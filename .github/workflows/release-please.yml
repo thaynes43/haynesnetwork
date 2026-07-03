@@ -1,0 +1,25 @@
+name: release-please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          # Prefer a fine-grained PAT (repo-scoped, contents:write +
+          # pull-requests:write) so the tags/releases release-please creates
+          # fire the downstream build-image job — GITHUB_TOKEN-created events
+          # are suppressed by GHA (donor lesson, todos-for-dues v0.3.0..v0.7.1).
+          # Falls back to GITHUB_TOKEN until the owner adds RELEASE_PLEASE_PAT;
+          # with the fallback, image builds need a manual tag re-push.
+          token: ${{ secrets.RELEASE_PLEASE_PAT || secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
