@@ -1,0 +1,26 @@
+# deps / build
+node_modules/
+.next/
+dist/
+out/
+*.tsbuildinfo
+
+# env & secrets
+.env
+.env.*
+!.env.example
+
+# test output
+coverage/
+playwright-report/
+test-results/
+blob-report/
+
+# tooling
+.DS_Store
+*.log
+.turbo/
+.pnpm-store/
+
+# embedded postgres data dirs (tests)
+.pg-embedded/
