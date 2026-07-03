@@ -154,6 +154,6 @@ rebuilding a lost *arr instance.
 |----|----------|------------|
 | Q-01 | Which email does Authentik emit for the owner (manofoz@ vs t.haynes43@)? | Mitigated: allowlist contains both; confirm on first real login. |
 | Q-02 | Seerr cutover timing (owner migrating in parallel) — when does the tile URL flip? | Owner action; catalog edit when ready. |
-| Q-03 | Do plexops/k8plex share library names with legacy Plex (affects per-server allowed-set UX)? | Inspect via Plex APIs during Phase 3 design. |
+| Q-03 | Do plexops/k8plex share library names with legacy Plex (affects per-server allowed-set UX)? | Partially resolved 2026-07-03: names differ (HAYNESOPS mirrors Movies/TV as `Movies`/`TV Shows` vs `HNet *`); registry keys on (server, library), mirror modeled explicitly — see docs/ops/002-plex-topology.md. |
 | Q-04 | Maintainerr deployment timing (for deletion attribution enrichment). | Follow-on when it lands in k8s. |
 | Q-05 | Per-user fix rate limits — fixed default or admin-configurable? | Default constant in Phase 2; revisit (R-47). |
