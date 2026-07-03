@@ -4,7 +4,12 @@
     "outDir": "./dist",
     "noEmit": true,
     "module": "ESNext",
-    "moduleResolution": "Bundler"
+    "moduleResolution": "Bundler",
+    // Better Auth's inferred `auth` type references zod internals that declaration
+    // emit cannot name portably (TS2742) — donor disables d.ts emit here too; the
+    // package ships raw TS, so declarations are never consumed anyway.
+    "declaration": false,
+    "declarationMap": false
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*", "__tests__/**/*", "vitest.config.ts"]
 }

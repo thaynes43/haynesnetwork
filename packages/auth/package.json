@@ -11,9 +11,19 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hnet/db": "workspace:*",
+    "@hnet/domain": "workspace:*",
+    "better-auth": "^1.6.11",
+    "drizzle-orm": "^0.36.4",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@hnet/test-utils": "workspace:*",
+    "@types/pg": "^8.11.10",
+    "pg": "^8.13.1",
     "vitest": "^4.1.6"
   }
 }

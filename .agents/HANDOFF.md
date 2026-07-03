@@ -2,8 +2,8 @@
 
 > The single resume point for agents. Update this in the same change as any milestone.
 
-- **Last updated:** 2026-07-03 (wave 2)
-- **Phase:** Scaffold + theme + db layer complete; auth implementation next
+- **Last updated:** 2026-07-03 (wave 3)
+- **Phase:** Scaffold + theme + db + auth package complete; Phase 1 features next
 - **Workflow mode:** PR flow (GATE A executed — see .agents/plans/001-gate-a-pr-cutover.md)
 
 ## Where things stand
@@ -32,10 +32,20 @@
 - Authentik OIDC provisioned via API (docs/ops/001) — creds in .env.local; owner must
   create the 1Password `haynesnetwork` item before cluster deploy.
 
+## Where things stand (wave 3 additions)
+
+- @hnet/auth implemented per DESIGN-002 (PR feat/auth-package): Better Auth 1.6.x with
+  genericOAuth→Authentik as the sole provider, drizzle adapter over DESIGN-001 tables,
+  7d/1d sessions, BOOTSTRAP_ADMIN_EMAILS hook via domain transitionRole (never throws
+  into sign-in), getServerSession hydrating {role, effective isFamily} for DESIGN-003,
+  authEnv/assertAuthEnv env contract, apps/web catch-all route. better-auth resolved to
+  1.6.23 — D-04 callback path `/oauth2/callback/:providerId` re-verified against the
+  installed package (DESIGN-002 D-03). Sign-in UI pages are a separate task; nothing
+  calls assertAuthEnv at startup yet (wire it with the deployment task).
+
 ## Next steps (task order)
 
-6. Better Auth implementation in packages/auth (Authentik side is DONE — see docs/ops/001).
-7. Phase 1 features (catalog, dashboard, admin permissions, tags).
+7. Phase 1 features (catalog, dashboard, admin permissions, tags) + sign-in UI.
 8. Playwright e2e (incl. phone/tablet resize matrix).
 9. Docker image + haynes-ops staged deployment (internal hostname first, then root domain).
 10. Phase 2: *arr ledger + fix + failsafe restore.
