@@ -341,6 +341,47 @@ PKCE note: generic-oauth's `pkce` option defaults to off in 1.6.11 (`codeVerifie
 when `pkce: true`); the confidential client + `state` parameter is the baseline. Enabling
 PKCE on both sides is a hardening follow-up (Q-04).
 
+### D-14 Rate limiting & error surfaces (added 2026-07-03)
+
+Production incident: better-auth's built-in rate limiter (enabled by default when
+`NODE_ENV=production`) ships a special rule of **3 requests / 10 s for every `/sign-in*`
+path**, and behind traefik-internal the client IP resolved to `null` — better-auth 1.6.23
+only trusts a *single-value* `x-forwarded-for` unless `trustedProxies` is configured, so a
+multi-hop chain fails closed and **all clients collapse into one shared per-path bucket**
+(`no-trusted-ip`). A couple of sign-in clicks 429'd the whole household, and the login
+button mapped the 429 to the generic `sso_unavailable` copy. All option names below
+verified against the installed `better-auth@1.6.23` source (supersedes D-03's 1.6.11 note
+for these options; the D-04 callback-path verification still holds at 1.6.23).
+
+Decided configuration (`packages/auth/src/config.ts`):
+
+| Option (verified) | Value | Why |
+|---|---|---|
+| `rateLimit.enabled` | `process.env.NODE_ENV === 'production'` | Mirrors better-auth's default (`enabled ?? isProduction`) explicitly; dev + the Playwright stub-OIDC suite run `next dev` and must never rate limit |
+| `rateLimit.window` / `rateLimit.max` | `60` s / `100` | Overall per-client-IP, per-path budget |
+| `rateLimit.customRules['/sign-in/oauth2']` | `{ window: 60, max: 10 }` | Overrides the built-in 3-per-10s `/sign-in*` special rule — ~10 OAuth initiation attempts/min per client. Keys are relative to basePath (`/api/auth`); exact match unless the key contains `*` |
+| `advanced.ipAddress.ipAddressHeaders` | `['x-forwarded-for', 'x-real-ip']` | Traefik sets both. XFF wins in the honest single-hop case; `x-real-ip` is single-value by construction (Traefik sets it to the connecting client) so the key still resolves per-client when the XFF chain has extra hops |
+| `logger.disableColors` | `true` | Pod logs (kubectl) stay grep-able; default `warn` level already emits callback failures, which better-auth `logger.error()`s before redirecting |
+| `onAPIError.onError` | `console.error('[auth] API error', …)` | Non-redirect API failures. Redirects (status FOUND) — i.e. callback failures — bypass it by design; plain 429s are raw Responses from `onRequest` and never reach it (no log noise under a storm) |
+| `onAPIError.errorURL` | `'/login?error=callback_failed'` | Callback failures whose OAuth state can't be parsed (expired/mismatch) can't recover the per-request error URL; this replaces better-auth's bare `/api/auth/error` page |
+| `signIn.oauth2` body param `errorCallbackURL` (login button) | `'/login?error=callback_failed'` | Carried through OAuth state; every post-Authentik callback failure redirects here |
+
+Storage stays the default `memory` — fine for the single-replica deployment; revisit
+(`rateLimit.storage: 'database'` or secondary storage) if the app ever scales out.
+
+Error taxonomy on `/login?error=…` (`ERROR_COPY` in `apps/web/app/login/page.tsx`;
+initiation mapping is the pure helper `apps/web/lib/sign-in-error.ts`, unit-tested):
+
+| Code | Source | Copy |
+|---|---|---|
+| `rate_limited` | initiation returned 429 | "Too many sign-in attempts — wait a minute and try once." |
+| `sso_unavailable` | any other initiation failure (5xx, network) | "Sign-in is temporarily unavailable. Try again in a moment." |
+| `callback_failed` | post-Authentik callback failure (`errorCallbackURL` / `onAPIError.errorURL`) | "Sign-in failed after Authentik. Try again; if it persists the admin should check the pod logs." |
+
+Note: better-auth's `redirectOnError` appends its machine-readable code as a **second**
+`error` query param (`/login?error=callback_failed&error=state_mismatch`); the login page
+renders the first and the raw code stays in the URL for debugging.
+
 ---
 
 ## Part B — Authentik provisioning (design + runbook outline)

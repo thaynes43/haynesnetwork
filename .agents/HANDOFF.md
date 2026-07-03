@@ -19,6 +19,9 @@
 
 ## Where things stand (wave 7)
 
+- Phase 2 (feat/arr-clients): @hnet/arr landed — typed Sonarr/Radarr/Lidarr/Seerr clients
+  (DESIGN-005 D-18 read/write entrypoint split, D-02 zod subsets, sanitized fixtures from
+  the 2026-07-03 live GET probes); sync CLI + domain writers are the next slices.
 - Waves 3-6 merged via PRs #2-#6: @hnet/auth (Better Auth + bootstrap), @hnet/api (tRPC),
   Phase 1 web UI, Dockerfile + CI image validation, Playwright e2e (38 tests incl. stub
   OIDC + resize matrix).
@@ -175,6 +178,10 @@
 
 ## Gotchas discovered so far
 
+- Prod sign-in 429 outage (2026-07-03): better-auth's built-in prod-only rate limiter
+  (3-per-10s on `/sign-in*`, single shared bucket when the client IP is unresolvable
+  behind Traefik) — fixed with per-client rate limiting + error taxonomy; see DESIGN-002
+  D-14 (fix/auth-rate-limit-and-errors).
 - No Docker in this WSL distro → tests use embedded Postgres, not Testcontainers.
 - `overseerr.haynesnetwork.com` currently routes to the legacy Unraid box; in-cluster Seerr
   is LAN-only pending the owner's parallel *arr/Seerr k8s migration. Catalog links are

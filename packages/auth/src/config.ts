@@ -55,6 +55,56 @@ export const auth = betterAuth({
   advanced: {
     // UUID id columns (DESIGN-001 D-01) — Postgres generates via gen_random_uuid().
     database: { generateId: 'uuid' },
+    // Rate limiting buckets by client IP. In-cluster the app sits behind Traefik
+    // (traefik-internal), which sets x-forwarded-for AND x-real-ip. better-auth
+    // 1.6.23 only trusts a SINGLE-value x-forwarded-for unless trustedProxies is
+    // configured (@better-auth/core src/utils/ip.ts getIPFromHeader): a multi-hop
+    // chain resolves to null, and in production every client then collapses into
+    // ONE shared per-path bucket (rate-limiter NO_TRUSTED_IP_KEY) — the observed
+    // outage where a couple of sign-in clicks 429'd the whole household. Walk
+    // x-forwarded-for first (honest single-hop case), then fall back to x-real-ip,
+    // which Traefik sets to the connecting client and is single-value by
+    // construction, so it resolves even when the XFF chain has extra hops.
+    ipAddress: {
+      ipAddressHeaders: ['x-forwarded-for', 'x-real-ip'],
+    },
+  },
+  rateLimit: {
+    // Mirror better-auth's default (enabled ?? isProduction) explicitly: prod-only.
+    // `next dev` (local + the Playwright/stub-OIDC suite) must never rate limit.
+    enabled: process.env.NODE_ENV === 'production',
+    // Overall per-client-IP, per-path budget: 100 requests/minute (window seconds).
+    window: 60,
+    max: 100,
+    customRules: {
+      // Paths are relative to basePath (/api/auth); exact match unless the key
+      // contains '*'. better-auth ships a built-in special rule of 3 requests per
+      // 10s for every /sign-in* path — far too tight for an OAuth initiation
+      // click that users retry. customRules resolve LAST, so this overrides it:
+      // ~10 sign-in attempts per minute per client.
+      '/sign-in/oauth2': { window: 60, max: 10 },
+    },
+  },
+  // Observability (kubectl logs): strip ANSI colors from better-auth's internal
+  // logger so pod logs stay grep-able. OAuth CALLBACK failures never reach
+  // onAPIError.onError — they redirect (status FOUND, filtered in the router's
+  // onError) — but better-auth logger.error()s them first (state parse failures,
+  // token-exchange failures, missing claims), and the default 'warn' level
+  // already emits those to console.
+  logger: { disableColors: true },
+  onAPIError: {
+    // Non-redirect API failures (sign-in initiation, adapter errors). Plain 429s
+    // never land here: the rate limiter short-circuits in onRequest with a raw
+    // Response, so a rate-limit storm stays quiet in the logs.
+    onError: (error) => {
+      console.error('[auth] API error', error);
+    },
+    // Callback failures that cannot recover errorCallbackURL from OAuth state
+    // (expired/mismatched state) redirect here instead of better-auth's bare
+    // /api/auth/error page. better-auth appends its machine-readable code as a
+    // SECOND `error` query param (redirectOnError); /login renders the first and
+    // the code stays in the URL for debugging.
+    errorURL: '/login?error=callback_failed',
   },
   database: drizzleAdapter(db, {
     provider: 'pg',

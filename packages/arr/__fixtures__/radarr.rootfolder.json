@@ -1,0 +1,160 @@
+[
+  {
+    "path": "/data/haynestower/Media/Movies",
+    "accessible": true,
+    "freeSpace": 130218010345472,
+    "unmappedFolders": [
+      {
+        "name": "2024 MTV Video Music Awards (2024)",
+        "path": "/data/haynestower/Media/Movies/2024 MTV Video Music Awards (2024)",
+        "relativePath": "2024 MTV Video Music Awards (2024)"
+      },
+      {
+        "name": "A Christmas Story Christmas (2022)",
+        "path": "/data/haynestower/Media/Movies/A Christmas Story Christmas (2022)",
+        "relativePath": "A Christmas Story Christmas (2022)"
+      },
+      {
+        "name": "Allegiant (2016) - 1080",
+        "path": "/data/haynestower/Media/Movies/Allegiant (2016) - 1080",
+        "relativePath": "Allegiant (2016) - 1080"
+      },
+      {
+        "name": "Avatar Fire and Ash (2025)",
+        "path": "/data/haynestower/Media/Movies/Avatar Fire and Ash (2025)",
+        "relativePath": "Avatar Fire and Ash (2025)"
+      },
+      {
+        "name": "Daadi Ki Shaadi (2026)",
+        "path": "/data/haynestower/Media/Movies/Daadi Ki Shaadi (2026)",
+        "relativePath": "Daadi Ki Shaadi (2026)"
+      },
+      {
+        "name": "Die Hart 2 Die Harter (2024)",
+        "path": "/data/haynestower/Media/Movies/Die Hart 2 Die Harter (2024)",
+        "relativePath": "Die Hart 2 Die Harter (2024)"
+      },
+      {
+        "name": "District 9 (2009)",
+        "path": "/data/haynestower/Media/Movies/District 9 (2009)",
+        "relativePath": "District 9 (2009)"
+      },
+      {
+        "name": "How to Train Your Dragon (2025)",
+        "path": "/data/haynestower/Media/Movies/How to Train Your Dragon (2025)",
+        "relativePath": "How to Train Your Dragon (2025)"
+      },
+      {
+        "name": "In Your Dreams (2025)",
+        "path": "/data/haynestower/Media/Movies/In Your Dreams (2025)",
+        "relativePath": "In Your Dreams (2025)"
+      },
+      {
+        "name": "Insurgent (2015) - 1080",
+        "path": "/data/haynestower/Media/Movies/Insurgent (2015) - 1080",
+        "relativePath": "Insurgent (2015) - 1080"
+      },
+      {
+        "name": "It Follows (2015)",
+        "path": "/data/haynestower/Media/Movies/It Follows (2015)",
+        "relativePath": "It Follows (2015)"
+      },
+      {
+        "name": "Little Women (2019)",
+        "path": "/data/haynestower/Media/Movies/Little Women (2019)",
+        "relativePath": "Little Women (2019)"
+      },
+      {
+        "name": "Love Lies Bleeding (2024)",
+        "path": "/data/haynestower/Media/Movies/Love Lies Bleeding (2024)",
+        "relativePath": "Love Lies Bleeding (2024)"
+      },
+      {
+        "name": "Marvel 75 Years, From Pulp to Pop! (2014)",
+        "path": "/data/haynestower/Media/Movies/Marvel 75 Years, From Pulp to Pop! (2014)",
+        "relativePath": "Marvel 75 Years, From Pulp to Pop! (2014)"
+      },
+      {
+        "name": "Mission Impossible - Dead Reckoning Part One (2023)",
+        "path": "/data/haynestower/Media/Movies/Mission Impossible - Dead Reckoning Part One (2023)",
+        "relativePath": "Mission Impossible - Dead Reckoning Part One (2023)"
+      },
+      {
+        "name": "Never Let Go (2024)",
+        "path": "/data/haynestower/Media/Movies/Never Let Go (2024)",
+        "relativePath": "Never Let Go (2024)"
+      },
+      {
+        "name": "Nobody 2 (2025)",
+        "path": "/data/haynestower/Media/Movies/Nobody 2 (2025)",
+        "relativePath": "Nobody 2 (2025)"
+      },
+      {
+        "name": "Ride (2024)",
+        "path": "/data/haynestower/Media/Movies/Ride (2024)",
+        "relativePath": "Ride (2024)"
+      },
+      {
+        "name": "Rise (2022)",
+        "path": "/data/haynestower/Media/Movies/Rise (2022)",
+        "relativePath": "Rise (2022)"
+      },
+      {
+        "name": "Samson and Delilah (1996)",
+        "path": "/data/haynestower/Media/Movies/Samson and Delilah (1996)",
+        "relativePath": "Samson and Delilah (1996)"
+      },
+      {
+        "name": "Seeking Persephone ()",
+        "path": "/data/haynestower/Media/Movies/Seeking Persephone ()",
+        "relativePath": "Seeking Persephone ()"
+      },
+      {
+        "name": "Self Reliance (2024)",
+        "path": "/data/haynestower/Media/Movies/Self Reliance (2024)",
+        "relativePath": "Self Reliance (2024)"
+      },
+      {
+        "name": "Sleeping Beauty (2011)",
+        "path": "/data/haynestower/Media/Movies/Sleeping Beauty (2011)",
+        "relativePath": "Sleeping Beauty (2011)"
+      },
+      {
+        "name": "Spider-Man (2002)",
+        "path": "/data/haynestower/Media/Movies/Spider-Man (2002)",
+        "relativePath": "Spider-Man (2002)"
+      },
+      {
+        "name": "The Eight Hundred (2020)",
+        "path": "/data/haynestower/Media/Movies/The Eight Hundred (2020)",
+        "relativePath": "The Eight Hundred (2020)"
+      },
+      {
+        "name": "The Lion King (2019)",
+        "path": "/data/haynestower/Media/Movies/The Lion King (2019)",
+        "relativePath": "The Lion King (2019)"
+      },
+      {
+        "name": "The Prince (2019)",
+        "path": "/data/haynestower/Media/Movies/The Prince (2019)",
+        "relativePath": "The Prince (2019)"
+      },
+      {
+        "name": "The Stand (1994)",
+        "path": "/data/haynestower/Media/Movies/The Stand (1994)",
+        "relativePath": "The Stand (1994)"
+      },
+      {
+        "name": "Union (2024)",
+        "path": "/data/haynestower/Media/Movies/Union (2024)",
+        "relativePath": "Union (2024)"
+      },
+      {
+        "name": "Watchmen (2009)",
+        "path": "/data/haynestower/Media/Movies/Watchmen (2009)",
+        "relativePath": "Watchmen (2009)"
+      }
+    ],
+    "id": 1
+  }
+]

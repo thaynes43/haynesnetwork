@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.1](https://github.com/thaynes43/haynesnetwork/compare/v0.1.0...v0.1.1) (2026-07-03)
+
+
+### Bug Fixes
+
+* **auth:** per-client rate limiting, callback error surfacing, sign-in error taxonomy ([#13](https://github.com/thaynes43/haynesnetwork/issues/13)) ([49de172](https://github.com/thaynes43/haynesnetwork/commit/49de172894a73c051d70950f8768b2d60bc493f1))
+
+
+### Documentation
+
+* **design:** DESIGN-005 — *arr ledger, fix, and restore ([#11](https://github.com/thaynes43/haynesnetwork/issues/11)) ([e0b0a62](https://github.com/thaynes43/haynesnetwork/commit/e0b0a6291ff0d6fe09e0f0890ebaab89f5f3817c))
+
 ## 0.1.0 (2026-07-03)
 
 
