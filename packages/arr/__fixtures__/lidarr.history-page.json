@@ -1,0 +1,169 @@
+{
+  "page": 1,
+  "pageSize": 5,
+  "sortKey": "date",
+  "sortDirection": "descending",
+  "totalRecords": 2943,
+  "records": [
+    {
+      "albumId": 2713,
+      "artistId": 417,
+      "trackId": 186764,
+      "sourceTitle": "12. Feel The Vibe (Extended Mix)",
+      "quality": {
+        "quality": {
+          "id": 6,
+          "name": "FLAC"
+        },
+        "revision": {
+          "version": 1,
+          "real": 0,
+          "isRepack": false
+        }
+      },
+      "customFormats": [],
+      "customFormatScore": 0,
+      "qualityCutoffNotMet": false,
+      "date": "2026-07-03T21:36:47Z",
+      "eventType": "trackFileImported",
+      "data": {
+        "fileId": "1756543",
+        "droppedPath": "/data/soulseek/complete/Benny Benassi - Feel the Bass (2026)/12. Feel The Vibe (Extended Mix).flac",
+        "importedPath": "/data/media/music/Benny Benassi/Feel the Bass (2026)/Benny Benassi - Feel the Bass - 12 - Feel the Vibe (extended mix).flac",
+        "downloadClient": null,
+        "releaseGroup": null,
+        "size": "34125311",
+        "indexerFlags": "0"
+      },
+      "id": 2943
+    },
+    {
+      "albumId": 2713,
+      "artistId": 417,
+      "trackId": 186763,
+      "sourceTitle": "11. Can I Feel (Extended Mix)",
+      "quality": {
+        "quality": {
+          "id": 6,
+          "name": "FLAC"
+        },
+        "revision": {
+          "version": 1,
+          "real": 0,
+          "isRepack": false
+        }
+      },
+      "customFormats": [],
+      "customFormatScore": 0,
+      "qualityCutoffNotMet": false,
+      "date": "2026-07-03T21:36:47Z",
+      "eventType": "trackFileImported",
+      "data": {
+        "fileId": "1756542",
+        "droppedPath": "/data/soulseek/complete/Benny Benassi - Feel the Bass (2026)/11. Can I Feel (Extended Mix).flac",
+        "importedPath": "/data/media/music/Benny Benassi/Feel the Bass (2026)/Benny Benassi - Feel the Bass - 11 - Can I Feel! (extended mix).flac",
+        "downloadClient": null,
+        "releaseGroup": null,
+        "size": "32235083",
+        "indexerFlags": "0"
+      },
+      "id": 2942
+    },
+    {
+      "albumId": 2713,
+      "artistId": 417,
+      "trackId": 186762,
+      "sourceTitle": "10. Aku Aku (Extended Mix)",
+      "quality": {
+        "quality": {
+          "id": 6,
+          "name": "FLAC"
+        },
+        "revision": {
+          "version": 1,
+          "real": 0,
+          "isRepack": false
+        }
+      },
+      "customFormats": [],
+      "customFormatScore": 0,
+      "qualityCutoffNotMet": false,
+      "date": "2026-07-03T21:36:47Z",
+      "eventType": "trackFileImported",
+      "data": {
+        "fileId": "1756541",
+        "droppedPath": "/data/soulseek/complete/Benny Benassi - Feel the Bass (2026)/10. Aku Aku (Extended Mix).flac",
+        "importedPath": "/data/media/music/Benny Benassi/Feel the Bass (2026)/Benny Benassi - Feel the Bass - 10 - Aku Aku (extended mix).flac",
+        "downloadClient": null,
+        "releaseGroup": null,
+        "size": "35437120",
+        "indexerFlags": "0"
+      },
+      "id": 2941
+    },
+    {
+      "albumId": 2713,
+      "artistId": 417,
+      "trackId": 186761,
+      "sourceTitle": "09. Dead Limit (Extended Mix)",
+      "quality": {
+        "quality": {
+          "id": 6,
+          "name": "FLAC"
+        },
+        "revision": {
+          "version": 1,
+          "real": 0,
+          "isRepack": false
+        }
+      },
+      "customFormats": [],
+      "customFormatScore": 0,
+      "qualityCutoffNotMet": false,
+      "date": "2026-07-03T21:36:47Z",
+      "eventType": "trackFileImported",
+      "data": {
+        "fileId": "1756540",
+        "droppedPath": "/data/soulseek/complete/Benny Benassi - Feel the Bass (2026)/09. Dead Limit (Extended Mix).flac",
+        "importedPath": "/data/media/music/Benny Benassi/Feel the Bass (2026)/Benny Benassi - Feel the Bass - 09 - Dead Limit (extended mix).flac",
+        "downloadClient": null,
+        "releaseGroup": null,
+        "size": "36978249",
+        "indexerFlags": "0"
+      },
+      "id": 2940
+    },
+    {
+      "albumId": 2713,
+      "artistId": 417,
+      "trackId": 186760,
+      "sourceTitle": "08. Feel The Bass (Extended Mix)",
+      "quality": {
+        "quality": {
+          "id": 6,
+          "name": "FLAC"
+        },
+        "revision": {
+          "version": 1,
+          "real": 0,
+          "isRepack": false
+        }
+      },
+      "customFormats": [],
+      "customFormatScore": 0,
+      "qualityCutoffNotMet": false,
+      "date": "2026-07-03T21:36:47Z",
+      "eventType": "trackFileImported",
+      "data": {
+        "fileId": "1756539",
+        "droppedPath": "/data/soulseek/complete/Benny Benassi - Feel the Bass (2026)/08. Feel The Bass (Extended Mix).flac",
+        "importedPath": "/data/media/music/Benny Benassi/Feel the Bass (2026)/Benny Benassi - Feel the Bass - 08 - Feel the Bass (extended mix).flac",
+        "downloadClient": null,
+        "releaseGroup": null,
+        "size": "38195097",
+        "indexerFlags": "0"
+      },
+      "id": 2939
+    }
+  ]
+}

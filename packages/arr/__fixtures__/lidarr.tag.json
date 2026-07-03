@@ -1,0 +1,14 @@
+[
+  {
+    "label": "spotifyalbums",
+    "id": 2
+  },
+  {
+    "label": "spotifyartists",
+    "id": 3
+  },
+  {
+    "label": "spotifyplaylist",
+    "id": 1
+  }
+]

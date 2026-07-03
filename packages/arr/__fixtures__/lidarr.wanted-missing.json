@@ -1,0 +1,1406 @@
+{
+  "page": 1,
+  "pageSize": 5,
+  "sortKey": "releaseDate",
+  "sortDirection": "descending",
+  "totalRecords": 635,
+  "records": [
+    {
+      "title": "SPLAT!",
+      "disambiguation": "",
+      "overview": "",
+      "artistId": 982,
+      "foreignAlbumId": "e67fe079-daef-490b-9f2d-fbc4b68e4466",
+      "monitored": true,
+      "anyReleaseOk": true,
+      "profileId": 1,
+      "duration": 3031000,
+      "albumType": "Album",
+      "secondaryTypes": [],
+      "mediumCount": 1,
+      "ratings": {
+        "votes": 0,
+        "value": 0
+      },
+      "releaseDate": "2026-07-03T00:00:00Z",
+      "releases": [
+        {
+          "id": 42270,
+          "albumId": 7825,
+          "foreignReleaseId": "e8b9af02-b61c-4c62-b2db-61be98f061a8",
+          "title": "SPLAT!",
+          "status": "Official",
+          "duration": 3031000,
+          "trackCount": 13,
+          "media": [
+            {
+              "mediumNumber": 1,
+              "mediumName": "",
+              "mediumFormat": "Digital Media"
+            }
+          ],
+          "mediumCount": 1,
+          "disambiguation": "",
+          "country": [
+            "[Worldwide]"
+          ],
+          "label": [
+            "earMUSIC"
+          ],
+          "format": "Digital Media",
+          "monitored": true
+        }
+      ],
+      "genres": [],
+      "media": [
+        {
+          "mediumNumber": 1,
+          "mediumName": "",
+          "mediumFormat": "Digital Media"
+        }
+      ],
+      "artist": {
+        "status": "continuing",
+        "ended": false,
+        "artistName": "Deep Purple",
+        "foreignArtistId": "79491354-3d83-40e3-9d8e-7592d58d790a",
+        "tadbId": 0,
+        "discogsId": 0,
+        "artistType": "Group",
+        "disambiguation": "",
+        "links": [
+          {
+            "url": "https://www.deep-purple.com/",
+            "name": "deep-purple"
+          },
+          {
+            "url": "https://www.discogs.com/artist/170355",
+            "name": "discogs"
+          },
+          {
+            "url": "https://myspace.com/deeppurple",
+            "name": "myspace"
+          },
+          {
+            "url": "https://www.imdb.com/name/nm1472464/",
+            "name": "imdb"
+          },
+          {
+            "url": "https://musicmoz.org/Bands_and_Artists/D/Deep_Purple/",
+            "name": "musicmoz"
+          },
+          {
+            "url": "https://www.bbc.co.uk/music/artists/79491354-3d83-40e3-9d8e-7592d58d790a",
+            "name": "bbc"
+          },
+          {
+            "url": "https://www.allmusic.com/artist/mn0000192382",
+            "name": "allmusic"
+          },
+          {
+            "url": "https://www.facebook.com/deeppurple6876",
+            "name": "facebook"
+          },
+          {
+            "url": "https://www.wikidata.org/wiki/Q101505",
+            "name": "wikidata"
+          },
+          {
+            "url": "https://rateyourmusic.com/artist/deep-purple",
+            "name": "rateyourmusic"
+          },
+          {
+            "url": "https://www.last.fm/music/Deep+Purple",
+            "name": "last"
+          },
+          {
+            "url": "https://twitter.com/_DeepPurple",
+            "name": "twitter"
+          },
+          {
+            "url": "https://www.metal-archives.com/bands/Deep_Purple/1178",
+            "name": "metal-archives"
+          },
+          {
+            "url": "http://viaf.org/viaf/139699570",
+            "name": "viaf"
+          },
+          {
+            "url": "http://muzikum.eu/en/122-3577/deep-purple/lyrics.html",
+            "name": "muzikum"
+          },
+          {
+            "url": "https://open.spotify.com/artist/568ZhdwyaiCyOGJRtNYhWf",
+            "name": "spotify"
+          },
+          {
+            "url": "https://www.45cat.com/artist/deep-purple",
+            "name": "45cat"
+          },
+          {
+            "url": "https://d-nb.info/gnd/1215941-4",
+            "name": "d-nb"
+          },
+          {
+            "url": "https://nla.gov.au/anbd.aut-an35864717",
+            "name": "gov"
+          },
+          {
+            "url": "https://www.songkick.com/artists/99952",
+            "name": "songkick"
+          },
+          {
+            "url": "https://www.setlist.fm/setlists/deep-purple-3bd6acc8.html",
+            "name": "setlist"
+          },
+          {
+            "url": "https://www.bandsintown.com/a/31005",
+            "name": "bandsintown"
+          },
+          {
+            "url": "https://www.musik-sammler.de/artist/deep-purple/",
+            "name": "musik-sammler"
+          },
+          {
+            "url": "https://www.facebook.com/officialdeeppurple",
+            "name": "facebook"
+          },
+          {
+            "url": "http://id.loc.gov/authorities/names/n88636925",
+            "name": "loc"
+          },
+          {
+            "url": "https://catalogue.bnf.fr/ark:/12148/cb13902886c",
+            "name": "bnf"
+          },
+          {
+            "url": "https://secondhandsongs.com/artist/201",
+            "name": "secondhandsongs"
+          },
+          {
+            "url": "https://genius.com/artists/Deep-purple",
+            "name": "genius"
+          },
+          {
+            "url": "https://www.musixmatch.com/artist/Deep-Purple",
+            "name": "musixmatch"
+          },
+          {
+            "url": "https://imvdb.com/n/deep-purple",
+            "name": "imvdb"
+          },
+          {
+            "url": "https://www.deezer.com/artist/864",
+            "name": "deezer"
+          },
+          {
+            "url": "https://tidal.com/artist/3355",
+            "name": "tidal"
+          },
+          {
+            "url": "https://play.google.com/store/music/artist?id=Afbqv2uk4sntsw5wjxjnwdh2xzy",
+            "name": "google"
+          },
+          {
+            "url": "https://uk.7digital.com/artist/deep-purple",
+            "name": "7digital"
+          },
+          {
+            "url": "https://www.progarchives.com/artist.asp?id=1969",
+            "name": "progarchives"
+          },
+          {
+            "url": "https://www.spirit-of-metal.com/en/band/Deep_Purple",
+            "name": "spirit-of-metal"
+          },
+          {
+            "url": "https://www.junodownload.com/artists/Deep+Purple/releases/",
+            "name": "junodownload"
+          },
+          {
+            "url": "https://www.livefans.jp/artists/2572",
+            "name": "livefans"
+          },
+          {
+            "url": "https://us.napster.com/artist/deep-purple",
+            "name": "napster"
+          },
+          {
+            "url": "https://www.cdjapan.co.jp/person/700278878",
+            "name": "cdjapan"
+          },
+          {
+            "url": "https://soundcloud.com/deeppurple",
+            "name": "soundcloud"
+          },
+          {
+            "url": "https://deeppurple.com/",
+            "name": "deeppurple"
+          },
+          {
+            "url": "https://www.youtube.com/channel/UC3SF_Sa_dVWQ09m88nvsXrg",
+            "name": "youtube"
+          },
+          {
+            "url": "https://music.apple.com/gb/artist/135532",
+            "name": "apple"
+          },
+          {
+            "url": "https://music.apple.com/gb/artist/135532",
+            "name": "apple"
+          },
+          {
+            "url": "https://www.metalmusicarchives.com/artist/deep-purple",
+            "name": "metalmusicarchives"
+          },
+          {
+            "url": "https://itunes.apple.com/gb/artist/id135532",
+            "name": "apple"
+          },
+          {
+            "url": "https://music.amazon.co.uk/artists/B000QJNHU0",
+            "name": "amazon"
+          },
+          {
+            "url": "https://www.spirit-of-rock.com/en/band/deep_purple",
+            "name": "spirit-of-rock"
+          },
+          {
+            "url": "https://www.instagram.com/deeppurple_official/",
+            "name": "instagram"
+          },
+          {
+            "url": "https://music.youtube.com/channel/UCoPZoa-KzZQRxspnRGZTx7A",
+            "name": "youtube"
+          },
+          {
+            "url": "https://www.youtube.com/channel/UChFONkdHg3zrt3zaHmx1bKA",
+            "name": "youtube"
+          },
+          {
+            "url": "https://www.tiktok.com/@deeppurple_official",
+            "name": "tiktok"
+          },
+          {
+            "url": "https://id.oclc.org/worldcat/entity/E39QQPVp7Mv3P3wbJqFQ3MGMJt",
+            "name": "oclc"
+          },
+          {
+            "url": "https://www.thehighwaystar.com/rosas/jouni/discoidx.html",
+            "name": "thehighwaystar"
+          },
+          {
+            "url": "https://www.qobuz.com/gb-en/interpreter/deep-purple-4/26742",
+            "name": "qobuz"
+          },
+          {
+            "url": "https://www.qobuz.com/gb-en/interpreter/deep-purple-4/26742",
+            "name": "qobuz"
+          },
+          {
+            "url": "https://mora.jp/artist/347596/",
+            "name": "mora"
+          },
+          {
+            "url": "https://ototoy.jp/_/default/a/244444",
+            "name": "ototoy"
+          },
+          {
+            "url": "https://www.melon.com/artist/detail.htm?artistId=103794",
+            "name": "melon"
+          },
+          {
+            "url": "https://www.melon.com/artist/detail.htm?artistId=103794",
+            "name": "melon"
+          },
+          {
+            "url": "https://music.apple.com/to/artist/135532",
+            "name": "apple"
+          }
+        ],
+        "nextAlbum": null,
+        "lastAlbum": null,
+        "images": [],
+        "path": "/data/media/music/Deep Purple",
+        "qualityProfileId": 1,
+        "metadataProfileId": 1,
+        "monitored": true,
+        "monitorNewItems": "new",
+        "genres": [
+          "Hard Rock",
+          "Rock",
+          "Heavy Metal",
+          "Progressive Rock",
+          "Blues Rock",
+          "Classic Rock"
+        ],
+        "cleanName": "deeppurple",
+        "sortName": "deep purple",
+        "tags": [],
+        "added": "2026-06-10T13:40:27Z",
+        "ratings": {
+          "votes": 30,
+          "value": 9.2
+        },
+        "id": 982
+      },
+      "images": [
+        {
+          "url": "/MediaCover/Albums/7825/cover.jpg?lastWrite=639166956543821031",
+          "coverType": "cover",
+          "extension": ".jpg",
+          "remoteUrl": "https://images.lidarr.audio/cache/https://coverartarchive.org/release/e8b9af02-b61c-4c62-b2db-61be98f061a8/45121928396-1200.jpg"
+        }
+      ],
+      "links": [],
+      "statistics": {
+        "trackFileCount": 0,
+        "trackCount": 13,
+        "totalTrackCount": 13,
+        "sizeOnDisk": 0,
+        "percentOfTracks": 0
+      },
+      "id": 7825
+    },
+    {
+      "title": "Love & Heartbreak",
+      "disambiguation": "",
+      "overview": "",
+      "artistId": 2517,
+      "foreignAlbumId": "e15824ec-442b-4eb4-8f45-26cf3a0081b8",
+      "monitored": true,
+      "anyReleaseOk": true,
+      "profileId": 1,
+      "duration": 3119162,
+      "albumType": "Album",
+      "secondaryTypes": [],
+      "mediumCount": 1,
+      "ratings": {
+        "votes": 0,
+        "value": 0
+      },
+      "releaseDate": "2026-07-03T00:00:00Z",
+      "releases": [
+        {
+          "id": 99839,
+          "albumId": 19055,
+          "foreignReleaseId": "cdc81454-a8bf-410a-a7ee-1ec31dcce62c",
+          "title": "Love & Heartbreak",
+          "status": "Official",
+          "duration": 3119162,
+          "trackCount": 14,
+          "media": [
+            {
+              "mediumNumber": 1,
+              "mediumName": "",
+              "mediumFormat": "Digital Media"
+            }
+          ],
+          "mediumCount": 1,
+          "disambiguation": "",
+          "country": [],
+          "label": [
+            "Nettwerk"
+          ],
+          "format": "Digital Media",
+          "monitored": true
+        }
+      ],
+      "genres": [],
+      "media": [
+        {
+          "mediumNumber": 1,
+          "mediumName": "",
+          "mediumFormat": "Digital Media"
+        }
+      ],
+      "artist": {
+        "status": "continuing",
+        "ended": false,
+        "artistName": "MISSIO",
+        "foreignArtistId": "ae5af627-ccd6-4db5-974d-83da8e32e705",
+        "tadbId": 0,
+        "discogsId": 0,
+        "artistType": "Group",
+        "disambiguation": "US electronic duo",
+        "links": [
+          {
+            "url": "http://www.missiomusic.com/",
+            "name": "missiomusic"
+          },
+          {
+            "url": "https://www.facebook.com/MissioMusic",
+            "name": "facebook"
+          },
+          {
+            "url": "https://soundcloud.com/missiomusic",
+            "name": "soundcloud"
+          },
+          {
+            "url": "https://www.wikidata.org/wiki/Q41733812",
+            "name": "wikidata"
+          },
+          {
+            "url": "https://www.discogs.com/artist/5598916",
+            "name": "discogs"
+          },
+          {
+            "url": "https://rateyourmusic.com/artist/missio-1",
+            "name": "rateyourmusic"
+          },
+          {
+            "url": "https://open.spotify.com/artist/2HOMW1liAxI3URnEq95SMS",
+            "name": "spotify"
+          },
+          {
+            "url": "https://www.deezer.com/artist/7003937",
+            "name": "deezer"
+          },
+          {
+            "url": "https://www.allmusic.com/artist/mn0003455025",
+            "name": "allmusic"
+          },
+          {
+            "url": "https://www.last.fm/music/MISSIO",
+            "name": "last"
+          },
+          {
+            "url": "https://www.bandsintown.com/a/703844",
+            "name": "bandsintown"
+          },
+          {
+            "url": "https://music.apple.com/us/artist/1228281701",
+            "name": "apple"
+          },
+          {
+            "url": "https://music.apple.com/us/artist/1228281701",
+            "name": "apple"
+          },
+          {
+            "url": "https://tidal.com/artist/6200789",
+            "name": "tidal"
+          },
+          {
+            "url": "https://missio.bandcamp.com/",
+            "name": "bandcamp"
+          }
+        ],
+        "nextAlbum": null,
+        "lastAlbum": null,
+        "images": [],
+        "path": "/data/media/music/Missio",
+        "qualityProfileId": 1,
+        "metadataProfileId": 1,
+        "monitored": true,
+        "monitorNewItems": "new",
+        "genres": [
+          "Indie Rock",
+          "Rock"
+        ],
+        "cleanName": "missio",
+        "sortName": "missio",
+        "tags": [],
+        "added": "2026-06-10T19:10:39Z",
+        "ratings": {
+          "votes": 0,
+          "value": 0
+        },
+        "id": 2517
+      },
+      "images": [
+        {
+          "url": "/MediaCover/Albums/19055/cover.jpg?lastWrite=639167155172805567",
+          "coverType": "cover",
+          "extension": ".jpg",
+          "remoteUrl": "https://images.lidarr.audio/cache/https://coverartarchive.org/release/cdc81454-a8bf-410a-a7ee-1ec31dcce62c/44592539799-1200.jpg"
+        }
+      ],
+      "links": [],
+      "statistics": {
+        "trackFileCount": 0,
+        "trackCount": 14,
+        "totalTrackCount": 14,
+        "sizeOnDisk": 0,
+        "percentOfTracks": 0
+      },
+      "id": 19055
+    },
+    {
+      "title": "Return to the Return (of the Spectrum of Intergalactic Happiness)",
+      "disambiguation": "",
+      "overview": "",
+      "artistId": 4238,
+      "foreignAlbumId": "f01d97ae-7b2c-48a2-88e1-4cd61e12307c",
+      "monitored": true,
+      "anyReleaseOk": true,
+      "profileId": 1,
+      "duration": 2596972,
+      "albumType": "Album",
+      "secondaryTypes": [],
+      "mediumCount": 1,
+      "ratings": {
+        "votes": 0,
+        "value": 0
+      },
+      "releaseDate": "2026-06-30T00:00:00Z",
+      "releases": [
+        {
+          "id": 179648,
+          "albumId": 34724,
+          "foreignReleaseId": "9cf2487f-6fe6-4b55-9dc4-891e3a775a27",
+          "title": "Return to the Return (of the Spectrum of Intergalactic Happiness)",
+          "status": "Official",
+          "duration": 2596972,
+          "trackCount": 14,
+          "media": [
+            {
+              "mediumNumber": 1,
+              "mediumName": "",
+              "mediumFormat": "Digital Media"
+            }
+          ],
+          "mediumCount": 1,
+          "disambiguation": "",
+          "country": [
+            "[Worldwide]"
+          ],
+          "label": [
+            "Deadbeats"
+          ],
+          "format": "Digital Media",
+          "monitored": true
+        }
+      ],
+      "genres": [],
+      "media": [
+        {
+          "mediumNumber": 1,
+          "mediumName": "",
+          "mediumFormat": "Digital Media"
+        }
+      ],
+      "artist": {
+        "status": "continuing",
+        "ended": false,
+        "artistName": "Zeds Dead",
+        "foreignArtistId": "f9fdca15-1bef-43a0-8213-758b6ee0aa91",
+        "tadbId": 0,
+        "discogsId": 0,
+        "artistType": "Group",
+        "disambiguation": "",
+        "links": [
+          {
+            "url": "https://www.discogs.com/artist/1578601",
+            "name": "discogs"
+          },
+          {
+            "url": "https://myspace.com/zedsdead",
+            "name": "myspace"
+          },
+          {
+            "url": "https://www.wikidata.org/wiki/Q3005564",
+            "name": "wikidata"
+          },
+          {
+            "url": "https://open.spotify.com/artist/67qogtRNI0GjUr8PlaG6Zh",
+            "name": "spotify"
+          },
+          {
+            "url": "https://rateyourmusic.com/artist/zeds_dead",
+            "name": "rateyourmusic"
+          },
+          {
+            "url": "https://www.bbc.co.uk/music/artists/f9fdca15-1bef-43a0-8213-758b6ee0aa91",
+            "name": "bbc"
+          },
+          {
+            "url": "https://www.facebook.com/zedsdead",
+            "name": "facebook"
+          },
+          {
+            "url": "https://www.whosampled.com/Zeds-Dead/",
+            "name": "whosampled"
+          },
+          {
+            "url": "https://twitter.com/whoszed",
+            "name": "twitter"
+          },
+          {
+            "url": "https://www.last.fm/music/Zeds+Dead",
+            "name": "last"
+          },
+          {
+            "url": "https://www.allmusic.com/artist/mn0002815836",
+            "name": "allmusic"
+          },
+          {
+            "url": "http://rolldabeats.com/artist/zeds_dead",
+            "name": "rolldabeats"
+          },
+          {
+            "url": "https://www.youtube.com/channel/UCsYkUlicwVBtW-pAInUSyPA",
+            "name": "youtube"
+          },
+          {
+            "url": "https://plus.google.com/106676405737368426680",
+            "name": "google"
+          },
+          {
+            "url": "https://soundcloud.com/zedsdead",
+            "name": "soundcloud"
+          },
+          {
+            "url": "https://commons.wikimedia.org/wiki/File:Zeds_deaddddddd.jpg",
+            "name": "wikimedia"
+          },
+          {
+            "url": "https://www.instagram.com/zedsdeadofficial/",
+            "name": "instagram"
+          },
+          {
+            "url": "https://www.beatport.com/artist/zeds-dead/16768",
+            "name": "beatport"
+          },
+          {
+            "url": "https://play.google.com/store/music/artist?id=Axkcqfwpnbasiodr7rx2lsumphe",
+            "name": "google"
+          },
+          {
+            "url": "https://www.songkick.com/artists/1725975",
+            "name": "songkick"
+          },
+          {
+            "url": "https://twitter.com/zedsdead",
+            "name": "twitter"
+          },
+          {
+            "url": "https://www.deezer.com/artist/788504",
+            "name": "deezer"
+          },
+          {
+            "url": "https://tidal.com/artist/3843654",
+            "name": "tidal"
+          },
+          {
+            "url": "https://music.youtube.com/channel/UCzXwsCed4N8BwLou75yxHlg",
+            "name": "youtube"
+          },
+          {
+            "url": "https://music.apple.com/ca/artist/418048196",
+            "name": "apple"
+          },
+          {
+            "url": "https://itunes.apple.com/ca/artist/id418048196",
+            "name": "apple"
+          }
+        ],
+        "nextAlbum": null,
+        "lastAlbum": null,
+        "images": [],
+        "path": "/data/media/music/Zeds Dead",
+        "qualityProfileId": 1,
+        "metadataProfileId": 1,
+        "monitored": true,
+        "monitorNewItems": "new",
+        "genres": [
+          "Dubstep",
+          "Drum And Bass",
+          "Electronic"
+        ],
+        "cleanName": "zedsdead",
+        "sortName": "zeds dead",
+        "tags": [],
+        "added": "2026-06-11T04:28:51Z",
+        "ratings": {
+          "votes": 0,
+          "value": 0
+        },
+        "id": 4238
+      },
+      "images": [
+        {
+          "url": "/MediaCover/Albums/34724/cover.jpg?lastWrite=639184612510418960",
+          "coverType": "cover",
+          "extension": ".jpg",
+          "remoteUrl": "https://images.lidarr.audio/cache/https://coverartarchive.org/release/9cf2487f-6fe6-4b55-9dc4-891e3a775a27/45531686762-1200.jpg"
+        }
+      ],
+      "links": [],
+      "statistics": {
+        "trackFileCount": 0,
+        "trackCount": 14,
+        "totalTrackCount": 14,
+        "sizeOnDisk": 0,
+        "percentOfTracks": 0
+      },
+      "id": 34724
+    },
+    {
+      "title": "After the Astronaut",
+      "disambiguation": "",
+      "overview": "",
+      "artistId": 620,
+      "foreignAlbumId": "74f9b885-54e7-499c-8c81-9117628b79ed",
+      "monitored": true,
+      "anyReleaseOk": true,
+      "profileId": 1,
+      "duration": 2752418,
+      "albumType": "Album",
+      "secondaryTypes": [],
+      "mediumCount": 1,
+      "ratings": {
+        "votes": 0,
+        "value": 0
+      },
+      "releaseDate": "2026-06-26T00:00:00Z",
+      "releases": [
+        {
+          "id": 26863,
+          "albumId": 4492,
+          "foreignReleaseId": "5cc90996-7a48-4356-8cc5-1dc335658d7a",
+          "title": "After the Astronaut",
+          "status": "Official",
+          "duration": 2752418,
+          "trackCount": 12,
+          "media": [
+            {
+              "mediumNumber": 1,
+              "mediumName": "",
+              "mediumFormat": "Digital Media"
+            }
+          ],
+          "mediumCount": 1,
+          "disambiguation": "",
+          "country": [],
+          "label": [
+            "Sunset Blvd Records"
+          ],
+          "format": "Digital Media",
+          "monitored": true
+        },
+        {
+          "id": 26864,
+          "albumId": 4492,
+          "foreignReleaseId": "d3aa54a5-bd70-4032-b3ab-1e89412a6dd2",
+          "title": "After the Astronaut",
+          "status": "Official",
+          "duration": 2752418,
+          "trackCount": 12,
+          "media": [
+            {
+              "mediumNumber": 1,
+              "mediumName": "",
+              "mediumFormat": "Digital Media"
+            }
+          ],
+          "mediumCount": 1,
+          "disambiguation": "",
+          "country": [],
+          "label": [
+            "Sunset Blvd Records"
+          ],
+          "format": "Digital Media",
+          "monitored": false
+        }
+      ],
+      "genres": [],
+      "media": [
+        {
+          "mediumNumber": 1,
+          "mediumName": "",
+          "mediumFormat": "Digital Media"
+        }
+      ],
+      "artist": {
+        "status": "continuing",
+        "ended": false,
+        "artistName": "Butthole Surfers",
+        "foreignArtistId": "2339bc21-aa92-4850-86f0-4bb9433910c8",
+        "tadbId": 0,
+        "discogsId": 0,
+        "overview": "Butthole Surfers are an American punk rock band formed in San Antonio, Texas, by singer Gibby Haynes and guitarist Paul Leary in 1981. The band has had numerous personnel changes, but its core lineup of Haynes, Leary, and drummer King Coffey remained consistent since 1983. Teresa Nervosa served as second drummer, playing alongside Coffey from 1983 to 1985, 1986 to 1989, and 2009. The band had also employed a variety of bass players, most notably Jeff Pinkus.",
+        "artistType": "Group",
+        "disambiguation": "Noise rock band from San Antonio",
+        "links": [
+          {
+            "url": "https://archive.org/details/ButtholeSurfers",
+            "name": "archive"
+          },
+          {
+            "url": "http://www.buttholesurfers.com/",
+            "name": "buttholesurfers"
+          },
+          {
+            "url": "http://www.buttholesurferfan.com/",
+            "name": "buttholesurferfan"
+          },
+          {
+            "url": "https://www.discogs.com/artist/18838",
+            "name": "discogs"
+          },
+          {
+            "url": "https://www.allmusic.com/artist/mn0000633181",
+            "name": "allmusic"
+          },
+          {
+            "url": "https://www.wikidata.org/wiki/Q1018174",
+            "name": "wikidata"
+          },
+          {
+            "url": "http://muzikum.eu/en/122-4064/butthole-surfers/lyrics.html",
+            "name": "muzikum"
+          },
+          {
+            "url": "https://rateyourmusic.com/artist/butthole_surfers",
+            "name": "rateyourmusic"
+          },
+          {
+            "url": "http://www.musik-sammler.de/artist/5590",
+            "name": "musik-sammler"
+          },
+          {
+            "url": "https://www.last.fm/music/Butthole+Surfers",
+            "name": "last"
+          },
+          {
+            "url": "https://secondhandsongs.com/artist/1599",
+            "name": "secondhandsongs"
+          },
+          {
+            "url": "https://www.imdb.com/name/nm1599580/",
+            "name": "imdb"
+          },
+          {
+            "url": "http://viaf.org/viaf/153753449",
+            "name": "viaf"
+          },
+          {
+            "url": "https://open.spotify.com/artist/62BcWP4fzR8axESibNQEhs",
+            "name": "spotify"
+          },
+          {
+            "url": "https://www.facebook.com/pages/Butthole-Surfers/107953985892629",
+            "name": "facebook"
+          },
+          {
+            "url": "https://d-nb.info/gnd/10295529-3",
+            "name": "d-nb"
+          },
+          {
+            "url": "https://catalogue.bnf.fr/ark:/12148/cb13933605v",
+            "name": "bnf"
+          },
+          {
+            "url": "https://twitter.com/surfersbutthole",
+            "name": "twitter"
+          },
+          {
+            "url": "https://www.songkick.com/artists/206012",
+            "name": "songkick"
+          },
+          {
+            "url": "http://id.loc.gov/authorities/names/no98023573",
+            "name": "loc"
+          },
+          {
+            "url": "https://www.worldcat.org/identities/lccn-no98023573",
+            "name": "worldcat"
+          },
+          {
+            "url": "https://imvdb.com/n/butthole-surfers",
+            "name": "imvdb"
+          },
+          {
+            "url": "https://www.deezer.com/artist/858",
+            "name": "deezer"
+          },
+          {
+            "url": "https://music.apple.com/us/artist/396656",
+            "name": "apple"
+          },
+          {
+            "url": "https://www.bandsintown.com/a/2497",
+            "name": "bandsintown"
+          },
+          {
+            "url": "https://us.napster.com/artist/butthole-surfers",
+            "name": "napster"
+          },
+          {
+            "url": "https://www.whosampled.com/Butthole-Surfers/",
+            "name": "whosampled"
+          },
+          {
+            "url": "https://tidal.com/artist/10984",
+            "name": "tidal"
+          },
+          {
+            "url": "https://music.apple.com/fr/artist/396656",
+            "name": "apple"
+          },
+          {
+            "url": "https://music.apple.com/gb/artist/396656",
+            "name": "apple"
+          },
+          {
+            "url": "https://www.setlist.fm/setlists/butthole-surfers-6bd68ed2.html",
+            "name": "setlist"
+          }
+        ],
+        "nextAlbum": null,
+        "lastAlbum": null,
+        "images": [
+          {
+            "url": "https://images.lidarr.audio/cache/https://r2.theaudiodb.com/images/media/artist/thumb/vxruww1366186780.jpg",
+            "coverType": "poster",
+            "extension": ".jpg"
+          },
+          {
+            "url": "https://images.lidarr.audio/cache/https://r2.theaudiodb.com/images/media/artist/banner/butthole-surfers-5688bcf8943b4.jpg",
+            "coverType": "banner",
+            "extension": ".jpg"
+          },
+          {
+            "url": "https://images.lidarr.audio/cache/https://r2.theaudiodb.com/images/media/artist/logo/vtwssx1469554376.png",
+            "coverType": "clearlogo",
+            "extension": ".png"
+          },
+          {
+            "url": "https://images.lidarr.audio/cache/https://r2.theaudiodb.com/images/media/artist/fanart/qvuwus1469554385.jpg",
+            "coverType": "fanart",
+            "extension": ".jpg"
+          }
+        ],
+        "path": "/data/media/music/Butthole Surfers",
+        "qualityProfileId": 1,
+        "metadataProfileId": 1,
+        "monitored": true,
+        "monitorNewItems": "new",
+        "genres": [
+          "Noise Rock",
+          "Art Punk",
+          "Psychedelic Rock",
+          "Experimental Rock",
+          "Stoner Metal",
+          "Acid Rock",
+          "Neo-Psychedelia",
+          "Alternative Rock",
+          "Pigfuck",
+          "Post-Hardcore",
+          "Post-Punk",
+          "Punk"
+        ],
+        "cleanName": "buttholesurfers",
+        "sortName": "butthole surfers",
+        "tags": [],
+        "added": "2026-06-10T12:28:50Z",
+        "ratings": {
+          "votes": 2,
+          "value": 8
+        },
+        "id": 620
+      },
+      "images": [
+        {
+          "url": "/MediaCover/Albums/4492/cover.jpg?lastWrite=639166914028018793",
+          "coverType": "cover",
+          "extension": ".jpg",
+          "remoteUrl": "https://images.lidarr.audio/cache/https://coverartarchive.org/release/5cc90996-7a48-4356-8cc5-1dc335658d7a/44623979788-1200.jpg"
+        }
+      ],
+      "links": [],
+      "statistics": {
+        "trackFileCount": 0,
+        "trackCount": 12,
+        "totalTrackCount": 12,
+        "sizeOnDisk": 0,
+        "percentOfTracks": 0
+      },
+      "id": 4492
+    },
+    {
+      "title": "Victory",
+      "disambiguation": "",
+      "overview": "",
+      "artistId": 2313,
+      "foreignAlbumId": "1733580c-35d8-4360-a97f-30908b4cc29b",
+      "monitored": true,
+      "anyReleaseOk": true,
+      "profileId": 1,
+      "duration": 1916000,
+      "albumType": "Album",
+      "secondaryTypes": [],
+      "mediumCount": 1,
+      "ratings": {
+        "votes": 0,
+        "value": 0
+      },
+      "releaseDate": "2026-06-26T00:00:00Z",
+      "releases": [
+        {
+          "id": 90946,
+          "albumId": 17534,
+          "foreignReleaseId": "2677d05f-7018-4b39-8372-02a526385a8c",
+          "title": "Victory",
+          "status": "Official",
+          "duration": 1916000,
+          "trackCount": 10,
+          "media": [
+            {
+              "mediumNumber": 1,
+              "mediumName": "",
+              "mediumFormat": "Digital Media"
+            }
+          ],
+          "mediumCount": 1,
+          "disambiguation": "",
+          "country": [
+            "[Worldwide]"
+          ],
+          "label": [
+            "Mom+Pop"
+          ],
+          "format": "Digital Media",
+          "monitored": true
+        },
+        {
+          "id": 179637,
+          "albumId": 17534,
+          "foreignReleaseId": "1831374f-caf4-408f-9315-51af8b5ba4bb",
+          "title": "Victory",
+          "status": "Official",
+          "duration": 1920000,
+          "trackCount": 10,
+          "media": [
+            {
+              "mediumNumber": 1,
+              "mediumName": "",
+              "mediumFormat": "CD"
+            }
+          ],
+          "mediumCount": 1,
+          "disambiguation": "",
+          "country": [
+            "United States"
+          ],
+          "label": [
+            "Mom+Pop"
+          ],
+          "format": "CD",
+          "monitored": false
+        },
+        {
+          "id": 179638,
+          "albumId": 17534,
+          "foreignReleaseId": "8ffc0af3-32ed-47ed-af7d-123e17558591",
+          "title": "Victory",
+          "status": "Official",
+          "duration": 1916000,
+          "trackCount": 10,
+          "media": [
+            {
+              "mediumNumber": 1,
+              "mediumName": "",
+              "mediumFormat": "Digital Media"
+            }
+          ],
+          "mediumCount": 1,
+          "disambiguation": "Japanese streaming release",
+          "country": [
+            "Japan"
+          ],
+          "label": [
+            "Sony Records International"
+          ],
+          "format": "Digital Media",
+          "monitored": false
+        },
+        {
+          "id": 179639,
+          "albumId": 17534,
+          "foreignReleaseId": "cba59f6e-93fa-428b-9f94-1d112ddb3f5b",
+          "title": "Victory",
+          "status": "Official",
+          "duration": 1916000,
+          "trackCount": 10,
+          "media": [
+            {
+              "mediumNumber": 1,
+              "mediumName": "",
+              "mediumFormat": "CD"
+            }
+          ],
+          "mediumCount": 1,
+          "disambiguation": "Japanese CD",
+          "country": [
+            "Japan"
+          ],
+          "label": [
+            "Sony Records International"
+          ],
+          "format": "CD",
+          "monitored": false
+        },
+        {
+          "id": 179640,
+          "albumId": 17534,
+          "foreignReleaseId": "29a52905-da5d-4fb3-878d-77dcfeb67733",
+          "title": "ヴィクトリー",
+          "status": "Pseudo-Release",
+          "duration": 1916000,
+          "trackCount": 10,
+          "media": [
+            {
+              "mediumNumber": 1,
+              "mediumName": "Unknown",
+              "mediumFormat": "Unknown"
+            }
+          ],
+          "mediumCount": 1,
+          "disambiguation": "",
+          "country": [],
+          "label": [],
+          "format": "Unknown",
+          "monitored": false
+        }
+      ],
+      "genres": [
+        "Electronic"
+      ],
+      "media": [
+        {
+          "mediumNumber": 1,
+          "mediumName": "",
+          "mediumFormat": "Digital Media"
+        }
+      ],
+      "artist": {
+        "status": "continuing",
+        "ended": false,
+        "artistName": "Madeon",
+        "foreignArtistId": "fa1de503-aba7-41fa-a1ed-371b3e87a717",
+        "tadbId": 0,
+        "discogsId": 0,
+        "artistType": "Person",
+        "disambiguation": "",
+        "links": [
+          {
+            "url": "https://myspace.com/madeon",
+            "name": "myspace"
+          },
+          {
+            "url": "https://www.youtube.com/channel/UCqMDNf3Pn5L7pcNkuSEeO3w",
+            "name": "youtube"
+          },
+          {
+            "url": "https://www.discogs.com/artist/1994410",
+            "name": "discogs"
+          },
+          {
+            "url": "http://www.madeon.fr/",
+            "name": "madeon"
+          },
+          {
+            "url": "https://soundcloud.com/madeon",
+            "name": "soundcloud"
+          },
+          {
+            "url": "https://www.beatport.com/artist/madeon/144138",
+            "name": "beatport"
+          },
+          {
+            "url": "https://www.facebook.com/itsmadeon",
+            "name": "facebook"
+          },
+          {
+            "url": "https://twitter.com/madeon",
+            "name": "twitter"
+          },
+          {
+            "url": "https://commons.wikimedia.org/wiki/File:Madeon_2015.jpg",
+            "name": "wikimedia"
+          },
+          {
+            "url": "https://www.wikidata.org/wiki/Q1355154",
+            "name": "wikidata"
+          },
+          {
+            "url": "https://open.spotify.com/artist/4pb4rqWSoGUgxm63xmJ8xc",
+            "name": "spotify"
+          },
+          {
+            "url": "https://www.last.fm/music/Madeon",
+            "name": "last"
+          },
+          {
+            "url": "https://www.instagram.com/madeon/",
+            "name": "instagram"
+          },
+          {
+            "url": "https://genius.com/artists/Madeon",
+            "name": "genius"
+          },
+          {
+            "url": "http://imvdb.com/n/madeon",
+            "name": "imvdb"
+          },
+          {
+            "url": "http://viaf.org/viaf/315939971",
+            "name": "viaf"
+          },
+          {
+            "url": "https://rateyourmusic.com/artist/madeon",
+            "name": "rateyourmusic"
+          },
+          {
+            "url": "https://www.allmusic.com/artist/mn0002857943",
+            "name": "allmusic"
+          },
+          {
+            "url": "https://www.youtube.com/channel/UCSml1Arkj2u3w2-u7xbzLlA",
+            "name": "youtube"
+          },
+          {
+            "url": "https://www.songkick.com/artists/4660573",
+            "name": "songkick"
+          },
+          {
+            "url": "https://www.whosampled.com/Madeon/",
+            "name": "whosampled"
+          },
+          {
+            "url": "https://www.bandsintown.com/a/1089299",
+            "name": "bandsintown"
+          },
+          {
+            "url": "https://play.google.com/store/music/artist?id=Admysjxnylzjj3rjnrre43wkobm",
+            "name": "google"
+          },
+          {
+            "url": "https://secondhandsongs.com/artist/104991",
+            "name": "secondhandsongs"
+          },
+          {
+            "url": "https://www.deezer.com/artist/1517560",
+            "name": "deezer"
+          },
+          {
+            "url": "https://uk.7digital.com/artist/madeon",
+            "name": "7digital"
+          },
+          {
+            "url": "http://www.rolldabeats.com/artist/madeon",
+            "name": "rolldabeats"
+          },
+          {
+            "url": "https://www.junodownload.com/artists/Madeon/releases/",
+            "name": "junodownload"
+          },
+          {
+            "url": "https://itunes.apple.com/fr/artist/id371199302",
+            "name": "apple"
+          },
+          {
+            "url": "https://music.apple.com/fr/artist/371199302",
+            "name": "apple"
+          },
+          {
+            "url": "https://tidal.com/artist/4319222",
+            "name": "tidal"
+          },
+          {
+            "url": "https://i1.sndcdn.com/avatars-xSjjFwU5zHuFrb0R-NfL5Rg-original.jpg",
+            "name": "sndcdn"
+          },
+          {
+            "url": "https://catalogue.bnf.fr/ark:/12148/cb169846611",
+            "name": "bnf"
+          },
+          {
+            "url": "https://music.apple.com/gb/artist/371199302",
+            "name": "apple"
+          },
+          {
+            "url": "https://www.qobuz.com/us-en/interpreter/madeon/586965",
+            "name": "qobuz"
+          },
+          {
+            "url": "https://www.qobuz.com/us-en/interpreter/madeon/586965",
+            "name": "qobuz"
+          },
+          {
+            "url": "https://music.apple.com/us/artist/371199302",
+            "name": "apple"
+          },
+          {
+            "url": "https://mora.jp/artist/184985/",
+            "name": "mora"
+          },
+          {
+            "url": "https://open.qobuz.com/artist/586965",
+            "name": "qobuz"
+          },
+          {
+            "url": "https://open.qobuz.com/artist/586965",
+            "name": "qobuz"
+          },
+          {
+            "url": "https://ototoy.jp/_/default/a/64328",
+            "name": "ototoy"
+          }
+        ],
+        "nextAlbum": null,
+        "lastAlbum": null,
+        "images": [],
+        "path": "/data/media/music/Madeon",
+        "qualityProfileId": 1,
+        "metadataProfileId": 1,
+        "monitored": true,
+        "monitorNewItems": "new",
+        "genres": [
+          "Electronic",
+          "Electropop",
+          "Electro House",
+          "House",
+          "Nu Disco",
+          "French House"
+        ],
+        "cleanName": "madeon",
+        "sortName": "madeon",
+        "tags": [],
+        "added": "2026-06-10T18:30:45Z",
+        "ratings": {
+          "votes": 4,
+          "value": 9.5
+        },
+        "id": 2313
+      },
+      "images": [
+        {
+          "url": "/MediaCover/Albums/17534/cover.jpg?lastWrite=639167130467093819",
+          "coverType": "cover",
+          "extension": ".jpg",
+          "remoteUrl": "https://images.lidarr.audio/cache/https://coverartarchive.org/release/2677d05f-7018-4b39-8372-02a526385a8c/45005952267-1200.jpg"
+        }
+      ],
+      "links": [
+        {
+          "url": "https://www.allmusic.com/album/mw0004810443",
+          "name": "allmusic"
+        },
+        {
+          "url": "https://www.last.fm/music/Madeon/Victory",
+          "name": "last"
+        }
+      ],
+      "statistics": {
+        "trackFileCount": 0,
+        "trackCount": 10,
+        "totalTrackCount": 10,
+        "sizeOnDisk": 0,
+        "percentOfTracks": 0
+      },
+      "id": 17534
+    }
+  ]
+}

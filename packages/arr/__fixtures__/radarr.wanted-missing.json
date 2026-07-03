@@ -1,0 +1,535 @@
+{
+  "page": 1,
+  "pageSize": 5,
+  "sortKey": "movieMetadata.sortTitle",
+  "sortDirection": "descending",
+  "totalRecords": 430,
+  "records": [
+    {
+      "title": "You Don't Mess with the Zohan",
+      "originalTitle": "You Don't Mess with the Zohan",
+      "originalLanguage": {
+        "id": 1,
+        "name": "English"
+      },
+      "alternateTitles": [],
+      "secondaryYearSourceId": 0,
+      "sortTitle": "you dont mess with the zohan",
+      "sizeOnDisk": 0,
+      "status": "released",
+      "overview": "An Israeli counterterrorism soldier with a secretly fabulous ambition to become a Manhattan hairstylist. Zohan's desire runs so deep that he'll do anything -- including faking his own death and going head-to-head with an Arab cab driver -- to make his dreams come true.",
+      "inCinemas": "2008-06-05T00:00:00Z",
+      "physicalRelease": "2009-03-04T00:00:00Z",
+      "digitalRelease": "2008-07-17T00:00:00Z",
+      "releaseDate": "2008-07-17T00:00:00Z",
+      "images": [
+        {
+          "coverType": "poster",
+          "url": "/MediaCover/9294/poster.jpg?lastWrite=639186435899078355",
+          "remoteUrl": "https://image.tmdb.org/t/p/original/gBhLQmpCPoKFMCGsulMbIFzrBID.jpg"
+        },
+        {
+          "coverType": "fanart",
+          "url": "/MediaCover/9294/fanart.jpg?lastWrite=639186435899838378",
+          "remoteUrl": "https://image.tmdb.org/t/p/original/tfUotS2rLaIu7ieJPDonyDn5EqQ.jpg"
+        }
+      ],
+      "website": "http://www.youdontmesswiththezohan.com/",
+      "year": 2008,
+      "youTubeTrailerId": "ucmnTmYpGhI",
+      "studio": "Relativity Media",
+      "path": "/data/haynestower/Media/Movies/You Don't Mess with the Zohan (2008)",
+      "qualityProfileId": 9,
+      "hasFile": false,
+      "movieFileId": 0,
+      "monitored": true,
+      "minimumAvailability": "released",
+      "isAvailable": true,
+      "folderName": "/data/haynestower/Media/Movies/You Don't Mess with the Zohan (2008)",
+      "runtime": 113,
+      "cleanTitle": "youdontmesswithzohan",
+      "imdbId": "tt0960144",
+      "tmdbId": 10661,
+      "titleSlug": "10661",
+      "certification": "PG-13",
+      "genres": [
+        "Comedy",
+        "Action"
+      ],
+      "keywords": [
+        "counterterrorism",
+        "developers",
+        "falling in love",
+        "famous",
+        "hacky sack",
+        "hairdresser",
+        "hairstyle",
+        "heart-throb",
+        "israel",
+        "ladykiller",
+        "middle east",
+        "mossad",
+        "nemesis",
+        "new york city",
+        "palestinian-israeli conflict",
+        "secret identity",
+        "slapstick",
+        "soldier",
+        "terrorist threat",
+        "zionism"
+      ],
+      "tags": [],
+      "added": "2026-07-03T02:46:28Z",
+      "ratings": {
+        "imdb": {
+          "votes": 228234,
+          "value": 5.6,
+          "type": "user"
+        },
+        "tmdb": {
+          "votes": 4084,
+          "value": 5.718,
+          "type": "user"
+        },
+        "metacritic": {
+          "votes": 0,
+          "value": 54,
+          "type": "user"
+        },
+        "rottenTomatoes": {
+          "votes": 0,
+          "value": 37,
+          "type": "user"
+        },
+        "trakt": {
+          "votes": 6126,
+          "value": 5.92393,
+          "type": "user"
+        }
+      },
+      "popularity": 5.4479,
+      "lastSearchTime": "2026-07-03T19:16:27Z",
+      "statistics": {
+        "movieFileCount": 0,
+        "sizeOnDisk": 0,
+        "releaseGroups": []
+      },
+      "id": 9294
+    },
+    {
+      "title": "Year One",
+      "originalTitle": "Year One",
+      "originalLanguage": {
+        "id": 1,
+        "name": "English"
+      },
+      "alternateTitles": [],
+      "secondaryYearSourceId": 0,
+      "sortTitle": "year one",
+      "sizeOnDisk": 0,
+      "status": "released",
+      "overview": "When a couple of lazy hunter-gatherers are banished from their primitive village, they set off on an epic journey through the ancient world.",
+      "inCinemas": "2009-06-18T00:00:00Z",
+      "physicalRelease": "2009-06-18T00:00:00Z",
+      "digitalRelease": "2009-06-26T00:00:00Z",
+      "releaseDate": "2009-06-18T00:00:00Z",
+      "images": [
+        {
+          "coverType": "poster",
+          "url": "/MediaCover/9271/poster.jpg?lastWrite=639186435847636811",
+          "remoteUrl": "https://image.tmdb.org/t/p/original/qF573jdJYwtCbXVXPDn4xu8nW2a.jpg"
+        },
+        {
+          "coverType": "fanart",
+          "url": "/MediaCover/9271/fanart.jpg?lastWrite=639186435848496469",
+          "remoteUrl": "https://image.tmdb.org/t/p/original/21RU5YYiLk3UVF9lRhf2fs1tRUK.jpg"
+        }
+      ],
+      "website": "",
+      "year": 2009,
+      "youTubeTrailerId": "4H_Eepvg3aU",
+      "studio": "Columbia Pictures",
+      "path": "/data/haynestower/Media/Movies/Year One (2009)",
+      "qualityProfileId": 9,
+      "hasFile": false,
+      "movieFileId": 0,
+      "monitored": true,
+      "minimumAvailability": "released",
+      "isAvailable": true,
+      "folderName": "/data/haynestower/Media/Movies/Year One (2009)",
+      "runtime": 97,
+      "cleanTitle": "yearone",
+      "imdbId": "tt1045778",
+      "tmdbId": 17610,
+      "titleSlug": "17610",
+      "certification": "PG-13",
+      "genres": [
+        "Comedy",
+        "Adventure"
+      ],
+      "keywords": [
+        "cavemen",
+        "circumcision",
+        "duringcreditsstinger",
+        "prehistoric man",
+        "prehistory",
+        "slavery",
+        "stone age",
+        "temple"
+      ],
+      "tags": [],
+      "added": "2026-07-03T02:46:21Z",
+      "ratings": {
+        "imdb": {
+          "votes": 108978,
+          "value": 5,
+          "type": "user"
+        },
+        "tmdb": {
+          "votes": 2041,
+          "value": 4.99,
+          "type": "user"
+        },
+        "metacritic": {
+          "votes": 0,
+          "value": 34,
+          "type": "user"
+        },
+        "rottenTomatoes": {
+          "votes": 0,
+          "value": 14,
+          "type": "user"
+        },
+        "trakt": {
+          "votes": 3382,
+          "value": 5.34477,
+          "type": "user"
+        }
+      },
+      "popularity": 4.1918,
+      "lastSearchTime": "2026-07-03T19:16:21Z",
+      "statistics": {
+        "movieFileCount": 0,
+        "sizeOnDisk": 0,
+        "releaseGroups": []
+      },
+      "id": 9271
+    },
+    {
+      "title": "xXx",
+      "originalTitle": "xXx",
+      "originalLanguage": {
+        "id": 1,
+        "name": "English"
+      },
+      "alternateTitles": [],
+      "secondaryYearSourceId": 0,
+      "sortTitle": "xxx",
+      "sizeOnDisk": 0,
+      "status": "released",
+      "overview": "Xander Cage is your standard adrenaline junkie with no fear and a lousy attitude. When the US Government \"recruits\" him to go on a mission, he's not exactly thrilled. His mission: to gather information on an organization that may just be planning the destruction of the world, led by the nihilistic Yorgi.",
+      "inCinemas": "2002-08-09T00:00:00Z",
+      "physicalRelease": "2002-12-31T00:00:00Z",
+      "digitalRelease": "2005-05-27T00:00:00Z",
+      "releaseDate": "2002-12-31T00:00:00Z",
+      "images": [
+        {
+          "coverType": "poster",
+          "url": "/MediaCover/9264/poster.jpg?lastWrite=639186435829556268",
+          "remoteUrl": "https://image.tmdb.org/t/p/original/xeEw3eLeSFmJgXZzmF2Efww0q3s.jpg"
+        },
+        {
+          "coverType": "fanart",
+          "url": "/MediaCover/9264/fanart.jpg?lastWrite=639186435830436294",
+          "remoteUrl": "https://image.tmdb.org/t/p/original/2OHa6ukEq3Hce7Pc2kvu8wkmMFY.jpg"
+        }
+      ],
+      "website": "http://www.sonypictures.com/movies/xxx/",
+      "year": 2002,
+      "youTubeTrailerId": "NgPdDDzVhkA",
+      "studio": "Revolution Studios",
+      "path": "/data/haynestower/Media/Movies/xXx (2002)",
+      "qualityProfileId": 9,
+      "hasFile": false,
+      "movieFileId": 0,
+      "monitored": true,
+      "minimumAvailability": "released",
+      "isAvailable": true,
+      "folderName": "/data/haynestower/Media/Movies/xXx (2002)",
+      "runtime": 124,
+      "cleanTitle": "xxx",
+      "imdbId": "tt0295701",
+      "tmdbId": 7451,
+      "titleSlug": "7451",
+      "certification": "PG-13",
+      "genres": [
+        "Action",
+        "Adventure",
+        "Thriller",
+        "Crime",
+        "Drama"
+      ],
+      "keywords": [
+        "adrenaline junkie",
+        "biological weapon",
+        "cold war",
+        "mission",
+        "nsa agent",
+        "prague, czech republic",
+        "sports car",
+        "thrill seeker"
+      ],
+      "tags": [],
+      "added": "2026-07-03T02:46:19Z",
+      "ratings": {
+        "imdb": {
+          "votes": 193838,
+          "value": 5.9,
+          "type": "user"
+        },
+        "tmdb": {
+          "votes": 4900,
+          "value": 6,
+          "type": "user"
+        },
+        "metacritic": {
+          "votes": 0,
+          "value": 48,
+          "type": "user"
+        },
+        "rottenTomatoes": {
+          "votes": 0,
+          "value": 48,
+          "type": "user"
+        },
+        "trakt": {
+          "votes": 7421,
+          "value": 6.39456,
+          "type": "user"
+        }
+      },
+      "collection": {
+        "title": "xXx Collection",
+        "tmdbId": 52785
+      },
+      "popularity": 41.5829,
+      "lastSearchTime": "2026-07-03T19:19:23Z",
+      "statistics": {
+        "movieFileCount": 0,
+        "sizeOnDisk": 0,
+        "releaseGroups": []
+      },
+      "id": 9264
+    },
+    {
+      "title": "X-Men Origins: Wolverine",
+      "originalTitle": "X-Men Origins: Wolverine",
+      "originalLanguage": {
+        "id": 1,
+        "name": "English"
+      },
+      "alternateTitles": [],
+      "secondaryYearSourceId": 0,
+      "sortTitle": "xmen origins wolverine",
+      "sizeOnDisk": 0,
+      "status": "released",
+      "overview": "After seeking to live a normal life after 200 years, Logan sets out to avenge a death by undergoing the mutant Weapon X program and becoming Wolverine.",
+      "inCinemas": "2009-04-28T00:00:00Z",
+      "physicalRelease": "2009-04-29T00:00:00Z",
+      "digitalRelease": "2009-04-29T00:00:00Z",
+      "releaseDate": "2009-04-29T00:00:00Z",
+      "images": [
+        {
+          "coverType": "poster",
+          "url": "/MediaCover/9260/poster.jpg?lastWrite=639186435817475905",
+          "remoteUrl": "https://image.tmdb.org/t/p/original/yj8LbTju1p7CUJg7US2unSBk33s.jpg"
+        },
+        {
+          "coverType": "fanart",
+          "url": "/MediaCover/9260/fanart.jpg?lastWrite=639186435818139050",
+          "remoteUrl": "https://image.tmdb.org/t/p/original/p4GzAzjlL7lXIVGvayg7zvzGTSi.jpg"
+        }
+      ],
+      "website": "https://www.20thcenturystudios.com/movies/x-men-origins-wolverine",
+      "year": 2009,
+      "youTubeTrailerId": "8TQ-gD4UCmI",
+      "studio": "The Donners' Company",
+      "path": "/data/haynestower/Media/Movies/X-Men Origins Wolverine (2009)",
+      "qualityProfileId": 9,
+      "hasFile": false,
+      "movieFileId": 0,
+      "monitored": true,
+      "minimumAvailability": "released",
+      "isAvailable": true,
+      "folderName": "/data/haynestower/Media/Movies/X-Men Origins Wolverine (2009)",
+      "runtime": 107,
+      "cleanTitle": "xmenoriginswolverine",
+      "imdbId": "tt0458525",
+      "tmdbId": 2080,
+      "titleSlug": "2080",
+      "certification": "PG-13",
+      "genres": [
+        "Adventure",
+        "Action",
+        "Science Fiction"
+      ],
+      "keywords": [
+        "aftercreditsstinger",
+        "army",
+        "based on comic",
+        "boxer",
+        "corruption",
+        "duringcreditsstinger",
+        "excited",
+        "mutant",
+        "powerful",
+        "prequel",
+        "spin off",
+        "superhero"
+      ],
+      "tags": [],
+      "added": "2026-07-03T02:46:18Z",
+      "ratings": {
+        "imdb": {
+          "votes": 569184,
+          "value": 6.5,
+          "type": "user"
+        },
+        "tmdb": {
+          "votes": 11294,
+          "value": 6.3,
+          "type": "user"
+        },
+        "metacritic": {
+          "votes": 0,
+          "value": 40,
+          "type": "user"
+        },
+        "rottenTomatoes": {
+          "votes": 0,
+          "value": 37,
+          "type": "user"
+        },
+        "trakt": {
+          "votes": 15377,
+          "value": 6.59849,
+          "type": "user"
+        }
+      },
+      "collection": {
+        "title": "The Wolverine Collection",
+        "tmdbId": 453993
+      },
+      "popularity": 2.3331,
+      "lastSearchTime": "2026-07-03T19:19:18Z",
+      "statistics": {
+        "movieFileCount": 0,
+        "sizeOnDisk": 0,
+        "releaseGroups": []
+      },
+      "id": 9260
+    },
+    {
+      "title": "Wonder Woman 1984",
+      "originalTitle": "Wonder Woman 1984",
+      "originalLanguage": {
+        "id": 1,
+        "name": "English"
+      },
+      "alternateTitles": [],
+      "secondaryYearSourceId": 0,
+      "sortTitle": "wonder woman 1984",
+      "sizeOnDisk": 0,
+      "status": "released",
+      "overview": "A botched store robbery places Wonder Woman in a global battle against a powerful and mysterious ancient force that puts her powers in jeopardy.",
+      "inCinemas": "2020-12-16T00:00:00Z",
+      "physicalRelease": "2021-03-22T00:00:00Z",
+      "digitalRelease": "2020-12-18T00:00:00Z",
+      "releaseDate": "2020-12-18T00:00:00Z",
+      "images": [
+        {
+          "coverType": "poster",
+          "url": "/MediaCover/9229/poster.jpg?lastWrite=639186435759154149",
+          "remoteUrl": "https://image.tmdb.org/t/p/original/8UlWHLMpgZm9bx6QYh0NFoq67TZ.jpg"
+        },
+        {
+          "coverType": "fanart",
+          "url": "/MediaCover/9229/fanart.jpg?lastWrite=639186435767281983",
+          "remoteUrl": "https://image.tmdb.org/t/p/original/egg7KFi18TSQc1s24RMmR9i2zO6.jpg"
+        }
+      ],
+      "website": "https://www.warnerbros.com/movies/wonder-woman-1984",
+      "year": 2020,
+      "youTubeTrailerId": "EMgbWouN4wE",
+      "studio": "Warner Bros. Pictures",
+      "path": "/data/haynestower/Media/Movies/Wonder Woman 1984 (2020)",
+      "qualityProfileId": 9,
+      "hasFile": false,
+      "movieFileId": 0,
+      "monitored": true,
+      "minimumAvailability": "released",
+      "isAvailable": true,
+      "folderName": "/data/haynestower/Media/Movies/Wonder Woman 1984 (2020)",
+      "runtime": 151,
+      "cleanTitle": "wonderwoman1984",
+      "imdbId": "tt7126948",
+      "tmdbId": 464052,
+      "titleSlug": "464052",
+      "certification": "PG-13",
+      "genres": [
+        "Action",
+        "Adventure",
+        "Fantasy"
+      ],
+      "keywords": [
+        "1980s",
+        "action hero",
+        "based on comic",
+        "dc extended universe (dceu)",
+        "superhero",
+        "woman director"
+      ],
+      "tags": [],
+      "added": "2026-07-03T02:46:07Z",
+      "ratings": {
+        "imdb": {
+          "votes": 311611,
+          "value": 5.3,
+          "type": "user"
+        },
+        "tmdb": {
+          "votes": 9077,
+          "value": 6.4,
+          "type": "user"
+        },
+        "metacritic": {
+          "votes": 0,
+          "value": 60,
+          "type": "user"
+        },
+        "rottenTomatoes": {
+          "votes": 0,
+          "value": 57,
+          "type": "user"
+        },
+        "trakt": {
+          "votes": 16719,
+          "value": 5.8086,
+          "type": "user"
+        }
+      },
+      "collection": {
+        "title": "Wonder Woman Collection",
+        "tmdbId": 468552
+      },
+      "popularity": 6.8686,
+      "lastSearchTime": "2026-07-03T19:19:04Z",
+      "statistics": {
+        "movieFileCount": 0,
+        "sizeOnDisk": 0,
+        "releaseGroups": []
+      },
+      "id": 9229
+    }
+  ]
+}

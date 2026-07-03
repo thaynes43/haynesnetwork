@@ -1,0 +1,28 @@
+{
+  "apiKey": "REDACTED",
+  "applicationTitle": "Jellyseerr",
+  "applicationUrl": "",
+  "cacheImages": false,
+  "defaultPermissions": 32,
+  "defaultQuotas": {
+    "movie": {},
+    "tv": {}
+  },
+  "hideAvailable": false,
+  "hideBlocklisted": false,
+  "localLogin": true,
+  "mediaServerLogin": true,
+  "newPlexLogin": true,
+  "discoverRegion": "",
+  "streamingRegion": "",
+  "originalLanguage": "",
+  "blocklistRegion": "",
+  "blocklistLanguage": "",
+  "blocklistedTags": "",
+  "blocklistedTagsLimit": 50,
+  "mediaServerType": 1,
+  "partialRequestsEnabled": true,
+  "enableSpecialEpisodes": false,
+  "locale": "en",
+  "youtubeUrl": ""
+}

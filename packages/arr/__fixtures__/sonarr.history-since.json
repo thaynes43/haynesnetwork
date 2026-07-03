@@ -1,0 +1,272 @@
+[
+  {
+    "episodeId": 113934,
+    "seriesId": 1019,
+    "sourceTitle": "The Fairly OddParents S01E01 NTSC DVD REMUX DD 2.0-Spark",
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "quality": {
+      "quality": {
+        "id": 2,
+        "name": "DVD",
+        "source": "dvd",
+        "resolution": 480
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [],
+    "customFormatScore": 0,
+    "qualityCutoffNotMet": true,
+    "date": "2026-07-03T15:20:22Z",
+    "downloadId": "74dd9c9e-17b8-41a5-937a-4c4ef504e0e1",
+    "eventType": "grabbed",
+    "data": {
+      "indexer": "NinjaCentral (Prowlarr)",
+      "nzbInfoUrl": "https://ninjacentral.co.za/details/e871946018e8244820eaca63dd0f3d07",
+      "releaseGroup": "Spark",
+      "age": "407",
+      "ageHours": "9787.587220454834",
+      "ageMinutes": "587255.233227395",
+      "publishedDate": "2025-05-21T19:45:09Z",
+      "downloadClient": "SABnzbd",
+      "downloadClientName": "SABnzbd-Fast",
+      "size": "459841550",
+      "downloadUrl": "http://prowlarr.downloads.svc.cluster.local:9696/14/download?apikey=REDACTED&link=VE5MTys4SDFyazlnd0hMd1JyVkN3UkN5bC9LUTFNanJoWXlOZXJUNDZJZmI1ZS92bU1qVjhYaVpBbHFZd29Ya1FKV1IvaE0vM2duMGprUk1USE9iUlRFaktyeS9SUW5TeGVHMzU1ZjJLajhTRnA2YzFsZjVtajlvTncwcU9EN1BhTFF3WWQ1cW50K3FFSERlOXZiaE1jWVpKRnhrZENOR205NTY1OTZPUmcwT3pBa1J3SHI1WUk0NUtxaVlNL0xR&file=The+Fairly+OddParents+S01E01+NTSC+DVD+REMUX+DD+2.0-Spark",
+      "guid": "https://ninjacentral.co.za/details/e871946018e8244820eaca63dd0f3d07",
+      "tvdbId": "0",
+      "tvRageId": "0",
+      "imdbId": "tt0235918",
+      "protocol": "1",
+      "customFormatScore": "0",
+      "seriesMatchType": "Title",
+      "releaseSource": "Search",
+      "indexerFlags": "0",
+      "releaseType": "SingleEpisode"
+    },
+    "id": 1
+  },
+  {
+    "episodeId": 113935,
+    "seriesId": 1019,
+    "sourceTitle": "The Fairly OddParents - S01E02 - Power Mad - [x264-DVD AC3-2.0]",
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "quality": {
+      "quality": {
+        "id": 2,
+        "name": "DVD",
+        "source": "dvd",
+        "resolution": 480
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [],
+    "customFormatScore": 0,
+    "qualityCutoffNotMet": true,
+    "date": "2026-07-03T15:20:24Z",
+    "downloadId": "a0b8645a-85a4-46ea-a624-a0e2d550a87a",
+    "eventType": "grabbed",
+    "data": {
+      "indexer": "NinjaCentral (Prowlarr)",
+      "nzbInfoUrl": "https://ninjacentral.co.za/details/852543e3b6b9033729d54cb281a77247",
+      "releaseGroup": null,
+      "age": "743",
+      "ageHours": "17855.005793955195",
+      "ageMinutes": "1071300.3476373584",
+      "publishedDate": "2024-06-19T16:20:04Z",
+      "downloadClient": "SABnzbd",
+      "downloadClientName": "SABnzbd-Fast",
+      "size": "196350171",
+      "downloadUrl": "http://prowlarr.downloads.svc.cluster.local:9696/14/download?apikey=REDACTED&link=TCsvZ2lvZUZuRGhNbnlnLzhTcEFnbE5oK0YwaUlyNTE5SDZXK2Mxb2lPZ2RrdkRpUitTQ3RyZnNzMG9STTBpazVLdmxzdm1WZEx6L1BVRmpaTWx1bVpUM0xLeVNrMXRkVEhUWkpvUnBVQktucy9YTkc1TFBUSnJRWENmUWZIaGt4bzJSQlAxVnJMbXRzckc2bDJScktoS2gwQ1JHam9ZVmlhampVTHdtS1VCRUIwcWZWWGRyeG9QbHd5TC9DVldi&file=The+Fairly+OddParents+-+S01E02+-+Power+Mad+-+%5Bx264-DVD+AC3-2.0%5D",
+      "guid": "https://ninjacentral.co.za/details/852543e3b6b9033729d54cb281a77247",
+      "tvdbId": "0",
+      "tvRageId": "0",
+      "imdbId": "tt0235918",
+      "protocol": "1",
+      "customFormatScore": "0",
+      "seriesMatchType": "Title",
+      "releaseSource": "Search",
+      "indexerFlags": "0",
+      "releaseType": "SingleEpisode"
+    },
+    "id": 2
+  },
+  {
+    "episodeId": 113936,
+    "seriesId": 1019,
+    "sourceTitle": "The Fairly OddParents - S01E03 - Spaced Out - [x264-DVD AC3-2.0]",
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "quality": {
+      "quality": {
+        "id": 2,
+        "name": "DVD",
+        "source": "dvd",
+        "resolution": 480
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [],
+    "customFormatScore": 0,
+    "qualityCutoffNotMet": true,
+    "date": "2026-07-03T15:20:26Z",
+    "downloadId": "037d8974-e46a-471e-81f4-57701ae18a88",
+    "eventType": "grabbed",
+    "data": {
+      "indexer": "NinjaCentral (Prowlarr)",
+      "nzbInfoUrl": "https://ninjacentral.co.za/details/9e47ae718d2abc5f40c6f98895e050ce",
+      "releaseGroup": null,
+      "age": "743",
+      "ageHours": "17855.009676920363",
+      "ageMinutes": "1071300.5806152667",
+      "publishedDate": "2024-06-19T16:19:52Z",
+      "downloadClient": "SABnzbd",
+      "downloadClientName": "SABnzbd-Fast",
+      "size": "190763963",
+      "downloadUrl": "http://prowlarr.downloads.svc.cluster.local:9696/14/download?apikey=REDACTED&link=UGFtNVczeC9KRlNSZHpSN2FVdzhVM0ZBZUl6RE9oRWhsbnRkekFvdW5zZzlGSmFmN3Bhc1V4OEdPU3NaK1RuS1lXbFc5Nk96NHF2MDA1aHNZT1NScUl4WlJydW5INEUxUGFOaEZMVXBySGVyOVVETzdXZXVLRk9FY3FGMVF6RHY4SmNIQVhxdnc3cTJyY3B5WFBhSng2TnMyYXFSd2YwYnlqT3dvbUtvNzlCRzFkbVRIcnJWTkh4UjBxZ3JpNEh4&file=The+Fairly+OddParents+-+S01E03+-+Spaced+Out+-+%5Bx264-DVD+AC3-2.0%5D",
+      "guid": "https://ninjacentral.co.za/details/9e47ae718d2abc5f40c6f98895e050ce",
+      "tvdbId": "0",
+      "tvRageId": "0",
+      "imdbId": "tt0235918",
+      "protocol": "1",
+      "customFormatScore": "0",
+      "seriesMatchType": "Title",
+      "releaseSource": "Search",
+      "indexerFlags": "0",
+      "releaseType": "SingleEpisode"
+    },
+    "id": 3
+  },
+  {
+    "episodeId": 113937,
+    "seriesId": 1019,
+    "sourceTitle": "The Fairly OddParents S01E04 NTSC DVD REMUX DD 2.0-Spark",
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "quality": {
+      "quality": {
+        "id": 2,
+        "name": "DVD",
+        "source": "dvd",
+        "resolution": 480
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [],
+    "customFormatScore": 0,
+    "qualityCutoffNotMet": true,
+    "date": "2026-07-03T15:20:28Z",
+    "downloadId": "0946c3ba-a53f-4184-85d7-e58f60a38acc",
+    "eventType": "grabbed",
+    "data": {
+      "indexer": "NinjaCentral (Prowlarr)",
+      "nzbInfoUrl": "https://ninjacentral.co.za/details/1b705019463a3563655d04b757167140",
+      "releaseGroup": "Spark",
+      "age": "407",
+      "ageHours": "9787.913592459445",
+      "ageMinutes": "587274.8155476083",
+      "publishedDate": "2025-05-21T19:25:40Z",
+      "downloadClient": "SABnzbd",
+      "downloadClientName": "SABnzbd-Fast",
+      "size": "459574270",
+      "downloadUrl": "http://prowlarr.downloads.svc.cluster.local:9696/14/download?apikey=REDACTED&link=eEVUT0doaFBkT2VXYnpoT2tHUU9ONzlvZUxXVm5KR3R6Wm15SlBsbUJIK2FJeEFYaU11S3hWYnNtYXpEQTdIWm1mQWJUWDVMaGRzdzIzYzFJMyt1a2IwTGZFeVhaZUlibEF1YUszTzFPdXdiTGN5S29uMVZWZDMvTTcrVnVMM2hvZi96VEJOQk9JRmlZc28zaytmS1dVYnFxRzhRRkRTWmpDWVdoOHgzK3lORk4ybXZkd0tQa3JNT3VWaEMweTdG&file=The+Fairly+OddParents+S01E04+NTSC+DVD+REMUX+DD+2.0-Spark",
+      "guid": "https://ninjacentral.co.za/details/1b705019463a3563655d04b757167140",
+      "tvdbId": "0",
+      "tvRageId": "0",
+      "imdbId": "tt0235918",
+      "protocol": "1",
+      "customFormatScore": "0",
+      "seriesMatchType": "Title",
+      "releaseSource": "Search",
+      "indexerFlags": "0",
+      "releaseType": "SingleEpisode"
+    },
+    "id": 4
+  },
+  {
+    "episodeId": 113938,
+    "seriesId": 1019,
+    "sourceTitle": "The.Fairly.OddParents.S01E05.Dogs.Day.Afternoon.DVDRip.x264-CtrlSD",
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "quality": {
+      "quality": {
+        "id": 2,
+        "name": "DVD",
+        "source": "dvd",
+        "resolution": 480
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [],
+    "customFormatScore": 0,
+    "qualityCutoffNotMet": true,
+    "date": "2026-07-03T15:20:30Z",
+    "downloadId": "0110a3cc-894d-4854-a471-4c2f37f13331",
+    "eventType": "grabbed",
+    "data": {
+      "indexer": "DrunkenSlug (Prowlarr)",
+      "nzbInfoUrl": "https://drunkenslug.com/details/e7de45399e92ade726ff8b36621c0be3689fe92f",
+      "releaseGroup": "CtrlSD",
+      "age": "3455",
+      "ageHours": "82928.93193157067",
+      "ageMinutes": "4975735.915894276",
+      "publishedDate": "2017-01-16T06:24:36Z",
+      "downloadClient": "SABnzbd",
+      "downloadClientName": "SABnzbd-Fast",
+      "size": "179720703",
+      "downloadUrl": "http://prowlarr.downloads.svc.cluster.local:9696/13/download?apikey=REDACTED&link=YWFoRXRXOS96ditBT3N0bTY2d1AxQXBmQWpKSkN4MDB5Snc5N2VhQUdvTFl0Q2FwcDlCblMxRTNkdEhkZmhiTitDWTBESCt4ZXk4OVFRc0tpcGNOMkV3YUd4NE1KSUF2QzR2aUVFa2o0U29Fdlp0VklLWGk0dWgrOEV2Z2c5YVNSZEVNRFA3YzRhUG0rY3RqcTY3cWgyTXVJRnJvNjhTWlZzQlFXcnFxcnR4OXJRSEhTZDJMdm9ReXNvYnduYUVj&file=The.Fairly.OddParents.S01E05.Dogs.Day.Afternoon.DVDRip.x264-CtrlSD",
+      "guid": "https://drunkenslug.com/details/e7de45399e92ade726ff8b36621c0be3689fe92f",
+      "tvdbId": "76372",
+      "tvRageId": "5761",
+      "imdbId": "tt0235918",
+      "protocol": "1",
+      "customFormatScore": "0",
+      "seriesMatchType": "Title",
+      "releaseSource": "Search",
+      "indexerFlags": "0",
+      "releaseType": "SingleEpisode"
+    },
+    "id": 5
+  }
+]
