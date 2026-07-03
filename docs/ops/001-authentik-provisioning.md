@@ -29,7 +29,7 @@ The callback path is Better Auth's generic-OAuth route: `{BETTER_AUTH_URL}/api/a
   | `OIDC_CLIENT_ID` | from Authentik UI → Providers → *Provider for haynesnetwork* (or dev `.env.local`) |
   | `OIDC_CLIENT_SECRET` | same source |
   | `BETTER_AUTH_SECRET` | any fresh 32+ char random (do not reuse the dev one) |
-  | `BOOTSTRAP_ADMIN_EMAILS` | `manofoz@gmail.com,t.haynes43@gmail.com` |
+  | `BOOTSTRAP_ADMIN_EMAILS` | `manofoz@gmail.com,t.haynes43@gmail.com,admin@haynesnetwork.com` |
   | `HAYNESNETWORK_POSTGRESQL__USER` | `haynesnetwork` |
   | `HAYNESNETWORK_POSTGRESQL__PASSWORD` | any fresh random — postgres-init creates the role with it |
 
