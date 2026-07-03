@@ -1,0 +1,306 @@
+[
+  {
+    "movieId": 1837,
+    "sourceTitle": "Daddys Home 2 2017 1080p MGMP WEB-DL DDP 5 1 H 265-PiRaTeS",
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "quality": {
+      "quality": {
+        "id": 3,
+        "name": "WEBDL-1080p",
+        "source": "webdl",
+        "resolution": 1080,
+        "modifier": "none"
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [
+      {
+        "id": 85,
+        "name": "DD+"
+      },
+      {
+        "id": 48,
+        "name": "x265 (HD)"
+      }
+    ],
+    "customFormatScore": -8250,
+    "qualityCutoffNotMet": true,
+    "date": "2026-07-03T02:25:27Z",
+    "downloadId": "c97d3bf0-25b1-4239-a430-828da556052c",
+    "eventType": "grabbed",
+    "data": {
+      "indexer": "NinjaCentral (Prowlarr)",
+      "nzbInfoUrl": "https://ninjacentral.co.za/details/6a58a56cb6d89606621e59ec857d3d76",
+      "releaseGroup": "PiRaTeS",
+      "age": "0",
+      "ageHours": "3.959849358111111",
+      "ageMinutes": "237.5909618",
+      "publishedDate": "2026-07-02T22:27:52Z",
+      "downloadClient": "SABnzbd",
+      "downloadClientName": "SABnzbd",
+      "size": "5537157578",
+      "downloadUrl": "http://prowlarr.downloads.svc.cluster.local:9696/14/download?apikey=REDACTED&link=MFgrcmd2MUp5dDIrUkFkZ0htSnpuTkpiTVlQMVhEbVhGdDUzdDgvaVZSWEorb0F5a05NSGNiRFJvaG1xVVlsaXkrU0JpRFNkU3l6UGwxaEpHbklOUEJjQjVQdk5DeVBDcm1qRXd3T0tGMzVQdFIrM1lFd1dUWFRhMTQ5U2NnMnU3ai9JSk5UOC9RN0Z3ZjMyckJqK2o1RW4vSVlSSHQvT1IrcTF5Y2E0T2wxclBYdFdXSWFvUE9kOXVZMGdFdzhX&file=Daddys+Home+2+2017+1080p+MGMP+WEB-DL+DDP+5+1+H+265-PiRaTeS",
+      "guid": "https://ninjacentral.co.za/details/6a58a56cb6d89606621e59ec857d3d76",
+      "tmdbId": "0",
+      "imdbId": "5657846",
+      "protocol": "1",
+      "customFormatScore": "0",
+      "movieMatchType": "Id",
+      "releaseSource": "Rss",
+      "indexerFlags": "0",
+      "indexerId": "2"
+    },
+    "id": 1
+  },
+  {
+    "movieId": 3818,
+    "sourceTitle": "Jurassic World Dominion 2022 1080p BluRay DV HDR10 x265-GeneMige",
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "quality": {
+      "quality": {
+        "id": 7,
+        "name": "Bluray-1080p",
+        "source": "bluray",
+        "resolution": 1080,
+        "modifier": "none"
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [
+      {
+        "id": 90,
+        "name": "DV Boost"
+      },
+      {
+        "id": 69,
+        "name": "HDR"
+      },
+      {
+        "id": 48,
+        "name": "x265 (HD)"
+      }
+    ],
+    "customFormatScore": -8500,
+    "qualityCutoffNotMet": true,
+    "date": "2026-07-03T02:25:28Z",
+    "downloadId": "b80728a9-4bb1-4646-895b-98257f4d29b2",
+    "eventType": "grabbed",
+    "data": {
+      "indexer": "NinjaCentral (Prowlarr)",
+      "nzbInfoUrl": "https://ninjacentral.co.za/details/22431637a21cca713798908d440f2e77",
+      "releaseGroup": "GeneMige",
+      "age": "0",
+      "ageHours": "5.534841996861111",
+      "ageMinutes": "332.09051993833333",
+      "publishedDate": "2026-07-02T20:53:23Z",
+      "downloadClient": "SABnzbd",
+      "downloadClientName": "SABnzbd",
+      "size": "13572442647",
+      "downloadUrl": "http://prowlarr.downloads.svc.cluster.local:9696/14/download?apikey=REDACTED&link=azR6MFV3WWZqZmpWSWtxS1VnbHZIWWhKd3RpVUFYMjI5MTB3YllEQk1ZdzdKVnlEV3djUE15K2ZTRXFZazhsZDhWbWtlVGw3c2F4d2s5Uit4SkN6S0NXMzBuRDJkM0I5VzdpRC9NQ1hwUFN0clFyN2hyWWE3aGJmYmllc1lSMHRYSC90RlVndlJIQkhQdW0rZGhScWl3dlE3TmhjNm5hOHhscjM0NHVDaVgrSm5aM0w5U0hZOWRSd09PMmRnelBS&file=Jurassic+World+Dominion+2022+1080p+BluRay+DV+HDR10+x265-GeneMige",
+      "guid": "https://ninjacentral.co.za/details/22431637a21cca713798908d440f2e77",
+      "tmdbId": "0",
+      "imdbId": "8041270",
+      "protocol": "1",
+      "customFormatScore": "0",
+      "movieMatchType": "Id",
+      "releaseSource": "Rss",
+      "indexerFlags": "0",
+      "indexerId": "2"
+    },
+    "id": 2
+  },
+  {
+    "movieId": 1837,
+    "sourceTitle": "Daddys Home 2 2017 1080p MGMP WEB-DL DDP 5 1 H 265-PiRaTeS",
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "quality": {
+      "quality": {
+        "id": 3,
+        "name": "WEBDL-1080p",
+        "source": "webdl",
+        "resolution": 1080,
+        "modifier": "none"
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [
+      {
+        "id": 85,
+        "name": "DD+"
+      },
+      {
+        "id": 48,
+        "name": "x265 (HD)"
+      }
+    ],
+    "customFormatScore": -8250,
+    "qualityCutoffNotMet": true,
+    "date": "2026-07-03T02:27:34Z",
+    "downloadId": "c97d3bf0-25b1-4239-a430-828da556052c",
+    "eventType": "downloadFolderImported",
+    "data": {
+      "fileId": "2836",
+      "droppedPath": "/data/haynestower/usenet/complete-k8s/movies/Daddys Home 2 2017 1080p MGMP WEB-DL DDP 5 1 H 265-PiRaTeS/Daddys_Home_2_2017_1080p_MGMP_WEB-DL_DDP_5_1_H_265-PiRaTeS.mkv",
+      "importedPath": "/data/haynestower/Media/Movies/Daddy's Home 2 (2017)/Daddys Home 2 (2017) {imdb-tt5657846} [WEBDL-1080p][EAC3 5.1][h264]-PiRaTeS.mkv",
+      "downloadClient": "SABnzbd",
+      "downloadClientName": "SABnzbd",
+      "releaseGroup": "PiRaTeS",
+      "customFormatScore": "0",
+      "size": "4863115134",
+      "indexerFlags": "0"
+    },
+    "id": 3
+  },
+  {
+    "movieId": 3818,
+    "sourceTitle": "Jurassic World Dominion 2022 1080p BluRay DV HDR10 x265-GeneMige",
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      },
+      {
+        "id": 3,
+        "name": "Spanish"
+      },
+      {
+        "id": 2,
+        "name": "French"
+      }
+    ],
+    "quality": {
+      "quality": {
+        "id": 7,
+        "name": "Bluray-1080p",
+        "source": "bluray",
+        "resolution": 1080,
+        "modifier": "none"
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [
+      {
+        "id": 90,
+        "name": "DV Boost"
+      },
+      {
+        "id": 69,
+        "name": "HDR"
+      },
+      {
+        "id": 48,
+        "name": "x265 (HD)"
+      }
+    ],
+    "customFormatScore": -8500,
+    "qualityCutoffNotMet": true,
+    "date": "2026-07-03T02:32:00Z",
+    "downloadId": "b80728a9-4bb1-4646-895b-98257f4d29b2",
+    "eventType": "downloadFolderImported",
+    "data": {
+      "fileId": "3326",
+      "droppedPath": "/data/haynestower/usenet/complete-k8s/movies/Jurassic World Dominion 2022 1080p BluRay DV HDR10 x265-GeneMige/Jurassic_World_Dominion_2022_1080p_BluRay_DV_HDR10_x265-GeneMige.mkv",
+      "importedPath": "/data/haynestower/Media/Movies/Jurassic World Dominion (2022)/Jurassic World Dominion (2022) {imdb-tt8041270} [Bluray-1080p][DV HDR10][DTS-X 7.1][x265]-GeneMige.mkv",
+      "downloadClient": "SABnzbd",
+      "downloadClientName": "SABnzbd",
+      "releaseGroup": "GeneMige",
+      "customFormatScore": "0",
+      "size": "11968227817",
+      "indexerFlags": "0"
+    },
+    "id": 4
+  },
+  {
+    "movieId": 4072,
+    "sourceTitle": "Legally Blondes 2009 NORDiC 1080p AMZN WEB-DL AV1-NORViNE",
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "quality": {
+      "quality": {
+        "id": 3,
+        "name": "WEBDL-1080p",
+        "source": "webdl",
+        "resolution": 1080,
+        "modifier": "none"
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [
+      {
+        "id": 57,
+        "name": "AMZN"
+      },
+      {
+        "id": 53,
+        "name": "AV1"
+      }
+    ],
+    "customFormatScore": -10000,
+    "qualityCutoffNotMet": true,
+    "date": "2026-07-03T02:55:34Z",
+    "downloadId": "a9258c85-fa5d-47d8-ad55-7d844a0ce64e",
+    "eventType": "grabbed",
+    "data": {
+      "indexer": "NinjaCentral (Prowlarr)",
+      "nzbInfoUrl": "https://ninjacentral.co.za/details/59e6c0540c9f00ad0970a5c042778ac8",
+      "releaseGroup": "NORViNE",
+      "age": "0",
+      "ageHours": "0.1609274708888889",
+      "ageMinutes": "9.655648513333333",
+      "publishedDate": "2026-07-03T02:45:55Z",
+      "downloadClient": "SABnzbd",
+      "downloadClientName": "SABnzbd",
+      "size": "3267615523",
+      "downloadUrl": "http://prowlarr.downloads.svc.cluster.local:9696/14/download?apikey=REDACTED&link=MkNlM1l1ZFJlZlZRZHFFNjYvSEJzeFZxK3ZqZTE3ZVp3RjRUVmRoTlovYndlMTRSbmUvak1tRjQ5QTk3RTRIMHpiZ0Jyczk1YllZMzMxT1JMTWl0ZUxFckx6elFHVllGM3UxWFpBU1I3TmVPLzM0RE00Y3dGa29RRGRXTkRNTk5VTlkvVDhBdmw1TE50ejZ0Q3Zsb1lZWnE2WUprYk5jSGtNZTRBMDJQNmZUbE5QUFlqZnpkRzR1VFE3WmdJVEdI&file=Legally+Blondes+2009+NORDiC+1080p+AMZN+WEB-DL+AV1-NORViNE",
+      "guid": "https://ninjacentral.co.za/details/59e6c0540c9f00ad0970a5c042778ac8",
+      "tmdbId": "0",
+      "imdbId": "1015999",
+      "protocol": "1",
+      "customFormatScore": "0",
+      "movieMatchType": "Id",
+      "releaseSource": "Rss",
+      "indexerFlags": "0",
+      "indexerId": "2"
+    },
+    "id": 5
+  }
+]

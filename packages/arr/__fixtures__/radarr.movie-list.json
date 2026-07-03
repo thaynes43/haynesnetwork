@@ -1,0 +1,451 @@
+[
+  {
+    "title": "Winner Takes the Cake",
+    "originalTitle": "¡Qué Huevos, Sofía!",
+    "originalLanguage": {
+      "id": 3,
+      "name": "Spanish"
+    },
+    "alternateTitles": [],
+    "secondaryYearSourceId": 0,
+    "sortTitle": "winner takes the cake",
+    "sizeOnDisk": 0,
+    "status": "released",
+    "overview": "Sofía quits her job after confronting her misogynistic boss. Determined, she starts her own company to rival her former employer, igniting a David vs. Goliath showdown in the business world.",
+    "inCinemas": "2025-02-27T00:00:00Z",
+    "releaseDate": "2025-05-28T00:00:00Z",
+    "images": [
+      {
+        "coverType": "poster",
+        "url": "/MediaCover/1/poster.jpg?lastWrite=639186412515939355",
+        "remoteUrl": "https://image.tmdb.org/t/p/original/obYQkGeTciQx3HNz8O78igbJjV6.jpg"
+      },
+      {
+        "coverType": "fanart",
+        "url": "/MediaCover/1/fanart.jpg?lastWrite=639186412528379714",
+        "remoteUrl": "https://image.tmdb.org/t/p/original/krO9SO7DRctt9Eg5AX4rdMR4LkU.jpg"
+      }
+    ],
+    "website": "",
+    "year": 2025,
+    "youTubeTrailerId": "ntzBD3ihVXg",
+    "studio": "Sastre Films",
+    "path": "/data/haynestower/Media/Movies/¡Qué Huevos, Sofía! (2025)",
+    "qualityProfileId": 9,
+    "hasFile": false,
+    "movieFileId": 0,
+    "monitored": false,
+    "minimumAvailability": "released",
+    "isAvailable": true,
+    "folderName": "/data/haynestower/Media/Movies/¡Qué Huevos, Sofía! (2025)",
+    "runtime": 106,
+    "cleanTitle": "winnertakescake",
+    "imdbId": "tt34723784",
+    "tmdbId": 1233620,
+    "titleSlug": "1233620",
+    "rootFolderPath": "/data/haynestower/Media/Movies",
+    "genres": [
+      "Comedy"
+    ],
+    "keywords": [
+      "bakery",
+      "business rivalry",
+      "eggs",
+      "enterpreneur woman",
+      "small business owner"
+    ],
+    "tags": [],
+    "added": "2026-07-03T02:07:30Z",
+    "ratings": {
+      "imdb": {
+        "votes": 379,
+        "value": 6.3,
+        "type": "user"
+      },
+      "tmdb": {
+        "votes": 41,
+        "value": 8.39,
+        "type": "user"
+      },
+      "trakt": {
+        "votes": 15,
+        "value": 7,
+        "type": "user"
+      }
+    },
+    "popularity": 1.2646,
+    "statistics": {
+      "movieFileCount": 0,
+      "sizeOnDisk": 0,
+      "releaseGroups": []
+    },
+    "id": 1
+  },
+  {
+    "title": "¡Three Amigos!",
+    "originalTitle": "¡Three Amigos!",
+    "originalLanguage": {
+      "id": 1,
+      "name": "English"
+    },
+    "alternateTitles": [
+      {
+        "sourceType": "tmdb",
+        "movieMetadataId": 2,
+        "title": "Tre amigos",
+        "id": 1
+      },
+      {
+        "sourceType": "tmdb",
+        "movieMetadataId": 2,
+        "title": "The Three Amigos",
+        "id": 2
+      },
+      {
+        "sourceType": "tmdb",
+        "movieMetadataId": 2,
+        "title": "The Three Caballeros",
+        "id": 3
+      },
+      {
+        "sourceType": "tmdb",
+        "movieMetadataId": 2,
+        "title": "現代三劍俠",
+        "id": 4
+      },
+      {
+        "sourceType": "tmdb",
+        "movieMetadataId": 2,
+        "title": "The 3 Amigos",
+        "id": 5
+      },
+      {
+        "sourceType": "tmdb",
+        "movieMetadataId": 2,
+        "title": "Tre kompisar",
+        "id": 6
+      }
+    ],
+    "secondaryYearSourceId": 0,
+    "sortTitle": "three amigos",
+    "sizeOnDisk": 30385636198,
+    "status": "released",
+    "overview": "A trio of unemployed silent film actors are mistaken for real heroes by a small Mexican village in search of someone to stop a malevolent bandit.",
+    "inCinemas": "1986-12-12T00:00:00Z",
+    "physicalRelease": "1986-12-25T00:00:00Z",
+    "digitalRelease": "2007-08-25T00:00:00Z",
+    "releaseDate": "1986-12-25T00:00:00Z",
+    "images": [
+      {
+        "coverType": "poster",
+        "url": "/MediaCover/2/poster.jpg?lastWrite=639186412506619086",
+        "remoteUrl": "https://image.tmdb.org/t/p/original/dUNRnhl2cwjFJ6TOsaPJmZeMZ0S.jpg"
+      },
+      {
+        "coverType": "fanart",
+        "url": "/MediaCover/2/fanart.jpg?lastWrite=639186412513179276",
+        "remoteUrl": "https://image.tmdb.org/t/p/original/sBt6tZpyzgZxc7woBn6vhyHEX1u.jpg"
+      }
+    ],
+    "website": "",
+    "year": 1986,
+    "youTubeTrailerId": "xgOcejbMuq0",
+    "studio": "L.A. Films",
+    "path": "/data/haynestower/Media/Movies/¡Three Amigos! (1986)",
+    "qualityProfileId": 9,
+    "hasFile": true,
+    "movieFileId": 3,
+    "monitored": true,
+    "minimumAvailability": "released",
+    "isAvailable": true,
+    "folderName": "/data/haynestower/Media/Movies/¡Three Amigos! (1986)",
+    "runtime": 103,
+    "cleanTitle": "threeamigos",
+    "imdbId": "tt0092086",
+    "tmdbId": 8388,
+    "titleSlug": "8388",
+    "rootFolderPath": "/data/haynestower/Media/Movies",
+    "certification": "PG",
+    "genres": [
+      "Comedy",
+      "Western",
+      "Action"
+    ],
+    "keywords": [
+      "confusion",
+      "hero",
+      "mexico",
+      "playful",
+      "ridiculous",
+      "spoof",
+      "usa–mexico border",
+      "village",
+      "western band",
+      "western hero"
+    ],
+    "tags": [],
+    "added": "2026-07-03T02:07:30Z",
+    "ratings": {
+      "imdb": {
+        "votes": 92566,
+        "value": 6.5,
+        "type": "user"
+      },
+      "tmdb": {
+        "votes": 1158,
+        "value": 6.326,
+        "type": "user"
+      },
+      "metacritic": {
+        "votes": 0,
+        "value": 52,
+        "type": "user"
+      },
+      "rottenTomatoes": {
+        "votes": 0,
+        "value": 44,
+        "type": "user"
+      },
+      "trakt": {
+        "votes": 2142,
+        "value": 6.81839,
+        "type": "user"
+      }
+    },
+    "movieFile": {
+      "movieId": 2,
+      "relativePath": "¡Three Amigos! (1986) {imdb-tt0092086} [Hybrid][Remux-1080p][DTS-HD MA 5.1][AVC]-FraMeSToR.mkv",
+      "path": "/data/haynestower/Media/Movies/¡Three Amigos! (1986)/¡Three Amigos! (1986) {imdb-tt0092086} [Hybrid][Remux-1080p][DTS-HD MA 5.1][AVC]-FraMeSToR.mkv",
+      "size": 30385636198,
+      "dateAdded": "2026-07-03T02:07:31Z",
+      "releaseGroup": "FraMeSToR",
+      "edition": "",
+      "languages": [
+        {
+          "id": 1,
+          "name": "English"
+        }
+      ],
+      "quality": {
+        "quality": {
+          "id": 30,
+          "name": "Remux-1080p",
+          "source": "bluray",
+          "resolution": 1080,
+          "modifier": "remux"
+        },
+        "revision": {
+          "version": 1,
+          "real": 0,
+          "isRepack": false
+        }
+      },
+      "indexerFlags": 0,
+      "mediaInfo": {
+        "audioBitrate": 0,
+        "audioChannels": 5.1,
+        "audioCodec": "DTS-HD MA",
+        "audioLanguages": "eng",
+        "audioStreamCount": 1,
+        "videoBitDepth": 8,
+        "videoBitrate": 0,
+        "videoCodec": "h264",
+        "videoFps": 23.976,
+        "videoDynamicRange": "",
+        "videoDynamicRangeType": "",
+        "resolution": "1920x1080",
+        "runTime": "1:43:02",
+        "scanType": "Progressive",
+        "subtitles": "eng/fre/spa"
+      },
+      "qualityCutoffNotMet": true,
+      "id": 3
+    },
+    "popularity": 2.9334,
+    "statistics": {
+      "movieFileCount": 1,
+      "sizeOnDisk": 30385636198,
+      "releaseGroups": [
+        "FraMeSToR"
+      ]
+    },
+    "id": 2
+  },
+  {
+    "title": "'71",
+    "originalTitle": "'71",
+    "originalLanguage": {
+      "id": 1,
+      "name": "English"
+    },
+    "alternateTitles": [
+      {
+        "sourceType": "tmdb",
+        "movieMetadataId": 3,
+        "title": "Bag fjendens linjer",
+        "id": 7
+      },
+      {
+        "sourceType": "tmdb",
+        "movieMetadataId": 3,
+        "title": "71 - Esquecido em Belfast",
+        "id": 8
+      },
+      {
+        "sourceType": "tmdb",
+        "movieMetadataId": 3,
+        "title": "W potrzasku. Belfast '71",
+        "id": 9
+      },
+      {
+        "sourceType": "tmdb",
+        "movieMetadataId": 3,
+        "title": "Sobreviviendo",
+        "id": 10
+      }
+    ],
+    "secondaryYearSourceId": 0,
+    "sortTitle": "71",
+    "sizeOnDisk": 29616542478,
+    "status": "released",
+    "overview": "A young British soldier must find his way back to safety after his unit accidentally abandons him during a riot in the streets of Belfast.",
+    "inCinemas": "2014-10-10T00:00:00Z",
+    "digitalRelease": "2014-08-03T00:00:00Z",
+    "releaseDate": "2014-08-03T00:00:00Z",
+    "images": [
+      {
+        "coverType": "poster",
+        "url": "/MediaCover/3/poster.jpg?lastWrite=639186412526299654",
+        "remoteUrl": "https://image.tmdb.org/t/p/original/2ZfUpDXEFQxEyXfzfxGFA9rcbP1.jpg"
+      },
+      {
+        "coverType": "fanart",
+        "url": "/MediaCover/3/fanart.jpg?lastWrite=639186412534713975",
+        "remoteUrl": "https://image.tmdb.org/t/p/original/aTloiKdNs2c8vlstbx3wBWD6Thi.jpg"
+      }
+    ],
+    "website": "",
+    "year": 2014,
+    "youTubeTrailerId": "kIYDNyEkJP4",
+    "studio": "BFI",
+    "path": "/data/haynestower/Media/Movies/'71 (2014)",
+    "qualityProfileId": 9,
+    "hasFile": true,
+    "movieFileId": 1,
+    "monitored": true,
+    "minimumAvailability": "released",
+    "isAvailable": true,
+    "folderName": "/data/haynestower/Media/Movies/'71 (2014)",
+    "runtime": 99,
+    "cleanTitle": "71",
+    "imdbId": "tt2614684",
+    "tmdbId": 252178,
+    "titleSlug": "252178",
+    "rootFolderPath": "/data/haynestower/Media/Movies",
+    "genres": [
+      "Thriller",
+      "Action",
+      "Drama",
+      "War"
+    ],
+    "keywords": [
+      "1970s",
+      "abandoned",
+      "belfast, north ireland",
+      "combat",
+      "explosion",
+      "ira (irish republican army)",
+      "northern ireland",
+      "riot",
+      "soldier",
+      "survival"
+    ],
+    "tags": [],
+    "added": "2026-07-03T02:07:30Z",
+    "ratings": {
+      "imdb": {
+        "votes": 65002,
+        "value": 7.2,
+        "type": "user"
+      },
+      "tmdb": {
+        "votes": 1223,
+        "value": 6.805,
+        "type": "user"
+      },
+      "metacritic": {
+        "votes": 0,
+        "value": 83,
+        "type": "user"
+      },
+      "rottenTomatoes": {
+        "votes": 0,
+        "value": 96,
+        "type": "user"
+      },
+      "trakt": {
+        "votes": 2019,
+        "value": 7.07925,
+        "type": "user"
+      }
+    },
+    "movieFile": {
+      "movieId": 3,
+      "relativePath": "'71 (2014) {imdb-tt2614684} [Remux-1080p][DTS-HD MA 5.1][AVC]-FraMeSToR.mkv",
+      "path": "/data/haynestower/Media/Movies/'71 (2014)/'71 (2014) {imdb-tt2614684} [Remux-1080p][DTS-HD MA 5.1][AVC]-FraMeSToR.mkv",
+      "size": 29616542478,
+      "dateAdded": "2026-07-03T02:07:31Z",
+      "releaseGroup": "FraMeSToR",
+      "edition": "",
+      "languages": [
+        {
+          "id": 1,
+          "name": "English"
+        }
+      ],
+      "quality": {
+        "quality": {
+          "id": 30,
+          "name": "Remux-1080p",
+          "source": "bluray",
+          "resolution": 1080,
+          "modifier": "remux"
+        },
+        "revision": {
+          "version": 1,
+          "real": 0,
+          "isRepack": false
+        }
+      },
+      "indexerFlags": 0,
+      "mediaInfo": {
+        "audioBitrate": 0,
+        "audioChannels": 5.1,
+        "audioCodec": "DTS-HD MA",
+        "audioLanguages": "eng",
+        "audioStreamCount": 1,
+        "videoBitDepth": 8,
+        "videoBitrate": 0,
+        "videoCodec": "h264",
+        "videoFps": 23.976,
+        "videoDynamicRange": "",
+        "videoDynamicRangeType": "",
+        "resolution": "1920x1080",
+        "runTime": "1:39:24",
+        "scanType": "Progressive",
+        "subtitles": "eng"
+      },
+      "qualityCutoffNotMet": true,
+      "id": 1
+    },
+    "popularity": 1.6869,
+    "statistics": {
+      "movieFileCount": 1,
+      "sizeOnDisk": 29616542478,
+      "releaseGroups": [
+        "FraMeSToR"
+      ]
+    },
+    "id": 3
+  }
+]

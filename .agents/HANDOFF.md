@@ -19,6 +19,9 @@
 
 ## Where things stand (wave 7)
 
+- Phase 2 (feat/arr-clients): @hnet/arr landed — typed Sonarr/Radarr/Lidarr/Seerr clients
+  (DESIGN-005 D-18 read/write entrypoint split, D-02 zod subsets, sanitized fixtures from
+  the 2026-07-03 live GET probes); sync CLI + domain writers are the next slices.
 - Waves 3-6 merged via PRs #2-#6: @hnet/auth (Better Auth + bootstrap), @hnet/api (tRPC),
   Phase 1 web UI, Dockerfile + CI image validation, Playwright e2e (38 tests incl. stub
   OIDC + resize matrix).

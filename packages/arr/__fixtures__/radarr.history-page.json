@@ -1,0 +1,276 @@
+{
+  "page": 1,
+  "pageSize": 5,
+  "sortKey": "date",
+  "sortDirection": "descending",
+  "totalRecords": 528,
+  "records": [
+    {
+      "movieId": 2327,
+      "sourceTitle": "Tropa.de.Elite.2007.BluRay.1080p.DTS-HD.MA.5.1.AVC.REMUX-FraMeSToR",
+      "languages": [
+        {
+          "id": 18,
+          "name": "Portuguese"
+        }
+      ],
+      "quality": {
+        "quality": {
+          "id": 30,
+          "name": "Remux-1080p",
+          "source": "bluray",
+          "resolution": 1080,
+          "modifier": "remux"
+        },
+        "revision": {
+          "version": 1,
+          "real": 0,
+          "isRepack": false
+        }
+      },
+      "customFormats": [
+        {
+          "id": 81,
+          "name": "DTS-HD MA"
+        },
+        {
+          "id": 73,
+          "name": "Remux Tier 01"
+        }
+      ],
+      "customFormatScore": 4450,
+      "qualityCutoffNotMet": true,
+      "date": "2026-07-03T21:32:01Z",
+      "downloadId": "316790a6-e665-41b6-a99a-723b0e8ee01f",
+      "eventType": "downloadFolderImported",
+      "data": {
+        "fileId": "5076",
+        "droppedPath": "/data/haynestower/usenet/complete-k8s/movies/Tropa.de.Elite.2007.BluRay.1080p.DTS-HD.MA.5.1.AVC.REMUX-FraMeSToR/Tropa.de.Elite.2007.BluRay.1080p.DTS-HD.MA.5.1.AVC.REMUX-FraMeSToR.mkv",
+        "importedPath": "/data/haynestower/Media/Movies/Elite Squad (2007)/Elite Squad (2007) {imdb-tt0861739} [Remux-1080p][DTS-HD MA 5.1][VC1]-FraMeSToR.mkv",
+        "downloadClient": "SABnzbd",
+        "downloadClientName": "SABnzbd",
+        "releaseGroup": "FraMeSToR",
+        "customFormatScore": "4450",
+        "size": "20512659973",
+        "indexerFlags": "0"
+      },
+      "id": 530
+    },
+    {
+      "movieId": 1117,
+      "sourceTitle": "Black.Adam.2022.UHD.BluRay.2160p.TrueHD.Atmos.7.1.DV.HEVC.REMUX-FraMeSToR",
+      "languages": [
+        {
+          "id": 1,
+          "name": "English"
+        }
+      ],
+      "quality": {
+        "quality": {
+          "id": 31,
+          "name": "Remux-2160p",
+          "source": "bluray",
+          "resolution": 2160,
+          "modifier": "remux"
+        },
+        "revision": {
+          "version": 1,
+          "real": 0,
+          "isRepack": false
+        }
+      },
+      "customFormats": [
+        {
+          "id": 90,
+          "name": "DV Boost"
+        },
+        {
+          "id": 69,
+          "name": "HDR"
+        },
+        {
+          "id": 73,
+          "name": "Remux Tier 01"
+        },
+        {
+          "id": 76,
+          "name": "TrueHD ATMOS"
+        }
+      ],
+      "customFormatScore": 8450,
+      "qualityCutoffNotMet": false,
+      "date": "2026-07-03T21:29:01Z",
+      "downloadId": "cbb20b84-6a0f-486e-a6fc-f8e0928c4d37",
+      "eventType": "downloadFolderImported",
+      "data": {
+        "fileId": "5075",
+        "droppedPath": "/data/haynestower/usenet/complete-k8s/movies/Black.Adam.2022.UHD.BluRay.2160p.TrueHD.Atmos.7.1.DV.HEVC.REMUX-FraMeSToR/Black.Adam.2022.UHD.BluRay.2160p.TrueHD.Atmos.7.1.DV.HEVC.REMUX-FraMeSToR.mkv",
+        "importedPath": "/data/haynestower/Media/Movies/Black Adam (2022)/Black Adam (2022) {imdb-tt6443346} [Remux-2160p][DV HDR10][TrueHD Atmos 7.1][HEVC]-FraMeSToR.mkv",
+        "downloadClient": "SABnzbd",
+        "downloadClientName": "SABnzbd",
+        "releaseGroup": "FraMeSToR",
+        "customFormatScore": "8450",
+        "size": "47438421850",
+        "indexerFlags": "0"
+      },
+      "id": 529
+    },
+    {
+      "movieId": 2314,
+      "sourceTitle": "Elektra.2005.1080p.BluRay.Remux.AVC.DTS-HD.MA.5.1-playBD",
+      "languages": [
+        {
+          "id": 1,
+          "name": "English"
+        }
+      ],
+      "quality": {
+        "quality": {
+          "id": 30,
+          "name": "Remux-1080p",
+          "source": "bluray",
+          "resolution": 1080,
+          "modifier": "remux"
+        },
+        "revision": {
+          "version": 1,
+          "real": 0,
+          "isRepack": false
+        }
+      },
+      "customFormats": [
+        {
+          "id": 81,
+          "name": "DTS-HD MA"
+        },
+        {
+          "id": 74,
+          "name": "Remux Tier 02"
+        }
+      ],
+      "customFormatScore": 4400,
+      "qualityCutoffNotMet": true,
+      "date": "2026-07-03T21:19:01Z",
+      "downloadId": "14f14b50-274e-4bec-8a8c-9d15b9b4589b",
+      "eventType": "downloadFolderImported",
+      "data": {
+        "fileId": "5074",
+        "droppedPath": "/data/haynestower/usenet/complete-k8s/movies/Elektra.2005.1080p.BluRay.Remux.AVC.DTS-HD.MA.5.1-playBD/Elektra.2005.1080p.BluRay.Remux.AVC.DTS-HD.MA.5.1-playBD.mkv",
+        "importedPath": "/data/haynestower/Media/Movies/Elektra (2005)/Elektra (2005) {imdb-tt0357277} [Remux-1080p][DTS-HD MA 5.1][AVC]-playBD.mkv",
+        "downloadClient": "SABnzbd",
+        "downloadClientName": "SABnzbd",
+        "releaseGroup": "playBD",
+        "customFormatScore": "4400",
+        "size": "23134956581",
+        "indexerFlags": "0"
+      },
+      "id": 528
+    },
+    {
+      "movieId": 95,
+      "sourceTitle": "47.Ronin.2013.UHD.BluRay.2160p.DTS-X.7.1.HEVC.REMUX-FraMeSToR",
+      "languages": [
+        {
+          "id": 1,
+          "name": "English"
+        }
+      ],
+      "quality": {
+        "quality": {
+          "id": 31,
+          "name": "Remux-2160p",
+          "source": "bluray",
+          "resolution": 2160,
+          "modifier": "remux"
+        },
+        "revision": {
+          "version": 1,
+          "real": 0,
+          "isRepack": false
+        }
+      },
+      "customFormats": [
+        {
+          "id": 77,
+          "name": "DTS X"
+        },
+        {
+          "id": 69,
+          "name": "HDR"
+        },
+        {
+          "id": 73,
+          "name": "Remux Tier 01"
+        }
+      ],
+      "customFormatScore": 6950,
+      "qualityCutoffNotMet": false,
+      "date": "2026-07-03T21:16:01Z",
+      "downloadId": "c564f7c5-428b-4e96-be3d-fd2892221557",
+      "eventType": "downloadFolderImported",
+      "data": {
+        "fileId": "5073",
+        "droppedPath": "/data/haynestower/usenet/complete-k8s/movies/47.Ronin.2013.UHD.BluRay.2160p.DTS-X.7.1.HEVC.REMUX-FraMeSToR/47.Ronin.2013.UHD.BluRay.2160p.DTS-X.7.1.HEVC.REMUX-FraMeSToR.mkv",
+        "importedPath": "/data/haynestower/Media/Movies/47 Ronin (2013)/47 Ronin (2013) {imdb-tt1335975} [Remux-2160p][HDR10][DTS-X 7.1][HEVC]-FraMeSToR.mkv",
+        "downloadClient": "SABnzbd",
+        "downloadClientName": "SABnzbd",
+        "releaseGroup": "FraMeSToR",
+        "customFormatScore": "6950",
+        "size": "52285587903",
+        "indexerFlags": "0"
+      },
+      "id": 527
+    },
+    {
+      "movieId": 1081,
+      "sourceTitle": "Big Daddy 1999 BluRay 1080p DTS-HD MA 5 1 AVC REMUX-FraMeSToR",
+      "languages": [
+        {
+          "id": 1,
+          "name": "English"
+        }
+      ],
+      "quality": {
+        "quality": {
+          "id": 30,
+          "name": "Remux-1080p",
+          "source": "bluray",
+          "resolution": 1080,
+          "modifier": "remux"
+        },
+        "revision": {
+          "version": 1,
+          "real": 0,
+          "isRepack": false
+        }
+      },
+      "customFormats": [
+        {
+          "id": 81,
+          "name": "DTS-HD MA"
+        },
+        {
+          "id": 73,
+          "name": "Remux Tier 01"
+        }
+      ],
+      "customFormatScore": 4450,
+      "qualityCutoffNotMet": true,
+      "date": "2026-07-03T21:02:01Z",
+      "downloadId": "a0bc8b5e-939f-4136-8a3f-33060365aef7",
+      "eventType": "downloadFolderImported",
+      "data": {
+        "fileId": "5072",
+        "droppedPath": "/data/haynestower/usenet/complete-k8s/movies/Big Daddy 1999 BluRay 1080p DTS-HD MA 5 1 AVC REMUX-FraMeSToR/Big_Daddy_1999_BluRay_1080p_DTS-HD_MA_5_1_AVC_REMUX-FraMeSToR.mkv",
+        "importedPath": "/data/haynestower/Media/Movies/Big Daddy (1999)/Big Daddy (1999) {imdb-tt0142342} [Remux-1080p][DTS-HD MA 5.1][AVC]-FraMeSToR.mkv",
+        "downloadClient": "SABnzbd",
+        "downloadClientName": "SABnzbd",
+        "releaseGroup": "FraMeSToR",
+        "customFormatScore": "4450",
+        "size": "19025132584",
+        "indexerFlags": "0"
+      },
+      "id": 526
+    }
+  ]
+}

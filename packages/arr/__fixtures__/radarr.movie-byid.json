@@ -1,0 +1,82 @@
+{
+  "title": "Winner Takes the Cake",
+  "originalTitle": "¡Qué Huevos, Sofía!",
+  "originalLanguage": {
+    "id": 3,
+    "name": "Spanish"
+  },
+  "alternateTitles": [],
+  "secondaryYearSourceId": 0,
+  "sortTitle": "winner takes the cake",
+  "sizeOnDisk": 0,
+  "status": "released",
+  "overview": "Sofía quits her job after confronting her misogynistic boss. Determined, she starts her own company to rival her former employer, igniting a David vs. Goliath showdown in the business world.",
+  "inCinemas": "2025-02-27T00:00:00Z",
+  "releaseDate": "2025-05-28T00:00:00Z",
+  "images": [
+    {
+      "coverType": "poster",
+      "url": "/MediaCover/1/poster.jpg?lastWrite=639186412515939355",
+      "remoteUrl": "https://image.tmdb.org/t/p/original/obYQkGeTciQx3HNz8O78igbJjV6.jpg"
+    },
+    {
+      "coverType": "fanart",
+      "url": "/MediaCover/1/fanart.jpg?lastWrite=639186412528379714",
+      "remoteUrl": "https://image.tmdb.org/t/p/original/krO9SO7DRctt9Eg5AX4rdMR4LkU.jpg"
+    }
+  ],
+  "website": "",
+  "year": 2025,
+  "youTubeTrailerId": "ntzBD3ihVXg",
+  "studio": "Sastre Films",
+  "path": "/data/haynestower/Media/Movies/¡Qué Huevos, Sofía! (2025)",
+  "qualityProfileId": 9,
+  "hasFile": false,
+  "movieFileId": 0,
+  "monitored": false,
+  "minimumAvailability": "released",
+  "isAvailable": true,
+  "folderName": "/data/haynestower/Media/Movies/¡Qué Huevos, Sofía! (2025)",
+  "runtime": 106,
+  "cleanTitle": "winnertakescake",
+  "imdbId": "tt34723784",
+  "tmdbId": 1233620,
+  "titleSlug": "1233620",
+  "rootFolderPath": "/data/haynestower/Media/Movies",
+  "genres": [
+    "Comedy"
+  ],
+  "keywords": [
+    "bakery",
+    "business rivalry",
+    "eggs",
+    "enterpreneur woman",
+    "small business owner"
+  ],
+  "tags": [],
+  "added": "2026-07-03T02:07:30Z",
+  "ratings": {
+    "imdb": {
+      "votes": 379,
+      "value": 6.3,
+      "type": "user"
+    },
+    "tmdb": {
+      "votes": 41,
+      "value": 8.39,
+      "type": "user"
+    },
+    "trakt": {
+      "votes": 15,
+      "value": 7,
+      "type": "user"
+    }
+  },
+  "popularity": 1.2646,
+  "statistics": {
+    "movieFileCount": 0,
+    "sizeOnDisk": 0,
+    "releaseGroups": []
+  },
+  "id": 1
+}

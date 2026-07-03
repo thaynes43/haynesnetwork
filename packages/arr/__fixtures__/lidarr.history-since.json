@@ -1,0 +1,162 @@
+[
+  {
+    "albumId": 34776,
+    "artistId": 4610,
+    "trackId": 2394885,
+    "sourceTitle": "01 - You Are a Runner and I Am My Father’s Son",
+    "quality": {
+      "quality": {
+        "id": 6,
+        "name": "FLAC"
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [],
+    "customFormatScore": 0,
+    "qualityCutoffNotMet": false,
+    "date": "2026-07-02T21:48:31Z",
+    "eventType": "trackFileImported",
+    "data": {
+      "fileId": "1749007",
+      "droppedPath": "/data/soulseek/complete/Wolf Parade - Apologies to the Queen Mary (2005)/01 - You Are a Runner and I Am My Father’s Son.flac",
+      "importedPath": "/data/media/music/Wolf Parade/Apologies to the Queen Mary (2005)/Wolf Parade - Apologies to the Queen Mary - 01 - You Are a Runner and I Am My Father’s Son.flac",
+      "downloadClient": null,
+      "releaseGroup": null,
+      "size": "23625116",
+      "indexerFlags": "0"
+    },
+    "id": 975
+  },
+  {
+    "albumId": 34776,
+    "artistId": 4610,
+    "trackId": 2394886,
+    "sourceTitle": "02 - Modern World",
+    "quality": {
+      "quality": {
+        "id": 6,
+        "name": "FLAC"
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [],
+    "customFormatScore": 0,
+    "qualityCutoffNotMet": false,
+    "date": "2026-07-02T21:48:31Z",
+    "eventType": "trackFileImported",
+    "data": {
+      "fileId": "1749008",
+      "droppedPath": "/data/soulseek/complete/Wolf Parade - Apologies to the Queen Mary (2005)/02 - Modern World.flac",
+      "importedPath": "/data/media/music/Wolf Parade/Apologies to the Queen Mary (2005)/Wolf Parade - Apologies to the Queen Mary - 02 - Modern World.flac",
+      "downloadClient": null,
+      "releaseGroup": null,
+      "size": "21483756",
+      "indexerFlags": "0"
+    },
+    "id": 976
+  },
+  {
+    "albumId": 34776,
+    "artistId": 4610,
+    "trackId": 2394887,
+    "sourceTitle": "03 - Grounds for Divorce",
+    "quality": {
+      "quality": {
+        "id": 6,
+        "name": "FLAC"
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [],
+    "customFormatScore": 0,
+    "qualityCutoffNotMet": false,
+    "date": "2026-07-02T21:48:31Z",
+    "eventType": "trackFileImported",
+    "data": {
+      "fileId": "1749009",
+      "droppedPath": "/data/soulseek/complete/Wolf Parade - Apologies to the Queen Mary (2005)/03 - Grounds for Divorce.flac",
+      "importedPath": "/data/media/music/Wolf Parade/Apologies to the Queen Mary (2005)/Wolf Parade - Apologies to the Queen Mary - 03 - Grounds for Divorce.flac",
+      "downloadClient": null,
+      "releaseGroup": null,
+      "size": "26028798",
+      "indexerFlags": "0"
+    },
+    "id": 977
+  },
+  {
+    "albumId": 34776,
+    "artistId": 4610,
+    "trackId": 2394888,
+    "sourceTitle": "04 - We Built Another World",
+    "quality": {
+      "quality": {
+        "id": 6,
+        "name": "FLAC"
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [],
+    "customFormatScore": 0,
+    "qualityCutoffNotMet": false,
+    "date": "2026-07-02T21:48:31Z",
+    "eventType": "trackFileImported",
+    "data": {
+      "fileId": "1749010",
+      "droppedPath": "/data/soulseek/complete/Wolf Parade - Apologies to the Queen Mary (2005)/04 - We Built Another World.flac",
+      "importedPath": "/data/media/music/Wolf Parade/Apologies to the Queen Mary (2005)/Wolf Parade - Apologies to the Queen Mary - 04 - We Built Another World.flac",
+      "downloadClient": null,
+      "releaseGroup": null,
+      "size": "25293510",
+      "indexerFlags": "0"
+    },
+    "id": 978
+  },
+  {
+    "albumId": 34776,
+    "artistId": 4610,
+    "trackId": 2394889,
+    "sourceTitle": "05 - Fancy Claps",
+    "quality": {
+      "quality": {
+        "id": 6,
+        "name": "FLAC"
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [],
+    "customFormatScore": 0,
+    "qualityCutoffNotMet": false,
+    "date": "2026-07-02T21:48:31Z",
+    "eventType": "trackFileImported",
+    "data": {
+      "fileId": "1749011",
+      "droppedPath": "/data/soulseek/complete/Wolf Parade - Apologies to the Queen Mary (2005)/05 - Fancy Claps.flac",
+      "importedPath": "/data/media/music/Wolf Parade/Apologies to the Queen Mary (2005)/Wolf Parade - Apologies to the Queen Mary - 05 - Fancy Claps.flac",
+      "downloadClient": null,
+      "releaseGroup": null,
+      "size": "21415778",
+      "indexerFlags": "0"
+    },
+    "id": 979
+  }
+]
