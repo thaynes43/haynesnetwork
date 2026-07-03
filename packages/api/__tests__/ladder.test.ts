@@ -22,6 +22,13 @@ const AUTHED_CALLS: Array<[string, (c: Caller) => Promise<unknown>]> = [
   ['profile.me', (c) => c.profile.me()],
   ['catalog.myApps', (c) => c.catalog.myApps()],
   ['tags.list', (c) => c.tags.list()],
+  ['ledger.search', (c) => c.ledger.search({})],
+  ['ledger.detail', (c) => c.ledger.detail({ id: UUID_A })],
+  ['ledger.events', (c) => c.ledger.events({ mediaItemId: UUID_A })],
+  ['ledger.children', (c) => c.ledger.children({ mediaItemId: UUID_A })],
+  ['ledger.wanted', (c) => c.ledger.wanted({})],
+  ['fix.create', (c) => c.fix.create({ mediaItemId: UUID_A, reason: 'wrong_language' })],
+  ['fix.myFixes', (c) => c.fix.myFixes()],
 ];
 
 /** Every admin procedure, with schema-valid inputs so FORBIDDEN is the only possible rejection. */
@@ -43,6 +50,11 @@ const ADMIN_CALLS: Array<[string, (c: Caller) => Promise<unknown>]> = [
   ['tags.delete', (c) => c.tags.delete({ id: UUID_A })],
   ['tags.applyToUser', (c) => c.tags.applyToUser({ tagId: UUID_A, userId: UUID_B })],
   ['tags.removeFromUser', (c) => c.tags.removeFromUser({ tagId: UUID_A, userId: UUID_B })],
+  ['fix.adminList', (c) => c.fix.adminList({})],
+  ['restore.diff', (c) => c.restore.diff({ arrKind: 'sonarr' })],
+  ['restore.execute', (c) => c.restore.execute({ arrKind: 'sonarr', mediaItemIds: [UUID_A] })],
+  ['restore.run', (c) => c.restore.run({ id: UUID_A })],
+  ['restore.runs', (c) => c.restore.runs()],
 ];
 
 describe('procedure ladder (D-02)', () => {

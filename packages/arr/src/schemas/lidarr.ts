@@ -64,6 +64,25 @@ export const lidarrAlbumSchema = z.object({
 });
 export type LidarrAlbum = z.infer<typeof lidarrAlbumSchema>;
 
+/**
+ * `GET /trackfile?albumId=` element — the Fix fallback's delete targets (D-03: an
+ * album fix deletes every track file of that album; Lidarr deletes at track-file
+ * granularity).
+ */
+export const lidarrTrackFileSchema = z.object({
+  id: z.number().int(),
+  albumId: z.number().int().optional(),
+  path: z.string().optional(),
+});
+export type LidarrTrackFile = z.infer<typeof lidarrTrackFileSchema>;
+
+/** `GET /metadataprofile` element — Restore maps metadata profiles BY NAME (D-16). */
+export const lidarrMetadataProfileSchema = z.object({
+  id: z.number().int(),
+  name: z.string(),
+});
+export type LidarrMetadataProfile = z.infer<typeof lidarrMetadataProfileSchema>;
+
 /** History record with Lidarr's per-kind target ids (`albumId` + `artistId`). */
 export const lidarrHistoryRecordSchema = historyRecordBaseSchema.extend({
   eventType: z.enum(LIDARR_HISTORY_EVENT_TYPES).catch('unknown'),

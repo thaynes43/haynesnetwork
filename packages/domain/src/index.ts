@@ -16,3 +16,9 @@ export * from './media-sync';
 export * from './ledger-ingest';
 export * from './fix-requests';
 export * from './restore-runs';
+// DESIGN-005 Phase 2 — fix/restore orchestration over @hnet/arr (D-15/D-16; the
+// mutating *arr surface stays confined to this package — D-12/D-18 guard test)
+export * from './arr-clients';
+export * from './media-children';
+export * from './fix-flow';
+export * from './restore-flow';

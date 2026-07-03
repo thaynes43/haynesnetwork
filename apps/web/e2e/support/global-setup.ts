@@ -31,6 +31,6 @@ export default async function globalSetup(): Promise<void> {
   writeRuntimeEnv(stack.env);
 
   console.log(
-    `[e2e] ready: pg=${stack.env.DATABASE_URL} oidc=${stack.oidc.baseUrl} app=${stack.appUrl}`,
+    `[e2e] ready: pg=${stack.env.DATABASE_URL} oidc=${stack.oidc.baseUrl} arr=${stack.arr.baseUrl} app=${stack.appUrl}`,
   );
 }

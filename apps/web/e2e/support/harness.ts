@@ -14,6 +14,7 @@ import { join } from 'node:path';
 // invalid under the CJS transform); migrations run as a subprocess instead.
 import { startPostgres, type StartedPostgres } from '@hnet/test-utils/postgres';
 import { startStubOidc, type StubOidcServer } from './stub-oidc';
+import { startStubArr, type StubArrServer } from './stub-arr';
 import { composeRuntimeEnv, DEFAULT_APP_PORT, type RuntimeEnv } from './env';
 
 const DEV_READY_TIMEOUT_MS = 180_000;
@@ -35,10 +36,12 @@ export interface RunningStack {
   appUrl: string;
   pg: StartedPostgres;
   oidc: StubOidcServer;
+  /** Stub Sonarr/Radarr/Lidarr/Seerr stand-in (DESIGN-005 e2e layer). */
+  arr: StubArrServer;
   devServer: ChildProcess;
   /** The DESIGN-002 D-08 env the dev server was booted with. */
   env: RuntimeEnv;
-  /** Idempotent, reverse-order teardown: dev server → stub OIDC → Postgres. */
+  /** Idempotent, reverse-order teardown: dev server → stub *arr → stub OIDC → Postgres. */
   stop: () => Promise<void>;
 }
 
@@ -67,9 +70,14 @@ async function prewarmRoutes(baseUrl: string): Promise<void> {
   const routes = [
     '/',
     '/login',
+    '/library',
+    `/library/${placeholderId}`,
+    '/my-fixes',
     '/admin',
     '/admin/catalog',
     '/admin/tags',
+    '/admin/fixes',
+    '/admin/restore',
     `/admin/users/${placeholderId}`,
     '/api/auth/get-session',
     '/api/trpc/profile.me',
@@ -115,6 +123,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
 
   const pg = await startPostgres();
   let oidc: StubOidcServer | undefined;
+  let arr: StubArrServer | undefined;
   let dev: ChildProcess | undefined;
   try {
     const migrate = spawnSync('pnpm', ['--filter', '@hnet/db', 'migrate'], {
@@ -125,11 +134,28 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       throw new Error(`@hnet/db migrations failed (exit ${String(migrate.status)})`);
     }
 
+    // Seed the ledger rows the /library specs browse — a tsx subprocess for the
+    // same CJS-transform reason migrations are (see the import note above).
+    const seed = spawnSync(
+      join(cwd, 'node_modules', '.bin', 'tsx'),
+      [join(cwd, 'e2e', 'support', 'seed-ledger.ts')],
+      {
+        env: { ...process.env, DATABASE_URL: pg.connectionString },
+        stdio: 'inherit',
+        cwd,
+      },
+    );
+    if (seed.status !== 0) {
+      throw new Error(`e2e ledger seed failed (exit ${String(seed.status)})`);
+    }
+
     oidc = await startStubOidc();
+    arr = await startStubArr();
     const env = composeRuntimeEnv({
       databaseUrl: pg.connectionString,
       stubOidcBaseUrl: oidc.baseUrl,
       stubOidcDiscoveryUrl: oidc.discoveryUrl,
+      stubArrBaseUrl: arr.baseUrl,
       appUrl,
     });
 
@@ -152,17 +178,20 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     if (options.prewarm !== false) await prewarmRoutes(appUrl);
 
     const running = dev;
+    const runningArr = arr;
     let stopped = false;
     return {
       appUrl,
       pg,
       oidc,
+      arr: runningArr,
       devServer: running,
       env,
       stop: async () => {
         if (stopped) return;
         stopped = true;
         await killDevServer(running);
+        await runningArr.stop().catch(() => undefined);
         await oidc!.stop();
         await pg.stop();
       },
@@ -170,6 +199,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
   } catch (err) {
     // Partial-boot cleanup, best effort in reverse order.
     if (dev) await killDevServer(dev).catch(() => undefined);
+    if (arr) await arr.stop().catch(() => undefined);
     if (oidc) await oidc.stop().catch(() => undefined);
     await pg.stop().catch(() => undefined);
     throw err;

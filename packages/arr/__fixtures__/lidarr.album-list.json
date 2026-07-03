@@ -1,0 +1,33 @@
+[
+  {
+    "title": "First Light",
+    "disambiguation": "",
+    "overview": "sanitized overview text that must be stripped by the schema",
+    "artistId": 7,
+    "foreignAlbumId": "11111111-2222-3333-4444-555555555555",
+    "monitored": true,
+    "anyReleaseOk": true,
+    "profileId": 1,
+    "albumType": "Album",
+    "secondaryTypes": [],
+    "releaseDate": "2019-05-17T00:00:00Z",
+    "statistics": {
+      "trackFileCount": 12,
+      "trackCount": 12,
+      "totalTrackCount": 12,
+      "sizeOnDisk": 412345678,
+      "percentOfTracks": 100
+    },
+    "id": 71
+  },
+  {
+    "title": "Second Sunrise",
+    "artistId": 7,
+    "foreignAlbumId": "66666666-7777-8888-9999-000000000000",
+    "monitored": true,
+    "anyReleaseOk": false,
+    "albumType": "EP",
+    "releaseDate": null,
+    "id": 72
+  }
+]

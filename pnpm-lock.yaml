@@ -78,6 +78,9 @@ importers:
       '@hnet/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@hnet/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@hnet/test-utils':
         specifier: workspace:*
         version: link:../../packages/test-utils
@@ -136,6 +139,9 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@hnet/arr':
+        specifier: workspace:*
+        version: link:../arr
       '@hnet/test-utils':
         specifier: workspace:*
         version: link:../test-utils
@@ -217,6 +223,9 @@ importers:
 
   packages/domain:
     dependencies:
+      '@hnet/arr':
+        specifier: workspace:*
+        version: link:../arr
       '@hnet/db':
         specifier: workspace:*
         version: link:../db

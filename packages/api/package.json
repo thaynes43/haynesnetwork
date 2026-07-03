@@ -28,6 +28,7 @@
     "@hnet/test-utils": "workspace:*",
     "@types/pg": "^8.11.10",
     "pg": "^8.13.1",
-    "vitest": "^4.1.6"
+    "vitest": "^4.1.6",
+    "@hnet/arr": "workspace:*"
   }
 }

@@ -30,7 +30,21 @@ export interface RuntimeEnv {
   BETTER_AUTH_SECRET: string;
   BETTER_AUTH_URL: string;
   BOOTSTRAP_ADMIN_EMAILS: string;
+  /** Stub *arr origin — specs GET its /_stub/calls endpoint (DESIGN-005 e2e layer). */
+  STUB_ARR_URL: string;
+  /** DESIGN-005 D-18 env contract, all pointed at the one stub server. */
+  SONARR_URL: string;
+  RADARR_URL: string;
+  LIDARR_URL: string;
+  SEERR_URL: string;
+  SONARR_API_KEY: string;
+  RADARR_API_KEY: string;
+  LIDARR_API_KEY: string;
+  SEERR_API_KEY: string;
 }
+
+/** The throwaway key every stubbed *arr accepts (never a real credential). */
+export const STUB_ARR_API_KEY = 'stub-arr-key';
 
 /**
  * The DESIGN-002 D-08 env contract wired to a running stack: embedded PG +
@@ -42,6 +56,7 @@ export function composeRuntimeEnv(opts: {
   databaseUrl: string;
   stubOidcBaseUrl: string;
   stubOidcDiscoveryUrl: string;
+  stubArrBaseUrl: string;
   appUrl: string;
 }): RuntimeEnv {
   return {
@@ -53,6 +68,15 @@ export function composeRuntimeEnv(opts: {
     BETTER_AUTH_SECRET: 'e2e-only-secret-e2e-only-secret-e2e-only',
     BETTER_AUTH_URL: opts.appUrl,
     BOOTSTRAP_ADMIN_EMAILS: ADMIN_EMAIL,
+    STUB_ARR_URL: opts.stubArrBaseUrl,
+    SONARR_URL: opts.stubArrBaseUrl,
+    RADARR_URL: opts.stubArrBaseUrl,
+    LIDARR_URL: opts.stubArrBaseUrl,
+    SEERR_URL: opts.stubArrBaseUrl,
+    SONARR_API_KEY: STUB_ARR_API_KEY,
+    RADARR_API_KEY: STUB_ARR_API_KEY,
+    LIDARR_API_KEY: STUB_ARR_API_KEY,
+    SEERR_API_KEY: STUB_ARR_API_KEY,
   };
 }
 

@@ -34,9 +34,13 @@ import {
   lidarrAlbumSchema,
   lidarrArtistSchema,
   lidarrHistoryRecordSchema,
+  lidarrMetadataProfileSchema,
+  lidarrTrackFileSchema,
   type LidarrAlbum,
   type LidarrArtist,
   type LidarrHistoryRecord,
+  type LidarrMetadataProfile,
+  type LidarrTrackFile,
 } from './schemas/lidarr';
 import {
   seerrMainSettingsSchema,
@@ -132,6 +136,23 @@ export class SonarrClient extends ArrReadClientBase {
     });
   }
 
+  /** `GET /episode?seriesId=` — fix-target picker, resolved LIVE, never synced (D-06). */
+  listEpisodes(seriesId: number): Promise<SonarrEpisode[]> {
+    return this.http.requestJson('GET', 'episode', z.array(sonarrEpisodeSchema), {
+      query: { seriesId },
+    });
+  }
+
+  /**
+   * `GET /history?episodeId=&eventType=grabbed` — latest grab for a fix target
+   * (D-03/D-15). Newest first (the *arr default sort is honored explicitly).
+   */
+  getEpisodeGrabHistory(episodeId: number): Promise<ArrPage<SonarrHistoryRecord>> {
+    return this.http.requestJson('GET', 'history', pagedSchema(sonarrHistoryRecordSchema), {
+      query: { ...this.historyQuery({ pageSize: 20 }), episodeId, eventType: 'grabbed' },
+    });
+  }
+
   /** Episode-level wanted feed (paged) — spot checks only, never mirrored (D-08). */
   getWantedMissing(params: WantedMissingParams = {}): Promise<ArrPage<SonarrEpisode>> {
     return this.http.requestJson('GET', 'wanted/missing', pagedSchema(sonarrEpisodeSchema), {
@@ -163,6 +184,16 @@ export class RadarrClient extends ArrReadClientBase {
   getHistorySince(date: string | Date, eventType?: string): Promise<RadarrHistoryRecord[]> {
     return this.http.requestJson('GET', 'history/since', z.array(radarrHistoryRecordSchema), {
       query: { date: toIso(date), eventType },
+    });
+  }
+
+  /**
+   * `GET /history/movie?movieId=&eventType=grabbed` — latest grab for a fix target
+   * (D-03/D-15). Radarr's per-movie history endpoint returns a plain array.
+   */
+  getMovieGrabHistory(movieId: number): Promise<RadarrHistoryRecord[]> {
+    return this.http.requestJson('GET', 'history/movie', z.array(radarrHistoryRecordSchema), {
+      query: { movieId, eventType: 'grabbed' },
     });
   }
 
@@ -198,6 +229,32 @@ export class LidarrClient extends ArrReadClientBase {
     return this.http.requestJson('GET', 'history/since', z.array(lidarrHistoryRecordSchema), {
       query: { date: toIso(date), eventType },
     });
+  }
+
+  /** `GET /album?artistId=` — fix-target picker, resolved LIVE, never synced (D-06). */
+  listAlbums(artistId: number): Promise<LidarrAlbum[]> {
+    return this.http.requestJson('GET', 'album', z.array(lidarrAlbumSchema), {
+      query: { artistId },
+    });
+  }
+
+  /** `GET /history?albumId=&eventType=grabbed` — latest grab for a fix target (D-03/D-15). */
+  getAlbumGrabHistory(albumId: number): Promise<ArrPage<LidarrHistoryRecord>> {
+    return this.http.requestJson('GET', 'history', pagedSchema(lidarrHistoryRecordSchema), {
+      query: { ...this.historyQuery({ pageSize: 20 }), albumId, eventType: 'grabbed' },
+    });
+  }
+
+  /** `GET /trackfile?albumId=` — the Fix fallback's delete targets (D-03). */
+  listTrackFiles(albumId: number): Promise<LidarrTrackFile[]> {
+    return this.http.requestJson('GET', 'trackfile', z.array(lidarrTrackFileSchema), {
+      query: { albumId },
+    });
+  }
+
+  /** `GET /metadataprofile` — Restore maps Lidarr metadata profiles BY NAME (D-16). */
+  listMetadataProfiles(): Promise<LidarrMetadataProfile[]> {
+    return this.http.requestJson('GET', 'metadataprofile', z.array(lidarrMetadataProfileSchema));
   }
 
   /** Album-level wanted feed (paged). */

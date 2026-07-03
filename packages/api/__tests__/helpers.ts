@@ -1,5 +1,5 @@
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { Pool } from 'pg';
 import { getErrorShape, TRPCError } from '@trpc/server';
 import { startPostgres } from '@hnet/test-utils';
@@ -7,6 +7,11 @@ import { runMigrations } from '@hnet/db/migrate';
 import * as schema from '@hnet/db/schema';
 import type { Database } from '@hnet/db';
 import type { SessionUser } from '@hnet/auth';
+import {
+  upsertMediaItemsBatch,
+  type ArrClientBundle,
+  type MediaItemSyncFields,
+} from '@hnet/domain';
 import { appRouter } from '../src/routers/index';
 import { createCallerFactory, type TRPCContext } from '../src/trpc';
 
@@ -62,8 +67,57 @@ export function sessionUser(row: typeof schema.users.$inferSelect): SessionUser 
   };
 }
 
-export function makeCtx(db: Database, user: SessionUser | null): TRPCContext {
-  return { db, user };
+export function makeCtx(
+  db: Database,
+  user: SessionUser | null,
+  arr?: ArrClientBundle,
+): TRPCContext {
+  return { db, user, ...(arr !== undefined ? { arr } : {}) };
+}
+
+let arrItemSeq = 500;
+
+/**
+ * Seed a media_items row through the D-12 single writer (upsertMediaItemsBatch —
+ * direct inserts are forbidden by the no-direct-writes guard) and return the row.
+ */
+export async function seedMediaItem(
+  db: Database,
+  arrKind: schema.ArrKind,
+  fields: Partial<MediaItemSyncFields> & { title: string },
+): Promise<typeof schema.mediaItems.$inferSelect> {
+  const arrItemId = fields.arrItemId ?? ++arrItemSeq;
+  const item: MediaItemSyncFields = {
+    title: fields.title,
+    arrItemId,
+    tvdbId: arrKind === 'sonarr' ? (fields.tvdbId ?? 100_000 + arrItemId) : (fields.tvdbId ?? null),
+    tmdbId: arrKind === 'radarr' ? (fields.tmdbId ?? 200_000 + arrItemId) : (fields.tmdbId ?? null),
+    musicbrainzArtistId:
+      arrKind === 'lidarr'
+        ? (fields.musicbrainzArtistId ??
+          `00000000-0000-0000-0000-${String(arrItemId).padStart(12, '0')}`)
+        : (fields.musicbrainzArtistId ?? null),
+    sortTitle: fields.sortTitle ?? fields.title.toLowerCase(),
+    year: fields.year ?? 2020,
+    monitored: fields.monitored ?? true,
+    qualityProfileId: fields.qualityProfileId ?? 1,
+    qualityProfileName: fields.qualityProfileName ?? 'Any',
+    metadataProfileId: fields.metadataProfileId ?? null,
+    metadataProfileName: fields.metadataProfileName ?? null,
+    rootFolder: fields.rootFolder ?? '/data/haynestower/Media/TV Shows',
+    arrTags: fields.arrTags ?? [],
+    onDiskFileCount: fields.onDiskFileCount ?? 1,
+    expectedFileCount: fields.expectedFileCount ?? 1,
+    sizeOnDisk: fields.sizeOnDisk ?? 1000,
+    arrAttrs: fields.arrAttrs ?? {},
+  };
+  await upsertMediaItemsBatch({ db, arrKind, items: [item] });
+  const [row] = await db
+    .select()
+    .from(schema.mediaItems)
+    .where(and(eq(schema.mediaItems.arrKind, arrKind), eq(schema.mediaItems.arrItemId, arrItemId)));
+  if (!row) throw new Error('seeded media item not found');
+  return row;
 }
 
 const callerFactory = createCallerFactory(appRouter);
