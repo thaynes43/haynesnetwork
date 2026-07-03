@@ -15,6 +15,13 @@
       "when": 1782950401000,
       "tag": "0002_seed_app_catalog",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1782950402000,
+      "tag": "0003_media_ledger",
+      "breakpoints": true
     }
   ]
 }

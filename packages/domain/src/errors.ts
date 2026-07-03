@@ -26,6 +26,53 @@ export class NotFoundError extends Error {
   readonly code = 'NOT_FOUND' as const;
 }
 
+// ---------------------------------------------------------------------------
+// DESIGN-005 Phase 2 — media ledger / fix / sync errors (D-09, D-14, D-17).
+// ---------------------------------------------------------------------------
+
+/** R-47: requester hit FIX_RATE_LIMIT_PER_HOUR (admins bypass). */
+export class FixRateLimitError extends Error {
+  readonly code = 'FIX_RATE_LIMIT_EXCEEDED' as const;
+}
+
+/** D-09: an open fix (pending/actioned/search_triggered) already targets this item+child. */
+export class FixAlreadyOpenError extends Error {
+  readonly code = 'FIX_ALREADY_OPEN' as const;
+}
+
+/** D-15: sonarr fixes need an episode target, lidarr an album target, radarr none. */
+export class FixTargetRequiredError extends Error {
+  readonly code = 'FIX_TARGET_REQUIRED' as const;
+}
+
+/** D-17: fix.create on a tombstoned item — nothing to fix in the *arr. */
+export class LedgerItemTombstonedError extends Error {
+  readonly code = 'LEDGER_ITEM_TOMBSTONED' as const;
+}
+
+/** D-09 lifecycle (DDD-001 T-43): the requested status transition is not legal. */
+export class InvalidFixTransitionError extends Error {
+  readonly code = 'FIX_INVALID_TRANSITION' as const;
+}
+
+/**
+ * D-14 mass-tombstone guard: the tombstone pass would exceed
+ * SYNC_TOMBSTONE_GUARD_PCT of the instance's live rows (and the 10-row minimum) —
+ * a wiped/fresh *arr looks exactly like a mass deletion, and blindly tombstoning
+ * would corrupt the very ledger Restore needs (R-50). No tombstones are written;
+ * the caller records the sync run as 'aborted' and an admin re-runs with force
+ * (--force-tombstones) after confirming reality (Q-03).
+ */
+export class MassTombstoneAbortedError extends Error {
+  readonly code = 'SYNC_MASS_TOMBSTONE_ABORTED' as const;
+  constructor(
+    message: string,
+    readonly detail: { wouldTombstone: number; liveCount: number },
+  ) {
+    super(message);
+  }
+}
+
 function pgErrorCode(err: unknown): string | undefined {
   if (typeof err !== 'object' || err === null) return undefined;
   const code = (err as { code?: unknown }).code;
