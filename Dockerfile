@@ -16,9 +16,11 @@ RUN corepack enable && corepack prepare pnpm@11.9.0 --activate
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/web/package.json apps/web/package.json
 COPY packages/api/package.json packages/api/package.json
+COPY packages/arr/package.json packages/arr/package.json
 COPY packages/auth/package.json packages/auth/package.json
 COPY packages/db/package.json packages/db/package.json
 COPY packages/domain/package.json packages/domain/package.json
+COPY packages/sync/package.json packages/sync/package.json
 COPY packages/test-utils/package.json packages/test-utils/package.json
 COPY packages/ui/package.json packages/ui/package.json
 
@@ -47,10 +49,23 @@ WORKDIR /repo
 RUN pnpm --filter @hnet/db deploy --legacy --prod /migrator-deploy
 
 # -----------------------------------------------------------------------------
+# Stage 3b: self-contained sync-runner subtree (DESIGN-005 D-14, same mechanism).
+#   `pnpm deploy --legacy` flattens @hnet/sync AND its workspace-dep chain
+#   (@hnet/arr, @hnet/domain, @hnet/db as real packed copies in node_modules —
+#   Q-07 verified: the chain flattens; no fallback needed) plus prod deps
+#   (drizzle-orm, pg, zod) into /sync-deploy. The CronJobs run
+#   `tsx /sync/src/scripts/sync.ts --mode=full|incremental` against this image.
+# -----------------------------------------------------------------------------
+FROM build AS sync-deploy
+WORKDIR /repo
+RUN pnpm --filter @hnet/sync deploy --legacy --prod /sync-deploy
+
+# -----------------------------------------------------------------------------
 # Stage 4: minimal runtime image.
 #   - Runs the Next.js standalone server by default.
 #   - The init container in Kubernetes overrides the command to run
-#     `tsx /migrator/src/scripts/migrate.ts` against the same image (ADR-006).
+#     `tsx /migrator/src/scripts/migrate.ts` against the same image (ADR-006);
+#     the sync CronJobs override it to `tsx /sync/src/scripts/sync.ts …`.
 #   - tsx is a devDependency of @hnet/db (excluded from the prod deploy), so it
 #     is installed globally here; pinned to the lockfile-resolved version.
 # -----------------------------------------------------------------------------
@@ -72,8 +87,11 @@ COPY --from=build /repo/apps/web/.next/static ./apps/web/.next/static
 # Migrator subtree (used only by the init container).
 COPY --from=migrator-deploy /migrator-deploy /migrator
 
+# Sync-runner subtree (used only by the ledger-sync CronJobs — DESIGN-005 D-14).
+COPY --from=sync-deploy /sync-deploy /sync
+
 # Non-root user.
-RUN addgroup -S app && adduser -S app -G app && chown -R app:app /app /migrator
+RUN addgroup -S app && adduser -S app -G app && chown -R app:app /app /migrator /sync
 USER app
 
 EXPOSE 3000
