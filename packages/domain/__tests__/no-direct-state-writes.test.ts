@@ -21,10 +21,15 @@ const ALLOWED_DIR_PREFIX = `packages${sep}domain${sep}`;
  * constraints, seed semantics). They validate the schema, not the domain helpers.
  * New code should not add to this list — route through @hnet/domain instead.
  */
-const ALLOWED_FILES = new Set<string>(['packages/db/__tests__/migrations.test.ts']);
+const ALLOWED_FILES = new Set<string>([
+  'packages/db/__tests__/migrations.test.ts',
+  'packages/db/__tests__/media-ledger.test.ts',
+]);
 
 // DESIGN-001 D-12 guarded tables: users.role / users.is_family, user_app_grants,
 // tags, tag_app_grants, user_tags, app_catalog + the audit tables themselves.
+// DESIGN-005 D-12 extends the watched list with the Phase 2 media-ledger tables:
+// media_items, ledger_events, fix_requests, restore_runs, sync_runs, sync_state.
 const FORBIDDEN_PATTERNS: Array<{ name: string; regex: RegExp }> = [
   {
     name: 'UPDATE users SET role/is_family (SQL)',
@@ -33,26 +38,32 @@ const FORBIDDEN_PATTERNS: Array<{ name: string; regex: RegExp }> = [
   {
     name: 'INSERT INTO guarded/audit table (SQL)',
     regex:
-      /INSERT\s+INTO\s+(user_role_transitions|permission_audit|user_app_grants|user_tags|tag_app_grants|app_catalog|tags)\b/i,
+      /INSERT\s+INTO\s+(user_role_transitions|permission_audit|user_app_grants|user_tags|tag_app_grants|app_catalog|tags|media_items|ledger_events|fix_requests|restore_runs|sync_runs|sync_state)\b/i,
   },
-  { name: 'UPDATE guarded table (SQL)', regex: /UPDATE\s+(app_catalog|tags)\s+SET\b/i },
+  {
+    name: 'UPDATE guarded table (SQL)',
+    regex:
+      /UPDATE\s+(app_catalog|tags|media_items|ledger_events|fix_requests|restore_runs|sync_runs|sync_state)\s+SET\b/i,
+  },
   {
     name: 'DELETE FROM guarded table (SQL)',
-    regex: /DELETE\s+FROM\s+(user_app_grants|user_tags|tag_app_grants|app_catalog|tags)\b/i,
+    regex:
+      /DELETE\s+FROM\s+(user_app_grants|user_tags|tag_app_grants|app_catalog|tags|media_items|ledger_events|fix_requests|restore_runs|sync_runs|sync_state)\b/i,
   },
   {
     name: '.insert() into guarded/audit table (Drizzle)',
     regex:
-      /\.insert\(\s*(?:[A-Za-z_$][\w$]*\.)?(userRoleTransitions|permissionAudit|userAppGrants|userTags|tagAppGrants|appCatalog|tags)\s*\)/,
+      /\.insert\(\s*(?:[A-Za-z_$][\w$]*\.)?(userRoleTransitions|permissionAudit|userAppGrants|userTags|tagAppGrants|appCatalog|tags|mediaItems|ledgerEvents|fixRequests|restoreRuns|syncRuns|syncState)\s*\)/,
   },
   {
     name: '.update() on guarded table (Drizzle)',
-    regex: /\.update\(\s*(?:[A-Za-z_$][\w$]*\.)?(users|appCatalog|tags)\s*\)/,
+    regex:
+      /\.update\(\s*(?:[A-Za-z_$][\w$]*\.)?(users|appCatalog|tags|mediaItems|ledgerEvents|fixRequests|restoreRuns|syncRuns|syncState)\s*\)/,
   },
   {
     name: '.delete() on guarded table (Drizzle)',
     regex:
-      /\.delete\(\s*(?:[A-Za-z_$][\w$]*\.)?(userAppGrants|userTags|tagAppGrants|appCatalog|tags)\s*\)/,
+      /\.delete\(\s*(?:[A-Za-z_$][\w$]*\.)?(userAppGrants|userTags|tagAppGrants|appCatalog|tags|mediaItems|ledgerEvents|fixRequests|restoreRuns|syncRuns|syncState)\s*\)/,
   },
 ];
 

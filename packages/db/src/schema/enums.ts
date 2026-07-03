@@ -23,3 +23,68 @@ export const PERMISSION_AUDIT_ACTIONS = [
   'delete_app', // R-11 catalog edits
 ] as const;
 export type PermissionAuditAction = (typeof PERMISSION_AUDIT_ACTIONS)[number];
+
+// ---------------------------------------------------------------------------
+// DESIGN-005 Phase 2 — media ledger enums (D-05, D-07, D-09, D-10, D-11).
+// The permission_audit action CHECK above is untouched by Phase 2 (D-12: BC-03
+// aggregates are their own audit records).
+// ---------------------------------------------------------------------------
+
+export const ARR_KINDS = ['sonarr', 'radarr', 'lidarr'] as const; // DDD-001 T-22
+export type ArrKind = (typeof ARR_KINDS)[number];
+
+export const LEDGER_EVENT_TYPES = [
+  'grabbed',
+  'imported',
+  'deleted',
+  'download_failed', // from *arr history (normalized per the D-07 map)
+  'requested', // from Seerr
+  'fix_requested',
+  'fix_actioned',
+  'fix_completed',
+  'fix_failed', // Fix lifecycle (D-09)
+  'restored', // Restore write-back (D-16)
+] as const;
+export type LedgerEventType = (typeof LEDGER_EVENT_TYPES)[number];
+
+export const LEDGER_EVENT_SOURCES = ['sonarr', 'radarr', 'lidarr', 'seerr', 'app'] as const;
+export type LedgerEventSource = (typeof LEDGER_EVENT_SOURCES)[number];
+
+export const FIX_REASONS = [
+  'wont_play_corrupt',
+  'wrong_language',
+  'wrong_version_quality',
+  'missing_subtitles',
+  'wrong_content',
+  'other',
+] as const; // R-45; DDD-001 T-30
+export type FixReason = (typeof FIX_REASONS)[number];
+
+export const FIX_STATUSES = [
+  'pending',
+  'actioned',
+  'search_triggered',
+  'failed',
+  'completed',
+] as const; // Fix Lifecycle, DDD-001 T-43
+export type FixStatus = (typeof FIX_STATUSES)[number];
+
+export const FIX_PATHS = ['blocklist_search', 'delete_search'] as const; // AC-07 vs AC-08
+export type FixPath = (typeof FIX_PATHS)[number];
+
+export const RESTORE_RUN_STATUSES = [
+  'running',
+  'completed',
+  'completed_with_errors',
+  'failed',
+] as const;
+export type RestoreRunStatus = (typeof RESTORE_RUN_STATUSES)[number];
+
+export const SYNC_SOURCES = ['sonarr', 'radarr', 'lidarr', 'seerr'] as const;
+export type SyncSource = (typeof SYNC_SOURCES)[number];
+
+export const SYNC_RUN_KINDS = ['full', 'incremental'] as const;
+export type SyncRunKind = (typeof SYNC_RUN_KINDS)[number];
+
+export const SYNC_RUN_STATUSES = ['running', 'succeeded', 'failed', 'aborted'] as const;
+export type SyncRunStatus = (typeof SYNC_RUN_STATUSES)[number];

@@ -38,6 +38,9 @@
 - Visual vetting pass done at 390x844 / 820x1180 / 1920x1080 (screenshots shared with
   owner 2026-07-03).
 - Staging live at haynesnetwork.haynesops.com (2026-07-03); DESIGN-005 drafted (this PR).
+- Phase 2 DB layer landed on feat/ledger-schema: migration 0003 (media_items,
+  ledger_events, fix_requests, restore_runs, sync_runs, sync_state, wanted_items view)
+  + @hnet/domain single-writers per DESIGN-005 D-05..D-13.
 
 ## Where things stand (wave 2 additions)
 
