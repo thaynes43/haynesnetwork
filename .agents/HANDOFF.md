@@ -172,6 +172,10 @@
 
 ## Gotchas discovered so far
 
+- Prod sign-in 429 outage (2026-07-03): better-auth's built-in prod-only rate limiter
+  (3-per-10s on `/sign-in*`, single shared bucket when the client IP is unresolvable
+  behind Traefik) — fixed with per-client rate limiting + error taxonomy; see DESIGN-002
+  D-14 (fix/auth-rate-limit-and-errors).
 - No Docker in this WSL distro → tests use embedded Postgres, not Testcontainers.
 - `overseerr.haynesnetwork.com` currently routes to the legacy Unraid box; in-cluster Seerr
   is LAN-only pending the owner's parallel *arr/Seerr k8s migration. Catalog links are
