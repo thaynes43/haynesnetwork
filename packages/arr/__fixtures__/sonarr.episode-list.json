@@ -1,0 +1,45 @@
+[
+  {
+    "seriesId": 1,
+    "tvdbId": 8444132,
+    "episodeFileId": 3101,
+    "seasonNumber": 1,
+    "episodeNumber": 1,
+    "title": "The Beginning",
+    "airDate": "2021-03-01",
+    "airDateUtc": "2021-03-02T01:00:00Z",
+    "runtime": 44,
+    "overview": "sanitized overview text that must be stripped by the schema",
+    "hasFile": true,
+    "monitored": true,
+    "unverifiedSceneNumbering": false,
+    "grabbed": false,
+    "id": 101
+  },
+  {
+    "seriesId": 1,
+    "tvdbId": 8444133,
+    "episodeFileId": 0,
+    "seasonNumber": 1,
+    "episodeNumber": 2,
+    "title": "The Middle",
+    "airDate": "2021-03-08",
+    "airDateUtc": "2021-03-09T01:00:00Z",
+    "runtime": 43,
+    "hasFile": false,
+    "monitored": true,
+    "unverifiedSceneNumbering": false,
+    "grabbed": false,
+    "id": 102
+  },
+  {
+    "seriesId": 1,
+    "tvdbId": 8444134,
+    "seasonNumber": 2,
+    "episodeNumber": 1,
+    "title": "The Return",
+    "hasFile": false,
+    "monitored": false,
+    "id": 103
+  }
+]

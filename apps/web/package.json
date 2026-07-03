@@ -28,6 +28,7 @@
   },
   "devDependencies": {
     "@hnet/db": "workspace:*",
+    "@hnet/domain": "workspace:*",
     "@hnet/test-utils": "workspace:*",
     "@playwright/test": "^1.61.1",
     "@types/node": "^22.15.0",

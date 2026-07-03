@@ -1,0 +1,18 @@
+[
+  {
+    "artistId": 7,
+    "albumId": 71,
+    "path": "/data/media/music/Artist Seven/First Light/01 - Opening.flac",
+    "size": 34345678,
+    "quality": { "quality": { "id": 6, "name": "FLAC" } },
+    "id": 9001
+  },
+  {
+    "artistId": 7,
+    "albumId": 71,
+    "path": "/data/media/music/Artist Seven/First Light/02 - Continuing.flac",
+    "size": 35345678,
+    "quality": { "quality": { "id": 6, "name": "FLAC" } },
+    "id": 9002
+  }
+]

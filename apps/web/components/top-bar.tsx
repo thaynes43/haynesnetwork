@@ -153,6 +153,24 @@ function UserMenu({ user }: { user: TopBarUser }) {
             <span className="usermenu__display">{user.displayName}</span>
             <span className="usermenu__email">{user.email}</span>
           </div>
+          {/* Library/My fixes ride in the menu too — the topbar nav collapses away
+              on phones (D-06), so the menu is the universal route to them. */}
+          <Link
+            href="/library"
+            role="menuitem"
+            className="usermenu__item"
+            onClick={() => setOpen(false)}
+          >
+            Library
+          </Link>
+          <Link
+            href="/my-fixes"
+            role="menuitem"
+            className="usermenu__item"
+            onClick={() => setOpen(false)}
+          >
+            My fixes
+          </Link>
           {user.role === 'Admin' ? (
             <Link
               href="/admin"
@@ -189,6 +207,12 @@ export function TopBar({ user }: { user: TopBarUser }) {
         <span className="brand__name" aria-hidden="true" />
         <span className="sr-only">haynesnetwork</span>
       </div>
+      {/* Primary nav (Phase 2): Library for every signed-in user (R-43). Hidden on
+          narrow phones (CSS) — the user menu carries the same destinations. */}
+      <nav className="topbar__nav" aria-label="Primary">
+        <Link href="/">Home</Link>
+        <Link href="/library">Library</Link>
+      </nav>
       <div className="topbar__spacer" />
       <div className="topbar__actions">
         <ThemeToggle />

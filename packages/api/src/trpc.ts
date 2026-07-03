@@ -6,10 +6,18 @@ import { initTRPC, TRPCError } from '@trpc/server';
 import { getServerSession, type SessionUser } from '@hnet/auth';
 import { db, ROLES, type Database } from '@hnet/db';
 import {
+  arrClientBundleFromEnv,
+  ArrUpstreamError,
+  FixAlreadyOpenError,
+  FixRateLimitError,
+  FixTargetRequiredError,
   ForbiddenHostError,
+  LedgerItemTombstonedError,
   NotFoundError,
   ReorderMismatchError,
+  RestoreProfileUnmappedError,
   TagNameConflictError,
+  type ArrClientBundle,
 } from '@hnet/domain';
 
 export type { SessionUser };
@@ -18,6 +26,21 @@ export interface TRPCContext {
   db: Database;
   /** null ⇢ no/invalid session (D-01). */
   user: SessionUser | null;
+  /**
+   * DESIGN-005 D-17/D-18 — the *arr client bundle the ledger/fix/restore procedures
+   * run against. Absent in production contexts (built lazily from env on first use);
+   * tests inject fetch-stubbed bundles here (ADR-010 — no live-API tests in CI).
+   */
+  arr?: ArrClientBundle;
+}
+
+let envArrBundle: ArrClientBundle | undefined;
+
+/** The bundle for this request: injected (tests) or the env-built singleton (D-18). */
+export function resolveArrBundle(ctx: TRPCContext): ArrClientBundle {
+  if (ctx.arr) return ctx.arr;
+  envArrBundle ??= arrClientBundleFromEnv();
+  return envArrBundle;
 }
 
 function hasKnownRole(user: SessionUser): boolean {
@@ -40,28 +63,32 @@ export const createTRPCContext = async ({
   return { db, user };
 };
 
+/**
+ * D-13 — the domain-error classes whose `code` field becomes the wire `appCode`
+ * (DESIGN-003 table + the DESIGN-005 D-17 additions). Formatter and mapper both
+ * derive from this list so the two can never drift.
+ */
+const APP_CODED_ERRORS = [
+  ForbiddenHostError,
+  TagNameConflictError,
+  ReorderMismatchError,
+  FixRateLimitError,
+  FixAlreadyOpenError,
+  FixTargetRequiredError,
+  LedgerItemTombstonedError,
+  ArrUpstreamError,
+  RestoreProfileUnmappedError,
+] as const;
+
 const t = initTRPC.context<TRPCContext>().create({
   // D-13 — attach the stable appCode so clients switch on a machine-readable string,
   // never on the message (donor errorFormatter pattern).
   errorFormatter({ shape, error }) {
     const cause = error.cause;
-    if (cause instanceof ForbiddenHostError) {
-      return {
-        ...shape,
-        data: { ...shape.data, appCode: 'CATALOG_URL_FORBIDDEN_HOST' as const },
-      };
-    }
-    if (cause instanceof TagNameConflictError) {
-      return {
-        ...shape,
-        data: { ...shape.data, appCode: 'TAG_NAME_CONFLICT' as const },
-      };
-    }
-    if (cause instanceof ReorderMismatchError) {
-      return {
-        ...shape,
-        data: { ...shape.data, appCode: 'REORDER_SET_MISMATCH' as const },
-      };
+    for (const ErrorClass of APP_CODED_ERRORS) {
+      if (cause instanceof ErrorClass) {
+        return { ...shape, data: { ...shape.data, appCode: cause.code } };
+      }
     }
     return shape;
   },
@@ -85,12 +112,18 @@ export const authedProcedure = t.procedure.use(({ ctx, next }) => {
  * original error rides along as `cause`, where the errorFormatter finds it to attach
  * the wire appCode.
  *
- * | Domain error          | appCode                     | TRPC code             |
- * |-----------------------|-----------------------------|-----------------------|
- * | ForbiddenHostError    | CATALOG_URL_FORBIDDEN_HOST  | UNPROCESSABLE_CONTENT |
- * | TagNameConflictError  | TAG_NAME_CONFLICT           | CONFLICT              |
- * | ReorderMismatchError  | REORDER_SET_MISMATCH        | CONFLICT              |
- * | NotFoundError         | —                           | NOT_FOUND             |
+ * | Domain error                | appCode                     | TRPC code             |
+ * |-----------------------------|-----------------------------|-----------------------|
+ * | ForbiddenHostError          | CATALOG_URL_FORBIDDEN_HOST  | UNPROCESSABLE_CONTENT |
+ * | TagNameConflictError        | TAG_NAME_CONFLICT           | CONFLICT              |
+ * | ReorderMismatchError        | REORDER_SET_MISMATCH        | CONFLICT              |
+ * | FixRateLimitError           | FIX_RATE_LIMIT_EXCEEDED     | TOO_MANY_REQUESTS     |
+ * | FixAlreadyOpenError         | FIX_ALREADY_OPEN            | CONFLICT              |
+ * | FixTargetRequiredError      | FIX_TARGET_REQUIRED         | UNPROCESSABLE_CONTENT |
+ * | LedgerItemTombstonedError   | LEDGER_ITEM_TOMBSTONED      | PRECONDITION_FAILED   |
+ * | ArrUpstreamError            | ARR_UPSTREAM_UNAVAILABLE    | BAD_GATEWAY           |
+ * | RestoreProfileUnmappedError | RESTORE_PROFILE_UNMAPPED    | UNPROCESSABLE_CONTENT |
+ * | NotFoundError               | —                           | NOT_FOUND             |
  */
 export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
   try {
@@ -104,6 +137,24 @@ export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
     }
     if (err instanceof ReorderMismatchError) {
       throw new TRPCError({ code: 'CONFLICT', message: err.message, cause: err });
+    }
+    if (err instanceof FixRateLimitError) {
+      throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: err.message, cause: err });
+    }
+    if (err instanceof FixAlreadyOpenError) {
+      throw new TRPCError({ code: 'CONFLICT', message: err.message, cause: err });
+    }
+    if (err instanceof FixTargetRequiredError) {
+      throw new TRPCError({ code: 'UNPROCESSABLE_CONTENT', message: err.message, cause: err });
+    }
+    if (err instanceof LedgerItemTombstonedError) {
+      throw new TRPCError({ code: 'PRECONDITION_FAILED', message: err.message, cause: err });
+    }
+    if (err instanceof ArrUpstreamError) {
+      throw new TRPCError({ code: 'BAD_GATEWAY', message: err.message, cause: err });
+    }
+    if (err instanceof RestoreProfileUnmappedError) {
+      throw new TRPCError({ code: 'UNPROCESSABLE_CONTENT', message: err.message, cause: err });
     }
     if (err instanceof NotFoundError) {
       throw new TRPCError({ code: 'NOT_FOUND', message: err.message, cause: err });

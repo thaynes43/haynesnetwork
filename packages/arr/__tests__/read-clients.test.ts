@@ -104,6 +104,32 @@ describe('SonarrClient (v3)', () => {
     expect(page.records[0]?.episodeNumber).toBeTypeOf('number');
     expect(page.records[0]?.hasFile).toBe(false);
   });
+
+  it('lists episodes for a series (fix-target picker, D-06 live proxy)', async () => {
+    const { client, calls } = sonarr([
+      { path: '/api/v3/episode', body: fixture('sonarr.episode-list') },
+    ]);
+    const episodes = await client.listEpisodes(1);
+    expect(calls[0]?.url.searchParams.get('seriesId')).toBe('1');
+    expect(episodes).toHaveLength(3);
+    expect(episodes[0]).toMatchObject({ id: 101, seasonNumber: 1, episodeNumber: 1 });
+    expect(episodes[0]?.episodeFileId).toBe(3101);
+    expect(episodes[2]?.episodeFileId).toBeUndefined(); // optional when never on disk
+    expect(episodes[0]).not.toHaveProperty('overview');
+  });
+
+  it('fetches the latest grab for an episode via history?episodeId=&eventType=grabbed', async () => {
+    const { client, calls } = sonarr([
+      { path: '/api/v3/history', body: fixture('sonarr.history-page') },
+    ]);
+    const page = await client.getEpisodeGrabHistory(102);
+    expect(page.records.length).toBeGreaterThan(0);
+    const params = calls[0]!.url.searchParams;
+    expect(params.get('episodeId')).toBe('102');
+    expect(params.get('eventType')).toBe('grabbed');
+    expect(params.get('sortKey')).toBe('date');
+    expect(params.get('sortDirection')).toBe('descending');
+  });
 });
 
 describe('RadarrClient (v3)', () => {
@@ -160,6 +186,19 @@ describe('RadarrClient (v3)', () => {
     expect(page.records[0]?.hasFile).toBe(false);
     expect(page.records[0]?.tmdbId).toBeTypeOf('number');
   });
+
+  it('fetches the latest grab via history/movie?movieId=&eventType=grabbed (plain array)', async () => {
+    const historyPage = fixture<{ records: unknown[] }>('radarr.history-page');
+    const { client, calls } = radarr([
+      { path: '/api/v3/history/movie', body: historyPage.records },
+    ]);
+    const records = await client.getMovieGrabHistory(42);
+    expect(records.length).toBeGreaterThan(0);
+    const params = calls[0]!.url.searchParams;
+    expect(calls[0]?.url.pathname).toBe('/api/v3/history/movie');
+    expect(params.get('movieId')).toBe('42');
+    expect(params.get('eventType')).toBe('grabbed');
+  });
 });
 
 describe('LidarrClient (v1)', () => {
@@ -212,6 +251,38 @@ describe('LidarrClient (v1)', () => {
     expect((await client.listTags()).map((t) => t.label)).toContain('spotifyalbums');
     expect((await client.listQualityProfiles())[0]?.name).toBe('Any');
     expect((await client.listRootFolders())[0]?.path).toBe('/data/media/music');
+  });
+
+  it('lists albums for an artist (fix-target picker, D-06 live proxy)', async () => {
+    const { client, calls } = lidarr([
+      { path: '/api/v1/album', body: fixture('lidarr.album-list') },
+    ]);
+    const albums = await client.listAlbums(7);
+    expect(calls[0]?.url.searchParams.get('artistId')).toBe('7');
+    expect(albums).toHaveLength(2);
+    expect(albums[0]).toMatchObject({ id: 71, title: 'First Light', monitored: true });
+    expect(albums[0]?.statistics?.trackFileCount).toBe(12);
+    expect(albums[1]?.releaseDate).toBeNull();
+    expect(albums[0]).not.toHaveProperty('overview');
+  });
+
+  it('fetches album grab history, track files, and metadata profiles', async () => {
+    const { client, calls } = lidarr([
+      { path: '/api/v1/history', body: fixture('lidarr.history-page') },
+      { path: '/api/v1/trackfile', body: fixture('lidarr.trackfile-list') },
+      { path: '/api/v1/metadataprofile', body: fixture('lidarr.metadataprofile') },
+    ]);
+    await client.getAlbumGrabHistory(71);
+    const params = calls[0]!.url.searchParams;
+    expect(params.get('albumId')).toBe('71');
+    expect(params.get('eventType')).toBe('grabbed');
+
+    const files = await client.listTrackFiles(71);
+    expect(calls[1]?.url.searchParams.get('albumId')).toBe('71');
+    expect(files.map((f) => f.id)).toEqual([9001, 9002]);
+
+    const profiles = await client.listMetadataProfiles();
+    expect(profiles[0]).toEqual({ id: 1, name: 'Standard' });
   });
 });
 

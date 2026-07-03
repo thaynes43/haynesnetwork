@@ -2,9 +2,46 @@
 
 > The single resume point for agents. Update this in the same change as any milestone.
 
-- **Last updated:** 2026-07-03 (wave 7)
-- **Phase:** Phase 1 complete + local test environment; haynes-ops staged deploy next
+- **Last updated:** 2026-07-03 (wave 8)
+- **Phase:** Phase 1 complete; Phase 2 code complete (sync + fix/ledger/restore UI); haynes-ops CronJobs + secrets next
 - **Workflow mode:** PR flow (GATE A executed — see .agents/plans/001-gate-a-pr-cutover.md)
+
+## Where things stand (wave 8 — fix & ledger UI)
+
+- Phase 2 (feat/fix-and-ledger-ui): the user-facing surface over the ledger — DESIGN-005
+  D-17 routers `ledger`/`fix`/`restore` in @hnet/api (cursor pagination, six new
+  appCodes wired through mapDomainErrors + errorFormatter), the D-15 fix orchestration
+  and D-16 restore diff/execute as @hnet/domain orchestrators (`runFixRequest`,
+  `computeRestoreDiff`/`executeRestore` — the mutating *arr entrypoint stays
+  domain-only, now ENFORCED by `packages/domain/__tests__/arr-write-import-guard.test.ts`),
+  read-surface additions in @hnet/arr (episode/album lists, per-target grab history,
+  trackfiles, lidarr metadataprofile).
+- apps/web: /library (search + kind/on-disk/wanted filters, horizontal media cards),
+  /library/[id] (metadata, event timeline via ledger.events, FIX dialog w/ live
+  episode/album picker + R-45 reason taxonomy), /my-fixes, /admin/fixes (status filter,
+  raw actions_taken disclosure), /admin/restore (kind → diff preview → checkbox select →
+  confirm 'no auto-search' → per-item report + recent runs). TopBar gained a primary nav
+  (Home/Library, hidden <600px) + Library/My fixes user-menu items; admin nav gained
+  Fixes/Restore (and now flex-wraps on phones).
+- e2e: stub *arr server (apps/web/e2e/support/stub-arr.ts — fixture-shaped reads,
+  records history/failed + command + delete writes, /_stub/calls control) boots in the
+  harness next to stub OIDC; ledger seeded via a tsx subprocess through the D-12 writers
+  (e2e/support/seed-ledger.ts). New library.spec.ts drives US-06: member fix w/
+  wrong_language → stub recorded blocklist+EpisodeSearch with the right ids → admin
+  queue shows it. Suite: 41/41 in ~39s. `pnpm dev:local` now boots the stub *arr too, so
+  the fix flow is hands-on testable.
+- Fix rate limit lives in the domain writer (5/user/hour, advisory-locked; admins
+  bypass) and surfaces as TOO_MANY_REQUESTS/FIX_RATE_LIMIT_EXCEEDED — trip-at-6th
+  covered in `packages/api/__tests__/fix.test.ts`.
+- DESIGN-003 updated in place (reservation note: ledger/fix claimed, restore recorded,
+  plex still reserved; D-13 table extended with the six Phase 2 codes). DESIGN-005 Q-08
+  got a partial stubbed-only finding (grab-less albums delete every trackfile — full
+  dislodge by construction); the live-probe half stays open. One documented deviation
+  from the D-09 letter: the fix flow does ONE read-only live child lookup
+  (label/validation) before the pending row commits — no MUTATING call ever precedes
+  the row (see packages/domain/src/fix-flow.ts comment).
+- Next: owner sign-off on DESIGN-006 identity (Q-01) still pending; remaining Phase 2
+  ops work: haynes-ops sync CronJobs + ExternalSecret keys (D-14/D-18).
 
 ## Where things stand
 

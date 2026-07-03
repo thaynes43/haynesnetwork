@@ -230,6 +230,37 @@ body {
   font-size: 16px;
   white-space: nowrap;
 }
+/* Primary topbar nav (Phase 2): ghost links in the D-03 chrome language. Hidden on
+   narrow phones — the user menu carries the same destinations (D-06). */
+.topbar__nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.topbar__nav a {
+  color: var(--color-text-muted);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 12px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 12px;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+.topbar__nav a:hover {
+  color: var(--color-text);
+  background: var(--color-surface-2);
+}
+@media (max-width: 599px) {
+  .topbar__nav {
+    display: none;
+  }
+}
 .topbar__spacer {
   flex: 1 1 auto;
 }
@@ -528,6 +559,7 @@ body {
 }
 .admin-nav {
   display: flex;
+  flex-wrap: wrap; /* five sections since Phase 2 — wrap instead of overflowing phones */
   gap: 4px;
   margin-bottom: var(--space);
   border-bottom: 1px solid var(--color-border);
@@ -813,4 +845,353 @@ input[aria-invalid='true'] {
     scrollbar-width: thin;
     scrollbar-color: var(--color-scrollbar-thumb) var(--color-scrollbar-track);
   }
+}
+
+/* ---------- Media ledger (DESIGN-005 UI, DESIGN-006 shape language) ---------- */
+.page-title {
+  font-size: 21px;
+  font-weight: 600;
+  margin: 4px 0 var(--space);
+}
+.library-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: var(--space);
+}
+.library-search,
+.fix-form textarea,
+.fix-form select {
+  font: inherit;
+  font-size: 13px;
+  color: var(--color-text);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  min-height: 44px;
+}
+.library-search {
+  width: min(420px, 100%);
+  border-radius: 999px; /* pill, per the D-03 control language */
+  padding: 10px 16px;
+}
+.library-search:focus,
+.fix-form textarea:focus,
+.fix-form select:focus {
+  border-color: var(--color-accent);
+}
+.library-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.admin-filterbar {
+  margin-bottom: var(--space);
+}
+
+/* Library cards: the horizontal-card geometry from the app tiles (D-03), as links. */
+.media-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--space);
+}
+@media (max-width: 480px) {
+  .media-list {
+    gap: 10px;
+  }
+}
+.media-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    'icon title'
+    'icon badges'
+    'icon meta';
+  align-items: center;
+  align-content: center;
+  column-gap: 14px;
+  row-gap: 4px;
+  min-height: 76px;
+  padding: 14px 16px;
+  background: linear-gradient(
+    155deg,
+    color-mix(in srgb, var(--color-surface) 97%, var(--color-accent)),
+    var(--color-surface) 65%
+  );
+  border: 1px solid var(--color-border);
+  border-radius: calc(var(--radius) + 2px);
+  box-shadow: var(--shadow);
+  color: var(--color-text);
+  text-decoration: none;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+.media-card:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 60%, var(--color-border));
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--color-accent) 22%, transparent),
+    var(--shadow);
+  transform: translateY(-1px);
+}
+.media-card__icon {
+  grid-area: icon;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  color: var(--color-accent);
+}
+[data-theme='hnet-light'] .media-card__icon {
+  color: color-mix(in srgb, var(--color-accent) 62%, var(--color-text)); /* D-04 contrast */
+}
+.media-card__title {
+  grid-area: title;
+  font-weight: 600;
+  font-size: 14px;
+}
+.media-card__badges {
+  grid-area: badges;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.media-card__meta {
+  grid-area: meta;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+.load-more {
+  display: flex;
+  justify-content: center;
+  margin: var(--space) 0;
+}
+
+/* Badge tones (status chips) — all through the token palette. */
+.badge--ok {
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+}
+.badge--info {
+  color: var(--color-info);
+  background: color-mix(in srgb, var(--color-info) 14%, transparent);
+}
+.badge--warn {
+  color: var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 16%, transparent);
+}
+.badge--danger {
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 14%, transparent);
+}
+.badge--muted {
+  color: var(--color-text-muted);
+  background: color-mix(in srgb, var(--color-text-muted) 14%, transparent);
+}
+
+/* Item detail */
+.crumbs {
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+.crumbs a {
+  color: var(--color-text-muted);
+  text-decoration: none;
+}
+.crumbs a:hover {
+  color: var(--color-text);
+}
+.detail-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.detail-head__icon {
+  flex: none;
+}
+.detail-head__body {
+  flex: 1 1 240px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.detail-head__title {
+  font-size: 19px;
+  font-weight: 600;
+  margin: 0;
+}
+.detail-head__actions {
+  flex: none;
+}
+.meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px 16px;
+  margin: 0;
+}
+.meta-grid dt {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.meta-grid dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+/* Event timeline (R-41) */
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 18px;
+  border-left: 2px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.timeline li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.timeline li::before {
+  content: '';
+  position: absolute;
+  left: -24px;
+  top: 5px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--color-accent);
+}
+.timeline__type {
+  font-weight: 600;
+  font-size: 13px;
+}
+.timeline__detail {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.timeline__detail:empty {
+  display: none;
+}
+.timeline__when {
+  font-size: 11px;
+}
+
+/* Fix list on the item + admin queue extras */
+.fix-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.fix-list__row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.fix-list__what {
+  font-size: 13px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.fix-list__when {
+  font-size: 12px;
+}
+.actions-details summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  min-height: 24px;
+}
+.actions-json {
+  margin: 6px 0 0;
+  padding: 10px;
+  font-size: 11px;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  max-width: 420px;
+  max-height: 280px;
+  overflow: auto;
+}
+
+/* Modal (fix dialog, restore confirm) */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: var(--space);
+  background: color-mix(in srgb, var(--color-bg) 62%, transparent);
+}
+.modal {
+  width: min(480px, 100%);
+  max-height: min(640px, 90dvh);
+  overflow: auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px;
+}
+.modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.modal__title {
+  font-size: 16px;
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.modal__close {
+  flex: none;
+}
+.fix-form {
+  max-width: none;
+}
+.fix-done {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.fix-done__lead {
+  margin: 0;
+  font-size: 14px;
+}
+.fix-done p {
+  margin: 0;
+}
+
+/* Restore page */
+.restore-lede {
+  margin: 0 0 var(--space);
+  font-size: 13px;
+  max-width: 640px;
+}
+.restore-actions {
+  margin-top: var(--space);
+}
+.restore-check {
+  min-height: 24px;
 }

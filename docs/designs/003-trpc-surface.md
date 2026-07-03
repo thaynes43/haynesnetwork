@@ -16,9 +16,10 @@ adminProcedure`), feature routers, typed domain errors surfaced through an
 permission-touching mutations delegating to `packages/domain` helpers that co-write
 `permission_audit` rows in the same transaction** (ADR-003, PRD R-04).
 
-Phase 1 routers: `profile`, `catalog`, `users`, `tags`. The names `ledger` and `fix`
-(Phase 2) and `plex` (Phase 3) are **reserved** — they appear here so nobody repurposes
-them, but this document does not design them.
+Phase 1 routers: `profile`, `catalog`, `users`, `tags`. The reserved Phase 2 names
+`ledger` and `fix` were claimed by DESIGN-005 D-17 (which also claimed `restore` as the
+third Phase 2 router — recorded here per its note); `plex` (Phase 3) remains
+**reserved**. This document designs only the Phase 1 surface.
 
 ## Detailed design
 
@@ -372,10 +373,16 @@ of parsing messages.
 | `ForbiddenHostError` | `CATALOG_URL_FORBIDDEN_HOST` | `UNPROCESSABLE_CONTENT` | domain URL assert (D-04 layer 2; zod normally rejects first with `BAD_REQUEST`) |
 | `TagNameConflictError` | `TAG_NAME_CONFLICT` | `CONFLICT` | `tags.create` / `tags.update` |
 | `ReorderMismatchError` | `REORDER_SET_MISMATCH` | `CONFLICT` | `catalog.reorder` on stale/partial id set |
+| `FixRateLimitError` | `FIX_RATE_LIMIT_EXCEEDED` | `TOO_MANY_REQUESTS` | `fix.create` (R-47, DESIGN-005 D-09) |
+| `FixAlreadyOpenError` | `FIX_ALREADY_OPEN` | `CONFLICT` | `fix.create` open-fix dedupe (DESIGN-005 D-09) |
+| `FixTargetRequiredError` | `FIX_TARGET_REQUIRED` | `UNPROCESSABLE_CONTENT` | sonarr/lidarr fix without child target (DESIGN-005 D-15) |
+| `LedgerItemTombstonedError` | `LEDGER_ITEM_TOMBSTONED` | `PRECONDITION_FAILED` | `fix.create` on a tombstoned item (DESIGN-005 D-17) |
+| `ArrUpstreamError` | `ARR_UPSTREAM_UNAVAILABLE` | `BAD_GATEWAY` | any *arr call failure surfaced to the client (DESIGN-005 D-17) |
+| `RestoreProfileUnmappedError` | `RESTORE_PROFILE_UNMAPPED` | `UNPROCESSABLE_CONTENT` | restore execute per-item profile mapping (DESIGN-005 D-16) |
 | — (`TRPCError` direct) | — | `NOT_FOUND` / `UNAUTHORIZED` / `FORBIDDEN` | resolvers / ladder |
 
-The list grows in place as Phase 2 domain rules land (fix rate limits R-47, restore
-preflight R-50..R-52).
+(Phase 2 rows added 2026-07-03 with the ledger/fix/restore routers, as this section
+planned.)
 
 ## Alternatives considered
 

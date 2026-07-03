@@ -6,6 +6,15 @@ const APP_CODE_COPY: Record<string, string> = {
     'The server rejected that URL — catalog links must be https://<sub>.haynesnetwork.com.',
   TAG_NAME_CONFLICT: 'A tag with that name already exists.',
   REORDER_SET_MISMATCH: 'The catalog changed under you — refresh and reorder again.',
+  // DESIGN-005 D-17 — media ledger / fix / restore codes.
+  FIX_RATE_LIMIT_EXCEEDED: 'Fix limit reached (5 per hour). Try again in a bit.',
+  FIX_ALREADY_OPEN: 'A fix is already open for this target — check its status below.',
+  FIX_TARGET_REQUIRED: 'Pick the episode or album that needs fixing first.',
+  LEDGER_ITEM_TOMBSTONED: 'This item is no longer in the media manager — nothing to fix.',
+  ARR_UPSTREAM_UNAVAILABLE:
+    'The media manager did not respond. The request was recorded as failed — an admin can see the details.',
+  RESTORE_PROFILE_UNMAPPED:
+    'A recorded quality profile has no match on the live instance — see the per-item report.',
 };
 
 /** The machine-readable appCode riding on a TRPCClientError, if any. */

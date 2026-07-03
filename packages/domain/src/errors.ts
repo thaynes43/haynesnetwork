@@ -56,6 +56,26 @@ export class InvalidFixTransitionError extends Error {
 }
 
 /**
+ * D-17: an *arr/Seerr call failed while serving a request (fix orchestration,
+ * ledger.children live proxy, restore diff/execute) — surfaced to the client as
+ * BAD_GATEWAY. The original ArrError rides along as `cause`.
+ */
+export class ArrUpstreamError extends Error {
+  readonly code = 'ARR_UPSTREAM_UNAVAILABLE' as const;
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+  }
+}
+
+/**
+ * D-16/D-17: a ledger profile-name snapshot has no match on the live target *arr —
+ * never silently defaulted; per-item failure recorded in restore_runs.results.
+ */
+export class RestoreProfileUnmappedError extends Error {
+  readonly code = 'RESTORE_PROFILE_UNMAPPED' as const;
+}
+
+/**
  * D-14 mass-tombstone guard: the tombstone pass would exceed
  * SYNC_TOMBSTONE_GUARD_PCT of the instance's live rows (and the 10-row minimum) —
  * a wiped/fresh *arr looks exactly like a mass deletion, and blindly tombstoning
