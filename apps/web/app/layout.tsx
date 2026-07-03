@@ -35,11 +35,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       </head>
       <body>
         <ThemeProvider>
-          <TRPCProvider>
-            <div className="app">
-              <main>{children}</main>
-            </div>
-          </TRPCProvider>
+          <TRPCProvider>{children}</TRPCProvider>
         </ThemeProvider>
       </body>
     </html>
