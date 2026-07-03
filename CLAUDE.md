@@ -66,6 +66,19 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
 
 ## Commands
 
-Populated as the scaffold lands (Task: monorepo scaffold). Target shape:
-`pnpm dev` (web on :3000), `pnpm build`, `pnpm lint`, `pnpm lint:css`, `pnpm typecheck`,
-`pnpm test`, `pnpm --filter web e2e`, `pnpm --filter @app/db generate|migrate`.
+pnpm 11.9 workspace (Node >= 22). Apps live in `apps/*`; internal packages in `packages/*`
+are scoped **`@hnet/*`** (`@hnet/db`, `@hnet/auth`, `@hnet/api`, `@hnet/domain`, `@hnet/ui`,
+`@hnet/test-utils`) and export raw TS — no per-package build step.
+
+- `pnpm install` — install workspace deps.
+- `pnpm dev` — Next.js dev server (`apps/web`) on http://localhost:3000.
+- `pnpm build` — `pnpm -r build` (`next build`, standalone output).
+- `pnpm typecheck` — `tsc --noEmit` in every workspace package.
+- `pnpm lint` — ESLint 9 flat config in every workspace package.
+- `pnpm lint:css` — hex-color guard (`scripts/lint-css-hex.mjs`; stub until the theme port).
+- `pnpm test` — Vitest across packages (`@hnet/domain` has the first real test; others
+  run `vitest run --passWithNoTests`).
+- `pnpm format` — Prettier write across the repo.
+
+Arriving with later tasks: `pnpm --filter web e2e` (Playwright),
+`pnpm --filter @hnet/db generate|migrate` (Drizzle).
