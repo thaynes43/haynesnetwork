@@ -2,8 +2,8 @@
 
 > The single resume point for agents. Update this in the same change as any milestone.
 
-- **Last updated:** 2026-07-03 (wave 5)
-- **Phase:** Phase 1 UI complete (login, dashboard, admin area); Playwright e2e next
+- **Last updated:** 2026-07-03 (wave 6)
+- **Phase:** Phase 1 e2e complete (Playwright + stub OIDC); Docker/haynes-ops deploy next
 - **Workflow mode:** PR flow (GATE A executed — see .agents/plans/001-gate-a-pr-cutover.md)
 
 ## Where things stand
@@ -102,9 +102,46 @@
   anonymous, /login 200 with the sign-in button and `data-theme="hnet-dark"` +
   pre-hydration script; typecheck/lint/lint:css/test (182)/build all green.
 
+## Where things stand (wave 6 additions)
+
+- Playwright e2e suite live per ADR-010 (PR feat/e2e): `pnpm --filter web e2e` (root
+  `pnpm e2e`), apps/web/playwright.config.ts + apps/web/e2e/. globalSetup boots the
+  whole stack itself — embedded PG16 (@hnet/test-utils/postgres SUBPATH import;
+  the package index pulls @hnet/db/migrate whose `import.meta` breaks Playwright's
+  CJS TS transform, so migrations run as a `pnpm --filter @hnet/db migrate`
+  subprocess), stub OIDC on a free port, then `next dev -p 3100` (port 3100 so a
+  local `pnpm dev` can keep 3000; NOT Playwright's webServer block — that plugin
+  starts BEFORE globalSetup and would miss the embedded-PG DATABASE_URL; donor
+  lesson, todos-for-dues). Route prewarm in globalSetup amortises dev-compile lag.
+- Stub OIDC (apps/web/e2e/support/stub-oidc.ts, node http + jose): discovery /
+  authorize (302 straight back with code+state+iss) / token (RS256 id_token,
+  client_secret_post) / jwks / userinfo, personas admin
+  (bootstrap-admin@example.test — the suite's BOOTSTRAP_ADMIN_EMAILS), member,
+  fresh-member (never granted anything — AC-04's "exactly the defaults"). Persona
+  selection via POST /_control/user, sticky (workers=1 keeps it race-free); stable
+  `sub`s so repeat logins hit the same users row. Verified against
+  better-auth@1.6.23: discovery re-fetched at initiation AND callback; id_token is
+  decodeJwt'd (not JWKS-verified) but signed properly anyway; `iss` on the callback
+  redirect must match the discovery issuer.
+- Specs (38 tests, ~26s locally): auth (AC-01 round trip incl. 7-day cookie +
+  no-password-form, AC-03 admin bootstrap/repeat/member-denied), dashboard (AC-04
+  exact seeded tiles + hrefs, AC-05 two-context grant/revoke), admin (catalog CRUD,
+  R-14 haynesops rejection UX, family-tag bundle → member gains tile), theme
+  (toggle + hnet-theme persistence, prefers-color-scheme seeding), resize-matrix
+  (AC-10's 8 sizes × /login, /, /admin — fit helpers ported from demo-console;
+  admin persona reused via storageState written in beforeAll). Suite runs SERIAL
+  (workers=1): one shared app/DB, specs mutate shared grants/catalog.
+- The matrix caught a real bug: card-mode `.admin-table thead` used clip-path-only
+  sr-only and kept its intrinsic width → page-level H-scroll at 375px; app.css now
+  applies the full sr-only treatment (width/height 1px + overflow hidden).
+- CI: .github/workflows/e2e.yml (pull_request + push main) — ADVISORY, not in the
+  required contexts (ADR-009/ADR-010 C-07); uploads playwright-report on failure.
+  Gotcha: label fields whose hint `<span>` sits inside the `<label>` get the hint
+  glued into the accessible name — match with `getByRole('textbox', { name: /^…/ })`
+  (tags form) instead of `getByLabel(..., { exact: true })`.
+
 ## Next steps (task order)
 
-8. Playwright e2e (incl. phone/tablet resize matrix + stubbed OIDC login).
 9. Docker image + haynes-ops staged deployment (internal hostname first, then root domain).
 10. Phase 2: *arr ledger + fix + failsafe restore.
 

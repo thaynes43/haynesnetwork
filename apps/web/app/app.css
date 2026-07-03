@@ -544,8 +544,15 @@ body {
 }
 @media (max-width: 759px) {
   .admin-table thead {
+    /* Full sr-only treatment: clip-path alone leaves the thead its intrinsic
+       table width, overflowing the page at phone widths (caught by the AC-10
+       resize matrix). Headers live on as td::before labels. */
     position: absolute;
-    clip-path: inset(50%); /* sr-only: headers live on as td::before labels */
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    white-space: nowrap;
+    clip-path: inset(50%);
   }
   .admin-table,
   .admin-table tbody,
