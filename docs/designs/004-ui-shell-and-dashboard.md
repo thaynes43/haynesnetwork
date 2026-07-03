@@ -1,6 +1,6 @@
 # DESIGN-004: UI shell and dashboard (Phase 1)
 
-- **Status:** Accepted
+- **Status:** Accepted — presentation details partially superseded by DESIGN-006 (visual identity: brand mark, typeface, radii, tile geometry); the mechanism and structure here remain normative
 - **Last updated:** 2026-07-03
 - **Satisfies:** PRD-001 R-10, R-12, R-14 (rendering side), R-60, R-61, R-66, AC-01, AC-04, AC-10; governed by ADR-005 (CSS-token theming via `data-theme`) — drafted in parallel, referenced by number; API consumed per DESIGN-003 / ADR-004 (API layer: tRPC v11).
 - **Donors:** `../demo-console/apps/shell/src/shell/theme/` (tokens.css, tokenContract.ts, ThemeProvider.tsx, app.css), `../demo-console/packages/shared/layout/`, `../demo-console/apps/shell/src/shell/chrome/` (TopBar, SettingsDrawer), `../demo-console/scripts/lint-css-hex.mjs`.
@@ -48,6 +48,11 @@ danger, warning, info, the three scrollbar colors, radius, radius-sm, space, fon
 shadow). Rebranding later = edit `tokens.css` values only; no markup or component
 change (ADR-005). Initial values keep the demo-console green — final palette is Q-03.
 
+> **DESIGN-006 update:** the "same values" rule now applies to the _palette_
+> only. The identity pass diverged the structural values — `--radius` 16px,
+> `--radius-sm` 10px, `--font` = self-hosted Outfit via the `--font-outfit`
+> next/font variable (system-ui fallback chain). Token names untouched.
+
 `tokenContract.ts` ports verbatim with:
 
 ```ts
@@ -66,7 +71,7 @@ Donor `ThemeProvider.tsx` extended; it remains **the single writer of
 ```tsx
 'use client';
 function initialTheme(): ThemeName {
-  if (typeof document === 'undefined') return DEFAULT_THEME;  // SSR pass of a client component
+  if (typeof document === 'undefined') return DEFAULT_THEME; // SSR pass of a client component
   const existing = document.documentElement.getAttribute('data-theme');
   return THEMES.includes(existing as ThemeName) ? (existing as ThemeName) : DEFAULT_THEME;
 }
@@ -76,11 +81,17 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   // Adopt whatever the pre-hydration script stamped (D-03) — covers the SSR
   // pass having seeded DEFAULT_THEME.
-  useEffect(() => { setCurrent(initialTheme()); }, []);
+  useEffect(() => {
+    setCurrent(initialTheme());
+  }, []);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', current);
-    try { localStorage.setItem(THEME_STORAGE_KEY, current); } catch { /* private mode */ }
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, current);
+    } catch {
+      /* private mode */
+    }
   }, [current]);
   // ...context identical to donor: { current, setTheme }
 }
@@ -114,7 +125,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: themeInit }} />
       </head>
       <body>
-        <ThemeProvider>{/* chrome + main */}{children}</ThemeProvider>
+        <ThemeProvider>
+          {/* chrome + main */}
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   );
@@ -154,16 +168,19 @@ only — no colors, per the donor's normative comment). App frame rules from the
   (56px, `flex: none`) + `<main>` (`flex: 1 1 auto; min-height: 0; overflow: auto`) —
   content scrolls internally.
 - Admin pages that need multi-pane budgets use `HeightBudget rows="auto minmax(0,1fr)"`
-  + `ReservedPane`, same contract as the donor.
+  - `ReservedPane`, same contract as the donor.
 
 ### D-06 — Responsive additions (R-60, AC-10)
 
 Beyond the donor (which is desktop-console-shaped), three phone-first behaviors:
 
 1. **Tile grid** — `.tile-grid { display: grid; grid-template-columns:
-   repeat(auto-fill, minmax(160px, 1fr)); gap: var(--space); }`. At
+repeat(auto-fill, minmax(160px, 1fr)); gap: var(--space); }`. At
    `@media (max-width: 480px)`: `gap: 10px`, main padding drops to `12px`. Yields 2
    columns at 375–412px, no horizontal scroll.
+   _(DESIGN-006: tiles are now horizontal cards on `minmax(280px, 1fr)` — one
+   column on phones; the no-horizontal-scroll invariant is unchanged and still
+   proven by the resize matrix.)_
 2. **Topbar collapse** — under 480px the user-menu trigger drops the displayName text
    and renders the avatar/initial only (`.usermenu__name { display: none }`); brand
    text stays. All triggers keep ≥44px hit area.
@@ -172,15 +189,31 @@ Beyond the donor (which is desktop-console-shaped), three phone-first behaviors:
 
    ```css
    @media (max-width: 759px) {
-     .admin-table thead { position: absolute; clip-path: inset(50%); /* sr-only */ }
-     .admin-table, .admin-table tbody, .admin-table tr, .admin-table td { display: block; }
-     .admin-table tr {
-       background: var(--color-surface); border: 1px solid var(--color-border);
-       border-radius: var(--radius); margin-bottom: 10px;
+     .admin-table thead {
+       position: absolute;
+       clip-path: inset(50%); /* sr-only */
      }
-     .admin-table td { display: flex; justify-content: space-between; gap: 12px; }
+     .admin-table,
+     .admin-table tbody,
+     .admin-table tr,
+     .admin-table td {
+       display: block;
+     }
+     .admin-table tr {
+       background: var(--color-surface);
+       border: 1px solid var(--color-border);
+       border-radius: var(--radius);
+       margin-bottom: 10px;
+     }
+     .admin-table td {
+       display: flex;
+       justify-content: space-between;
+       gap: 12px;
+     }
      .admin-table td::before {
-       content: attr(data-label); font-weight: 600; color: var(--color-text-muted);
+       content: attr(data-label);
+       font-weight: 600;
+       color: var(--color-text-muted);
      }
    }
    ```
@@ -221,8 +254,9 @@ TopBar ports the donor's structure (`.topbar`, `.brand`, `.topbar__spacer`,
 `.topbar__actions`, `.iconbtn`) minus i18n (copy is hard-coded English; no i18n in this
 app) and minus the notifications button:
 
-- **Brand:** placeholder four-square SVG mark (donor's, `currentColor` accent) +
-  `haynesnetwork` wordmark. Real logo is Q-01.
+- **Brand:** the hub-and-spoke mark (`apps/web/components/brand-mark.tsx`,
+  `currentColor` accent — DESIGN-006 D-01, resolving Q-01) + `haynesnetwork`
+  wordmark.
 - **Theme toggle:** the donor SettingsDrawer's segmented dark/light control simplified
   to a single topbar `iconbtn` that flips `hnet-dark ↔ hnet-light` via
   `useTheme().setTheme`. Sun and moon SVGs are **both in the DOM**, shown/hidden by
@@ -247,21 +281,21 @@ no CDN, no `<img>` for icons — they theme with the tokens and ship self-contai
 - Global `:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }`
   — keyboard focus always token-colored, visible in both themes.
 - `@media (prefers-reduced-motion: reduce) { *, *::before, *::after {
-  transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; } }`
+transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; } }`
   — kills the popover/drawer transitions and any spinner rotation.
 - Touch targets ≥44px (tiles, topbar buttons, card-list rows' action buttons).
 - Semantic landmarks: `<header>` topbar, one `<main>`, `<nav>` for the admin sub-nav.
 
 ### D-11 — Pages & routing
 
-| Route | Access | Content |
-|---|---|---|
-| `/` | authed | Dashboard (D-07) |
-| `/login` | public | Centered `.card`: brand mark + wordmark + single **Sign in** button → Better Auth Authentik OIDC flow (AC-01 — no password form exists). If a session exists, server-redirects to `/`. |
-| `/admin` | Admin | Users list: table (cards <760px) of displayName, email, role, family, tags, grant count → row links to detail |
-| `/admin/users/[id]` | Admin | Grants (checklist of catalog entries: direct grant toggle + provenance chips `default` / `direct` / `tag:<name>`, R-22), tags applied (add/remove), family toggle |
-| `/admin/catalog` | Admin | Entries table + create/edit form (URL field validated live against the R-14 rule; server remains authoritative), defaultVisible toggle, drag-or-buttons reorder → `catalog.reorder` |
-| `/admin/tags` | Admin | Tags table + create/edit (name, description, bundle: app checklist + grants-family toggle), apply/remove handled on the user detail page |
+| Route               | Access | Content                                                                                                                                                                                |
+| ------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`                 | authed | Dashboard (D-07)                                                                                                                                                                       |
+| `/login`            | public | Centered `.card`: brand mark + wordmark + single **Sign in** button → Better Auth Authentik OIDC flow (AC-01 — no password form exists). If a session exists, server-redirects to `/`. |
+| `/admin`            | Admin  | Users list: table (cards <760px) of displayName, email, role, family, tags, grant count → row links to detail                                                                          |
+| `/admin/users/[id]` | Admin  | Grants (checklist of catalog entries: direct grant toggle + provenance chips `default` / `direct` / `tag:<name>`, R-22), tags applied (add/remove), family toggle                      |
+| `/admin/catalog`    | Admin  | Entries table + create/edit form (URL field validated live against the R-14 rule; server remains authoritative), defaultVisible toggle, drag-or-buttons reorder → `catalog.reorder`    |
+| `/admin/tags`       | Admin  | Tags table + create/edit (name, description, bundle: app checklist + grants-family toggle), apply/remove handled on the user detail page                                               |
 
 Signed-out landing: any protected route without a session redirects to `/login`
 (session check in the root/server layout via Better Auth — no tRPC round-trip,
@@ -370,8 +404,8 @@ Desktop (≥760px)                              Phone (<760px)
 
 ## Open questions
 
-| ID | Question | Resolution |
-|----|----------|------------|
-| Q-01 | Brand mark: the donor's placeholder four-square SVG ships initially — does the owner want a real haynesnetwork logo (SVG) for topbar + `/login`? | (open) |
-| Q-02 | Topbar avatar: initial-letter circle only, or render `users.image` (Better Auth stores the OIDC `picture` claim there — DESIGN-001 D-02) when present? | (open) |
-| Q-03 | Final brand palette: initial tokens keep demo-console's green `#78be20` accent verbatim (D-01). What accent/surfaces does the owner want for the haynesnetwork rebrand (a `tokens.css`-only edit)? | (open) |
+| ID   | Question                                                                                                                                                                                           | Resolution                                                                                                            |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Q-01 | Brand mark: the donor's placeholder four-square SVG ships initially — does the owner want a real haynesnetwork logo (SVG) for topbar + `/login`?                                                   | Resolved 2026-07-03: hub-and-spoke mark, DESIGN-006 D-01                                                              |
+| Q-02 | Topbar avatar: initial-letter circle only, or render `users.image` (Better Auth stores the OIDC `picture` claim there — DESIGN-001 D-02) when present?                                             | (open)                                                                                                                |
+| Q-03 | Final brand palette: initial tokens keep demo-console's green `#78be20` accent verbatim (D-01). What accent/surfaces does the owner want for the haynesnetwork rebrand (a `tokens.css`-only edit)? | Resolved 2026-07-03: palette values stay (owner: "colors are good"); identity comes from mark/type/shape — DESIGN-006 |

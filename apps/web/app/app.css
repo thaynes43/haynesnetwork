@@ -1,9 +1,9 @@
-/* App chrome (DESIGN-004 D-05/D-10) — the demo-console app.css BASE styles,
-   trimmed to what the shell needs now (frame, card, buttons, seg, tag,
-   scrollbars, a11y). Every color is a theme token from
-   @hnet/ui/theme/tokens.css — no color literals (CLAUDE.md hard rule 2,
-   scripts/lint-css-hex.mjs). Nav/section-specific donor rules arrive with the
-   pages that need them. */
+/* App chrome (DESIGN-004 D-05/D-10) — frame, card, buttons, seg, tag,
+   scrollbars, a11y — restyled by the DESIGN-006 identity pass: soft large
+   radii, horizontal app cards with tinted icon wells, ghost topbar buttons,
+   pill buttons, barely-there accent gradients on card surfaces. Every color is
+   a theme token from @hnet/ui/theme/tokens.css — no color literals (CLAUDE.md
+   hard rule 2, scripts/lint-css-hex.mjs). */
 
 * {
   box-sizing: border-box;
@@ -56,22 +56,30 @@ body {
   }
 }
 
-/* ---------- Shared content primitives (donor base) ---------- */
+/* ---------- Shared content primitives (DESIGN-006 D-03) ---------- */
+/* Card surfaces carry a barely-there accent gradient (2–3% color-mix) so they
+   read as "brand paper", not flat gray — visible in both themes, never enough
+   to move text contrast. */
 .card {
-  background: var(--color-surface);
+  background: linear-gradient(
+    155deg,
+    color-mix(in srgb, var(--color-surface) 97%, var(--color-accent)),
+    var(--color-surface) 65%
+  );
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: 20px;
 }
 
+/* Buttons are pills (D-03 shape rule). */
 .btn {
   font: inherit;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  border-radius: var(--radius-sm);
-  padding: 8px 14px;
+  border-radius: 999px;
+  padding: 8px 16px;
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-text);
@@ -230,21 +238,26 @@ body {
   align-items: center;
   gap: 10px;
 }
+/* DESIGN-006 D-03: topbar icon buttons are GHOST — no bordered circles; a soft
+   rounded hover fill is the only chrome. Hit area stays ≥44px (D-06/D-10). */
 .iconbtn {
-  width: 44px; /* D-06/D-10: every topbar trigger keeps a ≥44px hit area */
+  width: 44px;
   height: 44px;
   display: grid;
   place-items: center;
-  border: 1px solid var(--color-border);
-  border-radius: 50%;
-  background: var(--color-surface);
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
   color: var(--color-text-muted);
   cursor: pointer;
   position: relative;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
 }
 .iconbtn:hover {
   color: var(--color-text);
-  border-color: var(--color-accent);
+  background: var(--color-surface-2);
 }
 /* Theme toggle: both glyphs in the DOM, CSS picks one — no theme-dependent JSX. */
 .icon-sun,
@@ -262,22 +275,25 @@ body {
 .usermenu {
   position: relative;
 }
+/* Ghost pill to match the D-03 topbar language — the avatar disc is the visual
+   anchor; chrome only appears on hover. */
 .usermenu__trigger {
   display: flex;
   align-items: center;
   gap: 8px;
   min-height: 44px;
   padding: 4px 10px 4px 4px;
-  border: 1px solid var(--color-border);
+  border: 0;
   border-radius: 999px;
-  background: var(--color-surface);
+  background: transparent;
   color: var(--color-text);
   font: inherit;
   font-size: 13px;
   cursor: pointer;
+  transition: background-color 0.15s ease;
 }
 .usermenu__trigger:hover {
-  border-color: var(--color-accent);
+  background: var(--color-surface-2);
 }
 .avatar {
   width: 34px;
@@ -362,7 +378,7 @@ body {
   background: var(--color-surface-2);
 }
 
-/* ---------- Login (D-11) ---------- */
+/* ---------- Login (D-11, restyled per DESIGN-006 D-03) ---------- */
 .login-wrap {
   height: 100dvh;
   display: grid;
@@ -370,13 +386,24 @@ body {
   padding: var(--space);
 }
 .login-card {
-  width: min(360px, 100%);
+  width: min(400px, 100%);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
+  padding: 32px 28px;
 }
+/* Hero brand: the mark at 64px stacked over the wordmark (DESIGN-006 D-01). */
 .login-brand {
+  flex-direction: column;
   justify-content: center;
+  gap: 10px;
+}
+.login-brand .brand__mark {
+  width: 64px;
+  height: 64px;
+}
+.login-brand .brand__name::after {
+  font-size: 22px;
 }
 .login-sub {
   margin: 0;
@@ -385,18 +412,19 @@ body {
   color: var(--color-text-muted);
 }
 .login-btn {
-  min-height: 44px;
+  min-height: 46px;
   font-size: 14px;
 }
 
-/* ---------- Dashboard (D-06/D-07) ---------- */
+/* ---------- Dashboard (D-06/D-07, reshaped by DESIGN-006 D-03) ---------- */
 .greeting {
-  font-size: 20px;
+  font-size: 21px;
+  font-weight: 600;
   margin: 4px 0 var(--space);
 }
 .tile-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: var(--space);
 }
 @media (max-width: 480px) {
@@ -404,40 +432,75 @@ body {
     gap: 10px;
   }
 }
+/* App tiles are HORIZONTAL cards: icon in a tinted circular well on the left,
+   name + description stacked to its right, the external-link affordance on the
+   far edge. The markup is unchanged (D-07) — .tile__top's children are lifted
+   into this grid via display: contents. Whole card stays one <a> target,
+   min 64px tall. */
 .tile {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-height: 112px; /* whole-tile target, well above the 44px touch minimum */
-  padding: 14px;
-  background: var(--color-surface);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    'icon name ext'
+    'icon desc ext';
+  align-items: center;
+  align-content: center;
+  column-gap: 14px;
+  row-gap: 2px;
+  min-height: 76px; /* whole-tile target, well above the 44px touch minimum */
+  padding: 14px 16px;
+  background: linear-gradient(
+    155deg,
+    color-mix(in srgb, var(--color-surface) 97%, var(--color-accent)),
+    var(--color-surface) 65%
+  );
   border: 1px solid var(--color-border);
-  border-radius: var(--radius);
+  border-radius: calc(var(--radius) + 2px);
   box-shadow: var(--shadow);
   color: var(--color-text);
   text-decoration: none;
-  transition: border-color 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
 }
+/* Subtle accent ring + lift on hover (D-03). */
 .tile:hover {
-  border-color: var(--color-accent);
+  border-color: color-mix(in srgb, var(--color-accent) 60%, var(--color-border));
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--color-accent) 22%, transparent),
+    var(--shadow);
+  transform: translateY(-1px);
 }
 .tile__top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  display: contents;
 }
 .tile__icon {
+  grid-area: icon;
+  width: 46px;
+  height: 46px;
+  padding: 11px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
   color: var(--color-accent);
 }
+/* Light theme: deepen the icon green toward the text color — pure accent on a
+   white tinted well is too faint (DESIGN-006 D-04 contrast note). */
+[data-theme='hnet-light'] .tile__icon {
+  color: color-mix(in srgb, var(--color-accent) 62%, var(--color-text));
+}
 .tile__ext {
+  grid-area: ext;
   color: var(--color-text-muted);
-  font-size: 13px;
+  font-size: 14px;
 }
 .tile__name {
+  grid-area: name;
   font-weight: 600;
   font-size: 14px;
 }
 .tile__desc {
+  grid-area: desc;
   font-size: 12px;
   color: var(--color-text-muted);
   overflow: hidden;

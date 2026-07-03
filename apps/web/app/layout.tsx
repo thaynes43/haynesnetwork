@@ -1,10 +1,22 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
+import localFont from 'next/font/local';
 import { ThemeProvider } from '@hnet/ui';
 import { TRPCProvider } from '@/lib/trpc-provider';
 import '@hnet/ui/theme/tokens.css';
 import '@hnet/ui/layout/layout.css';
 import './app.css';
+
+// DESIGN-006 D-02 — the brand typeface: Outfit (variable 100–900, SIL OFL,
+// vendored under apps/web/fonts — no external font fetches, CSP-safe). next/font
+// self-hosts the file and exposes it as the --font-outfit CSS variable, which
+// tokens.css consumes in --font with a system-ui fallback chain.
+const outfit = localFont({
+  src: '../fonts/Outfit-Variable.woff2',
+  weight: '100 900',
+  display: 'swap',
+  variable: '--font-outfit',
+});
 
 export const metadata: Metadata = {
   title: 'haynesnetwork',
@@ -29,7 +41,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     // data-theme='hnet-dark' is the no-JS/failed-JS SSR fallback;
     // suppressHydrationWarning (on <html> ONLY) keeps React quiet when the
     // script's attribute differs from the server-rendered default (D-03).
-    <html lang="en" data-theme="hnet-dark" suppressHydrationWarning>
+    <html lang="en" data-theme="hnet-dark" className={outfit.variable} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInit }} />
       </head>

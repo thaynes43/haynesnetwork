@@ -4,6 +4,7 @@
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { getServerSession, oidcEnabled } from '@hnet/auth';
+import { BrandMark } from '@/components/brand-mark';
 import { loginRouteRedirect } from '@/lib/route-gate';
 import { LoginButton } from './login-button';
 
@@ -36,12 +37,9 @@ export default async function LoginPage({
     <div className="login-wrap">
       <section className="card login-card">
         <div className="brand login-brand">
-          <svg className="brand__mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-            <rect x="3" y="3" width="11" height="11" rx="2.5" fill="currentColor" />
-            <rect x="18" y="3" width="11" height="11" rx="2.5" fill="currentColor" opacity=".55" />
-            <rect x="3" y="18" width="11" height="11" rx="2.5" fill="currentColor" opacity=".55" />
-            <rect x="18" y="18" width="11" height="11" rx="2.5" fill="currentColor" />
-          </svg>
+          {/* DESIGN-006 D-01: the hub-and-spoke mark at its 64px hero size;
+              stacked over the wordmark by the .login-brand CSS. */}
+          <BrandMark className="brand__mark" />
           <span className="brand__name" aria-hidden="true" />
           <h1 className="sr-only">haynesnetwork</h1>
         </div>

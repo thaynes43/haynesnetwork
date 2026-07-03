@@ -11,6 +11,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useTheme } from '@hnet/ui';
+import { BrandMark } from '@/components/brand-mark';
 import { authClient } from '@/lib/auth-client';
 import { initialFor } from '@/lib/initials';
 
@@ -181,15 +182,10 @@ export function TopBar({ user }: { user: TopBarUser }) {
   return (
     <header className="topbar">
       <div className="brand">
-        {/* Q-01 (coordinator default): donor placeholder four-square mark; the
+        {/* DESIGN-006 D-01: the hub-and-spoke brand mark (Q-01 resolved); the
             wordmark text comes from the --brand-name token via CSS content, so a
             rebrand stays a tokens.css-only edit (R-61). */}
-        <svg className="brand__mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-          <rect x="3" y="3" width="11" height="11" rx="2.5" fill="currentColor" />
-          <rect x="18" y="3" width="11" height="11" rx="2.5" fill="currentColor" opacity=".55" />
-          <rect x="3" y="18" width="11" height="11" rx="2.5" fill="currentColor" opacity=".55" />
-          <rect x="18" y="18" width="11" height="11" rx="2.5" fill="currentColor" />
-        </svg>
+        <BrandMark className="brand__mark" />
         <span className="brand__name" aria-hidden="true" />
         <span className="sr-only">haynesnetwork</span>
       </div>
