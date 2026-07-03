@@ -33,10 +33,10 @@ Populated once the scaffold lands. Target: `pnpm install && pnpm dev` → http:/
 
 ## Contributing — pull-request flow
 
-Until GATE A (the PR cutover, tracked in `.agents/plans/`), bootstrap commits land directly
-on `main`. After GATE A: branch off `main`, open a PR, required checks
-(`lint-and-typecheck`, `test`, `build`) must pass, squash-merge only. Conventional commits
-drive versioning via release-please; `v*` tags publish `ghcr.io/thaynes43/haynesnetwork`.
+GATE A is done ([`.agents/plans/001-gate-a-pr-cutover.md`](.agents/plans/001-gate-a-pr-cutover.md)):
+branch off `main`, open a PR, required checks (`lint-and-typecheck`, `test`, `build`) must
+pass, squash-merge only. Conventional commits drive versioning via release-please; `v*`
+tags publish `ghcr.io/thaynes43/haynesnetwork`.
 
 ## Related repositories
 

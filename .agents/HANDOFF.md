@@ -4,7 +4,7 @@
 
 - **Last updated:** 2026-07-03 (wave 2)
 - **Phase:** Scaffold + theme + db layer complete; auth implementation next
-- **Workflow mode:** direct pushes to `main` (pre-GATE A — flipping after this lands green)
+- **Workflow mode:** PR flow (GATE A executed — see .agents/plans/001-gate-a-pr-cutover.md)
 
 ## Where things stand
 
