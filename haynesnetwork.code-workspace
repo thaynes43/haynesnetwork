@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../todos-for-dues"
+		},
+		{
+			"path": "../demo-console"
+		}
+	],
+	"settings": {}
+}
