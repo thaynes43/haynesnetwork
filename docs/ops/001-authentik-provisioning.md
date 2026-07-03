@@ -48,7 +48,11 @@ user-agent (error 1010) — send `User-Agent: curl/8.5.0` (curl itself is fine).
 1. `GET /api/v3/providers/oauth2/?page_size=100` — skip creation if `Provider for haynesnetwork` exists.
 2. `POST /api/v3/providers/oauth2/` with the table's values (flows/keys/mappings pks via
    `GET /flows/instances/?designation=...`, `/crypto/certificatekeypairs/`,
-   `/propertymappings/provider/scope/`).
+   `/propertymappings/provider/scope/`). **MUST include
+   `"grant_types": ["authorization_code", "refresh_token"]`** — omitting the field on
+   Authentik 2026.5 saves an EMPTY list, which rejects every authorize request with
+   `invalid_request: The request is otherwise malformed` (cost us the first production
+   sign-in bug, fixed by PATCH 2026-07-03; UI-created providers default it correctly).
 3. `POST /api/v3/core/applications/` `{name, slug: haynesnetwork, provider: <pk>}`.
 4. `GET /api/v3/providers/oauth2/<pk>/` → `client_id`/`client_secret` → `.env.local` + 1Password.
 5. Verify the discovery URL returns 200.
