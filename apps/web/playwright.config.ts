@@ -28,7 +28,7 @@ export default defineConfig({
   globalSetup: './e2e/support/global-setup.ts',
   globalTeardown: './e2e/support/global-teardown.ts',
   use: {
-    // Keep in sync with APP_URL in e2e/support/global-setup.ts (port 3100 so the
+    // Keep in sync with DEFAULT_APP_PORT in e2e/support/env.ts (3100 so the
     // suite coexists with a locally running `pnpm dev` on 3000).
     baseURL: 'http://localhost:3100',
     trace: 'on-first-retry',

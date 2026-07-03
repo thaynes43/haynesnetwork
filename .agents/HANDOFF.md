@@ -105,14 +105,20 @@
 ## Where things stand (wave 6 additions)
 
 - Playwright e2e suite live per ADR-010 (PR feat/e2e): `pnpm --filter web e2e` (root
-  `pnpm e2e`), apps/web/playwright.config.ts + apps/web/e2e/. globalSetup boots the
-  whole stack itself — embedded PG16 (@hnet/test-utils/postgres SUBPATH import;
-  the package index pulls @hnet/db/migrate whose `import.meta` breaks Playwright's
-  CJS TS transform, so migrations run as a `pnpm --filter @hnet/db migrate`
-  subprocess), stub OIDC on a free port, then `next dev -p 3100` (port 3100 so a
-  local `pnpm dev` can keep 3000; NOT Playwright's webServer block — that plugin
-  starts BEFORE globalSetup and would miss the embedded-PG DATABASE_URL; donor
-  lesson, todos-for-dues). Route prewarm in globalSetup amortises dev-compile lag.
+  `pnpm e2e`), apps/web/playwright.config.ts + apps/web/e2e/. The orchestration is
+  REUSABLE, Playwright-free modules in apps/web/e2e/support/ (owner request — a
+  follow-up `pnpm dev:local` command will consume exactly these to boot the same
+  environment interactively): `harness.ts` (`startStack()` → embedded PG16 →
+  migrations → stub OIDC → `next dev`, `RunningStack.stop()` reverse teardown),
+  `stub-oidc.ts` (server + STUB_USERS personas), `env.ts` (`composeRuntimeEnv()`
+  D-08 contract, `DEFAULT_APP_PORT` 3100 so a local `pnpm dev` keeps 3000, worker
+  env-file handoff). globalSetup/globalTeardown are thin consumers — NOT
+  Playwright's webServer block (it starts BEFORE globalSetup and would miss the
+  embedded-PG DATABASE_URL; donor lesson, todos-for-dues). Gotchas encoded in the
+  harness: @hnet/test-utils/postgres SUBPATH import (the package index pulls
+  @hnet/db/migrate whose `import.meta` breaks Playwright's CJS TS transform —
+  migrations run as a `pnpm --filter @hnet/db migrate` subprocess); route prewarm
+  amortises dev-compile lag.
 - Stub OIDC (apps/web/e2e/support/stub-oidc.ts, node http + jose): discovery /
   authorize (302 straight back with code+state+iss) / token (RS256 id_token,
   client_secret_post) / jwks / userinfo, personas admin
