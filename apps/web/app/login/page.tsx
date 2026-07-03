@@ -11,18 +11,26 @@ export const metadata = { title: 'Sign in — haynesnetwork' };
 
 const ERROR_COPY: Record<string, string> = {
   sso_unavailable: 'Sign-in is temporarily unavailable. Try again in a moment.',
+  rate_limited: 'Too many sign-in attempts — wait a minute and try once.',
+  callback_failed:
+    'Sign-in failed after Authentik. Try again; if it persists the admin should check the pod logs.',
 };
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string | string[] }>;
 }) {
   const session = await getServerSession(await headers());
   const dest = loginRouteRedirect(session?.user ?? null);
   if (dest) redirect(dest);
 
-  const { error } = await searchParams;
+  // OAuth callback failures arrive as /login?error=callback_failed&error=<code>:
+  // better-auth's redirectOnError appends its machine-readable code as a second
+  // `error` param after ours. Render the first (our taxonomy); the raw code stays
+  // visible in the URL for debugging.
+  const { error: rawError } = await searchParams;
+  const error = Array.isArray(rawError) ? rawError[0] : rawError;
 
   return (
     <div className="login-wrap">
