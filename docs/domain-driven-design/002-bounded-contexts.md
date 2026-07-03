@@ -1,0 +1,126 @@
+# DDD-002: Bounded Contexts
+
+- **Status:** Accepted
+- **Last updated:** 2026-07-03
+- **Related:** PRD-001, DDD-001
+
+Four bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs as
+`DDD-002 BC-NN`. Terms in **bold** are defined in DDD-001.
+
+## 1. Context map
+
+```
+      Authentik (OIDC; Plex is the credential inside it)
+           |
+           v
+   +--------------+   user + role    +---------------+  effective perms   +---------------+
+   |    BC-01     | ---------------> |     BC-02     | -----------------> |     BC-04     |
+   |  Identity &  |  (read by every  |  Entitlements |  (allowed library  |  Plex Sharing |
+   |    Access    |     context)     |   (DECIDES)   |   sets, family)    |  (ENFORCES)   |
+   +------+-------+                  +-------+-------+                    +-------+-------+
+          |                                  | tile visibility                   | sharing API
+          | role gates fix (member)          v                                   v (owner tokens)
+          | and restore (admin)         Dashboard UI                  k8plex / plexops /
+          v                             (ENFORCES)                    haynestower Plex servers
+   +--------------+
+   |    BC-03     |  <--- sync, one-way --------------- Sonarr / Radarr / Lidarr
+   | Media Ledger |  <--- request attribution, read-only ---------------- Seerr
+   |    (ACL)     |  ---- fix + restore (the only write-backs) ---> Sonarr / Radarr / Lidarr
+   +--------------+
+```
+
+## 2. Catalog
+
+| ID | Context | Phase | Importance | Purpose in one line |
+|----|---------|-------|------------|---------------------|
+| BC-01 | Identity & Access | 1 | Generic | Turn an Authentik OIDC round-trip into an authenticated **User** with a **Role**. |
+| BC-02 | Entitlements | 1 | Core | Decide who may see/use what: catalog, grants, tags — owns **Effective Permissions**. |
+| BC-03 | Media Ledger | 2 | Core | Mirror the media estate from the *arrs; own **Fix Request** and **Restore**. |
+| BC-04 | Plex Sharing | 3 | Supporting | Apply library-share decisions to the three Plex servers. |
+
+## 3. Contexts in detail
+
+### BC-01 — Identity & Access
+
+- **Purpose:** authentication and identity only — Better Auth + Authentik OIDC (R-01),
+  **Member** auto-create (R-03), **Bootstrap Admin** promotion (R-02), **Session**
+  lifecycle, audited role transitions (R-04). Ends at "an authenticated User with a Role."
+- **Owned aggregates:** User (with Role), Session; the `user_role_transitions` audit log.
+- **Inbound:** OIDC callback from Authentik; admin role-change commands.
+- **Outbound:** session (user + role), read by every other context on every request.
+- **External systems:** Authentik (`authentik.haynesnetwork.com`) — the only one.
+- **Does NOT own:** grants or the Family designation — permission concerns (BC-02).
+
+### BC-02 — Entitlements
+
+- **Purpose:** the decision authority for access — the **Source of Truth** for permissions
+  and catalog. Owns the **App** catalog (R-11..R-13), **App Grants** (R-15), **Tags** with
+  **Permission Bundles** (R-20, R-21), **Library Grants** + **Family** designation (R-26,
+  R-27), and computes **Effective Permissions** with provenance (R-22, AC-06).
+- **Owned aggregates:** Catalog Entry, App Grant, Tag (+ bundle), Library Grant, Family
+  designation; permission-mutation audit rows.
+- **Inbound:** admin CRUD commands (catalog, grants, tags, family); permission queries from
+  the Dashboard and BC-04. Catalog writes reject `*.haynesops.com` URLs (R-14).
+- **Outbound:** Effective Permissions to the Dashboard (tile visibility, AC-05) and to
+  BC-04 (**Allowed Library Sets**, family); audit rows in the same transaction (R-04).
+- **External systems:** none in Phase 1; follow-on push of app permissions into Authentik (R-30).
+
+### BC-03 — Media Ledger
+
+- **Purpose:** durable, queryable mirror of the media estate plus self-service repair and
+  disaster recovery: **Sync** (one-way *arr → app, R-40), Seerr-attributed history (R-41),
+  **Wanted Items** (R-42), **Fix Requests** + **Fix Reasons** (R-43..R-47), and
+  **Restore** + **Restore Preview** (R-50..R-52).
+- **Anti-corruption layer:** per-service adapters translate external models (Sonarr
+  series, Radarr movies, Lidarr albums, Seerr requests) into the ledger's own terms
+  (**Media Item**, **Ledger Event**); external schemas and quirks never leak past them.
+- **Owned aggregates:** Media Item, Ledger Event, Wanted Item (derived), Fix Request,
+  Sync run, Restore run.
+- **Inbound:** scheduled Sync pulls; user Fix commands (Member, rate-guarded per R-47);
+  admin Restore commands; ledger browse/search queries (R-43).
+- **Outbound (the only write-backs, R-52):** Fix — **Blocklist** + search, or **Fix
+  Fallback** delete + search (R-44); Restore — re-add missing items monitored with
+  recorded profile/root folder/tags (R-51).
+- **External systems:** Sonarr, Radarr, Lidarr (read items + history; write fix/restore);
+  Seerr (read-only attribution). Maintainerr is a follow-on (Q-04).
+- **Does NOT own:** media lists — the *arrs are the **Source of Truth**; this is a mirror
+  plus attribution/audit.
+
+### BC-04 — Plex Sharing (Phase 3)
+
+- **Purpose:** the enforcement arm for library access. Registry of the three **Plex
+  Servers** and their **Plex Libraries**; applies users' add/remove-library requests
+  through the Plex sharing API using each server's owner token (R-25, R-28).
+- **Owned aggregates:** Plex Server registry, Plex Library registry (incl. the
+  **Family-Only Library** flag), share-application records + audit rows (R-28).
+- **Inbound:** user add/remove-library commands — validated against BC-02's Effective
+  Permissions before any Plex call; library-registry refresh from the Plex APIs.
+- **Outbound:** Plex sharing API calls; audit rows for every applied change.
+- **External systems:** the three Plex servers — k8plex, plexops (k8s), haynestower
+  (legacy Unraid); owner tokens sourced from 1Password via External Secrets.
+- **Decides nothing:** a share is applied only if BC-02 allows it (R-26, R-27).
+
+## 4. Relationship rules
+
+- **Entitlements decides; the Dashboard and BC-04 enforce.** Both consume Effective
+  Permissions and embed no permission logic of their own; hiding links is the accepted
+  enforcement start (PRD Non-goals; Authentik-side enforcement is follow-on R-30).
+- **BC-01 is upstream of everything:** contexts read (user, role); none mutates identity.
+- **The *arrs are upstream of BC-03** (conformist behind the ACL): sync is strictly
+  *arr → app; the only writes back are Fix and Restore, both narrow and audited (R-52).
+- **BC-04 owns library identity; BC-02 references it** — Library Grants point at
+  (server, library) identities from BC-04's registry.
+- **Seerr is read-only** — attribution source and a catalog Tile; never replaced (Non-goals).
+
+## 5. Cross-cutting (not bounded contexts)
+
+- **Audit:** each context writes its own Audit Rows in-transaction (R-04, R-28, R-52) —
+  a shared pattern (from todos-for-dues), not a context.
+- **Dashboard UI:** a view over BC-01 + BC-02 owning no aggregate; on the map only as an
+  enforcement point.
+
+## Changelog
+
+| Date | Author | Change |
+|------|--------|--------|
+| 2026-07-03 | Tom Haynes | Initial contexts BC-01..BC-04 identified from PRD-001 (Accepted). |

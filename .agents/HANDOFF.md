@@ -3,22 +3,22 @@
 > The single resume point for agents. Update this in the same change as any milestone.
 
 - **Last updated:** 2026-07-03
-- **Phase:** Bootstrap (docs skeleton)
+- **Phase:** Bootstrap (docs complete, scaffold next)
 - **Workflow mode:** direct pushes to `main` (pre-GATE A)
 
 ## Where things stand
 
 - Repo initialized against git@github.com:thaynes43/haynesnetwork.git (`main`).
-- Docs skeleton + process conventions landed (this change).
-- Requirements were gathered in the 2026-07-03 kickoff conversation and are being encoded
-  into PRD-001; decisions into ADR-001..010. Until those land, `.agents/context/2026-07-03-kickoff.md`
-  is the interim source of truth for what was decided.
+- **Docs suite complete and Accepted**: PRD-001, ADR-001..010, DDD 001-002 (glossary +
+  bounded contexts), DESIGN-001..004 (schema, auth/Authentik, tRPC surface, UI shell).
+  These are now the source of truth; `.agents/context/2026-07-03-kickoff.md` is historical.
+- Verified: Authentik API token works (in-cluster `homepage-secret`, ns `frontend`); Better
+  Auth generic OAuth callback = `{BETTER_AUTH_URL}/api/auth/oauth2/callback/authentik`
+  (verified against better-auth 1.6.11 source — see DESIGN-002); embedded-postgres
+  16.14.0-beta.17 is the Docker-less test DB pin (ADR-010).
 
 ## Next steps (task order)
 
-1. PRD-001 product requirements.
-2. ADR-001..010 core decisions.
-3. DDD glossary + Phase 1 designs.
 4. Monorepo scaffold (Next.js + ported demo-console theme).
 5. CI + GATE A PR cutover.
 6. Authentik OIDC provisioning + Better Auth + roles.
