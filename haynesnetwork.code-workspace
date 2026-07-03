@@ -8,6 +8,9 @@
 		},
 		{
 			"path": "../demo-console"
+		},
+		{
+			"path": "../../haynes-ops"
 		}
 	],
 	"settings": {}
