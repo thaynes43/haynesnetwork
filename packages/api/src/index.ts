@@ -1,3 +1,13 @@
-// TODO(DESIGN-003): the tRPC app router, context, and procedures land here
-// (docs/designs/003-trpc-surface.md).
-export const API_PACKAGE = '@hnet/api';
+// @hnet/api — the tRPC v11 surface (ADR-004, DESIGN-003). Context reads the Better
+// Auth session; the procedure ladder is publicProcedure → authedProcedure →
+// adminProcedure; every permission-touching mutation delegates to @hnet/domain
+// helpers that co-write permission_audit rows in the same transaction.
+export { appRouter, type AppRouter, createCallerFactory } from './routers/index';
+export { createTRPCContext, mapDomainErrors, type SessionUser, type TRPCContext } from './trpc';
+export {
+  catalogUrlSchema,
+  CatalogEntryInput,
+  CatalogEntryPatchInput,
+  TagBundleInput,
+} from './schemas';
+export type { MyApp } from './routers/catalog';

@@ -10,12 +10,18 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@hnet/api": "workspace:*",
     "@hnet/auth": "workspace:*",
     "@hnet/ui": "workspace:*",
+    "@tanstack/react-query": "^5.100.10",
+    "@trpc/client": "^11.17.0",
+    "@trpc/react-query": "^11.17.0",
+    "@trpc/server": "^11.0.0",
     "better-auth": "^1.6.11",
     "next": "16.2.6",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "server-only": "^0.0.1"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

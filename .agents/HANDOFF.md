@@ -2,8 +2,8 @@
 
 > The single resume point for agents. Update this in the same change as any milestone.
 
-- **Last updated:** 2026-07-03 (wave 3)
-- **Phase:** Scaffold + theme + db + auth package complete; Phase 1 features next
+- **Last updated:** 2026-07-03 (wave 4)
+- **Phase:** Scaffold + theme + db + auth + tRPC API surface complete; Phase 1 UI next
 - **Workflow mode:** PR flow (GATE A executed — see .agents/plans/001-gate-a-pr-cutover.md)
 
 ## Where things stand
@@ -42,6 +42,30 @@
   1.6.23 — D-04 callback path `/oauth2/callback/:providerId` re-verified against the
   installed package (DESIGN-002 D-03). Sign-in UI pages are a separate task; nothing
   calls assertAuthEnv at startup yet (wire it with the deployment task).
+
+## Where things stand (wave 4 additions)
+
+- @hnet/api implemented per DESIGN-003 (PR feat/api-package): tRPC v11 surface with
+  createTRPCContext({headers}) → {db, user: SessionUser|null} via getServerSession
+  (fail-closed role check), ladder publicProcedure → authedProcedure → adminProcedure
+  (middleware/role.ts), routers profile/catalog/users/tags exactly per D-06, zod v4
+  inputs (catalogUrlSchema per D-04), errorFormatter + mapDomainErrors attaching
+  appCode (D-13). Every mutation delegates to @hnet/domain (no-direct-writes guard
+  stays green); adminList/users.list emit ISO-string timestamps (D-03, no superjson).
+- apps/web wired: /api/trpc/[trpc] fetchRequestHandler route (runtime nodejs),
+  lib/trpc-server.ts getServerCaller, lib/trpc-client.ts + lib/trpc-provider.tsx
+  (@trpc/client + @trpc/react-query 11.18, @tanstack/react-query 5.101), TRPCProvider
+  mounted in app/layout.tsx. No UI pages yet (next task).
+- ICON_KEYS (D-10) lives at @hnet/ui/icons (packages/ui/src/icons/registry.ts,
+  React-free subpath export) — keys only; the SVG components ship with the UI shell.
+- Gotcha: zod v4 `.partial()` still APPLIES field `.default()`s when a key is absent —
+  catalog.update uses a default-free base schema (CatalogEntryPatchInput) so partial
+  patches don't silently reset defaultVisible/icon/description.
+- 59 api tests (embedded PG16, createCallerFactory + fake SessionUser contexts): ladder
+  rejections, myApps union/dedupe/order + AC-06 tag-removal, R-14 URL table across
+  zod + domain layers (DB CHECK covered by packages/db tests), audit co-writes +
+  idempotent replays, setFamily effective flips, tags.list D-12 scoping, appCode wire
+  shapes via getErrorShape. Workspace total: 130 tests green.
 
 ## Next steps (task order)
 

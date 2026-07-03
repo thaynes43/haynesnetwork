@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { ThemeProvider } from '@hnet/ui';
+import { TRPCProvider } from '@/lib/trpc-provider';
 import '@hnet/ui/theme/tokens.css';
 import '@hnet/ui/layout/layout.css';
 import './app.css';
@@ -34,9 +35,11 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       </head>
       <body>
         <ThemeProvider>
-          <div className="app">
-            <main>{children}</main>
-          </div>
+          <TRPCProvider>
+            <div className="app">
+              <main>{children}</main>
+            </div>
+          </TRPCProvider>
         </ThemeProvider>
       </body>
     </html>

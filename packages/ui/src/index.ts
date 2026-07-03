@@ -19,6 +19,9 @@ export type { TokenName, ThemeName } from './theme/tokenContract';
 
 export { ThemeProvider, useTheme } from './theme/ThemeProvider';
 
+export { ICON_KEYS, isIconKey } from './icons/registry';
+export type { IconKey } from './icons/registry';
+
 export { HeightBudget } from './layout/HeightBudget';
 export type { HeightBudgetProps } from './layout/HeightBudget';
 export { ReservedPane } from './layout/ReservedPane';
