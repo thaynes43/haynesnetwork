@@ -5,7 +5,7 @@
 import { join } from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
 import { signIn, expectViewportFit, SIGN_IN_BUTTON } from './support/helpers';
-import { TMP_DIR } from './support/runtime-env';
+import { TMP_DIR } from './support/env';
 
 // AC-10 sizes: phones, tablets, laptop, desktop, big desktop.
 const SIZES = [

@@ -29,7 +29,17 @@ This repo is documentation-first — read [`docs/PROCESS.md`](docs/PROCESS.md) f
 
 ## Running locally
 
-Populated once the scaffold lands. Target: `pnpm install && pnpm dev` → http://localhost:3000.
+Three modes, all WSL-friendly (no Docker required anywhere):
+
+| Command | What it gives you |
+|---------|-------------------|
+| `pnpm dev` | Plain Next dev server. Needs a real `DATABASE_URL`/OIDC env in `apps/web/.env.local` — pages that touch the DB or auth fail without one. |
+| `pnpm dev:local` | **The local test environment**: embedded Postgres 16 (migrated + seeded, throwaway), a stub OIDC provider standing in for Authentik, and the dev server on http://localhost:3000. Sign in with the normal button; switch persona (`admin` \| `member` \| `fresh-member`) by typing its name in the terminal. Use the browser devtools device toolbar for phone/tablet vetting. |
+| `pnpm --filter web e2e` | The Playwright suite against the same stack: full stub-OIDC login round trips, role-gated dashboards, admin grant flows, theme persistence, and the 8-size phone/tablet/PC resize matrix (~30s locally). |
+
+`admin` (bootstrap-admin@example.test) is promoted to Admin on first sign-in via the same
+`BOOTSTRAP_ADMIN_EMAILS` mechanism production uses; `fresh-member` always shows the
+first-login experience. Data is deleted on Ctrl-C.
 
 ## Contributing — pull-request flow
 

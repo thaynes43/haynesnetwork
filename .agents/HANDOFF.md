@@ -2,8 +2,8 @@
 
 > The single resume point for agents. Update this in the same change as any milestone.
 
-- **Last updated:** 2026-07-03 (wave 6)
-- **Phase:** Phase 1 e2e complete (Playwright + stub OIDC); Docker/haynes-ops deploy next
+- **Last updated:** 2026-07-03 (wave 7)
+- **Phase:** Phase 1 complete + local test environment; haynes-ops staged deploy next
 - **Workflow mode:** PR flow (GATE A executed — see .agents/plans/001-gate-a-pr-cutover.md)
 
 ## Where things stand
@@ -16,6 +16,24 @@
   Auth generic OAuth callback = `{BETTER_AUTH_URL}/api/auth/oauth2/callback/authentik`
   (verified against better-auth 1.6.11 source — see DESIGN-002); embedded-postgres
   16.14.0-beta.17 is the Docker-less test DB pin (ADR-010).
+
+## Where things stand (wave 7)
+
+- Waves 3-6 merged via PRs #2-#6: @hnet/auth (Better Auth + bootstrap), @hnet/api (tRPC),
+  Phase 1 web UI, Dockerfile + CI image validation, Playwright e2e (38 tests incl. stub
+  OIDC + resize matrix).
+- Wave 7 (this PR): e2e orchestration extracted into Playwright-free modules
+  (e2e/support/harness.ts startStack() + env.ts, replacing runtime-env.ts);
+  `pnpm dev:local` interactive test environment built on startStack() (personas
+  switched by typing admin|member|fresh-member), /api/health for the k8s probes,
+  tile description 2-line clamp, OPS-001 exact 1Password field list (Connect token
+  verified read-only -> owner-manual item).
+- Orchestration lesson recorded: never resume a completed agent for new scope in the
+  shared working tree — its revival did a reset --hard under a concurrent manual
+  branch (recovered from the amend commit; no work lost). Fresh agent + worktree
+  isolation next time.
+- Visual vetting pass done at 390x844 / 820x1180 / 1920x1080 (screenshots shared with
+  owner 2026-07-03).
 
 ## Where things stand (wave 2 additions)
 
@@ -105,14 +123,20 @@
 ## Where things stand (wave 6 additions)
 
 - Playwright e2e suite live per ADR-010 (PR feat/e2e): `pnpm --filter web e2e` (root
-  `pnpm e2e`), apps/web/playwright.config.ts + apps/web/e2e/. globalSetup boots the
-  whole stack itself — embedded PG16 (@hnet/test-utils/postgres SUBPATH import;
-  the package index pulls @hnet/db/migrate whose `import.meta` breaks Playwright's
-  CJS TS transform, so migrations run as a `pnpm --filter @hnet/db migrate`
-  subprocess), stub OIDC on a free port, then `next dev -p 3100` (port 3100 so a
-  local `pnpm dev` can keep 3000; NOT Playwright's webServer block — that plugin
-  starts BEFORE globalSetup and would miss the embedded-PG DATABASE_URL; donor
-  lesson, todos-for-dues). Route prewarm in globalSetup amortises dev-compile lag.
+  `pnpm e2e`), apps/web/playwright.config.ts + apps/web/e2e/. The orchestration is
+  REUSABLE, Playwright-free modules in apps/web/e2e/support/ (owner request — a
+  follow-up `pnpm dev:local` command will consume exactly these to boot the same
+  environment interactively): `harness.ts` (`startStack()` → embedded PG16 →
+  migrations → stub OIDC → `next dev`, `RunningStack.stop()` reverse teardown),
+  `stub-oidc.ts` (server + STUB_USERS personas), `env.ts` (`composeRuntimeEnv()`
+  D-08 contract, `DEFAULT_APP_PORT` 3100 so a local `pnpm dev` keeps 3000, worker
+  env-file handoff). globalSetup/globalTeardown are thin consumers — NOT
+  Playwright's webServer block (it starts BEFORE globalSetup and would miss the
+  embedded-PG DATABASE_URL; donor lesson, todos-for-dues). Gotchas encoded in the
+  harness: @hnet/test-utils/postgres SUBPATH import (the package index pulls
+  @hnet/db/migrate whose `import.meta` breaks Playwright's CJS TS transform —
+  migrations run as a `pnpm --filter @hnet/db migrate` subprocess); route prewarm
+  amortises dev-compile lag.
 - Stub OIDC (apps/web/e2e/support/stub-oidc.ts, node http + jose): discovery /
   authorize (302 straight back with code+state+iss) / token (RS256 id_token,
   client_secret_post) / jwks / userinfo, personas admin

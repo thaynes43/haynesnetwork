@@ -3,7 +3,7 @@
 // measurement ported from demo-console's resize matrix (AC-10).
 import { expect, type Page } from '@playwright/test';
 import type { PersonaName } from './stub-oidc';
-import { readRuntimeEnv } from './runtime-env';
+import { readRuntimeEnv } from './env';
 
 export const SIGN_IN_BUTTON = 'Sign in with Plex (Authentik)';
 

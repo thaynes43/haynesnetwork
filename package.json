@@ -16,7 +16,8 @@
     "lint:css": "node scripts/lint-css-hex.mjs",
     "test": "pnpm -r test",
     "e2e": "pnpm --filter web e2e",
-    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\""
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
+    "dev:local": "pnpm --filter web dev:local"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",
