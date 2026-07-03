@@ -1,19 +1,22 @@
-/* Theme tokens — the brandable seam (ADR-005, DESIGN-004 D-01).
-   Ported from demo-console with only the theme selector keys and brand string
-   changed: token NAMES and VALUES are byte-identical to the donor so a later
-   rebrand is an edit to this file and nothing else (R-61). Switching
-   `data-theme` on <html> re-skins the whole app via the CSS-variable cascade.
-   The canonical required names are enumerated in tokenContract.ts.
+/* Theme tokens — the brandable seam (ADR-005, DESIGN-004 D-01, DESIGN-006).
+   Token NAMES are byte-identical to the demo-console donor (the mechanism);
+   the DESIGN-006 identity pass diverges the structural VALUES (type, radii)
+   while keeping the donor-proven color palette. Switching `data-theme` on
+   <html> re-skins the whole app via the CSS-variable cascade. The canonical
+   required names are enumerated in tokenContract.ts.
    This is the ONLY file allowed to contain raw hex (CLAUDE.md hard rule 2,
    scripts/lint-css-hex.mjs). */
 
-/* Structural tokens shared by every theme. */
+/* Structural tokens shared by every theme (DESIGN-006 D-03: soft large radii;
+   D-02: Outfit via the next/font --font-outfit variable, system-ui fallback). */
 :root {
   --brand-name: 'haynesnetwork';
-  --radius: 10px;
-  --radius-sm: 7px;
+  --radius: 16px;
+  --radius-sm: 10px;
   --space: 16px;
-  --font: 'Segoe UI', system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+  --font:
+    var(--font-outfit, 'Outfit'), 'Segoe UI', system-ui, -apple-system, Roboto, Helvetica, Arial,
+    sans-serif;
   --color-nav-active: var(--color-accent);
   /* Persistent (always-visible) scrollbar geometry for internal scroll panes.
      A fixed width means a real scrollbar renders in BOTH Chrome (no
