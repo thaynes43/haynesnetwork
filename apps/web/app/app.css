@@ -1,0 +1,155 @@
+/* App chrome (DESIGN-004 D-05/D-10) — the demo-console app.css BASE styles,
+   trimmed to what the shell needs now (frame, card, buttons, seg, tag,
+   scrollbars, a11y). Every color is a theme token from
+   @hnet/ui/theme/tokens.css — no color literals (CLAUDE.md hard rule 2,
+   scripts/lint-css-hex.mjs). Nav/section-specific donor rules arrive with the
+   pages that need them. */
+
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+body {
+  font-family: var(--font);
+  color: var(--color-text);
+  background: var(--color-bg);
+  /* D-05: the page (html/body) never scrolls; content panes scroll internally. */
+  overflow: hidden;
+}
+
+/* App = full-viewport column: fixed chrome rows (topbar, later) + a flexible
+   content region. 100dvh, not vh — mobile URL-bar safe (D-05). */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  min-height: 0;
+}
+.app > main {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: calc(var(--space) * 1.5) var(--space);
+}
+@media (max-width: 480px) {
+  .app > main {
+    padding: 12px;
+  }
+}
+
+/* ---------- Accessibility (D-10) ---------- */
+/* Keyboard focus is always token-colored, visible in both themes. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/* ---------- Shared content primitives (donor base) ---------- */
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px;
+}
+
+.btn {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  padding: 8px 14px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+.btn.primary {
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  border-color: var(--color-accent);
+}
+
+.seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface-2);
+}
+.seg button {
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.seg button.is-active {
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  font-weight: 600;
+}
+
+.tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  border-radius: 999px;
+  padding: 2px 9px;
+  margin-bottom: 10px;
+}
+
+/* ---------- Scrollbars (donor data-table pattern, generalized) ---------- */
+/* WebKit / Blink (Chrome, Edge, Safari): an explicit, always-rendered, themed
+   scrollbar on every internal scroller. Declaring a SIZED track + thumb on the
+   legacy pseudo-element opts Chrome OUT of the invisible overlay bar.
+   IMPORTANT: do NOT also set the standard `scrollbar-width`/`scrollbar-color`
+   where `::-webkit-scrollbar` applies — when both are present Chromium takes
+   the standard path and IGNORES the pseudo-element styling. The standard
+   properties are therefore scoped to engines WITHOUT the pseudo-element
+   (Firefox) in the @supports block below. */
+::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+::-webkit-scrollbar-track {
+  background: var(--color-scrollbar-track);
+  border-radius: var(--radius-sm);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-scrollbar-thumb);
+  border-radius: var(--radius-sm);
+  /* A border the colour of the track insets the thumb so it reads as a
+     distinct pill against the gutter. */
+  border: 3px solid var(--color-scrollbar-track);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-scrollbar-thumb-hover);
+}
+::-webkit-scrollbar-corner {
+  background: var(--color-scrollbar-track);
+}
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-scrollbar-thumb) var(--color-scrollbar-track);
+  }
+}

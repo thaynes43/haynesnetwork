@@ -1,6 +1,0 @@
-/*
- * Placeholder — the demo-console token theme lands here with the theme port (ADR-005):
- * tokens.css files defining --color-* custom properties, themed via data-theme on <html>
- * (hnet-dark / hnet-light), plus the viewport-fit layout primitives.
- * No raw hex colors outside tokens.css (CLAUDE.md hard rule 2, scripts/lint-css-hex.mjs).
- */

@@ -1,0 +1,30 @@
+/* Viewport-fit layout primitives (ADR-005 / DESIGN-004 D-05; ported verbatim
+   from demo-console). STRUCTURAL ONLY — no colors, no theme tokens. These
+   classes implement the height-budget grid + reserved/scroll panes so content
+   fills then scrolls in place and the page never overflows. */
+
+/* HeightBudget: a CSS grid whose tracks the caller supplies via inline
+   grid-template-rows (minmax(0,1fr)-style). Direct children get min-height:0 so
+   they can shrink below content size and scroll internally instead of growing. */
+.hb-grid {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+}
+
+.hb-grid > * {
+  min-height: 0;
+  min-width: 0;
+}
+
+/* ReservedPane: claims its grid slot; min-height:0 enables shrink-to-scroll. */
+.rp-pane {
+  min-height: 0;
+  height: 100%;
+}
+
+/* The default (scroll) pane surfaces overflow as a pane-level scroll, not page
+   growth. data-scroll="false" opts out (e.g. a paginated pane). */
+.rp-pane[data-scroll='true'] {
+  overflow: auto;
+}

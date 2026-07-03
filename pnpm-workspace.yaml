@@ -2,6 +2,9 @@ packages:
   - "apps/*"
   - "packages/*"
 allowBuilds:
+  # embedded-postgres test binaries: postinstall re-creates the lib/bin symlinks that
+  # npm tarballs cannot carry (ADR-010 — embedded PG16 for tests, no Docker).
+  '@embedded-postgres/linux-x64': true
   esbuild: true
   sharp: true
   unrs-resolver: true
