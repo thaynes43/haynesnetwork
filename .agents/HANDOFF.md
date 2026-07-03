@@ -2,8 +2,8 @@
 
 > The single resume point for agents. Update this in the same change as any milestone.
 
-- **Last updated:** 2026-07-03 (wave 4)
-- **Phase:** Scaffold + theme + db + auth + tRPC API surface complete; Phase 1 UI next
+- **Last updated:** 2026-07-03 (wave 5)
+- **Phase:** Phase 1 UI complete (login, dashboard, admin area); Playwright e2e next
 - **Workflow mode:** PR flow (GATE A executed — see .agents/plans/001-gate-a-pr-cutover.md)
 
 ## Where things stand
@@ -67,10 +67,44 @@
   idempotent replays, setFamily effective flips, tags.list D-12 scoping, appCode wire
   shapes via getErrorShape. Workspace total: 130 tests green.
 
+## Where things stand (wave 5 additions)
+
+- Phase 1 UI implemented per DESIGN-004 (PR feat/web-ui). Routes: `/login` (public,
+  centered card, single "Sign in with Plex (Authentik)" button via
+  authClient.signIn.oauth2 — better-auth react client + genericOAuthClient in
+  apps/web/lib/auth-client.ts; `?error=…` alert; config-error state when OIDC creds
+  unset), `(app)` route group (server session gate → /login; 56px TopBar chrome +
+  scrolling `<main>`), `/` dashboard (catalog.myApps via getServerCaller, client-side
+  time-of-day greeting, auto-fill tile grid, new-tab tiles rel noopener noreferrer,
+  empty state), `/admin` + `/admin/users/[id]` + `/admin/catalog` + `/admin/tags`
+  (admin/layout.tsx re-checks role server-side → redirect('/')). Admin pages are
+  client components on trpc react-query with invalidate-refetch (no optimistic infra).
+- Gating rules live as pure helpers in apps/web/lib/route-gate.ts (unit-tested);
+  layouts call them then `redirect()`. The dashboard page re-checks the session itself
+  before using the server caller (a layout redirect doesn't stop the page render).
+- Provenance (`default`/`direct`/`tag:<name>` chips) is recomputed client-side from
+  users.list + catalog.adminList + tags.list per DESIGN-003 D-09
+  (apps/web/lib/provenance.ts, tested). Catalog URL field mirrors R-14 client-side
+  (lib/catalog-url.ts, tested); server appCodes surface via lib/app-error.ts (tested).
+- @hnet/ui now ships the D-09 SVG components for every ICON_KEY + generic fallback
+  (packages/ui/src/icons/components.tsx, `AppIcon`); registry.ts stays React-free for
+  @hnet/api. Icon render test proves currentColor/no-hex/self-contained.
+- @hnet/auth gained a dependency-free `./env` subpath export so client bundles can
+  import OIDC_PROVIDER_ID without pulling server code.
+- DESIGN-004 open questions resolved by coordinator defaults: Q-01 brand mark = donor
+  four-square placeholder SVG; the wordmark renders from the `--brand-name` token via
+  CSS `content` (rebrand stays a tokens.css-only edit). Q-02 avatar = initial-letter
+  circle (lib/initials.ts). Theme toggle labels resolve post-mount
+  (useSyncExternalStore) so no theme-dependent JSX mismatches the D-03 script.
+- Gotcha: the domain no-direct-writes guard walks the repo — `.claude/` (agent
+  worktrees hold a full repo copy during parallel work) is now in its IGNORE_DIRS.
+- Verified against embedded PG16 + `next dev`: `/` and `/admin/*` 307 → /login when
+  anonymous, /login 200 with the sign-in button and `data-theme="hnet-dark"` +
+  pre-hydration script; typecheck/lint/lint:css/test (182)/build all green.
+
 ## Next steps (task order)
 
-7. Phase 1 features (catalog, dashboard, admin permissions, tags) + sign-in UI.
-8. Playwright e2e (incl. phone/tablet resize matrix).
+8. Playwright e2e (incl. phone/tablet resize matrix + stubbed OIDC login).
 9. Docker image + haynes-ops staged deployment (internal hostname first, then root domain).
 10. Phase 2: *arr ledger + fix + failsafe restore.
 

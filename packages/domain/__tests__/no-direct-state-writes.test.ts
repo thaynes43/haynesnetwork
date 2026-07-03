@@ -68,6 +68,7 @@ const IGNORE_DIRS = new Set([
   'migrations', // raw SQL migrations in packages/db/migrations are the schema source of truth
   'docs',
   '.agents',
+  '.claude', // agent worktrees/settings — may hold a full repo copy during parallel work
   'playwright-report',
   'test-results',
   'blob-report',
