@@ -19,6 +19,7 @@
 
 ## Where things stand (wave 7)
 
+- Phase 2 (feat/sync-runner): @hnet/sync landed — DESIGN-005 D-14 *arr→ledger sync runner (full/incremental orchestrator over the domain writers, per-source sync_runs + isolated failures, tombstone guard + --force-tombstones, Seerr email attribution + FK backfill, CLI `src/scripts/sync.ts`, Dockerfile sync-deploy subtree; Q-07 verified: `pnpm deploy --legacy` flattens the @hnet/sync→arr/domain→db chain).
 - Phase 2 (feat/arr-clients): @hnet/arr landed — typed Sonarr/Radarr/Lidarr/Seerr clients
   (DESIGN-005 D-18 read/write entrypoint split, D-02 zod subsets, sanitized fixtures from
   the 2026-07-03 live GET probes); sync CLI + domain writers are the next slices.

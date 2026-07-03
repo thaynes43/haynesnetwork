@@ -524,8 +524,9 @@ No seed data — every row arrives via sync.
 
 The Dockerfile already proves the mechanism: the migrator runs `tsx` against a
 `pnpm deploy`-flattened subtree of the same image. Phase 2 adds one more flattened
-subtree (`pnpm --filter @hnet/arr deploy --legacy --prod /sync-deploy` → `/sync`;
-verify the workspace-dep chain flattens — Q-07). **Command:**
+subtree (`pnpm --filter @hnet/sync deploy --legacy --prod /sync-deploy` → `/sync`;
+the runner lives in its own `@hnet/sync` package so the CLI and orchestration stay
+out of the ACL package — workspace-dep chain flattening verified, Q-07). **Command:**
 
 ```
 tsx /sync/src/scripts/sync.ts --mode=incremental        # every 15 min
@@ -869,5 +870,5 @@ Per ADR-010 (embedded PG16, no Docker, no live-API tests in CI):
 | Q-04 | Restore defaults `searchFor* = false` (D-16) to protect indexers on bulk re-adds. Owner sign-off, or should small restores (< N items) search on add? | Coordinator 2026-07-03: searchFor*=false always for Phase 2 — indexer safety beats convenience; per-item manual search exists in the *arr UI. |
 | Q-05 | Episode-level wanted browsing: R-42 is satisfied at item granularity per DDD-001 T-27, but Sonarr tracks 40,862 missing episodes. If per-episode wanted views are ever wanted, they proxy `wanted/missing` live rather than sync. Confirm item granularity is the accepted reading. | Coordinator 2026-07-03: item granularity confirmed; per-episode wanted views proxy live if ever needed. |
 | Q-06 | `SEERR_API_KEY` sourcing: reuse the `HOMEPAGE_VAR_SEERR_API_KEY` field from the homepage-consumed items, or have the owner add a canonical `SEERR_API_KEY` field to `media-stack` for the haynesnetwork ExternalSecret? | Resolved 2026-07-03: SEERR_API_KEY already exists as a field in the media-stack item (the homepage ExternalSecret extracts it via dataFrom media-stack) — consume it directly; no owner action. |
-| Q-07 | Does `pnpm --filter @hnet/arr deploy --legacy --prod` flatten the `@hnet/arr → @hnet/domain → @hnet/db` workspace chain into a runnable `/sync` subtree like the migrator's single-package case? | (open — verify at implementation; fallback is a self-contained sync entry that imports drizzle directly like the migrator) |
+| Q-07 | Does `pnpm --filter @hnet/arr deploy --legacy --prod` flatten the `@hnet/arr → @hnet/domain → @hnet/db` workspace chain into a runnable `/sync` subtree like the migrator's single-package case? | Resolved 2026-07-03 (sync-runner implementation): yes — the runner landed as its own package `@hnet/sync` (depending on `@hnet/arr` + `@hnet/domain` → `@hnet/db`), and `pnpm --filter @hnet/sync deploy --legacy --prod /sync-deploy` packs the whole workspace chain as real copies inside the deploy dir's own `.pnpm` store (no symlinks back into /repo); `tsx /sync/src/scripts/sync.ts` runs from the flattened subtree. No fallback needed. |
 | Q-08 | Lidarr album-fix semantics: `POST /history/failed/{id}` verified to exist, but albums have multiple releases (`anyReleaseOk`) and multi-file grabs — does blocklisting one grab reliably dislodge a whole bad album, or does the Lidarr path need delete+search more often than Sonarr/Radarr? Recent live history showed only `trackFileImported` (import-list era), so grab coverage may be thin. | (open — probe during implementation with a real broken album) |
