@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.0](https://github.com/thaynes43/haynesnetwork/compare/v0.1.1...v0.2.0) (2026-07-03)
+
+
+### Features
+
+* **arr:** typed Sonarr/Radarr/Lidarr/Seerr clients with fixture tests ([#15](https://github.com/thaynes43/haynesnetwork/issues/15)) ([b68fb7a](https://github.com/thaynes43/haynesnetwork/commit/b68fb7a526fd161acb0583d68ec72d2fc870bd6f))
+* **db:** media ledger schema, fix lifecycle, sync bookkeeping (DESIGN-005) ([#16](https://github.com/thaynes43/haynesnetwork/issues/16)) ([6dfa4d5](https://github.com/thaynes43/haynesnetwork/commit/6dfa4d5419c05116520c30fb88c4712dd0ad3dbe))
+* **sync:** *arr→ledger sync runner with cursors, tombstone guard, Seerr attribution ([#20](https://github.com/thaynes43/haynesnetwork/issues/20)) ([dce9bb9](https://github.com/thaynes43/haynesnetwork/commit/dce9bb980f45ec95f850f307a4ebdc735cc68883))
+* **web:** haynesnetwork visual identity — mark, type, shape language ([#19](https://github.com/thaynes43/haynesnetwork/issues/19)) ([9da21a8](https://github.com/thaynes43/haynesnetwork/commit/9da21a8681add6827869b6dd85f44c75e43339ea))
+* **web:** media ledger browsing, fix flow with reasons, admin restore ([#21](https://github.com/thaynes43/haynesnetwork/issues/21)) ([5388eab](https://github.com/thaynes43/haynesnetwork/commit/5388eabd5582aa0913210f471f2fa0a7d04fb209))
+
+
+### Documentation
+
+* **ops:** record grant_types pitfall in Authentik provisioning runbook ([#18](https://github.com/thaynes43/haynesnetwork/issues/18)) ([f11cda6](https://github.com/thaynes43/haynesnetwork/commit/f11cda693de1386412b682baa0c3ab581c9b35e2))
+
 ## [0.1.1](https://github.com/thaynes43/haynesnetwork/compare/v0.1.0...v0.1.1) (2026-07-03)
 
 
