@@ -17,6 +17,9 @@ test-results/
 blob-report/
 .playwright-tmp/
 
+# local identity-proof screenshots (owner review artifacts, never committed)
+identity-screenshots/
+
 # tooling
 .DS_Store
 *.log

@@ -39,9 +39,18 @@
 - Visual vetting pass done at 390x844 / 820x1180 / 1920x1080 (screenshots shared with
   owner 2026-07-03).
 - Staging live at haynesnetwork.haynesops.com (2026-07-03); DESIGN-005 drafted (this PR).
+- Visual identity pass (feat/visual-identity, DESIGN-006 Draft): owner rejected the
+  demo-console-clone look ("colors good, squares too copy-like") → new hub-and-spoke
+  brand mark (apps/web/components/brand-mark.tsx, used by TopBar + /login), Outfit
+  variable font self-hosted via next/font/local (apps/web/fonts/, OFL), shape language
+  in tokens.css (--radius 16/--radius-sm 10, --font → --font-outfit) + app.css
+  (horizontal tile cards w/ tinted icon wells + display:contents bridge, ghost topbar
+  buttons, pill buttons, 2–3% accent gradients, restyled login card). Token NAMES and
+  palette VALUES unchanged; mechanism (ADR-005) untouched; e2e 38/38 survived without
+  test edits. PR blocks on owner screenshot approval (identity-screenshots/, gitignored).
 - Phase 2 DB layer landed on feat/ledger-schema: migration 0003 (media_items,
   ledger_events, fix_requests, restore_runs, sync_runs, sync_state, wanted_items view)
-  + @hnet/domain single-writers per DESIGN-005 D-05..D-13.
+  - @hnet/domain single-writers per DESIGN-005 D-05..D-13.
 
 ## Where things stand (wave 2 additions)
 
