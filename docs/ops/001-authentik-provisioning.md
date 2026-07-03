@@ -21,12 +21,21 @@ The callback path is Better Auth's generic-OAuth route: `{BETTER_AUTH_URL}/api/a
 
 - **Local dev:** `.env.local` (gitignored, 0600) — `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` written at provisioning time.
 - **Cluster (OWNER ACTION REQUIRED):** create a 1Password item **`haynesnetwork`** in the
-  `HaynesKube` vault with fields `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`,
-  `BETTER_AUTH_SECRET` (any 32+ char random), `BOOTSTRAP_ADMIN_EMAILS`
-  (`manofoz@gmail.com,t.haynes43@gmail.com`). The client id/secret can be read from
-  Authentik UI → Applications → Providers → *Provider for haynesnetwork*, or from
-  `.env.local` on the dev machine. The haynes-ops ExternalSecret (Task: deployment)
-  consumes this item.
+  `HaynesKube` vault with these fields (labels must match exactly — the haynes-ops
+  ExternalSecret extracts by label):
+
+  | Field | Value |
+  |-------|-------|
+  | `OIDC_CLIENT_ID` | from Authentik UI → Providers → *Provider for haynesnetwork* (or dev `.env.local`) |
+  | `OIDC_CLIENT_SECRET` | same source |
+  | `BETTER_AUTH_SECRET` | any fresh 32+ char random (do not reuse the dev one) |
+  | `BOOTSTRAP_ADMIN_EMAILS` | `manofoz@gmail.com,t.haynes43@gmail.com` |
+  | `HAYNESNETWORK_POSTGRESQL__USER` | `haynesnetwork` |
+  | `HAYNESNETWORK_POSTGRESQL__PASSWORD` | any fresh random — postgres-init creates the role with it |
+
+  Programmatic creation was attempted via the in-cluster 1Password Connect API
+  (2026-07-03): the ESO token is **read-only** (`403 … does not have permission to
+  perform create`), so this stays a manual step.
 
 ## How to re-provision (idempotent)
 

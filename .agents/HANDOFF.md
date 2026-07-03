@@ -2,8 +2,8 @@
 
 > The single resume point for agents. Update this in the same change as any milestone.
 
-- **Last updated:** 2026-07-03 (wave 6)
-- **Phase:** Phase 1 e2e complete (Playwright + stub OIDC); Docker/haynes-ops deploy next
+- **Last updated:** 2026-07-03 (wave 7)
+- **Phase:** Phase 1 complete + local test environment; haynes-ops staged deploy next
 - **Workflow mode:** PR flow (GATE A executed — see .agents/plans/001-gate-a-pr-cutover.md)
 
 ## Where things stand
@@ -16,6 +16,24 @@
   Auth generic OAuth callback = `{BETTER_AUTH_URL}/api/auth/oauth2/callback/authentik`
   (verified against better-auth 1.6.11 source — see DESIGN-002); embedded-postgres
   16.14.0-beta.17 is the Docker-less test DB pin (ADR-010).
+
+## Where things stand (wave 7)
+
+- Waves 3-6 merged via PRs #2-#6: @hnet/auth (Better Auth + bootstrap), @hnet/api (tRPC),
+  Phase 1 web UI, Dockerfile + CI image validation, Playwright e2e (38 tests incl. stub
+  OIDC + resize matrix).
+- Wave 7 (this PR): e2e orchestration extracted into Playwright-free modules
+  (e2e/support/harness.ts startStack() + env.ts, replacing runtime-env.ts);
+  `pnpm dev:local` interactive test environment built on startStack() (personas
+  switched by typing admin|member|fresh-member), /api/health for the k8s probes,
+  tile description 2-line clamp, OPS-001 exact 1Password field list (Connect token
+  verified read-only -> owner-manual item).
+- Orchestration lesson recorded: never resume a completed agent for new scope in the
+  shared working tree — its revival did a reset --hard under a concurrent manual
+  branch (recovered from the amend commit; no work lost). Fresh agent + worktree
+  isolation next time.
+- Visual vetting pass done at 390x844 / 820x1180 / 1920x1080 (screenshots shared with
+  owner 2026-07-03).
 
 ## Where things stand (wave 2 additions)
 
