@@ -4,7 +4,8 @@
 - **Feeds:** Phase 3 library management design (PRD R-25..R-28), Phase 2 ledger enrichment
 
 The three Plex servers, their roles in the owner's words, and where their credentials
-live. Canonical server slugs in code should follow the owner's names: `haynestower`,
+live. Library naming convention (owner, 2026-07-03): **`HOps *` prefix = hosted on the
+k8s cluster (HAYNESOPS, HAYNESKUBE); `HNet *` prefix = legacy Unraid (HAYNESTOWER).** Canonical server slugs in code should follow the owner's names: `haynestower`,
 `haynesops`, `hayneskube`.
 
 ## Servers
@@ -12,7 +13,7 @@ live. Canonical server slugs in code should follow the owner's names: `haynestow
 | Canonical name | URL | Hosting | Role | Libraries (2026-07-03, token-verified) |
 |---|---|---|---|---|
 | **HAYNESTOWER** | `https://plex.haynesnetwork.com` | Unraid (legacy) | Most-used today; the primary user-facing server | `HNet Movies`, `HNet TV Shows`, `HNet Photos`†, `HNet Home Videos`† |
-| **HAYNESOPS** | `https://plexops.haynesnetwork.com` | k8s, dedicated worker node w/ powerful iGPU | **Mirror of the shared Movies/TV library** on superior hardware — absorbs more users if needed | `Movies`, `TV Shows` |
+| **HAYNESOPS** | `https://plexops.haynesnetwork.com` | k8s, dedicated worker node w/ powerful iGPU | **Mirror of the shared Movies/TV library** on superior hardware — absorbs more users if needed | `HOps Movies`, `HOps TV Shows` |
 | **HAYNESKUBE** | `https://k8plex.haynesnetwork.com` | k8s (same cluster as HAYNESOPS), own worker node w/ powerful iGPU | Non-standard content: exercise videos, YouTube-dl archives, music | `HOps Peloton`, `HOps YT`, `HOps Music` |
 
 † Family-only libraries (PRD R-26) — these exist **only on HAYNESTOWER**.
@@ -38,7 +39,7 @@ All three tokens were validated against `GET /library/sections` on 2026-07-03.
 ## Design implications (for the Phase 3 design doc)
 
 1. **Library names differ across servers** (PRD Q-03 partially resolved): HAYNESOPS
-   mirrors HAYNESTOWER's Movies/TV under different names (`Movies` vs `HNet Movies`).
+   mirrors HAYNESTOWER's Movies/TV under different names (`HOps Movies` vs `HNet Movies`).
    The library registry must treat (server, library key) as identity and model the
    mirror relationship explicitly rather than matching by name.
 2. Family gating applies concretely to two HAYNESTOWER libraries today; the rule should
