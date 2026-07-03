@@ -61,17 +61,17 @@
 |----|------|------------|-----------------|-------|
 | T-22 | *arr | Collective for Sonarr (TV), Radarr (movies), Lidarr (music) — the Source of Truth for media lists (R-40). | `arr_kind` (`'sonarr' \| 'radarr' \| 'lidarr'`) | |
 | T-23 | Monitored | *arr state meaning the *arr actively manages/searches for an item. The Ledger mirrors all monitored media (R-40). | `ledger_items.monitored` | *arr concept we reference. |
-| T-24 | Media Item | One Ledger row mirroring a monitored *arr item: on-disk state, quality profile, root folder, *arr tags (R-40). | `ledger_items` | Written only by Sync — never hand-edited. |
-| T-25 | Ledger | The app's durable, queryable mirror of the media estate: Media Items + Ledger Events + Wanted Items. Doubles as the disaster-recovery source for Restore (R-40..R-42, R-50, R-51). | `ledger_*` tables | A synced copy plus attribution/audit — never the Source of Truth for media. |
-| T-26 | Ledger Event | A history record on the Ledger: who requested what (attributed via Seerr), what was deleted when, grabs/imports from *arr history (R-41). | `ledger_events`, `ledger_events.kind` | Maintainerr enrichment is a follow-on (Q-04). |
-| T-27 | Wanted Item | A Monitored Media Item with nothing on disk; captured and browsable (R-42). | `ledger_items` where `on_disk = false` | |
+| T-24 | Media Item | One Ledger row mirroring a monitored *arr item: on-disk state, quality profile, root folder, *arr tags (R-40). One row per Sonarr series / Radarr movie / Lidarr artist (DESIGN-005 D-04). | `media_items` | Written only by Sync — never hand-edited. Identifier amended from `ledger_items` to the DESIGN-001 D-15 reserved name (DESIGN-005). |
+| T-25 | Ledger | The app's durable, queryable mirror of the media estate: Media Items + Ledger Events + Wanted Items. Doubles as the disaster-recovery source for Restore (R-40..R-42, R-50, R-51). | `media_items`, `ledger_events`, `wanted_items` (view) | A synced copy plus attribution/audit — never the Source of Truth for media. |
+| T-26 | Ledger Event | A history record on the Ledger: who requested what (attributed via Seerr), what was deleted when, grabs/imports from *arr history (R-41). | `ledger_events`, `ledger_events.event_type` | Maintainerr enrichment is a follow-on (Q-04). |
+| T-27 | Wanted Item | A Monitored Media Item with nothing on disk; captured and browsable (R-42). | `wanted_items` (view over `media_items`, DESIGN-005 D-08) | Derived, never stored. |
 | T-28 | Seerr | The request app users request content through. We link to it and read request attribution from its API; we do not replace it (Non-goals, R-41). | `seerr` API client | Tile URL flips at the owner's cutover (Q-02). |
 | T-29 | Fix Request | A user's tracked repair action on a Media Item they believe is broken: requester, item, Fix Reason, *arr actions taken, outcome (R-43, R-46). | `fix_requests` | Users see their own history/status; admins see all. Rate-guarded (R-47, Q-05). |
-| T-30 | Fix Reason | Required taxonomy value on every Fix Request: `wont-play-corrupt`, `wrong-language`, `wrong-version-quality`, `missing-subtitles`, `wrong-content`, or `other` + free text (R-45). | `fix_reason` (enum), `fix_requests.other_text` | Stored for analysis of what goes wrong. |
+| T-30 | Fix Reason | Required taxonomy value on every Fix Request: `wont_play_corrupt`, `wrong_language`, `wrong_version_quality`, `missing_subtitles`, `wrong_content`, or `other` + free text (R-45). | `fix_requests.reason`, `fix_requests.reason_text` | Stored for analysis. Identifiers aligned to DESIGN-001 snake_case enum convention (DESIGN-005 D-09); free text rides only on `other`. |
 | T-31 | Release | *arr concept: a specific downloadable version/file of a media item offered by an indexer. Referenced, not owned. | — | |
 | T-32 | Grab | *arr concept: the *arr taking a Release for download; appears in *arr history. Fix chooses its path by grab history (R-44). | — | |
 | T-33 | Blocklist | *arr concept: marking a Release failed so the *arr won't re-grab it. Fix = mark-failed (blocklist) + trigger a new search (R-44, AC-07). | — | Via the *arr's history-failed endpoint. |
-| T-34 | Fix Fallback | The Fix path when an item has no Grab history: delete the file(s) + trigger search (R-44, AC-08). | `fix_requests.actions` | Outcome recorded either way. |
+| T-34 | Fix Fallback | The Fix path when an item has no Grab history: delete the file(s) + trigger search (R-44, AC-08). | `fix_requests.path_taken = 'delete_search'`, `fix_requests.actions_taken` | Outcome recorded either way. |
 | T-35 | Restore | The admin-only failsafe: diff the Ledger against a live *arr, preview, then re-add missing items Monitored with recorded quality profile, root folder, and tags (R-50..R-52). | `restore_runs` | The only bulk write-back; explicitly admin-initiated and audit-logged. |
 | T-36 | Restore Preview | The pre-execution diff listing exactly the Ledger items absent from the target *arr (R-52, AC-09). | `RestorePreview` | Execution reports successes/failures per item. |
 | T-37 | Sync | The one-way import *arr → app that keeps the Ledger current (R-40). Sync direction is strictly *arr → app; the only write-backs are Fix and Restore (R-52). | `sync_runs` | |
@@ -83,9 +83,13 @@
 | T-38 | Source of Truth | The ownership split: the *arrs own media lists (the Ledger mirrors them); this app owns permissions and the App catalog. | — | CLAUDE.md hard rule 4. |
 | T-39 | Audit Row | A record (who, what, when, Initiator Kind) written in the same transaction as any role/permission mutation (R-04), library change (R-28), or Restore (R-52). | `user_role_transitions` (+ analogs per mutation type) | Pattern borrowed from todos-for-dues. |
 | T-40 | Initiator Kind | Audit field distinguishing what caused a change: system (e.g. bootstrap promotion) vs admin vs user. | `initiator_kind` | AC-03: bootstrap writes a system-initiator row. |
+| T-41 | Tombstone | A Media Item marked as no longer present in its *arr (`deleted_from_arr_at` set) but retained in the Ledger — deletion history (R-41) and the Restore source (R-50) both require keeping the row. Cleared if the item reappears. | `media_items.deleted_from_arr_at` | Sync tombstones, never deletes; mass-tombstone guard in DESIGN-005 D-14. |
+| T-42 | Sync Cursor | The per-source high-water mark (history timestamp) that incremental Sync resumes from; advanced in the same transaction as each ingested batch. | `sync_state.history_cursor` | One row per source (`sonarr`, `radarr`, `lidarr`, `seerr`). |
+| T-43 | Fix Lifecycle | The tracked status progression of a Fix Request: `pending → actioned → search_triggered → completed`, with `failed` reachable from any active state. Completion is asynchronous — observed by Sync (ADR-007 C-06). | `fix_requests.status` | Transitions only via `packages/domain` writers (DESIGN-005 D-09/D-12). |
 
 ## Changelog
 
 | Date | Author | Change |
 |------|--------|--------|
 | 2026-07-03 | Tom Haynes | Initial glossary seeded from PRD-001 (Accepted). T-01..T-40 assigned. |
+| 2026-07-03 | Tom Haynes | DESIGN-005: added T-41 Tombstone, T-42 Sync Cursor, T-43 Fix Lifecycle; amended prescriptive identifiers on T-24..T-27, T-30, T-34 to the DESIGN-001 D-15 reserved names and snake_case enum convention. |

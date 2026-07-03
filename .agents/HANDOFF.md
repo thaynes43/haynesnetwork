@@ -34,6 +34,7 @@
   isolation next time.
 - Visual vetting pass done at 390x844 / 820x1180 / 1920x1080 (screenshots shared with
   owner 2026-07-03).
+- Staging live at haynesnetwork.haynesops.com (2026-07-03); DESIGN-005 drafted (this PR).
 
 ## Where things stand (wave 2 additions)
 
