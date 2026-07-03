@@ -14,7 +14,8 @@ Branch protection on `main` via `gh api` (ADR-009 parameters):
 - Required status checks, strict (branch must be up to date): contexts exactly
   `lint-and-typecheck`, `test`, `build` — the `e2e` job stays advisory until hardening.
 - `required_pull_request_reviews: null` — solo maintainer; CI is the gate.
-- `enforce_admins: false` — escape hatch for emergencies; use it consciously.
+- `enforce_admins: true` — protection applies to admins too (verified: owner direct push
+  rejected); the escape hatch is temporarily flipping this via API, consciously.
 - Linear history required; force pushes and deletions blocked.
 - Repo merge settings: squash-merge only (merge commits and rebase-merge disabled),
   head branches auto-deleted.
@@ -27,7 +28,7 @@ gh api -X PUT repos/thaynes43/haynesnetwork/branches/main/protection \
     "strict": true,
     "contexts": ["lint-and-typecheck", "test", "build"]
   },
-  "enforce_admins": false,
+  "enforce_admins": true,
   "required_pull_request_reviews": null,
   "restrictions": null,
   "required_linear_history": true,

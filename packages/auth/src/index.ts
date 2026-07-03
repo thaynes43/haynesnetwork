@@ -1,3 +1,65 @@
-// TODO(DESIGN-002): Better Auth instance with Authentik OIDC (generic OAuth) and the
-// BOOTSTRAP_ADMIN_EMAILS promotion hook land here (docs/designs/002-auth-and-authentik.md).
-export const AUTH_PACKAGE = '@hnet/auth';
+// @hnet/auth — Better Auth wired to Authentik OIDC (the sole sign-in method) per
+// DESIGN-002; consumed by apps/web's catch-all route and DESIGN-003's tRPC context.
+import type { Role } from '@hnet/db';
+import { auth } from './config';
+import { getSessionExtension } from './hooks/session-extension';
+
+export { auth, oidcEnabled, type Auth } from './config';
+export { bootstrapAdminOnSignin } from './hooks/bootstrap-admin';
+export {
+  getSessionRole,
+  getSessionExtension,
+  type SessionExtension,
+} from './hooks/session-extension';
+export {
+  authEnv,
+  assertAuthEnv,
+  parseBootstrapAdminEmails,
+  DEFAULT_OIDC_DISCOVERY_URL,
+  OIDC_PROVIDER_ID,
+  type AuthEnv,
+} from './env';
+
+type RawSession = NonNullable<Awaited<ReturnType<typeof auth.api.getSession>>>;
+
+/**
+ * The session-user shape DESIGN-003's tRPC context consumes: role rides the session
+ * (ADR-002 C-04) and isFamily is the EFFECTIVE family flag (direct designation OR any
+ * applied family tag — DESIGN-003 D-01), hydrated from the users table.
+ */
+export interface SessionUser {
+  id: string;
+  email: string;
+  displayName: string;
+  role: Role;
+  isFamily: boolean;
+}
+
+/** A live server-side session: Better Auth's session row + the hydrated user. */
+export interface Session {
+  session: RawSession['session'];
+  user: SessionUser;
+}
+
+/**
+ * Donor pattern via auth.api.getSession, extended per DESIGN-002 D-06: Better Auth
+ * resolves the DB-backed session from the request headers, then one users-table read
+ * grafts on role/displayName/effective-isFamily. Returns null for no/invalid session
+ * — and when the user row has vanished (fail closed, DESIGN-003 D-01).
+ */
+export async function getServerSession(headers: Headers): Promise<Session | null> {
+  const raw = await auth.api.getSession({ headers });
+  if (!raw) return null;
+  const extension = await getSessionExtension(raw.user.id);
+  if (!extension) return null;
+  return {
+    session: raw.session,
+    user: {
+      id: raw.user.id,
+      email: raw.user.email,
+      displayName: extension.displayName,
+      role: extension.role,
+      isFamily: extension.isFamily,
+    },
+  };
+}
