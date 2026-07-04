@@ -58,6 +58,10 @@ test.describe('media ledger + fix flow', () => {
     await expect(card).toContainText('9/10 on disk');
     await expect(page.locator('.media-card').filter({ hasText: 'The Fixture' })).toHaveCount(1);
 
+    // Owner ruling 2026-07-04: library tiles are ACTION-FREE — no Fix / Force Search
+    // buttons on the list; the whole tile is a click-through to the detail page.
+    await expect(page.locator('.media-list button')).toHaveCount(0);
+
     // Search narrows the list.
     await page.getByLabel('Search the library').fill('breaking');
     await expect(page.locator('.media-card')).toHaveCount(1);
@@ -76,13 +80,16 @@ test.describe('media ledger + fix flow', () => {
     await expect(page.getByRole('button', { name: 'Force Search show' })).toBeVisible();
     await expandSeason(page, 'Season 1');
 
-    // The episode list shows per-episode on-disk state (D-06). E2 is on disk → Fix;
-    // E10 is missing → Force Search (owner feedback: episode-level, not show-level).
+    // The episode list shows per-episode on-disk state (D-06). Owner availability rule
+    // (2026-07-04): ON DISK → BOTH Fix and Force Search; MISSING → Force Search only.
     const onDiskRow = page.locator('.child-row').filter({ hasText: 'S01E02 · Chapter 2' });
     await expect(onDiskRow).toContainText('On disk');
+    await expect(onDiskRow.getByRole('button', { name: 'Fix' })).toBeVisible();
+    await expect(onDiskRow.getByRole('button', { name: 'Force Search' })).toBeVisible();
     const missingRow = page.locator('.child-row').filter({ hasText: 'S01E10 · Chapter 10' });
     await expect(missingRow).toContainText('Missing');
     await expect(missingRow.getByRole('button', { name: 'Force Search' })).toBeVisible();
+    await expect(missingRow.getByRole('button', { name: 'Fix' })).toHaveCount(0);
 
     // Fix that specific episode: the dialog carries the chosen episode (no picker).
     await onDiskRow.getByRole('button', { name: 'Fix' }).click();
@@ -208,6 +215,45 @@ test.describe('media ledger + fix flow', () => {
       seriesId: STUB_SERIES_ID,
       seasonNumber: 2,
     });
+  });
+
+  test('an on-disk movie shows BOTH Fix and Force Search; Force Search searches ONLY (owner rule)', async ({
+    page,
+  }) => {
+    // Admin bypasses the shared fix/search hourly budget so this stays order-independent.
+    await signIn(page, 'admin');
+
+    // Open the seeded on-disk movie "The Fixture" (radarr, 1/1 on disk).
+    await page.locator('.topbar__nav').getByRole('link', { name: 'Library' }).click();
+    await page.waitForURL('/library');
+    const card = page.locator('.media-card').filter({ hasText: 'The Fixture' });
+    await expect(card).toContainText('Movie');
+    await card.click();
+    await page.waitForURL(/\/library\/[0-9a-f-]{36}$/);
+    await expect(page.locator('.detail-head__title')).toContainText('The Fixture');
+    await expect(page.locator('.detail-head')).toContainText('On disk');
+
+    // Owner availability rule (2026-07-04): an on-disk item offers BOTH actions.
+    const actions = page.locator('.detail-head__actions');
+    await expect(actions.getByRole('button', { name: 'Fix' })).toBeVisible();
+    await expect(actions.getByRole('button', { name: 'Force Search' })).toBeVisible();
+
+    // Force Search an ON-DISK movie must be permitted server-side and search ONLY:
+    // MoviesSearch fires, nothing is blocklisted or deleted.
+    await resetStubArrCalls();
+    await actions.getByRole('button', { name: 'Force Search' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Force search The Fixture' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Force search' }).click();
+    await expect(dialog).toContainText('search is running', { timeout: 15_000 });
+    await dialog.getByRole('button', { name: 'Done' }).click();
+
+    const calls = await stubArrCalls();
+    expect(calls.filter((c) => c.path.startsWith('/history/failed/'))).toHaveLength(0);
+    expect(calls.filter((c) => c.method === 'DELETE')).toHaveLength(0);
+    const commands = calls.filter((c) => c.path === '/command');
+    expect(commands).toHaveLength(1);
+    expect(commands[0]!.body).toEqual({ name: 'MoviesSearch', movieIds: [601] });
   });
 
   test('a season can be expanded to reveal its episodes', async ({ page }) => {

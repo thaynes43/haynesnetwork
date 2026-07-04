@@ -93,25 +93,43 @@ export function ItemDetail({ mediaItemId }: { mediaItemId: string }) {
     <p className="muted">No {childNoun}s found on the manager.</p>
   ) : null;
 
-  // One child row: on disk → Fix (something to repair); missing → Force Search.
+  // One child row (owner availability rule 2026-07-04): ON DISK → BOTH Fix (repair the
+  // grab) and Force Search (just re-grab); MISSING → Force Search only (nothing on disk
+  // to blocklist/delete). Force Search is always available; Fix is gated on hasFile.
   const childRow = (child: { arrChildId: number; label: string; hasFile: boolean }, scope: 'episode' | 'album') => (
     <li key={child.arrChildId} className="child-row">
       <span className="child-row__label">{child.label}</span>
       <span className={`badge badge--${child.hasFile ? 'ok' : 'warn'}`}>
         {child.hasFile ? 'On disk' : 'Missing'}
       </span>
-      <button
-        type="button"
-        className="btn sm child-row__action"
-        onClick={() =>
-          setAction({
-            mode: child.hasFile ? 'fix' : 'search',
-            target: { scope, childId: child.arrChildId, label: child.label },
-          })
-        }
-      >
-        {child.hasFile ? 'Fix' : 'Force Search'}
-      </button>
+      <span className="child-row__actions">
+        {child.hasFile ? (
+          <button
+            type="button"
+            className="btn sm"
+            onClick={() =>
+              setAction({
+                mode: 'fix',
+                target: { scope, childId: child.arrChildId, label: child.label },
+              })
+            }
+          >
+            Fix
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="btn sm"
+          onClick={() =>
+            setAction({
+              mode: 'search',
+              target: { scope, childId: child.arrChildId, label: child.label },
+            })
+          }
+        >
+          Force Search
+        </button>
+      </span>
     </li>
   );
 
@@ -140,7 +158,9 @@ export function ItemDetail({ mediaItemId }: { mediaItemId: string }) {
           </div>
         </div>
         {/* Radarr acts at the movie level (the movie IS the unit — ADR-007). Sonarr/Lidarr
-            act per episode/album below, so the show-level nuke is gone (owner feedback). */}
+            act per episode/album below, so the show-level nuke is gone (owner feedback).
+            Owner availability rule (2026-07-04): ON DISK → BOTH Fix and Force Search;
+            MISSING → Force Search only. */}
         {item.arrKind === 'radarr' ? (
           <div className="detail-head__actions">
             {item.onDiskFileCount > 0 ? (
@@ -152,16 +172,15 @@ export function ItemDetail({ mediaItemId }: { mediaItemId: string }) {
               >
                 Fix
               </button>
-            ) : (
-              <button
-                type="button"
-                className="btn primary"
-                disabled={item.tombstonedAt !== null}
-                onClick={() => setAction({ mode: 'search', target: null })}
-              >
-                Force Search
-              </button>
-            )}
+            ) : null}
+            <button
+              type="button"
+              className={item.onDiskFileCount > 0 ? 'btn' : 'btn primary'}
+              disabled={item.tombstonedAt !== null}
+              onClick={() => setAction({ mode: 'search', target: null })}
+            >
+              Force Search
+            </button>
           </div>
         ) : null}
       </section>

@@ -713,6 +713,23 @@ unit) — there is no track/song scope in our fix targets. Implemented at album 
 whole-artist roll-up, matching the design rather than adding track-level scope creep.
 Flagged here and in the PR report for owner sign-off.
 
+**Amendment — uniform availability rule (owner 2026-07-04, after testing v0.3.0).** The
+earlier "on disk → Fix; not on disk → Force Search" rule (above) was inconsistent across
+grains in the UI (movies offered only one action; on-disk items hid Force Search behind a
+Fix-only control). It is superseded by one rule applied at **every** repairable grain
+(movie item, episode, season, album): **on disk → BOTH Fix and Force Search available;
+not on disk → Force Search only.** Whole-**show** and whole-**artist** roll-ups stay
+**Force-Search-only** at any state (Fix needs a repairable grab grain — `resolveFixTarget`
+already rejects `show`/`artist`). This is purely a UI-availability change: it adds Force
+Search to on-disk movies/episodes/albums/seasons where the UI previously exposed only Fix.
+The backend already permits it — `resolveSearchTarget` allows every scope and `runForceSearch`
+has no on-disk gate, so force-searching an on-disk item/episode/album was always accepted
+server-side (verified: no domain or API change needed). Additionally, the library **list
+tiles and wanted rows are now action-free** (no per-tile Fix/Force Search buttons — they
+made tiles irregular and invited misclicks, owner screenshot): tiles keep their badges
+(kind, on-disk, Wanted/Removed) and are a uniform click-through to `/library/[id]`, where
+all actions live.
+
 ### D-16 Restore flow (R-50..R-52, AC-09)
 
 Explicitly **not automatic** — no code path triggers Restore but the two admin
