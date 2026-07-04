@@ -51,7 +51,8 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
 5. **Auth is Authentik OIDC only.** No email/password, no invite tokens. Admin role is
    bootstrapped by matching the OIDC email against the `BOOTSTRAP_ADMIN_EMAILS` allowlist.
 6. Role/permission mutations must write audit rows in the same transaction (see
-   `packages/domain` once it exists — pattern borrowed from todos-for-dues).
+   `packages/domain` — single-writer helpers; `packages/domain/README.md` — pattern
+   borrowed from todos-for-dues).
 7. Secrets never land in git: local dev uses `.env.local` (gitignored); cluster uses
    External Secrets + 1Password (`HaynesKube` vault). See `docs/ops/`.
 
@@ -67,11 +68,26 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
 ## Commands
 
 pnpm 11.9 workspace (Node >= 22). Apps live in `apps/*`; internal packages in `packages/*`
-are scoped **`@hnet/*`** (`@hnet/db`, `@hnet/auth`, `@hnet/api`, `@hnet/domain`, `@hnet/ui`,
-`@hnet/test-utils`) and export raw TS — no per-package build step.
+are scoped **`@hnet/*`** and export raw TS — no per-package build step. There are eight:
+
+- `@hnet/db` — Drizzle schema + migrations against Postgres 16.
+- `@hnet/domain` — single-writer domain logic; audit/ledger rows written in the same
+  transaction as the mutation they record.
+- `@hnet/arr` — Sonarr/Radarr/Lidarr client; `@hnet/arr/write` (the write-back surface) is
+  import-confined to `packages/domain`.
+- `@hnet/sync` — one-way *arr → ledger sync jobs (run by the cluster CronJobs).
+- `@hnet/auth` — Better Auth + Authentik OIDC wiring.
+- `@hnet/api` — tRPC routers.
+- `@hnet/ui` — token-themed components (`data-theme`); `tokens.css` is the only place for hex.
+- `@hnet/test-utils` — embedded-Postgres + stub harness helpers.
 
 - `pnpm install` — install workspace deps.
-- `pnpm dev` — Next.js dev server (`apps/web`) on http://localhost:3000.
+- `pnpm dev` — Next.js dev server (`apps/web`) on http://localhost:3000. Needs a real
+  `DATABASE_URL`/OIDC env in `apps/web/.env.local`.
+- `pnpm dev:local` — the primary no-Docker way to boot the whole app: embedded Postgres 16
+  (migrated + seeded), a stub OIDC provider, and stub Sonarr/Radarr/Lidarr/Seerr, all on
+  http://localhost:3000. See `docs/ops/003-local-verification.md` (local verify) and
+  `docs/ops/004-deploy-runbook.md` (merged PR → live staging).
 - `pnpm build` — `pnpm -r build` (`next build`, standalone output).
 - `pnpm typecheck` — `tsc --noEmit` in every workspace package.
 - `pnpm lint` — ESLint 9 flat config in every workspace package.

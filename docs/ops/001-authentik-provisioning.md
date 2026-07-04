@@ -15,7 +15,7 @@ What exists in Authentik (created via API, additive only):
 | Redirect URIs (strict) | `http://localhost:3000/api/auth/oauth2/callback/authentik` · `https://haynesnetwork.haynesops.com/api/auth/oauth2/callback/authentik` · `https://haynesnetwork.com/api/auth/oauth2/callback/authentik` · `https://www.haynesnetwork.com/api/auth/oauth2/callback/authentik` |
 | Discovery | `https://authentik.haynesnetwork.com/application/o/haynesnetwork/.well-known/openid-configuration` (verified live) |
 
-The callback path is Better Auth's generic-OAuth route: `{BETTER_AUTH_URL}/api/auth/oauth2/callback/authentik` (verified against better-auth 1.6.11 source — DESIGN-002).
+The callback path is Better Auth's generic-OAuth route: `{BETTER_AUTH_URL}/api/auth/oauth2/callback/authentik` (verified against the installed better-auth 1.6.23 source — `packages/auth` declares `^1.6.11`, the lockfile resolves it to 1.6.23; see DESIGN-002 D-04).
 
 ## Credential locations
 

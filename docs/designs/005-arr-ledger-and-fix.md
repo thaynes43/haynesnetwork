@@ -119,13 +119,23 @@ have no Seerr attribution path (Q-02).
 | Child list (fix target picker) | `GET /episode?seriesId=` | — (movie is the target) | `GET /album?artistId=` |
 | Paged history | `GET /history?page=&pageSize=&sortKey=date&sortDirection=descending` | same | same |
 | Incremental history | `GET /history/since?date=&eventType=` | same | same |
+| Queue (fix-in-flight display) | *deferred — NOT implemented* (no `queue` read method in `packages/arr/src/read.ts`; kept in this inventory as a future spot-check surface only) | — | — |
 | Latest grab for a target | `GET /history?episodeId=&eventType=1` (integer enum; `grabbed`=1) | `GET /history/movie?movieId=&eventType=grabbed` (tolerant path — string OK) | `GET /history?albumId=&eventType=1` (integer enum; `grabbed`=1) |
 | Profiles / folders / tags | `GET /qualityprofile`, `GET /rootfolder`, `GET /tag` | same | same (+ metadata profile via item fields) |
 | Wanted (spot checks) | `GET /wanted/missing?page=` (episode-level) | `GET /wanted/missing?page=` (movie-level) | `GET /wanted/missing?page=` (album-level) |
-| Queue (fix-in-flight display) | `GET /queue?page=` | same | same |
 
 Seerr: `GET /request?take=&skip=&sort=added` (attribution), `GET /settings/main`
 (identity probe), `GET /status` (version).
+
+> **Latent `/history/since?eventType=` 400 risk.** The same eventType string-vs-integer
+> asymmetry called out in D-02 also applies to the incremental endpoint. `getHistorySince`
+> in `packages/arr/src/read.ts` binds its optional `eventType?: string` as a **raw string**
+> query param — safe today only because sync calls it with `eventType` **undefined** (it
+> filters by date + normalizes every returned type per the D-07 map, not by a server-side
+> eventType filter). If a future caller ever passes a string eventType here, Sonarr/Lidarr
+> will 400 exactly as the paged `/history` filter does; that path must pass the INTEGER enum
+> (`SONARR_GRABBED_EVENT_TYPE` / `LIDARR_GRABBED_EVENT_TYPE`), same as the per-target grab
+> lookups already do. Radarr's `/history/movie` remains tolerant of the string.
 
 **Write (Phase 2 mutations — verified in the published OpenAPI specs, NEVER called
 during this investigation):**
@@ -134,7 +144,7 @@ during this investigation):**
 |---|---|---|
 | Mark grab failed (blocklist) | `POST /api/v3/history/failed/{id}` (Sonarr, Radarr), `POST /api/v1/history/failed/{id}` (Lidarr) | `{id}` = the **history record id** of the grab; no request body. This is the modern endpoint on all three (the pre-v3 `POST /history/failed` with a body id is gone). |
 | Delete file (fix fallback) | `DELETE /episodefile/{id}` · `DELETE /moviefile/{id}` · `DELETE /trackfile/{id}` (bulk variants exist) | Lidarr deletes at track-file granularity — an album fix deletes every track file of that album. |
-| Trigger search | `POST /command` with `{name: 'EpisodeSearch', episodeIds: int[]}` · `{name: 'MoviesSearch', movieIds: int[]}` · `{name: 'AlbumSearch', albumIds: int[]}` (`SeriesSearch {seriesId}` exists but Fix targets episodes) | Command *names* are not enumerable read-only via REST; verified against the command class constants in each *arr's `develop` source (`EpisodeSearchCommand`, `MoviesSearchCommand`, `AlbumSearchCommand`). |
+| Trigger search | `POST /command` with `{name: 'EpisodeSearch', episodeIds: int[]}` · `{name: 'MoviesSearch', movieIds: int[]}` · `{name: 'AlbumSearch', albumIds: int[]}`. **Roll-up scopes (ADR-011, D-15) add:** `{name: 'SeasonSearch', seriesId, seasonNumber}` + `{name: 'SeriesSearch', seriesId}` (sonarr) and `{name: 'ArtistSearch', artistId}` (lidarr) | Command *names* are not enumerable read-only via REST; verified against the command class constants in each *arr's `develop` source (`EpisodeSearchCommand`, `MoviesSearchCommand`, `AlbumSearchCommand`, `SeasonSearchCommand` {`SeriesId`+`SeasonNumber`}, `SeriesSearchCommand`, `ArtistSearchCommand` {`ArtistId`}). Implemented as `searchEpisodes`/`searchSeason`/`searchSeries` (`SonarrWriteClient`), `searchMovies` (`RadarrWriteClient`), `searchAlbums`/`searchArtist` (`LidarrWriteClient`) in `packages/arr/src/write.ts`. |
 | Re-add item (Restore) | `POST /series` · `POST /movie` · `POST /artist` | Payloads take the item resource + `addOptions` (`AddSeriesOptions{monitor, searchForMissingEpisodes,…}`, `AddMovieOptions{monitor, searchForMovie,…}`, `AddArtistOptions{monitor, monitored, searchForMissingAlbums,…}`). |
 | Create tag (Restore prerequisite) | `POST /tag` `{label}` | All three; restore recreates missing tags by **label** before re-adding items. |
 
@@ -420,8 +430,12 @@ pending ──(blocklist or delete succeeded)──> actioned ──(search comm
 `created_at > now() - interval '1 hour'` inside the insert transaction (under a
 per-requester `pg_advisory_xact_lock` so parallel submissions can't slip past) and throws
 `FixRateLimitError` at the limit. Admins bypass. Additionally, **one open fix per
-target**: an existing `pending`/`actioned`/`search_triggered` row for the same
-`(media_item_id, target_arr_child_id)` → `FixAlreadyOpenError` (CONFLICT).
+target**: an existing `pending`/`actioned`/`search_triggered` row for the same target
+→ `FixAlreadyOpenError` (CONFLICT). The dedupe key is the **4-tuple**
+`(media_item_id, target_scope, target_arr_child_id, target_season)` (migration 0006 added
+`target_scope` + `target_season` — D-13/D-15) so two different sonarr **seasons** of one
+show, which both carry a null `target_arr_child_id`, no longer collide on the old
+2-tuple `(media_item_id, target_arr_child_id)`.
 
 ### D-10 `restore_runs`
 
@@ -522,7 +536,8 @@ Continues DESIGN-001 D-13:
 |---|---|---|
 | `0003_media_ledger.sql` | All D-05..D-11 tables, CHECKs, partial unique + indexes, and the `wanted_items` view | `drizzle-kit generate`; view appended by hand if drizzle-kit still doesn't emit `pgView` (DESIGN-001 Q-04's resolution applies here too) |
 | `0004_search_requested_event.sql` | Relaxes (drop + re-add) the `ledger_events_event_type_enum` CHECK to admit `'search_requested'` — the Force Search audit event (D-17). Existing rows unaffected | hand-written ALTER TABLE; `LEDGER_EVENT_TYPES` extended in `packages/db/src/schema/enums.ts` in the same change |
-| `0006_fix_target_scope.sql` | Media-hierarchy actions: adds `fix_requests.target_scope` (`text NOT NULL DEFAULT 'item'`, CHECK `item\|season\|episode\|album`) + `target_season` (`integer`, CHECK: non-null IFF scope `season`), backfilling existing rows from their kind + child id. Lets a Fix repair a whole sonarr **season** and keeps two seasons of one show from colliding in the open-fix dedupe (D-09) | hand-written ALTER TABLE; `FIX_TARGET_SCOPES` added to `packages/db/src/schema/enums.ts` in the same change (0005 = the unaccent-search hotfix that landed between) |
+| `0005_unaccent_search.sql` | `CREATE EXTENSION IF NOT EXISTS unaccent` — accent/diacritic-insensitive library search (owner report: "pokemon" must find "Pokémon"). The `ledger.search` router wraps `unaccent()` around both the `media_items` column and the LIKE pattern (still ILIKE for case). Idempotent; a no-op on re-run. No expression index — `unaccent()` is STABLE not IMMUTABLE, and a seq scan at ~17k rows is cheap (deferred). CNPG images and the embedded-PG16 test binary both ship contrib `unaccent` | hand-written; no schema/enum change |
+| `0006_fix_target_scope.sql` | Media-hierarchy actions: adds `fix_requests.target_scope` (`text NOT NULL DEFAULT 'item'`, CHECK `item\|season\|episode\|album`) + `target_season` (`integer`, CHECK: non-null IFF scope `season`), backfilling existing rows from their kind + child id. Lets a Fix repair a whole sonarr **season** and, with scope + season now in the open-fix dedupe key, keeps two seasons of one show (both null child) from colliding (D-09) | hand-written ALTER TABLE; `FIX_TARGET_SCOPES` added to `packages/db/src/schema/enums.ts` in the same change |
 
 No seed data — every row arrives via sync.
 
@@ -545,13 +560,16 @@ the runner lives in its own `@hnet/sync` package so the CLI and orchestration st
 out of the ACL package — workspace-dep chain flattening verified, Q-07). **Command:**
 
 ```
-tsx /sync/src/scripts/sync.ts --mode=incremental        # every 15 min
-tsx /sync/src/scripts/sync.ts --mode=full               # nightly 03:30
+tsx /sync/src/scripts/sync.ts --mode=incremental        # every 15 min ("*/15 * * * *")
+tsx /sync/src/scripts/sync.ts --mode=full               # nightly 04:30 ("30 4 * * *")
 ```
 
-Two CronJobs in the haynesnetwork HelmRelease (haynes-ops), both `concurrencyPolicy:
-Forbid`, `backoffLimit: 0` (the next tick retries; cursors make missed ticks harmless),
-sharing the app's ExternalSecret-fed env (D-18). Fix/Restore are *not* CronJob work —
+Two CronJobs in the haynesnetwork HelmRelease (haynes-ops
+`kubernetes/main/apps/frontend/haynesnetwork/app/helmrelease.yaml`), both
+`concurrencyPolicy: Forbid`, `backoffLimit: 1` — as deployed, the `sync-incremental`
+CronJob runs `"*/15 * * * *"` and `sync-full` runs `"30 4 * * *"` (04:30). The cursor in
+`sync_state` makes missed/retried ticks harmless. Both share the app's ExternalSecret-fed
+env (D-18). Fix/Restore are *not* CronJob work —
 they run in-request in `apps/web` (user-facing latency, and they must report *arr
 responses synchronously).
 
@@ -800,7 +818,11 @@ export const ledgerRouter = router({
 
   children: authedProcedure.input(z.object({ mediaItemId: z.uuid() }))
     .query(/* LIVE proxy (D-06): sonarr episodes / lidarr albums / [] for radarr;
-              {arrChildId, label, hasFile, monitored} — fix target picker */),
+              {arrChildId, label, hasFile, monitored, seasonNumber, episodeFileId} —
+              fix target picker. seasonNumber (sonarr; null for lidarr/radarr) groups
+              the detail list into collapsible season sections and scopes a season
+              roll-up (D-15). episodeFileId (sonarr; null otherwise) is the AC-08
+              fallback's DELETE target — see packages/domain/src/media-children.ts */),
 
   wanted: authedProcedure.input(z.object({ arrKind: z.enum(ARR_KINDS).optional(),
       cursor: z.string().optional(), limit: z.number().int().min(1).max(100).default(50) }))
@@ -809,23 +831,35 @@ export const ledgerRouter = router({
 
 // ---------- fix ----------
 export const fixRouter = router({
+  // As-built input (packages/api/src/routers/fix.ts): the ADR-011 media-hierarchy
+  // roll-up added `scope` (ACTION_SCOPES = item|show|season|episode|album — the wire
+  // accepts the full set for both mutations; the DOMAIN writer does the authoritative
+  // per-kind validation) and `seasonNumber` (for scope 'season'). A shared
+  // `refineScopeShape` enforces season⇒seasonNumber+no child, episode/album⇒child.
   create: authedProcedure.input(z.object({
     mediaItemId: z.uuid(),
-    targetChildId: z.number().int().positive().optional(), // required iff sonarr/lidarr (domain-validated)
+    scope: z.enum(ACTION_SCOPES).optional(),               // omitted ⇒ legacy per-kind default; whole-show/artist rejected by the writer (Force-Search-only, D-15)
+    targetChildId: z.number().int().positive().optional(), // episode (sonarr) / album (lidarr); required iff kind needs it (domain-validated)
+    seasonNumber: z.number().int().min(0).optional(),      // sonarr season roll-up (scope 'season')
     reason: z.enum(FIX_REASONS),
     reasonText: z.string().trim().min(1).max(500).optional(), // required iff reason === 'other' (zod .refine + D-09 CHECK)
   }).refine(v => (v.reason === 'other') === (v.reasonText !== undefined),
-    { error: 'reasonText is required exactly when reason is "other"' }))
-    .mutation(/* createFixRequest → D-15 orchestration → returns
-                 {id, status, pathTaken, targetLabel} */),
+    { error: 'reasonText is required exactly when reason is "other"' })
+    .refine(refineScopeShape, { error: 'scope/target/season combination is invalid' }))
+    .mutation(/* runFixRequest → D-15 orchestration (resolveFixTarget, action-scope.ts)
+                 → returns {id, status, pathTaken, targetLabel} */),
 
-  // Force Search (D-15/D-17): search-only for MISSING content — no reason, no
-  // blocklist, no delete. targetChildId optional (sonarr episode or whole-series;
-  // required for lidarr album; forbidden for radarr). Shares the Fix hourly budget.
+  // Force Search (D-15/D-17, expanded write-back surface per ADR-011): search-only for
+  // MISSING content — no reason, no blocklist, no delete. Same scope/season inputs as
+  // create, but wider allow-list (whole-show 'show' / whole-artist 'artist' permitted —
+  // resolveSearchTarget). Shares the Fix hourly budget.
   forceSearch: authedProcedure.input(z.object({
     mediaItemId: z.uuid(),
+    scope: z.enum(ACTION_SCOPES).optional(),               // omitted ⇒ legacy default (radarr item / sonarr whole-series when no child, else episode / lidarr album)
     targetChildId: z.number().int().positive().optional(),
-  })).mutation(/* runForceSearch → recordSearchRequest ('search_requested') + the
+    seasonNumber: z.number().int().min(0).optional(),
+  }).refine(refineScopeShape, { error: 'scope/target/season combination is invalid' }))
+    .mutation(/* runForceSearch → recordSearchRequest ('search_requested') + the
                   *arr search command → returns {eventId, targetLabel, commandName} */),
 
   myFixes: authedProcedure.query(/* caller's fix_requests, newest first:
@@ -876,10 +910,16 @@ packages/arr/                        @hnet/arr (raw-TS workspace package, like s
     http.ts            fetch wrapper: X-Api-Key header, timeouts, retry(2, idempotent GETs only)
     schemas/           zod parsers for exactly the D-02 field sets (sonarr.ts radarr.ts lidarr.ts seerr.ts)
     read.ts            ArrReadClient + SeerrReadClient (everything in D-03's read table)   ← sync, ledger.children, restore.diff
-    write.ts           ArrWriteClient (history/failed, file deletes, command, add-item, tag) ← ONLY importable by packages/domain fix/restore writers (guard test, D-12)
-    scripts/sync.ts    the CronJob CLI entry (D-14): --mode=full|incremental [--source=…] [--force-tombstones]
+    write.ts           {Sonarr,Radarr,Lidarr}WriteClient (history/failed, file deletes, search commands, add-item, tag) ← ONLY importable by packages/domain fix/restore writers (guard test, D-12)
   __fixtures__/        sanitized recorded GET responses (test strategy)
 ```
+
+> **The CronJob CLI is NOT in `packages/arr`.** `packages/arr` has no `scripts/`
+> directory. As built (Q-07), the runner lives in its **own package `@hnet/sync`**
+> (`packages/sync/src/scripts/sync.ts`, plus its orchestrator/adapter/normalizer
+> modules — see `packages/sync/README.md` and D-14) so the CLI + orchestration stay out
+> of the ACL package. `@hnet/sync` depends on `@hnet/arr/read` + `@hnet/domain` → `@hnet/db`.
+> D-14/Q-07 are authoritative on this; the tree above is the ACL adapter only.
 
 Read and write surfaces are **separate entrypoints** (`@hnet/arr/read`, `@hnet/arr/write`)
 per ADR-008's enforceability requirement. Zod parsing is `strip`-mode with required

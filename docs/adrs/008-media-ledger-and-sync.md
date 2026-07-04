@@ -1,6 +1,7 @@
 # ADR-008: Media ledger — *arrs are the source of truth, one-way sync, two audited write-backs
 
 - **Status:** Accepted
+- **Amended by:** ADR-011 (2026-07-04): adds Force Search as a third audited write-back and media-hierarchy action scopes.
 - **Date:** 2026-07-03
 - **Deciders:** Tom Haynes (with agent input)
 

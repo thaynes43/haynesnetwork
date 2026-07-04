@@ -1,7 +1,7 @@
 # DESIGN-006: Visual identity — mark, type, shape language
 
-- **Status:** Draft
-- **Last updated:** 2026-07-03
+- **Status:** Accepted
+- **Last updated:** 2026-07-04
 - **Satisfies:** PRD-001 R-60, R-61 (rebrand-as-data stays true); governed by ADR-005 (the theming MECHANISM is untouched: tokens, `data-theme`, ThemeProvider, layout primitives, hex guard). Partially supersedes DESIGN-004 D-01 (structural token values), D-06 (tile grid), D-07/D-08 (tile shape, brand mark) — noted inline there.
 
 ## Overview
@@ -118,5 +118,5 @@ glyphs are unchanged — only their presentation well is new).
 
 | ID   | Question                                                                                                                                                         | Resolution |
 | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| Q-01 | Does the owner approve this identity from the screenshot set (PR blocks on this)?                                                                                | (open)     |
-| Q-02 | Should the generic app icon (four rounded squares, `packages/ui/src/icons`) be redrawn to match the new identity? It only appears for unknown catalog icon keys. | (open)     |
+| Q-01 | Does the owner approve this identity from the screenshot set (PR blocks on this)?                                                                                | **Resolved:** owner approved the identity; it shipped in 0.3.0/0.3.1 and `apps/web/app/app.css` records the owner ruling (2026-07-04). |
+| Q-02 | Should the generic app icon (four rounded squares, `packages/ui/src/icons`) be redrawn to match the new identity? It only appears for unknown catalog icon keys. | **Resolved:** no redraw — the generic fallback icon is kept as-is; all seeded catalog entries carry explicit icon keys, so it is not user-visible in practice. |

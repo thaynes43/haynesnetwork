@@ -29,9 +29,11 @@
 //                                             consume-once, so repeat logins reuse it)
 //   POST /_control/reset                    → clear codes/tokens, reset persona
 //
-// Personas use *.example.test emails — tests set their own BOOTSTRAP_ADMIN_EMAILS
-// (never the owner's real emails) and stable `sub`s so repeat sign-ins land on the
-// same users row (AC-03 "repeat logins are no-ops").
+// Personas use *.example.test emails — the e2e suite and the interactive
+// `pnpm dev:local` harness (apps/web/dev/local.ts imports STUB_USERS) both set
+// their own BOOTSTRAP_ADMIN_EMAILS (never the owner's real emails) and stable
+// `sub`s so repeat sign-ins land on the same users row (AC-03 "repeat logins are
+// no-ops").
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';

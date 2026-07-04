@@ -41,11 +41,12 @@ and an operator can run Part B's steps top-to-bottom to provision Authentik and 
 ```
 packages/auth/
   src/
-    index.ts                  ← exports auth, oidcEnabled, getSessionRole
+    index.ts                  ← exports auth, oidcEnabled, getServerSession, getSessionExtension, getSessionRole, env helpers
     config.ts                 ← Better Auth instance (D-02)
+    env.ts                    ← D-08 env contract: authEnv()/assertAuthEnv()/parseBootstrapAdminEmails
     hooks/
       bootstrap-admin.ts      ← BOOTSTRAP_ADMIN_EMAILS promotion (D-05)
-      session-extension.ts    ← getSessionRole fallback (D-06)
+      session-extension.ts    ← getSessionExtension + getSessionRole (D-06)
 apps/web/
   app/api/auth/[...all]/route.ts   ← Better Auth catch-all handler (D-07)
 ```
@@ -175,16 +176,18 @@ Deltas from the donor config, all deliberate:
 
 ### D-03 Version pin
 
-Better Auth is pinned to the donor-proven **1.6.11** line (`better-auth@1.6.11` per
-todos-for-dues `pnpm-lock.yaml`). Everything in D-02/D-04 was verified against that exact
-package; a version bump re-runs D-04's verification.
+`packages/auth/package.json` declares `better-auth: ^1.6.11`; the workspace `pnpm-lock.yaml`
+**resolves it to `better-auth@1.6.23`** (verified in the lockfile 2026-07-04), and
+`config.ts`'s rate-limit/IP comments reference the 1.6.23 source. The D-04 callback-path
+convention below was originally verified against the 1.6.11 line and **still holds at
+1.6.23** (the generic-oauth `/oauth2/callback/:providerId` route is unchanged); a further
+version bump re-runs D-04's verification.
 
 ### D-04 Callback path convention — VERIFIED against better-auth source
 
 The redirect URIs registered in Authentik (Part B) must match what the `genericOAuth` plugin
-actually sends. **Verified 2026-07-03** against `better-auth@1.6.11` (the version pinned in
-todos-for-dues' `pnpm-lock.yaml`; `node_modules` wasn't installed there, so the exact package
-was fetched from the npm registry and inspected):
+actually sends. Verified against the generic-oauth plugin source (originally on
+`better-auth@1.6.11`; re-confirmed unchanged at the installed **`better-auth@1.6.23`**):
 
 - `package/dist/plugins/generic-oauth/routes.mjs` line 116 registers the callback endpoint:
   `createAuthEndpoint("/oauth2/callback/:providerId", { method: "GET", ... })`.
@@ -213,42 +216,49 @@ case-insensitive allowlist:
 
 ```ts
 import { eq } from 'drizzle-orm';
-import { db } from '@app/db';
-import { users } from '@app/db/schema';
-import { transitionRole } from '@app/domain';
+import { db, users, type Database, type DbClient } from '@hnet/db';
+import { transitionRole } from '@hnet/domain';
+import { parseBootstrapAdminEmails } from '../env';
 
 /**
  * Promote any user whose email is on the BOOTSTRAP_ADMIN_EMAILS allowlist to Admin
  * on every sign-in. Idempotent — no-op when already Admin. Routes through
  * transitionRole (DESIGN-001 D-12 single-writer invariant) so the promotion and its
  * user_role_transitions audit row commit in one transaction (R-02, R-04, AC-03).
- * Initiator is system (initiatorKind: 'system', initiatorId: null).
+ * Initiator is system (kind: 'system', id: null). Never throws into the auth flow —
+ * the session already exists, so failures are caught + logged and the next sign-in
+ * retries the promotion. `dbc` lets the integration tests inject the embedded-PG client.
  */
-export async function bootstrapAdminOnSignin(user: {
-  id: string;
-  email: string;
-}): Promise<void> {
-  const allowlist = (process.env.BOOTSTRAP_ADMIN_EMAILS ?? '')
-    .split(',')
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean);
-  if (!allowlist.includes(user.email.toLowerCase())) return;
+export async function bootstrapAdminOnSignin(
+  user: { id: string; email: string },
+  dbc?: DbClient,
+): Promise<void> {
+  try {
+    const allowlist = parseBootstrapAdminEmails(process.env.BOOTSTRAP_ADMIN_EMAILS);
+    if (!allowlist.includes(user.email.toLowerCase())) return;
 
-  const [row] = await db
-    .select({ role: users.role })
-    .from(users)
-    .where(eq(users.id, user.id));
-  if (!row || row.role === 'Admin') return;          // idempotent (AC-03 "repeat logins are no-ops")
+    const q = (dbc ?? db) as Database;
+    const [row] = await q.select({ role: users.role }).from(users).where(eq(users.id, user.id));
+    if (!row || row.role === 'Admin') return;        // idempotent (AC-03 "repeat logins are no-ops")
 
-  await transitionRole({
-    targetUserId: user.id,
-    expectedFromRole: row.role,                      // 'Member'
-    toRole: 'Admin',
-    initiator: { id: null, kind: 'system' },
-    note: 'BOOTSTRAP_ADMIN_EMAILS promotion',
-  });
+    await transitionRole({
+      db: dbc,                                        // executor (Database | Transaction); defaults to the lazy @hnet/db client
+      userId: user.id,                                // NOT `targetUserId` — the real TransitionRoleInput field
+      expectedFromRole: row.role,                     // 'Member' — optimistic-concurrency guard
+      toRole: 'Admin',
+      initiator: { id: null, kind: 'system' },
+      note: 'BOOTSTRAP_ADMIN_EMAILS promotion',
+    });
+  } catch (error) {
+    console.error('[@hnet/auth] bootstrapAdminOnSignin failed (retries on next sign-in):', error);
+  }
 }
 ```
+
+`transitionRole`'s input (DESIGN-001 `packages/domain/src/user-role-transitions.ts`) is
+`{ db?, userId, toRole, initiator, note?, expectedFromRole? }` — it keys the target user by
+`userId`, and `db` is the optional executor. The allowlist parse is factored into
+`parseBootstrapAdminEmails` in `packages/auth/src/env.ts` (shared with the D-08 env reader).
 
 Ordering note (why this is safe on *first* login): the hook fires
 `databaseHooks.session.create.after`, i.e. after Better Auth has committed the new `users`
@@ -257,12 +267,21 @@ Member→Admin transition, never a race with user creation. Failure mode: if `tr
 throws, the sign-in itself has already succeeded (session exists); the user lands as Member
 and the next sign-in retries the promotion.
 
-### D-06 `hooks/session-extension.ts` — role for server-rendered gates
+### D-06 `hooks/session-extension.ts` — session hydration for server-rendered gates
 
-Port of the donor's `getSessionRole(userId)`: a one-query fallback returning
-`{ role, displayName }` for server components/route handlers that need role-gated UI when
-Better Auth's `additionalFields.role` plumbing isn't in hand. tRPC context resolution (the
-role-gated-procedures design, later) is the primary consumer.
+The **primary** server-side entry point is `getServerSession(headers)` (exported from
+`packages/auth/src/index.ts`): it calls Better Auth's `auth.api.getSession({ headers })` to
+resolve the DB-backed session, then grafts on a one-lookup **session extension** via
+`getSessionExtension(userId)`, which returns `{ role, displayName, isFamily }`. `isFamily` is
+the **effective** family flag — direct `users.is_family` OR any applied family tag, derived by
+`@hnet/domain`'s `isEffectivelyFamily` so consumers never re-derive it. `getSessionExtension`
+returns `null` when the user row has vanished between sign-in and read, and `getServerSession`
+propagates that as `null` (fail closed). DESIGN-003's tRPC context is the primary consumer.
+
+`getSessionRole(userId)` is retained as a **secondary** one-query helper returning
+`{ role, displayName }` (donor port) for the narrower case where only the role/display name is
+needed and the effective-family derivation is unwanted; unlike `getSessionExtension` it
+*throws* when the user row is gone. Both accept an optional `dbc` executor for tests.
 
 ### D-07 Catch-all route
 
@@ -337,7 +356,7 @@ the deployment design.
     |<-- permissioned dashboard -------------|                                    |
 ```
 
-PKCE note: generic-oauth's `pkce` option defaults to off in 1.6.11 (`codeVerifier` only sent
+PKCE note: generic-oauth's `pkce` option defaults to off in 1.6.23 (`codeVerifier` only sent
 when `pkce: true`); the confidential client + `state` parameter is the baseline. Enabling
 PKCE on both sides is a hardening follow-up (Q-04).
 
@@ -350,8 +369,8 @@ only trusts a *single-value* `x-forwarded-for` unless `trustedProxies` is config
 multi-hop chain fails closed and **all clients collapse into one shared per-path bucket**
 (`no-trusted-ip`). A couple of sign-in clicks 429'd the whole household, and the login
 button mapped the 429 to the generic `sso_unavailable` copy. All option names below
-verified against the installed `better-auth@1.6.23` source (supersedes D-03's 1.6.11 note
-for these options; the D-04 callback-path verification still holds at 1.6.23).
+verified against the installed `better-auth@1.6.23` source (the version D-03 resolves to;
+the D-04 callback-path verification still holds at 1.6.23).
 
 Decided configuration (`packages/auth/src/config.ts`):
 
@@ -420,14 +439,14 @@ https://www.haynesnetwork.com/api/auth/oauth2/callback/authentik    (production 
 ### D-12 Provisioning steps (agent-executed via API)
 
 1. **Version check** — `GET admin/version/` (requires the token; anonymous returns 403 —
-   probed 2026-07-03). Determines the `redirect_uris` payload shape: Authentik **2024.2+**
-   takes a list of objects `[{ "matching_mode": "strict", "url": "..." }]`; older versions
-   take a single newline-joined string (Q-05).
+   probed 2026-07-03). The live cluster runs **Authentik 2026.5.3** (Q-05 resolved via
+   OPS-001), so `redirect_uris` is a list of objects `[{ "matching_mode": "strict", "url":
+   "..." }]` and `invalidation_flow` is a required field on provider create. (Authentik
+   before 2024.2 took a single newline-joined `redirect_uris` string — not applicable here.)
 2. **Find the default authorization flow** — `GET flows/instances/?designation=authorization`;
-   pick the default (`default-provider-authorization-implicit-consent`, or the explicit-consent
-   variant if the owner prefers a consent screen — Q-06). Record `pk`. On 2024.x+, also
-   `GET flows/instances/?designation=invalidation` → `default-provider-invalidation-flow` `pk`
-   (required field on provider create there).
+   pick `default-provider-authorization-implicit-consent` (Q-06 resolved: implicit consent, no
+   household consent screen). Record `pk`. Also `GET flows/instances/?designation=invalidation`
+   → `default-provider-invalidation-flow` `pk` (required on 2026.5.3 provider create).
 3. **Find the signing key** — `GET crypto/certificatekeypairs/?name=authentik+Self-signed+Certificate`
    (the built-in keypair) → `pk`. id_tokens must be RS256-signed; discovery advertises the JWKS.
 4. **Collect scope mappings** — `GET propertymappings/provider/scope/` filtered to the managed
@@ -441,7 +460,12 @@ https://www.haynesnetwork.com/api/auth/oauth2/callback/authentik    (production 
      "name": "haynesnetwork",
      "client_type": "confidential",
      "authorization_flow": "<step-2 pk>",
-     "invalidation_flow": "<step-2 pk>",        // 2024.x+ only
+     "invalidation_flow": "<step-2 invalidation pk>",  // required on 2024.x+ (2026.5.3 live)
+     // MANDATORY on the API path: omitting grant_types on Authentik 2026.5 saves an
+     // EMPTY list, after which every authorize is rejected with
+     // `invalid_request: The request is otherwise malformed`. The UI defaults it
+     // correctly; the API does not. This cost the first production sign-in (OPS-001).
+     "grant_types": ["authorization_code", "refresh_token"],
      "redirect_uris": [                          // shape per step 1; the four URIs from D-11
        { "matching_mode": "strict", "url": "http://localhost:3000/api/auth/oauth2/callback/authentik" },
        { "matching_mode": "strict", "url": "https://haynesnetwork.haynesops.com/api/auth/oauth2/callback/authentik" },
@@ -455,7 +479,8 @@ https://www.haynesnetwork.com/api/auth/oauth2/callback/authentik    (production 
    ```
 
    The response includes generated `client_id` and `client_secret` (also retrievable later via
-   `GET providers/oauth2/<pk>/`).
+   `GET providers/oauth2/<pk>/`). `grant_types` is non-negotiable on the API path — see the
+   inline note above and OPS-001 for the empty-list pitfall.
 6. **Create the application** — `POST core/applications/`:
 
    ```jsonc
@@ -506,7 +531,7 @@ Idempotency: each step is preceded by a lookup (`GET providers/oauth2/?name=hayn
 - **Per-environment Authentik providers** (separate client per redirect URI) — rejected:
   single confidential client with four strict redirect URIs is simpler; staging and prod share
   the user base by design.
-- **PKCE now** — deferred (Q-04): confidential client + state is the 1.6.11 default; enabling
+- **PKCE now** — deferred (Q-04): confidential client + state is the 1.6.23 default; enabling
   is a two-line config change on each side later.
 
 ## Test strategy
@@ -534,5 +559,5 @@ Idempotency: each step is preceded by a lookup (`GET providers/oauth2/?name=hayn
 | Q-02 | Does the Plex-source login inside Authentik mark email as verified in all cases (we set `emailVerified: true` unconditionally in D-02 on the strength of R-01 "Authentik is the authority")? | (open — lean yes; revisit only if a non-Plex Authentik source is added) |
 | Q-03 | Exact claim set Authentik's Plex-sourced users carry: is `name` always populated, or only `preferred_username`? D-02's fallback chain handles either; confirm at first login and simplify if warranted. | (open) |
 | Q-04 | Enable PKCE (`pkce: true` in genericOAuth + Authentik provider setting)? Not required for a confidential client; hardening follow-up. | (open — lean: enable post-Phase-1) |
-| Q-05 | Authentik version on the cluster (drives `redirect_uris` payload shape and whether `invalidation_flow` is required, D-12.1) — anonymous version endpoint returns 403; needs the token. | (open — resolved by runbook step 1) |
-| Q-06 | Implicit-consent vs explicit-consent authorization flow for the haynesnetwork application (implicit = no consent screen for household users; explicit = one-time consent). | (open — lean: implicit consent, owner to confirm) |
+| Q-05 | Authentik version on the cluster (drives `redirect_uris` payload shape and whether `invalidation_flow` is required, D-12.1) — anonymous version endpoint returns 403; needs the token. | **Resolved (OPS-001, 2026-07-03): Authentik 2026.5.3.** `redirect_uris` is the list-of-objects shape (`{matching_mode, url}`) and `invalidation_flow` is required (bound to `default-provider-invalidation-flow`). This is also where the mandatory `grant_types` API pitfall surfaced. |
+| Q-06 | Implicit-consent vs explicit-consent authorization flow for the haynesnetwork application (implicit = no consent screen for household users; explicit = one-time consent). | **Resolved (OPS-001): implicit consent** — bound to `default-provider-authorization-implicit-consent` (mirrors the Grafana provider); no per-user consent screen. |

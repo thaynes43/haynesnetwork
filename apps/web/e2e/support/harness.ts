@@ -1,8 +1,8 @@
 // Reusable stack harness — boots the full local environment as a plain async
 // module (NO Playwright imports): embedded Postgres 16 (@hnet/test-utils), the
 // real @hnet/db migrations (incl. the 0002 catalog seed), the stub OIDC provider,
-// and `next dev`. The Playwright globalSetup is one consumer; the planned
-// `pnpm dev:local` command is the other (same stack, interactive browser, sign in
+// and `next dev`. The Playwright globalSetup is one consumer; `pnpm dev:local`
+// (apps/web/dev/local.ts) is the other (same stack, interactive browser, sign in
 // as the stub personas — see stub-oidc.ts STUB_USERS).
 //
 // Entry point: `startStack(options?)` → `RunningStack` with an idempotent

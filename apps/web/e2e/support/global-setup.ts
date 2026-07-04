@@ -1,6 +1,6 @@
 // Playwright globalSetup — a THIN consumer of the reusable stack harness
-// (harness.ts boots embedded PG16 + migrations + stub OIDC + `next dev`; the
-// planned `pnpm dev:local` command reuses the same modules interactively).
+// (harness.ts boots embedded PG16 + migrations + stub OIDC + stub *arr + `next dev`;
+// `pnpm dev:local` (apps/web/dev/local.ts) reuses the same modules interactively).
 //
 // The stack boots HERE, not via Playwright's `webServer` block: the webServer
 // plugin starts BEFORE globalSetup (runner createGlobalSetupTasks ordering —
