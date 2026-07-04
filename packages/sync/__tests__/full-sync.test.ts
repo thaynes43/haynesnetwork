@@ -52,7 +52,7 @@ describe('full sync (DESIGN-005 D-14)', () => {
       arrKind: 'lidarr',
       onDiskFileCount: 0,
       expectedFileCount: 0,
-      sizeOnDisk: '0',
+      sizeOnDisk: 0,
     });
 
     // Spot-check the adapters: names/labels snapshotted, external ids per kind (D-05).
@@ -78,7 +78,7 @@ describe('full sync (DESIGN-005 D-14)', () => {
       .select()
       .from(mediaItems)
       .where(eq(mediaItems.arrKind, 'lidarr'));
-    expect(lidarrRows).toHaveLength(3);
+    expect(lidarrRows).toHaveLength(4);
     expect(lidarrRows.every((r) => /^[0-9a-f-]{36}$/.test(r.musicbrainzArtistId ?? ''))).toBe(
       true,
     );
@@ -114,7 +114,7 @@ describe('full sync (DESIGN-005 D-14)', () => {
       });
     }
     const all = await t.db.select().from(mediaItems);
-    expect(all).toHaveLength(9);
+    expect(all).toHaveLength(10);
   });
 
   it('tombstones a vanished item (under guard bounds) with a deleted(item_removed) event', async () => {

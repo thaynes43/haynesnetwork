@@ -479,7 +479,7 @@
     "status": "continuing",
     "ended": false,
     "artistName": "Never Refreshed",
-    "foreignArtistId": "test-never-refreshed-0000",
+    "foreignArtistId": "00000000-0000-4000-8000-00000000dead",
     "tadbId": 0,
     "discogsId": 0,
     "artistType": "Person",
