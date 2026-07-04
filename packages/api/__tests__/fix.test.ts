@@ -89,7 +89,9 @@ describe('fix.create — primary path (AC-07)', () => {
     expect(failed[0]!.url.pathname).toBe('/api/v3/history/failed/771');
     const grabLookups = stub.callsFor('GET', '/api/v3/history');
     expect(grabLookups[0]!.url.searchParams.get('episodeId')).toBe('50102');
-    expect(grabLookups[0]!.url.searchParams.get('eventType')).toBe('grabbed');
+    // Paged /history binds eventType to the INTEGER enum — grabbed === 1. The string
+    // form 400s upstream (fix/history-eventtype-enum) and the strict stub now 400s too.
+    expect(grabLookups[0]!.url.searchParams.get('eventType')).toBe('1');
     const commands = stub.callsFor('POST', '/api/v3/command');
     expect(commands).toHaveLength(1);
     expect(commands[0]!.body).toEqual({ name: 'EpisodeSearch', episodeIds: [50102] });

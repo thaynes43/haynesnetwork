@@ -90,7 +90,14 @@ export function FixDialog({ open, onClose, item, target, onSubmitted }: FixDialo
   }
 
   return (
-    <Modal open={open} title={`Fix ${item.title}`} onClose={close}>
+    <Modal
+      open={open}
+      title={`Fix ${item.title}`}
+      onClose={close}
+      // Errors ride a pinned aria-live slot above the scrolling body so the alert never
+      // squeezes the reason list into a cut-off scrollbox (owner UX nitpick).
+      banner={error ? <p className="alert">{error}</p> : null}
+    >
       {done ? (
         <div className="fix-done">
           <p className="fix-done__lead">
@@ -114,12 +121,6 @@ export function FixDialog({ open, onClose, item, target, onSubmitted }: FixDialo
             submit();
           }}
         >
-          {error ? (
-            <p className="alert" role="alert">
-              {error}
-            </p>
-          ) : null}
-
           {needsTarget && preselected !== null ? (
             <p className="fix-target">
               Fixing <strong>{preselected.label}</strong>

@@ -14,6 +14,16 @@ export const SONARR_HISTORY_EVENT_TYPES = [
   'downloadIgnored',
 ] as const;
 
+/**
+ * The `grabbed` filter value for the paged `GET /history?eventType=` endpoint
+ * (D-03/D-15). That endpoint binds `eventType` to the INTEGER `EpisodeHistoryEventType`
+ * enum — the lowercase string it RETURNS in responses is rejected there with HTTP 400
+ * ("The value 'grabbed' is not valid."). The enum array above is in upstream order, so
+ * grabbed's integer is its index (verified live 2026-07-03: `?eventType=1` →
+ * records[0].eventType === 'grabbed'). Response-side schemas keep the string form.
+ */
+export const SONARR_GRABBED_EVENT_TYPE: number = SONARR_HISTORY_EVENT_TYPES.indexOf('grabbed');
+
 /** `GET /series` element — exactly the D-02 sync contract for the ledger row. */
 export const sonarrSeriesSchema = z.object({
   id: z.number().int(),

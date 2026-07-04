@@ -17,6 +17,7 @@ import {
   type ArrTag,
 } from './schemas/common';
 import {
+  SONARR_GRABBED_EVENT_TYPE,
   sonarrEpisodeSchema,
   sonarrHistoryRecordSchema,
   sonarrSeriesSchema,
@@ -31,6 +32,7 @@ import {
   type RadarrMovie,
 } from './schemas/radarr';
 import {
+  LIDARR_GRABBED_EVENT_TYPE,
   lidarrAlbumSchema,
   lidarrArtistSchema,
   lidarrHistoryRecordSchema,
@@ -144,12 +146,17 @@ export class SonarrClient extends ArrReadClientBase {
   }
 
   /**
-   * `GET /history?episodeId=&eventType=grabbed` — latest grab for a fix target
-   * (D-03/D-15). Newest first (the *arr default sort is honored explicitly).
+   * `GET /history?episodeId=&eventType=1` — latest grab for a fix target (D-03/D-15).
+   * Newest first (the *arr default sort is honored explicitly). The paged `/history`
+   * endpoint binds `eventType` to the INTEGER enum; the string `grabbed` yields HTTP 400.
    */
   getEpisodeGrabHistory(episodeId: number): Promise<ArrPage<SonarrHistoryRecord>> {
     return this.http.requestJson('GET', 'history', pagedSchema(sonarrHistoryRecordSchema), {
-      query: { ...this.historyQuery({ pageSize: 20 }), episodeId, eventType: 'grabbed' },
+      query: {
+        ...this.historyQuery({ pageSize: 20 }),
+        episodeId,
+        eventType: SONARR_GRABBED_EVENT_TYPE,
+      },
     });
   }
 
@@ -238,10 +245,18 @@ export class LidarrClient extends ArrReadClientBase {
     });
   }
 
-  /** `GET /history?albumId=&eventType=grabbed` — latest grab for a fix target (D-03/D-15). */
+  /**
+   * `GET /history?albumId=&eventType=1` — latest grab for a fix target (D-03/D-15).
+   * The paged `/history` endpoint binds `eventType` to the INTEGER enum; the string
+   * `grabbed` yields HTTP 400.
+   */
   getAlbumGrabHistory(albumId: number): Promise<ArrPage<LidarrHistoryRecord>> {
     return this.http.requestJson('GET', 'history', pagedSchema(lidarrHistoryRecordSchema), {
-      query: { ...this.historyQuery({ pageSize: 20 }), albumId, eventType: 'grabbed' },
+      query: {
+        ...this.historyQuery({ pageSize: 20 }),
+        albumId,
+        eventType: LIDARR_GRABBED_EVENT_TYPE,
+      },
     });
   }
 

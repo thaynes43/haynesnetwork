@@ -2,9 +2,24 @@
 
 > The single resume point for agents. Update this in the same change as any milestone.
 
-- **Last updated:** 2026-07-03 (wave 9)
+- **Last updated:** 2026-07-03 (hotfix fix/history-eventtype-enum)
 - **Phase:** Phase 1 complete; Phase 2 code complete (sync + fix/ledger/restore UI); haynes-ops CronJobs + secrets next
 - **Workflow mode:** PR flow (GATE A executed — see .agents/plans/001-gate-a-pr-cutover.md)
+
+> **Hotfix (fix/history-eventtype-enum):** Paged `GET /history` grab lookups were sending
+> `eventType=grabbed` (string) — Sonarr/Lidarr bind that param to the INTEGER
+> `*HistoryEventType` enum and 400'd live (`grabbed`=1). Fix: `@hnet/arr` now sends the
+> integer (`SONARR_GRABBED_EVENT_TYPE`/`LIDARR_GRABBED_EVENT_TYPE` = enum index) for
+> `getEpisodeGrabHistory`/`getAlbumGrabHistory`; Radarr's tolerant `/history/movie` path is
+> unchanged (proven live 200). The *arr stubs (e2e `stub-arr.ts` + api `arr-stubs.ts`) are
+> now STRICT — a non-integer `eventType` on paged `/history` returns the real 400
+> ValidationProblemDetails so this class of bug fails CI forever. Response-side zod keeps
+> the string form. Verified read-only 2026-07-03: `?eventType=1` → 200 `records[0].eventType
+> === 'grabbed'` on Sonarr/Radarr/Lidarr, and the fixed client hits HTTP 200 for the owner's
+> failing episode 49130. DESIGN-005 D-02/D-03/D-15 updated. Also fixed the Fix dialog
+> error-space UX: Modal now pins head + a dedicated aria-live alert `banner` slot and
+> scrolls ONLY the body (`.modal__body`), so an error no longer squeezes the reason list
+> into a cut-off scrollbox (tokens-only CSS).
 
 > **Wave 9 (fix/fix-flow-ux):** Fix-flow UX pass — Modal focus-steal fixed (focus effect keyed on `open` only, not the unstable `onClose`); Fix is now per-episode/per-album on `/library/[id]` (live `ledger.children` list, no show-level nuke); missing content gets **Force Search** (search-only: `fix.forceSearch` → `runForceSearch`/`recordSearchRequest`, new `search_requested` ledger event, migration `0004`, shares the Fix hourly budget). UI rule everywhere: on disk → Fix, not on disk → Force Search. New glossary term T-44.
 

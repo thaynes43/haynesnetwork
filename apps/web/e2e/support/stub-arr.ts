@@ -37,6 +37,30 @@ export const grabHistoryIdFor = (episodeId: number) => 700_000 + episodeId;
 
 const EPISODE_COUNT = 10;
 
+/**
+ * The `grabbed` value for the paged `GET /history?eventType=` filter. That real *arr
+ * endpoint binds `eventType` to the INTEGER `*HistoryEventType` enum (grabbed === 1;
+ * see @hnet/arr SONARR_GRABBED_EVENT_TYPE) — the lowercase string it RETURNS in bodies
+ * is rejected there with HTTP 400. The stub enforces the same so the prod bug
+ * (fix/history-eventtype-enum) can never pass CI again.
+ */
+const GRABBED_EVENT_TYPE = 1;
+
+/**
+ * The real ASP.NET ValidationProblemDetails body the paged /history endpoint returns for
+ * a non-integer `eventType` (captured live 2026-07-03). Mirrored so ArrHttpError sees the
+ * exact shape production does.
+ */
+function invalidEventTypeBody(value: string) {
+  return {
+    type: 'https://tools.ietf.org/html/rfc7231#section-6.5.1',
+    title: 'One or more validation errors occurred.',
+    status: 400,
+    traceId: '00-stubarr0000000000000000000000-0000000000000000-00',
+    errors: { eventType: [`The value '${value}' is not valid.`] },
+  };
+}
+
 function episodes() {
   return Array.from({ length: EPISODE_COUNT }, (_, i) => {
     const n = i + 1;
@@ -180,10 +204,16 @@ export async function startStubArr(): Promise<StubArrServer> {
           return json(res, 200, episodes());
         }
         case '/history': {
-          // Latest-grab lookup: ?episodeId=&eventType=grabbed (paged envelope).
+          // STRICT: the real paged /history binds eventType to the INTEGER enum — a
+          // lowercase string 400s (the fix/history-eventtype-enum prod bug). Reject any
+          // non-integer eventType with the real error shape so a regression fails CI.
+          if (query.eventType !== undefined && !/^\d+$/.test(query.eventType)) {
+            return json(res, 400, invalidEventTypeBody(query.eventType));
+          }
+          // Latest-grab lookup: ?episodeId=&eventType=1 (paged envelope; 1 === grabbed).
           const episodeId = Number(query.episodeId ?? Number.NaN);
           const records =
-            query.eventType === 'grabbed' && Number.isFinite(episodeId)
+            Number(query.eventType) === GRABBED_EVENT_TYPE && Number.isFinite(episodeId)
               ? [grabRecord(episodeId)]
               : [];
           return json(res, 200, {

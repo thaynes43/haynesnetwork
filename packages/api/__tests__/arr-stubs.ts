@@ -42,6 +42,19 @@ export function stubArrBundle(routes: ArrStubRoute[]): StubbedArrBundle {
       url,
       body: typeof init.body === 'string' ? JSON.parse(init.body) : undefined,
     });
+    // STRICT paged-/history contract: the real *arr binds `eventType` to the INTEGER
+    // enum (grabbed === 1); a lowercase string 400s (the fix/history-eventtype-enum prod
+    // bug). Enforce it before route matching so every grab lookup proves the integer
+    // round trip and a regression to the string form fails here with the real 400 shape.
+    if (method === 'GET' && /\/api\/v[13]\/history$/.test(url.pathname)) {
+      const eventType = url.searchParams.get('eventType');
+      if (eventType !== null && !/^\d+$/.test(eventType)) {
+        return new Response(JSON.stringify(invalidEventTypeBody(eventType)), {
+          status: 400,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+    }
     const route = routes.find(
       (r) =>
         (r.method ?? 'GET') === method &&
@@ -109,6 +122,21 @@ export function grabHistoryJson(id: number, date: string, overrides: Record<stri
     quality: { quality: { id: 4, name: 'WEBDL-1080p' } },
     data: { indexer: 'TestIndexer' },
     ...overrides,
+  };
+}
+
+/**
+ * The real ASP.NET ValidationProblemDetails body the paged `/history` endpoint returns
+ * for a non-integer `eventType` (captured live 2026-07-03). Mirrored so ArrHttpError
+ * sees the exact 400 shape production does.
+ */
+export function invalidEventTypeBody(value: string) {
+  return {
+    type: 'https://tools.ietf.org/html/rfc7231#section-6.5.1',
+    title: 'One or more validation errors occurred.',
+    status: 400,
+    traceId: '00-arrstub0000000000000000000000-0000000000000000-00',
+    errors: { eventType: [`The value '${value}' is not valid.`] },
   };
 }
 

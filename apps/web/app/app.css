@@ -1190,7 +1190,13 @@ input[aria-invalid='true'] {
 .modal {
   width: min(480px, 100%);
   max-height: min(640px, 90dvh);
-  overflow: auto;
+  /* Stable layout: the head + banner stay pinned; ONLY .modal__body scrolls. This keeps
+     an error alert from squeezing the reason list into a cut-off scrollbox and avoids
+     layout jump at phone sizes (the whole body scrolls as one instead). */
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
@@ -1198,11 +1204,25 @@ input[aria-invalid='true'] {
   padding: 20px;
 }
 .modal__head {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 12px;
+}
+/* Pinned aria-live slot for the dialog's error/status alert (Modal `banner`). Collapses
+   to nothing when empty so dialogs without a banner look unchanged. */
+.modal__banner {
+  flex: none;
+}
+.modal__banner:empty {
+  display: none;
+}
+.modal__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .modal__title {
   font-size: 16px;
