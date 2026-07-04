@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.2](https://github.com/thaynes43/haynesnetwork/compare/v0.2.1...v0.2.2) (2026-07-04)
+
+
+### Bug Fixes
+
+* **web:** accent-insensitive library search; raster favicons ([#25](https://github.com/thaynes43/haynesnetwork/issues/25)) ([795f3bb](https://github.com/thaynes43/haynesnetwork/commit/795f3bb63321e4e5696ad211e4b15e9aeb568300))
+* **web:** episode-level fixes, force-search for missing content, Other-reason focus bug ([#27](https://github.com/thaynes43/haynesnetwork/issues/27)) ([cba02d1](https://github.com/thaynes43/haynesnetwork/commit/cba02d1e6d5319ab08dac1bbebdbef55d270ea63))
+
 ## [0.2.1](https://github.com/thaynes43/haynesnetwork/compare/v0.2.0...v0.2.1) (2026-07-04)
 
 
