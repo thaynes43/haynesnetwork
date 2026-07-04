@@ -225,7 +225,9 @@ describe('LidarrClient (v1)', () => {
     const artists = await client.listArtists();
     expect(artists[0]?.foreignArtistId).toMatch(/^[0-9a-f-]{36}$/);
     expect(artists[0]?.metadataProfileId).toBeTypeOf('number');
-    expect(artists[0]?.statistics.trackFileCount).toBeTypeOf('number');
+    expect(artists[0]?.statistics?.trackFileCount).toBeTypeOf('number');
+    // Fixture's last artist is the never-refreshed one — statistics absent by design.
+    expect(artists.at(-1)?.statistics).toBeUndefined();
     expect(artists[0]).not.toHaveProperty('images');
     const artist = await client.getArtistById(2);
     expect(artist.artistName).toBe('$NOT');
