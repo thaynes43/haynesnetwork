@@ -14,12 +14,12 @@ import { and, eq, gte, inArray, sql } from 'drizzle-orm';
 import {
   FixAlreadyOpenError,
   FixRateLimitError,
-  FixTargetRequiredError,
   InvalidFixTransitionError,
   LedgerItemTombstonedError,
   NotFoundError,
 } from './errors';
 import { inTransaction } from './db-client';
+import { resolveFixTarget, type SearchScope } from './action-scope';
 
 /** R-47 / PRD Q-05 default: max fix requests per requester per rolling hour (admins bypass). */
 export const FIX_RATE_LIMIT_PER_HOUR = 5;
@@ -66,9 +66,18 @@ export interface CreateFixRequestInput {
   /** Admins bypass the hourly rate limit (D-09). */
   requesterIsAdmin?: boolean;
   mediaItemId: string;
-  /** Episode id (sonarr) / album id (lidarr); must be absent for radarr (D-15). */
+  /**
+   * The fix scope (media-hierarchy actions): radarr 'item'; sonarr 'season' | 'episode';
+   * lidarr 'album'. Omitted ⇒ the legacy default (radarr → item, sonarr → episode,
+   * lidarr → album). Whole-show/artist are Force-Search-only (D-15) — resolveFixTarget
+   * rejects them (widened to SearchScope only so the caller's union flows through).
+   */
+  scope?: SearchScope;
+  /** Episode id (sonarr) / album id (lidarr); absent for radarr / a season (D-15). */
   targetArrChildId?: number | null;
-  /** Display-durable label, e.g. 'S06E02 · Rich' / album title. */
+  /** Sonarr season number — for the 'season' scope. */
+  seasonNumber?: number | null;
+  /** Display-durable label, e.g. 'S06E02 · Rich' / album title / 'Season 6'. */
   targetLabel?: string | null;
   reason: FixReason;
   /** Required iff reason === 'other' — backstopped by the D-09 CHECK (SQLSTATE 23514). */
@@ -94,7 +103,6 @@ export interface CreateFixRequestResult {
 export async function createFixRequest(
   input: CreateFixRequestInput,
 ): Promise<CreateFixRequestResult> {
-  const targetArrChildId = input.targetArrChildId ?? null;
   return inTransaction(input.db, async (tx) => {
     // Serialize this requester's submissions for the rate-limit count (D-09).
     await tx.execute(
@@ -127,18 +135,15 @@ export async function createFixRequest(
       );
     }
 
-    // D-15 target validation: sonarr → episode, lidarr → album, radarr → the movie itself.
-    if (item.arrKind === 'radarr') {
-      if (targetArrChildId !== null) {
-        throw new FixTargetRequiredError(
-          'radarr fixes target the movie itself — no child target allowed',
-        );
-      }
-    } else if (targetArrChildId === null) {
-      throw new FixTargetRequiredError(
-        `${item.arrKind} fixes require a ${item.arrKind === 'sonarr' ? 'episode' : 'album'} target`,
-      );
-    }
+    // D-15 target validation (hierarchy-actions): radarr → the movie ('item'); sonarr →
+    // a single 'episode' or a whole 'season'; lidarr → an 'album'. Whole-show/artist
+    // are Force-Search-only, so resolveFixTarget rejects them here.
+    const { scope, targetChildId, seasonNumber } = resolveFixTarget(item.arrKind, {
+      scope: input.scope,
+      targetChildId: input.targetArrChildId,
+      seasonNumber: input.seasonNumber,
+    });
+    const targetArrChildId = targetChildId; // fix_requests column name
 
     if (!input.requesterIsAdmin) {
       // D-17: Fix + Force Search share one hourly budget (countRecentFixBudget).
@@ -150,19 +155,23 @@ export async function createFixRequest(
       }
     }
 
+    // One open fix per (item, scope, child, season): the scope + season keep two
+    // different SEASONS of one show from colliding (both carry a null child id).
     const [open] = await tx
       .select({ id: fixRequests.id })
       .from(fixRequests)
       .where(
         and(
           eq(fixRequests.mediaItemId, input.mediaItemId),
+          eq(fixRequests.targetScope, scope),
           sql`${fixRequests.targetArrChildId} IS NOT DISTINCT FROM ${targetArrChildId}`,
+          sql`${fixRequests.targetSeason} IS NOT DISTINCT FROM ${seasonNumber}`,
           inArray(fixRequests.status, [...OPEN_FIX_STATUSES]),
         ),
       );
     if (open) {
       throw new FixAlreadyOpenError(
-        `An open fix (${open.id}) already targets this item${targetArrChildId === null ? '' : ' and child'}`,
+        `An open fix (${open.id}) already targets this ${scope === 'item' ? 'item' : scope}`,
       );
     }
 
@@ -176,7 +185,9 @@ export async function createFixRequest(
       .values({
         requesterId: input.requesterId,
         mediaItemId: input.mediaItemId,
+        targetScope: scope,
         targetArrChildId,
+        targetSeason: seasonNumber,
         targetLabel: input.targetLabel ?? null,
         reason: input.reason,
         reasonText: input.reasonText ?? null,
@@ -196,7 +207,9 @@ export async function createFixRequest(
         fixRequestId: fix.id,
         reason: input.reason,
         reasonText: input.reasonText ?? null,
+        scope,
         targetArrChildId,
+        seasonNumber,
         targetLabel: input.targetLabel ?? null,
         requesterId: input.requesterId,
       },

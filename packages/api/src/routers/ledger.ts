@@ -256,11 +256,12 @@ export const ledgerRouter = router({
           arr: resolveArrBundle(ctx),
           mediaItemId: input.mediaItemId,
         });
-        return children.map(({ arrChildId, label, hasFile, monitored }) => ({
+        return children.map(({ arrChildId, label, hasFile, monitored, seasonNumber }) => ({
           arrChildId,
           label,
           hasFile,
           monitored,
+          seasonNumber,
         }));
       });
     }),

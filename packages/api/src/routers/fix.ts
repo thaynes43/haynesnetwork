@@ -13,6 +13,24 @@ import { decodeCursor, encodeCursor } from '../cursor';
 
 const iso = (d: Date) => d.toISOString();
 
+// media-hierarchy actions: the roll-up scopes a Fix / Force Search may target. The wire
+// accepts the full set for both; the DOMAIN writers do the authoritative per-kind
+// validation (Fix rejects whole-show/artist as Force-Search-only, D-15 → FIX_TARGET_
+// REQUIRED) — these zod checks are only a light front-line shape guard.
+const ACTION_SCOPES = ['item', 'show', 'season', 'episode', 'artist', 'album'] as const;
+
+/** season ⇒ seasonNumber required + no child; episode/album ⇒ child required. */
+function refineScopeShape(v: {
+  scope?: string;
+  targetChildId?: number;
+  seasonNumber?: number;
+}): boolean {
+  if (v.scope === 'season') return v.seasonNumber !== undefined && v.targetChildId === undefined;
+  if (v.seasonNumber !== undefined) return false; // seasonNumber rides only on 'season'
+  if (v.scope === 'episode' || v.scope === 'album') return v.targetChildId !== undefined;
+  return true;
+}
+
 export const fixRouter = router({
   /**
    * R-43/R-44/R-45 — submit a Fix. Reason taxonomy is mandatory; free text rides
@@ -24,14 +42,23 @@ export const fixRouter = router({
       z
         .object({
           mediaItemId: z.uuid(),
+          /**
+           * The roll-up scope (media-hierarchy actions). Omitted ⇒ legacy default
+           * (radarr item / sonarr episode / lidarr album). 'season' repairs a whole
+           * sonarr season; whole-show/artist are Force-Search-only (use forceSearch).
+           */
+          scope: z.enum(ACTION_SCOPES).optional(),
           /** Episode id (sonarr) / album id (lidarr); required iff kind needs it (domain-validated). */
           targetChildId: z.number().int().positive().optional(),
+          /** Sonarr season number — for scope 'season'. */
+          seasonNumber: z.number().int().min(0).optional(),
           reason: z.enum(FIX_REASONS),
           reasonText: z.string().trim().min(1).max(500).optional(),
         })
         .refine((v) => (v.reason === 'other') === (v.reasonText !== undefined), {
           error: 'reasonText is required exactly when reason is "other"',
-        }),
+        })
+        .refine(refineScopeShape, { error: 'scope/target/season combination is invalid' }),
     )
     .mutation(async ({ ctx, input }) => {
       return mapDomainErrors(async () => {
@@ -41,7 +68,9 @@ export const fixRouter = router({
           requesterId: ctx.user.id,
           requesterIsAdmin: ctx.user.role === 'Admin',
           mediaItemId: input.mediaItemId,
+          scope: input.scope,
           targetChildId: input.targetChildId,
+          seasonNumber: input.seasonNumber,
           reason: input.reason,
           reasonText: input.reasonText,
         });
@@ -58,11 +87,21 @@ export const fixRouter = router({
    */
   forceSearch: authedProcedure
     .input(
-      z.object({
-        mediaItemId: z.uuid(),
-        /** Episode id (sonarr) / album id (lidarr); absent = movie / whole-series search. */
-        targetChildId: z.number().int().positive().optional(),
-      }),
+      z
+        .object({
+          mediaItemId: z.uuid(),
+          /**
+           * The roll-up scope (media-hierarchy actions). Omitted ⇒ legacy default
+           * (radarr movie / sonarr whole-series when no child; else episode). 'season'
+           * / 'show' / 'artist' add the roll-up searches above the child level.
+           */
+          scope: z.enum(ACTION_SCOPES).optional(),
+          /** Episode id (sonarr) / album id (lidarr); for scope episode/album. */
+          targetChildId: z.number().int().positive().optional(),
+          /** Sonarr season number — for scope 'season'. */
+          seasonNumber: z.number().int().min(0).optional(),
+        })
+        .refine(refineScopeShape, { error: 'scope/target/season combination is invalid' }),
     )
     .mutation(async ({ ctx, input }) => {
       return mapDomainErrors(async () => {
@@ -72,7 +111,9 @@ export const fixRouter = router({
           requesterId: ctx.user.id,
           requesterIsAdmin: ctx.user.role === 'Admin',
           mediaItemId: input.mediaItemId,
+          scope: input.scope,
           targetChildId: input.targetChildId,
+          seasonNumber: input.seasonNumber,
         });
         return result; // {eventId, targetLabel, commandName}
       });

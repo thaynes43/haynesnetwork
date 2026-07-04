@@ -6,7 +6,7 @@
 import { useState } from 'react';
 import { trpc } from '@/lib/trpc-client';
 import { describeMutationError } from '@/lib/app-error';
-import { FIX_REASON_LABELS } from '@/lib/media';
+import { FIX_REASON_LABELS, targetToInput, type ActionTarget } from '@/lib/media';
 import { Modal } from '@/components/modal';
 
 const REASONS = [
@@ -24,10 +24,11 @@ export interface FixDialogProps {
   onClose: () => void;
   item: { id: string; arrKind: string; title: string };
   /**
-   * A specific episode/album already chosen (per-episode Fix from the detail list).
-   * When present the picker is skipped and this target is carried into fix.create.
+   * The scoped target already chosen (per-episode / per-album / whole-season Fix from
+   * the detail list). When present the picker is skipped and the scope is carried into
+   * fix.create. null ⇒ the radarr movie (item scope).
    */
-  target?: { childId: number; label: string } | null;
+  target?: ActionTarget | null;
   /** Invalidate/refresh hooks after a successful submit. */
   onSubmitted: () => void;
 }
@@ -72,10 +73,22 @@ export function FixDialog({ open, onClose, item, target, onSubmitted }: FixDialo
 
   function submit() {
     setError(null);
-    const childId = preselected !== null ? preselected.childId : targetChildId;
-    if (needsTarget && childId === '') {
-      setError(`Pick the ${targetNoun} that needs fixing first.`);
-      return;
+    // The preselected scope (episode/album/season/item) drives the mutation; the picker
+    // is the fallback for a bare sonarr/lidarr Fix and always resolves to a single child.
+    let scopeInput: ReturnType<typeof targetToInput>;
+    if (preselected !== null) {
+      scopeInput = targetToInput(preselected);
+    } else if (needsTarget) {
+      if (targetChildId === '') {
+        setError(`Pick the ${targetNoun} that needs fixing first.`);
+        return;
+      }
+      scopeInput = {
+        scope: item.arrKind === 'sonarr' ? 'episode' : 'album',
+        targetChildId,
+      };
+    } else {
+      scopeInput = {}; // radarr movie (item scope)
     }
     if (reason === 'other' && reasonText.trim() === '') {
       setError('Tell us what is wrong — the Other reason needs a few words.');
@@ -83,7 +96,7 @@ export function FixDialog({ open, onClose, item, target, onSubmitted }: FixDialo
     }
     create.mutate({
       mediaItemId: item.id,
-      ...(needsTarget && childId !== '' ? { targetChildId: childId } : {}),
+      ...scopeInput,
       reason,
       ...(reason === 'other' ? { reasonText: reasonText.trim() } : {}),
     });

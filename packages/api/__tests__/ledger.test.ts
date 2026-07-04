@@ -213,8 +213,8 @@ describe('ledger.children (D-06 live proxy)', () => {
       makeCtx(tdb.db, sessionUser(member), stub.bundle),
     ).ledger.children({ mediaItemId: ids.alpha! });
     expect(children).toEqual([
-      { arrChildId: 30101, label: 'S01E01 · Pilot', hasFile: true, monitored: true },
-      { arrChildId: 30102, label: 'S01E02 · Rich', hasFile: false, monitored: true },
+      { arrChildId: 30101, label: 'S01E01 · Pilot', hasFile: true, monitored: true, seasonNumber: 1 },
+      { arrChildId: 30102, label: 'S01E02 · Rich', hasFile: false, monitored: true, seasonNumber: 1 },
     ]);
     expect(stub.callsFor('GET', '/api/v3/episode')[0]!.url.searchParams.get('seriesId')).toBe(
       '301',

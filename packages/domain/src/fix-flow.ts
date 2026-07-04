@@ -27,6 +27,7 @@ import { resolveDb } from './db-client';
 import { createFixRequest, recordFixAction } from './fix-requests';
 import { arrApiBasePath, type ArrClientBundle } from './arr-clients';
 import { listMediaChildren } from './media-children';
+import { resolveFixTarget, type SearchScope } from './action-scope';
 
 export interface RunFixRequestInput {
   db?: DbClient;
@@ -35,8 +36,17 @@ export interface RunFixRequestInput {
   /** Admins bypass the hourly rate limit (D-09). */
   requesterIsAdmin?: boolean;
   mediaItemId: string;
-  /** Episode id (sonarr) / album id (lidarr); absent for radarr (domain-validated). */
+  /**
+   * The fix scope (media-hierarchy actions): radarr 'item'; sonarr 'season' | 'episode';
+   * lidarr 'album'. Omitted ⇒ the legacy default (radarr item / sonarr episode / lidarr
+   * album). Whole-show/artist are Force-Search-only (D-15) — resolveFixTarget rejects
+   * them here (widened to SearchScope only so the caller's union flows through cleanly).
+   */
+  scope?: SearchScope;
+  /** Episode id (sonarr) / album id (lidarr); absent for radarr / a season (domain-validated). */
   targetChildId?: number;
+  /** Sonarr season number — for the 'season' scope. */
+  seasonNumber?: number;
   reason: FixReason;
   reasonText?: string;
 }
@@ -90,14 +100,24 @@ export async function runFixRequest(input: RunFixRequestInput): Promise<RunFixRe
 
   const kind = item.arrKind;
   const base = arrApiBasePath(kind);
-  const targetChildId = input.targetChildId;
+  // Validate the (kind, scope, child, season) tuple up front. Kind/scope mismatches
+  // throw FixTargetRequiredError here (also re-checked inside createFixRequest).
+  const { scope, targetChildId, seasonNumber } = resolveFixTarget(kind, {
+    scope: input.scope,
+    targetChildId: input.targetChildId,
+    seasonNumber: input.seasonNumber,
+  });
+
+  // Season roll-up is its own orchestration (blocklist every backing grab + SeasonSearch).
+  if (scope === 'season') {
+    return runSeasonFix(input, { id: item.id, arrItemId: item.arrItemId }, seasonNumber!);
+  }
 
   // Live target validation + display label (D-06: children are never synced). A read
   // that fails here aborts BEFORE the pending row — nothing has been promised yet.
-  // Kind/target mismatches fall through to createFixRequest's FixTargetRequiredError.
   let targetLabel: string | null = null;
   let episodeFileId: number | null = null;
-  if ((kind === 'sonarr' || kind === 'lidarr') && targetChildId !== undefined) {
+  if (targetChildId !== null) {
     const children = await listMediaChildren({
       db: input.db,
       arr: input.arr,
@@ -119,7 +139,8 @@ export async function runFixRequest(input: RunFixRequestInput): Promise<RunFixRe
     requesterId: input.requesterId,
     requesterIsAdmin: input.requesterIsAdmin,
     mediaItemId: item.id,
-    targetArrChildId: targetChildId ?? null,
+    scope,
+    targetArrChildId: targetChildId,
     targetLabel,
     reason: input.reason,
     reasonText: input.reasonText ?? null,
@@ -252,6 +273,141 @@ export async function runFixRequest(input: RunFixRequestInput): Promise<RunFixRe
         : kind === 'radarr'
           ? await input.arr.write.radarr.searchMovies([item.arrItemId])
           : await input.arr.write.lidarr.searchAlbums([targetChildId!]);
+    await recordFixAction({
+      db: input.db,
+      fixRequestId,
+      transition: 'search_triggered',
+      actions: [
+        stepOk('trigger_search', commandEndpoint, {
+          commandId: command.id,
+          commandName: command.name,
+        }),
+      ],
+    });
+  } catch (err) {
+    if (err instanceof ArrError)
+      await fail(stepFailed('trigger_search', commandEndpoint, err), err);
+    throw err;
+  }
+
+  return { id: fixRequestId, status: 'search_triggered', pathTaken, targetLabel };
+}
+
+/**
+ * Season roll-up Fix (sonarr only, hierarchy-actions). Repairs a whole on-disk season:
+ * resolve every ON-DISK episode's latest grab from LIVE per-episode history (reusing the
+ * production-verified `GET /history?episodeId=&eventType=grabbed` per-target endpoint, so
+ * this never hits the paged-history integer-eventType pitfall), blocklist each DISTINCT
+ * backing grab (a season pack shares one id — the Set dedupes it), then fire ONE
+ * SeasonSearch. When no on-disk episode has a grab record, fall back to deleting the
+ * season's episode files (AC-08). One fix_requests row (scope 'season') is the audit.
+ */
+async function runSeasonFix(
+  input: RunFixRequestInput,
+  item: { id: string; arrItemId: number },
+  seasonNumber: number,
+): Promise<RunFixRequestResult> {
+  const base = arrApiBasePath('sonarr');
+  const targetLabel = `Season ${seasonNumber}`;
+
+  // Live season episodes (D-06). A read failure here aborts BEFORE the pending row.
+  const children = await listMediaChildren({ db: input.db, arr: input.arr, mediaItemId: item.id });
+  const seasonEpisodes = children.filter((c) => c.seasonNumber === seasonNumber);
+  if (seasonEpisodes.length === 0) {
+    throw new NotFoundError(
+      `Season ${seasonNumber} has no episodes on live series ${item.arrItemId}`,
+    );
+  }
+  const onDisk = seasonEpisodes.filter((c) => c.hasFile);
+
+  // D-09: pending row + fix_requested event commit before any mutating *arr call.
+  const { fixRequestId } = await createFixRequest({
+    db: input.db,
+    requesterId: input.requesterId,
+    requesterIsAdmin: input.requesterIsAdmin,
+    mediaItemId: item.id,
+    scope: 'season',
+    seasonNumber,
+    targetLabel,
+    reason: input.reason,
+    reasonText: input.reasonText ?? null,
+  });
+
+  const fail = async (entry: FixActionEntry, err: unknown): Promise<never> => {
+    await recordFixAction({ db: input.db, fixRequestId, transition: 'failed', actions: [entry] });
+    throw new ArrUpstreamError(
+      err instanceof Error ? err.message : `season fix step ${entry.step} failed`,
+      { cause: err },
+    );
+  };
+
+  // ---- Step 1: resolve the distinct grabs backing the on-disk episodes. ----
+  const actions: FixActionEntry[] = [];
+  const grabIds = new Set<number>();
+  try {
+    for (const ep of onDisk) {
+      const endpoint = `GET ${base}/history?episodeId=${ep.arrChildId}&eventType=grabbed`;
+      const page = await input.arr.read.sonarr.getEpisodeGrabHistory(ep.arrChildId);
+      const grab = page.records[0];
+      actions.push(
+        stepOk('resolve_grab', endpoint, {
+          episodeId: ep.arrChildId,
+          grabHistoryId: grab?.id ?? null,
+        }),
+      );
+      if (grab) grabIds.add(grab.id);
+    }
+  } catch (err) {
+    if (err instanceof ArrError)
+      await fail(stepFailed('resolve_grab', `${base}/history (season)`, err), err);
+    throw err;
+  }
+
+  let pathTaken: FixPath;
+  if (grabIds.size > 0) {
+    // ---- Primary path (AC-07): blocklist every distinct backing grab. ----
+    pathTaken = 'blocklist_search';
+    for (const grabId of grabIds) {
+      const endpoint = `POST ${base}/history/failed/${grabId}`;
+      try {
+        await input.arr.write.sonarr.markHistoryFailed(grabId);
+      } catch (err) {
+        if (err instanceof ArrError) await fail(stepFailed('mark_failed', endpoint, err), err);
+        throw err;
+      }
+      actions.push(stepOk('mark_failed', endpoint, { status: 200, grabHistoryId: grabId }));
+    }
+  } else {
+    // ---- Fallback (AC-08): no grabs to blocklist → delete the season's files. ----
+    pathTaken = 'delete_search';
+    try {
+      for (const ep of onDisk) {
+        if (ep.episodeFileId !== null && ep.episodeFileId > 0) {
+          const endpoint = `DELETE ${base}/episodefile/${ep.episodeFileId}`;
+          await input.arr.write.sonarr.deleteEpisodeFile(ep.episodeFileId);
+          actions.push(stepOk('delete_file', endpoint, { status: 200, episodeId: ep.arrChildId }));
+        }
+      }
+    } catch (err) {
+      if (err instanceof ArrError)
+        await fail(stepFailed('delete_file', `${base} (season fallback)`, err), err);
+      throw err;
+    }
+    if (!actions.some((a) => a.step === 'delete_file')) {
+      actions.push(
+        stepOk('delete_file', `${base} (season fallback)`, {
+          skipped: true,
+          note: 'no grab history and nothing on disk to delete — search only',
+        }),
+      );
+    }
+  }
+  await recordFixAction({ db: input.db, fixRequestId, transition: 'actioned', pathTaken, actions });
+
+  // ---- Step 3: SeasonSearch for the whole season. ----
+  const commandEndpoint = `POST ${base}/command`;
+  try {
+    const command = await input.arr.write.sonarr.searchSeason(item.arrItemId, seasonNumber);
     await recordFixAction({
       db: input.db,
       fixRequestId,

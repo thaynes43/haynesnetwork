@@ -384,6 +384,129 @@ describe('fix.create — rate limit (R-47)', () => {
   });
 });
 
+describe('fix.forceSearch — roll-up scopes (media-hierarchy actions, D-17)', () => {
+  it('whole-show search fires SeriesSearch and records a search_requested event', async () => {
+    const member = await createUser(tdb.db);
+    const item = await seedMediaItem(tdb.db, 'sonarr', { title: 'Show A', arrItemId: 801 });
+    const stub = stubArrBundle([
+      { method: 'POST', path: '/api/v3/command', status: 201, body: { id: 1, name: 'SeriesSearch' } },
+    ]);
+    const api = caller(makeCtx(tdb.db, sessionUser(member), stub.bundle));
+
+    const result = await api.fix.forceSearch({ mediaItemId: item.id, scope: 'show' });
+    expect(result.commandName).toBe('SeriesSearch');
+    expect(stub.callsFor('POST', '/api/v3/command')[0]!.body).toEqual({
+      name: 'SeriesSearch',
+      seriesId: 801,
+    });
+    // Search-only: NO blocklist / delete, one audited event.
+    expect(stub.callsFor('POST', '/api/v3/history/failed/')).toHaveLength(0);
+    const events = await eventsFor(item.id);
+    expect(events.map((e) => e.eventType)).toEqual(['search_requested']);
+    expect(events[0]!.payload).toMatchObject({ scope: 'show', targetArrChildId: null });
+  });
+
+  it('season search fires SeasonSearch with seriesId + seasonNumber', async () => {
+    const member = await createUser(tdb.db);
+    const item = await seedMediaItem(tdb.db, 'sonarr', { title: 'Show B', arrItemId: 802 });
+    const stub = stubArrBundle([
+      { method: 'POST', path: '/api/v3/command', status: 201, body: { id: 2, name: 'SeasonSearch' } },
+    ]);
+    const api = caller(makeCtx(tdb.db, sessionUser(member), stub.bundle));
+
+    const result = await api.fix.forceSearch({ mediaItemId: item.id, scope: 'season', seasonNumber: 3 });
+    expect(result.targetLabel).toBe('Season 3');
+    expect(stub.callsFor('POST', '/api/v3/command')[0]!.body).toEqual({
+      name: 'SeasonSearch',
+      seriesId: 802,
+      seasonNumber: 3,
+    });
+  });
+
+  it('whole-artist search fires ArtistSearch (lidarr)', async () => {
+    const member = await createUser(tdb.db);
+    const item = await seedMediaItem(tdb.db, 'lidarr', {
+      title: 'Artist B',
+      arrItemId: 88,
+      rootFolder: '/data/media/music',
+    });
+    const stub = stubArrBundle([
+      { method: 'POST', path: '/api/v1/command', status: 201, body: { id: 3, name: 'ArtistSearch' } },
+    ]);
+    const api = caller(makeCtx(tdb.db, sessionUser(member), stub.bundle));
+
+    const result = await api.fix.forceSearch({ mediaItemId: item.id, scope: 'artist' });
+    expect(result.commandName).toBe('ArtistSearch');
+    expect(stub.callsFor('POST', '/api/v1/command')[0]!.body).toEqual({
+      name: 'ArtistSearch',
+      artistId: 88,
+    });
+  });
+});
+
+describe('fix.create — season roll-up (media-hierarchy actions)', () => {
+  it('blocklists each on-disk episode grab in the season, then fires SeasonSearch', async () => {
+    const member = await createUser(tdb.db);
+    const item = await seedMediaItem(tdb.db, 'sonarr', { title: 'Season Show', arrItemId: 803 });
+    const stub = stubArrBundle([
+      {
+        path: '/api/v3/episode',
+        body: [
+          episodeJson(80101, 1, 1, { seriesId: 803 }), // season 1 — untouched
+          episodeJson(80301, 2, 1, { seriesId: 803 }), // season 2, on disk
+          episodeJson(80302, 2, 2, { seriesId: 803 }), // season 2, on disk
+          episodeJson(80303, 2, 3, { seriesId: 803, hasFile: false }), // season 2, missing
+        ],
+      },
+      {
+        path: '/api/v3/history',
+        body: (url: URL) =>
+          historyPage([
+            grabHistoryJson(900_000 + Number(url.searchParams.get('episodeId')), '2026-07-01T10:00:00Z', {
+              episodeId: Number(url.searchParams.get('episodeId')),
+              seriesId: 803,
+            }),
+          ]),
+      },
+      { method: 'POST', path: /^\/api\/v3\/history\/failed\/\d+$/, body: {} },
+      { method: 'POST', path: '/api/v3/command', status: 201, body: { id: 9100, name: 'SeasonSearch' } },
+    ]);
+    const api = caller(makeCtx(tdb.db, sessionUser(member), stub.bundle));
+
+    const result = await api.fix.create({
+      mediaItemId: item.id,
+      scope: 'season',
+      seasonNumber: 2,
+      reason: 'wrong_version_quality',
+    });
+    expect(result.status).toBe('search_triggered');
+    expect(result.pathTaken).toBe('blocklist_search');
+    expect(result.targetLabel).toBe('Season 2');
+
+    // Only the TWO on-disk season-2 episodes' grabs get blocklisted (E3 is missing).
+    const failed = stub.callsFor('POST', '/api/v3/history/failed/').map((c) => c.url.pathname);
+    expect(failed.sort()).toEqual([
+      '/api/v3/history/failed/980301',
+      '/api/v3/history/failed/980302',
+    ]);
+    // One SeasonSearch for the whole season.
+    expect(stub.callsFor('POST', '/api/v3/command')[0]!.body).toEqual({
+      name: 'SeasonSearch',
+      seriesId: 803,
+      seasonNumber: 2,
+    });
+
+    // The audit row carries the season scope (child null, season 2).
+    const row = await fixRow(result.id);
+    expect(row.targetScope).toBe('season');
+    expect(row.targetSeason).toBe(2);
+    expect(row.targetArrChildId).toBeNull();
+    expect(row.status).toBe('search_triggered');
+    const events = await eventsFor(item.id);
+    expect(events.map((e) => e.eventType)).toEqual(['fix_requested', 'fix_actioned']);
+  });
+});
+
 describe('fix.myFixes / fix.adminList (R-46)', () => {
   it('members see exactly their own; admins see all with requester + raw actions', async () => {
     const member = await createUser(tdb.db);

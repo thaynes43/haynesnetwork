@@ -36,6 +36,13 @@
       "when": 1782950404000,
       "tag": "0005_unaccent_search",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1782950405000,
+      "tag": "0006_fix_target_scope",
+      "breakpoints": true
     }
   ]
 }

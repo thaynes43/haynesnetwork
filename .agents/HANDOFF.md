@@ -2,9 +2,11 @@
 
 > The single resume point for agents. Update this in the same change as any milestone.
 
-- **Last updated:** 2026-07-03 (hotfix fix/history-eventtype-enum)
+- **Last updated:** 2026-07-03 (wave 10)
 - **Phase:** Phase 1 complete; Phase 2 code complete (sync + fix/ledger/restore UI); haynes-ops CronJobs + secrets next
 - **Workflow mode:** PR flow (GATE A executed — see .agents/plans/001-gate-a-pr-cutover.md)
+
+> **Wave 10 (feat/hierarchy-actions):** Media-hierarchy actions — Fix / Force Search gained a **scope** (packages/domain `action-scope.ts`, one shared `resolveFixTarget`/`resolveSearchTarget`). Force Search now rolls up to whole **show** (SeriesSearch), **season** (SeasonSearch), **artist** (ArtistSearch) on top of episode/album/movie; Fix rolls up to a whole sonarr **season** (`runSeasonFix`: blocklist every distinct backing grab of the season's on-disk episodes → SeasonSearch, AC-08 delete fallback; reuses the per-target grab lookup so it inherits the integer-eventType fix from the hotfix below). Whole-show/artist Fix is deliberately Force-Search-ONLY (blocklisting a whole series/discography is too broad — judgment call). Migration `0006` adds `fix_requests.target_scope` (`item|season|episode|album`) + `target_season`; open-fix dedupe now keys on scope+season. `ledger.children` returns `seasonNumber`; the sonarr detail view groups episodes into collapsible season sections (phone-width touch targets) with per-season Force Search + Fix; lidarr adds a whole-artist Force Search. New glossary term T-45 Action Scope. Owner discrepancy flagged: "per Song" → implemented at album grain (D-06 fixed Lidarr at the album). Rebased onto the hotfix below; full suite green (361 unit/integration + 45 e2e).
 
 > **Hotfix (fix/history-eventtype-enum):** Paged `GET /history` grab lookups were sending
 > `eventType=grabbed` (string) — Sonarr/Lidarr bind that param to the INTEGER

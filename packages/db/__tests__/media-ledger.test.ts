@@ -196,6 +196,28 @@ describe('0003_media_ledger against embedded Postgres 16', () => {
       await insertFix('other', 'audio drops out at 12:34'); // OK
       await insertFix('wrong_language', null); // OK
     });
+
+    // media-hierarchy actions (migration 0006): target_scope + target_season.
+    const insertScoped = (scope: string, season: number | null) =>
+      client.query({
+        text: `INSERT INTO fix_requests (media_item_id, reason, status, target_scope, target_season)
+               VALUES ($1, 'wrong_language', 'pending', $2, $3)`,
+        values: [itemId, scope, season],
+      });
+
+    it('target_scope enum is CHECK-enforced and defaults to item', async () => {
+      await expect(insertScoped('everything', null)).rejects.toMatchObject({ code: '23514' });
+      // default 'item' applies when the column is omitted (the reason_text test above inserts those).
+      await insertScoped('episode', null); // OK
+      await insertScoped('album', null); // OK
+    });
+
+    it('target_season rides IFF scope = season (both directions)', async () => {
+      await expect(insertScoped('season', null)).rejects.toMatchObject({ code: '23514' }); // season needs a number
+      await expect(insertScoped('episode', 3)).rejects.toMatchObject({ code: '23514' }); // a number needs season scope
+      await insertScoped('season', 2); // OK
+      await insertScoped('item', null); // OK
+    });
   });
 
   describe('restore_runs / sync_runs / sync_state enums (D-10, D-11)', () => {

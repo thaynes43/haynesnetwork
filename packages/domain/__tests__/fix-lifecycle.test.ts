@@ -205,6 +205,52 @@ describe('fix lifecycle single-writers (DESIGN-005 D-09/D-12, ADR-007)', () => {
       expect(other.status).toBe('pending');
     });
 
+    it('season scope: persists target_scope/target_season, and two seasons do not collide', async () => {
+      // A dedicated requester so this doesn't draw down memberId's shared hourly budget.
+      const seasonUser = (await createUser(t.db, { email: 'seasons@example.com' })).id;
+      const s6 = await createFixRequest({
+        db: t.db,
+        requesterId: seasonUser,
+        mediaItemId: sonarrItemId,
+        scope: 'season',
+        seasonNumber: 6,
+        targetLabel: 'Season 6',
+        reason: 'wrong_version_quality',
+      });
+      const [row] = await t.db.select().from(fixRequests).where(eq(fixRequests.id, s6.fixRequestId));
+      expect(row).toMatchObject({
+        targetScope: 'season',
+        targetSeason: 6,
+        targetArrChildId: null,
+        targetLabel: 'Season 6',
+      });
+
+      // A DIFFERENT season is allowed (both carry a null child id — scope+season split them).
+      const s7 = await createFixRequest({
+        db: t.db,
+        requesterId: seasonUser,
+        mediaItemId: sonarrItemId,
+        scope: 'season',
+        seasonNumber: 7,
+        targetLabel: 'Season 7',
+        reason: 'wrong_version_quality',
+      });
+      expect(s7.status).toBe('pending');
+
+      // The SAME open season is deduped.
+      await expect(
+        createFixRequest({
+          db: t.db,
+          requesterId: seasonUser,
+          mediaItemId: sonarrItemId,
+          scope: 'season',
+          seasonNumber: 6,
+          targetLabel: 'Season 6',
+          reason: 'wrong_content',
+        }),
+      ).rejects.toThrow(FixAlreadyOpenError);
+    });
+
     it('enforces the DB CHECK backstop: reason "other" without text → SQLSTATE 23514', async () => {
       await expect(
         createFixRequest({

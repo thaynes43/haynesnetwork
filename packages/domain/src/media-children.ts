@@ -16,6 +16,12 @@ export interface MediaChildTarget {
   label: string;
   hasFile: boolean;
   monitored: boolean;
+  /**
+   * Sonarr only: the episode's season number — groups the detail list into collapsible
+   * season sections and scopes a season roll-up Force Search / Fix (hierarchy-actions).
+   * null for lidarr albums / radarr.
+   */
+  seasonNumber: number | null;
   /** Sonarr only: the episode's file id — the AC-08 fallback's delete target. */
   episodeFileId: number | null;
 }
@@ -76,6 +82,7 @@ export async function listMediaChildren(input: {
         label: episodeLabel(ep.seasonNumber, ep.episodeNumber, ep.title),
         hasFile: ep.hasFile,
         monitored: ep.monitored,
+        seasonNumber: ep.seasonNumber,
         episodeFileId: ep.episodeFileId ?? null,
       }));
   }
@@ -92,6 +99,7 @@ export async function listMediaChildren(input: {
         label: album.title,
         hasFile: (album.statistics?.trackFileCount ?? 0) > 0,
         monitored: album.monitored,
+        seasonNumber: null,
         episodeFileId: null,
       }));
   }

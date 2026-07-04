@@ -6,14 +6,18 @@
 import { useState } from 'react';
 import { trpc } from '@/lib/trpc-client';
 import { describeMutationError } from '@/lib/app-error';
+import { targetToInput, type ActionTarget } from '@/lib/media';
 import { Modal } from '@/components/modal';
 
 export interface ForceSearchDialogProps {
   open: boolean;
   onClose: () => void;
   item: { id: string; arrKind: string; title: string };
-  /** A specific episode/album target; absent = the movie / whole series. */
-  target?: { childId: number; label: string } | null;
+  /**
+   * The scoped target: a single episode/album, a whole season, or the whole show /
+   * artist. null ⇒ the movie / legacy whole-series search.
+   */
+  target?: ActionTarget | null;
   /** Invalidate/refresh hooks after a successful submit. */
   onSubmitted: () => void;
 }
@@ -52,10 +56,7 @@ export function ForceSearchDialog({
 
   function submit() {
     setError(null);
-    search.mutate({
-      mediaItemId: item.id,
-      ...(preselected !== null ? { targetChildId: preselected.childId } : {}),
-    });
+    search.mutate({ mediaItemId: item.id, ...targetToInput(preselected) });
   }
 
   return (

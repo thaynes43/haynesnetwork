@@ -17,6 +17,7 @@ import { resolveDb } from './db-client';
 import { recordSearchRequest } from './search-requests';
 import { type ArrClientBundle } from './arr-clients';
 import { listMediaChildren } from './media-children';
+import { resolveSearchTarget, type SearchScope } from './action-scope';
 
 export interface RunForceSearchInput {
   db?: DbClient;
@@ -25,8 +26,15 @@ export interface RunForceSearchInput {
   /** Admins bypass the shared hourly budget (D-17). */
   requesterIsAdmin?: boolean;
   mediaItemId: string;
-  /** Episode id (sonarr) / album id (lidarr); absent for radarr or a whole-series search. */
+  /**
+   * The roll-up scope (media-hierarchy actions): radarr 'item'; sonarr 'show' |
+   * 'season' | 'episode'; lidarr 'artist' | 'album'. Omitted ⇒ the legacy default.
+   */
+  scope?: SearchScope;
+  /** Episode id (sonarr) / album id (lidarr) — for the 'episode'/'album' scopes. */
   targetChildId?: number;
+  /** Sonarr season number — for the 'season' scope. */
+  seasonNumber?: number;
 }
 
 export interface RunForceSearchResult {
@@ -43,6 +51,7 @@ export async function runForceSearch(input: RunForceSearchInput): Promise<RunFor
       id: mediaItems.id,
       arrKind: mediaItems.arrKind,
       arrItemId: mediaItems.arrItemId,
+      title: mediaItems.title,
       deletedFromArrAt: mediaItems.deletedFromArrAt,
     })
     .from(mediaItems)
@@ -55,24 +64,30 @@ export async function runForceSearch(input: RunForceSearchInput): Promise<RunFor
   }
 
   const kind = item.arrKind;
-  const targetChildId = input.targetChildId;
+  // Validate the (kind, scope, child, season) tuple up front — a bad combo aborts
+  // BEFORE the audit row (nothing promised yet). Kind/scope mismatches throw here.
+  const { scope, targetChildId, seasonNumber } = resolveSearchTarget(kind, {
+    scope: input.scope,
+    targetChildId: input.targetChildId,
+    seasonNumber: input.seasonNumber,
+  });
 
-  // Resolve the display label for a child target (D-06 live children). A read failure
-  // here aborts BEFORE the audit row — nothing has been promised yet.
+  // Resolve the display label per scope (child labels come from the D-06 live children;
+  // a read failure here still precedes the audit row). Whole-show/artist use the title.
   let targetLabel: string | null = null;
-  if ((kind === 'sonarr' || kind === 'lidarr') && targetChildId !== undefined) {
-    const children = await listMediaChildren({
-      db: input.db,
-      arr: input.arr,
-      mediaItemId: item.id,
-    });
+  if (scope === 'episode' || scope === 'album') {
+    const children = await listMediaChildren({ db: input.db, arr: input.arr, mediaItemId: item.id });
     const child = children.find((c) => c.arrChildId === targetChildId);
     if (!child) {
       throw new NotFoundError(
-        `${kind} ${kind === 'sonarr' ? 'episode' : 'album'} ${targetChildId} not found on live item ${item.arrItemId}`,
+        `${kind} ${scope} ${targetChildId} not found on live item ${item.arrItemId}`,
       );
     }
     targetLabel = child.label;
+  } else if (scope === 'season') {
+    targetLabel = `Season ${seasonNumber}`;
+  } else if (scope === 'show' || scope === 'artist') {
+    targetLabel = item.title;
   }
 
   // D-17: audit event commits (budget-checked, attributed) before the *arr call.
@@ -81,27 +96,28 @@ export async function runForceSearch(input: RunForceSearchInput): Promise<RunFor
     requesterId: input.requesterId,
     requesterIsAdmin: input.requesterIsAdmin,
     mediaItemId: item.id,
-    targetArrChildId: targetChildId ?? null,
+    scope,
+    targetArrChildId: targetChildId,
+    seasonNumber,
     targetLabel,
   });
 
   // Search only — no mark-failed, no delete (ADR-008: this is the whole point).
   try {
-    let commandName: string;
-    if (kind === 'sonarr') {
-      const command =
-        targetChildId !== undefined
-          ? await input.arr.write.sonarr.searchEpisodes([targetChildId])
-          : await input.arr.write.sonarr.searchSeries(item.arrItemId);
-      commandName = command.name;
-    } else if (kind === 'radarr') {
-      const command = await input.arr.write.radarr.searchMovies([item.arrItemId]);
-      commandName = command.name;
-    } else {
-      const command = await input.arr.write.lidarr.searchAlbums([targetChildId!]);
-      commandName = command.name;
-    }
-    return { eventId, targetLabel, commandName };
+    const write = input.arr.write;
+    const command =
+      scope === 'episode'
+        ? await write.sonarr.searchEpisodes([targetChildId!])
+        : scope === 'season'
+          ? await write.sonarr.searchSeason(item.arrItemId, seasonNumber!)
+          : scope === 'show'
+            ? await write.sonarr.searchSeries(item.arrItemId)
+            : scope === 'album'
+              ? await write.lidarr.searchAlbums([targetChildId!])
+              : scope === 'artist'
+                ? await write.lidarr.searchArtist(item.arrItemId)
+                : await write.radarr.searchMovies([item.arrItemId]); // 'item'
+    return { eventId, targetLabel, commandName: command.name };
   } catch (err) {
     if (err instanceof ArrError) {
       throw new ArrUpstreamError(
