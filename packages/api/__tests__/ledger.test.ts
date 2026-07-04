@@ -239,3 +239,39 @@ describe('ledger.wanted (D-08 view)', () => {
     expect(sonarrOnly.items).toEqual([]);
   });
 });
+
+// Owner report: "I could not find Pokémon by typing pokemon; none of my users would
+// bother using the é." Migration 0005_unaccent_search makes ledger.search accent- and
+// case-insensitive via unaccent() on both the column and the pattern. Seeded here (not in
+// the shared beforeAll) so the accented row can't perturb the exact-count assertions above.
+describe('ledger.search accent/diacritic-insensitivity (0005_unaccent_search)', () => {
+  it("finds 'Pokémon' when the user types unaccented 'pokemon' — and 'POKEMON' too", async () => {
+    await seedMediaItem(tdb.db, 'sonarr', {
+      title: 'Pokémon',
+      arrItemId: 401,
+      sortTitle: 'pokémon',
+      onDiskFileCount: 10,
+      expectedFileCount: 10,
+    });
+
+    // The owner's exact complaint: an unaccented query matches the accented title.
+    const lower = await api.ledger.search({ query: 'pokemon' });
+    expect(lower.items.map((i) => i.title)).toContain('Pokémon');
+
+    // ILIKE keeps the match case-insensitive, so an all-caps query works as well.
+    const upper = await api.ledger.search({ query: 'POKEMON' });
+    expect(upper.items.map((i) => i.title)).toContain('Pokémon');
+
+    // A mixed-case, still-accented substring resolves via the title branch.
+    const partialAccented = await api.ledger.search({ query: 'Kémon' });
+    expect(partialAccented.items.map((i) => i.title)).toContain('Pokémon');
+
+    // Sanity: it is not one-directional — the fully accented query still matches.
+    const accented = await api.ledger.search({ query: 'Pokémon' });
+    expect(accented.items.map((i) => i.title)).toContain('Pokémon');
+
+    // And a non-matching query still excludes it (unaccent didn't broaden into a match-all).
+    const miss = await api.ledger.search({ query: 'digimon' });
+    expect(miss.items.map((i) => i.title)).not.toContain('Pokémon');
+  });
+});

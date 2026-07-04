@@ -1,0 +1,19 @@
+-- 0005 unaccent search — accent/diacritic-insensitive library search.
+--
+-- Owner report: "I could not find Pokémon by typing pokemon; none of my users would
+-- bother using the é." The ledger router `search` (packages/api/src/routers/ledger.ts)
+-- now wraps unaccent() around both the media_items column and the user's LIKE pattern so
+-- 'pokemon' finds 'Pokémon'. ILIKE keeps the match case-insensitive, so 'POKEMON' works too.
+--
+-- Extension availability: CNPG images ship the PostgreSQL contrib modules, so `unaccent`
+-- is present in-cluster. The embedded-postgres binary the test harness boots bundles
+-- contrib as well — verified against @embedded-postgres/linux-x64 16.14.0-beta.17, which
+-- ships lib/postgresql/unaccent.so + share/postgresql/extension/unaccent--1.1.sql. No
+-- fallback is needed; IF NOT EXISTS keeps this migration idempotent and a no-op on re-run.
+--
+-- No expression index: unaccent() is STABLE (its result depends on the loaded unaccent
+-- dictionary), not IMMUTABLE, so it cannot back an expression index directly. That is fine
+-- here — at ~17k media_items rows a sequential scan applying unaccent() per row is cheap.
+-- If the table ever grows large enough to matter, wrap unaccent in an IMMUTABLE SQL
+-- function and build an expression index on it (deliberately deferred; no index today).
+CREATE EXTENSION IF NOT EXISTS unaccent;
