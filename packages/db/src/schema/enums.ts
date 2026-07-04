@@ -44,6 +44,7 @@ export const LEDGER_EVENT_TYPES = [
   'fix_completed',
   'fix_failed', // Fix lifecycle (D-09)
   'restored', // Restore write-back (D-16)
+  'search_requested', // Force Search — search-only action for missing content (D-17; migration 0004)
 ] as const;
 export type LedgerEventType = (typeof LEDGER_EVENT_TYPES)[number];
 

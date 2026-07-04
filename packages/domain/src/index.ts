@@ -21,4 +21,6 @@ export * from './restore-runs';
 export * from './arr-clients';
 export * from './media-children';
 export * from './fix-flow';
+export * from './search-requests';
+export * from './search-flow';
 export * from './restore-flow';

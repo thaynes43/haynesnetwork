@@ -154,6 +154,10 @@ describe('0003_media_ledger against embedded Postgres 16', () => {
       await insertEvent('fix_requested', 'app', null);
       await insertEvent('fix_requested', 'app', null); // no conflict
     });
+
+    it("accepts 'search_requested' (Force Search audit event, migration 0004)", async () => {
+      await expect(insertEvent('search_requested', 'app', null)).resolves.toBeDefined();
+    });
   });
 
   describe('fix_requests (D-09)', () => {

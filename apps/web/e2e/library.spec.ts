@@ -1,13 +1,15 @@
-// US-06 / AC-07 end to end (DESIGN-005 e2e layer): a member browses /library, opens
-// the seeded item, submits a Fix with reason "wrong language", sees the status —
-// and the stub *arr recorded the blocklist (history/failed) + search command with
-// the right ids. The admin then sees the request in /admin/fixes (R-46).
+// US-06 / AC-07 + DESIGN-005 D-15/D-17 end to end: a member browses /library, opens
+// the seeded item, and works PER EPISODE — Fix on an on-disk episode (blocklist +
+// search), Force Search on a missing one (search ONLY, no blocklist). The admin then
+// sees the fix in /admin/fixes (R-46). Also guards the Modal focus-steal regression:
+// the Other-reason textarea must keep focus across keystrokes.
 import { test, expect } from '@playwright/test';
 import { signIn, openUserMenu } from './support/helpers';
 import { readRuntimeEnv } from './support/env';
 import { grabHistoryIdFor, type RecordedArrWrite } from './support/stub-arr';
 
-const TARGET_EPISODE_ID = 50102; // S01E02 · Chapter 2 (seed-ledger.ts / stub-arr.ts)
+const TARGET_EPISODE_ID = 50102; // S01E02 · Chapter 2 (on disk) — the Fix target.
+const MISSING_EPISODE_ID = 50110; // S01E10 · Chapter 10 (E10 missing) — the Force Search target.
 
 async function stubArrCalls(): Promise<RecordedArrWrite[]> {
   const env = readRuntimeEnv();
@@ -17,17 +19,32 @@ async function stubArrCalls(): Promise<RecordedArrWrite[]> {
   return body.calls;
 }
 
+async function resetStubArrCalls(): Promise<void> {
+  const env = readRuntimeEnv();
+  const res = await fetch(`${env.STUB_ARR_URL}/_stub/reset`, { method: 'POST' });
+  if (!res.ok) throw new Error(`stub-arr reset failed: ${res.status}`);
+}
+
+async function openSeededItem(page: import('@playwright/test').Page): Promise<void> {
+  await page.locator('.topbar__nav').getByRole('link', { name: 'Library' }).click();
+  await page.waitForURL('/library');
+  const card = page.locator('.media-card').filter({ hasText: 'Breaking Prod' });
+  await expect(card).toHaveCount(1);
+  await card.click();
+  await page.waitForURL(/\/library\/[0-9a-f-]{36}$/);
+  await expect(page.locator('.detail-head__title')).toContainText('Breaking Prod');
+}
+
 test.describe('media ledger + fix flow', () => {
-  test('member browses /library, opens the item, submits a fix (AC-07)', async ({ page }) => {
+  test('member browses /library, opens the item, fixes a single episode (AC-07)', async ({
+    page,
+  }) => {
     await signIn(page, 'member');
 
-    // Topbar nav → /library (desktop viewport keeps the nav visible).
+    // Library list still shows the seeded rows with kind + disk badges.
     await page.locator('.topbar__nav').getByRole('link', { name: 'Library' }).click();
     await page.waitForURL('/library');
-
-    // The seeded ledger rows render as horizontal cards with kind + disk badges.
     const card = page.locator('.media-card').filter({ hasText: 'Breaking Prod' });
-    await expect(card).toHaveCount(1);
     await expect(card).toContainText('TV');
     await expect(card).toContainText('9/10 on disk');
     await expect(page.locator('.media-card').filter({ hasText: 'The Fixture' })).toHaveCount(1);
@@ -36,19 +53,26 @@ test.describe('media ledger + fix flow', () => {
     await page.getByLabel('Search the library').fill('breaking');
     await expect(page.locator('.media-card')).toHaveCount(1);
 
-    // Item detail: metadata + the seeded history timeline (R-41).
+    // Item detail: metadata + the seeded history timeline (R-41) + the live episode list.
     await card.click();
     await page.waitForURL(/\/library\/[0-9a-f-]{36}$/);
-    await expect(page.locator('.detail-head__title')).toContainText('Breaking Prod');
     await expect(page.locator('.detail-head')).toContainText('9/10 on disk');
     await expect(page.locator('.meta-grid')).toContainText('HD-1080p');
     await expect(page.locator('.timeline li').first()).toContainText('Imported');
 
-    // Fix dialog (D-15): pick the episode, pick the reason, submit.
-    await page.getByRole('button', { name: 'Fix' }).click();
+    // The episode list shows per-episode on-disk state (D-06). E2 is on disk → Fix;
+    // E10 is missing → Force Search (owner feedback: episode-level, not show-level).
+    const onDiskRow = page.locator('.child-row').filter({ hasText: 'S01E02 · Chapter 2' });
+    await expect(onDiskRow).toContainText('On disk');
+    const missingRow = page.locator('.child-row').filter({ hasText: 'S01E10 · Chapter 10' });
+    await expect(missingRow).toContainText('Missing');
+    await expect(missingRow.getByRole('button', { name: 'Force Search' })).toBeVisible();
+
+    // Fix that specific episode: the dialog carries the chosen episode (no picker).
+    await onDiskRow.getByRole('button', { name: 'Fix' }).click();
     const dialog = page.getByRole('dialog', { name: 'Fix Breaking Prod' });
     await expect(dialog).toBeVisible();
-    await dialog.getByLabel('Which episode?').selectOption(String(TARGET_EPISODE_ID));
+    await expect(dialog).toContainText('S01E02 · Chapter 2');
     await dialog.getByRole('radio', { name: 'Wrong language' }).check();
     await dialog.getByRole('button', { name: 'Submit fix' }).click();
 
@@ -104,5 +128,57 @@ test.describe('media ledger + fix flow', () => {
     await expect(row.locator('.actions-json')).toContainText(
       `/history/failed/${grabHistoryIdFor(TARGET_EPISODE_ID)}`,
     );
+  });
+
+  test('Force Search on a missing episode searches ONLY — no blocklist (D-17)', async ({
+    page,
+  }) => {
+    await signIn(page, 'member');
+    await openSeededItem(page);
+
+    // Isolate this action's recorded *arr writes.
+    await resetStubArrCalls();
+
+    const missingRow = page.locator('.child-row').filter({ hasText: 'S01E10 · Chapter 10' });
+    await expect(missingRow).toContainText('Missing');
+    await missingRow.getByRole('button', { name: 'Force Search' }).click();
+
+    // Single confirm — no reason taxonomy for missing content.
+    const dialog = page.getByRole('dialog', { name: 'Force search Breaking Prod' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText('S01E10 · Chapter 10');
+    await dialog.getByRole('button', { name: 'Force search' }).click();
+    await expect(dialog).toContainText('search is running', { timeout: 15_000 });
+    await dialog.getByRole('button', { name: 'Done' }).click();
+
+    // D-17 proof: EpisodeSearch fired for the missing episode, and NOTHING was
+    // blocklisted (no history/failed) or deleted — it is missing, not broken.
+    const calls = await stubArrCalls();
+    expect(calls.filter((c) => c.path.startsWith('/history/failed/'))).toHaveLength(0);
+    expect(calls.filter((c) => c.method === 'DELETE')).toHaveLength(0);
+    const commands = calls.filter((c) => c.path === '/command');
+    expect(commands).toHaveLength(1);
+    expect(commands[0]!.body).toEqual({ name: 'EpisodeSearch', episodeIds: [MISSING_EPISODE_ID] });
+  });
+
+  test('the Other-reason textarea keeps focus across keystrokes (Modal remount regression)', async ({
+    page,
+  }) => {
+    await signIn(page, 'member');
+    await openSeededItem(page);
+
+    // Open a Fix for an on-disk episode and pick the free-text "Other" reason.
+    const row = page.locator('.child-row').filter({ hasText: 'S01E03 · Chapter 3' });
+    await row.getByRole('button', { name: 'Fix' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Fix Breaking Prod' });
+    await dialog.getByRole('radio', { name: 'Other' }).check();
+
+    // Type MANY characters one at a time: the pre-fix bug re-ran the Modal focus
+    // effect on every keystroke and stole focus back to the dialog after char one.
+    const textarea = dialog.getByRole('textbox');
+    await textarea.click();
+    const typed = 'the audio track is out of sync with the video';
+    await textarea.pressSequentially(typed, { delay: 15 });
+    await expect(textarea).toHaveValue(typed);
   });
 });

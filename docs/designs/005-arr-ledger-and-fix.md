@@ -248,6 +248,7 @@ export const LEDGER_EVENT_TYPES = [
   'requested',                                           // from Seerr
   'fix_requested', 'fix_actioned', 'fix_completed', 'fix_failed', // Fix lifecycle (D-09)
   'restored',                                            // Restore write-back (D-16)
+  'search_requested',                                    // Force Search — search-only (D-17; migration 0004)
 ] as const;
 export const LEDGER_EVENT_SOURCES = ['sonarr', 'radarr', 'lidarr', 'seerr', 'app'] as const;
 
@@ -274,7 +275,8 @@ export const ledgerEvents = pgTable(
   (t) => [
     check('ledger_events_event_type_enum', sql`${t.eventType} = ANY (ARRAY[
       'grabbed','imported','deleted','download_failed','requested',
-      'fix_requested','fix_actioned','fix_completed','fix_failed','restored'])`),
+      'fix_requested','fix_actioned','fix_completed','fix_failed','restored',
+      'search_requested'])`),
     check('ledger_events_source_enum',
       sql`${t.source} = ANY (ARRAY['sonarr','radarr','lidarr','seerr','app'])`),
     uniqueIndex('ledger_events_source_event_unique')
@@ -507,6 +509,7 @@ Continues DESIGN-001 D-13:
 | Migration | Contents | How produced |
 |---|---|---|
 | `0003_media_ledger.sql` | All D-05..D-11 tables, CHECKs, partial unique + indexes, and the `wanted_items` view | `drizzle-kit generate`; view appended by hand if drizzle-kit still doesn't emit `pgView` (DESIGN-001 Q-04's resolution applies here too) |
+| `0004_search_requested_event.sql` | Relaxes (drop + re-add) the `ledger_events_event_type_enum` CHECK to admit `'search_requested'` — the Force Search audit event (D-17). Existing rows unaffected | hand-written ALTER TABLE; `LEDGER_EVENT_TYPES` extended in `packages/db/src/schema/enums.ts` in the same change |
 
 No seed data — every row arrives via sync.
 
@@ -626,6 +629,27 @@ any step failure → `failed` + `fix_failed` event. Target validation lives in
 requires none (`FixTargetRequiredError` otherwise). Admin visibility = `fix.adminList`
 (all rows, filterable); users see exactly their own via `fix.myFixes` (R-46).
 
+**Fix targets a single child, never the whole show (owner feedback).** The detail page
+renders the live per-episode (sonarr) / per-album (lidarr) list from `ledger.children`
+with each child's on-disk state, and the Fix action lives on that row — the dialog
+carries that specific episode/album, so a user repairs one broken thing rather than the
+whole series. Radarr stays movie-level (the movie *is* the child). The old show-level
+Fix button is gone for sonarr/lidarr.
+
+**Force Search — the search-only sibling for MISSING content (D-17).** Content that is
+Monitored but has nothing on disk is missing, not broken: it gets a **Force Search**
+action, not Fix. Force Search triggers ONLY the owning *arr's search command (episode /
+album / movie / whole-series `SeriesSearch`), with **no** `history/failed` (Blocklist),
+**no** file delete, and no Fix Reason — a single confirm. It records an audited
+`search_requested` `ledger_events` row (source `app`, attributed to the requester) via
+the `recordSearchRequest` single-writer, and the `runForceSearch` orchestrator fires the
+command after that audit row commits (search-only surface of `@hnet/arr/write`). Force
+Search **shares the Fix hourly budget** (`countRecentFixBudget` counts a requester's
+`fix_requests` + `search_requested` events against `FIX_RATE_LIMIT_PER_HOUR`; admins
+bypass) so the two actions can't be alternated to dodge R-47. UI rule everywhere
+(library list, wanted rows, detail item + each episode/album): **on disk → Fix; not on
+disk → Force Search.**
+
 ### D-16 Restore flow (R-50..R-52, AC-09)
 
 Explicitly **not automatic** — no code path triggers Restore but the two admin
@@ -714,6 +738,15 @@ export const fixRouter = router({
     { error: 'reasonText is required exactly when reason is "other"' }))
     .mutation(/* createFixRequest → D-15 orchestration → returns
                  {id, status, pathTaken, targetLabel} */),
+
+  // Force Search (D-15/D-17): search-only for MISSING content — no reason, no
+  // blocklist, no delete. targetChildId optional (sonarr episode or whole-series;
+  // required for lidarr album; forbidden for radarr). Shares the Fix hourly budget.
+  forceSearch: authedProcedure.input(z.object({
+    mediaItemId: z.uuid(),
+    targetChildId: z.number().int().positive().optional(),
+  })).mutation(/* runForceSearch → recordSearchRequest ('search_requested') + the
+                  *arr search command → returns {eventId, targetLabel, commandName} */),
 
   myFixes: authedProcedure.query(/* caller's fix_requests, newest first:
     {id, item {title, arrKind}, targetLabel, reason, status, pathTaken, createdAt, updatedAt} */),
