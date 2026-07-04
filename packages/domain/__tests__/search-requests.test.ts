@@ -138,6 +138,53 @@ describe('Force Search single-writer (DESIGN-005 D-07/D-17)', () => {
     });
   });
 
+  it('carries the roll-up scope: season records scope+seasonNumber; show has neither', async () => {
+    // A dedicated requester so this doesn't draw down memberId's shared hourly budget.
+    const rollupUser = (await createUser(t.db, { email: 'rollup@example.com' })).id;
+    const season = await recordSearchRequest({
+      db: t.db,
+      requesterId: rollupUser,
+      mediaItemId: sonarrItemId,
+      scope: 'season',
+      seasonNumber: 4,
+      targetLabel: 'Season 4',
+    });
+    const [seasonEvent] = await t.db
+      .select()
+      .from(ledgerEvents)
+      .where(eq(ledgerEvents.id, season.eventId));
+    expect(seasonEvent!.payload).toMatchObject({
+      scope: 'season',
+      seasonNumber: 4,
+      targetArrChildId: null,
+    });
+
+    const show = await recordSearchRequest({
+      db: t.db,
+      requesterId: rollupUser,
+      mediaItemId: sonarrItemId,
+      scope: 'show',
+    });
+    const [showEvent] = await t.db
+      .select()
+      .from(ledgerEvents)
+      .where(eq(ledgerEvents.id, show.eventId));
+    expect(showEvent!.payload).toMatchObject({
+      scope: 'show',
+      seasonNumber: null,
+      targetArrChildId: null,
+    });
+  });
+
+  it('rejects bad scope combinations: season without a number, radarr with a scope it lacks', async () => {
+    await expect(
+      recordSearchRequest({ db: t.db, requesterId: memberId, mediaItemId: sonarrItemId, scope: 'season' }),
+    ).rejects.toThrow(FixTargetRequiredError);
+    await expect(
+      recordSearchRequest({ db: t.db, requesterId: memberId, mediaItemId: radarrItemId, scope: 'show' }),
+    ).rejects.toThrow(FixTargetRequiredError);
+  });
+
   it('enforces per-kind target rules: radarr forbids a child, lidarr requires one', async () => {
     await expect(
       recordSearchRequest({

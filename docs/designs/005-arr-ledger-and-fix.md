@@ -522,6 +522,7 @@ Continues DESIGN-001 D-13:
 |---|---|---|
 | `0003_media_ledger.sql` | All D-05..D-11 tables, CHECKs, partial unique + indexes, and the `wanted_items` view | `drizzle-kit generate`; view appended by hand if drizzle-kit still doesn't emit `pgView` (DESIGN-001 Q-04's resolution applies here too) |
 | `0004_search_requested_event.sql` | Relaxes (drop + re-add) the `ledger_events_event_type_enum` CHECK to admit `'search_requested'` — the Force Search audit event (D-17). Existing rows unaffected | hand-written ALTER TABLE; `LEDGER_EVENT_TYPES` extended in `packages/db/src/schema/enums.ts` in the same change |
+| `0006_fix_target_scope.sql` | Media-hierarchy actions: adds `fix_requests.target_scope` (`text NOT NULL DEFAULT 'item'`, CHECK `item\|season\|episode\|album`) + `target_season` (`integer`, CHECK: non-null IFF scope `season`), backfilling existing rows from their kind + child id. Lets a Fix repair a whole sonarr **season** and keeps two seasons of one show from colliding in the open-fix dedupe (D-09) | hand-written ALTER TABLE; `FIX_TARGET_SCOPES` added to `packages/db/src/schema/enums.ts` in the same change (0005 = the unaccent-search hotfix that landed between) |
 
 No seed data — every row arrives via sync.
 
@@ -661,6 +662,56 @@ Search **shares the Fix hourly budget** (`countRecentFixBudget` counts a request
 bypass) so the two actions can't be alternated to dodge R-47. UI rule everywhere
 (library list, wanted rows, detail item + each episode/album): **on disk → Fix; not on
 disk → Force Search.**
+
+**Amendment (media-hierarchy actions, `feat/hierarchy-actions`) — roll-up scopes above
+the child.** Both actions gained a **scope** so a user can act on a whole show / season /
+album / artist, not only a single episode/album (owner request). The scope is optional on
+`fix.create` / `fix.forceSearch` (omitted ⇒ the legacy per-kind default) and validated by
+one shared `resolveSearchTarget` / `resolveFixTarget` (packages/domain `action-scope.ts`)
+— the per-kind allow-list of (scope, child, season) tuples.
+
+| Kind | Force Search scopes | Fix scopes |
+|---|---|---|
+| sonarr | `show` (SeriesSearch), `season` (SeasonSearch `{seriesId, seasonNumber}`), `episode` (EpisodeSearch) | `season`, `episode` |
+| radarr | `item` (MoviesSearch — the movie) | `item` |
+| lidarr | `artist` (ArtistSearch), `album` (AlbumSearch) | `album` |
+
+- **Force Search** is search-only for every scope (never blocklist/delete) — one audited
+  `search_requested` event carrying `payload.scope` + `seasonNumber`. New write methods
+  `SonarrWriteClient.searchSeason` and `LidarrWriteClient.searchArtist`.
+- **Fix — season roll-up** (`runSeasonFix`, sonarr): resolves each ON-DISK episode's
+  latest grab from the *live* per-episode `GET /history?episodeId=&eventType=grabbed`
+  endpoint (deliberately reusing the production-verified per-target lookup rather than the
+  paged `/history` feed, which would need the integer eventType enum), **blocklists each
+  DISTINCT backing grab** (a season pack shares one id — deduped by a `Set`), then fires
+  one `SeasonSearch`. No grab records for any on-disk episode ⇒ the AC-08 fallback deletes
+  the season's episode files before the search. One `fix_requests` row (scope `season`,
+  `target_season` set, child null) is the audit.
+- **Whole-show / whole-artist Fix is deliberately NOT offered — Force-Search-only
+  (judgment call).** Blocklisting every grab backing an entire series/discography is too
+  broad and destructive to expose behind one click; on-disk *repair* stays at
+  season/episode (sonarr) and album (lidarr) grain, which already covers the real repair
+  need, while whole-show/artist **Force Search** covers the "just search everything" case.
+  `resolveFixTarget` rejects `show`/`artist` with `FixTargetRequiredError`.
+- **`fix_requests` target semantics (migration 0006):** `target_scope`
+  (`item|season|episode|album`) + `target_season`; the open-fix dedupe key becomes
+  `(media_item_id, target_scope, target_arr_child_id, target_season)` so two different
+  seasons of one show no longer collide (both carry a null child id). `completeFixRequests`
+  is unchanged: a season/item fix (null child) still closes on the next matching import
+  (loose-but-safe — the imported payload carries `episodeId`, not a season, per D-06).
+- **UI:** sonarr episodes render as **collapsible season sections** (collapsed by default;
+  each summary is a phone-width touch target showing `Season N` + on-disk/total, with a
+  season Force Search and — when the season has anything on disk — a season Fix); the
+  whole-show Force Search sits in the section header. Lidarr keeps the flat album list
+  (albums are the fix unit — no per-track scope, D-06) plus a whole-artist Force Search.
+  `ledger.children` now also returns each child's `seasonNumber` (null for lidarr/radarr)
+  so the client can group by season (D-06).
+
+**Discrepancy vs. the verbatim owner request:** the owner said "Force Search per **Song**"
+for music, but D-06 fixed the Lidarr granularity at the **album** (the *arr delete/search
+unit) — there is no track/song scope in our fix targets. Implemented at album grain + a
+whole-artist roll-up, matching the design rather than adding track-level scope creep.
+Flagged here and in the PR report for owner sign-off.
 
 ### D-16 Restore flow (R-50..R-52, AC-09)
 

@@ -8,14 +8,10 @@
 // packages/domain (D-12/D-18).
 import { ledgerEvents, mediaItems, users, type ArrKind, type DbClient } from '@hnet/db';
 import { eq, sql } from 'drizzle-orm';
-import {
-  FixRateLimitError,
-  FixTargetRequiredError,
-  LedgerItemTombstonedError,
-  NotFoundError,
-} from './errors';
+import { FixRateLimitError, LedgerItemTombstonedError, NotFoundError } from './errors';
 import { inTransaction } from './db-client';
 import { countRecentFixBudget, FIX_RATE_LIMIT_PER_HOUR } from './fix-requests';
+import { resolveSearchTarget, type SearchScope } from './action-scope';
 
 export interface CreateSearchRequestInput {
   db?: DbClient;
@@ -24,12 +20,19 @@ export interface CreateSearchRequestInput {
   requesterIsAdmin?: boolean;
   mediaItemId: string;
   /**
-   * Episode id (sonarr) / album id (lidarr). Optional for sonarr (absent = a
-   * whole-series search); required for lidarr; forbidden for radarr (the movie is
-   * the target).
+   * The roll-up scope (media-hierarchy actions): radarr 'item'; sonarr 'show' |
+   * 'season' | 'episode'; lidarr 'artist' | 'album'. Omitted ⇒ the legacy per-kind
+   * default (sonarr → whole-series when no child, else episode; lidarr → album).
+   */
+  scope?: SearchScope;
+  /**
+   * Episode id (sonarr) / album id (lidarr) — for the 'episode'/'album' scopes;
+   * forbidden for whole-show/season/artist/movie searches.
    */
   targetArrChildId?: number | null;
-  /** Display-durable label, e.g. 'S01E10 · Chapter 10' / album title (audit copy). */
+  /** Sonarr season number for the 'season' scope. */
+  seasonNumber?: number | null;
+  /** Display-durable label, e.g. 'S01E10 · Chapter 10' / album title / 'Season 2' (audit copy). */
   targetLabel?: string | null;
 }
 
@@ -49,7 +52,6 @@ export interface CreateSearchRequestResult {
 export async function recordSearchRequest(
   input: CreateSearchRequestInput,
 ): Promise<CreateSearchRequestResult> {
-  const targetArrChildId = input.targetArrChildId ?? null;
   return inTransaction(input.db, async (tx) => {
     // Serialize this requester's submissions for the shared budget count (D-17) —
     // the SAME lock key Fix uses, so the two actions draw down one allowance.
@@ -82,17 +84,14 @@ export async function recordSearchRequest(
       );
     }
 
-    // Target rules (D-17): radarr searches the movie (no child); lidarr an album
-    // (child required); sonarr allows a whole-series search OR a single episode.
-    if (item.arrKind === 'radarr') {
-      if (targetArrChildId !== null) {
-        throw new FixTargetRequiredError(
-          'radarr force-search targets the movie itself — no child target allowed',
-        );
-      }
-    } else if (item.arrKind === 'lidarr' && targetArrChildId === null) {
-      throw new FixTargetRequiredError('lidarr force-search requires an album target');
-    }
+    // Target rules (D-17 / hierarchy-actions): validate the (kind, scope, child,
+    // season) tuple against the shared allow-list — radarr searches the movie; sonarr
+    // a whole show / a season / a single episode; lidarr a whole artist / an album.
+    const resolved = resolveSearchTarget(item.arrKind, {
+      scope: input.scope,
+      targetChildId: input.targetArrChildId,
+      seasonNumber: input.seasonNumber,
+    });
 
     if (!input.requesterIsAdmin) {
       const used = await countRecentFixBudget(tx, input.requesterId);
@@ -112,7 +111,9 @@ export async function recordSearchRequest(
         occurredAt: new Date(),
         requestedByUserId: input.requesterId,
         payload: {
-          targetArrChildId,
+          scope: resolved.scope,
+          targetArrChildId: resolved.targetChildId,
+          seasonNumber: resolved.seasonNumber,
           targetLabel: input.targetLabel ?? null,
           requesterId: input.requesterId,
           arrKind: item.arrKind,

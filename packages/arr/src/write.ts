@@ -112,9 +112,18 @@ export class SonarrWriteClient extends ArrWriteClientBase {
     return this.runCommand({ name: 'EpisodeSearch', episodeIds });
   }
 
-  /** `POST /command {name: 'SeriesSearch', seriesId}` (exists per D-03; Fix targets episodes). */
+  /** `POST /command {name: 'SeriesSearch', seriesId}` — whole-show Force Search (roll-up). */
   searchSeries(seriesId: number): Promise<ArrCommandResponse> {
     return this.runCommand({ name: 'SeriesSearch', seriesId });
+  }
+
+  /**
+   * `POST /command {name: 'SeasonSearch', seriesId, seasonNumber}` — season roll-up
+   * search (verified against Sonarr's `SeasonSearchCommand` fields `SeriesId` +
+   * `SeasonNumber` in the develop source; D-03 command-name convention).
+   */
+  searchSeason(seriesId: number, seasonNumber: number): Promise<ArrCommandResponse> {
+    return this.runCommand({ name: 'SeasonSearch', seriesId, seasonNumber });
   }
 
   /** `POST /series` — Restore re-add (D-16). */
@@ -159,6 +168,15 @@ export class LidarrWriteClient extends ArrWriteClientBase {
   /** `POST /command {name: 'AlbumSearch', albumIds}` (D-03 payload keys). */
   searchAlbums(albumIds: number[]): Promise<ArrCommandResponse> {
     return this.runCommand({ name: 'AlbumSearch', albumIds });
+  }
+
+  /**
+   * `POST /command {name: 'ArtistSearch', artistId}` — whole-discography Force Search
+   * (roll-up above album; verified against Lidarr's `ArtistSearchCommand` field
+   * `ArtistId` in the develop source; D-03 command-name convention).
+   */
+  searchArtist(artistId: number): Promise<ArrCommandResponse> {
+    return this.runCommand({ name: 'ArtistSearch', artistId });
   }
 
   /** `POST /artist` — Restore re-add (D-16). */

@@ -55,6 +55,14 @@ describe('SonarrWriteClient', () => {
     expect(calls[0]?.body).toEqual({ name: 'SeriesSearch', seriesId: 645 });
   });
 
+  it('searchSeason uses the SeasonSearch command with seriesId + seasonNumber', async () => {
+    const { client: c, calls } = client([
+      { method: 'POST', path: '/api/v3/command', body: COMMAND_OK },
+    ]);
+    await c.searchSeason(645, 2);
+    expect(calls[0]?.body).toEqual({ name: 'SeasonSearch', seriesId: 645, seasonNumber: 2 });
+  });
+
   it('addSeries POSTs /series with the D-16 payload and parses the created resource', async () => {
     const { client: c, calls } = client([
       { method: 'POST', path: '/api/v3/series', body: fixture('sonarr.series-byid') },
@@ -176,6 +184,14 @@ describe('LidarrWriteClient', () => {
     ]);
     await c.searchAlbums([2713]);
     expect(calls[0]?.body).toEqual({ name: 'AlbumSearch', albumIds: [2713] });
+  });
+
+  it('searchArtist uses the ArtistSearch command with artistId', async () => {
+    const { client: c, calls } = client([
+      { method: 'POST', path: '/api/v1/command', body: COMMAND_OK },
+    ]);
+    await c.searchArtist(88);
+    expect(calls[0]?.body).toEqual({ name: 'ArtistSearch', artistId: 88 });
   });
 
   it('addArtist POSTs /artist with the D-16 payload (searchForMissingAlbums off)', async () => {

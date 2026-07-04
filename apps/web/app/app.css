@@ -1018,6 +1018,61 @@ input[aria-invalid='true'] {
   white-space: nowrap;
 }
 
+/* Section header with a roll-up action (whole-show / whole-artist Force Search). */
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.section-head h2 {
+  margin: 0;
+}
+
+/* Collapsible season sections (sonarr, media-hierarchy actions). Collapsed by default;
+   the summary is a full-width touch target that also carries the season roll-up actions. */
+.season-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.season {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+}
+.season__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  cursor: pointer;
+  list-style-position: inside;
+  min-height: 44px; /* comfortable phone tap target */
+  box-sizing: border-box;
+}
+.season__title {
+  font-weight: 600;
+  font-size: 14px;
+}
+.season__actions {
+  flex: 1 1 auto;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.season[open] > .season__head {
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 8px;
+}
+.season .child-list {
+  padding: 0 10px 10px;
+}
+
 /* Badge tones (status chips) — all through the token palette. */
 .badge--ok {
   color: var(--color-accent);

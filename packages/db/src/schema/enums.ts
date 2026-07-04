@@ -73,6 +73,14 @@ export type FixStatus = (typeof FIX_STATUSES)[number];
 export const FIX_PATHS = ['blocklist_search', 'delete_search'] as const; // AC-07 vs AC-08
 export type FixPath = (typeof FIX_PATHS)[number];
 
+// DESIGN-005 D-09 (hierarchy-actions amendment) — the SCOPE a Fix Request targets.
+// 'item' = the radarr movie / whole unit (child null); 'episode' / 'album' = a single
+// sonarr episode / lidarr album (child id set); 'season' = a whole sonarr season
+// (target_season set, child null). Whole-show / whole-artist are Force-Search-only
+// (no fix_requests row — DESIGN-005 D-15), so they are NOT scopes here.
+export const FIX_TARGET_SCOPES = ['item', 'season', 'episode', 'album'] as const;
+export type FixTargetScope = (typeof FIX_TARGET_SCOPES)[number];
+
 export const RESTORE_RUN_STATUSES = [
   'running',
   'completed',

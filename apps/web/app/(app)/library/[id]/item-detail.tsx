@@ -3,10 +3,13 @@
 // DESIGN-005 D-17 / D-15 — the /library/[id] client view: metadata card, the live
 // per-episode / per-album list (D-06 ledger.children) with a per-child action —
 // Fix when it is on disk (something to repair), Force Search when it is missing
-// (nothing to blocklist, just search). Radarr acts at the movie level in the header.
-// Below: fix history for the item (R-46) and the ledger event timeline (R-41).
+// (nothing to blocklist, just search). Media-hierarchy actions add roll-ups: sonarr
+// episodes group into collapsible SEASON sections (each with a season Force Search +
+// Fix), and a whole-show / whole-artist Force Search sits in the section header.
+// Radarr acts at the movie level in the header. Below: fix history for the item (R-46)
+// and the ledger event timeline (R-41).
 import Link from 'next/link';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc-client';
 import {
   ARR_KIND_LABELS,
@@ -16,17 +19,20 @@ import {
   fixStatusTone,
   formatBytes,
   formatWhen,
+  groupBySeason,
   onDiskSummary,
+  seasonName,
+  type ActionTarget,
   type ArrKindName,
 } from '@/lib/media';
 import { KindIcon } from '@/components/kind-icon';
 import { FixDialog } from './fix-dialog';
 import { ForceSearchDialog } from './force-search-dialog';
 
-/** The open dialog: repair (Fix) vs search-only (Force Search), and its target. */
+/** The open dialog: repair (Fix) vs search-only (Force Search), and its scoped target. */
 type PendingAction = {
   mode: 'fix' | 'search';
-  target: { childId: number; label: string } | null;
+  target: ActionTarget | null;
 };
 
 export function ItemDetail({ mediaItemId }: { mediaItemId: string }) {
@@ -48,6 +54,12 @@ export function ItemDetail({ mediaItemId }: { mediaItemId: string }) {
     { enabled: needsChildren && !tombstoned },
   );
 
+  // Sonarr episodes group into collapsible season sections (media-hierarchy actions).
+  const seasons = useMemo(
+    () => (arrKind === 'sonarr' ? groupBySeason(children.data ?? []) : []),
+    [arrKind, children.data],
+  );
+
   if (detail.isLoading) return <p className="muted">Loading item…</p>;
   if (detail.error) {
     return (
@@ -66,6 +78,42 @@ export function ItemDetail({ mediaItemId }: { mediaItemId: string }) {
     void utils.ledger.children.invalidate({ mediaItemId });
     void utils.fix.myFixes.invalidate();
   };
+
+  // Shared "children not loaded yet" node (tombstoned / loading / error / empty) — null
+  // when the live child list is ready to render.
+  const childrenNotReady = tombstoned ? (
+    <p className="muted">This item was removed from the manager — nothing to fix.</p>
+  ) : children.isLoading ? (
+    <p className="muted">Loading {childNoun}s…</p>
+  ) : children.error ? (
+    <p className="alert" role="alert">
+      Could not load the {childNoun} list: {children.error.message}
+    </p>
+  ) : (children.data ?? []).length === 0 ? (
+    <p className="muted">No {childNoun}s found on the manager.</p>
+  ) : null;
+
+  // One child row: on disk → Fix (something to repair); missing → Force Search.
+  const childRow = (child: { arrChildId: number; label: string; hasFile: boolean }, scope: 'episode' | 'album') => (
+    <li key={child.arrChildId} className="child-row">
+      <span className="child-row__label">{child.label}</span>
+      <span className={`badge badge--${child.hasFile ? 'ok' : 'warn'}`}>
+        {child.hasFile ? 'On disk' : 'Missing'}
+      </span>
+      <button
+        type="button"
+        className="btn sm child-row__action"
+        onClick={() =>
+          setAction({
+            mode: child.hasFile ? 'fix' : 'search',
+            target: { scope, childId: child.arrChildId, label: child.label },
+          })
+        }
+      >
+        {child.hasFile ? 'Fix' : 'Force Search'}
+      </button>
+    </li>
+  );
 
   return (
     <>
@@ -118,44 +166,107 @@ export function ItemDetail({ mediaItemId }: { mediaItemId: string }) {
         ) : null}
       </section>
 
-      {needsChildren ? (
+      {/* Sonarr: episodes grouped into collapsible SEASON sections. Each season header
+          is a touch target that expands the episode list, and carries a season-level
+          Force Search (always) + Fix (when the season has something on disk). The whole
+          SHOW gets a Force Search here too — but no whole-show Fix: blocklisting every
+          grab of a series is too broad, so on-disk repair stays at season/episode grain
+          (owner judgment call — Force Search covers the whole-show "just search" need). */}
+      {item.arrKind === 'sonarr' ? (
         <section className="card admin-section">
-          <h2>{item.arrKind === 'sonarr' ? 'Episodes' : 'Albums'}</h2>
-          {item.tombstonedAt !== null ? (
-            <p className="muted">This item was removed from the manager — nothing to fix.</p>
-          ) : children.isLoading ? (
-            <p className="muted">Loading {childNoun}s…</p>
-          ) : children.error ? (
-            <p className="alert" role="alert">
-              Could not load the {childNoun} list: {children.error.message}
-            </p>
-          ) : (children.data ?? []).length === 0 ? (
-            <p className="muted">No {childNoun}s found on the manager.</p>
-          ) : (
-            <ul className="child-list">
-              {(children.data ?? []).map((child) => {
-                const onDisk = child.hasFile;
-                return (
-                  <li key={child.arrChildId} className="child-row">
-                    <span className="child-row__label">{child.label}</span>
-                    <span className={`badge badge--${onDisk ? 'ok' : 'warn'}`}>
-                      {onDisk ? 'On disk' : 'Missing'}
-                    </span>
-                    <button
-                      type="button"
-                      className="btn sm child-row__action"
-                      onClick={() =>
-                        setAction({
-                          mode: onDisk ? 'fix' : 'search',
-                          target: { childId: child.arrChildId, label: child.label },
-                        })
-                      }
+          <div className="section-head">
+            <h2>Episodes</h2>
+            {!tombstoned ? (
+              <button
+                type="button"
+                className="btn sm"
+                onClick={() =>
+                  setAction({ mode: 'search', target: { scope: 'show', label: item.title } })
+                }
+              >
+                Force Search show
+              </button>
+            ) : null}
+          </div>
+          {childrenNotReady ?? (
+            <div className="season-list">
+              {seasons.map((s) => (
+                <details key={s.seasonNumber} className="season">
+                  <summary className="season__head">
+                    <span className="season__title">{seasonName(s.seasonNumber)}</span>
+                    <span
+                      className={`badge badge--${s.onDiskCount >= s.total ? 'ok' : s.onDiskCount > 0 ? 'info' : 'warn'}`}
                     >
-                      {onDisk ? 'Fix' : 'Force Search'}
-                    </button>
-                  </li>
-                );
-              })}
+                      {s.onDiskCount}/{s.total} on disk
+                    </span>
+                    <span className="season__actions">
+                      {s.onDiskCount > 0 ? (
+                        <button
+                          type="button"
+                          className="btn sm"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setAction({
+                              mode: 'fix',
+                              target: {
+                                scope: 'season',
+                                seasonNumber: s.seasonNumber,
+                                label: seasonName(s.seasonNumber),
+                              },
+                            });
+                          }}
+                        >
+                          Fix season
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="btn sm"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setAction({
+                            mode: 'search',
+                            target: {
+                              scope: 'season',
+                              seasonNumber: s.seasonNumber,
+                              label: seasonName(s.seasonNumber),
+                            },
+                          });
+                        }}
+                      >
+                        Force Search
+                      </button>
+                    </span>
+                  </summary>
+                  <ul className="child-list">{s.episodes.map((ep) => childRow(ep, 'episode'))}</ul>
+                </details>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : null}
+
+      {/* Lidarr: albums as a flat list (albums are the fix unit — no per-track scope in
+          our design; DESIGN-005 D-06). The whole ARTIST gets a Force Search roll-up. */}
+      {item.arrKind === 'lidarr' ? (
+        <section className="card admin-section">
+          <div className="section-head">
+            <h2>Albums</h2>
+            {!tombstoned ? (
+              <button
+                type="button"
+                className="btn sm"
+                onClick={() =>
+                  setAction({ mode: 'search', target: { scope: 'artist', label: item.title } })
+                }
+              >
+                Force Search artist
+              </button>
+            ) : null}
+          </div>
+          {childrenNotReady ?? (
+            <ul className="child-list">
+              {(children.data ?? []).map((child) => childRow(child, 'album'))}
             </ul>
           )}
         </section>

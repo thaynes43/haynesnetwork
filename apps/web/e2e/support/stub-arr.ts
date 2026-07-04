@@ -62,11 +62,12 @@ function invalidEventTypeBody(value: string) {
 }
 
 function episodes() {
-  return Array.from({ length: EPISODE_COUNT }, (_, i) => {
+  // Season 1: 10 episodes, E10 missing (the seeded ledger row mirrors this as 9/10).
+  const season1 = Array.from({ length: EPISODE_COUNT }, (_, i) => {
     const n = i + 1;
-    const hasFile = n !== 10; // E10 missing → the ledger row shows 9/10
+    const hasFile = n !== 10; // E10 missing
     return {
-      id: STUB_SERIES_ID * 100 + n,
+      id: STUB_SERIES_ID * 100 + n, // 50101..50110
       seriesId: STUB_SERIES_ID,
       seasonNumber: 1,
       episodeNumber: n,
@@ -77,6 +78,32 @@ function episodes() {
       ...(hasFile ? { episodeFileId: 3000 + n } : {}),
     };
   });
+  // Season 2: gives the detail view a second collapsible season (roll-up actions). One
+  // episode on disk (so the season shows a Fix button), one missing.
+  const season2 = [
+    {
+      id: STUB_SERIES_ID * 100 + 201, // 50301
+      seriesId: STUB_SERIES_ID,
+      seasonNumber: 2,
+      episodeNumber: 1,
+      title: 'Return',
+      airDateUtc: '2022-03-01T01:00:00Z',
+      hasFile: true,
+      monitored: true,
+      episodeFileId: 3201,
+    },
+    {
+      id: STUB_SERIES_ID * 100 + 202, // 50302
+      seriesId: STUB_SERIES_ID,
+      seasonNumber: 2,
+      episodeNumber: 2,
+      title: 'Reckoning',
+      airDateUtc: '2022-03-08T01:00:00Z',
+      hasFile: false,
+      monitored: true,
+    },
+  ];
+  return [...season1, ...season2];
 }
 
 function seriesResource(id: number) {
