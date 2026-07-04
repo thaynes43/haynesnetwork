@@ -23,13 +23,19 @@ export interface FixDialogProps {
   open: boolean;
   onClose: () => void;
   item: { id: string; arrKind: string; title: string };
+  /**
+   * A specific episode/album already chosen (per-episode Fix from the detail list).
+   * When present the picker is skipped and this target is carried into fix.create.
+   */
+  target?: { childId: number; label: string } | null;
   /** Invalidate/refresh hooks after a successful submit. */
   onSubmitted: () => void;
 }
 
-export function FixDialog({ open, onClose, item, onSubmitted }: FixDialogProps) {
+export function FixDialog({ open, onClose, item, target, onSubmitted }: FixDialogProps) {
   const needsTarget = item.arrKind === 'sonarr' || item.arrKind === 'lidarr';
   const targetNoun = item.arrKind === 'sonarr' ? 'episode' : 'album';
+  const preselected = target ?? null;
 
   const [targetChildId, setTargetChildId] = useState<number | ''>('');
   const [reason, setReason] = useState<Reason>('wont_play_corrupt');
@@ -37,9 +43,10 @@ export function FixDialog({ open, onClose, item, onSubmitted }: FixDialogProps) 
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ pathTaken: string; targetLabel: string | null } | null>(null);
 
+  // Only fetch the live picker when we need a target AND one wasn't handed in.
   const children = trpc.ledger.children.useQuery(
     { mediaItemId: item.id },
-    { enabled: open && needsTarget },
+    { enabled: open && needsTarget && preselected === null },
   );
   const create = trpc.fix.create.useMutation({
     onError: (err) => setError(describeMutationError(err)),
@@ -65,7 +72,8 @@ export function FixDialog({ open, onClose, item, onSubmitted }: FixDialogProps) 
 
   function submit() {
     setError(null);
-    if (needsTarget && targetChildId === '') {
+    const childId = preselected !== null ? preselected.childId : targetChildId;
+    if (needsTarget && childId === '') {
       setError(`Pick the ${targetNoun} that needs fixing first.`);
       return;
     }
@@ -75,7 +83,7 @@ export function FixDialog({ open, onClose, item, onSubmitted }: FixDialogProps) 
     }
     create.mutate({
       mediaItemId: item.id,
-      ...(needsTarget && targetChildId !== '' ? { targetChildId } : {}),
+      ...(needsTarget && childId !== '' ? { targetChildId: childId } : {}),
       reason,
       ...(reason === 'other' ? { reasonText: reasonText.trim() } : {}),
     });
@@ -112,7 +120,13 @@ export function FixDialog({ open, onClose, item, onSubmitted }: FixDialogProps) 
             </p>
           ) : null}
 
-          {needsTarget ? (
+          {needsTarget && preselected !== null ? (
+            <p className="fix-target">
+              Fixing <strong>{preselected.label}</strong>
+            </p>
+          ) : null}
+
+          {needsTarget && preselected === null ? (
             <label className="field">
               <span>Which {targetNoun}?</span>
               {children.isLoading ? (

@@ -1,8 +1,10 @@
 'use client';
 
-// DESIGN-005 D-17 — the /library/[id] client view: metadata card + FIX button
-// (D-15 dialog), fix history for the item (R-46), and the ledger event timeline
-// (R-41) paged via ledger.events.
+// DESIGN-005 D-17 / D-15 — the /library/[id] client view: metadata card, the live
+// per-episode / per-album list (D-06 ledger.children) with a per-child action —
+// Fix when it is on disk (something to repair), Force Search when it is missing
+// (nothing to blocklist, just search). Radarr acts at the movie level in the header.
+// Below: fix history for the item (R-46) and the ledger event timeline (R-41).
 import Link from 'next/link';
 import { useState } from 'react';
 import { trpc } from '@/lib/trpc-client';
@@ -19,15 +21,31 @@ import {
 } from '@/lib/media';
 import { KindIcon } from '@/components/kind-icon';
 import { FixDialog } from './fix-dialog';
+import { ForceSearchDialog } from './force-search-dialog';
+
+/** The open dialog: repair (Fix) vs search-only (Force Search), and its target. */
+type PendingAction = {
+  mode: 'fix' | 'search';
+  target: { childId: number; label: string } | null;
+};
 
 export function ItemDetail({ mediaItemId }: { mediaItemId: string }) {
   const utils = trpc.useUtils();
-  const [fixOpen, setFixOpen] = useState(false);
+  const [action, setAction] = useState<PendingAction | null>(null);
 
   const detail = trpc.ledger.detail.useQuery({ id: mediaItemId });
   const events = trpc.ledger.events.useInfiniteQuery(
     { mediaItemId, limit: 25 },
     { getNextPageParam: (last) => last.nextCursor ?? undefined },
+  );
+
+  const arrKind = detail.data?.item.arrKind;
+  const tombstoned = detail.data?.item.tombstonedAt != null;
+  const needsChildren = arrKind === 'sonarr' || arrKind === 'lidarr';
+  const childNoun = arrKind === 'lidarr' ? 'album' : 'episode';
+  const children = trpc.ledger.children.useQuery(
+    { mediaItemId },
+    { enabled: needsChildren && !tombstoned },
   );
 
   if (detail.isLoading) return <p className="muted">Loading item…</p>;
@@ -41,6 +59,13 @@ export function ItemDetail({ mediaItemId }: { mediaItemId: string }) {
   const { item, fixes } = detail.data!;
   const disk = onDiskSummary(item);
   const timeline = events.data?.pages.flatMap((p) => p.events) ?? [];
+
+  const refresh = () => {
+    void utils.ledger.detail.invalidate({ id: mediaItemId });
+    void utils.ledger.events.invalidate();
+    void utils.ledger.children.invalidate({ mediaItemId });
+    void utils.fix.myFixes.invalidate();
+  };
 
   return (
     <>
@@ -66,17 +91,75 @@ export function ItemDetail({ mediaItemId }: { mediaItemId: string }) {
             ) : null}
           </div>
         </div>
-        <div className="detail-head__actions">
-          <button
-            type="button"
-            className="btn primary"
-            disabled={item.tombstonedAt !== null}
-            onClick={() => setFixOpen(true)}
-          >
-            Fix
-          </button>
-        </div>
+        {/* Radarr acts at the movie level (the movie IS the unit — ADR-007). Sonarr/Lidarr
+            act per episode/album below, so the show-level nuke is gone (owner feedback). */}
+        {item.arrKind === 'radarr' ? (
+          <div className="detail-head__actions">
+            {item.onDiskFileCount > 0 ? (
+              <button
+                type="button"
+                className="btn primary"
+                disabled={item.tombstonedAt !== null}
+                onClick={() => setAction({ mode: 'fix', target: null })}
+              >
+                Fix
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn primary"
+                disabled={item.tombstonedAt !== null}
+                onClick={() => setAction({ mode: 'search', target: null })}
+              >
+                Force Search
+              </button>
+            )}
+          </div>
+        ) : null}
       </section>
+
+      {needsChildren ? (
+        <section className="card admin-section">
+          <h2>{item.arrKind === 'sonarr' ? 'Episodes' : 'Albums'}</h2>
+          {item.tombstonedAt !== null ? (
+            <p className="muted">This item was removed from the manager — nothing to fix.</p>
+          ) : children.isLoading ? (
+            <p className="muted">Loading {childNoun}s…</p>
+          ) : children.error ? (
+            <p className="alert" role="alert">
+              Could not load the {childNoun} list: {children.error.message}
+            </p>
+          ) : (children.data ?? []).length === 0 ? (
+            <p className="muted">No {childNoun}s found on the manager.</p>
+          ) : (
+            <ul className="child-list">
+              {(children.data ?? []).map((child) => {
+                const onDisk = child.hasFile;
+                return (
+                  <li key={child.arrChildId} className="child-row">
+                    <span className="child-row__label">{child.label}</span>
+                    <span className={`badge badge--${onDisk ? 'ok' : 'warn'}`}>
+                      {onDisk ? 'On disk' : 'Missing'}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn sm child-row__action"
+                      onClick={() =>
+                        setAction({
+                          mode: onDisk ? 'fix' : 'search',
+                          target: { childId: child.arrChildId, label: child.label },
+                        })
+                      }
+                    >
+                      {onDisk ? 'Fix' : 'Force Search'}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+      ) : null}
 
       <section className="card admin-section">
         <h2>Details</h2>
@@ -183,14 +266,18 @@ export function ItemDetail({ mediaItemId }: { mediaItemId: string }) {
       </section>
 
       <FixDialog
-        open={fixOpen}
-        onClose={() => setFixOpen(false)}
+        open={action?.mode === 'fix'}
+        onClose={() => setAction(null)}
         item={{ id: item.id, arrKind: item.arrKind, title: item.title }}
-        onSubmitted={() => {
-          void utils.ledger.detail.invalidate({ id: mediaItemId });
-          void utils.ledger.events.invalidate();
-          void utils.fix.myFixes.invalidate();
-        }}
+        target={action?.mode === 'fix' ? action.target : null}
+        onSubmitted={refresh}
+      />
+      <ForceSearchDialog
+        open={action?.mode === 'search'}
+        onClose={() => setAction(null)}
+        item={{ id: item.id, arrKind: item.arrKind, title: item.title }}
+        target={action?.mode === 'search' ? action.target : null}
+        onSubmitted={refresh}
       />
     </>
   );

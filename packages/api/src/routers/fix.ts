@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import { and, desc, eq, sql, type SQL } from 'drizzle-orm';
 import { FIX_REASONS, FIX_STATUSES, fixRequests, mediaItems, users } from '@hnet/db';
-import { runFixRequest } from '@hnet/domain';
+import { runFixRequest, runForceSearch } from '@hnet/domain';
 import { authedProcedure, mapDomainErrors, resolveArrBundle, router } from '../trpc';
 import { adminProcedure } from '../middleware/role';
 import { decodeCursor, encodeCursor } from '../cursor';
@@ -46,6 +46,35 @@ export const fixRouter = router({
           reasonText: input.reasonText,
         });
         return result; // {id, status, pathTaken, targetLabel}
+      });
+    }),
+
+  /**
+   * D-17 — Force Search: the search-only action for MISSING content (not broken, just
+   * missing). No reason, no blocklist, no delete — it records an audited
+   * 'search_requested' ledger event and triggers ONLY the *arr search command, drawing
+   * on the same hourly budget as `create` (rate limit / tombstone guards inside the
+   * domain writer). Returns the accepted command + resolved target label.
+   */
+  forceSearch: authedProcedure
+    .input(
+      z.object({
+        mediaItemId: z.uuid(),
+        /** Episode id (sonarr) / album id (lidarr); absent = movie / whole-series search. */
+        targetChildId: z.number().int().positive().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      return mapDomainErrors(async () => {
+        const result = await runForceSearch({
+          db: ctx.db,
+          arr: resolveArrBundle(ctx),
+          requesterId: ctx.user.id,
+          requesterIsAdmin: ctx.user.role === 'Admin',
+          mediaItemId: input.mediaItemId,
+          targetChildId: input.targetChildId,
+        });
+        return result; // {eventId, targetLabel, commandName}
       });
     }),
 

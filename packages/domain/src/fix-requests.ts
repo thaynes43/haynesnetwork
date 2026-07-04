@@ -8,6 +8,7 @@ import {
   type FixPath,
   type FixReason,
   type FixStatus,
+  type Transaction,
 } from '@hnet/db';
 import { and, eq, gte, inArray, sql } from 'drizzle-orm';
 import {
@@ -25,6 +26,39 @@ export const FIX_RATE_LIMIT_PER_HOUR = 5;
 
 /** D-09: statuses that count as an open fix for the one-open-fix-per-target rule. */
 export const OPEN_FIX_STATUSES = ['pending', 'actioned', 'search_triggered'] as const;
+
+/**
+ * DESIGN-005 D-09/D-17 — the SHARED per-requester hourly budget: a Fix and a Force
+ * Search both draw down the same 5/hour allowance, so a member can't sidestep the
+ * limit by alternating the two actions. Counts this requester's fix_requests plus
+ * their 'search_requested' ledger events inside the rolling hour. Callers run this
+ * under the per-requester advisory lock so parallel submissions can't race past it.
+ */
+export async function countRecentFixBudget(
+  tx: Transaction,
+  requesterId: string,
+): Promise<number> {
+  const [fixes] = await tx
+    .select({ count: sql<number>`count(*)::int` })
+    .from(fixRequests)
+    .where(
+      and(
+        eq(fixRequests.requesterId, requesterId),
+        sql`${fixRequests.createdAt} > now() - interval '1 hour'`,
+      ),
+    );
+  const [searches] = await tx
+    .select({ count: sql<number>`count(*)::int` })
+    .from(ledgerEvents)
+    .where(
+      and(
+        eq(ledgerEvents.eventType, 'search_requested'),
+        eq(ledgerEvents.requestedByUserId, requesterId),
+        sql`${ledgerEvents.recordedAt} > now() - interval '1 hour'`,
+      ),
+    );
+  return (fixes?.count ?? 0) + (searches?.count ?? 0);
+}
 
 export interface CreateFixRequestInput {
   db?: DbClient;
@@ -107,16 +141,9 @@ export async function createFixRequest(
     }
 
     if (!input.requesterIsAdmin) {
-      const [row] = await tx
-        .select({ count: sql<number>`count(*)::int` })
-        .from(fixRequests)
-        .where(
-          and(
-            eq(fixRequests.requesterId, input.requesterId),
-            sql`${fixRequests.createdAt} > now() - interval '1 hour'`,
-          ),
-        );
-      if ((row?.count ?? 0) >= FIX_RATE_LIMIT_PER_HOUR) {
+      // D-17: Fix + Force Search share one hourly budget (countRecentFixBudget).
+      const used = await countRecentFixBudget(tx, input.requesterId);
+      if (used >= FIX_RATE_LIMIT_PER_HOUR) {
         throw new FixRateLimitError(
           `Fix rate limit reached: ${FIX_RATE_LIMIT_PER_HOUR} requests per hour`,
         );

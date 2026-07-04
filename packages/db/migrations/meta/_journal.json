@@ -24,6 +24,13 @@
       "breakpoints": true
     },
     {
+      "idx": 3,
+      "version": "7",
+      "when": 1782950403000,
+      "tag": "0004_search_requested_event",
+      "breakpoints": true
+    },
+    {
       "idx": 4,
       "version": "7",
       "when": 1782950404000,

@@ -2,9 +2,11 @@
 
 > The single resume point for agents. Update this in the same change as any milestone.
 
-- **Last updated:** 2026-07-03 (wave 8)
+- **Last updated:** 2026-07-03 (wave 9)
 - **Phase:** Phase 1 complete; Phase 2 code complete (sync + fix/ledger/restore UI); haynes-ops CronJobs + secrets next
 - **Workflow mode:** PR flow (GATE A executed — see .agents/plans/001-gate-a-pr-cutover.md)
+
+> **Wave 9 (fix/fix-flow-ux):** Fix-flow UX pass — Modal focus-steal fixed (focus effect keyed on `open` only, not the unstable `onClose`); Fix is now per-episode/per-album on `/library/[id]` (live `ledger.children` list, no show-level nuke); missing content gets **Force Search** (search-only: `fix.forceSearch` → `runForceSearch`/`recordSearchRequest`, new `search_requested` ledger event, migration `0004`, shares the Fix hourly budget). UI rule everywhere: on disk → Fix, not on disk → Force Search. New glossary term T-44.
 
 ## Where things stand (wave 8 — fix & ledger UI)
 

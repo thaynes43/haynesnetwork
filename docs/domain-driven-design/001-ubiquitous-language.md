@@ -86,6 +86,7 @@
 | T-41 | Tombstone | A Media Item marked as no longer present in its *arr (`deleted_from_arr_at` set) but retained in the Ledger — deletion history (R-41) and the Restore source (R-50) both require keeping the row. Cleared if the item reappears. | `media_items.deleted_from_arr_at` | Sync tombstones, never deletes; mass-tombstone guard in DESIGN-005 D-14. |
 | T-42 | Sync Cursor | The per-source high-water mark (history timestamp) that incremental Sync resumes from; advanced in the same transaction as each ingested batch. | `sync_state.history_cursor` | One row per source (`sonarr`, `radarr`, `lidarr`, `seerr`). |
 | T-43 | Fix Lifecycle | The tracked status progression of a Fix Request: `pending → actioned → search_triggered → completed`, with `failed` reachable from any active state. Completion is asynchronous — observed by Sync (ADR-007 C-06). | `fix_requests.status` | Transitions only via `packages/domain` writers (DESIGN-005 D-09/D-12). |
+| T-44 | Force Search | The search-only action on content that is Monitored but has nothing on disk — missing, not broken. It triggers ONLY the owning *arr's search command (episode / movie / album / series), with NO Blocklist, NO file delete, and no Fix Reason. It records an audited `search_requested` Ledger Event and draws on the same per-user hourly budget as Fix (R-42/R-47). | `ledger_events.event_type = 'search_requested'` (no `fix_requests` row) | The UI shows Force Search wherever an item/episode is not on disk (Fix shows when it is). Search-only writer + orchestrator in `packages/domain` (DESIGN-005 D-17). |
 
 ## Changelog
 
@@ -93,3 +94,4 @@
 |------|--------|--------|
 | 2026-07-03 | Tom Haynes | Initial glossary seeded from PRD-001 (Accepted). T-01..T-40 assigned. |
 | 2026-07-03 | Tom Haynes | DESIGN-005: added T-41 Tombstone, T-42 Sync Cursor, T-43 Fix Lifecycle; amended prescriptive identifiers on T-24..T-27, T-30, T-34 to the DESIGN-001 D-15 reserved names and snake_case enum convention. |
+| 2026-07-03 | Tom Haynes | DESIGN-005 Fix-flow UX pass: added T-44 Force Search (search-only action for missing content, `search_requested` Ledger Event; migration 0004). |

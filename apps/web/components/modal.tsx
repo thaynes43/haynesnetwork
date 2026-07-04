@@ -15,9 +15,19 @@ export interface ModalProps {
 export function Modal({ open, title, onClose, children }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
 
+  // Focus the dialog ONCE per open, keyed on `open` alone. Keeping `onClose` out of
+  // this effect's deps is load-bearing: parents pass a fresh onClose closure on every
+  // render, so a combined effect re-ran on each keystroke and yanked focus back to the
+  // dialog — the "Other box loses focus after one character" bug. (React remount-style
+  // focus theft via an unstable-reference dependency.)
+  useEffect(() => {
+    if (open) dialogRef.current?.focus();
+  }, [open]);
+
+  // Escape-to-close lives in its own effect; re-subscribing when onClose changes is
+  // harmless (it only swaps a keydown listener — it never moves focus).
   useEffect(() => {
     if (!open) return;
-    dialogRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };

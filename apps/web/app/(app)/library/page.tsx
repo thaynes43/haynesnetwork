@@ -8,6 +8,31 @@ import { useState } from 'react';
 import { trpc } from '@/lib/trpc-client';
 import { ARR_KIND_LABELS, formatBytes, onDiskSummary, type ArrKindName } from '@/lib/media';
 import { KindIcon } from '@/components/kind-icon';
+import { FixDialog } from './[id]/fix-dialog';
+import { ForceSearchDialog } from './[id]/force-search-dialog';
+
+type ListItem = {
+  id: string;
+  arrKind: ArrKindName;
+  title: string;
+  onDiskFileCount: number;
+  tombstoned: boolean;
+};
+
+/**
+ * D-17 — the item-level quick action: missing content gets Force Search (search only),
+ * on-disk content gets Fix. Sonarr/Lidarr repairs happen per episode/album on the
+ * detail page (owner feedback: no whole-series nuke), so the list only offers the
+ * movie-level Fix (radarr) and a whole-item Force Search where the item is fully
+ * missing (radarr movie / sonarr series). Everything else opens the detail view.
+ */
+function listAction(item: ListItem): 'fix' | 'search' | null {
+  if (item.tombstoned) return null;
+  const missing = item.onDiskFileCount === 0;
+  if (item.arrKind === 'radarr') return missing ? 'search' : 'fix';
+  if (item.arrKind === 'sonarr' && missing) return 'search';
+  return null;
+}
 
 const KIND_FILTERS: Array<{ value: ArrKindName | undefined; label: string }> = [
   { value: undefined, label: 'All' },
@@ -26,10 +51,15 @@ const ON_DISK_FILTERS = [
 type OnDiskFilter = (typeof ON_DISK_FILTERS)[number]['value'];
 
 export default function LibraryPage() {
+  const utils = trpc.useUtils();
   const [query, setQuery] = useState('');
   const [kind, setKind] = useState<ArrKindName | undefined>(undefined);
   const [onDisk, setOnDisk] = useState<OnDiskFilter>('any');
   const [wantedOnly, setWantedOnly] = useState(false);
+  const [action, setAction] = useState<{
+    mode: 'fix' | 'search';
+    item: { id: string; arrKind: string; title: string };
+  } | null>(null);
 
   const search = trpc.ledger.search.useInfiniteQuery(
     {
@@ -110,24 +140,41 @@ export default function LibraryPage() {
         <div className="media-list">
           {items.map((item) => {
             const disk = onDiskSummary(item);
+            const quick = listAction(item);
             return (
-              <Link key={item.id} href={`/library/${item.id}`} className="media-card">
-                <span className="media-card__icon">
-                  <KindIcon kind={item.arrKind} />
-                </span>
-                <span className="media-card__title">
-                  {item.title}
-                  {item.year !== null ? <span className="muted"> ({item.year})</span> : null}
-                </span>
-                <span className="media-card__badges">
-                  <span className="badge badge--muted">{ARR_KIND_LABELS[item.arrKind]}</span>
-                  <span className={`badge badge--${disk.tone}`}>{disk.label}</span>
-                  {item.tombstoned ? <span className="badge badge--danger">Removed</span> : null}
-                </span>
-                <span className="media-card__meta">
-                  {item.sizeOnDisk > 0 ? formatBytes(item.sizeOnDisk) : '—'}
-                </span>
-              </Link>
+              <div key={item.id} className="media-row">
+                <Link href={`/library/${item.id}`} className="media-card">
+                  <span className="media-card__icon">
+                    <KindIcon kind={item.arrKind} />
+                  </span>
+                  <span className="media-card__title">
+                    {item.title}
+                    {item.year !== null ? <span className="muted"> ({item.year})</span> : null}
+                  </span>
+                  <span className="media-card__badges">
+                    <span className="badge badge--muted">{ARR_KIND_LABELS[item.arrKind]}</span>
+                    <span className={`badge badge--${disk.tone}`}>{disk.label}</span>
+                    {item.tombstoned ? <span className="badge badge--danger">Removed</span> : null}
+                  </span>
+                  <span className="media-card__meta">
+                    {item.sizeOnDisk > 0 ? formatBytes(item.sizeOnDisk) : '—'}
+                  </span>
+                </Link>
+                {quick !== null ? (
+                  <button
+                    type="button"
+                    className="btn sm media-row__action"
+                    onClick={() =>
+                      setAction({
+                        mode: quick,
+                        item: { id: item.id, arrKind: item.arrKind, title: item.title },
+                      })
+                    }
+                  >
+                    {quick === 'fix' ? 'Fix' : 'Force Search'}
+                  </button>
+                ) : null}
+              </div>
             );
           })}
         </div>
@@ -144,6 +191,29 @@ export default function LibraryPage() {
             {search.isFetchingNextPage ? 'Loading…' : 'Load more'}
           </button>
         </div>
+      ) : null}
+
+      {action !== null ? (
+        <>
+          <FixDialog
+            open={action.mode === 'fix'}
+            onClose={() => setAction(null)}
+            item={action.item}
+            onSubmitted={() => {
+              void utils.ledger.search.invalidate();
+              void utils.fix.myFixes.invalidate();
+            }}
+          />
+          <ForceSearchDialog
+            open={action.mode === 'search'}
+            onClose={() => setAction(null)}
+            item={action.item}
+            onSubmitted={() => {
+              void utils.ledger.search.invalidate();
+              void utils.fix.myFixes.invalidate();
+            }}
+          />
+        </>
       ) : null}
     </>
   );
