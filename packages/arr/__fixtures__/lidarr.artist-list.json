@@ -133,13 +133,13 @@
   {
     "status": "continuing",
     "ended": false,
-    "artistName": "i‐dle",
+    "artistName": "i\u2010dle",
     "foreignArtistId": "0068ae6c-7156-40f9-a81f-39294af6a549",
     "tadbId": 0,
     "discogsId": 0,
     "overview": "I-dle, formerly known as (G)I-dle, is a South Korean girl group formed by Cube Entertainment in 2018. The group consists of five members: Miyeon, Minnie, Soyeon, Yuqi, and Shuhua. Originally a sextet ensemble, member Soojin departed the group on August 14, 2021. They are praised for their musicality, versatility, and for breaking stereotypes as a \"self-producing\" idol group, known for writing and producing much of their material. Since their debut, they have been described as one of the most successful South Korean girl groups outside of the \"big four\" record labels.",
     "artistType": "Group",
-    "disambiguation": "fka (G)I‐DLE",
+    "disambiguation": "fka (G)I\u2010DLE",
     "links": [
       {
         "url": "https://www.last.fm/music/(G)I-DLE",
@@ -326,7 +326,7 @@
         "remoteUrl": "https://images.lidarr.audio/cache/https://r2.theaudiodb.com/images/media/artist/thumb/28s2v71749944807.jpg"
       }
     ],
-    "path": "/data/media/music/(G)I‐DLE",
+    "path": "/data/media/music/(G)I\u2010DLE",
     "qualityProfileId": 1,
     "metadataProfileId": 1,
     "monitored": true,
@@ -474,5 +474,128 @@
       "percentOfTracks": 100
     },
     "id": 6
+  },
+  {
+    "status": "continuing",
+    "ended": false,
+    "artistName": "Never Refreshed",
+    "foreignArtistId": "test-never-refreshed-0000",
+    "tadbId": 0,
+    "discogsId": 0,
+    "artistType": "Person",
+    "disambiguation": "US rapper from Lake Worth, FL",
+    "links": [
+      {
+        "url": "https://undergroundunderdogs.com/2018/12/11/snot-rapper-interview-gosha-motorola-lake-worth-florida/",
+        "name": "undergroundunderdogs"
+      },
+      {
+        "url": "https://www.complex.com/pigeons-and-planes/2019/05/snot-rapper-interview",
+        "name": "complex"
+      },
+      {
+        "url": "https://genius.com/artists/Not",
+        "name": "genius"
+      },
+      {
+        "url": "https://soundcloud.com/sn0t",
+        "name": "soundcloud"
+      },
+      {
+        "url": "https://www.youtube.com/channel/UCNUL2JzmNpQJV4avV9AdjeA",
+        "name": "youtube"
+      },
+      {
+        "url": "https://open.spotify.com/artist/5IbEL2xjRtKsunfmsahLuO",
+        "name": "spotify"
+      },
+      {
+        "url": "https://itunes.apple.com/us/artist/id1209873032",
+        "name": "apple"
+      },
+      {
+        "url": "https://www.instagram.com/snot/",
+        "name": "instagram"
+      },
+      {
+        "url": "https://www.deezer.com/artist/12019624",
+        "name": "deezer"
+      },
+      {
+        "url": "https://www.snot.xyz/",
+        "name": "snot"
+      },
+      {
+        "url": "https://www.allmusic.com/artist/mn0003896062",
+        "name": "allmusic"
+      },
+      {
+        "url": "https://www.tiktok.com/@snot",
+        "name": "tiktok"
+      },
+      {
+        "url": "https://tidal.com/artist/8554007",
+        "name": "tidal"
+      },
+      {
+        "url": "https://www.discogs.com/artist/8178925",
+        "name": "discogs"
+      },
+      {
+        "url": "https://music.apple.com/gb/artist/1209873032",
+        "name": "apple"
+      },
+      {
+        "url": "https://imvdb.com/n/not-1",
+        "name": "imvdb"
+      },
+      {
+        "url": "https://www.wikidata.org/wiki/Q63996025",
+        "name": "wikidata"
+      },
+      {
+        "url": "https://www.imdb.com/name/nm12481971/",
+        "name": "imdb"
+      },
+      {
+        "url": "https://twitter.com/snot",
+        "name": "twitter"
+      },
+      {
+        "url": "https://www.last.fm/music/$NOT",
+        "name": "last"
+      }
+    ],
+    "nextAlbum": null,
+    "lastAlbum": null,
+    "images": [
+      {
+        "url": "/MediaCover/2/poster.jpg?lastWrite=639166456251454252",
+        "coverType": "poster",
+        "extension": ".jpg",
+        "remoteUrl": "/config/MediaCover/2/poster.jpg"
+      }
+    ],
+    "path": "/data/media/music/$NOT",
+    "qualityProfileId": 1,
+    "metadataProfileId": 1,
+    "monitored": true,
+    "monitorNewItems": "new",
+    "rootFolderPath": "/data/media/music",
+    "genres": [
+      "Cloud Rap",
+      "East Coast Hip Hop",
+      "Trap",
+      "Rage"
+    ],
+    "cleanName": "not",
+    "sortName": "not",
+    "tags": [],
+    "added": "2026-06-09T23:47:03Z",
+    "ratings": {
+      "votes": 1,
+      "value": 8
+    },
+    "id": 9901
   }
 ]

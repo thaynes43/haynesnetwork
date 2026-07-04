@@ -123,9 +123,12 @@ export function adaptLidarrArtist(
     metadataProfileId: artist.metadataProfileId,
     rootFolder: artist.rootFolderPath,
     arrTags: tagLabels(maps, artist.tags),
-    onDiskFileCount: artist.statistics.trackFileCount,
-    expectedFileCount: artist.statistics.trackCount,
-    sizeOnDisk: artist.statistics.sizeOnDisk,
+    // statistics is absent for never-refreshed artists (schema comment) —
+    // treat as nothing on disk yet; the next full sync after Lidarr's own
+    // refresh corrects the counts.
+    onDiskFileCount: artist.statistics?.trackFileCount ?? 0,
+    expectedFileCount: artist.statistics?.trackCount ?? 0,
+    sizeOnDisk: artist.statistics?.sizeOnDisk ?? 0,
     arrAttrs: {
       monitorNewItems: artist.monitorNewItems,
       artistType: artist.artistType ?? null,

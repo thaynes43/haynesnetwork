@@ -37,8 +37,23 @@ describe('full sync (DESIGN-005 D-14)', () => {
     expect(report.totalFailure).toBe(false);
     expect(report.sources.map((s) => s.status)).toEqual(['succeeded', 'succeeded', 'succeeded']);
     for (const source of report.sources) {
-      expect(source.stats).toMatchObject({ itemsSeen: 3, inserted: 3, tombstoned: 0 });
+      // lidarr's fixture carries an extra never-refreshed artist (no statistics
+      // object — live drift seen 2026-07-04) to pin the optional-statistics path.
+      const expected = source.source === 'lidarr' ? 4 : 3;
+      expect(source.stats).toMatchObject({ itemsSeen: expected, inserted: expected, tombstoned: 0 });
     }
+
+    // The statistics-less artist lands with nothing-on-disk counts, not a crash.
+    const [neverRefreshed] = await t.db
+      .select()
+      .from(mediaItems)
+      .where(eq(mediaItems.title, 'Never Refreshed'));
+    expect(neverRefreshed).toMatchObject({
+      arrKind: 'lidarr',
+      onDiskFileCount: 0,
+      expectedFileCount: 0,
+      sizeOnDisk: '0',
+    });
 
     // Spot-check the adapters: names/labels snapshotted, external ids per kind (D-05).
     const [gray] = await t.db.select().from(mediaItems).where(eq(mediaItems.title, 'Gray'));
@@ -91,7 +106,12 @@ describe('full sync (DESIGN-005 D-14)', () => {
     });
     for (const source of report.sources) {
       expect(source.status).toBe('succeeded');
-      expect(source.stats).toMatchObject({ inserted: 0, updated: 3, rematched: 0, tombstoned: 0 });
+      expect(source.stats).toMatchObject({
+        inserted: 0,
+        updated: source.source === 'lidarr' ? 4 : 3,
+        rematched: 0,
+        tombstoned: 0,
+      });
     }
     const all = await t.db.select().from(mediaItems);
     expect(all).toHaveLength(9);

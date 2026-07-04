@@ -30,12 +30,17 @@ export const lidarrArtistSchema = z.object({
   rootFolderPath: z.string(),
   path: z.string(),
   tags: z.array(z.number().int()),
-  statistics: z.object({
-    trackFileCount: z.number().int(),
-    trackCount: z.number().int(),
-    totalTrackCount: z.number().int(),
-    sizeOnDisk: z.number(),
-  }),
+  // Optional: Lidarr omits statistics entirely for artists it has never
+  // refreshed (seen live 2026-07-04 on 5 freshly-migrated artists — the field
+  // is absent, not empty). Adapt treats absence as nothing-on-disk.
+  statistics: z
+    .object({
+      trackFileCount: z.number().int(),
+      trackCount: z.number().int(),
+      totalTrackCount: z.number().int(),
+      sizeOnDisk: z.number(),
+    })
+    .optional(),
   // Restore-fidelity extras (D-02 / D-05 arr_attrs)
   artistType: z.string().nullish(),
   status: z.string(),
