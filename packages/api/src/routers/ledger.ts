@@ -4,7 +4,7 @@
 // pagination throughout (the documented D-17 deviation from DESIGN-003 D-03).
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
-import { and, asc, desc, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import { ARR_KINDS, fixRequests, ledgerEvents, mediaItems, users, wantedItems } from '@hnet/db';
 import { listMediaChildren } from '@hnet/domain';
 import { authedProcedure, mapDomainErrors, resolveArrBundle, router } from '../trpc';
@@ -37,8 +37,12 @@ export const ledgerRouter = router({
       const where: SQL[] = [];
       if (input.query) {
         const escaped = escapeLike(input.query);
+        // Accent- AND case-insensitive match (migration 0005_unaccent_search): unaccent()
+        // both the column and the user's pattern so typing 'pokemon' finds 'Pokémon', while
+        // ILIKE keeps it case-insensitive (so 'POKEMON' matches too). unaccent() is STABLE,
+        // not IMMUTABLE, so there is no expression index — a seq scan is fine at ~17k rows.
         where.push(
-          or(ilike(mediaItems.title, `%${escaped}%`), ilike(mediaItems.sortTitle, `${escaped}%`))!,
+          sql`(unaccent(${mediaItems.title}) ILIKE unaccent(${`%${escaped}%`}) OR unaccent(${mediaItems.sortTitle}) ILIKE unaccent(${`${escaped}%`}))`,
         );
       }
       if (input.arrKind) where.push(eq(mediaItems.arrKind, input.arrKind));
