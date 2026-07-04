@@ -972,22 +972,9 @@ input[aria-invalid='true'] {
   margin: var(--space) 0;
 }
 
-/* A library row = navigational card + an optional quick action (Fix / Force Search)
-   as a SIBLING of the link (never nested — an interactive control inside an <a>). */
-.media-row {
-  display: flex;
-  align-items: stretch;
-  gap: 8px;
-}
-.media-row > .media-card {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-.media-row__action {
-  flex: none;
-  align-self: center;
-  white-space: nowrap;
-}
+/* Library tiles are action-free click-through cards (owner ruling 2026-07-04) — the
+   whole tile is the navigational target; all Fix / Force Search actions live on the
+   item detail page, so no per-tile buttons here. */
 
 /* Per-episode / per-album list on the detail page (D-06 live children). */
 .child-list {
@@ -1002,6 +989,7 @@ input[aria-invalid='true'] {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap; /* the Fix + Force Search pair drops below the label on narrow phones */
   padding: 8px 10px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
@@ -1013,9 +1001,15 @@ input[aria-invalid='true'] {
   font-size: 13px;
   overflow-wrap: anywhere;
 }
-.child-row__action {
+/* The per-child action pair (Fix + Force Search on disk, Force Search only when
+   missing). Kept right-aligned and wrapping so both fit a phone-width row. */
+.child-row__actions {
   flex: none;
-  white-space: nowrap;
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 /* Section header with a roll-up action (whole-show / whole-artist Force Search). */
@@ -1130,6 +1124,9 @@ input[aria-invalid='true'] {
 }
 .detail-head__actions {
   flex: none;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap; /* Fix + Force Search wrap under the title on phones */
 }
 .meta-grid {
   display: grid;
