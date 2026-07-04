@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/thaynes43/haynesnetwork/compare/v0.2.0...v0.2.1) (2026-07-04)
+
+
+### Bug Fixes
+
+* **arr:** tolerate absent Lidarr artist statistics (never-refreshed artists) ([#23](https://github.com/thaynes43/haynesnetwork/issues/23)) ([f7936de](https://github.com/thaynes43/haynesnetwork/commit/f7936de8d42ce8519121e960c6a7206d39d960e4))
+
 ## [0.2.0](https://github.com/thaynes43/haynesnetwork/compare/v0.1.1...v0.2.0) (2026-07-03)
 
 
