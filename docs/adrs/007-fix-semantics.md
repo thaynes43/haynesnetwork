@@ -1,6 +1,7 @@
 # ADR-007: Fix semantics — mark-failed + search with a mandatory reason taxonomy
 
 - **Status:** Accepted
+- **Amended by:** ADR-011 (2026-07-04): Fix gains a media-hierarchy scope; season Fix is a roll-up orchestration.
 - **Date:** 2026-07-03
 - **Deciders:** Tom Haynes (with agent input)
 

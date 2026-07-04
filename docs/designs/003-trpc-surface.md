@@ -1,7 +1,7 @@
 # DESIGN-003: tRPC surface for Phase 1
 
 - **Status:** Accepted
-- **Last updated:** 2026-07-03
+- **Last updated:** 2026-07-04
 - **Satisfies:** PRD-001 R-04, R-10, R-11, R-13, R-14, R-15, R-20, R-21, R-22 (and serves R-01..R-03 session context to the UI); governed by ADR-003 (transactional permission-audit co-writes), ADR-004 (API layer: tRPC v11) — both drafted in parallel, referenced by number.
 - **Companions:** DESIGN-001 (database schema — table shapes and the `permission_audit` action enum are normative there); DESIGN-002 (auth/session wiring); DESIGN-004 (UI shell and dashboard) is the consumer of this surface.
 
@@ -17,9 +17,11 @@ permission-touching mutations delegating to `packages/domain` helpers that co-wr
 `permission_audit` rows in the same transaction** (ADR-003, PRD R-04).
 
 Phase 1 routers: `profile`, `catalog`, `users`, `tags`. The reserved Phase 2 names
-`ledger` and `fix` were claimed by DESIGN-005 D-17 (which also claimed `restore` as the
-third Phase 2 router — recorded here per its note); `plex` (Phase 3) remains
-**reserved**. This document designs only the Phase 1 surface.
+`ledger` and `fix` were claimed by DESIGN-005 D-17, which also added `restore` as the
+third Phase 2 router — so `packages/api/src/routers/index.ts` now mounts **seven**
+routers (`catalog`, `users`, `tags`, `ledger`, `fix`, `restore`, `profile`). Only
+`plex` (Phase 3) remains **reserved**. This document designs only the Phase 1 surface;
+the Phase 2 routers are designed in DESIGN-005.
 
 ## Detailed design
 
@@ -31,28 +33,32 @@ user fields hydrated by the auth package (DESIGN-002; this doc consumes its outp
 shape only). `isFamily` is the **effective** family flag — direct `users.is_family` OR
 any applied tag with `tags.is_family` (DESIGN-001 D-11) — so the UI never re-derives it.
 
+The context `user` type is `SessionUser`, re-exported from `@hnet/auth` (DESIGN-002);
+`packages/api/src/trpc.ts` imports and re-exports it rather than defining a parallel
+API-local shape:
+
 ```ts
-// packages/api/src/trpc.ts
-export type Role = 'Member' | 'Admin';          // PRD Actors table; Family is a
-                                                // designation flag, NOT a role.
-export interface AuthedUser {
-  id: string;
-  email: string;
-  displayName: string;
-  role: Role;
-  isFamily: boolean;
-}
+// packages/api/src/trpc.ts — actual
+import { getServerSession, type SessionUser } from '@hnet/auth';
+import { db, ROLES, type Database } from '@hnet/db';
+
+export type { SessionUser };                     // { id, email, displayName, role, isFamily }
 
 export interface TRPCContext {
-  db: typeof db;                                 // @app/db drizzle instance
-  user: AuthedUser | null;                       // null ⇢ no/invalid session
+  db: Database;                                  // @hnet/db drizzle instance
+  user: SessionUser | null;                      // null ⇢ no/invalid session
+  arr?: ArrClientBundle;                          // Phase 2 (DESIGN-005 D-17/D-18)
 }
 
-export const createTRPCContext = async ({ req }: { req: Request }): Promise<TRPCContext> => {
-  const session = await auth.api.getSession({ headers: req.headers });
-  return { db, user: session ? toAuthedUser(session.user) : null };
+export const createTRPCContext = async ({ headers }: { headers: Headers }): Promise<TRPCContext> => {
+  const session = await getServerSession(headers);
+  const user = session && hasKnownRole(session.user) ? session.user : null;
+  return { db, user };
 };
 ```
+
+`Role` (`'Member' | 'Admin'`, capitalized — `ROLES` in `packages/db/src/schema/enums.ts`)
+is a designation on `SessionUser`; Family is a flag, NOT a role.
 
 Unknown/missing `role` values coerce to `null` user (fail closed), same as the donor's
 `isRole()` guard.
@@ -89,6 +95,10 @@ exist at all: Phase 1 has **no role-mutation procedure**; Admin comes only from 
   timestamps are emitted as ISO-8601 strings explicitly, never raw `Date` fields.
 - No pagination in Phase 1 lists (household scale: tens of users, tens of catalog
   entries). Revisit only if a list demonstrably grows.
+- **Consumer conventions live in `apps/web/README.md`:** server components use a
+  `getServerCaller` helper; client components use react-query with a mandatory
+  `invalidate` after every mutation, no optimistic UI, and error branching on
+  `data.appCode` only (never the message string — D-13).
 
 ### D-04 — Catalog URL validation (R-14, AC-04)
 
@@ -274,15 +284,31 @@ export const tagsRouter = router({
     .mutation(/* domain.removeTag — audits 'remove_tag' */),
 });
 
-// ---------- root ----------
+// ---------- root (Phase 1 sketch; live tree below) ----------
 export const appRouter = router({
   profile: profileRouter,
   catalog: catalogRouter,
   users: usersRouter,
   tags: tagsRouter,
-  // RESERVED router names — do not repurpose:
-  //   ledger, fix   → Phase 2 (R-40..R-52)
-  //   plex          → Phase 3 (R-25..R-28)
+});
+export type AppRouter = typeof appRouter;
+```
+
+**Live root (`packages/api/src/routers/index.ts`)** — Phase 2 (DESIGN-005 D-17) added
+the `ledger`, `fix`, and `restore` routers, so the shipped tree mounts seven; only
+`plex` stays reserved:
+
+```ts
+export const appRouter = router({
+  profile: profileRouter,
+  catalog: catalogRouter,
+  users: usersRouter,
+  tags: tagsRouter,
+  ledger: ledgerRouter,   // Phase 2, DESIGN-005
+  fix: fixRouter,         // Phase 2, DESIGN-005
+  restore: restoreRouter, // Phase 2, DESIGN-005
+  // RESERVED — do not repurpose:
+  //   plex → Phase 3 (R-25..R-28)
 });
 export type AppRouter = typeof appRouter;
 ```
@@ -334,10 +360,13 @@ endpoint; add `getById` only if `users.list` payloads ever become a problem.
 enum exported by the inline-SVG icon registry (seed keys: `seerr`, `plex`, `immich`,
 `open-webui`, `paperless`, `tautulli`, …); `null`/unknown renders the generic tile
 glyph. Admins never upload markup — no SVG/XSS surface, icons theme via `currentColor`
-(DESIGN-004 D-09). Adding an icon is a code change. Registry location: `packages/ui`
-so that `packages/api` can import `ICON_KEYS` without depending on the Next app —
-DESIGN-001's D-05 comment says "in apps/web"; reconcile to `packages/ui` while both
-docs are Draft. Arbitrary admin-supplied icons: Q-02.
+(DESIGN-004 D-09). Adding an icon is a code change. **Registry location is settled:**
+`ICON_KEYS` lives in `@hnet/ui` at `packages/ui/src/icons/registry.ts`, kept
+**React-free** (a plain `as const` tuple + `isIconKey` guard) so `packages/api` imports
+it for `CatalogEntryInput` validation without pulling in React or the Next app; the
+inline-SVG components that render the keys sit alongside in `icons/components.tsx`
+(DESIGN-004 D-09). This resolves DESIGN-001 D-05's stale "in apps/web" note.
+Arbitrary admin-supplied icons: Q-02.
 
 ### D-11 — Idempotent permission mutations
 
@@ -358,15 +387,20 @@ shouldn't spray CONFLICT toasts or fabricate audit history; AC-03 sets the prece
 Rationale: R-22's "UI shows where each permission comes from" is admin-facing, but a
 member seeing "you have the *family* tag" on their own profile is harmless and useful,
 and scoping in one resolver is cheaper than a second procedure. Consequence: **tag
-names become member-visible** — admins must name tags accordingly (flagged as Q-03 for
-owner sign-off).
+names become member-visible** — admins must name tags accordingly. **Resolved (Q-03):**
+`tags.list` ships this member scope — the `role !== 'Admin'` branch in
+`packages/api/src/routers/tags.ts` returns `{ scope: 'member', tags: [{id,name,description}] }`
+for the caller's own applied tags (no bundle contents, no other users).
 
 ### D-13 — Error taxonomy
 
 Donor pattern exactly: typed domain errors in `packages/domain/src/errors.ts`, a
 `mapDomainErrors(fn)` wrapper translating them to `TRPCError` codes, and the
 `errorFormatter` attaching `data.appCode` so clients switch on a stable string instead
-of parsing messages.
+of parsing messages. **The `appCode` contract is a two-place edit in `trpc.ts`** — the
+`APP_CODED_ERRORS` list (which the `errorFormatter` iterates) and the `mapDomainErrors`
+`instanceof` chain are independent and can drift, so a new coded domain error must be
+added to both (plus this table and DESIGN-005 D-17). See `packages/api/README.md`.
 
 | Domain error | `appCode` | TRPC code | Thrown by |
 |---|---|---|---|
@@ -423,4 +457,4 @@ planned.)
 |----|----------|------------|
 | Q-01 | Phase 1 has no procedure to grant/revoke the Admin role (bootstrap allowlist only, R-02). Is that acceptable until Phase 2, or is a `users.setRole` (with min-one-admin invariant, donor-style) wanted now? | (open) |
 | Q-02 | Will the owner ever want admin-supplied catalog icons (upload/URL) instead of the code-shipped `ICON_KEYS` registry (D-10)? | (open) |
-| Q-03 | D-12 makes tag names visible to the tagged member. OK, or should member scope return nothing? | (open) |
+| Q-03 | D-12 makes tag names visible to the tagged member. OK, or should member scope return nothing? | **Resolved:** member scope ships — `tags.list` returns each caller's own applied tags as `{id,name,description}` (`packages/api/src/routers/tags.ts`). Names visible to the tagged member; bundle contents and other users are not. |

@@ -16,15 +16,27 @@ localStorage theme persistence + `prefers-color-scheme` seeding, a pre-hydration
 behaviors PRD R-60/AC-10 demand (auto-fill tile grid, collapsing topbar, table→card
 admin lists).
 
-File placement:
+File placement (as shipped — no `apps/web/src`; theme/layout/icons live in
+`@hnet/ui`, routes in the Next App Router under `apps/web/app`):
 
 ```
-apps/web/src/theme/            tokens.css, tokenContract.ts, ThemeProvider.tsx, app.css
-apps/web/src/app/              layout.tsx, page.tsx, login/page.tsx,
-                               admin/{layout,page}.tsx, admin/users/[id]/page.tsx,
-                               admin/catalog/page.tsx, admin/tags/page.tsx
-packages/ui/layout/            HeightBudget.tsx, ReservedPane.tsx, useAvailableHeight.ts, layout.css
-packages/ui/icons/             inline currentColor SVG registry (ICON_KEYS — DESIGN-003 D-10)
+packages/ui/src/theme/         tokens.css, tokenContract.ts, ThemeProvider.tsx
+                               (imported as @hnet/ui and @hnet/ui/theme/tokens.css)
+packages/ui/src/layout/        HeightBudget.tsx, ReservedPane.tsx, useAvailableHeight.ts, layout.css
+                               (@hnet/ui + @hnet/ui/layout/layout.css)
+packages/ui/src/icons/         registry.ts + components.tsx — inline currentColor SVG
+                               registry (ICON_KEYS — DESIGN-003 D-10), imported as @hnet/ui/icons
+apps/web/app/layout.tsx        root server layout: pre-hydration theme script (D-03),
+                               next/font Outfit, ThemeProvider + TRPCProvider
+apps/web/app/app.css           app-frame + component CSS (the demo-console app.css port)
+apps/web/app/login/page.tsx    public login (outside the (app) group)
+apps/web/app/(app)/            authed route group — layout.tsx (session gate + chrome),
+                               page.tsx (dashboard), greeting.tsx, library/, my-fixes/,
+                               admin/ (see D-11 for the full route inventory)
+apps/web/components/           shared page-local components: top-bar.tsx, brand-mark.tsx,
+                               kind-icon.tsx, modal.tsx
+apps/web/lib/                  client/server helpers: initials.ts, route-gate.ts,
+                               greeting.ts, auth-client.ts, trpc-*.ts
 scripts/lint-css-hex.mjs       hex guard (ported)
 ```
 
@@ -32,7 +44,8 @@ scripts/lint-css-hex.mjs       hex guard (ported)
 
 ### D-01 — Theme tokens: same names, same values, new theme keys
 
-`apps/web/src/theme/tokens.css` is the demo-console file with only the theme selector
+`packages/ui/src/theme/tokens.css` (imported by the root layout as
+`@hnet/ui/theme/tokens.css`) is the demo-console file with only the theme selector
 keys and brand string changed:
 
 - `[data-theme='hnet-dark']` — **default**; values copied from `demo-console-dark`
@@ -65,8 +78,9 @@ export const THEME_STORAGE_KEY = 'hnet-theme';
 
 ### D-02 — ThemeProvider (client component) with persistence
 
-Donor `ThemeProvider.tsx` extended; it remains **the single writer of
-`<html data-theme>`** after hydration:
+Donor `ThemeProvider.tsx` extended, shipped at `packages/ui/src/theme/ThemeProvider.tsx`
+and consumed via `@hnet/ui` (`ThemeProvider` in the root layout, `useTheme()` in the
+TopBar). It remains **the single writer of `<html data-theme>`** after hydration:
 
 ```tsx
 'use client';
@@ -109,7 +123,7 @@ blocking script in `<head>` corrects it from storage / OS preference before any
 content paints:
 
 ```tsx
-// apps/web/src/app/layout.tsx (server component)
+// apps/web/app/layout.tsx (root server component)
 const themeInit = `(function(){try{
   var t=localStorage.getItem('hnet-theme');
   if(t!=='hnet-dark'&&t!=='hnet-light'){
@@ -120,14 +134,14 @@ const themeInit = `(function(){try{
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" data-theme="hnet-dark" suppressHydrationWarning>
+    // outfit.variable carries the --font-outfit next/font var (DESIGN-006 D-02).
+    <html lang="en" data-theme="hnet-dark" className={outfit.variable} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInit }} />
       </head>
       <body>
         <ThemeProvider>
-          {/* chrome + main */}
-          {children}
+          <TRPCProvider>{children}</TRPCProvider>
         </ThemeProvider>
       </body>
     </html>
@@ -158,9 +172,11 @@ review + the same guard extended to inline `style=` strings if violations ever a
 ### D-05 — Layout primitives (packages/ui) and the app frame
 
 `HeightBudget`, `ReservedPane`, `useAvailableHeight`, and `layout.css` port verbatim
-from `demo-console/packages/shared/layout/` into `packages/ui/layout/` (structural
-only — no colors, per the donor's normative comment). App frame rules from the donor's
-`app.css`:
+from `demo-console/packages/shared/layout/` into `packages/ui/src/layout/` (exported via
+`@hnet/ui` + `@hnet/ui/layout/layout.css`; structural only — no colors, per the donor's
+normative comment). The authed app frame lives in `apps/web/app/(app)/layout.tsx`
+(56px topbar `flex:none` + `<main>` scroll region); frame rules from the ported
+`apps/web/app/app.css`:
 
 - `html, body { height: 100%; margin: 0; overflow: hidden; }` — **the page never
   scrolls** (AC-10: no page-level scrollbars at any matrix size).
@@ -250,31 +266,51 @@ live refresh)" without sockets.
 
 ### D-08 — Chrome: TopBar, theme toggle, user menu
 
-TopBar ports the donor's structure (`.topbar`, `.brand`, `.topbar__spacer`,
-`.topbar__actions`, `.iconbtn`) minus i18n (copy is hard-coded English; no i18n in this
-app) and minus the notifications button:
+`apps/web/components/top-bar.tsx` (a `'use client'` component rendered by the authed
+`(app)/layout.tsx`) ports the donor's structure (`.topbar`, `.brand`,
+`.topbar__spacer`, `.topbar__actions`, `.iconbtn`) minus i18n (copy is hard-coded
+English; no i18n in this app) and minus the notifications button:
 
 - **Brand:** the hub-and-spoke mark (`apps/web/components/brand-mark.tsx`,
-  `currentColor` accent — DESIGN-006 D-01, resolving Q-01) + `haynesnetwork`
-  wordmark.
+  `currentColor` accent — DESIGN-006 D-01, resolving Q-01). The `haynesnetwork`
+  wordmark text renders from the `--brand-name` token via `.brand__name` CSS `content`
+  (with an `sr-only` copy for the accessible name), so a rebrand stays a
+  `tokens.css`-only edit (R-61).
+- **Primary nav** (Phase 2 addition — `.topbar__nav`, `<nav aria-label="Primary">`):
+  **Home** (`/`) + **Library** (`/library`, every signed-in user — R-43), rendered
+  between the brand and the spacer. Hidden under 600px via CSS; on phones the same
+  destinations live in the user-menu popover so nothing becomes unreachable.
 - **Theme toggle:** the donor SettingsDrawer's segmented dark/light control simplified
   to a single topbar `iconbtn` that flips `hnet-dark ↔ hnet-light` via
   `useTheme().setTheme`. Sun and moon SVGs are **both in the DOM**, shown/hidden by
   `[data-theme] .icon-sun/.icon-moon` CSS — no theme-dependent JSX, so no hydration
-  mismatch with the pre-hydration attribute (D-03). `aria-label` = "Switch to light
-  theme" / "Switch to dark theme" via CSS-independent `aria-pressed` + label swap on
-  click. No settings drawer in Phase 1 — the toggle is the only setting.
-- **User menu:** button (avatar initial + displayName; name hidden <480px, D-06)
-  opening a popover: displayName + email header; **Admin** link (rendered only when
-  `profile.me.role === 'Admin'`); **Sign out** (Better Auth sign-out → `/login`).
-  Popover: Esc closes, focus returns to trigger, click-outside closes,
-  `aria-expanded`/`aria-haspopup="menu"` on the trigger.
+  mismatch with the pre-hydration attribute (D-03). The label is neutral
+  ("Toggle theme") on the SSR + first client render and resolves to "Switch to light
+  theme" / "Switch to dark theme" post-mount (`useSyncExternalStore` mounted flag),
+  keeping `aria-label`/`aria-pressed` off the hydration path. No settings drawer in
+  Phase 1 — the toggle is the only setting.
+- **User menu:** button (avatar initial via `initialFor()` + displayName; name hidden
+  <480px, D-06) opening a popover: displayName + email header, then menu items —
+  **Library** (`/library`) and **My fixes** (`/my-fixes`) for every user (they carry
+  the collapsed primary nav on phones), **Admin** (`/admin`, rendered only when
+  `user.role === 'Admin'`), and **Sign out** (Better Auth `authClient.signOut()` →
+  `router.push('/login')` + `router.refresh()`). Popover: Esc closes and returns focus
+  to the trigger, click-outside (pointerdown) closes,
+  `aria-expanded`/`aria-haspopup="menu"` on the trigger, `role="menu"` +
+  `role="menuitem"` on the items.
+
+Admin sub-nav (`apps/web/app/(app)/admin/layout.tsx`, `<nav aria-label="Admin
+sections">`, `.admin-nav`): five entries — **Users** (`/admin`), **Catalog**
+(`/admin/catalog`), **Tags** (`/admin/tags`), **Fixes** (`/admin/fixes`), **Restore**
+(`/admin/restore`). Flex row that wraps on phones; renders only after the layout's
+server-side Admin gate passes (D-11).
 
 ### D-09 — Icons
 
 All icons are inline `<svg>` with `stroke`/`fill` = `currentColor` (donor pattern) from
-the `packages/ui/icons` registry keyed by `ICON_KEYS` (DESIGN-003 D-10). No icon fonts,
-no CDN, no `<img>` for icons — they theme with the tokens and ship self-contained.
+the `packages/ui/src/icons` registry (`registry.ts` + `components.tsx`, imported as
+`@hnet/ui/icons`) keyed by `ICON_KEYS` (DESIGN-003 D-10). No icon fonts, no CDN, no
+`<img>` for icons — they theme with the tokens and ship self-contained.
 
 ### D-10 — Accessibility & motion
 
@@ -288,20 +324,31 @@ transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 
 ### D-11 — Pages & routing
 
-| Route               | Access | Content                                                                                                                                                                                |
-| ------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/`                 | authed | Dashboard (D-07)                                                                                                                                                                       |
-| `/login`            | public | Centered `.card`: brand mark + wordmark + single **Sign in** button → Better Auth Authentik OIDC flow (AC-01 — no password form exists). If a session exists, server-redirects to `/`. |
-| `/admin`            | Admin  | Users list: table (cards <760px) of displayName, email, role, family, tags, grant count → row links to detail                                                                          |
-| `/admin/users/[id]` | Admin  | Grants (checklist of catalog entries: direct grant toggle + provenance chips `default` / `direct` / `tag:<name>`, R-22), tags applied (add/remove), family toggle                      |
-| `/admin/catalog`    | Admin  | Entries table + create/edit form (URL field validated live against the R-14 rule; server remains authoritative), defaultVisible toggle, drag-or-buttons reorder → `catalog.reorder`    |
-| `/admin/tags`       | Admin  | Tags table + create/edit (name, description, bundle: app checklist + grants-family toggle), apply/remove handled on the user detail page                                               |
+Authoritative route inventory (Phase 1 + Phase 2 as shipped). Every route lives under
+`apps/web/app`; the `(app)` group is the authed frame (`(app)/layout.tsx` session gate
++ chrome), `/login` sits outside it. `apps/web/README.md` points here rather than
+re-listing routes.
 
-Signed-out landing: any protected route without a session redirects to `/login`
-(session check in the root/server layout via Better Auth — no tRPC round-trip,
-DESIGN-003 alternatives). `/admin/*` adds a role check in `admin/layout.tsx`
-(server component); non-Admin → `redirect('/')`. Both checks are server-side; the
-client never sees admin markup it can't use.
+| Route               | Access | Page file (under `apps/web/app`)  | Content                                                                                                                                            |
+| ------------------- | ------ | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/login`            | public | `login/page.tsx`                  | Centered `.card`: brand mark + wordmark + single **Sign in** button → Better Auth Authentik OIDC flow (AC-01 — no password form). Session present → server-redirects to `/`. |
+| `/`                 | authed | `(app)/page.tsx`                  | Dashboard (D-07): greeting + app-launcher tile grid.                                                                                                |
+| `/library`          | authed | `(app)/library/page.tsx`          | Synced media library (Phase 2): searchable/filterable list of *arr items across Sonarr/Radarr/Lidarr; season grouping for series.                  |
+| `/library/[id]`     | authed | `(app)/library/[id]/page.tsx`     | Item detail + write-back actions: Fix, Force Search, roll-up scopes (ADR-011); `item-detail.tsx` + `fix-dialog.tsx` + `force-search-dialog.tsx`.    |
+| `/my-fixes`         | authed | `(app)/my-fixes/page.tsx`         | The caller's own fix/force-search ledger history (attribution + status).                                                                           |
+| `/admin`            | Admin  | `(app)/admin/page.tsx`            | Users list: table (cards <760px) of displayName, email, role, family, tags, grant count → row links to detail.                                     |
+| `/admin/users/[id]` | Admin  | `(app)/admin/users/[id]/page.tsx` | Grants (checklist of catalog entries: direct grant toggle + provenance chips `default` / `direct` / `tag:<name>`, R-22), tags applied, family toggle (`user-detail.tsx`). |
+| `/admin/catalog`    | Admin  | `(app)/admin/catalog/page.tsx`    | Entries table + create/edit form (URL field validated live against R-14; server authoritative), defaultVisible toggle, reorder → `catalog.reorder`. |
+| `/admin/tags`       | Admin  | `(app)/admin/tags/page.tsx`       | Tags table + create/edit (name, description, bundle: app checklist + grants-family toggle); apply/remove happens on the user detail page.           |
+| `/admin/fixes`      | Admin  | `(app)/admin/fixes/page.tsx`      | All-users fix/force-search ledger (Phase 2): cross-user audit view of write-back actions.                                                          |
+| `/admin/restore`    | Admin  | `(app)/admin/restore/page.tsx`    | Failsafe restore surface (Phase 2, ADR-008/011): re-push a ledger snapshot back to the *arrs.                                                       |
+
+Signed-out landing: any route inside `(app)` without a session redirects to `/login`
+— the gate is server-side in `(app)/layout.tsx` via `getServerSession` +
+`protectedRouteRedirect` (`apps/web/lib/route-gate.ts`), no tRPC round-trip
+(DESIGN-003 alternatives). `/admin/*` adds `protectedRouteRedirect(..., { requireAdmin:
+true })` in `(app)/admin/layout.tsx`; non-Admin → `redirect('/')`. Both checks are
+server-side; the client never sees admin markup it can't use.
 
 ### D-12 — Wireframes
 
@@ -407,5 +454,5 @@ Desktop (≥760px)                              Phone (<760px)
 | ID   | Question                                                                                                                                                                                           | Resolution                                                                                                            |
 | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | Q-01 | Brand mark: the donor's placeholder four-square SVG ships initially — does the owner want a real haynesnetwork logo (SVG) for topbar + `/login`?                                                   | Resolved 2026-07-03: hub-and-spoke mark, DESIGN-006 D-01                                                              |
-| Q-02 | Topbar avatar: initial-letter circle only, or render `users.image` (Better Auth stores the OIDC `picture` claim there — DESIGN-001 D-02) when present?                                             | (open)                                                                                                                |
+| Q-02 | Topbar avatar: initial-letter circle only, or render `users.image` (Better Auth stores the OIDC `picture` claim there — DESIGN-001 D-02) when present?                                             | Resolved: initial-letter circle only — `initialFor(displayName)` in `apps/web/lib/initials.ts` (first letter uppercased, `?` fallback). `users.image` is never rendered. |
 | Q-03 | Final brand palette: initial tokens keep demo-console's green `#78be20` accent verbatim (D-01). What accent/surfaces does the owner want for the haynesnetwork rebrand (a `tokens.css`-only edit)? | Resolved 2026-07-03: palette values stay (owner: "colors are good"); identity comes from mark/type/shape — DESIGN-006 |

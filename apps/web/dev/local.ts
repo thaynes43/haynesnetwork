@@ -1,9 +1,10 @@
 // Interactive local test environment (owner request, 2026-07-03): boots the
 // EXACT stack the e2e suite uses — embedded Postgres 16 with the real
-// migrations + catalog seed, the stub OIDC provider with its personas, and
+// migrations + catalog seed, the stub OIDC provider with its personas, the stub
+// Sonarr/Radarr/Lidarr/Seerr server (startStack() calls startStubArr()), and
 // `next dev` — but long-running, so the app can be vetted hands-on in a real
 // browser (phone/tablet/PC via devtools device emulation) with no Docker, no
-// Authentik, no cluster, and no real credentials.
+// Authentik, no *arr stack, no cluster, and no real credentials.
 //
 //   pnpm dev:local            # from the repo root (PORT=3000 by default)
 //
@@ -22,7 +23,9 @@ import { STUB_USERS, type PersonaName } from '../e2e/support/stub-oidc';
 const PORT = Number(process.env.PORT ?? 3000);
 
 async function main(): Promise<void> {
-  console.log('[dev:local] booting the stack (embedded PG16 → migrations → stub OIDC → next dev)…');
+  console.log(
+    '[dev:local] booting the stack (embedded PG16 → migrations → stub OIDC → stub *arr → next dev)…',
+  );
   const stack = await startStack({ port: PORT, prewarm: false });
 
   let shuttingDown = false;

@@ -65,8 +65,12 @@ export const createTRPCContext = async ({
 
 /**
  * D-13 — the domain-error classes whose `code` field becomes the wire `appCode`
- * (DESIGN-003 table + the DESIGN-005 D-17 additions). Formatter and mapper both
- * derive from this list so the two can never drift.
+ * (DESIGN-003 table + the DESIGN-005 D-17 additions). ONLY the errorFormatter below
+ * iterates this list; mapDomainErrors is a hand-written instanceof chain (and also
+ * handles NotFoundError, which carries no appCode). The two are INDEPENDENT and CAN
+ * drift — adding a coded domain error is a two-place edit here (this list AND the
+ * mapDomainErrors chain), plus the DESIGN-003 D-13 and DESIGN-005 D-17 tables. See
+ * packages/api/README.md.
  */
 const APP_CODED_ERRORS = [
   ForbiddenHostError,

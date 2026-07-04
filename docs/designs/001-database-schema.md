@@ -330,10 +330,10 @@ Rules:
 
 **Decision: a SQL view + a typed wrapper in `packages/domain`** (not domain-query-only). The
 view gives one canonical definition queryable from `psql` during ops/debugging; the domain
-wrapper gives the app typed access. Declared as a Drizzle `pgView` in
-`schema/effective-app-grants.ts` so `drizzle-kit generate` emits it into `0001` (if the
-installed drizzle-kit version doesn't emit views, the statement is appended to `0001` by
-hand — reviewer verifies).
+wrapper gives the app typed access. Declared as a Drizzle `pgView().existing()` in
+`schema/effective-app-grants.ts` (row shape typed for queries); the `CREATE VIEW` DDL is
+hand-authored into `0001_init.sql` rather than relying on drizzle-kit view emission (Q-04
+resolved — see Open questions).
 
 ```sql
 CREATE VIEW effective_app_grants AS
@@ -397,8 +397,18 @@ Drizzle convention, `packages/db/migrations/`, 4-digit sequence:
 | `0001_init.sql` | All D-02..D-10 tables, CHECKs, indexes, FKs, and the D-11 view | `drizzle-kit generate` (reviewer diffs against this doc) |
 | `0002_seed_app_catalog.sql` | Catalog seed (D-14) | hand-written |
 
-No extensions migration (D-01 item 2). Migrations run as an init container in-cluster (R-62)
-and via `pnpm --filter @app/db migrate` locally/tests.
+> **Migrations continue past Phase 1.** The set now runs through `0006`
+> (confirmed in `packages/db/migrations/meta/_journal.json`): `0003_media_ledger`,
+> `0004_search_requested_event`, `0005_unaccent_search`, `0006_fix_target_scope`
+> are the Phase 2 media-ledger + fix/force-search additions (DESIGN-005 and
+> ADR-011). The IDs above are stable and never renumbered. For the add-a-migration
+> procedure (generate, hand-audit view/DDL, verify against embedded PG16) see
+> `packages/db/README.md`.
+
+No extensions migration in `0001` (D-01 item 2); Postgres extensions that later
+tables need (e.g. `unaccent` in `0005`) ship in their own migration. Migrations run
+as an init container in-cluster (R-62) and via `pnpm --filter @hnet/db migrate`
+locally/tests.
 
 ### D-14 Seed data — `0002_seed_app_catalog.sql` (R-12, R-13)
 
@@ -512,4 +522,4 @@ Library-change audit actions will extend D-10 per its extension rule.
 | Q-01 | Icon registry contract: exact `icon` key set (registry lives in `packages/ui` per DESIGN-003 D-10 so `packages/api` can validate keys). Owner of the SVG assets? | (open — UI design doc) |
 | Q-02 | `open-webui` tile: is `ai.haynesnetwork.com` the URL the owner wants on the tile long-term (verified serving Open WebUI today), or is a rename planned? | (open — verified working 2026-07-03; admin can edit later either way) |
 | Q-03 | Should deleting a catalog app be a soft delete (`archived_at`) instead of hard DELETE, given grants cascade away? Phase 1 assumes hard delete + audit snapshot (D-10). | (open — lean: hard delete is fine at this scale) |
-| Q-04 | Does drizzle-kit at the version we pin emit `CREATE VIEW` from `pgView` definitions (D-11), or does `0001` need a hand-written append? | (open — resolve at scaffold time; either lands in 0001) |
+| Q-04 | Does drizzle-kit at the version we pin emit `CREATE VIEW` from `pgView` definitions (D-11), or does `0001` need a hand-written append? | **Resolved:** the view is declared as `pgView('effective_app_grants', …).existing()` (`packages/db/src/schema/effective-app-grants.ts`, "Q-04 resolved") and the `CREATE VIEW` DDL is hand-authored into `0001_init.sql` — drizzle-kit is not relied on to emit it. |

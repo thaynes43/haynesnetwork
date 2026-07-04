@@ -1,7 +1,7 @@
 # DDD-001: Ubiquitous Language
 
 - **Status:** Accepted
-- **Last updated:** 2026-07-03
+- **Last updated:** 2026-07-04
 - **Related:** PRD-001
 
 <!-- The normative project glossary. Code and docs use these terms exactly (see
@@ -24,9 +24,9 @@
 | ID | Term | Definition | Code identifier | Notes |
 |----|------|------------|-----------------|-------|
 | T-01 | User | A person known to the app. A row is auto-created as a Member on first successful Authentik login — no approval gate (R-03). | `users` | Better Auth schema + `role` column; displayName/email from OIDC claims (AC-02). |
-| T-02 | Role | The single authorization level on a User. Exactly two: Member and Admin. Family is NOT a role (T-05). | `users.role` (`'member' \| 'admin'`) | Role changes write Audit Rows in the same transaction (R-04). |
-| T-03 | Member | Default Role for every successful Authentik login. Sees default-visible Tiles; manages own Plex libraries within their Allowed Library Set; can raise Fix Requests. | `'member'` | PRD-001 Actors & roles. |
-| T-04 | Admin | Full-control Role: catalog, users, permissions, tags, Family designation, Restore. First claimed via Bootstrap Admin (T-06). | `'admin'` | PRD-001 Actors & roles; R-02. |
+| T-02 | Role | The single authorization level on a User. Exactly two: Member and Admin. Family is NOT a role (T-05). | `users.role` (`'Member' \| 'Admin'`) | Literals are capitalized (`enums.ts` `ROLES = ['Member','Admin']`; `users.role` defaults to `Member`; the CHECK uses the capitalized values). Role changes write Audit Rows in the same transaction (R-04). |
+| T-03 | Member | Default Role for every successful Authentik login. Sees default-visible Tiles; manages own Plex libraries within their Allowed Library Set; can raise Fix Requests. | `'Member'` | PRD-001 Actors & roles. |
+| T-04 | Admin | Full-control Role: catalog, users, permissions, tags, Family designation, Restore. First claimed via Bootstrap Admin (T-06). | `'Admin'` | PRD-001 Actors & roles; R-02. |
 | T-05 | Family | A designation (attribute) on a Member — not a third Role — granting visibility/addability of Family-Only Libraries. Set directly per user or bundled in a Tag (R-26, R-27). | `users.is_family` (direct); tag bundle flag (derived) | Provenance surfaces in Effective Permissions (T-16). |
 | T-06 | Bootstrap Admin | Idempotent promotion to Admin of a first login whose email (case-insensitive) is on the allowlist; repeat logins are no-ops (R-02, AC-03). | `BOOTSTRAP_ADMIN_EMAILS` (env) | Allowlist seeded with both owner emails (Q-01). |
 | T-07 | Session | The authenticated browser session established after the Authentik OIDC round-trip; 7-day cookie (AC-01). | `sessions` (Better Auth) | No password form exists anywhere (R-01). |
@@ -36,14 +36,14 @@
 
 | ID | Term | Definition | Code identifier | Notes |
 |----|------|------------|-----------------|-------|
-| T-09 | App (Catalog Entry) | A DB-backed catalog row for a self-hosted app: name, description, icon, URL, default-visible flag, display order (R-11). URLs must be `*.haynesnetwork.com` — never `*.haynesops.com` (R-14, enforced on catalog writes). | `apps` | Admin-editable without redeploy; seeds per R-12/R-13. |
-| T-10 | Default-Visible | Catalog flag marking Apps every Member sees with no grant: Seerr, Plex, K8Plex at seed (R-12). | `apps.is_default_visible` | A fresh Member's Dashboard shows exactly these (AC-04). |
+| T-09 | App (Catalog Entry) | A DB-backed catalog row for a self-hosted app: name, description, icon, URL, default-visible flag, display order (R-11). URLs must be `*.haynesnetwork.com` — never `*.haynesops.com` (R-14, enforced on catalog writes). | `app_catalog` | Admin-editable without redeploy; seeds per R-12/R-13. The R-14 DB CHECK `app_catalog_url_haynesnetwork_only` anchors the URL regex on `.haynesnetwork.com`. |
+| T-10 | Default-Visible | Catalog flag marking Apps every Member sees with no grant: Seerr, Plex, K8Plex at seed (R-12). | `app_catalog.default_visible` | A fresh Member's Dashboard shows exactly these (AC-04). |
 | T-11 | Tile | The Dashboard rendering of one App the viewer is permitted to open; links out to its `*.haynesnetwork.com` URL (R-10). | `Tile` (UI component) | |
 | T-12 | Dashboard | The permissioned home page: the viewer's Tiles, derived from Effective Permissions. | `Dashboard` (route `/`) | Enforces (renders/hides); never decides — see DDD-002 §4. |
-| T-13 | App Grant | Permission for one User to see/open one App. Direct (admin grants per user, R-15) or tag-derived (via a Tag's Permission Bundle, R-21). | `app_grants` (direct); via `tag_apps` (derived) | Grant and revoke are both audit-logged (AC-05). |
+| T-13 | App Grant | Permission for one User to see/open one App. Direct (admin grants per user, R-15) or tag-derived (via a Tag's Permission Bundle, R-21). | `user_app_grants` (direct); via `tag_app_grants` (derived) | Grant and revoke are both audit-logged (AC-05). |
 | T-14 | Tag | An admin-created label carrying a Permission Bundle; applying/removing it on a User applies/removes the bundled permissions (R-20, R-21). | `tags`, `user_tags` | Per-user permissions remain possible without tags (R-21). |
-| T-15 | Permission Bundle | The set of permissions a Tag carries: App Grants, Library Grants, and optionally the Family designation (R-20). | `tag_apps`, `tag_libraries`, `tags.grants_family` | Removing the tag removes only tag-derived permissions (AC-06). |
-| T-16 | Effective Permissions | The computed union of a User's direct grants and tag-derived grants, with provenance — which direct grant or tag produced each permission (R-22). Never stored; recomputed per query. | `EffectivePermissions`, `getEffectivePermissions()` | Changes take effect on the next dashboard query — no re-login (AC-05). |
+| T-15 | Permission Bundle | The set of permissions a Tag carries: App Grants, Library Grants, and optionally the Family designation (R-20). | `tag_app_grants`, `tags.is_family` (`tag_libraries` prescriptive, Phase 3) | Removing the tag removes only tag-derived permissions (AC-06). |
+| T-16 | Effective Permissions | The computed union of a User's direct grants and tag-derived grants, with provenance — which direct grant or tag produced each permission (R-22). Never stored; recomputed per query. | `EffectiveApp` (interface) + `effectiveAppsForUser()`, backed by the `effective_app_grants` VIEW | View is `UNION ALL` (one row per provenance): dashboard dedupes on `app_id`, admin UI renders each row. Changes take effect on the next dashboard query — no re-login (AC-05). |
 
 ## Plex servers & libraries
 
@@ -81,7 +81,7 @@
 | ID | Term | Definition | Code identifier | Notes |
 |----|------|------------|-----------------|-------|
 | T-38 | Source of Truth | The ownership split: the *arrs own media lists (the Ledger mirrors them); this app owns permissions and the App catalog. | — | CLAUDE.md hard rule 4. |
-| T-39 | Audit Row | A record (who, what, when, Initiator Kind) written in the same transaction as any role/permission mutation (R-04), library change (R-28), or Restore (R-52). | `user_role_transitions` (+ analogs per mutation type) | Pattern borrowed from todos-for-dues. |
+| T-39 | Audit Row | A record (who, what, when, Initiator Kind) written in the same transaction as any role/permission mutation (R-04), library change (R-28), or Restore (R-52). | `permission_audit` (generic permission mutations, fixed `action` enum); `user_role_transitions` (role changes only); analogs per mutation type | `permission_audit` (schema/permission-audit.ts) is append-only, written only by the packages/domain single-writer helpers; role changes live in `user_role_transitions`, not here. Pattern borrowed from todos-for-dues. |
 | T-40 | Initiator Kind | Audit field distinguishing what caused a change: system (e.g. bootstrap promotion) vs admin vs user. | `initiator_kind` | AC-03: bootstrap writes a system-initiator row. |
 | T-41 | Tombstone | A Media Item marked as no longer present in its *arr (`deleted_from_arr_at` set) but retained in the Ledger — deletion history (R-41) and the Restore source (R-50) both require keeping the row. Cleared if the item reappears. | `media_items.deleted_from_arr_at` | Sync tombstones, never deletes; mass-tombstone guard in DESIGN-005 D-14. |
 | T-42 | Sync Cursor | The per-source high-water mark (history timestamp) that incremental Sync resumes from; advanced in the same transaction as each ingested batch. | `sync_state.history_cursor` | One row per source (`sonarr`, `radarr`, `lidarr`, `seerr`). |
@@ -97,3 +97,4 @@
 | 2026-07-03 | Tom Haynes | DESIGN-005: added T-41 Tombstone, T-42 Sync Cursor, T-43 Fix Lifecycle; amended prescriptive identifiers on T-24..T-27, T-30, T-34 to the DESIGN-001 D-15 reserved names and snake_case enum convention. |
 | 2026-07-03 | Tom Haynes | DESIGN-005 Fix-flow UX pass: added T-44 Force Search (search-only action for missing content, `search_requested` Ledger Event; migration 0004). |
 | 2026-07-03 | Tom Haynes | DESIGN-005 media-hierarchy actions: added T-45 Action Scope (episode/season/show/album/artist/item roll-ups; `fix_requests.target_scope`+`target_season`, migration 0006; SeasonSearch/ArtistSearch). |
+| 2026-07-04 | Tom Haynes | Reconciled code identifiers to shipped schema: T-02/03/04 Role literals are capitalized `Member`/`Admin` (`enums.ts` ROLES); T-09/10 table is `app_catalog`, flag `default_visible`; T-13 `user_app_grants`/`tag_app_grants`; T-15 `tag_app_grants`, `tags.is_family`; T-16 `EffectiveApp`+`effectiveAppsForUser()` over the `effective_app_grants` view; T-39 names the generic `permission_audit` table alongside `user_role_transitions`. |

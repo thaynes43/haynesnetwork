@@ -1,7 +1,7 @@
 // Environment composition for the e2e/dev-local stack — importable by anything
-// (NO Playwright imports here): the Playwright globalSetup consumes it today and
-// the planned `pnpm dev:local` harness will consume the same module to boot an
-// identical environment interactively.
+// (NO Playwright imports here): the Playwright globalSetup and the `pnpm dev:local`
+// harness (apps/web/dev/local.ts, via startStack) both consume this same module to
+// boot an identical environment — one for tests, one interactively.
 //
 // Also hosts the on-disk env handoff between Playwright's globalSetup and its
 // test workers — workers do not reliably inherit process.env mutations made
