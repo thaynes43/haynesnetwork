@@ -10,9 +10,17 @@ export interface ModalProps {
   title: string;
   onClose: () => void;
   children: ReactNode;
+  /**
+   * Optional pinned alert/status slot rendered in an aria-live region BETWEEN the fixed
+   * head and the scrolling body. Errors mounted here stay visible and get announced
+   * without squeezing the body content (e.g. the fix-reason list) into a tiny scroll
+   * region — the whole body scrolls as one instead. Pass `null` to keep the live region
+   * mounted (so later errors are announced); omit entirely when a dialog has no banner.
+   */
+  banner?: ReactNode;
 }
 
-export function Modal({ open, title, onClose, children }: ModalProps) {
+export function Modal({ open, title, onClose, children, banner }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
 
   // Focus the dialog ONCE per open, keyed on `open` alone. Keeping `onClose` out of
@@ -73,7 +81,12 @@ export function Modal({ open, title, onClose, children }: ModalProps) {
             </svg>
           </button>
         </div>
-        {children}
+        {banner !== undefined ? (
+          <div className="modal__banner" aria-live="assertive">
+            {banner}
+          </div>
+        ) : null}
+        <div className="modal__body">{children}</div>
       </div>
     </div>
   );

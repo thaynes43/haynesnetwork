@@ -91,6 +91,18 @@ downloadClient, …}}` plus the per-kind target id — `episodeId`+`seriesId` (S
 | Radarr (`MovieHistoryEventType`) | `unknown, grabbed, downloadFolderImported, downloadFailed, movieFileDeleted, movieFolderImported, movieFileRenamed, downloadIgnored` |
 | Lidarr (`EntityHistoryEventType`) | `unknown, grabbed, artistFolderImported, trackFileImported, downloadFailed, trackFileDeleted, trackFileRenamed, albumImportIncomplete, downloadImported, trackFileRetagged, downloadIgnored` |
 
+> **`eventType` is asymmetric — string in responses, INTEGER in the paged-`/history`
+> filter.** History records RETURN the lowercase string (`"grabbed"`), but the paged
+> `GET /history?…&eventType=` endpoint binds the query param to the INTEGER value of the
+> enum above (0-based, in the order listed — `grabbed` = **1** for all three). Passing the
+> string there returns HTTP 400 `{"errors":{"eventType":["The value 'grabbed' is not
+> valid."]}}` (a prod bug — the *arr e2e stub was too lenient and accepted the string, so
+> CI passed while Sonarr/Lidarr 400'd live). Verified read-only 2026-07-03: `?eventType=1`
+> → 200 with `records[0].eventType === "grabbed"` on all three. The `@hnet/arr` schemas
+> expose `SONARR_GRABBED_EVENT_TYPE` / `LIDARR_GRABBED_EVENT_TYPE` (= their enum index) for
+> the filter; response-side zod keeps the string. Radarr's separate `GET /history/movie`
+> path is tolerant and accepts the string (proven live 200) — left unchanged.
+
 Jellyseerr request (`GET /request?take=&skip=&sort=added`): `{id, type ('movie'|'tv'),
 status, createdAt, media{tmdbId, tvdbId, mediaType, status}, requestedBy{id, email,
 plexUsername, plexId, displayName}}`. **Jellyseerr 3.3.0 has no music/Lidarr support**
@@ -107,7 +119,7 @@ have no Seerr attribution path (Q-02).
 | Child list (fix target picker) | `GET /episode?seriesId=` | — (movie is the target) | `GET /album?artistId=` |
 | Paged history | `GET /history?page=&pageSize=&sortKey=date&sortDirection=descending` | same | same |
 | Incremental history | `GET /history/since?date=&eventType=` | same | same |
-| Latest grab for a target | `GET /history?episodeId=&eventType=grabbed` | `GET /history/movie?movieId=&eventType=grabbed` | `GET /history?albumId=&eventType=grabbed` |
+| Latest grab for a target | `GET /history?episodeId=&eventType=1` (integer enum; `grabbed`=1) | `GET /history/movie?movieId=&eventType=grabbed` (tolerant path — string OK) | `GET /history?albumId=&eventType=1` (integer enum; `grabbed`=1) |
 | Profiles / folders / tags | `GET /qualityprofile`, `GET /rootfolder`, `GET /tag` | same | same (+ metadata profile via item fields) |
 | Wanted (spot checks) | `GET /wanted/missing?page=` (episode-level) | `GET /wanted/missing?page=` (movie-level) | `GET /wanted/missing?page=` (album-level) |
 | Queue (fix-in-flight display) | `GET /queue?page=` | same | same |
@@ -604,7 +616,7 @@ sequenceDiagram
     U->>W: fix.create { mediaItemId, targetChildId?, reason, reasonText? }
     W->>D: createFixRequest (rate limit 5/h, open-fix dedupe)
     D-->>W: fix_requests row (pending) + fix_requested event  [one tx]
-    W->>A: GET history?episodeId|movieId|albumId=&eventType=grabbed (latest)
+    W->>A: GET latest grab — paged /history?episodeId|albumId=&eventType=1 (INTEGER enum; grabbed=1); Radarr /history/movie?movieId=&eventType=grabbed (tolerant)
     alt grab history exists (primary — AC-07)
         W->>A: POST history/failed/{grabHistoryId}   ← blocklists the release
         A-->>W: 200

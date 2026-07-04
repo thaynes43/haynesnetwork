@@ -118,7 +118,7 @@ describe('SonarrClient (v3)', () => {
     expect(episodes[0]).not.toHaveProperty('overview');
   });
 
-  it('fetches the latest grab for an episode via history?episodeId=&eventType=grabbed', async () => {
+  it('fetches the latest grab for an episode via history?episodeId=&eventType=1 (integer enum)', async () => {
     const { client, calls } = sonarr([
       { path: '/api/v3/history', body: fixture('sonarr.history-page') },
     ]);
@@ -126,7 +126,10 @@ describe('SonarrClient (v3)', () => {
     expect(page.records.length).toBeGreaterThan(0);
     const params = calls[0]!.url.searchParams;
     expect(params.get('episodeId')).toBe('102');
-    expect(params.get('eventType')).toBe('grabbed');
+    // Paged /history binds eventType to the INTEGER enum — the string 'grabbed' 400s
+    // upstream (fix/history-eventtype-enum). grabbed === 1. Responses still return the string.
+    expect(params.get('eventType')).toBe('1');
+    expect(page.records[0]?.eventType).toBe('grabbed');
     expect(params.get('sortKey')).toBe('date');
     expect(params.get('sortDirection')).toBe('descending');
   });
@@ -274,10 +277,13 @@ describe('LidarrClient (v1)', () => {
       { path: '/api/v1/trackfile', body: fixture('lidarr.trackfile-list') },
       { path: '/api/v1/metadataprofile', body: fixture('lidarr.metadataprofile') },
     ]);
-    await client.getAlbumGrabHistory(71);
+    const page = await client.getAlbumGrabHistory(71);
     const params = calls[0]!.url.searchParams;
     expect(params.get('albumId')).toBe('71');
-    expect(params.get('eventType')).toBe('grabbed');
+    // Paged /history binds eventType to the INTEGER enum — grabbed === 1 (the string
+    // form 400s upstream; fix/history-eventtype-enum). Responses still return the string.
+    expect(params.get('eventType')).toBe('1');
+    expect(typeof page.records[0]?.eventType).toBe('string');
 
     const files = await client.listTrackFiles(71);
     expect(calls[1]?.url.searchParams.get('albumId')).toBe('71');
@@ -327,5 +333,73 @@ describe('SeerrClient (Jellyseerr 3.3 v1)', () => {
     expect(params.get('take')).toBe('5');
     expect(params.get('skip')).toBe('0');
     expect(params.get('sort')).toBe('added');
+  });
+});
+
+describe('paged /history integer eventType contract (fix/history-eventtype-enum)', () => {
+  // A stub that mirrors the REAL paged /history: `eventType` is bound to the INTEGER
+  // enum, so a lowercase string 400s with the ASP.NET ValidationProblemDetails shape.
+  // This is the regression guard for the prod bug where the client sent the string form
+  // and Sonarr/Lidarr answered HTTP 400 "The value 'grabbed' is not valid."
+  function strictHistoryFetch() {
+    const calls: URL[] = [];
+    const fetchImpl = (async (input: unknown) => {
+      const url = new URL(String(input));
+      calls.push(url);
+      const eventType = url.searchParams.get('eventType');
+      if (eventType !== null && !/^\d+$/.test(eventType)) {
+        return new Response(
+          JSON.stringify({
+            type: 'https://tools.ietf.org/html/rfc7231#section-6.5.1',
+            title: 'One or more validation errors occurred.',
+            status: 400,
+            errors: { eventType: [`The value '${eventType}' is not valid.`] },
+          }),
+          { status: 400, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          page: 1,
+          pageSize: 20,
+          sortKey: 'date',
+          sortDirection: 'descending',
+          totalRecords: 1,
+          records: [
+            {
+              id: 5,
+              eventType: 'grabbed',
+              date: '2026-07-01T10:00:00Z',
+              episodeId: 102,
+              seriesId: 501,
+            },
+          ],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }) as typeof fetch;
+    return { fetchImpl, calls };
+  }
+
+  it('getEpisodeGrabHistory sends the integer enum and resolves against a strict server', async () => {
+    const { fetchImpl, calls } = strictHistoryFetch();
+    const client = new SonarrClient({
+      baseUrl: 'http://sonarr.test:8989',
+      fetchImpl,
+      ...TEST_OPTS,
+    });
+    const page = await client.getEpisodeGrabHistory(102);
+    expect(page.records[0]?.eventType).toBe('grabbed'); // response side stays the string
+    expect(calls[0]!.searchParams.get('eventType')).toBe('1'); // filter side is the integer
+  });
+
+  it('the strict server 400s the legacy string filter (the exact prod failure)', async () => {
+    const { fetchImpl } = strictHistoryFetch();
+    const res = await fetchImpl(
+      'http://sonarr.test:8989/api/v3/history?episodeId=102&eventType=grabbed',
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { errors: { eventType: string[] } };
+    expect(body.errors.eventType[0]).toContain("'grabbed' is not valid");
   });
 });

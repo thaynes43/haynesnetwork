@@ -16,7 +16,12 @@
 import { mediaItems, type DbClient, type FixPath, type FixReason, type FixStatus } from '@hnet/db';
 import type { FixActionEntry } from '@hnet/db';
 import { eq } from 'drizzle-orm';
-import { ArrError, ArrHttpError } from '@hnet/arr';
+import {
+  ArrError,
+  ArrHttpError,
+  LIDARR_GRABBED_EVENT_TYPE,
+  SONARR_GRABBED_EVENT_TYPE,
+} from '@hnet/arr';
 import { ArrUpstreamError, LedgerItemTombstonedError, NotFoundError } from './errors';
 import { resolveDb } from './db-client';
 import { createFixRequest, recordFixAction } from './fix-requests';
@@ -134,12 +139,15 @@ export async function runFixRequest(input: RunFixRequestInput): Promise<RunFixRe
   };
 
   // ---- Step 1: latest grab from LIVE history (D-15 / ADR-008 C-04). ----
+  // The paged `/history` grab lookups filter by the INTEGER eventType enum (a lowercase
+  // string 400s upstream — D-03/D-15); Radarr's separate `/history/movie` path is
+  // tolerant and keeps the string form.
   const grabEndpoint =
     kind === 'sonarr'
-      ? `GET ${base}/history?episodeId=${targetChildId}&eventType=grabbed`
+      ? `GET ${base}/history?episodeId=${targetChildId}&eventType=${SONARR_GRABBED_EVENT_TYPE}`
       : kind === 'radarr'
         ? `GET ${base}/history/movie?movieId=${item.arrItemId}&eventType=grabbed`
-        : `GET ${base}/history?albumId=${targetChildId}&eventType=grabbed`;
+        : `GET ${base}/history?albumId=${targetChildId}&eventType=${LIDARR_GRABBED_EVENT_TYPE}`;
   let grab: { id: number; sourceTitle: string | null } | null = null;
   try {
     if (kind === 'sonarr') {
