@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/thaynes43/haynesnetwork/compare/v0.2.2...v0.3.0) (2026-07-04)
+
+
+### Features
+
+* **web:** season grouping with roll-up force-search and scoped fixes ([#30](https://github.com/thaynes43/haynesnetwork/issues/30)) ([fb7eba0](https://github.com/thaynes43/haynesnetwork/commit/fb7eba047ac21828d18837a82e692880e8159ac7))
+
+
+### Bug Fixes
+
+* **arr:** integer eventType filter for paged history; stable fix-dialog layout ([#28](https://github.com/thaynes43/haynesnetwork/issues/28)) ([17f6cc8](https://github.com/thaynes43/haynesnetwork/commit/17f6cc8c28748cbc370ebda16acc9bbb6f43f58f))
+
 ## [0.2.2](https://github.com/thaynes43/haynesnetwork/compare/v0.2.1...v0.2.2) (2026-07-04)
 
 
