@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/thaynes43/haynesnetwork/compare/v0.3.0...v0.3.1) (2026-07-04)
+
+
+### Bug Fixes
+
+* **web:** uniform fix/force-search availability; action-free library tiles ([#31](https://github.com/thaynes43/haynesnetwork/issues/31)) ([eeab374](https://github.com/thaynes43/haynesnetwork/commit/eeab37465cbfe04aa1e5f0f8746a690f93057074))
+
 ## [0.3.0](https://github.com/thaynes43/haynesnetwork/compare/v0.2.2...v0.3.0) (2026-07-04)
 
 
