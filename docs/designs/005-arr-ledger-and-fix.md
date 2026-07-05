@@ -1,7 +1,17 @@
 # DESIGN-005: *arr media ledger, Fix, and failsafe Restore — Phase 2
 
 - **Status:** Accepted
-- **Last updated:** 2026-07-03
+- **Last updated:** 2026-07-05
+
+> **Amended 2026-07-05 (Library sub-tabs + My Fixes relocation):** the `/library` page is now a
+> **Movies · TV · Music · My Fixes** sub-tab shell (WAI-ARIA tablist; active tab via the `?tab=`
+> query param, default **Movies**, no "All" tab). Each media tab scopes `ledger.search` to one fixed
+> `arrKind` (movies→radarr, TV→sonarr, music→lidarr); the **My Fixes** tab hosts `fix.myFixes`,
+> relocated out of the account menu (DESIGN-004 D-08). The standalone `/my-fixes` route redirects to
+> `/library?tab=my-fixes`. See the amendments in **D-15** (Library UI) and **D-17** (surface + the
+> query-param-vs-routes decision). No backend/router change — `ledger.search` already scopes by
+> `arrKind` and `fix.myFixes` is unchanged.
+
 - **Satisfies:** PRD-001 R-40..R-47 (ledger, history, wanted, Fix), R-50..R-52 (Restore),
   AC-07..AC-09, US-06, US-07; governed by ADR-007 (Fix semantics), ADR-008 (one-way sync,
   two write-backs), ADR-003 (Postgres/Drizzle + transactional audit), ADR-006 (single
@@ -748,6 +758,23 @@ made tiles irregular and invited misclicks, owner screenshot): tiles keep their 
 (kind, on-disk, Wanted/Removed) and are a uniform click-through to `/library/[id]`, where
 all actions live.
 
+**Amendment — Library sub-tabs + My Fixes relocation (2026-07-05).** The `/library` page is a
+**Movies · TV · Music · My Fixes** sub-tab shell (WAI-ARIA tablist; roving focus + Left/Right
+arrow-key movement; the active tab is read from and written to the `?tab=` query param). Rules:
+
+- **Default is Movies; there is NO "All" tab.** An unknown/missing `?tab=` falls back to `movies`.
+- **Each media tab scopes the search to one fixed `arrKind`** — Movies→`radarr`, TV→`sonarr`,
+  Music→`lidarr` — passed straight into the existing `ledger.search` (which already scopes by
+  `arrKind`; no backend change). Per-tab scoped search box (e.g. "Search movies…"), the On-disk
+  segmented filter, and the Wanted-only toggle render **only on the three media tabs**.
+- **My Fixes** hides the search/On-disk/Wanted controls and renders the caller's fix/force-search
+  ledger (`fix.myFixes` — unchanged) inline. This **relocates My Fixes out of the account/user
+  menu** (superseding DESIGN-004 D-08's account-menu "My fixes" item); the standalone `/my-fixes`
+  route now server-redirects to `/library?tab=my-fixes` so old deep links survive.
+- The golden rule (CLAUDE.md hard rule 9 / DESIGN-004 D-14) still holds: switching tabs swaps the
+  panel content but never re-orients the surrounding shell. Tiles remain action-free click-through
+  to `/library/[id]` (above). The `/library/[id]` detail route and all tile rendering are unchanged.
+
 ### D-16 Restore flow (R-50..R-52, AC-09)
 
 Explicitly **not automatic** — no code path triggers Restore but the two admin
@@ -794,6 +821,26 @@ timestamps, `mapDomainErrors`, every mutation through a D-12 writer.
 **Deviation from DESIGN-003 D-03 (no pagination):** `ledger.*` lists and `fix.adminList`
 are cursor-paginated (`{cursor?, limit ≤ 100}`) — the ledger is 15k+ rows today, not
 household-scale. Phase 1 routers are unchanged.
+
+> **Amendment — Library UI shell + `?tab=` query param (2026-07-05).** The `/library` page groups
+> these routers into a **Movies · TV · Music · My Fixes** sub-tab shell (D-15 amendment). The
+> active sub-tab lives in the **`?tab=` query param** (values `movies|tv|music|my-fixes`, default
+> `movies`), **not** in distinct nested route segments. Rationale:
+> - **One page, one data client.** All tabs share the same tRPC hooks, search state, and layout
+>   frame; a query param swaps the active `arrKind`/panel without a route transition, keeping tab
+>   switches instant and the no-reorientation rule (D-15) trivial to honor.
+> - **Shareable/bookmarkable + back-button friendly.** `useRouter().replace(..., {scroll:false})`
+>   makes each tab a real URL (e.g. `/library?tab=tv`) without a history-entry-per-click storm.
+> - **Cheap legacy bridge.** The removed `/my-fixes` route redirects to `/library?tab=my-fixes`
+>   (DESIGN-004 D-08/D-11) — a one-line `redirect()` rather than a duplicated page.
+> - **Cost:** `useSearchParams()` in a client page needs a `<Suspense>` boundary for `next build`,
+>   so the page splits into a thin `LibraryPage` (Suspense) + `LibraryContent` (hooks/UI). Accepted.
+>
+> Rejected alternative — **`/library/movies|/tv|/music|/my-fixes` route segments:** heavier (four
+> route files + shared-layout plumbing) for no user-visible gain over the query param at this
+> single-page, four-tab scale; revisit only if a tab ever needs its own server data-loading
+> boundary. `ledger.search` already accepts `arrKind` and `fix.myFixes` is unchanged, so the whole
+> shell is a **frontend-only** change (no router/domain edit).
 
 ```ts
 // ---------- ledger (authed: browse/search is a Member feature, R-43) ----------
@@ -862,6 +909,8 @@ export const fixRouter = router({
     .mutation(/* runForceSearch → recordSearchRequest ('search_requested') + the
                   *arr search command → returns {eventId, targetLabel, commandName} */),
 
+  // Surfaced in the Library **My Fixes** sub-tab (`/library?tab=my-fixes`, 2026-07-05) —
+  // relocated out of the account menu (DESIGN-004 D-08). The procedure itself is unchanged.
   myFixes: authedProcedure.query(/* caller's fix_requests, newest first:
     {id, item {title, arrKind}, targetLabel, reason, status, pathTaken, createdAt, updatedAt} */),
 

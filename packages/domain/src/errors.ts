@@ -1,14 +1,27 @@
 // DESIGN-003 D-13 — typed domain errors. packages/api maps these to TRPCError codes via
 // mapDomainErrors; the `code` field is the stable appCode clients switch on.
 
-/** R-14: catalog URL failed the *.haynesnetwork.com host assert (url-assert.ts). */
-export class ForbiddenHostError extends Error {
-  readonly code = 'CATALOG_URL_FORBIDDEN_HOST' as const;
+/** ADR-013: catalog URL failed normalize/validate — not a well-formed http(s) URL
+ * (url-assert.ts). BRANCH-A: no host rules, so any well-formed link is accepted. */
+export class InvalidCatalogUrlError extends Error {
+  readonly code = 'CATALOG_URL_INVALID' as const;
 }
 
-/** tags.create / tags.update hit an existing tag name. */
-export class TagNameConflictError extends Error {
-  readonly code = 'TAG_NAME_CONFLICT' as const;
+/** roles.create / roles.update hit an existing role name (ADR-012). */
+export class RoleNameConflictError extends Error {
+  readonly code = 'ROLE_NAME_CONFLICT' as const;
+}
+
+/** ADR-012: attempt to edit/rename/delete a locked system role (Admin fully; Default's
+ * name/existence). Admin is a superuser with an implicit all-apps grant. */
+export class SystemRoleImmutableError extends Error {
+  readonly code = 'ROLE_IMMUTABLE' as const;
+}
+
+/** ADR-012: assigning a user off the Admin role when they are the last Admin — refused so
+ * the instance can never be locked out of its own admin console. */
+export class LastAdminError extends Error {
+  readonly code = 'LAST_ADMIN' as const;
 }
 
 /** catalog.reorder received a stale or partial id set. */

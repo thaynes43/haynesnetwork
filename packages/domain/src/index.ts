@@ -4,10 +4,7 @@
 // test forbids direct writes from anywhere else.
 export * from './errors';
 export * from './url-assert';
-export * from './user-role-transitions';
-export * from './family';
-export * from './app-grants';
-export * from './tags';
+export * from './roles';
 export * from './catalog';
 export * from './effective-apps';
 // DESIGN-005 Phase 2 — media ledger single-writers (D-12)

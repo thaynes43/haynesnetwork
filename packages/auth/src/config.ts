@@ -41,7 +41,8 @@ const oidcPlugins = oidcEnabled
                 profile.email,
               // Authentik authenticated this email; no separate verification loop (R-01).
               emailVerified: true,
-              role: 'Member', // R-03 — explicit, matches DB default
+              // ADR-012: role is not a Better Auth field — users.role_id defaults to the
+              // seeded Default role at the DB level (R-03), and bootstrap promotes to Admin.
             }),
           },
         ],
@@ -117,9 +118,8 @@ export const auth = betterAuth({
   user: {
     modelName: 'users',
     fields: { name: 'displayName' }, // `name` → display_name column
-    additionalFields: {
-      role: { type: 'string', required: false, defaultValue: 'Member' },
-    },
+    // ADR-012: no `role` additionalField — a user's role is the users.role_id FK
+    // (DB-defaulted to the Default role), hydrated onto the session by getSessionExtension.
   },
   // NO emailAndPassword block — Authentik OIDC is the only credential (R-01).
   account: {

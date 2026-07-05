@@ -119,7 +119,9 @@ export function FixDialog({ open, onClose, item, target, onSubmitted }: FixDialo
               : 'The file was removed and a search for a replacement is running.'}
           </p>
           {done.targetLabel ? <p className="muted">Target: {done.targetLabel}</p> : null}
-          <p className="muted">Track progress under My fixes — it completes when the new copy imports.</p>
+          <p className="muted">
+            Track progress under Library → My Fixes — it completes when the new copy imports.
+          </p>
           <div className="form-actions">
             <button type="button" className="btn primary" onClick={close}>
               Done

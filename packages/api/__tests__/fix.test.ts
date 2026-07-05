@@ -510,7 +510,7 @@ describe('fix.create — season roll-up (media-hierarchy actions)', () => {
 describe('fix.myFixes / fix.adminList (R-46)', () => {
   it('members see exactly their own; admins see all with requester + raw actions', async () => {
     const member = await createUser(tdb.db);
-    const admin = await createUser(tdb.db, { role: 'Admin' });
+    const admin = await createUser(tdb.db, { admin: true });
     const item = await seedMediaItem(tdb.db, 'sonarr', { title: 'Zeta Show', arrItemId: 506 });
     const stub = stubArrBundle([
       {

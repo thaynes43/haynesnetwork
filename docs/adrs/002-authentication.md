@@ -1,6 +1,10 @@
 # ADR-002: Better Auth with Authentik OIDC as the sole sign-in method
 
 - **Status:** Accepted
+- **Amended by ADR-012 (2026-07-05):** the **role model** (C-04) is superseded — role is
+  now a DB-backed `roles` table joined into the session, not a `'Member' | 'Admin'` enum
+  Better Auth `additionalField`. The sign-in decision (Authentik OIDC only, bootstrap by
+  email allowlist) is unchanged; do not edit the decision text below.
 - **Date:** 2026-07-03
 - **Deciders:** Tom Haynes (with agent input)
 

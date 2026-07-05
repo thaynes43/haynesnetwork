@@ -16,6 +16,7 @@ export const REQUIRED_TOKENS = [
   '--color-topbar',
   '--color-nav-active',
   '--color-danger',
+  '--color-danger-strong',
   '--color-warning',
   '--color-info',
   // Persistent-scrollbar palette for internal scroll panes. Required so every

@@ -1,8 +1,8 @@
 // DESIGN-004 D-07 — dashboard: catalog.myApps via the tRPC server caller (never
 // profile.me for tiles — one source of truth), greeting, auto-fill tile grid,
-// empty state. Tiles are whole-anchor targets opening in a new tab; hrefs come
-// straight from the API and are already guaranteed https://*.haynesnetwork.com
-// (R-14 enforced at write time) — the UI never constructs URLs.
+// empty state. Tiles are whole-anchor targets opening in a new tab; hrefs come straight from
+// the API (arbitrary admin-curated http(s) URLs, any host — ADR-013). The UI never constructs
+// URLs, and rel="noopener noreferrer" below guards these now-external links from tabnabbing.
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { getServerSession } from '@hnet/auth';

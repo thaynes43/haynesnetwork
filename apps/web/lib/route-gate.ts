@@ -4,19 +4,20 @@
 // never sees admin markup it can't use.
 
 export interface GateUser {
-  role: string; // SessionUser.role — fail closed on anything but 'Admin' for admin routes
+  role: { isAdmin: boolean }; // SessionUser.role — admin routes require role.isAdmin (ADR-012)
 }
 
 /**
  * Protected routes (`/`, and `/admin/*` with requireAdmin): anonymous → /login;
- * authed non-Admin on an admin route → / ; otherwise pass (null).
+ * authed non-Admin on an admin route → / ; otherwise pass (null). Fails closed on a
+ * missing/malformed role.
  */
 export function protectedRouteRedirect(
   user: GateUser | null | undefined,
   opts: { requireAdmin?: boolean } = {},
 ): '/login' | '/' | null {
   if (!user) return '/login';
-  if (opts.requireAdmin && user.role !== 'Admin') return '/';
+  if (opts.requireAdmin && !user.role?.isAdmin) return '/';
   return null;
 }
 

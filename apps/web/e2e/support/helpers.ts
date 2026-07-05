@@ -1,11 +1,23 @@
 // Shared spec helpers: persona sign-in/out through the REAL stub-OIDC round trip
 // (no cookie forgery — AC-01's flow is the only way in) and the viewport-fit
 // measurement ported from demo-console's resize matrix (AC-10).
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 import type { PersonaName } from './stub-oidc';
 import { readRuntimeEnv } from './env';
 
 export const SIGN_IN_BUTTON = 'Sign in with Plex (Authentik)';
+
+/**
+ * Drive a two-step ConfirmButton (ADR-014) the way a deliberate user would: click to arm,
+ * see it relabel to "Confirm?", pause past its MIN_ARM_MS double-click guard, then confirm.
+ * (A back-to-back second click is intentionally ignored by the control — it is a misclick.)
+ */
+export async function armAndConfirm(button: Locator): Promise<void> {
+  await button.click();
+  await expect(button).toHaveText('Confirm?');
+  await button.page().waitForTimeout(350);
+  await button.click();
+}
 
 /** Point the stub OIDC at a persona — sticky until changed (workers=1 keeps this race-free). */
 export async function selectStubUser(persona: PersonaName): Promise<void> {

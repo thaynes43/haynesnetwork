@@ -26,44 +26,44 @@ const ALLOWED_FILES = new Set<string>([
   'packages/db/__tests__/media-ledger.test.ts',
 ]);
 
-// DESIGN-001 D-12 guarded tables: users.role / users.is_family, user_app_grants,
-// tags, tag_app_grants, user_tags, app_catalog + the audit tables themselves.
-// DESIGN-005 D-12 extends the watched list with the Phase 2 media-ledger tables:
-// media_items, ledger_events, fix_requests, restore_runs, sync_runs, sync_state.
+// DESIGN-001 D-12 / ADR-012 guarded tables: users.role_id, roles, role_app_grants,
+// app_catalog + the audit tables (user_role_transitions, permission_audit). DESIGN-005
+// D-12 extends the watched list with the Phase 2 media-ledger tables: media_items,
+// ledger_events, fix_requests, restore_runs, sync_runs, sync_state.
 const FORBIDDEN_PATTERNS: Array<{ name: string; regex: RegExp }> = [
   {
-    name: 'UPDATE users SET role/is_family (SQL)',
-    regex: /UPDATE\s+users\s+SET\s+(role|is_family)\b/i,
+    name: 'UPDATE users SET role_id (SQL)',
+    regex: /UPDATE\s+users\s+SET\s+role_id\b/i,
   },
   {
     name: 'INSERT INTO guarded/audit table (SQL)',
     regex:
-      /INSERT\s+INTO\s+(user_role_transitions|permission_audit|user_app_grants|user_tags|tag_app_grants|app_catalog|tags|media_items|ledger_events|fix_requests|restore_runs|sync_runs|sync_state)\b/i,
+      /INSERT\s+INTO\s+(user_role_transitions|permission_audit|roles|role_app_grants|app_catalog|media_items|ledger_events|fix_requests|restore_runs|sync_runs|sync_state)\b/i,
   },
   {
     name: 'UPDATE guarded table (SQL)',
     regex:
-      /UPDATE\s+(app_catalog|tags|media_items|ledger_events|fix_requests|restore_runs|sync_runs|sync_state)\s+SET\b/i,
+      /UPDATE\s+(roles|app_catalog|media_items|ledger_events|fix_requests|restore_runs|sync_runs|sync_state)\s+SET\b/i,
   },
   {
     name: 'DELETE FROM guarded table (SQL)',
     regex:
-      /DELETE\s+FROM\s+(user_app_grants|user_tags|tag_app_grants|app_catalog|tags|media_items|ledger_events|fix_requests|restore_runs|sync_runs|sync_state)\b/i,
+      /DELETE\s+FROM\s+(role_app_grants|roles|app_catalog|media_items|ledger_events|fix_requests|restore_runs|sync_runs|sync_state)\b/i,
   },
   {
     name: '.insert() into guarded/audit table (Drizzle)',
     regex:
-      /\.insert\(\s*(?:[A-Za-z_$][\w$]*\.)?(userRoleTransitions|permissionAudit|userAppGrants|userTags|tagAppGrants|appCatalog|tags|mediaItems|ledgerEvents|fixRequests|restoreRuns|syncRuns|syncState)\s*\)/,
+      /\.insert\(\s*(?:[A-Za-z_$][\w$]*\.)?(userRoleTransitions|permissionAudit|roleAppGrants|roles|appCatalog|mediaItems|ledgerEvents|fixRequests|restoreRuns|syncRuns|syncState)\s*\)/,
   },
   {
     name: '.update() on guarded table (Drizzle)',
     regex:
-      /\.update\(\s*(?:[A-Za-z_$][\w$]*\.)?(users|appCatalog|tags|mediaItems|ledgerEvents|fixRequests|restoreRuns|syncRuns|syncState)\s*\)/,
+      /\.update\(\s*(?:[A-Za-z_$][\w$]*\.)?(users|roles|appCatalog|mediaItems|ledgerEvents|fixRequests|restoreRuns|syncRuns|syncState)\s*\)/,
   },
   {
     name: '.delete() on guarded table (Drizzle)',
     regex:
-      /\.delete\(\s*(?:[A-Za-z_$][\w$]*\.)?(userAppGrants|userTags|tagAppGrants|appCatalog|tags|mediaItems|ledgerEvents|fixRequests|restoreRuns|syncRuns|syncState)\s*\)/,
+      /\.delete\(\s*(?:[A-Za-z_$][\w$]*\.)?(roleAppGrants|roles|appCatalog|mediaItems|ledgerEvents|fixRequests|restoreRuns|syncRuns|syncState)\s*\)/,
   },
 ];
 
@@ -136,9 +136,9 @@ describe('static analysis — single-writer invariant for role/permission tables
       const detail = violations.map((v) => `  ${v.file}:${v.line}  →  ${v.pattern}`).join('\n');
       throw new Error(
         `Found ${violations.length} direct role/permission table write(s) outside packages/domain/.\n` +
-          `These mutations must go through @hnet/domain (transitionRole, grantApp, revokeApp, ` +
-          `setFamilyDesignation, createTag/updateTag/deleteTag, applyTag/removeTag, ` +
-          `createApp/updateApp/deleteApp/reorderCatalog) so the audit row commits in the same transaction.\n` +
+          `These mutations must go through @hnet/domain (createRole/updateRole/deleteRole, ` +
+          `assignRole, createApp/updateApp/deleteApp/reorderCatalog) so the audit row commits ` +
+          `in the same transaction.\n` +
           detail,
       );
     }

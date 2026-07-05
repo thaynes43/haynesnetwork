@@ -4,19 +4,22 @@
 // strings explicitly, never raw Date fields.
 import { initTRPC, TRPCError } from '@trpc/server';
 import { getServerSession, type SessionUser } from '@hnet/auth';
-import { db, ROLES, type Database } from '@hnet/db';
+import { db, type Database } from '@hnet/db';
 import {
   arrClientBundleFromEnv,
   ArrUpstreamError,
+  ConcurrentTransitionError,
   FixAlreadyOpenError,
   FixRateLimitError,
   FixTargetRequiredError,
-  ForbiddenHostError,
+  InvalidCatalogUrlError,
+  LastAdminError,
   LedgerItemTombstonedError,
   NotFoundError,
   ReorderMismatchError,
   RestoreProfileUnmappedError,
-  TagNameConflictError,
+  RoleNameConflictError,
+  SystemRoleImmutableError,
   type ArrClientBundle,
 } from '@hnet/domain';
 
@@ -44,14 +47,15 @@ export function resolveArrBundle(ctx: TRPCContext): ArrClientBundle {
 }
 
 function hasKnownRole(user: SessionUser): boolean {
-  return (ROLES as readonly string[]).includes(user.role);
+  // ADR-012: a valid session always carries a role object (users ⋈ roles). Fail closed if
+  // the shape is somehow malformed.
+  return typeof user.role?.isAdmin === 'boolean' && typeof user.role.id === 'string';
 }
 
 /**
  * D-01 — per-request context: getServerSession reads the Better Auth session from the
- * request headers and hydrates { role, displayName, effective isFamily } (DESIGN-002
- * D-06); isFamily is the EFFECTIVE flag so the UI never re-derives it. Unknown/missing
- * role coerces to a null user — fail closed, same as the donor's isRole() guard.
+ * request headers and hydrates { role: { id, name, isAdmin }, displayName } (DESIGN-002
+ * D-06, ADR-012). A missing/malformed role coerces to a null user — fail closed.
  */
 export const createTRPCContext = async ({
   headers,
@@ -73,8 +77,11 @@ export const createTRPCContext = async ({
  * packages/api/README.md.
  */
 const APP_CODED_ERRORS = [
-  ForbiddenHostError,
-  TagNameConflictError,
+  InvalidCatalogUrlError,
+  RoleNameConflictError,
+  SystemRoleImmutableError,
+  LastAdminError,
+  ConcurrentTransitionError,
   ReorderMismatchError,
   FixRateLimitError,
   FixAlreadyOpenError,
@@ -118,8 +125,10 @@ export const authedProcedure = t.procedure.use(({ ctx, next }) => {
  *
  * | Domain error                | appCode                     | TRPC code             |
  * |-----------------------------|-----------------------------|-----------------------|
- * | ForbiddenHostError          | CATALOG_URL_FORBIDDEN_HOST  | UNPROCESSABLE_CONTENT |
- * | TagNameConflictError        | TAG_NAME_CONFLICT           | CONFLICT              |
+ * | InvalidCatalogUrlError      | CATALOG_URL_INVALID         | UNPROCESSABLE_CONTENT |
+ * | RoleNameConflictError       | ROLE_NAME_CONFLICT          | CONFLICT              |
+ * | SystemRoleImmutableError    | ROLE_IMMUTABLE              | FORBIDDEN             |
+ * | LastAdminError              | LAST_ADMIN                  | CONFLICT              |
  * | ReorderMismatchError        | REORDER_SET_MISMATCH        | CONFLICT              |
  * | FixRateLimitError           | FIX_RATE_LIMIT_EXCEEDED     | TOO_MANY_REQUESTS     |
  * | FixAlreadyOpenError         | FIX_ALREADY_OPEN            | CONFLICT              |
@@ -133,10 +142,19 @@ export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (err) {
-    if (err instanceof ForbiddenHostError) {
+    if (err instanceof InvalidCatalogUrlError) {
       throw new TRPCError({ code: 'UNPROCESSABLE_CONTENT', message: err.message, cause: err });
     }
-    if (err instanceof TagNameConflictError) {
+    if (err instanceof RoleNameConflictError) {
+      throw new TRPCError({ code: 'CONFLICT', message: err.message, cause: err });
+    }
+    if (err instanceof SystemRoleImmutableError) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: err.message, cause: err });
+    }
+    if (err instanceof LastAdminError) {
+      throw new TRPCError({ code: 'CONFLICT', message: err.message, cause: err });
+    }
+    if (err instanceof ConcurrentTransitionError) {
       throw new TRPCError({ code: 'CONFLICT', message: err.message, cause: err });
     }
     if (err instanceof ReorderMismatchError) {

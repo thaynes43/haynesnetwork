@@ -1,13 +1,12 @@
-import { eq } from 'drizzle-orm';
-import { db, users, type Database, type DbClient } from '@hnet/db';
-import { transitionRole } from '@hnet/domain';
+import { type DbClient } from '@hnet/db';
+import { assignRole, getAdminRoleId } from '@hnet/domain';
 import { parseBootstrapAdminEmails } from '../env';
 
 /**
  * DESIGN-002 D-05 — promote any user whose email is on the BOOTSTRAP_ADMIN_EMAILS
- * allowlist (comma-separated, case-insensitive) to Admin on every sign-in. Idempotent —
- * no-op when already Admin (AC-03 "repeat logins are no-ops"). Routes through
- * transitionRole (DESIGN-001 D-12 single-writer invariant) so the promotion and its
+ * allowlist (comma-separated, case-insensitive) to the Admin role on every sign-in.
+ * Idempotent — no-op when already Admin (AC-03 "repeat logins are no-ops"). Routes through
+ * assignRole (ADR-012 / DESIGN-001 D-12 single-writer invariant) so the promotion and its
  * user_role_transitions audit row commit in one transaction (R-02, R-04, AC-03).
  * Initiator is system (initiatorKind: 'system', initiatorId: null).
  *
@@ -26,15 +25,12 @@ export async function bootstrapAdminOnSignin(
     const allowlist = parseBootstrapAdminEmails(process.env.BOOTSTRAP_ADMIN_EMAILS);
     if (!allowlist.includes(user.email.toLowerCase())) return;
 
-    const q = (dbc ?? db) as Database;
-    const [row] = await q.select({ role: users.role }).from(users).where(eq(users.id, user.id));
-    if (!row || row.role === 'Admin') return; // idempotent (AC-03)
-
-    await transitionRole({
+    const adminRoleId = await getAdminRoleId(dbc);
+    // assignRole is idempotent — already-Admin is a no-op with no audit row (AC-03).
+    await assignRole({
       db: dbc,
       userId: user.id,
-      expectedFromRole: row.role, // 'Member'
-      toRole: 'Admin',
+      toRoleId: adminRoleId,
       initiator: { id: null, kind: 'system' },
       note: 'BOOTSTRAP_ADMIN_EMAILS promotion',
     });

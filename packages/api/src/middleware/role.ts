@@ -1,10 +1,10 @@
-// DESIGN-003 D-02 — the admin rung of the procedure ladder (donor: middleware/role.ts).
-// haynesnetwork has two roles, so this is the only role middleware in Phase 1; further
-// rungs (e.g. permission-attribute checks like Family, R-26) compose the same way.
+// DESIGN-003 D-02 / ADR-012 — the admin rung of the procedure ladder. Admin is the
+// superuser role (roles.is_admin); the session carries role.isAdmin so this needs no
+// extra query. Further attribute rungs (e.g. Phase-3 library gating) compose the same way.
 import { TRPCError } from '@trpc/server';
 import { authedProcedure } from '../trpc';
 
 export const adminProcedure = authedProcedure.use(({ ctx, next }) => {
-  if (ctx.user.role !== 'Admin') throw new TRPCError({ code: 'FORBIDDEN' });
+  if (!ctx.user.role.isAdmin) throw new TRPCError({ code: 'FORBIDDEN' });
   return next();
 });

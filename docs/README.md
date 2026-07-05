@@ -40,7 +40,7 @@ MADR 3.0, one decision each, immutable once Accepted.
 | ID | Title | Read when |
 |----|-------|-----------|
 | ADR-001 | [Next.js App Router in a pnpm monorepo](adrs/001-web-framework-and-monorepo.md) | You need the stack/monorepo rationale. (Predates the `@hnet/arr` + `@hnet/sync` packages — there are eight `@hnet/*` packages, not six.) |
-| ADR-002 | [Better Auth with Authentik OIDC as the sole sign-in](adrs/002-authentication.md) | Anything auth: why OIDC-only, admin bootstrap by email allowlist. |
+| ADR-002 | [Better Auth with Authentik OIDC as the sole sign-in](adrs/002-authentication.md) | Anything auth: why OIDC-only, admin bootstrap by email allowlist. (Role model amended by ADR-012.) |
 | ADR-003 | [PostgreSQL 16 (CNPG) + Drizzle, migrator init container, audit-in-transaction](adrs/003-database-and-orm.md) | Why PG16-only, the migrator initContainer, single-writer audit-in-transaction rule. |
 | ADR-004 | [tRPC v11 as the API contract, role-gated procedure ladder](adrs/004-api-contract.md) | Adding/altering an API procedure or the role gates. |
 | ADR-005 | [Port demo-console's CSS-token theming and viewport-fit layout](adrs/005-theming-and-layout.md) | Touching theming, tokens, or layout primitives (see hard-rule 2 / the hex guard). |
@@ -50,6 +50,7 @@ MADR 3.0, one decision each, immutable once Accepted.
 | ADR-009 | [CI and PR flow — required checks, GATE A cutover, release-please](adrs/009-ci-and-pr-flow.md) | Branch/PR/merge rules, required checks, how versioning + release tagging works. |
 | ADR-010 | [Test strategy — Vitest + embedded Postgres, Playwright + stub OIDC, contract guards](adrs/010-test-strategy.md) | Writing tests, or understanding the import/no-direct-write contract guards. |
 | ADR-011 | [*arr write-back surface — Force Search + roll-up scopes](adrs/011-arr-write-back-surface.md) | The current write-back decision: Accepted, amends ADR-007/008 to add Force Search and season/series roll-up scopes. |
+| ADR-012 | [Unified Role model — one admin-managed Role per user](adrs/012-unified-role-model.md) | The entitlement model: DB-backed `roles` (one per user) replace the Member/Admin enum + tags + per-user grants + family flag + default_visible. **Supersedes ADR-002 C-04** (role-as-enum). |
 
 ## DDD — [`domain-driven-design/`](domain-driven-design/)
 
@@ -66,7 +67,7 @@ How, not why. Reference the PRD/ADR IDs they satisfy; amended in place.
 
 | ID | Title | Read when |
 |----|-------|-----------|
-| DESIGN-001 | [Database schema — Phase 1 (identity, catalog, tags, audit)](designs/001-database-schema.md) | Working on schema, catalog URL guard, or audit tables. |
+| DESIGN-001 | [Database schema — Phase 1 (identity, catalog, roles, audit)](designs/001-database-schema.md) | Working on schema, catalog URL normalization (ADR-013: any http(s) URL; scheme-only CHECK), or audit tables. (Entitlement tables re-shaped by ADR-012 — roles/role_app_grants.) |
 | DESIGN-002 | [Auth wiring — Better Auth + Authentik OIDC; provisioning](designs/002-auth-and-authentik.md) | Wiring auth or the callback path. Operator steps are in OPS-001. |
 | DESIGN-003 | [tRPC surface for Phase 1](designs/003-trpc-surface.md) | The concrete procedure list / router shape. |
 | DESIGN-004 | [UI shell and dashboard (Phase 1)](designs/004-ui-shell-and-dashboard.md) | Dashboard/app-catalog UI and component contracts. |

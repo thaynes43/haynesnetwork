@@ -1,14 +1,17 @@
 import { pgTable, uuid, text, timestamp, index, check } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { users } from './users';
-import { ROLE_INITIATOR_KINDS, type Role, type RoleInitiatorKind } from './enums';
+import { roles } from './roles';
+import { ROLE_INITIATOR_KINDS, type RoleInitiatorKind } from './enums';
 
 const INITIATOR_KINDS_SQL_LIST = ROLE_INITIATOR_KINDS.map((k) => `'${k}'`).join(',');
 
 /**
- * DESIGN-001 D-04 — role-change audit (R-02, R-04). Append-only by convention; rows are
- * written exclusively by `transitionRole` in packages/domain (D-12). `initiator_kind`
- * has no 'user' value — users never change their own role.
+ * DESIGN-001 D-04 / ADR-012 — role-assignment audit (R-02, R-04). Append-only by
+ * convention; rows are written exclusively by `assignRole` in packages/domain (D-12).
+ * `from_role_id` is null on a user's first assignment. `initiator_kind` has no 'user'
+ * value — users never change their own role. Role FKs are ON DELETE SET NULL so audit
+ * history outlives a deleted role.
  */
 export const userRoleTransitions = pgTable(
   'user_role_transitions',
@@ -17,8 +20,8 @@ export const userRoleTransitions = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    fromRole: text('from_role').$type<Role>(),
-    toRole: text('to_role').$type<Role>().notNull(),
+    fromRoleId: uuid('from_role_id').references(() => roles.id, { onDelete: 'set null' }),
+    toRoleId: uuid('to_role_id').references(() => roles.id, { onDelete: 'set null' }),
     initiatorId: uuid('initiator_id').references(() => users.id),
     initiatorKind: text('initiator_kind').$type<RoleInitiatorKind>().notNull(),
     note: text('note'),

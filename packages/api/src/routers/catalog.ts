@@ -3,7 +3,7 @@
 // permission_audit row in the same transaction (ADR-003, R-04 — the no-direct-writes
 // guard test enforces this).
 import { z } from 'zod';
-import { asc, eq } from 'drizzle-orm';
+import { asc } from 'drizzle-orm';
 import { appCatalog } from '@hnet/db';
 import {
   createApp,
@@ -28,46 +28,20 @@ export interface MyApp {
 
 export const catalogRouter = router({
   /**
-   * R-10 — effective visible apps for the caller (D-05):
-   * defaultVisible entries ∪ direct grants ∪ tag grants, deduped on app id, ordered by
-   * sort_order, name (DESIGN-001 D-05). Provenance-free — admin views recompute
-   * provenance client-side from users.list + catalog.adminList + tags.list (D-09).
+   * R-10 / ADR-012 — the apps the caller can open: exactly their role's app set (or ALL
+   * apps if their role is the Admin superuser), ordered by sort_order, name. The role-based
+   * union lives in @hnet/domain effectiveAppsForUser; the dashboard renders these tiles.
    */
   myApps: authedProcedure.query(async ({ ctx }): Promise<MyApp[]> => {
-    const defaults = await ctx.db
-      .select({
-        id: appCatalog.id,
-        slug: appCatalog.slug,
-        name: appCatalog.name,
-        description: appCatalog.description,
-        icon: appCatalog.icon,
-        url: appCatalog.url,
-        sortOrder: appCatalog.sortOrder,
-      })
-      .from(appCatalog)
-      .where(eq(appCatalog.defaultVisible, true));
-    const granted = await effectiveAppsForUser(ctx.user.id, ctx.db);
-
-    const byId = new Map<string, MyApp & { sortOrder: number }>();
-    for (const row of defaults) {
-      byId.set(row.id, row);
-    }
-    for (const row of granted) {
-      // effectiveAppsForUser yields one row per provenance (direct + each tag) —
-      // the dashboard union dedupes on app id.
-      byId.set(row.appId, {
-        id: row.appId,
-        slug: row.slug,
-        name: row.name,
-        description: row.description,
-        icon: row.icon,
-        url: row.url,
-        sortOrder: row.sortOrder,
-      });
-    }
-    return [...byId.values()]
-      .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
-      .map(({ sortOrder: _sortOrder, ...app }) => app);
+    const apps = await effectiveAppsForUser(ctx.user.id, ctx.db);
+    return apps.map((app) => ({
+      id: app.appId,
+      slug: app.slug,
+      name: app.name,
+      description: app.description,
+      icon: app.icon,
+      url: app.url,
+    }));
   }),
 
   /** R-11 — every entry incl. hidden ones + defaultVisible + sortOrder (admin table). */
@@ -85,7 +59,8 @@ export const catalogRouter = router({
   }),
 
   create: adminProcedure.input(CatalogEntryInput).mutation(async ({ ctx, input }) => {
-    // domain.createApp re-asserts R-14 (D-04 layer 2) and audits 'create_app' (D-07/D-08).
+    // domain.createApp normalizes + validates the URL (D-04 layer 2, ADR-013) and audits
+    // 'create_app' (D-07/D-08).
     return mapDomainErrors(() => createApp({ db: ctx.db, ...input, actorId: ctx.user.id }));
   }),
 

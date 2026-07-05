@@ -8,10 +8,12 @@ import * as schema from '@hnet/db/schema';
 import type { Database } from '@hnet/db';
 import type { SessionUser } from '@hnet/auth';
 import {
+  assignRole,
   upsertMediaItemsBatch,
   type ArrClientBundle,
   type MediaItemSyncFields,
 } from '@hnet/domain';
+import { SEEDED_ROLE_IDS } from '@hnet/db/schema';
 import { appRouter } from '../src/routers/index';
 import { createCallerFactory, type TRPCContext } from '../src/trpc';
 
@@ -39,31 +41,49 @@ export async function bootMigratedDb(): Promise<TestDb> {
 
 let emailSeq = 0;
 
-/** Insert a plain user row (user creation is Better Auth's job, not a guarded write). */
+/**
+ * Insert a plain user row (user creation is Better Auth's job, not a guarded write); role_id
+ * defaults to the Default role. Pass `admin: true` to promote to the Admin role via the
+ * assignRole single-writer (ADR-012). Returns the fresh row (role_id reflects the promotion).
+ */
 export async function createUser(
   db: Database,
-  overrides: Partial<typeof schema.users.$inferInsert> = {},
+  overrides: Partial<typeof schema.users.$inferInsert> & { admin?: boolean } = {},
 ): Promise<typeof schema.users.$inferSelect> {
+  const { admin, ...userOverrides } = overrides;
   const [row] = await db
     .insert(schema.users)
     .values({
-      email: overrides.email ?? `user-${++emailSeq}@example.com`,
-      displayName: overrides.displayName ?? `User ${emailSeq}`,
-      ...overrides,
+      email: userOverrides.email ?? `user-${++emailSeq}@example.com`,
+      displayName: userOverrides.displayName ?? `User ${emailSeq}`,
+      ...userOverrides,
     })
     .returning();
   if (!row) throw new Error('user insert returned no row');
-  return row;
+  if (!admin) return row;
+  await assignRole({
+    db,
+    userId: row.id,
+    toRoleId: SEEDED_ROLE_IDS.admin,
+    initiator: { id: null, kind: 'system' },
+  });
+  const [fresh] = await db.select().from(schema.users).where(eq(schema.users.id, row.id));
+  if (!fresh) throw new Error('user vanished after role assignment');
+  return fresh;
 }
 
-/** The fake SessionUser the tests hand to the context (no HTTP, no Better Auth). */
+/**
+ * The fake SessionUser the tests hand to the context (no HTTP, no Better Auth). The role
+ * object is derived from role_id — the two seeded roles have fixed ids (SEEDED_ROLE_IDS).
+ */
 export function sessionUser(row: typeof schema.users.$inferSelect): SessionUser {
+  const isAdmin = row.roleId === SEEDED_ROLE_IDS.admin;
+  const name = isAdmin ? 'Admin' : row.roleId === SEEDED_ROLE_IDS.default ? 'Default' : 'Custom';
   return {
     id: row.id,
     email: row.email,
     displayName: row.displayName,
-    role: row.role,
-    isFamily: row.isFamily,
+    role: { id: row.roleId, name, isAdmin },
   };
 }
 
@@ -141,7 +161,7 @@ export function forbidDbAccess(): Database {
   });
 }
 
-/** permission_audit rows for one subject/app/tag combination, oldest first (reads are unguarded). */
+/** permission_audit rows for one action, oldest first (reads are unguarded). */
 export async function auditRows(db: Database, action: schema.PermissionAuditAction) {
   return db
     .select({
@@ -149,7 +169,7 @@ export async function auditRows(db: Database, action: schema.PermissionAuditActi
       action: schema.permissionAudit.action,
       subjectUserId: schema.permissionAudit.subjectUserId,
       appId: schema.permissionAudit.appId,
-      tagId: schema.permissionAudit.tagId,
+      roleId: schema.permissionAudit.roleId,
       detail: schema.permissionAudit.detail,
     })
     .from(schema.permissionAudit)

@@ -96,9 +96,13 @@ this is normally a **verification**, not a change:
 - [ ] Full sign-in round-trip on `https://haynesnetwork.com`: redirect to Authentik →
       authorize → callback → landed authenticated with a session cookie scoped to the public
       host. This is the assertion that proves the `BETTER_AUTH_URL` flip matched the ingress.
-- [ ] `haynesnetwork.haynesops.com` no longer routes (staging host retired) — confirms R-14:
-      the LAN host is gone from the public surface.
-- [ ] App catalog still exposes only `*.haynesnetwork.com` URLs (R-14, unchanged by cutover).
+- [ ] `haynesnetwork.haynesops.com` no longer routes (staging host retired) — the app's own
+      LAN ingress is gone from the public surface.
+
+> **Note (ADR-013, 2026-07-05):** the former gate "App catalog exposes only
+> `*.haynesnetwork.com` URLs" is removed. R-14 was reversed — the catalog now accepts any
+> `http(s)` URL (including `*.haynesops.com` and external hosts), so catalog link hosts are no
+> longer a cutover check.
 
 ## Rollback
 

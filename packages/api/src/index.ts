@@ -8,6 +8,7 @@ export {
   catalogUrlSchema,
   CatalogEntryInput,
   CatalogEntryPatchInput,
-  TagBundleInput,
+  RoleInput,
+  RolePatchInput,
 } from './schemas';
 export type { MyApp } from './routers/catalog';

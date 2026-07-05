@@ -1,11 +1,12 @@
 // DESIGN-003 test strategy — catalog: the myApps union (default ∪ direct ∪ tag with
-// overlap dedupe, AC-06), admin CRUD via the audited domain helpers, the R-14 URL
-// table across the zod edge (layer 1) and the domain assert (layer 2), and the D-13
-// error taxonomy through the real errorFormatter. Layer 3 (the DB CHECK) is exercised
+// overlap dedupe, AC-06), admin CRUD via the audited domain helpers, the URL
+// normalize+validate path across the lenient zod edge (layer 1) and the authoritative
+// domain assert (layer 2, BRANCH-A: any host allowed), and the D-13 error taxonomy
+// through the real errorFormatter. Layer 3 (the scheme-only DB CHECK) is exercised
 // by packages/db/__tests__/migrations.test.ts per the design's test strategy.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { appCatalog, type users } from '@hnet/db';
-import { createApp, ForbiddenHostError } from '@hnet/domain';
+import { appCatalog, SEEDED_ROLE_IDS, type users } from '@hnet/db';
+import { createApp, InvalidCatalogUrlError } from '@hnet/domain';
 import { mapDomainErrors } from '../src/trpc';
 import { catalogUrlSchema } from '../src/schemas';
 import {
@@ -29,8 +30,8 @@ let appIdBySlug: Map<string, string>;
 
 beforeAll(async () => {
   testDb = await bootMigratedDb();
-  admin = await createUser(testDb.db, { role: 'Admin', displayName: 'Admin Ada' });
-  member = await createUser(testDb.db, { role: 'Member', displayName: 'Member Mia' });
+  admin = await createUser(testDb.db, { admin: true, displayName: 'Admin Ada' });
+  member = await createUser(testDb.db, { displayName: 'Member Mia' }); // Default role
   adminCaller = caller(makeCtx(testDb.db, sessionUser(admin)));
   memberCaller = caller(makeCtx(testDb.db, sessionUser(member)));
   const rows = await testDb.db
@@ -43,11 +44,11 @@ afterAll(async () => {
   await testDb.stop();
 });
 
-describe('catalog.myApps — effective visible apps (R-10, D-05)', () => {
-  it('fresh Member sees exactly the seeded default-visible tiles, ordered by sort_order', async () => {
+describe('catalog.myApps — role-based visible apps (R-10, ADR-012)', () => {
+  it('a Default-role user sees exactly the Default role app set, ordered by sort_order', async () => {
     const apps = await memberCaller.catalog.myApps();
-    expect(apps.map((a) => a.slug)).toEqual(['seerr', 'plex', 'k8plex']);
-    // Provenance-free projection: no sortOrder/source/tagId on the wire (D-05).
+    expect(apps.map((a) => a.slug)).toEqual(['seerr', 'plex', 'k8plex', 'plexops']);
+    // Provenance-free projection: no sortOrder on the wire (D-05).
     expect(Object.keys(apps[0]!).sort()).toEqual([
       'description',
       'icon',
@@ -58,41 +59,37 @@ describe('catalog.myApps — effective visible apps (R-10, D-05)', () => {
     ]);
   });
 
-  it('a direct admin grant adds a hidden app in sort_order position (R-15)', async () => {
-    const result = await adminCaller.users.grantApp({
-      userId: member.id,
-      appId: appIdBySlug.get('immich')!,
-    });
-    expect(result).toEqual({ changed: true });
-    const apps = await memberCaller.catalog.myApps();
-    expect(apps.map((a) => a.slug)).toEqual(['seerr', 'plex', 'k8plex', 'immich']);
-  });
-
-  it('a tag grant adds its bundle by reference, deduped against direct grants (R-21, AC-06)', async () => {
-    const { tagId } = await adminCaller.tags.create({
-      name: 'media-power',
-      description: 'paperless + tautulli bundle',
-      bundle: { appIds: [appIdBySlug.get('paperless')!, appIdBySlug.get('tautulli')!] },
-    });
-    await adminCaller.tags.applyToUser({ tagId, userId: member.id });
-    // Overlap: paperless is now ALSO granted directly — must appear exactly once.
-    await adminCaller.users.grantApp({ userId: member.id, appId: appIdBySlug.get('paperless')! });
-
-    const apps = await memberCaller.catalog.myApps();
+  it('an Admin sees every catalog app (implicit all-apps superuser)', async () => {
+    const apps = await adminCaller.catalog.myApps();
     expect(apps.map((a) => a.slug)).toEqual([
       'seerr',
       'plex',
       'k8plex',
+      'plexops',
       'immich',
+      'open-webui',
       'paperless',
       'tautulli',
     ]);
+  });
 
-    // AC-06: removing the tag removes exactly the tag-derived permissions — the
-    // direct paperless grant survives, tautulli disappears.
-    await adminCaller.tags.removeFromUser({ tagId, userId: member.id });
-    const after = await memberCaller.catalog.myApps();
-    expect(after.map((a) => a.slug)).toEqual(['seerr', 'plex', 'k8plex', 'immich', 'paperless']);
+  it('assigning the user a different role changes the visible set (setRole)', async () => {
+    const { roleId } = await adminCaller.roles.create({
+      name: 'media-power',
+      description: 'seerr + immich',
+      appIds: [appIdBySlug.get('seerr')!, appIdBySlug.get('immich')!],
+    });
+    await adminCaller.users.setRole({ userId: member.id, roleId });
+    expect((await memberCaller.catalog.myApps()).map((a) => a.slug)).toEqual(['seerr', 'immich']);
+
+    // Restore to Default so later tests observe the default set again.
+    await adminCaller.users.setRole({ userId: member.id, roleId: SEEDED_ROLE_IDS.default });
+    expect((await memberCaller.catalog.myApps()).map((a) => a.slug)).toEqual([
+      'seerr',
+      'plex',
+      'k8plex',
+      'plexops',
+    ]);
   });
 });
 
@@ -110,7 +107,6 @@ describe('catalog.adminList (R-11)', () => {
       'tautulli',
     ]);
     const seerr = rows[0]!;
-    expect(seerr.defaultVisible).toBe(true);
     expect(seerr.sortOrder).toBe(10);
     expect(typeof seerr.createdAt).toBe('string');
     expect(new Date(seerr.createdAt).toISOString()).toBe(seerr.createdAt);
@@ -137,33 +133,36 @@ describe('catalog.create / update / delete — audited domain writes (D-07/D-08)
 
   it('update patches only the provided fields (zod v4 partial keeps no defaults)', async () => {
     const id = appIdBySlug.get('jellyfin')!;
-    await adminCaller.catalog.update({ id, defaultVisible: true });
+    await adminCaller.catalog.update({ id, description: 'Edited desc' });
     let row = (await adminCaller.catalog.adminList()).find((r) => r.id === id)!;
-    expect(row.defaultVisible).toBe(true);
+    expect(row.description).toBe('Edited desc');
 
-    // Patching the name must NOT silently reset defaultVisible/icon/description.
+    // Patching the name must NOT silently reset description/icon.
     await adminCaller.catalog.update({ id, name: 'Jellyfin 2' });
     row = (await adminCaller.catalog.adminList()).find((r) => r.id === id)!;
     expect(row.name).toBe('Jellyfin 2');
-    expect(row.defaultVisible).toBe(true);
-    expect(row.description).toBe('Alt media server');
+    expect(row.description).toBe('Edited desc');
 
     const updates = await auditRows(testDb.db, 'update_app');
     expect(updates.length).toBeGreaterThanOrEqual(2);
     expect(updates.every((r) => r.actorId === admin.id)).toBe(true);
   });
 
-  it('delete audits delete_app and cascades grants away in the same transaction', async () => {
+  it('delete audits delete_app and cascades role grants away in the same transaction', async () => {
     const id = appIdBySlug.get('jellyfin')!;
-    await adminCaller.users.grantApp({ userId: member.id, appId: id });
+    const { roleId } = await adminCaller.roles.create({ name: 'jelly-role', appIds: [id] });
+    await adminCaller.users.setRole({ userId: member.id, roleId });
+    expect((await memberCaller.catalog.myApps()).map((a) => a.slug)).toContain('jellyfin');
+
     await adminCaller.catalog.delete({ id });
 
     const rows = await auditRows(testDb.db, 'delete_app');
     expect(rows).toHaveLength(1);
     expect(rows[0]!.detail).toMatchObject({ app_slug: 'jellyfin' });
 
-    const apps = await memberCaller.catalog.myApps();
-    expect(apps.map((a) => a.slug)).not.toContain('jellyfin');
+    // The role_app_grants row cascaded away — the role no longer grants the deleted app.
+    expect((await memberCaller.catalog.myApps()).map((a) => a.slug)).not.toContain('jellyfin');
+    await adminCaller.users.setRole({ userId: member.id, roleId: SEEDED_ROLE_IDS.default });
   });
 
   it('unknown target id → NOT_FOUND (D-06)', async () => {
@@ -173,48 +172,62 @@ describe('catalog.create / update / delete — audited domain writes (D-07/D-08)
   });
 });
 
-describe('R-14 URL validation — the DESIGN-003 rejection table (AC-04)', () => {
-  const rejected = [
-    'http://plex.haynesnetwork.com', // scheme
-    'https://sonarr.haynesops.com', // LAN-only ingress (CLAUDE.md rule 3)
-    'https://haynesnetwork.com', // bare apex
-    'https://evil.com/?x=.haynesnetwork.com', // host in query
-    'https://evil.haynesnetwork.com.attacker.io', // suffix attack
-    'https://a.haynesnetwork.com:8443', // port
-    'https://user:secret@a.haynesnetwork.com', // credentials
-    'https://192.168.4.20', // IP literal
+describe('catalog URL handling — normalize + validate, BRANCH-A: any host allowed (AC-04)', () => {
+  // Genuinely-invalid inputs: a non-http(s) scheme or embedded credentials. Layer 2 (the
+  // domain assert) rejects these; the lenient zod edge (layer 1) only guards a blank string.
+  const invalid = [
+    'javascript:alert(1)', // non-http(s) scheme
+    'mailto:x@y.com', // non-http(s) scheme
+    'https://user:secret@a.example.com', // credentials
   ];
-  const accepted = [
-    'https://plex.haynesnetwork.com',
-    'https://plex.haynesnetwork.com/web/index.html',
+  // raw input → canonical stored form (the normalizer's job). *.haynesops.com is now allowed.
+  const normalized: Array<[string, string]> = [
+    ['google.com', 'https://google.com'], // bare host → default https, no trailing slash
+    ['www.google.com', 'https://www.google.com'], // www kept
+    ['https://google.com', 'https://google.com'], // external https now ACCEPTED
+    ['sonarr.haynesops.com', 'https://sonarr.haynesops.com'], // ALLOWED — BRANCH-A
+    ['https://plex.haynesnetwork.com/web', 'https://plex.haynesnetwork.com/web'], // path kept
+    ['http://foo.internal:8080/x', 'http://foo.internal:8080/x'], // explicit scheme + port kept
   ];
 
-  it('layer 1 (zod edge): catalogUrlSchema rejects the table and accepts real hosts', () => {
-    for (const url of rejected) {
-      expect(catalogUrlSchema.safeParse(url).success, url).toBe(false);
+  it('layer 1 (zod edge): accepts any non-empty string, rejects only blank', () => {
+    expect(catalogUrlSchema.safeParse('').success).toBe(false);
+    expect(catalogUrlSchema.safeParse('   ').success).toBe(false); // trims to empty
+    for (const [raw] of normalized) {
+      expect(catalogUrlSchema.safeParse(raw).success, raw).toBe(true);
     }
-    for (const url of accepted) {
+    // Even eventually-invalid inputs survive layer 1 — the domain is authoritative.
+    for (const url of invalid) {
       expect(catalogUrlSchema.safeParse(url).success, url).toBe(true);
     }
   });
 
-  it('layer 1 via the procedure: catalog.create → BAD_REQUEST before any logic runs', async () => {
-    for (const url of rejected) {
-      await expect(
-        adminCaller.catalog.create({ slug: 'bad', name: 'Bad', url }),
-      ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+  it('layer 1 via the procedure: a blank URL → BAD_REQUEST before any logic runs', async () => {
+    await expect(
+      adminCaller.catalog.create({ slug: 'blank', name: 'Blank', url: '   ' }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+  });
+
+  it('stores the canonical normalized URL, not the raw input', async () => {
+    let n = 0;
+    for (const [raw, canonical] of normalized) {
+      const slug = `norm-${n++}`;
+      const { appId } = await adminCaller.catalog.create({ slug, name: 'Norm', url: raw });
+      const row = (await adminCaller.catalog.adminList()).find((r) => r.id === appId)!;
+      expect(row.url, raw).toBe(canonical);
+      await adminCaller.catalog.delete({ id: appId });
     }
   });
 
-  it('layer 2 (domain assert): createApp throws ForbiddenHostError for the same table', async () => {
-    for (const url of rejected) {
+  it('layer 2 (domain assert): createApp throws InvalidCatalogUrlError for invalid URLs', async () => {
+    for (const url of invalid) {
       await expect(
         createApp({ db: testDb.db, slug: 'bad', name: 'Bad', url, actorId: admin.id }),
-      ).rejects.toBeInstanceOf(ForbiddenHostError);
+      ).rejects.toBeInstanceOf(InvalidCatalogUrlError);
     }
   });
 
-  it('the typed error surfaces as appCode CATALOG_URL_FORBIDDEN_HOST on the wire (D-13)', async () => {
+  it('the typed error surfaces as appCode CATALOG_URL_INVALID on the wire (D-13)', async () => {
     // mapDomainErrors is exactly what catalog.create wraps its domain call in; feeding
     // the thrown TRPCError through the router's real errorFormatter (wireShape) is the
     // same path the HTTP adapter takes to build the client-visible shape.
@@ -225,7 +238,7 @@ describe('R-14 URL validation — the DESIGN-003 rejection table (AC-04)', () =>
           db: testDb.db,
           slug: 'bad',
           name: 'Bad',
-          url: 'https://sonarr.haynesops.com',
+          url: 'javascript:alert(1)',
           actorId: admin.id,
         }),
       );
@@ -233,21 +246,20 @@ describe('R-14 URL validation — the DESIGN-003 rejection table (AC-04)', () =>
       thrown = err;
     }
     expect(thrown).toMatchObject({ code: 'UNPROCESSABLE_CONTENT' });
-    expect((thrown as Error).cause).toBeInstanceOf(ForbiddenHostError);
+    expect((thrown as Error).cause).toBeInstanceOf(InvalidCatalogUrlError);
     const shape = wireShape(thrown, 'catalog.create');
-    expect(shape.data.appCode).toBe('CATALOG_URL_FORBIDDEN_HOST');
+    expect(shape.data.appCode).toBe('CATALOG_URL_INVALID');
     expect(shape.data.code).toBe('UNPROCESSABLE_CONTENT');
   });
 
   it('layer 2 catches what layer 1 misses, end to end through catalog.create', async () => {
-    // zod's URL check tolerates a query string glued to the hostname; the domain
-    // assert (mirroring the DB CHECK) requires a `/` first — so this input reaches
-    // layer 2 through the real procedure and comes back as the typed domain error.
+    // The lenient zod edge lets any non-empty string through; the domain assert rejects a
+    // non-http(s) scheme, so this input reaches layer 2 and returns the typed domain error.
     await expect(
       adminCaller.catalog.create({
         slug: 'sneaky',
         name: 'Sneaky',
-        url: 'https://sneaky.haynesnetwork.com?p=1',
+        url: 'javascript:alert(1)',
       }),
     ).rejects.toMatchObject({ code: 'UNPROCESSABLE_CONTENT' });
   });

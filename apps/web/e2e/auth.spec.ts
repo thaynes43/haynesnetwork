@@ -50,8 +50,11 @@ test.describe('AC-03 admin bootstrap', () => {
   }) => {
     await signIn(page, 'admin');
     await openUserMenu(page);
-    const adminLink = page.getByRole('menuitem', { name: 'Admin' });
+    const adminLink = page.getByRole('menuitem', { name: 'Admin settings' });
     await expect(adminLink).toBeVisible();
+    // The menu no longer carries Library or My fixes — those live in the top nav / Library tabs.
+    await expect(page.getByRole('menuitem', { name: 'Library' })).toHaveCount(0);
+    await expect(page.getByRole('menuitem', { name: 'My fixes' })).toHaveCount(0);
     await adminLink.click();
     await expect(page).toHaveURL(/\/admin$/);
     await expect(page.getByRole('heading', { name: 'Users' })).toBeVisible();
@@ -62,7 +65,7 @@ test.describe('AC-03 admin bootstrap', () => {
     await signOut(page);
     await signIn(page, 'admin');
     await openUserMenu(page);
-    await expect(page.getByRole('menuitem', { name: 'Admin' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Admin settings' })).toBeVisible();
   });
 
   test('member persona has no Admin link and /admin redirects away', async ({ page }) => {
@@ -70,7 +73,7 @@ test.describe('AC-03 admin bootstrap', () => {
     await openUserMenu(page);
     // Menu is open (Sign out is there) but no Admin entry exists for a Member.
     await expect(page.getByRole('menuitem', { name: 'Sign out' })).toBeVisible();
-    await expect(page.getByRole('menuitem', { name: 'Admin' })).toHaveCount(0);
+    await expect(page.getByRole('menuitem', { name: 'Admin settings' })).toHaveCount(0);
     // Server-side gate: direct navigation bounces to the dashboard.
     await page.goto('/admin');
     await expect(page).toHaveURL('/');

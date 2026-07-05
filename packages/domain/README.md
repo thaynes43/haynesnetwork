@@ -76,7 +76,8 @@ Pure / read-only helpers (no guarded writes): `effective-apps.ts` (`effectiveApp
 `family.ts` (`isEffectivelyFamily`), `media-children.ts` (`listMediaChildren`,
 `episodeLabel`, `guardArrCall`), `action-scope.ts` (`resolveSearchTarget`,
 `resolveFixTarget` — the shared Fix/Force-Search scope validators), `url-assert.ts`
-(`isUserFacingUrl`, `assertUserFacingUrl` — the R-14 `*.haynesnetwork.com` host assert),
+(`normalizeCatalogUrl`, `assertCatalogUrl` — normalize an arbitrary catalog URL to a canonical
+`http(s)` form; ADR-013 retired the old `*.haynesnetwork.com` host allowlist),
 `arr-clients.ts` (builds the read+write *arr client bundle).
 
 ---
@@ -130,8 +131,8 @@ may change).
 
 | Error class                   | `code` (appCode)               | Meaning                                                   |
 | ----------------------------- | ------------------------------ | --------------------------------------------------------- |
-| `ForbiddenHostError`          | `CATALOG_URL_FORBIDDEN_HOST`   | R-14: catalog URL is not a `*.haynesnetwork.com` host.    |
-| `TagNameConflictError`        | `TAG_NAME_CONFLICT`            | tag create/update hit an existing name.                   |
+| `InvalidCatalogUrlError`      | `CATALOG_URL_INVALID`          | catalog URL is not a well-formed `http(s)` URL (ADR-013). |
+| `RoleNameConflictError`       | `ROLE_NAME_CONFLICT`           | role create/rename hit an existing name (ADR-012).        |
 | `ReorderMismatchError`        | `REORDER_SET_MISMATCH`         | `reorderCatalog` got a stale/partial id set.              |
 | `ConcurrentTransitionError`   | `CONCURRENT_TRANSITION`        | optimistic-concurrency guard tripped in `transitionRole`. |
 | `NotFoundError`               | `NOT_FOUND`                    | target user/app/tag row does not exist.                   |

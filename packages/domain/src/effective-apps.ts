@@ -1,11 +1,11 @@
-import { appCatalog, effectiveAppGrants, type DbClient } from '@hnet/db';
+import { appCatalog, roleAppGrants, roles, users, type DbClient } from '@hnet/db';
 import { asc, eq } from 'drizzle-orm';
 import { resolveDb } from './db-client';
 
 /**
- * One effective grant row WITH provenance (R-22): a user granted an app directly and
- * via two tags yields three rows — the dashboard dedupes on appId, the admin UI shows
- * where each permission comes from.
+ * A catalog app a user can see. ADR-012: with one role per user there is a single
+ * provenance (the user's role), so there are no per-source/tag fields — every visible app
+ * comes from the role.
  */
 export interface EffectiveApp {
   appId: string;
@@ -15,35 +15,44 @@ export interface EffectiveApp {
   icon: string | null;
   url: string;
   sortOrder: number;
-  source: 'direct' | 'tag';
-  tagId: string | null;
 }
 
+const APP_COLUMNS = {
+  appId: appCatalog.id,
+  slug: appCatalog.slug,
+  name: appCatalog.name,
+  description: appCatalog.description,
+  icon: appCatalog.icon,
+  url: appCatalog.url,
+  sortOrder: appCatalog.sortOrder,
+} as const;
+
 /**
- * DESIGN-001 D-11 — typed wrapper over the effective_app_grants view (the canonical
- * union of direct grants and tag-derived grants), joined to the catalog and ordered by
- * sort_order, name. Note: default-visible tiles are a separate ∪ at the dashboard
- * query (AC-04) — this returns grants only.
+ * ADR-012 — the complete set of apps a user can open, ordered by sort_order, name. An
+ * Admin-role user sees EVERY catalog app (implicit all-apps — new apps included
+ * automatically); every other user sees exactly the apps their role grants
+ * (role_app_grants). Unlike the old model there is no separate default-visible union —
+ * "default visible" is now the Default role's app set.
  */
-export async function effectiveAppsForUser(
-  userId: string,
-  dbc?: DbClient,
-): Promise<EffectiveApp[]> {
+export async function effectiveAppsForUser(userId: string, dbc?: DbClient): Promise<EffectiveApp[]> {
   const q = resolveDb(dbc);
+
+  const [u] = await q
+    .select({ roleId: users.roleId, isAdmin: roles.isAdmin, grantsAll: roles.grantsAll })
+    .from(users)
+    .innerJoin(roles, eq(roles.id, users.roleId))
+    .where(eq(users.id, userId));
+  if (!u) return [];
+
+  // Admin (superuser) and any grants_all role see EVERY app — including ones added later.
+  if (u.isAdmin || u.grantsAll) {
+    return q.select(APP_COLUMNS).from(appCatalog).orderBy(asc(appCatalog.sortOrder), asc(appCatalog.name));
+  }
+
   return q
-    .select({
-      appId: effectiveAppGrants.appId,
-      slug: appCatalog.slug,
-      name: appCatalog.name,
-      description: appCatalog.description,
-      icon: appCatalog.icon,
-      url: appCatalog.url,
-      sortOrder: appCatalog.sortOrder,
-      source: effectiveAppGrants.source,
-      tagId: effectiveAppGrants.tagId,
-    })
-    .from(effectiveAppGrants)
-    .innerJoin(appCatalog, eq(appCatalog.id, effectiveAppGrants.appId))
-    .where(eq(effectiveAppGrants.userId, userId))
+    .select(APP_COLUMNS)
+    .from(roleAppGrants)
+    .innerJoin(appCatalog, eq(appCatalog.id, roleAppGrants.appId))
+    .where(eq(roleAppGrants.roleId, u.roleId))
     .orderBy(asc(appCatalog.sortOrder), asc(appCatalog.name));
 }
