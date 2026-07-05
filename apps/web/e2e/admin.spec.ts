@@ -16,28 +16,37 @@ test.describe('catalog CRUD (admin)', () => {
     await signIn(page, 'admin');
     await page.goto('/admin/catalog');
 
-    // Create (defaultVisible stays off so AC-04's "exactly the defaults" holds).
-    await page.getByLabel('Slug').fill('e2e-status');
-    await page.getByLabel('Name', { exact: true }).fill('E2E Status');
-    await page.getByLabel('Description').fill('Suite-created entry');
-    await page.getByLabel('URL').fill('https://status.haynesnetwork.com');
-    await page.getByRole('button', { name: 'Create entry' }).click();
+    // Create — the form lives in a Modal opened by "Add entry" (not a fixed bottom
+    // form). defaultVisible stays off so AC-04's "exactly the defaults" holds.
+    await page.getByRole('button', { name: 'Add entry' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Add entry' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByLabel('Slug').fill('e2e-status');
+    await dialog.getByLabel('Name', { exact: true }).fill('E2E Status');
+    await dialog.getByLabel('Description').fill('Suite-created entry');
+    await dialog.getByLabel('URL').fill('https://status.haynesnetwork.com');
+    await dialog.getByRole('button', { name: 'Create entry' }).click();
+    await expect(dialog).toBeHidden(); // modal closes on success
 
     const row = page.locator('.admin-table tbody tr').filter({ hasText: 'e2e-status' });
     await expect(row).toHaveCount(1);
     await expect(row).toContainText('https://status.haynesnetwork.com');
     await expect(row).toContainText('E2E Status');
 
-    // Edit — rename; slug is immutable and the row updates in place.
+    // Edit — the row expands into an inline editor IN PLACE (no bottom form); slug is
+    // immutable and the row updates on save.
     await row.getByRole('button', { name: 'Edit' }).click();
-    await expect(page.getByRole('heading', { name: 'Edit entry' })).toBeVisible();
-    await page.getByLabel('Name', { exact: true }).fill('E2E Status Page');
-    await page.getByRole('button', { name: 'Save changes' }).click();
-    await expect(row).toContainText('E2E Status Page');
+    const editRow = page.locator('.admin-table tbody tr.row-edit');
+    await expect(editRow).toBeVisible();
+    await expect(editRow).toContainText('slug is immutable');
+    await editRow.getByLabel('Name', { exact: true }).fill('E2E Status Page');
+    await editRow.getByRole('button', { name: 'Save changes' }).click();
+    const savedRow = page.locator('.admin-table tbody tr').filter({ hasText: 'e2e-status' });
+    await expect(savedRow).toContainText('E2E Status Page');
 
     // Delete (native confirm) — the row disappears.
     acceptNextDialog(page);
-    await row.getByRole('button', { name: 'Delete' }).click();
+    await savedRow.getByRole('button', { name: 'Delete' }).click();
     await expect(
       page.locator('.admin-table tbody tr').filter({ hasText: 'e2e-status' }),
     ).toHaveCount(0);
@@ -49,16 +58,20 @@ test.describe('catalog CRUD (admin)', () => {
     await signIn(page, 'admin');
     await page.goto('/admin/catalog');
 
-    await page.getByLabel('Slug').fill('e2e-sneaky');
-    await page.getByLabel('Name', { exact: true }).fill('Sneaky LAN App');
-    await page.getByLabel('URL').fill('https://sneaky.haynesops.com');
-    await page.getByRole('button', { name: 'Create entry' }).click();
+    await page.getByRole('button', { name: 'Add entry' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Add entry' });
+    await dialog.getByLabel('Slug').fill('e2e-sneaky');
+    await dialog.getByLabel('Name', { exact: true }).fill('Sneaky LAN App');
+    await dialog.getByLabel('URL').fill('https://sneaky.haynesops.com');
+    await dialog.getByRole('button', { name: 'Create entry' }).click();
 
-    await expect(page.locator('.field-error')).toBeVisible();
-    await expect(page.locator('.field-error')).toContainText(
+    // The live client check blocks submit; the modal stays open with the error.
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator('.field-error')).toBeVisible();
+    await expect(dialog.locator('.field-error')).toContainText(
       'Host must be a *.haynesnetwork.com subdomain',
     );
-    await expect(page.getByLabel('URL')).toHaveAttribute('aria-invalid', 'true');
+    await expect(dialog.getByLabel('URL')).toHaveAttribute('aria-invalid', 'true');
     // Nothing was created — haynesops never reaches the catalog.
     await expect(page.locator('.admin-table').getByText('e2e-sneaky')).toHaveCount(0);
     await expect(page.locator('.admin-table').getByText('haynesops.com')).toHaveCount(0);

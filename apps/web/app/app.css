@@ -779,6 +779,57 @@ input[aria-invalid='true'] {
   cursor: not-allowed;
 }
 
+/* ---------- Catalog admin: page header + edit-in-place row editor ---------- */
+.admin-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: var(--space);
+}
+.admin-head h1 {
+  margin: 0;
+}
+/* The create form lives in a Modal; the edit form expands the row in place. Both
+   reuse .admin-form's field styling but fill their container instead of the 480px cap. */
+.catalog-modal-form,
+.row-edit-form {
+  max-width: none;
+}
+.row-edit td {
+  background: var(--color-surface-2);
+}
+.row-edit__slug {
+  font-size: 12px;
+  margin: 0;
+}
+.row-edit__grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.row-edit__grid .field {
+  flex: 1 1 170px;
+}
+.row-edit__grid .field--url {
+  flex: 2 1 240px;
+}
+.row-edit__grid .field--desc,
+.row-edit__grid .check-row {
+  flex: 1 1 100%;
+}
+@media (max-width: 759px) {
+  /* In card mode the row-edit cell must not inherit the data-label flex/::before
+     treatment — it holds a full form, not a labelled value. */
+  .row-edit td {
+    display: block;
+  }
+  .row-edit td::before {
+    content: none;
+  }
+}
+
 /* Grant checklist with provenance chips (user detail). */
 .grant-list {
   list-style: none;
