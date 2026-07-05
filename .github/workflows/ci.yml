@@ -61,24 +61,20 @@ jobs:
       - run: pnpm build
 
   build-image:
-    # Hybrid trigger (donor lesson, todos-for-dues ci.yml): release-please's
-    # GITHUB_TOKEN-created releases don't fire downstream workflows, so we
-    # accept both release.published (PAT path) and manual tag re-push.
-    # PR and main-push events run the same job as a validation build (no push).
+    # VALIDATION build only — proves the Dockerfile builds on PRs and main. The image is
+    # PUBLISHED to GHCR by release-please.yml in the same run it cuts a release (release_created),
+    # using GITHUB_TOKEN — no PAT, no reliance on a tag/release event to trigger a job.
     # Guarded on the Dockerfile existing so pre-Task-10 tags don't fail CI.
     # NOT a required check — do not add to required contexts.
     if: >-
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
-      github.event_name == 'release' ||
       github.event_name == 'pull_request' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
     env:
-      # Push to GHCR only on tag/release events; everything else is build-only.
-      IMAGE_PUSH: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || github.event_name == 'release' }}
+      # Never publishes — release-please.yml owns the GHCR push. Build-only everywhere.
+      IMAGE_PUSH: 'false'
     steps:
       - uses: actions/checkout@v4
         with:
