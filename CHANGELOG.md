@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.4.0](https://github.com/thaynes43/haynesnetwork/compare/v0.3.1...v0.4.0) (2026-07-05)
+
+
+### Features
+
+* unified roles, arbitrary catalog URLs, inline confirm + drag-drop reorder, library sub-tabs ([#36](https://github.com/thaynes43/haynesnetwork/issues/36)) ([5cc7493](https://github.com/thaynes43/haynesnetwork/commit/5cc749338e65d2027690966db8a27340c28fa9f2))
+
+
+### Bug Fixes
+
+* **web:** admin catalog — edit-in-place rows + add-entry modal ([#35](https://github.com/thaynes43/haynesnetwork/issues/35)) ([40b43ee](https://github.com/thaynes43/haynesnetwork/commit/40b43ee49a84cf0d11fdc405f72460c7e38d65cb))
+
+
+### Documentation
+
+* retroactive documentation build-out + drift reconciliation ([#33](https://github.com/thaynes43/haynesnetwork/issues/33)) ([70105e9](https://github.com/thaynes43/haynesnetwork/commit/70105e97f661fa7ebafb492dca7c3c4358d6043f))
+
 ## [0.3.1](https://github.com/thaynes43/haynesnetwork/compare/v0.3.0...v0.3.1) (2026-07-04)
 
 
