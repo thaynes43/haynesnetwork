@@ -12,22 +12,29 @@ html,
 body {
   height: 100%;
   margin: 0;
+  /* D-05: the page never scrolls; content panes scroll internally. This must be on
+     html too (not just body) — with only body clipping, the documentElement still
+     reports the internally-scrolled <main>'s overflow as a phantom page scroll. */
+  overflow: hidden;
 }
 body {
   font-family: var(--font);
   color: var(--color-text);
   background: var(--color-bg);
-  /* D-05: the page (html/body) never scrolls; content panes scroll internally. */
-  overflow: hidden;
 }
 
 /* App = full-viewport column: fixed chrome rows (topbar, later) + a flexible
    content region. 100dvh, not vh — mobile URL-bar safe (D-05). */
 .app {
+  /* Pin the shell to the viewport (out of normal flow) so the document itself has no
+     scrollable content — <main> is the only scroll pane. Fixes the phantom page scroll
+     Chromium reports for a tall internally-scrolled flex column (AC-10, R-60). */
+  position: fixed;
+  inset: 0;
   display: flex;
   flex-direction: column;
-  height: 100dvh;
   min-height: 0;
+  overflow: hidden;
 }
 .app > main {
   flex: 1 1 auto;
@@ -230,8 +237,9 @@ body {
   font-size: 16px;
   white-space: nowrap;
 }
-/* Primary topbar nav (Phase 2): ghost links in the D-03 chrome language. Hidden on
-   narrow phones — the user menu carries the same destinations (D-06). */
+/* Primary topbar nav (Phase 2): ghost links in the D-03 chrome language. Shown at ALL
+   widths — it is the only route to Library since the user menu no longer carries it
+   (settings-only menu); the <600px rule below just tightens its spacing. */
 .topbar__nav {
   display: flex;
   align-items: center;
@@ -256,9 +264,16 @@ body {
   color: var(--color-text);
   background: var(--color-surface-2);
 }
+/* Phones once hid the top nav entirely (the user menu carried Library). The menu
+   no longer does, so Home + Library must stay reachable here — keep the row visible
+   and just tighten spacing/padding so both links stay legible at small widths. */
 @media (max-width: 599px) {
   .topbar__nav {
-    display: none;
+    gap: 0;
+  }
+  .topbar__nav a {
+    padding: 8px 8px;
+    font-size: 12px;
   }
 }
 .topbar__spacer {
@@ -348,8 +363,10 @@ body {
   flex: none;
   color: var(--color-text-muted);
 }
-@media (max-width: 480px) {
-  /* D-06: phone topbar collapse — avatar-initial only; brand text stays. */
+/* Below 600px the top nav (Home + Library) shows (it's the only route to Library now that
+   the user menu dropped it), so collapse the user-menu trigger to the avatar initial across
+   that whole band to keep the 56px topbar from overflowing. */
+@media (max-width: 599px) {
   .usermenu__name,
   .usermenu__caret {
     display: none;
@@ -594,10 +611,61 @@ body {
   color: var(--color-accent);
   text-decoration: underline;
 }
-.row-actions,
-.reorder {
+.row-actions {
   display: inline-flex;
   gap: 6px;
+}
+.drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: grab;
+  user-select: none;
+  border-radius: 8px;
+}
+.drag-handle:hover {
+  color: var(--color-text);
+  background: var(--color-surface-2);
+}
+.drag-handle:active {
+  cursor: grabbing;
+}
+.drag-handle:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+tr.dragging {
+  opacity: 0.4;
+}
+/* Zero-height drop indicator (no reflow, ADR-015): an accent line above the target row, or
+   below the last row when dropping at the end. In table layout the tds sit side-by-side so
+   the inset line reads as one continuous row edge. */
+tr.drop-before td {
+  box-shadow: inset 0 2px 0 0 var(--color-accent);
+}
+tr.drop-after td {
+  box-shadow: inset 0 -2px 0 0 var(--color-accent);
+}
+/* In the <760px stacked-card layout the tds stack vertically, so paint the edge line on just
+   the first cell of the card (not all four). */
+@media (max-width: 759px) {
+  tr.drop-before td,
+  tr.drop-after td {
+    box-shadow: none;
+  }
+  tr.drop-before td:first-child {
+    box-shadow: inset 0 2px 0 0 var(--color-accent);
+  }
+  tr.drop-after td:last-child {
+    box-shadow: inset 0 -2px 0 0 var(--color-accent);
+  }
 }
 .app-cell {
   display: inline-flex;
@@ -726,12 +794,53 @@ body {
   font-size: 11px;
   color: var(--color-text-muted);
 }
-.field-error {
-  font-size: 12px;
+/* Required-field marker (the * after a label). */
+.req {
   color: var(--color-danger);
+  font-weight: 700;
+}
+/* Prominent inline validation error: bold, danger-tinted pill with a warning glyph so it
+   can't be mistaken for the hint above it. */
+.field-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 40%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 4px 9px;
+}
+.field-error::before {
+  content: '⚠';
 }
 input[aria-invalid='true'] {
   border-color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 7%, var(--color-surface-2));
+}
+
+/* Structured catalog-URL entry: fixed https:// … .haynesnetwork.com affixes around a
+   subdomain field + an optional path (R-14 by construction). */
+.url-builder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.url-builder__affix {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.url-builder__sub {
+  flex: 1 1 120px;
+  min-width: 90px;
+}
+.url-builder__path {
+  flex: 1 1 100%;
 }
 .check-row {
   display: flex;
@@ -746,6 +855,11 @@ input[aria-invalid='true'] {
   height: 18px;
   accent-color: var(--color-accent);
   flex: none;
+}
+/* Per-app rows greyed while a role's "All apps" toggle is on (ADR-012). */
+.check-row[data-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .check-list {
   list-style: none;
@@ -777,6 +891,22 @@ input[aria-invalid='true'] {
 .btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+/* Inline arm-to-confirm (ADR-014/ADR-015): reserve for the WIDEST state (bold "Confirm?") so
+   the label swap never reflows neighbors. `.btn.confirm-btn` (0,2,0, later in source) beats
+   `.btn.sm`'s min-width:34px; nowrap forbids a height-growing wrap. Armed deepens red→strong. */
+.btn.confirm-btn {
+  min-width: 6.5rem;
+  white-space: nowrap;
+  text-align: center;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.confirm-btn.confirming {
+  font-weight: 700;
+  color: var(--color-danger-strong);
+  border-color: var(--color-danger-strong);
+  background: color-mix(in srgb, var(--color-danger-strong) 16%, transparent);
 }
 
 /* ---------- Catalog admin: page header + edit-in-place row editor ---------- */
@@ -903,6 +1033,39 @@ input[aria-invalid='true'] {
   font-size: 21px;
   font-weight: 600;
   margin: 4px 0 var(--space);
+}
+/* Library sub-tabs (Movies · TV · Music · My Fixes) — WAI-ARIA tablist styled as
+   underline tabs, mirroring the admin console's .admin-nav idiom: a flex row over a
+   1px border, each tab a borderless button carrying a 2px transparent bottom border
+   that fills with the nav-active token when selected/hovered. */
+.library-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: var(--space);
+  border-bottom: 1px solid var(--color-border);
+}
+.library-tabs [role='tab'] {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 10px 12px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+.library-tabs [role='tab']:hover {
+  color: var(--color-text);
+  border-bottom-color: var(--color-nav-active);
+}
+.library-tabs [role='tab'][aria-selected='true'] {
+  color: var(--color-text);
+  border-bottom-color: var(--color-nav-active);
 }
 .library-toolbar {
   display: flex;

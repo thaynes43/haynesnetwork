@@ -1,48 +1,21 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import {
-  applyTag,
-  createApp,
-  createTag,
-  effectiveAppsForUser,
-  grantApp,
-  isEffectivelyFamily,
-  removeTag,
-} from '../src/index';
+import { SEEDED_ROLE_IDS } from '@hnet/db/schema';
+import { assignRole, createApp, createRole, effectiveAppsForUser, updateRole } from '../src/index';
 import { bootMigratedDb, createUser, type TestDb } from './helpers';
 
-describe('effectiveAppsForUser over the effective_app_grants view (DESIGN-001 D-11, R-22, AC-06)', () => {
+describe('effectiveAppsForUser (ADR-012 — role-based, replaces the tri-union view)', () => {
   let t: TestDb;
-  let adminId: string;
-  let userId: string;
   let appA: string;
-  let appB: string;
-  let tagId: string;
 
   beforeAll(async () => {
     t = await bootMigratedDb();
-    adminId = (await createUser(t.db)).id;
-    userId = (await createUser(t.db)).id;
     ({ appId: appA } = await createApp({
       db: t.db,
-      slug: 'app-a',
-      name: 'App A',
-      url: 'https://app-a.haynesnetwork.com',
-      sortOrder: 110,
-      actorId: adminId,
-    }));
-    ({ appId: appB } = await createApp({
-      db: t.db,
-      slug: 'app-b',
-      name: 'App B',
-      url: 'https://app-b.haynesnetwork.com',
-      sortOrder: 120,
-      actorId: adminId,
-    }));
-    ({ tagId } = await createTag({
-      db: t.db,
-      name: 'bundle-b',
-      bundle: { appIds: [appB] },
-      actorId: adminId,
+      slug: 'extra',
+      name: 'Extra',
+      url: 'https://extra.haynesnetwork.com',
+      sortOrder: 200,
+      actorId: null,
     }));
   });
 
@@ -50,45 +23,53 @@ describe('effectiveAppsForUser over the effective_app_grants view (DESIGN-001 D-
     await t?.stop();
   });
 
-  it('returns the union of direct grants and tag grants, each with provenance', async () => {
-    await grantApp({ db: t.db, userId, appId: appA, actorId: adminId });
-    await applyTag({ db: t.db, tagId, userId, actorId: adminId });
-
-    const apps = await effectiveAppsForUser(userId, t.db);
-    expect(apps).toHaveLength(2);
-    expect(apps[0]).toMatchObject({ appId: appA, slug: 'app-a', source: 'direct', tagId: null });
-    expect(apps[1]).toMatchObject({ appId: appB, slug: 'app-b', source: 'tag', tagId });
+  it('a Default-role user sees exactly the Default role app set (seeded default-visible + plexops)', async () => {
+    const user = await createUser(t.db); // role_id defaults to Default
+    const apps = await effectiveAppsForUser(user.id, t.db);
+    expect(apps.map((a) => a.slug)).toEqual(['seerr', 'plex', 'k8plex', 'plexops']);
   });
 
-  it('keeps one row per provenance when direct and tag grants overlap (UNION ALL)', async () => {
-    await grantApp({ db: t.db, userId, appId: appB, actorId: adminId }); // now B is direct AND tagged
-    const apps = await effectiveAppsForUser(userId, t.db);
-    expect(apps).toHaveLength(3);
-    const bRows = apps.filter((a) => a.appId === appB);
-    expect(bRows.map((r) => r.source).sort()).toEqual(['direct', 'tag']);
-  });
-
-  it('removing a tag removes exactly the tag-derived rows, never direct grants (AC-06)', async () => {
-    await removeTag({ db: t.db, tagId, userId, actorId: adminId });
-    const apps = await effectiveAppsForUser(userId, t.db);
-    expect(apps).toHaveLength(2);
-    expect(apps.every((a) => a.source === 'direct')).toBe(true);
-    expect(apps.map((a) => a.appId).sort()).toEqual([appA, appB].sort());
-  });
-
-  it('isEffectivelyFamily: direct designation OR any family tag (D-11)', async () => {
-    expect(await isEffectivelyFamily(userId, t.db)).toBe(false);
-
-    const { tagId: familyTag } = await createTag({
+  it('an Admin-role user sees EVERY catalog app (implicit all-apps, including hidden/new ones)', async () => {
+    const admin = await createUser(t.db);
+    await assignRole({
       db: t.db,
-      name: 'family',
-      bundle: { appIds: [], isFamily: true },
-      actorId: adminId,
+      userId: admin.id,
+      toRoleId: SEEDED_ROLE_IDS.admin,
+      initiator: { id: null, kind: 'system' },
     });
-    await applyTag({ db: t.db, tagId: familyTag, userId, actorId: adminId });
-    expect(await isEffectivelyFamily(userId, t.db)).toBe(true);
+    const slugs = (await effectiveAppsForUser(admin.id, t.db)).map((a) => a.slug);
+    expect(slugs).toHaveLength(9); // 8 seeded + 'extra'
+    expect(slugs).toContain('extra');
+    expect(slugs).toContain('tautulli'); // a normally-hidden app — admins still see it
+  });
 
-    await removeTag({ db: t.db, tagId: familyTag, userId, actorId: adminId });
-    expect(await isEffectivelyFamily(userId, t.db)).toBe(false);
+  it('a custom role grants exactly its app set, and editing the role updates effective apps', async () => {
+    const user = await createUser(t.db);
+    const { roleId } = await createRole({ db: t.db, name: 'extra-only', appIds: [appA], actorId: null });
+    await assignRole({ db: t.db, userId: user.id, toRoleId: roleId, initiator: { id: null, kind: 'system' } });
+    expect((await effectiveAppsForUser(user.id, t.db)).map((a) => a.slug)).toEqual(['extra']);
+
+    await updateRole({ db: t.db, roleId, appIds: [], actorId: null }); // empty the set
+    expect(await effectiveAppsForUser(user.id, t.db)).toHaveLength(0);
+  });
+
+  // Runs LAST — it adds a catalog app, which would perturb the exact-count assertions above.
+  it('a grants_all role sees EVERY app — including one added after the role was created', async () => {
+    const user = await createUser(t.db);
+    const { roleId } = await createRole({ db: t.db, name: 'all-access', grantsAll: true, actorId: null });
+    await assignRole({ db: t.db, userId: user.id, toRoleId: roleId, initiator: { id: null, kind: 'system' } });
+    const before = (await effectiveAppsForUser(user.id, t.db)).map((a) => a.slug);
+    expect(before).toContain('extra');
+    expect(before).toContain('tautulli'); // grants_all includes normally-hidden apps
+    // A brand-new catalog app is auto-included without touching the role.
+    await createApp({
+      db: t.db,
+      slug: 'brand-new',
+      name: 'Brand New',
+      url: 'https://brand-new.haynesnetwork.com',
+      sortOrder: 300,
+      actorId: null,
+    });
+    expect((await effectiveAppsForUser(user.id, t.db)).map((a) => a.slug)).toContain('brand-new');
   });
 });

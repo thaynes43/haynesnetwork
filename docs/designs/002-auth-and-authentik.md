@@ -1,11 +1,18 @@
 # DESIGN-002: Auth wiring — Better Auth + Authentik OIDC; Authentik provisioning
 
 - **Status:** Accepted
-- **Last updated:** 2026-07-03
+- **Last updated:** 2026-07-05
 - **Satisfies:** PRD-001 R-01, R-02, R-03, R-04 (role-audit path); AC-01, AC-02, AC-03;
-  governed by ADR-002 (Authentik OIDC via Better Auth) and ADR-003 (Postgres 16 + Drizzle) —
-  both being written in parallel, referenced by number + title. Depends on DESIGN-001
-  (users/session/account/verification, user_role_transitions, `transitionRole`).
+  governed by ADR-002 (Authentik OIDC via Better Auth), ADR-003 (Postgres 16 + Drizzle), and
+  **ADR-012 (unified Role model)**. Depends on DESIGN-001
+  (users/session/account/verification, `roles`, `user_role_transitions`, `assignRole`).
+
+> **Amended by ADR-012 (2026-07-05):** role is no longer a Better Auth `additionalField`
+> enum. `users.role_id` is a FK (DB-defaulted to the seeded Default role), so `config.ts`
+> declares **no `role` additionalField** and `mapProfileToUser` sets no role. The session
+> extension grafts `role = { id, name, isAdmin }` (`users ⋈ roles`) — no `isFamily`. Bootstrap
+> promotes an allowlisted email to the **Admin role** via `assignRole` (not `transitionRole`).
+> D-02, D-05, D-06 below carry the amendments.
 
 ## Overview
 
@@ -41,12 +48,13 @@ and an operator can run Part B's steps top-to-bottom to provision Authentik and 
 ```
 packages/auth/
   src/
-    index.ts                  ← exports auth, oidcEnabled, getServerSession, getSessionExtension, getSessionRole, env helpers
+    index.ts                  ← exports auth, oidcEnabled, getServerSession, SessionUser, getSessionExtension, SessionRole, bootstrapAdminOnSignin, env helpers
+                                (ADR-012: getSessionRole removed — the session carries the role object)
     config.ts                 ← Better Auth instance (D-02)
     env.ts                    ← D-08 env contract: authEnv()/assertAuthEnv()/parseBootstrapAdminEmails
     hooks/
       bootstrap-admin.ts      ← BOOTSTRAP_ADMIN_EMAILS promotion (D-05)
-      session-extension.ts    ← getSessionExtension + getSessionRole (D-06)
+      session-extension.ts    ← getSessionExtension (+ SessionRole/SessionExtension types) (D-06; ADR-012: getSessionRole removed)
 apps/web/
   app/api/auth/[...all]/route.ts   ← Better Auth catch-all handler (D-07)
 ```
@@ -55,6 +63,13 @@ apps/web/
 Authentik authenticates is a Member, R-03.)
 
 ### D-02 `packages/auth/src/config.ts`
+
+> **Amended by ADR-012 (shipped):** two deletions from the block below. `mapProfileToUser`
+> **no longer sets `role`** (the `role: 'Member'` line is gone) — `users.role_id` DB-defaults
+> to the seeded Default role (R-03, DESIGN-001 D-02). And `user.additionalFields` **no longer
+> declares `role`** — the role rides the session via `getSessionExtension` (D-06,
+> `users ⋈ roles`), not as a Better Auth field. Everything else (provider, sessions, rate
+> limiting, bootstrap hook) is unchanged.
 
 ```ts
 import { betterAuth } from 'better-auth';
@@ -211,6 +226,19 @@ concrete redirect URIs are listed in D-11.
 
 ### D-05 `hooks/bootstrap-admin.ts` — `BOOTSTRAP_ADMIN_EMAILS` (R-02, AC-03)
 
+> **Amended by ADR-012 (shipped):** the promotion now routes through **`assignRole`** to the
+> **Admin role**, not `transitionRole` to a `'Admin'` enum:
+> ```ts
+> const adminRoleId = await getAdminRoleId(dbc);
+> await assignRole({ db: dbc, userId: user.id, toRoleId: adminRoleId,
+>                    initiator: { id: null, kind: 'system' }, note: 'BOOTSTRAP_ADMIN_EMAILS promotion' });
+> ```
+> `assignRole` is idempotent (already-Admin → no-op, no audit row, AC-03), writes the
+> `user_role_transitions` row in-tx, and its last-admin guard cannot fire on a promotion
+> *into* Admin. The pre-read + `expectedFromRole` guard is unnecessary (assignRole reads the
+> current role itself). The allowlist parse / never-throw-into-auth / retry-next-sign-in
+> behaviour below is unchanged. Original `transitionRole` version retained for history.
+
 Donor's `bootstrapAdminOnSignin` generalized from one email to a comma-separated,
 case-insensitive allowlist:
 
@@ -272,16 +300,18 @@ and the next sign-in retries the promotion.
 The **primary** server-side entry point is `getServerSession(headers)` (exported from
 `packages/auth/src/index.ts`): it calls Better Auth's `auth.api.getSession({ headers })` to
 resolve the DB-backed session, then grafts on a one-lookup **session extension** via
-`getSessionExtension(userId)`, which returns `{ role, displayName, isFamily }`. `isFamily` is
-the **effective** family flag — direct `users.is_family` OR any applied family tag, derived by
-`@hnet/domain`'s `isEffectivelyFamily` so consumers never re-derive it. `getSessionExtension`
-returns `null` when the user row has vanished between sign-in and read, and `getServerSession`
-propagates that as `null` (fail closed). DESIGN-003's tRPC context is the primary consumer.
+`getSessionExtension(userId)`.
 
-`getSessionRole(userId)` is retained as a **secondary** one-query helper returning
-`{ role, displayName }` (donor port) for the narrower case where only the role/display name is
-needed and the effective-family derivation is unwanted; unlike `getSessionExtension` it
-*throws* when the user row is gone. Both accept an optional `dbc` executor for tests.
+> **Amended by ADR-012 (shipped):** `getSessionExtension` returns
+> `{ role: { id, name, isAdmin }, displayName }` — the user's **single role**, joined
+> `users ⋈ roles` in one query. There is **no `isFamily`** (the family flag is gone) and
+> the old `getSessionRole` helper is **removed** — the session always carries the role
+> object, and admin gating switches on `role.isAdmin` (DESIGN-003 D-01, `adminProcedure`),
+> never a string literal. `SessionUser` is `{ id, email, displayName, role: { id, name, isAdmin } }`.
+
+`getSessionExtension` returns `null` when the user row has vanished between sign-in and read,
+and `getServerSession` propagates that as `null` (fail closed). It accepts an optional `dbc`
+executor for tests. DESIGN-003's tRPC context is the primary consumer.
 
 ### D-07 Catch-all route
 
@@ -355,6 +385,10 @@ the deployment design.
     |-- GET / (session cookie) ------------->|                                    |
     |<-- permissioned dashboard -------------|                                    |
 ```
+
+> **ADR-012 note:** in the diagram above, "find-or-create users row (Member, …)" is now the
+> **Default role** (`users.role_id` DB default, R-03), and the bootstrap step's "Member→Admin"
+> is `assignRole` to the **Admin role** with a `user_role_transitions` audit row (AC-03).
 
 PKCE note: generic-oauth's `pkce` option defaults to off in 1.6.23 (`codeVerifier` only sent
 when `pkce: true`); the confidential client + `state` parameter is the baseline. Enabling

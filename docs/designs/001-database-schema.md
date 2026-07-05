@@ -1,11 +1,22 @@
-# DESIGN-001: Database schema — Phase 1 (identity, catalog, tags, audit)
+# DESIGN-001: Database schema — Phase 1 (identity, catalog, roles, audit)
 
 - **Status:** Accepted
-- **Last updated:** 2026-07-03
+- **Last updated:** 2026-07-05
 - **Satisfies:** PRD-001 R-02, R-03, R-04 (persistence layer), R-10..R-15, R-20..R-22, R-62;
   groundwork for R-25..R-28 (Appendix A sketch only); governed by ADR-002 (Authentik OIDC via
-  Better Auth) and ADR-003 (Postgres 16 + Drizzle) — both being written in parallel, referenced
-  by number + title.
+  Better Auth), ADR-003 (Postgres 16 + Drizzle), and **ADR-012 (unified Role model)**.
+
+> **Amended by ADR-012 (2026-07-05) — the entitlement model changed.** The `Member`/`Admin`
+> role enum, tags (`tags`/`tag_app_grants`/`user_tags`), per-user grants (`user_app_grants`),
+> the family flag (`users.is_family`/`tags.is_family`), `app_catalog.default_visible`, and the
+> `effective_app_grants` VIEW are **all gone**. In their place: a `roles` table (incl. a
+> `grants_all` "All apps" flag) + `role_app_grants` (an editable app set per role),
+> `users.role_id` (exactly one role per user, DB-defaulted to
+> the seeded Default role), a recreated `user_role_transitions` keyed on `from_role_id`/`to_role_id`,
+> and `permission_audit.role_id` with the action set `create_role`/`update_role`/`delete_role` +
+> `create_app`/`update_app`/`delete_app`. Migration **0007_unified_roles.sql** is a clean cut
+> (staging data is disposable pre-1.0). D-06..D-09 and D-11 below are **superseded**; D-02, D-04,
+> D-05, D-10, D-12, D-13 carry inline amendments. See ADR-012 and DDD-001 T-02..T-05, T-46..T-48.
 
 ## Overview
 
@@ -50,22 +61,36 @@ Postgres 16, and every cited PRD requirement is satisfied at the persistence lay
    `index.ts` barrel); migrations in `packages/db/migrations/`.
 
 ```
-packages/db/src/schema/
-  enums.ts                    (ROLES, ROLE_INITIATOR_KINDS, PERMISSION_AUDIT_ACTIONS)
-  users.ts                    (D-02)
+packages/db/src/schema/    (as shipped — ADR-012)
+  enums.ts                    (ROLE_INITIATOR_KINDS, PERMISSION_AUDIT_ACTIONS — ROLES removed)
+  users.ts                    (D-02 — role_id FK; role enum + is_family dropped)
   session.ts account.ts verification.ts   (D-03 — Better Auth)
-  user-role-transitions.ts    (D-04)
-  app-catalog.ts              (D-05)
-  user-app-grants.ts          (D-06)
-  tags.ts                     (D-07)
-  tag-app-grants.ts           (D-08)
-  user-tags.ts                (D-09)
-  permission-audit.ts         (D-10)
-  effective-app-grants.ts     (D-11 — pgView)
+  roles.ts                    (ADR-012 — roles + SEEDED_ROLE_IDS)
+  role-app-grants.ts          (ADR-012 — a role's editable app set)
+  user-role-transitions.ts    (D-04 — recreated with from_role_id/to_role_id)
+  app-catalog.ts              (D-05 — default_visible dropped)
+  permission-audit.ts         (D-10 — role_id FK, new action set)
   index.ts                    (barrel)
+  # REMOVED by ADR-012 (migration 0007): user-app-grants.ts (D-06), tags.ts (D-07),
+  #   tag-app-grants.ts (D-08), user-tags.ts (D-09), effective-app-grants.ts (D-11 pgView)
 ```
 
 ### D-02 `enums.ts` + `users` (Better Auth user model)
+
+> **Amended by ADR-012 (shipped):** `ROLES` is **removed** — roles are DB-backed rows
+> (`roles` table), not an enum. `PERMISSION_AUDIT_ACTIONS` is now
+> `['create_role','update_role','delete_role','create_app','update_app','delete_app']`
+> (the tag/grant/family actions are gone). `users` **drops `role` and `is_family`** and
+> **adds `role_id`**:
+> ```ts
+> // users.ts (shipped) — one role per user, DB-defaulted to the seeded Default role.
+> roleId: uuid('role_id').notNull()
+>   .default(sql.raw(`'${SEEDED_ROLE_IDS.default}'::uuid`))   // fixed id: a column DEFAULT can't be a subquery
+>   .references(() => roles.id, { onDelete: 'restrict' }),    // deleteRole reassigns members to Default first
+> ```
+> The DB default is what lands every Better-Auth-created user in the Default role with no
+> app-layer step. `ROLE_INITIATOR_KINDS` (`['system','admin']`) is unchanged. The original
+> enum-based design below is retained for history.
 
 ```ts
 // enums.ts
@@ -139,6 +164,12 @@ exist; declaring it costs one empty table and avoids fighting the library.
 
 ### D-04 `user_role_transitions` — role-change audit (R-02, R-04)
 
+> **Amended by ADR-012 (shipped):** migration 0007 **drops and recreates** this table keyed on
+> roles: `from_role_id` (nullable — null on a user's first assignment) and `to_role_id`, both
+> `uuid references roles(id) ON DELETE SET NULL` (audit history outlives a deleted role); the
+> old `from_role`/`to_role` text columns are gone. Written exclusively by `assignRole` (D-16).
+> `initiator_kind` still has no `'user'` value. Original text-column design retained below.
+
 ```ts
 export const userRoleTransitions = pgTable(
   'user_role_transitions',
@@ -167,6 +198,13 @@ initiator".
 
 ### D-05 `app_catalog` — DB-backed, admin-editable catalog (R-11, R-14)
 
+> **Amended by ADR-012 (shipped):** the `default_visible` column is **dropped** (migration
+> 0007) — "default visible" is now the Default role's app set (D-16). Migration 0007 seeds the
+> Default role's `role_app_grants` by **explicit slug** (`seerr`/`plex`/`k8plex`/`plexops`),
+> then drops the column. The URL CHECK (R-14) and everything else here are unchanged. The
+> dashboard visibility rule "default_visible ∪ effective grants" below is superseded by
+> `effectiveAppsForUser` (D-16).
+
 ```ts
 export const appCatalog = pgTable(
   'app_catalog',
@@ -175,7 +213,7 @@ export const appCatalog = pgTable(
     slug: text('slug').notNull().unique(),                 // stable machine key, e.g. 'seerr'
     name: text('name').notNull(),                          // tile title
     description: text('description'),                      // tile subtitle
-    url: text('url').notNull(),                            // R-14 CHECK below
+    url: text('url').notNull(),                            // ADR-013: any http(s) URL; scheme CHECK below
     icon: text('icon'),                                    // key into the inline-SVG ICON_KEYS registry in packages/ui (no external fetches; themable via CSS tokens; see DESIGN-003 D-10)
     defaultVisible: boolean('default_visible').notNull().default(false), // R-12 vs R-13
     sortOrder: integer('sort_order').notNull().default(0), // R-11 display order
@@ -183,26 +221,41 @@ export const appCatalog = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    check('app_catalog_url_haynesnetwork_only',
-      sql`${table.url} ~ '^https://[a-z0-9.-]+\\.haynesnetwork\\.com(/.*)?$'`),
+    check('app_catalog_url_scheme',                        // ADR-013: scheme-only backstop
+      sql`${table.url} ~ '^https?://'`),
   ],
 );
 ```
 
-**The URL CHECK is the DB-level enforcement of R-14** (never link users to
-`*.haynesops.com` — CLAUDE.md rule 3). Note the regex is end-anchored with `(/.*)?$`: the
-sketch form `^https://[a-z0-9.-]+\.haynesnetwork\.com` (prefix-only) would accept
-`https://evil.haynesnetwork.com.attacker.io` because nothing constrains what follows `.com`.
-The anchored form requires the hostname to *end* in `.haynesnetwork.com`, optionally followed
-by a path. The app layer (Zod on the catalog tRPC mutations) validates first with a friendly
-error; the CHECK is the backstop that survives any future code path. Every catalog write is
-also audited (`create_app`/`update_app`/`delete_app` in D-10) per R-04's spirit — a URL edit
-is a permission-relevant change.
+> **Amended by ADR-013 (2026-07-05): the host CHECK is relaxed to a scheme-only backstop.**
+> The owner reversed R-14 — the catalog now accepts **any well-formed `http(s)` URL**
+> (`*.haynesops.com`, external hosts, ports, IP literals all allowed). Migration **0008
+> (`0008_relax_catalog_url.sql`)** drops `app_catalog_url_haynesnetwork_only` and adds
+> `app_catalog_url_scheme` (`url ~ '^https?://'`). Stored values are always the domain's
+> canonical normalized form, so the scheme predicate always holds; it exists only to reject a
+> non-URL slipping in by a future code path. The superseded R-14 CHECK is described below for
+> history.
+
+**The URL CHECK is now a scheme-only backstop** (`^https?://`): stored URLs are canonical
+`http(s)` URLs produced by the domain's `normalizeCatalogUrl` (DESIGN-003 D-04). The app
+layer (the domain writer, via `assertCatalogUrl`) is authoritative — it normalizes the raw
+input and throws `InvalidCatalogUrlError` on anything that is not a well-formed http(s) URL;
+the CHECK is the last-ditch guard against a non-URL from a future code path. Every catalog
+write is also audited (`create_app`/`update_app`/`delete_app` in D-10) per R-04's spirit — a
+URL edit is a permission-relevant change.
+
+_(Superseded R-14 form, for history: `check('app_catalog_url_haynesnetwork_only', url ~
+'^https://[a-z0-9.-]+\.haynesnetwork\.com(/.*)?$')` — end-anchored so the host had to *end*
+in `.haynesnetwork.com`. Removed by migration 0008.)_
 
 Dashboard query (AC-04): visible tiles = `default_visible` entries ∪ effective grants (D-11),
 ordered by `sort_order, name`.
 
 ### D-06 `user_app_grants` — direct per-user grants (R-15)
+
+> **SUPERSEDED by ADR-012.** Per-user grants are removed (migration 0007 drops this table).
+> App access is role-based: an app is granted to a *role* via `role_app_grants` (D-16), and
+> a user gets it by being assigned that role. Original design retained below for history.
 
 ```ts
 export const userAppGrants = pgTable(
@@ -228,6 +281,9 @@ jsonb snapshot — D-10). Grant/revoke goes through domain helpers that write th
 
 ### D-07 `tags` — permission bundles (R-20)
 
+> **SUPERSEDED by ADR-012.** Tags are removed (migration 0007 drops `tags`). The Role itself
+> (D-16) is now the permission bundle — a named, admin-managed app set. Retained for history.
+
 ```ts
 export const tags = pgTable('tags', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -246,6 +302,9 @@ simply `is_family = true` + family-library grants once Phase 3 lands.
 
 ### D-08 `tag_app_grants` — apps bundled into a tag (R-20)
 
+> **SUPERSEDED by ADR-012.** Replaced by `role_app_grants` (D-16); migration 0007 drops this
+> table. Retained for history.
+
 ```ts
 export const tagAppGrants = pgTable(
   'tag_app_grants',
@@ -262,6 +321,10 @@ export const tagAppGrants = pgTable(
 Editing a tag's bundle audits as `update_tag` with the delta in `permission_audit.detail`.
 
 ### D-09 `user_tags` — tag applications (R-21)
+
+> **SUPERSEDED by ADR-012.** With one role per user there is no tag-application join; a user's
+> role is `users.role_id` and assignments are audited in `user_role_transitions` (D-04).
+> Migration 0007 drops this table. Retained for history.
 
 ```ts
 export const userTags = pgTable(
@@ -285,6 +348,13 @@ Applying/removing a tag never copies rows into `user_app_grants` — tag permiss
 permissions and nothing else (AC-06).
 
 ### D-10 `permission_audit` — generic audit log (R-04)
+
+> **Amended by ADR-012 (shipped):** the `tag_id` FK is replaced by `role_id`
+> (`references(roles.id, { onDelete: 'set null' })`), and the `action` CHECK is now
+> `ARRAY['create_role','update_role','delete_role','create_app','update_app','delete_app']`.
+> The append-only / SET-NULL / `detail`-snapshot rules below are unchanged; role management
+> writes `create_role`/`update_role`/`delete_role` here, while **role assignment** writes
+> `user_role_transitions` (D-04), not this table.
 
 ```ts
 export const permissionAudit = pgTable(
@@ -328,6 +398,13 @@ Rules:
 
 ### D-11 Effective permissions derivation (R-22, AC-06)
 
+> **SUPERSEDED by ADR-012.** The `effective_app_grants` VIEW is **dropped** (migration 0007).
+> There is a single provenance now — the user's role — so no view/union is needed: effective
+> apps = the role's `role_app_grants` (or ALL catalog apps if `roles.is_admin`), computed in
+> `effectiveAppsForUser` (`packages/domain/src/effective-apps.ts`, D-16). "Effective family"
+> is gone with `users.is_family`; Phase-3 family gating attaches to a role attribute
+> (ADR-012 C-09). Original view-based design retained below for history.
+
 **Decision: a SQL view + a typed wrapper in `packages/domain`** (not domain-query-only). The
 view gives one canonical definition queryable from `psql` during ops/debugging; the domain
 wrapper gives the app typed access. Declared as a Drizzle `pgView().existing()` in
@@ -365,7 +442,74 @@ CREATE VIEW effective_app_grants AS
 - No materialization: the whole dataset is household-scale; derive-on-read is O(rows-you-can-
   count-on-fingers) and can never go stale.
 
+### D-16 Unified Role model (ADR-012, shipped) — `roles`, `role_app_grants`, effective apps
+
+The two tables that replace D-06..D-09 and D-11:
+
+```ts
+// roles.ts — admin-managed named group with an editable app set; one per user.
+export const roles = pgTable('roles', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull().unique(),
+  description: text('description'),
+  isAdmin: boolean('is_admin').notNull().default(false),     // superuser — implicit ALL apps
+  isDefault: boolean('is_default').notNull().default(false), // the new-user role
+  grantsAll: boolean('grants_all').notNull().default(false), // "All apps": every app (incl. future) for a non-admin role; holds NO role_app_grants rows
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt, updatedAt,
+}, (t) => [
+  check('roles_not_admin_and_default', sql`NOT (${t.isAdmin} AND ${t.isDefault})`),
+  uniqueIndex('roles_single_admin_idx').on(t.isAdmin).where(sql`${t.isAdmin}`),      // at most one Admin role
+  uniqueIndex('roles_single_default_idx').on(t.isDefault).where(sql`${t.isDefault}`),// at most one Default role
+]);
+
+// role-app-grants.ts — a role's app set. Composite PK; both FKs cascade.
+export const roleAppGrants = pgTable('role_app_grants', {
+  roleId: uuid('role_id').notNull().references(() => roles.id, { onDelete: 'cascade' }),
+  appId:  uuid('app_id').notNull().references(() => appCatalog.id, { onDelete: 'cascade' }),
+}, (t) => [primaryKey({ columns: [t.roleId, t.appId] })]);
+```
+
+- **Two seeded system roles, fixed ids** (`SEEDED_ROLE_IDS` in `roles.ts`): **Admin**
+  (`is_admin`, id `2222…`) — superuser, holds **no** `role_app_grants` rows (implicit
+  all-apps), immutable; and **Default** (`is_default`, id `1111…`) — the new-user role, its
+  app set seeded to **seerr/plex/k8plex/plexops** (D-14), editable, un-renamable/undeletable.
+  Fixed ids because `users.role_id`'s DB DEFAULT (D-02) can't be a subquery. Migration 0007
+  also seeds a **third, normal role `Family`** (fixed id `3333…`; `is_admin`/`is_default`/
+  `grants_all` all false) granting every app **except** `tautulli` — a starter example,
+  editable/deletable like any admin-created role (ADR-012 C-12).
+- **`grants_all`** (shipped after ADR-012, `roles.grants_all` boolean, default false): grants
+  a **non-admin** role EVERY catalog app — including ones added later — with **no**
+  `role_app_grants` rows (Admin's all-apps reach without console access). `createRole`/
+  `updateRole` take `grantsAll` (true clears the explicit app set); surfaced as the "All apps"
+  toggle on `/admin/roles` (DESIGN-004 D-11).
+- **Effective apps** (`effectiveAppsForUser(userId)` in `packages/domain/src/effective-apps.ts`):
+  load `users.role_id ⋈ roles.{is_admin, grants_all}`; if **`is_admin OR grants_all`** → every
+  `app_catalog` row (new apps included automatically); else
+  `role_app_grants ⋈ app_catalog WHERE role_id = …`. Ordered by `sort_order, name`.
+  `EffectiveApp` carries no source/provenance field (single provenance).
+- **The `roles` writers** (`createRole`/`updateRole`/`deleteRole`/`assignRole`) are the D-12
+  single-writers; `assignRole` holds the last-admin guard and the optimistic-concurrency guard.
+
 ### D-12 The audit-in-same-transaction rule (R-04)
+
+> **Amended by ADR-012 (shipped):** the guarded tables and helpers changed — the writer table
+> below is superseded by this one. The rule itself (mutation + audit row in one
+> `db.transaction`, enforced by the `packages/domain` single-writer convention + the
+> no-direct-state-writes guard test) is unchanged.
+>
+> | Helper (shipped) | Mutates | Audits |
+> |------------------|---------|--------|
+> | `assignRole` | `users.role_id` | `user_role_transitions` (from/to role_id) |
+> | `createRole` / `updateRole` / `deleteRole` | `roles`, `role_app_grants` | `permission_audit` (`create_role`/`update_role`/`delete_role`) |
+> | `createApp` / `updateApp` / `deleteApp` | `app_catalog` | `permission_audit` (`create_app`/`update_app`/`delete_app`) |
+>
+> The guard test now guards `users`, `roles`, `role_app_grants`, `permission_audit`,
+> `user_role_transitions`, `app_catalog` (+ media tables); `tags`/`tag_app_grants`/`user_tags`/
+> `user_app_grants` are removed. `assignRole` keeps the donor's optimistic-concurrency guard
+> (`UPDATE … WHERE role_id = current RETURNING`; zero rows → `ConcurrentTransitionError`) and
+> adds the last-admin guard (`LastAdminError`) — a zero-Admin state is also recoverable via the
+> bootstrap allowlist (R-02).
 
 Every mutation of `users.role`, `users.is_family`, `user_app_grants`, `tags`,
 `tag_app_grants`, `user_tags`, or `app_catalog` **must** write its audit row
@@ -397,13 +541,21 @@ Drizzle convention, `packages/db/migrations/`, 4-digit sequence:
 | `0001_init.sql` | All D-02..D-10 tables, CHECKs, indexes, FKs, and the D-11 view | `drizzle-kit generate` (reviewer diffs against this doc) |
 | `0002_seed_app_catalog.sql` | Catalog seed (D-14) | hand-written |
 
-> **Migrations continue past Phase 1.** The set now runs through `0006`
+> **Migrations continue past Phase 1.** The set now runs through `0007`
 > (confirmed in `packages/db/migrations/meta/_journal.json`): `0003_media_ledger`,
 > `0004_search_requested_event`, `0005_unaccent_search`, `0006_fix_target_scope`
 > are the Phase 2 media-ledger + fix/force-search additions (DESIGN-005 and
-> ADR-011). The IDs above are stable and never renumbered. For the add-a-migration
-> procedure (generate, hand-audit view/DDL, verify against embedded PG16) see
-> `packages/db/README.md`.
+> ADR-011), and **`0007_unified_roles`** is the ADR-012 clean cut — it creates
+> `roles` (incl. the `grants_all` column) + `role_app_grants`, seeds **three** roles at
+> fixed ids — Admin and Default (system-locked) plus a normal **`Family`** role — with
+> explicit app sets (Default → `seerr`/`plex`/`k8plex`/`plexops`; Family → every app
+> except `tautulli`; Admin → none/implicit-all), adds+backfills `users.role_id`
+> (Admin users → Admin role, everyone else → Default), recreates `user_role_transitions`
+> on role_id, swaps `permission_audit.tag_id`→`role_id` + the new action CHECK, and
+> **drops** `effective_app_grants` (view), `user_tags`, `tag_app_grants`, `user_app_grants`,
+> `tags`, `app_catalog.default_visible`, `users.role`, and `users.is_family`. The IDs above
+> are stable and never renumbered. For the add-a-migration procedure (generate, hand-audit
+> view/DDL, verify against embedded PG16) see `packages/db/README.md`.
 
 No extensions migration in `0001` (D-01 item 2); Postgres extensions that later
 tables need (e.g. `unaccent` in `0005`) ship in their own migration. Migrations run
@@ -411,6 +563,13 @@ as an init container in-cluster (R-62) and via `pnpm --filter @hnet/db migrate`
 locally/tests.
 
 ### D-14 Seed data — `0002_seed_app_catalog.sql` (R-12, R-13)
+
+> **ADR-012 note:** `0002` still seeds `default_visible` (it runs before `0007`). Migration
+> `0007_unified_roles` then seeds the **Default role's** `role_app_grants` by explicit slug —
+> `seerr`/`plex`/`k8plex`/**`plexops`** (PlexOps added: basic users get it too) — and the
+> **`Family` role's** grants as every app **except** `tautulli`, before dropping the
+> `default_visible` column (D-05/D-16). Post-0007, what basic users see is edited on the
+> Default role, not per-app.
 
 **Decision: seed only when `app_catalog` is empty** (guard: `WHERE NOT EXISTS (SELECT 1 FROM
 app_catalog)`), not per-row UPSERT. Rationale: the catalog is admin-owned data after first
@@ -487,9 +646,11 @@ Docker in this WSL distro — CLAUDE.md rule 1):
 - **Constraints:** `users_role_enum`, `permission_audit_action_enum`,
   `user_role_transitions_initiator_kind_enum` reject bad values (SQLSTATE 23514); UNIQUE
   pairs reject duplicates (23505); FK cascades/SET NULLs behave as declared.
-- **R-14 CHECK (D-05):** rejects `https://sonarr.haynesops.com/...`, `http://...`,
-  `https://evil.haynesnetwork.com.attacker.io/`; accepts `https://plex.haynesnetwork.com` and
-  `https://plex.haynesnetwork.com/web/index.html`.
+- **URL scheme CHECK (D-05, ADR-013 `app_catalog_url_scheme`):** accepts any `http(s)` URL —
+  `https://plex.haynesnetwork.com`, `https://plex.haynesnetwork.com/web/index.html`,
+  `https://sonarr.haynesops.com/`, `http://foo.internal:8080/x`, external hosts; rejects only
+  scheme-less / non-http(s) values (e.g. `mailto:x@y.com`, a bare `example.com`) — which the
+  domain never stores anyway (it normalizes first).
 - **View (D-11):** direct-only, tag-only, direct+tag (distinct provenance rows), two tags
   granting the same app (two rows); removing a tag removes only its rows (AC-06); dashboard
   query returns default-visible ∪ granted (AC-04/AC-05).

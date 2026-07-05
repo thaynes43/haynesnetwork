@@ -2,24 +2,25 @@
 
 // DESIGN-004 D-11 — /admin/catalog: entries table (cards <760px via data-label).
 // Add opens a Modal with the create form; Edit expands the row IN PLACE into an inline
-// editor (no shared bottom form). URL validated live against R-14 (server stays
-// authoritative — appCode errors surfaced), defaultVisible toggle, icon picker from
-// ICON_KEYS, up/down-button reorder → catalog.reorder with the complete id set (D-06).
+// editor (no shared bottom form). URL is a free-form http(s) field validated live
+// (server stays authoritative — appCode errors surfaced), icon picker from
+// ICON_KEYS, drag-and-drop + keyboard (arrow-keys on the grip) reorder → catalog.reorder
+// with the complete id set (D-06); optimistic so the drop feels instant (ADR-015).
 
 import { useState, type FormEvent } from 'react';
-import { ICON_KEYS, AppIcon, isIconKey } from '@hnet/ui';
+import { ICON_KEYS, AppIcon, isIconKey, ConfirmButton, useReorderDnD } from '@hnet/ui';
 import { Modal } from '@/components/modal';
 import { trpc } from '@/lib/trpc-client';
 import { describeMutationError } from '@/lib/app-error';
-import { catalogUrlError } from '@/lib/catalog-url';
+import { catalogUrlError, normalizeCatalogUrl } from '@/lib/catalog-url';
 
 interface FormState {
   slug: string;
   name: string;
   description: string;
   icon: string; // '' = none (null on the wire)
+  // Free-form URL: any http(s) URL; bare hosts get https:// (BRANCH-A — no host rules).
   url: string;
-  defaultVisible: boolean;
 }
 
 const EMPTY_FORM: FormState = {
@@ -28,8 +29,16 @@ const EMPTY_FORM: FormState = {
   description: '',
   icon: '',
   url: '',
-  defaultVisible: false,
 };
+
+// Slugs are auto-formatted as the user types (lowercase, spaces → dashes, other chars dropped)
+// so a "Test" or "My App" never trips a vague format error — it just becomes test / my-app.
+function toSlug(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '');
+}
 
 export default function AdminCatalogPage() {
   const utils = trpc.useUtils();
@@ -37,6 +46,7 @@ export default function AdminCatalogPage() {
 
   // Three independent error surfaces so a modal/inline/row error never bleeds across:
   const [error, setError] = useState<string | null>(null); // top-level (delete/reorder)
+  const [reorderMsg, setReorderMsg] = useState(''); // aria-live announce for keyboard moves
   const [adding, setAdding] = useState(false);
   const [addForm, setAddForm] = useState<FormState>(EMPTY_FORM);
   const [addUrlTouched, setAddUrlTouched] = useState(false);
@@ -71,16 +81,39 @@ export default function AdminCatalogPage() {
     onSettled: invalidate,
   });
   const reorder = trpc.catalog.reorder.useMutation({
-    onError: (err) => setError(describeMutationError(err)),
+    // Optimistic: apply the new order to the cache immediately so the drop never snaps back.
+    onMutate: async ({ orderedIds }) => {
+      await utils.catalog.adminList.cancel();
+      const prev = utils.catalog.adminList.getData();
+      utils.catalog.adminList.setData(undefined, (old) => {
+        if (!old) return old;
+        const byId = new Map(old.map((e) => [e.id, e]));
+        const next = orderedIds.map((id) => byId.get(id)).filter((e): e is (typeof old)[number] => Boolean(e));
+        // Append any not named in orderedIds (defensive; server has the full set).
+        for (const e of old) if (!orderedIds.includes(e.id)) next.push(e);
+        return next;
+      });
+      return { prev };
+    },
+    onError: (err, _vars, ctx) => {
+      if (ctx?.prev) utils.catalog.adminList.setData(undefined, ctx.prev);
+      setError(describeMutationError(err));
+    },
     onSuccess: () => setError(null),
     onSettled: invalidate,
   });
   // Table controls (reorder/delete) lock during any write so the id set can't race.
   const busy = create.isPending || update.isPending || del.isPending || reorder.isPending;
+  // Reorder stays interactive during its OWN optimistic mutation — otherwise disabling the
+  // focused grip mid-move blurs it and breaks keyboard chaining. Only a different write or an
+  // open inline editor locks dragging/keyboard reorder.
+  const dragLocked = create.isPending || update.isPending || del.isPending || editingId !== null;
 
   const entries = catalog.data ?? [];
   const addUrlError = catalogUrlError(addForm.url);
   const editUrlError = catalogUrlError(editForm.url);
+  const addUrlNorm = normalizeCatalogUrl(addForm.url);
+  const editUrlNorm = normalizeCatalogUrl(editForm.url);
 
   function openAdd() {
     setAddForm(EMPTY_FORM);
@@ -99,8 +132,7 @@ export default function AdminCatalogPage() {
       name: addForm.name.trim(),
       description: addForm.description.trim(),
       icon: isIconKey(addForm.icon) ? addForm.icon : null,
-      url: addForm.url.trim(),
-      defaultVisible: addForm.defaultVisible,
+      url: addUrlNorm.ok ? addUrlNorm.url : addForm.url,
     });
   }
 
@@ -113,7 +145,6 @@ export default function AdminCatalogPage() {
       description: entry.description ?? '',
       icon: entry.icon ?? '',
       url: entry.url,
-      defaultVisible: entry.defaultVisible,
     });
     setEditUrlTouched(false);
     setEditError(null);
@@ -133,21 +164,30 @@ export default function AdminCatalogPage() {
       name: editForm.name.trim(),
       description: editForm.description.trim(),
       icon: isIconKey(editForm.icon) ? editForm.icon : null,
-      url: editForm.url.trim(),
-      defaultVisible: editForm.defaultVisible,
+      url: editUrlNorm.ok ? editUrlNorm.url : editForm.url,
     });
   }
 
-  function move(index: number, delta: -1 | 1) {
+  // Commit the FULL spliced order (D-06): move fromId to toIndex, then send every id.
+  function commitReorder(fromId: string, toIndex: number) {
     const ids = entries.map((en) => en.id);
-    const target = index + delta;
-    const a = ids[index];
-    const b = ids[target];
-    if (a === undefined || b === undefined) return;
-    ids[index] = b;
-    ids[target] = a;
-    reorder.mutate({ orderedIds: ids });
+    const from = ids.indexOf(fromId);
+    if (from < 0) return;
+    const next = ids.slice();
+    const [moved] = next.splice(from, 1);
+    if (moved === undefined) return;
+    const clamped = Math.max(0, Math.min(toIndex, next.length));
+    next.splice(clamped, 0, moved);
+    const name = entries[from]?.name ?? fromId;
+    setReorderMsg(`Moved ${name} to position ${clamped + 1} of ${entries.length}`);
+    reorder.mutate({ orderedIds: next });
   }
+
+  const dnd = useReorderDnD({
+    ids: entries.map((e) => e.id),
+    onReorder: commitReorder,
+    disabled: dragLocked,
+  });
 
   if (catalog.isLoading) return <p className="muted">Loading catalog…</p>;
   if (catalog.error) {
@@ -171,6 +211,9 @@ export default function AdminCatalogPage() {
           {error}
         </p>
       ) : null}
+      <p className="sr-only" role="status" aria-live="polite">
+        {reorderMsg}
+      </p>
 
       {entries.length === 0 ? (
         <p className="muted">No catalog entries yet — use “Add entry” to create the first one.</p>
@@ -181,39 +224,42 @@ export default function AdminCatalogPage() {
               <th>Order</th>
               <th>App</th>
               <th>URL</th>
-              <th>Default</th>
               <th>Actions</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody {...dnd.containerProps}>
             {entries.map((entry, i) => {
               const editingThis = editingId === entry.id;
               const editingElsewhere = editingId !== null && !editingThis;
               if (editingThis) {
                 return (
                   <tr key={entry.id} className="row-edit">
-                    <td colSpan={5}>
+                    <td colSpan={4}>
                       <form className="admin-form row-edit-form" onSubmit={(e) => submitEdit(entry.id, e)}>
                         <p className="muted row-edit__slug">
                           Editing <strong>{entry.slug}</strong> — slug is immutable.
                         </p>
                         <div className="row-edit__grid">
                           <label className="field">
-                            <span>Name</span>
+                            <span>
+                              Name <span className="req" aria-hidden="true">*</span>
+                            </span>
                             <input
                               required
+                              aria-label="Name"
                               maxLength={64}
                               value={editForm.name}
                               onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
                             />
                           </label>
                           <label className="field field--url">
-                            <span>URL</span>
+                            <span>
+                              URL <span className="req" aria-hidden="true">*</span>
+                            </span>
                             <input
                               required
-                              type="url"
-                              inputMode="url"
-                              placeholder="https://app.haynesnetwork.com"
+                              aria-label="URL"
+                              placeholder="example.com"
                               value={editForm.url}
                               onBlur={() => setEditUrlTouched(true)}
                               onChange={(e) => setEditForm({ ...editForm, url: e.target.value })}
@@ -221,6 +267,8 @@ export default function AdminCatalogPage() {
                             />
                             {editUrlTouched && editUrlError ? (
                               <span className="field-error">{editUrlError}</span>
+                            ) : editUrlNorm.ok ? (
+                              <span className="field-hint">→ {editUrlNorm.url}</span>
                             ) : null}
                           </label>
                           <label className="field">
@@ -247,16 +295,6 @@ export default function AdminCatalogPage() {
                               }
                             />
                           </label>
-                          <label className="check-row">
-                            <input
-                              type="checkbox"
-                              checked={editForm.defaultVisible}
-                              onChange={(e) =>
-                                setEditForm({ ...editForm, defaultVisible: e.target.checked })
-                              }
-                            />
-                            <span>Visible to everyone by default (R-12)</span>
-                          </label>
                         </div>
                         {editError ? (
                           <p className="alert" role="alert">
@@ -282,28 +320,29 @@ export default function AdminCatalogPage() {
                 );
               }
               return (
-                <tr key={entry.id}>
+                <tr
+                  key={entry.id}
+                  {...dnd.rowProps(entry.id, i)}
+                  className={
+                    [
+                      dnd.isDragging(entry.id) && 'dragging',
+                      dnd.showBefore(i) && 'drop-before',
+                      dnd.showAtEnd() && i === entries.length - 1 && 'drop-after',
+                    ]
+                      .filter(Boolean)
+                      .join(' ') || undefined
+                  }
+                >
                   <td data-label="Order">
-                    <span className="reorder">
-                      <button
-                        type="button"
-                        className="btn sm"
-                        aria-label={`Move ${entry.name} up`}
-                        disabled={busy || editingElsewhere || i === 0}
-                        onClick={() => move(i, -1)}
-                      >
-                        ↑
-                      </button>
-                      <button
-                        type="button"
-                        className="btn sm"
-                        aria-label={`Move ${entry.name} down`}
-                        disabled={busy || editingElsewhere || i === entries.length - 1}
-                        onClick={() => move(i, 1)}
-                      >
-                        ↓
-                      </button>
-                    </span>
+                    <button
+                      type="button"
+                      className="drag-handle"
+                      disabled={dragLocked}
+                      aria-label={`Reorder ${entry.name} — drag, or focus and use arrow keys`}
+                      {...dnd.handleProps(entry.id, i)}
+                    >
+                      ⠿
+                    </button>
                   </td>
                   <td data-label="App">
                     <span className="app-cell">
@@ -316,7 +355,6 @@ export default function AdminCatalogPage() {
                   <td data-label="URL" className="url-cell">
                     {entry.url}
                   </td>
-                  <td data-label="Default">{entry.defaultVisible ? 'visible' : '—'}</td>
                   <td data-label="Actions">
                     <span className="row-actions">
                       <button
@@ -327,18 +365,15 @@ export default function AdminCatalogPage() {
                       >
                         Edit
                       </button>
-                      <button
-                        type="button"
+                      <ConfirmButton
                         className="btn sm danger"
+                        data-testid="catalog-row-delete"
                         disabled={busy || editingElsewhere}
-                        onClick={() => {
-                          if (window.confirm(`Delete ${entry.name}? Grants to it cascade away.`)) {
-                            del.mutate({ id: entry.id });
-                          }
-                        }}
-                      >
-                        Delete
-                      </button>
+                        label="Delete"
+                        restingAriaLabel={`Delete ${entry.name} — grants to it cascade away — click twice to confirm`}
+                        confirmAriaLabel={`Confirm delete ${entry.name}`}
+                        onConfirm={() => del.mutate({ id: entry.id })}
+                      />
                     </span>
                   </td>
                 </tr>
@@ -362,20 +397,25 @@ export default function AdminCatalogPage() {
       >
         <form className="admin-form catalog-modal-form" onSubmit={submitAdd}>
           <label className="field">
-            <span>Slug</span>
+            <span>
+              Slug <span className="req" aria-hidden="true">*</span>
+            </span>
             <input
               required
-              pattern="[a-z0-9-]+"
+              aria-label="Slug"
               maxLength={48}
               value={addForm.slug}
-              onChange={(e) => setAddForm({ ...addForm, slug: e.target.value })}
+              onChange={(e) => setAddForm({ ...addForm, slug: toSlug(e.target.value) })}
             />
-            <span className="field-hint">lowercase letters, digits, dashes — immutable</span>
+            <span className="field-hint">auto-lowercased; immutable after create</span>
           </label>
           <label className="field">
-            <span>Name</span>
+            <span>
+              Name <span className="req" aria-hidden="true">*</span>
+            </span>
             <input
               required
+              aria-label="Name"
               maxLength={64}
               value={addForm.name}
               onChange={(e) => setAddForm({ ...addForm, name: e.target.value })}
@@ -390,12 +430,13 @@ export default function AdminCatalogPage() {
             />
           </label>
           <label className="field">
-            <span>URL</span>
+            <span>
+              URL <span className="req" aria-hidden="true">*</span>
+            </span>
             <input
               required
-              type="url"
-              inputMode="url"
-              placeholder="https://app.haynesnetwork.com"
+              aria-label="URL"
+              placeholder="example.com"
               value={addForm.url}
               onBlur={() => setAddUrlTouched(true)}
               onChange={(e) => setAddForm({ ...addForm, url: e.target.value })}
@@ -403,6 +444,8 @@ export default function AdminCatalogPage() {
             />
             {addUrlTouched && addUrlError ? (
               <span className="field-error">{addUrlError}</span>
+            ) : addUrlNorm.ok ? (
+              <span className="field-hint">→ {addUrlNorm.url}</span>
             ) : null}
           </label>
           <label className="field">
@@ -418,14 +461,6 @@ export default function AdminCatalogPage() {
                 </option>
               ))}
             </select>
-          </label>
-          <label className="check-row">
-            <input
-              type="checkbox"
-              checked={addForm.defaultVisible}
-              onChange={(e) => setAddForm({ ...addForm, defaultVisible: e.target.checked })}
-            />
-            <span>Visible to everyone by default (R-12)</span>
           </label>
           <div className="form-actions">
             <button type="submit" className="btn primary" disabled={create.isPending}>

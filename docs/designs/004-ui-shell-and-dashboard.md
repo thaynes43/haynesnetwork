@@ -1,8 +1,38 @@
 # DESIGN-004: UI shell and dashboard (Phase 1)
 
 - **Status:** Accepted — presentation details partially superseded by DESIGN-006 (visual identity: brand mark, typeface, radii, tile geometry); the mechanism and structure here remain normative
-- **Last updated:** 2026-07-03
-- **Satisfies:** PRD-001 R-10, R-12, R-14 (rendering side), R-60, R-61, R-66, AC-01, AC-04, AC-10; governed by ADR-005 (CSS-token theming via `data-theme`) — drafted in parallel, referenced by number; API consumed per DESIGN-003 / ADR-004 (API layer: tRPC v11).
+- **Last updated:** 2026-07-05
+- **Satisfies:** PRD-001 R-10, R-12, R-14 (rendering side), R-60, R-61, R-66, AC-01, AC-04, AC-10; governed by ADR-005 (CSS-token theming via `data-theme`) and **ADR-012 (unified Role model)** — API consumed per DESIGN-003 / ADR-004 (API layer: tRPC v11).
+
+> **Amended by ADR-012 (2026-07-05):** the admin permissions UI is now role-based.
+> **`/admin/roles` replaces `/admin/tags`** (roles table + Add-role modal + edit-in-place, the
+> same UX as `/admin/catalog`); the **user detail page is a single Role `<select>`** (no
+> Family/Tags/Grants); the **`/admin` roster shows a Role column** only; **`/admin/catalog`
+> dropped its "Default" column + defaultVisible checkbox**; the admin sub-nav entry **"Tags" →
+> "Roles"**; and the Admin menu/gate switches on **`user.role.isAdmin`** (not `role === 'Admin'`).
+> Sections D-08 and D-11 carry the amendments. A layout hardening also landed — see D-05.
+>
+> **Amended by ADR-014 (2026-07-05):** destructive-delete confirmation moves off native
+> `window.confirm` to an inline two-step **`@hnet/ui` `ConfirmButton`** (arm-to-confirm). New
+> section **D-13** carries the normative component contract; the catalog-row and role-row Delete
+> buttons (D-11) are the two call sites. Explanatory/multi-field confirms (failsafe restore, Fix,
+> Force-search) intentionally stay `Modal`s (DESIGN-005).
+>
+> **Amended by ADR-015 (2026-07-05):** page contents must not re-orient on interaction (CLAUDE.md
+> hard rule 9). New section **D-14** carries the two consequences: (1) `/admin/catalog` reorder
+> becomes native-HTML5 drag-and-drop + keyboard arrow-move + `aria-live` (replacing the `↑`/`↓`
+> buttons), committing the full `orderedIds` to `catalog.reorder`; (2) the two-step confirm
+> reserves width for the widest (armed) label with a specificity-correct selector and deepens the
+> armed red via `--color-danger-strong` rather than reflowing (fixing the `.btn.sm`-outranks-
+> `.confirm-btn` bug that defeated D-13's `min-width` reservation). D-11's `/admin/catalog` row is
+> amended accordingly.
+>
+> **Amended by the settings-only-user-menu change (2026-07-05):** the user-menu popover is now
+> **identity header + "Admin settings" (admin-only) + Sign out** — the **Library** and **My fixes**
+> menu items are removed. Library now lives solely in the top-nav (`.topbar__nav`), which is **shown
+> on phones** (its `display: none` under 600px is relaxed) so nothing becomes unreachable. The
+> standalone `/my-fixes` route becomes a server redirect to **`/library?tab=my-fixes`** — My Fixes is
+> now a Library sub-tab (DESIGN-005 D-17). Sections **D-08** and **D-11** carry the amendments.
 - **Donors:** `../demo-console/apps/shell/src/shell/theme/` (tokens.css, tokenContract.ts, ThemeProvider.tsx, app.css), `../demo-console/packages/shared/layout/`, `../demo-console/apps/shell/src/shell/chrome/` (TopBar, SettingsDrawer), `../demo-console/scripts/lint-css-hex.mjs`.
 
 ## Overview
@@ -179,10 +209,17 @@ normative comment). The authed app frame lives in `apps/web/app/(app)/layout.tsx
 `apps/web/app/app.css`:
 
 - `html, body { height: 100%; margin: 0; overflow: hidden; }` — **the page never
-  scrolls** (AC-10: no page-level scrollbars at any matrix size).
-- App shell = flex column, `100dvh` (dvh, not vh — mobile URL-bar safe): topbar
-  (56px, `flex: none`) + `<main>` (`flex: 1 1 auto; min-height: 0; overflow: auto`) —
-  content scrolls internally.
+  scrolls** (AC-10: no page-level scrollbars at any matrix size). `overflow: hidden` is on
+  **`html` too**, not just `body`: with only `body` clipping, the documentElement still
+  reports the internally-scrolled `<main>`'s overflow as a phantom page scroll.
+- App shell = flex column: topbar (56px, `flex: none`) + `<main>` (`flex: 1 1 auto;
+  min-height: 0; overflow: auto`) — content scrolls internally.
+
+> **Layout hardening (shipped alongside ADR-012):** `apps/web/app/app.css` `.app` is now
+> `position: fixed; inset: 0` (plus `display: flex; flex-direction: column; overflow: hidden`)
+> — the shell is pinned out of normal flow so the document itself has **no** scrollable content
+> and `<main>` is the only scroll pane. This fixes a phantom page scroll Chromium reports for a
+> tall, internally-scrolled flex column (AC-10 / R-60); the resize matrix proves it.
 - Admin pages that need multi-pane budgets use `HeightBudget rows="auto minmax(0,1fr)"`
   - `ReservedPane`, same contract as the donor.
 
@@ -258,9 +295,9 @@ live refresh)" without sockets.
   separate target). Accessible name = app name + visually-hidden "(opens in new tab)".
 - Tiles open in a new tab: `target="_blank" rel="noopener noreferrer"` — the hub stays
   behind the launched app (launchpad convention).
-- Hrefs come straight from the API and are already guaranteed
-  `https://*.haynesnetwork.com` (R-14 enforced at write time, DESIGN-003 D-04); the UI
-  never constructs URLs and never links `*.haynesops.com` (CLAUDE.md hard rule 3).
+- Hrefs come straight from the API and are guaranteed to be a valid `http(s)` URL
+  (ADR-013: any host allowed; normalized at write time, DESIGN-003 D-04); the UI never
+  constructs the URL. Tiles still open with `target="_blank" rel="noopener noreferrer"`.
 - Empty state (no visible apps — possible if an admin unsets defaults): a `.card`
   saying "No apps yet — ask your admin", no dead grid.
 
@@ -278,8 +315,11 @@ English; no i18n in this app) and minus the notifications button:
   `tokens.css`-only edit (R-61).
 - **Primary nav** (Phase 2 addition — `.topbar__nav`, `<nav aria-label="Primary">`):
   **Home** (`/`) + **Library** (`/library`, every signed-in user — R-43), rendered
-  between the brand and the spacer. Hidden under 600px via CSS; on phones the same
-  destinations live in the user-menu popover so nothing becomes unreachable.
+  between the brand and the spacer.
+  > **Amended 2026-07-05:** the nav is **now shown on phones** — its `display: none`
+  > under 600px is relaxed. Previously it hid under 600px and the collapsed
+  > destinations lived in the user-menu popover; the user menu no longer carries them
+  > (see the User-menu note below), so the top-nav must stay reachable at all widths.
 - **Theme toggle:** the donor SettingsDrawer's segmented dark/light control simplified
   to a single topbar `iconbtn` that flips `hnet-dark ↔ hnet-light` via
   `useTheme().setTheme`. Sun and moon SVGs are **both in the DOM**, shown/hidden by
@@ -290,20 +330,25 @@ English; no i18n in this app) and minus the notifications button:
   keeping `aria-label`/`aria-pressed` off the hydration path. No settings drawer in
   Phase 1 — the toggle is the only setting.
 - **User menu:** button (avatar initial via `initialFor()` + displayName; name hidden
-  <480px, D-06) opening a popover: displayName + email header, then menu items —
-  **Library** (`/library`) and **My fixes** (`/my-fixes`) for every user (they carry
-  the collapsed primary nav on phones), **Admin** (`/admin`, rendered only when
-  `user.role === 'Admin'`), and **Sign out** (Better Auth `authClient.signOut()` →
-  `router.push('/login')` + `router.refresh()`). Popover: Esc closes and returns focus
-  to the trigger, click-outside (pointerdown) closes,
-  `aria-expanded`/`aria-haspopup="menu"` on the trigger, `role="menu"` +
-  `role="menuitem"` on the items.
+  <480px, D-06) opening a popover: displayName + email header, then menu items.
+  > **Amended 2026-07-05 (settings-only user menu):** the popover is now purely a
+  > settings/identity surface — displayName + email header, then **Admin settings**
+  > (`/admin`, rendered only when `user.role.isAdmin` — ADR-012; label changed from the
+  > former "Admin" to "Admin settings") and **Sign out** (Better Auth
+  > `authClient.signOut()` → `router.push('/login')` + `router.refresh()`). The former
+  > **Library** (`/library`) and **My fixes** (`/my-fixes`) menu items are **removed**:
+  > Library lives solely in the top-nav (`.topbar__nav`, now shown on phones — see the
+  > Primary-nav note) and My Fixes is now a Library sub-tab (`/library?tab=my-fixes`,
+  > DESIGN-005 D-17). Popover behavior is otherwise unchanged: Esc closes and returns
+  > focus to the trigger, click-outside (pointerdown) closes,
+  > `aria-expanded`/`aria-haspopup="menu"` on the trigger, `role="menu"` +
+  > `role="menuitem"` on the items.
 
 Admin sub-nav (`apps/web/app/(app)/admin/layout.tsx`, `<nav aria-label="Admin
 sections">`, `.admin-nav`): five entries — **Users** (`/admin`), **Catalog**
-(`/admin/catalog`), **Tags** (`/admin/tags`), **Fixes** (`/admin/fixes`), **Restore**
-(`/admin/restore`). Flex row that wraps on phones; renders only after the layout's
-server-side Admin gate passes (D-11).
+(`/admin/catalog`), **Roles** (`/admin/roles` — ADR-012, replaces the former **Tags**
+`/admin/tags`), **Fixes** (`/admin/fixes`), **Restore** (`/admin/restore`). Flex row that
+wraps on phones; renders only after the layout's server-side Admin gate passes (D-11).
 
 ### D-09 — Icons
 
@@ -333,13 +378,13 @@ re-listing routes.
 | ------------------- | ------ | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/login`            | public | `login/page.tsx`                  | Centered `.card`: brand mark + wordmark + single **Sign in** button → Better Auth Authentik OIDC flow (AC-01 — no password form). Session present → server-redirects to `/`. |
 | `/`                 | authed | `(app)/page.tsx`                  | Dashboard (D-07): greeting + app-launcher tile grid.                                                                                                |
-| `/library`          | authed | `(app)/library/page.tsx`          | Synced media library (Phase 2): searchable/filterable list of *arr items across Sonarr/Radarr/Lidarr; season grouping for series.                  |
+| `/library`          | authed | `(app)/library/page.tsx`          | Synced media library (Phase 2). **Movies · TV · Music · My Fixes** sub-tabs (WAI-ARIA tablist, active tab via `?tab=`, default **Movies**, no "All" — 2026-07-05). Each media tab scopes the searchable/filterable *arr list to one `arrKind` (movies→radarr, TV→sonarr, music→lidarr); season grouping for series. The **My Fixes** tab hosts the caller's fix/force-search ledger (`fix.myFixes`, relocated from the account menu — DESIGN-005 D-17).                  |
 | `/library/[id]`     | authed | `(app)/library/[id]/page.tsx`     | Item detail + write-back actions: Fix, Force Search, roll-up scopes (ADR-011); `item-detail.tsx` + `fix-dialog.tsx` + `force-search-dialog.tsx`.    |
-| `/my-fixes`         | authed | `(app)/my-fixes/page.tsx`         | The caller's own fix/force-search ledger history (attribution + status).                                                                           |
-| `/admin`            | Admin  | `(app)/admin/page.tsx`            | Users list: table (cards <760px) of displayName, email, role, family, tags, grant count → row links to detail.                                     |
-| `/admin/users/[id]` | Admin  | `(app)/admin/users/[id]/page.tsx` | Grants (checklist of catalog entries: direct grant toggle + provenance chips `default` / `direct` / `tag:<name>`, R-22), tags applied, family toggle (`user-detail.tsx`). |
-| `/admin/catalog`    | Admin  | `(app)/admin/catalog/page.tsx`    | Entries table. **Add** opens a `Modal` (`components/modal.tsx`) with the create form; **Edit** expands the row *in place* into an inline editor (no shared bottom form). URL validated live against R-14 (server authoritative), defaultVisible toggle, icon picker, reorder → `catalog.reorder`. |
-| `/admin/tags`       | Admin  | `(app)/admin/tags/page.tsx`       | Tags table + create/edit (name, description, bundle: app checklist + grants-family toggle); apply/remove happens on the user detail page.           |
+| `/my-fixes`         | authed | `(app)/my-fixes/page.tsx`         | **Legacy route — server-redirects to `/library?tab=my-fixes` (2026-07-05).** My Fixes is now a Library sub-tab; the redirect keeps old deep links working.                                                                           |
+| `/admin`            | Admin  | `(app)/admin/page.tsx`            | Users list: table (cards <760px) of displayName, email, **Role** (ADR-012 — no Family/Tags/Grants columns) → row links to detail.                    |
+| `/admin/users/[id]` | Admin  | `(app)/admin/users/[id]/page.tsx` | A single **Role `<select>`** → `users.setRole` (ADR-012); the role's apps shown read-only for context (edit them on `/admin/roles`); LAST_ADMIN/not-found surface in the alert (`user-detail.tsx`). |
+| `/admin/catalog`    | Admin  | `(app)/admin/catalog/page.tsx`    | Entries table. **Add** opens a `Modal` (`components/modal.tsx`) with the create form; **Edit** expands the row *in place* into an inline editor (no shared bottom form). The **URL is a plain text field** (ADR-013 — any `http(s)` URL, any host): the admin types a URL and the client normalizes it for live feedback via `normalizeCatalogUrl`/`catalogUrlError` (mirror in `lib/catalog-url.ts` of the authoritative `packages/domain` copy — DESIGN-003 D-04); the domain re-normalizes and is authoritative on write. Bare hosts default to `https://`, an explicit scheme is preserved; an unparseable/non-http(s) value surfaces inline. Icon picker, reorder → `catalog.reorder`. The slug input's `pattern` is `[a-z0-9\-]+` (the un-escaped `[a-z0-9-]+` is invalid under the browser `v`-flag regex engine and silently blocked the Add form's native submit); inline validation errors render as a prominent `.field-error` pill. Icon picker; **reorder is native-HTML5 drag-and-drop + keyboard arrow-move** (grip glyph `⠿` doubles as the keyboard handle, `aria-live` announces each move) — the whole row drags, and the drop commits the **full `orderedIds` array to `catalog.reorder`** optimistically (ADR-015 / D-14; replaces the old `↑`/`↓` buttons). _(ADR-012: the "Default" column + defaultVisible checkbox are removed.)_ |
+| `/admin/roles`      | Admin  | `(app)/admin/roles/page.tsx`      | **(ADR-012 — replaces `/admin/tags`.)** Roles table (name/description, app chips, member count, `superuser`/`default`/`all apps` badges) + **Add-role modal** + **edit-in-place** inline editor (name + description + app checklist), the same UX as `/admin/catalog`. The app checklist leads with an **"All apps"** checkbox (`grants_all` — every app incl. ones added later) that, when on, **greys out + disables the per-app list** and shows all boxes checked; a non-admin all-apps role gets an `all apps` badge and its Apps cell reads "All apps". Admin row locked (all apps · superuser, no edit/delete); Default row apps editable but no rename/delete. Assigning a role to a user happens on the user detail page. |
 | `/admin/fixes`      | Admin  | `(app)/admin/fixes/page.tsx`      | All-users fix/force-search ledger (Phase 2): cross-user audit view of write-back actions.                                                          |
 | `/admin/restore`    | Admin  | `(app)/admin/restore/page.tsx`    | Failsafe restore surface (Phase 2, ADR-008/011): re-push a ledger snapshot back to the *arrs.                                                       |
 
@@ -393,6 +438,9 @@ Phone dashboard (375×667):
 
 `/admin` users list — desktop table and its <760px card transform (D-06):
 
+> **ADR-012 note:** the wireframe below predates the role model — the shipped roster columns
+> are just **Name · Email · Role** (no Fam/Tags columns); the card view shows the same three.
+
 ```
 Desktop (≥760px)                              Phone (<760px)
 ┌──────────────────────────────────────────┐  ┌─────────────────────────┐
@@ -412,6 +460,87 @@ Desktop (≥760px)                              Phone (<760px)
                                               │ │    attr(data-label) │ │
                                               └─────────────────────────┘
 ```
+
+### D-13 — Inline two-step confirmation: `ConfirmButton` / `useConfirm` (ADR-014)
+
+> **Superseded in part by D-14 / ADR-015 (2026-07-05):** the armed look and width reservation
+> below are OUT OF DATE — the armed state is now `--color-danger-strong` and the reservation is
+> `.btn.confirm-btn { min-width: 6.5rem }` (specificity-correct). See **D-14** for the current
+> normative contract; the paragraphs here are kept for history.
+
+> **Added by ADR-014 (2026-07-05).** Destructive-delete confirmation is an inline two-step
+> arm-to-confirm button, not native `window.confirm`. Mechanism ported from demo-console; the
+> armed *look* is ours (token-only `app.css`, port-mechanism-not-look — DESIGN-006).
+
+`@hnet/ui` ships a `ConfirmButton` (thin wrapper) over a headless `useConfirm` hook at
+`packages/ui/src/controls/ConfirmButton.tsx` (`'use client'`, re-exported from
+`packages/ui/src/index.ts`). Normative contract:
+
+- **Two-step / auto-revert:** first click **arms**; a second click within `CONFIRM_MS` (module
+  constant, **3000ms**) fires `onConfirm`; otherwise a single timer **auto-reverts** after 3s.
+  The only reverts are the timeout and firing — no blur / pointer-leave / Escape / outside-click.
+  Disarm-before-fire + a per-instance armed boolean prevents a double fire (no disable/debounce).
+- **Relabel + tint on arm:** armed, the button shows `confirmLabel` (default **"Confirm?"**),
+  gains the `confirming` class, and sets `data-armed`. It always carries the base `confirm-btn`
+  class. The armed look is `var(--color-danger)` (text + border + a `color-mix` background tint)
+  from `apps/web/app/app.css` `.confirm-btn.confirming` — token-only, no raw hex (hard rule 2).
+- **No-reflow width reservation:** `.confirm-btn { min-width: 5rem }` reserves width so
+  relabeling to "Confirm?" cannot reflow the row.
+- **Accessible name swaps:** resting `aria-label` **must end with "— click twice to confirm"**;
+  armed, it becomes the caller's `confirmAriaLabel`. `onClick` calls `stopPropagation` so a row's
+  own click never fires from the button.
+- **`onConfirm` / `reArmOnFailure`:** `onConfirm` may return `void` or a `Promise<'ok' | 'failed'
+  | void>`; with `reArmOnFailure`, resolving the literal `'failed'` re-arms.
+- **Scope:** replaces the **two** `window.confirm` sites — the catalog-row Delete and role-row
+  Delete in D-11 (`data-testid` `catalog-row-delete` / `role-row-delete`, keeping their existing
+  `btn sm danger` + disabled logic). Explanatory / multi-field confirms (failsafe restore, Fix,
+  Force-search) **stay `Modal`s** (DESIGN-005) — this is not a modal-to-button conversion. The
+  role-reassignment `<select>` on the user detail page has no confirm and is a deferred follow-up
+  (ADR-014 C-05).
+- **e2e:** target by `data-testid` (the name changes on arm), not by button text — click, assert
+  the button reads "Confirm?", click again, assert the filtered row is gone. Native-dialog
+  handlers are removed (ADR-014 C-04).
+
+### D-14 — No layout reorientation on interaction (ADR-015)
+
+> **Added by ADR-015 (2026-07-05).** Page contents must not re-orient when a user interacts
+> (CLAUDE.md hard rule 9): an interaction may change color/emphasis but must NOT reflow or
+> reposition neighbors. Sanctioned exceptions: in-place expansions (the catalog inline editor,
+> D-11) and drag-and-drop reordering (below). Mechanisms ported from demo-console; the look is
+> ours (token-only, port-mechanism-not-look — DESIGN-006).
+
+**(1) `/admin/catalog` reorder — drag-and-drop + keyboard, full `orderedIds`.** The `↑`/`↓`
+`.btn.sm` buttons are replaced by native-HTML5 drag-and-drop over the dependency-free `@hnet/ui`
+`useReorderDnD` hook (pure geometry helpers `computeDropIndex` / `resolveReorderIndex`, DOM-free
+and unit-tested). Normative contract:
+
+- The whole data `<tr>` is `draggable`; a grip glyph (`⠿`) in the Order cell is the visual
+  affordance AND the keyboard handle — focus it and **ArrowUp/ArrowDown move the row one slot**,
+  each move announced through a visually-hidden `role="status" aria-live="polite"` region (e.g.
+  "Moved <name> to position N of M"). `aria-keyshortcuts="ArrowUp ArrowDown"`.
+- A **zero-height drop indicator** (`box-shadow: inset 0 2px 0 0 var(--color-accent)` on the
+  target row via `tr.drop-before td`) marks the drop position without reflow; the dragged row
+  dims (`tr.dragging { opacity: 0.4 }`). Both are token-only.
+- The drop commits the **full reordered id array** to the unchanged `catalog.reorder` mutation,
+  applied **optimistically** (`onMutate` snapshot + local reorder, `onError` restore) so the drop
+  feels instant and never snap-backs; `onSettled` invalidates. Reorder is disabled while a row is
+  in its inline editor (`editingId !== null`) or a mutation is in flight.
+- The grip keeps its `data-label="Order"` `<td>` so it stays visible in the <760px stacked-card
+  layout. Drag itself is not e2e-covered (Playwright `dragTo` is flaky, ADR-015 C-06); the
+  keyboard arrow-move path is the e2e target and the geometry is unit-tested.
+
+**(2) Two-step confirm — reserve for the widest label, deepen not reflow.** D-13's `.confirm-btn
+{ min-width: 5rem }` reservation never applied: `.btn.sm` (specificity 0,2,0; `min-width: 34px`)
+silently outranked `.confirm-btn` (0,1,0), so arming reflowed the row. Corrected here:
+
+- `.btn.confirm-btn` (a specificity-correct 0,2,0 selector that beats `.btn.sm`) reserves
+  `min-width: 6.5rem` with `white-space: nowrap` and centered text — sized for the **bold armed
+  "Confirm?" label**, so the resting→armed relabel can never reflow neighbors.
+- The armed state reads a shade or two **deeper** rather than moving: a new
+  **`--color-danger-strong`** token (darker than `--color-danger` in both themes) drives the
+  armed text/border and a `color-mix` background tint (`.confirm-btn.confirming`). Call sites keep
+  `className="btn sm danger"`; resting stays danger red, armed deepens to danger-strong. This
+  supersedes D-13's `var(--color-danger)`-only armed look and its `5rem` width claim.
 
 ## Alternatives considered
 
@@ -447,7 +576,7 @@ Desktop (≥760px)                              Phone (<760px)
   reload (localStorage); first-paint attribute already correct (no flash) by asserting
   `data-theme` before hydration completes; per-role visibility with stubbed OIDC —
   Member sees default tiles only (AC-04) and no Admin menu entry; Admin sees the admin
-  link; every tile href matches `https://*.haynesnetwork.com/*` (AC-04/R-14).
+  link; every tile href is a valid `http(s)` URL (AC-04; ADR-013 dropped the host match).
 
 ## Open questions
 

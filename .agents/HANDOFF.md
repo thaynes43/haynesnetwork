@@ -3,7 +3,7 @@
 > The single resume point for agents. Update this in the same change as any milestone.
 > Derive current state from this file's top; you should not have to reconcile anything.
 
-- **Last updated:** 2026-07-04
+- **Last updated:** 2026-07-05
 - **Workflow mode:** PR flow (GATE A executed — see `.agents/plans/001-gate-a-pr-cutover.md`).
   `main` is branch-protected: branch → PR → required checks `lint-and-typecheck`, `test`,
   `build` green → squash-merge. `e2e` advisory. Conventional-commit titles drive release-please.
@@ -11,6 +11,27 @@
 
 ## Current state
 
+- **Unified Role model (ADR-012) SHIPPED — code complete, all tests pass, docs updated.**
+  One role per user (`users.role_id`), roles-only (no per-user grants/tags/family flag);
+  two seeded system roles — **Admin** (superuser, implicit all-apps, immutable) and
+  **Default** (new-user role, editable app set). Migration
+  **0007_unified_roles** is a clean cut (drops the Member/Admin enum, tags, `user_app_grants`,
+  `is_family`, `default_visible`, the `effective_app_grants` view). `/admin/roles` replaces
+  `/admin/tags`; `users.setRole` replaces grant/revoke/setFamily; session carries
+  `role = { id, name, isAdmin }`. **Shipped-after refinements (docs synced 2026-07-05):**
+  (1) `roles.grants_all` "All apps" — a non-admin role grants every app incl. future ones,
+  no `role_app_grants` rows; effective apps = all when `is_admin OR grants_all`; "All apps"
+  checkbox on `/admin/roles`. (2) Default now seeds **seerr/plex/k8plex/plexops** (PlexOps
+  added). (3) Migration 0007 seeds a **third, normal role `Family`** (editable/deletable) =
+  every app except Tautulli. On branch **`feat/unified-roles`**, **pending owner
+  validation** (localhost smoke test before PR — `feat!:` off main).
+- **Catalog URLs are now arbitrary (ADR-013, in progress on `feat/unified-roles`).** R-14 is
+  reversed: the catalog accepts **any well-formed, normalized `http(s)` URL** (including
+  `*.haynesops.com` and external hosts) — no host allow-list. A shared `normalizeCatalogUrl`
+  (authoritative in `packages/domain`, mirror in the web client) canonicalizes; the domain
+  writer stores the canonical form. `ForbiddenHostError`→`InvalidCatalogUrlError` /
+  `CATALOG_URL_INVALID`. DB CHECK relaxed to scheme-only `app_catalog_url_scheme`
+  (migration 0008). Docs synced 2026-07-05.
 - **Phase 1 + Phase 2 COMPLETE and DEPLOYED.** Phase 2 = media ledger + fix / force-search /
   restore + *arr→ledger sync, all shipped through v0.3.1.
 - **Sync CronJobs + ExternalSecret media keys are LIVE since v0.2.0** (sync-incremental every

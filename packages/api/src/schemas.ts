@@ -4,41 +4,43 @@ import { z } from 'zod';
 import { ICON_KEYS } from '@hnet/ui/icons';
 
 /**
- * D-04 layer 1 (edge) — R-14: only `https://<sub>.haynesnetwork.com[/path?query]`
- * survives. `*.haynesops.com` (LAN-only Traefik ingress, CLAUDE.md hard rule 3), every
- * other host, `http:`, the bare apex, ports, credentials, IP literals, and the suffix
- * attack `evil.haynesnetwork.com.attacker.io` are all rejected (the hostname regex is
- * end-anchored). Layer 2 is @hnet/domain's assertUserFacingUrl; layer 3 is the
- * app_catalog_url_haynesnetwork_only DB CHECK (DESIGN-001 D-05).
+ * D-04 layer 1 (edge) — lenient: accept any non-empty string. The catalog now takes any
+ * URL (BRANCH-A: no host rules), and @hnet/domain's assertCatalogUrl normalizes + validates
+ * authoritatively before the write, storing the canonical form. Keeping the edge schema
+ * dumb avoids re-implementing (and drifting from) that normalizer here.
  */
 export const catalogUrlSchema = z
-  .url({
-    protocol: /^https$/,
-    hostname: /^([a-z0-9-]+\.)+haynesnetwork\.com$/i, // ≥1 subdomain label
-  })
-  .refine(
-    (raw) => {
-      const u = new URL(raw);
-      return u.port === '' && u.username === '' && u.password === '';
-    },
-    {
-      error:
-        'Catalog URLs must be https://<sub>.haynesnetwork.com — no ports, no credentials, and never *.haynesops.com',
-    },
-  );
+  .string()
+  .trim()
+  .min(1, 'Enter a URL.')
+  .max(2048, 'That URL is too long.');
 
-/** D-06 — a tag's permission bundle (replace-whole-bundle semantics on update). */
-export const TagBundleInput = z.object({
-  appIds: z.array(z.uuid()).default([]), // → tag_app_grants (DESIGN-001 D-08)
-  isFamily: z.boolean().default(false), // → tags.is_family (R-20 family designation)
-  // allowedPlexLibraries: RESERVED for Phase 3 (R-20/R-26/R-27) — do not add ad hoc.
+/**
+ * ADR-012 — a Role's editable shape. `appIds` is the whole app set (replace-whole-bundle
+ * semantics on update — role_app_grants). The Admin role is immutable and the Default role
+ * can't be renamed; the domain writers enforce that, not this schema.
+ */
+export const RoleInput = z.object({
+  name: z.string().trim().min(1).max(64),
+  description: z.string().trim().max(280).default(''),
+  appIds: z.array(z.uuid()).default([]),
+  grantsAll: z.boolean().default(false), // "All apps" — grants every app, incl. future ones
+});
+
+/** ADR-012 — roles.update: id required, every editable field optional (true PATCH). */
+export const RolePatchInput = z.object({
+  id: z.uuid(),
+  name: z.string().trim().min(1).max(64).optional(),
+  description: z.string().trim().max(280).optional(),
+  appIds: z.array(z.uuid()).optional(),
+  grantsAll: z.boolean().optional(),
 });
 
 // Default-free field set shared by create and update. In zod v4, `.partial()` on a
 // field carrying `.default()` still APPLIES the default when the key is absent —
-// which would silently rewrite defaultVisible/icon/description on every partial
-// update — so the defaults live only on CatalogEntryInput (create), and
-// catalog.update derives its patch schema from this base (true PATCH semantics).
+// which would silently rewrite icon/description on every partial update — so the
+// defaults live only on CatalogEntryInput (create), and catalog.update derives its
+// patch schema from this base (true PATCH semantics).
 const catalogEntryFields = z.object({
   slug: z
     .string()
@@ -49,15 +51,13 @@ const catalogEntryFields = z.object({
   name: z.string().trim().min(1).max(64),
   description: z.string().trim().max(280),
   icon: z.enum(ICON_KEYS).nullable(), // code-shipped icon registry key, D-10
-  url: catalogUrlSchema, // D-04, R-14
-  defaultVisible: z.boolean(), // R-12 seeds true; R-13 seeds false
+  url: catalogUrlSchema, // D-04 — lenient edge; domain normalizes/validates
 });
 
 /** D-06 — catalog entry shape for catalog.create (update omits the immutable slug). */
 export const CatalogEntryInput = catalogEntryFields.extend({
   description: catalogEntryFields.shape.description.default(''),
   icon: catalogEntryFields.shape.icon.default(null),
-  defaultVisible: catalogEntryFields.shape.defaultVisible.default(false),
 });
 
 /** D-06 — catalog.update: immutable slug omitted, everything else optional. */

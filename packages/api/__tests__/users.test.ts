@@ -1,18 +1,15 @@
-// DESIGN-003 test strategy — users router: direct grants and family designation
-// mutate state AND write their permission_audit row in the same transaction outcome
-// (R-04, ADR-003); idempotent replays are no-ops with no audit row (D-11); users.list
-// composes the R-15/R-22 admin roster.
+// DESIGN-003 / ADR-012 — users router: the admin roster carries each user's single role
+// { id, name, isAdmin }; setRole delegates to the assignRole single-writer (idempotent,
+// last-admin-guarded), surfacing the D-13 appCodes on the wire.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { appCatalog, users as usersTable } from '@hnet/db';
-import { eq } from 'drizzle-orm';
-import { isEffectivelyFamily } from '@hnet/domain';
+import { SEEDED_ROLE_IDS } from '@hnet/db';
 import {
-  auditRows,
   bootMigratedDb,
   caller,
   createUser,
   makeCtx,
   sessionUser,
+  wireShape,
   type Caller,
   type TestDb,
 } from './helpers';
@@ -21,138 +18,66 @@ let testDb: TestDb;
 let admin: Awaited<ReturnType<typeof createUser>>;
 let member: Awaited<ReturnType<typeof createUser>>;
 let adminCaller: Caller;
-let immichId: string;
 
 beforeAll(async () => {
   testDb = await bootMigratedDb();
-  admin = await createUser(testDb.db, { role: 'Admin', displayName: 'Admin Ada' });
-  member = await createUser(testDb.db, { role: 'Member', displayName: 'Member Mia' });
+  admin = await createUser(testDb.db, { admin: true, displayName: 'Admin Ada' });
+  member = await createUser(testDb.db, { displayName: 'Member Mia' }); // Default role
   adminCaller = caller(makeCtx(testDb.db, sessionUser(admin)));
-  const [immich] = await testDb.db
-    .select({ id: appCatalog.id })
-    .from(appCatalog)
-    .where(eq(appCatalog.slug, 'immich'));
-  immichId = immich!.id;
 });
 
 afterAll(async () => {
   await testDb.stop();
 });
 
-describe('users.grantApp / users.revokeApp — audited direct grants (R-15, R-04)', () => {
-  it('grantApp writes the grant and its grant_app audit row; replay is a no-op (D-11)', async () => {
-    expect(await adminCaller.users.grantApp({ userId: member.id, appId: immichId })).toEqual({
-      changed: true,
-    });
-
-    let rows = await auditRows(testDb.db, 'grant_app');
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
-      actorId: admin.id,
-      subjectUserId: member.id,
-      appId: immichId,
-    });
-    expect(rows[0]!.detail).toMatchObject({ app_slug: 'immich' });
-
-    // Idempotent replay: no change, NO second audit row.
-    expect(await adminCaller.users.grantApp({ userId: member.id, appId: immichId })).toEqual({
-      changed: false,
-    });
-    rows = await auditRows(testDb.db, 'grant_app');
-    expect(rows).toHaveLength(1);
-  });
-
-  it('revokeApp removes the grant and writes revoke_app; replay is a no-op', async () => {
-    expect(await adminCaller.users.revokeApp({ userId: member.id, appId: immichId })).toEqual({
-      changed: true,
-    });
-
-    let rows = await auditRows(testDb.db, 'revoke_app');
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
-      actorId: admin.id,
-      subjectUserId: member.id,
-      appId: immichId,
-    });
-
-    expect(await adminCaller.users.revokeApp({ userId: member.id, appId: immichId })).toEqual({
-      changed: false,
-    });
-    rows = await auditRows(testDb.db, 'revoke_app');
-    expect(rows).toHaveLength(1);
-  });
-
-  it('unknown app or user → NOT_FOUND', async () => {
-    const ghost = '00000000-0000-4000-8000-00000000dead';
-    await expect(
-      adminCaller.users.grantApp({ userId: member.id, appId: ghost }),
-    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
-    await expect(
-      adminCaller.users.grantApp({ userId: ghost, appId: immichId }),
-    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
-  });
-});
-
-describe('users.setFamily — direct designation flips EFFECTIVE isFamily (D-01/D-11)', () => {
-  it('setFamily(true) flips users.is_family, effective family, and audits set_family', async () => {
-    expect(await isEffectivelyFamily(member.id, testDb.db)).toBe(false);
-
-    expect(await adminCaller.users.setFamily({ userId: member.id, isFamily: true })).toEqual({
-      changed: true,
-    });
-
-    const [row] = await testDb.db
-      .select({ isFamily: usersTable.isFamily })
-      .from(usersTable)
-      .where(eq(usersTable.id, member.id));
-    expect(row!.isFamily).toBe(true);
-    expect(await isEffectivelyFamily(member.id, testDb.db)).toBe(true);
-
-    const rows = await auditRows(testDb.db, 'set_family');
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ actorId: admin.id, subjectUserId: member.id });
-
-    // Idempotent replay (D-11): already Family → no change, no audit row.
-    expect(await adminCaller.users.setFamily({ userId: member.id, isFamily: true })).toEqual({
-      changed: false,
-    });
-    expect(await auditRows(testDb.db, 'set_family')).toHaveLength(1);
-  });
-
-  it('setFamily(false) flips it back and audits unset_family', async () => {
-    expect(await adminCaller.users.setFamily({ userId: member.id, isFamily: false })).toEqual({
-      changed: true,
-    });
-    expect(await isEffectivelyFamily(member.id, testDb.db)).toBe(false);
-    expect(await auditRows(testDb.db, 'unset_family')).toHaveLength(1);
-  });
-});
-
-describe('users.list — the R-15/R-22 admin roster (D-09)', () => {
-  it('composes role, direct family flag, tags, and direct grants per user', async () => {
-    await adminCaller.users.grantApp({ userId: member.id, appId: immichId });
-    const { tagId } = await adminCaller.tags.create({
-      name: 'streamers',
-      bundle: {},
-    });
-    await adminCaller.tags.applyToUser({ tagId, userId: member.id });
-
+describe('users.list — the admin roster (ADR-012, D-09)', () => {
+  it('returns each user with their single role { id, name, isAdmin } and ISO createdAt', async () => {
     const roster = await adminCaller.users.list();
     expect(roster.map((u) => u.displayName)).toEqual(['Admin Ada', 'Member Mia']);
 
     const mia = roster.find((u) => u.id === member.id)!;
     expect(mia).toMatchObject({
       email: member.email,
-      role: 'Member',
-      isFamily: false,
-      tags: [{ id: tagId, name: 'streamers' }],
-      directGrants: [{ appId: immichId }],
+      role: { id: SEEDED_ROLE_IDS.default, name: 'Default', isAdmin: false },
     });
     expect(typeof mia.createdAt).toBe('string'); // D-03: ISO-8601 on the wire
     expect(new Date(mia.createdAt).toISOString()).toBe(mia.createdAt);
 
     const ada = roster.find((u) => u.id === admin.id)!;
-    expect(ada.tags).toEqual([]);
-    expect(ada.directGrants).toEqual([]);
+    expect(ada.role).toMatchObject({ name: 'Admin', isAdmin: true });
+  });
+});
+
+describe('users.setRole — role assignment (ADR-012, R-04)', () => {
+  it('assigns a user to a role; an idempotent replay is a no-op', async () => {
+    const { roleId } = await adminCaller.roles.create({ name: 'assignees', appIds: [] });
+    const first = await adminCaller.users.setRole({ userId: member.id, roleId });
+    expect(first).toMatchObject({ changed: true, fromRoleId: SEEDED_ROLE_IDS.default });
+
+    const repeat = await adminCaller.users.setRole({ userId: member.id, roleId });
+    expect(repeat.changed).toBe(false);
+
+    await adminCaller.users.setRole({ userId: member.id, roleId: SEEDED_ROLE_IDS.default }); // restore
+  });
+
+  it('unknown user or role → NOT_FOUND', async () => {
+    const ghost = '00000000-0000-4000-8000-00000000dead';
+    await expect(
+      adminCaller.users.setRole({ userId: ghost, roleId: SEEDED_ROLE_IDS.default }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(
+      adminCaller.users.setRole({ userId: member.id, roleId: ghost }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('demoting the last Admin → CONFLICT with appCode LAST_ADMIN (D-13)', async () => {
+    let thrown: unknown;
+    try {
+      await adminCaller.users.setRole({ userId: admin.id, roleId: SEEDED_ROLE_IDS.default });
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toMatchObject({ code: 'CONFLICT' });
+    expect(wireShape(thrown, 'users.setRole').data.appCode).toBe('LAST_ADMIN');
   });
 });

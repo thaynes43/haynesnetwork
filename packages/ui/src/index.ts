@@ -23,6 +23,24 @@ export { ICON_KEYS, isIconKey } from './icons/registry';
 export type { IconKey } from './icons/registry';
 export { AppIcon, GenericAppIcon, ICON_COMPONENTS } from './icons/components';
 
+export { ConfirmButton, useConfirm, createConfirmController, CONFIRM_MS } from './controls/ConfirmButton';
+export type {
+  ConfirmButtonProps,
+  UseConfirmOptions,
+  ConfirmController,
+  ConfirmOutcome,
+} from './controls/ConfirmButton';
+
+export { useReorderDnD } from './controls/useReorderDnD';
+export type {
+  UseReorderDnDOptions,
+  UseReorderDnD,
+  ReorderContainerProps,
+  ReorderRowProps,
+  ReorderHandleProps,
+} from './controls/useReorderDnD';
+export { computeDropIndex, resolveReorderIndex } from './controls/reorder';
+
 export { HeightBudget } from './layout/HeightBudget';
 export type { HeightBudgetProps } from './layout/HeightBudget';
 export { ReservedPane } from './layout/ReservedPane';

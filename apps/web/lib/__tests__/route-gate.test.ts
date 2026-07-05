@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { loginRouteRedirect, protectedRouteRedirect } from '../route-gate';
 
-const member = { role: 'Member' };
-const admin = { role: 'Admin' };
+const member = { role: { isAdmin: false } };
+const admin = { role: { isAdmin: true } };
 
 describe('route gating (DESIGN-004 D-11)', () => {
   it('anonymous on a protected route → /login', () => {
@@ -21,9 +21,10 @@ describe('route gating (DESIGN-004 D-11)', () => {
     expect(protectedRouteRedirect(admin, { requireAdmin: true })).toBeNull();
   });
 
-  it('fails closed on unknown roles for admin routes', () => {
-    expect(protectedRouteRedirect({ role: 'superuser' }, { requireAdmin: true })).toBe('/');
-    expect(protectedRouteRedirect({ role: '' }, { requireAdmin: true })).toBe('/');
+  it('fails closed for admin routes when role.isAdmin is false or the role is malformed', () => {
+    expect(protectedRouteRedirect({ role: { isAdmin: false } }, { requireAdmin: true })).toBe('/');
+    // @ts-expect-error — a malformed user (no role object) must still fail closed.
+    expect(protectedRouteRedirect({}, { requireAdmin: true })).toBe('/');
   });
 
   it('/login: session → /, anonymous stays', () => {

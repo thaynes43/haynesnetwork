@@ -89,7 +89,7 @@ test.describe('dashboard + admin (admin persona)', () => {
     test(`/admin @ ${w}x${h} — fits, nav + user list reachable`, async ({ page }) => {
       await page.setViewportSize({ width: w, height: h });
       await page.goto('/admin');
-      for (const section of ['Users', 'Catalog', 'Tags']) {
+      for (const section of ['Users', 'Catalog', 'Roles']) {
         await expect(
           page.locator('.admin-nav').getByRole('link', { name: section }),
         ).toBeInViewport();

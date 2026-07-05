@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { userRoleTransitions, users, type Database } from '@hnet/db';
+import { roles, userRoleTransitions, users, SEEDED_ROLE_IDS, type Database } from '@hnet/db';
 import { bootstrapAdminOnSignin } from '../src/index';
 import { bootMigratedDb, createUser, type TestDb } from './helpers';
 
@@ -33,13 +33,17 @@ describe('bootstrapAdminOnSignin (DESIGN-002 D-05, R-02, AC-03)', () => {
   }
 
   async function roleOf(userId: string) {
-    const [row] = await t.db.select({ role: users.role }).from(users).where(eq(users.id, userId));
-    return row?.role;
+    const [row] = await t.db
+      .select({ name: roles.name })
+      .from(users)
+      .innerJoin(roles, eq(roles.id, users.roleId))
+      .where(eq(users.id, userId));
+    return row?.name;
   }
 
   it('promotes an allowlisted email to Admin on first sign-in with a system audit row', async () => {
     const user = await createUser(t.db, { email: 'owner@example.com' });
-    expect(user.role).toBe('Member'); // R-03 default
+    expect(await roleOf(user.id)).toBe('Default'); // R-03 default
     vi.stubEnv('BOOTSTRAP_ADMIN_EMAILS', 'owner@example.com');
 
     await bootstrapAdminOnSignin({ id: user.id, email: user.email }, t.db);
@@ -48,8 +52,8 @@ describe('bootstrapAdminOnSignin (DESIGN-002 D-05, R-02, AC-03)', () => {
     const audits = await auditRowsFor(user.id);
     expect(audits).toHaveLength(1);
     expect(audits[0]).toMatchObject({
-      fromRole: 'Member',
-      toRole: 'Admin',
+      fromRoleId: SEEDED_ROLE_IDS.default,
+      toRoleId: SEEDED_ROLE_IDS.admin,
       initiatorId: null,
       initiatorKind: 'system',
       note: 'BOOTSTRAP_ADMIN_EMAILS promotion',
@@ -73,7 +77,7 @@ describe('bootstrapAdminOnSignin (DESIGN-002 D-05, R-02, AC-03)', () => {
 
     await bootstrapAdminOnSignin({ id: user.id, email: user.email }, t.db);
 
-    expect(await roleOf(user.id)).toBe('Member');
+    expect(await roleOf(user.id)).toBe('Default');
     expect(await auditRowsFor(user.id)).toHaveLength(0);
   });
 
@@ -107,7 +111,7 @@ describe('bootstrapAdminOnSignin (DESIGN-002 D-05, R-02, AC-03)', () => {
 
     await bootstrapAdminOnSignin({ id: user.id, email: user.email }, t.db);
 
-    expect(await roleOf(user.id)).toBe('Member');
+    expect(await roleOf(user.id)).toBe('Default');
     expect(await auditRowsFor(user.id)).toHaveLength(0);
   });
 

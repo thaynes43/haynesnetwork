@@ -2,10 +2,13 @@
 // attaches, never on message text. Pure + structurally typed for unit tests.
 
 const APP_CODE_COPY: Record<string, string> = {
-  CATALOG_URL_FORBIDDEN_HOST:
-    'The server rejected that URL — catalog links must be https://<sub>.haynesnetwork.com.',
-  TAG_NAME_CONFLICT: 'A tag with that name already exists.',
+  CATALOG_URL_INVALID: "That URL isn't valid — enter something like example.com.",
   REORDER_SET_MISMATCH: 'The catalog changed under you — refresh and reorder again.',
+  // ADR-012 — role management codes.
+  ROLE_NAME_CONFLICT: 'A role with that name already exists.',
+  ROLE_IMMUTABLE: 'That role is a system role and can’t be changed.',
+  LAST_ADMIN: 'You can’t remove the last Admin — assign another user to Admin first.',
+  CONCURRENT_TRANSITION: 'That user’s role changed under you — refresh and try again.',
   // DESIGN-005 D-17 — media ledger / fix / restore codes.
   FIX_RATE_LIMIT_EXCEEDED: 'Fix limit reached (5 per hour). Try again in a bit.',
   FIX_ALREADY_OPEN: 'A fix is already open for this target — check its status below.',

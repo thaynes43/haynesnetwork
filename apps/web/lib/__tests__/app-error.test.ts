@@ -3,7 +3,7 @@ import { appCodeOf, describeMutationError } from '../app-error';
 
 describe('appCode error surfacing (DESIGN-003 D-13)', () => {
   it('reads the appCode the errorFormatter attaches', () => {
-    expect(appCodeOf({ data: { appCode: 'TAG_NAME_CONFLICT' } })).toBe('TAG_NAME_CONFLICT');
+    expect(appCodeOf({ data: { appCode: 'ROLE_NAME_CONFLICT' } })).toBe('ROLE_NAME_CONFLICT');
     expect(appCodeOf({ data: {} })).toBeUndefined();
     expect(appCodeOf({ data: null })).toBeUndefined();
     expect(appCodeOf(null)).toBeUndefined();
@@ -12,10 +12,16 @@ describe('appCode error surfacing (DESIGN-003 D-13)', () => {
 
   it('maps known appCodes to friendly copy', () => {
     expect(
-      describeMutationError({ message: 'raw', data: { appCode: 'CATALOG_URL_FORBIDDEN_HOST' } }),
-    ).toMatch(/haynesnetwork\.com/);
-    expect(describeMutationError({ message: 'raw', data: { appCode: 'TAG_NAME_CONFLICT' } })).toMatch(
-      /already exists/,
+      describeMutationError({ message: 'raw', data: { appCode: 'CATALOG_URL_INVALID' } }),
+    ).toMatch(/example\.com/);
+    expect(
+      describeMutationError({ message: 'raw', data: { appCode: 'ROLE_NAME_CONFLICT' } }),
+    ).toMatch(/already exists/);
+    expect(describeMutationError({ message: 'raw', data: { appCode: 'ROLE_IMMUTABLE' } })).toMatch(
+      /system role/i,
+    );
+    expect(describeMutationError({ message: 'raw', data: { appCode: 'LAST_ADMIN' } })).toMatch(
+      /last Admin/i,
     );
     expect(
       describeMutationError({ message: 'raw', data: { appCode: 'REORDER_SET_MISMATCH' } }),

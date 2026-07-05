@@ -69,11 +69,11 @@ is silently skipped**. This is the top footgun. Steps:
 4. **New / changed view** → hand-write the `CREATE VIEW` (or `CREATE OR REPLACE VIEW`) in the
    migration and keep the `pgView(...).existing()` row shape in sync by hand. The canonical DDL
    for each view lives in a comment above its declaration in `src/schema/`.
-5. **Seeding `app_catalog`** → any seeded `url` MUST satisfy the DB CHECK
-   `app_catalog_url_haynesnetwork_only` (end-anchored `^https://[a-z0-9.-]+\.haynesnetwork\.com(/.*)?$`
-   — CLAUDE.md hard rule 3, R-14). Never seed a `*.haynesops.com` URL; it will be rejected at
-   INSERT. Seed guarded by `WHERE NOT EXISTS (SELECT 1 FROM app_catalog)` so admin edits win
-   forever after (see `0002_seed_app_catalog.sql`).
+5. **Seeding `app_catalog`** → any seeded `url` MUST satisfy the DB CHECK `app_catalog_url_scheme`
+   (`^https?://` — ADR-013 retired the old `*.haynesnetwork.com`-only host CHECK in migration
+   `0008`; any host is now allowed, the app normalizes/validates authoritatively). Seed guarded by
+   `WHERE NOT EXISTS (SELECT 1 FROM app_catalog)` so admin edits win forever after (see
+   `0002_seed_app_catalog.sql`).
 
 ## Applying migrations
 

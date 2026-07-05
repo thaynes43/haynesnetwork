@@ -38,6 +38,7 @@
   --color-text-muted: #a8acb2;
   --color-topbar: #000000;
   --color-danger: #e0524f;
+  --color-danger-strong: #c23a37;
   --color-warning: #f5a623;
   --color-info: #2bb3a3;
   /* Scrollbar palette — a visible track + a thumb that reads against the surface
@@ -60,6 +61,7 @@
   --color-text-muted: #9aa0a6;
   --color-topbar: #ffffff;
   --color-danger: #c0392b;
+  --color-danger-strong: #97271a;
   --color-warning: #b9770e;
   --color-info: #0f8c80;
   /* Scrollbar palette — visible track + a thumb darker than the surface. */

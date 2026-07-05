@@ -18,7 +18,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
       <nav className="admin-nav" aria-label="Admin sections">
         <Link href="/admin">Users</Link>
         <Link href="/admin/catalog">Catalog</Link>
-        <Link href="/admin/tags">Tags</Link>
+        <Link href="/admin/roles">Roles</Link>
         <Link href="/admin/fixes">Fixes</Link>
         <Link href="/admin/restore">Restore</Link>
       </nav>

@@ -60,7 +60,8 @@ Four bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across 
 - **Owned aggregates:** Catalog Entry, App Grant, Tag (+ bundle), Library Grant, Family
   designation; permission-mutation audit rows.
 - **Inbound:** admin CRUD commands (catalog, grants, tags, family); permission queries from
-  the Dashboard and BC-04. Catalog writes reject `*.haynesops.com` URLs (R-14).
+  the Dashboard and BC-04. Catalog writes normalize the entered URL to a canonical `http(s)`
+  URL (ADR-013 reversed R-14 — any host allowed).
 - **Outbound:** Effective Permissions to the Dashboard (tile visibility, AC-05) and to
   BC-04 (**Allowed Library Sets**, family); audit rows in the same transaction (R-04).
 - **External systems:** none in Phase 1; follow-on push of app permissions into Authentik (R-30).

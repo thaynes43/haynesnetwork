@@ -71,7 +71,6 @@ describe('0003_media_ledger against embedded Postgres 16', () => {
     );
     const viewNames = views.rows.map((r) => r.table_name as string);
     expect(viewNames).toContain('wanted_items'); // DESIGN-001 D-15 reserved name claimed (D-08)
-    expect(viewNames).toContain('effective_app_grants');
   });
 
   it('is idempotent: re-running runMigrations applies nothing new', async () => {

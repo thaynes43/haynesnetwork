@@ -1,9 +1,7 @@
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import { Client } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startPostgres, withMigratedDb, type StartedPostgres } from '@hnet/test-utils';
-import { DEFAULT_MIGRATIONS_FOLDER, runMigrations } from '../src/migrate';
+import { runMigrations } from '../src/migrate';
 
 // NOTE: this file exercises schema-level invariants (CHECK constraints, seed
 // semantics) with direct SQL on purpose — it is on the ALLOWED_FILES list of the
@@ -19,12 +17,6 @@ const SEED_SLUGS = [
   'paperless',
   'tautulli',
 ];
-const DEFAULT_VISIBLE_SLUGS = ['seerr', 'plex', 'k8plex'];
-
-async function seedSql(): Promise<string> {
-  return readFile(join(DEFAULT_MIGRATIONS_FOLDER, '0002_seed_app_catalog.sql'), 'utf8');
-}
-
 describe('withMigratedDb', () => {
   it('boots an embedded Postgres 16, applies both migrations, and tears down', async () => {
     const version = await withMigratedDb(async (connectionString) => {
@@ -59,7 +51,7 @@ describe('migrations against embedded Postgres 16', () => {
     await pg?.stop();
   });
 
-  it('creates all Phase 1 tables and the effective_app_grants view', async () => {
+  it('creates the Phase 1 tables (ADR-012 roles model) and drops the tag/grant surface', async () => {
     const tables = await client.query(
       `SELECT table_name FROM information_schema.tables
         WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`,
@@ -70,21 +62,23 @@ describe('migrations against embedded Postgres 16', () => {
       'session',
       'account',
       'verification',
+      'roles',
+      'role_app_grants',
       'user_role_transitions',
       'app_catalog',
-      'user_app_grants',
-      'tags',
-      'tag_app_grants',
-      'user_tags',
       'permission_audit',
     ]) {
       expect(names).toContain(expected);
+    }
+    // ADR-012 dropped the tag/grant tables and the derivation view.
+    for (const gone of ['tags', 'tag_app_grants', 'user_tags', 'user_app_grants']) {
+      expect(names).not.toContain(gone);
     }
     const view = await client.query(
       `SELECT table_name FROM information_schema.views
         WHERE table_schema = 'public' AND table_name = 'effective_app_grants'`,
     );
-    expect(view.rowCount).toBe(1);
+    expect(view.rowCount).toBe(0);
   });
 
   it('is idempotent: re-running runMigrations applies nothing new', async () => {
@@ -93,13 +87,11 @@ describe('migrations against embedded Postgres 16', () => {
     expect(seeded.rows[0].n).toBe(8);
   });
 
-  it('seeds the catalog exactly per DESIGN-001 D-14 (R-12 visible, R-13 hidden)', async () => {
+  it('seeds the catalog exactly per DESIGN-001 D-14', async () => {
     const rows = await client.query(
-      'SELECT slug, name, url, icon, default_visible, sort_order FROM app_catalog ORDER BY sort_order',
+      'SELECT slug, name, url, icon, sort_order FROM app_catalog ORDER BY sort_order',
     );
     expect(rows.rows.map((r) => r.slug)).toEqual(SEED_SLUGS);
-    const visible = rows.rows.filter((r) => r.default_visible).map((r) => r.slug);
-    expect(visible).toEqual(DEFAULT_VISIBLE_SLUGS);
     const bySlug = new Map(rows.rows.map((r) => [r.slug, r]));
     expect(bySlug.get('seerr').url).toBe('https://overseerr.haynesnetwork.com');
     expect(bySlug.get('plex').url).toBe('https://plex.haynesnetwork.com');
@@ -112,80 +104,91 @@ describe('migrations against embedded Postgres 16', () => {
     expect(rows.rows.map((r) => r.sort_order)).toEqual([10, 20, 30, 40, 50, 60, 70, 80]);
   });
 
-  it('re-running the seed against a non-empty table inserts nothing (rows present exactly once)', async () => {
-    await client.query(await seedSql());
-    const rows = await client.query(
-      'SELECT slug, count(*)::int AS n FROM app_catalog GROUP BY slug',
+  it('seeds Admin + Default + Family roles with the right app sets (ADR-012)', async () => {
+    const roleRows = await client.query(
+      'SELECT name, is_admin, is_default, grants_all FROM roles ORDER BY sort_order',
     );
-    expect(rows.rowCount).toBe(8);
-    for (const row of rows.rows) {
-      expect(row.n).toBe(1);
-    }
+    expect(roleRows.rows.map((r) => r.name)).toEqual(['Admin', 'Default', 'Family']);
+    expect(roleRows.rows.find((r) => r.name === 'Admin').is_admin).toBe(true);
+    expect(roleRows.rows.find((r) => r.name === 'Default').is_default).toBe(true);
+    expect(roleRows.rows.every((r) => r.grants_all === false)).toBe(true); // none are all-apps
+
+    const grantsFor = async (name: string) => {
+      const res = await client.query(
+        `SELECT ac.slug FROM role_app_grants rag
+           JOIN roles r ON r.id = rag.role_id AND r.name = $1
+           JOIN app_catalog ac ON ac.id = rag.app_id
+          ORDER BY ac.sort_order`,
+        [name],
+      );
+      return res.rows.map((r) => r.slug);
+    };
+    // Default = the old default-visible set PLUS plexops.
+    expect(await grantsFor('Default')).toEqual(['seerr', 'plex', 'k8plex', 'plexops']);
+    // Family (extended family) = every app except tautulli.
+    expect(await grantsFor('Family')).toEqual([
+      'seerr',
+      'plex',
+      'k8plex',
+      'plexops',
+      'immich',
+      'open-webui',
+      'paperless',
+    ]);
+    // Admin stores NO explicit grants (all-apps is implicit via is_admin).
+    expect(await grantsFor('Admin')).toEqual([]);
   });
 
-  it('admin edits and deletions survive a seed re-run (D-14 empty-table guard)', async () => {
-    await client.query(
-      `UPDATE app_catalog SET url = 'https://seerr.haynesnetwork.com' WHERE slug = 'seerr'`,
-    );
-    await client.query(`DELETE FROM app_catalog WHERE slug = 'tautulli'`);
-    await client.query(await seedSql());
-    const count = await client.query('SELECT count(*)::int AS n FROM app_catalog');
-    expect(count.rows[0].n).toBe(7); // tautulli stays deleted
-    const seerr = await client.query(`SELECT url FROM app_catalog WHERE slug = 'seerr'`);
-    expect(seerr.rows[0].url).toBe('https://seerr.haynesnetwork.com'); // edit survives
-  });
+  // (The 0002 seed's idempotency / empty-table guard was validated when it shipped and is
+  // re-proven by "re-running runMigrations applies nothing new" above. Manually replaying
+  // the raw 0002 SQL is no longer possible: migration 0007 drops app_catalog.default_visible,
+  // which that historical INSERT references — and shipped migrations are never edited.)
 
-  describe('app_catalog_url_haynesnetwork_only CHECK (R-14, end-anchored)', () => {
+  describe('app_catalog_url_scheme CHECK (ADR-013 — scheme backstop only, arbitrary hosts)', () => {
     const insert = (slug: string, url: string) =>
       client.query({
         text: `INSERT INTO app_catalog (slug, name, url) VALUES ($1, $2, $3)`,
         values: [slug, slug, url],
       });
 
-    it('rejects *.haynesops.com (LAN-only ingress — CLAUDE.md rule 3)', async () => {
-      await expect(insert('bad-ops', 'https://x.haynesops.com')).rejects.toMatchObject({
-        code: '23514',
-      });
+    it('accepts arbitrary hosts, including *.haynesops.com (host no longer restricted)', async () => {
+      await insert('ok-google', 'https://google.com');
+      await insert('ok-http', 'http://foo.com');
+      await insert('ok-ops', 'https://x.haynesops.com');
+      await client.query(`DELETE FROM app_catalog WHERE slug IN ('ok-google','ok-http','ok-ops')`);
     });
 
-    it('rejects the suffix attack https://evil.haynesnetwork.com.attacker.io', async () => {
-      await expect(
-        insert('bad-suffix', 'https://evil.haynesnetwork.com.attacker.io'),
-      ).rejects.toMatchObject({ code: '23514' });
+    it('rejects a non-http(s) scheme', async () => {
+      await expect(insert('bad-ftp', 'ftp://x.com')).rejects.toMatchObject({ code: '23514' });
     });
 
-    it('rejects http:// and the bare apex', async () => {
-      await expect(insert('bad-http', 'http://plex.haynesnetwork.com')).rejects.toMatchObject({
-        code: '23514',
-      });
-      await expect(insert('bad-apex', 'https://haynesnetwork.com')).rejects.toMatchObject({
-        code: '23514',
-      });
-    });
-
-    it('accepts https://plex.haynesnetwork.com (and deep paths)', async () => {
-      await insert('good-plex', 'https://plex2.haynesnetwork.com');
-      await insert('good-path', 'https://plex2.haynesnetwork.com/web/index.html');
-      await client.query(`DELETE FROM app_catalog WHERE slug IN ('good-plex','good-path')`);
+    it('rejects a value with no http(s):// prefix', async () => {
+      await expect(insert('bad-bare', 'notaurl')).rejects.toMatchObject({ code: '23514' });
     });
   });
 
-  describe('enum CHECK constraints (text + CHECK, DESIGN-001 D-01.5)', () => {
-    it('users_role_enum rejects unknown roles', async () => {
+  describe('constraints (roles model — DESIGN-001 D-01.5 + ADR-012)', () => {
+    it('roles_not_admin_and_default rejects a role that is both', async () => {
       await expect(
-        client.query(
-          `INSERT INTO users (email, display_name, role) VALUES ('bad-role@example.com', 'Bad', 'Owner')`,
-        ),
+        client.query(`INSERT INTO roles (name, is_admin, is_default) VALUES ('both', true, true)`),
       ).rejects.toMatchObject({ code: '23514' });
+    });
+
+    it('roles_single_admin_idx allows only one Admin role', async () => {
+      await expect(
+        client.query(`INSERT INTO roles (name, is_admin) VALUES ('admin2', true)`),
+      ).rejects.toMatchObject({ code: '23505' }); // partial unique index (the seeded Admin exists)
     });
 
     it('user_role_transitions_initiator_kind_enum rejects "user" (users never change their own role)', async () => {
       const user = await client.query(
-        `INSERT INTO users (email, display_name) VALUES ('kind@example.com', 'Kind') RETURNING id`,
+        `INSERT INTO users (email, display_name, role_id)
+           VALUES ('kind@example.com', 'Kind', (SELECT id FROM roles WHERE is_default)) RETURNING id`,
       );
       await expect(
         client.query({
-          text: `INSERT INTO user_role_transitions (user_id, to_role, initiator_kind) VALUES ($1, 'Admin', 'user')`,
+          text: `INSERT INTO user_role_transitions (user_id, to_role_id, initiator_kind)
+                   VALUES ($1, (SELECT id FROM roles WHERE is_admin), 'user')`,
           values: [user.rows[0].id],
         }),
       ).rejects.toMatchObject({ code: '23514' });

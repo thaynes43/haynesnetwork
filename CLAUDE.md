@@ -42,9 +42,11 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    embedded Postgres binary (no Docker available in this WSL distro).
 2. **No raw hex colors** outside `tokens.css` files — enforced by `scripts/lint-css-hex.mjs`.
    All UI color goes through `--color-*` CSS custom properties themed by `data-theme`.
-3. **Never link users to `*.haynesops.com`** — those are LAN-only Traefik ingresses. The app
-   catalog exposes `*.haynesnetwork.com` URLs only. (Server-side code may talk to in-cluster
-   services via `*.svc.cluster.local` — that's fine; it's user-facing links that must not leak.)
+3. **Catalog links are admin-curated, arbitrary URLs** — the catalog accepts any normalized
+   `http(s)` URL an admin enters (any domain, including `*.haynesops.com` and external sites);
+   the old `*.haynesnetwork.com`-only restriction was retired by ADR-013. (Server-side code
+   may talk to in-cluster services via `*.svc.cluster.local` — that's fine and unrelated to
+   user-facing catalog links.)
 4. **The *arrs are the source of truth** for media lists. This app's ledger is a synced copy
    plus attribution/audit — sync flows in from the *arrs; the only write-back is the explicit
    failsafe restore and fix actions.
@@ -55,6 +57,14 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    borrowed from todos-for-dues).
 7. Secrets never land in git: local dev uses `.env.local` (gitignored); cluster uses
    External Secrets + 1Password (`HaynesKube` vault). See `docs/ops/`.
+8. **Destructive actions use the `@hnet/ui` `ConfirmButton` inline two-step confirm — never
+   `window.confirm`** (ADR-014 / DESIGN-004 D-13). Explanatory / multi-field confirms (failsafe
+   restore, Fix, Force-search) use a `Modal` instead.
+9. **Page contents must not re-orient on interaction** (ADR-015 / DESIGN-004 D-14). An
+   interaction may change color/emphasis but must NOT reflow or reposition neighbors. The only
+   exceptions are deliberate in-place expansions (e.g. the catalog inline editor) and
+   drag-and-drop reordering. The two-step confirm reserves width for the widest (armed) label so
+   the label swap can't shift the row; armed state deepens color, never layout.
 
 ## Workflow
 

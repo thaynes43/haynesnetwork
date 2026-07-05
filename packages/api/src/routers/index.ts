@@ -3,7 +3,7 @@ import { router } from '../trpc';
 import { profileRouter } from './profile';
 import { catalogRouter } from './catalog';
 import { usersRouter } from './users';
-import { tagsRouter } from './tags';
+import { rolesRouter } from './roles';
 import { ledgerRouter } from './ledger';
 import { fixRouter } from './fix';
 import { restoreRouter } from './restore';
@@ -12,7 +12,7 @@ export const appRouter = router({
   profile: profileRouter,
   catalog: catalogRouter,
   users: usersRouter,
-  tags: tagsRouter,
+  roles: rolesRouter,
   // Phase 2 (DESIGN-005 D-17): ledger + fix claim their DESIGN-003 reservations;
   // restore is the third Phase 2 name (recorded in DESIGN-003's reservation note).
   ledger: ledgerRouter,

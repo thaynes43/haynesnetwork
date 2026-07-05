@@ -2,7 +2,7 @@ import { pgTable, uuid, text, timestamp, jsonb, index, check } from 'drizzle-orm
 import { sql } from 'drizzle-orm';
 import { users } from './users';
 import { appCatalog } from './app-catalog';
-import { tags } from './tags';
+import { roles } from './roles';
 import { PERMISSION_AUDIT_ACTIONS, type PermissionAuditAction } from './enums';
 
 const ACTIONS_SQL_LIST = PERMISSION_AUDIT_ACTIONS.map((a) => `'${a}'`).join(',');
@@ -22,7 +22,7 @@ export const permissionAudit = pgTable(
     action: text('action').$type<PermissionAuditAction>().notNull(),
     subjectUserId: uuid('subject_user_id').references(() => users.id, { onDelete: 'set null' }),
     appId: uuid('app_id').references(() => appCatalog.id, { onDelete: 'set null' }),
-    tagId: uuid('tag_id').references(() => tags.id, { onDelete: 'set null' }),
+    roleId: uuid('role_id').references(() => roles.id, { onDelete: 'set null' }),
     detail: jsonb('detail'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },

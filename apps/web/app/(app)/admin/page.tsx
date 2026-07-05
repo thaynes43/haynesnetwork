@@ -1,8 +1,8 @@
 'use client';
 
-// DESIGN-004 D-11 — /admin users list: displayName, email, role, family badge, tags,
-// direct-grant count; rows link to /admin/users/[id]. Table → card collapse <760px is
-// CSS-only via data-label (D-06).
+// DESIGN-004 D-11 / ADR-012 — /admin users list: displayName, email, and the user's
+// single role; rows link to /admin/users/[id] to change it. Table → card collapse <760px
+// is CSS-only via data-label (D-06).
 
 import Link from 'next/link';
 import { trpc } from '@/lib/trpc-client';
@@ -28,9 +28,6 @@ export default function AdminUsersPage() {
             <th>Name</th>
             <th>Email</th>
             <th>Role</th>
-            <th>Family</th>
-            <th>Tags</th>
-            <th>Grants</th>
           </tr>
         </thead>
         <tbody>
@@ -42,24 +39,9 @@ export default function AdminUsersPage() {
                 </Link>
               </td>
               <td data-label="Email">{u.email}</td>
-              <td data-label="Role">{u.role}</td>
-              <td data-label="Family">
-                {u.isFamily ? <span className="badge">family</span> : <span aria-hidden="true">—</span>}
+              <td data-label="Role">
+                {u.role.isAdmin ? <span className="badge">{u.role.name}</span> : u.role.name}
               </td>
-              <td data-label="Tags">
-                {u.tags.length === 0 ? (
-                  <span aria-hidden="true">—</span>
-                ) : (
-                  <span className="chips">
-                    {u.tags.map((t) => (
-                      <span key={t.id} className="chip">
-                        {t.name}
-                      </span>
-                    ))}
-                  </span>
-                )}
-              </td>
-              <td data-label="Grants">{u.directGrants.length}</td>
             </tr>
           ))}
         </tbody>

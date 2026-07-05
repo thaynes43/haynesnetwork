@@ -1,7 +1,7 @@
 import { appCatalog, permissionAudit, type DbClient } from '@hnet/db';
 import { asc, eq, sql } from 'drizzle-orm';
 import { NotFoundError, ReorderMismatchError } from './errors';
-import { assertUserFacingUrl } from './url-assert';
+import { assertCatalogUrl } from './url-assert';
 import { inTransaction } from './db-client';
 
 export interface CreateAppInput {
@@ -11,7 +11,6 @@ export interface CreateAppInput {
   description?: string | null;
   url: string;
   icon?: string | null;
-  defaultVisible?: boolean;
   sortOrder?: number;
   actorId: string | null;
 }
@@ -21,7 +20,6 @@ export interface UpdateAppPatch {
   description?: string | null;
   url?: string;
   icon?: string | null;
-  defaultVisible?: boolean;
   sortOrder?: number;
 }
 
@@ -47,11 +45,11 @@ export interface ReorderCatalogInput {
 
 /**
  * DESIGN-001 D-05/D-12 — create a catalog entry + its 'create_app' audit row in ONE
- * transaction. Re-asserts R-14 (assertUserFacingUrl) so no code path bypasses the URL
- * rule (DESIGN-003 D-04 layer 2; the DB CHECK is the final backstop).
+ * transaction. Normalizes the URL (ADR-013 arbitrary-URL normalization) so the DB +
+ * audit rows store the canonical form; the scheme-only DB CHECK is the final backstop.
  */
 export async function createApp(input: CreateAppInput): Promise<{ appId: string }> {
-  assertUserFacingUrl(input.url);
+  const url = assertCatalogUrl(input.url);
   return inTransaction(input.db, async (tx) => {
     const [row] = await tx
       .insert(appCatalog)
@@ -59,9 +57,8 @@ export async function createApp(input: CreateAppInput): Promise<{ appId: string 
         slug: input.slug,
         name: input.name,
         description: input.description ?? null,
-        url: input.url,
+        url,
         icon: input.icon ?? null,
-        defaultVisible: input.defaultVisible ?? false,
         sortOrder: input.sortOrder ?? 0,
       })
       .returning({ id: appCatalog.id });
@@ -76,8 +73,7 @@ export async function createApp(input: CreateAppInput): Promise<{ appId: string 
       detail: {
         app_slug: input.slug,
         app_name: input.name,
-        url: input.url,
-        default_visible: input.defaultVisible ?? false,
+        url,
       },
     });
 
@@ -87,12 +83,13 @@ export async function createApp(input: CreateAppInput): Promise<{ appId: string 
 
 /**
  * DESIGN-001 D-05/D-12 — update a catalog entry + one 'update_app' audit row with a
- * before/after snapshot of the patched fields (a defaultVisible flip or URL edit is
- * permission-relevant — DESIGN-003 D-08). Slug is immutable (the stable machine key).
+ * before/after snapshot of the patched fields (a URL edit is permission-relevant —
+ * DESIGN-003 D-08). Slug is immutable (the stable machine key). A patched URL is
+ * normalized (ADR-013 arbitrary-URL normalization) so DB + audit store the canonical form.
  */
 export async function updateApp(input: UpdateAppInput): Promise<{ changed: boolean }> {
   if (input.patch.url !== undefined) {
-    assertUserFacingUrl(input.patch.url);
+    input.patch.url = assertCatalogUrl(input.patch.url);
   }
   return inTransaction(input.db, async (tx) => {
     const [before] = await tx
@@ -105,7 +102,7 @@ export async function updateApp(input: UpdateAppInput): Promise<{ changed: boole
     }
 
     const patchedKeys = (
-      ['name', 'description', 'url', 'icon', 'defaultVisible', 'sortOrder'] as const
+      ['name', 'description', 'url', 'icon', 'sortOrder'] as const
     ).filter((key) => input.patch[key] !== undefined);
     if (patchedKeys.length === 0) {
       return { changed: false };

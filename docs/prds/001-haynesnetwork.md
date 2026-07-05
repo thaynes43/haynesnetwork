@@ -32,11 +32,21 @@ rebuilding a lost *arr instance.
 
 ## Actors & roles
 
+> **Amended by ADR-012 (2026-07-05):** roles are now **DB-backed, admin-managed rows**
+> (`roles` table), not a fixed `Member`/`Admin` enum, and each user has **exactly one**.
+> Migration 0007 seeds **three** roles: the **Admin** (superuser) and **Default** (new-user)
+> system roles, plus a normal, editable/deletable **`Family`** starter role (every app except
+> Tautulli). "Family" is no longer a built-in designation — it is just a seeded example role,
+> and its Phase-3 family-library meaning (R-26/R-27) will attach to a **role attribute** rather
+> than the removed `users.is_family` flag. A role may instead grant **all apps** via
+> `roles.grants_all` ("All apps") without admin access. See ADR-012 and DDD-001 T-02..T-05, T-49.
+
 | Role | Description |
 |------|-------------|
-| Admin | Full control: catalog, users, permissions, tags, family designation, restore. First login by an allowlisted email claims Admin. |
-| Member (default) | Any successful Authentik login. Sees default tiles; manages own Plex libraries within allowed set; can report fixes. |
-| Family | A Member designation granting access to family-only Plex libraries (`HNet Home Videos`, `HNet Photos`). |
+| Admin | Superuser role (`roles.is_admin`): full control of catalog, users, roles, restore; **implicitly sees every app**. Immutable (no rename/edit/delete). First login by an allowlisted email is assigned this role. |
+| Default | The role assigned to every successful Authentik login (`roles.is_default`). Its editable app set is what basic users see; manages own Plex libraries within allowed set; can report fixes. Cannot be renamed or deleted (app set is editable). |
+| Family (seeded example) | A `Family` role is now **seeded by migration 0007** — a normal, editable/deletable role granting every catalog app **except Tautulli**. It ships as the starter example and the intended home for the Phase-3 family-library grant (R-26/R-27, ADR-012 C-09/C-12). |
+| _(other admin-created roles)_ | Admins create additional roles with their own editable app sets (or the "All apps" grant, `roles.grants_all` — every app, incl. future ones, without admin access; ADR-012 C-11) and assign users. |
 
 ## Requirements
 
@@ -46,27 +56,33 @@ rebuilding a lost *arr instance.
 |----|-------------|----------|
 | R-01 | Sign-in exclusively via Authentik OIDC (`authentik.haynesnetwork.com`); Plex is offered as the credential inside Authentik. No local passwords or invite tokens. | Must |
 | R-02 | First login whose email (case-insensitive) is on the `BOOTSTRAP_ADMIN_EMAILS` allowlist is idempotently promoted to Admin, with an audit row. | Must |
-| R-03 | Every other first login auto-creates a Member account with default permissions — no approval gate. | Must |
+| R-03 | Every other first login auto-creates an account with default permissions — no approval gate. _(Amended by ADR-012: the new user lands in the **Default role**, DB-defaulted on `users.role_id`; "Member" is no longer a role.)_ | Must |
 | R-04 | All role/permission changes write audit rows (who, what, when, initiator kind) in the same transaction. | Must |
 
 ### Dashboard & app catalog
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| R-10 | Authenticated users see a tile dashboard of apps they're permitted to open; tiles link out to `*.haynesnetwork.com` URLs. | Must |
+| R-10 | Authenticated users see a tile dashboard of apps they're permitted to open; tiles link out to their configured URL. | Must |
 | R-11 | The catalog is DB-backed and admin-editable (name, description, icon, URL, default-visible flag, display order) — no redeploy to change a link. | Must |
-| R-12 | Default-visible tiles: Seerr (`overseerr.haynesnetwork.com` until the owner's Seerr cutover), Plex (`plex.haynesnetwork.com`), K8Plex (`k8plex.haynesnetwork.com`). | Must |
+| R-12 | Default-visible tiles: Seerr (`overseerr.haynesnetwork.com` until the owner's Seerr cutover), Plex (`plex.haynesnetwork.com`), K8Plex (`k8plex.haynesnetwork.com`). _(Amended by ADR-012: "default-visible" is now the **Default role's app set** (`role_app_grants`), seeded by migration 0007 to **Seerr, Plex, K8Plex, and PlexOps** (`plexops` — basic users get PlexOps too); the per-app `app_catalog.default_visible` flag is gone. Admins change what basic users see by editing the Default role.)_ | Must |
 | R-13 | Admin-grantable tiles (seeded hidden): plexops, Immich, Open WebUI, Paperless, Tautulli — extensible via R-11. | Must |
-| R-14 | **User-facing links must never point at `*.haynesops.com`** (LAN-only ingresses). Enforced by validation on catalog writes. | Must |
-| R-15 | Admins can grant/revoke individual apps per user. | Must |
+| R-14 | ~~**User-facing links must never point at `*.haynesops.com`** (LAN-only ingresses). Enforced by validation on catalog writes.~~ _(Amended by ADR-013: the host restriction is retired — the catalog is admin-curated and accepts **any normalized `http(s)` URL** entered as a plain string; the only floor is http(s)-only, no embedded credentials. No host allow/deny list.)_ | Must |
+| R-15 | ~~Admins can grant/revoke individual apps per user.~~ **SUPERSEDED by ADR-012:** there are no per-user app grants. Access is **role-based** — an app is granted to a *role* (`role_app_grants`), and a user gets it by being assigned that role. To give one user a bespoke app set, an admin creates or reuses a role. | ~~Must~~ |
 
 ### Tags & permission bundles
 
+> **Amended by ADR-012 (2026-07-05):** "tags" as a distinct mechanism are gone —
+> the permission-bundle concept **collapsed into the Role**. A Role *is* the bundle (a named,
+> admin-managed app set); assigning a user a role is how bundled permissions are applied.
+> Read "tag" as "role" below. The Phase-3 allowed-library / family part of the bundle will
+> attach to a role attribute (R-26/R-27, ADR-012 C-09).
+
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| R-20 | Admins can create/edit/delete tags; a tag bundles a set of permissions (app grants, allowed Plex libraries, family designation). | Must |
-| R-21 | Applying/removing a tag on a user applies/removes its bundled permissions; per-user permissions remain possible without tags. | Must |
-| R-22 | Effective permissions = union of direct grants and tag grants; UI shows where each permission comes from. | Should |
+| R-20 | Admins can create/edit/delete **roles**; a role bundles a set of permissions (app grants; Phase-3: allowed Plex libraries, family designation). _(Amended by ADR-012: role replaces tag; `roles` + `role_app_grants`. Admin/Default are system roles — see Actors table.)_ | Must |
+| R-21 | Assigning/changing a user's **role** applies its bundled permissions; a user has exactly one role. _(Amended by ADR-012: "per-user permissions without tags" is removed with R-15 — bespoke access = a dedicated role.)_ | Must |
+| R-22 | Effective permissions = **the user's role's apps** (or all apps if the role is the Admin superuser). Provenance is simply the role — there is no multi-source union to attribute. _(Amended by ADR-012: the `effective_app_grants` view and per-source provenance are gone; computed by `effectiveAppsForUser`.)_ | Should |
 
 ### Plex library self-service (Phase 3)
 
@@ -90,6 +106,13 @@ rebuilding a lost *arr instance.
 | R-45 | Every Fix requires a reason from a taxonomy (e.g. won't play / corrupt, wrong language, wrong version or quality, missing subtitles, wrong content entirely) or "Other" + free text. Reasons are stored for analysis. | Must |
 | R-46 | Fix requests are tracked (requester, item, reason, *arr actions taken, outcome) and visible to admins; users see their own fix history and status. | Must |
 | R-47 | Rate/abuse guard: sensible per-user limits on fix actions (admin-configurable later). | Should |
+
+> **Note (2026-07-05) — library browse & fix-history UX (R-43/R-46):** the `/library` page presents
+> browse as **Movies · TV · Music** sub-tabs (default Movies, no "All"), each scoping the search to
+> that one category (movies→Radarr, TV→Sonarr, music→Lidarr). A fourth **My Fixes** sub-tab hosts
+> the caller's own fix/force-search history (R-46) — **relocated out of the account/user menu** into
+> Library; the old `/my-fixes` route redirects to `/library?tab=my-fixes`. See DESIGN-005 D-15/D-17
+> and DESIGN-004 D-08. No change to the requirements themselves — this records how they are surfaced.
 
 ### Failsafe restore (Phase 2)
 
@@ -118,8 +141,8 @@ rebuilding a lost *arr instance.
 | US-01 | As a user, I sign in with my Plex account (via Authentik) and land on my dashboard. | AC-01, AC-02 |
 | US-02 | As the owner, my first login makes me Admin without any manual DB step. | AC-03 |
 | US-03 | As a Member, I see Seerr and the Plex tiles by default and can open them. | AC-04 |
-| US-04 | As an Admin, I grant a user Immich and it appears on their dashboard without their re-login. | AC-05 |
-| US-05 | As an Admin, I create a "family" tag (family designation + family libraries) and tag a user; they can now add HNet Home Videos on any Plex server. | AC-06 |
+| US-04 | As an Admin, I give a user Immich and it appears on their dashboard without their re-login. _(Amended by ADR-012: done by assigning a **role** whose app set includes Immich — or adding Immich to their current role — not a per-user grant.)_ | AC-05 |
+| US-05 | As an Admin, I create a **`Family` role** (Phase 3: family designation + family libraries) and assign a user; they can now add HNet Home Videos on any Plex server. _(Amended by ADR-012: "family" is an admin-created role, not a tag/flag; library gating lands in Phase 3, C-09.)_ | AC-06 |
 | US-06 | As a Member, a movie won't play; I find it in the app, hit Fix, pick "won't play / corrupt", and the *arr blocklists that release and searches for another. | AC-07, AC-08 |
 | US-07 | As an Admin, Radarr's DB is lost; I diff the ledger against the fresh instance and re-add everything monitored with correct profiles. | AC-09 |
 | US-08 | As a user on my phone, the dashboard and fix flow are fully usable without horizontal scrolling. | AC-10 |
@@ -131,9 +154,9 @@ rebuilding a lost *arr instance.
 | AC-01 | Unauthenticated visit → single "Sign in" → Authentik → back, session established (7-day cookie). No password form exists. |
 | AC-02 | First login creates a Member row; profile shows displayName/email from OIDC claims. |
 | AC-03 | Login with an email on `BOOTSTRAP_ADMIN_EMAILS` yields role Admin and a `user_role_transitions` audit row with system initiator; repeat logins are no-ops. |
-| AC-04 | A fresh Member's dashboard shows exactly the default-visible catalog entries; every href matches `https://*.haynesnetwork.com/*`. |
-| AC-05 | Admin grant → user's next dashboard query (or live refresh) includes the tile; revoke removes it; both audit-logged. |
-| AC-06 | Tag application yields the union of tag + direct permissions; removing the tag removes only tag-derived permissions. |
+| AC-04 | A fresh Member's dashboard shows exactly the default-visible catalog entries; every dashboard href is a valid http(s) URL. _(Amended by ADR-013: relaxed from `https://*.haynesnetwork.com/*` — arbitrary normalized http(s) URLs are allowed.)_ |
+| AC-05 | Admin assigns a role that includes the app → user's next dashboard query (or live refresh) includes the tile; changing to a role without it removes it; role assignment is audit-logged (`user_role_transitions`). _(Amended by ADR-012: role assignment, not a per-user grant/revoke.)_ |
+| AC-06 | ~~Tag application yields the union of tag + direct permissions; removing the tag removes only tag-derived permissions.~~ **Superseded by ADR-012:** a user's effective apps are exactly their role's app set (no union); editing a role's apps changes every member's effective set immediately. |
 | AC-07 | Fix on an item with grab history calls the *arr's history-failed endpoint (blocklist) then a search command; the fix record stores reason + actions + *arr responses. |
 | AC-08 | Fix without grab history deletes the file(s) and triggers search; outcome recorded. |
 | AC-09 | Restore preview lists exactly the ledger items absent from the target *arr; execution re-adds them monitored with stored quality profile, root folder, and tags; report shows successes/failures. |
@@ -143,7 +166,7 @@ rebuilding a lost *arr instance.
 
 | Phase | Scope |
 |-------|-------|
-| 1 | R-01..R-15, R-20..R-22, R-60..R-66 — auth, dashboard, admin permissions, tags, deploy to staging. |
+| 1 | R-01..R-15, R-20..R-22, R-60..R-66 — auth, dashboard, admin permissions, roles (tags→roles per ADR-012), deploy to staging. |
 | 2 | R-40..R-52 — *arr ledger, fix with reasons, Seerr attribution, failsafe restore. |
 | 3 | R-25..R-28 — Plex library self-service + family libraries. |
 | Later | R-30 Authentik permission sync; Maintainerr integration; root-domain cutover per R-64 gates on Phase 1 e2e. |

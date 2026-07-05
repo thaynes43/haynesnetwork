@@ -5,7 +5,7 @@
 // /admin/fixes (R-46). Also guards the Modal focus-steal regression: the Other-reason
 // textarea must keep focus across keystrokes.
 import { test, expect, type Page } from '@playwright/test';
-import { signIn, openUserMenu } from './support/helpers';
+import { signIn } from './support/helpers';
 import { readRuntimeEnv } from './support/env';
 import { grabHistoryIdFor, STUB_SERIES_ID, type RecordedArrWrite } from './support/stub-arr';
 
@@ -37,6 +37,8 @@ async function resetStubArrCalls(): Promise<void> {
 async function openSeededItem(page: import('@playwright/test').Page): Promise<void> {
   await page.locator('.topbar__nav').getByRole('link', { name: 'Library' }).click();
   await page.waitForURL('/library');
+  // Breaking Prod is a TV show — the library defaults to the Movies tab, so switch to TV.
+  await page.getByRole('tab', { name: 'TV' }).click();
   const card = page.locator('.media-card').filter({ hasText: 'Breaking Prod' });
   await expect(card).toHaveCount(1);
   await card.click();
@@ -50,19 +52,22 @@ test.describe('media ledger + fix flow', () => {
   }) => {
     await signIn(page, 'member');
 
-    // Library list still shows the seeded rows with kind + disk badges.
+    // Library defaults to the Movies tab — the seeded movie shows here.
     await page.locator('.topbar__nav').getByRole('link', { name: 'Library' }).click();
     await page.waitForURL('/library');
+    await expect(page.locator('.media-card').filter({ hasText: 'The Fixture' })).toHaveCount(1);
+
+    // The TV show lives under the TV sub-tab (each media tab scopes the list to its category).
+    await page.getByRole('tab', { name: 'TV' }).click();
     const card = page.locator('.media-card').filter({ hasText: 'Breaking Prod' });
     await expect(card).toContainText('TV');
     await expect(card).toContainText('9/10 on disk');
-    await expect(page.locator('.media-card').filter({ hasText: 'The Fixture' })).toHaveCount(1);
 
     // Owner ruling 2026-07-04: library tiles are ACTION-FREE — no Fix / Force Search
     // buttons on the list; the whole tile is a click-through to the detail page.
     await expect(page.locator('.media-list button')).toHaveCount(0);
 
-    // Search narrows the list.
+    // Search narrows the (TV-scoped) list.
     await page.getByLabel('Search the library').fill('breaking');
     await expect(page.locator('.media-card')).toHaveCount(1);
 
@@ -121,9 +126,9 @@ test.describe('media ledger + fix flow', () => {
 
   test('member sees the fix under My fixes with its status', async ({ page }) => {
     await signIn(page, 'member');
-    await openUserMenu(page);
-    await page.getByRole('menuitem', { name: 'My fixes' }).click();
-    await page.waitForURL('/my-fixes');
+    await page.goto('/library');
+    await page.getByRole('tab', { name: 'My Fixes' }).click();
+    await expect(page).toHaveURL(/tab=my-fixes/);
 
     const row = page.locator('.admin-table tbody tr').filter({ hasText: 'Breaking Prod' });
     await expect(row).toHaveCount(1);

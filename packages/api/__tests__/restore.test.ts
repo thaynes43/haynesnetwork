@@ -29,7 +29,7 @@ afterAll(async () => {
 
 describe('restore.diff / restore.execute (AC-09)', () => {
   it('diffs by external id, re-adds with searches OFF, and reports per item', async () => {
-    const admin = await createUser(tdb.db, { role: 'Admin' });
+    const admin = await createUser(tdb.db, { admin: true });
 
     // Three monitored sonarr rows; the live *arr only still has 'Kept Show'.
     // 'Lost Show' is additionally tombstoned (the disaster case, D-16 step 1).
@@ -149,7 +149,7 @@ describe('restore.diff / restore.execute (AC-09)', () => {
   });
 
   it('records an unmapped quality profile as a per-item failure (never a default)', async () => {
-    const admin = await createUser(tdb.db, { role: 'Admin' });
+    const admin = await createUser(tdb.db, { admin: true });
     const item = await seedMediaItem(tdb.db, 'radarr', {
       title: 'Orphan Movie',
       arrItemId: 801,
@@ -178,7 +178,7 @@ describe('restore.diff / restore.execute (AC-09)', () => {
   });
 
   it('surfaces a dead *arr as ARR_UPSTREAM_UNAVAILABLE on diff', async () => {
-    const admin = await createUser(tdb.db, { role: 'Admin' });
+    const admin = await createUser(tdb.db, { admin: true });
     const stub = stubArrBundle([
       { path: '/api/v1/artist', status: 500, body: { message: 'down' } },
     ]);

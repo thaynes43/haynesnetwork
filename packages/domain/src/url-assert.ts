@@ -1,46 +1,63 @@
-import { ForbiddenHostError } from './errors';
+import { InvalidCatalogUrlError } from './errors';
 
 /**
- * R-14 / CLAUDE.md hard rule 3 — user-facing catalog URLs must be
- * `https://<sub>.haynesnetwork.com[/path]` and nothing else. Never `*.haynesops.com`.
+ * ADR-013 / BRANCH-A — the catalog accepts ARBITRARY URLs entered as a plain string,
+ * normalized from common forms. NO host allow/deny rules: the only floor is a
+ * well-formed http(s) URL with no embedded credentials.
  *
- * Mirror of the DB CHECK `app_catalog_url_haynesnetwork_only` (DESIGN-001 D-05):
- * end-anchored with `(/.*)?$` so the hostname must END in `.haynesnetwork.com` —
- * a prefix-only regex would accept `https://evil.haynesnetwork.com.attacker.io`.
+ * The web client keeps an identical mirror of `normalizeCatalogUrl` in
+ * apps/web/lib/catalog-url.ts (live UX only) — the two copies must stay byte-identical.
  */
-const DB_CHECK_MIRROR = /^https:\/\/[a-z0-9.-]+\.haynesnetwork\.com(\/.*)?$/;
-
-/** Structural hostname rule (DESIGN-003 D-04): at least one subdomain label. */
-const USER_FACING_HOSTNAME = /^([a-z0-9-]+\.)+haynesnetwork\.com$/;
-
-export function isUserFacingUrl(raw: string): boolean {
-  if (!DB_CHECK_MIRROR.test(raw)) return false;
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    return false;
+export function normalizeCatalogUrl(
+  raw: string,
+): { ok: true; url: string } | { ok: false; error: string } {
+  const trimmed = raw.trim();
+  if (trimmed === '') return { ok: false, error: 'Enter a URL.' };
+  // A real URL has no interior whitespace. Reject it up front so behavior is deterministic:
+  // some URL engines throw on `https://a b`, others silently percent-encode it into a
+  // surprising "valid" URL.
+  if (/\s/.test(trimmed)) return { ok: false, error: 'A URL cannot contain spaces.' };
+  const tryParse = (s: string): URL | null => {
+    try {
+      return new URL(s);
+    } catch {
+      return null;
+    }
+  };
+  // Trust the string as typed only when it already names an http(s):// URL or a real scheme
+  // (javascript:/mailto:); otherwise default to https:// so a bare host or host:port
+  // (google.com, plex.example.com:32400) parses instead of the dotted host being read as a
+  // scheme. The regex treats `scheme:` followed by a digit as a port, not a scheme.
+  const hasScheme = /^[a-z][a-z0-9+.-]*:(\/\/|(?!\d))/i.test(trimmed);
+  const url = tryParse(hasScheme ? trimmed : `https://${trimmed}`);
+  if (!url) return { ok: false, error: 'That does not look like a URL. Try example.com.' };
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    return { ok: false, error: 'Only http:// and https:// links are allowed.' };
   }
-  return (
-    url.protocol === 'https:' &&
-    USER_FACING_HOSTNAME.test(url.hostname) &&
-    url.port === '' &&
-    url.username === '' &&
-    url.password === ''
-  );
+  if (url.username !== '' || url.password !== '') {
+    return { ok: false, error: 'Remove the username and password from the URL.' };
+  }
+  const host = url.hostname;
+  if (host === '') return { ok: false, error: 'That does not look like a URL. Try example.com.' };
+  // Require a real domain (a dot), an IP, or localhost — rejects typos like "eeeee".
+  if (!host.includes('.') && host !== 'localhost' && !host.startsWith('[')) {
+    return { ok: false, error: 'Add a top-level domain, e.g. example.com.' };
+  }
+  // Canonical form: URL.href minus the lone trailing slash a bare host picks up.
+  let out = url.toString();
+  if (url.pathname === '/' && url.search === '' && url.hash === '') out = out.slice(0, -1);
+  return { ok: true, url: out };
 }
 
 /**
- * Defense-in-depth layer 2 (DESIGN-003 D-04): re-asserts the R-14 predicate inside the
- * catalog domain helpers so no code path — tRPC or not — can write a forbidden host.
- * Layer 1 is the zod schema at the API edge; layer 3 is the DB CHECK constraint.
+ * Domain single-writer floor (ADR-013): normalize + validate an arbitrary catalog URL.
+ * Returns the canonical URL string on success; throws InvalidCatalogUrlError otherwise.
+ * The zod edge schema stays lenient — the domain is authoritative.
  */
-export function assertUserFacingUrl(raw: string): void {
-  if (!isUserFacingUrl(raw)) {
-    throw new ForbiddenHostError(
-      `Catalog URLs must be https://<sub>.haynesnetwork.com[/path] — got ${JSON.stringify(
-        raw,
-      )} (no ports, no credentials, and never *.haynesops.com — R-14)`,
-    );
+export function assertCatalogUrl(raw: string): string {
+  const res = normalizeCatalogUrl(raw);
+  if (!res.ok) {
+    throw new InvalidCatalogUrlError(res.error);
   }
+  return res.url;
 }
