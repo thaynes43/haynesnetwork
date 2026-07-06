@@ -84,6 +84,7 @@ deny-list-of-exceptions for the allowed set (DESIGN-001:674).
 | T-5 | **Verify Lidarr album-fix semantics** against a live instance (one blocklisted grab dislodging a bad album). | S | DESIGN-005 Q-08 |
 | T-6 | **Confirm Open WebUI tile URL** (`ai.haynesnetwork.com`) long-term vs a rename. | S | DESIGN-001 Q-02 |
 | T-7 | **`packages/auth` test teardown race** — `bootstrap-admin.test.ts` intermittently exits 1 with `57P01` (embedded PG stopped while a pooled connection is open); all tests pass. Fix: `await pool.end()` before stopping embedded PG. | S | CI run 28764595270 (PR #40) |
+| T-8 | **Catalog keyboard-reorder e2e flake** — `apps/web/e2e/admin.spec.ts:79` (ADR-015) intermittently fails (focus/timing: `order.b=-1` / dialog not dismissed); passed on #38–#43, failed on docs-only #44. Stabilize the test, or check whether it's a real intermittent race in the drag-handle focus/persist. `e2e` is advisory so it doesn't block. | S | CI run 28766326033 (PR #44) |
 
 ## Cross-cutting decisions the owner must settle for an unattended run
 

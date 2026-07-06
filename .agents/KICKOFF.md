@@ -101,6 +101,12 @@ every test passes; PG is just shut down with a pooled connection still open. If 
 with that `57P01` error, re-run the job (`gh run rerun <run-id> --failed`) — it's a flake, not a
 regression. (Backlog has a real fix: `await pool.end()` before stopping embedded PG.)
 
+**Second known flake:** the `e2e` job's catalog keyboard-reorder test
+(`apps/web/e2e/admin.spec.ts:79`, ADR-015) is intermittently red (focus/timing race — `order.b=-1`
+/ a dialog that doesn't dismiss). `e2e` is **advisory** (not a merge gate), so it never blocks a
+merge — re-run if you want it green. If it recurs during real UI work, check the catalog
+drag-handle focus/persist handling; it may be a genuine intermittent race, not just a test flake.
+
 **Testing — live Playwright is the sign-off.** Beyond unit + hermetic e2e stubs (`pnpm --filter
 web e2e`, :3100), each plan lists the **live journeys** to run against real staging
 `https://haynesnetwork.haynesops.com` and the real backing servers. A plan is **not done** until
