@@ -10,8 +10,10 @@
 // "Breaking Prod", 9/10 episodes on disk, profile HD-1080p.
 import { getPool, SEEDED_ROLE_IDS } from '@hnet/db';
 import {
+  createRole,
   ingestLedgerEvents,
   setRoleLibraries,
+  setSectionPermission,
   upsertMediaItemsBatch,
   upsertMediaMetadataBatch,
   upsertPlexLibraries,
@@ -244,8 +246,38 @@ async function main(): Promise<void> {
     });
   }
 
+  // ADR-021 / DESIGN-009 — two roles for the Ledger-section access e2e (AC-13): a Read-Only role
+  // (browse + export, no Add-&-search) and a Disabled role (no nav, no route). The Default role
+  // keeps the read_only default (no row needed) so authed members can browse out of the box.
+  const { roleId: ledgerReadOnlyId } = await createRole({
+    name: 'Ledger Read-Only',
+    description: 'Browse + export the Ledger; no Add-&-search',
+    appIds: [],
+    actorId: null,
+  });
+  await setSectionPermission({
+    roleId: ledgerReadOnlyId,
+    sectionId: 'ledger',
+    level: 'read_only',
+    actorId: null,
+  });
+  const { roleId: ledgerDisabledId } = await createRole({
+    name: 'Ledger Disabled',
+    description: 'No Ledger section',
+    appIds: [],
+    actorId: null,
+  });
+  await setSectionPermission({
+    roleId: ledgerDisabledId,
+    sectionId: 'ledger',
+    level: 'disabled',
+    actorId: null,
+  });
+
   await getPool().end();
-  console.log('[seed-ledger] seeded 4 media items + 2 ledger events + Plex libraries/grants');
+  console.log(
+    '[seed-ledger] seeded 4 media items + 2 ledger events + Plex libraries/grants + Ledger section roles',
+  );
 }
 
 main().catch((err: unknown) => {

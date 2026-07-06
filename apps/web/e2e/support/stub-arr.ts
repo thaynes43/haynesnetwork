@@ -102,6 +102,25 @@ function movieResource(id: number) {
   };
 }
 
+/** ADR-022 D-02 — a minimal Lidarr artist resource for `POST /artist` (Ledger add path). */
+function artistResource(id: number) {
+  return {
+    id,
+    artistName: 'Ledger Band',
+    sortName: 'ledger band',
+    foreignArtistId: `11111111-2222-3333-4444-${String(id).padStart(12, '0')}`,
+    monitored: true,
+    monitorNewItems: 'all',
+    qualityProfileId: 1,
+    metadataProfileId: 1,
+    rootFolderPath: '/data/media/music',
+    path: `/data/media/music/Ledger Band ${id}`,
+    tags: [] as number[],
+    status: 'continuing',
+    added: '2025-01-01T00:00:00Z',
+  };
+}
+
 /**
  * The `grabbed` value for the paged `GET /history?eventType=` filter. That real *arr
  * endpoint binds `eventType` to the INTEGER `*HistoryEventType` enum (grabbed === 1;
@@ -249,7 +268,7 @@ export async function startStubArr(): Promise<StubArrServer> {
         return res.end();
       }
 
-      if (method === 'POST' || method === 'DELETE') {
+      if (method === 'POST' || method === 'DELETE' || method === 'PUT') {
         const raw = await readBody(req);
         const body = raw === '' ? undefined : (JSON.parse(raw) as unknown);
         calls.push({ method, path, query, body });
@@ -270,7 +289,12 @@ export async function startStubArr(): Promise<StubArrServer> {
         if (method === 'DELETE' && /^\/(episodefile|moviefile|trackfile)\/\d+$/.test(path)) {
           return json(res, 200, {});
         }
-        // POST /series|/movie|/artist|/tag (restore surface) — echo minimal resources.
+        // ADR-022 D-02 — the bulk-editor monitor flip (Ledger Add-&-search, present-but-
+        // unmonitored path). Echo the updated resource list (the write client drains it).
+        if (method === 'PUT' && /^\/(series|movie|artist)\/editor$/.test(path)) {
+          return json(res, 200, []);
+        }
+        // POST /series|/movie|/artist|/tag (restore + Ledger add surface) — echo resources.
         if (method === 'POST' && path === '/tag') {
           return json(res, 201, {
             id: 99,
@@ -279,6 +303,12 @@ export async function startStubArr(): Promise<StubArrServer> {
         }
         if (method === 'POST' && path === '/series') {
           return json(res, 201, seriesResource(9001));
+        }
+        if (method === 'POST' && path === '/movie') {
+          return json(res, 201, movieResource(9701));
+        }
+        if (method === 'POST' && path === '/artist') {
+          return json(res, 201, artistResource(9801));
         }
         return json(res, 404, { message: `stub-arr: no write handler for ${method} ${path}` });
       }
