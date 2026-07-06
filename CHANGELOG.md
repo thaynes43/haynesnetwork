@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/thaynes43/haynesnetwork/compare/v0.6.1...v0.7.0) (2026-07-06)
+
+
+### Features
+
+* cosign keyless image signing on release (ADR-020) ([#53](https://github.com/thaynes43/haynesnetwork/issues/53)) ([25e0ca4](https://github.com/thaynes43/haynesnetwork/commit/25e0ca44627e8d80e7b0131bd061d0e47df919a9))
+
 ## [0.6.1](https://github.com/thaynes43/haynesnetwork/compare/v0.6.0...v0.6.1) (2026-07-06)
 
 
