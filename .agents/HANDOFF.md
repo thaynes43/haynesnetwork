@@ -8,10 +8,12 @@
   `.agents/plans/completed/001-gate-a-pr-cutover.md`).
   `main` is branch-protected: branch → PR → required checks `lint-and-typecheck`, `test`,
   `build` green → squash-merge. `e2e` advisory. Conventional-commit titles drive release-please.
-- **Latest release: v0.8.1 (signed) — PLAN-004 library metadata + posters + filter engine
-  (v0.8.0 feature + v0.8.1 resolution/rating fix; every release signed since v0.7.0).** Prior:
-  **v0.7.0 — first *signed* release (PLAN-007: keyless cosign, Rekor-logged, in-run verified,
-  `.sig` on GHCR; Kyverno dedicated Enforce policy live-validated).** Earlier
+- **Latest release: v0.9.0 (signed) — PLAN-005 Ledger section: section-level role permissions
+  (Edit/Read-Only/Disabled), bulk monitor-and-search, and emergency JSONL export (ADR-021/022);
+  live-validated on staging.** Prior: **v0.8.1 (signed) — PLAN-004 library metadata + posters +
+  filter engine (v0.8.0 feature + v0.8.1 resolution/rating fix; every release signed since
+  v0.7.0).** Prior: **v0.7.0 — first *signed* release (PLAN-007: keyless cosign, Rekor-logged,
+  in-run verified, `.sig` on GHCR; Kyverno dedicated Enforce policy live-validated).** Earlier
   today: **v0.5.0 (#47) — PLAN-002 Bazarr subtitle Fix (ADR-016), deployed to staging +
   live-validated 2026-07-06:** `missing_subtitles` fixes route to Bazarr's async
   `search-missing` (movie: per-movie; sonarr episode/season: series-level — no per-episode async
@@ -21,8 +23,9 @@
 - **The autonomous Fable 5 run (Mon 2026-07-06) is IN PROGRESS.** Entry prompt
   `.agents/KICKOFF.md`; queue in `.agents/plans/` (see `.agents/plans/README.md`). **Plans done
   so far today:** 002 ✓ (v0.5.0); 003 validated on v0.6.1 (one deferred live share-write, owner
-  input pending); 004 ✓ (v0.8.0/v0.8.1); 007 ✓ (v0.7.0); 005 backend built (Fable review in
-  progress, UX next); 006/008 pending.
+  input pending); 004 ✓ (v0.8.0/v0.8.1); 005 ✓ (v0.9.0); 007 ✓ (v0.7.0); 006 backend in flight.
+  **Queue extended per owner:** 011 (Authentik MFA-for-native-accounts + `hnet` rebrand of the
+  login portal) → then 009/010 → then 008 (public cutover — LAST).
   v0.4.0 recap: unified roles (ADR-012), arbitrary catalog URLs (ADR-013), two-step
   `ConfirmButton`, drag-drop catalog reorder, Library sub-tabs.
 - **PLAN-007 (cosign image signing) COMPLETE** (`.agents/plans/completed/007-cosign-image-signing.md`).
@@ -47,22 +50,23 @@
 
 ## Current state
 
-- **PLAN-005 Ledger section — backend + UX BUILT on `feat/ledger-section` (2026-07-06,
-  Fable 5 backend run + Fable UX agent).** Backend: ADR-021 section permissions
-  (`role_section_permissions`, session-carried levels, `sectionProcedure`), ADR-022
-  `executeArrAdd` (add / monitor-flip / skip + best-effort search, 1000 cap), `ledgerAdmin`
-  browse/bulkAddAndSearch/run/runs, streaming JSONL `/api/ledger/export`. UX: the `/ledger`
-  top-level section (topbar entry gated on the session's ledger level; Disabled gets a clean
-  "not available" page), Movies/TV/Music tabs over a frozen-pane spreadsheet
-  (sticky header + Title column, internal both-axis scroll), the /library chip engine plus
-  `?mon`/`?file` single-select chips, sortable Title/Rating/Added headers, persistent actions
-  bar ("N selected" · Export filtered (M rows) — exports the FILTER — · Monitor & search),
-  the ADR-014 Modal confirm → per-item run report keyed off ok/outcome/searched (D-05),
-  Recent runs, and the `/admin/roles` Ledger access select (Admin implicit Edit). E2e:
-  `e2e/ledger.spec.ts` (browse/chips/sort/export/bulk-run-vs-stub/read-only/disabled/roles
-  editor/mobile); seed adds tombstoned 'Vanished Heist'; stub *arr adds the
-  present-but-unmonitored live movie + full rootfolder list. As-built record: DESIGN-009
-  D-01/D-08. Remaining: PR, deploy, LIVE journeys 1–4 (plan stays in `.agents/plans/`).
+- **PLAN-005 (Ledger section) COMPLETE — shipped v0.9.0, live-validated**
+  (`.agents/plans/completed/005-ledger-section.md`). ADR-021 section-level role permissions
+  (`role_section_permissions`, session-carried levels, `sectionProcedure`) — the **base
+  Section-Permission model PLAN-006 (Trash) extends**; ADR-022 `executeArrAdd` **generalizes
+  `executeRestore`** (add / monitor-flip / skip + best-effort search, same-tx `restored` +
+  `search_requested` ledger events, 1000 cap); `ledgerAdmin` browse/bulkAddAndSearch/run/runs;
+  streaming JSONL `/api/ledger/export`. UX: the `/ledger` top-level section (topbar gated on the
+  session's ledger level; Disabled → clean "not available" page), Movies/TV/Music frozen-pane
+  spreadsheet, `?mon`/`?file` chips, sortable Title/Rating/Added headers, actions bar
+  (Export filtered · Monitor & search), ADR-014 Modal confirm → per-item run report,
+  `/admin/roles` Ledger access select (Admin implicit Edit). **Live evidence:** two-item
+  monitor-and-search landed monitored + MoviesSearch in the real Radarr (API-verified), 600-row
+  JSONL export byte-exact vs DB, read_only/disabled gating enforced server-side with audited
+  flips. **Fileless import dropped** on live evidence (all 4,008 backlog ids were already live
+  unmonitored rows) → reframed to filter + bulk monitor-and-search (ADR-022 C-04). **Process
+  note:** an adversarial pre-ship review found + fixed one confirmed defect before ship.
+  As-built record: DESIGN-009 D-01/D-08.
 - **Unified Role model (ADR-012) SHIPPED — code complete, all tests pass, docs updated.**
   One role per user (`users.role_id`), roles-only (no per-user grants/tags/family flag);
   two seeded system roles — **Admin** (superuser, implicit all-apps, immutable) and
@@ -104,14 +108,16 @@ The **Fable 5 autonomous run** works the release queue in `.agents/plans/` (star
 3. ~~**004 — Library metadata enrichment + posters + shared filter engine**~~ ✅ **DONE**
    (v0.8.0/v0.8.1, `completed/004-library-metadata-enrichment.md`; filter engine + D-09 search
    contract now in `@hnet/ui`, reused by 005/006).
-4. **005 — Ledger section** (native restore via filter→*arr + export; imports
-   `radarr-fileless-backlog.md`) — **backend built; Fable review in progress, UX next**.
-5. **006 — Trash section** (integrates the Maintainerr instance; replaces the Restore nav).
-6. ~~**007 — cosign signing**~~ ✅ **DONE** (v0.7.0, `completed/007-cosign-image-signing.md`);
-   **008 — public cutover (LAST)**.
-7. **Stretch (owner ideas, post-core):** 009 **Bulletin** (aggregated notification Feed +
-   user Messages board), 010 **MOTD** dashboard banner — build only if time/budget remains
-   after 002–008; 010 is small enough to pull forward as a quick win.
+4. ~~**005 — Ledger section**~~ ✅ **DONE** (v0.9.0, `completed/005-ledger-section.md`; native
+   restore via filter→*arr + JSONL export; fileless import dropped per ADR-022 C-04).
+5. **006 — Trash section** (integrates the Maintainerr instance; replaces the Restore nav) —
+   **backend in flight; next up.** Reuses the ADR-021 Section-Permission base 005 shipped.
+6. **011 — Authentik hardening / branding** (NEW, owner-scoped 2026-07-06): MFA for native Authentik accounts + `hnet` rebrand of the login portal — doc to be authored at slot time.
+7. ~~**007 — cosign signing**~~ ✅ **DONE** (v0.7.0, `completed/007-cosign-image-signing.md`).
+   Owner-extended queue after 006: **011 → 009/010 → 008 (public cutover — LAST)**.
+8. **Stretch (owner ideas, post-core):** 009 **Bulletin** (aggregated notification Feed +
+   user Messages board), 010 **MOTD** dashboard banner — now slotted after 011, before the
+   008 cutover; 010 is small enough to pull forward as a quick win.
 
 The full consolidated backlog (with what is deferred beyond this run) is in
 `context/2026-07-05-backlog-recon.md`.

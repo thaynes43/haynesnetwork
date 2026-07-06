@@ -1,11 +1,11 @@
 # PLAN-005: Ledger section — spreadsheet browse + bulk Add-&-search + emergency export
 
-- **Status:** Executing — **backend vertical + UX layer shipped** on `feat/ledger-section`
-  (2026-07-06, Fable 5 backend + Fable UX agent): the `/ledger` section (tabs, spreadsheet,
-  chips incl. `?mon`/`?file`, selection → Monitor-&-search Modal + run report, JSONL export,
-  Recent runs), the topbar nav gate, and the `/admin/roles` Ledger access editor are built
-  per DESIGN-009 D-08 (as-built notes recorded there). Remaining before Completed: PR merge,
-  deploy, LIVE Playwright journeys 1–4.
+- **Status:** Completed (2026-07-06) — shipped v0.9.0; live-validated: real two-item
+  monitor-and-search landed in Radarr (monitored flags + MoviesSearch commands verified via
+  API), 600-row JSONL export byte-exact vs DB, section-permission gating (read_only/disabled)
+  enforced in nav/page/controls with audited flips, search_requested events same-tx. Fileless
+  import dropped on live evidence (all 4,008 backlog ids were live unmonitored rows) — reframed
+  to filter + bulk monitor-and-search (ADR-022).
 - **Satisfies:** PRD-001 **R-74..R-78** (new; R-75 generalizes R-50..R-52 Restore; **R-56 reframed** →
   R-77 / ADR-022 C-04), **US-09**, **AC-11..AC-13**; new **ADR-021** (section-level Role permissions) +
   **ADR-022** (generalized *arr add + export + fileless reframe); new **DESIGN-009** (Ledger section).
