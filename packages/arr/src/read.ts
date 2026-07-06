@@ -18,11 +18,13 @@ import {
 } from './schemas/common';
 import {
   SONARR_GRABBED_EVENT_TYPE,
+  sonarrEpisodeFileSchema,
   sonarrEpisodeSchema,
   sonarrHistoryRecordSchema,
   sonarrLookupSchema,
   sonarrSeriesSchema,
   type SonarrEpisode,
+  type SonarrEpisodeFile,
   type SonarrHistoryRecord,
   type SonarrLookup,
   type SonarrSeries,
@@ -164,6 +166,18 @@ export class SonarrClient extends ArrReadClientBase {
   /** `GET /episode?seriesId=` — fix-target picker, resolved LIVE, never synced (D-06). */
   listEpisodes(seriesId: number): Promise<SonarrEpisode[]> {
     return this.http.requestJson('GET', 'episode', z.array(sonarrEpisodeSchema), {
+      query: { seriesId },
+    });
+  }
+
+  /**
+   * `GET /episodefile?seriesId=` — the per-file resolution source for the metadata harvest
+   * (DESIGN-008 D-02 resolution fix). The series list carries no per-file data, so the harvest
+   * fetches this per target series and derives the DOMINANT `quality.quality.resolution` tier.
+   * Cheap: ~16ms/req in-cluster (live-measured 2026-07-06), ~17s across the 1026-series estate.
+   */
+  listEpisodeFiles(seriesId: number): Promise<SonarrEpisodeFile[]> {
+    return this.http.requestJson('GET', 'episodefile', z.array(sonarrEpisodeFileSchema), {
       query: { seriesId },
     });
   }

@@ -1,6 +1,6 @@
 // DESIGN-005 D-02 — Radarr v3 field subsets (strip mode: extra fields tolerated, dropped).
 import { z } from 'zod';
-import { arrImageSchema, historyRecordBaseSchema, radarrRatingsSchema } from './common';
+import { arrFileSchema, arrImageSchema, historyRecordBaseSchema, radarrRatingsSchema } from './common';
 
 /** Full eventType enum per Radarr's `MovieHistoryEventType` (D-02). */
 export const RADARR_HISTORY_EVENT_TYPES = [
@@ -48,6 +48,10 @@ export const radarrMovieSchema = z.object({
   images: z.array(arrImageSchema).optional(),
   genres: z.array(z.string()).optional(),
   runtime: z.number().int().optional(),
+  // The on-disk file is embedded INLINE in the `GET /movie` list when hasFile is true (verified
+  // live 2026-07-06: 5473/9558 carry it) — no extra request. Its `quality.quality.resolution` is
+  // the REAL per-item resolution tier the harvest derives from (resolution fix, D-02).
+  movieFile: arrFileSchema.optional(),
 });
 export type RadarrMovie = z.infer<typeof radarrMovieSchema>;
 

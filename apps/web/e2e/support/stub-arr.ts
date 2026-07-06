@@ -89,6 +89,9 @@ function movieResource(id: number) {
     tags: [] as number[],
     hasFile: true,
     movieFileId: 9601,
+    // The on-disk file is embedded inline (DESIGN-008 D-02 resolution fix): the harvest reads
+    // quality.quality.resolution (int) for the REAL per-item tier — here 1080 → '1080p'.
+    movieFile: { quality: { quality: { id: 4, name: 'WEBDL-1080p', resolution: 1080 } } },
     sizeOnDisk: 4_294_967_296,
     statistics: { movieFileCount: 1 },
     minimumAvailability: 'released',
@@ -326,6 +329,20 @@ export async function startStubArr(): Promise<StubArrServer> {
         case '/episode': {
           if (Number(query.seriesId) !== STUB_SERIES_ID) return json(res, 200, []);
           return json(res, 200, episodes());
+        }
+        case '/episodefile': {
+          // DESIGN-008 D-02 resolution fix — one file per on-disk episode, each carrying the
+          // normalized `quality.quality.resolution` int the harvest derives the dominant tier
+          // from (all 1080 → '1080p' for the stub series).
+          if (Number(query.seriesId) !== STUB_SERIES_ID) return json(res, 200, []);
+          const files = episodes()
+            .filter((e) => e.hasFile)
+            .map((e) => ({
+              id: e.episodeFileId,
+              seriesId: STUB_SERIES_ID,
+              quality: { quality: { id: 4, name: 'WEBDL-1080p', resolution: 1080 } },
+            }));
+          return json(res, 200, files);
         }
         case '/album': {
           // Lidarr album picker (D-06): the seeded artist 701 has one on-disk album so its

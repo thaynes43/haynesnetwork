@@ -52,10 +52,25 @@ The *arr item resources carry metadata previously strip-dropped; the subsets now
 - `images[]` = `{coverType, url(relative, carries ?lastWrite), remoteUrl}`. The poster is
   `coverType='poster'`; `posterFromArrImages` records `poster_source='arr'`, `poster_ref = url`.
 - `genres` string[]; `runtime` int minutes (radarr/sonarr; artists have none); `added` → `arr_added_at`.
-- **resolution** is derived from the *arr **quality-profile name** (approximate — a per-item file
-  fetch across ~17.7k items is too costly for a 6h refresh). A profile pinning exactly one tier
-  maps to it (HD-1080p→1080p, Ultra-HD→2160p, SD→sd); range/any profiles ("Any", "HD - 720p/1080p",
-  "FHD-UHD") → 'unknown'. A future enhancement can read the real `movieFile.quality.resolution`.
+- **resolution** is the REAL per-item on-disk tier (live-validation fix 2026-07-06; the original
+  quality-PROFILE-name derivation mapped the owner's live *range* profiles — every movie is on
+  "Any"/"FHD-UHD"/… and every series on "FHD-UHD" — to `'unknown'`, making the facet useless in
+  practice). Sources, `resolutionFromInt`/`dominantResolution` in `adapt-metadata.ts`:
+  - **Radarr** — the `GET /movie` list embeds the on-disk file INLINE (`movieFile`, present on
+    5473/9558 movies), so `movieFile.quality.quality.resolution` (the *arr's normalized INT tier:
+    2160/1080/720/576/480; 0/absent = unknown) gives the resolution with NO extra request. A
+    movie with no file ⇒ resolution `null`.
+  - **Sonarr** — the series list carries no per-file data, so the harvest fetches
+    `GET /episodefile?seriesId=` per LIVE target and takes the DOMINANT (modal) episode-file tier.
+    Cheap: live-measured **16 ms/req in-cluster** (the earlier "~1 s/req" was pure `kubectl
+    port-forward` tunnel overhead — a trivial `/system/status` measured the same 1 s), ~17 s
+    serial across the 1026-series estate — well inside the 6 h cadence, so no concurrency needed.
+    Per-series degradable; a series with no files ⇒ `null`.
+  - **Lidarr (Music)** — resolution is meaningless for audio ⇒ always `null` (NOT `'unknown'`).
+    `filterFacets` scopes resolution by `arrKind` and filters `IS NOT NULL`, so the Music tab's
+    Resolution chip simply offers no values.
+  - Tombstoned / lookup / direct-TMDB/TVDB rows have no file on disk ⇒ `null`. The raw int→enum
+    map uses `RESOLUTIONS` unchanged (no enum/CHECK migration needed — the live ints all fit).
 
 ### D-03 — Tautulli watch-stats (cross-server) + refresh cadence
 
@@ -349,8 +364,14 @@ so a filter/sort visibly CHANGES the result set.
 - Columns on `media_items` vs the separate table — see ADR-018 (rejected: sync bloat, Restore
   preview pollution).
 - PVC/`sharp` and Postgres `bytea` posters — see ADR-019 (rejected: storage/backup/complexity).
-- Reading exact file resolution per item — rejected for the 6h refresh (a per-item file fetch
-  across ~17.7k items); profile-name derivation is the bounded approximation (D-02).
+- Quality-PROFILE-name resolution derivation — shipped first, then **rejected** on live
+  validation (2026-07-06): every live profile is a range ("Any"/"FHD-UHD"/"HD - 720p/1080p"), so
+  it mapped ALL 17,713 rows to `'unknown'`. Replaced by real per-item derivation (D-02): Radarr's
+  inline `movieFile` (free) + Sonarr's per-series `episodefile` (cheap, ~16 ms/req in-cluster).
+  The originally-feared "per-item file fetch across ~17.7k items" cost turned out not to apply —
+  Radarr embeds the file inline, and Sonarr is a per-SERIES (1026) loop, not per-episode.
+- A per-series concurrency pool for the Sonarr episodefile loop — unnecessary: the serial loop is
+  ~17 s in-cluster, far inside the 6 h cadence (D-02). Kept serial (simpler, gentler on Sonarr).
 
 ## Test strategy
 
@@ -368,5 +389,5 @@ the stubs above + the poster-proxy contract spec + the D-10/D-11 grid/filter jou
 
 | ID | Question | Resolution |
 |----|----------|------------|
-| Q-09 | Backfill real per-file resolution (vs profile-derived) | Deferred — profile-derivation ships; a later pass can read `movieFile.quality.resolution`. |
+| Q-09 | Backfill real per-file resolution (vs profile-derived) | **Resolved** (live-validation fix 2026-07-06): the harvest now reads Radarr `movieFile.quality.quality.resolution` (inline) + Sonarr per-series `episodefile` dominant tier; Lidarr → null. Profile-derivation retired (mapped every live row to 'unknown'). See D-02. |
 | Q-10 | Dedupe one account watching a title on two servers | Deferred — SUM across servers is the current signal (PLAN-006 refines if needed). |

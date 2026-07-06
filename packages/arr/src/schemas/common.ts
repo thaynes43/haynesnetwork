@@ -106,6 +106,21 @@ export const singleRatingSchema = z.object({
   votes: z.number().int().optional(),
 });
 
+/**
+ * DESIGN-008 D-02 (resolution fix, live-validated 2026-07-06) — a *arr FILE resource's nested
+ * `quality` wrapper. `quality.quality.resolution` is the *arr's NORMALIZED integer resolution
+ * tier (observed live: 2160/1080/720/576/480; 0 or absent = unknown) — the release's declared
+ * resolution, far cleaner than the raw `mediaInfo.resolution` pixel dims which letterboxing
+ * skews into hundreds of odd values (e.g. "1920x800", "3840x1600"). Shared by Radarr's inline
+ * `movieFile` and Sonarr's `GET /episodefile` element (identical shape). Strip-mode: the rest of
+ * the file resource (path, size, mediaInfo, …) is tolerated and dropped. */
+export const arrFileSchema = z.object({
+  quality: z
+    .object({ quality: z.object({ resolution: z.number().int().optional() }).optional() })
+    .optional(),
+});
+export type ArrFile = z.infer<typeof arrFileSchema>;
+
 /** An *arr image: coverType ('poster'|'fanart'|'banner'), the relative in-app `url`
  *  (carries ?lastWrite — the poster ETag input) and the upstream `remoteUrl` (a TMDB CDN
  *  URL for the tombstone/lookup TMDB tier). */

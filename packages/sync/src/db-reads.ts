@@ -22,7 +22,6 @@ export interface MetadataTarget {
   imdbId: string | null;
   musicbrainzArtistId: string | null;
   arrTags: string[];
-  qualityProfileName: string;
   tombstoned: boolean;
 }
 
@@ -53,7 +52,6 @@ export async function selectMetadataTargets(
       imdbId: mediaItems.imdbId,
       musicbrainzArtistId: mediaItems.musicbrainzArtistId,
       arrTags: mediaItems.arrTags,
-      qualityProfileName: mediaItems.qualityProfileName,
       deletedFromArrAt: mediaItems.deletedFromArrAt,
       fetchedAt: mediaMetadata.fetchedAt,
     })
@@ -73,7 +71,6 @@ export async function selectMetadataTargets(
     imdbId: r.imdbId,
     musicbrainzArtistId: r.musicbrainzArtistId,
     arrTags: r.arrTags,
-    qualityProfileName: r.qualityProfileName,
     tombstoned: r.deletedFromArrAt !== null,
   }));
 }
