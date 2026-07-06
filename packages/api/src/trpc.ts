@@ -23,6 +23,7 @@ import {
   ReorderMismatchError,
   RestoreProfileUnmappedError,
   RoleNameConflictError,
+  SearchCapExceededError,
   SubtitleFixUnsupportedError,
   SystemRoleImmutableError,
   type ArrClientBundle,
@@ -114,6 +115,7 @@ const APP_CODED_ERRORS = [
   LibraryNotAllowedError,
   PlexAccountUnmatchedError,
   PlexServerUnavailableError,
+  SearchCapExceededError,
 ] as const;
 
 const t = initTRPC.context<TRPCContext>().create({
@@ -162,6 +164,7 @@ export const authedProcedure = t.procedure.use(({ ctx, next }) => {
  * | LedgerItemTombstonedError   | LEDGER_ITEM_TOMBSTONED      | PRECONDITION_FAILED   |
  * | ArrUpstreamError            | ARR_UPSTREAM_UNAVAILABLE    | BAD_GATEWAY           |
  * | RestoreProfileUnmappedError | RESTORE_PROFILE_UNMAPPED    | UNPROCESSABLE_CONTENT |
+ * | SearchCapExceededError      | ARR_ADD_SEARCH_CAP_EXCEEDED | UNPROCESSABLE_CONTENT |
  * | LibraryNotAllowedError      | LIBRARY_NOT_ALLOWED         | FORBIDDEN             |
  * | PlexAccountUnmatchedError   | PLEX_ACCOUNT_UNMATCHED      | UNPROCESSABLE_CONTENT |
  * | PlexServerUnavailableError  | PLEX_SERVER_UNAVAILABLE     | BAD_GATEWAY           |
@@ -208,6 +211,9 @@ export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
       throw new TRPCError({ code: 'BAD_GATEWAY', message: err.message, cause: err });
     }
     if (err instanceof RestoreProfileUnmappedError) {
+      throw new TRPCError({ code: 'UNPROCESSABLE_CONTENT', message: err.message, cause: err });
+    }
+    if (err instanceof SearchCapExceededError) {
       throw new TRPCError({ code: 'UNPROCESSABLE_CONTENT', message: err.message, cause: err });
     }
     if (err instanceof LibraryNotAllowedError) {

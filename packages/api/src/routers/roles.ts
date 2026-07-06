@@ -3,11 +3,20 @@
 // audits in the same tx). Role ASSIGNMENT to a user lives on the users router (setRole).
 import { z } from 'zod';
 import { asc, count } from 'drizzle-orm';
-import { roleAppGrants, roles, users } from '@hnet/db';
-import { createRole, deleteRole, updateRole } from '@hnet/domain';
+import {
+  roleAppGrants,
+  roleSectionPermissions,
+  roles,
+  users,
+  SECTION_IDS,
+  SECTION_DEFAULT_LEVELS,
+  type SectionId,
+  type SectionPermissionLevel,
+} from '@hnet/db';
+import { createRole, deleteRole, setSectionPermission, updateRole } from '@hnet/domain';
 import { mapDomainErrors, router } from '../trpc';
 import { adminProcedure } from '../middleware/role';
-import { RoleInput, RolePatchInput } from '../schemas';
+import { RoleInput, RolePatchInput, SectionPermissionInput } from '../schemas';
 
 export const rolesRouter = router({
   /** Every role with its app set + member count (feeds /admin/roles + the user role picker). */
@@ -31,6 +40,14 @@ export const rolesRouter = router({
       .select({ roleId: users.roleId, members: count(users.id) })
       .from(users)
       .groupBy(users.roleId);
+    // ADR-021 — each role's section access rows (Ledger + reserved Trash).
+    const sectionRows = await ctx.db
+      .select({
+        roleId: roleSectionPermissions.roleId,
+        sectionId: roleSectionPermissions.sectionId,
+        level: roleSectionPermissions.level,
+      })
+      .from(roleSectionPermissions);
 
     const appIdsByRole = new Map<string, string[]>();
     for (const row of grantRows) {
@@ -39,13 +56,29 @@ export const rolesRouter = router({
       appIdsByRole.set(row.roleId, list);
     }
     const membersByRole = new Map(memberRows.map((row) => [row.roleId, Number(row.members)]));
+    const sectionLevelByRole = new Map<string, Map<SectionId, SectionPermissionLevel>>();
+    for (const row of sectionRows) {
+      const m = sectionLevelByRole.get(row.roleId) ?? new Map<SectionId, SectionPermissionLevel>();
+      m.set(row.sectionId, row.level);
+      sectionLevelByRole.set(row.roleId, m);
+    }
 
-    // The Admin role has no explicit grants — it's an implicit all-apps superuser.
-    return roleRows.map((row) => ({
-      ...row,
-      appIds: appIdsByRole.get(row.id) ?? [],
-      memberCount: membersByRole.get(row.id) ?? 0,
-    }));
+    // The Admin role has no explicit grants — it's an implicit all-apps / all-sections superuser.
+    return roleRows.map((row) => {
+      const stored = sectionLevelByRole.get(row.id);
+      const sectionPermissions = Object.fromEntries(
+        SECTION_IDS.map((sid) => [
+          sid,
+          row.isAdmin ? 'edit' : (stored?.get(sid) ?? SECTION_DEFAULT_LEVELS[sid]),
+        ]),
+      ) as Record<SectionId, SectionPermissionLevel>;
+      return {
+        ...row,
+        appIds: appIdsByRole.get(row.id) ?? [],
+        memberCount: membersByRole.get(row.id) ?? 0,
+        sectionPermissions,
+      };
+    });
   }),
 
   create: adminProcedure.input(RoleInput).mutation(async ({ ctx, input }) => {
@@ -63,4 +96,23 @@ export const rolesRouter = router({
     // Reassigns members to Default, then deletes; system roles → ROLE_IMMUTABLE. Audits 'delete_role'.
     return mapDomainErrors(() => deleteRole({ db: ctx.db, roleId: input.id, actorId: ctx.user.id }));
   }),
+
+  /**
+   * ADR-021 C-02 — set a role's access level for one section (Ledger now; Trash reserved for
+   * PLAN-006). Delegates to the @hnet/domain single-writer (audits 'update_section_permission'
+   * in-tx); the Admin role is immutable → ROLE_IMMUTABLE (D-13).
+   */
+  setSectionPermission: adminProcedure
+    .input(SectionPermissionInput)
+    .mutation(async ({ ctx, input }) => {
+      return mapDomainErrors(() =>
+        setSectionPermission({
+          db: ctx.db,
+          roleId: input.roleId,
+          sectionId: input.sectionId,
+          level: input.level,
+          actorId: ctx.user.id,
+        }),
+      );
+    }),
 });

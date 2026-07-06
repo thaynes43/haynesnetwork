@@ -5,6 +5,7 @@ import { catalogRouter } from './catalog';
 import { usersRouter } from './users';
 import { rolesRouter } from './roles';
 import { ledgerRouter } from './ledger';
+import { ledgerAdminRouter } from './ledger-admin';
 import { fixRouter } from './fix';
 import { restoreRouter } from './restore';
 import { plexRouter } from './plex';
@@ -17,6 +18,8 @@ export const appRouter = router({
   // Phase 2 (DESIGN-005 D-17): ledger + fix claim their DESIGN-003 reservations;
   // restore is the third Phase 2 name (recorded in DESIGN-003's reservation note).
   ledger: ledgerRouter,
+  // ADR-021/022 / DESIGN-009 (PLAN-005): the Ledger section — section-gated browse/export/bulk.
+  ledgerAdmin: ledgerAdminRouter,
   fix: fixRouter,
   restore: restoreRouter,
   // Phase 3 (ADR-017 / DESIGN-007 D-05): Plex library self-service.

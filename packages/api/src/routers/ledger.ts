@@ -4,7 +4,7 @@
 // pagination throughout (the documented D-17 deviation from DESIGN-003 D-03).
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
-import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, sql, type SQL } from 'drizzle-orm';
 import {
   ARR_KINDS,
   RESOLUTIONS,
@@ -23,115 +23,25 @@ import {
   encodeKeysetCursor,
   keysetAfter,
   keysetOrderBy,
-  type KeysetKind,
   type KeysetValue,
 } from '../keyset';
+// ADR-022 / DESIGN-009 D-04 — the shared library query DSL (extracted so ledgerAdmin.browse
+// + the Ledger export route reuse the EXACT same WHERE / sort / metadata assembly).
+import {
+  LIBRARY_FILTER_SHAPE,
+  LIBRARY_SORT_FIELDS,
+  METADATA_SELECT,
+  SORT_SPECS,
+  buildLibraryWhere,
+  librarySortShape,
+  metadataBlock,
+  posterUrlFor,
+} from '../ledger-query';
 
 const iso = (d: Date) => d.toISOString();
 const isoOrNull = (d: Date | null) => (d === null ? null : d.toISOString());
 
-/** Escape LIKE wildcards in user-typed search text. */
-const escapeLike = (q: string) => q.replace(/[\\%_]/g, '\\$&');
-
-const ON_DISK_FILTERS = ['any', 'complete', 'partial', 'none'] as const;
-
-// ADR-018 / DESIGN-008 D-09 — the shared sort-field contract (PLAN-005/006 reuse it verbatim).
-// Each field maps to its sortable expression + SQL kind (drives the keyset cursor cast).
-export const LIBRARY_SORT_FIELDS = [
-  'title',
-  'imdb_rating',
-  'tmdb_rating',
-  'rt_tomatometer',
-  'added_at',
-  'play_count',
-  'last_viewed',
-  'runtime',
-] as const;
-export type LibrarySortField = (typeof LIBRARY_SORT_FIELDS)[number];
-
-const SORT_SPECS: Record<LibrarySortField, { col: SQL; kind: KeysetKind }> = {
-  title: { col: sql`${mediaItems.sortTitle}`, kind: 'text' },
-  imdb_rating: { col: sql`${mediaMetadata.imdbRating}`, kind: 'number' },
-  tmdb_rating: { col: sql`${mediaMetadata.tmdbRating}`, kind: 'number' },
-  rt_tomatometer: { col: sql`${mediaMetadata.rtTomatometer}`, kind: 'number' },
-  added_at: { col: sql`${mediaMetadata.arrAddedAt}`, kind: 'date' },
-  play_count: { col: sql`${mediaMetadata.playCount}`, kind: 'number' },
-  last_viewed: { col: sql`${mediaMetadata.lastViewedAt}`, kind: 'date' },
-  runtime: { col: sql`${mediaMetadata.runtimeMinutes}`, kind: 'number' },
-};
-
-/** The metadata block returned per search/detail item (numeric → number; dates → ISO). */
-const METADATA_SELECT = {
-  imdbRating: mediaMetadata.imdbRating,
-  imdbVotes: mediaMetadata.imdbVotes,
-  tmdbRating: mediaMetadata.tmdbRating,
-  tmdbVotes: mediaMetadata.tmdbVotes,
-  rtTomatometer: mediaMetadata.rtTomatometer,
-  rtPopcorn: mediaMetadata.rtPopcorn,
-  runtimeMinutes: mediaMetadata.runtimeMinutes,
-  resolution: mediaMetadata.resolution,
-  genres: mediaMetadata.genres,
-  arrAddedAt: mediaMetadata.arrAddedAt,
-  playCount: mediaMetadata.playCount,
-  lastViewedAt: mediaMetadata.lastViewedAt,
-  requesters: mediaMetadata.requesters,
-  sourceCollections: mediaMetadata.sourceCollections,
-  posterSource: mediaMetadata.posterSource,
-} as const;
-
-type MetadataRow = {
-  imdbRating: string | null;
-  imdbVotes: number | null;
-  tmdbRating: string | null;
-  tmdbVotes: number | null;
-  rtTomatometer: number | null;
-  rtPopcorn: number | null;
-  runtimeMinutes: number | null;
-  resolution: string | null;
-  genres: string[] | null;
-  arrAddedAt: Date | null;
-  playCount: number | null;
-  lastViewedAt: Date | null;
-  requesters: string[] | null;
-  sourceCollections: string[] | null;
-  posterSource: string | null;
-};
-
-const numOrNull = (v: string | null) => (v === null ? null : Number(v));
-
-/** Shape the joined media_metadata columns into the wire metadata block. ALWAYS an object
- *  (all-null fields when unharvested / no row) — search and detail return the identical shape,
- *  so consumers never null-check the block itself (DESIGN-008 D-09, fix 2026-07-06). */
-function metadataBlock(row: MetadataRow | null | undefined) {
-  return {
-    imdbRating: numOrNull(row?.imdbRating ?? null),
-    imdbVotes: row?.imdbVotes ?? null,
-    tmdbRating: numOrNull(row?.tmdbRating ?? null),
-    tmdbVotes: row?.tmdbVotes ?? null,
-    rtTomatometer: row?.rtTomatometer ?? null,
-    rtPopcorn: row?.rtPopcorn ?? null,
-    runtimeMinutes: row?.runtimeMinutes ?? null,
-    resolution: row?.resolution ?? null,
-    genres: row?.genres ?? [],
-    addedAt: isoOrNull(row?.arrAddedAt ?? null),
-    playCount: row?.playCount ?? null,
-    lastViewedAt: isoOrNull(row?.lastViewedAt ?? null),
-    requesters: row?.requesters ?? [],
-    sourceCollections: row?.sourceCollections ?? [],
-  };
-}
-
-/** The authed poster-proxy URL (ADR-019) — null when no poster tier resolved. */
-const posterUrlFor = (id: string, posterSource: string | null) =>
-  posterSource === null ? null : `/api/posters/${id}`;
-
-/** jsonb-array overlap: true when the column shares ANY value with `values` (same-field OR).
- *  Builds an explicit `ARRAY[$1,$2,…]::text[]` so each value is a safe bound parameter. */
-const jsonbOverlap = (col: SQL, values: string[]): SQL =>
-  sql`${col} ?| ARRAY[${sql.join(
-    values.map((v) => sql`${v}`),
-    sql`, `,
-  )}]::text[]`;
+export { LIBRARY_SORT_FIELDS };
 
 export const ledgerRouter = router({
   /**
@@ -143,83 +53,16 @@ export const ledgerRouter = router({
   search: authedProcedure
     .input(
       z.object({
-        query: z.string().trim().max(200).optional(),
-        arrKind: z.enum(ARR_KINDS).optional(),
-        onDisk: z.enum(ON_DISK_FILTERS).default('any'),
-        /** true ⇒ narrow to the D-08 wanted view semantics (monitored, nothing on disk). */
-        wanted: z.boolean().optional(),
-        includeTombstoned: z.boolean().default(false),
-        // Metadata filters (D-09) — within a facet OR, across facets AND (chip semantics).
-        genres: z.array(z.string().min(1)).max(50).optional(),
-        resolutions: z.array(z.enum(RESOLUTIONS)).max(RESOLUTIONS.length).optional(),
-        requesters: z.array(z.string().min(1)).max(50).optional(),
-        sourceCollections: z.array(z.string().min(1)).max(50).optional(),
-        ratingMin: z.number().min(0).max(10).optional(), // on COALESCE(imdb_rating, tmdb_rating)
-        ratingMax: z.number().min(0).max(10).optional(),
-        // Sort (D-09) — title default; any metadata field, either direction, NULLS LAST.
-        sort: z
-          .object({
-            field: z.enum(LIBRARY_SORT_FIELDS).default('title'),
-            dir: z.enum(['asc', 'desc']).default('asc'),
-          })
-          .default({ field: 'title', dir: 'asc' }),
+        ...LIBRARY_FILTER_SHAPE,
+        ...librarySortShape,
         cursor: z.string().optional(),
         limit: z.number().int().min(1).max(100).default(50),
       }),
     )
     .query(async ({ ctx, input }) => {
-      const where: SQL[] = [];
-      if (input.query) {
-        const escaped = escapeLike(input.query);
-        // Accent- AND case-insensitive match (migration 0005_unaccent_search): unaccent()
-        // both the column and the user's pattern so typing 'pokemon' finds 'Pokémon', while
-        // ILIKE keeps it case-insensitive (so 'POKEMON' matches too). unaccent() is STABLE,
-        // not IMMUTABLE, so there is no expression index — a seq scan is fine at ~17k rows.
-        where.push(
-          sql`(unaccent(${mediaItems.title}) ILIKE unaccent(${`%${escaped}%`}) OR unaccent(${mediaItems.sortTitle}) ILIKE unaccent(${`${escaped}%`}))`,
-        );
-      }
-      if (input.arrKind) where.push(eq(mediaItems.arrKind, input.arrKind));
-      if (input.onDisk === 'complete') {
-        where.push(
-          sql`${mediaItems.onDiskFileCount} > 0 AND ${mediaItems.onDiskFileCount} >= ${mediaItems.expectedFileCount}`,
-        );
-      } else if (input.onDisk === 'partial') {
-        where.push(
-          sql`${mediaItems.onDiskFileCount} > 0 AND ${mediaItems.onDiskFileCount} < ${mediaItems.expectedFileCount}`,
-        );
-      } else if (input.onDisk === 'none') {
-        where.push(eq(mediaItems.onDiskFileCount, 0));
-      }
-      if (input.wanted === true) {
-        where.push(eq(mediaItems.monitored, true), eq(mediaItems.onDiskFileCount, 0));
-        where.push(isNull(mediaItems.deletedFromArrAt));
-      }
-      if (!input.includeTombstoned) where.push(isNull(mediaItems.deletedFromArrAt));
-      // Metadata facet filters — same-field OR (jsonb overlap / IN), cross-field AND.
-      if (input.genres?.length) where.push(jsonbOverlap(sql`${mediaMetadata.genres}`, input.genres));
-      if (input.resolutions?.length) {
-        where.push(inArray(mediaMetadata.resolution, input.resolutions));
-      }
-      if (input.requesters?.length) {
-        where.push(jsonbOverlap(sql`${mediaMetadata.requesters}`, input.requesters));
-      }
-      if (input.sourceCollections?.length) {
-        where.push(jsonbOverlap(sql`${mediaMetadata.sourceCollections}`, input.sourceCollections));
-      }
-      // COALESCE(imdb_rating, tmdb_rating): the Radarr tier fills imdb_rating, but Sonarr/Lidarr
-      // land their single community rating in tmdb_rating (ADR-018 C-07). Coalescing lets the
-      // rating filter work on ALL tiers; a both-null row never satisfies a bound (fix 2026-07-06).
-      if (input.ratingMin !== undefined) {
-        where.push(
-          sql`COALESCE(${mediaMetadata.imdbRating}, ${mediaMetadata.tmdbRating}) >= ${input.ratingMin}`,
-        );
-      }
-      if (input.ratingMax !== undefined) {
-        where.push(
-          sql`COALESCE(${mediaMetadata.imdbRating}, ${mediaMetadata.tmdbRating}) <= ${input.ratingMax}`,
-        );
-      }
+      // The shared WHERE assembly (unaccent search + onDisk grains + metadata facets + rating
+      // bounds + tombstone gate) — single-sourced in ledger-query.ts (DESIGN-008 D-09).
+      const where: SQL[] = buildLibraryWhere(input);
 
       const spec = SORT_SPECS[input.sort.field];
       const idCol = sql`${mediaItems.id}`;

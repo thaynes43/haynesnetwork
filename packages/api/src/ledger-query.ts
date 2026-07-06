@@ -1,0 +1,235 @@
+// ADR-018 / DESIGN-008 D-09 + ADR-022 / DESIGN-009 D-04 — the SHARED library query DSL.
+// ledger.search (Member browse), ledgerAdmin.browse (Ledger section), and the Ledger export
+// route ALL assemble their WHERE / sort / metadata projection from this one module so the
+// filter contract never forks (PLAN-005 reuses PLAN-004's engine verbatim). The keyset cursor
+// primitive lives in ./keyset.
+import { z } from 'zod';
+import { eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
+import { ARR_KINDS, RESOLUTIONS, mediaItems, mediaMetadata } from '@hnet/db';
+import type { KeysetKind } from './keyset';
+
+const isoOrNull = (d: Date | null) => (d === null ? null : d.toISOString());
+
+/** Escape LIKE wildcards in user-typed search text. */
+export const escapeLike = (q: string) => q.replace(/[\\%_]/g, '\\$&');
+
+export const ON_DISK_FILTERS = ['any', 'complete', 'partial', 'none'] as const;
+export type OnDiskFilter = (typeof ON_DISK_FILTERS)[number];
+
+// ADR-022 / DESIGN-009 D-04 — the Ledger-only completeness facet (superset of onDisk grains):
+// 'none' (nothing on disk) | 'some' (>0 files) | 'all' (complete) | 'any'. 'none' is exactly
+// the Fileless-Set half (T-66) when combined with monitored=false.
+export const HAS_FILE_FILTERS = ['any', 'none', 'some', 'all'] as const;
+export type HasFileFilter = (typeof HAS_FILE_FILTERS)[number];
+
+// The shared sort-field contract (DESIGN-008 D-09). Each maps to its sortable expression + kind.
+export const LIBRARY_SORT_FIELDS = [
+  'title',
+  'imdb_rating',
+  'tmdb_rating',
+  'rt_tomatometer',
+  'added_at',
+  'play_count',
+  'last_viewed',
+  'runtime',
+] as const;
+export type LibrarySortField = (typeof LIBRARY_SORT_FIELDS)[number];
+
+export const SORT_SPECS: Record<LibrarySortField, { col: SQL; kind: KeysetKind }> = {
+  title: { col: sql`${mediaItems.sortTitle}`, kind: 'text' },
+  imdb_rating: { col: sql`${mediaMetadata.imdbRating}`, kind: 'number' },
+  tmdb_rating: { col: sql`${mediaMetadata.tmdbRating}`, kind: 'number' },
+  rt_tomatometer: { col: sql`${mediaMetadata.rtTomatometer}`, kind: 'number' },
+  added_at: { col: sql`${mediaMetadata.arrAddedAt}`, kind: 'date' },
+  play_count: { col: sql`${mediaMetadata.playCount}`, kind: 'number' },
+  last_viewed: { col: sql`${mediaMetadata.lastViewedAt}`, kind: 'date' },
+  runtime: { col: sql`${mediaMetadata.runtimeMinutes}`, kind: 'number' },
+};
+
+/** The joined media_metadata columns returned per search/browse/detail item. */
+export const METADATA_SELECT = {
+  imdbRating: mediaMetadata.imdbRating,
+  imdbVotes: mediaMetadata.imdbVotes,
+  tmdbRating: mediaMetadata.tmdbRating,
+  tmdbVotes: mediaMetadata.tmdbVotes,
+  rtTomatometer: mediaMetadata.rtTomatometer,
+  rtPopcorn: mediaMetadata.rtPopcorn,
+  runtimeMinutes: mediaMetadata.runtimeMinutes,
+  resolution: mediaMetadata.resolution,
+  genres: mediaMetadata.genres,
+  arrAddedAt: mediaMetadata.arrAddedAt,
+  playCount: mediaMetadata.playCount,
+  lastViewedAt: mediaMetadata.lastViewedAt,
+  requesters: mediaMetadata.requesters,
+  sourceCollections: mediaMetadata.sourceCollections,
+  posterSource: mediaMetadata.posterSource,
+} as const;
+
+export type MetadataRow = {
+  imdbRating: string | null;
+  imdbVotes: number | null;
+  tmdbRating: string | null;
+  tmdbVotes: number | null;
+  rtTomatometer: number | null;
+  rtPopcorn: number | null;
+  runtimeMinutes: number | null;
+  resolution: string | null;
+  genres: string[] | null;
+  arrAddedAt: Date | null;
+  playCount: number | null;
+  lastViewedAt: Date | null;
+  requesters: string[] | null;
+  sourceCollections: string[] | null;
+  posterSource: string | null;
+};
+
+const numOrNull = (v: string | null) => (v === null ? null : Number(v));
+
+/** Shape the joined media_metadata columns into the wire metadata block. ALWAYS an object
+ *  (all-null fields when unharvested / no row) — search, browse and detail return the identical
+ *  shape, so consumers never null-check the block itself (DESIGN-008 D-09). */
+export function metadataBlock(row: MetadataRow | null | undefined) {
+  return {
+    imdbRating: numOrNull(row?.imdbRating ?? null),
+    imdbVotes: row?.imdbVotes ?? null,
+    tmdbRating: numOrNull(row?.tmdbRating ?? null),
+    tmdbVotes: row?.tmdbVotes ?? null,
+    rtTomatometer: row?.rtTomatometer ?? null,
+    rtPopcorn: row?.rtPopcorn ?? null,
+    runtimeMinutes: row?.runtimeMinutes ?? null,
+    resolution: row?.resolution ?? null,
+    genres: row?.genres ?? [],
+    addedAt: isoOrNull(row?.arrAddedAt ?? null),
+    playCount: row?.playCount ?? null,
+    lastViewedAt: isoOrNull(row?.lastViewedAt ?? null),
+    requesters: row?.requesters ?? [],
+    sourceCollections: row?.sourceCollections ?? [],
+  };
+}
+
+/** The authed poster-proxy URL (ADR-019) — null when no poster tier resolved. */
+export const posterUrlFor = (id: string, posterSource: string | null) =>
+  posterSource === null ? null : `/api/posters/${id}`;
+
+/** jsonb-array overlap: true when the column shares ANY value with `values` (same-field OR). */
+export const jsonbOverlap = (col: SQL, values: string[]): SQL =>
+  sql`${col} ?| ARRAY[${sql.join(
+    values.map((v) => sql`${v}`),
+    sql`, `,
+  )}]::text[]`;
+
+/**
+ * The shared filter fields (DESIGN-008 D-09 chip DSL). ledger.search and ledgerAdmin.browse
+ * spread these into their input schemas so the contract is single-sourced. The Ledger-only
+ * dims (`monitored`, `hasFile`) are added by browse (see LEDGER_FILTER_SHAPE).
+ */
+export const LIBRARY_FILTER_SHAPE = {
+  query: z.string().trim().max(200).optional(),
+  arrKind: z.enum(ARR_KINDS).optional(),
+  onDisk: z.enum(ON_DISK_FILTERS).default('any'),
+  wanted: z.boolean().optional(),
+  includeTombstoned: z.boolean().default(false),
+  genres: z.array(z.string().min(1)).max(50).optional(),
+  resolutions: z.array(z.enum(RESOLUTIONS)).max(RESOLUTIONS.length).optional(),
+  requesters: z.array(z.string().min(1)).max(50).optional(),
+  sourceCollections: z.array(z.string().min(1)).max(50).optional(),
+  ratingMin: z.number().min(0).max(10).optional(), // on COALESCE(imdb_rating, tmdb_rating)
+  ratingMax: z.number().min(0).max(10).optional(),
+} as const;
+
+/** The Ledger-section-only filter dims (ADR-022 / DESIGN-009 D-04): monitored + completeness. */
+export const LEDGER_FILTER_SHAPE = {
+  ...LIBRARY_FILTER_SHAPE,
+  monitored: z.boolean().optional(),
+  hasFile: z.enum(HAS_FILE_FILTERS).default('any'),
+} as const;
+
+export const librarySortShape = {
+  sort: z
+    .object({
+      field: z.enum(LIBRARY_SORT_FIELDS).default('title'),
+      dir: z.enum(['asc', 'desc']).default('asc'),
+    })
+    .default({ field: 'title', dir: 'asc' }),
+} as const;
+
+/** The already-parsed filter values buildLibraryWhere consumes (a superset — all optional). */
+export interface LibraryWhereInput {
+  query?: string;
+  arrKind?: (typeof ARR_KINDS)[number];
+  onDisk?: OnDiskFilter;
+  hasFile?: HasFileFilter;
+  monitored?: boolean;
+  wanted?: boolean;
+  includeTombstoned?: boolean;
+  genres?: string[];
+  resolutions?: (typeof RESOLUTIONS)[number][];
+  requesters?: string[];
+  sourceCollections?: string[];
+  ratingMin?: number;
+  ratingMax?: number;
+}
+
+/**
+ * Assemble the WHERE predicates shared by search/browse/export. Metadata facets are same-field
+ * OR (jsonb overlap / IN) and cross-field AND (chip semantics). The keyset cursor predicate is
+ * NOT included here (it depends on the sort spec — added by each caller).
+ */
+export function buildLibraryWhere(input: LibraryWhereInput): SQL[] {
+  const where: SQL[] = [];
+  if (input.query) {
+    const escaped = escapeLike(input.query);
+    where.push(
+      sql`(unaccent(${mediaItems.title}) ILIKE unaccent(${`%${escaped}%`}) OR unaccent(${mediaItems.sortTitle}) ILIKE unaccent(${`${escaped}%`}))`,
+    );
+  }
+  if (input.arrKind) where.push(eq(mediaItems.arrKind, input.arrKind));
+  if (input.onDisk === 'complete') {
+    where.push(
+      sql`${mediaItems.onDiskFileCount} > 0 AND ${mediaItems.onDiskFileCount} >= ${mediaItems.expectedFileCount}`,
+    );
+  } else if (input.onDisk === 'partial') {
+    where.push(
+      sql`${mediaItems.onDiskFileCount} > 0 AND ${mediaItems.onDiskFileCount} < ${mediaItems.expectedFileCount}`,
+    );
+  } else if (input.onDisk === 'none') {
+    where.push(eq(mediaItems.onDiskFileCount, 0));
+  }
+  // ADR-022 / DESIGN-009 D-04 — Ledger completeness facet (superset of onDisk).
+  if (input.hasFile === 'none') {
+    where.push(eq(mediaItems.onDiskFileCount, 0));
+  } else if (input.hasFile === 'some') {
+    where.push(sql`${mediaItems.onDiskFileCount} > 0`);
+  } else if (input.hasFile === 'all') {
+    where.push(
+      sql`${mediaItems.onDiskFileCount} > 0 AND ${mediaItems.onDiskFileCount} >= ${mediaItems.expectedFileCount}`,
+    );
+  }
+  if (input.monitored !== undefined) where.push(eq(mediaItems.monitored, input.monitored));
+  if (input.wanted === true) {
+    where.push(eq(mediaItems.monitored, true), eq(mediaItems.onDiskFileCount, 0));
+    where.push(isNull(mediaItems.deletedFromArrAt));
+  }
+  if (!input.includeTombstoned) where.push(isNull(mediaItems.deletedFromArrAt));
+  if (input.genres?.length) where.push(jsonbOverlap(sql`${mediaMetadata.genres}`, input.genres));
+  if (input.resolutions?.length) where.push(inArray(mediaMetadata.resolution, input.resolutions));
+  if (input.requesters?.length) {
+    where.push(jsonbOverlap(sql`${mediaMetadata.requesters}`, input.requesters));
+  }
+  if (input.sourceCollections?.length) {
+    where.push(jsonbOverlap(sql`${mediaMetadata.sourceCollections}`, input.sourceCollections));
+  }
+  // COALESCE(imdb_rating, tmdb_rating): Radarr fills imdb_rating; Sonarr/Lidarr land their single
+  // community rating in tmdb_rating (ADR-018 C-07). Coalescing makes the bound work on all tiers.
+  if (input.ratingMin !== undefined) {
+    where.push(
+      sql`COALESCE(${mediaMetadata.imdbRating}, ${mediaMetadata.tmdbRating}) >= ${input.ratingMin}`,
+    );
+  }
+  if (input.ratingMax !== undefined) {
+    where.push(
+      sql`COALESCE(${mediaMetadata.imdbRating}, ${mediaMetadata.tmdbRating}) <= ${input.ratingMax}`,
+    );
+  }
+  return where;
+}

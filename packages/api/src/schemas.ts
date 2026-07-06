@@ -2,6 +2,7 @@
 // ADR-001 C-05). These are the sketches from the design doc, verbatim.
 import { z } from 'zod';
 import { ICON_KEYS } from '@hnet/ui/icons';
+import { SECTION_IDS, SECTION_PERMISSION_LEVELS } from '@hnet/db';
 
 /**
  * D-04 layer 1 (edge) — lenient: accept any non-empty string. The catalog now takes any
@@ -85,3 +86,10 @@ export const RefreshRegistryInput = z
     slugs: z.array(z.enum(['haynestower', 'haynesops', 'hayneskube'])).optional(),
   })
   .default({});
+
+/** ADR-021 — roles.setSectionPermission: set one role's access level for one section. */
+export const SectionPermissionInput = z.object({
+  roleId: z.uuid(),
+  sectionId: z.enum(SECTION_IDS),
+  level: z.enum(SECTION_PERMISSION_LEVELS),
+});

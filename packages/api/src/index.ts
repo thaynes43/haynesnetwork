@@ -15,7 +15,16 @@ export {
   RefreshRegistryInput,
 } from './schemas';
 export { resolvePlexBundle } from './trpc';
+export { SectionPermissionInput } from './schemas';
 // ADR-019 / DESIGN-008 — the poster-proxy upstream resolver (used by the app poster route).
 export { resolvePosterUpstream, type PosterUpstream } from './poster';
+// ADR-021 — the section-level resolver the nav + the Ledger export route gate on (server-authoritative).
+export { effectiveSectionLevel } from './middleware/role';
+// ADR-022 / DESIGN-009 D-06 — the emergency Ledger JSONL export (used by the app export route).
+export {
+  buildExportFilterFromParams,
+  streamLedgerExportRows,
+  type LedgerExportRow,
+} from './ledger-export';
 export type { MyApp } from './routers/catalog';
 export type { MyServer, MyLibrary } from './routers/plex';
