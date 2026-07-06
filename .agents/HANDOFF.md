@@ -8,17 +8,30 @@
   `.agents/plans/completed/001-gate-a-pr-cutover.md`).
   `main` is branch-protected: branch → PR → required checks `lint-and-typecheck`, `test`,
   `build` green → squash-merge. `e2e` advisory. Conventional-commit titles drive release-please.
-- **Latest release: v0.5.0 (#47) — PLAN-002 Bazarr subtitle Fix (ADR-016), deployed to staging
-  + live-validated 2026-07-06.** `missing_subtitles` fixes route to Bazarr's async
+- **Latest release: v0.7.0 — first *signed* release (PLAN-007: keyless cosign, Rekor-logged,
+  in-run verified, `.sig` on GHCR; Kyverno dedicated Enforce policy live-validated).** Earlier
+  today: **v0.5.0 (#47) — PLAN-002 Bazarr subtitle Fix (ADR-016), deployed to staging +
+  live-validated 2026-07-06:** `missing_subtitles` fixes route to Bazarr's async
   `search-missing` (movie: per-movie; sonarr episode/season: series-level — no per-episode async
   action in Bazarr 1.5.6), rest at `search_triggered`, excluded from `completeFixRequests`;
   Music no longer offers the reason. Migration 0009; `BazarrClient`/`BazarrWriteClient` in
   `@hnet/arr`; `BAZARR_API_KEY` wired via the existing media-stack ExternalSecret.
 - **The autonomous Fable 5 run (Mon 2026-07-06) is IN PROGRESS.** Entry prompt
-  `.agents/KICKOFF.md`; queue in `.agents/plans/` (see `.agents/plans/README.md`). 002 is
-  complete; 003 (Plex self-service) is being built on `feat/plex-library-self-service`.
+  `.agents/KICKOFF.md`; queue in `.agents/plans/` (see `.agents/plans/README.md`). **Plans done
+  so far today:** 002 ✓ (v0.5.0); 003 validated on v0.6.1 (one deferred live share-write, owner
+  test-user pending); 004 in flight (backend done, Fable UX in progress); 007 ✓ (v0.7.0).
   v0.4.0 recap: unified roles (ADR-012), arbitrary catalog URLs (ADR-013), two-step
   `ConfirmButton`, drag-drop catalog reorder, Library sub-tabs.
+- **PLAN-007 (cosign image signing) COMPLETE** (`.agents/plans/completed/007-cosign-image-signing.md`).
+  `release-please.yml` keyless-cosign-signs every published `haynesnetwork` image by digest and
+  verifies it in-run (ADR-020); v0.7.0 is the first signed release. Admission is **enforced** by a
+  **dedicated** Kyverno ClusterPolicy `verify-haynesnetwork-images` in `haynes-ops` (spec-level
+  `validationFailureAction: Enforce`) — live-validated: signed admitted (probe + prod rollout),
+  unsigned denied (pod + Deployment). **Gotcha of the day:** on Kyverno v1.18.1 a shared policy's
+  server-defaulted spec-level `validationFailureAction: Audit` **overrides** a per-`verifyImages`
+  entry `failureAction: Enforce`, so a nested rule admitted an unsigned image with only a warning —
+  hence the dedicated Enforce policy. Full detail + validation evidence in **OPS-006**
+  (`docs/ops/006-image-signing.md`).
 
 ## Current state
 
@@ -64,7 +77,8 @@ The **Fable 5 autonomous run** works the release queue in `.agents/plans/` (star
 4. **005 — Ledger section** (native restore via filter→*arr + export; imports
    `radarr-fileless-backlog.md`).
 5. **006 — Trash section** (integrates the Maintainerr instance; replaces the Restore nav).
-6. **007 — cosign signing**; **008 — public cutover (LAST)**.
+6. ~~**007 — cosign signing**~~ ✅ **DONE** (v0.7.0, `completed/007-cosign-image-signing.md`);
+   **008 — public cutover (LAST)**.
 7. **Stretch (owner ideas, post-core):** 009 **Bulletin** (aggregated notification Feed +
    user Messages board), 010 **MOTD** dashboard banner — build only if time/budget remains
    after 002–008; 010 is small enough to pull forward as a quick win.
@@ -104,11 +118,15 @@ The full consolidated backlog (with what is deferred beyond this run) is in
 - **Three Plex servers, 1Password key collision:** the `plexops` item's Plex key is *also*
   named `HAYNESKUBE_PLEX_API_KEY` — do not confuse it with the `homepage` item's key of the
   same name (see the haynes-ops `frontend/homepage/app/externalsecret.yaml` comment).
-- **Kyverno cosign / image signing (PLAN-007 shipped the signing side):** `release-please.yml`
-  now **keyless-cosign-signs** every published `haynesnetwork` image by digest and verifies it
-  in-run (ADR-020). The `haynes-ops` Kyverno policy for `ghcr.io/thaynes43/*` is still AUDIT and
-  does **not yet cover `haynesnetwork`** — extending it (dedicated rule) + the **Audit→Enforce
-  flip** are **deploy-time** steps with the exact YAML diff in **OPS-006** (`docs/ops/006-image-signing.md`).
+- **Kyverno cosign / image signing (PLAN-007 COMPLETE, both sides shipped):** `release-please.yml`
+  **keyless-cosign-signs** every published `haynesnetwork` image by digest and verifies it in-run
+  (ADR-020). Admission is now **enforced** in `haynes-ops` by a **dedicated** ClusterPolicy
+  `verify-haynesnetwork-images` (spec-level `validationFailureAction: Enforce`) — *not* a rule on
+  the shared `verify-thaynes43-images` policy (that stays Audit for upgrade-agent/shepherd),
+  because a shared policy's server-defaulted spec-level `Audit` overrode a per-entry
+  `failureAction: Enforce` on Kyverno v1.18.1. Rollbacks must target **signed** tags (v0.7.0+);
+  pre-signing tags (≤v0.6.1) are now denied. Break-glass + full validation evidence in **OPS-006**
+  (`docs/ops/006-image-signing.md`).
 
 ## History
 
