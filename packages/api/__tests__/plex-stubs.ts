@@ -10,16 +10,18 @@ export interface FakeServerConfig {
   serverSections: Array<{ id: string; key: string }>;
   /** PMS `/library/sections`. */
   librarySections: Array<{ key: string; title: string; type: string }>;
-  /** Seeded current shares: userId → shared plex.tv section ids. */
-  shared?: Record<string, { id: string; sectionIds: number[] }>;
+  /** Seeded current shares: userId → shared plex.tv section ids (+ optional all-libraries flag). */
+  shared?: Record<string, { id: string; sectionIds: number[]; allLibraries?: boolean }>;
 }
 
 export interface RecordedPlexWrite {
   slug: PlexServerName;
-  kind: 'create' | 'update' | 'delete';
+  kind: 'create' | 'update' | 'delete' | 'setAll';
   invitedUserId?: number;
   sharedServerId?: string;
   librarySectionIds?: number[];
+  /** ADR-024 — for kind 'setAll': the target all-libraries state. */
+  on?: boolean;
 }
 
 export interface ApiPlexStub {
@@ -28,9 +30,9 @@ export interface ApiPlexStub {
 }
 
 function makeServer(slug: PlexServerName, cfg: FakeServerConfig, writes: RecordedPlexWrite[]) {
-  const shared = new Map<string, { id: string; sectionIds: Set<number> }>();
+  const shared = new Map<string, { id: string; sectionIds: Set<number>; allLibraries?: boolean }>();
   for (const [uid, s] of Object.entries(cfg.shared ?? {})) {
-    shared.set(uid, { id: s.id, sectionIds: new Set(s.sectionIds) });
+    shared.set(uid, { id: s.id, sectionIds: new Set(s.sectionIds), allLibraries: s.allLibraries });
   }
   const keyForId = new Map(cfg.serverSections.map((s) => [Number(s.id), s.key]));
 
@@ -57,7 +59,7 @@ function makeServer(slug: PlexServerName, cfg: FakeServerConfig, writes: Recorde
         userID: userId,
         email: null,
         username: null,
-        allLibraries: false,
+        allLibraries: s.allLibraries ?? false,
         sections: [...s.sectionIds].map((id) => ({
           id: String(id),
           key: keyForId.get(id) ?? '',
@@ -83,6 +85,39 @@ function makeServer(slug: PlexServerName, cfg: FakeServerConfig, writes: Recorde
     async deleteSharedServer(sharedServerId: string) {
       for (const [uid, s] of shared) if (s.id === sharedServerId) shared.delete(uid);
       writes.push({ slug, kind: 'delete', sharedServerId });
+    },
+    async updateSharedServerAll(input: {
+      sharedServerId: string | null;
+      invitedUserId: number;
+      on: boolean;
+      librarySectionIds?: number[];
+    }) {
+      if (input.on) {
+        let entry = [...shared.values()].find((s) => s.id === input.sharedServerId);
+        if (!entry) {
+          const id = input.sharedServerId ?? `ss-${input.invitedUserId}`;
+          entry = { id, sectionIds: new Set<number>(), allLibraries: true };
+          shared.set(String(input.invitedUserId), entry);
+        } else {
+          entry.allLibraries = true;
+        }
+        writes.push({ slug, kind: 'setAll', on: true, sharedServerId: entry.id, invitedUserId: input.invitedUserId });
+        return { sharedServerId: entry.id };
+      }
+      for (const s of shared.values()) {
+        if (s.id === input.sharedServerId) {
+          s.allLibraries = false;
+          s.sectionIds = new Set(input.librarySectionIds ?? []);
+        }
+      }
+      writes.push({
+        slug,
+        kind: 'setAll',
+        on: false,
+        sharedServerId: input.sharedServerId ?? undefined,
+        librarySectionIds: input.librarySectionIds,
+      });
+      return { sharedServerId: input.sharedServerId };
     },
   };
 

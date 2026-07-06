@@ -2,9 +2,15 @@
 
 - **Status:** Accepted
 - **Last updated:** 2026-07-06
-- **Amendments:** 2026-07-06 (D-12) — registry `base_url` truthfulness (haynestower is the
-  external ingress, no in-cluster Service) + per-server refresh degradation with a summary
-  return shape. Live-validated fix on staging v0.6.0 (migration `0011_haynestower_base_url.sql`).
+- **Amendments:**
+  - 2026-07-06 (D-12) — registry `base_url` truthfulness (haynestower is the external ingress, no
+    in-cluster Service) + per-server refresh degradation with a summary return shape. Live-validated
+    fix on staging v0.6.0 (migration `0011_haynestower_base_url.sql`).
+  - 2026-07-06 (D-13, **ADR-024**) — role-scoped **all-libraries** self-service. A role may grant
+    ALL libraries on a server (`role_plex_server_all_grants`, migration `0015`); a member self-toggles
+    their account between the plex.tv all-libraries state and an explicit list (leaving All seeds the
+    current full set — no access loss). No silent demotion: a per-library add/remove against an
+    all-libraries account is refused (`PLEX_ALL_STATE`). Supersedes ADR-017 C-14.
 - **Satisfies:** PRD-001 R-25..R-28 (resolves Q-03); governed by ADR-017; supersedes
   DESIGN-001 Appendix A. Builds on ADR-011 (write confinement), ADR-012 (Role model),
   ADR-014 (ConfirmButton), ADR-015 (no reorientation), OPS-002 (topology).
@@ -57,6 +63,9 @@ no grant seeding, per ADR-017).
   **UNIQUE(`server_id`, `section_key`)**. **No `is_family_only`** (family = a role grant).
 - **`role_library_grants`** — `role_id` → `roles` CASCADE + `plex_library_id` → `plex_libraries`
   CASCADE; composite PK. **Exact mirror of `role_app_grants`.**
+- **`role_plex_server_all_grants`** (**ADR-024**, migration `0015`) — `role_id` → `roles` CASCADE +
+  `plex_server_id` → `plex_servers` CASCADE; composite PK. Presence = the role grants ALL libraries
+  (incl. future) on that server. Sits alongside `role_library_grants` (a role may hold both).
 - **`plex_share_audit`** — `id`; `user_id` → `users` SET NULL; `plex_library_id` → `plex_libraries`
   SET NULL; `event` text `$type<PlexShareEvent>()` + CHECK; `actor_id` → `users` SET NULL;
   `detail` jsonb; `created_at` (+ indexes). BC-04 owns its own audit (like the BC-03 media
@@ -67,9 +76,11 @@ no grant seeding, per ADR-017).
 ```
 PLEX_SERVER_SLUGS = ['haynestower','haynesops','hayneskube']   // slug CHECK
 PLEX_MEDIA_TYPES  = ['movie','show','artist','photo']          // observed live 2026-07-06
-PLEX_SHARE_EVENTS = ['share_added','share_removed']            // plex_share_audit CHECK
+PLEX_SHARE_EVENTS = ['share_added','share_removed',            // plex_share_audit CHECK
+                     'share_all_enabled','share_all_disabled'] // ADR-024 (migration 0015)
 ```
-`PERMISSION_AUDIT_ACTIONS` gains `'update_role_libraries'` (role-grant edits are audited).
+`PERMISSION_AUDIT_ACTIONS` gains `'update_role_libraries'` (role-grant edits are audited — this one
+action covers both the per-library and the ADR-024 per-server all-grant edits).
 
 ### D-03 — `@hnet/plex` (new package; read/write split, import-confined)
 
@@ -88,8 +99,9 @@ its zod schemas (BC-04 ACL).
   /api/servers/{mid}` — the section key → plex.tv id map), `listSharedServers`/
   `findSharedServerForUser` (`GET /api/servers/{mid}/shared_servers`).
 - `write.ts` (`@hnet/plex/write`) — `createSharedServer` (POST), `updateSharedServer` (PUT),
-  `deleteSharedServer` (DELETE). Header comment states it is importable ONLY by
-  `packages/domain` + `packages/plex` (the extended arr-write guard enforces it).
+  `deleteSharedServer` (DELETE), and `updateSharedServerAll` (**ADR-024** — toggle the server-wide
+  all flag). Header comment states it is importable ONLY by `packages/domain` + `packages/plex`
+  (the extended arr-write guard enforces it).
 - `http.ts` — `X-Plex-Token` header-only (never in URLs), `X-Plex-Client-Identifier`/
   `X-Plex-Product`, GET-only retries; JSON or XML bodies; typed errors (`errors.ts`).
 
@@ -100,23 +112,42 @@ its zod schemas (BC-04 ACL).
   section key (registry identity), `id` is the plex.tv section id the share body uses.
 - `GET /api/servers/{mid}/shared_servers` → `<SharedServer id userID email allLibraries>
   <Section id key shared/>…</SharedServer>…` — `id` is the `sharedServerId` (PUT/DELETE key);
-  the shared base set = the `<Section shared="1">` ids. Real partial shares exist (proving the
-  read-merge-write need). POST/PUT body: `{ server_id, shared_server: { library_section_ids,
-  invited_id? } }` (JSON; response XML — the python-plexapi friend model).
+  the shared base set = the `<Section shared="1">` ids; `allLibraries="1"` marks a share-everything
+  (future-inclusive) grant. Real partial shares exist (proving the read-merge-write need). POST/PUT
+  body: `{ server_id, shared_server: { library_section_ids, invited_id? } }` (JSON; response XML —
+  the python-plexapi friend model).
+- **ADR-024 all-libraries write shape (verified vs. inferred).** python-plexapi (source of record,
+  `myplex.py` `updateFriend`/`inviteFriend`) writes JSON and only ever sends `library_section_ids`
+  (snake_case) — `allLibraries` is **read-only** there. So: turning All **OFF** uses the VERIFIED
+  explicit-list PUT (`{ shared_server: { library_section_ids } }` — an explicit list demotes the
+  account from all); we send `all_libraries: false` alongside it only to be explicit. Turning All
+  **ON** uses the plex.tv-web convention `{ shared_server: { all_libraries: true } }` (PUT for an
+  existing SharedServer, or POST `{ all_libraries: true, invited_id }` to create) — this key is
+  **inferred** (snake_case, consistent with the other keys) and deferred to live write-validation by
+  the designated owner test-user (ADR-017 C-13).
 
 ### D-04 — Domain (`packages/domain/src/*`)
 
 - `effective-allowed-libraries.ts` — `effectiveAllowedLibrariesForUser(userId)`: structural
-  mirror of `effectiveAppsForUser`. Admin ⇒ all available libraries; every other user ⇒ their
-  role's `role_library_grants` (NO `grants_all` short-circuit — ADR-017 C-03). Only `available`
-  libraries are offered.
+  mirror of `effectiveAppsForUser`. Admin ⇒ all available libraries; every other user ⇒ the UNION
+  of their role's explicit `role_library_grants` and every available library on any server their
+  role all-grants (`role_plex_server_all_grants` — ADR-024; each library row matches at most once,
+  so no duplicates). NO `grants_all` short-circuit (ADR-017 C-03). Only `available` libraries are
+  offered. Sibling `allGrantedServerIdsForUser(userId)` returns the servers the user may all-toggle
+  (Admin ⇒ every server) — the TOCTOU gate for `setServerAllShare`.
 - `plex-shares.ts` — `shareLibrary`/`unshareLibrary`. (1) re-derive the allowed set and gate
   add with `LibraryNotAllowedError` (TOCTOU, before any Plex call); (2) map user→account
-  (`PlexAccountUnmatchedError` if not a friend); (3) read-merge-write (union/subtract against
-  the current SharedServer; POST/PUT/DELETE); (4) write the `plex_share_audit` row **after** a
-  successful apply — single-shot, since the ledger is append-only and records only applied
-  shares (the row's detail carries `previous_section_ids`/`new_section_ids` for the
-  preservation proof). Plex failures wrap as `PlexServerUnavailableError` (→ BAD_GATEWAY).
+  (`PlexAccountUnmatchedError` if not a friend); (3) **refuse a per-library change while the account
+  is all-libraries** (`PlexAllStateError`, before any write — no silent demotion, ADR-024 / D-13);
+  (4) read-merge-write (union/subtract against the current SharedServer; POST/PUT/DELETE); (5) write
+  the `plex_share_audit` row **after** a successful apply (detail carries
+  `previous_section_ids`/`new_section_ids`). Plex failures wrap as `PlexServerUnavailableError`.
+  - `setServerAllShare({ userId, serverId, on })` (**ADR-024**) — self-toggle the server-wide
+    all-libraries state. Role-gated via `allGrantedServerIdsForUser` (TOCTOU). `on:true` writes the
+    plex.tv all flag (creating the SharedServer if the friend has none); `on:false` demotes by
+    PUTting an explicit list seeded with the account's **current full section set** (all of the
+    server's sections — no access loss). Audits `share_all_enabled` / `share_all_disabled`
+    (server-scoped — `plex_library_id` null). Idempotent (already in the target state ⇒ no write).
 - `plex-registry.ts` — `refreshPlexRegistry({ db, plex, slugs? })`: admin orchestrator; reads
   each server's `GET /library/sections` (+ `/identity`) via the READ client OUTSIDE the tx,
   then upserts `plex_libraries` keyed on `(server_id, section_key)` and marks unseen libraries
@@ -128,13 +159,16 @@ its zod schemas (BC-04 ACL).
   recorded as `{ ok: false, error }` in the summary; the remaining servers still refresh and
   commit. Returns `{ ok, servers: [{ slug, name, ok, libraryCount?, markedUnavailable?, error? }] }`
   (`ok` = every server ok; `error` is a SHORT label like `'unreachable'`, never a raw message).
-- `role-libraries.ts` — `setRoleLibraries({ roleId, libraryIds, actorId })`: replace-whole-set
-  (mirrors `updateRole`'s appIds), co-writes an `update_role_libraries` `permission_audit` row.
-  Admin role is immutable (implicit all-libraries).
+- `role-libraries.ts` — `setRoleLibraries({ roleId, libraryIds, allServerIds?, actorId })`:
+  replace-whole-set the per-library grants and (ADR-024, when `allServerIds` is provided) the
+  per-server all-grants (`role_plex_server_all_grants`); omitting `allServerIds` leaves the role's
+  all-grants untouched. Co-writes one `update_role_libraries` `permission_audit` row (all-server
+  before/after in `detail`). Admin role is immutable (implicit all-libraries everywhere).
 - `plex-clients.ts` — `PlexClientBundle` + `buildPlexClientBundle` + `plexClientBundleFromEnv`
   (mirror `arr-clients.ts`); per-slug read+write clients.
 - `errors.ts` — `LibraryNotAllowedError` (FORBIDDEN), `PlexAccountUnmatchedError`
-  (UNPROCESSABLE_CONTENT), `PlexServerUnavailableError` (BAD_GATEWAY).
+  (UNPROCESSABLE_CONTENT), `PlexAllStateError` (UNPROCESSABLE_CONTENT — ADR-024),
+  `PlexServerUnavailableError` (BAD_GATEWAY).
 
 **Share sequence (add):**
 
@@ -167,13 +201,19 @@ Plex failure is caught and folded into the returned summary (D-12) instead of ab
 ### D-05 — tRPC `plex` router (claims the reserved `plex` name)
 
 - `myLibraries` (authed query) — the caller's allowed libraries grouped per server, each
-  annotated `shared` from the read client's live share state; degrades per-server on a Plex
-  outage (`available:false`) rather than failing the page.
+  annotated `shared` from the read client's live share state. Per server also carries `id`,
+  `allGranted` (the role all-grants this server — ADR-024) and `allActive` (the account is
+  currently in the plex.tv all-libraries state). Degrades per-server on a Plex outage
+  (`available:false`) rather than failing the page.
 - `addLibrary` / `removeLibrary` (authed mutations) — own account only (`ctx.user.id`, never a
-  `userId` input); role-gated in-domain.
+  `userId` input); role-gated in-domain. Refused with `PLEX_ALL_STATE` while the account is all (D-13).
+- `setServerAll` (authed mutation, **ADR-024**) — `setServerAllShare` on the caller's own account;
+  `{ serverId, on }`; role-gated (all-grant required). Returns `{ changed, event, serverSlug, allActive }`.
 - `refreshRegistry` (admin mutation) — `refreshPlexRegistry` (all or a subset).
-- `roleLibraryGrants` (admin query) — libraries grouped by server + grants per role (the matrix).
-- `setRoleLibraryGrants` (admin mutation) — `setRoleLibraries`.
+- `roleLibraryGrants` (admin query) — libraries grouped by server + `grantsByRole` (per-library) +
+  `allGrantsByRole` (per-server all-grants, ADR-024); each server carries its `id` for the all toggle.
+- `setRoleLibraryGrants` (admin mutation) — `setRoleLibraries`; accepts `allServerIds` (ADR-024;
+  omitted = leave the role's all-grants untouched).
 
 New appCodes (two-place edit in `trpc.ts` — `APP_CODED_ERRORS` + the `mapDomainErrors` chain,
 per ADR-012 C-10):
@@ -182,6 +222,7 @@ per ADR-012 C-10):
 |---|---|---|
 | `LibraryNotAllowedError` | `LIBRARY_NOT_ALLOWED` | FORBIDDEN |
 | `PlexAccountUnmatchedError` | `PLEX_ACCOUNT_UNMATCHED` | UNPROCESSABLE_CONTENT |
+| `PlexAllStateError` | `PLEX_ALL_STATE` | UNPROCESSABLE_CONTENT |
 | `PlexServerUnavailableError` | `PLEX_SERVER_UNAVAILABLE` | BAD_GATEWAY |
 
 ### D-06 — UI
@@ -189,14 +230,33 @@ per ADR-012 C-10):
 - **`/library/plex`** (`'use client'`, top-bar nav "My Plex") — role-allowed libraries grouped
   per server; **Add** is a plain action, **Remove** is the `@hnet/ui` `ConfirmButton` inline
   two-step (ADR-014, never `window.confirm`). Non-permitted libraries are never offered.
+- **Per-server all-libraries self-service** (ADR-024 / D-13). When the caller's role all-grants
+  a server, its header carries a segmented **"All libraries | Specific libraries"** control
+  (chosen over a lone switch: a switch labeled "All libraries" makes OFF read as *no* libraries;
+  the segment names both states and is the affordance for both directions). While the account is
+  all-libraries the rows render a read-only **"Included"** label — per-library Add/Remove is
+  refused server-side (`PLEX_ALL_STATE`), so it is never offered. A persistent state note under
+  the header explains the current state and the consequence of switching ("keeps today's set,
+  but new libraries won't be added automatically"). Leaving All is **not** two-step-confirmed:
+  it is lossless (the explicit list seeds the current full set) and instantly reversible, and
+  ADR-014 reserves the arm-to-confirm for destructive actions — the always-visible note is the
+  explanation before the click. An account that is all-libraries WITHOUT the role grant (e.g.
+  granted directly by the owner) renders the read-only state + an "managed by an admin" note,
+  never controls that would always error.
 - **`/admin/roles`** — a **Refresh Plex libraries** button (admin registry refresh) + a second
-  checkbox matrix (`libraryChecklist`, grouped per server) folded into the role editor. Unlike
-  the app matrix there is **no "All libraries" master toggle** (`grants_all` ≠ all libraries —
-  C-03); unavailable libraries stay checkable so a soft-removed grant round-trips.
-- **No layout reorientation** (ADR-015): the action cell reserves a fixed width and the
-  ConfirmButton reserves its armed-label width, so arming/removing never reflows neighbors;
-  matrix toggles change color/emphasis only. Mutations invalidate-and-refetch. Tokens only
-  (no raw hex — CLAUDE.md rule 2).
+  checkbox matrix (`libraryChecklist`, grouped per server) folded into the role editor. There is
+  no cross-server master toggle (`grants_all` ≠ all libraries — C-03), but each server group
+  carries a **per-server "All libraries" checkbox** (ADR-024 → `allServerIds`); while checked,
+  that server's per-library boxes show implied-on and disabled (the same dim treatment as the
+  "All apps" toggle) with their underlying selection preserved, so unchecking All restores the
+  explicit set. Unavailable libraries stay checkable so a soft-removed grant round-trips. The
+  Admin role remains locked (implicit all everywhere, no editor).
+- **No layout reorientation** (ADR-015): the action cell reserves a fixed width and height (the
+  "Included" swap keeps row geometry) and the ConfirmButton reserves its armed-label width, so
+  arming/removing never reflows neighbors; the segmented control always renders both labels and
+  changes tint only; the All↔explicit list swap is a deliberate in-place change of that server
+  block only (same-shape note copy, unchanged row heights); matrix toggles change color/emphasis
+  only. Mutations invalidate-and-refetch. Tokens only (no raw hex — CLAUDE.md rule 2).
 
 ### D-07 — Ops, e2e, env
 
@@ -268,11 +328,38 @@ fixed here without changing the BC-04 contract.
      HaynesOps: 1 library · HaynesTower: unreachable"). It is **not** the red `.alert` banner;
      ADR-015 discipline holds (status renders in the page's consistent feedback area).
 
+### D-13 — Role-scoped all-libraries self-service (ADR-024, live-validated 2026-07-06)
+
+plex.tv lets an owner share **all libraries** with a friend (`SharedServer allLibraries="1"`) — a
+share-everything grant that also auto-includes any **future** library. ADR-017 could not model this:
+a per-library remove against such an account computed an explicit list and PUT it, silently +
+permanently demoting the future-inclusive grant (ADR-017 C-14 accepted this); an add was a silent
+no-op. The live case: the owner's wife (friend id `19299967`) has `allLibraries` on hayneskube.
+**ADR-024 supersedes C-14** with a richer, no-silent-demotion model:
+
+- **Admin grant.** A role may all-grant a server (`role_plex_server_all_grants`). The effective
+  allowed set = explicit library grants ∪ all available libraries of all-granted servers (D-04).
+- **Two states, user-driven.** A user whose role all-grants server X self-manages between **On All**
+  (`allLibraries=1`) and an **explicit list**. Leaving All demotes to an explicit list **seeded with
+  their current full section set** (every section on X — no access loss); they then add/remove
+  individual libraries; they may return to All. Users without the all-grant are explicit-only (as
+  ADR-017 shipped).
+- **No silent demotion.** While the account is all-libraries, a per-library add/remove throws
+  `PlexAllStateError` (`PLEX_ALL_STATE`) **before any Plex write** — the user must leave All first.
+
+**Verified plex.tv write shapes** (see D-03): OFF (leave All) = the VERIFIED explicit-list PUT
+`{ shared_server: { library_section_ids } }` (an explicit list demotes from all). ON (enter All) =
+the INFERRED plex.tv-web `{ shared_server: { all_libraries: true } }` (PUT existing / POST create) —
+deferred to live write-validation (ADR-017 C-13). Audited as `share_all_enabled` /
+`share_all_disabled` (server-scoped, `plex_library_id` null).
+
 ## Alternatives considered
 
 See ADR-017 "Considered options": per-user/per-tag grants (rejected — ADR-012), an
 `is_family_only` deny flag (rejected — family is a role grant), the v2 API (rejected — 405
-live), blind overwrite (rejected — revokes other shares).
+live), blind overwrite (rejected — revokes other shares). ADR-024: a boolean on
+`role_library_grants` or a magic "ALL" library row (rejected — the grant is server-scoped, and a
+sentinel corrupts the `(server, section_key)` identity + the per-library matrix).
 
 ## Test strategy
 
@@ -280,18 +367,33 @@ live), blind overwrite (rejected — revokes other shares).
   grants; Family includes the family libs, Default excludes them; grants_all ⇒ still explicit);
   `shareLibrary`/`unshareLibrary` (role gate throws with NO write-client call; read-merge-write
   preserves pre-existing sections; audit row same-tx; create/update/delete selection; idempotent
-  no-op); `setRoleLibraries` (replace-set + audit; Admin immutable); `refreshPlexRegistry`
+  no-op); `setRoleLibraries` (replace-set + audit; Admin immutable). **ADR-024:** the effective set
+  unions all-of-all-granted-servers and de-dupes; `allGrantedServerIdsForUser` (role vs. admin);
+  `setRoleLibraries` replace-sets all-grants + audit detail; omitting `allServerIds` leaves them
+  untouched; `setServerAllShare` (role gate → `LibraryNotAllowedError`, no write; ON create + audit
+  `share_all_enabled`; OFF seeds the full section set + audit `share_all_disabled`; idempotent);
+  per-library add/remove throws `PlexAllStateError` (no write) while all-libraries. `refreshPlexRegistry`
   (upsert keyed on `(server, section_key)`; same-named `Movies` on two servers stays distinct;
   soft-unavailable + re-available; loud on unexpected type). `@hnet/plex`: the XML parser + read
-  (friend/section/shared parsing; token header-only) + write (POST/PUT/DELETE bodies) + config.
-- **Guard tests:** the four tables join `no-direct-state-writes`; `@hnet/plex/write` joins the
-  write-import guard.
-- **API:** admin refresh populates the registry; matrix + `setRoleLibraryGrants` drive grants;
-  member add/remove records the stub write and myLibraries reflects it; `LIBRARY_NOT_ALLOWED` /
-  `PLEX_ACCOUNT_UNMATCHED` flow through the real errorFormatter; the authed/admin ladder.
+  (friend/section/shared parsing; token header-only) + write (POST/PUT/DELETE + `updateSharedServerAll`
+  bodies) + config.
+- **Guard tests:** the five tables (incl. `role_plex_server_all_grants`) join `no-direct-state-writes`;
+  `@hnet/plex/write` joins the write-import guard.
+- **API:** admin refresh populates the registry; matrix + `setRoleLibraryGrants` drive grants
+  (incl. `allGrantsByRole`); member add/remove records the stub write and myLibraries reflects it;
+  `myLibraries` surfaces `allGranted`/`allActive`; `setServerAll` toggles on↔off (recorded setAll
+  writes; myLibraries reflects `allActive`); `LIBRARY_NOT_ALLOWED` / `PLEX_ACCOUNT_UNMATCHED` /
+  `PLEX_ALL_STATE` flow through the real errorFormatter; the authed/admin ladder.
 - **e2e (hermetic, stub-plex):** member sees role-allowed libraries (family withheld); add
   records a sharing write; remove via ConfirmButton records the un-share; narrow-viewport fit;
-  admin refresh + the library matrix reflecting seeded grants.
+  admin refresh + the library matrix reflecting seeded grants. The stub models the all-libraries
+  state (renders/parses `all_libraries`, records the setAll PUT) with an all-grant fixture on
+  haynesops for the member persona. **ADR-024 UI:** the member sees the segmented toggle on the
+  all-granted server only, the All state offers no per-library Add/Remove (read-only "Included"),
+  leaving All records the seeded explicit-list write and re-exposes Add/Remove, returning to All
+  records the `all_libraries: true` write and hides them again; the admin editor's per-server
+  All checkbox reflects the seeded grant, implies-on/disables that server's boxes, and
+  round-trips through save in both directions.
 - **LIVE (deferred):** as a designated Plex test-user, add a permitted library and confirm the
   share on the real server; remove it; confirm a non-permitted (family) library is not offered.
 

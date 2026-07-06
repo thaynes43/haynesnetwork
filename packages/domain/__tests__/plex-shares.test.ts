@@ -8,9 +8,13 @@ import {
   type Database,
 } from '@hnet/db';
 import {
+  assignRole,
+  createRole,
   LibraryNotAllowedError,
   PlexAccountUnmatchedError,
+  PlexAllStateError,
   setRoleLibraries,
+  setServerAllShare,
   shareLibrary,
   unshareLibrary,
   type PlexClientBundle,
@@ -20,14 +24,17 @@ import { bootMigratedDb, createUser, type TestDb } from './helpers';
 // ---- a fake PlexClientBundle: records write payloads, serves configurable reads ----
 
 interface RecordedWrite {
-  kind: 'create' | 'update' | 'delete';
+  kind: 'create' | 'update' | 'delete' | 'setAll';
   librarySectionIds?: number[];
   invitedUserId?: number;
-  sharedServerId?: string;
+  sharedServerId?: string | null;
+  on?: boolean;
 }
 interface SharedState {
   id: string;
   sections: Array<{ id: string; key: string; shared: boolean }>;
+  /** ADR-024 — a share-everything (incl. future libraries) all-libraries grant. */
+  allLibraries?: boolean;
 }
 interface TowerState {
   friends: Array<{ id: string; email: string }>;
@@ -49,7 +56,7 @@ function makeFakeBundle(state: TowerState): { bundle: PlexClientBundle; writes: 
     async findSharedServerForUser(userId: string) {
       const s = state.sharedByUser[userId];
       return s
-        ? { id: s.id, userID: userId, email: null, username: null, allLibraries: false, sections: s.sections }
+        ? { id: s.id, userID: userId, email: null, username: null, allLibraries: s.allLibraries ?? false, sections: s.sections }
         : null;
     },
   };
@@ -63,6 +70,21 @@ function makeFakeBundle(state: TowerState): { bundle: PlexClientBundle; writes: 
     },
     async deleteSharedServer(sharedServerId: string) {
       writes.push({ kind: 'delete', sharedServerId });
+    },
+    async updateSharedServerAll(input: {
+      sharedServerId: string | null;
+      invitedUserId: number;
+      on: boolean;
+      librarySectionIds?: number[];
+    }) {
+      writes.push({
+        kind: 'setAll',
+        sharedServerId: input.sharedServerId,
+        invitedUserId: input.invitedUserId,
+        on: input.on,
+        librarySectionIds: input.librarySectionIds,
+      });
+      return { sharedServerId: input.sharedServerId ?? 'new-all-1' };
     },
   };
   const bundle = {
@@ -234,6 +256,131 @@ describe('unshareLibrary (ADR-017 D-02)', () => {
       sharedByUser: {},
     });
     const res = await unshareLibrary({ db: t.db, plex: bundle, userId: user.id, libraryId: moviesLib, actorId: user.id });
+    expect(res.changed).toBe(false);
+    expect(writes).toHaveLength(0);
+  });
+});
+
+describe('per-library add/remove refuses to demote an all-libraries account (ADR-024)', () => {
+  // A friend whose current SharedServer is allLibraries="1" (share-everything, incl. future
+  // libraries). A per-library add/remove would PUT an explicit list and silently demote the
+  // superset — so both throw PLEX_ALL_STATE before any Plex write (the user must leave All first).
+  function allLibrariesBundle(email: string, friendId: string) {
+    return makeFakeBundle({
+      friends: [{ id: friendId, email }],
+      serverSections: SERVER_SECTIONS,
+      sharedByUser: {
+        [friendId]: {
+          id: `ss-${friendId}`,
+          allLibraries: true,
+          sections: [{ id: '118181361', key: '1', shared: true }],
+        },
+      },
+    });
+  }
+
+  it('add throws PlexAllStateError and makes NO write-client call', async () => {
+    const user = await freshUser('alllibs-add@example.com');
+    const { bundle, writes } = allLibrariesBundle('alllibs-add@example.com', '191');
+    await expect(
+      shareLibrary({ db: t.db, plex: bundle, userId: user.id, libraryId: moviesLib, actorId: user.id }),
+    ).rejects.toBeInstanceOf(PlexAllStateError);
+    expect(writes).toHaveLength(0);
+    expect(await auditFor(user.id)).toHaveLength(0);
+  });
+
+  it('remove throws PlexAllStateError and makes NO write-client call', async () => {
+    const user = await freshUser('alllibs-rm@example.com');
+    const { bundle, writes } = allLibrariesBundle('alllibs-rm@example.com', '192');
+    await expect(
+      unshareLibrary({ db: t.db, plex: bundle, userId: user.id, libraryId: moviesLib, actorId: user.id }),
+    ).rejects.toBeInstanceOf(PlexAllStateError);
+    expect(writes).toHaveLength(0);
+    expect(await auditFor(user.id)).toHaveLength(0);
+  });
+});
+
+describe('setServerAllShare (ADR-024 — role-scoped all-libraries self-toggle)', () => {
+  const TOWER = SEEDED_PLEX_SERVER_IDS.haynestower;
+
+  /** A user whose role holds an all-libraries grant on haynestower. */
+  async function allGrantedUser(email: string) {
+    const { roleId } = await createRole({ db: t.db, name: `all-${email}`, actorId: null });
+    await setRoleLibraries({ db: t.db, roleId, libraryIds: [], allServerIds: [TOWER], actorId: null });
+    const user = await createUser(t.db, { email });
+    await assignRole({ db: t.db, userId: user.id, toRoleId: roleId, initiator: { id: null, kind: 'system' } });
+    return user;
+  }
+
+  it('role gate: a user whose role does NOT all-grant the server → LibraryNotAllowedError, no write', async () => {
+    const user = await freshUser('all-gate@example.com'); // Default role — no all-grant
+    const { bundle, writes } = makeFakeBundle({
+      friends: [{ id: '60', email: 'all-gate@example.com' }],
+      serverSections: SERVER_SECTIONS,
+      sharedByUser: {},
+    });
+    await expect(
+      setServerAllShare({ db: t.db, plex: bundle, userId: user.id, serverId: TOWER, on: true, actorId: user.id }),
+    ).rejects.toBeInstanceOf(LibraryNotAllowedError);
+    expect(writes).toHaveLength(0);
+    expect(await auditFor(user.id)).toHaveLength(0);
+  });
+
+  it('ON: enters all-libraries (create when no share) and audits share_all_enabled', async () => {
+    const user = await allGrantedUser('all-on@example.com');
+    const { bundle, writes } = makeFakeBundle({
+      friends: [{ id: '61', email: 'all-on@example.com' }],
+      serverSections: SERVER_SECTIONS,
+      sharedByUser: {},
+    });
+    const res = await setServerAllShare({ db: t.db, plex: bundle, userId: user.id, serverId: TOWER, on: true, actorId: user.id });
+    expect(res).toMatchObject({ changed: true, event: 'share_all_enabled', allActive: true });
+    expect(writes).toEqual([{ kind: 'setAll', sharedServerId: null, invitedUserId: 61, on: true, librarySectionIds: undefined }]);
+    const audit = await auditFor(user.id);
+    expect(audit).toHaveLength(1);
+    expect(audit[0]!.event).toBe('share_all_enabled');
+    expect(audit[0]!.plexLibraryId).toBeNull();
+  });
+
+  it('ON: idempotent when already all — no write, no audit', async () => {
+    const user = await allGrantedUser('all-idem@example.com');
+    const { bundle, writes } = makeFakeBundle({
+      friends: [{ id: '62', email: 'all-idem@example.com' }],
+      serverSections: SERVER_SECTIONS,
+      sharedByUser: { '62': { id: 'ss-62', allLibraries: true, sections: [] } },
+    });
+    const res = await setServerAllShare({ db: t.db, plex: bundle, userId: user.id, serverId: TOWER, on: true, actorId: user.id });
+    expect(res.changed).toBe(false);
+    expect(writes).toHaveLength(0);
+    expect(await auditFor(user.id)).toHaveLength(0);
+  });
+
+  it('OFF: leaves all, seeding the explicit full section set, audits share_all_disabled', async () => {
+    const user = await allGrantedUser('all-off@example.com');
+    const { bundle, writes } = makeFakeBundle({
+      friends: [{ id: '63', email: 'all-off@example.com' }],
+      serverSections: SERVER_SECTIONS,
+      sharedByUser: { '63': { id: 'ss-63', allLibraries: true, sections: [] } },
+    });
+    const res = await setServerAllShare({ db: t.db, plex: bundle, userId: user.id, serverId: TOWER, on: false, actorId: user.id });
+    expect(res).toMatchObject({ changed: true, event: 'share_all_disabled', allActive: false });
+    // Seeded with EVERY server section id (no access loss).
+    expect(writes).toEqual([
+      { kind: 'setAll', sharedServerId: 'ss-63', invitedUserId: 63, on: false, librarySectionIds: [118181361, 118278404] },
+    ]);
+    const audit = await auditFor(user.id);
+    expect(audit[0]!.event).toBe('share_all_disabled');
+    expect(audit[0]!.detail).toMatchObject({ seeded_section_ids: [118181361, 118278404] });
+  });
+
+  it('OFF: idempotent when the account is not all — no write', async () => {
+    const user = await allGrantedUser('all-off-noop@example.com');
+    const { bundle, writes } = makeFakeBundle({
+      friends: [{ id: '64', email: 'all-off-noop@example.com' }],
+      serverSections: SERVER_SECTIONS,
+      sharedByUser: { '64': { id: 'ss-64', allLibraries: false, sections: [{ id: '118181361', key: '1', shared: true }] } },
+    });
+    const res = await setServerAllShare({ db: t.db, plex: bundle, userId: user.id, serverId: TOWER, on: false, actorId: user.id });
     expect(res.changed).toBe(false);
     expect(writes).toHaveLength(0);
   });

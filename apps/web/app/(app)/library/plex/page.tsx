@@ -7,6 +7,19 @@
 // are never offered (the query returns only the allowed set). No layout reorientation on
 // interaction (ADR-015): the action cell reserves width and the ConfirmButton reserves its
 // armed-label width, so arming/removing never reflows neighbors. Mutations invalidate-and-refetch.
+//
+// ADR-024 / DESIGN-007 D-13 — per-server all-libraries self-service. When the caller's role
+// all-grants a server, its header carries a segmented "All libraries | Specific libraries"
+// control (a segment names each state, so neither reads as "off"; both segments always render,
+// so toggling changes tint only — ADR-015). While the account is all-libraries the rows are
+// read-only ("Included") — per-library add/remove is refused server-side (PLEX_ALL_STATE), so
+// the controls are simply not offered; the state note under the header explains that leaving
+// All keeps today's libraries but stops new ones arriving automatically. Leaving All is
+// LOSSLESS (the explicit list is seeded with the current full set) and instantly reversible,
+// so it is a plain action — no two-step confirm (ADR-014 reserves that for destructive acts);
+// the always-visible note is the "explanation before the click". The All↔explicit swap changes
+// only THIS server block, in place: rows keep their height (the action cell reserves the
+// button height) and the note area swaps same-shape text.
 
 import { useState } from 'react';
 import { ConfirmButton } from '@hnet/ui';
@@ -29,7 +42,13 @@ export default function MyPlexPage() {
     onSuccess: () => setError(null),
     onSettled: invalidate,
   });
-  const busy = add.isPending || remove.isPending;
+  // ADR-024 — toggle the caller's own account between all-libraries and an explicit list.
+  const setAll = trpc.plex.setServerAll.useMutation({
+    onError: (err: unknown) => setError(describeMutationError(err)),
+    onSuccess: () => setError(null),
+    onSettled: invalidate,
+  });
+  const busy = add.isPending || remove.isPending || setAll.isPending;
 
   if (query.isLoading) return <p className="muted">Loading your libraries…</p>;
   if (query.error) {
@@ -73,7 +92,57 @@ export default function MyPlexPage() {
                   Your account isn’t a Plex friend of this server yet — ask an admin to add you.
                 </span>
               ) : null}
+              {server.allGranted ? (
+                <div
+                  className="plex-mode"
+                  role="group"
+                  aria-label={`Library access on ${server.name}`}
+                  data-testid={`plex-all-toggle-${server.slug}`}
+                >
+                  <button
+                    type="button"
+                    className="plex-mode__btn"
+                    data-testid="plex-mode-all"
+                    aria-pressed={server.allActive}
+                    disabled={busy || !server.available || !server.friendMatched}
+                    onClick={() => {
+                      if (!server.allActive) setAll.mutate({ serverId: server.id, on: true });
+                    }}
+                  >
+                    All libraries
+                  </button>
+                  <button
+                    type="button"
+                    className="plex-mode__btn"
+                    data-testid="plex-mode-specific"
+                    aria-pressed={!server.allActive}
+                    disabled={busy || !server.available || !server.friendMatched}
+                    onClick={() => {
+                      if (server.allActive) setAll.mutate({ serverId: server.id, on: false });
+                    }}
+                  >
+                    Specific libraries
+                  </button>
+                </div>
+              ) : null}
             </div>
+            {server.allGranted ? (
+              // Both states render the same-shape note (similar length, same element) so the
+              // All↔explicit swap doesn't shift the list below (ADR-015).
+              <p className="plex-mode__note" role="status">
+                {server.allActive
+                  ? `You’re receiving all current and future libraries on ${server.name}. ` +
+                    `Choosing specific libraries keeps today’s set, but new libraries won’t be added automatically.`
+                  : `You choose specific libraries on ${server.name}. New libraries won’t be added ` +
+                    `automatically — switch to all libraries to always get everything.`}
+              </p>
+            ) : server.allActive ? (
+              // The account is all-libraries but the role doesn't grant the toggle — read-only.
+              <p className="plex-mode__note" role="status">
+                You’re receiving all current and future libraries on {server.name} — this is
+                managed by an admin.
+              </p>
+            ) : null}
             <ul className="plex-lib-list">
               {server.libraries.map((lib) => (
                 <li className="plex-lib-row" key={lib.id}>
@@ -82,7 +151,11 @@ export default function MyPlexPage() {
                     <span className="plex-lib-type muted"> · {lib.mediaType}</span>
                   </span>
                   <span className="plex-lib-action">
-                    {lib.shared ? (
+                    {server.allActive ? (
+                      // All-libraries state: everything is included; per-library add/remove is
+                      // refused server-side (PLEX_ALL_STATE), so it is never offered (ADR-024).
+                      <span className="plex-lib-included muted">Included</span>
+                    ) : lib.shared ? (
                       <ConfirmButton
                         className="btn sm danger"
                         data-testid="plex-remove"

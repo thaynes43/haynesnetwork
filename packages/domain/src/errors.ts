@@ -166,6 +166,19 @@ export class PlexServerUnavailableError extends Error {
   }
 }
 
+/**
+ * ADR-024 (live-validated 2026-07-06): a per-library add/remove was attempted while the user's
+ * account is currently in the plex.tv all-libraries state (`allLibraries="1"` — share-everything
+ * incl. future libraries). Applying an explicit single-library change would silently + permanently
+ * demote the superset grant (new libraries would stop auto-appearing). No silent demotion ever:
+ * `applyShare` throws this BEFORE any Plex write and the message directs the user to LEAVE All
+ * first (`plex.setServerAll { on:false }` seeds the explicit list with their current full set — no
+ * access loss), then manage individual libraries. Surfaced as UNPROCESSABLE_CONTENT.
+ */
+export class PlexAllStateError extends Error {
+  readonly code = 'PLEX_ALL_STATE' as const;
+}
+
 function pgErrorCode(err: unknown): string | undefined {
   if (typeof err !== 'object' || err === null) return undefined;
   const code = (err as { code?: unknown }).code;

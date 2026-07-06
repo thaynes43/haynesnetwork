@@ -122,9 +122,16 @@ export type PlexServerSlug = (typeof PLEX_SERVER_SLUGS)[number];
 export const PLEX_MEDIA_TYPES = ['movie', 'show', 'artist', 'photo'] as const;
 export type PlexMediaType = (typeof PLEX_MEDIA_TYPES)[number];
 
-// A library share was applied to (share_added) or revoked from (share_removed) a user's
-// Plex account on a server. The only two Plex-share ledger events (ADR-017 D-07).
-export const PLEX_SHARE_EVENTS = ['share_added', 'share_removed'] as const;
+// Plex-share ledger events (ADR-017 D-07 / ADR-024). A per-section library share was applied
+// (share_added) or revoked (share_removed); OR the server-wide all-libraries flag was turned on
+// (share_all_enabled) or off (share_all_disabled) for a user's account (ADR-024 role-scoped
+// all-libraries self-service — the all events carry no plex_library_id, they are server-scoped).
+export const PLEX_SHARE_EVENTS = [
+  'share_added',
+  'share_removed',
+  'share_all_enabled',
+  'share_all_disabled',
+] as const;
 export type PlexShareEvent = (typeof PLEX_SHARE_EVENTS)[number];
 
 // ---------------------------------------------------------------------------

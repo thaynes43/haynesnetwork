@@ -486,6 +486,7 @@ added to both (plus this table and DESIGN-005 D-17). See `packages/api/README.md
 | `ArrUpstreamError` | `ARR_UPSTREAM_UNAVAILABLE` | `BAD_GATEWAY` | any *arr call failure surfaced to the client (DESIGN-005 D-17) |
 | `RestoreProfileUnmappedError` | `RESTORE_PROFILE_UNMAPPED` | `UNPROCESSABLE_CONTENT` | restore execute per-item profile mapping (DESIGN-005 D-16) |
 | `SearchCapExceededError` | `ARR_ADD_SEARCH_CAP_EXCEEDED` | `UNPROCESSABLE_CONTENT` | `ledgerAdmin.bulkAddAndSearch` with `searchOnAdd` over `ARR_ADD_SEARCH_CAP` (1000) items (ADR-022, DESIGN-009 D-06) |
+| `PlexAllStateError` | `PLEX_ALL_STATE` | `UNPROCESSABLE_CONTENT` | `plex.addLibrary`/`removeLibrary` against an account currently in the plex.tv all-libraries state — refused, no silent demotion (ADR-024, DESIGN-007 D-13). The rest of the Plex-router taxonomy (`LIBRARY_NOT_ALLOWED`, `PLEX_ACCOUNT_UNMATCHED`, `PLEX_SERVER_UNAVAILABLE`) lives in DESIGN-007 D-05. |
 | — (`TRPCError` direct) | — | `NOT_FOUND` / `UNAUTHORIZED` / `FORBIDDEN` | resolvers / ladder |
 
 (Phase 2 rows added 2026-07-03 with the ledger/fix/restore routers, as this section

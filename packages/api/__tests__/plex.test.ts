@@ -5,7 +5,8 @@
 // through the real errorFormatter. The procedure ladder (authed / admin) is exercised too.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { plexLibraries, plexServers, SEEDED_ROLE_IDS } from '@hnet/db';
+import { plexLibraries, plexServers, SEEDED_PLEX_SERVER_IDS, SEEDED_ROLE_IDS } from '@hnet/db';
+import { assignRole, createRole } from '@hnet/domain';
 import {
   bootMigratedDb,
   caller,
@@ -107,6 +108,37 @@ describe('plex.myLibraries (self-service)', () => {
     expect(tower.libraries.map((l) => l.name)).toEqual(['HNet Movies']); // Photos withheld (not granted)
     expect(tower.libraries[0]!.shared).toBe(false);
   });
+
+  it('surfaces allGranted + allActive and shares every library when the role all-grants (ADR-024)', async () => {
+    // The live case (owner's wife, friend id 19299967) modelled the new way: her role ALL-grants
+    // haynestower and her account is in the all-libraries state. myLibraries flags both, offers
+    // every available library on the server, and reports them all shared.
+    const wife = await createUser(t.db, { email: 'wife-plex@example.com' });
+    const { roleId } = await createRole({ db: t.db, name: 'all-tower-role', actorId: null });
+    await adminCaller.plex.setRoleLibraryGrants({
+      roleId,
+      libraryIds: [],
+      allServerIds: [SEEDED_PLEX_SERVER_IDS.haynestower],
+    });
+    await assignRole({ db: t.db, userId: wife.id, toRoleId: roleId, initiator: { id: null, kind: 'system' } });
+
+    const allLibsStub = makeApiPlexStub({
+      haynestower: {
+        ...towerConfig().haynestower,
+        friends: [{ id: '19299967', email: 'wife-plex@example.com' }],
+        shared: { '19299967': { id: 'ss-wife', sectionIds: [118181361], allLibraries: true } },
+      },
+    });
+    const wifeCaller = caller(makeCtx(t.db, sessionUser(wife), undefined, allLibsStub.bundle));
+    const { servers } = await wifeCaller.plex.myLibraries();
+    const tower = servers.find((s) => s.slug === 'haynestower')!;
+    expect(tower.id).toBe(SEEDED_PLEX_SERVER_IDS.haynestower);
+    expect(tower.allGranted).toBe(true);
+    expect(tower.allActive).toBe(true);
+    // All available libraries on the all-granted server are offered, and every one is shared.
+    expect(tower.libraries.map((l) => l.name).sort()).toEqual(['HNet Movies', 'HNet Photos']);
+    expect(tower.libraries.every((l) => l.shared)).toBe(true);
+  });
 });
 
 describe('plex.addLibrary / removeLibrary (self-service)', () => {
@@ -154,6 +186,64 @@ describe('plex.addLibrary / removeLibrary (self-service)', () => {
       const shape = wireShape(err, 'plex.addLibrary');
       expect(shape.data.appCode).toBe('PLEX_ACCOUNT_UNMATCHED');
     }
+  });
+});
+
+describe('plex.setServerAll (ADR-024)', () => {
+  it('rejects a server the role does not all-grant with LIBRARY_NOT_ALLOWED (FORBIDDEN)', async () => {
+    // member's Default role holds no all-grant on haynestower.
+    try {
+      await memberCaller.plex.setServerAll({ serverId: SEEDED_PLEX_SERVER_IDS.haynestower, on: true });
+      throw new Error('expected throw');
+    } catch (err) {
+      const shape = wireShape(err, 'plex.setServerAll');
+      expect(shape.data.code).toBe('FORBIDDEN');
+      expect(shape.data.appCode).toBe('LIBRARY_NOT_ALLOWED');
+    }
+  });
+
+  it('turns All on then off for an all-granted user; myLibraries reflects allActive both ways', async () => {
+    const user = await createUser(t.db, { email: 'toggler@example.com' });
+    const { roleId } = await createRole({ db: t.db, name: 'toggle-role', actorId: null });
+    await adminCaller.plex.setRoleLibraryGrants({
+      roleId,
+      libraryIds: [],
+      allServerIds: [SEEDED_PLEX_SERVER_IDS.haynestower],
+    });
+    await assignRole({ db: t.db, userId: user.id, toRoleId: roleId, initiator: { id: null, kind: 'system' } });
+
+    const s = makeApiPlexStub({
+      haynestower: { ...towerConfig().haynestower, friends: [{ id: '88', email: 'toggler@example.com' }] },
+    });
+    const c = caller(makeCtx(t.db, sessionUser(user), undefined, s.bundle));
+
+    const on = await c.plex.setServerAll({ serverId: SEEDED_PLEX_SERVER_IDS.haynestower, on: true });
+    expect(on).toMatchObject({ changed: true, event: 'share_all_enabled', allActive: true });
+    expect(s.writes.at(-1)).toMatchObject({ slug: 'haynestower', kind: 'setAll', on: true });
+    let libs = await c.plex.myLibraries();
+    expect(libs.servers.find((x) => x.slug === 'haynestower')!.allActive).toBe(true);
+
+    const off = await c.plex.setServerAll({ serverId: SEEDED_PLEX_SERVER_IDS.haynestower, on: false });
+    expect(off).toMatchObject({ changed: true, event: 'share_all_disabled', allActive: false });
+    expect(s.writes.at(-1)).toMatchObject({ slug: 'haynestower', kind: 'setAll', on: false });
+    libs = await c.plex.myLibraries();
+    expect(libs.servers.find((x) => x.slug === 'haynestower')!.allActive).toBe(false);
+  });
+});
+
+describe('plex.roleLibraryGrants — per-server all-grants (ADR-024)', () => {
+  it('setRoleLibraryGrants persists all-grants and roleLibraryGrants surfaces allGrantsByRole + server id', async () => {
+    const { roleId } = await createRole({ db: t.db, name: 'matrix-all-role', actorId: null });
+    await adminCaller.plex.setRoleLibraryGrants({
+      roleId,
+      libraryIds: [moviesId],
+      allServerIds: [SEEDED_PLEX_SERVER_IDS.haynestower],
+    });
+    const matrix = await adminCaller.plex.roleLibraryGrants();
+    expect(matrix.grantsByRole[roleId]).toEqual([moviesId]);
+    expect(matrix.allGrantsByRole[roleId]).toEqual([SEEDED_PLEX_SERVER_IDS.haynestower]);
+    const tower = matrix.servers.find((srv) => srv.slug === 'haynestower')!;
+    expect(tower.id).toBe(SEEDED_PLEX_SERVER_IDS.haynestower);
   });
 });
 

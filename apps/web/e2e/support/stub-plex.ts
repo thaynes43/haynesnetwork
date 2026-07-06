@@ -73,6 +73,8 @@ interface SharedServerState {
   id: string;
   userId: string;
   sectionIds: Set<string>; // plex.tv section ids currently shared
+  /** ADR-017 C-14 — a share-everything (incl. future libraries) grant; read-only in self-service. */
+  allLibraries?: boolean;
 }
 
 function esc(v: string): string {
@@ -110,10 +112,25 @@ export async function startStubPlex(): Promise<StubPlexServer> {
     if (!m) shares.set(mid, (m = new Map()));
     return m;
   };
+  // ADR-024 (live 2026-07-06) — the member's role ALL-grants haynesops (seed-ledger) and their
+  // account starts in the plex.tv all-libraries state on that server (share-everything, incl. future
+  // libraries; the owner's-wife case). The My Plex page can then exercise the leave-All / re-enter-All
+  // flow. Set directly (NOT via a recorded write) so the add/remove specs' call log stays clean.
+  const seedFixtures = () => {
+    const opsMid = STUB_PLEX_MACHINE_IDS.haynesops;
+    sharesFor(opsMid).set(STUB_PLEX_MEMBER.id, {
+      id: 'ss-alllibs',
+      userId: STUB_PLEX_MEMBER.id,
+      sectionIds: new Set(LIBRARIES.haynesops.map((s) => s.plexId)),
+      allLibraries: true,
+    });
+  };
   const resetState = () => {
     calls.length = 0;
     shares.clear();
+    seedFixtures();
   };
+  seedFixtures();
 
   const usersXml = () =>
     `<MediaContainer friendlyName="StubPlex" identifier="com.plexapp.plugins.myplex" size="1">` +
@@ -139,7 +156,7 @@ export async function startStubPlex(): Promise<StubPlexServer> {
           )
           .join('');
         return (
-          `<SharedServer id="${ss.id}" username="${STUB_PLEX_MEMBER.username}" email="${esc(STUB_PLEX_MEMBER.email)}" userID="${ss.userId}" name="${slug}" allLibraries="0" owned="0">` +
+          `<SharedServer id="${ss.id}" username="${STUB_PLEX_MEMBER.username}" email="${esc(STUB_PLEX_MEMBER.email)}" userID="${ss.userId}" name="${slug}" allLibraries="${ss.allLibraries ? '1' : '0'}" owned="0">` +
           sections +
           `</SharedServer>`
         );
@@ -201,21 +218,36 @@ export async function startStubPlex(): Promise<StubPlexServer> {
           const state = sharesFor(mid);
 
           if (method === 'POST') {
-            const b = body as { shared_server?: { library_section_ids?: number[]; invited_id?: number } };
+            const b = body as {
+              shared_server?: { library_section_ids?: number[]; invited_id?: number; all_libraries?: boolean };
+            };
             const invited = String(b.shared_server?.invited_id ?? STUB_PLEX_MEMBER.id);
+            const all = b.shared_server?.all_libraries === true; // ADR-024 enter-all create
             const ids = (b.shared_server?.library_section_ids ?? []).map(String);
             const id = `ss-${invited}`;
-            state.set(invited, { id, userId: invited, sectionIds: new Set(ids) });
+            state.set(invited, { id, userId: invited, sectionIds: new Set(ids), allLibraries: all });
             return xml(
               res,
               201,
-              `<MediaContainer size="1"><SharedServer id="${id}" userID="${invited}" username="${STUB_PLEX_MEMBER.username}" allLibraries="0"/></MediaContainer>`,
+              `<MediaContainer size="1"><SharedServer id="${id}" userID="${invited}" username="${STUB_PLEX_MEMBER.username}" allLibraries="${all ? '1' : '0'}"/></MediaContainer>`,
             );
           }
           if (method === 'PUT') {
-            const b = body as { shared_server?: { library_section_ids?: number[] } };
-            const ids = (b.shared_server?.library_section_ids ?? []).map(String);
-            for (const ss of state.values()) if (ss.id === sharedServerId) ss.sectionIds = new Set(ids);
+            const b = body as { shared_server?: { library_section_ids?: number[]; all_libraries?: boolean } };
+            const all = b.shared_server?.all_libraries;
+            for (const ss of state.values()) {
+              if (ss.id !== sharedServerId) continue;
+              if (all === true) {
+                // ADR-024 enter-all: set the flag; the section set is irrelevant while all.
+                ss.allLibraries = true;
+              } else {
+                // Explicit list (all_libraries omitted or false) demotes from all-libraries.
+                ss.allLibraries = false;
+                if (b.shared_server?.library_section_ids !== undefined) {
+                  ss.sectionIds = new Set(b.shared_server.library_section_ids.map(String));
+                }
+              }
+            }
             return xml(res, 200, `<MediaContainer size="1"/>`);
           }
           // DELETE

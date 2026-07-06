@@ -19,6 +19,9 @@ interface RoleForm {
   grantsAll: boolean;
   // ADR-017 / DESIGN-007 D-06 — the Plex libraries this role may self-add (role_library_grants).
   libraryIds: string[];
+  // ADR-024 / DESIGN-007 D-13 — the servers this role all-grants (role_plex_server_all_grants):
+  // every library on the server, including ones added later.
+  allServerIds: string[];
 }
 
 const EMPTY_FORM: RoleForm = {
@@ -27,6 +30,7 @@ const EMPTY_FORM: RoleForm = {
   appIds: [],
   grantsAll: false,
   libraryIds: [],
+  allServerIds: [],
 };
 
 export default function AdminRolesPage() {
@@ -106,6 +110,7 @@ export default function AdminRolesPage() {
   const appNameById = new Map(entries.map((e) => [e.id, e.name]));
   const libServers = libs.data?.servers ?? [];
   const grantsByRole = libs.data?.grantsByRole ?? {};
+  const allGrantsByRole = libs.data?.allGrantsByRole ?? {};
 
   function openAdd() {
     setAddForm(EMPTY_FORM);
@@ -124,7 +129,12 @@ export default function AdminRolesPage() {
         grantsAll: addForm.grantsAll,
       });
       // Library grants are independent of grants_all (ADR-017 D-08) — always persisted.
-      if (libs.data) await setLibs.mutateAsync({ roleId, libraryIds: addForm.libraryIds });
+      if (libs.data)
+        await setLibs.mutateAsync({
+          roleId,
+          libraryIds: addForm.libraryIds,
+          allServerIds: addForm.allServerIds,
+        });
     } catch {
       /* onError handlers set the banners */
     }
@@ -139,6 +149,7 @@ export default function AdminRolesPage() {
       appIds: [...role.appIds],
       grantsAll: role.grantsAll,
       libraryIds: [...(grantsByRole[role.id] ?? [])],
+      allServerIds: [...(allGrantsByRole[role.id] ?? [])],
     });
     setEditError(null);
   }
@@ -156,7 +167,11 @@ export default function AdminRolesPage() {
       });
       // Only touch library grants when the matrix has loaded (else we'd wipe the current set).
       if (libs.data)
-        await setLibs.mutateAsync({ roleId: role.id, libraryIds: editForm.libraryIds });
+        await setLibs.mutateAsync({
+          roleId: role.id,
+          libraryIds: editForm.libraryIds,
+          allServerIds: editForm.allServerIds,
+        });
     } catch {
       /* onError handlers set the banners */
     }
@@ -172,6 +187,15 @@ export default function AdminRolesPage() {
     libraryIds: on
       ? [...form.libraryIds, libraryId]
       : form.libraryIds.filter((id) => id !== libraryId),
+  });
+
+  // ADR-024 — per-server all-libraries grant. The per-library selection is kept underneath
+  // (implied-on while All is checked, restored when it's unchecked) — never wiped.
+  const toggleAllServer = (form: RoleForm, serverId: string, on: boolean): RoleForm => ({
+    ...form,
+    allServerIds: on
+      ? [...form.allServerIds, serverId]
+      : form.allServerIds.filter((id) => id !== serverId),
   });
 
   if (roles.isLoading || catalog.isLoading) return <p className="muted">Loading roles…</p>;
@@ -222,8 +246,13 @@ export default function AdminRolesPage() {
   );
 
   // ADR-017 / DESIGN-007 D-06 — the Plex library grant matrix, grouped per server. Unlike the
-  // app matrix there is no "All libraries" master toggle: grants_all does not imply libraries
-  // (D-08). Unavailable libraries stay checkable so a soft-removed library's grant round-trips.
+  // app matrix there is no cross-server master toggle (grants_all does not imply libraries —
+  // D-08), but each server group carries a PER-SERVER "All libraries" checkbox (ADR-024 /
+  // D-13, role_plex_server_all_grants): every library on that server, including future ones.
+  // While it's checked the server's per-library boxes read implied-on and disabled (same
+  // treatment as the "All apps" toggle) — their underlying selection is kept, not wiped, so
+  // unchecking All restores the explicit set. Unavailable libraries stay checkable so a
+  // soft-removed library's grant round-trips.
   const libraryChecklist = (form: RoleForm, apply: (next: (f: RoleForm) => RoleForm) => void) => (
     <fieldset className="field">
       <legend>Plex libraries this role can self-add</legend>
@@ -232,28 +261,50 @@ export default function AdminRolesPage() {
       ) : libServers.length === 0 ? (
         <p className="muted">No libraries yet — run a registry refresh to populate them.</p>
       ) : (
-        libServers.map((server) => (
-          <div className="lib-group" key={server.slug}>
-            <p className="lib-group__name">{server.name}</p>
-            <ul className="check-list">
-              {server.libraries.map((lib) => (
-                <li key={lib.id}>
-                  <label className="check-row" data-disabled={!lib.available || undefined}>
-                    <input
-                      type="checkbox"
-                      checked={form.libraryIds.includes(lib.id)}
-                      onChange={(e) => apply((f) => toggleLibrary(f, lib.id, e.target.checked))}
-                    />
-                    <span>
-                      {lib.name}
-                      {!lib.available ? <span className="muted"> (unavailable)</span> : null}
-                    </span>
-                  </label>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))
+        libServers.map((server) => {
+          const allOn = form.allServerIds.includes(server.id);
+          return (
+            <div className="lib-group" key={server.slug}>
+              <p className="lib-group__name">{server.name}</p>
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  data-testid={`lib-all-${server.slug}`}
+                  checked={allOn}
+                  onChange={(e) => apply((f) => toggleAllServer(f, server.id, e.target.checked))}
+                />
+                <span>
+                  <strong>All libraries</strong>
+                  <span className="muted">
+                    {' '}
+                    — everything on {server.name}, including libraries added later
+                  </span>
+                </span>
+              </label>
+              <ul className="check-list">
+                {server.libraries.map((lib) => (
+                  <li key={lib.id}>
+                    <label
+                      className="check-row"
+                      data-disabled={allOn || !lib.available || undefined}
+                    >
+                      <input
+                        type="checkbox"
+                        disabled={allOn}
+                        checked={allOn || form.libraryIds.includes(lib.id)}
+                        onChange={(e) => apply((f) => toggleLibrary(f, lib.id, e.target.checked))}
+                      />
+                      <span>
+                        {lib.name}
+                        {!lib.available ? <span className="muted"> (unavailable)</span> : null}
+                      </span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })
       )}
     </fieldset>
   );

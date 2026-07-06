@@ -19,6 +19,23 @@ interface SharedServerBody {
   };
 }
 
+/**
+ * ADR-024 — the body for toggling the server-wide all-libraries flag. `all_libraries` is the
+ * plex.tv web-client convention (snake_case, consistent with the other shared_server keys); it is
+ * NOT part of python-plexapi's write surface (which only ever sends `library_section_ids`), so the
+ * ON path is INFERRED and deferred to live write-validation (ADR-017 C-13). The OFF path (an
+ * explicit `library_section_ids` list, which demotes the account from all-libraries) IS the
+ * verified python-plexapi shape; `all_libraries: false` is sent alongside it only to be explicit.
+ */
+interface SharedServerAllBody {
+  server_id: string;
+  shared_server: {
+    all_libraries: boolean;
+    library_section_ids?: number[];
+    invited_id?: number;
+  };
+}
+
 export class PlexWriteClient {
   private readonly http: PlexHttp;
   private readonly plexTvBaseUrl: string;
@@ -82,6 +99,55 @@ export class PlexWriteClient {
     await this.http.requestVoid('DELETE', this.sharedServersUrl(sharedServerId), {
       accept: 'application/xml',
     });
+  }
+
+  /**
+   * ADR-024 — set the server-wide all-libraries flag for a friend's SharedServer.
+   * - `on: true`  → PUT `.../{id}` `{ shared_server: { all_libraries: true } }` when the friend
+   *   already has a SharedServer, else POST `.../shared_servers` `{ shared_server: { all_libraries:
+   *   true, invited_id } }` to create one. (INFERRED plex.tv-web shape — see SharedServerAllBody.)
+   * - `on: false` → PUT `.../{id}` `{ shared_server: { all_libraries: false, library_section_ids }
+   *   }` — the explicit list (the caller seeds it with the account's current full section set) is
+   *   what actually demotes the account from all-libraries; this is the VERIFIED python-plexapi
+   *   shape. Returns the (possibly newly created) sharedServerId.
+   */
+  async updateSharedServerAll(input: {
+    sharedServerId: string | null;
+    invitedUserId: number;
+    on: boolean;
+    librarySectionIds?: number[];
+  }): Promise<{ sharedServerId: string | null }> {
+    if (input.on) {
+      if (input.sharedServerId) {
+        const body: SharedServerAllBody = {
+          server_id: this.machineIdentifier,
+          shared_server: { all_libraries: true },
+        };
+        await this.http.requestVoid('PUT', this.sharedServersUrl(input.sharedServerId), {
+          body,
+          accept: 'application/xml',
+        });
+        return { sharedServerId: input.sharedServerId };
+      }
+      const body: SharedServerAllBody = {
+        server_id: this.machineIdentifier,
+        shared_server: { all_libraries: true, invited_id: input.invitedUserId },
+      };
+      const root = await this.http.requestXml('POST', this.sharedServersUrl(), { body });
+      const created = childrenNamed(root, 'SharedServer')[0] ?? root;
+      return { sharedServerId: created.attrs.id ?? null };
+    }
+    // OFF — an explicit list demotes the account from all-libraries (verified shape).
+    if (!input.sharedServerId) return { sharedServerId: null };
+    const body: SharedServerAllBody = {
+      server_id: this.machineIdentifier,
+      shared_server: { all_libraries: false, library_section_ids: input.librarySectionIds ?? [] },
+    };
+    await this.http.requestVoid('PUT', this.sharedServersUrl(input.sharedServerId), {
+      body,
+      accept: 'application/xml',
+    });
+    return { sharedServerId: input.sharedServerId };
   }
 }
 

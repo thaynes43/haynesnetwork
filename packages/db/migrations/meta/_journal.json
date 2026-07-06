@@ -99,6 +99,13 @@
       "when": 1782950413000,
       "tag": "0014_arr_add_reason",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1782950415000,
+      "tag": "0015_role_plex_server_all_grants",
+      "breakpoints": true
     }
   ]
 }

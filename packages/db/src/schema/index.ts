@@ -23,4 +23,6 @@ export * from './sync-state';
 export * from './plex-servers';
 export * from './plex-libraries';
 export * from './role-library-grants';
+// ADR-024 — role-scoped all-libraries-on-server grants (sits alongside role-library-grants)
+export * from './role-plex-server-all-grants';
 export * from './plex-share-audit';

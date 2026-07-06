@@ -3,6 +3,11 @@
 - **Status:** Accepted
 - **Date:** 2026-07-06
 - **Deciders:** Tom Haynes (owner) · ratified by Fable 5 (autonomous run, KICKOFF mandate)
+- **Amended by:** [ADR-024](024-role-scoped-all-libraries.md) (2026-07-06) — adds a role-scoped
+  *all-libraries-on-server* grant and self-service toggle between the plex.tv all-libraries state
+  and an explicit list. This **supersedes C-14's stance** (which accepted that a self-service edit
+  silently demotes an all-libraries account): no silent demotion ever — a per-library add/remove
+  against an all-libraries account is refused (`PLEX_ALL_STATE`) and the user leaves All explicitly.
 
 ## Context and problem statement
 

@@ -4,12 +4,14 @@ import {
   permissionAudit,
   plexLibraries,
   roleLibraryGrants,
+  rolePlexServerAllGrants,
   roles,
   SEEDED_ROLE_IDS,
   SEEDED_PLEX_SERVER_IDS,
   type Database,
 } from '@hnet/db';
 import {
+  allGrantedServerIdsForUser,
   assignRole,
   createRole,
   effectiveAllowedLibrariesForUser,
@@ -143,5 +145,109 @@ describe('setRoleLibraries (ADR-017 D-04/D-07)', () => {
     await expect(
       setRoleLibraries({ db: t.db, roleId: SEEDED_ROLE_IDS.admin, libraryIds: [hnetMovies], actorId: null }),
     ).rejects.toBeInstanceOf(SystemRoleImmutableError);
+  });
+});
+
+describe('all-libraries server grants (ADR-024)', () => {
+  it('effective set = explicit grants ∪ all available libraries of all-granted servers', async () => {
+    const user = await createUser(t.db);
+    const { roleId } = await createRole({ db: t.db, name: 'union-role', actorId: null });
+    await assignRole({ db: t.db, userId: user.id, toRoleId: roleId, initiator: { id: null, kind: 'system' } });
+    // explicit: HNet Movies (tower); all-grant: haynesops (→ its one library, HOps Movies).
+    await setRoleLibraries({
+      db: t.db,
+      roleId,
+      libraryIds: [hnetMovies],
+      allServerIds: [SEEDED_PLEX_SERVER_IDS.haynesops],
+      actorId: null,
+    });
+    const names = (await effectiveAllowedLibrariesForUser(user.id, t.db)).map((l) => l.name);
+    expect(names.sort()).toEqual(['HNet Movies', 'HOps Movies']);
+  });
+
+  it('an all-grant covers a whole server and de-dupes a library that is ALSO explicitly granted', async () => {
+    const user = await createUser(t.db);
+    const { roleId } = await createRole({ db: t.db, name: 'dedupe-role', actorId: null });
+    await assignRole({ db: t.db, userId: user.id, toRoleId: roleId, initiator: { id: null, kind: 'system' } });
+    // Explicit HNet Movies AND an all-grant on haynestower (which itself covers HNet Movies).
+    await setRoleLibraries({
+      db: t.db,
+      roleId,
+      libraryIds: [hnetMovies],
+      allServerIds: [SEEDED_PLEX_SERVER_IDS.haynestower],
+      actorId: null,
+    });
+    const libs = await effectiveAllowedLibrariesForUser(user.id, t.db);
+    expect(libs.filter((l) => l.name === 'HNet Movies')).toHaveLength(1); // no duplicate
+    expect(libs.map((l) => l.name).sort()).toEqual(['HNet Home Videos', 'HNet Movies', 'HNet Photos']);
+  });
+
+  it('allGrantedServerIdsForUser: a role returns its all-grants; Admin returns every server', async () => {
+    const user = await createUser(t.db);
+    const { roleId } = await createRole({ db: t.db, name: 'allgrant-role', actorId: null });
+    await assignRole({ db: t.db, userId: user.id, toRoleId: roleId, initiator: { id: null, kind: 'system' } });
+    await setRoleLibraries({
+      db: t.db,
+      roleId,
+      libraryIds: [],
+      allServerIds: [SEEDED_PLEX_SERVER_IDS.haynesops],
+      actorId: null,
+    });
+    expect([...(await allGrantedServerIdsForUser(user.id, t.db))]).toEqual([SEEDED_PLEX_SERVER_IDS.haynesops]);
+
+    const admin = await createUser(t.db);
+    await assignRole({ db: t.db, userId: admin.id, toRoleId: SEEDED_ROLE_IDS.admin, initiator: { id: null, kind: 'system' } });
+    expect((await allGrantedServerIdsForUser(admin.id, t.db)).size).toBe(3); // all three seeded servers
+  });
+
+  it('setRoleLibraries replace-sets the all-grants and records them in the audit detail', async () => {
+    const { roleId } = await createRole({ db: t.db, name: 'audit-all-role', actorId: null });
+    await setRoleLibraries({
+      db: t.db,
+      roleId,
+      libraryIds: [],
+      allServerIds: [SEEDED_PLEX_SERVER_IDS.haynestower, SEEDED_PLEX_SERVER_IDS.haynesops],
+      actorId: null,
+    });
+    let rows = await t.db
+      .select()
+      .from(rolePlexServerAllGrants)
+      .where(eq(rolePlexServerAllGrants.roleId, roleId));
+    expect(rows).toHaveLength(2);
+
+    await setRoleLibraries({
+      db: t.db,
+      roleId,
+      libraryIds: [],
+      allServerIds: [SEEDED_PLEX_SERVER_IDS.haynestower],
+      actorId: null,
+    });
+    rows = await t.db
+      .select()
+      .from(rolePlexServerAllGrants)
+      .where(eq(rolePlexServerAllGrants.roleId, roleId));
+    expect(rows.map((r) => r.plexServerId)).toEqual([SEEDED_PLEX_SERVER_IDS.haynestower]);
+
+    const audits = await t.db.select().from(permissionAudit).where(eq(permissionAudit.roleId, roleId));
+    const last = audits.at(-1)!;
+    expect((last.detail as { all_servers_after: unknown[] }).all_servers_after).toHaveLength(1);
+  });
+
+  it('omitting allServerIds leaves existing all-grants untouched (back-compat)', async () => {
+    const { roleId } = await createRole({ db: t.db, name: 'untouched-role', actorId: null });
+    await setRoleLibraries({
+      db: t.db,
+      roleId,
+      libraryIds: [],
+      allServerIds: [SEEDED_PLEX_SERVER_IDS.haynestower],
+      actorId: null,
+    });
+    // A later call that only manages the per-library set must NOT wipe the all-grant.
+    await setRoleLibraries({ db: t.db, roleId, libraryIds: [hnetMovies], actorId: null });
+    const rows = await t.db
+      .select()
+      .from(rolePlexServerAllGrants)
+      .where(eq(rolePlexServerAllGrants.roleId, roleId));
+    expect(rows).toHaveLength(1);
   });
 });
