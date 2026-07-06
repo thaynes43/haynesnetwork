@@ -83,8 +83,11 @@ The full consolidated backlog (with what is deferred beyond this run) is in
   going live = MANUAL edit of the image tag in the SIBLING haynes-ops repo
   (`kubernetes/main/apps/frontend/haynesnetwork/app/helmrelease.yaml`, currently v0.4.0).
   Also holds the 1Password `haynesnetwork` secret contract.
-- **overseerr.haynesnetwork.com** still routes to the legacy Unraid box; in-cluster Seerr is
-  LAN-only pending the owner's parallel *arr/Seerr k8s migration. Catalog links are DB data.
+- **overseerr.haynesnetwork.com** catalog tile still points at the legacy Unraid URL — an
+  owner-driven one-field admin edit to flip. The owner's *arr/Seerr stack **has migrated
+  in-cluster**: Seerr + Sonarr/Radarr/Lidarr are reachable at `*.media.svc.cluster.local` (the
+  plans call these directly); legacy HaynesTower (Unraid) stays up as a NAS only. Catalog links
+  are DB data.
 - **Three Plex servers, 1Password key collision:** the `plexops` item's Plex key is *also*
   named `HAYNESKUBE_PLEX_API_KEY` — do not confuse it with the `homepage` item's key of the
   same name (see the haynes-ops `frontend/homepage/app/externalsecret.yaml` comment).

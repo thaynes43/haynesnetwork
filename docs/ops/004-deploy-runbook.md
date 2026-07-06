@@ -1,6 +1,6 @@
 # OPS-004: Deploy runbook — merged PR to live staging
 
-- **Status:** Accepted (reflects the pipeline live as of v0.3.1, 2026-07-04)
+- **Status:** Accepted (reflects the pipeline live as of v0.4.0, 2026-07-05; image-publish flow updated per #37)
 - **Implements:** ADR-006 (single GHCR image + Flux), ADR-009 (CI + release-please)
 - **Sibling repo:** `haynes-ops` at `kubernetes/main/apps/frontend/haynesnetwork/`
   (cluster context `haynes-ops`)
@@ -15,9 +15,9 @@ this documents field contracts only (CLAUDE.md rule 7).
 | Thing | Where |
 |-------|-------|
 | Source repo | this repo, `main` (branch-protected, squash-only — PLAN-001) |
-| Image | `ghcr.io/thaynes43/haynesnetwork`, pushed on `v*` tags only |
+| Image | `ghcr.io/thaynes43/haynesnetwork`, pushed in-run by release-please on `release_created` (#37) |
 | Deploy manifests | `haynes-ops/kubernetes/main/apps/frontend/haynesnetwork/` |
-| Live image tag | `app/helmrelease.yaml` → `controllers.main.initContainers.migrate.image.tag` (anchor `&mainImage`, currently **`v0.3.1`**) |
+| Live image tag | `app/helmrelease.yaml` → `controllers.main.initContainers.migrate.image.tag` (anchor `&mainImage`, currently **`v0.4.0`**) |
 | Staging URL | `https://haynesnetwork.haynesops.com` (traefik-internal, LAN-only) |
 | Namespace | `frontend` |
 
@@ -31,26 +31,25 @@ this documents field contracts only (CLAUDE.md rule 7).
    `fix:` → patch pre-1.0), and titles itself `chore(main): release X.Y.Z`.
 3. **Merge the release PR.** That squash-merge tags **`vX.Y.Z`** on `main` and publishes a
    GitHub Release. `include-component-in-tag: false`, so the tag is a bare `v*`.
-4. **The `build-image` job builds and pushes** `ghcr.io/thaynes43/haynesnetwork:vX.Y.Z`
-   **and** `:latest` (`.github/workflows/ci.yml`). It pushes **only** on `v*` tag pushes
-   and `release: published` events (`IMAGE_PUSH` gate); on PRs and `main` pushes it runs as
-   a build-only validation (no push) and is **not** a required check.
+4. **release-please publishes the image IN THAT SAME RUN** (`.github/workflows/release-please.yml`,
+   steps gated on `release_created`): it builds + pushes `ghcr.io/thaynes43/haynesnetwork:vX.Y.Z`
+   **and** `:latest` with `GITHUB_TOKEN` (`packages:write`) — automatically, no PAT, no re-push
+   (#37, commit `4aefdd6`). `ci.yml`'s `build-image` job is **validation/build-only everywhere**
+   (`IMAGE_PUSH: 'false'`) and never publishes.
 
-### 1a. The RELEASE_PLEASE_PAT caveat (read this)
+### 1a. Publishing is automatic since #37 (no PAT, no re-push)
 
-GitHub Actions suppresses downstream workflows for tags/releases created with the default
-`GITHUB_TOKEN`. So whether step 4 fires automatically depends on the token:
+The image publishes with **no operator action**. Because the build/push runs INSIDE the
+release-please job (not a separate tag/release-triggered workflow), the "Actions don't trigger
+Actions" restriction on `GITHUB_TOKEN` doesn't apply, so `GITHUB_TOKEN` (`packages:write`) pushes
+to GHCR directly. There is **no `RELEASE_PLEASE_PAT`** and **no tag re-push** — the old re-push
+fallback is dead (`ci.yml`'s tag build is `IMAGE_PUSH=false` and will not push).
 
-- **If `secrets.RELEASE_PLEASE_PAT` is set** (fine-grained, repo-scoped, `contents:write` +
-  `pull-requests:write`): release-please uses it, the release event fires `build-image`, and
-  the image publishes with no operator action.
-- **If it is not set** (current fallback → `GITHUB_TOKEN`): the tag lands but **no image
-  builds**. The operator must re-push the tag by hand to trigger the tag-push path:
+If the image is somehow missing (e.g. the in-job publish step failed), **re-run the release-please
+workflow run** — do NOT re-push the tag:
 
   ```bash
-  git fetch --tags
-  git push origin :refs/tags/vX.Y.Z    # delete the remote tag
-  git push origin vX.Y.Z               # re-push → fires build-image (push + refs/tags/v*)
+  gh run rerun <release-please-run-id>   # re-runs the in-job build + push
   ```
 
 Confirm the image exists before touching `haynes-ops`:
