@@ -41,10 +41,6 @@ export type {
 } from './controls/useReorderDnD';
 export { computeDropIndex, resolveReorderIndex } from './controls/reorder';
 
-// ADR-018 / DESIGN-008 D-10 — the shared filter/sort engine (ported from demo-console;
-// mechanism-shared, look-per-app). Reused by Library now and by PLAN-005/006.
-export * from './filters';
-
 export { HeightBudget } from './layout/HeightBudget';
 export type { HeightBudgetProps } from './layout/HeightBudget';
 export { ReservedPane } from './layout/ReservedPane';

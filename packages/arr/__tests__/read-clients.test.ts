@@ -36,10 +36,14 @@ describe('SonarrClient (v3)', () => {
     expect(first.tvdbId).toBeTypeOf('number');
     expect(first.statistics.totalEpisodeCount).toBeTypeOf('number');
     expect(first.seasonFolder).toBeTypeOf('boolean');
-    // BC-03 ACL: fields outside the D-02 contract never enter the app.
+    // BC-03 ACL: fields outside the (extended) contract never enter the app.
     expect(first).not.toHaveProperty('seasons');
     expect(first).not.toHaveProperty('overview');
-    expect(first).not.toHaveProperty('images');
+    // DESIGN-008 D-02: ratings/images/genres/runtime are now IN the contract (parsed metadata).
+    expect(first.images?.some((i) => i.coverType === 'poster')).toBe(true);
+    expect(first.genres).toBeDefined();
+    expect(first.ratings?.value).toBeTypeOf('number');
+    expect(first.runtime).toBeTypeOf('number');
   });
 
   it('fetches a single series by id', async () => {
@@ -159,7 +163,11 @@ describe('RadarrClient (v3)', () => {
     expect(movies[0]?.tmdbId).toBeTypeOf('number');
     expect(movies[0]?.statistics.movieFileCount).toBeTypeOf('number');
     expect(movies[0]).not.toHaveProperty('overview');
-    expect(movies[0]).not.toHaveProperty('images');
+    // DESIGN-008 D-02: Radarr's multi-source ratings + images/genres/runtime are parsed.
+    expect(movies[0]!.images?.some((i) => i.coverType === 'poster')).toBe(true);
+    expect(movies[0]!.ratings).toBeDefined();
+    expect(movies[0]!.genres).toBeDefined();
+    expect(movies[0]!.runtime).toBeTypeOf('number');
     const movie = await client.getMovieById(1);
     expect(movie.minimumAvailability).toBe('released');
     expect(movie.isAvailable).toBe(true);
@@ -231,7 +239,10 @@ describe('LidarrClient (v1)', () => {
     expect(artists[0]?.statistics?.trackFileCount).toBeTypeOf('number');
     // Fixture's last artist is the never-refreshed one — statistics absent by design.
     expect(artists.at(-1)?.statistics).toBeUndefined();
-    expect(artists[0]).not.toHaveProperty('images');
+    // DESIGN-008 D-02: artist images/genres/ratings are parsed (artists have no runtime).
+    expect(artists[0]!.images?.some((i) => i.coverType === 'poster')).toBe(true);
+    expect(artists[0]!.genres).toBeDefined();
+    expect(artists[0]!.ratings?.value).toBeTypeOf('number');
     const artist = await client.getArtistById(2);
     expect(artist.artistName).toBe('$NOT');
   });

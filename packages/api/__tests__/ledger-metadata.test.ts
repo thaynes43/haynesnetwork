@@ -60,21 +60,30 @@ afterAll(async () => {
   await tdb?.stop();
 });
 
+// NB: the two unrated rows tie on the sort value (null) and break by id ASC (a random uuid),
+// so their RELATIVE order is nondeterministic — assert the non-null ordering exactly and the
+// null rows as a trailing SET.
+const NULLS = ['NullA', 'NullB'];
+
 describe('ledger.search — sort by a nullable metadata field (NULLS LAST, keyset)', () => {
   it('imdb_rating desc: highest first, unrated rows last', async () => {
     const { items } = await api.ledger.search({ sort: { field: 'imdb_rating', dir: 'desc' } });
-    expect(items.map((i) => i.title)).toEqual(['High', 'Mid', 'Low', 'NullA', 'NullB']);
+    const titles = items.map((i) => i.title);
+    expect(titles.slice(0, 3)).toEqual(['High', 'Mid', 'Low']);
+    expect(titles.slice(3).sort()).toEqual(NULLS);
   });
 
   it('imdb_rating asc: lowest first, unrated rows STILL last (nulls last in both dirs)', async () => {
     const { items } = await api.ledger.search({ sort: { field: 'imdb_rating', dir: 'asc' } });
-    expect(items.map((i) => i.title)).toEqual(['Low', 'Mid', 'High', 'NullA', 'NullB']);
+    const titles = items.map((i) => i.title);
+    expect(titles.slice(0, 3)).toEqual(['Low', 'Mid', 'High']);
+    expect(titles.slice(3).sort()).toEqual(NULLS);
   });
 
   it('paginates a sorted-by-rating list across the null boundary with a stable cursor', async () => {
     const seen: string[] = [];
     let cursor: string | null | undefined;
-    for (let i = 0; i < 10 && (cursor !== null); i++) {
+    for (let i = 0; i < 10 && cursor !== null; i++) {
       const page = await api.ledger.search({
         sort: { field: 'imdb_rating', dir: 'desc' },
         limit: 2,
@@ -84,8 +93,10 @@ describe('ledger.search — sort by a nullable metadata field (NULLS LAST, keyse
       cursor = page.nextCursor;
       if (!cursor) break;
     }
-    // Every row exactly once, in the full sorted order — no dup/skip across the null boundary.
-    expect(seen).toEqual(['High', 'Mid', 'Low', 'NullA', 'NullB']);
+    // Every row exactly once across the null boundary — no dup/skip; non-nulls in order, nulls last.
+    expect(seen.slice(0, 3)).toEqual(['High', 'Mid', 'Low']);
+    expect(seen.slice(3).sort()).toEqual(NULLS);
+    expect(new Set(seen).size).toBe(5);
   });
 
   it('play_count asc keyset paginates cleanly (numeric field)', async () => {

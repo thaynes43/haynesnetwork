@@ -5,7 +5,6 @@ import { ThemeProvider } from '@hnet/ui';
 import { TRPCProvider } from '@/lib/trpc-provider';
 import '@hnet/ui/theme/tokens.css';
 import '@hnet/ui/layout/layout.css';
-import '@hnet/ui/filters/filters.css';
 import './app.css';
 
 // DESIGN-006 D-02 — the brand typeface: Outfit (variable 100–900, SIL OFL,
