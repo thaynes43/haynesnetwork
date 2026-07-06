@@ -13,7 +13,12 @@ const member: SessionUser = {
   id: UUID_A,
   email: 'member@example.com',
   displayName: 'Member Mia',
-  role: { id: UUID_B, name: 'Default', isAdmin: false },
+  role: {
+    id: UUID_B,
+    name: 'Default',
+    isAdmin: false,
+    sectionPermissions: { ledger: 'read_only', trash: 'disabled' },
+  },
 };
 
 /** Every procedure behind authedProcedure (directly or via adminProcedure). */

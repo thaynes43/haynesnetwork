@@ -1,11 +1,28 @@
 import { eq } from 'drizzle-orm';
-import { db, roles, users, type Database, type DbClient } from '@hnet/db';
+import {
+  db,
+  roleSectionPermissions,
+  roles,
+  users,
+  SECTION_IDS,
+  SECTION_DEFAULT_LEVELS,
+  type Database,
+  type DbClient,
+  type SectionId,
+  type SectionPermissionLevel,
+} from '@hnet/db';
 
 /** The role summary carried on the session (ADR-012 — one role per user). */
 export interface SessionRole {
   id: string;
   name: string;
   isAdmin: boolean;
+  /**
+   * ADR-021 C-02 — the caller's resolved access LEVEL per top-level section, so nav + the
+   * `sectionProcedure` gate need no per-request query (mirrors `isAdmin`). ALWAYS a full map
+   * over SECTION_IDS: admin ⇒ 'edit' everywhere; otherwise the role's row or the section default.
+   */
+  sectionPermissions: Record<SectionId, SectionPermissionLevel>;
 }
 
 /**
@@ -39,8 +56,27 @@ export async function getSessionExtension(
     .innerJoin(roles, eq(roles.id, users.roleId))
     .where(eq(users.id, userId));
   if (!row) return null;
+  // ADR-021 C-01/C-03 — resolve the full section-level map: admin ⇒ 'edit' everywhere (no
+  // rows), otherwise the role's stored rows with each missing section falling back to its
+  // documented default. One small extra query, mirroring the role join above.
+  const sectionRows = row.isAdmin
+    ? []
+    : await q
+        .select({
+          sectionId: roleSectionPermissions.sectionId,
+          level: roleSectionPermissions.level,
+        })
+        .from(roleSectionPermissions)
+        .where(eq(roleSectionPermissions.roleId, row.roleId));
+  const byId = new Map(sectionRows.map((r) => [r.sectionId, r.level]));
+  const sectionPermissions = Object.fromEntries(
+    SECTION_IDS.map((sid) => [
+      sid,
+      row.isAdmin ? 'edit' : (byId.get(sid) ?? SECTION_DEFAULT_LEVELS[sid]),
+    ]),
+  ) as Record<SectionId, SectionPermissionLevel>;
   return {
-    role: { id: row.roleId, name: row.roleName, isAdmin: row.isAdmin },
+    role: { id: row.roleId, name: row.roleName, isAdmin: row.isAdmin, sectionPermissions },
     displayName: row.displayName,
   };
 }
