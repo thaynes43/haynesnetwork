@@ -88,6 +88,12 @@ The app deploys via the **sibling Flux GitOps repo** `../../haynes-ops` (cluster
 with `pnpm --filter @hnet/<pkg> test`. Boot the whole app locally with **`pnpm dev:local`**
 (embedded PG16 + stub OIDC + stub *arr, on :3000).
 
+**Known flake:** `packages/auth` (`bootstrap-admin.test.ts`) occasionally exits 1 on an
+embedded-Postgres teardown race (`57P01: terminating connection due to administrator command`) —
+every test passes; PG is just shut down with a pooled connection still open. If `test` fails **only**
+with that `57P01` error, re-run the job (`gh run rerun <run-id> --failed`) — it's a flake, not a
+regression. (Backlog has a real fix: `await pool.end()` before stopping embedded PG.)
+
 **Testing — live Playwright is the sign-off.** Beyond unit + hermetic e2e stubs (`pnpm --filter
 web e2e`, :3100), each plan lists the **live journeys** to run against real staging
 `https://haynesnetwork.haynesops.com` and the real backing servers. A plan is **not done** until
