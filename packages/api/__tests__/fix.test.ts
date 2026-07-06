@@ -265,7 +265,9 @@ describe('fix.create — failures land failed + ARR_UPSTREAM_UNAVAILABLE', () =>
     const api = caller(makeCtx(tdb.db, sessionUser(member), stub.bundle));
 
     const err = await api.fix
-      .create({ mediaItemId: item.id, targetChildId: 50301, reason: 'missing_subtitles' })
+      // A non-subtitle reason: missing_subtitles now routes to Bazarr (ADR-016), so it would
+      // no longer take this blocklist path. This test exercises the *arr blocklist failure.
+      .create({ mediaItemId: item.id, targetChildId: 50301, reason: 'wont_play_corrupt' })
       .catch((e: unknown) => e);
     const shape = wireShape(err, 'fix.create');
     expect(shape.data.code).toBe('BAD_GATEWAY');
@@ -504,6 +506,109 @@ describe('fix.create — season roll-up (media-hierarchy actions)', () => {
     expect(row.status).toBe('search_triggered');
     const events = await eventsFor(item.id);
     expect(events.map((e) => e.eventType)).toEqual(['fix_requested', 'fix_actioned']);
+  });
+});
+
+describe('fix.create — missing_subtitles routes to Bazarr (ADR-016 / D-19)', () => {
+  const MISSING_EN = { name: 'English', code2: 'en', forced: false, hi: false };
+
+  it('sonarr episode: fires the Bazarr series search; no *arr blocklist/command/delete', async () => {
+    const member = await createUser(tdb.db);
+    const item = await seedMediaItem(tdb.db, 'sonarr', { title: 'Subs Show', arrItemId: 507 });
+    const stub = stubArrBundle([
+      { path: '/api/v3/episode', body: [episodeJson(50701, 1, 1, { seriesId: 507 })] },
+      {
+        path: '/api/episodes', // Bazarr subtitle-state pre-read
+        body: {
+          data: [
+            {
+              sonarrSeriesId: 507,
+              sonarrEpisodeId: 50701,
+              season: 1,
+              episode: 1,
+              title: 'Chapter 1',
+              missing_subtitles: [MISSING_EN],
+            },
+          ],
+        },
+      },
+      { method: 'PATCH', path: '/api/series', status: 204 }, // Bazarr search-missing
+    ]);
+    const api = caller(makeCtx(tdb.db, sessionUser(member), stub.bundle));
+
+    const result = await api.fix.create({
+      mediaItemId: item.id,
+      targetChildId: 50701,
+      reason: 'missing_subtitles',
+    });
+    expect(result.status).toBe('search_triggered');
+    expect(result.pathTaken).toBe('bazarr_subtitle');
+    expect(result.targetLabel).toBe('S01E01 · Episode 1');
+
+    // The Bazarr series-level search fired with the right series id.
+    const patch = stub.callsFor('PATCH', '/api/series');
+    expect(patch).toHaveLength(1);
+    expect(patch[0]!.url.searchParams.get('seriesid')).toBe('507');
+    expect(patch[0]!.url.searchParams.get('action')).toBe('search-missing');
+    // The ADR-007 destructive/re-grab surface was NEVER touched.
+    expect(stub.callsFor('POST', '/api/v3/history/failed/')).toHaveLength(0);
+    expect(stub.callsFor('POST', '/api/v3/command')).toHaveLength(0);
+    expect(stub.calls.filter((c) => c.method === 'DELETE')).toHaveLength(0);
+
+    const row = await fixRow(result.id);
+    expect(row.pathTaken).toBe('bazarr_subtitle');
+    const events = await eventsFor(item.id);
+    expect(events.map((e) => e.eventType)).toEqual(['fix_requested', 'fix_actioned']);
+  });
+
+  it('radarr movie: fires PATCH /api/movies (radarrid); movie file untouched', async () => {
+    const member = await createUser(tdb.db);
+    const item = await seedMediaItem(tdb.db, 'radarr', { title: 'Subs Movie', arrItemId: 607 });
+    const stub = stubArrBundle([
+      {
+        path: '/api/movies', // Bazarr subtitle-state pre-read
+        body: { data: [{ radarrId: 607, title: 'Subs Movie', missing_subtitles: [MISSING_EN] }] },
+      },
+      { method: 'PATCH', path: '/api/movies', status: 204 }, // Bazarr search-missing
+    ]);
+    const api = caller(makeCtx(tdb.db, sessionUser(member), stub.bundle));
+
+    const result = await api.fix.create({ mediaItemId: item.id, reason: 'missing_subtitles' });
+    expect(result.pathTaken).toBe('bazarr_subtitle');
+    expect(result.targetLabel).toBeNull();
+
+    const patch = stub.callsFor('PATCH', '/api/movies');
+    expect(patch).toHaveLength(1);
+    expect(patch[0]!.url.searchParams.get('radarrid')).toBe('607');
+    expect(patch[0]!.url.searchParams.get('action')).toBe('search-missing');
+    expect(stub.callsFor('POST', '/api/v3/history/failed/')).toHaveLength(0);
+    expect(stub.callsFor('POST', '/api/v3/command')).toHaveLength(0);
+    expect(stub.calls.filter((c) => c.method === 'DELETE')).toHaveLength(0);
+  });
+
+  it('lidarr: missing_subtitles is unsupported → UNPROCESSABLE_CONTENT / SUBTITLE_FIX_UNSUPPORTED', async () => {
+    const member = await createUser(tdb.db);
+    const item = await seedMediaItem(tdb.db, 'lidarr', {
+      title: 'Subs Artist',
+      arrItemId: 707,
+      rootFolder: '/data/media/music',
+    });
+    const stub = stubArrBundle([]);
+    const api = caller(makeCtx(tdb.db, sessionUser(member), stub.bundle));
+
+    const err = await api.fix
+      .create({ mediaItemId: item.id, targetChildId: 71, reason: 'missing_subtitles' })
+      .catch((e: unknown) => e);
+    const shape = wireShape(err, 'fix.create');
+    expect(shape.data.code).toBe('UNPROCESSABLE_CONTENT');
+    expect(shape.data.appCode).toBe('SUBTITLE_FIX_UNSUPPORTED');
+    expect(stub.calls).toHaveLength(0); // rejected before any *arr/Bazarr call, no orphan row
+
+    const rows = await tdb.db
+      .select({ id: schema.fixRequests.id })
+      .from(schema.fixRequests)
+      .where(eq(schema.fixRequests.mediaItemId, item.id));
+    expect(rows).toHaveLength(0);
   });
 });
 

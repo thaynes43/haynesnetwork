@@ -185,6 +185,40 @@ export class LidarrWriteClient extends ArrWriteClientBase {
   }
 }
 
+/**
+ * ADR-016 / DESIGN-005 D-19 — Bazarr write client (the subtitle-search trigger for the
+ * missing_subtitles Fix). Base path `/api`, auth header `X-API-KEY` (exact casing). Both
+ * endpoints are Bazarr's async `search-missing` action (verified live 2026-07-06: HTTP 204
+ * in ~18ms, queued internally — fire-and-forget). Lives under @hnet/arr/write so it stays
+ * import-confined to packages/domain (D-12 guard) like the other write clients.
+ */
+export class BazarrWriteClient {
+  private readonly http: ArrHttp;
+
+  constructor(options: ArrClientOptions) {
+    this.http = new ArrHttp({ ...options, apiBasePath: '/api', apiKeyHeader: 'X-API-KEY' });
+  }
+
+  /** `PATCH /api/movies?radarrid=&action=search-missing` — search missing subtitles for a movie. */
+  searchMovieSubtitles(radarrMovieId: number): Promise<void> {
+    return this.http.requestVoid('PATCH', 'movies', {
+      query: { radarrid: radarrMovieId, action: 'search-missing' },
+    });
+  }
+
+  /**
+   * `PATCH /api/series?seriesid=&action=search-missing` — search missing subtitles for a
+   * whole series. Bazarr 1.5.6 has no async per-episode action, so an episode- OR
+   * season-scoped subtitle Fix both trigger this series-level search (only *missing* subs
+   * are searched — a safe superset covering the target; ADR-016 option C rejected).
+   */
+  searchSeriesSubtitles(sonarrSeriesId: number): Promise<void> {
+    return this.http.requestVoid('PATCH', 'series', {
+      query: { seriesid: sonarrSeriesId, action: 'search-missing' },
+    });
+  }
+}
+
 export interface ArrWriteClients {
   sonarr: SonarrWriteClient;
   radarr: RadarrWriteClient;

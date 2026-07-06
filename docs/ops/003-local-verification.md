@@ -101,6 +101,10 @@ e2e suite uses** — embedded PG16 → real migrations + catalog seed → stub O
   so you can drive the dashboard, library browse/detail, and the fix / force-search /
   restore flows end-to-end. The seeded Sonarr row is series 501 "Breaking Prod", 9/10
   episodes on disk (mirrors the stub).
+- **Stub Bazarr** (a second HTTP server; `BAZARR_URL` points at it) serves the
+  subtitle-state reads and accepts the `search-missing` PATCH, so the **missing-subtitles
+  Fix** (ADR-016 / DESIGN-005 D-19) runs end-to-end without a real Bazarr. It records its
+  writes at `/_stub/calls` just like the stub *arr.
 - Everything is **throwaway**: the database is a temp dir deleted on Ctrl-C; restart for a
   pristine seeded catalog.
 - Phone/tablet/PC layouts: use the browser devtools device toolbar.

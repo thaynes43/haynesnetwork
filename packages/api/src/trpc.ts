@@ -19,6 +19,7 @@ import {
   ReorderMismatchError,
   RestoreProfileUnmappedError,
   RoleNameConflictError,
+  SubtitleFixUnsupportedError,
   SystemRoleImmutableError,
   type ArrClientBundle,
 } from '@hnet/domain';
@@ -86,6 +87,7 @@ const APP_CODED_ERRORS = [
   FixRateLimitError,
   FixAlreadyOpenError,
   FixTargetRequiredError,
+  SubtitleFixUnsupportedError,
   LedgerItemTombstonedError,
   ArrUpstreamError,
   RestoreProfileUnmappedError,
@@ -133,6 +135,7 @@ export const authedProcedure = t.procedure.use(({ ctx, next }) => {
  * | FixRateLimitError           | FIX_RATE_LIMIT_EXCEEDED     | TOO_MANY_REQUESTS     |
  * | FixAlreadyOpenError         | FIX_ALREADY_OPEN            | CONFLICT              |
  * | FixTargetRequiredError      | FIX_TARGET_REQUIRED         | UNPROCESSABLE_CONTENT |
+ * | SubtitleFixUnsupportedError | SUBTITLE_FIX_UNSUPPORTED    | UNPROCESSABLE_CONTENT |
  * | LedgerItemTombstonedError   | LEDGER_ITEM_TOMBSTONED      | PRECONDITION_FAILED   |
  * | ArrUpstreamError            | ARR_UPSTREAM_UNAVAILABLE    | BAD_GATEWAY           |
  * | RestoreProfileUnmappedError | RESTORE_PROFILE_UNMAPPED    | UNPROCESSABLE_CONTENT |
@@ -167,6 +170,9 @@ export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
       throw new TRPCError({ code: 'CONFLICT', message: err.message, cause: err });
     }
     if (err instanceof FixTargetRequiredError) {
+      throw new TRPCError({ code: 'UNPROCESSABLE_CONTENT', message: err.message, cause: err });
+    }
+    if (err instanceof SubtitleFixUnsupportedError) {
       throw new TRPCError({ code: 'UNPROCESSABLE_CONTENT', message: err.message, cause: err });
     }
     if (err instanceof LedgerItemTombstonedError) {

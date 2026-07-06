@@ -13,7 +13,14 @@
 // Every step's outcome (endpoint, status, response ids) is appended to
 // fix_requests.actions_taken; any *arr failure lands 'failed' + a 'fix_failed' event
 // and re-throws as ArrUpstreamError (D-17).
-import { mediaItems, type DbClient, type FixPath, type FixReason, type FixStatus } from '@hnet/db';
+import {
+  mediaItems,
+  type ArrKind,
+  type DbClient,
+  type FixPath,
+  type FixReason,
+  type FixStatus,
+} from '@hnet/db';
 import type { FixActionEntry } from '@hnet/db';
 import { eq } from 'drizzle-orm';
 import {
@@ -22,12 +29,17 @@ import {
   LIDARR_GRABBED_EVENT_TYPE,
   SONARR_GRABBED_EVENT_TYPE,
 } from '@hnet/arr';
-import { ArrUpstreamError, LedgerItemTombstonedError, NotFoundError } from './errors';
+import {
+  ArrUpstreamError,
+  LedgerItemTombstonedError,
+  NotFoundError,
+  SubtitleFixUnsupportedError,
+} from './errors';
 import { resolveDb } from './db-client';
 import { createFixRequest, recordFixAction } from './fix-requests';
 import { arrApiBasePath, type ArrClientBundle } from './arr-clients';
 import { listMediaChildren } from './media-children';
-import { resolveFixTarget, type SearchScope } from './action-scope';
+import { resolveFixTarget, type FixScope, type SearchScope } from './action-scope';
 
 export interface RunFixRequestInput {
   db?: DbClient;
@@ -107,6 +119,19 @@ export async function runFixRequest(input: RunFixRequestInput): Promise<RunFixRe
     targetChildId: input.targetChildId,
     seasonNumber: input.seasonNumber,
   });
+
+  // ADR-016 / D-19: a missing_subtitles Fix routes to Bazarr (subtitle search), never the
+  // blocklist/delete paths — a subtitle gap is not a bad grab. Placed BEFORE the season
+  // branch so a season-scoped subtitle fix does NOT fall into runSeasonFix's blocklist/
+  // delete path; runSubtitleFix covers episode AND season scope via one series-level Bazarr
+  // call. The kind guard (sonarr/radarr only) lands inside, before any fix_requests row.
+  if (input.reason === 'missing_subtitles') {
+    return runSubtitleFix(
+      input,
+      { id: item.id, arrKind: kind, arrItemId: item.arrItemId },
+      { scope, targetChildId, seasonNumber },
+    );
+  }
 
   // Season roll-up is its own orchestration (blocklist every backing grab + SeasonSearch).
   if (scope === 'season') {
@@ -289,6 +314,141 @@ export async function runFixRequest(input: RunFixRequestInput): Promise<RunFixRe
       await fail(stepFailed('trigger_search', commandEndpoint, err), err);
     throw err;
   }
+
+  return { id: fixRequestId, status: 'search_triggered', pathTaken, targetLabel };
+}
+
+/**
+ * ADR-016 / DESIGN-005 D-19 — Subtitle Fix (reason 'missing_subtitles'). Routes to Bazarr
+ * instead of the ADR-007 blocklist/delete paths: a subtitle gap is not a bad grab, so the
+ * media file is left untouched. Fire-and-forget — Bazarr's async `search-missing` action is
+ * triggered and the fix rests at 'search_triggered' (completeFixRequests excludes it, so an
+ * unrelated later import can't spuriously complete it). Covers radarr (movie) and sonarr
+ * (episode OR season — both trigger the series-level Bazarr search; Bazarr 1.5.6 has no async
+ * per-episode action). Lidarr is unsupported (guarded before any fix_requests row).
+ *
+ *   1. guard kind ∈ {sonarr, radarr} else SubtitleFixUnsupportedError (no orphan pending row);
+ *   2. resolve the display label (read-only): sonarr episode via listMediaChildren, season →
+ *      'Season N', radarr → null (the movie is the target);
+ *   3. createFixRequest — pending row + 'fix_requested' event committed BEFORE any Bazarr call;
+ *   4. Bazarr pre-read (audit color: which languages are missing) then the PATCH search;
+ *   5. recordFixAction → 'actioned' (path 'bazarr_subtitle') then 'search_triggered'.
+ */
+async function runSubtitleFix(
+  input: RunFixRequestInput,
+  item: { id: string; arrKind: ArrKind; arrItemId: number },
+  resolved: { scope: FixScope; targetChildId: number | null; seasonNumber: number | null },
+): Promise<RunFixRequestResult> {
+  const kind = item.arrKind;
+  // ---- Step 1: kind guard (BEFORE createFixRequest — no orphan pending row). ----
+  if (kind !== 'sonarr' && kind !== 'radarr') {
+    throw new SubtitleFixUnsupportedError(
+      `Subtitle Fix is not available for ${kind} — Bazarr covers the Radarr/Sonarr estate only`,
+    );
+  }
+  const base = '/api'; // Bazarr base path (for the audit endpoint strings)
+
+  // ---- Step 2: resolve the display label (read-only). A read failure here aborts
+  // BEFORE the pending row — nothing has been promised yet. ----
+  let targetLabel: string | null = null;
+  if (kind === 'sonarr') {
+    if (resolved.scope === 'season') {
+      targetLabel = `Season ${resolved.seasonNumber}`;
+    } else if (resolved.targetChildId !== null) {
+      const children = await listMediaChildren({
+        db: input.db,
+        arr: input.arr,
+        mediaItemId: item.id,
+      });
+      const child = children.find((c) => c.arrChildId === resolved.targetChildId);
+      if (!child) {
+        throw new NotFoundError(
+          `sonarr episode ${resolved.targetChildId} not found on live item ${item.arrItemId}`,
+        );
+      }
+      targetLabel = child.label;
+    }
+  }
+  // radarr: the movie itself is the target — no child, label stays null.
+
+  // ---- Step 3: pending row + fix_requested event before any Bazarr call (D-09). ----
+  const { fixRequestId } = await createFixRequest({
+    db: input.db,
+    requesterId: input.requesterId,
+    requesterIsAdmin: input.requesterIsAdmin,
+    mediaItemId: item.id,
+    scope: resolved.scope,
+    targetArrChildId: resolved.targetChildId,
+    seasonNumber: resolved.seasonNumber,
+    targetLabel,
+    reason: input.reason,
+    reasonText: input.reasonText ?? null,
+  });
+
+  const fail = async (entry: FixActionEntry, err: unknown): Promise<never> => {
+    await recordFixAction({ db: input.db, fixRequestId, transition: 'failed', actions: [entry] });
+    throw new ArrUpstreamError(
+      err instanceof Error ? err.message : `subtitle fix step ${entry.step} failed`,
+      { cause: err },
+    );
+  };
+
+  const actions: FixActionEntry[] = [];
+
+  // ---- Step 4a: Bazarr pre-read (audit color — which languages are missing). Fail-closed:
+  // Bazarr down = subtitle fix fails, no file touched. Season scope has no single target,
+  // so it is skipped. ----
+  if (kind === 'radarr') {
+    const endpoint = `GET ${base}/movies?radarrid[]=${item.arrItemId}`;
+    try {
+      const state = await input.arr.read.bazarr.getMovieSubtitleState(item.arrItemId);
+      actions.push(
+        stepOk('bazarr_subtitle_state', endpoint, {
+          missingSubtitles: state?.missing_subtitles.map((s) => s.code2) ?? [],
+        }),
+      );
+    } catch (err) {
+      if (err instanceof ArrError) await fail(stepFailed('bazarr_subtitle_state', endpoint, err), err);
+      throw err;
+    }
+  } else if (resolved.scope !== 'season' && resolved.targetChildId !== null) {
+    const endpoint = `GET ${base}/episodes?episodeid[]=${resolved.targetChildId}`;
+    try {
+      const state = await input.arr.read.bazarr.getEpisodeSubtitleState(resolved.targetChildId);
+      actions.push(
+        stepOk('bazarr_subtitle_state', endpoint, {
+          missingSubtitles: state?.missing_subtitles.map((s) => s.code2) ?? [],
+        }),
+      );
+    } catch (err) {
+      if (err instanceof ArrError) await fail(stepFailed('bazarr_subtitle_state', endpoint, err), err);
+      throw err;
+    }
+  }
+
+  // ---- Step 4b: the Bazarr search-missing PATCH (async/queued — HTTP 204). ----
+  const patchEndpoint =
+    kind === 'radarr'
+      ? `PATCH ${base}/movies?radarrid=${item.arrItemId}&action=search-missing`
+      : `PATCH ${base}/series?seriesid=${item.arrItemId}&action=search-missing`;
+  try {
+    if (kind === 'radarr') {
+      await input.arr.write.bazarr.searchMovieSubtitles(item.arrItemId);
+    } else {
+      // sonarr episode OR season — both trigger the series-level Bazarr search.
+      await input.arr.write.bazarr.searchSeriesSubtitles(item.arrItemId);
+    }
+    actions.push(stepOk('bazarr_subtitle_search', patchEndpoint, { status: 204 }));
+  } catch (err) {
+    if (err instanceof ArrError)
+      await fail(stepFailed('bazarr_subtitle_search', patchEndpoint, err), err);
+    throw err;
+  }
+
+  // ---- Step 5: actioned (path 'bazarr_subtitle') then rest at search_triggered. ----
+  const pathTaken: FixPath = 'bazarr_subtitle';
+  await recordFixAction({ db: input.db, fixRequestId, transition: 'actioned', pathTaken, actions });
+  await recordFixAction({ db: input.db, fixRequestId, transition: 'search_triggered' });
 
   return { id: fixRequestId, status: 'search_triggered', pathTaken, targetLabel };
 }

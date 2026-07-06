@@ -11,8 +11,13 @@ export interface ArrHttpOptions {
   /** Service origin WITHOUT the API base path, e.g. `http://sonarr.media.svc.cluster.local:8989`. */
   baseUrl: string;
   apiKey: string;
-  /** Kind-specific API base path: `/api/v3` (Sonarr/Radarr) or `/api/v1` (Lidarr/Seerr). */
+  /** Kind-specific API base path: `/api/v3` (Sonarr/Radarr), `/api/v1` (Lidarr/Seerr), `/api` (Bazarr). */
   apiBasePath: string;
+  /**
+   * The header the API key is sent in. Defaults to `X-Api-Key` (the *arr/Seerr casing);
+   * Bazarr wants the exact casing `X-API-KEY` (ADR-016 / D-19), passed here.
+   */
+  apiKeyHeader?: string;
   /** Per-attempt timeout. Default 30s. */
   timeoutMs?: number;
   /** Delay between GET retry attempts. Default 250ms (tests use 0). */
@@ -33,6 +38,7 @@ const sleep = (ms: number) =>
 export class ArrHttp {
   private readonly base: string;
   private readonly apiKey: string;
+  private readonly apiKeyHeader: string;
   private readonly timeoutMs: number;
   private readonly retryDelayMs: number;
   private readonly fetchImpl: typeof fetch;
@@ -41,6 +47,7 @@ export class ArrHttp {
     this.base =
       options.baseUrl.replace(/\/+$/, '') + '/' + options.apiBasePath.replace(/^\/+|\/+$/g, '');
     this.apiKey = options.apiKey;
+    this.apiKeyHeader = options.apiKeyHeader ?? 'X-Api-Key';
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
     this.fetchImpl = options.fetchImpl ?? fetch;
@@ -63,7 +70,7 @@ export class ArrHttp {
       response = await this.fetchImpl(url, {
         method,
         headers: {
-          'X-Api-Key': this.apiKey,
+          [this.apiKeyHeader]: this.apiKey,
           Accept: 'application/json',
           ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         },
@@ -85,7 +92,7 @@ export class ArrHttp {
 
   /** Fetch with GET-only retries on transient failures (5xx gateway statuses, timeouts, network errors). */
   async request(
-    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     path: string,
     options: { query?: QueryParams; body?: unknown } = {},
   ): Promise<Response> {
@@ -110,7 +117,7 @@ export class ArrHttp {
 
   /** Request + parse the JSON body through `schema`; zod failures become ArrParseError. */
   async requestJson<T>(
-    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     path: string,
     schema: ZodType<T>,
     options: { query?: QueryParams; body?: unknown } = {},
@@ -137,9 +144,9 @@ export class ArrHttp {
     }
   }
 
-  /** Request where the response body is irrelevant (mark-failed, file deletes). */
+  /** Request where the response body is irrelevant (mark-failed, file deletes, Bazarr search). */
   async requestVoid(
-    method: 'POST' | 'PUT' | 'DELETE',
+    method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     path: string,
     options: { query?: QueryParams; body?: unknown } = {},
   ): Promise<void> {

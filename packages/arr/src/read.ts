@@ -52,6 +52,13 @@ import {
   type SeerrRequestPage,
   type SeerrStatus,
 } from './schemas/seerr';
+import {
+  bazarrEnvelopeSchema,
+  bazarrEpisodeSubtitleSchema,
+  bazarrMovieSubtitleSchema,
+  type BazarrEpisodeSubtitle,
+  type BazarrMovieSubtitle,
+} from './schemas/bazarr';
 
 export interface ArrClientOptions {
   /** Service origin WITHOUT the API path, e.g. `http://sonarr.media.svc.cluster.local:8989`. */
@@ -310,6 +317,44 @@ export class SeerrClient {
         sort: params.sort ?? 'added',
       },
     });
+  }
+}
+
+/**
+ * ADR-016 / DESIGN-005 D-19 — Bazarr read client (subtitle-state pre-read for the
+ * missing_subtitles Fix). Base path `/api` (no v3), auth header `X-API-KEY` (exact casing,
+ * unlike the *arr `X-Api-Key`). GET list filters use bracket-array params (`radarrid[]=`,
+ * `episodeid[]=`) and the response is Bazarr's `{data: [...]}` envelope. Verified live
+ * against Bazarr 1.5.6 (2026-07-06). BC-03 ACL: only the consumed subset (schemas/bazarr.ts)
+ * enters the app.
+ */
+export class BazarrClient {
+  private readonly http: ArrHttp;
+
+  constructor(options: ArrClientOptions) {
+    this.http = new ArrHttp({ ...options, apiBasePath: '/api', apiKeyHeader: 'X-API-KEY' });
+  }
+
+  /** `GET /api/movies?radarrid[]=` — the movie's subtitle state; null when Bazarr knows no such movie. */
+  async getMovieSubtitleState(radarrMovieId: number): Promise<BazarrMovieSubtitle | null> {
+    const { data } = await this.http.requestJson(
+      'GET',
+      'movies',
+      bazarrEnvelopeSchema(bazarrMovieSubtitleSchema),
+      { query: { 'radarrid[]': radarrMovieId } },
+    );
+    return data.find((m) => m.radarrId === radarrMovieId) ?? data[0] ?? null;
+  }
+
+  /** `GET /api/episodes?episodeid[]=` — the episode's subtitle state; null when Bazarr knows no such episode. */
+  async getEpisodeSubtitleState(sonarrEpisodeId: number): Promise<BazarrEpisodeSubtitle | null> {
+    const { data } = await this.http.requestJson(
+      'GET',
+      'episodes',
+      bazarrEnvelopeSchema(bazarrEpisodeSubtitleSchema),
+      { query: { 'episodeid[]': sonarrEpisodeId } },
+    );
+    return data.find((e) => e.sonarrEpisodeId === sonarrEpisodeId) ?? data[0] ?? null;
   }
 }
 

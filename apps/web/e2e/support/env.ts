@@ -11,6 +11,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ADMIN_EMAIL, STUB_CLIENT_ID, STUB_CLIENT_SECRET } from './stub-oidc';
+import { STUB_BAZARR_API_KEY } from './stub-bazarr';
 
 /** Default app port — off 3000 so the stack coexists with a running `pnpm dev`.
  *  playwright.config.ts's baseURL derives from this. */
@@ -32,6 +33,8 @@ export interface RuntimeEnv {
   BOOTSTRAP_ADMIN_EMAILS: string;
   /** Stub *arr origin — specs GET its /_stub/calls endpoint (DESIGN-005 e2e layer). */
   STUB_ARR_URL: string;
+  /** Stub Bazarr origin — specs GET its /_stub/calls endpoint (ADR-016 / D-19). */
+  STUB_BAZARR_URL: string;
   /** DESIGN-005 D-18 env contract, all pointed at the one stub server. */
   SONARR_URL: string;
   RADARR_URL: string;
@@ -41,6 +44,9 @@ export interface RuntimeEnv {
   RADARR_API_KEY: string;
   LIDARR_API_KEY: string;
   SEERR_API_KEY: string;
+  /** ADR-016 / D-19 — Bazarr subtitle-fix contract, pointed at the stub Bazarr server. */
+  BAZARR_URL: string;
+  BAZARR_API_KEY: string;
 }
 
 /** The throwaway key every stubbed *arr accepts (never a real credential). */
@@ -57,6 +63,7 @@ export function composeRuntimeEnv(opts: {
   stubOidcBaseUrl: string;
   stubOidcDiscoveryUrl: string;
   stubArrBaseUrl: string;
+  stubBazarrBaseUrl: string;
   appUrl: string;
 }): RuntimeEnv {
   return {
@@ -69,6 +76,7 @@ export function composeRuntimeEnv(opts: {
     BETTER_AUTH_URL: opts.appUrl,
     BOOTSTRAP_ADMIN_EMAILS: ADMIN_EMAIL,
     STUB_ARR_URL: opts.stubArrBaseUrl,
+    STUB_BAZARR_URL: opts.stubBazarrBaseUrl,
     SONARR_URL: opts.stubArrBaseUrl,
     RADARR_URL: opts.stubArrBaseUrl,
     LIDARR_URL: opts.stubArrBaseUrl,
@@ -77,6 +85,8 @@ export function composeRuntimeEnv(opts: {
     RADARR_API_KEY: STUB_ARR_API_KEY,
     LIDARR_API_KEY: STUB_ARR_API_KEY,
     SEERR_API_KEY: STUB_ARR_API_KEY,
+    BAZARR_URL: opts.stubBazarrBaseUrl,
+    BAZARR_API_KEY: STUB_BAZARR_API_KEY,
   };
 }
 

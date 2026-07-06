@@ -323,6 +323,11 @@ export interface CompletedFix {
  * payload.episodeId/payload.albumId for sonarr/lidarr, any import for radarr) flips
  * to 'completed', links completed_event_id, and writes a 'fix_completed' event — all
  * in one transaction.
+ *
+ * ADR-016 / D-19: subtitle fixes (path_taken 'bazarr_subtitle') are EXCLUDED — Bazarr
+ * downloads subtitles, producing no 'imported' event, so an UNRELATED later import on the
+ * same item (a normal re-grab of another file) must not spuriously flip the subtitle fix
+ * to completed. They rest at 'search_triggered' (fire-and-forget).
  */
 export async function completeFixRequests(
   input: CompleteFixRequestsInput = {},
@@ -336,7 +341,12 @@ export async function completeFixRequests(
         createdAt: fixRequests.createdAt,
       })
       .from(fixRequests)
-      .where(eq(fixRequests.status, 'search_triggered'))
+      .where(
+        and(
+          eq(fixRequests.status, 'search_triggered'),
+          sql`${fixRequests.pathTaken} IS DISTINCT FROM 'bazarr_subtitle'`,
+        ),
+      )
       .for('update');
 
     const completed: CompletedFix[] = [];

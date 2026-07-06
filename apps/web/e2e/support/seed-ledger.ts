@@ -52,6 +52,31 @@ async function main(): Promise<void> {
       },
     ],
   });
+  // A Music (Lidarr) artist with an on-disk album so the detail offers Fix — used to assert
+  // the Fix dialog offers NO 'Missing subtitles' radio for Music (ADR-016 / D-19). Mirrors
+  // the stub-arr `/album?artistId=701` handler.
+  await upsertMediaItemsBatch({
+    arrKind: 'lidarr',
+    items: [
+      {
+        arrItemId: 701,
+        musicbrainzArtistId: '11111111-2222-3333-4444-555555550701',
+        title: 'The Stub Band',
+        sortTitle: 'stub band',
+        year: null,
+        monitored: true,
+        qualityProfileId: 1,
+        qualityProfileName: 'Standard',
+        metadataProfileId: 1,
+        metadataProfileName: 'Standard',
+        rootFolder: '/data/media/music',
+        onDiskFileCount: 10,
+        expectedFileCount: 10,
+        sizeOnDisk: 1_073_741_824,
+        arrAttrs: { artistType: 'Group', monitorNewItems: 'all' },
+      },
+    ],
+  });
 
   // A little history so the detail timeline has something to show (R-41).
   const { rows } = await getPool().query<{ id: string }>(

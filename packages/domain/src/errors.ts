@@ -63,6 +63,15 @@ export class LedgerItemTombstonedError extends Error {
   readonly code = 'LEDGER_ITEM_TOMBSTONED' as const;
 }
 
+/**
+ * ADR-016 / D-19: a missing_subtitles Fix reached a kind Bazarr cannot cover (lidarr —
+ * no music subtitle integration). Defense in depth: the reason is not offered for Music
+ * (fixReasonsForKind) and thrown BEFORE any fix_requests row is created (no orphan pending).
+ */
+export class SubtitleFixUnsupportedError extends Error {
+  readonly code = 'SUBTITLE_FIX_UNSUPPORTED' as const;
+}
+
 /** D-09 lifecycle (DDD-001 T-43): the requested status transition is not legal. */
 export class InvalidFixTransitionError extends Error {
   readonly code = 'FIX_INVALID_TRANSITION' as const;

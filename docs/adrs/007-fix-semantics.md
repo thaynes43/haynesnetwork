@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Amended by:** ADR-011 (2026-07-04): Fix gains a media-hierarchy scope; season Fix is a roll-up orchestration.
+- **Amended by:** ADR-016 (2026-07-06): reason `missing_subtitles` routes to Bazarr subtitle search (no blocklist/delete/re-grab) and is not offered for Music.
 - **Date:** 2026-07-03
 - **Deciders:** Tom Haynes (with agent input)
 
