@@ -355,3 +355,12 @@ without a per-request query (mirrors the `role.isAdmin` pattern, `middleware/rol
   (Q-02) — deletable by that marker without touching real synced rows.
 - Roll back staging by pinning the previous image tag in `haynes-ops` + `flux reconcile`.
 - `executeRestore` remains a wrapper, so Restore is unaffected by a Ledger-only revert.
+
+---
+
+## Addendum (2026-07-05, owner) — filter the Ledger by *arr tags / requester / collection
+
+Expose PLAN-004's parsed tag dimensions — raw `arrTags`, **requesters** (Seerr), and
+**source_collections** (Kometa) — as filter facets in the Ledger's high-powered filters, so an
+admin can slice by "who requested this" or "which Kometa collection added this" alongside
+ratings / watch-stats / size.
