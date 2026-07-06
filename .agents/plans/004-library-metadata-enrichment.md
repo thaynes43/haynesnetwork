@@ -208,3 +208,19 @@ partial:
 
 Open decision for Fable 5: per-server columns vs one unified row + a per-source side table;
 whether to dedupe one account watching the same title on two servers.
+
+---
+
+## Addendum (2026-07-05, owner) — *arr tag semantics (requester + source-collection)
+
+The raw *arr tag LABELS are ALREADY synced into `media_items.arrTags` (`media-items.ts`). This
+plan adds tag **semantics** — parse those labels into structured, filterable metadata. The owner
+is porting tags from the legacy instances that encode:
+- **Seerr / requester tags** — who personally requested a title → a strong **KEEP** signal.
+- **Kometa / collection tags** — which auto-collection added a title → provenance of **where
+  unwanted media comes from**.
+Store parsed dimensions on `media_metadata` (e.g. `requesters text[]`, `source_collections text[]`,
+derived from `arrTags` by naming convention) and expose them as first-class **filter facets** in
+the ported filter engine; keep the raw `arrTags` too. Fable: discover the live tag naming
+conventions (prefixes) from the *arr tag list before parsing. Feeds PLAN-005 filters + PLAN-006
+rules; the requester signal also complements the exclusion-tag `dnd` + the watch-history guardian.

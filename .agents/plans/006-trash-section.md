@@ -519,3 +519,16 @@ extends — a `notifications` table + `POST /api/webhooks/<source>` receiver wit
 source #1** (NOT a Maintainerr-specific endpoint/table). PLAN-009 then only adds Seerr/Tautulli
 adapters + promotes the feed to a top-level "Bulletin" section, and this Trash "Activity" tab
 becomes a `source='maintainerr'` filtered view of the same store. See `009-communication-hub.md`.
+
+---
+
+## Addendum (2026-07-05, owner) — *arr tags in Trash (requester = keep, collection = source)
+
+Use PLAN-004's parsed tag dimensions in both the pending Movies/TV tables (filter facets + columns)
+and the deletion logic:
+- **Requester (Seerr) tags = a KEEP signal** — a personally-requested title is strong
+  do-not-delete: auto-protect/whitelist it (same mechanism as the watch-history guardian + the
+  `dnd` exclusion tag), or at minimum surface the requester so a human never trashes it.
+- **Source-collection (Kometa) tags = unwanted-media provenance** — surface which auto-collection
+  added an item so rules/admins can target low-value sources (e.g. a "Trending" collection nobody
+  watches); a rule could key on source-collection + low watch + low rating.
