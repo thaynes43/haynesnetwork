@@ -22,8 +22,8 @@
   `@hnet/arr`; `BAZARR_API_KEY` wired via the existing media-stack ExternalSecret.
 - **The autonomous Fable 5 run (Mon 2026-07-06) is IN PROGRESS.** Entry prompt
   `.agents/KICKOFF.md`; queue in `.agents/plans/` (see `.agents/plans/README.md`). **Plans done
-  so far today:** 002 ✓ (v0.5.0); 003 validated on v0.6.1 (one deferred live share-write, owner
-  input pending); 004 ✓ (v0.8.0/v0.8.1); 005 ✓ (v0.9.0); 007 ✓ (v0.7.0); 006 backend in flight.
+  so far today:** 002 ✓ (v0.5.0); 003 ✓ (v0.6.0 + fix v0.6.1); 004 ✓ (v0.8.0/v0.8.1); 005 ✓
+  (v0.9.0); 007 ✓ (v0.7.0); 006 backend in flight.
   **Queue extended per owner:** 011 (Authentik MFA-for-native-accounts + `hnet` rebrand of the
   login portal) → then 009/010 → then 008 (public cutover — LAST).
   v0.4.0 recap: unified roles (ADR-012), arbitrary catalog URLs (ADR-013), two-step
@@ -67,6 +67,18 @@
   unmonitored rows) → reframed to filter + bulk monitor-and-search (ADR-022 C-04). **Process
   note:** an adversarial pre-ship review found + fixed one confirmed defect before ship.
   As-built record: DESIGN-009 D-01/D-08.
+- **PLAN-003 (Plex library self-service, Phase 3) COMPLETE — shipped v0.6.0 + fix v0.6.1, fully
+  live-validated** (`.agents/plans/completed/003-plex-library-self-service.md`). ADR-017 Plex
+  sharing + role-library-grant model (family = a role grant, not a flag), migration 0010; registry
+  refresh across all three servers (k8plex/plexops/legacy haynestower — family libraries
+  populated) plus role grants + member isolation with same-tx `plex_share_audit` audited flips.
+  **Q-06 RESOLVED:** the real plex.tv share cycle ran against production on an owner-designated
+  friend account (**KAH517**, owner-sanctioned allLibraries demotion) — remove + re-add with
+  read-merge-write preserving every other shared library, `plex_share_audit` trail written in the
+  same transaction, ConfirmButton two-step against production. The invite / friend-account
+  *creation* flow stays **out of scope**. **Follow-on:** the owner-directed (2026-07-06)
+  role-scoped all-libraries self-service model ships **separately as ADR-024** — in flight as its
+  own release (006 Trash backend also in flight).
 - **Unified Role model (ADR-012) SHIPPED — code complete, all tests pass, docs updated.**
   One role per user (`users.role_id`), roles-only (no per-user grants/tags/family flag);
   two seeded system roles — **Admin** (superuser, implicit all-apps, immutable) and
@@ -101,10 +113,10 @@ The **Fable 5 autonomous run** works the release queue in `.agents/plans/` (star
 `.agents/KICKOFF.md`). In order:
 
 1. ~~**002 — Bazarr subtitle Fix**~~ ✅ **DONE** (v0.5.0, `completed/002-bazarr-subtitle-fix.md`).
-2. **003 — Plex library self-service (BC-04, Phase 3)**: entirely UNBUILT (no `plex_*` tables, no
-   Plex domain code; glossary T-17..T-21 are placeholders). Per-**role** allowed library sets
-   across the three servers (k8plex, plexops, legacy haynestower); family libs = libraries granted
-   only to the Family role.
+2. ~~**003 — Plex library self-service (BC-04, Phase 3)**~~ ✅ **DONE** (v0.6.0 + fix v0.6.1,
+   `completed/003-plex-library-self-service.md`; ADR-017 Plex sharing + role-library-grant model,
+   family = a role grant; the real plex.tv share cycle live-validated against production, Q-06
+   resolved). **Follow-on:** ADR-024 role-scoped all-libraries self-service ships separately.
 3. ~~**004 — Library metadata enrichment + posters + shared filter engine**~~ ✅ **DONE**
    (v0.8.0/v0.8.1, `completed/004-library-metadata-enrichment.md`; filter engine + D-09 search
    contract now in `@hnet/ui`, reused by 005/006).
