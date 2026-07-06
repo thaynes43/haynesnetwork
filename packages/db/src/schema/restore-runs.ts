@@ -1,10 +1,18 @@
 import { pgTable, uuid, text, integer, timestamp, jsonb, check, index } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { users } from './users';
-import { ARR_KINDS, RESTORE_RUN_STATUSES, type ArrKind, type RestoreRunStatus } from './enums';
+import {
+  ARR_ADD_REASONS,
+  ARR_KINDS,
+  RESTORE_RUN_STATUSES,
+  type ArrAddReason,
+  type ArrKind,
+  type RestoreRunStatus,
+} from './enums';
 
 const ARR_KINDS_SQL_LIST = ARR_KINDS.map((k) => `'${k}'`).join(',');
 const RESTORE_STATUSES_SQL_LIST = RESTORE_RUN_STATUSES.map((s) => `'${s}'`).join(',');
+const ARR_ADD_REASONS_SQL_LIST = ARR_ADD_REASONS.map((r) => `'${r}'`).join(',');
 
 /** One approved-preview entry (D-16 step 2 input; the exact diff the admin approved). */
 export interface RestorePreviewItem {
@@ -35,6 +43,10 @@ export const restoreRuns = pgTable(
     arrKind: text('arr_kind').$type<ArrKind>().notNull(),
     arrInstanceId: text('arr_instance_id').notNull(),
     initiatedBy: uuid('initiated_by').references(() => users.id, { onDelete: 'set null' }), // admin (snapshot in preview)
+    // ADR-022 C-01 — how this run was initiated: 'restore' (diff-driven admin failsafe,
+    // searches OFF) or 'ledger_add' (Ledger bulk Add-&-search, searches ON). Existing rows
+    // backfill to 'restore' (migration 0014).
+    reason: text('reason').$type<ArrAddReason>().notNull().default('restore'),
     status: text('status').$type<RestoreRunStatus>().notNull().default('running'),
     preview: jsonb('preview').$type<RestorePreviewItem[]>().notNull(), // the exact diff the admin approved
     results: jsonb('results').$type<RestoreResultItem[]>().notNull().default([]),
@@ -51,6 +63,10 @@ export const restoreRuns = pgTable(
     check(
       'restore_runs_status_enum',
       sql`${t.status} = ANY (ARRAY[${sql.raw(RESTORE_STATUSES_SQL_LIST)}])`,
+    ),
+    check(
+      'restore_runs_reason_enum',
+      sql`${t.reason} = ANY (ARRAY[${sql.raw(ARR_ADD_REASONS_SQL_LIST)}])`,
     ),
     index('restore_runs_started_idx').on(t.startedAt.desc()),
   ],

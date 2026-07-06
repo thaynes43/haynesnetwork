@@ -1,6 +1,8 @@
 export * from './enums';
 export * from './roles';
 export * from './role-app-grants';
+// ADR-021 / DESIGN-009 — section-level role permissions (Ledger + reserved Trash)
+export * from './role-section-permissions';
 export * from './users';
 export * from './session';
 export * from './account';

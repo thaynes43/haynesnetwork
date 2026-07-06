@@ -15,6 +15,7 @@ export const PERMISSION_AUDIT_ACTIONS = [
   'update_app',
   'delete_app', // R-11 catalog edits
   'update_role_libraries', // ADR-017 D-07 — a role's Plex library grants were replaced
+  'update_section_permission', // ADR-021 C-02 — a role's section access level was changed
 ] as const;
 export type PermissionAuditAction = (typeof PERMISSION_AUDIT_ACTIONS)[number];
 
@@ -125,6 +126,45 @@ export type PlexMediaType = (typeof PLEX_MEDIA_TYPES)[number];
 // Plex account on a server. The only two Plex-share ledger events (ADR-017 D-07).
 export const PLEX_SHARE_EVENTS = ['share_added', 'share_removed'] as const;
 export type PlexShareEvent = (typeof PLEX_SHARE_EVENTS)[number];
+
+// ---------------------------------------------------------------------------
+// ADR-021 / DESIGN-009 — Section-level Role Permissions (Ledger + reserved Trash).
+// A role carries one access LEVEL per top-level SECTION (role_section_permissions).
+// These const arrays are the single source of truth for TS + the SQL CHECKs (migration
+// 0013). PLAN-005 owns the base model; PLAN-006 (Trash) reuses 'trash' + layers its finer
+// per-action grants on top — it does NOT create a second base table.
+// ---------------------------------------------------------------------------
+
+export const SECTION_IDS = ['ledger', 'trash'] as const; // 'trash' reserved for PLAN-006
+export type SectionId = (typeof SECTION_IDS)[number];
+
+export const SECTION_PERMISSION_LEVELS = ['edit', 'read_only', 'disabled'] as const;
+export type SectionPermissionLevel = (typeof SECTION_PERMISSION_LEVELS)[number];
+
+/**
+ * The no-row fallback per section (ADR-021 C-01, Q-03 resolved). Ledger defaults to
+ * `read_only`: an authenticated member browses/exports the whole ledger without an admin
+ * touching their role, while the mutating Add-&-search stays Edit-gated. `trash` defaults
+ * to `disabled` (reserved for PLAN-006 — hidden until that plan builds the section). An
+ * `is_admin` role implies `edit` on every section with NO rows (ADR-021 C-03).
+ */
+export const SECTION_DEFAULT_LEVELS: Record<SectionId, SectionPermissionLevel> = {
+  ledger: 'read_only',
+  trash: 'disabled',
+};
+
+/** disabled < read_only < edit — the total order `sectionProcedure` gates on (ADR-021). */
+export const SECTION_LEVEL_RANK: Record<SectionPermissionLevel, number> = {
+  disabled: 0,
+  read_only: 1,
+  edit: 2,
+};
+
+// ADR-022 C-01 — how an *arr-add run was initiated (restore_runs.reason, migration 0014).
+// `restore` = the admin-only diff-driven failsafe (searches OFF, skip-if-present); `ledger_add`
+// = the Ledger section's bulk Add-&-search (monitors present-but-unmonitored items, searches ON).
+export const ARR_ADD_REASONS = ['restore', 'ledger_add'] as const;
+export type ArrAddReason = (typeof ARR_ADD_REASONS)[number];
 
 // ---------------------------------------------------------------------------
 // ADR-018 / DESIGN-008 Phase 4 — Library metadata enrichment enums (D-01).
