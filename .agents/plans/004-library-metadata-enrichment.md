@@ -9,7 +9,7 @@
 
 Harvest rich metadata from the *arrs (then Tautulli for watch-stats, then Maintainerr where it adds computed properties) into our DB, tied 1:1 to `media_items` (`packages/db/src/schema/media-items.ts:34`); expose **sort + filter** over it through `ledger.search`; render **server-side-cached small posters** in Library instead of the generic `KindIcon` (`apps/web/app/(app)/library/page.tsx:184`); and **port `demo-console`'s `packages/shared/filters` into `@hnet/ui` as the ONE filter/table engine** (mechanism only, our own look per DESIGN-006 + memory `distinct-visual-identity-per-app`) reused by Library now and by PLAN-005/006. Include a metadata path for **ledger-only / tombstoned / DELETED items** (not live in any *arr) via the *arr LOOKUP endpoints, and a **periodic refresh job** (ratings/votes/watch-stats go stale).
 
-Sources, in priority order (owner-fixed): **1) *arr** (`ratings`/`images`/`genres`/`runtime` already on the live resources, currently dropped by strip-mode schemas), **2) Tautulli** legacy haynestower instance (most history; key `TAUTULLI_HAYNESTOWER_API_KEY`) for watch-stats, **3) Maintainerr** computed properties where cheap. **NO direct TMDB/RT/IMDB keys** this plan — everything flows through the *arrs (which already resolve TMDB/IMDB/RT ratings) + Tautulli.
+Sources, in priority order (owner-fixed): **1) *arr** (`ratings`/`images`/`genres`/`runtime` already on the live resources, currently dropped by strip-mode schemas), **2) Tautulli** legacy haynestower instance (most history; key `TAUTULLI_HAYNESTOWER_API_KEY`) for watch-stats, **3) Maintainerr** computed properties where cheap. *arr-first, but **direct TMDB/TVDB is now a sanctioned fallback tier** for metadata holes (keys staged in 1Password 2026-07-05 — `TMDB_API_KEY` v3, `TMDB_API_READ_ACCESS_TOKEN` v4 bearer, `TVDB_API_KEY`), used ONLY where the *arrs + Tautulli can't supply a field (esp. deleted / ledger-only items and fields an *arr doesn't expose). **RT stays *arr-only** — Rotten Tomatoes has no public API.
 
 ## Docs-first artifacts to author (no code before docs — `docs/PROCESS.md`)
 
@@ -33,7 +33,7 @@ Sources, in priority order (owner-fixed): **1) *arr** (`ratings`/`images`/`genre
 - **D-02 *arr harvest contract** — the additional `ratings{imdb,tmdb,rottenTomatoes}`, `images[]`, `genres[]`, `runtime` fields to add to `radarrMovieSchema`/`sonarrSeriesSchema`/`lidarrArtistSchema` (currently strip-mode-dropped — `packages/arr/src/schemas/radarr.ts:22`, `sonarr.ts:24`); the map to `media_metadata` columns. Amends **DESIGN-005 D-02** (note the extension there).
 - **D-03 Tautulli read client** — endpoints (`get_library_media_info` / `get_metadata` / `get_history` / `get_home_stats` via `/api/v2?apikey=&cmd=`), the watch-stats fields (play_count, last_played) and the tmdb/tvdb/rating-key join to `media_items`.
 - **D-04 Maintainerr harvest (best-effort)** — which computed rule-properties are cheaply pullable now vs deferred; explicit "as much as we can" list mapped to Maintainerr's rule catalog. Maintainerr is being stood up tonight (PLAN-006 dep); this plan consumes it read-only if reachable, else degrades (the field stays null with `source` unset).
-- **D-05 deleted-item lookup** — `GET /movie/lookup?term=tmdb:{id}` (Radarr), `GET /series/lookup?term=tvdb:{id}` (Sonarr), `GET /artist/lookup?term=...` (Lidarr): returns full metadata + images WITHOUT adding the item; used for tombstoned rows (`media_items.deleted_from_arr_at` set) and any row the full-sync harvest never populated. Document the "add-unwatched-and-snag-then-remove" fallback as a documented Q-NN only, NOT built here.
+- **D-05 deleted-item lookup** — `GET /movie/lookup?term=tmdb:{id}` (Radarr), `GET /series/lookup?term=tvdb:{id}` (Sonarr), `GET /artist/lookup?term=...` (Lidarr): returns full metadata + images WITHOUT adding the item; used for tombstoned rows (`media_items.deleted_from_arr_at` set) and any row the full-sync harvest never populated. Where the *arr lookup falls short (or the title is unknown to that *arr), fall back to a **direct TMDB/TVDB lookup by id** (keys now in 1Password; record `source='tmdb'`/`'tvdb'`) — this supersedes the old "add-unwatched-and-snag-then-remove" idea (now unnecessary; keep only as a documented Q-NN).
 - **D-06 refresh cadence** — a new sync mode/job that re-harvests ratings/votes/watch-stats on a schedule; `fetched_at` staleness threshold drives which rows refresh.
 - **D-07 poster cache** — fetch → resize → store pipeline; PVC layout; the serving route; eviction.
 - **D-08 the ported filter/table engine** — what moves from `demo-console/packages/shared/filters` (index @ `.../index.ts`) into `@hnet/ui`: `chipModel` (`ChipGroup`/`groupPairs`/`chipCsv`), `FilterChip` + inline editor, `FilterCell`/`BinChip`/`CopyableId`, the pure `FilterMap` helpers, generic `sort` (`nextSort`/`arrowFor`/`sortRowsClientSide`/`FieldSpec`) — all i18n-free (host injects `labels`), theme-free (host picks `classPrefix`; ours defaults to an `hnet-`/token-driven namespace, NOT demo-console's `dtf-`/`wk-` look). Host owns the field union + predicate/match-mode (handoff prompt "What STAYS in Work"). No `useTranslation` in any ported component (add the guard test).
@@ -82,7 +82,7 @@ media_metadata
 ```
 
 New enums in `packages/db/src/schema/enums.ts` (single source of truth for TS types + SQL CHECK — HARD RULE; follow the `ARR_KINDS` pattern @ `enums.ts:26`):
-- `METADATA_SOURCES = ['arr','arr_lookup','tautulli','maintainerr'] as const`
+- `METADATA_SOURCES = ['arr','arr_lookup','tautulli','maintainerr','tmdb','tvdb'] as const` <!-- tmdb/tvdb = direct fallback for holes; keys in 1Password -->
 - `RESOLUTIONS = ['sd','720p','1080p','2160p','unknown'] as const`
 - `MEDIA_TYPES = ['movie','show','artist'] as const`  _(distinct from `ARR_KINDS` — the human media noun the UI filters on; document why in DESIGN-007 D-01, or reuse `ARR_KINDS` and record that choice as a Q-NN. Fable 5 decides.)_
 
@@ -175,7 +175,7 @@ Docs authored + ADR-016/017 Accepted + glossary T-46..T-49 landed in the same PR
 ## Out of scope
 
 - Ledger section UI (PLAN-005) and Trash section (PLAN-006) — they REUSE this plan's `media_metadata`, filter engine, and `ledger.search` contract but are separate verticals.
-- Direct TMDB/RT/IMDb API keys (owner-deferred — everything flows via the *arrs + Tautulli).
+- A direct **Rotten Tomatoes** integration (no public RT API — RT ratings stay *arr-sourced). _(TMDB/TVDB direct is now IN scope as a fallback tier — keys staged 2026-07-05.)_
 - The "add-unwatched-and-snag-then-remove" deleted-item fallback (documented Q-NN, not built unless lookup proves insufficient live).
 - Posters for the Ledger (TODO #5 explicitly: ledger needs no posters).
 - Perma-save / whitelist pin on Library cards (that's PLAN-006 Trash scope).

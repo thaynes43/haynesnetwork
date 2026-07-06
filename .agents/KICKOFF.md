@@ -60,11 +60,15 @@ guard; import-confine any new write client; add an e2e **stub** for any new exte
 | 006 | Trash section (Maintainerr) | 004 + Maintainerr (deployed for you) |
 | 007 | Cosign image signing | — (any time) |
 | 008 | haynesnetwork public cutover | **runs LAST** — after 002–006 |
+| 009 | Bulletin — notification Feed + Messages (stretch) | 004, 006 |
+| 010 | MOTD dashboard banner (stretch) | — |
 
 `004` builds the ported demo-console filter/table engine that `005` and `006` reuse — so `004`
 before `005`/`006`. `005` before `006` (the Ledger carries the retired Restore page's re-add
 power; Trash then removes the Restore nav). `008` is the public go-live and must not start until
-every feature plan is complete and validated.
+every feature plan is complete and validated. **`009` (Bulletin) and `010` (MOTD) are stretch** —
+build them only after the core queue (`002`–`008`) is done and budget/time remains; `010` is small
+and independent enough to pull forward as a quick win if you're ahead.
 
 ## haynes-ops — how to deploy and test
 
