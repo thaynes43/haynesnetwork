@@ -3,18 +3,22 @@
 > The single resume point for agents. Update this in the same change as any milestone.
 > Derive current state from this file's top; you should not have to reconcile anything.
 
-- **Last updated:** 2026-07-05
+- **Last updated:** 2026-07-06 (Fable 5 autonomous run, in progress)
 - **Workflow mode:** PR flow (GATE A executed — see
   `.agents/plans/completed/001-gate-a-pr-cutover.md`).
   `main` is branch-protected: branch → PR → required checks `lint-and-typecheck`, `test`,
   `build` green → squash-merge. `e2e` advisory. Conventional-commit titles drive release-please.
-- **Latest release:** v0.4.0 (#36) — unified roles (ADR-012), arbitrary catalog URLs (ADR-013),
-  inline two-step `ConfirmButton` + drag-drop catalog reorder, Library sub-tabs, settings-only
-  user menu. All the UX-backlog items in `context/2026-07-05-ux-backlog.md` are DONE.
-- **NEXT: an autonomous Fable 5 build run (Mon 2026-07-06).** The entry prompt is
-  `.agents/KICKOFF.md`; the release queue is `.agents/plans/` (see `.agents/plans/README.md`).
-  Plans 002–008 cover Bazarr subtitle Fix, Plex self-service (Phase 3), metadata enrichment,
-  the Ledger + Trash sections, cosign, and the public cutover.
+- **Latest release: v0.5.0 (#47) — PLAN-002 Bazarr subtitle Fix (ADR-016), deployed to staging
+  + live-validated 2026-07-06.** `missing_subtitles` fixes route to Bazarr's async
+  `search-missing` (movie: per-movie; sonarr episode/season: series-level — no per-episode async
+  action in Bazarr 1.5.6), rest at `search_triggered`, excluded from `completeFixRequests`;
+  Music no longer offers the reason. Migration 0009; `BazarrClient`/`BazarrWriteClient` in
+  `@hnet/arr`; `BAZARR_API_KEY` wired via the existing media-stack ExternalSecret.
+- **The autonomous Fable 5 run (Mon 2026-07-06) is IN PROGRESS.** Entry prompt
+  `.agents/KICKOFF.md`; queue in `.agents/plans/` (see `.agents/plans/README.md`). 002 is
+  complete; 003 (Plex self-service) is being built on `feat/plex-library-self-service`.
+  v0.4.0 recap: unified roles (ADR-012), arbitrary catalog URLs (ADR-013), two-step
+  `ConfirmButton`, drag-drop catalog reorder, Library sub-tabs.
 
 ## Current state
 
@@ -51,8 +55,7 @@
 The **Fable 5 autonomous run** works the release queue in `.agents/plans/` (start at
 `.agents/KICKOFF.md`). In order:
 
-1. **002 — Bazarr subtitle Fix**: route the "missing subtitles" Fix to Bazarr; drop that reason
-   for Music.
+1. ~~**002 — Bazarr subtitle Fix**~~ ✅ **DONE** (v0.5.0, `completed/002-bazarr-subtitle-fix.md`).
 2. **003 — Plex library self-service (BC-04, Phase 3)**: entirely UNBUILT (no `plex_*` tables, no
    Plex domain code; glossary T-17..T-21 are placeholders). Per-**role** allowed library sets
    across the three servers (k8plex, plexops, legacy haynestower); family libs = libraries granted
@@ -70,6 +73,16 @@ The full consolidated backlog (with what is deferred beyond this run) is in
 `context/2026-07-05-backlog-recon.md`.
 
 ## Key gotchas / where to look
+
+- **Learned during the 2026-07-06 run:** (1) The 1Password `AUTHENTIK_BOOTSTRAP_PASSWORD` is
+  STALE — it authenticates no Authentik user (akadmin unchanged since 2024-10). Live staging
+  validation logs in as the dedicated local Authentik member **`hnet-e2e`** (created via
+  `ak shell` in the authentik-server pod; Default-role member in the app). (2) Bot-authored
+  release-please PRs sit in an `action_required` CI gate — an admin must re-run the gated
+  workflow run before the required checks report and the release PR can merge. (3) The `57P01`
+  embedded-PG teardown flake also hits `packages/sync` (`incremental-sync.test.ts`), not just
+  `packages/auth`. (4) Live-validation UX finding: at 390px the header wordmark collides with
+  the "Home" nav link — fix during plan 004's UI pass.
 
 - **Orientation:** `docs/README.md` is the docs index. Per-package READMEs
   (`packages/{db,domain,sync,arr,api,ui}/README.md`, `apps/web/README.md`) orient by area;
