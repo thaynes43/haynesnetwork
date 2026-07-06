@@ -1,6 +1,6 @@
 // DESIGN-005 D-02 — Sonarr v3 field subsets (strip mode: extra fields tolerated, dropped).
 import { z } from 'zod';
-import { historyRecordBaseSchema } from './common';
+import { arrImageSchema, historyRecordBaseSchema, singleRatingSchema } from './common';
 
 /** Full eventType enum per Sonarr's `EpisodeHistoryEventType` (D-02). */
 export const SONARR_HISTORY_EVENT_TYPES = [
@@ -51,8 +51,29 @@ export const sonarrSeriesSchema = z.object({
   status: z.string(),
   ended: z.boolean(),
   added: z.string(),
+  // Metadata-harvest fields (DESIGN-008 D-02). Sonarr exposes a single community rating
+  // ({value, votes}) mapped to the tmdb_* slots (no imdb/tmdb split like Radarr).
+  ratings: singleRatingSchema.optional(),
+  images: z.array(arrImageSchema).optional(),
+  genres: z.array(z.string()).optional(),
+  runtime: z.number().int().optional(),
 });
 export type SonarrSeries = z.infer<typeof sonarrSeriesSchema>;
+
+/** `GET /series/lookup?term=tvdb:{id}` element (DESIGN-008 D-05) — tombstoned metadata path. */
+export const sonarrLookupSchema = z.object({
+  title: z.string(),
+  year: z.number().int().optional(),
+  tvdbId: z.number().int().optional(),
+  tmdbId: z.number().int().optional(),
+  imdbId: z.string().optional(),
+  runtime: z.number().int().optional(),
+  genres: z.array(z.string()).optional(),
+  ratings: singleRatingSchema.optional(),
+  images: z.array(arrImageSchema).optional(),
+  remotePoster: z.string().optional(),
+});
+export type SonarrLookup = z.infer<typeof sonarrLookupSchema>;
 
 /** `GET /episode?seriesId=` / `wanted/missing` record — fix-target granularity (D-02). */
 export const sonarrEpisodeSchema = z.object({

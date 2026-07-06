@@ -3,8 +3,24 @@
 // means a run may only need one service's config, so clients are built per requested
 // source; missing keys for the REQUESTED sources throw a single ArrConfigError naming
 // every absent variable (values are never echoed).
-import { ARR_CLUSTER_URL_DEFAULTS, ArrConfigError } from '@hnet/arr';
-import { LidarrClient, RadarrClient, SeerrClient, SonarrClient } from '@hnet/arr/read';
+import {
+  ARR_CLUSTER_URL_DEFAULTS,
+  ArrConfigError,
+  resolveMaintainerrConfig,
+  resolveTautulliInstances,
+  resolveTmdbConfig,
+  resolveTvdbConfig,
+} from '@hnet/arr';
+import {
+  LidarrClient,
+  MaintainerrClient,
+  RadarrClient,
+  SeerrClient,
+  SonarrClient,
+  TautulliClient,
+  TmdbClient,
+  TvdbClient,
+} from '@hnet/arr/read';
 import type { SyncSource } from '@hnet/db';
 
 /** The (possibly partial) client set a sync run operates on. Tests inject stubs. */
@@ -58,4 +74,40 @@ export function requireClient<S extends SyncSource>(
     throw new Error(`no ${source} client configured for this run`);
   }
   return client;
+}
+
+// ADR-018 / DESIGN-008 — the OPTIONAL metadata-harvest source clients (Tautulli ×N, TMDB,
+// TVDB, Maintainerr). Every one is skip-if-absent (per-source degradation, D-03): a config
+// with none of these set yields an empty bundle and the harvest still lands the *arr tier.
+
+export interface TautulliInstanceClient {
+  /** the estate server this Tautulli tracks (used as the per-instance breakdown key). */
+  slug: string;
+  client: TautulliClient;
+}
+
+export interface MetadataSourceClients {
+  tautulli: TautulliInstanceClient[];
+  tmdb?: TmdbClient;
+  tvdb?: TvdbClient;
+  maintainerr?: MaintainerrClient;
+}
+
+/** Build the metadata-source clients from env — each tier included only when configured. */
+export function buildMetadataSourceClients(
+  env: Record<string, string | undefined> = process.env,
+): MetadataSourceClients {
+  const tautulli = resolveTautulliInstances(env).map((inst) => ({
+    slug: inst.slug,
+    client: new TautulliClient({ baseUrl: inst.baseUrl, apiKey: inst.apiKey }),
+  }));
+  const tmdbConfig = resolveTmdbConfig(env);
+  const tvdbConfig = resolveTvdbConfig(env);
+  const maintainerrConfig = resolveMaintainerrConfig(env);
+  return {
+    tautulli,
+    ...(tmdbConfig ? { tmdb: new TmdbClient(tmdbConfig) } : {}),
+    ...(tvdbConfig ? { tvdb: new TvdbClient(tvdbConfig) } : {}),
+    ...(maintainerrConfig ? { maintainerr: new MaintainerrClient(maintainerrConfig) } : {}),
+  };
 }

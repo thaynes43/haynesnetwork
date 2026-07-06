@@ -6,21 +6,34 @@
 // URLs default to the in-cluster service DNS. Exit 0 with a per-source report unless
 // EVERY requested source failed (or the run could not start at all) — one *arr being
 // down must not mask the sources that synced (D-14 failure isolation).
-import { SYNC_RUN_KINDS, SYNC_SOURCES, getPool, type SyncRunKind, type SyncSource } from '@hnet/db';
-import { buildSyncClients } from '../clients';
+import {
+  ARR_KINDS,
+  SYNC_RUN_KINDS,
+  SYNC_SOURCES,
+  getPool,
+  type SyncRunKind,
+  type SyncSource,
+} from '@hnet/db';
+import { buildMetadataSourceClients, buildSyncClients } from '../clients';
 import { createConsoleLogger } from '../logger';
 import { runSync } from '../orchestrator';
 
-const USAGE = `Usage: sync.ts --mode=full|incremental [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
+const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
 
-  --mode=full           item-list upsert + tombstone pass per *arr (+ Seerr requests)
-  --mode=incremental    history/since cursor polling per *arr (+ Seerr requests)
-  --source=NAME         limit the run to one source (repeatable; default: all four)
-  --force-tombstones    override the mass-tombstone guard (DESIGN-005 D-14/Q-03)
-  --help                print this usage
+  --mode=full             item-list upsert + tombstone pass per *arr (+ Seerr requests)
+  --mode=incremental      history/since cursor polling per *arr (+ Seerr requests)
+  --mode=metadata-refresh harvest ratings/genres/runtime/posters (+ Tautulli watch-stats,
+                          Maintainerr, direct TMDB/TVDB fallback) into media_metadata (ADR-018)
+  --source=NAME           limit the run to one source (repeatable; default: all sources; for
+                          metadata-refresh the default is the three *arr kinds)
+  --force-tombstones      override the mass-tombstone guard (DESIGN-005 D-14/Q-03)
+  --help                  print this usage
 
 Env (DESIGN-005 D-18): DATABASE_URL, SONARR_URL/SONARR_API_KEY, RADARR_URL/RADARR_API_KEY,
-LIDARR_URL/LIDARR_API_KEY, SEERR_URL/SEERR_API_KEY (URLs default to in-cluster DNS).`;
+LIDARR_URL/LIDARR_API_KEY, SEERR_URL/SEERR_API_KEY (URLs default to in-cluster DNS).
+Metadata sources (ADR-018 / DESIGN-008 — all OPTIONAL, skip-if-absent): TAUTULLI_API_KEY,
+TAUTULLI_K8PLEX_API_KEY, TAUTULLI_HAYNESTOWER_API_KEY (+ _URL for haynestower), TMDB_API_KEY /
+TMDB_API_READ_ACCESS_TOKEN, TVDB_API_KEY, MAINTAINERR_URL/MAINTAINERR_API_KEY.`;
 
 interface CliArgs {
   mode: SyncRunKind;
@@ -56,9 +69,17 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
     }
   }
   if (mode === undefined) {
-    throw new CliUsageError('--mode=full|incremental is required');
+    throw new CliUsageError('--mode=full|incremental|metadata-refresh is required');
   }
-  return { mode, sources: sources.length > 0 ? [...new Set(sources)] : [...SYNC_SOURCES], forceTombstones };
+  // metadata-refresh defaults to the *arr kinds (Seerr has no metadata); other modes default
+  // to all four sources.
+  const defaultSources =
+    mode === 'metadata-refresh' ? [...ARR_KINDS] : [...SYNC_SOURCES];
+  return {
+    mode,
+    sources: sources.length > 0 ? [...new Set(sources)] : defaultSources,
+    forceTombstones,
+  };
 }
 
 async function main(): Promise<number> {
@@ -87,17 +108,30 @@ async function main(): Promise<number> {
   // Build only the clients this run needs; missing keys for requested sources throw
   // one ArrConfigError naming every absent variable (never their values).
   const clients = buildSyncClients(args.sources);
+  // ADR-018 / DESIGN-008 — the OPTIONAL metadata-harvest sources (Tautulli/TMDB/TVDB/
+  // Maintainerr). Only built for metadata-refresh; each tier is skip-if-absent.
+  const metadataSources =
+    args.mode === 'metadata-refresh' ? buildMetadataSourceClients() : undefined;
 
   logger.info('sync starting', {
     mode: args.mode,
     sources: args.sources,
     forceTombstones: args.forceTombstones,
+    ...(metadataSources
+      ? {
+          tautulliInstances: metadataSources.tautulli.map((t) => t.slug),
+          tmdb: Boolean(metadataSources.tmdb),
+          tvdb: Boolean(metadataSources.tvdb),
+          maintainerr: Boolean(metadataSources.maintainerr),
+        }
+      : {}),
   });
   const report = await runSync({
     mode: args.mode,
     sources: args.sources,
     forceTombstones: args.forceTombstones,
     clients,
+    ...(metadataSources ? { metadataSources } : {}),
     logger,
   });
 

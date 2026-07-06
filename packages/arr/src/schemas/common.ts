@@ -73,6 +73,50 @@ export const historyRecordBaseSchema = z.object({
   data: z.record(z.string(), z.unknown()).optional(),
 });
 
+// ---------------------------------------------------------------------------
+// DESIGN-008 D-02 — metadata-harvest shapes (ADR-018). The *arrs already carry
+// ratings/images/genres/runtime on their item resources; strip-mode dropped them until now.
+// Verified live 2026-07-06 against Radarr 6.x / Sonarr 4.x / Lidarr 3.x.
+// ---------------------------------------------------------------------------
+
+/** One rating source: {value, votes?, type?}. Radarr splits imdb/tmdb/rottenTomatoes/…;
+ *  Sonarr/Lidarr expose a single community rating (see per-kind schemas). */
+export const ratingValueSchema = z.object({
+  value: z.number(),
+  votes: z.number().int().optional(),
+  type: z.string().optional(),
+});
+export type ArrRatingValue = z.infer<typeof ratingValueSchema>;
+
+/** Radarr's multi-source `ratings` map (all optional — verified sources: imdb, tmdb,
+ *  rottenTomatoes (critics tomatometer), metacritic, trakt). RT audience/popcorn is NOT
+ *  exposed by any *arr, so rt_popcorn stays null from this tier. */
+export const radarrRatingsSchema = z.object({
+  imdb: ratingValueSchema.optional(),
+  tmdb: ratingValueSchema.optional(),
+  rottenTomatoes: ratingValueSchema.optional(),
+  metacritic: ratingValueSchema.optional(),
+  trakt: ratingValueSchema.optional(),
+});
+export type RadarrRatings = z.infer<typeof radarrRatingsSchema>;
+
+/** Sonarr/Lidarr expose a single `{value, votes}` community rating (no per-source split). */
+export const singleRatingSchema = z.object({
+  value: z.number(),
+  votes: z.number().int().optional(),
+});
+
+/** An *arr image: coverType ('poster'|'fanart'|'banner'), the relative in-app `url`
+ *  (carries ?lastWrite — the poster ETag input) and the upstream `remoteUrl` (a TMDB CDN
+ *  URL for the tombstone/lookup TMDB tier). */
+export const arrImageSchema = z.object({
+  coverType: z.string(),
+  url: z.string().optional(),
+  remoteUrl: z.string().optional(),
+  extension: z.string().optional(), // lidarr adds this
+});
+export type ArrImage = z.infer<typeof arrImageSchema>;
+
 /** `POST /command` acknowledgement (write surface — search triggers, D-15). */
 export const commandResponseSchema = z.object({
   id: z.number().int(),

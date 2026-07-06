@@ -14,11 +14,16 @@ import {
 } from '@hnet/domain';
 import { runArrFullSync } from './arr-full';
 import { runArrIncrementalSync } from './arr-incremental';
-import type { SyncClients } from './clients';
+import type { MetadataSourceClients, SyncClients } from './clients';
+import {
+  buildMetadataContext,
+  runMetadataRefreshForKind,
+  type MetadataContext,
+} from './metadata-refresh';
 import { noopLogger, type SyncLogger } from './logger';
 import { runSeerrSync } from './seerr';
 
-export type SyncMode = SyncRunKind; // 'full' | 'incremental'
+export type SyncMode = SyncRunKind; // 'full' | 'incremental' | 'metadata-refresh'
 
 export interface RunSyncOptions {
   mode: SyncMode;
@@ -29,6 +34,13 @@ export interface RunSyncOptions {
   /** *arr instance slug (D-05 decision 1); single-instance 'main' today. */
   arrInstanceId?: string;
   clients: SyncClients;
+  /** ADR-018 / DESIGN-008 — the OPTIONAL metadata-harvest source clients (Tautulli/TMDB/
+   *  TVDB/Maintainerr). Required only for mode 'metadata-refresh'; every tier is degradable. */
+  metadataSources?: MetadataSourceClients;
+  /** metadata-refresh: rows older than now-threshold (or missing) refresh. Default 6h. */
+  metadataStaleThresholdMs?: number;
+  /** metadata-refresh: cap the rows harvested this run. */
+  metadataLimit?: number;
   /** Injected DB (tests); defaults to the lazy @hnet/db client. */
   db?: DbClient;
   logger?: SyncLogger;
@@ -69,8 +81,26 @@ async function runSource(
   db: DbClient,
   logger: SyncLogger,
   source: SyncSource,
+  metadataContext: MetadataContext | undefined,
 ): Promise<Record<string, unknown>> {
   const arrInstanceId = options.arrInstanceId ?? 'main';
+  // ADR-018 / DESIGN-008 D-03 — the metadata harvest is per *arr kind (Seerr has no metadata);
+  // the cross-kind Tautulli/Maintainerr context is built once and shared across kinds.
+  if (options.mode === 'metadata-refresh') {
+    if (!isArrKind(source)) return { skipped: 'metadata-refresh harvests *arr kinds only' };
+    if (!metadataContext) throw new Error('metadata-refresh requires metadataSources');
+    return runMetadataRefreshForKind({
+      db,
+      clients: options.clients,
+      sources: options.metadataSources!,
+      context: metadataContext,
+      arrKind: source,
+      arrInstanceId,
+      logger,
+      staleThresholdMs: options.metadataStaleThresholdMs,
+      limit: options.metadataLimit,
+    });
+  }
   if (!isArrKind(source)) {
     // Seerr has no item list; its request scan is cursor-driven in both modes (D-14).
     return runSeerrSync({ db, clients: options.clients, logger });
@@ -104,16 +134,25 @@ async function runSource(
 export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
   const logger = options.logger ?? noopLogger;
   const db = options.db ?? (defaultDb as DbClient);
-  const sources = options.sources ?? SYNC_SOURCES;
+  // metadata-refresh harvests *arr kinds only (Seerr has no metadata) — default to ARR_KINDS.
+  const sources =
+    options.sources ?? (options.mode === 'metadata-refresh' ? ARR_KINDS : SYNC_SOURCES);
   const startedAt = new Date();
   const reports: SourceRunReport[] = [];
+
+  // Build the shared Tautulli/Maintainerr context ONCE (D-03) so a 3-kind harvest doesn't
+  // re-scan Tautulli three times. Degrades internally — never throws for a tier failure.
+  const metadataContext =
+    options.mode === 'metadata-refresh' && options.metadataSources
+      ? await buildMetadataContext({ sources: options.metadataSources, logger })
+      : undefined;
 
   for (const source of sources) {
     let runId: string | null = null;
     try {
       ({ runId } = await startSyncRun({ db, source, runKind: options.mode }));
       logger.info('sync run started', { source, mode: options.mode, runId });
-      const stats = await runSource(options, db, logger, source);
+      const stats = await runSource(options, db, logger, source, metadataContext);
       await finishSyncRun({ db, runId, status: 'succeeded', stats });
       logger.info('sync run succeeded', { source, runId, ...stats });
       reports.push({ source, runId, status: 'succeeded', stats });
@@ -142,9 +181,24 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
     }
   }
 
-  // Post-steps — idempotent, cheap, and independent of which sources ran (D-12).
+  // Post-steps — idempotent, cheap, and independent of which sources ran (D-12). Skipped for
+  // metadata-refresh: attribution backfill + fix completion are ledger concerns, not metadata.
   let backfill: SyncReport['backfill'] = null;
   let backfillError: string | undefined;
+  let fixesCompleted: number | null = null;
+  let fixCompletionError: string | undefined;
+  if (options.mode === 'metadata-refresh') {
+    const totalFailure = reports.length > 0 && reports.every((r) => r.status !== 'succeeded');
+    return {
+      mode: options.mode,
+      startedAt,
+      finishedAt: new Date(),
+      sources: reports,
+      backfill,
+      fixesCompleted,
+      totalFailure,
+    };
+  }
   try {
     backfill = await backfillEventAttribution({ db });
     if (backfill.itemsLinked > 0 || backfill.usersLinked > 0) {
@@ -155,8 +209,6 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
     logger.error('attribution backfill failed', { error: backfillError });
   }
 
-  let fixesCompleted: number | null = null;
-  let fixCompletionError: string | undefined;
   try {
     const { completed } = await completeFixRequests({ db });
     fixesCompleted = completed.length;

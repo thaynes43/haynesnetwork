@@ -20,15 +20,19 @@ import {
   SONARR_GRABBED_EVENT_TYPE,
   sonarrEpisodeSchema,
   sonarrHistoryRecordSchema,
+  sonarrLookupSchema,
   sonarrSeriesSchema,
   type SonarrEpisode,
   type SonarrHistoryRecord,
+  type SonarrLookup,
   type SonarrSeries,
 } from './schemas/sonarr';
 import {
   radarrHistoryRecordSchema,
+  radarrLookupSchema,
   radarrMovieSchema,
   type RadarrHistoryRecord,
+  type RadarrLookup,
   type RadarrMovie,
 } from './schemas/radarr';
 import {
@@ -36,11 +40,13 @@ import {
   lidarrAlbumSchema,
   lidarrArtistSchema,
   lidarrHistoryRecordSchema,
+  lidarrLookupSchema,
   lidarrMetadataProfileSchema,
   lidarrTrackFileSchema,
   type LidarrAlbum,
   type LidarrArtist,
   type LidarrHistoryRecord,
+  type LidarrLookup,
   type LidarrMetadataProfile,
   type LidarrTrackFile,
 } from './schemas/lidarr';
@@ -133,6 +139,16 @@ export class SonarrClient extends ArrReadClientBase {
     return this.http.requestJson('GET', `series/${id}`, sonarrSeriesSchema);
   }
 
+  /**
+   * `GET /series/lookup?term=tvdb:{id}` — metadata for a tombstoned / never-listed series
+   * WITHOUT adding it (DESIGN-008 D-05). Returns the *arr's lookup matches (metadata + poster).
+   */
+  lookupSeries(term: string): Promise<SonarrLookup[]> {
+    return this.http.requestJson('GET', 'series/lookup', z.array(sonarrLookupSchema), {
+      query: { term },
+    });
+  }
+
   getHistory(params: HistoryPageParams = {}): Promise<ArrPage<SonarrHistoryRecord>> {
     return this.http.requestJson('GET', 'history', pagedSchema(sonarrHistoryRecordSchema), {
       query: this.historyQuery(params),
@@ -189,6 +205,13 @@ export class RadarrClient extends ArrReadClientBase {
     return this.http.requestJson('GET', `movie/${id}`, radarrMovieSchema);
   }
 
+  /** `GET /movie/lookup?term=tmdb:{id}` — tombstoned-movie metadata, no add (DESIGN-008 D-05). */
+  lookupMovie(term: string): Promise<RadarrLookup[]> {
+    return this.http.requestJson('GET', 'movie/lookup', z.array(radarrLookupSchema), {
+      query: { term },
+    });
+  }
+
   getHistory(params: HistoryPageParams = {}): Promise<ArrPage<RadarrHistoryRecord>> {
     return this.http.requestJson('GET', 'history', pagedSchema(radarrHistoryRecordSchema), {
       query: this.historyQuery(params),
@@ -231,6 +254,13 @@ export class LidarrClient extends ArrReadClientBase {
 
   getArtistById(id: number): Promise<LidarrArtist> {
     return this.http.requestJson('GET', `artist/${id}`, lidarrArtistSchema);
+  }
+
+  /** `GET /artist/lookup?term=lidarr:{mbid}` — tombstoned-artist metadata, no add (DESIGN-008 D-05). */
+  lookupArtist(term: string): Promise<LidarrLookup[]> {
+    return this.http.requestJson('GET', 'artist/lookup', z.array(lidarrLookupSchema), {
+      query: { term },
+    });
   }
 
   getHistory(params: HistoryPageParams = {}): Promise<ArrPage<LidarrHistoryRecord>> {
@@ -384,3 +414,13 @@ export function arrReadClientsFromEnv(
 
 export { ARR_CLUSTER_URL_DEFAULTS, assertArrEnv };
 export type { ArrEnvConfig };
+
+// ADR-018 / DESIGN-008 — metadata-harvest read clients (consumed by the sync harvest).
+export { TautulliClient } from './tautulli';
+export type { TautulliClientOptions, TautulliHistoryParams } from './tautulli';
+export { TmdbClient } from './tmdb';
+export type { TmdbClientOptions } from './tmdb';
+export { TvdbClient } from './tvdb';
+export type { TvdbClientOptions } from './tvdb';
+export { MaintainerrClient } from './maintainerr';
+export type { MaintainerrClientOptions } from './maintainerr';
