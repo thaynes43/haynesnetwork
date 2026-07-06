@@ -189,6 +189,33 @@ export function onDiskSummary(input: {
   return { label: expected > 1 ? `${onDisk}/${expected} on disk` : 'On disk', tone: 'ok' };
 }
 
+// ADR-018 / DESIGN-008 — metadata display helpers (D-08: the media noun is a display map,
+// not a new enum; ARR_KIND_LABELS above already maps radarr/sonarr/lidarr → Movie/TV/Music).
+
+/** Resolution tier display labels (RESOLUTIONS enum → user-facing). */
+export const RESOLUTION_LABELS: Record<string, string> = {
+  '2160p': '4K',
+  '1080p': '1080p',
+  '720p': '720p',
+  '576p': '576p',
+  '480p': '480p',
+  sd: 'SD',
+  unknown: 'Unknown',
+};
+
+/** A 0-10 rating to one decimal (e.g. 8 → "8.0", 7.35 → "7.4"); null → null. */
+export function formatRating(value: number | null): string | null {
+  return value === null ? null : value.toFixed(1);
+}
+
+/** Minutes → "1h 46m" / "44m"; null/0 → null. */
+export function formatRuntime(minutes: number | null): string | null {
+  if (minutes === null || minutes <= 0) return null;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return h > 0 ? `${h}h${m > 0 ? ` ${m}m` : ''}` : `${m}m`;
+}
+
 /** Compact local timestamp for timelines/tables (ISO in, locale out, minute precision). */
 export function formatWhen(iso: string): string {
   const date = new Date(iso);

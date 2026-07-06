@@ -1,0 +1,108 @@
+/* Shared filter/sort primitive styles (PLAN-018 §3; DESIGN-002 §4.7). Neutral `hnet-` namespace
+   (Demo-console Table Filters) built ENTIRELY on the global theme tokens (`--color-*` / `--radius-*`,
+   shell-owned) so any host can consume the chip/cell components by passing `classPrefix='hnet'` and
+   get the themed look for free. No hex (ADR-005 lint:css guard) — every hue is a token or a
+   `color-mix` over one. A host that wants a different namespace (e.g. Work's existing `wk-*`) passes
+   its own `classPrefix` and keeps its own equivalent rules; these hnet- rules then stay dormant.
+
+   The chip/pill BAR container (the fixed-height reserved row) is owned by the host page, not by these
+   components — only the chip/cell internals live here. */
+
+/* ── small utilities the components emit ── */
+.hnet-mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+.hnet-sub { font-size: 12px; color: var(--color-text-muted); margin: 0; }
+.hnet-search { font: inherit; font-size: 13px; padding: 7px 10px; color: var(--color-text); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); }
+.hnet-addbtn { font: inherit; font-size: 12px; cursor: pointer; color: var(--color-text); border: 1px solid var(--color-border); background: var(--color-surface); border-radius: var(--radius-sm); padding: 4px 10px; }
+.hnet-addbtn:hover { border-color: var(--color-accent); color: var(--color-accent); }
+
+/* ── the editable filter chip + its inline editor popover ──
+   The optional per-value tint rides a `--fc` custom property (no hex); it falls back to the accent. */
+.hnet-filter-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 2px 5px 2px 10px; border-radius: 999px; color: var(--fc, var(--color-accent)); border: 1px solid var(--fc, var(--color-accent)); background: color-mix(in srgb, var(--fc, var(--color-accent)) 13%, transparent); white-space: nowrap; position: relative; }
+.hnet-filter-chip .hnet-chip-label { color: inherit; }
+.hnet-filter-chip .hnet-mono { color: inherit; }
+.hnet-chip-x { background: transparent; border: 0; color: inherit; cursor: pointer; font-size: 12px; line-height: 1; padding: 0 0 0 2px; opacity: 0.8; }
+.hnet-chip-x:hover { opacity: 1; }
+
+/* The editable chip: the label is a borderless button that opens the editor popover. */
+.hnet-chip-open { background: transparent; border: 0; color: inherit; font: inherit; font-weight: 600; cursor: pointer; padding: 0; }
+.hnet-chip-open:hover { text-decoration: underline; text-underline-offset: 2px; }
+.hnet-chip-open:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: 3px; }
+
+/* The click-to-edit popover (enum checklist / unbounded typeahead). Absolutely positioned so it
+   OVERLAYS the pane (never reflows the reserved row); a high z-index keeps it above the table. */
+.hnet-chip-popover {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 40;
+  min-width: 200px; max-width: 320px; max-height: 360px; overflow-y: auto;
+  padding: 8px; border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+  background: var(--color-surface); color: var(--color-text);
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--color-text) 18%, transparent);
+}
+.hnet-chip-checklist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.hnet-chip-check { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: var(--radius-sm); cursor: pointer; font-weight: 500; }
+.hnet-chip-check:hover { background: color-mix(in srgb, var(--color-accent) 12%, transparent); }
+.hnet-chip-typeahead { display: flex; flex-direction: column; gap: 8px; }
+.hnet-chip-tokens { display: flex; flex-wrap: wrap; gap: 5px; }
+.hnet-chip-token { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 4px 2px 8px; border-radius: 999px; border: 1px solid var(--color-border); background: var(--color-surface-2); }
+.hnet-chip-token-x { background: transparent; border: 0; color: var(--color-text-muted); cursor: pointer; font-size: 11px; line-height: 1; padding: 0; }
+.hnet-chip-token-x:hover { color: var(--color-danger); }
+.hnet-chip-add { display: flex; align-items: flex-start; gap: 6px; }
+.hnet-chip-add .hnet-search { flex: 1 1 auto; min-width: 0; }
+
+/* ── the shared narrowing autocomplete / typeahead (PLAN-019; DDD-003 T-112) ──
+   Replaces the native <datalist> on every filter input. The custom in-DOM listbox renders ONLY the
+   matching options. Two positionings: `flow` renders the listbox IN-FLOW (it grows the already-
+   scrolling chip popover — no clipping), `overlay` renders it absolutely under the input (for inputs
+   in an `overflow:visible` chrome row; z-index >= the popover's 40 so it sits above the table). All
+   hues are theme tokens (no hex; ADR-005 lint:css guard); the surface/border/shadow mirror the
+   popover so the dropdown reads as part of the same family. */
+.hnet-ac { position: relative; display: flex; flex: 1 1 auto; min-width: 0; }
+.hnet-ac .hnet-ac-input { flex: 1 1 auto; min-width: 0; }
+.hnet-ac-list {
+  list-style: none; margin: 4px 0 0; padding: 4px;
+  border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+  background: var(--color-surface); color: var(--color-text);
+  max-height: 240px; overflow-y: auto;
+}
+/* flow: in-flow under the input (grows the scrolling popover). */
+.hnet-ac--flow { flex-direction: column; align-items: stretch; }
+.hnet-ac--flow .hnet-ac-list { width: 100%; }
+/* overlay: anchored under the input, above the ReservedPane. */
+.hnet-ac--overlay .hnet-ac-list {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 40;
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--color-text) 18%, transparent);
+}
+.hnet-ac-option { padding: 5px 8px; border-radius: var(--radius-sm); cursor: pointer; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hnet-ac-option:hover { background: color-mix(in srgb, var(--color-accent) 12%, transparent); }
+.hnet-ac-option.is-active { background: color-mix(in srgb, var(--color-accent) 20%, transparent); }
+.hnet-ac-empty { padding: 5px 8px; font-size: 12px; color: var(--color-text-muted); }
+
+/* ── Discover-consistent value cells (the `efcell` analogue) ──
+   Every value cell is clickable: cascade ids DRILL (a `›` link), attributes TOGGLE in place
+   (highlighted when active). Hues come from the accent token (no hex). */
+.hnet-efcell { cursor: pointer; border-radius: 4px; padding: 1px 3px; transition: background 0.1s ease; }
+.hnet-efcell:hover { background: color-mix(in srgb, var(--color-accent) 14%, transparent); text-decoration: underline; text-underline-offset: 2px; }
+.hnet-efcell.filtered { background: color-mix(in srgb, var(--color-accent) 24%, transparent); box-shadow: inset 0 0 0 1px var(--color-accent); text-decoration: none; }
+.hnet-efcell.filtered:hover { text-decoration: none; }
+.hnet-efcell.drill { color: var(--color-accent); font-weight: 600; }
+.hnet-efcell.drill::after { content: " ›"; opacity: 0.55; }
+.hnet-efcell.drill:hover { background: color-mix(in srgb, var(--color-accent) 18%, transparent); text-decoration: none; }
+.hnet-efcell:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+
+/* ── compact copyable long id (BinChip / CopyableId) ──
+   The id is too long to fit inline, so the chip shows a SHORT form + a sibling copy control writes
+   the FULL id; the full id rides the `title` hover. The chip is the click-to-FILTER target; the copy
+   button is a sibling (no nested interactive elements). */
+.hnet-copyid { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; vertical-align: middle; }
+.hnet-bin-chip { display: inline-block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; font-size: 11px; padding: 1px 7px; border-radius: 5px; border: 1px solid var(--color-border); background: var(--color-surface-2); color: var(--color-text); font-family: ui-monospace, Menlo, Consolas, monospace; }
+.hnet-bin-chip[role='button'] { cursor: pointer; transition: background 0.1s ease, border-color 0.1s ease; }
+.hnet-bin-chip[role='button']:hover { background: color-mix(in srgb, var(--color-accent) 14%, transparent); border-color: var(--color-accent); }
+.hnet-bin-chip[role='button'].filtered { background: color-mix(in srgb, var(--color-accent) 24%, transparent); border-color: var(--color-accent); box-shadow: inset 0 0 0 1px var(--color-accent); }
+.hnet-bin-chip[role='button']:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+/* The copy control — a small icon button beside the id (NOT nested in the filter chip). */
+.hnet-copybtn { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--color-text-muted); cursor: pointer; transition: background 0.1s ease, color 0.1s ease; }
+.hnet-copybtn:hover { background: color-mix(in srgb, var(--color-accent) 14%, transparent); color: var(--color-accent); }
+.hnet-copybtn:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+.hnet-copybtn.copied { color: var(--color-accent); }
+.hnet-copy-glyph { font-size: 12px; line-height: 1; }
+/* Visually hidden but readable by assistive tech — carries the "Copied" announcement (aria-live). */
+.hnet-vh { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }

@@ -15,5 +15,7 @@ export {
   RefreshRegistryInput,
 } from './schemas';
 export { resolvePlexBundle } from './trpc';
+// ADR-019 / DESIGN-008 — the poster-proxy upstream resolver (used by the app poster route).
+export { resolvePosterUpstream, type PosterUpstream } from './poster';
 export type { MyApp } from './routers/catalog';
 export type { MyServer, MyLibrary } from './routers/plex';

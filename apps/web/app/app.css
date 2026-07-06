@@ -1209,6 +1209,149 @@ input[aria-invalid='true'] {
   margin: var(--space) 0;
 }
 
+/* DESIGN-008 D-11 — the poster-card GRID (replaces the icon list). Mobile-first: 2 columns at
+   ~390px scaling to ~6 on desktop. `.media-grid`/`.poster-card` OVERRIDE the horizontal
+   .media-list/.media-card geometry above (kept for compatibility) with a vertical poster tile. */
+.media-grid {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px;
+}
+@media (max-width: 480px) {
+  .media-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+}
+.poster-card {
+  display: flex;
+  flex-direction: column;
+  grid-template-areas: none;
+  align-items: stretch;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+/* The fixed 2:3 poster box RESERVES its space so a late image load never reflows (ADR-015). */
+.poster-box {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface-2));
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+.poster-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.poster-fallback {
+  display: grid;
+  place-items: center;
+  color: color-mix(in srgb, var(--color-accent) 55%, var(--color-text-muted));
+}
+.poster-fallback-icon {
+  width: 44px;
+  height: 44px;
+}
+.media-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px 12px;
+}
+.poster-card .media-card__title {
+  font-size: 13px;
+  line-height: 1.3;
+}
+.library-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+.library-rating select {
+  font: inherit;
+  font-size: 12px;
+  color: var(--color-text);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  min-height: 44px;
+}
+.library-chipbar,
+.library-sortbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.library-sortbar__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+/* DESIGN-008 D-11 — detail-view poster + metadata (About section). Layout is static so no
+   interaction reorients it (ADR-015). */
+.detail-head__poster {
+  flex: 0 0 auto;
+  width: 84px;
+  aspect-ratio: 2 / 3;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  align-self: flex-start;
+}
+.detail-head__poster .poster-box {
+  border-radius: var(--radius-sm);
+}
+.ratings-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: var(--space);
+}
+.rating-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface-2);
+}
+.rating-pill__src {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+.rating-pill__val {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+.meta-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 10px;
+}
+.meta-chips__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+.chip--keep {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+  color: var(--color-accent);
+}
+
 /* Library tiles are action-free click-through cards (owner ruling 2026-07-04) — the
    whole tile is the navigational target; all Fix / Force Search actions live on the
    item detail page, so no per-tile buttons here. */

@@ -9,7 +9,8 @@
     ".": "./src/index.ts",
     "./icons": "./src/icons/registry.ts",
     "./theme/tokens.css": "./src/theme/tokens.css",
-    "./layout/layout.css": "./src/layout/layout.css"
+    "./layout/layout.css": "./src/layout/layout.css",
+    "./filters/filters.css": "./src/filters/filters.css"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

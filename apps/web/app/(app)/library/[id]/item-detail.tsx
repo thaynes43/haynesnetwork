@@ -16,8 +16,11 @@ import {
   EVENT_TYPE_LABELS,
   FIX_REASON_LABELS,
   FIX_STATUS_LABELS,
+  RESOLUTION_LABELS,
   fixStatusTone,
   formatBytes,
+  formatRating,
+  formatRuntime,
   formatWhen,
   groupBySeason,
   onDiskSummary,
@@ -25,7 +28,7 @@ import {
   type ActionTarget,
   type ArrKindName,
 } from '@/lib/media';
-import { KindIcon } from '@/components/kind-icon';
+import { MediaPoster } from '@/components/media-poster';
 import { FixDialog } from './fix-dialog';
 import { ForceSearchDialog } from './force-search-dialog';
 
@@ -140,8 +143,8 @@ export function ItemDetail({ mediaItemId }: { mediaItemId: string }) {
       </p>
 
       <section className="card detail-head">
-        <span className="media-card__icon detail-head__icon">
-          <KindIcon kind={item.arrKind} />
+        <span className="detail-head__poster">
+          <MediaPoster posterUrl={item.posterUrl} kind={item.arrKind} alt={item.title} />
         </span>
         <div className="detail-head__body">
           <h1 className="detail-head__title">
@@ -184,6 +187,103 @@ export function ItemDetail({ mediaItemId }: { mediaItemId: string }) {
           </div>
         ) : null}
       </section>
+
+      {/* DESIGN-008 D-11 — harvested metadata: ratings row, genres, runtime/resolution,
+          watch stats, requester/collection chips. Layout is static (no reorientation on any
+          interaction, ADR-015). Absent until the metadata-refresh harvest runs. */}
+      {item.metadata ? (
+        <section className="card admin-section">
+          <h2>About</h2>
+          <div className="ratings-row" role="group" aria-label="Ratings">
+            {formatRating(item.metadata.imdbRating) !== null ? (
+              <span className="rating-pill" title="IMDb rating">
+                <span className="rating-pill__src">IMDb</span>
+                <span className="rating-pill__val">{formatRating(item.metadata.imdbRating)}</span>
+              </span>
+            ) : null}
+            {formatRating(item.metadata.tmdbRating) !== null ? (
+              <span className="rating-pill" title="TMDb rating">
+                <span className="rating-pill__src">TMDb</span>
+                <span className="rating-pill__val">{formatRating(item.metadata.tmdbRating)}</span>
+              </span>
+            ) : null}
+            {item.metadata.rtTomatometer !== null ? (
+              <span className="rating-pill" title="Rotten Tomatoes tomatometer">
+                <span className="rating-pill__src">RT</span>
+                <span className="rating-pill__val">{item.metadata.rtTomatometer}%</span>
+              </span>
+            ) : null}
+            {item.metadata.rtPopcorn !== null ? (
+              <span className="rating-pill" title="Rotten Tomatoes audience">
+                <span className="rating-pill__src">RT Audience</span>
+                <span className="rating-pill__val">{item.metadata.rtPopcorn}%</span>
+              </span>
+            ) : null}
+          </div>
+          <dl className="meta-grid">
+            {formatRuntime(item.metadata.runtimeMinutes) !== null ? (
+              <div>
+                <dt>Runtime</dt>
+                <dd>{formatRuntime(item.metadata.runtimeMinutes)}</dd>
+              </div>
+            ) : null}
+            {item.metadata.resolution !== null ? (
+              <div>
+                <dt>Resolution</dt>
+                <dd>{RESOLUTION_LABELS[item.metadata.resolution] ?? item.metadata.resolution}</dd>
+              </div>
+            ) : null}
+            {item.metadata.playCount !== null ? (
+              <div>
+                <dt>Plays</dt>
+                <dd>{item.metadata.playCount}</dd>
+              </div>
+            ) : null}
+            {item.metadata.lastViewedAt !== null ? (
+              <div>
+                <dt>Last watched</dt>
+                <dd>{formatWhen(item.metadata.lastViewedAt)}</dd>
+              </div>
+            ) : null}
+          </dl>
+          {item.metadata.genres.length > 0 ? (
+            <div className="meta-chips">
+              <span className="meta-chips__label">Genres</span>
+              <span className="chips">
+                {item.metadata.genres.map((g) => (
+                  <span key={g} className="chip">
+                    {g}
+                  </span>
+                ))}
+              </span>
+            </div>
+          ) : null}
+          {item.metadata.requesters.length > 0 ? (
+            <div className="meta-chips">
+              <span className="meta-chips__label">Requested by</span>
+              <span className="chips">
+                {item.metadata.requesters.map((r) => (
+                  <span key={r} className="chip chip--keep">
+                    {r}
+                  </span>
+                ))}
+              </span>
+            </div>
+          ) : null}
+          {item.metadata.sourceCollections.length > 0 ? (
+            <div className="meta-chips">
+              <span className="meta-chips__label">Collections</span>
+              <span className="chips">
+                {item.metadata.sourceCollections.map((c) => (
+                  <span key={c} className="chip">
+                    {c}
+                  </span>
+                ))}
+              </span>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       {/* Sonarr: episodes grouped into collapsible SEASON sections. Each season header
           is a touch target that expands the episode list, and carries a season-level
