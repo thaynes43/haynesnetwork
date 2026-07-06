@@ -13,6 +13,7 @@ import {
   ingestLedgerEvents,
   setRoleLibraries,
   upsertMediaItemsBatch,
+  upsertMediaMetadataBatch,
   upsertPlexLibraries,
 } from '@hnet/domain';
 
@@ -89,6 +90,50 @@ async function main(): Promise<void> {
   );
   const mediaItemId = rows[0]?.id;
   if (!mediaItemId) throw new Error('seed-ledger: sonarr row not found after upsert');
+
+  // ADR-018 / DESIGN-008 D-14 — seed media_metadata through the single writer so the poster
+  // route (posterSource='arr' → stub-arr MediaCover) and the metadata blocks are exercisable
+  // hermetically. Ratings/genres/resolution/requesters mirror what the stub *arr would harvest.
+  const { rows: radarrRows } = await getPool().query<{ id: string }>(
+    `SELECT id FROM media_items WHERE arr_kind = 'radarr' AND arr_item_id = 601`,
+  );
+  const radarrItemId = radarrRows[0]?.id;
+  await upsertMediaMetadataBatch({
+    rows: [
+      {
+        mediaItemId,
+        tmdbRating: 8.2,
+        tmdbVotes: 4321,
+        runtimeMinutes: 44,
+        resolution: '1080p',
+        genres: ['Drama', 'Crime'],
+        requesters: ['manofoz'],
+        sourceCollections: ['emmycollection'],
+        posterSource: 'arr',
+        posterRef: '/MediaCover/501/poster.jpg?lastWrite=1',
+        playCount: 3,
+        sources: { arr: true, tautulli: true },
+        extra: { tautulli: { haynestower: { playCount: 3, lastViewedAt: null } } },
+      },
+      ...(radarrItemId
+        ? [
+            {
+              mediaItemId: radarrItemId,
+              imdbRating: 7.7,
+              imdbVotes: 12345,
+              tmdbRating: 7.9,
+              rtTomatometer: 88,
+              runtimeMinutes: 106,
+              resolution: 'sd' as const, // 'Any' profile → 'unknown' normally; pin a value the facet can show
+              genres: ['Comedy', 'Drama'],
+              posterSource: 'arr' as const,
+              posterRef: '/MediaCover/601/poster.jpg?lastWrite=1',
+              sources: { arr: true },
+            },
+          ]
+        : []),
+    ],
+  });
   await ingestLedgerEvents({
     source: 'sonarr',
     events: [
