@@ -15,10 +15,17 @@ import { BrandMark } from '@/components/brand-mark';
 import { authClient } from '@/lib/auth-client';
 import { initialFor } from '@/lib/initials';
 
+/** ADR-021 — the session-carried section levels (SessionRole.sectionPermissions) the nav
+ *  gates on. Typed structurally so this client component needs no server-package import. */
+type SectionLevel = 'edit' | 'read_only' | 'disabled';
+
 export interface TopBarUser {
   displayName: string;
   email: string;
-  role: { isAdmin: boolean };
+  role: {
+    isAdmin: boolean;
+    sectionPermissions?: Partial<Record<'ledger' | 'trash', SectionLevel>>;
+  };
 }
 
 const emptySubscribe = () => () => {};
@@ -179,6 +186,11 @@ function UserMenu({ user }: { user: TopBarUser }) {
 }
 
 export function TopBar({ user }: { user: TopBarUser }) {
+  // DESIGN-009 D-01 / AC-13 — the Ledger entry renders only when the caller's section level
+  // is at least Read-Only. The no-row default IS read_only (ADR-021 C-01), so a missing map
+  // falls open to the documented default; a Disabled role never sees the entry (the /ledger
+  // route is additionally server-gated — hiding here is courtesy, not the enforcement).
+  const showLedger = (user.role.sectionPermissions?.ledger ?? 'read_only') !== 'disabled';
   return (
     <header className="topbar">
       <div className="brand">
@@ -195,6 +207,8 @@ export function TopBar({ user }: { user: TopBarUser }) {
       <nav className="topbar__nav" aria-label="Primary">
         <Link href="/">Home</Link>
         <Link href="/library">Library</Link>
+        {/* PLAN-005 (DESIGN-009 D-01): the Ledger section, level-gated (see showLedger). */}
+        {showLedger ? <Link href="/ledger">Ledger</Link> : null}
         {/* Phase 3 (R-25..R-28): self-service Plex library access on the user's own account. */}
         <Link href="/library/plex">My Plex</Link>
       </nav>

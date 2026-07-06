@@ -23,6 +23,9 @@ const APP_CODE_COPY: Record<string, string> = {
   PLEX_ACCOUNT_UNMATCHED:
     'Your account isn’t a Plex friend of this server yet — ask an admin to add you on Plex first.',
   PLEX_SERVER_UNAVAILABLE: 'Plex didn’t respond. Nothing changed — try again in a bit.',
+  // ADR-022 D-02 / DESIGN-009 — the Ledger bulk Add-&-search cap (indexer safety).
+  ARR_ADD_SEARCH_CAP_EXCEEDED:
+    'Monitor & search is capped at 1000 items per run — narrow the filter set and run in batches.',
 };
 
 /** The machine-readable appCode riding on a TRPCClientError, if any. */

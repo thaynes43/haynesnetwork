@@ -79,6 +79,7 @@ async function prewarmRoutes(baseUrl: string): Promise<void> {
     '/library',
     `/library/${placeholderId}`,
     '/library/plex',
+    '/ledger',
     '/my-fixes',
     '/admin',
     '/admin/catalog',

@@ -98,6 +98,22 @@ export class RestoreProfileUnmappedError extends Error {
 }
 
 /**
+ * ADR-022 D-02: a Ledger bulk Add-&-search (`executeArrAdd`, reason 'ledger_add', searches ON)
+ * was asked to act on more than ARR_ADD_SEARCH_CAP items. The *arrs queue search commands
+ * internally, but indexers rate-limit, so a single run is capped; the UI guides the user to
+ * batch (e.g. by vote tier). Thrown BEFORE any *arr write, so nothing partial happens.
+ */
+export class SearchCapExceededError extends Error {
+  readonly code = 'ARR_ADD_SEARCH_CAP_EXCEEDED' as const;
+  constructor(
+    message: string,
+    readonly detail: { requested: number; cap: number },
+  ) {
+    super(message);
+  }
+}
+
+/**
  * D-14 mass-tombstone guard: the tombstone pass would exceed
  * SYNC_TOMBSTONE_GUARD_PCT of the instance's live rows (and the 10-row minimum) —
  * a wiped/fresh *arr looks exactly like a mass deletion, and blindly tombstoning

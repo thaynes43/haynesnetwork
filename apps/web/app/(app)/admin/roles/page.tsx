@@ -85,8 +85,21 @@ export default function AdminRolesPage() {
     onSuccess: () => setError(null),
     onSettled: invalidate,
   });
+  // ADR-021 / DESIGN-009 D-08 — a role's per-section access level (Ledger only for now;
+  // Trash is reserved for PLAN-006 and stays hidden). Applies on change, like the user-detail
+  // role select; the Admin role is implicit Edit and immutable (server-enforced ROLE_IMMUTABLE).
+  const setSection = trpc.roles.setSectionPermission.useMutation({
+    onError: (err: unknown) => setError(describeMutationError(err)),
+    onSuccess: () => setError(null),
+    onSettled: invalidate,
+  });
   const busy =
-    create.isPending || update.isPending || del.isPending || setLibs.isPending || refresh.isPending;
+    create.isPending ||
+    update.isPending ||
+    del.isPending ||
+    setLibs.isPending ||
+    refresh.isPending ||
+    setSection.isPending;
 
   const roleRows = roles.data ?? [];
   const entries = catalog.data ?? [];
@@ -142,7 +155,8 @@ export default function AdminRolesPage() {
         grantsAll: editForm.grantsAll,
       });
       // Only touch library grants when the matrix has loaded (else we'd wipe the current set).
-      if (libs.data) await setLibs.mutateAsync({ roleId: role.id, libraryIds: editForm.libraryIds });
+      if (libs.data)
+        await setLibs.mutateAsync({ roleId: role.id, libraryIds: editForm.libraryIds });
     } catch {
       /* onError handlers set the banners */
     }
@@ -170,10 +184,7 @@ export default function AdminRolesPage() {
     );
   }
 
-  const appChecklist = (
-    form: RoleForm,
-    apply: (next: (f: RoleForm) => RoleForm) => void,
-  ) => (
+  const appChecklist = (form: RoleForm, apply: (next: (f: RoleForm) => RoleForm) => void) => (
     <fieldset className="field">
       <legend>Apps this role grants</legend>
       <label className="check-row">
@@ -301,6 +312,7 @@ export default function AdminRolesPage() {
             <th>Role</th>
             <th>Apps</th>
             <th>Members</th>
+            <th>Ledger</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -309,11 +321,14 @@ export default function AdminRolesPage() {
             if (editingId === role.id) {
               return (
                 <tr key={role.id} className="row-edit">
-                  <td colSpan={4}>
+                  <td colSpan={5}>
                     <form className="admin-form" onSubmit={(e) => submitEdit(role, e)}>
                       <label className="field">
                         <span>
-                          Name <span className="req" aria-hidden="true">*</span>
+                          Name{' '}
+                          <span className="req" aria-hidden="true">
+                            *
+                          </span>
                         </span>
                         <input
                           required
@@ -388,6 +403,33 @@ export default function AdminRolesPage() {
                   )}
                 </td>
                 <td data-label="Members">{role.memberCount}</td>
+                {/* ADR-021 — the Sections editor (Ledger level; Trash reserved for PLAN-006).
+                    Admin shows its implicit Edit, uneditable (C-03). */}
+                <td data-label="Ledger">
+                  {role.isAdmin ? (
+                    <span className="muted" title="The Admin role implies Edit on every section">
+                      Edit
+                    </span>
+                  ) : (
+                    <select
+                      className="section-select"
+                      aria-label={`Ledger access for ${role.name}`}
+                      value={role.sectionPermissions.ledger}
+                      disabled={busy || editingElsewhere}
+                      onChange={(e) =>
+                        setSection.mutate({
+                          roleId: role.id,
+                          sectionId: 'ledger',
+                          level: e.target.value as 'edit' | 'read_only' | 'disabled',
+                        })
+                      }
+                    >
+                      <option value="edit">Edit</option>
+                      <option value="read_only">Read-only</option>
+                      <option value="disabled">Disabled</option>
+                    </select>
+                  )}
+                </td>
                 <td data-label="Actions">
                   {role.isAdmin ? (
                     <span className="muted">locked</span>
@@ -436,7 +478,10 @@ export default function AdminRolesPage() {
         <form className="admin-form catalog-modal-form" onSubmit={submitAdd}>
           <label className="field">
             <span>
-              Name <span className="req" aria-hidden="true">*</span>
+              Name{' '}
+              <span className="req" aria-hidden="true">
+                *
+              </span>
             </span>
             <input
               required
@@ -457,7 +502,11 @@ export default function AdminRolesPage() {
           {appChecklist(addForm, setAddForm)}
           {libraryChecklist(addForm, setAddForm)}
           <div className="form-actions">
-            <button type="submit" className="btn primary" disabled={create.isPending || setLibs.isPending}>
+            <button
+              type="submit"
+              className="btn primary"
+              disabled={create.isPending || setLibs.isPending}
+            >
               Create role
             </button>
             <button

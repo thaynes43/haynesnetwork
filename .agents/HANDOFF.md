@@ -47,6 +47,22 @@
 
 ## Current state
 
+- **PLAN-005 Ledger section — backend + UX BUILT on `feat/ledger-section` (2026-07-06,
+  Fable 5 backend run + Fable UX agent).** Backend: ADR-021 section permissions
+  (`role_section_permissions`, session-carried levels, `sectionProcedure`), ADR-022
+  `executeArrAdd` (add / monitor-flip / skip + best-effort search, 1000 cap), `ledgerAdmin`
+  browse/bulkAddAndSearch/run/runs, streaming JSONL `/api/ledger/export`. UX: the `/ledger`
+  top-level section (topbar entry gated on the session's ledger level; Disabled gets a clean
+  "not available" page), Movies/TV/Music tabs over a frozen-pane spreadsheet
+  (sticky header + Title column, internal both-axis scroll), the /library chip engine plus
+  `?mon`/`?file` single-select chips, sortable Title/Rating/Added headers, persistent actions
+  bar ("N selected" · Export filtered (M rows) — exports the FILTER — · Monitor & search),
+  the ADR-014 Modal confirm → per-item run report keyed off ok/outcome/searched (D-05),
+  Recent runs, and the `/admin/roles` Ledger access select (Admin implicit Edit). E2e:
+  `e2e/ledger.spec.ts` (browse/chips/sort/export/bulk-run-vs-stub/read-only/disabled/roles
+  editor/mobile); seed adds tombstoned 'Vanished Heist'; stub *arr adds the
+  present-but-unmonitored live movie + full rootfolder list. As-built record: DESIGN-009
+  D-01/D-08. Remaining: PR, deploy, LIVE journeys 1–4 (plan stays in `.agents/plans/`).
 - **Unified Role model (ADR-012) SHIPPED — code complete, all tests pass, docs updated.**
   One role per user (`users.role_id`), roles-only (no per-user grants/tags/family flag);
   two seeded system roles — **Admin** (superuser, implicit all-apps, immutable) and

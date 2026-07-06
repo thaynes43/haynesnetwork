@@ -231,6 +231,13 @@ export function formatRuntime(minutes: number | null): string | null {
   return h > 0 ? `${h}h${m > 0 ? ` ${m}m` : ''}` : `${m}m`;
 }
 
+/** Day-precision local date for dense table cells (ISO in, "Jul 6, 2026" out); bad ISO → as-is. */
+export function formatDay(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
 /** Compact local timestamp for timelines/tables (ISO in, locale out, minute precision). */
 export function formatWhen(iso: string): string {
   const date = new Date(iso);

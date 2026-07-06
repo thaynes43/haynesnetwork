@@ -85,6 +85,20 @@
       "when": 1782950411000,
       "tag": "0012_media_metadata",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1782950412000,
+      "tag": "0013_role_section_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1782950413000,
+      "tag": "0014_arr_add_reason",
+      "breakpoints": true
     }
   ]
 }

@@ -145,6 +145,23 @@ rebuilding a lost *arr instance.
 | R-51 | Admin can re-add missing items to the matching *arr (monitored, with recorded quality profile/root folder/tags) to recover a lost DB or bootstrap a fresh server. | Must |
 | R-52 | Restore is explicitly admin-initiated, previewed before execution, and audit-logged. Sync direction is otherwise strictly *arr → app. | Must |
 
+### Ledger section (Phase 5)
+
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| R-74 | A top-level **Ledger** section with Movie/TV/Music sub-tabs, spreadsheet-style over the high-powered filters (R-67..R-72 / DESIGN-008), listing **every** ledger row (live + tombstoned) with all harvested metadata. | Must |
+| R-75 | From a filtered Ledger set, an authorized user can **bulk Add & search** the items in the matching *arr — absent items added monitored (recorded quality profile / root folder / tags), **present-but-unmonitored items set monitored**, then a search command triggered. _Generalizes R-50..R-52: Restore is the admin-only, diff-driven, searches-off special case of this action (ADR-022)._ | Must |
+| R-76 | The filtered Ledger set is **exportable to disk** as an emergency Radarr/Sonarr/Lidarr import list (deterministic JSONL) for catastrophic-failure recovery. | Must |
+| R-77 | The prior "import the radarr fileless backlog as tombstoned rows" (draft R-56) is **reframed**: those titles already exist as live *arr rows, so the backlog is met by the Ledger filters (unmonitored + no-file + vote tiers) plus R-75's bulk action — **no import** (ADR-022 C-04). The *filterable state* (on-disk none + unmonitored) is the **Fileless Set** (T-66). | Must |
+| R-78 | **Section-level role access**: each role has an access level per top-level section — **Edit** (full), **Read-Only** (browse/export, no mutations), **Disabled** (section hidden). Applies to Ledger now; Trash reuses it (PLAN-006). Server-enforced, not client-hidden only. | Must |
+
+> **Note (2026-07-06) — R-56 reframe (Fable 5).** Draft **R-56** proposed importing a 4,008-row
+> "radarr fileless backlog" snapshot into the ledger as tombstoned rows. A live probe found all
+> 4,008 ids already exist as live Radarr `media_items` rows (3,910 unmonitored, 3,971 no-file),
+> with `imdb_votes` present for ~99%. The import is therefore **dropped**; its need is fully met
+> by **R-74** (browse/filters), **R-75** (bulk Add-&-search), and **R-77** (the Fileless-Set
+> filter state). See **ADR-022 C-04** for the evidence.
+
 ### Platform & non-functional
 
 | ID | Requirement | Priority |
@@ -170,6 +187,7 @@ rebuilding a lost *arr instance.
 | US-06 | As a Member, a movie won't play; I find it in the app, hit Fix, pick "won't play / corrupt", and the *arr blocklists that release and searches for another. | AC-07, AC-08 |
 | US-07 | As an Admin, Radarr's DB is lost; I diff the ledger against the fresh instance and re-add everything monitored with correct profiles. | AC-09 |
 | US-08 | As a user on my phone, the dashboard and fix flow are fully usable without horizontal scrolling. | AC-10 |
+| US-09 | As a household admin, last week's disk sweep removed 200 movies (and thousands sit unmonitored with nothing on disk); I open Ledger → Movies, filter to `removed` / `unmonitored + no file` (by vote tier), select a batch, **Add & search in Radarr**, and also **Export** the list as a backup. | AC-11, AC-12, AC-13 |
 
 ## Acceptance criteria
 
@@ -185,6 +203,9 @@ rebuilding a lost *arr instance.
 | AC-08 | Fix without grab history deletes the file(s) and triggers search; outcome recorded. |
 | AC-09 | Restore preview lists exactly the ledger items absent from the target *arr; execution re-adds them monitored with stored quality profile, root folder, and tags; report shows successes/failures. |
 | AC-10 | Playwright resize matrix passes at 375×667, 390×844, 412×915, 768×1024, 820×1180, 1280×800, 1920×1080, 2560×1440: no page-level scrollbars, no off-screen controls, panes scroll internally. |
+| AC-11 | A bulk Add-&-search over N filtered Ledger items adds exactly those absent from the live *arr (monitored, stored profile/root/tags), sets monitored on those present-but-unmonitored, skips those already present + monitored, triggers a search per acted item, and reports per-item added/monitored/skipped/failed. A searched run over 1000 items is refused before any *arr write. |
+| AC-12 | Ledger export produces a deterministic JSONL file listing exactly the filtered set with the external ids needed to re-import into the target *arr. |
+| AC-13 | A role set to **Disabled** for Ledger never sees the nav entry or route; **Read-Only** sees browse + export but no Add-&-search control, and the mutation is server-refused (FORBIDDEN) even if called directly. |
 
 ## Phasing
 
