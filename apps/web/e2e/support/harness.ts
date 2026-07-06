@@ -17,6 +17,7 @@ import { startStubOidc, type StubOidcServer } from './stub-oidc';
 import { startStubArr, type StubArrServer } from './stub-arr';
 import { startStubBazarr, type StubBazarrServer } from './stub-bazarr';
 import { startStubPlex, type StubPlexServer } from './stub-plex';
+import { startStubMaintainerr, type StubMaintainerrServer } from './stub-maintainerr';
 import { composeRuntimeEnv, DEFAULT_APP_PORT, type RuntimeEnv } from './env';
 
 const DEV_READY_TIMEOUT_MS = 180_000;
@@ -44,10 +45,12 @@ export interface RunningStack {
   bazarr: StubBazarrServer;
   /** Stub Plex stand-in — library self-service e2e layer (ADR-017 / DESIGN-007). */
   plex: StubPlexServer;
+  /** Stub Maintainerr stand-in — Trash section e2e layer (ADR-023 / DESIGN-010). */
+  maintainerr: StubMaintainerrServer;
   devServer: ChildProcess;
   /** The DESIGN-002 D-08 env the dev server was booted with. */
   env: RuntimeEnv;
-  /** Idempotent, reverse-order teardown: dev server → stub Plex → stub Bazarr → stub *arr → stub OIDC → Postgres. */
+  /** Idempotent, reverse-order teardown: dev server → stub Maintainerr → stub Plex → stub Bazarr → stub *arr → stub OIDC → Postgres. */
   stop: () => Promise<void>;
 }
 
@@ -80,6 +83,7 @@ async function prewarmRoutes(baseUrl: string): Promise<void> {
     `/library/${placeholderId}`,
     '/library/plex',
     '/ledger',
+    '/trash',
     '/my-fixes',
     '/admin',
     '/admin/catalog',
@@ -135,6 +139,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
   let arr: StubArrServer | undefined;
   let bazarr: StubBazarrServer | undefined;
   let plex: StubPlexServer | undefined;
+  let maintainerr: StubMaintainerrServer | undefined;
   let dev: ChildProcess | undefined;
   try {
     const migrate = spawnSync('pnpm', ['--filter', '@hnet/db', 'migrate'], {
@@ -164,6 +169,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     arr = await startStubArr();
     bazarr = await startStubBazarr();
     plex = await startStubPlex();
+    maintainerr = await startStubMaintainerr();
     const env = composeRuntimeEnv({
       databaseUrl: pg.connectionString,
       stubOidcBaseUrl: oidc.baseUrl,
@@ -171,6 +177,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       stubArrBaseUrl: arr.baseUrl,
       stubBazarrBaseUrl: bazarr.baseUrl,
       stubPlexBaseUrl: plex.baseUrl,
+      stubMaintainerrBaseUrl: maintainerr.baseUrl,
       appUrl,
     });
 
@@ -196,6 +203,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     const runningArr = arr;
     const runningBazarr = bazarr;
     const runningPlex = plex;
+    const runningMaintainerr = maintainerr;
     let stopped = false;
     return {
       appUrl,
@@ -204,12 +212,14 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       arr: runningArr,
       bazarr: runningBazarr,
       plex: runningPlex,
+      maintainerr: runningMaintainerr,
       devServer: running,
       env,
       stop: async () => {
         if (stopped) return;
         stopped = true;
         await killDevServer(running);
+        await runningMaintainerr.stop().catch(() => undefined);
         await runningPlex.stop().catch(() => undefined);
         await runningBazarr.stop().catch(() => undefined);
         await runningArr.stop().catch(() => undefined);
@@ -220,6 +230,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
   } catch (err) {
     // Partial-boot cleanup, best effort in reverse order.
     if (dev) await killDevServer(dev).catch(() => undefined);
+    if (maintainerr) await maintainerr.stop().catch(() => undefined);
     if (plex) await plex.stop().catch(() => undefined);
     if (bazarr) await bazarr.stop().catch(() => undefined);
     if (arr) await arr.stop().catch(() => undefined);

@@ -61,7 +61,7 @@ DDD-002 **BC-03 `Q-04`** ("Maintainerr is a follow-on") and records the binding 
   (replace-set + a same-tx `permission_audit` `update_trash_actions` row; Admin immutable →
   `ROLE_IMMUTABLE`). Sessions carry `SessionRole.trashActions`; the API gate is
   `trashActionProcedure(action[, minLevel])` composed on `sectionProcedure('trash','read_only')`
-  (rule editing passes `minLevel:'edit'`). Migration **0015** adds the table + rebuilds the
+  (rule editing passes `minLevel:'edit'`). Migration **0016** adds the table + rebuilds the
   `permission_audit.action` CHECK for `update_trash_actions`.
 
 - **C-04 — The safety gate.** `auditMaintainerr` returns `{ safe, reachable, version, integrations,

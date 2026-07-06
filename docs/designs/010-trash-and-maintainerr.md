@@ -10,7 +10,7 @@
 
 > **Split note (2026-07-06, Fable 5).** The **backend vertical** — the `@hnet/arr` Maintainerr
 > read/write client extension, the enums + `role_trash_action_grants` + `notifications` schema +
-> migration 0015, the domain single-writers + orchestrators (`auditMaintainerr`, `listTrashPending`,
+> migration 0016, the domain single-writers + orchestrators (`auditMaintainerr`, `listTrashPending`,
 > `saveExclusion`/`removeExclusion`, `expediteDeletion`, `guardRecentlyWatched`, `restoreDeleted`,
 > `upsert/deleteTrashRule`, `recordNotification`), the session/gating extensions
 > (`SessionRole.trashActions`, `trashActionProcedure`), the `trash` tRPC router + `roles.setTrashActions`,

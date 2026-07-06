@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { ADMIN_EMAIL, STUB_CLIENT_ID, STUB_CLIENT_SECRET } from './stub-oidc';
 import { STUB_BAZARR_API_KEY } from './stub-bazarr';
 import { STUB_PLEX_TOKENS } from './stub-plex';
+import { STUB_MAINTAINERR_API_KEY } from './stub-maintainerr';
 
 /** Default app port — off 3000 so the stack coexists with a running `pnpm dev`.
  *  playwright.config.ts's baseURL derives from this. */
@@ -59,7 +60,16 @@ export interface RuntimeEnv {
   PLEX_HAYNESOPS_TOKEN: string;
   PLEX_HAYNESKUBE_TOKEN: string;
   PLEX_TV_URL: string;
+  /** ADR-023 / DESIGN-010 — stub Maintainerr origin (specs GET its /_stub/calls) + the Trash
+   *  contract (URL/key + the webhook shared secret). */
+  STUB_MAINTAINERR_URL: string;
+  MAINTAINERR_URL: string;
+  MAINTAINERR_API_KEY: string;
+  MAINTAINERR_WEBHOOK_SECRET: string;
 }
+
+/** The shared secret the e2e Maintainerr webhook receiver requires. */
+export const STUB_MAINTAINERR_WEBHOOK_SECRET = 'e2e-maintainerr-webhook-secret';
 
 /** The throwaway key every stubbed *arr accepts (never a real credential). */
 export const STUB_ARR_API_KEY = 'stub-arr-key';
@@ -77,6 +87,7 @@ export function composeRuntimeEnv(opts: {
   stubArrBaseUrl: string;
   stubBazarrBaseUrl: string;
   stubPlexBaseUrl: string;
+  stubMaintainerrBaseUrl: string;
   appUrl: string;
 }): RuntimeEnv {
   return {
@@ -110,6 +121,10 @@ export function composeRuntimeEnv(opts: {
     PLEX_HAYNESOPS_TOKEN: STUB_PLEX_TOKENS.haynesops,
     PLEX_HAYNESKUBE_TOKEN: STUB_PLEX_TOKENS.hayneskube,
     PLEX_TV_URL: opts.stubPlexBaseUrl,
+    STUB_MAINTAINERR_URL: opts.stubMaintainerrBaseUrl,
+    MAINTAINERR_URL: opts.stubMaintainerrBaseUrl,
+    MAINTAINERR_API_KEY: STUB_MAINTAINERR_API_KEY,
+    MAINTAINERR_WEBHOOK_SECRET: STUB_MAINTAINERR_WEBHOOK_SECRET,
   };
 }
 

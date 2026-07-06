@@ -41,7 +41,7 @@ export const LEDGER_EVENT_TYPES = [
   'fix_failed', // Fix lifecycle (D-09)
   'restored', // Restore write-back (D-16)
   'search_requested', // Force Search — search-only action for missing content (D-17; migration 0004)
-  // ADR-023 / DESIGN-010 — Trash (Maintainerr) attribution markers (migration 0015). Each is an
+  // ADR-023 / DESIGN-010 — Trash (Maintainerr) attribution markers (migration 0016). Each is an
   // app-initiated Trash action, source 'maintainerr': trash_excluded (Save/whitelist an item to
   // Maintainerr's exclusion list), trash_expedited (an item's deletion was hastened via the
   // collection handler), trash_restored (a recently-deleted item was re-added via executeRestore).
@@ -52,7 +52,7 @@ export const LEDGER_EVENT_TYPES = [
 export type LedgerEventType = (typeof LEDGER_EVENT_TYPES)[number];
 
 // ADR-023 / DESIGN-010 — 'maintainerr' joins the source set: Trash's exclusion/expedite/restore
-// markers are attributed to Maintainerr (the deletion system of record). migration 0015.
+// markers are attributed to Maintainerr (the deletion system of record). migration 0016.
 export const LEDGER_EVENT_SOURCES = [
   'sonarr',
   'radarr',
