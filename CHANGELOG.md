@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/thaynes43/haynesnetwork/compare/v0.6.0...v0.6.1) (2026-07-06)
+
+
+### Bug Fixes
+
+* plex registry refresh — haynestower reachability + per-server degradation ([#51](https://github.com/thaynes43/haynesnetwork/issues/51)) ([592d767](https://github.com/thaynes43/haynesnetwork/commit/592d767007e8803810a9c91508fd9a7f3c975653))
+
 ## [0.6.0](https://github.com/thaynes43/haynesnetwork/compare/v0.5.0...v0.6.0) (2026-07-06)
 
 
