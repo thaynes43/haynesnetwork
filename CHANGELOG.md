@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.0](https://github.com/thaynes43/haynesnetwork/compare/v0.8.1...v0.9.0) (2026-07-06)
+
+
+### Features
+
+* Ledger section — section permissions, monitor-and-search, export (ADR-021/022) ([#62](https://github.com/thaynes43/haynesnetwork/issues/62)) ([3064a1f](https://github.com/thaynes43/haynesnetwork/commit/3064a1f5bbfbce99bffda51ae28133b800584037))
+
+
+### Documentation
+
+* complete plan 004 (library metadata + posters + filter engine) — v0.8.0/v0.8.1 live-validated ([#60](https://github.com/thaynes43/haynesnetwork/issues/60)) ([59fdb9d](https://github.com/thaynes43/haynesnetwork/commit/59fdb9df71840d3e4da078f92d2c72213d463543))
+
 ## [0.8.1](https://github.com/thaynes43/haynesnetwork/compare/v0.8.0...v0.8.1) (2026-07-06)
 
 
