@@ -483,3 +483,33 @@ auto-whitelist so Maintainerr itself never deletes it).
 
 **Add to Definition of Done:** a LIVE check that an item watched on HaynesTower *only* is excluded
 from deletion on the HaynesOps-paired Maintainerr.
+
+---
+
+## Addendum (2026-07-05, owner) — exclusion tag → *arr tag → our ledger
+
+Enable Maintainerr's **"Tag excluded content"**: whenever Maintainerr excludes/whitelists an item
+it stamps a protective tag (canonical label TBD — `dnd` or `do-not-delete`) on the matching
+**Radarr movie / Sonarr series** (NOT Lidarr — no music deletion). Our *arr sync ALREADY ingests
+*arr tags into `media_items.arrTags`, so "protected" is readable straight from the ledger — no
+extra Maintainerr call. Fable: enable it via the Maintainerr API on Radarr + Sonarr with **"Remove
+tag on un-exclude" = ON** (so the tag mirrors live state — safe because the label is
+Maintainerr-managed, not hand-applied); treat the tag on `arrTags` as a first-class "protected"
+signal in Library + the Trash pending tables; make **perma-save (shield) ⇄ Maintainerr exclusion**
+bidirectional; standardize ONE canonical label across Maintainerr + our copy (add it to the glossary).
+
+## Addendum (2026-07-05, owner) — Maintainerr notifications → in-app "Activity" feed (no phone spam)
+
+Make THIS app the notification hub instead of Pushover-to-phone. Configure a Maintainerr **Webhook**
+notification agent → a new secured endpoint on the app (`POST /api/webhooks/maintainerr`), gated by a
+shared secret (`MAINTAINERR_WEBHOOK_SECRET`, 1Password → ExternalSecret; session-unauthenticated but
+secret-required). **Target the in-cluster service** (`http://haynesnetwork.frontend.svc.cluster.local`),
+NOT the public URL — both are in-cluster, so no public exposure and it works before the R-64 cutover.
+Persist events (`ledger_events` `source:'maintainerr'`, or a `trash_notifications` table) and surface a
+**"Activity" sub-tab under Trash**: a filterable deletion-lifecycle feed (flagged / leaving-soon /
+excluded / deleted), role-gated read. **Notification router:** the in-app feed is the default sink;
+let the owner opt specific event types (e.g. "items deleted", "large batch pending") to forward to
+**Pushover** (existing creds, configured in our app) so only high-signal events reach the phone. Fable
+configures the Maintainerr webhook agent via API once the endpoint ships (endpoint first, then wire the
+agent). Open decisions: webhook payload → our event model; default Pushover-forward types; Trash-only
+feed vs a general notification center later.
