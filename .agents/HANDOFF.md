@@ -8,7 +8,11 @@
   `.agents/plans/completed/001-gate-a-pr-cutover.md`).
   `main` is branch-protected: branch → PR → required checks `lint-and-typecheck`, `test`,
   `build` green → squash-merge. `e2e` advisory. Conventional-commit titles drive release-please.
-- **Latest release: v0.9.0 (signed) — PLAN-005 Ledger section: section-level role permissions
+- **Latest release: v0.10.0 (signed) — ADR-024 role-scoped all-libraries Plex self-service:
+  a role can grant all-libraries-on-a-server; users self-toggle All ↔ specific (leaving All is
+  lossless, seeded with the current full set); no silent demotion (per-library ops throw
+  PLEX_ALL_STATE in the All state); Migration 0015.** Prior: **v0.9.0 (signed) — PLAN-005 Ledger
+  section: section-level role permissions
   (Edit/Read-Only/Disabled), bulk monitor-and-search, and emergency JSONL export (ADR-021/022);
   live-validated on staging.** Prior: **v0.8.1 (signed) — PLAN-004 library metadata + posters +
   filter engine (v0.8.0 feature + v0.8.1 resolution/rating fix; every release signed since
@@ -23,7 +27,8 @@
 - **The autonomous Fable 5 run (Mon 2026-07-06) is IN PROGRESS.** Entry prompt
   `.agents/KICKOFF.md`; queue in `.agents/plans/` (see `.agents/plans/README.md`). **Plans done
   so far today:** 002 ✓ (v0.5.0); 003 ✓ (v0.6.0 + fix v0.6.1); 004 ✓ (v0.8.0/v0.8.1); 005 ✓
-  (v0.9.0); 007 ✓ (v0.7.0); 006 backend in flight.
+  (v0.9.0); 007 ✓ (v0.7.0); ADR-024 ✓ (v0.10.0, follow-on to 003); 006 backend rebased &
+  reverifying (pending merge).
   **Queue extended per owner:** 011 (Authentik MFA-for-native-accounts + `hnet` rebrand of the
   login portal) → then 009/010 → then 008 (public cutover — LAST).
   v0.4.0 recap: unified roles (ADR-012), arbitrary catalog URLs (ADR-013), two-step
@@ -50,6 +55,14 @@
 
 ## Current state
 
+- **ADR-024 all-libraries Plex self-service SHIPPED (v0.10.0)** — a role can grant
+  all-libraries-on-a-server; users self-toggle All ↔ specific (leaving All is lossless, seeded
+  with the current full set); no silent demotion (per-library ops throw `PLEX_ALL_STATE` in the
+  All state). Migration 0015. **Open live-validation:** the ENTER-All plex.tv API key
+  (`all_libraries:true`) is inferred, not verified — needs a supervised real-write test with a
+  revert path (leave-All is verified; the KAH517 demote cycle proved the explicit-list PUT).
+  KAH517 is currently in the post-003-test demoted explicit 3-lib state and would be restored to
+  All by that validation.
 - **PLAN-005 (Ledger section) COMPLETE — shipped v0.9.0, live-validated**
   (`.agents/plans/completed/005-ledger-section.md`). ADR-021 section-level role permissions
   (`role_section_permissions`, session-carried levels, `sectionProcedure`) — the **base
@@ -77,8 +90,8 @@
   read-merge-write preserving every other shared library, `plex_share_audit` trail written in the
   same transaction, ConfirmButton two-step against production. The invite / friend-account
   *creation* flow stays **out of scope**. **Follow-on:** the owner-directed (2026-07-06)
-  role-scoped all-libraries self-service model ships **separately as ADR-024** — in flight as its
-  own release (006 Trash backend also in flight).
+  role-scoped all-libraries self-service model shipped **separately as ADR-024 (v0.10.0)** — see
+  the ADR-024 bullet at the top of Current state (open enter-All live-validation).
 - **Unified Role model (ADR-012) SHIPPED — code complete, all tests pass, docs updated.**
   One role per user (`users.role_id`), roles-only (no per-user grants/tags/family flag);
   two seeded system roles — **Admin** (superuser, implicit all-apps, immutable) and
@@ -116,14 +129,16 @@ The **Fable 5 autonomous run** works the release queue in `.agents/plans/` (star
 2. ~~**003 — Plex library self-service (BC-04, Phase 3)**~~ ✅ **DONE** (v0.6.0 + fix v0.6.1,
    `completed/003-plex-library-self-service.md`; ADR-017 Plex sharing + role-library-grant model,
    family = a role grant; the real plex.tv share cycle live-validated against production, Q-06
-   resolved). **Follow-on:** ADR-024 role-scoped all-libraries self-service ships separately.
+   resolved). **Follow-on:** ADR-024 role-scoped all-libraries self-service ✅ **SHIPPED** (v0.10.0;
+   open enter-All live-validation — see Current state).
 3. ~~**004 — Library metadata enrichment + posters + shared filter engine**~~ ✅ **DONE**
    (v0.8.0/v0.8.1, `completed/004-library-metadata-enrichment.md`; filter engine + D-09 search
    contract now in `@hnet/ui`, reused by 005/006).
 4. ~~**005 — Ledger section**~~ ✅ **DONE** (v0.9.0, `completed/005-ledger-section.md`; native
    restore via filter→*arr + JSONL export; fileless import dropped per ADR-022 C-04).
 5. **006 — Trash section** (integrates the Maintainerr instance; replaces the Restore nav) —
-   **backend in flight; next up.** Reuses the ADR-021 Section-Permission base 005 shipped.
+   **backend rebased & reverifying; pending merge.** Reuses the ADR-021 Section-Permission base
+   005 shipped.
 6. **011 — Authentik hardening / branding** (NEW, owner-scoped 2026-07-06): MFA for native Authentik accounts + `hnet` rebrand of the login portal — doc to be authored at slot time.
 7. ~~**007 — cosign signing**~~ ✅ **DONE** (v0.7.0, `completed/007-cosign-image-signing.md`).
    Owner-extended queue after 006: **011 → 009/010 → 008 (public cutover — LAST)**.
