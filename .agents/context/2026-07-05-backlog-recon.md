@@ -44,7 +44,7 @@ deny-list-of-exceptions for the allowed set (DESIGN-001:674).
 | # | Item | Size | Source |
 |---|------|------|--------|
 | O-1 | **Root-domain cutover** to public `haynesnetwork.com` + `www` — coupled two-file swap in haynes-ops (ingressroute + externalsecret `BETTER_AUTH_URL`). Gated on Phase-1 e2e green + public DNS/Cloudflare tunnel + cert Ready + Authentik redirect-URI. | M | PRD R-64; OPS-005 |
-| O-2 | **Overseerr/Seerr k8s migration + catalog tile URL flip** — `overseerr.haynesnetwork.com` still points at the legacy Unraid box; in-cluster Seerr is LAN-only. Tile flip is a one-field admin edit. Owner-driven, external. | M | PRD Q-02; HANDOFF:66-67 |
+| O-2 | **Catalog tile URL flip for overseerr.haynesnetwork.com** — the *arr/Seerr stack has migrated in-cluster (reachable at `*.media.svc.cluster.local`); only the user-facing catalog tile still points at the legacy Unraid URL — a one-field admin edit. Owner-driven. | S | PRD Q-02 |
 | O-3 | **Cosign image signing** before Kyverno enforcement expands (policy is AUDIT-mode today). | M | HANDOFF:71-72 |
 | O-4 | **Promote Playwright e2e from advisory → required CI check** once hardening closes. | S | ADR-009; ADR-010 |
 | O-5 | **Rate-limit storage in-memory → database** if the app ever scales past one replica. | M | DESIGN-002 D-14 |

@@ -76,10 +76,13 @@ The app deploys via the **sibling Flux GitOps repo** `../../haynes-ops` (cluster
 `haynes-ops`). There is **no image automation** — deploying is a **manual image-tag bump**:
 
 1. Merge your feature PR → release-please opens a `chore(main): release X.Y.Z` PR → merge it →
-   tag `vX.Y.Z` + image `ghcr.io/thaynes43/haynesnetwork:vX.Y.Z`. **Caveat:** with only
-   `GITHUB_TOKEN` (no PAT), the tag may land without building the image — confirm the image
-   exists (`gh api .../packages/container/haynesnetwork/versions`); if missing, delete+re-push
-   the tag to fire the tag-push build. See `docs/ops/004-deploy-runbook.md`.
+   tag `vX.Y.Z` + image `ghcr.io/thaynes43/haynesnetwork:vX.Y.Z`. Since **#37** the image
+   **builds + pushes automatically in that release-please run** (`release_created`, `GITHUB_TOKEN`,
+   `packages:write`) — no PAT, no tag re-push. Confirm it exists
+   (`gh api .../packages/container/haynesnetwork/versions`); if it's missing, **re-run the
+   release-please workflow run** (`gh run rerun <run-id>`) — do NOT re-push the tag (`ci.yml`'s
+   tag build is `IMAGE_PUSH=false`, build-only, and won't publish). See
+   `docs/ops/004-deploy-runbook.md`.
 2. In `haynes-ops`, bump the `tag:` at
    `kubernetes/main/apps/frontend/haynesnetwork/app/helmrelease.yaml` (the `&mainImage` anchor
    moves app + migrate init-container + both sync CronJobs together). Commit + push.
