@@ -208,9 +208,19 @@ export const RESOLUTION_LABELS: Record<string, string> = {
   unknown: 'Unknown',
 };
 
-/** A 0-10 rating to one decimal (e.g. 8 → "8.0", 7.35 → "7.4"); null → null. */
+/**
+ * A rating/score is meaningful only when present AND positive. Upstream sources report an
+ * absent rating as 0 (a genuine "unrated" — pervasive on Music and unrated movies), so a 0 (or
+ * null) collapses to null: no ★/TMDb/RT badge or pill renders (DESIGN-008 live-validation fix,
+ * 2026-07-06). Used for the 0-10 ratings AND the 0-100 RT percentages alike.
+ */
+export function ratingOrNull(value: number | null | undefined): number | null {
+  return value !== null && value !== undefined && value > 0 ? value : null;
+}
+
+/** A 0-10 rating to one decimal (e.g. 8 → "8.0", 7.35 → "7.4"); null/0 (unrated) → null. */
 export function formatRating(value: number | null): string | null {
-  return value === null ? null : value.toFixed(1);
+  return ratingOrNull(value) === null ? null : (value as number).toFixed(1);
 }
 
 /** Minutes → "1h 46m" / "44m"; null/0 → null. */

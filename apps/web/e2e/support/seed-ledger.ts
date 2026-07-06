@@ -144,7 +144,7 @@ async function main(): Promise<void> {
               tmdbRating: 7.9,
               rtTomatometer: 88,
               runtimeMinutes: 106,
-              resolution: 'sd' as const, // 'Any' profile → 'unknown' normally; pin a value the facet can show
+              resolution: 'sd' as const, // pinned (a distinct tier from the tv row) so the facet chip has values to show
               genres: ['Comedy', 'Drama'],
               requesters: ['manofoz'],
               posterSource: 'arr' as const,

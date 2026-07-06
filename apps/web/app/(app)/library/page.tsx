@@ -44,6 +44,7 @@ import {
   RESOLUTION_LABELS,
   formatRating,
   onDiskSummary,
+  ratingOrNull,
   type ArrKindName,
   type ResolutionName,
 } from '@/lib/media';
@@ -487,8 +488,12 @@ function MediaBrowser({ arrKind, label }: { arrKind: ArrKindName; label: string 
         >
           {items.map((item) => {
             const disk = onDiskSummary(item);
-            const rating = formatRating(item.metadata.imdbRating ?? item.metadata.tmdbRating);
-            const ratingSource = item.metadata.imdbRating !== null ? 'IMDb' : 'TMDb';
+            // A 0 upstream rating means "unrated" — collapse it so no ★ 0.0 badge renders
+            // (DESIGN-008 live-validation fix). Prefer IMDb, else TMDb, each 0-suppressed.
+            const imdbRating = ratingOrNull(item.metadata.imdbRating);
+            const tmdbRating = ratingOrNull(item.metadata.tmdbRating);
+            const rating = formatRating(imdbRating ?? tmdbRating);
+            const ratingSource = imdbRating !== null ? 'IMDb' : 'TMDb';
             return (
               <Link key={item.id} href={`/library/${item.id}`} className="media-card poster-card">
                 <MediaPoster posterUrl={item.posterUrl} kind={item.arrKind} alt="" />

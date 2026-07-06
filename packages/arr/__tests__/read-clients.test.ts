@@ -122,6 +122,23 @@ describe('SonarrClient (v3)', () => {
     expect(episodes[0]).not.toHaveProperty('overview');
   });
 
+  it('lists episode files with the normalized resolution int (DESIGN-008 D-02 resolution fix)', async () => {
+    const { client, calls } = sonarr([
+      {
+        path: '/api/v3/episodefile',
+        body: [
+          { id: 3101, seriesId: 1, quality: { quality: { id: 4, name: 'WEBDL-1080p', resolution: 1080 } } },
+          { id: 3102, seriesId: 1, quality: { quality: { id: 9, name: 'HDTV-720p', resolution: 720 } } },
+        ],
+      },
+    ]);
+    const files = await client.listEpisodeFiles(1);
+    expect(calls[0]?.url.searchParams.get('seriesId')).toBe('1');
+    expect(files).toHaveLength(2);
+    expect(files[0]?.quality?.quality?.resolution).toBe(1080);
+    expect(files[1]?.quality?.quality?.resolution).toBe(720);
+  });
+
   it('fetches the latest grab for an episode via history?episodeId=&eventType=1 (integer enum)', async () => {
     const { client, calls } = sonarr([
       { path: '/api/v3/history', body: fixture('sonarr.history-page') },

@@ -16,6 +16,7 @@ import type {
   TvdbSeries,
 } from '@hnet/arr';
 import type { PosterSource, Resolution } from '@hnet/db';
+import { RESOLUTIONS } from '@hnet/db';
 import type { MediaMetadataFields } from '@hnet/domain';
 
 /** The metadata slice a tier contributes (mediaItemId is stitched on by the harvest). */
@@ -25,24 +26,44 @@ const round = (v: number | null | undefined): number | null =>
   v === null || v === undefined ? null : Math.round(v);
 
 /**
- * DESIGN-008 D-02 — derive the resolution tier from the *arr's target QUALITY PROFILE name
- * (approximate: it reflects the profile, not the exact on-disk file — a per-item file fetch
- * across ~17.7k items is too costly for a 6-hourly refresh). A profile that pins exactly ONE
- * resolution tier maps to it; range/any profiles ("Any", "HD - 720p/1080p", "FHD-UHD") are
- * ambiguous → 'unknown'.
+ * DESIGN-008 D-02 (resolution fix, live-validated 2026-07-06) — map the *arr's NORMALIZED
+ * integer resolution tier (`file.quality.quality.resolution`) to the RESOLUTIONS enum. This is
+ * the REAL per-item on-disk resolution, replacing the old quality-PROFILE-name approximation
+ * which mapped the owner's live range profiles ("Any", "FHD-UHD", "HD - 720p/1080p") to
+ * 'unknown' for every item. Observed live ints: 2160/1080/720/576/480 (and 0/absent = the
+ * *arr couldn't classify the release → 'unknown'). Ranged for robustness: an unusual tier
+ * (e.g. 540) buckets to the nearest lower standard tier; anything below 480 → 'sd'.
  */
-export function resolutionFromProfile(name: string | null | undefined): Resolution {
-  if (!name) return 'unknown';
-  const n = name.toLowerCase();
-  const hits: Resolution[] = [];
-  if (/2160|ultra|\buhd\b|\b4k\b/.test(n)) hits.push('2160p');
-  if (/1080|\bfhd\b/.test(n)) hits.push('1080p');
-  if (/720/.test(n)) hits.push('720p');
-  if (/576/.test(n)) hits.push('576p');
-  if (/480/.test(n)) hits.push('480p');
-  if (hits.length === 1) return hits[0]!;
-  if (hits.length === 0 && /\bsd\b/.test(n)) return 'sd';
-  return 'unknown';
+export function resolutionFromInt(res: number | null | undefined): Resolution {
+  if (res === null || res === undefined || res <= 0) return 'unknown';
+  if (res >= 2160) return '2160p';
+  if (res >= 1080) return '1080p';
+  if (res >= 720) return '720p';
+  if (res >= 576) return '576p';
+  if (res >= 480) return '480p';
+  return 'sd';
+}
+
+/**
+ * DESIGN-008 D-02 (resolution fix) — the DOMINANT (statistical mode) resolution across a set of
+ * file tiers, used to summarize a Sonarr series from its per-episode files (a series' episodes
+ * may span tiers; the mode is the representative one). Ties resolve to the HIGHER tier (iterate
+ * RESOLUTIONS best-first with a strict `>`). Empty input ⇒ null (no files ⇒ no resolution).
+ */
+export function dominantResolution(tiers: readonly Resolution[]): Resolution | null {
+  if (tiers.length === 0) return null;
+  const counts = new Map<Resolution, number>();
+  for (const t of tiers) counts.set(t, (counts.get(t) ?? 0) + 1);
+  let best: Resolution | null = null;
+  let bestCount = -1;
+  for (const r of RESOLUTIONS) {
+    const n = counts.get(r) ?? 0;
+    if (n > bestCount) {
+      best = r;
+      bestCount = n;
+    }
+  }
+  return best;
 }
 
 /** Pick the poster image and record the *arr proxy reference (posterSource='arr', posterRef =
@@ -69,7 +90,8 @@ function arrAddedAt(added: string | null | undefined): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/** Radarr movie (live list, arr tier) → metadata patch. */
+/** Radarr movie (live list, arr tier) → metadata patch. Resolution is the REAL per-file tier
+ *  from the INLINE `movieFile` (no extra request); a movie with no file on disk ⇒ null. */
 export function metadataFromRadarrMovie(movie: RadarrMovie): MetadataPatch {
   const r = movie.ratings;
   const poster = posterFromArrImages(movie.images);
@@ -82,6 +104,9 @@ export function metadataFromRadarrMovie(movie: RadarrMovie): MetadataPatch {
     runtimeMinutes: movie.runtime ?? null,
     genres: movie.genres ?? [],
     arrAddedAt: arrAddedAt(movie.added),
+    resolution: movie.movieFile
+      ? resolutionFromInt(movie.movieFile.quality?.quality?.resolution)
+      : null,
     ...(poster ?? {}),
   };
 }

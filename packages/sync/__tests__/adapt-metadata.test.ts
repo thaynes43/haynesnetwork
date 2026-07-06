@@ -1,27 +1,52 @@
 import { describe, expect, it } from 'vitest';
 import type { RadarrMovie, SonarrSeries } from '@hnet/arr';
 import {
+  dominantResolution,
   mergeWatchContributions,
   metadataFromRadarrMovie,
   metadataFromSonarrSeries,
   parseTautulliGuids,
   posterFromArrImages,
-  resolutionFromProfile,
+  resolutionFromInt,
   tautulliDate,
   tmdbPathFromRemote,
   type WatchContribution,
 } from '../src/adapt-metadata';
 
-describe('resolutionFromProfile (DESIGN-008 D-02 — approximate, profile-derived)', () => {
-  it('maps single-tier profiles; ranges/any → unknown', () => {
-    expect(resolutionFromProfile('HD-1080p')).toBe('1080p');
-    expect(resolutionFromProfile('HD-720p')).toBe('720p');
-    expect(resolutionFromProfile('Ultra-HD')).toBe('2160p');
-    expect(resolutionFromProfile('SD')).toBe('sd');
-    expect(resolutionFromProfile('Any')).toBe('unknown');
-    expect(resolutionFromProfile('HD - 720p/1080p')).toBe('unknown'); // two tiers → ambiguous
-    expect(resolutionFromProfile('FHD-UHD')).toBe('unknown');
-    expect(resolutionFromProfile(null)).toBe('unknown');
+describe('resolutionFromInt (DESIGN-008 D-02 — real per-file tier from *arr quality int)', () => {
+  it('maps the live *arr resolution ints to the RESOLUTIONS enum', () => {
+    // live-observed Radarr movieFile.quality.quality.resolution values (2026-07-06)
+    expect(resolutionFromInt(2160)).toBe('2160p');
+    expect(resolutionFromInt(1080)).toBe('1080p');
+    expect(resolutionFromInt(720)).toBe('720p');
+    expect(resolutionFromInt(576)).toBe('576p');
+    expect(resolutionFromInt(480)).toBe('480p');
+  });
+
+  it('treats 0 / absent (the *arr could not classify the release) as unknown', () => {
+    expect(resolutionFromInt(0)).toBe('unknown');
+    expect(resolutionFromInt(null)).toBe('unknown');
+    expect(resolutionFromInt(undefined)).toBe('unknown');
+    expect(resolutionFromInt(-1)).toBe('unknown');
+  });
+
+  it('buckets an unusual tier to the nearest lower standard; sub-480 → sd', () => {
+    expect(resolutionFromInt(540)).toBe('480p'); // qHD → 480p bucket
+    expect(resolutionFromInt(4320)).toBe('2160p'); // 8K clamps to top tier
+    expect(resolutionFromInt(360)).toBe('sd');
+    expect(resolutionFromInt(240)).toBe('sd');
+  });
+});
+
+describe('dominantResolution (DESIGN-008 D-02 — Sonarr series mode across episode files)', () => {
+  it('returns the modal tier; ties resolve to the higher tier', () => {
+    expect(dominantResolution(['1080p', '1080p', '720p'])).toBe('1080p');
+    expect(dominantResolution(['720p', '1080p'])).toBe('1080p'); // tie → higher tier
+    expect(dominantResolution(['480p', '480p', '2160p'])).toBe('480p'); // mode beats a lone 4K
+  });
+
+  it('returns null for a series with no episode files', () => {
+    expect(dominantResolution([])).toBeNull();
   });
 });
 
@@ -45,7 +70,7 @@ describe('posterFromArrImages / tmdbPathFromRemote', () => {
 });
 
 describe('metadata mappers (D-02)', () => {
-  it('radarr movie → imdb/tmdb/RT split + poster + runtime + genres', () => {
+  it('radarr movie → imdb/tmdb/RT split + poster + runtime + genres + inline-file resolution', () => {
     const movie = {
       id: 1,
       added: '2025-01-01T00:00:00Z',
@@ -57,6 +82,10 @@ describe('metadata mappers (D-02)', () => {
         rottenTomatoes: { value: 44 },
       },
       images: [{ coverType: 'poster', url: '/MediaCover/1/poster.jpg?lastWrite=1' }],
+      // live shape: the on-disk file is embedded inline in GET /movie (D-02 resolution fix)
+      movieFile: {
+        quality: { quality: { id: 30, name: 'Remux-1080p', resolution: 1080 } },
+      },
     } as unknown as RadarrMovie;
     expect(metadataFromRadarrMovie(movie)).toMatchObject({
       imdbRating: 6.3,
@@ -66,9 +95,21 @@ describe('metadata mappers (D-02)', () => {
       rtTomatometer: 44,
       runtimeMinutes: 106,
       genres: ['Comedy'],
+      resolution: '1080p',
       posterSource: 'arr',
       posterRef: '/MediaCover/1/poster.jpg?lastWrite=1',
     });
+  });
+
+  it('radarr movie with no file on disk → resolution null (not unknown)', () => {
+    const movie = {
+      id: 2,
+      added: '2025-01-01T00:00:00Z',
+      runtime: 90,
+      genres: [],
+      images: [],
+    } as unknown as RadarrMovie;
+    expect(metadataFromRadarrMovie(movie).resolution).toBeNull();
   });
 
   it('sonarr series single rating → tmdb slot', () => {

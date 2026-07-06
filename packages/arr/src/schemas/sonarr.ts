@@ -1,6 +1,6 @@
 // DESIGN-005 D-02 — Sonarr v3 field subsets (strip mode: extra fields tolerated, dropped).
 import { z } from 'zod';
-import { arrImageSchema, historyRecordBaseSchema, singleRatingSchema } from './common';
+import { arrFileSchema, arrImageSchema, historyRecordBaseSchema, singleRatingSchema } from './common';
 
 /** Full eventType enum per Sonarr's `EpisodeHistoryEventType` (D-02). */
 export const SONARR_HISTORY_EVENT_TYPES = [
@@ -88,6 +88,18 @@ export const sonarrEpisodeSchema = z.object({
   episodeFileId: z.number().int().optional(),
 });
 export type SonarrEpisode = z.infer<typeof sonarrEpisodeSchema>;
+
+/**
+ * `GET /episodefile?seriesId=` element (DESIGN-008 D-02 resolution fix). The Sonarr series list
+ * carries NO per-file data, so the metadata harvest fetches the episode files per target series
+ * and derives the DOMINANT `quality.quality.resolution` tier (verified live 2026-07-06). A
+ * metadata-only subset — the fix/delete paths use `episodeFileId` off the episode resource, not
+ * this shape. */
+export const sonarrEpisodeFileSchema = arrFileSchema.extend({
+  id: z.number().int(),
+  seriesId: z.number().int().optional(),
+});
+export type SonarrEpisodeFile = z.infer<typeof sonarrEpisodeFileSchema>;
 
 /** History record with Sonarr's per-kind target ids (`episodeId` + `seriesId`). */
 export const sonarrHistoryRecordSchema = historyRecordBaseSchema.extend({

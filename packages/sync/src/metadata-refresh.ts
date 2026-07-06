@@ -10,10 +10,11 @@
 // ONCE (buildMetadataContext); the per-*arr-kind harvest (runMetadataRefreshForKind) reuses
 // them, so the orchestrator can bracket one sync_runs row per arr source (D-03) without
 // re-harvesting Tautulli three times.
-import type { ArrKind, DbClient } from '@hnet/db';
+import type { ArrKind, DbClient, Resolution } from '@hnet/db';
 import { parseArrTags, upsertMediaMetadataBatch, type MediaMetadataFields } from '@hnet/domain';
 import type { LidarrLookup, RadarrLookup, SonarrLookup, TautulliMetadata } from '@hnet/arr';
 import {
+  dominantResolution,
   guidsFromMetadata,
   mergeWatchContributions,
   metadataFromLidarrArtist,
@@ -25,7 +26,7 @@ import {
   metadataFromTmdbMovie,
   metadataFromTmdbTv,
   metadataFromTvdbSeries,
-  resolutionFromProfile,
+  resolutionFromInt,
   tautulliDate,
   type MetadataPatch,
   type ParsedGuids,
@@ -134,6 +135,20 @@ export async function runMetadataRefreshForKind(
     }
   }
 
+  // Sonarr per-series resolution (D-02 resolution fix): the series list carries no per-file
+  // data, so derive the DOMINANT episode-file tier per LIVE target from GET /episodefile.
+  // Cheap in-cluster (~16ms/req; ~17s for the ~1026-series estate) and per-series degradable.
+  // Radarr gets resolution inline from `movieFile` (no extra request); Lidarr (music) → null.
+  let sonarrResolution = new Map<number, Resolution>();
+  if (arrKind === 'sonarr' && arrList.size > 0) {
+    const liveSeriesIds = [
+      ...new Set(
+        targets.filter((t) => !t.tombstoned && arrList.has(t.arrItemId)).map((t) => t.arrItemId),
+      ),
+    ];
+    sonarrResolution = await fetchSonarrResolutions(input.clients, liveSeriesIds, logger);
+  }
+
   const stats: MetadataRefreshStats = {
     arrKind,
     targets: targets.length,
@@ -190,7 +205,14 @@ export async function runMetadataRefreshForKind(
       }
     }
 
-    const resolution = resolutionFromProfile(target.qualityProfileName);
+    // Resolution (D-02 resolution fix) — the REAL per-item on-disk tier: Radarr from the inline
+    // movieFile (carried on `patch`), Sonarr from the dominant episode-file tier, Lidarr (music)
+    // and every non-live row (tombstoned/lookup/TMDB/TVDB — no file on disk) → null.
+    let resolution: Resolution | null = null;
+    if (live) {
+      if (arrKind === 'radarr') resolution = patch.resolution ?? null;
+      else if (arrKind === 'sonarr') resolution = sonarrResolution.get(target.arrItemId) ?? null;
+    }
     const { requesters, sourceCollections } = parseArrTags(target.arrTags);
 
     const extra: Record<string, unknown> = {};
@@ -250,6 +272,37 @@ async function fetchArrList(
       map.set(a.id, metadataFromLidarrArtist(a));
   }
   return map;
+}
+
+/**
+ * DESIGN-008 D-02 (resolution fix) — per LIVE Sonarr series, fetch `GET /episodefile?seriesId=`
+ * and reduce to the DOMINANT episode-file resolution tier. Serial: cheap in-cluster (~16ms/req
+ * live-measured 2026-07-06; ~17s across the ~1026-series estate — well inside the 6h cadence).
+ * A per-series fetch failure is logged and skipped (that series keeps null resolution this
+ * cycle — per-source degradation, D-03). Series with no episode files ⇒ omitted (null).
+ */
+async function fetchSonarrResolutions(
+  clients: SyncClients,
+  seriesIds: number[],
+  logger: SyncLogger,
+): Promise<Map<number, Resolution>> {
+  const out = new Map<number, Resolution>();
+  const sonarr = requireClient(clients, 'sonarr');
+  for (const seriesId of seriesIds) {
+    try {
+      const files = await sonarr.listEpisodeFiles(seriesId);
+      const dominant = dominantResolution(
+        files.map((f) => resolutionFromInt(f.quality?.quality?.resolution)),
+      );
+      if (dominant !== null) out.set(seriesId, dominant);
+    } catch (err) {
+      logger.warn('metadata-refresh: sonarr episodefile fetch failed', {
+        seriesId,
+        error: msg(err),
+      });
+    }
+  }
+  return out;
 }
 
 /** The *arr /lookup tier for tombstoned / never-listed rows (D-05) — no re-add. */

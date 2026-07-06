@@ -24,6 +24,7 @@ import {
   formatWhen,
   groupBySeason,
   onDiskSummary,
+  ratingOrNull,
   seasonName,
   type ActionTarget,
   type ArrKindName,
@@ -78,10 +79,10 @@ export function ItemDetail({ mediaItemId }: { mediaItemId: string }) {
   // still renders only when it has something to show — gate it on real harvested content.
   const meta = item.metadata;
   const hasAbout =
-    meta.imdbRating !== null ||
-    meta.tmdbRating !== null ||
-    meta.rtTomatometer !== null ||
-    meta.rtPopcorn !== null ||
+    ratingOrNull(meta.imdbRating) !== null ||
+    ratingOrNull(meta.tmdbRating) !== null ||
+    ratingOrNull(meta.rtTomatometer) !== null ||
+    ratingOrNull(meta.rtPopcorn) !== null ||
     meta.playCount !== null ||
     meta.lastViewedAt !== null ||
     meta.addedAt !== null ||
@@ -227,7 +228,9 @@ export function ItemDetail({ mediaItemId }: { mediaItemId: string }) {
         <section className="card admin-section">
           <h2>About</h2>
           <div className="ratings-row" role="group" aria-label="Ratings">
-            {item.metadata.imdbRating !== null ? (
+            {/* A 0 upstream rating means "unrated" — suppress the pill so no "IMDb 0.0" /
+                "RT 0%" renders (DESIGN-008 live-validation fix). */}
+            {ratingOrNull(item.metadata.imdbRating) !== null ? (
               <span
                 className="rating-pill"
                 title={
@@ -240,7 +243,7 @@ export function ItemDetail({ mediaItemId }: { mediaItemId: string }) {
                 <span className="rating-pill__val">{formatRating(item.metadata.imdbRating)}</span>
               </span>
             ) : null}
-            {item.metadata.tmdbRating !== null ? (
+            {ratingOrNull(item.metadata.tmdbRating) !== null ? (
               <span
                 className="rating-pill"
                 title={
@@ -253,22 +256,22 @@ export function ItemDetail({ mediaItemId }: { mediaItemId: string }) {
                 <span className="rating-pill__val">{formatRating(item.metadata.tmdbRating)}</span>
               </span>
             ) : null}
-            {item.metadata.rtTomatometer !== null ? (
+            {ratingOrNull(item.metadata.rtTomatometer) !== null ? (
               <span className="rating-pill" title="Rotten Tomatoes tomatometer">
                 <span className="rating-pill__src">RT</span>
                 <span className="rating-pill__val">{item.metadata.rtTomatometer}%</span>
               </span>
             ) : null}
-            {item.metadata.rtPopcorn !== null ? (
+            {ratingOrNull(item.metadata.rtPopcorn) !== null ? (
               <span className="rating-pill" title="Rotten Tomatoes audience">
                 <span className="rating-pill__src">RT Audience</span>
                 <span className="rating-pill__val">{item.metadata.rtPopcorn}%</span>
               </span>
             ) : null}
-            {item.metadata.imdbRating === null &&
-            item.metadata.tmdbRating === null &&
-            item.metadata.rtTomatometer === null &&
-            item.metadata.rtPopcorn === null ? (
+            {ratingOrNull(item.metadata.imdbRating) === null &&
+            ratingOrNull(item.metadata.tmdbRating) === null &&
+            ratingOrNull(item.metadata.rtTomatometer) === null &&
+            ratingOrNull(item.metadata.rtPopcorn) === null ? (
               <span className="muted">No ratings yet.</span>
             ) : null}
           </div>

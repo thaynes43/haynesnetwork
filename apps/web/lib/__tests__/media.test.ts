@@ -4,8 +4,27 @@ import {
   FIX_REASON_LABELS,
   fixStatusTone,
   formatBytes,
+  formatRating,
   onDiskSummary,
+  ratingOrNull,
 } from '../media';
+
+describe('ratingOrNull / formatRating (DESIGN-008 — 0 upstream = unrated, suppress badge)', () => {
+  it('collapses null AND 0 to null so no ★ 0.0 / RT 0% badge renders', () => {
+    expect(ratingOrNull(0)).toBeNull();
+    expect(ratingOrNull(null)).toBeNull();
+    expect(ratingOrNull(undefined)).toBeNull();
+    expect(formatRating(0)).toBeNull();
+    expect(formatRating(null)).toBeNull();
+  });
+
+  it('keeps real positive ratings (0-10 and 0-100 alike)', () => {
+    expect(ratingOrNull(7.7)).toBe(7.7);
+    expect(ratingOrNull(44)).toBe(44); // an RT tomatometer percentage
+    expect(formatRating(8)).toBe('8.0');
+    expect(formatRating(7.9)).toBe('7.9');
+  });
+});
 
 describe('formatBytes', () => {
   it('renders bytes through terabytes', () => {
