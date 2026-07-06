@@ -84,13 +84,20 @@ Four bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across 
 - **Inbound:** scheduled Sync pulls; user Fix commands (Member, rate-guarded per R-47);
   admin Restore commands; ledger browse/search queries (R-43); **Ledger section** browse /
   bulk **Add-&-search** / **export** commands, section-gated by BC-02's Section Permission
-  (R-74..R-78, ADR-021/022).
-- **Outbound (the only write-backs, R-52 + R-75):** Fix — **Blocklist** + search, or **Fix
-  Fallback** delete + search (R-44); Restore / Ledger Add-&-search — the generalized
+  (R-74..R-78, ADR-021/022); **Trash section** pending browse / Save / Expedite / Restore /
+  rule-edit commands, gated by BC-02's Section Permission (VIEW) + Trash Action Grants (writes)
+  (R-79..R-87, ADR-023).
+- **Outbound (the only write-backs, R-52 + R-75 + R-79..R-87):** Fix — **Blocklist** + search,
+  or **Fix Fallback** delete + search (R-44); Restore / Ledger Add-&-search — the generalized
   `executeArrAdd`: re-add absent items monitored (recorded profile/root/tags), set monitored
-  on present-but-unmonitored items, and trigger a search (R-51, R-75; ADR-022).
+  on present-but-unmonitored items, and trigger a search (R-51, R-75; ADR-022); **Trash /
+  Maintainerr** — add/remove exclusion (Save), rule-group CRUD, and the collection **handle**
+  Expedite trigger (ADR-023; the mutating Maintainerr surface stays confined to `packages/domain`).
 - **External systems:** Sonarr, Radarr, Lidarr (read items + history; write fix/restore);
-  Seerr (read-only attribution). Maintainerr is a follow-on (Q-04).
+  Seerr (read-only attribution); **Maintainerr** (read collections/rules/exclusions/settings;
+  write exclusions/rules/expedite — the deletion system of record, **Q-04 RESOLVED** by ADR-023:
+  Trash is read-through + a confined write surface, not a re-implementation). The Section/Action
+  permission *mutation* is BC-02 Entitlements (audited); the Trash actions themselves are BC-03.
 - **Does NOT own:** media lists — the *arrs are the **Source of Truth**; this is a mirror
   plus attribution/audit.
 

@@ -5,7 +5,7 @@
 // window; the read-through pending merge + scheduled-delete derivation; recently-deleted from
 // tombstones; and the music/Lidarr rejection.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { ledgerEvents, mediaItems } from '@hnet/db/schema';
 import {
   MaintainerrUnsafeError,
