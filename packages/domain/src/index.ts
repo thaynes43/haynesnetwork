@@ -12,6 +12,9 @@ export * from './section-permissions';
 // ADR-023 / DESIGN-010 — Trash (Maintainerr) fine-grained action grants + the notification store
 export * from './trash-permissions';
 export * from './notifications';
+// ADR-023 / DESIGN-010 — Trash orchestrators over Maintainerr (confined write surface — guard test)
+export * from './maintainerr-clients';
+export * from './trash-flow';
 // DESIGN-005 Phase 2 — media ledger single-writers (D-12)
 export * from './sync-runs';
 export * from './media-sync';
