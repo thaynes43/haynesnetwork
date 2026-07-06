@@ -52,6 +52,15 @@ beforeAll(async () => {
     requesters: [],
     playCount: 0,
   });
+  // TmdbOnly: a harvested row with NO imdb_rating, only tmdb_rating (the Sonarr/Lidarr shape,
+  // ADR-018 C-07) — exercises the rating filter's COALESCE(imdb, tmdb). Kept disjoint on every
+  // facet (empty genres/requesters, null resolution) so it doesn't perturb the facet tests, and
+  // it has null imdb_rating so it sorts with the trailing nulls on imdb_rating.
+  await mk('TmdbOnly', {
+    tmdbRating: 8.8,
+    genres: [],
+    requesters: [],
+  });
   await mk('NullA', null); // no metadata row at all
   await mk('NullB', null);
 });
@@ -60,10 +69,10 @@ afterAll(async () => {
   await tdb?.stop();
 });
 
-// NB: the two unrated rows tie on the sort value (null) and break by id ASC (a random uuid),
-// so their RELATIVE order is nondeterministic — assert the non-null ordering exactly and the
-// null rows as a trailing SET.
-const NULLS = ['NullA', 'NullB'];
+// NB: the imdb-null rows (NullA/NullB have no metadata; TmdbOnly has only a tmdb_rating) tie on
+// the imdb_rating sort value (null) and break by id ASC (a random uuid), so their RELATIVE order
+// is nondeterministic — assert the non-null ordering exactly and the null rows as a trailing SET.
+const NULLS = ['NullA', 'NullB', 'TmdbOnly'];
 
 describe('ledger.search — sort by a nullable metadata field (NULLS LAST, keyset)', () => {
   it('imdb_rating desc: highest first, unrated rows last', async () => {
@@ -96,7 +105,7 @@ describe('ledger.search — sort by a nullable metadata field (NULLS LAST, keyse
     // Every row exactly once across the null boundary — no dup/skip; non-nulls in order, nulls last.
     expect(seen.slice(0, 3)).toEqual(['High', 'Mid', 'Low']);
     expect(seen.slice(3).sort()).toEqual(NULLS);
-    expect(new Set(seen).size).toBe(5);
+    expect(new Set(seen).size).toBe(6);
   });
 
   it('play_count asc keyset paginates cleanly (numeric field)', async () => {
@@ -128,9 +137,20 @@ describe('ledger.search — metadata filters', () => {
     expect(items.map((i) => i.title)).toEqual(['High']);
   });
 
-  it('imdb rating range (min/max)', async () => {
+  it('rating range (min/max) on COALESCE(imdb, tmdb)', async () => {
+    // [4,8]: Mid (imdb 6.5) is in range; High (9) / Low (3.2) are out; TmdbOnly (tmdb 8.8) is out.
     const { items } = await api.ledger.search({ ratingMin: 4, ratingMax: 8 });
     expect(items.map((i) => i.title)).toEqual(['Mid']);
+  });
+
+  it('rating filter coalesces imdb→tmdb: a tmdb-only row matches; both-null rows never do', async () => {
+    // ratingMin 8.5: High (imdb 9) AND TmdbOnly (no imdb, tmdb 8.8 via COALESCE) both qualify.
+    const { items } = await api.ledger.search({ ratingMin: 8.5 });
+    const titles = items.map((i) => i.title);
+    expect(titles.sort()).toEqual(['High', 'TmdbOnly']);
+    // The unrated rows (no imdb AND no tmdb) are excluded by any bound.
+    expect(titles).not.toContain('NullA');
+    expect(titles).not.toContain('NullB');
   });
 
   it('exposes the metadata block + poster URL on items', async () => {
@@ -147,7 +167,8 @@ describe('ledger.filterFacets', () => {
   it('returns the distinct harvested facet values', async () => {
     const facets = await api.ledger.filterFacets({ arrKind: 'radarr' });
     expect(facets.genres.sort()).toEqual(['Comedy', 'Drama', 'Horror']);
-    expect(facets.resolutions.sort()).toEqual(['1080p', '2160p']);
+    // Resolutions come back in RESOLUTIONS enum order (best-first), NOT alphabetical.
+    expect(facets.resolutions).toEqual(['2160p', '1080p']);
     expect(facets.requesters.sort()).toEqual(['helmu15', 'manofoz']);
   });
 });

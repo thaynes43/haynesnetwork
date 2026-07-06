@@ -73,6 +73,21 @@ export function ItemDetail({ mediaItemId }: { mediaItemId: string }) {
   }
   const { item, fixes } = detail.data!;
   const disk = onDiskSummary(item);
+  // ledger.detail.metadata is now ALWAYS an object (all-null when unharvested — same shape as
+  // search, DESIGN-008 D-09), so the old `metadata !== null` guards are dead. The About card
+  // still renders only when it has something to show — gate it on real harvested content.
+  const meta = item.metadata;
+  const hasAbout =
+    meta.imdbRating !== null ||
+    meta.tmdbRating !== null ||
+    meta.rtTomatometer !== null ||
+    meta.rtPopcorn !== null ||
+    meta.playCount !== null ||
+    meta.lastViewedAt !== null ||
+    meta.addedAt !== null ||
+    meta.genres.length > 0 ||
+    meta.requesters.length > 0 ||
+    meta.sourceCollections.length > 0;
   const timeline = events.data?.pages.flatMap((p) => p.events) ?? [];
 
   const refresh = () => {
@@ -162,8 +177,7 @@ export function ItemDetail({ mediaItemId }: { mediaItemId: string }) {
               <span className="badge badge--danger">Removed from the manager</span>
             ) : null}
           </div>
-          {item.metadata !== null &&
-          (item.metadata.runtimeMinutes !== null || item.metadata.resolution !== null) ? (
+          {item.metadata.runtimeMinutes !== null || item.metadata.resolution !== null ? (
             <p className="detail-head__meta muted">
               {[
                 formatRuntime(item.metadata.runtimeMinutes),
@@ -209,7 +223,7 @@ export function ItemDetail({ mediaItemId }: { mediaItemId: string }) {
           has run for this item; the layout is static — nothing here re-orients on interaction
           (ADR-015). NB: the facts <dl> is `about-facts`, NOT `.meta-grid` — the Details section
           below owns that class (and the e2e suite targets it singularly). */}
-      {item.metadata !== null ? (
+      {hasAbout ? (
         <section className="card admin-section">
           <h2>About</h2>
           <div className="ratings-row" role="group" aria-label="Ratings">

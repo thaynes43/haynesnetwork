@@ -99,23 +99,25 @@ type MetadataRow = {
 
 const numOrNull = (v: string | null) => (v === null ? null : Number(v));
 
-/** Shape the joined media_metadata columns into the wire metadata block (null when unharvested). */
-function metadataBlock(row: MetadataRow) {
+/** Shape the joined media_metadata columns into the wire metadata block. ALWAYS an object
+ *  (all-null fields when unharvested / no row) — search and detail return the identical shape,
+ *  so consumers never null-check the block itself (DESIGN-008 D-09, fix 2026-07-06). */
+function metadataBlock(row: MetadataRow | null | undefined) {
   return {
-    imdbRating: numOrNull(row.imdbRating),
-    imdbVotes: row.imdbVotes,
-    tmdbRating: numOrNull(row.tmdbRating),
-    tmdbVotes: row.tmdbVotes,
-    rtTomatometer: row.rtTomatometer,
-    rtPopcorn: row.rtPopcorn,
-    runtimeMinutes: row.runtimeMinutes,
-    resolution: row.resolution,
-    genres: row.genres ?? [],
-    addedAt: isoOrNull(row.arrAddedAt),
-    playCount: row.playCount,
-    lastViewedAt: isoOrNull(row.lastViewedAt),
-    requesters: row.requesters ?? [],
-    sourceCollections: row.sourceCollections ?? [],
+    imdbRating: numOrNull(row?.imdbRating ?? null),
+    imdbVotes: row?.imdbVotes ?? null,
+    tmdbRating: numOrNull(row?.tmdbRating ?? null),
+    tmdbVotes: row?.tmdbVotes ?? null,
+    rtTomatometer: row?.rtTomatometer ?? null,
+    rtPopcorn: row?.rtPopcorn ?? null,
+    runtimeMinutes: row?.runtimeMinutes ?? null,
+    resolution: row?.resolution ?? null,
+    genres: row?.genres ?? [],
+    addedAt: isoOrNull(row?.arrAddedAt ?? null),
+    playCount: row?.playCount ?? null,
+    lastViewedAt: isoOrNull(row?.lastViewedAt ?? null),
+    requesters: row?.requesters ?? [],
+    sourceCollections: row?.sourceCollections ?? [],
   };
 }
 
@@ -152,7 +154,7 @@ export const ledgerRouter = router({
         resolutions: z.array(z.enum(RESOLUTIONS)).max(RESOLUTIONS.length).optional(),
         requesters: z.array(z.string().min(1)).max(50).optional(),
         sourceCollections: z.array(z.string().min(1)).max(50).optional(),
-        ratingMin: z.number().min(0).max(10).optional(),
+        ratingMin: z.number().min(0).max(10).optional(), // on COALESCE(imdb_rating, tmdb_rating)
         ratingMax: z.number().min(0).max(10).optional(),
         // Sort (D-09) — title default; any metadata field, either direction, NULLS LAST.
         sort: z
@@ -205,11 +207,18 @@ export const ledgerRouter = router({
       if (input.sourceCollections?.length) {
         where.push(jsonbOverlap(sql`${mediaMetadata.sourceCollections}`, input.sourceCollections));
       }
+      // COALESCE(imdb_rating, tmdb_rating): the Radarr tier fills imdb_rating, but Sonarr/Lidarr
+      // land their single community rating in tmdb_rating (ADR-018 C-07). Coalescing lets the
+      // rating filter work on ALL tiers; a both-null row never satisfies a bound (fix 2026-07-06).
       if (input.ratingMin !== undefined) {
-        where.push(sql`${mediaMetadata.imdbRating} >= ${input.ratingMin}`);
+        where.push(
+          sql`COALESCE(${mediaMetadata.imdbRating}, ${mediaMetadata.tmdbRating}) >= ${input.ratingMin}`,
+        );
       }
       if (input.ratingMax !== undefined) {
-        where.push(sql`${mediaMetadata.imdbRating} <= ${input.ratingMax}`);
+        where.push(
+          sql`COALESCE(${mediaMetadata.imdbRating}, ${mediaMetadata.tmdbRating}) <= ${input.ratingMax}`,
+        );
       }
 
       const spec = SORT_SPECS[input.sort.field];
@@ -300,9 +309,14 @@ export const ledgerRouter = router({
              ${kindFilter} ${input.arrKind ? sql`AND` : sql`WHERE`} mm.resolution IS NOT NULL
              ORDER BY value ASC`,
       );
-      const resolutions = (
-        resolutionRows.rows ?? (resolutionRows as unknown as { value: string }[])
-      ).map((r) => r.value);
+      // Return resolutions in RESOLUTIONS enum order (2160p→sd→unknown), not the DISTINCT's
+      // alphabetical order, so the client renders them best-first with no re-sort (fix 2026-07-06).
+      const harvestedResolutions = new Set(
+        (resolutionRows.rows ?? (resolutionRows as unknown as { value: string }[])).map(
+          (r) => r.value,
+        ),
+      );
+      const resolutions = RESOLUTIONS.filter((r) => harvestedResolutions.has(r));
       return {
         genres: await distinctText('genres'),
         requesters: await distinctText('requesters'),
@@ -378,7 +392,8 @@ export const ledgerRouter = router({
         lastSeenAt: iso(item.lastSeenAt),
         tombstonedAt: isoOrNull(item.deletedFromArrAt),
         posterUrl: posterUrlFor(item.id, meta?.posterSource ?? null),
-        metadata: meta ? metadataBlock(meta) : null,
+        // Always the object shape (all-null when unharvested) — identical to search (fix 2026-07-06).
+        metadata: metadataBlock(meta),
       },
       events: events.map((e) => ({
         id: e.id,

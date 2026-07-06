@@ -1293,17 +1293,18 @@ input[aria-invalid='true'] {
   color: color-mix(in srgb, var(--color-accent) 62%, var(--color-text)); /* D-04 contrast */
 }
 
-/* The poster GRID (replaces the icon list geometry): mobile-first 2 columns at 390px,
-   ~6 at 1440px. `.poster-grid`/`.poster-card` override the horizontal .media-list/
+/* The poster GRID (replaces the icon list geometry). Densified per owner feedback 2026-07-06:
+   posters tell media apart at a glance, not hero display — ~9 columns at 1440px (was ~6) and
+   3 columns at 390px (was 2). `.poster-grid`/`.poster-card` override the horizontal .media-list/
    .media-card rules above (same specificity, later wins). */
 .poster-grid {
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 12px;
 }
 @media (max-width: 480px) {
   .poster-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
   }
 }
 /* A refetch (filter/sort change) dims the stale grid in place instead of swapping it for a
@@ -1353,18 +1354,29 @@ input[aria-invalid='true'] {
 .poster-card__body {
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  padding: 10px 12px 12px;
+  gap: 5px;
+  padding: 7px 9px 9px;
 }
+/* Densified card caption (owner feedback 2026-07-06): the title rides ONE line with an
+   ellipsis (the trailing year truncates with it) so the caption never dominates the smaller
+   card — a fixed single-line height keeps badge rows aligned across the row (ADR-015). */
 .poster-card .media-card__title {
-  font-size: 13px;
-  line-height: 1.35;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  font-size: 12.5px;
+  line-height: 1.3;
+  white-space: nowrap;
   overflow: hidden;
-  /* reserve two lines so one-line titles keep badge rows aligned across the row */
-  min-height: calc(2 * 1.35em);
+  text-overflow: ellipsis;
+}
+/* Slimmer badges on the dense grid: smaller type + tighter padding, one non-wrapping row. */
+.poster-card__body .media-card__badges {
+  gap: 5px;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+.poster-card__body .badge {
+  font-size: 10px;
+  padding: 1px 7px;
+  white-space: nowrap;
 }
 .badge--rating {
   color: var(--color-accent);

@@ -148,7 +148,7 @@ z.object({
   resolutions: z.array(z.enum(RESOLUTIONS)).max(RESOLUTIONS.length).optional(),
   requesters: z.array(z.string().min(1)).max(50).optional(),
   sourceCollections: z.array(z.string().min(1)).max(50).optional(),
-  ratingMin: z.number().min(0).max(10).optional(),      // on imdb_rating
+  ratingMin: z.number().min(0).max(10).optional(),      // on COALESCE(imdb_rating, tmdb_rating)
   ratingMax: z.number().min(0).max(10).optional(),
   sort: z.object({
     field: z.enum(['title','imdb_rating','tmdb_rating','rt_tomatometer',
@@ -167,7 +167,9 @@ sourceCollections[]}`; numeric columns coerced to number, dates to ISO, jsonb de
 alongside the existing `{id, arrKind, title, year, monitored, onDiskFileCount, expectedFileCount,
 sizeOnDisk, qualityProfileName, tombstoned}`. Facet filters: `genres`/`requesters`/
 `sourceCollections` use jsonb overlap `col ?| ARRAY[$1,…]::text[]`; `resolutions` uses `IN`;
-`ratingMin/Max` compares `imdb_rating`.
+`ratingMin/Max` compares `COALESCE(imdb_rating, tmdb_rating)` (fix 2026-07-06 — was `imdb_rating`
+only, which starved TV/Music whose single *arr rating lands in `tmdb_rating`; ADR-018 C-07). A
+row with neither rating never satisfies a bound (`COALESCE(NULL,NULL) → NULL`).
 
 **The generalized keyset cursor** (`packages/api/src/keyset.ts`) — the load-bearing algorithm.
 It generalizes DESIGN-005's `(sort_title, id)` to `(sortValue, id)` over an ARBITRARY nullable
@@ -193,7 +195,11 @@ directions, page boundaries across the null frontier (`packages/api/__tests__/le
 
 `ledger.filterFacets({ arrKind? })` returns `{ genres[], resolutions[], requesters[],
 sourceCollections[] }` — cheap SELECT-DISTINCTs over the harvested jsonb (`jsonb_array_elements_text`),
-scoped per media tab. `ledger.detail` gains the same `metadata` block + `posterUrl`.
+scoped per media tab. `resolutions` is returned in **RESOLUTIONS enum order** (2160p→sd→unknown),
+not the DISTINCT's alphabetical order, so the client renders it best-first without a re-sort (fix
+2026-07-06). `ledger.detail` gains the same `metadata` block + `posterUrl`; the block is **always
+the object shape** — all-null fields when unharvested, identical to `search` — so no consumer
+null-checks the block itself (fix 2026-07-06 — `detail` previously returned `metadata: null`).
 
 ### D-10 — the ported filter/sort engine (IMPLEMENTED 2026-07-06)
 
@@ -268,9 +274,11 @@ KindIcon fallback on null/error) serves both the grid and the detail head.
   pattern) — it can never wrap/grow, so the grid below never shifts; the same pattern serves
   the sort bar. Editors overlay via D-10's fixed positioning.
 - **Rating range = a bounded chip** (host glue wearing the shared `hnet-` chip skin): a
-  Min/Max select pair → `ratingMin`/`ratingMax`, CSV label `≥ 7` / `≤ 9` / `7–9`. **Movies tab
-  only** — D-09's rating filter compares `imdb_rating`, which only the Radarr tier fills
-  (ADR-018 C-07); offering it on TV/Music would be a dead control.
+  Min/Max select pair → `ratingMin`/`ratingMax`, CSV label `≥ 7` / `≤ 9` / `7–9`. **On ALL tabs**
+  (**superseded 2026-07-06** the original "Movies tab only" judgment call): D-09's rating filter
+  now compares `COALESCE(imdb_rating, tmdb_rating)`, so the single Sonarr/Lidarr community rating
+  (which lands in `tmdb_rating`, ADR-018 C-07) filters too — the chip is a live control on TV and
+  Music, not a dead one. The editor hint reads "Rating, 0–10" (no longer IMDb-specific).
 - **Sort control**: pill buttons on the ported `nextSort`/`arrowFor`. Each column cycles
   best-first → reversed → default (`title:asc`); "best-first" = desc for Rating/Added/Plays/
   Watched/Runtime, asc for Title. The **Rating column maps to `imdb_rating` on Movies and
@@ -283,12 +291,19 @@ KindIcon fallback on null/error) serves both the grid and the detail head.
   (`placeholderData` + `.is-refreshing`) — results swap in place, nothing collapses.
 - **Infinite scroll**: an IntersectionObserver sentinel (600px lookahead) on the Load-more
   row pulls the next keyset page; the button remains as the visible/manual + a11y fallback.
-- **Grid geometry**: `auto-fill minmax(190px, 1fr)` (≈6 columns at 1440px), pinned to exactly
-  2 columns ≤480px; card titles clamp to 2 lines and RESERVE 2 lines so badge rows align.
-  The card rating badge shows IMDb first, else TMDb (`★ 7.7`, source on the tooltip).
+- **Grid geometry** (densified per owner feedback 2026-07-06 — posters tell media apart at a
+  glance, not hero display): `auto-fill minmax(132px, 1fr)`, gap 12px (**≈9 columns at 1440px**,
+  was ≈6 at 190px), pinned to exactly **3 columns ≤480px** (was 2). The card caption slims to a
+  **single-line title with an ellipsis** (the trailing year truncates with it) and a slimmer
+  badge row — the **kind badge is dropped** (the active tab already names the kind), leaving the
+  rating star + on-disk state (smaller). The card rating badge shows IMDb first, else TMDb
+  (`★ 7.7`, source on the tooltip). The 2:3 reserved boxes + KindIcon fallback are unchanged (ADR-015).
 - **Detail**: the head swaps the kind icon for the 96px poster box + a runtime·resolution
   meta line; the About card (ratings pills with vote-count tooltips, watch/added facts,
-  genre/requester/collection chips) renders only when metadata exists. Its facts `<dl>` is
+  genre/requester/collection chips) renders only when there is harvested content to show.
+  Since `ledger.detail.metadata` is now the always-object shape (fix 2026-07-06), that gate is a
+  **content predicate** (`hasAbout` — any rating / watch fact / added date / chip present), not
+  the old `metadata !== null` object check (dead under the normalized shape). Its facts `<dl>` is
   `.about-facts`, NOT a second `.meta-grid` — the Details section owns that class and the
   e2e suite targets it singularly.
 

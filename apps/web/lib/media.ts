@@ -192,7 +192,8 @@ export function onDiskSummary(input: {
 // ADR-018 / DESIGN-008 — metadata display helpers (D-01: the media noun is a display map,
 // not a new enum; ARR_KIND_LABELS above already maps radarr/sonarr/lidarr → Movie/TV/Music).
 
-/** The RESOLUTIONS enum in quality order (facets return alphabetical — resort for display). */
+/** The RESOLUTIONS enum in quality order — the ResolutionName union + the facet display order
+ *  (filterFacets returns resolutions in this order server-side, so the client renders verbatim). */
 export const RESOLUTION_ORDER = ['2160p', '1080p', '720p', '576p', '480p', 'sd', 'unknown'] as const;
 export type ResolutionName = (typeof RESOLUTION_ORDER)[number];
 
@@ -206,11 +207,6 @@ export const RESOLUTION_LABELS: Record<string, string> = {
   sd: 'SD',
   unknown: 'Unknown',
 };
-
-/** Order facet resolution values best-first, dropping anything outside the known enum. */
-export function orderResolutions(values: string[]): ResolutionName[] {
-  return RESOLUTION_ORDER.filter((r) => values.includes(r));
-}
 
 /** A 0-10 rating to one decimal (e.g. 8 → "8.0", 7.35 → "7.4"); null → null. */
 export function formatRating(value: number | null): string | null {

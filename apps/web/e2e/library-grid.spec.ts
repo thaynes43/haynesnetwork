@@ -103,25 +103,38 @@ test.describe('library poster grid + filter/sort engine (DESIGN-008 D-10/D-11)',
     await expect(page).not.toHaveURL(/genre=/);
   });
 
-  test('the bounded rating chip filters by imdb_rating (Movies only)', async ({ page }) => {
+  test('the bounded rating chip filters by COALESCE(imdb, tmdb) — on every tab', async ({
+    page,
+  }) => {
     await signIn(page, 'member');
     await openMovies(page);
 
+    // Movies: the Radarr tier fills imdb_rating — ≥ 7 keeps The Fixture (7.7), drops Stub Runner (6.4).
     await page.getByTitle('Edit the Rating filter').click();
     const popover = page.getByRole('dialog', { name: 'Edit the Rating filter' });
     await popover.getByLabel('Minimum rating').selectOption('7');
     await expect(page.locator('.poster-card')).toHaveCount(1);
-    await expect(page.locator('.poster-card')).toContainText('The Fixture'); // 7.7 stays, 6.4 drops
+    await expect(page.locator('.poster-card')).toContainText('The Fixture');
     await expect(page).toHaveURL(/rmin=7/);
     await page.keyboard.press('Escape');
     await expect(page.locator('.hnet-filter-chip').filter({ hasText: 'Rating' })).toContainText(
       'Rating · ≥ 7',
     );
 
-    // TV never offers the movie-centric rating chip (ADR-018 C-07).
+    // TV now offers the SAME chip (superseded the Movies-only rule): Breaking Prod carries only a
+    // tmdb_rating (8.2 — the Sonarr community rating, ADR-018 C-07), which COALESCE surfaces.
     await page.getByRole('tab', { name: 'TV' }).click();
     await expect(page.locator('.poster-card').filter({ hasText: 'Breaking Prod' })).toHaveCount(1);
-    await expect(page.getByTitle('Edit the Rating filter')).toHaveCount(0);
+    await expect(page.getByTitle('Edit the Rating filter')).toHaveCount(1);
+
+    // ≥ 8 keeps it (8.2 ≥ 8), proving the filter reads tmdb_rating on TV…
+    await page.getByTitle('Edit the Rating filter').click();
+    await page.getByRole('dialog', { name: 'Edit the Rating filter' }).getByLabel('Minimum rating').selectOption('8');
+    await expect(page.locator('.poster-card')).toHaveCount(1);
+    // …and ≥ 9 drops it (8.2 < 9) → the honest empty state, no reflow.
+    await page.getByRole('dialog', { name: 'Edit the Rating filter' }).getByLabel('Minimum rating').selectOption('9');
+    await expect(page.locator('.poster-card')).toHaveCount(0);
+    await expect(page.locator('.empty-state')).toBeVisible();
   });
 
   test('sort journey: Rating cycles best-first → reversed, swapping results without layout jumps', async ({
@@ -203,20 +216,23 @@ test.describe('library poster grid + filter/sort engine (DESIGN-008 D-10/D-11)',
     );
   });
 
-  test('mobile 390×844: 2-column grid, single-row chip bar, viewport-clamped popover', async ({
+  test('mobile 390×844: 3-column grid, single-row chip bar, viewport-clamped popover', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await signIn(page, 'member');
     await openMovies(page);
 
-    // Two columns: the two cards share a row (same y), split across the width.
+    // The two seeded cards share the first row of the dense 3-column grid (same y), split across
+    // the width (owner densify 2026-07-06: 3 columns at 390px, was 2).
     const boxes = await Promise.all(
       (await page.locator('.poster-card').all()).map((c) => c.boundingBox()),
     );
     expect(boxes).toHaveLength(2);
     expect(Math.abs(boxes[0]!.y - boxes[1]!.y)).toBeLessThan(2);
     expect(boxes[1]!.x).toBeGreaterThan(boxes[0]!.x + boxes[0]!.width - 2);
+    // Three columns at 390px: each card is well under half the viewport width.
+    expect(boxes[0]!.width).toBeLessThan(150);
 
     // The chip bar stays ONE fixed-height row (it pans horizontally; it never wraps/grows).
     const bar = (await page.locator('.library-chipbar').boundingBox())!;

@@ -60,7 +60,9 @@ test.describe('media ledger + fix flow', () => {
     // The TV show lives under the TV sub-tab (each media tab scopes the list to its category).
     await page.getByRole('tab', { name: 'TV' }).click();
     const card = page.locator('.media-card').filter({ hasText: 'Breaking Prod' });
-    await expect(card).toContainText('TV');
+    // Slim badge row (kind badge dropped 2026-07-06): the TMDb rating star (8.2 via the tmdb
+    // slot) + on-disk state ride the card; the TV tab itself names the kind.
+    await expect(card).toContainText('★ 8.2');
     await expect(card).toContainText('9/10 on disk');
 
     // Owner ruling 2026-07-04: library tiles are ACTION-FREE — no Fix / Force Search
@@ -232,7 +234,7 @@ test.describe('media ledger + fix flow', () => {
     await page.locator('.topbar__nav').getByRole('link', { name: 'Library' }).click();
     await page.waitForURL('/library');
     const card = page.locator('.media-card').filter({ hasText: 'The Fixture' });
-    await expect(card).toContainText('Movie');
+    await expect(card).toContainText('On disk'); // slim badge row (the kind badge was dropped)
     await card.click();
     await page.waitForURL(/\/library\/[0-9a-f-]{36}$/);
     await expect(page.locator('.detail-head__title')).toContainText('The Fixture');

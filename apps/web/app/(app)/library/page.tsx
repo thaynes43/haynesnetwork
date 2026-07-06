@@ -13,7 +13,7 @@
 //   ?disk=complete|partial|none            on-disk narrowing ('any' = absent)
 //   ?wanted=1                              the wanted-only toggle
 //   ?genre=…&genre=… / res / req / col     facet filters (REPEATED params — comma-safe)
-//   ?rmin=7&rmax=9                         the bounded rating chip (imdb_rating, D-09)
+//   ?rmin=7&rmax=9                         the bounded rating chip (COALESCE imdb/tmdb, D-09)
 //   ?sort=imdb_rating:desc                 wire sort ('title:asc' = absent default)
 // Every filter/sort edit uses router.replace — the URL always mirrors the state (shareable),
 // while Back/Forward cross PAGES, not individual filter edits. Switching media tabs keeps
@@ -41,11 +41,9 @@ import {
 } from '@hnet/ui';
 import { trpc } from '@/lib/trpc-client';
 import {
-  ARR_KIND_LABELS,
   RESOLUTION_LABELS,
   formatRating,
   onDiskSummary,
-  orderResolutions,
   type ArrKindName,
   type ResolutionName,
 } from '@/lib/media';
@@ -305,11 +303,10 @@ function MediaBrowser({ arrKind, label }: { arrKind: ArrKindName; label: string 
 
   // ── facets + search (D-09) ──
   const facets = trpc.ledger.filterFacets.useQuery({ arrKind });
-  const facetValues = (field: LibraryField): readonly string[] => {
-    if (facets.data === undefined) return [];
-    if (field === 'resolutions') return orderResolutions(facets.data.resolutions);
-    return facets.data[field];
-  };
+  // filterFacets already returns resolutions in RESOLUTIONS enum order (server-side, D-09) —
+  // no client re-sort needed; every facet is used verbatim.
+  const facetValues = (field: LibraryField): readonly string[] =>
+    facets.data === undefined ? [] : facets.data[field];
 
   const resolutionsInput = filterValues(filters, 'resolutions').filter((v): v is ResolutionName =>
     Object.hasOwn(RESOLUTION_LABELS, v),
@@ -421,20 +418,19 @@ function MediaBrowser({ arrKind, label }: { arrKind: ArrKindName; label: string 
               onClear={() => setFieldValues(f.field, [])}
             />
           ))}
-          {/* The bounded rating chip (D-11 judgment call): Movies only — D-09's ratingMin/Max
-              compare imdb_rating, which only the Radarr tier fills (ADR-018 C-07). */}
-          {arrKind === 'radarr' ? (
-            <RatingChip
-              min={ratingMin}
-              max={ratingMax}
-              onChange={(min, max) =>
-                patchParams({
-                  rmin: min === undefined ? null : String(min),
-                  rmax: max === undefined ? null : String(max),
-                })
-              }
-            />
-          ) : null}
+          {/* The bounded rating chip — on ALL tabs (superseded the Movies-only judgment call,
+              2026-07-06): D-09's ratingMin/Max now COALESCE(imdb_rating, tmdb_rating), so the
+              Sonarr/Lidarr community rating (in the tmdb slots, ADR-018 C-07) filters too. */}
+          <RatingChip
+            min={ratingMin}
+            max={ratingMax}
+            onChange={(min, max) =>
+              patchParams({
+                rmin: min === undefined ? null : String(min),
+                rmax: max === undefined ? null : String(max),
+              })
+            }
+          />
         </div>
 
         {/* Sort bar (D-10 nextSort/arrowFor): each column cycles best-first → reversed →
@@ -501,8 +497,10 @@ function MediaBrowser({ arrKind, label }: { arrKind: ArrKindName; label: string 
                     {item.title}
                     {item.year !== null ? <span className="muted"> ({item.year})</span> : null}
                   </span>
+                  {/* Slim badge row (owner densify 2026-07-06): the kind badge is dropped — the
+                      active tab already names the kind — leaving the rating star + on-disk state
+                      (and the tombstone flag when set). */}
                   <span className="media-card__badges">
-                    <span className="badge badge--muted">{ARR_KIND_LABELS[item.arrKind]}</span>
                     {rating !== null ? (
                       <span className="badge badge--rating" title={`${ratingSource} rating`}>
                         ★ {rating}
@@ -673,7 +671,7 @@ function RatingChip({
                 ))}
               </select>
             </label>
-            <p className="rating-editor__hint muted">IMDb score, 0–10</p>
+            <p className="rating-editor__hint muted">Rating, 0–10</p>
           </div>
         </div>
       ) : null}
