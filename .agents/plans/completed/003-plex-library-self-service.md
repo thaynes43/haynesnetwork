@@ -1,8 +1,12 @@
 # PLAN-003: Plex library self-service (Phase 3)
 
-- **Status:** Executing   _(Fable 5 flips Draft → Executing → Completed)_ — code+docs+tests
-  landed locally on branch `feat/plex-library-self-service` (gate green; e2e green). Remaining
-  for Completed: PR → merge → deploy → LIVE validation (owner test-user, Q-06).
+- **Status:** Completed (2026-07-06) — shipped v0.6.0 + fix v0.6.1; fully live-validated:
+  registry refresh across all three servers (family libraries populated), role grants + member
+  isolation with audited flips, and the real plex.tv share cycle on an owner-designated friend
+  account (owner-sanctioned allLibraries demotion): remove + re-add with read-merge-write
+  preserving all other libraries, same-tx plex_share_audit trail, ConfirmButton two-step against
+  production. Follow-on: role-scoped all-libraries self-service model (owner-directed 2026-07-06)
+  ships separately as ADR-024.
 - **Numbering reconciled at authoring (2026-07-06):** the placeholder `ADR-016` below is
   **ADR-017** (016 was taken by the bazarr subtitle-fix ADR); migration is **0010**.
 - **Satisfies:** PRD-001 R-25..R-28 (+ resolves Q-03); NEW **ADR-017** (Plex sharing +
