@@ -6,18 +6,15 @@
 import { useState } from 'react';
 import { trpc } from '@/lib/trpc-client';
 import { describeMutationError } from '@/lib/app-error';
-import { FIX_REASON_LABELS, targetToInput, type ActionTarget } from '@/lib/media';
+import {
+  FIX_REASON_LABELS,
+  fixReasonsForKind,
+  targetToInput,
+  type ActionTarget,
+  type ArrKindName,
+  type FixReasonName,
+} from '@/lib/media';
 import { Modal } from '@/components/modal';
-
-const REASONS = [
-  'wont_play_corrupt',
-  'wrong_language',
-  'wrong_version_quality',
-  'missing_subtitles',
-  'wrong_content',
-  'other',
-] as const;
-type Reason = (typeof REASONS)[number];
 
 export interface FixDialogProps {
   open: boolean;
@@ -37,9 +34,13 @@ export function FixDialog({ open, onClose, item, target, onSubmitted }: FixDialo
   const needsTarget = item.arrKind === 'sonarr' || item.arrKind === 'lidarr';
   const targetNoun = item.arrKind === 'sonarr' ? 'episode' : 'album';
   const preselected = target ?? null;
+  // ADR-016 / D-19: the reason set is fixed by kind at dialog-open (Music excludes
+  // 'missing_subtitles' — Bazarr covers movies/TV only). It never changes on interaction,
+  // so no reflow-on-interaction (ADR-015 / hard rule 9).
+  const reasons = fixReasonsForKind(item.arrKind as ArrKindName);
 
   const [targetChildId, setTargetChildId] = useState<number | ''>('');
-  const [reason, setReason] = useState<Reason>('wont_play_corrupt');
+  const [reason, setReason] = useState<FixReasonName>('wont_play_corrupt');
   const [reasonText, setReasonText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ pathTaken: string; targetLabel: string | null } | null>(null);
@@ -114,9 +115,11 @@ export function FixDialog({ open, onClose, item, target, onSubmitted }: FixDialo
       {done ? (
         <div className="fix-done">
           <p className="fix-done__lead">
-            {done.pathTaken === 'blocklist_search'
-              ? 'The bad release was blocklisted and a search for a replacement is running.'
-              : 'The file was removed and a search for a replacement is running.'}
+            {done.pathTaken === 'bazarr_subtitle'
+              ? 'Bazarr is searching for and downloading subtitles — the media file itself is untouched.'
+              : done.pathTaken === 'blocklist_search'
+                ? 'The bad release was blocklisted and a search for a replacement is running.'
+                : 'The file was removed and a search for a replacement is running.'}
           </p>
           {done.targetLabel ? <p className="muted">Target: {done.targetLabel}</p> : null}
           <p className="muted">
@@ -174,7 +177,7 @@ export function FixDialog({ open, onClose, item, target, onSubmitted }: FixDialo
           <fieldset className="field">
             <legend>What is wrong? (required)</legend>
             <ul className="check-list">
-              {REASONS.map((value) => (
+              {reasons.map((value) => (
                 <li key={value}>
                   <label className="check-row">
                     <input

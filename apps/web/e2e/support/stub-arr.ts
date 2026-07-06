@@ -32,6 +32,9 @@ export interface StubArrServer {
 /** The seeded Sonarr series the e2e ledger row mirrors (see seed-ledger.ts). */
 export const STUB_SERIES_ID = 501;
 export const STUB_SERIES_TVDB_ID = 990001;
+/** The seeded Lidarr artist + its one on-disk album (ADR-016 / D-19 no-subtitle-radio assertion). */
+export const STUB_ARTIST_ID = 701;
+export const STUB_ALBUM_ID = 7011;
 /** Grab-history ids are derived so specs can predict them: 700000 + episodeId. */
 export const grabHistoryIdFor = (episodeId: number) => 700_000 + episodeId;
 
@@ -229,6 +232,30 @@ export async function startStubArr(): Promise<StubArrServer> {
         case '/episode': {
           if (Number(query.seriesId) !== STUB_SERIES_ID) return json(res, 200, []);
           return json(res, 200, episodes());
+        }
+        case '/album': {
+          // Lidarr album picker (D-06): the seeded artist 701 has one on-disk album so its
+          // detail offers Fix — used to assert Music offers no 'Missing subtitles' radio
+          // (ADR-016 / D-19). Mirrors seed-ledger.ts's lidarr row.
+          if (Number(query.artistId) !== STUB_ARTIST_ID) return json(res, 200, []);
+          return json(res, 200, [
+            {
+              id: STUB_ALBUM_ID,
+              artistId: STUB_ARTIST_ID,
+              foreignAlbumId: '11111111-2222-3333-4444-666666660701',
+              title: 'Stub Sessions',
+              albumType: 'Album',
+              monitored: true,
+              anyReleaseOk: true,
+              releaseDate: '2020-01-01T00:00:00Z',
+              statistics: {
+                trackFileCount: 10,
+                trackCount: 10,
+                totalTrackCount: 10,
+                sizeOnDisk: 1_073_741_824,
+              },
+            },
+          ]);
         }
         case '/history': {
           // STRICT: the real paged /history binds eventType to the INTEGER enum — a

@@ -114,6 +114,13 @@ rebuilding a lost *arr instance.
 > Library; the old `/my-fixes` route redirects to `/library?tab=my-fixes`. See DESIGN-005 D-15/D-17
 > and DESIGN-004 D-08. No change to the requirements themselves — this records how they are surfaced.
 
+> **Note (2026-07-06) — subtitle Fix routes to Bazarr (R-44/R-45):** the Fix reason
+> `missing_subtitles` does **not** take the R-44 mark-failed/blocklist or delete-file path and does
+> **not** trigger an *arr re-grab — the media file is untouched. Instead it triggers a **Bazarr**
+> subtitle search for the movie (Radarr) / episode (Sonarr). Because Bazarr covers movies/TV only,
+> the reason is **not offered for Music** (Lidarr). No change to the requirements themselves — see
+> ADR-016 / DESIGN-005 D-19.
+
 ### Failsafe restore (Phase 2)
 
 | ID | Requirement | Priority |

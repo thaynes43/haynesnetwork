@@ -19,6 +19,15 @@ export const ARR_CLUSTER_URL_DEFAULTS: Record<ArrServiceName, string> = {
   seerr: 'http://seerr.media.svc.cluster.local:5055',
 };
 
+/**
+ * Bazarr is NOT an *arr (ADR-016 / DESIGN-005 D-19) — it is the subtitle manager the
+ * missing_subtitles Fix routes to. It has its own in-cluster service DNS default (verified:
+ * `haynes-ops/.../apps/media/bazarr/app/helmrelease.yaml` service port 6767) and is kept out
+ * of ARR_SERVICES so BAZARR_API_KEY never becomes a hard requirement of assertArrEnv (sync
+ * never touches Bazarr).
+ */
+export const BAZARR_CLUSTER_URL_DEFAULT = 'http://bazarr.media.svc.cluster.local:6767';
+
 export interface ArrInstanceConfig {
   baseUrl: string;
   apiKey: string;
@@ -45,4 +54,24 @@ export function assertArrEnv(
   }
   if (missing.length > 0) throw new ArrConfigError(missing);
   return config;
+}
+
+export interface BazarrEnvConfig {
+  baseUrl: string;
+  apiKey: string;
+}
+
+/**
+ * ADR-016 / DESIGN-005 D-19 — the Bazarr subtitle-fix env contract. Reads `BAZARR_URL`
+ * (defaulting to the in-cluster service DNS) + `BAZARR_API_KEY` (required; never echoed —
+ * same ArrConfigError shape as assertArrEnv). Separate from assertArrEnv so sync, which
+ * never touches Bazarr, is not forced to carry BAZARR_API_KEY.
+ */
+export function assertBazarrEnv(
+  env: Record<string, string | undefined> = process.env,
+): BazarrEnvConfig {
+  const baseUrl = env.BAZARR_URL?.trim() || BAZARR_CLUSTER_URL_DEFAULT;
+  const apiKey = env.BAZARR_API_KEY?.trim() ?? '';
+  if (!apiKey) throw new ArrConfigError(['BAZARR_API_KEY']);
+  return { baseUrl, apiKey };
 }

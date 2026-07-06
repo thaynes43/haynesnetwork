@@ -63,7 +63,10 @@ export const FIX_STATUSES = [
 ] as const; // Fix Lifecycle, DDD-001 T-43
 export type FixStatus = (typeof FIX_STATUSES)[number];
 
-export const FIX_PATHS = ['blocklist_search', 'delete_search'] as const; // AC-07 vs AC-08
+// AC-07 (blocklist_search) vs AC-08 (delete_search); ADR-016/D-19 added 'bazarr_subtitle'
+// — the missing_subtitles Fix routes to Bazarr's subtitle search (no blocklist, no delete,
+// no *arr re-grab; the media file is untouched). Migration 0009 relaxes the CHECK.
+export const FIX_PATHS = ['blocklist_search', 'delete_search', 'bazarr_subtitle'] as const;
 export type FixPath = (typeof FIX_PATHS)[number];
 
 // DESIGN-005 D-09 (hierarchy-actions amendment) — the SCOPE a Fix Request targets.

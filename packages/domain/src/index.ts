@@ -17,6 +17,7 @@ export * from './restore-runs';
 // mutating *arr surface stays confined to this package — D-12/D-18 guard test)
 export * from './arr-clients';
 export * from './action-scope';
+export * from './fix-reasons';
 export * from './media-children';
 export * from './fix-flow';
 export * from './search-requests';

@@ -157,6 +157,7 @@ during this investigation):**
 | Trigger search | `POST /command` with `{name: 'EpisodeSearch', episodeIds: int[]}` · `{name: 'MoviesSearch', movieIds: int[]}` · `{name: 'AlbumSearch', albumIds: int[]}`. **Roll-up scopes (ADR-011, D-15) add:** `{name: 'SeasonSearch', seriesId, seasonNumber}` + `{name: 'SeriesSearch', seriesId}` (sonarr) and `{name: 'ArtistSearch', artistId}` (lidarr) | Command *names* are not enumerable read-only via REST; verified against the command class constants in each *arr's `develop` source (`EpisodeSearchCommand`, `MoviesSearchCommand`, `AlbumSearchCommand`, `SeasonSearchCommand` {`SeriesId`+`SeasonNumber`}, `SeriesSearchCommand`, `ArtistSearchCommand` {`ArtistId`}). Implemented as `searchEpisodes`/`searchSeason`/`searchSeries` (`SonarrWriteClient`), `searchMovies` (`RadarrWriteClient`), `searchAlbums`/`searchArtist` (`LidarrWriteClient`) in `packages/arr/src/write.ts`. |
 | Re-add item (Restore) | `POST /series` · `POST /movie` · `POST /artist` | Payloads take the item resource + `addOptions` (`AddSeriesOptions{monitor, searchForMissingEpisodes,…}`, `AddMovieOptions{monitor, searchForMovie,…}`, `AddArtistOptions{monitor, monitored, searchForMissingAlbums,…}`). |
 | Create tag (Restore prerequisite) | `POST /tag` `{label}` | All three; restore recreates missing tags by **label** before re-adding items. |
+| Subtitle search (Bazarr — ADR-016 / D-19) | Movie: `PATCH /api/movies?radarrid=&action=search-missing` · Sonarr (episode/season): `PATCH /api/series?seriesid=&action=search-missing` (+ pre-read GETs `GET /api/movies?radarrid[]=` · `GET /api/episodes?episodeid[]=`) | Bazarr 1.5.6, base path `/api` (no `v3`), header `X-API-KEY`. Async/queued (HTTP 204 ~18ms, verified live 2026-07-06). The `missing_subtitles` Fix routes here instead of blocklist/delete — the media file is untouched. Bazarr 1.5.6 has no async per-episode action, so an episode fix uses the series-level search (`searchSeriesSubtitles`). |
 
 ### D-04 Granularity: one `media_items` row per series / movie / artist
 
@@ -548,6 +549,7 @@ Continues DESIGN-001 D-13:
 | `0004_search_requested_event.sql` | Relaxes (drop + re-add) the `ledger_events_event_type_enum` CHECK to admit `'search_requested'` — the Force Search audit event (D-17). Existing rows unaffected | hand-written ALTER TABLE; `LEDGER_EVENT_TYPES` extended in `packages/db/src/schema/enums.ts` in the same change |
 | `0005_unaccent_search.sql` | `CREATE EXTENSION IF NOT EXISTS unaccent` — accent/diacritic-insensitive library search (owner report: "pokemon" must find "Pokémon"). The `ledger.search` router wraps `unaccent()` around both the `media_items` column and the LIKE pattern (still ILIKE for case). Idempotent; a no-op on re-run. No expression index — `unaccent()` is STABLE not IMMUTABLE, and a seq scan at ~17k rows is cheap (deferred). CNPG images and the embedded-PG16 test binary both ship contrib `unaccent` | hand-written; no schema/enum change |
 | `0006_fix_target_scope.sql` | Media-hierarchy actions: adds `fix_requests.target_scope` (`text NOT NULL DEFAULT 'item'`, CHECK `item\|season\|episode\|album`) + `target_season` (`integer`, CHECK: non-null IFF scope `season`), backfilling existing rows from their kind + child id. Lets a Fix repair a whole sonarr **season** and, with scope + season now in the open-fix dedupe key, keeps two seasons of one show (both null child) from colliding (D-09) | hand-written ALTER TABLE; `FIX_TARGET_SCOPES` added to `packages/db/src/schema/enums.ts` in the same change |
+| `0009_bazarr_subtitle_fix_path.sql` | Subtitle Fix via Bazarr (ADR-016 / D-19): relaxes (drop + re-add) the `fix_requests_path_enum` CHECK to admit the new FixPath `'bazarr_subtitle'`, keeping the `IS NULL OR` guard. Existing rows unaffected (additive) | hand-written ALTER TABLE; `FIX_PATHS` extended in `packages/db/src/schema/enums.ts` in the same change |
 
 No seed data — every row arrives via sync.
 
@@ -982,7 +984,16 @@ fields only — unknown *arr fields never enter the app (BC-03 ACL).
 | `RADARR_URL` | `http://radarr.media.svc.cluster.local:7878` | `https://radarr.haynesops.com` |
 | `LIDARR_URL` | `http://lidarr.media.svc.cluster.local:8686` | `https://lidarr.haynesops.com` |
 | `SEERR_URL` | `http://seerr.media.svc.cluster.local:5055` | `https://seerr.haynesops.com` |
+| `BAZARR_URL` (ADR-016 / D-19) | `http://bazarr.media.svc.cluster.local:6767` | `https://bazarr.haynesops.com` |
 | `SONARR_API_KEY` / `RADARR_API_KEY` / `LIDARR_API_KEY` / `SEERR_API_KEY` | ExternalSecret (below) | copied from the same 1Password fields |
+| `BAZARR_API_KEY` (ADR-016 / D-19) | ExternalSecret (below) | copied from the same 1Password field |
+
+> **Bazarr is not an *arr.** `BAZARR_URL`/`BAZARR_API_KEY` are read by a **separate**
+> `assertBazarrEnv` (not `assertArrEnv`, whose `ARR_SERVICES` set is untouched), so sync —
+> which never calls Bazarr — is not forced to carry the key. `assertBazarrEnv` is part of the
+> fix/restore client bundle env (`arrClientBundleFromEnv`); `BAZARR_URL` defaults to the
+> in-cluster service DNS, `BAZARR_API_KEY` is required. The Bazarr client uses base path
+> `/api` (no `v3`) and auth header `X-API-KEY` (exact casing, unlike the *arr `X-Api-Key`).
 
 These are server/CronJob-only values — they never reach client bundles, and the
 `*.haynesops.com` dev URLs are backend config, not user-facing links (R-14 untouched; the
@@ -997,6 +1008,105 @@ sources verified against the live cluster's existing ExternalSecrets in ns `medi
 | `RADARR_API_KEY` | `media-stack` → `RADARR_API_KEY` (same pattern) |
 | `LIDARR_API_KEY` | `lidarr` → `LIDARR__AUTH__APIKEY` (the `lidarr` item is whole-item-extracted in ns `media`; we map the field to the clean name) |
 | `SEERR_API_KEY` | today only exists as `HOMEPAGE_VAR_SEERR_API_KEY` (whole-item extract feeding `homepage-secret`, ns `frontend`); recommend the owner add a canonical `SEERR_API_KEY` field to `media-stack` — Q-06 |
+| `BAZARR_API_KEY` (ADR-016 / D-19) | `media-stack` → `BAZARR_API_KEY` (Bazarr's own `config.yaml` `auth.apikey`; add the field to the item if absent). The haynesnetwork ExternalSecret already `dataFrom: extract: media-stack`, so it resolves once the field exists. Deploy wiring lands with the cluster change, not here. |
+
+### D-19 Subtitle Fix via Bazarr (ADR-016)
+
+The Fix reason `missing_subtitles` is **not a bad grab** — the media file is fine, only its
+subtitles are missing. ADR-016 routes it to **Bazarr** (the estate's subtitle manager)
+instead of the ADR-007 blocklist/delete + re-grab paths, adding a new FixPath
+`bazarr_subtitle`.
+
+**`runFixRequest` reason branch — placement.** In `packages/domain/src/fix-flow.ts`, after
+the item load + `resolveFixTarget` but **before** the `scope === 'season'` → `runSeasonFix`
+branch, a `if (input.reason === 'missing_subtitles') return runSubtitleFix(...)` short-circuit
+diverts the flow. It sits before the season branch on purpose: a **season-scoped**
+`missing_subtitles` fix must NOT fall into `runSeasonFix`'s blocklist/delete path —
+`runSubtitleFix` handles episode **and** season scope uniformly via the single series-level
+Bazarr call. `runSubtitleFix`:
+
+1. guards kind ∈ {sonarr, radarr}, else `SubtitleFixUnsupportedError` — thrown **before**
+   `createFixRequest` so no orphan `pending` row is left (Music never reaches here in normal
+   use: the reason is not offered and the router rejects it);
+2. resolves the display label read-only (sonarr episode → `listMediaChildren`; season →
+   `Season N`; radarr → null, the movie is the target);
+3. `createFixRequest` — the `pending` row + `fix_requested` event commit in one tx **before**
+   any Bazarr call (D-09 crash-safety), reason `missing_subtitles`, `path_taken` null;
+4. Bazarr **pre-read** (audit color — which languages are missing) then the **PATCH** search;
+5. `recordFixAction` → `actioned` (`path_taken='bazarr_subtitle'`, step entries appended to
+   `actions_taken`) then `search_triggered` — the resting state (fire-and-forget).
+
+Any Bazarr `ArrError` reuses the existing `fail(...)` helper → `failed` + `fix_failed` +
+`ArrUpstreamError` (D-17 / BAD_GATEWAY). Bazarr down = subtitle fix fails, no file touched
+(fail-closed).
+
+```mermaid
+sequenceDiagram
+    actor U as User (Member)
+    participant W as apps/web (fix router)
+    participant D as packages/domain
+    participant B as Bazarr (via @hnet/arr)
+
+    U->>W: fix.create { mediaItemId, targetChildId?/scope, reason: 'missing_subtitles' }
+    W->>D: runFixRequest → reason branch → runSubtitleFix (kind guard: sonarr/radarr only)
+    D-->>W: fix_requests row (pending) + fix_requested event  [one tx, before any Bazarr call]
+    alt radarr (movie)
+        W->>B: GET /api/movies?radarrid[]=<movieId>            (pre-read: missing languages)
+        B-->>W: { data: [{ radarrId, missing_subtitles }] }
+        W->>B: PATCH /api/movies?radarrid=<movieId>&action=search-missing
+        B-->>W: 204 (queued)
+    else sonarr (episode → pre-read; episode OR season → series-level search)
+        opt episode scope
+            W->>B: GET /api/episodes?episodeid[]=<episodeId>   (pre-read: missing languages)
+            B-->>W: { data: [{ sonarrEpisodeId, missing_subtitles }] }
+        end
+        W->>B: PATCH /api/series?seriesid=<seriesId>&action=search-missing
+        B-->>W: 204 (queued)
+    end
+    W->>D: recordFixAction → actioned (path=bazarr_subtitle) → search_triggered
+    W-->>U: "Bazarr is searching for and downloading subtitles — the media file is untouched."
+    Note over D,B: NO blocklist, NO file delete, NO *arr *Search command. Fire-and-forget:<br/>the fix rests at search_triggered and never auto-completes (completeFixRequests excludes it).
+```
+
+**Bazarr client (`@hnet/arr`).** `BazarrClient` (`@hnet/arr/read`) and `BazarrWriteClient`
+(`@hnet/arr/write`, so the D-12 write-import confinement holds unchanged) both construct
+`ArrHttp` with base path `/api` (no `v3`) and the `apiKeyHeader: 'X-API-KEY'` override (exact
+casing, unlike the *arr `X-Api-Key`). `ArrHttp` gained `PATCH` in its method unions and an
+optional `apiKeyHeader` (default `X-Api-Key`). Reads consume only the subset in
+`packages/arr/src/schemas/bazarr.ts` (envelope `{data: [...]}`; movie: `radarrId`, `title`,
+`missing_subtitles[{code2,name,forced,hi}]`; episode: `sonarrSeriesId`, `sonarrEpisodeId`,
+`season`, `episode`, `title`, `missing_subtitles`) — BC-03 ACL. The bundle
+(`ArrClientBundle`) gains `read.bazarr` + `write.bazarr`; `arrClientBundleFromEnv` builds them
+via `assertBazarrEnv` (D-18).
+
+**Per-kind reason offer rule.** `FIX_REASONS` is **unchanged** (all six values still valid).
+`fixReasonsForKind(kind)` (`packages/domain/src/fix-reasons.ts`) returns all six for
+sonarr/radarr and the five-minus-`missing_subtitles` set for lidarr. The web layer carries a
+**framework-free mirror** in `apps/web/lib/media.ts` (repo convention: `lib/media.ts` never
+imports `@hnet/domain`); the Fix dialog's reason list is `fixReasonsForKind(item.arrKind)`, so
+Music never renders the "Missing subtitles" radio. The domain guard
+`SubtitleFixUnsupportedError` (→ TRPC `UNPROCESSABLE_CONTENT`, appCode
+`SUBTITLE_FIX_UNSUPPORTED`) is defense-in-depth.
+
+**`completeFixRequests` exclusion (correctness).** A subtitle fix produces no `imported`
+event, so it must never be auto-completed. Worse: a movie/season subtitle fix has a **null**
+`target_arr_child_id`, and the completer matches any import on the item when the child is null
+— so an unrelated later import (a normal re-grab of another file) would spuriously flip the
+subtitle fix to `completed`. The completer's `open` query now filters
+`path_taken IS DISTINCT FROM 'bazarr_subtitle'`; subtitle fixes rest at `search_triggered`.
+
+**No dynamic hint under the reason radios (ADR-015 / hard rule 9).** The reason set is fixed
+by kind **at dialog-open** and never changes on interaction, so there is no
+reflow-on-interaction. Selecting `missing_subtitles` adds **no** field or hint — a dynamic
+hint would reflow the dialog and was rejected. The Bazarr copy appears only in the post-submit
+`done` block ("Bazarr is searching for and downloading subtitles — the media file itself is
+untouched."), a three-way with the blocklist/delete copy.
+
+**Env contract.** `BAZARR_URL` (defaulted) + `BAZARR_API_KEY` (required) via `assertBazarrEnv`
+(D-18 table above). Migration `0009` relaxes the `fix_requests_path_enum` CHECK for
+`'bazarr_subtitle'` (D-13). e2e adds a stub Bazarr server (`apps/web/e2e/support/stub-bazarr.ts`)
+wired into the harness so `pnpm dev:local` and the Playwright suite drive the subtitle Fix
+hermetically.
 
 ## Alternatives considered
 

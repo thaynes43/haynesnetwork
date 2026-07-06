@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import { startPostgres, type StartedPostgres } from '@hnet/test-utils/postgres';
 import { startStubOidc, type StubOidcServer } from './stub-oidc';
 import { startStubArr, type StubArrServer } from './stub-arr';
+import { startStubBazarr, type StubBazarrServer } from './stub-bazarr';
 import { composeRuntimeEnv, DEFAULT_APP_PORT, type RuntimeEnv } from './env';
 
 const DEV_READY_TIMEOUT_MS = 180_000;
@@ -38,10 +39,12 @@ export interface RunningStack {
   oidc: StubOidcServer;
   /** Stub Sonarr/Radarr/Lidarr/Seerr stand-in (DESIGN-005 e2e layer). */
   arr: StubArrServer;
+  /** Stub Bazarr stand-in — subtitle-fix e2e layer (ADR-016 / D-19). */
+  bazarr: StubBazarrServer;
   devServer: ChildProcess;
   /** The DESIGN-002 D-08 env the dev server was booted with. */
   env: RuntimeEnv;
-  /** Idempotent, reverse-order teardown: dev server → stub *arr → stub OIDC → Postgres. */
+  /** Idempotent, reverse-order teardown: dev server → stub Bazarr → stub *arr → stub OIDC → Postgres. */
   stop: () => Promise<void>;
 }
 
@@ -124,6 +127,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
   const pg = await startPostgres();
   let oidc: StubOidcServer | undefined;
   let arr: StubArrServer | undefined;
+  let bazarr: StubBazarrServer | undefined;
   let dev: ChildProcess | undefined;
   try {
     const migrate = spawnSync('pnpm', ['--filter', '@hnet/db', 'migrate'], {
@@ -151,11 +155,13 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
 
     oidc = await startStubOidc();
     arr = await startStubArr();
+    bazarr = await startStubBazarr();
     const env = composeRuntimeEnv({
       databaseUrl: pg.connectionString,
       stubOidcBaseUrl: oidc.baseUrl,
       stubOidcDiscoveryUrl: oidc.discoveryUrl,
       stubArrBaseUrl: arr.baseUrl,
+      stubBazarrBaseUrl: bazarr.baseUrl,
       appUrl,
     });
 
@@ -179,18 +185,21 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
 
     const running = dev;
     const runningArr = arr;
+    const runningBazarr = bazarr;
     let stopped = false;
     return {
       appUrl,
       pg,
       oidc,
       arr: runningArr,
+      bazarr: runningBazarr,
       devServer: running,
       env,
       stop: async () => {
         if (stopped) return;
         stopped = true;
         await killDevServer(running);
+        await runningBazarr.stop().catch(() => undefined);
         await runningArr.stop().catch(() => undefined);
         await oidc!.stop();
         await pg.stop();
@@ -199,6 +208,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
   } catch (err) {
     // Partial-boot cleanup, best effort in reverse order.
     if (dev) await killDevServer(dev).catch(() => undefined);
+    if (bazarr) await bazarr.stop().catch(() => undefined);
     if (arr) await arr.stop().catch(() => undefined);
     if (oidc) await oidc.stop().catch(() => undefined);
     await pg.stop().catch(() => undefined);

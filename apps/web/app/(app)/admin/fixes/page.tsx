@@ -98,7 +98,11 @@ export default function AdminFixesPage() {
                   {fix.pathTaken ? (
                     <span className="muted">
                       {' '}
-                      {fix.pathTaken === 'blocklist_search' ? 'blocklist+search' : 'delete+search'}
+                      {fix.pathTaken === 'bazarr_subtitle'
+                        ? 'bazarr subtitles'
+                        : fix.pathTaken === 'blocklist_search'
+                          ? 'blocklist+search'
+                          : 'delete+search'}
                     </span>
                   ) : null}
                 </td>

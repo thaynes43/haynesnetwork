@@ -2,9 +2,20 @@
 // against. `@hnet/arr/write` is import-guarded to packages/domain (ADR-008: no other
 // code path may call a mutating *arr endpoint — see __tests__/arr-write-import-guard);
 // packages/api receives this bundle as an opaque type and injects stubs in tests.
-import { ARR_CLUSTER_URL_DEFAULTS, ArrConfigError } from '@hnet/arr';
-import { LidarrClient, RadarrClient, SonarrClient, type ArrClientOptions } from '@hnet/arr/read';
-import { LidarrWriteClient, RadarrWriteClient, SonarrWriteClient } from '@hnet/arr/write';
+import { ARR_CLUSTER_URL_DEFAULTS, ArrConfigError, assertBazarrEnv } from '@hnet/arr';
+import {
+  BazarrClient,
+  LidarrClient,
+  RadarrClient,
+  SonarrClient,
+  type ArrClientOptions,
+} from '@hnet/arr/read';
+import {
+  BazarrWriteClient,
+  LidarrWriteClient,
+  RadarrWriteClient,
+  SonarrWriteClient,
+} from '@hnet/arr/write';
 import type { ArrKind } from '@hnet/db';
 
 export type { ArrClientOptions };
@@ -14,11 +25,15 @@ export interface ArrClientBundle {
     sonarr: SonarrClient;
     radarr: RadarrClient;
     lidarr: LidarrClient;
+    /** ADR-016 / D-19 — Bazarr subtitle-state pre-read for the missing_subtitles Fix. */
+    bazarr: BazarrClient;
   };
   write: {
     sonarr: SonarrWriteClient;
     radarr: RadarrWriteClient;
     lidarr: LidarrWriteClient;
+    /** ADR-016 / D-19 — Bazarr subtitle-search trigger (import-confined like the *arrs). */
+    bazarr: BazarrWriteClient;
   };
 }
 
@@ -31,6 +46,8 @@ export interface ArrBundleOptions {
   sonarr: ArrClientOptions;
   radarr: ArrClientOptions;
   lidarr: ArrClientOptions;
+  /** ADR-016 / D-19 — Bazarr client options (own URL + key; base path `/api`, X-API-KEY). */
+  bazarr: ArrClientOptions;
 }
 
 /**
@@ -44,11 +61,13 @@ export function buildArrClientBundle(options: ArrBundleOptions): ArrClientBundle
       sonarr: new SonarrClient(options.sonarr),
       radarr: new RadarrClient(options.radarr),
       lidarr: new LidarrClient(options.lidarr),
+      bazarr: new BazarrClient(options.bazarr),
     },
     write: {
       sonarr: new SonarrWriteClient(options.sonarr),
       radarr: new RadarrWriteClient(options.radarr),
       lidarr: new LidarrWriteClient(options.lidarr),
+      bazarr: new BazarrWriteClient(options.bazarr),
     },
   };
 }
@@ -73,5 +92,8 @@ export function arrClientBundleFromEnv(
     options[kind] = { baseUrl, apiKey };
   }
   if (missing.length > 0) throw new ArrConfigError(missing);
-  return buildArrClientBundle(options);
+  // ADR-016 / D-19: Bazarr rides the same bundle (BAZARR_URL default + BAZARR_API_KEY
+  // required — assertBazarrEnv throws its own ArrConfigError naming the missing key).
+  const bazarr = assertBazarrEnv(env);
+  return buildArrClientBundle({ ...options, bazarr });
 }

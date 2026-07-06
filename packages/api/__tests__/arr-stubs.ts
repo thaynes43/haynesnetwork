@@ -67,7 +67,9 @@ export function stubArrBundle(routes: ArrStubRoute[]): StubbedArrBundle {
       });
     }
     const body = typeof route.body === 'function' ? route.body(url) : route.body;
-    return new Response(body === undefined ? '' : JSON.stringify(body), {
+    // A 204 (Bazarr's queued search-missing) carries NO body — the Response ctor rejects
+    // a body on 204, so pass null when there is none.
+    return new Response(body === undefined ? null : JSON.stringify(body), {
       status: route.status ?? 200,
       headers: { 'content-type': 'application/json' },
     });
@@ -79,6 +81,9 @@ export function stubArrBundle(routes: ArrStubRoute[]): StubbedArrBundle {
       sonarr: { baseUrl: 'http://sonarr.test:8989', ...opts },
       radarr: { baseUrl: 'http://radarr.test:7878', ...opts },
       lidarr: { baseUrl: 'http://lidarr.test:8686', ...opts },
+      // ADR-016 / D-19 — Bazarr rides the same stub host so tests can assert its
+      // subtitle-search PATCH via callsFor (base path /api, distinct host).
+      bazarr: { baseUrl: 'http://bazarr.test:6767', ...opts },
     }),
     calls,
     callsFor: (method, pathPrefix) =>

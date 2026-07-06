@@ -88,6 +88,30 @@ export const FIX_REASON_LABELS: Record<string, string> = {
   other: 'Other',
 };
 
+/** The full R-45 reason taxonomy, in display order (mirrors @hnet/db FIX_REASONS). */
+export const FIX_REASONS = [
+  'wont_play_corrupt',
+  'wrong_language',
+  'wrong_version_quality',
+  'missing_subtitles',
+  'wrong_content',
+  'other',
+] as const;
+export type FixReasonName = (typeof FIX_REASONS)[number];
+
+/**
+ * ADR-016 / DESIGN-005 D-19 — the per-kind Fix Reason offer rule (a framework-free MIRROR
+ * of @hnet/domain's fixReasonsForKind; lib/media.ts never imports @hnet/domain). Sonarr/
+ * Radarr get all six reasons; Music (lidarr) excludes `missing_subtitles` — Bazarr covers
+ * the Radarr/Sonarr estate only.
+ */
+export function fixReasonsForKind(kind: ArrKindName): readonly FixReasonName[] {
+  if (kind === 'lidarr') {
+    return FIX_REASONS.filter((r) => r !== 'missing_subtitles');
+  }
+  return FIX_REASONS;
+}
+
 /** Fix Lifecycle labels (DDD-001 T-43). */
 export const FIX_STATUS_LABELS: Record<string, string> = {
   pending: 'Pending',
