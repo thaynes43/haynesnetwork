@@ -1,14 +1,15 @@
 # OPS-006: Image signing — keyless cosign + Kyverno admission
 
-- **Status:** Accepted (signing live in `release-please.yml` as of PLAN-007; the Kyverno
-  `haynesnetwork` rule + enforce flip are **deploy-time steps in `haynes-ops`**, staged below)
+- **Status:** Accepted — **shipped & live-validated 2026-07-06** (v0.7.0, the first signed
+  release). Signing is live in `release-please.yml` (PLAN-007); admission **Enforce** is live in
+  `haynes-ops` as the dedicated ClusterPolicy `verify-haynesnetwork-images`.
 - **Implements:** ADR-020 (keyless cosign via GitHub OIDC), resolves ADR-006 C-04
 - **Sibling repo:** `haynes-ops`
-  `kubernetes/main/apps/kyverno/policies/app/verify-thaynes43-images.yaml`
+  `kubernetes/main/apps/kyverno/policies/app/verify-haynesnetwork-images.yaml`
 
 How `haynesnetwork` images are signed, how to verify one, the cross-repo coupling that makes
-admission work, and the **Audit → Enforce** switch. Secret *values* never appear here — keyless
-signing has **no secret** (that is the point). CLAUDE.md rule 7.
+admission work, and how the shipped **Enforce** policy was live-validated. Secret *values* never
+appear here — keyless signing has **no secret** (that is the point). CLAUDE.md rule 7.
 
 ## 0. What happens, in one breath
 
@@ -69,117 +70,140 @@ breaks admission** unless the Kyverno `subject` glob is updated in lockstep — 
 as ADR-009 C-05 (required-check-name drift). If you change either side, change both in the same
 change window and re-run §5's verify.
 
-## 4. DEPLOY-TIME — extend the Kyverno policy (`haynes-ops`, NOT applied by this repo)
+## 4. Admission enforcement — the dedicated ClusterPolicy (`haynes-ops`, shipped & live)
 
 > This is a **manual-merge** area in `haynes-ops` — do **not** add `kyverno/**` to any autoMerge
 > glob (`…/kyverno/kyverno/app/ocirepository.yaml`). Follow `haynes-ops`
 > `.agents/runbooks/kyverno-enforce-verify.md`.
 
-Edit `kubernetes/main/apps/kyverno/policies/app/verify-thaynes43-images.yaml`. Add a **dedicated**
-`verifyImages` rule for `haynesnetwork` (ADR-020: a separate rule, not a second attestor on the
-existing one, so its enforce flip is independent of upgrade-agent/shepherd). Land it at
-**`failureAction: Audit`** first.
+`haynesnetwork` verification is its **own ClusterPolicy**, `verify-haynesnetwork-images`
+(`kubernetes/main/apps/kyverno/policies/app/verify-haynesnetwork-images.yaml`, wired into that
+dir's `kustomization.yaml`) — **not** a second `verifyImages` entry or attestor on the shared
+`verify-thaynes43-images` policy (which stays Audit for upgrade-agent/shepherd). It ships at
+**spec-level `validationFailureAction: Enforce`** (plus entry-level `failureAction: Enforce`),
+`background: false`, and a fail-open webhook (`failurePolicy: Ignore`). See §4b for *why* it is a
+dedicated policy — that is the finding of the day.
 
-### 4a. Stage 1 diff — add coverage (Audit)
+### 4a. The shipped policy (live in the cluster, verbatim)
 
-```diff
-       verifyImages:
-         - imageReferences:
-             - "ghcr.io/thaynes43/upgrade-agent*"
-             - "ghcr.io/thaynes43/upgrade-shepherd*"
-           failureAction: Audit
-           mutateDigest: false   # we pin tag@digest in the manifests; don't rewrite
-           verifyDigest: false
-           required: true
-           attestors:
-             - count: 1
-               entries:
-                 - keyless:
-                     # The GitHub Actions OIDC identity of our build workflows on main.
-                     subject: "https://github.com/thaynes43/haynes-ops/.github/workflows/*"
-                     issuer: "https://token.actions.githubusercontent.com"
-                     rekor:
-                       url: https://rekor.sigstore.dev
-+        # haynesnetwork: signed by ITS OWN repo's release-please.yml OIDC identity — a
-+        # dedicated rule so its Audit->Enforce flip is independent (ADR-020 / hnet OPS-006).
-+        - imageReferences:
-+            - "ghcr.io/thaynes43/haynesnetwork*"
-+          failureAction: Audit
-+          mutateDigest: false
-+          verifyDigest: false
-+          required: true
-+          attestors:
-+            - count: 1
-+              entries:
-+                - keyless:
-+                    subject: "https://github.com/thaynes43/haynesnetwork/.github/workflows/*"
-+                    issuer: "https://token.actions.githubusercontent.com"
-+                    rekor:
-+                      url: https://rekor.sigstore.dev
+```yaml
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-haynesnetwork-images
+spec:
+  background: false
+  validationFailureAction: Enforce
+  webhookConfiguration:
+    failurePolicy: Ignore
+  rules:
+    - name: verify-haynesnetwork
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      verifyImages:
+        - imageReferences:
+            - "ghcr.io/thaynes43/haynesnetwork*"
+          failureAction: Enforce
+          mutateDigest: false
+          verifyDigest: false
+          required: true
+          attestors:
+            - count: 1
+              entries:
+                - keyless:
+                    subject: "https://github.com/thaynes43/haynesnetwork/.github/workflows/*"
+                    issuer: "https://token.actions.githubusercontent.com"
+                    rekor:
+                      url: https://rekor.sigstore.dev
 ```
 
-Commit + push to `haynes-ops` `main`, then reconcile (OPS-004 §2 pattern):
+Land/change it manually, then reconcile (OPS-004 §2 pattern):
 
 ```bash
 flux reconcile source git haynes-ops -n flux-system
-flux reconcile kustomization kyverno -n flux-system --with-source   # or the policy's kustomization
+flux reconcile kustomization kyverno -n flux-system --with-source
 ```
 
-### 4b. Confirm the signed digest PASSES in Audit
+### 4b. Why a dedicated policy — the `validationFailureAction`-override gotcha (finding, 2026-07-06)
 
-Deploy the signed `vX.Y.Z` to staging (OPS-004 §2), then read the report — the `haynesnetwork`
-pod's `verifyImages` result must be **pass**, and zero admission blocks:
+The first cut of this coverage was a *nested* `verifyImages` entry on the shared
+`verify-thaynes43-images` policy carrying only entry-level `failureAction: Enforce`. **It did not
+enforce.** On **Kyverno v1.18.1** the server defaults the shared policy's *spec-level*
+`validationFailureAction` to **`Audit`**, and that spec-level `Audit` **overrides** the
+per-`verifyImages`-entry `failureAction: Enforce` — an unsigned image was **admitted with only a
+warning**. A standalone ClusterPolicy that sets **spec-level `validationFailureAction: Enforce`**
+is unambiguous, and it keeps `haynesnetwork`'s enforce decision independent of the still-Audit
+upgrade-agent/shepherd coverage. (Kept here as the gotcha; the policy header comment records it too.)
+
+### 4c. Confirm the signed digest PASSES (PolicyReport)
+
+The signed `vX.Y.Z` deploy produces a **pass** in the frontend namespace PolicyReport — for a
+Deployment the autogen rule is what evaluates:
 
 ```bash
-# Policy report for the frontend namespace — look for verify-thaynes43-images = pass on the haynesnetwork pod:
 kubectl -n frontend get policyreport -o wide
 kubectl -n frontend get policyreport -o json \
-  | jq -r '.items[].results[] | select(.policy=="verify-thaynes43-images") | "\(.result)\t\(.resources[0].name // .subjects)"'
-
-# No enforce-block happened (Audit never blocks, but this proves the rule is evaluating):
-kubectl logs -n kyverno -l app.kubernetes.io/component=admission-controller --since=1h \
-  | grep -i haynesnetwork | grep -iE 'verifyImages|signature' | tail
+  | jq -r '.items[].results[]
+           | select(.policy=="verify-haynesnetwork-images")
+           | "\(.rule)\t\(.result)\t\(.message)"'
+# → autogen-verify-haynesnetwork   pass   verified image signatures
 ```
 
-`fail` here means the signature/identity didn't match — **stop**, do not flip Enforce; re-check
-§2 verify and §3 coupling.
+A `fail`/`warn` here means the signature or identity didn't match — re-check §2 verify and §3
+coupling before assuming the policy is at fault.
 
-### 4c. Stage 2 diff — flip Enforce (one field, that rule only)
+## 5. Prove the guard bites — live-validated 2026-07-06 (v0.7.0)
 
-Once §4b shows pass, change **only the `haynesnetwork` rule**:
-
-```diff
-         - imageReferences:
-             - "ghcr.io/thaynes43/haynesnetwork*"
--          failureAction: Audit
-+          failureAction: Enforce
-```
-
-Commit + reconcile as in §4a. The webhook stays `failurePolicy: Ignore` (fail-open) — a Sigstore
-outage degrades to unverified admission, never a deploy freeze (ADR-020 C-05).
-
-## 5. Prove the guard bites (after Enforce)
+All four checks passed against the shipped Enforce policy:
 
 ```bash
-# 5a. The signed digest is still ADMITTED:
-kubectl -n frontend rollout status deploy/haynesnetwork
+# 5a. The signed v0.7.0 image is ADMITTED — a bare pod on the signed digest comes up:
+kubectl -n frontend run signed-probe \
+  --image=ghcr.io/thaynes43/haynesnetwork:v0.7.0 --restart=Never   # → admitted
+kubectl -n frontend delete pod signed-probe
 
-# 5b. An UNSIGNED image on our path is DENIED. Use a throwaway namespace + an unsigned
-#     ghcr.io/thaynes43/haynesnetwork-path reference (e.g. an old pre-signing tag), then clean up:
+# 5b. An UNSIGNED image on our path is DENIED — for BOTH a bare Pod AND a Deployment:
 kubectl create ns cosign-probe
-kubectl -n cosign-probe run probe --image=ghcr.io/thaynes43/haynesnetwork:<unsigned-tag> --restart=Never
-#   → expect: admission DENIED naming policy `verify-thaynes43-images`.
+kubectl -n cosign-probe run probe \
+  --image=ghcr.io/thaynes43/haynesnetwork:v0.6.1 --restart=Never   # pre-signing tag, unsigned
+#   → Error … admission webhook "mutate.kyverno.svc-ignore" denied the request:
+#     … blocked due to the following policies … verify-haynesnetwork-images
+kubectl -n cosign-probe create deployment probe-deploy \
+  --image=ghcr.io/thaynes43/haynesnetwork:v0.6.1
+#   → the Deployment is rejected outright by the same
+#     admission webhook "mutate.kyverno.svc-ignore" denied the request … blocked …
+#     verify-haynesnetwork-images (autogen rule) — no pod is ever admitted
 kubectl delete ns cosign-probe
+
+# 5c. Production is ADMITTED and healthy on the signed digest:
+kubectl -n frontend rollout status deploy/haynesnetwork   # → successfully rolled out
 ```
+
+> **Caveat — Enforce denies on a transient verify failure.** Verification reaches the registry +
+> Sigstore *at admission*. A transient outage there (observed once:
+> `failed to verify image … Get "https://ghcr.io/v2/": context canceled`) makes Enforce **deny
+> that one admission** — verification failing closed, which is *distinct* from
+> `failurePolicy: Ignore` (that only fails **open** when the **webhook itself** is unreachable).
+> The owning controller retries and self-heals — the ReplicaSet/Job simply re-creates the pod — so
+> a blip does not wedge a rollout. **Rollbacks must target a signed tag (v0.7.0+): pre-signing tags
+> (≤v0.6.1) are now rejected by Enforce.** Break-glass = revert the policy commit in `haynes-ops`
+> (see §6).
 
 ## 6. Rollback
 
-- **Wrongly denied a good image** → flip the `haynesnetwork` rule back to `failureAction: Audit`
-  in `haynes-ops` and reconcile (single-field revert). Fail-open (`failurePolicy: Ignore`) means
-  a Sigstore outage never wedged you — enforce is the only failing-closed surface.
-- **Signing itself** → revert the `release-please.yml` commit; publish returns to unsigned
-  (harmless while Kyverno is Audit; would be denied under Enforce — so flip that rule to Audit
-  too if you must ship unsigned).
+- **Wrongly denying a good image / need to ship an unsigned tag** → **revert the policy commit**
+  in `haynes-ops` (drop `verify-haynesnetwork-images` from the kustomization, or flip its
+  spec-level `validationFailureAction` to `Audit`) and reconcile. With a dedicated policy this is
+  the whole break-glass — there is no shared rule to untangle.
+- **A transient Sigstore/registry blip** is *not* a rollback trigger — the controller re-creates
+  the pod and the retry verifies (see the §5 caveat). `failurePolicy: Ignore` additionally fails
+  open if the webhook itself is down.
+- **Signing itself** → revert the `release-please.yml` commit; publish returns to unsigned. That
+  is now **deploy-affecting**: an unsigned image is **denied** under Enforce, so flip the policy to
+  Audit (above) in the same window if you must ship unsigned.
 - **No secret to unwind** (keyless).
 
 ## 7. Out of scope / future

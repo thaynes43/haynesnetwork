@@ -1,6 +1,8 @@
 # PLAN-007: Cosign image signing — keyless (GitHub OIDC) sign + Kyverno enforce
 
-- **Status:** Draft
+- **Status:** Completed (2026-07-06) — v0.7.0 released signed (Rekor-logged, in-run verified,
+  .sig on GHCR); Kyverno dedicated Enforce policy live-validated: signed admitted (probe +
+  production rollout), unsigned denied (pod + Deployment).
 - **Satisfies:** ADR-006 C-04 (`docs/adrs/006-hosting-and-deployment.md:75`) · ADR-009 C-04
   release-workflow note (`docs/adrs/009-ci-and-pr-flow.md:50`) · new **ADR-016** (image
   signing approach) · OPS-004 reconciliation (`docs/ops/004-deploy-runbook.md`)
