@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0](https://github.com/thaynes43/haynesnetwork/compare/v0.5.0...v0.6.0) (2026-07-06)
+
+
+### Features
+
+* Plex library self-service per role (ADR-017) ([#50](https://github.com/thaynes43/haynesnetwork/issues/50)) ([52f0321](https://github.com/thaynes43/haynesnetwork/commit/52f03219d11d3be5b3479b79f6bb19b7e4259a57))
+
+
+### Documentation
+
+* complete plan 002 (Bazarr subtitle Fix) — v0.5.0 live-validated ([#48](https://github.com/thaynes43/haynesnetwork/issues/48)) ([7ab49d7](https://github.com/thaynes43/haynesnetwork/commit/7ab49d7809fa6ab126c8144866f31e52df6ad812))
+
 ## [0.5.0](https://github.com/thaynes43/haynesnetwork/compare/v0.4.0...v0.5.0) (2026-07-06)
 
 
