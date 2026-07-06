@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/thaynes43/haynesnetwork/compare/v0.8.0...v0.8.1) (2026-07-06)
+
+
+### Bug Fixes
+
+* derive real per-item resolution in metadata harvest; hide zero/absent rating badges ([#58](https://github.com/thaynes43/haynesnetwork/issues/58)) ([a207374](https://github.com/thaynes43/haynesnetwork/commit/a2073743c7613e5853f822538b1cfc518107e687))
+
 ## [0.8.0](https://github.com/thaynes43/haynesnetwork/compare/v0.7.0...v0.8.0) (2026-07-06)
 
 
