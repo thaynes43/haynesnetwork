@@ -80,6 +80,14 @@ describe('plex.refreshRegistry (admin)', () => {
     expect(moviesId).toBeTruthy();
     expect(photosId).toBeTruthy();
   });
+
+  it('returns the D-11 per-server summary { ok, servers: [{ slug, name, ok, libraryCount }] }', async () => {
+    const summary = await adminCaller.plex.refreshRegistry({ slugs: ['haynestower'] });
+    expect(summary.ok).toBe(true);
+    const tower = summary.servers.find((s) => s.slug === 'haynestower')!;
+    expect(tower).toMatchObject({ slug: 'haynestower', name: 'HaynesTower', ok: true, libraryCount: 2 });
+    expect(tower.error).toBeUndefined();
+  });
 });
 
 describe('plex.roleLibraryGrants (admin matrix)', () => {

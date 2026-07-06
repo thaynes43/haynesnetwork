@@ -4,8 +4,8 @@
 
 /** Base class — lets callers `catch (e) { if (e instanceof PlexError) … }`. */
 export class PlexError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
     this.name = new.target.name;
   }
 }
@@ -28,6 +28,26 @@ export class PlexHttpError extends PlexError {
     readonly bodySnippet?: string,
   ) {
     super(`${method} ${url} → HTTP ${status}${bodySnippet ? ` — ${bodySnippet}` : ''}`);
+  }
+}
+
+/**
+ * A network-level failure BELOW the HTTP layer — DNS resolution failed, the connection was
+ * refused/reset, TLS failed, or the socket died — anything `fetchImpl` rejects with that is
+ * NOT an aborted-timeout. Without this wrapper the raw undici `TypeError: fetch failed` (whose
+ * message names neither the server nor the cause) escapes untyped and a caller that only
+ * catches PlexError sees a leaked bare error. Names the host so pod logs point at the failed
+ * server; the original error rides as `cause`; the token is never echoed (header-only). Live
+ * defect 2026-07-06: haynestower's stale in-cluster URL surfaced here as an untyped throw.
+ */
+export class PlexNetworkError extends PlexError {
+  readonly code = 'PLEX_NETWORK_ERROR' as const;
+  constructor(
+    readonly method: string,
+    readonly url: string,
+    options?: { cause?: unknown },
+  ) {
+    super(`${method} ${url} → network request failed (host unreachable, refused, or DNS)`, options);
   }
 }
 

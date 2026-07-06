@@ -2,6 +2,9 @@
 
 - **Status:** Accepted
 - **Last updated:** 2026-07-06
+- **Amendments:** 2026-07-06 (D-12) — registry `base_url` truthfulness (haynestower is the
+  external ingress, no in-cluster Service) + per-server refresh degradation with a summary
+  return shape. Live-validated fix on staging v0.6.0 (migration `0011_haynestower_base_url.sql`).
 - **Satisfies:** PRD-001 R-25..R-28 (resolves Q-03); governed by ADR-017; supersedes
   DESIGN-001 Appendix A. Builds on ADR-011 (write confinement), ADR-012 (Role model),
   ADR-014 (ConfirmButton), ADR-015 (no reorientation), OPS-002 (topology).
@@ -18,11 +21,17 @@ set) permits, re-derived inside each mutation (TOCTOU).
 
 **Live topology of record** (OPS-002; verified 2026-07-06, all PMS 1.43.2.10687):
 
-| Slug | Ingress | In-cluster default URL | machineIdentifier |
-|------|---------|------------------------|-------------------|
-| `haynestower` | `plex.haynesnetwork.com` | `http://haynestower.media.svc.cluster.local:32400` | `a5ec8cb29c425667637eabdb6a0615d6ccf68cc3` |
+| Slug | Ingress | Backend read URL (default) | machineIdentifier |
+|------|---------|----------------------------|-------------------|
+| `haynestower` | `plex.haynesnetwork.com` | `https://plex.haynesnetwork.com` ‡ | `a5ec8cb29c425667637eabdb6a0615d6ccf68cc3` |
 | `haynesops` | `plexops.haynesnetwork.com` | `http://plexops.media.svc.cluster.local:32400` | `80b33acb1d207508990637ec151fe9abad8d3d7a` |
 | `hayneskube` | `k8plex.haynesnetwork.com` | `http://plex.media.svc.cluster.local:32400` | `c1b23d688afea4a39ec2c214776832c16be6504d` |
+
+‡ **haynestower is the EXTERNAL Unraid box — it has NO in-cluster `*.media.svc.cluster.local`
+Service** (the original `haynestower.media.svc.cluster.local` default failed DNS from cluster
+pods; live defect, 2026-07-06). Cluster pods reach it via its public ingress
+`https://plex.haynesnetwork.com` (owner-token verified 2026-07-06). The other two ARE genuine
+in-cluster Services. All three remain overridable via `PLEX_<SLUG>_URL`. See D-12.
 
 Note the subdomain↔slug mismatch (plexops↔haynesops, k8plex↔hayneskube): **code uses the
 owner SLUGS everywhere**; the subdomains are ingress detail. Observed `GET /library/sections`
@@ -113,7 +122,12 @@ its zod schemas (BC-04 ACL).
   then upserts `plex_libraries` keyed on `(server_id, section_key)` and marks unseen libraries
   `available=false` in ONE tx (never deletes). `upsertPlexLibraries` is the client-free upsert
   core (also used by the e2e/dev seed, which runs before the stub is up). An unexpected media
-  type fails loudly (prompts a `PLEX_MEDIA_TYPES` update) before any write.
+  type fails loudly (prompts a `PLEX_MEDIA_TYPES` update) before any write. **Degrades per
+  server (D-12):** a typed Plex failure on one server (`PlexError`, incl. the new
+  `PlexNetworkError`) is caught + `console.error`-logged (cause preserved, token-free) and
+  recorded as `{ ok: false, error }` in the summary; the remaining servers still refresh and
+  commit. Returns `{ ok, servers: [{ slug, name, ok, libraryCount?, markedUnavailable?, error? }] }`
+  (`ok` = every server ok; `error` is a SHORT label like `'unreachable'`, never a raw message).
 - `role-libraries.ts` — `setRoleLibraries({ roleId, libraryIds, actorId })`: replace-whole-set
   (mirrors `updateRole`'s appIds), co-writes an `update_role_libraries` `permission_audit` row.
   Admin role is immutable (implicit all-libraries).
@@ -146,8 +160,9 @@ sequenceDiagram
 ```
 
 Unshare mirrors this: subtract the target; `DELETE .../{sharedServerId}` when the set empties,
-else `PUT` the reduced set; audit `share_removed`. Registry refresh: per server, external reads
-→ one upsert tx (upsert seen + `available=false` unseen + update machine id).
+else `PUT` the reduced set; audit `share_removed`. Registry refresh: **per server**, external
+reads → one upsert tx (upsert seen + `available=false` unseen + update machine id); a per-server
+Plex failure is caught and folded into the returned summary (D-12) instead of aborting the rest.
 
 ### D-05 — tRPC `plex` router (claims the reserved `plex` name)
 
@@ -185,8 +200,11 @@ per ADR-012 C-10):
 
 ### D-07 — Ops, e2e, env
 
-- **Env contract** (`.env.example`): `PLEX_<SLUG>_URL` (default in-cluster DNS) +
-  `PLEX_<SLUG>_TOKEN` (required secret) for the three slugs; server URLs are non-secret config.
+- **Env contract** (`.env.example`): `PLEX_<SLUG>_URL` + `PLEX_<SLUG>_TOKEN` (required secret)
+  for the three slugs; server URLs are non-secret config. Default backend read URLs: `haynesops`
+  / `hayneskube` default to their in-cluster Service DNS; **`haynestower` defaults to its public
+  ingress `https://plex.haynesnetwork.com`** — it is the external Unraid box with no in-cluster
+  Service (D-12). All three are overridable via `PLEX_<SLUG>_URL`.
 - **e2e stub** (`apps/web/e2e/support/stub-plex.ts`) — one `node:http` server stands in for all
   three PMS instances (disambiguated by per-server token) AND plex.tv (disambiguated by
   machineId in the path); stateful shared_servers; `/_stub/calls` + `/_stub/reset`. Wired into
@@ -214,6 +232,41 @@ observation:** the live `homepage-secret` in-cluster exposes the HAYNESOPS token
 the exact 1Password property name for the haynesnetwork ExternalSecret remoteRef before rollout.
 The tokens carry account-owner (sharing) scope — the homepage widgets only need read scope, so
 verify owner scope against a live write with the designated test user.
+
+### D-12 — Registry `base_url` truthfulness + per-server refresh resilience (live-validated 2026-07-06)
+
+Two defects surfaced when the registry refresh was first exercised on staging v0.6.0; both are
+fixed here without changing the BC-04 contract.
+
+1. **haynestower reachability.** The 0010 seed + `PLEX_CLUSTER_URL_DEFAULTS` pinned haynestower's
+   `base_url` to `http://haynestower.media.svc.cluster.local:32400` — a Service that **does not
+   exist** (haynestower is the external Unraid box; only `haynesops`/`hayneskube` are in-cluster
+   PMS Services). Cluster pods reach haynestower via its public ingress
+   `https://plex.haynesnetwork.com` (owner-token verified 2026-07-06). Fix: correct the default
+   (`packages/plex/src/config.ts`) **and** the seeded row (migration `0011_haynestower_base_url.sql`
+   — registry metadata must stay truthful). Still overridable via `PLEX_HAYNESTOWER_URL`.
+
+2. **Untyped network failures + all-or-nothing refresh.** A DNS/connection failure inside
+   `@hnet/plex`'s http layer escaped as undici's raw `TypeError: fetch failed` (not a
+   `PlexError`), so `refreshPlexRegistry` re-threw it and the whole request 500'd with a leaked
+   bare message — even though the alphabetically-earlier servers had already refreshed and
+   committed in their own transactions, and nothing indicated *which* server failed. Fixes:
+   - `PlexNetworkError` (`packages/plex/src/errors.ts`) — the http wrapper now wraps any non-HTTP,
+     non-abort `fetchImpl` rejection into this typed `PlexError` subclass (host named, token never
+     echoed, original as `cause`), mirroring `PlexTimeoutError`. GET-retry-on-transient still
+     applies (network errors are retryable for idempotent GETs).
+   - `refreshPlexRegistry` **degrades per server**: it catches `PlexError` per server,
+     `console.error`-logs the cause (a failed refresh was previously invisible in pod logs), and
+     records `{ ok: false, error }` with a SHORT label (`'unreachable'`, `'timed out'`, `HTTP n`,
+     `'unexpected response'`) — never a raw message. It returns
+     `{ ok, servers: [{ slug, name, ok, libraryCount?, markedUnavailable?, error? }] }`. An
+     unexpected media type still throws (loud — needs a code change, not a transient outage).
+   - `plex.refreshRegistry` returns the summary (partial failure is a 200 summary, not a throw);
+     `mapDomainErrors` still maps genuinely fatal cases (config missing, unexpected media type).
+   - `/admin/roles` renders the per-server outcome after a refresh in a `.status-note` region
+     (info tone when all ok, `--warn` warning tone when partial — e.g. "HaynesKube: 1 library ·
+     HaynesOps: 1 library · HaynesTower: unreachable"). It is **not** the red `.alert` banner;
+     ADR-015 discipline holds (status renders in the page's consistent feedback area).
 
 ## Alternatives considered
 

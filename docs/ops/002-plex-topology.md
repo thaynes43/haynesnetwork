@@ -49,3 +49,10 @@ All three tokens were validated against `GET /library/sections` on 2026-07-03.
 4. Sonarr/Radarr manage the **shared** library content (fixing is server-agnostic —
    the *arrs write storage that HAYNESTOWER/HAYNESOPS serve); HAYNESKUBE's non-standard
    content is outside the *arr fix flow.
+5. **Backend read URL ≠ in-cluster DNS for HAYNESTOWER** (added 2026-07-06, DESIGN-007 D-12):
+   HAYNESTOWER is the external Unraid box — it has **no** `*.media.svc.cluster.local` Service.
+   The app's registry reads must reach it via its public ingress `https://plex.haynesnetwork.com`
+   (owner-token verified from a cluster pod 2026-07-06); an early default assumed an in-cluster
+   Service and failed DNS. Only HAYNESOPS (`plexops.media`) and HAYNESKUBE (`plex.media`) are
+   genuine in-cluster PMS Services. Code default lives in `packages/plex/src/config.ts`
+   (`PLEX_CLUSTER_URL_DEFAULTS`), overridable per server via `PLEX_<SLUG>_URL`.

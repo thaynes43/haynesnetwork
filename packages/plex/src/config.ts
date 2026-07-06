@@ -25,7 +25,11 @@ export const PLEX_TV_BASE_URL = 'https://plex.tv';
  * (`/library/sections`, `/identity`); sharing writes go to PLEX_TV_BASE_URL.
  */
 export const PLEX_CLUSTER_URL_DEFAULTS: Record<PlexServerName, string> = {
-  haynestower: 'http://haynestower.media.svc.cluster.local:32400',
+  // haynestower is the EXTERNAL Unraid box — there is NO `haynestower.media.svc.cluster.local`
+  // Service (the old default 404'd DNS from cluster pods). It IS reachable from cluster pods
+  // via its public ingress (verified with the owner token 2026-07-06); still overridable via
+  // PLEX_HAYNESTOWER_URL. The other two ARE in-cluster Services (plexops/plex in the `media` ns).
+  haynestower: 'https://plex.haynesnetwork.com',
   haynesops: 'http://plexops.media.svc.cluster.local:32400',
   hayneskube: 'http://plex.media.svc.cluster.local:32400',
 };
