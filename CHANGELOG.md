@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.10.0](https://github.com/thaynes43/haynesnetwork/compare/v0.9.0...v0.10.0) (2026-07-06)
+
+
+### Features
+
+* role-scoped all-libraries Plex self-service (ADR-024) ([#66](https://github.com/thaynes43/haynesnetwork/issues/66)) ([0e11f56](https://github.com/thaynes43/haynesnetwork/commit/0e11f56f6b7a72fb70dac4543e0cdef8dd9ccd82))
+
+
+### Documentation
+
+* complete plan 003 (Plex library self-service) — fully live-validated incl. real share cycle ([#65](https://github.com/thaynes43/haynesnetwork/issues/65)) ([ee56df5](https://github.com/thaynes43/haynesnetwork/commit/ee56df57a86a4bfe00f19fe16c07d8678c55599d))
+* complete plan 005 (Ledger section) — v0.9.0 live-validated ([#63](https://github.com/thaynes43/haynesnetwork/issues/63)) ([70e52b3](https://github.com/thaynes43/haynesnetwork/commit/70e52b376a8ba62dcac4748afaf73c449c0eff8d))
+
 ## [0.9.0](https://github.com/thaynes43/haynesnetwork/compare/v0.8.1...v0.9.0) (2026-07-06)
 
 
