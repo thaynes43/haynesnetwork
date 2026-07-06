@@ -51,6 +51,7 @@ const ADMIN_CALLS: Array<[string, (c: Caller) => Promise<unknown>]> = [
   ['roles.create', (c) => c.roles.create({ name: 'x' })],
   ['roles.update', (c) => c.roles.update({ id: UUID_A, name: 'y' })],
   ['roles.delete', (c) => c.roles.delete({ id: UUID_A })],
+  ['roles.setTrashActions', (c) => c.roles.setTrashActions({ roleId: UUID_A, actions: [] })],
   ['fix.adminList', (c) => c.fix.adminList({})],
   ['restore.diff', (c) => c.restore.diff({ arrKind: 'sonarr' })],
   ['restore.execute', (c) => c.restore.execute({ arrKind: 'sonarr', mediaItemIds: [UUID_A] })],

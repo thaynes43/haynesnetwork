@@ -2,7 +2,7 @@
 // ADR-001 C-05). These are the sketches from the design doc, verbatim.
 import { z } from 'zod';
 import { ICON_KEYS } from '@hnet/ui/icons';
-import { SECTION_IDS, SECTION_PERMISSION_LEVELS } from '@hnet/db';
+import { SECTION_IDS, SECTION_PERMISSION_LEVELS, TRASH_ACTIONS } from '@hnet/db';
 
 /**
  * D-04 layer 1 (edge) — lenient: accept any non-empty string. The catalog now takes any
@@ -100,4 +100,10 @@ export const SectionPermissionInput = z.object({
   roleId: z.uuid(),
   sectionId: z.enum(SECTION_IDS),
   level: z.enum(SECTION_PERMISSION_LEVELS),
+});
+
+/** ADR-023 — roles.setTrashActions: replace-whole-set of a role's fine-grained Trash action grants. */
+export const TrashActionsInput = z.object({
+  roleId: z.uuid(),
+  actions: z.array(z.enum(TRASH_ACTIONS)).default([]),
 });

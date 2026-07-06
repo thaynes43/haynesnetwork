@@ -6,17 +6,26 @@ import { asc, count } from 'drizzle-orm';
 import {
   roleAppGrants,
   roleSectionPermissions,
+  roleTrashActionGrants,
   roles,
   users,
   SECTION_IDS,
   SECTION_DEFAULT_LEVELS,
+  TRASH_ACTIONS,
   type SectionId,
   type SectionPermissionLevel,
+  type TrashAction,
 } from '@hnet/db';
-import { createRole, deleteRole, setSectionPermission, updateRole } from '@hnet/domain';
+import {
+  createRole,
+  deleteRole,
+  setRoleTrashActions,
+  setSectionPermission,
+  updateRole,
+} from '@hnet/domain';
 import { mapDomainErrors, router } from '../trpc';
 import { adminProcedure } from '../middleware/role';
-import { RoleInput, RolePatchInput, SectionPermissionInput } from '../schemas';
+import { RoleInput, RolePatchInput, SectionPermissionInput, TrashActionsInput } from '../schemas';
 
 export const rolesRouter = router({
   /** Every role with its app set + member count (feeds /admin/roles + the user role picker). */
@@ -48,6 +57,13 @@ export const rolesRouter = router({
         level: roleSectionPermissions.level,
       })
       .from(roleSectionPermissions);
+    // ADR-023 — each role's fine-grained Trash action grant rows (a row = granted).
+    const trashActionRows = await ctx.db
+      .select({
+        roleId: roleTrashActionGrants.roleId,
+        action: roleTrashActionGrants.action,
+      })
+      .from(roleTrashActionGrants);
 
     const appIdsByRole = new Map<string, string[]>();
     for (const row of grantRows) {
@@ -62,6 +78,12 @@ export const rolesRouter = router({
       m.set(row.sectionId, row.level);
       sectionLevelByRole.set(row.roleId, m);
     }
+    const trashActionsByRole = new Map<string, Set<TrashAction>>();
+    for (const row of trashActionRows) {
+      const s = trashActionsByRole.get(row.roleId) ?? new Set<TrashAction>();
+      s.add(row.action);
+      trashActionsByRole.set(row.roleId, s);
+    }
 
     // The Admin role has no explicit grants — it's an implicit all-apps / all-sections superuser.
     return roleRows.map((row) => {
@@ -72,11 +94,17 @@ export const rolesRouter = router({
           row.isAdmin ? 'edit' : (stored?.get(sid) ?? SECTION_DEFAULT_LEVELS[sid]),
         ]),
       ) as Record<SectionId, SectionPermissionLevel>;
+      // ADR-023 — admin ⇒ every action; otherwise the granted rows in canonical order.
+      const grantedSet = trashActionsByRole.get(row.id);
+      const trashActions: TrashAction[] = row.isAdmin
+        ? [...TRASH_ACTIONS]
+        : TRASH_ACTIONS.filter((a) => grantedSet?.has(a));
       return {
         ...row,
         appIds: appIdsByRole.get(row.id) ?? [],
         memberCount: membersByRole.get(row.id) ?? 0,
         sectionPermissions,
+        trashActions,
       };
     });
   }),
@@ -115,4 +143,21 @@ export const rolesRouter = router({
         }),
       );
     }),
+
+  /**
+   * ADR-023 C-03 — replace a role's fine-grained Trash action grants (Save/Expedite/Edit-rules/
+   * Restore). Delegates to the @hnet/domain single-writer (audits 'update_trash_actions' in-tx);
+   * the Admin role is immutable → ROLE_IMMUTABLE. Layered on top of the coarse `trash` section
+   * level (setSectionPermission) — a Disabled-trash role's actions are moot until it's ≥ Read-Only.
+   */
+  setTrashActions: adminProcedure.input(TrashActionsInput).mutation(async ({ ctx, input }) => {
+    return mapDomainErrors(() =>
+      setRoleTrashActions({
+        db: ctx.db,
+        roleId: input.roleId,
+        actions: input.actions,
+        actorId: ctx.user.id,
+      }),
+    );
+  }),
 });

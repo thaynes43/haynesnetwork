@@ -16,6 +16,9 @@ import {
   LastAdminError,
   LedgerItemTombstonedError,
   LibraryNotAllowedError,
+  maintainerrClientBundleFromEnv,
+  MaintainerrUnsafeError,
+  MaintainerrUpstreamError,
   NotFoundError,
   PlexAccountUnmatchedError,
   PlexAllStateError,
@@ -27,7 +30,9 @@ import {
   SearchCapExceededError,
   SubtitleFixUnsupportedError,
   SystemRoleImmutableError,
+  TrashMusicUnsupportedError,
   type ArrClientBundle,
+  type MaintainerrClientBundle,
   type PlexClientBundle,
 } from '@hnet/domain';
 
@@ -49,6 +54,12 @@ export interface TRPCContext {
    * `arr`: env-built singleton in production, stubbed bundle in tests.
    */
   plex?: PlexClientBundle;
+  /**
+   * ADR-023 / DESIGN-010 D-01 — the Maintainerr client bundle the Trash procedures run against.
+   * Same injection model: env-built singleton in production (built lazily on first Trash call —
+   * requires MAINTAINERR_API_KEY), stubbed bundle in tests.
+   */
+  maintainerr?: MaintainerrClientBundle;
 }
 
 let envArrBundle: ArrClientBundle | undefined;
@@ -58,6 +69,15 @@ export function resolveArrBundle(ctx: TRPCContext): ArrClientBundle {
   if (ctx.arr) return ctx.arr;
   envArrBundle ??= arrClientBundleFromEnv();
   return envArrBundle;
+}
+
+let envMaintainerrBundle: MaintainerrClientBundle | undefined;
+
+/** The Maintainerr bundle for this request: injected (tests) or the env-built singleton (D-01). */
+export function resolveMaintainerrBundle(ctx: TRPCContext): MaintainerrClientBundle {
+  if (ctx.maintainerr) return ctx.maintainerr;
+  envMaintainerrBundle ??= maintainerrClientBundleFromEnv();
+  return envMaintainerrBundle;
 }
 
 let envPlexBundle: PlexClientBundle | undefined;
@@ -118,6 +138,9 @@ const APP_CODED_ERRORS = [
   PlexAllStateError,
   PlexServerUnavailableError,
   SearchCapExceededError,
+  MaintainerrUnsafeError,
+  MaintainerrUpstreamError,
+  TrashMusicUnsupportedError,
 ] as const;
 
 const t = initTRPC.context<TRPCContext>().create({
@@ -171,6 +194,9 @@ export const authedProcedure = t.procedure.use(({ ctx, next }) => {
  * | PlexAccountUnmatchedError   | PLEX_ACCOUNT_UNMATCHED      | UNPROCESSABLE_CONTENT |
  * | PlexAllStateError           | PLEX_ALL_STATE              | UNPROCESSABLE_CONTENT |
  * | PlexServerUnavailableError  | PLEX_SERVER_UNAVAILABLE     | BAD_GATEWAY           |
+ * | MaintainerrUnsafeError      | MAINTAINERR_UNSAFE          | PRECONDITION_FAILED   |
+ * | MaintainerrUpstreamError    | MAINTAINERR_UNAVAILABLE     | BAD_GATEWAY           |
+ * | TrashMusicUnsupportedError  | TRASH_MUSIC_UNSUPPORTED     | UNPROCESSABLE_CONTENT |
  * | NotFoundError               | —                           | NOT_FOUND             |
  */
 export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
@@ -230,6 +256,15 @@ export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
     }
     if (err instanceof PlexServerUnavailableError) {
       throw new TRPCError({ code: 'BAD_GATEWAY', message: err.message, cause: err });
+    }
+    if (err instanceof MaintainerrUnsafeError) {
+      throw new TRPCError({ code: 'PRECONDITION_FAILED', message: err.message, cause: err });
+    }
+    if (err instanceof MaintainerrUpstreamError) {
+      throw new TRPCError({ code: 'BAD_GATEWAY', message: err.message, cause: err });
+    }
+    if (err instanceof TrashMusicUnsupportedError) {
+      throw new TRPCError({ code: 'UNPROCESSABLE_CONTENT', message: err.message, cause: err });
     }
     if (err instanceof NotFoundError) {
       throw new TRPCError({ code: 'NOT_FOUND', message: err.message, cause: err });

@@ -11,6 +11,7 @@ import {
   assignRole,
   upsertMediaItemsBatch,
   type ArrClientBundle,
+  type MaintainerrClientBundle,
   type MediaItemSyncFields,
   type PlexClientBundle,
 } from '@hnet/domain';
@@ -117,12 +118,14 @@ export function makeCtx(
   user: SessionUser | null,
   arr?: ArrClientBundle,
   plex?: PlexClientBundle,
+  maintainerr?: MaintainerrClientBundle,
 ): TRPCContext {
   return {
     db,
     user,
     ...(arr !== undefined ? { arr } : {}),
     ...(plex !== undefined ? { plex } : {}),
+    ...(maintainerr !== undefined ? { maintainerr } : {}),
   };
 }
 

@@ -58,13 +58,17 @@ export function hasTrashAction(role: SessionRole, action: TrashAction): boolean 
 
 /**
  * ADR-023 C-03 — the Trash action rung: authed AND the caller's Trash section is at least
- * Read-Only (so viewing/browse is allowed) AND the specific `action` is granted. FORBIDDEN
- * otherwise. Composed on top of the section gate so a Disabled-Trash role can never reach a
- * write action even if it somehow carried a stale grant. Server-authoritative (AC-13) — the
- * grants are session-carried, never client-hidden only.
+ * `minLevel` (default Read-Only, so viewing/browse is allowed) AND the specific `action` is
+ * granted. FORBIDDEN otherwise. Composed on top of the section gate so a Disabled-Trash role can
+ * never reach a write action even if it somehow carried a stale grant. Rule EDITING passes
+ * `minLevel: 'edit'` (D5 — edit_rules additionally requires section Edit). Server-authoritative
+ * (AC-13) — the grants are session-carried, never client-hidden only.
  */
-export function trashActionProcedure(action: TrashAction) {
-  return sectionProcedure('trash', 'read_only').use(({ ctx, next }) => {
+export function trashActionProcedure(
+  action: TrashAction,
+  minLevel: SectionPermissionLevel = 'read_only',
+) {
+  return sectionProcedure('trash', minLevel).use(({ ctx, next }) => {
     if (!hasTrashAction(ctx.user.role, action)) {
       throw new TRPCError({ code: 'FORBIDDEN' });
     }
