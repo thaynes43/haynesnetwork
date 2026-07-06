@@ -245,6 +245,95 @@ export class BazarrWriteClient {
   }
 }
 
+/**
+ * ADR-023 / DESIGN-010 D-02 — Maintainerr WRITE client (the confined deletion-control surface).
+ * Base path `/api`, auth header `x-api-key` (writes REQUIRE the key, unlike the keyless reads).
+ * Lives under @hnet/arr/write so every Maintainerr mutation stays import-confined to
+ * packages/domain (the ADR-008 guard test) exactly like the *arr write clients. Endpoints derived
+ * from the Maintainerr v3.17.0 source (route decorators + DTO/Zod bodies — no live call):
+ *   - POST   /api/rules/exclusion            (add: { mediaId, collectionId?, action:0 })
+ *   - DELETE /api/rules/exclusions/:mediaId  (remove ALL exclusions for an item)
+ *   - POST   /api/collections/handle         (expedite ALL — no body; 409 if already running)
+ *   - POST   /api/collections/media/handle   ({ collectionId, mediaId } — expedite one item)
+ *   - POST   /api/rules  |  PUT /api/rules  |  DELETE /api/rules/:id   (rule-group CRUD)
+ *   - PATCH  /api/settings                   (enable radarr/sonarr tag exclusions + `dnd` tag)
+ * ReturnStatus/BasicResponse bodies are drained (a non-2xx already throws ArrHttpError → the
+ * domain maps it to MaintainerrUpstreamError / BAD_GATEWAY, fail-closed).
+ */
+export interface MaintainerrWriteClientOptions {
+  baseUrl: string;
+  apiKey: string;
+  timeoutMs?: number;
+  retryDelayMs?: number;
+  fetchImpl?: typeof fetch;
+}
+
+export class MaintainerrWriteClient {
+  private readonly http: ArrHttp;
+
+  constructor(options: MaintainerrWriteClientOptions) {
+    this.http = new ArrHttp({
+      baseUrl: options.baseUrl,
+      apiBasePath: '/api',
+      apiKey: options.apiKey,
+      apiKeyHeader: 'x-api-key',
+      timeoutMs: options.timeoutMs,
+      retryDelayMs: options.retryDelayMs,
+      fetchImpl: options.fetchImpl,
+    });
+  }
+
+  /** `POST /api/rules/exclusion` — Save/whitelist: exclude an item so Maintainerr never deletes it.
+   *  `mediaServerId` is the item's Plex ratingKey; omit `collectionId` for a GLOBAL exclusion. */
+  addExclusion(mediaServerId: string, collectionId?: number): Promise<void> {
+    return this.http.requestVoid('POST', 'rules/exclusion', {
+      body: {
+        mediaId: mediaServerId,
+        action: 0, // 0 = ADD
+        ...(collectionId !== undefined ? { collectionId } : {}),
+      },
+    });
+  }
+
+  /** `DELETE /api/rules/exclusions/:mediaServerId` — un-save: remove ALL exclusions for an item. */
+  removeExclusion(mediaServerId: string): Promise<void> {
+    return this.http.requestVoid('DELETE', `rules/exclusions/${encodeURIComponent(mediaServerId)}`);
+  }
+
+  /** `POST /api/collections/handle` — expedite ALL collections' pending deletions now (no body). */
+  handleAllCollections(): Promise<void> {
+    return this.http.requestVoid('POST', 'collections/handle');
+  }
+
+  /** `POST /api/collections/media/handle` — expedite ONE item's deletion now. */
+  handleCollectionMedia(collectionId: number, mediaServerId: string): Promise<void> {
+    return this.http.requestVoid('POST', 'collections/media/handle', {
+      body: { collectionId, mediaId: mediaServerId },
+    });
+  }
+
+  /** `POST /api/rules` — create a rule group (RulesDto). */
+  createRuleGroup(payload: Record<string, unknown>): Promise<void> {
+    return this.http.requestVoid('POST', 'rules', { body: payload });
+  }
+
+  /** `PUT /api/rules` — update a rule group (RulesDto with id). */
+  updateRuleGroup(payload: Record<string, unknown>): Promise<void> {
+    return this.http.requestVoid('PUT', 'rules', { body: payload });
+  }
+
+  /** `DELETE /api/rules/:id` — delete a rule group. */
+  deleteRuleGroup(id: number): Promise<void> {
+    return this.http.requestVoid('DELETE', `rules/${id}`);
+  }
+
+  /** `PATCH /api/settings` — enable Radarr/Sonarr tag exclusions + set the `dnd` exclusion tag
+   *  (a documented deploy-time step; the code path exists so ops can flip it via our surface). */
+  patchSettings(payload: Record<string, unknown>): Promise<void> {
+    return this.http.requestVoid('PATCH', 'settings', { body: payload });
+  }
+}
+
 export interface ArrWriteClients {
   sonarr: SonarrWriteClient;
   radarr: RadarrWriteClient;

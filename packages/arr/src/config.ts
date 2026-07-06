@@ -187,3 +187,24 @@ export function resolveMaintainerrConfig(
   if (!url && !apiKey) return null;
   return { baseUrl: url || MAINTAINERR_CLUSTER_URL_DEFAULT, ...(apiKey ? { apiKey } : {}) };
 }
+
+export interface MaintainerrWriteConfig {
+  baseUrl: string;
+  apiKey: string;
+}
+
+/**
+ * ADR-023 / DESIGN-010 D-01 — the Trash section's Maintainerr config, where the API key is
+ * REQUIRED (Maintainerr's WRITE endpoints need x-api-key). URL defaults to the in-cluster Service
+ * DNS (EXEMPT server-side base URL, like the *arrs); a missing MAINTAINERR_API_KEY throws one
+ * ArrConfigError naming it (never echoed). Distinct from resolveMaintainerrConfig (the OPTIONAL,
+ * key-less-tolerant harvest tier) so the Trash bundle fails loud when the secret is absent.
+ */
+export function assertMaintainerrEnv(
+  env: Record<string, string | undefined> = process.env,
+): MaintainerrWriteConfig {
+  const baseUrl = env.MAINTAINERR_URL?.trim() || MAINTAINERR_CLUSTER_URL_DEFAULT;
+  const apiKey = env.MAINTAINERR_API_KEY?.trim() ?? '';
+  if (!apiKey) throw new ArrConfigError(['MAINTAINERR_API_KEY']);
+  return { baseUrl, apiKey };
+}
