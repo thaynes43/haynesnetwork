@@ -275,6 +275,12 @@ body {
     padding: 8px 8px;
     font-size: 12px;
   }
+  /* The nowrap wordmark cannot shrink, so on narrow phones it overflowed its flex-shrunk
+     .brand and collided with "Home" (live-validation finding, 390px; worse with the third
+     nav link). Phones keep the brand MARK only; the wordmark returns at ≥600px. */
+  .brand__name {
+    display: none;
+  }
 }
 .topbar__spacer {
   flex: 1 1 auto;

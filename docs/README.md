@@ -39,7 +39,7 @@ MADR 3.0, one decision each, immutable once Accepted.
 
 | ID | Title | Read when |
 |----|-------|-----------|
-| ADR-001 | [Next.js App Router in a pnpm monorepo](adrs/001-web-framework-and-monorepo.md) | You need the stack/monorepo rationale. (Predates the `@hnet/arr` + `@hnet/sync` packages — there are eight `@hnet/*` packages, not six.) |
+| ADR-001 | [Next.js App Router in a pnpm monorepo](adrs/001-web-framework-and-monorepo.md) | You need the stack/monorepo rationale. (Predates the `@hnet/arr` + `@hnet/sync` + `@hnet/plex` packages — there are nine `@hnet/*` packages, not six.) |
 | ADR-002 | [Better Auth with Authentik OIDC as the sole sign-in](adrs/002-authentication.md) | Anything auth: why OIDC-only, admin bootstrap by email allowlist. (Role model amended by ADR-012.) |
 | ADR-003 | [PostgreSQL 16 (CNPG) + Drizzle, migrator init container, audit-in-transaction](adrs/003-database-and-orm.md) | Why PG16-only, the migrator initContainer, single-writer audit-in-transaction rule. |
 | ADR-004 | [tRPC v11 as the API contract, role-gated procedure ladder](adrs/004-api-contract.md) | Adding/altering an API procedure or the role gates. |
@@ -51,6 +51,11 @@ MADR 3.0, one decision each, immutable once Accepted.
 | ADR-010 | [Test strategy — Vitest + embedded Postgres, Playwright + stub OIDC, contract guards](adrs/010-test-strategy.md) | Writing tests, or understanding the import/no-direct-write contract guards. |
 | ADR-011 | [*arr write-back surface — Force Search + roll-up scopes](adrs/011-arr-write-back-surface.md) | The current write-back decision: Accepted, amends ADR-007/008 to add Force Search and season/series roll-up scopes. |
 | ADR-012 | [Unified Role model — one admin-managed Role per user](adrs/012-unified-role-model.md) | The entitlement model: DB-backed `roles` (one per user) replace the Member/Admin enum + tags + per-user grants + family flag + default_visible. **Supersedes ADR-002 C-04** (role-as-enum). |
+| ADR-013 | [Catalog links are arbitrary http(s) URLs](adrs/013-catalog-arbitrary-urls.md) | Catalog URL rules: any normalized `http(s)` URL, no host allow-list (reverses R-14; server-side base URLs exempt). |
+| ADR-014 | [Inline two-step confirmation for destructive actions](adrs/014-inline-two-step-confirmation.md) | Any destructive UI action: `@hnet/ui` `ConfirmButton` arm→confirm, never `window.confirm`; Modal for explanatory/multi-field confirms. |
+| ADR-015 | [No layout reorientation on interaction](adrs/015-no-layout-reorientation-on-interaction.md) | Any interactive UI: interactions may recolor, never reflow/reposition neighbors (sanctioned exceptions: deliberate expansions, drag-and-drop). |
+| ADR-016 | [Subtitle Fix routes to Bazarr; not offered for Music](adrs/016-subtitle-fix-via-bazarr.md) | The `missing_subtitles` Fix path: Bazarr async `search-missing`, `bazarr_subtitle` FixPath, per-kind reason offer rule. **Extends ADR-007.** |
+| ADR-017 | [Plex library sharing & the role-library-grant model](adrs/017-plex-library-sharing.md) | Phase-3 self-service: `role_library_grants` allow-list, family-as-role-grant, plex.tv v1 read-merge-write sharing, `@hnet/plex/write` confinement. |
 
 ## DDD — [`domain-driven-design/`](domain-driven-design/)
 
