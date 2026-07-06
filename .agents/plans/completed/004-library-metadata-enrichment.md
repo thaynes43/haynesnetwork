@@ -1,6 +1,9 @@
 # PLAN-004: Library metadata enrichment + posters + the shared filter/table engine
 
-- **Status:** Draft _(Fable 5 flips Draft→Executing→Completed)_
+- **Status:** Completed (2026-07-06) — shipped v0.8.0 + fix v0.8.1; live-validated on staging:
+  7/7 journeys (posters via authed proxy, real facets/deep-links, NULLS-LAST keyset against
+  17.7k rows, Tautulli watch-stats matching DB), resolution harvest fixed to real per-file tiers
+  (1080p×3385/2160p×2711 live), zero-rating badges suppressed.
 - **Satisfies:** PRD-001 R-40..R-42 (extended — see §Docs) + new **R-67..R-72**; new **DESIGN-007** (D-01..D-14); new **ADR-016** (metadata modeling), **ADR-017** (poster storage). Governed by ADR-008 (one-way sync, two write-backs), ADR-003 (Postgres/Drizzle + transactional audit), ADR-010 (test layers), ADR-015 (no reorientation). Bounded context DDD-002 **BC-03 Media Ledger** (extends DESIGN-005).
 - **Depends on:** none. **FOUNDATION for PLAN-005 (Ledger) + PLAN-006 (Trash)** — both reuse the metadata schema, the filter engine, and the filter/sort query contract this plan lands.
 - **TODO source:** #3 of `.agents/plans/TODO.md` (metadata harvest + posters + high-powered filters).
