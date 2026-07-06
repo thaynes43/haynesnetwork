@@ -8,8 +8,10 @@
   `.agents/plans/completed/001-gate-a-pr-cutover.md`).
   `main` is branch-protected: branch → PR → required checks `lint-and-typecheck`, `test`,
   `build` green → squash-merge. `e2e` advisory. Conventional-commit titles drive release-please.
-- **Latest release: v0.7.0 — first *signed* release (PLAN-007: keyless cosign, Rekor-logged,
-  in-run verified, `.sig` on GHCR; Kyverno dedicated Enforce policy live-validated).** Earlier
+- **Latest release: v0.8.1 (signed) — PLAN-004 library metadata + posters + filter engine
+  (v0.8.0 feature + v0.8.1 resolution/rating fix; every release signed since v0.7.0).** Prior:
+  **v0.7.0 — first *signed* release (PLAN-007: keyless cosign, Rekor-logged, in-run verified,
+  `.sig` on GHCR; Kyverno dedicated Enforce policy live-validated).** Earlier
   today: **v0.5.0 (#47) — PLAN-002 Bazarr subtitle Fix (ADR-016), deployed to staging +
   live-validated 2026-07-06:** `missing_subtitles` fixes route to Bazarr's async
   `search-missing` (movie: per-movie; sonarr episode/season: series-level — no per-episode async
@@ -19,7 +21,8 @@
 - **The autonomous Fable 5 run (Mon 2026-07-06) is IN PROGRESS.** Entry prompt
   `.agents/KICKOFF.md`; queue in `.agents/plans/` (see `.agents/plans/README.md`). **Plans done
   so far today:** 002 ✓ (v0.5.0); 003 validated on v0.6.1 (one deferred live share-write, owner
-  test-user pending); 004 in flight (backend done, Fable UX in progress); 007 ✓ (v0.7.0).
+  input pending); 004 ✓ (v0.8.0/v0.8.1); 007 ✓ (v0.7.0); 005 backend built (Fable review in
+  progress, UX next); 006/008 pending.
   v0.4.0 recap: unified roles (ADR-012), arbitrary catalog URLs (ADR-013), two-step
   `ConfirmButton`, drag-drop catalog reorder, Library sub-tabs.
 - **PLAN-007 (cosign image signing) COMPLETE** (`.agents/plans/completed/007-cosign-image-signing.md`).
@@ -32,6 +35,15 @@
   entry `failureAction: Enforce`, so a nested rule admitted an unsigned image with only a warning —
   hence the dedicated Enforce policy. Full detail + validation evidence in **OPS-006**
   (`docs/ops/006-image-signing.md`).
+- **PLAN-004 (library metadata + posters + filter engine) COMPLETE**
+  (`.agents/plans/completed/004-library-metadata-enrichment.md`; shipped v0.8.0 + fix v0.8.1,
+  live-validated on staging). The `media_metadata` harvest runs as a **6h CronJob — LIVE, first
+  harvests already run**: *arr ratings/genres/runtime + real per-file resolution tiers
+  (1080p×3385/2160p×2711 live), Tautulli watch-stats, cached poster thumbnails. Library renders
+  those posters through an **authed poster proxy** (no hot-linking); zero/absent rating badges are
+  suppressed. The **filter/table engine now lives in `@hnet/ui`** (ported from demo-console,
+  mechanism-shared / look-per-app) — **PLAN-005 (Ledger) + PLAN-006 (Trash) reuse it**, and the
+  **D-09 `ledger.search` sort/filter query contract is the shared substrate** those plans build on.
 
 ## Current state
 
@@ -89,9 +101,11 @@ The **Fable 5 autonomous run** works the release queue in `.agents/plans/` (star
    Plex domain code; glossary T-17..T-21 are placeholders). Per-**role** allowed library sets
    across the three servers (k8plex, plexops, legacy haynestower); family libs = libraries granted
    only to the Family role.
-3. **004 — Library metadata enrichment + posters + shared filter engine** (foundation for 005/006).
+3. ~~**004 — Library metadata enrichment + posters + shared filter engine**~~ ✅ **DONE**
+   (v0.8.0/v0.8.1, `completed/004-library-metadata-enrichment.md`; filter engine + D-09 search
+   contract now in `@hnet/ui`, reused by 005/006).
 4. **005 — Ledger section** (native restore via filter→*arr + export; imports
-   `radarr-fileless-backlog.md`).
+   `radarr-fileless-backlog.md`) — **backend built; Fable review in progress, UX next**.
 5. **006 — Trash section** (integrates the Maintainerr instance; replaces the Restore nav).
 6. ~~**007 — cosign signing**~~ ✅ **DONE** (v0.7.0, `completed/007-cosign-image-signing.md`);
    **008 — public cutover (LAST)**.
