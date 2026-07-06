@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.5.0](https://github.com/thaynes43/haynesnetwork/compare/v0.4.0...v0.5.0) (2026-07-06)
+
+
+### Features
+
+* route missing-subtitles Fix to Bazarr; drop the reason for Music (ADR-016) ([#47](https://github.com/thaynes43/haynesnetwork/issues/47)) ([4f96aef](https://github.com/thaynes43/haynesnetwork/commit/4f96aef261d38b70126552fc470434bdf5537cb2))
+
+
+### Documentation
+
+* Fable 5 plan queue + KICKOFF for the overnight autonomous build ([#38](https://github.com/thaynes43/haynesnetwork/issues/38)) ([4e4961a](https://github.com/thaynes43/haynesnetwork/commit/4e4961a0cf6527e7cb149c665c7d09696f6ded3a))
+* fix stale deploy flow + completed *arr migration (game-day audit) ([#44](https://github.com/thaynes43/haynesnetwork/issues/44)) ([a79c312](https://github.com/thaynes43/haynesnetwork/commit/a79c31280ab94d14b8759da015457f59ca123545))
+* note the catalog keyboard-reorder e2e flake (KICKOFF + backlog T-8) ([#45](https://github.com/thaynes43/haynesnetwork/issues/45)) ([28cbc76](https://github.com/thaynes43/haynesnetwork/commit/28cbc76f4d1be3dd7bf0be77ae6a398b64ec33a7))
+* **plan-003:** pin Plex owner-token location (verified against 1Password) ([#46](https://github.com/thaynes43/haynesnetwork/issues/46)) ([258c20f](https://github.com/thaynes43/haynesnetwork/commit/258c20fcfc5b7e3b276b3aea65985740ef9bed98))
+* **plans:** *arr tag semantics (requester / collection) for filters + Trash rules ([#43](https://github.com/thaynes43/haynesnetwork/issues/43)) ([1bbc7cd](https://github.com/thaynes43/haynesnetwork/commit/1bbc7cdfaf010e5a2297398b8024445883774b48))
+* **plans:** add 009 Bulletin + 010 MOTD (stretch); 004 TMDB/TVDB fallback ([#42](https://github.com/thaynes43/haynesnetwork/issues/42)) ([3a7cfc8](https://github.com/thaynes43/haynesnetwork/commit/3a7cfc8dcc8d23a231216df5936e2b7b2380d004))
+* **plans:** cross-server Tautulli watch-history protection (Trash + metadata) ([#40](https://github.com/thaynes43/haynesnetwork/issues/40)) ([951a91a](https://github.com/thaynes43/haynesnetwork/commit/951a91aeb2eeccbbbd3ae627c3dba522496749fb))
+* **plans:** Maintainerr exclusion-tag + notification-webhook design ([#41](https://github.com/thaynes43/haynesnetwork/issues/41)) ([bb5cc3f](https://github.com/thaynes43/haynesnetwork/commit/bb5cc3fdf50a45dc8fb9083e17d2d16992d9167b))
+
 ## [0.4.0](https://github.com/thaynes43/haynesnetwork/compare/v0.3.1...v0.4.0) (2026-07-05)
 
 
