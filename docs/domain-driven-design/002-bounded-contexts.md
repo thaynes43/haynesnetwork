@@ -64,6 +64,10 @@ Four bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across 
   URL (ADR-013 reversed R-14 — any host allowed).
 - **Outbound:** Effective Permissions to the Dashboard (tile visibility, AC-05) and to
   BC-04 (**Allowed Library Sets**, family); audit rows in the same transaction (R-04).
+- **Section Permission (ADR-021, R-78):** a role's Edit/Read-Only/Disabled **level per
+  top-level section** (`role_section_permissions`) is a permission concern owned here,
+  alongside Effective Permissions — carried on the session and consumed by BC-03's Ledger
+  (and later BC-03's Trash) nav + `sectionProcedure` gate.
 - **External systems:** none in Phase 1; follow-on push of app permissions into Authentik (R-30).
 
 ### BC-03 — Media Ledger
@@ -78,10 +82,13 @@ Four bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across 
 - **Owned aggregates:** Media Item, Ledger Event, Wanted Item (derived), Fix Request,
   Sync run, Restore run.
 - **Inbound:** scheduled Sync pulls; user Fix commands (Member, rate-guarded per R-47);
-  admin Restore commands; ledger browse/search queries (R-43).
-- **Outbound (the only write-backs, R-52):** Fix — **Blocklist** + search, or **Fix
-  Fallback** delete + search (R-44); Restore — re-add missing items monitored with
-  recorded profile/root folder/tags (R-51).
+  admin Restore commands; ledger browse/search queries (R-43); **Ledger section** browse /
+  bulk **Add-&-search** / **export** commands, section-gated by BC-02's Section Permission
+  (R-74..R-78, ADR-021/022).
+- **Outbound (the only write-backs, R-52 + R-75):** Fix — **Blocklist** + search, or **Fix
+  Fallback** delete + search (R-44); Restore / Ledger Add-&-search — the generalized
+  `executeArrAdd`: re-add absent items monitored (recorded profile/root/tags), set monitored
+  on present-but-unmonitored items, and trigger a search (R-51, R-75; ADR-022).
 - **External systems:** Sonarr, Radarr, Lidarr (read items + history; write fix/restore);
   Seerr (read-only attribution). Maintainerr is a follow-on (Q-04).
 - **Does NOT own:** media lists — the *arrs are the **Source of Truth**; this is a mirror

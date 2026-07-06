@@ -1,7 +1,12 @@
 # PLAN-005: Ledger section — spreadsheet browse + bulk Add-&-search + emergency export
 
-- **Status:** Draft _(Fable 5 flips Draft → Executing → Completed)_
-- **Satisfies:** PRD-001 **R-53..R-57** (new; R-54 generalizes R-50..R-52 Restore), **US-09**, **AC-11..AC-13**; new **ADR-016** (section-level Role permissions) + **ADR-017** (generalized *arr add + export); new **DESIGN-007** (Ledger section)
+- **Status:** Executing — **backend vertical shipped** on `feat/ledger-section` (2026-07-06, Fable 5);
+  the `/ledger` page + `/admin/roles` section editor land as the follow-up UX change (Fable UX agent).
+- **Satisfies:** PRD-001 **R-74..R-78** (new; R-75 generalizes R-50..R-52 Restore; **R-56 reframed** →
+  R-77 / ADR-022 C-04), **US-09**, **AC-11..AC-13**; new **ADR-021** (section-level Role permissions) +
+  **ADR-022** (generalized *arr add + export + fileless reframe); new **DESIGN-009** (Ledger section).
+  _(The indicative ADR-016/017 + DESIGN-007 + R-53..R-57 numbers below are the pre-reconciliation
+  placeholders — the real numbers, re-grepped against v0.8.0, are the ones on this line.)_
 - **Depends on:** **PLAN-004** — the demo-console `packages/shared/filters` engine ported into `@hnet/ui` (the ONE filter/table engine; DESIGN-006 keeps our own look), and the harvested/enriched metadata columns on `media_items` that the Ledger sorts/filters by
 - **TODO source:** #5 of `.agents/plans/TODO.md`
 - **Coordinates with:** **PLAN-006** (Trash) — 005 is lower-numbered and executes first, so **005 authors the shared section-permission ADR/DDD/table** (ADR-016) and 006 reuses it; 005 leaves `/admin/restore` intact (its re-add power now lives on in the Ledger), **006 removes the Restore nav** per its own plan
