@@ -9,6 +9,9 @@ export * from './catalog';
 export * from './effective-apps';
 // ADR-021 / DESIGN-009 — section-level role permissions (Ledger + reserved Trash) single-writer
 export * from './section-permissions';
+// ADR-023 / DESIGN-010 — Trash (Maintainerr) fine-grained action grants + the notification store
+export * from './trash-permissions';
+export * from './notifications';
 // DESIGN-005 Phase 2 — media ledger single-writers (D-12)
 export * from './sync-runs';
 export * from './media-sync';

@@ -18,8 +18,10 @@ import {
   SEEDED_ROLE_IDS,
   SECTION_IDS,
   SECTION_DEFAULT_LEVELS,
+  TRASH_ACTIONS,
   type SectionId,
   type SectionPermissionLevel,
+  type TrashAction,
 } from '@hnet/db/schema';
 import { appRouter } from '../src/routers/index';
 import { createCallerFactory, type TRPCContext } from '../src/trpc';
@@ -87,6 +89,8 @@ export function sessionUser(
   row: typeof schema.users.$inferSelect,
   /** ADR-021 — override the caller's section levels (non-admin only; admin is 'edit' everywhere). */
   sectionOverrides?: Partial<Record<SectionId, SectionPermissionLevel>>,
+  /** ADR-023 — override the caller's fine-grained Trash action grants (non-admin only; admin ⇒ all). */
+  trashActionOverrides?: TrashAction[],
 ): SessionUser {
   const isAdmin = row.roleId === SEEDED_ROLE_IDS.admin;
   const name = isAdmin ? 'Admin' : row.roleId === SEEDED_ROLE_IDS.default ? 'Default' : 'Custom';
@@ -96,11 +100,15 @@ export function sessionUser(
       isAdmin ? 'edit' : (sectionOverrides?.[sid] ?? SECTION_DEFAULT_LEVELS[sid]),
     ]),
   ) as Record<SectionId, SectionPermissionLevel>;
+  const grantedSet = new Set(trashActionOverrides ?? []);
+  const trashActions: TrashAction[] = isAdmin
+    ? [...TRASH_ACTIONS]
+    : TRASH_ACTIONS.filter((a) => grantedSet.has(a));
   return {
     id: row.id,
     email: row.email,
     displayName: row.displayName,
-    role: { id: row.roleId, name, isAdmin, sectionPermissions },
+    role: { id: row.roleId, name, isAdmin, sectionPermissions, trashActions },
   };
 }
 

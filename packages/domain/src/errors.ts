@@ -179,6 +179,47 @@ export class PlexAllStateError extends Error {
   readonly code = 'PLEX_ALL_STATE' as const;
 }
 
+// ---------------------------------------------------------------------------
+// ADR-023 / DESIGN-010 — Trash section (Maintainerr) errors.
+// ---------------------------------------------------------------------------
+
+/**
+ * ADR-023 D-04: a DESTRUCTIVE Trash path (expedite) re-ran the preflight `auditMaintainerr` and
+ * the install did NOT look safe — a required integration is down, or the service is unreachable.
+ * The orchestrator refuses BEFORE any Maintainerr write (fail closed). Surfaced as
+ * PRECONDITION_FAILED with the failing checks named (never a raw error).
+ */
+export class MaintainerrUnsafeError extends Error {
+  readonly code = 'MAINTAINERR_UNSAFE' as const;
+  constructor(
+    message: string,
+    readonly detail?: { integrations?: Record<string, boolean>; reachable?: boolean },
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * ADR-023 D-04: a Maintainerr read/write failed upstream (unreachable, non-2xx, schema drift) —
+ * surfaced to the client as BAD_GATEWAY, exactly like ArrUpstreamError. The original ArrError
+ * (the shared @hnet/arr HTTP taxonomy) rides along as `cause`. Fail closed.
+ */
+export class MaintainerrUpstreamError extends Error {
+  readonly code = 'MAINTAINERR_UNAVAILABLE' as const;
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+  }
+}
+
+/**
+ * ADR-023 / R-87: a Trash action reached a music (Lidarr) target. Music is NEVER deletable via
+ * Trash — Maintainerr has no Lidarr integration and the estate keeps music undeletable. Rejected
+ * at the orchestrator (defence in depth beneath the UI, which hides the shield for Lidarr items).
+ */
+export class TrashMusicUnsupportedError extends Error {
+  readonly code = 'TRASH_MUSIC_UNSUPPORTED' as const;
+}
+
 function pgErrorCode(err: unknown): string | undefined {
   if (typeof err !== 'object' || err === null) return undefined;
   const code = (err as { code?: unknown }).code;

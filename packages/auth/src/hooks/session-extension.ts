@@ -2,14 +2,17 @@ import { eq } from 'drizzle-orm';
 import {
   db,
   roleSectionPermissions,
+  roleTrashActionGrants,
   roles,
   users,
   SECTION_IDS,
   SECTION_DEFAULT_LEVELS,
+  TRASH_ACTIONS,
   type Database,
   type DbClient,
   type SectionId,
   type SectionPermissionLevel,
+  type TrashAction,
 } from '@hnet/db';
 
 /** The role summary carried on the session (ADR-012 — one role per user). */
@@ -23,6 +26,12 @@ export interface SessionRole {
    * over SECTION_IDS: admin ⇒ 'edit' everywhere; otherwise the role's row or the section default.
    */
   sectionPermissions: Record<SectionId, SectionPermissionLevel>;
+  /**
+   * ADR-023 C-03 — the caller's resolved FINE-GRAINED Trash action grants, so `trashActionProcedure`
+   * needs no per-request query. Admin ⇒ ALL actions; otherwise exactly the role's granted rows
+   * (absence ⇒ not granted). Layered on top of `sectionPermissions.trash` (which gates VIEW).
+   */
+  trashActions: TrashAction[];
 }
 
 /**
@@ -75,8 +84,27 @@ export async function getSessionExtension(
       row.isAdmin ? 'edit' : (byId.get(sid) ?? SECTION_DEFAULT_LEVELS[sid]),
     ]),
   ) as Record<SectionId, SectionPermissionLevel>;
+  // ADR-023 C-03 — the fine-grained Trash action grants: admin ⇒ every action (no rows),
+  // otherwise the role's granted rows filtered to the canonical order. One more small query,
+  // skipped entirely for admins.
+  const grantRows = row.isAdmin
+    ? []
+    : await q
+        .select({ action: roleTrashActionGrants.action })
+        .from(roleTrashActionGrants)
+        .where(eq(roleTrashActionGrants.roleId, row.roleId));
+  const grantedSet = new Set(grantRows.map((r) => r.action));
+  const trashActions: TrashAction[] = row.isAdmin
+    ? [...TRASH_ACTIONS]
+    : TRASH_ACTIONS.filter((a) => grantedSet.has(a));
   return {
-    role: { id: row.roleId, name: row.roleName, isAdmin: row.isAdmin, sectionPermissions },
+    role: {
+      id: row.roleId,
+      name: row.roleName,
+      isAdmin: row.isAdmin,
+      sectionPermissions,
+      trashActions,
+    },
     displayName: row.displayName,
   };
 }

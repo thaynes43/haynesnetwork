@@ -18,6 +18,7 @@ const member: SessionUser = {
     name: 'Default',
     isAdmin: false,
     sectionPermissions: { ledger: 'read_only', trash: 'disabled' },
+    trashActions: [],
   },
 };
 
