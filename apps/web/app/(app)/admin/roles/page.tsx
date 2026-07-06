@@ -274,6 +274,26 @@ export default function AdminRolesPage() {
           {error}
         </p>
       ) : null}
+      {/* ADR-017 / DESIGN-007 D-12 — per-server refresh outcome. A single unreachable server
+          degrades to a warning tone (never the red error banner); all-ok is an info tone. Short
+          labels only ('unreachable' etc.) — the domain never surfaces a raw error or token. */}
+      {refresh.data ? (
+        <p
+          className={`status-note${refresh.data.ok ? '' : ' status-note--warn'}`}
+          role="status"
+          data-testid="plex-refresh-status"
+        >
+          {refresh.data.servers.length === 0
+            ? 'No Plex servers to refresh.'
+            : refresh.data.servers
+                .map((s) =>
+                  s.ok
+                    ? `${s.name}: ${s.libraryCount ?? 0} ${s.libraryCount === 1 ? 'library' : 'libraries'}`
+                    : `${s.name}: ${s.error ?? 'error'}`,
+                )
+                .join(' · ')}
+        </p>
+      ) : null}
 
       <table className="admin-table">
         <thead>

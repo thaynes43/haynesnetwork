@@ -14,7 +14,7 @@ import {
   type PlexServerSlug,
 } from '@hnet/db';
 import { and, asc, eq, notInArray, sql } from 'drizzle-orm';
-import { PlexError } from '@hnet/plex';
+import { PlexError, PlexHttpError, PlexNetworkError, PlexParseError, PlexTimeoutError } from '@hnet/plex';
 import { resolveDb, inTransaction } from './db-client';
 import { NotFoundError, PlexServerUnavailableError } from './errors';
 import type { PlexClientBundle } from './plex-clients';
@@ -64,25 +64,53 @@ export interface RefreshPlexRegistryInput {
   slugs?: PlexServerSlug[];
 }
 
-export interface RefreshedServer {
+/**
+ * DESIGN-007 D-12 — the per-server outcome of a refresh. `ok` servers carry their fresh counts;
+ * a failed server carries a SHORT human label (`error`, e.g. 'unreachable') — never a raw
+ * error message or token — so the admin banner can name what happened without leaking internals.
+ */
+export interface RefreshedServerSummary {
   slug: PlexServerSlug;
-  serverId: string;
-  machineIdentifier: string;
-  upserted: number;
-  markedUnavailable: number;
+  name: string;
+  /** true = this server refreshed cleanly; false = it was skipped (its registry rows are unchanged). */
+  ok: boolean;
+  /** Libraries upserted this refresh (present only when ok). */
+  libraryCount?: number;
+  /** Libraries soft-marked unavailable this refresh (present only when ok). */
+  markedUnavailable?: number;
+  /** SHORT human label when !ok (e.g. 'unreachable', 'timed out', 'HTTP 500'). */
+  error?: string;
 }
 
 export interface RefreshPlexRegistryResult {
-  servers: RefreshedServer[];
+  /** true only when EVERY targeted server refreshed cleanly (⇒ the UI shows a success tone). */
+  ok: boolean;
+  servers: RefreshedServerSummary[];
 }
 
 const isPlexMediaType = (t: string): t is PlexMediaType =>
   (PLEX_MEDIA_TYPES as readonly string[]).includes(t);
 
+/** Map a typed PlexError to a short, token-free human label for the summary/banner (D-12). */
+function shortPlexErrorLabel(err: PlexError): string {
+  if (err instanceof PlexNetworkError) return 'unreachable';
+  if (err instanceof PlexTimeoutError) return 'timed out';
+  if (err instanceof PlexHttpError) return `HTTP ${err.status}`;
+  if (err instanceof PlexParseError) return 'unexpected response';
+  return 'error';
+}
+
 /**
  * Refresh the Plex library registry from the live servers. External reads happen OUTSIDE the
  * transaction (one server at a time); the per-server upsert + soft-unavailable pass + machine
  * identifier update run in ONE transaction so a partial refresh never leaves half-synced rows.
+ *
+ * DESIGN-007 D-12 — the refresh DEGRADES PER SERVER: a Plex network/HTTP failure on one server
+ * (typed PlexError, incl. PlexNetworkError) is caught, logged, and recorded as `ok: false` in
+ * the summary; the remaining servers still refresh and commit in their own transactions. One
+ * unreachable server (the live 2026-07-06 haynestower defect) no longer aborts the whole
+ * request. A genuinely LOUD condition — an unexpected media type (needs a code change) or a
+ * misconfiguration — still throws (mapped to a client error by the router).
  */
 export async function refreshPlexRegistry(
   input: RefreshPlexRegistryInput,
@@ -90,14 +118,19 @@ export async function refreshPlexRegistry(
   const db = resolveDb(input.db);
 
   const serverRows = await db
-    .select({ id: plexServers.id, slug: plexServers.slug, machineIdentifier: plexServers.machineIdentifier })
+    .select({
+      id: plexServers.id,
+      slug: plexServers.slug,
+      name: plexServers.name,
+      machineIdentifier: plexServers.machineIdentifier,
+    })
     .from(plexServers)
     .orderBy(asc(plexServers.slug));
   const targets = input.slugs
     ? serverRows.filter((s) => input.slugs!.includes(s.slug))
     : serverRows;
 
-  const results: RefreshedServer[] = [];
+  const results: RefreshedServerSummary[] = [];
   for (const server of targets) {
     const client = input.plex.read[server.slug];
 
@@ -109,16 +142,23 @@ export async function refreshPlexRegistry(
       const identity = await client.getIdentity();
       if (identity.machineIdentifier) machineIdentifier = identity.machineIdentifier;
     } catch (err) {
+      // Typed Plex failure (unreachable/timeout/HTTP/parse) → degrade THIS server only, keep
+      // going. Log the cause so a failed refresh is visible in pod logs (it was invisible
+      // before). The token never appears — the PlexError taxonomy keeps it header-only.
       if (err instanceof PlexError) {
-        throw new PlexServerUnavailableError(
-          `Plex server '${server.slug}' is unavailable during registry refresh`,
-          { cause: err },
+        const label = shortPlexErrorLabel(err);
+        console.error(
+          `[plex-registry] refresh failed for '${server.slug}' (${label}) — its registry rows are unchanged`,
+          err,
         );
+        results.push({ slug: server.slug, name: server.name, ok: false, error: label });
+        continue;
       }
       throw err;
     }
 
-    // Validate media types up front (loud failure beats a raw CHECK violation mid-tx).
+    // Validate media types up front (loud failure beats a raw CHECK violation mid-tx). This is
+    // NOT a per-server degrade: an unmapped type means the code needs PLEX_MEDIA_TYPES updated.
     for (const s of sections) {
       if (!isPlexMediaType(s.type)) {
         throw new PlexServerUnavailableError(
@@ -176,12 +216,12 @@ export async function refreshPlexRegistry(
 
     results.push({
       slug: server.slug,
-      serverId: server.id,
-      machineIdentifier,
-      upserted: outcome.upserted,
+      name: server.name,
+      ok: true,
+      libraryCount: outcome.upserted,
       markedUnavailable: outcome.markedUnavailable,
     });
   }
 
-  return { servers: results };
+  return { ok: results.every((r) => r.ok), servers: results };
 }

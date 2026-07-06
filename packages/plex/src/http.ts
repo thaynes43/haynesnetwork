@@ -5,7 +5,7 @@
 // mirroring @hnet/arr's ArrHttp.
 import type { ZodType } from 'zod';
 import { ZodError } from 'zod';
-import { PlexHttpError, PlexParseError, PlexTimeoutError } from './errors';
+import { PlexHttpError, PlexNetworkError, PlexParseError, PlexTimeoutError } from './errors';
 import { parseXml, type XmlElement } from './xml';
 
 export type QueryParams = Record<string, string | number | boolean | undefined>;
@@ -92,8 +92,12 @@ export class PlexHttp {
         signal: controller.signal,
       });
     } catch (error) {
+      // An aborted fetch is our own timeout; anything else fetchImpl rejects with is a
+      // network-level failure (DNS/refused/reset/TLS) — undici throws a bare `TypeError:
+      // fetch failed`. Wrap it so it stays inside the PlexError taxonomy (host named, token
+      // never echoed, original as `cause`) instead of escaping untyped.
       if (controller.signal.aborted) throw new PlexTimeoutError(method, url, this.timeoutMs);
-      throw error;
+      throw new PlexNetworkError(method, url, { cause: error });
     } finally {
       clearTimeout(timer);
     }
@@ -120,8 +124,8 @@ export class PlexHttp {
         lastError = error;
         const retryable =
           error instanceof PlexTimeoutError ||
-          (error instanceof PlexHttpError && RETRYABLE_STATUSES.has(error.status)) ||
-          (!(error instanceof PlexHttpError) && !(error instanceof PlexTimeoutError)); // network
+          error instanceof PlexNetworkError || // transient DNS/connection failure
+          (error instanceof PlexHttpError && RETRYABLE_STATUSES.has(error.status));
         if (!retryable || i === attempts - 1) throw error;
       }
     }

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { plexLibraries, plexServers, SEEDED_PLEX_SERVER_IDS, type Database } from '@hnet/db';
 import { refreshPlexRegistry, PlexServerUnavailableError, type PlexClientBundle } from '../src/index';
+import { PlexNetworkError } from '@hnet/plex';
 import { bootMigratedDb, type TestDb } from './helpers';
 
 type Slug = 'haynestower' | 'haynesops' | 'hayneskube';
@@ -118,6 +119,56 @@ describe('refreshPlexRegistry (ADR-017 D-04)', () => {
     });
     const libs = await librariesFor(t.db, 'haynesops');
     expect(libs.find((l) => l.key === '2')).toMatchObject({ available: true });
+  });
+
+  it('degrades PER SERVER — one unreachable server does not abort the reachable ones (D-11)', async () => {
+    // haynestower fails network-style (the live 2026-07-06 defect); the other two succeed.
+    const netErr = new PlexNetworkError('GET', 'https://plex.haynesnetwork.com/library/sections', {
+      cause: new TypeError('fetch failed'),
+    });
+    const bundle = {
+      read: {
+        haynestower: {
+          async listSections(): Promise<never> {
+            throw netErr;
+          },
+          async getIdentity(): Promise<never> {
+            throw netErr;
+          },
+        },
+        haynesops: {
+          async listSections() {
+            return [{ key: '7', title: 'Degrade Ops Movies', type: 'movie', agent: '' }];
+          },
+          async getIdentity() {
+            return { machineIdentifier: 'mid-haynesops', version: '1' };
+          },
+        },
+        hayneskube: {
+          async listSections() {
+            return [{ key: '8', title: 'Degrade Kube Music', type: 'artist', agent: '' }];
+          },
+          async getIdentity() {
+            return { machineIdentifier: 'mid-hayneskube', version: '1' };
+          },
+        },
+      },
+      write: {},
+    } as unknown as PlexClientBundle;
+
+    // No throw — the failure is folded into the summary.
+    const res = await refreshPlexRegistry({ db: t.db, plex: bundle });
+    expect(res.ok).toBe(false);
+    const bySlug = new Map(res.servers.map((s) => [s.slug, s]));
+    expect(bySlug.get('haynestower')).toMatchObject({ ok: false, error: 'unreachable' });
+    expect(bySlug.get('haynesops')).toMatchObject({ ok: true, libraryCount: 1 });
+    expect(bySlug.get('hayneskube')).toMatchObject({ ok: true, libraryCount: 1 });
+    // The failed server never surfaces a raw message or token.
+    expect(bySlug.get('haynestower')!.error).not.toContain('fetch failed');
+
+    // The reachable servers' libraries WERE upserted despite the other server's failure.
+    expect((await librariesFor(t.db, 'haynesops')).find((l) => l.key === '7')).toBeDefined();
+    expect((await librariesFor(t.db, 'hayneskube')).find((l) => l.key === '8')).toBeDefined();
   });
 
   it('throws on an unexpected media type (loud — prompts a PLEX_MEDIA_TYPES update)', async () => {

@@ -116,7 +116,13 @@ export const plexRouter = router({
     );
   }),
 
-  /** Admin: refresh the library registry from the live servers (all, or a subset). */
+  /**
+   * Admin: refresh the library registry from the live servers (all, or a subset). Returns the
+   * DESIGN-007 D-12 per-server summary `{ ok, servers: [{ slug, name, ok, libraryCount?, error? }] }`
+   * — a single unreachable server degrades to `ok: false` for that row (the others still commit)
+   * rather than failing the whole call. mapDomainErrors still surfaces the genuinely fatal cases
+   * (config missing, an unexpected media type) as client errors.
+   */
   refreshRegistry: adminProcedure.input(RefreshRegistryInput).mutation(async ({ ctx, input }) => {
     return mapDomainErrors(() =>
       refreshPlexRegistry({ db: ctx.db, plex: resolvePlexBundle(ctx), slugs: input.slugs }),

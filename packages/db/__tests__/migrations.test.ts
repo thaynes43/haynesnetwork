@@ -144,6 +144,17 @@ describe('migrations against embedded Postgres 16', () => {
   // the raw 0002 SQL is no longer possible: migration 0007 drops app_catalog.default_visible,
   // which that historical INSERT references — and shipped migrations are never edited.)
 
+  it('0011 corrects the haynestower registry base_url to the external ingress (live defect fix)', async () => {
+    const rows = await client.query('SELECT slug, base_url FROM plex_servers ORDER BY slug');
+    const bySlug = new Map(rows.rows.map((r) => [r.slug as string, r.base_url as string]));
+    // haynestower is the EXTERNAL Unraid box — reachable via its public ingress, NOT an
+    // in-cluster Service (the 0010 seed's svc.cluster.local URL did not resolve).
+    expect(bySlug.get('haynestower')).toBe('https://plex.haynesnetwork.com');
+    // The other two ARE genuine in-cluster Services and are left untouched by 0011.
+    expect(bySlug.get('haynesops')).toBe('http://plexops.media.svc.cluster.local:32400');
+    expect(bySlug.get('hayneskube')).toBe('http://plex.media.svc.cluster.local:32400');
+  });
+
   describe('app_catalog_url_scheme CHECK (ADR-013 — scheme backstop only, arbitrary hosts)', () => {
     const insert = (slug: string, url: string) =>
       client.query({

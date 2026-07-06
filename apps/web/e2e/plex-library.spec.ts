@@ -84,10 +84,18 @@ test.describe.serial('Plex library self-service (ADR-017)', () => {
     await signIn(page, 'admin');
     await page.goto('/admin/roles');
 
-    // Registry refresh (idempotent — the stub serves the same sections the seed used).
+    // Registry refresh (idempotent — the stub serves the same sections the seed used). All three
+    // stub servers are reachable, so the refresh reports success per server (DESIGN-007 D-12) —
+    // an info-tone status note, never the red error banner.
     await page.getByTestId('plex-refresh-registry').click();
     await expect(page.getByTestId('plex-refresh-registry')).toHaveText('Refresh Plex libraries');
     await expect(page.locator('.alert')).toHaveCount(0);
+    const refreshStatus = page.getByTestId('plex-refresh-status');
+    await expect(refreshStatus).toBeVisible();
+    await expect(refreshStatus).toContainText('HaynesTower');
+    await expect(refreshStatus).toContainText('libraries');
+    await expect(refreshStatus).not.toContainText('unreachable');
+    await expect(refreshStatus).not.toHaveClass(/status-note--warn/);
 
     // Open the Default role editor; its library matrix reflects the seeded grants.
     const defaultRow = page.locator('tr', { hasText: 'Default' }).first();
