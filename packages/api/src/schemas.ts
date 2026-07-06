@@ -74,10 +74,18 @@ export const CatalogEntryPatchInput = catalogEntryFields
 /** plex.addLibrary / plex.removeLibrary — the caller's own account, a single library. */
 export const PlexLibraryInput = z.object({ libraryId: z.uuid() });
 
-/** plex.setRoleLibraryGrants — replace-whole-set of a role's Plex library grants. */
+/** ADR-024 — plex.setServerAll: toggle the caller's own account all-libraries state on a server. */
+export const ServerAllInput = z.object({ serverId: z.uuid(), on: z.boolean() });
+
+/**
+ * plex.setRoleLibraryGrants — replace-whole-set of a role's Plex library grants: the per-library
+ * allow-list AND (ADR-024) the per-server all-libraries grants. `allServerIds` OMITTED leaves the
+ * role's existing all-grants untouched; an empty array clears them (replace-whole-set semantics).
+ */
 export const RoleLibrariesInput = z.object({
   roleId: z.uuid(),
   libraryIds: z.array(z.uuid()).default([]),
+  allServerIds: z.array(z.uuid()).optional(),
 });
 
 /** plex.refreshRegistry — optionally restrict to a subset of servers (default: all three). */

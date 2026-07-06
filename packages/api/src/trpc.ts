@@ -18,6 +18,7 @@ import {
   LibraryNotAllowedError,
   NotFoundError,
   PlexAccountUnmatchedError,
+  PlexAllStateError,
   PlexServerUnavailableError,
   plexClientBundleFromEnv,
   ReorderMismatchError,
@@ -114,6 +115,7 @@ const APP_CODED_ERRORS = [
   RestoreProfileUnmappedError,
   LibraryNotAllowedError,
   PlexAccountUnmatchedError,
+  PlexAllStateError,
   PlexServerUnavailableError,
   SearchCapExceededError,
 ] as const;
@@ -167,6 +169,7 @@ export const authedProcedure = t.procedure.use(({ ctx, next }) => {
  * | SearchCapExceededError      | ARR_ADD_SEARCH_CAP_EXCEEDED | UNPROCESSABLE_CONTENT |
  * | LibraryNotAllowedError      | LIBRARY_NOT_ALLOWED         | FORBIDDEN             |
  * | PlexAccountUnmatchedError   | PLEX_ACCOUNT_UNMATCHED      | UNPROCESSABLE_CONTENT |
+ * | PlexAllStateError           | PLEX_ALL_STATE              | UNPROCESSABLE_CONTENT |
  * | PlexServerUnavailableError  | PLEX_SERVER_UNAVAILABLE     | BAD_GATEWAY           |
  * | NotFoundError               | —                           | NOT_FOUND             |
  */
@@ -220,6 +223,9 @@ export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
       throw new TRPCError({ code: 'FORBIDDEN', message: err.message, cause: err });
     }
     if (err instanceof PlexAccountUnmatchedError) {
+      throw new TRPCError({ code: 'UNPROCESSABLE_CONTENT', message: err.message, cause: err });
+    }
+    if (err instanceof PlexAllStateError) {
       throw new TRPCError({ code: 'UNPROCESSABLE_CONTENT', message: err.message, cause: err });
     }
     if (err instanceof PlexServerUnavailableError) {

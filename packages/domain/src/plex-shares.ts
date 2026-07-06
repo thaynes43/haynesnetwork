@@ -28,9 +28,13 @@ import {
   LibraryNotAllowedError,
   NotFoundError,
   PlexAccountUnmatchedError,
+  PlexAllStateError,
   PlexServerUnavailableError,
 } from './errors';
-import { effectiveAllowedLibrariesForUser } from './effective-allowed-libraries';
+import {
+  allGrantedServerIdsForUser,
+  effectiveAllowedLibrariesForUser,
+} from './effective-allowed-libraries';
 import type { PlexClientBundle } from './plex-clients';
 
 export interface ShareMutationInput {
@@ -120,6 +124,18 @@ async function applyShare(input: ShareMutationInput, mode: Mode): Promise<ShareM
 
   // (2) read-merge-write: the user's CURRENT shared section set is the base.
   const current = await plexCall(lib.serverSlug, () => read.findSharedServerForUser(friend.id));
+
+  // ADR-024 — no silent demotion. When the account is currently in the plex.tv all-libraries state,
+  // a per-library add (union) or remove (subtract) would PUT an explicit list and silently demote
+  // the superset grant (future libraries would stop auto-appearing). Throw BEFORE any Plex write
+  // for BOTH modes; the user must LEAVE All first (plex.setServerAll { on:false } — seeds the
+  // explicit list with their current full set, no access loss) and then manage individual libraries.
+  if (current?.allLibraries) {
+    throw new PlexAllStateError(
+      `Your ${lib.serverName} account currently has all libraries. Turn off “All libraries” for this server first, then add or remove individual libraries.`,
+    );
+  }
+
   const currentIds = current
     ? current.sections.filter((s) => s.shared).map((s) => Number(s.id))
     : [];
@@ -192,4 +208,124 @@ export function shareLibrary(input: ShareMutationInput): Promise<ShareMutationRe
 /** Remove a library share from the user's Plex account (always permitted — revokes access). */
 export function unshareLibrary(input: ShareMutationInput): Promise<ShareMutationResult> {
   return applyShare(input, 'remove');
+}
+
+export interface ServerAllShareInput {
+  db?: DbClient;
+  plex: PlexClientBundle;
+  /** Whose Plex account is toggled. */
+  userId: string;
+  /** plex_servers.id — the server whose all-libraries flag to toggle for the user. */
+  serverId: string;
+  /** true = enter the plex.tv all-libraries state; false = leave it (demote to explicit full set). */
+  on: boolean;
+  /** Who initiated: the user (self-service) or an admin acting for them. */
+  actorId: string;
+}
+
+export interface ServerAllShareResult {
+  changed: boolean;
+  event: PlexShareEvent | null;
+  serverSlug: PlexServerSlug;
+  /** The resulting all-libraries state (== `on`, idempotent no-ops included). */
+  allActive: boolean;
+}
+
+/**
+ * ADR-024 — self-toggle (or admin-toggle for) the server-wide all-libraries state on the user's own
+ * Plex account. Role-gated: the user's role must hold an all-libraries grant on the server
+ * (re-derived here INSIDE the call — TOCTOU; Admin implicitly all-grants every server). Turning it
+ * ON share-everything (incl. future libraries); turning it OFF demotes to an EXPLICIT list seeded
+ * with the account's CURRENT FULL section set (all of the server's sections) so no access is lost.
+ * Audited in plex_share_audit (share_all_enabled / share_all_disabled) after a successful apply.
+ */
+export async function setServerAllShare(input: ServerAllShareInput): Promise<ServerAllShareResult> {
+  const db = resolveDb(input.db);
+
+  const [srv] = await db
+    .select({
+      id: plexServers.id,
+      slug: plexServers.slug,
+      name: plexServers.name,
+    })
+    .from(plexServers)
+    .where(eq(plexServers.id, input.serverId));
+  if (!srv) throw new NotFoundError(`Plex server ${input.serverId} not found`);
+
+  const [u] = await db.select({ email: users.email }).from(users).where(eq(users.id, input.userId));
+  if (!u) throw new NotFoundError(`User ${input.userId} not found`);
+
+  // Role gate (TOCTOU): the fresh all-granted server set must contain this server (Admin ⇒ all).
+  const allGranted = await allGrantedServerIdsForUser(input.userId, input.db);
+  if (!allGranted.has(srv.id)) {
+    throw new LibraryNotAllowedError(
+      `Your role does not grant all-libraries access on ${srv.name}.`,
+    );
+  }
+
+  const read = input.plex.read[srv.slug];
+  const write = input.plex.write[srv.slug];
+
+  const friend = await plexCall(srv.slug, () => read.findFriendByEmail(u.email));
+  if (!friend) {
+    throw new PlexAccountUnmatchedError(
+      `${u.email} is not a Plex friend of the ${srv.name} account yet`,
+    );
+  }
+  const plexUserId = Number(friend.id);
+
+  const current = await plexCall(srv.slug, () => read.findSharedServerForUser(friend.id));
+  const currentlyAll = current?.allLibraries ?? false;
+
+  let changed = false;
+  let event: PlexShareEvent | null = null;
+  const detail: Record<string, unknown> = {
+    server_slug: srv.slug,
+    server_name: srv.name,
+    self: input.actorId === input.userId,
+    previous_all: currentlyAll,
+    new_all: input.on,
+  };
+
+  if (input.on && !currentlyAll) {
+    await plexCall(srv.slug, () =>
+      write.updateSharedServerAll({
+        sharedServerId: current?.id ?? null,
+        invitedUserId: plexUserId,
+        on: true,
+      }),
+    );
+    changed = true;
+    event = 'share_all_enabled';
+  } else if (!input.on && currentlyAll) {
+    // Demote — seed the explicit list with the account's CURRENT FULL section set (every section
+    // on the server) so leaving All loses no access. current.id is set (currentlyAll ⇒ a share).
+    const serverSections = await plexCall(srv.slug, () => read.listServerSections());
+    const seededSectionIds = serverSections.map((s) => Number(s.id));
+    await plexCall(srv.slug, () =>
+      write.updateSharedServerAll({
+        sharedServerId: current!.id,
+        invitedUserId: plexUserId,
+        on: false,
+        librarySectionIds: seededSectionIds,
+      }),
+    );
+    detail.seeded_section_ids = seededSectionIds;
+    changed = true;
+    event = 'share_all_disabled';
+  }
+
+  if (changed && event) {
+    await inTransaction(input.db, async (tx) => {
+      await tx.insert(plexShareAudit).values({
+        userId: input.userId,
+        plexLibraryId: null,
+        event,
+        actorId: input.actorId,
+        detail,
+      });
+    });
+  }
+
+  return { changed, event, serverSlug: srv.slug, allActive: input.on };
 }

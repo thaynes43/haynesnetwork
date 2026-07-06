@@ -4,18 +4,20 @@
 // domain call is wrapped in mapDomainErrors so the D-13 appCodes reach the client; the Plex
 // client bundle is injected via resolvePlexBundle (env singleton in prod, stub in tests).
 import { asc, eq } from 'drizzle-orm';
-import { plexLibraries, plexServers, roleLibraryGrants, type PlexMediaType, type PlexServerSlug } from '@hnet/db';
+import { plexLibraries, plexServers, roleLibraryGrants, rolePlexServerAllGrants, type PlexMediaType, type PlexServerSlug } from '@hnet/db';
 import {
+  allGrantedServerIdsForUser,
   effectiveAllowedLibrariesForUser,
   refreshPlexRegistry,
   setRoleLibraries,
+  setServerAllShare,
   shareLibrary,
   unshareLibrary,
 } from '@hnet/domain';
 import { mapDomainErrors, resolvePlexBundle, router } from '../trpc';
 import { authedProcedure } from '../trpc';
 import { adminProcedure } from '../middleware/role';
-import { PlexLibraryInput, RefreshRegistryInput, RoleLibrariesInput } from '../schemas';
+import { PlexLibraryInput, RefreshRegistryInput, RoleLibrariesInput, ServerAllInput } from '../schemas';
 
 export interface MyLibrary {
   id: string;
@@ -25,31 +27,49 @@ export interface MyLibrary {
   shared: boolean;
 }
 export interface MyServer {
+  /** plex_servers.id — the key the all-libraries toggle (plex.setServerAll) addresses. */
+  id: string;
   slug: PlexServerSlug;
   name: string;
   /** false when the server (or plex.tv) was unreachable while resolving live share state. */
   available: boolean;
   /** false when the caller's email has no matching Plex friend on the server account (Q-06). */
   friendMatched: boolean;
+  /**
+   * ADR-024 — the caller's ROLE grants all-libraries on this server, so they may self-toggle their
+   * account between the plex.tv all-libraries state and an explicit per-section list. When false,
+   * they can only add/remove the individual libraries their role grants (unchanged from before).
+   */
+  allGranted: boolean;
+  /**
+   * ADR-024 — the caller's Plex account is CURRENTLY in the all-libraries state on this server
+   * (`allLibraries="1"` — share-everything, incl. future libraries). While true, every library
+   * reports `shared` and per-library add/remove is refused (PLEX_ALL_STATE) — the user must leave
+   * All first. Toggled via plex.setServerAll.
+   */
+  allActive: boolean;
   libraries: MyLibrary[];
 }
 
 export const plexRouter = router({
   /**
    * The caller's role-allowed libraries grouped by server, each annotated with whether they
-   * currently share it (live from the read client). Degrades gracefully per server: a Plex
-   * outage marks that server `available: false` rather than failing the whole page.
+   * currently share it (live from the read client). Per server also surfaces `allGranted` (the
+   * role grants all-libraries here — ADR-024) and `allActive` (the account is currently in the
+   * plex.tv all-libraries state). Degrades gracefully per server: a Plex outage marks that server
+   * `available: false` rather than failing the whole page.
    */
   myLibraries: authedProcedure.query(async ({ ctx }): Promise<{ servers: MyServer[] }> => {
     const libs = await effectiveAllowedLibrariesForUser(ctx.user.id, ctx.db);
+    const allGrantedServerIds = await allGrantedServerIdsForUser(ctx.user.id, ctx.db);
     const bundle = resolvePlexBundle(ctx);
 
     const groups = new Map<
       PlexServerSlug,
-      { name: string; libs: Array<(typeof libs)[number]> }
+      { id: string; name: string; libs: Array<(typeof libs)[number]> }
     >();
     for (const lib of libs) {
-      const g = groups.get(lib.serverSlug) ?? { name: lib.serverName, libs: [] };
+      const g = groups.get(lib.serverSlug) ?? { id: lib.serverId, name: lib.serverName, libs: [] };
       g.libs.push(lib);
       groups.set(lib.serverSlug, g);
     }
@@ -58,6 +78,7 @@ export const plexRouter = router({
     for (const [slug, group] of groups) {
       let available = true;
       let friendMatched = true;
+      let allActive = false;
       const sharedKeys = new Set<string>();
       try {
         const read = bundle.read[slug];
@@ -67,6 +88,9 @@ export const plexRouter = router({
         } else {
           const current = await read.findSharedServerForUser(friend.id);
           if (current) {
+            // In the all-libraries state every library (incl. future ones) is shared; surface the
+            // live flag and treat every library as shared (ADR-024).
+            allActive = current.allLibraries;
             for (const s of current.sections) if (s.shared) sharedKeys.add(s.key);
           }
         }
@@ -74,16 +98,19 @@ export const plexRouter = router({
         available = false;
       }
       servers.push({
+        id: group.id,
         slug,
         name: group.name,
         available,
         friendMatched,
+        allGranted: allGrantedServerIds.has(group.id),
+        allActive,
         libraries: group.libs.map((l) => ({
           id: l.libraryId,
           name: l.name,
           sectionKey: l.sectionKey,
           mediaType: l.mediaType,
-          shared: sharedKeys.has(l.sectionKey),
+          shared: allActive || sharedKeys.has(l.sectionKey),
         })),
       });
     }
@@ -117,6 +144,25 @@ export const plexRouter = router({
   }),
 
   /**
+   * ADR-024 — self-toggle the all-libraries state on the caller's OWN account for a server their
+   * role all-grants (role-gated in-domain). `on:true` enters the plex.tv all-libraries state;
+   * `on:false` leaves it, demoting to an explicit list seeded with the account's current full set
+   * (no access loss). Returns `{ changed, event, serverSlug, allActive }`.
+   */
+  setServerAll: authedProcedure.input(ServerAllInput).mutation(async ({ ctx, input }) => {
+    return mapDomainErrors(() =>
+      setServerAllShare({
+        db: ctx.db,
+        plex: resolvePlexBundle(ctx),
+        userId: ctx.user.id,
+        serverId: input.serverId,
+        on: input.on,
+        actorId: ctx.user.id,
+      }),
+    );
+  }),
+
+  /**
    * Admin: refresh the library registry from the live servers (all, or a subset). Returns the
    * DESIGN-007 D-12 per-server summary `{ ok, servers: [{ slug, name, ok, libraryCount?, error? }] }`
    * — a single unreachable server degrades to `ok: false` for that row (the others still commit)
@@ -129,7 +175,12 @@ export const plexRouter = router({
     );
   }),
 
-  /** Admin: the per-role library grant matrix — every library grouped by server + grants per role. */
+  /**
+   * Admin: the per-role library grant matrix — every library grouped by server + per-role grants.
+   * `grantsByRole` maps roleId → granted library ids; `allGrantsByRole` maps roleId → the server
+   * ids the role all-grants (ADR-024). Each server carries its `id` so the UI can address the
+   * per-server all-grant toggle.
+   */
   roleLibraryGrants: adminProcedure.query(async ({ ctx }) => {
     const libRows = await ctx.db
       .select({
@@ -138,6 +189,7 @@ export const plexRouter = router({
         sectionKey: plexLibraries.sectionKey,
         mediaType: plexLibraries.mediaType,
         available: plexLibraries.available,
+        serverId: plexServers.id,
         serverSlug: plexServers.slug,
         serverName: plexServers.name,
       })
@@ -149,13 +201,17 @@ export const plexRouter = router({
       .select({ roleId: roleLibraryGrants.roleId, libraryId: roleLibraryGrants.plexLibraryId })
       .from(roleLibraryGrants);
 
+    const allGrantRows = await ctx.db
+      .select({ roleId: rolePlexServerAllGrants.roleId, serverId: rolePlexServerAllGrants.plexServerId })
+      .from(rolePlexServerAllGrants);
+
     const servers = new Map<
       PlexServerSlug,
-      { slug: PlexServerSlug; name: string; libraries: Array<Omit<(typeof libRows)[number], 'serverSlug' | 'serverName'>> }
+      { id: string; slug: PlexServerSlug; name: string; libraries: Array<Omit<(typeof libRows)[number], 'serverId' | 'serverSlug' | 'serverName'>> }
     >();
     for (const row of libRows) {
-      const { serverSlug, serverName, ...lib } = row;
-      const s = servers.get(serverSlug) ?? { slug: serverSlug, name: serverName, libraries: [] };
+      const { serverId, serverSlug, serverName, ...lib } = row;
+      const s = servers.get(serverSlug) ?? { id: serverId, slug: serverSlug, name: serverName, libraries: [] };
       s.libraries.push(lib);
       servers.set(serverSlug, s);
     }
@@ -163,16 +219,24 @@ export const plexRouter = router({
     const grantsByRole: Record<string, string[]> = {};
     for (const g of grantRows) (grantsByRole[g.roleId] ??= []).push(g.libraryId);
 
-    return { servers: [...servers.values()], grantsByRole };
+    const allGrantsByRole: Record<string, string[]> = {};
+    for (const g of allGrantRows) (allGrantsByRole[g.roleId] ??= []).push(g.serverId);
+
+    return { servers: [...servers.values()], grantsByRole, allGrantsByRole };
   }),
 
-  /** Admin: replace a role's whole Plex library grant set (audited 'update_role_libraries'). */
+  /**
+   * Admin: replace a role's whole Plex library grant set (audited 'update_role_libraries'). Sets
+   * the per-library allow-list AND, when `allServerIds` is provided, the per-server all-libraries
+   * grants (ADR-024). Omitting `allServerIds` leaves the role's existing all-grants untouched.
+   */
   setRoleLibraryGrants: adminProcedure.input(RoleLibrariesInput).mutation(async ({ ctx, input }) => {
     return mapDomainErrors(() =>
       setRoleLibraries({
         db: ctx.db,
         roleId: input.roleId,
         libraryIds: input.libraryIds,
+        allServerIds: input.allServerIds,
         actorId: ctx.user.id,
       }),
     );

@@ -8,7 +8,7 @@
 //
 // The Sonarr row mirrors what the stub *arr serves (stub-arr.ts): series 501
 // "Breaking Prod", 9/10 episodes on disk, profile HD-1080p.
-import { getPool, SEEDED_ROLE_IDS } from '@hnet/db';
+import { getPool, SEEDED_PLEX_SERVER_IDS, SEEDED_ROLE_IDS } from '@hnet/db';
 import {
   createRole,
   ingestLedgerEvents,
@@ -255,7 +255,15 @@ async function main(): Promise<void> {
   const libId = (slug: string, key: string) =>
     libRows.find((r) => r.slug === slug && r.key === key)!.id;
   const nonFamily = [libId('haynestower', '1'), libId('haynesops', '1')];
-  await setRoleLibraries({ roleId: SEEDED_ROLE_IDS.default, libraryIds: nonFamily, actorId: null });
+  // ADR-024 — Default additionally ALL-grants haynesops, so the member can exercise the per-server
+  // all-libraries self-toggle (leave All / re-enter All) on /library/plex. The all-grant subsumes
+  // the explicit HOps Movies grant (kept for clarity); the effective set is unchanged.
+  await setRoleLibraries({
+    roleId: SEEDED_ROLE_IDS.default,
+    libraryIds: nonFamily,
+    allServerIds: [SEEDED_PLEX_SERVER_IDS.haynesops],
+    actorId: null,
+  });
   const { rows: familyRows } = await getPool().query<{ id: string }>(
     `SELECT id FROM roles WHERE name = 'Family'`,
   );
