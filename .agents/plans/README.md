@@ -55,6 +55,8 @@ For each plan, in order:
 | 006 | Trash section (Maintainerr) | #4 | 004 + Maintainerr | queued |
 | 007 | Cosign image signing | — | — | queued (any time) |
 | 008 | haynesnetwork public cutover (Cloudflare tunnel) | — | 002–006 done | queued **LAST** |
+| 009 | Bulletin — notification Feed + Messages board | stretch | 004, 006 | queued (stretch) |
+| 010 | MOTD dashboard banner | stretch | — | queued (stretch, small) |
 
 Source brain dump: `TODO.md`. Consolidated backlog + Restore explanation:
 `../context/2026-07-05-backlog-recon.md`. Deleted-items snapshot to import into the Ledger:

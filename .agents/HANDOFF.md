@@ -62,6 +62,9 @@ The **Fable 5 autonomous run** works the release queue in `.agents/plans/` (star
    `radarr-fileless-backlog.md`).
 5. **006 — Trash section** (integrates the Maintainerr instance; replaces the Restore nav).
 6. **007 — cosign signing**; **008 — public cutover (LAST)**.
+7. **Stretch (owner ideas, post-core):** 009 **Bulletin** (aggregated notification Feed +
+   user Messages board), 010 **MOTD** dashboard banner — build only if time/budget remains
+   after 002–008; 010 is small enough to pull forward as a quick win.
 
 The full consolidated backlog (with what is deferred beyond this run) is in
 `context/2026-07-05-backlog-recon.md`.

@@ -513,3 +513,9 @@ let the owner opt specific event types (e.g. "items deleted", "large batch pendi
 configures the Maintainerr webhook agent via API once the endpoint ships (endpoint first, then wire the
 agent). Open decisions: webhook payload → our event model; default Pushover-forward types; Trash-only
 feed vs a general notification center later.
+
+**Coordination with PLAN-009 (Bulletin):** build this receiver as the **generic** pattern 009
+extends — a `notifications` table + `POST /api/webhooks/<source>` receiver with **Maintainerr as
+source #1** (NOT a Maintainerr-specific endpoint/table). PLAN-009 then only adds Seerr/Tautulli
+adapters + promotes the feed to a top-level "Bulletin" section, and this Trash "Activity" tab
+becomes a `source='maintainerr'` filtered view of the same store. See `009-communication-hub.md`.
