@@ -1209,6 +1209,246 @@ input[aria-invalid='true'] {
   margin: var(--space) 0;
 }
 
+/* ---------- Poster grid + filter chrome (DESIGN-008 D-11, ADR-019, ADR-015) ---------- */
+/* Row 1 of the toolbar: search + on-disk/wanted, one wrapping row (wraps at load time on
+   phones — static layout, not interaction-driven). */
+.library-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.library-controls .library-search {
+  flex: 0 1 420px;
+  min-width: 220px;
+}
+
+/* The chip bar and sort bar are FIXED-HEIGHT single rows that pan horizontally when crowded
+   (the modern mobile filter-rail pattern): adding/removing chips can never grow the bar, so
+   the grid below never shifts (ADR-015). Chip editors overlay via `position: fixed`
+   (filters.css) so the scroll container cannot clip them. The scrollbar is hidden — chips
+   remain reachable by touch/trackpad pan and keyboard focus (focus scrolls them into view). */
+.library-chipbar,
+.library-sortbar {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 0;
+  scrollbar-width: none;
+}
+.library-chipbar::-webkit-scrollbar,
+.library-sortbar::-webkit-scrollbar {
+  display: none;
+}
+.library-chipbar {
+  min-height: 44px;
+}
+.library-sortbar {
+  min-height: 40px;
+}
+.library-sortbar__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  flex: none;
+  padding-right: 2px;
+}
+/* Sort buttons: ghost pills (DESIGN-006 D-03); the active column deepens to the accent
+   idiom. State changes recolor only — the ▲/▼ glyph rides reserved space via the
+   fixed-width arrow slot below, so toggling never nudges neighbors (ADR-015). */
+.sort-btn {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  min-height: 34px;
+  padding: 4px 8px 4px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex: none;
+}
+/* Every sort button reserves a fixed arrow slot after its label (ADR-015: the ▲/▼
+   appearing must not shift the row — the ConfirmButton reserve-the-widest-state idiom). */
+.sort-btn__arrow {
+  display: inline-block;
+  width: 1.1em;
+  text-align: center;
+  font-size: 10px;
+}
+.sort-btn:hover {
+  background: var(--color-surface-2);
+  color: var(--color-text);
+}
+.sort-btn.is-active {
+  color: var(--color-accent);
+  border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
+[data-theme='hnet-light'] .sort-btn.is-active {
+  color: color-mix(in srgb, var(--color-accent) 62%, var(--color-text)); /* D-04 contrast */
+}
+
+/* The poster GRID (replaces the icon list geometry). Densified per owner feedback 2026-07-06:
+   posters tell media apart at a glance, not hero display — ~9 columns at 1440px (was ~6) and
+   3 columns at 390px (was 2). `.poster-grid`/`.poster-card` override the horizontal .media-list/
+   .media-card rules above (same specificity, later wins). */
+.poster-grid {
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 12px;
+}
+@media (max-width: 480px) {
+  .poster-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+}
+/* A refetch (filter/sort change) dims the stale grid in place instead of swapping it for a
+   spinner — results replace results, the page never collapses (ADR-015). */
+.poster-grid.is-refreshing {
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+}
+.poster-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0;
+  overflow: hidden;
+  min-height: 0;
+}
+/* The fixed 2:3 poster box RESERVES its space so a late image load / failure never reflows
+   the grid (ADR-015 / ADR-019). */
+.poster-box {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  background: color-mix(in srgb, var(--color-accent) 7%, var(--color-surface-2));
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  flex: none;
+}
+.poster-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.poster-fallback {
+  display: grid;
+  place-items: center;
+  color: color-mix(in srgb, var(--color-accent) 55%, var(--color-text-muted));
+}
+[data-theme='hnet-light'] .poster-fallback {
+  color: color-mix(in srgb, var(--color-accent) 45%, var(--color-text-muted)); /* D-04 contrast */
+}
+.poster-fallback-icon {
+  width: 44px;
+  height: 44px;
+}
+.poster-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 7px 9px 9px;
+}
+/* Densified card caption (owner feedback 2026-07-06): the title rides ONE line with an
+   ellipsis (the trailing year truncates with it) so the caption never dominates the smaller
+   card — a fixed single-line height keeps badge rows aligned across the row (ADR-015). */
+.poster-card .media-card__title {
+  font-size: 12.5px;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Slimmer badges on the dense grid: smaller type + tighter padding, one non-wrapping row. */
+.poster-card__body .media-card__badges {
+  gap: 5px;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+.poster-card__body .badge {
+  font-size: 10px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+.badge--rating {
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+}
+[data-theme='hnet-light'] .badge--rating {
+  color: color-mix(in srgb, var(--color-accent) 62%, var(--color-text)); /* D-04 contrast */
+}
+
+/* Skeleton poster cards: the exact grid geometry, pulsing quietly (killed by the global
+   prefers-reduced-motion rule). Never a spinner that collapses. */
+.poster-card--skeleton {
+  pointer-events: none;
+}
+.poster-card--skeleton .poster-box {
+  animation: poster-pulse 1.6s ease-in-out infinite;
+}
+@keyframes poster-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+.skeleton-line {
+  height: 12px;
+  border-radius: 999px;
+  background: var(--color-surface-2);
+  width: 85%;
+}
+.skeleton-line--short {
+  width: 45%;
+  height: 10px;
+}
+
+/* The bounded rating-chip editor (host glue around the shared chip skin). */
+.rating-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px;
+  min-width: 200px;
+}
+.rating-editor__bound {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.rating-editor__bound select {
+  font: inherit;
+  font-size: 13px;
+  color: var(--color-text);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  min-height: 40px;
+  min-width: 120px;
+}
+.rating-editor__bound select:focus {
+  border-color: var(--color-accent);
+}
+.rating-editor__hint {
+  font-size: 12px;
+  margin: 0;
+}
+
 /* Library tiles are action-free click-through cards (owner ruling 2026-07-04) — the
    whole tile is the navigational target; all Fix / Force Search actions live on the
    item detail page, so no per-tile buttons here. */
@@ -1365,6 +1605,91 @@ input[aria-invalid='true'] {
   gap: 8px;
   flex-wrap: wrap; /* Fix + Force Search wrap under the title on phones */
 }
+
+/* DESIGN-008 D-11 — detail-head poster + the About (harvested metadata) section. The layout
+   is static: nothing here re-orients on interaction (ADR-015). */
+.detail-head__poster {
+  flex: none;
+  width: 96px;
+  align-self: flex-start;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+}
+.detail-head__meta {
+  margin: 0;
+  font-size: 13px;
+}
+.ratings-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: var(--space);
+}
+.rating-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 7px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface-2);
+}
+.rating-pill__src {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.rating-pill__val {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+/* The About facts <dl> mirrors .meta-grid's look under its OWN class — the detail page must
+   carry exactly one .meta-grid (the Details section; the e2e suite targets it singularly). */
+.about-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px 16px;
+  margin: 0;
+}
+.about-facts:empty {
+  display: none;
+}
+.about-facts dt {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.about-facts dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.meta-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 12px;
+}
+.meta-chips__label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  min-width: 92px;
+}
+.chip--requester {
+  border: 1px solid color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+}
+
 .meta-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));

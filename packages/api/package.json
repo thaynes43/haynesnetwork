@@ -16,6 +16,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@hnet/arr": "workspace:*",
     "@hnet/auth": "workspace:*",
     "@hnet/db": "workspace:*",
     "@hnet/domain": "workspace:*",

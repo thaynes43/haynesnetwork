@@ -16,8 +16,11 @@ import {
   EVENT_TYPE_LABELS,
   FIX_REASON_LABELS,
   FIX_STATUS_LABELS,
+  RESOLUTION_LABELS,
   fixStatusTone,
   formatBytes,
+  formatRating,
+  formatRuntime,
   formatWhen,
   groupBySeason,
   onDiskSummary,
@@ -25,7 +28,7 @@ import {
   type ActionTarget,
   type ArrKindName,
 } from '@/lib/media';
-import { KindIcon } from '@/components/kind-icon';
+import { MediaPoster } from '@/components/media-poster';
 import { FixDialog } from './fix-dialog';
 import { ForceSearchDialog } from './force-search-dialog';
 
@@ -70,6 +73,21 @@ export function ItemDetail({ mediaItemId }: { mediaItemId: string }) {
   }
   const { item, fixes } = detail.data!;
   const disk = onDiskSummary(item);
+  // ledger.detail.metadata is now ALWAYS an object (all-null when unharvested — same shape as
+  // search, DESIGN-008 D-09), so the old `metadata !== null` guards are dead. The About card
+  // still renders only when it has something to show — gate it on real harvested content.
+  const meta = item.metadata;
+  const hasAbout =
+    meta.imdbRating !== null ||
+    meta.tmdbRating !== null ||
+    meta.rtTomatometer !== null ||
+    meta.rtPopcorn !== null ||
+    meta.playCount !== null ||
+    meta.lastViewedAt !== null ||
+    meta.addedAt !== null ||
+    meta.genres.length > 0 ||
+    meta.requesters.length > 0 ||
+    meta.sourceCollections.length > 0;
   const timeline = events.data?.pages.flatMap((p) => p.events) ?? [];
 
   const refresh = () => {
@@ -140,8 +158,11 @@ export function ItemDetail({ mediaItemId }: { mediaItemId: string }) {
       </p>
 
       <section className="card detail-head">
-        <span className="media-card__icon detail-head__icon">
-          <KindIcon kind={item.arrKind} />
+        {/* DESIGN-008 D-11 — the fixed 2:3 poster box replaces the kind icon; the KindIcon
+            fallback lives inside MediaPoster (null poster / load error), so tombstoned or
+            unharvested items still read correctly. */}
+        <span className="detail-head__poster">
+          <MediaPoster posterUrl={item.posterUrl} kind={item.arrKind} alt="" />
         </span>
         <div className="detail-head__body">
           <h1 className="detail-head__title">
@@ -156,6 +177,18 @@ export function ItemDetail({ mediaItemId }: { mediaItemId: string }) {
               <span className="badge badge--danger">Removed from the manager</span>
             ) : null}
           </div>
+          {item.metadata.runtimeMinutes !== null || item.metadata.resolution !== null ? (
+            <p className="detail-head__meta muted">
+              {[
+                formatRuntime(item.metadata.runtimeMinutes),
+                item.metadata.resolution !== null
+                  ? (RESOLUTION_LABELS[item.metadata.resolution] ?? item.metadata.resolution)
+                  : null,
+              ]
+                .filter((part) => part !== null)
+                .join(' · ')}
+            </p>
+          ) : null}
         </div>
         {/* Radarr acts at the movie level (the movie IS the unit — ADR-007). Sonarr/Lidarr
             act per episode/album below, so the show-level nuke is gone (owner feedback).
@@ -184,6 +217,119 @@ export function ItemDetail({ mediaItemId }: { mediaItemId: string }) {
           </div>
         ) : null}
       </section>
+
+      {/* DESIGN-008 D-11 — the harvested metadata block: ratings row, watch stats, and the
+          genre / requester / collection chips. Rendered only once the metadata-refresh harvest
+          has run for this item; the layout is static — nothing here re-orients on interaction
+          (ADR-015). NB: the facts <dl> is `about-facts`, NOT `.meta-grid` — the Details section
+          below owns that class (and the e2e suite targets it singularly). */}
+      {hasAbout ? (
+        <section className="card admin-section">
+          <h2>About</h2>
+          <div className="ratings-row" role="group" aria-label="Ratings">
+            {item.metadata.imdbRating !== null ? (
+              <span
+                className="rating-pill"
+                title={
+                  item.metadata.imdbVotes !== null
+                    ? `IMDb — ${item.metadata.imdbVotes.toLocaleString()} votes`
+                    : 'IMDb rating'
+                }
+              >
+                <span className="rating-pill__src">IMDb</span>
+                <span className="rating-pill__val">{formatRating(item.metadata.imdbRating)}</span>
+              </span>
+            ) : null}
+            {item.metadata.tmdbRating !== null ? (
+              <span
+                className="rating-pill"
+                title={
+                  item.metadata.tmdbVotes !== null
+                    ? `TMDb — ${item.metadata.tmdbVotes.toLocaleString()} votes`
+                    : 'TMDb rating'
+                }
+              >
+                <span className="rating-pill__src">TMDb</span>
+                <span className="rating-pill__val">{formatRating(item.metadata.tmdbRating)}</span>
+              </span>
+            ) : null}
+            {item.metadata.rtTomatometer !== null ? (
+              <span className="rating-pill" title="Rotten Tomatoes tomatometer">
+                <span className="rating-pill__src">RT</span>
+                <span className="rating-pill__val">{item.metadata.rtTomatometer}%</span>
+              </span>
+            ) : null}
+            {item.metadata.rtPopcorn !== null ? (
+              <span className="rating-pill" title="Rotten Tomatoes audience">
+                <span className="rating-pill__src">RT Audience</span>
+                <span className="rating-pill__val">{item.metadata.rtPopcorn}%</span>
+              </span>
+            ) : null}
+            {item.metadata.imdbRating === null &&
+            item.metadata.tmdbRating === null &&
+            item.metadata.rtTomatometer === null &&
+            item.metadata.rtPopcorn === null ? (
+              <span className="muted">No ratings yet.</span>
+            ) : null}
+          </div>
+          <dl className="about-facts">
+            {item.metadata.playCount !== null ? (
+              <div>
+                <dt>Plays</dt>
+                <dd>{item.metadata.playCount}</dd>
+              </div>
+            ) : null}
+            {item.metadata.lastViewedAt !== null ? (
+              <div>
+                <dt>Last watched</dt>
+                <dd>{formatWhen(item.metadata.lastViewedAt)}</dd>
+              </div>
+            ) : null}
+            {item.metadata.addedAt !== null ? (
+              <div>
+                <dt>Added to the manager</dt>
+                <dd>{formatWhen(item.metadata.addedAt)}</dd>
+              </div>
+            ) : null}
+          </dl>
+          {item.metadata.genres.length > 0 ? (
+            <div className="meta-chips">
+              <span className="meta-chips__label">Genres</span>
+              <span className="chips">
+                {item.metadata.genres.map((g) => (
+                  <span key={g} className="chip">
+                    {g}
+                  </span>
+                ))}
+              </span>
+            </div>
+          ) : null}
+          {item.metadata.requesters.length > 0 ? (
+            <div className="meta-chips">
+              <span className="meta-chips__label">Requested by</span>
+              <span className="chips">
+                {item.metadata.requesters.map((r) => (
+                  <span key={r} className="chip chip--requester">
+                    {r}
+                  </span>
+                ))}
+              </span>
+            </div>
+          ) : null}
+          {item.metadata.sourceCollections.length > 0 ? (
+            <div className="meta-chips">
+              <span className="meta-chips__label">Collections</span>
+              <span className="chips">
+                {item.metadata.sourceCollections.map((c) => (
+                  <span key={c} className="chip">
+                    {c}
+                  </span>
+                ))}
+              </span>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       {/* Sonarr: episodes grouped into collapsible SEASON sections. Each season header
           is a touch target that expands the episode list, and carries a season-level

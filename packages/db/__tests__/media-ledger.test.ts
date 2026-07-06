@@ -247,6 +247,12 @@ describe('0003_media_ledger against embedded Postgres 16', () => {
       ).rejects.toMatchObject({ code: '23514' });
     });
 
+    it("sync_runs accepts the 'metadata-refresh' run_kind (0012, ADR-018)", async () => {
+      await expect(
+        client.query(`INSERT INTO sync_runs (source, run_kind) VALUES ('radarr', 'metadata-refresh')`),
+      ).resolves.toBeDefined();
+    });
+
     it('sync_state enforces the source enum and one row per source', async () => {
       await expect(
         client.query(`INSERT INTO sync_state (source) VALUES ('app')`),
@@ -255,6 +261,77 @@ describe('0003_media_ledger against embedded Postgres 16', () => {
       await expect(
         client.query(`INSERT INTO sync_state (source) VALUES ('seerr')`),
       ).rejects.toMatchObject({ code: '23505' });
+    });
+  });
+
+  // ADR-018 / DESIGN-008 D-01 — the 1:1 metadata sibling (migration 0012).
+  describe('media_metadata (D-01)', () => {
+    let itemId: string;
+    beforeAll(async () => {
+      itemId = await insertItem({ arr_item_id: 778000, tmdb_id: 900 });
+    });
+
+    const insertMeta = (extra: Record<string, unknown> = {}) => {
+      const row: Record<string, unknown> = { media_item_id: itemId, ...extra };
+      const cols = Object.keys(row);
+      const placeholders = cols.map((_, i) => `$${i + 1}`);
+      return client.query({
+        text: `INSERT INTO media_metadata (${cols.join(',')}) VALUES (${placeholders.join(',')})`,
+        values: cols.map((c) => row[c]),
+      });
+    };
+
+    it('accepts a minimal row and defaults genres/sources/extra + fetched_at', async () => {
+      const id = await insertItem({ arr_item_id: 778001, tmdb_id: 901 });
+      await client.query(`INSERT INTO media_metadata (media_item_id) VALUES ($1)`, [id]);
+      const res = await client.query(
+        `SELECT genres, requesters, source_collections, sources, extra, fetched_at
+           FROM media_metadata WHERE media_item_id = $1`,
+        [id],
+      );
+      expect(res.rows[0].genres).toEqual([]);
+      expect(res.rows[0].sources).toEqual({});
+      expect(res.rows[0].fetched_at).not.toBeNull();
+    });
+
+    it('media_metadata_media_item_unique enforces the 1:1 with media_items', async () => {
+      await insertMeta();
+      await expect(insertMeta()).rejects.toMatchObject({ code: '23505' });
+    });
+
+    it('media_metadata_resolution_enum rejects bad values, accepts valid + null', async () => {
+      const id = await insertItem({ arr_item_id: 778002, tmdb_id: 902 });
+      await expect(
+        client.query(`INSERT INTO media_metadata (media_item_id, resolution) VALUES ($1, '4k')`, [
+          id,
+        ]),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query(
+        `INSERT INTO media_metadata (media_item_id, resolution) VALUES ($1, '2160p')`,
+        [id],
+      );
+    });
+
+    it('media_metadata_poster_source_enum rejects bad values, accepts arr/tmdb', async () => {
+      const id = await insertItem({ arr_item_id: 778003, tmdb_id: 903 });
+      await expect(
+        client.query(
+          `INSERT INTO media_metadata (media_item_id, poster_source) VALUES ($1, 'plex')`,
+          [id],
+        ),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query(
+        `INSERT INTO media_metadata (media_item_id, poster_source, poster_ref) VALUES ($1, 'tmdb', '/x.jpg')`,
+        [id],
+      );
+    });
+
+    it('the FK requires a real media_items row', async () => {
+      await expect(
+        client.query(
+          `INSERT INTO media_metadata (media_item_id) VALUES ('00000000-0000-4000-8000-000000000000')`,
+        ),
+      ).rejects.toMatchObject({ code: '23503' });
     });
   });
 

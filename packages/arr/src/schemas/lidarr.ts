@@ -1,6 +1,6 @@
 // DESIGN-005 D-02 — Lidarr v1 field subsets (strip mode: extra fields tolerated, dropped).
 import { z } from 'zod';
-import { historyRecordBaseSchema } from './common';
+import { arrImageSchema, historyRecordBaseSchema, singleRatingSchema } from './common';
 
 /** Full eventType enum per Lidarr's `EntityHistoryEventType` (D-02). */
 export const LIDARR_HISTORY_EVENT_TYPES = [
@@ -55,8 +55,24 @@ export const lidarrArtistSchema = z.object({
   artistType: z.string().nullish(),
   status: z.string(),
   added: z.string(),
+  // Metadata-harvest fields (DESIGN-008 D-02). Lidarr exposes a single community rating +
+  // genres + images (artist poster); no runtime for artists.
+  ratings: singleRatingSchema.optional(),
+  images: z.array(arrImageSchema).optional(),
+  genres: z.array(z.string()).optional(),
 });
 export type LidarrArtist = z.infer<typeof lidarrArtistSchema>;
+
+/** `GET /artist/lookup?term=lidarr:{mbid}` element (DESIGN-008 D-05) — tombstoned metadata path. */
+export const lidarrLookupSchema = z.object({
+  artistName: z.string(),
+  foreignArtistId: z.string().optional(),
+  genres: z.array(z.string()).optional(),
+  ratings: singleRatingSchema.optional(),
+  images: z.array(arrImageSchema).optional(),
+  remotePoster: z.string().optional(),
+});
+export type LidarrLookup = z.infer<typeof lidarrLookupSchema>;
 
 /** `GET /album?artistId=` / `wanted/missing` record — fix-target granularity (D-02). */
 export const lidarrAlbumSchema = z.object({

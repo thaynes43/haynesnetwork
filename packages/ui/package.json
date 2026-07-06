@@ -9,7 +9,8 @@
     ".": "./src/index.ts",
     "./icons": "./src/icons/registry.ts",
     "./theme/tokens.css": "./src/theme/tokens.css",
-    "./layout/layout.css": "./src/layout/layout.css"
+    "./layout/layout.css": "./src/layout/layout.css",
+    "./filters/filters.css": "./src/filters/filters.css"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -21,9 +22,13 @@
     "react-dom": "^19"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^19",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^4.7.0",
+    "jsdom": "^25.0.1",
     "react": "19.2.4",
-    "react-dom": "19.2.4",
+    "react-dom": "^19.2.4",
     "vitest": "^4.1.6"
   }
 }

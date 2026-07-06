@@ -41,6 +41,65 @@ export const grabHistoryIdFor = (episodeId: number) => 700_000 + episodeId;
 const EPISODE_COUNT = 10;
 
 /**
+ * ADR-018 / DESIGN-008 D-14 — the metadata a harvest reads off the item resources
+ * (ratings/images/genres/runtime) + the poster a /api/posters proxy streams. A 1x1 PNG stands
+ * in for the *arr's pre-resized MediaCover variant so the poster route runs hermetically.
+ */
+const POSTER_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+);
+export const STUB_MOVIE_ID = 601;
+export const STUB_MOVIE_TMDB_ID = 880001;
+
+/** The metadata fields DESIGN-008 D-02 harvests off a Radarr movie / Sonarr series. */
+const RADARR_META = {
+  runtime: 106,
+  genres: ['Comedy', 'Drama'],
+  ratings: {
+    imdb: { value: 7.7, votes: 12345, type: 'user' },
+    tmdb: { value: 7.9, votes: 678, type: 'user' },
+    rottenTomatoes: { value: 88, type: 'user' },
+  },
+  images: [
+    { coverType: 'poster', url: '/MediaCover/601/poster.jpg?lastWrite=1', remoteUrl: 'https://image.tmdb.org/t/p/original/fixture.jpg' },
+  ],
+};
+const SONARR_META = {
+  runtime: 44,
+  genres: ['Drama', 'Crime'],
+  ratings: { value: 8.2, votes: 4321 },
+  images: [
+    { coverType: 'poster', url: '/MediaCover/501/poster.jpg?lastWrite=1', remoteUrl: 'https://artworks.thetvdb.com/x/poster.jpg' },
+  ],
+};
+
+function movieResource(id: number) {
+  return {
+    id,
+    title: 'The Fixture',
+    sortTitle: 'fixture',
+    year: 2022,
+    tmdbId: STUB_MOVIE_TMDB_ID,
+    imdbId: 'tt8800010',
+    monitored: true,
+    qualityProfileId: 1,
+    rootFolderPath: '/data/haynestower/Media/Movies',
+    path: '/data/haynestower/Media/Movies/The Fixture',
+    tags: [] as number[],
+    hasFile: true,
+    movieFileId: 9601,
+    sizeOnDisk: 4_294_967_296,
+    statistics: { movieFileCount: 1 },
+    minimumAvailability: 'released',
+    status: 'released',
+    isAvailable: true,
+    added: '2025-02-02T00:00:00Z',
+    ...RADARR_META,
+  };
+}
+
+/**
  * The `grabbed` value for the paged `GET /history?eventType=` filter. That real *arr
  * endpoint binds `eventType` to the INTEGER `*HistoryEventType` enum (grabbed === 1;
  * see @hnet/arr SONARR_GRABBED_EVENT_TYPE) — the lowercase string it RETURNS in bodies
@@ -133,6 +192,7 @@ function seriesResource(id: number) {
     status: 'ended',
     ended: true,
     added: '2025-01-01T00:00:00Z',
+    ...SONARR_META,
   };
 }
 
@@ -220,6 +280,13 @@ export async function startStubArr(): Promise<StubArrServer> {
         return json(res, 404, { message: `stub-arr: no write handler for ${method} ${path}` });
       }
 
+      // ---- MediaCover poster proxy (ADR-019 / D-14): serve the fixture PNG for any variant.
+      // Matches radarr/sonarr `/mediacover/{id}/poster-250.jpg` + lidarr `/mediacover/artist/{id}/…`.
+      if (method === 'GET' && /^\/mediacover\//.test(path)) {
+        res.writeHead(200, { 'content-type': 'image/png' });
+        return res.end(POSTER_PNG);
+      }
+
       // ---- reads ----
       switch (path) {
         case '/system/status':
@@ -227,8 +294,35 @@ export async function startStubArr(): Promise<StubArrServer> {
         case '/series':
           return json(res, 200, [seriesResource(STUB_SERIES_ID)]);
         case '/movie':
+          return json(res, 200, [movieResource(STUB_MOVIE_ID)]);
         case '/artist':
           return json(res, 200, []);
+        // DESIGN-008 D-05 — the /lookup endpoints (tombstoned-row metadata, no add).
+        case '/movie/lookup':
+          return json(res, 200, [
+            {
+              title: 'The Fixture',
+              year: 2022,
+              tmdbId: STUB_MOVIE_TMDB_ID,
+              imdbId: 'tt8800010',
+              remotePoster: 'https://image.tmdb.org/t/p/original/lookup.jpg',
+              ...RADARR_META,
+            },
+          ]);
+        case '/series/lookup':
+          return json(res, 200, [
+            {
+              title: 'Breaking Prod',
+              year: 2019,
+              tvdbId: STUB_SERIES_TVDB_ID,
+              remotePoster: 'https://artworks.thetvdb.com/x/lookup.jpg',
+              ...SONARR_META,
+            },
+          ]);
+        case '/artist/lookup':
+          return json(res, 200, [
+            { artistName: 'The Stub Band', foreignArtistId: '11111111-2222-3333-4444-555555550701', genres: ['Rock'], ratings: { value: 7.0, votes: 3 } },
+          ]);
         case '/episode': {
           if (Number(query.seriesId) !== STUB_SERIES_ID) return json(res, 200, []);
           return json(res, 200, episodes());

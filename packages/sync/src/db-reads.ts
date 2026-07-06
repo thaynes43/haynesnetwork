@@ -1,7 +1,82 @@
 // Read-only DB lookups the runner needs between the @hnet/domain single-writers.
 // Nothing here mutates state — all writes go through packages/domain (D-12 guard).
-import { mediaItems, syncState, users, type ArrKind, type DbClient, type SyncSource } from '@hnet/db';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import {
+  mediaItems,
+  mediaMetadata,
+  syncState,
+  users,
+  type ArrKind,
+  type DbClient,
+  type SyncSource,
+} from '@hnet/db';
+import { and, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+
+/** A Media Item the metadata harvest must (re)fetch (ADR-018 / DESIGN-008 D-03). */
+export interface MetadataTarget {
+  id: string;
+  arrKind: ArrKind;
+  arrInstanceId: string;
+  arrItemId: number;
+  tvdbId: number | null;
+  tmdbId: number | null;
+  imdbId: string | null;
+  musicbrainzArtistId: string | null;
+  arrTags: string[];
+  qualityProfileName: string;
+  tombstoned: boolean;
+}
+
+/**
+ * DESIGN-008 D-03 — the refresh scan: rows whose metadata is MISSING (no media_metadata row)
+ * OR STALE (fetched_at older than the threshold). Ordered oldest-first so a capped run makes
+ * steady progress across the estate. Read-only (LEFT JOIN media_metadata).
+ */
+export async function selectMetadataTargets(
+  db: DbClient,
+  opts: { staleBefore: Date; arrKind?: ArrKind; arrInstanceId?: string; limit?: number },
+): Promise<MetadataTarget[]> {
+  const staleness = or(
+    isNull(mediaMetadata.fetchedAt),
+    lt(mediaMetadata.fetchedAt, opts.staleBefore),
+  );
+  const where = [staleness];
+  if (opts.arrKind) where.push(eq(mediaItems.arrKind, opts.arrKind));
+  if (opts.arrInstanceId) where.push(eq(mediaItems.arrInstanceId, opts.arrInstanceId));
+  const rows = await db
+    .select({
+      id: mediaItems.id,
+      arrKind: mediaItems.arrKind,
+      arrInstanceId: mediaItems.arrInstanceId,
+      arrItemId: mediaItems.arrItemId,
+      tvdbId: mediaItems.tvdbId,
+      tmdbId: mediaItems.tmdbId,
+      imdbId: mediaItems.imdbId,
+      musicbrainzArtistId: mediaItems.musicbrainzArtistId,
+      arrTags: mediaItems.arrTags,
+      qualityProfileName: mediaItems.qualityProfileName,
+      deletedFromArrAt: mediaItems.deletedFromArrAt,
+      fetchedAt: mediaMetadata.fetchedAt,
+    })
+    .from(mediaItems)
+    .leftJoin(mediaMetadata, eq(mediaMetadata.mediaItemId, mediaItems.id))
+    .where(and(...where))
+    .orderBy(sql`${mediaMetadata.fetchedAt} asc nulls first`)
+    .limit(opts.limit ?? 100000);
+
+  return rows.map((r) => ({
+    id: r.id,
+    arrKind: r.arrKind,
+    arrInstanceId: r.arrInstanceId,
+    arrItemId: r.arrItemId,
+    tvdbId: r.tvdbId,
+    tmdbId: r.tmdbId,
+    imdbId: r.imdbId,
+    musicbrainzArtistId: r.musicbrainzArtistId,
+    arrTags: r.arrTags,
+    qualityProfileName: r.qualityProfileName,
+    tombstoned: r.deletedFromArrAt !== null,
+  }));
+}
 
 /** The source's history cursor (max ingested history date / Seerr createdAt), if any. */
 export async function readHistoryCursor(db: DbClient, source: SyncSource): Promise<Date | null> {

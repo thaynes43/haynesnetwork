@@ -98,7 +98,7 @@ rebuilding a lost *arr instance.
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| R-40 | The app maintains a ledger synced FROM Sonarr, Radarr, and Lidarr (they are the source of truth): all monitored media, on-disk state, quality profile, root folder, and *arr tags per item. | Must |
+| R-40 | The app maintains a ledger synced FROM Sonarr, Radarr, and Lidarr (they are the source of truth): all monitored media, on-disk state, quality profile, root folder, and *arr tags per item. The ledger also mirrors *arr-provided **metadata** (ratings, votes, genres, runtime, images) alongside these fields — see R-67 and DESIGN-008. | Must |
 | R-41 | The ledger records history: who requested what (attributed via Seerr API), what was deleted when, grabs/imports (from *arr history). Maintainerr integration is a follow-on once it's in k8s. | Must |
 | R-42 | Wanted-but-not-on-disk items are captured and browsable. | Must |
 | R-43 | Users can search/browse the ledger and trigger **Fix** on an item they believe is broken. | Must |
@@ -106,6 +106,22 @@ rebuilding a lost *arr instance.
 | R-45 | Every Fix requires a reason from a taxonomy (e.g. won't play / corrupt, wrong language, wrong version or quality, missing subtitles, wrong content entirely) or "Other" + free text. Reasons are stored for analysis. | Must |
 | R-46 | Fix requests are tracked (requester, item, reason, *arr actions taken, outcome) and visible to admins; users see their own fix history and status. | Must |
 | R-47 | Rate/abuse guard: sensible per-user limits on fix actions (admin-configurable later). | Should |
+| R-67 | The ledger stores per-item metadata harvested from the *arrs: IMDb/TMDb rating, IMDb/TMDb vote counts, Rotten Tomatoes tomatometer + audience (popcorn), runtime, resolution, genres, added date. | Must |
+| R-68 | Watch-stats (play count, last-viewed) are harvested from Tautulli — across all three estate instances, unified per item — and stored. | Must |
+| R-69 | Posters are served small and server-side (proxied, not hot-linked) and shown in Library. | Must |
+| R-70 | Users can sort and filter the library by any stored metadata field. | Must |
+| R-71 | Metadata is refreshed periodically (ratings/votes/watch-stats are volatile); a per-item source set + fetched-at is recorded. | Must |
+| R-72 | Ledger-only / deleted items (absent from every *arr) get metadata via the *arr lookup-by-external-id endpoints (and a direct TMDB/TVDB fallback), without re-adding the item. | Should |
+
+> **Note (2026-07-06) — metadata enrichment, posters & shared filters (R-40, R-67..R-72):** the
+> ledger is enriched with multi-source metadata (the *arrs, then Tautulli watch-stats across the
+> three estate instances, then Maintainerr, with a direct TMDB/TVDB fallback for holes), held in a
+> separate 1:1 `media_metadata` table (**ADR-018**) refreshed by a 6-hourly `metadata-refresh`
+> sync job with per-source degradation. Posters are served through an authed **proxy** — never
+> stored, never hot-linked (**ADR-019**). Library gains sort + filter over the metadata via a
+> shared filter/sort engine reused by the Ledger and Trash sections. See DESIGN-008. (The Library
+> grid + filter UX lands as a follow-up UX change on the same branch; the backend contract ships
+> first.)
 
 > **Note (2026-07-05) — library browse & fix-history UX (R-43/R-46):** the `/library` page presents
 > browse as **Movies · TV · Music** sub-tabs (default Movies, no "All"), each scoping the search to
