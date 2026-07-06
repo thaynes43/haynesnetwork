@@ -1,9 +1,14 @@
 # PLAN-003: Plex library self-service (Phase 3)
 
-- **Status:** Draft   _(Fable 5 flips Draft → Executing → Completed)_
-- **Satisfies:** PRD-001 R-25..R-28 (+ resolves Q-03); NEW **ADR-016** (Plex sharing +
+- **Status:** Executing   _(Fable 5 flips Draft → Executing → Completed)_ — code+docs+tests
+  landed locally on branch `feat/plex-library-self-service` (gate green; e2e green). Remaining
+  for Completed: PR → merge → deploy → LIVE validation (owner test-user, Q-06).
+- **Numbering reconciled at authoring (2026-07-06):** the placeholder `ADR-016` below is
+  **ADR-017** (016 was taken by the bazarr subtitle-fix ADR); migration is **0010**.
+- **Satisfies:** PRD-001 R-25..R-28 (+ resolves Q-03); NEW **ADR-017** (Plex sharing +
   role-library-grant model + family-as-a-role-grant); NEW **DESIGN-007** (supersedes
-  DESIGN-001 Appendix A); DDD-001 T-17..T-21 finalized; DDD-002 BC-04 promoted intent → owned.
+  DESIGN-001 Appendix A); DDD-001 T-17..T-21 finalized (+ T-52/53/54); DDD-002 BC-04 promoted
+  intent → owned.
 - **Depends on:** none. **Reads** ADR-012 (`docs/adrs/012-unified-role-model.md`, esp. C-09/C-12
   — family gating attaches to a *role attribute*, not the dropped `users.is_family`).
 - **TODO source:** #2 of `.agents/plans/TODO.md` (Plex library self-service, Phase 3).

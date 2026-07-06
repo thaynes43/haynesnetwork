@@ -658,7 +658,15 @@ Docker in this WSL distro — CLAUDE.md rule 1):
   failure rolls back the mutation; `transitionRole` concurrency guard errors on stale
   `expectedFromRole`.
 
-## Appendix A — Phase 3 sketch: Plex servers & libraries (NON-NORMATIVE)
+## Appendix A — Phase 3 sketch: Plex servers & libraries (SUPERSEDED)
+
+> **Superseded by DESIGN-007 / ADR-017 (2026-07-06).** The Phase-3 vertical is built. The sketch
+> below is left for provenance only; the shipped model differs materially: identity is
+> `(server_id, section_key)`; grants are a positive **role→library** allow-list
+> (`role_library_grants`, mirroring `role_app_grants`) — the per-user (`user_library_grants`) and
+> per-tag (`tag_library_grants`) tables were retired before build (ADR-012); there is **no**
+> `plex_libraries.is_family_only` flag — the two family libraries are ordinary rows granted only
+> to the `Family` role; and BC-04 owns a `plex_share_audit` ledger. See DESIGN-007 D-01.
 
 Columns **proposed, not final** — Phase 3 design (post-DESIGN-005) finalizes after inspecting
 the three servers' library naming via the Plex API (PRD Q-03). Recorded now only so Phase 1

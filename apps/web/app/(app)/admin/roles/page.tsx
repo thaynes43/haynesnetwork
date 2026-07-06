@@ -17,14 +17,24 @@ interface RoleForm {
   description: string;
   appIds: string[];
   grantsAll: boolean;
+  // ADR-017 / DESIGN-007 D-06 — the Plex libraries this role may self-add (role_library_grants).
+  libraryIds: string[];
 }
 
-const EMPTY_FORM: RoleForm = { name: '', description: '', appIds: [], grantsAll: false };
+const EMPTY_FORM: RoleForm = {
+  name: '',
+  description: '',
+  appIds: [],
+  grantsAll: false,
+  libraryIds: [],
+};
 
 export default function AdminRolesPage() {
   const utils = trpc.useUtils();
   const roles = trpc.roles.list.useQuery();
   const catalog = trpc.catalog.adminList.useQuery();
+  // Phase 3 — the per-role Plex library grant matrix (folded onto this page).
+  const libs = trpc.plex.roleLibraryGrants.useQuery();
 
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -35,7 +45,12 @@ export default function AdminRolesPage() {
   const [editError, setEditError] = useState<string | null>(null);
 
   const invalidate = () =>
-    Promise.all([utils.roles.list.invalidate(), utils.catalog.myApps.invalidate()]);
+    Promise.all([
+      utils.roles.list.invalidate(),
+      utils.catalog.myApps.invalidate(),
+      utils.plex.roleLibraryGrants.invalidate(),
+      utils.plex.myLibraries.invalidate(),
+    ]);
 
   const create = trpc.roles.create.useMutation({
     onError: (err: unknown) => setAddError(describeMutationError(err)),
@@ -58,11 +73,26 @@ export default function AdminRolesPage() {
     onSuccess: () => setError(null),
     onSettled: invalidate,
   });
-  const busy = create.isPending || update.isPending || del.isPending;
+  // Library grants ride a separate single-writer (setRoleLibraries → 'update_role_libraries'
+  // audit); its errors surface on the top-level banner since the inline editor may have closed.
+  const setLibs = trpc.plex.setRoleLibraryGrants.useMutation({
+    onError: (err: unknown) => setError(describeMutationError(err)),
+    onSettled: invalidate,
+  });
+  // Admin registry refresh (ADR-017 D-04) — repopulate plex_libraries from the live servers.
+  const refresh = trpc.plex.refreshRegistry.useMutation({
+    onError: (err: unknown) => setError(describeMutationError(err)),
+    onSuccess: () => setError(null),
+    onSettled: invalidate,
+  });
+  const busy =
+    create.isPending || update.isPending || del.isPending || setLibs.isPending || refresh.isPending;
 
   const roleRows = roles.data ?? [];
   const entries = catalog.data ?? [];
   const appNameById = new Map(entries.map((e) => [e.id, e.name]));
+  const libServers = libs.data?.servers ?? [];
+  const grantsByRole = libs.data?.grantsByRole ?? {};
 
   function openAdd() {
     setAddForm(EMPTY_FORM);
@@ -71,14 +101,20 @@ export default function AdminRolesPage() {
     setAdding(true);
   }
 
-  function submitAdd(e: FormEvent) {
+  async function submitAdd(e: FormEvent) {
     e.preventDefault();
-    create.mutate({
-      name: addForm.name.trim(),
-      description: addForm.description.trim(),
-      appIds: addForm.grantsAll ? [] : addForm.appIds,
-      grantsAll: addForm.grantsAll,
-    });
+    try {
+      const { roleId } = await create.mutateAsync({
+        name: addForm.name.trim(),
+        description: addForm.description.trim(),
+        appIds: addForm.grantsAll ? [] : addForm.appIds,
+        grantsAll: addForm.grantsAll,
+      });
+      // Library grants are independent of grants_all (ADR-017 D-08) — always persisted.
+      if (libs.data) await setLibs.mutateAsync({ roleId, libraryIds: addForm.libraryIds });
+    } catch {
+      /* onError handlers set the banners */
+    }
   }
 
   function startEdit(role: (typeof roleRows)[number]) {
@@ -89,25 +125,39 @@ export default function AdminRolesPage() {
       description: role.description ?? '',
       appIds: [...role.appIds],
       grantsAll: role.grantsAll,
+      libraryIds: [...(grantsByRole[role.id] ?? [])],
     });
     setEditError(null);
   }
 
-  function submitEdit(role: (typeof roleRows)[number], e: FormEvent) {
+  async function submitEdit(role: (typeof roleRows)[number], e: FormEvent) {
     e.preventDefault();
-    update.mutate({
-      id: role.id,
-      // The Default role can't be renamed — omit the name so an unchanged submit is a no-op.
-      ...(role.isDefault ? {} : { name: editForm.name.trim() }),
-      description: editForm.description.trim(),
-      appIds: editForm.grantsAll ? [] : editForm.appIds,
-      grantsAll: editForm.grantsAll,
-    });
+    try {
+      await update.mutateAsync({
+        id: role.id,
+        // The Default role can't be renamed — omit the name so an unchanged submit is a no-op.
+        ...(role.isDefault ? {} : { name: editForm.name.trim() }),
+        description: editForm.description.trim(),
+        appIds: editForm.grantsAll ? [] : editForm.appIds,
+        grantsAll: editForm.grantsAll,
+      });
+      // Only touch library grants when the matrix has loaded (else we'd wipe the current set).
+      if (libs.data) await setLibs.mutateAsync({ roleId: role.id, libraryIds: editForm.libraryIds });
+    } catch {
+      /* onError handlers set the banners */
+    }
   }
 
   const toggle = (form: RoleForm, appId: string, on: boolean): RoleForm => ({
     ...form,
     appIds: on ? [...form.appIds, appId] : form.appIds.filter((id) => id !== appId),
+  });
+
+  const toggleLibrary = (form: RoleForm, libraryId: string, on: boolean): RoleForm => ({
+    ...form,
+    libraryIds: on
+      ? [...form.libraryIds, libraryId]
+      : form.libraryIds.filter((id) => id !== libraryId),
   });
 
   if (roles.isLoading || catalog.isLoading) return <p className="muted">Loading roles…</p>;
@@ -160,13 +210,61 @@ export default function AdminRolesPage() {
     </fieldset>
   );
 
+  // ADR-017 / DESIGN-007 D-06 — the Plex library grant matrix, grouped per server. Unlike the
+  // app matrix there is no "All libraries" master toggle: grants_all does not imply libraries
+  // (D-08). Unavailable libraries stay checkable so a soft-removed library's grant round-trips.
+  const libraryChecklist = (form: RoleForm, apply: (next: (f: RoleForm) => RoleForm) => void) => (
+    <fieldset className="field">
+      <legend>Plex libraries this role can self-add</legend>
+      {libs.isLoading ? (
+        <p className="muted">Loading libraries…</p>
+      ) : libServers.length === 0 ? (
+        <p className="muted">No libraries yet — run a registry refresh to populate them.</p>
+      ) : (
+        libServers.map((server) => (
+          <div className="lib-group" key={server.slug}>
+            <p className="lib-group__name">{server.name}</p>
+            <ul className="check-list">
+              {server.libraries.map((lib) => (
+                <li key={lib.id}>
+                  <label className="check-row" data-disabled={!lib.available || undefined}>
+                    <input
+                      type="checkbox"
+                      checked={form.libraryIds.includes(lib.id)}
+                      onChange={(e) => apply((f) => toggleLibrary(f, lib.id, e.target.checked))}
+                    />
+                    <span>
+                      {lib.name}
+                      {!lib.available ? <span className="muted"> (unavailable)</span> : null}
+                    </span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))
+      )}
+    </fieldset>
+  );
+
   return (
     <>
       <div className="admin-head">
         <h1>Roles</h1>
-        <button type="button" className="btn primary" onClick={openAdd} disabled={busy}>
-          Add role
-        </button>
+        <span className="row-actions">
+          <button
+            type="button"
+            className="btn"
+            data-testid="plex-refresh-registry"
+            onClick={() => refresh.mutate({})}
+            disabled={busy}
+          >
+            {refresh.isPending ? 'Refreshing…' : 'Refresh Plex libraries'}
+          </button>
+          <button type="button" className="btn primary" onClick={openAdd} disabled={busy}>
+            Add role
+          </button>
+        </span>
       </div>
       <p className="muted">
         Every user has exactly one role. Assign roles to users on their detail page.
@@ -220,6 +318,7 @@ export default function AdminRolesPage() {
                         />
                       </label>
                       {appChecklist(editForm, setEditForm)}
+                      {libraryChecklist(editForm, setEditForm)}
                       {editError ? (
                         <p className="alert" role="alert">
                           {editError}
@@ -336,8 +435,9 @@ export default function AdminRolesPage() {
             />
           </label>
           {appChecklist(addForm, setAddForm)}
+          {libraryChecklist(addForm, setAddForm)}
           <div className="form-actions">
-            <button type="submit" className="btn primary" disabled={create.isPending}>
+            <button type="submit" className="btn primary" disabled={create.isPending || setLibs.isPending}>
               Create role
             </button>
             <button

@@ -15,3 +15,8 @@ export * from './fix-requests';
 export * from './restore-runs';
 export * from './sync-runs';
 export * from './sync-state';
+// ADR-017 / DESIGN-007 Phase 3 — Plex library self-service (BC-04 registry + role grants + share ledger)
+export * from './plex-servers';
+export * from './plex-libraries';
+export * from './role-library-grants';
+export * from './plex-share-audit';

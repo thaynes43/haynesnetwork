@@ -10,5 +10,10 @@ export {
   CatalogEntryPatchInput,
   RoleInput,
   RolePatchInput,
+  PlexLibraryInput,
+  RoleLibrariesInput,
+  RefreshRegistryInput,
 } from './schemas';
+export { resolvePlexBundle } from './trpc';
 export type { MyApp } from './routers/catalog';
+export type { MyServer, MyLibrary } from './routers/plex';

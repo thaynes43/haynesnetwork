@@ -23,3 +23,10 @@ export * from './fix-flow';
 export * from './search-requests';
 export * from './search-flow';
 export * from './restore-flow';
+// ADR-017 / DESIGN-007 Phase 3 — Plex library self-service single-writers + orchestrators
+// (the mutating Plex surface @hnet/plex/write stays confined to this package — guard test).
+export * from './plex-clients';
+export * from './effective-allowed-libraries';
+export * from './role-libraries';
+export * from './plex-registry';
+export * from './plex-shares';

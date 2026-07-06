@@ -65,3 +65,23 @@ export const CatalogEntryPatchInput = catalogEntryFields
   .omit({ slug: true })
   .partial()
   .extend({ id: z.uuid() });
+
+// ---------------------------------------------------------------------------
+// ADR-017 / DESIGN-007 D-05 — Plex library self-service inputs.
+// ---------------------------------------------------------------------------
+
+/** plex.addLibrary / plex.removeLibrary — the caller's own account, a single library. */
+export const PlexLibraryInput = z.object({ libraryId: z.uuid() });
+
+/** plex.setRoleLibraryGrants — replace-whole-set of a role's Plex library grants. */
+export const RoleLibrariesInput = z.object({
+  roleId: z.uuid(),
+  libraryIds: z.array(z.uuid()).default([]),
+});
+
+/** plex.refreshRegistry — optionally restrict to a subset of servers (default: all three). */
+export const RefreshRegistryInput = z
+  .object({
+    slugs: z.array(z.enum(['haynestower', 'haynesops', 'hayneskube'])).optional(),
+  })
+  .default({});

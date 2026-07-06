@@ -12,6 +12,7 @@ import {
   upsertMediaItemsBatch,
   type ArrClientBundle,
   type MediaItemSyncFields,
+  type PlexClientBundle,
 } from '@hnet/domain';
 import { SEEDED_ROLE_IDS } from '@hnet/db/schema';
 import { appRouter } from '../src/routers/index';
@@ -91,8 +92,14 @@ export function makeCtx(
   db: Database,
   user: SessionUser | null,
   arr?: ArrClientBundle,
+  plex?: PlexClientBundle,
 ): TRPCContext {
-  return { db, user, ...(arr !== undefined ? { arr } : {}) };
+  return {
+    db,
+    user,
+    ...(arr !== undefined ? { arr } : {}),
+    ...(plex !== undefined ? { plex } : {}),
+  };
 }
 
 let arrItemSeq = 500;

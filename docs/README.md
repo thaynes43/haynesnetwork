@@ -73,6 +73,7 @@ How, not why. Reference the PRD/ADR IDs they satisfy; amended in place.
 | DESIGN-004 | [UI shell and dashboard (Phase 1)](designs/004-ui-shell-and-dashboard.md) | Dashboard/app-catalog UI and component contracts. |
 | DESIGN-005 | [*arr media ledger, Fix, and failsafe Restore — Phase 2](designs/005-arr-ledger-and-fix.md) | Ledger sync, Fix / Restore / Force-Search flows. Read alongside ADR-008/011. |
 | DESIGN-006 | [Visual identity — mark, type, shape language](designs/006-visual-identity.md) | Anything visual-brand: this app has its own identity, never a clone of a sibling app. |
+| DESIGN-007 | [Plex library self-service — Phase 3](designs/007-plex-library-self-service.md) | The `@hnet/plex` client, `plex` router, role→library grants, share read-merge-write, registry refresh. Governed by ADR-017; supersedes DESIGN-001 Appendix A. |
 
 ## Ops runbooks — [`ops/`](ops/)
 

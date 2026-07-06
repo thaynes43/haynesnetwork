@@ -18,6 +18,11 @@ const APP_CODE_COPY: Record<string, string> = {
     'The media manager did not respond. The request was recorded as failed — an admin can see the details.',
   RESTORE_PROFILE_UNMAPPED:
     'A recorded quality profile has no match on the live instance — see the per-item report.',
+  // ADR-017 / DESIGN-007 D-05 — Plex library self-service codes.
+  LIBRARY_NOT_ALLOWED: 'Your role doesn’t include that library.',
+  PLEX_ACCOUNT_UNMATCHED:
+    'Your account isn’t a Plex friend of this server yet — ask an admin to add you on Plex first.',
+  PLEX_SERVER_UNAVAILABLE: 'Plex didn’t respond. Nothing changed — try again in a bit.',
 };
 
 /** The machine-readable appCode riding on a TRPCClientError, if any. */

@@ -7,6 +7,7 @@ import { rolesRouter } from './roles';
 import { ledgerRouter } from './ledger';
 import { fixRouter } from './fix';
 import { restoreRouter } from './restore';
+import { plexRouter } from './plex';
 
 export const appRouter = router({
   profile: profileRouter,
@@ -18,8 +19,8 @@ export const appRouter = router({
   ledger: ledgerRouter,
   fix: fixRouter,
   restore: restoreRouter,
-  // RESERVED router names — do not repurpose:
-  //   plex          → Phase 3 (R-25..R-28)
+  // Phase 3 (ADR-017 / DESIGN-007 D-05): Plex library self-service.
+  plex: plexRouter,
 });
 
 export type AppRouter = typeof appRouter;
