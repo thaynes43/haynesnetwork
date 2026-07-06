@@ -1,6 +1,9 @@
 # PLAN-002: Bazarr subtitle Fix
 
-- **Status:** Draft
+- **Status:** Completed (2026-07-06) — shipped in v0.5.0 (PR #47, ADR-016); deployed to staging
+  and live-validated: real movie + episode subtitle fixes landed `path_taken='bazarr_subtitle'` /
+  `search_triggered` with 204s from the verified Bazarr endpoints (Bazarr logged both search
+  attempts), and Music offers no Missing-subtitles reason.
 - **Satisfies:** PRD-001 R-44/R-45 (note added), new **ADR-016** (supersedes/extends ADR-007),
   DESIGN-005 **D-19** (new)
 - **Depends on:** none
