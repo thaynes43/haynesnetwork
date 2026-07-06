@@ -9,6 +9,8 @@ export * from './user-role-transitions';
 export * from './app-catalog';
 export * from './permission-audit';
 export * from './media-items';
+// ADR-018 / DESIGN-008 Phase 4 — harvested descriptive/quality metadata (1:1 sibling of media_items)
+export * from './media-metadata';
 export * from './ledger-events';
 export * from './wanted-items';
 export * from './fix-requests';

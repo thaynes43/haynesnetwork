@@ -89,7 +89,12 @@ export type RestoreRunStatus = (typeof RESTORE_RUN_STATUSES)[number];
 export const SYNC_SOURCES = ['sonarr', 'radarr', 'lidarr', 'seerr'] as const;
 export type SyncSource = (typeof SYNC_SOURCES)[number];
 
-export const SYNC_RUN_KINDS = ['full', 'incremental'] as const;
+// ADR-018 / DESIGN-008 D-03 — 'metadata-refresh' is the metadata-enrichment harvest mode
+// (ratings/genres/runtime/posters from the *arrs, watch-stats from Tautulli, computed props
+// from Maintainerr, holes from direct TMDB/TVDB). It is a DISTINCT run from full/incremental
+// sync (which never touch media_metadata); sync_runs.run_kind is CHECK-constrained to this set,
+// so migration 0012 relaxes that CHECK when this value lands.
+export const SYNC_RUN_KINDS = ['full', 'incremental', 'metadata-refresh'] as const;
 export type SyncRunKind = (typeof SYNC_RUN_KINDS)[number];
 
 export const SYNC_RUN_STATUSES = ['running', 'succeeded', 'failed', 'aborted'] as const;
@@ -120,3 +125,41 @@ export type PlexMediaType = (typeof PLEX_MEDIA_TYPES)[number];
 // Plex account on a server. The only two Plex-share ledger events (ADR-017 D-07).
 export const PLEX_SHARE_EVENTS = ['share_added', 'share_removed'] as const;
 export type PlexShareEvent = (typeof PLEX_SHARE_EVENTS)[number];
+
+// ---------------------------------------------------------------------------
+// ADR-018 / DESIGN-008 Phase 4 — Library metadata enrichment enums (D-01).
+// media_metadata is a separate 1:1 sibling of media_items (ADR-018) carrying the
+// volatile, multi-source, refreshed descriptive/quality data. These const arrays are
+// the single source of truth for both the TS types and the SQL CHECK constraints
+// (DESIGN-001 D-02 / HARD RULE — enums are text+CHECK, never Postgres enum types).
+// ---------------------------------------------------------------------------
+
+// Which harvest tier contributed a metadata row's PRIMARY descriptive fields. The
+// per-tier `sources` jsonb records EVERY tier that landed (arr + tautulli + …); this
+// scalar records the winning descriptive source in priority order (*arr first, then the
+// *arr lookup for tombstoned/hole rows, then direct TMDB/TVDB). Tautulli/Maintainerr are
+// additive (watch-stats / computed props) and ride `sources`, not this scalar — but are
+// listed so a metadata row harvested ONLY from them still validates.
+export const METADATA_SOURCES = [
+  'arr', // the live *arr item list (ratings/images/genres/runtime/added)
+  'arr_lookup', // the *arr /lookup endpoint (tombstoned / never-listed rows) — no re-add
+  'tautulli', // watch-stats only
+  'maintainerr', // computed rule-props only
+  'tmdb', // direct TMDB fallback for holes the *arrs can't fill
+  'tvdb', // direct TVDB fallback for holes
+] as const;
+export type MetadataSource = (typeof METADATA_SOURCES)[number];
+
+// The quality/resolution tier of a Media Item, derived from the *arr's target quality
+// profile (DESIGN-008 D-02 — approximate: it reflects the profile the *arr targets, not the
+// exact on-disk file, which would cost a per-item file fetch across ~17.7k items). 'unknown'
+// covers range/any profiles (e.g. "Any", "HD - 720p/1080p") that don't pin one resolution.
+export const RESOLUTIONS = ['2160p', '1080p', '720p', '576p', '480p', 'sd', 'unknown'] as const;
+export type Resolution = (typeof RESOLUTIONS)[number];
+
+// Where the poster PROXY route streams a Media Item's poster from (ADR-019 — posters are
+// proxied, never stored: no PVC, no image processing). 'arr' → the owning *arr's pre-resized
+// MediaCover variant (server-side, API-key header); 'tmdb' → the TMDB CDN (w342) for
+// tombstoned / lookup-sourced rows. Nullable on the row: null ⇒ the UI shows the KindIcon.
+export const POSTER_SOURCES = ['arr', 'tmdb'] as const;
+export type PosterSource = (typeof POSTER_SOURCES)[number];

@@ -10,6 +10,8 @@ export * from './effective-apps';
 // DESIGN-005 Phase 2 — media ledger single-writers (D-12)
 export * from './sync-runs';
 export * from './media-sync';
+// ADR-018 / DESIGN-008 Phase 4 — metadata harvest single-writer + *arr-tag semantics (D-12/D-07)
+export * from './media-metadata';
 export * from './ledger-ingest';
 export * from './fix-requests';
 export * from './restore-runs';
