@@ -185,4 +185,26 @@ Docs authored + ADR-016/017 Accepted + glossary T-46..T-49 landed in the same PR
 - Revert the app image tag in `haynes-ops .../helmrelease.yaml` + `flux reconcile` → prior image (no metadata UI). `media_metadata` is additive (new table, cascade-on-delete FK) — leaving the migration applied is harmless; `ledger.search` ignores the new optional inputs when the client doesn't send them.
 - The `sync-metadata` CronJob + poster PVC can be removed independently; posters degrade to `KindIcon` fallback (`page.tsx:184`) when `poster_path` is null, so an un-primed cache never breaks Library.
 - Migration `0009` is forward-only (project convention — no down migrations); rollback is image-revert, not schema-revert.
-```
+
+---
+
+## Addendum (2026-07-05, owner) — harvest ALL THREE Tautullis for cross-server watch history
+
+Widen the watch-stats source from the single HaynesTower Tautulli to **all three Tautulli
+instances**, so watch history is complete across the estate. The owner keeps the legacy
+HaynesTower Plex live and not all users will migrate, so any single server's history is always
+partial:
+
+- **Sources:** HaynesOps `TAUTULLI_API_KEY`, HaynesKube `TAUTULLI_K8PLEX_API_KEY`, HaynesTower
+  `TAUTULLI_HAYNESTOWER_API_KEY` (all already in 1Password — the homepage ExternalSecret already
+  references the first two). Add all three to the haynesnetwork app ExternalSecret / env.
+- **Matching:** correlate each Tautulli's history to our `media_items` by **TMDB / IMDb GUID**,
+  NOT Plex rating key — the three servers have different machine identifiers and rating keys, so
+  rating-key matching would not line up. This is our own code; we control the join.
+- **Unified signal on `media_metadata`:** `last_watched_at` = MAX across servers, `play_count` =
+  SUM across servers (keep a per-server breakdown if cheap), optionally `watched_by`. This unified
+  watch signal is the substrate PLAN-006 uses to protect actively-watched media from deletion.
+- Populate it on the same metadata refresh job.
+
+Open decision for Fable 5: per-server columns vs one unified row + a per-source side table;
+whether to dedupe one account watching the same title on two servers.

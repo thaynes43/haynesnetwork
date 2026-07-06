@@ -443,3 +443,43 @@ like every `@hnet/*`). Split entrypoints as the arr package does (`packages/arr/
   system of record; a rollback of *this app* leaves Maintainerr untouched and safe.
 - **Safety:** because expedite is the only destructive path and it is gated behind the recorded
   SAFE verdict + per-action permission + confirm, a rollback never leaves a half-armed deletion.
+
+---
+
+## Addendum (2026-07-05, owner) — never delete what people are watching (cross-server guarantee)
+
+**Requirement (owner, load-bearing):** watch history must protect media from deletion across ALL
+THREE Plex servers — *"I don't want to delete things people are watching."*
+
+**Why not a one-time Tautulli migration:** Maintainerr pairs to ONE Plex+Tautulli (HaynesOps), so
+its native rules only see HaynesOps watch history. Importing HaynesTower's Tautulli history into
+HaynesOps once is a frozen snapshot — HaynesTower stays live and keeps accruing views from users
+who don't migrate, which would then be invisible to Maintainerr. A migration is a seed, not a
+safeguard.
+
+**The safeguard THIS app owns (build it):** using PLAN-004's unified cross-server watch signal
+(`last_watched_at` = MAX across the three Tautullis), the Trash flow **auto-excludes any item
+watched on ANY server within a configurable recency window** (default e.g. 90 days) by adding it
+to **Maintainerr's exclusion/whitelist** before it can be actioned, and surfaces "last watched
+(any server)" in the Movies/TV pending tables so a recently-watched title is never a deletion
+candidate. This runs as a safety net OVER Maintainerr's own HaynesOps-only rules: anything watched
+anywhere recently is whitelisted, not deleted. The exclusion sync must run **before** Maintainerr's
+scheduled deletion cron.
+
+**Optional supplementary step (owner-driven, not a substitute):** a one-time Tautulli "Import
+Database" of HaynesTower's history into the HaynesOps Tautulli, to give Maintainerr's *native*
+rules more depth. Largely a manual Tautulli UI operation — document it, but do not rely on it for
+the guarantee above.
+
+**Note — Maintainerr config is UI-only:** Maintainerr's dependency tokens (Plex, Tautulli, the
+three *arrs, Seerr) are configured in its own UI and stored in its SQLite DB — they are NOT
+env-injectable (only `TZ` / `UI_PORT` / `BASE_PATH` / `GITHUB_TOKEN` are supported). Do **not**
+create an ExternalSecret for them. The only Maintainerr secret this app wires is
+`MAINTAINERR_API_KEY` (Maintainerr's own key, which THIS app consumes).
+
+Open decisions for Fable 5: the default recency window + whether it's admin/per-role configurable;
+protection via auto-whitelist in Maintainerr vs filtering our pending view vs both (recommend
+auto-whitelist so Maintainerr itself never deletes it).
+
+**Add to Definition of Done:** a LIVE check that an item watched on HaynesTower *only* is excluded
+from deletion on the HaynesOps-paired Maintainerr.
