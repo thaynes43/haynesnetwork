@@ -3,6 +3,8 @@ export * from './roles';
 export * from './role-app-grants';
 // ADR-021 / DESIGN-009 — section-level role permissions (Ledger + reserved Trash)
 export * from './role-section-permissions';
+// ADR-023 / DESIGN-010 — Trash (Maintainerr) fine-grained per-action role grants
+export * from './role-trash-action-grants';
 export * from './users';
 export * from './session';
 export * from './account';
@@ -26,3 +28,5 @@ export * from './role-library-grants';
 // ADR-024 — role-scoped all-libraries-on-server grants (sits alongside role-library-grants)
 export * from './role-plex-server-all-grants';
 export * from './plex-share-audit';
+// ADR-023 / DESIGN-010 (addendum c) — generic in-app notification store (Maintainerr source #1)
+export * from './notifications';
