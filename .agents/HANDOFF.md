@@ -104,8 +104,11 @@ The full consolidated backlog (with what is deferred beyond this run) is in
 - **Three Plex servers, 1Password key collision:** the `plexops` item's Plex key is *also*
   named `HAYNESKUBE_PLEX_API_KEY` — do not confuse it with the `homepage` item's key of the
   same name (see the haynes-ops `frontend/homepage/app/externalsecret.yaml` comment).
-- **Kyverno cosign** policy for `ghcr.io/thaynes43/*` is AUDIT-mode — plan a signing step
-  before enforcement expands.
+- **Kyverno cosign / image signing (PLAN-007 shipped the signing side):** `release-please.yml`
+  now **keyless-cosign-signs** every published `haynesnetwork` image by digest and verifies it
+  in-run (ADR-020). The `haynes-ops` Kyverno policy for `ghcr.io/thaynes43/*` is still AUDIT and
+  does **not yet cover `haynesnetwork`** — extending it (dedicated rule) + the **Audit→Enforce
+  flip** are **deploy-time** steps with the exact YAML diff in **OPS-006** (`docs/ops/006-image-signing.md`).
 
 ## History
 

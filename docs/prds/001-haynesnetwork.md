@@ -140,6 +140,7 @@ rebuilding a lost *arr instance.
 | R-64 | Staged rollout: internal `haynesnetwork.haynesops.com` first; claim `haynesnetwork.com` + `www` (traefik-external + Cloudflare tunnel) after e2e passes against staging. | Must |
 | R-65 | PR flow with required CI checks (lint-and-typecheck, test, build) after the bootstrap GATE A cutover; conventional commits + release-please; squash merges. | Must |
 | R-66 | UI testing with Playwright, including the login flow (stub OIDC in CI) and per-role dashboard visibility. | Must |
+| R-73 | Published images are cryptographically signed (keyless cosign via GitHub Actions OIDC → Fulcio/Rekor) in the release run and verified in-run; the cluster admits **only** signed `haynesnetwork` images once enforcement is on (ADR-020, OPS-006). | Must |
 
 ## User stories
 

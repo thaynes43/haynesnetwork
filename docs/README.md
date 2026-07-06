@@ -56,6 +56,7 @@ MADR 3.0, one decision each, immutable once Accepted.
 | ADR-015 | [No layout reorientation on interaction](adrs/015-no-layout-reorientation-on-interaction.md) | Any interactive UI: interactions may recolor, never reflow/reposition neighbors (sanctioned exceptions: deliberate expansions, drag-and-drop). |
 | ADR-016 | [Subtitle Fix routes to Bazarr; not offered for Music](adrs/016-subtitle-fix-via-bazarr.md) | The `missing_subtitles` Fix path: Bazarr async `search-missing`, `bazarr_subtitle` FixPath, per-kind reason offer rule. **Extends ADR-007.** |
 | ADR-017 | [Plex library sharing & the role-library-grant model](adrs/017-plex-library-sharing.md) | Phase-3 self-service: `role_library_grants` allow-list, family-as-role-grant, plex.tv v1 read-merge-write sharing, `@hnet/plex/write` confinement. |
+| ADR-020 | [Container image signing — keyless cosign via GitHub OIDC](adrs/020-container-image-signing.md) | Supply chain: images signed keyless (Fulcio/Rekor) in `release-please.yml`, verified in-run, Kyverno admits by OIDC identity. Resolves ADR-006 C-04. Pairs with OPS-006. |
 
 ## DDD — [`domain-driven-design/`](domain-driven-design/)
 
@@ -91,3 +92,4 @@ Operator procedures and secret contracts.
 | OPS-003 | [Local verification runbook](ops/003-local-verification.md) | Before you push: the local merge-gate sequence (`lint` + `lint:css` + `typecheck` + `test` + `build`) on embedded PG16, no Docker. |
 | OPS-004 | [Deploy runbook](ops/004-deploy-runbook.md) | Getting a merged PR to live staging: image tag → haynes-ops helmrelease edit → Flux reconcile, plus the 1Password secret contract. |
 | OPS-005 | [Root-domain cutover](ops/005-root-domain-cutover.md) | Promoting staging to the public root domain (ingress swap + `BETTER_AUTH_URL` flip), gated on Phase-1 e2e. |
+| OPS-006 | [Image signing — keyless cosign + Kyverno admission](ops/006-image-signing.md) | How images are signed, the `cosign verify` invocation, the cross-repo Kyverno coupling, and the deploy-time Audit→Enforce switch (with the exact `haynes-ops` YAML diff). ADR-020. |
