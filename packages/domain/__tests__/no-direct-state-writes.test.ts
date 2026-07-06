@@ -29,7 +29,10 @@ const ALLOWED_FILES = new Set<string>([
 // DESIGN-001 D-12 / ADR-012 guarded tables: users.role_id, roles, role_app_grants,
 // app_catalog + the audit tables (user_role_transitions, permission_audit). DESIGN-005
 // D-12 extends the watched list with the Phase 2 media-ledger tables: media_items,
-// ledger_events, fix_requests, restore_runs, sync_runs, sync_state.
+// ledger_events, fix_requests, restore_runs, sync_runs, sync_state. ADR-017 / DESIGN-007
+// D-01 adds the Phase 3 Plex tables: plex_servers, plex_libraries, role_library_grants,
+// plex_share_audit (registry refresh + role grants + share ledger all go through
+// packages/domain single-writers).
 const FORBIDDEN_PATTERNS: Array<{ name: string; regex: RegExp }> = [
   {
     name: 'UPDATE users SET role_id (SQL)',
@@ -38,32 +41,32 @@ const FORBIDDEN_PATTERNS: Array<{ name: string; regex: RegExp }> = [
   {
     name: 'INSERT INTO guarded/audit table (SQL)',
     regex:
-      /INSERT\s+INTO\s+(user_role_transitions|permission_audit|roles|role_app_grants|app_catalog|media_items|ledger_events|fix_requests|restore_runs|sync_runs|sync_state)\b/i,
+      /INSERT\s+INTO\s+(user_role_transitions|permission_audit|roles|role_app_grants|app_catalog|media_items|ledger_events|fix_requests|restore_runs|sync_runs|sync_state|plex_servers|plex_libraries|role_library_grants|plex_share_audit)\b/i,
   },
   {
     name: 'UPDATE guarded table (SQL)',
     regex:
-      /UPDATE\s+(roles|app_catalog|media_items|ledger_events|fix_requests|restore_runs|sync_runs|sync_state)\s+SET\b/i,
+      /UPDATE\s+(roles|app_catalog|media_items|ledger_events|fix_requests|restore_runs|sync_runs|sync_state|plex_servers|plex_libraries|role_library_grants)\s+SET\b/i,
   },
   {
     name: 'DELETE FROM guarded table (SQL)',
     regex:
-      /DELETE\s+FROM\s+(role_app_grants|roles|app_catalog|media_items|ledger_events|fix_requests|restore_runs|sync_runs|sync_state)\b/i,
+      /DELETE\s+FROM\s+(role_app_grants|roles|app_catalog|media_items|ledger_events|fix_requests|restore_runs|sync_runs|sync_state|plex_servers|plex_libraries|role_library_grants|plex_share_audit)\b/i,
   },
   {
     name: '.insert() into guarded/audit table (Drizzle)',
     regex:
-      /\.insert\(\s*(?:[A-Za-z_$][\w$]*\.)?(userRoleTransitions|permissionAudit|roleAppGrants|roles|appCatalog|mediaItems|ledgerEvents|fixRequests|restoreRuns|syncRuns|syncState)\s*\)/,
+      /\.insert\(\s*(?:[A-Za-z_$][\w$]*\.)?(userRoleTransitions|permissionAudit|roleAppGrants|roles|appCatalog|mediaItems|ledgerEvents|fixRequests|restoreRuns|syncRuns|syncState|plexServers|plexLibraries|roleLibraryGrants|plexShareAudit)\s*\)/,
   },
   {
     name: '.update() on guarded table (Drizzle)',
     regex:
-      /\.update\(\s*(?:[A-Za-z_$][\w$]*\.)?(users|roles|appCatalog|mediaItems|ledgerEvents|fixRequests|restoreRuns|syncRuns|syncState)\s*\)/,
+      /\.update\(\s*(?:[A-Za-z_$][\w$]*\.)?(users|roles|appCatalog|mediaItems|ledgerEvents|fixRequests|restoreRuns|syncRuns|syncState|plexServers|plexLibraries|roleLibraryGrants)\s*\)/,
   },
   {
     name: '.delete() on guarded table (Drizzle)',
     regex:
-      /\.delete\(\s*(?:[A-Za-z_$][\w$]*\.)?(roleAppGrants|roles|appCatalog|mediaItems|ledgerEvents|fixRequests|restoreRuns|syncRuns|syncState)\s*\)/,
+      /\.delete\(\s*(?:[A-Za-z_$][\w$]*\.)?(roleAppGrants|roles|appCatalog|mediaItems|ledgerEvents|fixRequests|restoreRuns|syncRuns|syncState|roleLibraryGrants|plexLibraries|plexServers)\s*\)/,
   },
 ];
 

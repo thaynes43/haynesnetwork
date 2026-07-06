@@ -14,6 +14,7 @@ export const PERMISSION_AUDIT_ACTIONS = [
   'create_app',
   'update_app',
   'delete_app', // R-11 catalog edits
+  'update_role_libraries', // ADR-017 D-07 — a role's Plex library grants were replaced
 ] as const;
 export type PermissionAuditAction = (typeof PERMISSION_AUDIT_ACTIONS)[number];
 
@@ -93,3 +94,29 @@ export type SyncRunKind = (typeof SYNC_RUN_KINDS)[number];
 
 export const SYNC_RUN_STATUSES = ['running', 'succeeded', 'failed', 'aborted'] as const;
 export type SyncRunStatus = (typeof SYNC_RUN_STATUSES)[number];
+
+// ---------------------------------------------------------------------------
+// ADR-017 / DESIGN-007 Phase 3 — Plex library self-service enums (D-01, D-02).
+// The plex_share_audit action CHECK is these events; BC-04 aggregates own their
+// own audit rows (like the BC-03 media aggregates — D-12), so share events are a
+// separate table, not permission_audit.
+// ---------------------------------------------------------------------------
+
+// The three Plex servers of record (OPS-002; canonical owner slugs). `plex_servers.slug`
+// is CHECK-constrained to this set. Note the subdomain↔slug mismatch (plexops↔haynesops,
+// k8plex↔hayneskube) — code uses the SLUGS everywhere; the subdomains are ingress detail.
+export const PLEX_SERVER_SLUGS = ['haynestower', 'haynesops', 'hayneskube'] as const;
+export type PlexServerSlug = (typeof PLEX_SERVER_SLUGS)[number];
+
+// The Plex library `type` values observed live 2026-07-06 against `GET /library/sections`
+// on all three servers (ADR-017 D-06). Only these four appear — HAYNESTOWER's family
+// libraries report as `movie` (HNet Home Videos) and `photo` (HNet Photos); Plex has no
+// distinct `homevideo` section type. New values arrive only if a future library reports a
+// new `type`; relax this CHECK if that happens.
+export const PLEX_MEDIA_TYPES = ['movie', 'show', 'artist', 'photo'] as const;
+export type PlexMediaType = (typeof PLEX_MEDIA_TYPES)[number];
+
+// A library share was applied to (share_added) or revoked from (share_removed) a user's
+// Plex account on a server. The only two Plex-share ledger events (ADR-017 D-07).
+export const PLEX_SHARE_EVENTS = ['share_added', 'share_removed'] as const;
+export type PlexShareEvent = (typeof PLEX_SHARE_EVENTS)[number];

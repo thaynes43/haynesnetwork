@@ -64,6 +64,13 @@
       "when": 1782950408000,
       "tag": "0009_bazarr_subtitle_fix_path",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1782950409000,
+      "tag": "0010_plex_libraries",
+      "breakpoints": true
     }
   ]
 }

@@ -78,13 +78,15 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
 ## Commands
 
 pnpm 11.9 workspace (Node >= 22). Apps live in `apps/*`; internal packages in `packages/*`
-are scoped **`@hnet/*`** and export raw TS — no per-package build step. There are eight:
+are scoped **`@hnet/*`** and export raw TS — no per-package build step. There are nine:
 
 - `@hnet/db` — Drizzle schema + migrations against Postgres 16.
 - `@hnet/domain` — single-writer domain logic; audit/ledger rows written in the same
   transaction as the mutation they record.
 - `@hnet/arr` — Sonarr/Radarr/Lidarr client; `@hnet/arr/write` (the write-back surface) is
   import-confined to `packages/domain`.
+- `@hnet/plex` — Plex server + plex.tv sharing client (XML ACL); `@hnet/plex/write` (the
+  share-mutation surface) is import-confined to `packages/domain` (ADR-017).
 - `@hnet/sync` — one-way *arr → ledger sync jobs (run by the cluster CronJobs).
 - `@hnet/auth` — Better Auth + Authentik OIDC wiring.
 - `@hnet/api` — tRPC routers.

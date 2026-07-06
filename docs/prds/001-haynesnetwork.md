@@ -45,7 +45,7 @@ rebuilding a lost *arr instance.
 |------|-------------|
 | Admin | Superuser role (`roles.is_admin`): full control of catalog, users, roles, restore; **implicitly sees every app**. Immutable (no rename/edit/delete). First login by an allowlisted email is assigned this role. |
 | Default | The role assigned to every successful Authentik login (`roles.is_default`). Its editable app set is what basic users see; manages own Plex libraries within allowed set; can report fixes. Cannot be renamed or deleted (app set is editable). |
-| Family (seeded example) | A `Family` role is now **seeded by migration 0007** — a normal, editable/deletable role granting every catalog app **except Tautulli**. It ships as the starter example and the intended home for the Phase-3 family-library grant (R-26/R-27, ADR-012 C-09/C-12). |
+| Family (seeded example) | A `Family` role is now **seeded by migration 0007** — a normal, editable/deletable role granting every catalog app **except Tautulli**. It ships as the starter example and is the home for the Phase-3 family-library grant: `HNet Home Videos` + `HNet Photos` are ordinary libraries granted only to this role (R-26/R-27, ADR-012 C-09/C-12, ADR-017 — built by DESIGN-007). |
 | _(other admin-created roles)_ | Admins create additional roles with their own editable app sets (or the "All apps" grant, `roles.grants_all` — every app, incl. future ones, without admin access; ADR-012 C-11) and assign users. |
 
 ## Requirements
@@ -88,10 +88,10 @@ rebuilding a lost *arr instance.
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| R-25 | Users can add/remove Plex libraries on their own account, per server, across all three servers (k8plex, plexops, legacy haynestower), within the set an admin allows them. | Must |
-| R-26 | Default allowed set = all libraries except `HNet Home Videos` and `HNet Photos`; those are visible/addable only to Family users. | Must |
-| R-27 | Admins can set per-user (or per-tag) allowed-library sets and designate Family. | Must |
-| R-28 | Library changes are applied through the Plex sharing API using each server's owner token (1Password) and are audit-logged. | Must |
+| R-25 | Users can add/remove Plex libraries on their own account, per server, across all three servers (`haynestower`/`haynesops`/`hayneskube`), within the set their **Role** allows them (ADR-017). | Must |
+| R-26 | Default allowed set = the **Default role's** library grants (all libraries except `HNet Home Videos` and `HNet Photos`); those two are the **Family role's** exclusive grants (ADR-017 — no `is_family_only` flag). | Must |
+| R-27 | Admins set **per-Role** allowed-library sets; Family is just a Role whose grants include the family libraries (ADR-012 C-09/C-12; ADR-017). | Must |
+| R-28 | Library changes are applied through the Plex sharing API using each server's owner token (1Password) and are audit-logged (ADR-017 / DESIGN-007). | Must |
 | R-30 | Follow-on: sync app permissions into Authentik via its API once Authentik-side enforcement is wanted. | Later |
 
 ### Media ledger & fix (Phase 2)
@@ -184,6 +184,6 @@ rebuilding a lost *arr instance.
 |----|----------|------------|
 | Q-01 | Which email does Authentik emit for the owner (manofoz@ vs t.haynes43@)? | Mitigated: allowlist contains both; confirm on first real login. |
 | Q-02 | Seerr cutover timing (owner migrating in parallel) — when does the tile URL flip? | Owner action; catalog edit when ready. |
-| Q-03 | Do plexops/k8plex share library names with legacy Plex (affects per-server allowed-set UX)? | Partially resolved 2026-07-03: names differ (HAYNESOPS mirrors Movies/TV as `Movies`/`TV Shows` vs `HNet *`); registry keys on (server, library), mirror modeled explicitly — see docs/ops/002-plex-topology.md. |
+| Q-03 | Do plexops/k8plex share library names with legacy Plex (affects per-server allowed-set UX)? | **Resolved by ADR-017 / DESIGN-007**: names differ (HAYNESOPS mirrors Movies/TV as `HOps Movies`/`HOps TV Shows` vs `HNet *`); library identity is `(server, section_key)`, never name — the `plex_libraries` UNIQUE(`server_id`,`section_key`) models the mirror explicitly (verified live 2026-07-06). |
 | Q-04 | Maintainerr deployment timing (for deletion attribution enrichment). | Follow-on when it lands in k8s. |
 | Q-05 | Per-user fix rate limits — fixed default or admin-configurable? | Default constant in Phase 2; revisit (R-47). |

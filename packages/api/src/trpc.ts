@@ -15,13 +15,18 @@ import {
   InvalidCatalogUrlError,
   LastAdminError,
   LedgerItemTombstonedError,
+  LibraryNotAllowedError,
   NotFoundError,
+  PlexAccountUnmatchedError,
+  PlexServerUnavailableError,
+  plexClientBundleFromEnv,
   ReorderMismatchError,
   RestoreProfileUnmappedError,
   RoleNameConflictError,
   SubtitleFixUnsupportedError,
   SystemRoleImmutableError,
   type ArrClientBundle,
+  type PlexClientBundle,
 } from '@hnet/domain';
 
 export type { SessionUser };
@@ -36,6 +41,12 @@ export interface TRPCContext {
    * tests inject fetch-stubbed bundles here (ADR-010 — no live-API tests in CI).
    */
   arr?: ArrClientBundle;
+  /**
+   * ADR-017 / DESIGN-007 D-05 — the Plex client bundle the plex procedures (registry
+   * refresh, share/unshare, myLibraries live-state) run against. Same injection model as
+   * `arr`: env-built singleton in production, stubbed bundle in tests.
+   */
+  plex?: PlexClientBundle;
 }
 
 let envArrBundle: ArrClientBundle | undefined;
@@ -45,6 +56,15 @@ export function resolveArrBundle(ctx: TRPCContext): ArrClientBundle {
   if (ctx.arr) return ctx.arr;
   envArrBundle ??= arrClientBundleFromEnv();
   return envArrBundle;
+}
+
+let envPlexBundle: PlexClientBundle | undefined;
+
+/** The Plex bundle for this request: injected (tests) or the env-built singleton (D-05). */
+export function resolvePlexBundle(ctx: TRPCContext): PlexClientBundle {
+  if (ctx.plex) return ctx.plex;
+  envPlexBundle ??= plexClientBundleFromEnv();
+  return envPlexBundle;
 }
 
 function hasKnownRole(user: SessionUser): boolean {
@@ -91,6 +111,9 @@ const APP_CODED_ERRORS = [
   LedgerItemTombstonedError,
   ArrUpstreamError,
   RestoreProfileUnmappedError,
+  LibraryNotAllowedError,
+  PlexAccountUnmatchedError,
+  PlexServerUnavailableError,
 ] as const;
 
 const t = initTRPC.context<TRPCContext>().create({
@@ -139,6 +162,9 @@ export const authedProcedure = t.procedure.use(({ ctx, next }) => {
  * | LedgerItemTombstonedError   | LEDGER_ITEM_TOMBSTONED      | PRECONDITION_FAILED   |
  * | ArrUpstreamError            | ARR_UPSTREAM_UNAVAILABLE    | BAD_GATEWAY           |
  * | RestoreProfileUnmappedError | RESTORE_PROFILE_UNMAPPED    | UNPROCESSABLE_CONTENT |
+ * | LibraryNotAllowedError      | LIBRARY_NOT_ALLOWED         | FORBIDDEN             |
+ * | PlexAccountUnmatchedError   | PLEX_ACCOUNT_UNMATCHED      | UNPROCESSABLE_CONTENT |
+ * | PlexServerUnavailableError  | PLEX_SERVER_UNAVAILABLE     | BAD_GATEWAY           |
  * | NotFoundError               | —                           | NOT_FOUND             |
  */
 export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
@@ -183,6 +209,15 @@ export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
     }
     if (err instanceof RestoreProfileUnmappedError) {
       throw new TRPCError({ code: 'UNPROCESSABLE_CONTENT', message: err.message, cause: err });
+    }
+    if (err instanceof LibraryNotAllowedError) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: err.message, cause: err });
+    }
+    if (err instanceof PlexAccountUnmatchedError) {
+      throw new TRPCError({ code: 'UNPROCESSABLE_CONTENT', message: err.message, cause: err });
+    }
+    if (err instanceof PlexServerUnavailableError) {
+      throw new TRPCError({ code: 'BAD_GATEWAY', message: err.message, cause: err });
     }
     if (err instanceof NotFoundError) {
       throw new TRPCError({ code: 'NOT_FOUND', message: err.message, cause: err });

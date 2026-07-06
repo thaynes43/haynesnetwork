@@ -87,19 +87,24 @@ Four bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across 
 - **Does NOT own:** media lists — the *arrs are the **Source of Truth**; this is a mirror
   plus attribution/audit.
 
-### BC-04 — Plex Sharing (Phase 3)
+### BC-04 — Plex Sharing (Phase 3 — **built**: ADR-017 / DESIGN-007)
 
 - **Purpose:** the enforcement arm for library access. Registry of the three **Plex
   Servers** and their **Plex Libraries**; applies users' add/remove-library requests
-  through the Plex sharing API using each server's owner token (R-25, R-28).
-- **Owned aggregates:** Plex Server registry, Plex Library registry (incl. the
-  **Family-Only Library** flag), share-application records + audit rows (R-28).
-- **Inbound:** user add/remove-library commands — validated against BC-02's Effective
-  Permissions before any Plex call; library-registry refresh from the Plex APIs.
-- **Outbound:** Plex sharing API calls; audit rows for every applied change.
-- **External systems:** the three Plex servers — k8plex, plexops (k8s), haynestower
-  (legacy Unraid); owner tokens sourced from 1Password via External Secrets.
-- **Decides nothing:** a share is applied only if BC-02 allows it (R-26, R-27).
+  through the plex.tv v1 sharing API using each server's owner token (R-25, R-28).
+- **Owned aggregates (built):** Plex Server registry (`plex_servers`), Plex Library
+  registry (`plex_libraries`), and the Plex Share audit ledger (`plex_share_audit`).
+  Family gating is a `Family`-**role grant**, not a library flag (ADR-017 C-02 — there
+  is no `is_family_only` column).
+- **Inbound:** user add/remove-library commands — validated against BC-02's Allowed
+  Library Set (re-derived inside the mutation, TOCTOU) before any Plex call; the
+  admin-triggered Library Registry Refresh from the Plex APIs.
+- **Outbound:** plex.tv sharing API calls (read-merge-write — never blind overwrite);
+  a `plex_share_audit` row for every applied change.
+- **External systems:** the three Plex servers — `haynesops`, `hayneskube` (k8s),
+  `haynestower` (legacy Unraid); owner tokens sourced from 1Password via External
+  Secrets, held header-only (never in git/URLs).
+- **Decides nothing:** a share is applied only if BC-02 allows it (R-26, R-27; ADR-017 C-08).
 
 ## 4. Relationship rules
 
@@ -109,8 +114,8 @@ Four bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across 
 - **BC-01 is upstream of everything:** contexts read (user, role); none mutates identity.
 - **The *arrs are upstream of BC-03** (conformist behind the ACL): sync is strictly
   *arr → app; the only writes back are Fix and Restore, both narrow and audited (R-52).
-- **BC-04 owns library identity; BC-02 references it** — Library Grants point at
-  (server, library) identities from BC-04's registry.
+- **BC-04 owns library identity; BC-02 references it** — `role_library_grants` (BC-02)
+  point at `plex_libraries` `(server_id, section_key)` identities from BC-04's registry.
 - **Seerr is read-only** — attribution source and a catalog Tile; never replaced (Non-goals).
 
 ## 5. Cross-cutting (not bounded contexts)
@@ -125,3 +130,4 @@ Four bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across 
 | Date | Author | Change |
 |------|--------|--------|
 | 2026-07-03 | Tom Haynes | Initial contexts BC-01..BC-04 identified from PRD-001 (Accepted). |
+| 2026-07-06 | Fable 5 | BC-04 Plex Sharing promoted intent → **built** (ADR-017 / DESIGN-007): owns `plex_servers`/`plex_libraries`/`plex_share_audit`; family gating is a `Family`-role grant (no `is_family_only` flag); BC-02→BC-04 reference named as `role_library_grants` → `plex_libraries (server_id, section_key)`; server slugs corrected to `haynestower`/`haynesops`/`hayneskube`. |

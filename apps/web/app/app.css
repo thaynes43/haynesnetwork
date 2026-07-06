@@ -275,6 +275,12 @@ body {
     padding: 8px 8px;
     font-size: 12px;
   }
+  /* The nowrap wordmark cannot shrink, so on narrow phones it overflowed its flex-shrunk
+     .brand and collided with "Home" (live-validation finding, 390px; worse with the third
+     nav link). Phones keep the brand MARK only; the wordmark returns at ≥600px. */
+  .brand__name {
+    display: none;
+  }
 }
 .topbar__spacer {
   flex: 1 1 auto;
@@ -1535,4 +1541,74 @@ input[aria-invalid='true'] {
 }
 .restore-check {
   min-height: 24px;
+}
+
+/* ADR-017 / DESIGN-007 D-06 — self-service "My Plex" page + the admin role→library matrix.
+   Tokens only (no raw hex — CLAUDE.md rule 2). No layout reorientation on interaction
+   (ADR-015): the action cell reserves a fixed width so add↔remove never shifts the row. */
+.plex-server {
+  margin-top: var(--space);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  padding: 14px 16px;
+}
+.plex-server__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+  margin-bottom: 8px;
+}
+.plex-server__name {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+}
+.plex-server__note {
+  font-size: 12px;
+  color: var(--color-warning);
+}
+.plex-lib-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.plex-lib-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
+}
+.plex-lib-row:first-child {
+  border-top: 0;
+}
+.plex-lib-name {
+  font-size: 13px;
+  color: var(--color-text);
+}
+.plex-lib-type {
+  font-size: 12px;
+}
+/* Reserve a stable width so swapping the plain Add button for the two-step Remove
+   ConfirmButton (which reserves its own armed-label width) never reflows the row. */
+.plex-lib-action {
+  flex: 0 0 auto;
+  min-width: 92px;
+  display: flex;
+  justify-content: flex-end;
+}
+/* Admin matrix: a per-server group of library checkboxes inside the role editor. */
+.lib-group + .lib-group {
+  margin-top: 10px;
+}
+.lib-group__name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  margin: 0 0 4px;
 }

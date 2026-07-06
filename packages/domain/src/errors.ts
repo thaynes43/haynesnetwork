@@ -115,6 +115,41 @@ export class MassTombstoneAbortedError extends Error {
   }
 }
 
+// ---------------------------------------------------------------------------
+// ADR-017 / DESIGN-007 Phase 3 — Plex library self-service errors (D-04/D-05).
+// ---------------------------------------------------------------------------
+
+/**
+ * ADR-017 D-04: a user tried to self-share a library their Role does not grant. The domain
+ * re-derives the fresh allowed set INSIDE the share transaction (TOCTOU guard) and throws
+ * this BEFORE any Plex write — so a stale/forged client can never widen access.
+ */
+export class LibraryNotAllowedError extends Error {
+  readonly code = 'LIBRARY_NOT_ALLOWED' as const;
+}
+
+/**
+ * ADR-017 D-01: the app user's OIDC email has no matching Plex friend on the target server's
+ * account, so there is no Plex account id to share to. NOT an invite flow (out of scope,
+ * Q-06) — the user must already be a Plex friend of the server owner. Surfaced as
+ * UNPROCESSABLE_CONTENT with an actionable message.
+ */
+export class PlexAccountUnmatchedError extends Error {
+  readonly code = 'PLEX_ACCOUNT_UNMATCHED' as const;
+}
+
+/**
+ * ADR-017 D-04/D-05: a Plex read/write (registry refresh, friend lookup, share apply) failed
+ * upstream — surfaced to the client as BAD_GATEWAY. The original PlexError rides as `cause`.
+ * The token is never echoed (the PlexError taxonomy keeps it header-only).
+ */
+export class PlexServerUnavailableError extends Error {
+  readonly code = 'PLEX_SERVER_UNAVAILABLE' as const;
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+  }
+}
+
 function pgErrorCode(err: unknown): string | undefined {
   if (typeof err !== 'object' || err === null) return undefined;
   const code = (err as { code?: unknown }).code;

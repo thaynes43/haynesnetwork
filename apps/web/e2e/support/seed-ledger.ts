@@ -8,8 +8,13 @@
 //
 // The Sonarr row mirrors what the stub *arr serves (stub-arr.ts): series 501
 // "Breaking Prod", 9/10 episodes on disk, profile HD-1080p.
-import { getPool } from '@hnet/db';
-import { ingestLedgerEvents, upsertMediaItemsBatch } from '@hnet/domain';
+import { getPool, SEEDED_ROLE_IDS } from '@hnet/db';
+import {
+  ingestLedgerEvents,
+  setRoleLibraries,
+  upsertMediaItemsBatch,
+  upsertPlexLibraries,
+} from '@hnet/domain';
 
 async function main(): Promise<void> {
   await upsertMediaItemsBatch({
@@ -114,8 +119,47 @@ async function main(): Promise<void> {
     ],
   });
 
+  // ADR-017 / DESIGN-007 — the Plex registry + role grants the /library/plex specs use. The
+  // seed runs BEFORE the stub Plex is up, so it can't refresh; upsertPlexLibraries seeds the
+  // same libraries stub-plex.ts serves (so a later admin refresh is idempotent). Default gets
+  // the non-family set; Family additionally gets HNet Photos.
+  await upsertPlexLibraries({
+    slug: 'haynestower',
+    libraries: [
+      { sectionKey: '1', name: 'HNet Movies', mediaType: 'movie' },
+      { sectionKey: '4', name: 'HNet Photos', mediaType: 'photo' },
+    ],
+  });
+  await upsertPlexLibraries({
+    slug: 'haynesops',
+    libraries: [{ sectionKey: '1', name: 'HOps Movies', mediaType: 'movie' }],
+  });
+  await upsertPlexLibraries({
+    slug: 'hayneskube',
+    libraries: [{ sectionKey: '2', name: 'HOps Music', mediaType: 'artist' }],
+  });
+
+  const { rows: libRows } = await getPool().query<{ id: string; slug: string; key: string }>(
+    `SELECT l.id, s.slug, l.section_key AS key
+       FROM plex_libraries l JOIN plex_servers s ON s.id = l.server_id`,
+  );
+  const libId = (slug: string, key: string) =>
+    libRows.find((r) => r.slug === slug && r.key === key)!.id;
+  const nonFamily = [libId('haynestower', '1'), libId('haynesops', '1')];
+  await setRoleLibraries({ roleId: SEEDED_ROLE_IDS.default, libraryIds: nonFamily, actorId: null });
+  const { rows: familyRows } = await getPool().query<{ id: string }>(
+    `SELECT id FROM roles WHERE name = 'Family'`,
+  );
+  if (familyRows[0]) {
+    await setRoleLibraries({
+      roleId: familyRows[0].id,
+      libraryIds: [...nonFamily, libId('haynestower', '4')],
+      actorId: null,
+    });
+  }
+
   await getPool().end();
-  console.log('[seed-ledger] seeded 2 media items + 2 ledger events');
+  console.log('[seed-ledger] seeded 2 media items + 2 ledger events + Plex libraries/grants');
 }
 
 main().catch((err: unknown) => {

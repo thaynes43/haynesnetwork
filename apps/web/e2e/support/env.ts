@@ -12,6 +12,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ADMIN_EMAIL, STUB_CLIENT_ID, STUB_CLIENT_SECRET } from './stub-oidc';
 import { STUB_BAZARR_API_KEY } from './stub-bazarr';
+import { STUB_PLEX_TOKENS } from './stub-plex';
 
 /** Default app port — off 3000 so the stack coexists with a running `pnpm dev`.
  *  playwright.config.ts's baseURL derives from this. */
@@ -47,6 +48,17 @@ export interface RuntimeEnv {
   /** ADR-016 / D-19 — Bazarr subtitle-fix contract, pointed at the stub Bazarr server. */
   BAZARR_URL: string;
   BAZARR_API_KEY: string;
+  /** ADR-017 / DESIGN-007 — stub Plex origin (specs GET its /_stub/calls). */
+  STUB_PLEX_URL: string;
+  /** Per-server Plex contract: URLs + owner tokens (distinct tokens so one stub can tell the
+   *  three PMS instances apart) + the plex.tv override pointed at the same stub. */
+  PLEX_HAYNESTOWER_URL: string;
+  PLEX_HAYNESOPS_URL: string;
+  PLEX_HAYNESKUBE_URL: string;
+  PLEX_HAYNESTOWER_TOKEN: string;
+  PLEX_HAYNESOPS_TOKEN: string;
+  PLEX_HAYNESKUBE_TOKEN: string;
+  PLEX_TV_URL: string;
 }
 
 /** The throwaway key every stubbed *arr accepts (never a real credential). */
@@ -64,6 +76,7 @@ export function composeRuntimeEnv(opts: {
   stubOidcDiscoveryUrl: string;
   stubArrBaseUrl: string;
   stubBazarrBaseUrl: string;
+  stubPlexBaseUrl: string;
   appUrl: string;
 }): RuntimeEnv {
   return {
@@ -87,6 +100,16 @@ export function composeRuntimeEnv(opts: {
     SEERR_API_KEY: STUB_ARR_API_KEY,
     BAZARR_URL: opts.stubBazarrBaseUrl,
     BAZARR_API_KEY: STUB_BAZARR_API_KEY,
+    STUB_PLEX_URL: opts.stubPlexBaseUrl,
+    // All three PMS URLs + the plex.tv override point at the one stub; distinct tokens let it
+    // tell the servers apart (the stub also routes plex.tv calls by machineId in the path).
+    PLEX_HAYNESTOWER_URL: opts.stubPlexBaseUrl,
+    PLEX_HAYNESOPS_URL: opts.stubPlexBaseUrl,
+    PLEX_HAYNESKUBE_URL: opts.stubPlexBaseUrl,
+    PLEX_HAYNESTOWER_TOKEN: STUB_PLEX_TOKENS.haynestower,
+    PLEX_HAYNESOPS_TOKEN: STUB_PLEX_TOKENS.haynesops,
+    PLEX_HAYNESKUBE_TOKEN: STUB_PLEX_TOKENS.hayneskube,
+    PLEX_TV_URL: opts.stubPlexBaseUrl,
   };
 }
 

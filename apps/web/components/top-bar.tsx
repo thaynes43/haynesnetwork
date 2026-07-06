@@ -195,6 +195,8 @@ export function TopBar({ user }: { user: TopBarUser }) {
       <nav className="topbar__nav" aria-label="Primary">
         <Link href="/">Home</Link>
         <Link href="/library">Library</Link>
+        {/* Phase 3 (R-25..R-28): self-service Plex library access on the user's own account. */}
+        <Link href="/library/plex">My Plex</Link>
       </nav>
       <div className="topbar__spacer" />
       <div className="topbar__actions">
