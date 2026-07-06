@@ -13,10 +13,9 @@
 > generalized NULLS-LAST keyset cursor, the poster proxy route, and the e2e stubs — landed on
 > this branch. The **UX layer** — **D-10** (the demo-console filter-engine port into `@hnet/ui`)
 > and **D-11** (the `/library` poster-grid + chip bar + sort control + host glue, and the detail
-> metadata block) — was reassigned to a follow-up UX change **on this same branch**. D-10/D-11
-> below are the **spec that follow-up builds against**; they are designed, not yet implemented.
-> The existing `/library` list UI keeps working unchanged against the extended API (the extended
-> search returns every field it already read plus new optional ones; default sort = title asc).
+> metadata block) — **landed with the follow-up UX change on this same branch (2026-07-06)**;
+> the implemented-judgment notes inside D-10/D-11 record where the build deviated from the
+> original plan text and why.
 
 ## Overview
 
@@ -196,7 +195,7 @@ directions, page boundaries across the null frontier (`packages/api/__tests__/le
 sourceCollections[] }` — cheap SELECT-DISTINCTs over the harvested jsonb (`jsonb_array_elements_text`),
 scoped per media tab. `ledger.detail` gains the same `metadata` block + `posterUrl`.
 
-### D-10 — the ported filter/sort engine (DESIGNED — follow-up UX change)
+### D-10 — the ported filter/sort engine (IMPLEMENTED 2026-07-06)
 
 Port `demo-console/packages/shared/filters` → `packages/ui/src/filters/` (mechanism only; hnet
 keeps its own look via the token seam + an `hnet-` class namespace — memory
@@ -214,7 +213,30 @@ devDeps to `@hnet/ui`, and keep the runner env `node` with the component tests o
 via a `// @vitest-environment jsdom` docblock (so the existing node-based token-contract test keeps
 working). Export everything from `@hnet/ui`. The host owns the field union + labels + predicate.
 
-### D-11 — Library poster grid + host glue + detail metadata (DESIGNED — follow-up UX change)
+**Implemented — deliberate divergences from the donor (2026-07-06 UX run):**
+
+- **Popover positioning: `absolute` → viewport-clamped `position: fixed`** (pure helper
+  `chipPopoverStyle(anchor, viewport)`, exported). The donor SPA anchored chips in a wide
+  static toolbar; here the chip bar is a horizontally-scrolling row (D-11) whose `overflow`
+  would never clip a fixed-position editor, and 390px viewports need the left/height clamp so
+  the editor always fits on screen. The popover closes on outside click, Escape, resize, and
+  any outside scroll (a fixed overlay must not detach from its anchor).
+- **The ✕ clear button renders only while the field HAS values**, the chip gains an
+  `is-empty` class, and a new optional `labels.noValues` message covers an empty enum facet —
+  because the Library host keeps every field's chip PERMANENTLY in the bar (the empty chip is
+  the "add a filter" affordance), where the donor only mounted chips for active fields.
+- **CSV values render in the body face** (`hnet-chip-csv`), not the donor's mono — hnet's
+  filter values are human words (genres, requesters), not opaque ids. `hnet-mono` remains for
+  the cells/BinChip surface.
+- **`filters.css` is a re-skin, not a rename**: pill chips with ghost empty state and
+  ghost hovers, `--radius` (16px) editor panels, ≥40px checklist rows, accent `accent-color`
+  checkboxes, and the DESIGN-006 D-04 light-theme deepen
+  (`color-mix(accent 62%, text)`) on active chip/token text. Donor selectors and structure
+  are otherwise 1:1 so the ported interaction tests run unchanged.
+- The pure modules (`chipModel`/`filterMap`/`sort`/`filterSuggestions`) + their tests + the
+  no-i18n guard moved VERBATIM (only `!` non-null tweaks for this repo's stricter TS).
+
+### D-11 — Library poster grid + host glue + detail metadata (IMPLEMENTED 2026-07-06)
 
 Replace the `/library` icon LIST (`page.tsx`) with a **poster-card GRID**: fixed **2:3** poster
 boxes (reserve space so image load/failure never reflows — ADR-015), KindIcon fallback inside the
@@ -230,6 +252,45 @@ watch stats) — static layout, no reorientation on any interaction. Host-glue r
 URL param and to the same-named `ledger.search` input; `resolutions` values are the `RESOLUTIONS`
 enum (labels via `RESOLUTION_LABELS`). A `<MediaPoster>` component (fixed box, `posterUrl` with
 KindIcon fallback on null/error) serves both the grid and the detail head.
+
+**Implemented — judgment calls (2026-07-06 UX run; ADR-015 is the ruling constraint):**
+
+- **URL-state contract** (documented at the top of `page.tsx`): `?q` (search text, input
+  debounced 250 ms → URL), `?disk`, `?wanted=1`, `?genre/res/req/col` as **repeated params**
+  (comma-safe for arbitrary tag labels), `?rmin`/`?rmax`, `?sort=field:dir` (`title:asc`
+  normalizes to absent). Every edit uses `router.replace` — the URL always mirrors state
+  (deep-linkable/shareable) while Back/Forward cross PAGES, not individual filter edits.
+  **Tab switch keeps ONLY `?tab`** (fresh start per tab; the tab-keyed remount re-reads the
+  cleaned URL) — a Movies filter can never leak into TV/Music.
+- **Chip bar = a permanent filter rail**: one chip per facet, always mounted — empty chips are
+  ghost pills (the add-affordance), active chips carry the OR-ed CSV + ✕. The bar is a
+  **fixed-height single row that pans horizontally** when crowded (the mobile filter-rail
+  pattern) — it can never wrap/grow, so the grid below never shifts; the same pattern serves
+  the sort bar. Editors overlay via D-10's fixed positioning.
+- **Rating range = a bounded chip** (host glue wearing the shared `hnet-` chip skin): a
+  Min/Max select pair → `ratingMin`/`ratingMax`, CSV label `≥ 7` / `≤ 9` / `7–9`. **Movies tab
+  only** — D-09's rating filter compares `imdb_rating`, which only the Radarr tier fills
+  (ADR-018 C-07); offering it on TV/Music would be a dead control.
+- **Sort control**: pill buttons on the ported `nextSort`/`arrowFor`. Each column cycles
+  best-first → reversed → default (`title:asc`); "best-first" = desc for Rating/Added/Plays/
+  Watched/Runtime, asc for Title. The **Rating column maps to `imdb_rating` on Movies and
+  `tmdb_rating` on TV/Music** (the single Sonarr/Lidarr community rating lives in the tmdb
+  slots — ADR-018 C-07); **Music drops Runtime** (artists have none, D-02). Every button
+  reserves a fixed-width arrow slot so the ▲/▼ appearing never nudges neighbors (ADR-015,
+  the ConfirmButton reserve-the-widest idiom).
+- **Loading states**: initial load renders a grid of skeleton 2:3 poster boxes (identical
+  geometry); a filter/sort refetch keeps the previous grid rendered and dims it
+  (`placeholderData` + `.is-refreshing`) — results swap in place, nothing collapses.
+- **Infinite scroll**: an IntersectionObserver sentinel (600px lookahead) on the Load-more
+  row pulls the next keyset page; the button remains as the visible/manual + a11y fallback.
+- **Grid geometry**: `auto-fill minmax(190px, 1fr)` (≈6 columns at 1440px), pinned to exactly
+  2 columns ≤480px; card titles clamp to 2 lines and RESERVE 2 lines so badge rows align.
+  The card rating badge shows IMDb first, else TMDb (`★ 7.7`, source on the tooltip).
+- **Detail**: the head swaps the kind icon for the 96px poster box + a runtime·resolution
+  meta line; the About card (ratings pills with vote-count tooltips, watch/added facts,
+  genre/requester/collection chips) renders only when metadata exists. Its facts `<dl>` is
+  `.about-facts`, NOT a second `.meta-grid` — the Details section owns that class and the
+  e2e suite targets it singularly.
 
 ### D-12 — env contract (deploy-time — NOT this plan)
 
@@ -261,7 +322,12 @@ resources, and the `/movie|/series|/artist/lookup` routes. Add `stub-tautulli` (
 get_history/get_metadata) — **optional-env**, NOT wired into the default stack, so the existing
 specs are unaffected. Seed `media_metadata` through `upsertMediaMetadataBatch` in `seed-ledger`.
 Backend contract spec `poster-proxy.spec.ts` (authed image, unknown→404, unauth→401). The grid/
-filter e2e journeys land with the D-10/D-11 follow-up.
+filter e2e journeys landed with D-10/D-11 (`library-grid.spec.ts`, 8 specs): poster streaming via
+the proxy + KindIcon fallback, the genre-chip and bounded-rating journeys (result set changes, no
+reflow — geometry asserted), the sort cycle, deep-link restore, tab-switch reset, the untouched
+Music tab, and the 390×844 pass (2-column grid, single-row chip bar, viewport-clamped popover).
+`seed-ledger.ts` gained a second radarr movie (`Stub Runner`, disjoint genres/requester/rating)
+so a filter/sort visibly CHANGES the result set.
 
 ## Alternatives considered
 
@@ -278,8 +344,10 @@ Unit: the pure metadata mappers + tag parsing + watch-stat SUM/MAX merge
 (`packages/domain`/`packages/db`), the *arr `/lookup` + Tautulli clients
 (`packages/arr/__tests__/metadata-clients.test.ts`). Integration: the `ledger.search` sort/filter
 + **keyset across the null boundary in both directions** + `filterFacets`
-(`packages/api/__tests__/ledger-metadata.test.ts`). e2e: the stubs above + the poster-proxy
-contract spec; the grid/filter journeys land with D-10/D-11.
+(`packages/api/__tests__/ledger-metadata.test.ts`). Component: the ported filter-engine suite
+runs verbatim in `@hnet/ui` (`src/filters/*.test.*` — jsdom via per-file docblocks, D-10). e2e:
+the stubs above + the poster-proxy contract spec + the D-10/D-11 grid/filter journeys
+(`library-grid.spec.ts`, see D-14).
 
 ## Open questions
 
