@@ -1,6 +1,18 @@
 # PLAN-006: Trash section — Maintainerr-backed deletion UI + fine-grained role permissions
 
-- **Status:** Draft <!-- Fable 5 flips Draft → Executing → Completed -->
+- **Status:** Executing — **backend vertical shipped 2026-07-06** (Fable 5); the Trash UX is the
+  Fable follow-up. Landed on `feat/trash-section`: enums + `role_trash_action_grants` +
+  `notifications` + migration **0016** (renumbered from 0015 to cede 0015 to the Plex all-libraries
+  branch); `@hnet/arr` Maintainerr read/write client (endpoints derived from v3.17.0 source);
+  domain single-writers + orchestrators (`auditMaintainerr`, `listTrashPending`,
+  `saveExclusion`/`removeExclusion`, `expediteDeletion`, `guardRecentlyWatched`, `restoreDeleted`,
+  `upsert/deleteTrashRule`, `recordNotification`, `setRoleTrashActions`); session/gating
+  (`SessionRole.trashActions`, `trashActionProcedure`); the `trash` router + `roles.setTrashActions`;
+  `POST /api/webhooks/maintainerr`; the `/admin/restore`→`/trash` redirect + minimal `/trash` gate;
+  the e2e stub + specs. Decisions of Record (D1–D10) are ratified in **ADR-023** + **DESIGN-010**.
+  Remaining: the Trash UX (pending tables, Save shield, Expedite ConfirmButton/Modal, Rules editor,
+  Recently-Deleted, Activity tab, `/admin/roles` Trash editor, nav entry); the LIVE non-destructive
+  staging validation; then flip to Completed + `git mv` to `completed/`.
 - **Satisfies:** PRD-001 new R-80..R-88 (Trash); new ADR-019 (Trash lifecycle + Maintainerr
   integration + Section/Action permission model + Restore-nav retirement); new DESIGN-009
   (Trash UI + `@hnet/maintainerr` + permission matrix). Relates ADR-008 (ledger/write-backs),
