@@ -15,7 +15,7 @@ this documents field contracts only (CLAUDE.md rule 7).
 | Thing | Where |
 |-------|-------|
 | Source repo | this repo, `main` (branch-protected, squash-only — PLAN-001) |
-| Image | `ghcr.io/thaynes43/haynesnetwork`, pushed in-run by release-please on `release_created` (#37) |
+| Image | `ghcr.io/thaynes43/haynesnetwork`, pushed **and keyless-cosign-signed** in-run by release-please on `release_created` (#37; signing ADR-020 / OPS-006) |
 | Deploy manifests | `haynes-ops/kubernetes/main/apps/frontend/haynesnetwork/` |
 | Live image tag | `app/helmrelease.yaml` → `controllers.main.initContainers.migrate.image.tag` (anchor `&mainImage`, currently **`v0.4.0`**) |
 | Staging URL | `https://haynesnetwork.haynesops.com` (traefik-internal, LAN-only) |
@@ -36,6 +36,15 @@ this documents field contracts only (CLAUDE.md rule 7).
    **and** `:latest` with `GITHUB_TOKEN` (`packages:write`) — automatically, no PAT, no re-push
    (#37, commit `4aefdd6`). `ci.yml`'s `build-image` job is **validation/build-only everywhere**
    (`IMAGE_PUSH: 'false'`) and never publishes.
+5. **release-please then keyless-cosign-SIGNS the image** in that same run (ADR-020, added by
+   PLAN-007): the workflow's `permissions` block carries `id-token: write`, so after the
+   `docker/build-push-action` push (now `id: build`) it runs `sigstore/cosign-installer@v3`,
+   `cosign sign --yes …@${{ steps.build.outputs.digest }}` (**by digest** — covers `:vX.Y.Z`
+   and `:latest`), then a `cosign verify` **gate** asserting our workflow's OIDC identity. A
+   verify failure **fails the release job** — an unsignable release is loud, not silent. No
+   secret: keyless mints an ephemeral Fulcio cert from the runner's OIDC token; the signature +
+   cert land in the public Rekor log. Full operator detail (verify invocation, Kyverno coupling,
+   Audit→Enforce switch) is in **OPS-006**.
 
 ### 1a. Publishing is automatic since #37 (no PAT, no re-push)
 
@@ -52,13 +61,22 @@ workflow run** — do NOT re-push the tag:
   gh run rerun <release-please-run-id>   # re-runs the in-job build + push
   ```
 
-Confirm the image exists before touching `haynes-ops`:
+Confirm the image exists **and is signed** before touching `haynes-ops`:
 
 ```bash
 gh api /users/thaynes43/packages/container/haynesnetwork/versions \
   --jq '.[].metadata.container.tags[]' | grep vX.Y.Z
 # or: docker manifest inspect ghcr.io/thaynes43/haynesnetwork:vX.Y.Z >/dev/null && echo ok
+
+# Signature exists + carries OUR workflow's keyless OIDC identity (ADR-020 / OPS-006):
+cosign verify ghcr.io/thaynes43/haynesnetwork:vX.Y.Z \
+  --certificate-identity-regexp '^https://github.com/thaynes43/haynesnetwork/\.github/workflows/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
+
+> Once the Kyverno `haynesnetwork` rule is flipped to **Enforce** (OPS-006), an unsigned tag on
+> our own path is **denied at admission** — so a missing/failed signature here means the deploy
+> in §2 will not roll. Fix the release (re-run the release-please run) before proceeding.
 
 ## 2. Roll the release live (the one manual step, in `haynes-ops`)
 
@@ -207,4 +225,5 @@ gh api repos/thaynes43/haynesnetwork/branches/main/protection \
 
 - OPS-001 — Authentik provider of record (source of `OIDC_CLIENT_ID/SECRET`).
 - OPS-005 — root-domain cutover (staging → public; the manifest swap + `BETTER_AUTH_URL` flip).
-- ADR-006 (deployment), ADR-009 (CI/release), PLAN-001 (GATE A branch protection).
+- OPS-006 — image signing runbook (keyless cosign, `cosign verify`, Kyverno Audit→Enforce).
+- ADR-006 (deployment), ADR-009 (CI/release), ADR-020 (image signing), PLAN-001 (GATE A branch protection).

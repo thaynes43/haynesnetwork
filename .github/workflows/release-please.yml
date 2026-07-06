@@ -8,6 +8,7 @@ permissions:
   contents: write
   pull-requests: write
   packages: write
+  id-token: write # keyless cosign: mint the Actions OIDC token for Fulcio (ADR-020)
 
 jobs:
   release:
@@ -47,7 +48,8 @@ jobs:
             type=raw,value=${{ steps.release.outputs.tag_name }}
             type=raw,value=latest
 
-      - if: steps.release.outputs.release_created == 'true'
+      - id: build
+        if: steps.release.outputs.release_created == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -57,3 +59,24 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Keyless cosign: sign the pushed image so the cluster's Kyverno policy
+      # (verify-thaynes43-images) can admit ONLY images built by this workflow's OIDC
+      # identity. No private key, no COSIGN_* secret — a short-lived Fulcio cert is minted
+      # from the runner's `id-token`, the signature + cert land in the public Rekor log
+      # (ADR-020 / OPS-006). Every step stays behind `release_created` like the publish steps.
+      - if: steps.release.outputs.release_created == 'true'
+        uses: sigstore/cosign-installer@v3
+
+      # Sign BY DIGEST (not tag): the digest signature covers :vX.Y.Z and :latest at once,
+      # and it is exactly what Kyverno verifies at admission. `--yes` skips the confirm prompt.
+      - if: steps.release.outputs.release_created == 'true'
+        run: cosign sign --yes ghcr.io/thaynes43/haynesnetwork@${{ steps.build.outputs.digest }}
+
+      # In-run gate: assert the signature carries OUR workflow's OIDC identity. A verify
+      # failure fails the job so an unsignable/mis-signed release is loud, never silent.
+      - if: steps.release.outputs.release_created == 'true'
+        run: |
+          cosign verify ghcr.io/thaynes43/haynesnetwork@${{ steps.build.outputs.digest }} \
+            --certificate-identity-regexp '^https://github.com/thaynes43/haynesnetwork/\.github/workflows/' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
