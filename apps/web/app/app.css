@@ -1956,12 +1956,67 @@ input[aria-invalid='true'] {
   font-size: 12px;
 }
 /* Reserve a stable width so swapping the plain Add button for the two-step Remove
-   ConfirmButton (which reserves its own armed-label width) never reflows the row. */
+   ConfirmButton (which reserves its own armed-label width) never reflows the row.
+   min-height matches .btn.sm so the read-only "Included" label (ADR-024 all-libraries
+   state) keeps the exact row height the buttons set — the All↔explicit swap never
+   changes row geometry (ADR-015). */
 .plex-lib-action {
   flex: 0 0 auto;
   min-width: 92px;
+  min-height: 32px;
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+}
+.plex-lib-included {
+  font-size: 12px;
+}
+/* ADR-024 / DESIGN-007 D-13 — the per-server "All libraries | Specific libraries" segmented
+   control. Both segments always render at full width and the active one changes TINT only
+   (no weight change — a bold swap would widen the segment and shift the group, ADR-015). */
+.plex-mode {
+  display: inline-flex;
+  margin-left: auto;
+  align-self: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--color-surface-2);
+}
+.plex-mode__btn {
+  font: inherit;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: 0;
+  padding: 6px 10px;
+  min-height: 32px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.plex-mode__btn + .plex-mode__btn {
+  border-left: 1px solid var(--color-border);
+}
+.plex-mode__btn[aria-pressed='true'] {
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  cursor: default;
+}
+.plex-mode__btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.plex-mode__btn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+/* The state note under an all-granted server's header. Reserves one line so the
+   All↔explicit text swap (same-shape copy) doesn't shift the library list. */
+.plex-mode__note {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin: 0 0 8px;
+  min-height: 1.4em;
 }
 /* Admin matrix: a per-server group of library checkboxes inside the role editor. */
 .lib-group + .lib-group {

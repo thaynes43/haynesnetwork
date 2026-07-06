@@ -230,14 +230,33 @@ per ADR-012 C-10):
 - **`/library/plex`** (`'use client'`, top-bar nav "My Plex") — role-allowed libraries grouped
   per server; **Add** is a plain action, **Remove** is the `@hnet/ui` `ConfirmButton` inline
   two-step (ADR-014, never `window.confirm`). Non-permitted libraries are never offered.
+- **Per-server all-libraries self-service** (ADR-024 / D-13). When the caller's role all-grants
+  a server, its header carries a segmented **"All libraries | Specific libraries"** control
+  (chosen over a lone switch: a switch labeled "All libraries" makes OFF read as *no* libraries;
+  the segment names both states and is the affordance for both directions). While the account is
+  all-libraries the rows render a read-only **"Included"** label — per-library Add/Remove is
+  refused server-side (`PLEX_ALL_STATE`), so it is never offered. A persistent state note under
+  the header explains the current state and the consequence of switching ("keeps today's set,
+  but new libraries won't be added automatically"). Leaving All is **not** two-step-confirmed:
+  it is lossless (the explicit list seeds the current full set) and instantly reversible, and
+  ADR-014 reserves the arm-to-confirm for destructive actions — the always-visible note is the
+  explanation before the click. An account that is all-libraries WITHOUT the role grant (e.g.
+  granted directly by the owner) renders the read-only state + an "managed by an admin" note,
+  never controls that would always error.
 - **`/admin/roles`** — a **Refresh Plex libraries** button (admin registry refresh) + a second
-  checkbox matrix (`libraryChecklist`, grouped per server) folded into the role editor. Unlike
-  the app matrix there is **no "All libraries" master toggle** (`grants_all` ≠ all libraries —
-  C-03); unavailable libraries stay checkable so a soft-removed grant round-trips.
-- **No layout reorientation** (ADR-015): the action cell reserves a fixed width and the
-  ConfirmButton reserves its armed-label width, so arming/removing never reflows neighbors;
-  matrix toggles change color/emphasis only. Mutations invalidate-and-refetch. Tokens only
-  (no raw hex — CLAUDE.md rule 2).
+  checkbox matrix (`libraryChecklist`, grouped per server) folded into the role editor. There is
+  no cross-server master toggle (`grants_all` ≠ all libraries — C-03), but each server group
+  carries a **per-server "All libraries" checkbox** (ADR-024 → `allServerIds`); while checked,
+  that server's per-library boxes show implied-on and disabled (the same dim treatment as the
+  "All apps" toggle) with their underlying selection preserved, so unchecking All restores the
+  explicit set. Unavailable libraries stay checkable so a soft-removed grant round-trips. The
+  Admin role remains locked (implicit all everywhere, no editor).
+- **No layout reorientation** (ADR-015): the action cell reserves a fixed width and height (the
+  "Included" swap keeps row geometry) and the ConfirmButton reserves its armed-label width, so
+  arming/removing never reflows neighbors; the segmented control always renders both labels and
+  changes tint only; the All↔explicit list swap is a deliberate in-place change of that server
+  block only (same-shape note copy, unchanged row heights); matrix toggles change color/emphasis
+  only. Mutations invalidate-and-refetch. Tokens only (no raw hex — CLAUDE.md rule 2).
 
 ### D-07 — Ops, e2e, env
 
@@ -369,7 +388,12 @@ sentinel corrupts the `(server, section_key)` identity + the per-library matrix)
   records a sharing write; remove via ConfirmButton records the un-share; narrow-viewport fit;
   admin refresh + the library matrix reflecting seeded grants. The stub models the all-libraries
   state (renders/parses `all_libraries`, records the setAll PUT) with an all-grant fixture on
-  haynesops for the member persona; the My Plex all-toggle UX lands with a follow-up UI change.
+  haynesops for the member persona. **ADR-024 UI:** the member sees the segmented toggle on the
+  all-granted server only, the All state offers no per-library Add/Remove (read-only "Included"),
+  leaving All records the seeded explicit-list write and re-exposes Add/Remove, returning to All
+  records the `all_libraries: true` write and hides them again; the admin editor's per-server
+  All checkbox reflects the seeded grant, implies-on/disables that server's boxes, and
+  round-trips through save in both directions.
 - **LIVE (deferred):** as a designated Plex test-user, add a permitted library and confirm the
   share on the real server; remove it; confirm a non-permitted (family) library is not offered.
 
