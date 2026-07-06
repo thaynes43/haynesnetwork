@@ -7,6 +7,8 @@ export * from './url-assert';
 export * from './roles';
 export * from './catalog';
 export * from './effective-apps';
+// ADR-021 / DESIGN-009 — section-level role permissions (Ledger + reserved Trash) single-writer
+export * from './section-permissions';
 // DESIGN-005 Phase 2 — media ledger single-writers (D-12)
 export * from './sync-runs';
 export * from './media-sync';

@@ -118,6 +118,16 @@ export class SonarrWriteClient extends ArrWriteClientBase {
   }
 
   /**
+   * `PUT /series/editor {seriesIds, monitored}` — the bulk-editor patch (ADR-022 D-02).
+   * Ledger Add-&-search flips a present-but-unmonitored series to monitored WITHOUT
+   * round-tripping the full resource (the ACL schema is a read subset, not a valid PUT body).
+   * The editor echoes the updated resources; we drain them.
+   */
+  setSeriesMonitored(seriesIds: number[], monitored: boolean): Promise<void> {
+    return this.http.requestVoid('PUT', 'series/editor', { body: { seriesIds, monitored } });
+  }
+
+  /**
    * `POST /command {name: 'SeasonSearch', seriesId, seasonNumber}` — season roll-up
    * search (verified against Sonarr's `SeasonSearchCommand` fields `SeriesId` +
    * `SeasonNumber` in the develop source; D-03 command-name convention).
@@ -146,6 +156,14 @@ export class RadarrWriteClient extends ArrWriteClientBase {
   /** `POST /command {name: 'MoviesSearch', movieIds}` (D-03 payload keys). */
   searchMovies(movieIds: number[]): Promise<ArrCommandResponse> {
     return this.runCommand({ name: 'MoviesSearch', movieIds });
+  }
+
+  /**
+   * `PUT /movie/editor {movieIds, monitored}` — bulk-editor patch (ADR-022 D-02). Flips a
+   * present-but-unmonitored movie to monitored without round-tripping the full resource.
+   */
+  setMoviesMonitored(movieIds: number[], monitored: boolean): Promise<void> {
+    return this.http.requestVoid('PUT', 'movie/editor', { body: { movieIds, monitored } });
   }
 
   /** `POST /movie` — Restore re-add (D-16). */
@@ -177,6 +195,14 @@ export class LidarrWriteClient extends ArrWriteClientBase {
    */
   searchArtist(artistId: number): Promise<ArrCommandResponse> {
     return this.runCommand({ name: 'ArtistSearch', artistId });
+  }
+
+  /**
+   * `PUT /artist/editor {artistIds, monitored}` — bulk-editor patch (ADR-022 D-02). Flips a
+   * present-but-unmonitored artist to monitored without round-tripping the full resource.
+   */
+  setArtistsMonitored(artistIds: number[], monitored: boolean): Promise<void> {
+    return this.http.requestVoid('PUT', 'artist/editor', { body: { artistIds, monitored } });
   }
 
   /** `POST /artist` — Restore re-add (D-16). */

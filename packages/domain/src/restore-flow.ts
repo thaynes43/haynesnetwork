@@ -11,6 +11,7 @@
 //             the add with searches OFF (Q-04: indexer safety beats convenience).
 import {
   mediaItems,
+  type ArrAddReason,
   type ArrKind,
   type DbClient,
   type MediaItemRow,
@@ -21,10 +22,18 @@ import { and, asc, eq, inArray } from 'drizzle-orm';
 import { ArrError } from '@hnet/arr';
 import type { ArrTag } from '@hnet/arr';
 import { resolveDb } from './db-client';
-import { RestoreProfileUnmappedError } from './errors';
+import { RestoreProfileUnmappedError, SearchCapExceededError } from './errors';
 import { finishRestoreRun, recordRestoreResult, startRestoreRun } from './restore-runs';
 import { guardArrCall } from './media-children';
 import type { ArrClientBundle } from './arr-clients';
+
+/**
+ * ADR-022 D-02 — a Ledger bulk Add-&-search (reason 'ledger_add', searches ON) is capped at
+ * this many items per run: the *arrs queue search commands internally, but indexers
+ * rate-limit, so the UI guides the user to batch (e.g. by vote tier). Restore
+ * (reason 'restore', searches OFF) is not search-capped.
+ */
+export const ARR_ADD_SEARCH_CAP = 1000;
 
 export interface RestoreDiffItem {
   mediaItemId: string;
@@ -48,20 +57,59 @@ function externalIdOfRow(
   return raw === null || raw === undefined ? null : String(raw);
 }
 
+/** The live *arr item indexed by its EXTERNAL id: its internal arr id + monitored state.
+ *  ADR-022 D-02 uses monitored to split present rows into skip (monitored) vs monitor-flip. */
+interface LiveArrItem {
+  arrId: number;
+  monitored: boolean;
+}
+
+async function liveItemsByExternalId(
+  arr: Pick<ArrClientBundle, 'read'>,
+  kind: ArrKind,
+): Promise<Map<string, LiveArrItem>> {
+  if (kind === 'sonarr') {
+    const series = await guardArrCall('sonarr GET /series', () => arr.read.sonarr.listSeries());
+    return new Map(series.map((s) => [String(s.tvdbId), { arrId: s.id, monitored: s.monitored }]));
+  }
+  if (kind === 'radarr') {
+    const movies = await guardArrCall('radarr GET /movie', () => arr.read.radarr.listMovies());
+    return new Map(movies.map((m) => [String(m.tmdbId), { arrId: m.id, monitored: m.monitored }]));
+  }
+  const artists = await guardArrCall('lidarr GET /artist', () => arr.read.lidarr.listArtists());
+  return new Map(
+    artists.map((a) => [a.foreignArtistId, { arrId: a.id, monitored: a.monitored }]),
+  );
+}
+
+/** Just the present external ids — the read-only Restore diff (D-16) needs no monitored state. */
 async function liveExternalIds(
   arr: Pick<ArrClientBundle, 'read'>,
   kind: ArrKind,
 ): Promise<Set<string>> {
+  return new Set((await liveItemsByExternalId(arr, kind)).keys());
+}
+
+/** Trigger the owning *arr's search command on an item id (ADR-022 D-02; search-flow.ts calls). */
+async function triggerArrSearch(arr: ArrClientBundle, kind: ArrKind, arrId: number): Promise<void> {
   if (kind === 'sonarr') {
-    const series = await guardArrCall('sonarr GET /series', () => arr.read.sonarr.listSeries());
-    return new Set(series.map((s) => String(s.tvdbId)));
+    await arr.write.sonarr.searchSeries(arrId);
+  } else if (kind === 'radarr') {
+    await arr.write.radarr.searchMovies([arrId]);
+  } else {
+    await arr.write.lidarr.searchArtist(arrId);
   }
-  if (kind === 'radarr') {
-    const movies = await guardArrCall('radarr GET /movie', () => arr.read.radarr.listMovies());
-    return new Set(movies.map((m) => String(m.tmdbId)));
+}
+
+/** Flip a present-but-unmonitored *arr item to monitored via the bulk-editor PUT (ADR-022 D-02). */
+async function setArrMonitored(arr: ArrClientBundle, kind: ArrKind, arrId: number): Promise<void> {
+  if (kind === 'sonarr') {
+    await arr.write.sonarr.setSeriesMonitored([arrId], true);
+  } else if (kind === 'radarr') {
+    await arr.write.radarr.setMoviesMonitored([arrId], true);
+  } else {
+    await arr.write.lidarr.setArtistsMonitored([arrId], true);
   }
-  const artists = await guardArrCall('lidarr GET /artist', () => arr.read.lidarr.listArtists());
-  return new Set(artists.map((a) => a.foreignArtistId));
 }
 
 /** Ledger rows Restore considers: monitored rows of the instance, tombstoned included. */
@@ -123,34 +171,55 @@ export async function computeRestoreDiff(
     .map((row) => toDiffItem(input.arrKind, row));
 }
 
-export interface ExecuteRestoreInput {
+export interface ExecuteArrAddInput {
   db?: DbClient;
   arr: ArrClientBundle;
   arrKind: ArrKind;
   arrInstanceId?: string;
-  /** The initiating admin (SET NULL on user deletion). */
+  /** The initiating user (SET NULL on user deletion). */
   initiatedBy: string | null;
-  /** The EXPLICIT id list the admin approved (D-16 step 2). */
+  /** The EXPLICIT id list the caller approved/selected (D-16 step 2 / Ledger selection). */
   mediaItemIds: string[];
+  /**
+   * ADR-022 C-01/D-02 — 'restore' (default): the diff-driven failsafe — searches OFF,
+   * present items skipped, only monitored ledger rows eligible. 'ledger_add': the Ledger
+   * bulk action — present-but-unmonitored items are flipped to monitored (not skipped), and
+   * any ledger row (monitored or not) is eligible.
+   */
+  reason?: ArrAddReason;
+  /** ADR-022 D-02 — trigger the owning *arr's item search after each add/monitor. */
+  searchOnAdd?: boolean;
 }
 
-export interface ExecuteRestoreResultItem {
+/** Back-compat alias — Restore is `executeArrAdd({ reason:'restore', searchOnAdd:false })`. */
+export type ExecuteRestoreInput = Omit<ExecuteArrAddInput, 'reason' | 'searchOnAdd'>;
+
+export interface ExecuteArrAddResultItem {
   mediaItemId: string;
   title: string;
   ok: boolean;
+  /** ADR-022 D-02 — 'added' (re-added monitored) | 'monitored' (present, flipped monitored). */
+  outcome?: 'added' | 'monitored';
   newArrItemId?: number;
+  /** A search command was triggered for this item (searchOnAdd). */
+  searched?: boolean;
   error?: string;
-  /** True when the item was approved but no longer missing at execute time. */
+  /** True when the item was approved but skipped at execute time (present / ineligible). */
   skipped?: boolean;
 }
 
-export interface ExecuteRestoreResult {
+export interface ExecuteArrAddResult {
   runId: string;
   status: RestoreRunStatus;
   itemCount: number;
   successCount: number;
-  results: ExecuteRestoreResultItem[];
+  results: ExecuteArrAddResultItem[];
 }
+
+/** @deprecated use ExecuteArrAddResultItem */
+export type ExecuteRestoreResultItem = ExecuteArrAddResultItem;
+/** @deprecated use ExecuteArrAddResult */
+export type ExecuteRestoreResult = ExecuteArrAddResult;
 
 interface LiveTargetState {
   profileIdByName: Map<string, number>;
@@ -266,17 +335,48 @@ async function addItemToArr(
   return added.id;
 }
 
+const errMessage = (err: unknown): string =>
+  err instanceof ArrError || err instanceof Error ? err.message : String(err);
+
+/** One planned per-item action, decided against fresh live state (ADR-022 D-02). */
+interface ArrAddAction {
+  row: MediaItemRow;
+  /** 'add' = absent, re-add monitored; 'monitor' = present-but-unmonitored, flip to monitored. */
+  kind: 'add' | 'monitor';
+  /** The live *arr internal id (the 'monitor' + search target). */
+  liveArrId?: number;
+}
+
 /**
- * D-16 step 2+3 — execute an admin-approved Restore. Awaited end to end (household
- * scale); the durable report is the restore_runs row (AC-09), also returned inline.
+ * ADR-022 D-02 (generalizes DESIGN-005 D-16 executeRestore) — execute a bulk *arr add over an
+ * explicit id list, awaited end to end (household scale); the durable report is the restore_runs
+ * row (AC-09), also returned inline. Re-derives FRESH live state and classifies each approved id
+ * into three outcomes:
+ *   - absent from the live *arr        → add it monitored (recorded profile/root/tags);
+ *   - present but unmonitored          → flip it to monitored in place (reason 'ledger_add' only);
+ *   - present + monitored (or reason   → skip, recorded as such.
+ *     'restore' + any present)
+ * When `searchOnAdd`, the owning *arr's item search is triggered (best-effort) on the acted id.
+ * Restore is the `{ reason:'restore', searchOnAdd:false }` special case (executeRestore wrapper):
+ * only monitored ledger rows are eligible and every present row is skipped (the failsafe contract).
  */
-export async function executeRestore(input: ExecuteRestoreInput): Promise<ExecuteRestoreResult> {
+export async function executeArrAdd(input: ExecuteArrAddInput): Promise<ExecuteArrAddResult> {
   const db = resolveDb(input.db);
   const arrInstanceId = input.arrInstanceId ?? 'main';
-
-  // Fresh diff — the approved set is re-validated; no TOCTOU re-adds (D-16).
-  const live = await liveExternalIds(input.arr, input.arrKind);
+  const reason: ArrAddReason = input.reason ?? 'restore';
+  const searchOnAdd = input.searchOnAdd ?? false;
   const approvedIds = [...new Set(input.mediaItemIds)];
+
+  // Search-cap safety (ADR-022 D-02) — thrown BEFORE any read/write, so nothing is partial.
+  if (searchOnAdd && approvedIds.length > ARR_ADD_SEARCH_CAP) {
+    throw new SearchCapExceededError(
+      `Add-&-search is capped at ${ARR_ADD_SEARCH_CAP} items per run; ${approvedIds.length} were selected — batch the selection (e.g. by tier).`,
+      { requested: approvedIds.length, cap: ARR_ADD_SEARCH_CAP },
+    );
+  }
+
+  // Fresh live state — the approved set is re-validated against reality; no TOCTOU (D-16).
+  const live = await liveItemsByExternalId(input.arr, input.arrKind);
   const rows = await db
     .select()
     .from(mediaItems)
@@ -290,12 +390,14 @@ export async function executeRestore(input: ExecuteRestoreInput): Promise<Execut
     .orderBy(asc(mediaItems.sortTitle));
   const rowById = new Map(rows.map((r) => [r.id, r]));
 
-  const actionable: MediaItemRow[] = [];
-  const skipped: ExecuteRestoreResultItem[] = [];
+  const actions: ArrAddAction[] = [];
+  const skipped: ExecuteArrAddResultItem[] = [];
   for (const id of approvedIds) {
     const row = rowById.get(id);
     const ext = row === undefined ? null : externalIdOfRow(input.arrKind, row);
-    if (row === undefined || !row.monitored || ext === null) {
+    // Eligibility: a real row of this instance with an external id. 'restore' additionally
+    // requires the ledger row be monitored (the failsafe re-adds only monitored rows).
+    if (row === undefined || ext === null || (reason === 'restore' && !row.monitored)) {
       skipped.push({
         mediaItemId: id,
         title: row?.title ?? '(unknown item)',
@@ -303,31 +405,37 @@ export async function executeRestore(input: ExecuteRestoreInput): Promise<Execut
         skipped: true,
         error: 'skipped: not an eligible ledger row for this instance',
       });
-    } else if (live.has(ext)) {
+      continue;
+    }
+    const present = live.get(ext);
+    if (present === undefined) {
+      actions.push({ row, kind: 'add' });
+    } else if (reason === 'ledger_add' && !present.monitored) {
+      actions.push({ row, kind: 'monitor', liveArrId: present.arrId });
+    } else {
       skipped.push({
         mediaItemId: id,
         title: row.title,
         ok: false,
         skipped: true,
-        error: 'skipped: already present in the live *arr',
+        error: present.monitored
+          ? 'skipped: already present and monitored in the live *arr'
+          : 'skipped: already present in the live *arr',
       });
-    } else {
-      actionable.push(row);
     }
   }
 
-  const preview: RestorePreviewItem[] = actionable.map((row) => ({
-    ...toDiffItem(input.arrKind, row),
-  }));
+  const preview: RestorePreviewItem[] = actions.map((a) => ({ ...toDiffItem(input.arrKind, a.row) }));
   const { runId } = await startRestoreRun({
     db: input.db,
     arrKind: input.arrKind,
     arrInstanceId,
     initiatedBy: input.initiatedBy,
+    reason,
     preview,
   });
 
-  const results: ExecuteRestoreResultItem[] = [];
+  const results: ExecuteArrAddResultItem[] = [];
   for (const skip of skipped) {
     await recordRestoreResult({
       db: input.db,
@@ -337,52 +445,96 @@ export async function executeRestore(input: ExecuteRestoreInput): Promise<Execut
     results.push(skip);
   }
 
-  let state: LiveTargetState;
-  try {
-    state = await fetchLiveTargetState(input.arr, input.arrKind);
-  } catch (err) {
-    // Catastrophic: the target isn't answering — close the run as failed (D-10).
-    await finishRestoreRun({ db: input.db, runId, status: 'failed' });
-    throw err;
+  // The live target state (profiles/root folders/tags) is only needed to re-add absent items.
+  let state: LiveTargetState | undefined;
+  if (actions.some((a) => a.kind === 'add')) {
+    try {
+      state = await fetchLiveTargetState(input.arr, input.arrKind);
+    } catch (err) {
+      // Catastrophic: the target isn't answering — close the run as failed (D-10).
+      await finishRestoreRun({ db: input.db, runId, status: 'failed' });
+      throw err;
+    }
   }
 
-  for (const row of actionable) {
-    let result: ExecuteRestoreResultItem;
+  for (const action of actions) {
+    const outcome: 'added' | 'monitored' = action.kind === 'add' ? 'added' : 'monitored';
+    let result: ExecuteArrAddResultItem;
     try {
-      const qualityProfileId = state.profileIdByName.get(row.qualityProfileName);
-      if (qualityProfileId === undefined) {
-        // Recorded per item, never a silent default (D-16/D-17).
-        throw new RestoreProfileUnmappedError(
-          `quality profile '${row.qualityProfileName}' not found on the live ${input.arrKind}`,
+      let newArrItemId: number | undefined;
+      let targetArrId: number;
+      if (action.kind === 'add') {
+        const st = state!;
+        const qualityProfileId = st.profileIdByName.get(action.row.qualityProfileName);
+        if (qualityProfileId === undefined) {
+          // Recorded per item, never a silent default (D-16/D-17).
+          throw new RestoreProfileUnmappedError(
+            `quality profile '${action.row.qualityProfileName}' not found on the live ${input.arrKind}`,
+          );
+        }
+        if (!st.rootFolderPaths.has(action.row.rootFolder)) {
+          throw new Error(
+            `root folder '${action.row.rootFolder}' not found on the live ${input.arrKind}`,
+          );
+        }
+        const tags = await resolveTagIds(input.arr, input.arrKind, st, action.row.arrTags);
+        newArrItemId = await addItemToArr(
+          input.arr,
+          input.arrKind,
+          action.row,
+          st,
+          qualityProfileId,
+          tags,
         );
+        targetArrId = newArrItemId;
+      } else {
+        await setArrMonitored(input.arr, input.arrKind, action.liveArrId!);
+        targetArrId = action.liveArrId!;
       }
-      if (!state.rootFolderPaths.has(row.rootFolder)) {
-        throw new Error(`root folder '${row.rootFolder}' not found on the live ${input.arrKind}`);
+
+      // Best-effort search — the add/monitor is the durable state change; a failed search
+      // command does NOT fail the item (the *arrs queue search internally; indexers may throttle).
+      let searched = false;
+      let searchError: string | undefined;
+      if (searchOnAdd) {
+        try {
+          await triggerArrSearch(input.arr, input.arrKind, targetArrId);
+          searched = true;
+        } catch (err) {
+          searchError = errMessage(err);
+        }
       }
-      const tags = await resolveTagIds(input.arr, input.arrKind, state, row.arrTags);
-      const newArrItemId = await addItemToArr(
-        input.arr,
-        input.arrKind,
-        row,
-        state,
-        qualityProfileId,
-        tags,
-      );
-      result = { mediaItemId: row.id, title: row.title, ok: true, newArrItemId };
+
+      result = {
+        mediaItemId: action.row.id,
+        title: action.row.title,
+        ok: true,
+        outcome,
+        ...(newArrItemId !== undefined ? { newArrItemId } : {}),
+        ...(searched ? { searched: true } : {}),
+        ...(searchError !== undefined ? { error: `search failed: ${searchError}` } : {}),
+      };
+      await recordRestoreResult({
+        db: input.db,
+        runId,
+        result: {
+          mediaItemId: action.row.id,
+          ok: true,
+          outcome,
+          searched,
+          ...(newArrItemId !== undefined ? { newArrItemId } : {}),
+          ...(searchError !== undefined ? { searchError } : {}),
+        },
+      });
     } catch (err) {
-      const message = err instanceof ArrError || err instanceof Error ? err.message : String(err);
-      result = { mediaItemId: row.id, title: row.title, ok: false, error: message };
+      const message = errMessage(err);
+      result = { mediaItemId: action.row.id, title: action.row.title, ok: false, outcome, error: message };
+      await recordRestoreResult({
+        db: input.db,
+        runId,
+        result: { mediaItemId: action.row.id, ok: false, error: message },
+      });
     }
-    await recordRestoreResult({
-      db: input.db,
-      runId,
-      result: {
-        mediaItemId: result.mediaItemId,
-        ok: result.ok,
-        ...(result.newArrItemId !== undefined ? { newArrItemId: result.newArrItemId } : {}),
-        ...(result.error !== undefined ? { error: result.error } : {}),
-      },
-    });
     results.push(result);
   }
 
@@ -390,8 +542,18 @@ export async function executeRestore(input: ExecuteRestoreInput): Promise<Execut
   return {
     runId,
     status,
-    itemCount: actionable.length,
+    itemCount: actions.length,
     successCount: results.filter((r) => r.ok).length,
     results,
   };
+}
+
+/**
+ * DESIGN-005 D-16 — the admin-only failsafe Restore, now a thin wrapper over executeArrAdd
+ * with the historical contract preserved: searches OFF, present items skipped (never
+ * monitor-flipped), only monitored ledger rows eligible. The restore router + tests are
+ * unchanged (ADR-022 C-01).
+ */
+export async function executeRestore(input: ExecuteRestoreInput): Promise<ExecuteArrAddResult> {
+  return executeArrAdd({ ...input, reason: 'restore', searchOnAdd: false });
 }
