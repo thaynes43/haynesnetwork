@@ -51,6 +51,11 @@ const POSTER_PNG = Buffer.from(
 );
 export const STUB_MOVIE_ID = 601;
 export const STUB_MOVIE_TMDB_ID = 880001;
+/** DESIGN-009 (ledger e2e) — a live movie that is PRESENT but UNMONITORED with no file: the
+ *  bulk Monitor-&-search's monitor-flip outcome (ADR-022 C-01). Mirrors the tombstoned
+ *  'Vanished Heist' ledger row (seed-ledger.ts) by tmdbId. */
+export const STUB_VANISHED_ID = 604;
+export const STUB_VANISHED_TMDB_ID = 880004;
 
 /** The metadata fields DESIGN-008 D-02 harvests off a Radarr movie / Sonarr series. */
 const RADARR_META = {
@@ -62,7 +67,11 @@ const RADARR_META = {
     rottenTomatoes: { value: 88, type: 'user' },
   },
   images: [
-    { coverType: 'poster', url: '/MediaCover/601/poster.jpg?lastWrite=1', remoteUrl: 'https://image.tmdb.org/t/p/original/fixture.jpg' },
+    {
+      coverType: 'poster',
+      url: '/MediaCover/601/poster.jpg?lastWrite=1',
+      remoteUrl: 'https://image.tmdb.org/t/p/original/fixture.jpg',
+    },
   ],
 };
 const SONARR_META = {
@@ -70,7 +79,11 @@ const SONARR_META = {
   genres: ['Drama', 'Crime'],
   ratings: { value: 8.2, votes: 4321 },
   images: [
-    { coverType: 'poster', url: '/MediaCover/501/poster.jpg?lastWrite=1', remoteUrl: 'https://artworks.thetvdb.com/x/poster.jpg' },
+    {
+      coverType: 'poster',
+      url: '/MediaCover/501/poster.jpg?lastWrite=1',
+      remoteUrl: 'https://artworks.thetvdb.com/x/poster.jpg',
+    },
   ],
 };
 
@@ -99,6 +112,30 @@ function movieResource(id: number) {
     isAvailable: true,
     added: '2025-02-02T00:00:00Z',
     ...RADARR_META,
+  };
+}
+
+/** The present-but-unmonitored, fileless live movie (see STUB_VANISHED_ID above). */
+function vanishedMovieResource() {
+  return {
+    id: STUB_VANISHED_ID,
+    title: 'Vanished Heist',
+    sortTitle: 'vanished heist',
+    year: 2018,
+    tmdbId: STUB_VANISHED_TMDB_ID,
+    monitored: false,
+    qualityProfileId: 1,
+    rootFolderPath: '/data/haynestower/Media/Movies',
+    path: '/data/haynestower/Media/Movies/Vanished Heist',
+    tags: [] as number[],
+    hasFile: false,
+    movieFileId: 0, // Radarr sends 0 (not absent) for fileless movies
+    sizeOnDisk: 0,
+    statistics: { movieFileCount: 0 },
+    minimumAvailability: 'released',
+    status: 'released',
+    isAvailable: true,
+    added: '2025-03-03T00:00:00Z',
   };
 }
 
@@ -327,7 +364,9 @@ export async function startStubArr(): Promise<StubArrServer> {
         case '/series':
           return json(res, 200, [seriesResource(STUB_SERIES_ID)]);
         case '/movie':
-          return json(res, 200, [movieResource(STUB_MOVIE_ID)]);
+          // The Fixture (monitored, on disk) + Vanished Heist (unmonitored, fileless) — the
+          // skip and monitor-flip halves of the Ledger bulk action's outcome matrix.
+          return json(res, 200, [movieResource(STUB_MOVIE_ID), vanishedMovieResource()]);
         case '/artist':
           return json(res, 200, []);
         // DESIGN-008 D-05 — the /lookup endpoints (tombstoned-row metadata, no add).
@@ -354,7 +393,12 @@ export async function startStubArr(): Promise<StubArrServer> {
           ]);
         case '/artist/lookup':
           return json(res, 200, [
-            { artistName: 'The Stub Band', foreignArtistId: '11111111-2222-3333-4444-555555550701', genres: ['Rock'], ratings: { value: 7.0, votes: 3 } },
+            {
+              artistName: 'The Stub Band',
+              foreignArtistId: '11111111-2222-3333-4444-555555550701',
+              genres: ['Rock'],
+              ratings: { value: 7.0, votes: 3 },
+            },
           ]);
         case '/episode': {
           if (Number(query.seriesId) !== STUB_SERIES_ID) return json(res, 200, []);
@@ -430,7 +474,13 @@ export async function startStubArr(): Promise<StubArrServer> {
         case '/metadataprofile':
           return json(res, 200, [{ id: 1, name: 'Standard' }]);
         case '/rootfolder':
-          return json(res, 200, [{ id: 1, path: '/data/haynestower/Media/TV Shows' }]);
+          // One stub stands in for all three *arrs, so it advertises every seeded root —
+          // the Ledger add path validates the recorded root against this list.
+          return json(res, 200, [
+            { id: 1, path: '/data/haynestower/Media/TV Shows' },
+            { id: 2, path: '/data/haynestower/Media/Movies' },
+            { id: 3, path: '/data/media/music' },
+          ]);
         case '/tag':
           return json(res, 200, [{ id: 1, label: 'mediarequests' }]);
         case '/trackfile':

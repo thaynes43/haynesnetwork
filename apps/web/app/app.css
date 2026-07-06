@@ -299,6 +299,22 @@ body {
     display: none;
   }
 }
+/* Four nav links since PLAN-005 (Home · Library · Ledger · My Plex): the ≤599px squeeze above
+   is not enough at true phone widths — tighten chrome gaps + link padding so the row fits 375px
+   with the theme toggle and avatar intact (AC-10 resize matrix). Static layout, not
+   interaction-driven (ADR-015-safe). */
+@media (max-width: 479px) {
+  .topbar {
+    gap: 8px;
+    padding: 0 10px;
+  }
+  .topbar__nav a {
+    padding: 8px 5px;
+  }
+  .topbar__actions {
+    gap: 2px;
+  }
+}
 .topbar__spacer {
   flex: 1 1 auto;
 }
@@ -923,7 +939,10 @@ input[aria-invalid='true'] {
   min-width: 6.5rem;
   white-space: nowrap;
   text-align: center;
-  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+  transition:
+    color 0.12s ease,
+    border-color 0.12s ease,
+    background 0.12s ease;
 }
 .confirm-btn.confirming {
   font-weight: 700;
@@ -1953,4 +1972,238 @@ input[aria-invalid='true'] {
   font-weight: 600;
   color: var(--color-text-muted);
   margin: 0 0 4px;
+}
+
+/* ADR-021 / DESIGN-009 D-08 — the per-role section-access select on /admin/roles (compact,
+   lives in a table cell — the 44px form-control height would bloat the rows). */
+.section-select {
+  font: inherit;
+  font-size: 12px;
+  color: var(--color-text);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  min-height: 36px;
+}
+.section-select:focus {
+  border-color: var(--color-accent);
+}
+
+/* ---------- Ledger section (DESIGN-009 D-08, ADR-015) ---------- */
+/* The persistent actions bar: ALWAYS rendered (reserved space), fixed height, constant-width
+   controls — selection recolors/recounts, it never moves the table below (ADR-015). */
+.ledger-actionsbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  margin-bottom: 10px;
+  padding: 4px 0;
+  flex-wrap: nowrap;
+  overflow-x: auto; /* same pan-not-grow rule as the chip bar at narrow widths */
+  scrollbar-width: none;
+}
+.ledger-actionsbar::-webkit-scrollbar {
+  display: none;
+}
+.ledger-actionsbar__count {
+  font-size: 13px;
+  font-weight: 600;
+  min-width: 6.5rem; /* "999 selected" fits — the count changing never nudges Clear */
+  white-space: nowrap;
+}
+.ledger-actionsbar__spacer {
+  flex: 1 1 auto;
+  min-width: 8px;
+}
+.ledger-actionsbar .btn {
+  flex: none;
+  white-space: nowrap;
+}
+/* The export label carries the (honest) row count; reserve room so the count settling in
+   never shuffles the right-hand button group. */
+.ledger-exportbtn {
+  min-width: 12.5rem;
+  text-align: center;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The spreadsheet pane: ONE internal scroller for both axes (the page body never scrolls
+   horizontally — hard rule; the sticky header + first columns are the spreadsheet chrome). */
+.ledger-tablewrap {
+  overflow: auto;
+  max-height: max(320px, 68dvh);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  overscroll-behavior-x: contain;
+}
+/* A refetch dims the stale rows in place (never a collapsing spinner — ADR-015). */
+.ledger-tablewrap.is-refreshing {
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+}
+.ledger-table {
+  border-collapse: separate; /* sticky cells need their own borders/backgrounds */
+  border-spacing: 0;
+  width: 100%;
+  min-width: 1080px; /* the full column set keeps its grid; narrow viewports pan the pane */
+  font-size: 12.5px;
+}
+.ledger-table th,
+.ledger-table td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+.ledger-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--color-surface-2);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+/* Compact in-header sort buttons (the shared .sort-btn pill, densified for the table). */
+.ledger-table .sort-btn.ledger-sort {
+  min-height: 26px;
+  padding: 2px 4px 2px 8px;
+  margin: -2px 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+/* Every row paints an OPAQUE background via a row-scoped var so the sticky select/Title cells
+   cover the panning columns underneath; selection/hover deepen the VAR (color only, ADR-015). */
+.ledger-table tbody tr {
+  --row-bg: var(--color-surface);
+}
+.ledger-table tbody tr:hover {
+  --row-bg: color-mix(in srgb, var(--color-accent) 5%, var(--color-surface));
+}
+.ledger-table tbody tr.is-selected {
+  --row-bg: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface));
+}
+.ledger-table tbody td {
+  background: var(--row-bg);
+}
+/* The frozen first column: select box + Title share ONE sticky pane at left:0 (two separate
+   frozen columns drift under auto table layout — the offset never matches the real width). */
+.ledger-table .col-title {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 200px;
+  max-width: 280px;
+  /* Frozen-pane edge: a subtle right border marks where the sheet pans under. */
+  border-right: 1px solid var(--color-border);
+}
+.ledger-table thead .col-title {
+  z-index: 4; /* the frozen corner beats both the header row and the frozen column */
+  background: var(--color-surface-2);
+}
+.ledger-titlecell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.ledger-check {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-accent);
+  vertical-align: middle;
+}
+.ledger-title {
+  color: var(--color-text);
+  font-weight: 600;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.ledger-title:hover {
+  color: var(--color-accent);
+  text-decoration: underline;
+}
+.ledger-table .col-num {
+  font-variant-numeric: tabular-nums;
+}
+.ledger-table .col-center {
+  text-align: center;
+}
+.ledger-yes {
+  color: var(--color-accent);
+  font-weight: 700;
+}
+[data-theme='hnet-light'] .ledger-yes {
+  color: color-mix(in srgb, var(--color-accent) 62%, var(--color-text)); /* D-04 contrast */
+}
+.ledger-removed {
+  color: var(--color-danger);
+  font-weight: 600;
+}
+.ledger-table .col-root,
+.ledger-table .col-list {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--color-text-muted);
+}
+.ledger-empty {
+  padding: 24px 16px;
+  white-space: normal;
+}
+.ledger-tablewrap .load-more {
+  margin: 12px 0;
+  position: sticky;
+  left: 0; /* keep the button visible when the sheet is panned right */
+}
+.ledger-table .skeleton-line {
+  display: inline-block;
+  width: 120px;
+}
+.ledger-table .skeleton-line--short {
+  width: 48px;
+}
+
+/* The Monitor & search confirm + report (Modal content, ADR-014). */
+.ledger-confirm p {
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+.ledger-confirm__outcomes {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+.ledger-confirm .check-row {
+  margin-bottom: 10px;
+}
+.ledger-confirm .alert {
+  margin-bottom: 10px;
+}
+.ledger-report__meta,
+.ledger-report__summary {
+  margin: 0 0 10px;
+  font-size: 13px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.ledger-report__table {
+  margin-bottom: 10px;
 }

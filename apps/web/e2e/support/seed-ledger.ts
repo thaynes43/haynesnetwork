@@ -14,6 +14,7 @@ import {
   ingestLedgerEvents,
   setRoleLibraries,
   setSectionPermission,
+  tombstoneMissingItems,
   upsertMediaItemsBatch,
   upsertMediaMetadataBatch,
   upsertPlexLibraries,
@@ -74,8 +75,28 @@ async function main(): Promise<void> {
         expectedFileCount: 1,
         sizeOnDisk: 8_589_934_592,
       },
+      // DESIGN-009 — an UNMONITORED, FILELESS movie the tombstone pass below removes: the
+      // Ledger spreadsheet (tombstones forced in, D-04) shows it where /library never does,
+      // and the Monitored / Has-file chips + the monitored=false export have a row to bite on.
+      {
+        arrItemId: 604,
+        tmdbId: 880004,
+        title: 'Vanished Heist',
+        sortTitle: 'vanished heist',
+        year: 2018,
+        monitored: false,
+        qualityProfileId: 1,
+        qualityProfileName: 'Any',
+        rootFolder: '/data/haynestower/Media/Movies',
+        onDiskFileCount: 0,
+        expectedFileCount: 1,
+        sizeOnDisk: 0,
+      },
     ],
   });
+  // Tombstone Vanished Heist (single writer — writes the 'deleted' ledger event in-tx). The
+  // mass-tombstone guard stays quiet: 1 missing row of 3 is under the >10-rows floor.
+  await tombstoneMissingItems({ arrKind: 'radarr', seenArrItemIds: [601, 602] });
   // A Music (Lidarr) artist with an on-disk album so the detail offers Fix — used to assert
   // the Fix dialog offers NO 'Missing subtitles' radio for Music (ADR-016 / D-19). Mirrors
   // the stub-arr `/album?artistId=701` handler.
@@ -276,7 +297,7 @@ async function main(): Promise<void> {
 
   await getPool().end();
   console.log(
-    '[seed-ledger] seeded 4 media items + 2 ledger events + Plex libraries/grants + Ledger section roles',
+    '[seed-ledger] seeded 5 media items (1 tombstoned) + ledger events + Plex libraries/grants + Ledger section roles',
   );
 }
 
