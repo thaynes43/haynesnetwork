@@ -75,6 +75,13 @@ must resolve (record each as a numbered consequence C-NN):
   is surfaced to the app as an env var via ExternalSecret; `plex_servers.token_ref` stores the
   **reference name** (env var name / 1Password item→field), **never the token** (CLAUDE.md rule
   7). The write client reads the actual token from `process.env` at call time.
+- **Where the tokens ARE (verified 2026-07-05):** the three already exist in 1Password as
+  `HAYNESKUBE_PLEX_API_KEY` / `HAYNESOPS_PLEX_API_KEY` / `HAYNESTOWER_PLEX_API_KEY` — but on the
+  **`homepage`** item, which the haynesnetwork ExternalSecret does NOT extract today (it extracts
+  `media-stack` / `haynesnetwork` / `cloudnative-pg` / `lidarr`). Add `- extract: { key: homepage }`
+  to `haynes-ops .../frontend/haynesnetwork/app/externalsecret.yaml` `dataFrom` so they resolve.
+  **Verify these tokens carry owner/admin (sharing) scope** — the homepage widgets only need read
+  scope, but the Plex sharing API needs the account owner's token.
 - **`base_url` is server-side and EXEMPT** from the arbitrary-http(s) catalog rule (CLAUDE.md
   rule 3 / ADR-013) — same exemption OPS-002 and Appendix A already note.
 - **Share application is enforcement, never decision** (DDD-002 BC-04, `002-bounded-contexts.md:90`):
