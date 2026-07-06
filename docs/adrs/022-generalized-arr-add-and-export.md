@@ -94,6 +94,12 @@ A live probe of the staging database showed that import is **unnecessary**.
   the next sync reconciles anyway.
 - **Neutral:** the bulk-editor monitor PUT is a new `@hnet/arr/write` method; it stays
   import-confined to `packages/domain` (guard untouched).
+- **Neutral (best-effort search):** the add/monitor is the durable state change; the follow-on
+  item search under `searchOnAdd` is **best-effort**. A search-command failure leaves the item
+  `ok:true` (`searched:false`) with a `searchError` recorded on the result, the run still
+  `completed`, and — because `search_requested` is written only when `searched` — **no
+  `search_requested` ledger event** for that item. Consumers must key success off `ok`/`searched`,
+  not off the presence of error text (see DESIGN-009).
 
 ## Alternatives considered
 

@@ -95,6 +95,13 @@ ADR-022 C-01). Returns `{ runId, status }`; the per-item report (AC-11) is read 
 the section never surfaces failsafe Restore runs. Over-cap selections reject
 (`ARR_ADD_SEARCH_CAP_EXCEEDED`) before any `*arr` call.
 
+**Best-effort search / report semantics (ADR-022):** the add-or-monitor is the durable outcome;
+the follow-on search is best-effort. A per-item result can therefore be `ok:true` **and still
+carry `error`/`searchError` text** (the add succeeded but the search command failed — the item is
+`searched:false`, no `search_requested` event). The report UX must key success off **`ok`**
+(item added/monitored) and the search badge off **`searched`** — **never** treat error-text
+presence as failure, or an added-but-search-throttled item reads as a false failure.
+
 ## D-06 — Export (shipped; ADR-022 C-03)
 
 `GET /api/ledger/export` — a Next route handler, session-gated + **section-gated to Read-Only+**

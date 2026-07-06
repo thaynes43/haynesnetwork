@@ -15,7 +15,7 @@ import {
   sessionUser,
   type TestDb,
 } from './helpers';
-import { seriesJson, stubArrBundle } from './arr-stubs';
+import { movieJson, seriesJson, stubArrBundle } from './arr-stubs';
 
 let tdb: TestDb;
 
@@ -175,6 +175,72 @@ describe('restore.diff / restore.execute (AC-09)', () => {
     expect(run.results[0]).toMatchObject({ mediaItemId: item.id, ok: false });
     expect(run.results[0]!.error).toContain("quality profile 'UHD-Remux' not found");
     expect(stub.callsFor('POST', '/api/v3/movie')).toHaveLength(0); // no blind re-add
+  });
+
+  // ADR-022 C-02 — restore_runs is shared between the failsafe Restore (reason 'restore')
+  // and the Ledger Add-&-search (reason 'ledger_add'); the admin Restore projections MUST be
+  // reason-scoped so a ledger_add run never leaks into restore.run / restore.runs.
+  it('a Ledger add run (reason ledger_add) is NOT visible via restore.run/runs', async () => {
+    const admin = await createUser(tdb.db, { admin: true });
+    const absent = await seedMediaItem(tdb.db, 'radarr', {
+      title: 'Ledger Add Only',
+      arrItemId: 7301,
+      tmdbId: 973001,
+      monitored: false,
+      qualityProfileName: 'Any',
+      rootFolder: '/movies',
+    });
+    await tombstoneMissingItems({ db: tdb.db, arrKind: 'radarr', seenArrItemIds: [] });
+
+    const stub = stubArrBundle([
+      { path: '/api/v3/movie', body: [] }, // nothing live → absent → add
+      { path: '/api/v3/qualityprofile', body: [{ id: 1, name: 'Any' }] },
+      { path: '/api/v3/rootfolder', body: [{ id: 1, path: '/movies' }] },
+      { path: '/api/v3/tag', body: [] },
+      { method: 'POST', path: '/api/v3/movie', status: 201, body: () => movieJson(6301, { tmdbId: 973001, monitored: true }) },
+      { method: 'POST', path: '/api/v3/command', status: 201, body: { id: 1, name: 'MoviesSearch' } },
+    ]);
+    const api = caller(makeCtx(tdb.db, sessionUser(admin), stub.bundle));
+
+    // Create the ledger_add run through the Ledger surface (admin has 'edit' everywhere).
+    const { runId } = await api.ledgerAdmin.bulkAddAndSearch({
+      arrKind: 'radarr',
+      mediaItemIds: [absent.id],
+      searchOnAdd: true,
+    });
+
+    // Reason-scoped Restore projections must NOT surface it (the C-02 defect).
+    await expect(api.restore.run({ id: runId })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    expect((await api.restore.runs()).some((r) => r.id === runId)).toBe(false);
+
+    // Positive control: it IS visible via the reason-scoped Ledger projections.
+    expect((await api.ledgerAdmin.run({ id: runId })).reason).toBe('ledger_add');
+    expect((await api.ledgerAdmin.runs()).some((r) => r.id === runId)).toBe(true);
+  });
+
+  it('a Restore run (reason restore) is visible via restore.run/runs but NOT ledgerAdmin.run', async () => {
+    const admin = await createUser(tdb.db, { admin: true });
+    const item = await seedMediaItem(tdb.db, 'radarr', {
+      title: 'Restore Scoped',
+      arrItemId: 7401,
+      tmdbId: 974001,
+      qualityProfileName: 'Any',
+      rootFolder: '/movies',
+    });
+    await tombstoneMissingItems({ db: tdb.db, arrKind: 'radarr', seenArrItemIds: [] });
+    const stub = stubArrBundle([
+      { path: '/api/v3/movie', body: [] },
+      { path: '/api/v3/qualityprofile', body: [{ id: 1, name: 'Any' }] },
+      { path: '/api/v3/rootfolder', body: [{ id: 1, path: '/movies' }] },
+      { path: '/api/v3/tag', body: [] },
+      { method: 'POST', path: '/api/v3/movie', status: 201, body: () => movieJson(6401, { tmdbId: 974001 }) },
+    ]);
+    const api = caller(makeCtx(tdb.db, sessionUser(admin), stub.bundle));
+    const { runId } = await api.restore.execute({ arrKind: 'radarr', mediaItemIds: [item.id] });
+
+    expect((await api.restore.run({ id: runId })).id).toBe(runId);
+    expect((await api.restore.runs()).some((r) => r.id === runId)).toBe(true);
+    await expect(api.ledgerAdmin.run({ id: runId })).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
   it('surfaces a dead *arr as ARR_UPSTREAM_UNAVAILABLE on diff', async () => {

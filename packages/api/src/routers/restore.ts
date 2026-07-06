@@ -5,7 +5,7 @@
 // is the restore_runs row.
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { ARR_KINDS, restoreRuns, users } from '@hnet/db';
 import { computeRestoreDiff, executeRestore } from '@hnet/domain';
 import { mapDomainErrors, resolveArrBundle, router } from '../trpc';
@@ -57,7 +57,11 @@ export const restoreRouter = router({
       });
     }),
 
-  /** AC-09's report — the restore_runs row: preview, per-item results, counts. */
+  /**
+   * AC-09's report — the restore_runs row: preview, per-item results, counts.
+   * ADR-022 C-02 — scoped to reason 'restore' so Ledger `ledger_add` runs (which share
+   * the restore_runs table) never surface through the admin Restore surface.
+   */
   run: adminProcedure.input(z.object({ id: z.uuid() })).query(async ({ ctx, input }) => {
     const [row] = await ctx.db
       .select({
@@ -75,7 +79,7 @@ export const restoreRouter = router({
       })
       .from(restoreRuns)
       .leftJoin(users, eq(users.id, restoreRuns.initiatedBy))
-      .where(eq(restoreRuns.id, input.id));
+      .where(and(eq(restoreRuns.id, input.id), eq(restoreRuns.reason, 'restore')));
     if (!row) {
       throw new TRPCError({ code: 'NOT_FOUND', message: `Restore run ${input.id} not found` });
     }
@@ -86,7 +90,7 @@ export const restoreRouter = router({
     };
   }),
 
-  /** Recent runs, newest first (R-52 audit browsing). */
+  /** Recent runs, newest first (R-52 audit browsing). ADR-022 C-02 — reason 'restore' only. */
   runs: adminProcedure.query(async ({ ctx }) => {
     const rows = await ctx.db
       .select({
@@ -102,6 +106,7 @@ export const restoreRouter = router({
       })
       .from(restoreRuns)
       .leftJoin(users, eq(users.id, restoreRuns.initiatedBy))
+      .where(eq(restoreRuns.reason, 'restore'))
       .orderBy(desc(restoreRuns.startedAt))
       .limit(20);
     return rows.map((row) => ({
