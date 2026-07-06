@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.0](https://github.com/thaynes43/haynesnetwork/compare/v0.7.0...v0.8.0) (2026-07-06)
+
+
+### Features
+
+* library metadata enrichment, poster proxy, shared filter engine (ADR-018/019) ([#57](https://github.com/thaynes43/haynesnetwork/issues/57)) ([6932e53](https://github.com/thaynes43/haynesnetwork/commit/6932e53a87361a0e09a5eb5a8f6d4a4c6141c018))
+
+
+### Documentation
+
+* complete plan 007 (cosign signing) — v0.7.0 signed + Kyverno Enforce live-validated ([#55](https://github.com/thaynes43/haynesnetwork/issues/55)) ([3caf031](https://github.com/thaynes43/haynesnetwork/commit/3caf03114912a3d96c6d0dad54ef0e8c2fd35781))
+
 ## [0.7.0](https://github.com/thaynes43/haynesnetwork/compare/v0.6.1...v0.7.0) (2026-07-06)
 
 
