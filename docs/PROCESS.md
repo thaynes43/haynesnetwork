@@ -23,7 +23,8 @@ Executable plans live in `.agents/plans/` (agent working state), not `docs/plans
 4. **Design** (`docs/designs/`) — how: schemas, API surfaces, component contracts, sequence
    flows. References PRD/ADR IDs it satisfies.
 5. **Plan** (`.agents/plans/`) — executable implementation steps as a single free-form doc
-   per effort (`NNN-<slug>.md`); GATE A is `001-gate-a-pr-cutover.md`. No fixed
+   per effort (`NNN-<slug>.md`); a finished plan moves to `.agents/plans/completed/`
+   (e.g. `completed/001-gate-a-pr-cutover.md`). No fixed
    implementation/validation split is required. (A `COVERAGE.md` mapping PRD requirement IDs
    → plans is a possible future artifact, not a current requirement.)
 6. **Code + tests** — implementation follows the plan; the plan states what proves it done

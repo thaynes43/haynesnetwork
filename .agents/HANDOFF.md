@@ -4,10 +4,17 @@
 > Derive current state from this file's top; you should not have to reconcile anything.
 
 - **Last updated:** 2026-07-05
-- **Workflow mode:** PR flow (GATE A executed — see `.agents/plans/001-gate-a-pr-cutover.md`).
+- **Workflow mode:** PR flow (GATE A executed — see
+  `.agents/plans/completed/001-gate-a-pr-cutover.md`).
   `main` is branch-protected: branch → PR → required checks `lint-and-typecheck`, `test`,
   `build` green → squash-merge. `e2e` advisory. Conventional-commit titles drive release-please.
-- **Latest release:** v0.3.1.
+- **Latest release:** v0.4.0 (#36) — unified roles (ADR-012), arbitrary catalog URLs (ADR-013),
+  inline two-step `ConfirmButton` + drag-drop catalog reorder, Library sub-tabs, settings-only
+  user menu. All the UX-backlog items in `context/2026-07-05-ux-backlog.md` are DONE.
+- **NEXT: an autonomous Fable 5 build run (Mon 2026-07-06).** The entry prompt is
+  `.agents/KICKOFF.md`; the release queue is `.agents/plans/` (see `.agents/plans/README.md`).
+  Plans 002–008 cover Bazarr subtitle Fix, Plex self-service (Phase 3), metadata enrichment,
+  the Ledger + Trash sections, cosign, and the public cutover.
 
 ## Current state
 
@@ -23,9 +30,8 @@
   no `role_app_grants` rows; effective apps = all when `is_admin OR grants_all`; "All apps"
   checkbox on `/admin/roles`. (2) Default now seeds **seerr/plex/k8plex/plexops** (PlexOps
   added). (3) Migration 0007 seeds a **third, normal role `Family`** (editable/deletable) =
-  every app except Tautulli. On branch **`feat/unified-roles`**, **pending owner
-  validation** (localhost smoke test before PR — `feat!:` off main).
-- **Catalog URLs are now arbitrary (ADR-013, in progress on `feat/unified-roles`).** R-14 is
+  every app except Tautulli. **Shipped in v0.4.0 (#36).**
+- **Catalog URLs are now arbitrary (ADR-013) — shipped in v0.4.0.** R-14 is
   reversed: the catalog accepts **any well-formed, normalized `http(s)` URL** (including
   `*.haynesops.com` and external hosts) — no host allow-list. A shared `normalizeCatalogUrl`
   (authoritative in `packages/domain`, mirror in the web client) canonicalizes; the domain
@@ -33,7 +39,7 @@
   `CATALOG_URL_INVALID`. DB CHECK relaxed to scheme-only `app_catalog_url_scheme`
   (migration 0008). Docs synced 2026-07-05.
 - **Phase 1 + Phase 2 COMPLETE and DEPLOYED.** Phase 2 = media ledger + fix / force-search /
-  restore + *arr→ledger sync, all shipped through v0.3.1.
+  restore + *arr→ledger sync, all shipped through v0.4.0.
 - **Sync CronJobs + ExternalSecret media keys are LIVE since v0.2.0** (sync-incremental every
   15 min, sync-full 04:30) — confirmed in the haynes-ops `externalsecret.yaml` + `helmrelease.yaml`.
 - **Live staging:** https://haynesnetwork.haynesops.com (traefik-internal).
@@ -42,12 +48,23 @@
 
 ## Genuinely next
 
-1. **Bug-fix / UX-smoothing pass** now underway (the v0.2.x–v0.3.x fix stream continues:
-   dialog layout, action consistency, search behaviour — driven by owner testing on staging).
-2. **Phase 3 — Plex library self-service (BC-04)**: entirely UNBUILT. No `plex_*` tables, no
-   Plex domain code; glossary T-17..T-21 are placeholders. Three Plex servers to support
-   (k8plex, plexops, legacy haynestower).
-3. DESIGN-006 (visual identity) is SHIPPED — being flipped Draft → Accepted in this change.
+The **Fable 5 autonomous run** works the release queue in `.agents/plans/` (start at
+`.agents/KICKOFF.md`). In order:
+
+1. **002 — Bazarr subtitle Fix**: route the "missing subtitles" Fix to Bazarr; drop that reason
+   for Music.
+2. **003 — Plex library self-service (BC-04, Phase 3)**: entirely UNBUILT (no `plex_*` tables, no
+   Plex domain code; glossary T-17..T-21 are placeholders). Per-**role** allowed library sets
+   across the three servers (k8plex, plexops, legacy haynestower); family libs = libraries granted
+   only to the Family role.
+3. **004 — Library metadata enrichment + posters + shared filter engine** (foundation for 005/006).
+4. **005 — Ledger section** (native restore via filter→*arr + export; imports
+   `radarr-fileless-backlog.md`).
+5. **006 — Trash section** (integrates the Maintainerr instance; replaces the Restore nav).
+6. **007 — cosign signing**; **008 — public cutover (LAST)**.
+
+The full consolidated backlog (with what is deferred beyond this run) is in
+`context/2026-07-05-backlog-recon.md`.
 
 ## Key gotchas / where to look
 
@@ -61,7 +78,7 @@
   `allowBuilds` or the PG binary is non-functional. `pnpm dev:local` on :3000, e2e on :3100.
 - **Deploy (manual):** `docs/ops/004-deploy-runbook.md`. There is NO Flux image automation —
   going live = MANUAL edit of the image tag in the SIBLING haynes-ops repo
-  (`kubernetes/main/apps/frontend/haynesnetwork/app/helmrelease.yaml`, currently v0.3.1).
+  (`kubernetes/main/apps/frontend/haynesnetwork/app/helmrelease.yaml`, currently v0.4.0).
   Also holds the 1Password `haynesnetwork` secret contract.
 - **overseerr.haynesnetwork.com** still routes to the legacy Unraid box; in-cluster Seerr is
   LAN-only pending the owner's parallel *arr/Seerr k8s migration. Catalog links are DB data.

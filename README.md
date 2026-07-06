@@ -66,7 +66,7 @@ Run these before pushing — they mirror the CI checks that gate every PR. Full 
 
 ## Contributing — pull-request flow
 
-GATE A is done ([`.agents/plans/001-gate-a-pr-cutover.md`](.agents/plans/001-gate-a-pr-cutover.md)):
+GATE A is done ([`.agents/plans/completed/001-gate-a-pr-cutover.md`](.agents/plans/completed/001-gate-a-pr-cutover.md)):
 branch off `main`, open a PR, required checks (`lint-and-typecheck`, `test`, `build`) must
 pass, squash-merge only. Conventional commits drive versioning via release-please; `v*`
 tags publish `ghcr.io/thaynes43/haynesnetwork`.
