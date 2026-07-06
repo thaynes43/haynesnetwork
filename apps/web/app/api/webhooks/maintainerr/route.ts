@@ -7,6 +7,11 @@
 // agent can send). Reject anything without it. The persisted event is the generic notification
 // store (PLAN-009 Bulletin extends this); Trash's Activity tab reads source='maintainerr'.
 import { recordNotification } from '@hnet/domain';
+import {
+  MAX_WEBHOOK_BODY_BYTES,
+  parseMaintainerrWebhook,
+  secretsMatch,
+} from '@/lib/maintainerr-webhook';
 
 export const runtime = 'nodejs';
 
@@ -19,48 +24,35 @@ function providedSecret(req: Request, url: URL): string | null {
   return token ? token.trim() : null;
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
-}
-
-function str(value: unknown): string | undefined {
-  return typeof value === 'string' && value.length > 0 ? value : undefined;
-}
-
 export async function POST(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const expected = process.env.MAINTAINERR_WEBHOOK_SECRET?.trim();
   // Fail closed: without a configured secret the endpoint is disabled (never open).
   if (!expected) return new Response('webhook disabled', { status: 503 });
   const provided = providedSecret(req, url);
-  if (!provided || provided !== expected) {
+  // Constant-time compare (never a timing-observable `===`).
+  if (!secretsMatch(provided, expected)) {
     return new Response('unauthorized', { status: 401 });
   }
 
-  let payload: Record<string, unknown>;
+  // Cap the body BEFORE parsing — an unauthenticated endpoint must not buffer/persist unbounded input.
+  const rawText = await req.text();
+  if (Buffer.byteLength(rawText, 'utf8') > MAX_WEBHOOK_BODY_BYTES) {
+    return new Response('payload too large', { status: 413 });
+  }
+
+  let json: unknown;
   try {
-    payload = asRecord(await req.json());
+    json = JSON.parse(rawText);
   } catch {
     return new Response('bad request', { status: 400 });
   }
 
-  // Tolerant field mapping — Maintainerr's webhook body is a configurable JSON template; accept the
-  // common Overseerr-style keys and fall back to sensible defaults. The full body is persisted.
-  const type =
-    str(payload['notification_type']) ?? str(payload['type']) ?? str(payload['event']) ?? 'event';
-  const title =
-    str(payload['subject']) ??
-    str(payload['title']) ??
-    str(asRecord(payload['media'])['title']) ??
-    'Maintainerr notification';
-  const body = str(payload['message']) ?? str(payload['body']) ?? '';
+  // Zod-validate to the known shape + strip arbitrary/proto keys + cap stored strings (never persist
+  // unbounded caller JSON). An unexpected shape is rejected, not stored.
+  const parsed = parseMaintainerrWebhook(json);
+  if (!parsed) return new Response('bad request', { status: 400 });
 
-  const { id } = await recordNotification({
-    source: 'maintainerr',
-    type,
-    title,
-    body,
-    payload,
-  });
+  const { id } = await recordNotification({ source: 'maintainerr', ...parsed });
   return Response.json({ ok: true, id }, { status: 202 });
 }

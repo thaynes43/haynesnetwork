@@ -91,7 +91,9 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
         }
         if ((method === 'POST' || method === 'PUT') && path === '/rules') return json(res, 201, { code: 1 });
         if (method === 'DELETE' && /^\/rules\/\d+$/.test(path)) return json(res, 200, { code: 1 });
-        if (method === 'PATCH' && path === '/settings') return json(res, 200, {});
+        // BasicResponseDto (code:1 = success) — the write client fails closed on code:0 (P1a).
+        if (method === 'PATCH' && path === '/settings')
+          return json(res, 200, { status: 'OK', code: 1, message: 'Success' });
         return json(res, 404, { message: `stub-maintainerr: no write handler for ${method} ${path}` });
       }
 

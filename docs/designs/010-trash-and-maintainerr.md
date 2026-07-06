@@ -43,16 +43,16 @@ argument (there is **no** `setGlobalPrefix`, so effective paths are `/api/…`);
 | Collection membership + size | `GET /api/collections/media/{id}/content/{page}?size=` | page 1-based | `{ totalSize, items[] }`; item `sizeBytes`, `tmdbId`, `tvdbId`, `mediaServerId`, `addDate` |
 | Rule groups | `GET /api/rules?activeOnly=&libraryId=&typeId=` | — | `RulesDto[]` (`id,name,isActive,dataType,collection{...}`) |
 | Rule-schema catalog | `GET /api/rules/constants` | — | `{ applications:[{id,name,mediaType,props}] }` — filtered to CONFIGURED integrations |
-| Exclusions | `GET /api/rules/exclusion?mediaServerId=&rulegroupId=` | — | `Exclusion[]` (`ruleGroupId=null` ⇒ global); `[]` with no params |
+| Exclusions | `GET /api/rules/exclusion?mediaServerId=&rulegroupId=` | — | `Exclusion[]` (`ruleGroupId=null` ⇒ global); `[]` with no params. `Exclusion.parent` is a **string** (Plex ratingKey, written on every exclusion — schema is `string\|number`, P2) |
 | Settings (tag-exclusion subset) | `GET /api/settings` | — | `Settings` (secrets masked): `radarr_tag_exclusions`, `radarr_exclusion_tag`(default `dnd`), `radarr_untag_on_unexclude`, `sonarr_*` |
 | App status / version | `GET /api/app/status` | — | `VersionResponse {status,version,commitTag,updateAvailable}` (may arrive double-encoded — the client pre-parses) |
 | Plex connectivity | `GET /api/settings/test/plex` | — | `BasicResponseDto` (`status:'OK'` ⇒ connected) |
-| **Add exclusion (Save)** | `POST /api/rules/exclusion` | `{ mediaId, action:0, collectionId? }` (omit `collectionId` ⇒ global) | `ReturnStatus`; `action:1` routes to remove |
-| **Remove exclusion (un-save)** | `DELETE /api/rules/exclusions/{mediaServerId}` | path param | `ReturnStatus` (removes ALL exclusions for the item) |
-| **Expedite ALL** | `POST /api/collections/handle` | no body | `201`; `409` if the handler is already running |
-| **Expedite one item** | `POST /api/collections/media/handle` | `{ collectionId, mediaId }` | `201`; `404`/`409` on miss/conflict |
-| **Rule group create / update / delete** | `POST /api/rules` · `PUT /api/rules` · `DELETE /api/rules/{id}` | `RulesDto` (create/update) / id | `ReturnStatus`; `deleteAfterDays` lives in the nested `collection` |
-| **Enable tag exclusions + `dnd`** | `PATCH /api/settings` | partial `SettingDto` (`{radarr_tag_exclusions,radarr_exclusion_tag,radarr_untag_on_unexclude, sonarr_*}`) | full replace is `POST /api/settings` |
+| **Add exclusion (Save)** | `POST /api/rules/exclusion` | `{ mediaId, action:0, collectionId? }` (omit `collectionId` ⇒ global) | `ReturnStatus`; **`code:0` at HTTP 201 = logical FAILURE** (parsed → throw, P1a); `action:1` routes to remove |
+| **Remove exclusion (un-save)** | `DELETE /api/rules/exclusions/{mediaServerId}` | path param | `ReturnStatus` (removes ALL exclusions for the item); `code:0` fails closed (P1a) |
+| **Expedite ALL** *(NEVER CALLED — P1b)* | `POST /api/collections/handle` | no body | `201`; processes EVERY active collection (all kinds, not scopeable) → **not used**; expedite loops per-item instead |
+| **Expedite one item** | `POST /api/collections/media/handle` | `{ collectionId, mediaId }` | `201`, **void** (no ReturnStatus); the ONLY deletion trigger expedite uses (per item) |
+| **Rule group create / update / delete** | `POST /api/rules` · `PUT /api/rules` · `DELETE /api/rules/{id}` | `RulesDto` (create/update) / id | `ReturnStatus` (`code:0` fails closed, P1a); `deleteAfterDays` lives in the nested `collection` |
+| **Enable tag exclusions + `dnd`** | `PATCH /api/settings` | partial `SettingDto` (`{radarr_tag_exclusions,radarr_exclusion_tag,radarr_untag_on_unexclude, sonarr_*}`) | `BasicResponseDto {status,code,message}` (`code:0` fails closed, P1a); full replace is `POST /api/settings` |
 
 **Uncertainty flags (carried from source review):** (a) `typeId`/`dataType` is numeric on
 `GET /rules` (`1=movie,2=show,3=season,4=episode`) but string on the collection Zod schema — our
@@ -87,18 +87,37 @@ reachable AND every required integration connected. `expedite*` re-run it and re
 
 ## D-05 — Write ordering + the guardian (ADR-023 C-05/C-07)
 
+- **In-band failure detection (review 2026-07-06, Fable — P1a).** Maintainerr's WRITE endpoints
+  return their body — `ReturnStatus {code:0|1,result?,message?}` (exclusion + rule CRUD) or
+  `BasicResponseDto {status,code,message}` (settings `PATCH`) — at **HTTP 201/200 even on a LOGICAL
+  failure** (`code:0`; e.g. `setExclusion` → `{code:0,'Failed - no metadata'}`, verified v3.17.0
+  `createReturnStatus`). So the write client parses those bodies (not HTTP-status-only `requestVoid`)
+  and throws `MaintainerrWriteFailedError` (→ `MaintainerrUpstreamError` → **BAD_GATEWAY**) when
+  `code === 0` — a logical failure now fails **closed** exactly like a non-2xx, so a failed save can
+  never mint a phantom `trash_excluded` event or phantom guardian protection. The two collection
+  **handle** endpoints return VOID (no ReturnStatus) and keep void semantics (a non-2xx still throws).
 - **Save/remove exclusion (protective):** external Maintainerr call **first**, then the
   `trash_excluded` event (idempotent — already excluded ⇒ no-op/no event). Rationale: a Save is
   protective, so the fail-safe direction is establish-protection-first; a phantom protective event
   (written before a failed call) is the dangerous under-protection failure, so we never write it
   first. A crash after the exclusion leaves the item genuinely protected (audit reconcilable from
   Maintainerr's exclusion list).
-- **Expedite (destructive):** commit the `trash_expedited` intent event **first**, then the
-  Maintainerr handle call (the Fix D-09 discipline — a lost response must never hide an initiated
-  deletion; over-reporting a destructive intent is the safe direction).
-- **Guardian:** `guardRecentlyWatched` runs before an expedite-all (auto-whitelisting
-  recently-watched / requester-tagged items so Maintainerr's handler can't delete them) and per-item
-  for `expedite_item` (a watched/requested target is protected instead of deleted). Window
+- **Expedite (destructive) is PER ITEM — the estate-wide handler is deliberately never used (review
+  2026-07-06, Fable — P1b/P5).** `POST /collections/handle` processes EVERY active collection (all
+  media kinds, incl. items outside our ledger) and is **not scopeable**, so `expediteDeletion` never
+  calls it. Both scopes delete via `POST /collections/media/handle`, one item at a time, each having
+  passed the guardian. **scope 'all'** is a two-pass loop over the requested kind's pending set: PASS 1
+  runs the guardian over each item (auto-whitelist watched/requested; a **failed protection SKIPS**
+  that item — a failed protection is never followed by that item's deletion); PASS 2 deletes each
+  SURVIVOR individually, committing its `trash_expedited` intent event **before** its handle call (the
+  Fix D-09 discipline — a lost response must never hide an initiated deletion). **scope 'item'**
+  resolves the target's REAL identity from the actual pending set (NOT the client `media` param);
+  if it cannot be resolved to run the guardian it **REFUSES** (fail closed), never fires blind.
+- **Guardian (`classifyGuardian`, fail closed — P3/P4):** an item is expeditable ONLY when it is
+  positively evaluated (resolved to our ledger, so we hold the cross-server watch / requester signal)
+  AND cold. Kept otherwise: `tag` (already `dnd`-whitelisted), `recently_watched`/`requested`
+  (auto-whitelisted), or `unevaluable` (unknown to our ledger — we never delete what we cannot
+  evaluate). The client-supplied `media` never steers which set is searched. Window
   `RECENTLY_WATCHED_WINDOW_DAYS = 30` (constant — **Q-01:** admin/per-role configurability deferred).
   The `dnd` protective tag is Maintainerr-managed (settings `PATCH` deploy step); we read it off
   `arrTags` as `protectedByTag` and never hand-apply it.
@@ -118,7 +137,11 @@ session-unauthenticated, **shared-secret-required** (`MAINTAINERR_WEBHOOK_SECRET
 `x-webhook-secret` / `Authorization: Bearer` / `?token=`; 503 when unset, 401 without) → tolerant
 Overseerr-style field map → `recordNotification`. `trash.activity` reads `source='maintainerr'`,
 newest first. Built as the generic pattern PLAN-009 (Bulletin) extends — NOT a Maintainerr-specific
-endpoint/table.
+endpoint/table. **Hardening (review 2026-07-06):** the secret compare is **constant-time**
+(`crypto.timingSafeEqual` over SHA-256 digests — length-safe, no early bail); the body is **capped at
+~64KB** before parsing (413 over); the payload is **Zod-validated to a known shape**, arbitrary /
+prototype-polluting keys are **stripped**, and stored `type`/`title`/`body` are **length-capped** — we
+never persist unbounded caller JSON. (Pure helpers in `apps/web/lib/maintainerr-webhook.ts`.)
 
 ## D-08 — `trash` router wire contracts (for the UX follow-up)
 
@@ -132,8 +155,8 @@ trash.rules()                               → MaintainerrRuleGroup[]
 trash.ruleConstants()                       → MaintainerrRuleConstants
 trash.saveExclusion({ maintainerrMediaId, mediaItemId?, collectionId? })   → { excluded, alreadyExcluded }
 trash.removeExclusion({ maintainerrMediaId, mediaItemId? })                → { removed }
-trash.expediteItem({ media, collectionId, maintainerrMediaId, mediaItemId? }) → { scope:'item', protectedCount, expeditedCount }
-trash.expediteAll({ media })                → { scope:'all', protectedCount, expeditedCount }
+trash.expediteItem({ media, collectionId, maintainerrMediaId, mediaItemId? }) → { scope:'item', protectedCount, expeditedCount, skippedCount }
+trash.expediteAll({ media })                → { scope:'all', protectedCount, expeditedCount, skippedCount }   // per-item loop; skippedCount = kept-but-unevaluable / failed-protection (UX must surface it — review 2026-07-06)
 trash.recentlyDeleted({ media })            → RecentlyDeletedItem[]   // adds posterUrl
 trash.restoreDeleted({ media, mediaItemId })→ { runId, status }
 trash.activity({ limit? })                  → NotificationView[]

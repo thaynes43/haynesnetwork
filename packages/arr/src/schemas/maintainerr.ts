@@ -90,11 +90,35 @@ export const maintainerrExclusionSchema = z
     mediaServerId: z.union([z.string(), z.number()]).nullish(),
     plexId: z.union([z.string(), z.number()]).nullish(), // legacy alias
     ruleGroupId: z.number().int().nullish(),
-    parent: z.number().int().nullish(),
+    // v3.17.0 `Exclusion.parent` is a STRING (the Plex ratingKey, written on every exclusion) — a
+    // number-only schema 502'd `getExclusions` for every already-excluded item, breaking idempotency
+    // + un-save on the real estate (P2). Accept either; verified against the source entity.
+    parent: z.union([z.string(), z.number()]).nullish(),
     type: z.union([z.string(), z.number()]).nullish(),
   })
   .passthrough();
 export type MaintainerrExclusion = z.infer<typeof maintainerrExclusionSchema>;
+
+/**
+ * Shared WRITE envelope. Maintainerr's rule/exclusion writes return a `ReturnStatus`
+ * (`{ code:0|1, result?, message?, skipped? }`) at HTTP 201/200 **even on LOGICAL failure** —
+ * e.g. `setExclusion` → `{ code:0, message:'Failed - no metadata' }` — and the settings `PATCH`/`POST`
+ * return a `BasicResponseDto` (`{ status:'OK'|'NOK', code:0|1, message }`) that ALSO carries the same
+ * numeric `code`. In BOTH shapes `code === 0` is the logical-failure signal. Parsing writes through
+ * this schema (instead of HTTP-status-only `requestVoid`) is what lets us fail CLOSED on a `code:0`
+ * (P1a). Verified against maintainerr v3.17.0 (`createReturnStatus(success, result)` →
+ * `{ code: success ? 1 : 0, result, message: result }`; `patchSettings`/`updateSettings` →
+ * `BasicResponseDto`). `code` is required — a body that drops it is upstream drift and fails closed.
+ */
+export const maintainerrReturnStatusSchema = z
+  .object({
+    code: z.number().int(),
+    result: z.string().nullish(),
+    message: z.string().nullish(),
+    status: z.string().nullish(), // BasicResponseDto (settings PATCH/POST) carries this instead of `result`
+  })
+  .passthrough();
+export type MaintainerrReturnStatus = z.infer<typeof maintainerrReturnStatusSchema>;
 
 /** `GET /api/settings` — the subset we read (secrets are masked upstream). The tag-exclusion
  *  fields (enabling the `dnd` protective tag on Radarr/Sonarr) are a documented deploy step. */

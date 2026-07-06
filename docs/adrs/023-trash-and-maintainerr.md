@@ -99,6 +99,34 @@ DDD-002 **BC-03 `Q-04`** ("Maintainerr is a follow-on") and records the binding 
   receiver (Maintainerr as source #1, shared-secret `MAINTAINERR_WEBHOOK_SECRET`) feeds Trash's
   Activity tab; PLAN-009 (Bulletin) extends the same store.
 
+## Addendum — 2026-07-06 adversarial-review ruling (Fable)
+
+An adversarial review of the shipped backend (the estate's first destructive-capable surface) added
+these **binding clarifications** to the decisions above (append-only — the accepted decisions stand;
+this refines their mechanism):
+
+- **C-07a — Expedite is PER ITEM; the estate-wide handler is DELIBERATELY NEVER USED.** Maintainerr's
+  `POST /collections/handle` processes EVERY active collection (all media kinds, incl. items outside
+  our ledger) and is not scopeable — calling it would delete beyond the media kind/set the user
+  filtered and could delete items the guardian never evaluated. `expediteDeletion` therefore **never**
+  calls it: both scopes delete one item at a time via `POST /collections/media/handle`, and every
+  deleted item has individually passed the guardian. scope 'all' is a two-pass loop (guardian/whitelist,
+  then per-survivor delete); a **failed guardian protection SKIPS that item** (never followed by its
+  deletion).
+- **C-07b — The guardian is FAIL-CLOSED and identity-derived.** An item is expeditable ONLY when it is
+  positively evaluated (resolved to our ledger, so the cross-server watch / requester signal exists)
+  AND cold; anything unevaluable (unknown to our ledger) is KEPT, never deleted. The client-supplied
+  `media` param never steers which pending set the guardian searches — the item's REAL identity is
+  resolved from the actual pending set; an unresolvable single-item target is REFUSED, not fired blind.
+- **C-04a — Maintainerr in-band failures fail CLOSED.** v3.17.0 write endpoints return a
+  `ReturnStatus`/`BasicResponseDto` with `code:0` on LOGICAL failure at HTTP 201/200 (e.g.
+  `setExclusion` → `{code:0,'Failed - no metadata'}`). The write client parses these bodies and throws
+  (→ `MaintainerrUpstreamError`/BAD_GATEWAY) on `code:0`, so a logical failure can never mint a phantom
+  `trash_excluded` event or phantom protection. `Exclusion.parent` is a **string** (the schema was
+  number-only, which 502'd `getExclusions` for every already-excluded item — now `string|number`).
+- **C-08a — Webhook receiver hardened:** constant-time secret compare, 64KB body cap, Zod-validated
+  known shape, stripped arbitrary/proto keys, length-capped stored strings (no unbounded JSON).
+
 ## Consequences
 
 **Good:** one deletion brain (no re-implemented rule engine); every Save/Expedite/Restore is

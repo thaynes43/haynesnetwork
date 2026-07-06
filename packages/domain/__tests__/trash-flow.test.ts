@@ -55,6 +55,9 @@ interface MaintState {
   }>;
   /** force a 500 on these `METHOD /path` keys (e.g. 'POST /rules/exclusion'). */
   fail: Set<string>;
+  /** force a Maintainerr LOGICAL failure (HTTP 201 + ReturnStatus `{code:0}`) on these `METHOD /path`
+   *  keys — the P1a in-band failure that HTTP-status-only reads used to miss. */
+  logicalFail: Set<string>;
 }
 
 function makeMaintainerr(state: MaintState): {
@@ -80,6 +83,11 @@ function makeMaintainerr(state: MaintState): {
         status,
         headers: { 'content-type': 'application/json' },
       });
+    // P1a — a Maintainerr WRITE that returns HTTP 201 but a ReturnStatus `{code:0}` (logical failure,
+    // e.g. setExclusion 'Failed - no metadata'). The write client must fail closed on this.
+    if (state.logicalFail.has(key)) {
+      return ok({ code: 0, result: 'Failed - no metadata', message: 'Failed - no metadata' }, 201);
+    }
 
     // ---- reads ----
     if (method === 'GET' && path === '/app/status') {
@@ -154,6 +162,7 @@ const baseState = (over: Partial<MaintState> = {}): MaintState => ({
   exclusions: new Set(),
   collections: [],
   fail: new Set(),
+  logicalFail: new Set(),
   ...over,
 });
 
@@ -240,6 +249,24 @@ describe('saveExclusion / removeExclusion (ADR-023 D-05 protective ordering)', (
     expect(events.some((e) => (e.payload as { maintainerrMediaId?: string }).maintainerrMediaId === '7777')).toBe(
       false,
     );
+  });
+
+  it('P1a — a Maintainerr in-band failure (201 + code:0) fails CLOSED: throws + writes NO event', async () => {
+    // setExclusion returns HTTP 201 with {code:0,'Failed - no metadata'} — a LOGICAL failure the old
+    // requestVoid (HTTP-status-only) read as success → phantom trash_excluded + phantom protection.
+    const state = baseState({ logicalFail: new Set(['POST /rules/exclusion']) });
+    const { bundle } = makeMaintainerr(state);
+    await expect(
+      saveExclusion({ db: t.db, maintainerr: bundle, maintainerrMediaId: '6006', actorId }),
+    ).rejects.toBeInstanceOf(MaintainerrUpstreamError);
+    // The item is NOT actually excluded, and no phantom protection event was written.
+    expect(state.exclusions.has('6006')).toBe(false);
+    const events = await excludeEvents();
+    expect(
+      events.some(
+        (e) => (e.payload as { maintainerrMediaId?: string }).maintainerrMediaId === '6006',
+      ),
+    ).toBe(false);
   });
 
   it('removeExclusion removes then records an unsave event; no-op when not excluded', async () => {
@@ -409,6 +436,72 @@ describe('listTrashPending + guardian + expedite (ADR-023 D-02/D-04/D-05)', () =
       (e) => (e.payload as { maintainerrMediaId?: string }).maintainerrMediaId === 'ms-8002',
     );
     expect(forItem.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('P1b/P5 — expedite scope=all loops PER ITEM (never /collections/handle) + guards each', async () => {
+    const state = pendingState();
+    const { bundle, calls } = makeMaintainerr(state);
+    const res = await expediteDeletion({
+      db: t.db,
+      maintainerr: bundle,
+      scope: 'all',
+      media: 'movie',
+      actorId,
+    });
+    // The watched item is whitelisted; the cold one is deleted individually.
+    expect(res).toMatchObject({ scope: 'all', protectedCount: 1, expeditedCount: 1 });
+    expect(state.exclusions.has('ms-8001')).toBe(true); // watched → auto-whitelisted
+    // The estate-wide handler is NEVER called (it would delete beyond the user's media kind/ledger).
+    expect(calls.some((c) => c.pathname === '/collections/handle')).toBe(false);
+    // The cold survivor is deleted via the per-item handler, scoped to exactly what was seen.
+    const perItem = calls.filter((c) => c.pathname === '/collections/media/handle');
+    expect(perItem).toHaveLength(1);
+    expect((perItem[0]!.body as { mediaId?: string }).mediaId).toBe('ms-8002');
+  });
+
+  it('P3 — expediteItem with a WRONG media param still protects the watched item (no bypass)', async () => {
+    const state = pendingState();
+    const { bundle, calls } = makeMaintainerr(state);
+    // ms-8001 is a recently-watched MOVIE; the caller lies with media:'tv'. Old code searched the tv
+    // pending set, did not find the target, skipped the guardian and DELETED it. Now the target's
+    // real identity is resolved from the actual pending set and the guardian protects it.
+    const res = await expediteDeletion({
+      db: t.db,
+      maintainerr: bundle,
+      scope: 'item',
+      media: 'tv',
+      actorId,
+      item: { collectionId: 7, maintainerrMediaId: 'ms-8001' },
+    });
+    expect(res).toMatchObject({ protectedCount: 1, expeditedCount: 0 });
+    expect(calls.some((c) => c.pathname === '/collections/media/handle')).toBe(false);
+    expect(state.exclusions.has('ms-8001')).toBe(true);
+  });
+
+  it('P4 — expedite scope=all SKIPS an item unknown to our ledger (cannot evaluate ⇒ never delete)', async () => {
+    const state = pendingState();
+    // Add a third collection item with a tmdbId absent from our ledger ⇒ mediaItemId null ⇒
+    // the guardian cannot positively clear it. It must be skipped, never deleted.
+    state.collections[0]!.items.push({
+      mediaServerId: 'ms-8003',
+      tmdbId: 8003,
+      sizeBytes: 500_000_000,
+      addDate: '2026-06-01T00:00:00Z',
+    });
+    const { bundle, calls } = makeMaintainerr(state);
+    const res = await expediteDeletion({
+      db: t.db,
+      maintainerr: bundle,
+      scope: 'all',
+      media: 'movie',
+      actorId,
+    });
+    expect(res.skippedCount).toBeGreaterThanOrEqual(1);
+    const handled = calls
+      .filter((c) => c.pathname === '/collections/media/handle')
+      .map((c) => (c.body as { mediaId?: string }).mediaId);
+    expect(handled).toContain('ms-8002'); // the cold, ledger-known item is deleted
+    expect(handled).not.toContain('ms-8003'); // the unevaluable item is never deleted
   });
 });
 

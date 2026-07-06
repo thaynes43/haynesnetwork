@@ -4,7 +4,9 @@
 // the packages/domain fix/restore writers — enforced by the D-12 guard test that lands
 // with those writers. Exercised exclusively via fetch stubs in tests; never in sync.
 import { assertArrEnv, type ArrEnvConfig } from './config';
-import { ArrHttp } from './http';
+import { MaintainerrWriteFailedError } from './errors';
+import { ArrHttp, type QueryParams } from './http';
+import { maintainerrReturnStatusSchema } from './schemas/maintainerr';
 import { commandResponseSchema, tagSchema, type ArrCommandResponse, type ArrTag } from './schemas/common';
 import { sonarrSeriesSchema, type SonarrSeries } from './schemas/sonarr';
 import { radarrMovieSchema, type RadarrMovie } from './schemas/radarr';
@@ -257,8 +259,15 @@ export class BazarrWriteClient {
  *   - POST   /api/collections/media/handle   ({ collectionId, mediaId } — expedite one item)
  *   - POST   /api/rules  |  PUT /api/rules  |  DELETE /api/rules/:id   (rule-group CRUD)
  *   - PATCH  /api/settings                   (enable radarr/sonarr tag exclusions + `dnd` tag)
- * ReturnStatus/BasicResponse bodies are drained (a non-2xx already throws ArrHttpError → the
- * domain maps it to MaintainerrUpstreamError / BAD_GATEWAY, fail-closed).
+ *
+ * P1a — these endpoints return a `ReturnStatus`/`BasicResponseDto` at HTTP 201/200 **even on logical
+ * failure** (`code:0`, e.g. `setExclusion` → `{code:0, message:'Failed - no metadata'}`). So the
+ * write methods do NOT use HTTP-status-only `requestVoid` (which would read `code:0` as success →
+ * phantom protection); they parse the body through `maintainerrReturnStatusSchema` and throw
+ * `MaintainerrWriteFailedError` (an ArrError → BAD_GATEWAY via the domain guard) when `code === 0`,
+ * failing closed exactly like a non-2xx. The two collection **handle** endpoints
+ * (`/collections/handle`, `/collections/media/handle`) return VOID (no ReturnStatus — verified in the
+ * v3.17.0 controllers) and keep `requestVoid` semantics.
  */
 export interface MaintainerrWriteClientOptions {
   baseUrl: string;
@@ -283,10 +292,32 @@ export class MaintainerrWriteClient {
     });
   }
 
+  /**
+   * P1a — a write whose body is a `ReturnStatus`/`BasicResponseDto`: a non-2xx already throws
+   * (ArrHttpError), and here a 2xx body with `code === 0` (logical failure) throws
+   * `MaintainerrWriteFailedError`. Both fail closed. A missing `code` is upstream drift → ArrParseError
+   * (also fail closed). `code === 1` ⇒ success (void).
+   */
+  private async requestReturnStatus(
+    method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+    path: string,
+    options: { query?: QueryParams; body?: unknown } = {},
+  ): Promise<void> {
+    const status = await this.http.requestJson(method, path, maintainerrReturnStatusSchema, options);
+    if (status.code === 0) {
+      throw new MaintainerrWriteFailedError(
+        method,
+        this.http.buildUrl(path, options.query),
+        status.message ?? status.result ?? undefined,
+      );
+    }
+  }
+
   /** `POST /api/rules/exclusion` — Save/whitelist: exclude an item so Maintainerr never deletes it.
-   *  `mediaServerId` is the item's Plex ratingKey; omit `collectionId` for a GLOBAL exclusion. */
+   *  `mediaServerId` is the item's Plex ratingKey; omit `collectionId` for a GLOBAL exclusion.
+   *  Returns a ReturnStatus — `code:0` (e.g. 'Failed - no metadata') throws, never a phantom success. */
   addExclusion(mediaServerId: string, collectionId?: number): Promise<void> {
-    return this.http.requestVoid('POST', 'rules/exclusion', {
+    return this.requestReturnStatus('POST', 'rules/exclusion', {
       body: {
         mediaId: mediaServerId,
         action: 0, // 0 = ADD
@@ -295,42 +326,55 @@ export class MaintainerrWriteClient {
     });
   }
 
-  /** `DELETE /api/rules/exclusions/:mediaServerId` — un-save: remove ALL exclusions for an item. */
+  /** `DELETE /api/rules/exclusions/:mediaServerId` — un-save: remove ALL exclusions for an item.
+   *  Returns a ReturnStatus — `code:0` fails closed (a phantom un-save would leave the item exposed). */
   removeExclusion(mediaServerId: string): Promise<void> {
-    return this.http.requestVoid('DELETE', `rules/exclusions/${encodeURIComponent(mediaServerId)}`);
+    return this.requestReturnStatus(
+      'DELETE',
+      `rules/exclusions/${encodeURIComponent(mediaServerId)}`,
+    );
   }
 
-  /** `POST /api/collections/handle` — expedite ALL collections' pending deletions now (no body). */
+  /**
+   * `POST /api/collections/handle` — trigger Maintainerr's ESTATE-WIDE handler (every active
+   * collection, all media kinds, incl. items outside our ledger; NOT scopeable; no ReturnStatus).
+   * DELIBERATELY NEVER CALLED by the Trash expedite path (ADR-023 C-07 / DESIGN-010 D-05, dated
+   * ruling 2026-07-06, Fable): expedite loops per-item over `handleCollectionMedia` so deletion is
+   * scoped to exactly what the user saw and every deleted item passed the guardian. Retained only for
+   * client-surface completeness; wiring it into a user action would bypass the guardian — do not.
+   */
   handleAllCollections(): Promise<void> {
     return this.http.requestVoid('POST', 'collections/handle');
   }
 
-  /** `POST /api/collections/media/handle` — expedite ONE item's deletion now. */
+  /** `POST /api/collections/media/handle` — expedite ONE item's deletion now (void — no ReturnStatus
+   *  in the v3.17.0 controller; a non-2xx still throws ArrHttpError → fail closed). */
   handleCollectionMedia(collectionId: number, mediaServerId: string): Promise<void> {
     return this.http.requestVoid('POST', 'collections/media/handle', {
       body: { collectionId, mediaId: mediaServerId },
     });
   }
 
-  /** `POST /api/rules` — create a rule group (RulesDto). */
+  /** `POST /api/rules` — create a rule group (RulesDto). Returns a ReturnStatus (`code:0` fails closed). */
   createRuleGroup(payload: Record<string, unknown>): Promise<void> {
-    return this.http.requestVoid('POST', 'rules', { body: payload });
+    return this.requestReturnStatus('POST', 'rules', { body: payload });
   }
 
-  /** `PUT /api/rules` — update a rule group (RulesDto with id). */
+  /** `PUT /api/rules` — update a rule group (RulesDto with id). Returns a ReturnStatus (`code:0` throws). */
   updateRuleGroup(payload: Record<string, unknown>): Promise<void> {
-    return this.http.requestVoid('PUT', 'rules', { body: payload });
+    return this.requestReturnStatus('PUT', 'rules', { body: payload });
   }
 
-  /** `DELETE /api/rules/:id` — delete a rule group. */
+  /** `DELETE /api/rules/:id` — delete a rule group. Returns a ReturnStatus (`code:0` = 'Delete Failed'). */
   deleteRuleGroup(id: number): Promise<void> {
-    return this.http.requestVoid('DELETE', `rules/${id}`);
+    return this.requestReturnStatus('DELETE', `rules/${id}`);
   }
 
   /** `PATCH /api/settings` — enable Radarr/Sonarr tag exclusions + set the `dnd` exclusion tag
-   *  (a documented deploy-time step; the code path exists so ops can flip it via our surface). */
+   *  (a documented deploy-time step; the code path exists so ops can flip it via our surface).
+   *  Returns a BasicResponseDto — `code:0` (e.g. invalid CRON) fails closed, never a phantom apply. */
   patchSettings(payload: Record<string, unknown>): Promise<void> {
-    return this.http.requestVoid('PATCH', 'settings', { body: payload });
+    return this.requestReturnStatus('PATCH', 'settings', { body: payload });
   }
 }
 

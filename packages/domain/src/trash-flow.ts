@@ -14,6 +14,7 @@ import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
 import { inTransaction, resolveDb } from './db-client';
 import {
   MaintainerrUnsafeError,
+  MaintainerrUpstreamError,
   TrashMusicUnsupportedError,
 } from './errors';
 import { guardMaintainerrCall, type MaintainerrClientBundle } from './maintainerr-clients';
@@ -547,11 +548,38 @@ export async function removeExclusion(input: {
 }
 
 /**
+ * Why an item is kept out of a deletion. `tag` ⇒ already whitelisted by the Maintainerr-managed
+ * `dnd` tag; `recently_watched`/`requested` ⇒ the watch/requester guardian (auto-whitelist);
+ * `unevaluable` ⇒ FAIL-CLOSED: the item is not resolved to our ledger, so we have NO cross-server
+ * watch / requester signal to positively clear it (P4) — we never delete what we cannot evaluate.
+ */
+export type GuardianKeepReason = 'tag' | 'recently_watched' | 'requested' | 'unevaluable';
+export type GuardianVerdict = { keep: true; reason: GuardianKeepReason } | { keep: false };
+
+/**
+ * The guardian's per-item verdict (P4 — fail closed). An item is expeditable ONLY when it is
+ * positively evaluated (resolved to our ledger) AND cold (not tag-protected, not recently watched,
+ * no requester). Anything we cannot positively clear — including an item unknown to our ledger — is
+ * KEPT. The `media`-param bypass (P3) is defeated by callers running this over the item's REAL
+ * pending identity, never a client-declared kind.
+ */
+export function classifyGuardian(item: TrashPendingItem): GuardianVerdict {
+  if (item.protectedByTag) return { keep: true, reason: 'tag' };
+  if (item.recentlyWatched) return { keep: true, reason: 'recently_watched' };
+  if (item.requesters.length > 0) return { keep: true, reason: 'requested' };
+  // Fail closed: no ledger resolution ⇒ no watch/requester data ⇒ we cannot confirm it is safe.
+  if (item.mediaItemId === null) return { keep: true, reason: 'unevaluable' };
+  return { keep: false };
+}
+
+/**
  * Addendum a — the cross-server watch guardian. Given the pending set for a media kind, auto-protect
  * (whitelist in Maintainerr) every item watched on ANY server within the window that is not already
- * protected, BEFORE any expedite / Maintainerr deletion cron. Returns the protected + surviving
- * (expeditable) partitions. Each protection records a `trash_excluded` (reason 'watch_guardian')
- * event. Items with no Maintainerr id can't be protected/expedited and are dropped from expedite.
+ * protected, BEFORE any expedite. Returns the protected + surviving (expeditable) partitions. Each
+ * protection records a `trash_excluded` (reason 'watch_guardian') event. Items with no Maintainerr id
+ * (unactionable) or that the guardian cannot positively evaluate are kept out of the expeditable set
+ * (fail closed, P4). NOTE this returns only ids; `expediteDeletion` scope 'all' runs the richer
+ * per-item loop directly (it needs each survivor's collectionId for `handleCollectionMedia`).
  */
 export async function guardRecentlyWatched(input: {
   db?: DbClient;
@@ -570,9 +598,9 @@ export async function guardRecentlyWatched(input: {
   const expeditableIds: string[] = [];
   for (const item of pending.items) {
     if (item.maintainerrMediaId === null) continue;
-    const keep = item.recentlyWatched || item.requesters.length > 0 || item.protectedByTag;
-    if (keep) {
-      if (!item.protectedByTag) {
+    const verdict = classifyGuardian(item);
+    if (verdict.keep) {
+      if (verdict.reason === 'recently_watched' || verdict.reason === 'requested') {
         const res = await saveExclusion({
           db: input.db,
           maintainerr: input.maintainerr,
@@ -583,6 +611,7 @@ export async function guardRecentlyWatched(input: {
         });
         if (res.excluded || res.alreadyExcluded) protectedIds.push(item.maintainerrMediaId);
       } else {
+        // tag-protected (already whitelisted) or unevaluable (kept, not force-whitelisted).
         protectedIds.push(item.maintainerrMediaId);
       }
     } else {
@@ -592,18 +621,58 @@ export async function guardRecentlyWatched(input: {
   return { protectedCount: protectedIds.length, protectedIds, expeditableIds };
 }
 
+/**
+ * Resolve a pending item to its REAL identity + media kind by scanning the actual Maintainerr
+ * pending sets (both movie and tv), NOT trusting any client-declared `media` param (P3). Returns the
+ * merged pending row (which carries the true collectionId, arrKind, watch/requester facets the
+ * guardian needs) or null when the item is not present in ANY pending set. At household scale
+ * (currently zero collections) the two-kind scan is negligible.
+ */
+async function resolvePendingTarget(input: {
+  db?: DbClient;
+  maintainerr: MaintainerrClientBundle;
+  maintainerrMediaId: string;
+  collectionId?: number;
+  watchWindowDays?: number;
+}): Promise<{ item: TrashPendingItem; media: TrashMedia } | null> {
+  for (const media of ['movie', 'tv'] as const) {
+    const pending = await listTrashPending({
+      db: input.db,
+      maintainerr: input.maintainerr,
+      media,
+      watchWindowDays: input.watchWindowDays,
+    });
+    const item = pending.items.find(
+      (p) =>
+        p.maintainerrMediaId === input.maintainerrMediaId &&
+        (input.collectionId === undefined || p.collectionId === input.collectionId),
+    );
+    if (item) return { item, media };
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Expedite (destructive — D5 intent-first ordering) + rules + restore
 // ---------------------------------------------------------------------------
 
 /**
- * ADR-023 / DESIGN-010 D-04/D-05 — expedite deletion (DESTRUCTIVE). Every call re-runs the
- * preflight audit and refuses (MaintainerrUnsafeError → PRECONDITION_FAILED) unless SAFE. The
- * watch guardian runs FIRST (auto-whitelisting recently-watched / requested items so Maintainerr's
- * handler can't delete them). Ordering: the `trash_expedited` intent event is committed BEFORE the
- * Maintainerr handle call (the Fix D-09 discipline for destructive actions — a lost response must
- * never hide an initiated deletion). scope 'item' → POST /collections/media/handle for one item;
- * scope 'all' → POST /collections/handle. Music/Lidarr is rejected (R-87).
+ * ADR-023 / DESIGN-010 D-04/D-05 — expedite deletion (DESTRUCTIVE). Every call re-runs the preflight
+ * audit and refuses (MaintainerrUnsafeError → PRECONDITION_FAILED) unless SAFE.
+ *
+ * P1b/P5 (dated ruling 2026-07-06, Fable): Maintainerr's `POST /collections/handle` processes EVERY
+ * active collection (all media kinds, incl. items outside our ledger) and is NOT scopeable — so
+ * expedite NEVER calls it. Both scopes delete PER ITEM via `POST /collections/media/handle`, guarded
+ * individually. This keeps deletion scoped to exactly the media kind / set the user saw and
+ * guarantees every deleted item passed the guardian.
+ *
+ * scope 'item' — resolve the target's REAL identity from the actual pending set (NOT the client
+ * `media` param, P3); if it cannot be resolved to run the guardian, REFUSE (don't fail open). scope
+ * 'all' — a two-pass loop over the requested kind's pending set: PASS 1 runs the guardian over each
+ * item (auto-whitelisting watched/requested; a failed protection SKIPS the item, never deletes it —
+ * P4/P5); PASS 2 deletes each SURVIVOR individually, committing the `trash_expedited` intent event
+ * BEFORE its handle call (the Fix D-09 destructive-ordering discipline). Music/Lidarr is rejected
+ * upstream at the router (media is movie|tv only, R-87).
  */
 export interface ExpediteDeletionInput {
   db?: DbClient;
@@ -611,6 +680,7 @@ export interface ExpediteDeletionInput {
   scope: 'item' | 'all';
   media: TrashMedia;
   actorId: string | null;
+  watchWindowDays?: number;
   /** scope 'item' — the target. */
   item?: {
     collectionId: number;
@@ -621,10 +691,39 @@ export interface ExpediteDeletionInput {
 
 export interface ExpediteDeletionResult {
   scope: 'item' | 'all';
-  /** items protected by the watch guardian (whitelisted instead of deleted). */
+  /** items kept by the guardian (whitelisted / already tag-protected) instead of deleted. */
   protectedCount: number;
-  /** items handed to Maintainerr's handler (scope 'all' ⇒ every surviving pending item). */
+  /** items handed to Maintainerr's per-item handler (each passed the guardian). */
   expeditedCount: number;
+  /** items NOT deleted because the guardian could not clear them: unevaluable (unknown to our
+   *  ledger), unactionable (no Maintainerr id), or a failed protection write. Never deleted. */
+  skippedCount: number;
+}
+
+/** Commit the `trash_expedited` intent event for one item, THEN trigger its per-item handle. The
+ *  intent is durable before the (lost-response-prone) destructive call — Fix D-09 discipline. */
+async function expediteOneSurvivor(
+  input: Pick<ExpediteDeletionInput, 'db' | 'maintainerr' | 'actorId'>,
+  scope: 'item' | 'all',
+  survivor: { collectionId: number; maintainerrMediaId: string; mediaItemId: string | null },
+): Promise<void> {
+  await inTransaction(input.db, async (tx) => {
+    await tx.insert(ledgerEvents).values({
+      mediaItemId: survivor.mediaItemId,
+      eventType: 'trash_expedited',
+      source: 'maintainerr',
+      occurredAt: nowDate(),
+      requestedByUserId: input.actorId ?? null,
+      payload: {
+        scope,
+        collectionId: survivor.collectionId,
+        maintainerrMediaId: survivor.maintainerrMediaId,
+      },
+    });
+  });
+  await guardMaintainerrCall('maintainerr POST /collections/media/handle', () =>
+    input.maintainerr.write.handleCollectionMedia(survivor.collectionId, survivor.maintainerrMediaId),
+  );
 }
 
 export async function expediteDeletion(
@@ -646,85 +745,116 @@ export async function expediteDeletion(
   if (input.scope === 'item') {
     const item = input.item;
     if (!item) throw new Error('expediteDeletion scope "item" requires an item target');
-    // Guardian check for the single target: recently-watched / requested ⇒ protect, don't delete.
-    const pending = await listTrashPending({
+    // P3 — resolve the target's REAL identity from the actual pending set; the client `media` param
+    // never steers the guardian. Unresolvable ⇒ REFUSE, never fail open.
+    const resolved = await resolvePendingTarget({
       db: input.db,
       maintainerr: input.maintainerr,
-      media: input.media,
+      maintainerrMediaId: item.maintainerrMediaId,
+      collectionId: item.collectionId,
+      watchWindowDays: input.watchWindowDays,
     });
-    const target = pending.items.find(
-      (p) => p.maintainerrMediaId === item.maintainerrMediaId,
-    );
-    if (
-      target &&
-      (target.recentlyWatched || target.requesters.length > 0) &&
-      !target.protectedByTag
-    ) {
-      await saveExclusion({
-        db: input.db,
-        maintainerr: input.maintainerr,
-        maintainerrMediaId: item.maintainerrMediaId,
-        mediaItemId: item.mediaItemId,
-        actorId: input.actorId,
-        reason: 'watch_guardian',
-      });
-      return { scope: 'item', protectedCount: 1, expeditedCount: 0 };
+    if (!resolved) {
+      throw new MaintainerrUnsafeError(
+        `Cannot resolve pending item ${item.maintainerrMediaId} in any Maintainerr collection to ` +
+          `run the deletion guardian. Refusing to expedite (fail closed).`,
+        { reachable: true },
+      );
+    }
+    const target = resolved.item;
+    // target.maintainerrMediaId is guaranteed non-null (we matched on it above).
+    const targetMediaId = target.maintainerrMediaId as string;
+    const verdict = classifyGuardian(target);
+    if (verdict.keep) {
+      // Watched/requested ⇒ auto-whitelist; tag ⇒ already protected; unevaluable ⇒ keep (fail closed).
+      if (verdict.reason === 'recently_watched' || verdict.reason === 'requested') {
+        await saveExclusion({
+          db: input.db,
+          maintainerr: input.maintainerr,
+          maintainerrMediaId: targetMediaId,
+          mediaItemId: target.mediaItemId,
+          actorId: input.actorId,
+          reason: 'watch_guardian',
+        });
+        return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0 };
+      }
+      if (verdict.reason === 'tag') {
+        return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0 };
+      }
+      // unevaluable — not deleted, not force-whitelisted.
+      return { scope: 'item', protectedCount: 0, expeditedCount: 0, skippedCount: 1 };
     }
 
-    // 1) Commit the destructive INTENT first (Fix D-09 discipline).
-    await inTransaction(input.db, async (tx) => {
-      await tx.insert(ledgerEvents).values({
-        mediaItemId: item.mediaItemId ?? null,
-        eventType: 'trash_expedited',
-        source: 'maintainerr',
-        occurredAt: nowDate(),
-        requestedByUserId: input.actorId ?? null,
-        payload: {
-          scope: 'item',
-          collectionId: item.collectionId,
-          maintainerrMediaId: item.maintainerrMediaId,
-        },
-      });
+    // Cold + positively evaluated ⇒ delete this one item (intent-first). Use the RESOLVED
+    // collectionId, not the client's (defence in depth against a mismatched request).
+    await expediteOneSurvivor(input, 'item', {
+      collectionId: target.collectionId,
+      maintainerrMediaId: targetMediaId,
+      mediaItemId: target.mediaItemId,
     });
-    // 2) Then trigger Maintainerr's per-item handler.
-    await guardMaintainerrCall('maintainerr POST /collections/media/handle', () =>
-      input.maintainerr.write.handleCollectionMedia(item.collectionId, item.maintainerrMediaId),
-    );
-    return { scope: 'item', protectedCount: 0, expeditedCount: 1 };
+    return { scope: 'item', protectedCount: 0, expeditedCount: 1, skippedCount: 0 };
   }
 
-  // scope 'all' — guardian auto-whitelists watched/requested items, then handle every collection.
-  const guard = await guardRecentlyWatched({
+  // scope 'all' — per-item loop over the REQUESTED kind's pending set (never /collections/handle).
+  const pending = await listTrashPending({
     db: input.db,
     maintainerr: input.maintainerr,
     media: input.media,
-    actorId: input.actorId,
+    watchWindowDays: input.watchWindowDays,
   });
-  // 1) Commit the destructive INTENT (one marker for the batch).
-  await inTransaction(input.db, async (tx) => {
-    await tx.insert(ledgerEvents).values({
-      mediaItemId: null,
-      eventType: 'trash_expedited',
-      source: 'maintainerr',
-      occurredAt: nowDate(),
-      requestedByUserId: input.actorId ?? null,
-      payload: {
-        scope: 'all',
-        media: input.media,
-        expeditableCount: guard.expeditableIds.length,
-        protectedCount: guard.protectedCount,
-      },
+
+  // PASS 1 — guardian: whitelist watched/requested, skip anything we can't positively clear.
+  const survivors: Array<{ collectionId: number; maintainerrMediaId: string; mediaItemId: string | null }> = [];
+  let protectedCount = 0;
+  let skippedCount = 0;
+  for (const p of pending.items) {
+    if (p.maintainerrMediaId === null) {
+      skippedCount += 1; // unactionable — cannot be deleted anyway.
+      continue;
+    }
+    const verdict = classifyGuardian(p);
+    if (verdict.keep) {
+      if (verdict.reason === 'recently_watched' || verdict.reason === 'requested') {
+        // A FAILED protection must never be followed by that item's deletion (P5): skip it.
+        try {
+          await saveExclusion({
+            db: input.db,
+            maintainerr: input.maintainerr,
+            maintainerrMediaId: p.maintainerrMediaId,
+            mediaItemId: p.mediaItemId,
+            actorId: input.actorId,
+            reason: 'watch_guardian',
+          });
+          protectedCount += 1;
+        } catch (err) {
+          if (err instanceof MaintainerrUpstreamError) {
+            skippedCount += 1;
+            continue;
+          }
+          throw err;
+        }
+      } else if (verdict.reason === 'tag') {
+        protectedCount += 1; // already whitelisted by the dnd tag.
+      } else {
+        skippedCount += 1; // unevaluable — fail closed.
+      }
+      continue;
+    }
+    survivors.push({
+      collectionId: p.collectionId,
+      maintainerrMediaId: p.maintainerrMediaId,
+      mediaItemId: p.mediaItemId,
     });
-  });
-  // 2) Trigger Maintainerr's whole-estate handler.
-  await guardMaintainerrCall('maintainerr POST /collections/handle', () =>
-    input.maintainerr.write.handleAllCollections(),
-  );
-  return {
-    scope: 'all',
-    protectedCount: guard.protectedCount,
-    expeditedCount: guard.expeditableIds.length,
-  };
+  }
+
+  // PASS 2 — delete each survivor individually (intent-first, then per-item handle).
+  let expeditedCount = 0;
+  for (const survivor of survivors) {
+    await expediteOneSurvivor(input, 'all', survivor);
+    expeditedCount += 1;
+  }
+
+  return { scope: 'all', protectedCount, expeditedCount, skippedCount };
 }
 
 /**
