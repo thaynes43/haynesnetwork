@@ -3,12 +3,19 @@
 > The single resume point for agents. Update this in the same change as any milestone.
 > Derive current state from this file's top; you should not have to reconcile anything.
 
-- **Last updated:** 2026-07-07 (Fable 5 autonomous run — PLAN-009 Bulletin complete, v0.13.0 live-validated)
+- **Last updated:** 2026-07-07 (Fable 5 autonomous run — PLAN-010 MOTD complete, v0.14.0 live-validated)
 - **Workflow mode:** PR flow (GATE A executed — see
   `.agents/plans/completed/001-gate-a-pr-cutover.md`).
   `main` is branch-protected: branch → PR → required checks `lint-and-typecheck`, `test`,
   `build` green → squash-merge. `e2e` advisory. Conventional-commit titles drive release-please.
-- **Latest release: v0.13.0 (signed) — PLAN-009 Bulletin: aggregated notification Feed + moderated
+- **Latest release: v0.14.0 (signed) — PLAN-010 MOTD: message-of-the-day dashboard banner
+  (ADR-027 / DESIGN-004 D-15; migration 0019 — `app_settings` key CHECK relax; reuses the ADR-025
+  audited `app_settings` store under a `motd` key, NOT a bespoke table). An admin sets an
+  info/warning MOTD on the compose page; it renders above the dashboard greeting with correct
+  role/severity gating; dismissal is per-user localStorage keyed by a content version (sticky across
+  reload; edit re-shows; Clear removes via ConfirmButton). Live-validated 13/13 on staging. NOTE: a
+  welcome MOTD is currently LIVE on staging for the owner's review.** Prior: **v0.13.0 (signed) —
+  PLAN-009 Bulletin: aggregated notification Feed + moderated
   user Messages board (ADR-026/DESIGN-012; migration 0018). The Feed renders Maintainerr+Seerr+Tautulli
   events with distinct source badges + attribution + media links over a generic per-source
   `POST /api/webhooks/[source]` receiver; Messages is a moderated board (post/edit +
@@ -51,16 +58,22 @@
   `.agents/KICKOFF.md`; queue in `.agents/plans/` (see `.agents/plans/README.md`). **Plans done
   so far:** 002 ✓ (v0.5.0); 003 ✓ (v0.6.0 + fix v0.6.1); 004 ✓ (v0.8.0/v0.8.1); 005 ✓
   (v0.9.0); 006 ✓ (v0.11.0 + fixes v0.11.1/v0.11.2); 007 ✓ (v0.7.0); 012 ✓ (v0.12.0);
-  009 ✓ (v0.13.0); ADR-024 ✓ (v0.10.0, follow-on to 003). **NEXT:** 010 (MOTD) building; 011
-  (Authentik hardening) — branding mocks awaiting the owner's pick; 008 (public cutover) —
-  awaiting the owner's go; 015 (downstream *arr action feedback) — authored, not yet built.
-  **Queue extended per owner (plans 011–015 authored):** 012 (Trash curation pipeline: batches →
-  poster review → Leaving Soon → windowed deletion) ✓ v0.12.0 → 009 (Bulletin) ✓ v0.13.0 →
-  **010 (MOTD) → 011** (Authentik MFA-for-native-accounts + haynesnetwork sign-in rebrand; reordered
-  after 009/010 while its branding mocks await the owner's pick) → 008 (public cutover) → then
-  post-cutover: 013 (disk/reclaim metrics) → 014 (rules tuning + space policy).
+  009 ✓ (v0.13.0); 010 ✓ (v0.14.0); ADR-024 ✓ (v0.10.0, follow-on to 003). **The CORE QUEUE
+  (002–007, 009, 010, 012) + ADR-024 are ALL COMPLETE + live-validated.** **REMAINING BEFORE PUBLIC
+  CUTOVER (008) — all owner-gated:** (a) **011 Authentik branding** — 3 login mockups + a
+  one-command apply/rollback runbook are ready in `scratchpad/ux-011/`; the owner picks (recommend
+  **option C, "haynesnetwork"**). MFA hardening is the **owner's task** — the MFA validation stage
+  already exists in the auth flow at **order 30** (this is config + an exempt policy, NOT new
+  wiring). (b) **009 Seerr/Tautulli notification agents** still need pointing at the live receiver
+  (runbook step — see the PLAN-009 bullet). (c) the owner's **app-by-app SSO login verification**
+  (008 precondition). **Queue order of record:** 012 ✓ v0.12.0 → 009 ✓ v0.13.0 → 010 ✓ v0.14.0 →
+  **011** (owner-gated branding pick + owner MFA task) → **008** (public cutover, owner's go) → then
+  post-cutover backlog: 013 (disk/reclaim metrics) → 014 (rules tuning + space policy) → 015
+  (downstream *arr action feedback, authored) → the Ledger UX polish batch (task #21).
   v0.4.0 recap: unified roles (ADR-012), arbitrary catalog URLs (ADR-013), two-step
   `ConfirmButton`, drag-drop catalog reorder, Library sub-tabs.
+  **Housekeeping:** two git stashes on the (now-deleted) `feat/bulletin` branch held a duplicate
+  agent's Bulletin polish — moot, that branch is merged.
 - **PLAN-006 (Trash section) COMPLETE — shipped v0.11.0 + fixes v0.11.1/v0.11.2, live-validated
   on staging** (`.agents/plans/completed/006-trash-section.md`). Maintainerr-backed deletion UI
   wrapping the live `maintainerr.media.svc.cluster.local` instance behind a friendly `/trash`
@@ -101,6 +114,18 @@
 
 ## Current state
 
+- **PLAN-010 (MOTD dashboard banner) COMPLETE — shipped v0.14.0, live-validated 13/13 on staging**
+  (`.agents/plans/completed/010-motd-dashboard-banner.md`). ADR-027 / DESIGN-004 D-15 / glossary
+  T-89; migration 0019 (`app_settings` key CHECK relax). The MOTD **reuses the shipped ADR-025
+  audited `app_settings` store** under a `motd` key (jsonb `{ message, severity, enabled, startsAt,
+  endsAt, updatedBy }`) — NOT a bespoke table; writes reuse the existing `update_app_setting` audit
+  action. Severity = `info|warning`; a dedicated `motd` router (`getActive` authed; `get`/`set`/
+  `clear` admin); the compose page + "MOTD" admin sub-nav; the banner mounts above `<Greeting>` with
+  ADR-015 reflow-free collapse and a ConfirmButton Clear; dismissal is per-user localStorage keyed
+  by a content version (tokens reused via `color-mix` — no new token/hex). **Live evidence:** admin
+  set info/warning MOTD → renders above the greeting with correct role/severity → per-user versioned
+  dismiss sticky across reload → edit re-shows → Clear removes. **OWNER NOTE:** a welcome MOTD is
+  currently **LIVE on staging** for the owner's review.
 - **PLAN-009 (Bulletin — Feed + Messages board) COMPLETE — shipped v0.13.0, live-validated 7/7 on
   staging** (`.agents/plans/completed/009-communication-hub.md`). ADR-026 / DESIGN-012; migration
   0018 (widen `notifications` + `messages` + `role_message_action_grants`). The **`/bulletin`
@@ -239,22 +264,30 @@ The **Fable 5 autonomous run** works the release queue in `.agents/plans/` (star
 7. ~~**009 — Bulletin**~~ ✅ **DONE** (v0.13.0, `completed/009-communication-hub.md`; ADR-026 /
    DESIGN-012, migration 0018): aggregated notification Feed + moderated Messages board,
    live-validated 7/7 on staging. **REMAINING owner config:** point the real Seerr + Tautulli
-   notification agents at the receiver (see the PLAN-009 bullet under Current state). **010 — MOTD**
-   dashboard banner is **NEXT UP, building** (small enough to be a quick win); pulled ahead of 011
-   because 011 is parked on an owner decision (below).
-8. **011 — Authentik hardening** (`011-authentik-hardening.md`, owner-scoped 2026-07-06):
-   **PARKED — branding mocks awaiting the owner's pick.** MFA for NATIVE Authentik accounts only
-   (Plex-source logins exempt; `mfa-exempt` group keeps the `hnet-e2e` accounts automating) +
-   rebrand the login as "haynesnetwork sign-in" (owner picks from 2–3 screenshot mocks).
+   notification agents at the receiver (see the PLAN-009 bullet under Current state).
+8. ~~**010 — MOTD dashboard banner**~~ ✅ **DONE** (v0.14.0, `completed/010-motd-dashboard-banner.md`;
+   ADR-027 / DESIGN-004 D-15, migration 0019): admin-set info/warning message-of-the-day above the
+   dashboard greeting; reuses the ADR-025 audited `app_settings` store; per-user localStorage
+   versioned dismiss. Live-validated 13/13 on staging; a welcome MOTD is currently live on staging
+   for the owner's review. **With this, the CORE QUEUE (002–007, 009, 010, 012) + ADR-024 are all
+   COMPLETE + live-validated.**
+9. **011 — Authentik hardening** (`011-authentik-hardening.md`, owner-scoped 2026-07-06):
+   **owner-gated, next in the pre-cutover queue.** (a) **Branding:** 3 login mockups + a one-command
+   apply/rollback runbook are ready in `scratchpad/ux-011/` — the owner picks (recommend **option C,
+   "haynesnetwork"**). (b) **MFA hardening is the owner's task**, not new wiring — the MFA validation
+   stage already exists in the auth flow at **order 30**; this is config + the `mfa-exempt` policy
+   (Plex-source logins exempt; the exempt group keeps the `hnet-e2e` accounts automating).
    App-by-app SSO verification = owner task in 008's HARD GATE.
-9. ~~**007 — cosign signing**~~ ✅ **DONE** (v0.7.0, `completed/007-cosign-image-signing.md`).
-10. **008 — public cutover** (LAST of the pre-cutover queue; **awaiting the owner's go**; HARD
+10. ~~**007 — cosign signing**~~ ✅ **DONE** (v0.7.0, `completed/007-cosign-image-signing.md`).
+11. **008 — public cutover** (LAST of the pre-cutover queue; **awaiting the owner's go**; HARD
     GATE incl. the owner's app-by-app SSO check from 011).
-11. **Post-cutover (banked, owner 2026-07-06):** **013 — disk utilization + reclaim metrics**
-    (`013-disk-and-reclaim-metrics.md`; consumes 012's deletion snapshots; core open decision:
-    Grafana embed vs native — owner decides) → **014 — rules tuning + space policy**
+12. **Post-cutover backlog (banked, owner 2026-07-06/07):** **013 — disk utilization + reclaim
+    metrics** (`013-disk-and-reclaim-metrics.md`; consumes 012's deletion snapshots; core open
+    decision: Grafana embed vs native — owner decides) → **014 — rules tuning + space policy**
     (`014-rules-tuning-space-policy.md`; save-data + metrics → tune rules toward the space
-    target; skip-admin-gate graduation criteria).
+    target; skip-admin-gate graduation criteria) → **015 — downstream *arr action feedback**
+    (`015-arr-action-feedback.md`; authored, not yet built) → the **Ledger UX polish batch**
+    (backlog task #21).
 
 The full consolidated backlog (with what is deferred beyond this run) is in
 `context/2026-07-05-backlog-recon.md`.
