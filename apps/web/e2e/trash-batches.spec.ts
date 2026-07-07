@@ -216,11 +216,13 @@ test.describe('trash curation batches (DESIGN-011 D-07)', () => {
   }) => {
     await signIn(page, 'admin');
     await openBatches(page);
-    // The admin locks Vanished Heist — the foreign lock Marge must NOT be able to release.
+    // The admin locks Vanished Heist — the foreign lock Marge must NOT be able to release. NET stats:
+    // the earlier save→unsave of this same title (test above, shared serial DB) nets to 0, so re-locking
+    // it leaves the admin holding exactly ONE current rescue (the old raw counter double-counted to 2).
     const adminVanished = page.getByTestId('wall-tile').filter({ hasText: 'Vanished Heist' });
     await adminVanished.getByRole('button').click();
     await expect(adminVanished).toHaveAttribute('data-glyph', 'lock');
-    await expect(page.getByTestId('batch-savers')).toContainText('Bootstrap Admin · 2 saved');
+    await expect(page.getByTestId('batch-savers')).toContainText('Bootstrap Admin · 1 saved');
 
     // Marge must exist before the admin can assign her a role (users are minted on first
     // sign-in), so the member context signs in FIRST — then gets the family grant.
