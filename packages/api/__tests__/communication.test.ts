@@ -24,9 +24,8 @@ describe('communication.feed (ADR-026 D-05)', () => {
   beforeAll(async () => {
     t = await bootMigratedDb();
     memberRow = await createUser(t.db, { email: 'member@example.com' });
-    const requester = await createUser(t.db, { email: 'req@example.com', displayName: 'Reqi Requester' });
-    const movie = await seedMediaItem(t.db, 'radarr', { title: 'Linked Movie', tmdbId: 603 });
-    void movie;
+    await createUser(t.db, { email: 'req@example.com', displayName: 'Reqi Requester' });
+    await seedMediaItem(t.db, 'radarr', { title: 'Linked Movie', tmdbId: 603 });
 
     // A seerr event that attributes to the requester + links the movie by tmdbId.
     await recordNotification({

@@ -66,10 +66,16 @@ export interface RuntimeEnv {
   MAINTAINERR_URL: string;
   MAINTAINERR_API_KEY: string;
   MAINTAINERR_WEBHOOK_SECRET: string;
+  /** ADR-026 / DESIGN-012 — per-source Bulletin webhook shared secrets (Seerr + Tautulli). */
+  SEERR_WEBHOOK_SECRET: string;
+  TAUTULLI_WEBHOOK_SECRET: string;
 }
 
 /** The shared secret the e2e Maintainerr webhook receiver requires. */
 export const STUB_MAINTAINERR_WEBHOOK_SECRET = 'e2e-maintainerr-webhook-secret';
+/** ADR-026 — the per-source Bulletin webhook secrets the e2e receiver requires. */
+export const STUB_SEERR_WEBHOOK_SECRET = 'e2e-seerr-webhook-secret';
+export const STUB_TAUTULLI_WEBHOOK_SECRET = 'e2e-tautulli-webhook-secret';
 
 /** The throwaway key every stubbed *arr accepts (never a real credential). */
 export const STUB_ARR_API_KEY = 'stub-arr-key';
@@ -125,6 +131,8 @@ export function composeRuntimeEnv(opts: {
     MAINTAINERR_URL: opts.stubMaintainerrBaseUrl,
     MAINTAINERR_API_KEY: STUB_MAINTAINERR_API_KEY,
     MAINTAINERR_WEBHOOK_SECRET: STUB_MAINTAINERR_WEBHOOK_SECRET,
+    SEERR_WEBHOOK_SECRET: STUB_SEERR_WEBHOOK_SECRET,
+    TAUTULLI_WEBHOOK_SECRET: STUB_TAUTULLI_WEBHOOK_SECRET,
   };
 }
 

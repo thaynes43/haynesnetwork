@@ -17,13 +17,7 @@ import { and, eq, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
 import { editMessage, moderateMessage, postMessage } from '@hnet/domain';
 import { mapDomainErrors, router } from '../trpc';
 import { hasMessageAction, messageActionProcedure, sectionProcedure } from '../middleware/role';
-import {
-  decodeKeysetCursor,
-  encodeKeysetCursor,
-  keysetAfter,
-  keysetOrderBy,
-  type KeysetValue,
-} from '../keyset';
+import { decodeKeysetCursor, encodeKeysetCursor, keysetAfter, keysetOrderBy } from '../keyset';
 
 const iso = (d: Date) => d.toISOString();
 const isoOrNull = (d: Date | null) => (d === null ? null : d.toISOString());

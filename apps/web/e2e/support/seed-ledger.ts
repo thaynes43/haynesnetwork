@@ -12,7 +12,9 @@ import { getPool, SEEDED_PLEX_SERVER_IDS, SEEDED_ROLE_IDS } from '@hnet/db';
 import {
   createRole,
   ingestLedgerEvents,
+  recordNotification,
   setRoleLibraries,
+  setRoleMessageActions,
   setRoleTrashActions,
   setSectionPermission,
   tombstoneMissingItems,
@@ -353,9 +355,56 @@ async function main(): Promise<void> {
     actorId: null,
   });
 
+  // ADR-026 / DESIGN-012 (PLAN-009 Bulletin) — roles for the UX agent's Bulletin journeys. The
+  // `bulletin` section defaults read_only for everyone (implicit, no row), so the Feed + Messages
+  // are readable out of the box; these two roles add the fine-grained write grants:
+  //   • Bulletin Poster    — may post/edit own messages (post grant), no moderation.
+  //   • Bulletin Moderator — may hide/delete/restore any message (moderate grant).
+  const { roleId: bulletinPosterId } = await createRole({
+    name: 'Bulletin Poster',
+    description: 'Read the Feed + post/edit own Messages; no moderation',
+    appIds: [],
+    actorId: null,
+  });
+  await setRoleMessageActions({ roleId: bulletinPosterId, actions: ['post'], actorId: null });
+  const { roleId: bulletinModeratorId } = await createRole({
+    name: 'Bulletin Moderator',
+    description: 'Read + post + moderate (hide/delete/restore) any Message',
+    appIds: [],
+    actorId: null,
+  });
+  await setRoleMessageActions({
+    roleId: bulletinModeratorId,
+    actions: ['post', 'moderate'],
+    actorId: null,
+  });
+
+  // A couple of durable Feed notifications so the Bulletin Feed has rows to render hermetically:
+  // a Seerr request attributed to a seeded user + linked to the ledger movie (tmdbId 880001), and
+  // a Tautulli playback event (unattributed). Ingested through the single writer (dedupe-keyed).
+  await recordNotification({
+    source: 'seerr',
+    type: 'MEDIA_APPROVED',
+    title: 'The Fixture (2022)',
+    body: 'Your request was approved',
+    sourceEventId: 'MEDIA_APPROVED:e2e-1',
+    tmdbId: 880001,
+    mediaType: 'movie',
+    requesterEmail: 'manofoz@gmail.com',
+    occurredAt: new Date('2026-07-05T18:00:00Z'),
+  });
+  await recordNotification({
+    source: 'tautulli',
+    type: 'playback.start',
+    title: 'Breaking Prod',
+    body: 'A viewer started playing Breaking Prod',
+    sourceEventId: 'playback.start:e2e-1',
+    occurredAt: new Date('2026-07-05T19:00:00Z'),
+  });
+
   await getPool().end();
   console.log(
-    '[seed-ledger] seeded 5 media items (1 tombstoned) + ledger events + Plex libraries/grants + Ledger/Trash section roles',
+    '[seed-ledger] seeded 5 media items (1 tombstoned) + ledger events + Plex libraries/grants + Ledger/Trash section roles + Bulletin roles + Feed notifications',
   );
 }
 
