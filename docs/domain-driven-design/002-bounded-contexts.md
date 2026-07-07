@@ -37,6 +37,7 @@ Four bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across 
 | BC-02 | Entitlements | 1 | Core | Decide who may see/use what: catalog, grants, tags — owns **Effective Permissions**. |
 | BC-03 | Media Ledger | 2 | Core | Mirror the media estate from the *arrs; own **Fix Request** and **Restore**. |
 | BC-04 | Plex Sharing | 3 | Supporting | Apply library-share decisions to the three Plex servers. |
+| BC-05 | Media Communication | 2.5 | Supporting | Aggregate inbound third-party events into a **Feed**; host a user **Messages** board (Bulletin). |
 
 ## 3. Contexts in detail
 
@@ -120,6 +121,31 @@ Four bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across 
   Secrets, held header-only (never in git/URLs).
 - **Decides nothing:** a share is applied only if BC-02 allows it (R-26, R-27; ADR-017 C-08).
 
+### BC-05 — Media Communication (Phase 2.5 / stretch — **backend built**: ADR-026 / DESIGN-012)
+
+- **Purpose:** the household's communication surface — aggregate inbound third-party events into one
+  durable, filterable **Feed**, and host a user-driven **Messages** board for free-form
+  discussion/triage. The Bulletin section (R-97..R-104).
+- **Owned aggregates:** **Notification** (`notifications` — the durable normalized third-party
+  event store, widened from PLAN-006), **Message** (`messages` — user board entries with a soft
+  moderation lifecycle), and the **Message Action Grant** (`role_message_action_grants` — the
+  fine-grained post/moderate grant; its *mutation* audit is BC-02 Entitlements, `update_message_actions`).
+- **Anti-corruption layer:** per-source webhook **adapters** (Seerr/Overseerr, Tautulli, Maintainerr)
+  translate each service's webhook template into the common Notification model; external payload
+  quirks never leak past the parser (known-key validation + sanitization).
+- **Inbound:** secret-gated webhook POSTs (`POST /api/webhooks/<source>`) → `recordNotification`;
+  Feed browse + Message post/edit/moderate commands, gated by BC-02's Section Permission (READ) +
+  the Message Action Grant (post/moderate).
+- **Outbound:** none — the receiver is **inbound-only** (writes nothing to the source services); a
+  Message linked to a Media Item is a reference, never a write. NO *arr/Plex/Maintainerr mutation.
+- **Attribution reuse (from BC-03):** the email-only requester→user auto-link (ADR-008 C-05) and the
+  tmdb/tvdb→Media Item match are the **single** factored path (`resolveUserIdByEmail` /
+  `resolveMediaItemId`) — BC-05 reuses them, never a second attribution path.
+- **External systems:** Seerr/Overseerr, Tautulli, Maintainerr — **as webhook senders only** (they
+  POST us; we never call them for the Feed). In-cluster, per-source shared secret.
+- **Does NOT own:** the media estate or the Fix flow — Messages **complement** Fix (BC-03), never
+  replace it; the Feed is a read-through over inbound events, not a media source of truth.
+
 ## 4. Relationship rules
 
 - **Entitlements decides; the Dashboard and BC-04 enforce.** Both consume Effective
@@ -145,3 +171,4 @@ Four bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across 
 |------|--------|--------|
 | 2026-07-03 | Tom Haynes | Initial contexts BC-01..BC-04 identified from PRD-001 (Accepted). |
 | 2026-07-06 | Fable 5 | BC-04 Plex Sharing promoted intent → **built** (ADR-017 / DESIGN-007): owns `plex_servers`/`plex_libraries`/`plex_share_audit`; family gating is a `Family`-role grant (no `is_family_only` flag); BC-02→BC-04 reference named as `role_library_grants` → `plex_libraries (server_id, section_key)`; server slugs corrected to `haynestower`/`haynesops`/`hayneskube`. |
+| 2026-07-07 | Fable 5 | Added **BC-05 Media Communication** (ADR-026 / DESIGN-012, PLAN-009 Bulletin, backend built): owns Notification (`notifications`, widened), Message (`messages`), Message Action Grant (`role_message_action_grants`); inbound-only webhook adapters (Seerr/Tautulli/Maintainerr); reuses BC-03's single email/media attribution path; complements (never replaces) BC-03's Fix. The Feed/Messages UX lands as a Fable follow-up. |
