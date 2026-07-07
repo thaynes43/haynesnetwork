@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.16.0](https://github.com/thaynes43/haynesnetwork/compare/v0.15.0...v0.16.0) (2026-07-07)
+
+
+### Features
+
+* Ledger Runs tab — promote run history out from under the spreadsheet ([#95](https://github.com/thaynes43/haynesnetwork/issues/95)) ([2445955](https://github.com/thaynes43/haynesnetwork/commit/2445955be4e2ee75b47c2b677f2ed1ad23061beb))
+
+
+### Bug Fixes
+
+* cutover auth hardening — trustedOrigins for apex/www + real client IP behind tunnel ([#94](https://github.com/thaynes43/haynesnetwork/issues/94)) ([692a14d](https://github.com/thaynes43/haynesnetwork/commit/692a14d300b4a0bd2516431ec244522f5cb9975d))
+* My Plex recognizes the server owner + clearer unlinked-account copy ([#96](https://github.com/thaynes43/haynesnetwork/issues/96)) ([971ab90](https://github.com/thaynes43/haynesnetwork/commit/971ab900599171a983c1f64d1895a7746a0c4b5f))
+* themed dark-mode backgrounds for Bulletin composer + shared inputs ([#93](https://github.com/thaynes43/haynesnetwork/issues/93)) ([8ebf3e1](https://github.com/thaynes43/haynesnetwork/commit/8ebf3e1ce6ff6ae4e52c05856796cdb7dbe351ef))
+
+
+### Documentation
+
+* ADR-029 (amends ADR-017 C-06), DESIGN-007 D-14, glossary T-94. ([971ab90](https://github.com/thaynes43/haynesnetwork/commit/971ab900599171a983c1f64d1895a7746a0c4b5f))
+* complete plan 015 (arr action feedback) — v0.15.0 live-validated ([#91](https://github.com/thaynes43/haynesnetwork/issues/91)) ([bab4538](https://github.com/thaynes43/haynesnetwork/commit/bab4538c09bfba1d3e965ba7ef4633fb73599a8c))
+
 ## [0.15.0](https://github.com/thaynes43/haynesnetwork/compare/v0.14.1...v0.15.0) (2026-07-07)
 
 
