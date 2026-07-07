@@ -2,7 +2,13 @@
 // Messages (post/edit/moderate action gating, moderator-only hidden visibility). Embedded PG16.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { TRPCError } from '@trpc/server';
-import { moderateMessage, postMessage, recordNotification } from '@hnet/domain';
+import {
+  createFixRequest,
+  moderateMessage,
+  postMessage,
+  recordFixAction,
+  recordNotification,
+} from '@hnet/domain';
 import {
   bootMigratedDb,
   caller,
@@ -200,5 +206,94 @@ describe('communication.messages — action gating + moderation (ADR-026 D-06)',
     );
     await forbidden(() => disabled.communication.messages.list({}));
     await forbidden(() => disabled.communication.messages.post({ body: 'x' }));
+  });
+});
+
+describe('communication.messages.list — repair-status hint (Bulletin title deep-links)', () => {
+  let t: TestDb;
+  let author: Awaited<ReturnType<typeof createUser>>;
+  let requester: Awaited<ReturnType<typeof createUser>>;
+  let itemOpen: Awaited<ReturnType<typeof seedMediaItem>>;
+  let itemPast: Awaited<ReturnType<typeof seedMediaItem>>;
+  let itemNone: Awaited<ReturnType<typeof seedMediaItem>>;
+
+  beforeAll(async () => {
+    t = await bootMigratedDb();
+    author = await createUser(t.db, { email: 'msgauthor@example.com', displayName: 'Msg Author' });
+    requester = await createUser(t.db, { email: 'fixer@example.com', displayName: 'Fix Er' });
+    itemOpen = await seedMediaItem(t.db, 'radarr', { title: 'Open Fix Movie', tmdbId: 7001, year: 2021 });
+    itemPast = await seedMediaItem(t.db, 'radarr', { title: 'Past Fix Movie', tmdbId: 7002, year: 2019 });
+    itemNone = await seedMediaItem(t.db, 'radarr', { title: 'No Fix Movie', tmdbId: 7003, year: 2018 });
+
+    // itemOpen — one OPEN (pending) fix ⇒ openFix true, fixCount 1.
+    await createFixRequest({
+      db: t.db,
+      requesterId: requester.id,
+      requesterIsAdmin: true,
+      mediaItemId: itemOpen.id,
+      reason: 'wont_play_corrupt',
+    });
+    // itemPast — two TERMINAL (failed) fixes ⇒ openFix false, fixCount 2. The first must reach a
+    // terminal state before the second opens (open-fix dedupe blocks a second OPEN on the item).
+    for (let i = 0; i < 2; i++) {
+      const f = await createFixRequest({
+        db: t.db,
+        requesterId: requester.id,
+        requesterIsAdmin: true,
+        mediaItemId: itemPast.id,
+        reason: 'wont_play_corrupt',
+      });
+      await recordFixAction({
+        db: t.db,
+        fixRequestId: f.fixRequestId,
+        transition: 'failed',
+        actions: [{ step: 'test_failed', at: new Date().toISOString() }],
+      });
+    }
+    // itemNone — no fixes ⇒ openFix false, fixCount 0.
+
+    await postMessage({ db: t.db, authorId: author.id, body: 'open fix here', mediaItemId: itemOpen.id });
+    await postMessage({ db: t.db, authorId: author.id, body: 'past fixes here', mediaItemId: itemPast.id });
+    await postMessage({ db: t.db, authorId: author.id, body: 'no fix here', mediaItemId: itemNone.id });
+    await postMessage({ db: t.db, authorId: author.id, body: 'no link here' });
+  });
+
+  afterAll(async () => {
+    await t?.stop();
+  });
+
+  const reader = () => caller(makeCtx(t.db, sessionUser(author)));
+
+  it('batches openFix + fixCount per linked message, with mediaYear; zeros/nulls when unlinked', async () => {
+    const res = await reader().communication.messages.list({ limit: 50 });
+    const byBody = (b: string) => {
+      const row = res.items.find((m) => m.body === b);
+      if (!row) throw new Error(`message not found: ${b}`);
+      return row;
+    };
+
+    const open = byBody('open fix here');
+    expect(open.mediaItemId).toBe(itemOpen.id);
+    expect(open.mediaTitle).toBe('Open Fix Movie');
+    expect(open.mediaYear).toBe(2021);
+    expect(open.openFix).toBe(true);
+    expect(open.fixCount).toBe(1);
+
+    const past = byBody('past fixes here');
+    expect(past.mediaItemId).toBe(itemPast.id);
+    expect(past.openFix).toBe(false);
+    expect(past.fixCount).toBe(2);
+
+    const none = byBody('no fix here');
+    expect(none.mediaItemId).toBe(itemNone.id);
+    expect(none.openFix).toBe(false);
+    expect(none.fixCount).toBe(0);
+
+    const unlinked = byBody('no link here');
+    expect(unlinked.mediaItemId).toBeNull();
+    expect(unlinked.mediaYear).toBeNull();
+    expect(unlinked.mediaPosterUrl).toBeNull();
+    expect(unlinked.openFix).toBe(false);
+    expect(unlinked.fixCount).toBe(0);
   });
 });
