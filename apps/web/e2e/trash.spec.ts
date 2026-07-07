@@ -28,6 +28,12 @@ async function maintainerrCalls(page: Page): Promise<RecordedMaintainerrWrite[]>
   return ((await res.json()) as { calls: RecordedMaintainerrWrite[] }).calls;
 }
 
+/** Crucial-change wipes the stub would have enacted (a correct isActive toggle produces none). */
+async function maintainerrWipes(page: Page): Promise<unknown[]> {
+  const res = await page.request.get(`${env().STUB_MAINTAINERR_URL}/_stub/wipes`);
+  return ((await res.json()) as { wipes: unknown[] }).wipes;
+}
+
 async function setIntegration(page: Page, name: string, connected: boolean): Promise<void> {
   await page.request.post(`${env().STUB_MAINTAINERR_URL}/_stub/integrations`, {
     data: { name, connected },
@@ -428,12 +434,21 @@ test.describe('trash section (DESIGN-010)', () => {
 
     // Disarm → PUT /rules with the full round-tripped payload, isActive false. The GET rule carries
     // an ENCODED `ruleJson`; the app must DECODE it to the RuleDto shape Maintainerr's PUT validates,
-    // else the write 502s (the live arm/disarm bug). A successful disarm proves the decode ran.
+    // else the write 502s (the live arm/disarm bug). A successful disarm proves the decode ran. The
+    // rule references Radarr (firstVal[0]=1), so the disarm ALSO proves the group-level radarrSettingsId
+    // was lifted from the nested collection (else the stub returns {code:0,"Radarr rules require…"} → 502).
     await rule.getByTestId('trash-rule-toggle').click();
     await expect(rule.locator('.badge')).toHaveText('Disarmed');
     let puts = (await maintainerrCalls(page)).filter((c) => c.method === 'PUT' && c.path === '/rules');
     expect(puts).toHaveLength(1);
     expect(puts[0]!.body).toMatchObject({ id: 11, name: 'Purge stale movies', isActive: false });
+    // Server selection is lifted to the group level (Bug: live re-verify 502).
+    expect(puts[0]!.body).toMatchObject({ radarrSettingsId: 3 });
+    // HAZARD guard: dataType + libraryId are carried back VERBATIM (the GET-derived canonical strings),
+    // never coerced — else Maintainerr's updateRules sees a crucial-setting change and WIPES the
+    // collection. Asserting the exact representation catches a would-be-wipe payload.
+    expect(puts[0]!.body).toMatchObject({ dataType: 'movie', libraryId: '1' });
+    expect(await maintainerrWipes(page)).toHaveLength(0); // no crucial-change wipe happened
     // the PUT body's rules[] are DECODED (firstVal present, the encoded ruleJson is gone).
     const disarmRules = (puts[0]!.body as { rules: Array<Record<string, unknown>> }).rules;
     expect(disarmRules.length).toBeGreaterThan(0);
@@ -447,10 +462,11 @@ test.describe('trash section (DESIGN-010)', () => {
     await expect(rule.locator('.badge')).toHaveText('Armed');
     puts = (await maintainerrCalls(page)).filter((c) => c.method === 'PUT' && c.path === '/rules');
     expect(puts).toHaveLength(2);
-    expect(puts[1]!.body).toMatchObject({ id: 11, isActive: true });
+    expect(puts[1]!.body).toMatchObject({ id: 11, isActive: true, dataType: 'movie', libraryId: '1', radarrSettingsId: 3 });
     const rearmRules = (puts[1]!.body as { rules: Array<Record<string, unknown>> }).rules;
     expect(rearmRules[0]).toHaveProperty('firstVal');
     expect(rearmRules[0]).not.toHaveProperty('ruleJson');
+    expect(await maintainerrWipes(page)).toHaveLength(0); // still no crucial-change wipe across the round-trip
 
     // Delete (two-step) → DELETE /rules/11 and the row leaves the list.
     await armAndConfirm(rule.getByTestId('trash-rule-delete'));

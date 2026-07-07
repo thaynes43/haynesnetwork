@@ -56,6 +56,10 @@ interface MaintState {
   }>;
   /** rule groups GET /rules serves (the Rules tab's data). Default []. */
   rules: Array<Record<string, unknown>>;
+  /** DESTRUCTIVE-hazard tracker: each PUT /rules that Maintainerr's `updateRules` would treat as a
+   *  crucial-setting change (dataType/libraryId differs from the stored group → wipes collection media
+   *  + specific exclusions + deletes the Plex collection). A correct isActive toggle produces none. */
+  wipes: Array<{ ruleId: number; from: unknown; to: unknown }>;
   /** force a 500 on these `METHOD /path` keys (e.g. 'POST /rules/exclusion'). */
   fail: Set<string>;
   /** force a Maintainerr LOGICAL failure (HTTP 201 + ReturnStatus `{code:0}`) on these `METHOD /path`
@@ -145,26 +149,63 @@ function makeMaintainerr(state: MaintState): {
     if (method === 'POST' && path === '/collections/handle') return ok(null, 201);
     if (method === 'POST' && path === '/collections/media/handle') return ok(null, 201);
     if ((method === 'PUT' || method === 'POST') && path === '/rules') {
-      // Faithful to Maintainerr updateRules/validateRule: it validates each rule as a DECODED RuleDto
-      // (reads firstVal/action) and NEVER decodes ruleJson. A round-tripped DB entity (still carrying
-      // a string `ruleJson`, no firstVal) fails validation → ReturnStatus {code:0}; decoded rules pass.
-      // An EMPTY rules[] skips the loop entirely (→ code:1), which is why the pre-fix e2e never caught
-      // the bug. The confined write client fails closed on code:0 (P1a) → BAD_GATEWAY.
-      const dtoRules = Array.isArray((body as { rules?: unknown }).rules)
-        ? ((body as { rules: unknown[] }).rules)
-        : [];
+      const dto = (body ?? {}) as {
+        id?: unknown;
+        rules?: unknown;
+        dataType?: unknown;
+        libraryId?: unknown;
+        radarrSettingsId?: unknown;
+        sonarrSettingsId?: unknown;
+      };
+      // (1) Faithful to Maintainerr updateRules/validateRule: it validates each rule as a DECODED
+      // RuleDto (reads firstVal/action) and NEVER decodes ruleJson. A round-tripped DB entity (still
+      // carrying a string `ruleJson`, no firstVal) fails validation → ReturnStatus {code:0}; decoded
+      // rules pass. An EMPTY rules[] skips the loop (→ code:1), which is why the pre-fix e2e never
+      // caught Bug 1. The confined write client fails closed on code:0 (P1a) → BAD_GATEWAY.
+      const dtoRules = Array.isArray(dto.rules) ? (dto.rules as unknown[]) : [];
       const undecoded = dtoRules.some(
         (r) =>
           r !== null &&
           typeof r === 'object' &&
           typeof (r as { ruleJson?: unknown }).ruleJson === 'string',
       );
-      return ok(
-        undecoded
-          ? { code: 0, result: 'First value is not available for this server' }
-          : { code: 1, result: 'Success' },
-        method === 'POST' ? 201 : 200,
-      );
+      if (undecoded) {
+        return ok({ code: 0, result: 'First value is not available for this server' }, method === 'POST' ? 201 : 200);
+      }
+      // (2) validateRuleServerSelection: a rule referencing Radarr (Application.RADARR=1) or Sonarr
+      // (=2) in firstVal[0]/lastVal[0] requires the matching GROUP-LEVEL server id (GET nests them
+      // under `collection`, so a verbatim round-trip omits them → the live re-verify 502).
+      const appIds = new Set<number>();
+      for (const r of dtoRules) {
+        if (r === null || typeof r !== 'object') continue;
+        for (const v of [(r as { firstVal?: unknown }).firstVal, (r as { lastVal?: unknown }).lastVal]) {
+          if (Array.isArray(v) && typeof v[0] === 'number') appIds.add(v[0]);
+        }
+      }
+      if (appIds.has(1) && dto.radarrSettingsId == null) {
+        return ok({ code: 0, result: 'Radarr rules require a Radarr server to be selected' }, method === 'POST' ? 201 : 200);
+      }
+      if (appIds.has(2) && dto.sonarrSettingsId == null) {
+        return ok({ code: 0, result: 'Sonarr rules require a Sonarr server to be selected' }, method === 'POST' ? 201 : 200);
+      }
+      // (3) Crucial-change WIPE simulation (verified v3.17.0 updateRules): dataType or libraryId
+      // differing from the stored group wipes the collection media + specific exclusions + deletes the
+      // Plex collection. A correct isActive toggle carries both back VERBATIM ⇒ never fires.
+      if (method === 'PUT' && typeof dto.id === 'number') {
+        const stored = state.rules.find((r) => r.id === dto.id);
+        if (
+          stored !== undefined &&
+          (('dataType' in dto && dto.dataType !== stored.dataType) ||
+            ('libraryId' in dto && dto.libraryId !== stored.libraryId))
+        ) {
+          state.wipes.push({
+            ruleId: dto.id,
+            from: { dataType: stored.dataType, libraryId: stored.libraryId },
+            to: { dataType: dto.dataType, libraryId: dto.libraryId },
+          });
+        }
+      }
+      return ok({ code: 1, result: 'Success' }, method === 'POST' ? 201 : 200);
     }
     return new Response(JSON.stringify({ message: `no stub for ${key}` }), { status: 404 });
   }) as typeof fetch;
@@ -187,6 +228,7 @@ const baseState = (over: Partial<MaintState> = {}): MaintState => ({
   exclusions: new Set(),
   collections: [],
   rules: [],
+  wipes: [],
   fail: new Set(),
   logicalFail: new Set(),
   ...over,
@@ -661,7 +703,8 @@ describe('upsertTrashRule — GET→PUT rule-shape reconciliation (Bug 1, live-r
         ruleGroupId: 11,
         section: 0,
         isActive: true,
-        ruleJson: JSON.stringify({ operator: 1, action: 2, firstVal: [2, 0], customVal: { ruleTypeId: 0, value: '90' }, section: 0 }),
+        // Plex-app value (firstVal[0]=0) so this decode-focused fixture never trips server selection.
+        ruleJson: JSON.stringify({ operator: 1, action: 2, firstVal: [0, 0], customVal: { ruleTypeId: 0, value: '90' }, section: 0 }),
       },
     ],
   });
@@ -708,6 +751,96 @@ describe('upsertTrashRule — GET→PUT rule-shape reconciliation (Bug 1, live-r
     ).resolves.toBeUndefined();
     const put = calls.find((c) => c.method === 'PUT' && c.pathname === '/rules')!;
     expect((put.body as { rules: unknown[] }).rules[0]).toMatchObject(decoded);
+  });
+});
+
+// Live re-verification (2026-07-07, plan-006 staging) — the arm/disarm PUT still 502'd after Bug 1.
+// GET /api/rules NESTS the *arr server ids under `collection`, but PUT (updateRules) reads them at the
+// GROUP level for validateRuleServerSelection: a Radarr/Sonarr rule with no group-level id →
+// {code:0,"Radarr rules require a Radarr server to be selected"} → the write client fails closed →
+// 502. upsertTrashRule now lifts them up. HAZARD: updateRules ALSO treats a change to
+// dataType/manualCollection/manualCollectionName/libraryId (vs the stored group) as a "crucial setting
+// change" that WIPES the collection's media + specific exclusions and DELETES the Plex collection.
+// Verified against v3.17.0 rules.service.ts: `dataType` (contracts MediaItemType) is a STRING union
+// ('movie'|'show'|'season'|'episode') stored as varchar, `libraryId` is varchar — so a pure isActive
+// toggle MUST carry both back VERBATIM. These tests lock the exact PUT body and prove no wipe fires.
+describe('upsertTrashRule — group server selection + crucial-change safety (live re-verify 2026-07-07)', () => {
+  // A movie rule EXACTLY as GET /api/rules serves it on v3.17.0: dataType the STRING 'movie', libraryId
+  // a varchar string, the server ids NESTED under collection, and the rule references Radarr
+  // (Application.RADARR === 1 in firstVal[0]) so PUT's validateRuleServerSelection actually applies.
+  const getShapedRadarrRule = () => ({
+    id: 11,
+    libraryId: '1',
+    name: 'Purge stale movies',
+    description: 'Unwatched 4K movies older than 90 days',
+    isActive: true,
+    dataType: 'movie',
+    collection: { id: 7, libraryId: '1', deleteAfterDays: 30, radarrSettingsId: 3, sonarrSettingsId: null },
+    rules: [
+      {
+        id: 1,
+        ruleGroupId: 11,
+        section: 0,
+        isActive: true,
+        ruleJson: JSON.stringify({ operator: null, action: 0, firstVal: [1, 0], lastVal: [0, 4], section: 0 }),
+      },
+    ],
+  });
+  // Seed the stub with the stored baseline so the crucial-change comparison has something to diff.
+  const storedState = () => baseState({ rules: [getShapedRadarrRule()] });
+
+  it('FAIL-BEFORE: a decoded round-trip WITHOUT the group server id is rejected upstream (the live 502)', async () => {
+    const { bundle } = makeMaintainerr(storedState());
+    // Bug-1 fix applied (ruleJson decoded) but the server id NOT lifted — the pre-this-fix behaviour.
+    const decodedButNoServerId = {
+      ...getShapedRadarrRule(),
+      isActive: false,
+      rules: [{ operator: null, action: 0, firstVal: [1, 0], lastVal: [0, 4], section: 0 }],
+    };
+    await expect(bundle.write.updateRuleGroup(decodedButNoServerId)).rejects.toThrow(
+      /Radarr rules require a Radarr server to be selected|logical failure|code 0/i,
+    );
+  });
+
+  it('PASS-AFTER: upsertTrashRule lifts radarrSettingsId from the nested collection so the PUT succeeds', async () => {
+    const { bundle, calls } = makeMaintainerr(storedState());
+    await expect(
+      upsertTrashRule({ maintainerr: bundle, payload: { ...getShapedRadarrRule(), isActive: false } }),
+    ).resolves.toBeUndefined();
+    const put = calls.find((c) => c.method === 'PUT' && c.pathname === '/rules')!;
+    expect((put.body as { radarrSettingsId?: unknown }).radarrSettingsId).toBe(3);
+  });
+
+  it('HAZARD: the PUT body carries dataType/libraryId VERBATIM (never coerced) ⇒ NO crucial-change wipe', async () => {
+    const state = storedState();
+    const { bundle, calls } = makeMaintainerr(state);
+    await upsertTrashRule({ maintainerr: bundle, payload: { ...getShapedRadarrRule(), isActive: false } });
+    const put = calls.find((c) => c.method === 'PUT' && c.pathname === '/rules')!;
+    const sent = put.body as Record<string, unknown>;
+    const canonical = getShapedRadarrRule();
+    // The exact GET-derived canonical representation — the string 'movie' and the string '1', NOT numbers.
+    // If any normalization coerced these, updateRules would see a crucial change and WIPE the collection.
+    expect(sent.dataType).toBe('movie');
+    expect(sent.dataType).toBe(canonical.dataType);
+    expect(sent.libraryId).toBe('1');
+    expect(sent.libraryId).toBe(canonical.libraryId);
+    expect(state.wipes).toHaveLength(0); // matched the stored group ⇒ no crucial change, no wipe
+  });
+
+  it('the wipe detector actually fires on a coerced dataType (proves the no-wipe assertion is real)', async () => {
+    // Directly PUT a COERCED numeric dataType (the regression this guards against) and confirm the stub
+    // flags + would have enacted the crucial-change wipe — so the PASS tests are a real safety net.
+    const state = storedState();
+    const { bundle } = makeMaintainerr(state);
+    await bundle.write.updateRuleGroup({
+      ...getShapedRadarrRule(),
+      isActive: false,
+      dataType: 1, // WRONG: a number instead of the stored string 'movie' → crucial change → WIPE
+      radarrSettingsId: 3,
+      rules: [{ operator: null, action: 0, firstVal: [1, 0], lastVal: [0, 4], section: 0 }],
+    });
+    expect(state.wipes).toHaveLength(1);
+    expect(state.wipes[0]).toMatchObject({ ruleId: 11, to: { dataType: 1 } });
   });
 });
 
