@@ -4,12 +4,13 @@
 // un-save through the shield (stub-verified exclusion calls), the Expedite Modal with its
 // deleted / protected / skipped partition (per-item /collections/media/handle calls ONLY —
 // the estate-wide /collections/handle must be ABSENT, C-07a), the stale "no longer safe"
-// refusal, Recently-Deleted → Restore, the Rules list (arm/disarm/delete), the Activity feed,
-// the /admin/roles per-action grid, and role gating (disabled ⇒ no nav; a save-only role can't
+// refusal, Recently-Deleted → Restore, the Rules list (arm/disarm/delete — on /settings/trash
+// since ADR-032, reached from the user menu at Trash Edit level), the Activity feed, the
+// /admin/roles per-action grid, and role gating (disabled ⇒ no nav; a save-only role can't
 // expedite; edit_rules needs section Edit). Plus the retired /admin/restore → /trash redirect
 // and the webhook receiver. Serial — the suite shares one stack and the stub's mutable state.
 import { test, expect, type Page } from '@playwright/test';
-import { armAndConfirm, expectViewportFit, signIn, signOut } from './support/helpers';
+import { armAndConfirm, expectViewportFit, openUserMenu, signIn, signOut } from './support/helpers';
 import { readRuntimeEnv } from './support/env';
 import {
   STUB_MAINT_FIXTURE_ID,
@@ -42,7 +43,9 @@ async function setIntegration(page: Page, name: string, connected: boolean): Pro
 
 /** Pre-seed a live Maintainerr exclusion (outside the app's save flow) — its `dnd` tag has NOT synced. */
 async function seedExclusion(page: Page, mediaServerId: string): Promise<void> {
-  await page.request.post(`${env().STUB_MAINTAINERR_URL}/_stub/exclude`, { data: { mediaServerId } });
+  await page.request.post(`${env().STUB_MAINTAINERR_URL}/_stub/exclude`, {
+    data: { mediaServerId },
+  });
 }
 
 async function openTrashMovies(page: Page): Promise<void> {
@@ -105,8 +108,10 @@ test.describe('trash section (DESIGN-010)', () => {
     await expect(banner).toContainText('Maintainerr connected');
     await expect(banner).toContainText('1 rule armed');
 
-    // No Music tab exists — music is structurally undeletable (R-87).
+    // No Music tab exists — music is structurally undeletable (R-87). No Rules tab either:
+    // rule management moved to /settings/trash (ADR-032) — /trash keeps the user surfaces.
     await expect(page.getByRole('tab', { name: 'Music' })).toHaveCount(0);
+    await expect(page.getByRole('tab', { name: 'Rules' })).toHaveCount(0);
 
     // Movies: all four pending fixtures, each with its guardian badge.
     await expect(page.getByTestId('trash-row')).toHaveCount(4);
@@ -373,7 +378,9 @@ test.describe('trash section (DESIGN-010)', () => {
         (c.body as { mediaId?: string }).mediaId === STUB_MAINT_VANISHED_ID,
     );
     expect(handledSaved).toHaveLength(0);
-    await expect(page.getByTestId('trash-row').filter({ hasText: 'Vanished Heist' })).toHaveCount(1);
+    await expect(page.getByTestId('trash-row').filter({ hasText: 'Vanished Heist' })).toHaveCount(
+      1,
+    );
   });
 
   test('safety banner warns when an integration drops, and every destructive control disables', async ({
@@ -418,12 +425,20 @@ test.describe('trash section (DESIGN-010)', () => {
     await expect(row.getByTestId('trash-restore-status')).toBeVisible();
   });
 
-  test('Rules: readable list; disarm→re-arm round-trips the encoded RulesDto; delete removes it', async ({
+  test('Rules on /settings/trash (ADR-032): the admin round-trips via the user menu; disarm→re-arm round-trips the encoded RulesDto; delete removes it', async ({
     page,
   }) => {
     await resetMaintainerr(page);
     await signIn(page, 'admin');
-    await page.goto('/trash?tab=rules');
+
+    // The user menu is the route in (ADR-032 / DESIGN-004 D-16): Trash settings shows for
+    // the admin's implicit trash=edit and lands on the relocated settings page.
+    await openUserMenu(page);
+    await page.getByRole('menuitem', { name: 'Trash settings' }).click();
+    await page.waitForURL('/settings/trash');
+    await expect(page.getByRole('heading', { name: 'Trash settings' })).toBeVisible();
+    // The safety banner rides along (the honest WHY when edits are disabled).
+    await expect(page.getByTestId('trash-safety')).toBeVisible();
 
     const rule = page.getByTestId('trash-rule-row').filter({ hasText: 'Purge stale movies' });
     await expect(rule).toBeVisible();
@@ -439,7 +454,9 @@ test.describe('trash section (DESIGN-010)', () => {
     // was lifted from the nested collection (else the stub returns {code:0,"Radarr rules require…"} → 502).
     await rule.getByTestId('trash-rule-toggle').click();
     await expect(rule.locator('.badge')).toHaveText('Disarmed');
-    let puts = (await maintainerrCalls(page)).filter((c) => c.method === 'PUT' && c.path === '/rules');
+    let puts = (await maintainerrCalls(page)).filter(
+      (c) => c.method === 'PUT' && c.path === '/rules',
+    );
     expect(puts).toHaveLength(1);
     expect(puts[0]!.body).toMatchObject({ id: 11, name: 'Purge stale movies', isActive: false });
     // Server selection is lifted to the group level (Bug: live re-verify 502).
@@ -462,7 +479,13 @@ test.describe('trash section (DESIGN-010)', () => {
     await expect(rule.locator('.badge')).toHaveText('Armed');
     puts = (await maintainerrCalls(page)).filter((c) => c.method === 'PUT' && c.path === '/rules');
     expect(puts).toHaveLength(2);
-    expect(puts[1]!.body).toMatchObject({ id: 11, isActive: true, dataType: 'movie', libraryId: '1', radarrSettingsId: 3 });
+    expect(puts[1]!.body).toMatchObject({
+      id: 11,
+      isActive: true,
+      dataType: 'movie',
+      libraryId: '1',
+      radarrSettingsId: 3,
+    });
     const rearmRules = (puts[1]!.body as { rules: Array<Record<string, unknown>> }).rules;
     expect(rearmRules[0]).toHaveProperty('firstVal');
     expect(rearmRules[0]).not.toHaveProperty('ruleJson');
@@ -533,14 +556,17 @@ test.describe('trash section (DESIGN-010)', () => {
     await expect(memberPage.getByTestId('trash-expedite-item')).toHaveCount(0);
     await expect(memberPage.getByTestId('trash-expedite-all')).toHaveCount(0);
 
-    // edit_rules is granted but the section is Read-only ⇒ the rules stay UNEDITABLE
-    // (edit_rules additionally requires section Edit — ADR-023 C-03).
-    await memberPage.goto('/trash?tab=rules');
-    await expect(
-      memberPage.getByTestId('trash-rule-row').filter({ hasText: 'Purge stale movies' }),
-    ).toBeVisible();
-    await expect(memberPage.getByTestId('trash-rule-toggle')).toHaveCount(0);
-    await expect(memberPage.getByTestId('trash-rule-delete')).toHaveCount(0);
+    // Rules live on /settings/trash now (ADR-032), gated at section EDIT: this read-only
+    // role (even WITH the edit_rules grant — it additionally requires section Edit,
+    // ADR-023 C-03) gets no "Trash settings" menu item and the friendly dead-end on the
+    // direct URL. There is no Rules tab left on /trash to leak a read-only view.
+    await expect(memberPage.getByRole('tab', { name: 'Rules' })).toHaveCount(0);
+    await openUserMenu(memberPage);
+    await expect(memberPage.getByRole('menuitem', { name: 'Trash settings' })).toHaveCount(0);
+    await memberPage.keyboard.press('Escape');
+    await memberPage.goto('/settings/trash');
+    await expect(memberPage.getByTestId('trash-settings-unavailable')).toBeVisible();
+    await expect(memberPage.getByTestId('trash-rule-row')).toHaveCount(0);
 
     // No restore grant ⇒ no Restore control.
     await memberPage.goto('/trash?tab=deleted');

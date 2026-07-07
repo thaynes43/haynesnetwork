@@ -5,7 +5,8 @@
 // every tile carries an X (slated to delete) that a tap flips to a lock (rescued). Layout rules:
 //
 // - THE WALL IS THE PAGE. The lifecycle strip, countdown, and running counts are compact,
-//   fixed-height rows above it; admin ceremony (history, save stats, settings) sits below.
+//   fixed-height rows above it; admin ceremony (history, save stats) sits below. The
+//   Trash-settings card moved to /settings/trash (ADR-032).
 // - ADR-015: a tap swaps the overlay glyph and deepens color IN PLACE — the tile never moves,
 //   resizes, or reflows neighbors (the overlay occupies a fixed reserved corner; captions are
 //   fixed-height single lines). The counts header changes numbers only (tabular figures).
@@ -166,7 +167,9 @@ function tileLabel(
 ): string {
   switch (glyph) {
     case 'x':
-      return tappable ? `${title} is slated to delete — tap to save it` : `${title} is slated to delete`;
+      return tappable
+        ? `${title} is slated to delete — tap to save it`
+        : `${title} is slated to delete`;
     case 'lock':
       if (tappable) return `${title} is saved — tap to un-save it`;
       return savedByName !== null ? `${title} — saved by ${savedByName}` : `${title} is saved`;
@@ -276,10 +279,11 @@ function PosterWall({
         {effective.map(({ item, state }) => {
           const glyph = wallGlyph(state, item.recentlyWatched);
           const tappable = tileTappable(ctx, glyph, item.savedBy);
-          const savedByName =
-            item.savedBy !== null ? (saverNames.get(item.savedBy) ?? null) : null;
+          const savedByName = item.savedBy !== null ? (saverNames.get(item.savedBy) ?? null) : null;
           const label = tileLabel(item.title, glyph, tappable, savedByName);
-          const rating = formatRating(ratingOrNull(item.imdbRating) ?? ratingOrNull(item.tmdbRating));
+          const rating = formatRating(
+            ratingOrNull(item.imdbRating) ?? ratingOrNull(item.tmdbRating),
+          );
           const inner = (
             <>
               <MediaPoster
@@ -509,9 +513,9 @@ function ExpireModal({
         <div className="trash-confirm" data-testid="batch-expire-report">
           {result.aborted ? (
             <p className="alert" data-testid="batch-expire-aborted">
-              <strong>Batch not finished</strong> — Maintainerr failed mid-run, so the sweep
-              stopped early with the partial results below. The batch stays in Leaving Soon and
-              will resume on the next sweep.
+              <strong>Batch not finished</strong> — Maintainerr failed mid-run, so the sweep stopped
+              early with the partial results below. The batch stays in Leaving Soon and will resume
+              on the next sweep.
             </p>
           ) : null}
           <p className="ledger-report__summary" data-testid="batch-expire-summary">
@@ -533,9 +537,9 @@ function ExpireModal({
               <strong>Protected</strong> — already whitelisted before the batch; untouched.
             </li>
             <li>
-              <strong>Skipped</strong> — kept because it couldn’t be verified safe (or the
-              guardian stepped in at sweep time). Not the same as rescued — these were never
-              deliberately saved, and were never deleted.
+              <strong>Skipped</strong> — kept because it couldn’t be verified safe (or the guardian
+              stepped in at sweep time). Not the same as rescued — these were never deliberately
+              saved, and were never deleted.
             </li>
           </ul>
           <div className="form-actions">
@@ -548,16 +552,16 @@ function ExpireModal({
         <div className="trash-confirm" data-testid="batch-expire-confirm">
           <p className="alert" role="alert">
             This runs the deletion sweep <strong>NOW</strong> — immediate and permanent for every
-            unsaved item that passes the fresh safety checks. There is no undo beyond a
-            re-download via Restore.
+            unsaved item that passes the fresh safety checks. There is no undo beyond a re-download
+            via Restore.
           </p>
           <ul className="ledger-confirm__outcomes">
             <li>
               <strong className="trash-danger-text">
                 Up to {willDelete} item{willDelete === 1 ? '' : 's'} will be deleted
               </strong>{' '}
-              — each is re-checked fresh first (live whitelist + the watch/requester guardian);
-              only verified-cold items delete.
+              — each is re-checked fresh first (live whitelist + the watch/requester guardian); only
+              verified-cold items delete.
             </li>
             <li>
               <strong>
@@ -566,10 +570,8 @@ function ExpireModal({
               — a lock is permanent protection.
             </li>
             <li>
-              <strong>
-                At least {willKeep} will be kept (skipped)
-              </strong>{' '}
-              — recently watched, unverifiable, or guardian-protected at sweep time.
+              <strong>At least {willKeep} will be kept (skipped)</strong> — recently watched,
+              unverifiable, or guardian-protected at sweep time.
             </li>
           </ul>
           <div className="form-actions">
@@ -702,7 +704,11 @@ function BatchPanel({
           {BATCH_STATE_LABELS[batch.state]}
         </span>
         {batch.gateSkipped ? (
-          <span className="badge badge--warn" data-testid="batch-gate-skipped" title="The audited skip-gate promoted this batch straight to Leaving Soon — no poster review.">
+          <span
+            className="badge badge--warn"
+            data-testid="batch-gate-skipped"
+            title="The audited skip-gate promoted this batch straight to Leaving Soon — no poster review."
+          >
             Gate skipped
           </span>
         ) : null}
@@ -833,119 +839,10 @@ function BatchPanel({
   );
 }
 
-// ── Trash settings (admin — ADR-025 C-06/C-07) ───────────────────────────────────────────
-function TrashSettingsCard() {
-  const utils = trpc.useUtils();
-  const settings = trpc.trash.settings.get.useQuery();
-  const [windowDraft, setWindowDraft] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const save = trpc.trash.settings.set.useMutation({
-    onSuccess: () => {
-      setError(null);
-      setWindowDraft(null);
-      void utils.trash.settings.get.invalidate();
-    },
-    onError: (err: unknown) => setError(describeMutationError(err)),
-  });
+// The Trash-settings card (admin gate + default window) moved to /settings/trash
+// (ADR-032 — settings are not a user-facing Trash surface); see settings/trash/.
 
-  const skipGate = settings.data?.trash_skip_admin_gate === true;
-  const serverDays = settings.data?.trash_default_window_days ?? 21;
-  const daysValue = windowDraft ?? String(serverDays);
-  const parsedDays = Number(daysValue);
-  const daysValid = Number.isInteger(parsedDays) && parsedDays >= 1 && parsedDays <= 365;
-
-  const flipGate = async (next: boolean): Promise<'ok' | 'failed'> => {
-    try {
-      await save.mutateAsync({ trashSkipAdminGate: next });
-      return 'ok';
-    } catch {
-      return 'failed'; // save.onError already set the message
-    }
-  };
-
-  return (
-    <section className="card batch-settings" data-testid="trash-settings">
-      <h2 className="batch-settings__head">Trash settings</h2>
-      {error !== null ? (
-        <p className="alert" role="alert">
-          {error}
-        </p>
-      ) : null}
-      <div className="batch-settings__row">
-        <div className="batch-settings__copy">
-          <strong>Admin gate</strong>
-          <p className="muted">
-            With the gate on, every batch waits in Admin review for the poster pass. Skipping it
-            sends new batches <strong>straight to Leaving Soon</strong> — no human review before
-            the save window opens. The flip is audited either way.
-          </p>
-          <p data-testid="skipgate-state">
-            {settings.isLoading
-              ? 'Loading…'
-              : skipGate
-                ? 'Skip-gate is ON — new batches go straight to Leaving Soon.'
-                : 'Gate is ON — every batch waits for admin review.'}
-          </p>
-        </div>
-        {skipGate ? (
-          <button
-            type="button"
-            className="btn sm"
-            data-testid="skipgate-disable"
-            disabled={save.isPending || settings.isLoading}
-            onClick={() => void save.mutateAsync({ trashSkipAdminGate: false }).catch(() => undefined)}
-          >
-            Restore the admin gate
-          </button>
-        ) : (
-          <ConfirmButton
-            className="btn sm danger"
-            data-testid="skipgate-enable"
-            label="Skip the admin gate"
-            reArmOnFailure
-            disabled={save.isPending || settings.isLoading}
-            restingAriaLabel="Skip the admin gate — new batches go straight to Leaving Soon without review — click twice to confirm"
-            confirmAriaLabel="Confirm skipping the admin gate"
-            onConfirm={() => flipGate(true)}
-          />
-        )}
-      </div>
-      <div className="batch-settings__row">
-        <div className="batch-settings__copy">
-          <strong>Default save window</strong>
-          <p className="muted">
-            How long a green-lit batch stays in Leaving Soon before the sweep deletes the
-            remainder. Green-light can override per batch.
-          </p>
-        </div>
-        <span className="batch-settings__field">
-          <input
-            type="number"
-            className="batch-window-input"
-            min={1}
-            max={365}
-            value={daysValue}
-            data-testid="settings-window"
-            aria-label="Default save window in days"
-            onChange={(e) => setWindowDraft(e.target.value)}
-          />
-          <span className="muted">days</span>
-          <button
-            type="button"
-            className="btn sm"
-            data-testid="settings-window-save"
-            disabled={save.isPending || !daysValid || windowDraft === null}
-            onClick={() => save.mutate({ trashDefaultWindowDays: parsedDays })}
-          >
-            Save
-          </button>
-        </span>
-      </div>
-    </section>
-  );
-}
-
-// ── the tab shell: kind switch · create · current batch · history · settings ─────────────
+// ── the tab shell: kind switch · create · current batch · history ────────────────────────
 export function BatchesTab({
   access,
   viewerId,
@@ -1141,7 +1038,10 @@ export function BatchesTab({
                       {BATCH_STATE_LABELS[b.state]}
                     </span>
                     {b.gateSkipped ? (
-                      <span className="badge badge--warn" title="Promoted by the audited skip-gate — no admin review.">
+                      <span
+                        className="badge badge--warn"
+                        title="Promoted by the audited skip-gate — no admin review."
+                      >
                         Gate skipped
                       </span>
                     ) : null}
@@ -1171,8 +1071,6 @@ export function BatchesTab({
           </table>
         </div>
       ) : null}
-
-      {viewerIsAdmin ? <TrashSettingsCard /> : null}
     </div>
   );
 }

@@ -142,8 +142,7 @@ test.describe('trash curation batches (DESIGN-011 D-07)', () => {
     calls = await maintainerrCalls(page);
     expect(
       calls.some(
-        (c) =>
-          c.method === 'DELETE' && c.path === `/rules/exclusions/${STUB_MAINT_VANISHED_ID}`,
+        (c) => c.method === 'DELETE' && c.path === `/rules/exclusions/${STUB_MAINT_VANISHED_ID}`,
       ),
     ).toBe(true);
     await expect(wall).toBeVisible();
@@ -291,15 +290,19 @@ test.describe('trash curation batches (DESIGN-011 D-07)', () => {
     page,
   }) => {
     await signIn(page, 'admin');
-    await openBatches(page);
 
-    // Enable the skip-gate — consequential, so it is a two-step confirm with the explanation.
+    // The settings card lives on /settings/trash now (ADR-032) — no longer under the
+    // Batches tab. Enable the skip-gate there — consequential, so it is a two-step
+    // confirm with the explanation.
+    await page.goto('/settings/trash');
     const settings = page.getByTestId('trash-settings');
     await expect(settings).toContainText('straight to Leaving Soon');
     await armAndConfirm(page.getByTestId('skipgate-enable'));
     await expect(page.getByTestId('skipgate-state')).toContainText('Skip-gate is ON');
 
-    // A fresh TV batch skips admin review entirely: born Leaving Soon, flagged as gate-skipped.
+    // A fresh TV batch (back on the Batches tab) skips admin review entirely: born
+    // Leaving Soon, flagged as gate-skipped.
+    await openBatches(page);
     await page.locator('.seg').getByRole('button', { name: 'TV' }).click();
     // The kind rides the URL (router.replace) — wait for the TV context to commit before
     // creating, or a fast click still targets movies (the server would refuse safely).
@@ -317,7 +320,9 @@ test.describe('trash curation batches (DESIGN-011 D-07)', () => {
       calls.some((c) => c.method === 'POST' && c.path === '/collections/removeCollection'),
     ).toBe(true);
 
-    // Restore the gate + round-trip the default window (14 → sticks → back to 21).
+    // Restore the gate + round-trip the default window (14 → sticks → back to 21),
+    // back on the settings page.
+    await page.goto('/settings/trash');
     await page.getByTestId('skipgate-disable').click();
     await expect(page.getByTestId('skipgate-state')).toContainText('Gate is ON');
     await page.getByTestId('settings-window').fill('14');

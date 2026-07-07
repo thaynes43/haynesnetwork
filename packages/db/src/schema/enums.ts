@@ -204,13 +204,16 @@ export type SectionPermissionLevel = (typeof SECTION_PERMISSION_LEVELS)[number];
 
 /**
  * The no-row fallback per section (ADR-021 C-01, Q-03 resolved). Ledger defaults to
- * `read_only`: an authenticated member browses/exports the whole ledger without an admin
- * touching their role, while the mutating Add-&-search stays Edit-gated. `trash` defaults
- * to `disabled` (reserved for PLAN-006 — hidden until that plan builds the section). An
- * `is_admin` role implies `edit` on every section with NO rows (ADR-021 C-03).
+ * `disabled` — **ADR-032 (2026-07-07) flipped it from ADR-021's original `read_only`**:
+ * the Ledger is operator tooling reached from the user menu, hidden for members unless a
+ * role opts them in (a role row `read_only`/`edit` restores access; admins imply `edit`).
+ * `trash` defaults to `disabled` (reserved by PLAN-006's rollout — a role row opts users
+ * in). An `is_admin` role implies `edit` on every section with NO rows (ADR-021 C-03).
+ * NOTE: these are CODE defaults (the no-row fallback) — no SQL default exists, so the flip
+ * needs no migration; a LIVE role with a stored `ledger` row keeps its stored level.
  */
 export const SECTION_DEFAULT_LEVELS: Record<SectionId, SectionPermissionLevel> = {
-  ledger: 'read_only',
+  ledger: 'disabled',
   trash: 'disabled',
   // ADR-026 C-02 — the Bulletin Feed is for everyone: an authenticated member reads the Feed +
   // Messages out of the box (no admin touch), while POSTING/MODERATING stay opt-in per-action

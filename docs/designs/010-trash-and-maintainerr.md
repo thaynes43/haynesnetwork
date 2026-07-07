@@ -215,6 +215,11 @@ session's `sectionPermissions.trash ≠ disabled` (no-row default is _disabled_ 
 - **Tabs:** Movies · TV · Recently Deleted · Rules · Activity (`?tab=`, WAI-ARIA tablist, keyed
   remount, tab switch keeps only `?tab`). Movies/TV are NEVER combined; Music does not exist
   here (R-87).
+  > **Amended by ADR-032 (2026-07-07 / DESIGN-004 D-16):** the **Rules tab moved to
+  > `/settings/trash`** (user-menu "Trash settings", gated at trash **Edit**) — it is a
+  > setting, not a user-facing deletion surface. `/trash` keeps Movies · TV · Batches ·
+  > Recently Deleted · Activity; the rules list/arm/disarm/delete below are unchanged, just
+  > re-homed (same testids and wire calls).
 - **Pending tables:** the `/ledger` spreadsheet treatment (sticky header + frozen Title column,
   both-axis internal scroll) with the shared chip engine (`?q/genre/res/req/col/rmin/rmax/sort`).
   Because `trash.pending` returns the WHOLE kind's set (household scale), filtering/sorting is

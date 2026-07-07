@@ -22,6 +22,9 @@
 //   "looks filtered, deletes everything" state is unexpressible (DESIGN-010 D-09).
 // - ADR-015: the banner reserves its height; the footer bar is persistent with constant-width
 //   controls; refetches dim rows in place; arming/toggling recolors, never reflows.
+// - ADR-032 (2026-07-07): the RULES tab and the Trash-settings card are settings, not
+//   user-facing surfaces — they moved to /settings/trash (reached from the user menu,
+//   trash-Edit gated). /trash keeps Movies · TV · Batches · Recently Deleted · Activity.
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useMemo, useRef, useState } from 'react';
@@ -40,6 +43,7 @@ import { Modal } from '@/components/modal';
 import { MediaPoster } from '@/components/media-poster';
 import { CHIP_LABELS, RatingChip } from '@/components/filter-chips';
 import { ExpediteButton, ShieldButton, type TrashAccess } from '@/components/trash-shield';
+import { SafetyBanner, type SafetyStatus } from '@/components/trash-safety';
 import { BatchesTab } from './batches-tab';
 import {
   RESOLUTION_LABELS,
@@ -62,12 +66,13 @@ import {
 
 export type { TrashAccess };
 
+// ADR-032 — Rules is no longer a Trash tab: rule management is a SETTING and lives on
+// /settings/trash. The remaining five are the user-facing deletion surfaces.
 const TRASH_TABS = [
   { key: 'movies', label: 'Movies' },
   { key: 'tv', label: 'TV' },
   { key: 'batches', label: 'Batches' },
   { key: 'deleted', label: 'Recently Deleted' },
-  { key: 'rules', label: 'Rules' },
   { key: 'activity', label: 'Activity' },
 ] as const;
 type TabKey = (typeof TRASH_TABS)[number]['key'];
@@ -99,76 +104,8 @@ interface PendingItem {
   posterUrl: string | null;
 }
 
-interface SafetyStatus {
-  safe: boolean;
-  reachable: boolean;
-  version: string | null;
-  integrations: Record<string, boolean>;
-  armedRules: number;
-  activeCollections: number;
-}
-
-const INTEGRATION_LABELS: Record<string, string> = {
-  plex: 'Plex',
-  radarr: 'Radarr',
-  sonarr: 'Sonarr',
-  tautulli: 'Tautulli',
-  seerr: 'Seerr',
-};
-
-/** DESIGN-010 D-04 — the safety banner. Reserved height in every state (ADR-015). */
-function SafetyBanner({
-  status,
-  loading,
-  failed,
-}: {
-  status: SafetyStatus | undefined;
-  loading: boolean;
-  failed: boolean;
-}) {
-  let state: 'loading' | 'safe' | 'warn' | 'down';
-  let body: React.ReactNode;
-  if (loading) {
-    state = 'loading';
-    body = <span className="muted">Checking Maintainerr…</span>;
-  } else if (failed || status === undefined || !status.reachable) {
-    state = 'down';
-    body = (
-      <span>
-        <strong>Maintainerr is unreachable.</strong> Trash is read-only until it’s back — nothing
-        can be saved, expedited, or edited.
-      </span>
-    );
-  } else if (!status.safe) {
-    const down = Object.entries(status.integrations)
-      .filter(([, ok]) => !ok)
-      .map(([k]) => INTEGRATION_LABELS[k] ?? k);
-    state = 'warn';
-    body = (
-      <span>
-        <strong>Maintainerr safety check failed</strong> — {down.join(', ')} not connected. Deletion
-        actions are disabled until every integration is back (the watch/keep signal chain can’t be
-        trusted without them).
-      </span>
-    );
-  } else {
-    state = 'safe';
-    body = (
-      <span>
-        <strong>Maintainerr connected</strong>
-        {status.version !== null ? ` · v${status.version}` : ''} · {status.armedRules} rule
-        {status.armedRules === 1 ? '' : 's'} armed · {status.activeCollections} active collection
-        {status.activeCollections === 1 ? '' : 's'}
-      </span>
-    );
-  }
-  return (
-    <div className="trash-safety" data-state={state} data-testid="trash-safety" role="status">
-      <span className="trash-safety__dot" aria-hidden="true" />
-      {body}
-    </div>
-  );
-}
+// The safety banner + its SafetyStatus wire mirror live in components/trash-safety.tsx
+// (shared with /settings/trash — ADR-032).
 
 // ── the pending table (one media kind) ──────────────────────────────────────────────────
 
@@ -1154,147 +1091,6 @@ function RecentlyDeletedTab({ access }: { access: TrashAccess }) {
   );
 }
 
-// ── Rules (readable list + arm/disarm/delete this pass — DESIGN-010 D-09 scope) ─────────
-
-/** GET /rules `dataType` is a STRING `MediaItemType` ('movie'|'show'|'season'|'episode') on v3.17.0
- *  (verified against source — the rule_group column is varchar; DESIGN-010 D-02 flag (a), resolved).
- *  Display-only: we still accept the legacy numeric spelling (1=movie…) defensively, but this label
- *  NEVER feeds the arm/disarm PUT — that round-trips dataType verbatim (a coerced value would be a
- *  crucial-setting change that wipes the collection). */
-function ruleKindLabel(dataType: unknown): string {
-  if (dataType === 1 || dataType === 'movie') return 'Movies';
-  if (dataType === 2 || dataType === 'show') return 'TV';
-  if (dataType === 3 || dataType === 'season') return 'TV (seasons)';
-  if (dataType === 4 || dataType === 'episode') return 'TV (episodes)';
-  return '—';
-}
-
-function RulesTab({ access, reachable }: { access: TrashAccess; reachable: boolean }) {
-  const utils = trpc.useUtils();
-  const rules = trpc.trash.rules.useQuery();
-  const [error, setError] = useState<string | null>(null);
-  const canEditRules =
-    access.level === 'edit' && access.actions.includes('edit_rules') && reachable;
-
-  const invalidate = () => {
-    void utils.trash.rules.invalidate();
-    void utils.trash.status.invalidate();
-  };
-  const saveRule = trpc.trash.saveRule.useMutation({
-    onError: (err: unknown) => setError(describeMutationError(err)),
-    onSuccess: () => {
-      setError(null);
-      invalidate();
-    },
-  });
-  const deleteRule = trpc.trash.deleteRule.useMutation({
-    onError: (err: unknown) => setError(describeMutationError(err)),
-    onSuccess: () => {
-      setError(null);
-      invalidate();
-    },
-  });
-  const busy = saveRule.isPending || deleteRule.isPending;
-
-  if (rules.isLoading) return <p className="muted">Loading rules…</p>;
-  if (rules.error) {
-    return (
-      <p className="alert" role="alert">
-        Couldn’t load the rules: {rules.error.message}
-      </p>
-    );
-  }
-  const list = rules.data ?? [];
-
-  return (
-    <div data-testid="trash-rules">
-      <p className="muted">
-        Maintainerr’s rules decide what lands in the pending tables.{' '}
-        {canEditRules
-          ? 'You can arm, disarm, or delete a rule here; building new rules still happens in Maintainerr for now.'
-          : 'Read-only — changing rules needs Trash access = Edit plus the edit-rules grant.'}
-      </p>
-      {error !== null ? (
-        <p className="alert" role="alert">
-          {error}
-        </p>
-      ) : null}
-      {list.length === 0 ? (
-        <p className="muted">No rules configured — nothing is scheduled for deletion.</p>
-      ) : (
-        <table className="admin-table">
-          <thead>
-            <tr>
-              <th>Rule</th>
-              <th>Applies to</th>
-              <th>Deletes after</th>
-              <th>State</th>
-              {canEditRules ? <th>Actions</th> : null}
-            </tr>
-          </thead>
-          <tbody>
-            {list.map((rule, i) => {
-              // The wire schema is passthrough (round-trip PUTs) — normalize the shell keys.
-              const ruleId = typeof rule.id === 'number' ? rule.id : null;
-              const ruleName = typeof rule.name === 'string' ? rule.name : `Rule ${ruleId ?? i}`;
-              const description = typeof rule.description === 'string' ? rule.description : '';
-              const collection = (rule.collection ?? {}) as Record<string, unknown>;
-              const deleteAfterDays =
-                typeof collection.deleteAfterDays === 'number' ? collection.deleteAfterDays : null;
-              const active = rule.isActive === true;
-              return (
-                <tr key={ruleId ?? i} data-testid="trash-rule-row">
-                  <td data-label="Rule">
-                    <strong>{ruleName}</strong>
-                    {description !== '' ? <span className="muted"> — {description}</span> : null}
-                  </td>
-                  <td data-label="Applies to">{ruleKindLabel(rule.dataType)}</td>
-                  <td data-label="Deletes after">
-                    {deleteAfterDays !== null ? `${deleteAfterDays} days` : '—'}
-                  </td>
-                  <td data-label="State">
-                    <span className={`badge badge--${active ? 'warn' : 'muted'}`}>
-                      {active ? 'Armed' : 'Disarmed'}
-                    </span>
-                  </td>
-                  {canEditRules ? (
-                    <td data-label="Actions">
-                      <span className="row-actions">
-                        <button
-                          type="button"
-                          className="btn sm"
-                          data-testid="trash-rule-toggle"
-                          disabled={busy}
-                          onClick={() =>
-                            saveRule.mutate({ payload: { ...rule, isActive: !active } })
-                          }
-                        >
-                          {active ? 'Disarm' : 'Arm'}
-                        </button>
-                        {ruleId !== null ? (
-                          <ConfirmButton
-                            className="btn sm danger"
-                            data-testid="trash-rule-delete"
-                            disabled={busy}
-                            label="Delete"
-                            restingAriaLabel={`Delete rule ${ruleName} — its collection stops scheduling deletions — click twice to confirm`}
-                            confirmAriaLabel={`Confirm delete rule ${ruleName}`}
-                            onConfirm={() => deleteRule.mutate({ ruleGroupId: ruleId })}
-                          />
-                        ) : null}
-                      </span>
-                    </td>
-                  ) : null}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      )}
-    </div>
-  );
-}
-
 // ── Activity (D-07 — the Maintainerr notification feed; PLAN-009 extends this) ──────────
 
 function ActivityTab() {
@@ -1421,8 +1217,6 @@ function TrashContent({
           />
         ) : active === 'deleted' ? (
           <RecentlyDeletedTab access={access} />
-        ) : active === 'rules' ? (
-          <RulesTab access={access} reachable={status.data?.reachable === true} />
         ) : (
           <ActivityTab />
         )}

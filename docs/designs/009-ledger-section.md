@@ -35,6 +35,11 @@ disk. Access is per-role at the **section** level (Edit / Read-Only / Disabled �
 
 ## D-01 — Nav + routing (UX)
 
+> **Amended by ADR-032 (2026-07-07 / DESIGN-004 D-16):** the Ledger entry moved from
+> `.topbar__nav` into the **user menu** (role-gated menuitem), and the section's no-row
+> default flipped to **`disabled`** — out of the box only admins see it. The level gating,
+> route gate, sub-tabs, and everything below are otherwise unchanged.
+
 `/ledger` is a top-level entry in `.topbar__nav` (DESIGN-004 D-11, between Library and My Plex),
 with Movie/TV/Music/Runs sub-tabs via `?tab=` (WAI-ARIA tablist, default Movies — mirrors
 `/library`; `runs` is the run-history destination, D-08).

@@ -17,7 +17,8 @@ const member: SessionUser = {
     id: UUID_B,
     name: 'Default',
     isAdmin: false,
-    sectionPermissions: { ledger: 'read_only', trash: 'disabled', bulletin: 'read_only' },
+    // The documented no-row defaults (ADR-032 flipped ledger to disabled).
+    sectionPermissions: { ledger: 'disabled', trash: 'disabled', bulletin: 'read_only' },
     trashActions: [],
     messageActions: [],
   },

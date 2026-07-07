@@ -1,11 +1,21 @@
 'use client';
 
-// DESIGN-004 D-08 — chrome: brand block, theme toggle, user menu. Ported from the
-// demo-console TopBar (inline currentColor SVGs, token styling) minus i18n and
-// notifications; plus the theme toggle and the user menu popover. No theme-dependent
-// JSX on first render (labels resolve post-mount) so hydration never mismatches the
-// pre-stamped `data-theme` (D-03). Under 480px the user-menu name collapses to the
-// avatar initial via CSS (D-06).
+// DESIGN-004 D-08/D-16 — chrome: brand block, universal primary nav, theme toggle, user
+// menu. Ported from the demo-console TopBar (inline currentColor SVGs, token styling)
+// minus i18n and notifications; plus the theme toggle and the user menu popover. No
+// theme-dependent JSX on first render (labels resolve post-mount) so hydration never
+// mismatches the pre-stamped `data-theme` (D-03). Under 600px the user-menu name
+// collapses to the avatar initial via CSS (D-06).
+//
+// ADR-032 (2026-07-07, owner-directed IA): the top row is the UNIVERSAL section nav —
+// Home · Library · Trash · Bulletin, the same candidates for every role (a Disabled
+// section still hides its entry; the route stays server-gated). The personal and
+// role-gated tooling destinations moved into the user menu: My Plex (everyone — it is
+// the user's own Plex account), Ledger (only when the section isn't Disabled — the
+// shipped default IS Disabled for members now), Trash settings (/settings/trash, only
+// at Trash Edit level), Admin settings (admin). Fewer top-row items = larger touch
+// targets on phones. The menu is an overlay popover — opening it never reflows the
+// page (ADR-015-sanctioned).
 
 import Link from 'next/link';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
@@ -91,6 +101,14 @@ function UserMenu({ user }: { user: TopBarUser }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
+  // ADR-032 / DESIGN-004 D-16 — the role-gated menu destinations. Ledger's no-row default
+  // is now DISABLED (members see no Ledger anywhere unless a role opts them in); Trash
+  // settings shows only at the Edit level (admin sessions carry 'edit' everywhere, so
+  // admins pass implicitly — ADR-021 C-03). Hiding here is courtesy: every destination is
+  // additionally server-gated.
+  const showLedger = (user.role.sectionPermissions?.ledger ?? 'disabled') !== 'disabled';
+  const showTrashSettings = (user.role.sectionPermissions?.trash ?? 'disabled') === 'edit';
+
   // Esc closes and returns focus to the trigger; click-outside closes (D-08).
   useEffect(() => {
     if (!open) return;
@@ -156,6 +174,39 @@ function UserMenu({ user }: { user: TopBarUser }) {
             <span className="usermenu__display">{user.displayName}</span>
             <span className="usermenu__email">{user.email}</span>
           </div>
+          {/* Personal — the user's own stuff (everyone). */}
+          <Link
+            href="/library/plex"
+            role="menuitem"
+            className="usermenu__item"
+            onClick={() => setOpen(false)}
+          >
+            My Plex
+          </Link>
+          {/* Tooling — role-gated destinations (subtle separator, D-16). */}
+          {showLedger || showTrashSettings || user.role.isAdmin ? (
+            <div className="usermenu__sep" role="separator" aria-hidden="true" />
+          ) : null}
+          {showLedger ? (
+            <Link
+              href="/ledger"
+              role="menuitem"
+              className="usermenu__item"
+              onClick={() => setOpen(false)}
+            >
+              Ledger
+            </Link>
+          ) : null}
+          {showTrashSettings ? (
+            <Link
+              href="/settings/trash"
+              role="menuitem"
+              className="usermenu__item"
+              onClick={() => setOpen(false)}
+            >
+              Trash settings
+            </Link>
+          ) : null}
           {user.role.isAdmin ? (
             <Link
               href="/admin"
@@ -166,6 +217,7 @@ function UserMenu({ user }: { user: TopBarUser }) {
               Admin settings
             </Link>
           ) : null}
+          <div className="usermenu__sep" role="separator" aria-hidden="true" />
           <button
             type="button"
             role="menuitem"
@@ -182,16 +234,11 @@ function UserMenu({ user }: { user: TopBarUser }) {
 }
 
 export function TopBar({ user }: { user: TopBarUser }) {
-  // DESIGN-009 D-01 / AC-13 — the Ledger entry renders only when the caller's section level
-  // is at least Read-Only. The no-row default IS read_only (ADR-021 C-01), so a missing map
-  // falls open to the documented default; a Disabled role never sees the entry (the /ledger
-  // route is additionally server-gated — hiding here is courtesy, not the enforcement).
-  const showLedger = (user.role.sectionPermissions?.ledger ?? 'read_only') !== 'disabled';
   // ADR-023 / DESIGN-010 D-09 — the Trash entry: the no-row DEFAULT for trash is disabled
   // (ADR-021), so a missing map falls CLOSED; the /trash route is additionally server-gated.
   const showTrash = (user.role.sectionPermissions?.trash ?? 'disabled') !== 'disabled';
   // ADR-026 / DESIGN-012 D-08 — the Bulletin entry: the no-row DEFAULT for bulletin is
-  // read_only (C-02 — the Feed is for everyone), so a missing map falls OPEN like Ledger;
+  // read_only (C-02 — the Feed is for everyone), so a missing map falls OPEN;
   // the /bulletin route is additionally server-gated.
   const showBulletin = (user.role.sectionPermissions?.bulletin ?? 'read_only') !== 'disabled';
   return (
@@ -204,20 +251,17 @@ export function TopBar({ user }: { user: TopBarUser }) {
         <span className="brand__name" aria-hidden="true" />
         <span className="sr-only">haynesnetwork</span>
       </div>
-      {/* Primary nav (Phase 2): Home + Library for every signed-in user (R-43). Shown at all
-          widths — it is the only route to Library now that the settings-only user menu no
-          longer carries it. */}
+      {/* ADR-032 / DESIGN-004 D-16 — the UNIVERSAL primary nav: Home · Library · Trash ·
+          Bulletin, the same candidate set for every role (a Disabled section still hides its
+          entry). Ledger and My Plex moved to the user menu — the freed width buys larger
+          touch targets on phones. Shown at all widths. */}
       <nav className="topbar__nav" aria-label="Primary">
         <Link href="/">Home</Link>
         <Link href="/library">Library</Link>
-        {/* PLAN-005 (DESIGN-009 D-01): the Ledger section, level-gated (see showLedger). */}
-        {showLedger ? <Link href="/ledger">Ledger</Link> : null}
         {/* PLAN-006 (DESIGN-010 D-09): the Trash section, level-gated (see showTrash). */}
         {showTrash ? <Link href="/trash">Trash</Link> : null}
         {/* PLAN-009 (DESIGN-012 D-08): the Bulletin section, level-gated (see showBulletin). */}
         {showBulletin ? <Link href="/bulletin">Bulletin</Link> : null}
-        {/* Phase 3 (R-25..R-28): self-service Plex library access on the user's own account. */}
-        <Link href="/library/plex">My Plex</Link>
       </nav>
       <div className="topbar__spacer" />
       <div className="topbar__actions">

@@ -3,6 +3,11 @@
 - **Status:** Accepted
 - **Date:** 2026-07-06
 - **Deciders:** Tom Haynes (owner) · ratified by Fable 5 (autonomous run, KICKOFF mandate)
+- **Amended by ADR-032 (2026-07-07):** the **Ledger no-row default** (C-01 / Q-03) is
+  superseded — `SECTION_DEFAULT_LEVELS.ledger` is now **`disabled`** (the Ledger is
+  user-menu tooling, hidden for members unless a role opts them in). The model, the
+  single-writer, the session hydration, and the `sectionProcedure` gate here all stand
+  unchanged.
 
 ## Context and problem statement
 

@@ -282,15 +282,15 @@ describe('roles.setSectionPermission (ADR-021 C-02)', () => {
     const api = caller(makeCtx(tdb.db, sessionUser(admin)));
 
     const before = (await api.roles.list()).find((r) => r.id === schema.SEEDED_ROLE_IDS.default)!;
-    expect(before.sectionPermissions.ledger).toBe('read_only'); // default
+    expect(before.sectionPermissions.ledger).toBe('disabled'); // the no-row default (ADR-032)
 
     await api.roles.setSectionPermission({
       roleId: schema.SEEDED_ROLE_IDS.default,
       sectionId: 'ledger',
-      level: 'disabled',
+      level: 'read_only',
     });
     const after = (await api.roles.list()).find((r) => r.id === schema.SEEDED_ROLE_IDS.default)!;
-    expect(after.sectionPermissions.ledger).toBe('disabled');
+    expect(after.sectionPermissions.ledger).toBe('read_only');
     // The Admin role always shows edit (implicit).
     expect(
       (await api.roles.list()).find((r) => r.id === schema.SEEDED_ROLE_IDS.admin)!

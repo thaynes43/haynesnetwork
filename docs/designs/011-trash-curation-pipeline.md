@@ -249,10 +249,13 @@ running counts → **the wall** → save-stats → history → settings.
 - **Save-stats** — a "Who rescued what" list under the wall (`saveStats.byUser` — the PLAN-014
   tuning record, surfaced lightly). NET counts: a saver's tally is their current effect (save→unsave→
   save = 1; save→unsave = 0; a tug-of-war lands on the final holder), never a raw flip count.
-- **Admin settings** — a Trash-settings card at the bottom of the Batches tab (admin-only —
-  `trash.settings.*` is adminProcedure): skip-gate flip via two-step ConfirmButton with the
+- **Admin settings** — a Trash-settings card (admin-only — `trash.settings.*` is
+  adminProcedure): skip-gate flip via two-step ConfirmButton with the
   straight-to-Leaving-Soon explanation, default window days; flips are `update_app_setting`-
   audited.
+  > **Amended by ADR-032 (2026-07-07 / DESIGN-004 D-16):** the card moved off the Batches
+  > tab to **`/settings/trash`** (user-menu "Trash settings"). Controls, testids, gates,
+  > and audit are unchanged.
 - In-theme stroke-drawn glyphs per DESIGN-006 (no borrowed icon set); wall screenshots captured
   for owner approval (owner memory: visual identity sign-off).
 

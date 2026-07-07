@@ -1,7 +1,7 @@
 # DESIGN-004: UI shell and dashboard (Phase 1)
 
 - **Status:** Accepted — presentation details partially superseded by DESIGN-006 (visual identity: brand mark, typeface, radii, tile geometry); the mechanism and structure here remain normative
-- **Last updated:** 2026-07-05
+- **Last updated:** 2026-07-07
 - **Satisfies:** PRD-001 R-10, R-12, R-14 (rendering side), R-60, R-61, R-66, AC-01, AC-04, AC-10; governed by ADR-005 (CSS-token theming via `data-theme`) and **ADR-012 (unified Role model)** — API consumed per DESIGN-003 / ADR-004 (API layer: tRPC v11).
 
 > **Amended by ADR-012 (2026-07-05):** the admin permissions UI is now role-based.
@@ -33,6 +33,16 @@
 > on phones** (its `display: none` under 600px is relaxed) so nothing becomes unreachable. The
 > standalone `/my-fixes` route becomes a server redirect to **`/library?tab=my-fixes`** — My Fixes is
 > now a Library sub-tab (DESIGN-005 D-17). Sections **D-08** and **D-11** carry the amendments.
+>
+> **Amended by ADR-032 (2026-07-07, owner-directed IA — recorded here as a dated note rather
+> than a new plan):** the top row becomes the **universal section rail** (Home · Library ·
+> Trash · Bulletin — the same candidate set for every role; a Disabled section still hides its
+> entry) and the user menu becomes the **role-gated personal/tooling menu**: My Plex (everyone),
+> Ledger (section ≠ Disabled — and the Ledger's no-row default flips to **Disabled**), Trash
+> settings (`/settings/trash`, trash = Edit), Admin settings (admin), Sign out — with subtle
+> group separators. The Trash **Rules** tab and the Batches tab's **settings card** relocate to
+> the new `/settings/trash` page. New section **D-16** is normative; **D-08** and **D-11**
+> carry the amendments; DESIGN-009 D-01 / DESIGN-010 D-09 / DESIGN-011 D-07 carry pointers.
 - **Donors:** `../demo-console/apps/shell/src/shell/theme/` (tokens.css, tokenContract.ts, ThemeProvider.tsx, app.css), `../demo-console/packages/shared/layout/`, `../demo-console/apps/shell/src/shell/chrome/` (TopBar, SettingsDrawer), `../demo-console/scripts/lint-css-hex.mjs`.
 
 ## Overview
@@ -326,6 +336,13 @@ English; no i18n in this app) and minus the notifications button:
   > at least Read-Only (ADR-021; hidden for Disabled roles — the route is additionally
   > server-gated). With four links, a ≤479px rule tightens topbar gaps/padding so the
   > row still fits 375px phones.
+  >
+  > **Amended 2026-07-07 (ADR-032 — see D-16):** the row is now the **universal section
+  > rail**: Home · Library · **Trash** · **Bulletin** only. **Ledger and My Plex moved to
+  > the user menu.** With at most four links the phone rules scale UP instead of down:
+  > 14px labels / 8px 14px padding at desktop, 13px / 8px 10px under 600px, and the ≤479px
+  > rule now tightens only the chrome (topbar gap/padding, action gap) — labels stay 13px
+  > with ≥44px targets at 375/390px. The wordmark still yields to the mark alone <600px.
 - **Theme toggle:** the donor SettingsDrawer's segmented dark/light control simplified
   to a single topbar `iconbtn` that flips `hnet-dark ↔ hnet-light` via
   `useTheme().setTheme`. Sun and moon SVGs are **both in the DOM**, shown/hidden by
@@ -349,6 +366,12 @@ English; no i18n in this app) and minus the notifications button:
   > focus to the trigger, click-outside (pointerdown) closes,
   > `aria-expanded`/`aria-haspopup="menu"` on the trigger, `role="menu"` +
   > `role="menuitem"` on the items.
+  >
+  > **Amended 2026-07-07 (ADR-032 — see D-16):** the popover is now the **role-gated
+  > personal/tooling menu**: identity header → **My Plex** → separator → **Ledger** (section
+  > ≠ Disabled) · **Trash settings** (trash = Edit) · **Admin settings** (admin) → separator
+  > → **Sign out**. Behavior (Esc/click-outside/ARIA) unchanged; it remains an overlay, so
+  > opening it never reflows the page (ADR-015).
 
 Admin sub-nav (`apps/web/app/(app)/admin/layout.tsx`, `<nav aria-label="Admin
 sections">`, `.admin-nav`): five entries — **Users** (`/admin`), **Catalog**
@@ -388,6 +411,7 @@ re-listing routes.
 | `/library/[id]`     | authed | `(app)/library/[id]/page.tsx`     | Item detail + write-back actions: Fix, Force Search, roll-up scopes (ADR-011); `item-detail.tsx` + `fix-dialog.tsx` + `force-search-dialog.tsx`.    |
 | `/my-fixes`         | authed | `(app)/my-fixes/page.tsx`         | **Legacy route — server-redirects to `/library?tab=my-fixes` (2026-07-05).** My Fixes is now a Library sub-tab; the redirect keeps old deep links working.                                                                           |
 | `/ledger`           | authed, Ledger section ≥ Read-Only | `(app)/ledger/page.tsx` | **(PLAN-005 — DESIGN-009.)** The Ledger section: Movies · TV · Music sub-tabs over a frozen-pane spreadsheet of the WHOLE ledger (tombstones included), the shared filter chips + `?mon`/`?file` dims, JSONL export of the current filter, and the Edit-gated bulk **Monitor & search** (Modal confirm → per-item run report). Disabled roles get a clean "not available" state (`ledger-client.tsx` renders the section; the server page gates). |
+| `/settings/trash`   | authed, Trash section = Edit | `(app)/settings/trash/page.tsx` | **(ADR-032 — D-16.)** The relocated Trash settings: safety banner + the Maintainerr **Rules** list (arm/disarm/delete — moved from the `/trash` Rules tab) + the admin-only **Batch pipeline** card (skip-gate, default save window — moved from the Batches tab). Reached from the user menu ("Trash settings"). Below Edit renders the clean "not available" state (`trash-settings-unavailable`). |
 | `/admin`            | Admin  | `(app)/admin/page.tsx`            | Users list: table (cards <760px) of displayName, email, **Role** (ADR-012 — no Family/Tags/Grants columns) → row links to detail.                    |
 | `/admin/users/[id]` | Admin  | `(app)/admin/users/[id]/page.tsx` | A single **Role `<select>`** → `users.setRole` (ADR-012); the role's apps shown read-only for context (edit them on `/admin/roles`); LAST_ADMIN/not-found surface in the alert (`user-detail.tsx`). |
 | `/admin/catalog`    | Admin  | `(app)/admin/catalog/page.tsx`    | Entries table. **Add** opens a `Modal` (`components/modal.tsx`) with the create form; **Edit** expands the row *in place* into an inline editor (no shared bottom form). The **URL is a plain text field** (ADR-013 — any `http(s)` URL, any host): the admin types a URL and the client normalizes it for live feedback via `normalizeCatalogUrl`/`catalogUrlError` (mirror in `lib/catalog-url.ts` of the authoritative `packages/domain` copy — DESIGN-003 D-04); the domain re-normalizes and is authoritative on write. Bare hosts default to `https://`, an explicit scheme is preserved; an unparseable/non-http(s) value surfaces inline. Icon picker, reorder → `catalog.reorder`. The slug input's `pattern` is `[a-z0-9\-]+` (the un-escaped `[a-z0-9-]+` is invalid under the browser `v`-flag regex engine and silently blocked the Add form's native submit); inline validation errors render as a prominent `.field-error` pill. Icon picker; **reorder is native-HTML5 drag-and-drop + keyboard arrow-move** (grip glyph `⠿` doubles as the keyboard handle, `aria-live` announces each move) — the whole row drags, and the drop commits the **full `orderedIds` array to `catalog.reorder`** optimistically (ADR-015 / D-14; replaces the old `↑`/`↓` buttons). _(ADR-012: the "Default" column + defaultVisible checkbox are removed.)_ |
@@ -582,6 +606,44 @@ dashboard `page.tsx`, above `<Greeting>`** (the D-07 neighbor). It is **present-
   the layout (D-14). **Save** → `motd.set`; **Clear** → `motd.clear` behind a `@hnet/ui`
   **`ConfirmButton`** (inline two-step — clearing removes something users see; never `window.confirm`,
   hard rule 8). The admin sub-nav (D-10) gains a **"MOTD"** link.
+
+### D-16 — Universal top row + role-gated user menu (ADR-032, owner-directed 2026-07-07)
+
+Owner direction (2026-07-07, verbatim intent): "My Plex" is user settings → the dropdown;
+Ledger → the dropdown, role-gated, admin-only by default; the Trash rules + settings are real
+settings → a settings page under the dropdown. This keeps the top row consistent for all
+roles while admins get more dropdown items, and frees top-row space for larger touch targets
+on mobile. Recorded here as the normative IA (a dated DESIGN-004 note per the owner's
+process call — no new plan doc).
+
+- **Top row (universal section rail):** `Home · Library · Trash · Bulletin` — the same
+  candidate set for every role. Section gating unchanged: a `disabled` section hides its
+  entry (Trash's no-row default IS disabled; Bulletin's is read_only) and every route stays
+  server-gated. No role-variant items ride the row anymore. Sizing: 14px/8×14 desktop →
+  13px/8×10 <600px → chrome-only tightening ≤479px (see the D-08 amendment).
+- **User menu (personal / tooling groups, `.usermenu__sep` separators):**
+  1. identity header (displayName + email);
+  2. **My Plex** → `/library/plex` — everyone (personal, not a section);
+  3. **Ledger** → `/ledger` — only when the session's ledger level ≠ `disabled`. **The
+     no-row default is now `disabled`** (ADR-032 C-03 — flipped from ADR-021's read_only), so
+     out of the box this is admin-only; a role row opts members back in via `/admin/roles`;
+  4. **Trash settings** → `/settings/trash` — only at trash level `edit` (admins implicitly);
+  5. **Admin settings** → `/admin` — admin only;
+  6. **Sign out**.
+  The popover is an overlay — opening it never reflows the page (ADR-015-sanctioned); Esc /
+  click-outside / ARIA behavior is the D-08 contract, unchanged.
+- **`/settings/trash`** (route table, D-11): the Rules list + the admin-only Batch-pipeline
+  card, both relocated **verbatim** (same testids, same wire calls, same ADR-014 ceremony:
+  skip-gate = two-step ConfirmButton, rule delete = two-step, arm/disarm = plain toggle).
+  Server gate: `effectiveSectionLevel(role,'trash') === 'edit'`; the rules EDIT controls
+  additionally need the `edit_rules` grant + a reachable Maintainerr (ADR-023 C-03); the
+  pipeline card is admin-only (`trash.settings.*` is adminProcedure). `/trash` keeps
+  Movies · TV · Batches · Recently Deleted · Activity (`?tab=rules` now falls back to
+  Movies). The shared safety banner (`components/trash-safety.tsx`) renders on both pages —
+  reserved height in every state (D-14/ADR-015).
+- **Consequence for members (the default experience):** top row `Home · Library · Bulletin`
+  (Trash appears once a role grants it), menu = header + My Plex + Sign out. No Ledger
+  anywhere unless a role opts them in.
 
 ## Alternatives considered
 
