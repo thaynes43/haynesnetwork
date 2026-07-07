@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.18.0](https://github.com/thaynes43/haynesnetwork/compare/v0.17.0...v0.18.0) (2026-07-07)
+
+
+### Features
+
+* bulletin messages deep-link referenced titles with repair-status hints ([#107](https://github.com/thaynes43/haynesnetwork/issues/107)) ([be198c3](https://github.com/thaynes43/haynesnetwork/commit/be198c39e95409180c9ea2d143763bcbabc97c1c))
+* space-driven batch proposals + rules-tuning report (ADR-031) ([#108](https://github.com/thaynes43/haynesnetwork/issues/108)) ([c92fc15](https://github.com/thaynes43/haynesnetwork/commit/c92fc15b8fba7b2877f6ed298ebba72eee3ec99e))
+
+
+### Bug Fixes
+
+* deleted items fall back to TMDB posters (Recently Deleted art) ([#106](https://github.com/thaynes43/haynesnetwork/issues/106)) ([87a076c](https://github.com/thaynes43/haynesnetwork/commit/87a076c57b23728ed22535f168891580c2bc4559))
+* sign-out ends the Authentik SSO session (RP-initiated logout) ([#109](https://github.com/thaynes43/haynesnetwork/issues/109)) ([c374aca](https://github.com/thaynes43/haynesnetwork/commit/c374aca18d41583c5f23184df22790c321718c79))
+
+
+### Documentation
+
+* complete plan 013 (storage metrics) — v0.17.0 live on public origin ([#104](https://github.com/thaynes43/haynesnetwork/issues/104)) ([7427c25](https://github.com/thaynes43/haynesnetwork/commit/7427c257b1383eb921f0496d3132f75c312ca011))
+
 ## [0.17.0](https://github.com/thaynes43/haynesnetwork/compare/v0.16.1...v0.17.0) (2026-07-07)
 
 
