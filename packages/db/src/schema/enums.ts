@@ -57,6 +57,12 @@ export const LEDGER_EVENT_TYPES = [
   // (same intent-first discipline); item saves/unsaves reuse 'trash_excluded' + the dedicated
   // trash_batch_saves tuning table — so only this one new type is added.
   'trash_batch_transition',
+  // ADR-031 / DESIGN-014 (PLAN-014 space-driven policy). The space-policy sync mode PROPOSES a batch
+  // (never deletes) when a media array is over its space target; it appends this batch-scoped event
+  // (mediaItemId null) explaining WHY — payload carries { batchId, mediaKind, array, usedPct, target,
+  // candidateCount, candidateBytes, gateSkipped } — so Bulletin/Activity can show "policy proposed a
+  // batch". Migration 0022 rebuilds the ledger_events.event_type CHECK to admit it.
+  'trash_space_policy',
 ] as const;
 export type LedgerEventType = (typeof LEDGER_EVENT_TYPES)[number];
 
@@ -128,11 +134,20 @@ export type SyncSource = (typeof SYNC_SOURCES)[number];
 // the ledger (trash_batch_transition + trash_expedited) + the batch columns, exactly like expedite.
 // It joins SYNC_RUN_KINDS so the CLI `--mode` parser + `SyncMode` accept it (migration 0017 rebuilds
 // the sync_runs.run_kind CHECK to keep the const array and CHECK in parity).
+// ADR-031 / DESIGN-014 — 'space-policy' is the space-driven PROPOSAL sync mode: it reads
+// getUtilization() and, for each array over its space target with no open batch for the backing
+// kind(s), PROPOSES a draft batch (createBatchFromPending — the normal admin_review path; it NEVER
+// greenlights, NEVER sweeps). Like trash-batch-sweep it touches NO *arr source (it reads *arr
+// /diskspace + drives Maintainerr through the batch orchestrator), so it writes NO sync_runs row —
+// its audit trail is the trash_space_policy ledger event + the space_policy notification + the
+// proposed batch's own transition events. It joins SYNC_RUN_KINDS so the CLI `--mode` parser +
+// `SyncMode` accept it (migration 0022 rebuilds the sync_runs.run_kind CHECK to keep parity).
 export const SYNC_RUN_KINDS = [
   'full',
   'incremental',
   'metadata-refresh',
   'trash-batch-sweep',
+  'space-policy',
 ] as const;
 export type SyncRunKind = (typeof SYNC_RUN_KINDS)[number];
 
@@ -305,6 +320,12 @@ export const APP_SETTING_KEYS = [
   // Q-03 split: 013 stores + displays, 014 enforces). Reuses the generic audited store; the
   // app_settings.key CHECK is relaxed to admit this value in migration 0021.
   'space_targets',
+  // ADR-031 / DESIGN-014 (PLAN-014 space-driven policy) — the space-policy CONFIG (jsonb object:
+  // { enabled, cooldownDays, minCandidates, perArray: { <arrayKey>: { enabled, cooldownDays?,
+  // minCandidates? } } }). DEFAULT OFF (enabled:false). When on, the space-policy sync mode proposes
+  // (never deletes) a draft batch for an array over its space_targets ceiling. Admin-gated + audited
+  // through the same setAppSetting single-writer; migration 0022 relaxes the app_settings.key CHECK.
+  'space_policy',
 ] as const;
 export type AppSettingKey = (typeof APP_SETTING_KEYS)[number];
 

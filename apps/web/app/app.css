@@ -3415,15 +3415,132 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='lock'] {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.bulletin-msg__media,
 .bulletin-msg__trail {
   margin: 6px 0 0;
   font-size: 13px;
+}
+.bulletin-msg__media {
+  margin: 10px 0 0;
 }
 /* Soft-moderated rows (moderator view) read subdued — content stays legible for triage. */
 .bulletin-msg[data-status='hidden'] .bulletin-msg__body,
 .bulletin-msg[data-status='deleted'] .bulletin-msg__body {
   opacity: 0.6;
+}
+
+/* The referenced-title deep-link chip (DESIGN-012 addendum). A clearly-clickable card that jumps
+   to /library/[id] (History + Fix). The thumb box RESERVES its 2:3 space (aspect-ratio), so a late
+   or failed poster load swaps to the kind icon in place — never a reflow (ADR-015). Hover/focus
+   recolor only; geometry is fixed. Phone-friendly: the whole chip is one ≥44px-tall tap target. */
+.media-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  padding: 6px 12px 6px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text);
+  text-decoration: none;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+.media-chip:hover,
+.media-chip:focus-visible {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface-2));
+}
+.media-chip__thumb {
+  flex: none;
+  width: 34px;
+  aspect-ratio: 2 / 3;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--color-surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+}
+.media-chip__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.media-chip__icon {
+  width: 18px;
+  height: 18px;
+}
+.media-chip__text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.media-chip__title {
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.media-chip__year {
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+.media-chip__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+.media-chip__kind {
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+/* The static repair cue. Open fix reads in the ADR-028 "actively moving" progress tone (matching
+   the item page's live phases); a past-repairs count reads muted. Neither ever changes on
+   interaction, so no reflow risk. */
+.repair-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+}
+.repair-hint--open {
+  color: var(--color-progress);
+}
+.repair-hint--past {
+  color: var(--color-text-muted);
+}
+.repair-hint__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-progress) 60%, transparent);
+  animation: repair-pulse 1.8s ease-out infinite;
+}
+@keyframes repair-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-progress) 55%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--color-progress) 0%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-progress) 0%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .repair-hint__dot {
+    animation: none;
+  }
 }
 
 /* ---------- Storage metrics (ADR-030 / DESIGN-013 D-05, PLAN-013) ---------- */
@@ -3689,4 +3806,90 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='lock'] {
 
 .storage-batches {
   margin-top: 16px;
+}
+
+/* ---------- Space policy card (ADR-031 / DESIGN-014 — propose-only + tuning/graduation) ---------- */
+/* Rows recolor/deepen on interaction but never reflow neighbours (ADR-015): fixed layout, flex wrap. */
+.space-policy h2 {
+  margin: 0 0 6px;
+}
+.space-policy > p.muted {
+  margin: 0 0 10px;
+}
+.space-policy__row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 0;
+  border-top: 1px solid var(--color-border);
+  flex-wrap: wrap;
+}
+.space-policy__copy {
+  min-width: 0;
+  font-size: 13px;
+}
+.space-policy__copy p {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+.space-policy__controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  flex-wrap: wrap;
+}
+.space-policy__field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.space-policy__field input {
+  width: 5em;
+}
+.space-policy .confirm-btn,
+.space-policy .btn {
+  flex: none;
+}
+.space-policy__status {
+  padding: 12px 0 4px;
+  border-top: 1px solid var(--color-border);
+  font-size: 13px;
+}
+.space-policy__status p {
+  margin: 4px 0 0;
+}
+.space-policy__kinds {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+.space-policy__kinds li {
+  margin: 2px 0;
+}
+.policy-tuning {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+.policy-tuning h3 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+.policy-tuning table {
+  margin-top: 10px;
+}
+.policy-graduation {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+.policy-graduation[data-meets] {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+}
+.policy-graduation p {
+  margin: 4px 0 0;
 }

@@ -1,8 +1,10 @@
 # PLAN-014: Rules tuning + space policy (banked — analysis/config, decisions deferred by design)
 
-- **Status:** Draft — **BANKED**: runs after PLAN-013 (owner ordering 2026-07-06). Deliberately
-  lean — this is mostly an **analysis + Maintainerr-config** plan, not a build plan; its
-  decisions are EXPECTED to be deferred until the data exists.
+- **Status:** **Executing** (Fable 5, 2026-07-07) — built per the owner's conservative-first rulings
+  (2026-07-07): a **propose-only** space policy (never autonomous deletion) + a **rules-tuning REPORT**
+  (never auto-tune) + the **skip-gate graduation criteria**. Ratified as **ADR-031** / **DESIGN-014**;
+  PRD **R-112..R-114**; glossary **T-98..T-99**; migration **0022**. See the "As built" note below.
+  (Was: Draft — **BANKED**, runs after PLAN-013.)
 - **Satisfies:** likely a new **ADR-NN** (the skip-admin-gate graduation criteria + the tuning
   policy of record) and dated as-built notes on the PLAN-012 ADR/DESIGN; little to no PRD/schema
   surface expected. Numbers indicative per `.agents/plans/README.md` — re-grep at slot time.
@@ -65,3 +67,29 @@ trail — tuning changes WHAT is proposed, never HOW deletion is gated.
 
 Rule edits are Maintainerr config — revert to the previous recorded rule definitions; flip the
 skip-gate off (audited). Nothing structural to roll back.
+
+## As built (Fable 5, 2026-07-07)
+
+Ratified propose-only per the owner's rulings — the plan's Q-01..Q-04 are resolved in ADR-031.
+
+- **Space policy (propose-only, DEFAULT OFF).** New `space-policy` `@hnet/sync` mode
+  (`evaluateSpacePolicy`, `packages/domain/src/space-policy.ts`): reads `getUtilization()` and, for each
+  over-target, **opted-in** array with no open batch + past **cooldown** (default 7d) + ≥ **minCandidates**
+  (default 1), PROPOSES a draft batch via `createBatchFromPending` (the ordinary `admin_review` path —
+  never greenlights, never sweeps; the audited skip-gate is not special-cased). One-open-per-kind refusals
+  are handled gracefully. Writes a `trash_space_policy` ledger event + a `space_policy` notification
+  (source `trash`) explaining WHY. Config in `app_settings['space_policy']` (`SpacePolicy`), admin-set +
+  audited; status via `getSpacePolicyStatus`. Wire: `storage.policy.{get,status,set}`.
+- **Rules tuning (REPORT, not auto-tune).** `getTuningReport` / `trash.tuning`
+  (`packages/domain/src/trash-tuning.ts`): rescue-vs-delete by resolution / rating band / collection
+  (`save-rate = rescued/(rescued+deleted)`) + the **graduation readiness** block. Never mutates a rule.
+- **Skip-gate graduation criteria (ADR-025 C-07 resolved).** Suggested bar: ≥3 completed policy-proposed
+  batches, ≤10% aggregate save-rate, 0 restores of swept items (`GRADUATION_THRESHOLDS`); surfaced live in
+  the report; the flip stays an owner action.
+- **UI.** A "Space policy" card on `/admin/storage` (enable ConfirmButton, per-array opt-in + cooldown,
+  status line, tuning/graduation block). No new page. Pure helpers in `apps/web/lib/space-policy.ts`.
+- **Migration 0022** (CHECK relaxes: `space_policy`, `trash_space_policy`, `space-policy`).
+- **Ops:** the `haynes-ops` `space-policy` CronJob (DESIGN-014 D-08, **suspended**) is owner-deployed — NOT
+  committed here.
+- **Deferred (documented):** rule attribution is **collection-grain** (Q-02); **no auto-tuning** ships
+  (Q-03); actual rule edits + the skip-gate flip remain owner actions against the surfaced evidence.

@@ -49,6 +49,23 @@ describe('storage admin gate — every procedure is adminProcedure (v1)', () => 
       memberCaller.storage.targets.set({ targets: { haynestower: 80 } }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
+
+  // ADR-031 / DESIGN-014 (PLAN-014) — the space-policy card's four procedures are all admin-gated too:
+  // the propose-only config (policy.get/set), its ledger-derived status (policy.status), and the
+  // rules-tuning/graduation read the card composes (trash.tuning). A member is FORBIDDEN on every one.
+  it('a member is FORBIDDEN on policy.get / policy.status / policy.set / trash.tuning', async () => {
+    await expect(memberCaller.storage.policy.get()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(memberCaller.storage.policy.status()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(
+      memberCaller.storage.policy.set({
+        enabled: false,
+        cooldownDays: 7,
+        minCandidates: 1,
+        perArray: {},
+      }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(memberCaller.trash.tuning()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
 });
 
 describe('storage.utilization — merges /diskspace + targets (admin)', () => {

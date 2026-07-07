@@ -24,6 +24,7 @@ import { Suspense, useRef, useState, type FormEvent } from 'react';
 import { ConfirmButton } from '@hnet/ui';
 import { trpc } from '@/lib/trpc-client';
 import { Modal } from '@/components/modal';
+import { KindIcon } from '@/components/kind-icon';
 import { describeMutationError } from '@/lib/app-error';
 import { ARR_KIND_LABELS, formatWhen, type ArrKindName } from '@/lib/media';
 import {
@@ -70,6 +71,90 @@ function MediaLink({
   return (
     <Link className="row-link" href={`/library/${mediaItemId}`}>
       {mediaTitle ?? 'Media item'}
+    </Link>
+  );
+}
+
+/** The static repair-status cue shown on a linked message's media chip — sourced server-side
+ *  (messages.list) from fix_requests for the page's linked ids. An OPEN fix wins; else a count
+ *  of recorded repairs; else nothing. This is a HINT, not a live view — the item page owns the
+ *  live phases (ADR-028). */
+function RepairHint({ openFix, fixCount }: { openFix: boolean; fixCount: number }) {
+  if (openFix) {
+    return (
+      <span className="repair-hint repair-hint--open" data-testid="repair-hint">
+        <span className="repair-hint__dot" aria-hidden="true" />
+        Fix in progress
+      </span>
+    );
+  }
+  if (fixCount > 0) {
+    return (
+      <span className="repair-hint repair-hint--past" data-testid="repair-hint">
+        {fixCount} {fixCount === 1 ? 'repair' : 'repairs'} recorded
+      </span>
+    );
+  }
+  return null;
+}
+
+/** DESIGN-012 addendum — the prominent, clearly-clickable media chip on a message card. It deep-
+ *  links to the item page (/library/[id] — where History + Fix live) so a reader can jump straight
+ *  to a referenced title's repair history. Poster thumb when the item has one (authed proxy), else
+ *  the kind icon; the thumb box RESERVES its space so a late/failed image never reflows (ADR-015).
+ *  The repair cue rides along, static. */
+function MessageMediaChip({
+  mediaItemId,
+  mediaTitle,
+  mediaArrKind,
+  mediaYear,
+  mediaPosterUrl,
+  openFix,
+  fixCount,
+}: {
+  mediaItemId: string;
+  mediaTitle: string | null;
+  mediaArrKind: string | null;
+  mediaYear: number | null;
+  mediaPosterUrl: string | null;
+  openFix: boolean;
+  fixCount: number;
+}) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const kind = mediaArrKind ?? 'radarr';
+  const label = kindLabel(mediaArrKind);
+  const showImage = mediaPosterUrl !== null && !imgFailed;
+  return (
+    <Link
+      className="media-chip"
+      href={`/library/${mediaItemId}`}
+      data-testid="message-media-chip"
+      aria-label={`Open ${mediaTitle ?? 'the media item'} — view its history and repairs`}
+    >
+      <span className="media-chip__thumb" aria-hidden="true">
+        {showImage ? (
+          // eslint-disable-next-line @next/next/no-img-element -- authed proxy route, not a static asset
+          <img
+            src={mediaPosterUrl}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            onError={() => setImgFailed(true)}
+          />
+        ) : (
+          <KindIcon kind={kind} className="media-chip__icon" />
+        )}
+      </span>
+      <span className="media-chip__text">
+        <span className="media-chip__title">
+          {mediaTitle ?? 'Media item'}
+          {mediaYear !== null ? <span className="media-chip__year"> ({mediaYear})</span> : null}
+        </span>
+        <span className="media-chip__meta">
+          {label !== null ? <span className="media-chip__kind">{label}</span> : null}
+          <RepairHint openFix={openFix} fixCount={fixCount} />
+        </span>
+      </span>
     </Link>
   );
 }
@@ -381,7 +466,7 @@ function Composer({ onPosted }: { onPosted: () => void }) {
         />
       </label>
       <div className="field">
-        <span>Link a media item (optional)</span>
+        <span>Link the title (optional) — helps others check its history and repairs</span>
         <MediaPicker selected={media} onSelect={setMedia} />
       </div>
       {error !== null ? (
@@ -414,6 +499,10 @@ interface MessageItem {
   mediaItemId: string | null;
   mediaTitle: string | null;
   mediaArrKind: string | null;
+  mediaYear: number | null;
+  mediaPosterUrl: string | null;
+  openFix: boolean;
+  fixCount: number;
   status: MessageStatusName;
   createdAt: string;
   editedAt: string | null;
@@ -621,12 +710,17 @@ function MessagesTab({ access, viewerId }: { access: BulletinAccess; viewerId: s
                   ) : null}
                   <p className="bulletin-msg__body">{m.body}</p>
                   {m.mediaItemId !== null ? (
-                    <p className="bulletin-msg__media">
-                      About: <MediaLink mediaItemId={m.mediaItemId} mediaTitle={m.mediaTitle} />
-                      {kindLabel(m.mediaArrKind) !== null ? (
-                        <span className="muted"> · {kindLabel(m.mediaArrKind)}</span>
-                      ) : null}
-                    </p>
+                    <div className="bulletin-msg__media">
+                      <MessageMediaChip
+                        mediaItemId={m.mediaItemId}
+                        mediaTitle={m.mediaTitle}
+                        mediaArrKind={m.mediaArrKind}
+                        mediaYear={m.mediaYear}
+                        mediaPosterUrl={m.mediaPosterUrl}
+                        openFix={m.openFix}
+                        fixCount={m.fixCount}
+                      />
+                    </div>
                   ) : null}
                   {canModerate && m.moderatedAt !== null ? (
                     <p className="muted bulletin-msg__trail" data-testid="message-trail">

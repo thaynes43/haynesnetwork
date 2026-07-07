@@ -162,7 +162,23 @@ test.describe('Bulletin section UI (ADR-026 / DESIGN-012 D-08)', () => {
     const card = page.getByTestId('message-card').filter({ hasText: 'Buffering again' });
     await expect(card).toHaveCount(1);
     await expect(card).toContainText('buffers at 12 minutes');
-    await expect(card.getByRole('link', { name: /The Fixture/ })).toBeVisible();
+
+    // The linked title now renders as a prominent, clickable media chip that DEEP-LINKS to the
+    // item page (/library/[id] — where History + Fix live), carrying a static repair cue sourced
+    // server-side from fix_requests. The Fixture has a seeded (resolved) fix, so the chip shows a
+    // "repairs recorded" hint. This is the owner's ask: jump from a message to the title's history.
+    const chip = card.getByTestId('message-media-chip');
+    await expect(chip).toBeVisible();
+    await expect(chip).toHaveAttribute('href', /^\/library\/[0-9a-f-]{36}$/);
+    await expect(chip).toContainText('The Fixture');
+    await expect(chip.getByTestId('repair-hint')).toContainText(/repair/i);
+
+    // Parity: an UNLINKED message renders NO chip (the picker stays optional).
+    await composer.getByLabel(/^Message/).fill('Household heads-up — no title linked here.');
+    await page.getByTestId('message-post').click();
+    const plainCard = page.getByTestId('message-card').filter({ hasText: 'Household heads-up' });
+    await expect(plainCard).toHaveCount(1);
+    await expect(plainCard.getByTestId('message-media-chip')).toHaveCount(0);
 
     // Durable: a full reload still shows it (R-101).
     await page.reload();
