@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.1](https://github.com/thaynes43/haynesnetwork/compare/v0.16.0...v0.16.1) (2026-07-07)
+
+
+### Bug Fixes
+
+* track expedited deletions in Recently Deleted + Activity; match Expedite/Save button weight ([#97](https://github.com/thaynes43/haynesnetwork/issues/97)) ([5b2933d](https://github.com/thaynes43/haynesnetwork/commit/5b2933d33f213f576d2f3b72ac4dcec09b546173))
+
 ## [0.16.0](https://github.com/thaynes43/haynesnetwork/compare/v0.15.0...v0.16.0) (2026-07-07)
 
 
