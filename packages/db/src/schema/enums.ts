@@ -18,6 +18,7 @@ export const PERMISSION_AUDIT_ACTIONS = [
   'update_section_permission', // ADR-021 C-02 — a role's section access level was changed
   'update_trash_actions', // ADR-023 C-03 — a role's fine-grained Trash action grants were replaced
   'update_app_setting', // ADR-025 C-06 — a generic app_settings key was changed (skip-gate, window default)
+  'update_message_actions', // ADR-026 C-04 — a role's fine-grained Bulletin message action grants were replaced
 ] as const;
 export type PermissionAuditAction = (typeof PERMISSION_AUDIT_ACTIONS)[number];
 
@@ -179,7 +180,8 @@ export type PlexShareEvent = (typeof PLEX_SHARE_EVENTS)[number];
 // per-action grants on top — it does NOT create a second base table.
 // ---------------------------------------------------------------------------
 
-export const SECTION_IDS = ['ledger', 'trash'] as const; // 'trash' reserved for PLAN-006
+// ADR-026 / DESIGN-012 — 'bulletin' joins the section set (PLAN-009 Bulletin: Feed + Messages).
+export const SECTION_IDS = ['ledger', 'trash', 'bulletin'] as const; // 'trash' PLAN-006; 'bulletin' PLAN-009
 export type SectionId = (typeof SECTION_IDS)[number];
 
 export const SECTION_PERMISSION_LEVELS = ['edit', 'read_only', 'disabled'] as const;
@@ -195,6 +197,10 @@ export type SectionPermissionLevel = (typeof SECTION_PERMISSION_LEVELS)[number];
 export const SECTION_DEFAULT_LEVELS: Record<SectionId, SectionPermissionLevel> = {
   ledger: 'read_only',
   trash: 'disabled',
+  // ADR-026 C-02 — the Bulletin Feed is for everyone: an authenticated member reads the Feed +
+  // Messages out of the box (no admin touch), while POSTING/MODERATING stay opt-in per-action
+  // grants (message action grants, T-87). `disabled` hides the whole section from that role.
+  bulletin: 'read_only',
 };
 
 /** disabled < read_only < edit — the total order `sectionProcedure` gates on (ADR-021). */
@@ -291,11 +297,35 @@ export const APP_SETTING_KEYS = [
 ] as const;
 export type AppSettingKey = (typeof APP_SETTING_KEYS)[number];
 
-// ADR-023 / DESIGN-010 (addendum c) — the notification store's source set. PLAN-006 ships the
-// generic receiver with Maintainerr as source #1; PLAN-009 (Bulletin) extends this with Seerr /
-// Tautulli adapters. text+CHECK, single source of truth for TS + the notifications SQL CHECK.
-export const NOTIFICATION_SOURCES = ['maintainerr'] as const;
+// ADR-023 / DESIGN-010 (addendum c) — the notification store's source set. PLAN-006 shipped the
+// generic receiver with Maintainerr as source #1; ADR-026 / DESIGN-012 (PLAN-009 Bulletin) WIDENS
+// it with Seerr + Tautulli adapters (migration 0018 rebuilds the notifications source CHECK).
+// 'seerr' is the single canonical name for BOTH Overseerr and Seerr (one deployment, one source
+// name — the Overseerr webhook agent posts here). text+CHECK, single source of truth for TS + the
+// notifications SQL CHECK.
+export const NOTIFICATION_SOURCES = ['maintainerr', 'seerr', 'tautulli'] as const;
 export type NotificationSource = (typeof NOTIFICATION_SOURCES)[number];
+
+// ---------------------------------------------------------------------------
+// ADR-026 / DESIGN-012 — Bulletin: Messages board enums (migration 0018). A Message is a
+// user-posted durable board entry; MESSAGE_STATUSES is its moderation lifecycle and
+// MESSAGE_ACTIONS the fine-grained per-action grants (mirroring TRASH_ACTIONS). text+CHECK,
+// single source of truth for TS + the SQL CHECKs (DESIGN-001 D-02).
+// ---------------------------------------------------------------------------
+
+// A Message's moderation status. 'visible' (posted, shown in the board); 'hidden' (moderator
+// soft-hide — content preserved, filtered from the default board); 'deleted' (moderator
+// soft-delete — content preserved for audit, never rendered). Content is NEVER physically
+// removed by a status change (soft states preserve the row for the audit trail).
+export const MESSAGE_STATUSES = ['visible', 'hidden', 'deleted'] as const;
+export type MessageStatus = (typeof MESSAGE_STATUSES)[number];
+
+// The fine-grained Bulletin message actions layered on top of the coarse `bulletin` section level
+// (which gates READ). 'post' = create/edit one's OWN messages; 'moderate' = hide/delete/restore
+// ANY message. A ROW in role_message_action_grants = the action is granted (presence is the grant;
+// no boolean — mirrors TRASH_ACTIONS / role_trash_action_grants). Admin implies both with no rows.
+export const MESSAGE_ACTIONS = ['post', 'moderate'] as const;
+export type MessageAction = (typeof MESSAGE_ACTIONS)[number];
 
 // ADR-022 C-01 — how an *arr-add run was initiated (restore_runs.reason, migration 0014).
 // `restore` = the admin-only diff-driven failsafe (searches OFF, skip-if-present); `ledger_add`

@@ -211,4 +211,117 @@ describe('migrations against embedded Postgres 16', () => {
       ).rejects.toMatchObject({ code: '23514' });
     });
   });
+
+  // ADR-026 / DESIGN-012 (migration 0018) — the Bulletin widening: the rebuilt CHECKs preserve the
+  // prior values AND admit the new ones, and the widened notifications columns + dedupe index exist.
+  describe('0018 Bulletin widening (ADR-026 — CHECK preservation + new tables/columns)', () => {
+    it('notifications_source_enum admits maintainerr + the new seerr/tautulli, rejects unknown', async () => {
+      for (const src of ['maintainerr', 'seerr', 'tautulli']) {
+        await client.query({
+          text: `INSERT INTO notifications (source, type, title) VALUES ($1, 'ev', 't')`,
+          values: [src],
+        });
+      }
+      await expect(
+        client.query(`INSERT INTO notifications (source, type, title) VALUES ('overseerr', 'ev', 't')`),
+      ).rejects.toMatchObject({ code: '23514' }); // 'overseerr' folds into 'seerr' — not its own value
+      await client.query(`DELETE FROM notifications WHERE type = 'ev'`);
+    });
+
+    it('the widened notification columns + partial-unique dedupe index exist', async () => {
+      const cols = await client.query(
+        `SELECT column_name FROM information_schema.columns WHERE table_name = 'notifications'`,
+      );
+      const names = cols.rows.map((r) => r.column_name as string);
+      for (const c of ['media_item_id', 'tmdb_id', 'tvdb_id', 'actor_user_id', 'occurred_at', 'source_event_id']) {
+        expect(names).toContain(c);
+      }
+      // occurred_at is NOT NULL with a default (backfilled from created_at).
+      const occ = await client.query(
+        `SELECT is_nullable, column_default FROM information_schema.columns
+           WHERE table_name = 'notifications' AND column_name = 'occurred_at'`,
+      );
+      expect(occ.rows[0].is_nullable).toBe('NO');
+      expect(String(occ.rows[0].column_default)).toContain('now()');
+      // The (source, source_event_id) partial-unique dedupe index enforces idempotent re-delivery.
+      await client.query(
+        `INSERT INTO notifications (source, type, title, source_event_id) VALUES ('seerr','ev','a','X1')`,
+      );
+      await expect(
+        client.query(
+          `INSERT INTO notifications (source, type, title, source_event_id) VALUES ('seerr','ev','b','X1')`,
+        ),
+      ).rejects.toMatchObject({ code: '23505' });
+      // ...but two NULL source_event_ids are allowed (partial index — WHERE source_event_id IS NOT NULL).
+      await client.query(`INSERT INTO notifications (source, type, title) VALUES ('maintainerr','ev','n1')`);
+      await client.query(`INSERT INTO notifications (source, type, title) VALUES ('maintainerr','ev','n2')`);
+      await client.query(`DELETE FROM notifications WHERE type = 'ev'`);
+    });
+
+    it('messages_status_enum admits visible/hidden/deleted, rejects unknown', async () => {
+      const u = await client.query(
+        `INSERT INTO users (email, display_name, role_id)
+           VALUES ('msg@example.com', 'Msg', (SELECT id FROM roles WHERE is_default)) RETURNING id`,
+      );
+      const author = u.rows[0].id as string;
+      for (const st of ['visible', 'hidden', 'deleted']) {
+        await client.query({
+          text: `INSERT INTO messages (author_user_id, body, status) VALUES ($1, 'b', $2)`,
+          values: [author, st],
+        });
+      }
+      await expect(
+        client.query({
+          text: `INSERT INTO messages (author_user_id, body, status) VALUES ($1, 'b', 'archived')`,
+          values: [author],
+        }),
+      ).rejects.toMatchObject({ code: '23514' });
+    });
+
+    it('role_message_action_grants_action_enum admits post/moderate, rejects unknown', async () => {
+      const role = await client.query(`SELECT id FROM roles WHERE is_default`);
+      const roleId = role.rows[0].id as string;
+      for (const a of ['post', 'moderate']) {
+        await client.query({
+          text: `INSERT INTO role_message_action_grants (role_id, action) VALUES ($1, $2)`,
+          values: [roleId, a],
+        });
+      }
+      await expect(
+        client.query({
+          text: `INSERT INTO role_message_action_grants (role_id, action) VALUES ($1, 'admin')`,
+          values: [roleId],
+        }),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query(`DELETE FROM role_message_action_grants WHERE role_id = '${roleId}'`);
+    });
+
+    it('permission_audit_action_enum admits the new update_message_actions (preservation)', async () => {
+      await client.query(
+        `INSERT INTO permission_audit (action) VALUES ('update_message_actions')`,
+      );
+      // The prior values still validate (rebuild preserved them).
+      await client.query(`INSERT INTO permission_audit (action) VALUES ('update_app_setting')`);
+    });
+
+    it('role_section_permissions_section_enum admits the new bulletin section', async () => {
+      const role = await client.query(`SELECT id FROM roles WHERE is_default`);
+      const roleId = role.rows[0].id as string;
+      await client.query({
+        text: `INSERT INTO role_section_permissions (role_id, section_id, level)
+                 VALUES ($1, 'bulletin', 'read_only')`,
+        values: [roleId],
+      });
+      await expect(
+        client.query({
+          text: `INSERT INTO role_section_permissions (role_id, section_id, level)
+                   VALUES ($1, 'nonesuch', 'read_only')`,
+          values: [roleId],
+        }),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query(
+        `DELETE FROM role_section_permissions WHERE role_id = '${roleId}' AND section_id = 'bulletin'`,
+      );
+    });
+  });
 });

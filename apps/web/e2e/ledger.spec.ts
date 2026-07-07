@@ -49,9 +49,10 @@ test.describe('ledger section (DESIGN-009)', () => {
     await signIn(page, 'admin');
 
     // Nav order: the Ledger entry sits between Library and My Plex (D-01); the admin's
-    // implicit trash=edit also shows the Trash entry (PLAN-006, DESIGN-010 D-09).
+    // implicit trash=edit also shows the Trash entry (PLAN-006, DESIGN-010 D-09), and
+    // Bulletin defaults read_only for everyone (PLAN-009, ADR-026 C-02).
     const navTexts = await page.locator('.topbar__nav a').allInnerTexts();
-    expect(navTexts).toEqual(['Home', 'Library', 'Ledger', 'Trash', 'My Plex']);
+    expect(navTexts).toEqual(['Home', 'Library', 'Ledger', 'Trash', 'Bulletin', 'My Plex']);
     await page.getByRole('navigation', { name: 'Primary' }).getByText('Ledger').click();
     await page.waitForURL('/ledger');
 
@@ -373,7 +374,8 @@ test.describe('ledger section (DESIGN-009)', () => {
     // No Ledger in the nav… (the section level rides the session read — a reload suffices)
     await memberPage.goto('/');
     const navTexts = await memberPage.locator('.topbar__nav a').allInnerTexts();
-    expect(navTexts).toEqual(['Home', 'Library', 'My Plex']);
+    // Ledger disabled hides only Ledger; Bulletin still defaults read_only (PLAN-009).
+    expect(navTexts).toEqual(['Home', 'Library', 'Bulletin', 'My Plex']);
 
     // …and the direct URL renders the friendly dead end, never a raw error.
     await memberPage.goto('/ledger');

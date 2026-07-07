@@ -2833,3 +2833,122 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='lock'] {
 .batch-settings .btn {
   flex: none;
 }
+
+/* ---------- Bulletin (ADR-026 / DESIGN-012 D-08): Feed table + Messages board ---------- */
+/* Refetches dim in place (ADR-015 — results swap, the layout never jumps). */
+.bulletin-feedwrap.is-refreshing,
+.bulletin-board.is-refreshing {
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+}
+.bulletin-feedwrap {
+  overflow-x: auto;
+}
+.bulletin-when,
+.bulletin-event {
+  white-space: nowrap;
+}
+/* Long titles/bodies clamp inside the What column — a verbose webhook never stretches rows. */
+.bulletin-feed .col-what {
+  max-width: 34ch;
+}
+.bulletin-what {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+/* The composer card sits above the board; the media-pick results are an overlay POPOVER so
+   opening/closing them never reflows the form below (ADR-015). */
+.bulletin-composer {
+  margin-bottom: var(--space);
+}
+.bulletin-composer textarea {
+  resize: vertical;
+}
+.bulletin-mediapick {
+  position: relative;
+  display: inline-block;
+  min-width: min(320px, 100%);
+}
+.bulletin-mediapick input {
+  width: 100%;
+}
+.bulletin-mediapick__pop {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.bulletin-mediapick__opt {
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+.bulletin-mediapick__opt:hover,
+.bulletin-mediapick__opt:focus-visible {
+  background: var(--color-surface-2);
+}
+.bulletin-mediapick__note {
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+/* The board: one card per message; moderation recolors via the status badge, never re-lays. */
+.bulletin-board {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.bulletin-msg__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.bulletin-msg__meta {
+  min-width: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.bulletin-msg__actions {
+  flex: none;
+}
+.bulletin-msg__subject {
+  margin: 6px 0 0;
+  font-weight: 700;
+}
+.bulletin-msg__body {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.bulletin-msg__media,
+.bulletin-msg__trail {
+  margin: 6px 0 0;
+  font-size: 13px;
+}
+/* Soft-moderated rows (moderator view) read subdued — content stays legible for triage. */
+.bulletin-msg[data-status='hidden'] .bulletin-msg__body,
+.bulletin-msg[data-status='deleted'] .bulletin-msg__body {
+  opacity: 0.6;
+}

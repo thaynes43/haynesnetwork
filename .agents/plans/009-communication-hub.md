@@ -1,6 +1,23 @@
 # PLAN-009: Bulletin — aggregated notification Feed + user Messages board
 
-- **Status:** Draft <!-- Fable 5 flips Draft → Executing → Completed -->
+- **Status:** Executing <!-- Fable 5 flips Draft → Executing → Completed -->
+  <!-- 2026-07-07 (Fable 5): BACKEND vertical landed on branch `feat/bulletin` — ADR-026 (Accepted),
+       DESIGN-012, PRD R-97..R-104, glossary T-81..T-88, BC-05; enums + migration 0018 (widen
+       notifications + messages + role_message_action_grants); recordNotification attribution/dedupe;
+       message writers + setRoleMessageActions; generic `POST /api/webhooks/[source]` receiver +
+       Seerr/Tautulli/Maintainerr adapters; communication tRPC router (feed + messages);
+       session.messageActions + messageActionProcedure; guard-list + e2e stubs + seed roles. The
+       Feed/Messages **UI is the remaining Fable UX follow-up** (DESIGN-012 D-05/D-06 are its contract);
+       ID numbering differs from the tentative plan values (re-grepped). -->
+  <!-- 2026-07-07 (Fable 5, follow-up): SEAM REVIEW hardened the backend (streamed 64KB webhook
+       body cap; author edits of moderated messages rejected MESSAGE_MODERATED→CONFLICT; new
+       route-level secret-isolation/404-before-secret/proto-strip tests + status-filter-injection
+       probes — all green). SECTION UX landed (DESIGN-012 D-08): nav entry + server-gated
+       /bulletin (Feed table w/ source+media segs, keyset load-more; Messages board w/ composer +
+       ledger.search media picker, author-edit Modal, moderator ConfirmButton hide/delete +
+       restore + Triage Modal) + /admin/roles Bulletin column/action grid; e2e journeys pass
+       (communication.spec.ts 7/7). REMAINING: deploy (haynes-ops secrets/env), wire the real
+       Seerr/Tautulli/Maintainerr agents, LIVE validation, then mark Completed. -->
 - **Satisfies:** PRD-001 new **R-89..R-96** (Bulletin — Feed + Messages); new **ADR-020**
   (communication hub: generic webhook ingestion + durable notification store + user message board +
   moderation/permission model + relationship to Fix and to BC-03 attribution); new **DESIGN-010**

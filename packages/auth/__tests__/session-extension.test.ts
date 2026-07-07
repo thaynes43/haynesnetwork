@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { SEEDED_ROLE_IDS, TRASH_ACTIONS } from '@hnet/db/schema';
+import { MESSAGE_ACTIONS, SEEDED_ROLE_IDS, TRASH_ACTIONS } from '@hnet/db/schema';
 import { assignRole, createRole, setRoleTrashActions, setSectionPermission } from '@hnet/domain';
 import { getSessionExtension } from '../src/index';
 import { bootMigratedDb, createUser, type TestDb } from './helpers';
@@ -22,10 +22,12 @@ describe('session extension (DESIGN-002 D-06 / DESIGN-003 D-01, ADR-012)', () =>
         id: SEEDED_ROLE_IDS.default,
         name: 'Default',
         isAdmin: false,
-        // ADR-021 — no rows ⇒ the documented section defaults.
-        sectionPermissions: { ledger: 'read_only', trash: 'disabled' },
+        // ADR-021 — no rows ⇒ the documented section defaults (bulletin defaults read_only).
+        sectionPermissions: { ledger: 'read_only', trash: 'disabled', bulletin: 'read_only' },
         // ADR-023 — no grant rows ⇒ no Trash actions.
         trashActions: [],
+        // ADR-026 — no grant rows ⇒ no Bulletin message actions.
+        messageActions: [],
       },
       displayName: 'Owner Haynes',
     });
@@ -45,9 +47,11 @@ describe('session extension (DESIGN-002 D-06 / DESIGN-003 D-01, ADR-012)', () =>
         name: 'Admin',
         isAdmin: true,
         // ADR-021 C-03 — admin implies Edit on every section (no rows).
-        sectionPermissions: { ledger: 'edit', trash: 'edit' },
+        sectionPermissions: { ledger: 'edit', trash: 'edit', bulletin: 'edit' },
         // ADR-023 C-03 — admin implies EVERY Trash action (no rows).
         trashActions: [...TRASH_ACTIONS],
+        // ADR-026 C-04 — admin implies EVERY Bulletin message action (no rows).
+        messageActions: [...MESSAGE_ACTIONS],
       },
       displayName: 'Admin Ada',
     });
@@ -72,7 +76,11 @@ describe('session extension (DESIGN-002 D-06 / DESIGN-003 D-01, ADR-012)', () =>
       actorId: null,
     });
     const after = await getSessionExtension(user.id, t.db);
-    expect(after!.role.sectionPermissions).toEqual({ ledger: 'disabled', trash: 'disabled' });
+    expect(after!.role.sectionPermissions).toEqual({
+      ledger: 'disabled',
+      trash: 'disabled',
+      bulletin: 'read_only',
+    });
   });
 
   it('hydrates the fine-grained Trash action grants after setRoleTrashActions (ADR-023 C-03)', async () => {

@@ -5,6 +5,8 @@ export * from './role-app-grants';
 export * from './role-section-permissions';
 // ADR-023 / DESIGN-010 — Trash (Maintainerr) fine-grained per-action role grants
 export * from './role-trash-action-grants';
+// ADR-026 / DESIGN-012 — Bulletin (Messages) fine-grained per-action role grants
+export * from './role-message-action-grants';
 export * from './users';
 export * from './session';
 export * from './account';
@@ -28,8 +30,11 @@ export * from './role-library-grants';
 // ADR-024 — role-scoped all-libraries-on-server grants (sits alongside role-library-grants)
 export * from './role-plex-server-all-grants';
 export * from './plex-share-audit';
-// ADR-023 / DESIGN-010 (addendum c) — generic in-app notification store (Maintainerr source #1)
+// ADR-023 / DESIGN-010 (addendum c) — generic in-app notification store (Maintainerr source #1);
+// ADR-026 / DESIGN-012 (PLAN-009) widens it (Seerr + Tautulli) into the durable Bulletin Feed store
 export * from './notifications';
+// ADR-026 / DESIGN-012 — Bulletin Messages board (user-posted durable board entries)
+export * from './messages';
 // ADR-025 / DESIGN-011 — Trash curation pipeline: generic app settings + batches/items/save events
 export * from './app-settings';
 export * from './trash-batches';

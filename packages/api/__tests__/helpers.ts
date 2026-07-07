@@ -19,7 +19,9 @@ import {
   SEEDED_ROLE_IDS,
   SECTION_IDS,
   SECTION_DEFAULT_LEVELS,
+  MESSAGE_ACTIONS,
   TRASH_ACTIONS,
+  type MessageAction,
   type SectionId,
   type SectionPermissionLevel,
   type TrashAction,
@@ -92,6 +94,8 @@ export function sessionUser(
   sectionOverrides?: Partial<Record<SectionId, SectionPermissionLevel>>,
   /** ADR-023 — override the caller's fine-grained Trash action grants (non-admin only; admin ⇒ all). */
   trashActionOverrides?: TrashAction[],
+  /** ADR-026 — override the caller's fine-grained Bulletin message action grants (non-admin; admin ⇒ all). */
+  messageActionOverrides?: MessageAction[],
 ): SessionUser {
   const isAdmin = row.roleId === SEEDED_ROLE_IDS.admin;
   const name = isAdmin ? 'Admin' : row.roleId === SEEDED_ROLE_IDS.default ? 'Default' : 'Custom';
@@ -105,11 +109,15 @@ export function sessionUser(
   const trashActions: TrashAction[] = isAdmin
     ? [...TRASH_ACTIONS]
     : TRASH_ACTIONS.filter((a) => grantedSet.has(a));
+  const messageGrantedSet = new Set(messageActionOverrides ?? []);
+  const messageActions: MessageAction[] = isAdmin
+    ? [...MESSAGE_ACTIONS]
+    : MESSAGE_ACTIONS.filter((a) => messageGrantedSet.has(a));
   return {
     id: row.id,
     email: row.email,
     displayName: row.displayName,
-    role: { id: row.roleId, name, isAdmin, sectionPermissions, trashActions },
+    role: { id: row.roleId, name, isAdmin, sectionPermissions, trashActions, messageActions },
   };
 }
 

@@ -17,8 +17,9 @@ const member: SessionUser = {
     id: UUID_B,
     name: 'Default',
     isAdmin: false,
-    sectionPermissions: { ledger: 'read_only', trash: 'disabled' },
+    sectionPermissions: { ledger: 'read_only', trash: 'disabled', bulletin: 'read_only' },
     trashActions: [],
+    messageActions: [],
   },
 };
 

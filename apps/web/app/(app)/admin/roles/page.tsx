@@ -12,6 +12,11 @@ import { Modal } from '@/components/modal';
 import { trpc } from '@/lib/trpc-client';
 import { describeMutationError } from '@/lib/app-error';
 import { TRASH_ACTION_LABELS, TRASH_ACTION_NAMES, type TrashActionName } from '@/lib/trash';
+import {
+  MESSAGE_ACTION_LABELS,
+  MESSAGE_ACTION_NAMES,
+  type MessageActionName,
+} from '@/lib/bulletin';
 
 interface RoleForm {
   name: string;
@@ -25,6 +30,8 @@ interface RoleForm {
   allServerIds: string[];
   // ADR-023 C-03 — the fine-grained Trash action grants (a row per action; replace-set writer).
   trashActions: TrashActionName[];
+  // ADR-026 C-04 — the fine-grained Bulletin message action grants (post / moderate).
+  messageActions: MessageActionName[];
 }
 
 const EMPTY_FORM: RoleForm = {
@@ -35,6 +42,7 @@ const EMPTY_FORM: RoleForm = {
   libraryIds: [],
   allServerIds: [],
   trashActions: [],
+  messageActions: [],
 };
 
 export default function AdminRolesPage() {
@@ -108,6 +116,12 @@ export default function AdminRolesPage() {
     onError: (err: unknown) => setError(describeMutationError(err)),
     onSettled: invalidate,
   });
+  // ADR-026 C-04 / DESIGN-012 D-04 — a role's fine-grained Bulletin message action grants
+  // (replace-set; audited 'update_message_actions' in-tx). Same ride as setTrash.
+  const setMessages = trpc.roles.setMessageActions.useMutation({
+    onError: (err: unknown) => setError(describeMutationError(err)),
+    onSettled: invalidate,
+  });
   const busy =
     create.isPending ||
     update.isPending ||
@@ -115,7 +129,8 @@ export default function AdminRolesPage() {
     setLibs.isPending ||
     refresh.isPending ||
     setSection.isPending ||
-    setTrash.isPending;
+    setTrash.isPending ||
+    setMessages.isPending;
 
   const roleRows = roles.data ?? [];
   const entries = catalog.data ?? [];
@@ -150,6 +165,9 @@ export default function AdminRolesPage() {
       // Trash action grants — only when any were checked (a fresh role has no rows).
       if (addForm.trashActions.length > 0)
         await setTrash.mutateAsync({ roleId, actions: addForm.trashActions });
+      // Bulletin message action grants — same convention.
+      if (addForm.messageActions.length > 0)
+        await setMessages.mutateAsync({ roleId, actions: addForm.messageActions });
     } catch {
       /* onError handlers set the banners */
     }
@@ -166,6 +184,7 @@ export default function AdminRolesPage() {
       libraryIds: [...(grantsByRole[role.id] ?? [])],
       allServerIds: [...(allGrantsByRole[role.id] ?? [])],
       trashActions: [...role.trashActions] as TrashActionName[],
+      messageActions: [...role.messageActions] as MessageActionName[],
     });
     setEditError(null);
   }
@@ -194,6 +213,11 @@ export default function AdminRolesPage() {
       const after = [...editForm.trashActions].sort().join(',');
       if (before !== after)
         await setTrash.mutateAsync({ roleId: role.id, actions: editForm.trashActions });
+      // Replace-set Bulletin message action grants (skip when unchanged — same audit-noise rule).
+      const beforeMsg = [...role.messageActions].sort().join(',');
+      const afterMsg = [...editForm.messageActions].sort().join(',');
+      if (beforeMsg !== afterMsg)
+        await setMessages.mutateAsync({ roleId: role.id, actions: editForm.messageActions });
     } catch {
       /* onError handlers set the banners */
     }
@@ -295,6 +319,40 @@ export default function AdminRolesPage() {
                 }
               />
               <span>{TRASH_ACTION_LABELS[action]}</span>
+            </label>
+          </li>
+        ))}
+      </ul>
+    </fieldset>
+  );
+
+  // ADR-026 C-04 / DESIGN-012 D-04 — the per-action Bulletin message grant grid. Reading the
+  // Feed/board rides the coarse Bulletin level in the table column; post/moderate are opt-in.
+  const bulletinChecklist = (form: RoleForm, apply: (next: (f: RoleForm) => RoleForm) => void) => (
+    <fieldset className="field" data-testid="message-actions-grid">
+      <legend>Bulletin message actions this role may use</legend>
+      <p className="field-hint">
+        Actions apply only while the role’s Bulletin access is Read-only or Edit. Reading the Feed
+        and the board rides the access level alone; posting and moderating are opt-in.
+      </p>
+      <ul className="check-list">
+        {MESSAGE_ACTION_NAMES.map((action) => (
+          <li key={action}>
+            <label className="check-row">
+              <input
+                type="checkbox"
+                data-testid={`message-action-${action}`}
+                checked={form.messageActions.includes(action)}
+                onChange={(e) =>
+                  apply((f) => ({
+                    ...f,
+                    messageActions: e.target.checked
+                      ? [...f.messageActions, action]
+                      : f.messageActions.filter((a) => a !== action),
+                  }))
+                }
+              />
+              <span>{MESSAGE_ACTION_LABELS[action]}</span>
             </label>
           </li>
         ))}
@@ -422,6 +480,7 @@ export default function AdminRolesPage() {
             <th>Members</th>
             <th>Ledger</th>
             <th>Trash</th>
+            <th>Bulletin</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -430,7 +489,7 @@ export default function AdminRolesPage() {
             if (editingId === role.id) {
               return (
                 <tr key={role.id} className="row-edit">
-                  <td colSpan={6}>
+                  <td colSpan={7}>
                     <form className="admin-form" onSubmit={(e) => submitEdit(role, e)}>
                       <label className="field">
                         <span>
@@ -464,6 +523,7 @@ export default function AdminRolesPage() {
                       {appChecklist(editForm, setEditForm)}
                       {libraryChecklist(editForm, setEditForm)}
                       {trashChecklist(editForm, setEditForm)}
+                      {bulletinChecklist(editForm, setEditForm)}
                       {editError ? (
                         <p className="alert" role="alert">
                           {editError}
@@ -587,6 +647,52 @@ export default function AdminRolesPage() {
                     </span>
                   )}
                 </td>
+                {/* ADR-026 / DESIGN-012 D-04 — the Bulletin access level + a grant summary
+                    (same treatment as Trash: the per-action grid lives in the row editor). */}
+                <td data-label="Bulletin">
+                  {role.isAdmin ? (
+                    <span
+                      className="muted"
+                      title="The Admin role implies Edit on every section and every message action"
+                    >
+                      Edit · all actions
+                    </span>
+                  ) : (
+                    <span className="trash-cell">
+                      <select
+                        className="section-select"
+                        aria-label={`Bulletin access for ${role.name}`}
+                        value={role.sectionPermissions.bulletin}
+                        disabled={busy || editingElsewhere}
+                        onChange={(e) =>
+                          setSection.mutate({
+                            roleId: role.id,
+                            sectionId: 'bulletin',
+                            level: e.target.value as 'edit' | 'read_only' | 'disabled',
+                          })
+                        }
+                      >
+                        <option value="edit">Edit</option>
+                        <option value="read_only">Read-only</option>
+                        <option value="disabled">Disabled</option>
+                      </select>
+                      <span
+                        className="muted trash-cell__actions"
+                        data-testid={`message-actions-summary-${role.name}`}
+                        title={
+                          role.messageActions.length > 0
+                            ? role.messageActions
+                                .map((a) => MESSAGE_ACTION_LABELS[a as MessageActionName] ?? a)
+                                .join(' · ')
+                            : 'No message actions granted — this role can only read'
+                        }
+                      >
+                        {role.messageActions.length}{' '}
+                        {role.messageActions.length === 1 ? 'action' : 'actions'}
+                      </span>
+                    </span>
+                  )}
+                </td>
                 <td data-label="Actions">
                   {role.isAdmin ? (
                     <span className="muted">locked</span>
@@ -659,6 +765,7 @@ export default function AdminRolesPage() {
           {appChecklist(addForm, setAddForm)}
           {libraryChecklist(addForm, setAddForm)}
           {trashChecklist(addForm, setAddForm)}
+          {bulletinChecklist(addForm, setAddForm)}
           <div className="form-actions">
             <button
               type="submit"

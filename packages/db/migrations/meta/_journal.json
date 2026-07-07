@@ -120,6 +120,13 @@
       "when": 1782950417000,
       "tag": "0017_trash_curation_pipeline",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1782950418000,
+      "tag": "0018_bulletin_communication",
+      "breakpoints": true
     }
   ]
 }

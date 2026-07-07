@@ -12,6 +12,9 @@ export * from './section-permissions';
 // ADR-023 / DESIGN-010 — Trash (Maintainerr) fine-grained action grants + the notification store
 export * from './trash-permissions';
 export * from './notifications';
+// ADR-026 / DESIGN-012 — Bulletin: message action grants + the Messages board single-writers
+export * from './message-permissions';
+export * from './messages';
 // ADR-023 / DESIGN-010 — Trash orchestrators over Maintainerr (confined write surface — guard test)
 export * from './maintainerr-clients';
 export * from './trash-flow';

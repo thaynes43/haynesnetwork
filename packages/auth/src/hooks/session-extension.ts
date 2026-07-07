@@ -1,15 +1,18 @@
 import { eq } from 'drizzle-orm';
 import {
   db,
+  roleMessageActionGrants,
   roleSectionPermissions,
   roleTrashActionGrants,
   roles,
   users,
+  MESSAGE_ACTIONS,
   SECTION_IDS,
   SECTION_DEFAULT_LEVELS,
   TRASH_ACTIONS,
   type Database,
   type DbClient,
+  type MessageAction,
   type SectionId,
   type SectionPermissionLevel,
   type TrashAction,
@@ -32,6 +35,12 @@ export interface SessionRole {
    * (absence ⇒ not granted). Layered on top of `sectionPermissions.trash` (which gates VIEW).
    */
   trashActions: TrashAction[];
+  /**
+   * ADR-026 C-04 — the caller's resolved FINE-GRAINED Bulletin message action grants, so
+   * `messageActionProcedure` needs no per-request query. Admin ⇒ ALL actions; otherwise exactly
+   * the role's granted rows. Layered on top of `sectionPermissions.bulletin` (which gates READ).
+   */
+  messageActions: MessageAction[];
 }
 
 /**
@@ -97,6 +106,18 @@ export async function getSessionExtension(
   const trashActions: TrashAction[] = row.isAdmin
     ? [...TRASH_ACTIONS]
     : TRASH_ACTIONS.filter((a) => grantedSet.has(a));
+  // ADR-026 C-04 — the fine-grained Bulletin message action grants: admin ⇒ every action (no
+  // rows), otherwise the role's granted rows in canonical order. Skipped entirely for admins.
+  const messageGrantRows = row.isAdmin
+    ? []
+    : await q
+        .select({ action: roleMessageActionGrants.action })
+        .from(roleMessageActionGrants)
+        .where(eq(roleMessageActionGrants.roleId, row.roleId));
+  const messageGrantedSet = new Set(messageGrantRows.map((r) => r.action));
+  const messageActions: MessageAction[] = row.isAdmin
+    ? [...MESSAGE_ACTIONS]
+    : MESSAGE_ACTIONS.filter((a) => messageGrantedSet.has(a));
   return {
     role: {
       id: row.roleId,
@@ -104,6 +125,7 @@ export async function getSessionExtension(
       isAdmin: row.isAdmin,
       sectionPermissions,
       trashActions,
+      messageActions,
     },
     displayName: row.displayName,
   };

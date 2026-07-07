@@ -203,6 +203,24 @@ expiry deletes the survivors — every R-86/R-87 safety layer still applying.
 | R-95 | Admin-tunable operational settings (skip-gate, default window) live in an **audited settings store**; every change writes an audit row. | Should |
 | R-96 | Batch cadence / scheduled creation is **configurable** (manual-first v1; scheduled creation future). | Should |
 
+### Bulletin — Feed + Messages (Phase 2.5 / stretch)
+
+Governed by **ADR-026** / **DESIGN-012** (PLAN-009). A top-level **Bulletin** section with two
+sub-tabs: an aggregated third-party notification **Feed** and a user-driven **Messages** board. The
+backend vertical (store + receiver + Feed/Messages API + permission model) ships first; the Feed +
+Messages UI is a separate UX follow-up.
+
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| R-97 | A top-level **Bulletin** section with **Feed** + **Messages** sub-tabs; role-gated visibility per the Section-Permission model (`bulletin` section). The Feed defaults **Read-Only for everyone** (a member reads it out of the box); Disabled hides the whole section. | Should |
+| R-98 | Inbound webhooks from **Seerr/Overseerr, Tautulli, and Maintainerr** are ingested into ONE durable `notifications` store and shown in the Feed; the Trash **Activity** tab is a `source='maintainerr'` view of the same store. | Should |
+| R-99 | The Feed is **filterable** (source, event type, media-link presence) and keyset-paginated (newest-first by source event time). | Should |
+| R-100 | Notification events are **attributed to app users** where the payload carries requester/viewer identity (Seerr requester email → user; Tautulli account email best-effort), reusing the single email-only attribution path; else shown **unattributed**. Events link to a ledger **Media Item** when tmdb/tvdb ids match. | Should |
+| R-101 | Ingest is **idempotent**: a `(source, source_event_id)` dedupe index makes webhook re-delivery a no-op. | Must |
+| R-102 | Users can **post durable Messages** (subject optional, body required), optionally **linked to a Media Item**; a Message **complements** (never replaces) the structured Fix flow. Authors may **edit their own** Messages. | Should |
+| R-103 | Moderators can **triage Messages** — hide / delete / restore (soft status transitions that **preserve content** for audit) with a moderation trail. **Read**, **post**, and **moderate** are distinct per-role grants (`bulletin` section level + `post`/`moderate` action grants); server-enforced. | Should |
+| R-104 | The webhook receiver (`POST /api/webhooks/<source>`) is **session-unauthenticated but per-source shared-secret-gated** and reachable only in-cluster (no public exposure; works before the R-64 public cutover). | Must (security) |
+
 ### Platform & non-functional
 
 | ID | Requirement | Priority |
