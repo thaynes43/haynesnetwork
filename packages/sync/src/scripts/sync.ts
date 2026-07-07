@@ -14,20 +14,24 @@ import {
   type SyncRunKind,
   type SyncSource,
 } from '@hnet/db';
+import { maintainerrClientBundleFromEnv } from '@hnet/domain';
 import { buildMetadataSourceClients, buildSyncClients } from '../clients';
 import { createConsoleLogger } from '../logger';
 import { runSync } from '../orchestrator';
 
-const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
+const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-batch-sweep [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
 
-  --mode=full             item-list upsert + tombstone pass per *arr (+ Seerr requests)
-  --mode=incremental      history/since cursor polling per *arr (+ Seerr requests)
-  --mode=metadata-refresh harvest ratings/genres/runtime/posters (+ Tautulli watch-stats,
-                          Maintainerr, direct TMDB/TVDB fallback) into media_metadata (ADR-018)
-  --source=NAME           limit the run to one source (repeatable; default: all sources; for
-                          metadata-refresh the default is the three *arr kinds)
-  --force-tombstones      override the mass-tombstone guard (DESIGN-005 D-14/Q-03)
-  --help                  print this usage
+  --mode=full              item-list upsert + tombstone pass per *arr (+ Seerr requests)
+  --mode=incremental       history/since cursor polling per *arr (+ Seerr requests)
+  --mode=metadata-refresh  harvest ratings/genres/runtime/posters (+ Tautulli watch-stats,
+                           Maintainerr, direct TMDB/TVDB fallback) into media_metadata (ADR-018)
+  --mode=trash-batch-sweep delete the survivors of every EXPIRED Leaving-Soon batch, one guarded
+                           item at a time (ADR-025 — SAFE audit + live exclusions + guardian re-run).
+                           Drives Maintainerr; needs MAINTAINERR_URL/MAINTAINERR_API_KEY. No --source.
+  --source=NAME            limit the run to one source (repeatable; default: all sources; for
+                           metadata-refresh the default is the three *arr kinds)
+  --force-tombstones       override the mass-tombstone guard (DESIGN-005 D-14/Q-03)
+  --help                   print this usage
 
 Env (DESIGN-005 D-18): DATABASE_URL, SONARR_URL/SONARR_API_KEY, RADARR_URL/RADARR_API_KEY,
 LIDARR_URL/LIDARR_API_KEY, SEERR_URL/SEERR_API_KEY (URLs default to in-cluster DNS).
@@ -69,12 +73,19 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
     }
   }
   if (mode === undefined) {
-    throw new CliUsageError('--mode=full|incremental|metadata-refresh is required');
+    throw new CliUsageError('--mode=full|incremental|metadata-refresh|trash-batch-sweep is required');
   }
-  // metadata-refresh defaults to the *arr kinds (Seerr has no metadata); other modes default
-  // to all four sources.
+  if (mode === 'trash-batch-sweep' && sources.length > 0) {
+    throw new CliUsageError('--source is not valid for --mode=trash-batch-sweep (it drives Maintainerr)');
+  }
+  // metadata-refresh defaults to the *arr kinds (Seerr has no metadata); trash-batch-sweep uses no
+  // *arr source at all (it drives Maintainerr); other modes default to all four sources.
   const defaultSources =
-    mode === 'metadata-refresh' ? [...ARR_KINDS] : [...SYNC_SOURCES];
+    mode === 'trash-batch-sweep'
+      ? []
+      : mode === 'metadata-refresh'
+        ? [...ARR_KINDS]
+        : [...SYNC_SOURCES];
   return {
     mode,
     sources: sources.length > 0 ? [...new Set(sources)] : defaultSources,
@@ -106,12 +117,18 @@ async function main(): Promise<number> {
   }
 
   // Build only the clients this run needs; missing keys for requested sources throw
-  // one ArrConfigError naming every absent variable (never their values).
+  // one ArrConfigError naming every absent variable (never their values). trash-batch-sweep
+  // has no *arr sources — it drives the Maintainerr bundle built below.
   const clients = buildSyncClients(args.sources);
   // ADR-018 / DESIGN-008 — the OPTIONAL metadata-harvest sources (Tautulli/TMDB/TVDB/
   // Maintainerr). Only built for metadata-refresh; each tier is skip-if-absent.
   const metadataSources =
     args.mode === 'metadata-refresh' ? buildMetadataSourceClients() : undefined;
+  // ADR-025 — the confined Maintainerr bundle for the batch-expiry sweep (throws one ArrConfigError
+  // naming MAINTAINERR_API_KEY if absent). The mutating client is constructed INSIDE @hnet/domain
+  // (maintainerrClientBundleFromEnv), so the confined write surface stays domain-only (ADR-008 guard).
+  const maintainerr =
+    args.mode === 'trash-batch-sweep' ? maintainerrClientBundleFromEnv() : undefined;
 
   logger.info('sync starting', {
     mode: args.mode,
@@ -132,6 +149,7 @@ async function main(): Promise<number> {
     forceTombstones: args.forceTombstones,
     clients,
     ...(metadataSources ? { metadataSources } : {}),
+    ...(maintainerr ? { maintainerr } : {}),
     logger,
   });
 
@@ -141,6 +159,8 @@ async function main(): Promise<number> {
     totalFailure: report.totalFailure,
     backfill: report.backfill,
     fixesCompleted: report.fixesCompleted,
+    ...(report.sweep ? { sweep: { batchesSwept: report.sweep.batchesSwept, batches: report.sweep.batches } } : {}),
+    ...(report.sweepError !== undefined ? { sweepError: report.sweepError } : {}),
     sources: report.sources.map((s) => ({
       source: s.source,
       status: s.status,

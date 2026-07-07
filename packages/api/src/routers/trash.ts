@@ -6,21 +6,38 @@
 // target (the media param is movie|tv only — R-87).
 import { z } from 'zod';
 import {
+  APP_SETTING_DEFAULTS,
   arrKindForTrashMedia,
   auditMaintainerr,
+  cancelBatch,
+  createBatchFromPending,
   deleteTrashRule,
   expediteDeletion,
+  getAppSettings,
+  getBatchDetail,
+  getBatchSaveStats,
+  greenlightBatch,
+  listBatches,
   listNotifications,
   listRecentlyDeleted,
   listTrashPending,
   removeExclusion,
   restoreDeleted,
   saveExclusion,
+  setAppSetting,
+  setBatchItemSaved,
+  sweepExpiredBatches,
   upsertTrashRule,
 } from '@hnet/domain';
 import { mapDomainErrors, resolveArrBundle, resolveMaintainerrBundle, router } from '../trpc';
-import { sectionProcedure, trashActionProcedure } from '../middleware/role';
+import {
+  adminProcedure,
+  hasTrashAction,
+  sectionProcedure,
+  trashActionProcedure,
+} from '../middleware/role';
 import { posterUrlFor } from '../ledger-query';
+import { TRPCError } from '@trpc/server';
 
 /** movie|tv only — Lidarr/music is structurally undeletable (R-87). */
 const trashMedia = z.enum(['movie', 'tv']);
@@ -246,4 +263,172 @@ export const trashRouter = router({
         }),
       );
     }),
+
+  // ADR-025 / DESIGN-011 — the CURATION PIPELINE surface (batches, poster review, Leaving Soon,
+  // windowed deletion). Reads are section read_only; batch lifecycle needs the `manage_batches`
+  // grant (admin ⇒ all actions); the per-item save is phase-gated (admin_review ⇒ manage_batches,
+  // leaving_soon ⇒ save_leaving_soon) so a windowed user rescues with the narrow grant.
+  batches: router({
+    /** List batches (newest first), optionally by media kind. Section read_only+. */
+    list: sectionProcedure('trash', 'read_only')
+      .input(z.object({ mediaKind: trashMedia.optional() }).optional())
+      .query(async ({ ctx, input }) => {
+        return mapDomainErrors(() =>
+          listBatches({ db: ctx.db, mediaKind: input?.mediaKind }),
+        );
+      }),
+
+    /** One batch + its poster-grid item list (the review / Leaving-Soon wall source). read_only+. */
+    get: sectionProcedure('trash', 'read_only')
+      .input(z.object({ batchId: z.uuid() }))
+      .query(async ({ ctx, input }) => {
+        return mapDomainErrors(async () => {
+          const detail = await getBatchDetail({ db: ctx.db, batchId: input.batchId });
+          return {
+            ...detail,
+            items: detail.items.map((item) => ({
+              ...item,
+              posterUrl:
+                item.mediaItemId === null
+                  ? null
+                  : posterUrlFor(item.mediaItemId, item.posterSource),
+            })),
+          };
+        });
+      }),
+
+    /** Tuning-data summary for a batch (save/unsave totals + per-user breakdown). read_only+. */
+    saveStats: sectionProcedure('trash', 'read_only')
+      .input(z.object({ batchId: z.uuid() }))
+      .query(async ({ ctx, input }) => {
+        return mapDomainErrors(() => getBatchSaveStats({ db: ctx.db, batchId: input.batchId }));
+      }),
+
+    /** Create a batch from the current pending set for one media kind (manage_batches; admin ⇒ ok). */
+    create: trashActionProcedure('manage_batches')
+      .input(z.object({ mediaKind: trashMedia }))
+      .mutation(async ({ ctx, input }) => {
+        return mapDomainErrors(() =>
+          createBatchFromPending({
+            db: ctx.db,
+            maintainerr: resolveMaintainerrBundle(ctx),
+            mediaKind: input.mediaKind,
+            actorId: ctx.user.id,
+          }),
+        );
+      }),
+
+    /** Green-light a batch → Leaving Soon (manage_batches). Optional window override (else default). */
+    greenlight: trashActionProcedure('manage_batches')
+      .input(z.object({ batchId: z.uuid(), windowDays: z.number().int().min(1).max(365).optional() }))
+      .mutation(async ({ ctx, input }) => {
+        return mapDomainErrors(() =>
+          greenlightBatch({
+            db: ctx.db,
+            maintainerr: resolveMaintainerrBundle(ctx),
+            batchId: input.batchId,
+            windowDays: input.windowDays,
+            actorId: ctx.user.id,
+          }),
+        );
+      }),
+
+    /** Cancel a batch (any non-terminal → cancelled; releases the Leaving-Soon collection). */
+    cancel: trashActionProcedure('manage_batches')
+      .input(z.object({ batchId: z.uuid() }))
+      .mutation(async ({ ctx, input }) => {
+        return mapDomainErrors(() =>
+          cancelBatch({
+            db: ctx.db,
+            maintainerr: resolveMaintainerrBundle(ctx),
+            batchId: input.batchId,
+            actorId: ctx.user.id,
+          }),
+        );
+      }),
+
+    /** Manually expire ONE batch NOW (manage_batches; mostly validation). Runs the guarded sweep for it.
+     *  The scheduled path is the `trash-batch-sweep` sync job, which calls the domain orchestrator. */
+    expire: trashActionProcedure('manage_batches')
+      .input(z.object({ batchId: z.uuid() }))
+      .mutation(async ({ ctx, input }) => {
+        return mapDomainErrors(() =>
+          sweepExpiredBatches({
+            db: ctx.db,
+            maintainerr: resolveMaintainerrBundle(ctx),
+            batchId: input.batchId,
+            actorId: ctx.user.id,
+          }),
+        );
+      }),
+
+    /**
+     * Flip one item pending⇄saved. PHASE-DEPENDENT gate (composed on section read_only): during
+     * `admin_review` the caller needs `manage_batches` (admin curation); during `leaving_soon` the
+     * narrow `save_leaving_soon` grant (the windowed user exercise). A role holding neither for the
+     * batch's phase is FORBIDDEN — server-authoritative, never client-hidden only (AC-13).
+     */
+    setItemSaved: sectionProcedure('trash', 'read_only')
+      .input(z.object({ batchId: z.uuid(), itemId: z.uuid(), saved: z.boolean() }))
+      .mutation(async ({ ctx, input }) => {
+        return mapDomainErrors(async () => {
+          const detail = await getBatchDetail({ db: ctx.db, batchId: input.batchId });
+          const requiredAction =
+            detail.state === 'leaving_soon' ? 'save_leaving_soon' : 'manage_batches';
+          if (!hasTrashAction(ctx.user.role, requiredAction)) {
+            throw new TRPCError({ code: 'FORBIDDEN' });
+          }
+          return setBatchItemSaved({
+            db: ctx.db,
+            maintainerr: resolveMaintainerrBundle(ctx),
+            batchId: input.batchId,
+            itemId: input.itemId,
+            saved: input.saved,
+            actorId: ctx.user.id,
+            // DESIGN-011 D-05 — the domain enforces the leaving_soon un-save ownership rule: a caller
+            // holding `manage_batches`/admin may release ANY family member's rescue; a bare
+            // `save_leaving_soon` holder only their own (TrashSaveNotOwnedError otherwise).
+            callerCanManage: hasTrashAction(ctx.user.role, 'manage_batches'),
+          });
+        });
+      }),
+  }),
+
+  // ADR-025 C-06 — the app-settings admin surface (skip-gate + default window). Admin-only.
+  settings: router({
+    get: adminProcedure.query(async ({ ctx }) => {
+      return mapDomainErrors(async () => ({
+        ...APP_SETTING_DEFAULTS,
+        ...(await getAppSettings(ctx.db)),
+      }));
+    }),
+    set: adminProcedure
+      .input(
+        z.object({
+          trashSkipAdminGate: z.boolean().optional(),
+          trashDefaultWindowDays: z.number().int().min(1).max(365).optional(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        return mapDomainErrors(async () => {
+          if (input.trashSkipAdminGate !== undefined) {
+            await setAppSetting({
+              db: ctx.db,
+              key: 'trash_skip_admin_gate',
+              value: input.trashSkipAdminGate,
+              actorId: ctx.user.id,
+            });
+          }
+          if (input.trashDefaultWindowDays !== undefined) {
+            await setAppSetting({
+              db: ctx.db,
+              key: 'trash_default_window_days',
+              value: input.trashDefaultWindowDays,
+              actorId: ctx.user.id,
+            });
+          }
+          return getAppSettings(ctx.db);
+        });
+      }),
+  }),
 });

@@ -17,6 +17,7 @@ export const PERMISSION_AUDIT_ACTIONS = [
   'update_role_libraries', // ADR-017 D-07 — a role's Plex library grants were replaced
   'update_section_permission', // ADR-021 C-02 — a role's section access level was changed
   'update_trash_actions', // ADR-023 C-03 — a role's fine-grained Trash action grants were replaced
+  'update_app_setting', // ADR-025 C-06 — a generic app_settings key was changed (skip-gate, window default)
 ] as const;
 export type PermissionAuditAction = (typeof PERMISSION_AUDIT_ACTIONS)[number];
 
@@ -48,6 +49,13 @@ export const LEDGER_EVENT_TYPES = [
   'trash_excluded',
   'trash_expedited',
   'trash_restored',
+  // ADR-025 / DESIGN-011 — Trash CURATION PIPELINE (migration 0017). A batch's state-machine
+  // transition (create / green-light / cancel / expiry-complete) appends one of these with the
+  // before/after state + per-item counts in the payload (mediaItemId null — it is batch-scoped,
+  // not tied to one media item). Per-item deletions during the expiry sweep reuse 'trash_expedited'
+  // (same intent-first discipline); item saves/unsaves reuse 'trash_excluded' + the dedicated
+  // trash_batch_saves tuning table — so only this one new type is added.
+  'trash_batch_transition',
 ] as const;
 export type LedgerEventType = (typeof LEDGER_EVENT_TYPES)[number];
 
@@ -112,7 +120,19 @@ export type SyncSource = (typeof SYNC_SOURCES)[number];
 // from Maintainerr, holes from direct TMDB/TVDB). It is a DISTINCT run from full/incremental
 // sync (which never touch media_metadata); sync_runs.run_kind is CHECK-constrained to this set,
 // so migration 0012 relaxes that CHECK when this value lands.
-export const SYNC_RUN_KINDS = ['full', 'incremental', 'metadata-refresh'] as const;
+// ADR-025 / DESIGN-011 — 'trash-batch-sweep' is the batch-expiry sync mode: it acts ONLY on
+// `leaving_soon` trash_batches whose save window has expired, deleting survivors via the existing
+// per-item guarded loop (live exclusions + guardian + SAFE audit re-run at sweep time). It touches
+// NO *arr source (it drives Maintainerr), so it never writes a sync_runs row — its audit trail is
+// the ledger (trash_batch_transition + trash_expedited) + the batch columns, exactly like expedite.
+// It joins SYNC_RUN_KINDS so the CLI `--mode` parser + `SyncMode` accept it (migration 0017 rebuilds
+// the sync_runs.run_kind CHECK to keep the const array and CHECK in parity).
+export const SYNC_RUN_KINDS = [
+  'full',
+  'incremental',
+  'metadata-refresh',
+  'trash-batch-sweep',
+] as const;
 export type SyncRunKind = (typeof SYNC_RUN_KINDS)[number];
 
 export const SYNC_RUN_STATUSES = ['running', 'succeeded', 'failed', 'aborted'] as const;
@@ -200,8 +220,76 @@ export const TRASH_ACTIONS = [
   'expedite_all', // Hasten the whole pending set's deletion (destructive; R-84)
   'edit_rules', // Create/update/delete Maintainerr rule groups (R-81; needs section edit too)
   'restore_deleted', // Re-add a recently-deleted item via executeRestore (R-85)
+  // ADR-025 / DESIGN-011 — the curation-pipeline grants (migration 0017 rebuilds the CHECK):
+  'save_leaving_soon', // A user rescues an item during the Leaving-Soon window (Q-04 — NOT seeded)
+  'manage_batches', // Admin batch lifecycle: create / green-light / cancel / expire-now (Q-04; admin ⇒ all)
 ] as const;
 export type TrashAction = (typeof TRASH_ACTIONS)[number];
+
+// ---------------------------------------------------------------------------
+// ADR-025 / DESIGN-011 — Trash CURATION PIPELINE (migration 0017). Batches are the
+// deletion unit: a snapshot of the current pending set an admin curates (poster review),
+// green-lights into a Plex "Leaving Soon" collection, and a windowed sweep deletes. These
+// const arrays are the single source of truth for TS + the SQL CHECKs (text+CHECK, never
+// Postgres enum types — DESIGN-001 D-02).
+// ---------------------------------------------------------------------------
+
+/** The two media kinds a batch covers (never mixed, mirroring the never-combined tabs; music
+ *  is never batchable — R-87). CHECK on trash_batches.media_kind. */
+export const TRASH_MEDIA_KINDS = ['movie', 'tv'] as const;
+export type TrashMediaKind = (typeof TRASH_MEDIA_KINDS)[number];
+
+/**
+ * The batch state machine (ADR-025 C-01). `draft` (staged; the skip-gate path starts here) →
+ * `admin_review` (poster curation) → `leaving_soon` (green-lit; the Plex collection is up and the
+ * user save window is running) → `deleted` (the windowed sweep ran). Any non-terminal state may go
+ * to `cancelled`. INVARIANT: only `leaving_soon` expires, and only `greenlightBatch` OR the audited
+ * `gate_skipped` path reaches `leaving_soon` — a batch NEVER deletes without the admin gate.
+ */
+export const TRASH_BATCH_STATES = [
+  'draft',
+  'admin_review',
+  'leaving_soon',
+  'deleted',
+  'cancelled',
+] as const;
+export type TrashBatchState = (typeof TRASH_BATCH_STATES)[number];
+
+/** The non-terminal ("open") batch states — at most ONE open batch per media kind (enforced by a
+ *  partial unique index). Terminal = `deleted` | `cancelled`. */
+export const TRASH_BATCH_OPEN_STATES = ['draft', 'admin_review', 'leaving_soon'] as const;
+
+/**
+ * A batch item's lifecycle. `pending` (proposed for deletion) ⇄ `saved` (rescued: permanently
+ * excluded in Maintainerr, leaves the batch). At sweep time a survivor becomes `deleted`; an item
+ * the guardian keeps (dnd/watched/requester/unevaluable) or a failed delete lands `skipped`;
+ * `protected` records an item that was tag-protected at snapshot time (never a delete candidate).
+ */
+export const TRASH_BATCH_ITEM_STATES = [
+  'pending',
+  'saved',
+  'deleted',
+  'skipped',
+  'protected',
+] as const;
+export type TrashBatchItemState = (typeof TRASH_BATCH_ITEM_STATES)[number];
+
+/** A save-event row's direction (Q-07 — the trash_batch_saves tuning dataset). */
+export const TRASH_SAVE_ACTIONS = ['save', 'unsave'] as const;
+export type TrashSaveAction = (typeof TRASH_SAVE_ACTIONS)[number];
+
+// ---------------------------------------------------------------------------
+// ADR-025 C-06 — generic app_settings key/value store (Q-06). A small audited key→jsonb
+// table; the single-writer `setAppSetting` co-writes an `update_app_setting` permission_audit
+// row in the same tx. Reusable — PLAN-010 (MOTD) and PLAN-013/014 (space target / tuning knobs)
+// add keys here. CHECK on app_settings.key.
+// ---------------------------------------------------------------------------
+
+export const APP_SETTING_KEYS = [
+  'trash_skip_admin_gate', // bool — when true, createBatch auto-green-lights (audited gate_skipped)
+  'trash_default_window_days', // int — the default save-window length copied onto a batch at green-light
+] as const;
+export type AppSettingKey = (typeof APP_SETTING_KEYS)[number];
 
 // ADR-023 / DESIGN-010 (addendum c) — the notification store's source set. PLAN-006 ships the
 // generic receiver with Maintainerr as source #1; PLAN-009 (Bulletin) extends this with Seerr /

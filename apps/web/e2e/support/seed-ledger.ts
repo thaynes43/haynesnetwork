@@ -332,6 +332,27 @@ async function main(): Promise<void> {
     actorId: null,
   });
 
+  // ADR-025 / DESIGN-011 — the FAMILY persona role for the Leaving-Soon window e2e: section
+  // read-only + ONLY the save_leaving_soon grant (may lock/unlock during the window; no batch
+  // lifecycle, no expedite, no shield grants — the poster wall is their whole surface).
+  const { roleId: trashFamilyId } = await createRole({
+    name: 'Trash Family',
+    description: 'Trash read-only; may rescue items during the Leaving-Soon window only',
+    appIds: [],
+    actorId: null,
+  });
+  await setSectionPermission({
+    roleId: trashFamilyId,
+    sectionId: 'trash',
+    level: 'read_only',
+    actorId: null,
+  });
+  await setRoleTrashActions({
+    roleId: trashFamilyId,
+    actions: ['save_leaving_soon'],
+    actorId: null,
+  });
+
   await getPool().end();
   console.log(
     '[seed-ledger] seeded 5 media items (1 tombstoned) + ledger events + Plex libraries/grants + Ledger/Trash section roles',

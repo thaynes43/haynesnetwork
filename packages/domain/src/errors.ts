@@ -220,6 +220,50 @@ export class TrashMusicUnsupportedError extends Error {
   readonly code = 'TRASH_MUSIC_UNSUPPORTED' as const;
 }
 
+// ---------------------------------------------------------------------------
+// ADR-025 / DESIGN-011 — Trash curation pipeline (batch state machine) errors.
+// ---------------------------------------------------------------------------
+
+/**
+ * ADR-025 C-01: a batch transition or precondition was illegal — green-light on a batch not in
+ * `admin_review`, cancel on an already-terminal batch, expire on a batch that is not
+ * `leaving_soon`/not-yet-expired, or a save flip whose phase does not match the batch state. The
+ * state machine refuses (fail closed) BEFORE any external write. Surfaced as CONFLICT.
+ */
+export class TrashBatchStateError extends Error {
+  readonly code = 'TRASH_BATCH_STATE' as const;
+}
+
+/**
+ * ADR-025 C-01 (Q-01): a batch could not be created because an OPEN (draft/admin_review/
+ * leaving_soon) batch already exists for that media kind — one live batch per kind. Also raised
+ * when the DB partial-unique index trips a race. Surfaced as CONFLICT.
+ */
+export class TrashBatchOpenError extends Error {
+  readonly code = 'TRASH_BATCH_ALREADY_OPEN' as const;
+}
+
+/**
+ * ADR-025: create-batch found no actionable pending items to snapshot (nothing for that kind, or
+ * every candidate lacks a Maintainerr id). No empty batch is created. Surfaced as
+ * UNPROCESSABLE_CONTENT.
+ */
+export class TrashBatchEmptyError extends Error {
+  readonly code = 'TRASH_BATCH_EMPTY' as const;
+}
+
+/**
+ * ADR-025 / DESIGN-011 D-05: an un-save was attempted during the OPEN `leaving_soon` window against
+ * a save that is NOT the caller's own, by a caller who does not hold `manage_batches`/admin. During
+ * the family save window a `save_leaving_soon` holder may release ONLY their own rescue; releasing
+ * another family member's rescue needs a batch manager. Enforced server-side in the
+ * `setBatchItemSaved` writer BEFORE any external Maintainerr write (the poster wall scopes this
+ * client-side, but the domain is authoritative — AC-13). Surfaced as FORBIDDEN.
+ */
+export class TrashSaveNotOwnedError extends Error {
+  readonly code = 'TRASH_SAVE_NOT_OWNED' as const;
+}
+
 function pgErrorCode(err: unknown): string | undefined {
   if (typeof err !== 'object' || err === null) return undefined;
   const code = (err as { code?: unknown }).code;

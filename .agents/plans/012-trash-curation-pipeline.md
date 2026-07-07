@@ -1,6 +1,10 @@
 # PLAN-012: Trash curation pipeline — batches, poster review, Leaving Soon, windowed deletion
 
-- **Status:** Draft <!-- Fable 5 flips Draft → Executing → Completed -->
+- **Status:** Executing <!-- Fable 5 flips Draft → Executing → Completed -->
+  <!-- 2026-07-07: numbers pinned — ADR-025, DESIGN-011, migration 0017 (journal idx 16),
+       PRD R-88..R-96 / US-11 / AC-17..AC-19, glossary T-75..T-80. Backend vertical shipped
+       (schema + domain + API + trash-batch-sweep sync mode + docs); the poster-wall UX is a
+       separate Fable follow-up per DESIGN-011 D-07. -->
 - **Satisfies:** PRD-001 new **R-NN** block (indicative **R-88..R-96** — curation batches,
   admin poster review, Leaving Soon, user save window, expiry deletion, skip-gate, deletion
   snapshots); new **ADR-NN** (indicative **ADR-025** — batch lifecycle + human-curation gate +

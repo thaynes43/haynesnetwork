@@ -285,4 +285,21 @@ describe('MaintainerrWriteClient (ADR-023 P1a — in-band ReturnStatus failure d
     await expect(c.handleCollectionMedia(7, 'ms-1')).resolves.toBeUndefined();
     expect(calls[0]?.body).toEqual({ collectionId: 7, mediaId: 'ms-1' });
   });
+
+  it('createCollection tolerates the v3.17.0 EMPTY create response (void — requestJson would 502 on it)', async () => {
+    // v3.17.0's `createCollection` handler returns NO body at HTTP 201. A JSON parse of an empty body
+    // throws (ArrParseError → BAD_GATEWAY); the void request drains it and resolves. The id is re-read
+    // by the caller via GET /collections. The body carries the verified contract (string type, arrAction).
+    const { client: c, calls } = client([{ method: 'POST', path: '/api/collections', status: 201 }]);
+    await expect(
+      c.createCollection({
+        collection: { title: 'Leaving Soon — Movies', type: 'movie', arrAction: 4, isActive: true },
+        media: [{ mediaServerId: 'ms-1' }],
+      }),
+    ).resolves.toBeUndefined();
+    expect(calls[0]?.body).toMatchObject({
+      collection: { type: 'movie', arrAction: 4 },
+      media: [{ mediaServerId: 'ms-1' }],
+    });
+  });
 });

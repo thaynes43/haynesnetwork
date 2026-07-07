@@ -40,6 +40,7 @@ import { Modal } from '@/components/modal';
 import { MediaPoster } from '@/components/media-poster';
 import { CHIP_LABELS, RatingChip } from '@/components/filter-chips';
 import { ShieldButton, type TrashAccess } from '@/components/trash-shield';
+import { BatchesTab } from './batches-tab';
 import {
   RESOLUTION_LABELS,
   formatBytes,
@@ -64,6 +65,7 @@ export type { TrashAccess };
 const TRASH_TABS = [
   { key: 'movies', label: 'Movies' },
   { key: 'tv', label: 'TV' },
+  { key: 'batches', label: 'Batches' },
   { key: 'deleted', label: 'Recently Deleted' },
   { key: 'rules', label: 'Rules' },
   { key: 'activity', label: 'Activity' },
@@ -1328,7 +1330,15 @@ function ActivityTab() {
 
 // ── the section shell ───────────────────────────────────────────────────────────────────
 
-function TrashContent({ access }: { access: TrashAccess }) {
+function TrashContent({
+  access,
+  viewerId,
+  viewerIsAdmin,
+}: {
+  access: TrashAccess;
+  viewerId: string;
+  viewerIsAdmin: boolean;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -1400,6 +1410,14 @@ function TrashContent({ access }: { access: TrashAccess }) {
           />
         ) : active === 'tv' ? (
           <PendingTab key="tv" media="tv" label="TV" access={access} status={status.data} />
+        ) : active === 'batches' ? (
+          // ADR-025 / DESIGN-011 D-07 — the curation area: batches + the poster wall.
+          <BatchesTab
+            access={access}
+            viewerId={viewerId}
+            viewerIsAdmin={viewerIsAdmin}
+            status={status.data}
+          />
         ) : active === 'deleted' ? (
           <RecentlyDeletedTab access={access} />
         ) : active === 'rules' ? (
@@ -1412,10 +1430,20 @@ function TrashContent({ access }: { access: TrashAccess }) {
   );
 }
 
-export function TrashClient({ access }: { access: TrashAccess }) {
+export function TrashClient({
+  access,
+  viewerId,
+  viewerIsAdmin,
+}: {
+  access: TrashAccess;
+  /** The session user's id — the wall's "may I undo THIS lock?" rule needs it (D-07). */
+  viewerId: string;
+  /** Admin unlocks the settings card (trash.settings.* is adminProcedure). */
+  viewerIsAdmin: boolean;
+}) {
   return (
     <Suspense fallback={<p className="muted">Loading…</p>}>
-      <TrashContent access={access} />
+      <TrashContent access={access} viewerId={viewerId} viewerIsAdmin={viewerIsAdmin} />
     </Suspense>
   );
 }

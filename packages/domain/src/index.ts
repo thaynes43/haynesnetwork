@@ -15,6 +15,9 @@ export * from './notifications';
 // ADR-023 / DESIGN-010 — Trash orchestrators over Maintainerr (confined write surface — guard test)
 export * from './maintainerr-clients';
 export * from './trash-flow';
+// ADR-025 / DESIGN-011 — Trash curation pipeline: generic app settings + batch state machine
+export * from './app-settings';
+export * from './trash-batches';
 // DESIGN-005 Phase 2 — media ledger single-writers (D-12)
 export * from './sync-runs';
 export * from './media-sync';

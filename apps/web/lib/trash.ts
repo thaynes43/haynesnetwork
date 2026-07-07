@@ -8,7 +8,8 @@
  *  client can't import the server package; keep the literals in sync). */
 export const PROTECTED_TAG = 'dnd';
 
-/** The fine-grained Trash action grants (mirrors @hnet/db TRASH_ACTIONS — ADR-023 C-03). */
+/** The fine-grained Trash action grants (mirrors @hnet/db TRASH_ACTIONS — ADR-023 C-03 /
+ *  ADR-025 C-01 for the two curation-pipeline grants). Keep in lockstep with @hnet/db. */
 export const TRASH_ACTION_NAMES = [
   'save_exclude',
   'remove_exclude',
@@ -16,6 +17,8 @@ export const TRASH_ACTION_NAMES = [
   'expedite_all',
   'edit_rules',
   'restore_deleted',
+  'save_leaving_soon',
+  'manage_batches',
 ] as const;
 export type TrashActionName = (typeof TRASH_ACTION_NAMES)[number];
 
@@ -27,6 +30,8 @@ export const TRASH_ACTION_LABELS: Record<TrashActionName, string> = {
   expedite_all: 'Expedite the whole pending set — destructive',
   edit_rules: 'Edit deletion rules (also needs Trash access = Edit)',
   restore_deleted: 'Restore recently deleted items',
+  save_leaving_soon: 'Rescue items during the Leaving-Soon window',
+  manage_batches: 'Manage curation batches — create / green-light / cancel / expire',
 };
 
 /** The minimal pending-item surface the guardian preview reads. */

@@ -2490,3 +2490,346 @@ input[aria-invalid='true'] {
   font-size: 11px;
   white-space: nowrap;
 }
+
+/* ── Trash curation batches — THE POSTER WALL (ADR-025 / DESIGN-011 D-07) ────────────────
+   The owner's surface: a phone-first grid of proposed-deletion posters, each carrying a fixed
+   overlay badge — X (slated), lock (rescued), eye (watched — guardian keeps), shield
+   (protected), ⊘ (skipped), trash (deleted). ADR-015 is load-bearing here: the badge occupies
+   a RESERVED corner in every state, a tap swaps glyph + deepens color only (the pop is a
+   transform on the badge — never layout), captions are fixed-height single lines, and the
+   running counts row uses tabular figures so numbers change in place. Tokens only. */
+.batches-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  margin: 0 0 10px;
+}
+.batches-hint {
+  margin: 0 0 12px;
+  font-size: 13px;
+  min-height: 17px;
+}
+
+/* The lifecycle strip — state pill · meta · admin actions. Wraps on narrow screens (a static
+   per-state layout, not an interaction reflow). */
+.batch-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-height: 40px;
+  margin: 0 0 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+.batch-strip__meta {
+  font-size: 13px;
+  min-width: 0;
+}
+.batch-strip__spacer {
+  flex: 1;
+}
+.batch-state {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 2px 10px;
+  white-space: nowrap;
+}
+.batch-state[data-tone='info'] {
+  color: var(--color-info);
+  background: color-mix(in srgb, var(--color-info) 14%, transparent);
+}
+.batch-state[data-tone='warn'] {
+  color: var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 16%, transparent);
+}
+.batch-state[data-tone='danger'] {
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 14%, transparent);
+}
+.batch-state[data-tone='muted'] {
+  color: var(--color-text-muted);
+  background: color-mix(in srgb, var(--color-text-muted) 14%, transparent);
+}
+
+/* The Leaving-Soon countdown banner — reserved height, tone deepens as the window closes. */
+.batch-countdown {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-info);
+  color: var(--color-info);
+  background: color-mix(in srgb, var(--color-info) 10%, transparent);
+}
+.batch-countdown[data-tone='warn'] {
+  border-color: var(--color-warning);
+  color: var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 10%, transparent);
+}
+.batch-countdown[data-tone='danger'] {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+}
+.batch-countdown[data-tone='muted'] {
+  border-color: var(--color-border);
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+}
+
+/* The running counts — sticky over the wall; numbers swap in place (tabular figures). */
+.bwall-counts {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  padding: 6px 2px;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  background: var(--color-bg);
+}
+/* Fixed-height error slot under the counts: appearing text recolors, never shifts the wall. */
+.bwall-error {
+  margin: 0 0 6px;
+  min-height: 17px;
+  font-size: 12px;
+  color: var(--color-danger);
+}
+
+/* The wall itself — the /library poster-grid density (fixed 2:3 boxes; 3-up at 390px). */
+.bwall {
+  list-style: none;
+  margin: 0 0 18px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 12px;
+}
+.bwall-tile {
+  min-width: 0;
+}
+.bwall-tap {
+  display: block;
+  position: relative;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+button.bwall-tap {
+  cursor: pointer;
+}
+button.bwall-tap:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* The overlay badge — a fixed reserved corner in EVERY state; the tap swaps glyph/color only.
+   Resting X is an outlined danger badge over a translucent surface puck (legible over any
+   poster in both themes); a lock DEEPENS to a filled accent badge — the satisfying flip. */
+.bwall-overlay {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface) 84%, transparent);
+  color: var(--color-text-muted);
+  animation: bwall-pop 0.22s ease-out; /* re-mounted per glyph flip; transform only (ADR-015) */
+}
+@keyframes bwall-pop {
+  0% {
+    transform: scale(0.6);
+  }
+  60% {
+    transform: scale(1.12);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.bwall-overlay[data-glyph='x'] {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+.bwall-overlay[data-glyph='lock'] {
+  color: var(--color-accent-contrast);
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+}
+.bwall-overlay[data-glyph='eye'] {
+  color: var(--color-info);
+  border-color: var(--color-info);
+}
+.bwall-overlay[data-glyph='shield'] {
+  color: var(--color-accent);
+  border-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
+}
+.bwall-overlay[data-glyph='skip'] {
+  color: var(--color-warning);
+  border-color: var(--color-warning);
+}
+.bwall-overlay[data-glyph='gone'] {
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+}
+/* Poster treatment per state — filters/outlines only (no geometry): a rescued poster gets an
+   accent ring; swept/skipped posters recede. */
+.bwall-tile[data-glyph='lock'] .poster-box {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+.bwall-tile[data-glyph='gone'] .poster-img,
+.bwall-tile[data-glyph='gone'] .poster-fallback {
+  filter: grayscale(1) brightness(0.62);
+}
+.bwall-tile[data-glyph='skip'] .poster-img,
+.bwall-tile[data-glyph='skip'] .poster-fallback {
+  filter: grayscale(0.5) brightness(0.85);
+}
+button.bwall-tap:hover .bwall-overlay[data-glyph='x'] {
+  background: color-mix(in srgb, var(--color-danger) 16%, var(--color-surface));
+}
+button.bwall-tap:hover .bwall-overlay[data-glyph='lock'] {
+  background: color-mix(in srgb, var(--color-accent) 84%, var(--color-text));
+}
+
+/* Fixed-height single-line caption + meta — a flip can never change a tile's height. */
+.bwall-caption {
+  display: block;
+  margin-top: 6px;
+  font-size: 12.5px;
+  line-height: 1.3;
+  height: 17px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bwall-meta {
+  display: block;
+  font-size: 11px;
+  line-height: 1.3;
+  height: 15px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 480px) {
+  .bwall {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .bwall-overlay {
+    top: 5px;
+    right: 5px;
+    width: 27px;
+    height: 27px;
+  }
+}
+
+/* Green-light / settings inputs. */
+.batch-window-row {
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+.batch-window-input {
+  width: 76px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 13px;
+}
+
+/* Who-rescued-what (the tuning record) + past batches. */
+.batch-savers {
+  margin: 0 0 18px;
+}
+.batch-savers__title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.batch-savers ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.batch-savers__note {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+.batch-history {
+  margin: 0 0 18px;
+}
+.batch-history tr.is-selected td {
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+}
+.batch-history .batch-state {
+  margin-right: 6px;
+}
+
+/* The admin settings card (skip-gate + default window — audited, ADR-025 C-06/C-07). */
+.batch-settings {
+  margin: 0 0 18px;
+}
+.batch-settings__head {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+.batch-settings__row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 0;
+  border-top: 1px solid var(--color-border);
+}
+.batch-settings__copy {
+  min-width: 0;
+  font-size: 13px;
+}
+.batch-settings__copy p {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+.batch-settings__field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+.batch-settings .confirm-btn,
+.batch-settings .btn {
+  flex: none;
+}

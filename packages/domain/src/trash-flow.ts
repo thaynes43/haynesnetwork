@@ -29,6 +29,21 @@ export const RECENTLY_WATCHED_WINDOW_DAYS = 30;
 /** The two media kinds Trash covers — Music (Lidarr) is structurally undeletable (R-87). */
 export type TrashMedia = 'movie' | 'tv';
 
+/** ADR-025 (Q-09) — the rolling per-kind "Leaving Soon" collection titles. Defined here (the shared
+ *  Maintainerr read module) so the batch drive that CREATES them (trash-batches.ts) and the pending
+ *  derivation that must never treat them as rule-collection sources agree on the exact name. */
+export const LEAVING_SOON_COLLECTION_TITLES = {
+  movie: 'Leaving Soon — Movies',
+  tv: 'Leaving Soon — TV',
+} as const;
+
+/** True when a Maintainerr collection title is one of OUR manual Leaving-Soon collections. */
+export function isLeavingSoonCollectionTitle(title: string | null | undefined): boolean {
+  return (
+    title === LEAVING_SOON_COLLECTION_TITLES.movie || title === LEAVING_SOON_COLLECTION_TITLES.tv
+  );
+}
+
 /** Map a Trash media kind to the owning *arr (movie→radarr, tv→sonarr). */
 export function arrKindForTrashMedia(media: TrashMedia): 'radarr' | 'sonarr' {
   return media === 'movie' ? 'radarr' : 'sonarr';
@@ -243,6 +258,12 @@ async function fetchMaintainerrPending(
   const PAGE_SIZE = 50;
   for (const c of collections) {
     if (c.isActive !== true || c.id === null || c.id === undefined) continue;
+    // OUR manually-driven Leaving-Soon collections are NOT rule-collection sources (ADR-025 C-04):
+    // their members are the SAME physical media the rule collections already surface, so folding them
+    // in would double-count sizes AND — worse — let the sweep re-derive an item's collectionId to the
+    // Leaving-Soon collection, whose arrAction is DO_NOTHING → a per-item handle there deletes nothing.
+    // Skip them (verified 2026-07-07: v3.17.0 GET /api/collections returns manual collections too).
+    if (isLeavingSoonCollectionTitle(c.title)) continue;
     const collectionId = c.id;
     const collectionKind = collectionMediaKind(c.type);
     let page = 1;

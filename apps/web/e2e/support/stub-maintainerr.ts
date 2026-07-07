@@ -52,6 +52,7 @@ interface StubCollection {
   isActive: boolean;
   deleteAfterDays: number;
   type: string;
+  libraryId: number;
   items: Array<{
     mediaServerId: string;
     tmdbId?: number;
@@ -70,6 +71,7 @@ function freshCollections(): StubCollection[] {
       isActive: true,
       deleteAfterDays: 30,
       type: 'movie',
+      libraryId: 1,
       items: [
         {
           mediaServerId: STUB_MAINT_FIXTURE_ID,
@@ -103,6 +105,7 @@ function freshCollections(): StubCollection[] {
       isActive: true,
       deleteAfterDays: 45,
       type: 'show',
+      libraryId: 2,
       items: [
         {
           mediaServerId: STUB_MAINT_TV_ID,
@@ -199,6 +202,14 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
   const handled = new Set<string>();
   /** lowercased application names currently "disconnected" (dropped from rules/constants). */
   const disconnected = new Set<string>();
+  // ADR-025 — the manual Leaving-Soon collections created via POST /collections. v3.17.0's create
+  // returns NO body, so the drive re-reads the new id from GET /collections by title; the list must
+  // surface these (id → { title, type, libraryId, members }).
+  const manualCollections = new Map<
+    number,
+    { title: string; type: string; libraryId: number; members: Set<string> }
+  >();
+  let nextManualCollectionId = 900;
   /** DESTRUCTIVE-hazard tracker: each PUT /rules that Maintainerr's `updateRules` would treat as a
    *  "crucial setting change" (dataType/manualCollection/manualCollectionName/libraryId differs from
    *  the stored group) — it wipes the collection media + specific exclusions + deletes the Plex
@@ -223,6 +234,8 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
         exclusions.clear();
         handled.clear();
         disconnected.clear();
+        manualCollections.clear();
+        nextManualCollectionId = 900;
         wipes.length = 0;
         collections = freshCollections();
         rules = freshRules();
@@ -268,6 +281,39 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
         if (method === 'POST' && path === '/collections/handle') {
           // The estate-wide handler expedite must NEVER call (C-07a). Accept it (Maintainerr
           // would) so the guard is the spec's /_stub/calls assertion, not a stub 404.
+          return json(res, 201, {});
+        }
+        // ADR-025 — the manual Leaving-Soon collection surface (Q-05). Faithful to v3.17.0: `type` is a
+        // STRING enum, `arrAction` is required (DO_NOTHING=4 for Leaving-Soon), and create returns VOID.
+        if (method === 'POST' && path === '/collections') {
+          const dto = body as {
+            collection?: { title?: unknown; type?: unknown; libraryId?: unknown };
+            media?: Array<{ mediaServerId: string }>;
+          };
+          const col = dto.collection ?? {};
+          const id = ++nextManualCollectionId;
+          manualCollections.set(id, {
+            title: String(col.title ?? ''),
+            type: typeof col.type === 'string' ? col.type : 'movie',
+            libraryId: Number(col.libraryId ?? 0),
+            members: new Set((dto.media ?? []).map((m) => m.mediaServerId)),
+          });
+          return json(res, 201, undefined); // v3.17.0 create returns NO body
+        }
+        if (method === 'POST' && path === '/collections/add') {
+          const dto = body as { collectionId: number; media?: Array<{ mediaServerId: string }> };
+          const mc = manualCollections.get(dto.collectionId);
+          if (mc) for (const m of dto.media ?? []) mc.members.add(m.mediaServerId);
+          return json(res, 201, {});
+        }
+        if (method === 'POST' && path === '/collections/remove') {
+          const dto = body as { collectionId: number; media?: Array<{ mediaServerId: string }> };
+          const mc = manualCollections.get(dto.collectionId);
+          if (mc) for (const m of dto.media ?? []) mc.members.delete(m.mediaServerId);
+          return json(res, 201, {});
+        }
+        if (method === 'POST' && path === '/collections/removeCollection') {
+          manualCollections.delete((body as { collectionId: number }).collectionId);
           return json(res, 201, {});
         }
         if ((method === 'POST' || method === 'PUT') && path === '/rules') {
@@ -383,18 +429,28 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
             sonarr_untag_on_unexclude: true,
           });
         case path === '/collections':
-          return json(
-            res,
-            200,
-            collections.map((c) => ({
+          return json(res, 200, [
+            ...collections.map((c) => ({
               id: c.id,
               title: c.title,
               isActive: c.isActive,
               deleteAfterDays: c.deleteAfterDays,
               type: c.type,
+              libraryId: c.libraryId,
               media: [], // the list serves a PREVIEW subset — content is the paged endpoint
             })),
-          );
+            // ADR-025 — surface the created Leaving-Soon collections so the drive can re-read their id
+            // by title (the pending derivation skips them by title, so they never inflate the tables).
+            ...[...manualCollections].map(([id, mc]) => ({
+              id,
+              title: mc.title,
+              isActive: true,
+              deleteAfterDays: 0,
+              type: mc.type,
+              libraryId: mc.libraryId,
+              media: [],
+            })),
+          ]);
         case /^\/collections\/media\/\d+\/content\/\d+$/.test(path): {
           const cid = Number(path.split('/')[3]);
           const items =

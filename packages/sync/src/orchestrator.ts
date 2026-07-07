@@ -11,6 +11,9 @@ import {
   completeFixRequests,
   finishSyncRun,
   startSyncRun,
+  sweepExpiredBatches,
+  type MaintainerrClientBundle,
+  type SweepReport,
 } from '@hnet/domain';
 import { runArrFullSync } from './arr-full';
 import { runArrIncrementalSync } from './arr-incremental';
@@ -41,6 +44,9 @@ export interface RunSyncOptions {
   metadataStaleThresholdMs?: number;
   /** metadata-refresh: cap the rows harvested this run. */
   metadataLimit?: number;
+  /** ADR-025 / DESIGN-011 — the Maintainerr client bundle the `trash-batch-sweep` mode drives
+   *  (read + confined write). Required only for that mode; tests inject a fetch-stubbed bundle. */
+  maintainerr?: MaintainerrClientBundle;
   /** Injected DB (tests); defaults to the lazy @hnet/db client. */
   db?: DbClient;
   logger?: SyncLogger;
@@ -68,6 +74,10 @@ export interface SyncReport {
   fixesCompleted: number | null;
   backfillError?: string;
   fixCompletionError?: string;
+  /** ADR-025 — the `trash-batch-sweep` result (null for every other mode / when the sweep errored). */
+  sweep?: SweepReport | null;
+  /** The sweep's error (e.g. an unsafe-Maintainerr refusal) — sets totalFailure for the CLI exit. */
+  sweepError?: string;
   /** True when EVERY requested source failed/aborted — the CLI's nonzero-exit signal. */
   totalFailure: boolean;
 }
@@ -134,6 +144,42 @@ async function runSource(
 export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
   const logger = options.logger ?? noopLogger;
   const db = options.db ?? (defaultDb as DbClient);
+
+  // ADR-025 / DESIGN-011 — the batch-expiry sweep is NOT a per-source loop; it drives Maintainerr
+  // to delete the survivors of every expired `leaving_soon` batch (each item re-checked fresh:
+  // SAFE audit + live exclusions + guardian). Its audit trail is the ledger + batch rows (never a
+  // sync_runs row, exactly like expedite), so it returns early with a `sweep` report.
+  if (options.mode === 'trash-batch-sweep') {
+    const startedAt = new Date();
+    if (!options.maintainerr) {
+      throw new Error('trash-batch-sweep requires a maintainerr client bundle');
+    }
+    let sweep: SweepReport | null = null;
+    let sweepError: string | undefined;
+    try {
+      sweep = await sweepExpiredBatches({ db, maintainerr: options.maintainerr, actorId: null });
+      logger.info('trash batch sweep complete', {
+        batchesSwept: sweep.batchesSwept,
+        deleted: sweep.batches.reduce((n, b) => n + b.deletedCount, 0),
+        skipped: sweep.batches.reduce((n, b) => n + b.skippedCount, 0),
+      });
+    } catch (error) {
+      sweepError = error instanceof Error ? error.message : String(error);
+      logger.error('trash batch sweep failed', { error: sweepError });
+    }
+    return {
+      mode: options.mode,
+      startedAt,
+      finishedAt: new Date(),
+      sources: [],
+      backfill: null,
+      fixesCompleted: null,
+      sweep,
+      ...(sweepError !== undefined ? { sweepError } : {}),
+      totalFailure: sweepError !== undefined,
+    };
+  }
+
   // metadata-refresh harvests *arr kinds only (Seerr has no metadata) — default to ARR_KINDS.
   const sources =
     options.sources ?? (options.mode === 'metadata-refresh' ? ARR_KINDS : SYNC_SOURCES);

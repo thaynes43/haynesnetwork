@@ -376,6 +376,61 @@ export class MaintainerrWriteClient {
   patchSettings(payload: Record<string, unknown>): Promise<void> {
     return this.requestReturnStatus('PATCH', 'settings', { body: payload });
   }
+
+  // ADR-025 / DESIGN-011 — the Leaving-Soon manual-collection surface (Q-05). Endpoints + body shapes
+  // re-verified against the Maintainerr v3.17.0 source 2026-07-07 (Maintainerr/Maintainerr@v3.17.0
+  // apps/server/src/modules/collections/collections.controller.ts — `@Controller('api/collections')`,
+  // `createCollectionBodySchema` / `collectionBaseShape`):
+  //   POST /api/collections            createCollection  { collection, media?: [{ mediaServerId }] }
+  //   POST /api/collections/add        addToCollection    { collectionId, media: [{ mediaServerId }], manual? }
+  //   POST /api/collections/remove     removeFromCollection { collectionId, media: [{ mediaServerId }] }
+  //   POST /api/collections/removeCollection removeCollection { collectionId }
+  // The `collection` body is validated by `collectionBaseShape`: `type` is `z.enum(MediaItemTypes)`
+  // (the STRING 'movie'|'show'|… — a numeric code is rejected 400), `arrAction` is a REQUIRED
+  // `z.nativeEnum(ServarrAction)`, and `deleteAfterDays` is `z.coerce.number().int().optional()` — so
+  // `null` COERCES to `0` (Number(null)); it does NOT disable aging. `visibleOnHome`/`visibleOnRecommended`
+  // are pushed to Plex by collections.service.ts (`updateCollectionVisibility`) so the collection
+  // surfaces on Plex Home + Recommended.
+
+  /** `POST /api/collections` — create a standalone, Plex-visible collection seeded with `media`.
+   *  v3.17.0's `createCollection` handler returns NO body (void, HTTP 201) — so this is a tolerant
+   *  void write (parsing an empty body as JSON would throw ArrParseError). The caller re-reads the new
+   *  collection's id via `GET /api/collections`, matching the exact title. A non-2xx still throws
+   *  ArrHttpError (fail closed). */
+  createCollection(body: {
+    collection: Record<string, unknown>;
+    media?: Array<{ mediaServerId: string }>;
+  }): Promise<void> {
+    return this.http.requestVoid('POST', 'collections', { body });
+  }
+
+  /** `POST /api/collections/add` — add specific Plex items (by ratingKey) to a collection. */
+  addToCollection(collectionId: number, mediaServerIds: string[]): Promise<void> {
+    return this.http.requestVoid('POST', 'collections/add', {
+      body: {
+        collectionId,
+        media: mediaServerIds.map((mediaServerId) => ({ mediaServerId })),
+        manual: true,
+      },
+    });
+  }
+
+  /** `POST /api/collections/remove` — remove specific Plex items from a collection (e.g. a rescued item). */
+  removeFromCollection(collectionId: number, mediaServerIds: string[]): Promise<void> {
+    return this.http.requestVoid('POST', 'collections/remove', {
+      body: {
+        collectionId,
+        media: mediaServerIds.map((mediaServerId) => ({ mediaServerId })),
+      },
+    });
+  }
+
+  /** `POST /api/collections/removeCollection` — tear the whole collection down (cancel/complete). */
+  removeCollection(collectionId: number): Promise<void> {
+    return this.http.requestVoid('POST', 'collections/removeCollection', {
+      body: { collectionId },
+    });
+  }
 }
 
 export interface ArrWriteClients {
