@@ -18,6 +18,14 @@ export {
   OIDC_PROVIDER_ID,
   type AuthEnv,
 } from './env';
+export {
+  resolveSignOutRedirect,
+  buildEndSessionUrl,
+  parseEndSessionEndpoint,
+  fetchEndSessionEndpoint,
+  postLogoutRedirectUri,
+  type EndSessionParams,
+} from './logout';
 
 type RawSession = NonNullable<Awaited<ReturnType<typeof auth.api.getSession>>>;
 
