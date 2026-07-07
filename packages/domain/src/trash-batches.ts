@@ -308,7 +308,7 @@ export async function createBatchFromPending(input: {
 // greenlightBatch / promoteToLeavingSoon
 // ---------------------------------------------------------------------------
 
-interface PromoteResult {
+export interface PromoteResult {
   expiresAt: string;
   windowDays: number;
   collectionId: number | null;

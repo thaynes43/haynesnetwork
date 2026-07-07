@@ -30,6 +30,9 @@ import {
   SearchCapExceededError,
   SubtitleFixUnsupportedError,
   SystemRoleImmutableError,
+  TrashBatchEmptyError,
+  TrashBatchOpenError,
+  TrashBatchStateError,
   TrashMusicUnsupportedError,
   type ArrClientBundle,
   type MaintainerrClientBundle,
@@ -141,6 +144,9 @@ const APP_CODED_ERRORS = [
   MaintainerrUnsafeError,
   MaintainerrUpstreamError,
   TrashMusicUnsupportedError,
+  TrashBatchStateError,
+  TrashBatchOpenError,
+  TrashBatchEmptyError,
 ] as const;
 
 const t = initTRPC.context<TRPCContext>().create({
@@ -197,6 +203,9 @@ export const authedProcedure = t.procedure.use(({ ctx, next }) => {
  * | MaintainerrUnsafeError      | MAINTAINERR_UNSAFE          | PRECONDITION_FAILED   |
  * | MaintainerrUpstreamError    | MAINTAINERR_UNAVAILABLE     | BAD_GATEWAY           |
  * | TrashMusicUnsupportedError  | TRASH_MUSIC_UNSUPPORTED     | UNPROCESSABLE_CONTENT |
+ * | TrashBatchStateError        | TRASH_BATCH_STATE           | CONFLICT              |
+ * | TrashBatchOpenError         | TRASH_BATCH_ALREADY_OPEN    | CONFLICT              |
+ * | TrashBatchEmptyError        | TRASH_BATCH_EMPTY           | UNPROCESSABLE_CONTENT |
  * | NotFoundError               | —                           | NOT_FOUND             |
  */
 export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
@@ -264,6 +273,15 @@ export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
       throw new TRPCError({ code: 'BAD_GATEWAY', message: err.message, cause: err });
     }
     if (err instanceof TrashMusicUnsupportedError) {
+      throw new TRPCError({ code: 'UNPROCESSABLE_CONTENT', message: err.message, cause: err });
+    }
+    if (err instanceof TrashBatchStateError) {
+      throw new TRPCError({ code: 'CONFLICT', message: err.message, cause: err });
+    }
+    if (err instanceof TrashBatchOpenError) {
+      throw new TRPCError({ code: 'CONFLICT', message: err.message, cause: err });
+    }
+    if (err instanceof TrashBatchEmptyError) {
       throw new TRPCError({ code: 'UNPROCESSABLE_CONTENT', message: err.message, cause: err });
     }
     if (err instanceof NotFoundError) {
