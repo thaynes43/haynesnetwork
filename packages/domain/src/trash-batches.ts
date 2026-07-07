@@ -39,13 +39,16 @@ import {
 import { isPostgresUniqueViolation } from './errors';
 import { guardMaintainerrCall, type MaintainerrClientBundle } from './maintainerr-clients';
 import {
+  arrKindForTrashMedia,
   auditMaintainerr,
   classifyGuardian,
   isLeavingSoonCollectionTitle,
   LEAVING_SOON_COLLECTION_TITLES,
   listTrashPending,
+  recordDeletionAudit,
   RECENTLY_WATCHED_WINDOW_DAYS,
   removeExclusion,
+  resolveActorName,
   saveExclusion,
   type TrashMedia,
   type TrashPendingItem,
@@ -759,6 +762,9 @@ async function expireOneBatch(input: {
   watchWindowDays?: number;
 }): Promise<BatchSweepResult> {
   const db = resolveDb(input.db);
+  // Deletion-audit attribution (Recently Deleted "By" + the Activity notification), resolved once.
+  const actorName = await resolveActorName(input.db, input.actorId);
+  const sweepArrKind = arrKindForTrashMedia(input.mediaKind as TrashMedia);
 
   // FRESH pending re-derivation — the guardian re-runs against live data, never the frozen snapshot.
   const pending = await listTrashPending({
@@ -843,6 +849,20 @@ async function expireOneBatch(input: {
           collectionId: fresh.collectionId,
           maintainerrMediaId: item.maintainerrMediaId,
         },
+      });
+      // Same-tx deletion audit: tombstone the media_item so Recently Deleted surfaces this swept
+      // deletion (with actor) immediately, and write the app-sourced Activity notification — the batch
+      // sweep deletes via the same per-item handle Maintainerr never webhooks back.
+      await recordDeletionAudit(tx, {
+        mediaItemId: item.mediaItemId,
+        title: fresh.title,
+        sizeBytes: fresh.sizeBytes,
+        tmdbId: fresh.tmdbId,
+        tvdbId: fresh.tvdbId,
+        arrKind: sweepArrKind,
+        actorId: input.actorId,
+        actorName,
+        scope: 'batch',
       });
       return true;
     });

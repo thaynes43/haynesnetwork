@@ -10,7 +10,15 @@
 // arbitrary / prototype-polluting keys — never persisting unbounded caller JSON. (Hand-rolled
 // validation — apps/web carries no zod.)
 import { createHash, timingSafeEqual } from 'node:crypto';
-import type { NotificationSource } from '@hnet/db';
+
+/**
+ * The INBOUND webhook sources — the subset of NOTIFICATION_SOURCES that a `POST /api/webhooks/<source>`
+ * receiver accepts. Excludes app-internal sources like 'trash' (the app writes its own Trash deletion
+ * Activity events directly via @hnet/domain — there is no inbound webhook for them, so they have no
+ * secret env var and no parser).
+ */
+export const WEBHOOK_SOURCES = ['maintainerr', 'seerr', 'tautulli'] as const;
+export type WebhookSource = (typeof WEBHOOK_SOURCES)[number];
 
 /** Reject bodies larger than this (bytes) BEFORE parsing — an unauthenticated endpoint must not
  *  buffer or persist unbounded input. ~64KB is far above any real webhook template. */
@@ -65,7 +73,7 @@ export async function readWebhookBodyCapped(
 }
 
 /** The per-source env var holding that source's webhook shared secret (fail-closed if unset). */
-export const WEBHOOK_SECRET_ENV: Record<NotificationSource, string> = {
+export const WEBHOOK_SECRET_ENV: Record<WebhookSource, string> = {
   maintainerr: 'MAINTAINERR_WEBHOOK_SECRET',
   seerr: 'SEERR_WEBHOOK_SECRET',
   tautulli: 'TAUTULLI_WEBHOOK_SECRET',
@@ -288,9 +296,9 @@ function normalizeMediaType(value: string | undefined): 'movie' | 'tv' | null {
   return null;
 }
 
-/** Dispatch to the per-source parser. */
+/** Dispatch to the per-source parser (inbound webhook sources only). */
 export function parserForSource(
-  source: NotificationSource,
+  source: WebhookSource,
 ): (raw: unknown) => ParsedNotification | null {
   switch (source) {
     case 'maintainerr':

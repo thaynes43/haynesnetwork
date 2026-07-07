@@ -315,7 +315,12 @@ export type MotdSeverity = (typeof MOTD_SEVERITIES)[number];
 // 'seerr' is the single canonical name for BOTH Overseerr and Seerr (one deployment, one source
 // name — the Overseerr webhook agent posts here). text+CHECK, single source of truth for TS + the
 // notifications SQL CHECK.
-export const NOTIFICATION_SOURCES = ['maintainerr', 'seerr', 'tautulli'] as const;
+//
+// 'trash' (migration 0020) is the APP itself as an event source: an app-initiated Trash deletion
+// (Expedite / batch sweep) writes its own Activity notification here so it surfaces in the Activity
+// tab independent of Maintainerr's webhook — Maintainerr does NOT webhook our API-triggered per-item
+// `/collections/media/handle` calls, so app-expedited deletions would otherwise never reach Activity.
+export const NOTIFICATION_SOURCES = ['maintainerr', 'seerr', 'tautulli', 'trash'] as const;
 export type NotificationSource = (typeof NOTIFICATION_SOURCES)[number];
 
 // ---------------------------------------------------------------------------

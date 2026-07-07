@@ -3,8 +3,17 @@
 // exclusion/expedite/rules write surface, the cross-server watch guardian, and the recently-deleted
 // + restore paths. The mutating Maintainerr surface (@hnet/arr/write) stays confined here (ADR-008
 // guard). Music/Lidarr is NEVER a Trash target (R-87) — rejected at the orchestrator, not just UI.
-import { ledgerEvents, mediaItems, mediaMetadata, type ArrKind, type DbClient } from '@hnet/db';
-import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
+import {
+  ledgerEvents,
+  mediaItems,
+  mediaMetadata,
+  notifications,
+  users,
+  type ArrKind,
+  type DbClient,
+  type Transaction,
+} from '@hnet/db';
+import { and, desc, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { inTransaction, resolveDb } from './db-client';
 import {
   MaintainerrUnsafeError,
@@ -468,13 +477,28 @@ export interface RecentlyDeletedItem {
   sizeOnDisk: number;
   deletedAt: string | null;
   posterSource: string | null;
+  /** WHO expedited the deletion (the most-recent `trash_expedited` event's attributed app user's
+   *  display name), or null when the tombstone came from a sync pass with no actor ("system"). */
+  deletedBy: string | null;
 }
 
 /**
- * ADR-023 / DESIGN-010 D-02 — Recently-Deleted from OUR ledger: tombstoned media_items
- * (deleted_from_arr_at set, T-41) of the requested kind, newest tombstone first. This is the
- * durable, restore-able set (Maintainerr exposes no deletion-history API); Restore re-adds via the
- * existing executeRestore path.
+ * ADR-023 / DESIGN-010 D-02 — Recently-Deleted from OUR durable records, newest first. An item is
+ * "recently deleted" when EITHER:
+ *
+ *   (A) it is TOMBSTONED (`deleted_from_arr_at` set, T-41) — the sync pass detected the *arr removal, OR
+ *   (B) it carries an app-initiated `trash_expedited` ledger event that has NOT been superseded by a
+ *       later restore (`trash_restored` / `restored`).
+ *
+ * Branch (B) is the fix for the deletion-audit gap: Expedite deletes PER ITEM via Maintainerr's
+ * `/collections/media/handle`, which can delete the FILE while leaving the *arr entry — so the item is
+ * never "missing" for the tombstone pass, and worse, any tombstone we DO write is CLEARED the next time
+ * sync re-sees the still-present *arr entry (media-sync un-tombstones live rows). The append-only
+ * `trash_expedited` event is therefore the durable source of truth for an app deletion; Maintainerr
+ * exposes no deletion-history API of its own. The deletion time is the tombstone time when present,
+ * else the latest expedite time; the actor (`deletedBy`) is the latest `trash_expedited` event's
+ * attributed user (null ⇒ a sync-only tombstone with no app actor → "system"). Restore re-adds via the
+ * existing executeRestore path and writes a restore event, which drops the item from this list.
  */
 export async function listRecentlyDeleted(input: {
   db?: DbClient;
@@ -483,6 +507,18 @@ export async function listRecentlyDeleted(input: {
 }): Promise<RecentlyDeletedItem[]> {
   const db = resolveDb(input.db);
   const arrKind = arrKindForTrashMedia(input.media);
+  // Correlated: the item's latest app-expedite time and its latest restore time (branch B + supersede).
+  const expeditedAt = sql<Date | null>`(
+    SELECT max(le.occurred_at) FROM ${ledgerEvents} le
+    WHERE le.media_item_id = ${mediaItems.id} AND le.event_type = 'trash_expedited'
+  )`;
+  const restoredAt = sql<Date | null>`(
+    SELECT max(le.occurred_at) FROM ${ledgerEvents} le
+    WHERE le.media_item_id = ${mediaItems.id} AND le.event_type IN ('trash_restored', 'restored')
+  )`;
+  // Branch B: has a trash_expedited event NOT superseded by a later restore.
+  const expeditedNotRestored = sql`(${expeditedAt}) IS NOT NULL AND ((${restoredAt}) IS NULL OR (${expeditedAt}) > (${restoredAt}))`;
+  const deletedAtExpr = sql<Date | null>`coalesce(${mediaItems.deletedFromArrAt}, (${expeditedAt}))`;
   const rows = await db
     .select({
       mediaItemId: mediaItems.id,
@@ -492,13 +528,28 @@ export async function listRecentlyDeleted(input: {
       tmdbId: mediaItems.tmdbId,
       tvdbId: mediaItems.tvdbId,
       sizeOnDisk: mediaItems.sizeOnDisk,
-      deletedFromArrAt: mediaItems.deletedFromArrAt,
+      deletedAt: deletedAtExpr,
       posterSource: mediaMetadata.posterSource,
+      // The actor of the item's latest `trash_expedited` event (null ⇒ sync-only tombstone → system).
+      deletedBy: sql<string | null>`(
+        SELECT ${users.displayName}
+        FROM ${ledgerEvents}
+        JOIN ${users} ON ${users.id} = ${ledgerEvents.requestedByUserId}
+        WHERE ${ledgerEvents.mediaItemId} = ${mediaItems.id}
+          AND ${ledgerEvents.eventType} = 'trash_expedited'
+        ORDER BY ${ledgerEvents.occurredAt} DESC
+        LIMIT 1
+      )`,
     })
     .from(mediaItems)
     .leftJoin(mediaMetadata, eq(mediaMetadata.mediaItemId, mediaItems.id))
-    .where(and(eq(mediaItems.arrKind, arrKind), isNotNull(mediaItems.deletedFromArrAt)))
-    .orderBy(desc(mediaItems.deletedFromArrAt))
+    .where(
+      and(
+        eq(mediaItems.arrKind, arrKind),
+        or(isNotNull(mediaItems.deletedFromArrAt), expeditedNotRestored),
+      ),
+    )
+    .orderBy(desc(deletedAtExpr))
     .limit(input.limit ?? 100);
   return rows.map((r) => ({
     mediaItemId: r.mediaItemId,
@@ -508,8 +559,9 @@ export async function listRecentlyDeleted(input: {
     tmdbId: r.tmdbId,
     tvdbId: r.tvdbId,
     sizeOnDisk: r.sizeOnDisk,
-    deletedAt: r.deletedFromArrAt === null ? null : r.deletedFromArrAt.toISOString(),
+    deletedAt: r.deletedAt === null ? null : new Date(r.deletedAt).toISOString(),
     posterSource: r.posterSource,
+    deletedBy: r.deletedBy ?? null,
   }));
 }
 
@@ -816,12 +868,97 @@ async function fetchLiveExclusions(
   return excluded;
 }
 
-/** Commit the `trash_expedited` intent event for one item, THEN trigger its per-item handle. The
- *  intent is durable before the (lost-response-prone) destructive call — Fix D-09 discipline. */
+/** A compact human byte size for the Activity notification body. Domain-side (the web UI has its own
+ *  richer `formatBytes`, but Activity renders the stored notification body verbatim). */
+export function formatBytesShort(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+  const i = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+  const value = bytes / 1024 ** i;
+  return `${value >= 100 || i === 0 ? Math.round(value) : value.toFixed(1)} ${units[i]}`;
+}
+
+/** Resolve an actor's display name for deletion attribution (null actor / unknown id ⇒ null). */
+export async function resolveActorName(
+  db: DbClient | undefined,
+  actorId: string | null,
+): Promise<string | null> {
+  if (actorId === null) return null;
+  const [row] = await resolveDb(db)
+    .select({ displayName: users.displayName })
+    .from(users)
+    .where(eq(users.id, actorId))
+    .limit(1);
+  return row?.displayName ?? null;
+}
+
+export interface DeletionAuditInput {
+  mediaItemId: string | null;
+  title: string;
+  sizeBytes: number;
+  tmdbId: number | null;
+  tvdbId: number | null;
+  arrKind: 'radarr' | 'sonarr';
+  actorId: string | null;
+  actorName: string | null;
+  scope: 'item' | 'all' | 'batch';
+}
+
+/**
+ * The deletion-audit seam shared by BOTH destructive paths (direct Expedite + the batch expiry sweep).
+ * Runs INSIDE the caller's transaction — same-tx as the `trash_expedited` intent event and the delete
+ * decision (audit-in-transaction discipline). It writes an Activity notification (source 'trash')
+ * carrying the actor + title + size so an app-initiated deletion shows in the Activity tab:
+ * Maintainerr does NOT webhook our API-triggered per-item `/collections/media/handle` calls, so
+ * without this app-initiated deletions never reach Activity.
+ *
+ * NOTE it deliberately does NOT tombstone the media_item: `deleted_from_arr_at` means "gone from the
+ * *arr" and is SYNC-OWNED (CLAUDE.md rule 4) — a per-item Maintainerr delete can remove the FILE while
+ * leaving the *arr entry, so the item is still live for sync (which would immediately un-tombstone any
+ * value we wrote). Recently Deleted instead surfaces app-expedited items from the durable append-only
+ * `trash_expedited` ledger event (listRecentlyDeleted branch B), which the callers write same-tx.
+ */
+export async function recordDeletionAudit(
+  tx: Transaction,
+  input: DeletionAuditInput,
+): Promise<void> {
+  await tx.insert(notifications).values({
+    source: 'trash',
+    type: 'deleted',
+    title: input.title,
+    body:
+      (input.actorName !== null ? `Deleted by ${input.actorName}` : 'Deleted') +
+      (input.sizeBytes > 0 ? ` · ${formatBytesShort(input.sizeBytes)} freed` : ''),
+    tmdbId: input.tmdbId,
+    tvdbId: input.tvdbId,
+    mediaItemId: input.mediaItemId,
+    actorUserId: input.actorId,
+    payload: { scope: input.scope, arrKind: input.arrKind, sizeBytes: input.sizeBytes },
+  });
+}
+
+interface ExpediteSurvivor {
+  collectionId: number;
+  maintainerrMediaId: string;
+  mediaItemId: string | null;
+  /** Deletion-audit facets (Recently Deleted + Activity) — carried from the pending row the user saw. */
+  title: string;
+  sizeBytes: number;
+  tmdbId: number | null;
+  tvdbId: number | null;
+  arrKind: 'radarr' | 'sonarr';
+}
+
+/**
+ * Commit the `trash_expedited` intent event for one item + its deletion audit (tombstone + Activity
+ * notification, `recordDeletionAudit`) in ONE transaction, THEN trigger its per-item handle. The
+ * intent + audit are durable before the (lost-response-prone) destructive call — Fix D-09 discipline.
+ */
 async function expediteOneSurvivor(
   input: Pick<ExpediteDeletionInput, 'db' | 'maintainerr' | 'actorId'>,
   scope: 'item' | 'all',
-  survivor: { collectionId: number; maintainerrMediaId: string; mediaItemId: string | null },
+  actorName: string | null,
+  survivor: ExpediteSurvivor,
 ): Promise<void> {
   await inTransaction(input.db, async (tx) => {
     await tx.insert(ledgerEvents).values({
@@ -835,6 +972,19 @@ async function expediteOneSurvivor(
         collectionId: survivor.collectionId,
         maintainerrMediaId: survivor.maintainerrMediaId,
       },
+    });
+    // Same-tx deletion audit: tombstone so Recently Deleted surfaces it now (with actor), and write
+    // the app-sourced Activity notification (Maintainerr never webhooks our per-item handle).
+    await recordDeletionAudit(tx, {
+      mediaItemId: survivor.mediaItemId,
+      title: survivor.title,
+      sizeBytes: survivor.sizeBytes,
+      tmdbId: survivor.tmdbId,
+      tvdbId: survivor.tvdbId,
+      arrKind: survivor.arrKind,
+      actorId: input.actorId ?? null,
+      actorName,
+      scope,
     });
   });
   await guardMaintainerrCall('maintainerr POST /collections/media/handle', () =>
@@ -860,6 +1010,10 @@ export async function expediteDeletion(
       },
     );
   }
+
+  // Resolve the actor's display name ONCE for the deletion-audit attribution (Recently Deleted "By" +
+  // the Activity notification body). Read-only; a null/unknown actor stays unattributed.
+  const actorName = await resolveActorName(input.db, input.actorId);
 
   if (input.scope === 'item') {
     const item = input.item;
@@ -912,10 +1066,15 @@ export async function expediteDeletion(
 
     // Cold + positively evaluated ⇒ delete this one item (intent-first). Use the RESOLVED
     // collectionId, not the client's (defence in depth against a mismatched request).
-    await expediteOneSurvivor(input, 'item', {
+    await expediteOneSurvivor(input, 'item', actorName, {
       collectionId: target.collectionId,
       maintainerrMediaId: targetMediaId,
       mediaItemId: target.mediaItemId,
+      title: target.title,
+      sizeBytes: target.sizeBytes,
+      tmdbId: target.tmdbId,
+      tvdbId: target.tvdbId,
+      arrKind: arrKindForTrashMedia(resolved.media),
     });
     return { scope: 'item', protectedCount: 0, expeditedCount: 1, skippedCount: 0, stalePending: 0 };
   }
@@ -955,12 +1114,9 @@ export async function expediteDeletion(
     targets.map((p) => p.maintainerrMediaId),
   );
 
+  const arrKind = arrKindForTrashMedia(input.media);
   // PASS 1 — guardian: whitelist watched/requested, skip anything we can't positively clear.
-  const survivors: Array<{
-    collectionId: number;
-    maintainerrMediaId: string;
-    mediaItemId: string | null;
-  }> = [];
+  const survivors: ExpediteSurvivor[] = [];
   let protectedCount = 0;
   // Legacy (unpinned) parity: unactionable items still count as skipped. When pinned they are simply
   // not targets (never in the snapshot) and are left untouched, uncounted.
@@ -1005,13 +1161,18 @@ export async function expediteDeletion(
       collectionId: p.collectionId,
       maintainerrMediaId: mediaId,
       mediaItemId: p.mediaItemId,
+      title: p.title,
+      sizeBytes: p.sizeBytes,
+      tmdbId: p.tmdbId,
+      tvdbId: p.tvdbId,
+      arrKind,
     });
   }
 
   // PASS 2 — delete each survivor individually (intent-first, then per-item handle).
   let expeditedCount = 0;
   for (const survivor of survivors) {
-    await expediteOneSurvivor(input, 'all', survivor);
+    await expediteOneSurvivor(input, 'all', actorName, survivor);
     expeditedCount += 1;
   }
 

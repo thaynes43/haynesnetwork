@@ -8,19 +8,22 @@
 // sanitized event is persisted through the @hnet/domain `recordNotification` single-writer (so the
 // no-direct-state-writes guard passes); the Bulletin Feed + Trash Activity read it back.
 import { recordNotification } from '@hnet/domain';
-import { NOTIFICATION_SOURCES, type NotificationSource } from '@hnet/db';
 import {
   WEBHOOK_SECRET_ENV,
+  WEBHOOK_SOURCES,
   parserForSource,
   readWebhookBodyCapped,
   secretsMatch,
+  type WebhookSource,
 } from '@/lib/webhook-sources';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-function isKnownSource(source: string): source is NotificationSource {
-  return (NOTIFICATION_SOURCES as readonly string[]).includes(source);
+// Only INBOUND webhook sources are routable here — app-internal notification sources (e.g. 'trash')
+// have no receiver, so a POST to their path 404s exactly like any other unknown source.
+function isKnownSource(source: string): source is WebhookSource {
+  return (WEBHOOK_SOURCES as readonly string[]).includes(source);
 }
 
 function providedSecret(req: Request, url: URL): string | null {
