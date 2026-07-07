@@ -133,7 +133,9 @@ export function TrashPendingNotice({
   const item = pending.data?.items.find((i) => i.mediaItemId === mediaItemId);
   if (item === undefined || item.maintainerrMediaId === null) return null;
 
-  const on = override === 'saved' || (item.protectedByTag && override !== 'unsaved');
+  const on =
+    override === 'saved' ||
+    ((item.protectedByTag || item.protectedByExclusion) && override !== 'unsaved');
   const days = daysUntil(item.scheduledDeleteAt);
   const canSave = access.actions.includes('save_exclude');
   const canUnsave = access.actions.includes('remove_exclude');

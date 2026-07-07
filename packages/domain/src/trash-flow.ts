@@ -175,6 +175,12 @@ export interface TrashPendingItem {
   arrTags: string[];
   /** arrTags includes the Maintainerr-managed protective tag (already safe from deletion). */
   protectedByTag: boolean;
+  /** Live-repro fix (2026-07-06) — this item is currently on Maintainerr's exclusion (whitelist)
+   *  list per a direct read, independent of whether the `dnd` tag has synced into arrTags yet. Only
+   *  populated when listTrashPending is called with `includeLiveExclusions` (the pending TAB);
+   *  false otherwise. The UI treats tag-OR-exclusion as Protected (closes the cross-session window
+   *  where an exclusion made outside this session shows Unprotected until the tag round-trips). */
+  protectedByExclusion: boolean;
   /** last_viewed_at (cross-server MAX) is within RECENTLY_WATCHED_WINDOW_DAYS — never delete. */
   recentlyWatched: boolean;
   lastViewedAt: string | null;
@@ -289,6 +295,16 @@ export async function listTrashPending(input: {
   media: TrashMedia;
   /** Window override for the recently-watched flag (default RECENTLY_WATCHED_WINDOW_DAYS). */
   watchWindowDays?: number;
+  /**
+   * Live-repro fix (2026-07-06) — when true, cross-check each pending item against Maintainerr's LIVE
+   * exclusion list (per-item mediaServerId reads via fetchLiveExclusions — real Maintainerr answers
+   * [] for a param-less exclusion GET, so there is no cheaper bulk read) and set `protectedByExclusion`.
+   * The pending TAB passes this so an exclusion created OUTSIDE this session shows as Protected before
+   * its `dnd` tag round-trips into arrTags. Left OFF for the internal expedite/guardian calls: they run
+   * their own per-run authoritative fetchLiveExclusions and `classifyGuardian` never reads this flag, so
+   * those paths are unchanged and pay no extra exclusion reads.
+   */
+  includeLiveExclusions?: boolean;
 }): Promise<TrashPendingResult> {
   const db = resolveDb(input.db);
   const arrKind = arrKindForTrashMedia(input.media);
@@ -302,6 +318,16 @@ export async function listTrashPending(input: {
     if (f.collectionKind !== null) return f.collectionKind === input.media;
     return input.media === 'movie' ? f.tmdbId !== null : f.tvdbId !== null;
   });
+
+  // Live-repro fix (2026-07-06) — optionally OR in Maintainerr's LIVE exclusion set so a whitelist
+  // made outside this session is reflected as Protected before its `dnd` tag syncs into arrTags.
+  const liveExcludedIds = input.includeLiveExclusions
+    ? await fetchLiveExclusions(input.maintainerr, [
+        ...new Set(
+          forMedia.map((f) => f.maintainerrMediaId).filter((id): id is string => id !== null),
+        ),
+      ])
+    : new Set<string>();
 
   // Gather the external ids to join our ledger on.
   const ids = new Set<number>();
@@ -394,6 +420,8 @@ export async function listTrashPending(input: {
       arrKind: joined ? arrKind : null,
       arrTags,
       protectedByTag: arrTags.includes(PROTECTED_TAG),
+      protectedByExclusion:
+        f.maintainerrMediaId !== null && liveExcludedIds.has(f.maintainerrMediaId),
       recentlyWatched,
       lastViewedAt: lastViewed === null ? null : lastViewed.toISOString(),
       requesters: joined?.requesters ?? [],
@@ -1010,19 +1038,68 @@ export async function restoreDeleted(input: {
 // ---------------------------------------------------------------------------
 
 /**
+ * Live-repro fix (2026-07-06, plan-006 live validation) — reconcile the Maintainerr GET/PUT rule
+ * shapes. `GET /api/rules` returns each rule group's `rules[]` as the DB ENTITY shape (`RuleDbDto`:
+ * `{ id, ruleJson: <stringified RuleDto>, section, ruleGroupId, isActive }`) — the actual filter is
+ * an ENCODED `ruleJson` string. But `PUT /api/rules` (`updateRules`) validates each rule as a DECODED
+ * `RuleDto` (it reads `firstVal`/`action`/`lastVal`/`customVal`); it does NOT decode `ruleJson`.
+ * Maintainerr's own web UI decodes `ruleJson` → `RuleDto` before saving; our Rules tab round-trips
+ * the GET object verbatim (`{ ...rule, isActive }`). So any rule group with a NON-EMPTY `rules[]`
+ * fails `validateRule` upstream (`firstVal` is undefined) → Maintainerr answers `{ code:0, result:
+ * 'First value is not available for this server' }` at HTTP 200/201 → the write client's P1a
+ * ReturnStatus hardening throws MaintainerrWriteFailedError → BAD_GATEWAY. (An EMPTY `rules[]` skips
+ * the loop, which is why the old stub/e2e — a rule with `rules: []` — never caught it.)
+ *
+ * We normalize here (the confined write seam, not the UI) so the payload we PUT matches the DTO
+ * `updateRules` expects: each `rules[]` item that still carries a string `ruleJson` is replaced by
+ * `JSON.parse(ruleJson)` (backfilling `section` from the column when the encoded rule lacks it).
+ * Items already in decoded `RuleDto` shape (no `ruleJson`) and non-array/absent `rules` pass through
+ * untouched — the transform is idempotent and shape-agnostic.
+ */
+function decodeRuleGroupRules(payload: Record<string, unknown>): Record<string, unknown> {
+  const rules = payload.rules;
+  if (!Array.isArray(rules)) return payload;
+  const decoded = rules.map((rule) => {
+    if (
+      rule === null ||
+      typeof rule !== 'object' ||
+      typeof (rule as { ruleJson?: unknown }).ruleJson !== 'string'
+    ) {
+      return rule;
+    }
+    const entity = rule as { ruleJson: string; section?: unknown };
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(entity.ruleJson);
+    } catch {
+      return rule; // leave undecodable rules as-is — Maintainerr surfaces the error as before.
+    }
+    if (parsed === null || typeof parsed !== 'object') return rule;
+    const out = parsed as Record<string, unknown>;
+    // `section` is a column on the entity; older ruleJson may not embed it — backfill from the row.
+    if (out.section === undefined && entity.section !== undefined) out.section = entity.section;
+    return out;
+  });
+  return { ...payload, rules: decoded };
+}
+
+/**
  * ADR-023 / DESIGN-010 — create/update a Maintainerr rule group. Maintainerr owns the rule engine
  * and validation; we pass the RulesDto payload through the confined write client. `POST` when no id
  * (create), `PUT` when an id is present (update). Only reachable via the edit_rules-gated router.
+ * The GET→PUT rule-shape reconciliation (decodeRuleGroupRules) runs FIRST so a round-tripped rule
+ * group's `rules[]` is the decoded shape `updateRules` validates against (see that helper's note).
  */
 export async function upsertTrashRule(input: {
   maintainerr: MaintainerrClientBundle;
   payload: Record<string, unknown>;
 }): Promise<void> {
-  const hasId = typeof input.payload.id === 'number';
+  const payload = decodeRuleGroupRules(input.payload);
+  const hasId = typeof payload.id === 'number';
   await guardMaintainerrCall(hasId ? 'maintainerr PUT /rules' : 'maintainerr POST /rules', () =>
     hasId
-      ? input.maintainerr.write.updateRuleGroup(input.payload)
-      : input.maintainerr.write.createRuleGroup(input.payload),
+      ? input.maintainerr.write.updateRuleGroup(payload)
+      : input.maintainerr.write.createRuleGroup(payload),
   );
 }
 

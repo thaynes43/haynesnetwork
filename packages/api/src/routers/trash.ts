@@ -48,6 +48,9 @@ export const trashRouter = router({
           db: ctx.db,
           maintainerr: resolveMaintainerrBundle(ctx),
           media: input.media,
+          // DESIGN-010 D-08/D-09 — reflect exclusions made outside this session as Protected before
+          // the `dnd` tag round-trips (the pending TAB is the only live-exclusion-aware read).
+          includeLiveExclusions: true,
         });
         return {
           media: input.media,

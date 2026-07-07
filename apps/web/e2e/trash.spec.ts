@@ -34,6 +34,11 @@ async function setIntegration(page: Page, name: string, connected: boolean): Pro
   });
 }
 
+/** Pre-seed a live Maintainerr exclusion (outside the app's save flow) — its `dnd` tag has NOT synced. */
+async function seedExclusion(page: Page, mediaServerId: string): Promise<void> {
+  await page.request.post(`${env().STUB_MAINTAINERR_URL}/_stub/exclude`, { data: { mediaServerId } });
+}
+
 async function openTrashMovies(page: Page): Promise<void> {
   await page.goto('/trash');
   await expect(page.getByTestId('trash-row').filter({ hasText: 'Vanished Heist' })).toHaveCount(1);
@@ -173,6 +178,24 @@ test.describe('trash section (DESIGN-010)', () => {
       (c) => c.method === 'DELETE' && c.path === `/rules/exclusions/${STUB_MAINT_VANISHED_ID}`,
     );
     expect(removes).toHaveLength(1);
+  });
+
+  // Bug 2 (live-repro fix) — an exclusion created OUTSIDE this session (no `dnd` tag synced yet) must
+  // still render Protected in the pending list; the pending read ORs the LIVE exclusion set into the
+  // badge. Vanished Heist is the cold, unbadged fixture (see the pending-table test), so a pre-seeded
+  // exclusion for it is a clean before/after.
+  test('a live exclusion made outside the session shows Protected before the dnd tag syncs', async ({
+    page,
+  }) => {
+    await resetMaintainerr(page);
+    await seedExclusion(page, STUB_MAINT_VANISHED_ID); // excluded upstream — no save flow, no tag
+    await signIn(page, 'admin');
+    await openTrashMovies(page);
+
+    const vanished = page.getByTestId('trash-row').filter({ hasText: 'Vanished Heist' });
+    await expect(vanished.getByTestId('badge-protected')).toBeVisible();
+
+    await resetMaintainerr(page); // clear the seeded exclusion for later tests
   });
 
   test('Expedite all: filters refuse to arm; the Modal predicts deleted/protected/skipped; per-item handle calls only (C-07a)', async ({
@@ -389,7 +412,7 @@ test.describe('trash section (DESIGN-010)', () => {
     await expect(row.getByTestId('trash-restore-status')).toBeVisible();
   });
 
-  test('Rules: readable list; arm/disarm round-trips the full RulesDto; delete removes it', async ({
+  test('Rules: readable list; disarm→re-arm round-trips the encoded RulesDto; delete removes it', async ({
     page,
   }) => {
     await resetMaintainerr(page);
@@ -400,15 +423,34 @@ test.describe('trash section (DESIGN-010)', () => {
     await expect(rule).toBeVisible();
     await expect(rule).toContainText('Movies');
     await expect(rule).toContainText('30 days');
-    await expect(rule.locator('.badge').filter({ hasText: 'Armed' })).toBeVisible();
+    // NB exact text — hasText 'Armed' would ALSO substring-match "Disarmed".
+    await expect(rule.locator('.badge')).toHaveText('Armed');
 
-    // Disarm → PUT /rules with the full round-tripped payload, isActive false.
+    // Disarm → PUT /rules with the full round-tripped payload, isActive false. The GET rule carries
+    // an ENCODED `ruleJson`; the app must DECODE it to the RuleDto shape Maintainerr's PUT validates,
+    // else the write 502s (the live arm/disarm bug). A successful disarm proves the decode ran.
     await rule.getByTestId('trash-rule-toggle').click();
-    await expect(rule.locator('.badge').filter({ hasText: 'Disarmed' })).toBeVisible();
-    const calls = await maintainerrCalls(page);
-    const puts = calls.filter((c) => c.method === 'PUT' && c.path === '/rules');
+    await expect(rule.locator('.badge')).toHaveText('Disarmed');
+    let puts = (await maintainerrCalls(page)).filter((c) => c.method === 'PUT' && c.path === '/rules');
     expect(puts).toHaveLength(1);
     expect(puts[0]!.body).toMatchObject({ id: 11, name: 'Purge stale movies', isActive: false });
+    // the PUT body's rules[] are DECODED (firstVal present, the encoded ruleJson is gone).
+    const disarmRules = (puts[0]!.body as { rules: Array<Record<string, unknown>> }).rules;
+    expect(disarmRules.length).toBeGreaterThan(0);
+    expect(disarmRules[0]).toHaveProperty('firstVal');
+    expect(disarmRules[0]).not.toHaveProperty('ruleJson');
+
+    // Re-arm → a SECOND full GET→PUT round-trip (the stub re-encoded the rule to the DB shape on the
+    // disarm, so re-arm decodes again), isActive true. Waiting for the exact "Armed" badge gates on
+    // the re-arm refetch completing, so the second PUT is recorded by the time we read the calls.
+    await rule.getByTestId('trash-rule-toggle').click();
+    await expect(rule.locator('.badge')).toHaveText('Armed');
+    puts = (await maintainerrCalls(page)).filter((c) => c.method === 'PUT' && c.path === '/rules');
+    expect(puts).toHaveLength(2);
+    expect(puts[1]!.body).toMatchObject({ id: 11, isActive: true });
+    const rearmRules = (puts[1]!.body as { rules: Array<Record<string, unknown>> }).rules;
+    expect(rearmRules[0]).toHaveProperty('firstVal');
+    expect(rearmRules[0]).not.toHaveProperty('ruleJson');
 
     // Delete (two-step) → DELETE /rules/11 and the row leaves the list.
     await armAndConfirm(rule.getByTestId('trash-rule-delete'));

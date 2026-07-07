@@ -163,7 +163,7 @@ All `movie|tv` only (music rejected). Reads gate `read_only`; writes gate the na
 
 ```
 trash.status()                              → { safe, reachable, version, integrations{plex,radarr,sonarr,tautulli,seerr}, armedRules, activeCollections }
-trash.pending({ media })                    → { media, totalSizeBytes, count, items: TrashPendingItem[] }   // item adds posterUrl
+trash.pending({ media })                    → { media, totalSizeBytes, count, items: TrashPendingItem[] }   // item adds posterUrl; ORs the LIVE Maintainerr exclusion set into protectedByExclusion (2026-07-06 live fix) so an exclusion made outside this session reads Protected before its dnd tag syncs
 trash.collections()                         → MaintainerrCollection[]
 trash.rules()                               → MaintainerrRuleGroup[]
 trash.ruleConstants()                       → MaintainerrRuleConstants
@@ -181,7 +181,12 @@ roles.setTrashActions({ roleId, actions[] })→ { changed, before[], after[] }  
 
 `TrashPendingItem`: `{ maintainerrMediaId, collectionId, collectionTitle, tmdbId, tvdbId, sizeBytes,
 addedToCollectionAt, deleteAfterDays, scheduledDeleteAt, mediaItemId, title, year, arrKind, arrTags,
-protectedByTag, recentlyWatched, lastViewedAt, requesters, sourceCollections, posterSource, posterUrl }`.
+protectedByTag, protectedByExclusion, recentlyWatched, lastViewedAt, requesters, sourceCollections,
+posterSource, posterUrl }`. `protectedByExclusion` (2026-07-06 live fix) is the LIVE Maintainerr
+exclusion signal, set only on the pending-tab read (`includeLiveExclusions`): the UI treats
+tag-OR-exclusion as Protected. Real Maintainerr answers `[]` for a param-less exclusion GET, so the
+read cross-checks per pending item by `mediaServerId` (the same `fetchLiveExclusions` seam the
+expedite path uses — no bulk-all endpoint exists); the internal expedite/guardian calls leave it off.
 
 ## D-09 — Trash UX (as built, 2026-07-06 Fable UX pass; ADR-014/ADR-015 governed)
 
@@ -210,9 +215,13 @@ session's `sectionPermissions.trash ≠ disabled` (no-row default is _disabled_ 
   soonest-deleting first. A persistent **footer** ("Reclaiming N across M items", filter-aware,
   "· filtered from K pending" when narrowed) carries the **Expedite all…** button.
 - **Shield (Save/whitelist, R-83):** a plain accent toggle (protective + reversible — ADR-014's
-  two-step is reserved for destructive), constant footprint both states (ADR-015). The dnd tag
-  only lands on the next *arr sync, so a session-local override reflects a fresh save/un-save
-  immediately; `protectedByTag` is the durable signal. **Q-02 resolved — protect-in-context:**
+  two-step is reserved for destructive), constant footprint both states (ADR-015). The `dnd` tag only
+  lands on the next *arr sync, but the pending read now ORs the LIVE Maintainerr exclusion set into
+  `protectedByExclusion` (2026-07-06 live fix), so an exclusion made in ANY session — or outside the
+  app entirely — reads Protected immediately; there is no cross-session lag to paper over. The
+  session-local shield override remains only as an instant optimistic echo of the current click (the
+  refetch confirms it); `protectedByTag`/`protectedByExclusion` are the durable signals. **Q-02
+  resolved — protect-in-context:**
   the `/library/[id]` guard panel (scheduled-delete warning + shield) renders ONLY while the
   item is in the actual pending set — `saveExclusion` needs the Maintainerr mediaServerId (a
   Plex ratingKey) which only pending rows carry, and D-02's endpoint inventory has **no**

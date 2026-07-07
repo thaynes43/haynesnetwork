@@ -31,6 +31,8 @@ interface MaintState {
     title: string;
     items: Array<{ mediaServerId: string; tmdbId?: number; sizeBytes: number; addDate: string }>;
   }>;
+  /** rule groups GET /rules serves (the Rules tab's data); default []. */
+  rules: Array<Record<string, unknown>>;
 }
 
 function stubMaintainerr(state: MaintState): MaintainerrClientBundle {
@@ -54,7 +56,7 @@ function stubMaintainerr(state: MaintState): MaintainerrClientBundle {
           ? [{ name: 'Radarr' }, { name: 'Sonarr' }, { name: 'Tautulli' }, { name: 'Overseerr' }]
           : [{ name: 'Sonarr' }],
       });
-    if (method === 'GET' && path === '/rules') return ok([]);
+    if (method === 'GET' && path === '/rules') return ok(state.rules);
     if (method === 'GET' && path === '/collections')
       return ok(state.collections.map((c) => ({ ...c, media: [] })));
     const cm = path.match(/^\/collections\/media\/(\d+)\/content\/(\d+)$/);
@@ -73,6 +75,23 @@ function stubMaintainerr(state: MaintState): MaintainerrClientBundle {
     }
     if (method === 'POST' && path === '/collections/handle') return ok(null, 201);
     if (method === 'POST' && path === '/collections/media/handle') return ok(null, 201);
+    if ((method === 'PUT' || method === 'POST') && path === '/rules') {
+      // Faithful to Maintainerr updateRules/validateRule: rules[] must be the DECODED RuleDto shape
+      // (it never decodes ruleJson). A round-tripped DB entity (still carrying `ruleJson`) fails →
+      // ReturnStatus {code:0} → the write client fails closed → BAD_GATEWAY. Decoded rules pass.
+      const dtoRules = Array.isArray((body as { rules?: unknown }).rules)
+        ? (body as { rules: unknown[] }).rules
+        : [];
+      const undecoded = dtoRules.some(
+        (r) => r !== null && typeof r === 'object' && typeof (r as { ruleJson?: unknown }).ruleJson === 'string',
+      );
+      if (undecoded) return ok({ code: 0, result: 'First value is not available for this server' }, 200);
+      const dto = body as { id?: unknown };
+      if (method === 'PUT' && typeof dto.id === 'number') {
+        state.rules = state.rules.map((r) => (r.id === dto.id ? { ...r, ...(body as object) } : r));
+      }
+      return ok({ code: 1, result: 'Success' }, method === 'POST' ? 201 : 200);
+    }
     return new Response(JSON.stringify({ message: `no stub ${method} ${path}` }), { status: 404 });
   }) as typeof fetch;
   return buildMaintainerrClientBundle({
@@ -86,6 +105,7 @@ function stubMaintainerr(state: MaintState): MaintainerrClientBundle {
 const state = (over: Partial<MaintState> = {}): MaintState => ({
   safe: true,
   exclusions: new Set(),
+  rules: [],
   collections: [
     {
       id: 7,
@@ -162,7 +182,8 @@ describe('trash router — section + per-action gating (ADR-023 C-03)', () => {
     await expect(roGrant.trash.saveRule({ payload: {} })).rejects.toMatchObject({
       code: 'FORBIDDEN',
     });
-    // Section edit + grant passes the gate (payload {} is accepted by our passthrough → 404 stub).
+    // Section edit + grant passes the gate: the write reaches Maintainerr and (empty rules ⇒ code:1)
+    // succeeds — i.e. NOT FORBIDDEN, the gate PASSED.
     const editGrant = caller(
       makeCtx(
         t.db,
@@ -172,10 +193,7 @@ describe('trash router — section + per-action gating (ADR-023 C-03)', () => {
         stubMaintainerr(state()),
       ),
     );
-    await expect(editGrant.trash.saveRule({ payload: {} })).rejects.toMatchObject({
-      // reaches Maintainerr (stub 404 → BAD_GATEWAY), i.e. the gate PASSED.
-      code: 'BAD_GATEWAY',
-    });
+    await expect(editGrant.trash.saveRule({ payload: {} })).resolves.toBeUndefined();
   });
 });
 
@@ -207,6 +225,57 @@ describe('trash router — happy paths (ADR-023 D-02/D-04/D-05)', () => {
     expect(res.items[0]!.scheduledDeleteAt).toBe(
       new Date(Date.parse('2026-06-01T00:00:00Z') + 30 * 86_400_000).toISOString(),
     );
+  });
+
+  // Bug 1 (live-repro fix 2026-07-06) — the Rules-tab arm/disarm GET→PUT round-trip. The rule GET
+  // shape carries an ENCODED `ruleJson`; PUT validates the DECODED RuleDto. upsertTrashRule now
+  // decodes first, so round-tripping the GET object verbatim no longer 502s (the pre-fix live bug).
+  it('Bug 1 — arm/disarm round-trips a real (ruleJson) rule through saveRule without a 502', async () => {
+    const s = state({
+      rules: [
+        {
+          id: 11,
+          libraryId: 1,
+          name: 'Purge stale movies',
+          description: 'Unwatched 4K movies older than 90 days',
+          isActive: true,
+          arrAction: 0,
+          useRules: true,
+          dataType: 1,
+          collection: { id: 7, deleteAfterDays: 30 },
+          rules: [
+            {
+              id: 1,
+              ruleGroupId: 11,
+              section: 0,
+              isActive: true,
+              ruleJson: JSON.stringify({ operator: null, action: 0, firstVal: [0, 3], lastVal: [0, 4], section: 0 }),
+            },
+          ],
+        },
+      ],
+    });
+    const c = adminCaller(s);
+    const rules = await c.trash.rules();
+    expect(rules).toHaveLength(1);
+    const rule = rules[0] as Record<string, unknown>;
+    expect(rule.isActive).toBe(true);
+    // The UI PUTs the rule object exactly as READ (encoded ruleJson and all).
+    await expect(c.trash.saveRule({ payload: { ...rule, isActive: false } })).resolves.toBeUndefined();
+    // The write landed on Maintainerr — the rule is now disarmed.
+    const after = await c.trash.rules();
+    expect((after[0] as Record<string, unknown>).isActive).toBe(false);
+  });
+
+  // Bug 2 (live-repro fix 2026-07-06) — a Maintainerr exclusion made outside this session shows as
+  // Protected in the pending list before its `dnd` tag syncs into arrTags.
+  it('Bug 2 — pending reflects a LIVE Maintainerr exclusion as protectedByExclusion', async () => {
+    const res = await adminCaller(state({ exclusions: new Set(['ms-1']) })).trash.pending({
+      media: 'movie',
+    });
+    const item = res.items.find((i) => i.maintainerrMediaId === 'ms-1')!;
+    expect(item.protectedByTag).toBe(false); // no dnd tag synced
+    expect(item.protectedByExclusion).toBe(true); // but live-excluded ⇒ Protected
   });
 
   it('status returns the SAFE verdict; expedite refuses when unsafe (PRECONDITION_FAILED)', async () => {
