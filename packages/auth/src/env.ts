@@ -16,6 +16,16 @@ export const DEV_FALLBACK_SECRET = 'dev-only-not-for-prod-not-for-prod';
 export interface AuthEnv {
   /** Canonical origin; the OIDC redirect URI is derived from it (DESIGN-002 D-04). */
   baseUrl: string;
+  /**
+   * The full Better Auth `trustedOrigins` allowlist: the canonical `baseUrl`
+   * origin plus every extra origin from `TRUSTED_ORIGINS` (e.g. `www` at the
+   * public apex), de-duplicated. Behind the Cloudflare Tunnel the app is reachable
+   * at both `haynesnetwork.com` and `www.haynesnetwork.com`; a sign-in initiated
+   * from the non-baseURL origin is rejected by Better Auth's origin/CSRF check
+   * unless that origin is trusted. Sourced from env so the list isn't hardcoded
+   * (staging keeps working because its own baseUrl is always trusted).
+   */
+  trustedOrigins: string[];
   /** Session-cookie signing secret (BETTER_AUTH_SECRET, dev fallback when unset). */
   secret: string;
   /** True when both OIDC_CLIENT_ID and OIDC_CLIENT_SECRET are present. */
@@ -39,12 +49,59 @@ export function parseBootstrapAdminEmails(raw: string | undefined): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Normalize a URL string to its origin (scheme + host [+ port], no path or
+ * trailing slash — the exact form Better Auth's origin check compares against:
+ * `pattern === getOrigin(url)`). Returns null for anything that isn't a parseable
+ * absolute URL, so a malformed entry is dropped rather than silently never matching.
+ */
+function toOriginOrNull(value: string): string | null {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Parse the comma-separated TRUSTED_ORIGINS list into normalized origins: trim
+ * whitespace, drop empty segments, normalize each to its origin, and drop any
+ * entry that isn't a valid absolute URL. Unset/empty input yields [].
+ */
+export function parseTrustedOrigins(raw: string | undefined): string[] {
+  return (raw ?? '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean)
+    .map(toOriginOrNull)
+    .filter((o): o is string => o !== null);
+}
+
+/**
+ * Resolve the complete Better Auth `trustedOrigins` allowlist: the `baseUrl`
+ * origin first, then every extra origin from TRUSTED_ORIGINS, de-duplicated.
+ * Better Auth trusts `baseUrl` implicitly too, but we include it so the resolved
+ * allowlist is explicit and unit-testable (DESIGN-002 D-08). The public cutover
+ * sets TRUSTED_ORIGINS to the `www` apex (and optionally the staging host); on
+ * staging TRUSTED_ORIGINS can stay unset because that env's baseUrl is the
+ * trusted origin. Never broadened beyond apex/www/staging (auth is sensitive).
+ */
+export function resolveTrustedOrigins(baseUrl: string, raw: string | undefined): string[] {
+  const origins: string[] = [];
+  const base = toOriginOrNull(baseUrl);
+  if (base) origins.push(base);
+  origins.push(...parseTrustedOrigins(raw));
+  return [...new Set(origins)];
+}
+
 /** Typed, non-throwing read of the DESIGN-002 D-08 environment contract. */
 export function authEnv(env: NodeJS.ProcessEnv = process.env): AuthEnv {
   const oidcClientId = env.OIDC_CLIENT_ID;
   const oidcClientSecret = env.OIDC_CLIENT_SECRET;
+  const baseUrl = env.BETTER_AUTH_URL ?? 'http://localhost:3000';
   return {
-    baseUrl: env.BETTER_AUTH_URL ?? 'http://localhost:3000',
+    baseUrl,
+    trustedOrigins: resolveTrustedOrigins(baseUrl, env.TRUSTED_ORIGINS),
     secret: env.BETTER_AUTH_SECRET ?? DEV_FALLBACK_SECRET,
     // App still boots without OIDC creds (CI builds, unit tests); the login page
     // renders a config-error state instead of a sign-in button when disabled.
