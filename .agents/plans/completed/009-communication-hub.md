@@ -1,6 +1,11 @@
 # PLAN-009: Bulletin — aggregated notification Feed + user Messages board
 
-- **Status:** Executing <!-- Fable 5 flips Draft → Executing → Completed -->
+- **Status:** Completed (2026-07-07) — shipped v0.13.0; live-validated 7/7 on staging: Feed renders
+  Maintainerr+Seerr+Tautulli events with distinct badges + attribution + media links; per-source
+  webhook receiver verified live (202/401/413/404, dedupe idempotent, oversize capped); Feed filters
+  URL-synced; Messages post/edit + moderation with content-preserving hide/restore; section +
+  message-action role gating audited. Seam review found+fixed two real bugs pre-ship (streamed 64KB
+  body cap; author can't rewrite moderated content). <!-- Fable 5 flips Draft → Executing → Completed -->
   <!-- 2026-07-07 (Fable 5): BACKEND vertical landed on branch `feat/bulletin` — ADR-026 (Accepted),
        DESIGN-012, PRD R-97..R-104, glossary T-81..T-88, BC-05; enums + migration 0018 (widen
        notifications + messages + role_message_action_grants); recordNotification attribution/dedupe;
