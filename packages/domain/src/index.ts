@@ -22,6 +22,9 @@ export * from './trash-flow';
 export * from './app-settings';
 export * from './trash-batches';
 export * from './storage-metrics';
+// ADR-031 / DESIGN-014 (PLAN-014) — space-driven policy (propose-only) + rules-tuning report
+export * from './space-policy';
+export * from './trash-tuning';
 // ADR-027 / DESIGN-004 D-15 (PLAN-010) — Message-of-the-Day: reader + single-writers over app_settings
 export * from './motd';
 // DESIGN-005 Phase 2 — media ledger single-writers (D-12)

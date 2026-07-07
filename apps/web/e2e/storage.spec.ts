@@ -9,7 +9,7 @@
 //   • the page fits a phone (AC-10 spot check at 390×844).
 // Leaves the seeded target back at 80 so later specs (and re-runs) see the seeded state.
 import { test, expect, type Page } from '@playwright/test';
-import { expectViewportFit, signIn } from './support/helpers';
+import { armAndConfirm, expectViewportFit, signIn } from './support/helpers';
 
 async function openStorage(page: Page): Promise<void> {
   await page.goto('/admin');
@@ -137,5 +137,56 @@ test.describe('storage metrics (ADR-030 HYBRID, native half)', () => {
     await expect(page.getByTestId('array-stats-haynestower')).toBeVisible();
     await expect(page.getByTestId('reclaim-empty')).toBeVisible();
     await expectViewportFit(page);
+  });
+});
+
+// ADR-031 / DESIGN-014 (PLAN-014) — the propose-only "Space policy" card + the rules-tuning /
+// graduation block. Journeys: default OFF; the enable ceremony (two-step ConfirmButton) flips it ON;
+// the per-array opt-in; the tuning block renders its (production-faithful) empty state + graduation
+// readiness. Leaves the policy OFF + the array opted out so later specs see the default.
+test.describe('space policy (ADR-031, propose-only)', () => {
+  test.describe.configure({ mode: 'serial' });
+
+  test('card defaults OFF, enables via two-step confirm, opts the array in, and disables', async ({
+    page,
+  }) => {
+    await signIn(page, 'admin');
+    await openStorage(page);
+
+    const card = page.getByTestId('space-policy');
+    await expect(card.getByRole('heading', { name: 'Space policy' })).toBeVisible();
+    // Default OFF — no batches proposed automatically.
+    await expect(page.getByTestId('policy-state')).toContainText('OFF');
+
+    // Enable is a two-step ConfirmButton (ADR-014) — it never deletes, only proposes for review.
+    await armAndConfirm(page.getByTestId('policy-enable'));
+    await expect(page.getByTestId('policy-state')).toContainText('ON');
+    await expect(page.getByTestId('policy-disable')).toBeVisible();
+
+    // Per-array opt-in (HaynesTower is over/under its 80% target from the stub — either way opt-in works).
+    await page.getByTestId('policy-array-enable').click();
+    await expect(page.getByTestId('policy-array-state')).toContainText('Opted in');
+
+    // Status line is present (no proposal yet in a fresh seed).
+    await expect(page.getByTestId('policy-status')).toContainText('Last proposal');
+
+    // Restore defaults for later specs: opt out, then turn the policy off.
+    await page.getByTestId('policy-array-disable').click();
+    await expect(page.getByTestId('policy-array-state')).toContainText('Not opted in');
+    await page.getByTestId('policy-disable').click();
+    await expect(page.getByTestId('policy-state')).toContainText('OFF');
+  });
+
+  test('tuning + graduation block renders (empty-state, not-yet graduation)', async ({ page }) => {
+    await signIn(page, 'admin');
+    await openStorage(page);
+
+    const tuning = page.getByTestId('policy-tuning');
+    await expect(tuning.getByRole('heading', { name: 'Rules tuning & graduation' })).toBeVisible();
+    // Production-faithful: no curated batch has reached a verdict yet.
+    await expect(page.getByTestId('tuning-empty')).toBeVisible();
+    // Graduation readiness reads "not yet" against the suggested bar.
+    await expect(page.getByTestId('graduation-verdict')).toContainText('Not yet');
+    await expect(page.getByTestId('graduation-verdict')).toContainText('of 3');
   });
 });

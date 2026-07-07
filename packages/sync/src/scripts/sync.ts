@@ -14,12 +14,12 @@ import {
   type SyncRunKind,
   type SyncSource,
 } from '@hnet/db';
-import { maintainerrClientBundleFromEnv } from '@hnet/domain';
-import { buildMetadataSourceClients, buildSyncClients } from '../clients';
+import { maintainerrClientBundleFromEnv, type UtilizationArrBundle } from '@hnet/domain';
+import { buildMetadataSourceClients, buildSyncClients, requireClient } from '../clients';
 import { createConsoleLogger } from '../logger';
 import { runSync } from '../orchestrator';
 
-const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-batch-sweep [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
+const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
 
   --mode=full              item-list upsert + tombstone pass per *arr (+ Seerr requests)
   --mode=incremental       history/since cursor polling per *arr (+ Seerr requests)
@@ -28,6 +28,11 @@ const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-bat
   --mode=trash-batch-sweep delete the survivors of every EXPIRED Leaving-Soon batch, one guarded
                            item at a time (ADR-025 — SAFE audit + live exclusions + guardian re-run).
                            Drives Maintainerr; needs MAINTAINERR_URL/MAINTAINERR_API_KEY. No --source.
+  --mode=space-policy      PROPOSE (never delete) a draft batch for each media array over its space
+                           target (ADR-031 — reads *arr /diskspace + createBatchFromPending; admin gate
+                           stays the human check). Needs SONARR/RADARR/LIDARR_URL/_API_KEY +
+                           MAINTAINERR_URL/MAINTAINERR_API_KEY. No --source. No-op unless space_policy
+                           is enabled in app_settings.
   --source=NAME            limit the run to one source (repeatable; default: all sources; for
                            metadata-refresh the default is the three *arr kinds)
   --force-tombstones       override the mass-tombstone guard (DESIGN-005 D-14/Q-03)
@@ -59,7 +64,7 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
     } else if (arg.startsWith('--mode=')) {
       const value = arg.slice('--mode='.length);
       if (!(SYNC_RUN_KINDS as readonly string[]).includes(value)) {
-        throw new CliUsageError(`invalid --mode "${value}" (expected full|incremental)`);
+        throw new CliUsageError(`invalid --mode "${value}" (expected ${SYNC_RUN_KINDS.join('|')})`);
       }
       mode = value as SyncRunKind;
     } else if (arg.startsWith('--source=')) {
@@ -73,15 +78,18 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
     }
   }
   if (mode === undefined) {
-    throw new CliUsageError('--mode=full|incremental|metadata-refresh|trash-batch-sweep is required');
+    throw new CliUsageError(
+      '--mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy is required',
+    );
   }
-  if (mode === 'trash-batch-sweep' && sources.length > 0) {
-    throw new CliUsageError('--source is not valid for --mode=trash-batch-sweep (it drives Maintainerr)');
+  if ((mode === 'trash-batch-sweep' || mode === 'space-policy') && sources.length > 0) {
+    throw new CliUsageError(`--source is not valid for --mode=${mode} (it drives Maintainerr)`);
   }
-  // metadata-refresh defaults to the *arr kinds (Seerr has no metadata); trash-batch-sweep uses no
-  // *arr source at all (it drives Maintainerr); other modes default to all four sources.
+  // metadata-refresh defaults to the *arr kinds (Seerr has no metadata); trash-batch-sweep +
+  // space-policy use no *arr SOURCE loop at all (they drive Maintainerr / read diskspace directly);
+  // other modes default to all four sources.
   const defaultSources =
-    mode === 'trash-batch-sweep'
+    mode === 'trash-batch-sweep' || mode === 'space-policy'
       ? []
       : mode === 'metadata-refresh'
         ? [...ARR_KINDS]
@@ -124,11 +132,28 @@ async function main(): Promise<number> {
   // Maintainerr). Only built for metadata-refresh; each tier is skip-if-absent.
   const metadataSources =
     args.mode === 'metadata-refresh' ? buildMetadataSourceClients() : undefined;
-  // ADR-025 — the confined Maintainerr bundle for the batch-expiry sweep (throws one ArrConfigError
-  // naming MAINTAINERR_API_KEY if absent). The mutating client is constructed INSIDE @hnet/domain
-  // (maintainerrClientBundleFromEnv), so the confined write surface stays domain-only (ADR-008 guard).
+  // ADR-025 / ADR-031 — the confined Maintainerr bundle for the batch-expiry sweep AND the
+  // space-policy proposal mode (throws one ArrConfigError naming MAINTAINERR_API_KEY if absent). The
+  // mutating client is constructed INSIDE @hnet/domain (maintainerrClientBundleFromEnv), so the
+  // confined write surface stays domain-only (ADR-008 guard).
   const maintainerr =
-    args.mode === 'trash-batch-sweep' ? maintainerrClientBundleFromEnv() : undefined;
+    args.mode === 'trash-batch-sweep' || args.mode === 'space-policy'
+      ? maintainerrClientBundleFromEnv()
+      : undefined;
+  // ADR-031 — the diskspace-only *arr read bundle for space-policy's getUtilization (needs the three
+  // *arr keys; throws one ArrConfigError naming any absent). Wrapped as the minimal UtilizationArrBundle
+  // shape — no bazarr, no confined write surface.
+  let arr: UtilizationArrBundle | undefined;
+  if (args.mode === 'space-policy') {
+    const disk = buildSyncClients(['sonarr', 'radarr', 'lidarr']);
+    arr = {
+      read: {
+        sonarr: requireClient(disk, 'sonarr'),
+        radarr: requireClient(disk, 'radarr'),
+        lidarr: requireClient(disk, 'lidarr'),
+      },
+    };
+  }
 
   logger.info('sync starting', {
     mode: args.mode,
@@ -150,6 +175,7 @@ async function main(): Promise<number> {
     clients,
     ...(metadataSources ? { metadataSources } : {}),
     ...(maintainerr ? { maintainerr } : {}),
+    ...(arr ? { arr } : {}),
     logger,
   });
 
@@ -161,6 +187,16 @@ async function main(): Promise<number> {
     fixesCompleted: report.fixesCompleted,
     ...(report.sweep ? { sweep: { batchesSwept: report.sweep.batchesSwept, batches: report.sweep.batches } } : {}),
     ...(report.sweepError !== undefined ? { sweepError: report.sweepError } : {}),
+    ...(report.spacePolicy
+      ? {
+          spacePolicy: {
+            enabled: report.spacePolicy.enabled,
+            proposedCount: report.spacePolicy.proposedCount,
+            arrays: report.spacePolicy.arrays,
+          },
+        }
+      : {}),
+    ...(report.spacePolicyError !== undefined ? { spacePolicyError: report.spacePolicyError } : {}),
     sources: report.sources.map((s) => ({
       source: s.source,
       status: s.status,

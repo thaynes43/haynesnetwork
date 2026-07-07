@@ -233,6 +233,19 @@ does not change any deletion behavior. Native reads are admin-gated for v1.
 | R-110 | **Reclaim attribution** from the deletion snapshots (R-93): reclaimed bytes by **category** (Movies vs TV) AND by **resolution** (the bang-for-buck view — "3 × 4K = 90% of the reclaim"), a cumulative-reclaim curve, and a per-batch rollup attributed to the green-lighting admin, over a selectable window. Batch-swept deletions are the clean dataset; direct-expedites are a best-effort second-class series. | Should |
 | R-111 | A **configurable space target** (percent-used ceiling per Plex server, e.g. HaynesTower < 80%) lives in the **audited settings store** (R-95's `app_settings`); the metrics surface displays it as a reference line. This plan **stores + displays** the target; enforcement/action on it is a later plan (PLAN-014). | Should |
 
+### Space policy + rules tuning (PLAN-014)
+
+> Close the space loop the owner described (2026-07-06): ACT on the space target (R-111) and the
+> save-data (R-92) — but conservative-first. **The system proposes; the human disposes.** No autonomous
+> deletion, no automatic rule edits; the save-data becomes tuning evidence, and the pipeline earns
+> hands-off operation only against an explicit, evidence-backed bar.
+
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| R-112 | When a media array is **over its space target** (R-111), the system may **PROPOSE a deletion batch** for the kind(s) that array backs — it lands in **admin review** exactly like a manual batch and **never deletes on its own**. The behavior is **opt-in and default-off**, per-array, with an anti-spam cooldown; enabling it never bypasses the admin gate, the windowed sweep, or any R-88..R-91 safety layer. Each proposal records **why** (array, %-used, target, candidate count) in the activity feed. | Should |
+| R-113 | A **rules-tuning report** turns the pipeline outcomes (what the family **rescued** vs. what was **deleted**, R-92) into per-**resolution** / per-**rating-band** / per-**collection** save-rate stats — the labelled false positives the owner reads to tune the Maintainerr rules **by hand**. The report **never edits a rule automatically** (out of scope — this estate optimizes for trust). | Should |
+| R-114 | **Skip-admin-gate graduation criteria** (giving R-96's audited skip-gate teeth): the report surfaces a **graduation-readiness** readout against an explicit bar — enough completed policy-proposed batches, a low enough save-rate, and no restores of swept items — after which the **owner may** flip the audited skip-gate. Flipping it stays an owner action; the criteria and the live numbers are recorded. | Should |
+
 ### Bulletin — Feed + Messages (Phase 2.5 / stretch)
 
 Governed by **ADR-026** / **DESIGN-012** (PLAN-009). A top-level **Bulletin** section with two
