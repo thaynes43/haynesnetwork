@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.15.0](https://github.com/thaynes43/haynesnetwork/compare/v0.14.1...v0.15.0) (2026-07-07)
+
+
+### Features
+
+* downstream *arr action feedback — live Fix/Force-Search progress (ADR-028) ([#90](https://github.com/thaynes43/haynesnetwork/issues/90)) ([1b3e589](https://github.com/thaynes43/haynesnetwork/commit/1b3e589f3e2ecd11f48c1a45c04981ba947c4eda))
+
+
+### Documentation
+
+* note ledger UX polish shipped (v0.14.1) ([#88](https://github.com/thaynes43/haynesnetwork/issues/88)) ([dddfbb5](https://github.com/thaynes43/haynesnetwork/commit/dddfbb564a636678d93a10d60eb715cea9ba69d0))
+
 ## [0.14.1](https://github.com/thaynes43/haynesnetwork/compare/v0.14.0...v0.14.1) (2026-07-07)
 
 
