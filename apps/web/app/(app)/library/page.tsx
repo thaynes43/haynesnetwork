@@ -268,7 +268,9 @@ function MediaBrowser({ arrKind, label }: { arrKind: ArrKindName; label: string 
 
   // ── sort control (the ported nextSort/arrowFor engine) ──
   const sortColumns = sortColumnsFor(arrKind);
-  // Click cycle per column: first click → firstDir, second → the other, third → default.
+  // Two-state click cycle per column: first click → firstDir, then it just toggles direction
+  // (no cleared state — the active column always shows an arrow; Title A–Z is the reachable
+  // default via the Title column).
   const clickCycle = Object.fromEntries(
     sortColumns.map((c) => [
       c.col,
@@ -286,7 +288,7 @@ function MediaBrowser({ arrKind, label }: { arrKind: ArrKindName; label: string 
   ) as Record<string, { asc: SortToken; desc: SortToken }>;
   const cycleSort = (col: string) => {
     const next = nextSort<SortToken, string>(sortToken, col, clickCycle);
-    patchParams({ sort: next === undefined || next === DEFAULT_SORT ? null : next });
+    patchParams({ sort: next === DEFAULT_SORT ? null : next });
   };
 
   // ── facets + search (D-09) ──
@@ -421,8 +423,9 @@ function MediaBrowser({ arrKind, label }: { arrKind: ArrKindName; label: string 
           />
         </div>
 
-        {/* Sort bar (D-10 nextSort/arrowFor): each column cycles best-first → reversed →
-            default (Title A–Z). Same fixed-height scroll-row pattern as the chip bar. */}
+        {/* Sort bar (D-10 nextSort/arrowFor): each column toggles best-first ↔ reversed (two-
+            state — the active column always shows an arrow; Title A–Z is the reachable default via
+            the Title column). Same fixed-height scroll-row pattern as the chip bar. */}
         <div className="library-sortbar" role="group" aria-label="Sort">
           <span className="library-sortbar__label">Sort</span>
           {sortColumns.map((c) => {

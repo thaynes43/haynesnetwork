@@ -161,7 +161,7 @@ test.describe('ledger section (DESIGN-009)', () => {
     await expect(page.locator('.ledger-row').filter({ hasText: 'Breaking Prod' })).toHaveCount(1);
   });
 
-  test('sortable headers: Rating cycles best-first → reversed → default, nulls always last', async ({
+  test('sortable headers: Rating toggles best-first ↔ reversed (two-state, never clears), nulls always last', async ({
     page,
   }) => {
     await signIn(page, 'admin');
@@ -179,8 +179,10 @@ test.describe('ledger section (DESIGN-009)', () => {
     // Ascending still keeps the unrated row LAST (NULLS LAST keyset, D-09).
     expect(await rowTitles(page)).toEqual(['Stub Runner', 'The Fixture', 'Vanished Heist']);
 
+    // Third click toggles BACK to best-first — the header never silently clears the sort (the
+    // reported nit: the old third click dropped ?sort= and the sheet looked unsorted).
     await ratingHeader.click();
-    await expect(page).not.toHaveURL(/sort=/);
+    await expect(page).toHaveURL(/sort=imdb_rating%3Adesc|sort=imdb_rating:desc/);
     expect(await rowTitles(page)).toEqual(['The Fixture', 'Stub Runner', 'Vanished Heist']);
   });
 

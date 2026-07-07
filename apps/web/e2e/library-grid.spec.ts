@@ -137,7 +137,7 @@ test.describe('library poster grid + filter/sort engine (DESIGN-008 D-10/D-11)',
     await expect(page.locator('.empty-state')).toBeVisible();
   });
 
-  test('sort journey: Rating cycles best-first → reversed, swapping results without layout jumps', async ({
+  test('sort journey: Rating toggles best-first ↔ reversed (two-state, never clears), swapping results without layout jumps', async ({
     page,
   }) => {
     await signIn(page, 'member');
@@ -155,9 +155,10 @@ test.describe('library poster grid + filter/sort engine (DESIGN-008 D-10/D-11)',
     await expect(page.locator('.poster-card').first()).toContainText('Stub Runner');
     expect(await cardTitles(page)).toEqual(['Stub Runner', 'The Fixture']);
 
-    // Third click: back to the default (Title A–Z), param dropped; the grid never moved.
+    // Third click: toggles BACK to best-first (two-state — the header never silently clears the
+    // sort); the grid never moved.
     await page.locator('.library-sortbar').getByRole('button', { name: 'Rating' }).click();
-    await expect(page).not.toHaveURL(/sort=/);
+    await expect(page).toHaveURL(/sort=imdb_rating%3Adesc|sort=imdb_rating:desc/);
     expect(await cardTitles(page)).toEqual(['The Fixture', 'Stub Runner']);
     const gridAfter = (await page.locator('.media-list').boundingBox())!;
     expect(gridAfter.y).toBe(gridBefore.y);

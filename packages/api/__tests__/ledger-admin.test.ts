@@ -194,6 +194,44 @@ describe('ledger export (AC-12 — deterministic JSONL)', () => {
   });
 });
 
+describe('ledgerAdmin.count (Export label true total — nit fix 2026-07-07)', () => {
+  it('counts the FULL filtered set (== the export), never just the loaded page; honors the shared filters', async () => {
+    const admin = await createUser(tdb.db, { admin: true });
+    // 12 rows behind a unique query token — 5 unmonitored, 7 monitored.
+    for (let i = 0; i < 12; i++) {
+      await seedMediaItem(tdb.db, 'radarr', {
+        title: `CountFixture ${String(i).padStart(2, '0')}`,
+        arrItemId: 74000 + i,
+        tmdbId: 974000 + i,
+        monitored: i >= 5,
+      });
+    }
+    const api = caller(makeCtx(tdb.db, sessionUser(admin)));
+    const filter = { arrKind: 'radarr' as const, query: 'CountFixture' };
+
+    // The true total equals EXACTLY what the export streams for the same filter (shared
+    // buildLibraryWhere — the label can't drift from the streamed set).
+    const { count } = await api.ledgerAdmin.count(filter);
+    const exportFilter = buildExportFilterFromParams(
+      new URLSearchParams({ arrKind: 'radarr', query: 'CountFixture' }),
+    );
+    const lines: string[] = [];
+    for await (const line of streamLedgerExportRows(tdb.db, exportFilter)) lines.push(line);
+    expect(count).toBe(12);
+    expect(count).toBe(lines.length);
+
+    // …and it EXCEEDS a single loaded page — the old label ("N+ rows") only knew page 1 (the bug).
+    const page = await api.ledgerAdmin.browse({ ...filter, limit: 10 });
+    expect(page.items).toHaveLength(10);
+    expect(page.nextCursor).not.toBeNull();
+    expect(count).toBeGreaterThan(page.items.length);
+
+    // The shared filter narrows the count in lockstep with browse/export (the monitored dim).
+    const unmonitored = await api.ledgerAdmin.count({ ...filter, monitored: false });
+    expect(unmonitored.count).toBe(5);
+  });
+});
+
 describe('roles.setSectionPermission (ADR-021 C-02)', () => {
   it('admin sets a role level and roles.list reflects it; non-admin is FORBIDDEN', async () => {
     const admin = await createUser(tdb.db, { admin: true });

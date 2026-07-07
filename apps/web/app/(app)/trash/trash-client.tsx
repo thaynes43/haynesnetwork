@@ -472,7 +472,7 @@ function PendingTab({
   ) as Record<string, { asc: SortToken; desc: SortToken }>;
   const cycleSort = (colKey: string) => {
     const next = nextSort<SortToken, string>(sortToken, colKey, clickCycle);
-    patchParams({ sort: next === undefined || next === DEFAULT_SORT ? null : next });
+    patchParams({ sort: next === DEFAULT_SORT ? null : next });
   };
 
   const colCount = cols.length;
