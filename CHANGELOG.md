@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.19.0](https://github.com/thaynes43/haynesnetwork/compare/v0.18.1...v0.19.0) (2026-07-07)
+
+
+### Features
+
+* trash pending views become poster walls (phone-first) ([#116](https://github.com/thaynes43/haynesnetwork/issues/116)) ([18d3751](https://github.com/thaynes43/haynesnetwork/commit/18d3751adbfc1e3a47b83bfd69c30e7d6f6abf18))
+* universal top nav + role-gated user menu (My Plex, Ledger, Trash settings) ([#115](https://github.com/thaynes43/haynesnetwork/issues/115)) ([9737d26](https://github.com/thaynes43/haynesnetwork/commit/9737d261482ed44db32456c281df63f366a45a2b))
+
+
+### Bug Fixes
+
+* save-stats and rescue rates count net outcomes, not raw save events ([#113](https://github.com/thaynes43/haynesnetwork/issues/113)) ([cc841bb](https://github.com/thaynes43/haynesnetwork/commit/cc841bb8c39283e0ffdb1b48652cb6b724c6367e))
+
 ## [0.18.1](https://github.com/thaynes43/haynesnetwork/compare/v0.18.0...v0.18.1) (2026-07-07)
 
 
