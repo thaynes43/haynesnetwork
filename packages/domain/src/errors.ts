@@ -264,6 +264,20 @@ export class TrashSaveNotOwnedError extends Error {
   readonly code = 'TRASH_SAVE_NOT_OWNED' as const;
 }
 
+// ---------------------------------------------------------------------------
+// ADR-026 / DESIGN-012 — Bulletin (Messages board) errors.
+// ---------------------------------------------------------------------------
+
+/**
+ * ADR-026 D-06: an author-only action (edit) was attempted on a Message the caller does not own,
+ * by a caller who does not hold the `moderate` grant. The `post` grant unlocks editing one's OWN
+ * messages only; changing another user's message requires a moderator. Enforced in the
+ * `editMessage` writer BEFORE any update. Surfaced as FORBIDDEN.
+ */
+export class MessageNotOwnedError extends Error {
+  readonly code = 'MESSAGE_NOT_OWNED' as const;
+}
+
 function pgErrorCode(err: unknown): string | undefined {
   if (typeof err !== 'object' || err === null) return undefined;
   const code = (err as { code?: unknown }).code;

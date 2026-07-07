@@ -3,6 +3,7 @@ import {
   mediaItems,
   syncState,
   users,
+  type Database,
   type DbClient,
   type LedgerEventSource,
   type LedgerEventType,
@@ -10,7 +11,7 @@ import {
   type Transaction,
 } from '@hnet/db';
 import { and, eq, isNull, or, sql } from 'drizzle-orm';
-import { inTransaction } from './db-client';
+import { inTransaction, resolveDb } from './db-client';
 
 /** One normalized event ready for the ledger (D-07 shapes; payload keeps rawEventType). */
 export interface LedgerEventInput {
@@ -134,20 +135,12 @@ export async function backfillEventAttribution(
 
       if (event.mediaItemId === null) {
         const mediaType = payload['mediaType'];
-        const tmdbId = numberOrNull(payload['tmdbId']);
-        const tvdbId = numberOrNull(payload['tvdbId']);
-        let itemId: string | undefined;
-        if (mediaType === 'movie' && tmdbId !== null) {
-          itemId = await findItemId(tx, 'radarr', 'tmdbId', tmdbId);
-        } else if (mediaType === 'tv') {
-          if (tvdbId !== null) {
-            itemId = await findItemId(tx, 'sonarr', 'tvdbId', tvdbId);
-          }
-          if (itemId === undefined && tmdbId !== null) {
-            itemId = await findItemId(tx, 'sonarr', 'tmdbId', tmdbId);
-          }
-        }
-        if (itemId !== undefined) {
+        const itemId = await resolveMediaItemId(tx, {
+          mediaType: typeof mediaType === 'string' ? mediaType : null,
+          tmdbId: numberOrNull(payload['tmdbId']),
+          tvdbId: numberOrNull(payload['tvdbId']),
+        });
+        if (itemId !== null) {
           patch.mediaItemId = itemId;
           itemsLinked += 1;
         }
@@ -159,15 +152,10 @@ export async function backfillEventAttribution(
           typeof requestedBy === 'object' && requestedBy !== null
             ? (requestedBy as Record<string, unknown>)['email']
             : undefined;
-        if (typeof email === 'string' && email.length > 0) {
-          const [user] = await tx
-            .select({ id: users.id })
-            .from(users)
-            .where(sql`lower(${users.email}) = lower(${email})`);
-          if (user) {
-            patch.requestedByUserId = user.id;
-            usersLinked += 1;
-          }
+        const userId = await resolveUserIdByEmail(tx, typeof email === 'string' ? email : null);
+        if (userId !== null) {
+          patch.requestedByUserId = userId;
+          usersLinked += 1;
         }
       }
 
@@ -185,16 +173,64 @@ function numberOrNull(value: unknown): number | null {
 }
 
 async function findItemId(
-  tx: Transaction,
+  executor: Database | Transaction,
   kind: 'sonarr' | 'radarr',
   by: 'tmdbId' | 'tvdbId',
   value: number,
 ): Promise<string | undefined> {
   const column = by === 'tmdbId' ? mediaItems.tmdbId : mediaItems.tvdbId;
-  const [row] = await tx
+  const [row] = await executor
     .select({ id: mediaItems.id })
     .from(mediaItems)
     .where(and(eq(mediaItems.arrKind, kind), sql`${column} = ${value}`))
     .limit(1);
   return row?.id;
+}
+
+/**
+ * DESIGN-005 D-12 / ADR-008 C-05 — the SINGLE email→user attribution path (Q-01: email-only
+ * auto-link, case-insensitive). Factored so Seerr ledger attribution (backfill) AND ADR-026
+ * notification ingest reuse it — never a second attribution path. Null email / no match ⇒ null
+ * ("unattributed"). Accepts an injected tx/db so it composes inside a caller's transaction.
+ */
+export async function resolveUserIdByEmail(
+  executor: DbClient | undefined,
+  email: string | null | undefined,
+): Promise<string | null> {
+  if (typeof email !== 'string' || email.length === 0) return null;
+  const db = resolveDb(executor);
+  const [user] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(sql`lower(${users.email}) = lower(${email})`)
+    .limit(1);
+  return user?.id ?? null;
+}
+
+/**
+ * DESIGN-005 D-12 / ADR-026 — the SINGLE external-id→Media Item match (movie→radarr by tmdbId;
+ * tv→sonarr by tvdbId, fallback tmdbId). Factored from backfillEventAttribution so notification
+ * ingest reuses the identical logic. When `mediaType` is absent (Tautulli/Maintainerr carry no
+ * Seerr media_type), it probes radarr(tmdb) → sonarr(tvdb) → sonarr(tmdb) in turn. No match ⇒ null.
+ */
+export async function resolveMediaItemId(
+  executor: DbClient | undefined,
+  input: { mediaType?: string | null; tmdbId?: number | null; tvdbId?: number | null },
+): Promise<string | null> {
+  const db = resolveDb(executor);
+  const tmdbId = numberOrNull(input.tmdbId ?? null);
+  const tvdbId = numberOrNull(input.tvdbId ?? null);
+  let itemId: string | undefined;
+  if (input.mediaType === 'movie') {
+    if (tmdbId !== null) itemId = await findItemId(db, 'radarr', 'tmdbId', tmdbId);
+  } else if (input.mediaType === 'tv') {
+    if (tvdbId !== null) itemId = await findItemId(db, 'sonarr', 'tvdbId', tvdbId);
+    if (itemId === undefined && tmdbId !== null) itemId = await findItemId(db, 'sonarr', 'tmdbId', tmdbId);
+  } else {
+    // No media-type hint: probe movie then tv by whichever external ids are present.
+    if (tmdbId !== null) itemId = await findItemId(db, 'radarr', 'tmdbId', tmdbId);
+    if (itemId === undefined && tvdbId !== null) itemId = await findItemId(db, 'sonarr', 'tvdbId', tvdbId);
+    if (itemId === undefined && tmdbId !== null) itemId = await findItemId(db, 'sonarr', 'tmdbId', tmdbId);
+  }
+  return itemId ?? null;
 }
