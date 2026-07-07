@@ -8,11 +8,9 @@
 // avatar initial via CSS (D-06).
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useTheme } from '@hnet/ui';
 import { BrandMark } from '@/components/brand-mark';
-import { authClient } from '@/lib/auth-client';
 import { initialFor } from '@/lib/initials';
 
 /** ADR-021 — the session-carried section levels (SessionRole.sectionPermissions) the nav
@@ -88,7 +86,6 @@ function ThemeToggle() {
 }
 
 function UserMenu({ user }: { user: TopBarUser }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -114,15 +111,14 @@ function UserMenu({ user }: { user: TopBarUser }) {
     };
   }, [open]);
 
-  async function signOut() {
+  function signOut() {
     setSigningOut(true);
-    try {
-      await authClient.signOut();
-    } finally {
-      // Refresh re-runs the server layouts, whose session gate lands on /login.
-      router.push('/login');
-      router.refresh();
-    }
+    // DESIGN-002 D-15 — RP-initiated logout: a full-page navigation to the server
+    // logout route (NOT router.push), so the browser follows the cross-origin
+    // Authentik end-session redirect chain. The route clears the local session and,
+    // when the issuer supports it, ends the Authentik SSO session before landing on
+    // /login — otherwise the next "Log In" silently re-authenticates.
+    window.location.assign('/api/auth/logout');
   }
 
   return (
@@ -175,7 +171,7 @@ function UserMenu({ user }: { user: TopBarUser }) {
             role="menuitem"
             className="usermenu__item"
             disabled={signingOut}
-            onClick={() => void signOut()}
+            onClick={() => signOut()}
           >
             {signingOut ? 'Signing out…' : 'Sign out'}
           </button>

@@ -35,12 +35,31 @@ test.describe('AC-01 login round trip', () => {
   });
 
   test('sign-out returns to /login and the session is gone', async ({ page }) => {
+    // DESIGN-002 D-15 — Sign out routes through /api/auth/logout (RP-initiated logout).
+    // The stub OIDC advertises no end_session_endpoint, so this degrades to a plain
+    // local logout landing on /login — the stub-OIDC path must keep passing.
     await signIn(page, 'member');
     await signOut(page);
     await expect(page).toHaveURL(/\/login$/);
     // The gate holds: revisiting a protected route bounces straight back.
     await page.goto('/');
     await expect(page).toHaveURL(/\/login$/);
+  });
+
+  test('the /api/auth/logout route clears the session and lands on /login', async ({ page }) => {
+    // DESIGN-002 D-15 — drive the RP-initiated logout route directly: it must clear the
+    // Better Auth session cookie and redirect to /login (the stub issuer has no
+    // end_session_endpoint, so the redirect stays local).
+    await signIn(page, 'member');
+    const before = await page.context().cookies();
+    expect(before.some((c) => c.name.includes('session_token'))).toBe(true);
+
+    await page.goto('/api/auth/logout');
+    await expect(page).toHaveURL(/\/login$/);
+
+    // The session cookie is deleted (Max-Age=0), not just emptied.
+    const after = await page.context().cookies();
+    expect(after.some((c) => c.name.includes('session_token'))).toBe(false);
   });
 });
 

@@ -325,7 +325,9 @@ export const { GET, POST } = toNextJsHandler(auth.handler);
 
 Surface actually used (all under `/api/auth`, per D-04 verification):
 `POST /sign-in/oauth2` (initiation), `GET /oauth2/callback/authentik` (callback),
-`GET /get-session`, `POST /sign-out`.
+`GET /get-session`, `POST /sign-out`. Sign out is initiated by the sibling custom route
+`GET /api/auth/logout` (RP-initiated logout, D-15), which calls `auth.api.signOut` itself
+and then redirects — the static segment wins Next.js routing precedence over this catch-all.
 
 ### D-08 Environment contract
 
@@ -434,6 +436,60 @@ initiation mapping is the pure helper `apps/web/lib/sign-in-error.ts`, unit-test
 Note: better-auth's `redirectOnError` appends its machine-readable code as a **second**
 `error` query param (`/login?error=callback_failed&error=state_mismatch`); the login page
 renders the first and the raw code stays in the URL for debugging.
+
+### D-15 RP-initiated logout — Sign out ends the Authentik SSO session (added 2026-07-07)
+
+Owner-reported bug: clicking **Sign out** cleared only the local Better Auth session
+(`authClient.signOut()` → `POST /sign-out` deletes the session row + cookie). Authentik's
+own SSO session cookie survived, so the next **Log In** silently re-authenticated with the
+Authentik authorization flow set to `…-implicit-consent` (OPS-001) — no login page shown.
+Better Auth 1.6.23's genericOAuth has no built-in RP-initiated logout, so we add it.
+
+**Flow (`packages/auth/src/logout.ts` + `apps/web/app/api/auth/logout/route.ts`):** the
+TopBar "Sign out" button does a full-page `window.location.assign('/api/auth/logout')`
+(not `router.push` — the browser must follow a cross-origin redirect chain). That route:
+
+1. `resolveSignOutRedirect(headers)` — **while the session is still live** — resolves the
+   post-logout target: the issuer's `end_session_endpoint` (from the discovery doc) with
+   `post_logout_redirect_uri` (our `/login`) and, when the account row has one, the stored
+   `id_token` as `id_token_hint` (lets Authentik skip its logout confirmation). Better Auth
+   stores `account.id_token` raw at callback (verified against generic-oauth `routes.mjs`).
+2. `auth.api.signOut({ headers, asResponse: true })` — clears the local session; its
+   cookie-deleting `Set-Cookie` is forwarded on the redirect response.
+3. `303` to the target. Authentik ends its session and bounces to `post_logout_redirect_uri`.
+
+**Derivation, never hardcoded.** `post_logout_redirect_uri = new URL('/login', BETTER_AUTH_URL)`
+→ prod `https://haynesnetwork.com/login`, staging `https://haynesnetwork.haynesops.com/login`,
+e2e the app port's `/login`. The `end_session_endpoint` comes from the live discovery doc
+(cached 5 min).
+
+**Graceful degradation (keeps e2e + any endpoint-less IdP working).** When OIDC is disabled,
+or there's **no live session**, or the discovery doc advertises **no** `end_session_endpoint`
+(the e2e stub OIDC), the route degrades to a plain local logout → `/login` (pre-fix behavior).
+`buildEndSessionUrl` returns `null` in that last case; `parseEndSessionEndpoint` /
+`fetchEndSessionEndpoint` are the unit-tested seams.
+
+**Why a GET is safe.** The session cookie is `SameSite=Lax`, so a cross-site `<img>`/prefetch
+never carries it — `resolveSignOutRedirect` then finds no session and returns a plain
+`/login`, so the endpoint can't be weaponized to force an off-site SSO logout. The static
+`/api/auth/logout` segment takes Next.js routing precedence over the `[...all]` Better Auth
+catch-all, and `/logout` is not a Better Auth route, so nothing is shadowed.
+
+**Authentik side (OPS-001) — TWO changes, both live-verified 2026-07-07.**
+1. `post_logout_redirect_uri` values registered on the provider as `redirect_uris` entries with
+   `redirect_uri_type: "logout"` (Authentik 2026.5's `RedirectURITypeEnum` = `authorization | logout`);
+   the two production/staging `/login` URIs. Without a valid `id_token_hint` Authentik rejects
+   `post_logout_redirect_uri` as a malformed request — which is why the app always sends the hint.
+2. **The provider's `invalidation_flow` must contain a `user_logout` stage.** It shipped pointing at
+   `default-provider-invalidation-flow`, which has ZERO stages — so end-session redirected but never
+   invalidated the SSO session (registering the redirect URIs alone did NOT fix the bug; verified
+   `core/users/me` stayed the user). Repointed to `default-invalidation-flow` (the "Logout" flow with
+   the user_logout stage). This is the load-bearing half of the fix.
+
+Live verification (driving the end-session URL with the DB-stored `id_token` after a real login,
+since the app code isn't deployed yet): end-session lands on `/login`, `core/users/me` drops from
+`hnet-e2e` to anonymous, and the next Log In renders the Authentik login form. The complete
+button-driven flow verifies once the app image ships.
 
 ---
 
