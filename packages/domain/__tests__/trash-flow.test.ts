@@ -383,7 +383,15 @@ describe('listTrashPending + guardian + expedite (ADR-023 D-02/D-04/D-05)', () =
       db: t.db,
       rows: [
         { mediaItemId: watchedId, lastViewedAt: new Date(RECENT) },
-        { mediaItemId: coldId, lastViewedAt: new Date(OLD) },
+        // PLAN-013 reclaim forward-capture: the cold item carries a resolution + ratings so the
+        // expedite-freeze test can assert they land in the trash_expedited payload + notification.
+        {
+          mediaItemId: coldId,
+          lastViewedAt: new Date(OLD),
+          resolution: '2160p',
+          imdbRating: 8.5,
+          tmdbRating: 7.9,
+        },
       ],
     });
   });
@@ -478,7 +486,30 @@ describe('listTrashPending + guardian + expedite (ADR-023 D-02/D-04/D-05)', () =
       .select()
       .from(ledgerEvents)
       .where(eq(ledgerEvents.eventType, 'trash_expedited'));
-    expect(events.some((e) => (e.payload as { maintainerrMediaId?: string }).maintainerrMediaId === 'ms-8002')).toBe(true);
+    const forItem = events.find(
+      (e) => (e.payload as { maintainerrMediaId?: string }).maintainerrMediaId === 'ms-8002',
+    );
+    expect(forItem).toBeDefined();
+    // PLAN-013 reclaim forward-capture — the direct-expedite path now FREEZES size/resolution/ratings
+    // into the trash_expedited payload (previously only scope/collectionId/maintainerrMediaId).
+    expect(forItem!.payload).toMatchObject({
+      scope: 'item',
+      sizeBytes: 2_000_000_000,
+      resolution: '2160p',
+      imdbRating: 8.5,
+      tmdbRating: 7.9,
+    });
+    // …and into the app-sourced Activity notification payload (source 'trash').
+    const [note] = await t.db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.source, 'trash'));
+    expect(note!.payload).toMatchObject({
+      sizeBytes: 2_000_000_000,
+      resolution: '2160p',
+      imdbRating: 8.5,
+      tmdbRating: 7.9,
+    });
   });
 
   it('a FAILED handle STILL leaves the trash_expedited intent event (destructive ordering)', async () => {
