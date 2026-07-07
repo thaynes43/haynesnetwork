@@ -1,5 +1,6 @@
 // Generic client-side sort model (PLAN-018 task #5, decision D-5) — the reusable half of Work's
-// `jobSort`. It sorts the LOADED rows in the browser when the filtered result is fully loaded (the
+// `jobSort`. The header cycle is two-state (asc ↔ desc, no cleared state — see nextSort). It sorts
+// the LOADED rows in the browser when the filtered result is fully loaded (the
 // common case); the comparators mirror a typical backend's whole-set order (string keys
 // case-insensitive, nulls last, with a host-supplied stable tiebreaker) so the client-sort and the
 // wire-sort paths agree. The host binds the row type, the wire-sort enum, and the per-sort field
@@ -23,18 +24,20 @@ export interface FieldSpec<Row> {
   dir: 'asc' | 'desc';
 }
 
-/** Tri-state cycle for a column header (PLAN-018): unsorted → asc → desc → cleared (`undefined` =
- *  the host's default order). Given the CURRENT sort, return the next one for `col`. `cycle` maps
- *  each column key to its asc/desc wire-sort values. */
+/** Two-state cycle for a column header (nit fix 2026-07-07): the active column just flips
+ *  direction (asc ↔ desc) and any other column (or the unsorted default) enters at its first
+ *  direction. There is NO cleared state — a header click always lands on an explicit sort with a
+ *  visible arrow, so a spreadsheet never sits in an ambiguous "looks sorted but isn't" state (the
+ *  tri-state clear that silently dropped the sort was the reported UX nit). The host default order
+ *  (e.g. Title A–Z) stays reachable by clicking that column. Given the CURRENT sort, return the
+ *  next one for `col`; `cycle` maps each column key to its first/second-click wire-sort values. */
 export function nextSort<S, C extends string>(
   current: S | undefined,
   col: C,
   cycle: Record<C, { asc: S; desc: S }>,
-): S | undefined {
+): S {
   const { asc, desc } = cycle[col];
-  if (current === asc) return desc;
-  if (current === desc) return undefined;
-  return asc;
+  return current === asc ? desc : asc;
 }
 
 /** The arrow glyph for a column under the current sort (▲ asc / ▼ desc / none). */

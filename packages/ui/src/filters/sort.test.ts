@@ -1,6 +1,7 @@
-// Unit tests for the generic client-side sort: the tri-state cycle clears back to the host default,
-// the arrow glyphs track the active column/direction, and the sort loop places null/empty cells LAST
-// in both directions with a host-supplied stable tiebreaker (mirrors a backend whole-set sort).
+// Unit tests for the generic client-side sort: the two-state cycle toggles the active column's
+// direction (no cleared state), the arrow glyphs track the active column/direction, and the sort
+// loop places null/empty cells LAST in both directions with a host-supplied stable tiebreaker
+// (mirrors a backend whole-set sort).
 
 import { describe, expect, it } from 'vitest';
 import { arrowFor, cmpNum, cmpStr, nextSort, sortRowsClientSide, type FieldSpec } from './sort';
@@ -25,11 +26,11 @@ const ids = (rows: Row[]): string[] => rows.map((r) => r.id);
 const sort = (rows: Row[], s: Sort): Row[] => sortRowsClientSide(rows, s, { fields: FIELDS, tiebreaker });
 
 describe('nextSort / arrowFor', () => {
-  it('cycles unsorted → asc → desc → cleared, restarting other columns at asc', () => {
-    expect(nextSort(undefined, 'name', CYCLE)).toBe('name:asc');
-    expect(nextSort('name:asc' as Sort, 'name', CYCLE)).toBe('name:desc');
-    expect(nextSort('name:desc' as Sort, 'name', CYCLE)).toBeUndefined();
-    expect(nextSort('name:asc' as Sort, 'n', CYCLE)).toBe('n:asc');
+  it('toggles the active column asc ↔ desc (no cleared state), entering other columns at asc', () => {
+    expect(nextSort(undefined, 'name', CYCLE)).toBe('name:asc'); // unsorted → first direction
+    expect(nextSort('name:asc' as Sort, 'name', CYCLE)).toBe('name:desc'); // toggle
+    expect(nextSort('name:desc' as Sort, 'name', CYCLE)).toBe('name:asc'); // toggle back — never cleared
+    expect(nextSort('name:asc' as Sort, 'n', CYCLE)).toBe('n:asc'); // a DIFFERENT column enters at asc
   });
 
   it('shows the arrow only for the active column + direction', () => {

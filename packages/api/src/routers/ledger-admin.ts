@@ -134,6 +134,26 @@ export const ledgerAdminRouter = router({
     }),
 
   /**
+   * DESIGN-009 D-06 (nit fix 2026-07-07) — the TRUE filtered row count for the Export button
+   * label. browse is keyset-paged (no cheap total), so the label used to read the loaded-so-far
+   * count ("100+ rows"); this is a single COUNT(*) over the EXACT same WHERE browse/export
+   * assemble (shared buildLibraryWhere, includeTombstoned FORCED true, same media_metadata join
+   * for the facet filters), so the label can never drift from the streamed export set. Read-Only
+   * and above — the export button shows for read_only too (Disabled never reaches here).
+   */
+  count: sectionProcedure('ledger', 'read_only')
+    .input(z.object({ ...LEDGER_FILTER_SHAPE }))
+    .query(async ({ ctx, input }) => {
+      const where: SQL[] = buildLibraryWhere({ ...input, includeTombstoned: true });
+      const [row] = await ctx.db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(mediaItems)
+        .leftJoin(mediaMetadata, eq(mediaMetadata.mediaItemId, mediaItems.id))
+        .where(and(...where));
+      return { count: row?.total ?? 0 };
+    }),
+
+  /**
    * ADR-022 D-02 / DESIGN-009 D-05 — bulk Add-&-search over an explicit selection. Edit-gated.
    * Delegates to executeArrAdd(reason:'ledger_add'): absent → add monitored + search; present
    * but unmonitored → monitor + search; present + monitored → skip. Capped at 1000 items/run

@@ -273,21 +273,22 @@ function LedgerBrowser({
     Object.hasOwn(RESOLUTION_LABELS, v),
   );
   const trimmedQuery = qParam.trim();
+  // The shared filter set — the paged browse, the true-total count (Export label), and the export
+  // href all derive from THIS one object, so the three can never disagree about "what's filtered".
+  const filterInput = {
+    arrKind,
+    ...(trimmedQuery === '' ? {} : { query: trimmedQuery }),
+    hasFile,
+    ...(mon === 'yes' ? { monitored: true } : mon === 'no' ? { monitored: false } : {}),
+    ...(filters.genres ? { genres: filters.genres } : {}),
+    ...(resolutionsInput.length > 0 ? { resolutions: resolutionsInput } : {}),
+    ...(filters.requesters ? { requesters: filters.requesters } : {}),
+    ...(filters.sourceCollections ? { sourceCollections: filters.sourceCollections } : {}),
+    ...(ratingMin !== undefined ? { ratingMin } : {}),
+    ...(ratingMax !== undefined ? { ratingMax } : {}),
+  };
   const browse = trpc.ledgerAdmin.browse.useInfiniteQuery(
-    {
-      arrKind,
-      ...(trimmedQuery === '' ? {} : { query: trimmedQuery }),
-      hasFile,
-      ...(mon === 'yes' ? { monitored: true } : mon === 'no' ? { monitored: false } : {}),
-      sort,
-      ...(filters.genres ? { genres: filters.genres } : {}),
-      ...(resolutionsInput.length > 0 ? { resolutions: resolutionsInput } : {}),
-      ...(filters.requesters ? { requesters: filters.requesters } : {}),
-      ...(filters.sourceCollections ? { sourceCollections: filters.sourceCollections } : {}),
-      ...(ratingMin !== undefined ? { ratingMin } : {}),
-      ...(ratingMax !== undefined ? { ratingMax } : {}),
-      limit: 100,
-    },
+    { ...filterInput, sort, limit: 100 },
     {
       getNextPageParam: (last) => last.nextCursor ?? undefined,
       // Keep the previous rows rendered (dimmed) while a filter/sort refetch resolves —
@@ -295,6 +296,13 @@ function LedgerBrowser({
       placeholderData: (prev) => prev,
     },
   );
+  // The TRUE filtered total for the Export label (nit fix 2026-07-07): browse is keyset-paged, so
+  // items.length only knows the loaded-so-far count ("100+"). This cheap COUNT(*) rides the SAME
+  // filter set as the streamed export. placeholderData keeps the last number visible during a
+  // refetch (the grid is never blocked while counting).
+  const totalCount = trpc.ledgerAdmin.count.useQuery(filterInput, {
+    placeholderData: (prev) => prev,
+  });
 
   const items = browse.data?.pages.flatMap((p) => p.items) ?? [];
   const refreshing = browse.isPlaceholderData && browse.isFetching;
@@ -372,7 +380,9 @@ function LedgerBrowser({
     { key: 'added', label: 'Added', sortField: 'added_at', firstDir: 'desc' },
   ];
   const sortableCols = cols.filter((c) => c.sortField !== undefined);
-  // Click cycle per column: first click → firstDir, second → the other, third → default.
+  // Two-state click cycle per column: first click → firstDir, then it just toggles direction
+  // (no cleared state — the active column always shows an arrow; Title A–Z is the reachable
+  // default via the Title column).
   const clickCycle = Object.fromEntries(
     sortableCols.map((c) => [
       c.key,
@@ -390,7 +400,7 @@ function LedgerBrowser({
   ) as Record<string, { asc: SortToken; desc: SortToken }>;
   const cycleSort = (colKey: string) => {
     const next = nextSort<SortToken, string>(sortToken, colKey, clickCycle);
-    patchParams({ sort: next === undefined || next === DEFAULT_SORT ? null : next });
+    patchParams({ sort: next === DEFAULT_SORT ? null : next });
   };
 
   // Keyset infinite scroll INSIDE the spreadsheet pane: the wrap is the scroll root, so the
@@ -413,26 +423,14 @@ function LedgerBrowser({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canLoadMore]);
 
-  // ── export (AC-12): the CURRENT FILTER SET, never the selection ──
-  const exportQs = ledgerExportQuery({
-    arrKind,
-    ...(trimmedQuery === '' ? {} : { query: trimmedQuery }),
-    ...(mon === 'yes' ? { monitored: true } : mon === 'no' ? { monitored: false } : {}),
-    hasFile,
-    ...(filters.genres ? { genres: filters.genres } : {}),
-    ...(resolutionsInput.length > 0 ? { resolutions: resolutionsInput } : {}),
-    ...(filters.requesters ? { requesters: filters.requesters } : {}),
-    ...(filters.sourceCollections ? { sourceCollections: filters.sourceCollections } : {}),
-    ...(ratingMin !== undefined ? { ratingMin } : {}),
-    ...(ratingMax !== undefined ? { ratingMax } : {}),
-  });
-  // Browse is keyset-paged (no cheap COUNT) — an honest count label: exact once fully loaded,
-  // "N+" while more pages remain.
-  const countLabel = browse.isLoading
-    ? '…'
-    : browse.hasNextPage === true
-      ? `${items.length}+ rows`
-      : `${items.length} ${items.length === 1 ? 'row' : 'rows'}`;
+  // ── export (AC-12): the CURRENT FILTER SET, never the selection ── (same filterInput as the
+  // browse + the count, so the href, the label, and the streamed rows all describe one set).
+  const exportQs = ledgerExportQuery(filterInput);
+  // The Export label now shows the TRUE filtered total (ledgerAdmin.count), not the loaded-so-far
+  // page count — a "…" only until the first count resolves, then the exact number.
+  const total = totalCount.data?.count;
+  const countLabel =
+    total === undefined ? '…' : `${total.toLocaleString()} ${total === 1 ? 'row' : 'rows'}`;
 
   // ── the Monitor & search Modal (ADR-014 explanatory confirm → AC-11 report) ──
   const [confirmOpen, setConfirmOpen] = useState(false);
