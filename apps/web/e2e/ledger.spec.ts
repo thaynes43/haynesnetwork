@@ -492,29 +492,85 @@ test.describe('ledger section (DESIGN-009)', () => {
     await expect(page.getByLabel('Ledger access for Ledger Read-Only')).toHaveValue('read_only');
   });
 
-  test('mobile 390×844: the sheet pans INSIDE its container — the page never scrolls sideways', async ({
+  test('portrait mobile 390×844: the 13-column sheet becomes stacked cards — scannable, selectable, filterable', async ({
     page,
   }) => {
+    // Owner report 2026-07-07: the spreadsheet was a sideways-panning wall on a phone. Below
+    // 640px the wrap paints .ledger-cards (condensed 3-line cards) instead of the <table>.
     await page.setViewportSize({ width: 390, height: 844 });
+    await signIn(page, 'admin');
+    await page.goto('/ledger');
+
+    const cards = page.getByTestId('ledger-cards');
+    const card = (title: string) => cards.getByTestId('ledger-card').filter({ hasText: title });
+
+    // The sheet is swapped for cards — one per seeded movie, tombstone included (D-04) — and
+    // the desktop <table> is not painted at this width.
+    await expect(cards.getByTestId('ledger-card')).toHaveCount(3);
+    await expect(page.locator('.ledger-table')).toBeHidden();
+    // The whole point: the page no longer scrolls sideways (no 1080px pan wall — AC-10).
+    await expectViewportFit(page);
+
+    // Each card condenses the row: title + kind, the condensed facts (on-disk/size/rating), the
+    // monitored ✓ cue, and the Removed badge on the tombstone. (Assertions stay independent of
+    // the serial suite's monitor-flips: The Fixture is skipped by the bulk run so it stays
+    // monitored; Vanished Heist's tombstone is permanent.)
+    await expect(card('The Fixture')).toContainText('Movie');
+    await expect(card('The Fixture')).toContainText('1/1 files');
+    await expect(card('The Fixture')).toContainText('★ 7.7');
+    await expect(card('The Fixture').locator('.ledger-yes')).toHaveCount(1); // monitored ✓
+    await expect(card('Vanished Heist')).toContainText('Removed');
+
+    // Tapping the card body opens the item page (the same /library/[id] deep link as the sheet).
+    await expect(card('The Fixture').getByTestId('ledger-card-link')).toHaveAttribute(
+      'href',
+      /^\/library\/[0-9a-f-]{36}$/,
+    );
+
+    // Selection rides the edge checkbox — export/bulk stay usable on mobile. The card re-tints
+    // (is-selected), the actions bar recounts; the count control sits ABOVE the cards and holds.
+    const barBefore = (await page.locator('.ledger-actionsbar').boundingBox())!;
+    await card('The Fixture').getByRole('checkbox').check();
+    await expect(page.getByTestId('ledger-selected-count')).toHaveText('1 selected');
+    await expect(card('The Fixture')).toHaveClass(/is-selected/);
+    const barAfter = (await page.locator('.ledger-actionsbar').boundingBox())!;
+    expect(barAfter.y).toBe(barBefore.y);
+    // Export still mirrors the FILTER set (three rows), never the one-item selection (AC-12).
+    await expect(page.getByTestId('ledger-export')).toContainText('Export filtered (3 rows)');
+
+    // A search narrows the cards to the one title match and clears the now-stale selection
+    // (membership changed). Title search is deterministic regardless of the suite's monitor state.
+    await page.locator('.library-search').fill('Vanished');
+    await expect(cards.getByTestId('ledger-card')).toHaveCount(1);
+    await expect(cards.getByTestId('ledger-card')).toContainText('Vanished Heist');
+    await expect(page.getByTestId('ledger-selected-count')).toHaveText('0 selected');
+    await expect(page).toHaveURL(/q=Vanished/);
+
+    // The chip bar stays one fixed-height pan-row (never wraps — ADR-015).
+    const bar = (await page.locator('.library-chipbar').boundingBox())!;
+    expect(bar.height).toBeLessThanOrEqual(52);
+  });
+
+  test('tablet-portrait 768×1024: the sheet still pans INSIDE its container (table mode above 640px)', async ({
+    page,
+  }) => {
+    // The card swap is a phone treatment (<640px); at tablet-portrait the full spreadsheet is
+    // back, panning inside its wrap while the page stays viewport-clean.
+    await page.setViewportSize({ width: 768, height: 1024 });
     await signIn(page, 'admin');
     await openLedgerMovies(page);
 
-    // The full column set overflows 390px — but only inside the wrap (internal pan)…
     const wrap = page.getByTestId('ledger-tablewrap');
     const overflow = await wrap.evaluate((el) => el.scrollWidth - el.clientWidth);
     expect(overflow).toBeGreaterThan(100);
-    // …while the page itself stays viewport-clean (AC-10 invariants).
+    await expect(page.getByTestId('ledger-cards')).toBeHidden();
     await expectViewportFit(page);
 
-    // The frozen Title column: pan the sheet right and the Title cells hold their x.
+    // The frozen Title column holds its x as the sheet pans right.
     const titleCell = page.locator('.ledger-row .col-title').first();
     const xBefore = (await titleCell.boundingBox())!.x;
     await wrap.evaluate((el) => el.scrollTo({ left: 300 }));
     const xAfter = (await titleCell.boundingBox())!.x;
     expect(Math.abs(xAfter - xBefore)).toBeLessThan(2);
-
-    // The chip bar stays one fixed-height row (pans, never wraps — ADR-015).
-    const bar = (await page.locator('.library-chipbar').boundingBox())!;
-    expect(bar.height).toBeLessThanOrEqual(52);
   });
 });
