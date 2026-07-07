@@ -1,6 +1,13 @@
 # PLAN-010: Message-of-the-Day dashboard banner
 
-- **Status:** Executing (Fable 5, 2026-07-07)
+- **Status:** Completed (2026-07-07) — shipped v0.14.0; live-validated 13/13 on staging: admin set
+  info/warning MOTD → renders above the greeting with correct role/severity → per-user
+  localStorage-versioned dismiss sticky across reload → edit re-shows → Clear removes. Reuses the
+  `app_settings` audited store (ADR-027); migration 0019 (key CHECK relax).
+  <!-- Fable 5 flips Draft → Executing → Completed -->
+  <!-- 2026-07-07 (Fable 5): shipped in v0.14.0 (commit 77ab5fc "feat: MOTD dashboard banner
+       (ADR-027)"); moved to completed/ by the docs-only PLAN-010 completion PR.
+       Prior status line: Executing (Fable 5, 2026-07-07). -->
 - **Satisfies:** PRD-001 **R-105** (Dashboard & app catalog), **ADR-027** (Dashboard MOTD banner,
   Accepted), DESIGN-004 **D-15**, glossary **T-89**.
 
