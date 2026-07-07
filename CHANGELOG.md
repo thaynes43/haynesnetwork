@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.14.0](https://github.com/thaynes43/haynesnetwork/compare/v0.13.0...v0.14.0) (2026-07-07)
+
+
+### Features
+
+* MOTD dashboard banner (ADR-027) ([#84](https://github.com/thaynes43/haynesnetwork/issues/84)) ([77ab5fc](https://github.com/thaynes43/haynesnetwork/commit/77ab5fce45f9fe781691355c78ddd91ec3781d12))
+
+
+### Documentation
+
+* complete plan 009 (Bulletin) — v0.13.0 live-validated ([#82](https://github.com/thaynes43/haynesnetwork/issues/82)) ([cc7ac4b](https://github.com/thaynes43/haynesnetwork/commit/cc7ac4b6d4e693421383a771690f8e3c576c268d))
+
 ## [0.13.0](https://github.com/thaynes43/haynesnetwork/compare/v0.12.0...v0.13.0) (2026-07-07)
 
 
