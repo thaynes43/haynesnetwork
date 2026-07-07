@@ -172,6 +172,71 @@ body {
   color: var(--color-warning);
   background: color-mix(in srgb, var(--color-warning) 12%, transparent);
 }
+
+/* ADR-027 / DESIGN-004 D-15 (PLAN-010) — dashboard Message-of-the-Day banner. Full-width, mounted
+   above the greeting; severity drives the border + fill tint + icon color from the existing
+   --color-info / --color-warning tokens via color-mix (no new tokens, no raw hex — hard rule 2).
+   Present-when-set; the dismiss is a SANCTIONED deliberate removal (ADR-015 / hard rule 9) — nothing
+   reflows on hover/arm, only presence toggles the banner. */
+.motd {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid var(--color-info);
+  border-left-width: 4px;
+  background: color-mix(in srgb, var(--color-info) 10%, var(--color-surface));
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  margin-bottom: var(--space);
+}
+.motd--warning {
+  border-color: var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 12%, var(--color-surface));
+}
+.motd__icon {
+  flex: none;
+  color: var(--color-info);
+  font-weight: 700;
+  line-height: 1.45;
+}
+.motd--warning .motd__icon {
+  color: var(--color-warning);
+}
+.motd__message {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  color: var(--color-text);
+  font-size: 14px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.motd__dismiss {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  min-width: 32px;
+  min-height: 32px;
+}
+.motd__dismiss:hover {
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-text) 8%, transparent);
+}
+/* Admin compose-page live preview wrapper. */
+.motd-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 480px;
+  margin-bottom: var(--space);
+}
 .badge {
   display: inline-block;
   font-size: 11px;
@@ -813,7 +878,9 @@ tr.drop-after td {
 }
 .admin-form input[type='text'],
 .admin-form input[type='url'],
+.admin-form input[type='datetime-local'],
 .admin-form input:not([type]),
+.admin-form textarea,
 .admin-form select,
 .form-row select {
   font: inherit;
@@ -825,7 +892,13 @@ tr.drop-after td {
   padding: 10px 12px;
   min-height: 44px;
 }
+.admin-form textarea {
+  resize: vertical;
+  min-height: 76px;
+  line-height: 1.4;
+}
 .admin-form input:focus,
+.admin-form textarea:focus,
 .admin-form select:focus {
   border-color: var(--color-accent);
 }
