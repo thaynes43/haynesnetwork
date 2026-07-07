@@ -52,6 +52,7 @@ interface StubCollection {
   isActive: boolean;
   deleteAfterDays: number;
   type: string;
+  libraryId: number;
   items: Array<{
     mediaServerId: string;
     tmdbId?: number;
@@ -70,6 +71,7 @@ function freshCollections(): StubCollection[] {
       isActive: true,
       deleteAfterDays: 30,
       type: 'movie',
+      libraryId: 1,
       items: [
         {
           mediaServerId: STUB_MAINT_FIXTURE_ID,
@@ -103,6 +105,7 @@ function freshCollections(): StubCollection[] {
       isActive: true,
       deleteAfterDays: 45,
       type: 'show',
+      libraryId: 2,
       items: [
         {
           mediaServerId: STUB_MAINT_TV_ID,
@@ -185,6 +188,9 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
   const handled = new Set<string>();
   /** lowercased application names currently "disconnected" (dropped from rules/constants). */
   const disconnected = new Set<string>();
+  // ADR-025 — the manual Leaving-Soon collections created via POST /collections (id → member set).
+  const manualCollections = new Map<number, Set<string>>();
+  let nextManualCollectionId = 900;
   let collections = freshCollections();
   let rules = freshRules();
 
@@ -201,6 +207,8 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
         exclusions.clear();
         handled.clear();
         disconnected.clear();
+        manualCollections.clear();
+        nextManualCollectionId = 900;
         collections = freshCollections();
         rules = freshRules();
         res.writeHead(204);
@@ -245,6 +253,30 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
         if (method === 'POST' && path === '/collections/handle') {
           // The estate-wide handler expedite must NEVER call (C-07a). Accept it (Maintainerr
           // would) so the guard is the spec's /_stub/calls assertion, not a stub 404.
+          return json(res, 201, {});
+        }
+        // ADR-025 — the manual Leaving-Soon collection surface (Q-05).
+        if (method === 'POST' && path === '/collections') {
+          const dto = body as { media?: Array<{ mediaServerId: string }> };
+          const id = ++nextManualCollectionId;
+          manualCollections.set(id, new Set((dto?.media ?? []).map((m) => m.mediaServerId)));
+          return json(res, 201, { id });
+        }
+        if (method === 'POST' && path === '/collections/add') {
+          const dto = body as { collectionId: number; media?: Array<{ mediaServerId: string }> };
+          const set = manualCollections.get(dto.collectionId) ?? new Set<string>();
+          for (const m of dto.media ?? []) set.add(m.mediaServerId);
+          manualCollections.set(dto.collectionId, set);
+          return json(res, 201, {});
+        }
+        if (method === 'POST' && path === '/collections/remove') {
+          const dto = body as { collectionId: number; media?: Array<{ mediaServerId: string }> };
+          const set = manualCollections.get(dto.collectionId);
+          if (set) for (const m of dto.media ?? []) set.delete(m.mediaServerId);
+          return json(res, 201, {});
+        }
+        if (method === 'POST' && path === '/collections/removeCollection') {
+          manualCollections.delete((body as { collectionId: number }).collectionId);
           return json(res, 201, {});
         }
         if ((method === 'POST' || method === 'PUT') && path === '/rules') {
@@ -322,6 +354,7 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
               isActive: c.isActive,
               deleteAfterDays: c.deleteAfterDays,
               type: c.type,
+              libraryId: c.libraryId,
               media: [], // the list serves a PREVIEW subset — content is the paged endpoint
             })),
           );
