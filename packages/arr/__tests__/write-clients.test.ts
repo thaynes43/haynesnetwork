@@ -2,7 +2,8 @@
 // (DESIGN-005 D-03 write table). NO live write endpoint is ever called: the write
 // clients are exercised here exclusively against stubs (ADR-008).
 import { describe, expect, it } from 'vitest';
-import { LidarrWriteClient, RadarrWriteClient, SonarrWriteClient } from '../src/write';
+import { LidarrWriteClient, MaintainerrWriteClient, RadarrWriteClient, SonarrWriteClient } from '../src/write';
+import { MaintainerrWriteFailedError } from '../src/errors';
 import { fixture, stubFetch, TEST_OPTS } from './helpers';
 
 const COMMAND_OK = { id: 1234, name: 'stub' };
@@ -215,5 +216,73 @@ describe('LidarrWriteClient', () => {
       addOptions: { searchForMissingAlbums: false },
     });
     expect(await c.createTag('restored')).toEqual({ id: 4, label: 'restored' });
+  });
+});
+
+describe('MaintainerrWriteClient (ADR-023 P1a — in-band ReturnStatus failure detection)', () => {
+  function client(routes: Parameters<typeof stubFetch>[0]) {
+    const stub = stubFetch(routes);
+    return {
+      client: new MaintainerrWriteClient({
+        baseUrl: 'http://maintainerr.test:6246',
+        fetchImpl: stub.fetchImpl,
+        ...TEST_OPTS,
+      }),
+      ...stub,
+    };
+  }
+
+  it('addExclusion RESOLVES on a ReturnStatus success (201 {code:1})', async () => {
+    const { client: c, calls } = client([
+      { method: 'POST', path: '/api/rules/exclusion', status: 201, body: { code: 1, result: 'Success' } },
+    ]);
+    await expect(c.addExclusion('12345')).resolves.toBeUndefined();
+    expect(calls[0]?.body).toEqual({ mediaId: '12345', action: 0 });
+    expect(calls[0]?.headers.get('x-api-key')).toBe('test-api-key');
+  });
+
+  it('addExclusion THROWS on an in-band failure (201 {code:0, "Failed - no metadata"})', async () => {
+    // v3.17.0 setExclusion returns HTTP 201 with a ReturnStatus code:0 on logical failure. HTTP-status
+    // -only requestVoid used to read this as success → phantom exclusion + phantom guardian protection.
+    const { client: c } = client([
+      {
+        method: 'POST',
+        path: '/api/rules/exclusion',
+        status: 201,
+        body: { code: 0, result: 'Failed - no metadata', message: 'Failed - no metadata' },
+      },
+    ]);
+    await expect(c.addExclusion('12345')).rejects.toBeInstanceOf(MaintainerrWriteFailedError);
+    await expect(c.addExclusion('12345')).rejects.toThrow(/Failed - no metadata/);
+  });
+
+  it('removeExclusion + rule CRUD fail closed on code:0; patchSettings fails closed on a BasicResponseDto code:0', async () => {
+    const fail = (path: string | RegExp, method: string) =>
+      client([{ method, path, status: 200, body: { code: 0, message: 'Failed' } }]);
+
+    await expect(
+      fail(/^\/api\/rules\/exclusions\/.+$/, 'DELETE').client.removeExclusion('12345'),
+    ).rejects.toBeInstanceOf(MaintainerrWriteFailedError);
+    await expect(
+      fail('/api/rules', 'POST').client.createRuleGroup({ name: 'x' }),
+    ).rejects.toBeInstanceOf(MaintainerrWriteFailedError);
+    await expect(
+      fail(/^\/api\/rules\/\d+$/, 'DELETE').client.deleteRuleGroup(9),
+    ).rejects.toBeInstanceOf(MaintainerrWriteFailedError);
+    // settings PATCH returns a BasicResponseDto {status:'NOK', code:0, message} — same code:0 signal.
+    const settings = client([
+      { method: 'PATCH', path: '/api/settings', status: 200, body: { status: 'NOK', code: 0, message: 'Failure' } },
+    ]);
+    await expect(settings.client.patchSettings({ radarr_tag_exclusions: true })).rejects.toBeInstanceOf(
+      MaintainerrWriteFailedError,
+    );
+  });
+
+  it('handleCollectionMedia keeps VOID semantics (no ReturnStatus in the v3.17.0 controller)', async () => {
+    const { client: c, calls } = client([
+      { method: 'POST', path: '/api/collections/media/handle', status: 201 },
+    ]);
+    await expect(c.handleCollectionMedia(7, 'ms-1')).resolves.toBeUndefined();
+    expect(calls[0]?.body).toEqual({ collectionId: 7, mediaId: 'ms-1' });
   });
 });

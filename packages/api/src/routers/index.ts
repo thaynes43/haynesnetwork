@@ -9,6 +9,7 @@ import { ledgerAdminRouter } from './ledger-admin';
 import { fixRouter } from './fix';
 import { restoreRouter } from './restore';
 import { plexRouter } from './plex';
+import { trashRouter } from './trash';
 
 export const appRouter = router({
   profile: profileRouter,
@@ -24,6 +25,9 @@ export const appRouter = router({
   restore: restoreRouter,
   // Phase 3 (ADR-017 / DESIGN-007 D-05): Plex library self-service.
   plex: plexRouter,
+  // ADR-023 / DESIGN-010 (PLAN-006): the Trash section — Maintainerr-backed deletion UI,
+  // section-gated view + per-action grants.
+  trash: trashRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -16,6 +16,7 @@ export const PERMISSION_AUDIT_ACTIONS = [
   'delete_app', // R-11 catalog edits
   'update_role_libraries', // ADR-017 D-07 — a role's Plex library grants were replaced
   'update_section_permission', // ADR-021 C-02 — a role's section access level was changed
+  'update_trash_actions', // ADR-023 C-03 — a role's fine-grained Trash action grants were replaced
 ] as const;
 export type PermissionAuditAction = (typeof PERMISSION_AUDIT_ACTIONS)[number];
 
@@ -40,10 +41,26 @@ export const LEDGER_EVENT_TYPES = [
   'fix_failed', // Fix lifecycle (D-09)
   'restored', // Restore write-back (D-16)
   'search_requested', // Force Search — search-only action for missing content (D-17; migration 0004)
+  // ADR-023 / DESIGN-010 — Trash (Maintainerr) attribution markers (migration 0016). Each is an
+  // app-initiated Trash action, source 'maintainerr': trash_excluded (Save/whitelist an item to
+  // Maintainerr's exclusion list), trash_expedited (an item's deletion was hastened via the
+  // collection handler), trash_restored (a recently-deleted item was re-added via executeRestore).
+  'trash_excluded',
+  'trash_expedited',
+  'trash_restored',
 ] as const;
 export type LedgerEventType = (typeof LEDGER_EVENT_TYPES)[number];
 
-export const LEDGER_EVENT_SOURCES = ['sonarr', 'radarr', 'lidarr', 'seerr', 'app'] as const;
+// ADR-023 / DESIGN-010 — 'maintainerr' joins the source set: Trash's exclusion/expedite/restore
+// markers are attributed to Maintainerr (the deletion system of record). migration 0016.
+export const LEDGER_EVENT_SOURCES = [
+  'sonarr',
+  'radarr',
+  'lidarr',
+  'seerr',
+  'app',
+  'maintainerr',
+] as const;
 export type LedgerEventSource = (typeof LEDGER_EVENT_SOURCES)[number];
 
 export const FIX_REASONS = [
@@ -166,6 +183,31 @@ export const SECTION_LEVEL_RANK: Record<SectionPermissionLevel, number> = {
   read_only: 1,
   edit: 2,
 };
+
+// ---------------------------------------------------------------------------
+// ADR-023 / DESIGN-010 — Trash (Maintainerr) fine-grained per-action grants. A role's
+// coarse `trash` section level (SECTION_IDS above) still gates VIEW (read_only ⇒ can browse
+// the pending tables / rules / recently-deleted); each ACTION below is an EXPLICIT extra grant
+// (a row in role_trash_action_grants ⇒ granted). Viewing is NOT an action — it is section
+// read_only (ADR-023 C-03). Section edit-level implies NOTHING extra: every action is opt-in.
+// An is_admin role implies ALL actions (like it implies section edit) with NO rows.
+// ---------------------------------------------------------------------------
+
+export const TRASH_ACTIONS = [
+  'save_exclude', // Save/whitelist an item → add it to Maintainerr's exclusion list (R-83)
+  'remove_exclude', // Un-save → remove the Maintainerr exclusion
+  'expedite_item', // Hasten one item's deletion (destructive; R-84)
+  'expedite_all', // Hasten the whole pending set's deletion (destructive; R-84)
+  'edit_rules', // Create/update/delete Maintainerr rule groups (R-81; needs section edit too)
+  'restore_deleted', // Re-add a recently-deleted item via executeRestore (R-85)
+] as const;
+export type TrashAction = (typeof TRASH_ACTIONS)[number];
+
+// ADR-023 / DESIGN-010 (addendum c) — the notification store's source set. PLAN-006 ships the
+// generic receiver with Maintainerr as source #1; PLAN-009 (Bulletin) extends this with Seerr /
+// Tautulli adapters. text+CHECK, single source of truth for TS + the notifications SQL CHECK.
+export const NOTIFICATION_SOURCES = ['maintainerr'] as const;
+export type NotificationSource = (typeof NOTIFICATION_SOURCES)[number];
 
 // ADR-022 C-01 — how an *arr-add run was initiated (restore_runs.reason, migration 0014).
 // `restore` = the admin-only diff-driven failsafe (searches OFF, skip-if-present); `ledger_add`

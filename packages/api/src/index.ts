@@ -15,7 +15,9 @@ export {
   RefreshRegistryInput,
 } from './schemas';
 export { resolvePlexBundle } from './trpc';
-export { SectionPermissionInput } from './schemas';
+export { SectionPermissionInput, TrashActionsInput } from './schemas';
+// ADR-023 — the Trash section gates the UX/nav reads on (server-authoritative).
+export { hasTrashAction, trashActionProcedure } from './middleware/role';
 // ADR-019 / DESIGN-008 — the poster-proxy upstream resolver (used by the app poster route).
 export { resolvePosterUpstream, type PosterUpstream } from './poster';
 // ADR-021 — the section-level resolver the nav + the Ledger export route gate on (server-authoritative).

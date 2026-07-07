@@ -8,6 +8,7 @@ import {
   SECTION_LEVEL_RANK,
   type SectionId,
   type SectionPermissionLevel,
+  type TrashAction,
 } from '@hnet/db';
 import { authedProcedure } from '../trpc';
 import type { SessionRole } from '@hnet/auth';
@@ -40,6 +41,35 @@ export function sectionProcedure(sectionId: SectionId, minLevel: SectionPermissi
   return authedProcedure.use(({ ctx, next }) => {
     const level = effectiveSectionLevel(ctx.user.role, sectionId);
     if (SECTION_LEVEL_RANK[level] < SECTION_LEVEL_RANK[minLevel]) {
+      throw new TRPCError({ code: 'FORBIDDEN' });
+    }
+    return next();
+  });
+}
+
+/**
+ * ADR-023 C-03 — is the caller granted a fine-grained Trash `action`? Read off the session
+ * (no query). Admin ⇒ every action; otherwise the resolved session grant list. Absence ⇒ deny.
+ */
+export function hasTrashAction(role: SessionRole, action: TrashAction): boolean {
+  if (role.isAdmin) return true;
+  return (role.trashActions ?? []).includes(action);
+}
+
+/**
+ * ADR-023 C-03 — the Trash action rung: authed AND the caller's Trash section is at least
+ * `minLevel` (default Read-Only, so viewing/browse is allowed) AND the specific `action` is
+ * granted. FORBIDDEN otherwise. Composed on top of the section gate so a Disabled-Trash role can
+ * never reach a write action even if it somehow carried a stale grant. Rule EDITING passes
+ * `minLevel: 'edit'` (D5 — edit_rules additionally requires section Edit). Server-authoritative
+ * (AC-13) — the grants are session-carried, never client-hidden only.
+ */
+export function trashActionProcedure(
+  action: TrashAction,
+  minLevel: SectionPermissionLevel = 'read_only',
+) {
+  return sectionProcedure('trash', minLevel).use(({ ctx, next }) => {
+    if (!hasTrashAction(ctx.user.role, action)) {
       throw new TRPCError({ code: 'FORBIDDEN' });
     }
     return next();

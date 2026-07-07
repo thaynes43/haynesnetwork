@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { SEEDED_ROLE_IDS } from '@hnet/db/schema';
-import { assignRole, createRole, setSectionPermission } from '@hnet/domain';
+import { SEEDED_ROLE_IDS, TRASH_ACTIONS } from '@hnet/db/schema';
+import { assignRole, createRole, setRoleTrashActions, setSectionPermission } from '@hnet/domain';
 import { getSessionExtension } from '../src/index';
 import { bootMigratedDb, createUser, type TestDb } from './helpers';
 
@@ -24,6 +24,8 @@ describe('session extension (DESIGN-002 D-06 / DESIGN-003 D-01, ADR-012)', () =>
         isAdmin: false,
         // ADR-021 — no rows ⇒ the documented section defaults.
         sectionPermissions: { ledger: 'read_only', trash: 'disabled' },
+        // ADR-023 — no grant rows ⇒ no Trash actions.
+        trashActions: [],
       },
       displayName: 'Owner Haynes',
     });
@@ -44,6 +46,8 @@ describe('session extension (DESIGN-002 D-06 / DESIGN-003 D-01, ADR-012)', () =>
         isAdmin: true,
         // ADR-021 C-03 — admin implies Edit on every section (no rows).
         sectionPermissions: { ledger: 'edit', trash: 'edit' },
+        // ADR-023 C-03 — admin implies EVERY Trash action (no rows).
+        trashActions: [...TRASH_ACTIONS],
       },
       displayName: 'Admin Ada',
     });
@@ -69,6 +73,28 @@ describe('session extension (DESIGN-002 D-06 / DESIGN-003 D-01, ADR-012)', () =>
     });
     const after = await getSessionExtension(user.id, t.db);
     expect(after!.role.sectionPermissions).toEqual({ ledger: 'disabled', trash: 'disabled' });
+  });
+
+  it('hydrates the fine-grained Trash action grants after setRoleTrashActions (ADR-023 C-03)', async () => {
+    const { roleId } = await createRole({
+      db: t.db,
+      name: 'Trash Saver',
+      appIds: [],
+      actorId: null,
+    });
+    const user = await createUser(t.db, { displayName: 'Save Sam', roleId });
+    // No grant rows yet ⇒ empty action set.
+    const before = await getSessionExtension(user.id, t.db);
+    expect(before!.role.trashActions).toEqual([]);
+    await setRoleTrashActions({
+      db: t.db,
+      roleId,
+      actions: ['save_exclude', 'remove_exclude'],
+      actorId: null,
+    });
+    const after = await getSessionExtension(user.id, t.db);
+    // Canonical order preserved (TRASH_ACTIONS order), grants reflected.
+    expect(after!.role.trashActions).toEqual(['save_exclude', 'remove_exclude']);
   });
 
   it('returns null (fail closed) for a missing user', async () => {

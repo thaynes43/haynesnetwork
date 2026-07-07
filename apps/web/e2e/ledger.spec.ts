@@ -48,9 +48,10 @@ test.describe('ledger section (DESIGN-009)', () => {
   }) => {
     await signIn(page, 'admin');
 
-    // Nav order: the Ledger entry sits between Library and My Plex (D-01).
+    // Nav order: the Ledger entry sits between Library and My Plex (D-01); the admin's
+    // implicit trash=edit also shows the Trash entry (PLAN-006, DESIGN-010 D-09).
     const navTexts = await page.locator('.topbar__nav a').allInnerTexts();
-    expect(navTexts).toEqual(['Home', 'Library', 'Ledger', 'My Plex']);
+    expect(navTexts).toEqual(['Home', 'Library', 'Ledger', 'Trash', 'My Plex']);
     await page.getByRole('navigation', { name: 'Primary' }).getByText('Ledger').click();
     await page.waitForURL('/ledger');
 

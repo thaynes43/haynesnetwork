@@ -145,6 +145,12 @@ rebuilding a lost *arr instance.
 | R-51 | Admin can re-add missing items to the matching *arr (monitored, with recorded quality profile/root folder/tags) to recover a lost DB or bootstrap a fresh server. | Must |
 | R-52 | Restore is explicitly admin-initiated, previewed before execution, and audit-logged. Sync direction is otherwise strictly *arr → app. | Must |
 
+> **Amendment (2026-07-06, ADR-023 / PLAN-006).** The Restore capability is **retired as an
+> Admin nav item**: `/admin/restore` now redirects to `/trash` and the Recently-Deleted → Restore
+> re-add re-homes into the **Trash** section (R-84). The underlying `restoreRouter` +
+> `executeRestore` stay callable and unchanged (Trash's Restore reuses them); the diff/re-add UI
+> re-home into the Ledger section is PLAN-005's scope.
+
 ### Ledger section (Phase 5)
 
 | ID | Requirement | Priority |
@@ -161,6 +167,23 @@ rebuilding a lost *arr instance.
 > with `imdb_votes` present for ~99%. The import is therefore **dropped**; its need is fully met
 > by **R-74** (browse/filters), **R-75** (bulk Add-&-search), and **R-77** (the Fileless-Set
 > filter state). See **ADR-022 C-04** for the evidence.
+
+### Trash & retention (Phase 5.5)
+
+Governed by **ADR-023** / **DESIGN-010** (PLAN-006). Maintainerr is the deletion system of record;
+Trash is a read-through front-end + a confined write surface.
+
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| R-79 | A top-level **Trash** section integrates Maintainerr (rules, pending-deletion collections, exclusions, deletion execution) and **replaces the Admin → Restore nav item**; `/admin/restore` redirects to `/trash`. | Must |
+| R-80 | A **Rules editor** mapped to Maintainerr rule groups; role access is graded Edit / Read-Only / Disabled (section level) plus an explicit `edit_rules` action grant. | Must |
+| R-81 | **Movies** and **TV** pending-deletion tables (separate tabs, never combined), each row showing the scheduled-delete date + space it frees, plus a **total-space** figure for the whole set, filterable via the shared filter engine (DESIGN-008/009). | Must |
+| R-82 | **Save/whitelist** an item so Maintainerr never deletes it (add to its exclusion list); also a perma-save from the Library page (Movies + TV only, never music). | Must |
+| R-83 | **Expedite** deletion — the whole pending list or one item — destructive, confirmed. | Must |
+| R-84 | **Recently Deleted** list (our tombstoned ledger rows) with **Restore** (reuses the failsafe re-add). | Must |
+| R-85 | **Fine-grained per-role permissions**: the whole tab is disablable (then hidden), and each user-action (Save, Expedite item/all, Edit rules, Restore) is an explicit per-role grant on top of the section level. Server-enforced. | Must |
+| R-86 | **Music is never deletable** via Trash (no Lidarr deletion surface); watched/requested media is auto-protected across all three Plex servers before it can be deleted. | Must |
+| R-87 | Before any destructive action is available, Maintainerr integration health + a safe, no-imminent-deletion state are **audited and surfaced**; destructive actions refuse on an unsafe verdict. | Must |
 
 ### Platform & non-functional
 
@@ -188,6 +211,7 @@ rebuilding a lost *arr instance.
 | US-07 | As an Admin, Radarr's DB is lost; I diff the ledger against the fresh instance and re-add everything monitored with correct profiles. | AC-09 |
 | US-08 | As a user on my phone, the dashboard and fix flow are fully usable without horizontal scrolling. | AC-10 |
 | US-09 | As a household admin, last week's disk sweep removed 200 movies (and thousands sit unmonitored with nothing on disk); I open Ledger → Movies, filter to `removed` / `unmonitored + no file` (by vote tier), select a batch, **Add & search in Radarr**, and also **Export** the list as a backup. | AC-11, AC-12, AC-13 |
+| US-10 | As a household admin, I open **Trash → Movies**, see what Maintainerr will delete and when + how much space it frees, **Save** a title I want to keep (it can never be watched off), **Expedite** a batch I'm done with, and give a trusted user a role that can Save but not Expedite. Anything watched on any of my three Plex servers recently is already protected. | AC-14, AC-15, AC-16 |
 
 ## Acceptance criteria
 
@@ -206,6 +230,9 @@ rebuilding a lost *arr instance.
 | AC-11 | A bulk Add-&-search over N filtered Ledger items adds exactly those absent from the live *arr (monitored, stored profile/root/tags), sets monitored on those present-but-unmonitored, skips those already present + monitored, triggers a search per acted item, and reports per-item added/monitored/skipped/failed. A searched run over 1000 items is refused before any *arr write. |
 | AC-12 | Ledger export produces a deterministic JSONL file listing exactly the filtered set with the external ids needed to re-import into the target *arr. |
 | AC-13 | A role set to **Disabled** for Ledger never sees the nav entry or route; **Read-Only** sees browse + export but no Add-&-search control, and the mutation is server-refused (FORBIDDEN) even if called directly. |
+| AC-14 | Trash → Movies/TV lists exactly Maintainerr's pending items for that kind, each with its scheduled-delete date + space freed, plus a total-space figure; an item known to the ledger shows its poster/title/facets, an unknown one still lists with Maintainerr's fields. |
+| AC-15 | Save adds the item to Maintainerr's exclusion list and records a `trash_excluded` event (idempotent); Expedite is refused with a safety error when the Maintainerr audit is not SAFE, and a recently-watched/requested item is auto-protected rather than deleted; music is never a Trash target. |
+| AC-16 | Trash section **Disabled** ⇒ no nav/route (redirect); **Read-Only** browses but each write action is server-refused unless its per-action grant is present (FORBIDDEN even if called directly); `edit_rules` additionally requires section **Edit**. |
 
 ## Phasing
 
@@ -223,5 +250,5 @@ rebuilding a lost *arr instance.
 | Q-01 | Which email does Authentik emit for the owner (manofoz@ vs t.haynes43@)? | Mitigated: allowlist contains both; confirm on first real login. |
 | Q-02 | Seerr cutover timing (owner migrating in parallel) — when does the tile URL flip? | Owner action; catalog edit when ready. |
 | Q-03 | Do plexops/k8plex share library names with legacy Plex (affects per-server allowed-set UX)? | **Resolved by ADR-017 / DESIGN-007**: names differ (HAYNESOPS mirrors Movies/TV as `HOps Movies`/`HOps TV Shows` vs `HNet *`); library identity is `(server, section_key)`, never name — the `plex_libraries` UNIQUE(`server_id`,`section_key`) models the mirror explicitly (verified live 2026-07-06). |
-| Q-04 | Maintainerr deployment timing (for deletion attribution enrichment). | Follow-on when it lands in k8s. |
+| Q-04 | Maintainerr deployment timing (for deletion attribution enrichment). | **Resolved by ADR-023 / DESIGN-010 (PLAN-006):** Maintainerr is deployed (3.17.0, `media` ns); the **Trash** section integrates it as the deletion system of record (read-through pending + a confined write surface: Save/Expedite/Rules), gated by Section Permission (VIEW) + Trash Action Grants (writes), behind a preflight safety audit. Backend vertical shipped 2026-07-06; the Trash UX is a follow-up. |
 | Q-05 | Per-user fix rate limits — fixed default or admin-configurable? | Default constant in Phase 2; revisit (R-47). |

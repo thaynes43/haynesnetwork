@@ -45,6 +45,29 @@ export class ArrTimeoutError extends ArrError {
   }
 }
 
+/**
+ * ADR-023 (P1a): a Maintainerr WRITE returned an OK HTTP status (201/200) but its `ReturnStatus`/
+ * `BasicResponseDto` body reported a LOGICAL failure (`code === 0` — e.g. `setExclusion` →
+ * `{ code:0, message:'Failed - no metadata' }`). Without this, HTTP-status-only `requestVoid` reads
+ * `code:0` as success → phantom exclusions/guardian protection + phantom `trash_excluded` events.
+ * Reported like a non-2xx so the domain fails CLOSED (guardMaintainerrCall maps every ArrError →
+ * MaintainerrUpstreamError → BAD_GATEWAY). The upstream `message`/`result` (a fixed status string,
+ * never a secret — keys travel only in the x-api-key header) is included for diagnostics.
+ */
+export class MaintainerrWriteFailedError extends ArrError {
+  readonly code = 'MAINTAINERR_WRITE_FAILED' as const;
+  constructor(
+    readonly method: string,
+    readonly url: string,
+    readonly upstreamMessage?: string,
+  ) {
+    super(
+      `${method} ${url} → Maintainerr reported a logical failure (code 0)` +
+        `${upstreamMessage ? ` — ${upstreamMessage}` : ''}`,
+    );
+  }
+}
+
 /** A 2xx response body failed its zod schema — upstream schema drift (BC-03 ACL). */
 export class ArrParseError extends ArrError {
   readonly code = 'ARR_PARSE_ERROR' as const;

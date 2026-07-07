@@ -20,7 +20,9 @@ export default async function AdminLayout({ children }: { children: ReactNode })
         <Link href="/admin/catalog">Catalog</Link>
         <Link href="/admin/roles">Roles</Link>
         <Link href="/admin/fixes">Fixes</Link>
-        <Link href="/admin/restore">Restore</Link>
+        {/* ADR-023 / DESIGN-010 D-08 — the Restore nav item is retired: its capability re-homes
+            into the Trash section's Recently-Deleted (and PLAN-005's Ledger). /admin/restore now
+            redirects to /trash; restoreRouter stays callable. */}
       </nav>
       {children}
     </div>

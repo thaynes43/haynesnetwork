@@ -11,6 +11,7 @@ import { ConfirmButton } from '@hnet/ui';
 import { Modal } from '@/components/modal';
 import { trpc } from '@/lib/trpc-client';
 import { describeMutationError } from '@/lib/app-error';
+import { TRASH_ACTION_LABELS, TRASH_ACTION_NAMES, type TrashActionName } from '@/lib/trash';
 
 interface RoleForm {
   name: string;
@@ -22,6 +23,8 @@ interface RoleForm {
   // ADR-024 / DESIGN-007 D-13 — the servers this role all-grants (role_plex_server_all_grants):
   // every library on the server, including ones added later.
   allServerIds: string[];
+  // ADR-023 C-03 — the fine-grained Trash action grants (a row per action; replace-set writer).
+  trashActions: TrashActionName[];
 }
 
 const EMPTY_FORM: RoleForm = {
@@ -31,6 +34,7 @@ const EMPTY_FORM: RoleForm = {
   grantsAll: false,
   libraryIds: [],
   allServerIds: [],
+  trashActions: [],
 };
 
 export default function AdminRolesPage() {
@@ -97,13 +101,21 @@ export default function AdminRolesPage() {
     onSuccess: () => setError(null),
     onSettled: invalidate,
   });
+  // ADR-023 C-03 / DESIGN-010 D-09 — a role's fine-grained Trash action grants (replace-set;
+  // audited 'update_trash_actions' in-tx). Edited inside the inline row editor; errors surface
+  // on the editor banner (setTrash rides the row submit, like setLibs).
+  const setTrash = trpc.roles.setTrashActions.useMutation({
+    onError: (err: unknown) => setError(describeMutationError(err)),
+    onSettled: invalidate,
+  });
   const busy =
     create.isPending ||
     update.isPending ||
     del.isPending ||
     setLibs.isPending ||
     refresh.isPending ||
-    setSection.isPending;
+    setSection.isPending ||
+    setTrash.isPending;
 
   const roleRows = roles.data ?? [];
   const entries = catalog.data ?? [];
@@ -135,6 +147,9 @@ export default function AdminRolesPage() {
           libraryIds: addForm.libraryIds,
           allServerIds: addForm.allServerIds,
         });
+      // Trash action grants — only when any were checked (a fresh role has no rows).
+      if (addForm.trashActions.length > 0)
+        await setTrash.mutateAsync({ roleId, actions: addForm.trashActions });
     } catch {
       /* onError handlers set the banners */
     }
@@ -150,6 +165,7 @@ export default function AdminRolesPage() {
       grantsAll: role.grantsAll,
       libraryIds: [...(grantsByRole[role.id] ?? [])],
       allServerIds: [...(allGrantsByRole[role.id] ?? [])],
+      trashActions: [...role.trashActions] as TrashActionName[],
     });
     setEditError(null);
   }
@@ -172,6 +188,12 @@ export default function AdminRolesPage() {
           libraryIds: editForm.libraryIds,
           allServerIds: editForm.allServerIds,
         });
+      // Replace-set Trash action grants (skip only when unchanged — the writer is idempotent
+      // but a no-op write still audits, so avoid noise).
+      const before = [...role.trashActions].sort().join(',');
+      const after = [...editForm.trashActions].sort().join(',');
+      if (before !== after)
+        await setTrash.mutateAsync({ roleId: role.id, actions: editForm.trashActions });
     } catch {
       /* onError handlers set the banners */
     }
@@ -242,6 +264,41 @@ export default function AdminRolesPage() {
           ))}
         </ul>
       )}
+    </fieldset>
+  );
+
+  // ADR-023 C-03 / DESIGN-010 D-09 — the per-action Trash grant grid. Every action is opt-in
+  // (section Edit implies NOTHING extra); viewing rides the coarse Trash level in the table
+  // column. Destructive actions say so in their labels.
+  const trashChecklist = (form: RoleForm, apply: (next: (f: RoleForm) => RoleForm) => void) => (
+    <fieldset className="field" data-testid="trash-actions-grid">
+      <legend>Trash actions this role may use</legend>
+      <p className="field-hint">
+        Actions apply only while the role’s Trash access is Read-only or Edit. Every action is
+        opt-in — the access level alone never grants any.
+      </p>
+      <ul className="check-list">
+        {TRASH_ACTION_NAMES.map((action) => (
+          <li key={action}>
+            <label className="check-row">
+              <input
+                type="checkbox"
+                data-testid={`trash-action-${action}`}
+                checked={form.trashActions.includes(action)}
+                onChange={(e) =>
+                  apply((f) => ({
+                    ...f,
+                    trashActions: e.target.checked
+                      ? [...f.trashActions, action]
+                      : f.trashActions.filter((a) => a !== action),
+                  }))
+                }
+              />
+              <span>{TRASH_ACTION_LABELS[action]}</span>
+            </label>
+          </li>
+        ))}
+      </ul>
     </fieldset>
   );
 
@@ -364,6 +421,7 @@ export default function AdminRolesPage() {
             <th>Apps</th>
             <th>Members</th>
             <th>Ledger</th>
+            <th>Trash</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -372,7 +430,7 @@ export default function AdminRolesPage() {
             if (editingId === role.id) {
               return (
                 <tr key={role.id} className="row-edit">
-                  <td colSpan={5}>
+                  <td colSpan={6}>
                     <form className="admin-form" onSubmit={(e) => submitEdit(role, e)}>
                       <label className="field">
                         <span>
@@ -405,6 +463,7 @@ export default function AdminRolesPage() {
                       </label>
                       {appChecklist(editForm, setEditForm)}
                       {libraryChecklist(editForm, setEditForm)}
+                      {trashChecklist(editForm, setEditForm)}
                       {editError ? (
                         <p className="alert" role="alert">
                           {editError}
@@ -481,6 +540,53 @@ export default function AdminRolesPage() {
                     </select>
                   )}
                 </td>
+                {/* ADR-023 / DESIGN-010 D-09 — the Trash access level + a grant summary. The
+                    per-action grid itself lives in the row editor (Edit); the summary keeps the
+                    row constant-width (ADR-015 — changing grants recounts, never reflows). */}
+                <td data-label="Trash">
+                  {role.isAdmin ? (
+                    <span
+                      className="muted"
+                      title="The Admin role implies Edit on every section and every Trash action"
+                    >
+                      Edit · all actions
+                    </span>
+                  ) : (
+                    <span className="trash-cell">
+                      <select
+                        className="section-select"
+                        aria-label={`Trash access for ${role.name}`}
+                        value={role.sectionPermissions.trash}
+                        disabled={busy || editingElsewhere}
+                        onChange={(e) =>
+                          setSection.mutate({
+                            roleId: role.id,
+                            sectionId: 'trash',
+                            level: e.target.value as 'edit' | 'read_only' | 'disabled',
+                          })
+                        }
+                      >
+                        <option value="edit">Edit</option>
+                        <option value="read_only">Read-only</option>
+                        <option value="disabled">Disabled</option>
+                      </select>
+                      <span
+                        className="muted trash-cell__actions"
+                        data-testid={`trash-actions-summary-${role.name}`}
+                        title={
+                          role.trashActions.length > 0
+                            ? role.trashActions
+                                .map((a) => TRASH_ACTION_LABELS[a as TrashActionName] ?? a)
+                                .join(' · ')
+                            : 'No Trash actions granted — this role can only browse'
+                        }
+                      >
+                        {role.trashActions.length}{' '}
+                        {role.trashActions.length === 1 ? 'action' : 'actions'}
+                      </span>
+                    </span>
+                  )}
+                </td>
                 <td data-label="Actions">
                   {role.isAdmin ? (
                     <span className="muted">locked</span>
@@ -552,6 +658,7 @@ export default function AdminRolesPage() {
           </label>
           {appChecklist(addForm, setAddForm)}
           {libraryChecklist(addForm, setAddForm)}
+          {trashChecklist(addForm, setAddForm)}
           <div className="form-actions">
             <button
               type="submit"
