@@ -1,9 +1,14 @@
 'use client';
 
-// DESIGN-009 D-08 — the /ledger section UI: Movies/TV/Music sub-tabs (same tablist + ?tab=
-// contract as /library, keyed remount) over a SPREADSHEET table bound to ledgerAdmin.browse —
-// everything that ever was on the server (tombstones forced in, D-04). The toolbar reuses the
-// /library chip machinery (same engine, same URL params) plus the two Ledger-only dims:
+// DESIGN-009 D-08 — the /ledger section UI: Movies/TV/Music/Runs sub-tabs (same tablist +
+// ?tab= contract as /library, keyed remount). The three media tabs are each a SPREADSHEET
+// table bound to ledgerAdmin.browse — everything that ever was on the server (tombstones
+// forced in, D-04); the RUNS tab is the Monitor-&-search run history (owner UX 2026-07-07:
+// runs used to be a card BELOW each spreadsheet you scrolled the whole ledger to reach — now
+// they're a destination with an All/Movies/TV/Music media filter that rides ledgerAdmin.runs
+// server-side, and each run expands in place to its per-item report — a sanctioned ADR-015
+// expansion). The media-tab toolbar reuses the /library chip machinery (same engine, same URL
+// params) plus the two Ledger-only dims:
 //   ?mon=yes|no       the monitored filter        (browse `monitored`)
 //   ?file=none|some|all  the completeness facet   (browse `hasFile`; absent = any)
 // Sortable headers ride the shared nextSort/arrowFor cycle for the D-09 wire-sort fields the
@@ -56,11 +61,21 @@ import { Modal } from '@/components/modal';
 import { CHIP_LABELS, RatingChip } from '@/components/filter-chips';
 import { describeMutationError } from '@/lib/app-error';
 
-const LEDGER_TABS = [
+const MEDIA_TABS = [
   { key: 'movies', label: 'Movies', arrKind: 'radarr' },
   { key: 'tv', label: 'TV', arrKind: 'sonarr' },
   { key: 'music', label: 'Music', arrKind: 'lidarr' },
 ] as const satisfies ReadonlyArray<{ key: string; label: string; arrKind: ArrKindName }>;
+
+/** The full tablist: the three media spreadsheets + the run-history tab (owner UX
+ *  2026-07-07 — Recent runs used to sit BELOW each sheet; now it's a destination). */
+const LEDGER_TABS = [
+  ...MEDIA_TABS.map(({ key, label }) => ({ key, label })),
+  {
+    key: 'runs',
+    label: 'Runs',
+  },
+] as const satisfies ReadonlyArray<{ key: string; label: string }>;
 
 type TabKey = (typeof LEDGER_TABS)[number]['key'];
 
@@ -70,6 +85,13 @@ const ARR_TARGET_LABELS: Record<ArrKindName, string> = {
   radarr: 'Radarr',
   sonarr: 'Sonarr',
   lidarr: 'Lidarr',
+};
+
+/** The user-facing media label per *arr — what the Runs tab rows and filter speak. */
+const ARR_MEDIA_LABELS: Record<ArrKindName, string> = {
+  radarr: 'Movies',
+  sonarr: 'TV',
+  lidarr: 'Music',
 };
 
 // Shared facet chips — the exact /library set (DESIGN-008 D-11 param contract).
@@ -129,7 +151,7 @@ function LedgerContent({ canEdit }: { canEdit: boolean }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const active = resolveTab(searchParams.get('tab'));
-  const activeTab = LEDGER_TABS.find((t) => t.key === active) ?? LEDGER_TABS[0];
+  const activeMedia = MEDIA_TABS.find((t) => t.key === active);
 
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
@@ -182,15 +204,17 @@ function LedgerContent({ canEdit }: { canEdit: boolean }) {
 
       <div id="ledger-panel" role="tabpanel" aria-labelledby={`ledgertab-${active}`}>
         {/* Keyed by tab: switching REMOUNTS with fresh state (selection included). */}
-        <LedgerBrowser
-          key={activeTab.key}
-          arrKind={activeTab.arrKind}
-          label={activeTab.label}
-          canEdit={canEdit}
-        />
+        {activeMedia !== undefined ? (
+          <LedgerBrowser
+            key={activeMedia.key}
+            arrKind={activeMedia.arrKind}
+            label={activeMedia.label}
+            canEdit={canEdit}
+          />
+        ) : (
+          <LedgerRunsTab key="runs" />
+        )}
       </div>
-
-      <LedgerRuns />
     </>
   );
 }
@@ -974,42 +998,128 @@ function RunReport({
   );
 }
 
-/** The Recent-runs area (D-08): every reason='ledger_add' run, newest first, with the report
- *  reopenable in the same Modal language. Runs are synchronous end-to-end, so a plain
- *  fetch-on-load is honest — no polling. */
-function LedgerRuns() {
-  const runs = trpc.ledgerAdmin.runs.useQuery();
-  const [openRunId, setOpenRunId] = useState<string | null>(null);
+/** The Runs tab's media-type filter row: All plus one entry per media tab. `key` is the
+ *  ?kind= URL token; `arrKind` (absent on All) is passed to ledgerAdmin.runs server-side so
+ *  the newest-first window and the filter always agree. */
+interface RunFilter {
+  key: string;
+  label: string;
+  /** Absent on All — the query then narrows nothing. */
+  arrKind?: ArrKindName;
+}
+const RUN_FILTERS: readonly RunFilter[] = [
+  { key: 'all', label: 'All' },
+  ...MEDIA_TABS.map(({ key, label, arrKind }) => ({ key, label, arrKind })),
+];
+
+/** The Runs tab (owner UX 2026-07-07): the FULL run history as its own destination — every
+ *  reason='ledger_add' run, newest first, each row expanding IN PLACE to the same per-item
+ *  report the post-submit Modal shows (a sanctioned ADR-015 expansion, like the catalog
+ *  inline editor). Filter state rides the URL (?kind=), like every other Ledger dim; a tab
+ *  switch keeps only ?tab, so filters never leak between tabs. Read-Only sees this tab too —
+ *  runs are a read surface (the CREATING action stays edit-gated on the media tabs). Runs are
+ *  synchronous end-to-end, so fetch-on-load is honest — no polling. */
+function LedgerRunsTab() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const kindRaw = searchParams.get('kind');
+  const filter = RUN_FILTERS.find((f) => f.key === kindRaw) ?? RUN_FILTERS[0]!;
+  const setKind = (key: string) => {
+    const params = new URLSearchParams(window.location.search);
+    if (key === 'all') params.delete('kind');
+    else params.set('kind', key);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  };
+
+  const runs = trpc.ledgerAdmin.runs.useQuery(
+    filter.arrKind === undefined ? {} : { arrKind: filter.arrKind },
+    // A filter switch keeps the previous rows rendered (dimmed) while the refetch resolves —
+    // the list swaps in place, it never collapses (ADR-015).
+    { placeholderData: (prev) => prev },
+  );
+  const refreshing = runs.isPlaceholderData && runs.isFetching;
+
+  // Which runs are expanded to their report (id-keyed — filter switches keep them open).
+  const [openRunIds, setOpenRunIds] = useState<ReadonlySet<string>>(() => new Set<string>());
+  const toggleRun = (id: string) => {
+    setOpenRunIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   return (
-    <section className="card admin-section" data-testid="ledger-runs">
-      <h2>Recent runs</h2>
-      {runs.isLoading ? (
-        <p className="muted">Loading…</p>
-      ) : runs.error ? (
-        <p className="alert" role="alert">
-          Failed to load runs: {runs.error.message}
-        </p>
-      ) : (runs.data ?? []).length === 0 ? (
-        <p className="muted">No Monitor-&amp;-search runs yet.</p>
-      ) : (
-        <table className="admin-table">
-          <thead>
-            <tr>
-              <th>Started</th>
-              <th>Target</th>
-              <th>Status</th>
-              <th>Items</th>
-              <th>By</th>
-              <th>Report</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(runs.data ?? []).map((run) => (
-              <tr key={run.id}>
-                <td data-label="Started">{formatWhen(run.startedAt)}</td>
-                <td data-label="Target">{ARR_TARGET_LABELS[run.arrKind as ArrKindName]}</td>
-                <td data-label="Status">
+    <>
+      {/* The media-type filter: a single-select pill row (aria-pressed radios). Constant
+          label widths — switching recolors the pills and dims the list, nothing moves. */}
+      <div className="ledger-runsbar" role="group" aria-label="Filter runs by media type">
+        {RUN_FILTERS.map((f) => (
+          <button
+            key={f.key}
+            type="button"
+            className={`ledger-runfilter${filter.key === f.key ? ' is-active' : ''}`}
+            aria-pressed={filter.key === f.key}
+            onClick={() => setKind(f.key)}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      <div
+        className={`ledger-runlist${refreshing ? ' is-refreshing' : ''}`}
+        data-testid="ledger-runs"
+        aria-busy={refreshing}
+      >
+        {runs.isLoading ? (
+          // Skeleton cards hold the list geometry — never a collapsing spinner (ADR-015).
+          <div
+            className="ledger-runlist__skeleton"
+            data-testid="ledger-runs-skeleton"
+            aria-hidden="true"
+          >
+            {Array.from({ length: 3 }, (_, i) => (
+              <div key={i} className="ledger-runcard">
+                <div className="ledger-runcard__head">
+                  <span className="skeleton-line" />
+                  <span className="skeleton-line skeleton-line--short" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : runs.error ? (
+          <p className="alert" role="alert">
+            Failed to load runs: {runs.error.message}
+          </p>
+        ) : (runs.data ?? []).length === 0 ? (
+          <p className="muted ledger-runsempty" data-testid="ledger-runs-empty">
+            {filter.arrKind === undefined
+              ? 'No runs yet — a bulk Monitor & search from a media tab creates a run.'
+              : `No ${filter.label} runs yet — a bulk Monitor & search from the ${filter.label} tab creates one.`}
+          </p>
+        ) : (
+          (runs.data ?? []).map((run) => {
+            const open = openRunIds.has(run.id);
+            const s = run.summary;
+            return (
+              <div key={run.id} className="ledger-runcard">
+                <button
+                  type="button"
+                  className="ledger-runcard__head"
+                  aria-expanded={open}
+                  onClick={() => toggleRun(run.id)}
+                >
+                  <span className="ledger-runcard__chevron" aria-hidden="true">
+                    ▸
+                  </span>
+                  <span className="ledger-runcard__when">{formatWhen(run.startedAt)}</span>
+                  <span className="badge badge--muted ledger-runcard__kind">
+                    {ARR_MEDIA_LABELS[run.arrKind as ArrKindName]}
+                  </span>
                   <span
                     className={`badge badge--${
                       run.status === 'completed'
@@ -1023,27 +1133,35 @@ function LedgerRuns() {
                   >
                     {RUN_STATUS_LABELS[run.status] ?? run.status}
                   </span>
-                </td>
-                <td data-label="Items">
-                  {run.successCount}/{run.itemCount}
-                </td>
-                <td data-label="By">{run.initiatedByDisplayName ?? '—'}</td>
-                <td data-label="Report">
-                  <button type="button" className="btn sm" onClick={() => setOpenRunId(run.id)}>
-                    View report
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      <Modal open={openRunId !== null} title="Run report" onClose={() => setOpenRunId(null)}>
-        {openRunId !== null ? (
-          <RunReport runId={openRunId} onClose={() => setOpenRunId(null)} />
-        ) : null}
-      </Modal>
-    </section>
+                  {/* The report's count language, toned only when non-zero (a red "0 failed"
+                      reads as an alarm it isn't). */}
+                  <span className="ledger-runcard__counts">
+                    <span className={`badge badge--${s.added > 0 ? 'ok' : 'muted'}`}>
+                      {s.added} added
+                    </span>{' '}
+                    <span className={`badge badge--${s.monitored > 0 ? 'info' : 'muted'}`}>
+                      {s.monitored} monitored
+                    </span>{' '}
+                    <span className="badge badge--muted">{s.skipped} skipped</span>{' '}
+                    <span className={`badge badge--${s.failed > 0 ? 'danger' : 'muted'}`}>
+                      {s.failed} failed
+                    </span>
+                  </span>
+                  <span className="ledger-runcard__by muted">
+                    {run.initiatedByDisplayName !== null ? `by ${run.initiatedByDisplayName}` : '—'}
+                  </span>
+                </button>
+                {open ? (
+                  <div className="ledger-runcard__report">
+                    <RunReport runId={run.id} />
+                  </div>
+                ) : null}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </>
   );
 }
 
