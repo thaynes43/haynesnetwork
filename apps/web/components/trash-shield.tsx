@@ -43,8 +43,30 @@ export function ShieldGlyph({ filled }: { filled: boolean }) {
   );
 }
 
+/** The protected-elsewhere shield-check — outline shield with an inner check, distinct from the
+ *  FILLED saved-by-you shield: same 16×16 box + stroke weight as its siblings. Marks pending-wall
+ *  tiles protected by the *arr `dnd` tag or a live exclusion made outside this session (inert). */
+export function ShieldCheckGlyph() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3Z" />
+      <path d="m9 12 2 2 4-4" />
+    </svg>
+  );
+}
+
 /** The Expedite trash-can glyph — icon twin of ShieldGlyph, same 16×16 box + stroke weight so the
- *  two per-row actions read as one equal-weight pair (ADR-015 — constant footprint). */
+ *  two per-tile actions read as one equal-weight pair (ADR-015 — constant footprint). */
 export function TrashCanGlyph() {
   return (
     <svg
@@ -66,37 +88,9 @@ export function TrashCanGlyph() {
   );
 }
 
-export interface ExpediteButtonProps {
-  itemTitle: string;
-  /** Maintainerr is in a SAFE state (the destructive gate); when false the button is disabled. */
-  safe: boolean;
-  onClick: () => void;
-}
-
-/**
- * DESIGN-010 / ADR-014 — the per-row Expedite affordance: an icon-only DANGER-toned trash-can button
- * sized/treated exactly like the protective ShieldButton so the row's two actions are equal weight
- * (the fix for the "big red pill dwarfs the shield" nit). Clicking it opens the Expedite confirm
- * Modal (ADR-014 — the icon only TRIGGERS the two-step/Modal confirm; it never one-click deletes).
- */
-export function ExpediteButton({ itemTitle, safe, onClick }: ExpediteButtonProps) {
-  const label = safe
-    ? `Expedite the deletion of ${itemTitle}`
-    : `Expedite ${itemTitle} — disabled while Maintainerr is not in a safe state (see the banner)`;
-  return (
-    <button
-      type="button"
-      className="expedite-btn"
-      data-testid="trash-expedite-item"
-      aria-label={label}
-      title={label}
-      disabled={!safe}
-      onClick={onClick}
-    >
-      <TrashCanGlyph />
-    </button>
-  );
-}
+// The old per-row ExpediteButton retired with the pending tables (2026-07-07) — the poster
+// wall's fixed-corner trash-can (trash-client.tsx) is the per-item Expedite affordance now,
+// still only ever TRIGGERING the ADR-014 confirm Modal.
 
 export interface ShieldButtonProps {
   /** Is the item currently protected (excluded / dnd-tagged / saved this session)? */

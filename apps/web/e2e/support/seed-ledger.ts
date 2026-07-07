@@ -68,7 +68,7 @@ async function main(): Promise<void> {
       // A SECOND movie with disjoint metadata (genres/rating/requester) so the D-11 grid
       // journeys can prove a filter/sort actually CHANGES the result set (library-grid.spec).
       // DESIGN-010 D-09 — it carries the Maintainerr-managed protective 'dnd' tag, so the Trash
-      // pending table has a tag-PROTECTED row (the stub Maintainerr lists it as pending).
+      // pending wall has a tag-PROTECTED tile (the stub Maintainerr lists it as pending).
       {
         arrItemId: 602,
         tmdbId: 880002,
@@ -182,7 +182,7 @@ async function main(): Promise<void> {
               posterSource: 'arr' as const,
               posterRef: '/MediaCover/601/poster.jpg?lastWrite=1',
               // DESIGN-010 D-09 — watched 3 days ago (inside the 30-day guardian window), so the
-              // Trash pending table has a RECENTLY-WATCHED row the expedite guardian protects.
+              // Trash pending wall has a RECENTLY-WATCHED tile the expedite guardian protects.
               playCount: 2,
               lastViewedAt: new Date(Date.now() - 3 * 86_400_000),
               sources: { arr: true, tautulli: true },

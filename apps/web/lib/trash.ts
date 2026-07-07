@@ -119,6 +119,40 @@ export function expediteErrorAction(
   return { invalidate: true, stale: false, message };
 }
 
+/**
+ * The pending WALL's shield-corner language (2026-07-07 — the Movies/TV pending tables became
+ * poster walls riding the Batches wall grammar; DESIGN-010 D-09 amendment). One corner glyph
+ * per tile, derived from the durable server signals + the session-local optimistic override:
+ * - `check`   — protected by the *arr `dnd` tag or a live Maintainerr exclusion made OUTSIDE
+ *               this session. Inert: the wall never un-saves someone else's protection (the
+ *               /library/[id] guard panel keeps that power for remove_exclude holders).
+ * - `shield`  — saved by YOU this session (the optimistic echo of your own save). Tap ⇒ un-save.
+ * - `outline` — unprotected. Tap ⇒ save (the existing dnd-tag exclusion flow).
+ */
+export type PendingShieldGlyph = 'check' | 'shield' | 'outline';
+
+export function pendingShieldGlyph(
+  item: { protectedByTag: boolean; protectedByExclusion: boolean },
+  override: 'saved' | 'unsaved' | undefined,
+): PendingShieldGlyph {
+  if (override === 'saved') return 'shield';
+  if (override !== 'unsaved' && (item.protectedByTag || item.protectedByExclusion)) return 'check';
+  return 'outline';
+}
+
+/** May THIS shield corner be tapped? Mirrors the wire gates the caller resolved (canSave /
+ *  canUnsave already fold in reachability). `check` is always inert — protection made outside
+ *  this session reads as state, never as a button. */
+export function pendingShieldTappable(
+  glyph: PendingShieldGlyph,
+  canSave: boolean,
+  canUnsave: boolean,
+): boolean {
+  if (glyph === 'outline') return canSave;
+  if (glyph === 'shield') return canUnsave;
+  return false;
+}
+
 /** Whole days until an ISO instant (ceil): 0 ⇒ today, negative ⇒ overdue. Null-safe. */
 export function daysUntil(iso: string | null, now: Date = new Date()): number | null {
   if (iso === null) return null;

@@ -1,7 +1,7 @@
 // ADR-025 / DESIGN-011 D-07 — pure client helpers for the Trash curation Batches area (the
 // poster wall). The glyph language, tap-permission rules, and running counts live here so the
 // safety-critical parts of the wall are unit-testable exactly like lib/trash.ts is for the
-// pending tables. The server verdict is always authoritative — these mirror the wire contract
+// pending walls. The server verdict is always authoritative — these mirror the wire contract
 // (trash.batches.*), never re-implement it.
 
 /** Mirrors @hnet/db TRASH_BATCH_STATES (keep in lockstep — the client can't import server pkgs). */

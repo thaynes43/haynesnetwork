@@ -1,7 +1,8 @@
 # DESIGN-010: Trash section — Maintainerr client, per-action grants, safety gate, Activity feed
 
-- **Status:** Draft (backend vertical shipped; **UX shipped 2026-07-06** — D-09 records the as-built)
-- **Last updated:** 2026-07-06
+- **Status:** Draft (backend vertical shipped; **UX shipped 2026-07-06** — D-09 records the
+  as-built; **pending tables → poster walls 2026-07-07**, see the D-09 amendment)
+- **Last updated:** 2026-07-07
 - **Satisfies:** PRD-001 **R-79..R-87** + **US-10** / **AC-14..AC-16**; governed by **ADR-023**
   (Trash/Maintainerr + per-action grants + safety gate). Reuses **ADR-021** (section levels),
   **ADR-008/011** (write-back confinement), **DESIGN-005 D-16** (Restore), **DESIGN-008/009 D-09**
@@ -231,6 +232,24 @@ session's `sectionPermissions.trash ≠ disabled` (no-row default is _disabled_ 
   **Requested** / **Not in ledger** warn), Requested-by, Collection, Actions. Default sort:
   soonest-deleting first. A persistent **footer** ("Reclaiming N across M items", filter-aware,
   "· filtered from K pending" when narrowed) carries the **Expedite all…** button.
+  > **Amended 2026-07-07 (owner: "the tables are unusable on my phone — the Batches wall UX is
+  > perfect for all devices"):** the Movies/TV pending views are now **poster walls** riding the
+  > DESIGN-011 D-07 wall grammar (the shared `.bwall` grid — fixed 2:3 boxes, 3-up at 390px);
+  > the tables are retired with **no view toggle**. Same wire calls, same actions, re-skinned:
+  > each tile carries **two fixed reserved corners** — the **shield** (top-right: `check` =
+  > protected by the dnd tag or an exclusion made outside this session, **inert**; filled
+  > `shield` = saved by YOU this session, tap ⇒ un-save; `outline` = tap ⇒ save — the flip is
+  > optimistic, reconciles with the response, reverts on error; one flip in flight per tile) and
+  > the **trash-can** (top-left: opens the unchanged ADR-014 Expedite Modal; disabled when
+  > unsafe). **Tapping the poster opens `/library/[id]`** (ledger-joined items only — history/fix
+  > live there; the bulletin-chip pattern); the old Deletes/Status/Requested-by/Collection
+  > columns move into the tile **tooltip** (multi-line `title` attr). Caption: title (year);
+  > meta: size · ★rating (fixed-height single lines). The reclaim bar moved **above** the wall
+  > (sticky, constant-height, still carrying Expedite all…), a `/library`-style **sort bar**
+  > replaces the table headers (same `?sort` tokens, soonest-deleting default), and a
+  > fixed-height error slot sits between them (ADR-015). Un-saving protection you didn't make
+  > stays possible via the `/library/[id]` guard panel, not the wall. The glyph rules are
+  > unit-tested (`apps/web/lib/trash.ts pendingShieldGlyph`/`pendingShieldTappable`).
 - **Shield (Save/whitelist, R-83):** a plain accent toggle (protective + reversible — ADR-014's
   two-step is reserved for destructive), constant footprint both states (ADR-015). The `dnd` tag only
   lands on the next *arr sync, but the pending read now ORs the LIVE Maintainerr exclusion set into
@@ -276,12 +295,14 @@ session's `sectionPermissions.trash ≠ disabled` (no-row default is _disabled_ 
   the **per-action grid** (6 checkboxes, destructive ones labeled so) lives in the row editor
   and Add-role modal, submitted via `roles.setTrashActions` (replace-set). Admin shows
   "Edit · all actions", locked.
-- **e2e** (`apps/web/e2e/trash.spec.ts` + the stateful stub): pending badges/footer,
-  save→protected→unsave (exclusion calls asserted), expedite-all partition + report with the
-  **`/collections/handle` ABSENT** assertion (C-07a), the mid-flight-unsafe refusal, the
-  banner-warn + disabled-destructive state, restore, rules round-trip, activity, the roles
-  grid, save-only role gating (can shield, cannot expedite/restore/edit rules), the library
-  shield (pending movie ⇒ panel; dnd badge; music ⇒ nothing), and the 390px internal-pan fit.
+- **e2e** (`apps/web/e2e/trash.spec.ts` + the stateful stub): pending wall glyphs/tooltips +
+  the reclaim counts bar + sort bar + poster-tap → `/library/[id]` (2026-07-07 amendment),
+  save→saved-shield→unsave (exclusion calls asserted; an outside-session exclusion renders the
+  inert check), expedite-all partition + report with the **`/collections/handle` ABSENT**
+  assertion (C-07a), the mid-flight-unsafe refusal, the banner-warn + disabled-destructive
+  state, restore, rules round-trip, activity, the roles grid, save-only role gating (can
+  shield, cannot expedite/restore/edit rules), the library shield (pending movie ⇒ panel; dnd
+  badge; music ⇒ nothing), and the 390px 3-column wall + viewport fit.
 
 ## Ops / deploy-time checklist (owner)
 

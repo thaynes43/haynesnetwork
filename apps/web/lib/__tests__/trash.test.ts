@@ -8,6 +8,8 @@ import {
   daysUntil,
   expediteErrorAction,
   partitionForExpedite,
+  pendingShieldGlyph,
+  pendingShieldTappable,
   previewGuardian,
   reclaimLabel,
   type GuardianPreviewInput,
@@ -80,6 +82,35 @@ describe('expediteErrorAction (F3 — always re-partition on ANY expedite error)
       message: 'Maintainerr unreachable',
     });
     expect(expediteErrorAction(null, 'Something broke')).toMatchObject({ invalidate: true });
+  });
+});
+
+describe('pendingShieldGlyph / pendingShieldTappable (the pending WALL corner — D-09 amendment)', () => {
+  const cold = { protectedByTag: false, protectedByExclusion: false };
+  it('unprotected ⇒ outline; tappable only with save_exclude', () => {
+    expect(pendingShieldGlyph(cold, undefined)).toBe('outline');
+    expect(pendingShieldTappable('outline', true, false)).toBe(true);
+    expect(pendingShieldTappable('outline', false, true)).toBe(false);
+  });
+  it('a save made THIS session ⇒ the filled shield (yours); un-save needs remove_exclude', () => {
+    expect(pendingShieldGlyph(cold, 'saved')).toBe('shield');
+    expect(pendingShieldTappable('shield', false, true)).toBe(true);
+    expect(pendingShieldTappable('shield', true, false)).toBe(false);
+  });
+  it('your save wins over the server signals (the refetch lands protectedByExclusion)', () => {
+    expect(pendingShieldGlyph({ protectedByTag: false, protectedByExclusion: true }, 'saved')).toBe(
+      'shield',
+    );
+  });
+  it('tag or live-exclusion protection from elsewhere ⇒ the inert check (never tappable)', () => {
+    expect(pendingShieldGlyph({ ...cold, protectedByTag: true }, undefined)).toBe('check');
+    expect(pendingShieldGlyph({ ...cold, protectedByExclusion: true }, undefined)).toBe('check');
+    expect(pendingShieldTappable('check', true, true)).toBe(false);
+  });
+  it('an un-save this session ⇒ back to outline even while the stale protection signal lingers', () => {
+    expect(
+      pendingShieldGlyph({ protectedByTag: false, protectedByExclusion: true }, 'unsaved'),
+    ).toBe('outline');
   });
 });
 
