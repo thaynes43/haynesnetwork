@@ -8,7 +8,7 @@
   `.agents/plans/completed/001-gate-a-pr-cutover.md`).
   `main` is branch-protected: branch → PR → required checks `lint-and-typecheck`, `test`,
   `build` green → squash-merge. `e2e` advisory. Conventional-commit titles drive release-please.
-- **Latest release: v0.15.0 (signed) — PLAN-015 downstream *arr action feedback: live
+- **Latest release: v0.16.1 (signed)** — v0.16.0 + v0.16.1 shipped 6 owner-reported fixes (2026-07-07), all deployed + verified: Bulletin composer dark-mode inputs; Ledger 'Runs' tab (run history out from under the spreadsheet, media-type filter); My Plex now recognizes the server owner (owner logged in as the LOCAL admin@haynesnetwork.com account — sign in VIA PLEX as manofoz@gmail.com for the Plex-linked owner state); Expedite is now an equal-weight trash-can icon; **Trash deletion audit** — Recently Deleted + Activity now record app-expedited deletions with actor+size (the owner's 2 previously-untracked deletions now surface with 'By: Tom Haynes'); cosign-verify retry so release runs don't red-flag on GHCR propagation lag. Prior: **v0.15.0 (signed) — PLAN-015 downstream *arr action feedback: live
   Fix/Force-Search progress (ADR-028 / DESIGN-005 D-20/D-21; glossary T-90..T-93; PRD R-106/R-107;
   NO migration — derived-not-persisted). A read-only, poll-on-demand tRPC progress query
   (`fix.progress` / `fix.searchProgress`) projects derived phases over the *arrs' `/queue` + recent
@@ -68,23 +68,13 @@
   action in Bazarr 1.5.6), rest at `search_triggered`, excluded from `completeFixRequests`;
   Music no longer offers the reason. Migration 0009; `BazarrClient`/`BazarrWriteClient` in
   `@hnet/arr`; `BAZARR_API_KEY` wired via the existing media-stack ExternalSecret.
-- **GO-LIVE READINESS (Fable 5 autonomous run) — ALL BUILDABLE WORK COMPLETE + live-validated +
-  deployed at v0.15.0.** Entry prompt `.agents/KICKOFF.md`; queue in `.agents/plans/`. Shipped and
-  live-validated: **core plans 002–007, 009, 010, 012, 015 + ADR-024** (role-scoped all-libraries
-  Plex self-service) **+ the Ledger UX polish** (task #21; first slice v0.14.1 — Ledger/Library sort
-  affordance + true filtered export count). **Nothing buildable remains on the queue.**
+- **GO-LIVE READINESS (all buildable work done + deployed at v0.16.1; remaining is owner-gated only):** Entry prompt `.agents/KICKOFF.md`; queue in `.agents/plans/`. Shipped and live-validated: **core plans 002–007, 009, 010, 012, 015 + ADR-024** (role-scoped all-libraries Plex self-service) **+ the Ledger UX polish** (task #21; first slice v0.14.1 — Ledger/Library sort affordance + true filtered export count). **Nothing buildable remains on the queue.**
   **REMAINING = OWNER-GATED ONLY (nothing an agent can build unattended):**
-  (a) **011 Authentik branding** — the owner picks from the 3 login mockups + the one-command
-  apply/rollback runbook in `scratchpad/ux-011/` (recommend **option C, "haynesnetwork"**); **MFA
-  hardening is the owner's task** — the MFA validation stage already exists in the auth flow at
-  **order 30** (config + the `mfa-exempt` policy, NOT new wiring).
-  (b) **009 Seerr (Overseerr) + Tautulli notification agents** need pointing at the live receiver
-  (`/api/webhooks/{seerr,tautulli}`; per-source secrets are already live in the cluster; exact
-  payloads in DESIGN-012) — owner config on those two apps.
-  (c) the owner's **app-by-app SSO login verification** (008 precondition).
-  (d) **008 public cutover** — on the owner's go.
-  **BANKED (post-cutover, owner slots):** 013 disk/reclaim metrics (Grafana-embed-vs-native is the
-  owner's call) → 014 rules tuning + space policy.
+  (a) **011 Authentik branding** — the owner picks from the 3 login mockups + the one-command apply/rollback runbook in `scratchpad/ux-011/` (recommend **option C**) **+ owner MFA** (validation stage already at auth order 30).
+  (b) **009 Seerr/Tautulli webhook-agent wiring** — point notification agents at the receiver.
+  (c) **owner app-by-app SSO check** (008 precondition).
+  (d) **008 public cutover** — runbook go-ready at `scratchpad/008-cutover-runbook.md`; the two recon-found technical gates (www cookie/origin split, tunnel rate-limit-IP) are **CLOSED in code via v0.16.0's auth hardening**, needs only the `TRUSTED_ORIGINS` env at cutover.
+  **BANKED (post-cutover):** 013/014.
   **Owner reminders:** the live **Leaving Soon** batch **expires 2026-07-21** (owner's poster pass +
   the Default-role family save grants are still pending); a **welcome MOTD is live** on the dashboard
   for the owner's review.
@@ -130,6 +120,7 @@
 
 ## Current state
 
+- **v0.16.0 + v0.16.1 shipped 6 owner-reported fixes (2026-07-07), all deployed + verified:** Bulletin composer dark-mode inputs; Ledger 'Runs' tab (run history out from under the spreadsheet, media-type filter); My Plex now recognizes the server owner (owner logged in as the LOCAL admin@haynesnetwork.com account — sign in VIA PLEX as manofoz@gmail.com for the Plex-linked owner state); Expedite is now an equal-weight trash-can icon; **Trash deletion audit** — Recently Deleted + Activity now record app-expedited deletions with actor+size (the owner's 2 previously-untracked deletions now surface with 'By: Tom Haynes'); cosign-verify retry so release runs don't red-flag on GHCR propagation lag.
 - **PLAN-015 (downstream *arr action feedback) COMPLETE — shipped v0.15.0, live-validated 6/6 on
   staging** (`.agents/plans/completed/015-arr-action-feedback.md`). ADR-028 / DESIGN-005 D-20/D-21;
   glossary T-90..T-93; PRD R-106/R-107; **no migration** (derived-not-persisted). Fix/Force-Search
