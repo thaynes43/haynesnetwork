@@ -328,20 +328,27 @@ async function proposeForKind(input: {
 
   // 5. Record the WHY: a trash_space_policy ledger event + a space_policy notification (source
   //    'trash'). Attribution records for Bulletin/Activity + the tuning report's graduation join.
-  await recordSpacePolicyProposal({
-    db: input.db,
-    batchId: created.batchId,
-    mediaKind: input.mediaKind,
-    arrayKey: input.arrayKey,
-    arrayLabel: input.arrayLabel,
-    usedPct: input.usedPct,
-    target: input.target,
-    candidateCount: created.itemCount,
-    candidateBytes,
-    gateSkipped: created.gateSkipped,
-    actorId: input.actorId,
-    occurredAt: input.now,
-  });
+  //    Best-effort (intent-first, like the rest of the pipeline): the batch is the durable outcome, so
+  //    a rare attribution-write failure must not abort the run — the proposal still reports 'proposed'.
+  let attributionNote = '';
+  try {
+    await recordSpacePolicyProposal({
+      db: input.db,
+      batchId: created.batchId,
+      mediaKind: input.mediaKind,
+      arrayKey: input.arrayKey,
+      arrayLabel: input.arrayLabel,
+      usedPct: input.usedPct,
+      target: input.target,
+      candidateCount: created.itemCount,
+      candidateBytes,
+      gateSkipped: created.gateSkipped,
+      actorId: input.actorId,
+      occurredAt: input.now,
+    });
+  } catch (err) {
+    attributionNote = ` (attribution write failed: ${err instanceof Error ? err.message : String(err)})`;
+  }
 
   return {
     ...base,
@@ -352,7 +359,8 @@ async function proposeForKind(input: {
     reason:
       `Proposed a ${input.mediaKind} batch of ${created.itemCount} item(s) — ${input.arrayLabel} is ` +
       `${input.usedPct}% used vs a ${input.target}% target` +
-      (created.gateSkipped ? ' (skip-gate ON — straight to Leaving Soon).' : ' (awaiting admin review).'),
+      (created.gateSkipped ? ' (skip-gate ON — straight to Leaving Soon).' : ' (awaiting admin review).') +
+      attributionNote,
   };
 }
 
