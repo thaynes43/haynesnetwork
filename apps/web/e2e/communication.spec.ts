@@ -5,6 +5,7 @@
 // (email→user, tmdb/tvdb→media) is covered by the @hnet/domain + @hnet/api integration tests
 // (embedded PG16). The Feed/Messages UI is a separate Fable UX follow-up.
 import { test, expect } from '@playwright/test';
+import { armAndConfirm, signIn, signOut } from './support/helpers';
 import { readRuntimeEnv } from './support/env';
 import { ADMIN_EMAIL } from './support/stub-oidc';
 
@@ -96,5 +97,108 @@ test.describe('Bulletin webhook receiver (ADR-026 / DESIGN-012)', () => {
     );
     expect(res.status()).toBe(202);
     expect(((await res.json()) as { ok: boolean }).ok).toBe(true);
+  });
+});
+
+// ── the section UI (DESIGN-012 D-08) — nav gating, the Feed browse, the Messages board ────
+
+test.describe('Bulletin section UI (ADR-026 / DESIGN-012 D-08)', () => {
+  test('a member sees the nav entry, the seeded Feed (source-filterable), and a read-only board', async ({
+    page,
+  }) => {
+    // The Default role: bulletin defaults READ_ONLY (C-02) with no message actions.
+    await signIn(page, 'member');
+    await page
+      .getByRole('navigation', { name: 'Primary' })
+      .getByRole('link', { name: 'Bulletin' })
+      .click();
+    await page.waitForURL(/\/bulletin/);
+
+    // Feed (default tab): the seeded notifications render newest-first.
+    const rows = page.getByTestId('feed-row');
+    await expect(rows.filter({ hasText: 'The Fixture (2022)' }).first()).toBeVisible();
+    await expect(rows.filter({ hasText: 'Breaking Prod' }).first()).toBeVisible();
+
+    // Source seg: Seerr-only swaps the result set in place (Tautulli rows gone).
+    await page.getByRole('group', { name: 'Source' }).getByRole('button', { name: 'Seerr' }).click();
+    await expect(rows.filter({ hasText: 'The Fixture (2022)' }).first()).toBeVisible();
+    await expect(rows.filter({ hasText: 'playback.start' })).toHaveCount(0);
+
+    // Messages: readable, but NO composer without the post grant (R-103).
+    await page.getByRole('tab', { name: 'Messages' }).click();
+    await expect(page.getByTestId('composer-absent')).toBeVisible();
+    await expect(page.getByTestId('message-composer')).toHaveCount(0);
+  });
+
+  test('admin: post (with a media link) → persists → edit → two-step hide → invisible to members', async ({
+    page,
+  }) => {
+    await signIn(page, 'admin');
+    await page.goto('/bulletin?tab=messages');
+    const composer = page.getByTestId('message-composer');
+    await expect(composer).toBeVisible();
+
+    // Compose: subject + body + a Media Item link through the picker.
+    await composer.getByLabel('Subject').fill('Buffering again');
+    await composer.getByLabel(/^Message/).fill('The Fixture buffers at 12 minutes, every time.');
+    await page.getByTestId('composer-media-search').fill('Fixture');
+    await page.getByRole('option', { name: /The Fixture/ }).click();
+    await expect(page.getByTestId('composer-media-picked')).toContainText('The Fixture');
+    await page.getByTestId('message-post').click();
+
+    const card = page.getByTestId('message-card').filter({ hasText: 'Buffering again' });
+    await expect(card).toHaveCount(1);
+    await expect(card).toContainText('buffers at 12 minutes');
+    await expect(card.getByRole('link', { name: /The Fixture/ })).toBeVisible();
+
+    // Durable: a full reload still shows it (R-101).
+    await page.reload();
+    await expect(card).toHaveCount(1);
+
+    // Author edit rides the Modal; the card shows the new body + the edited marker.
+    await card.getByTestId('message-edit').click();
+    await page.getByRole('dialog', { name: 'Edit message' }).getByLabel(/^Message/).fill('Fixed after a re-download — resolved.');
+    await page.getByTestId('message-edit-save').click();
+    await expect(card).toContainText('resolved');
+    await expect(card).toContainText('edited');
+
+    // Moderation is the inline two-step ConfirmButton (ADR-014) — content preserved, status Hidden.
+    await armAndConfirm(card.getByTestId('message-hide'));
+    await expect(card).toContainText('Hidden');
+
+    // A member (no moderate grant) can NEVER see the hidden message (R-102/AC-16).
+    await signOut(page);
+    await signIn(page, 'member');
+    await page.goto('/bulletin?tab=messages');
+    await expect(page.getByTestId('message-card').filter({ hasText: 'Buffering again' })).toHaveCount(0);
+
+    // Moderator restore brings it back for everyone (leaves the suite's shared state visible).
+    await signOut(page);
+    await signIn(page, 'admin');
+    await page.goto('/bulletin?tab=messages');
+    const hiddenCard = page.getByTestId('message-card').filter({ hasText: 'Buffering again' });
+    await hiddenCard.getByTestId('message-restore').click();
+    await expect(hiddenCard).not.toContainText('Hidden');
+  });
+
+  test('/admin/roles: the Bulletin access select + per-action grid; seeded roles summarized', async ({
+    page,
+  }) => {
+    await signIn(page, 'admin');
+    await page.goto('/admin/roles');
+    // The seeded Bulletin Poster role: default read_only level + exactly the post grant.
+    await expect(page.getByLabel('Bulletin access for Bulletin Poster')).toHaveValue('read_only');
+    await expect(page.getByTestId('message-actions-summary-Bulletin Poster')).toHaveText('1 action');
+    await expect(page.getByTestId('message-actions-summary-Bulletin Moderator')).toHaveText(
+      '2 actions',
+    );
+    // The row editor carries the per-action grid with the granted boxes checked.
+    await page
+      .getByRole('row', { name: /Bulletin Moderator/ })
+      .getByRole('button', { name: 'Edit' })
+      .click();
+    await expect(page.getByTestId('message-actions-grid')).toBeVisible();
+    await expect(page.getByTestId('message-action-post')).toBeChecked();
+    await expect(page.getByTestId('message-action-moderate')).toBeChecked();
   });
 });

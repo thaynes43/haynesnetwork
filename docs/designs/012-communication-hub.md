@@ -170,6 +170,30 @@ attributedUserName }` + `nextCursor`. NO full filter-engine port backend-side (Q
 **factored out of** `backfillEventAttribution` (`ledger-ingest.ts`) and reused by `recordNotification`
 — never a second attribution path (ADR-008 C-05 unattributed fallback preserved).
 
+### D-08 — The section UI (`/bulletin`)
+
+- **Nav + gate** — a `Bulletin` primary-nav entry renders when the caller's `bulletin` level ≠
+  `disabled` (the no-row default is `read_only`, so it falls OPEN like Ledger); the route is
+  additionally server-gated in `app/(app)/bulletin/page.tsx` (Disabled ⇒ a clean "not available"
+  card, mirroring `/trash`). The page resolves the caller's effective message actions server-side
+  and passes them down — the client only ever renders affordances the server would honor (AC-13).
+- **Tabs** — `Feed` and `Messages` (`?tab=`), the shared `/library`-style tablist.
+- **Feed** — `communication.feed` infinite keyset pages in a table (When · Source · Event · What ·
+  Media · Who); seg filters for source + media-link presence ride the URL (`?src`/`?media`) and
+  swap the result set in place (`placeholderData` dims, never reflows — ADR-015). Long titles/bodies
+  line-clamp inside the What column. Media cells link to `/library/[id]`; unattributed events say so.
+- **Messages** — a composer card (the `post` grant; subject optional, body required, optional Media
+  Item link via a small `ledger.search` popover picker — results overlay, nothing reflows) above the
+  newest-first board. Cards show author/when/edited, the subject/body, the media link, and (to
+  moderators only) the status badge + moderation trail. Author edit and moderator status+note triage
+  are multi-field **Modals**; moderator hide/delete are inline two-step **ConfirmButtons** and
+  restore is a plain protective button (ADR-014; hard rule 9 width reservation via `.confirm-btn`).
+  Without `post` the composer is replaced by a read-only note; without `moderate` no moderation
+  affordances render (and the server never sends hidden/deleted rows).
+- **Admin** — `/admin/roles` gains a Bulletin column (level select + granted-action count summary,
+  the Trash treatment) and a per-action `post`/`moderate` grid in the row editor + Add-role modal,
+  writing through `roles.setSectionPermission` / `roles.setMessageActions`.
+
 ## Deploy / ops
 
 - **Secrets** (three, all in 1Password `HaynesKube` via External Secrets; never committed):

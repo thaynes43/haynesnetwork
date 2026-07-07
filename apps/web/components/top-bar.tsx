@@ -24,7 +24,7 @@ export interface TopBarUser {
   email: string;
   role: {
     isAdmin: boolean;
-    sectionPermissions?: Partial<Record<'ledger' | 'trash', SectionLevel>>;
+    sectionPermissions?: Partial<Record<'ledger' | 'trash' | 'bulletin', SectionLevel>>;
   };
 }
 
@@ -194,6 +194,10 @@ export function TopBar({ user }: { user: TopBarUser }) {
   // ADR-023 / DESIGN-010 D-09 — the Trash entry: the no-row DEFAULT for trash is disabled
   // (ADR-021), so a missing map falls CLOSED; the /trash route is additionally server-gated.
   const showTrash = (user.role.sectionPermissions?.trash ?? 'disabled') !== 'disabled';
+  // ADR-026 / DESIGN-012 D-08 — the Bulletin entry: the no-row DEFAULT for bulletin is
+  // read_only (C-02 — the Feed is for everyone), so a missing map falls OPEN like Ledger;
+  // the /bulletin route is additionally server-gated.
+  const showBulletin = (user.role.sectionPermissions?.bulletin ?? 'read_only') !== 'disabled';
   return (
     <header className="topbar">
       <div className="brand">
@@ -214,6 +218,8 @@ export function TopBar({ user }: { user: TopBarUser }) {
         {showLedger ? <Link href="/ledger">Ledger</Link> : null}
         {/* PLAN-006 (DESIGN-010 D-09): the Trash section, level-gated (see showTrash). */}
         {showTrash ? <Link href="/trash">Trash</Link> : null}
+        {/* PLAN-009 (DESIGN-012 D-08): the Bulletin section, level-gated (see showBulletin). */}
+        {showBulletin ? <Link href="/bulletin">Bulletin</Link> : null}
         {/* Phase 3 (R-25..R-28): self-service Plex library access on the user's own account. */}
         <Link href="/library/plex">My Plex</Link>
       </nav>
