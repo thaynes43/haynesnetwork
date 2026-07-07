@@ -299,6 +299,12 @@ export const APP_SETTING_KEYS = [
   // generic audited store rather than a bespoke `motd` table (Open decision #1 resolved to reuse).
   // The app_settings.key CHECK is relaxed to admit this value in migration 0019.
   'motd',
+  // ADR-030 / DESIGN-013 (PLAN-013 disk + reclaim metrics) — the per-Plex-server space TARGETS
+  // (jsonb object keyed by plex_servers slug → percent-used ceiling, e.g. { haynestower: 80 }). The
+  // Storage utilization surface draws the target as a reference line; PLAN-014 later acts on it (C-05,
+  // Q-03 split: 013 stores + displays, 014 enforces). Reuses the generic audited store; the
+  // app_settings.key CHECK is relaxed to admit this value in migration 0021.
+  'space_targets',
 ] as const;
 export type AppSettingKey = (typeof APP_SETTING_KEYS)[number];
 

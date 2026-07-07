@@ -67,6 +67,13 @@ export const trashBatchItems = pgTable(
     // One row per (batch, Maintainerr item) — the snapshot is deduped.
     uniqueIndex('trash_batch_items_batch_media_unique').on(t.batchId, t.maintainerrMediaId),
     index('trash_batch_items_batch_state_idx').on(t.batchId, t.state),
+    // ADR-030 / DESIGN-013 (PLAN-013) — the reclaim-attribution queries scan deleted items over a
+    // time window (category × resolution, cumulative-by-day). A partial index on the deleted subset
+    // keyed by (state, deleted_at) serves those range scans without bloating the hot pending path
+    // (additive, non-blocking; the deleted rows are a small terminal slice).
+    index('trash_batch_items_deleted_at_idx')
+      .on(t.state, t.deletedAt)
+      .where(sql`${t.state} = 'deleted'`),
   ],
 );
 

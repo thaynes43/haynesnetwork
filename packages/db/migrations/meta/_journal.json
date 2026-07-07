@@ -141,6 +141,13 @@
       "when": 1782950420000,
       "tag": "0020_trash_deletion_activity",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1782950421000,
+      "tag": "0021_space_targets",
+      "breakpoints": true
     }
   ]
 }
