@@ -3,12 +3,26 @@
 > The single resume point for agents. Update this in the same change as any milestone.
 > Derive current state from this file's top; you should not have to reconcile anything.
 
-- **Last updated:** 2026-07-07 (Fable 5 autonomous run — PLAN-010 MOTD complete, v0.14.0 live-validated)
+- **Last updated:** 2026-07-07 (Fable 5 autonomous run — PLAN-015 *arr action feedback complete, v0.15.0 live-validated; all buildable work done — remaining is owner-gated only)
 - **Workflow mode:** PR flow (GATE A executed — see
   `.agents/plans/completed/001-gate-a-pr-cutover.md`).
   `main` is branch-protected: branch → PR → required checks `lint-and-typecheck`, `test`,
   `build` green → squash-merge. `e2e` advisory. Conventional-commit titles drive release-please.
-- **Latest release: v0.14.0 (signed) — PLAN-010 MOTD: message-of-the-day dashboard banner
+- **Latest release: v0.15.0 (signed) — PLAN-015 downstream *arr action feedback: live
+  Fix/Force-Search progress (ADR-028 / DESIGN-005 D-20/D-21; glossary T-90..T-93; PRD R-106/R-107;
+  NO migration — derived-not-persisted). A read-only, poll-on-demand tRPC progress query
+  (`fix.progress` / `fix.searchProgress`) projects derived phases over the *arrs' `/queue` + recent
+  history (searching → wire-ack → downloading with a Seerr-style meter/ETA → imported |
+  nothing_found | stalled) with NO `FIX_STATUSES` growth and no server-side poller. `@hnet/arr`
+  gained a `getQueue` read client (+ e2e `/queue` stub); the pre-existing server-side one-open-fix
+  lock (`FixAlreadyOpenError`) is now surfaced in the UI as a live chip that REPLACES the
+  Fix/Force-Search control (reserved width, ADR-015 reflow-free) so mashing yields 0 duplicate *arr
+  commands; `@hnet/ui` PhaseChip/ProgressMeter (+ `--color-progress` token); season/roll-up cascades
+  phases per child; live My Fixes rows; polling is bounded and stops on terminal states.
+  Live-validated 6/6 on staging against real Radarr/Sonarr: Force Search searching→nothing_found
+  (15-min window) with wire-ack; anti-mash lock 0 duplicate commands; subtitle Fix rests
+  reassuringly (Bazarr, no poll); season roll-up cascades per-episode phases; UI phase matched the
+  real *arr queue on every cross-check.** Prior: **v0.14.0 (signed) — PLAN-010 MOTD: message-of-the-day dashboard banner
   (ADR-027 / DESIGN-004 D-15; migration 0019 — `app_settings` key CHECK relax; reuses the ADR-025
   audited `app_settings` store under a `motd` key, NOT a bespoke table). An admin sets an
   info/warning MOTD on the compose page; it renders above the dashboard greeting with correct
@@ -54,28 +68,28 @@
   action in Bazarr 1.5.6), rest at `search_triggered`, excluded from `completeFixRequests`;
   Music no longer offers the reason. Migration 0009; `BazarrClient`/`BazarrWriteClient` in
   `@hnet/arr`; `BAZARR_API_KEY` wired via the existing media-stack ExternalSecret.
-- **The autonomous Fable 5 run is IN PROGRESS.** Entry prompt
-  `.agents/KICKOFF.md`; queue in `.agents/plans/` (see `.agents/plans/README.md`). **Plans done
-  so far:** 002 ✓ (v0.5.0); 003 ✓ (v0.6.0 + fix v0.6.1); 004 ✓ (v0.8.0/v0.8.1); 005 ✓
-  (v0.9.0); 006 ✓ (v0.11.0 + fixes v0.11.1/v0.11.2); 007 ✓ (v0.7.0); 012 ✓ (v0.12.0);
-  009 ✓ (v0.13.0); 010 ✓ (v0.14.0); ADR-024 ✓ (v0.10.0, follow-on to 003). **The CORE QUEUE
-  (002–007, 009, 010, 012) + ADR-024 are ALL COMPLETE + live-validated.** **REMAINING BEFORE PUBLIC
-  CUTOVER (008) — all owner-gated:** (a) **011 Authentik branding** — 3 login mockups + a
-  one-command apply/rollback runbook are ready in `scratchpad/ux-011/`; the owner picks (recommend
-  **option C, "haynesnetwork"**). MFA hardening is the **owner's task** — the MFA validation stage
-  already exists in the auth flow at **order 30** (this is config + an exempt policy, NOT new
-  wiring). (b) **009 Seerr/Tautulli notification agents** still need pointing at the live receiver
-  (runbook step — see the PLAN-009 bullet). (c) the owner's **app-by-app SSO login verification**
-  (008 precondition). **Queue order of record:** 012 ✓ v0.12.0 → 009 ✓ v0.13.0 → 010 ✓ v0.14.0 →
-  **011** (owner-gated branding pick + owner MFA task) → **008** (public cutover, owner's go) → then
-  post-cutover backlog: 013 (disk/reclaim metrics) → 014 (rules tuning + space policy) → 015
-  (downstream *arr action feedback, authored) → the Ledger UX polish batch (task #21).
-  **Task #21 DONE (first polish slice shipped v0.14.1):** Ledger/Library sort affordance + true
-  filtered export count — ad-hoc polish, no plan file.
-  v0.4.0 recap: unified roles (ADR-012), arbitrary catalog URLs (ADR-013), two-step
-  `ConfirmButton`, drag-drop catalog reorder, Library sub-tabs.
-  **Housekeeping:** two git stashes on the (now-deleted) `feat/bulletin` branch held a duplicate
-  agent's Bulletin polish — moot, that branch is merged.
+- **GO-LIVE READINESS (Fable 5 autonomous run) — ALL BUILDABLE WORK COMPLETE + live-validated +
+  deployed at v0.15.0.** Entry prompt `.agents/KICKOFF.md`; queue in `.agents/plans/`. Shipped and
+  live-validated: **core plans 002–007, 009, 010, 012, 015 + ADR-024** (role-scoped all-libraries
+  Plex self-service) **+ the Ledger UX polish** (task #21; first slice v0.14.1 — Ledger/Library sort
+  affordance + true filtered export count). **Nothing buildable remains on the queue.**
+  **REMAINING = OWNER-GATED ONLY (nothing an agent can build unattended):**
+  (a) **011 Authentik branding** — the owner picks from the 3 login mockups + the one-command
+  apply/rollback runbook in `scratchpad/ux-011/` (recommend **option C, "haynesnetwork"**); **MFA
+  hardening is the owner's task** — the MFA validation stage already exists in the auth flow at
+  **order 30** (config + the `mfa-exempt` policy, NOT new wiring).
+  (b) **009 Seerr (Overseerr) + Tautulli notification agents** need pointing at the live receiver
+  (`/api/webhooks/{seerr,tautulli}`; per-source secrets are already live in the cluster; exact
+  payloads in DESIGN-012) — owner config on those two apps.
+  (c) the owner's **app-by-app SSO login verification** (008 precondition).
+  (d) **008 public cutover** — on the owner's go.
+  **BANKED (post-cutover, owner slots):** 013 disk/reclaim metrics (Grafana-embed-vs-native is the
+  owner's call) → 014 rules tuning + space policy.
+  **Owner reminders:** the live **Leaving Soon** batch **expires 2026-07-21** (owner's poster pass +
+  the Default-role family save grants are still pending); a **welcome MOTD is live** on the dashboard
+  for the owner's review.
+  v0.4.0 recap: unified roles (ADR-012), arbitrary catalog URLs (ADR-013), two-step `ConfirmButton`,
+  drag-drop catalog reorder, Library sub-tabs.
 - **PLAN-006 (Trash section) COMPLETE — shipped v0.11.0 + fixes v0.11.1/v0.11.2, live-validated
   on staging** (`.agents/plans/completed/006-trash-section.md`). Maintainerr-backed deletion UI
   wrapping the live `maintainerr.media.svc.cluster.local` instance behind a friendly `/trash`
@@ -116,6 +130,21 @@
 
 ## Current state
 
+- **PLAN-015 (downstream *arr action feedback) COMPLETE — shipped v0.15.0, live-validated 6/6 on
+  staging** (`.agents/plans/completed/015-arr-action-feedback.md`). ADR-028 / DESIGN-005 D-20/D-21;
+  glossary T-90..T-93; PRD R-106/R-107; **no migration** (derived-not-persisted). Fix/Force-Search
+  now report status back: a **read-only, poll-on-demand** tRPC progress query (`fix.progress` /
+  `fix.searchProgress`) projects **derived phases** over the *arrs' `/queue` + recent history
+  (searching → wire-ack → downloading with a Seerr-style meter/ETA → imported | nothing_found |
+  stalled) with **no `FIX_STATUSES` growth and no server-side poller**. `@hnet/arr` gained a
+  `getQueue` read client (+ e2e `/queue` stub); the pre-existing server-side one-open-fix lock
+  (`FixAlreadyOpenError`) is surfaced as a **live chip that replaces** the Fix/Force-Search control
+  (reserved width, ADR-015 reflow-free) so mashing yields **0 duplicate *arr commands**; `@hnet/ui`
+  **PhaseChip/ProgressMeter** (+ `--color-progress` token); season/roll-up cascades phases per child;
+  live **My Fixes** rows; polling is bounded and stops on terminal states. **Live evidence:** Force
+  Search searching→nothing_found (15-min window) with wire-ack; anti-mash lock 0 duplicate commands;
+  subtitle Fix rests reassuringly (Bazarr, no poll); season roll-up cascades per-episode phases; UI
+  phase matched the real *arr queue on every cross-check.
 - **PLAN-010 (MOTD dashboard banner) COMPLETE — shipped v0.14.0, live-validated 13/13 on staging**
   (`.agents/plans/completed/010-motd-dashboard-banner.md`). ADR-027 / DESIGN-004 D-15 / glossary
   T-89; migration 0019 (`app_settings` key CHECK relax). The MOTD **reuses the shipped ADR-025
@@ -287,9 +316,9 @@ The **Fable 5 autonomous run** works the release queue in `.agents/plans/` (star
     metrics** (`013-disk-and-reclaim-metrics.md`; consumes 012's deletion snapshots; core open
     decision: Grafana embed vs native — owner decides) → **014 — rules tuning + space policy**
     (`014-rules-tuning-space-policy.md`; save-data + metrics → tune rules toward the space
-    target; skip-admin-gate graduation criteria) → **015 — downstream *arr action feedback**
-    (`015-arr-action-feedback.md`; authored, not yet built) → the **Ledger UX polish batch**
-    (backlog task #21).
+    target; skip-admin-gate graduation criteria). ~~**015 — downstream *arr action feedback**~~
+    ✅ **DONE** (v0.15.0, `completed/015-arr-action-feedback.md`) and the **Ledger UX polish batch**
+    (task #21; first slice v0.14.1) have already shipped.
 
 The full consolidated backlog (with what is deferred beyond this run) is in
 `context/2026-07-05-backlog-recon.md`.
@@ -335,14 +364,12 @@ The full consolidated backlog (with what is deferred beyond this run) is in
   `failureAction: Enforce` on Kyverno v1.18.1. Rollbacks must target **signed** tags (v0.7.0+);
   pre-signing tags (≤v0.6.1) are now denied. Break-glass + full validation evidence in **OPS-006**
   (`docs/ops/006-image-signing.md`).
-- **PLAN-015 authored (owner backlog 2026-07-07):** live downstream-*arr **action feedback** — Fix/
-  Force-Search buttons must report status back (wire-ack "searching" → download progress → complete /
-  nothing_found / stalled; roll-ups cascade per-child). Design = a **read-only, poll-on-demand** tRPC
-  progress query over the *arrs' `/queue` + recent history, **derived** phases (no `FIX_STATUSES`
-  growth, no new table), **no server-side poller v1**. The one-open-fix lock already exists server-side
-  (`FixAlreadyOpenError`) — v1 just surfaces it in the UI. New: `@hnet/arr` `getQueue` read client +
-  stub `/queue` route. See `.agents/plans/015-arr-action-feedback.md` (Draft; ADR/DESIGN/R/T numbers
-  are next-free placeholders — re-grep after 012/011/009/010 land).
+- **PLAN-015 downstream *arr action feedback SHIPPED (v0.15.0)** — the derived, poll-on-demand
+  progress model (no `FIX_STATUSES` growth, no new table, no server-side poller) is live; the
+  `@hnet/arr` `getQueue` read client + e2e `/queue` stub, the `fix.progress` / `fix.searchProgress`
+  projectors, and the `@hnet/ui` PhaseChip/ProgressMeter are on `main`. Reconciled identifiers:
+  **ADR-028, DESIGN-005 D-20/D-21, glossary T-90..T-93, PRD R-106/R-107, no migration.** As-built
+  detail in `.agents/plans/completed/015-arr-action-feedback.md`.
 
 ## History
 
