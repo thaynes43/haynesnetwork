@@ -1,0 +1,82 @@
+# PLAN-013: Disk utilization + reclaim metrics (banked — post-cutover)
+
+- **Status:** Draft — **BANKED**: runs after the core queue and after the PLAN-008 cutover
+  (owner ordering 2026-07-06). Kept deliberately shorter than the core plans; the executing
+  agent expands it at slot time.
+- **Satisfies:** PRD-001 new **R-NN** block (space target + utilization/reclaim visibility);
+  new **ADR-NN** (THE surface decision: embedded Grafana vs native in-app); new **DESIGN-NN**
+  only if the native option wins. Relates ADR-023/DESIGN-010 (Trash), PLAN-012 (deletion
+  snapshots — the reclaim data source).
+- **Depends on:** **PLAN-012** (per-deleted-item size/resolution/quality/category snapshots
+  must exist and be accumulating — this plan consumes, never backfills) and PLAN-008 (owner:
+  post-cutover).
+- **TODO source:** owner vision 2026-07-06 ("LATER, separate plans, decisions after the core
+  queue").
+
+> **ID reconciliation:** all numbers indicative per `.agents/plans/README.md`; re-grep ceilings
+> at slot time (many plans land before this one).
+
+## Goal
+
+Make the space story measurable. Two halves — **collection first, surface second**:
+
+1. **Collect / expose:**
+   - **Disk utilization per server/rootfolder** — candidate sources to evaluate (enumerated,
+     not yet chosen): Radarr/Sonarr rootfolder free-space APIs (`GET /api/v3/rootfolder`
+     `freeSpace`, `GET /api/v3/diskspace`) via the existing `@hnet/arr` read clients;
+     **node-exporter filesystem metrics already scraped in-cluster** (Prometheus/Grafana stack
+     lives in haynes-ops) for the volumes backing the libraries; Plex/Tautulli library sizes as
+     a cross-check.
+   - **Fill/drain rate over time** — utilization as a time series, so the owner gets
+     steady-state evidence against the space target ("are we draining toward <80% or still
+     filling?").
+   - **Reclaim attribution** — from PLAN-012's deletion snapshots: reclaimed bytes by category
+     (**TV vs Movies**) AND by **quality format/resolution** — the bang-for-buck view the owner
+     described: "15 720p movies = 10% of the reclaim, 3 4K = 90%".
+2. **Surface — THE core open decision (Q-01):** an **embedded/internal Grafana dashboard**
+   (the estate already runs Grafana behind Authentik) **vs a native in-app metrics page**.
+   Decision criteria to weigh and record in the ADR: auth integration (embed auth/cookies
+   through the app vs a link-out), **mobile experience** (the owner curates from a phone),
+   build effort, visual-identity fit (DESIGN-006), and where the reclaim-attribution queries
+   naturally live (Postgres snapshots favor native; node-exporter series favor Grafana — a
+   hybrid "Grafana for infra series, native for reclaim attribution" is a legitimate outcome).
+   **The owner decides when the criteria are laid out** — present, don't presume.
+3. **Configurable space target** (e.g. HaynesTower < 80%) — the number everything is judged
+   against. Lives in the PLAN-012 app-settings store (Q-06 there). **Reconcile at slot time
+   whether the target's OWNERSHIP sits here (a displayed threshold) or in PLAN-014 (a policy
+   input)** — default: this plan stores + displays it; 014 acts on it.
+
+## Docs-first artifacts (enumerated for the executing agent)
+
+- PRD block (utilization visibility, fill/drain trend, reclaim attribution, space target —
+  next free R-NN).
+- The surface ADR (Q-01 decision + criteria; author, present options to owner, ratify after
+  the owner picks).
+- DESIGN-NN only if native surfaces are built (charts/pages/wire contracts); if Grafana wins,
+  an OPS-NN records the dashboard provisioning (dashboard-as-code in haynes-ops) instead.
+- Glossary: **Space Target**, **Fill/Drain Rate**, **Reclaim Attribution** (next free T-NN).
+
+## Open decisions (Q-NN)
+
+- **Q-01 — Grafana embed vs native in-app** (the core one; owner decides — see criteria above).
+- **Q-02 — Utilization source of record** per server (arr rootfolder APIs vs node-exporter vs
+  both with reconciliation) and where the time series persists (Prometheus retention vs our PG).
+- **Q-03 — Space-target ownership** here vs PLAN-014 (default split above).
+- **Q-04 — Collection cadence** (piggyback the existing 6h harvest CronJob vs its own job).
+
+## Verification sketch + DoD (expand at slot time)
+
+Hermetic tests for any new collectors/queries; LIVE: utilization numbers cross-checked against
+`df`/Grafana ground truth on at least one server; reclaim attribution reproduces a known 012
+deletion batch's totals; the surface renders on a phone. DoD: docs authored (ADR ratified after
+the owner's Q-01 call), merge gate green, live checks pass, plan moved to `completed/`.
+
+## Out of scope
+
+Rule changes / policy action on the metrics (PLAN-014); any deletion behavior; historical
+backfill of pre-012 deletions (no snapshots exist for them).
+
+## Rollback
+
+Read-only/additive throughout — remove the dashboard/page + collectors; no deletion path is
+touched.

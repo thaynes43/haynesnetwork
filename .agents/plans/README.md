@@ -48,15 +48,21 @@ For each plan, in order:
 | # | Plan | TODO | Depends on | Status |
 |---|------|------|-----------|--------|
 | 001 | GATE A — PR-flow cutover | — | — | ✅ completed/ |
-| 002 | Bazarr subtitle Fix | #1 | — | queued |
-| 003 | Plex library self-service (Phase 3) | #2 | — | queued |
-| 004 | Library metadata enrichment + posters + shared filter engine | #3 | — | queued |
-| 005 | Ledger section (native restore + export) | #5 | 004 | queued |
-| 006 | Trash section (Maintainerr) | #4 | 004 + Maintainerr | queued |
-| 007 | Cosign image signing | — | — | queued (any time) |
-| 008 | haynesnetwork public cutover (Cloudflare tunnel) | — | 002–006 done | queued **LAST** |
+| 002 | Bazarr subtitle Fix | #1 | — | ✅ completed/ (v0.5.0) |
+| 003 | Plex library self-service (Phase 3) | #2 | — | ✅ completed/ (v0.6.0/v0.6.1 + ADR-024 v0.10.0) |
+| 004 | Library metadata enrichment + posters + shared filter engine | #3 | — | ✅ completed/ (v0.8.0/v0.8.1) |
+| 005 | Ledger section (native restore + export) | #5 | 004 | ✅ completed/ (v0.9.0) |
+| 006 | Trash section (Maintainerr) | #4 | 004 + Maintainerr | **executing** (backend on `feat/trash-section`, pending merge; UX + live validation incl. the 2026-07-06 test-rules addendum remain) |
+| 007 | Cosign image signing | — | — | ✅ completed/ (v0.7.0) |
+| 012 | Trash curation pipeline (batches → poster review → Leaving Soon → windowed deletion) | owner 2026-07-06 | 006 (incl. its test-rule collections) | queued |
+| 011 | Authentik hardening (native-account MFA + haynesnetwork sign-in rebrand) | owner 2026-07-06 | — (runs after 012 per owner order) | queued |
 | 009 | Bulletin — notification Feed + Messages board | stretch | 004, 006 | queued (stretch) |
 | 010 | MOTD dashboard banner | stretch | — | queued (stretch, small) |
+| 008 | haynesnetwork public cutover (Cloudflare tunnel) | — | 002–006, 012, 011 done | queued **LAST of the pre-cutover queue** |
+| 013 | Disk utilization + reclaim metrics | owner 2026-07-06 | 012 (deletion snapshots) + 008 | **banked** (post-cutover per owner) |
+| 014 | Rules tuning + space policy (skip-gate graduation) | owner 2026-07-06 | 013 + accumulated 012 save-data | **banked** (post-cutover, after 013) |
+
+**Owner-ordered sequence (2026-07-06):** 006 (finish) → 012 → 011 → 009 → 010 → 008 → 013 → 014.
 
 Source brain dump: `TODO.md`. Consolidated backlog + Restore explanation:
 `../context/2026-07-05-backlog-recon.md`. Deleted-items snapshot to import into the Ledger:
@@ -89,6 +95,12 @@ shared building blocks. Reconcile these before you act on any plan:
   failsafe is never absent — keep that order.
 - **Shared `enums.ts` + guard list:** most plans append to `packages/db/src/schema/enums.ts` and
   the `no-direct-state-writes` guard list. Re-read both before each plan; append, never rewrite.
+- **2026-07-06 — plans 011–014 authored:** as with the original seven, every plan-internal
+  ADR/DESIGN/OPS/R-/T-/migration/D- number inside 011–014 is an **indicative placeholder**, not a
+  reservation — assign the next free number at authoring time, in the owner-ordered execution
+  sequence (012 before 011). Ceilings when they were written: ADR-024 on `main` **plus ADR-023 /
+  DESIGN-010 / R-87 / T-74 / migration 0016 on the pending `feat/trash-section` branch** — re-grep
+  all of them (including anything 006's remaining work consumes) before authoring any 011–014 doc.
 
 ## Tonight's prerequisite (owner + assistant, not Fable 5)
 

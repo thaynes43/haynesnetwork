@@ -2,7 +2,7 @@
 
 - **Status:** Draft   _(Fable 5 flips Draft → Executing → Completed)_
 - **Satisfies:** PRD-001 R-64 (`docs/prds/001-haynesnetwork.md:133` — claim `haynesnetwork.com` + `www` after e2e passes against staging), R-63 (`:132`), R-14-as-amended by ADR-013 (`:70`); executes OPS-005 (`docs/ops/005-root-domain-cutover.md`); ADR-006 C-03 (the "pure manifest change").
-- **Depends on:** PLAN-002, PLAN-003, PLAN-004, PLAN-005, PLAN-006 — **all Completed AND live-validated** (in `.agents/plans/completed/`). PLAN-007 (cosign) is NOT a blocker but SHOULD land first so the public image is signed.
+- **Depends on:** PLAN-002, PLAN-003, PLAN-004, PLAN-005, PLAN-006, **PLAN-012 and PLAN-011** (queue extended by the owner 2026-07-06) — **all Completed AND live-validated** (in `.agents/plans/completed/`). PLAN-007 (cosign) is NOT a blocker but SHOULD land first so the public image is signed. PLAN-013/014 are deliberately **post-cutover** and do not gate this plan.
 - **TODO source:** backlog O-1 / "root-domain cutover per R-64 gates on Phase 1 e2e" (`docs/prds/001-haynesnetwork.md:172`).
 
 ---
@@ -21,6 +21,11 @@ assumption:
       checkbox (`docs/ops/005-root-domain-cutover.md` §Gate).
 - [ ] `main` is clean and the latest staging image is deployed and healthy (`/api/health` 200 on
       `haynesnetwork.haynesops.com`).
+- [ ] **OWNER task (added 2026-07-06 by PLAN-011 scope):** after PLAN-011's Authentik changes
+      (native-account MFA + the haynesnetwork sign-in rebrand), the owner has verified
+      **app-by-app SSO login** for each catalog app behind Authentik (Grafana, Seerr, the *arrs,
+      …) through the changed flow. Manual, not automated — do not cut over on an unverified
+      shared login flow.
 
 If any box is unchecked, **stop and pick the next-lowest active plan instead.** A broken cutover
 takes the whole app offline for real users, unlike a feature bug behind the LAN ingress.
