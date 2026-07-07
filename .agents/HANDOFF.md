@@ -3,7 +3,19 @@
 > The single resume point for agents. Update this in the same change as any milestone.
 > Derive current state from this file's top; you should not have to reconcile anything.
 
-- **Last updated:** 2026-07-07 (Fable 5 autonomous run — PLAN-015 *arr action feedback complete, v0.15.0 live-validated; all buildable work done — remaining is owner-gated only)
+- **Last updated:** 2026-07-07 (**PUBLIC CUTOVER EXECUTED — the site is LIVE at https://haynesnetwork.com** via Cloudflare Tunnel; PLAN-008 Completed. Owner authorized go-live ahead of the 011 MFA/branding gate. Now building PLAN-013 disk/reclaim metrics.)
+- 🚀 **THE SITE IS PUBLICLY LIVE at https://haynesnetwork.com (2026-07-07).** Apex auth round-trip +
+  every permissioned surface validated live; `www.haynesnetwork.com` **301s to the apex**; TLS is the
+  Cloudflare edge cert (Google Trust Services WE1). Executed as four coupled `haynes-ops` commits
+  (`ea457b43..c9935b9b`) — full log in `docs/ops/005-root-domain-cutover.md` (Status: **Executed**).
+  Staging (`haynesnetwork.haynesops.com`) was **kept warm** as the rollback target.
+  **Post-cutover watch items (open, non-blocking):** (a) HSTS is `max-age=0` at the edge — enable a
+  real max-age later; (b) `CF-Connecting-IP` per-user rate-limit bucketing is coded (v0.16.0) but only
+  provable under concurrent real users; (c) two Trash posters 404 (cosmetic); (d) recommend a
+  Cloudflare rate-limit/WAF rule on `/api/auth/*` (owner dashboard task).
+  **Remaining OWNER items:** 011 Authentik branding pick + apply (mockups + runbook in
+  `scratchpad/ux-011/`, recommend option C) · owner native-account MFA · the optional Cloudflare WAF
+  rule above. **Now building: 013** (disk/reclaim metrics — backend done, UX in flight); **014 next**.
 - **Workflow mode:** PR flow (GATE A executed — see
   `.agents/plans/completed/001-gate-a-pr-cutover.md`).
   `main` is branch-protected: branch → PR → required checks `lint-and-typecheck`, `test`,
@@ -73,8 +85,13 @@
   (a) **011 Authentik branding** — the owner picks from the 3 login mockups + the one-command apply/rollback runbook in `scratchpad/ux-011/` (recommend **option C**) **+ owner MFA** (validation stage already at auth order 30).
   (b) **009 Seerr/Tautulli webhook-agent wiring** — point notification agents at the receiver.
   (c) **owner app-by-app SSO check** (008 precondition).
-  (d) **008 public cutover** — runbook go-ready at `scratchpad/008-cutover-runbook.md`; the two recon-found technical gates (www cookie/origin split, tunnel rate-limit-IP) are **CLOSED in code via v0.16.0's auth hardening**, needs only the `TRUSTED_ORIGINS` env at cutover.
-  **BANKED (post-cutover):** 013/014.
+  (d) ~~**008 public cutover**~~ ✅ **EXECUTED 2026-07-07 — the site is LIVE at https://haynesnetwork.com**
+  (`completed/008-haynesnetwork-public-cutover.md`; executed log `docs/ops/005-root-domain-cutover.md`).
+  The two recon-found technical gates (www cookie/origin split, tunnel rate-limit-IP) were CLOSED in
+  code via v0.16.0's auth hardening; the `TRUSTED_ORIGINS` env was set in the coupled `haynes-ops`
+  commit. Owner authorized go-live ahead of the 011 MFA/branding gate (Authentik was already public).
+  **POST-CUTOVER (now building / next):** **013** disk + reclaim metrics — **executing** (backend done,
+  UX in flight) → **014** rules tuning + space policy — queued next.
   **Owner reminders:** the live **Leaving Soon** batch **expires 2026-07-21** (owner's poster pass +
   the Default-role family save grants are still pending); a **welcome MOTD is live** on the dashboard
   for the owner's review.
@@ -250,9 +267,14 @@
   restore + *arr→ledger sync, all shipped through v0.4.0.
 - **Sync CronJobs + ExternalSecret media keys are LIVE since v0.2.0** (sync-incremental every
   15 min, sync-full 04:30) — confirmed in the haynes-ops `externalsecret.yaml` + `helmrelease.yaml`.
-- **Live staging:** https://haynesnetwork.haynesops.com (traefik-internal).
-- **Root-domain cutover** (staging → public root + www) is still PENDING Phase-1 e2e (R-64) —
-  a manifest swap in haynes-ops; see `docs/ops/005-root-domain-cutover.md`.
+- **PUBLIC (live):** https://haynesnetwork.com + www (Cloudflare Tunnel → `traefik-external`) since
+  the **2026-07-07 cutover**. **Staging** https://haynesnetwork.haynesops.com (`traefik-internal`) is
+  **kept warm** as the rollback target (restored as its own IngressRoute in `haynes-ops` `312dd17a`).
+- **Root-domain cutover COMPLETE (PLAN-008, EXECUTED 2026-07-07)** — the coupled `haynes-ops` set
+  (`ea457b43..c9935b9b`) flipped the ingress to `traefik-external`, `BETTER_AUTH_URL` →
+  `https://haynesnetwork.com` (+ `TRUSTED_ORIGINS` for www), added the tunnel apex rule, 301'd
+  www→apex, and retired `cloudflare-ddns`. Three gotchas closed live (Traefik v3 `Host()` syntax;
+  cloudflare-ddns record ownership; Flux envsubst `${1}`). Executed log: `docs/ops/005-root-domain-cutover.md`.
 
 ## Genuinely next
 
@@ -294,22 +316,27 @@ The **Fable 5 autonomous run** works the release queue in `.agents/plans/` (star
    for the owner's review. **With this, the CORE QUEUE (002–007, 009, 010, 012) + ADR-024 are all
    COMPLETE + live-validated.**
 9. **011 — Authentik hardening** (`011-authentik-hardening.md`, owner-scoped 2026-07-06):
-   **owner-gated, next in the pre-cutover queue.** (a) **Branding:** 3 login mockups + a one-command
+   **owner-gated; deferred PAST the 008 cutover on owner authorization** (Authentik was already
+   publicly exposed, so cutover added no new auth surface — owner applies MFA/branding on his own
+   schedule). (a) **Branding:** 3 login mockups + a one-command
    apply/rollback runbook are ready in `scratchpad/ux-011/` — the owner picks (recommend **option C,
    "haynesnetwork"**). (b) **MFA hardening is the owner's task**, not new wiring — the MFA validation
    stage already exists in the auth flow at **order 30**; this is config + the `mfa-exempt` policy
    (Plex-source logins exempt; the exempt group keeps the `hnet-e2e` accounts automating).
    App-by-app SSO verification = owner task in 008's HARD GATE.
 10. ~~**007 — cosign signing**~~ ✅ **DONE** (v0.7.0, `completed/007-cosign-image-signing.md`).
-11. **008 — public cutover** (LAST of the pre-cutover queue; **awaiting the owner's go**; HARD
-    GATE incl. the owner's app-by-app SSO check from 011).
-12. **Post-cutover backlog (banked, owner 2026-07-06/07):** **013 — disk utilization + reclaim
+11. ~~**008 — public cutover**~~ ✅ **DONE — EXECUTED 2026-07-07** (`completed/008-haynesnetwork-public-cutover.md`;
+    executed log `docs/ops/005-root-domain-cutover.md`). **The site is LIVE at https://haynesnetwork.com.**
+    Owner authorized go-live ahead of the 011 MFA/branding gate (Authentik was already public), so the
+    owner's app-by-app SSO re-check moved to a post-cutover owner task rather than a pre-cutover gate.
+12. **Post-cutover backlog (owner 2026-07-06/07) — NOW ACTIVE:** **013 — disk utilization + reclaim
     metrics** (`013-disk-and-reclaim-metrics.md`; consumes 012's deletion snapshots; core open
-    decision: Grafana embed vs native — owner decides) → **014 — rules tuning + space policy**
-    (`014-rules-tuning-space-policy.md`; save-data + metrics → tune rules toward the space
-    target; skip-admin-gate graduation criteria). ~~**015 — downstream *arr action feedback**~~
-    ✅ **DONE** (v0.15.0, `completed/015-arr-action-feedback.md`) and the **Ledger UX polish batch**
-    (task #21; first slice v0.14.1) have already shipped.
+    decision: Grafana embed vs native — owner decides) is **executing** (backend done, UX in flight)
+    → **014 — rules tuning + space policy** (`014-rules-tuning-space-policy.md`; save-data + metrics →
+    tune rules toward the space target; skip-admin-gate graduation criteria) is **queued next**.
+    ~~**015 — downstream *arr action feedback**~~ ✅ **DONE** (v0.15.0,
+    `completed/015-arr-action-feedback.md`) and the **Ledger UX polish batch** (task #21; first slice
+    v0.14.1) have already shipped.
 
 The full consolidated backlog (with what is deferred beyond this run) is in
 `context/2026-07-05-backlog-recon.md`.
