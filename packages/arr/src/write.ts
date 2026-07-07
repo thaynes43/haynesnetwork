@@ -6,7 +6,10 @@
 import { assertArrEnv, type ArrEnvConfig } from './config';
 import { MaintainerrWriteFailedError } from './errors';
 import { ArrHttp, type QueryParams } from './http';
-import { maintainerrReturnStatusSchema } from './schemas/maintainerr';
+import {
+  maintainerrCollectionRefSchema,
+  maintainerrReturnStatusSchema,
+} from './schemas/maintainerr';
 import { commandResponseSchema, tagSchema, type ArrCommandResponse, type ArrTag } from './schemas/common';
 import { sonarrSeriesSchema, type SonarrSeries } from './schemas/sonarr';
 import { radarrMovieSchema, type RadarrMovie } from './schemas/radarr';
@@ -375,6 +378,61 @@ export class MaintainerrWriteClient {
    *  Returns a BasicResponseDto — `code:0` (e.g. invalid CRON) fails closed, never a phantom apply. */
   patchSettings(payload: Record<string, unknown>): Promise<void> {
     return this.requestReturnStatus('PATCH', 'settings', { body: payload });
+  }
+
+  // ADR-025 / DESIGN-011 — the Leaving-Soon manual-collection surface (Q-05). Endpoints derived from
+  // the Maintainerr v3.17.0 source (Maintainerr/Maintainerr@v3.17.0
+  // apps/server/src/modules/collections/collections.controller.ts — `@Controller('api/collections')`):
+  //   POST /api/collections            createCollection  { collection, media?: [{ mediaServerId }] }
+  //   POST /api/collections/add        addToCollection    { collectionId, media: [{ mediaServerId }], manual? }
+  //   POST /api/collections/remove     removeFromCollection { collectionId, media: [{ mediaServerId }] }
+  //   POST /api/collections/removeCollection removeCollection { collectionId }
+  // `visibleOnHome`/`visibleOnRecommended` on the collection body are pushed to Plex by
+  // collections.service.ts (`updateCollectionVisibility`) so the collection surfaces on Plex Home +
+  // Recommended. These handlers return the (updated) Collection entity — NOT a ReturnStatus — so a
+  // permissive parse extracts the id; a non-2xx still throws ArrHttpError (fail closed).
+
+  /** `POST /api/collections` — create a standalone, Plex-visible collection seeded with `media`.
+   *  Returns the created collection's id (null if the body drops it — treated as no-collection). */
+  async createCollection(body: {
+    collection: Record<string, unknown>;
+    media?: Array<{ mediaServerId: string }>;
+  }): Promise<{ id: number | null }> {
+    const parsed = await this.http.requestJson(
+      'POST',
+      'collections',
+      maintainerrCollectionRefSchema,
+      { body },
+    );
+    return { id: parsed.id ?? null };
+  }
+
+  /** `POST /api/collections/add` — add specific Plex items (by ratingKey) to a collection. */
+  addToCollection(collectionId: number, mediaServerIds: string[]): Promise<void> {
+    return this.http.requestVoid('POST', 'collections/add', {
+      body: {
+        collectionId,
+        media: mediaServerIds.map((mediaServerId) => ({ mediaServerId })),
+        manual: true,
+      },
+    });
+  }
+
+  /** `POST /api/collections/remove` — remove specific Plex items from a collection (e.g. a rescued item). */
+  removeFromCollection(collectionId: number, mediaServerIds: string[]): Promise<void> {
+    return this.http.requestVoid('POST', 'collections/remove', {
+      body: {
+        collectionId,
+        media: mediaServerIds.map((mediaServerId) => ({ mediaServerId })),
+      },
+    });
+  }
+
+  /** `POST /api/collections/removeCollection` — tear the whole collection down (cancel/complete). */
+  removeCollection(collectionId: number): Promise<void> {
+    return this.http.requestVoid('POST', 'collections/removeCollection', {
+      body: { collectionId },
+    });
   }
 }
 

@@ -220,6 +220,38 @@ export class TrashMusicUnsupportedError extends Error {
   readonly code = 'TRASH_MUSIC_UNSUPPORTED' as const;
 }
 
+// ---------------------------------------------------------------------------
+// ADR-025 / DESIGN-011 — Trash curation pipeline (batch state machine) errors.
+// ---------------------------------------------------------------------------
+
+/**
+ * ADR-025 C-01: a batch transition or precondition was illegal — green-light on a batch not in
+ * `admin_review`, cancel on an already-terminal batch, expire on a batch that is not
+ * `leaving_soon`/not-yet-expired, or a save flip whose phase does not match the batch state. The
+ * state machine refuses (fail closed) BEFORE any external write. Surfaced as CONFLICT.
+ */
+export class TrashBatchStateError extends Error {
+  readonly code = 'TRASH_BATCH_STATE' as const;
+}
+
+/**
+ * ADR-025 C-01 (Q-01): a batch could not be created because an OPEN (draft/admin_review/
+ * leaving_soon) batch already exists for that media kind — one live batch per kind. Also raised
+ * when the DB partial-unique index trips a race. Surfaced as CONFLICT.
+ */
+export class TrashBatchOpenError extends Error {
+  readonly code = 'TRASH_BATCH_ALREADY_OPEN' as const;
+}
+
+/**
+ * ADR-025: create-batch found no actionable pending items to snapshot (nothing for that kind, or
+ * every candidate lacks a Maintainerr id). No empty batch is created. Surfaced as
+ * UNPROCESSABLE_CONTENT.
+ */
+export class TrashBatchEmptyError extends Error {
+  readonly code = 'TRASH_BATCH_EMPTY' as const;
+}
+
 function pgErrorCode(err: unknown): string | undefined {
   if (typeof err !== 'object' || err === null) return undefined;
   const code = (err as { code?: unknown }).code;
