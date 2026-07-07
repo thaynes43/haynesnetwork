@@ -17,8 +17,9 @@ async function setMotd(
   opts: { message: string; severity: 'info' | 'warning'; enabled?: boolean },
 ): Promise<void> {
   await admin.goto('/admin/motd');
-  await admin.getByLabel('Message').fill(opts.message);
-  await admin.getByLabel('Severity').selectOption(opts.severity);
+  // exact: the Clear button's aria-label also contains "Message" (substring match otherwise collides).
+  await admin.getByLabel('Message', { exact: true }).fill(opts.message);
+  await admin.getByLabel('Severity', { exact: true }).selectOption(opts.severity);
   const enabled = admin.getByRole('checkbox', { name: /Enabled/ });
   if (opts.enabled === false) await enabled.uncheck();
   else await enabled.check();
