@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.17.0](https://github.com/thaynes43/haynesnetwork/compare/v0.16.1...v0.17.0) (2026-07-07)
+
+
+### Features
+
+* storage metrics — utilization vs space target + reclaim attribution (ADR-030) ([#103](https://github.com/thaynes43/haynesnetwork/issues/103)) ([dccb082](https://github.com/thaynes43/haynesnetwork/commit/dccb08296bdbdc7d9cfb2aa4f2ec6e91096adb22))
+
+
+### Documentation
+
+* HANDOFF refresh — v0.16.1 + owner fixes shipped ([#100](https://github.com/thaynes43/haynesnetwork/issues/100)) ([c3403fc](https://github.com/thaynes43/haynesnetwork/commit/c3403fcdd2ffc7afb9bbaf98ba03ef290070f033))
+* plan 008 executed — haynesnetwork.com publicly live (OPS-005 log) ([#102](https://github.com/thaynes43/haynesnetwork/issues/102)) ([8c6cb3c](https://github.com/thaynes43/haynesnetwork/commit/8c6cb3c4971693ae5d550f11bf5a712d156d0aca))
+
 ## [0.16.1](https://github.com/thaynes43/haynesnetwork/compare/v0.16.0...v0.16.1) (2026-07-07)
 
 
