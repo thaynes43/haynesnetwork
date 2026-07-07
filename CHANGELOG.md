@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.12.0](https://github.com/thaynes43/haynesnetwork/compare/v0.11.2...v0.12.0) (2026-07-07)
+
+
+### Features
+
+* Trash curation pipeline — poster-wall review, Leaving Soon batches, timed deletion (ADR-025) ([#78](https://github.com/thaynes43/haynesnetwork/issues/78)) ([206541d](https://github.com/thaynes43/haynesnetwork/commit/206541d6da216dde6d103010f085df1dd7f0f995))
+
+
+### Documentation
+
+* complete plan 006 (Trash section) — v0.11.0-2 live-validated ([#76](https://github.com/thaynes43/haynesnetwork/issues/76)) ([a1149ae](https://github.com/thaynes43/haynesnetwork/commit/a1149ae591b1c4ee9f114040fa80895976a4bb2f))
+
 ## [0.11.2](https://github.com/thaynes43/haynesnetwork/compare/v0.11.1...v0.11.2) (2026-07-07)
 
 
