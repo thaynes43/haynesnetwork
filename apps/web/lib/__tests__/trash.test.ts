@@ -6,6 +6,7 @@ import {
   daysLeftLabel,
   daysLeftTone,
   daysUntil,
+  expediteErrorAction,
   partitionForExpedite,
   previewGuardian,
   reclaimLabel,
@@ -60,6 +61,25 @@ describe('partitionForExpedite', () => {
       protected: 2,
       unverifiable: 2,
     });
+  });
+});
+
+describe('expediteErrorAction (F3 — always re-partition on ANY expedite error)', () => {
+  it('MAINTAINERR_UNSAFE ⇒ invalidate + show the calm stale panel (no raw message)', () => {
+    expect(expediteErrorAction('MAINTAINERR_UNSAFE', 'ignored')).toEqual({
+      invalidate: true,
+      stale: true,
+      message: null,
+    });
+  });
+  it('any OTHER error code STILL invalidates (the fix) and surfaces the message', () => {
+    // Before F3 a non-UNSAFE error left the pending query (and the confirm partition) stale.
+    expect(expediteErrorAction('BAD_GATEWAY', 'Maintainerr unreachable')).toEqual({
+      invalidate: true,
+      stale: false,
+      message: 'Maintainerr unreachable',
+    });
+    expect(expediteErrorAction(null, 'Something broke')).toMatchObject({ invalidate: true });
   });
 });
 

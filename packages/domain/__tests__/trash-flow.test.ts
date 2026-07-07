@@ -503,6 +503,68 @@ describe('listTrashPending + guardian + expedite (ADR-023 D-02/D-04/D-05)', () =
     expect(handled).toContain('ms-8002'); // the cold, ledger-known item is deleted
     expect(handled).not.toContain('ms-8003'); // the unevaluable item is never deleted
   });
+
+  // F1 (2026-07-06 pre-ship review) — the LIVE-exclusion safety seam. classifyGuardian reads only
+  // the synced facets, so a just-SAVED item (exclusion set, but dnd tag not yet synced ⇒
+  // protectedByTag still false) would be cleared as cold and DELETED. Expedite must consult the live
+  // Maintainerr exclusion set and PROTECT it instead — the save→expedite race the review found.
+  it('F1 — a LIVE Maintainerr exclusion PROTECTS a cold item (scope item), never handled', async () => {
+    const state = pendingState();
+    state.exclusions.add('ms-8002'); // saved just now; dnd tag has NOT synced (protectedByTag false)
+    const { bundle, calls } = makeMaintainerr(state);
+    const res = await expediteDeletion({
+      db: t.db,
+      maintainerr: bundle,
+      scope: 'item',
+      media: 'movie',
+      actorId,
+      item: { collectionId: 7, maintainerrMediaId: 'ms-8002' },
+    });
+    expect(res).toMatchObject({ protectedCount: 1, expeditedCount: 0, skippedCount: 0 });
+    // NEVER handed to the per-item delete handler.
+    expect(calls.some((c) => c.pathname === '/collections/media/handle')).toBe(false);
+  });
+
+  it('F1 — a LIVE exclusion PROTECTS a cold item in scope all, never handled', async () => {
+    const state = pendingState();
+    state.exclusions.add('ms-8002');
+    const { bundle, calls } = makeMaintainerr(state);
+    const res = await expediteDeletion({
+      db: t.db,
+      maintainerr: bundle,
+      scope: 'all',
+      media: 'movie',
+      actorId,
+      snapshotMediaIds: ['ms-8001', 'ms-8002'],
+    });
+    expect(res.expeditedCount).toBe(0);
+    // ms-8002 live-excluded + ms-8001 watched-whitelisted ⇒ both protected; nothing deleted.
+    expect(res.protectedCount).toBe(2);
+    expect(calls.filter((c) => c.pathname === '/collections/media/handle')).toHaveLength(0);
+  });
+
+  // F2 (2026-07-06 pre-ship review) — scope 'all' is pinned to the snapshot the user SAW.
+  it('F2 — scope all processes ONLY the snapshot ∩ pending: stale ids counted, newly-pending untouched', async () => {
+    const state = pendingState(); // pending now: ms-8001 (watched), ms-8002 (cold)
+    const { bundle, calls } = makeMaintainerr(state);
+    const res = await expediteDeletion({
+      db: t.db,
+      maintainerr: bundle,
+      scope: 'all',
+      media: 'movie',
+      actorId,
+      // The user saw ms-8002 (cold) + a stale id no longer pending. They did NOT see ms-8001.
+      snapshotMediaIds: ['ms-8002', 'ms-gone'],
+    });
+    expect(res.expeditedCount).toBe(1); // only the SEEN cold item
+    expect(res.stalePending).toBe(1); // ms-gone was in the snapshot but no longer pending
+    const handled = calls
+      .filter((c) => c.pathname === '/collections/media/handle')
+      .map((c) => (c.body as { mediaId?: string }).mediaId);
+    expect(handled).toEqual(['ms-8002']);
+    // ms-8001 became pending but was NOT in the snapshot ⇒ never touched (not whitelisted, not deleted).
+    expect(state.exclusions.has('ms-8001')).toBe(false);
+  });
 });
 
 describe('listRecentlyDeleted + restore music rejection (ADR-023 D-02 / R-87)', () => {

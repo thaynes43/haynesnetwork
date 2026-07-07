@@ -113,6 +113,20 @@ reachable AND every required integration connected. `expedite*` re-run it and re
   Fix D-09 discipline — a lost response must never hide an initiated deletion). **scope 'item'**
   resolves the target's REAL identity from the actual pending set (NOT the client `media` param);
   if it cannot be resolved to run the guardian it **REFUSES** (fail closed), never fires blind.
+- **Live-exclusion safety seam (pre-ship review 2026-07-06 — F1).** `classifyGuardian` reads only the
+  SYNCED facets (`arrTags`/watched/requesters); a just-SAVED item's protective `dnd` tag has not yet
+  round-tripped Maintainerr → the *arr → our ledger, so the guardian alone would clear a freshly-saved
+  cold item as deletable (the save→expedite race). BOTH scopes therefore fetch the LIVE Maintainerr
+  exclusion set once, before the guardian loop (`fetchLiveExclusions` — per candidate by
+  `mediaServerId`, since real Maintainerr returns [] with no params), and treat any live exclusion as
+  **PROTECTED**, never handled — counted in `protectedCount`. The confirm modal's item verdict is built
+  from the guardian mirror + server-declared fields only (never a session-local shield override), so the
+  copy can no longer promise "nothing deletes" on state the server won't honor.
+- **Pinned whole-set (pre-ship review 2026-07-06 — F2).** `trash.expediteAll` takes a REQUIRED
+  `maintainerrMediaIds` snapshot (1..1000) — the ids the confirm modal displayed. The run processes
+  EXACTLY that ∩ the current pending set: ids no longer pending → `stalePending` (never deleted); items
+  that became pending after the modal opened are absent from the snapshot and NEVER touched. Converges
+  toward PLAN-012's explicit batch endpoint.
 - **Guardian (`classifyGuardian`, fail closed — P3/P4):** an item is expeditable ONLY when it is
   positively evaluated (resolved to our ledger, so we hold the cross-server watch / requester signal)
   AND cold. Kept otherwise: `tag` (already `dnd`-whitelisted), `recently_watched`/`requested`
@@ -155,8 +169,8 @@ trash.rules()                               → MaintainerrRuleGroup[]
 trash.ruleConstants()                       → MaintainerrRuleConstants
 trash.saveExclusion({ maintainerrMediaId, mediaItemId?, collectionId? })   → { excluded, alreadyExcluded }
 trash.removeExclusion({ maintainerrMediaId, mediaItemId? })                → { removed }
-trash.expediteItem({ media, collectionId, maintainerrMediaId, mediaItemId? }) → { scope:'item', protectedCount, expeditedCount, skippedCount }
-trash.expediteAll({ media })                → { scope:'all', protectedCount, expeditedCount, skippedCount }   // per-item loop; skippedCount = kept-but-unevaluable / failed-protection (UX must surface it — review 2026-07-06)
+trash.expediteItem({ media, collectionId, maintainerrMediaId, mediaItemId? }) → { scope:'item', protectedCount, expeditedCount, skippedCount, stalePending:0 }
+trash.expediteAll({ media, maintainerrMediaIds[] })  → { scope:'all', protectedCount, expeditedCount, skippedCount, stalePending }   // per-item loop; maintainerrMediaIds (REQUIRED, 1..1000) = the snapshot the user SAW — the run processes exactly that ∩ the current pending set (F2, 2026-07-06). skippedCount = kept-but-unevaluable / failed-protection; stalePending = snapshot ids no longer pending (never deleted). BOTH scopes honor LIVE Maintainerr exclusions first (F1) — a just-saved item is protected before its dnd tag syncs.
 trash.recentlyDeleted({ media })            → RecentlyDeletedItem[]   // adds posterUrl
 trash.restoreDeleted({ media, mediaItemId })→ { runId, status }
 trash.activity({ limit? })                  → NotificationView[]

@@ -139,7 +139,9 @@ describe('trash router — section + per-action gating (ADR-023 C-03)', () => {
     await expect(
       c.trash.saveExclusion({ maintainerrMediaId: 'ms-1' }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
-    await expect(c.trash.expediteAll({ media: 'movie' })).rejects.toMatchObject({
+    await expect(
+      c.trash.expediteAll({ media: 'movie', maintainerrMediaIds: ['ms-1'] }),
+    ).rejects.toMatchObject({
       code: 'FORBIDDEN',
     });
     await expect(c.trash.saveRule({ payload: {} })).rejects.toMatchObject({ code: 'FORBIDDEN' });
@@ -212,7 +214,10 @@ describe('trash router — happy paths (ADR-023 D-02/D-04/D-05)', () => {
     expect(okStatus.safe).toBe(true);
 
     try {
-      await adminCaller(state({ safe: false })).trash.expediteAll({ media: 'movie' });
+      await adminCaller(state({ safe: false })).trash.expediteAll({
+        media: 'movie',
+        maintainerrMediaIds: ['ms-1'],
+      });
       throw new Error('expected expediteAll to reject');
     } catch (err) {
       const shape = wireShape(err, 'trash.expediteAll');
@@ -243,5 +248,37 @@ describe('trash router — happy paths (ADR-023 D-02/D-04/D-05)', () => {
     // sanity — the seeded movie is live, not tombstoned.
     const live = await t.db.select().from(mediaItems).where(eq(mediaItems.tmdbId, 55001));
     expect(live[0]!.deletedFromArrAt).toBeNull();
+  });
+
+  // F2 (2026-07-06 pre-ship review) — expediteAll is pinned to the snapshot the user saw.
+  it('F2 — expediteAll deletes only the pinned snapshot ∩ pending; stale ids counted', async () => {
+    // ms-1 (tmdb 55001) is cold + ledger-known ⇒ deletable. Pinning to exactly it deletes it.
+    const hit = await adminCaller(state()).trash.expediteAll({
+      media: 'movie',
+      maintainerrMediaIds: ['ms-1'],
+    });
+    expect(hit).toMatchObject({ scope: 'all', expeditedCount: 1, stalePending: 0 });
+
+    // A snapshot id no longer pending ⇒ counted stalePending, nothing deleted.
+    const stale = await adminCaller(state()).trash.expediteAll({
+      media: 'movie',
+      maintainerrMediaIds: ['ms-gone'],
+    });
+    expect(stale).toMatchObject({ expeditedCount: 0, stalePending: 1 });
+  });
+
+  // F1 (2026-07-06 pre-ship review) — a live exclusion protects even a cold, ledger-known item.
+  it('F1 — a live Maintainerr exclusion protects the pinned item (no deletion)', async () => {
+    const res = await adminCaller(state({ exclusions: new Set(['ms-1']) })).trash.expediteAll({
+      media: 'movie',
+      maintainerrMediaIds: ['ms-1'],
+    });
+    expect(res).toMatchObject({ expeditedCount: 0, protectedCount: 1 });
+  });
+
+  it('expediteAll REQUIRES a non-empty maintainerrMediaIds snapshot (wire contract)', async () => {
+    await expect(
+      adminCaller(state()).trash.expediteAll({ media: 'movie', maintainerrMediaIds: [] }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 });

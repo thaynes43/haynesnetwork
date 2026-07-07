@@ -90,6 +90,30 @@ export function partitionForExpedite(
   return out;
 }
 
+/**
+ * F3 (2026-07-06 review) — what the Expedite modal does when a mutation FAILS. The key invariant is
+ * `invalidate: true` on EVERY error code: a partial/failed run can leave the pending set (and thus
+ * the confirm's deleted/protected/skipped partition) stale, so we always refetch and re-partition —
+ * previously only the MAINTAINERR_UNSAFE branch did. An UNSAFE verdict shows the calm "nothing was
+ * deleted — refreshed" state (no raw message); any other error surfaces its message.
+ */
+export interface ExpediteErrorAction {
+  /** Always true — refetch pending + status so the confirm re-partitions against fresh data. */
+  invalidate: true;
+  /** Show the calm stale/"nothing deleted" panel (MAINTAINERR_UNSAFE) instead of an error banner. */
+  stale: boolean;
+  /** The banner message to show, or null when the stale panel replaces it. */
+  message: string | null;
+}
+
+export function expediteErrorAction(
+  appCode: string | null | undefined,
+  message: string,
+): ExpediteErrorAction {
+  if (appCode === 'MAINTAINERR_UNSAFE') return { invalidate: true, stale: true, message: null };
+  return { invalidate: true, stale: false, message };
+}
+
 /** Whole days until an ISO instant (ceil): 0 ⇒ today, negative ⇒ overdue. Null-safe. */
 export function daysUntil(iso: string | null, now: Date = new Date()): number | null {
   if (iso === null) return null;

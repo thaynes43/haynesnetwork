@@ -688,9 +688,15 @@ async function resolvePendingTarget(input: {
  * individually. This keeps deletion scoped to exactly the media kind / set the user saw and
  * guarantees every deleted item passed the guardian.
  *
+ * F1 (2026-07-06 review) — BOTH scopes first consult the LIVE Maintainerr exclusion set
+ * (`fetchLiveExclusions`) and treat a currently-excluded item as PROTECTED, closing the window where
+ * a just-SAVED item's `dnd` tag has not yet synced to `classifyGuardian`'s inputs. F2 — scope 'all'
+ * is pinned to `snapshotMediaIds` (the set the user saw); only its intersection with the current
+ * pending set is processed (stale ids → `stalePending`; newly-pending items are never touched).
+ *
  * scope 'item' — resolve the target's REAL identity from the actual pending set (NOT the client
  * `media` param, P3); if it cannot be resolved to run the guardian, REFUSE (don't fail open). scope
- * 'all' — a two-pass loop over the requested kind's pending set: PASS 1 runs the guardian over each
+ * 'all' — a two-pass loop over the (pinned) pending targets: PASS 1 runs the guardian over each
  * item (auto-whitelisting watched/requested; a failed protection SKIPS the item, never deletes it —
  * P4/P5); PASS 2 deletes each SURVIVOR individually, committing the `trash_expedited` intent event
  * BEFORE its handle call (the Fix D-09 destructive-ordering discipline). Music/Lidarr is rejected
@@ -709,17 +715,56 @@ export interface ExpediteDeletionInput {
     maintainerrMediaId: string;
     mediaItemId?: string | null;
   };
+  /**
+   * F2 (2026-07-06 pre-ship review) — scope 'all' ONLY: the maintainerrMediaId snapshot the user
+   * actually SAW in the confirm modal. The run processes EXACTLY the intersection of this list with
+   * the CURRENT pending set: ids no longer pending are counted `stalePending` (never deleted), and
+   * items that became pending AFTER the snapshot are NEVER touched (the user never consented to
+   * them). Omit for the legacy/internal whole-set behaviour (process the entire current pending set).
+   */
+  snapshotMediaIds?: string[];
 }
 
 export interface ExpediteDeletionResult {
   scope: 'item' | 'all';
-  /** items kept by the guardian (whitelisted / already tag-protected) instead of deleted. */
+  /** items kept by the guardian (whitelisted / already tag-protected / LIVE-excluded) instead of
+   *  deleted. */
   protectedCount: number;
   /** items handed to Maintainerr's per-item handler (each passed the guardian). */
   expeditedCount: number;
   /** items NOT deleted because the guardian could not clear them: unevaluable (unknown to our
    *  ledger), unactionable (no Maintainerr id), or a failed protection write. Never deleted. */
   skippedCount: number;
+  /** F2 — scope 'all': snapshot ids that were no longer pending at run time (the pending set moved
+   *  under the user). Not deleted, not an error — just no longer applicable. Always 0 for scope 'item'
+   *  and for an unpinned 'all' run. */
+  stalePending: number;
+}
+
+/**
+ * F1 (2026-07-06 pre-ship review) — the LIVE-exclusion safety seam. `classifyGuardian` reads only
+ * the SYNCED facets (arrTags/watched/requesters); a just-SAVED item's protective `dnd` tag has not
+ * yet round-tripped Maintainerr → the *arr → our ledger, so the guardian would (wrongly) clear a
+ * freshly-saved cold item as deletable — the save→expedite race the review found. Before any
+ * expedite deletes anything we therefore ask Maintainerr DIRECTLY whether each candidate is
+ * currently excluded (whitelisted) and treat a live exclusion as PROTECTED — never handled.
+ *
+ * Gathered ONCE per run (before the guardian loop). Real Maintainerr returns [] for `getExclusions`
+ * with no params, so we query per candidate by mediaServerId — bounded by the (household-scale)
+ * candidate set. Read-only; failures fail closed via guardMaintainerrCall like every other call.
+ */
+async function fetchLiveExclusions(
+  maintainerr: Pick<MaintainerrClientBundle, 'read'>,
+  ids: readonly string[],
+): Promise<Set<string>> {
+  const excluded = new Set<string>();
+  for (const id of ids) {
+    const rows = await guardMaintainerrCall('maintainerr GET /rules/exclusion', () =>
+      maintainerr.read.getExclusions({ mediaServerId: id }),
+    );
+    if (rows.length > 0) excluded.add(id);
+  }
+  return excluded;
 }
 
 /** Commit the `trash_expedited` intent event for one item, THEN trigger its per-item handle. The
@@ -789,6 +834,12 @@ export async function expediteDeletion(
     const target = resolved.item;
     // target.maintainerrMediaId is guaranteed non-null (we matched on it above).
     const targetMediaId = target.maintainerrMediaId as string;
+    // F1 — a LIVE Maintainerr exclusion protects the item even if its dnd tag hasn't synced yet.
+    // Checked BEFORE the guardian so a just-saved cold item is never handled (closes the race).
+    const liveExcluded = await fetchLiveExclusions(input.maintainerr, [targetMediaId]);
+    if (liveExcluded.has(targetMediaId)) {
+      return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0 };
+    }
     const verdict = classifyGuardian(target);
     if (verdict.keep) {
       // Watched/requested ⇒ auto-whitelist; tag ⇒ already protected; unevaluable ⇒ keep (fail closed).
@@ -801,13 +852,13 @@ export async function expediteDeletion(
           actorId: input.actorId,
           reason: 'watch_guardian',
         });
-        return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0 };
+        return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0 };
       }
       if (verdict.reason === 'tag') {
-        return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0 };
+        return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0 };
       }
       // unevaluable — not deleted, not force-whitelisted.
-      return { scope: 'item', protectedCount: 0, expeditedCount: 0, skippedCount: 1 };
+      return { scope: 'item', protectedCount: 0, expeditedCount: 0, skippedCount: 1, stalePending: 0 };
     }
 
     // Cold + positively evaluated ⇒ delete this one item (intent-first). Use the RESOLVED
@@ -817,7 +868,7 @@ export async function expediteDeletion(
       maintainerrMediaId: targetMediaId,
       mediaItemId: target.mediaItemId,
     });
-    return { scope: 'item', protectedCount: 0, expeditedCount: 1, skippedCount: 0 };
+    return { scope: 'item', protectedCount: 0, expeditedCount: 1, skippedCount: 0, stalePending: 0 };
   }
 
   // scope 'all' — per-item loop over the REQUESTED kind's pending set (never /collections/handle).
@@ -828,6 +879,33 @@ export async function expediteDeletion(
     watchWindowDays: input.watchWindowDays,
   });
 
+  // F2 — pin to the snapshot the user SAW. Only actionable pending items are eligible; when a
+  // snapshot is supplied the eligible set is narrowed to its intersection with the current pending
+  // set. Snapshot ids no longer pending are counted `stalePending`; items that became pending after
+  // the snapshot are absent from `targets` and thus NEVER touched. Unpinned (snapshot === null) is
+  // the legacy whole-set behaviour: every actionable pending item is a target; unactionable (no
+  // Maintainerr id) items are counted skipped exactly as before.
+  const snapshot = input.snapshotMediaIds === undefined ? null : new Set(input.snapshotMediaIds);
+  const actionable = pending.items.filter(
+    (p): p is TrashPendingItem & { maintainerrMediaId: string } => p.maintainerrMediaId !== null,
+  );
+  let stalePending = 0;
+  if (snapshot !== null) {
+    const pendingIds = new Set(actionable.map((p) => p.maintainerrMediaId));
+    for (const id of snapshot) if (!pendingIds.has(id)) stalePending += 1;
+  }
+  const targets =
+    snapshot === null
+      ? actionable
+      : actionable.filter((p) => snapshot.has(p.maintainerrMediaId));
+
+  // F1 — live-exclusion safety seam: fetch which targets are currently excluded (whitelisted) ONCE,
+  // before the guardian loop, and treat any live exclusion as PROTECTED (never handled).
+  const excludedIds = await fetchLiveExclusions(
+    input.maintainerr,
+    targets.map((p) => p.maintainerrMediaId),
+  );
+
   // PASS 1 — guardian: whitelist watched/requested, skip anything we can't positively clear.
   const survivors: Array<{
     collectionId: number;
@@ -835,10 +913,15 @@ export async function expediteDeletion(
     mediaItemId: string | null;
   }> = [];
   let protectedCount = 0;
-  let skippedCount = 0;
-  for (const p of pending.items) {
-    if (p.maintainerrMediaId === null) {
-      skippedCount += 1; // unactionable — cannot be deleted anyway.
+  // Legacy (unpinned) parity: unactionable items still count as skipped. When pinned they are simply
+  // not targets (never in the snapshot) and are left untouched, uncounted.
+  let skippedCount =
+    snapshot === null ? pending.items.filter((p) => p.maintainerrMediaId === null).length : 0;
+  for (const p of targets) {
+    const mediaId = p.maintainerrMediaId;
+    // F1 — a LIVE exclusion protects the item even before its dnd tag round-trips.
+    if (excludedIds.has(mediaId)) {
+      protectedCount += 1;
       continue;
     }
     const verdict = classifyGuardian(p);
@@ -849,7 +932,7 @@ export async function expediteDeletion(
           await saveExclusion({
             db: input.db,
             maintainerr: input.maintainerr,
-            maintainerrMediaId: p.maintainerrMediaId,
+            maintainerrMediaId: mediaId,
             mediaItemId: p.mediaItemId,
             actorId: input.actorId,
             reason: 'watch_guardian',
@@ -871,7 +954,7 @@ export async function expediteDeletion(
     }
     survivors.push({
       collectionId: p.collectionId,
-      maintainerrMediaId: p.maintainerrMediaId,
+      maintainerrMediaId: mediaId,
       mediaItemId: p.mediaItemId,
     });
   }
@@ -883,7 +966,7 @@ export async function expediteDeletion(
     expeditedCount += 1;
   }
 
-  return { scope: 'all', protectedCount, expeditedCount, skippedCount };
+  return { scope: 'all', protectedCount, expeditedCount, skippedCount, stalePending };
 }
 
 /**

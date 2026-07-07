@@ -53,6 +53,7 @@ import {
   daysLeftLabel,
   daysLeftTone,
   daysUntil,
+  expediteErrorAction,
   partitionForExpedite,
   previewGuardian,
   reclaimLabel,
@@ -239,6 +240,8 @@ interface ExpediteOutcome {
   protectedCount: number;
   expeditedCount: number;
   skippedCount: number;
+  /** F2 — scope 'all': snapshot ids that were no longer pending at run time. 0 for scope 'item'. */
+  stalePending: number;
 }
 
 function PendingTab({
@@ -390,16 +393,15 @@ function PendingTab({
     void utils.trash.status.invalidate();
   };
   const onExpediteError = (err: unknown) => {
-    if (appCodeOf(err) === 'MAINTAINERR_UNSAFE') {
-      // PRECONDITION_FAILED — the item is no longer pending, or the install turned unsafe
-      // between the banner read and the call. Refresh rather than surfacing a raw error.
-      setStale(true);
-      setModalError(null);
-      void utils.trash.pending.invalidate();
-      void utils.trash.status.invalidate();
-      return;
-    }
-    setModalError(describeMutationError(err));
+    // F3 — refetch on EVERY error code (not just MAINTAINERR_UNSAFE): a partial/failed run can leave
+    // the pending set and thus the confirm's deleted/protected/skipped partition stale, so we always
+    // re-partition against fresh data. MAINTAINERR_UNSAFE (item no longer pending, or the install
+    // turned unsafe between the banner read and the call) shows the calm "nothing deleted" state.
+    const action = expediteErrorAction(appCodeOf(err), describeMutationError(err));
+    void utils.trash.pending.invalidate();
+    void utils.trash.status.invalidate();
+    setStale(action.stale);
+    setModalError(action.message);
   };
   const expediteItem = trpc.trash.expediteItem.useMutation({
     onError: onExpediteError,
@@ -804,7 +806,6 @@ function PendingTab({
         ) : expedite.scope === 'item' ? (
           <ExpediteItemConfirm
             item={expedite.item}
-            protectedNow={isProtected(expedite.item)}
             busy={expediteBusy}
             onCancel={closeExpedite}
             onConfirm={() =>
@@ -875,7 +876,17 @@ function PendingTab({
                 className="btn danger"
                 data-testid="trash-expedite-all-submit"
                 disabled={expediteBusy || partition.deletable === 0}
-                onClick={() => expediteAll.mutate({ media })}
+                onClick={() =>
+                  // F2 — pin the run to the snapshot the user SAW (the entire pending set; filters
+                  // can't scope Expedite all). The server processes only this ∩ the current pending
+                  // set, so items that became pending after the modal opened are never deleted.
+                  expediteAll.mutate({
+                    media,
+                    maintainerrMediaIds: allItems
+                      .map((i) => i.maintainerrMediaId)
+                      .filter((id): id is string => id !== null),
+                  })
+                }
               >
                 {expediteBusy
                   ? 'Deleting…'
@@ -892,21 +903,28 @@ function PendingTab({
   );
 }
 
-/** The single-item confirm body — copy keyed to the guardian's predicted verdict. */
+/**
+ * The single-item confirm body — copy keyed to the guardian's predicted verdict.
+ *
+ * F1(b) (2026-07-06 review): the verdict comes SOLELY from the unit-tested guardian mirror
+ * (`previewGuardian`) over the item's server-declared fields — never the session-local shield
+ * override. The old short-circuit ("saved this session ⇒ protected_tag ⇒ nothing deletes") reported
+ * a protection the server did not yet honor. With the server-side live-exclusion seam (F1a) a
+ * genuinely-saved item is now protected server-side, so the honest outcome shows in the report; the
+ * shield badge stays display-only.
+ */
 function ExpediteItemConfirm({
   item,
-  protectedNow,
   busy,
   onCancel,
   onConfirm,
 }: {
   item: PendingItem;
-  protectedNow: boolean;
   busy: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  const verdict = protectedNow ? 'protected_tag' : previewGuardian(item);
+  const verdict = previewGuardian(item);
   const title = `${item.title}${item.year !== null ? ` (${item.year})` : ''}`;
   return (
     <div className="trash-confirm" data-testid="trash-expedite-item-confirm">
@@ -968,6 +986,14 @@ function ExpediteReport({ outcome, onClose }: { outcome: ExpediteOutcome; onClos
         <span className={`badge badge--${outcome.skippedCount > 0 ? 'warn' : 'muted'}`}>
           {outcome.skippedCount} skipped
         </span>
+        {outcome.stalePending > 0 ? (
+          <>
+            {' '}
+            <span className="badge badge--muted" data-testid="trash-expedite-stale-count">
+              {outcome.stalePending} no longer pending
+            </span>
+          </>
+        ) : null}
       </p>
       <ul className="ledger-confirm__outcomes">
         <li>
@@ -976,13 +1002,19 @@ function ExpediteReport({ outcome, onClose }: { outcome: ExpediteOutcome; onClos
         </li>
         <li>
           <strong>Protected</strong> — deliberately kept: recently watched, requested, or
-          whitelisted (watched/requested items were auto-whitelisted during this run).
+          whitelisted/saved (watched/requested items were auto-whitelisted during this run).
         </li>
         <li>
-          <strong>Skipped</strong> — could not be verified safe, so it was <em>kept</em>. Not the
-          same as protected: these items are unknown to the ledger (or unactionable) and are never
-          deleted blind.
+          <strong>Skipped</strong> — could not be verified safe <em>or</em> its protection could not
+          be applied, so it was <em>kept, never deleted</em>. Not the same as protected: these items
+          are unknown to the ledger (or unactionable) and are never deleted blind.
         </li>
+        {outcome.stalePending > 0 ? (
+          <li>
+            <strong>No longer pending</strong> — you saw these when you opened the dialog, but
+            Maintainerr’s pending set changed before the run, so they were left untouched.
+          </li>
+        ) : null}
       </ul>
       <div className="form-actions">
         <button type="button" className="btn" onClick={onClose}>

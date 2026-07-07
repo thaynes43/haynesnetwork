@@ -302,6 +302,51 @@ test.describe('trash section (DESIGN-010)', () => {
     expect(saves[0]!.body).toMatchObject({ mediaId: STUB_MAINT_FIXTURE_ID });
   });
 
+  test('F1 — a just-SAVED item survives BOTH Expedite paths: no per-item handle, reported protected (save→expedite race)', async ({
+    page,
+  }) => {
+    await resetMaintainerr(page);
+    await signIn(page, 'admin');
+    await openTrashMovies(page);
+
+    // Save the cold item. Its Maintainerr exclusion lands NOW, but its protective dnd tag would only
+    // reach our ledger on the next *arr sync — the window the review flagged. The server-side
+    // live-exclusion seam (F1a) must protect it across every expedite regardless of the tag lag.
+    const vanished = page.getByTestId('trash-row').filter({ hasText: 'Vanished Heist' });
+    await vanished.getByTestId('trash-shield').click();
+    await expect(vanished.getByTestId('trash-shield')).toHaveAttribute('data-on', 'true');
+
+    // Expedite it as a SINGLE item immediately. The confirm no longer short-circuits on the session
+    // shield (F1b) — it shows the honest guardian verdict — but the SERVER protects the saved item,
+    // so the report says protected (not deleted) and NO per-item handle fires for it.
+    await vanished.getByTestId('trash-expedite-item').click();
+    await page.getByTestId('trash-expedite-item-submit').click();
+    await expect(page.getByTestId('trash-expedite-summary')).toContainText('0 deleted');
+    await expect(page.getByTestId('trash-expedite-summary')).toContainText('1 protected');
+    await page.getByRole('button', { name: 'Done' }).click();
+    await expect(vanished).toHaveCount(1); // still pending — never deleted
+
+    // Now Expedite ALL. The saved item must again be protected, never handled.
+    await page.getByTestId('trash-expedite-all').click();
+    await page.getByTestId('trash-expedite-all-submit').click();
+    await expect(page.getByTestId('trash-expedite-report')).toBeVisible();
+    await expect(page.getByTestId('trash-expedite-summary')).toContainText('0 deleted');
+    await page.getByRole('button', { name: 'Done' }).click();
+
+    // Stub-verified across BOTH runs: the estate-wide handler never fired, and the per-item delete
+    // handler was NEVER called for the saved item.
+    const calls = await maintainerrCalls(page);
+    expect(calls.some((c) => c.path === '/collections/handle')).toBe(false);
+    const handledSaved = calls.filter(
+      (c) =>
+        c.method === 'POST' &&
+        c.path === '/collections/media/handle' &&
+        (c.body as { mediaId?: string }).mediaId === STUB_MAINT_VANISHED_ID,
+    );
+    expect(handledSaved).toHaveLength(0);
+    await expect(page.getByTestId('trash-row').filter({ hasText: 'Vanished Heist' })).toHaveCount(1);
+  });
+
   test('safety banner warns when an integration drops, and every destructive control disables', async ({
     page,
   }) => {

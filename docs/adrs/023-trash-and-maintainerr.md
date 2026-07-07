@@ -126,6 +126,20 @@ this refines their mechanism):
   number-only, which 502'd `getExclusions` for every already-excluded item — now `string|number`).
 - **C-08a — Webhook receiver hardened:** constant-time secret compare, 64KB body cap, Zod-validated
   known shape, stripped arbitrary/proto keys, length-capped stored strings (no unbounded JSON).
+- **C-07c — Expedite honors LIVE exclusions, not just synced tags (pre-ship review 2026-07-06).**
+  `classifyGuardian` reads only the synced facets (`arrTags`/watched/requesters), so a just-SAVED item
+  whose protective `dnd` tag has not yet round-tripped Maintainerr → the *arr → our ledger would be
+  (wrongly) cleared as cold — the save→expedite race. BOTH expedite scopes now fetch the LIVE
+  Maintainerr exclusion set ONCE before the guardian loop (`fetchLiveExclusions`, per candidate by
+  `mediaServerId` — real Maintainerr returns [] with no params) and treat a live exclusion as
+  **PROTECTED**, never handled (reported in `protectedCount`). The confirm modal's per-item verdict is
+  derived from the guardian mirror + server-declared fields ONLY (never the session-local shield
+  override that the server does not honor).
+- **C-07d — Whole-set expedite is PINNED to the user's snapshot (pre-ship review 2026-07-06).**
+  `trash.expediteAll` takes a REQUIRED `maintainerrMediaIds` (1..1000) — the set the confirm displayed.
+  The run processes exactly that **∩ the current pending set**; snapshot ids no longer pending are
+  counted `stalePending` (never deleted) and items that became pending after the modal opened are NEVER
+  touched (no consent to them). Converges toward PLAN-012's batch endpoint.
 
 ## Consequences
 

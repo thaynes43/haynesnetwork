@@ -155,11 +155,19 @@ export const trashRouter = router({
     }),
 
   /**
-   * DESIGN-010 D-04/D-05 — expedite the WHOLE pending set (destructive; expedite_all grant). Re-runs
-   * the SAFE gate; the watch guardian auto-whitelists recently-watched/requested items first.
+   * DESIGN-010 D-04/D-05/D-08 — expedite the WHOLE pending set (destructive; expedite_all grant).
+   * Re-runs the SAFE gate; the watch guardian auto-whitelists recently-watched/requested items
+   * first. F2 (2026-07-06 review): `maintainerrMediaIds` is the REQUIRED snapshot the user saw in
+   * the confirm — the run processes exactly its intersection with the current pending set, so items
+   * that became pending after the modal opened are never deleted (see `snapshotMediaIds`).
    */
   expediteAll: trashActionProcedure('expedite_all')
-    .input(z.object({ media: trashMedia }))
+    .input(
+      z.object({
+        media: trashMedia,
+        maintainerrMediaIds: z.array(z.string().min(1)).min(1).max(1000),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
       return mapDomainErrors(() =>
         expediteDeletion({
@@ -168,6 +176,7 @@ export const trashRouter = router({
           scope: 'all',
           media: input.media,
           actorId: ctx.user.id,
+          snapshotMediaIds: input.maintainerrMediaIds,
         }),
       );
     }),

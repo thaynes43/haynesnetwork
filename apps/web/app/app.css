@@ -931,6 +931,16 @@ input[aria-invalid='true'] {
   opacity: 0.55;
   cursor: not-allowed;
 }
+/* F4 (2026-07-06 review) — a DISABLED destructive button must not read as armed/actionable. In the
+   warn-banner state (Maintainerr unsafe ⇒ Expedite disabled) the danger tint (red text + red border)
+   made a dead control still look "hot". Drop the tint to a neutral muted look and deepen the fade so
+   "you can't do this right now" is unambiguous; it never applies to an ENABLED danger button. */
+.btn.danger:disabled {
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+  background: transparent;
+  opacity: 0.5;
+}
 
 /* Inline arm-to-confirm (ADR-014/ADR-015): reserve for the WIDEST state (bold "Confirm?") so
    the label swap never reflows neighbors. `.btn.confirm-btn` (0,2,0, later in source) beats
