@@ -18,8 +18,14 @@ export { resolvePlexBundle } from './trpc';
 export { SectionPermissionInput, TrashActionsInput } from './schemas';
 // ADR-023 — the Trash section gates the UX/nav reads on (server-authoritative).
 export { hasTrashAction, trashActionProcedure } from './middleware/role';
-// ADR-019 / DESIGN-008 — the poster-proxy upstream resolver (used by the app poster route).
-export { resolvePosterUpstream, type PosterUpstream } from './poster';
+// ADR-019 / DESIGN-008 — the poster-proxy upstream resolver + the TMDB fallback for removed
+// items (used by the app poster route).
+export {
+  resolvePosterUpstream,
+  resolveTmdbPosterFallback,
+  type PosterUpstream,
+  type TmdbFallbackDeps,
+} from './poster';
 // ADR-021 — the section-level resolver the nav + the Ledger export route gate on (server-authoritative).
 export { effectiveSectionLevel } from './middleware/role';
 // ADR-022 / DESIGN-009 D-06 — the emergency Ledger JSONL export (used by the app export route).
