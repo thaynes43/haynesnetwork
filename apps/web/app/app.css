@@ -882,7 +882,13 @@ tr.drop-after td {
 .admin-form input:not([type]),
 .admin-form textarea,
 .admin-form select,
-.form-row select {
+.form-row select,
+/* The /bulletin Messages composer isn't an .admin-form, so its Subject/Message/media-search
+   controls share the SAME themed surface here — otherwise they fall back to the browser
+   default white background in dark mode. */
+.bulletin-composer input,
+.bulletin-composer textarea,
+.bulletin-mediapick input {
   font: inherit;
   font-size: 13px;
   color: var(--color-text);
@@ -892,14 +898,18 @@ tr.drop-after td {
   padding: 10px 12px;
   min-height: 44px;
 }
-.admin-form textarea {
+.admin-form textarea,
+.bulletin-composer textarea {
   resize: vertical;
   min-height: 76px;
   line-height: 1.4;
 }
 .admin-form input:focus,
 .admin-form textarea:focus,
-.admin-form select:focus {
+.admin-form select:focus,
+.bulletin-composer input:focus,
+.bulletin-composer textarea:focus,
+.bulletin-mediapick input:focus {
   border-color: var(--color-accent);
 }
 .field-hint {
@@ -3302,9 +3312,8 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='lock'] {
 .bulletin-composer {
   margin-bottom: var(--space);
 }
-.bulletin-composer textarea {
-  resize: vertical;
-}
+/* Themed input surface (color/background/border/focus) is shared with .admin-form near the
+   top of this file so the composer matches every other form in dark + light mode. */
 .bulletin-mediapick {
   position: relative;
   display: inline-block;

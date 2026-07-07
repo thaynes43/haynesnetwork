@@ -138,6 +138,19 @@ test.describe('Bulletin section UI (ADR-026 / DESIGN-012 D-08)', () => {
     const composer = page.getByTestId('message-composer');
     await expect(composer).toBeVisible();
 
+    // Fable UX regression guard: the composer's Subject/Message/media-search controls use the
+    // SHARED themed input surface (not the browser-default white that stood out in dark mode).
+    // Their background must resolve to a themed color, never `rgb(255, 255, 255)` / transparent.
+    for (const control of [
+      composer.getByLabel('Subject'),
+      composer.getByLabel(/^Message/),
+      page.getByTestId('composer-media-search'),
+    ]) {
+      const bg = await control.evaluate((el) => getComputedStyle(el).backgroundColor);
+      expect(bg).not.toBe('rgb(255, 255, 255)');
+      expect(bg).not.toBe('rgba(0, 0, 0, 0)');
+    }
+
     // Compose: subject + body + a Media Item link through the picker.
     await composer.getByLabel('Subject').fill('Buffering again');
     await composer.getByLabel(/^Message/).fill('The Fixture buffers at 12 minutes, every time.');
