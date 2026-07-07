@@ -137,6 +137,150 @@ export function fixStatusTone(status: string): BadgeTone {
   }
 }
 
+// ---------------------------------------------------------------------------
+// ADR-028 / DESIGN-005 D-20/D-21 — Action Progress Phase display vocabulary.
+// A framework-free MIRROR of @hnet/domain's ActionPhase (same rule as
+// fixReasonsForKind above: lib/media.ts never imports @hnet/domain).
+// ---------------------------------------------------------------------------
+
+/** The nine derived phases (DDD-001 T-90): five in-flight, four terminal. */
+export type ActionPhaseName =
+  | 'searching'
+  | 'queued'
+  | 'grabbed'
+  | 'downloading'
+  | 'importing'
+  | 'completed'
+  | 'nothing_found'
+  | 'stalled'
+  | 'failed';
+
+const TERMINAL_ACTION_PHASES: ReadonlySet<ActionPhaseName> = new Set([
+  'completed',
+  'nothing_found',
+  'stalled',
+  'failed',
+]);
+
+/** Terminal ⇒ the poll stops and the action button re-arms (D-20 poll contract). */
+export function isTerminalActionPhase(phase: string): boolean {
+  return TERMINAL_ACTION_PHASES.has(phase as ActionPhaseName);
+}
+
+/** Short chip labels (the compact in-row form; the dialogs use actionPhaseCopy). */
+export const ACTION_PHASE_LABELS: Record<string, string> = {
+  searching: 'Searching…',
+  queued: 'Queued',
+  grabbed: 'Grabbed',
+  downloading: 'Downloading',
+  importing: 'Importing…',
+  completed: 'Done',
+  nothing_found: 'Nothing found',
+  stalled: 'Stuck',
+  failed: 'Failed',
+};
+
+/** The @hnet/ui PhaseTone union (mirrored — same framework-free rule). */
+export type ActionPhaseTone =
+  | 'neutral'
+  | 'info'
+  | 'progress'
+  | 'success'
+  | 'muted'
+  | 'warning'
+  | 'danger';
+
+/**
+ * Chip/meter tone per phase: searching/queued read as calm activity (info/neutral),
+ * downloading/importing as motion (--color-progress), completed as success,
+ * nothing_found as a quiet terminal, stalled/failed as warning/danger.
+ */
+export function actionPhaseTone(phase: string): ActionPhaseTone {
+  switch (phase) {
+    case 'searching':
+      return 'info';
+    case 'queued':
+      return 'neutral';
+    case 'grabbed':
+    case 'downloading':
+    case 'importing':
+      return 'progress';
+    case 'completed':
+      return 'success';
+    case 'nothing_found':
+      return 'muted';
+    case 'stalled':
+      return 'warning';
+    case 'failed':
+      return 'danger';
+    default:
+      return 'neutral';
+  }
+}
+
+/** The proper names for the queue owner (dialog copy: "Queued in Radarr…"). */
+export const ARR_MANAGER_NAMES: Record<ArrKindName, string> = {
+  sonarr: 'Sonarr',
+  radarr: 'Radarr',
+  lidarr: 'Lidarr',
+};
+
+/** "~4 min", "~1 h 20 m", "under a minute" — the humanized ETA for the meter. */
+export function formatEta(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return '';
+  if (seconds < 90) return 'under a minute';
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `~${minutes} min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m > 0 ? `~${h} h ${m} m` : `~${h} h`;
+}
+
+/**
+ * The plain-language dialog copy per phase (owner spec, PLAN-015): a wire-ack the
+ * request landed, live download progress with an ETA, and an honest terminal for
+ * the empty/stuck/failed cases — never a silent state.
+ */
+export function actionPhaseCopy(input: {
+  phase: string;
+  kind: ArrKindName;
+  progressPct?: number;
+  etaSeconds?: number;
+  message?: string;
+}): string {
+  const manager = ARR_MANAGER_NAMES[input.kind] ?? 'the manager';
+  switch (input.phase) {
+    case 'searching':
+      return 'Searching for a release…';
+    case 'queued':
+      return `Queued in ${manager} — waiting for the download to start…`;
+    case 'grabbed':
+      return 'Release grabbed — handing off to the download client…';
+    case 'downloading': {
+      const pct = input.progressPct !== undefined ? ` — ${Math.round(input.progressPct)}%` : '';
+      const eta =
+        input.etaSeconds !== undefined && formatEta(input.etaSeconds) !== ''
+          ? ` (${formatEta(input.etaSeconds)} left)`
+          : '';
+      return `Downloading${pct}${eta}`;
+    }
+    case 'importing':
+      return 'Downloaded — importing the new copy…';
+    case 'completed':
+      return 'Done — the new copy imported.';
+    case 'nothing_found':
+      return 'No release found yet — still watching; you can try again later.';
+    case 'stalled':
+      return input.message
+        ? `This seems stuck — ${input.message}`
+        : 'This seems stuck — no progress for a while.';
+    case 'failed':
+      return input.message ? `The download failed: ${input.message}` : 'The download failed.';
+    default:
+      return 'Checking status…';
+  }
+}
+
 /** Ledger event type labels for the item timeline (D-07 normalized set). */
 export const EVENT_TYPE_LABELS: Record<string, string> = {
   grabbed: 'Grabbed',
@@ -144,6 +288,7 @@ export const EVENT_TYPE_LABELS: Record<string, string> = {
   deleted: 'Deleted',
   download_failed: 'Download failed',
   requested: 'Requested',
+  search_requested: 'Search requested',
   fix_requested: 'Fix requested',
   fix_actioned: 'Fix actioned',
   fix_completed: 'Fix completed',

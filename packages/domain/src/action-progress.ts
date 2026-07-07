@@ -72,14 +72,30 @@ export interface ActionProgress {
 // Never-stuck windows (ADR-028 D2/D3; constants, not settings v1).
 // ---------------------------------------------------------------------------
 
+/** Test hook (e2e/dev-local only): the windows are constants in prod (ADR-028 C-06),
+ *  but a 15-min found-nothing window is untestable in Playwright — the harness
+ *  shortens it via env. Unset/invalid ⇒ the documented default. */
+function windowMsFromEnv(name: string, fallbackMs: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallbackMs;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : fallbackMs;
+}
+
 /** No grab within this window after a search ⇒ the terminal `nothing_found` (ADR-028 D2). */
-export const FOUND_NOTHING_WINDOW_MS = 15 * 60 * 1000; // 15 min
+export const FOUND_NOTHING_WINDOW_MS = windowMsFromEnv(
+  'ACTION_FOUND_NOTHING_WINDOW_MS',
+  15 * 60 * 1000, // 15 min
+);
 
 /**
  * A non-terminal action older than this with no queue/import activity ⇒ `stalled` (ADR-028
  * D3). `trackedDownloadStatus:'error'` on a live queue record is `stalled` immediately.
  */
-export const STALLED_THRESHOLD_MS = 45 * 60 * 1000; // 45 min
+export const STALLED_THRESHOLD_MS = windowMsFromEnv(
+  'ACTION_STALLED_THRESHOLD_MS',
+  45 * 60 * 1000, // 45 min
+);
 
 const TERMINAL_PHASES: ReadonlySet<ActionPhase> = new Set([
   'completed',

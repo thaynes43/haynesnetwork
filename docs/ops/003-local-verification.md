@@ -101,6 +101,15 @@ e2e suite uses** — embedded PG16 → real migrations + catalog seed → stub O
   so you can drive the dashboard, library browse/detail, and the fix / force-search /
   restore flows end-to-end. The seeded Sonarr row is series 501 "Breaking Prod", 9/10
   episodes on disk (mirrors the stub).
+  - **Scriptable download queue (ADR-028 action feedback).** `GET /queue` serves records
+    you stage via `POST <stub-arr>/_stub/queue` with `{"records": [...]}` (empty by
+    default; `POST /_stub/reset` clears it). To demo a Fix advancing live, submit a Fix in
+    the UI and re-stage the same record with a shrinking `sizeleft`
+    (queued → downloading → `trackedDownloadState:"importing"` → empty-after-import) —
+    the dialog/item/My-Fixes surfaces walk the phases as they poll. Join keys:
+    `seriesId`+`episodeId` / `movieId` / `artistId`+`albumId`. The harness also shortens
+    the found-nothing window to 30 s (`ACTION_FOUND_NOTHING_WINDOW_MS`; prod default
+    15 min) so the `nothing_found` terminal is reachable while you watch.
 - **Stub Bazarr** (a second HTTP server; `BAZARR_URL` points at it) serves the
   subtitle-state reads and accepts the `search-missing` PATCH, so the **missing-subtitles
   Fix** (ADR-016 / DESIGN-005 D-19) runs end-to-end without a real Bazarr. It records its

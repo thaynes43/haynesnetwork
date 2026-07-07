@@ -2,7 +2,12 @@
 
 // DESIGN-005 D-15 / R-43..R-45 — the Fix dialog: episode/album target picker (live
 // children via ledger.children, D-06), the mandatory reason taxonomy (free text only
-// on Other), submit → fix.create → status feedback (path taken).
+// on Other), submit → fix.create → then the ADR-028 / D-20 LIVE progress view: the
+// dialog polls fix.progress and walks the user through
+// searching → queued → downloading% → importing → completed (or an honest
+// nothing_found / stalled / failed terminal with a retry) instead of a static
+// "a search is running" line. Closing the dialog is safe — the same state lives on
+// the item's action slot (D-21).
 import { useState } from 'react';
 import { trpc } from '@/lib/trpc-client';
 import { describeMutationError } from '@/lib/app-error';
@@ -15,6 +20,12 @@ import {
   type FixReasonName,
 } from '@/lib/media';
 import { Modal } from '@/components/modal';
+import {
+  ActionProgressBlock,
+  useActionProgress,
+  type ProgressSource,
+  type SearchProgressInput,
+} from '@/components/action-progress';
 
 export interface FixDialogProps {
   open: boolean;
@@ -30,6 +41,14 @@ export interface FixDialogProps {
   onSubmitted: () => void;
 }
 
+interface DoneState {
+  fixRequestId: string;
+  pathTaken: string;
+  targetLabel: string | null;
+  /** The grain submitted — the "Search again" retry re-issues a search on it. */
+  searchInput: SearchProgressInput;
+}
+
 export function FixDialog({ open, onClose, item, target, onSubmitted }: FixDialogProps) {
   const needsTarget = item.arrKind === 'sonarr' || item.arrKind === 'lidarr';
   const targetNoun = item.arrKind === 'sonarr' ? 'episode' : 'album';
@@ -43,7 +62,10 @@ export function FixDialog({ open, onClose, item, target, onSubmitted }: FixDialo
   const [reason, setReason] = useState<FixReasonName>('wont_play_corrupt');
   const [reasonText, setReasonText] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<{ pathTaken: string; targetLabel: string | null } | null>(null);
+  const [done, setDone] = useState<DoneState | null>(null);
+  // After a retry the live anchor is the NEW search event, not the old fix row
+  // (whose found-nothing window already elapsed) — so the poll source swaps.
+  const [retried, setRetried] = useState(false);
 
   // Only fetch the live picker when we need a target AND one wasn't handed in.
   const children = trpc.ledger.children.useQuery(
@@ -52,12 +74,45 @@ export function FixDialog({ open, onClose, item, target, onSubmitted }: FixDialo
   );
   const create = trpc.fix.create.useMutation({
     onError: (err) => setError(describeMutationError(err)),
-    onSuccess: (result) => {
+    onSuccess: (result, variables) => {
       setError(null);
-      setDone({ pathTaken: result.pathTaken, targetLabel: result.targetLabel });
+      setDone({
+        fixRequestId: result.id,
+        pathTaken: result.pathTaken,
+        targetLabel: result.targetLabel,
+        searchInput: {
+          mediaItemId: variables.mediaItemId,
+          scope: variables.scope,
+          targetChildId: variables.targetChildId,
+          seasonNumber: variables.seasonNumber,
+        },
+      });
       onSubmitted();
     },
   });
+  const utils = trpc.useUtils();
+  const retrySearch = trpc.fix.forceSearch.useMutation({
+    onError: (err) => setError(describeMutationError(err)),
+    onSuccess: () => {
+      setError(null);
+      setRetried(true);
+      // The retry may reuse a search query that already stopped on a terminal —
+      // invalidate so the fresh anchor is fetched and polling re-arms.
+      void utils.fix.searchProgress.invalidate();
+      onSubmitted();
+    },
+  });
+
+  // Bazarr subtitle fixes have no *arr queue/import to watch — they keep the
+  // static fire-and-forget copy (mirrors the completeFixRequests exclusion).
+  const isSubtitlePath = done?.pathTaken === 'bazarr_subtitle';
+  const source: ProgressSource | null =
+    open && done !== null && !isSubtitlePath
+      ? retried
+        ? { kind: 'search', input: done.searchInput }
+        : { kind: 'fix', fixRequestId: done.fixRequestId }
+      : null;
+  const live = useActionProgress(source, { onTerminal: () => onSubmitted() });
 
   function reset() {
     setTargetChildId('');
@@ -65,6 +120,7 @@ export function FixDialog({ open, onClose, item, target, onSubmitted }: FixDialo
     setReasonText('');
     setError(null);
     setDone(null);
+    setRetried(false);
   }
 
   function close() {
@@ -122,9 +178,27 @@ export function FixDialog({ open, onClose, item, target, onSubmitted }: FixDialo
                 : 'The file was removed and a search for a replacement is running.'}
           </p>
           {done.targetLabel ? <p className="muted">Target: {done.targetLabel}</p> : null}
-          <p className="muted">
-            Track progress under Library → My Fixes — it completes when the new copy imports.
-          </p>
+          {isSubtitlePath ? (
+            <p className="muted">
+              Subtitle downloads finish on their own — nothing else to watch here.
+            </p>
+          ) : (
+            <>
+              <ActionProgressBlock
+                progress={live.progress}
+                pending={live.pending}
+                checkFailed={live.checkFailed}
+                kind={item.arrKind as ArrKindName}
+                onRetry={() => retrySearch.mutate({ ...done.searchInput })}
+                retryLabel="Search again"
+                retryPending={retrySearch.isPending}
+              />
+              <p className="muted">
+                You can close this — the live status stays on the item and under Library → My
+                Fixes.
+              </p>
+            </>
+          )}
           <div className="form-actions">
             <button type="button" className="btn primary" onClick={close}>
               Done

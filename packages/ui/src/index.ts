@@ -31,6 +31,11 @@ export type {
   ConfirmOutcome,
 } from './controls/ConfirmButton';
 
+// ADR-028 / DESIGN-005 D-21 — live *arr action-feedback primitives (structure only;
+// tones map to app classes over the token palette, incl. --color-progress).
+export { PhaseChip, ProgressMeter } from './controls/PhaseChip';
+export type { PhaseChipProps, ProgressMeterProps, PhaseTone } from './controls/PhaseChip';
+
 export { useReorderDnD } from './controls/useReorderDnD';
 export type {
   UseReorderDnDOptions,

@@ -8,9 +8,17 @@
 // Fix), and a whole-show / whole-artist Force Search sits in the section header.
 // Radarr acts at the movie level in the header. Below: fix history for the item (R-46)
 // and the ledger event timeline (R-41).
+//
+// ADR-028 / DESIGN-005 D-21 — the in-flight LOCK: while an open fix (or a
+// just-submitted force search) targets a grain, its action slot renders the LIVE
+// phase chip IN PLACE of the buttons — no more clicking Fix into a
+// FixAlreadyOpenError toast; the buttons re-arm when the live phase lands a
+// terminal. Every slot reserves width (hard rule 9), so button ↔ chip swaps and
+// percent ticks never reflow the row.
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { trpc } from '@/lib/trpc-client';
+import { PhaseChip } from '@hnet/ui';
 import {
   ARR_KIND_LABELS,
   EVENT_TYPE_LABELS,
@@ -26,12 +34,19 @@ import {
   onDiskSummary,
   ratingOrNull,
   seasonName,
+  type ActionScope,
   type ActionTarget,
   type ArrKindName,
 } from '@/lib/media';
 import { MediaPoster } from '@/components/media-poster';
 import { TrashPendingNotice, type TrashAccess } from '@/components/trash-shield';
 import { PROTECTED_TAG } from '@/lib/trash';
+import {
+  ActionLiveChip,
+  useActionProgress,
+  type ProgressSource,
+  type SearchProgressInput,
+} from '@/components/action-progress';
 import { FixDialog } from './fix-dialog';
 import { ForceSearchDialog } from './force-search-dialog';
 
@@ -40,6 +55,127 @@ type PendingAction = {
   mode: 'fix' | 'search';
   target: ActionTarget | null;
 };
+
+/** Client mirror of @hnet/domain OPEN_FIX_STATUSES (lib/media never imports domain). */
+const OPEN_FIX_STATUSES = new Set(['pending', 'actioned', 'search_triggered']);
+
+/** An open fix row as ledger.detail returns it (the lock's data source). */
+interface OpenFixRow {
+  id: string;
+  status: string;
+  reason: string;
+  pathTaken: string | null;
+  targetScope: string;
+  targetArrChildId: number | null;
+  targetSeason: number | null;
+  watchable: boolean;
+}
+
+/**
+ * One session-key per action grain — force searches leave no durable row (D-20),
+ * so the lock tracks the grains this session submitted searches for.
+ */
+function grainKey(scope: ActionScope, childId?: number | null, seasonNumber?: number | null) {
+  return `${scope}:${childId ?? ''}:${seasonNumber ?? ''}`;
+}
+
+/** Mirror of the server's default-scope resolution, for session-key normalization. */
+function searchInputKey(kind: ArrKindName, input: SearchProgressInput): string {
+  let scope = input.scope;
+  if (scope === undefined) {
+    if (kind === 'radarr') scope = 'item';
+    else if (kind === 'sonarr') scope = input.targetChildId !== undefined ? 'episode' : 'show';
+    else scope = input.targetChildId !== undefined ? 'album' : 'artist';
+  }
+  return grainKey(scope, input.targetChildId ?? null, input.seasonNumber ?? null);
+}
+
+interface LiveSearch {
+  input: SearchProgressInput;
+  label: string;
+}
+
+/**
+ * The reserved action slot (D-21): renders the enabled button(s) by default, the live
+ * phase chip while an open fix / in-flight search targets this grain, and — for a fix
+ * that landed nothing_found/stalled (its row is still open server-side, so a fresh Fix
+ * would only CONFLICT) — the chip plus the re-enabled Force Search button as the retry.
+ * The slot's min-width is reserved in CSS for its widest state (hard rule 9).
+ */
+function ActionSlot({
+  fix,
+  liveSearch,
+  onSearchTerminal,
+  onFixTerminal,
+  fixButton,
+  searchButton,
+  className,
+}: {
+  fix: OpenFixRow | null;
+  liveSearch: LiveSearch | null;
+  onSearchTerminal: () => void;
+  onFixTerminal: () => void;
+  fixButton: ReactNode;
+  searchButton: ReactNode;
+  className?: string;
+}) {
+  // A session search is the newest signal for the grain; else the caller's own open
+  // fix polls live; someone else's open fix renders a static in-flight chip (the
+  // progress query is own-or-admin — no leak, and the server lock protects anyway).
+  const source: ProgressSource | null =
+    liveSearch !== null
+      ? { kind: 'search', input: liveSearch.input }
+      : fix !== null && fix.watchable
+        ? { kind: 'fix', fixRequestId: fix.id }
+        : null;
+  const live = useActionProgress(source, {
+    onTerminal: liveSearch !== null ? onSearchTerminal : onFixTerminal,
+  });
+  const phase = live.progress?.phase ?? null;
+
+  let content: ReactNode;
+  if (source !== null) {
+    if (liveSearch === null && (phase === 'completed' || phase === 'failed')) {
+      // The fix reached a real terminal — the buttons re-arm.
+      content = (
+        <>
+          {fixButton}
+          {searchButton}
+        </>
+      );
+    } else if (liveSearch === null && (phase === 'nothing_found' || phase === 'stalled')) {
+      // Never-stuck terminals on an OPEN fix row: a fresh Fix would 409 against the
+      // one-open-fix rule, so the retry affordance is the (lock-free) Force Search.
+      content = (
+        <>
+          <ActionLiveChip {...live} />
+          {searchButton}
+        </>
+      );
+    } else {
+      content = <ActionLiveChip {...live} />;
+    }
+  } else if (fix !== null) {
+    content = (
+      <PhaseChip
+        phase="in_progress"
+        label="Fix in progress"
+        tone="info"
+        pulse
+        title="Someone already has a fix running for this"
+      />
+    );
+  } else {
+    content = (
+      <>
+        {fixButton}
+        {searchButton}
+      </>
+    );
+  }
+
+  return <span className={['action-slot', className].filter(Boolean).join(' ')}>{content}</span>;
+}
 
 /** DESIGN-010 D-09 — the caller's Trash access (null when the section is Disabled for them). */
 export type ItemTrashAccess = TrashAccess | null;
@@ -53,6 +189,9 @@ export function ItemDetail({
 }) {
   const utils = trpc.useUtils();
   const [action, setAction] = useState<PendingAction | null>(null);
+  // D-21 — force searches leave no durable row, so the grains THIS session searched
+  // are tracked here; each keeps its slot locked behind the live chip until terminal.
+  const [liveSearches, setLiveSearches] = useState<Record<string, LiveSearch>>({});
 
   const detail = trpc.ledger.detail.useQuery({ id: mediaItemId });
   const events = trpc.ledger.events.useInfiniteQuery(
@@ -102,11 +241,85 @@ export function ItemDetail({
     meta.sourceCollections.length > 0;
   const timeline = events.data?.pages.flatMap((p) => p.events) ?? [];
 
+  // Plain closures (not hooks) — they sit below the loading/error early returns.
   const refresh = () => {
     void utils.ledger.detail.invalidate({ id: mediaItemId });
     void utils.ledger.events.invalidate();
     void utils.ledger.children.invalidate({ mediaItemId });
     void utils.fix.myFixes.invalidate();
+  };
+
+  const kindName = item.arrKind as ArrKindName;
+
+  // D-21 lock plumbing — the open fix matching a grain (subtitle fixes excluded:
+  // they rest open forever by design and never occupy the *arr pipeline), and the
+  // session-search register/clear pair the slots + dialog share.
+  const openFixFor = (
+    scope: ActionScope,
+    childId: number | null = null,
+    seasonNumber: number | null = null,
+  ): OpenFixRow | null =>
+    fixes.find(
+      (f) =>
+        OPEN_FIX_STATUSES.has(f.status) &&
+        f.pathTaken !== 'bazarr_subtitle' &&
+        f.reason !== 'missing_subtitles' &&
+        f.targetScope === scope &&
+        (f.targetArrChildId ?? null) === childId &&
+        (f.targetSeason ?? null) === seasonNumber,
+    ) ?? null;
+
+  const registerSearch = (search: { input: SearchProgressInput; label: string }) => {
+    setLiveSearches((prev) => ({
+      ...prev,
+      [searchInputKey(kindName, search.input)]: search,
+    }));
+    refresh();
+  };
+  const clearSearch = (key: string) => {
+    setLiveSearches((prev) => {
+      if (!(key in prev)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+    refresh();
+  };
+  const liveSearchFor = (
+    scope: ActionScope,
+    childId: number | null = null,
+    seasonNumber: number | null = null,
+  ): { key: string; search: LiveSearch } | null => {
+    const key = grainKey(scope, childId, seasonNumber);
+    const search = liveSearches[key];
+    return search !== undefined ? { key, search } : null;
+  };
+
+  /** The reserved slot for one grain — buttons by default, live chip while locked. */
+  const actionSlot = (input: {
+    scope: ActionScope;
+    childId?: number | null;
+    seasonNumber?: number | null;
+    fixButton: ReactNode;
+    searchButton: ReactNode;
+    className?: string;
+  }) => {
+    const childId = input.childId ?? null;
+    const seasonNumber = input.seasonNumber ?? null;
+    const search = liveSearchFor(input.scope, childId, seasonNumber);
+    return (
+      <ActionSlot
+        fix={openFixFor(input.scope, childId, seasonNumber)}
+        liveSearch={search?.search ?? null}
+        onSearchTerminal={() => {
+          if (search !== null) clearSearch(search.key);
+        }}
+        onFixTerminal={refresh}
+        fixButton={input.fixButton}
+        searchButton={input.searchButton}
+        className={input.className}
+      />
+    );
   };
 
   // Shared "children not loaded yet" node (tombstoned / loading / error / empty) — null
@@ -126,6 +339,8 @@ export function ItemDetail({
   // One child row (owner availability rule 2026-07-04): ON DISK → BOTH Fix (repair the
   // grab) and Force Search (just re-grab); MISSING → Force Search only (nothing on disk
   // to blocklist/delete). Force Search is always available; Fix is gated on hasFile.
+  // The action pair rides a reserved ActionSlot (D-21): a live fix/search on this
+  // child swaps the buttons for its phase chip without moving anything else.
   const childRow = (
     child: { arrChildId: number; label: string; hasFile: boolean },
     scope: 'episode' | 'album',
@@ -136,32 +351,38 @@ export function ItemDetail({
         {child.hasFile ? 'On disk' : 'Missing'}
       </span>
       <span className="child-row__actions">
-        {child.hasFile ? (
-          <button
-            type="button"
-            className="btn sm"
-            onClick={() =>
-              setAction({
-                mode: 'fix',
-                target: { scope, childId: child.arrChildId, label: child.label },
-              })
-            }
-          >
-            Fix
-          </button>
-        ) : null}
-        <button
-          type="button"
-          className="btn sm"
-          onClick={() =>
-            setAction({
-              mode: 'search',
-              target: { scope, childId: child.arrChildId, label: child.label },
-            })
-          }
-        >
-          Force Search
-        </button>
+        {actionSlot({
+          scope,
+          childId: child.arrChildId,
+          fixButton: child.hasFile ? (
+            <button
+              type="button"
+              className="btn sm"
+              onClick={() =>
+                setAction({
+                  mode: 'fix',
+                  target: { scope, childId: child.arrChildId, label: child.label },
+                })
+              }
+            >
+              Fix
+            </button>
+          ) : null,
+          searchButton: (
+            <button
+              type="button"
+              className="btn sm"
+              onClick={() =>
+                setAction({
+                  mode: 'search',
+                  target: { scope, childId: child.arrChildId, label: child.label },
+                })
+              }
+            >
+              Force Search
+            </button>
+          ),
+        })}
       </span>
     </li>
   );
@@ -221,24 +442,31 @@ export function ItemDetail({
             MISSING → Force Search only. */}
         {item.arrKind === 'radarr' ? (
           <div className="detail-head__actions">
-            {item.onDiskFileCount > 0 ? (
-              <button
-                type="button"
-                className="btn primary"
-                disabled={item.tombstonedAt !== null}
-                onClick={() => setAction({ mode: 'fix', target: null })}
-              >
-                Fix
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className={item.onDiskFileCount > 0 ? 'btn' : 'btn primary'}
-              disabled={item.tombstonedAt !== null}
-              onClick={() => setAction({ mode: 'search', target: null })}
-            >
-              Force Search
-            </button>
+            {actionSlot({
+              scope: 'item',
+              className: 'action-slot--head',
+              fixButton:
+                item.onDiskFileCount > 0 ? (
+                  <button
+                    type="button"
+                    className="btn primary"
+                    disabled={item.tombstonedAt !== null}
+                    onClick={() => setAction({ mode: 'fix', target: null })}
+                  >
+                    Fix
+                  </button>
+                ) : null,
+              searchButton: (
+                <button
+                  type="button"
+                  className={item.onDiskFileCount > 0 ? 'btn' : 'btn primary'}
+                  disabled={item.tombstonedAt !== null}
+                  onClick={() => setAction({ mode: 'search', target: null })}
+                >
+                  Force Search
+                </button>
+              ),
+            })}
           </div>
         ) : null}
       </section>
@@ -378,17 +606,24 @@ export function ItemDetail({
         <section className="card admin-section">
           <div className="section-head">
             <h2>Episodes</h2>
-            {!tombstoned ? (
-              <button
-                type="button"
-                className="btn sm"
-                onClick={() =>
-                  setAction({ mode: 'search', target: { scope: 'show', label: item.title } })
-                }
-              >
-                Force Search show
-              </button>
-            ) : null}
+            {!tombstoned
+              ? actionSlot({
+                  scope: 'show',
+                  className: 'action-slot--roll',
+                  fixButton: null,
+                  searchButton: (
+                    <button
+                      type="button"
+                      className="btn sm"
+                      onClick={() =>
+                        setAction({ mode: 'search', target: { scope: 'show', label: item.title } })
+                      }
+                    >
+                      Force Search show
+                    </button>
+                  ),
+                })
+              : null}
           </div>
           {childrenNotReady ?? (
             <div className="season-list">
@@ -402,42 +637,49 @@ export function ItemDetail({
                       {s.onDiskCount}/{s.total} on disk
                     </span>
                     <span className="season__actions">
-                      {s.onDiskCount > 0 ? (
-                        <button
-                          type="button"
-                          className="btn sm"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            setAction({
-                              mode: 'fix',
-                              target: {
-                                scope: 'season',
-                                seasonNumber: s.seasonNumber,
-                                label: seasonName(s.seasonNumber),
-                              },
-                            });
-                          }}
-                        >
-                          Fix season
-                        </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        className="btn sm"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          setAction({
-                            mode: 'search',
-                            target: {
-                              scope: 'season',
-                              seasonNumber: s.seasonNumber,
-                              label: seasonName(s.seasonNumber),
-                            },
-                          });
-                        }}
-                      >
-                        Force Search
-                      </button>
+                      {actionSlot({
+                        scope: 'season',
+                        seasonNumber: s.seasonNumber,
+                        fixButton:
+                          s.onDiskCount > 0 ? (
+                            <button
+                              type="button"
+                              className="btn sm"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                setAction({
+                                  mode: 'fix',
+                                  target: {
+                                    scope: 'season',
+                                    seasonNumber: s.seasonNumber,
+                                    label: seasonName(s.seasonNumber),
+                                  },
+                                });
+                              }}
+                            >
+                              Fix season
+                            </button>
+                          ) : null,
+                        searchButton: (
+                          <button
+                            type="button"
+                            className="btn sm"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              setAction({
+                                mode: 'search',
+                                target: {
+                                  scope: 'season',
+                                  seasonNumber: s.seasonNumber,
+                                  label: seasonName(s.seasonNumber),
+                                },
+                              });
+                            }}
+                          >
+                            Force Search
+                          </button>
+                        ),
+                      })}
                     </span>
                   </summary>
                   <ul className="child-list">{s.episodes.map((ep) => childRow(ep, 'episode'))}</ul>
@@ -454,17 +696,27 @@ export function ItemDetail({
         <section className="card admin-section">
           <div className="section-head">
             <h2>Albums</h2>
-            {!tombstoned ? (
-              <button
-                type="button"
-                className="btn sm"
-                onClick={() =>
-                  setAction({ mode: 'search', target: { scope: 'artist', label: item.title } })
-                }
-              >
-                Force Search artist
-              </button>
-            ) : null}
+            {!tombstoned
+              ? actionSlot({
+                  scope: 'artist',
+                  className: 'action-slot--roll',
+                  fixButton: null,
+                  searchButton: (
+                    <button
+                      type="button"
+                      className="btn sm"
+                      onClick={() =>
+                        setAction({
+                          mode: 'search',
+                          target: { scope: 'artist', label: item.title },
+                        })
+                      }
+                    >
+                      Force Search artist
+                    </button>
+                  ),
+                })
+              : null}
           </div>
           {childrenNotReady ?? (
             <ul className="child-list">
@@ -590,7 +842,7 @@ export function ItemDetail({
         onClose={() => setAction(null)}
         item={{ id: item.id, arrKind: item.arrKind, title: item.title }}
         target={action?.mode === 'search' ? action.target : null}
-        onSubmitted={refresh}
+        onSubmitted={registerSearch}
       />
     </>
   );

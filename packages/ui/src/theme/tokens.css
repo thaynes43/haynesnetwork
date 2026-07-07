@@ -41,6 +41,10 @@
   --color-danger-strong: #c23a37;
   --color-warning: #f5a623;
   --color-info: #2bb3a3;
+  /* ADR-028 action-feedback: the "actively moving" tone (downloading/importing
+     phase chips + progress meters) — a blue distinct from accent (done) and
+     info (searching) so a live download reads at a glance. */
+  --color-progress: #4c9fe8;
   /* Scrollbar palette — a visible track + a thumb that reads against the surface
      (brighter than the border so the bar is obvious even when idle). */
   --color-scrollbar-track: #15181d;
@@ -64,6 +68,8 @@
   --color-danger-strong: #97271a;
   --color-warning: #b9770e;
   --color-info: #0f8c80;
+  /* ADR-028 action-feedback progress tone (see the dark block note). */
+  --color-progress: #2a6cb0;
   /* Scrollbar palette — visible track + a thumb darker than the surface. */
   --color-scrollbar-track: #e6e9ec;
   --color-scrollbar-thumb: #b0b5ba;

@@ -374,6 +374,19 @@ export async function startStubArr(): Promise<StubArrServer> {
         return res.end(POSTER_PNG);
       }
 
+      // ---- GET /movie/{id} — the radarr fix flow's pre-read before its delete fallback
+      // (getMovieById → movieFileId). PLAN-015's movie-fix journey is the first spec to
+      // exercise a non-subtitle movie Fix, so this by-id read joined late.
+      if (method === 'GET') {
+        const movieById = /^\/movie\/(\d+)$/.exec(path);
+        if (movieById) {
+          const id = Number(movieById[1]);
+          if (id === STUB_MOVIE_ID) return json(res, 200, movieResource(STUB_MOVIE_ID));
+          if (id === STUB_VANISHED_ID) return json(res, 200, vanishedMovieResource());
+          return json(res, 404, { message: `stub-arr: no movie ${id}` });
+        }
+      }
+
       // ---- reads ----
       switch (path) {
         case '/system/status':

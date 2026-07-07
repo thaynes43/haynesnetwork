@@ -1215,13 +1215,39 @@ headline over the series queue (no per-episode fan-out — too many episodes).
   message?: string; }     // the stall/terminal reason
 ```
 
-**The UI states (Fable follow-up — not built in this backend vertical).** The inline in-flight
-chip/progress meter beside the Fix/Force-Search buttons (`item-detail.tsx`); the live phase in item
-History and My Fixes; the Fix-button open-fix disable (surfacing the already-enforced
-`FixAlreadyOpenError` — hard rule so the click can no longer error). **Hard rule 9 (ADR-015):**
-progress renders in **reserved space** and deepens color / advances a meter but **never** reflows or
-reorients neighbors — the action slot reserves width for the widest state ("Downloading 100%" /
-"Nothing found"), exactly as the ConfirmButton reserves the armed-label width (ADR-014). The
+**The UI states (SHIPPED 2026-07-07 with the backend vertical's UX follow-up).** The
+`@hnet/ui` `PhaseChip` + `ProgressMeter` primitives (structure only; tones ride the token palette
+incl. the new `--color-progress` "in motion" blue) render in three surfaces:
+
+- **The dialogs** (`fix-dialog.tsx` / `force-search-dialog.tsx`): after submit the `done` block is a
+  live `ActionProgressBlock` — chip headline, Seerr-style meter (percent + "~4 min left" ETA while
+  downloading; indeterminate shimmer while searching/queued), plain-language copy per phase, a
+  reserved retry slot that fills in on the never-stuck terminals, and the expandable per-child
+  roll-up for season/artist scopes. Bazarr subtitle fixes keep the static fire-and-forget copy
+  (nothing in the *arr pipeline to watch).
+- **The item's action slots** (`item-detail.tsx` `ActionSlot`): while an open fix (or a
+  session-submitted force search) targets a grain, the slot renders the live chip IN PLACE of the
+  buttons — the anti-mashing lock is finally visible, and the `FixAlreadyOpenError` click can no
+  longer happen. Buttons re-arm on `completed`/`failed`; on `nothing_found`/`stalled` (the fix row
+  is still open server-side, so a fresh Fix would only 409) the chip pairs with the re-enabled
+  Force Search as the retry. Someone ELSE's open fix shows a static "Fix in progress" chip (the
+  progress query is own-or-admin — never polled cross-user). Force-search locks are session-scoped
+  (no durable row to rediscover on reload — accepted v1 trade-off).
+- **My Fixes** (`my-fixes-panel.tsx`): in-flight rows (bounded to the newest 8) poll at the slow
+  table cadence and show the compact chip + mini-meter; terminal rows keep the static badge and
+  are never polled.
+
+**Poll cadence (decided):** 2.5 s while `grabbed`/`downloading`/`importing`, 5 s while
+`searching`/`queued` (8 s in the My Fixes table), stop on terminal or unmount; a failed status
+check shows a transient warning chip and keeps retrying. **Test hook:** the found-nothing/stalled
+windows accept `ACTION_FOUND_NOTHING_WINDOW_MS` / `ACTION_STALLED_THRESHOLD_MS` env overrides
+(e2e/dev-local only — 30 s in the harness; the prod constants stand, ADR-028 C-06).
+
+**Hard rule 9 (ADR-015):** progress renders in **reserved space** and deepens color / advances a
+meter but **never** reflows or reorients neighbors — the action slot reserves width for the widest
+state ("Downloading 100%" / "Nothing found" + retry), exactly as the ConfirmButton reserves the
+armed-label width (ADR-014); the chip percent rides reserved tabular numerals; the e2e suite
+asserts the locked row's bounding box is byte-identical across a phase transition. The
 Fix/Force-Search entry points stay `Modal`s (multi-field/explanatory), never `window.confirm`.
 
 **e2e.** `apps/web/e2e/support/stub-arr.ts` gains a scriptable `GET /api/v3/queue` + a `POST
