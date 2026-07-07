@@ -130,7 +130,8 @@ handle is tolerated per-item (intent durable, Maintainerr reconciles) and never 
 
 The UX agent wires against these. All compose the ADR-023 gates; errors ride `mapDomainErrors`
 (`TRASH_BATCH_STATE`/`TRASH_BATCH_ALREADY_OPEN` → CONFLICT; `TRASH_BATCH_EMPTY` →
-UNPROCESSABLE_CONTENT; `MAINTAINERR_UNSAFE` → PRECONDITION_FAILED).
+UNPROCESSABLE_CONTENT; `TRASH_SAVE_NOT_OWNED` → FORBIDDEN; `MAINTAINERR_UNSAFE` →
+PRECONDITION_FAILED).
 
 ```ts
 // ---- reads (section read_only) ----
@@ -173,6 +174,13 @@ trash.batches.expire      // in: { batchId: uuid }  (manual "Expire now")
 // ---- per-item save (PHASE-dependent gate: read_only + action check in-resolver) ----
 trash.batches.setItemSaved // in: { batchId: uuid, itemId: uuid, saved: boolean }
 // gate: admin_review ⇒ manage_batches; leaving_soon ⇒ save_leaving_soon (else FORBIDDEN)
+// UN-SAVE OWNERSHIP (server-authoritative, enforced in the setBatchItemSaved writer — NOT UI-only):
+//   during the OPEN leaving_soon window an un-save is owner-or-manager only — a bare
+//   `save_leaving_soon` holder may release ONLY their own rescue (saved_by === caller); releasing
+//   another family member's rescue needs `manage_batches`/admin, else TRASH_SAVE_NOT_OWNED (FORBIDDEN).
+//   The API passes `callerCanManage = hasTrashAction(role, 'manage_batches')` (admin ⇒ true) down to
+//   the writer. admin_review un-saves are already manage_batches-gated, so the manager rules there are
+//   unchanged. (Save, and un-saving your own, are unaffected.)
 // out: { changed: boolean, state: TrashBatchItemState }
 //   On an ACTIVE flip: changed:true, state 'saved' (save) | 'pending' (un-save). On an INERT flip
 //   (redundant save, or the item is already 'protected'/'skipped'/'deleted'): changed:false and
@@ -226,9 +234,11 @@ running counts → **the wall** → save-stats → history → settings.
   the blocking batch (id + state) inline.
 - **Phase-aware permissions** (mirrors the D-05 setItemSaved gate): `admin_review` ⇒ only
   `manage_batches` holders tap; `leaving_soon` ⇒ `save_leaving_soon` holders while the window is
-  open — they may lock anything and **unlock only their own locks** (the server contract permits
-  any-grant-holder unlocks; the wall scopes the family flow to own locks — a manager can always
-  release a foreign lock, shown as "saved by <name>"). Everyone else sees the wall read-only.
+  open — they may lock anything and **unlock only their own locks** (this is now enforced
+  server-side — a bare `save_leaving_soon` holder un-saving a foreign lock gets
+  `TRASH_SAVE_NOT_OWNED`/FORBIDDEN; the wall scopes the family flow to own locks to match. A manager
+  (`manage_batches`/admin) can always release a foreign lock, shown as "saved by <name>"). Everyone
+  else sees the wall read-only.
 - **User (Leaving Soon) view** — same wall + the countdown banner ("These delete in N days — tap
   the ✕ on anything you want to keep"); no lifecycle buttons; calm read-only after expiry.
 - **Save-stats** — a "Who rescued what" list under the wall (`saveStats.byUser` — the PLAN-014

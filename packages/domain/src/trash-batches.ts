@@ -34,6 +34,7 @@ import {
   TrashBatchEmptyError,
   TrashBatchOpenError,
   TrashBatchStateError,
+  TrashSaveNotOwnedError,
 } from './errors';
 import { isPostgresUniqueViolation } from './errors';
 import { guardMaintainerrCall, type MaintainerrClientBundle } from './maintainerr-clients';
@@ -526,6 +527,13 @@ export async function cancelBatch(input: {
  * item out of the Leaving-Soon collection. Phase-gated: admin flips require `admin_review` (or
  * `leaving_soon` — admins may keep curating); user flips require `leaving_soon` with the window still
  * open (the API layer gates on the `save_leaving_soon` action). Idempotent — no-op on a redundant flip.
+ *
+ * DESIGN-011 D-05 ownership rule: un-saving DURING the open `leaving_soon` window is owner-or-manager
+ * only — a `save_leaving_soon` holder may release ONLY their own rescue (`saved_by === actorId`);
+ * releasing another family member's rescue needs `manage_batches`/admin (`callerCanManage`). This is
+ * SERVER-authoritative (the poster wall scopes it client-side, but a `save_leaving_soon` holder could
+ * otherwise unlock anyone's save). The manager rules for `admin_review` are unchanged — that phase is
+ * already `manage_batches`-gated at the API, so `callerCanManage` is irrelevant there.
  */
 export async function setBatchItemSaved(input: {
   db?: DbClient;
@@ -534,6 +542,9 @@ export async function setBatchItemSaved(input: {
   itemId: string;
   saved: boolean;
   actorId: string | null;
+  /** Whether the caller holds `manage_batches`/admin (the API resolves this off the session). Governs
+   *  ONLY the `leaving_soon` un-save ownership gate below; defaults false (fail closed). */
+  callerCanManage?: boolean;
 }): Promise<{ changed: boolean; state: TrashBatchItemState }> {
   const db = resolveDb(input.db);
   const batch = await loadBatch(input.db, input.batchId);
@@ -561,6 +572,22 @@ export async function setBatchItemSaved(input: {
   if (input.saved && item.state !== 'pending') {
     // protected/deleted/skipped — nothing to rescue.
     return { changed: false, state: item.state };
+  }
+
+  // DESIGN-011 D-05 — un-save ownership gate. Reaching here on an un-save means item.state==='saved'.
+  // While the window is OPEN (leaving_soon), a family member holding only `save_leaving_soon` may
+  // release ONLY their OWN rescue; releasing another member's save needs `manage_batches`/admin. Fail
+  // closed BEFORE any external Maintainerr write. (admin_review un-saves are already manage_batches-
+  // gated at the API — the manager rules there are unchanged.)
+  if (
+    !input.saved &&
+    batch.state === 'leaving_soon' &&
+    !input.callerCanManage &&
+    item.savedBy !== input.actorId
+  ) {
+    throw new TrashSaveNotOwnedError(
+      `Only the family member who saved "${item.title}" — or a batch manager — can un-save it while it is Leaving Soon.`,
+    );
   }
 
   if (input.saved) {

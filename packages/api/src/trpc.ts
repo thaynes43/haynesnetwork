@@ -34,6 +34,7 @@ import {
   TrashBatchOpenError,
   TrashBatchStateError,
   TrashMusicUnsupportedError,
+  TrashSaveNotOwnedError,
   type ArrClientBundle,
   type MaintainerrClientBundle,
   type PlexClientBundle,
@@ -147,6 +148,7 @@ const APP_CODED_ERRORS = [
   TrashBatchStateError,
   TrashBatchOpenError,
   TrashBatchEmptyError,
+  TrashSaveNotOwnedError,
 ] as const;
 
 const t = initTRPC.context<TRPCContext>().create({
@@ -206,6 +208,7 @@ export const authedProcedure = t.procedure.use(({ ctx, next }) => {
  * | TrashBatchStateError        | TRASH_BATCH_STATE           | CONFLICT              |
  * | TrashBatchOpenError         | TRASH_BATCH_ALREADY_OPEN    | CONFLICT              |
  * | TrashBatchEmptyError        | TRASH_BATCH_EMPTY           | UNPROCESSABLE_CONTENT |
+ * | TrashSaveNotOwnedError      | TRASH_SAVE_NOT_OWNED        | FORBIDDEN             |
  * | NotFoundError               | —                           | NOT_FOUND             |
  */
 export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
@@ -283,6 +286,9 @@ export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
     }
     if (err instanceof TrashBatchEmptyError) {
       throw new TRPCError({ code: 'UNPROCESSABLE_CONTENT', message: err.message, cause: err });
+    }
+    if (err instanceof TrashSaveNotOwnedError) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: err.message, cause: err });
     }
     if (err instanceof NotFoundError) {
       throw new TRPCError({ code: 'NOT_FOUND', message: err.message, cause: err });

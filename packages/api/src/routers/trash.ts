@@ -385,6 +385,10 @@ export const trashRouter = router({
             itemId: input.itemId,
             saved: input.saved,
             actorId: ctx.user.id,
+            // DESIGN-011 D-05 — the domain enforces the leaving_soon un-save ownership rule: a caller
+            // holding `manage_batches`/admin may release ANY family member's rescue; a bare
+            // `save_leaving_soon` holder only their own (TrashSaveNotOwnedError otherwise).
+            callerCanManage: hasTrashAction(ctx.user.role, 'manage_batches'),
           });
         });
       }),

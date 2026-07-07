@@ -20,6 +20,7 @@ import {
   TrashBatchEmptyError,
   TrashBatchOpenError,
   TrashBatchStateError,
+  TrashSaveNotOwnedError,
   buildMaintainerrClientBundle,
   cancelBatch,
   createBatchFromPending,
@@ -409,6 +410,46 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     expect(unsaved).toEqual({ changed: true, state: 'pending' });
     const unsaveRows = await t.db.select().from(trashBatchSaves).where(and(eq(trashBatchSaves.batchItemId, cold.id), eq(trashBatchSaves.action, 'unsave')));
     expect(unsaveRows).toHaveLength(1);
+  });
+
+  it('un-save during leaving_soon is owner-or-manager only (DESIGN-011 D-05 — TrashSaveNotOwnedError)', async () => {
+    const { bundle } = makeMaintainerr(baseState());
+    const memberA = (await createUser(t.db, { email: 'familyA@example.com' })).id;
+    const memberB = (await createUser(t.db, { email: 'familyB@example.com' })).id;
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    // Open window (future expiry) — the family save exercise is live.
+    await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: 14, actorId });
+    const items = await itemsOf(batchId);
+    const itemA = items.find((i) => i.maintainerrMediaId === 'ms-9001')!;
+    const itemB = items.find((i) => i.maintainerrMediaId === 'ms-9004')!;
+
+    // Family member A rescues item A (save is ungated — anyone with the window grant may lock).
+    const savedA = await setBatchItemSaved({
+      db: t.db, maintainerr: bundle, batchId, itemId: itemA.id, saved: true, actorId: memberA, callerCanManage: false,
+    });
+    expect(savedA).toEqual({ changed: true, state: 'saved' });
+    const [rowA] = await t.db.select().from(trashBatchItems).where(eq(trashBatchItems.id, itemA.id));
+    expect(rowA!.savedBy).toBe(memberA);
+
+    // Family member B (save_leaving_soon only) CANNOT un-save A's rescue → FORBIDDEN.
+    await expect(
+      setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: itemA.id, saved: false, actorId: memberB, callerCanManage: false }),
+    ).rejects.toBeInstanceOf(TrashSaveNotOwnedError);
+    // Fail-closed BEFORE any external release — item A stays saved.
+    expect((await itemsOf(batchId)).find((i) => i.id === itemA.id)!.state).toBe('saved');
+
+    // B CAN un-save B's OWN rescue.
+    await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: itemB.id, saved: true, actorId: memberB, callerCanManage: false });
+    const unsaveOwn = await setBatchItemSaved({
+      db: t.db, maintainerr: bundle, batchId, itemId: itemB.id, saved: false, actorId: memberB, callerCanManage: false,
+    });
+    expect(unsaveOwn).toEqual({ changed: true, state: 'pending' });
+
+    // A manager (manage_batches/admin ⇒ callerCanManage) can un-save ANYONE's rescue — A's item.
+    const unsaveByManager = await setBatchItemSaved({
+      db: t.db, maintainerr: bundle, batchId, itemId: itemA.id, saved: false, actorId, callerCanManage: true,
+    });
+    expect(unsaveByManager).toEqual({ changed: true, state: 'pending' });
   });
 
   it('skip-gate: with the setting ON, createBatch auto-green-lights straight to leaving_soon (audited gate_skipped)', async () => {

@@ -252,6 +252,18 @@ export class TrashBatchEmptyError extends Error {
   readonly code = 'TRASH_BATCH_EMPTY' as const;
 }
 
+/**
+ * ADR-025 / DESIGN-011 D-05: an un-save was attempted during the OPEN `leaving_soon` window against
+ * a save that is NOT the caller's own, by a caller who does not hold `manage_batches`/admin. During
+ * the family save window a `save_leaving_soon` holder may release ONLY their own rescue; releasing
+ * another family member's rescue needs a batch manager. Enforced server-side in the
+ * `setBatchItemSaved` writer BEFORE any external Maintainerr write (the poster wall scopes this
+ * client-side, but the domain is authoritative — AC-13). Surfaced as FORBIDDEN.
+ */
+export class TrashSaveNotOwnedError extends Error {
+  readonly code = 'TRASH_SAVE_NOT_OWNED' as const;
+}
+
 function pgErrorCode(err: unknown): string | undefined {
   if (typeof err !== 'object' || err === null) return undefined;
   const code = (err as { code?: unknown }).code;
