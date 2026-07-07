@@ -316,7 +316,8 @@ async function main(): Promise<void> {
 
   // ADR-021 / DESIGN-009 — two roles for the Ledger-section access e2e (AC-13): a Read-Only role
   // (browse + export, no Add-&-search) and a Disabled role (no nav, no route). The Default role
-  // keeps the read_only default (no row needed) so authed members can browse out of the box.
+  // keeps the NO-ROW default — which is DISABLED since ADR-032 (members see no Ledger anywhere
+  // unless a role opts them in; the specs assign Ledger Read-Only for the member journeys).
   const { roleId: ledgerReadOnlyId } = await createRole({
     name: 'Ledger Read-Only',
     description: 'Browse + export the Ledger; no Add-&-search',

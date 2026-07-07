@@ -22,8 +22,9 @@ describe('session extension (DESIGN-002 D-06 / DESIGN-003 D-01, ADR-012)', () =>
         id: SEEDED_ROLE_IDS.default,
         name: 'Default',
         isAdmin: false,
-        // ADR-021 — no rows ⇒ the documented section defaults (bulletin defaults read_only).
-        sectionPermissions: { ledger: 'read_only', trash: 'disabled', bulletin: 'read_only' },
+        // ADR-021 — no rows ⇒ the documented section defaults (ADR-032 flipped ledger to
+        // disabled; bulletin stays read_only — the Feed is for everyone).
+        sectionPermissions: { ledger: 'disabled', trash: 'disabled', bulletin: 'read_only' },
         // ADR-023 — no grant rows ⇒ no Trash actions.
         trashActions: [],
         // ADR-026 — no grant rows ⇒ no Bulletin message actions.
@@ -65,19 +66,19 @@ describe('session extension (DESIGN-002 D-06 / DESIGN-003 D-01, ADR-012)', () =>
       actorId: null,
     });
     const user = await createUser(t.db, { displayName: 'Locked Lou', roleId });
-    // Custom role, no rows yet ⇒ the ledger default (read_only).
+    // Custom role, no rows yet ⇒ the ledger default (disabled — ADR-032).
     const before = await getSessionExtension(user.id, t.db);
-    expect(before!.role.sectionPermissions.ledger).toBe('read_only');
+    expect(before!.role.sectionPermissions.ledger).toBe('disabled');
     await setSectionPermission({
       db: t.db,
       roleId,
       sectionId: 'ledger',
-      level: 'disabled',
+      level: 'read_only',
       actorId: null,
     });
     const after = await getSessionExtension(user.id, t.db);
     expect(after!.role.sectionPermissions).toEqual({
-      ledger: 'disabled',
+      ledger: 'read_only',
       trash: 'disabled',
       bulletin: 'read_only',
     });

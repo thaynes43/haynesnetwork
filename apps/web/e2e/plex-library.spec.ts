@@ -8,7 +8,7 @@
 // All-libraries grant round-trip are exercised too. Serial: the tests share the one stack +
 // stub state.
 import { test, expect } from '@playwright/test';
-import { armAndConfirm, signIn } from './support/helpers';
+import { armAndConfirm, openUserMenu, signIn } from './support/helpers';
 import { readRuntimeEnv } from './support/env';
 
 interface StubShareCall {
@@ -36,7 +36,9 @@ test.describe.serial('Plex library self-service (ADR-017)', () => {
   }) => {
     await resetStubPlex();
     await signIn(page, 'member');
-    await page.locator('.topbar__nav').getByRole('link', { name: 'My Plex' }).click();
+    // My Plex lives in the user menu now (ADR-032 — it's personal, not a section).
+    await openUserMenu(page);
+    await page.getByRole('menuitem', { name: 'My Plex' }).click();
     await page.waitForURL('/library/plex');
     await expect(page.getByRole('heading', { name: 'My Plex libraries' })).toBeVisible();
 
@@ -86,9 +88,7 @@ test.describe.serial('Plex library self-service (ADR-017)', () => {
     // future-inclusive grant, and NO per-library Add/Remove is offered — the row is read-only
     // "Included" (PLEX_ALL_STATE is unreachable from the UI).
     await expect(ops.getByTestId('plex-mode-all')).toHaveAttribute('aria-pressed', 'true');
-    await expect(ops.locator('.plex-mode__note')).toContainText(
-      'all current and future libraries',
-    );
+    await expect(ops.locator('.plex-mode__note')).toContainText('all current and future libraries');
     await expect(opsRow).toContainText('Included');
     await expect(ops.getByTestId('plex-add')).toHaveCount(0);
     await expect(ops.getByTestId('plex-remove')).toHaveCount(0);
@@ -140,7 +140,9 @@ test.describe.serial('Plex library self-service (ADR-017)', () => {
     expect(m.hScroll, 'no page-level horizontal scrollbar').toBeLessThanOrEqual(1);
   });
 
-  test('admin: registry refresh + the per-role library matrix on /admin/roles', async ({ page }) => {
+  test('admin: registry refresh + the per-role library matrix on /admin/roles', async ({
+    page,
+  }) => {
     await signIn(page, 'admin');
     await page.goto('/admin/roles');
 

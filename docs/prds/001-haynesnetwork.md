@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Owner:** Tom Haynes
-- **Last updated:** 2026-07-03
+- **Last updated:** 2026-07-07 (AC-13 note — ADR-032 nav IA)
 
 ## Summary
 
@@ -309,7 +309,7 @@ Messages UI is a separate UX follow-up.
 | AC-10 | Playwright resize matrix passes at 375×667, 390×844, 412×915, 768×1024, 820×1180, 1280×800, 1920×1080, 2560×1440: no page-level scrollbars, no off-screen controls, panes scroll internally. |
 | AC-11 | A bulk Add-&-search over N filtered Ledger items adds exactly those absent from the live *arr (monitored, stored profile/root/tags), sets monitored on those present-but-unmonitored, skips those already present + monitored, triggers a search per acted item, and reports per-item added/monitored/skipped/failed. A searched run over 1000 items is refused before any *arr write. |
 | AC-12 | Ledger export produces a deterministic JSONL file listing exactly the filtered set with the external ids needed to re-import into the target *arr. |
-| AC-13 | A role set to **Disabled** for Ledger never sees the nav entry or route; **Read-Only** sees browse + export but no Add-&-search control, and the mutation is server-refused (FORBIDDEN) even if called directly. |
+| AC-13 | A role set to **Disabled** for Ledger never sees the nav entry or route; **Read-Only** sees browse + export but no Add-&-search control, and the mutation is server-refused (FORBIDDEN) even if called directly. _(Amended by ADR-032 (2026-07-07): the "nav entry" is now the role-gated **user-menu** item — the top row is the universal Home · Library · Trash · Bulletin rail — and the Ledger's **no-row default is Disabled**, so out of the box only admins see it; a role row opts members back in.)_ |
 | AC-14 | Trash → Movies/TV lists exactly Maintainerr's pending items for that kind, each with its scheduled-delete date + space freed, plus a total-space figure; an item known to the ledger shows its poster/title/facets, an unknown one still lists with Maintainerr's fields. |
 | AC-15 | Save adds the item to Maintainerr's exclusion list and records a `trash_excluded` event (idempotent); Expedite is refused with a safety error when the Maintainerr audit is not SAFE, and a recently-watched/requested item is auto-protected rather than deleted; music is never a Trash target. |
 | AC-16 | Trash section **Disabled** ⇒ no nav/route (redirect); **Read-Only** browses but each write action is server-refused unless its per-action grant is present (FORBIDDEN even if called directly); `edit_rules` additionally requires section **Edit**. |

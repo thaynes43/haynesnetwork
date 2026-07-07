@@ -54,7 +54,8 @@ describe('setSectionPermission (ADR-021 C-02)', () => {
       level: 'edit',
       actorId,
     });
-    expect(res).toEqual({ changed: true, before: 'read_only', after: 'edit' });
+    // ADR-032 — the ledger no-row default is now 'disabled'.
+    expect(res).toEqual({ changed: true, before: 'disabled', after: 'edit' });
 
     const rows = await levelRows();
     expect(rows).toHaveLength(1);
@@ -65,7 +66,7 @@ describe('setSectionPermission (ADR-021 C-02)', () => {
     expect(audits[0]).toMatchObject({ actorId, roleId });
     expect(audits[0]!.detail).toMatchObject({
       section_id: 'ledger',
-      before: 'read_only',
+      before: 'disabled',
       after: 'edit',
     });
   });
@@ -125,14 +126,14 @@ describe('sectionLevelForRole (ADR-021 C-01/C-03 fallbacks)', () => {
     ).toBe('edit');
   });
 
-  it('no row ⇒ the section default (ledger=read_only, trash=disabled)', async () => {
+  it('no row ⇒ the section default (ledger=disabled per ADR-032, trash=disabled)', async () => {
     const { roleId } = await createRole({
       db: t.db,
       name: 'Fresh Role',
       appIds: [],
       actorId: null,
     });
-    expect(await sectionLevelForRole({ db: t.db, roleId, sectionId: 'ledger' })).toBe('read_only');
+    expect(await sectionLevelForRole({ db: t.db, roleId, sectionId: 'ledger' })).toBe('disabled');
     expect(await sectionLevelForRole({ db: t.db, roleId, sectionId: 'trash' })).toBe('disabled');
   });
 
@@ -143,7 +144,13 @@ describe('sectionLevelForRole (ADR-021 C-01/C-03 fallbacks)', () => {
       appIds: [],
       actorId: null,
     });
-    await setSectionPermission({ db: t.db, roleId, sectionId: 'ledger', level: 'disabled', actorId: null });
-    expect(await sectionLevelForRole({ db: t.db, roleId, sectionId: 'ledger' })).toBe('disabled');
+    await setSectionPermission({
+      db: t.db,
+      roleId,
+      sectionId: 'ledger',
+      level: 'read_only',
+      actorId: null,
+    });
+    expect(await sectionLevelForRole({ db: t.db, roleId, sectionId: 'ledger' })).toBe('read_only');
   });
 });

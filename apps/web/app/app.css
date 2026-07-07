@@ -319,9 +319,10 @@ body {
   font-size: 16px;
   white-space: nowrap;
 }
-/* Primary topbar nav (Phase 2): ghost links in the D-03 chrome language. Shown at ALL
-   widths — it is the only route to Library since the user menu no longer carries it
-   (settings-only menu); the <600px rule below just tightens its spacing. */
+/* Primary topbar nav — the UNIVERSAL section row (ADR-032 / DESIGN-004 D-16): ghost links
+   in the D-03 chrome language, shown at ALL widths. Ledger + My Plex moved to the user
+   menu, so the row tops out at four links (Home · Library · Trash · Bulletin) and the
+   freed width goes into LARGER type + touch targets, especially on phones. */
 .topbar__nav {
   display: flex;
   align-items: center;
@@ -331,9 +332,9 @@ body {
 .topbar__nav a {
   color: var(--color-text-muted);
   text-decoration: none;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  padding: 8px 12px;
+  padding: 8px 14px;
   min-height: 44px;
   display: inline-flex;
   align-items: center;
@@ -347,34 +348,34 @@ body {
   background: var(--color-surface-2);
 }
 /* Phones once hid the top nav entirely (the user menu carried Library). The menu
-   no longer does, so Home + Library must stay reachable here — keep the row visible
-   and just tighten spacing/padding so both links stay legible at small widths. */
+   no longer does, so the section row must stay reachable here — keep it visible and
+   ease the spacing gently; with four links max (ADR-032) the type no longer has to
+   shrink below 13px. */
 @media (max-width: 599px) {
   .topbar__nav {
     gap: 0;
   }
   .topbar__nav a {
-    padding: 8px 8px;
-    font-size: 12px;
+    padding: 8px 10px;
+    font-size: 13px;
   }
   /* The nowrap wordmark cannot shrink, so on narrow phones it overflowed its flex-shrunk
-     .brand and collided with "Home" (live-validation finding, 390px; worse with the third
-     nav link). Phones keep the brand MARK only; the wordmark returns at ≥600px. */
+     .brand and collided with "Home" (live-validation finding, 390px). Phones keep the
+     brand MARK only; the wordmark returns at ≥600px. */
   .brand__name {
     display: none;
   }
 }
-/* Four nav links since PLAN-005 (Home · Library · Ledger · My Plex): the ≤599px squeeze above
-   is not enough at true phone widths — tighten chrome gaps + link padding so the row fits 375px
-   with the theme toggle and avatar intact (AC-10 resize matrix). Static layout, not
-   interaction-driven (ADR-015-safe). */
+/* True phone widths (≤479px, incl. the 375/390 matrix sizes): tighten the CHROME (topbar
+   gaps/padding, action gap) rather than the link type — the four-link row keeps its 13px
+   labels and ≥44px targets. Static layout, not interaction-driven (ADR-015-safe). */
 @media (max-width: 479px) {
   .topbar {
-    gap: 8px;
+    gap: 6px;
     padding: 0 10px;
   }
   .topbar__nav a {
-    padding: 8px 5px;
+    padding: 8px 8px;
   }
   .topbar__actions {
     gap: 2px;
@@ -528,6 +529,14 @@ body {
 }
 .usermenu__item:hover {
   background: var(--color-surface-2);
+}
+/* ADR-032 / DESIGN-004 D-16 — subtle group separators inside the popover (personal /
+   role-gated tooling / sign-out). Purely decorative (aria-hidden); the popover is an
+   overlay, so group presence never reflows the page (ADR-015). */
+.usermenu__sep {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--color-border);
 }
 
 /* ---------- Login (D-11, restyled per DESIGN-006 D-03) ---------- */
@@ -3306,6 +3315,16 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='lock'] {
 .batch-settings .confirm-btn,
 .batch-settings .btn {
   flex: none;
+}
+
+/* ---------- /settings/trash (ADR-032 / DESIGN-004 D-16) ---------- */
+/* The relocated Rules section rides the same card language as the pipeline card. */
+.settings-section {
+  margin: 0 0 18px;
+}
+.settings-section__head {
+  margin: 0 0 8px;
+  font-size: 15px;
 }
 
 /* ---------- Bulletin (ADR-026 / DESIGN-012 D-08): Feed table + Messages board ---------- */

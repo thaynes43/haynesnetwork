@@ -11,7 +11,7 @@
 // unmonitored in the stub live list → MONITOR-FLIP). Serial like the rest of the suite —
 // tests share one stack, and the role-juggling tests restore the member to Default.
 import { test, expect, type Page } from '@playwright/test';
-import { signIn, expectViewportFit } from './support/helpers';
+import { signIn, expectViewportFit, openUserMenu } from './support/helpers';
 import { readRuntimeEnv } from './support/env';
 import {
   STUB_MOVIE_TMDB_ID,
@@ -43,17 +43,19 @@ async function assignMemberRole(page: Page, roleLabel: string): Promise<void> {
 }
 
 test.describe('ledger section (DESIGN-009)', () => {
-  test('admin: Ledger rides the primary nav; the spreadsheet shows everything, tombstones included', async ({
+  test('admin: Ledger rides the user menu (ADR-032); the spreadsheet shows everything, tombstones included', async ({
     page,
   }) => {
     await signIn(page, 'admin');
 
-    // Nav order: the Ledger entry sits between Library and My Plex (D-01); the admin's
-    // implicit trash=edit also shows the Trash entry (PLAN-006, DESIGN-010 D-09), and
-    // Bulletin defaults read_only for everyone (PLAN-009, ADR-026 C-02).
+    // ADR-032 / DESIGN-004 D-16 — the top row is the UNIVERSAL section nav (Home · Library ·
+    // Trash · Bulletin; the admin's implicit trash=edit shows Trash, Bulletin defaults
+    // read_only for everyone). Ledger and My Plex moved into the user menu.
     const navTexts = await page.locator('.topbar__nav a').allInnerTexts();
-    expect(navTexts).toEqual(['Home', 'Library', 'Ledger', 'Trash', 'Bulletin', 'My Plex']);
-    await page.getByRole('navigation', { name: 'Primary' }).getByText('Ledger').click();
+    expect(navTexts).toEqual(['Home', 'Library', 'Trash', 'Bulletin']);
+    await openUserMenu(page);
+    await expect(page.getByRole('menuitem', { name: 'My Plex' })).toBeVisible();
+    await page.getByRole('menuitem', { name: 'Ledger' }).click();
     await page.waitForURL('/ledger');
 
     // The tablist: three media sheets + the Runs history tab (owner UX 2026-07-07).
@@ -382,7 +384,12 @@ test.describe('ledger section (DESIGN-009)', () => {
     await signIn(page, 'admin');
     await assignMemberRole(page, 'Ledger Read-Only');
 
-    // Nav present; the sheet browses (tombstones included) and Export stays…
+    // The user menu carries the role-gated Ledger entry (ADR-032 — Read-Only ⇒ shown)…
+    await memberPage.goto('/');
+    await openUserMenu(memberPage);
+    await expect(memberPage.getByRole('menuitem', { name: 'Ledger' })).toBeVisible();
+    await memberPage.keyboard.press('Escape');
+    // …the sheet browses (tombstones included) and Export stays…
     await memberPage.goto('/ledger');
     await expect(memberPage.locator('.ledger-row')).toHaveCount(3);
     await expect(memberPage.getByTestId('ledger-export')).toBeVisible();
@@ -406,7 +413,7 @@ test.describe('ledger section (DESIGN-009)', () => {
     await memberContext.close();
   });
 
-  test('disabled role: no nav entry; a direct URL gets the clean unavailable state', async ({
+  test('default + disabled roles: NO Ledger anywhere (ADR-032 default flip); a direct URL gets the clean unavailable state', async ({
     page,
     browser,
   }) => {
@@ -414,14 +421,39 @@ test.describe('ledger section (DESIGN-009)', () => {
     const memberPage = await memberContext.newPage();
     await signIn(memberPage, 'member');
 
+    // The read-only test above left the member on 'Ledger Read-Only' — put them back on
+    // Default FIRST so this test exercises the shipped default experience.
     await signIn(page, 'admin');
-    await assignMemberRole(page, 'Ledger Disabled');
+    await assignMemberRole(page, 'Default (default)');
 
-    // No Ledger in the nav… (the section level rides the session read — a reload suffices)
+    // ADR-032 — the shipped Default role (no ledger row) now resolves DISABLED: no top-row
+    // entry (the row is universal — Home · Library · Bulletin for this role), no user-menu
+    // Ledger item (My Plex stays — it's personal), and the route dead-ends.
     await memberPage.goto('/');
-    const navTexts = await memberPage.locator('.topbar__nav a').allInnerTexts();
-    // Ledger disabled hides only Ledger; Bulletin still defaults read_only (PLAN-009).
-    expect(navTexts).toEqual(['Home', 'Library', 'Bulletin', 'My Plex']);
+    expect(await memberPage.locator('.topbar__nav a').allInnerTexts()).toEqual([
+      'Home',
+      'Library',
+      'Bulletin',
+    ]);
+    await openUserMenu(memberPage);
+    await expect(memberPage.getByRole('menuitem', { name: 'My Plex' })).toBeVisible();
+    await expect(memberPage.getByRole('menuitem', { name: 'Ledger' })).toHaveCount(0);
+    await memberPage.keyboard.press('Escape');
+    await memberPage.goto('/ledger');
+    await expect(memberPage.getByTestId('ledger-unavailable')).toBeVisible();
+
+    // An explicit Disabled row behaves identically (the section level rides the session
+    // read — a reload suffices).
+    await assignMemberRole(page, 'Ledger Disabled');
+    await memberPage.goto('/');
+    expect(await memberPage.locator('.topbar__nav a').allInnerTexts()).toEqual([
+      'Home',
+      'Library',
+      'Bulletin',
+    ]);
+    await openUserMenu(memberPage);
+    await expect(memberPage.getByRole('menuitem', { name: 'Ledger' })).toHaveCount(0);
+    await memberPage.keyboard.press('Escape');
 
     // …and the direct URL renders the friendly dead end, never a raw error.
     await memberPage.goto('/ledger');

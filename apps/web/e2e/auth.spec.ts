@@ -71,6 +71,11 @@ test.describe('AC-03 admin bootstrap', () => {
     await openUserMenu(page);
     const adminLink = page.getByRole('menuitem', { name: 'Admin settings' });
     await expect(adminLink).toBeVisible();
+    // ADR-032 — the admin's menu carries the full set: My Plex (personal) plus the
+    // role-gated tooling (Ledger, Trash settings) the universal top row no longer shows.
+    await expect(page.getByRole('menuitem', { name: 'My Plex' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Ledger' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Trash settings' })).toBeVisible();
     // The menu no longer carries Library or My fixes — those live in the top nav / Library tabs.
     await expect(page.getByRole('menuitem', { name: 'Library' })).toHaveCount(0);
     await expect(page.getByRole('menuitem', { name: 'My fixes' })).toHaveCount(0);
@@ -90,9 +95,14 @@ test.describe('AC-03 admin bootstrap', () => {
   test('member persona has no Admin link and /admin redirects away', async ({ page }) => {
     await signIn(page, 'member');
     await openUserMenu(page);
-    // Menu is open (Sign out is there) but no Admin entry exists for a Member.
+    // Menu is open (Sign out is there) but no Admin entry exists for a Member. The
+    // Default role's menu is personal-only (ADR-032): My Plex yes; Ledger (default
+    // disabled) and Trash settings (needs trash=edit) absent.
     await expect(page.getByRole('menuitem', { name: 'Sign out' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'My Plex' })).toBeVisible();
     await expect(page.getByRole('menuitem', { name: 'Admin settings' })).toHaveCount(0);
+    await expect(page.getByRole('menuitem', { name: 'Ledger' })).toHaveCount(0);
+    await expect(page.getByRole('menuitem', { name: 'Trash settings' })).toHaveCount(0);
     // Server-side gate: direct navigation bounces to the dashboard.
     await page.goto('/admin');
     await expect(page).toHaveURL('/');
