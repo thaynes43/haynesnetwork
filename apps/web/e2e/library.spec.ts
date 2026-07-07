@@ -136,7 +136,10 @@ test.describe('media ledger + fix flow', () => {
     await expect(row).toHaveCount(1);
     await expect(row).toContainText('S01E02 · Chapter 2');
     await expect(row).toContainText('Wrong language');
-    await expect(row).toContainText('Search triggered');
+    // ADR-028 / D-21 — an in-flight row's Status cell is the LIVE phase chip (polling
+    // fix.progress), not the stored lifecycle badge. The exact phase depends on the
+    // (test-shortened) found-nothing window, so assert the live chip itself.
+    await expect(row.locator('.phase-chip')).toBeVisible();
   });
 
   test('admin sees the request in /admin/fixes with requester and actions (R-46)', async ({

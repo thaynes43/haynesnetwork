@@ -1,6 +1,12 @@
 // DESIGN-005 D-02 — Sonarr v3 field subsets (strip mode: extra fields tolerated, dropped).
 import { z } from 'zod';
-import { arrFileSchema, arrImageSchema, historyRecordBaseSchema, singleRatingSchema } from './common';
+import {
+  arrFileSchema,
+  arrImageSchema,
+  historyRecordBaseSchema,
+  queueRecordBaseSchema,
+  singleRatingSchema,
+} from './common';
 
 /** Full eventType enum per Sonarr's `EpisodeHistoryEventType` (D-02). */
 export const SONARR_HISTORY_EVENT_TYPES = [
@@ -108,3 +114,16 @@ export const sonarrHistoryRecordSchema = historyRecordBaseSchema.extend({
   seriesId: z.number().int(),
 });
 export type SonarrHistoryRecord = z.infer<typeof sonarrHistoryRecordSchema>;
+
+/**
+ * `GET /queue?seriesIds=` record with Sonarr's join keys (PLAN-015 / D-20). `seriesId` is the
+ * parent (= media_items.arr_item_id) the queue is filtered by; `episodeId`/`seasonNumber` map a
+ * record back to a fix/search target child (verified live 2026-07-07). Nullish because a queue
+ * item for an unknown/removed series can omit them.
+ */
+export const sonarrQueueRecordSchema = queueRecordBaseSchema.extend({
+  seriesId: z.number().int().nullish(),
+  episodeId: z.number().int().nullish(),
+  seasonNumber: z.number().int().nullish(),
+});
+export type SonarrQueueRecord = z.infer<typeof sonarrQueueRecordSchema>;

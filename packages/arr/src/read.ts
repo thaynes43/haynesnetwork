@@ -22,20 +22,24 @@ import {
   sonarrEpisodeSchema,
   sonarrHistoryRecordSchema,
   sonarrLookupSchema,
+  sonarrQueueRecordSchema,
   sonarrSeriesSchema,
   type SonarrEpisode,
   type SonarrEpisodeFile,
   type SonarrHistoryRecord,
   type SonarrLookup,
+  type SonarrQueueRecord,
   type SonarrSeries,
 } from './schemas/sonarr';
 import {
   radarrHistoryRecordSchema,
   radarrLookupSchema,
   radarrMovieSchema,
+  radarrQueueRecordSchema,
   type RadarrHistoryRecord,
   type RadarrLookup,
   type RadarrMovie,
+  type RadarrQueueRecord,
 } from './schemas/radarr';
 import {
   LIDARR_GRABBED_EVENT_TYPE,
@@ -44,12 +48,14 @@ import {
   lidarrHistoryRecordSchema,
   lidarrLookupSchema,
   lidarrMetadataProfileSchema,
+  lidarrQueueRecordSchema,
   lidarrTrackFileSchema,
   type LidarrAlbum,
   type LidarrArtist,
   type LidarrHistoryRecord,
   type LidarrLookup,
   type LidarrMetadataProfile,
+  type LidarrQueueRecord,
   type LidarrTrackFile,
 } from './schemas/lidarr';
 import {
@@ -89,6 +95,15 @@ export interface WantedMissingParams {
   page?: number;
   pageSize?: number;
 }
+
+/**
+ * PLAN-015 / DESIGN-005 D-20 — one page big enough to hold every in-flight download for a
+ * SINGLE parent (series/movie/artist), which is what the Action Feedback projection filters
+ * to. A whole household rarely queues 200 releases for one show/artist at once; the filter is
+ * server-side (verified live 2026-07-07: `?seriesIds=`/`?movieIds=`/`?artistIds=` narrow the
+ * queue), so this page never needs to span the whole instance queue.
+ */
+const QUEUE_PAGE_SIZE = 200;
 
 const toIso = (value: string | Date) =>
   value instanceof Date ? value.toISOString() : value;
@@ -203,6 +218,23 @@ export class SonarrClient extends ArrReadClientBase {
       query: { page: params.page ?? 1, pageSize: params.pageSize ?? 50 },
     });
   }
+
+  /**
+   * `GET /queue?seriesIds=` — the LIVE download queue for one series, read-only (PLAN-015 /
+   * D-20). Filtered server-side by `seriesIds` (verified live 2026-07-07); the caller maps each
+   * record back to its episode/season target via `episodeId`/`seasonNumber`. Returns just the
+   * records (percent = `(size - sizeleft) / size`).
+   */
+  async getQueue(seriesId?: number): Promise<SonarrQueueRecord[]> {
+    const page = await this.http.requestJson('GET', 'queue', pagedSchema(sonarrQueueRecordSchema), {
+      query: {
+        page: 1,
+        pageSize: QUEUE_PAGE_SIZE,
+        ...(seriesId !== undefined ? { seriesIds: seriesId } : {}),
+      },
+    });
+    return page.records;
+  }
 }
 
 /** Radarr v3 read client (D-01: live 6.0.x, `/api/v3`). */
@@ -253,6 +285,22 @@ export class RadarrClient extends ArrReadClientBase {
     return this.http.requestJson('GET', 'wanted/missing', pagedSchema(radarrMovieSchema), {
       query: { page: params.page ?? 1, pageSize: params.pageSize ?? 50 },
     });
+  }
+
+  /**
+   * `GET /queue?movieIds=` — the LIVE download queue for one movie, read-only (PLAN-015 /
+   * D-20). Filtered server-side by `movieIds` (verified live 2026-07-07); the movie IS the fix
+   * target (radarr has no children). Returns just the records.
+   */
+  async getQueue(movieId?: number): Promise<RadarrQueueRecord[]> {
+    const page = await this.http.requestJson('GET', 'queue', pagedSchema(radarrQueueRecordSchema), {
+      query: {
+        page: 1,
+        pageSize: QUEUE_PAGE_SIZE,
+        ...(movieId !== undefined ? { movieIds: movieId } : {}),
+      },
+    });
+    return page.records;
   }
 }
 
@@ -328,6 +376,23 @@ export class LidarrClient extends ArrReadClientBase {
     return this.http.requestJson('GET', 'wanted/missing', pagedSchema(lidarrAlbumSchema), {
       query: { page: params.page ?? 1, pageSize: params.pageSize ?? 50 },
     });
+  }
+
+  /**
+   * `GET /queue?artistIds=` — the LIVE download queue for one artist, read-only (PLAN-015 /
+   * D-20; Lidarr's queue lives under `/api/v1`). Filtered server-side by `artistIds` (verified
+   * live 2026-07-07); the caller maps each record back to its album target via `albumId`.
+   * Returns just the records.
+   */
+  async getQueue(artistId?: number): Promise<LidarrQueueRecord[]> {
+    const page = await this.http.requestJson('GET', 'queue', pagedSchema(lidarrQueueRecordSchema), {
+      query: {
+        page: 1,
+        pageSize: QUEUE_PAGE_SIZE,
+        ...(artistId !== undefined ? { artistIds: artistId } : {}),
+      },
+    });
+    return page.records;
   }
 }
 

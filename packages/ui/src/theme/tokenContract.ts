@@ -19,6 +19,9 @@ export const REQUIRED_TOKENS = [
   '--color-danger-strong',
   '--color-warning',
   '--color-info',
+  // ADR-028 action feedback: the live download/import "in motion" tone
+  // (phase chips + progress meters).
+  '--color-progress',
   // Persistent-scrollbar palette for internal scroll panes. Required so every
   // theme renders a visible, re-skinnable scrollbar in both Chrome and WebKit
   // (ADR-005).

@@ -202,6 +202,13 @@ export const ledgerRouter = router({
         reason: fixRequests.reason,
         reasonText: fixRequests.reasonText,
         targetLabel: fixRequests.targetLabel,
+        // ADR-028 / D-21 — the exact grain an open fix locks (scope + child + season)
+        // and whether the caller owns it (own fixes poll fix.progress live; others
+        // render a static in-flight chip — the progress query is own-or-admin only).
+        targetScope: fixRequests.targetScope,
+        targetArrChildId: fixRequests.targetArrChildId,
+        targetSeason: fixRequests.targetSeason,
+        requesterId: fixRequests.requesterId,
         pathTaken: fixRequests.pathTaken,
         createdAt: fixRequests.createdAt,
         requesterDisplayName: users.displayName,
@@ -252,6 +259,11 @@ export const ledgerRouter = router({
         reason: f.reason,
         reasonText: f.reasonText,
         targetLabel: f.targetLabel,
+        targetScope: f.targetScope,
+        targetArrChildId: f.targetArrChildId,
+        targetSeason: f.targetSeason,
+        // fix.progress is own-or-admin; watchable ⇒ this caller may poll it live.
+        watchable: f.requesterId === ctx.user.id || ctx.user.role.isAdmin,
         pathTaken: f.pathTaken,
         createdAt: iso(f.createdAt),
         requesterDisplayName: f.requesterDisplayName,

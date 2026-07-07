@@ -1,6 +1,11 @@
 // DESIGN-005 D-02 — Lidarr v1 field subsets (strip mode: extra fields tolerated, dropped).
 import { z } from 'zod';
-import { arrImageSchema, historyRecordBaseSchema, singleRatingSchema } from './common';
+import {
+  arrImageSchema,
+  historyRecordBaseSchema,
+  queueRecordBaseSchema,
+  singleRatingSchema,
+} from './common';
 
 /** Full eventType enum per Lidarr's `EntityHistoryEventType` (D-02). */
 export const LIDARR_HISTORY_EVENT_TYPES = [
@@ -121,3 +126,14 @@ export const lidarrHistoryRecordSchema = historyRecordBaseSchema.extend({
   artistId: z.number().int(),
 });
 export type LidarrHistoryRecord = z.infer<typeof lidarrHistoryRecordSchema>;
+
+/**
+ * `GET /queue?artistIds=` record with Lidarr's join keys (PLAN-015 / D-20). `artistId` is the
+ * parent (= media_items.arr_item_id) the queue is filtered by; `albumId` maps a record back to
+ * a fix/search album target (verified live 2026-07-07). Nullish for unknown-artist items.
+ */
+export const lidarrQueueRecordSchema = queueRecordBaseSchema.extend({
+  artistId: z.number().int().nullish(),
+  albumId: z.number().int().nullish(),
+});
+export type LidarrQueueRecord = z.infer<typeof lidarrQueueRecordSchema>;

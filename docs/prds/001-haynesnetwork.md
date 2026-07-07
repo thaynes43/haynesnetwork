@@ -107,6 +107,8 @@ rebuilding a lost *arr instance.
 | R-45 | Every Fix requires a reason from a taxonomy (e.g. won't play / corrupt, wrong language, wrong version or quality, missing subtitles, wrong content entirely) or "Other" + free text. Reasons are stored for analysis. | Must |
 | R-46 | Fix requests are tracked (requester, item, reason, *arr actions taken, outcome) and visible to admins; users see their own fix history and status. | Must |
 | R-47 | Rate/abuse guard: sensible per-user limits on fix actions (admin-configurable later). | Should |
+| R-106 | Every user-triggered downstream *arr action (Fix, Force Search, incl. roll-ups) gives **live status feedback**: a wire-ack the request landed ("searching"), download progress (queued → downloading% → importing → complete), and a **terminal** for the empty/failed/stalled cases — no silent buttons, no stuck states. | Must |
+| R-107 | Feedback **cascades to every child** a roll-up touched (per-season episode / per-artist album phases), and each authoritative step (grab → import → complete / fail) is reflected in the shared item **History** so others can see what was done. | Should |
 | R-67 | The ledger stores per-item metadata harvested from the *arrs: IMDb/TMDb rating, IMDb/TMDb vote counts, Rotten Tomatoes tomatometer + audience (popcorn), runtime, resolution, genres, added date. | Must |
 | R-68 | Watch-stats (play count, last-viewed) are harvested from Tautulli — across all three estate instances, unified per item — and stored. | Must |
 | R-69 | Posters are served small and server-side (proxied, not hot-linked) and shown in Library. | Must |
@@ -137,6 +139,18 @@ rebuilding a lost *arr instance.
 > subtitle search for the movie (Radarr) / episode (Sonarr). Because Bazarr covers movies/TV only,
 > the reason is **not offered for Music** (Lidarr). No change to the requirements themselves — see
 > ADR-016 / DESIGN-005 D-19.
+
+> **Note (2026-07-07) — live action feedback (R-43/R-46/R-47, R-106/R-107):** every Fix / Force
+> Search now reports live status back (**ADR-028**): a wire-ack ("searching") → download progress
+> (queued → downloading% → importing → complete) → a never-stuck terminal (`nothing_found` after a
+> 15-min window, `stalled` after 45 min or on an *arr download error, `failed`), cascading per-child
+> for season/artist roll-ups. The phase is **DERIVED read-only** on demand from the *arr download
+> queue + the sync-ingested ledger milestones — no new stored state, no migration, no new *arr write
+> surface. Poll-on-demand (no background poller v1). The R-47 one-open-fix guard is now **surfaced**
+> in the UI (the Fix button disables + shows the in-flight phase while an open fix targets the same
+> grain, instead of erroring). The backend contract (`fix.progress`/`fix.searchProgress`) ships
+> first; the progress UI (chips/bars, live My Fixes) lands as a Fable follow-up. See DESIGN-005
+> D-20/D-21.
 
 ### Failsafe restore (Phase 2)
 

@@ -69,6 +69,9 @@ export interface RuntimeEnv {
   /** ADR-026 / DESIGN-012 — per-source Bulletin webhook shared secrets (Seerr + Tautulli). */
   SEERR_WEBHOOK_SECRET: string;
   TAUTULLI_WEBHOOK_SECRET: string;
+  /** ADR-028 test hook — the found-nothing window, shortened so the nothing_found
+   *  terminal is reachable inside a Playwright test (prod default is 15 min). */
+  ACTION_FOUND_NOTHING_WINDOW_MS: string;
 }
 
 /** The shared secret the e2e Maintainerr webhook receiver requires. */
@@ -133,6 +136,9 @@ export function composeRuntimeEnv(opts: {
     MAINTAINERR_WEBHOOK_SECRET: STUB_MAINTAINERR_WEBHOOK_SECRET,
     SEERR_WEBHOOK_SECRET: STUB_SEERR_WEBHOOK_SECRET,
     TAUTULLI_WEBHOOK_SECRET: STUB_TAUTULLI_WEBHOOK_SECRET,
+    // 30 s (vs 15 min in prod): long enough that fresh submits deterministically read
+    // `searching`, short enough that a spec can WAIT OUT the window for nothing_found.
+    ACTION_FOUND_NOTHING_WINDOW_MS: '30000',
   };
 }
 

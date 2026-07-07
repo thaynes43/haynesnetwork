@@ -40,6 +40,9 @@ export * from './media-children';
 export * from './fix-flow';
 export * from './search-requests';
 export * from './search-flow';
+// ADR-028 / DESIGN-005 D-20 (PLAN-015) — the Action Feedback projection: derive live *arr
+// action phases on demand from the queue + ledger milestones (read-only; no writes, no migration)
+export * from './action-progress';
 export * from './restore-flow';
 // ADR-017 / DESIGN-007 Phase 3 — Plex library self-service single-writers + orchestrators
 // (the mutating Plex surface @hnet/plex/write stays confined to this package — guard test).

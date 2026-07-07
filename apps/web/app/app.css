@@ -1974,6 +1974,251 @@ input[aria-invalid='true'] {
   background: var(--color-surface-2);
 }
 
+/* ---------- ADR-028 / DESIGN-005 D-20/D-21 — live *arr action feedback ----------
+   Every color rides the token palette (--color-progress is the "in motion" tone);
+   every surface reserves its footprint so a poll tick or a non-terminal → terminal
+   swap recolors and fills but NEVER reflows neighbors (ADR-015 / hard rule 9). */
+
+/* The tone seam: one custom property per chip/meter, set by the tone modifier. */
+.phase-chip,
+.progress-meter {
+  --feedback-tone: var(--color-text-muted);
+}
+.phase-chip--info,
+.progress-meter--info {
+  --feedback-tone: var(--color-info);
+}
+.phase-chip--progress,
+.progress-meter--progress {
+  --feedback-tone: var(--color-progress);
+}
+.phase-chip--success,
+.progress-meter--success {
+  --feedback-tone: var(--color-accent);
+}
+.phase-chip--warning,
+.progress-meter--warning {
+  --feedback-tone: var(--color-warning);
+}
+.phase-chip--danger,
+.progress-meter--danger {
+  --feedback-tone: var(--color-danger);
+}
+.phase-chip--neutral,
+.progress-meter--neutral,
+.phase-chip--muted,
+.progress-meter--muted {
+  --feedback-tone: var(--color-text-muted);
+}
+
+/* Compact single-line chip — same height as a `.btn.sm` so a button ↔ chip swap in a
+   reserved slot never changes row height. */
+.phase-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--feedback-tone);
+  background: color-mix(in srgb, var(--feedback-tone) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--feedback-tone) 30%, transparent);
+  border-radius: 999px;
+}
+.phase-chip__dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--feedback-tone);
+}
+.phase-chip--pulse .phase-chip__dot {
+  animation: phase-pulse 1.6s ease-in-out infinite;
+}
+@keyframes phase-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+.phase-chip__label {
+  line-height: 1;
+}
+/* Inline mini-meter (Seerr-style sliver inside the chip). */
+.phase-chip__track {
+  flex: none;
+  position: relative;
+  width: 44px;
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--feedback-tone) 22%, transparent);
+  overflow: hidden;
+}
+.phase-chip__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: inherit;
+  background: var(--feedback-tone);
+  transition: width 0.4s ease;
+}
+.phase-chip__track--indeterminate .phase-chip__fill {
+  width: 40%;
+  animation: meter-slide 1.4s ease-in-out infinite;
+}
+/* Percent readout reserves the widest value ("100%") in tabular numerals — 7% → 62%
+   never nudges the chip's contents. */
+.phase-chip__pct {
+  min-width: 4ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* Block-level thin meter (dialog-size). The detail line always occupies its row. */
+.progress-meter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+.progress-meter__track {
+  position: relative;
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--feedback-tone) 18%, var(--color-surface-2));
+  overflow: hidden;
+}
+.progress-meter__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: inherit;
+  background: var(--feedback-tone);
+  transition: width 0.4s ease;
+}
+.progress-meter__track--indeterminate .progress-meter__fill {
+  width: 35%;
+  animation: meter-slide 1.4s ease-in-out infinite;
+}
+@keyframes meter-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(350%);
+  }
+}
+.progress-meter__detail {
+  align-self: flex-end;
+  min-height: 16px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+}
+
+/* The dialog live block: chip headline → meter → copy → reserved retry slot →
+   per-child roll-up. min-height reserves the terminal copy's tallest form so
+   searching → completed/nothing_found never grows the dialog (ADR-015). */
+.action-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 132px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+}
+.action-progress__head {
+  display: flex;
+  align-items: center;
+}
+.action-progress__copy {
+  margin: 0;
+  min-height: 2.6em; /* two lines reserved — the nothing_found copy wraps */
+  font-size: 13px;
+}
+.action-progress__retry {
+  min-height: 30px; /* reserved — the retry button fills in on the never-stuck terminals */
+  display: flex;
+  align-items: center;
+}
+
+/* Per-child roll-up (season fix / artist search) — a deliberate in-place expansion
+   (the sanctioned ADR-015 exception, like the season sections). */
+.rollup {
+  border-top: 1px solid var(--color-border);
+  padding-top: 8px;
+}
+.rollup__summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+.rollup__list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+.rollup__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.rollup__label {
+  min-width: 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+/* The reserved action slot (item detail): sized for its WIDEST state — the button
+   pair, the live chip with its mini-meter, or chip + re-armed Force Search — so
+   button ↔ chip swaps never rewrap the row (hard rule 9, ConfirmButton discipline). */
+.action-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 15rem;
+  min-height: 30px;
+}
+/* The radarr header pair (bigger buttons). */
+.action-slot--head {
+  min-width: 16rem;
+}
+/* Whole-show / whole-artist roll-up header (single button ↔ chip). */
+.action-slot--roll {
+  min-width: 12rem;
+}
+/* Phones: the slot already wraps to its own row inside .child-row/.season__actions —
+   cap the reservation so it never exceeds the viewport. */
+@media (max-width: 480px) {
+  .action-slot,
+  .action-slot--head {
+    min-width: 0;
+  }
+}
+
+/* My Fixes: the Status column reserves the live chip's width so chip ↔ badge and
+   percent ticks never shift the table columns. */
+.admin-table td.status-col,
+.admin-table th.status-col {
+  min-width: 13rem;
+}
+
 /* Restore page */
 .restore-lede {
   margin: 0 0 var(--space);

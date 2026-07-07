@@ -693,3 +693,87 @@ describe('fix.myFixes / fix.adminList (R-46)', () => {
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 });
+
+// PLAN-015 / ADR-028 — the live Action Progress Phase queries (fix.progress / fix.searchProgress).
+describe('fix.progress / fix.searchProgress (PLAN-015 action feedback)', () => {
+  const queuePage = (records: unknown[]) => ({
+    page: 1,
+    pageSize: 200,
+    sortKey: 'timeleft',
+    sortDirection: 'ascending',
+    totalRecords: records.length,
+    records,
+  });
+  const downloadingQueueRec = (episodeId: number, seriesId: number) => ({
+    id: 1,
+    status: 'downloading',
+    trackedDownloadStatus: 'ok',
+    trackedDownloadState: 'downloading',
+    size: 1000,
+    sizeleft: 100,
+    seriesId,
+    episodeId,
+  });
+
+  it('fix.progress derives downloading + pct against the live queue; own-fix vs admin auth', async () => {
+    const member = await createUser(tdb.db);
+    const other = await createUser(tdb.db);
+    const admin = await createUser(tdb.db, { admin: true });
+    const item = await seedMediaItem(tdb.db, 'sonarr', { title: 'Prog Show', arrItemId: 907 });
+    const stub = stubArrBundle([
+      { path: '/api/v3/episode', body: [episodeJson(90701, 1, 1, { seriesId: 907 })] },
+      {
+        path: '/api/v3/history',
+        body: historyPage([
+          grabHistoryJson(7701, '2026-07-01T10:00:00Z', { episodeId: 90701, seriesId: 907 }),
+        ]),
+      },
+      { method: 'POST', path: /^\/api\/v3\/history\/failed\/\d+$/, body: {} },
+      { method: 'POST', path: '/api/v3/command', status: 201, body: { id: 1, name: 'EpisodeSearch' } },
+      { path: '/api/v3/queue', body: queuePage([downloadingQueueRec(90701, 907)]) },
+    ]);
+
+    const memberApi = caller(makeCtx(tdb.db, sessionUser(member), stub.bundle));
+    const created = await memberApi.fix.create({
+      mediaItemId: item.id,
+      targetChildId: 90701,
+      reason: 'wrong_language',
+    });
+
+    // Owner sees the live phase.
+    const progress = await memberApi.fix.progress({ fixRequestId: created.id });
+    expect(progress.phase).toBe('downloading');
+    expect(progress.progressPct).toBe(90);
+
+    // Admin sees any fix.
+    const adminApi = caller(makeCtx(tdb.db, sessionUser(admin), stub.bundle));
+    await expect(adminApi.fix.progress({ fixRequestId: created.id })).resolves.toMatchObject({
+      phase: 'downloading',
+    });
+
+    // Another member cannot (NOT_FOUND — no leak).
+    const otherApi = caller(makeCtx(tdb.db, sessionUser(other), stub.bundle));
+    const err = await otherApi.fix.progress({ fixRequestId: created.id }).catch((e: unknown) => e);
+    expect(wireShape(err, 'fix.progress').data.code).toBe('NOT_FOUND');
+  });
+
+  it('fix.searchProgress derives the phase for a Force-Search target', async () => {
+    const member = await createUser(tdb.db);
+    const item = await seedMediaItem(tdb.db, 'sonarr', { title: 'Search Show', arrItemId: 908 });
+    const stub = stubArrBundle([
+      { path: '/api/v3/episode', body: [episodeJson(90801, 1, 1, { seriesId: 908 })] },
+      { method: 'POST', path: '/api/v3/command', status: 201, body: { id: 1, name: 'EpisodeSearch' } },
+      { path: '/api/v3/queue', body: queuePage([downloadingQueueRec(90801, 908)]) },
+    ]);
+    const api = caller(makeCtx(tdb.db, sessionUser(member), stub.bundle));
+
+    await api.fix.forceSearch({ mediaItemId: item.id, scope: 'episode', targetChildId: 90801 });
+    const progress = await api.fix.searchProgress({
+      mediaItemId: item.id,
+      scope: 'episode',
+      targetChildId: 90801,
+    });
+    expect(progress.phase).toBe('downloading');
+    expect(progress.progressPct).toBe(90);
+  });
+});

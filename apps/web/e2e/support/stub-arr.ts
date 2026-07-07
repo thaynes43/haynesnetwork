@@ -11,7 +11,12 @@
 //
 // Control endpoints:
 //   GET  /_stub/calls  → { calls: [{method, path, query, body}] } (writes only)
-//   POST /_stub/reset  → 204 (clears recorded calls)
+//   POST /_stub/reset  → 204 (clears recorded calls + the staged queue)
+//   POST /_stub/queue  → 204 (stage the scriptable download queue: { records: [...] })
+//                        PLAN-015 / D-20 — drives the Action Feedback progress derivation
+//                        deterministically (queued → downloading with a shrinking sizeleft →
+//                        importing → empty-after-import). GET /queue serves the staged records,
+//                        server-side filtered by seriesIds/movieIds/artistIds like the real *arrs.
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 
 export interface RecordedArrWrite {
@@ -286,6 +291,9 @@ function json(res: import('node:http').ServerResponse, status: number, body: unk
 
 export async function startStubArr(): Promise<StubArrServer> {
   const calls: RecordedArrWrite[] = [];
+  // PLAN-015 / D-20 — the scriptable download queue (staged via POST /_stub/queue). Empty by
+  // default so a target with no download derives `searching`/`nothing_found`.
+  let queueRecords: Record<string, unknown>[] = [];
 
   const server: Server = createServer((req, res) => {
     void (async () => {
@@ -301,6 +309,15 @@ export async function startStubArr(): Promise<StubArrServer> {
       }
       if (url.pathname === '/_stub/reset' && method === 'POST') {
         calls.length = 0;
+        queueRecords = [];
+        res.writeHead(204);
+        return res.end();
+      }
+      // PLAN-015 / D-20 — stage the download queue for the Action Feedback progress derivation.
+      if (url.pathname === '/_stub/queue' && method === 'POST') {
+        const raw = await readBody(req);
+        const parsed = raw === '' ? {} : (JSON.parse(raw) as { records?: Record<string, unknown>[] });
+        queueRecords = Array.isArray(parsed.records) ? parsed.records : [];
         res.writeHead(204);
         return res.end();
       }
@@ -355,6 +372,19 @@ export async function startStubArr(): Promise<StubArrServer> {
       if (method === 'GET' && /^\/mediacover\//.test(path)) {
         res.writeHead(200, { 'content-type': 'image/png' });
         return res.end(POSTER_PNG);
+      }
+
+      // ---- GET /movie/{id} — the radarr fix flow's pre-read before its delete fallback
+      // (getMovieById → movieFileId). PLAN-015's movie-fix journey is the first spec to
+      // exercise a non-subtitle movie Fix, so this by-id read joined late.
+      if (method === 'GET') {
+        const movieById = /^\/movie\/(\d+)$/.exec(path);
+        if (movieById) {
+          const id = Number(movieById[1]);
+          if (id === STUB_MOVIE_ID) return json(res, 200, movieResource(STUB_MOVIE_ID));
+          if (id === STUB_VANISHED_ID) return json(res, 200, vanishedMovieResource());
+          return json(res, 404, { message: `stub-arr: no movie ${id}` });
+        }
       }
 
       // ---- reads ----
@@ -460,6 +490,28 @@ export async function startStubArr(): Promise<StubArrServer> {
             pageSize: 20,
             sortKey: 'date',
             sortDirection: 'descending',
+            totalRecords: records.length,
+            records,
+          });
+        }
+        case '/queue': {
+          // PLAN-015 / D-20 — serve the staged queue, server-side filtered by the parent id
+          // (seriesIds/movieIds/artistIds), exactly like the real *arrs (verified live 2026-07-07).
+          const parentParam =
+            query.seriesIds ?? query.movieIds ?? query.artistIds ?? undefined;
+          const parentId = parentParam !== undefined ? Number(parentParam) : undefined;
+          const records =
+            parentId === undefined
+              ? queueRecords
+              : queueRecords.filter(
+                  (r) =>
+                    r.seriesId === parentId || r.movieId === parentId || r.artistId === parentId,
+                );
+          return json(res, 200, {
+            page: 1,
+            pageSize: 200,
+            sortKey: 'timeleft',
+            sortDirection: 'ascending',
             totalRecords: records.length,
             records,
           });
