@@ -28,6 +28,14 @@ export const STUB_PLEX_MACHINE_IDS = {
 /** The member persona's Plex account (email matches stub-oidc STUB_USERS.member). */
 export const STUB_PLEX_MEMBER = { id: '77', email: 'member@example.test', username: 'member' };
 
+/**
+ * ADR-029 — the token account, i.e. the server OWNER (`GET /api/v2/user`). Its email matches NO
+ * persona by default, so the member stays a *friend* (not owner) and existing specs are unchanged.
+ * The owner email is overridable at runtime via `POST /_stub/owner { email }` so the owner-state /
+ * unlinked-account UX can be captured against a real persona.
+ */
+export const STUB_PLEX_OWNER = { id: '12874060', email: 'plex-owner@example.test', username: 'plexowner' };
+
 type Slug = keyof typeof STUB_PLEX_TOKENS;
 
 interface StubSection {
@@ -125,9 +133,12 @@ export async function startStubPlex(): Promise<StubPlexServer> {
       allLibraries: true,
     });
   };
+  // ADR-029 — the OWNER account email `GET /api/v2/user` reports (runtime-overridable for UX capture).
+  let ownerEmail = STUB_PLEX_OWNER.email;
   const resetState = () => {
     calls.length = 0;
     shares.clear();
+    ownerEmail = STUB_PLEX_OWNER.email;
     seedFixtures();
   };
   seedFixtures();
@@ -179,6 +190,25 @@ export async function startStubPlex(): Promise<StubPlexServer> {
         resetState();
         res.writeHead(204);
         return res.end();
+      }
+      // ADR-029 — set the OWNER email so a persona can be recognized as the server owner.
+      if (path === '/_stub/owner' && method === 'POST') {
+        const raw = await readBody(req);
+        const b = raw === '' ? {} : (JSON.parse(raw) as { email?: string });
+        ownerEmail = (b.email ?? '').trim();
+        res.writeHead(204);
+        return res.end();
+      }
+
+      // ---- plex.tv account read (owner identity — ADR-029) ----
+      if (path === '/api/v2/user') {
+        return json(res, 200, {
+          id: Number(STUB_PLEX_OWNER.id),
+          uuid: 'stub-owner-uuid',
+          username: STUB_PLEX_OWNER.username,
+          title: 'Stub Owner',
+          email: ownerEmail,
+        });
       }
 
       // ---- PMS reads (disambiguated by token) ----

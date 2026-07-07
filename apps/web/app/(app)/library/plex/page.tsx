@@ -87,12 +87,23 @@ export default function MyPlexPage() {
                 <span className="plex-server__note" role="status">
                   Couldn’t reach this server — try again shortly.
                 </span>
-              ) : !server.friendMatched ? (
+              ) : server.owner ? (
+                // ADR-029 — the caller IS this server's Plex owner; every library is already
+                // theirs. No add/remove/friend controls apply — the owner can't "add" access
+                // they inherently have, and they are never in their own friend list.
                 <span className="plex-server__note" role="status">
-                  Your account isn’t a Plex friend of this server yet — ask an admin to add you.
+                  You own {server.name} — all libraries are already yours.
+                </span>
+              ) : !server.friendMatched ? (
+                // ADR-029 — email matched neither the owner nor any Plex friend. The common real
+                // case is a local Authentik account with no Plex identity; be accurate rather than
+                // calling it "not a friend yet".
+                <span className="plex-server__note" role="status">
+                  This account isn’t linked to a Plex identity on {server.name}. Sign in with Plex
+                  to manage your libraries — or ask an admin to add you.
                 </span>
               ) : null}
-              {server.allGranted ? (
+              {!server.owner && server.allGranted ? (
                 <div
                   className="plex-mode"
                   role="group"
@@ -126,7 +137,7 @@ export default function MyPlexPage() {
                 </div>
               ) : null}
             </div>
-            {server.allGranted ? (
+            {server.owner ? null : server.allGranted ? (
               // Both states render the same-shape note (similar length, same element) so the
               // All↔explicit swap doesn't shift the list below (ADR-015).
               <p className="plex-mode__note" role="status">
@@ -151,9 +162,10 @@ export default function MyPlexPage() {
                     <span className="plex-lib-type muted"> · {lib.mediaType}</span>
                   </span>
                   <span className="plex-lib-action">
-                    {server.allActive ? (
-                      // All-libraries state: everything is included; per-library add/remove is
-                      // refused server-side (PLEX_ALL_STATE), so it is never offered (ADR-024).
+                    {server.owner || server.allActive ? (
+                      // Owner (ADR-029) or all-libraries state (ADR-024): everything is included.
+                      // The owner owns every library; in the all state per-library add/remove is
+                      // refused server-side (PLEX_ALL_STATE). Either way it is never offered.
                       <span className="plex-lib-included muted">Included</span>
                     ) : lib.shared ? (
                       <ConfirmButton

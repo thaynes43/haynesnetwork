@@ -62,3 +62,18 @@ export const LIBRARY_SECTIONS_JSON = {
 export const IDENTITY_JSON = {
   MediaContainer: { machineIdentifier: 'mid-ops', version: '1.43.2.10687-563d026ea' },
 };
+
+/**
+ * `GET /api/v2/user` JSON (plex.tv) — the token account, i.e. the server OWNER. Shaped like the
+ * live response (id is a number; many extra fields) with a fake email/id so no PII lands in the
+ * repo. The read client consumes only { id, email, username } (ADR-029).
+ */
+export const ACCOUNT_JSON = {
+  id: 12874060,
+  uuid: '6430780f7aa923ed',
+  username: 'owneruser',
+  title: 'Owner User',
+  email: 'Owner@Example.com',
+  friendlyName: 'owneruser',
+  hasPassword: true,
+};

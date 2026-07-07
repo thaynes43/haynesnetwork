@@ -8,6 +8,10 @@
   and an explicit list. This **supersedes C-14's stance** (which accepted that a self-service edit
   silently demotes an all-libraries account): no silent demotion ever — a per-library add/remove
   against an all-libraries account is refused (`PLEX_ALL_STATE`) and the user leaves All explicitly.
+- **Amended by:** [ADR-029](029-plex-server-owner-recognition.md) (2026-07-07) — **amends C-06's
+  friend-only user→account map**: the server OWNER is never in their own friend list, so
+  `plex.myLibraries` recognizes the owner (via plex.tv `GET /api/v2/user`) and returns an owner
+  state instead of the "not a friend" error (closes Q-06 for the owner case).
 
 ## Context and problem statement
 

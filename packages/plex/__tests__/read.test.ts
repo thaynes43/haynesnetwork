@@ -3,6 +3,7 @@ import { PlexReadClient } from '../src/read';
 import { PlexParseError } from '../src/errors';
 import { plexStub, TEST_CLIENT_OPTIONS, type RecordedPlexCall } from './helpers';
 import {
+  ACCOUNT_JSON,
   IDENTITY_JSON,
   LIBRARY_SECTIONS_JSON,
   SERVER_SECTIONS_XML,
@@ -40,6 +41,35 @@ describe('PlexReadClient — PMS registry reads', () => {
     expect(call.headers['X-Plex-Token']).toBe('owner-secret-token');
     expect(call.url.toString()).not.toContain('owner-secret-token');
     expect(call.url.search).toBe('');
+  });
+});
+
+describe('PlexReadClient — owner account (ADR-029)', () => {
+  const accountRoute = { path: '/api/v2/user', body: ACCOUNT_JSON };
+
+  it('getOwnerAccount reads the token account from /api/v2/user (id coerced to string)', async () => {
+    const account = await client(plexStub([accountRoute])).getOwnerAccount();
+    expect(account).toEqual({ id: '12874060', email: 'Owner@Example.com', username: 'owneruser' });
+  });
+
+  it('getOwnerEmail returns the owner email trimmed + lowercased', async () => {
+    expect(await client(plexStub([accountRoute])).getOwnerEmail()).toBe('owner@example.com');
+  });
+
+  it('caches the account — only one /api/v2/user call across repeated reads', async () => {
+    const stub = plexStub([accountRoute]);
+    const c = client(stub);
+    await c.getOwnerAccount();
+    await c.getOwnerEmail();
+    expect(stub.callsFor('GET', '/api/v2/user')).toHaveLength(1);
+  });
+
+  it('addresses /api/v2/user on plex.tv (not the PMS base URL)', async () => {
+    const stub = plexStub([accountRoute]);
+    await client(stub).getOwnerAccount();
+    const call = stub.calls[0]!;
+    expect(call.url.origin).toBe('https://plex.tv');
+    expect(call.url.pathname).toBe('/api/v2/user');
   });
 });
 

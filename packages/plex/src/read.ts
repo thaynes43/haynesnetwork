@@ -10,9 +10,11 @@ import { PlexParseError } from './errors';
 import {
   identitySchema,
   librarySectionsSchema,
+  plexAccountSchema,
   plexFriendSchema,
   plexServerSectionSchema,
   sharedServerSchema,
+  type PlexAccount,
   type PlexFriend,
   type PlexIdentity,
   type PlexLibrarySection,
@@ -48,6 +50,8 @@ export class PlexReadClient {
   protected readonly baseUrl: string;
   protected readonly plexTvBaseUrl: string;
   readonly machineIdentifier: string;
+  /** Cache for `getOwnerAccount` — the owner is stable for the client's lifetime. */
+  private ownerAccount?: PlexAccount;
 
   constructor(options: PlexClientOptions) {
     this.http = new PlexHttp(options);
@@ -79,6 +83,32 @@ export class PlexReadClient {
       librarySectionsSchema,
     );
     return body.MediaContainer.Directory;
+  }
+
+  // ---- plex.tv account read (owner identity) ----
+
+  /**
+   * `GET /api/v2/user` (JSON) — the account the owner token authenticates as (the server OWNER).
+   * The owner is NEVER in their own friend list (`/api/users` lists friends only), so
+   * owner-vs-friend must be resolved here, not via `findFriendByEmail` (ADR-029). Cached per
+   * client (the owner account is stable for the client's lifetime). Throws the usual typed
+   * PlexError on failure — callers that want to degrade (plex.myLibraries) catch it.
+   */
+  async getOwnerAccount(): Promise<PlexAccount> {
+    if (this.ownerAccount) return this.ownerAccount;
+    const account = await this.http.requestJson(
+      'GET',
+      `${this.plexTvBaseUrl}/api/v2/user`,
+      plexAccountSchema,
+    );
+    this.ownerAccount = account;
+    return account;
+  }
+
+  /** The server owner's plex.tv account email, trimmed + lowercased — or null if it has none. */
+  async getOwnerEmail(): Promise<string | null> {
+    const email = (await this.getOwnerAccount()).email?.trim().toLowerCase();
+    return email ? email : null;
   }
 
   // ---- plex.tv v1 sharing reads (share orchestration base) ----
@@ -163,4 +193,4 @@ export function plexReadClient(options: PlexClientOptions): PlexReadClient {
 }
 
 export { parseXml };
-export type { PlexFriend, PlexServerSection, PlexSharedServer, PlexLibrarySection };
+export type { PlexAccount, PlexFriend, PlexServerSection, PlexSharedServer, PlexLibrarySection };

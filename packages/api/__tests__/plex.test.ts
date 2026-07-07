@@ -141,6 +141,58 @@ describe('plex.myLibraries (self-service)', () => {
   });
 });
 
+describe('plex.myLibraries — server owner + unlinked account (ADR-029)', () => {
+  it('flags the server OWNER (never in their own friend list): owner:true, friendMatched stays true, every library shared', async () => {
+    const ownerUser = await createUser(t.db, { email: 'owner-plex@example.com' });
+    // The stub reports this account as the haynestower OWNER and lists NO friends — exactly the
+    // live shape (manofoz@gmail.com owns all three servers, is absent from every friend list).
+    const ownerStub = makeApiPlexStub({
+      haynestower: { ...towerConfig().haynestower, ownerEmail: 'owner-plex@example.com', friends: [] },
+    });
+    const ownerCaller = caller(makeCtx(t.db, sessionUser(ownerUser), undefined, ownerStub.bundle));
+    const { servers } = await ownerCaller.plex.myLibraries();
+    const tower = servers.find((s) => s.slug === 'haynestower')!;
+    expect(tower.owner).toBe(true);
+    expect(tower.friendMatched).toBe(true); // owner takes precedence — the friend lookup is skipped
+    expect(tower.available).toBe(true);
+    expect(tower.libraries.length).toBeGreaterThan(0);
+    expect(tower.libraries.every((l) => l.shared)).toBe(true); // all libraries implicitly the owner's
+  });
+
+  it('an unlinked account (neither owner nor friend) reports owner:false, friendMatched:false', async () => {
+    const localUser = await createUser(t.db, { email: 'local-admin@example.com' });
+    const stub2 = makeApiPlexStub({
+      haynestower: { ...towerConfig().haynestower, ownerEmail: 'owner-plex@example.com', friends: [] },
+    });
+    const c = caller(makeCtx(t.db, sessionUser(localUser), undefined, stub2.bundle));
+    const { servers } = await c.plex.myLibraries();
+    const tower = servers.find((s) => s.slug === 'haynestower')!;
+    expect(tower.owner).toBe(false);
+    expect(tower.friendMatched).toBe(false);
+  });
+
+  it('degrades to the friend flow when the owner lookup fails — no crash, server stays available', async () => {
+    const friendUser = await createUser(t.db, { email: 'degrade-plex@example.com' });
+    const s = makeApiPlexStub({
+      haynestower: {
+        ...towerConfig().haynestower,
+        friends: [{ id: '77', email: 'degrade-plex@example.com' }],
+      },
+    });
+    // The owner lookup throws (plex.tv hiccup) — myLibraries must fall back to friend matching
+    // rather than marking the server unavailable.
+    s.bundle.read.haynestower.getOwnerEmail = async () => {
+      throw new Error('plex.tv 500');
+    };
+    const c = caller(makeCtx(t.db, sessionUser(friendUser), undefined, s.bundle));
+    const { servers } = await c.plex.myLibraries();
+    const tower = servers.find((x) => x.slug === 'haynestower')!;
+    expect(tower.available).toBe(true);
+    expect(tower.owner).toBe(false);
+    expect(tower.friendMatched).toBe(true); // matched via the friend list despite the owner-lookup failure
+  });
+});
+
 describe('plex.addLibrary / removeLibrary (self-service)', () => {
   it('add records a sharing write and myLibraries then shows it shared', async () => {
     stub.writes.length = 0;
