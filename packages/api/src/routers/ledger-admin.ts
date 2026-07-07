@@ -6,7 +6,14 @@
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import { and, desc, eq, sql, type SQL } from 'drizzle-orm';
-import { ARR_KINDS, mediaItems, mediaMetadata, restoreRuns, users } from '@hnet/db';
+import {
+  ARR_KINDS,
+  mediaItems,
+  mediaMetadata,
+  restoreRuns,
+  users,
+  type RestoreResultItem,
+} from '@hnet/db';
 import { executeArrAdd } from '@hnet/domain';
 import { mapDomainErrors, resolveArrBundle, router } from '../trpc';
 import { sectionProcedure } from '../middleware/role';
@@ -29,6 +36,32 @@ import {
 
 const iso = (d: Date) => d.toISOString();
 const isoOrNull = (d: Date | null) => (d === null ? null : d.toISOString());
+
+/**
+ * DESIGN-009 D-05 — roll a run's per-item results up into the outcome counts the /ledger Runs
+ * tab shows on every collapsed row. SAME classification contract as the web report
+ * (`apps/web/lib/ledger.ts` classifyRunItem): success keys off `ok` (`outcome:'monitored'` =
+ * the monitor-flip, anything else ok = added); skips are persisted as ok:false with a
+ * `'skipped:'`-prefixed error (executeArrAdd's skip record); every other ok:false is a real
+ * failure. Error TEXT on an ok row is only a best-effort-search caution — NEVER a failure.
+ * Computed server-side so the run LIST never ships the full results payload (a capped run
+ * carries up to 1000 jsonb entries).
+ */
+function summarizeArrAddResults(results: RestoreResultItem[]): {
+  added: number;
+  monitored: number;
+  skipped: number;
+  failed: number;
+} {
+  const summary = { added: 0, monitored: 0, skipped: 0, failed: 0 };
+  for (const entry of results) {
+    if (entry.ok) summary[entry.outcome === 'monitored' ? 'monitored' : 'added'] += 1;
+    else if (typeof entry.error === 'string' && entry.error.startsWith('skipped:')) {
+      summary.skipped += 1;
+    } else summary.failed += 1;
+  }
+  return summary;
+}
 
 export const ledgerAdminRouter = router({
   /**
@@ -213,30 +246,46 @@ export const ledgerAdminRouter = router({
       return { ...row, startedAt: iso(row.startedAt), finishedAt: isoOrNull(row.finishedAt) };
     }),
 
-  /** Recent Ledger Add-&-search runs, newest first (reason 'ledger_add' only). */
-  runs: sectionProcedure('ledger', 'read_only').query(async ({ ctx }) => {
-    const rows = await ctx.db
-      .select({
-        id: restoreRuns.id,
-        arrKind: restoreRuns.arrKind,
-        arrInstanceId: restoreRuns.arrInstanceId,
-        reason: restoreRuns.reason,
-        status: restoreRuns.status,
-        itemCount: restoreRuns.itemCount,
-        successCount: restoreRuns.successCount,
-        startedAt: restoreRuns.startedAt,
-        finishedAt: restoreRuns.finishedAt,
-        initiatedByDisplayName: users.displayName,
-      })
-      .from(restoreRuns)
-      .leftJoin(users, eq(users.id, restoreRuns.initiatedBy))
-      .where(eq(restoreRuns.reason, 'ledger_add'))
-      .orderBy(desc(restoreRuns.startedAt))
-      .limit(20);
-    return rows.map((row) => ({
-      ...row,
-      startedAt: iso(row.startedAt),
-      finishedAt: isoOrNull(row.finishedAt),
-    }));
-  }),
+  /**
+   * Ledger Add-&-search runs, newest first (reason 'ledger_add' only) — the /ledger **Runs**
+   * tab's list (owner UX 2026-07-07: run history is a destination, not a scroll-past card).
+   * Optional `arrKind` narrows to one *arr server-side so the media-type filter and the
+   * newest-first window always agree (a client-side trim of a fixed page could hide older
+   * runs of the filtered kind). Same read gate as `run` — Read-Only browses run history.
+   * Each row carries the server-computed outcome summary (added/monitored/skipped/failed)
+   * instead of the raw per-item results payload; the expanded report reads `run({id})`.
+   */
+  runs: sectionProcedure('ledger', 'read_only')
+    .input(z.object({ arrKind: z.enum(ARR_KINDS).optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      const where: SQL[] = [eq(restoreRuns.reason, 'ledger_add')];
+      if (input?.arrKind !== undefined) where.push(eq(restoreRuns.arrKind, input.arrKind));
+      const rows = await ctx.db
+        .select({
+          id: restoreRuns.id,
+          arrKind: restoreRuns.arrKind,
+          arrInstanceId: restoreRuns.arrInstanceId,
+          reason: restoreRuns.reason,
+          status: restoreRuns.status,
+          itemCount: restoreRuns.itemCount,
+          successCount: restoreRuns.successCount,
+          startedAt: restoreRuns.startedAt,
+          finishedAt: restoreRuns.finishedAt,
+          initiatedByDisplayName: users.displayName,
+          results: restoreRuns.results,
+        })
+        .from(restoreRuns)
+        .leftJoin(users, eq(users.id, restoreRuns.initiatedBy))
+        .where(and(...where))
+        // id is a pure tiebreak — keeps the order deterministic if two runs share a timestamp.
+        .orderBy(desc(restoreRuns.startedAt), desc(restoreRuns.id))
+        // "There won't be many runs" (owner) — 100 newest is effectively "all", bounded.
+        .limit(100);
+      return rows.map(({ results, ...row }) => ({
+        ...row,
+        startedAt: iso(row.startedAt),
+        finishedAt: isoOrNull(row.finishedAt),
+        summary: summarizeArrAddResults(results),
+      }));
+    }),
 });

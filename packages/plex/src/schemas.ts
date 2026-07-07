@@ -44,6 +44,19 @@ export type PlexLibrarySections = z.infer<typeof librarySectionsSchema>;
 // objects (all XML attrs are strings) and validates them here. Verified live 2026-07-06.
 // ---------------------------------------------------------------------------
 
+/**
+ * `GET /api/v2/user` (JSON) — the account the owner token authenticates as, i.e. the server
+ * OWNER. Consumed to detect when the logged-in user IS the owner: owners are never in their own
+ * `/api/users` friend list, so friend-matching structurally cannot match them (ADR-029). Only
+ * the identity subset is read; every other field plex.tv returns is ignored (non-strict object).
+ */
+export const plexAccountSchema = z.object({
+  id: z.union([z.string(), z.number()]).transform(String).optional(),
+  email: z.string().nullable().default(null),
+  username: z.string().nullable().default(null),
+});
+export type PlexAccount = z.infer<typeof plexAccountSchema>;
+
 /** `<User>` from `GET /api/users` — the friend list. Maps app user (OIDC email) → Plex id. */
 export const plexFriendSchema = z.object({
   id: z.string(),

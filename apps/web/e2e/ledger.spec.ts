@@ -56,6 +56,9 @@ test.describe('ledger section (DESIGN-009)', () => {
     await page.getByRole('navigation', { name: 'Primary' }).getByText('Ledger').click();
     await page.waitForURL('/ledger');
 
+    // The tablist: three media sheets + the Runs history tab (owner UX 2026-07-07).
+    expect(await page.getByRole('tab').allInnerTexts()).toEqual(['Movies', 'TV', 'Music', 'Runs']);
+
     // Movies default tab: all three seeded movies — the tombstoned one INCLUDED (D-04),
     // which /library never shows.
     await expect(page.locator('.ledger-row')).toHaveCount(3);
@@ -307,7 +310,7 @@ test.describe('ledger section (DESIGN-009)', () => {
     expect(searchCalls).toHaveLength(2);
 
     // Close the report (the Modal is retitled 'Run report' once the run lands); the selection
-    // was consumed; the sheet reflects the monitor flip and the run lands in Recent runs.
+    // was consumed and the sheet reflects the monitor flip.
     const reportDialog = page.getByRole('dialog', { name: 'Run report' });
     await reportDialog.getByRole('button', { name: 'Done' }).click();
     await expect(reportDialog).toBeHidden();
@@ -315,18 +318,51 @@ test.describe('ledger section (DESIGN-009)', () => {
     await expect(
       page.locator('.ledger-row').filter({ hasText: 'Vanished Heist' }).locator('.ledger-yes'),
     ).toHaveCount(1);
-    const runsCard = page.getByTestId('ledger-runs');
-    await expect(runsCard.locator('tbody tr')).toHaveCount(1);
-    await expect(runsCard.locator('tbody tr').first()).toContainText('Completed');
-    await expect(runsCard.locator('tbody tr').first()).toContainText('2/2');
-    await expect(runsCard.locator('tbody tr').first()).toContainText('Bootstrap Admin');
 
-    // The report is re-openable from Recent runs (titles resolve via the run's preview).
-    await runsCard.getByRole('button', { name: 'View report' }).click();
-    const reopened = page.getByRole('dialog', { name: 'Run report' });
-    await expect(reopened.getByTestId('ledger-run-summary')).toContainText('1 added');
-    await page.keyboard.press('Escape');
-    await expect(reopened).toBeHidden();
+    // The media tabs no longer carry a Recent-runs card below the sheet (owner UX
+    // 2026-07-07) — run history lives on the Runs tab.
+    await expect(page.getByTestId('ledger-runs')).toHaveCount(0);
+
+    // The Runs tab lists the run: when/media/status/outcome-counts/initiator on one row.
+    await page.getByRole('tab', { name: 'Runs' }).click();
+    await expect(page).toHaveURL(/\/ledger\?tab=runs$/);
+    const runsList = page.getByTestId('ledger-runs');
+    await expect(runsList.locator('.ledger-runcard')).toHaveCount(1);
+    const runCard = runsList.locator('.ledger-runcard').first();
+    await expect(runCard).toContainText('Movies');
+    await expect(runCard).toContainText('Completed');
+    await expect(runCard).toContainText('1 added');
+    await expect(runCard).toContainText('1 monitored');
+    await expect(runCard).toContainText('1 skipped');
+    await expect(runCard).toContainText('0 failed');
+    await expect(runCard).toContainText('by Bootstrap Admin');
+
+    // The media-type filter narrows server-side and rides the URL: TV → none of these
+    // (honest filtered-empty copy), Movies → the run, All → everything again.
+    const filterBar = page.getByRole('group', { name: 'Filter runs by media type' });
+    const barBox = (await filterBar.boundingBox())!;
+    await filterBar.getByRole('button', { name: 'TV' }).click();
+    await expect(page).toHaveURL(/kind=tv/);
+    await expect(runsList.locator('.ledger-runcard')).toHaveCount(0);
+    await expect(page.getByTestId('ledger-runs-empty')).toContainText('No TV runs yet');
+    await filterBar.getByRole('button', { name: 'Movies' }).click();
+    await expect(page).toHaveURL(/kind=movies/);
+    await expect(runsList.locator('.ledger-runcard')).toHaveCount(1);
+
+    // Expanding a run opens its per-item report IN PLACE (sanctioned ADR-015 expansion —
+    // titles resolve via the run's preview); the filter bar above must not move.
+    await runsList.locator('.ledger-runcard__head').first().click();
+    const inlineReport = runsList.getByTestId('ledger-run-report');
+    await expect(inlineReport).toBeVisible();
+    await expect(inlineReport.getByTestId('ledger-run-summary')).toContainText('1 added');
+    await expect(inlineReport.locator('tbody tr').filter({ hasText: 'Stub Runner' })).toContainText(
+      'added',
+    );
+    const barBoxAfter = (await filterBar.boundingBox())!;
+    expect(barBoxAfter.y).toBe(barBox.y);
+    // Collapse again — the card contracts back to its header row.
+    await runsList.locator('.ledger-runcard__head').first().click();
+    await expect(inlineReport).toBeHidden();
 
     // Leave the shared stub call log clean — later spec files (library.spec's AC-07 flow)
     // assert exact call counts against it.
@@ -354,6 +390,14 @@ test.describe('ledger section (DESIGN-009)', () => {
     await expect(memberPage.getByTestId('ledger-bulk-open')).toHaveCount(0);
     await expect(memberPage.locator('.ledger-check')).toHaveCount(0);
     await expect(memberPage.getByTestId('ledger-selected-count')).toHaveCount(0);
+
+    // The Runs tab is a READ surface (ledgerAdmin.runs gates at read_only) — Read-Only
+    // browses run history; only the run-CREATING bulk action above is edit-gated.
+    await memberPage.getByRole('tab', { name: 'Runs' }).click();
+    await expect(memberPage.getByTestId('ledger-runs')).toBeVisible();
+    // Settled (skeleton gone) without a FORBIDDEN alert — the read gate admits Read-Only.
+    await expect(memberPage.getByTestId('ledger-runs-skeleton')).toHaveCount(0);
+    await expect(memberPage.locator('.alert')).toHaveCount(0);
 
     // The export route serves Read-Only callers.
     const res = await memberPage.request.get('/api/ledger/export?arrKind=radarr');

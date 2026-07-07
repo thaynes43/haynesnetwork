@@ -1,8 +1,13 @@
 # DESIGN-007: Plex library self-service
 
 - **Status:** Accepted
-- **Last updated:** 2026-07-06
+- **Last updated:** 2026-07-07
 - **Amendments:**
+  - 2026-07-07 (D-14, **ADR-029**) — **server-owner recognition.** The owner (the token account) is
+    never in their own friend list, so friend-matching can't match them; `plex.myLibraries` resolves
+    the owner per server (plex.tv `GET /api/v2/user`) and returns an `owner` state ("all libraries are
+    already yours", no controls) instead of the "not a friend" error. The genuinely-unlinked copy is
+    corrected. Live-diagnosed on staging v0.15.0 (owner `manofoz@gmail.com` owns all three servers).
   - 2026-07-06 (D-12) — registry `base_url` truthfulness (haynestower is the external ingress, no
     in-cluster Service) + per-server refresh degradation with a summary return shape. Live-validated
     fix on staging v0.6.0 (migration `0011_haynestower_base_url.sql`).
@@ -202,9 +207,10 @@ Plex failure is caught and folded into the returned summary (D-12) instead of ab
 
 - `myLibraries` (authed query) — the caller's allowed libraries grouped per server, each
   annotated `shared` from the read client's live share state. Per server also carries `id`,
-  `allGranted` (the role all-grants this server — ADR-024) and `allActive` (the account is
-  currently in the plex.tv all-libraries state). Degrades per-server on a Plex outage
-  (`available:false`) rather than failing the page.
+  `owner` (the caller IS this server's Plex owner — ADR-029 / D-14; every library implicitly theirs,
+  no controls, friend lookup skipped), `allGranted` (the role all-grants this server — ADR-024) and
+  `allActive` (the account is currently in the plex.tv all-libraries state). Degrades per-server on
+  a Plex outage (`available:false`) rather than failing the page.
 - `addLibrary` / `removeLibrary` (authed mutations) — own account only (`ctx.user.id`, never a
   `userId` input); role-gated in-domain. Refused with `PLEX_ALL_STATE` while the account is all (D-13).
 - `setServerAll` (authed mutation, **ADR-024**) — `setServerAllShare` on the caller's own account;
@@ -229,7 +235,9 @@ per ADR-012 C-10):
 
 - **`/library/plex`** (`'use client'`, top-bar nav "My Plex") — role-allowed libraries grouped
   per server; **Add** is a plain action, **Remove** is the `@hnet/ui` `ConfirmButton` inline
-  two-step (ADR-014, never `window.confirm`). Non-permitted libraries are never offered.
+  two-step (ADR-014, never `window.confirm`). Non-permitted libraries are never offered. A server
+  the caller **owns** (ADR-029 / D-14) shows the note "You own {server} — all libraries are already
+  yours", read-only "Included" rows, and no controls (owner takes precedence over `allGranted`).
 - **Per-server all-libraries self-service** (ADR-024 / D-13). When the caller's role all-grants
   a server, its header carries a segmented **"All libraries | Specific libraries"** control
   (chosen over a lone switch: a switch labeled "All libraries" makes OFF read as *no* libraries;
@@ -353,6 +361,38 @@ the INFERRED plex.tv-web `{ shared_server: { all_libraries: true } }` (PUT exist
 deferred to live write-validation (ADR-017 C-13). Audited as `share_all_enabled` /
 `share_all_disabled` (server-scoped, `plex_library_id` null).
 
+### D-14 — Server-owner recognition (ADR-029, live-diagnosed 2026-07-07)
+
+The user→account map (C-06) matched the caller's OIDC email against the friend list
+(`GET /api/users`). But **the server owner is never in their own friend list** — Plex lists an
+account's *friends*, not the account itself. All three tokens authenticate as one owner account
+(`manofoz@gmail.com`, plex.tv id `12874060`; verified live GET-only 2026-07-07 — absent from all
+three friend lists, all three `machineIdentifier`s `owned="1"`). So `findFriendByEmail` always
+returned null for the owner → `friendMatched:false` → the wrong *"not a Plex friend"* copy.
+
+Fix:
+
+- **`@hnet/plex/read`** — `getOwnerAccount()` (cached) over plex.tv `GET /api/v2/user` (JSON),
+  consuming only `{ id, email, username }` via the new `plexAccountSchema` (BC-04 ACL); a
+  `getOwnerEmail()` convenience returns the trimmed/lowercased owner email or null. Read-only — no
+  write surface changes, the `@hnet/plex/write` guard is untouched.
+- **`plex.myLibraries`** — per server, resolve the owner email (its own try/catch: a failed lookup
+  degrades to the friend flow, the server is NOT marked unavailable). When it equals the caller's
+  email, set `owner:true`, skip the friend/share lookup, and mark every library `shared` (the owner
+  owns them all). Otherwise the existing friend flow is unchanged.
+- **UI** — an `owner` server renders the note *"You own {server} — all libraries are already yours"*
+  with read-only "Included" rows and no add/remove/friend/all-toggle controls (the owner branch
+  takes precedence over `allGranted`). ADR-015 in-place: the action cell keeps its "Included"
+  geometry, nothing reflows. The `!friendMatched` copy is corrected to *"This account isn't linked
+  to a Plex identity on {server}. Sign in with Plex to manage your libraries — or ask an admin to
+  add you."* — accurate for the local `admin@haynesnetwork.com` account (no Plex identity), which is
+  neither owner nor friend.
+
+**How the owner should sign in:** via **Plex** (email `manofoz@gmail.com`, on
+`BOOTSTRAP_ADMIN_EMAILS`) — this bootstraps Admin under his Plex email and triggers owner-recognition
+(all three servers show the owner state). The local Authentik `admin@haynesnetwork.com` account has
+**no Plex identity** and can never match owner or friend; it now shows the corrected "not linked" copy.
+
 ## Alternatives considered
 
 See ADR-017 "Considered options": per-user/per-tag grants (rejected — ADR-012), an
@@ -383,7 +423,12 @@ sentinel corrupts the `(server, section_key)` identity + the per-library matrix)
   (incl. `allGrantsByRole`); member add/remove records the stub write and myLibraries reflects it;
   `myLibraries` surfaces `allGranted`/`allActive`; `setServerAll` toggles on↔off (recorded setAll
   writes; myLibraries reflects `allActive`); `LIBRARY_NOT_ALLOWED` / `PLEX_ACCOUNT_UNMATCHED` /
-  `PLEX_ALL_STATE` flow through the real errorFormatter; the authed/admin ladder.
+  `PLEX_ALL_STATE` flow through the real errorFormatter; the authed/admin ladder. **ADR-029:**
+  `myLibraries` flags the owner (owner email == caller ⇒ `owner:true`, `friendMatched` stays true,
+  every library shared), reports an unlinked account (neither owner nor friend) `owner:false`/
+  `friendMatched:false`, and degrades to the friend flow when the owner lookup throws (server stays
+  `available`). `@hnet/plex/read`: `getOwnerAccount`/`getOwnerEmail` parse `/api/v2/user`, cache, and
+  hit plex.tv (not the PMS).
 - **e2e (hermetic, stub-plex):** member sees role-allowed libraries (family withheld); add
   records a sharing write; remove via ConfirmButton records the un-share; narrow-viewport fit;
   admin refresh + the library matrix reflecting seeded grants. The stub models the all-libraries

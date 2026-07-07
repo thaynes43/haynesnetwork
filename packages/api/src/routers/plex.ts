@@ -33,7 +33,18 @@ export interface MyServer {
   name: string;
   /** false when the server (or plex.tv) was unreachable while resolving live share state. */
   available: boolean;
-  /** false when the caller's email has no matching Plex friend on the server account (Q-06). */
+  /**
+   * ADR-029 — the caller's email IS this server's Plex OWNER account (the token account). Owners
+   * are never in their own friend list, so friend-matching structurally can't match them; when
+   * true every library is implicitly theirs and no add/remove/friend controls apply. Detected via
+   * plex.tv `GET /api/v2/user`; degrades to `false` (the friend flow) if that lookup fails.
+   */
+  owner: boolean;
+  /**
+   * false when the caller's email matches neither the server OWNER nor any Plex friend on the
+   * server account — e.g. a local Authentik account with no Plex identity (Q-06). Always true for
+   * the owner (owner takes precedence; the friend lookup is skipped).
+   */
   friendMatched: boolean;
   /**
    * ADR-024 — the caller's ROLE grants all-libraries on this server, so they may self-toggle their
@@ -54,10 +65,11 @@ export interface MyServer {
 export const plexRouter = router({
   /**
    * The caller's role-allowed libraries grouped by server, each annotated with whether they
-   * currently share it (live from the read client). Per server also surfaces `allGranted` (the
-   * role grants all-libraries here — ADR-024) and `allActive` (the account is currently in the
-   * plex.tv all-libraries state). Degrades gracefully per server: a Plex outage marks that server
-   * `available: false` rather than failing the whole page.
+   * currently share it (live from the read client). Per server also surfaces `owner` (the caller
+   * IS this server's Plex owner — ADR-029; every library is implicitly theirs, no controls apply),
+   * `allGranted` (the role grants all-libraries here — ADR-024) and `allActive` (the account is
+   * currently in the plex.tv all-libraries state). Degrades gracefully per server: a Plex outage
+   * marks that server `available: false` rather than failing the whole page.
    */
   myLibraries: authedProcedure.query(async ({ ctx }): Promise<{ servers: MyServer[] }> => {
     const libs = await effectiveAllowedLibrariesForUser(ctx.user.id, ctx.db);
@@ -74,24 +86,41 @@ export const plexRouter = router({
       groups.set(lib.serverSlug, g);
     }
 
+    const callerEmail = ctx.user.email.trim().toLowerCase();
     const servers: MyServer[] = [];
     for (const [slug, group] of groups) {
       let available = true;
+      let owner = false;
       let friendMatched = true;
       let allActive = false;
       const sharedKeys = new Set<string>();
       try {
         const read = bundle.read[slug];
-        const friend = await read.findFriendByEmail(ctx.user.email);
-        if (!friend) {
-          friendMatched = false;
+        // ADR-029 — the server OWNER (the token account) is never in their own friend list, so
+        // friend-matching can't match them. Detect the owner explicitly via plex.tv /api/v2/user;
+        // if that lookup fails, degrade to the friend flow (today's behavior) rather than breaking
+        // the page.
+        let ownerEmail: string | null = null;
+        try {
+          ownerEmail = await read.getOwnerEmail();
+        } catch {
+          ownerEmail = null;
+        }
+        if (ownerEmail && ownerEmail === callerEmail) {
+          // The owner implicitly has every library — no friend/share lookup applies.
+          owner = true;
         } else {
-          const current = await read.findSharedServerForUser(friend.id);
-          if (current) {
-            // In the all-libraries state every library (incl. future ones) is shared; surface the
-            // live flag and treat every library as shared (ADR-024).
-            allActive = current.allLibraries;
-            for (const s of current.sections) if (s.shared) sharedKeys.add(s.key);
+          const friend = await read.findFriendByEmail(ctx.user.email);
+          if (!friend) {
+            friendMatched = false;
+          } else {
+            const current = await read.findSharedServerForUser(friend.id);
+            if (current) {
+              // In the all-libraries state every library (incl. future ones) is shared; surface the
+              // live flag and treat every library as shared (ADR-024).
+              allActive = current.allLibraries;
+              for (const s of current.sections) if (s.shared) sharedKeys.add(s.key);
+            }
           }
         }
       } catch {
@@ -102,6 +131,7 @@ export const plexRouter = router({
         slug,
         name: group.name,
         available,
+        owner,
         friendMatched,
         allGranted: allGrantedServerIds.has(group.id),
         allActive,
@@ -110,7 +140,8 @@ export const plexRouter = router({
           name: l.name,
           sectionKey: l.sectionKey,
           mediaType: l.mediaType,
-          shared: allActive || sharedKeys.has(l.sectionKey),
+          // The owner owns every library; the all-libraries state shares every library.
+          shared: owner || allActive || sharedKeys.has(l.sectionKey),
         })),
       });
     }

@@ -42,7 +42,10 @@ describe('ledgerAdmin section gating (AC-13)', () => {
     const page = await readOnly.ledgerAdmin.browse({ arrKind: 'radarr' });
     expect(page.items.some((i) => i.title === 'Gate Movie')).toBe(true);
     await expect(
-      readOnly.ledgerAdmin.bulkAddAndSearch({ arrKind: 'radarr', mediaItemIds: [crypto.randomUUID()] }),
+      readOnly.ledgerAdmin.bulkAddAndSearch({
+        arrKind: 'radarr',
+        mediaItemIds: [crypto.randomUUID()],
+      }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
 
     // Edit reaches the resolver (no arr bundle injected → it fails at the *arr call, NOT the gate).
@@ -114,8 +117,18 @@ describe('ledgerAdmin.bulkAddAndSearch + run (AC-11)', () => {
       { path: '/api/v3/qualityprofile', body: [{ id: 1, name: 'Any' }] },
       { path: '/api/v3/rootfolder', body: [{ id: 1, path: '/movies' }] },
       { path: '/api/v3/tag', body: [] },
-      { method: 'POST', path: '/api/v3/movie', status: 201, body: () => movieJson(5000 + ++added, { tmdbId: 971001, monitored: true }) },
-      { method: 'POST', path: '/api/v3/command', status: 201, body: { id: 1, name: 'MoviesSearch' } },
+      {
+        method: 'POST',
+        path: '/api/v3/movie',
+        status: 201,
+        body: () => movieJson(5000 + ++added, { tmdbId: 971001, monitored: true }),
+      },
+      {
+        method: 'POST',
+        path: '/api/v3/command',
+        status: 201,
+        body: { id: 1, name: 'MoviesSearch' },
+      },
     ]);
 
     const api = caller(makeCtx(tdb.db, sessionUser(editor, { ledger: 'edit' }), stub.bundle));
@@ -132,22 +145,47 @@ describe('ledgerAdmin.bulkAddAndSearch + run (AC-11)', () => {
     const run = await api.ledgerAdmin.run({ id: runId });
     expect(run.reason).toBe('ledger_add');
     expect(run.successCount).toBe(1);
-    expect(run.results[0]).toMatchObject({ mediaItemId: absent.id, ok: true, outcome: 'added', searched: true });
+    expect(run.results[0]).toMatchObject({
+      mediaItemId: absent.id,
+      ok: true,
+      outcome: 'added',
+      searched: true,
+    });
     expect(await api.ledgerAdmin.runs()).toEqual(
       expect.arrayContaining([expect.objectContaining({ id: runId, reason: 'ledger_add' })]),
     );
+
+    // The Runs-tab list contract: each row carries the server-computed outcome summary
+    // (D-05 classification — the list never ships the raw results payload)…
+    const listed = (await api.ledgerAdmin.runs()).find((r) => r.id === runId)!;
+    expect(listed.summary).toEqual({ added: 1, monitored: 0, skipped: 0, failed: 0 });
+    expect(listed).not.toHaveProperty('results');
+    // …and the optional arrKind narrows server-side (the media-type filter).
+    const radarrRuns = await api.ledgerAdmin.runs({ arrKind: 'radarr' });
+    expect(radarrRuns.some((r) => r.id === runId)).toBe(true);
+    const sonarrRuns = await api.ledgerAdmin.runs({ arrKind: 'sonarr' });
+    expect(sonarrRuns.some((r) => r.id === runId)).toBe(false);
   });
 
   it('a Restore run (reason restore) is NOT visible via ledgerAdmin.run', async () => {
     const admin = await createUser(tdb.db, { admin: true });
-    const item = await seedMediaItem(tdb.db, 'radarr', { title: 'Restore Only', arrItemId: 7201, tmdbId: 972001 });
+    const item = await seedMediaItem(tdb.db, 'radarr', {
+      title: 'Restore Only',
+      arrItemId: 7201,
+      tmdbId: 972001,
+    });
     await tombstoneMissingItems({ db: tdb.db, arrKind: 'radarr', seenArrItemIds: [] });
     const stub = stubArrBundle([
       { path: '/api/v3/movie', body: [] },
       { path: '/api/v3/qualityprofile', body: [{ id: 1, name: 'Any' }] },
       { path: '/api/v3/rootfolder', body: [{ id: 1, path: '/data/haynestower/Media/TV Shows' }] },
       { path: '/api/v3/tag', body: [] },
-      { method: 'POST', path: '/api/v3/movie', status: 201, body: () => movieJson(6001, { tmdbId: 972001 }) },
+      {
+        method: 'POST',
+        path: '/api/v3/movie',
+        status: 201,
+        body: () => movieJson(6001, { tmdbId: 972001 }),
+      },
     ]);
     const api = caller(makeCtx(tdb.db, sessionUser(admin), stub.bundle));
     const { runId } = await api.restore.execute({ arrKind: 'radarr', mediaItemIds: [item.id] });
@@ -184,11 +222,16 @@ describe('ledger export (AC-12 — deterministic JSONL)', () => {
     const filter = buildExportFilterFromParams(new URLSearchParams({ arrKind: 'lidarr' }));
     const lines: string[] = [];
     for await (const line of streamLedgerExportRows(tdb.db, filter)) lines.push(line);
-    const rows = lines.map((l) => JSON.parse(l) as { kind: string; title: string; musicbrainzArtistId: string | null });
+    const rows = lines.map(
+      (l) => JSON.parse(l) as { kind: string; title: string; musicbrainzArtistId: string | null },
+    );
     const bands = rows.filter((r) => r.title.endsWith(' Band'));
     // Deterministic sort_title order: 'alpha band' before 'zeta band'.
     expect(bands.map((b) => b.title)).toEqual(['Alpha Band', 'Zeta Band']);
-    expect(bands[0]).toMatchObject({ kind: 'lidarr', musicbrainzArtistId: '00000000-0000-0000-0000-000000alpha' });
+    expect(bands[0]).toMatchObject({
+      kind: 'lidarr',
+      musicbrainzArtistId: '00000000-0000-0000-0000-000000alpha',
+    });
     // Each line is a single JSON object terminated by a newline.
     expect(lines.every((l) => l.endsWith('\n'))).toBe(true);
   });
@@ -250,7 +293,8 @@ describe('roles.setSectionPermission (ADR-021 C-02)', () => {
     expect(after.sectionPermissions.ledger).toBe('disabled');
     // The Admin role always shows edit (implicit).
     expect(
-      (await api.roles.list()).find((r) => r.id === schema.SEEDED_ROLE_IDS.admin)!.sectionPermissions,
+      (await api.roles.list()).find((r) => r.id === schema.SEEDED_ROLE_IDS.admin)!
+        .sectionPermissions,
     ).toEqual({ ledger: 'edit', trash: 'edit', bulletin: 'edit' });
 
     const memberApi = caller(makeCtx(tdb.db, sessionUser(member)));
