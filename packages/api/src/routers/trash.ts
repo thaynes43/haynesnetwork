@@ -233,11 +233,20 @@ export const trashRouter = router({
       });
     }),
 
-  /** DESIGN-010 D-07 (addendum c) — the Maintainerr Activity feed (from the notification store). */
+  /**
+   * DESIGN-010 D-07 (addendum c) — the Activity feed (from the notification store). Reads BOTH the
+   * webhook-sourced `maintainerr` events AND the app's own `trash` deletion events: Maintainerr does
+   * NOT webhook our API-triggered per-item `/collections/media/handle` calls, so app-initiated
+   * (Expedite / batch sweep) deletions arrive only as the `trash`-sourced rows the domain writes.
+   */
   activity: sectionProcedure('trash', 'read_only')
     .input(z.object({ limit: z.number().int().min(1).max(200).default(50) }).optional())
     .query(async ({ ctx, input }) => {
-      return listNotifications({ db: ctx.db, source: 'maintainerr', limit: input?.limit ?? 50 });
+      return listNotifications({
+        db: ctx.db,
+        sources: ['maintainerr', 'trash'],
+        limit: input?.limit ?? 50,
+      });
     }),
 
   /**

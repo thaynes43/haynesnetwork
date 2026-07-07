@@ -39,7 +39,7 @@ import { trpc } from '@/lib/trpc-client';
 import { Modal } from '@/components/modal';
 import { MediaPoster } from '@/components/media-poster';
 import { CHIP_LABELS, RatingChip } from '@/components/filter-chips';
-import { ShieldButton, type TrashAccess } from '@/components/trash-shield';
+import { ExpediteButton, ShieldButton, type TrashAccess } from '@/components/trash-shield';
 import { BatchesTab } from './batches-tab';
 import {
   RESOLUTION_LABELS,
@@ -727,20 +727,11 @@ function PendingTab({
                           />
                         ) : null}
                         {canExpediteItem && item.maintainerrMediaId !== null ? (
-                          <button
-                            type="button"
-                            className="btn sm danger"
-                            data-testid="trash-expedite-item"
-                            disabled={!safe}
-                            title={
-                              safe
-                                ? `Expedite the deletion of ${item.title}`
-                                : 'Disabled — Maintainerr is not in a safe state (see the banner).'
-                            }
+                          <ExpediteButton
+                            itemTitle={item.title}
+                            safe={safe}
                             onClick={() => openExpedite({ scope: 'item', item })}
-                          >
-                            Expedite
-                          </button>
+                          />
                         ) : null}
                       </span>
                     </td>
@@ -1092,6 +1083,7 @@ function RecentlyDeletedTab({ access }: { access: TrashAccess }) {
           <th>Kind</th>
           <th>Size</th>
           <th>Deleted</th>
+          <th>By</th>
           <th>Restore</th>
         </tr>
       </thead>
@@ -1117,6 +1109,15 @@ function RecentlyDeletedTab({ access }: { access: TrashAccess }) {
               <td data-label="Size">{row.sizeOnDisk > 0 ? formatBytes(row.sizeOnDisk) : '—'}</td>
               <td data-label="Deleted">
                 {row.deletedAt !== null ? formatDay(row.deletedAt) : '—'}
+              </td>
+              <td data-label="By" data-testid="trash-deleted-by">
+                {row.deletedBy !== null ? (
+                  row.deletedBy
+                ) : (
+                  <span className="muted" title="Removed by a sync pass — no app user attributed.">
+                    System
+                  </span>
+                )}
               </td>
               <td data-label="Restore">
                 {status !== undefined ? (

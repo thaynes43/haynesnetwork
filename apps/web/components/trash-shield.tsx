@@ -43,6 +43,61 @@ export function ShieldGlyph({ filled }: { filled: boolean }) {
   );
 }
 
+/** The Expedite trash-can glyph — icon twin of ShieldGlyph, same 16×16 box + stroke weight so the
+ *  two per-row actions read as one equal-weight pair (ADR-015 — constant footprint). */
+export function TrashCanGlyph() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 7h16" />
+      <path d="M10 4h4a1 1 0 0 1 1 1v2H9V5a1 1 0 0 1 1-1Z" />
+      <path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12" />
+      <path d="M10 11v6M14 11v6" />
+    </svg>
+  );
+}
+
+export interface ExpediteButtonProps {
+  itemTitle: string;
+  /** Maintainerr is in a SAFE state (the destructive gate); when false the button is disabled. */
+  safe: boolean;
+  onClick: () => void;
+}
+
+/**
+ * DESIGN-010 / ADR-014 — the per-row Expedite affordance: an icon-only DANGER-toned trash-can button
+ * sized/treated exactly like the protective ShieldButton so the row's two actions are equal weight
+ * (the fix for the "big red pill dwarfs the shield" nit). Clicking it opens the Expedite confirm
+ * Modal (ADR-014 — the icon only TRIGGERS the two-step/Modal confirm; it never one-click deletes).
+ */
+export function ExpediteButton({ itemTitle, safe, onClick }: ExpediteButtonProps) {
+  const label = safe
+    ? `Expedite the deletion of ${itemTitle}`
+    : `Expedite ${itemTitle} — disabled while Maintainerr is not in a safe state (see the banner)`;
+  return (
+    <button
+      type="button"
+      className="expedite-btn"
+      data-testid="trash-expedite-item"
+      aria-label={label}
+      title={label}
+      disabled={!safe}
+      onClick={onClick}
+    >
+      <TrashCanGlyph />
+    </button>
+  );
+}
+
 export interface ShieldButtonProps {
   /** Is the item currently protected (excluded / dnd-tagged / saved this session)? */
   on: boolean;

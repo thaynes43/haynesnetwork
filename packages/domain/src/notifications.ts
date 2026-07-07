@@ -1,5 +1,5 @@
 import { notifications, type DbClient, type NotificationSource } from '@hnet/db';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { resolveDb } from './db-client';
 import { resolveMediaItemId, resolveUserIdByEmail } from './ledger-ingest';
 
@@ -94,19 +94,30 @@ export interface NotificationView {
 }
 
 /**
- * Read the notification feed for a source, newest first (the Trash Activity tab / a future
- * Bulletin). A plain read — unguarded.
+ * Read the notification feed newest first (the Trash Activity tab / a future Bulletin). A plain read
+ * — unguarded. Pass a single `source` OR a `sources` set: the Trash Activity tab reads BOTH the
+ * webhook-sourced `maintainerr` events AND the app's own `trash` deletion events (Maintainerr never
+ * webhooks our API-triggered per-item deletes, so app-initiated deletions arrive only via `trash`).
  */
 export async function listNotifications(input: {
   db?: DbClient;
-  source: NotificationSource;
+  source?: NotificationSource;
+  sources?: NotificationSource[];
   limit?: number;
 }): Promise<NotificationView[]> {
   const db = resolveDb(input.db);
+  const sources = input.sources ?? (input.source !== undefined ? [input.source] : []);
+  if (sources.length === 0) {
+    throw new Error('listNotifications requires a source or a non-empty sources array');
+  }
   const rows = await db
     .select()
     .from(notifications)
-    .where(eq(notifications.source, input.source))
+    .where(
+      sources.length === 1
+        ? eq(notifications.source, sources[0]!)
+        : inArray(notifications.source, sources),
+    )
     .orderBy(desc(notifications.createdAt))
     .limit(input.limit ?? 50);
   return rows.map((r) => ({

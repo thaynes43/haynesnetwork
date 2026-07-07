@@ -5,8 +5,8 @@
 // window; the read-through pending merge + scheduled-delete derivation; recently-deleted from
 // tombstones; and the music/Lidarr rejection.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { eq } from 'drizzle-orm';
-import { ledgerEvents, mediaItems } from '@hnet/db/schema';
+import { desc, eq } from 'drizzle-orm';
+import { ledgerEvents, mediaItems, notifications } from '@hnet/db/schema';
 import {
   MaintainerrUnsafeError,
   MaintainerrUpstreamError,
@@ -15,6 +15,7 @@ import {
   buildMaintainerrClientBundle,
   expediteDeletion,
   guardRecentlyWatched,
+  listNotifications,
   listRecentlyDeleted,
   listTrashPending,
   removeExclusion,
@@ -632,6 +633,121 @@ describe('listTrashPending + guardian + expedite (ADR-023 D-02/D-04/D-05)', () =
     expect(handled).toEqual(['ms-8002']);
     // ms-8001 became pending but was NOT in the snapshot ⇒ never touched (not whitelisted, not deleted).
     expect(state.exclusions.has('ms-8001')).toBe(false);
+  });
+});
+
+// Deletion-tracking fix (2026-07-07) — an app-initiated Expedite must be trackable from OUR durable
+// records. ROOT CAUSE: listRecentlyDeleted read ONLY tombstoned media_items, but a per-item Maintainerr
+// delete can remove the FILE while leaving the *arr entry — so sync never tombstones it (and would
+// un-tombstone any value we wrote). The two owner-deleted titles thus wrote a `trash_expedited` event
+// but were never tombstoned → invisible in Recently Deleted; and Maintainerr never webhooks our per-item
+// handle → invisible in Activity. The fix: (1) listRecentlyDeleted ALSO surfaces items with a
+// non-superseded `trash_expedited` event (branch B, the durable source); (2) expedite writes a
+// source='trash' Activity notification same-tx carrying actor + title + size.
+describe('expedite deletion audit — Recently Deleted + Activity (deletion-tracking fix)', () => {
+  let t: TestDb;
+  let actorId: string;
+  const OLD = new Date(Date.now() - 400 * 86_400_000).toISOString();
+
+  beforeAll(async () => {
+    t = await bootMigratedDb();
+    actorId = (await createUser(t.db, { email: 'deleter@example.com', displayName: 'Tom Haynes' })).id;
+    await upsertMediaItemsBatch({
+      db: t.db,
+      arrKind: 'radarr',
+      items: [
+        { arrItemId: 1, tmdbId: 8100, title: 'The Deadly Little Mermaid', sortTitle: 'deadly little mermaid', monitored: true, qualityProfileId: 1, qualityProfileName: 'Any', rootFolder: '/movies', sizeOnDisk: 1_400_000_000 },
+      ],
+    });
+    const [row] = await t.db.select().from(mediaItems).where(eq(mediaItems.tmdbId, 8100));
+    await upsertMediaMetadataBatch({
+      db: t.db,
+      rows: [{ mediaItemId: row!.id, lastViewedAt: new Date(OLD) }],
+    });
+  });
+  afterAll(async () => t?.stop());
+
+  const coldState = () =>
+    baseState({
+      collections: [
+        {
+          id: 9,
+          isActive: true,
+          deleteAfterDays: 30,
+          type: 'movie',
+          title: 'Least watched movies',
+          items: [
+            { mediaServerId: 'ms-8100', tmdbId: 8100, sizeBytes: 1_400_000_000, addDate: '2026-06-01T00:00:00Z' },
+          ],
+        },
+      ],
+    });
+
+  it('surfaces an app-expedited deletion in Recently Deleted WITH actor + title, NOT tombstoned', async () => {
+    // Sanity: no expedite yet AND not tombstoned ⇒ Recently Deleted is empty (the pre-fix bug state:
+    // the item is still a live *arr entry, so a tombstone-only query would never surface it).
+    expect(await listRecentlyDeleted({ db: t.db, media: 'movie' })).toHaveLength(0);
+
+    const { bundle } = makeMaintainerr(coldState());
+    const res = await expediteDeletion({
+      db: t.db,
+      maintainerr: bundle,
+      scope: 'item',
+      media: 'movie',
+      actorId,
+      item: { collectionId: 9, maintainerrMediaId: 'ms-8100' },
+    });
+    expect(res).toMatchObject({ expeditedCount: 1 });
+
+    // The item is NOT tombstoned (sync owns deleted_from_arr_at; the *arr entry may still be live) —
+    // yet it surfaces in Recently Deleted from the durable trash_expedited event (branch B).
+    const [item] = await t.db.select().from(mediaItems).where(eq(mediaItems.tmdbId, 8100));
+    expect(item!.deletedFromArrAt).toBeNull();
+
+    const deleted = await listRecentlyDeleted({ db: t.db, media: 'movie' });
+    expect(deleted).toHaveLength(1);
+    expect(deleted[0]).toMatchObject({
+      title: 'The Deadly Little Mermaid',
+      deletedBy: 'Tom Haynes', // WHO — the attributed actor
+      sizeOnDisk: 1_400_000_000,
+    });
+    expect(deleted[0]!.deletedAt).not.toBeNull(); // WHEN — the expedite time
+  });
+
+  it('same-tx Activity notification carries the actor + title + size', async () => {
+    // An app-sourced Activity notification exists (source 'trash') attributed to the actor.
+    const notes = await t.db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.source, 'trash'))
+      .orderBy(desc(notifications.createdAt));
+    expect(notes.length).toBeGreaterThanOrEqual(1);
+    expect(notes[0]).toMatchObject({
+      source: 'trash',
+      type: 'deleted',
+      title: 'The Deadly Little Mermaid',
+      actorUserId: actorId,
+    });
+    expect(notes[0]!.body).toContain('Tom Haynes');
+    expect(notes[0]!.body).toContain('freed');
+
+    // The Activity feed read (maintainerr + trash) returns the deletion.
+    const feed = await listNotifications({ db: t.db, sources: ['maintainerr', 'trash'] });
+    expect(feed.some((n) => n.title === 'The Deadly Little Mermaid')).toBe(true);
+  });
+
+  it('a later restore event supersedes the expedite ⇒ the item LEAVES Recently Deleted', async () => {
+    const [item] = await t.db.select().from(mediaItems).where(eq(mediaItems.tmdbId, 8100));
+    // A restore event newer than the trash_expedited event (the executeRestore/restoreDeleted marker).
+    await t.db.insert(ledgerEvents).values({
+      mediaItemId: item!.id,
+      eventType: 'trash_restored',
+      source: 'maintainerr',
+      occurredAt: new Date(Date.now() + 1000),
+      payload: {},
+    });
+    const deleted = await listRecentlyDeleted({ db: t.db, media: 'movie' });
+    expect(deleted.some((r) => r.tmdbId === 8100)).toBe(false);
   });
 });
 
