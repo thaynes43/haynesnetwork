@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.14.1](https://github.com/thaynes43/haynesnetwork/compare/v0.14.0...v0.14.1) (2026-07-07)
+
+
+### Bug Fixes
+
+* ledger/library sort affordance + true filtered export count ([#87](https://github.com/thaynes43/haynesnetwork/issues/87)) ([d2b933c](https://github.com/thaynes43/haynesnetwork/commit/d2b933c57b442c7d82fcc1fa257bc476a3466acf))
+
+
+### Documentation
+
+* complete plan 010 (MOTD banner) — v0.14.0 live-validated ([#85](https://github.com/thaynes43/haynesnetwork/issues/85)) ([a51f780](https://github.com/thaynes43/haynesnetwork/commit/a51f78063196b2568e9c804eab01dacc3d8a0609))
+
 ## [0.14.0](https://github.com/thaynes43/haynesnetwork/compare/v0.13.0...v0.14.0) (2026-07-07)
 
 
