@@ -3,7 +3,7 @@
 > The single resume point for agents. Update this in the same change as any milestone.
 > Derive current state from this file's top; you should not have to reconcile anything.
 
-- **Last updated:** 2026-07-06 (Fable 5 autonomous run, in progress)
+- **Last updated:** 2026-07-07 (Fable 5 autonomous run, in progress — PLAN-012 UX pass)
 - **Workflow mode:** PR flow (GATE A executed — see
   `.agents/plans/completed/001-gate-a-pr-cutover.md`).
   `main` is branch-protected: branch → PR → required checks `lint-and-typecheck`, `test`,
@@ -57,6 +57,25 @@
 
 ## Current state
 
+- **PLAN-012 (Trash curation pipeline) — backend + POSTER-WALL UX code-complete on
+  `feat/trash-curation` (2026-07-07, pending PR/merge + live validation).** Backend vertical
+  (ADR-025 / DESIGN-011: migration 0017 batch tables + `app_settings`, `trash-batches.ts`
+  single-writers, `trash.batches.*`/`trash.settings.*` tRPC, `trash-batch-sweep` sync mode,
+  Maintainerr v3.17.0 manual-collection drive with `arrAction: DO_NOTHING`) was adversarially
+  reviewed + fixed at `588b334`. The UX pass adds the **Batches tab on `/trash`** (D-07
+  as-built): the phone-first poster wall (X → lock rescue taps, optimistic + server-reconciled,
+  eye/shield/skip/gone glyphs, ADR-015 reflow-free overlay swaps), lifecycle strip
+  (Create/Green-light Modal/Cancel two-step/Expire-now DANGER Modal with the SweepReport
+  partition incl. `raceSkipped`+`aborted`), the Leaving-Soon countdown + family
+  `save_leaving_soon` flow (lock anything, unlock own), save-stats ("Who rescued what"), and the
+  admin Trash-settings card (skip-gate + default window). `getBatchDetail` gained a read-only
+  metadata join (ratings + recentlyWatched) — DESIGN-011 D-05 updated. e2e: 7 new journeys in
+  `trash-batches.spec.ts` (full lifecycle vs the stub, incl. a domain-driven expired-window
+  green-light helper); whole suite green (100 = 93 existing + 7 new). Screenshot set for owner sign-off captured via
+  `apps/web/e2e/support/capture-batches-ux.ts`. **Remaining for PLAN-012 DoD:** PR/merge →
+  staging deploy (migration 0017 + the hourly `trash-batch-sweep` CronJob manifest in
+  haynes-ops, D-08 checklist) → the LIVE non-destructive journeys 1–4 + owner screenshot
+  approval → move the plan to completed.
 - **ADR-024 all-libraries Plex self-service SHIPPED (v0.10.0)** — a role can grant
   all-libraries-on-a-server; users self-toggle All ↔ specific (leaving All is lossless, seeded
   with the current full set); no silent demotion (per-library ops throw `PLEX_ALL_STATE` in the

@@ -7,9 +7,9 @@
   mapping, D-05 guardian, D-08 wire contracts). Relates ADR-014/015 (confirm + no-reorient),
   ADR-019 (poster proxy).
 
-This design is the contract the **Trash curation UX** (a Fable follow-up) wires against. The backend
-vertical (schema, domain, API, sweep) ships here; the poster-wall page + admin settings surface land
-as a follow-up UX change on the same branch.
+This design is the contract the **Trash curation UX** wires against. The backend vertical (schema,
+domain, API, sweep) shipped first; the poster-wall UX (D-07, implemented 2026-07-07) landed as the
+follow-up change on the same branch.
 
 ---
 
@@ -143,8 +143,14 @@ trash.batches.list        // in: { mediaKind?: 'movie'|'tv' } | undefined
 trash.batches.get         // in: { batchId: uuid }
 // out: BatchSummary & { items: BatchDetailItem[] }
 //   BatchDetailItem = { id, maintainerrMediaId, mediaItemId, collectionId, title, year, tmdbId,
-//                       tvdbId, sizeBytes, posterSource, state, savedBy, savedAt, posterUrl }
+//                       tvdbId, sizeBytes, posterSource, state, savedBy, savedAt, posterUrl,
+//                       imdbRating, tmdbRating, recentlyWatched }
 //   posterUrl: the ADR-019 authed proxy url (null when unresolved) — the poster-wall tile source.
+//   imdbRating/tmdbRating/recentlyWatched (added by the D-07 UX pass, 2026-07-07): a read-only
+//   media_metadata join for the tile caption rating and the "watched ⇒ guardian keeps it" eye
+//   overlay; recentlyWatched uses the same RECENTLY_WATCHED_WINDOW_DAYS window the sweep's
+//   guardian applies, so the wall's eye matches what expiry will actually protect. Live reads —
+//   NOT part of the frozen creation snapshot.
 
 trash.batches.saveStats   // in: { batchId: uuid }
 // out: { batchId, totalSaves, totalUnsaves, netSaved,
@@ -189,25 +195,50 @@ Written same-tx as `state='deleted'` at sweep time (PLAN-013's metrics source):
 
 ---
 
-## D-07 — Poster-wall UX guidance (for the Fable follow-up; ADR-014/015)
+## D-07 — Poster-wall UX (implemented 2026-07-07 — the `/trash?tab=batches` area; ADR-014/015)
 
-- **Poster wall** — a responsive portrait-poster grid (`posterUrl` via the ADR-019 proxy) that
-  scrolls one-handed. Each tile: poster, title/year/size caption, and a **state overlay** — **X**
-  (`pending`, will be deleted) or **lock** (`saved`). `protected`/`skipped`/`deleted` render distinctly
-  (already-safe / kept / gone). **Tap toggles X ⇄ lock in place** (`setItemSaved`) — the overlay swaps
-  glyph + deepens color; the tile NEVER moves/reflows (hard rule 9 — reserved corner/scrim). No
-  per-tap confirm (a save is protective + reversible).
-- **Running counts header** — sticky, fixed-height: `N deleting · M saved · X GB reclaimed` from
-  `counts` — numbers change in place, no layout shift.
-- **Batch actions** — **Green-light** is explanatory/multi-consequence ⇒ a **Modal** (window length,
-  the rolling collection name, what publishes to Plex). **Cancel** ⇒ `ConfirmButton` two-step.
-  **Expire now** (admin) ⇒ Modal surfacing the deleted/skipped/protected report from `SweepReport`.
-- **User (Leaving Soon) view** — the SAME wall scoped by `save_leaving_soon`: countdown to
-  `expiresAt`, X→lock only; no lifecycle buttons; calm read-only when expired.
-- **Admin settings** — skip-gate toggle + default window on the Trash admin area (`trash.settings.*`);
-  flips are `update_app_setting`-audited.
-- In-theme glyphs per DESIGN-006 (no borrowed look); screenshot the wall for owner approval before
-  ship (owner memory: visual identity sign-off).
+Ships as a **Batches tab** on `/trash` (alongside Movies · TV · Recently Deleted · Rules ·
+Activity), with a Movies|TV segmented switch inside it (batches never mix kinds) and deep-linkable
+`?tab=batches&kind=&batch=` state. Layout order is phone-first: lifecycle strip → countdown →
+running counts → **the wall** → save-stats → history → settings.
+
+- **Poster wall** (`apps/web/app/(app)/trash/batches-tab.tsx`; pure rules in
+  `apps/web/lib/trash-batches.ts`, unit-tested) — the /library poster-grid density (fixed 2:3
+  boxes, 3-up at 390px). Each tile: poster, single-line title/year caption, size + ★rating meta,
+  and a **fixed-corner overlay badge**: **X** (pending — outlined danger), **lock** (saved —
+  filled accent, the deliberate "deepens color" flip), **eye** (pending but recently watched —
+  the guardian will keep it, so an X would be dishonest; inert), **shield** (protected — inert),
+  **⊘** (skipped — kept-not-saved, ADR-023 C-07b), **trash** (deleted; poster grays out).
+  **Tap toggles X ⇄ lock in place** — optimistic flip, reconciled with the `setItemSaved`
+  response; on `changed:false` the tile renders the RETURNED real state. The badge re-mount pop
+  is transform-only; captions are fixed-height — the tile never moves/reflows (hard rule 9). No
+  per-tap confirm (protective + reversible).
+- **Running counts header** — sticky, fixed-height, tabular figures, derived from the SAME glyph
+  mapping as the tiles: `Deleting N · Rescued M · Kept K · frees X GB` (terminal batches switch
+  to `Deleted/freed` off the deletion snapshots).
+- **Batch actions** — **Green-light** ⇒ Modal (what promotes, the window-days input defaulting
+  from `trash_default_window_days`, the rolling Plex collection name + Home visibility, what the
+  sweep does after). **Cancel** ⇒ `ConfirmButton` two-step. **Expire now** ⇒ DANGER Modal:
+  honest "up to N delete / saved untouched / at least K skipped" preview, enabled only once the
+  window has closed (mirrors the server precondition), post-run report from `SweepReport` incl.
+  `raceSkipped` ("saved mid-run") and the `aborted` banner ("batch not finished — it will
+  resume"). **Create batch** stays clickable while a batch is open — the server refusal names
+  the blocking batch (id + state) inline.
+- **Phase-aware permissions** (mirrors the D-05 setItemSaved gate): `admin_review` ⇒ only
+  `manage_batches` holders tap; `leaving_soon` ⇒ `save_leaving_soon` holders while the window is
+  open — they may lock anything and **unlock only their own locks** (the server contract permits
+  any-grant-holder unlocks; the wall scopes the family flow to own locks — a manager can always
+  release a foreign lock, shown as "saved by <name>"). Everyone else sees the wall read-only.
+- **User (Leaving Soon) view** — same wall + the countdown banner ("These delete in N days — tap
+  the ✕ on anything you want to keep"); no lifecycle buttons; calm read-only after expiry.
+- **Save-stats** — a "Who rescued what" list under the wall (`saveStats.byUser` — the PLAN-014
+  tuning record, surfaced lightly).
+- **Admin settings** — a Trash-settings card at the bottom of the Batches tab (admin-only —
+  `trash.settings.*` is adminProcedure): skip-gate flip via two-step ConfirmButton with the
+  straight-to-Leaving-Soon explanation, default window days; flips are `update_app_setting`-
+  audited.
+- In-theme stroke-drawn glyphs per DESIGN-006 (no borrowed icon set); wall screenshots captured
+  for owner approval (owner memory: visual identity sign-off).
 
 ---
 

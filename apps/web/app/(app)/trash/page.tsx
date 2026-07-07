@@ -39,5 +39,11 @@ export default async function TrashPage() {
 
   // ADR-023 C-03 — admin implies every action with no rows; otherwise the session grants.
   const actions = role.isAdmin ? [...TRASH_ACTIONS] : (role.trashActions ?? []);
-  return <TrashClient access={{ level, actions }} />;
+  return (
+    <TrashClient
+      access={{ level, actions }}
+      viewerId={session.user.id}
+      viewerIsAdmin={role.isAdmin}
+    />
+  );
 }

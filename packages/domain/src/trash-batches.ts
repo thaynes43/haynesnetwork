@@ -14,6 +14,7 @@
 // WHERE, so a concurrent transition loses the race (TrashBatchStateError) instead of double-acting.
 import {
   ledgerEvents,
+  mediaMetadata,
   trashBatchItems,
   trashBatchSaves,
   trashBatches,
@@ -42,6 +43,7 @@ import {
   isLeavingSoonCollectionTitle,
   LEAVING_SOON_COLLECTION_TITLES,
   listTrashPending,
+  RECENTLY_WATCHED_WINDOW_DAYS,
   removeExclusion,
   saveExclusion,
   type TrashMedia,
@@ -1050,6 +1052,13 @@ export interface BatchDetailItem {
   state: TrashBatchItemState;
   savedBy: string | null;
   savedAt: string | null;
+  // Poster-wall display join (DESIGN-011 D-05/D-07 — read-only media_metadata enrichment): the
+  // caption rating and the "recently watched ⇒ the guardian keeps it" eye overlay. Both are live
+  // reads (not part of the frozen snapshot); recentlyWatched mirrors listTrashPending's window so
+  // the wall's eye matches what the sweep's guardian will actually protect.
+  imdbRating: number | null;
+  tmdbRating: number | null;
+  recentlyWatched: boolean;
 }
 
 export interface BatchDetail extends BatchSummary {
@@ -1065,15 +1074,27 @@ export async function getBatchDetail(input: {
   const [b] = await db.select().from(trashBatches).where(eq(trashBatches.id, input.batchId));
   if (!b) throw new NotFoundError(`Batch ${input.batchId} not found`);
 
-  const items = await db
-    .select()
+  // Left-join media_metadata for the wall's display fields (rating caption + the recently-watched
+  // eye). Items unknown to our ledger (media_item_id NULL) simply get nulls/false.
+  const rows = await db
+    .select({
+      item: trashBatchItems,
+      imdbRating: mediaMetadata.imdbRating,
+      tmdbRating: mediaMetadata.tmdbRating,
+      lastViewedAt: mediaMetadata.lastViewedAt,
+    })
     .from(trashBatchItems)
+    .leftJoin(mediaMetadata, eq(mediaMetadata.mediaItemId, trashBatchItems.mediaItemId))
     .where(eq(trashBatchItems.batchId, input.batchId))
     .orderBy(desc(trashBatchItems.sizeBytes));
 
+  const watchedCutoff = Date.now() - RECENTLY_WATCHED_WINDOW_DAYS * 86_400_000;
+  /** Drizzle numeric columns arrive as strings — normalize (0 stays 0; the UI collapses it). */
+  const numOrNull = (v: string | null): number | null => (v === null ? null : Number(v));
+
   const raw: Record<string, number> = {};
   let reclaimedBytes = 0;
-  for (const it of items) {
+  for (const { item: it } of rows) {
     raw[it.state] = (raw[it.state] ?? 0) + 1;
     if (it.state === 'deleted') reclaimedBytes += it.deletedSizeBytes ?? 0;
   }
@@ -1091,7 +1112,7 @@ export async function getBatchDetail(input: {
     cancelledAt: b.cancelledAt?.toISOString() ?? null,
     counts: toCounts(raw),
     reclaimedBytes,
-    items: items.map((it) => ({
+    items: rows.map(({ item: it, imdbRating, tmdbRating, lastViewedAt }) => ({
       id: it.id,
       maintainerrMediaId: it.maintainerrMediaId,
       mediaItemId: it.mediaItemId,
@@ -1105,6 +1126,9 @@ export async function getBatchDetail(input: {
       state: it.state,
       savedBy: it.savedBy,
       savedAt: it.savedAt?.toISOString() ?? null,
+      imdbRating: numOrNull(imdbRating),
+      tmdbRating: numOrNull(tmdbRating),
+      recentlyWatched: lastViewedAt !== null && lastViewedAt.getTime() >= watchedCutoff,
     })),
   };
 }
