@@ -208,6 +208,14 @@ The full consolidated backlog (with what is deferred beyond this run) is in
   `failureAction: Enforce` on Kyverno v1.18.1. Rollbacks must target **signed** tags (v0.7.0+);
   pre-signing tags (≤v0.6.1) are now denied. Break-glass + full validation evidence in **OPS-006**
   (`docs/ops/006-image-signing.md`).
+- **PLAN-015 authored (owner backlog 2026-07-07):** live downstream-*arr **action feedback** — Fix/
+  Force-Search buttons must report status back (wire-ack "searching" → download progress → complete /
+  nothing_found / stalled; roll-ups cascade per-child). Design = a **read-only, poll-on-demand** tRPC
+  progress query over the *arrs' `/queue` + recent history, **derived** phases (no `FIX_STATUSES`
+  growth, no new table), **no server-side poller v1**. The one-open-fix lock already exists server-side
+  (`FixAlreadyOpenError`) — v1 just surfaces it in the UI. New: `@hnet/arr` `getQueue` read client +
+  stub `/queue` route. See `.agents/plans/015-arr-action-feedback.md` (Draft; ADR/DESIGN/R/T numbers
+  are next-free placeholders — re-grep after 012/011/009/010 land).
 
 ## History
 

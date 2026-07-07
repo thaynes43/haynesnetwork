@@ -61,8 +61,11 @@ For each plan, in order:
 | 008 | haynesnetwork public cutover (Cloudflare tunnel) | — | 002–006, 012, 011 done | queued **LAST of the pre-cutover queue** |
 | 013 | Disk utilization + reclaim metrics | owner 2026-07-06 | 012 (deletion snapshots) + 008 | **banked** (post-cutover per owner) |
 | 014 | Rules tuning + space policy (skip-gate graduation) | owner 2026-07-06 | 013 + accumulated 012 save-data | **banked** (post-cutover, after 013) |
+| 015 | Downstream *arr action feedback (live Fix/Force-Search status) | owner 2026-07-07 | — (extends the on-`main` Fix/Force-Search vertical) | **backlog** (owner slots it; UX-important, pre-cutover-desirable) |
 
 **Owner-ordered sequence (2026-07-06):** 006 (finish) → 012 → 011 → 009 → 010 → 008 → 013 → 014.
+**015** (owner 2026-07-07) is UX-important and desirable **before** the 008 public cutover — owner to
+slot it into the sequence (a natural fit alongside/after 009–010 and before 008).
 
 Source brain dump: `TODO.md`. Consolidated backlog + Restore explanation:
 `../context/2026-07-05-backlog-recon.md`. Deleted-items snapshot to import into the Ledger:
