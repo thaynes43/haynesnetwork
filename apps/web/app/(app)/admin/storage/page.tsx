@@ -14,6 +14,7 @@
 //      (category × resolution, pre-sorted bytes-desc), the cumulative step strip, the per-batch
 //      table, and the best-effort expedite footnote (never folded into totals, C-01b).
 import { useState, type FormEvent } from 'react';
+import { ConfirmButton } from '@hnet/ui';
 import { trpc } from '@/lib/trpc-client';
 import { describeMutationError } from '@/lib/app-error';
 import { formatBytes, formatWhen } from '@/lib/media';
@@ -31,6 +32,18 @@ import {
   type ReclaimWindow,
   type StorageArrayUtilization,
 } from '@/lib/storage';
+import {
+  POLICY_ARRAY_KEY,
+  POLICY_ARRAY_LABEL,
+  arrayEnabled,
+  effectiveCooldownDays,
+  graduationVerdict,
+  nextEligibleLabel,
+  overTargetLabel,
+  saveRateLabel,
+  withArrayConfig,
+  withEnabled,
+} from '@/lib/space-policy';
 
 /** ADR-030 C-04 / OPS-007 — the deep-linked (never embedded) free-space trend dashboard. */
 const GRAFANA_TREND_URL = 'https://grafana.haynesops.com/d/media-storage-utilization';
@@ -358,6 +371,284 @@ function ReclaimSection() {
 }
 
 // ---------------------------------------------------------------------------------------------------
+// Space policy card (ADR-031 / DESIGN-014 — propose-only; the admin gate stays the human check)
+// ---------------------------------------------------------------------------------------------------
+
+/** The rescue-rate + graduation block (trash.tuning). Reads only — the owner tunes rules by hand. */
+function TuningBlock() {
+  const tuning = trpc.trash.tuning.useQuery();
+  const report = tuning.data;
+  if (tuning.isLoading) return <p className="muted">Loading tuning…</p>;
+  if (!report) return null;
+
+  const g = report.graduation;
+  const empty = report.overall.proposed === 0;
+
+  return (
+    <div className="policy-tuning" data-testid="policy-tuning">
+      <h3>Rules tuning &amp; graduation</h3>
+      <p className="muted">
+        What the family rescued vs. what the sweep deleted — the labelled false positives you tune the
+        Maintainerr rules against. Save-rate is rescued ÷ (rescued + deleted); a high rate means the
+        rules are too aggressive for that slice.
+      </p>
+
+      {empty ? (
+        <p className="muted" data-testid="tuning-empty">
+          No curated batches have reached a keep-or-delete verdict yet — this fills in as batches sweep.
+        </p>
+      ) : (
+        <>
+          <p data-testid="tuning-overall">
+            Overall: {report.overall.rescued} rescued · {report.overall.deleted} deleted ·{' '}
+            {report.overall.skipped} guardian-kept · save-rate{' '}
+            <strong>{saveRateLabel(report.overall.saveRatePct)}</strong>
+          </p>
+          <table className="admin-table" data-testid="tuning-resolution">
+            <caption className="sr-only">Rescue rate by resolution</caption>
+            <thead>
+              <tr>
+                <th>Resolution</th>
+                <th>Rescued</th>
+                <th>Deleted</th>
+                <th>Save-rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.byResolution.map((row) => (
+                <tr key={row.key}>
+                  <td data-label="Resolution">{row.label}</td>
+                  <td data-label="Rescued">{row.rescued}</td>
+                  <td data-label="Deleted">{row.deleted}</td>
+                  <td data-label="Save-rate">{saveRateLabel(row.saveRatePct)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <table className="admin-table" data-testid="tuning-rating">
+            <caption className="sr-only">Rescue rate by rating band</caption>
+            <thead>
+              <tr>
+                <th>Rating band</th>
+                <th>Rescued</th>
+                <th>Deleted</th>
+                <th>Save-rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.byRatingBand.map((row) => (
+                <tr key={row.key}>
+                  <td data-label="Rating band">{row.label}</td>
+                  <td data-label="Rescued">{row.rescued}</td>
+                  <td data-label="Deleted">{row.deleted}</td>
+                  <td data-label="Save-rate">{saveRateLabel(row.saveRatePct)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+
+      <div
+        className="policy-graduation"
+        data-testid="policy-graduation"
+        data-meets={g.meetsCriteria || undefined}
+      >
+        <strong>Skip-gate graduation readiness</strong>
+        <p data-testid="graduation-verdict">{graduationVerdict(g)}</p>
+        <p className="muted">
+          The bar (ADR-031 C-05): at least {g.thresholds.minCompletedBatches} completed policy batches,
+          an aggregate save-rate at or below {g.thresholds.maxSaveRatePct}%, and no restores of swept
+          items. Flipping the skip-gate stays an owner action, in Trash → Batches → settings.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function SpacePolicyCard() {
+  const utils = trpc.useUtils();
+  const policy = trpc.storage.policy.get.useQuery();
+  const status = trpc.storage.policy.status.useQuery();
+  const utilization = trpc.storage.utilization.useQuery();
+  const [cooldownDraft, setCooldownDraft] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = trpc.storage.policy.set.useMutation({
+    onSuccess: () => {
+      setError(null);
+      setCooldownDraft(null);
+      void utils.storage.policy.get.invalidate();
+      void utils.storage.policy.status.invalidate();
+    },
+    onError: (err: unknown) => setError(describeMutationError(err)),
+  });
+
+  const p = policy.data;
+  const enabled = p?.enabled === true;
+  const arrOn = p ? arrayEnabled(p, POLICY_ARRAY_KEY) : false;
+  const cooldown = p ? effectiveCooldownDays(p, POLICY_ARRAY_KEY) : 7;
+  const cooldownValue = cooldownDraft ?? String(cooldown);
+  const parsedCooldown = Number(cooldownValue);
+  const cooldownValid = Number.isInteger(parsedCooldown) && parsedCooldown >= 0 && parsedCooldown <= 365;
+
+  const tower = utilization.data?.find((a) => a.key === POLICY_ARRAY_KEY) ?? null;
+  const towerKinds = status.data?.kinds ?? [];
+
+  const flipEnabled = async (next: boolean): Promise<'ok' | 'failed'> => {
+    if (!p) return 'failed';
+    try {
+      await save.mutateAsync(withEnabled(p, next));
+      return 'ok';
+    } catch {
+      return 'failed';
+    }
+  };
+
+  return (
+    <section className="card space-policy admin-section" data-testid="space-policy" aria-label="Space policy">
+      <h2>Space policy</h2>
+      <p className="muted">
+        When an array is over its space target, the policy PROPOSES a Leaving-Soon batch for admin
+        review — it never deletes on its own. The admin gate stays the human check.
+      </p>
+      {error !== null ? (
+        <p className="alert" role="alert">
+          {error}
+        </p>
+      ) : null}
+
+      {/* Global enable — mirrors the Trash skip-gate ceremony (ConfirmButton to arm; plain to disable). */}
+      <div className="space-policy__row">
+        <div className="space-policy__copy">
+          <strong>Automatic proposals</strong>
+          <p data-testid="policy-state">
+            {policy.isLoading
+              ? 'Loading…'
+              : enabled
+                ? 'ON — the hourly job proposes batches for over-target, opted-in arrays.'
+                : 'OFF — no batches are proposed automatically (default).'}
+          </p>
+        </div>
+        {enabled ? (
+          <button
+            type="button"
+            className="btn sm"
+            data-testid="policy-disable"
+            disabled={save.isPending || policy.isLoading}
+            onClick={() => void flipEnabled(false)}
+          >
+            Turn off
+          </button>
+        ) : (
+          <ConfirmButton
+            className="btn sm"
+            data-testid="policy-enable"
+            label="Turn on proposals"
+            reArmOnFailure
+            disabled={save.isPending || policy.isLoading}
+            restingAriaLabel="Turn on automatic space-policy proposals — batches are proposed for admin review, never deleted automatically — click twice to confirm"
+            confirmAriaLabel="Confirm turning on automatic proposals"
+            onConfirm={() => flipEnabled(true)}
+          />
+        )}
+      </div>
+
+      {/* Per-array (HaynesTower) opt-in + cooldown. */}
+      <div className="space-policy__row" data-testid={`policy-array-${POLICY_ARRAY_KEY}`}>
+        <div className="space-policy__copy">
+          <strong>{POLICY_ARRAY_LABEL}</strong>
+          <p className="muted" data-testid="policy-array-target">
+            {tower ? overTargetLabel(tower.usedPct, tower.target) : 'utilization loading…'}
+          </p>
+          <p data-testid="policy-array-state">
+            {arrOn
+              ? 'Opted in — over-target proposals may fire for Movies + TV.'
+              : 'Not opted in — this array never proposes, even over target.'}
+          </p>
+        </div>
+        <div className="space-policy__controls">
+          {arrOn ? (
+            <button
+              type="button"
+              className="btn sm"
+              data-testid="policy-array-disable"
+              disabled={save.isPending || !p}
+              onClick={() => p && save.mutate(withArrayConfig(p, POLICY_ARRAY_KEY, { enabled: false }))}
+            >
+              Opt out
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn sm"
+              data-testid="policy-array-enable"
+              disabled={save.isPending || !p}
+              onClick={() => p && save.mutate(withArrayConfig(p, POLICY_ARRAY_KEY, { enabled: true }))}
+            >
+              Opt in
+            </button>
+          )}
+          <label className="space-policy__field">
+            <span className="muted">Cooldown</span>
+            <input
+              type="number"
+              min={0}
+              max={365}
+              value={cooldownValue}
+              data-testid="policy-cooldown"
+              aria-label={`${POLICY_ARRAY_LABEL} proposal cooldown in days`}
+              onChange={(e) => setCooldownDraft(e.target.value)}
+            />
+            <span className="muted">days</span>
+            <button
+              type="button"
+              className="btn sm"
+              data-testid="policy-cooldown-save"
+              disabled={save.isPending || !p || !cooldownValid || cooldownDraft === null}
+              onClick={() =>
+                p && save.mutate(withArrayConfig(p, POLICY_ARRAY_KEY, { cooldownDays: parsedCooldown }))
+              }
+            >
+              Save
+            </button>
+          </label>
+        </div>
+      </div>
+
+      {/* Status line — last proposal + next-eligible per kind (live over/under is on the array card). */}
+      <div className="space-policy__status" data-testid="policy-status">
+        <strong>Status</strong>
+        {status.isLoading ? (
+          <p className="muted">Loading status…</p>
+        ) : (
+          <>
+            <p>
+              Last proposal:{' '}
+              {status.data?.lastProposalAt ? formatWhen(status.data.lastProposalAt) : 'none yet'}
+            </p>
+            <ul className="space-policy__kinds">
+              {towerKinds.map((k) => (
+                <li key={k.mediaKind} data-testid={`policy-kind-${k.mediaKind}`}>
+                  {k.mediaKind === 'movie' ? 'Movies' : 'TV'}:{' '}
+                  {k.hasOpenBatch
+                    ? 'an open batch is holding the slot'
+                    : k.lastProposal
+                      ? `last ${formatWhen(k.lastProposal.proposedAt)} · ${nextEligibleLabel(k.nextEligibleAt)}`
+                      : 'no proposal yet · eligible now'}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </div>
+
+      <TuningBlock />
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------------------------------
 
@@ -386,6 +677,9 @@ export default function AdminStoragePage() {
           <ArrayCard key={array.key} array={array} />
         ))}
       </section>
+
+      {/* ADR-031 / DESIGN-014 — the propose-only space policy + rules-tuning / graduation block. */}
+      <SpacePolicyCard />
 
       {/* ADR-030 C-04 — the fill/drain history is Grafana, deep-linked (never an iframe). */}
       <a

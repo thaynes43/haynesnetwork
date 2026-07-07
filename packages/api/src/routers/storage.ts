@@ -10,6 +10,8 @@ import {
   getReclaim,
   getUtilization,
   getAppSetting,
+  getSpacePolicy,
+  getSpacePolicyStatus,
   setAppSetting,
   RECLAIM_WINDOWS,
 } from '@hnet/domain';
@@ -33,6 +35,28 @@ export const SpaceTargetsInput = z.object({
     .strict(),
 });
 
+/**
+ * ADR-031 / DESIGN-014 — the space-policy config the admin card writes. The whole object is replaced
+ * (the UI sends the merged value, like the targets editor). `perArray` is keyed by STORAGE_ARRAYS key
+ * (`haynestower`|`cephfs`); an entry OPTS AN ARRAY IN (`enabled` true). Bounds keep the knobs sane;
+ * the inferred shape is exactly @hnet/domain's SpacePolicy — no cast needed.
+ */
+const spacePolicyArrayCfg = z
+  .object({
+    enabled: z.boolean(),
+    cooldownDays: z.number().int().min(0).max(365).optional(),
+    minCandidates: z.number().int().min(0).max(100000).optional(),
+  })
+  .strict();
+export const SpacePolicyInput = z
+  .object({
+    enabled: z.boolean(),
+    cooldownDays: z.number().int().min(0).max(365),
+    minCandidates: z.number().int().min(0).max(100000),
+    perArray: z.record(z.string(), spacePolicyArrayCfg),
+  })
+  .strict();
+
 export const storageRouter = router({
   /** Current disk utilization per media array — the utilization card. Resilient to a downed *arr. */
   utilization: adminProcedure.query(({ ctx }) =>
@@ -55,6 +79,33 @@ export const storageRouter = router({
           db: ctx.db,
           key: 'space_targets',
           value: input.targets,
+          actorId: ctx.user.id,
+        }),
+      ),
+    ),
+  }),
+
+  // ADR-031 / DESIGN-014 (PLAN-014) — the space-driven POLICY: propose-only config + status. All
+  // adminProcedure (operational + destructive-adjacent). The tuning/graduation READ lives on
+  // trash.tuning; this card composes both.
+  policy: router({
+    /** The effective space-policy config (defaults merged — always fully populated, DEFAULT OFF). */
+    get: adminProcedure.query(({ ctx }) => getSpacePolicy(ctx.db)),
+
+    /** Ledger-derived status: last proposal (global + per kind), open-batch + cooldown/next-eligible. */
+    status: adminProcedure.query(({ ctx }) => getSpacePolicyStatus({ db: ctx.db })),
+
+    /**
+     * Replace the space-policy config — audited via the app_settings single-writer (update_app_setting).
+     * The whole object is replaced (like targets.set); the UI sends the merged object. Enabling is a
+     * config change only: the propose-only sync job (which never deletes) acts on it out-of-band.
+     */
+    set: adminProcedure.input(SpacePolicyInput).mutation(({ ctx, input }) =>
+      mapDomainErrors(() =>
+        setAppSetting({
+          db: ctx.db,
+          key: 'space_policy',
+          value: input,
           actorId: ctx.user.id,
         }),
       ),

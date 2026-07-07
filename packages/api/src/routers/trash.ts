@@ -16,6 +16,7 @@ import {
   getAppSettings,
   getBatchDetail,
   getBatchSaveStats,
+  getTuningReport,
   greenlightBatch,
   listBatches,
   listNotifications,
@@ -402,6 +403,15 @@ export const trashRouter = router({
         });
       }),
   }),
+
+  /**
+   * ADR-031 / DESIGN-014 (PLAN-014) — the RULES-TUNING report (admin-only). A READ, not an auto-tune:
+   * per-resolution / per-rating-band / per-collection rescue-vs-delete stats from the curation
+   * pipeline's outcomes (the save-data = labelled false positives), plus the skip-gate GRADUATION
+   * readiness (ADR-025 C-08). The owner reads this to tune the Maintainerr rules by hand; the report
+   * never mutates a rule.
+   */
+  tuning: adminProcedure.query(({ ctx }) => mapDomainErrors(() => getTuningReport({ db: ctx.db }))),
 
   // ADR-025 C-06 — the app-settings admin surface (skip-gate + default window). Admin-only.
   settings: router({

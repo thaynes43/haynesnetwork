@@ -3807,3 +3807,89 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='lock'] {
 .storage-batches {
   margin-top: 16px;
 }
+
+/* ---------- Space policy card (ADR-031 / DESIGN-014 — propose-only + tuning/graduation) ---------- */
+/* Rows recolor/deepen on interaction but never reflow neighbours (ADR-015): fixed layout, flex wrap. */
+.space-policy h2 {
+  margin: 0 0 6px;
+}
+.space-policy > p.muted {
+  margin: 0 0 10px;
+}
+.space-policy__row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 0;
+  border-top: 1px solid var(--color-border);
+  flex-wrap: wrap;
+}
+.space-policy__copy {
+  min-width: 0;
+  font-size: 13px;
+}
+.space-policy__copy p {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+.space-policy__controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  flex-wrap: wrap;
+}
+.space-policy__field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.space-policy__field input {
+  width: 5em;
+}
+.space-policy .confirm-btn,
+.space-policy .btn {
+  flex: none;
+}
+.space-policy__status {
+  padding: 12px 0 4px;
+  border-top: 1px solid var(--color-border);
+  font-size: 13px;
+}
+.space-policy__status p {
+  margin: 4px 0 0;
+}
+.space-policy__kinds {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+.space-policy__kinds li {
+  margin: 2px 0;
+}
+.policy-tuning {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+.policy-tuning h3 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+.policy-tuning table {
+  margin-top: 10px;
+}
+.policy-graduation {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+.policy-graduation[data-meets] {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+}
+.policy-graduation p {
+  margin: 4px 0 0;
+}

@@ -25,8 +25,21 @@ import {
 import { and, count, desc, eq, gte, sql, sum } from 'drizzle-orm';
 import { resolveDb } from './db-client';
 import { getAppSetting } from './app-settings';
-import type { ArrClientBundle } from './arr-clients';
 import type { ArrDiskSpace } from '@hnet/arr';
+
+/**
+ * The MINIMAL read surface getUtilization needs: a `/diskspace` reader per *arr kind. A full
+ * `ArrClientBundle` (`arr-clients.ts`) structurally satisfies this (its `read.{sonarr,radarr,lidarr}`
+ * clients carry `getDiskSpace`), so the storage router keeps passing its bundle unchanged. Declaring
+ * the narrow shape lets the `space-policy` sync mode pass a diskspace-only read bundle built from the
+ * sync clients — no bazarr client, no confined write surface, no ArrConfigError for BAZARR_API_KEY.
+ */
+export interface DiskSpaceReader {
+  getDiskSpace(): Promise<ArrDiskSpace[]>;
+}
+export interface UtilizationArrBundle {
+  read: { sonarr: DiskSpaceReader; radarr: DiskSpaceReader; lidarr: DiskSpaceReader };
+}
 
 // ---------------------------------------------------------------------------------------------------
 // Utilization (source of record = *arr GET /diskspace)
@@ -124,7 +137,7 @@ const roundPct = (used: number): number => Math.round(used * 10) / 10;
  */
 export async function getUtilization(input: {
   db?: DbClient;
-  arr: ArrClientBundle;
+  arr: UtilizationArrBundle;
 }): Promise<StorageArrayUtilization[]> {
   const targets = await getAppSetting(input.db, 'space_targets');
 
