@@ -109,7 +109,8 @@ const ADVANCEMENT: Record<ActionPhase, number> = {
 // A kind-agnostic queue record — the normalized subset the derivation reasons over.
 // ---------------------------------------------------------------------------
 
-interface NormalizedQueueRecord {
+/** The kind-agnostic queue record the derivation reasons over (exported for the phase-matrix tests). */
+export interface NormalizedQueueRecord {
   status: string;
   trackedDownloadStatus: string;
   trackedDownloadState: string;
@@ -215,16 +216,18 @@ export function phaseFromQueueRecord(rec: {
   if (state === 'importblocked' || state === 'importfailed' || state === 'ignored') {
     return { phase: 'stalled', message };
   }
-  if (state === 'downloading' || status === 'downloading') return { phase: 'downloading' };
+  // Client wait states — NOT actively pulling bytes even when the tracked state is 'downloading'
+  // (a paused/delayed grab sits at 0% progress) → queued, checked before the downloading catch.
   if (status === 'queued' || status === 'delay' || status === 'paused') {
     return { phase: 'queued', message };
   }
-  // A transient client warning with no import/download signal keeps moving (queued), not stalled:
+  if (state === 'downloading' || status === 'downloading') return { phase: 'downloading' };
+  if (status === 'completed') return { phase: 'importing' }; // download done, import imminent
+  // A transient client warning with no download/import signal keeps moving (queued), not stalled:
   // warnings resolve on their own (verified live 2026-07-07); the 45-min window catches the rest.
   if (status === 'downloadclientunavailable' || status === 'warning' || tds === 'warning') {
     return { phase: 'queued', message };
   }
-  if (status === 'completed') return { phase: 'importing' }; // download done, import imminent
   return { phase: 'downloading', message };
 }
 

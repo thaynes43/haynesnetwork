@@ -431,3 +431,114 @@ describe('paged /history integer eventType contract (fix/history-eventtype-enum)
     expect(body.errors.eventType[0]).toContain("'grabbed' is not valid");
   });
 });
+
+// PLAN-015 / DESIGN-005 D-20 — the download-queue read client (Action Feedback). Verifies the
+// BC-03 zod subset (unknown fields stripped, consumed fields parsed) and the server-side filter
+// param per kind (verified live 2026-07-07: ?seriesIds= / ?movieIds= / ?artistIds= narrow /queue).
+describe('queue read client (getQueue, PLAN-015 D-20)', () => {
+  /** A rich (real-shaped) queue record with fields OUTSIDE the consumed subset (must be stripped). */
+  function queueRecord(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 55,
+      status: 'downloading',
+      trackedDownloadStatus: 'ok',
+      trackedDownloadState: 'downloading',
+      size: 1000,
+      sizeleft: 250,
+      estimatedCompletionTime: '2026-07-07T12:00:00Z',
+      timeleft: '00:05:00',
+      downloadId: 'abc123',
+      title: 'Some.Release.1080p',
+      errorMessage: '',
+      statusMessages: [{ title: 'warn', messages: ['slow'] }],
+      // fields the ACL must drop:
+      protocol: 'torrent',
+      downloadClient: 'qbittorrent',
+      indexer: 'SecretTracker',
+      outputPath: '/downloads/secret',
+      ...overrides,
+    };
+  }
+  const paged = (records: unknown[]) => ({
+    page: 1,
+    pageSize: 200,
+    sortKey: 'timeleft',
+    sortDirection: 'ascending',
+    totalRecords: records.length,
+    records,
+  });
+
+  it('sonarr: filters by seriesIds and parses the subset (episodeId/seasonNumber kept, extras stripped)', async () => {
+    const stub = stubFetch([
+      {
+        path: '/api/v3/queue',
+        body: paged([queueRecord({ seriesId: 587, episodeId: 53156, seasonNumber: 9 })]),
+      },
+    ]);
+    const client = new SonarrClient({
+      baseUrl: 'http://sonarr.test:8989',
+      fetchImpl: stub.fetchImpl,
+      ...TEST_OPTS,
+    });
+    const records = await client.getQueue(587);
+    expect(stub.calls[0]?.url.pathname).toBe('/api/v3/queue');
+    expect(stub.calls[0]?.url.searchParams.get('seriesIds')).toBe('587');
+    expect(stub.calls[0]?.url.searchParams.get('pageSize')).toBe('200');
+    expect(records).toHaveLength(1);
+    const r = records[0]!;
+    expect(r).toMatchObject({
+      id: 55,
+      status: 'downloading',
+      trackedDownloadState: 'downloading',
+      size: 1000,
+      sizeleft: 250,
+      seriesId: 587,
+      episodeId: 53156,
+      seasonNumber: 9,
+    });
+    // BC-03 ACL: transport/indexer fields never enter the app.
+    expect(r).not.toHaveProperty('protocol');
+    expect(r).not.toHaveProperty('indexer');
+    expect(r).not.toHaveProperty('outputPath');
+  });
+
+  it('radarr: filters by movieIds and keeps movieId', async () => {
+    const stub = stubFetch([
+      { path: '/api/v3/queue', body: paged([queueRecord({ movieId: 2010 })]) },
+    ]);
+    const client = new RadarrClient({
+      baseUrl: 'http://radarr.test:7878',
+      fetchImpl: stub.fetchImpl,
+      ...TEST_OPTS,
+    });
+    const records = await client.getQueue(2010);
+    expect(stub.calls[0]?.url.searchParams.get('movieIds')).toBe('2010');
+    expect(records[0]!.movieId).toBe(2010);
+  });
+
+  it('lidarr: hits /api/v1/queue, filters by artistIds, keeps artistId/albumId', async () => {
+    const stub = stubFetch([
+      { path: '/api/v1/queue', body: paged([queueRecord({ artistId: 5973, albumId: 41 })]) },
+    ]);
+    const client = new LidarrClient({
+      baseUrl: 'http://lidarr.test:8686',
+      fetchImpl: stub.fetchImpl,
+      ...TEST_OPTS,
+    });
+    const records = await client.getQueue(5973);
+    expect(stub.calls[0]?.url.pathname).toBe('/api/v1/queue');
+    expect(stub.calls[0]?.url.searchParams.get('artistIds')).toBe('5973');
+    expect(records[0]).toMatchObject({ artistId: 5973, albumId: 41 });
+  });
+
+  it('omits the filter param when no parent id is given (whole queue)', async () => {
+    const stub = stubFetch([{ path: '/api/v3/queue', body: paged([]) }]);
+    const client = new SonarrClient({
+      baseUrl: 'http://sonarr.test:8989',
+      fetchImpl: stub.fetchImpl,
+      ...TEST_OPTS,
+    });
+    await client.getQueue();
+    expect(stub.calls[0]?.url.searchParams.has('seriesIds')).toBe(false);
+  });
+});
