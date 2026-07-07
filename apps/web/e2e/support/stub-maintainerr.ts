@@ -115,9 +115,19 @@ function freshCollections(): StubCollection[] {
   ];
 }
 
-/** One armed rule group as GET /api/rules serves it. `rules[]` is the DB ENTITY shape (RuleDbDto:
- *  an ENCODED `ruleJson` string), NOT the decoded RuleDto that PUT /api/rules validates — the exact
- *  shape mismatch that 502'd the live arm/disarm (a rule with `rules: []` slipped past the old stub). */
+/** One armed rule group EXACTLY as GET /api/rules serves it on v3.17.0 (verified against source):
+ *  - `rules[]` is the DB ENTITY shape (RuleDbDto: an ENCODED `ruleJson` string), NOT the decoded
+ *    RuleDto that PUT /api/rules validates — the shape mismatch that 502'd arm/disarm (Bug 1).
+ *  - `dataType` is a STRING union member ('movie'|'show'|'season'|'episode'), NOT a number: the entity
+ *    column is `varchar` and contracts' `MediaItemType` is a string. The PUT's crucial-change guard
+ *    compares `group.dataType !== params.dataType`, so a numeric round-trip ('movie' !== 1) would be
+ *    seen as a crucial change and WIPE the collection — the hazard this fixture must model faithfully.
+ *  - `libraryId` is likewise a `varchar` string (crucial-change also compares `params.libraryId !==
+ *    dbCollection.libraryId`).
+ *  - the *arr server ids live NESTED under `collection` (columns on the collection entity), NOT at the
+ *    group level — but PUT validates them at the group level, so the app must lift them up (Bug: the
+ *    live re-verify 502 "Radarr rules require a Radarr server to be selected"). The rule references
+ *    Radarr (`firstVal[0] === Application.RADARR === 1`) so that selection validation actually applies. */
 function freshRules(): Array<Record<string, unknown>> {
   return [
     {
@@ -125,16 +135,17 @@ function freshRules(): Array<Record<string, unknown>> {
       name: 'Purge stale movies',
       description: 'Unwatched 4K movies older than 90 days',
       isActive: true,
-      dataType: 1,
-      libraryId: 1,
-      collection: { id: 7, deleteAfterDays: 30 },
+      dataType: 'movie',
+      libraryId: '1',
+      collection: { id: 7, libraryId: '1', deleteAfterDays: 30, radarrSettingsId: 3, sonarrSettingsId: null },
       rules: [
         {
           id: 1,
           ruleGroupId: 11,
           section: 0,
           isActive: true,
-          ruleJson: JSON.stringify({ operator: null, action: 0, firstVal: [0, 3], lastVal: [0, 4], section: 0 }),
+          // firstVal[0] === 1 (Application.RADARR) ⇒ PUT requires a group-level radarrSettingsId.
+          ruleJson: JSON.stringify({ operator: null, action: 0, firstVal: [1, 0], lastVal: [0, 4], section: 0 }),
         },
       ],
     },
@@ -156,12 +167,15 @@ function encodeRules(ruleGroupId: number, decoded: unknown[]): Array<Record<stri
   });
 }
 
+// Ids per contracts' `Application` enum (v3.17.0): PLEX=0, RADARR=1, SONARR=2, SEERR=3, TAUTULLI=4.
+// The audit matches by NAME, but the ids must line up with the server-selection check below (which
+// keys a rule's `firstVal[0]`/`lastVal[0]` on RADARR=1 / SONARR=2).
 const ALL_APPLICATIONS = [
   { id: 0, name: 'Plex' },
-  { id: 2, name: 'Radarr' },
-  { id: 3, name: 'Sonarr' },
-  { id: 4, name: 'Overseerr' },
-  { id: 5, name: 'Tautulli' },
+  { id: 1, name: 'Radarr' },
+  { id: 2, name: 'Sonarr' },
+  { id: 3, name: 'Overseerr' },
+  { id: 4, name: 'Tautulli' },
 ];
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -185,6 +199,12 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
   const handled = new Set<string>();
   /** lowercased application names currently "disconnected" (dropped from rules/constants). */
   const disconnected = new Set<string>();
+  /** DESTRUCTIVE-hazard tracker: each PUT /rules that Maintainerr's `updateRules` would treat as a
+   *  "crucial setting change" (dataType/manualCollection/manualCollectionName/libraryId differs from
+   *  the stored group) — it wipes the collection media + specific exclusions + deletes the Plex
+   *  collection. A correct isActive toggle NEVER triggers one; a spec asserts this list stays empty so
+   *  a dataType/libraryId round-trip regression (e.g. coercing 'movie'→1) is caught as data loss. */
+  const wipes: Array<{ ruleId: number; collectionId: unknown; from: unknown; to: unknown }> = [];
   let collections = freshCollections();
   let rules = freshRules();
 
@@ -196,11 +216,14 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
       const query = Object.fromEntries(url.searchParams.entries());
 
       if (url.pathname === '/_stub/calls') return json(res, 200, { calls });
+      // The crucial-change wipe ledger (empty unless a PUT would have destroyed a collection).
+      if (url.pathname === '/_stub/wipes') return json(res, 200, { wipes });
       if (url.pathname === '/_stub/reset' && method === 'POST') {
         calls.length = 0;
         exclusions.clear();
         handled.clear();
         disconnected.clear();
+        wipes.length = 0;
         collections = freshCollections();
         rules = freshRules();
         res.writeHead(204);
@@ -248,26 +271,73 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
           return json(res, 201, {});
         }
         if ((method === 'POST' || method === 'PUT') && path === '/rules') {
-          const dto = body as { id?: unknown; rules?: unknown };
+          const dto = body as {
+            id?: unknown;
+            rules?: unknown;
+            dataType?: unknown;
+            libraryId?: unknown;
+            radarrSettingsId?: unknown;
+            sonarrSettingsId?: unknown;
+          };
           const dtoRules = Array.isArray(dto.rules) ? dto.rules : [];
-          // Faithful to Maintainerr updateRules/validateRule: rules[] must be the DECODED RuleDto
+          // (1) Faithful to Maintainerr updateRules/validateRule: rules[] must be the DECODED RuleDto
           // shape (it never decodes ruleJson). A round-tripped DB entity (still carrying `ruleJson`)
           // fails validation → ReturnStatus {code:0} → the app fails closed (BAD_GATEWAY). This is
-          // the live 502 the fix addresses; a rule with `rules: []` (the OLD fixture) never hit it.
+          // the Bug-1 502; a rule with `rules: []` (the OLD fixture) never hit it.
           const undecoded = dtoRules.some(
             (r) => r !== null && typeof r === 'object' && typeof (r as { ruleJson?: unknown }).ruleJson === 'string',
           );
           if (undecoded) {
             return json(res, 200, { code: 0, result: 'First value is not available for this server' });
           }
+          // (2) validateRuleServerSelection: a rule referencing Radarr (Application.RADARR=1) or
+          // Sonarr (=2) in firstVal[0]/lastVal[0] requires the matching GROUP-LEVEL server id. GET
+          // nests those under `collection`, so a verbatim round-trip omits them and Maintainerr
+          // rejects the PUT — the live re-verify 502 the settings-id backfill fixes.
+          const appIds = new Set<number>();
+          for (const r of dtoRules) {
+            if (r === null || typeof r !== 'object') continue;
+            for (const v of [(r as { firstVal?: unknown }).firstVal, (r as { lastVal?: unknown }).lastVal]) {
+              if (Array.isArray(v) && typeof v[0] === 'number') appIds.add(v[0]);
+            }
+          }
+          if (appIds.has(1) && dto.radarrSettingsId == null) {
+            return json(res, 200, { code: 0, result: 'Radarr rules require a Radarr server to be selected' });
+          }
+          if (appIds.has(2) && dto.sonarrSettingsId == null) {
+            return json(res, 200, { code: 0, result: 'Sonarr rules require a Sonarr server to be selected' });
+          }
           if (method === 'PUT' && typeof dto.id === 'number') {
-            // Store the merge, re-encoding rules to the DB shape so a subsequent GET (re-arm) again
-            // exercises the decode.
-            rules = rules.map((r) =>
-              r.id === dto.id
-                ? { ...r, ...(body as object), rules: encodeRules(dto.id as number, dtoRules) }
-                : r,
-            );
+            const stored = rules.find((r) => r.id === dto.id);
+            // (3) Crucial-change WIPE simulation (verified v3.17.0 updateRules): dataType or libraryId
+            // differing from the stored group wipes the collection media + specific exclusions and
+            // deletes the Plex collection. A correct isActive toggle carries both back VERBATIM, so
+            // this must NOT fire; if it does (e.g. dataType coerced 'movie'→1), we record + enact the
+            // data loss so a spec/regression catches it.
+            if (stored !== undefined) {
+              const crucial =
+                ('dataType' in dto && dto.dataType !== stored.dataType) ||
+                ('libraryId' in dto && dto.libraryId !== stored.libraryId);
+              if (crucial) {
+                const collectionId = (stored.collection as { id?: unknown } | undefined)?.id;
+                wipes.push({
+                  ruleId: dto.id,
+                  collectionId,
+                  from: { dataType: stored.dataType, libraryId: stored.libraryId },
+                  to: { dataType: dto.dataType, libraryId: dto.libraryId },
+                });
+                const col = collections.find((c) => c.id === collectionId);
+                if (col) col.items = []; // media wiped
+                exclusions.clear(); // specific exclusions wiped
+              }
+              // Store the merge, re-encoding rules to the DB shape so a subsequent GET (re-arm) again
+              // exercises the decode.
+              rules = rules.map((r) =>
+                r.id === dto.id
+                  ? { ...r, ...(body as object), rules: encodeRules(dto.id as number, dtoRules) }
+                  : r,
+              );
+            }
           }
           return json(res, 200, { code: 1 });
         }

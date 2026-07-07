@@ -1084,17 +1084,57 @@ function decodeRuleGroupRules(payload: Record<string, unknown>): Record<string, 
 }
 
 /**
+ * Live re-verification (2026-07-07, plan-006 staging) — backfill the GROUP-LEVEL server selection.
+ * `GET /api/rules` nests the *arr server ids under the collection (`collection.radarrSettingsId` /
+ * `collection.sonarrSettingsId` — they are columns on the COLLECTION entity, not the rule group), but
+ * `PUT /api/rules` (`updateRules`) reads them at the GROUP level to run `validateRuleServerSelection`:
+ * any rule whose `firstVal[0]`/`lastVal[0]` is Radarr (Application.RADARR=1) or Sonarr (=2) with NO
+ * group-level `radarrSettingsId`/`sonarrSettingsId` is rejected `{code:0,"Radarr rules require a
+ * Radarr server to be selected"}` → our write client fails closed (P1a) → 502. Round-tripping the GET
+ * verbatim therefore drops the ids and re-arms fail. We copy them up from the nested collection when
+ * the group level is absent.
+ *
+ * SAFETY (verified against v3.17.0 rules.service.ts `updateRules`): the server ids do NOT participate
+ * in the crucial-change wipe. That comparison is EXACTLY `group.dataType !== params.dataType ||
+ * manualCollection changed || manualCollectionName changed || params.libraryId !== dbCollection.libraryId`
+ * — a mismatch wipes the collection's media + specific exclusions AND deletes the Plex collection.
+ * `dataType` (contracts `MediaItemType`) is a STRING union ('movie'|'show'|'season'|'episode') stored
+ * as varchar, and `libraryId` is a varchar string — so a pure isActive toggle must carry BOTH back
+ * VERBATIM as the GET returned them (we never coerce dataType to a number or libraryId to a number).
+ * This backfill only ever ADDS the two server ids and never touches dataType/libraryId, so it can
+ * never turn a toggle into a crucial change.
+ */
+function backfillGroupServerSelection(payload: Record<string, unknown>): Record<string, unknown> {
+  const collection = payload.collection;
+  if (collection === null || typeof collection !== 'object') return payload;
+  const nested = collection as Record<string, unknown>;
+  let out = payload;
+  for (const key of ['radarrSettingsId', 'sonarrSettingsId'] as const) {
+    const current = payload[key];
+    if ((current === undefined || current === null) && typeof nested[key] === 'number') {
+      if (out === payload) out = { ...payload };
+      out[key] = nested[key];
+    }
+  }
+  return out;
+}
+
+/**
  * ADR-023 / DESIGN-010 — create/update a Maintainerr rule group. Maintainerr owns the rule engine
  * and validation; we pass the RulesDto payload through the confined write client. `POST` when no id
  * (create), `PUT` when an id is present (update). Only reachable via the edit_rules-gated router.
- * The GET→PUT rule-shape reconciliation (decodeRuleGroupRules) runs FIRST so a round-tripped rule
- * group's `rules[]` is the decoded shape `updateRules` validates against (see that helper's note).
+ * Two GET→PUT reconciliations run FIRST, both required for a round-tripped rule group to survive
+ * `updateRules`: (1) decodeRuleGroupRules turns each `rules[]` entity's encoded `ruleJson` back into
+ * the decoded RuleDto `updateRules` validates against; (2) backfillGroupServerSelection lifts the
+ * server ids from the nested collection to the group level `validateRuleServerSelection` reads. Neither
+ * touches `dataType`/`libraryId`, which round-trip verbatim so a pure isActive toggle is never seen as
+ * a crucial-setting change (which would WIPE the collection — see backfillGroupServerSelection).
  */
 export async function upsertTrashRule(input: {
   maintainerr: MaintainerrClientBundle;
   payload: Record<string, unknown>;
 }): Promise<void> {
-  const payload = decodeRuleGroupRules(input.payload);
+  const payload = backfillGroupServerSelection(decodeRuleGroupRules(input.payload));
   const hasId = typeof payload.id === 'number';
   await guardMaintainerrCall(hasId ? 'maintainerr PUT /rules' : 'maintainerr POST /rules', () =>
     hasId
