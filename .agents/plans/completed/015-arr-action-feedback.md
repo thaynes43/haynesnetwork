@@ -1,19 +1,11 @@
 # PLAN-015: Downstream *arr action feedback (live status)
 
-- **Status:** Executing
-  <!-- Backend vertical built on branch feat/arr-feedback (2026-07-07): queue read client
-       (getQueue, verified live), the action-progress projectors (computeFixProgress /
-       computeSearchProgress), fix.progress / fix.searchProgress queries, the e2e queue stub,
-       and the docs (ADR-028, DESIGN-005 D-20/D-21, glossary T-90..T-93, PRD R-106/R-107).
-       NUMBERING TAKEN (the plan's placeholders were superseded): ADR-028; DESIGN-005 D-20/D-21;
-       glossary T-90/T-91/T-92/T-93; PRD R-106/R-107; NO migration (derive-not-persist).
-       UX follow-up ALSO landed on this branch (2026-07-07): @hnet/ui PhaseChip/ProgressMeter
-       (+ --color-progress token), the live fix/force-search dialog blocks (meter + ETA + retry
-       + per-child roll-up), the item-detail ActionSlot in-flight lock (reserved width, ADR-015),
-       live My Fixes rows, and the progress-feedback e2e journey (scriptable stub queue +
-       ingest-import closure helper; found-nothing window env-shortened to 30 s in the harness).
-       Remaining before Completed: PR/merge gate on CI, deploy, and the LIVE staging Playwright
-       validation below (a real fix watched through to import). -->
+- **Status:** Completed (2026-07-07) — shipped v0.15.0; live-validated 6/6 on staging against
+  real Radarr/Sonarr: Force Search shows live searching→nothing_found (15-min window) with
+  wire-ack; the anti-mashing lock replaces Fix/Force-Search with a live chip producing 0 duplicate
+  *arr commands on mash (ADR-015 no reflow); subtitle Fix rests reassuringly (Bazarr, no poll);
+  season roll-up cascades per-episode phases; My Fixes live rows; polling bounded + stops on
+  terminal; UI phase matched the real *arr queue on every cross-check.
 - **Reconciled identifiers (2026-07-07):** the plan's NEXT-FREE-AT-AUTHORING placeholders
   (ADR-025, DESIGN-005 D-20/D-21, T-75..T-78, R-88/R-89) were consumed by plans that landed
   first. Actual numbers taken: **ADR-028**, **DESIGN-005 D-20/D-21** (D-19 was the ceiling),
