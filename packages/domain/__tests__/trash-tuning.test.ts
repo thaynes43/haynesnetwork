@@ -4,7 +4,7 @@
 // policy batches, aggregate save-rate, restores-of-swept, meetsCriteria).
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { inArray } from 'drizzle-orm';
-import { ledgerEvents, mediaItems, trashBatchItems, trashBatches } from '@hnet/db/schema';
+import { ledgerEvents, mediaItems, trashBatchItems, trashBatchSaves, trashBatches } from '@hnet/db/schema';
 import type { TrashMediaKind } from '@hnet/db';
 import {
   getTuningReport,
@@ -147,6 +147,31 @@ describe('getTuningReport (ADR-031 — rescue-vs-delete stats + graduation)', ()
     // Only ONE completed policy batch ⇒ graduation not met (needs ≥3).
     expect(r.graduation.completedPolicyBatches).toBe(1);
     expect(r.graduation.meetsCriteria).toBe(false);
+  });
+
+  it('rescue-rate is NET: a saved-then-unsaved item that got deleted counts as DELETED, not rescued', async () => {
+    // The item churned (a save then an un-save in the audit log) but the sweep ultimately deleted it.
+    // The report keys off the item's FINAL state, so the raw save event must never leak into `rescued`.
+    const bid = await seedBatch({
+      mediaKind: 'movie',
+      state: 'deleted',
+      policy: true,
+      items: [
+        { mediaItemId: byTmdb.get(4001), state: 'deleted', deletedResolution: '1080p', deletedImdbRating: '6.0' },
+      ],
+    });
+    const [item] = await t.db
+      .select()
+      .from(trashBatchItems)
+      .where(inArray(trashBatchItems.batchId, [bid]));
+    await t.db.insert(trashBatchSaves).values([
+      { batchItemId: item!.id, userId: actorId, action: 'save' },
+      { batchItemId: item!.id, userId: actorId, action: 'unsave' },
+    ]);
+
+    const r = await getTuningReport({ db: t.db });
+    expect(r.overall).toMatchObject({ rescued: 0, deleted: 1, saveRatePct: 0 });
+    expect(r.graduation.aggregate).toMatchObject({ rescued: 0, deleted: 1 });
   });
 
   it('graduation MET: ≥3 completed policy batches, ≤10% save-rate, 0 restores', async () => {

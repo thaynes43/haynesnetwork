@@ -565,6 +565,62 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     expect(stats.byUser.some((u) => u.userId === actorId)).toBe(true);
   });
 
+  it('getBatchSaveStats is NET: save→unsave→save = 1 saved; save→unsave = 0 saved (churn never inflates)', async () => {
+    const { bundle } = makeMaintainerr(baseState());
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    const items = await itemsOf(batchId);
+    const kept = items.find((i) => i.maintainerrMediaId === 'ms-9001')!;
+    const dropped = items.find((i) => i.maintainerrMediaId === 'ms-9004')!;
+
+    // Item A: save → unsave → save ⇒ nets to 1 save (still held). Item B: save → unsave ⇒ nets to 0.
+    await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: kept.id, saved: true, actorId });
+    await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: kept.id, saved: false, actorId });
+    await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: kept.id, saved: true, actorId });
+    await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: dropped.id, saved: true, actorId });
+    await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: dropped.id, saved: false, actorId });
+
+    const stats = await getBatchSaveStats({ db: t.db, batchId });
+    expect(stats.totalSaves).toBe(1); // NOT 3 raw saves — only item A is currently held
+    expect(stats.netSaved).toBe(1);
+    expect(stats.totalUnsaves).toBe(1); // NOT 3 raw unsaves — only item B is net-released
+    expect(stats.byUser.find((u) => u.userId === actorId)).toMatchObject({ saves: 1, unsaves: 1 });
+
+    // The raw audit log is intact — every flip is still recorded (the PLAN-014 tuning dataset).
+    const events = await t.db
+      .select()
+      .from(trashBatchSaves)
+      .innerJoin(trashBatchItems, eq(trashBatchItems.id, trashBatchSaves.batchItemId))
+      .where(eq(trashBatchItems.batchId, batchId));
+    expect(events).toHaveLength(5); // A: save,unsave,save + B: save,unsave
+  });
+
+  it('getBatchSaveStats is NET: a two-user tug-of-war is attributed to the FINAL holder only', async () => {
+    const { bundle } = makeMaintainerr(baseState());
+    const alice = (await createUser(t.db, { email: 'tug-alice@example.com' })).id;
+    const bob = (await createUser(t.db, { email: 'tug-bob@example.com' })).id;
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    const contested = (await itemsOf(batchId)).find((i) => i.maintainerrMediaId === 'ms-9001')!;
+
+    // Alice saves, Alice unsaves, Bob saves ⇒ Bob holds it (and only Bob is credited).
+    await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: contested.id, saved: true, actorId: alice });
+    await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: contested.id, saved: false, actorId: alice });
+    await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: contested.id, saved: true, actorId: bob });
+
+    const held = await getBatchSaveStats({ db: t.db, batchId });
+    expect(held.totalSaves).toBe(1);
+    expect(held.totalUnsaves).toBe(0); // currently saved — nobody nets an un-save
+    expect(held.byUser).toHaveLength(1);
+    expect(held.byUser[0]).toMatchObject({ userId: bob, saves: 1, unsaves: 0 });
+
+    // Bob releases it last ⇒ now a net un-save credited to Bob; nobody nets a save.
+    await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: contested.id, saved: false, actorId: bob });
+    const released = await getBatchSaveStats({ db: t.db, batchId });
+    expect(released.totalSaves).toBe(0);
+    expect(released.totalUnsaves).toBe(1);
+    expect(released.byUser).toHaveLength(1);
+    expect(released.byUser[0]).toMatchObject({ userId: bob, saves: 0, unsaves: 1 });
+  });
+
   it('F1 — green-light re-reads the collection id via GET /collections (void create) and is idempotent', async () => {
     // Pre-seed a Leaving-Soon collection with OUR exact title — models a retry after a crash between
     // create and the DB commit. The drive must REUSE it (no duplicate create).

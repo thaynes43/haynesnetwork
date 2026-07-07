@@ -132,11 +132,12 @@ test.describe('trash curation batches (DESIGN-011 D-07)', () => {
     expect(saves).toHaveLength(1);
     expect(saves[0]!.body).toMatchObject({ mediaId: STUB_MAINT_VANISHED_ID });
 
-    // Tap lock → X (un-save): exclusion released, un-save recorded.
+    // Tap lock → X (un-save): exclusion released, un-save recorded. NET semantics — the un-saved title
+    // no longer counts as a save (0 saved), just the net un-save (it must not inflate the rescue count).
     await vanished.getByRole('button').click();
     await expect(vanished).toHaveAttribute('data-glyph', 'x');
     await expect(page.getByTestId('batch-savers')).toContainText(
-      'Bootstrap Admin · 1 saved · 1 un-saved',
+      'Bootstrap Admin · 0 saved · 1 un-saved',
     );
     calls = await maintainerrCalls(page);
     expect(
@@ -215,11 +216,13 @@ test.describe('trash curation batches (DESIGN-011 D-07)', () => {
   }) => {
     await signIn(page, 'admin');
     await openBatches(page);
-    // The admin locks Vanished Heist — the foreign lock Marge must NOT be able to release.
+    // The admin locks Vanished Heist — the foreign lock Marge must NOT be able to release. NET stats:
+    // the earlier save→unsave of this same title (test above, shared serial DB) nets to 0, so re-locking
+    // it leaves the admin holding exactly ONE current rescue (the old raw counter double-counted to 2).
     const adminVanished = page.getByTestId('wall-tile').filter({ hasText: 'Vanished Heist' });
     await adminVanished.getByRole('button').click();
     await expect(adminVanished).toHaveAttribute('data-glyph', 'lock');
-    await expect(page.getByTestId('batch-savers')).toContainText('Bootstrap Admin · 2 saved');
+    await expect(page.getByTestId('batch-savers')).toContainText('Bootstrap Admin · 1 saved');
 
     // Marge must exist before the admin can assign her a role (users are minted on first
     // sign-in), so the member context signs in FIRST — then gets the family grant.
@@ -260,11 +263,12 @@ test.describe('trash curation batches (DESIGN-011 D-07)', () => {
           (c.body as { mediaId?: string }).mediaId === STUB_MAINT_UNKNOWN_ID,
       ),
     ).toBe(true);
-    // …may undo her OWN lock, and lock it again (leaving it rescued).
+    // …may undo her OWN lock, and lock it again (leaving it rescued). While it is un-saved the NET
+    // stats read 0 saved (the churn must not inflate her rescue count), just the net un-save.
     await unknown.getByRole('button').click();
     await expect(unknown).toHaveAttribute('data-glyph', 'x');
     await expect(memberPage.getByTestId('batch-savers')).toContainText(
-      'Marge Member · 1 saved · 1 un-saved',
+      'Marge Member · 0 saved · 1 un-saved',
     );
     await unknown.getByRole('button').click();
     await expect(unknown).toHaveAttribute('data-glyph', 'lock');
