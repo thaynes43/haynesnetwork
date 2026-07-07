@@ -3,12 +3,21 @@
 > The single resume point for agents. Update this in the same change as any milestone.
 > Derive current state from this file's top; you should not have to reconcile anything.
 
-- **Last updated:** 2026-07-07 (Fable 5 autonomous run — PLAN-012 complete, v0.12.0 live-validated)
+- **Last updated:** 2026-07-07 (Fable 5 autonomous run — PLAN-009 Bulletin complete, v0.13.0 live-validated)
 - **Workflow mode:** PR flow (GATE A executed — see
   `.agents/plans/completed/001-gate-a-pr-cutover.md`).
   `main` is branch-protected: branch → PR → required checks `lint-and-typecheck`, `test`,
   `build` green → squash-merge. `e2e` advisory. Conventional-commit titles drive release-please.
-- **Latest release: v0.12.0 (signed) — PLAN-012 Trash curation pipeline: curation batches →
+- **Latest release: v0.13.0 (signed) — PLAN-009 Bulletin: aggregated notification Feed + moderated
+  user Messages board (ADR-026/DESIGN-012; migration 0018). The Feed renders Maintainerr+Seerr+Tautulli
+  events with distinct source badges + attribution + media links over a generic per-source
+  `POST /api/webhooks/[source]` receiver; Messages is a moderated board (post/edit +
+  content-preserving hide/restore); section + message-action role gating audited. Live-validated 7/7
+  on staging (webhook 202/401/413/404 + idempotent dedupe + oversize cap; URL-synced Feed filters;
+  post/edit/moderation). A seam review found + fixed two real bugs pre-ship (streamed 64KB webhook
+  body cap; author can't rewrite moderated content). REMAINING owner/follow-up config: point the real
+  Seerr + Tautulli notification agents at the receiver — see the PLAN-009 bullet under Current
+  state.** Prior: **v0.12.0 (signed) — PLAN-012 Trash curation pipeline: curation batches →
   phone-first poster-wall review → Leaving Soon → windowed (guardian-checked) deletion
   (ADR-025/DESIGN-011; migration 0017; hourly `trash-batch-sweep` CronJob). Live-validated 7/7 on
   staging: a real 18-candidate batch driven through the whole pipeline (18/18 proxied posters,
@@ -42,14 +51,14 @@
   `.agents/KICKOFF.md`; queue in `.agents/plans/` (see `.agents/plans/README.md`). **Plans done
   so far:** 002 ✓ (v0.5.0); 003 ✓ (v0.6.0 + fix v0.6.1); 004 ✓ (v0.8.0/v0.8.1); 005 ✓
   (v0.9.0); 006 ✓ (v0.11.0 + fixes v0.11.1/v0.11.2); 007 ✓ (v0.7.0); 012 ✓ (v0.12.0);
-  ADR-024 ✓ (v0.10.0, follow-on to 003). **NEXT:** 009 (Bulletin) building; 010 (MOTD) after;
-  011 (Authentik hardening) — branding mocks awaiting the owner's pick; 008 (public cutover) —
+  009 ✓ (v0.13.0); ADR-024 ✓ (v0.10.0, follow-on to 003). **NEXT:** 010 (MOTD) building; 011
+  (Authentik hardening) — branding mocks awaiting the owner's pick; 008 (public cutover) —
   awaiting the owner's go; 015 (downstream *arr action feedback) — authored, not yet built.
   **Queue extended per owner (plans 011–015 authored):** 012 (Trash curation pipeline: batches →
-  poster review → Leaving Soon → windowed deletion) ✓ v0.12.0 → **009 (Bulletin) → 010 (MOTD) →
-  011** (Authentik MFA-for-native-accounts + haynesnetwork sign-in rebrand; reordered after 009/010
-  while its branding mocks await the owner's pick) → 008 (public cutover) → then post-cutover:
-  013 (disk/reclaim metrics) → 014 (rules tuning + space policy).
+  poster review → Leaving Soon → windowed deletion) ✓ v0.12.0 → 009 (Bulletin) ✓ v0.13.0 →
+  **010 (MOTD) → 011** (Authentik MFA-for-native-accounts + haynesnetwork sign-in rebrand; reordered
+  after 009/010 while its branding mocks await the owner's pick) → 008 (public cutover) → then
+  post-cutover: 013 (disk/reclaim metrics) → 014 (rules tuning + space policy).
   v0.4.0 recap: unified roles (ADR-012), arbitrary catalog URLs (ADR-013), two-step
   `ConfirmButton`, drag-drop catalog reorder, Library sub-tabs.
 - **PLAN-006 (Trash section) COMPLETE — shipped v0.11.0 + fixes v0.11.1/v0.11.2, live-validated
@@ -92,6 +101,27 @@
 
 ## Current state
 
+- **PLAN-009 (Bulletin — Feed + Messages board) COMPLETE — shipped v0.13.0, live-validated 7/7 on
+  staging** (`.agents/plans/completed/009-communication-hub.md`). ADR-026 / DESIGN-012; migration
+  0018 (widen `notifications` + `messages` + `role_message_action_grants`). The **`/bulletin`
+  section** = a Feed table (Maintainerr+Seerr+Tautulli events with distinct source badges +
+  attribution + media links; source/media segs; keyset load-more; URL-synced filters) + a moderated
+  **Messages** board (composer with `ledger.search` media picker, author-edit Modal, moderator
+  ConfirmButton hide/delete + restore + Triage Modal, content-preserving hide/restore) + the
+  `/admin/roles` Bulletin section-level + message-action grid. Ingestion is a generic per-source
+  `POST /api/webhooks/[source]` receiver with Seerr/Tautulli/Maintainerr adapters. **Live evidence:**
+  Feed renders all three sources with correct badges/attribution/media links; receiver verified live
+  (202/401/413/404, idempotent dedupe, oversize capped); URL-synced Feed filters; Messages post/edit
+  + moderation with content-preserving hide/restore; section + message-action gating audited. A seam
+  review found + fixed two real bugs pre-ship (streamed **64KB** webhook body cap; author edits of a
+  moderated message rejected `MESSAGE_MODERATED`→CONFLICT so an author can't rewrite hidden content).
+  **REMAINING RUNBOOK STEP — owner/follow-up config task (the receiver + per-source secrets are live
+  and validated with SYNTHETIC posts only):** the real **Seerr (Overseerr)** and **Tautulli**
+  notification agents still need to be pointed at
+  `http://haynesnetwork.frontend.svc.cluster.local:3000/api/webhooks/{seerr,tautulli}` — the exact
+  payloads + secret-header forms are in **DESIGN-012's deploy section** (Maintainerr's agent is
+  already configured from PLAN-006). It's a config task on those services and they choose which event
+  types to emit.
 - **PLAN-012 (Trash curation pipeline) COMPLETE — shipped v0.12.0, live-validated 7/7 on staging**
   (`.agents/plans/completed/012-trash-curation-pipeline.md`). ADR-025 / DESIGN-011: migration 0017
   batch tables + `app_settings`, `trash-batches.ts` single-writers, `trash.batches.*` /
@@ -206,9 +236,12 @@ The **Fable 5 autonomous run** works the release queue in `.agents/plans/` (star
    data; deletion snapshots recorded for 013. Live-validated 7/7 on staging; the demo batch sits
    in Leaving Soon (expires 2026-07-21). **Owner: family grants + hourly-sweep detail in the
    PLAN-012 bullet under Current state.**
-7. **009 — Bulletin** (`009-bulletin.md`) — **NEXT UP, building:** aggregated notification Feed
-   + user Messages board. **010 — MOTD** dashboard banner follows (small enough to be a quick
-   win). These were pulled ahead of 011 because 011 is parked on an owner decision (below).
+7. ~~**009 — Bulletin**~~ ✅ **DONE** (v0.13.0, `completed/009-communication-hub.md`; ADR-026 /
+   DESIGN-012, migration 0018): aggregated notification Feed + moderated Messages board,
+   live-validated 7/7 on staging. **REMAINING owner config:** point the real Seerr + Tautulli
+   notification agents at the receiver (see the PLAN-009 bullet under Current state). **010 — MOTD**
+   dashboard banner is **NEXT UP, building** (small enough to be a quick win); pulled ahead of 011
+   because 011 is parked on an owner decision (below).
 8. **011 — Authentik hardening** (`011-authentik-hardening.md`, owner-scoped 2026-07-06):
    **PARKED — branding mocks awaiting the owner's pick.** MFA for NATIVE Authentik accounts only
    (Plex-source logins exempt; `mfa-exempt` group keeps the `hnet-e2e` accounts automating) +
