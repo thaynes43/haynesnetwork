@@ -68,6 +68,9 @@ interface MaintState {
   /** the id the stub returns for POST /collections. */
   nextCollectionId: number;
   fail: Set<string>;
+  /** Test seam (F2): fired on every GET /rules/exclusion — lets a test land a concurrent DB write
+   *  (e.g. a Save) in the sweep's window between candidate-select and the guarded item-write. */
+  onExclusionCheck?: (mediaServerId: string) => Promise<void> | void;
 }
 interface RecordedCall {
   method: string;
@@ -133,6 +136,7 @@ function makeMaintainerr(state: MaintState): {
     }
     if (method === 'GET' && path === '/rules/exclusion') {
       const id = query.mediaServerId;
+      if (id !== undefined) await state.onExclusionCheck?.(id);
       const present = id !== undefined && state.exclusions.has(id);
       return ok(present ? [{ id: 1, mediaServerId: id, ruleGroupId: null, parent: id }] : []);
     }
@@ -152,8 +156,58 @@ function makeMaintainerr(state: MaintState): {
       state.handled.add(String((body as { mediaId: string }).mediaId));
       return ok(null, 201);
     }
-    // writes — the Leaving-Soon manual collection surface
-    if (method === 'POST' && path === '/collections') return ok({ id: state.nextCollectionId }, 201);
+    // writes — the Leaving-Soon manual collection surface. This stub enforces v3.17.0's REAL create
+    // contracts (verified 2026-07-07): `type` is z.enum(MediaItemTypes) — a STRING (numeric → 400);
+    // `arrAction` is REQUIRED; `deleteAfterDays` is z.coerce.number() so null coerces to 0; and the
+    // handler returns NO body (void). It also simulates the aging worker: the collection worker's ONLY
+    // per-collection skip is arrAction===DO_NOTHING(4), so a collection created with any other arrAction
+    // (with deleteAfterDays coerced to 0) would have its WHOLE membership estate-deleted on the next
+    // worker run — a loud contract violation the test must never trip (F1 safety inversion).
+    if (method === 'POST' && path === '/collections') {
+      const payload = (body ?? {}) as {
+        collection?: Record<string, unknown>;
+        media?: Array<{ mediaServerId: string }>;
+      };
+      const col = payload.collection ?? {};
+      const type = col.type;
+      if (typeof type !== 'string' || !['movie', 'show', 'season', 'episode'].includes(type)) {
+        return new Response(
+          JSON.stringify({ message: `type: expected MediaItemTypes enum string, got ${JSON.stringify(type)}` }),
+          { status: 400, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (typeof col.arrAction !== 'number') {
+        return new Response(JSON.stringify({ message: 'arrAction: Required' }), {
+          status: 400,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      const rawDelete = col.deleteAfterDays;
+      const coerced = rawDelete === undefined || rawDelete === null ? 0 : Number(rawDelete);
+      if (col.arrAction !== 4) {
+        throw new Error(
+          `STUB CONTRACT VIOLATION (Maintainerr v3.17.0): Leaving-Soon collection ${JSON.stringify(col.title)} ` +
+            `created with arrAction=${col.arrAction} (≠ DO_NOTHING=4) and deleteAfterDays ` +
+            `${JSON.stringify(rawDelete)}→${coerced}; the estate aging worker would delete all ` +
+            `${(payload.media ?? []).length} members on its next run.`,
+        );
+      }
+      const id = state.nextCollectionId;
+      state.collections.push({
+        id,
+        isActive: true,
+        deleteAfterDays: coerced,
+        type,
+        title: String(col.title ?? ''),
+        libraryId: Number(col.libraryId ?? 0),
+        items: (payload.media ?? []).map((m) => ({
+          mediaServerId: m.mediaServerId,
+          sizeBytes: 0,
+          addDate: new Date().toISOString(),
+        })),
+      });
+      return ok(undefined, 201); // v3.17.0 create returns NO body
+    }
     if (method === 'POST' && path === '/collections/add') return ok(null, 201);
     if (method === 'POST' && path === '/collections/remove') return ok(null, 201);
     if (method === 'POST' && path === '/collections/removeCollection') return ok(null, 201);
@@ -299,8 +353,12 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     // The manual Leaving-Soon collection was created (visible + seeded with the pending items).
     const create = calls.find((c) => c.method === 'POST' && c.pathname === '/collections');
     expect(create).toBeTruthy();
-    expect((create!.body as { collection: Record<string, unknown> }).collection.visibleOnHome).toBe(true);
-    expect((create!.body as { collection: Record<string, unknown> }).collection.deleteAfterDays).toBeNull();
+    const createdCollection = (create!.body as { collection: Record<string, unknown> }).collection;
+    expect(createdCollection.visibleOnHome).toBe(true);
+    // F1 — the create body carries the VERIFIED v3.17.0 contract: arrAction DO_NOTHING(4) (the worker's
+    // only skip) + the STRING MediaItemTypes `type`. Its id is re-read via GET /collections (void create).
+    expect(createdCollection.arrAction).toBe(4);
+    expect(createdCollection.type).toBe('movie');
     const [row] = await t.db.select().from(trashBatches).where(eq(trashBatches.id, batchId));
     expect(row!.state).toBe('leaving_soon');
     expect(row!.maintainerrCollectionId).toBe(777);
@@ -464,6 +522,128 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     expect(stats.totalSaves).toBe(1);
     expect(stats.netSaved).toBe(1);
     expect(stats.byUser.some((u) => u.userId === actorId)).toBe(true);
+  });
+
+  it('F1 — green-light re-reads the collection id via GET /collections (void create) and is idempotent', async () => {
+    // Pre-seed a Leaving-Soon collection with OUR exact title — models a retry after a crash between
+    // create and the DB commit. The drive must REUSE it (no duplicate create).
+    const state = baseState({ nextCollectionId: 8123 });
+    state.collections.push({
+      id: 8123,
+      isActive: true,
+      deleteAfterDays: 0,
+      type: 'movie',
+      title: 'Leaving Soon — Movies',
+      libraryId: 1,
+      items: [],
+    });
+    const { bundle, calls } = makeMaintainerr(state);
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    const res = await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: 7, actorId });
+    // Reused the pre-existing collection's id — NO create POST fired; membership topped up via add.
+    expect(res.collectionId).toBe(8123);
+    expect(calls.some((c) => c.method === 'POST' && c.pathname === '/collections')).toBe(false);
+    expect(calls.some((c) => c.method === 'POST' && c.pathname === '/collections/add')).toBe(true);
+    const [row] = await t.db.select().from(trashBatches).where(eq(trashBatches.id, batchId));
+    expect(row!.maintainerrCollectionId).toBe(8123);
+  });
+
+  it('F2 — a Save landing mid-sweep (after candidate-select) is NOT deleted (guarded item-write)', async () => {
+    const state = baseState();
+    const { bundle, calls } = makeMaintainerr(state);
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: -1, actorId });
+    const cold = (await itemsOf(batchId)).find((i) => i.maintainerrMediaId === 'ms-9001')!;
+    // The sweep captures ms-9001 as a pending candidate, THEN (during its live-exclusion check, which
+    // runs before the guarded delete-write) a concurrent Save flips the row to 'saved'. The guarded
+    // `... AND state='pending'` write must claim 0 rows ⇒ skip the delete + the handle.
+    let flipped = false;
+    state.onExclusionCheck = async (id) => {
+      if (id === 'ms-9001' && !flipped) {
+        flipped = true;
+        await t.db
+          .update(trashBatchItems)
+          .set({ state: 'saved', savedBy: actorId, savedAt: new Date() })
+          .where(eq(trashBatchItems.id, cold.id));
+      }
+    };
+    const report = await sweepExpiredBatches({ db: t.db, maintainerr: bundle, actorId });
+    const r = report.batches[0]!;
+    expect(r.deletedCount).toBe(0); // the only cold item was saved just in time
+    expect(r.raceSkipped).toBe(1);
+    expect(calls.some((c) => c.pathname === '/collections/media/handle')).toBe(false); // no handle fired
+    const after = (await itemsOf(batchId)).find((i) => i.maintainerrMediaId === 'ms-9001')!;
+    expect(after.state).toBe('saved'); // the guarded write did NOT overwrite 'saved' with 'deleted'
+    // No trash_expedited intent event was written for the raced item IN THIS batch (the shared ledger
+    // carries expedite events from earlier tests — scope by batchId).
+    const exped = await t.db.select().from(ledgerEvents).where(eq(ledgerEvents.eventType, 'trash_expedited'));
+    expect(
+      exped.some((e) => {
+        const p = e.payload as Record<string, unknown>;
+        return p.batchId === batchId && p.maintainerrMediaId === 'ms-9001';
+      }),
+    ).toBe(false);
+  });
+
+  it('F3 — the sweep aborts after 3 consecutive handle failures and resumes on the next sweep', async () => {
+    // Four cold, ledger-resolved movies in their own collection; every per-item handle fails.
+    const tmdbs = [9101, 9102, 9103, 9104];
+    await upsertMediaItemsBatch({
+      db: t.db,
+      arrKind: 'radarr',
+      items: tmdbs.map((tmdb, i) => ({
+        arrItemId: 200 + i,
+        tmdbId: tmdb,
+        title: `Cold ${tmdb}`,
+        sortTitle: `cold${tmdb}`,
+        monitored: true,
+        qualityProfileId: 1,
+        qualityProfileName: 'Any',
+        rootFolder: '/m',
+      })),
+    });
+    const rows = await t.db.select().from(mediaItems);
+    const byTmdb = new Map(rows.map((r) => [r.tmdbId, r.id]));
+    await upsertMediaMetadataBatch({
+      db: t.db,
+      rows: tmdbs.map((tmdb) => ({ mediaItemId: byTmdb.get(tmdb)!, lastViewedAt: new Date(OLD), resolution: '1080p' })),
+    });
+    const coldCollection = {
+      id: 70,
+      isActive: true,
+      deleteAfterDays: 30,
+      type: 'movie',
+      title: 'Cold movies',
+      libraryId: 1,
+      items: tmdbs.map((tmdb) => ({ mediaServerId: `ms-${tmdb}`, tmdbId: tmdb, sizeBytes: 1_000_000_000, addDate: '2026-06-01T00:00:00Z' })),
+    };
+    const state = baseState({
+      collections: [coldCollection],
+      nextCollectionId: 606,
+      fail: new Set(['POST /collections/media/handle']),
+    });
+    const { bundle, calls } = makeMaintainerr(state);
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: -1, actorId });
+
+    const first = await sweepExpiredBatches({ db: t.db, maintainerr: bundle, actorId });
+    const r = first.batches[0]!;
+    expect(r.aborted).toBe(true);
+    expect(r.handleErrors).toBe(3); // stopped at the 3rd consecutive failure
+    expect(r.deletedCount).toBe(3);
+    expect(calls.filter((c) => c.pathname === '/collections/media/handle')).toHaveLength(3);
+    // The batch is LEFT open for resume; one item remains pending.
+    const [mid] = await t.db.select().from(trashBatches).where(eq(trashBatches.id, batchId));
+    expect(mid!.state).toBe('leaving_soon');
+    expect((await itemsOf(batchId)).filter((i) => i.state === 'pending')).toHaveLength(1);
+
+    // Next sweep with the handle healthy resumes the remaining pending item and closes the batch.
+    state.fail.delete('POST /collections/media/handle');
+    const second = await sweepExpiredBatches({ db: t.db, maintainerr: bundle, actorId });
+    expect(second.batches[0]!.aborted).toBe(false);
+    expect(second.batches[0]!.deletedCount).toBe(1);
+    const [done] = await t.db.select().from(trashBatches).where(eq(trashBatches.id, batchId));
+    expect(done!.state).toBe('deleted');
   });
 });
 

@@ -66,19 +66,29 @@ one OPEN (`draft|admin_review|leaving_soon`) batch per media kind (partial uniqu
 
 ## D-03 — Leaving Soon collection mechanics (ADR-025 C-04; Q-05 verified from source)
 
-Derived from Maintainerr **v3.17.0** (`Maintainerr/Maintainerr@v3.17.0`,
-`apps/server/src/modules/collections/collections.controller.ts` + `collections.service.ts`). The
-confined write methods live in `@hnet/arr/write` (`MaintainerrWriteClient`).
+Re-verified against Maintainerr **v3.17.0** on **2026-07-07** (`Maintainerr/Maintainerr@v3.17.0`,
+`apps/server/src/modules/collections/collections.controller.ts` — `createCollectionBodySchema` /
+`collectionBaseShape`; `collection-worker.service.ts`; `@maintainerr/contracts`
+`collections/servarr-action.ts` + `media-server/enums.ts`). The confined write methods live in
+`@hnet/arr/write` (`MaintainerrWriteClient`). **The pre-2026-07-07 row was wrong on three points**
+(numeric `type`, `arrAction:0`, `deleteAfterDays:null` — all corrected below); it never worked
+against a live v3.17.0.
 
 | Purpose | Method (base `/api`) | Body | Notes |
 |---|---|---|---|
-| Create Leaving Soon | `POST /collections` | `{ collection: { title, libraryId, type(1\|2), isActive, arrAction:0, deleteAfterDays:null, manualCollection:false, visibleOnHome:true, visibleOnRecommended:true }, media:[{mediaServerId}] }` | Returns the Collection; we key on `id`. `visibleOn*` pushed to Plex Home+Recommended by `updateCollectionVisibility`. `deleteAfterDays:null` ⇒ Maintainerr never ages it. |
+| Create Leaving Soon | `POST /collections` | `{ collection: { title, libraryId, type:'movie'\|'show', isActive:true, arrAction:4, manualCollection:false, visibleOnHome:true, visibleOnRecommended:true }, media:[{mediaServerId}] }` | **Returns NO body (void, HTTP 201)** — re-read the new id via `GET /collections` matching the exact `title` (idempotent: reuse if one already exists). `type` is `z.enum(MediaItemTypes)` — the STRING `'movie'`/`'show'` (a numeric code is **rejected 400**). `arrAction:4` = `ServarrAction.DO_NOTHING` — the collection worker's **ONLY** per-collection skip; any other value ages the collection. `visibleOn*` pushed to Plex Home+Recommended by `updateCollectionVisibility`. |
 | Add rescued-back items | `POST /collections/add` | `{ collectionId, media:[{mediaServerId}], manual:true }` | un-save re-adds |
 | Remove rescued items | `POST /collections/remove` | `{ collectionId, media:[{mediaServerId}] }` | save pulls out |
 | Tear down | `POST /collections/removeCollection` | `{ collectionId }` | cancel |
 
 `libraryId` is derived at green-light from the batch items' source rule collection (via
-`GET /collections`). `type` = 1 (movie) / 2 (show). The write is external-first (ADR-023 C-05).
+`GET /collections`). `type` = `'movie'` (movie) / `'show'` (tv). **We do NOT send `deleteAfterDays`:
+it is `z.coerce.number().int().optional()`, so `null` coerces to `0` (`Number(null)`) — every member
+would be instantly past its danger date, and with any `arrAction` other than DO_NOTHING the
+estate-wide worker would delete the WHOLE collection on its next run. `arrAction:4` is the only lever
+that stops aging.** The write is external-first (ADR-023 C-05); the pending derivation
+(`fetchMaintainerrPending`) skips collections whose title is a Leaving-Soon name so our own manual
+collections never re-enter the pending set nor mis-target the sweep's per-item handle.
 
 ---
 
@@ -150,12 +160,17 @@ trash.batches.greenlight  // in: { batchId: uuid, windowDays?: 1..365 }
 trash.batches.cancel      // in: { batchId: uuid }               -> { state:'cancelled' }
 trash.batches.expire      // in: { batchId: uuid }  (manual "Expire now")
 // out: SweepReport = { batchesSwept, batches: [{ batchId, mediaKind, deletedCount, skippedCount,
-//                       savedCount, protectedCount, handleErrors }] }
+//                       savedCount, protectedCount, handleErrors,
+//                       raceSkipped,   // F2: items Saved mid-sweep (guarded write lost the race)
+//                       aborted }] }   // F3: circuit breaker tripped ⇒ batch left leaving_soon to resume
 
 // ---- per-item save (PHASE-dependent gate: read_only + action check in-resolver) ----
 trash.batches.setItemSaved // in: { batchId: uuid, itemId: uuid, saved: boolean }
 // gate: admin_review ⇒ manage_batches; leaving_soon ⇒ save_leaving_soon (else FORBIDDEN)
-// out: { changed: boolean, state: 'pending'|'saved' }
+// out: { changed: boolean, state: TrashBatchItemState }
+//   On an ACTIVE flip: changed:true, state 'saved' (save) | 'pending' (un-save). On an INERT flip
+//   (redundant save, or the item is already 'protected'/'skipped'/'deleted'): changed:false and
+//   state is the item's ACTUAL current state — so callers must accept the full item-state union.
 
 // ---- settings (adminProcedure) ----
 trash.settings.get         // -> { trash_skip_admin_gate: boolean, trash_default_window_days: number }

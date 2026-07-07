@@ -39,6 +39,8 @@ import { guardMaintainerrCall, type MaintainerrClientBundle } from './maintainer
 import {
   auditMaintainerr,
   classifyGuardian,
+  isLeavingSoonCollectionTitle,
+  LEAVING_SOON_COLLECTION_TITLES,
   listTrashPending,
   removeExclusion,
   saveExclusion,
@@ -49,12 +51,28 @@ import {
 const nowDate = () => new Date();
 const OPEN_STATES = TRASH_BATCH_OPEN_STATES as readonly TrashBatchState[];
 
-/** The Plex media-item `type` code Maintainerr expects for a collection (1 = movie, 2 = show). */
-const plexCollectionType = (mediaKind: TrashMediaKind): number => (mediaKind === 'movie' ? 1 : 2);
+/**
+ * ServarrAction.DO_NOTHING (verified `@maintainerr/contracts` v3.17.0, 2026-07-07 —
+ * `packages/contracts/src/collections/servarr-action.ts`, enum position 4). This is the collection
+ * aging worker's ONLY per-collection skip (`collection-worker.service.ts`: `if (arrAction ===
+ * ServarrAction.DO_NOTHING) return false`). We create the Leaving-Soon collection with it so
+ * Maintainerr's estate-wide worker NEVER touches it — WE own deletion via the windowed sweep. This
+ * is load-bearing safety: `deleteAfterDays` cannot disable aging (it is `z.coerce.number()`, so a
+ * `null` coerces to `0` → every member is immediately past its danger date), so arrAction is the
+ * only lever. */
+const MAINTAINERR_DO_NOTHING = 4;
 
-/** The rolling "Leaving Soon" collection name per media kind (Q-09). */
+/** The Maintainerr `MediaItemTypes` string a Leaving-Soon collection's `type` must carry (verified
+ *  v3.17.0: `type: z.enum(MediaItemTypes)` — 'movie'|'show'|…; a numeric code is rejected 400). */
+const leavingSoonPlexType = (mediaKind: TrashMediaKind): 'movie' | 'show' =>
+  mediaKind === 'movie' ? 'movie' : 'show';
+
+/** The rolling "Leaving Soon" collection name per media kind (Q-09). Shared with trash-flow's pending
+ *  derivation (which skips these — they are not rule-collection sources). */
 const leavingSoonName = (mediaKind: TrashMediaKind): string =>
-  mediaKind === 'movie' ? 'Leaving Soon — Movies' : 'Leaving Soon — TV';
+  mediaKind === 'movie'
+    ? LEAVING_SOON_COLLECTION_TITLES.movie
+    : LEAVING_SOON_COLLECTION_TITLES.tv;
 
 // ---------------------------------------------------------------------------
 // Ledger helpers (every transition/deletion writes its event same-tx)
@@ -99,13 +117,21 @@ async function writeTransitionEvent(
 // ---------------------------------------------------------------------------
 
 /**
- * ADR-025 C-05 (Q-05) — drive the batch's "Leaving Soon" Plex collection through Maintainerr's
- * manual-collection surface (verified from v3.17.0 source): `POST /api/collections` with
- * `visibleOnHome`/`visibleOnRecommended` true (Maintainerr pushes these to Plex Home + Recommended)
- * and `deleteAfterDays: null` (Maintainerr NEVER ages/auto-deletes these — the windowed sweep is our
- * per-item guarded loop, reaffirming ADR-023 C-07a). The target Plex `libraryId` is read from the
- * items' source rule collection. Returns the created collection's id (stored on the batch) or null
- * when there is nothing to surface / no library could be derived (the batch still green-lights).
+ * ADR-025 C-04 (Q-05) — drive the batch's "Leaving Soon" Plex collection through Maintainerr's
+ * manual-collection surface (re-verified from v3.17.0 source 2026-07-07): `POST /api/collections`
+ * with `visibleOnHome`/`visibleOnRecommended` true (Maintainerr pushes these to Plex Home +
+ * Recommended) and `arrAction: DO_NOTHING` (4) — the collection worker's ONLY per-collection skip, so
+ * Maintainerr NEVER ages/auto-deletes it; the windowed sweep is our per-item guarded loop (ADR-023
+ * C-07a). NOT `deleteAfterDays: null` — that field is `z.coerce.number()`, so null coerces to 0 and
+ * would make the estate worker delete the WHOLE collection on its next run; arrAction is the lever.
+ *
+ * v3.17.0's create handler returns NO body, so `createCollection` is a tolerant void write and we
+ * RE-READ the id via `GET /api/collections` matching the exact title. Idempotent: if a collection
+ * with our title already exists (a crash between create and the DB commit), reuse it (top up its
+ * membership) instead of creating a duplicate. `type` is the STRING MediaItemTypes enum (a numeric
+ * code is rejected 400). The target Plex `libraryId` is read from the items' source rule collection.
+ * Returns the collection id (stored on the batch) or null when there is nothing to surface / no
+ * library could be derived (the batch still green-lights).
  */
 async function driveLeavingSoonCollection(input: {
   maintainerr: MaintainerrClientBundle;
@@ -126,16 +152,32 @@ async function driveLeavingSoonCollection(input: {
   const libraryId = source?.libraryId ?? null;
   if (libraryId === null || libraryId === undefined) return null;
 
-  const created = await guardMaintainerrCall('maintainerr POST /collections', () =>
+  const title = leavingSoonName(input.mediaKind);
+  const mediaServerIds = input.items.map((i) => i.maintainerrMediaId);
+
+  // Idempotency: a collection with our exact title already exists (a retry after a crash) ⇒ reuse it,
+  // topping up its membership, rather than creating a duplicate.
+  const existing = collections.find(
+    (c) => c.id !== null && c.id !== undefined && isLeavingSoonCollectionTitle(c.title) && c.title === title,
+  );
+  if (existing && existing.id !== null && existing.id !== undefined) {
+    const existingId = existing.id;
+    await guardMaintainerrCall('maintainerr POST /collections/add', () =>
+      input.maintainerr.write.addToCollection(existingId, mediaServerIds),
+    );
+    return existingId;
+  }
+
+  // Create (void response), then re-read the new id by exact title.
+  await guardMaintainerrCall('maintainerr POST /collections', () =>
     input.maintainerr.write.createCollection({
       collection: {
-        title: leavingSoonName(input.mediaKind),
+        title,
         description: 'Items leaving the server soon — save the ones you still want.',
         libraryId: String(libraryId),
-        type: plexCollectionType(input.mediaKind),
+        type: leavingSoonPlexType(input.mediaKind),
         isActive: true,
-        arrAction: 0,
-        deleteAfterDays: null, // WE delete via the windowed sweep — never Maintainerr's aging worker
+        arrAction: MAINTAINERR_DO_NOTHING, // the worker's ONLY skip — WE own deletion via the sweep
         manualCollection: false,
         visibleOnHome: true,
         visibleOnRecommended: true,
@@ -143,7 +185,13 @@ async function driveLeavingSoonCollection(input: {
       media: input.items.map((i) => ({ mediaServerId: i.maintainerrMediaId })),
     }),
   );
-  return created.id;
+  const after = await guardMaintainerrCall('maintainerr GET /collections', () =>
+    input.maintainerr.read.getCollections(),
+  );
+  const created = after.find(
+    (c) => c.id !== null && c.id !== undefined && c.title === title,
+  );
+  return created?.id ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -185,7 +233,8 @@ export interface CreateBatchResult {
  * no Maintainerr id are unactionable and dropped from the snapshot; a tag-protected item is
  * snapshotted as `protected` (never a delete candidate). When the audited `trash_skip_admin_gate`
  * setting is ON, the batch is auto-green-lit straight to `leaving_soon` (draft → leaving_soon,
- * `gate_skipped = true`, system-audited) — otherwise it lands in `admin_review` for poster curation.
+ * `gate_skipped = true`, attributed to the creating admin) — otherwise it lands in `admin_review` for
+ * poster curation.
  */
 export async function createBatchFromPending(input: {
   db?: DbClient;
@@ -213,12 +262,15 @@ export async function createBatchFromPending(input: {
   // Pre-flight the one-open-batch-per-kind rule (the DB partial-unique index is the true guard).
   const db = resolveDb(input.db);
   const [openBatch] = await db
-    .select({ id: trashBatches.id })
+    .select({ id: trashBatches.id, state: trashBatches.state })
     .from(trashBatches)
     .where(and(eq(trashBatches.mediaKind, input.mediaKind), inArray(trashBatches.state, [...OPEN_STATES])));
   if (openBatch) {
+    // Name the blocking batch's id AND state so a stuck `draft`/`admin_review` is obvious (the footgun
+    // is an admin not realising which batch — and in which phase — is holding the one-open slot).
     throw new TrashBatchOpenError(
-      `An open ${input.mediaKind} batch already exists (${openBatch.id}). Green-light, cancel, or expire it first.`,
+      `An open ${input.mediaKind} batch already exists (${openBatch.id}, state '${openBatch.state}'). ` +
+        `Green-light, cancel, or expire it first.`,
     );
   }
 
@@ -281,7 +333,8 @@ export async function createBatchFromPending(input: {
     };
   }
 
-  // Skip-gate: auto-green-light straight to leaving_soon (audited gate_skipped, system attribution).
+  // Skip-gate: auto-green-light straight to leaving_soon (audited gate_skipped, attributed to the
+  // creating admin — greenlitBy = actorId).
   const windowDays = await getAppSetting(input.db, 'trash_default_window_days');
   const promoted = await promoteToLeavingSoon({
     db: input.db,
@@ -578,6 +631,12 @@ export interface BatchSweepResult {
   savedCount: number;
   protectedCount: number;
   handleErrors: number;
+  /** Items that changed state (typically a concurrent Save) between candidate-select and the guarded
+   *  item-write — neither deleted nor re-skipped by this sweep (F2 save-race). */
+  raceSkipped: number;
+  /** True when the circuit breaker tripped (N consecutive handle failures): the batch was left
+   *  `leaving_soon` with partial results; the next sweep resumes the remaining `pending` items (F3). */
+  aborted: boolean;
 }
 
 export interface SweepReport {
@@ -592,9 +651,12 @@ export interface SweepReport {
  * still-`pending` item is re-evaluated against FRESH pending data + LIVE Maintainerr exclusions +
  * the guardian; survivors delete one at a time (NEVER /collections/handle — C-07a), with the
  * deletion snapshot (Q-08) + `deleted` state + `trash_expedited` intent event written same-tx BEFORE
- * the per-item handle call. Guardian-kept / stale / live-excluded items land `skipped`. When
- * `batchId` is given (the manual "Expire now" trigger) only that batch is swept (and must be
- * leaving_soon + expired).
+ * the per-item handle call. The per-item state flip is a GUARDED UPDATE (`AND state='pending'`): an
+ * item Saved mid-sweep loses the race and is never deleted (F2 → `raceSkipped`). Guardian-kept /
+ * stale / live-excluded items land `skipped`. After 3 CONSECUTIVE handle failures the batch's sweep
+ * aborts (F3 → `aborted`), leaving it `leaving_soon` for the next sweep to resume. When `batchId` is
+ * given (the manual "Expire now" trigger) only that batch is swept (and must be leaving_soon +
+ * expired).
  */
 export async function sweepExpiredBatches(input: {
   db?: DbClient;
@@ -693,29 +755,53 @@ async function expireOneBatch(input: {
     candidates.map((c) => c.maintainerrMediaId),
   );
 
+  // F3 — mid-loop circuit breaker: after this many CONSECUTIVE per-item handle failures, abort the
+  // sweep of THIS batch (Maintainerr is likely mid-outage). The batch stays `leaving_soon` with the
+  // partial results honestly recorded; the next sweep resumes the remaining `pending` items.
+  const HANDLE_FAILURE_LIMIT = 3;
+
   let deletedCount = 0;
   let skippedCount = 0;
   let handleErrors = 0;
+  let raceSkipped = 0;
+  let consecutiveHandleFailures = 0;
+  let aborted = false;
 
   for (const item of candidates) {
     const fresh = freshById.get(item.maintainerrMediaId);
     // Gone from Maintainerr's pending set, or currently live-excluded (saved/dnd synced) ⇒ keep.
     if (!fresh || liveExcluded.has(item.maintainerrMediaId)) {
-      await markItemSkipped(input.db, item.id);
-      skippedCount += 1;
+      if (await markItemSkipped(input.db, item.id)) skippedCount += 1;
+      else raceSkipped += 1; // saved between candidate-select and skip-write — leave it 'saved'
       continue;
     }
     const verdict = classifyGuardian(fresh);
     if (verdict.keep) {
       // dnd / recently-watched / requester / unevaluable — never deleted (C-07b). Skip, no whitelist:
       // a repeat next batch is the intended stronger tuning signal (Q-03), Save is the permanent lever.
-      await markItemSkipped(input.db, item.id);
-      skippedCount += 1;
+      if (await markItemSkipped(input.db, item.id)) skippedCount += 1;
+      else raceSkipped += 1;
       continue;
     }
-    // Cold + positively evaluated ⇒ delete this one item. Intent event + terminal state + deletion
-    // snapshot committed BEFORE the per-item handle (Fix D-09 intent-first discipline, Q-08 snapshot).
-    await inTransaction(input.db, async (tx) => {
+    // Cold + positively evaluated ⇒ delete this one item. F2 — the state flip is a GUARDED UPDATE
+    // (`... AND state='pending'`): if a concurrent Save flipped the row between the candidate-select
+    // above and this write, it claims 0 rows and we ABORT this item's delete (no intent event, no
+    // handle) — a saved item must never be deleted. Intent event + terminal state + deletion snapshot
+    // land same-tx AFTER the claim so nothing is written when the claim loses (D-09 intent-first).
+    const claimed = await inTransaction(input.db, async (tx) => {
+      const updated = await tx
+        .update(trashBatchItems)
+        .set({
+          state: 'deleted',
+          deletedAt: nowDate(),
+          deletedSizeBytes: fresh.sizeBytes,
+          deletedResolution: fresh.resolution,
+          deletedImdbRating: fresh.imdbRating === null ? null : fresh.imdbRating.toString(),
+          deletedTmdbRating: fresh.tmdbRating === null ? null : fresh.tmdbRating.toString(),
+        })
+        .where(and(eq(trashBatchItems.id, item.id), eq(trashBatchItems.state, 'pending')))
+        .returning({ id: trashBatchItems.id });
+      if (updated.length === 0) return false; // saved/changed mid-sweep — do not delete
       await tx.insert(ledgerEvents).values({
         mediaItemId: item.mediaItemId,
         eventType: 'trash_expedited',
@@ -729,32 +815,48 @@ async function expireOneBatch(input: {
           maintainerrMediaId: item.maintainerrMediaId,
         },
       });
-      await tx
-        .update(trashBatchItems)
-        .set({
-          state: 'deleted',
-          deletedAt: nowDate(),
-          deletedSizeBytes: fresh.sizeBytes,
-          deletedResolution: fresh.resolution,
-          deletedImdbRating: fresh.imdbRating === null ? null : fresh.imdbRating.toString(),
-          deletedTmdbRating: fresh.tmdbRating === null ? null : fresh.tmdbRating.toString(),
-        })
-        .where(eq(trashBatchItems.id, item.id));
+      return true;
     });
-    // The destructive per-item handle. A failure is tolerated per-item (intent + snapshot are durable);
-    // Maintainerr's own systems reconcile a genuinely-missed delete. Never aborts the batch.
+    if (!claimed) {
+      raceSkipped += 1; // the item was Saved just in time — never deleted, never handled
+      continue;
+    }
+    deletedCount += 1; // the row is durably 'deleted' (intent-first) whether or not the handle lands
+    // The destructive per-item handle. A single failure is tolerated (intent + snapshot are durable;
+    // Maintainerr reconciles a genuinely-missed delete), but N consecutive failures trip the breaker.
     try {
       await guardMaintainerrCall('maintainerr POST /collections/media/handle', () =>
         input.maintainerr.write.handleCollectionMedia(fresh.collectionId, item.maintainerrMediaId),
       );
+      consecutiveHandleFailures = 0;
     } catch {
       handleErrors += 1;
+      consecutiveHandleFailures += 1;
+      if (consecutiveHandleFailures >= HANDLE_FAILURE_LIMIT) {
+        aborted = true;
+        break;
+      }
     }
-    deletedCount += 1;
+  }
+
+  const finalCounts = await countItemStates(input.db, input.batchId);
+  // F3 — on a circuit-breaker abort, DO NOT close the batch: leave it `leaving_soon` so the next sweep
+  // resumes the remaining `pending` items (deleted/skipped items are excluded by their state).
+  if (aborted) {
+    return {
+      batchId: input.batchId,
+      mediaKind: input.mediaKind,
+      deletedCount,
+      skippedCount,
+      savedCount: finalCounts.saved ?? 0,
+      protectedCount: finalCounts.protected ?? 0,
+      handleErrors,
+      raceSkipped,
+      aborted: true,
+    };
   }
 
   // Tally the settled states + close the batch (guarded UPDATE + transition event same-tx).
-  const finalCounts = await countItemStates(input.db, input.batchId);
   await inTransaction(input.db, async (tx) => {
     const updated = await tx
       .update(trashBatches)
@@ -770,7 +872,7 @@ async function expireOneBatch(input: {
       from: 'leaving_soon',
       to: 'deleted',
       actorId: input.actorId,
-      extra: { deletedCount, skippedCount, handleErrors, counts: finalCounts },
+      extra: { deletedCount, skippedCount, raceSkipped, handleErrors, counts: finalCounts },
     });
   });
 
@@ -782,14 +884,20 @@ async function expireOneBatch(input: {
     savedCount: finalCounts.saved ?? 0,
     protectedCount: finalCounts.protected ?? 0,
     handleErrors,
+    raceSkipped,
+    aborted: false,
   };
 }
 
-async function markItemSkipped(db: DbClient | undefined, itemId: string): Promise<void> {
-  await resolveDb(db)
+/** F2 — a GUARDED skip: only flips a still-`pending` item to `skipped`. Returns whether it claimed the
+ *  row; false means a concurrent Save changed it mid-sweep (leave it 'saved', never overwrite). */
+async function markItemSkipped(db: DbClient | undefined, itemId: string): Promise<boolean> {
+  const updated = await resolveDb(db)
     .update(trashBatchItems)
     .set({ state: 'skipped' })
-    .where(eq(trashBatchItems.id, itemId));
+    .where(and(eq(trashBatchItems.id, itemId), eq(trashBatchItems.state, 'pending')))
+    .returning({ id: trashBatchItems.id });
+  return updated.length > 0;
 }
 
 // ---------------------------------------------------------------------------

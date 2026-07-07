@@ -71,6 +71,26 @@ This ADR records the binding decisions and resolves the plan's open questions (Q
   (cancel). The collection write is external-first (ADR-023 C-05: a crash must not leave a green-lit
   batch whose collection was never created). The confined write methods live in `@hnet/arr/write`.
 
+  > **Correction (2026-07-07, pre-ship adversarial review) — the create contract above was wrong on
+  > three points; re-verified against the v3.17.0 source (`collections.controller.ts`
+  > `collectionBaseShape`, `collection-worker.service.ts`, `@maintainerr/contracts`):**
+  > 1. `type` is `z.enum(MediaItemTypes)` — the STRING `'movie'`/`'show'`, NOT a numeric `1|2` (a
+  >    number is rejected 400).
+  > 2. **`deleteAfterDays: null` does NOT disable aging.** The field is `z.coerce.number().int()`, so
+  >    `null` coerces to `0` (`Number(null)`) — every member is instantly past its danger date. We omit
+  >    it entirely.
+  > 3. The collection is created with **`arrAction: 4` (`ServarrAction.DO_NOTHING`)** — the aging
+  >    worker's ONLY per-collection skip (`if (arrAction === ServarrAction.DO_NOTHING) return false`).
+  >    This, not `deleteAfterDays`, is what keeps Maintainerr's estate-wide worker from deleting the
+  >    whole Leaving-Soon collection; the windowed sweep owns deletion (reaffirms C-07a). Had the batch
+  >    shipped with `arrAction: 0` + `deleteAfterDays: null`, green-light would have handed Maintainerr
+  >    a collection it deletes wholesale on the next worker run — the safety claim inverts.
+  >
+  > Also: `POST /api/collections` returns **no body** (void, HTTP 201), so the id is re-read via
+  > `GET /api/collections` by exact title (idempotent — reuse if present). And
+  > `fetchMaintainerrPending` now skips collections titled like our Leaving-Soon collections so they
+  > never re-enter the pending set (v3.17.0 GET /collections returns manual collections too).
+
 - **C-05 — Windowed deletion = the `trash-batch-sweep` sync mode (Q-02).** `sweepExpiredBatches` acts
   ONLY on `leaving_soon` batches whose `expires_at` has passed. It re-runs the SAFE preflight audit
   once up front (fail closed — the whole sweep refuses on an unsafe install) and then, per batch, the
@@ -96,6 +116,12 @@ This ADR records the binding decisions and resolves the plan's open questions (Q
   and system attribution — the audit trail always distinguishes a skipped gate from a human
   green-light. This plan ships the MECHANISM + audit; the DECISION to flip it (graduation criteria) is
   PLAN-014.
+
+  > **Correction (2026-07-07, pre-ship review):** the skip-gate promotion is attributed to the
+  > **creating admin** (`greenlit_by = actorId`, the batch's `created_by`), NOT a null/"system" actor —
+  > the promotion transition and `trash_batch_transition` event both carry that admin id alongside
+  > `gate_skipped = true`. The audit still distinguishes a skipped gate from a manual green-light (the
+  > `gate_skipped` flag), but the actor is the admin who triggered the create, not "system".
 
 - **C-08 — Deletion snapshots + roles (Q-08, Q-04).** On sweep-delete, `{ size, resolution, imdb/tmdb
   rating }` are frozen into `trash_batch_items.deleted_*` in the same tx as the item's `deleted` state
@@ -128,7 +154,7 @@ This ADR records the binding decisions and resolves the plan's open questions (Q
 | Q-02 Expiry trigger | Scheduled `trash-batch-sweep` sync mode (hourly CronJob) + admin "Expire now"; both call `sweepExpiredBatches`. |
 | Q-03 Saved items | Permanent Maintainerr exclusion + `saved` state (leaves the batch) + `trash_batch_saves` row; no re-eligibility v1. |
 | Q-04 Role seeding | `save_leaving_soon` + `manage_batches` are new grants, NOT seeded; admins grant per role. |
-| Q-05 Leaving Soon | Manual Maintainerr collection (`POST /api/collections`, verified v3.17.0) with `visibleOnHome`/`visibleOnRecommended`, `deleteAfterDays: null`. |
+| Q-05 Leaving Soon | Manual Maintainerr collection (`POST /api/collections`, verified v3.17.0) with `visibleOnHome`/`visibleOnRecommended` and **`arrAction: 4` (DO_NOTHING)** to disable aging (see C-04 Correction 2026-07-07 — `deleteAfterDays: null` does NOT, it coerces to `0`). |
 | Q-06 Settings store | New generic `app_settings` key/value table + audited `setAppSetting`. |
 | Q-07 Save events | Dedicated `trash_batch_saves` table (tuning dataset) + the `trash_excluded` ledger event. |
 | Q-08 Snapshots | `trash_batch_items.deleted_*` (size/resolution/ratings) frozen at sweep-delete, same tx. |

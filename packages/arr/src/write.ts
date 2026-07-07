@@ -6,10 +6,7 @@
 import { assertArrEnv, type ArrEnvConfig } from './config';
 import { MaintainerrWriteFailedError } from './errors';
 import { ArrHttp, type QueryParams } from './http';
-import {
-  maintainerrCollectionRefSchema,
-  maintainerrReturnStatusSchema,
-} from './schemas/maintainerr';
+import { maintainerrReturnStatusSchema } from './schemas/maintainerr';
 import { commandResponseSchema, tagSchema, type ArrCommandResponse, type ArrTag } from './schemas/common';
 import { sonarrSeriesSchema, type SonarrSeries } from './schemas/sonarr';
 import { radarrMovieSchema, type RadarrMovie } from './schemas/radarr';
@@ -380,31 +377,31 @@ export class MaintainerrWriteClient {
     return this.requestReturnStatus('PATCH', 'settings', { body: payload });
   }
 
-  // ADR-025 / DESIGN-011 — the Leaving-Soon manual-collection surface (Q-05). Endpoints derived from
-  // the Maintainerr v3.17.0 source (Maintainerr/Maintainerr@v3.17.0
-  // apps/server/src/modules/collections/collections.controller.ts — `@Controller('api/collections')`):
+  // ADR-025 / DESIGN-011 — the Leaving-Soon manual-collection surface (Q-05). Endpoints + body shapes
+  // re-verified against the Maintainerr v3.17.0 source 2026-07-07 (Maintainerr/Maintainerr@v3.17.0
+  // apps/server/src/modules/collections/collections.controller.ts — `@Controller('api/collections')`,
+  // `createCollectionBodySchema` / `collectionBaseShape`):
   //   POST /api/collections            createCollection  { collection, media?: [{ mediaServerId }] }
   //   POST /api/collections/add        addToCollection    { collectionId, media: [{ mediaServerId }], manual? }
   //   POST /api/collections/remove     removeFromCollection { collectionId, media: [{ mediaServerId }] }
   //   POST /api/collections/removeCollection removeCollection { collectionId }
-  // `visibleOnHome`/`visibleOnRecommended` on the collection body are pushed to Plex by
-  // collections.service.ts (`updateCollectionVisibility`) so the collection surfaces on Plex Home +
-  // Recommended. These handlers return the (updated) Collection entity — NOT a ReturnStatus — so a
-  // permissive parse extracts the id; a non-2xx still throws ArrHttpError (fail closed).
+  // The `collection` body is validated by `collectionBaseShape`: `type` is `z.enum(MediaItemTypes)`
+  // (the STRING 'movie'|'show'|… — a numeric code is rejected 400), `arrAction` is a REQUIRED
+  // `z.nativeEnum(ServarrAction)`, and `deleteAfterDays` is `z.coerce.number().int().optional()` — so
+  // `null` COERCES to `0` (Number(null)); it does NOT disable aging. `visibleOnHome`/`visibleOnRecommended`
+  // are pushed to Plex by collections.service.ts (`updateCollectionVisibility`) so the collection
+  // surfaces on Plex Home + Recommended.
 
   /** `POST /api/collections` — create a standalone, Plex-visible collection seeded with `media`.
-   *  Returns the created collection's id (null if the body drops it — treated as no-collection). */
-  async createCollection(body: {
+   *  v3.17.0's `createCollection` handler returns NO body (void, HTTP 201) — so this is a tolerant
+   *  void write (parsing an empty body as JSON would throw ArrParseError). The caller re-reads the new
+   *  collection's id via `GET /api/collections`, matching the exact title. A non-2xx still throws
+   *  ArrHttpError (fail closed). */
+  createCollection(body: {
     collection: Record<string, unknown>;
     media?: Array<{ mediaServerId: string }>;
-  }): Promise<{ id: number | null }> {
-    const parsed = await this.http.requestJson(
-      'POST',
-      'collections',
-      maintainerrCollectionRefSchema,
-      { body },
-    );
-    return { id: parsed.id ?? null };
+  }): Promise<void> {
+    return this.http.requestVoid('POST', 'collections', { body });
   }
 
   /** `POST /api/collections/add` — add specific Plex items (by ratingKey) to a collection. */

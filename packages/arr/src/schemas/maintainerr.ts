@@ -120,17 +120,10 @@ export const maintainerrReturnStatusSchema = z
   .passthrough();
 export type MaintainerrReturnStatus = z.infer<typeof maintainerrReturnStatusSchema>;
 
-/**
- * ADR-025 / DESIGN-011 — the permissive parse of a `POST /api/collections` (create) response: the
- * v3.17.0 handler returns the created Collection entity, of which we key ONLY on `id` (the id we
- * store on the batch to drive add/remove/removeCollection). Everything else passes through.
- */
-export const maintainerrCollectionRefSchema = z
-  .object({
-    id: z.number().int().nullish(),
-  })
-  .passthrough();
-export type MaintainerrCollectionRef = z.infer<typeof maintainerrCollectionRefSchema>;
+// ADR-025 / DESIGN-011 — NOTE (verified v3.17.0, 2026-07-07): `POST /api/collections` (create)
+// returns NO body (the controller's `createCollection` awaits the service and returns nothing).
+// There is therefore no create-response schema — the write client issues a tolerant VOID request and
+// the caller re-reads the new id via `GET /api/collections`, matching the collection title.
 
 /** `GET /api/settings` — the subset we read (secrets are masked upstream). The tag-exclusion
  *  fields (enabling the `dnd` protective tag on Radarr/Sonarr) are a documented deploy step. */

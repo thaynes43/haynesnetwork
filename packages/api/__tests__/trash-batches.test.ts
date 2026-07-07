@@ -23,6 +23,10 @@ import {
 function stubMaintainerr(): MaintainerrClientBundle {
   const exclusions = new Set<string>();
   const handled = new Set<string>();
+  // ADR-025 — created Leaving-Soon collections (id → title). v3.17.0's create returns void, so the
+  // drive re-reads the id from GET /collections by title; the list must surface them.
+  const manualCollections = new Map<number, string>();
+  let nextManualCollectionId = 900;
   const items = [
     { mediaServerId: 'ms-1', tmdbId: 55001, sizeBytes: 4_000_000_000, addDate: '2026-06-01T00:00:00Z' },
     { mediaServerId: 'ms-2', tmdbId: 55002, sizeBytes: 2_000_000_000, addDate: '2026-06-01T00:00:00Z' },
@@ -44,7 +48,18 @@ function stubMaintainerr(): MaintainerrClientBundle {
       return ok({ applications: [{ name: 'Radarr' }, { name: 'Sonarr' }, { name: 'Tautulli' }, { name: 'Overseerr' }] });
     if (method === 'GET' && path === '/rules') return ok([]);
     if (method === 'GET' && path === '/collections')
-      return ok([{ id: 7, isActive: true, deleteAfterDays: 30, type: 'movie', title: 'Least watched', libraryId: 1, media: [] }]);
+      return ok([
+        { id: 7, isActive: true, deleteAfterDays: 30, type: 'movie', title: 'Least watched', libraryId: 1, media: [] },
+        ...[...manualCollections].map(([id, title]) => ({
+          id,
+          isActive: true,
+          deleteAfterDays: 0,
+          type: 'movie',
+          title,
+          libraryId: 1,
+          media: [],
+        })),
+      ]);
     const cm = path.match(/^\/collections\/media\/(\d+)\/content\/(\d+)$/);
     if (method === 'GET' && cm)
       return ok({ totalSize: items.filter((i) => !handled.has(i.mediaServerId)).length, items: items.filter((i) => !handled.has(i.mediaServerId)) });
@@ -63,7 +78,13 @@ function stubMaintainerr(): MaintainerrClientBundle {
       handled.add(String((body as { mediaId: string }).mediaId));
       return ok(null, 201);
     }
-    if (method === 'POST' && path === '/collections') return ok({ id: 999 }, 201);
+    if (method === 'POST' && path === '/collections') {
+      // v3.17.0 create returns NO body (void); register the collection so GET /collections surfaces it
+      // for the drive's re-read-by-title.
+      const title = String(((body as { collection?: { title?: unknown } })?.collection?.title) ?? '');
+      manualCollections.set(++nextManualCollectionId, title);
+      return ok(undefined, 201);
+    }
     if (method === 'POST' && (path === '/collections/add' || path === '/collections/remove' || path === '/collections/removeCollection'))
       return ok(null, 201);
     return new Response(JSON.stringify({ message: `no stub ${method} ${path}` }), { status: 404 });
