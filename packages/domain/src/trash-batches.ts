@@ -14,7 +14,6 @@
 // WHERE, so a concurrent transition loses the race (TrashBatchStateError) instead of double-acting.
 import {
   ledgerEvents,
-  mediaItems,
   trashBatchItems,
   trashBatchSaves,
   trashBatches,

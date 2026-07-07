@@ -185,6 +185,24 @@ Trash is a read-through front-end + a confined write surface.
 | R-86 | **Music is never deletable** via Trash (no Lidarr deletion surface); watched/requested media is auto-protected across all three Plex servers before it can be deleted. | Must |
 | R-87 | Before any destructive action is available, Maintainerr integration health + a safe, no-imminent-deletion state are **audited and surfaced**; destructive actions refuse on an unsafe verdict. | Must |
 
+#### Curation pipeline (PLAN-012 — ADR-025 / DESIGN-011)
+
+Batches become the deletion unit: rules propose, an admin curates a poster wall, green-lighting
+publishes a Plex **Leaving Soon** collection where users rescue titles within a window, and window
+expiry deletes the survivors — every R-86/R-87 safety layer still applying.
+
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| R-88 | A **batch** is the deletion unit: a frozen snapshot of the current pending set for ONE media kind (never mixed; never music), created on demand from the pending set; at most one open batch per kind. | Must |
+| R-89 | An **admin poster review**: a phone-first poster wall where each item toggles X (will delete) ⇄ lock (saved) in place; every save/unsave is durably recorded (the rules-tuning dataset). | Must |
+| R-90 | A batch **never deletes without a green-light** (the human gate) — unless an **audited skip-gate** setting is on, which auto-green-lights and records `gate_skipped` with system attribution. | Must |
+| R-91 | Green-light publishes a **Leaving Soon** Plex collection (driven through Maintainerr) that users can browse; a **role-gated** save exercise runs there within a **configurable window** (default 21 days). | Must |
+| R-92 | **Window expiry deletes the batch server-side, one item at a time**, re-running the live-exclusion + guardian + SAFE-audit checks per item at deletion time; every deletion audited. | Must |
+| R-93 | Every batch **state transition** and every **save/unsave** is durably recorded; per-deleted-item **size/resolution/rating snapshots** are captured at deletion time (PLAN-013 depends on this). | Must |
+| R-94 | Batch management (create/green-light/cancel/expire) and the windowed user rescue are **distinct per-role grants** (`manage_batches`, `save_leaving_soon`), neither seeded; server-enforced. | Must |
+| R-95 | Admin-tunable operational settings (skip-gate, default window) live in an **audited settings store**; every change writes an audit row. | Should |
+| R-96 | Batch cadence / scheduled creation is **configurable** (manual-first v1; scheduled creation future). | Should |
+
 ### Platform & non-functional
 
 | ID | Requirement | Priority |
@@ -212,6 +230,7 @@ Trash is a read-through front-end + a confined write surface.
 | US-08 | As a user on my phone, the dashboard and fix flow are fully usable without horizontal scrolling. | AC-10 |
 | US-09 | As a household admin, last week's disk sweep removed 200 movies (and thousands sit unmonitored with nothing on disk); I open Ledger → Movies, filter to `removed` / `unmonitored + no file` (by vote tier), select a batch, **Add & search in Radarr**, and also **Export** the list as a backup. | AC-11, AC-12, AC-13 |
 | US-10 | As a household admin, I open **Trash → Movies**, see what Maintainerr will delete and when + how much space it frees, **Save** a title I want to keep (it can never be watched off), **Expedite** a batch I'm done with, and give a trusted user a role that can Save but not Expedite. Anything watched on any of my three Plex servers recently is already protected. | AC-14, AC-15, AC-16 |
+| US-11 | As a household admin, I create a **batch** from what Maintainerr proposes, scroll a poster wall on my phone tapping X→lock to rescue keepers, **green-light** it (a "Leaving Soon" collection appears on Plex for a few weeks), and let my users save what they still want; when the window closes the rest is deleted one item at a time — anything watched, requested, or freshly saved is spared, and I get a record of what went and how much space it freed. | AC-17, AC-18, AC-19 |
 
 ## Acceptance criteria
 
@@ -233,6 +252,9 @@ Trash is a read-through front-end + a confined write surface.
 | AC-14 | Trash → Movies/TV lists exactly Maintainerr's pending items for that kind, each with its scheduled-delete date + space freed, plus a total-space figure; an item known to the ledger shows its poster/title/facets, an unknown one still lists with Maintainerr's fields. |
 | AC-15 | Save adds the item to Maintainerr's exclusion list and records a `trash_excluded` event (idempotent); Expedite is refused with a safety error when the Maintainerr audit is not SAFE, and a recently-watched/requested item is auto-protected rather than deleted; music is never a Trash target. |
 | AC-16 | Trash section **Disabled** ⇒ no nav/route (redirect); **Read-Only** browses but each write action is server-refused unless its per-action grant is present (FORBIDDEN even if called directly); `edit_rules` additionally requires section **Edit**. |
+| AC-17 | Creating a batch snapshots the current pending set for one kind into `admin_review` (or, with the skip-gate on, straight to `leaving_soon` with `gate_skipped=true` + a system-attributed audit); a second open batch for the same kind is refused (`TRASH_BATCH_ALREADY_OPEN`); `draft`/`admin_review` can never reach `deleted` without passing through `leaving_soon`. |
+| AC-18 | Green-light moves `admin_review→leaving_soon`, sets `expires_at = now + window_days`, and creates the Plex-visible "Leaving Soon" collection; a save flips the item `pending→saved` (Maintainerr exclusion + a `trash_batch_saves` row + removal from the collection); a member with `save_leaving_soon` can save during the window but not manage the batch, and vice-versa for `manage_batches`. |
+| AC-19 | The expiry sweep deletes only cold, positively-evaluated survivors one item at a time (recently-watched/requested/`dnd`/unresolved/live-excluded/saved items are kept and land `skipped`/`saved`); an unsafe Maintainerr audit refuses the whole sweep; each deletion writes a `trash_expedited` event + freezes the size/resolution/rating snapshot same-tx; the batch closes `deleted` with per-item counts. |
 
 ## Phasing
 
