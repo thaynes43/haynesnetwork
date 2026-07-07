@@ -52,20 +52,22 @@ For each plan, in order:
 | 003 | Plex library self-service (Phase 3) | #2 | — | ✅ completed/ (v0.6.0/v0.6.1 + ADR-024 v0.10.0) |
 | 004 | Library metadata enrichment + posters + shared filter engine | #3 | — | ✅ completed/ (v0.8.0/v0.8.1) |
 | 005 | Ledger section (native restore + export) | #5 | 004 | ✅ completed/ (v0.9.0) |
-| 006 | Trash section (Maintainerr) | #4 | 004 + Maintainerr | **executing** (backend on `feat/trash-section`, pending merge; UX + live validation incl. the 2026-07-06 test-rules addendum remain) |
+| 006 | Trash section (Maintainerr) | #4 | 004 + Maintainerr | ✅ completed/ (v0.11.0 + v0.11.1/v0.11.2) |
 | 007 | Cosign image signing | — | — | ✅ completed/ (v0.7.0) |
-| 012 | Trash curation pipeline (batches → poster review → Leaving Soon → windowed deletion) | owner 2026-07-06 | 006 (incl. its test-rule collections) | queued |
-| 011 | Authentik hardening (native-account MFA + haynesnetwork sign-in rebrand) | owner 2026-07-06 | — (runs after 012 per owner order) | queued |
-| 009 | Bulletin — notification Feed + Messages board | stretch | 004, 006 | queued (stretch) |
-| 010 | MOTD dashboard banner | stretch | — | queued (stretch, small) |
-| 008 | haynesnetwork public cutover (Cloudflare tunnel) | — | 002–006, 012, 011 done | queued **LAST of the pre-cutover queue** |
-| 013 | Disk utilization + reclaim metrics | owner 2026-07-06 | 012 (deletion snapshots) + 008 | **banked** (post-cutover per owner) |
-| 014 | Rules tuning + space policy (skip-gate graduation) | owner 2026-07-06 | 013 + accumulated 012 save-data | **banked** (post-cutover, after 013) |
-| 015 | Downstream *arr action feedback (live Fix/Force-Search status) | owner 2026-07-07 | — (extends the on-`main` Fix/Force-Search vertical) | **backlog** (owner slots it; UX-important, pre-cutover-desirable) |
+| 012 | Trash curation pipeline (batches → poster review → Leaving Soon → windowed deletion) | owner 2026-07-06 | 006 (incl. its test-rule collections) | ✅ completed/ (v0.12.0) |
+| 011 | Authentik hardening (native-account MFA + haynesnetwork sign-in rebrand) | owner 2026-07-06 | — (runs after 012 per owner order) | **owner-gated** (branding mockups + apply/rollback runbook ready in `scratchpad/ux-011/`; owner picks + does MFA — deferred past the 008 cutover on owner authorization) |
+| 009 | Bulletin — notification Feed + Messages board | stretch | 004, 006 | ✅ completed/ (v0.13.0) |
+| 010 | MOTD dashboard banner | stretch | — | ✅ completed/ (v0.14.0) |
+| 008 | haynesnetwork public cutover (Cloudflare tunnel) | — | 002–006, 012 done | ✅ completed/ (**EXECUTED 2026-07-07** — `haynesnetwork.com` + `www` publicly live; see `../../docs/ops/005-root-domain-cutover.md`) |
+| 013 | Disk utilization + reclaim metrics | owner 2026-07-06 | 012 (deletion snapshots) + 008 | **executing** (backend done; UX in flight) |
+| 014 | Rules tuning + space policy (skip-gate graduation) | owner 2026-07-06 | 013 + accumulated 012 save-data | queued (next, post-013) |
+| 015 | Downstream *arr action feedback (live Fix/Force-Search status) | owner 2026-07-07 | — (extends the on-`main` Fix/Force-Search vertical) | ✅ completed/ (v0.15.0) |
 
-**Owner-ordered sequence (2026-07-06):** 006 (finish) → 012 → 011 → 009 → 010 → 008 → 013 → 014.
-**015** (owner 2026-07-07) is UX-important and desirable **before** the 008 public cutover — owner to
-slot it into the sequence (a natural fit alongside/after 009–010 and before 008).
+**Owner-ordered sequence (2026-07-06):** 006 → 012 → 011 → 009 → 010 → 008 → 013 → 014, with 015
+(owner 2026-07-07) landed alongside. **Executed through 008:** 002–007, 009, 010, 012, 015 shipped
+and live-validated; **008 cut over to the public root domain 2026-07-07** (owner authorized go-live
+ahead of the 011 MFA/branding gate). **Now building: 013** (disk + reclaim metrics), then **014**.
+**011 is owner-gated** (Authentik branding pick + owner MFA), tracked separately from the plan queue.
 
 Source brain dump: `TODO.md`. Consolidated backlog + Restore explanation:
 `../context/2026-07-05-backlog-recon.md`. Deleted-items snapshot to import into the Ledger:
