@@ -81,3 +81,43 @@ describe('users.setRole — role assignment (ADR-012, R-04)', () => {
     expect(wireShape(thrown, 'users.setRole').data.appCode).toBe('LAST_ADMIN');
   });
 });
+
+describe('users.setPlexIdentity — the Plex identity override (fix/plex-identity-mapping)', () => {
+  it('sets and clears the override (normalized), and users.list surfaces it', async () => {
+    const set = await adminCaller.users.setPlexIdentity({
+      userId: member.id,
+      plexEmail: '  Manofoz@Gmail.com ',
+      plexUsername: ' MANOFOZ ',
+    });
+    expect(set).toEqual({ plexEmail: 'manofoz@gmail.com', plexUsername: 'manofoz' });
+
+    const roster = await adminCaller.users.list();
+    const mia = roster.find((u) => u.id === member.id)!;
+    expect(mia).toMatchObject({ plexEmail: 'manofoz@gmail.com', plexUsername: 'manofoz' });
+
+    // Blank fields clear the override (→ null).
+    const cleared = await adminCaller.users.setPlexIdentity({
+      userId: member.id,
+      plexEmail: '   ',
+      plexUsername: null,
+    });
+    expect(cleared).toEqual({ plexEmail: null, plexUsername: null });
+  });
+
+  it('unknown user → NOT_FOUND', async () => {
+    await expect(
+      adminCaller.users.setPlexIdentity({
+        userId: '00000000-0000-4000-8000-00000000dead',
+        plexEmail: 'x@y.com',
+        plexUsername: null,
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('requires admin (a member caller is FORBIDDEN)', async () => {
+    const memberCaller = caller(makeCtx(testDb.db, sessionUser(member)));
+    await expect(
+      memberCaller.users.setPlexIdentity({ userId: member.id, plexEmail: null, plexUsername: null }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+});

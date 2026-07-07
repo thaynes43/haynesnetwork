@@ -95,12 +95,14 @@ export default function MyPlexPage() {
                   You own {server.name} — all libraries are already yours.
                 </span>
               ) : !server.friendMatched ? (
-                // ADR-029 — email matched neither the owner nor any Plex friend. The common real
-                // case is a local Authentik account with no Plex identity; be accurate rather than
-                // calling it "not a friend yet".
+                // ADR-029 / fix/plex-identity-mapping — matched neither the owner nor any Plex
+                // friend. The common real case is a local Authentik account with no Plex identity,
+                // OR an account whose sign-in email differs from its plex.tv email — an admin can
+                // pin the real Plex email/username on /admin/users so matching resolves.
                 <span className="plex-server__note" role="status">
                   This account isn’t linked to a Plex identity on {server.name}. Sign in with Plex
-                  to manage your libraries — or ask an admin to add you.
+                  to manage your libraries — or ask an admin to set your Plex email or username so we
+                  can match your account.
                 </span>
               ) : null}
               {!server.owner && server.allGranted ? (

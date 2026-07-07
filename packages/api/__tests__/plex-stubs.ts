@@ -7,7 +7,9 @@ export interface FakeServerConfig {
   machineIdentifier: string;
   /** ADR-029 — the server OWNER's plex.tv account email (the token account). Absent = no owner. */
   ownerEmail?: string;
-  friends: Array<{ id: string; email: string }>;
+  /** fix/plex-identity-mapping — the OWNER's plex.tv username (identity-username match). */
+  ownerUsername?: string;
+  friends: Array<{ id: string; email: string; username?: string }>;
   /** plex.tv section map: server section `key` → plex.tv section `id`. */
   serverSections: Array<{ id: string; key: string }>;
   /** PMS `/library/sections`. */
@@ -47,14 +49,33 @@ function makeServer(slug: PlexServerName, cfg: FakeServerConfig, writes: Recorde
       return { machineIdentifier: cfg.machineIdentifier, version: '1.43.2' };
     },
     async getOwnerAccount() {
-      return { id: 'owner-id', email: cfg.ownerEmail ?? null, username: null };
+      return { id: 'owner-id', email: cfg.ownerEmail ?? null, username: cfg.ownerUsername ?? null };
     },
     async getOwnerEmail() {
       return cfg.ownerEmail ? cfg.ownerEmail.trim().toLowerCase() : null;
     },
     async findFriendByEmail(email: string) {
       const f = cfg.friends.find((x) => x.email.toLowerCase() === email.trim().toLowerCase());
-      return f ? { id: f.id, email: f.email, username: null, title: null } : null;
+      return f ? { id: f.id, email: f.email, username: f.username ?? null, title: null } : null;
+    },
+    // fix/plex-identity-mapping — mirror PlexReadClient.findFriendByIdentity: match by (email OR
+    // username, case-insensitive) from the resolved Plex identity, falling back to the app email.
+    async findFriendByIdentity(
+      identity: { email: string | null; username: string | null },
+      fallbackEmail: string,
+    ) {
+      const emails = new Set(
+        [identity.email, fallbackEmail]
+          .map((e) => (e ?? '').trim().toLowerCase())
+          .filter((e) => e.length > 0),
+      );
+      const username = (identity.username ?? '').trim().toLowerCase();
+      const f = cfg.friends.find((x) => {
+        const fe = x.email.trim().toLowerCase();
+        const fu = (x.username ?? '').trim().toLowerCase();
+        return emails.has(fe) || (username !== '' && fu === username);
+      });
+      return f ? { id: f.id, email: f.email, username: f.username ?? null, title: null } : null;
     },
     async listServerSections() {
       return cfg.serverSections.map((s) => ({ id: s.id, key: s.key, title: '', type: 'movie' }));
