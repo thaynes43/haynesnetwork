@@ -70,6 +70,8 @@
   **011** (owner-gated branding pick + owner MFA task) → **008** (public cutover, owner's go) → then
   post-cutover backlog: 013 (disk/reclaim metrics) → 014 (rules tuning + space policy) → 015
   (downstream *arr action feedback, authored) → the Ledger UX polish batch (task #21).
+  **Task #21 DONE (first polish slice shipped v0.14.1):** Ledger/Library sort affordance + true
+  filtered export count — ad-hoc polish, no plan file.
   v0.4.0 recap: unified roles (ADR-012), arbitrary catalog URLs (ADR-013), two-step
   `ConfirmButton`, drag-drop catalog reorder, Library sub-tabs.
   **Housekeeping:** two git stashes on the (now-deleted) `feat/bulletin` branch held a duplicate
