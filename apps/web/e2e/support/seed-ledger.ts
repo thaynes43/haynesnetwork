@@ -10,8 +10,10 @@
 // "Breaking Prod", 9/10 episodes on disk, profile HD-1080p.
 import { getPool, SEEDED_PLEX_SERVER_IDS, SEEDED_ROLE_IDS } from '@hnet/db';
 import {
+  createFixRequest,
   createRole,
   ingestLedgerEvents,
+  recordFixAction,
   recordNotification,
   setAppSetting,
   setRoleLibraries,
@@ -238,6 +240,32 @@ async function main(): Promise<void> {
       },
     ],
   });
+
+  // A resolved (failed) Fix on The Fixture so the Bulletin message deep-link chip has a repair
+  // cue to render ("1 repair recorded") when a message links this movie. Seeded through the
+  // domain single-writers (fix_requests is a guarded table) with a SYNTHETIC requester — no
+  // persona owns it, so it never shows in a persona's "My Fixes". It is TERMINAL (failed), so it
+  // never trips the open-fix dedupe the later Fix specs (subtitle-fix / progress-feedback) rely on.
+  if (radarrItemId) {
+    const { rows: fixerRows } = await getPool().query<{ id: string }>(
+      `INSERT INTO users (email, display_name)
+         VALUES ('seed-fixer@haynesnetwork.test', 'Seed Fixer')
+         ON CONFLICT (email) DO UPDATE SET display_name = EXCLUDED.display_name
+         RETURNING id`,
+    );
+    const fixerId = fixerRows[0]!.id;
+    const seededFix = await createFixRequest({
+      requesterId: fixerId,
+      requesterIsAdmin: true,
+      mediaItemId: radarrItemId,
+      reason: 'wont_play_corrupt',
+    });
+    await recordFixAction({
+      fixRequestId: seededFix.fixRequestId,
+      transition: 'failed',
+      actions: [{ step: 'seed_failed', at: new Date().toISOString() }],
+    });
+  }
 
   // ADR-017 / DESIGN-007 — the Plex registry + role grants the /library/plex specs use. The
   // seed runs BEFORE the stub Plex is up, so it can't refresh; upsertPlexLibraries seeds the

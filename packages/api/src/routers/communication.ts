@@ -6,16 +6,19 @@
 // mutations go through @hnet/domain single-writers wrapped in mapDomainErrors.
 import { z } from 'zod';
 import {
+  fixRequests,
   mediaItems,
+  mediaMetadata,
   messages,
   notifications,
   users,
   MESSAGE_STATUSES,
   NOTIFICATION_SOURCES,
 } from '@hnet/db';
-import { and, eq, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
-import { editMessage, moderateMessage, postMessage } from '@hnet/domain';
+import { and, eq, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
+import { editMessage, moderateMessage, postMessage, OPEN_FIX_STATUSES } from '@hnet/domain';
 import { mapDomainErrors, router } from '../trpc';
+import { posterUrlFor } from '../ledger-query';
 import { hasMessageAction, messageActionProcedure, sectionProcedure } from '../middleware/role';
 import { decodeKeysetCursor, encodeKeysetCursor, keysetAfter, keysetOrderBy } from '../keyset';
 
@@ -146,6 +149,8 @@ export const communicationRouter = router({
             mediaItemId: messages.mediaItemId,
             mediaTitle: mediaItems.title,
             mediaArrKind: mediaItems.arrKind,
+            mediaYear: mediaItems.year,
+            posterSource: mediaMetadata.posterSource,
             status: messages.status,
             createdAt: messages.createdAt,
             editedAt: messages.editedAt,
@@ -156,30 +161,70 @@ export const communicationRouter = router({
           .from(messages)
           .leftJoin(users, eq(users.id, messages.authorUserId))
           .leftJoin(mediaItems, eq(mediaItems.id, messages.mediaItemId))
+          .leftJoin(mediaMetadata, eq(mediaMetadata.mediaItemId, messages.mediaItemId))
           .where(where.length ? and(...where) : undefined)
           .orderBy(keysetOrderBy(sortExpr, 'desc', idCol))
           .limit(input.limit + 1);
 
         const page = rows.slice(0, input.limit);
         const last = page[page.length - 1];
+
+        // Batched repair-status hint (ADR-026 addendum — Bulletin title deep-links): one grouped
+        // pass over fix_requests for JUST the page's linked media ids, so a message card can show a
+        // static "has an open fix / N repairs recorded" cue that sends the reader to the item page
+        // (where the live phases + History + Fix actually live). openFix mirrors the domain's
+        // OPEN_FIX_STATUSES; fixCount is the total recorded. NO live polling here (D-06 stays a read).
+        const linkedIds = [
+          ...new Set(page.map((r) => r.mediaItemId).filter((id): id is string => id !== null)),
+        ];
+        const fixHints = new Map<string, { fixCount: number; openFix: boolean }>();
+        if (linkedIds.length > 0) {
+          const hintRows = await ctx.db
+            .select({
+              mediaItemId: fixRequests.mediaItemId,
+              fixCount: sql<number>`count(*)::int`,
+              openCount: sql<number>`(count(*) filter (where ${inArray(
+                fixRequests.status,
+                [...OPEN_FIX_STATUSES],
+              )}))::int`,
+            })
+            .from(fixRequests)
+            .where(inArray(fixRequests.mediaItemId, linkedIds))
+            .groupBy(fixRequests.mediaItemId);
+          for (const h of hintRows) {
+            fixHints.set(h.mediaItemId, { fixCount: h.fixCount, openFix: h.openCount > 0 });
+          }
+        }
+
         return {
-          items: page.map((r) => ({
-            id: r.id,
-            authorUserId: r.authorUserId,
-            authorName: r.authorName,
-            subject: r.subject,
-            body: r.body,
-            mediaItemId: r.mediaItemId,
-            mediaTitle: r.mediaTitle,
-            mediaArrKind: r.mediaArrKind,
-            status: r.status,
-            createdAt: iso(r.createdAt),
-            editedAt: isoOrNull(r.editedAt),
-            // Moderation trail exposed only to moderators (never leak who hid/deleted to members).
-            moderatedBy: canModerate ? r.moderatedBy : null,
-            moderatedAt: canModerate ? isoOrNull(r.moderatedAt) : null,
-            moderationNote: canModerate ? r.moderationNote : null,
-          })),
+          items: page.map((r) => {
+            const hint = r.mediaItemId !== null ? fixHints.get(r.mediaItemId) : undefined;
+            return {
+              id: r.id,
+              authorUserId: r.authorUserId,
+              authorName: r.authorName,
+              subject: r.subject,
+              body: r.body,
+              mediaItemId: r.mediaItemId,
+              mediaTitle: r.mediaTitle,
+              mediaArrKind: r.mediaArrKind,
+              mediaYear: r.mediaYear,
+              // null poster ⇒ the card renders the kind icon (never a broken <img>) — same
+              // authed-proxy contract as the Library grid (ADR-019 posterUrlFor).
+              mediaPosterUrl:
+                r.mediaItemId !== null ? posterUrlFor(r.mediaItemId, r.posterSource) : null,
+              // Static repair cue for the linked title (unlinked ⇒ false/0, nothing rendered).
+              openFix: hint?.openFix ?? false,
+              fixCount: hint?.fixCount ?? 0,
+              status: r.status,
+              createdAt: iso(r.createdAt),
+              editedAt: isoOrNull(r.editedAt),
+              // Moderation trail exposed only to moderators (never leak who hid/deleted to members).
+              moderatedBy: canModerate ? r.moderatedBy : null,
+              moderatedAt: canModerate ? isoOrNull(r.moderatedAt) : null,
+              moderationNote: canModerate ? r.moderationNote : null,
+            };
+          }),
           nextCursor:
             rows.length > input.limit && last !== undefined
               ? encodeKeysetCursor(iso(last.createdAt), last.id)
