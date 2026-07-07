@@ -10,6 +10,7 @@ import { fixRouter } from './fix';
 import { restoreRouter } from './restore';
 import { plexRouter } from './plex';
 import { trashRouter } from './trash';
+import { communicationRouter } from './communication';
 
 export const appRouter = router({
   profile: profileRouter,
@@ -28,6 +29,9 @@ export const appRouter = router({
   // ADR-023 / DESIGN-010 (PLAN-006): the Trash section — Maintainerr-backed deletion UI,
   // section-gated view + per-action grants.
   trash: trashRouter,
+  // ADR-026 / DESIGN-012 (PLAN-009): the Bulletin section — aggregated notification Feed +
+  // user Messages board, section-gated read + per-action post/moderate grants.
+  communication: communicationRouter,
 });
 
 export type AppRouter = typeof appRouter;

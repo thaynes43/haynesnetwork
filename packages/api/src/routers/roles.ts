@@ -5,13 +5,16 @@ import { z } from 'zod';
 import { asc, count } from 'drizzle-orm';
 import {
   roleAppGrants,
+  roleMessageActionGrants,
   roleSectionPermissions,
   roleTrashActionGrants,
   roles,
   users,
+  MESSAGE_ACTIONS,
   SECTION_IDS,
   SECTION_DEFAULT_LEVELS,
   TRASH_ACTIONS,
+  type MessageAction,
   type SectionId,
   type SectionPermissionLevel,
   type TrashAction,
@@ -19,13 +22,20 @@ import {
 import {
   createRole,
   deleteRole,
+  setRoleMessageActions,
   setRoleTrashActions,
   setSectionPermission,
   updateRole,
 } from '@hnet/domain';
 import { mapDomainErrors, router } from '../trpc';
 import { adminProcedure } from '../middleware/role';
-import { RoleInput, RolePatchInput, SectionPermissionInput, TrashActionsInput } from '../schemas';
+import {
+  MessageActionsInput,
+  RoleInput,
+  RolePatchInput,
+  SectionPermissionInput,
+  TrashActionsInput,
+} from '../schemas';
 
 export const rolesRouter = router({
   /** Every role with its app set + member count (feeds /admin/roles + the user role picker). */
@@ -64,6 +74,13 @@ export const rolesRouter = router({
         action: roleTrashActionGrants.action,
       })
       .from(roleTrashActionGrants);
+    // ADR-026 — each role's fine-grained Bulletin message action grant rows (a row = granted).
+    const messageActionRows = await ctx.db
+      .select({
+        roleId: roleMessageActionGrants.roleId,
+        action: roleMessageActionGrants.action,
+      })
+      .from(roleMessageActionGrants);
 
     const appIdsByRole = new Map<string, string[]>();
     for (const row of grantRows) {
@@ -84,6 +101,12 @@ export const rolesRouter = router({
       s.add(row.action);
       trashActionsByRole.set(row.roleId, s);
     }
+    const messageActionsByRole = new Map<string, Set<MessageAction>>();
+    for (const row of messageActionRows) {
+      const s = messageActionsByRole.get(row.roleId) ?? new Set<MessageAction>();
+      s.add(row.action);
+      messageActionsByRole.set(row.roleId, s);
+    }
 
     // The Admin role has no explicit grants — it's an implicit all-apps / all-sections superuser.
     return roleRows.map((row) => {
@@ -99,12 +122,18 @@ export const rolesRouter = router({
       const trashActions: TrashAction[] = row.isAdmin
         ? [...TRASH_ACTIONS]
         : TRASH_ACTIONS.filter((a) => grantedSet?.has(a));
+      // ADR-026 — admin ⇒ every message action; otherwise the granted rows in canonical order.
+      const messageGrantedSet = messageActionsByRole.get(row.id);
+      const messageActions: MessageAction[] = row.isAdmin
+        ? [...MESSAGE_ACTIONS]
+        : MESSAGE_ACTIONS.filter((a) => messageGrantedSet?.has(a));
       return {
         ...row,
         appIds: appIdsByRole.get(row.id) ?? [],
         memberCount: membersByRole.get(row.id) ?? 0,
         sectionPermissions,
         trashActions,
+        messageActions,
       };
     });
   }),
@@ -153,6 +182,23 @@ export const rolesRouter = router({
   setTrashActions: adminProcedure.input(TrashActionsInput).mutation(async ({ ctx, input }) => {
     return mapDomainErrors(() =>
       setRoleTrashActions({
+        db: ctx.db,
+        roleId: input.roleId,
+        actions: input.actions,
+        actorId: ctx.user.id,
+      }),
+    );
+  }),
+
+  /**
+   * ADR-026 C-04 — replace a role's fine-grained Bulletin message action grants (post / moderate).
+   * Delegates to the @hnet/domain single-writer (audits 'update_message_actions' in-tx); the Admin
+   * role is immutable → ROLE_IMMUTABLE. Layered on top of the coarse `bulletin` section level
+   * (setSectionPermission) — a Disabled-bulletin role's actions are moot until it's ≥ Read-Only.
+   */
+  setMessageActions: adminProcedure.input(MessageActionsInput).mutation(async ({ ctx, input }) => {
+    return mapDomainErrors(() =>
+      setRoleMessageActions({
         db: ctx.db,
         roleId: input.roleId,
         actions: input.actions,

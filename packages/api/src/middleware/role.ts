@@ -6,6 +6,7 @@ import { TRPCError } from '@trpc/server';
 import {
   SECTION_DEFAULT_LEVELS,
   SECTION_LEVEL_RANK,
+  type MessageAction,
   type SectionId,
   type SectionPermissionLevel,
   type TrashAction,
@@ -70,6 +71,31 @@ export function trashActionProcedure(
 ) {
   return sectionProcedure('trash', minLevel).use(({ ctx, next }) => {
     if (!hasTrashAction(ctx.user.role, action)) {
+      throw new TRPCError({ code: 'FORBIDDEN' });
+    }
+    return next();
+  });
+}
+
+/**
+ * ADR-026 C-04 — is the caller granted a fine-grained Bulletin message `action`? Read off the
+ * session (no query). Admin ⇒ every action; otherwise the resolved session grant list. Deny on
+ * absence.
+ */
+export function hasMessageAction(role: SessionRole, action: MessageAction): boolean {
+  if (role.isAdmin) return true;
+  return (role.messageActions ?? []).includes(action);
+}
+
+/**
+ * ADR-026 C-04 — the Bulletin message-action rung: authed AND the caller's `bulletin` section is at
+ * least Read-Only (browse allowed) AND the specific `action` is granted. FORBIDDEN otherwise.
+ * Composed on top of the section gate so a Disabled-Bulletin role can never reach post/moderate
+ * even with a stale grant. Server-authoritative (AC-13) — grants are session-carried.
+ */
+export function messageActionProcedure(action: MessageAction) {
+  return sectionProcedure('bulletin', 'read_only').use(({ ctx, next }) => {
+    if (!hasMessageAction(ctx.user.role, action)) {
       throw new TRPCError({ code: 'FORBIDDEN' });
     }
     return next();
