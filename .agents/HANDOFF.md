@@ -29,8 +29,10 @@
   so far today:** 002 ✓ (v0.5.0); 003 ✓ (v0.6.0 + fix v0.6.1); 004 ✓ (v0.8.0/v0.8.1); 005 ✓
   (v0.9.0); 007 ✓ (v0.7.0); ADR-024 ✓ (v0.10.0, follow-on to 003); 006 backend rebased &
   reverifying (pending merge).
-  **Queue extended per owner:** 011 (Authentik MFA-for-native-accounts + `hnet` rebrand of the
-  login portal) → then 009/010 → then 008 (public cutover — LAST).
+  **Queue extended per owner (2026-07-06, plans 011–014 authored):** 006 (finish) → 012 (Trash
+  curation pipeline: batches → poster review → Leaving Soon → windowed deletion) → 011 (Authentik
+  MFA-for-native-accounts + haynesnetwork sign-in rebrand) → 009 → 010 → 008 (public cutover) →
+  then post-cutover: 013 (disk/reclaim metrics) → 014 (rules tuning + space policy).
   v0.4.0 recap: unified roles (ADR-012), arbitrary catalog URLs (ADR-013), two-step
   `ConfirmButton`, drag-drop catalog reorder, Library sub-tabs.
 - **PLAN-007 (cosign image signing) COMPLETE** (`.agents/plans/completed/007-cosign-image-signing.md`).
@@ -138,13 +140,29 @@ The **Fable 5 autonomous run** works the release queue in `.agents/plans/` (star
    restore via filter→*arr + JSONL export; fileless import dropped per ADR-022 C-04).
 5. **006 — Trash section** (integrates the Maintainerr instance; replaces the Restore nav) —
    **backend rebased & reverifying; pending merge.** Reuses the ADR-021 Section-Permission base
-   005 shipped.
-6. **011 — Authentik hardening / branding** (NEW, owner-scoped 2026-07-06): MFA for native Authentik accounts + `hnet` rebrand of the login portal — doc to be authored at slot time.
-7. ~~**007 — cosign signing**~~ ✅ **DONE** (v0.7.0, `completed/007-cosign-image-signing.md`).
-   Owner-extended queue after 006: **011 → 009/010 → 008 (public cutover — LAST)**.
-8. **Stretch (owner ideas, post-core):** 009 **Bulletin** (aggregated notification Feed +
-   user Messages board), 010 **MOTD** dashboard banner — now slotted after 011, before the
-   008 cutover; 010 is small enough to pull forward as a quick win.
+   005 shipped. Remaining: the Trash UX layer, deploy, and live validation — now **including the
+   2026-07-06 owner addendum: 1–2 conservative NON-DELETING Maintainerr test rules
+   (deleteAfterDays ≥ 60) + the `dnd` tag settings**, whose collections seed plan 012.
+6. **012 — Trash curation pipeline** (`012-trash-curation-pipeline.md`, owner vision
+   2026-07-06): batches (`draft → admin_review → leaving_soon → deleted|cancelled`) → admin
+   poster-grid review (X ⇄ lock) → green-light → "Leaving Soon" Plex collection + role-gated
+   user save window → per-item guardian-checked expiry deletion; every save/unsave durably
+   recorded as rules-tuning data; deletion snapshots recorded for 013.
+7. **011 — Authentik hardening** (`011-authentik-hardening.md`, owner-scoped 2026-07-06): MFA
+   for NATIVE Authentik accounts only (Plex-source logins exempt; `mfa-exempt` group keeps the
+   `hnet-e2e` accounts automating) + rebrand the login as "haynesnetwork sign-in" (owner picks
+   from 2–3 screenshot mocks). App-by-app SSO verification = owner task in 008's HARD GATE.
+8. **Stretch (owner ideas):** 009 **Bulletin** (aggregated notification Feed + user Messages
+   board), 010 **MOTD** dashboard banner — slotted after 011, before the 008 cutover; 010 is
+   small enough to pull forward as a quick win.
+9. ~~**007 — cosign signing**~~ ✅ **DONE** (v0.7.0, `completed/007-cosign-image-signing.md`).
+10. **008 — public cutover** (LAST of the pre-cutover queue; HARD GATE incl. the owner's
+    app-by-app SSO check from 011).
+11. **Post-cutover (banked, owner 2026-07-06):** **013 — disk utilization + reclaim metrics**
+    (`013-disk-and-reclaim-metrics.md`; consumes 012's deletion snapshots; core open decision:
+    Grafana embed vs native — owner decides) → **014 — rules tuning + space policy**
+    (`014-rules-tuning-space-policy.md`; save-data + metrics → tune rules toward the space
+    target; skip-admin-gate graduation criteria).
 
 The full consolidated backlog (with what is deferred beyond this run) is in
 `context/2026-07-05-backlog-recon.md`.

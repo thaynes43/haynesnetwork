@@ -553,6 +553,32 @@ becomes a `source='maintainerr'` filtered view of the same store. See `009-commu
 
 ---
 
+## Addendum (2026-07-06, owner) — minimal NON-DELETING test rules (deploy/live-validation step)
+
+**Owner requirement:** as part of THIS plan's deploy + live-validation step, configure Maintainerr
+with **1–2 deliberately conservative rules whose only job is to exercise the Trash UI** — real
+collections, real pending rows, zero deletion risk:
+
+- **Target only unambiguous junk**: very low rating **AND** very few votes **AND** zero plays
+  across all servers (the PLAN-004 cross-server watch signal / Tautulli) **AND** never requested
+  (no Seerr requester tag) **AND** added long ago. Every predicate must hold — the rule is an
+  intersection, not a union.
+- **LONG `deleteAfterDays` (≥ 60)** so nothing can reach its delete date during validation. The
+  point is populated Movies/TV pending tables (sizes, scheduled dates, total-space footer), not
+  deletions.
+- **Enable the `dnd` tag settings** while here: the Radarr + Sonarr tag-exclusion settings
+  (`radarr_tag_exclusions`/`sonarr_*`, tag `dnd`, "remove tag on un-exclude" = ON) via the
+  settings `PATCH` (DESIGN-010 D-02 / ops checklist #3) — so Save/exclusion round-trips are
+  observable in `media_items.arrTags` during live validation.
+- **Expedite is still NEVER exercised live** (the existing non-destructive validation rule
+  stands unchanged; the ≥60-day window is belt-and-braces on top, not a substitute).
+- **Seed data for PLAN-012:** the collections these test rules produce become the input the
+  PLAN-012 curation pipeline (batches → admin poster review → Leaving Soon) builds its first
+  draft batch from. Name them accordingly (e.g. `junk-movies-conservative`) and record the rule
+  definitions in DESIGN-010 as-built notes.
+
+---
+
 ## Addendum (2026-07-05, owner) — *arr tags in Trash (requester = keep, collection = source)
 
 Use PLAN-004's parsed tag dimensions in both the pending Movies/TV tables (filter facets + columns)
