@@ -1,9 +1,21 @@
 # PLAN-010: Message-of-the-Day dashboard banner
 
-- **Status:** Draft
-- **Satisfies:** PRD-001 new **R-NN** (indicative **R-73**, Dashboard & app catalog), new
-  **ADR-0NN** (indicative **ADR-024**, Dashboard MOTD banner), DESIGN-004 new **D-NN**
-  (indicative **D-15**)
+- **Status:** Executing (Fable 5, 2026-07-07)
+- **Satisfies:** PRD-001 **R-105** (Dashboard & app catalog), **ADR-027** (Dashboard MOTD banner,
+  Accepted), DESIGN-004 **D-15**, glossary **T-89**.
+
+> **EXECUTION NOTE (Fable 5, 2026-07-07).** Reconciled IDs to next-free at authoring time (ADR-027,
+> R-105, D-15, T-89). Per the Fable 5 rulings, the MOTD **reuses the shipped `app_settings` audited
+> store** (ADR-025 C-06) under a new key `motd` (jsonb record `{ message, severity, enabled, startsAt,
+> endsAt, updatedBy }`) — **NOT** a bespoke `motd` table (this plan's Open decision #1 → reuse). So the
+> data-model section below (bespoke `motd` table + `set_motd`/`clear_motd` audit actions + a
+> `motd_severity` CHECK + guard-list additions) is **SUPERSEDED**: the only migration is
+> `0019_motd_app_setting.sql`, a one-line CHECK relax admitting the `motd` key; writes reuse the
+> existing `update_app_setting` audit action; `app_settings` is already guarded. Severity =
+> `MOTD_SEVERITIES=['info','warning']`; dismissal = per-user localStorage keyed by a content version;
+> tokens reused via `color-mix` (no new token/hex). API = a dedicated `motd` router (`getActive`
+> authed; `get`/`set`/`clear` admin). Everything else (mount above `<Greeting>`, ADR-015 collapse,
+> ConfirmButton Clear, the compose page + "MOTD" sub-nav) is implemented as written.
 - **Depends on:** none — self-contained. **Optionally coordinates with PLAN-009 (Bulletin/Feed)**
   if that plan exists by the time this runs (soft tie-in only, see "Optional PLAN-009 tie-in").
 - **TODO source:** owner stretch request 2026-07-05 (not in `TODO.md` #1..#5).

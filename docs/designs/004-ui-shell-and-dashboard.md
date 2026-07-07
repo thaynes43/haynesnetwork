@@ -549,6 +549,40 @@ silently outranked `.confirm-btn` (0,1,0), so arming reflowed the row. Corrected
   `className="btn sm danger"`; resting stays danger red, armed deepens to danger-strong. This
   supersedes D-13's `var(--color-danger)`-only armed look and its `5rem` width claim.
 
+### D-15 — Dashboard Message-of-the-Day banner (ADR-027 / PLAN-010, R-105)
+
+An optional admin-set banner broadcasts a notice to every signed-in user, mounted at the **top of the
+dashboard `page.tsx`, above `<Greeting>`** (the D-07 neighbor). It is **present-when-set** and
+**collapses cleanly on dismiss** — never a source of interaction reflow (D-14 / hard rule 9).
+
+- **Data.** No bespoke table — the MOTD reuses the `app_settings` audited store under the key `motd`
+  (ADR-027; a jsonb record `{ message, severity, enabled, startsAt, endsAt, updatedBy }`). The domain
+  reader `getActiveMotd` returns the record only when **active** (`enabled` + non-blank message +
+  within the optional `startsAt`/`endsAt` window; inclusive start, exclusive end) plus a `version`
+  string (a hash of `updated_at` + content). Writes go through `setMotd`/`clearMotd` →
+  `setAppSetting`, audited in the same tx (`update_app_setting`).
+- **Mount + fetch.** `page.tsx` (server component) server-fetches `caller.motd.getActive()` alongside
+  `catalog.myApps()` and passes it as a prop to `<MotdBanner motd={…} />` (no loading flash). The
+  banner renders nothing when the prop is null.
+- **Semantics + tokens.** `role="status"` for `info`, `role="alert"` for `warning`. The severity
+  modifier class (`.motd--info` / `.motd--warning`) draws its border, left rule, tint, and icon from
+  the **existing** `--color-info` / `--color-warning` tokens via `color-mix()` — **no new token, no
+  raw hex** (hard rule 2). No `tokenContract` change.
+- **Dismiss.** A dismiss button writes the current `version` to `localStorage['hnet-motd-dismissed']`
+  and the banner unmounts. On mount it reads the key (via `useSyncExternalStore` with a neutral server
+  snapshot — the hydration-safe pattern D-07's `<Greeting>` uses) and hides only when the stored
+  version equals the current one, so an admin edit / re-enable (new `updated_at` → new version)
+  **re-shows** it. Collapsing the banner is an **ADR-015-sanctioned deliberate removal** (like the
+  catalog inline editor / drag exceptions) — the tile grid simply reclaims the space; nothing reflows
+  on hover/arm.
+- **Admin compose page `/admin/motd`.** A single static form mirroring the D-11 `/admin/catalog`
+  form: a `<textarea maxLength={280}>` message, a severity `<select>`, an `enabled` checkbox, and
+  optional `startsAt`/`endsAt` `<input type="datetime-local">` (converted to UTC ISO on the wire). A
+  live preview reuses the real `.motd` classes; changing severity recolors **only** the preview, never
+  the layout (D-14). **Save** → `motd.set`; **Clear** → `motd.clear` behind a `@hnet/ui`
+  **`ConfirmButton`** (inline two-step — clearing removes something users see; never `window.confirm`,
+  hard rule 8). The admin sub-nav (D-10) gains a **"MOTD"** link.
+
 ## Alternatives considered
 
 - **`next-themes`** for persistence/seeding: rejected — the donor ThemeProvider is

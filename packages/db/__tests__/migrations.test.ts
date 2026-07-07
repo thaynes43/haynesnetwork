@@ -324,4 +324,22 @@ describe('migrations against embedded Postgres 16', () => {
       );
     });
   });
+
+  // ADR-027 / DESIGN-004 D-15 (migration 0019) — the MOTD reuses the app_settings store, so the
+  // app_settings.key CHECK is relaxed to admit 'motd' (preserving the prior two keys).
+  describe('0019 MOTD app_setting key (ADR-027 — CHECK relax, preservation)', () => {
+    it('app_settings_key_enum admits motd + the prior keys, rejects unknown', async () => {
+      for (const key of ['trash_skip_admin_gate', 'trash_default_window_days', 'motd']) {
+        await client.query({
+          text: `INSERT INTO app_settings (key, value) VALUES ($1, '{}'::jsonb)
+                   ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+          values: [key],
+        });
+      }
+      await expect(
+        client.query(`INSERT INTO app_settings (key, value) VALUES ('bogus_key', '{}'::jsonb)`),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query(`DELETE FROM app_settings WHERE key IN ('trash_skip_admin_gate','trash_default_window_days','motd')`);
+    });
+  });
 });

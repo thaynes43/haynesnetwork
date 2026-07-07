@@ -21,6 +21,8 @@ export * from './trash-flow';
 // ADR-025 / DESIGN-011 — Trash curation pipeline: generic app settings + batch state machine
 export * from './app-settings';
 export * from './trash-batches';
+// ADR-027 / DESIGN-004 D-15 (PLAN-010) — Message-of-the-Day: reader + single-writers over app_settings
+export * from './motd';
 // DESIGN-005 Phase 2 — media ledger single-writers (D-12)
 export * from './sync-runs';
 export * from './media-sync';

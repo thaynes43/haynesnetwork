@@ -69,6 +69,7 @@ rebuilding a lost *arr instance.
 | R-13 | Admin-grantable tiles (seeded hidden): plexops, Immich, Open WebUI, Paperless, Tautulli — extensible via R-11. | Must |
 | R-14 | ~~**User-facing links must never point at `*.haynesops.com`** (LAN-only ingresses). Enforced by validation on catalog writes.~~ _(Amended by ADR-013: the host restriction is retired — the catalog is admin-curated and accepts **any normalized `http(s)` URL** entered as a plain string; the only floor is http(s)-only, no embedded credentials. No host allow/deny list.)_ | Must |
 | R-15 | ~~Admins can grant/revoke individual apps per user.~~ **SUPERSEDED by ADR-012:** there are no per-user app grants. Access is **role-based** — an app is granted to a *role* (`role_app_grants`), and a user gets it by being assigned that role. To give one user a bespoke app set, an admin creates or reuses a role. | ~~Must~~ |
+| R-105 | Admins may set an optional **Message-of-the-Day** banner (severity-coded `info`/`warning`, optionally time-windowed, per-user dismissible) shown at the top of the dashboard to every signed-in user. Composed/cleared from `/admin/motd`; the write is audited (ADR-027 / DESIGN-004 D-15). | Could |
 
 ### Tags & permission bundles
 

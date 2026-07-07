@@ -9,21 +9,50 @@ import {
   APP_SETTING_KEYS,
   type AppSettingKey,
   type DbClient,
+  type MotdSeverity,
 } from '@hnet/db';
 import { eq } from 'drizzle-orm';
 import { NotFoundError } from './errors';
 import { inTransaction, resolveDb } from './db-client';
 
+/**
+ * ADR-027 / DESIGN-004 D-15 (PLAN-010) — the Message-of-the-Day record stored as the `motd`
+ * app_settings jsonb value (Open decision #1: reuse the generic store, no bespoke table). Timestamps
+ * ride as ISO-8601 strings (jsonb holds no Date; ISO is also the wire form — DESIGN-003 D-03).
+ * `updatedBy` mirrors the row's `updated_by` column into the value so the whole record is
+ * self-describing; the dismiss version (motd.ts) is driven off the row's `updated_at`.
+ */
+export interface MotdRecord {
+  message: string;
+  severity: MotdSeverity;
+  enabled: boolean;
+  startsAt: string | null;
+  endsAt: string | null;
+  updatedBy: string | null;
+}
+
+/** The MOTD default — disabled + empty, so an unset key renders no banner. */
+export const MOTD_DEFAULT: MotdRecord = {
+  message: '',
+  severity: 'info',
+  enabled: false,
+  startsAt: null,
+  endsAt: null,
+  updatedBy: null,
+};
+
 /** The typed value shape per key — the jsonb column holds exactly these. */
 export interface AppSettingValueMap {
   trash_skip_admin_gate: boolean;
   trash_default_window_days: number;
+  motd: MotdRecord;
 }
 
 /** The documented default returned when a key has no row (never null — every key has a default). */
 export const APP_SETTING_DEFAULTS: AppSettingValueMap = {
   trash_skip_admin_gate: false,
   trash_default_window_days: 21,
+  motd: MOTD_DEFAULT,
 };
 
 /**

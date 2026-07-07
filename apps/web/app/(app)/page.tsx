@@ -8,6 +8,7 @@ import { redirect } from 'next/navigation';
 import { getServerSession } from '@hnet/auth';
 import { AppIcon } from '@hnet/ui';
 import { getServerCaller } from '@/lib/trpc-server';
+import { MotdBanner } from '@/components/motd-banner';
 import { Greeting } from './greeting';
 
 export default async function DashboardPage() {
@@ -17,10 +18,13 @@ export default async function DashboardPage() {
   if (!session) redirect('/login');
 
   const caller = await getServerCaller();
-  const apps = await caller.catalog.myApps();
+  // DESIGN-004 D-15 — the active MOTD (or null) is server-fetched alongside the tiles so the banner
+  // renders with no loading flash, anchored ABOVE the greeting (D-07 neighbor).
+  const [apps, motd] = await Promise.all([caller.catalog.myApps(), caller.motd.getActive()]);
 
   return (
     <>
+      <MotdBanner motd={motd} />
       <Greeting displayName={session.user.displayName} />
       {apps.length === 0 ? (
         <section className="card empty-state">
