@@ -13,6 +13,7 @@ import {
   createRole,
   ingestLedgerEvents,
   recordNotification,
+  setAppSetting,
   setRoleLibraries,
   setRoleMessageActions,
   setRoleTrashActions,
@@ -402,9 +403,19 @@ async function main(): Promise<void> {
     occurredAt: new Date('2026-07-05T19:00:00Z'),
   });
 
+  // ADR-030 / DESIGN-013 (PLAN-013) — seed the per-server space targets so the Storage utilization
+  // card renders its reference line (HaynesTower 80% used ceiling). Guard-legal: setAppSetting is the
+  // audited single-writer. The utilization numbers come live from the stub *arr /diskspace route;
+  // reclaim starts empty (production-faithful — it accrues only as batch sweeps run).
+  await setAppSetting({
+    key: 'space_targets',
+    value: { haynestower: 80 },
+    actorId: null,
+  });
+
   await getPool().end();
   console.log(
-    '[seed-ledger] seeded 5 media items (1 tombstoned) + ledger events + Plex libraries/grants + Ledger/Trash section roles + Bulletin roles + Feed notifications',
+    '[seed-ledger] seeded 5 media items (1 tombstoned) + ledger events + Plex libraries/grants + Ledger/Trash section roles + Bulletin roles + Feed notifications + space_targets',
   );
 }
 

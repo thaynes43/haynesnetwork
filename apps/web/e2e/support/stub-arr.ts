@@ -533,6 +533,25 @@ export async function startStubArr(): Promise<StubArrServer> {
             { id: 2, path: '/data/haynestower/Media/Movies' },
             { id: 3, path: '/data/media/music' },
           ]);
+        case '/diskspace':
+          // ADR-030 / DESIGN-013 (PLAN-013) — the utilization source of record. One stub serves all
+          // three *arrs, so it advertises BOTH physical media arrays (the domain's getUtilization picks
+          // each array's disk by path): the HaynesTower NFS array at ~78.8% used (the owner's
+          // cross-check number) and the CephFS music pool at ~25.4%, live-shaped 2026-07-07.
+          return json(res, 200, [
+            {
+              path: '/data/haynestower',
+              label: 'haynestower',
+              freeSpace: 112_430_400_000_000,
+              totalSpace: 529_960_000_000_000,
+            },
+            {
+              path: '/data/cephfs-hdd',
+              label: 'cephfs',
+              freeSpace: 130_450_000_000_000,
+              totalSpace: 174_840_000_000_000,
+            },
+          ]);
         case '/tag':
           return json(res, 200, [{ id: 1, label: 'mediarequests' }]);
         case '/trackfile':
