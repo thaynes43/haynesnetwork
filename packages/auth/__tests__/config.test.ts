@@ -35,6 +35,36 @@ describe('betterAuth config (DESIGN-002 D-02)', () => {
     expect('emailAndPassword' in auth.options).toBe(false);
   });
 
+  it('buckets rate limiting by the real client IP behind the Cloudflare Tunnel', async () => {
+    vi.stubEnv('BETTER_AUTH_URL', 'https://haynesnetwork.com');
+    vi.stubEnv('BETTER_AUTH_SECRET', 'test-secret-test-secret-test-secret');
+
+    const { auth } = await import('../src/config');
+
+    // CF-Connecting-IP FIRST: behind cloudflared→traefik-external, x-forwarded-for/
+    // x-real-ip carry the tunnel address (one shared bucket → household 429). Cloudflare
+    // puts the real end-user IP in CF-Connecting-IP; better-auth walks headers in order,
+    // so it must lead. LAN staging / dev have no CF header and fall through unchanged.
+    expect(auth.options.advanced?.ipAddress?.ipAddressHeaders).toEqual([
+      'cf-connecting-ip',
+      'x-forwarded-for',
+      'x-real-ip',
+    ]);
+  });
+
+  it('trusts the apex baseURL + the www origin from TRUSTED_ORIGINS (cutover)', async () => {
+    vi.stubEnv('BETTER_AUTH_URL', 'https://haynesnetwork.com');
+    vi.stubEnv('BETTER_AUTH_SECRET', 'test-secret-test-secret-test-secret');
+    vi.stubEnv('TRUSTED_ORIGINS', 'https://www.haynesnetwork.com');
+
+    const { auth } = await import('../src/config');
+
+    expect(auth.options.trustedOrigins).toEqual([
+      'https://haynesnetwork.com',
+      'https://www.haynesnetwork.com',
+    ]);
+  });
+
   it('boots with OIDC disabled when client creds are absent (CI builds)', async () => {
     delete process.env.OIDC_CLIENT_ID;
     delete process.env.OIDC_CLIENT_SECRET;

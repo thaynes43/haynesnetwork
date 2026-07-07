@@ -5,6 +5,8 @@ import {
   assertAuthEnv,
   authEnv,
   parseBootstrapAdminEmails,
+  parseTrustedOrigins,
+  resolveTrustedOrigins,
 } from '../src/env';
 
 // Pure env parsing — tests pass explicit env objects; nothing reads .env.local.
@@ -24,6 +26,72 @@ describe('parseBootstrapAdminEmails (DESIGN-002 D-05/D-08)', () => {
   });
 });
 
+describe('parseTrustedOrigins (cutover origin allowlist)', () => {
+  it('splits on commas, trims, drops empties, normalizes each to its origin', () => {
+    expect(
+      parseTrustedOrigins(' https://www.haynesnetwork.com/ , https://haynesnetwork.haynesops.com ,, '),
+    ).toEqual(['https://www.haynesnetwork.com', 'https://haynesnetwork.haynesops.com']);
+  });
+
+  it('strips path/query so a stray trailing path still yields a bare origin', () => {
+    // Better Auth compares `pattern === getOrigin(url)`, so entries must be origins.
+    expect(parseTrustedOrigins('https://www.haynesnetwork.com/login?x=1')).toEqual([
+      'https://www.haynesnetwork.com',
+    ]);
+  });
+
+  it('drops entries that are not parseable absolute URLs', () => {
+    expect(parseTrustedOrigins('not a url, https://ok.example.com, ://bad')).toEqual([
+      'https://ok.example.com',
+    ]);
+  });
+
+  it('returns [] for unset or empty input', () => {
+    expect(parseTrustedOrigins(undefined)).toEqual([]);
+    expect(parseTrustedOrigins('')).toEqual([]);
+    expect(parseTrustedOrigins(' , ')).toEqual([]);
+  });
+});
+
+describe('resolveTrustedOrigins (baseUrl + extras)', () => {
+  it('is just the baseUrl origin when TRUSTED_ORIGINS is unset (staging default)', () => {
+    expect(resolveTrustedOrigins('https://haynesnetwork.haynesops.com', undefined)).toEqual([
+      'https://haynesnetwork.haynesops.com',
+    ]);
+  });
+
+  it('prepends the apex baseUrl origin, then the www extra (public cutover)', () => {
+    expect(
+      resolveTrustedOrigins('https://haynesnetwork.com', 'https://www.haynesnetwork.com'),
+    ).toEqual(['https://haynesnetwork.com', 'https://www.haynesnetwork.com']);
+  });
+
+  it('covers apex + www + retained staging origin from env', () => {
+    expect(
+      resolveTrustedOrigins(
+        'https://haynesnetwork.com',
+        'https://www.haynesnetwork.com,https://haynesnetwork.haynesops.com',
+      ),
+    ).toEqual([
+      'https://haynesnetwork.com',
+      'https://www.haynesnetwork.com',
+      'https://haynesnetwork.haynesops.com',
+    ]);
+  });
+
+  it('de-duplicates when an extra repeats the baseUrl origin', () => {
+    expect(
+      resolveTrustedOrigins('https://haynesnetwork.com', 'https://haynesnetwork.com/'),
+    ).toEqual(['https://haynesnetwork.com']);
+  });
+
+  it('keeps the local dev / e2e origin (localhost:3100) trusted', () => {
+    expect(resolveTrustedOrigins('http://localhost:3100', undefined)).toEqual([
+      'http://localhost:3100',
+    ]);
+  });
+});
+
 describe('authEnv (DESIGN-002 D-08)', () => {
   it('applies the documented defaults when optional vars are unset', () => {
     const env = authEnv({} as NodeJS.ProcessEnv);
@@ -32,6 +100,19 @@ describe('authEnv (DESIGN-002 D-08)', () => {
     expect(env.oidcDiscoveryUrl).toBe(DEFAULT_OIDC_DISCOVERY_URL);
     expect(env.oidcEnabled).toBe(false);
     expect(env.bootstrapAdminEmails).toEqual([]);
+    // trustedOrigins defaults to just the baseUrl origin.
+    expect(env.trustedOrigins).toEqual(['http://localhost:3000']);
+  });
+
+  it('resolves trustedOrigins from BETTER_AUTH_URL + TRUSTED_ORIGINS (apex + www)', () => {
+    const env = authEnv({
+      BETTER_AUTH_URL: 'https://haynesnetwork.com',
+      TRUSTED_ORIGINS: 'https://www.haynesnetwork.com',
+    } as NodeJS.ProcessEnv);
+    expect(env.trustedOrigins).toEqual([
+      'https://haynesnetwork.com',
+      'https://www.haynesnetwork.com',
+    ]);
   });
 
   it('enables OIDC only when both client id and secret are present', () => {
