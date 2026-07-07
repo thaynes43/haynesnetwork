@@ -20,6 +20,7 @@ import {
   removeExclusion,
   restoreDeleted,
   saveExclusion,
+  upsertTrashRule,
   tombstoneMissingItems,
   upsertMediaItemsBatch,
   upsertMediaMetadataBatch,
@@ -53,6 +54,8 @@ interface MaintState {
       addDate: string;
     }>;
   }>;
+  /** rule groups GET /rules serves (the Rules tab's data). Default []. */
+  rules: Array<Record<string, unknown>>;
   /** force a 500 on these `METHOD /path` keys (e.g. 'POST /rules/exclusion'). */
   fail: Set<string>;
   /** force a Maintainerr LOGICAL failure (HTTP 201 + ReturnStatus `{code:0}`) on these `METHOD /path`
@@ -104,7 +107,7 @@ function makeMaintainerr(state: MaintState): {
       if (state.integrations.seerr) apps.push({ name: 'Overseerr' });
       return ok({ applications: apps });
     }
-    if (method === 'GET' && path === '/rules') return ok([]);
+    if (method === 'GET' && path === '/rules') return ok(state.rules);
     if (method === 'GET' && path === '/collections') {
       return ok(
         state.collections.map((c) => ({
@@ -141,6 +144,28 @@ function makeMaintainerr(state: MaintState): {
     }
     if (method === 'POST' && path === '/collections/handle') return ok(null, 201);
     if (method === 'POST' && path === '/collections/media/handle') return ok(null, 201);
+    if ((method === 'PUT' || method === 'POST') && path === '/rules') {
+      // Faithful to Maintainerr updateRules/validateRule: it validates each rule as a DECODED RuleDto
+      // (reads firstVal/action) and NEVER decodes ruleJson. A round-tripped DB entity (still carrying
+      // a string `ruleJson`, no firstVal) fails validation → ReturnStatus {code:0}; decoded rules pass.
+      // An EMPTY rules[] skips the loop entirely (→ code:1), which is why the pre-fix e2e never caught
+      // the bug. The confined write client fails closed on code:0 (P1a) → BAD_GATEWAY.
+      const dtoRules = Array.isArray((body as { rules?: unknown }).rules)
+        ? ((body as { rules: unknown[] }).rules)
+        : [];
+      const undecoded = dtoRules.some(
+        (r) =>
+          r !== null &&
+          typeof r === 'object' &&
+          typeof (r as { ruleJson?: unknown }).ruleJson === 'string',
+      );
+      return ok(
+        undecoded
+          ? { code: 0, result: 'First value is not available for this server' }
+          : { code: 1, result: 'Success' },
+        method === 'POST' ? 201 : 200,
+      );
+    }
     return new Response(JSON.stringify({ message: `no stub for ${key}` }), { status: 404 });
   }) as typeof fetch;
 
@@ -161,6 +186,7 @@ const baseState = (over: Partial<MaintState> = {}): MaintState => ({
   reachable: true,
   exclusions: new Set(),
   collections: [],
+  rules: [],
   fail: new Set(),
   logicalFail: new Set(),
   ...over,
@@ -601,5 +627,155 @@ describe('listRecentlyDeleted + restore music rejection (ADR-023 D-02 / R-87)', 
         actorId: null,
       }),
     ).rejects.toBeInstanceOf(TrashMusicUnsupportedError);
+  });
+});
+
+// Live-repro fix (2026-07-06, plan-006 live validation) — Bug 1: the Rules-tab arm/disarm 502.
+// GET /api/rules returns each group's rules[] as the DB ENTITY shape (RuleDbDto: an ENCODED `ruleJson`
+// string), but PUT /api/rules validates each rule as a DECODED RuleDto (firstVal/action). Round-tripping
+// the GET object verbatim makes Maintainerr's validateRule fail → ReturnStatus {code:0} → the write
+// client's P1a hardening throws → BAD_GATEWAY. upsertTrashRule now decodes ruleJson → RuleDto first.
+describe('upsertTrashRule — GET→PUT rule-shape reconciliation (Bug 1, live-repro fix)', () => {
+  /** A rule group exactly as GET /api/rules returns it: rules[] carry an encoded `ruleJson`, NOT the
+   *  decoded RuleDto fields PUT validates. Non-empty rules[] is what triggers the upstream failure. */
+  const getShapedRule = () => ({
+    id: 11,
+    libraryId: 1,
+    name: 'Purge stale movies',
+    description: 'Unwatched 4K movies older than 90 days',
+    isActive: true,
+    arrAction: 0,
+    useRules: true,
+    dataType: 1,
+    collection: { id: 7, deleteAfterDays: 30 },
+    rules: [
+      {
+        id: 1,
+        ruleGroupId: 11,
+        section: 0,
+        isActive: true,
+        ruleJson: JSON.stringify({ operator: null, action: 0, firstVal: [0, 3], lastVal: [0, 4], section: 0 }),
+      },
+      {
+        id: 2,
+        ruleGroupId: 11,
+        section: 0,
+        isActive: true,
+        ruleJson: JSON.stringify({ operator: 1, action: 2, firstVal: [2, 0], customVal: { ruleTypeId: 0, value: '90' }, section: 0 }),
+      },
+    ],
+  });
+
+  it('FAIL-BEFORE: PUTting the raw GET shape (undecoded ruleJson) is rejected upstream (the live 502)', async () => {
+    const { bundle } = makeMaintainerr(baseState());
+    // The pre-fix path handed the GET object straight to the confined write client.
+    await expect(
+      bundle.write.updateRuleGroup({ ...getShapedRule(), isActive: false }),
+    ).rejects.toThrow(/logical failure|code 0/i);
+  });
+
+  it('PASS-AFTER: upsertTrashRule decodes ruleJson → RuleDto so the round-trip succeeds', async () => {
+    const { bundle, calls } = makeMaintainerr(baseState());
+    await expect(
+      upsertTrashRule({ maintainerr: bundle, payload: { ...getShapedRule(), isActive: false } }),
+    ).resolves.toBeUndefined();
+
+    const put = calls.find((c) => c.method === 'PUT' && c.pathname === '/rules');
+    expect(put).toBeDefined();
+    const sent = put!.body as { id: number; isActive: boolean; rules: Array<Record<string, unknown>> };
+    expect(sent).toMatchObject({ id: 11, isActive: false });
+    expect(sent.rules).toHaveLength(2);
+    for (const r of sent.rules) {
+      // decoded RuleDto shape — the encoded string is gone; the fields updateRules validates are present.
+      expect(r).not.toHaveProperty('ruleJson');
+      expect(r).toHaveProperty('firstVal');
+      expect(r).toHaveProperty('section');
+    }
+  });
+
+  it('an EMPTY rules[] round-trips even undecoded (why the old rules: [] stub never caught it)', async () => {
+    const { bundle } = makeMaintainerr(baseState());
+    await expect(
+      upsertTrashRule({ maintainerr: bundle, payload: { id: 11, isActive: false, rules: [] } }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('leaves rules already in decoded RuleDto shape untouched (idempotent)', async () => {
+    const { bundle, calls } = makeMaintainerr(baseState());
+    const decoded = { operator: null, action: 0, firstVal: [0, 3], lastVal: [0, 4], section: 0 };
+    await expect(
+      upsertTrashRule({ maintainerr: bundle, payload: { id: 11, isActive: false, rules: [decoded] } }),
+    ).resolves.toBeUndefined();
+    const put = calls.find((c) => c.method === 'PUT' && c.pathname === '/rules')!;
+    expect((put.body as { rules: unknown[] }).rules[0]).toMatchObject(decoded);
+  });
+});
+
+// Live-repro fix (2026-07-06) — Bug 2: a Maintainerr exclusion made OUTSIDE this session must show as
+// Protected in the pending list before its `dnd` tag round-trips into arrTags. listTrashPending with
+// `includeLiveExclusions` consults the live exclusion set (per-item mediaServerId reads) and sets
+// `protectedByExclusion`, which the UI ORs with protectedByTag.
+describe('listTrashPending — live exclusion reflected in the pending list (Bug 2, live-repro fix)', () => {
+  let t: TestDb;
+
+  beforeAll(async () => {
+    t = await bootMigratedDb();
+    // A cold, ledger-known movie with NO dnd tag (arrTags empty) — protectedByTag stays false.
+    await upsertMediaItemsBatch({
+      db: t.db,
+      arrKind: 'radarr',
+      items: [
+        { arrItemId: 91, tmdbId: 9101, title: 'Excluded Elsewhere', sortTitle: 'excluded elsewhere', monitored: true, qualityProfileId: 1, qualityProfileName: 'Any', rootFolder: '/movies', arrTags: [] },
+      ],
+    });
+  });
+  afterAll(async () => t?.stop());
+
+  const oneItemState = (over: Partial<MaintState> = {}) =>
+    baseState({
+      collections: [
+        {
+          id: 7,
+          isActive: true,
+          deleteAfterDays: 30,
+          type: 'movie',
+          title: 'Least watched movies',
+          items: [{ mediaServerId: 'ms-9101', tmdbId: 9101, sizeBytes: 1_000_000_000, addDate: '2026-06-01T00:00:00Z' }],
+        },
+      ],
+      ...over,
+    });
+
+  it('protectedByExclusion is TRUE for a live-excluded item (tag not yet synced) when opted in', async () => {
+    const { bundle, calls } = makeMaintainerr(oneItemState({ exclusions: new Set(['ms-9101']) }));
+    const res = await listTrashPending({
+      db: t.db,
+      maintainerr: bundle,
+      media: 'movie',
+      includeLiveExclusions: true,
+    });
+    const item = res.items.find((i) => i.maintainerrMediaId === 'ms-9101')!;
+    expect(item.protectedByTag).toBe(false); // no dnd tag synced
+    expect(item.protectedByExclusion).toBe(true); // but live-excluded ⇒ Protected
+    // the live exclusion set was consulted (per-item mediaServerId read — no bulk endpoint exists).
+    expect(calls.some((c) => c.method === 'GET' && c.pathname === '/rules/exclusion' && c.query.mediaServerId === 'ms-9101')).toBe(true);
+  });
+
+  it('protectedByExclusion is FALSE when the item is NOT live-excluded', async () => {
+    const { bundle } = makeMaintainerr(oneItemState());
+    const res = await listTrashPending({
+      db: t.db,
+      maintainerr: bundle,
+      media: 'movie',
+      includeLiveExclusions: true,
+    });
+    expect(res.items[0]!.protectedByExclusion).toBe(false);
+  });
+
+  it('does NOT read the exclusion list when includeLiveExclusions is off (internal expedite/guardian path)', async () => {
+    const { bundle, calls } = makeMaintainerr(oneItemState({ exclusions: new Set(['ms-9101']) }));
+    const res = await listTrashPending({ db: t.db, maintainerr: bundle, media: 'movie' });
+    expect(res.items[0]!.protectedByExclusion).toBe(false);
+    expect(calls.some((c) => c.pathname === '/rules/exclusion')).toBe(false);
   });
 });

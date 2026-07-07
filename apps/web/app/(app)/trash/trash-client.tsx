@@ -86,6 +86,7 @@ interface PendingItem {
   title: string;
   year: number | null;
   protectedByTag: boolean;
+  protectedByExclusion: boolean;
   recentlyWatched: boolean;
   requesters: string[];
   sourceCollections: string[];
@@ -321,7 +322,9 @@ function PendingTab({
       item.maintainerrMediaId === null ? undefined : shieldOverrides.get(item.maintainerrMediaId);
     if (o === 'saved') return true;
     if (o === 'unsaved') return false;
-    return item.protectedByTag;
+    // tag OR live Maintainerr exclusion (D-08/D-09) — an exclusion made outside this session shows
+    // Protected before its `dnd` tag round-trips into arrTags.
+    return item.protectedByTag || item.protectedByExclusion;
   };
 
   // ── client-side shaping (filter → sort) over the full pending set ──

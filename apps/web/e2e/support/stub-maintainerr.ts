@@ -115,7 +115,9 @@ function freshCollections(): StubCollection[] {
   ];
 }
 
-/** One armed rule group (round-trippable RulesDto shell — the Rules tab lists/arms/deletes it). */
+/** One armed rule group as GET /api/rules serves it. `rules[]` is the DB ENTITY shape (RuleDbDto:
+ *  an ENCODED `ruleJson` string), NOT the decoded RuleDto that PUT /api/rules validates — the exact
+ *  shape mismatch that 502'd the live arm/disarm (a rule with `rules: []` slipped past the old stub). */
 function freshRules(): Array<Record<string, unknown>> {
   return [
     {
@@ -126,9 +128,32 @@ function freshRules(): Array<Record<string, unknown>> {
       dataType: 1,
       libraryId: 1,
       collection: { id: 7, deleteAfterDays: 30 },
-      rules: [],
+      rules: [
+        {
+          id: 1,
+          ruleGroupId: 11,
+          section: 0,
+          isActive: true,
+          ruleJson: JSON.stringify({ operator: null, action: 0, firstVal: [0, 3], lastVal: [0, 4], section: 0 }),
+        },
+      ],
     },
   ];
+}
+
+/** Re-encode a decoded RuleDto[] back to the DB entity shape (RuleDbDto with `ruleJson`) so a stored
+ *  rule GET keeps serving the shape a fresh round-trip must decode — exactly like Maintainerr. */
+function encodeRules(ruleGroupId: number, decoded: unknown[]): Array<Record<string, unknown>> {
+  return decoded.map((r, i) => {
+    const rule = (r ?? {}) as Record<string, unknown>;
+    return {
+      id: i + 1,
+      ruleGroupId,
+      section: typeof rule.section === 'number' ? rule.section : 0,
+      isActive: true,
+      ruleJson: JSON.stringify(rule),
+    };
+  });
 }
 
 const ALL_APPLICATIONS = [
@@ -188,6 +213,16 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
         res.writeHead(204);
         return res.end();
       }
+      // Pre-seed a live exclusion WITHOUT going through the app's save flow — simulates an exclusion
+      // created outside the current session (its `dnd` tag has not synced into arrTags). Bug 2: the
+      // pending list must still show it Protected (protectedByExclusion), not wait for the tag.
+      if (url.pathname === '/_stub/exclude' && method === 'POST') {
+        const body = JSON.parse(await readBody(req)) as { mediaServerId: string; excluded?: boolean };
+        if (body.excluded === false) exclusions.delete(body.mediaServerId);
+        else exclusions.add(body.mediaServerId);
+        res.writeHead(204);
+        return res.end();
+      }
 
       if (method === 'POST' || method === 'DELETE' || method === 'PUT' || method === 'PATCH') {
         const raw = await readBody(req);
@@ -213,11 +248,28 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
           return json(res, 201, {});
         }
         if ((method === 'POST' || method === 'PUT') && path === '/rules') {
-          const dto = body as Record<string, unknown>;
-          if (method === 'PUT' && typeof dto?.id === 'number') {
-            rules = rules.map((r) => (r.id === dto.id ? { ...r, ...dto } : r));
+          const dto = body as { id?: unknown; rules?: unknown };
+          const dtoRules = Array.isArray(dto.rules) ? dto.rules : [];
+          // Faithful to Maintainerr updateRules/validateRule: rules[] must be the DECODED RuleDto
+          // shape (it never decodes ruleJson). A round-tripped DB entity (still carrying `ruleJson`)
+          // fails validation → ReturnStatus {code:0} → the app fails closed (BAD_GATEWAY). This is
+          // the live 502 the fix addresses; a rule with `rules: []` (the OLD fixture) never hit it.
+          const undecoded = dtoRules.some(
+            (r) => r !== null && typeof r === 'object' && typeof (r as { ruleJson?: unknown }).ruleJson === 'string',
+          );
+          if (undecoded) {
+            return json(res, 200, { code: 0, result: 'First value is not available for this server' });
           }
-          return json(res, 201, { code: 1 });
+          if (method === 'PUT' && typeof dto.id === 'number') {
+            // Store the merge, re-encoding rules to the DB shape so a subsequent GET (re-arm) again
+            // exercises the decode.
+            rules = rules.map((r) =>
+              r.id === dto.id
+                ? { ...r, ...(body as object), rules: encodeRules(dto.id as number, dtoRules) }
+                : r,
+            );
+          }
+          return json(res, 200, { code: 1 });
         }
         if (method === 'DELETE' && /^\/rules\/\d+$/.test(path)) {
           const id = Number(path.split('/').pop());
