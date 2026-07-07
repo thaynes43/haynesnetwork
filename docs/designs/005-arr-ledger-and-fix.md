@@ -129,7 +129,7 @@ have no Seerr attribution path (Q-02).
 | Child list (fix target picker) | `GET /episode?seriesId=` | — (movie is the target) | `GET /album?artistId=` |
 | Paged history | `GET /history?page=&pageSize=&sortKey=date&sortDirection=descending` | same | same |
 | Incremental history | `GET /history/since?date=&eventType=` | same | same |
-| Queue (fix-in-flight display) | *deferred — NOT implemented* (no `queue` read method in `packages/arr/src/read.ts`; kept in this inventory as a future spot-check surface only) | — | — |
+| Queue (action-feedback progress — PLAN-015 / D-20; read-only, join by `episodeId`/`movieId`/`albumId`) | `GET /queue?seriesIds=&pageSize=200` | `GET /queue?movieIds=&pageSize=200` | `GET /queue?artistIds=&pageSize=200` (`/api/v1`) |
 | Latest grab for a target | `GET /history?episodeId=&eventType=1` (integer enum; `grabbed`=1) | `GET /history/movie?movieId=&eventType=grabbed` (tolerant path — string OK) | `GET /history?albumId=&eventType=1` (integer enum; `grabbed`=1) |
 | Profiles / folders / tags | `GET /qualityprofile`, `GET /rootfolder`, `GET /tag` | same | same (+ metadata profile via item fields) |
 | Wanted (spot checks) | `GET /wanted/missing?page=` (episode-level) | `GET /wanted/missing?page=` (movie-level) | `GET /wanted/missing?page=` (album-level) |
@@ -1107,6 +1107,126 @@ untouched."), a three-way with the blocklist/delete copy.
 `'bazarr_subtitle'` (D-13). e2e adds a stub Bazarr server (`apps/web/e2e/support/stub-bazarr.ts`)
 wired into the harness so `pnpm dev:local` and the Playwright suite drive the subtitle Fix
 hermetically.
+
+### D-20 Action-feedback progress model (ADR-028, PLAN-015)
+
+The layer between `search_triggered` and `completed`: a **read-only, poll-on-demand projection**
+that turns a Fix row (or the latest Force-Search event) + the *arr's live download queue + the
+sync-ingested ledger milestones into a user-facing **Action Progress Phase** (T-90). Nothing here
+writes; `FIX_STATUSES`/`LEDGER_EVENT_TYPES` are unchanged — no migration.
+
+**The phase state machine (nine phases).**
+
+```
+searching → queued → grabbed → downloading → importing → completed        (the happy path)
+     └──────────────────────────── nothing_found | stalled | failed        (the never-stuck terminals)
+```
+
+- `searching` — the wire-ack (the mutation resolved; the *arr accepted the command).
+- `queued` — a queue record exists but the client is waiting (`status ∈ {queued,delay,paused}`, or a
+  transient warning).
+- `grabbed` — a `grabbed` milestone landed but the target isn't in the queue yet.
+- `downloading` — a live queue record is pulling bytes; `progressPct = round((size - sizeleft)/size·100)`,
+  `etaSeconds` from `estimatedCompletionTime`.
+- `importing` — `trackedDownloadState ∈ {importing, importPending}`.
+- `completed` — a matching `imported` milestone (or the durable row already `completed`).
+- `nothing_found` — no grab + no queue record within the **15-min found-nothing window**.
+- `stalled` — a non-terminal action past the **45-min stalled threshold** with no activity, OR a live
+  record with `trackedDownloadStatus:'error'` / `importBlocked` / `importFailed` (immediate). Carries a
+  retry affordance (re-issue the same action).
+- `failed` — the fix row is `failed`, or a `download_failed` milestone with an empty queue.
+
+**Derivation table** (single target — `(row status | search event) × queue × history → phase`, in
+precedence order; `derivePhaseForTarget` / `phaseFromQueueRecord` in
+`packages/domain/src/action-progress.ts`):
+
+| Condition | Phase |
+|---|---|
+| fix row `status = failed` | `failed` |
+| fix row `status = completed` OR a matching `imported` milestone | `completed` (pct 100) |
+| `path_taken = 'bazarr_subtitle'` | `searching` ("subtitles requested"; never stalls) |
+| `download_failed` milestone + empty queue | `failed` |
+| queue record `trackedDownloadState ∈ {failed, failedPending}` / `status = failed` | `failed` |
+| queue record `trackedDownloadStatus = 'error'` | `stalled` (message) |
+| queue record `trackedDownloadState ∈ {importing, importPending}` | `importing` |
+| queue record `trackedDownloadState = imported` | `completed` |
+| queue record `trackedDownloadState ∈ {importBlocked, importFailed, ignored}` | `stalled` (message) |
+| queue record `status ∈ {queued, delay, paused}` | `queued` |
+| queue record downloading (`status`/`state = downloading`) | `downloading` (pct, eta) |
+| queue record `status = completed` (download done) | `importing` |
+| no queue, a `grabbed` milestone, silent < 45 min | `grabbed` |
+| no queue, a `grabbed` milestone, silent ≥ 45 min | `stalled` |
+| no queue, no grab, age < 15 min | `searching` |
+| no queue, no grab, age ≥ 15 min | `nothing_found` |
+
+**The queue client (D-03 Queue row).** `getQueue(parentId?)` on the Sonarr/Radarr/Lidarr read
+clients (`packages/arr/src/read.ts`), `GET /api/v3|v1/queue` filtered server-side by
+`seriesIds`/`movieIds`/`artistIds` (**verified live 2026-07-07**; the app pod read the real queues
+read-only). `queueRecordBaseSchema` (`schemas/common.ts`) zod-schemas only the consumed subset
+(BC-03 ACL). Read side only — the D-12/D-18 `@hnet/arr/write` confinement is untouched.
+
+**The projectors + procedures.** `computeFixProgress({fixRequestId, requesterId, requesterIsAdmin})`
+and `computeSearchProgress({mediaItemId, scope, targetChildId?, seasonNumber?, requesterId, …})`
+(`packages/domain/src/action-progress.ts`) each do exactly **one** live *arr read (the queue) + one
+cheap `ledger_events` read of the milestones, then derive. Surfaced as tRPC **queries**
+`fix.progress` / `fix.searchProgress` (`authedProcedure`; own-fix/own-search or admin, else
+`NOT_FOUND` — no leak; kept on the fix router, which already owns `forceSearch`). Errors flow through
+`mapDomainErrors` (`ARR_UPSTREAM_UNAVAILABLE` on a queue read failure — fail-closed to a transient
+phase, never a false terminal).
+
+**The client poll contract (for the Fable UX follow-up).** The browser polls the progress query via
+`refetchInterval` **only while a progress surface is mounted and the phase is non-terminal**; it stops
+on a terminal phase or when the surface unmounts. No server-side poller, no cron, no webhook/SSE in v1.
+
+**Projection vs. authority (mermaid, read-only — mirrors D-15 but never mutates):**
+
+```
+client ──poll──▶ fix.progress / fix.searchProgress
+                        │
+                        ├─▶ arr.read.<kind>.getQueue(parentId)     (the one live *arr read)
+                        └─▶ ledger_events (grabbed/imported/download_failed since the anchor)
+                        ▼
+                 derivePhaseForTarget → Action Progress Phase
+```
+
+The derived `completed` may lead the durable row: the projection reads a matching import live, before
+`completeFixRequests` (D-15) flips `fix_requests.status` on the next sync. The cron matcher stays the
+durable writer; the phase is a view. `computeFixProgress` treats the row's own terminals as authority.
+
+### D-21 Roll-up cascade + the UI feedback states (ADR-014/015 discipline)
+
+**Per-child mapping.** For a season / artist action the projector resolves the touched children via
+`listMediaChildren` (D-06) — episodes filtered to `MediaChildTarget.seasonNumber` for a season; the
+artist's albums for an artist — maps each child's queue records (keyed on `episodeId`/`albumId`) +
+milestones to a per-child phase, and returns `perChild: [{childId, label, phase, progressPct}]`. The
+**headline** phase is the **least-advanced non-terminal** child (`rollupHeadlinePhase`); all-terminal
+resolves to `completed` if any child imported, else `stalled`, else `nothing_found`. Overall
+`progressPct` sums size/sizeleft across every child's queue records. A whole-show Force Search is a
+headline over the series queue (no per-episode fan-out — too many episodes).
+
+**The wire contract for the Fable UX agent** (`ActionProgress`):
+
+```ts
+{ phase: 'queued'|'searching'|'grabbed'|'downloading'|'importing'
+        |'completed'|'nothing_found'|'stalled'|'failed';
+  progressPct?: number;   // 0–100, from size/sizeleft
+  etaSeconds?: number;    // downloading only, from estimatedCompletionTime
+  perChild?: { childId: number; label: string; phase: ActionPhase; progressPct?: number }[];
+  message?: string; }     // the stall/terminal reason
+```
+
+**The UI states (Fable follow-up — not built in this backend vertical).** The inline in-flight
+chip/progress meter beside the Fix/Force-Search buttons (`item-detail.tsx`); the live phase in item
+History and My Fixes; the Fix-button open-fix disable (surfacing the already-enforced
+`FixAlreadyOpenError` — hard rule so the click can no longer error). **Hard rule 9 (ADR-015):**
+progress renders in **reserved space** and deepens color / advances a meter but **never** reflows or
+reorients neighbors — the action slot reserves width for the widest state ("Downloading 100%" /
+"Nothing found"), exactly as the ConfirmButton reserves the armed-label width (ADR-014). The
+Fix/Force-Search entry points stay `Modal`s (multi-field/explanatory), never `window.confirm`.
+
+**e2e.** `apps/web/e2e/support/stub-arr.ts` gains a scriptable `GET /api/v3/queue` + a `POST
+/_stub/queue` control (server-side filtered by the parent id) so a Playwright spec can drive
+queued → downloading → importing → empty-after-import deterministically once the UX lands.
 
 ## Alternatives considered
 

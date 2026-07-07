@@ -254,7 +254,8 @@ describe('computeFixProgress / computeSearchProgress (projectors)', () => {
     t = await bootMigratedDb();
     memberId = (await createUser(t.db, { email: 'ap-member@example.com' })).id;
     otherId = (await createUser(t.db, { email: 'ap-other@example.com' })).id;
-    adminId = (await createUser(t.db, { email: 'ap-admin@example.com', admin: true })).id;
+    // Any user id — the admin READ path is driven by the requesterIsAdmin flag, not the row's role.
+    adminId = (await createUser(t.db, { email: 'ap-admin@example.com' })).id;
     await upsertMediaItemsBatch({
       db: t.db,
       arrKind: 'sonarr',

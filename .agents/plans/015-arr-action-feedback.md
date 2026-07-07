@@ -1,6 +1,18 @@
 # PLAN-015: Downstream *arr action feedback (live status)
 
-- **Status:** Draft
+- **Status:** Executing
+  <!-- Backend vertical built on branch feat/arr-feedback (2026-07-07): queue read client
+       (getQueue, verified live), the action-progress projectors (computeFixProgress /
+       computeSearchProgress), fix.progress / fix.searchProgress queries, the e2e queue stub,
+       and the docs (ADR-028, DESIGN-005 D-20/D-21, glossary T-90..T-93, PRD R-106/R-107).
+       NUMBERING TAKEN (the plan's placeholders were superseded): ADR-028; DESIGN-005 D-20/D-21;
+       glossary T-90/T-91/T-92/T-93; PRD R-106/R-107; NO migration (derive-not-persist). The
+       progress UI (chips/bars on Fix + Force-Search, live My Fixes phases, the roll-up child
+       display, the Fix-button open-fix disable) is a separate Fable UX follow-up. -->
+- **Reconciled identifiers (2026-07-07):** the plan's NEXT-FREE-AT-AUTHORING placeholders
+  (ADR-025, DESIGN-005 D-20/D-21, T-75..T-78, R-88/R-89) were consumed by plans that landed
+  first. Actual numbers taken: **ADR-028**, **DESIGN-005 D-20/D-21** (D-19 was the ceiling),
+  **glossary T-90..T-93** (T-89 ceiling), **PRD R-106/R-107** (R-105 ceiling). No migration.
 - **Satisfies:** PRD-001 new **R-88/R-89** (+ dated notes under R-43/R-46/R-47), new **ADR-025**
   (the feedback / on-demand-polling model), DESIGN-005 new **D-20**/**D-21** (+ a `/queue` row on
   the D-03 endpoint inventory, line 122), DDD new **T-75..T-78**.
