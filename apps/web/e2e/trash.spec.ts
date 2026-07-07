@@ -1,9 +1,11 @@
 // ADR-023 / DESIGN-010 end to end — the Trash section, the app's ONLY user-facing deletion
 // surface: the safety banner (safe / integration-down states, destructive controls disabling),
-// the Movies/TV pending tables (badges + the filter-aware reclaim footer), Save → protected →
-// un-save through the shield (stub-verified exclusion calls), the Expedite Modal with its
-// deleted / protected / skipped partition (per-item /collections/media/handle calls ONLY —
-// the estate-wide /collections/handle must be ABSENT, C-07a), the stale "no longer safe"
+// the Movies/TV pending POSTER WALLS (2026-07-07 — the tables retired; corner shield/trash-can
+// glyphs, tile tooltips, the filter-aware reclaim counts bar above the wall, poster tap ⇒
+// /library/[id]), Save → protected → un-save through the shield corner (stub-verified exclusion
+// calls; a protection made OUTSIDE the session renders the inert check), the Expedite Modal
+// with its deleted / protected / skipped partition (per-item /collections/media/handle calls
+// ONLY — the estate-wide /collections/handle must be ABSENT, C-07a), the stale "no longer safe"
 // refusal, Recently-Deleted → Restore, the Rules list (arm/disarm/delete — on /settings/trash
 // since ADR-032, reached from the user menu at Trash Edit level), the Activity feed, the
 // /admin/roles per-action grid, and role gating (disabled ⇒ no nav; a save-only role can't
@@ -50,7 +52,7 @@ async function seedExclusion(page: Page, mediaServerId: string): Promise<void> {
 
 async function openTrashMovies(page: Page): Promise<void> {
   await page.goto('/trash');
-  await expect(page.getByTestId('trash-row').filter({ hasText: 'Vanished Heist' })).toHaveCount(1);
+  await expect(page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' })).toHaveCount(1);
 }
 
 /** Assign the Marge Member persona's user to a role by name (admin user-detail select). */
@@ -95,7 +97,7 @@ test.describe('trash section (DESIGN-010)', () => {
     await expect(page.getByTestId('trash-unavailable')).toBeVisible();
   });
 
-  test('safety banner is green when SAFE; Movies/TV pending tables show badges + the reclaim footer', async ({
+  test('safety banner is green when SAFE; Movies/TV pending WALLS carry the glyphs, tooltips + the reclaim counts bar', async ({
     page,
   }) => {
     await resetMaintainerr(page);
@@ -113,72 +115,112 @@ test.describe('trash section (DESIGN-010)', () => {
     await expect(page.getByRole('tab', { name: 'Music' })).toHaveCount(0);
     await expect(page.getByRole('tab', { name: 'Rules' })).toHaveCount(0);
 
-    // Movies: all four pending fixtures, each with its guardian badge.
-    await expect(page.getByTestId('trash-row')).toHaveCount(4);
-    const fixture = page.getByTestId('trash-row').filter({ hasText: 'The Fixture' });
-    await expect(fixture.getByTestId('badge-watched')).toBeVisible();
-    const runner = page.getByTestId('trash-row').filter({ hasText: 'Stub Runner' });
-    await expect(runner.getByTestId('badge-protected')).toBeVisible();
-    const unknown = page.getByTestId('trash-row').filter({ hasText: 'tmdb:990009' });
-    await expect(unknown.getByTestId('badge-unverified')).toBeVisible();
-    const vanished = page.getByTestId('trash-row').filter({ hasText: 'Vanished Heist' });
-    await expect(vanished.locator('.badge')).toHaveCount(0); // cold — no protection badge
+    // Movies: all four pending fixtures as poster tiles; the table is gone.
+    await expect(page.getByTestId('trash-tile')).toHaveCount(4);
+    await expect(page.getByTestId('trash-tablewrap')).toHaveCount(0);
 
-    // Scheduled-delete column: a date plus the days-left pill.
-    await expect(vanished.locator('.trash-days')).toBeVisible();
-
-    // Ledger-joined titles link to the library detail; the unknown item has no link.
-    await expect(fixture.locator('a.ledger-title')).toHaveAttribute(
-      'href',
-      /^\/library\/[0-9a-f-]{36}$/,
+    // The watched fixture: shield outline (watched ≠ protected); the guardian fact + the
+    // scheduled date live in the tile tooltip now (the old Status/Deletes columns).
+    const fixture = page.getByTestId('trash-tile').filter({ hasText: 'The Fixture' });
+    await expect(fixture.getByTestId('trash-shield')).toHaveAttribute('data-glyph', 'outline');
+    await expect(fixture.getByTestId('trash-tile-poster')).toHaveAttribute(
+      'title',
+      /Recently watched/,
     );
-    await expect(unknown.locator('a.ledger-title')).toHaveCount(0);
 
-    // The total-space footer: 4+8+2+1 GiB = 15 GB across 4 items.
+    // The dnd-tagged fixture: the inert protected CHECK — state reads, but it is NOT a button
+    // (protection made outside this session can't be un-saved from the wall).
+    const runner = page.getByTestId('trash-tile').filter({ hasText: 'Stub Runner' });
+    await expect(runner.getByTestId('trash-shield')).toHaveAttribute('data-glyph', 'check');
+    await expect(runner.locator('button[data-testid="trash-shield"]')).toHaveCount(0);
+
+    // The unknown item: no library link (span poster), and the tooltip says why.
+    const unknown = page.getByTestId('trash-tile').filter({ hasText: 'tmdb:990009' });
+    await expect(unknown.locator('a[data-testid="trash-tile-poster"]')).toHaveCount(0);
+    await expect(unknown.getByTestId('trash-tile-poster')).toHaveAttribute(
+      'title',
+      /Not in our ledger/,
+    );
+
+    // The cold item: plain outline shield; the tooltip carries the delete date + days left.
+    const vanished = page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' });
+    await expect(vanished.getByTestId('trash-shield')).toHaveAttribute('data-glyph', 'outline');
+    await expect(vanished.getByTestId('trash-tile-poster')).toHaveAttribute('title', /Deletes /);
+
+    // The reclaim counts bar sits ABOVE the wall: 4+8+2+1 GiB = 15 GB across 4 items.
     await expect(page.getByTestId('trash-total')).toHaveText('Reclaiming 15 GB across 4 items');
+    const barBox = (await page.getByTestId('trash-total').boundingBox())!;
+    const wallBox = (await page.getByTestId('trash-wall').boundingBox())!;
+    expect(barBox.y).toBeLessThan(wallBox.y);
 
-    // Filter-aware: Genre=Action keeps only Stub Runner and the footer says so.
+    // The sort bar replaces the table headers (same ?sort contract): Size ⇒ biggest first.
+    await page.getByRole('group', { name: 'Sort' }).getByRole('button', { name: 'Size' }).click();
+    await expect(page).toHaveURL(/sort=size%3Adesc|sort=size:desc/);
+    await expect(page.getByTestId('trash-tile').first()).toContainText('Stub Runner');
+    await page
+      .getByRole('group', { name: 'Sort' })
+      .getByRole('button', { name: 'Deletes' })
+      .click(); // back to the soonest-deleting default (the token leaves the URL)
+    await expect(page).not.toHaveURL(/sort=/);
+
+    // Filter-aware: Genre=Action keeps only Stub Runner and the counts bar says so.
     await page.getByTitle('Edit the Genre filter').click();
     await page
       .getByRole('dialog', { name: 'Edit the Genre filter' })
       .getByLabel('Action', { exact: true })
       .click();
     await page.keyboard.press('Escape');
-    await expect(page.getByTestId('trash-row')).toHaveCount(1);
+    await expect(page.getByTestId('trash-tile')).toHaveCount(1);
     await expect(page.getByTestId('trash-total')).toHaveText(
       'Reclaiming 8.0 GB across 1 item · filtered from 4 pending',
     );
     await expect(page).toHaveURL(/genre=Action/);
 
-    // TV is a separate tab (never combined): Breaking Prod, requested → protected.
+    // A poster tap opens the item's library page (history/fix live there).
+    await page.getByRole('tab', { name: 'Movies' }).click(); // clears the filter (keeps ?tab)
+    await expect(page.getByTestId('trash-tile')).toHaveCount(4);
+    await fixture.getByTestId('trash-tile-poster').click();
+    await page.waitForURL(/\/library\/[0-9a-f-]{36}$/);
+    await page.goBack();
+
+    // TV is a separate tab (never combined): Breaking Prod, requested → tooltip fact.
     await page.getByRole('tab', { name: 'TV' }).click();
     await expect(page).toHaveURL(/\/trash\?tab=tv$/); // tab switch keeps ONLY ?tab
-    const tvRow = page.getByTestId('trash-row').filter({ hasText: 'Breaking Prod' });
-    await expect(tvRow).toHaveCount(1);
-    await expect(tvRow.getByTestId('badge-requested')).toBeVisible();
+    const tvTile = page.getByTestId('trash-tile').filter({ hasText: 'Breaking Prod' });
+    await expect(tvTile).toHaveCount(1);
+    await expect(tvTile.getByTestId('trash-tile-poster')).toHaveAttribute('title', /Requested by/);
     await expect(page.getByTestId('trash-total')).toHaveText('Reclaiming 20 GB across 1 item');
   });
 
-  test('Save → protected → un-save: the shield drives Maintainerr exclusion calls (stub-verified)', async ({
+  test('Save → protected → un-save: the shield corner drives Maintainerr exclusion calls (stub-verified)', async ({
     page,
   }) => {
     await resetMaintainerr(page);
     await signIn(page, 'admin');
     await openTrashMovies(page);
 
-    const vanished = page.getByTestId('trash-row').filter({ hasText: 'Vanished Heist' });
+    const vanished = page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' });
     const shield = vanished.getByTestId('trash-shield');
-    await expect(shield).not.toHaveAttribute('data-on', 'true');
+    await expect(shield).toHaveAttribute('data-glyph', 'outline');
 
-    // Save (protective — plain toggle, no confirm): the row turns Protected.
+    // Save (protective — plain optimistic toggle, no confirm): the corner flips to the filled
+    // "saved by you" shield in place — the tile never moves (ADR-015). Wait out the wire call:
+    // the wall swallows taps while a flip is in flight (no queued double-toggles).
+    const before = (await vanished.boundingBox())!;
+    const saveSettled = page.waitForResponse((r) => r.url().includes('trash.saveExclusion'));
     await shield.click();
-    await expect(shield).toHaveAttribute('data-on', 'true');
-    await expect(vanished.getByTestId('badge-protected')).toBeVisible();
+    await expect(shield).toHaveAttribute('data-glyph', 'shield');
+    await expect(shield).toHaveAttribute('aria-pressed', 'true');
+    await saveSettled;
+    const after = (await vanished.boundingBox())!;
+    expect(Math.abs(after.x - before.x)).toBeLessThan(1);
+    expect(Math.abs(after.y - before.y)).toBeLessThan(1);
 
-    // Un-save puts it back under the rules.
+    // Un-save puts it back under the rules (your own save stays un-savable from the wall).
+    const unsaveSettled = page.waitForResponse((r) => r.url().includes('trash.removeExclusion'));
     await shield.click();
-    await expect(shield).not.toHaveAttribute('data-on', 'true');
-    await expect(vanished.getByTestId('badge-protected')).toHaveCount(0);
+    await expect(shield).toHaveAttribute('data-glyph', 'outline');
+    await unsaveSettled;
 
     // The stub saw exactly the sanctioned writes: one exclusion add, one exclusion delete.
     const calls = await maintainerrCalls(page);
@@ -193,9 +235,10 @@ test.describe('trash section (DESIGN-010)', () => {
 
   // Bug 2 (live-repro fix) — an exclusion created OUTSIDE this session (no `dnd` tag synced yet) must
   // still render Protected in the pending list; the pending read ORs the LIVE exclusion set into the
-  // badge. Vanished Heist is the cold, unbadged fixture (see the pending-table test), so a pre-seeded
-  // exclusion for it is a clean before/after.
-  test('a live exclusion made outside the session shows Protected before the dnd tag syncs', async ({
+  // signal. Vanished Heist is the cold outline-shield fixture (see the wall test), so a pre-seeded
+  // exclusion for it is a clean before/after — and it must render as the INERT check (the wall never
+  // un-saves protection it didn't make).
+  test('a live exclusion made outside the session shows the inert protected check before the dnd tag syncs', async ({
     page,
   }) => {
     await resetMaintainerr(page);
@@ -203,8 +246,9 @@ test.describe('trash section (DESIGN-010)', () => {
     await signIn(page, 'admin');
     await openTrashMovies(page);
 
-    const vanished = page.getByTestId('trash-row').filter({ hasText: 'Vanished Heist' });
-    await expect(vanished.getByTestId('badge-protected')).toBeVisible();
+    const vanished = page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' });
+    await expect(vanished.getByTestId('trash-shield')).toHaveAttribute('data-glyph', 'check');
+    await expect(vanished.locator('button[data-testid="trash-shield"]')).toHaveCount(0);
 
     await resetMaintainerr(page); // clear the seeded exclusion for later tests
   });
@@ -223,7 +267,7 @@ test.describe('trash section (DESIGN-010)', () => {
       .getByLabel('Action', { exact: true })
       .click();
     await page.keyboard.press('Escape');
-    await expect(page.getByTestId('trash-row')).toHaveCount(1);
+    await expect(page.getByTestId('trash-tile')).toHaveCount(1);
     await page.getByTestId('trash-expedite-all').click();
     await expect(page.getByTestId('trash-expedite-refusal')).toBeVisible();
     await expect(page.getByTestId('trash-expedite-refusal')).toContainText(
@@ -253,8 +297,8 @@ test.describe('trash section (DESIGN-010)', () => {
     await report.getByRole('button', { name: 'Done' }).click();
 
     // The deleted item left the pending set on refetch; the protected/skipped ones remain.
-    await expect(page.getByTestId('trash-row')).toHaveCount(3);
-    await expect(page.getByTestId('trash-row').filter({ hasText: 'Vanished Heist' })).toHaveCount(
+    await expect(page.getByTestId('trash-tile')).toHaveCount(3);
+    await expect(page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' })).toHaveCount(
       0,
     );
 
@@ -281,7 +325,7 @@ test.describe('trash section (DESIGN-010)', () => {
     await openTrashMovies(page);
 
     // The cold row's Modal carries the immediate-and-permanent warning.
-    const vanished = page.getByTestId('trash-row').filter({ hasText: 'Vanished Heist' });
+    const vanished = page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' });
     await vanished.getByTestId('trash-expedite-item').click();
     const confirm = page.getByTestId('trash-expedite-item-confirm');
     await expect(confirm).toBeVisible();
@@ -301,12 +345,12 @@ test.describe('trash section (DESIGN-010)', () => {
     // Restore the integration; the deletable item's Modal now deletes for real.
     await setIntegration(page, 'tautulli', true);
     await page.reload();
-    const row = page.getByTestId('trash-row').filter({ hasText: 'Vanished Heist' });
+    const row = page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' });
     await row.getByTestId('trash-expedite-item').click();
     await page.getByTestId('trash-expedite-item-submit').click();
     await expect(page.getByTestId('trash-expedite-summary')).toContainText('1 deleted');
     await page.getByRole('button', { name: 'Done' }).click();
-    await expect(page.getByTestId('trash-row').filter({ hasText: 'Vanished Heist' })).toHaveCount(
+    await expect(page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' })).toHaveCount(
       0,
     );
   });
@@ -318,7 +362,7 @@ test.describe('trash section (DESIGN-010)', () => {
     await signIn(page, 'admin');
     await openTrashMovies(page);
 
-    const fixture = page.getByTestId('trash-row').filter({ hasText: 'The Fixture' });
+    const fixture = page.getByTestId('trash-tile').filter({ hasText: 'The Fixture' });
     await fixture.getByTestId('trash-expedite-item').click();
     const confirm = page.getByTestId('trash-expedite-item-confirm');
     await expect(confirm).toContainText('recently watched');
@@ -346,9 +390,11 @@ test.describe('trash section (DESIGN-010)', () => {
     // Save the cold item. Its Maintainerr exclusion lands NOW, but its protective dnd tag would only
     // reach our ledger on the next *arr sync — the window the review flagged. The server-side
     // live-exclusion seam (F1a) must protect it across every expedite regardless of the tag lag.
-    const vanished = page.getByTestId('trash-row').filter({ hasText: 'Vanished Heist' });
+    const vanished = page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' });
+    const saveSettled = page.waitForResponse((r) => r.url().includes('trash.saveExclusion'));
     await vanished.getByTestId('trash-shield').click();
-    await expect(vanished.getByTestId('trash-shield')).toHaveAttribute('data-on', 'true');
+    await expect(vanished.getByTestId('trash-shield')).toHaveAttribute('data-glyph', 'shield');
+    await saveSettled; // the exclusion write must LAND before the expedite race is meaningful
 
     // Expedite it as a SINGLE item immediately. The confirm no longer short-circuits on the session
     // shield (F1b) — it shows the honest guardian verdict — but the SERVER protects the saved item,
@@ -378,7 +424,7 @@ test.describe('trash section (DESIGN-010)', () => {
         (c.body as { mediaId?: string }).mediaId === STUB_MAINT_VANISHED_ID,
     );
     expect(handledSaved).toHaveLength(0);
-    await expect(page.getByTestId('trash-row').filter({ hasText: 'Vanished Heist' })).toHaveCount(
+    await expect(page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' })).toHaveCount(
       1,
     );
   });
@@ -398,7 +444,7 @@ test.describe('trash section (DESIGN-010)', () => {
     // Expedite (destructive) disables everywhere; the shield (protective, needs only
     // reachability) stays live.
     await expect(page.getByTestId('trash-expedite-all')).toBeDisabled();
-    const vanished = page.getByTestId('trash-row').filter({ hasText: 'Vanished Heist' });
+    const vanished = page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' });
     await expect(vanished.getByTestId('trash-expedite-item')).toBeDisabled();
     await expect(vanished.getByTestId('trash-shield')).toBeEnabled();
 
@@ -541,14 +587,14 @@ test.describe('trash section (DESIGN-010)', () => {
     await signIn(page, 'admin');
     await assignMemberRole(page, 'Trash Limited');
 
-    // Nav shows Trash (read_only ≥ visible); the pending table renders with shields…
+    // Nav shows Trash (read_only ≥ visible); the pending wall renders with shield corners…
     await memberPage.goto('/');
     expect(await memberPage.locator('.topbar__nav a').allInnerTexts()).toContain('Trash');
     await memberPage.goto('/trash');
-    await expect(memberPage.getByTestId('trash-row')).toHaveCount(4);
+    await expect(memberPage.getByTestId('trash-tile')).toHaveCount(4);
     await expect(
       memberPage
-        .getByTestId('trash-row')
+        .getByTestId('trash-tile')
         .filter({ hasText: 'Vanished Heist' })
         .getByTestId('trash-shield'),
     ).toBeVisible();
@@ -625,9 +671,9 @@ test.describe('trash section (DESIGN-010)', () => {
 
     // A pending, ledger-joined movie → its detail page mounts the guard panel + shield.
     const fixtureHref = await page
-      .getByTestId('trash-row')
+      .getByTestId('trash-tile')
       .filter({ hasText: 'The Fixture' })
-      .locator('a.ledger-title')
+      .locator('a[data-testid="trash-tile-poster"]')
       .getAttribute('href');
     await page.goto(fixtureHref!);
     await expect(page.getByTestId('trash-guard')).toBeVisible();
@@ -637,9 +683,9 @@ test.describe('trash section (DESIGN-010)', () => {
     // The dnd-tagged movie shows the protected badge in its header (read off arrTags).
     await openTrashMovies(page);
     const runnerHref = await page
-      .getByTestId('trash-row')
+      .getByTestId('trash-tile')
       .filter({ hasText: 'Stub Runner' })
-      .locator('a.ledger-title')
+      .locator('a[data-testid="trash-tile-poster"]')
       .getAttribute('href');
     await page.goto(runnerHref!);
     await expect(page.locator('.detail-head').getByText('Protected from deletion')).toBeVisible();
@@ -657,7 +703,7 @@ test.describe('trash section (DESIGN-010)', () => {
     await expect(page.getByTestId('trash-shield')).toHaveCount(0);
   });
 
-  test('mobile 390×844: the pending sheet pans internally — the page never scrolls sideways', async ({
+  test('mobile 390×844: the pending wall is a 3-column thumb grid with legible corner glyphs — no sideways scroll', async ({
     page,
   }) => {
     await resetMaintainerr(page);
@@ -665,9 +711,25 @@ test.describe('trash section (DESIGN-010)', () => {
     await signIn(page, 'admin');
     await openTrashMovies(page);
 
-    const wrap = page.getByTestId('trash-tablewrap');
-    const overflow = await wrap.evaluate((el) => el.scrollWidth - el.clientWidth);
-    expect(overflow).toBeGreaterThan(50);
+    const tiles = page.getByTestId('trash-tile');
+    await expect(tiles).toHaveCount(4);
+    const boxes = await Promise.all(
+      [0, 1, 2, 3].map(async (i) => (await tiles.nth(i).boundingBox())!),
+    );
+    // 3 columns: the first three tiles share a row, the fourth wraps below.
+    expect(Math.abs(boxes[0]!.y - boxes[1]!.y)).toBeLessThan(1);
+    expect(Math.abs(boxes[1]!.y - boxes[2]!.y)).toBeLessThan(1);
+    expect(boxes[3]!.y).toBeGreaterThan(boxes[0]!.y + 10);
+    // Thumb-sized targets: each tile is a ~120px-wide, taller-than-wide poster.
+    expect(boxes[0]!.width).toBeGreaterThan(100);
+    expect(boxes[0]!.height).toBeGreaterThan(boxes[0]!.width);
+    // Both corner glyphs render on the cold tile and stay tappable-sized (≥ 26px).
+    const vanished = tiles.filter({ hasText: 'Vanished Heist' });
+    const shieldBox = (await vanished.getByTestId('trash-shield').boundingBox())!;
+    const canBox = (await vanished.getByTestId('trash-expedite-item').boundingBox())!;
+    expect(shieldBox.width).toBeGreaterThanOrEqual(26);
+    expect(canBox.width).toBeGreaterThanOrEqual(26);
+
     await expectViewportFit(page);
   });
 });

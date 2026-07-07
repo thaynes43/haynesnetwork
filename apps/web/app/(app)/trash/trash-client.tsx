@@ -8,20 +8,27 @@
 //   disabled) when an integration is down; danger when unreachable. The server re-runs the
 //   audit on every expedite regardless — the banner is the honest mirror, not the enforcement.
 // - Movies and TV are separate tabs, NEVER combined; Music does not exist here (R-87).
-// - The pending tables ride the shared /library//ledger filter engine (chips + URL contract
-//   ?q/genre/res/req/col/rmin/rmax/sort, client-side over the small pending set) inside the
-//   ledger spreadsheet treatment (sticky header + frozen Title column, both-axis internal
-//   scroll — the page body never pans, hard rule 9).
-// - Save/whitelist is the shield toggle (protective — plain toggle, ADR-014 reserves two-step
-//   for destructive); Expedite ALWAYS goes through a Modal (ADR-014 — never one-click delete),
-//   whose copy predicts the guardian partition (deleted NOW / protected / skipped-unverifiable)
-//   and whose post-run report distinguishes those three outcomes (skipped ≠ protected —
-//   ADR-023 C-07b).
+// - The pending views are POSTER WALLS (2026-07-07 — the owner: the tables were unusable on a
+//   phone; the Batches wall grammar is perfect on every device, so it replaced them). Same
+//   /library//ledger filter engine (chips + URL contract ?q/genre/res/req/col/rmin/rmax/sort,
+//   client-side over the small pending set) plus the /library sort bar (the table headers were
+//   the old sort affordance). Each tile: poster (tap ⇒ /library/[id] when ledger-joined — the
+//   bulletin-chip pattern; history/fix live there), a fixed-corner SHIELD (check = protected by
+//   tag/exclusion, inert · filled = saved by you, tap to un-save · outline = tap to save) and a
+//   fixed-corner TRASH-CAN (expedite ⇒ the ADR-014 Modal). Scheduled-delete date, requesters,
+//   collection, and guardian facts move into the tile tooltip; the reclaim counts bar rides
+//   ABOVE the wall with Expedite-all.
+// - Save/whitelist is the shield corner (protective — plain optimistic toggle, ADR-014 reserves
+//   two-step for destructive); Expedite ALWAYS goes through a Modal (ADR-014 — never one-click
+//   delete), whose copy predicts the guardian partition (deleted NOW / protected /
+//   skipped-unverifiable) and whose post-run report distinguishes those three outcomes
+//   (skipped ≠ protected — ADR-023 C-07b).
 // - "Expedite all" cannot be scoped by filters (the wire contract takes only the media kind),
 //   so with filters active the Modal REFUSES to arm and offers to clear them — the dangerous
 //   "looks filtered, deletes everything" state is unexpressible (DESIGN-010 D-09).
-// - ADR-015: the banner reserves its height; the footer bar is persistent with constant-width
-//   controls; refetches dim rows in place; arming/toggling recolors, never reflows.
+// - ADR-015: the banner reserves its height; the counts bar is persistent with constant-width
+//   controls; a fixed-height error slot recolors, never shifts the wall; refetches dim the wall
+//   in place; a shield tap swaps the corner glyph and deepens color — tiles never move.
 // - ADR-032 (2026-07-07): the RULES tab and the Trash-settings card are settings, not
 //   user-facing surfaces — they moved to /settings/trash (reached from the user menu,
 //   trash-Edit gated). /trash keeps Movies · TV · Batches · Recently Deleted · Activity.
@@ -42,7 +49,12 @@ import { trpc } from '@/lib/trpc-client';
 import { Modal } from '@/components/modal';
 import { MediaPoster } from '@/components/media-poster';
 import { CHIP_LABELS, RatingChip } from '@/components/filter-chips';
-import { ExpediteButton, ShieldButton, type TrashAccess } from '@/components/trash-shield';
+import {
+  ShieldCheckGlyph,
+  ShieldGlyph,
+  TrashCanGlyph,
+  type TrashAccess,
+} from '@/components/trash-shield';
 import { SafetyBanner, type SafetyStatus } from '@/components/trash-safety';
 import { BatchesTab } from './batches-tab';
 import {
@@ -56,12 +68,14 @@ import {
 import { appCodeOf, describeMutationError } from '@/lib/app-error';
 import {
   daysLeftLabel,
-  daysLeftTone,
   daysUntil,
   expediteErrorAction,
   partitionForExpedite,
+  pendingShieldGlyph,
+  pendingShieldTappable,
   previewGuardian,
   reclaimLabel,
+  type PendingShieldGlyph,
 } from '@/lib/trash';
 
 export type { TrashAccess };
@@ -107,7 +121,7 @@ interface PendingItem {
 // The safety banner + its SafetyStatus wire mirror live in components/trash-safety.tsx
 // (shared with /settings/trash — ADR-032).
 
-// ── the pending table (one media kind) ──────────────────────────────────────────────────
+// ── the pending WALL (one media kind) ───────────────────────────────────────────────────
 
 type PendingField = 'genres' | 'resolution' | 'requesters' | 'sourceCollections';
 const FILTER_FIELDS: ReadonlyArray<{ field: PendingField; param: string; label: string }> = [
@@ -121,6 +135,20 @@ const SORT_FIELDS = ['scheduled', 'title', 'size', 'rating'] as const;
 type SortField = (typeof SORT_FIELDS)[number];
 type SortToken = `${SortField}:${'asc' | 'desc'}`;
 const DEFAULT_SORT: SortToken = 'scheduled:asc';
+
+/** The wall's sort bar (the table headers were the old sort affordance — same /library
+ *  nextSort/arrowFor engine, same `?sort` token contract, soonest-deleting first by default). */
+const SORT_COLUMNS: ReadonlyArray<{
+  col: string;
+  label: string;
+  field: SortField;
+  firstDir: 'asc' | 'desc';
+}> = [
+  { col: 'scheduled', label: 'Deletes', field: 'scheduled', firstDir: 'asc' },
+  { col: 'title', label: 'Title', field: 'title', firstDir: 'asc' },
+  { col: 'size', label: 'Size', field: 'size', firstDir: 'desc' },
+  { col: 'rating', label: 'Rating', field: 'rating', firstDir: 'desc' },
+];
 
 function parseSortToken(raw: string | null): { field: SortField; dir: 'asc' | 'desc' } {
   const [field, dir] = (raw ?? '').split(':');
@@ -173,6 +201,33 @@ function compareItems(
         b.scheduledDeleteAt === null ? null : Date.parse(b.scheduledDeleteAt),
       );
   }
+}
+
+/** The tile tooltip — the detail the table's columns carried (scheduled date + days-left,
+ *  protection reason, guardian facts, requesters, source rule), phone-first: title-attr on the
+ *  poster; the full history lives one tap away on /library/[id]. */
+function tileInfo(item: PendingItem, glyph: PendingShieldGlyph): string {
+  const lines: string[] = [
+    item.scheduledDeleteAt !== null
+      ? `Deletes ${formatDay(item.scheduledDeleteAt)} (${daysLeftLabel(daysUntil(item.scheduledDeleteAt))})`
+      : 'No scheduled delete date',
+  ];
+  if (glyph === 'shield') lines.push('Saved by you — protected from deletion');
+  else if (glyph === 'check')
+    lines.push(
+      item.protectedByTag
+        ? 'Protected — carries the dnd tag'
+        : 'Protected — excluded in Maintainerr',
+    );
+  if (item.recentlyWatched) lines.push('Recently watched — the guardian keeps it');
+  if (item.requesters.length > 0) lines.push(`Requested by ${item.requesters.join(', ')}`);
+  if (item.collectionTitle !== null) lines.push(`Rule: ${item.collectionTitle}`);
+  lines.push(
+    item.mediaItemId !== null
+      ? 'Tap the poster for history and fixes'
+      : 'Not in our ledger — it can never be expedited (fail closed), only saved',
+  );
+  return lines.join('\n');
 }
 
 type ExpediteTarget = { scope: 'all' } | { scope: 'item'; item: PendingItem };
@@ -252,19 +307,14 @@ function PendingTab({
   const allItems: PendingItem[] = pending.data?.items ?? [];
   const refreshing = pending.isPlaceholderData && pending.isFetching;
 
-  // Session-local shield overrides (the dnd tag lands on the next *arr sync — D-09).
+  // Session-local shield overrides (the dnd tag lands on the next *arr sync — D-09). A 'saved'
+  // override is ALSO the wall's "saved by YOU" signal: pending items carry no ownership, so only
+  // the save you just made renders as the tappable filled shield — protection that arrives from
+  // the server (tag / exclusion made elsewhere or in an earlier session) is the inert check.
   const [shieldOverrides, setShieldOverrides] = useState<ReadonlyMap<string, 'saved' | 'unsaved'>>(
     () => new Map(),
   );
-  const isProtected = (item: PendingItem): boolean => {
-    const o =
-      item.maintainerrMediaId === null ? undefined : shieldOverrides.get(item.maintainerrMediaId);
-    if (o === 'saved') return true;
-    if (o === 'unsaved') return false;
-    // tag OR live Maintainerr exclusion (D-08/D-09) — an exclusion made outside this session shows
-    // Protected before its `dnd` tag round-trips into arrTags.
-    return item.protectedByTag || item.protectedByExclusion;
-  };
+  const [shieldBusy, setShieldBusy] = useState<ReadonlySet<string>>(() => new Set());
 
   // ── client-side shaping (filter → sort) over the full pending set ──
   const facetValues = (field: PendingField): readonly string[] => {
@@ -303,24 +353,43 @@ function PendingTab({
 
   const filteredBytes = items.reduce((sum, i) => sum + i.sizeBytes, 0);
 
-  // ── save / un-save ──
+  // ── save / un-save (same wire calls as the old table; the flip is now OPTIMISTIC like the
+  //    Batches wall: the corner glyph swaps immediately, reconciles with the response, and
+  //    reverts on error — one flip in flight per tile, no queued double-toggles) ──
   const [rowError, setRowError] = useState<string | null>(null);
-  const save = trpc.trash.saveExclusion.useMutation({
-    onError: (err: unknown) => setRowError(describeMutationError(err)),
-    onSuccess: (_res, vars) => {
-      setRowError(null);
-      setShieldOverrides((prev) => new Map(prev).set(vars.maintainerrMediaId, 'saved'));
-      void utils.trash.pending.invalidate({ media });
-    },
-  });
-  const unsave = trpc.trash.removeExclusion.useMutation({
-    onError: (err: unknown) => setRowError(describeMutationError(err)),
-    onSuccess: (_res, vars) => {
-      setRowError(null);
-      setShieldOverrides((prev) => new Map(prev).set(vars.maintainerrMediaId, 'unsaved'));
-      void utils.trash.pending.invalidate({ media });
-    },
-  });
+  const save = trpc.trash.saveExclusion.useMutation();
+  const unsave = trpc.trash.removeExclusion.useMutation();
+  const toggleShield = (item: PendingItem, glyph: PendingShieldGlyph) => {
+    const id = item.maintainerrMediaId;
+    if (id === null || shieldBusy.has(id)) return;
+    const saving = glyph === 'outline';
+    const prev = shieldOverrides.get(id);
+    setShieldOverrides((m) => new Map(m).set(id, saving ? 'saved' : 'unsaved'));
+    setShieldBusy((s) => new Set(s).add(id));
+    setRowError(null);
+    const mutation = saving ? save : unsave;
+    mutation.mutate(
+      { maintainerrMediaId: id, mediaItemId: item.mediaItemId },
+      {
+        onSuccess: () => void utils.trash.pending.invalidate({ media }),
+        onError: (err: unknown) => {
+          setShieldOverrides((m) => {
+            const next = new Map(m);
+            if (prev === undefined) next.delete(id);
+            else next.set(id, prev);
+            return next;
+          });
+          setRowError(describeMutationError(err));
+        },
+        onSettled: () =>
+          setShieldBusy((s) => {
+            const next = new Set(s);
+            next.delete(id);
+            return next;
+          }),
+      },
+    );
+  };
 
   // ── expedite (THE destructive path — Modal every time, ADR-014) ──
   const [expedite, setExpedite] = useState<ExpediteTarget | null>(null);
@@ -372,84 +441,24 @@ function PendingTab({
   // The Modal's honest preview — the ENTIRE pending set for 'all' (never the filtered view).
   const partition = partitionForExpedite(allItems);
 
-  // ── sortable headers (shared nextSort/arrowFor cycle) ──
-  interface Col {
-    key: string;
-    label: string;
-    className?: string;
-    sortField?: SortField;
-    firstDir?: 'asc' | 'desc';
-  }
-  // A caller with no row action at all (browse-only) gets no empty Actions column.
-  const showActionsCol = canSave || canUnsave || canExpediteItem;
-  const cols: Col[] = [
-    { key: 'title', label: 'Title', className: 'col-title', sortField: 'title', firstDir: 'asc' },
-    { key: 'size', label: 'Size', sortField: 'size', firstDir: 'desc' },
-    { key: 'scheduled', label: 'Deletes', sortField: 'scheduled', firstDir: 'asc' },
-    { key: 'rating', label: 'Rating', sortField: 'rating', firstDir: 'desc' },
-    { key: 'status', label: 'Status', className: 'col-list' },
-    { key: 'requesters', label: 'Requested by', className: 'col-list' },
-    { key: 'collection', label: 'Collection', className: 'col-list' },
-    ...(showActionsCol ? [{ key: 'actions', label: 'Actions' }] : []),
-  ];
-  const sortableCols = cols.filter((c) => c.sortField !== undefined);
+  // ── the sort bar (shared nextSort/arrowFor cycle over SORT_COLUMNS) ──
   const clickCycle = Object.fromEntries(
-    sortableCols.map((c) => [
-      c.key,
+    SORT_COLUMNS.map((c) => [
+      c.col,
       c.firstDir === 'asc'
-        ? { asc: `${c.sortField}:asc` as SortToken, desc: `${c.sortField}:desc` as SortToken }
-        : { asc: `${c.sortField}:desc` as SortToken, desc: `${c.sortField}:asc` as SortToken },
+        ? { asc: `${c.field}:asc` as SortToken, desc: `${c.field}:desc` as SortToken }
+        : { asc: `${c.field}:desc` as SortToken, desc: `${c.field}:asc` as SortToken },
     ]),
   ) as Record<string, { asc: SortToken; desc: SortToken }>;
   const arrowCycle = Object.fromEntries(
-    sortableCols.map((c) => [
-      c.key,
-      { asc: `${c.sortField}:asc` as SortToken, desc: `${c.sortField}:desc` as SortToken },
+    SORT_COLUMNS.map((c) => [
+      c.col,
+      { asc: `${c.field}:asc` as SortToken, desc: `${c.field}:desc` as SortToken },
     ]),
   ) as Record<string, { asc: SortToken; desc: SortToken }>;
   const cycleSort = (colKey: string) => {
     const next = nextSort<SortToken, string>(sortToken, colKey, clickCycle);
     patchParams({ sort: next === DEFAULT_SORT ? null : next });
-  };
-
-  const colCount = cols.length;
-
-  const statusBadges = (item: PendingItem) => {
-    const badges: React.ReactNode[] = [];
-    if (isProtected(item)) {
-      badges.push(
-        <span key="prot" className="badge badge--shield" data-testid="badge-protected">
-          Protected
-        </span>,
-      );
-    }
-    if (item.recentlyWatched) {
-      badges.push(
-        <span key="watch" className="badge badge--info" data-testid="badge-watched">
-          Recently watched
-        </span>,
-      );
-    }
-    if (item.requesters.length > 0) {
-      badges.push(
-        <span key="req" className="badge badge--info" data-testid="badge-requested">
-          Requested
-        </span>,
-      );
-    }
-    if (item.mediaItemId === null) {
-      badges.push(
-        <span
-          key="unk"
-          className="badge badge--warn"
-          data-testid="badge-unverified"
-          title="Not in our ledger — it can never be expedited (fail closed), only saved."
-        >
-          Not in ledger
-        </span>,
-      );
-    }
-    return badges.length > 0 ? badges : <span className="muted">—</span>;
   };
 
   return (
@@ -498,191 +507,34 @@ function PendingTab({
             }
           />
         </div>
+
+        {/* Sort bar — the /library pattern (the table headers were the old affordance). */}
+        <div className="library-sortbar" role="group" aria-label="Sort">
+          <span className="library-sortbar__label">Sort</span>
+          {SORT_COLUMNS.map((c) => {
+            const isActive = sort.field === c.field;
+            return (
+              <button
+                key={c.col}
+                type="button"
+                className={`sort-btn${isActive ? ' is-active' : ''}`}
+                aria-pressed={isActive}
+                onClick={() => cycleSort(c.col)}
+              >
+                {c.label}
+                <span className="sort-btn__arrow" aria-hidden="true">
+                  {arrowFor<SortToken, string>(sortToken, c.col, arrowCycle).trim()}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {rowError !== null ? (
-        <p className="alert" role="alert">
-          {rowError}
-        </p>
-      ) : null}
-
-      <div
-        className={`ledger-tablewrap trash-tablewrap${refreshing ? ' is-refreshing' : ''}`}
-        data-testid="trash-tablewrap"
-      >
-        <table
-          className="ledger-table ledger-table--noselect trash-table"
-          aria-busy={refreshing}
-          aria-label={`Pending ${label} deletions`}
-        >
-          <thead>
-            <tr>
-              {cols.map((c) => {
-                const isActive = c.sortField !== undefined && sort.field === c.sortField;
-                const sortButton =
-                  c.sortField !== undefined ? (
-                    <button
-                      type="button"
-                      className={`sort-btn ledger-sort${isActive ? ' is-active' : ''}`}
-                      onClick={() => cycleSort(c.key)}
-                    >
-                      {c.label}
-                      <span className="sort-btn__arrow" aria-hidden="true">
-                        {arrowFor<SortToken, string>(sortToken, c.key, arrowCycle).trim()}
-                      </span>
-                    </button>
-                  ) : (
-                    c.label
-                  );
-                return (
-                  <th
-                    key={c.key}
-                    scope="col"
-                    className={c.className}
-                    aria-sort={
-                      isActive ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined
-                    }
-                  >
-                    {sortButton}
-                  </th>
-                );
-              })}
-            </tr>
-          </thead>
-          {pending.isLoading ? (
-            <tbody data-testid="trash-skeleton" aria-hidden="true">
-              {Array.from({ length: 4 }, (_, i) => (
-                <tr key={i} className="ledger-row">
-                  {cols.map((c) => (
-                    <td key={c.key} className={c.className}>
-                      <span
-                        className={`skeleton-line${c.key === 'title' ? '' : ' skeleton-line--short'}`}
-                      />
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          ) : pending.error ? (
-            <tbody>
-              <tr>
-                <td colSpan={colCount}>
-                  <p className="alert" role="alert">
-                    Couldn’t load the pending list: {pending.error.message}
-                  </p>
-                </td>
-              </tr>
-            </tbody>
-          ) : items.length === 0 ? (
-            <tbody>
-              <tr>
-                <td colSpan={colCount} className="ledger-empty muted">
-                  {allItems.length === 0
-                    ? `Nothing pending — no ${label.toLowerCase()} are scheduled for deletion.`
-                    : 'Nothing matches the filters.'}
-                </td>
-              </tr>
-            </tbody>
-          ) : (
-            <tbody>
-              {items.map((item) => {
-                const rating = formatRating(itemRating(item));
-                const days = daysUntil(item.scheduledDeleteAt);
-                const on = isProtected(item);
-                const rowKey = `${item.collectionId}:${item.maintainerrMediaId ?? item.title}`;
-                return (
-                  <tr key={rowKey} className="ledger-row" data-testid="trash-row">
-                    <td className="col-title">
-                      <span className="ledger-titlecell trash-titlecell">
-                        <span className="trash-poster" aria-hidden="true">
-                          <MediaPoster
-                            posterUrl={item.posterUrl}
-                            kind={media === 'movie' ? 'radarr' : 'sonarr'}
-                            alt=""
-                          />
-                        </span>
-                        {item.mediaItemId !== null ? (
-                          <Link
-                            href={`/library/${item.mediaItemId}`}
-                            className="ledger-title"
-                            title={item.title}
-                          >
-                            {item.title}
-                          </Link>
-                        ) : (
-                          <span className="ledger-title" title={item.title}>
-                            {item.title}
-                          </span>
-                        )}
-                        {item.year !== null ? <span className="muted"> ({item.year})</span> : null}
-                      </span>
-                    </td>
-                    <td className="col-num">
-                      {item.sizeBytes > 0 ? formatBytes(item.sizeBytes) : '—'}
-                    </td>
-                    <td className="trash-when">
-                      {item.scheduledDeleteAt !== null ? (
-                        <>
-                          {formatDay(item.scheduledDeleteAt)}{' '}
-                          <span className={`trash-days trash-days--${daysLeftTone(days)}`}>
-                            {daysLeftLabel(days)}
-                          </span>
-                        </>
-                      ) : (
-                        <span className="muted">no date</span>
-                      )}
-                    </td>
-                    <td className="col-num">{rating !== null ? `★ ${rating}` : '—'}</td>
-                    <td className="col-list trash-status">{statusBadges(item)}</td>
-                    <td className="col-list" title={item.requesters.join(', ')}>
-                      {item.requesters.length > 0 ? item.requesters.join(', ') : '—'}
-                    </td>
-                    <td className="col-list" title={item.collectionTitle ?? undefined}>
-                      {item.collectionTitle ?? '—'}
-                    </td>
-                    <td className="trash-actions">
-                      <span className="row-actions">
-                        {(canSave || canUnsave) && item.maintainerrMediaId !== null ? (
-                          <ShieldButton
-                            on={on}
-                            itemTitle={item.title}
-                            canSave={canSave}
-                            canUnsave={canUnsave}
-                            busy={save.isPending || unsave.isPending}
-                            onSave={() =>
-                              save.mutate({
-                                maintainerrMediaId: item.maintainerrMediaId!,
-                                mediaItemId: item.mediaItemId,
-                              })
-                            }
-                            onUnsave={() =>
-                              unsave.mutate({
-                                maintainerrMediaId: item.maintainerrMediaId!,
-                                mediaItemId: item.mediaItemId,
-                              })
-                            }
-                          />
-                        ) : null}
-                        {canExpediteItem && item.maintainerrMediaId !== null ? (
-                          <ExpediteButton
-                            itemTitle={item.title}
-                            safe={safe}
-                            onClick={() => openExpedite({ scope: 'item', item })}
-                          />
-                        ) : null}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          )}
-        </table>
-      </div>
-
-      {/* The filter-aware total-space footer — persistent, constant-height (ADR-015). */}
-      <div className="trash-footer" role="toolbar" aria-label="Pending totals and actions">
-        <span className="trash-footer__total" data-testid="trash-total">
+      {/* The filter-aware reclaim counts bar — persistent, constant-height, ABOVE the wall
+          (ADR-015); it carries the bulk Expedite-all pill. */}
+      <div className="trash-countsbar" role="toolbar" aria-label="Pending totals and actions">
+        <span className="trash-countsbar__total" data-testid="trash-total">
           {pending.isLoading
             ? 'Totaling…'
             : `${reclaimLabel(filteredBytes, items.length, formatBytes)}${
@@ -707,6 +559,171 @@ function PendingTab({
           </button>
         ) : null}
       </div>
+
+      {/* Fixed-height error slot — an error appearing recolors the line, never shifts the wall. */}
+      <p className="bwall-error" role="alert" data-testid="trash-wall-error">
+        {rowError ?? ''}
+      </p>
+
+      {/* THE PENDING WALL — the Batches wall grammar over the pending set (tables retired
+          2026-07-07). Poster taps open /library/[id]; the corners carry the actions. */}
+      {pending.isLoading ? (
+        <ul className="bwall" aria-hidden="true" data-testid="trash-wall-skeleton">
+          {Array.from({ length: 8 }, (_, i) => (
+            <li key={i} className="bwall-tile">
+              <span className="bwall-tap">
+                <div className="poster-box" />
+              </span>
+              <span className="bwall-caption">
+                <span className="skeleton-line" />
+              </span>
+              <span className="bwall-meta">
+                <span className="skeleton-line skeleton-line--short" />
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : pending.error ? (
+        <p className="alert" role="alert">
+          Couldn’t load the pending list: {pending.error.message}
+        </p>
+      ) : items.length === 0 ? (
+        <p className="muted trash-wall-empty" data-testid="trash-wall-empty">
+          {allItems.length === 0
+            ? `Nothing pending — no ${label.toLowerCase()} are scheduled for deletion.`
+            : 'Nothing matches the filters.'}
+        </p>
+      ) : (
+        <ul
+          className={`bwall pwall${refreshing ? ' is-refreshing' : ''}`}
+          aria-busy={refreshing}
+          aria-label={`Pending ${label} deletions`}
+          data-testid="trash-wall"
+        >
+          {items.map((item) => {
+            const rating = formatRating(itemRating(item));
+            const override =
+              item.maintainerrMediaId === null
+                ? undefined
+                : shieldOverrides.get(item.maintainerrMediaId);
+            const glyph = pendingShieldGlyph(item, override);
+            const tappable = pendingShieldTappable(glyph, canSave, canUnsave);
+            const tileKey = `${item.collectionId}:${item.maintainerrMediaId ?? item.title}`;
+            const info = tileInfo(item, glyph);
+            const titleYear = `${item.title}${item.year !== null ? ` (${item.year})` : ''}`;
+            const shieldLabel =
+              glyph === 'check'
+                ? `${item.title} is protected from deletion`
+                : glyph === 'shield'
+                  ? tappable
+                    ? `Un-save ${item.title} — remove its deletion protection`
+                    : `${item.title} is saved — protected from deletion`
+                  : `Save ${item.title} — protect it from deletion`;
+            const expediteLabel = safe
+              ? `Expedite the deletion of ${item.title}`
+              : `Expedite ${item.title} — disabled while Maintainerr is not in a safe state (see the banner)`;
+            const shieldInner = (
+              <span key={glyph} className="pwall-glyphpop">
+                {glyph === 'check' ? (
+                  <ShieldCheckGlyph />
+                ) : (
+                  <ShieldGlyph filled={glyph === 'shield'} />
+                )}
+              </span>
+            );
+            const poster = (
+              <MediaPoster
+                posterUrl={item.posterUrl}
+                kind={media === 'movie' ? 'radarr' : 'sonarr'}
+                alt=""
+              />
+            );
+            return (
+              <li
+                key={tileKey}
+                className="bwall-tile pwall-tile"
+                data-glyph={glyph}
+                data-testid="trash-tile"
+              >
+                {item.mediaItemId !== null ? (
+                  <Link
+                    href={`/library/${item.mediaItemId}`}
+                    className="bwall-tap"
+                    data-testid="trash-tile-poster"
+                    title={info}
+                    aria-label={`${titleYear} — open its library page`}
+                  >
+                    {poster}
+                  </Link>
+                ) : (
+                  <span
+                    className="bwall-tap"
+                    data-testid="trash-tile-poster"
+                    role="img"
+                    title={info}
+                    aria-label={`${titleYear} — not in the ledger`}
+                  >
+                    {poster}
+                  </span>
+                )}
+                {/* Shield corner — check (protected elsewhere, inert) / filled (saved by you,
+                    tap ⇒ un-save) / outline (tap ⇒ save). State always READS even when the
+                    viewer can't act (a span, not a button). */}
+                {item.maintainerrMediaId !== null && (glyph !== 'outline' || canSave) ? (
+                  tappable ? (
+                    <button
+                      type="button"
+                      className="pwall-corner pwall-shield"
+                      data-glyph={glyph}
+                      data-testid="trash-shield"
+                      aria-pressed={glyph !== 'outline'}
+                      aria-label={shieldLabel}
+                      title={shieldLabel}
+                      aria-busy={shieldBusy.has(item.maintainerrMediaId) || undefined}
+                      onClick={() => toggleShield(item, glyph)}
+                    >
+                      {shieldInner}
+                    </button>
+                  ) : (
+                    <span
+                      className="pwall-corner pwall-shield"
+                      data-glyph={glyph}
+                      data-testid="trash-shield"
+                      role="img"
+                      aria-label={shieldLabel}
+                      title={shieldLabel}
+                    >
+                      {shieldInner}
+                    </span>
+                  )
+                ) : null}
+                {/* Trash-can corner — expedite: only ever OPENS the ADR-014 confirm Modal. */}
+                {canExpediteItem && item.maintainerrMediaId !== null ? (
+                  <button
+                    type="button"
+                    className="pwall-corner pwall-expedite"
+                    data-testid="trash-expedite-item"
+                    aria-label={expediteLabel}
+                    title={expediteLabel}
+                    disabled={!safe}
+                    onClick={() => openExpedite({ scope: 'item', item })}
+                  >
+                    <TrashCanGlyph />
+                  </button>
+                ) : null}
+                <span className="bwall-caption">
+                  {item.title}
+                  {item.year !== null ? <span className="muted"> ({item.year})</span> : null}
+                </span>
+                <span className="bwall-meta">
+                  {item.sizeBytes > 0 ? formatBytes(item.sizeBytes) : '—'}
+                  {rating !== null ? ` · ★ ${rating}` : ''}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
 
       {/* ADR-014 — the Expedite Modal (never one-click delete). */}
       <Modal

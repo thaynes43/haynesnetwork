@@ -76,7 +76,7 @@ function RulesSection({ access, reachable }: { access: TrashAccess; reachable: b
   return (
     <div data-testid="trash-rules">
       <p className="muted">
-        Maintainerr’s rules decide what lands in the Trash pending tables.{' '}
+        Maintainerr’s rules decide what lands in the Trash pending walls.{' '}
         {canEditRules
           ? 'You can arm, disarm, or delete a rule here; building new rules still happens in Maintainerr for now.'
           : 'Read-only — changing rules needs the edit-rules grant (and a reachable Maintainerr).'}
