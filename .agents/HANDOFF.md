@@ -3,7 +3,7 @@
 > The single resume point for agents. Update this in the same change as any milestone.
 > Derive current state from this file's top; you should not have to reconcile anything.
 
-- **Last updated:** 2026-07-07 (**PUBLIC CUTOVER EXECUTED — the site is LIVE at https://haynesnetwork.com** via Cloudflare Tunnel; PLAN-008 Completed. Owner authorized go-live ahead of the 011 MFA/branding gate. Now building PLAN-013 disk/reclaim metrics.)
+- **Last updated:** 2026-07-07 (**PUBLIC CUTOVER EXECUTED — the site is LIVE at https://haynesnetwork.com** via Cloudflare Tunnel; PLAN-008 Completed. Owner authorized go-live ahead of the 011 MFA/branding gate. **PLAN-013 disk/reclaim metrics COMPLETE — shipped v0.17.0 (signed), live-validated on the public origin. Now building PLAN-014 (rules tuning + space policy) — the last board item; a poster-fallback fix is in flight alongside.**)
 - 🚀 **THE SITE IS PUBLICLY LIVE at https://haynesnetwork.com (2026-07-07).** Apex auth round-trip +
   every permissioned surface validated live; `www.haynesnetwork.com` **301s to the apex**; TLS is the
   Cloudflare edge cert (Google Trust Services WE1). Executed as four coupled `haynes-ops` commits
@@ -15,12 +15,25 @@
   Cloudflare rate-limit/WAF rule on `/api/auth/*` (owner dashboard task).
   **Remaining OWNER items:** 011 Authentik branding pick + apply (mockups + runbook in
   `scratchpad/ux-011/`, recommend option C) · owner native-account MFA · the optional Cloudflare WAF
-  rule above. **Now building: 013** (disk/reclaim metrics — backend done, UX in flight); **014 next**.
+  rule above. **013** (disk/reclaim metrics) shipped **v0.17.0**; **now building: 014** (rules tuning +
+  space policy — the last board item), with a poster-fallback fix in flight alongside.
 - **Workflow mode:** PR flow (GATE A executed — see
   `.agents/plans/completed/001-gate-a-pr-cutover.md`).
   `main` is branch-protected: branch → PR → required checks `lint-and-typecheck`, `test`,
   `build` green → squash-merge. `e2e` advisory. Conventional-commit titles drive release-please.
-- **Latest release: v0.16.1 (signed)** — v0.16.0 + v0.16.1 shipped 6 owner-reported fixes (2026-07-07), all deployed + verified: Bulletin composer dark-mode inputs; Ledger 'Runs' tab (run history out from under the spreadsheet, media-type filter); My Plex now recognizes the server owner (owner logged in as the LOCAL admin@haynesnetwork.com account — sign in VIA PLEX as manofoz@gmail.com for the Plex-linked owner state); Expedite is now an equal-weight trash-can icon; **Trash deletion audit** — Recently Deleted + Activity now record app-expedited deletions with actor+size (the owner's 2 previously-untracked deletions now surface with 'By: Tom Haynes'); cosign-verify retry so release runs don't red-flag on GHCR propagation lag. Prior: **v0.15.0 (signed) — PLAN-015 downstream *arr action feedback: live
+- **Latest release: v0.17.0 (signed)** — **PLAN-013 disk + reclaim metrics (ADR-030 HYBRID; DESIGN-013;
+  OPS-007 dashboard-as-code; PRD R-108..R-111; glossary T-95..T-97; migration 0021 `space_targets` in
+  `app_settings`).** Native `/admin/storage`: per-server utilization meters judged against a configurable
+  space target (HaynesTower **80%**, set + audited via the ADR-025 `app_settings` store under
+  `space_targets`), reclaim-attribution views (bytes by TV/Movies + quality/resolution from PLAN-012's
+  deletion snapshots — accrues from batch sweeps, expedite forward-capture in place), and a **deep-link**
+  (not embed) to the dashboards-as-code `media-storage-utilization` Grafana board for the fill/drain
+  trend. Source-of-record split per ADR-030 Q-02: *arr `GET /diskspace` = utilization (only source with a
+  total), exportarr freeSpace via Grafana = trend (node-exporter can't see the media libraries).
+  **Live-validated on the PUBLIC origin:** HaynesTower 78.8% used vs the 80% target, Music 25.4%, reclaim
+  empty-state correct. Also in the release: the **cosign-verify retry** (from v0.16.1) is **confirmed
+  working in CI** — the attempts step passed on GHCR propagation lag rather than red-flagging the run.
+  Prior: **v0.16.1 (signed)** — v0.16.0 + v0.16.1 shipped 6 owner-reported fixes (2026-07-07), all deployed + verified: Bulletin composer dark-mode inputs; Ledger 'Runs' tab (run history out from under the spreadsheet, media-type filter); My Plex now recognizes the server owner (owner logged in as the LOCAL admin@haynesnetwork.com account — sign in VIA PLEX as manofoz@gmail.com for the Plex-linked owner state); Expedite is now an equal-weight trash-can icon; **Trash deletion audit** — Recently Deleted + Activity now record app-expedited deletions with actor+size (the owner's 2 previously-untracked deletions now surface with 'By: Tom Haynes'); cosign-verify retry so release runs don't red-flag on GHCR propagation lag. Prior: **v0.15.0 (signed) — PLAN-015 downstream *arr action feedback: live
   Fix/Force-Search progress (ADR-028 / DESIGN-005 D-20/D-21; glossary T-90..T-93; PRD R-106/R-107;
   NO migration — derived-not-persisted). A read-only, poll-on-demand tRPC progress query
   (`fix.progress` / `fix.searchProgress`) projects derived phases over the *arrs' `/queue` + recent
@@ -90,8 +103,9 @@
   The two recon-found technical gates (www cookie/origin split, tunnel rate-limit-IP) were CLOSED in
   code via v0.16.0's auth hardening; the `TRUSTED_ORIGINS` env was set in the coupled `haynes-ops`
   commit. Owner authorized go-live ahead of the 011 MFA/branding gate (Authentik was already public).
-  **POST-CUTOVER (now building / next):** **013** disk + reclaim metrics — **executing** (backend done,
-  UX in flight) → **014** rules tuning + space policy — queued next.
+  **POST-CUTOVER:** **013** disk + reclaim metrics — ✅ **shipped v0.17.0** (live-validated on the public
+  origin) → **014** rules tuning + space policy — **now executing** (the last board item; a poster-fallback
+  fix is in flight alongside).
   **Owner reminders:** the live **Leaving Soon** batch **expires 2026-07-21** (owner's poster pass +
   the Default-role family save grants are still pending); a **welcome MOTD is live** on the dashboard
   for the owner's review.
@@ -138,6 +152,20 @@
 ## Current state
 
 - **v0.16.0 + v0.16.1 shipped 6 owner-reported fixes (2026-07-07), all deployed + verified:** Bulletin composer dark-mode inputs; Ledger 'Runs' tab (run history out from under the spreadsheet, media-type filter); My Plex now recognizes the server owner (owner logged in as the LOCAL admin@haynesnetwork.com account — sign in VIA PLEX as manofoz@gmail.com for the Plex-linked owner state); Expedite is now an equal-weight trash-can icon; **Trash deletion audit** — Recently Deleted + Activity now record app-expedited deletions with actor+size (the owner's 2 previously-untracked deletions now surface with 'By: Tom Haynes'); cosign-verify retry so release runs don't red-flag on GHCR propagation lag.
+- **PLAN-013 (disk utilization + reclaim metrics) COMPLETE — shipped v0.17.0, live-validated on the
+  PUBLIC origin** (`.agents/plans/completed/013-disk-and-reclaim-metrics.md`). ADR-030 (HYBRID:
+  native reclaim + deep-linked Grafana trend) / DESIGN-013 / OPS-007 (dashboard-as-code); PRD
+  R-108..R-111; glossary T-95..T-97; **migration 0021** (`space_targets` in the ADR-025 `app_settings`
+  store). Native **`/admin/storage`**: per-server utilization meters vs a configurable **space target**,
+  reclaim-attribution views (bytes by TV/Movies + quality/resolution from PLAN-012 deletion snapshots),
+  and a **deep-link** (not embed, per ADR-030 Q-01) to the dashboards-as-code `media-storage-utilization`
+  Grafana board. Source-of-record split (Q-02): *arr `GET /diskspace` = utilization (only source with a
+  total); exportarr freeSpace via Grafana = trend (node-exporter can't see the media libraries).
+  **Live evidence (public origin):** HaynesTower **78.8% used vs the 80% target**, Music 25.4%; reclaim
+  attribution empty-state correct (accrues from batch sweeps; expedite forward-capture in place).
+  **THE SPACE TARGET IS NOW LIVE:** `haynestower: 80` is set + audited in `app_settings` `space_targets`
+  — **PLAN-014's policy engine consumes it** (Q-03 resolved: 013 stores/displays, 014 acts). **OWNER
+  NOTE:** the reclaim ledger only accrues going forward from PLAN-012 sweeps — no pre-012 backfill.
 - **PLAN-015 (downstream *arr action feedback) COMPLETE — shipped v0.15.0, live-validated 6/6 on
   staging** (`.agents/plans/completed/015-arr-action-feedback.md`). ADR-028 / DESIGN-005 D-20/D-21;
   glossary T-90..T-93; PRD R-106/R-107; **no migration** (derived-not-persisted). Fix/Force-Search
@@ -329,11 +357,13 @@ The **Fable 5 autonomous run** works the release queue in `.agents/plans/` (star
     executed log `docs/ops/005-root-domain-cutover.md`). **The site is LIVE at https://haynesnetwork.com.**
     Owner authorized go-live ahead of the 011 MFA/branding gate (Authentik was already public), so the
     owner's app-by-app SSO re-check moved to a post-cutover owner task rather than a pre-cutover gate.
-12. **Post-cutover backlog (owner 2026-07-06/07) — NOW ACTIVE:** **013 — disk utilization + reclaim
-    metrics** (`013-disk-and-reclaim-metrics.md`; consumes 012's deletion snapshots; core open
-    decision: Grafana embed vs native — owner decides) is **executing** (backend done, UX in flight)
-    → **014 — rules tuning + space policy** (`014-rules-tuning-space-policy.md`; save-data + metrics →
-    tune rules toward the space target; skip-admin-gate graduation criteria) is **queued next**.
+12. **Post-cutover backlog (owner 2026-07-06/07) — NOW ACTIVE:** ~~**013 — disk utilization + reclaim
+    metrics**~~ ✅ **DONE** (v0.17.0, `completed/013-disk-and-reclaim-metrics.md`; consumed 012's
+    deletion snapshots; core decision resolved HYBRID per ADR-030 — native reclaim + deep-linked
+    Grafana trend, space target live in `app_settings`) → **014 — rules tuning + space policy**
+    (`014-rules-tuning-space-policy.md`; save-data + metrics → tune rules toward the space target;
+    skip-admin-gate graduation criteria) is **now executing** — the last board item, with a
+    poster-fallback fix in flight alongside.
     ~~**015 — downstream *arr action feedback**~~ ✅ **DONE** (v0.15.0,
     `completed/015-arr-action-feedback.md`) and the **Ledger UX polish batch** (task #21; first slice
     v0.14.1) have already shipped.

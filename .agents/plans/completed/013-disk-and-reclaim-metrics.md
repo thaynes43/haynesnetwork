@@ -1,9 +1,13 @@
 # PLAN-013: Disk utilization + reclaim metrics (banked — post-cutover)
 
-- **Status:** **Executing** (2026-07-07, Fable 5) — backend + Grafana half built on
-  `feat/storage-metrics`; the native `/admin/storage` page UX landed on the same branch
-  (2026-07-07 Fable UX pass: utilization meters + targets editor + reclaim views + Grafana
-  deep-link, e2e'd in `storage.spec.ts`). Was Draft/BANKED.
+- **Status:** **Completed (2026-07-07)** — shipped v0.17.0; live-validated on the PUBLIC origin:
+  `/admin/storage` renders real diskspace (HaynesTower 78.8% used vs the 80% target — set + audited
+  via `app_settings` `space_targets`; Music 25.4%), reclaim attribution empty-state correct (accrues
+  from batch sweeps; expedite forward-capture in place), Grafana deep-link to the dashboards-as-code
+  `media-storage-utilization` board. HYBRID per ADR-030 (deep-link not embed; *arr diskspace =
+  utilization source of record; exportarr = trend — node-exporter can't see the media libraries).
+  Was Draft/BANKED → Executing (backend + Grafana half + native `/admin/storage` page UX on
+  `feat/storage-metrics`, e2e'd in `storage.spec.ts`).
 - **Satisfies:** PRD-001 **R-108..R-111** (space target + utilization/reclaim visibility);
   **ADR-030** (THE surface decision — ratifies HYBRID: native reclaim + deep-linked Grafana trend);
   **DESIGN-013** (the metrics vertical + the native page contract for the UX agent); **OPS-007**
