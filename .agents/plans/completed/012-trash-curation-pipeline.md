@@ -1,6 +1,12 @@
 # PLAN-012: Trash curation pipeline — batches, poster review, Leaving Soon, windowed deletion
 
-- **Status:** Executing <!-- Fable 5 flips Draft → Executing → Completed -->
+- **Status:** Completed (2026-07-07) — shipped v0.12.0; live-validated 7/7 on staging: real
+  18-candidate batch through the full pipeline (poster wall 18/18 proxied posters, 0.00px reflow
+  on rescue taps; attributed save/unsave tuning rows; greenlight → Maintainerr manual collection
+  arrAction=DO_NOTHING → visible in real Plex; family window with server-enforced owner-or-manager
+  un-save; expire modal gated behind window closure; sweep no-op verified on unexpired batch).
+  Batch left in Leaving Soon (expires 2026-07-21) as the owner's morning demo. Three adversarial
+  review findings closed pre-ship incl. the inverted never-ages hazard. <!-- Fable 5 flips Draft → Executing → Completed -->
   <!-- 2026-07-07: numbers pinned — ADR-025, DESIGN-011, migration 0017 (journal idx 16),
        PRD R-88..R-96 / US-11 / AC-17..AC-19, glossary T-75..T-80. Backend vertical shipped
        (schema + domain + API + trash-batch-sweep sync mode + docs); the poster-wall UX is a
