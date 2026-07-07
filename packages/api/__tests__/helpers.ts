@@ -6,7 +6,7 @@ import { startPostgres } from '@hnet/test-utils';
 import { runMigrations } from '@hnet/db/migrate';
 import * as schema from '@hnet/db/schema';
 import type { Database } from '@hnet/db';
-import type { SessionUser } from '@hnet/auth';
+import { resolvePlexIdentity, type PlexIdentity, type SessionUser } from '@hnet/auth';
 import {
   assignRole,
   upsertMediaItemsBatch,
@@ -96,6 +96,12 @@ export function sessionUser(
   trashActionOverrides?: TrashAction[],
   /** ADR-026 — override the caller's fine-grained Bulletin message action grants (non-admin; admin ⇒ all). */
   messageActionOverrides?: MessageAction[],
+  /**
+   * fix/plex-identity-mapping — override the caller's resolved Plex identity (the id_token-claim
+   * case). Defaults to the row's admin-override columns (plex_email/plex_username), mirroring prod
+   * where getSessionExtension resolves claim → override.
+   */
+  plexIdentity?: PlexIdentity,
 ): SessionUser {
   const isAdmin = row.roleId === SEEDED_ROLE_IDS.admin;
   const name = isAdmin ? 'Admin' : row.roleId === SEEDED_ROLE_IDS.default ? 'Default' : 'Custom';
@@ -118,6 +124,9 @@ export function sessionUser(
     email: row.email,
     displayName: row.displayName,
     role: { id: row.roleId, name, isAdmin, sectionPermissions, trashActions, messageActions },
+    plexIdentity:
+      plexIdentity ??
+      resolvePlexIdentity({ overrideEmail: row.plexEmail, overrideUsername: row.plexUsername }),
   };
 }
 
