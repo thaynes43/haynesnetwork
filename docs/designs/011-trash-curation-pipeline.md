@@ -156,6 +156,11 @@ trash.batches.get         // in: { batchId: uuid }
 trash.batches.saveStats   // in: { batchId: uuid }
 // out: { batchId, totalSaves, totalUnsaves, netSaved,
 //        byUser: [{ userId, displayName, saves, unsaves }] }
+// NET, not raw event counts (repeatedly save/un-saving a title must NOT inflate the tallies):
+//   saves   = items CURRENTLY 'saved' (grouped by saved_by) — the SAME source as counts.saved + the
+//             wall; unsaves = items rescued-then-released (state<>'saved', last audit event an un-save,
+//             credited to the last releaser). The two sets are disjoint; netSaved == totalSaves.
+//   trash_batch_saves is the untouched audit/tuning DATASET behind this — never the count.
 
 // ---- lifecycle (trashActionProcedure('manage_batches') — admin ⇒ ok) ----
 trash.batches.create      // in: { mediaKind: 'movie'|'tv' }
@@ -242,7 +247,8 @@ running counts → **the wall** → save-stats → history → settings.
 - **User (Leaving Soon) view** — same wall + the countdown banner ("These delete in N days — tap
   the ✕ on anything you want to keep"); no lifecycle buttons; calm read-only after expiry.
 - **Save-stats** — a "Who rescued what" list under the wall (`saveStats.byUser` — the PLAN-014
-  tuning record, surfaced lightly).
+  tuning record, surfaced lightly). NET counts: a saver's tally is their current effect (save→unsave→
+  save = 1; save→unsave = 0; a tug-of-war lands on the final holder), never a raw flip count.
 - **Admin settings** — a Trash-settings card at the bottom of the Batches tab (admin-only —
   `trash.settings.*` is adminProcedure): skip-gate flip via two-step ConfirmButton with the
   straight-to-Leaving-Soon explanation, default window days; flips are `update_app_setting`-

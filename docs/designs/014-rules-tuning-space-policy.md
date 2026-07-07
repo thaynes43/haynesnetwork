@@ -114,7 +114,9 @@ interface TuningReport {
 
 `rescued` = items that ended `saved` (a human rescue = a labelled false positive); `deleted` = swept;
 `skipped` = guardian-kept (excluded from the save-rate ratio, reported alongside). The frozen `deleted_*`
-wins for swept items; live `media_metadata` fills saved/skipped items.
+wins for swept items; live `media_metadata` fills saved/skipped items. This is NET by construction — the
+report keys off each item's FINAL `state`, never the raw `trash_batch_saves` flip log, so a title that
+was saved then un-saved then swept counts as `deleted` (never `rescued`); the save-rate is churn-immune.
 
 **Graduation readiness** (`GRADUATION_THRESHOLDS = { minCompletedBatches:3, maxSaveRatePct:10, maxRestores:0 }`,
 ADR-031 C-05): over the most recent **completed** (`state='deleted'`) **policy-proposed** batches (those

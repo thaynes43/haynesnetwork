@@ -25,7 +25,7 @@ import {
   type TrashBatchState,
   type TrashMediaKind,
 } from '@hnet/db';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { getAppSetting } from './app-settings';
 import { inTransaction, resolveDb } from './db-client';
 import {
@@ -1186,56 +1186,97 @@ export async function getBatchDetail(input: {
 
 export interface BatchSaveStats {
   batchId: string;
+  /** Items CURRENTLY held saved (net) — identical to `counts.saved` + the poster wall. */
   totalSaves: number;
+  /** Items rescued at some point but NOT currently saved (net churn) — released, attributed to the
+   *  last releaser. Disjoint from the saved set (an item is in exactly one, or neither). */
   totalUnsaves: number;
+  /** The net rescued count. Equals `totalSaves` — each item contributes at most one net save. */
   netSaved: number;
   byUser: Array<{ userId: string | null; displayName: string | null; saves: number; unsaves: number }>;
 }
 
-/** ADR-025 (Q-07) — the tuning-data summary for a batch: save/unsave totals + a per-user breakdown. */
+/**
+ * ADR-025 (Q-07) — the "who rescued what" summary for a batch, in NET semantics: a saver's tally is
+ * their CURRENT net effect, never a raw count of save/unsave events. Repeatedly saving+unsaving a
+ * title no longer inflates anything — save→unsave→save is 1 net save; save→unsave is 0; a two-user
+ * tug-of-war lands on the FINAL holder only.
+ *
+ * Two disjoint, net-by-construction sources (the raw `trash_batch_saves` log stays intact as the
+ * PLAN-014 tuning DATASET / audit trail — it is not the count):
+ *   - saves   → current item state (`trash_batch_items.state = 'saved'`, grouped by `saved_by`). This
+ *               is the SAME source as `counts.saved` and the poster wall, so the card can never drift
+ *               from what the owner sees on the grid.
+ *   - unsaves → the audit log's LATEST event per still-un-saved item (`state <> 'saved'`, DISTINCT ON
+ *               newest first). An item currently saved has a `save` as its latest event and is excluded
+ *               here, so the two sets never overlap (no double count). Every row this returns is a
+ *               net-released item (its latest flip was an un-save — the only way to leave `saved`),
+ *               credited to whoever released it last.
+ */
 export async function getBatchSaveStats(input: {
   db?: DbClient;
   batchId: string;
 }): Promise<BatchSaveStats> {
   const db = resolveDb(input.db);
-  const rows = await db
+
+  // Net SAVES — current holders, straight from item state (matches counts.saved + the wall).
+  const savedRows = await db
     .select({
+      userId: trashBatchItems.savedBy,
+      displayName: users.displayName,
+      n: sql<number>`count(*)::int`,
+    })
+    .from(trashBatchItems)
+    .leftJoin(users, eq(users.id, trashBatchItems.savedBy))
+    .where(and(eq(trashBatchItems.batchId, input.batchId), eq(trashBatchItems.state, 'saved')))
+    .groupBy(trashBatchItems.savedBy, users.displayName);
+
+  // Net UNSAVES — one row per still-released item (its latest audit event, which is always an un-save
+  // once the item is no longer 'saved'); attributed to the last releaser.
+  const releasedRows = await db
+    .selectDistinctOn([trashBatchSaves.batchItemId], {
       userId: trashBatchSaves.userId,
       displayName: users.displayName,
-      action: trashBatchSaves.action,
-      n: sql<number>`count(*)::int`,
     })
     .from(trashBatchSaves)
     .innerJoin(trashBatchItems, eq(trashBatchItems.id, trashBatchSaves.batchItemId))
     .leftJoin(users, eq(users.id, trashBatchSaves.userId))
-    .where(eq(trashBatchItems.batchId, input.batchId))
-    .groupBy(trashBatchSaves.userId, users.displayName, trashBatchSaves.action);
+    .where(and(eq(trashBatchItems.batchId, input.batchId), ne(trashBatchItems.state, 'saved')))
+    .orderBy(trashBatchSaves.batchItemId, desc(trashBatchSaves.createdAt), desc(trashBatchSaves.id));
 
-  let totalSaves = 0;
-  let totalUnsaves = 0;
   const byUserMap = new Map<
     string,
     { userId: string | null; displayName: string | null; saves: number; unsaves: number }
   >();
-  for (const r of rows) {
-    const key = r.userId ?? 'system';
-    const entry =
-      byUserMap.get(key) ?? { userId: r.userId, displayName: r.displayName, saves: 0, unsaves: 0 };
-    if (r.action === 'save') {
-      entry.saves += r.n;
-      totalSaves += r.n;
-    } else {
-      entry.unsaves += r.n;
-      totalUnsaves += r.n;
+  const entryFor = (userId: string | null, displayName: string | null) => {
+    const key = userId ?? 'system';
+    let entry = byUserMap.get(key);
+    if (entry === undefined) {
+      entry = { userId, displayName, saves: 0, unsaves: 0 };
+      byUserMap.set(key, entry);
+    } else if (entry.displayName === null && displayName !== null) {
+      entry.displayName = displayName;
     }
-    byUserMap.set(key, entry);
+    return entry;
+  };
+
+  let totalSaves = 0;
+  for (const r of savedRows) {
+    entryFor(r.userId, r.displayName).saves += r.n;
+    totalSaves += r.n;
+  }
+
+  let totalUnsaves = 0;
+  for (const r of releasedRows) {
+    entryFor(r.userId, r.displayName).unsaves += 1;
+    totalUnsaves += 1;
   }
 
   return {
     batchId: input.batchId,
     totalSaves,
     totalUnsaves,
-    netSaved: totalSaves - totalUnsaves,
+    netSaved: totalSaves,
     byUser: [...byUserMap.values()],
   };
 }
