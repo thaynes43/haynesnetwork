@@ -206,6 +206,34 @@ describe('RadarrClient (v3)', () => {
     expect((await client.getHistorySince('2026-07-02T00:00:00Z')).length).toBeGreaterThan(0);
   });
 
+  it('parses GET /diskspace to the {path,label,freeSpace,totalSpace} subset (PLAN-013)', async () => {
+    const { client, calls } = radarr([
+      {
+        path: '/api/v3/diskspace',
+        // Live-shaped: the HaynesTower array (78.8% used) + an unrelated config mount, each with
+        // extra fields the BC-03 ACL must strip.
+        body: [
+          {
+            path: '/data/haynestower',
+            label: 'haynestower',
+            freeSpace: 112_430_400_000_000,
+            totalSpace: 529_960_000_000_000,
+            accessible: true, // stripped
+          },
+          { path: '/config', freeSpace: 5_000_000_000, totalSpace: 20_000_000_000 },
+        ],
+      },
+    ]);
+    const disks = await client.getDiskSpace();
+    expect(calls[0]?.url.pathname).toBe('/api/v3/diskspace');
+    const tower = disks.find((d) => d.path === '/data/haynestower')!;
+    expect(tower.totalSpace).toBe(529_960_000_000_000);
+    expect(tower.freeSpace).toBe(112_430_400_000_000);
+    // (1 - free/total) ≈ 78.8% used — the number the utilization card cross-checks against.
+    expect(Math.round((1 - tower.freeSpace / tower.totalSpace) * 1000) / 10).toBe(78.8);
+    expect(tower).not.toHaveProperty('accessible'); // strip mode
+  });
+
   it('parses wanted/missing pages as movies (rootFolderPath optional there)', async () => {
     const { client } = radarr([
       { path: '/api/v3/wanted/missing', body: fixture('radarr.wanted-missing') },
@@ -284,6 +312,26 @@ describe('LidarrClient (v1)', () => {
     expect((await client.listTags()).map((t) => t.label)).toContain('spotifyalbums');
     expect((await client.listQualityProfiles())[0]?.name).toBe('Any');
     expect((await client.listRootFolders())[0]?.path).toBe('/data/media/music');
+  });
+
+  it('GET /diskspace hits the v1 base path and parses the subset (PLAN-013 music array)', async () => {
+    const { client, calls } = lidarr([
+      {
+        path: '/api/v1/diskspace',
+        body: [
+          {
+            path: '/data/cephfs-hdd',
+            label: 'cephfs',
+            freeSpace: 130_450_000_000_000,
+            totalSpace: 174_840_000_000_000,
+          },
+        ],
+      },
+    ]);
+    const disks = await client.getDiskSpace();
+    expect(calls[0]?.url.pathname).toBe('/api/v1/diskspace'); // Lidarr v1, not v3
+    expect(disks[0]?.path).toBe('/data/cephfs-hdd');
+    expect(disks[0]?.totalSpace).toBe(174_840_000_000_000);
   });
 
   it('lists albums for an artist (fix-target picker, D-06 live proxy)', async () => {

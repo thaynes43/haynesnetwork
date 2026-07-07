@@ -34,6 +34,22 @@ export const tagSchema = z.object({
 });
 export type ArrTag = z.infer<typeof tagSchema>;
 
+/**
+ * ADR-030 / DESIGN-013 (PLAN-013) — `GET /api/v3|v1/diskspace` element. UNLIKE `/rootfolder`
+ * (freeSpace only), diskspace carries BOTH `freeSpace` AND `totalSpace`, so it is the utilization
+ * source of record (the only source with a total; verified live 2026-07-07 — Radarr `/data/haynestower`
+ * 112.43 TB free / 529.96 TB total = 78.8% used). One element per mounted disk visible to the *arr;
+ * the domain filters to the media-library array paths. `label` is the *arr's disk label (optional).
+ * Strip-mode: any other fields are tolerated and dropped (BC-03 ACL).
+ */
+export const diskSpaceSchema = z.object({
+  path: z.string(),
+  label: z.string().optional(),
+  freeSpace: z.number(),
+  totalSpace: z.number(),
+});
+export type ArrDiskSpace = z.infer<typeof diskSpaceSchema>;
+
 /** Paged *arr envelope (`/history`, `/wanted/missing`, …). */
 export const pagedSchema = <T extends z.ZodType>(record: T) =>
   z.object({
