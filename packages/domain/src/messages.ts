@@ -6,7 +6,7 @@ import {
   type MessageStatus,
 } from '@hnet/db';
 import { eq } from 'drizzle-orm';
-import { MessageNotOwnedError, NotFoundError } from './errors';
+import { MessageModeratedError, MessageNotOwnedError, NotFoundError } from './errors';
 import { inTransaction, resolveDb } from './db-client';
 
 /**
@@ -63,20 +63,27 @@ export interface EditMessageInput {
 }
 
 /**
- * Edit a Message's content (the `post` action, AUTHOR-ONLY). The author may edit their own message
- * any time; another user's message is never content-edited (moderation is status-only — content is
- * preserved). Editing a non-owned message ⇒ MessageNotOwnedError. Sets `edited_at`.
+ * Edit a Message's content (the `post` action, AUTHOR-ONLY). The author may edit their own VISIBLE
+ * message any time; another user's message is never content-edited (moderation is status-only —
+ * content is preserved). Editing a non-owned message ⇒ MessageNotOwnedError. Editing a
+ * hidden/deleted message ⇒ MessageModeratedError — the soft-moderated content is the audit record,
+ * so the author must not be able to rewrite it out from under the moderation trail. Sets `edited_at`.
  */
 export async function editMessage(input: EditMessageInput): Promise<MessageRow> {
   return inTransaction(input.db, async (tx) => {
     const [existing] = await tx
-      .select({ id: messages.id, authorUserId: messages.authorUserId })
+      .select({ id: messages.id, authorUserId: messages.authorUserId, status: messages.status })
       .from(messages)
       .where(eq(messages.id, input.messageId))
       .for('update');
     if (!existing) throw new NotFoundError(`Message ${input.messageId} not found`);
     if (existing.authorUserId !== input.editorId) {
       throw new MessageNotOwnedError('You can only edit your own messages.');
+    }
+    if (existing.status !== 'visible') {
+      throw new MessageModeratedError(
+        'This message was moderated; it cannot be edited unless a moderator restores it.',
+      );
     }
     const [row] = await tx
       .update(messages)

@@ -157,7 +157,9 @@ attributedUserName }` + `nextCursor`. NO full filter-engine port backend-side (Q
   editedAt, moderatedBy?, moderatedAt?, moderationNote? }` (moderation fields null for non-moderators).
 - `post` — `messageActionProcedure('post')`, `{ subject?, body(1..8000), mediaItemId? }` → `postMessage`.
 - `edit` — `messageActionProcedure('post')`, `{ messageId, subject?, body }` → `editMessage`
-  (author-only; MESSAGE_NOT_OWNED → FORBIDDEN otherwise; sets `edited_at`).
+  (author-only; MESSAGE_NOT_OWNED → FORBIDDEN otherwise; sets `edited_at`). Only a **`visible`**
+  message is editable — a moderated (hidden/deleted) message's content is the audit record, so an
+  author edit is rejected (MESSAGE_MODERATED → CONFLICT) until a moderator restores it.
 - `moderate` — `messageActionProcedure('moderate')`, `{ messageId, status, note? }` → `moderateMessage`
   (soft transition, preserves content, stamps the trail). UX: ConfirmButton for hide/delete (ADR-014).
 

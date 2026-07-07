@@ -163,6 +163,26 @@ describe('communication.messages — action gating + moderation (ADR-026 D-06)',
     expect(seen!.moderationNote).toBe('off-topic'); // moderation trail exposed to moderators
   });
 
+  it('a non-moderator CANNOT reach hidden/deleted content via status-filter injection', async () => {
+    const posted = await poster().communication.messages.post({ body: 'redacted take' });
+    await moderator().communication.messages.moderate({ messageId: posted.id, status: 'deleted' });
+    // Probe every list/filter combination a member could inject — the status filter is ignored
+    // for non-moderators, so ONLY visible rows ever come back and the deleted row never appears.
+    for (const status of ['hidden', 'deleted', 'visible', undefined] as const) {
+      const res = await reader().communication.messages.list(status ? { status } : {});
+      expect(res.items.every((m) => m.status === 'visible')).toBe(true);
+      expect(res.items.find((m) => m.id === posted.id)).toBeUndefined();
+    }
+  });
+
+  it('the AUTHOR cannot edit a message a moderator hid (CONFLICT — audit content preserved)', async () => {
+    const posted = await poster().communication.messages.post({ body: 'original' });
+    await moderator().communication.messages.moderate({ messageId: posted.id, status: 'hidden' });
+    await expect(
+      poster().communication.messages.edit({ messageId: posted.id, body: 'rewritten' }),
+    ).rejects.toMatchObject({ code: 'CONFLICT' } satisfies Partial<TRPCError>);
+  });
+
   it('the moderation trail is NOT leaked to non-moderators', async () => {
     // Seed a visible message that was previously moderated (visible again) via the domain writer.
     const posted = await postMessage({ db: t.db, authorId: author.id, body: 'restored later' });

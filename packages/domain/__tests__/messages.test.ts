@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { mediaItems, messages } from '@hnet/db/schema';
 import {
+  MessageModeratedError,
   MessageNotOwnedError,
   NotFoundError,
   editMessage,
@@ -134,6 +135,30 @@ describe('Messages board writers (ADR-026 D-06)', () => {
     // The row is never physically removed by any status transition.
     const [still] = await t.db.select().from(messages).where(eq(messages.id, posted.id));
     expect(still).toBeDefined();
+  });
+
+  it('the AUTHOR cannot rewrite a hidden/deleted message (moderated content is the audit record)', async () => {
+    const posted = await postMessage({ db: t.db, authorId, body: 'evidence' });
+    await moderateMessage({ db: t.db, messageId: posted.id, moderatorId, status: 'hidden' });
+    await expect(
+      editMessage({ db: t.db, messageId: posted.id, editorId: authorId, body: 'nothing to see' }),
+    ).rejects.toBeInstanceOf(MessageModeratedError);
+    await moderateMessage({ db: t.db, messageId: posted.id, moderatorId, status: 'deleted' });
+    await expect(
+      editMessage({ db: t.db, messageId: posted.id, editorId: authorId, body: 'gone' }),
+    ).rejects.toBeInstanceOf(MessageModeratedError);
+    // Content survived both edit attempts…
+    const [row] = await t.db.select().from(messages).where(eq(messages.id, posted.id));
+    expect(row!.body).toBe('evidence');
+    // …and a moderator restore makes it editable again.
+    await moderateMessage({ db: t.db, messageId: posted.id, moderatorId, status: 'visible' });
+    const edited = await editMessage({
+      db: t.db,
+      messageId: posted.id,
+      editorId: authorId,
+      body: 'clarified',
+    });
+    expect(edited.body).toBe('clarified');
   });
 
   it('moderating a non-existent message is NotFound', async () => {

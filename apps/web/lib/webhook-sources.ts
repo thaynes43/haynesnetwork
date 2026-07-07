@@ -35,6 +35,35 @@ export function secretsMatch(provided: string | null | undefined, expected: stri
   return timingSafeEqual(a, b);
 }
 
+/**
+ * Read the request body enforcing MAX_WEBHOOK_BODY_BYTES WITHOUT ever buffering more than the cap:
+ * a declared oversize Content-Length is rejected up front (cheap), and the stream itself is read
+ * chunk-by-chunk with a hard byte cap (chunked/lying senders can't sidestep the header check).
+ * Returns the UTF-8 text, or null when the cap is exceeded (the caller responds 413).
+ */
+export async function readWebhookBodyCapped(
+  req: Request,
+  cap: number = MAX_WEBHOOK_BODY_BYTES,
+): Promise<string | null> {
+  const declared = Number(req.headers.get('content-length') ?? Number.NaN);
+  if (Number.isFinite(declared) && declared > cap) return null;
+  if (!req.body) return '';
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > cap) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
 /** The per-source env var holding that source's webhook shared secret (fail-closed if unset). */
 export const WEBHOOK_SECRET_ENV: Record<NotificationSource, string> = {
   maintainerr: 'MAINTAINERR_WEBHOOK_SECRET',

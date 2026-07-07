@@ -10,9 +10,9 @@
 import { recordNotification } from '@hnet/domain';
 import { NOTIFICATION_SOURCES, type NotificationSource } from '@hnet/db';
 import {
-  MAX_WEBHOOK_BODY_BYTES,
   WEBHOOK_SECRET_ENV,
   parserForSource,
+  readWebhookBodyCapped,
   secretsMatch,
 } from '@/lib/webhook-sources';
 
@@ -50,11 +50,11 @@ export async function POST(
   // Constant-time compare (never a timing-observable `===`); never echo the secret.
   if (!secretsMatch(provided, expected)) return new Response('unauthorized', { status: 401 });
 
-  // Cap the body BEFORE parsing — an unauthenticated endpoint must not buffer/persist unbounded input.
-  const rawText = await req.text();
-  if (Buffer.byteLength(rawText, 'utf8') > MAX_WEBHOOK_BODY_BYTES) {
-    return new Response('payload too large', { status: 413 });
-  }
+  // Cap the body BEFORE buffering/parsing — the stream is read with a hard byte cap (never
+  // accumulating more than the cap), so even a lying/chunked sender can't make us buffer
+  // unbounded input.
+  const rawText = await readWebhookBodyCapped(req);
+  if (rawText === null) return new Response('payload too large', { status: 413 });
 
   let json: unknown;
   try {
