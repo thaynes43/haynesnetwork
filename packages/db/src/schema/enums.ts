@@ -294,8 +294,20 @@ export type TrashSaveAction = (typeof TRASH_SAVE_ACTIONS)[number];
 export const APP_SETTING_KEYS = [
   'trash_skip_admin_gate', // bool — when true, createBatch auto-green-lights (audited gate_skipped)
   'trash_default_window_days', // int — the default save-window length copied onto a batch at green-light
+  // ADR-027 / DESIGN-004 D-15 (PLAN-010 MOTD) — the Message-of-the-Day record (jsonb object:
+  // { message, severity, enabled, startsAt, endsAt, updatedBy }). The dashboard banner reuses the
+  // generic audited store rather than a bespoke `motd` table (Open decision #1 resolved to reuse).
+  // The app_settings.key CHECK is relaxed to admit this value in migration 0019.
+  'motd',
 ] as const;
 export type AppSettingKey = (typeof APP_SETTING_KEYS)[number];
+
+// ADR-027 / DESIGN-004 D-15 (PLAN-010) — a MOTD's severity, driving the banner's token palette
+// (`--color-info` / `--color-warning`) and its ARIA role (status vs alert). Stored inside the
+// `motd` app_settings jsonb value (no DB CHECK of its own); this const array is the single source
+// of truth for the TS type + the API zod enum. `critical` is intentionally out of scope (Open #4).
+export const MOTD_SEVERITIES = ['info', 'warning'] as const;
+export type MotdSeverity = (typeof MOTD_SEVERITIES)[number];
 
 // ADR-023 / DESIGN-010 (addendum c) — the notification store's source set. PLAN-006 shipped the
 // generic receiver with Maintainerr as source #1; ADR-026 / DESIGN-012 (PLAN-009 Bulletin) WIDENS

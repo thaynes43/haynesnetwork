@@ -11,6 +11,7 @@ import { restoreRouter } from './restore';
 import { plexRouter } from './plex';
 import { trashRouter } from './trash';
 import { communicationRouter } from './communication';
+import { motdRouter } from './motd';
 
 export const appRouter = router({
   profile: profileRouter,
@@ -32,6 +33,9 @@ export const appRouter = router({
   // ADR-026 / DESIGN-012 (PLAN-009): the Bulletin section — aggregated notification Feed +
   // user Messages board, section-gated read + per-action post/moderate grants.
   communication: communicationRouter,
+  // ADR-027 / DESIGN-004 D-15 (PLAN-010): the dashboard Message-of-the-Day banner — admin compose/
+  // clear over the audited app_settings store, one authed read for every user's dashboard.
+  motd: motdRouter,
 });
 
 export type AppRouter = typeof appRouter;
