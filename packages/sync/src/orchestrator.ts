@@ -9,11 +9,14 @@ import {
   MassTombstoneAbortedError,
   backfillEventAttribution,
   completeFixRequests,
+  evaluateSpacePolicy,
   finishSyncRun,
   startSyncRun,
   sweepExpiredBatches,
   type MaintainerrClientBundle,
+  type SpacePolicyReport,
   type SweepReport,
+  type UtilizationArrBundle,
 } from '@hnet/domain';
 import { runArrFullSync } from './arr-full';
 import { runArrIncrementalSync } from './arr-incremental';
@@ -45,8 +48,12 @@ export interface RunSyncOptions {
   /** metadata-refresh: cap the rows harvested this run. */
   metadataLimit?: number;
   /** ADR-025 / DESIGN-011 — the Maintainerr client bundle the `trash-batch-sweep` mode drives
-   *  (read + confined write). Required only for that mode; tests inject a fetch-stubbed bundle. */
+   *  (read + confined write). Required only for that mode; tests inject a fetch-stubbed bundle.
+   *  ADR-031 — the `space-policy` mode ALSO drives it (createBatchFromPending). */
   maintainerr?: MaintainerrClientBundle;
+  /** ADR-031 / DESIGN-014 — the diskspace-only *arr read bundle the `space-policy` mode reads
+   *  utilization from (getUtilization). Required only for that mode; tests inject a stubbed bundle. */
+  arr?: UtilizationArrBundle;
   /** Injected DB (tests); defaults to the lazy @hnet/db client. */
   db?: DbClient;
   logger?: SyncLogger;
@@ -78,6 +85,10 @@ export interface SyncReport {
   sweep?: SweepReport | null;
   /** The sweep's error (e.g. an unsafe-Maintainerr refusal) — sets totalFailure for the CLI exit. */
   sweepError?: string;
+  /** ADR-031 — the `space-policy` proposal result (null for every other mode / when it errored). */
+  spacePolicy?: SpacePolicyReport | null;
+  /** The space-policy run's error — sets totalFailure for the CLI exit. */
+  spacePolicyError?: string;
   /** True when EVERY requested source failed/aborted — the CLI's nonzero-exit signal. */
   totalFailure: boolean;
 }
@@ -177,6 +188,56 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       sweep,
       ...(sweepError !== undefined ? { sweepError } : {}),
       totalFailure: sweepError !== undefined,
+    };
+  }
+
+  // ADR-031 / DESIGN-014 — the space-driven policy is also NOT a per-source loop: it reads *arr
+  // /diskspace utilization + drives Maintainerr through createBatchFromPending to PROPOSE (never
+  // delete) draft batches for arrays over target. Like the sweep it writes no sync_runs row — its
+  // audit trail is the trash_space_policy ledger event + the space_policy notification + the proposed
+  // batch's transition events. Returns early with a `spacePolicy` report.
+  if (options.mode === 'space-policy') {
+    const startedAt = new Date();
+    if (!options.maintainerr) {
+      throw new Error('space-policy requires a maintainerr client bundle');
+    }
+    if (!options.arr) {
+      throw new Error('space-policy requires an *arr diskspace read bundle');
+    }
+    let spacePolicy: SpacePolicyReport | null = null;
+    let spacePolicyError: string | undefined;
+    try {
+      spacePolicy = await evaluateSpacePolicy({
+        db,
+        maintainerr: options.maintainerr,
+        arr: options.arr,
+        actorId: null,
+      });
+      logger.info('space policy evaluated', {
+        enabled: spacePolicy.enabled,
+        proposedCount: spacePolicy.proposedCount,
+        arrays: spacePolicy.arrays.map((a) => ({
+          key: a.key,
+          usedPct: a.usedPct,
+          target: a.target,
+          overTarget: a.overTarget,
+          proposals: a.proposals.map((p) => ({ mediaKind: p.mediaKind, outcome: p.outcome })),
+        })),
+      });
+    } catch (error) {
+      spacePolicyError = error instanceof Error ? error.message : String(error);
+      logger.error('space policy evaluation failed', { error: spacePolicyError });
+    }
+    return {
+      mode: options.mode,
+      startedAt,
+      finishedAt: new Date(),
+      sources: [],
+      backfill: null,
+      fixesCompleted: null,
+      spacePolicy,
+      ...(spacePolicyError !== undefined ? { spacePolicyError } : {}),
+      totalFailure: spacePolicyError !== undefined,
     };
   }
 
