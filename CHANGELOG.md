@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.11.0](https://github.com/thaynes43/haynesnetwork/compare/v0.10.0...v0.11.0) (2026-07-07)
+
+
+### Features
+
+* Trash section — Maintainerr integration, per-action grants, curated deletion surface (ADR-023) ([#70](https://github.com/thaynes43/haynesnetwork/issues/70)) ([8c5f2dc](https://github.com/thaynes43/haynesnetwork/commit/8c5f2dcba8d957f35f1be22c5a6f78a13c3fedda))
+
+
+### Documentation
+
+* HANDOFF — ADR-024 shipped (v0.10.0); note inferred enter-All live-validation ([#67](https://github.com/thaynes43/haynesnetwork/issues/67)) ([7b857bd](https://github.com/thaynes43/haynesnetwork/commit/7b857bdcc654cd8125e0084fa21df3a2c7383aa7))
+* plans 011-014 (Authentik hardening, trash curation pipeline, metrics, rules tuning) + 006 test-rules amendment ([#69](https://github.com/thaynes43/haynesnetwork/issues/69)) ([3fc732f](https://github.com/thaynes43/haynesnetwork/commit/3fc732f6dc79ae0f18528a0dd3dd3125fcf0ce3b))
+
 ## [0.10.0](https://github.com/thaynes43/haynesnetwork/compare/v0.9.0...v0.10.0) (2026-07-06)
 
 
