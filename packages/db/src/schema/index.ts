@@ -30,3 +30,8 @@ export * from './role-plex-server-all-grants';
 export * from './plex-share-audit';
 // ADR-023 / DESIGN-010 (addendum c) — generic in-app notification store (Maintainerr source #1)
 export * from './notifications';
+// ADR-025 / DESIGN-011 — Trash curation pipeline: generic app settings + batches/items/save events
+export * from './app-settings';
+export * from './trash-batches';
+export * from './trash-batch-items';
+export * from './trash-batch-saves';
