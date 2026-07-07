@@ -3,12 +3,20 @@
 > The single resume point for agents. Update this in the same change as any milestone.
 > Derive current state from this file's top; you should not have to reconcile anything.
 
-- **Last updated:** 2026-07-07 (Fable 5 autonomous run, in progress — PLAN-012 UX pass)
+- **Last updated:** 2026-07-07 (Fable 5 autonomous run — PLAN-012 complete, v0.12.0 live-validated)
 - **Workflow mode:** PR flow (GATE A executed — see
   `.agents/plans/completed/001-gate-a-pr-cutover.md`).
   `main` is branch-protected: branch → PR → required checks `lint-and-typecheck`, `test`,
   `build` green → squash-merge. `e2e` advisory. Conventional-commit titles drive release-please.
-- **Latest release: v0.11.2 (signed) — PLAN-006 Trash section: Maintainerr-backed deletion UI +
+- **Latest release: v0.12.0 (signed) — PLAN-012 Trash curation pipeline: curation batches →
+  phone-first poster-wall review → Leaving Soon → windowed (guardian-checked) deletion
+  (ADR-025/DESIGN-011; migration 0017; hourly `trash-batch-sweep` CronJob). Live-validated 7/7 on
+  staging: a real 18-candidate batch driven through the whole pipeline (18/18 proxied posters,
+  0.00px reflow on rescue taps; attributed save/unsave tuning rows; greenlight → Maintainerr
+  manual collection `arrAction=DO_NOTHING` visible in real Plex; family save window with
+  server-enforced owner-or-manager un-save; expire-now gated behind window closure; sweep no-op on
+  the unexpired batch). The batch sits in Leaving Soon (expires 2026-07-21) as the owner's morning
+  demo.** Prior: **v0.11.2 (signed) — PLAN-006 Trash section: Maintainerr-backed deletion UI +
   fine-grained Section/Action role permissions (ADR-023/DESIGN-010; migration 0016). v0.11.0
   feature + fixes v0.11.1 (trash rule arm/disarm round-trip; pending list reflects live
   exclusions) and v0.11.2 (rules PUT carries server selection + normalized dataType — no
@@ -33,14 +41,15 @@
 - **The autonomous Fable 5 run is IN PROGRESS.** Entry prompt
   `.agents/KICKOFF.md`; queue in `.agents/plans/` (see `.agents/plans/README.md`). **Plans done
   so far:** 002 ✓ (v0.5.0); 003 ✓ (v0.6.0 + fix v0.6.1); 004 ✓ (v0.8.0/v0.8.1); 005 ✓
-  (v0.9.0); 006 ✓ (v0.11.0 + fixes v0.11.1/v0.11.2); 007 ✓ (v0.7.0); ADR-024 ✓ (v0.10.0,
-  follow-on to 003). **In flight:** 012 (Trash curation pipeline) — backend reviewed + fixed,
-  poster-wall UX in progress; 011 (Authentik hardening) — branding mocks awaiting the owner's
-  pick; 015 (downstream *arr action feedback) — authored, not yet built.
-  **Queue extended per owner (plans 011–015 authored):** 012 (Trash
-  curation pipeline: batches → poster review → Leaving Soon → windowed deletion) → 011 (Authentik
-  MFA-for-native-accounts + haynesnetwork sign-in rebrand) → 009 → 010 → 008 (public cutover) →
-  then post-cutover: 013 (disk/reclaim metrics) → 014 (rules tuning + space policy).
+  (v0.9.0); 006 ✓ (v0.11.0 + fixes v0.11.1/v0.11.2); 007 ✓ (v0.7.0); 012 ✓ (v0.12.0);
+  ADR-024 ✓ (v0.10.0, follow-on to 003). **NEXT:** 009 (Bulletin) building; 010 (MOTD) after;
+  011 (Authentik hardening) — branding mocks awaiting the owner's pick; 008 (public cutover) —
+  awaiting the owner's go; 015 (downstream *arr action feedback) — authored, not yet built.
+  **Queue extended per owner (plans 011–015 authored):** 012 (Trash curation pipeline: batches →
+  poster review → Leaving Soon → windowed deletion) ✓ v0.12.0 → **009 (Bulletin) → 010 (MOTD) →
+  011** (Authentik MFA-for-native-accounts + haynesnetwork sign-in rebrand; reordered after 009/010
+  while its branding mocks await the owner's pick) → 008 (public cutover) → then post-cutover:
+  013 (disk/reclaim metrics) → 014 (rules tuning + space policy).
   v0.4.0 recap: unified roles (ADR-012), arbitrary catalog URLs (ADR-013), two-step
   `ConfirmButton`, drag-drop catalog reorder, Library sub-tabs.
 - **PLAN-006 (Trash section) COMPLETE — shipped v0.11.0 + fixes v0.11.1/v0.11.2, live-validated
@@ -83,25 +92,26 @@
 
 ## Current state
 
-- **PLAN-012 (Trash curation pipeline) — backend + POSTER-WALL UX code-complete on
-  `feat/trash-curation` (2026-07-07, pending PR/merge + live validation).** Backend vertical
-  (ADR-025 / DESIGN-011: migration 0017 batch tables + `app_settings`, `trash-batches.ts`
-  single-writers, `trash.batches.*`/`trash.settings.*` tRPC, `trash-batch-sweep` sync mode,
-  Maintainerr v3.17.0 manual-collection drive with `arrAction: DO_NOTHING`) was adversarially
-  reviewed + fixed at `588b334`. The UX pass adds the **Batches tab on `/trash`** (D-07
-  as-built): the phone-first poster wall (X → lock rescue taps, optimistic + server-reconciled,
-  eye/shield/skip/gone glyphs, ADR-015 reflow-free overlay swaps), lifecycle strip
-  (Create/Green-light Modal/Cancel two-step/Expire-now DANGER Modal with the SweepReport
-  partition incl. `raceSkipped`+`aborted`), the Leaving-Soon countdown + family
-  `save_leaving_soon` flow (lock anything, unlock own), save-stats ("Who rescued what"), and the
-  admin Trash-settings card (skip-gate + default window). `getBatchDetail` gained a read-only
-  metadata join (ratings + recentlyWatched) — DESIGN-011 D-05 updated. e2e: 7 new journeys in
-  `trash-batches.spec.ts` (full lifecycle vs the stub, incl. a domain-driven expired-window
-  green-light helper); whole suite green (100 = 93 existing + 7 new). Screenshot set for owner sign-off captured via
-  `apps/web/e2e/support/capture-batches-ux.ts`. **Remaining for PLAN-012 DoD:** PR/merge →
-  staging deploy (migration 0017 + the hourly `trash-batch-sweep` CronJob manifest in
-  haynes-ops, D-08 checklist) → the LIVE non-destructive journeys 1–4 + owner screenshot
-  approval → move the plan to completed.
+- **PLAN-012 (Trash curation pipeline) COMPLETE — shipped v0.12.0, live-validated 7/7 on staging**
+  (`.agents/plans/completed/012-trash-curation-pipeline.md`). ADR-025 / DESIGN-011: migration 0017
+  batch tables + `app_settings`, `trash-batches.ts` single-writers, `trash.batches.*` /
+  `trash.settings.*` tRPC, the hourly `trash-batch-sweep` sync mode, and the Maintainerr v3.17.0
+  manual-collection drive with `arrAction: DO_NOTHING`. UX = the **Batches tab on `/trash`**: the
+  phone-first poster wall (X → lock rescue taps, optimistic + server-reconciled, ADR-015
+  reflow-free overlay swaps), the lifecycle strip (Create / Green-light Modal / Cancel two-step /
+  Expire-now DANGER Modal with the SweepReport partition), the Leaving-Soon countdown + family
+  `save_leaving_soon` flow (lock anything, un-save own — owner/manager may un-save any), save-stats,
+  and the admin Trash-settings card (skip-gate + default window). **Live evidence:** a real
+  18-candidate batch driven through the whole pipeline — 18/18 proxied posters, 0.00px reflow on
+  rescue taps; attributed save/unsave tuning rows; greenlight → visible "Leaving Soon" collection
+  in real Plex; family window with server-enforced owner-or-manager un-save; expire-now gated
+  behind window closure; sweep verified no-op on the unexpired batch. Three adversarial-review
+  findings closed pre-ship, incl. an inverted never-ages hazard. **OWNER NOTES:** (a) the live
+  Leaving Soon batch **expires 2026-07-21** and is the owner's morning demo — his poster pass + the
+  family grants (**Default role: Trash `read_only` + `save_leaving_soon` action**) are **one admin
+  visit away, currently OFF**; (b) the **hourly `trash-batch-sweep` CronJob is armed** in
+  haynes-ops — **only expired greenlit batches ever delete**, so the unexpired demo batch is safe
+  until the owner acts.
 - **ADR-024 all-libraries Plex self-service SHIPPED (v0.10.0)** — a role can grant
   all-libraries-on-a-server; users self-toggle All ↔ specific (leaving All is lossless, seeded
   with the current full set); no silent demotion (per-library ops throw `PLEX_ALL_STATE` in the
@@ -188,22 +198,25 @@ The **Fable 5 autonomous run** works the release queue in `.agents/plans/` (star
    Restore nav, reuses the ADR-021 Section-Permission base 005 shipped). Live-validated with the
    owner-required NON-DELETING test rule (18 candidates, 60-day `deleteAfterDays`, `dnd` tag
    settings) whose collections seed plan 012.
-6. **012 — Trash curation pipeline** (`012-trash-curation-pipeline.md`, owner vision 2026-07-06)
-   — **NEXT UP;** backend reviewed + fixed, poster-wall UX in progress: batches
-   (`draft → admin_review → leaving_soon → deleted|cancelled`) → admin
-   poster-grid review (X ⇄ lock) → green-light → "Leaving Soon" Plex collection + role-gated
-   user save window → per-item guardian-checked expiry deletion; every save/unsave durably
-   recorded as rules-tuning data; deletion snapshots recorded for 013.
-7. **011 — Authentik hardening** (`011-authentik-hardening.md`, owner-scoped 2026-07-06): MFA
-   for NATIVE Authentik accounts only (Plex-source logins exempt; `mfa-exempt` group keeps the
-   `hnet-e2e` accounts automating) + rebrand the login as "haynesnetwork sign-in" (owner picks
-   from 2–3 screenshot mocks). App-by-app SSO verification = owner task in 008's HARD GATE.
-8. **Stretch (owner ideas):** 009 **Bulletin** (aggregated notification Feed + user Messages
-   board), 010 **MOTD** dashboard banner — slotted after 011, before the 008 cutover; 010 is
-   small enough to pull forward as a quick win.
+6. ~~**012 — Trash curation pipeline**~~ ✅ **DONE** (v0.12.0,
+   `completed/012-trash-curation-pipeline.md`; owner vision 2026-07-06). Batches
+   (`draft → admin_review → leaving_soon → deleted|cancelled`) → admin poster-grid review
+   (X ⇄ lock) → green-light → "Leaving Soon" Plex collection + role-gated user save window →
+   per-item guardian-checked expiry deletion; every save/unsave durably recorded as rules-tuning
+   data; deletion snapshots recorded for 013. Live-validated 7/7 on staging; the demo batch sits
+   in Leaving Soon (expires 2026-07-21). **Owner: family grants + hourly-sweep detail in the
+   PLAN-012 bullet under Current state.**
+7. **009 — Bulletin** (`009-bulletin.md`) — **NEXT UP, building:** aggregated notification Feed
+   + user Messages board. **010 — MOTD** dashboard banner follows (small enough to be a quick
+   win). These were pulled ahead of 011 because 011 is parked on an owner decision (below).
+8. **011 — Authentik hardening** (`011-authentik-hardening.md`, owner-scoped 2026-07-06):
+   **PARKED — branding mocks awaiting the owner's pick.** MFA for NATIVE Authentik accounts only
+   (Plex-source logins exempt; `mfa-exempt` group keeps the `hnet-e2e` accounts automating) +
+   rebrand the login as "haynesnetwork sign-in" (owner picks from 2–3 screenshot mocks).
+   App-by-app SSO verification = owner task in 008's HARD GATE.
 9. ~~**007 — cosign signing**~~ ✅ **DONE** (v0.7.0, `completed/007-cosign-image-signing.md`).
-10. **008 — public cutover** (LAST of the pre-cutover queue; HARD GATE incl. the owner's
-    app-by-app SSO check from 011).
+10. **008 — public cutover** (LAST of the pre-cutover queue; **awaiting the owner's go**; HARD
+    GATE incl. the owner's app-by-app SSO check from 011).
 11. **Post-cutover (banked, owner 2026-07-06):** **013 — disk utilization + reclaim metrics**
     (`013-disk-and-reclaim-metrics.md`; consumes 012's deletion snapshots; core open decision:
     Grafana embed vs native — owner decides) → **014 — rules tuning + space policy**
