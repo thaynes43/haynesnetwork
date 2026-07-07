@@ -52,12 +52,49 @@ export const MOTD_DEFAULT: MotdRecord = {
  */
 export type SpaceTargets = Partial<Record<PlexServerSlug, number>>;
 
+/**
+ * ADR-031 / DESIGN-014 (PLAN-014) — the per-physical-array knobs of the space-driven policy. All
+ * optional overrides of the top-level `SpacePolicy` defaults; a `perArray` entry is what OPTS AN
+ * ARRAY IN (its `enabled` must be true for that array to ever be proposed on).
+ */
+export interface SpacePolicyArrayConfig {
+  /** This array participates in the policy (default false — an array is opt-in even when the policy
+   *  is globally enabled, so turning the policy on can't surprise-propose on an array you forgot). */
+  enabled: boolean;
+  /** Override the top-level cooldown for this array (days). */
+  cooldownDays?: number;
+  /** Override the top-level minimum candidate count for this array. */
+  minCandidates?: number;
+}
+
+/**
+ * ADR-031 / DESIGN-014 (PLAN-014) — the space-driven-policy CONFIG. **Propose-only, DEFAULT OFF.**
+ * When `enabled`, the hourly-ish `space-policy` sync mode reads getUtilization() and, for each
+ * per-array-enabled array whose usedPct is over its `space_targets` ceiling AND has no open batch for
+ * the backing kind(s), PROPOSES a draft batch (createBatchFromPending — the normal admin_review
+ * path). It NEVER greenlights and NEVER deletes: the admin gate stays the human check. `cooldownDays`
+ * blocks re-proposing for a kind within N days of its last policy-created batch (anti-spam while a
+ * batch is mid-window); `minCandidates` skips a proposal when too few items are pending to be worth a
+ * batch. Both have top-level defaults and optional per-array overrides.
+ */
+export interface SpacePolicy {
+  enabled: boolean;
+  /** Don't re-propose a kind within this many days of its last policy-created batch (default 7). */
+  cooldownDays: number;
+  /** Don't propose unless at least this many actionable items are pending (default 1). */
+  minCandidates: number;
+  /** Per-physical-array (STORAGE_ARRAYS key) opt-in + overrides. Absent/`enabled:false` ⇒ that array
+   *  never proposes, even over target. */
+  perArray: Record<string, SpacePolicyArrayConfig>;
+}
+
 /** The typed value shape per key — the jsonb column holds exactly these. */
 export interface AppSettingValueMap {
   trash_skip_admin_gate: boolean;
   trash_default_window_days: number;
   motd: MotdRecord;
   space_targets: SpaceTargets;
+  space_policy: SpacePolicy;
 }
 
 /** The documented default returned when a key has no row (never null — every key has a default). */
@@ -68,7 +105,23 @@ export const APP_SETTING_DEFAULTS: AppSettingValueMap = {
   // No targets set out of the box — the utilization surface renders numbers with no reference line
   // until an admin sets one. `{}` (an object) so the getAppSetting typeof-guard treats it like motd.
   space_targets: {},
+  // The space-driven policy is OFF out of the box (the owner's conservative-first instruction) — an
+  // unset key proposes nothing. An object so the getAppSetting typeof-guard treats it like motd.
+  space_policy: { enabled: false, cooldownDays: 7, minCandidates: 1, perArray: {} },
 };
+
+/** Resolve the effective cooldown/minCandidates for one array (its override, else the policy default). */
+export function effectiveArrayPolicy(
+  policy: SpacePolicy,
+  arrayKey: string,
+): { enabled: boolean; cooldownDays: number; minCandidates: number } {
+  const perArray = policy.perArray?.[arrayKey];
+  return {
+    enabled: perArray?.enabled === true,
+    cooldownDays: perArray?.cooldownDays ?? policy.cooldownDays,
+    minCandidates: perArray?.minCandidates ?? policy.minCandidates,
+  };
+}
 
 /**
  * Read one setting, falling back to its documented default when unset. A read (unguarded). The
