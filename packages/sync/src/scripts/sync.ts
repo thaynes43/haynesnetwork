@@ -125,8 +125,8 @@ async function main(): Promise<number> {
   const metadataSources =
     args.mode === 'metadata-refresh' ? buildMetadataSourceClients() : undefined;
   // ADR-025 — the confined Maintainerr bundle for the batch-expiry sweep (throws one ArrConfigError
-  // naming MAINTAINERR_API_KEY if absent). The write client is constructed inside @hnet/domain so
-  // the @hnet/arr/write import stays confined there (ADR-008 guard).
+  // naming MAINTAINERR_API_KEY if absent). The mutating client is constructed INSIDE @hnet/domain
+  // (maintainerrClientBundleFromEnv), so the confined write surface stays domain-only (ADR-008 guard).
   const maintainerr =
     args.mode === 'trash-batch-sweep' ? maintainerrClientBundleFromEnv() : undefined;
 
