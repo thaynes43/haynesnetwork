@@ -1,7 +1,9 @@
 # PLAN-013: Disk utilization + reclaim metrics (banked — post-cutover)
 
 - **Status:** **Executing** (2026-07-07, Fable 5) — backend + Grafana half built on
-  `feat/storage-metrics`; the native Storage page UX is a separate Fable follow-up. Was Draft/BANKED.
+  `feat/storage-metrics`; the native `/admin/storage` page UX landed on the same branch
+  (2026-07-07 Fable UX pass: utilization meters + targets editor + reclaim views + Grafana
+  deep-link, e2e'd in `storage.spec.ts`). Was Draft/BANKED.
 - **Satisfies:** PRD-001 **R-108..R-111** (space target + utilization/reclaim visibility);
   **ADR-030** (THE surface decision — ratifies HYBRID: native reclaim + deep-linked Grafana trend);
   **DESIGN-013** (the metrics vertical + the native page contract for the UX agent); **OPS-007**

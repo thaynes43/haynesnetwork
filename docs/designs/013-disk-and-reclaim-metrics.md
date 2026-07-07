@@ -12,8 +12,8 @@ The **backend vertical** for the space story (PLAN-013): a native, admin-gated *
 surface with two reads — **utilization** (current disk % per media array, from the *arr `GET
 /diskspace` API) and **reclaim** attribution (from Postgres deletion snapshots) — plus **space-target**
 get/set. The fill/drain **time-series** is Grafana, **deep-linked** (ADR-030 C-04), not sourced here.
-The **native Storage page UI is a separate Fable UX follow-up**; the D-02/D-03/D-05 wire contracts
-below are its input.
+The native Storage page shipped as **`/admin/storage`** (same branch, Fable UX pass 2026-07-07)
+against the D-02/D-03/D-05 wire contracts below.
 
 ## Detailed design
 
@@ -28,7 +28,7 @@ below are its input.
   (`trash_batch_items_deleted_at_idx`) — serves the reclaim window scans without bloating the hot
   pending path. Additive, non-blocking.
 - **No new table for expedite forward-capture** — the frozen `{sizeBytes, resolution, imdbRating,
-  tmdbRating}` ride existing jsonb payloads (the `trash_expedited` ledger event + the deletion-audit
+tmdbRating}` ride existing jsonb payloads (the `trash_expedited` ledger event + the deletion-audit
   notification).
 
 ### D-02 — Utilization read (source of record = *arr `GET /diskspace`)
@@ -53,14 +53,14 @@ dedupes the shared HaynesTower array. Returns one row per physical array:
 
 ```ts
 export interface StorageArrayUtilization {
-  key: string;               // 'haynestower' | 'cephfs'
-  label: string;             // 'HaynesTower' | 'Music (CephFS)'
-  path: string | null;       // matched diskspace mount, null when unavailable
+  key: string; // 'haynestower' | 'cephfs'
+  label: string; // 'HaynesTower' | 'Music (CephFS)'
+  path: string | null; // matched diskspace mount, null when unavailable
   freeSpace: number | null;
   totalSpace: number | null;
-  usedPct: number | null;    // (1 - free/total) * 100, one decimal
-  target: number | null;     // percent-used ceiling from space_targets, or null
-  unavailable: boolean;      // true when no source *arr could be read
+  usedPct: number | null; // (1 - free/total) * 100, one decimal
+  target: number | null; // percent-used ceiling from space_targets, or null
+  unavailable: boolean; // true when no source *arr could be read
 }
 ```
 
@@ -74,24 +74,32 @@ from `ledger_events` payloads (ADR-030 C-01b).
 ```ts
 export interface ReclaimReport {
   window: ReclaimWindow;
-  since: string | null;                      // ISO lower bound, null for 'all'
+  since: string | null; // ISO lower bound, null for 'all'
   totals: { items: number; reclaimedBytes: number };
-  byCategoryResolution: {                    // the "3 × 4K = 90%" view, ordered by bytes desc
+  byCategoryResolution: {
+    // the "3 × 4K = 90%" view, ordered by bytes desc
     mediaKind: 'movie' | 'tv';
-    resolution: string;                      // deleted_resolution, or 'unknown'
-    items: number; reclaimedBytes: number;
+    resolution: string; // deleted_resolution, or 'unknown'
+    items: number;
+    reclaimedBytes: number;
   }[];
-  cumulative: {                              // running total by UTC day
-    day: string;                             // YYYY-MM-DD
-    reclaimedBytes: number;                  // that day
-    cumulativeReclaimedBytes: number;        // running
+  cumulative: {
+    // running total by UTC day
+    day: string; // YYYY-MM-DD
+    reclaimedBytes: number; // that day
+    cumulativeReclaimedBytes: number; // running
   }[];
-  batches: {                                 // per green-lit batch, attributed to the admin
-    batchId: string; mediaKind: 'movie' | 'tv';
-    greenlitBy: string | null; greenlitByName: string | null;
-    items: number; reclaimedBytes: number; lastDeletedAt: string | null;
+  batches: {
+    // per green-lit batch, attributed to the admin
+    batchId: string;
+    mediaKind: 'movie' | 'tv';
+    greenlitBy: string | null;
+    greenlitByName: string | null;
+    items: number;
+    reclaimedBytes: number;
+    lastDeletedAt: string | null;
   }[];
-  expedited: { items: number; reclaimedBytes: number };  // best-effort, direct-expedites only
+  expedited: { items: number; reclaimedBytes: number }; // best-effort, direct-expedites only
 }
 ```
 
@@ -106,10 +114,10 @@ payload->>'sizeBytes' IS NOT NULL`, summing `(payload->>'sizeBytes')::bigint`.
 `space_targets` is keyed by **Plex-server slug** (the owner's mental model — "HaynesTower < 80%"), but
 the media arrays are physical mounts. `STORAGE_ARRAYS` (in `storage-metrics.ts`) is the documented map:
 
-| Array `key` | Label | `targetSlug` | diskspace mount path(s) | *arr source(s) | Live (2026-07-07) |
-|-------------|-------|--------------|-------------------------|----------------|-------------------|
-| `haynestower` | HaynesTower | `haynestower` | `/data/haynestower` | Radarr (movies) + Sonarr (TV) **share it** — deduped | 529.96 TB, **78.8% used** |
-| `cephfs` | Music (CephFS) | `null` | `/data/cephfs-hdd` (or rootfolder label `/data/media/music`) | Lidarr | 174.84 TB, 25.4% used |
+| Array `key`   | Label          | `targetSlug`  | diskspace mount path(s)                                      | *arr source(s)                                       | Live (2026-07-07)         |
+| ------------- | -------------- | ------------- | ------------------------------------------------------------ | ---------------------------------------------------- | ------------------------- |
+| `haynestower` | HaynesTower    | `haynestower` | `/data/haynestower`                                          | Radarr (movies) + Sonarr (TV) **share it** — deduped | 529.96 TB, **78.8% used** |
+| `cephfs`      | Music (CephFS) | `null`        | `/data/cephfs-hdd` (or rootfolder label `/data/media/music`) | Lidarr                                               | 174.84 TB, 25.4% used     |
 
 Only `haynestower` maps to a surfaced array today. `haynesops`/`hayneskube` remain **reserved**
 `space_targets` slugs (the in-cluster Plex servers on CephFS) whose per-server utilization is not yet
@@ -121,15 +129,20 @@ NFS array, so the reading survives either Radarr **or** Sonarr being down (first
 `storage` router, **all adminProcedure for v1** (ADR-030 — operational data; a future
 section-permission if it ever goes member-facing):
 
-| Procedure | Kind | Input | Returns |
-|-----------|------|-------|---------|
-| `storage.utilization` | query | — | `StorageArrayUtilization[]` |
-| `storage.reclaim` | query | `{ window?: '30d'\|'90d'\|'365d'\|'all' }` (default `'90d'`) | `ReclaimReport` |
-| `storage.targets.get` | query | — | `SpaceTargets` (defaults `{}`) |
-| `storage.targets.set` | mutation | `{ targets: { haynestower?, haynesops?, hayneskube?: 0..100 } }` (`.strict()`) | `{ changed, before, after }` |
+| Procedure             | Kind     | Input                                                                          | Returns                        |
+| --------------------- | -------- | ------------------------------------------------------------------------------ | ------------------------------ |
+| `storage.utilization` | query    | —                                                                              | `StorageArrayUtilization[]`    |
+| `storage.reclaim`     | query    | `{ window?: '30d'\|'90d'\|'365d'\|'all' }` (default `'90d'`)                   | `ReclaimReport`                |
+| `storage.targets.get` | query    | —                                                                              | `SpaceTargets` (defaults `{}`) |
+| `storage.targets.set` | mutation | `{ targets: { haynestower?, haynesops?, hayneskube?: 0..100 } }` (`.strict()`) | `{ changed, before, after }`   |
 
-**Page contract for the Fable UX follow-up** (native `/storage` or a Trash sub-tab — the UX agent
-decides; DESIGN-006 identity, DESIGN-004 primitives, ADR-015 no-reorient):
+**Page contract — realized as `/admin/storage`** (a "Storage" admin sub-nav section: the whole
+surface is adminProcedure-gated, so it lives beside Users/Catalog/Roles, not under Trash; DESIGN-006
+identity, DESIGN-004 primitives, ADR-015 no-reorient). Presentation conventions the page pinned:
+**capacity** renders in decimal/SI units (`formatCapacity` — the disk-vendor and *arr convention,
+matching ADR-030's "112.4 TB free of 530 TB" cross-check) while **reclaim** sizes keep the binary
+`formatBytes` the Trash pages use for the same rows; the meter tone deepens ok → warn (within 5
+points of target) → danger (at/past target), with 85/95 absolute guardrails when no target is set.
 
 - **Utilization card** — one row per `StorageArrayUtilization`: a labelled meter of `usedPct` with the
   `target` drawn as a threshold marker (color deepens past target — never reflow, ADR-015); show
@@ -159,6 +172,10 @@ reclaim SQL over seeded snapshots (category/resolution/cumulative math exact + w
 union), the expedite-freeze regression (proves the frozen payloads), the zod diskspace subset, and
 router admin-gating. e2e: a `/diskspace` stub route (both arrays) + a `space_targets` seed so the UX
 agent has live utilization + a target line (reclaim starts empty, production-faithful).
+`storage.spec.ts` covers the page: both arrays' % + tick against the stub numbers, the targets
+editor round-trip (optimistic + persisted + reflow-free), the reclaim empty state + window
+switcher, the Grafana deep-link (no iframe), and a 390×844 viewport-fit spot check. Pure helpers
+(`apps/web/lib/storage.ts`: capacity/tone/share/step-geometry) are unit-tested.
 
 ## Open questions
 
