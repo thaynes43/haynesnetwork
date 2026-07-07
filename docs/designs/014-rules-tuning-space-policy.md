@@ -149,32 +149,49 @@ Reflow-free (ADR-015): armed states deepen color, never move neighbors. Pure hel
 
 ### D-08 — Ops (the CronJob — NOT committed to haynes-ops here)
 
-The owner deploys the manifest. The `space-policy` sync mode runs `tsx sync.ts --mode=space-policy` (no
-`--source`), needing `DATABASE_URL`, `SONARR_URL`/`SONARR_API_KEY` (+ `RADARR_`/`LIDARR_`), and
-`MAINTAINERR_URL`/`MAINTAINERR_API_KEY`. It is a no-op unless `space_policy.enabled` is on. Recommended
-manifest (under `kubernetes/main/apps/frontend/haynesnetwork/`, mirroring the sync CronJobs) — ship it
-**suspended** so the owner arms it by unsuspending:
+The owner deploys the manifest. The `space-policy` sync mode runs
+`tsx /sync/src/scripts/sync.ts --mode=space-policy` (no `--source`; the app image deploys the sync
+subtree flattened at `/sync`, exactly like the other CronJobs), needing `DATABASE_URL`,
+`SONARR_URL`/`SONARR_API_KEY` (+ `RADARR_`/`LIDARR_`), and `MAINTAINERR_URL`/`MAINTAINERR_API_KEY` —
+all supplied by the existing `haynesnetwork-secret` External Secret (with the optional
+`haynesnetwork-webhook`) via `envFrom`, same as `sync-trash-batch-sweep`. It is a no-op unless
+`space_policy.enabled` is on. It is a new **bjw-s app-template `type: cronjob` controller** under
+`kubernetes/main/apps/frontend/haynesnetwork/app/helmrelease.yaml` — mirror the existing
+`sync-trash-batch-sweep` block, shipped `suspend: true` so the owner arms it by unsuspending once the
+first run is validated:
 
 ```yaml
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: haynesnetwork-space-policy
-spec:
-  schedule: "17 * * * *"      # hourly-ish, offset off the sweep
-  suspend: true                # owner arms it by unsuspending once the first run is validated
-  concurrencyPolicy: Forbid
-  jobTemplate:
-    spec:
-      template:
-        spec:
-          restartPolicy: Never
-          containers:
-            - name: space-policy
-              image: ghcr.io/thaynes43/haynesnetwork:<tag>
-              command: ["tsx", "packages/sync/src/scripts/sync.ts", "--mode=space-policy"]
-              envFrom:
-                - secretRef: { name: haynesnetwork-sync-env }   # DATABASE_URL + *arr + MAINTAINERR (existing External Secret)
+# spec.values.controllers.space-policy — mirrors sync-trash-batch-sweep (see helmrelease.yaml).
+    space-policy:
+      type: cronjob
+      pod:
+        restartPolicy: Never
+      cronjob:
+        schedule: "17 * * * *"        # hourly-ish, offset off the sweep
+        suspend: true                 # owner arms it by unsuspending once the first run is validated
+        backoffLimit: 1
+        concurrencyPolicy: Forbid
+        failedJobsHistory: 2
+        successfulJobsHistory: 1
+      containers:
+        main:
+          image: *mainImage
+          command:
+            - tsx
+            - /sync/src/scripts/sync.ts
+            - --mode=space-policy
+          envFrom:
+            - secretRef:
+                name: haynesnetwork-secret
+            - secretRef:
+                name: haynesnetwork-webhook
+                optional: true
+          resources:
+            requests:
+              cpu: 25m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
 ```
 
 Exit 0 with a report unless the evaluation itself errored (then exit 1 → retry). Writes no `sync_runs`

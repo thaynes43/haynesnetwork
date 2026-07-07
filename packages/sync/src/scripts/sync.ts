@@ -64,7 +64,7 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
     } else if (arg.startsWith('--mode=')) {
       const value = arg.slice('--mode='.length);
       if (!(SYNC_RUN_KINDS as readonly string[]).includes(value)) {
-        throw new CliUsageError(`invalid --mode "${value}" (expected full|incremental)`);
+        throw new CliUsageError(`invalid --mode "${value}" (expected ${SYNC_RUN_KINDS.join('|')})`);
       }
       mode = value as SyncRunKind;
     } else if (arg.startsWith('--source=')) {

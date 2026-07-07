@@ -110,7 +110,13 @@ export const APP_SETTING_DEFAULTS: AppSettingValueMap = {
   space_policy: { enabled: false, cooldownDays: 7, minCandidates: 1, perArray: {} },
 };
 
-/** Resolve the effective cooldown/minCandidates for one array (its override, else the policy default). */
+/**
+ * Resolve the effective cooldown/minCandidates for one array (its override, else the policy default).
+ * The per-array overrides are typeof-guarded exactly like the top-level fields (getSpacePolicy) so a
+ * hand-edited wrong-type jsonb value (e.g. a string `cooldownDays`) fails SAFE to the policy default —
+ * never passing through to yield `now < NaN` (a NaN comparison is always false, which would silently
+ * DISABLE the cooldown). `enabled` is already strict (`=== true`), so a non-boolean reads as opted-out.
+ */
 export function effectiveArrayPolicy(
   policy: SpacePolicy,
   arrayKey: string,
@@ -118,8 +124,10 @@ export function effectiveArrayPolicy(
   const perArray = policy.perArray?.[arrayKey];
   return {
     enabled: perArray?.enabled === true,
-    cooldownDays: perArray?.cooldownDays ?? policy.cooldownDays,
-    minCandidates: perArray?.minCandidates ?? policy.minCandidates,
+    cooldownDays:
+      typeof perArray?.cooldownDays === 'number' ? perArray.cooldownDays : policy.cooldownDays,
+    minCandidates:
+      typeof perArray?.minCandidates === 'number' ? perArray.minCandidates : policy.minCandidates,
   };
 }
 

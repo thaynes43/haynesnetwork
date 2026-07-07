@@ -214,6 +214,49 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
     expect(open).toHaveLength(0);
   });
 
+  it('per-array override of the WRONG TYPE (string cooldownDays) fails SAFE to the default (cooldown still enforced)', async () => {
+    // A hand-edited jsonb row where the per-array cooldownDays is a string, not a number. Without the
+    // typeof guard in effectiveArrayPolicy the `??` pass-through would feed the string into the cooldown
+    // math → new Date(lastAt + NaN) → `now < NaN` is always false → the cooldown SILENTLY DISABLES and
+    // the policy re-proposes. The guard must instead fall back to the policy default (7d) → still blocked.
+    await setAppSetting({
+      db: t.db,
+      key: 'space_policy',
+      value: {
+        enabled: true,
+        cooldownDays: 7,
+        minCandidates: 1,
+        perArray: { haynestower: { enabled: true, cooldownDays: 'soon' } },
+      } as unknown as SpacePolicy,
+      actorId,
+    });
+    // A prior proposal 2 days ago (well within the 7d default) whose batch has since closed.
+    const [b] = await t.db
+      .insert(trashBatches)
+      .values({ mediaKind: 'movie', state: 'cancelled', createdBy: actorId })
+      .returning();
+    await t.db.insert(ledgerEvents).values({
+      mediaItemId: null,
+      eventType: 'trash_space_policy',
+      source: 'maintainerr',
+      occurredAt: new Date(Date.now() - 2 * 86_400_000),
+      payload: { batchId: b!.id, mediaKind: 'movie', array: 'haynestower', usedPct: 90, target: 80 },
+    });
+    const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
+    const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: overBundle(), actorId });
+    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    // The default 7d was applied (a real date, not NaN) → still in cooldown → NO new batch proposed.
+    expect(movie.outcome).toBe('skipped_cooldown');
+    expect(movie.cooldownUntil).not.toBeNull();
+    expect(Number.isNaN(Date.parse(movie.cooldownUntil!))).toBe(false);
+    expect(report.proposedCount).toBe(0);
+    const open = await t.db
+      .select()
+      .from(trashBatches)
+      .where(inArray(trashBatches.state, ['draft', 'admin_review', 'leaving_soon']));
+    expect(open).toHaveLength(0);
+  });
+
   it('min-candidates → too few pending is skipped', async () => {
     await setPolicy({ ...ENABLED, minCandidates: 10 }); // the movie collection has only 3
     const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
