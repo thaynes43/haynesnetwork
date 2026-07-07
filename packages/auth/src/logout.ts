@@ -12,6 +12,21 @@
  * local session, we fall back to a plain local logout — /login on our own origin, the
  * pre-fix behavior. Deriving everything from `authEnv()` keeps staging + e2e working
  * without hardcoding hosts.
+ *
+ * Stale-hint guard (live incident 2026-07-07): we ONLY hand the browser to Authentik's
+ * end-session endpoint when the account's stored `id_token` is present AND unexpired.
+ * Two reasons. (1) Authentik REQUIRES a valid `id_token_hint` next to a
+ * `post_logout_redirect_uri` — a hint-less end-session request with a redirect is a
+ * `TokenError` error page. (2) More importantly, Authentik's SSO session is a
+ * browser-close session (login `session_duration=seconds=0`) while our Better Auth
+ * session lives 7 days, and the id_token is never refreshed (no refresh token is
+ * stored). So a user who returns hours/days later has a live app session but a DEAD
+ * Authentik session; hitting end-session then is unauthenticated, and Authentik's
+ * `PolicyAccessView` bounces the browser into the *login* flow — the "log in to log
+ * out" loop / broken error card the owner hit. A stale (or absent) id_token is our best
+ * available proxy for "the Authentik session is probably gone", so we skip the round
+ * trip and log out locally. A fresh id_token (the immediate sign-out that actually needs
+ * the SSO session ended, and the e2e/normal path) still gets full RP-initiated logout.
  */
 import { and, eq } from 'drizzle-orm';
 import { db, account } from '@hnet/db';
@@ -52,6 +67,42 @@ export function buildEndSessionUrl(params: EndSessionParams): string | null {
   url.searchParams.set('post_logout_redirect_uri', redirectUri);
   if (idTokenHint) url.searchParams.set('id_token_hint', idTokenHint);
   return url.toString();
+}
+
+/**
+ * Read the `exp` (expiry, seconds since epoch) from an OIDC id_token WITHOUT verifying
+ * its signature — this is a best-effort freshness heuristic, not a security check
+ * (Authentik re-validates the hint server-side). Returns the expiry in milliseconds, or
+ * null when the token is absent, malformed, or carries no numeric `exp`. Pure + exported
+ * for the unit tests. Uses base64url → JSON on the payload segment only.
+ */
+export function idTokenExpMs(idToken: string | null | undefined): number | null {
+  if (!idToken) return null;
+  const payloadSegment = idToken.split('.')[1];
+  if (!payloadSegment) return null;
+  try {
+    const payloadJson = Buffer.from(payloadSegment, 'base64url').toString('utf8');
+    const exp = (JSON.parse(payloadJson) as { exp?: unknown }).exp;
+    return typeof exp === 'number' && Number.isFinite(exp) ? exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * True when `idToken` is present, parseable, and not yet expired (with a small negative
+ * `skewMs` tolerance for clock drift). This gates RP-initiated logout: only a fresh
+ * id_token is handed to Authentik as an `id_token_hint`. An absent / malformed / expired
+ * token returns false so the caller degrades to a local logout (see the module doc —
+ * the stale-hint guard for the 2026-07-07 sign-out incident). Pure + exported for tests.
+ */
+export function isFreshIdToken(
+  idToken: string | null | undefined,
+  nowMs: number = Date.now(),
+  skewMs: number = 0,
+): boolean {
+  const expMs = idTokenExpMs(idToken);
+  return expMs !== null && expMs > nowMs - skewMs;
 }
 
 /**
@@ -134,7 +185,14 @@ export async function resolveSignOutRedirect(headers: Headers): Promise<string> 
   const endSessionEndpoint = await fetchEndSessionEndpoint(env.oidcDiscoveryUrl);
   if (!endSessionEndpoint) return localLogin;
 
+  // Stale-hint guard (see module doc): RP-initiated logout only when we hold a fresh,
+  // unexpired id_token to present as the hint. Otherwise the Authentik SSO session is
+  // almost certainly already gone (browser-close session; the id_token is never
+  // refreshed), and routing to end-session would bounce the browser into the login flow
+  // — the owner-reported "log in to log out" error card. Degrade to a local logout.
   const idTokenHint = await getIdTokenHintForUser(session.user.id);
+  if (!isFreshIdToken(idTokenHint)) return localLogin;
+
   return (
     buildEndSessionUrl({
       endSessionEndpoint,
