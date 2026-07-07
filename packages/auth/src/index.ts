@@ -24,6 +24,8 @@ export {
   parseEndSessionEndpoint,
   fetchEndSessionEndpoint,
   postLogoutRedirectUri,
+  idTokenExpMs,
+  isFreshIdToken,
   type EndSessionParams,
 } from './logout';
 

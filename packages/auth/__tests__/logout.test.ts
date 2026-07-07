@@ -2,9 +2,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildEndSessionUrl,
   fetchEndSessionEndpoint,
+  idTokenExpMs,
+  isFreshIdToken,
   parseEndSessionEndpoint,
   postLogoutRedirectUri,
 } from '../src/logout';
+
+/** Build a syntactically-valid (unsigned) JWT with the given payload for the pure
+ *  exp/freshness helpers — signature is irrelevant here (Authentik re-validates). */
+function fakeJwt(payload: Record<string, unknown>): string {
+  const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  return `${b64({ alg: 'RS256', typ: 'JWT' })}.${b64(payload)}.signature`;
+}
 
 // DESIGN-002 D-15 — RP-initiated logout URL construction. These are the pure/mockable
 // halves (the db + live-session orchestration in resolveSignOutRedirect is covered by
@@ -85,6 +94,50 @@ describe('buildEndSessionUrl (DESIGN-002 D-15)', () => {
   });
 });
 
+describe('idTokenExpMs (DESIGN-002 D-15 — stale-hint guard)', () => {
+  it('reads exp (seconds) and returns it in milliseconds', () => {
+    expect(idTokenExpMs(fakeJwt({ exp: 1783445949 }))).toBe(1783445949 * 1000);
+  });
+
+  it('returns null for absent / malformed / exp-less tokens', () => {
+    expect(idTokenExpMs(null)).toBeNull();
+    expect(idTokenExpMs(undefined)).toBeNull();
+    expect(idTokenExpMs('')).toBeNull();
+    expect(idTokenExpMs('not-a-jwt')).toBeNull(); // no '.' segments
+    expect(idTokenExpMs('only.two')).toBeNull(); // payload segment isn't valid JSON
+    expect(idTokenExpMs(fakeJwt({ sub: 'x' }))).toBeNull(); // no exp claim
+    expect(idTokenExpMs(fakeJwt({ exp: 'soon' }))).toBeNull(); // non-numeric exp
+  });
+});
+
+describe('isFreshIdToken (DESIGN-002 D-15 — stale-hint guard)', () => {
+  // The 2026-07-07 incident: token issued 16:39Z, exp 17:39Z, sign-out at 19:22Z.
+  const expZ = Date.parse('2026-07-07T17:39:09Z');
+  const tokenExpAt1739 = fakeJwt({ exp: Math.floor(expZ / 1000), sub: 'owner' });
+
+  it('is false once the id_token has expired (the owner sign-out at 19:22Z)', () => {
+    expect(isFreshIdToken(tokenExpAt1739, Date.parse('2026-07-07T19:22:45Z'))).toBe(false);
+  });
+
+  it('is true while the id_token is still valid (an immediate sign-out / e2e path)', () => {
+    expect(isFreshIdToken(tokenExpAt1739, Date.parse('2026-07-07T17:00:00Z'))).toBe(true);
+  });
+
+  it('is false for an absent or unparseable hint (no id_token stored)', () => {
+    const now = Date.parse('2026-07-07T17:00:00Z');
+    expect(isFreshIdToken(null, now)).toBe(false);
+    expect(isFreshIdToken(undefined, now)).toBe(false);
+    expect(isFreshIdToken('garbage', now)).toBe(false);
+    expect(isFreshIdToken(fakeJwt({ sub: 'no-exp' }), now)).toBe(false);
+  });
+
+  it('honours a negative skew tolerance for clock drift at the boundary', () => {
+    const now = Date.parse('2026-07-07T17:39:14Z'); // 5s past expiry
+    expect(isFreshIdToken(tokenExpAt1739, now)).toBe(false); // no skew → expired
+    expect(isFreshIdToken(tokenExpAt1739, now, 10_000)).toBe(true); // 10s skew → still fresh
+  });
+});
+
 describe('parseEndSessionEndpoint (DESIGN-002 D-15)', () => {
   it('reads a non-empty end_session_endpoint from a discovery doc', () => {
     expect(
@@ -97,7 +150,9 @@ describe('parseEndSessionEndpoint (DESIGN-002 D-15)', () => {
   });
 
   it('returns null when the field is absent (stub OIDC discovery)', () => {
-    expect(parseEndSessionEndpoint({ issuer: 'http://127.0.0.1:9', token_endpoint: 'x' })).toBeNull();
+    expect(
+      parseEndSessionEndpoint({ issuer: 'http://127.0.0.1:9', token_endpoint: 'x' }),
+    ).toBeNull();
   });
 
   it('returns null for non-string / empty / non-object inputs', () => {
@@ -116,16 +171,22 @@ describe('fetchEndSessionEndpoint (DESIGN-002 D-15)', () => {
   it('returns the endpoint when discovery advertises one', async () => {
     // Distinct URL per test — the module-level cache is keyed by discovery URL.
     const discoveryUrl = 'https://issuer.example/with-endsession/.well-known/openid-configuration';
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(
-        JSON.stringify({ end_session_endpoint: 'https://issuer.example/o/end-session/' }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      ),
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ end_session_endpoint: 'https://issuer.example/o/end-session/' }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+    expect(await fetchEndSessionEndpoint(discoveryUrl)).toBe(
+      'https://issuer.example/o/end-session/',
     );
-    expect(await fetchEndSessionEndpoint(discoveryUrl)).toBe('https://issuer.example/o/end-session/');
 
     // Second call inside the TTL is served from cache (no extra fetch).
-    expect(await fetchEndSessionEndpoint(discoveryUrl)).toBe('https://issuer.example/o/end-session/');
+    expect(await fetchEndSessionEndpoint(discoveryUrl)).toBe(
+      'https://issuer.example/o/end-session/',
+    );
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
