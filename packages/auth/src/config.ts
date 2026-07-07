@@ -52,22 +52,35 @@ const oidcPlugins = oidcEnabled
 
 export const auth = betterAuth({
   baseURL: env.baseUrl,
+  // Origin/CSRF allowlist. Better Auth always trusts baseURL; this adds the extra
+  // public origins the app is reachable at behind the Cloudflare Tunnel — the `www`
+  // apex alongside the bare apex baseURL — so a sign-in initiated from www isn't
+  // rejected as an Origin mismatch. Sourced from env (BETTER_AUTH_URL + TRUSTED_ORIGINS)
+  // so staging (its own baseURL) and the e2e stub (localhost:3100) keep working
+  // unchanged. See @hnet/auth env.ts resolveTrustedOrigins.
+  trustedOrigins: env.trustedOrigins,
   secret: env.secret,
   advanced: {
     // UUID id columns (DESIGN-001 D-01) — Postgres generates via gen_random_uuid().
     database: { generateId: 'uuid' },
-    // Rate limiting buckets by client IP. In-cluster the app sits behind Traefik
-    // (traefik-internal), which sets x-forwarded-for AND x-real-ip. better-auth
-    // 1.6.23 only trusts a SINGLE-value x-forwarded-for unless trustedProxies is
-    // configured (@better-auth/core src/utils/ip.ts getIPFromHeader): a multi-hop
-    // chain resolves to null, and in production every client then collapses into
-    // ONE shared per-path bucket (rate-limiter NO_TRUSTED_IP_KEY) — the observed
-    // outage where a couple of sign-in clicks 429'd the whole household. Walk
-    // x-forwarded-for first (honest single-hop case), then fall back to x-real-ip,
-    // which Traefik sets to the connecting client and is single-value by
-    // construction, so it resolves even when the XFF chain has extra hops.
+    // Rate limiting buckets by client IP. better-auth 1.6.23 walks these headers in
+    // order and only trusts a SINGLE-value x-forwarded-for unless trustedProxies is
+    // configured (@better-auth/core src/utils/ip.ts getIP/getIPFromHeader): a multi-hop
+    // chain resolves to null, and in production every client then collapses into ONE
+    // shared per-path bucket (rate-limiter NO_TRUSTED_IP_KEY) — the observed outage
+    // where a couple of sign-in clicks 429'd the whole household.
+    //
+    // Public cutover: behind the Cloudflare Tunnel (edge → cloudflared → traefik-external),
+    // the address Traefik sees is the cloudflared pod / Cloudflare edge, NOT the end user,
+    // so x-forwarded-for / x-real-ip alone would bucket the WHOLE public household into one
+    // shared IP — the 429 storm would recur. Cloudflare guarantees the real end-user IP in
+    // CF-Connecting-IP (single-value, and overwritten at the edge so a public client can't
+    // spoof it), so read it FIRST. It's absent on the LAN staging path (traefik-internal) and
+    // in dev/e2e, where resolution falls through to x-forwarded-for (single-hop LAN client),
+    // then x-real-ip (Traefik sets it to the connecting client, single-value) — unchanged
+    // behavior for those environments.
     ipAddress: {
-      ipAddressHeaders: ['x-forwarded-for', 'x-real-ip'],
+      ipAddressHeaders: ['cf-connecting-ip', 'x-forwarded-for', 'x-real-ip'],
     },
   },
   rateLimit: {
