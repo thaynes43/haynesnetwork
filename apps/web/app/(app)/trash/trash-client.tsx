@@ -1155,8 +1155,11 @@ function RecentlyDeletedTab({ access }: { access: TrashAccess }) {
 
 // ── Rules (readable list + arm/disarm/delete this pass — DESIGN-010 D-09 scope) ─────────
 
-/** GET /rules dataType is numeric (1=movie, 2=show, 3=season, 4=episode — DESIGN-010 D-02
- *  uncertainty a) but string on the collection schema; accept both spellings. */
+/** GET /rules `dataType` is a STRING `MediaItemType` ('movie'|'show'|'season'|'episode') on v3.17.0
+ *  (verified against source — the rule_group column is varchar; DESIGN-010 D-02 flag (a), resolved).
+ *  Display-only: we still accept the legacy numeric spelling (1=movie…) defensively, but this label
+ *  NEVER feeds the arm/disarm PUT — that round-trips dataType verbatim (a coerced value would be a
+ *  crucial-setting change that wipes the collection). */
 function ruleKindLabel(dataType: unknown): string {
   if (dataType === 1 || dataType === 'movie') return 'Movies';
   if (dataType === 2 || dataType === 'show') return 'TV';

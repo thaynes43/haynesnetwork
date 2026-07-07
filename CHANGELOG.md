@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.11.2](https://github.com/thaynes43/haynesnetwork/compare/v0.11.1...v0.11.2) (2026-07-07)
+
+
+### Bug Fixes
+
+* trash rules PUT carries server selection; dataType normalized (no crucial-change wipes) ([#75](https://github.com/thaynes43/haynesnetwork/issues/75)) ([62eb887](https://github.com/thaynes43/haynesnetwork/commit/62eb8875b3970c6cdda30a3c1a12c7fb5f29f3ae))
+
+
+### Documentation
+
+* plan 015 — downstream *arr action feedback (owner backlog 2026-07-07) ([#73](https://github.com/thaynes43/haynesnetwork/issues/73)) ([14f8d81](https://github.com/thaynes43/haynesnetwork/commit/14f8d818cee0d22929430a00fc76fa9b3a67c83b))
+
 ## [0.11.1](https://github.com/thaynes43/haynesnetwork/compare/v0.11.0...v0.11.1) (2026-07-07)
 
 

@@ -54,14 +54,26 @@ argument (there is **no** `setGlobalPrefix`, so effective paths are `/api/…`);
 | **Rule group create / update / delete** | `POST /api/rules` · `PUT /api/rules` · `DELETE /api/rules/{id}` | `RulesDto` (create/update) / id                                                                           | `ReturnStatus` (`code:0` fails closed, P1a); `deleteAfterDays` lives in the nested `collection`                                                                                    |
 | **Enable tag exclusions + `dnd`**       | `PATCH /api/settings`                                           | partial `SettingDto` (`{radarr_tag_exclusions,radarr_exclusion_tag,radarr_untag_on_unexclude, sonarr_*}`) | `BasicResponseDto {status,code,message}` (`code:0` fails closed, P1a); full replace is `POST /api/settings`                                                                        |
 
-**Uncertainty flags (carried from source review):** (a) `typeId`/`dataType` is numeric on
-`GET /rules` (`1=movie,2=show,3=season,4=episode`) but string on the collection Zod schema — our
-pending fetch does **not** send `typeId` (it fetches all collections and buckets client-side by the
-collection `type` / item id presence), sidestepping the ambiguity; (b) the delete date is **never
-returned** — we derive it = `addDate + deleteAfterDays` days; (c) `POST /rules/exclusion`'s body has
-no runtime ValidationPipe, so extra fields are ignored — we send the minimal `{ mediaId, action:0 }`;
-(d) there is **no aggregated integration-health endpoint** — the audit derives connectivity from the
-`rules/constants` `applications` list (present only for configured integrations) + the Plex test.
+**Uncertainty flags (carried from source review):** (a) **RESOLVED (2026-07-07, verified against
+v3.17.0 source).** `dataType` on `GET /rules` is a **STRING** `MediaItemType`
+(`'movie'|'show'|'season'|'episode'`) — the `rule_group.dataType` column is `varchar` and contracts'
+`MediaItemType` is a string union; the earlier "numeric on `GET /rules`" note was wrong. This matters
+because `PUT /api/rules` (`updateRules`) treats a change to **`dataType` / `manualCollection` /
+`manualCollectionName` / `libraryId`** (vs the stored group/collection) as a _crucial setting change_
+that **wipes the collection's media + specific exclusions and deletes the Plex collection**. So an
+arm/disarm toggle MUST round-trip `dataType` and `libraryId` **verbatim** (both varchar strings) — the
+write seam never coerces them (see `upsertTrashRule`). The pending fetch still does **not** send
+`typeId` (it buckets client-side), sidestepping the collection-type ambiguity. **Server selection:**
+`GET /rules` nests the *arr server ids under the **collection** (`collection.radarrSettingsId` /
+`collection.sonarrSettingsId`), but `PUT` validates them at the **group** level
+(`validateRuleServerSelection`: a rule whose `firstVal[0]`/`lastVal[0]` is Radarr=1/Sonarr=2 with no
+group-level id → `{code:0,"Radarr rules require a Radarr server to be selected"}` → fail closed →
+502) — `upsertTrashRule` lifts them up from the nested collection when absent (the ids do **not**
+participate in the crucial-change wipe); (b) the delete date is **never returned** — we derive it =
+`addDate + deleteAfterDays` days; (c) `POST /rules/exclusion`'s body has no runtime ValidationPipe, so
+extra fields are ignored — we send the minimal `{ mediaId, action:0 }`; (d) there is **no aggregated
+integration-health endpoint** — the audit derives connectivity from the `rules/constants`
+`applications` list (present only for configured integrations) + the Plex test.
 
 ## D-03 — Permission matrix (ADR-023 C-03)
 

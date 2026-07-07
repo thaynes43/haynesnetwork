@@ -8,7 +8,13 @@
   `.agents/plans/completed/001-gate-a-pr-cutover.md`).
   `main` is branch-protected: branch → PR → required checks `lint-and-typecheck`, `test`,
   `build` green → squash-merge. `e2e` advisory. Conventional-commit titles drive release-please.
-- **Latest release: v0.10.0 (signed) — ADR-024 role-scoped all-libraries Plex self-service:
+- **Latest release: v0.11.2 (signed) — PLAN-006 Trash section: Maintainerr-backed deletion UI +
+  fine-grained Section/Action role permissions (ADR-023/DESIGN-010; migration 0016). v0.11.0
+  feature + fixes v0.11.1 (trash rule arm/disarm round-trip; pending list reflects live
+  exclusions) and v0.11.2 (rules PUT carries server selection + normalized dataType — no
+  crucial-change wipes). Live-validated on staging with the owner-required non-deleting test
+  rule (18 junk candidates, 60-day horizon, dnd tag-exclusions).** Prior: **v0.10.0 (signed) —
+  ADR-024 role-scoped all-libraries Plex self-service:
   a role can grant all-libraries-on-a-server; users self-toggle All ↔ specific (leaving All is
   lossless, seeded with the current full set); no silent demotion (per-library ops throw
   PLEX_ALL_STATE in the All state); Migration 0015.** Prior: **v0.9.0 (signed) — PLAN-005 Ledger
@@ -24,17 +30,37 @@
   action in Bazarr 1.5.6), rest at `search_triggered`, excluded from `completeFixRequests`;
   Music no longer offers the reason. Migration 0009; `BazarrClient`/`BazarrWriteClient` in
   `@hnet/arr`; `BAZARR_API_KEY` wired via the existing media-stack ExternalSecret.
-- **The autonomous Fable 5 run (Mon 2026-07-06) is IN PROGRESS.** Entry prompt
+- **The autonomous Fable 5 run is IN PROGRESS.** Entry prompt
   `.agents/KICKOFF.md`; queue in `.agents/plans/` (see `.agents/plans/README.md`). **Plans done
-  so far today:** 002 ✓ (v0.5.0); 003 ✓ (v0.6.0 + fix v0.6.1); 004 ✓ (v0.8.0/v0.8.1); 005 ✓
-  (v0.9.0); 007 ✓ (v0.7.0); ADR-024 ✓ (v0.10.0, follow-on to 003); 006 backend rebased &
-  reverifying (pending merge).
-  **Queue extended per owner (2026-07-06, plans 011–014 authored):** 006 (finish) → 012 (Trash
+  so far:** 002 ✓ (v0.5.0); 003 ✓ (v0.6.0 + fix v0.6.1); 004 ✓ (v0.8.0/v0.8.1); 005 ✓
+  (v0.9.0); 006 ✓ (v0.11.0 + fixes v0.11.1/v0.11.2); 007 ✓ (v0.7.0); ADR-024 ✓ (v0.10.0,
+  follow-on to 003). **In flight:** 012 (Trash curation pipeline) — backend reviewed + fixed,
+  poster-wall UX in progress; 011 (Authentik hardening) — branding mocks awaiting the owner's
+  pick; 015 (downstream *arr action feedback) — authored, not yet built.
+  **Queue extended per owner (plans 011–015 authored):** 012 (Trash
   curation pipeline: batches → poster review → Leaving Soon → windowed deletion) → 011 (Authentik
   MFA-for-native-accounts + haynesnetwork sign-in rebrand) → 009 → 010 → 008 (public cutover) →
   then post-cutover: 013 (disk/reclaim metrics) → 014 (rules tuning + space policy).
   v0.4.0 recap: unified roles (ADR-012), arbitrary catalog URLs (ADR-013), two-step
   `ConfirmButton`, drag-drop catalog reorder, Library sub-tabs.
+- **PLAN-006 (Trash section) COMPLETE — shipped v0.11.0 + fixes v0.11.1/v0.11.2, live-validated
+  on staging** (`.agents/plans/completed/006-trash-section.md`). Maintainerr-backed deletion UI
+  wrapping the live `maintainerr.media.svc.cluster.local` instance behind a friendly `/trash`
+  section: pending Movies/TV tables over the shared filter engine + reclaim footer, Save shield
+  (save/unsave with real `dnd` *arr tagging round-trip), Expedite modals (cancel-only in
+  validation + the filters-can't-scope-expedite-all refusal), the Rules list with wipe-free
+  arm/disarm, the `/library/[id]` protect-in-context guard, `/admin/roles` Section/Action grid,
+  and the webhook → **Activity** feed. ADR-023 + DESIGN-010; migration 0016. The preflight
+  `auditMaintainerr` recorded **SAFE** before any destructive surface was enabled; three
+  adversarial review passes closed every destructive-surface finding (estate-wide collection
+  handle never used, live exclusions always consulted, snapshots pinned, in-band failures fail
+  closed). **Operational notes:** (1) Maintainerr's memory limit was raised to **2Gi** in
+  haynes-ops so rule evaluation doesn't OOM. (2) The Maintainerr **webhook notification agent**
+  is configured with the **Bearer-secret** form (`MAINTAINERR_WEBHOOK_SECRET`) — the receiver
+  contract for `POST /api/webhooks/maintainerr` is documented in the **DESIGN-010 D-07** runbook.
+  (3) The owner-required **non-deleting test rule** is armed with a **60-day** `deleteAfterDays`
+  horizon (18 junk candidates) — **PLAN-012's curation gate must land, or the owner must rearm,
+  before that horizon elapses** so nothing reaches its delete date unattended.
 - **PLAN-007 (cosign image signing) COMPLETE** (`.agents/plans/completed/007-cosign-image-signing.md`).
   `release-please.yml` keyless-cosign-signs every published `haynesnetwork` image by digest and
   verifies it in-run (ADR-020); v0.7.0 is the first signed release. Admission is **enforced** by a
@@ -157,13 +183,14 @@ The **Fable 5 autonomous run** works the release queue in `.agents/plans/` (star
    contract now in `@hnet/ui`, reused by 005/006).
 4. ~~**005 — Ledger section**~~ ✅ **DONE** (v0.9.0, `completed/005-ledger-section.md`; native
    restore via filter→*arr + JSONL export; fileless import dropped per ADR-022 C-04).
-5. **006 — Trash section** (integrates the Maintainerr instance; replaces the Restore nav) —
-   **backend rebased & reverifying; pending merge.** Reuses the ADR-021 Section-Permission base
-   005 shipped. Remaining: the Trash UX layer, deploy, and live validation — now **including the
-   2026-07-06 owner addendum: 1–2 conservative NON-DELETING Maintainerr test rules
-   (deleteAfterDays ≥ 60) + the `dnd` tag settings**, whose collections seed plan 012.
-6. **012 — Trash curation pipeline** (`012-trash-curation-pipeline.md`, owner vision
-   2026-07-06): batches (`draft → admin_review → leaving_soon → deleted|cancelled`) → admin
+5. ~~**006 — Trash section**~~ ✅ **DONE** (v0.11.0 + fixes v0.11.1/v0.11.2,
+   `completed/006-trash-section.md`; integrates the live Maintainerr instance, replaces the
+   Restore nav, reuses the ADR-021 Section-Permission base 005 shipped). Live-validated with the
+   owner-required NON-DELETING test rule (18 candidates, 60-day `deleteAfterDays`, `dnd` tag
+   settings) whose collections seed plan 012.
+6. **012 — Trash curation pipeline** (`012-trash-curation-pipeline.md`, owner vision 2026-07-06)
+   — **NEXT UP;** backend reviewed + fixed, poster-wall UX in progress: batches
+   (`draft → admin_review → leaving_soon → deleted|cancelled`) → admin
    poster-grid review (X ⇄ lock) → green-light → "Leaving Soon" Plex collection + role-gated
    user save window → per-item guardian-checked expiry deletion; every save/unsave durably
    recorded as rules-tuning data; deletion snapshots recorded for 013.

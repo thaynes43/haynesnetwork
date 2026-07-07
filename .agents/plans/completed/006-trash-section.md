@@ -1,24 +1,13 @@
 # PLAN-006: Trash section — Maintainerr-backed deletion UI + fine-grained role permissions
 
-- **Status:** Executing — **backend vertical shipped 2026-07-06** (Fable 5); the Trash UX is the
-  Fable follow-up. Landed on `feat/trash-section`: enums + `role_trash_action_grants` +
-  `notifications` + migration **0016** (renumbered from 0015 to cede 0015 to the Plex all-libraries
-  branch); `@hnet/arr` Maintainerr read/write client (endpoints derived from v3.17.0 source);
-  domain single-writers + orchestrators (`auditMaintainerr`, `listTrashPending`,
-  `saveExclusion`/`removeExclusion`, `expediteDeletion`, `guardRecentlyWatched`, `restoreDeleted`,
-  `upsert/deleteTrashRule`, `recordNotification`, `setRoleTrashActions`); session/gating
-  (`SessionRole.trashActions`, `trashActionProcedure`); the `trash` router + `roles.setTrashActions`;
-  `POST /api/webhooks/maintainerr`; the `/admin/restore`→`/trash` redirect + minimal `/trash` gate;
-  the e2e stub + specs. Decisions of Record (D1–D10) are ratified in **ADR-023** + **DESIGN-010**.
-  **UX shipped 2026-07-06** (Fable UX pass — DESIGN-010 **D-09** records the as-built): the nav
-  entry + `/trash` client (safety banner, Movies/TV pending tables over the shared filter engine
-  with the filter-aware reclaim footer, the Save shield, the Expedite **Modal** with the
-  deleted/protected/skipped partition + the filters-can't-scope-expedite-all refusal,
-  Recently-Deleted + Restore, the Rules list with arm/disarm/delete — full rule BUILDING
-  deferred, see D-09 — and the Activity tab), the `/library/[id]` protect-in-context guard panel
-  (Q-02), the `/admin/roles` Trash level + per-action grid, and the full e2e layer (stateful stub
-  Maintainerr + `trash.spec.ts`). Remaining: the LIVE non-destructive staging validation; then
-  flip to Completed + `git mv` to `completed/`.
+- **Status:** Completed (2026-07-07) — shipped v0.11.0 + fixes v0.11.1/v0.11.2; live-validated on
+  staging: Maintainerr audited SAFE and configured with the owner-required non-deleting test rule
+  (18 junk candidates, 60-day countdown, dnd tag-exclusions enabled); Trash UI validated
+  end-to-end (pending tables + reclaim footer, shield save/unsave with real dnd tagging, expedite
+  modals cancel-only + filter refusal, role gating audited, webhook → Activity feed live); rules
+  arm/disarm round-trip verified wipe-free against the real API. Three review passes closed every
+  destructive-surface finding (estate-wide handle never used; live exclusions consulted; pinned
+  snapshots; in-band failures fail closed).
 - **Satisfies:** PRD-001 new R-80..R-88 (Trash); new ADR-019 (Trash lifecycle + Maintainerr
   integration + Section/Action permission model + Restore-nav retirement); new DESIGN-009
   (Trash UI + `@hnet/maintainerr` + permission matrix). Relates ADR-008 (ledger/write-backs),
