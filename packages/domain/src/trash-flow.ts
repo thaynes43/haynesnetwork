@@ -3,13 +3,7 @@
 // exclusion/expedite/rules write surface, the cross-server watch guardian, and the recently-deleted
 // + restore paths. The mutating Maintainerr surface (@hnet/arr/write) stays confined here (ADR-008
 // guard). Music/Lidarr is NEVER a Trash target (R-87) — rejected at the orchestrator, not just UI.
-import {
-  ledgerEvents,
-  mediaItems,
-  mediaMetadata,
-  type ArrKind,
-  type DbClient,
-} from '@hnet/db';
+import { ledgerEvents, mediaItems, mediaMetadata, type ArrKind, type DbClient } from '@hnet/db';
 import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
 import { inTransaction, resolveDb } from './db-client';
 import {
@@ -187,6 +181,13 @@ export interface TrashPendingItem {
   requesters: string[];
   sourceCollections: string[];
   posterSource: string | null;
+  // DESIGN-010 D-09 (UX pass, 2026-07-06) — the harvested facet fields the shared filter engine
+  // chips over (genre/resolution/rating). Same media_metadata join the fields above ride; all
+  // empty/null when the item is unknown to our ledger.
+  genres: string[];
+  resolution: string | null;
+  imdbRating: number | null;
+  tmdbRating: number | null;
 }
 
 export interface TrashPendingResult {
@@ -318,7 +319,14 @@ export async function listTrashPending(input: {
     lastViewedAt: Date | null;
     requesters: string[];
     sourceCollections: string[];
+    genres: string[];
+    resolution: string | null;
+    imdbRating: number | null;
+    tmdbRating: number | null;
   }
+  /** Drizzle numeric columns arrive as strings — normalize to number|null for the wire. */
+  const numOrNull = (v: string | null | undefined): number | null =>
+    v === null || v === undefined ? null : Number(v);
   const byExtId = new Map<number, LedgerJoin>();
   if (ids.size > 0) {
     const extCol = input.media === 'movie' ? mediaItems.tmdbId : mediaItems.tvdbId;
@@ -333,6 +341,10 @@ export async function listTrashPending(input: {
         lastViewedAt: mediaMetadata.lastViewedAt,
         requesters: mediaMetadata.requesters,
         sourceCollections: mediaMetadata.sourceCollections,
+        genres: mediaMetadata.genres,
+        resolution: mediaMetadata.resolution,
+        imdbRating: mediaMetadata.imdbRating,
+        tmdbRating: mediaMetadata.tmdbRating,
       })
       .from(mediaItems)
       .leftJoin(mediaMetadata, eq(mediaMetadata.mediaItemId, mediaItems.id))
@@ -348,6 +360,10 @@ export async function listTrashPending(input: {
         lastViewedAt: r.lastViewedAt,
         requesters: r.requesters ?? [],
         sourceCollections: r.sourceCollections ?? [],
+        genres: r.genres ?? [],
+        resolution: r.resolution ?? null,
+        imdbRating: numOrNull(r.imdbRating),
+        tmdbRating: numOrNull(r.tmdbRating),
       });
     }
   }
@@ -371,7 +387,9 @@ export async function listTrashPending(input: {
       deleteAfterDays: f.deleteAfterDays,
       scheduledDeleteAt: scheduledDeleteAt(f.addDate, f.deleteAfterDays),
       mediaItemId: joined?.mediaItemId ?? null,
-      title: joined?.title ?? `tmdb:${f.tmdbId ?? ''}${f.tvdbId !== null ? ` tvdb:${f.tvdbId}` : ''}`.trim(),
+      title:
+        joined?.title ??
+        `tmdb:${f.tmdbId ?? ''}${f.tvdbId !== null ? ` tvdb:${f.tvdbId}` : ''}`.trim(),
       year: joined?.year ?? null,
       arrKind: joined ? arrKind : null,
       arrTags,
@@ -381,6 +399,10 @@ export async function listTrashPending(input: {
       requesters: joined?.requesters ?? [],
       sourceCollections: joined?.sourceCollections ?? [],
       posterSource: joined?.posterSource ?? null,
+      genres: joined?.genres ?? [],
+      resolution: joined?.resolution ?? null,
+      imdbRating: joined?.imdbRating ?? null,
+      tmdbRating: joined?.tmdbRating ?? null,
     };
   });
 
@@ -722,7 +744,10 @@ async function expediteOneSurvivor(
     });
   });
   await guardMaintainerrCall('maintainerr POST /collections/media/handle', () =>
-    input.maintainerr.write.handleCollectionMedia(survivor.collectionId, survivor.maintainerrMediaId),
+    input.maintainerr.write.handleCollectionMedia(
+      survivor.collectionId,
+      survivor.maintainerrMediaId,
+    ),
   );
 }
 
@@ -804,7 +829,11 @@ export async function expediteDeletion(
   });
 
   // PASS 1 — guardian: whitelist watched/requested, skip anything we can't positively clear.
-  const survivors: Array<{ collectionId: number; maintainerrMediaId: string; mediaItemId: string | null }> = [];
+  const survivors: Array<{
+    collectionId: number;
+    maintainerrMediaId: string;
+    mediaItemId: string | null;
+  }> = [];
   let protectedCount = 0;
   let skippedCount = 0;
   for (const p of pending.items) {
@@ -907,12 +936,10 @@ export async function upsertTrashRule(input: {
   payload: Record<string, unknown>;
 }): Promise<void> {
   const hasId = typeof input.payload.id === 'number';
-  await guardMaintainerrCall(
-    hasId ? 'maintainerr PUT /rules' : 'maintainerr POST /rules',
-    () =>
-      hasId
-        ? input.maintainerr.write.updateRuleGroup(input.payload)
-        : input.maintainerr.write.createRuleGroup(input.payload),
+  await guardMaintainerrCall(hasId ? 'maintainerr PUT /rules' : 'maintainerr POST /rules', () =>
+    hasId
+      ? input.maintainerr.write.updateRuleGroup(input.payload)
+      : input.maintainerr.write.createRuleGroup(input.payload),
   );
 }
 

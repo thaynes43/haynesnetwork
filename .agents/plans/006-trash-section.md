@@ -10,9 +10,15 @@
   (`SessionRole.trashActions`, `trashActionProcedure`); the `trash` router + `roles.setTrashActions`;
   `POST /api/webhooks/maintainerr`; the `/admin/restore`→`/trash` redirect + minimal `/trash` gate;
   the e2e stub + specs. Decisions of Record (D1–D10) are ratified in **ADR-023** + **DESIGN-010**.
-  Remaining: the Trash UX (pending tables, Save shield, Expedite ConfirmButton/Modal, Rules editor,
-  Recently-Deleted, Activity tab, `/admin/roles` Trash editor, nav entry); the LIVE non-destructive
-  staging validation; then flip to Completed + `git mv` to `completed/`.
+  **UX shipped 2026-07-06** (Fable UX pass — DESIGN-010 **D-09** records the as-built): the nav
+  entry + `/trash` client (safety banner, Movies/TV pending tables over the shared filter engine
+  with the filter-aware reclaim footer, the Save shield, the Expedite **Modal** with the
+  deleted/protected/skipped partition + the filters-can't-scope-expedite-all refusal,
+  Recently-Deleted + Restore, the Rules list with arm/disarm/delete — full rule BUILDING
+  deferred, see D-09 — and the Activity tab), the `/library/[id]` protect-in-context guard panel
+  (Q-02), the `/admin/roles` Trash level + per-action grid, and the full e2e layer (stateful stub
+  Maintainerr + `trash.spec.ts`). Remaining: the LIVE non-destructive staging validation; then
+  flip to Completed + `git mv` to `completed/`.
 - **Satisfies:** PRD-001 new R-80..R-88 (Trash); new ADR-019 (Trash lifecycle + Maintainerr
   integration + Section/Action permission model + Restore-nav retirement); new DESIGN-009
   (Trash UI + `@hnet/maintainerr` + permission matrix). Relates ADR-008 (ledger/write-backs),
@@ -34,7 +40,7 @@
 - **TODO source:** `.agents/plans/TODO.md` #4.
 
 > **ID reconciliation (Fable 5, do first):** the concrete numbers below (ADR-019, DESIGN-009,
-> R-80.., migration 0009, glossary T-50.., D-01..) are *tentative*. Plans 002–005 execute
+> R-80.., migration 0009, glossary T-50.., D-01..) are _tentative_. Plans 002–005 execute
 > before this one and may consume some IDs. Before authoring, grep the live ceilings
 > (`grep -oE 'R-[0-9]+' docs/prds/001-haynesnetwork.md | sort -t- -k2 -n | tail`; same for
 > ADR/DESIGN filenames, `T-` in the glossary, `packages/db/migrations/`) and take the next
@@ -53,7 +59,7 @@ front-end the owner wants (raw Maintainerr is too complex). Five parts:
 1. **Rules editor** — create/edit the Maintainerr rules that decide what gets deleted; role
    access is coarse **Edit / Read-Only / Disabled**.
 2. **Movies tab + TV tab** (never combined) of items marked for deletion, each row showing
-   *when* it deletes and *how much space* it frees, plus the **total space** the whole pending
+   _when_ it deletes and _how much space_ it frees, plus the **total space** the whole pending
    set frees. Filtered by our `media_metadata` (PLAN-004) via the ported filter engine.
 3. **Save** an item → add it to Maintainerr's **exclusion/whitelist** so it is never deleted;
    also available as **perma-save** from the Library page via a shield 🛡️ affordance, **Movies +
@@ -66,51 +72,54 @@ whole Trash tab is disablable (then hidden from nav), and individual portions ar
 (e.g. a role limited to only saving/whitelisting Movies).
 
 > **CRITICAL (owner instruction) — audit before arming anything destructive.** Fable 5's FIRST
-> executable step, before wiring or enabling *any* expedite/rule/delete path, is to **audit the
+> executable step, before wiring or enabling _any_ expedite/rule/delete path, is to **audit the
 > live Maintainerr install**: verify its integrations are connected (Plex, Tautulli
 > [`haynestower`], Sonarr, Radarr, Lidarr, Seerr) and verify **nothing is poised to delete**
 > (no active destructive rule firing / a confirmed safe-hold). Only after a recorded SAFE
 > verdict may the destructive surfaces (expedite, rule-save that could schedule deletions) be
-> enabled. See Verification → *Preflight audit gate*.
+> enabled. See Verification → _Preflight audit gate_.
 
 ---
 
 ## Docs-first artifacts to author (same PR as behavior)
 
 ### PRD-001 edits (`docs/prds/001-haynesnetwork.md`)
+
 - New subsection **### Trash & retention (Phase 2.5)** under Requirements with:
   - **R-80** Top-level Trash section integrates Maintainerr; replaces the Admin Restore nav
-    item. *(Must)*
+    item. _(Must)_
   - **R-81** Rules editor mapped to Maintainerr rules; role access Edit / Read-Only / Disabled.
-    *(Must)*
+    _(Must)_
   - **R-82** Movies and TV pending-deletion tables (separate tabs), each row: title +
     scheduled-delete date + space freed; a total-space figure for the whole set; filterable by
-    our metadata via the shared filter engine. *(Must)*
+    our metadata via the shared filter engine. _(Must)_
   - **R-83** Save/whitelist an item so Maintainerr never deletes it; perma-save from Library
-    (Movies + TV only, not music). *(Must)*
-  - **R-84** Expedite deletion for the whole list or one item — destructive, confirmed. *(Must)*
-  - **R-85** Recently Deleted list with Restore. *(Must)*
+    (Movies + TV only, not music). _(Must)_
+  - **R-84** Expedite deletion for the whole list or one item — destructive, confirmed. _(Must)_
+  - **R-85** Recently Deleted list with Restore. _(Must)_
   - **R-86** Fine-grained per-role permissions: per-action toggle + Disabled; whole tab
-    disablable (hidden) and per-portion disablable. *(Must)*
-  - **R-87** Music is never deletable via Trash (no Lidarr deletion surface). *(Must)*
+    disablable (hidden) and per-portion disablable. _(Must)_
+  - **R-87** Music is never deletable via Trash (no Lidarr deletion surface). _(Must)_
   - **R-88** Before any destructive action is available, the Maintainerr integration health and
-    a no-pending-delete safe state are verified and surfaced. *(Must)*
+    a no-pending-delete safe state are verified and surfaced. _(Must)_
 - Amend the **Failsafe restore** block (`R-50..R-52`, lines 117–123): note the Restore capability
   is **retired as an Admin nav item** here; its diff/re-add power is **re-homed into the
   PLAN-005 Ledger section**. The underlying `restoreRouter` + `executeRestore` stay callable
   (Recently-Deleted Restore reuses them); `/admin/restore` redirects to `/trash`.
 
 ### New ADR-019 (`docs/adrs/019-trash-and-maintainerr.md`, MADR 3.0 — Fable 5 authors AND ratifies to Accepted)
+
 Decides, in one ADR:
+
 - **Maintainerr is the system of record** for rules, pending-deletion collections, exclusions,
-  and deletion execution — Trash is read-through + a confined write surface, *not* a
+  and deletion execution — Trash is read-through + a confined write surface, _not_ a
   reimplementation. (Resolves DDD-002 BC-03's open `Q-04` "Maintainerr is a follow-on".)
 - **`@hnet/maintainerr` write surface is import-confined to `packages/domain`** — same rule as
   `@hnet/arr/write` (ADR-008/011), enforced by a new guard test.
 - **The Section/Action permission model**: coarse `role_section_grants` (section ∈ {trash,
   ledger,…} × level ∈ {edit, read_only, disabled}) plus fine-grained `role_trash_action_grants`
   (per-action enable) layered on top. Extends ADR-012's unified Role. (Coordinated with PLAN-005
-  — see Cross-plan coordination; whichever of 005/006 lands first *creates* `role_section_grants`
+  — see Cross-plan coordination; whichever of 005/006 lands first _creates_ `role_section_grants`
   and the other extends it.)
 - **Restore nav retirement** and its re-home into Ledger (relates R-50..R-52).
 - **No music deletion** — Trash exposes Movies (Radarr) + TV (Sonarr) only.
@@ -118,6 +127,7 @@ Decides, in one ADR:
   on Maintainerr uptime + its API stability; safe-hold audit is a manual gate).
 
 ### DDD (`docs/domain-driven-design/001-ubiquitous-language.md` — glossary is normative)
+
 New terms (tentative T-50..): **Trash** (T-50), **Deletion Candidate** (T-51, an item in a
 Maintainerr collection pending deletion), **Exclusion / Whitelist / Save** (T-52), **Recently
 Deleted** (T-53), **Section Permission** (T-54, coarse Edit/Read-Only/Disabled), **Action
@@ -129,10 +139,11 @@ are decided by **BC-02 Entitlements** (the permission mutation, audited) while t
 themselves are BC-03.
 
 ### New DESIGN-009 (`docs/designs/009-trash-and-maintainerr.md`)
+
 - **D-01** `@hnet/maintainerr` client shape (read + confined write), config/env contract
   (mirrors `packages/arr/src/config.ts:22-48`).
-- **D-02** Maintainerr REST mapping table (endpoints → our operations) — *filled from the live
-  Swagger*, see Client below.
+- **D-02** Maintainerr REST mapping table (endpoints → our operations) — _filled from the live
+  Swagger_, see Client below.
 - **D-03** Permission matrix: sections × levels, Trash actions × enable, and how the nav/route
   gate + each tRPC procedure read it.
 - **D-04** Trash UI layout: `/trash` sub-nav (Rules · Movies · TV · Recently Deleted), the
@@ -152,12 +163,13 @@ owner adds tonight). Config lives in a `@hnet/maintainerr` module à la `assertA
 table.
 
 ### Enums — single source of truth (`packages/db/src/schema/enums.ts`)
+
 - `SECTION_PERMISSION_LEVELS = ['edit','read_only','disabled'] as const` (coordinate: PLAN-005
   may already add this — reuse, don't duplicate).
 - `PERMISSION_SECTIONS = ['trash','ledger', …] as const` (coordinate with 005; add only 'trash'
   if 005 seeded the array).
 - `TRASH_ACTIONS = ['view_pending','save_exclude','remove_exclude','expedite_item',
-  'expedite_all','edit_rules','restore_deleted'] as const` — *the exact set is an Open Decision*.
+'expedite_all','edit_rules','restore_deleted'] as const` — _the exact set is an Open Decision_.
 - Extend `LEDGER_EVENT_TYPES` (`enums.ts:29-42`) with `'trash_excluded'`, `'trash_expedited'`,
   `'trash_restored'`.
 - Extend `LEDGER_EVENT_SOURCES` (`enums.ts:44`) with `'maintainerr'`.
@@ -167,19 +179,21 @@ table.
   `media-items.ts:73-84` / `restore-runs.ts` build `ANY(ARRAY[...])` from the const list.
 
 ### Tables
+
 - **`role_section_grants`** (`role_id` FK→roles cascade, `section` text+CHECK, `level`
-  text+CHECK, PK `(role_id, section)`). Coarse access. *Created by whichever of PLAN-005/006
-  lands first; the other extends its section set.*
+  text+CHECK, PK `(role_id, section)`). Coarse access. _Created by whichever of PLAN-005/006
+  lands first; the other extends its section set._
 - **`role_trash_action_grants`** (`role_id` FK→roles cascade, `action` text+CHECK, `enabled`
   boolean, PK `(role_id, action)`). Fine-grained. Absent row ⇒ derived from the section level
   (edit ⇒ all enabled, read_only ⇒ only view_* / no writes, disabled ⇒ none).
-- **Recently-Deleted source** — *Open Decision (D-06)*: default **read-through** from
+- **Recently-Deleted source** — _Open Decision (D-06)_: default **read-through** from
   Maintainerr history + existing `ledger_events` `'deleted'` rows (`enums.ts:33`), **no new
   table**. If Maintainerr history proves thin/non-durable, add a thin mirror
   `trash_deletions(id, media_item_id?, maintainerr_media_id, arr_kind, title, size_freed,
-  deleted_at, restored_at)` — decide during the audit step.
+deleted_at, restored_at)` — decide during the audit step.
 
 ### Guard-list + import-confinement updates (mandatory)
+
 - **`packages/domain/__tests__/no-direct-state-writes.test.ts`** — add the new guarded tables to
   every relevant pattern (`roleSectionGrants`, `roleTrashActionGrants`, and `trash_deletions` if
   created) in `FORBIDDEN_PATTERNS` (`no-direct-state-writes.test.ts:33-68`): the `.insert()`,
@@ -204,9 +218,9 @@ record outcome) and the orchestrator **re-derives fresh state** to avoid TOCTOU 
 
 - **Permission writers** (extend `packages/domain/src/roles.ts`):
   - `updateRoleSectionGrant({ roleId, section, level, actorId })` — upsert `role_section_grants`
-    + a `'update_role_permissions'` `permission_audit` row in one tx (pattern:
-    `roles.ts:130-224 updateRole`). Refuse to disable a section for the Admin role (Admin is
-    superuser, `roles.ts:144-146`).
+    - a `'update_role_permissions'` `permission_audit` row in one tx (pattern:
+      `roles.ts:130-224 updateRole`). Refuse to disable a section for the Admin role (Admin is
+      superuser, `roles.ts:144-146`).
   - `updateRoleTrashActions({ roleId, actions[], actorId })` — replace the fine-grained set +
     audit in one tx.
   - **Read helper** `trashPermissionsForRole(roleId)` (à la `effective-apps.ts:37`) resolving the
@@ -242,6 +256,7 @@ record outcome) and the orchestrator **re-derives fresh state** to avoid TOCTOU 
 New workspace package `packages/maintainerr` (scoped `@hnet/maintainerr`, raw TS, no build step —
 like every `@hnet/*`). Split entrypoints as the arr package does (`packages/arr/src/read.ts` vs
 `write.ts`, `index.ts`), with a `@hnet/maintainerr/write` subpath that is import-confined:
+
 - **`config.ts`** — `MAINTAINERR_URL` (default `http://maintainerr.media.svc.cluster.local:6246`,
   EXEMPT server-side base URL) + `MAINTAINERR_API_KEY` (required secret, never echoed) — clone
   `packages/arr/src/config.ts:34-48` `assertArrEnv`.
@@ -304,7 +319,7 @@ like every `@hnet/*`). Split entrypoints as the arr package does (`packages/arr/
   table engine** (built in PLAN-004) over `trash.pending`; columns include scheduled-delete date
   and per-item space freed; a **total-space footer** for the whole pending set. Each row has a
   **Save 🛡️** control and an **Expedite** control (per-item).
-- **Save (perma-save) shield 🛡️** — on the Trash rows *and* on the **Library page**
+- **Save (perma-save) shield 🛡️** — on the Trash rows _and_ on the **Library page**
   (`app/(app)/library/page.tsx` + `library/[id]/item-detail.tsx`), **Movies + TV only, never
   music** (hide the shield for Lidarr items). Save is non-destructive → a light **ConfirmButton**
   inline two-step (ADR-014) or a plain toggle; toggling fills color, never layout (ADR-015). Icon
@@ -381,6 +396,7 @@ like every `@hnet/*`). Split entrypoints as the arr package does (`packages/arr/
 ## Verification
 
 ### Preflight audit gate (run FIRST, before enabling destructive surfaces)
+
 - Point `@hnet/maintainerr` at the live instance; run `auditMaintainerr` (or `trash.status`) and
   **confirm**: Plex, Tautulli (haynestower), Sonarr, Radarr, Lidarr, Seerr all connected, and a
   **SAFE** no-imminent-deletion verdict. Record the verdict. **Do not** wire/enable expedite or
@@ -388,6 +404,7 @@ like every `@hnet/*`). Split entrypoints as the arr package does (`packages/arr/
   surface for the owner (PushNotification) rather than proceeding.
 
 ### Unit / integration (Vitest, embedded PG16)
+
 - **Permission matrix** — `trashPermissionsForRole` across section levels × action grants
   (edit ⇒ all, read_only ⇒ view-only, disabled ⇒ none; Admin ⇒ all, cannot be disabled).
 - **Single-writers** — `updateRoleSectionGrant`/`updateRoleTrashActions` write the
@@ -400,6 +417,7 @@ like every `@hnet/*`). Split entrypoints as the arr package does (`packages/arr/
   green.
 
 ### e2e (Playwright, stub Maintainerr — hermetic)
+
 - New `apps/web/e2e/trash.spec.ts`: nav visibility per role (disabled ⇒ no Trash link);
   Movies/TV tables render + filter + total-space footer; Save shield adds an exclusion (stub
   asserts the POST); Expedite shows ConfirmButton (item) / Modal (all); Recently-Deleted +
@@ -407,6 +425,7 @@ like every `@hnet/*`). Split entrypoints as the arr package does (`packages/arr/
   for music.
 
 ### LIVE Playwright against real staging (`https://haynesnetwork.haynesops.com`) + real Maintainerr — **NON-DESTRUCTIVE**
+
 - Read the **real** pending collections into the Movies and TV tabs; verify per-item + total
   space render.
 - **Save one item** and confirm it lands in Maintainerr's real **exclusion list** (verify via
@@ -427,9 +446,9 @@ like every `@hnet/*`). Split entrypoints as the arr package does (`packages/arr/
   `test`, `build`) green → squash-merge.
 - Deployed to staging (image tag bumped in haynes-ops + `flux reconcile`).
 - Preflight audit recorded SAFE; the four LIVE non-destructive journeys pass against real staging
-  + real Maintainerr, with an explicit "nothing deleted" confirmation.
+  - real Maintainerr, with an explicit "nothing deleted" confirmation.
 - Plan marked **Completed** and `git mv .agents/plans/006-trash-section.md
-  .agents/plans/completed/`.
+.agents/plans/completed/`.
 
 ---
 
@@ -452,7 +471,7 @@ like every `@hnet/*`). Split entrypoints as the arr package does (`packages/arr/
 - **Data:** the migration is additive (new tables/enums/`ledger_events` values); a down-migration
   drops `role_section_grants`/`role_trash_action_grants` (+ `trash_deletions` if created) — no
   existing table altered destructively. Maintainerr state (exclusions/rules) is Maintainerr's own
-  system of record; a rollback of *this app* leaves Maintainerr untouched and safe.
+  system of record; a rollback of _this app_ leaves Maintainerr untouched and safe.
 - **Safety:** because expedite is the only destructive path and it is gated behind the recorded
   SAFE verdict + per-action permission + confirm, a rollback never leaves a half-armed deletion.
 
@@ -461,7 +480,7 @@ like every `@hnet/*`). Split entrypoints as the arr package does (`packages/arr/
 ## Addendum (2026-07-05, owner) — never delete what people are watching (cross-server guarantee)
 
 **Requirement (owner, load-bearing):** watch history must protect media from deletion across ALL
-THREE Plex servers — *"I don't want to delete things people are watching."*
+THREE Plex servers — _"I don't want to delete things people are watching."_
 
 **Why not a one-time Tautulli migration:** Maintainerr pairs to ONE Plex+Tautulli (HaynesOps), so
 its native rules only see HaynesOps watch history. Importing HaynesTower's Tautulli history into
@@ -479,7 +498,7 @@ anywhere recently is whitelisted, not deleted. The exclusion sync must run **bef
 scheduled deletion cron.
 
 **Optional supplementary step (owner-driven, not a substitute):** a one-time Tautulli "Import
-Database" of HaynesTower's history into the HaynesOps Tautulli, to give Maintainerr's *native*
+Database" of HaynesTower's history into the HaynesOps Tautulli, to give Maintainerr's _native_
 rules more depth. Largely a manual Tautulli UI operation — document it, but do not rely on it for
 the guarantee above.
 
@@ -493,7 +512,7 @@ Open decisions for Fable 5: the default recency window + whether it's admin/per-
 protection via auto-whitelist in Maintainerr vs filtering our pending view vs both (recommend
 auto-whitelist so Maintainerr itself never deletes it).
 
-**Add to Definition of Done:** a LIVE check that an item watched on HaynesTower *only* is excluded
+**Add to Definition of Done:** a LIVE check that an item watched on HaynesTower _only_ is excluded
 from deletion on the HaynesOps-paired Maintainerr.
 
 ---
@@ -538,6 +557,7 @@ becomes a `source='maintainerr'` filtered view of the same store. See `009-commu
 
 Use PLAN-004's parsed tag dimensions in both the pending Movies/TV tables (filter facets + columns)
 and the deletion logic:
+
 - **Requester (Seerr) tags = a KEEP signal** — a personally-requested title is strong
   do-not-delete: auto-protect/whitelist it (same mechanism as the watch-history guardian + the
   `dnd` exclusion tag), or at minimum surface the requester so a human never trashes it.

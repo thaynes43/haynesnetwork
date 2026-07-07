@@ -30,6 +30,8 @@ import {
   type ArrKindName,
 } from '@/lib/media';
 import { MediaPoster } from '@/components/media-poster';
+import { TrashPendingNotice, type TrashAccess } from '@/components/trash-shield';
+import { PROTECTED_TAG } from '@/lib/trash';
 import { FixDialog } from './fix-dialog';
 import { ForceSearchDialog } from './force-search-dialog';
 
@@ -39,7 +41,16 @@ type PendingAction = {
   target: ActionTarget | null;
 };
 
-export function ItemDetail({ mediaItemId }: { mediaItemId: string }) {
+/** DESIGN-010 D-09 — the caller's Trash access (null when the section is Disabled for them). */
+export type ItemTrashAccess = TrashAccess | null;
+
+export function ItemDetail({
+  mediaItemId,
+  trashAccess = null,
+}: {
+  mediaItemId: string;
+  trashAccess?: ItemTrashAccess;
+}) {
   const utils = trpc.useUtils();
   const [action, setAction] = useState<PendingAction | null>(null);
 
@@ -115,7 +126,10 @@ export function ItemDetail({ mediaItemId }: { mediaItemId: string }) {
   // One child row (owner availability rule 2026-07-04): ON DISK → BOTH Fix (repair the
   // grab) and Force Search (just re-grab); MISSING → Force Search only (nothing on disk
   // to blocklist/delete). Force Search is always available; Fix is gated on hasFile.
-  const childRow = (child: { arrChildId: number; label: string; hasFile: boolean }, scope: 'episode' | 'album') => (
+  const childRow = (
+    child: { arrChildId: number; label: string; hasFile: boolean },
+    scope: 'episode' | 'album',
+  ) => (
     <li key={child.arrChildId} className="child-row">
       <span className="child-row__label">{child.label}</span>
       <span className={`badge badge--${child.hasFile ? 'ok' : 'warn'}`}>
@@ -171,11 +185,21 @@ export function ItemDetail({ mediaItemId }: { mediaItemId: string }) {
             {item.year !== null ? <span className="muted"> ({item.year})</span> : null}
           </h1>
           <div className="media-card__badges">
-            <span className="badge badge--muted">{ARR_KIND_LABELS[item.arrKind as ArrKindName]}</span>
+            <span className="badge badge--muted">
+              {ARR_KIND_LABELS[item.arrKind as ArrKindName]}
+            </span>
             <span className={`badge badge--${disk.tone}`}>{disk.label}</span>
             {!item.monitored ? <span className="badge badge--muted">Not monitored</span> : null}
             {item.tombstonedAt !== null ? (
               <span className="badge badge--danger">Removed from the manager</span>
+            ) : null}
+            {/* DESIGN-010 D-09 — the Maintainerr-managed protective tag read off arrTags (the
+                first-class "protected" signal, addendum b). Display-only: un-saving needs the
+                item's Maintainerr id, which only pending rows carry. */}
+            {item.arrTags.includes(PROTECTED_TAG) ? (
+              <span className="badge badge--shield" data-testid="badge-protected">
+                Protected from deletion
+              </span>
             ) : null}
           </div>
           {item.metadata.runtimeMinutes !== null || item.metadata.resolution !== null ? (
@@ -218,6 +242,16 @@ export function ItemDetail({ mediaItemId }: { mediaItemId: string }) {
           </div>
         ) : null}
       </section>
+
+      {/* DESIGN-010 D-09 / Q-02 (protect-in-context) — the deletion-guard panel: renders ONLY
+          when this Movie/TV item is actually in Maintainerr's pending set (the pending row is
+          the only place its Maintainerr id exists — we never guess ratingKeys). Music (Lidarr)
+          never mounts it (R-87); a Disabled-trash caller has null access. */}
+      {trashAccess !== null &&
+      (item.arrKind === 'radarr' || item.arrKind === 'sonarr') &&
+      item.tombstonedAt === null ? (
+        <TrashPendingNotice mediaItemId={item.id} arrKind={item.arrKind} access={trashAccess} />
+      ) : null}
 
       {/* DESIGN-008 D-11 — the harvested metadata block: ratings row, watch stats, and the
           genre / requester / collection chips. Rendered only once the metadata-refresh harvest

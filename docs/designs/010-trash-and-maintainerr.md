@@ -1,6 +1,6 @@
 # DESIGN-010: Trash section — Maintainerr client, per-action grants, safety gate, Activity feed
 
-- **Status:** Draft (backend vertical shipped; the Trash UX is a Fable follow-up)
+- **Status:** Draft (backend vertical shipped; **UX shipped 2026-07-06** — D-09 records the as-built)
 - **Last updated:** 2026-07-06
 - **Satisfies:** PRD-001 **R-79..R-87** + **US-10** / **AC-14..AC-16**; governed by **ADR-023**
   (Trash/Maintainerr + per-action grants + safety gate). Reuses **ADR-021** (section levels),
@@ -37,22 +37,22 @@ argument (there is **no** `setGlobalPrefix`, so effective paths are `/api/…`);
 `BasicResponseDto {status:'OK'|'NOK', code, message}` (settings tests). v3 renamed `plexId` →
 `mediaServerId` (a Plex ratingKey) — Maintainerr's exclusion/handle key.
 
-| Our operation | Verb + path | Request | Response / notes |
-|---|---|---|---|
-| Collections (list) | `GET /api/collections` | — | `Collection[]` incl. `deleteAfterDays, isActive, type, totalSizeBytes`; `media` is a PREVIEW subset |
-| Collection membership + size | `GET /api/collections/media/{id}/content/{page}?size=` | page 1-based | `{ totalSize, items[] }`; item `sizeBytes`, `tmdbId`, `tvdbId`, `mediaServerId`, `addDate` |
-| Rule groups | `GET /api/rules?activeOnly=&libraryId=&typeId=` | — | `RulesDto[]` (`id,name,isActive,dataType,collection{...}`) |
-| Rule-schema catalog | `GET /api/rules/constants` | — | `{ applications:[{id,name,mediaType,props}] }` — filtered to CONFIGURED integrations |
-| Exclusions | `GET /api/rules/exclusion?mediaServerId=&rulegroupId=` | — | `Exclusion[]` (`ruleGroupId=null` ⇒ global); `[]` with no params. `Exclusion.parent` is a **string** (Plex ratingKey, written on every exclusion — schema is `string\|number`, P2) |
-| Settings (tag-exclusion subset) | `GET /api/settings` | — | `Settings` (secrets masked): `radarr_tag_exclusions`, `radarr_exclusion_tag`(default `dnd`), `radarr_untag_on_unexclude`, `sonarr_*` |
-| App status / version | `GET /api/app/status` | — | `VersionResponse {status,version,commitTag,updateAvailable}` (may arrive double-encoded — the client pre-parses) |
-| Plex connectivity | `GET /api/settings/test/plex` | — | `BasicResponseDto` (`status:'OK'` ⇒ connected) |
-| **Add exclusion (Save)** | `POST /api/rules/exclusion` | `{ mediaId, action:0, collectionId? }` (omit `collectionId` ⇒ global) | `ReturnStatus`; **`code:0` at HTTP 201 = logical FAILURE** (parsed → throw, P1a); `action:1` routes to remove |
-| **Remove exclusion (un-save)** | `DELETE /api/rules/exclusions/{mediaServerId}` | path param | `ReturnStatus` (removes ALL exclusions for the item); `code:0` fails closed (P1a) |
-| **Expedite ALL** *(NEVER CALLED — P1b)* | `POST /api/collections/handle` | no body | `201`; processes EVERY active collection (all kinds, not scopeable) → **not used**; expedite loops per-item instead |
-| **Expedite one item** | `POST /api/collections/media/handle` | `{ collectionId, mediaId }` | `201`, **void** (no ReturnStatus); the ONLY deletion trigger expedite uses (per item) |
-| **Rule group create / update / delete** | `POST /api/rules` · `PUT /api/rules` · `DELETE /api/rules/{id}` | `RulesDto` (create/update) / id | `ReturnStatus` (`code:0` fails closed, P1a); `deleteAfterDays` lives in the nested `collection` |
-| **Enable tag exclusions + `dnd`** | `PATCH /api/settings` | partial `SettingDto` (`{radarr_tag_exclusions,radarr_exclusion_tag,radarr_untag_on_unexclude, sonarr_*}`) | `BasicResponseDto {status,code,message}` (`code:0` fails closed, P1a); full replace is `POST /api/settings` |
+| Our operation                           | Verb + path                                                     | Request                                                                                                   | Response / notes                                                                                                                                                                   |
+| --------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Collections (list)                      | `GET /api/collections`                                          | —                                                                                                         | `Collection[]` incl. `deleteAfterDays, isActive, type, totalSizeBytes`; `media` is a PREVIEW subset                                                                                |
+| Collection membership + size            | `GET /api/collections/media/{id}/content/{page}?size=`          | page 1-based                                                                                              | `{ totalSize, items[] }`; item `sizeBytes`, `tmdbId`, `tvdbId`, `mediaServerId`, `addDate`                                                                                         |
+| Rule groups                             | `GET /api/rules?activeOnly=&libraryId=&typeId=`                 | —                                                                                                         | `RulesDto[]` (`id,name,isActive,dataType,collection{...}`)                                                                                                                         |
+| Rule-schema catalog                     | `GET /api/rules/constants`                                      | —                                                                                                         | `{ applications:[{id,name,mediaType,props}] }` — filtered to CONFIGURED integrations                                                                                               |
+| Exclusions                              | `GET /api/rules/exclusion?mediaServerId=&rulegroupId=`          | —                                                                                                         | `Exclusion[]` (`ruleGroupId=null` ⇒ global); `[]` with no params. `Exclusion.parent` is a **string** (Plex ratingKey, written on every exclusion — schema is `string\|number`, P2) |
+| Settings (tag-exclusion subset)         | `GET /api/settings`                                             | —                                                                                                         | `Settings` (secrets masked): `radarr_tag_exclusions`, `radarr_exclusion_tag`(default `dnd`), `radarr_untag_on_unexclude`, `sonarr_*`                                               |
+| App status / version                    | `GET /api/app/status`                                           | —                                                                                                         | `VersionResponse {status,version,commitTag,updateAvailable}` (may arrive double-encoded — the client pre-parses)                                                                   |
+| Plex connectivity                       | `GET /api/settings/test/plex`                                   | —                                                                                                         | `BasicResponseDto` (`status:'OK'` ⇒ connected)                                                                                                                                     |
+| **Add exclusion (Save)**                | `POST /api/rules/exclusion`                                     | `{ mediaId, action:0, collectionId? }` (omit `collectionId` ⇒ global)                                     | `ReturnStatus`; **`code:0` at HTTP 201 = logical FAILURE** (parsed → throw, P1a); `action:1` routes to remove                                                                      |
+| **Remove exclusion (un-save)**          | `DELETE /api/rules/exclusions/{mediaServerId}`                  | path param                                                                                                | `ReturnStatus` (removes ALL exclusions for the item); `code:0` fails closed (P1a)                                                                                                  |
+| **Expedite ALL** _(NEVER CALLED — P1b)_ | `POST /api/collections/handle`                                  | no body                                                                                                   | `201`; processes EVERY active collection (all kinds, not scopeable) → **not used**; expedite loops per-item instead                                                                |
+| **Expedite one item**                   | `POST /api/collections/media/handle`                            | `{ collectionId, mediaId }`                                                                               | `201`, **void** (no ReturnStatus); the ONLY deletion trigger expedite uses (per item)                                                                                              |
+| **Rule group create / update / delete** | `POST /api/rules` · `PUT /api/rules` · `DELETE /api/rules/{id}` | `RulesDto` (create/update) / id                                                                           | `ReturnStatus` (`code:0` fails closed, P1a); `deleteAfterDays` lives in the nested `collection`                                                                                    |
+| **Enable tag exclusions + `dnd`**       | `PATCH /api/settings`                                           | partial `SettingDto` (`{radarr_tag_exclusions,radarr_exclusion_tag,radarr_untag_on_unexclude, sonarr_*}`) | `BasicResponseDto {status,code,message}` (`code:0` fails closed, P1a); full replace is `POST /api/settings`                                                                        |
 
 **Uncertainty flags (carried from source review):** (a) `typeId`/`dataType` is numeric on
 `GET /rules` (`1=movie,2=show,3=season,4=episode`) but string on the collection Zod schema — our
@@ -65,14 +65,14 @@ no runtime ValidationPipe, so extra fields are ignored — we send the minimal `
 
 ## D-03 — Permission matrix (ADR-023 C-03)
 
-| Capability | Gate |
-|---|---|
-| View pending / collections / rules / recently-deleted / activity / status | `sectionProcedure('trash','read_only')` |
-| Save / un-save an item | `trashActionProcedure('save_exclude'|'remove_exclude')` (read_only + grant) |
-| Expedite one / all | `trashActionProcedure('expedite_item'|'expedite_all')` |
-| Restore a deleted item | `trashActionProcedure('restore_deleted')` |
-| Create/update/delete a rule group | `trashActionProcedure('edit_rules','edit')` — grant **and** section Edit |
-| Set a role's Trash actions | `roles.setTrashActions` (`adminProcedure`) |
+| Capability                                                                | Gate                                                                     |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| View pending / collections / rules / recently-deleted / activity / status | `sectionProcedure('trash','read_only')`                                  |
+| Save / un-save an item                                                    | `trashActionProcedure('save_exclude'                                     | 'remove_exclude')` (read_only + grant) |
+| Expedite one / all                                                        | `trashActionProcedure('expedite_item'                                    | 'expedite_all')`                       |
+| Restore a deleted item                                                    | `trashActionProcedure('restore_deleted')`                                |
+| Create/update/delete a rule group                                         | `trashActionProcedure('edit_rules','edit')` — grant **and** section Edit |
+| Set a role's Trash actions                                                | `roles.setTrashActions` (`adminProcedure`)                               |
 
 Admin ⇒ every section Edit + every action (no rows). Section `disabled` ⇒ no procedure reachable
 (server-authoritative — the grants are session-carried, never client-hidden only, AC-16). A row in
@@ -168,6 +168,80 @@ roles.setTrashActions({ roleId, actions[] })→ { changed, before[], after[] }  
 `TrashPendingItem`: `{ maintainerrMediaId, collectionId, collectionTitle, tmdbId, tvdbId, sizeBytes,
 addedToCollectionAt, deleteAfterDays, scheduledDeleteAt, mediaItemId, title, year, arrKind, arrTags,
 protectedByTag, recentlyWatched, lastViewedAt, requesters, sourceCollections, posterSource, posterUrl }`.
+
+## D-09 — Trash UX (as built, 2026-07-06 Fable UX pass; ADR-014/ADR-015 governed)
+
+`/trash` (`apps/web/app/(app)/trash/`) — a server page gate (Disabled ⇒ the clean "not
+available" state, mirroring `/ledger`; the page resolves `{level, actions}` off the session,
+admin ⇒ all actions) over `trash-client.tsx`. Top-nav **Trash** entry renders only when the
+session's `sectionPermissions.trash ≠ disabled` (no-row default is _disabled_ — falls closed).
+
+- **Safety banner first** (`trash.status`, D-04): a reserved-height strip above the tabs —
+  `safe` (accent: "Maintainerr connected · vX · N rules armed · M active collections"), `warn`
+  (integration(s) named; **every Expedite control disables**; the shield stays live — exclusion
+  writes need only reachability), `down` (unreachable ⇒ read-only). The banner mirrors; the
+  server re-audits on every destructive call regardless.
+- **Tabs:** Movies · TV · Recently Deleted · Rules · Activity (`?tab=`, WAI-ARIA tablist, keyed
+  remount, tab switch keeps only `?tab`). Movies/TV are NEVER combined; Music does not exist
+  here (R-87).
+- **Pending tables:** the `/ledger` spreadsheet treatment (sticky header + frozen Title column,
+  both-axis internal scroll) with the shared chip engine (`?q/genre/res/req/col/rmin/rmax/sort`).
+  Because `trash.pending` returns the WHOLE kind's set (household scale), filtering/sorting is
+  **client-side**; facet values derive from the live set. _(The UX pass extended
+  `TrashPendingItem` with `genres/resolution/imdbRating/tmdbRating` — same media_metadata join —
+  so the chips have data.)_ Columns: Title (poster thumb + `/library/[id]` link when
+  ledger-joined), Size, **Deletes** (date + a days-left pill that deepens muted→warn→danger as
+  the delete nears), Rating, Status badges (**Protected** accent-shield / **Recently watched** /
+  **Requested** / **Not in ledger** warn), Requested-by, Collection, Actions. Default sort:
+  soonest-deleting first. A persistent **footer** ("Reclaiming N across M items", filter-aware,
+  "· filtered from K pending" when narrowed) carries the **Expedite all…** button.
+- **Shield (Save/whitelist, R-83):** a plain accent toggle (protective + reversible — ADR-014's
+  two-step is reserved for destructive), constant footprint both states (ADR-015). The dnd tag
+  only lands on the next *arr sync, so a session-local override reflects a fresh save/un-save
+  immediately; `protectedByTag` is the durable signal. **Q-02 resolved — protect-in-context:**
+  the `/library/[id]` guard panel (scheduled-delete warning + shield) renders ONLY while the
+  item is in the actual pending set — `saveExclusion` needs the Maintainerr mediaServerId (a
+  Plex ratingKey) which only pending rows carry, and D-02's endpoint inventory has **no**
+  tmdb/tvdb→ratingKey lookup, so an always-on library shield is not implementable without
+  guessing ids (never). A dnd-tagged item additionally shows a display-only "Protected from
+  deletion" badge on its detail header (read off `arrTags`). Music never shows either.
+- **Expedite — the Modal EVERY time (ADR-014; never one-click):** per-row Expedite
+  (`expedite_item`) and footer Expedite-all (`expedite_all`). The confirm predicts the guardian
+  partition via a client mirror of `classifyGuardian` + the all-loop's unactionable check
+  (`apps/web/lib/trash.ts previewGuardian` — unit-tested against the server semantics): **X
+  deleted NOW (freeing S)** / **P protected** / **K kept-unverifiable**. The single-item Modal
+  keys its copy to the verdict (cold ⇒ "immediate and permanent"; watched/requested ⇒ "will be
+  protected instead"; unverifiable ⇒ "kept"). **Expedite-all cannot be scoped by filters** (the
+  wire contract takes only `media`), so with any filter active the Modal **refuses to arm** and
+  offers _Clear filters_ — the "looks filtered, deletes everything" state is unexpressible. The
+  post-run report renders `expeditedCount/protectedCount/skippedCount` as **deleted / protected
+  / skipped** with explicit copy that skipped = "could not be verified safe, kept" ≠ protected
+  (C-07b). `MAINTAINERR_UNSAFE` (PRECONDITION_FAILED — no longer pending, or a between-check
+  regression) renders a calm "Nothing was deleted — refreshed" state and invalidates the list.
+- **Recently Deleted:** movie+tv tombstones merged newest-first (poster, kind badge, size,
+  deleted-at); per-row **Restore** is a two-step `ConfirmButton` (`restore_deleted`) →
+  `trash.restoreDeleted` (failsafe re-add); the row reports inline ("Re-added — clears on the
+  next sync" — the tombstone lifts at sync time, deliberately).
+- **Rules (scope decision):** this pass ships a readable **list + arm/disarm + delete** —
+  name, media kind, delete-after days, Armed/Disarmed. Arm/disarm round-trips the passthrough
+  RulesDto via `trash.saveRule` (`{...rule, isActive}`); delete is a two-step ConfirmButton.
+  **Full rule BUILDING is deferred**: `GET /rules/constants` describes a deep
+  application×property×operator matrix whose faithful editor is a project of its own — a
+  half-faithful builder on the deletion engine is a safety liability, so authoring stays in
+  Maintainerr for now (noted in the UI). Controls render only for section **Edit** +
+  `edit_rules` (C-03) and disable when unreachable.
+- **Activity:** `trash.activity` as the timeline list (type/title/body/when). PLAN-009 extends.
+- **/admin/roles:** a **Trash** column — level `<select>` (applies on change) stacked over a
+  constant-width "N actions" summary (tooltip lists them; ADR-015 — recounts, never reflows);
+  the **per-action grid** (6 checkboxes, destructive ones labeled so) lives in the row editor
+  and Add-role modal, submitted via `roles.setTrashActions` (replace-set). Admin shows
+  "Edit · all actions", locked.
+- **e2e** (`apps/web/e2e/trash.spec.ts` + the stateful stub): pending badges/footer,
+  save→protected→unsave (exclusion calls asserted), expedite-all partition + report with the
+  **`/collections/handle` ABSENT** assertion (C-07a), the mid-flight-unsafe refusal, the
+  banner-warn + disabled-destructive state, restore, rules round-trip, activity, the roles
+  grid, save-only role gating (can shield, cannot expedite/restore/edit rules), the library
+  shield (pending movie ⇒ panel; dnd badge; music ⇒ nothing), and the 390px internal-pan fit.
 
 ## Ops / deploy-time checklist (owner)
 

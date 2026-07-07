@@ -191,6 +191,9 @@ export function TopBar({ user }: { user: TopBarUser }) {
   // falls open to the documented default; a Disabled role never sees the entry (the /ledger
   // route is additionally server-gated — hiding here is courtesy, not the enforcement).
   const showLedger = (user.role.sectionPermissions?.ledger ?? 'read_only') !== 'disabled';
+  // ADR-023 / DESIGN-010 D-09 — the Trash entry: the no-row DEFAULT for trash is disabled
+  // (ADR-021), so a missing map falls CLOSED; the /trash route is additionally server-gated.
+  const showTrash = (user.role.sectionPermissions?.trash ?? 'disabled') !== 'disabled';
   return (
     <header className="topbar">
       <div className="brand">
@@ -209,6 +212,8 @@ export function TopBar({ user }: { user: TopBarUser }) {
         <Link href="/library">Library</Link>
         {/* PLAN-005 (DESIGN-009 D-01): the Ledger section, level-gated (see showLedger). */}
         {showLedger ? <Link href="/ledger">Ledger</Link> : null}
+        {/* PLAN-006 (DESIGN-010 D-09): the Trash section, level-gated (see showTrash). */}
+        {showTrash ? <Link href="/trash">Trash</Link> : null}
         {/* Phase 3 (R-25..R-28): self-service Plex library access on the user's own account. */}
         <Link href="/library/plex">My Plex</Link>
       </nav>

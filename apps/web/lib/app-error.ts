@@ -26,6 +26,13 @@ const APP_CODE_COPY: Record<string, string> = {
   // ADR-022 D-02 / DESIGN-009 — the Ledger bulk Add-&-search cap (indexer safety).
   ARR_ADD_SEARCH_CAP_EXCEEDED:
     'Monitor & search is capped at 1000 items per run — narrow the filter set and run in batches.',
+  // ADR-023 / DESIGN-010 D-09 — Trash / Maintainerr codes. Expedite handles MAINTAINERR_UNSAFE
+  // specially (the "no longer pending — refreshed" Modal state); this copy is the fallback for
+  // the other write paths (rules, save).
+  MAINTAINERR_UNSAFE:
+    'Maintainerr isn’t in a safe state — nothing was deleted. Check the Trash safety banner.',
+  MAINTAINERR_UNAVAILABLE: 'Maintainerr didn’t respond. Nothing changed — try again in a bit.',
+  TRASH_MUSIC_UNSUPPORTED: 'Music can’t be deleted or restored through Trash.',
 };
 
 /** The machine-readable appCode riding on a TRPCClientError, if any. */

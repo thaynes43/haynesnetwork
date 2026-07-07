@@ -13,6 +13,7 @@ import {
   createRole,
   ingestLedgerEvents,
   setRoleLibraries,
+  setRoleTrashActions,
   setSectionPermission,
   tombstoneMissingItems,
   upsertMediaItemsBatch,
@@ -61,6 +62,8 @@ async function main(): Promise<void> {
       },
       // A SECOND movie with disjoint metadata (genres/rating/requester) so the D-11 grid
       // journeys can prove a filter/sort actually CHANGES the result set (library-grid.spec).
+      // DESIGN-010 D-09 — it carries the Maintainerr-managed protective 'dnd' tag, so the Trash
+      // pending table has a tag-PROTECTED row (the stub Maintainerr lists it as pending).
       {
         arrItemId: 602,
         tmdbId: 880002,
@@ -71,6 +74,7 @@ async function main(): Promise<void> {
         qualityProfileId: 7,
         qualityProfileName: 'HD-1080p',
         rootFolder: '/data/haynestower/Media/Movies',
+        arrTags: ['dnd'],
         onDiskFileCount: 1,
         expectedFileCount: 1,
         sizeOnDisk: 8_589_934_592,
@@ -172,7 +176,11 @@ async function main(): Promise<void> {
               requesters: ['manofoz'],
               posterSource: 'arr' as const,
               posterRef: '/MediaCover/601/poster.jpg?lastWrite=1',
-              sources: { arr: true },
+              // DESIGN-010 D-09 — watched 3 days ago (inside the 30-day guardian window), so the
+              // Trash pending table has a RECENTLY-WATCHED row the expedite guardian protects.
+              playCount: 2,
+              lastViewedAt: new Date(Date.now() - 3 * 86_400_000),
+              sources: { arr: true, tautulli: true },
             },
           ]
         : []),
@@ -303,9 +311,30 @@ async function main(): Promise<void> {
     actorId: null,
   });
 
+  // ADR-023 / DESIGN-010 D-09 — one role covers all three Trash-gating e2e journeys (AC-16):
+  // section READ-ONLY (browse, but rules stay uneditable even WITH the edit_rules grant —
+  // edit_rules also needs section Edit) + save/un-save granted + NO expedite/restore grants.
+  const { roleId: trashLimitedId } = await createRole({
+    name: 'Trash Limited',
+    description: 'Trash read-only; may save/un-save; no expedite/restore; edit_rules moot',
+    appIds: [],
+    actorId: null,
+  });
+  await setSectionPermission({
+    roleId: trashLimitedId,
+    sectionId: 'trash',
+    level: 'read_only',
+    actorId: null,
+  });
+  await setRoleTrashActions({
+    roleId: trashLimitedId,
+    actions: ['save_exclude', 'remove_exclude', 'edit_rules'],
+    actorId: null,
+  });
+
   await getPool().end();
   console.log(
-    '[seed-ledger] seeded 5 media items (1 tombstoned) + ledger events + Plex libraries/grants + Ledger section roles',
+    '[seed-ledger] seeded 5 media items (1 tombstoned) + ledger events + Plex libraries/grants + Ledger/Trash section roles',
   );
 }
 

@@ -5,9 +5,19 @@
 // collection handle/expedite), RECORDING every mutating call so specs can assert them. Wired into
 // harness.ts / env.ts so both Playwright e2e and `pnpm dev:local` boot a complete Trash stack.
 //
+// Fixtures join the seed-ledger rows so the Trash UX exercises every guardian partition
+// (DESIGN-010 D-09): The Fixture (tmdb 880001, recently watched → auto-protected), Stub Runner
+// (tmdb 880002, dnd-tagged → already protected), Vanished Heist (tmdb 880004, cold → deletable),
+// plus one item UNKNOWN to the ledger (tmdb 990009 → unverifiable/skipped). The TV collection
+// holds Breaking Prod (tvdb 990001, requested → protected).
+//
 // Control endpoints:
-//   GET  /_stub/calls  → { calls: [{method, path, query, body}] } (writes only)
-//   POST /_stub/reset  → 204 (clears recorded calls + resets exclusions)
+//   GET  /_stub/calls         → { calls: [{method, path, query, body}] } (writes only)
+//   POST /_stub/reset         → 204 (clears calls + exclusions + handled items + integrations)
+//   POST /_stub/integrations  → 204; body { name: 'radarr'|'sonarr'|'tautulli'|'overseerr'|'plex',
+//                               connected: boolean } — degrade/restore one integration so specs
+//                               can flip the safety banner (trash.status derives connectivity
+//                               from rules/constants applications + the Plex test — D-04).
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 
 export interface RecordedMaintainerrWrite {
@@ -27,18 +37,106 @@ export interface StubMaintainerrServer {
 /** The throwaway key the stub Maintainerr accepts (never a real credential). */
 export const STUB_MAINTAINERR_API_KEY = 'stub-maintainerr-key';
 
-/** A movie collection with two fixture items (sizes + addDate → derived scheduled-delete date). */
-const COLLECTION = {
-  id: 7,
-  title: 'Least watched movies',
-  isActive: true,
-  deleteAfterDays: 30,
-  type: 'movie',
-  media: [] as unknown[],
-};
-const COLLECTION_ITEMS = [
-  { mediaServerId: 'ms-9001', tmdbId: 990001, sizeBytes: 1_500_000_000, addDate: '2026-06-01T00:00:00Z' },
-  { mediaServerId: 'ms-9002', tmdbId: 990002, sizeBytes: 2_500_000_000, addDate: '2026-06-05T00:00:00Z' },
+/** Seed-joined Maintainerr ids (Plex ratingKeys) — exported for spec assertions. */
+export const STUB_MAINT_FIXTURE_ID = 'ms-880001'; // The Fixture — recently watched
+export const STUB_MAINT_RUNNER_ID = 'ms-880002'; // Stub Runner — dnd-tagged
+export const STUB_MAINT_VANISHED_ID = 'ms-880004'; // Vanished Heist — cold (deletable)
+export const STUB_MAINT_UNKNOWN_ID = 'ms-990009'; // not in the ledger — unverifiable
+export const STUB_MAINT_TV_ID = 'ms-990001'; // Breaking Prod — requested
+
+const daysAgo = (n: number): string => new Date(Date.now() - n * 86_400_000).toISOString();
+
+interface StubCollection {
+  id: number;
+  title: string;
+  isActive: boolean;
+  deleteAfterDays: number;
+  type: string;
+  items: Array<{
+    mediaServerId: string;
+    tmdbId?: number;
+    tvdbId?: number;
+    sizeBytes: number;
+    addDate: string;
+  }>;
+}
+
+/** Fresh fixture state (addDates are relative so scheduled-delete stays in the future). */
+function freshCollections(): StubCollection[] {
+  return [
+    {
+      id: 7,
+      title: 'Least watched movies',
+      isActive: true,
+      deleteAfterDays: 30,
+      type: 'movie',
+      items: [
+        {
+          mediaServerId: STUB_MAINT_FIXTURE_ID,
+          tmdbId: 880001,
+          sizeBytes: 4_294_967_296,
+          addDate: daysAgo(5),
+        },
+        {
+          mediaServerId: STUB_MAINT_RUNNER_ID,
+          tmdbId: 880002,
+          sizeBytes: 8_589_934_592,
+          addDate: daysAgo(10),
+        },
+        {
+          mediaServerId: STUB_MAINT_VANISHED_ID,
+          tmdbId: 880004,
+          sizeBytes: 2_147_483_648,
+          addDate: daysAgo(25),
+        },
+        {
+          mediaServerId: STUB_MAINT_UNKNOWN_ID,
+          tmdbId: 990009,
+          sizeBytes: 1_073_741_824,
+          addDate: daysAgo(2),
+        },
+      ],
+    },
+    {
+      id: 8,
+      title: 'Stale shows',
+      isActive: true,
+      deleteAfterDays: 45,
+      type: 'show',
+      items: [
+        {
+          mediaServerId: STUB_MAINT_TV_ID,
+          tvdbId: 990001,
+          sizeBytes: 21_474_836_480,
+          addDate: daysAgo(7),
+        },
+      ],
+    },
+  ];
+}
+
+/** One armed rule group (round-trippable RulesDto shell — the Rules tab lists/arms/deletes it). */
+function freshRules(): Array<Record<string, unknown>> {
+  return [
+    {
+      id: 11,
+      name: 'Purge stale movies',
+      description: 'Unwatched 4K movies older than 90 days',
+      isActive: true,
+      dataType: 1,
+      libraryId: 1,
+      collection: { id: 7, deleteAfterDays: 30 },
+      rules: [],
+    },
+  ];
+}
+
+const ALL_APPLICATIONS = [
+  { id: 0, name: 'Plex' },
+  { id: 2, name: 'Radarr' },
+  { id: 3, name: 'Sonarr' },
+  { id: 4, name: 'Overseerr' },
+  { id: 5, name: 'Tautulli' },
 ];
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -58,6 +156,12 @@ function json(res: import('node:http').ServerResponse, status: number, body: unk
 export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
   const calls: RecordedMaintainerrWrite[] = [];
   const exclusions = new Set<string>();
+  /** mediaServerIds whose per-item handle (delete) has fired — dropped from collection content. */
+  const handled = new Set<string>();
+  /** lowercased application names currently "disconnected" (dropped from rules/constants). */
+  const disconnected = new Set<string>();
+  let collections = freshCollections();
+  let rules = freshRules();
 
   const server: Server = createServer((req, res) => {
     void (async () => {
@@ -70,6 +174,17 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
       if (url.pathname === '/_stub/reset' && method === 'POST') {
         calls.length = 0;
         exclusions.clear();
+        handled.clear();
+        disconnected.clear();
+        collections = freshCollections();
+        rules = freshRules();
+        res.writeHead(204);
+        return res.end();
+      }
+      if (url.pathname === '/_stub/integrations' && method === 'POST') {
+        const body = JSON.parse(await readBody(req)) as { name: string; connected: boolean };
+        if (body.connected) disconnected.delete(body.name.toLowerCase());
+        else disconnected.add(body.name.toLowerCase());
         res.writeHead(204);
         return res.end();
       }
@@ -86,35 +201,56 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
           exclusions.delete(decodeURIComponent(path.split('/').pop() ?? ''));
           return json(res, 200, { code: 1 });
         }
-        if (method === 'POST' && (path === '/collections/handle' || path === '/collections/media/handle')) {
+        if (method === 'POST' && path === '/collections/media/handle') {
+          // The per-item delete trigger (the ONLY one expedite may use — C-07a): the item
+          // leaves its collection so a pending refetch shows it gone.
+          handled.add(String((body as { mediaId?: unknown })?.mediaId ?? ''));
           return json(res, 201, {});
         }
-        if ((method === 'POST' || method === 'PUT') && path === '/rules') return json(res, 201, { code: 1 });
-        if (method === 'DELETE' && /^\/rules\/\d+$/.test(path)) return json(res, 200, { code: 1 });
+        if (method === 'POST' && path === '/collections/handle') {
+          // The estate-wide handler expedite must NEVER call (C-07a). Accept it (Maintainerr
+          // would) so the guard is the spec's /_stub/calls assertion, not a stub 404.
+          return json(res, 201, {});
+        }
+        if ((method === 'POST' || method === 'PUT') && path === '/rules') {
+          const dto = body as Record<string, unknown>;
+          if (method === 'PUT' && typeof dto?.id === 'number') {
+            rules = rules.map((r) => (r.id === dto.id ? { ...r, ...dto } : r));
+          }
+          return json(res, 201, { code: 1 });
+        }
+        if (method === 'DELETE' && /^\/rules\/\d+$/.test(path)) {
+          const id = Number(path.split('/').pop());
+          rules = rules.filter((r) => r.id !== id);
+          return json(res, 200, { code: 1 });
+        }
         // BasicResponseDto (code:1 = success) — the write client fails closed on code:0 (P1a).
         if (method === 'PATCH' && path === '/settings')
           return json(res, 200, { status: 'OK', code: 1, message: 'Success' });
-        return json(res, 404, { message: `stub-maintainerr: no write handler for ${method} ${path}` });
+        return json(res, 404, {
+          message: `stub-maintainerr: no write handler for ${method} ${path}`,
+        });
       }
 
       // ---- reads ----
       switch (true) {
         case path === '/app/status':
-          return json(res, 200, { status: 'ok', version: '3.17.0', commitTag: 'e2e', updateAvailable: false });
+          return json(res, 200, {
+            status: 'ok',
+            version: '3.17.0',
+            commitTag: 'e2e',
+            updateAvailable: false,
+          });
         case path === '/settings/test/plex':
-          return json(res, 200, { status: 'OK', code: 1, message: 'Plex 1.40 (stub)' });
+          return disconnected.has('plex')
+            ? json(res, 200, { status: 'NOK', code: 0, message: 'Plex unreachable (stub)' })
+            : json(res, 200, { status: 'OK', code: 1, message: 'Plex 1.40 (stub)' });
         case path === '/rules/constants':
           return json(res, 200, {
-            applications: [
-              { id: 0, name: 'Plex' },
-              { id: 2, name: 'Radarr' },
-              { id: 3, name: 'Sonarr' },
-              { id: 4, name: 'Overseerr' },
-              { id: 5, name: 'Tautulli' },
-            ],
+            applications: ALL_APPLICATIONS.filter((a) => !disconnected.has(a.name.toLowerCase())),
           });
         case path === '/rules':
-          return json(res, 200, []);
+          return json(res, 200, rules);
         case path === '/settings':
           return json(res, 200, {
             radarr_tag_exclusions: true,
@@ -125,20 +261,42 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
             sonarr_untag_on_unexclude: true,
           });
         case path === '/collections':
-          return json(res, 200, [{ ...COLLECTION }]);
+          return json(
+            res,
+            200,
+            collections.map((c) => ({
+              id: c.id,
+              title: c.title,
+              isActive: c.isActive,
+              deleteAfterDays: c.deleteAfterDays,
+              type: c.type,
+              media: [], // the list serves a PREVIEW subset — content is the paged endpoint
+            })),
+          );
         case /^\/collections\/media\/\d+\/content\/\d+$/.test(path): {
           const cid = Number(path.split('/')[3]);
-          const items = cid === COLLECTION.id ? COLLECTION_ITEMS : [];
+          const items =
+            collections
+              .find((c) => c.id === cid)
+              ?.items.filter((i) => !handled.has(i.mediaServerId)) ?? [];
           return json(res, 200, { totalSize: items.length, items });
         }
         case path === '/rules/exclusion': {
           const id = query.mediaServerId;
-          return json(res, 200, id !== undefined && exclusions.has(id) ? [{ id: 1, mediaServerId: id, ruleGroupId: null }] : []);
+          return json(
+            res,
+            200,
+            id !== undefined && exclusions.has(id)
+              ? [{ id: 1, mediaServerId: id, ruleGroupId: null, parent: id }]
+              : [],
+          );
         }
         default:
           return json(res, 404, { message: `stub-maintainerr: no read handler for GET ${path}` });
       }
-    })().catch((err: unknown) => json(res, 500, { message: `stub-maintainerr error: ${String(err)}` }));
+    })().catch((err: unknown) =>
+      json(res, 500, { message: `stub-maintainerr error: ${String(err)}` }),
+    );
   });
 
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -151,6 +309,8 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
     port: address.port,
     calls,
     stop: () =>
-      new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve()))),
+      new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve())),
+      ),
   };
 }
