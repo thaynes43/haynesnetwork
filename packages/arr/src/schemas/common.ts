@@ -138,3 +138,35 @@ export const commandResponseSchema = z.object({
   name: z.string(),
 });
 export type ArrCommandResponse = z.infer<typeof commandResponseSchema>;
+
+/**
+ * PLAN-015 / DESIGN-005 D-20 — the *arr download-queue record subset the Action Feedback
+ * projection consumes (`GET /api/v3|v1/queue`, read-only; verified live 2026-07-07 against
+ * Sonarr 4.x / Radarr 6.x / Lidarr 3.x). Per-kind target ids (`episodeId`/`movieId`/`albumId`
+ * + parents) are added in sonarr.ts/radarr.ts/lidarr.ts. BC-03 ACL — only these fields enter
+ * the app; the rest of the (large) queue resource is tolerated and dropped (strip mode).
+ *
+ * `size`/`sizeleft` drive the download percent (`(size - sizeleft) / size`);
+ * `status` is the download-client status (`queued|delay|paused|downloading|completed|warning|
+ * failed|downloadClientUnavailable`); `trackedDownloadStatus` is `ok|warning|error`;
+ * `trackedDownloadState` is the lifecycle (`downloading|importPending|importing|imported|
+ * importBlocked|importFailed|failedPending|failed|ignored`). `errorMessage`/`statusMessages`
+ * carry the stall reason surfaced on the `stalled` phase.
+ */
+export const queueRecordBaseSchema = z.object({
+  id: z.number().int(),
+  status: z.string(),
+  trackedDownloadStatus: z.string().nullish(),
+  trackedDownloadState: z.string().nullish(),
+  size: z.number().nullish(),
+  sizeleft: z.number().nullish(),
+  estimatedCompletionTime: z.string().nullish(),
+  timeleft: z.string().nullish(),
+  downloadId: z.string().nullish(),
+  title: z.string().nullish(),
+  errorMessage: z.string().nullish(),
+  statusMessages: z
+    .array(z.object({ title: z.string().nullish(), messages: z.array(z.string()).nullish() }))
+    .nullish(),
+});
+export type ArrQueueRecordBase = z.infer<typeof queueRecordBaseSchema>;

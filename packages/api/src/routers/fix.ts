@@ -6,7 +6,12 @@
 import { z } from 'zod';
 import { and, desc, eq, sql, type SQL } from 'drizzle-orm';
 import { FIX_REASONS, FIX_STATUSES, fixRequests, mediaItems, users } from '@hnet/db';
-import { runFixRequest, runForceSearch } from '@hnet/domain';
+import {
+  computeFixProgress,
+  computeSearchProgress,
+  runFixRequest,
+  runForceSearch,
+} from '@hnet/domain';
 import { authedProcedure, mapDomainErrors, resolveArrBundle, router } from '../trpc';
 import { adminProcedure } from '../middleware/role';
 import { decodeCursor, encodeCursor } from '../cursor';
@@ -117,6 +122,62 @@ export const fixRouter = router({
         });
         return result; // {eventId, targetLabel, commandName}
       });
+    }),
+
+  /**
+   * PLAN-015 / ADR-028 (R-106/R-107) — the LIVE Action Progress Phase for a Fix. A read-only
+   * query the client polls (`refetchInterval` while a progress surface is mounted and the phase
+   * is non-terminal). Derives the phase on demand from the fix row + a live *arr queue read + the
+   * sync-ingested ledger milestones (no new state). Own-fix or admin only (else NOT_FOUND — the
+   * domain enforces it, no leak). Errors via mapDomainErrors (ARR_UPSTREAM_UNAVAILABLE on a queue
+   * read failure; the underlying Fix is unaffected — fail-closed to a transient phase, never a
+   * false terminal).
+   */
+  progress: authedProcedure
+    .input(z.object({ fixRequestId: z.uuid() }))
+    .query(async ({ ctx, input }) => {
+      return mapDomainErrors(async () =>
+        computeFixProgress({
+          db: ctx.db,
+          arr: resolveArrBundle(ctx),
+          fixRequestId: input.fixRequestId,
+          requesterId: ctx.user.id,
+          requesterIsAdmin: ctx.user.role.isAdmin,
+        }),
+      );
+    }),
+
+  /**
+   * PLAN-015 / ADR-028 — the LIVE Action Progress Phase for a Force Search. Force Search leaves
+   * no fix_requests row, so this keys off the most recent `search_requested` ledger event for the
+   * grain (reuse `refineScopeShape`). Same poll/derivation contract as `progress`; own-search or
+   * admin only. Kept on the fix router (which already owns `forceSearch`) rather than a new
+   * `search.*` router — one action surface, documented in DESIGN-005 D-20.
+   */
+  searchProgress: authedProcedure
+    .input(
+      z
+        .object({
+          mediaItemId: z.uuid(),
+          scope: z.enum(ACTION_SCOPES).optional(),
+          targetChildId: z.number().int().positive().optional(),
+          seasonNumber: z.number().int().min(0).optional(),
+        })
+        .refine(refineScopeShape, { error: 'scope/target/season combination is invalid' }),
+    )
+    .query(async ({ ctx, input }) => {
+      return mapDomainErrors(async () =>
+        computeSearchProgress({
+          db: ctx.db,
+          arr: resolveArrBundle(ctx),
+          mediaItemId: input.mediaItemId,
+          scope: input.scope,
+          targetChildId: input.targetChildId,
+          seasonNumber: input.seasonNumber,
+          requesterId: ctx.user.id,
+          requesterIsAdmin: ctx.user.role.isAdmin,
+        }),
+      );
     }),
 
   /** R-46 — the caller's own fix history, newest first. */

@@ -1,6 +1,12 @@
 // DESIGN-005 D-02 — Radarr v3 field subsets (strip mode: extra fields tolerated, dropped).
 import { z } from 'zod';
-import { arrFileSchema, arrImageSchema, historyRecordBaseSchema, radarrRatingsSchema } from './common';
+import {
+  arrFileSchema,
+  arrImageSchema,
+  historyRecordBaseSchema,
+  queueRecordBaseSchema,
+  radarrRatingsSchema,
+} from './common';
 
 /** Full eventType enum per Radarr's `MovieHistoryEventType` (D-02). */
 export const RADARR_HISTORY_EVENT_TYPES = [
@@ -79,3 +85,13 @@ export const radarrHistoryRecordSchema = historyRecordBaseSchema.extend({
   movieId: z.number().int(),
 });
 export type RadarrHistoryRecord = z.infer<typeof radarrHistoryRecordSchema>;
+
+/**
+ * `GET /queue?movieIds=` record with Radarr's join key (PLAN-015 / D-20). `movieId` is the
+ * target (= media_items.arr_item_id) the queue is filtered by — the movie IS the fix target
+ * (radarr has no children). Verified live 2026-07-07.
+ */
+export const radarrQueueRecordSchema = queueRecordBaseSchema.extend({
+  movieId: z.number().int().nullish(),
+});
+export type RadarrQueueRecord = z.infer<typeof radarrQueueRecordSchema>;
