@@ -55,20 +55,21 @@ For each plan, in order:
 | 006 | Trash section (Maintainerr) | #4 | 004 + Maintainerr | ✅ completed/ (v0.11.0 + v0.11.1/v0.11.2) |
 | 007 | Cosign image signing | — | — | ✅ completed/ (v0.7.0) |
 | 012 | Trash curation pipeline (batches → poster review → Leaving Soon → windowed deletion) | owner 2026-07-06 | 006 (incl. its test-rule collections) | ✅ completed/ (v0.12.0) |
-| 011 | Authentik hardening (native-account MFA + haynesnetwork sign-in rebrand) | owner 2026-07-06 | — (runs after 012 per owner order) | **owner-gated** (branding mockups + apply/rollback runbook ready in `scratchpad/ux-011/`; owner picks + does MFA — deferred past the 008 cutover on owner authorization) |
+| 011 | Authentik hardening (native-account MFA + haynesnetwork sign-in rebrand) | owner 2026-07-06 | — (runs after 012 per owner order) | **branding COMPLETE** (2026-07-07, applied live: option C rebrand + Plex-primary login card + RP-initiated SSO logout); **remaining = owner MFA enrollment + `mfa-exempt` policy** (tracked in the active plan) |
 | 009 | Bulletin — notification Feed + Messages board | stretch | 004, 006 | ✅ completed/ (v0.13.0) |
 | 010 | MOTD dashboard banner | stretch | — | ✅ completed/ (v0.14.0) |
 | 008 | haynesnetwork public cutover (Cloudflare tunnel) | — | 002–006, 012 done | ✅ completed/ (**EXECUTED 2026-07-07** — `haynesnetwork.com` + `www` publicly live; see `../../docs/ops/005-root-domain-cutover.md`) |
 | 013 | Disk utilization + reclaim metrics | owner 2026-07-06 | 012 (deletion snapshots) + 008 | ✅ completed/ (v0.17.0) |
-| 014 | Rules tuning + space policy (skip-gate graduation) | owner 2026-07-06 | 013 + accumulated 012 save-data | **executing** (last board item) |
+| 014 | Rules tuning + space policy (skip-gate graduation) | owner 2026-07-06 | 013 + accumulated 012 save-data | ✅ completed/ (v0.18.0) |
 | 015 | Downstream *arr action feedback (live Fix/Force-Search status) | owner 2026-07-07 | — (extends the on-`main` Fix/Force-Search vertical) | ✅ completed/ (v0.15.0) |
 
 **Owner-ordered sequence (2026-07-06):** 006 → 012 → 011 → 009 → 010 → 008 → 013 → 014, with 015
-(owner 2026-07-07) landed alongside. **Executed through 008:** 002–007, 009, 010, 012, 015 shipped
-and live-validated; **008 cut over to the public root domain 2026-07-07** (owner authorized go-live
-ahead of the 011 MFA/branding gate). **013** (disk + reclaim metrics) shipped v0.17.0; **now
-building: 014** (rules tuning + space policy — the last board item).
-**011 is owner-gated** (Authentik branding pick + owner MFA), tracked separately from the plan queue.
+(owner 2026-07-07) landed alongside. **THE BOARD IS COMPLETE:** every buildable plan **002–015**
+is shipped and live-validated on the public origin (latest **v0.18.0** = 014 rules tuning + space
+policy, delivered **OFF** by default). **008 cut over to the public root domain 2026-07-07**
+(`haynesnetwork.com` + `www` live). **011 branding is COMPLETE** (option C rebrand + Plex-primary
+login + RP-initiated SSO logout, applied live 2026-07-07); its **only remaining piece is owner MFA
+enrollment + the `mfa-exempt` policy**, tracked in the active `011-authentik-hardening.md`.
 
 Source brain dump: `TODO.md`. Consolidated backlog + Restore explanation:
 `../context/2026-07-05-backlog-recon.md`. Deleted-items snapshot to import into the Ledger:

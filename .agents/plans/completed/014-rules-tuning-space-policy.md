@@ -1,8 +1,12 @@
 # PLAN-014: Rules tuning + space policy (banked — analysis/config, decisions deferred by design)
 
-- **Status:** **Executing** (Fable 5, 2026-07-07) — built per the owner's conservative-first rulings
-  (2026-07-07): a **propose-only** space policy (never autonomous deletion) + a **rules-tuning REPORT**
-  (never auto-tune) + the **skip-gate graduation criteria**. Ratified as **ADR-031** / **DESIGN-014**;
+- **Status:** **Completed (2026-07-07)** — shipped v0.18.0; adversarially verified (the policy
+  provably cannot delete or promote under any input permutation — only draft batches into the
+  normal admin gate); live: `/admin/storage` Space-policy card **OFF (default)**, suspended
+  `sync-space-policy` CronJob deployed (arm by unsuspending + enabling in the card); tuning report +
+  skip-gate graduation readiness live. Built per the owner's conservative-first rulings (2026-07-07):
+  a **propose-only** space policy (never autonomous deletion) + a **rules-tuning REPORT** (never
+  auto-tune) + the **skip-gate graduation criteria**. Ratified as **ADR-031** / **DESIGN-014**;
   PRD **R-112..R-114**; glossary **T-98..T-99**; migration **0022**. See the "As built" note below.
   (Was: Draft — **BANKED**, runs after PLAN-013.)
 - **Satisfies:** likely a new **ADR-NN** (the skip-admin-gate graduation criteria + the tuning
