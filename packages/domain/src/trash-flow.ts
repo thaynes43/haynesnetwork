@@ -902,6 +902,11 @@ export interface DeletionAuditInput {
   actorId: string | null;
   actorName: string | null;
   scope: 'item' | 'all' | 'batch';
+  // ADR-030 / DESIGN-013 (PLAN-013) — reclaim forward-capture (optional; batch-sweep callers already
+  // freeze these on trash_batch_items, so they pass them through here too for the notification payload).
+  resolution?: string | null;
+  imdbRating?: number | null;
+  tmdbRating?: number | null;
 }
 
 /**
@@ -933,7 +938,15 @@ export async function recordDeletionAudit(
     tvdbId: input.tvdbId,
     mediaItemId: input.mediaItemId,
     actorUserId: input.actorId,
-    payload: { scope: input.scope, arrKind: input.arrKind, sizeBytes: input.sizeBytes },
+    payload: {
+      scope: input.scope,
+      arrKind: input.arrKind,
+      sizeBytes: input.sizeBytes,
+      // PLAN-013 reclaim forward-capture — present when the caller froze them (undefined ⇒ omitted).
+      resolution: input.resolution ?? null,
+      imdbRating: input.imdbRating ?? null,
+      tmdbRating: input.tmdbRating ?? null,
+    },
   });
 }
 
@@ -947,6 +960,13 @@ interface ExpediteSurvivor {
   tmdbId: number | null;
   tvdbId: number | null;
   arrKind: 'radarr' | 'sonarr';
+  // ADR-030 / DESIGN-013 (PLAN-013) — reclaim forward-capture. The direct-expedite path (unlike the
+  // batch sweep, which freezes these on trash_batch_items) carried NO size/resolution into any durable
+  // record. Freeze them here from the SAME live/pending row already in scope so the reclaim report can
+  // fold in a best-effort direct-expedite series (no new table/migration — they ride the jsonb payloads).
+  resolution: string | null;
+  imdbRating: number | null;
+  tmdbRating: number | null;
 }
 
 /**
@@ -971,6 +991,11 @@ async function expediteOneSurvivor(
         scope,
         collectionId: survivor.collectionId,
         maintainerrMediaId: survivor.maintainerrMediaId,
+        // PLAN-013 reclaim forward-capture — frozen at expedite time (best-effort reclaim source).
+        sizeBytes: survivor.sizeBytes,
+        resolution: survivor.resolution,
+        imdbRating: survivor.imdbRating,
+        tmdbRating: survivor.tmdbRating,
       },
     });
     // Same-tx deletion audit: tombstone so Recently Deleted surfaces it now (with actor), and write
@@ -985,6 +1010,9 @@ async function expediteOneSurvivor(
       actorId: input.actorId ?? null,
       actorName,
       scope,
+      resolution: survivor.resolution,
+      imdbRating: survivor.imdbRating,
+      tmdbRating: survivor.tmdbRating,
     });
   });
   await guardMaintainerrCall('maintainerr POST /collections/media/handle', () =>
@@ -1075,6 +1103,9 @@ export async function expediteDeletion(
       tmdbId: target.tmdbId,
       tvdbId: target.tvdbId,
       arrKind: arrKindForTrashMedia(resolved.media),
+      resolution: target.resolution,
+      imdbRating: target.imdbRating,
+      tmdbRating: target.tmdbRating,
     });
     return { scope: 'item', protectedCount: 0, expeditedCount: 1, skippedCount: 0, stalePending: 0 };
   }
@@ -1166,6 +1197,9 @@ export async function expediteDeletion(
       tmdbId: p.tmdbId,
       tvdbId: p.tvdbId,
       arrKind,
+      resolution: p.resolution,
+      imdbRating: p.imdbRating,
+      tmdbRating: p.tmdbRating,
     });
   }
 

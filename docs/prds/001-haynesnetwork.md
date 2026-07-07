@@ -218,6 +218,21 @@ expiry deletes the survivors — every R-86/R-87 safety layer still applying.
 | R-95 | Admin-tunable operational settings (skip-gate, default window) live in an **audited settings store**; every change writes an audit row. | Should |
 | R-96 | Batch cadence / scheduled creation is **configurable** (manual-first v1; scheduled creation future). | Should |
 
+#### Space & reclaim metrics (PLAN-013 — ADR-030 / DESIGN-013)
+
+Governed by **ADR-030** / **DESIGN-013**. Make the space story measurable: current utilization per
+media array against a **space target**, the fill/drain **trend** over time, and **reclaim attribution**
+from the curation pipeline's deletions (R-93's snapshots). HYBRID surface — native in-app for
+point-in-time utilization + reclaim, **deep-linked Grafana** for the historical trend. Consumes R-93;
+does not change any deletion behavior. Native reads are admin-gated for v1.
+
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| R-108 | **Disk utilization per media array is visible** — current free/total + percent-used per physical array (HaynesTower, Music/CephFS), read from the *arr `GET /diskspace` API (the only source with a total). A downed *arr yields a partial result, never a broken page. | Should |
+| R-109 | **Fill/drain trend over time** is surfaced so the owner can judge steady-state against the target ("draining toward the floor, or still filling?"). Sourced from the exportarr `*_rootfolder_freespace_bytes` series in Grafana, **deep-linked** (not embedded) so it survives the `haynesnetwork.com` cutover and stays excellent on a phone. | Should |
+| R-110 | **Reclaim attribution** from the deletion snapshots (R-93): reclaimed bytes by **category** (Movies vs TV) AND by **resolution** (the bang-for-buck view — "3 × 4K = 90% of the reclaim"), a cumulative-reclaim curve, and a per-batch rollup attributed to the green-lighting admin, over a selectable window. Batch-swept deletions are the clean dataset; direct-expedites are a best-effort second-class series. | Should |
+| R-111 | A **configurable space target** (percent-used ceiling per Plex server, e.g. HaynesTower < 80%) lives in the **audited settings store** (R-95's `app_settings`); the metrics surface displays it as a reference line. This plan **stores + displays** the target; enforcement/action on it is a later plan (PLAN-014). | Should |
+
 ### Bulletin — Feed + Messages (Phase 2.5 / stretch)
 
 Governed by **ADR-026** / **DESIGN-012** (PLAN-009). A top-level **Bulletin** section with two

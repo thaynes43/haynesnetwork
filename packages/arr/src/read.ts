@@ -5,11 +5,13 @@ import { z } from 'zod';
 import { ARR_CLUSTER_URL_DEFAULTS, assertArrEnv, type ArrEnvConfig } from './config';
 import { ArrHttp, type QueryParams } from './http';
 import {
+  diskSpaceSchema,
   pagedSchema,
   qualityProfileSchema,
   rootFolderSchema,
   systemStatusSchema,
   tagSchema,
+  type ArrDiskSpace,
   type ArrPage,
   type ArrQualityProfile,
   type ArrRootFolder,
@@ -126,6 +128,16 @@ abstract class ArrReadClientBase {
 
   listRootFolders(): Promise<ArrRootFolder[]> {
     return this.http.requestJson('GET', 'rootfolder', z.array(rootFolderSchema));
+  }
+
+  /**
+   * ADR-030 / DESIGN-013 (PLAN-013) — `GET /diskspace`: per-mounted-disk free + total bytes. The
+   * utilization source of record (the only *arr read with a `totalSpace`). Shared verbatim by all
+   * three kinds (Lidarr's `/api/v1` base is handled by apiBasePath). The domain filters the result to
+   * the media-library array paths (`/data/haynestower`, `/data/cephfs-hdd`).
+   */
+  getDiskSpace(): Promise<ArrDiskSpace[]> {
+    return this.http.requestJson('GET', 'diskspace', z.array(diskSpaceSchema));
   }
 
   listTags(): Promise<ArrTag[]> {

@@ -863,6 +863,10 @@ async function expireOneBatch(input: {
         actorId: input.actorId,
         actorName,
         scope: 'batch',
+        // PLAN-013 — mirror the frozen deletion snapshot into the Activity notification payload too.
+        resolution: fresh.resolution,
+        imdbRating: fresh.imdbRating,
+        tmdbRating: fresh.tmdbRating,
       });
       return true;
     });

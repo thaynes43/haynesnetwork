@@ -12,6 +12,7 @@ import { plexRouter } from './plex';
 import { trashRouter } from './trash';
 import { communicationRouter } from './communication';
 import { motdRouter } from './motd';
+import { storageRouter } from './storage';
 
 export const appRouter = router({
   profile: profileRouter,
@@ -36,6 +37,9 @@ export const appRouter = router({
   // ADR-027 / DESIGN-004 D-15 (PLAN-010): the dashboard Message-of-the-Day banner — admin compose/
   // clear over the audited app_settings store, one authed read for every user's dashboard.
   motd: motdRouter,
+  // ADR-030 / DESIGN-013 (PLAN-013): the Storage metrics surface — admin-gated disk utilization
+  // (*arr /diskspace) + reclaim attribution (PG deletion snapshots) + per-server space targets.
+  storage: storageRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -3425,3 +3425,268 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='lock'] {
 .bulletin-msg[data-status='deleted'] .bulletin-msg__body {
   opacity: 0.6;
 }
+
+/* ---------- Storage metrics (ADR-030 / DESIGN-013 D-05, PLAN-013) ---------- */
+/* The utilization cards are the headline view: one capacity meter per physical array. The tone
+   seam (--meter-tone) is the ADR-028 pattern — severity recolors the SAME geometry (ok accent →
+   warn → danger as usedPct approaches/passes the target); layout never changes (ADR-015). The
+   unfilled track is a light step of the meter's own tone (dataviz meter rule) so state reads
+   across the whole bar, not just the fill. */
+.storage-arrays {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+  margin-top: var(--space);
+}
+.storage-array {
+  --meter-tone: var(--color-accent);
+}
+.storage-array--warn {
+  --meter-tone: var(--color-warning);
+}
+.storage-array--danger {
+  --meter-tone: var(--color-danger);
+}
+.storage-array--muted {
+  --meter-tone: var(--color-text-muted);
+}
+.storage-array__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.storage-array__head h2 {
+  margin: 0;
+  font-size: 15px;
+}
+.storage-array__path {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+.storage-array__meter {
+  position: relative;
+  height: 16px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--meter-tone) 16%, var(--color-surface-2));
+}
+.storage-array__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  min-width: 10px;
+  border-radius: inherit;
+  background: var(--meter-tone);
+  transition: width 0.3s ease;
+}
+/* The space-target tick: a text-ink line overhanging the track so it reads on fill AND track.
+   Moving the target slides the tick (a deliberate data change) — nothing else may move. */
+.storage-array__tick {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--color-text);
+  opacity: 0.85;
+  transform: translateX(-1px);
+  transition: left 0.2s ease;
+}
+.storage-array__stats {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+.storage-array__pct {
+  font-size: 24px;
+  font-weight: 650;
+  color: var(--color-text);
+}
+.storage-array--danger .storage-array__pct {
+  color: var(--color-danger);
+}
+.storage-array__stats--degraded {
+  min-height: 29px; /* reserve the stat line's slot so a degraded card keeps the meter geometry */
+  display: flex;
+  align-items: center;
+}
+/* Inline per-array target editor — one row, every state the same footprint (ADR-015): the Save
+   button and the status slot are always rendered; validity/savedness only recolor. */
+.storage-target {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  min-height: 36px;
+}
+.storage-target--none {
+  font-size: 13px;
+}
+.storage-target__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.storage-target__label input {
+  font: inherit;
+  font-size: 13px;
+  width: 64px;
+  min-height: 32px;
+  padding: 4px 8px;
+  text-align: right;
+  color: var(--color-text);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+.storage-target__label input:focus {
+  border-color: var(--color-accent);
+}
+.storage-target__status {
+  font-size: 12px;
+  min-width: 96px; /* reserved — "Whole 0–100 only" never widens the row when it appears */
+}
+.storage-target:has(input[aria-invalid='true']) .storage-target__status {
+  color: var(--color-danger);
+  font-weight: 600;
+}
+
+/* Grafana deep-link — a QUIET secondary card (ADR-030 C-04: link out, never embed): flat surface
+   (no brand-paper gradient), muted until hover deepens the border. */
+.storage-grafana {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 12px;
+  padding: 14px 20px;
+  background: var(--color-surface);
+  text-decoration: none;
+  color: var(--color-text);
+}
+.storage-grafana:hover {
+  border-color: var(--color-accent);
+}
+.storage-grafana__title {
+  font-weight: 600;
+  font-size: 14px;
+}
+.storage-grafana .muted {
+  font-size: 12px;
+}
+
+/* Reclaim section. */
+.storage-reclaim__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 4px;
+}
+.storage-reclaim__head h2 {
+  margin: 0;
+}
+.storage-reclaim__headline {
+  margin: 12px 0 0;
+  font-size: 15px;
+}
+.storage-reclaim__headline strong {
+  font-size: 20px;
+  font-weight: 650;
+}
+.storage-reclaim__empty {
+  margin-top: 12px;
+}
+.storage-reclaim__empty p {
+  margin: 0 0 6px;
+}
+.storage-reclaim__empty p:last-child {
+  margin-bottom: 0;
+  font-size: 13px;
+}
+.storage-reclaim__expedited {
+  margin: 10px 0 0;
+  font-size: 12px;
+}
+
+/* Bang-for-buck bars: one measure (reclaimed bytes) across category × resolution rows ⇒ a single
+   hue (accent), magnitude carried by length — identity lives in the row label, never in a hue
+   cycle (dataviz). Thin marks, 4px rounded data-end, square at the left baseline. */
+.reclaim-bars {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.reclaim-bar__meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.reclaim-bar__label {
+  font-size: 13px;
+  font-weight: 600;
+}
+.reclaim-bar__value {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.reclaim-bar__track {
+  height: 10px;
+  border-radius: 0 4px 4px 0;
+  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface-2));
+}
+.reclaim-bar__fill {
+  height: 100%;
+  min-width: 4px;
+  border-radius: inherit;
+  background: var(--color-accent);
+}
+
+/* Cumulative strip: a lightweight inline-SVG step line (2px, non-scaling stroke) over a ~10%
+   area wash — the running total, not a Grafana stand-in (the real trend deep-links out). */
+.reclaim-cumulative {
+  margin: 18px 0 0;
+}
+.reclaim-cumulative figcaption {
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.reclaim-cumulative svg {
+  display: block;
+  width: 100%;
+  height: 64px;
+  border-bottom: 1px solid var(--color-border);
+}
+.reclaim-cumulative__area {
+  fill: var(--color-accent);
+  opacity: 0.1;
+  stroke: none;
+}
+.reclaim-cumulative__line {
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-width: 2px;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.reclaim-cumulative__axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.storage-batches {
+  margin-top: 16px;
+}

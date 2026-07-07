@@ -10,6 +10,7 @@ import {
   type AppSettingKey,
   type DbClient,
   type MotdSeverity,
+  type PlexServerSlug,
 } from '@hnet/db';
 import { eq } from 'drizzle-orm';
 import { NotFoundError } from './errors';
@@ -41,11 +42,22 @@ export const MOTD_DEFAULT: MotdRecord = {
   updatedBy: null,
 };
 
+/**
+ * ADR-030 / DESIGN-013 (PLAN-013) — per-Plex-server space TARGETS: a percent-used ceiling per server
+ * slug (the number utilization is judged against, e.g. "HaynesTower < 80%"). Stored as the
+ * `space_targets` app_settings jsonb value; keyed by `plex_servers.slug` (the owner's mental model —
+ * DESIGN-013 documents the slug→rootfolder-path map the utilization read resolves through). Sparse: an
+ * absent slug ⇒ "no target set" for that server (the surface draws no reference line). Owned/displayed
+ * here (013); acted on by PLAN-014 (Q-03 split). Values are 0..100 (validated at the zod edge).
+ */
+export type SpaceTargets = Partial<Record<PlexServerSlug, number>>;
+
 /** The typed value shape per key — the jsonb column holds exactly these. */
 export interface AppSettingValueMap {
   trash_skip_admin_gate: boolean;
   trash_default_window_days: number;
   motd: MotdRecord;
+  space_targets: SpaceTargets;
 }
 
 /** The documented default returned when a key has no row (never null — every key has a default). */
@@ -53,6 +65,9 @@ export const APP_SETTING_DEFAULTS: AppSettingValueMap = {
   trash_skip_admin_gate: false,
   trash_default_window_days: 21,
   motd: MOTD_DEFAULT,
+  // No targets set out of the box — the utilization surface renders numbers with no reference line
+  // until an admin sets one. `{}` (an object) so the getAppSetting typeof-guard treats it like motd.
+  space_targets: {},
 };
 
 /**

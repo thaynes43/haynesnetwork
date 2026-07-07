@@ -1,20 +1,25 @@
 # PLAN-013: Disk utilization + reclaim metrics (banked — post-cutover)
 
-- **Status:** Draft — **BANKED**: runs after the core queue and after the PLAN-008 cutover
-  (owner ordering 2026-07-06). Kept deliberately shorter than the core plans; the executing
-  agent expands it at slot time.
-- **Satisfies:** PRD-001 new **R-NN** block (space target + utilization/reclaim visibility);
-  new **ADR-NN** (THE surface decision: embedded Grafana vs native in-app); new **DESIGN-NN**
-  only if the native option wins. Relates ADR-023/DESIGN-010 (Trash), PLAN-012 (deletion
-  snapshots — the reclaim data source).
+- **Status:** **Executing** (2026-07-07, Fable 5) — backend + Grafana half built on
+  `feat/storage-metrics`; the native `/admin/storage` page UX landed on the same branch
+  (2026-07-07 Fable UX pass: utilization meters + targets editor + reclaim views + Grafana
+  deep-link, e2e'd in `storage.spec.ts`). Was Draft/BANKED.
+- **Satisfies:** PRD-001 **R-108..R-111** (space target + utilization/reclaim visibility);
+  **ADR-030** (THE surface decision — ratifies HYBRID: native reclaim + deep-linked Grafana trend);
+  **DESIGN-013** (the metrics vertical + the native page contract for the UX agent); **OPS-007**
+  (dashboard-as-code). Glossary **T-95..T-97**. Relates ADR-023/DESIGN-010 (Trash), PLAN-012
+  (deletion snapshots — the reclaim data source).
 - **Depends on:** **PLAN-012** (per-deleted-item size/resolution/quality/category snapshots
   must exist and be accumulating — this plan consumes, never backfills) and PLAN-008 (owner:
   post-cutover).
 - **TODO source:** owner vision 2026-07-06 ("LATER, separate plans, decisions after the core
   queue").
 
-> **ID reconciliation:** all numbers indicative per `.agents/plans/README.md`; re-grep ceilings
-> at slot time (many plans land before this one).
+> **ID reconciliation (resolved 2026-07-07):** ADR-030, DESIGN-013, OPS-007, migration **0021**,
+> PRD R-108..R-111, glossary T-95..T-97. Q-01 resolved to HYBRID (owner-ratified). Q-02 resolved:
+> utilization source of record = *arr `GET /diskspace` (only source with a total); trend = exportarr
+> freeSpace via Grafana. Q-03 stands: 013 stores/displays the target, 014 acts on it. Q-04 (collection
+> cadence) deferred — the diskspace read is live-on-demand, no new CronJob.
 
 ## Goal
 
