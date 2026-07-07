@@ -1,6 +1,9 @@
 # PLAN-011: Authentik hardening — MFA for native accounts + haynesnetwork sign-in rebrand
 
-- **Status:** Draft <!-- Fable 5 flips Draft → Executing → Completed -->
+- **Status:** **Branding COMPLETE** (2026-07-07, applied live: option C rebrand + Plex-primary
+  login card + RP-initiated logout incl. the provider invalidation-flow fix). **REMAINING:** owner
+  MFA enrollment + `mfa-exempt` policy for `hnet-e2e` (validation stage already at auth flow order 30).
+  <!-- Fable 5 flips Draft → Executing → Completed -->
 - **Satisfies:** PRD-001 new **R-NN** block (indicative **R-97..R-99** — native-account MFA,
   rebranded sign-in, no user-facing "Authentik"); new **ADR-NN** (indicative **ADR-026** —
   Authentik login hardening + brand: MFA-for-native-only policy, exemption group, config-as-API

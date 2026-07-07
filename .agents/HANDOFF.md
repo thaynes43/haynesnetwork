@@ -3,25 +3,54 @@
 > The single resume point for agents. Update this in the same change as any milestone.
 > Derive current state from this file's top; you should not have to reconcile anything.
 
-- **Last updated:** 2026-07-07 (**PUBLIC CUTOVER EXECUTED — the site is LIVE at https://haynesnetwork.com** via Cloudflare Tunnel; PLAN-008 Completed. Owner authorized go-live ahead of the 011 MFA/branding gate. **PLAN-013 disk/reclaim metrics COMPLETE — shipped v0.17.0 (signed), live-validated on the public origin. Now building PLAN-014 (rules tuning + space policy) — the last board item; a poster-fallback fix is in flight alongside.**)
+- **Last updated:** 2026-07-07 — 🏁 **THE BOARD IS COMPLETE. ALL PLANS 002–015 are shipped and
+  live-validated on the PUBLIC origin, latest v0.18.0.** Today additionally: the **public cutover was
+  executed** (site LIVE at https://haynesnetwork.com); **Authentik was rebranded** (option C +
+  Plex-primary login card + RP-initiated SSO logout, incl. the provider invalidation-flow fix);
+  **8 same-day owner-reported fixes** shipped; the **Seerr + Tautulli notification feeds were wired**
+  to the receiver; and **PLAN-014 (rules tuning + space policy) landed OFF by default.** Nothing
+  buildable remains — what's left is the owner's checklist below.
+- 🏁 **BOARD COMPLETE at v0.18.0.** Every buildable plan (002–015) is on `main`, released, deployed,
+  and live-validated against the public origin + real backing servers. PLAN-014 is the last item: the
+  space policy is **propose-only and delivered OFF** (adversarially verified it can only draft batches
+  into the normal admin gate — never delete or promote), with the tuning report + skip-gate graduation
+  readiness live on `/admin/storage`.
 - 🚀 **THE SITE IS PUBLICLY LIVE at https://haynesnetwork.com (2026-07-07).** Apex auth round-trip +
   every permissioned surface validated live; `www.haynesnetwork.com` **301s to the apex**; TLS is the
   Cloudflare edge cert (Google Trust Services WE1). Executed as four coupled `haynes-ops` commits
   (`ea457b43..c9935b9b`) — full log in `docs/ops/005-root-domain-cutover.md` (Status: **Executed**).
-  Staging (`haynesnetwork.haynesops.com`) was **kept warm** as the rollback target.
-  **Post-cutover watch items (open, non-blocking):** (a) HSTS is `max-age=0` at the edge — enable a
-  real max-age later; (b) `CF-Connecting-IP` per-user rate-limit bucketing is coded (v0.16.0) but only
-  provable under concurrent real users; (c) two Trash posters 404 (cosmetic); (d) recommend a
-  Cloudflare rate-limit/WAF rule on `/api/auth/*` (owner dashboard task).
-  **Remaining OWNER items:** 011 Authentik branding pick + apply (mockups + runbook in
-  `scratchpad/ux-011/`, recommend option C) · owner native-account MFA · the optional Cloudflare WAF
-  rule above. **013** (disk/reclaim metrics) shipped **v0.17.0**; **now building: 014** (rules tuning +
-  space policy — the last board item), with a poster-fallback fix in flight alongside.
+  Staging (`haynesnetwork.haynesops.com`) is **kept warm** as the rollback target.
+- ✅ **OWNER'S REMAINING CHECKLIST** (nothing an agent can do unattended):
+  1. **MFA enrollment + `mfa-exempt` policy** (011) — the validation stage is already at auth-flow
+     order 30; enroll owner MFA and exempt the `hnet-e2e` automation accounts (Plex-source logins exempt).
+  2. **Arm the space policy when ready** — unsuspend the `sync-space-policy` CronJob in `haynes-ops`
+     and enable the card in `/admin/storage`; the live graduation report guides the skip-gate flip
+     later. Delivered **OFF** — nothing acts until the owner arms it.
+  3. **Optional edge hardening** — a Cloudflare WAF / rate-limit rule on `/api/auth/*` + a real HSTS
+     `max-age` (currently `max-age=0` at the edge). Needs a zone-scoped token or the CF dashboard.
+  4. **Leaving-Soon batch expires 2026-07-21** — the owner's poster pass + the Default-role family
+     save grants (Trash `read_only` + `save_leaving_soon`) when desired.
+  5. **Trash webhook secret** is still cluster-created — a 1Password migration nicety, not a blocker.
+  **Post-cutover watch items from OPS-005 stand:** `CF-Connecting-IP` per-user rate-limit bucketing is
+  coded (v0.16.0) but only provable under concurrent real users; two Trash posters 404 (cosmetic).
 - **Workflow mode:** PR flow (GATE A executed — see
   `.agents/plans/completed/001-gate-a-pr-cutover.md`).
   `main` is branch-protected: branch → PR → required checks `lint-and-typecheck`, `test`,
   `build` green → squash-merge. `e2e` advisory. Conventional-commit titles drive release-please.
-- **Latest release: v0.17.0 (signed)** — **PLAN-013 disk + reclaim metrics (ADR-030 HYBRID; DESIGN-013;
+- **Latest release: v0.18.0 (signed)** — **PLAN-014 rules tuning + space policy (ADR-031 / DESIGN-014;
+  PRD R-112..R-114; glossary T-98..T-99; migration 0022).** A **propose-only** space policy delivered
+  **OFF by default**: a `space-policy` `@hnet/sync` mode + `evaluateSpacePolicy`
+  (`packages/domain/src/space-policy.ts`) that, for each opted-in over-target array past cooldown with
+  ≥ minCandidates and no open batch, PROPOSES a draft batch via the ordinary `admin_review` path
+  (never greenlights, never sweeps, never special-cases the audited skip-gate) + a `trash_space_policy`
+  ledger event and a `space_policy` notification explaining WHY. A rules-tuning **REPORT** (`getTuningReport`
+  / `trash.tuning`: rescue-vs-delete by resolution / rating band / collection) + the **skip-gate
+  graduation readiness** block, surfaced on a "Space policy" card on `/admin/storage`. Config in
+  `app_settings['space_policy']` (admin-set + audited); `storage.policy.{get,status,set}`. **Adversarially
+  verified** the policy cannot delete or promote under any input permutation. Deferred (documented):
+  collection-grain attribution (Q-02), no auto-tuning (Q-03) — rule edits + the skip-gate flip stay owner
+  actions. The `sync-space-policy` CronJob is owner-deployed **suspended** in `haynes-ops`. Prior:
+  **v0.17.0 (signed)** — **PLAN-013 disk + reclaim metrics (ADR-030 HYBRID; DESIGN-013;
   OPS-007 dashboard-as-code; PRD R-108..R-111; glossary T-95..T-97; migration 0021 `space_targets` in
   `app_settings`).** Native `/admin/storage`: per-server utilization meters judged against a configurable
   space target (HaynesTower **80%**, set + audited via the ADR-025 `app_settings` store under
