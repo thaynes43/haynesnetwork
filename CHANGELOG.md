@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.18.1](https://github.com/thaynes43/haynesnetwork/compare/v0.18.0...v0.18.1) (2026-07-07)
+
+
+### Bug Fixes
+
+* **auth:** local logout when the id_token is stale/absent (no SSO login-loop) ([#112](https://github.com/thaynes43/haynesnetwork/issues/112)) ([77def0d](https://github.com/thaynes43/haynesnetwork/commit/77def0d60e07665abc04e4d0f32dbb683e412af3))
+
+
+### Documentation
+
+* complete plan 014 — board complete at v0.18.0 ([#110](https://github.com/thaynes43/haynesnetwork/issues/110)) ([5df4a89](https://github.com/thaynes43/haynesnetwork/commit/5df4a8916981364e688ecbe03557f18c985554cf))
+
 ## [0.18.0](https://github.com/thaynes43/haynesnetwork/compare/v0.17.0...v0.18.0) (2026-07-07)
 
 
