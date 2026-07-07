@@ -75,8 +75,26 @@ jobs:
 
       # In-run gate: assert the signature carries OUR workflow's OIDC identity. A verify
       # failure fails the job so an unsignable/mis-signed release is loud, never silent.
+      #
+      # Retry loop: `cosign sign` above can succeed while GHCR has not yet made the freshly
+      # pushed signature layer readable to `cosign verify` (a registry propagation race that
+      # surfaces as `Error: no signatures found` moments after a SUCCESSFUL sign). The image
+      # IS signed; verify just queried too early. Retry up to 5 times with a 10s pause,
+      # succeeding on the first clean pass and failing the step only if every attempt fails.
       - if: steps.release.outputs.release_created == 'true'
         run: |
-          cosign verify ghcr.io/thaynes43/haynesnetwork@${{ steps.build.outputs.digest }} \
-            --certificate-identity-regexp '^https://github.com/thaynes43/haynesnetwork/\.github/workflows/' \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          attempts=5
+          for i in $(seq 1 "$attempts"); do
+            if cosign verify ghcr.io/thaynes43/haynesnetwork@${{ steps.build.outputs.digest }} \
+              --certificate-identity-regexp '^https://github.com/thaynes43/haynesnetwork/\.github/workflows/' \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com; then
+              echo "cosign verify succeeded on attempt ${i}/${attempts}"
+              exit 0
+            fi
+            if [ "$i" -lt "$attempts" ]; then
+              echo "cosign verify attempt ${i}/${attempts} failed (likely GHCR signature-propagation lag); retrying in 10s..."
+              sleep 10
+            fi
+          done
+          echo "cosign verify failed after ${attempts} attempts"
+          exit 1
