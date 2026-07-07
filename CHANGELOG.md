@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.13.0](https://github.com/thaynes43/haynesnetwork/compare/v0.12.0...v0.13.0) (2026-07-07)
+
+
+### Features
+
+* Bulletin — activity Feed + Messages board (ADR-026) ([#81](https://github.com/thaynes43/haynesnetwork/issues/81)) ([886d70a](https://github.com/thaynes43/haynesnetwork/commit/886d70a547559f025927e6dc5f135ad57a3b680d))
+
+
+### Documentation
+
+* complete plan 012 (trash curation pipeline) — v0.12.0 live-validated ([#79](https://github.com/thaynes43/haynesnetwork/issues/79)) ([30d0b57](https://github.com/thaynes43/haynesnetwork/commit/30d0b57d5a88566796f27d1518ae1e89ab979da2))
+
 ## [0.12.0](https://github.com/thaynes43/haynesnetwork/compare/v0.11.2...v0.12.0) (2026-07-07)
 
 
