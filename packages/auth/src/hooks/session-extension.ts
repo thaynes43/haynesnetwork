@@ -56,11 +56,12 @@ export interface SessionExtension {
   role: SessionRole;
   displayName: string;
   /**
-   * fix/plex-identity-mapping — the caller's resolved REAL Plex identity (email/username), NOT the
-   * OIDC email. Sourced from the id_token `plex_email`/`plex_username` claim (Authentik source
-   * mapping) with the admin-set users.plex_email/plex_username override as fallback. Empty fields
-   * ⇒ the My Plex matcher falls back to the app email. Carried on the session so plex.myLibraries
-   * needs no extra query.
+   * fix/plex-identity-mapping — the caller's resolved REAL Plex identity, NOT the OIDC email.
+   * Sourced from the id_token claims (Authentik provider scope mappings): fix/plex-numeric-id adds
+   * `plex_user_id` (the plex.tv numeric id — the strongest, matched first), alongside `plex_email`/
+   * `plex_username` with the admin-set users.plex_email/plex_username override as fallback. Empty
+   * fields ⇒ the My Plex matcher falls back to the app email. Carried on the session so
+   * plex.myLibraries needs no extra query.
    */
   plexIdentity: PlexIdentity;
 }

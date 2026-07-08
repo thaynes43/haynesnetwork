@@ -53,6 +53,13 @@ export interface StubUser {
    */
   plex_email?: string;
   plex_username?: string;
+  /**
+   * fix/plex-numeric-id — the plex.tv NUMERIC user id claim (an Authentik provider scope mapping
+   * reads it off the Plex source connection). The strongest, immutable identity and the ONE the
+   * owner's token reliably carries; the matcher checks it first. When it alone is set (no plex_email
+   * / plex_username), owner/friend recognition must fire from the id alone.
+   */
+  plex_user_id?: string;
 }
 
 export const STUB_CLIENT_ID = 'hnet-e2e-client';
@@ -96,6 +103,19 @@ export const STUB_USERS = {
     preferred_username: 'linked-owner',
     plex_email: 'plex-owner@example.test',
     plex_username: 'plexowner',
+  },
+  /**
+   * fix/plex-numeric-id — the RECOMMENDED automatic path (the owner's real shape). This persona's
+   * app email (linked-owner-id@example.test) matches nothing on Plex, and it carries NO
+   * plex_email/plex_username — ONLY plex_user_id, equal to the stub server OWNER id
+   * (STUB_PLEX_OWNER.id = '12874060'). Owner recognition must fire from the numeric id alone.
+   */
+  'plex-linked-owner-id': {
+    sub: 'stub-plex-linked-owner-id',
+    email: 'linked-owner-id@example.test',
+    name: 'Linked Owner By Id',
+    preferred_username: 'linked-owner-id',
+    plex_user_id: '12874060',
   },
 } as const satisfies Record<string, StubUser>;
 
@@ -143,6 +163,8 @@ export async function startStubOidc(): Promise<StubOidcServer> {
       // fix/plex-identity-mapping — only present when the persona carries them (Authentik source map).
       ...(user.plex_email ? { plex_email: user.plex_email } : {}),
       ...(user.plex_username ? { plex_username: user.plex_username } : {}),
+      // fix/plex-numeric-id — the plex.tv numeric id claim (Authentik provider scope mapping).
+      ...(user.plex_user_id ? { plex_user_id: user.plex_user_id } : {}),
     };
   }
 

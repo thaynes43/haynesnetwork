@@ -40,7 +40,7 @@ describe('session extension (DESIGN-002 D-06 / DESIGN-003 D-01, ADR-012)', () =>
       },
       displayName: 'Owner Haynes',
       // fix/plex-identity-mapping — no claim, no override ⇒ empty (matcher falls back to app email).
-      plexIdentity: { email: null, username: null },
+      plexIdentity: { userId: null, email: null, username: null },
     });
   });
 
@@ -65,7 +65,7 @@ describe('session extension (DESIGN-002 D-06 / DESIGN-003 D-01, ADR-012)', () =>
         messageActions: [...MESSAGE_ACTIONS],
       },
       displayName: 'Admin Ada',
-      plexIdentity: { email: null, username: null },
+      plexIdentity: { userId: null, email: null, username: null },
     });
   });
 
@@ -132,7 +132,11 @@ describe('session extension (DESIGN-002 D-06 / DESIGN-003 D-01, ADR-012)', () =>
         plexUsername: 'Manofoz',
       });
       const ext = await getSessionExtension(user.id, t.db);
-      expect(ext!.plexIdentity).toEqual({ email: 'manofoz@gmail.com', username: 'manofoz' });
+      expect(ext!.plexIdentity).toEqual({
+        userId: null,
+        email: 'manofoz@gmail.com',
+        username: 'manofoz',
+      });
     });
 
     it('resolves from the id_token plex_* claim, which wins over the override', async () => {
@@ -153,7 +157,31 @@ describe('session extension (DESIGN-002 D-06 / DESIGN-003 D-01, ADR-012)', () =>
         }),
       });
       const ext = await getSessionExtension(user.id, t.db);
-      expect(ext!.plexIdentity).toEqual({ email: 'manofoz@gmail.com', username: 'manofoz' });
+      expect(ext!.plexIdentity).toEqual({
+        userId: null,
+        email: 'manofoz@gmail.com',
+        username: 'manofoz',
+      });
+    });
+
+    // fix/plex-numeric-id — the RECOMMENDED automatic path: the id_token carries plex_user_id (the
+    // Authentik provider scope mapping reads it off the Plex source connection). This is exactly the
+    // owner's live shape — a numeric id, no plex_email/plex_username — and it must hydrate onto the
+    // session so My Plex recognizes him from the id alone.
+    it('hydrates the numeric userId from the plex_user_id claim (id-only, owner shape)', async () => {
+      const user = await createUser(t.db, { displayName: 'Owner By Id' });
+      await t.db.insert(account).values({
+        userId: user.id,
+        providerId: OIDC_PROVIDER_ID,
+        accountId: `sub-id-${user.id}`,
+        idToken: idTokenWith({
+          sub: `sub-id-${user.id}`,
+          email: 'admin@haynesnetwork.com',
+          plex_user_id: '12874060',
+        }),
+      });
+      const ext = await getSessionExtension(user.id, t.db);
+      expect(ext!.plexIdentity).toEqual({ userId: '12874060', email: null, username: null });
     });
 
     it('is empty for a linked account whose token carries no plex_* claim and no override', async () => {
@@ -165,7 +193,7 @@ describe('session extension (DESIGN-002 D-06 / DESIGN-003 D-01, ADR-012)', () =>
         idToken: idTokenWith({ sub: `sub2-${user.id}`, email: 'member@example.test' }),
       });
       const ext = await getSessionExtension(user.id, t.db);
-      expect(ext!.plexIdentity).toEqual({ email: null, username: null });
+      expect(ext!.plexIdentity).toEqual({ userId: null, email: null, username: null });
     });
   });
 });

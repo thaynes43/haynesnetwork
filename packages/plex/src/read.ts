@@ -126,6 +126,19 @@ export class PlexReadClient {
     );
   }
 
+  /**
+   * fix/plex-numeric-id — resolve an app user to their Plex friend account by the plex.tv NUMERIC
+   * user id (the friend list's `<User id=…>`). The id is immutable and the one identity Authentik
+   * reliably surfaces for a source-linked account, so callers try this BEFORE email/username
+   * matching. Exact string match (both sides are the plex.tv id as a string); blank id → null.
+   */
+  async findFriendById(plexUserId: string): Promise<PlexFriend | null> {
+    const needle = plexUserId.trim();
+    if (!needle) return null;
+    const friends = await this.listFriends();
+    return friends.find((f) => f.id === needle) ?? null;
+  }
+
   /** Case-insensitive email match against the friend list (ADR-017 D-01 user→account map). */
   async findFriendByEmail(email: string): Promise<PlexFriend | null> {
     const needle = email.trim().toLowerCase();

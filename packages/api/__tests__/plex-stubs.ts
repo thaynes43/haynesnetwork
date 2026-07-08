@@ -5,6 +5,8 @@ import type { PlexClientBundle, PlexServerName } from '@hnet/domain';
 
 export interface FakeServerConfig {
   machineIdentifier: string;
+  /** fix/plex-numeric-id — the OWNER's plex.tv NUMERIC id (`/api/v2/user`.id). Defaults 'owner-id'. */
+  ownerId?: string;
   /** ADR-029 — the server OWNER's plex.tv account email (the token account). Absent = no owner. */
   ownerEmail?: string;
   /** fix/plex-identity-mapping — the OWNER's plex.tv username (identity-username match). */
@@ -49,13 +51,24 @@ function makeServer(slug: PlexServerName, cfg: FakeServerConfig, writes: Recorde
       return { machineIdentifier: cfg.machineIdentifier, version: '1.43.2' };
     },
     async getOwnerAccount() {
-      return { id: 'owner-id', email: cfg.ownerEmail ?? null, username: cfg.ownerUsername ?? null };
+      return {
+        id: cfg.ownerId ?? 'owner-id',
+        email: cfg.ownerEmail ?? null,
+        username: cfg.ownerUsername ?? null,
+      };
     },
     async getOwnerEmail() {
       return cfg.ownerEmail ? cfg.ownerEmail.trim().toLowerCase() : null;
     },
     async findFriendByEmail(email: string) {
       const f = cfg.friends.find((x) => x.email.toLowerCase() === email.trim().toLowerCase());
+      return f ? { id: f.id, email: f.email, username: f.username ?? null, title: null } : null;
+    },
+    // fix/plex-numeric-id — mirror PlexReadClient.findFriendById: exact string match on the
+    // friend's plex.tv numeric id.
+    async findFriendById(plexUserId: string) {
+      const needle = plexUserId.trim();
+      const f = needle ? cfg.friends.find((x) => x.id === needle) : undefined;
       return f ? { id: f.id, email: f.email, username: f.username ?? null, title: null } : null;
     },
     // fix/plex-identity-mapping — mirror PlexReadClient.findFriendByIdentity: match by (email OR

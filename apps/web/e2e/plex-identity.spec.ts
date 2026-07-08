@@ -25,4 +25,23 @@ test.describe('My Plex — real Plex identity from the id_token claim (fix/plex-
     // No add control while owner — every library reads as Included.
     await expect(page.getByTestId('plex-add')).toHaveCount(0);
   });
+
+  // fix/plex-numeric-id — the RECOMMENDED automatic path. The `plex-linked-owner-id` persona
+  // carries ONLY the plex.tv numeric id (plex_user_id = STUB_PLEX_OWNER.id), no plex_email/username,
+  // and its app email matches nothing on Plex. Owner recognition must fire from the id ALONE — this
+  // is the owner's real production shape (Authentik reliably holds his numeric id, not his emails).
+  test('the owner is recognized from the plex.tv numeric id alone (no email/username claim)', async ({
+    page,
+  }) => {
+    await signIn(page, 'plex-linked-owner-id');
+    await page.goto('/library/plex');
+    await expect(page.getByRole('heading', { name: 'My Plex libraries' })).toBeVisible();
+
+    // Owner state (ADR-029) — resolved by the numeric id alone.
+    await expect(page.getByText('all libraries are already yours').first()).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(page.getByText('linked to a Plex identity')).toHaveCount(0);
+    await expect(page.getByTestId('plex-add')).toHaveCount(0);
+  });
 });
