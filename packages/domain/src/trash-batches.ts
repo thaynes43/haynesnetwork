@@ -1034,6 +1034,10 @@ export interface BatchSummary {
   counts: BatchCounts;
   /** bytes freed by this batch's actually-deleted items (deletion snapshot, PLAN-013 source). */
   reclaimedBytes: number;
+  /** bytes STILL slated — the frozen size of the batch's `pending` (not-yet-saved) items. The
+   *  Trash Overview card's "frees X" for an open batch (DESIGN-010 amendment 2026-07-08); the
+   *  companion of reclaimedBytes for a batch that has not yet swept. */
+  pendingBytes: number;
 }
 
 /** ADR-025 — the batch list (newest first), optionally filtered by media kind. Read-only. */
@@ -1058,18 +1062,25 @@ export async function listBatches(input: {
       state: trashBatchItems.state,
       n: sql<number>`count(*)::int`,
       reclaimed: sql<number>`coalesce(sum(${trashBatchItems.deletedSizeBytes}), 0)::bigint`,
+      // The frozen snapshot size — summed per state so the `pending` row yields the "still-slated"
+      // bytes the Overview card's "frees X" reads for an open batch (DESIGN-010 amendment).
+      slatedBytes: sql<number>`coalesce(sum(${trashBatchItems.sizeBytes}), 0)::bigint`,
     })
     .from(trashBatchItems)
     .where(inArray(trashBatchItems.batchId, ids))
     .groupBy(trashBatchItems.batchId, trashBatchItems.state);
   const rawByBatch = new Map<string, Record<string, number>>();
   const reclaimedByBatch = new Map<string, number>();
+  const pendingBytesByBatch = new Map<string, number>();
   for (const r of countRows) {
     const raw = rawByBatch.get(r.batchId) ?? {};
     raw[r.state] = r.n;
     rawByBatch.set(r.batchId, raw);
     if (r.state === 'deleted') {
       reclaimedByBatch.set(r.batchId, (reclaimedByBatch.get(r.batchId) ?? 0) + Number(r.reclaimed));
+    }
+    if (r.state === 'pending') {
+      pendingBytesByBatch.set(r.batchId, Number(r.slatedBytes));
     }
   }
 
@@ -1086,6 +1097,7 @@ export async function listBatches(input: {
     cancelledAt: b.cancelledAt?.toISOString() ?? null,
     counts: toCounts(rawByBatch.get(b.id) ?? {}),
     reclaimedBytes: reclaimedByBatch.get(b.id) ?? 0,
+    pendingBytes: pendingBytesByBatch.get(b.id) ?? 0,
   }));
 }
 
@@ -1145,9 +1157,11 @@ export async function getBatchDetail(input: {
 
   const raw: Record<string, number> = {};
   let reclaimedBytes = 0;
+  let pendingBytes = 0;
   for (const { item: it } of rows) {
     raw[it.state] = (raw[it.state] ?? 0) + 1;
     if (it.state === 'deleted') reclaimedBytes += it.deletedSizeBytes ?? 0;
+    if (it.state === 'pending') pendingBytes += it.sizeBytes;
   }
 
   return {
@@ -1163,6 +1177,7 @@ export async function getBatchDetail(input: {
     cancelledAt: b.cancelledAt?.toISOString() ?? null,
     counts: toCounts(raw),
     reclaimedBytes,
+    pendingBytes,
     items: rows.map(({ item: it, imdbRating, tmdbRating, lastViewedAt }) => ({
       id: it.id,
       maintainerrMediaId: it.maintainerrMediaId,

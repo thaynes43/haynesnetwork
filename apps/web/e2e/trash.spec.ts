@@ -21,6 +21,7 @@ import { armAndConfirm, expectViewportFit, openUserMenu, signIn, signOut } from 
 import { readRuntimeEnv } from './support/env';
 import {
   STUB_MAINT_FIXTURE_ID,
+  STUB_MAINT_TV_ID,
   STUB_MAINT_VANISHED_ID,
   type RecordedMaintainerrWrite,
 } from './support/stub-maintainerr';
@@ -55,6 +56,13 @@ async function seedExclusion(page: Page, mediaServerId: string): Promise<void> {
 async function addPendingCandidate(page: Page): Promise<void> {
   await page.request.post(`${env().STUB_MAINTAINERR_URL}/_stub/add-pending`, {
     data: { collectionId: 7, mediaServerId: 'ms-990010', tmdbId: 990010, sizeBytes: 3_221_225_472 },
+  });
+}
+
+/** Drop a pending item from its collection — empty a whole kind (Overview "nothing pending" card). */
+async function removePending(page: Page, mediaServerId: string): Promise<void> {
+  await page.request.post(`${env().STUB_MAINTAINERR_URL}/_stub/remove-pending`, {
+    data: { mediaServerId },
   });
 }
 
@@ -564,6 +572,62 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
       visibleOnHome: true,
     });
     expect(dto.media.map((m) => m.mediaServerId)).not.toContain('ms-880002'); // protected stays out
+  });
+
+  // DESIGN-010 amendment (2026-07-08) — the OVERVIEW landing. The movie batch is Leaving Soon (a
+  // 14-day window ⇒ warn) from the green-light test above; empty the TV collection so its card reads
+  // "nothing pending" with a suppressed-zero badge. Verifies: bare /trash lands on Overview (not
+  // Movies); the two kind cards (warn leaving-soon movie w/ deadline + still-pending count; empty
+  // TV); the Movies/TV tab count badges (3 warn / suppressed zero); the whole card clicks into its
+  // kind tab; a direct ?tab=movies deep link is unaffected; and the landing fits 390px.
+  test('Overview is the default landing: warn leaving-soon movie card + empty TV card, tab count badges, card→tab nav, 390 fit', async ({
+    page,
+  }) => {
+    await signIn(page, 'admin');
+    await removePending(page, STUB_MAINT_TV_ID); // TV → empty (nothing pending / suppressed badge)
+
+    // Bare /trash lands on OVERVIEW (no ?tab), not Movies.
+    await page.goto('/trash');
+    await expect(page).toHaveURL(/\/trash$/);
+    await expect(page.getByRole('tab', { name: 'Overview', selected: true })).toBeVisible();
+    await expect(page.getByTestId('trash-overview')).toBeVisible();
+
+    // Movie card — Leaving Soon, warn tone, the batch's still-pending count (3), and a "frees" line.
+    const movie = page.locator('[data-testid="trash-ovcard"][data-kind="movie"]');
+    await expect(movie).toHaveAttribute('data-tone', 'warn');
+    await expect(movie.getByTestId('trash-ovcard-state')).toHaveText('Leaving Soon');
+    await expect(movie.getByTestId('trash-ovcard-count')).toHaveText('3');
+    await expect(movie.getByTestId('trash-ovcard-deadline')).toContainText(
+      'Leaving Soon — window closes',
+    );
+    await expect(movie.getByTestId('trash-ovcard-bytes')).toContainText('frees');
+
+    // TV card — emptied ⇒ "nothing pending", neutral tone, no count/state.
+    const tv = page.locator('[data-testid="trash-ovcard"][data-kind="tv"]');
+    await expect(tv).toHaveAttribute('data-tone', 'neutral');
+    await expect(tv.getByTestId('trash-ovcard-empty')).toContainText('Nothing pending');
+    await expect(tv.getByTestId('trash-ovcard-count')).toHaveCount(0);
+
+    // Tab badges — Movies shows 3 (warn); TV suppressed at zero.
+    const moviesBadge = page.getByTestId('trash-tab-badge-movies');
+    await expect(moviesBadge).toHaveText('3');
+    await expect(moviesBadge).toHaveClass(/trashtab__badge--warn/);
+    await expect(page.getByTestId('trash-tab-badge-tv')).toHaveCount(0);
+
+    // 390 fits — no sideways scroll, nothing wider than the viewport (ADR-015 / DESIGN-004).
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expectViewportFit(page);
+    await page.setViewportSize({ width: 1280, height: 800 });
+
+    // The whole card clicks into its kind tab (it's a <button>, keyboard-accessible).
+    await movie.click();
+    await expect(page).toHaveURL(/\/trash\?tab=movies$/);
+    await expect(page.getByTestId('batch-state')).toHaveText('Leaving Soon');
+
+    // A direct ?tab=movies deep link is unaffected (Movies, not Overview).
+    await page.goto('/trash?tab=movies');
+    await expect(page.getByRole('tab', { name: 'Movies', selected: true })).toBeVisible();
+    await expect(page.getByTestId('trash-overview')).toHaveCount(0);
   });
 
   test('the family window: a save_leaving_soon role saves anything, un-saves ONLY its own; no lifecycle controls', async ({

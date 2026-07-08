@@ -559,6 +559,15 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     expect(detail.items).toHaveLength(5);
     expect(detail.items[0]!.sizeBytes).toBeGreaterThanOrEqual(detail.items[1]!.sizeBytes); // sorted by size desc
 
+    // DESIGN-010 amendment — the Overview card's "frees X" for an open batch reads pendingBytes: the
+    // frozen size of the STILL-`pending` (not-yet-saved) items. listBatches + getBatchDetail agree.
+    const pendingSum = detail.items
+      .filter((i) => i.state === 'pending')
+      .reduce((s, i) => s + i.sizeBytes, 0);
+    expect(pendingSum).toBeGreaterThan(0);
+    expect(summary.pendingBytes).toBe(pendingSum);
+    expect(detail.pendingBytes).toBe(pendingSum);
+
     const stats = await getBatchSaveStats({ db: t.db, batchId });
     expect(stats.totalSaves).toBe(1);
     expect(stats.netSaved).toBe(1);

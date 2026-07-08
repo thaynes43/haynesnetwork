@@ -21,6 +21,8 @@ export * from './trash-flow';
 // ADR-025 / DESIGN-011 — Trash curation pipeline: generic app settings + batch state machine
 export * from './app-settings';
 export * from './trash-batches';
+// DESIGN-010 amendment — the Trash Overview landing aggregate (composes the reads above)
+export * from './trash-overview';
 export * from './storage-metrics';
 // ADR-031 / DESIGN-014 (PLAN-014) — space-driven policy (propose-only) + rules-tuning report
 export * from './space-policy';

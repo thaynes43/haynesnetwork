@@ -147,6 +147,7 @@ describe('trash router — section + per-action gating (ADR-023 C-03)', () => {
     const c = call('disabled');
     await expect(c.trash.pending({ media: 'movie' })).rejects.toMatchObject({ code: 'FORBIDDEN' });
     await expect(c.trash.status()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(c.trash.overview()).rejects.toMatchObject({ code: 'FORBIDDEN' });
     await expect(c.trash.recentlyDeleted({ media: 'movie' })).rejects.toMatchObject({
       code: 'FORBIDDEN',
     });
@@ -156,6 +157,7 @@ describe('trash router — section + per-action gating (ADR-023 C-03)', () => {
     const c = call('read_only');
     await expect(c.trash.pending({ media: 'movie' })).resolves.toBeTruthy();
     await expect(c.trash.status()).resolves.toBeTruthy();
+    await expect(c.trash.overview()).resolves.toBeTruthy();
     await expect(
       c.trash.saveExclusion({ maintainerrMediaId: 'ms-1' }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
@@ -234,6 +236,25 @@ describe('trash router — happy paths (ADR-023 D-02/D-04/D-05)', () => {
     expect(res.items[0]!.scheduledDeleteAt).toBe(
       new Date(Date.parse('2026-06-01T00:00:00Z') + 30 * 86_400_000).toISOString(),
     );
+  });
+
+  // DESIGN-010 amendment (2026-07-08) — the Overview aggregate. With NO open batch the per-kind card
+  // reads the LIVE candidate count (movie ms-1 pending; TV has no collection ⇒ nothing pending), and
+  // the recent strip is empty until something is deleted. Placed BEFORE the expedite tests so the
+  // Recently-Deleted head is still clean.
+  it('overview aggregates per-kind slated counts + empty recent strip (no open batch)', async () => {
+    const res = await adminCaller(state()).trash.overview();
+    const movie = res.kinds.find((k) => k.kind === 'movie')!;
+    const tv = res.kinds.find((k) => k.kind === 'tv')!;
+    expect(movie).toMatchObject({
+      slatedCount: 1,
+      reclaimableBytes: 1_000_000_000,
+      live: true,
+      batch: null,
+    });
+    expect(tv).toMatchObject({ slatedCount: 0, reclaimableBytes: 0, live: true, batch: null });
+    expect(res.recentlyDeleted).toEqual([]);
+    expect(res.activity).toEqual([]);
   });
 
   // Bug 1 (live-repro fix 2026-07-06) — the Rules-tab arm/disarm GET→PUT round-trip. The rule GET
