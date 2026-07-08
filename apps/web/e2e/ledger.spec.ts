@@ -175,20 +175,23 @@ test.describe('ledger section (DESIGN-009)', () => {
     const ratingHeader = page
       .locator('.ledger-table thead')
       .getByRole('button', { name: 'Rating' });
+    // The URL syncs synchronously, but the re-sorted rows swap in place only once the
+    // placeholderData refetch settles (ADR-015 — the old order stays, dimmed, until then). Read
+    // the order with expect.poll so the assertion waits out that window instead of racing it.
     await ratingHeader.click();
     await expect(page).toHaveURL(/sort=imdb_rating%3Adesc|sort=imdb_rating:desc/);
-    expect(await rowTitles(page)).toEqual(['The Fixture', 'Stub Runner', 'Vanished Heist']);
+    await expect.poll(() => rowTitles(page)).toEqual(['The Fixture', 'Stub Runner', 'Vanished Heist']);
 
     await ratingHeader.click();
     await expect(page).toHaveURL(/sort=imdb_rating%3Aasc|sort=imdb_rating:asc/);
     // Ascending still keeps the unrated row LAST (NULLS LAST keyset, D-09).
-    expect(await rowTitles(page)).toEqual(['Stub Runner', 'The Fixture', 'Vanished Heist']);
+    await expect.poll(() => rowTitles(page)).toEqual(['Stub Runner', 'The Fixture', 'Vanished Heist']);
 
     // Third click toggles BACK to best-first — the header never silently clears the sort (the
     // reported nit: the old third click dropped ?sort= and the sheet looked unsorted).
     await ratingHeader.click();
     await expect(page).toHaveURL(/sort=imdb_rating%3Adesc|sort=imdb_rating:desc/);
-    expect(await rowTitles(page)).toEqual(['The Fixture', 'Stub Runner', 'Vanished Heist']);
+    await expect.poll(() => rowTitles(page)).toEqual(['The Fixture', 'Stub Runner', 'Vanished Heist']);
   });
 
   test('export streams the CURRENT filter set as JSONL — deterministic, filter-true (AC-12)', async ({
