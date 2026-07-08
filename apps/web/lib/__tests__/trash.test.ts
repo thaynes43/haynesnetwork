@@ -7,12 +7,16 @@ import {
   daysLeftTone,
   daysUntil,
   expediteErrorAction,
+  overviewBadge,
+  overviewCardTone,
+  overviewDeadlineLabel,
   partitionForExpedite,
   pendingWallGlyph,
   pendingWallTappable,
   previewGuardian,
   reclaimLabel,
   type GuardianPreviewInput,
+  type OverviewBatchLike,
 } from '../trash';
 
 const base: GuardianPreviewInput = {
@@ -156,5 +160,62 @@ describe('reclaimLabel', () => {
     expect(reclaimLabel(4200, 3, fmt)).toBe('Reclaiming 4200 B across 3 items');
     expect(reclaimLabel(1, 1, fmt)).toBe('Reclaiming 1 B across 1 item');
     expect(reclaimLabel(0, 0, fmt)).toBe('Nothing pending');
+  });
+});
+
+// ── the Overview landing + tab badge (DESIGN-010 amendment 2026-07-08) ──────────────────────
+describe('overviewCardTone / overviewBadge / overviewDeadlineLabel', () => {
+  const now = new Date('2026-07-08T12:00:00Z');
+  const admin: OverviewBatchLike = { state: 'admin_review', expiresAt: null, pendingCount: 18 };
+  const leavingFar: OverviewBatchLike = {
+    state: 'leaving_soon',
+    expiresAt: '2026-07-21T12:00:00Z', // 13 days out
+    pendingCount: 9,
+  };
+  const leavingSoon: OverviewBatchLike = {
+    state: 'leaving_soon',
+    expiresAt: '2026-07-10T12:00:00Z', // 2 days out ⇒ danger
+    pendingCount: 4,
+  };
+  const fmtDay = (iso: string) => (iso.startsWith('2026-07-21') ? 'Jul 21' : 'Jul 10');
+
+  it('card tone: neutral no-batch → info admin-review → warn leaving-soon → danger ≤3 days', () => {
+    expect(overviewCardTone(null, now)).toBe('neutral');
+    expect(overviewCardTone(admin, now)).toBe('info');
+    expect(overviewCardTone(leavingFar, now)).toBe('warn');
+    expect(overviewCardTone(leavingSoon, now)).toBe('danger');
+    // draft (transient skip-gate leftover) reads as admin-review.
+    expect(overviewCardTone({ state: 'draft', expiresAt: null, pendingCount: 1 }, now)).toBe('info');
+  });
+
+  it('deadline line reads the owner examples', () => {
+    expect(overviewDeadlineLabel(admin, fmtDay, now)).toBe('Admin review — 18 items');
+    expect(overviewDeadlineLabel({ ...admin, pendingCount: 1 }, fmtDay, now)).toBe(
+      'Admin review — 1 item',
+    );
+    expect(overviewDeadlineLabel(leavingFar, fmtDay, now)).toBe(
+      'Leaving Soon — window closes Jul 21 (in 13 days)',
+    );
+    expect(overviewDeadlineLabel(null, fmtDay, now)).toBe('');
+  });
+
+  it('badge: suppressed at zero / unknown, warn while the window is open, danger ≤3 days', () => {
+    // No batch, positive live count ⇒ shown, muted tone.
+    expect(overviewBadge({ slatedCount: 5, live: true, batch: null }, now)).toEqual({
+      show: true,
+      count: 5,
+      tone: 'muted',
+    });
+    // Zero ⇒ suppressed.
+    expect(overviewBadge({ slatedCount: 0, live: true, batch: null }, now).show).toBe(false);
+    // Unknown live count (Maintainerr down) is stored as 0 ⇒ suppressed.
+    expect(overviewBadge({ slatedCount: 0, live: false, batch: null }, now).show).toBe(false);
+    // Leaving-soon window open ⇒ warn; ≤3 days ⇒ danger.
+    expect(overviewBadge({ slatedCount: 9, live: true, batch: leavingFar }, now).tone).toBe('warn');
+    expect(overviewBadge({ slatedCount: 4, live: true, batch: leavingSoon }, now).tone).toBe(
+      'danger',
+    );
+    // Admin review is informational (muted pill) even with a positive count.
+    expect(overviewBadge({ slatedCount: 18, live: true, batch: admin }, now).tone).toBe('muted');
   });
 });

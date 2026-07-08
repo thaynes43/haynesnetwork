@@ -194,3 +194,82 @@ export function reclaimLabel(
   if (count === 0) return 'Nothing pending';
   return `Reclaiming ${formatBytes(totalBytes)} across ${count} item${count === 1 ? '' : 's'}`;
 }
+
+// ── the Overview landing + tab count badges (DESIGN-010 amendment 2026-07-08) ────────────────
+// Pure derivations for the new default Trash tab: one card per kind (Movies, TV) that aggregates
+// what's slated BEFORE you navigate, plus the small count pill on the Movies/TV tab labels. Tone is
+// safety-critical copy, so it lives here (unit-tested), mirroring the wire — never re-deriving it.
+
+/** The open-batch facts the card/badge tone reads (a subset of the trash.overview batch shape). */
+export interface OverviewBatchLike {
+  state: string;
+  expiresAt: string | null;
+  pendingCount: number;
+}
+
+/** The per-kind card/badge input (mirrors one trash.overview `kinds[]` entry). */
+export interface OverviewKindLike {
+  slatedCount: number;
+  /** false ⇒ the live candidate count is unknown (Maintainerr down, no open batch) — not zero. */
+  live: boolean;
+  batch: OverviewBatchLike | null;
+}
+
+export type OverviewTone = 'neutral' | 'info' | 'warn' | 'danger';
+
+/**
+ * The kind card's state tone: neutral with no batch, info during admin review, warn once a
+ * Leaving-Soon window is open, danger when that window has ≤3 days left (mirrors daysLeftTone's
+ * danger threshold). Draft (a transient skip-gate leftover) reads as admin-review.
+ */
+export function overviewCardTone(batch: OverviewBatchLike | null, now: Date = new Date()): OverviewTone {
+  if (batch === null) return 'neutral';
+  if (batch.state === 'leaving_soon') {
+    const days = daysUntil(batch.expiresAt, now);
+    return days !== null && days <= 3 ? 'danger' : 'warn';
+  }
+  if (batch.state === 'admin_review' || batch.state === 'draft') return 'info';
+  return 'neutral';
+}
+
+/** The lifecycle line on the card when a batch is open: "Admin review — 18 items" /
+ *  "Leaving Soon — window closes Jul 21 (in 9 days)". Empty string when no batch is open. */
+export function overviewDeadlineLabel(
+  batch: OverviewBatchLike | null,
+  formatDay: (iso: string) => string,
+  now: Date = new Date(),
+): string {
+  if (batch === null) return '';
+  if (batch.state === 'leaving_soon') {
+    if (batch.expiresAt === null) return 'Leaving Soon';
+    return `Leaving Soon — window closes ${formatDay(batch.expiresAt)} (${daysLeftLabel(
+      daysUntil(batch.expiresAt, now),
+    )})`;
+  }
+  if (batch.state === 'admin_review' || batch.state === 'draft') {
+    return `Admin review — ${batch.pendingCount} item${batch.pendingCount === 1 ? '' : 's'}`;
+  }
+  return '';
+}
+
+/**
+ * The Movies/TV tab count badge: suppressed at zero (or an unknown live count), warn while a
+ * Leaving-Soon window is open, danger at ≤3 days left, else a muted informational pill. The count is
+ * the SAME number the kind card shows (slatedCount).
+ */
+export interface OverviewBadge {
+  show: boolean;
+  count: number;
+  tone: 'muted' | 'warn' | 'danger';
+}
+
+export function overviewBadge(kind: OverviewKindLike, now: Date = new Date()): OverviewBadge {
+  // `slatedCount` is 0 whenever the live read failed (live:false), so `> 0` also suppresses unknowns.
+  const show = kind.slatedCount > 0;
+  let tone: 'muted' | 'warn' | 'danger' = 'muted';
+  if (kind.batch?.state === 'leaving_soon') {
+    const days = daysUntil(kind.batch.expiresAt, now);
+    tone = days !== null && days <= 3 ? 'danger' : 'warn';
+  }
+  return { show, count: kind.slatedCount, tone };
+}

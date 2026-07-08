@@ -64,6 +64,7 @@ import {
 import { SafetyBanner, type SafetyStatus } from '@/components/trash-safety';
 import { ExpediteReport, type ExpediteOutcome } from '@/components/trash-expedite';
 import { KindTab } from './kind-tab';
+import { TrashOverview, type OverviewData } from './trash-overview';
 import {
   RESOLUTION_LABELS,
   formatBytes,
@@ -77,6 +78,7 @@ import {
   daysLeftLabel,
   daysUntil,
   expediteErrorAction,
+  overviewBadge,
   partitionForExpedite,
   pendingWallGlyph,
   pendingWallTappable,
@@ -87,8 +89,11 @@ import {
 export type { TrashAccess };
 
 // ADR-032 — Rules is a SETTING now (/settings/trash). ADR-033 — "Batches" is folded into the
-// per-kind tabs (a batch is a property of Movies/TV). These four are the user-facing surfaces.
+// per-kind tabs (a batch is a property of Movies/TV). DESIGN-010 amendment (2026-07-08) — OVERVIEW
+// is the new DEFAULT landing (aggregate before navigating; supersedes the default-Movies landing);
+// only Movies/TV carry a count badge. These are the user-facing surfaces.
 const TRASH_TABS = [
+  { key: 'overview', label: 'Overview' },
   { key: 'movies', label: 'Movies' },
   { key: 'tv', label: 'TV' },
   { key: 'deleted', label: 'Recently Deleted' },
@@ -96,11 +101,15 @@ const TRASH_TABS = [
 ] as const;
 type TabKey = (typeof TRASH_TABS)[number]['key'];
 
+/** The Movies/TV tabs badge a count; the kind their card aggregates. */
+const TAB_KIND: Partial<Record<TabKey, 'movie' | 'tv'>> = { movies: 'movie', tv: 'tv' };
+
 function resolveTab(raw: string | null): TabKey {
   // ADR-033 — old `?tab=batches` deep links fold into the per-kind tab (Movies unless the old
   // `?kind=tv` rode along — handled by the redirect effect below).
   if (raw === 'batches') return 'movies';
-  return TRASH_TABS.some((t) => t.key === raw) ? (raw as TabKey) : 'movies';
+  // DESIGN-010 amendment — no ?tab (or an unknown one) lands on Overview, not Movies.
+  return TRASH_TABS.some((t) => t.key === raw) ? (raw as TabKey) : 'overview';
 }
 
 // ── shared wire-shape aliases (inferred from the tRPC hooks at the use sites; these
@@ -996,6 +1005,14 @@ function TrashContent({
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   const status = trpc.trash.status.useQuery();
+  // DESIGN-010 amendment — fetched ONCE at the shell for BOTH the Overview cards and the Movies/TV
+  // tab badges (the same slated count in both places — one wire read, no double query).
+  const overview = trpc.trash.overview.useQuery();
+  const overviewByKind = useMemo(() => {
+    const map = new Map<'movie' | 'tv', OverviewData['kinds'][number]>();
+    for (const k of overview.data?.kinds ?? []) map.set(k.kind, k);
+    return map;
+  }, [overview.data]);
 
   const selectTab = (key: TabKey) => {
     // Same contract as /library and /ledger: switching keeps ONLY ?tab.
@@ -1038,28 +1055,62 @@ function TrashContent({
       />
 
       <div className="library-tabs" role="tablist" aria-label="Trash sections">
-        {TRASH_TABS.map((tab, index) => (
-          <button
-            key={tab.key}
-            ref={(el) => {
-              tabRefs.current[index] = el;
-            }}
-            type="button"
-            role="tab"
-            id={`trashtab-${tab.key}`}
-            aria-selected={active === tab.key}
-            aria-controls="trash-panel"
-            tabIndex={active === tab.key ? 0 : -1}
-            onClick={() => selectTab(tab.key)}
-            onKeyDown={(e) => onTabKeyDown(e, index)}
-          >
-            {tab.label}
-          </button>
-        ))}
+        {TRASH_TABS.map((tab, index) => {
+          // DESIGN-010 amendment — the Movies/TV count pill (same count as the kind card;
+          // suppressed at zero; warn while a window is open, danger ≤3 days). It rides INSIDE the
+          // fixed-height tab row (ADR-015) and never widens it enough to reflow the tablist.
+          const kind = TAB_KIND[tab.key];
+          const kd = kind !== undefined ? overviewByKind.get(kind) : undefined;
+          const badge = kd !== undefined ? overviewBadge(kd) : { show: false, count: 0, tone: 'muted' as const };
+          const windowCloses =
+            badge.tone !== 'muted' && kd?.batch?.expiresAt != null
+              ? `window closes ${formatDay(kd.batch.expiresAt)}`
+              : null;
+          return (
+            <button
+              key={tab.key}
+              ref={(el) => {
+                tabRefs.current[index] = el;
+              }}
+              type="button"
+              role="tab"
+              id={`trashtab-${tab.key}`}
+              aria-selected={active === tab.key}
+              aria-controls="trash-panel"
+              tabIndex={active === tab.key ? 0 : -1}
+              onClick={() => selectTab(tab.key)}
+              onKeyDown={(e) => onTabKeyDown(e, index)}
+            >
+              <span className="trashtab__label">{tab.label}</span>
+              {badge.show ? (
+                <span
+                  className={`trashtab__badge trashtab__badge--${badge.tone}`}
+                  data-testid={`trash-tab-badge-${tab.key}`}
+                  title={windowCloses ?? undefined}
+                  aria-label={
+                    windowCloses !== null
+                      ? `${badge.count} slated — ${windowCloses}`
+                      : `${badge.count} slated`
+                  }
+                >
+                  {badge.count}
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
       </div>
 
       <div id="trash-panel" role="tabpanel" aria-labelledby={`trashtab-${active}`}>
-        {active === 'movies' ? (
+        {active === 'overview' ? (
+          <TrashOverview
+            overview={overview.data}
+            loading={overview.isLoading}
+            error={overview.error?.message ?? null}
+            onOpenKind={(kind) => selectTab(kind === 'movie' ? 'movies' : 'tv')}
+            onOpenTab={(tab) => selectTab(tab)}
+          />
+        ) : active === 'movies' ? (
           // ADR-033 — the kind tab is state-aware: no open batch ⇒ this pending wall; an open
           // batch ⇒ its lifecycle (KindTab swaps them; the wall is passed as a render prop).
           <KindTab

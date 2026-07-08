@@ -16,6 +16,7 @@ import {
   getAppSettings,
   getBatchDetail,
   getBatchSaveStats,
+  getTrashOverview,
   getTuningReport,
   greenlightBatch,
   listBatches,
@@ -51,6 +52,19 @@ export const trashRouter = router({
   status: sectionProcedure('trash', 'read_only').query(async ({ ctx }) => {
     return mapDomainErrors(() =>
       auditMaintainerr({ maintainerr: resolveMaintainerrBundle(ctx) }),
+    );
+  }),
+
+  /**
+   * DESIGN-010 amendment (2026-07-08) — the OVERVIEW landing aggregate: one light read the tab shell
+   * fetches ONCE to drive both the Overview cards and the Movies/TV count badges. Composes the
+   * existing per-kind slated summary + open-batch lifecycle + Recently-Deleted/Activity heads (no new
+   * query logic — see getTrashOverview). Read-Only+. A no-batch kind's live candidate read degrades
+   * to `live:false` when Maintainerr can't answer, so the landing never hard-errors on a down install.
+   */
+  overview: sectionProcedure('trash', 'read_only').query(async ({ ctx }) => {
+    return mapDomainErrors(() =>
+      getTrashOverview({ db: ctx.db, maintainerr: resolveMaintainerrBundle(ctx) }),
     );
   }),
 

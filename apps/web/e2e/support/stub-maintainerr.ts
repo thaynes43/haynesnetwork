@@ -18,6 +18,9 @@
 //                               connected: boolean } — degrade/restore one integration so specs
 //                               can flip the safety banner (trash.status derives connectivity
 //                               from rules/constants applications + the Plex test — D-04).
+//   POST /_stub/add-pending    → 204; body { collectionId, mediaServerId, tmdb/tvdbId?, sizeBytes? }
+//   POST /_stub/remove-pending → 204; body { mediaServerId } — drop it from its collection (empty a
+//                               kind for the Overview "nothing pending" card / suppressed-zero badge).
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 
 export interface RecordedMaintainerrWrite {
@@ -280,6 +283,17 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
             sizeBytes: body.sizeBytes ?? 1_073_741_824,
             addDate: daysAgo(1),
           });
+        }
+        res.writeHead(204);
+        return res.end();
+      }
+      // Drop a pending item from whatever collection holds it (the inverse of add-pending) — lets a
+      // spec make a whole KIND empty (e.g. the TV collection) to exercise the Overview "nothing
+      // pending" card + suppressed-zero badge (DESIGN-010 amendment 2026-07-08).
+      if (url.pathname === '/_stub/remove-pending' && method === 'POST') {
+        const body = JSON.parse(await readBody(req)) as { mediaServerId: string };
+        for (const col of collections) {
+          col.items = col.items.filter((i) => i.mediaServerId !== body.mediaServerId);
         }
         res.writeHead(204);
         return res.end();

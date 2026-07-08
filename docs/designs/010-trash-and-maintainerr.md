@@ -2,7 +2,7 @@
 
 - **Status:** Draft (backend vertical shipped; **UX shipped 2026-07-06** — D-09 records the
   as-built; **pending tables → poster walls 2026-07-07**, see the D-09 amendment)
-- **Last updated:** 2026-07-07
+- **Last updated:** 2026-07-08 (D-10 — Overview landing + kind tab count badges)
 - **Satisfies:** PRD-001 **R-79..R-87** + **US-10** / **AC-14..AC-16**; governed by **ADR-023**
   (Trash/Maintainerr + per-action grants + safety gate). Reuses **ADR-021** (section levels),
   **ADR-008/011** (write-back confinement), **DESIGN-005 D-16** (Restore), **DESIGN-008/009 D-09**
@@ -262,8 +262,10 @@ session's `sectionPermissions.trash ≠ disabled` (no-row default is _disabled_ 
   > amendment). **Per-item Expedite left the wall**: the trash-can is now a STATE, not a Modal
   > trigger — per-item "Delete now…" moved to the `/library/[id]` deletion-guard card
   > (`TrashPendingNotice`, admin/`expedite_item`-gated, safe-gated), reusing the ADR-014 Expedite
-  > Modal. The bulk **Expedite all…** pill stays on the wall unchanged. The five Trash tabs become
+  > Modal. The bulk **Expedite all…** pill stays on the wall unchanged. The Trash tabs become
   > **Movies · TV · Recently Deleted · Activity** (Batches folded into the kind tabs — ADR-033).
+  > **Further amended 2026-07-08 (D-10):** a leading **Overview** tab is prepended and becomes the
+  > **default landing** (superseding default-Movies); Movies/TV gain count badges.
 - **Shield (Save/whitelist, R-83):** a plain accent toggle (protective + reversible — ADR-014's
   two-step is reserved for destructive), constant footprint both states (ADR-015). The `dnd` tag only
   lands on the next *arr sync, but the pending read now ORs the LIVE Maintainerr exclusion set into
@@ -317,6 +319,51 @@ session's `sectionPermissions.trash ≠ disabled` (no-row default is _disabled_ 
   state, restore, rules round-trip, activity, the roles grid, save-only role gating (can
   shield, cannot expedite/restore/edit rules), the library shield (pending movie ⇒ panel; dnd
   badge; music ⇒ nothing), and the 390px 3-column wall + viewport fit.
+
+## D-10 — Trash Overview landing + kind tab count badges (amendment 2026-07-08, owner-directed)
+
+> **Supersedes the default-Movies landing (D-09 / ADR-033).** Owner rationale: `/trash` opened on
+> **Movies**, so **TV was a separate click and easy to miss** — it has been empty, but a TV-only
+> deletion window would have been **invisible** from the landing. The fix is to **aggregate what's
+> slated before you navigate**. The tab set gains a leading **Overview** and becomes
+> **Overview · Movies · TV · Recently Deleted · Activity**; **Overview is the new default** (no
+> `?tab=` → Overview; an explicit `?tab=movies|tv|deleted|activity` is unchanged, and the retired
+> `?tab=batches` still folds to Movies — ADR-033).
+
+- **Kind cards (the stars).** One card per kind (Movies, TV). Each shows the **count slated** — an
+  open batch's **still-`pending` count**, else the **live candidate count** (the same number the
+  kind tab's candidate hint / pending count shows, so the two never disagree) — the **reclaimable
+  bytes** ("frees 114 GB"), the **open-batch state + deadline** when one is open ("Admin review — 18
+  items" / "Leaving Soon — window closes Jul 21 (in 9 days)"), and a **state tone**: neutral
+  (no batch) · info (admin review) · warn (Leaving-Soon window open) · **danger (≤3 days left**,
+  mirroring `daysLeftTone`). An empty kind reads **"Nothing pending"**; a kind whose live candidate
+  read failed (Maintainerr unreachable, no open batch) reads **"Candidates unavailable"**. **The
+  whole card is a `<button>`** that opens its kind tab (keyboard-accessible).
+- **Recent strip (light, below).** The newest few **Recently-Deleted** rows (title · by · size ·
+  when) and **Activity** events, one line each, linking to those tabs. The cards lead; the strip is
+  secondary.
+- **Tab count badges.** The **Movies/TV** tab labels carry a small token pill (the roles-table
+  `.action-badge` idiom) with the **same count as the card** — **suppressed at zero** (and when the
+  live count is unknown), **warn** while a Leaving-Soon window is open, **danger ≤3 days** (aria /
+  tooltip: "window closes Jul 21"). It rides **inside the fixed-height tab row** and never reflows it
+  (ADR-015); the 390px tablist wraps as before. Overview / Recently-Deleted / Activity carry no badge.
+- **Data — `trash.overview` (sectionProcedure `trash` `read_only`).** One light read the tab shell
+  fetches **once** for both the cards and the badges:
+  `{ kinds: [{ kind, slatedCount, reclaimableBytes, live, batch: { state, expiresAt, pendingCount } |
+  null }], recentlyDeleted[], activity[] }`. It **composes existing reads** (`@hnet/domain
+  getTrashOverview` — no duplicated query logic): the per-kind slated summary is `listTrashPending`
+  (no open batch) or `listBatches` counts + the new `pendingBytes` (open batch — the frozen size of
+  the still-`pending` items, the companion of `reclaimedBytes`); the strip heads are
+  `listRecentlyDeleted` (both kinds, merged newest-first) + `listNotifications`. A no-batch kind's
+  live read **degrades to `live:false`** (count unknown, not zero) when Maintainerr can't answer, so
+  the landing never hard-errors on a down install — the safety banner remains the health mirror.
+- **Client purity.** The card/badge tone + deadline copy are pure, unit-tested helpers
+  (`apps/web/lib/trash.ts` `overviewCardTone` / `overviewDeadlineLabel` / `overviewBadge`), mirroring
+  the wire — never re-deriving the server's slated/pending semantics.
+- **e2e.** Bare `/trash` lands on Overview; a stubbed **Leaving-Soon movie** (warn card + deadline +
+  still-pending count) beside an **emptied TV** ("nothing pending" card, suppressed-zero badge); the
+  Movies tab badge shows the count in warn tone; a card click opens its kind tab; a direct
+  `?tab=movies` deep link is unaffected; the landing fits 390px.
 
 ## Ops / deploy-time checklist (owner)
 
