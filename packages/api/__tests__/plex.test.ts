@@ -207,7 +207,7 @@ describe('plex.myLibraries — real Plex identity (fix/plex-identity-mapping)', 
     const ownerStub = makeApiPlexStub({
       haynestower: { ...towerConfig().haynestower, ownerEmail: 'Manofoz@Gmail.COM', friends: [] },
     });
-    const identity = { email: 'manofoz@gmail.com', username: null };
+    const identity = { userId: null, email: 'manofoz@gmail.com', username: null };
     const c = caller(
       makeCtx(t.db, sessionUser(owner, undefined, undefined, undefined, identity), undefined, ownerStub.bundle),
     );
@@ -227,7 +227,7 @@ describe('plex.myLibraries — real Plex identity (fix/plex-identity-mapping)', 
         friends: [],
       },
     });
-    const identity = { email: null, username: 'manofoz' };
+    const identity = { userId: null, email: null, username: 'manofoz' };
     const c = caller(
       makeCtx(t.db, sessionUser(owner, undefined, undefined, undefined, identity), undefined, ownerStub.bundle),
     );
@@ -256,7 +256,7 @@ describe('plex.myLibraries — real Plex identity (fix/plex-identity-mapping)', 
         friends: [{ id: '55', email: 'friend-plex@example.com' }],
       },
     });
-    const identity = { email: 'friend-plex@example.com', username: null };
+    const identity = { userId: null, email: 'friend-plex@example.com', username: null };
     const c = caller(
       makeCtx(t.db, sessionUser(user, undefined, undefined, undefined, identity), undefined, friendStub.bundle),
     );
@@ -278,6 +278,98 @@ describe('plex.myLibraries — real Plex identity (fix/plex-identity-mapping)', 
     const c = caller(makeCtx(t.db, sessionUser(user), undefined, friendStub.bundle));
     const tower = (await c.plex.myLibraries()).servers.find((s) => s.slug === 'haynestower')!;
     expect(tower.friendMatched).toBe(true);
+  });
+});
+
+describe('plex.myLibraries — plex.tv numeric id (fix/plex-numeric-id)', () => {
+  beforeAll(async () => {
+    await adminCaller.plex.setRoleLibraryGrants({ roleId: SEEDED_ROLE_IDS.default, libraryIds: [moviesId] });
+  });
+
+  // The RECOMMENDED automatic path: the owner's id_token carries ONLY plex_user_id (12874060) —
+  // no plex_email/username — so owner recognition must fire from the numeric id alone. Neither the
+  // app email nor the owner-account email/username agree here; only the id does.
+  it('recognizes the OWNER by the plex.tv numeric id alone (no email/username claim)', async () => {
+    const owner = await createUser(t.db, { email: 'linked-owner-id@haynesnetwork.com' });
+    const ownerStub = makeApiPlexStub({
+      haynestower: {
+        ...towerConfig().haynestower,
+        ownerId: '12874060',
+        ownerEmail: 'someone-else@plex.tv',
+        ownerUsername: 'somebodyelse',
+        friends: [],
+      },
+    });
+    const identity = { userId: '12874060', email: null, username: null };
+    const c = caller(
+      makeCtx(t.db, sessionUser(owner, undefined, undefined, undefined, identity), undefined, ownerStub.bundle),
+    );
+    const tower = (await c.plex.myLibraries()).servers.find((s) => s.slug === 'haynestower')!;
+    expect(tower.owner).toBe(true);
+    expect(tower.friendMatched).toBe(true);
+    expect(tower.libraries.every((l) => l.shared)).toBe(true);
+  });
+
+  it('matches a FRIEND by their plex.tv numeric id alone', async () => {
+    const user = await createUser(t.db, { email: 'friend-by-id@haynesnetwork.com' });
+    const friendStub = makeApiPlexStub({
+      haynestower: {
+        ...towerConfig().haynestower,
+        ownerId: 'owner-xyz',
+        ownerEmail: 'owner@plex.tv',
+        friends: [{ id: '55', email: 'plex-friend@example.com', username: 'plexfriend' }],
+      },
+    });
+    const identity = { userId: '55', email: null, username: null };
+    const c = caller(
+      makeCtx(t.db, sessionUser(user, undefined, undefined, undefined, identity), undefined, friendStub.bundle),
+    );
+    const tower = (await c.plex.myLibraries()).servers.find((s) => s.slug === 'haynestower')!;
+    expect(tower.owner).toBe(false);
+    expect(tower.friendMatched).toBe(true);
+  });
+
+  // Precedence: the numeric id WINS over a conflicting email. The caller's id identifies the OWNER;
+  // their app email happens to match a DIFFERENT friend on the server. Resolving by email would
+  // mis-identify them as that friend — the id must take precedence.
+  it('numeric id WINS over a conflicting email (id → OWNER, not the email-matched friend)', async () => {
+    const user = await createUser(t.db, { email: 'collides@haynesnetwork.com' });
+    const stubX = makeApiPlexStub({
+      haynestower: {
+        ...towerConfig().haynestower,
+        ownerId: '12874060',
+        ownerEmail: 'owner-real@plex.tv',
+        friends: [{ id: '55', email: 'collides@haynesnetwork.com' }], // same as the app email
+      },
+    });
+    const identity = { userId: '12874060', email: null, username: null };
+    const c = caller(
+      makeCtx(t.db, sessionUser(user, undefined, undefined, undefined, identity), undefined, stubX.bundle),
+    );
+    const tower = (await c.plex.myLibraries()).servers.find((s) => s.slug === 'haynestower')!;
+    expect(tower.owner).toBe(true); // id → owner, NOT the friend whose email matches the app email
+  });
+
+  // Honesty about staleness: a numeric id that matches NOTHING on the server (owner or friend) must
+  // NOT lock the caller out — we fall through to the email/username layers (the id may be stale).
+  it('a STALE numeric id that matches nothing falls through to the email layer', async () => {
+    const user = await createUser(t.db, { email: 'stale-id@haynesnetwork.com' });
+    const stubY = makeApiPlexStub({
+      haynestower: {
+        ...towerConfig().haynestower,
+        ownerId: 'owner-xyz',
+        ownerEmail: 'owner@plex.tv',
+        friends: [{ id: '55', email: 'real-plex@example.com' }],
+      },
+    });
+    // id 424242 matches neither the owner nor any friend; the email DOES match friend 55.
+    const identity = { userId: '424242', email: 'real-plex@example.com', username: null };
+    const c = caller(
+      makeCtx(t.db, sessionUser(user, undefined, undefined, undefined, identity), undefined, stubY.bundle),
+    );
+    const tower = (await c.plex.myLibraries()).servers.find((s) => s.slug === 'haynestower')!;
+    expect(tower.owner).toBe(false);
+    expect(tower.friendMatched).toBe(true); // fell through to the email layer despite the present id
   });
 });
 

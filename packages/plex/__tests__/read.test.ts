@@ -121,6 +121,15 @@ describe('PlexReadClient — plex.tv sharing reads', () => {
     ).toBeNull();
   });
 
+  // fix/plex-numeric-id — exact match on the friend's plex.tv numeric id (the strongest signal).
+  it('findFriendById matches a friend by their plex.tv numeric id (exact string)', async () => {
+    const c = client(plexStub([usersRoute]));
+    expect((await c.findFriendById('222'))?.email).toBe('bob@example.com');
+    expect((await c.findFriendById(' 111 '))?.id).toBe('111'); // trimmed
+    expect(await c.findFriendById('999')).toBeNull(); // no such id
+    expect(await c.findFriendById('  ')).toBeNull(); // blank → null (no list fetch needed)
+  });
+
   it('listServerSections maps section key → plex.tv id', async () => {
     const sections = await client(plexStub([serverRoute])).listServerSections();
     const byKey = new Map(sections.map((s) => [s.key, s.id]));
