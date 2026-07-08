@@ -385,6 +385,23 @@ async function main(): Promise<void> {
     actorId: null,
   });
 
+  // ADR-025 errata (2026-07-08) — the pure read-only Trash persona: section read-only, ZERO action
+  // grants (neither Save power). The Leaving-Soon wall is fully read-only for it — the contrast role
+  // for the "global Save (save_exclude) implies the windowed rescue" e2e (Trash Limited holds
+  // save_exclude, so it CAN rescue; this one cannot).
+  const { roleId: trashViewerId } = await createRole({
+    name: 'Trash Viewer',
+    description: 'Trash read-only; no action grants — browse only, no save/rescue',
+    appIds: [],
+    actorId: null,
+  });
+  await setSectionPermission({
+    roleId: trashViewerId,
+    sectionId: 'trash',
+    level: 'read_only',
+    actorId: null,
+  });
+
   // ADR-026 / DESIGN-012 (PLAN-009 Bulletin) — roles for the UX agent's Bulletin journeys. The
   // `bulletin` section defaults read_only for everyone (implicit, no row), so the Feed + Messages
   // are readable out of the box; these two roles add the fine-grained write grants:

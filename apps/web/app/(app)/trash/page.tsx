@@ -9,7 +9,7 @@ import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { getServerSession } from '@hnet/auth';
-import { effectiveSectionLevel } from '@hnet/api';
+import { effectiveSectionLevel, effectiveTrashActions } from '@hnet/api';
 import { TRASH_ACTIONS } from '@hnet/db';
 import { TrashClient } from './trash-client';
 
@@ -37,8 +37,10 @@ export default async function TrashPage() {
     );
   }
 
-  // ADR-023 C-03 — admin implies every action with no rows; otherwise the session grants.
-  const actions = role.isAdmin ? [...TRASH_ACTIONS] : (role.trashActions ?? []);
+  // ADR-023 C-03 — admin implies every action with no rows; otherwise the session grants, expanded
+  // with the computed implication (ADR-025 errata — `save_exclude` ⇒ `save_leaving_soon`) so the
+  // Leaving-Soon rescue wall lights up for global-Save holders exactly as the server would honor.
+  const actions = role.isAdmin ? [...TRASH_ACTIONS] : effectiveTrashActions(role.trashActions ?? []);
   return (
     <TrashClient
       access={{ level, actions }}

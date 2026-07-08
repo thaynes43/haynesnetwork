@@ -49,12 +49,28 @@ export function sectionProcedure(sectionId: SectionId, minLevel: SectionPermissi
 }
 
 /**
+ * ADR-025 errata (2026-07-08, owner-directed) — GLOBAL SAVE IS A SUPERSET OF THE WINDOWED RESCUE.
+ * Holding `save_exclude` (the anytime whitelist power — "Save items, anytime") IMPLIES
+ * `save_leaving_soon` (the narrow "Save during a Leaving-Soon window" grant): if you can whitelist
+ * any flagged item at any time, you can obviously rescue one that is Leaving Soon. The implication is
+ * one-directional (a `save_leaving_soon`-only holder does NOT gain the anytime pending-wall save) and
+ * is COMPUTED here — never written to `role_trash_action_grants` (the stored grants stay as-is).
+ * Admin still implies ALL actions and never reaches this helper.
+ */
+export function effectiveTrashActions(actions: readonly TrashAction[]): TrashAction[] {
+  const set = new Set<TrashAction>(actions);
+  if (set.has('save_exclude')) set.add('save_leaving_soon');
+  return [...set];
+}
+
+/**
  * ADR-023 C-03 — is the caller granted a fine-grained Trash `action`? Read off the session
- * (no query). Admin ⇒ every action; otherwise the resolved session grant list. Absence ⇒ deny.
+ * (no query). Admin ⇒ every action; otherwise the resolved session grant list expanded with the
+ * computed implications (ADR-025 errata — `save_exclude` ⇒ `save_leaving_soon`). Absence ⇒ deny.
  */
 export function hasTrashAction(role: SessionRole, action: TrashAction): boolean {
   if (role.isAdmin) return true;
-  return (role.trashActions ?? []).includes(action);
+  return effectiveTrashActions(role.trashActions ?? []).includes(action);
 }
 
 /**

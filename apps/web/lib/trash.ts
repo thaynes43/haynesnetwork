@@ -22,15 +22,18 @@ export const TRASH_ACTION_NAMES = [
 ] as const;
 export type TrashActionName = (typeof TRASH_ACTION_NAMES)[number];
 
-/** Human labels for the per-action grant grid (/admin/roles) — destructive ones say so. */
+/** Human labels for the per-action grant grid (/admin/roles) — destructive ones say so. The two
+ *  Save grants are relabelled (owner-directed 2026-07-08) to make their SCOPE unmistakable: the
+ *  first whitelists ANY flagged item at any time (a superset — it implies the second), the second is
+ *  only the windowed Leaving-Soon rescue. ADR-025 errata / DESIGN-011 D-05. */
 export const TRASH_ACTION_LABELS: Record<TrashActionName, string> = {
-  save_exclude: 'Save (whitelist) items',
+  save_exclude: 'Save items — anytime (whitelists any flagged item)',
   remove_exclude: 'Un-save items',
   expedite_item: 'Expedite one item — destructive',
   expedite_all: 'Expedite the whole pending set — destructive',
   edit_rules: 'Edit deletion rules (also needs Trash access = Edit)',
   restore_deleted: 'Restore recently deleted items',
-  save_leaving_soon: 'Rescue items during the Leaving-Soon window',
+  save_leaving_soon: 'Save items — during a Leaving-Soon window only',
   manage_batches: 'Manage curation batches — create / green-light / cancel / expire',
 };
 

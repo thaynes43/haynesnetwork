@@ -604,8 +604,22 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await unknown.getByRole('button').click();
     await expect(unknown).toHaveAttribute('data-glyph', 'trash');
 
-    // Without the grant (Trash Limited) the SAME wall is fully read-only, countdown drops the tap.
+    // ADR-025 errata — GLOBAL SAVE IS A SUPERSET: Trash Limited holds `save_exclude` (the anytime
+    // whitelist power) which IMPLIES `save_leaving_soon`, so it ALSO rescues in the window even
+    // though it was never granted save_leaving_soon. The wall stays tappable + the countdown invites.
     await assignMemberRole(page, 'Trash Limited');
+    await memberPage.goto('/trash?tab=movies');
+    await expect(memberPage.getByTestId('batch-countdown')).toContainText('tap anything you want to keep');
+    const limitedTile = memberPage.getByTestId('wall-tile').filter({ hasText: 'tmdb:990009' });
+    await limitedTile.getByRole('button').click();
+    await expect(limitedTile).toHaveAttribute('data-glyph', 'shield');
+    // Own save ⇒ can release it again (leaves the wall clean for the next test).
+    await limitedTile.getByRole('button').click();
+    await expect(limitedTile).toHaveAttribute('data-glyph', 'trash');
+
+    // A role with NEITHER Save power (Trash Viewer — read-only, zero grants) gets the fully
+    // read-only wall: no tap buttons, and the countdown drops the "tap anything" invite.
+    await assignMemberRole(page, 'Trash Viewer');
     await memberPage.goto('/trash?tab=movies');
     await expect(memberPage.getByTestId('wall-tile')).toHaveCount(4);
     await expect(memberPage.getByTestId('batch-wall').getByRole('button')).toHaveCount(0);
@@ -850,10 +864,40 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
 
     const select = page.getByLabel('Trash access for Trash Limited');
     await expect(select).toHaveValue('read_only');
-    await expect(page.getByTestId('trash-actions-summary-Trash Limited')).toHaveText('3 actions');
+
+    // Roles table: the action count is an INLINE token badge BESIDE the select (same baseline),
+    // not a below-select line (owner-directed 2026-07-08). Assert the pill class + that it sits on
+    // the select's row, to the right of it.
+    const summary = page.getByTestId('trash-actions-summary-Trash Limited');
+    await expect(summary).toHaveText('3 actions');
+    await expect(summary).toHaveClass(/action-badge/);
+    const selBox = (await select.boundingBox())!;
+    const badgeBox = (await summary.boundingBox())!;
+    // Vertically overlapping ⇒ same row (inline), not stacked below.
+    expect(badgeBox.y).toBeLessThan(selBox.y + selBox.height);
+    expect(badgeBox.y + badgeBox.height).toBeGreaterThan(selBox.y);
+    // …and to the RIGHT of the select (beside, not below).
+    expect(badgeBox.x).toBeGreaterThan(selBox.x + selBox.width - 4);
+
     const limitedRow = page.locator('.admin-table tbody tr').filter({ hasText: 'Trash Limited' });
     await limitedRow.getByRole('button', { name: 'Edit' }).click();
     const grid = page.getByTestId('trash-actions-grid');
+
+    // ADR-025 errata — global Save is a superset: Trash Limited holds `save_exclude`, so the
+    // Leaving-Soon rescue row renders CHECKED + DISABLED with the "included in Save" note.
+    const rescue = grid.getByTestId('trash-action-save_leaving_soon');
+    await expect(rescue).toBeChecked();
+    await expect(rescue).toBeDisabled();
+    await expect(grid.getByTestId('trash-action-save_leaving_soon-implied')).toBeVisible();
+    // Unchecking Save re-enables the rescue row at its STORED value (unchecked — never granted).
+    await grid.getByTestId('trash-action-save_exclude').uncheck();
+    await expect(rescue).toBeEnabled();
+    await expect(rescue).not.toBeChecked();
+    // Re-checking Save implies it ON + locked again (the stored grant was never written either way).
+    await grid.getByTestId('trash-action-save_exclude').check();
+    await expect(rescue).toBeChecked();
+    await expect(rescue).toBeDisabled();
+
     await grid.getByTestId('trash-action-expedite_item').check();
     await page.getByRole('button', { name: 'Save changes' }).click();
     await expect(page.getByTestId('trash-actions-summary-Trash Limited')).toHaveText('4 actions');
