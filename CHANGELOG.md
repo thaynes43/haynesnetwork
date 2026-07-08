@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.20.0](https://github.com/thaynes43/haynesnetwork/compare/v0.19.0...v0.20.0) (2026-07-08)
+
+
+### Features
+
+* per-kind trash lifecycle (Batches folded in) + context-aware item back-links ([#121](https://github.com/thaynes43/haynesnetwork/issues/121)) ([86a43c5](https://github.com/thaynes43/haynesnetwork/commit/86a43c5d94f20fdf3733325a45ac6bbad4ea8d41))
+
+
+### Bug Fixes
+
+* ledger rows become stacked cards on portrait mobile ([#117](https://github.com/thaynes43/haynesnetwork/issues/117)) ([49519bf](https://github.com/thaynes43/haynesnetwork/commit/49519bfa2a10a5c888228982f8b5d1077d1b7309))
+* match Plex identity by plex.tv numeric id (automatic owner/friend recognition) ([#120](https://github.com/thaynes43/haynesnetwork/issues/120)) ([4aa2faf](https://github.com/thaynes43/haynesnetwork/commit/4aa2faf122ed7177f2cc67688ed828bebd0c18e0))
+* My Plex resolves the real Plex identity (source claim + admin override), not the OIDC email ([#118](https://github.com/thaynes43/haynesnetwork/issues/118)) ([72d6a03](https://github.com/thaynes43/haynesnetwork/commit/72d6a0308a3fce9b307e3407a2a0eddedfd01c86))
+
 ## [0.19.0](https://github.com/thaynes43/haynesnetwork/compare/v0.18.1...v0.19.0) (2026-07-07)
 
 
