@@ -55,3 +55,5 @@ export * from './effective-allowed-libraries';
 export * from './role-libraries';
 export * from './plex-registry';
 export * from './plex-shares';
+// fix/plex-identity-mapping — the users.plex_email/plex_username override single-writer.
+export * from './user-identity';

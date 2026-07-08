@@ -135,6 +135,35 @@ export class PlexReadClient {
   }
 
   /**
+   * fix/plex-identity-mapping — resolve an app user to their Plex friend account by the caller's
+   * REAL Plex identity (email OR username, case-insensitive), falling back to their app/OIDC email.
+   * The OIDC id_token carries the Authentik email, which for a linked pre-existing account need NOT
+   * equal the plex.tv email/username; email-only matching (findFriendByEmail) therefore misses such
+   * users. The username arm covers accounts whose plex.tv email is private/absent but whose
+   * username is known. Returns the first matching friend, or null.
+   */
+  async findFriendByIdentity(
+    identity: { email: string | null; username: string | null },
+    fallbackEmail: string,
+  ): Promise<PlexFriend | null> {
+    const emails = new Set(
+      [identity.email, fallbackEmail]
+        .map((e) => (e ?? '').trim().toLowerCase())
+        .filter((e): e is string => e.length > 0),
+    );
+    const username = (identity.username ?? '').trim().toLowerCase();
+    if (emails.size === 0 && !username) return null;
+    const friends = await this.listFriends();
+    return (
+      friends.find((f) => {
+        const fe = (f.email ?? '').trim().toLowerCase();
+        const fu = (f.username ?? '').trim().toLowerCase();
+        return (fe !== '' && emails.has(fe)) || (username !== '' && fu === username);
+      }) ?? null
+    );
+  }
+
+  /**
    * `GET /api/servers/{machineId}` — the section-id map: each `<Section>` carries both the
    * server section `key` (our registry identity) and the plex.tv `id` the share body uses.
    */

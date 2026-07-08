@@ -22,6 +22,7 @@ const member: SessionUser = {
     trashActions: [],
     messageActions: [],
   },
+  plexIdentity: { email: null, username: null },
 };
 
 /** Every procedure behind authedProcedure (directly or via adminProcedure). */
