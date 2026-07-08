@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.0](https://github.com/thaynes43/haynesnetwork/compare/v0.20.1...v0.21.0) (2026-07-08)
+
+
+### Features
+
+* trash Overview landing + kind tab count badges ([#124](https://github.com/thaynes43/haynesnetwork/issues/124)) ([86edd82](https://github.com/thaynes43/haynesnetwork/commit/86edd825f8c4fb25fcfe7b93660825968ce9b114))
+
 ## [0.20.1](https://github.com/thaynes43/haynesnetwork/compare/v0.20.0...v0.20.1) (2026-07-08)
 
 
