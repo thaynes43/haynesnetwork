@@ -294,37 +294,60 @@ export default function AdminRolesPage() {
   // ADR-023 C-03 / DESIGN-010 D-09 — the per-action Trash grant grid. Every action is opt-in
   // (section Edit implies NOTHING extra); viewing rides the coarse Trash level in the table
   // column. Destructive actions say so in their labels.
-  const trashChecklist = (form: RoleForm, apply: (next: (f: RoleForm) => RoleForm) => void) => (
-    <fieldset className="field" data-testid="trash-actions-grid">
-      <legend>Trash actions this role may use</legend>
-      <p className="field-hint">
-        Actions apply only while the role’s Trash access is Read-only or Edit. Every action is
-        opt-in — the access level alone never grants any.
-      </p>
-      <ul className="check-list">
-        {TRASH_ACTION_NAMES.map((action) => (
-          <li key={action}>
-            <label className="check-row">
-              <input
-                type="checkbox"
-                data-testid={`trash-action-${action}`}
-                checked={form.trashActions.includes(action)}
-                onChange={(e) =>
-                  apply((f) => ({
-                    ...f,
-                    trashActions: e.target.checked
-                      ? [...f.trashActions, action]
-                      : f.trashActions.filter((a) => a !== action),
-                  }))
-                }
-              />
-              <span>{TRASH_ACTION_LABELS[action]}</span>
-            </label>
-          </li>
-        ))}
-      </ul>
-    </fieldset>
-  );
+  // ADR-025 errata (2026-07-08) — global Save (`save_exclude`, "Save items, anytime") is a SUPERSET
+  // of the windowed rescue (`save_leaving_soon`): when it's checked, the rescue row renders CHECKED +
+  // DISABLED with an "included in Save" note. The implication is COMPUTED, never written — the stored
+  // `save_leaving_soon` grant is untouched, so unchecking Save re-enables the row at its stored value.
+  const trashChecklist = (form: RoleForm, apply: (next: (f: RoleForm) => RoleForm) => void) => {
+    const hasSavePower = form.trashActions.includes('save_exclude');
+    return (
+      <fieldset className="field" data-testid="trash-actions-grid">
+        <legend>Trash actions this role may use</legend>
+        <p className="field-hint">
+          Actions apply only while the role’s Trash access is Read-only or Edit. Every action is
+          opt-in — the access level alone never grants any.
+        </p>
+        <ul className="check-list">
+          {TRASH_ACTION_NAMES.map((action) => {
+            const impliedBySave = action === 'save_leaving_soon' && hasSavePower;
+            return (
+              <li key={action}>
+                <label className="check-row" data-disabled={impliedBySave || undefined}>
+                  <input
+                    type="checkbox"
+                    data-testid={`trash-action-${action}`}
+                    disabled={impliedBySave}
+                    checked={impliedBySave || form.trashActions.includes(action)}
+                    onChange={(e) =>
+                      apply((f) => ({
+                        ...f,
+                        trashActions: e.target.checked
+                          ? [...f.trashActions, action]
+                          : f.trashActions.filter((a) => a !== action),
+                      }))
+                    }
+                  />
+                  <span>
+                    {TRASH_ACTION_LABELS[action]}
+                    {impliedBySave ? (
+                      <span
+                        className="muted"
+                        data-testid="trash-action-save_leaving_soon-implied"
+                        title="Holding “Save items — anytime” already grants the Leaving-Soon rescue."
+                      >
+                        {' '}
+                        — included in Save
+                      </span>
+                    ) : null}
+                  </span>
+                </label>
+              </li>
+            );
+          })}
+        </ul>
+      </fieldset>
+    );
+  };
 
   // ADR-026 C-04 / DESIGN-012 D-04 — the per-action Bulletin message grant grid. Reading the
   // Feed/board rides the coarse Bulletin level in the table column; post/moderate are opt-in.
@@ -472,7 +495,7 @@ export default function AdminRolesPage() {
         </p>
       ) : null}
 
-      <table className="admin-table">
+      <table className="admin-table admin-table--roles">
         <thead>
           <tr>
             <th>Role</th>
@@ -631,7 +654,7 @@ export default function AdminRolesPage() {
                         <option value="disabled">Disabled</option>
                       </select>
                       <span
-                        className="muted trash-cell__actions"
+                        className="action-badge"
                         data-testid={`trash-actions-summary-${role.name}`}
                         title={
                           role.trashActions.length > 0
@@ -677,7 +700,7 @@ export default function AdminRolesPage() {
                         <option value="disabled">Disabled</option>
                       </select>
                       <span
-                        className="muted trash-cell__actions"
+                        className="action-badge"
                         data-testid={`message-actions-summary-${role.name}`}
                         title={
                           role.messageActions.length > 0

@@ -45,6 +45,19 @@ one OPEN (`draft|admin_review|leaving_soon`) batch per media kind (partial uniqu
 | `leaving_soon` → `deleted` | `sweepExpiredBatches` | system / `manage_batches` (Expire now) | per-item `trash_expedited` + batch `trash_batch_transition` `{counts}` | per-item `collections/media/handle` |
 | item `pending` ⇄ `saved` | `setBatchItemSaved` | `admin_review`⇒`manage_batches`; `leaving_soon`⇒`save_leaving_soon` | `trash_batch_saves` + `trash_excluded` | `addExclusion`/`removeExclusion` + collection `remove`/`add` |
 
+> **Errata (2026-07-08, owner-directed) — GLOBAL SAVE IS A SUPERSET OF THE WINDOWED RESCUE.**
+> Holding `save_exclude` (the anytime whitelist power, relabelled **“Save items — anytime (whitelists
+> any flagged item)”**) now IMPLIES `save_leaving_soon` (relabelled **“Save items — during a
+> Leaving-Soon window only”**) everywhere the latter gates — the `leaving_soon`⇒`save_leaving_soon`
+> row above passes for a `save_exclude` holder too. If you can whitelist any flagged item at any time,
+> you can obviously rescue one that is Leaving Soon. The implication is **one-directional** (a
+> `save_leaving_soon`-only holder gains NO anytime pending-wall save) and **computed, never written**
+> to `role_trash_action_grants` (stored grants are untouched). It lives in `hasTrashAction` /
+> `effectiveTrashActions` (`packages/api/src/middleware/role.ts`); the `/trash` page hands the client
+> the same expanded set so the family rescue wall lights up for global-Save holders. In the role
+> editor's Trash grid, checking “Save items — anytime” renders the rescue row checked + disabled with
+> an *“included in Save”* note (unchecking restores its stored value). Admin still implies all actions.
+
 ---
 
 ## D-02 — Data model (migration 0017)

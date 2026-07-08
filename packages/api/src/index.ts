@@ -17,7 +17,9 @@ export {
 export { resolvePlexBundle } from './trpc';
 export { SectionPermissionInput, TrashActionsInput } from './schemas';
 // ADR-023 — the Trash section gates the UX/nav reads on (server-authoritative).
-export { hasTrashAction, trashActionProcedure } from './middleware/role';
+// ADR-025 errata — `effectiveTrashActions` expands stored grants with the computed implication
+// (`save_exclude` ⇒ `save_leaving_soon`) so the /trash page hands the client the same effective set.
+export { hasTrashAction, effectiveTrashActions, trashActionProcedure } from './middleware/role';
 // ADR-019 / DESIGN-008 — the poster-proxy upstream resolver + the TMDB fallback for removed
 // items (used by the app poster route).
 export {

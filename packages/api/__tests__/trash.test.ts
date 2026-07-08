@@ -177,6 +177,15 @@ describe('trash router — section + per-action gating (ADR-023 C-03)', () => {
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 
+  it('the Save implication is ONE-DIRECTIONAL — save_leaving_soon does NOT unlock the anytime pending-wall save (ADR-025 errata)', async () => {
+    // save_exclude ⇒ save_leaving_soon, but NOT the reverse: a windowed-rescue holder still cannot
+    // whitelist arbitrary flagged items on the live pending wall (that is the save_exclude power).
+    const c = call('read_only', ['save_leaving_soon']);
+    await expect(
+      c.trash.saveExclusion({ maintainerrMediaId: 'ms-1' }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
   it('edit_rules requires section EDIT (read_only + grant is still FORBIDDEN)', async () => {
     const roGrant = call('read_only', ['edit_rules']);
     await expect(roGrant.trash.saveRule({ payload: {} })).rejects.toMatchObject({

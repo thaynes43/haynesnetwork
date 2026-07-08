@@ -187,6 +187,17 @@ describe('trash.batches + trash.settings (ADR-025 / DESIGN-011)', () => {
     expect(ok.state).toBe('saved');
   });
 
+  it('save_exclude (global Save) IMPLIES save_leaving_soon — a save_exclude-only role rescues in the window (ADR-025 errata)', async () => {
+    const { batchId } = await adminCall().trash.batches.create({ mediaKind: 'movie' });
+    const detail = await adminCall().trash.batches.get({ batchId });
+    const itemId = detail.items[0]!.id;
+    await adminCall().trash.batches.greenlight({ batchId, windowDays: 14 });
+    // The role holds ONLY the anytime whitelist power (save_exclude) — NOT save_leaving_soon — yet the
+    // windowed rescue is honored because global Save is a superset (computed, no stored grant).
+    const ok = await memberCall('read_only', ['save_exclude']).trash.batches.setItemSaved({ batchId, itemId, saved: true });
+    expect(ok.state).toBe('saved');
+  });
+
   it('settings.get/set are admin-only; get returns the documented defaults', async () => {
     await expect(memberCall('edit', ['manage_batches']).trash.settings.get()).rejects.toMatchObject({ code: 'FORBIDDEN' });
     const defaults = await adminCall().trash.settings.get();

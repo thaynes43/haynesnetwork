@@ -862,6 +862,59 @@ tr.drop-after td {
   }
 }
 
+/* The roles table is the DENSEST admin table — 7 columns, three of them a level select + an inline
+   action badge (owner-directed 2026-07-08). Those don't fit the desktop grid below ~900px, so this
+   variant collapses to the labeled card list EARLIER than the shared 759px breakpoint (otherwise the
+   Bulletin badge + Actions column clip at tablet width). Same card treatment, wider trigger. */
+@media (max-width: 899px) {
+  .admin-table--roles thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    white-space: nowrap;
+    clip-path: inset(50%);
+  }
+  .admin-table--roles,
+  .admin-table--roles tbody,
+  .admin-table--roles tr,
+  .admin-table--roles td {
+    display: block;
+  }
+  .admin-table--roles {
+    background: transparent;
+    border: 0;
+    overflow: visible;
+  }
+  .admin-table--roles tr {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    margin-bottom: 10px;
+  }
+  .admin-table--roles td {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    border-bottom: 0;
+  }
+  .admin-table--roles td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: var(--color-text-muted);
+    flex: none;
+  }
+  /* The inline row editor holds a full form, not a labelled value — reset the card treatment (mirrors
+     the 759px `.row-edit td` reset, extended to the roles table's wider 899px collapse). */
+  .admin-table--roles .row-edit td {
+    display: block;
+  }
+  .admin-table--roles .row-edit td::before {
+    content: none;
+  }
+}
+
 /* ---------- Forms (admin create/edit) ---------- */
 .admin-form {
   display: flex;
@@ -3127,16 +3180,28 @@ input[aria-invalid='true'] {
   height: 38px;
 }
 
-/* Recently Deleted + Activity ride admin-table/timeline; the roles Trash cell stacks the
-   level select over a constant-height grant count (no reflow on change). */
+/* Recently Deleted + Activity ride admin-table/timeline; the roles Trash/Bulletin cells lay the
+   level select and its grant-count badge on ONE baseline (owner-directed 2026-07-08 — the count was
+   a below-select line that pushed the cell taller than the single-line Ledger column and misaligned
+   the Ledger|Trash|Bulletin row). Changing grants recounts the badge in place, never reflows (ADR-015). */
 .trash-cell {
   display: inline-flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
 }
-.trash-cell__actions {
+/* The grant-count pill (e.g. "4 actions") — a neutral token-styled badge beside the select. Muted,
+   not the accent `.tag`/`.chip` (a count is informational, not a grant chip). */
+.action-badge {
+  display: inline-block;
   font-size: 11px;
+  font-weight: 600;
   white-space: nowrap;
+  color: var(--color-text-muted);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 2px 9px;
 }
 
 /* ── Trash curation batches — THE POSTER WALL (ADR-025 / DESIGN-011 D-07) ────────────────
