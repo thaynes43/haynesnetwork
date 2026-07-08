@@ -2,6 +2,7 @@
 // DESIGN-002; consumed by apps/web's catch-all route and DESIGN-003's tRPC context.
 import { auth } from './config';
 import { getSessionExtension, type SessionRole } from './hooks/session-extension';
+import type { PlexIdentity } from './hooks/plex-identity';
 
 export { auth, oidcEnabled, type Auth } from './config';
 export { bootstrapAdminOnSignin } from './hooks/bootstrap-admin';
@@ -10,6 +11,14 @@ export {
   type SessionExtension,
   type SessionRole,
 } from './hooks/session-extension';
+export {
+  resolvePlexIdentity,
+  plexIdentityFromIdToken,
+  normalizePlexField,
+  normalizePlexUserId,
+  EMPTY_PLEX_IDENTITY,
+  type PlexIdentity,
+} from './hooks/plex-identity';
 export {
   authEnv,
   assertAuthEnv,
@@ -41,6 +50,14 @@ export interface SessionUser {
   email: string;
   displayName: string;
   role: SessionRole;
+  /**
+   * fix/plex-identity-mapping — the caller's resolved REAL Plex identity, NOT the OIDC email.
+   * fix/plex-numeric-id — carries the plex.tv NUMERIC `userId` (id_token `plex_user_id` claim), the
+   * strongest signal the My Plex matcher checks first, plus `email`/`username` (claim → admin
+   * override). All fields may be null; the matcher then falls back to `email`. Lets plex.myLibraries
+   * recognize the owner/friend even when the Authentik email differs from the plex.tv account email.
+   */
+  plexIdentity: PlexIdentity;
 }
 
 /** A live server-side session: Better Auth's session row + the hydrated user. */
@@ -67,6 +84,7 @@ export async function getServerSession(headers: Headers): Promise<Session | null
       email: raw.user.email,
       displayName: extension.displayName,
       role: extension.role,
+      plexIdentity: extension.plexIdentity,
     },
   };
 }

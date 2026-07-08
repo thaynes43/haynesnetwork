@@ -16,8 +16,17 @@ export function UserDetail({ userId }: { userId: string }) {
   const roles = trpc.roles.list.useQuery();
   const catalog = trpc.catalog.adminList.useQuery();
   const [error, setError] = useState<string | null>(null);
+  // fix/plex-identity-mapping — the Plex identity override inputs (seeded from the user row below).
+  const [plexEmail, setPlexEmail] = useState('');
+  const [plexUsername, setPlexUsername] = useState('');
+  const [seededFor, setSeededFor] = useState<string | null>(null);
 
   const setRole = trpc.users.setRole.useMutation({
+    onError: (err: unknown) => setError(describeMutationError(err)),
+    onSuccess: () => setError(null),
+    onSettled: () => utils.users.list.invalidate(),
+  });
+  const setPlexIdentity = trpc.users.setPlexIdentity.useMutation({
     onError: (err: unknown) => setError(describeMutationError(err)),
     onSuccess: () => setError(null),
     onSettled: () => utils.users.list.invalidate(),
@@ -36,6 +45,13 @@ export function UserDetail({ userId }: { userId: string }) {
   }
 
   const user = (users.data ?? []).find((u) => u.id === userId);
+  // Seed the Plex identity inputs once per loaded user (React's adjust-state-on-change pattern) so
+  // the fields show the current override without a useEffect; admin edits then persist locally.
+  if (user && seededFor !== user.id) {
+    setSeededFor(user.id);
+    setPlexEmail(user.plexEmail ?? '');
+    setPlexUsername(user.plexUsername ?? '');
+  }
   if (!user) {
     return (
       <>
@@ -94,6 +110,58 @@ export function UserDetail({ userId }: { userId: string }) {
         <p className="field-hint">
           A user has exactly one role. Edit what a role grants on{' '}
           <Link href="/admin/roles">Roles</Link>.
+        </p>
+      </section>
+
+      <section className="card admin-section">
+        <h2>Plex identity</h2>
+        <form
+          className="admin-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setPlexIdentity.mutate({
+              userId,
+              plexEmail: plexEmail.trim() || null,
+              plexUsername: plexUsername.trim() || null,
+            });
+          }}
+        >
+          <div className="form-row">
+            <label htmlFor="plex-email">Plex email</label>
+            <input
+              id="plex-email"
+              type="text"
+              inputMode="email"
+              autoComplete="off"
+              placeholder="name@example.com"
+              value={plexEmail}
+              disabled={setPlexIdentity.isPending}
+              onChange={(e) => setPlexEmail(e.target.value)}
+            />
+          </div>
+          <div className="form-row">
+            <label htmlFor="plex-username">Plex username</label>
+            <input
+              id="plex-username"
+              type="text"
+              autoComplete="off"
+              placeholder="plexuser"
+              value={plexUsername}
+              disabled={setPlexIdentity.isPending}
+              onChange={(e) => setPlexUsername(e.target.value)}
+            />
+          </div>
+          <div className="form-row">
+            <button type="submit" className="btn sm primary" disabled={setPlexIdentity.isPending}>
+              {setPlexIdentity.isPending ? 'Saving…' : 'Save Plex identity'}
+            </button>
+          </div>
+        </form>
+        <p className="field-hint">
+          Maps this user to their real Plex account when their sign-in email differs from their
+          plex.tv email (e.g. an account linked to Plex after it was created). My Plex uses this to
+          recognize the owner and friends. Leave blank to fall back to the sign-in email. Set either
+          the email or the username — whichever matches their Plex account.
         </p>
       </section>
 

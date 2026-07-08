@@ -2578,6 +2578,145 @@ input[aria-invalid='true'] {
   width: 48px;
 }
 
+/* Portrait-mobile stacked cards (owner report 2026-07-07). The 13-column sheet only ever panned
+   sideways on a phone; below 640px the wrap hides the <table> and paints .ledger-cards instead —
+   the SAME items as condensed 3-line cards. Hidden (display:none) above the breakpoint, so the
+   markup is inert on desktop. Tokens only (hard rule 2). */
+.ledger-cards {
+  display: none;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+.ledger-cardrow {
+  min-width: 0;
+}
+.ledger-card {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  /* Selection deepens THIS var — color only, never layout (ADR-015). */
+  --card-bg: var(--color-surface);
+  background: var(--card-bg);
+  overflow: hidden;
+}
+.ledger-card.is-selected {
+  --card-bg: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
+}
+/* The edge tap target: a sibling of the body Link so a tap selects without navigating. */
+.ledger-card__check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  padding: 0 14px;
+  border-right: 1px solid var(--color-border);
+  cursor: pointer;
+}
+.ledger-card__check .ledger-check {
+  width: 18px;
+  height: 18px;
+}
+.ledger-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 10px 12px;
+  text-decoration: none;
+  color: var(--color-text);
+}
+/* Line 1: title (+year) bold, then the kind badge and a Removed cue for tombstones. Title
+   ellipsizes; the badges hold their place at the end of the row. */
+.ledger-card__l1 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.ledger-card__title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--color-text);
+}
+.ledger-card__year {
+  flex: none;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+.ledger-card__kind,
+.ledger-card__removed {
+  flex: none;
+}
+/* Line 2: the condensed facts, middot-separated (the dot only rides BETWEEN facts, so a missing
+   size/resolution/rating never leaves a dangling separator). */
+.ledger-card__l2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: 2px;
+  font-size: 12.5px;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+.ledger-card__fact {
+  white-space: nowrap;
+}
+.ledger-card__fact + .ledger-card__fact::before {
+  content: '·';
+  margin: 0 6px;
+  color: var(--color-text-muted);
+}
+/* Line 3: muted meta (requesters + added), one ellipsized line. */
+.ledger-card__l3 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  font-size: 11.5px;
+}
+.ledger-card--skeleton {
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px;
+}
+.ledger-card--skeleton .skeleton-line {
+  display: block;
+}
+.ledger-cards__state {
+  padding: 20px 4px;
+  font-size: 13px;
+  white-space: normal;
+}
+@media (max-width: 640px) {
+  /* Swap the sheet for the card list. The wrap stays the ONE scroller (its max-height + overflow
+     keep the keyset infinite-scroll sentinel wired); it just sheds its panel chrome so each card
+     owns its own border. */
+  .ledger-table {
+    display: none;
+  }
+  .ledger-cards {
+    display: flex;
+  }
+  .ledger-tablewrap {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    overscroll-behavior-x: auto;
+  }
+}
+
 /* The Monitor & search confirm + report (Modal content, ADR-014). */
 .ledger-confirm p {
   margin: 0 0 10px;

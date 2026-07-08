@@ -14,10 +14,35 @@ import {
   shareLibrary,
   unshareLibrary,
 } from '@hnet/domain';
+import { EMPTY_PLEX_IDENTITY, type PlexIdentity } from '@hnet/auth';
 import { mapDomainErrors, resolvePlexBundle, router } from '../trpc';
 import { authedProcedure } from '../trpc';
 import { adminProcedure } from '../middleware/role';
 import { PlexLibraryInput, RefreshRegistryInput, RoleLibrariesInput, ServerAllInput } from '../schemas';
+
+/**
+ * fix/plex-identity-mapping — does a plex.tv account (the server OWNER, from `/api/v2/user`) match
+ * the caller by EMAIL or USERNAME? True when its email matches the caller's REAL Plex identity email
+ * OR their app/OIDC email, OR its username matches the caller's Plex identity username — all
+ * case-insensitive, null-safe. The app-email arm preserves the pre-fix behavior (accounts whose
+ * emails already agree); the identity arms fix the owner whose Authentik email differs from their
+ * plex.tv email. NOTE: the plex.tv NUMERIC id (fix/plex-numeric-id) is the strongest signal and is
+ * matched separately, BEFORE this — see the ID PASS in myLibraries.
+ */
+function plexAccountMatchesCaller(
+  account: { email: string | null; username: string | null },
+  identity: PlexIdentity,
+  appEmail: string,
+): boolean {
+  const accEmail = (account.email ?? '').trim().toLowerCase();
+  const accUsername = (account.username ?? '').trim().toLowerCase();
+  const emails = [identity.email, appEmail].map((e) => (e ?? '').trim().toLowerCase());
+  const idUsername = (identity.username ?? '').trim().toLowerCase();
+  return (
+    (accEmail !== '' && emails.includes(accEmail)) ||
+    (accUsername !== '' && idUsername !== '' && accUsername === idUsername)
+  );
+}
 
 export interface MyLibrary {
   id: string;
@@ -34,16 +59,21 @@ export interface MyServer {
   /** false when the server (or plex.tv) was unreachable while resolving live share state. */
   available: boolean;
   /**
-   * ADR-029 — the caller's email IS this server's Plex OWNER account (the token account). Owners
-   * are never in their own friend list, so friend-matching structurally can't match them; when
-   * true every library is implicitly theirs and no add/remove/friend controls apply. Detected via
-   * plex.tv `GET /api/v2/user`; degrades to `false` (the friend flow) if that lookup fails.
+   * ADR-029 — the caller IS this server's Plex OWNER account (the token account). Owners are never
+   * in their own friend list, so friend-matching structurally can't match them; when true every
+   * library is implicitly theirs and no add/remove/friend controls apply. Detected via plex.tv
+   * `GET /api/v2/user`, matched — in precedence order — by the caller's plex.tv NUMERIC id
+   * (fix/plex-numeric-id, the strongest), then their REAL Plex email/username (id_token claim /
+   * admin override), then their app email; degrades to `false` (the friend flow) if that lookup
+   * fails.
    */
   owner: boolean;
   /**
-   * false when the caller's email matches neither the server OWNER nor any Plex friend on the
-   * server account — e.g. a local Authentik account with no Plex identity (Q-06). Always true for
-   * the owner (owner takes precedence; the friend lookup is skipped).
+   * false when the caller matches neither the server OWNER nor any Plex friend on the server
+   * account — e.g. a local Authentik account with no Plex identity (Q-06). Matching resolves the
+   * caller's real Plex identity — plex.tv numeric id first (fix/plex-numeric-id), then email OR
+   * username — falling back to the app email. Always true for the owner (owner takes precedence;
+   * the friend lookup is skipped).
    */
   friendMatched: boolean;
   /**
@@ -86,7 +116,10 @@ export const plexRouter = router({
       groups.set(lib.serverSlug, g);
     }
 
-    const callerEmail = ctx.user.email.trim().toLowerCase();
+    const appEmail = ctx.user.email.trim().toLowerCase();
+    // fix/plex-identity-mapping — the caller's REAL Plex identity (id_token claim → admin override),
+    // NOT the OIDC email. Owner + friend matching resolve against it, falling back to the app email.
+    const identity = ctx.user.plexIdentity ?? EMPTY_PLEX_IDENTITY;
     const servers: MyServer[] = [];
     for (const [slug, group] of groups) {
       let available = true;
@@ -99,28 +132,57 @@ export const plexRouter = router({
         // ADR-029 — the server OWNER (the token account) is never in their own friend list, so
         // friend-matching can't match them. Detect the owner explicitly via plex.tv /api/v2/user;
         // if that lookup fails, degrade to the friend flow (today's behavior) rather than breaking
-        // the page.
-        let ownerEmail: string | null = null;
+        // the page. fix/plex-identity-mapping: match the owner account by the caller's real Plex
+        // identity — the owner's Authentik email (admin@haynesnetwork.com) differs from their
+        // plex.tv email (manofoz@gmail.com), so app-email matching missed them.
+        let ownerAccount: { id?: string; email: string | null; username: string | null } | null =
+          null;
         try {
-          ownerEmail = await read.getOwnerEmail();
+          ownerAccount = await read.getOwnerAccount();
         } catch {
-          ownerEmail = null;
+          ownerAccount = null;
         }
-        if (ownerEmail && ownerEmail === callerEmail) {
-          // The owner implicitly has every library — no friend/share lookup applies.
-          owner = true;
-        } else {
-          const friend = await read.findFriendByEmail(ctx.user.email);
-          if (!friend) {
-            friendMatched = false;
+
+        // fix/plex-numeric-id — ID PASS (strongest). The plex.tv NUMERIC user id is immutable and
+        // the one identity Authentik reliably holds for a source-linked account (the owner's token
+        // carries `plex_user_id` even though his plex_email/username are absent). Match the OWNER,
+        // then a FRIEND, by id. This wins over any conflicting email/username match. A present id
+        // that matches NOTHING here is treated as possibly-stale and falls through to the WEAK PASS
+        // below (email/username → app email) rather than locking the caller out.
+        let friend: Awaited<ReturnType<typeof read.findFriendByIdentity>> = null;
+        let idMatched = false;
+        const plexUserId = identity.userId;
+        if (plexUserId) {
+          if (ownerAccount?.id && ownerAccount.id === plexUserId) {
+            owner = true;
+            idMatched = true;
           } else {
-            const current = await read.findSharedServerForUser(friend.id);
-            if (current) {
-              // In the all-libraries state every library (incl. future ones) is shared; surface the
-              // live flag and treat every library as shared (ADR-024).
-              allActive = current.allLibraries;
-              for (const s of current.sections) if (s.shared) sharedKeys.add(s.key);
-            }
+            friend = await read.findFriendById(plexUserId);
+            if (friend) idMatched = true;
+          }
+        }
+
+        // WEAK PASS (#118 layers) — only when the id was absent or matched nothing: the resolved
+        // Plex email/username, then the app/OIDC email fallback.
+        if (!idMatched) {
+          if (ownerAccount && plexAccountMatchesCaller(ownerAccount, identity, appEmail)) {
+            owner = true;
+          } else {
+            friend = await read.findFriendByIdentity(identity, ctx.user.email);
+          }
+        }
+
+        if (owner) {
+          // The owner implicitly has every library — no friend/share lookup applies.
+        } else if (!friend) {
+          friendMatched = false;
+        } else {
+          const current = await read.findSharedServerForUser(friend.id);
+          if (current) {
+            // In the all-libraries state every library (incl. future ones) is shared; surface the
+            // live flag and treat every library as shared (ADR-024).
+            allActive = current.allLibraries;
+            for (const s of current.sections) if (s.shared) sharedKeys.add(s.key);
           }
         }
       } catch {

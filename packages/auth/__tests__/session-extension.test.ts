@@ -1,8 +1,16 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { account } from '@hnet/db';
 import { MESSAGE_ACTIONS, SEEDED_ROLE_IDS, TRASH_ACTIONS } from '@hnet/db/schema';
 import { assignRole, createRole, setRoleTrashActions, setSectionPermission } from '@hnet/domain';
 import { getSessionExtension } from '../src/index';
+import { OIDC_PROVIDER_ID } from '../src/env';
 import { bootMigratedDb, createUser, type TestDb } from './helpers';
+
+/** Build a JWT-shaped id_token whose payload carries `claims` (decode-only, no verification). */
+function idTokenWith(claims: Record<string, unknown>): string {
+  const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  return `${b64({ alg: 'RS256', typ: 'JWT' })}.${b64(claims)}.sig`;
+}
 
 describe('session extension (DESIGN-002 D-06 / DESIGN-003 D-01, ADR-012)', () => {
   let t: TestDb;
@@ -31,6 +39,8 @@ describe('session extension (DESIGN-002 D-06 / DESIGN-003 D-01, ADR-012)', () =>
         messageActions: [],
       },
       displayName: 'Owner Haynes',
+      // fix/plex-identity-mapping — no claim, no override ⇒ empty (matcher falls back to app email).
+      plexIdentity: { userId: null, email: null, username: null },
     });
   });
 
@@ -55,6 +65,7 @@ describe('session extension (DESIGN-002 D-06 / DESIGN-003 D-01, ADR-012)', () =>
         messageActions: [...MESSAGE_ACTIONS],
       },
       displayName: 'Admin Ada',
+      plexIdentity: { userId: null, email: null, username: null },
     });
   });
 
@@ -108,5 +119,81 @@ describe('session extension (DESIGN-002 D-06 / DESIGN-003 D-01, ADR-012)', () =>
 
   it('returns null (fail closed) for a missing user', async () => {
     expect(await getSessionExtension('00000000-0000-0000-0000-000000000000', t.db)).toBeNull();
+  });
+
+  // fix/plex-identity-mapping — the session carries the caller's REAL Plex identity, resolved
+  // claim → override → empty. This is what lets My Plex recognize the owner whose Authentik email
+  // (admin@haynesnetwork.com) differs from their plex.tv email (manofoz@gmail.com).
+  describe('plexIdentity hydration', () => {
+    it('resolves from the admin override columns when there is no linked account / claim', async () => {
+      const user = await createUser(t.db, {
+        displayName: 'Owner',
+        plexEmail: 'Manofoz@Gmail.com',
+        plexUsername: 'Manofoz',
+      });
+      const ext = await getSessionExtension(user.id, t.db);
+      expect(ext!.plexIdentity).toEqual({
+        userId: null,
+        email: 'manofoz@gmail.com',
+        username: 'manofoz',
+      });
+    });
+
+    it('resolves from the id_token plex_* claim, which wins over the override', async () => {
+      const user = await createUser(t.db, {
+        displayName: 'Owner Linked',
+        plexEmail: 'override@plex.tv',
+        plexUsername: 'overrideuser',
+      });
+      await t.db.insert(account).values({
+        userId: user.id,
+        providerId: OIDC_PROVIDER_ID,
+        accountId: `sub-${user.id}`,
+        idToken: idTokenWith({
+          sub: `sub-${user.id}`,
+          email: 'admin@haynesnetwork.com',
+          plex_email: 'manofoz@gmail.com',
+          plex_username: 'manofoz',
+        }),
+      });
+      const ext = await getSessionExtension(user.id, t.db);
+      expect(ext!.plexIdentity).toEqual({
+        userId: null,
+        email: 'manofoz@gmail.com',
+        username: 'manofoz',
+      });
+    });
+
+    // fix/plex-numeric-id — the RECOMMENDED automatic path: the id_token carries plex_user_id (the
+    // Authentik provider scope mapping reads it off the Plex source connection). This is exactly the
+    // owner's live shape — a numeric id, no plex_email/plex_username — and it must hydrate onto the
+    // session so My Plex recognizes him from the id alone.
+    it('hydrates the numeric userId from the plex_user_id claim (id-only, owner shape)', async () => {
+      const user = await createUser(t.db, { displayName: 'Owner By Id' });
+      await t.db.insert(account).values({
+        userId: user.id,
+        providerId: OIDC_PROVIDER_ID,
+        accountId: `sub-id-${user.id}`,
+        idToken: idTokenWith({
+          sub: `sub-id-${user.id}`,
+          email: 'admin@haynesnetwork.com',
+          plex_user_id: '12874060',
+        }),
+      });
+      const ext = await getSessionExtension(user.id, t.db);
+      expect(ext!.plexIdentity).toEqual({ userId: '12874060', email: null, username: null });
+    });
+
+    it('is empty for a linked account whose token carries no plex_* claim and no override', async () => {
+      const user = await createUser(t.db, { displayName: 'Plain Member' });
+      await t.db.insert(account).values({
+        userId: user.id,
+        providerId: OIDC_PROVIDER_ID,
+        accountId: `sub2-${user.id}`,
+        idToken: idTokenWith({ sub: `sub2-${user.id}`, email: 'member@example.test' }),
+      });
+      const ext = await getSessionExtension(user.id, t.db);
+      expect(ext!.plexIdentity).toEqual({ userId: null, email: null, username: null });
+    });
   });
 });

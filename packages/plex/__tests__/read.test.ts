@@ -91,6 +91,45 @@ describe('PlexReadClient — plex.tv sharing reads', () => {
     expect(await c.findFriendByEmail('nobody@example.com')).toBeNull();
   });
 
+  // fix/plex-identity-mapping — match by the caller's REAL Plex identity (email OR username),
+  // falling back to the app email. Covers accounts whose Authentik email differs from plex.tv.
+  it('findFriendByIdentity matches by plex username when the email differs (case-insensitive)', async () => {
+    const c = client(plexStub([usersRoute]));
+    const f = await c.findFriendByIdentity(
+      { email: 'not-in-list@example.com', username: 'ALICE' },
+      'also-not-in-list@example.com',
+    );
+    expect(f?.id).toBe('111');
+  });
+
+  it('findFriendByIdentity matches by plex email even when the app (fallback) email differs', async () => {
+    const c = client(plexStub([usersRoute]));
+    const f = await c.findFriendByIdentity(
+      { email: 'bob@example.com', username: null },
+      'authentik-only@haynesnetwork.com',
+    );
+    expect(f?.id).toBe('222');
+  });
+
+  it('findFriendByIdentity falls back to the app email when the identity is empty', async () => {
+    const c = client(plexStub([usersRoute]));
+    expect(
+      (await c.findFriendByIdentity({ email: null, username: null }, 'Alice@Example.com'))?.id,
+    ).toBe('111');
+    expect(
+      await c.findFriendByIdentity({ email: null, username: null }, 'nobody@example.com'),
+    ).toBeNull();
+  });
+
+  // fix/plex-numeric-id — exact match on the friend's plex.tv numeric id (the strongest signal).
+  it('findFriendById matches a friend by their plex.tv numeric id (exact string)', async () => {
+    const c = client(plexStub([usersRoute]));
+    expect((await c.findFriendById('222'))?.email).toBe('bob@example.com');
+    expect((await c.findFriendById(' 111 '))?.id).toBe('111'); // trimmed
+    expect(await c.findFriendById('999')).toBeNull(); // no such id
+    expect(await c.findFriendById('  ')).toBeNull(); // blank → null (no list fetch needed)
+  });
+
   it('listServerSections maps section key → plex.tv id', async () => {
     const sections = await client(plexStub([serverRoute])).listServerSections();
     const byKey = new Map(sections.map((s) => [s.key, s.id]));

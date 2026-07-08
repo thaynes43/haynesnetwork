@@ -107,6 +107,47 @@ Local dev / e2e need no provider change: they run the stub OIDC, whose discovery
 - Re-PATCH `redirect_uris` with only the original four `authorization` entries to drop the two
   `logout` URIs.
 
+## `plex_user_id` scope mapping — My Plex numeric-id recognition (fix/plex-numeric-id) — added 2026-07-07
+
+My Plex must recognize the owner/friend by their **plex.tv numeric user id** — the one identity
+Authentik reliably holds for a source-linked account (the owner's Authentik user carries email
+`admin@haynesnetwork.com`, not his plex.tv email; his Plex source connection stores
+`identifier: 12874060`). A provider **scope property mapping** now emits that id as the `plex_user_id`
+claim so the app can match on it (strongest signal, immutable). Applied live to provider 109 on
+Authentik 2026.5.3.
+
+- **Mapping** (`propertymappings/provider/scope/`, pk `f3cba182-4f38-4fda-a8f1-9d5172ad2c97`):
+  name `haynesnetwork OIDC: plex_user_id (Plex source numeric id)`, `scope_name: profile` (rides the
+  `profile` scope the app already requests — no app scope change), expression:
+
+  ```python
+  from authentik.sources.plex.models import UserPlexSourceConnection
+  connection = UserPlexSourceConnection.objects.filter(user=user).first()
+  if not connection or not connection.identifier:
+      return {}
+  return {"plex_user_id": connection.identifier}
+  ```
+
+  Note the model is `UserPlexSourceConnection` (verified by module introspection in the test console
+  — the `#118` recommendation's `PlexSourceConnection` does not exist in 2026.5). No connection ⇒ the
+  claim is omitted (harmless: a form-login user simply gets no claim). The provider has
+  `include_claims_in_id_token: true`, so the claim lands in the **id_token** (what Better Auth decodes).
+
+- **Attached** to provider 109 by appending the pk to `property_mappings` (PATCH; the field is
+  replaced wholesale — the full 4-pk list was sent). The before/after provider JSON was captured
+  out-of-band for rollback but is **not committed** (the provider GET carries `client_secret`); the
+  rollback below is self-contained (the three original pks are listed inline).
+
+- **Verified** via the mapping **test console** (`POST propertymappings/all/<pk>/test/`
+  `{"user": <pk>}`): user `thaynes` (pk 10) → `{"plex_user_id": "12874060"}` (`successful: true`);
+  a user with no Plex connection → `{}` (claim omitted). The owner's next Plex re-login will carry
+  the claim → My Plex shows owner state with no admin override needed.
+
+- **Rollback**: `PATCH providers/oauth2/109/` with `property_mappings` set back to the original three
+  (`f8cbc5a4-…`, `57fbe55d-…`, `6c130fb7-…`), then `DELETE propertymappings/provider/scope/f3cba182-4f38-4fda-a8f1-9d5172ad2c97/`.
+  App-side matching degrades safely without the claim (the `#118` email/username layers + app-email
+  fallback still apply).
+
 ## Follow-ons
 
 - Redirect URIs already include the staging + production hosts, so no Authentik change is

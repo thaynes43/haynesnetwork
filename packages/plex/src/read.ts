@@ -126,12 +126,54 @@ export class PlexReadClient {
     );
   }
 
+  /**
+   * fix/plex-numeric-id — resolve an app user to their Plex friend account by the plex.tv NUMERIC
+   * user id (the friend list's `<User id=…>`). The id is immutable and the one identity Authentik
+   * reliably surfaces for a source-linked account, so callers try this BEFORE email/username
+   * matching. Exact string match (both sides are the plex.tv id as a string); blank id → null.
+   */
+  async findFriendById(plexUserId: string): Promise<PlexFriend | null> {
+    const needle = plexUserId.trim();
+    if (!needle) return null;
+    const friends = await this.listFriends();
+    return friends.find((f) => f.id === needle) ?? null;
+  }
+
   /** Case-insensitive email match against the friend list (ADR-017 D-01 user→account map). */
   async findFriendByEmail(email: string): Promise<PlexFriend | null> {
     const needle = email.trim().toLowerCase();
     if (!needle) return null;
     const friends = await this.listFriends();
     return friends.find((f) => (f.email ?? '').toLowerCase() === needle) ?? null;
+  }
+
+  /**
+   * fix/plex-identity-mapping — resolve an app user to their Plex friend account by the caller's
+   * REAL Plex identity (email OR username, case-insensitive), falling back to their app/OIDC email.
+   * The OIDC id_token carries the Authentik email, which for a linked pre-existing account need NOT
+   * equal the plex.tv email/username; email-only matching (findFriendByEmail) therefore misses such
+   * users. The username arm covers accounts whose plex.tv email is private/absent but whose
+   * username is known. Returns the first matching friend, or null.
+   */
+  async findFriendByIdentity(
+    identity: { email: string | null; username: string | null },
+    fallbackEmail: string,
+  ): Promise<PlexFriend | null> {
+    const emails = new Set(
+      [identity.email, fallbackEmail]
+        .map((e) => (e ?? '').trim().toLowerCase())
+        .filter((e): e is string => e.length > 0),
+    );
+    const username = (identity.username ?? '').trim().toLowerCase();
+    if (emails.size === 0 && !username) return null;
+    const friends = await this.listFriends();
+    return (
+      friends.find((f) => {
+        const fe = (f.email ?? '').trim().toLowerCase();
+        const fu = (f.username ?? '').trim().toLowerCase();
+        return (fe !== '' && emails.has(fe)) || (username !== '' && fu === username);
+      }) ?? null
+    );
   }
 
   /**

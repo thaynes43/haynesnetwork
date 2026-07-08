@@ -1,5 +1,6 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import {
+  account,
   db,
   roleMessageActionGrants,
   roleSectionPermissions,
@@ -17,6 +18,8 @@ import {
   type SectionPermissionLevel,
   type TrashAction,
 } from '@hnet/db';
+import { OIDC_PROVIDER_ID } from '../env';
+import { resolvePlexIdentity, type PlexIdentity } from './plex-identity';
 
 /** The role summary carried on the session (ADR-012 — one role per user). */
 export interface SessionRole {
@@ -52,6 +55,15 @@ export interface SessionRole {
 export interface SessionExtension {
   role: SessionRole;
   displayName: string;
+  /**
+   * fix/plex-identity-mapping — the caller's resolved REAL Plex identity, NOT the OIDC email.
+   * Sourced from the id_token claims (Authentik provider scope mappings): fix/plex-numeric-id adds
+   * `plex_user_id` (the plex.tv numeric id — the strongest, matched first), alongside `plex_email`/
+   * `plex_username` with the admin-set users.plex_email/plex_username override as fallback. Empty
+   * fields ⇒ the My Plex matcher falls back to the app email. Carried on the session so
+   * plex.myLibraries needs no extra query.
+   */
+  plexIdentity: PlexIdentity;
 }
 
 /**
@@ -69,11 +81,27 @@ export async function getSessionExtension(
       displayName: users.displayName,
       roleName: roles.name,
       isAdmin: roles.isAdmin,
+      // fix/plex-identity-mapping — the admin-set Plex identity override (fallback for the claim).
+      plexEmail: users.plexEmail,
+      plexUsername: users.plexUsername,
     })
     .from(users)
     .innerJoin(roles, eq(roles.id, users.roleId))
     .where(eq(users.id, userId));
   if (!row) return null;
+  // fix/plex-identity-mapping — the OIDC id_token carries the Plex source claims; read the latest
+  // token from the linked Authentik account (Better Auth refreshes it each sign-in). One small
+  // extra query, mirroring the role join. Decoded (not re-verified) for an identity hint only.
+  const [acct] = await q
+    .select({ idToken: account.idToken })
+    .from(account)
+    .where(and(eq(account.userId, userId), eq(account.providerId, OIDC_PROVIDER_ID)))
+    .limit(1);
+  const plexIdentity = resolvePlexIdentity({
+    idToken: acct?.idToken ?? null,
+    overrideEmail: row.plexEmail,
+    overrideUsername: row.plexUsername,
+  });
   // ADR-021 C-01/C-03 — resolve the full section-level map: admin ⇒ 'edit' everywhere (no
   // rows), otherwise the role's stored rows with each missing section falling back to its
   // documented default. One small extra query, mirroring the role join above.
@@ -128,5 +156,6 @@ export async function getSessionExtension(
       messageActions,
     },
     displayName: row.displayName,
+    plexIdentity,
   };
 }

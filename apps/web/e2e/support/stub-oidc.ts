@@ -45,6 +45,21 @@ export interface StubUser {
   /** Maps to users.display_name via @hnet/auth mapProfileToUser. */
   name: string;
   preferred_username: string;
+  /**
+   * fix/plex-identity-mapping — optional Plex source claims. When set, the token endpoint emits
+   * them in the id_token so @hnet/auth's resolvePlexIdentity surfaces the REAL Plex identity onto
+   * the session (the owner's Authentik email differs from their plex.tv email). Absent for the
+   * default personas — their My Plex behavior is unchanged (fallback to the app email).
+   */
+  plex_email?: string;
+  plex_username?: string;
+  /**
+   * fix/plex-numeric-id — the plex.tv NUMERIC user id claim (an Authentik provider scope mapping
+   * reads it off the Plex source connection). The strongest, immutable identity and the ONE the
+   * owner's token reliably carries; the matcher checks it first. When it alone is set (no plex_email
+   * / plex_username), owner/friend recognition must fire from the id alone.
+   */
+  plex_user_id?: string;
 }
 
 export const STUB_CLIENT_ID = 'hnet-e2e-client';
@@ -74,6 +89,33 @@ export const STUB_USERS = {
     email: 'fresh-member@example.test',
     name: 'Fred Freshman',
     preferred_username: 'fresh-member',
+  },
+  /**
+   * fix/plex-identity-mapping — a pre-existing Authentik account LINKED to the Plex source: its app
+   * (OIDC) email is `linked-owner@example.test`, but the id_token carries a `plex_email` claim equal
+   * to the stub server OWNER email (STUB_PLEX_OWNER.email). Email-matching on the app email misses
+   * the owner; the claim lets My Plex recognize them. Default role (has libraries → a server group).
+   */
+  'plex-linked-owner': {
+    sub: 'stub-plex-linked-owner',
+    email: 'linked-owner@example.test',
+    name: 'Linked Owner',
+    preferred_username: 'linked-owner',
+    plex_email: 'plex-owner@example.test',
+    plex_username: 'plexowner',
+  },
+  /**
+   * fix/plex-numeric-id — the RECOMMENDED automatic path (the owner's real shape). This persona's
+   * app email (linked-owner-id@example.test) matches nothing on Plex, and it carries NO
+   * plex_email/plex_username — ONLY plex_user_id, equal to the stub server OWNER id
+   * (STUB_PLEX_OWNER.id = '12874060'). Owner recognition must fire from the numeric id alone.
+   */
+  'plex-linked-owner-id': {
+    sub: 'stub-plex-linked-owner-id',
+    email: 'linked-owner-id@example.test',
+    name: 'Linked Owner By Id',
+    preferred_username: 'linked-owner-id',
+    plex_user_id: '12874060',
   },
 } as const satisfies Record<string, StubUser>;
 
@@ -118,6 +160,11 @@ export async function startStubOidc(): Promise<StubOidcServer> {
       email_verified: true,
       name: user.name,
       preferred_username: user.preferred_username,
+      // fix/plex-identity-mapping — only present when the persona carries them (Authentik source map).
+      ...(user.plex_email ? { plex_email: user.plex_email } : {}),
+      ...(user.plex_username ? { plex_username: user.plex_username } : {}),
+      // fix/plex-numeric-id — the plex.tv numeric id claim (Authentik provider scope mapping).
+      ...(user.plex_user_id ? { plex_user_id: user.plex_user_id } : {}),
     };
   }
 

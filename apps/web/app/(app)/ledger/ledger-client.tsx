@@ -28,6 +28,15 @@
 // reflow; a filter/sort refetch keeps the previous rows rendered (dimmed); the table scrolls
 // BOTH axes inside .ledger-tablewrap (sticky header + sticky select/Title columns — the page
 // body never scrolls horizontally).
+//
+// Portrait mobile (owner report 2026-07-07 — the 13-column sheet was a sideways-panning wall):
+// below 640px the wrap hides the <table> and shows .ledger-cards — the SAME items rendered as
+// condensed stacked cards (title+year+kind on line 1, monitored/on-disk/size/resolution/rating
+// on line 2, requester+added muted on line 3). Both renderings live in the ONE .ledger-tablewrap
+// scroller so selection state, the refetch dim, and the keyset infinite-scroll sentinel are
+// shared verbatim — only the CSS breakpoint swaps which one is painted. The card carries its own
+// edge checkbox (a sibling of the body Link, so a tap selects without navigating); tapping the
+// body opens the item page. Selecting re-tints the card, never reflows it (ADR-015).
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
@@ -42,6 +51,7 @@ import {
 } from '@hnet/ui';
 import { trpc } from '@/lib/trpc-client';
 import {
+  ARR_KIND_LABELS,
   RESOLUTION_LABELS,
   formatBytes,
   formatDay,
@@ -494,6 +504,9 @@ function LedgerBrowser({
 
   const colCount = cols.length;
   const target = ARR_TARGET_LABELS[arrKind];
+  // The portrait-card kind badge (Movie / TV / Music) — the tab context is lost once a row is a
+  // detached card, so each card re-states its kind.
+  const kindLabel = ARR_KIND_LABELS[arrKind];
 
   return (
     <>
@@ -793,6 +806,119 @@ function LedgerBrowser({
             </tbody>
           )}
         </table>
+
+        {/* Portrait mobile (<640px): the SAME items as condensed stacked cards. Lives in the one
+            .ledger-tablewrap scroller with the table (CSS swaps which is painted), so selection,
+            the refetch dim, and the infinite-scroll sentinel below are shared. */}
+        <ul className="ledger-cards" data-testid="ledger-cards" aria-busy={refreshing}>
+          {browse.isLoading ? (
+            // Skeleton cards hold the list geometry on mobile — never a collapsing spinner.
+            Array.from({ length: 5 }, (_, i) => (
+              <li key={i} className="ledger-card ledger-card--skeleton" aria-hidden="true">
+                <span className="skeleton-line" />
+                <span className="skeleton-line skeleton-line--short" />
+                <span className="skeleton-line skeleton-line--short" />
+              </li>
+            ))
+          ) : browse.error ? (
+            <li className="ledger-cards__state">
+              <p className="alert" role="alert">
+                Failed to load the ledger: {browse.error.message}
+              </p>
+            </li>
+          ) : items.length === 0 ? (
+            <li className="ledger-cards__state muted" data-testid="ledger-cards-empty">
+              Nothing matches — loosen the filters (the Ledger holds everything that ever was on the
+              server, removed items included).
+            </li>
+          ) : (
+            items.map((item) => {
+              const rating = formatRating(
+                ratingOrNull(item.metadata.imdbRating) ?? ratingOrNull(item.metadata.tmdbRating),
+              );
+              const disk =
+                item.expectedFileCount > 0
+                  ? `${item.onDiskFileCount}/${item.expectedFileCount}`
+                  : String(item.onDiskFileCount);
+              const resLabel =
+                item.metadata.resolution !== null && item.metadata.resolution !== ''
+                  ? (RESOLUTION_LABELS[item.metadata.resolution] ?? item.metadata.resolution)
+                  : null;
+              const requesters = item.metadata.requesters;
+              const isSelected = selected.has(item.id);
+              return (
+                <li key={item.id} className="ledger-cardrow">
+                  <div
+                    className={`ledger-card${isSelected ? ' is-selected' : ''}`}
+                    data-testid="ledger-card"
+                  >
+                    {canEdit ? (
+                      // Edge tap target — a SIBLING of the body Link, so a tap selects without
+                      // navigating (no nested interactive).
+                      <label className="ledger-card__check">
+                        <input
+                          type="checkbox"
+                          className="ledger-check"
+                          aria-label={`Select ${item.title}`}
+                          checked={isSelected}
+                          onChange={() => toggleRow(item.id)}
+                        />
+                      </label>
+                    ) : null}
+                    <Link
+                      href={`/library/${item.id}`}
+                      className="ledger-card__body"
+                      data-testid="ledger-card-link"
+                    >
+                      <span className="ledger-card__l1">
+                        <span className="ledger-card__title">{item.title}</span>
+                        {item.year !== null ? (
+                          <span className="ledger-card__year">({item.year})</span>
+                        ) : null}
+                        <span className="badge badge--muted ledger-card__kind">{kindLabel}</span>
+                        {item.tombstonedAt !== null ? (
+                          <span className="badge badge--danger ledger-card__removed">Removed</span>
+                        ) : null}
+                      </span>
+                      <span className="ledger-card__l2">
+                        {/* Monitored is the norm → the green ✓ carries it (matches the sheet's
+                            Monitored column); the noteworthy exception gets a full muted word. */}
+                        {item.monitored ? (
+                          <span
+                            className="ledger-card__fact ledger-yes"
+                            title="Monitored"
+                            aria-label="Monitored"
+                          >
+                            ✓
+                          </span>
+                        ) : (
+                          <span className="ledger-card__fact muted" title="Not monitored">
+                            Unmonitored
+                          </span>
+                        )}
+                        <span className="ledger-card__fact">{disk} files</span>
+                        {item.sizeOnDisk > 0 ? (
+                          <span className="ledger-card__fact">{formatBytes(item.sizeOnDisk)}</span>
+                        ) : null}
+                        {resLabel !== null ? (
+                          <span className="ledger-card__fact">{resLabel}</span>
+                        ) : null}
+                        {rating !== null ? (
+                          <span className="ledger-card__fact">★ {rating}</span>
+                        ) : null}
+                      </span>
+                      <span className="ledger-card__l3 muted">
+                        {requesters.length > 0 ? `${requesters.join(', ')} · ` : ''}Added{' '}
+                        {formatDay(item.metadata.addedAt ?? item.addedAt)}
+                      </span>
+                    </Link>
+                  </div>
+                </li>
+              );
+            })
+          )}
+        </ul>
+
         {browse.hasNextPage === true ? (
           <div className="load-more" ref={sentinelRef}>
             <button

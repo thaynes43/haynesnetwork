@@ -4,7 +4,7 @@
 import { z } from 'zod';
 import { asc, eq } from 'drizzle-orm';
 import { roles, users } from '@hnet/db';
-import { assignRole } from '@hnet/domain';
+import { assignRole, setUserPlexIdentity } from '@hnet/domain';
 import { mapDomainErrors, router } from '../trpc';
 import { adminProcedure } from '../middleware/role';
 
@@ -24,6 +24,9 @@ export const usersRouter = router({
         roleId: users.roleId,
         roleName: roles.name,
         roleIsAdmin: roles.isAdmin,
+        // fix/plex-identity-mapping — the admin-set Plex identity override (My Plex matching).
+        plexEmail: users.plexEmail,
+        plexUsername: users.plexUsername,
       })
       .from(users)
       .innerJoin(roles, eq(roles.id, users.roleId))
@@ -35,8 +38,41 @@ export const usersRouter = router({
       email: row.email,
       createdAt: row.createdAt.toISOString(), // D-03: ISO-8601 strings on the wire
       role: { id: row.roleId, name: row.roleName, isAdmin: row.roleIsAdmin },
+      plexEmail: row.plexEmail,
+      plexUsername: row.plexUsername,
     }));
   }),
+
+  /**
+   * fix/plex-identity-mapping — set (or clear) a user's Plex identity OVERRIDE. This is the
+   * fallback the My Plex matcher uses when the OIDC id_token carries no plex_email/plex_username
+   * claim: the owner's Authentik email (admin@haynesnetwork.com) differs from their plex.tv email
+   * (manofoz@gmail.com), so email-matching missed them. Values are normalized (trim + lowercase);
+   * a blank field clears it (→ NULL). Not a role/permission mutation (no audit row) — it is an
+   * identity hint for display, never an access grant.
+   */
+  setPlexIdentity: adminProcedure
+    .input(
+      z.object({
+        userId: z.uuid(),
+        // Accept a loose email-ish string; the matcher is case-insensitive and the value is a hint.
+        // Normalization (trim + lowercase, blank → null) is owned by the domain single-writer.
+        plexEmail: z.string().max(320).nullable(),
+        plexUsername: z.string().max(320).nullable(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      // The single-writer guard requires the users write to live in @hnet/domain (unknown user
+      // → NotFoundError → NOT_FOUND via mapDomainErrors).
+      return mapDomainErrors(() =>
+        setUserPlexIdentity({
+          db: ctx.db,
+          userId: input.userId,
+          plexEmail: input.plexEmail,
+          plexUsername: input.plexUsername,
+        }),
+      );
+    }),
 
   /**
    * Assign a user to a role (ADR-012). Idempotent (already in the role → no-op, no audit).
