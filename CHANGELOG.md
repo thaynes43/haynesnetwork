@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.1](https://github.com/thaynes43/haynesnetwork/compare/v0.20.0...v0.20.1) (2026-07-08)
+
+
+### Bug Fixes
+
+* global Save implies Leaving-Soon rescue (UI + server); roles table inline action badges ([#122](https://github.com/thaynes43/haynesnetwork/issues/122)) ([620ee6c](https://github.com/thaynes43/haynesnetwork/commit/620ee6cf0458eb5191e36de78155f6bf842439bd))
+
 ## [0.20.0](https://github.com/thaynes43/haynesnetwork/compare/v0.19.0...v0.20.0) (2026-07-08)
 
 
