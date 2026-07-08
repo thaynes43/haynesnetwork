@@ -31,10 +31,17 @@
 //   in place; a shield tap swaps the corner glyph and deepens color — tiles never move.
 // - ADR-032 (2026-07-07): the RULES tab and the Trash-settings card are settings, not
 //   user-facing surfaces — they moved to /settings/trash (reached from the user menu,
-//   trash-Edit gated). /trash keeps Movies · TV · Batches · Recently Deleted · Activity.
+//   trash-Edit gated).
+// - ADR-033 (2026-07-07): the "Batches" tab is FOLDED into the per-kind tabs — one open batch
+//   per kind is the invariant, so a batch is a property of Movies/TV, not a separate collection.
+//   /trash keeps Movies · TV · Recently Deleted · Activity; each kind tab is one state-aware
+//   surface (no batch ⇒ this pending wall; admin_review/leaving_soon ⇒ the batch lifecycle;
+//   terminal ⇒ back to the wall + a Past-batches strip). See kind-tab.tsx. Owner refinement: the
+//   wall is a fast tap-toggle (poster flips trash⇄shield), /library nav is a corner icon, and
+//   per-item expedite moved to the item page — the wall keeps only bulk "Expedite all…".
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FilterChip,
   ConfirmButton,
@@ -50,13 +57,13 @@ import { Modal } from '@/components/modal';
 import { MediaPoster } from '@/components/media-poster';
 import { CHIP_LABELS, RatingChip } from '@/components/filter-chips';
 import {
-  ShieldCheckGlyph,
-  ShieldGlyph,
-  TrashCanGlyph,
+  LibraryCornerLink,
+  WallGlyphSvg,
   type TrashAccess,
 } from '@/components/trash-shield';
 import { SafetyBanner, type SafetyStatus } from '@/components/trash-safety';
-import { BatchesTab } from './batches-tab';
+import { ExpediteReport, type ExpediteOutcome } from '@/components/trash-expedite';
+import { KindTab } from './kind-tab';
 import {
   RESOLUTION_LABELS,
   formatBytes,
@@ -71,27 +78,28 @@ import {
   daysUntil,
   expediteErrorAction,
   partitionForExpedite,
-  pendingShieldGlyph,
-  pendingShieldTappable,
-  previewGuardian,
+  pendingWallGlyph,
+  pendingWallTappable,
   reclaimLabel,
-  type PendingShieldGlyph,
+  type PendingWallGlyph,
 } from '@/lib/trash';
 
 export type { TrashAccess };
 
-// ADR-032 — Rules is no longer a Trash tab: rule management is a SETTING and lives on
-// /settings/trash. The remaining five are the user-facing deletion surfaces.
+// ADR-032 — Rules is a SETTING now (/settings/trash). ADR-033 — "Batches" is folded into the
+// per-kind tabs (a batch is a property of Movies/TV). These four are the user-facing surfaces.
 const TRASH_TABS = [
   { key: 'movies', label: 'Movies' },
   { key: 'tv', label: 'TV' },
-  { key: 'batches', label: 'Batches' },
   { key: 'deleted', label: 'Recently Deleted' },
   { key: 'activity', label: 'Activity' },
 ] as const;
 type TabKey = (typeof TRASH_TABS)[number]['key'];
 
 function resolveTab(raw: string | null): TabKey {
+  // ADR-033 — old `?tab=batches` deep links fold into the per-kind tab (Movies unless the old
+  // `?kind=tv` rode along — handled by the redirect effect below).
+  if (raw === 'batches') return 'movies';
   return TRASH_TABS.some((t) => t.key === raw) ? (raw as TabKey) : 'movies';
 }
 
@@ -206,7 +214,7 @@ function compareItems(
 /** The tile tooltip — the detail the table's columns carried (scheduled date + days-left,
  *  protection reason, guardian facts, requesters, source rule), phone-first: title-attr on the
  *  poster; the full history lives one tap away on /library/[id]. */
-function tileInfo(item: PendingItem, glyph: PendingShieldGlyph): string {
+function tileInfo(item: PendingItem, glyph: PendingWallGlyph): string {
   const lines: string[] = [
     item.scheduledDeleteAt !== null
       ? `Deletes ${formatDay(item.scheduledDeleteAt)} (${daysLeftLabel(daysUntil(item.scheduledDeleteAt))})`
@@ -230,14 +238,9 @@ function tileInfo(item: PendingItem, glyph: PendingShieldGlyph): string {
   return lines.join('\n');
 }
 
-type ExpediteTarget = { scope: 'all' } | { scope: 'item'; item: PendingItem };
-interface ExpediteOutcome {
-  protectedCount: number;
-  expeditedCount: number;
-  skippedCount: number;
-  /** F2 — scope 'all': snapshot ids that were no longer pending at run time. 0 for scope 'item'. */
-  stalePending: number;
-}
+// Per-item expedite moved to the item page (owner refinement 2026-07-07); the wall keeps only the
+// bulk "Expedite all…". ExpediteOutcome is the shared partition shape (trash-expedite.tsx).
+type ExpediteTarget = { scope: 'all' };
 
 function PendingTab({
   media,
@@ -259,8 +262,8 @@ function PendingTab({
   const reachable = status?.reachable === true;
   const canSave = access.actions.includes('save_exclude') && reachable;
   const canUnsave = access.actions.includes('remove_exclude') && reachable;
-  const canExpediteItem = access.actions.includes('expedite_item');
   const canExpediteAll = access.actions.includes('expedite_all');
+  const fromKey = media === 'movie' ? 'trash-movies' : 'trash-tv';
 
   // ── URL → state (same param contract as /library and /ledger) ──
   const qParam = searchParams.get('q') ?? '';
@@ -353,16 +356,16 @@ function PendingTab({
 
   const filteredBytes = items.reduce((sum, i) => sum + i.sizeBytes, 0);
 
-  // ── save / un-save (same wire calls as the old table; the flip is now OPTIMISTIC like the
-  //    Batches wall: the corner glyph swaps immediately, reconciles with the response, and
-  //    reverts on error — one flip in flight per tile, no queued double-toggles) ──
+  // ── save / un-save (same wire calls; the whole poster is now the OPTIMISTIC tap-toggle like the
+  //    batch wall — owner refinement 2026-07-07: the overlay glyph swaps immediately (trash⇄shield),
+  //    reconciles with the response, reverts on error; one flip in flight per tile) ──
   const [rowError, setRowError] = useState<string | null>(null);
   const save = trpc.trash.saveExclusion.useMutation();
   const unsave = trpc.trash.removeExclusion.useMutation();
-  const toggleShield = (item: PendingItem, glyph: PendingShieldGlyph) => {
+  const toggleShield = (item: PendingItem, glyph: PendingWallGlyph) => {
     const id = item.maintainerrMediaId;
     if (id === null || shieldBusy.has(id)) return;
-    const saving = glyph === 'outline';
+    const saving = glyph === 'trash';
     const prev = shieldOverrides.get(id);
     setShieldOverrides((m) => new Map(m).set(id, saving ? 'saved' : 'unsaved'));
     setShieldBusy((s) => new Set(s).add(id));
@@ -414,15 +417,11 @@ function PendingTab({
     setStale(action.stale);
     setModalError(action.message);
   };
-  const expediteItem = trpc.trash.expediteItem.useMutation({
-    onError: onExpediteError,
-    onSuccess: afterExpedite,
-  });
   const expediteAll = trpc.trash.expediteAll.useMutation({
     onError: onExpediteError,
     onSuccess: afterExpedite,
   });
-  const expediteBusy = expediteItem.isPending || expediteAll.isPending;
+  const expediteBusy = expediteAll.isPending;
 
   const openExpedite = (target: ExpediteTarget) => {
     setOutcome(null);
@@ -606,37 +605,37 @@ function PendingTab({
               item.maintainerrMediaId === null
                 ? undefined
                 : shieldOverrides.get(item.maintainerrMediaId);
-            const glyph = pendingShieldGlyph(item, override);
-            const tappable = pendingShieldTappable(glyph, canSave, canUnsave);
+            const glyph = pendingWallGlyph(item, override);
+            const tappable =
+              item.maintainerrMediaId !== null &&
+              pendingWallTappable(glyph, canSave, canUnsave);
             const tileKey = `${item.collectionId}:${item.maintainerrMediaId ?? item.title}`;
             const info = tileInfo(item, glyph);
             const titleYear = `${item.title}${item.year !== null ? ` (${item.year})` : ''}`;
-            const shieldLabel =
-              glyph === 'check'
-                ? `${item.title} is protected from deletion`
-                : glyph === 'shield'
-                  ? tappable
-                    ? `Un-save ${item.title} — remove its deletion protection`
-                    : `${item.title} is saved — protected from deletion`
-                  : `Save ${item.title} — protect it from deletion`;
-            const expediteLabel = safe
-              ? `Expedite the deletion of ${item.title}`
-              : `Expedite ${item.title} — disabled while Maintainerr is not in a safe state (see the banner)`;
-            const shieldInner = (
-              <span key={glyph} className="pwall-glyphpop">
-                {glyph === 'check' ? (
-                  <ShieldCheckGlyph />
-                ) : (
-                  <ShieldGlyph filled={glyph === 'shield'} />
-                )}
-              </span>
-            );
-            const poster = (
-              <MediaPoster
-                posterUrl={item.posterUrl}
-                kind={media === 'movie' ? 'radarr' : 'sonarr'}
-                alt=""
-              />
+            // The whole poster is the tap-toggle (owner refinement): trash ⇄ shield.
+            const toggleLabel =
+              glyph === 'shield'
+                ? tappable
+                  ? `Un-save ${item.title} — remove its deletion protection`
+                  : `${item.title} is saved — protected from deletion`
+                : glyph === 'check'
+                  ? `${item.title} is protected from deletion`
+                  : glyph === 'eye'
+                    ? `${item.title} was watched recently — the guardian keeps it`
+                    : tappable
+                      ? `${item.title} is slated to delete — tap to save it`
+                      : `${item.title} is slated to delete`;
+            const inner = (
+              <>
+                <MediaPoster
+                  posterUrl={item.posterUrl}
+                  kind={media === 'movie' ? 'radarr' : 'sonarr'}
+                  alt=""
+                />
+                <span key={glyph} className="bwall-overlay" data-glyph={glyph} aria-hidden="true">
+                  <WallGlyphSvg glyph={glyph} />
+                </span>
+              </>
             );
             return (
               <li
@@ -645,71 +644,43 @@ function PendingTab({
                 data-glyph={glyph}
                 data-testid="trash-tile"
               >
-                {item.mediaItemId !== null ? (
-                  <Link
-                    href={`/library/${item.mediaItemId}`}
+                {tappable ? (
+                  <button
+                    type="button"
                     className="bwall-tap"
-                    data-testid="trash-tile-poster"
+                    data-testid="trash-toggle"
+                    aria-pressed={glyph === 'shield'}
+                    aria-label={toggleLabel}
                     title={info}
-                    aria-label={`${titleYear} — open its library page`}
+                    aria-busy={
+                      (item.maintainerrMediaId !== null &&
+                        shieldBusy.has(item.maintainerrMediaId)) ||
+                      undefined
+                    }
+                    onClick={() => toggleShield(item, glyph)}
                   >
-                    {poster}
-                  </Link>
+                    {inner}
+                  </button>
                 ) : (
                   <span
                     className="bwall-tap"
-                    data-testid="trash-tile-poster"
+                    data-testid="trash-toggle"
+                    data-inert="true"
                     role="img"
+                    aria-label={toggleLabel}
                     title={info}
-                    aria-label={`${titleYear} — not in the ledger`}
                   >
-                    {poster}
+                    {inner}
                   </span>
                 )}
-                {/* Shield corner — check (protected elsewhere, inert) / filled (saved by you,
-                    tap ⇒ un-save) / outline (tap ⇒ save). State always READS even when the
-                    viewer can't act (a span, not a button). */}
-                {item.maintainerrMediaId !== null && (glyph !== 'outline' || canSave) ? (
-                  tappable ? (
-                    <button
-                      type="button"
-                      className="pwall-corner pwall-shield"
-                      data-glyph={glyph}
-                      data-testid="trash-shield"
-                      aria-pressed={glyph !== 'outline'}
-                      aria-label={shieldLabel}
-                      title={shieldLabel}
-                      aria-busy={shieldBusy.has(item.maintainerrMediaId) || undefined}
-                      onClick={() => toggleShield(item, glyph)}
-                    >
-                      {shieldInner}
-                    </button>
-                  ) : (
-                    <span
-                      className="pwall-corner pwall-shield"
-                      data-glyph={glyph}
-                      data-testid="trash-shield"
-                      role="img"
-                      aria-label={shieldLabel}
-                      title={shieldLabel}
-                    >
-                      {shieldInner}
-                    </span>
-                  )
-                ) : null}
-                {/* Trash-can corner — expedite: only ever OPENS the ADR-014 confirm Modal. */}
-                {canExpediteItem && item.maintainerrMediaId !== null ? (
-                  <button
-                    type="button"
-                    className="pwall-corner pwall-expedite"
-                    data-testid="trash-expedite-item"
-                    aria-label={expediteLabel}
-                    title={expediteLabel}
-                    disabled={!safe}
-                    onClick={() => openExpedite({ scope: 'item', item })}
-                  >
-                    <TrashCanGlyph />
-                  </button>
+                {/* The /library nav corner — distinct from the poster toggle (owner refinement),
+                    carrying the ?from context so the item page returns here (Part 2). */}
+                {item.mediaItemId !== null ? (
+                  <LibraryCornerLink
+                    href={`/library/${item.mediaItemId}?from=${fromKey}`}
+                    title={`Open ${titleYear} — history and fixes`}
+                    ariaLabel={`Open ${titleYear} — its library page`}
+                  />
                 ) : null}
                 <span className="bwall-caption">
                   {item.title}
@@ -753,20 +724,6 @@ function PendingTab({
           </div>
         ) : outcome !== null ? (
           <ExpediteReport outcome={outcome} onClose={closeExpedite} />
-        ) : expedite.scope === 'item' ? (
-          <ExpediteItemConfirm
-            item={expedite.item}
-            busy={expediteBusy}
-            onCancel={closeExpedite}
-            onConfirm={() =>
-              expediteItem.mutate({
-                media,
-                collectionId: expedite.item.collectionId,
-                maintainerrMediaId: expedite.item.maintainerrMediaId!,
-                mediaItemId: expedite.item.mediaItemId,
-              })
-            }
-          />
         ) : hasFilters ? (
           <div className="trash-confirm" data-testid="trash-expedite-refusal">
             <p className="alert" role="alert">
@@ -775,8 +732,8 @@ function PendingTab({
               {allItems.length - items.length} your filters currently hide.
             </p>
             <p className="muted">
-              Clear the filters to expedite the whole set, or use each row’s Expedite button for
-              specific items.
+              Clear the filters to expedite the whole set, or open a specific title and use{' '}
+              <strong>Delete now…</strong> on its page.
             </p>
             <div className="form-actions">
               <button
@@ -850,128 +807,6 @@ function PendingTab({
         )}
       </Modal>
     </>
-  );
-}
-
-/**
- * The single-item confirm body — copy keyed to the guardian's predicted verdict.
- *
- * F1(b) (2026-07-06 review): the verdict comes SOLELY from the unit-tested guardian mirror
- * (`previewGuardian`) over the item's server-declared fields — never the session-local shield
- * override. The old short-circuit ("saved this session ⇒ protected_tag ⇒ nothing deletes") reported
- * a protection the server did not yet honor. With the server-side live-exclusion seam (F1a) a
- * genuinely-saved item is now protected server-side, so the honest outcome shows in the report; the
- * shield badge stays display-only.
- */
-function ExpediteItemConfirm({
-  item,
-  busy,
-  onCancel,
-  onConfirm,
-}: {
-  item: PendingItem;
-  busy: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  const verdict = previewGuardian(item);
-  const title = `${item.title}${item.year !== null ? ` (${item.year})` : ''}`;
-  return (
-    <div className="trash-confirm" data-testid="trash-expedite-item-confirm">
-      <p>
-        Expedite <strong>{title}</strong>
-        {item.sizeBytes > 0 ? <> — {formatBytes(item.sizeBytes)} on disk.</> : '.'}
-      </p>
-      {verdict === 'deletable' ? (
-        <p className="alert" role="alert">
-          This deletes the files <strong>NOW</strong> — immediate and permanent. It is not the
-          scheduled cleanup; there is no undo beyond a re-download via Restore.
-        </p>
-      ) : verdict === 'unverifiable' ? (
-        <p className="status-note status-note--warn">
-          This item can’t be verified safe (it isn’t in our ledger), so the server will{' '}
-          <strong>keep it</strong> — nothing will be deleted.
-        </p>
-      ) : (
-        <p className="status-note">
-          This item is{' '}
-          {verdict === 'protected_watched'
-            ? 'recently watched'
-            : verdict === 'protected_requested'
-              ? 'personally requested'
-              : 'whitelisted'}{' '}
-          — instead of deleting, Maintainerr will <strong>protect it</strong> (auto-whitelist).
-        </p>
-      )}
-      <div className="form-actions">
-        <button
-          type="button"
-          className={`btn ${verdict === 'deletable' ? 'danger' : 'primary'}`}
-          data-testid="trash-expedite-item-submit"
-          disabled={busy}
-          onClick={onConfirm}
-        >
-          {busy ? 'Working…' : verdict === 'deletable' ? 'Delete now' : 'Run it (nothing deletes)'}
-        </button>
-        <button type="button" className="btn" disabled={busy} onClick={onCancel}>
-          Cancel
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/** The post-run report — deleted / protected / skipped are THREE different things (ADR-023
- *  C-07b): skipped means "could not be verified safe, kept", NOT deliberately whitelisted. */
-function ExpediteReport({ outcome, onClose }: { outcome: ExpediteOutcome; onClose: () => void }) {
-  return (
-    <div className="trash-confirm" data-testid="trash-expedite-report">
-      <p className="ledger-report__summary" data-testid="trash-expedite-summary">
-        <span className={`badge badge--${outcome.expeditedCount > 0 ? 'danger' : 'muted'}`}>
-          {outcome.expeditedCount} deleted
-        </span>{' '}
-        <span className={`badge badge--${outcome.protectedCount > 0 ? 'ok' : 'muted'}`}>
-          {outcome.protectedCount} protected
-        </span>{' '}
-        <span className={`badge badge--${outcome.skippedCount > 0 ? 'warn' : 'muted'}`}>
-          {outcome.skippedCount} skipped
-        </span>
-        {outcome.stalePending > 0 ? (
-          <>
-            {' '}
-            <span className="badge badge--muted" data-testid="trash-expedite-stale-count">
-              {outcome.stalePending} no longer pending
-            </span>
-          </>
-        ) : null}
-      </p>
-      <ul className="ledger-confirm__outcomes">
-        <li>
-          <strong>Deleted</strong> — handed to Maintainerr’s per-item delete handler; the files are
-          being removed now.
-        </li>
-        <li>
-          <strong>Protected</strong> — deliberately kept: recently watched, requested, or
-          whitelisted/saved (watched/requested items were auto-whitelisted during this run).
-        </li>
-        <li>
-          <strong>Skipped</strong> — could not be verified safe <em>or</em> its protection could not
-          be applied, so it was <em>kept, never deleted</em>. Not the same as protected: these items
-          are unknown to the ledger (or unactionable) and are never deleted blind.
-        </li>
-        {outcome.stalePending > 0 ? (
-          <li>
-            <strong>No longer pending</strong> — you saw these when you opened the dialog, but
-            Maintainerr’s pending set changed before the run, so they were left untouched.
-          </li>
-        ) : null}
-      </ul>
-      <div className="form-actions">
-        <button type="button" className="btn" onClick={onClose}>
-          Done
-        </button>
-      </div>
-    </div>
   );
 }
 
@@ -1156,7 +991,8 @@ function TrashContent({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const active = resolveTab(searchParams.get('tab'));
+  const rawTab = searchParams.get('tab');
+  const active = resolveTab(rawTab);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   const status = trpc.trash.status.useQuery();
@@ -1167,6 +1003,15 @@ function TrashContent({
     params.set('tab', key);
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
   };
+
+  // ADR-033 — canonicalize the retired `?tab=batches` deep link: the old kind seg (`?kind=tv`)
+  // maps to the TV tab, else Movies. Clears the dead `?kind`/`?batch` params in one replace.
+  useEffect(() => {
+    if (rawTab !== 'batches') return;
+    const params = new URLSearchParams();
+    params.set('tab', searchParams.get('kind') === 'tv' ? 'tv' : 'movies');
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }, [rawTab, searchParams, pathname, router]);
 
   const onTabKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
     let next = index;
@@ -1215,22 +1060,32 @@ function TrashContent({
 
       <div id="trash-panel" role="tabpanel" aria-labelledby={`trashtab-${active}`}>
         {active === 'movies' ? (
-          <PendingTab
+          // ADR-033 — the kind tab is state-aware: no open batch ⇒ this pending wall; an open
+          // batch ⇒ its lifecycle (KindTab swaps them; the wall is passed as a render prop).
+          <KindTab
             key="movie"
-            media="movie"
+            kind="movie"
             label="Movies"
-            access={access}
-            status={status.data}
-          />
-        ) : active === 'tv' ? (
-          <PendingTab key="tv" media="tv" label="TV" access={access} status={status.data} />
-        ) : active === 'batches' ? (
-          // ADR-025 / DESIGN-011 D-07 — the curation area: batches + the poster wall.
-          <BatchesTab
             access={access}
             viewerId={viewerId}
             viewerIsAdmin={viewerIsAdmin}
             status={status.data}
+            pendingWall={
+              <PendingTab media="movie" label="Movies" access={access} status={status.data} />
+            }
+          />
+        ) : active === 'tv' ? (
+          <KindTab
+            key="tv"
+            kind="tv"
+            label="TV"
+            access={access}
+            viewerId={viewerId}
+            viewerIsAdmin={viewerIsAdmin}
+            status={status.data}
+            pendingWall={
+              <PendingTab media="tv" label="TV" access={access} status={status.data} />
+            }
           />
         ) : active === 'deleted' ? (
           <RecentlyDeletedTab access={access} />

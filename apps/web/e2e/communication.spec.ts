@@ -169,7 +169,8 @@ test.describe('Bulletin section UI (ADR-026 / DESIGN-012 D-08)', () => {
     // "repairs recorded" hint. This is the owner's ask: jump from a message to the title's history.
     const chip = card.getByTestId('message-media-chip');
     await expect(chip).toBeVisible();
-    await expect(chip).toHaveAttribute('href', /^\/library\/[0-9a-f-]{36}$/);
+    // Carries ?from=bulletin so the item back-link reads "← Bulletin" (ADR-033 / DESIGN-005 D-17).
+    await expect(chip).toHaveAttribute('href', /^\/library\/[0-9a-f-]{36}\?from=bulletin$/);
     await expect(chip).toContainText('The Fixture');
     await expect(chip.getByTestId('repair-hint')).toContainText(/repair/i);
 

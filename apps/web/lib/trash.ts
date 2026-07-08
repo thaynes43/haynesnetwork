@@ -120,35 +120,39 @@ export function expediteErrorAction(
 }
 
 /**
- * The pending WALL's shield-corner language (2026-07-07 — the Movies/TV pending tables became
- * poster walls riding the Batches wall grammar; DESIGN-010 D-09 amendment). One corner glyph
- * per tile, derived from the durable server signals + the session-local optimistic override:
- * - `check`   — protected by the *arr `dnd` tag or a live Maintainerr exclusion made OUTSIDE
- *               this session. Inert: the wall never un-saves someone else's protection (the
- *               /library/[id] guard panel keeps that power for remove_exclude holders).
+ * The pending WALL's overlay language (owner-directed 2026-07-07 — the Movies/TV pending wall now
+ * shares the batch wall's fast tap-toggle: a poster tap flips `trash` ⇄ `shield`). One glyph per
+ * tile, derived from the durable server signals + the session-local optimistic override. Keep the
+ * keys in lockstep with `lib/trash-batches.ts` `WallGlyph` — both walls read as one system:
+ * - `trash`   — slated for deletion (unprotected). Tap ⇒ save (the dnd-tag exclusion flow).
  * - `shield`  — saved by YOU this session (the optimistic echo of your own save). Tap ⇒ un-save.
- * - `outline` — unprotected. Tap ⇒ save (the existing dnd-tag exclusion flow).
+ * - `check`   — protected by the *arr `dnd` tag or a live Maintainerr exclusion made OUTSIDE this
+ *               session. Inert: the wall never un-saves someone else's protection (the
+ *               /library/[id] guard panel keeps that power for remove_exclude holders).
+ * - `eye`     — recently watched: the guardian keeps it regardless, so a save is pointless; inert
+ *               (mirrors the batch wall — a trash-can here would be dishonest, it cannot delete).
  */
-export type PendingShieldGlyph = 'check' | 'shield' | 'outline';
+export type PendingWallGlyph = 'trash' | 'shield' | 'check' | 'eye';
 
-export function pendingShieldGlyph(
-  item: { protectedByTag: boolean; protectedByExclusion: boolean },
+export function pendingWallGlyph(
+  item: { protectedByTag: boolean; protectedByExclusion: boolean; recentlyWatched: boolean },
   override: 'saved' | 'unsaved' | undefined,
-): PendingShieldGlyph {
+): PendingWallGlyph {
   if (override === 'saved') return 'shield';
   if (override !== 'unsaved' && (item.protectedByTag || item.protectedByExclusion)) return 'check';
-  return 'outline';
+  if (override !== 'unsaved' && item.recentlyWatched) return 'eye';
+  return 'trash';
 }
 
-/** May THIS shield corner be tapped? Mirrors the wire gates the caller resolved (canSave /
- *  canUnsave already fold in reachability). `check` is always inert — protection made outside
- *  this session reads as state, never as a button. */
-export function pendingShieldTappable(
-  glyph: PendingShieldGlyph,
+/** May THIS tile be tapped to toggle? Mirrors the wire gates the caller resolved (canSave /
+ *  canUnsave already fold in reachability). `check` / `eye` are always inert — protection made
+ *  outside this session (or the watch guardian's automatic keep) reads as state, never a button. */
+export function pendingWallTappable(
+  glyph: PendingWallGlyph,
   canSave: boolean,
   canUnsave: boolean,
 ): boolean {
-  if (glyph === 'outline') return canSave;
+  if (glyph === 'trash') return canSave;
   if (glyph === 'shield') return canUnsave;
   return false;
 }

@@ -1,5 +1,6 @@
-// ADR-025 / DESIGN-011 D-07 — unit coverage for the poster wall's safety-critical client rules:
-// the glyph language (X/lock/eye/shield/skip/gone), the phase-and-grant tap permissions (mirrors
+// ADR-025 / DESIGN-011 D-07 (ADR-033 unification) — unit coverage for the poster wall's
+// safety-critical client rules: the glyph language (trash/shield/check/eye/skip/gone), the
+// phase-and-grant tap permissions (mirrors
 // the server's setItemSaved gate), the running header counts (must agree with the glyphs), and
 // the Expire report rows (raceSkipped/aborted semantics surfaced honestly).
 import { describe, expect, it } from 'vitest';
@@ -24,18 +25,18 @@ const ctx = (over: Partial<WallTapContext> = {}): WallTapContext => ({
   ...over,
 });
 
-describe('wallGlyph — the overlay language', () => {
-  it('maps every item state, with recently-watched pending items getting the eye (not X)', () => {
-    expect(wallGlyph('pending', false)).toBe('x');
+describe('wallGlyph — the overlay language (ADR-033 unified: trash/shield/check/eye/skip/gone)', () => {
+  it('maps every item state, with recently-watched pending items getting the eye (not trash)', () => {
+    expect(wallGlyph('pending', false)).toBe('trash');
     expect(wallGlyph('pending', true)).toBe('eye');
-    expect(wallGlyph('saved', false)).toBe('lock');
-    expect(wallGlyph('protected', false)).toBe('shield');
+    expect(wallGlyph('saved', false)).toBe('shield');
+    expect(wallGlyph('protected', false)).toBe('check');
     expect(wallGlyph('skipped', false)).toBe('skip');
     expect(wallGlyph('deleted', false)).toBe('gone');
   });
 
   it('recently-watched only softens PENDING — terminal/saved states keep their own glyph', () => {
-    expect(wallGlyph('saved', true)).toBe('lock');
+    expect(wallGlyph('saved', true)).toBe('shield');
     expect(wallGlyph('skipped', true)).toBe('skip');
     expect(wallGlyph('deleted', true)).toBe('gone');
   });
@@ -70,29 +71,29 @@ describe('tileTappable — per-tile rules', () => {
   const admin = ctx({ canManage: true, canSaveWindow: true });
   const family = ctx({ batchState: 'leaving_soon', windowOpen: true, canSaveWindow: true });
 
-  it('X is tappable for anyone who may interact (a save is protective)', () => {
-    expect(tileTappable(admin, 'x', null)).toBe(true);
-    expect(tileTappable(family, 'x', null)).toBe(true);
+  it('a trash (slated) tile is tappable for anyone who may interact (a save is protective)', () => {
+    expect(tileTappable(admin, 'trash', null)).toBe(true);
+    expect(tileTappable(family, 'trash', null)).toBe(true);
   });
 
-  it('a family saver may undo their OWN lock (incl. an optimistic one) but not a foreign one', () => {
-    expect(tileTappable(family, 'lock', 'user-1')).toBe(true); // their save
-    expect(tileTappable(family, 'lock', null)).toBe(true); // optimistic — refetch not landed
-    expect(tileTappable(family, 'lock', 'someone-else')).toBe(false);
+  it('a family saver may undo their OWN save (incl. an optimistic one) but not a foreign one', () => {
+    expect(tileTappable(family, 'shield', 'user-1')).toBe(true); // their save
+    expect(tileTappable(family, 'shield', null)).toBe(true); // optimistic — refetch not landed
+    expect(tileTappable(family, 'shield', 'someone-else')).toBe(false);
   });
 
-  it('a batch manager may release any lock', () => {
+  it('a batch manager may release any save', () => {
     const managing = ctx({
       batchState: 'leaving_soon',
       windowOpen: true,
       canManage: true,
       canSaveWindow: true,
     });
-    expect(tileTappable(managing, 'lock', 'someone-else')).toBe(true);
+    expect(tileTappable(managing, 'shield', 'someone-else')).toBe(true);
   });
 
-  it('eye/shield/skip/gone are inert for everyone', () => {
-    for (const glyph of ['eye', 'shield', 'skip', 'gone'] as const) {
+  it('check/eye/skip/gone are inert for everyone', () => {
+    for (const glyph of ['check', 'eye', 'skip', 'gone'] as const) {
       expect(tileTappable(admin, glyph, null)).toBe(false);
     }
   });
@@ -101,11 +102,11 @@ describe('tileTappable — per-tile rules', () => {
 describe('wallCounts — the running header agrees with the glyphs', () => {
   it('partitions slated/rescued/kept/deleted and sums slated bytes only', () => {
     const counts = wallCounts([
-      { state: 'pending', recentlyWatched: false, sizeBytes: 100 }, // x
-      { state: 'pending', recentlyWatched: false, sizeBytes: 50 }, // x
+      { state: 'pending', recentlyWatched: false, sizeBytes: 100 }, // trash
+      { state: 'pending', recentlyWatched: false, sizeBytes: 50 }, // trash
       { state: 'pending', recentlyWatched: true, sizeBytes: 999 }, // eye → kept
-      { state: 'saved', recentlyWatched: false, sizeBytes: 10 }, // lock
-      { state: 'protected', recentlyWatched: false, sizeBytes: 1 }, // shield → kept
+      { state: 'saved', recentlyWatched: false, sizeBytes: 10 }, // shield
+      { state: 'protected', recentlyWatched: false, sizeBytes: 1 }, // check → kept
       { state: 'skipped', recentlyWatched: false, sizeBytes: 2 }, // skip → kept
       { state: 'deleted', recentlyWatched: false, sizeBytes: 3 }, // gone
     ]);
@@ -122,7 +123,7 @@ describe('wallCounts — the running header agrees with the glyphs', () => {
 describe('countdownCopy — the family banner', () => {
   it('invites the tap while the window is open and the viewer may save', () => {
     expect(countdownCopy('in 14 days', true, true)).toBe(
-      'These delete in 14 days — tap the ✕ on anything you want to keep.',
+      'These delete in 14 days — tap anything you want to keep.',
     );
   });
   it('drops the invitation for read-only viewers and explains the closed window', () => {

@@ -47,39 +47,42 @@ export const LEAVING_SOON_NAMES: Record<'movie' | 'tv', string> = {
 };
 
 /**
- * THE overlay language (the owner's "X over the title … click and it changes to a lock"):
- * - `x`      — pending, slated to delete (tap ⇒ rescue).
- * - `lock`   — saved/rescued (tap ⇒ un-save, permission-scoped).
+ * THE overlay language (owner-directed 2026-07-07 — the same fast tap-toggle on BOTH the pending
+ * candidates wall and the batch curation wall: a poster tap flips `trash` ⇄ `shield`):
+ * - `trash`  — slated to delete (tap ⇒ save/rescue). The default for a cold candidate.
+ * - `shield` — saved/rescued by a user (tap ⇒ un-save, permission-scoped). The deliberate,
+ *              deepens-color flip.
+ * - `check`  — protected OUTSIDE this action (dnd-tagged at snapshot / a live exclusion made
+ *              elsewhere): already safe, inert (a shield-check, distinct from the filled save).
  * - `eye`    — pending but recently watched: the sweep's guardian will keep it; not tappable
- *              toward the delete state (an X here would be dishonest — it cannot delete).
- * - `shield` — protected (dnd-tagged at snapshot time): already safe, inert.
+ *              toward the delete state (a trash-can here would be dishonest — it cannot delete).
  * - `skip`   — sweep kept it (guardian / unverifiable / live-excluded) — kept, NOT deliberately
  *              saved (skipped ≠ protected, ADR-023 C-07b).
  * - `gone`   — deleted by the sweep.
  */
-export type WallGlyph = 'x' | 'lock' | 'eye' | 'shield' | 'skip' | 'gone';
+export type WallGlyph = 'trash' | 'shield' | 'check' | 'eye' | 'skip' | 'gone';
 
 export function wallGlyph(state: BatchItemStateName, recentlyWatched: boolean): WallGlyph {
   switch (state) {
     case 'saved':
-      return 'lock';
-    case 'protected':
       return 'shield';
+    case 'protected':
+      return 'check';
     case 'skipped':
       return 'skip';
     case 'deleted':
       return 'gone';
     case 'pending':
-      return recentlyWatched ? 'eye' : 'x';
+      return recentlyWatched ? 'eye' : 'trash';
   }
 }
 
 /** What the wall announces per glyph (title/aria copy; {title} interpolated by the caller). */
 export const WALL_GLYPH_MEANING: Record<WallGlyph, string> = {
-  x: 'slated to delete — tap to save it',
-  lock: 'saved — it will be kept',
+  trash: 'slated to delete — tap to save it',
+  shield: 'saved — it will be kept',
+  check: 'protected — already safe from deletion',
   eye: 'recently watched — the guardian keeps it',
-  shield: 'protected — already safe from deletion',
   skip: 'kept — could not be verified safe, never deleted',
   gone: 'deleted',
 };
@@ -110,12 +113,12 @@ export function wallInteractive(ctx: WallTapContext): boolean {
 }
 
 /**
- * Is THIS tile tappable? X is always tappable (a save is protective). A lock is un-tappable back
- * to X by batch managers anywhere they may curate; during the family window a saver may undo
- * their OWN lock (savedBy === viewer, or a lock this session just made — savedBy null until the
- * refetch lands) but not someone else's (the server contract would allow it; the wall keeps the
- * family flow polite — a manager can always release a foreign lock). eye/shield/skip/gone are
- * inert: there is nothing honest a tap could do (the server would answer changed:false anyway).
+ * Is THIS tile tappable? A `trash` tile is always tappable (a save is protective). A saved
+ * `shield` is un-tappable back to `trash` by batch managers anywhere they may curate; during the
+ * family window a saver may undo their OWN save (savedBy === viewer, or a save this session just
+ * made — savedBy null until the refetch lands) but not someone else's (the server contract would
+ * allow it; the wall keeps the family flow polite — a manager can always release a foreign save).
+ * check/eye/skip/gone are inert: there is nothing honest a tap could do (changed:false anyway).
  */
 export function tileTappable(
   ctx: WallTapContext,
@@ -123,8 +126,8 @@ export function tileTappable(
   savedBy: string | null,
 ): boolean {
   if (!wallInteractive(ctx)) return false;
-  if (glyph === 'x') return true;
-  if (glyph === 'lock') {
+  if (glyph === 'trash') return true;
+  if (glyph === 'shield') {
     if (ctx.canManage) return true;
     return savedBy === null || savedBy === ctx.viewerId;
   }
@@ -138,12 +141,12 @@ export interface WallCountInput {
 }
 
 export interface WallCounts {
-  /** X tiles — pending and not guardian-watched (what the wall shows as slated). */
+  /** trash tiles — pending and not guardian-watched (what the wall shows as slated). */
   slated: number;
   slatedBytes: number;
-  /** lock tiles. */
+  /** shield (saved) tiles. */
   rescued: number;
-  /** eye + shield + skip tiles — kept without being a deliberate save. */
+  /** eye + check + skip tiles — kept without being a deliberate save. */
   kept: number;
   /** gone tiles. */
   deleted: number;
@@ -155,18 +158,18 @@ export function wallCounts(items: ReadonlyArray<WallCountInput>): WallCounts {
   const out: WallCounts = { slated: 0, slatedBytes: 0, rescued: 0, kept: 0, deleted: 0 };
   for (const item of items) {
     switch (wallGlyph(item.state, item.recentlyWatched)) {
-      case 'x':
+      case 'trash':
         out.slated += 1;
         out.slatedBytes += item.sizeBytes;
         break;
-      case 'lock':
+      case 'shield':
         out.rescued += 1;
         break;
       case 'gone':
         out.deleted += 1;
         break;
       default:
-        out.kept += 1; // eye / shield / skip
+        out.kept += 1; // eye / check / skip
     }
   }
   return out;
@@ -181,7 +184,7 @@ export function countdownCopy(daysLeftLabel: string, windowOpen: boolean, canSav
     return 'The save window has closed — the remaining items delete on the next sweep.';
   }
   if (canSave) {
-    return `These delete ${daysLeftLabel} — tap the ✕ on anything you want to keep.`;
+    return `These delete ${daysLeftLabel} — tap anything you want to keep.`;
   }
   return `These delete ${daysLeftLabel}.`;
 }

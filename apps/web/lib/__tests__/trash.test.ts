@@ -8,8 +8,8 @@ import {
   daysUntil,
   expediteErrorAction,
   partitionForExpedite,
-  pendingShieldGlyph,
-  pendingShieldTappable,
+  pendingWallGlyph,
+  pendingWallTappable,
   previewGuardian,
   reclaimLabel,
   type GuardianPreviewInput,
@@ -85,32 +85,42 @@ describe('expediteErrorAction (F3 — always re-partition on ANY expedite error)
   });
 });
 
-describe('pendingShieldGlyph / pendingShieldTappable (the pending WALL corner — D-09 amendment)', () => {
-  const cold = { protectedByTag: false, protectedByExclusion: false };
-  it('unprotected ⇒ outline; tappable only with save_exclude', () => {
-    expect(pendingShieldGlyph(cold, undefined)).toBe('outline');
-    expect(pendingShieldTappable('outline', true, false)).toBe(true);
-    expect(pendingShieldTappable('outline', false, true)).toBe(false);
+describe('pendingWallGlyph / pendingWallTappable (the pending WALL tap-toggle — ADR-033)', () => {
+  const cold = { protectedByTag: false, protectedByExclusion: false, recentlyWatched: false };
+  it('unprotected cold ⇒ trash (slated); tappable to SAVE only with save_exclude', () => {
+    expect(pendingWallGlyph(cold, undefined)).toBe('trash');
+    expect(pendingWallTappable('trash', true, false)).toBe(true);
+    expect(pendingWallTappable('trash', false, true)).toBe(false);
   });
   it('a save made THIS session ⇒ the filled shield (yours); un-save needs remove_exclude', () => {
-    expect(pendingShieldGlyph(cold, 'saved')).toBe('shield');
-    expect(pendingShieldTappable('shield', false, true)).toBe(true);
-    expect(pendingShieldTappable('shield', true, false)).toBe(false);
+    expect(pendingWallGlyph(cold, 'saved')).toBe('shield');
+    expect(pendingWallTappable('shield', false, true)).toBe(true);
+    expect(pendingWallTappable('shield', true, false)).toBe(false);
   });
   it('your save wins over the server signals (the refetch lands protectedByExclusion)', () => {
-    expect(pendingShieldGlyph({ protectedByTag: false, protectedByExclusion: true }, 'saved')).toBe(
-      'shield',
-    );
+    expect(
+      pendingWallGlyph({ ...cold, protectedByExclusion: true }, 'saved'),
+    ).toBe('shield');
   });
   it('tag or live-exclusion protection from elsewhere ⇒ the inert check (never tappable)', () => {
-    expect(pendingShieldGlyph({ ...cold, protectedByTag: true }, undefined)).toBe('check');
-    expect(pendingShieldGlyph({ ...cold, protectedByExclusion: true }, undefined)).toBe('check');
-    expect(pendingShieldTappable('check', true, true)).toBe(false);
+    expect(pendingWallGlyph({ ...cold, protectedByTag: true }, undefined)).toBe('check');
+    expect(pendingWallGlyph({ ...cold, protectedByExclusion: true }, undefined)).toBe('check');
+    expect(pendingWallTappable('check', true, true)).toBe(false);
   });
-  it('an un-save this session ⇒ back to outline even while the stale protection signal lingers', () => {
+  it('recently watched (and not saved) ⇒ the inert eye — the guardian keeps it regardless', () => {
+    expect(pendingWallGlyph({ ...cold, recentlyWatched: true }, undefined)).toBe('eye');
+    expect(pendingWallTappable('eye', true, true)).toBe(false);
+    // protection from elsewhere outranks the watch signal (both are inert, check reads first).
     expect(
-      pendingShieldGlyph({ protectedByTag: false, protectedByExclusion: true }, 'unsaved'),
-    ).toBe('outline');
+      pendingWallGlyph({ protectedByTag: true, protectedByExclusion: false, recentlyWatched: true }, undefined),
+    ).toBe('check');
+    // a save this session still wins — the watched item can be deliberately protected.
+    expect(pendingWallGlyph({ ...cold, recentlyWatched: true }, 'saved')).toBe('shield');
+  });
+  it('an un-save this session ⇒ back to trash even while the stale protection signal lingers', () => {
+    expect(
+      pendingWallGlyph({ protectedByTag: false, protectedByExclusion: true, recentlyWatched: false }, 'unsaved'),
+    ).toBe('trash');
   });
 });
 

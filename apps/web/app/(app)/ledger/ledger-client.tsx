@@ -750,7 +750,7 @@ function LedgerBrowser({
                           />
                         ) : null}
                         <Link
-                          href={`/library/${item.id}`}
+                          href={`/library/${item.id}?from=ledger`}
                           className="ledger-title"
                           title={item.title}
                         >

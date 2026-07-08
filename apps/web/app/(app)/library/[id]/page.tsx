@@ -11,8 +11,18 @@ import { effectiveSectionLevel } from '@hnet/api';
 import { TRASH_ACTIONS } from '@hnet/db';
 import { ItemDetail, type ItemTrashAccess } from './item-detail';
 
-export default async function LibraryItemPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function LibraryItemPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { id } = await params;
+  // Read the back-link origin key SERVER-side (DESIGN-005 D-17) — passing it down avoids a
+  // useSearchParams() CSR bailout on the detail page (which has no Suspense boundary).
+  const fromParam = (await searchParams).from;
+  const from = typeof fromParam === 'string' ? fromParam : null;
   const session = await getServerSession(await headers());
   if (!session) redirect('/login'); // defense in depth — the layout already gates
   const role = session.user.role;
@@ -21,5 +31,5 @@ export default async function LibraryItemPage({ params }: { params: Promise<{ id
     level === 'disabled'
       ? null
       : { level, actions: role.isAdmin ? [...TRASH_ACTIONS] : (role.trashActions ?? []) };
-  return <ItemDetail mediaItemId={id} trashAccess={trashAccess} />;
+  return <ItemDetail mediaItemId={id} trashAccess={trashAccess} from={from} />;
 }

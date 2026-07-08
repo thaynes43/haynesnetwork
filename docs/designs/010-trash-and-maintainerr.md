@@ -250,6 +250,20 @@ session's `sectionPermissions.trash ≠ disabled` (no-row default is _disabled_ 
   > fixed-height error slot sits between them (ADR-015). Un-saving protection you didn't make
   > stays possible via the `/library/[id]` guard panel, not the wall. The glyph rules are
   > unit-tested (`apps/web/lib/trash.ts pendingShieldGlyph`/`pendingShieldTappable`).
+  >
+  > **Amended by ADR-033 (2026-07-07 evening, owner-directed):** the pending wall now shares the
+  > batch wall's **fast tap-toggle** — the WHOLE poster is the toggle (`trash` ⇄ `shield`),
+  > optimistic + reflow-free; there is no separate shield corner. The glyph language is **unified**
+  > with the batch wall (`trash` slated · `shield` saved-by-you · `check` protected-elsewhere,
+  > inert · `eye` recently-watched, inert), rendered by the shared `WallGlyphSvg`; the rules moved
+  > to `apps/web/lib/trash.ts` **`pendingWallGlyph`/`pendingWallTappable`** (unit-tested). The
+  > `/library/[id]` nav moved OFF the poster to a distinct **top-left corner icon** (an open book,
+  > `LibraryCornerLink`) carrying the `?from=trash-movies|trash-tv` context (DESIGN-005 D-17
+  > amendment). **Per-item Expedite left the wall**: the trash-can is now a STATE, not a Modal
+  > trigger — per-item "Delete now…" moved to the `/library/[id]` deletion-guard card
+  > (`TrashPendingNotice`, admin/`expedite_item`-gated, safe-gated), reusing the ADR-014 Expedite
+  > Modal. The bulk **Expedite all…** pill stays on the wall unchanged. The five Trash tabs become
+  > **Movies · TV · Recently Deleted · Activity** (Batches folded into the kind tabs — ADR-033).
 - **Shield (Save/whitelist, R-83):** a plain accent toggle (protective + reversible — ADR-014's
   two-step is reserved for destructive), constant footprint both states (ADR-015). The `dnd` tag only
   lands on the next *arr sync, but the pending read now ORs the LIVE Maintainerr exclusion set into

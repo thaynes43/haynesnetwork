@@ -259,6 +259,30 @@ running counts → **the wall** → save-stats → history → settings.
 - In-theme stroke-drawn glyphs per DESIGN-006 (no borrowed icon set); wall screenshots captured
   for owner approval (owner memory: visual identity sign-off).
 
+> **Amended by ADR-033 (2026-07-07 evening, owner-directed):** the **Batches tab is folded into
+> the per-kind Movies/TV tabs** — one open batch per kind is the enforced invariant, so a batch is
+> a *property* of the kind, not a separate browsable collection. `apps/web/app/(app)/trash/batches-tab.tsx`
+> is replaced by **`kind-tab.tsx`** (`KindTab`), a state-aware surface the Movies/TV tab renders
+> off `trash.batches.list` scoped to the kind:
+> - **no open batch** → the live-candidates pending wall (passed in as a render prop) + an
+>   admin-only **"Start a batch"** header; terminal batches collapse into a **Past-batches** strip
+>   (`<details>` rows that expand to each batch's final report — the terminal PosterWall).
+> - **admin_review** → the batch wall (curation) + the lifecycle header (Green-light / Cancel) +
+>   an admin-only **"new candidates since this batch (K)"** strip (client-side diff of the live
+>   pending set vs the batch's media ids — eligible for the next batch).
+> - **leaving_soon** → countdown + family save wall + "Who rescued what" + Expire-now (window-close
+>   gated) + the same new-candidates strip.
+> - **terminal** → back to the pending wall + the Past-batches strip.
+>
+> All wire calls are unchanged (zero backend change). The kind-switch seg control, the `?kind=` /
+> `?batch=` params, and the empty-state card are retired; `?tab=batches` redirects to the per-kind
+> tab (kind rides along). The wall glyph language is **unified** with the pending wall
+> (`trash · shield · check · eye · skip · gone`; `wallGlyph` renames X→`trash`, lock→`shield`,
+> protected→`check`) and every tile gains a corner **library-nav link** (`?from=trash-*`).
+> **The Expire report now defers the batch-list refetch to modal close** — a successful sweep flips
+> the batch terminal, which would otherwise unmount the LifecycleView (and its Modal) before the
+> report is read; deferring keeps the Deletion report on screen until dismissed.
+
 ---
 
 ## D-08 — Ops (env + CronJob)

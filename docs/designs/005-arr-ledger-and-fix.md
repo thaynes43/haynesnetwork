@@ -844,6 +844,21 @@ household-scale. Phase 1 routers are unchanged.
 > boundary. `ledger.search` already accepts `arrKind` and `fix.myFixes` is unchanged, so the whole
 > shell is a **frontend-only** change (no router/domain edit).
 
+> **Amendment — context-aware `/library/[id]` back-link (2026-07-07, ADR-033 Part 2).** The item
+> detail page previously hardcoded "← Library". It now renders a **context-aware back affordance**:
+> origin surfaces append `?from=<key>` when they link to an item, and the detail page renders
+> "← <Label>" from a **fixed dictionary** (`apps/web/lib/back-link.ts`, unit-tested):
+> `trash-movies`→"Trash Movies" (`/trash?tab=movies`), `trash-tv`→"Trash TV", `bulletin`→"Bulletin"
+> (`/bulletin?tab=messages`), `bulletin-feed`→"Bulletin" (`/bulletin`), `ledger`→"Ledger", and
+> **default/absent/unknown → "Library"** (`/library`). Behaviour (`components/back-link.tsx`): when
+> the previous history entry is in-app (the Navigation API's `canGoBack`, falling back to
+> `history.state.idx` / a same-origin referrer) a click calls `history.back()` so the origin's
+> scroll + filters are preserved; otherwise it navigates to the mapped href. The mapping is a
+> **closed dictionary, never a raw URL from the query** — so `?from=` can never become an
+> open-redirect surface (a garbage key falls to Library). Origin links wired: both trash walls (via
+> the corner library-nav icon), the bulletin message chip + feed links, and the ledger title links.
+> Frontend-only (no router/domain change).
+
 ```ts
 // ---------- ledger (authed: browse/search is a Member feature, R-43) ----------
 export const ledgerRouter = router({

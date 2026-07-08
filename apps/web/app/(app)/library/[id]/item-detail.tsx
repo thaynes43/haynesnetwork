@@ -15,10 +15,10 @@
 // FixAlreadyOpenError toast; the buttons re-arm when the live phase lands a
 // terminal. Every slot reserves width (hard rule 9), so button ↔ chip swaps and
 // percent ticks never reflow the row.
-import Link from 'next/link';
 import { useMemo, useState, type ReactNode } from 'react';
 import { trpc } from '@/lib/trpc-client';
 import { PhaseChip } from '@hnet/ui';
+import { BackLink } from '@/components/back-link';
 import {
   ARR_KIND_LABELS,
   EVENT_TYPE_LABELS,
@@ -183,9 +183,12 @@ export type ItemTrashAccess = TrashAccess | null;
 export function ItemDetail({
   mediaItemId,
   trashAccess = null,
+  from = null,
 }: {
   mediaItemId: string;
   trashAccess?: ItemTrashAccess;
+  /** The `?from=` origin key (resolved server-side; DESIGN-005 D-17). */
+  from?: string | null;
 }) {
   const utils = trpc.useUtils();
   const [action, setAction] = useState<PendingAction | null>(null);
@@ -389,9 +392,7 @@ export function ItemDetail({
 
   return (
     <>
-      <p className="crumbs">
-        <Link href="/library">← Library</Link>
-      </p>
+      <BackLink from={from} />
 
       <section className="card detail-head">
         {/* DESIGN-008 D-11 — the fixed 2:3 poster box replaces the kind icon; the KindIcon

@@ -96,10 +96,11 @@ test.describe('ledger section (DESIGN-009)', () => {
     await expect(vanished).toContainText('0/1');
     await expect(vanished.locator('.ledger-removed')).toHaveCount(1);
 
-    // Title cells are click-throughs to the /library detail page.
+    // Title cells are click-throughs to the /library detail page, carrying the ?from=ledger
+    // context so the item back-link returns here (ADR-033 / DESIGN-005 D-17 amendment).
     await expect(fixture.locator('a.ledger-title')).toHaveAttribute(
       'href',
-      /^\/library\/[0-9a-f-]{36}$/,
+      /^\/library\/[0-9a-f-]{36}\?from=ledger$/,
     );
 
     // TV tab: Breaking Prod; Music tab: The Stub Band (music included — Q-04).
