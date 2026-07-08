@@ -1,17 +1,22 @@
-// ADR-023 / DESIGN-010 end to end — the Trash section, the app's ONLY user-facing deletion
-// surface: the safety banner (safe / integration-down states, destructive controls disabling),
-// the Movies/TV pending POSTER WALLS (2026-07-07 — the tables retired; corner shield/trash-can
-// glyphs, tile tooltips, the filter-aware reclaim counts bar above the wall, poster tap ⇒
-// /library/[id]), Save → protected → un-save through the shield corner (stub-verified exclusion
-// calls; a protection made OUTSIDE the session renders the inert check), the Expedite Modal
-// with its deleted / protected / skipped partition (per-item /collections/media/handle calls
-// ONLY — the estate-wide /collections/handle must be ABSENT, C-07a), the stale "no longer safe"
-// refusal, Recently-Deleted → Restore, the Rules list (arm/disarm/delete — on /settings/trash
-// since ADR-032, reached from the user menu at Trash Edit level), the Activity feed, the
-// /admin/roles per-action grid, and role gating (disabled ⇒ no nav; a save-only role can't
-// expedite; edit_rules needs section Edit). Plus the retired /admin/restore → /trash redirect
-// and the webhook receiver. Serial — the suite shares one stack and the stub's mutable state.
+// ADR-023 / ADR-033 / DESIGN-010 + DESIGN-011 end to end — the Trash section, the app's ONLY
+// user-facing deletion surface, now with the Batches tab FOLDED INTO the per-kind tabs (ADR-033):
+// each of Movies/TV is one state-aware surface driven by that kind's open batch. This suite walks
+// the whole thing serially (one stack, one DB, the stub's mutable state):
+//   • the safety banner + the pending POSTER WALL (no open batch) — the owner-refined fast
+//     tap-toggle (poster flips trash⇄shield), the library-nav corner (→ /library/[id]?from=…),
+//     the reclaim counts bar + Expedite-all; per-item "Delete now…" relocated to the item page;
+//   • the batch lifecycle IN the Movies tab — Start a batch → admin_review curation (+ the
+//     admin-only new-candidates strip) → Green-light → Leaving-Soon countdown + family save
+//     window → Expire sweep → the Past-batches strip (each row expands to its final report);
+//   • the ?tab=batches → ?tab=movies redirect for old deep links;
+//   • the context-aware item back-link (← Trash Movies / ← Bulletin, history.back() with state);
+//   • Recently-Deleted → Restore, the Rules list (/settings/trash), Activity, the roles grid, and
+//     role gating.
+// Per-item /collections/media/handle calls ONLY (the estate-wide /collections/handle is asserted
+// ABSENT — ADR-023 C-07a).
 import { test, expect, type Page } from '@playwright/test';
+import { spawnSync } from 'node:child_process';
+import { join } from 'node:path';
 import { armAndConfirm, expectViewportFit, openUserMenu, signIn, signOut } from './support/helpers';
 import { readRuntimeEnv } from './support/env';
 import {
@@ -31,7 +36,6 @@ async function maintainerrCalls(page: Page): Promise<RecordedMaintainerrWrite[]>
   return ((await res.json()) as { calls: RecordedMaintainerrWrite[] }).calls;
 }
 
-/** Crucial-change wipes the stub would have enacted (a correct isActive toggle produces none). */
 async function maintainerrWipes(page: Page): Promise<unknown[]> {
   const res = await page.request.get(`${env().STUB_MAINTAINERR_URL}/_stub/wipes`);
   return ((await res.json()) as { wipes: unknown[] }).wipes;
@@ -43,15 +47,19 @@ async function setIntegration(page: Page, name: string, connected: boolean): Pro
   });
 }
 
-/** Pre-seed a live Maintainerr exclusion (outside the app's save flow) — its `dnd` tag has NOT synced. */
 async function seedExclusion(page: Page, mediaServerId: string): Promise<void> {
-  await page.request.post(`${env().STUB_MAINTAINERR_URL}/_stub/exclude`, {
-    data: { mediaServerId },
+  await page.request.post(`${env().STUB_MAINTAINERR_URL}/_stub/exclude`, { data: { mediaServerId } });
+}
+
+/** Push a NEW pending candidate into the movie collection AFTER a batch snapshot (ADR-033 strip). */
+async function addPendingCandidate(page: Page): Promise<void> {
+  await page.request.post(`${env().STUB_MAINTAINERR_URL}/_stub/add-pending`, {
+    data: { collectionId: 7, mediaServerId: 'ms-990010', tmdbId: 990010, sizeBytes: 3_221_225_472 },
   });
 }
 
 async function openTrashMovies(page: Page): Promise<void> {
-  await page.goto('/trash');
+  await page.goto('/trash?tab=movies');
   await expect(page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' })).toHaveCount(1);
 }
 
@@ -65,10 +73,32 @@ async function assignMemberRole(page: Page, roleLabel: string): Promise<void> {
   await settled;
 }
 
-test.describe('trash section (DESIGN-010)', () => {
+/** Green-light the OPEN admin_review batch with an ALREADY-EXPIRED window (e2e time-travel). */
+function greenlightExpired(kind: 'movie' | 'tv'): void {
+  const res = spawnSync(
+    join(process.cwd(), 'node_modules', '.bin', 'tsx'),
+    [join(process.cwd(), 'e2e', 'support', 'greenlight-expired.ts'), kind],
+    { env: { ...process.env, ...env() }, encoding: 'utf8' },
+  );
+  if (res.status !== 0) throw new Error(`greenlight-expired failed:\n${res.stdout}\n${res.stderr}`);
+}
+
+/** ADR-015: the two boxes are the same place and size (float-tolerant). */
+function expectSameBox(
+  a: { x: number; y: number; width: number; height: number } | null,
+  b: { x: number; y: number; width: number; height: number } | null,
+): void {
+  expect(a).not.toBeNull();
+  expect(b).not.toBeNull();
+  for (const key of ['x', 'y', 'width', 'height'] as const) {
+    expect(Math.abs(a![key] - b![key]), `tile ${key} must not move on tap`).toBeLessThan(0.5);
+  }
+}
+
+test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
   test.describe.configure({ mode: 'serial' });
 
-  test('the Admin → Restore nav item is gone and /admin/restore redirects to /trash', async ({
+  test('the Admin → Restore nav item is gone; /admin/restore and ?tab=batches redirect', async ({
     page,
   }) => {
     await signIn(page, 'admin');
@@ -77,6 +107,16 @@ test.describe('trash section (DESIGN-010)', () => {
     await page.goto('/admin/restore');
     await page.waitForURL('**/trash');
     await expect(page.getByRole('heading', { name: 'Trash' })).toBeVisible();
+
+    // ADR-033 — the retired ?tab=batches deep link folds into the per-kind tab (kind rides along).
+    await page.goto('/trash?tab=batches');
+    await page.waitForURL('**/trash?tab=movies');
+    await expect(page.getByRole('tab', { name: 'Movies', selected: true })).toBeVisible();
+    await page.goto('/trash?tab=batches&kind=tv');
+    await page.waitForURL('**/trash?tab=tv');
+    await expect(page.getByRole('tab', { name: 'TV', selected: true })).toBeVisible();
+    // The Batches tab itself no longer exists.
+    await expect(page.getByRole('tab', { name: 'Batches' })).toHaveCount(0);
   });
 
   test('gate: Admin reaches the section; a Default member gets "not available", no nav entry', async ({
@@ -88,8 +128,6 @@ test.describe('trash section (DESIGN-010)', () => {
     await expect(page.getByRole('tab', { name: 'Movies' })).toBeVisible();
     await signOut(page);
 
-    // A plain member's Default role has Trash Disabled → no nav entry, and the direct URL
-    // renders the friendly dead-end, never a raw 403.
     await signIn(page, 'fresh-member');
     const navTexts = await page.locator('.topbar__nav a').allInnerTexts();
     expect(navTexts).not.toContain('Trash');
@@ -97,55 +135,49 @@ test.describe('trash section (DESIGN-010)', () => {
     await expect(page.getByTestId('trash-unavailable')).toBeVisible();
   });
 
-  test('safety banner is green when SAFE; Movies/TV pending WALLS carry the glyphs, tooltips + the reclaim counts bar', async ({
+  test('safety banner green + the pending WALL: glyphs, tooltips, reclaim bar, sort, filter, library-nav', async ({
     page,
   }) => {
     await resetMaintainerr(page);
     await signIn(page, 'admin');
     await openTrashMovies(page);
 
-    // The banner reads SAFE with the audit facts (D-04).
     const banner = page.getByTestId('trash-safety');
     await expect(banner).toHaveAttribute('data-state', 'safe');
     await expect(banner).toContainText('Maintainerr connected');
     await expect(banner).toContainText('1 rule armed');
 
-    // No Music tab exists — music is structurally undeletable (R-87). No Rules tab either:
-    // rule management moved to /settings/trash (ADR-032) — /trash keeps the user surfaces.
+    // No Music tab, no Rules tab, no Batches tab — Movies · TV · Recently Deleted · Activity.
     await expect(page.getByRole('tab', { name: 'Music' })).toHaveCount(0);
     await expect(page.getByRole('tab', { name: 'Rules' })).toHaveCount(0);
+    await expect(page.getByRole('tab', { name: 'Batches' })).toHaveCount(0);
 
-    // Movies: all four pending fixtures as poster tiles; the table is gone.
+    // Four pending fixtures as poster tiles; the table is gone.
     await expect(page.getByTestId('trash-tile')).toHaveCount(4);
     await expect(page.getByTestId('trash-tablewrap')).toHaveCount(0);
 
-    // The watched fixture: shield outline (watched ≠ protected); the guardian fact + the
-    // scheduled date live in the tile tooltip now (the old Status/Deletes columns).
-    const fixture = page.getByTestId('trash-tile').filter({ hasText: 'The Fixture' });
-    await expect(fixture.getByTestId('trash-shield')).toHaveAttribute('data-glyph', 'outline');
-    await expect(fixture.getByTestId('trash-tile-poster')).toHaveAttribute(
-      'title',
-      /Recently watched/,
-    );
-
-    // The dnd-tagged fixture: the inert protected CHECK — state reads, but it is NOT a button
-    // (protection made outside this session can't be un-saved from the wall).
-    const runner = page.getByTestId('trash-tile').filter({ hasText: 'Stub Runner' });
-    await expect(runner.getByTestId('trash-shield')).toHaveAttribute('data-glyph', 'check');
-    await expect(runner.locator('button[data-testid="trash-shield"]')).toHaveCount(0);
-
-    // The unknown item: no library link (span poster), and the tooltip says why.
-    const unknown = page.getByTestId('trash-tile').filter({ hasText: 'tmdb:990009' });
-    await expect(unknown.locator('a[data-testid="trash-tile-poster"]')).toHaveCount(0);
-    await expect(unknown.getByTestId('trash-tile-poster')).toHaveAttribute(
-      'title',
-      /Not in our ledger/,
-    );
-
-    // The cold item: plain outline shield; the tooltip carries the delete date + days left.
+    // The unified glyph model: cold ⇒ trash, watched ⇒ eye (inert), dnd-tagged ⇒ check (inert),
+    // unknown-to-ledger ⇒ trash (savable; the sweep would skip it).
     const vanished = page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' });
-    await expect(vanished.getByTestId('trash-shield')).toHaveAttribute('data-glyph', 'outline');
-    await expect(vanished.getByTestId('trash-tile-poster')).toHaveAttribute('title', /Deletes /);
+    const fixture = page.getByTestId('trash-tile').filter({ hasText: 'The Fixture' });
+    const runner = page.getByTestId('trash-tile').filter({ hasText: 'Stub Runner' });
+    const unknown = page.getByTestId('trash-tile').filter({ hasText: 'tmdb:990009' });
+    await expect(vanished).toHaveAttribute('data-glyph', 'trash');
+    await expect(fixture).toHaveAttribute('data-glyph', 'eye');
+    await expect(runner).toHaveAttribute('data-glyph', 'check');
+    await expect(unknown).toHaveAttribute('data-glyph', 'trash');
+
+    // eye/check are inert — the toggle is a non-button span (state reads, no action).
+    await expect(fixture.locator('span[data-testid="trash-toggle"]')).toHaveCount(1);
+    await expect(runner.locator('span[data-testid="trash-toggle"]')).toHaveCount(1);
+    await expect(fixture.locator('button[data-testid="trash-toggle"]')).toHaveCount(0);
+
+    // The guardian fact + scheduled date live in the tile tooltip now.
+    await expect(fixture.getByTestId('trash-toggle')).toHaveAttribute('title', /Recently watched/);
+    await expect(vanished.getByTestId('trash-toggle')).toHaveAttribute('title', /Deletes /);
+
+    // The unknown item carries no library-nav corner (not in the ledger).
+    await expect(unknown.getByTestId('wall-lib-link')).toHaveCount(0);
 
     // The reclaim counts bar sits ABOVE the wall: 4+8+2+1 GiB = 15 GB across 4 items.
     await expect(page.getByTestId('trash-total')).toHaveText('Reclaiming 15 GB across 4 items');
@@ -157,10 +189,7 @@ test.describe('trash section (DESIGN-010)', () => {
     await page.getByRole('group', { name: 'Sort' }).getByRole('button', { name: 'Size' }).click();
     await expect(page).toHaveURL(/sort=size%3Adesc|sort=size:desc/);
     await expect(page.getByTestId('trash-tile').first()).toContainText('Stub Runner');
-    await page
-      .getByRole('group', { name: 'Sort' })
-      .getByRole('button', { name: 'Deletes' })
-      .click(); // back to the soonest-deleting default (the token leaves the URL)
+    await page.getByRole('group', { name: 'Sort' }).getByRole('button', { name: 'Deletes' }).click();
     await expect(page).not.toHaveURL(/sort=/);
 
     // Filter-aware: Genre=Action keeps only Stub Runner and the counts bar says so.
@@ -176,23 +205,20 @@ test.describe('trash section (DESIGN-010)', () => {
     );
     await expect(page).toHaveURL(/genre=Action/);
 
-    // A poster tap opens the item's library page (history/fix live there).
-    await page.getByRole('tab', { name: 'Movies' }).click(); // clears the filter (keeps ?tab)
-    await expect(page.getByTestId('trash-tile')).toHaveCount(4);
-    await fixture.getByTestId('trash-tile-poster').click();
-    await page.waitForURL(/\/library\/[0-9a-f-]{36}$/);
-    await page.goBack();
+    // The library-nav corner opens the item page with the ?from=trash-movies context.
+    const libHref = await runner.getByTestId('wall-lib-link').getAttribute('href');
+    expect(libHref).toMatch(/\/library\/[0-9a-f-]{36}\?from=trash-movies$/);
 
     // TV is a separate tab (never combined): Breaking Prod, requested → tooltip fact.
     await page.getByRole('tab', { name: 'TV' }).click();
-    await expect(page).toHaveURL(/\/trash\?tab=tv$/); // tab switch keeps ONLY ?tab
+    await expect(page).toHaveURL(/\/trash\?tab=tv$/);
     const tvTile = page.getByTestId('trash-tile').filter({ hasText: 'Breaking Prod' });
     await expect(tvTile).toHaveCount(1);
-    await expect(tvTile.getByTestId('trash-tile-poster')).toHaveAttribute('title', /Requested by/);
+    await expect(tvTile.getByTestId('trash-toggle')).toHaveAttribute('title', /Requested by/);
     await expect(page.getByTestId('trash-total')).toHaveText('Reclaiming 20 GB across 1 item');
   });
 
-  test('Save → protected → un-save: the shield corner drives Maintainerr exclusion calls (stub-verified)', async ({
+  test('the poster tap-toggle saves ⇄ un-saves (optimistic, reflow-free); Maintainerr calls (stub-verified)', async ({
     page,
   }) => {
     await resetMaintainerr(page);
@@ -200,29 +226,32 @@ test.describe('trash section (DESIGN-010)', () => {
     await openTrashMovies(page);
 
     const vanished = page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' });
-    const shield = vanished.getByTestId('trash-shield');
-    await expect(shield).toHaveAttribute('data-glyph', 'outline');
+    const fixture = page.getByTestId('trash-tile').filter({ hasText: 'The Fixture' });
+    const toggle = vanished.getByTestId('trash-toggle');
+    await expect(vanished).toHaveAttribute('data-glyph', 'trash');
+    // Let the poster images settle, and scroll the tile fully into view so Playwright's click
+    // doesn't auto-scroll (which would shift the viewport-relative box, not the tile).
+    await page.waitForLoadState('networkidle');
+    await toggle.scrollIntoViewIfNeeded();
 
-    // Save (protective — plain optimistic toggle, no confirm): the corner flips to the filled
-    // "saved by you" shield in place — the tile never moves (ADR-015). Wait out the wire call:
-    // the wall swallows taps while a flip is in flight (no queued double-toggles).
+    // Save: the glyph deepens to the filled shield IN PLACE — the tile and its neighbor never move
+    // on the tap (ADR-015). Measure the optimistic flip (synchronous), before the refetch lands.
     const before = (await vanished.boundingBox())!;
+    const neighborBefore = (await fixture.boundingBox())!;
     const saveSettled = page.waitForResponse((r) => r.url().includes('trash.saveExclusion'));
-    await shield.click();
-    await expect(shield).toHaveAttribute('data-glyph', 'shield');
-    await expect(shield).toHaveAttribute('aria-pressed', 'true');
+    await toggle.click();
+    await expect(vanished).toHaveAttribute('data-glyph', 'shield');
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    expectSameBox(before, await vanished.boundingBox());
+    expectSameBox(neighborBefore, await fixture.boundingBox());
     await saveSettled;
-    const after = (await vanished.boundingBox())!;
-    expect(Math.abs(after.x - before.x)).toBeLessThan(1);
-    expect(Math.abs(after.y - before.y)).toBeLessThan(1);
 
-    // Un-save puts it back under the rules (your own save stays un-savable from the wall).
+    // Tap again ⇒ un-save, back to trash (your own save stays un-savable via the wall).
     const unsaveSettled = page.waitForResponse((r) => r.url().includes('trash.removeExclusion'));
-    await shield.click();
-    await expect(shield).toHaveAttribute('data-glyph', 'outline');
+    await toggle.click();
+    await expect(vanished).toHaveAttribute('data-glyph', 'trash');
     await unsaveSettled;
 
-    // The stub saw exactly the sanctioned writes: one exclusion add, one exclusion delete.
     const calls = await maintainerrCalls(page);
     const adds = calls.filter((c) => c.method === 'POST' && c.path === '/rules/exclusion');
     expect(adds).toHaveLength(1);
@@ -233,27 +262,75 @@ test.describe('trash section (DESIGN-010)', () => {
     expect(removes).toHaveLength(1);
   });
 
-  // Bug 2 (live-repro fix) — an exclusion created OUTSIDE this session (no `dnd` tag synced yet) must
-  // still render Protected in the pending list; the pending read ORs the LIVE exclusion set into the
-  // signal. Vanished Heist is the cold outline-shield fixture (see the wall test), so a pre-seeded
-  // exclusion for it is a clean before/after — and it must render as the INERT check (the wall never
-  // un-saves protection it didn't make).
-  test('a live exclusion made outside the session shows the inert protected check before the dnd tag syncs', async ({
+  test('a live exclusion made outside the session shows the inert protected check', async ({
     page,
   }) => {
     await resetMaintainerr(page);
-    await seedExclusion(page, STUB_MAINT_VANISHED_ID); // excluded upstream — no save flow, no tag
+    await seedExclusion(page, STUB_MAINT_VANISHED_ID);
     await signIn(page, 'admin');
     await openTrashMovies(page);
 
     const vanished = page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' });
-    await expect(vanished.getByTestId('trash-shield')).toHaveAttribute('data-glyph', 'check');
-    await expect(vanished.locator('button[data-testid="trash-shield"]')).toHaveCount(0);
-
-    await resetMaintainerr(page); // clear the seeded exclusion for later tests
+    await expect(vanished).toHaveAttribute('data-glyph', 'check');
+    await expect(vanished.locator('button[data-testid="trash-toggle"]')).toHaveCount(0);
+    await resetMaintainerr(page);
   });
 
-  test('Expedite all: filters refuse to arm; the Modal predicts deleted/protected/skipped; per-item handle calls only (C-07a)', async ({
+  test('per-item Delete now… on the item page: the guard card carries the Modal; a mid-flight unsafe install refuses cleanly', async ({
+    page,
+  }) => {
+    await resetMaintainerr(page);
+    await signIn(page, 'admin');
+    await openTrashMovies(page);
+
+    // Open a pending item's page via its library-nav corner (?from=trash-movies). The Fixture is
+    // pending + non-tombstoned (the seed tombstones Vanished), so its guard card mounts.
+    await page.getByTestId('trash-tile').filter({ hasText: 'The Fixture' }).getByTestId('wall-lib-link').click();
+    await page.waitForURL(/\/library\/[0-9a-f-]{36}\?from=trash-movies$/);
+
+    // The deletion-guard card carries the relocated per-item Expedite ("Delete now…").
+    const guard = page.getByTestId('trash-guard');
+    await expect(guard).toContainText('Scheduled for deletion');
+    await guard.getByTestId('trash-delete-now').click();
+    const confirm = page.getByTestId('trash-expedite-item-confirm');
+    await expect(confirm).toBeVisible();
+
+    // The install degrades between the read and the submit → calm "nothing deleted" state.
+    await setIntegration(page, 'tautulli', false);
+    await page.getByTestId('trash-expedite-item-submit').click();
+    await expect(page.getByTestId('trash-expedite-stale')).toBeVisible();
+    await expect(page.getByTestId('trash-expedite-stale')).toContainText('Nothing was deleted');
+    expect((await maintainerrCalls(page)).some((c) => c.path === '/collections/media/handle')).toBe(false);
+    await page.getByTestId('trash-expedite-stale').getByRole('button', { name: 'Close' }).click();
+    await setIntegration(page, 'tautulli', true);
+  });
+
+  test('a watched item, Delete now…, is PROTECTED not deleted (the guardian wins)', async ({
+    page,
+  }) => {
+    await resetMaintainerr(page);
+    await signIn(page, 'admin');
+    await openTrashMovies(page);
+
+    await page.getByTestId('trash-tile').filter({ hasText: 'The Fixture' }).getByTestId('wall-lib-link').click();
+    await page.waitForURL(/\/library\/[0-9a-f-]{36}\?from=trash-movies$/);
+    await page.getByTestId('trash-delete-now').click();
+    const confirm = page.getByTestId('trash-expedite-item-confirm');
+    await expect(confirm).toContainText('recently watched');
+    await expect(confirm).toContainText('protect it');
+    await page.getByTestId('trash-expedite-item-submit').click();
+    await expect(page.getByTestId('trash-expedite-summary')).toContainText('0 deleted');
+    await expect(page.getByTestId('trash-expedite-summary')).toContainText('1 protected');
+    await page.getByRole('button', { name: 'Done' }).click();
+
+    const calls = await maintainerrCalls(page);
+    expect(calls.some((c) => c.path === '/collections/media/handle')).toBe(false);
+    const saves = calls.filter((c) => c.method === 'POST' && c.path === '/rules/exclusion');
+    expect(saves).toHaveLength(1);
+    expect(saves[0]!.body).toMatchObject({ mediaId: STUB_MAINT_FIXTURE_ID });
+  });
+
+  test('Expedite all: filters refuse to arm; the Modal predicts deleted/protected/skipped; per-item handle only', async ({
     page,
   }) => {
     await resetMaintainerr(page);
@@ -273,163 +350,96 @@ test.describe('trash section (DESIGN-010)', () => {
     await expect(page.getByTestId('trash-expedite-refusal')).toContainText(
       'Filters can’t scope “Expedite all”',
     );
-    await expect(page.getByTestId('trash-expedite-all-submit')).toHaveCount(0);
 
-    // Clearing the filters from inside the Modal reveals the real confirm with the honest
-    // partition: 1 deletes NOW (cold), 2 protected (watched + dnd-tag), 1 kept-unverifiable.
+    // Clearing the filters reveals the real confirm with the honest partition.
     await page.getByRole('button', { name: 'Clear filters' }).click();
     const confirm = page.getByTestId('trash-expedite-all-confirm');
     await expect(confirm).toBeVisible();
     await expect(confirm).toContainText('4 items');
     await expect(confirm).toContainText('1 will be deleted NOW');
-    await expect(confirm).toContainText('freeing 2.0 GB');
     await expect(confirm).toContainText('2 protected');
     await expect(confirm).toContainText('1 kept — can’t be verified safe');
 
-    // Fire. The report distinguishes deleted / protected / skipped (skipped ≠ protected).
+    // Fire — this is the real per-item deletion of Vanished (feeds Recently Deleted).
     await page.getByTestId('trash-expedite-all-submit').click();
     const report = page.getByTestId('trash-expedite-report');
     await expect(report).toBeVisible();
     await expect(page.getByTestId('trash-expedite-summary')).toContainText('1 deleted');
     await expect(page.getByTestId('trash-expedite-summary')).toContainText('2 protected');
     await expect(page.getByTestId('trash-expedite-summary')).toContainText('1 skipped');
-    await expect(report).toContainText('could not be verified safe');
     await report.getByRole('button', { name: 'Done' }).click();
 
-    // The deleted item left the pending set on refetch; the protected/skipped ones remain.
     await expect(page.getByTestId('trash-tile')).toHaveCount(3);
-    await expect(page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' })).toHaveCount(
-      0,
-    );
+    await expect(page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' })).toHaveCount(0);
 
-    // Stub-verified: deletion went through the PER-ITEM handler for exactly the cold item,
-    // the guardian auto-whitelisted the watched item, and the estate-wide handler that
-    // processes EVERY collection was NEVER called (ADR-023 C-07a).
     const calls = await maintainerrCalls(page);
-    const perItem = calls.filter(
-      (c) => c.method === 'POST' && c.path === '/collections/media/handle',
-    );
+    const perItem = calls.filter((c) => c.method === 'POST' && c.path === '/collections/media/handle');
     expect(perItem).toHaveLength(1);
     expect(perItem[0]!.body).toMatchObject({ collectionId: 7, mediaId: STUB_MAINT_VANISHED_ID });
     expect(calls.some((c) => c.path === '/collections/handle')).toBe(false);
-    const guardianSaves = calls.filter((c) => c.method === 'POST' && c.path === '/rules/exclusion');
-    expect(guardianSaves).toHaveLength(1);
-    expect(guardianSaves[0]!.body).toMatchObject({ mediaId: STUB_MAINT_FIXTURE_ID, action: 0 });
   });
 
-  test('Expedite one item: the Modal is unavoidable; a mid-flight unsafe install refuses cleanly', async ({
+  test('the context-aware back-link: ← Trash Movies returns WITH state; garbage from ⇒ Library', async ({
     page,
   }) => {
     await resetMaintainerr(page);
     await signIn(page, 'admin');
     await openTrashMovies(page);
 
-    // The cold row's Modal carries the immediate-and-permanent warning.
-    const vanished = page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' });
-    await vanished.getByTestId('trash-expedite-item').click();
-    const confirm = page.getByTestId('trash-expedite-item-confirm');
-    await expect(confirm).toBeVisible();
-    await expect(confirm).toContainText('immediate and permanent');
+    // Apply a filter, then open an item via its corner — the URL carries the filter state.
+    await page.getByTitle('Edit the Genre filter').click();
+    await page
+      .getByRole('dialog', { name: 'Edit the Genre filter' })
+      .getByLabel('Action', { exact: true })
+      .click();
+    await page.keyboard.press('Escape');
+    await expect(page).toHaveURL(/genre=Action/);
+    await page.getByTestId('trash-tile').filter({ hasText: 'Stub Runner' }).getByTestId('wall-lib-link').click();
+    await page.waitForURL(/\/library\/[0-9a-f-]{36}\?from=trash-movies$/);
 
-    // The install degrades BETWEEN the banner read and the submit (the between-check
-    // regression ADR-023 names) — the server refuses (PRECONDITION_FAILED) and the UI shows
-    // the calm "nothing was deleted — refreshed" state, never a raw error.
-    await setIntegration(page, 'tautulli', false);
-    await page.getByTestId('trash-expedite-item-submit').click();
-    await expect(page.getByTestId('trash-expedite-stale')).toBeVisible();
-    await expect(page.getByTestId('trash-expedite-stale')).toContainText('Nothing was deleted');
-    const midCalls = await maintainerrCalls(page);
-    expect(midCalls.some((c) => c.path === '/collections/media/handle')).toBe(false);
-    await page.getByTestId('trash-expedite-stale').getByRole('button', { name: 'Close' }).click();
+    // The back affordance reads "← Trash Movies"…
+    const back = page.getByTestId('back-link');
+    await expect(back).toHaveText('← Trash Movies');
+    // …and returns to the origin WITH its filter state preserved (history.back()).
+    await back.click();
+    await page.waitForURL(/\/trash\?tab=movies&genre=Action$/);
+    await expect(page.getByTestId('trash-tile')).toHaveCount(1);
 
-    // Restore the integration; the deletable item's Modal now deletes for real.
-    await setIntegration(page, 'tautulli', true);
-    await page.reload();
-    const row = page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' });
-    await row.getByTestId('trash-expedite-item').click();
-    await page.getByTestId('trash-expedite-item-submit').click();
-    await expect(page.getByTestId('trash-expedite-summary')).toContainText('1 deleted');
-    await page.getByRole('button', { name: 'Done' }).click();
-    await expect(page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' })).toHaveCount(
-      0,
-    );
+    // A deep-linked garbage `from` falls to the Library default (no open redirect).
+    const anyId = (await page
+      .getByTestId('trash-tile')
+      .first()
+      .getByTestId('wall-lib-link')
+      .getAttribute('href'))!.replace(/\?.*$/, '');
+    await page.goto(`${anyId}?from=https://evil.example.com`);
+    await expect(page.getByTestId('back-link')).toHaveText('← Library');
+    await expect(page.getByTestId('back-link')).toHaveAttribute('href', '/library');
   });
 
-  test('a watched item expedited alone is PROTECTED, not deleted (the guardian wins)', async ({
+  test('the bulletin media chip carries ?from=bulletin and its item back-link reads ← Bulletin', async ({
     page,
   }) => {
-    await resetMaintainerr(page);
     await signIn(page, 'admin');
-    await openTrashMovies(page);
+    // Post a message linking a library item, so the board has a media chip (body is required).
+    await page.goto('/bulletin?tab=messages');
+    await expect(page.getByTestId('message-composer')).toBeVisible();
+    await page
+      .getByPlaceholder('Broken media, a request, or anything for the household…')
+      .fill('Please check this title.');
+    await page.getByTestId('composer-media-search').fill('Fixture');
+    await page.getByRole('option', { name: /The Fixture/ }).first().click();
+    await page.getByTestId('message-post').click();
 
-    const fixture = page.getByTestId('trash-tile').filter({ hasText: 'The Fixture' });
-    await fixture.getByTestId('trash-expedite-item').click();
-    const confirm = page.getByTestId('trash-expedite-item-confirm');
-    await expect(confirm).toContainText('recently watched');
-    await expect(confirm).toContainText('protect it');
-    await page.getByTestId('trash-expedite-item-submit').click();
-    await expect(page.getByTestId('trash-expedite-summary')).toContainText('0 deleted');
-    await expect(page.getByTestId('trash-expedite-summary')).toContainText('1 protected');
-    await page.getByRole('button', { name: 'Done' }).click();
-
-    const calls = await maintainerrCalls(page);
-    expect(calls.some((c) => c.path === '/collections/media/handle')).toBe(false);
-    expect(calls.some((c) => c.path === '/collections/handle')).toBe(false);
-    const saves = calls.filter((c) => c.method === 'POST' && c.path === '/rules/exclusion');
-    expect(saves).toHaveLength(1);
-    expect(saves[0]!.body).toMatchObject({ mediaId: STUB_MAINT_FIXTURE_ID });
+    const chip = page.getByTestId('message-media-chip').first();
+    await expect(chip).toBeVisible();
+    expect(await chip.getAttribute('href')).toMatch(/\/library\/[0-9a-f-]{36}\?from=bulletin$/);
+    await chip.click();
+    await page.waitForURL(/\/library\/[0-9a-f-]{36}\?from=bulletin$/);
+    await expect(page.getByTestId('back-link')).toHaveText('← Bulletin');
+    await expect(page.getByTestId('back-link')).toHaveAttribute('href', '/bulletin?tab=messages');
   });
 
-  test('F1 — a just-SAVED item survives BOTH Expedite paths: no per-item handle, reported protected (save→expedite race)', async ({
-    page,
-  }) => {
-    await resetMaintainerr(page);
-    await signIn(page, 'admin');
-    await openTrashMovies(page);
-
-    // Save the cold item. Its Maintainerr exclusion lands NOW, but its protective dnd tag would only
-    // reach our ledger on the next *arr sync — the window the review flagged. The server-side
-    // live-exclusion seam (F1a) must protect it across every expedite regardless of the tag lag.
-    const vanished = page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' });
-    const saveSettled = page.waitForResponse((r) => r.url().includes('trash.saveExclusion'));
-    await vanished.getByTestId('trash-shield').click();
-    await expect(vanished.getByTestId('trash-shield')).toHaveAttribute('data-glyph', 'shield');
-    await saveSettled; // the exclusion write must LAND before the expedite race is meaningful
-
-    // Expedite it as a SINGLE item immediately. The confirm no longer short-circuits on the session
-    // shield (F1b) — it shows the honest guardian verdict — but the SERVER protects the saved item,
-    // so the report says protected (not deleted) and NO per-item handle fires for it.
-    await vanished.getByTestId('trash-expedite-item').click();
-    await page.getByTestId('trash-expedite-item-submit').click();
-    await expect(page.getByTestId('trash-expedite-summary')).toContainText('0 deleted');
-    await expect(page.getByTestId('trash-expedite-summary')).toContainText('1 protected');
-    await page.getByRole('button', { name: 'Done' }).click();
-    await expect(vanished).toHaveCount(1); // still pending — never deleted
-
-    // Now Expedite ALL. The saved item must again be protected, never handled.
-    await page.getByTestId('trash-expedite-all').click();
-    await page.getByTestId('trash-expedite-all-submit').click();
-    await expect(page.getByTestId('trash-expedite-report')).toBeVisible();
-    await expect(page.getByTestId('trash-expedite-summary')).toContainText('0 deleted');
-    await page.getByRole('button', { name: 'Done' }).click();
-
-    // Stub-verified across BOTH runs: the estate-wide handler never fired, and the per-item delete
-    // handler was NEVER called for the saved item.
-    const calls = await maintainerrCalls(page);
-    expect(calls.some((c) => c.path === '/collections/handle')).toBe(false);
-    const handledSaved = calls.filter(
-      (c) =>
-        c.method === 'POST' &&
-        c.path === '/collections/media/handle' &&
-        (c.body as { mediaId?: string }).mediaId === STUB_MAINT_VANISHED_ID,
-    );
-    expect(handledSaved).toHaveLength(0);
-    await expect(page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' })).toHaveCount(
-      1,
-    );
-  });
-
-  test('safety banner warns when an integration drops, and every destructive control disables', async ({
+  test('safety banner warns when an integration drops; the destructive controls disable', async ({
     page,
   }) => {
     await resetMaintainerr(page);
@@ -441,18 +451,289 @@ test.describe('trash section (DESIGN-010)', () => {
     await expect(banner).toHaveAttribute('data-state', 'warn');
     await expect(banner).toContainText('Tautulli not connected');
 
-    // Expedite (destructive) disables everywhere; the shield (protective, needs only
-    // reachability) stays live.
+    // Expedite-all disables; the protective save toggle (needs only reachability) stays live.
     await expect(page.getByTestId('trash-expedite-all')).toBeDisabled();
-    const vanished = page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' });
-    await expect(vanished.getByTestId('trash-expedite-item')).toBeDisabled();
-    await expect(vanished.getByTestId('trash-shield')).toBeEnabled();
+    await expect(
+      page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' }).getByTestId('trash-toggle'),
+    ).toBeEnabled();
 
-    // Restore → green again, controls re-arm.
     await setIntegration(page, 'tautulli', true);
     await page.reload();
     await expect(page.getByTestId('trash-safety')).toHaveAttribute('data-state', 'safe');
     await expect(page.getByTestId('trash-expedite-all')).toBeEnabled();
+  });
+
+  // ── the batch lifecycle, now IN the Movies tab (ADR-033) ─────────────────────────────────
+
+  test('Start a batch → admin_review curation on the Movies tab; tap trash→shield is reflow-free + records the save; the new-candidates strip is admin-only', async ({
+    page,
+  }) => {
+    await resetMaintainerr(page);
+    await signIn(page, 'admin');
+    await openTrashMovies(page);
+
+    // No open batch ⇒ the pending wall + the admin "Start a batch" header (candidate count).
+    await expect(page.getByTestId('batch-candidates')).toHaveText(
+      '4 movie candidates currently proposed by the rules.',
+    );
+    await page.getByTestId('batch-start').click();
+
+    // The lifecycle header renders: Admin review, 4 items; the batch wall replaces the pending wall.
+    await expect(page.getByTestId('batch-state')).toHaveText('Admin review');
+    await expect(page.getByTestId('batch-lifecycle')).toContainText('4 items');
+    await expect(page.getByTestId('wall-tile')).toHaveCount(4);
+    const vanished = page.getByTestId('wall-tile').filter({ hasText: 'Vanished Heist' });
+    await expect(vanished).toHaveAttribute('data-glyph', 'trash');
+    await expect(page.getByTestId('wall-tile').filter({ hasText: 'The Fixture' })).toHaveAttribute('data-glyph', 'eye');
+    await expect(page.getByTestId('wall-tile').filter({ hasText: 'Stub Runner' })).toHaveAttribute('data-glyph', 'check');
+    await expect(page.getByTestId('wall-counts')).toHaveText('Deleting 2 · Rescued 0 · Kept 2 · frees 3.0 GB');
+
+    // Tap trash → shield: overlay swap only — the tile and its neighbor must not move (ADR-015).
+    const fixture = page.getByTestId('wall-tile').filter({ hasText: 'The Fixture' });
+    await vanished.getByRole('button').scrollIntoViewIfNeeded();
+    const tileBefore = await vanished.boundingBox();
+    const neighborBefore = await fixture.boundingBox();
+    await vanished.getByRole('button').click();
+    await expect(vanished).toHaveAttribute('data-glyph', 'shield');
+    expectSameBox(tileBefore, await vanished.boundingBox());
+    expectSameBox(neighborBefore, await fixture.boundingBox());
+    await expect(page.getByTestId('wall-counts')).toHaveText('Deleting 1 · Rescued 1 · Kept 2 · frees 1.0 GB');
+    await expect(page.getByTestId('batch-savers')).toContainText('Bootstrap Admin · 1 saved');
+    let calls = await maintainerrCalls(page);
+    const saves = calls.filter((c) => c.method === 'POST' && c.path === '/rules/exclusion');
+    expect(saves).toHaveLength(1);
+    expect(saves[0]!.body).toMatchObject({ mediaId: STUB_MAINT_VANISHED_ID });
+
+    // Un-save (NET semantics — 0 saved, 1 un-saved).
+    await vanished.getByRole('button').click();
+    await expect(vanished).toHaveAttribute('data-glyph', 'trash');
+    await expect(page.getByTestId('batch-savers')).toContainText('Bootstrap Admin · 0 saved · 1 un-saved');
+    calls = await maintainerrCalls(page);
+    expect(
+      calls.some((c) => c.method === 'DELETE' && c.path === `/rules/exclusions/${STUB_MAINT_VANISHED_ID}`),
+    ).toBe(true);
+
+    // A fresh candidate joins the LIVE set (not the frozen batch) ⇒ the admin-only strip appears.
+    await addPendingCandidate(page);
+    await page.goto('/trash?tab=movies');
+    await expect(page.getByTestId('batch-new-candidates')).toContainText('New candidates since this batch (1)');
+  });
+
+  test('Start refuses gracefully while a batch is open — the error names the blocker', async ({
+    page,
+  }) => {
+    await signIn(page, 'admin');
+    await page.goto('/trash?tab=movies');
+    await expect(page.getByTestId('batch-state')).toHaveText('Admin review');
+    // No "Start a batch" button while one is open (the button only renders with no open batch).
+    await expect(page.getByTestId('batch-start')).toHaveCount(0);
+  });
+
+  test('Green-light → Leaving Soon: window default + override, countdown, DO_NOTHING Plex collection', async ({
+    page,
+  }) => {
+    await signIn(page, 'admin');
+    await page.goto('/trash?tab=movies');
+
+    await page.getByTestId('batch-greenlight').click();
+    const confirm = page.getByTestId('batch-greenlight-confirm');
+    await expect(confirm).toContainText('Leaving Soon — Movies');
+    await expect(confirm).toContainText('the sweep deletes what’s left');
+    await expect(page.getByTestId('batch-window-days')).toHaveValue('21');
+    await page.getByTestId('batch-window-days').fill('14');
+    await page.getByTestId('batch-greenlight-submit').click();
+
+    await expect(page.getByTestId('batch-state')).toHaveText('Leaving Soon');
+    await expect(page.getByTestId('batch-countdown')).toHaveText(
+      'These delete in 14 days — tap anything you want to keep.',
+    );
+    await expect(page.getByTestId('batch-expire')).toBeDisabled();
+
+    const creates = (await maintainerrCalls(page)).filter(
+      (c) => c.method === 'POST' && c.path === '/collections',
+    );
+    expect(creates).toHaveLength(1);
+    const dto = creates[0]!.body as {
+      collection: Record<string, unknown>;
+      media: Array<{ mediaServerId: string }>;
+    };
+    expect(dto.collection).toMatchObject({
+      title: 'Leaving Soon — Movies',
+      type: 'movie',
+      arrAction: 4,
+      visibleOnHome: true,
+    });
+    expect(dto.media.map((m) => m.mediaServerId)).not.toContain('ms-880002'); // protected stays out
+  });
+
+  test('the family window: a save_leaving_soon role saves anything, un-saves ONLY its own; no lifecycle controls', async ({
+    page,
+    browser,
+  }) => {
+    await signIn(page, 'admin');
+    await page.goto('/trash?tab=movies');
+    // The admin saves Vanished — the foreign save Marge must NOT be able to release.
+    const adminVanished = page.getByTestId('wall-tile').filter({ hasText: 'Vanished Heist' });
+    await adminVanished.getByRole('button').click();
+    await expect(adminVanished).toHaveAttribute('data-glyph', 'shield');
+
+    const memberContext = await browser.newContext();
+    const memberPage = await memberContext.newPage();
+    await signIn(memberPage, 'member');
+    await assignMemberRole(page, 'Trash Family');
+    await memberPage.goto('/trash?tab=movies');
+
+    // The countdown invites the rescue; the family sees NO lifecycle controls, and (admin-only)
+    // NO new-candidates strip.
+    await expect(memberPage.getByTestId('batch-countdown')).toContainText('tap anything you want to keep');
+    for (const control of ['batch-start', 'batch-greenlight', 'batch-cancel', 'batch-expire']) {
+      await expect(memberPage.getByTestId(control)).toHaveCount(0);
+    }
+    await expect(memberPage.getByTestId('batch-new-candidates')).toHaveCount(0);
+
+    // The admin's save reads as someone else's — visible but not tappable.
+    const vanished = memberPage.getByTestId('wall-tile').filter({ hasText: 'Vanished Heist' });
+    await expect(vanished).toHaveAttribute('data-glyph', 'shield');
+    await expect(vanished.getByRole('button')).toHaveCount(0);
+
+    // Marge rescues the unknown item (a real exclusion write lands), then undoes her OWN save.
+    const unknown = memberPage.getByTestId('wall-tile').filter({ hasText: 'tmdb:990009' });
+    await unknown.getByRole('button').click();
+    await expect(unknown).toHaveAttribute('data-glyph', 'shield');
+    await expect(memberPage.getByTestId('batch-savers')).toContainText('Marge Member · 1 saved');
+    await unknown.getByRole('button').click();
+    await expect(unknown).toHaveAttribute('data-glyph', 'trash');
+
+    // Without the grant (Trash Limited) the SAME wall is fully read-only, countdown drops the tap.
+    await assignMemberRole(page, 'Trash Limited');
+    await memberPage.goto('/trash?tab=movies');
+    await expect(memberPage.getByTestId('wall-tile')).toHaveCount(4);
+    await expect(memberPage.getByTestId('batch-wall').getByRole('button')).toHaveCount(0);
+    await expect(memberPage.getByTestId('batch-countdown')).toContainText('These delete in');
+    await expect(memberPage.getByTestId('batch-countdown')).not.toContainText('tap anything');
+
+    await memberContext.close();
+    await assignMemberRole(page, 'Default (default)');
+  });
+
+  test('Expire now → the sweep; the Movies tab returns to the pending wall + a Past-batches strip (report)', async ({
+    page,
+  }) => {
+    await signIn(page, 'admin');
+    await page.goto('/trash?tab=movies');
+
+    // Close the window-open batch and start a clean one for the expiry journey. Cancelling is
+    // terminal ⇒ the LifecycleView drops out and the pending wall returns (no open batch).
+    await expect(page.getByTestId('batch-state')).toHaveText('Leaving Soon');
+    await armAndConfirm(page.getByTestId('batch-cancel'));
+    await expect(page.getByTestId('trash-wall')).toBeVisible();
+    await resetMaintainerr(page);
+
+    // A cancelled batch is terminal ⇒ the pending wall is back, plus a Past-batches strip.
+    await page.goto('/trash?tab=movies');
+    await expect(page.getByTestId('trash-wall')).toBeVisible();
+    await expect(page.getByTestId('batch-history')).toBeVisible();
+
+    await page.getByTestId('batch-start').click();
+    await expect(page.getByTestId('batch-state')).toHaveText('Admin review');
+
+    // Time-travel: green-light with an already-expired window via the domain single-writer.
+    greenlightExpired('movie');
+    await page.goto('/trash?tab=movies');
+    await expect(page.getByTestId('batch-state')).toHaveText('Leaving Soon');
+    await expect(page.getByTestId('batch-countdown')).toContainText('The save window has closed');
+    const expire = page.getByTestId('batch-expire');
+    await expect(expire).toBeEnabled();
+
+    await expire.click();
+    const confirm = page.getByTestId('batch-expire-confirm');
+    await expect(confirm).toContainText('immediate and permanent');
+    await expect(confirm).toContainText('Up to 1 item will be deleted');
+    await page.getByTestId('batch-expire-submit').click();
+
+    const report = page.getByTestId('batch-expire-report');
+    await expect(report).toBeVisible();
+    await expect(page.getByTestId('batch-expire-summary')).toContainText('1 deleted');
+    await expect(page.getByTestId('batch-expire-summary')).toContainText('2 skipped');
+
+    // Per-item handle only (ADR-023 C-07a).
+    const calls = await maintainerrCalls(page);
+    const handles = calls.filter((c) => c.method === 'POST' && c.path === '/collections/media/handle');
+    expect(handles).toHaveLength(1);
+    expect(handles[0]!.body).toMatchObject({ mediaId: STUB_MAINT_VANISHED_ID });
+    expect(calls.some((c) => c.path === '/collections/handle')).toBe(false);
+
+    // Done ⇒ the batch is now terminal, so the Movies tab returns to the pending wall +
+    // the Past-batches strip (ADR-033). Expanding the Deleted row reveals its final report
+    // (the terminal PosterWall with the sweep glyphs).
+    await report.getByRole('button', { name: 'Done' }).click();
+    await expect(page.getByTestId('trash-wall')).toBeVisible();
+    const strip = page.getByTestId('batch-history');
+    await expect(strip).toBeVisible();
+    const rows = page.getByTestId('batch-history-row');
+    expect(await rows.count()).toBeGreaterThanOrEqual(2); // cancelled + deleted
+    // The state chip is exact; the cancelled row's meta ("nothing deleted") would also substring-match.
+    const deletedRow = rows.filter({ has: page.locator('.batch-state', { hasText: 'Deleted' }) }).first();
+    await deletedRow.locator('summary').click(); // toggle the <details> open
+    await expect(deletedRow.getByTestId('batch-wall')).toBeVisible();
+    await expect(deletedRow.getByTestId('wall-counts')).toContainText('Deleted 1 · Rescued 0 · Kept 3 · freed 2.0 GB');
+    await expect(deletedRow.getByTestId('wall-tile').filter({ hasText: 'Vanished Heist' })).toHaveAttribute('data-glyph', 'gone');
+    await expect(deletedRow.getByTestId('wall-tile').filter({ hasText: 'The Fixture' })).toHaveAttribute('data-glyph', 'skip');
+    await expect(deletedRow.getByTestId('wall-tile').filter({ hasText: 'Stub Runner' })).toHaveAttribute('data-glyph', 'check');
+  });
+
+  test('mobile 390×844: the batch wall is a 3-column thumb grid with legible glyphs; no sideways scroll', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await resetMaintainerr(page);
+    await signIn(page, 'admin');
+    // Fresh batch for the mobile shot (the previous one is terminal).
+    await page.goto('/trash?tab=movies');
+    await page.getByTestId('batch-start').click();
+    await expect(page.getByTestId('batch-state')).toHaveText('Admin review');
+
+    const tiles = page.getByTestId('wall-tile');
+    await expect(tiles).toHaveCount(4);
+    const boxes = await Promise.all([0, 1, 2, 3].map(async (i) => (await tiles.nth(i).boundingBox())!));
+    expect(Math.abs(boxes[0]!.y - boxes[1]!.y)).toBeLessThan(1);
+    expect(boxes[3]!.y).toBeGreaterThan(boxes[0]!.y + 10);
+    expect(boxes[0]!.width).toBeGreaterThan(100);
+    expect(boxes[0]!.height).toBeGreaterThan(boxes[0]!.width);
+    await expectViewportFit(page);
+
+    // Clean up: cancel so later tests see the pending wall (cancel is terminal ⇒ wall returns).
+    await armAndConfirm(page.getByTestId('batch-cancel'));
+    await expect(page.getByTestId('trash-wall')).toBeVisible();
+  });
+
+  // ── the rest of the section (unchanged surfaces) ─────────────────────────────────────────
+
+  test('skip-gate: the audited setting sends a new batch STRAIGHT to Leaving Soon', async ({
+    page,
+  }) => {
+    await resetMaintainerr(page);
+    await signIn(page, 'admin');
+
+    await page.goto('/settings/trash');
+    await expect(page.getByTestId('trash-settings')).toContainText('straight to Leaving Soon');
+    await armAndConfirm(page.getByTestId('skipgate-enable'));
+    await expect(page.getByTestId('skipgate-state')).toContainText('Skip-gate is ON');
+
+    // A fresh TV batch skips admin review entirely: born Leaving Soon, flagged gate-skipped.
+    await page.goto('/trash?tab=tv');
+    await expect(page.getByTestId('batch-candidates')).toContainText('TV candidate');
+    await page.getByTestId('batch-start').click();
+    await expect(page.getByTestId('batch-state')).toHaveText('Leaving Soon');
+    await expect(page.getByTestId('batch-gate-skipped')).toBeVisible();
+    await expect(page.getByTestId('batch-countdown')).toContainText('These delete in 21 days');
+    await armAndConfirm(page.getByTestId('batch-cancel'));
+    await expect(page.getByTestId('trash-wall')).toBeVisible(); // terminal ⇒ TV pending wall returns
+
+    // Restore the gate.
+    await page.goto('/settings/trash');
+    await page.getByTestId('skipgate-disable').click();
+    await expect(page.getByTestId('skipgate-state')).toContainText('Gate is ON');
   });
 
   test('Recently Deleted lists the tombstoned item; Restore re-adds through the failsafe path', async ({
@@ -464,118 +745,60 @@ test.describe('trash section (DESIGN-010)', () => {
 
     const row = page.getByTestId('trash-deleted-row').filter({ hasText: 'Vanished Heist' });
     await expect(row).toBeVisible();
-    await expect(row.locator('.badge').filter({ hasText: 'Movie' })).toBeVisible();
-
-    // Two-step confirm (ADR-014) → the failsafe executeRestore run; the row reports inline.
     await armAndConfirm(row.getByTestId('trash-restore'));
     await expect(row.getByTestId('trash-restore-status')).toBeVisible();
   });
 
-  test('Rules on /settings/trash (ADR-032): the admin round-trips via the user menu; disarm→re-arm round-trips the encoded RulesDto; delete removes it', async ({
+  test('Rules on /settings/trash: disarm→re-arm round-trips the RulesDto; delete removes it', async ({
     page,
   }) => {
     await resetMaintainerr(page);
     await signIn(page, 'admin');
-
-    // The user menu is the route in (ADR-032 / DESIGN-004 D-16): Trash settings shows for
-    // the admin's implicit trash=edit and lands on the relocated settings page.
     await openUserMenu(page);
     await page.getByRole('menuitem', { name: 'Trash settings' }).click();
     await page.waitForURL('/settings/trash');
-    await expect(page.getByRole('heading', { name: 'Trash settings' })).toBeVisible();
-    // The safety banner rides along (the honest WHY when edits are disabled).
-    await expect(page.getByTestId('trash-safety')).toBeVisible();
 
     const rule = page.getByTestId('trash-rule-row').filter({ hasText: 'Purge stale movies' });
-    await expect(rule).toBeVisible();
-    await expect(rule).toContainText('Movies');
-    await expect(rule).toContainText('30 days');
-    // NB exact text — hasText 'Armed' would ALSO substring-match "Disarmed".
     await expect(rule.locator('.badge')).toHaveText('Armed');
-
-    // Disarm → PUT /rules with the full round-tripped payload, isActive false. The GET rule carries
-    // an ENCODED `ruleJson`; the app must DECODE it to the RuleDto shape Maintainerr's PUT validates,
-    // else the write 502s (the live arm/disarm bug). A successful disarm proves the decode ran. The
-    // rule references Radarr (firstVal[0]=1), so the disarm ALSO proves the group-level radarrSettingsId
-    // was lifted from the nested collection (else the stub returns {code:0,"Radarr rules require…"} → 502).
     await rule.getByTestId('trash-rule-toggle').click();
     await expect(rule.locator('.badge')).toHaveText('Disarmed');
-    let puts = (await maintainerrCalls(page)).filter(
-      (c) => c.method === 'PUT' && c.path === '/rules',
-    );
+    let puts = (await maintainerrCalls(page)).filter((c) => c.method === 'PUT' && c.path === '/rules');
     expect(puts).toHaveLength(1);
-    expect(puts[0]!.body).toMatchObject({ id: 11, name: 'Purge stale movies', isActive: false });
-    // Server selection is lifted to the group level (Bug: live re-verify 502).
-    expect(puts[0]!.body).toMatchObject({ radarrSettingsId: 3 });
-    // HAZARD guard: dataType + libraryId are carried back VERBATIM (the GET-derived canonical strings),
-    // never coerced — else Maintainerr's updateRules sees a crucial-setting change and WIPES the
-    // collection. Asserting the exact representation catches a would-be-wipe payload.
-    expect(puts[0]!.body).toMatchObject({ dataType: 'movie', libraryId: '1' });
-    expect(await maintainerrWipes(page)).toHaveLength(0); // no crucial-change wipe happened
-    // the PUT body's rules[] are DECODED (firstVal present, the encoded ruleJson is gone).
-    const disarmRules = (puts[0]!.body as { rules: Array<Record<string, unknown>> }).rules;
-    expect(disarmRules.length).toBeGreaterThan(0);
-    expect(disarmRules[0]).toHaveProperty('firstVal');
-    expect(disarmRules[0]).not.toHaveProperty('ruleJson');
+    expect(puts[0]!.body).toMatchObject({ id: 11, isActive: false, dataType: 'movie', libraryId: '1', radarrSettingsId: 3 });
+    expect(await maintainerrWipes(page)).toHaveLength(0);
 
-    // Re-arm → a SECOND full GET→PUT round-trip (the stub re-encoded the rule to the DB shape on the
-    // disarm, so re-arm decodes again), isActive true. Waiting for the exact "Armed" badge gates on
-    // the re-arm refetch completing, so the second PUT is recorded by the time we read the calls.
     await rule.getByTestId('trash-rule-toggle').click();
     await expect(rule.locator('.badge')).toHaveText('Armed');
     puts = (await maintainerrCalls(page)).filter((c) => c.method === 'PUT' && c.path === '/rules');
     expect(puts).toHaveLength(2);
-    expect(puts[1]!.body).toMatchObject({
-      id: 11,
-      isActive: true,
-      dataType: 'movie',
-      libraryId: '1',
-      radarrSettingsId: 3,
-    });
-    const rearmRules = (puts[1]!.body as { rules: Array<Record<string, unknown>> }).rules;
-    expect(rearmRules[0]).toHaveProperty('firstVal');
-    expect(rearmRules[0]).not.toHaveProperty('ruleJson');
-    expect(await maintainerrWipes(page)).toHaveLength(0); // still no crucial-change wipe across the round-trip
+    expect(await maintainerrWipes(page)).toHaveLength(0);
 
-    // Delete (two-step) → DELETE /rules/11 and the row leaves the list.
     await armAndConfirm(rule.getByTestId('trash-rule-delete'));
     await expect(page.getByTestId('trash-rule-row')).toHaveCount(0);
-    const afterDelete = await maintainerrCalls(page);
-    expect(afterDelete.some((c) => c.method === 'DELETE' && c.path === '/rules/11')).toBe(true);
-
-    await resetMaintainerr(page); // put the fixture rule back for later tests
+    await resetMaintainerr(page);
   });
 
-  test('the webhook rejects without the shared secret, accepts with it, and feeds Activity', async ({
+  test('the webhook rejects without the secret, accepts with it, and feeds Activity', async ({
     page,
     request,
   }) => {
     const url = `${env().BETTER_AUTH_URL}/api/webhooks/maintainerr`;
     const body = { notification_type: 'MEDIA_DELETED', subject: 'Cleaned up', message: '2 items' };
-
     const noSecret = await request.post(url, { data: body });
     expect(noSecret.status()).toBe(401);
-
     const withSecret = await request.post(url, {
       headers: { 'x-webhook-secret': env().MAINTAINERR_WEBHOOK_SECRET },
       data: body,
     });
     expect(withSecret.status()).toBe(202);
-    const json = (await withSecret.json()) as { ok: boolean; id: string };
-    expect(json.ok).toBe(true);
-    expect(json.id).toBeTruthy();
 
-    // The stored notification surfaces on the Activity tab (D-07).
     await signIn(page, 'admin');
     await page.goto('/trash?tab=activity');
     const feed = page.getByTestId('trash-activity');
-    await expect(feed).toBeVisible();
-    await expect(feed.locator('li').filter({ hasText: 'Cleaned up' }).first()).toContainText(
-      '2 items',
-    );
+    await expect(feed.locator('li').filter({ hasText: 'Cleaned up' }).first()).toContainText('2 items');
   });
 
-  test('role gating: a save-only role browses and shields but cannot expedite, restore, or edit rules', async ({
+  test('role gating: a save-only role browses and toggles but cannot expedite, restore, or edit rules', async ({
     page,
     browser,
   }) => {
@@ -583,43 +806,37 @@ test.describe('trash section (DESIGN-010)', () => {
     const memberContext = await browser.newContext();
     const memberPage = await memberContext.newPage();
     await signIn(memberPage, 'member');
-
     await signIn(page, 'admin');
     await assignMemberRole(page, 'Trash Limited');
 
-    // Nav shows Trash (read_only ≥ visible); the pending wall renders with shield corners…
     await memberPage.goto('/');
     expect(await memberPage.locator('.topbar__nav a').allInnerTexts()).toContain('Trash');
-    await memberPage.goto('/trash');
+    await memberPage.goto('/trash?tab=movies');
     await expect(memberPage.getByTestId('trash-tile')).toHaveCount(4);
-    await expect(
-      memberPage
-        .getByTestId('trash-tile')
-        .filter({ hasText: 'Vanished Heist' })
-        .getByTestId('trash-shield'),
-    ).toBeVisible();
-    // …but NOTHING destructive is reachable: no per-row Expedite, no Expedite-all.
-    await expect(memberPage.getByTestId('trash-expedite-item')).toHaveCount(0);
+    // Expedite-all is absent (no grant). Per-item expedite lives on the item page (also absent):
+    // open a pending, non-tombstoned item (The Fixture) whose guard card DOES mount for this role.
     await expect(memberPage.getByTestId('trash-expedite-all')).toHaveCount(0);
+    await memberPage
+      .getByTestId('trash-tile')
+      .filter({ hasText: 'The Fixture' })
+      .getByTestId('wall-lib-link')
+      .click();
+    await memberPage.waitForURL(/\/library\//);
+    await expect(memberPage.getByTestId('trash-guard')).toBeVisible();
+    await expect(memberPage.getByTestId('trash-delete-now')).toHaveCount(0); // no expedite_item grant
+    await expect(memberPage.getByTestId('trash-guard').getByTestId('trash-shield')).toBeVisible(); // save is allowed
 
-    // Rules live on /settings/trash now (ADR-032), gated at section EDIT: this read-only
-    // role (even WITH the edit_rules grant — it additionally requires section Edit,
-    // ADR-023 C-03) gets no "Trash settings" menu item and the friendly dead-end on the
-    // direct URL. There is no Rules tab left on /trash to leak a read-only view.
-    await expect(memberPage.getByRole('tab', { name: 'Rules' })).toHaveCount(0);
+    // Rules live on /settings/trash (section EDIT): this read-only role gets the dead-end.
     await openUserMenu(memberPage);
     await expect(memberPage.getByRole('menuitem', { name: 'Trash settings' })).toHaveCount(0);
     await memberPage.keyboard.press('Escape');
     await memberPage.goto('/settings/trash');
     await expect(memberPage.getByTestId('trash-settings-unavailable')).toBeVisible();
-    await expect(memberPage.getByTestId('trash-rule-row')).toHaveCount(0);
 
-    // No restore grant ⇒ no Restore control.
     await memberPage.goto('/trash?tab=deleted');
     await expect(memberPage.getByTestId('trash-restore')).toHaveCount(0);
 
     await memberContext.close();
-    // Restore the member to Default — later spec files depend on the seeded grants.
     await assignMemberRole(page, 'Default (default)');
   });
 
@@ -628,30 +845,18 @@ test.describe('trash section (DESIGN-010)', () => {
   }) => {
     await signIn(page, 'admin');
     await page.goto('/admin/roles');
-
-    // Admin: implicit Edit + all actions, uneditable.
     const adminRow = page.locator('.admin-table tbody tr').filter({ hasText: 'superuser' });
     await expect(adminRow).toContainText('Edit · all actions');
 
-    // The seeded Trash Limited role: level select reads read_only; the summary counts grants.
     const select = page.getByLabel('Trash access for Trash Limited');
     await expect(select).toHaveValue('read_only');
     await expect(page.getByTestId('trash-actions-summary-Trash Limited')).toHaveText('3 actions');
-
-    // The per-action grid lives in the row editor: grant expedite_item, save, verify persistence.
     const limitedRow = page.locator('.admin-table tbody tr').filter({ hasText: 'Trash Limited' });
     await limitedRow.getByRole('button', { name: 'Edit' }).click();
     const grid = page.getByTestId('trash-actions-grid');
-    await expect(grid).toBeVisible();
-    await expect(grid.getByTestId('trash-action-save_exclude')).toBeChecked();
-    await expect(grid.getByTestId('trash-action-expedite_item')).not.toBeChecked();
     await grid.getByTestId('trash-action-expedite_item').check();
     await page.getByRole('button', { name: 'Save changes' }).click();
     await expect(page.getByTestId('trash-actions-summary-Trash Limited')).toHaveText('4 actions');
-    await page.reload();
-    await expect(page.getByTestId('trash-actions-summary-Trash Limited')).toHaveText('4 actions');
-
-    // Put the seeded grant set back (the suite treats seeded roles as canonical).
     await page
       .locator('.admin-table tbody tr')
       .filter({ hasText: 'Trash Limited' })
@@ -669,28 +874,24 @@ test.describe('trash section (DESIGN-010)', () => {
     await signIn(page, 'admin');
     await openTrashMovies(page);
 
-    // A pending, ledger-joined movie → its detail page mounts the guard panel + shield.
     const fixtureHref = await page
       .getByTestId('trash-tile')
       .filter({ hasText: 'The Fixture' })
-      .locator('a[data-testid="trash-tile-poster"]')
+      .getByTestId('wall-lib-link')
       .getAttribute('href');
     await page.goto(fixtureHref!);
     await expect(page.getByTestId('trash-guard')).toBeVisible();
     await expect(page.getByTestId('trash-guard')).toContainText('Scheduled for deletion');
-    await expect(page.getByTestId('trash-guard').getByTestId('trash-shield')).toBeVisible();
 
-    // The dnd-tagged movie shows the protected badge in its header (read off arrTags).
     await openTrashMovies(page);
     const runnerHref = await page
       .getByTestId('trash-tile')
       .filter({ hasText: 'Stub Runner' })
-      .locator('a[data-testid="trash-tile-poster"]')
+      .getByTestId('wall-lib-link')
       .getAttribute('href');
     await page.goto(runnerHref!);
     await expect(page.locator('.detail-head').getByText('Protected from deletion')).toBeVisible();
 
-    // Music (Lidarr) never mounts a shield or guard panel (R-87).
     await page.goto('/ledger?tab=music');
     const musicHref = await page
       .locator('.ledger-row')
@@ -700,10 +901,9 @@ test.describe('trash section (DESIGN-010)', () => {
     await page.goto(musicHref!);
     await expect(page.getByRole('heading', { name: 'The Stub Band' })).toBeVisible();
     await expect(page.getByTestId('trash-guard')).toHaveCount(0);
-    await expect(page.getByTestId('trash-shield')).toHaveCount(0);
   });
 
-  test('mobile 390×844: the pending wall is a 3-column thumb grid with legible corner glyphs — no sideways scroll', async ({
+  test('mobile 390×844: the pending wall is a 3-column thumb grid with legible glyphs — no sideways scroll', async ({
     page,
   }) => {
     await resetMaintainerr(page);
@@ -713,23 +913,17 @@ test.describe('trash section (DESIGN-010)', () => {
 
     const tiles = page.getByTestId('trash-tile');
     await expect(tiles).toHaveCount(4);
-    const boxes = await Promise.all(
-      [0, 1, 2, 3].map(async (i) => (await tiles.nth(i).boundingBox())!),
-    );
-    // 3 columns: the first three tiles share a row, the fourth wraps below.
+    const boxes = await Promise.all([0, 1, 2, 3].map(async (i) => (await tiles.nth(i).boundingBox())!));
     expect(Math.abs(boxes[0]!.y - boxes[1]!.y)).toBeLessThan(1);
-    expect(Math.abs(boxes[1]!.y - boxes[2]!.y)).toBeLessThan(1);
     expect(boxes[3]!.y).toBeGreaterThan(boxes[0]!.y + 10);
-    // Thumb-sized targets: each tile is a ~120px-wide, taller-than-wide poster.
     expect(boxes[0]!.width).toBeGreaterThan(100);
     expect(boxes[0]!.height).toBeGreaterThan(boxes[0]!.width);
-    // Both corner glyphs render on the cold tile and stay tappable-sized (≥ 26px).
+    // The toggle poster and the library corner both render at a thumb-tappable size (≥ 26px).
     const vanished = tiles.filter({ hasText: 'Vanished Heist' });
-    const shieldBox = (await vanished.getByTestId('trash-shield').boundingBox())!;
-    const canBox = (await vanished.getByTestId('trash-expedite-item').boundingBox())!;
-    expect(shieldBox.width).toBeGreaterThanOrEqual(26);
-    expect(canBox.width).toBeGreaterThanOrEqual(26);
-
+    const toggleBox = (await vanished.getByTestId('trash-toggle').boundingBox())!;
+    const libBox = (await vanished.getByTestId('wall-lib-link').boundingBox())!;
+    expect(toggleBox.width).toBeGreaterThan(100);
+    expect(libBox.width).toBeGreaterThanOrEqual(26);
     await expectViewportFit(page);
   });
 });

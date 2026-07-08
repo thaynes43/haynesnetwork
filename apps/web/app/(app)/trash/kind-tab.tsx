@@ -1,31 +1,32 @@
 'use client';
 
-// ADR-025 / DESIGN-011 D-07 — the Trash CURATION area: batches, the poster wall, Leaving Soon.
-// This is the owner's centerpiece surface: a phone-first wall of proposed-deletion posters where
-// every tile carries an X (slated to delete) that a tap flips to a lock (rescued). Layout rules:
+// ADR-033 / DESIGN-011 D-07 (amended 2026-07-07) — the per-kind Trash surface. The old "Batches"
+// tab is GONE: one open batch per kind is the enforced invariant, so a batch is a PROPERTY of the
+// Movies/TV tab, not a separate browsable collection. This one state-aware component drives the
+// whole per-kind lifecycle off that kind's open batch (trash.batches.list scoped to kind — reusing
+// EVERY existing wire call, zero backend change):
 //
-// - THE WALL IS THE PAGE. The lifecycle strip, countdown, and running counts are compact,
-//   fixed-height rows above it; admin ceremony (history, save stats) sits below. The
-//   Trash-settings card moved to /settings/trash (ADR-032).
-// - ADR-015: a tap swaps the overlay glyph and deepens color IN PLACE — the tile never moves,
-//   resizes, or reflows neighbors (the overlay occupies a fixed reserved corner; captions are
-//   fixed-height single lines). The counts header changes numbers only (tabular figures).
-// - Saves are OPTIMISTIC: the overlay flips immediately, then reconciles with the server
-//   response. On `changed:false` (an inert tap — the item was really protected/skipped/deleted)
-//   the tile renders the RETURNED state, so the wall self-corrects to the truth (D-05).
-// - Phase-aware permissions mirror the server gate (D-05 setItemSaved): admin_review ⇒
-//   manage_batches; leaving_soon ⇒ save_leaving_soon while the window is open. During the family
-//   window a saver may undo their OWN locks; a manager may release any (lib/trash-batches.ts).
-// - Batch-level ceremony per ADR-014: Green-light and Expire-now are explanatory Modals
-//   (multi-consequence); Cancel is an inline two-step ConfirmButton; per-tile saves are
-//   protective + reversible, so no confirm at all.
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useState } from 'react';
+//   • no open batch  → the live-candidates poster wall (passed in as `pendingWall`) + an admin-only
+//                       "Start a batch" header; terminal batches collapse into the Past-batches strip.
+//   • admin_review    → the batch wall RENDERS THE BATCH (X/shield curation) + a lifecycle header
+//                       (state chip · Green-light · Cancel) + an admin-only "new candidates since
+//                       this batch" strip.
+//   • leaving_soon    → countdown banner + the family save wall + "Who rescued what" + Expire-now
+//                       (window-close-gated), same new-candidates strip.
+//   • terminal        → falls back to the live wall + the Past-batches strip.
+//
+// Owner refinement 2026-07-07: the wall is a FAST tap-toggle (poster/glyph flips trash⇄shield);
+// /library nav is a distinct corner icon; per-item expedite lives on the item page now.
+import { useState, type ReactNode } from 'react';
 import { ConfirmButton } from '@hnet/ui';
 import { trpc } from '@/lib/trpc-client';
 import { Modal } from '@/components/modal';
 import { MediaPoster } from '@/components/media-poster';
-import type { TrashAccess } from '@/components/trash-shield';
+import {
+  LibraryCornerLink,
+  WallGlyphSvg,
+  type TrashAccess,
+} from '@/components/trash-shield';
 import { formatBytes, formatDay, formatRating, ratingOrNull } from '@/lib/media';
 import { appCodeOf, describeMutationError } from '@/lib/app-error';
 import { daysLeftLabel, daysLeftTone, daysUntil } from '@/lib/trash';
@@ -88,76 +89,28 @@ interface BatchItemWire {
   recentlyWatched: boolean;
 }
 
+/** The pending-candidate fields the new-candidates diff reads (a subset of trash.pending items). */
+interface PendingCandidate {
+  maintainerrMediaId: string | null;
+  mediaItemId: string | null;
+  title: string;
+  year: number | null;
+  posterUrl: string | null;
+}
+
 interface SafetyLike {
   safe: boolean;
   reachable: boolean;
 }
 
 const OPEN_STATES: readonly BatchStateName[] = ['draft', 'admin_review', 'leaving_soon'];
+const TERMINAL_STATES: readonly BatchStateName[] = ['deleted', 'cancelled'];
 
 const windowStillOpen = (expiresAt: string | null): boolean =>
   expiresAt !== null && Date.parse(expiresAt) > Date.now();
 
-// ── the overlay glyphs (in-theme per DESIGN-006 — stroke-drawn, no borrowed icon set) ────
-function GlyphSvg({ glyph }: { glyph: WallGlyph }) {
-  const path = (() => {
-    switch (glyph) {
-      case 'x':
-        return <path d="M7 7l10 10M17 7L7 17" />;
-      case 'lock':
-        return (
-          <>
-            <rect x="5.5" y="11" width="13" height="8.5" rx="2" />
-            <path d="M8.5 11V8.5a3.5 3.5 0 0 1 7 0V11" />
-          </>
-        );
-      case 'eye':
-        return (
-          <>
-            <path d="M3 12s3.2-5.5 9-5.5S21 12 21 12s-3.2 5.5-9 5.5S3 12 3 12Z" />
-            <circle cx="12" cy="12" r="2.4" />
-          </>
-        );
-      case 'shield':
-        return (
-          <>
-            <path d="M12 3.5l6.5 2.8v4.6c0 4.1-2.7 7.5-6.5 9.1-3.8-1.6-6.5-5-6.5-9.1V6.3L12 3.5Z" />
-            <path d="m9.2 12 2 2 3.6-3.8" />
-          </>
-        );
-      case 'skip':
-        return (
-          <>
-            <circle cx="12" cy="12" r="8.5" />
-            <path d="M6.2 6.2l11.6 11.6" />
-          </>
-        );
-      case 'gone':
-        return (
-          <>
-            <path d="M5 7.5h14" />
-            <path d="M9.5 7.5V6a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1.5" />
-            <path d="M7 7.5l1 11h8l1-11" />
-          </>
-        );
-    }
-  })();
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      {path}
-    </svg>
-  );
-}
+/** The kind → `?from=` key so a poster-nav returns to THIS tab (Part 2). */
+const fromKeyFor = (kind: 'movie' | 'tv'): string => (kind === 'movie' ? 'trash-movies' : 'trash-tv');
 
 function tileLabel(
   title: string,
@@ -166,17 +119,17 @@ function tileLabel(
   savedByName: string | null,
 ): string {
   switch (glyph) {
-    case 'x':
+    case 'trash':
       return tappable
         ? `${title} is slated to delete — tap to save it`
         : `${title} is slated to delete`;
-    case 'lock':
+    case 'shield':
       if (tappable) return `${title} is saved — tap to un-save it`;
       return savedByName !== null ? `${title} — saved by ${savedByName}` : `${title} is saved`;
+    case 'check':
+      return `${title} is protected — already safe from deletion`;
     case 'eye':
       return `${title} was watched recently — the guardian keeps it`;
-    case 'shield':
-      return `${title} is protected — already safe from deletion`;
     case 'skip':
       return `${title} was kept — it couldn’t be verified safe, so it was never deleted`;
     case 'gone':
@@ -184,7 +137,7 @@ function tileLabel(
   }
 }
 
-// ── THE POSTER WALL ───────────────────────────────────────────────────────────────────────
+// ── THE POSTER WALL (batch curation / Leaving-Soon / terminal review) ───────────────────────
 function PosterWall({
   batchId,
   batch,
@@ -209,6 +162,7 @@ function PosterWall({
   const [inFlight, setInFlight] = useState<ReadonlySet<string>>(() => new Set());
   const [wallError, setWallError] = useState<string | null>(null);
   const setSaved = trpc.trash.batches.setItemSaved.useMutation();
+  const fromKey = fromKeyFor(kind);
 
   const effectiveState = (item: BatchItemWire): BatchItemStateName =>
     overrides.get(item.id) ?? item.state;
@@ -284,6 +238,7 @@ function PosterWall({
           const rating = formatRating(
             ratingOrNull(item.imdbRating) ?? ratingOrNull(item.tmdbRating),
           );
+          const titleYear = `${item.title}${item.year !== null ? ` (${item.year})` : ''}`;
           const inner = (
             <>
               <MediaPoster
@@ -294,7 +249,7 @@ function PosterWall({
               {/* keyed by glyph: a flip re-mounts the badge so the pop animation replays
                   (transform-only — never layout; killed by prefers-reduced-motion). */}
               <span key={glyph} className="bwall-overlay" data-glyph={glyph} aria-hidden="true">
-                <GlyphSvg glyph={glyph} />
+                <WallGlyphSvg glyph={glyph} />
               </span>
             </>
           );
@@ -304,7 +259,7 @@ function PosterWall({
                 <button
                   type="button"
                   className="bwall-tap"
-                  aria-pressed={glyph === 'lock'}
+                  aria-pressed={glyph === 'shield'}
                   aria-label={label}
                   title={label}
                   aria-busy={inFlight.has(item.id) || undefined}
@@ -317,6 +272,14 @@ function PosterWall({
                   {inner}
                 </span>
               )}
+              {/* The /library nav corner — distinct from the toggle (owner refinement). */}
+              {item.mediaItemId !== null ? (
+                <LibraryCornerLink
+                  href={`/library/${item.mediaItemId}?from=${fromKey}`}
+                  title={`Open ${titleYear} — history and fixes`}
+                  ariaLabel={`Open ${titleYear} — its library page`}
+                />
+              ) : null}
               <span className="bwall-caption">
                 {item.title}
                 {item.year !== null ? <span className="muted"> ({item.year})</span> : null}
@@ -385,8 +348,8 @@ function GreenlightModal({
             Recommended, so the family sees what’s on the chopping block.
           </li>
           <li>
-            <strong>The save window opens.</strong> Anyone with the rescue grant can tap ✕ → lock
-            here until it closes; a lock is permanent protection.
+            <strong>The save window opens.</strong> Anyone with the rescue grant can tap a slated
+            poster to save it here until it closes; a save is permanent protection.
           </li>
           <li>
             <strong>When the window closes, the sweep deletes what’s left</strong> — one item at a
@@ -460,8 +423,9 @@ function ExpireModal({
   const expire = trpc.trash.batches.expire.useMutation({
     onSuccess: (res: { batchesSwept: number; batches: SweepBatchWire[] }) => {
       setError(null);
+      // DON'T invalidate yet — a successful sweep makes the batch TERMINAL, which would drop this
+      // LifecycleView (and its Modal) before the report is read (ADR-033). Defer to close().
       setResult(res.batches.find((b) => b.batchId === batch.id) ?? res.batches[0] ?? null);
-      void utils.trash.batches.invalidate();
     },
     onError: (err: unknown) => {
       // Always refetch — a partial/failed run can leave the batch counts stale (same F3
@@ -473,12 +437,14 @@ function ExpireModal({
   });
 
   const close = () => {
-    if (!expire.isPending) onClose();
+    if (expire.isPending) return;
+    // Now reconcile: a completed sweep flips the batch terminal ⇒ the tab returns to the pending
+    // wall + the Past-batches strip (where the final report re-opens).
+    if (result !== null) void utils.trash.batches.invalidate();
+    onClose();
   };
 
   // Honest preview over the batch's remaining `pending` items (the sweep's only candidates).
-  // Every one is re-verified FRESH server-side, so "up to" is the honest phrasing: requester
-  // protection and live whitelists are server-known signals this client cannot see.
   const pending = items.filter((i) => i.state === 'pending');
   const willDelete = pending.filter((i) => !i.recentlyWatched && i.mediaItemId !== null).length;
   const willKeep = pending.length - willDelete;
@@ -531,7 +497,7 @@ function ExpireModal({
               handler; the files are being removed now.
             </li>
             <li>
-              <strong>Rescued</strong> — locked during the window; untouched.
+              <strong>Rescued</strong> — saved during the window; untouched.
             </li>
             <li>
               <strong>Protected</strong> — already whitelisted before the batch; untouched.
@@ -567,7 +533,7 @@ function ExpireModal({
               <strong>
                 {savedCount} rescued item{savedCount === 1 ? '' : 's'} are untouched
               </strong>{' '}
-              — a lock is permanent protection.
+              — a save is permanent protection.
             </li>
             <li>
               <strong>At least {willKeep} will be kept (skipped)</strong> — recently watched,
@@ -599,8 +565,40 @@ function ExpireModal({
   );
 }
 
-// ── the per-batch panel: lifecycle strip → countdown → wall → savers ─────────────────────
-function BatchPanel({
+// ── the "new candidates since this batch" strip (admin-only; DESIGN-011 D-07 amendment) ──
+function NewCandidatesStrip({
+  candidates,
+  kind,
+}: {
+  candidates: PendingCandidate[];
+  kind: 'movie' | 'tv';
+}) {
+  if (candidates.length === 0) return null;
+  return (
+    <div className="batch-newcands" data-testid="batch-new-candidates">
+      <p className="batch-newcands__head muted">
+        New candidates since this batch ({candidates.length}) — eligible for the next batch.
+      </p>
+      <ul className="batch-newcands__grid" aria-label="New candidates since this batch">
+        {candidates.map((c) => {
+          const titleYear = `${c.title}${c.year !== null ? ` (${c.year})` : ''}`;
+          return (
+            <li key={c.maintainerrMediaId ?? c.title} className="batch-newcands__tile" title={titleYear}>
+              <MediaPoster
+                posterUrl={c.posterUrl}
+                kind={kind === 'movie' ? 'radarr' : 'sonarr'}
+                alt=""
+              />
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+// ── the lifecycle view: header → countdown → wall → savers → new-candidates ──────────────
+function LifecycleView({
   batch,
   items,
   itemsLoading,
@@ -610,6 +608,8 @@ function BatchPanel({
   status,
   defaultWindowDays,
   saveStats,
+  newCandidates,
+  canManage,
 }: {
   batch: BatchSummaryWire;
   items: BatchItemWire[] | undefined;
@@ -631,6 +631,8 @@ function BatchPanel({
         }>;
       }
     | undefined;
+  newCandidates: PendingCandidate[];
+  canManage: boolean;
 }) {
   const utils = trpc.useUtils();
   const [modal, setModal] = useState<'greenlight' | 'expire' | null>(null);
@@ -638,7 +640,6 @@ function BatchPanel({
 
   const reachable = status?.reachable === true;
   const safe = status?.safe === true;
-  const canManage = access.actions.includes('manage_batches');
   const canSaveWindow = access.actions.includes('save_leaving_soon');
   const windowOpen = batch.state === 'leaving_soon' && windowStillOpen(batch.expiresAt);
   const ctx: WallTapContext = {
@@ -677,10 +678,6 @@ function BatchPanel({
           {daysLeftLabel(days)}
         </span>
       </>
-    ) : batch.state === 'deleted' && batch.deletedAt !== null ? (
-      <>swept {formatDay(batch.deletedAt)}</>
-    ) : batch.state === 'cancelled' && batch.cancelledAt !== null ? (
-      <>cancelled {formatDay(batch.cancelledAt)}</>
     ) : (
       <>created {formatDay(batch.createdAt)}</>
     );
@@ -825,6 +822,9 @@ function BatchPanel({
         </div>
       ) : null}
 
+      {/* Admin-only: live pending items NOT in this batch — eligible for the next one. */}
+      {canManage ? <NewCandidatesStrip candidates={newCandidates} kind={kind} /> : null}
+
       {modal === 'greenlight' ? (
         <GreenlightModal
           batch={batch}
@@ -839,167 +839,181 @@ function BatchPanel({
   );
 }
 
-// The Trash-settings card (admin gate + default window) moved to /settings/trash
-// (ADR-032 — settings are not a user-facing Trash surface); see settings/trash/.
+// ── the Past-batches strip (terminal batches — collapsible, each expands to its final report) ──
+function PastBatchRow({ batch, kind }: { batch: BatchSummaryWire; kind: 'movie' | 'tv' }) {
+  const [open, setOpen] = useState(false);
+  const detail = trpc.trash.batches.get.useQuery(
+    { batchId: batch.id },
+    { enabled: open, placeholderData: (prev) => prev },
+  );
+  const stats = trpc.trash.batches.saveStats.useQuery(
+    { batchId: batch.id },
+    { enabled: open, placeholderData: (prev) => prev },
+  );
+  const detailData =
+    detail.data !== undefined && (detail.data as BatchSummaryWire).id === batch.id
+      ? (detail.data as unknown as { items: BatchItemWire[] })
+      : undefined;
+  const saverNames = new Map<string, string>();
+  for (const u of stats.data?.byUser ?? []) {
+    if (u.userId !== null && u.displayName !== null) saverNames.set(u.userId, u.displayName);
+  }
+  // Terminal batches are always read-only (wallInteractive returns false for them).
+  const ctx: WallTapContext = {
+    batchState: batch.state,
+    windowOpen: false,
+    reachable: false,
+    canManage: false,
+    canSaveWindow: false,
+    viewerId: '',
+  };
 
-// ── the tab shell: kind switch · create · current batch · history ────────────────────────
-export function BatchesTab({
+  return (
+    <details
+      className="batch-past__row"
+      data-testid="batch-history-row"
+      onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
+    >
+      <summary className="batch-past__summary">
+        <span className="batch-state" data-tone={batchStateTone(batch.state)}>
+          {BATCH_STATE_LABELS[batch.state]}
+        </span>
+        <span className="batch-past__meta muted">
+          {formatDay(batch.deletedAt ?? batch.cancelledAt ?? batch.createdAt)} ·{' '}
+          {batch.counts.total} item{batch.counts.total === 1 ? '' : 's'} · {batch.counts.saved}{' '}
+          rescued · {batch.reclaimedBytes > 0 ? `${formatBytes(batch.reclaimedBytes)} reclaimed` : 'nothing deleted'}
+        </span>
+      </summary>
+      {detailData === undefined ? (
+        <p className="muted batch-past__loading">Loading the final report…</p>
+      ) : (
+        <PosterWall
+          key={batch.id}
+          batchId={batch.id}
+          batch={batch}
+          items={detailData.items}
+          kind={kind}
+          ctx={ctx}
+          saverNames={saverNames}
+        />
+      )}
+    </details>
+  );
+}
+
+function PastBatches({ batches, kind }: { batches: BatchSummaryWire[]; kind: 'movie' | 'tv' }) {
+  if (batches.length === 0) return null;
+  return (
+    <div className="batch-past" data-testid="batch-history">
+      <h3 className="batch-savers__title">Past batches</h3>
+      {batches.map((b) => (
+        <PastBatchRow key={b.id} batch={b} kind={kind} />
+      ))}
+    </div>
+  );
+}
+
+// ── the per-kind orchestrator ────────────────────────────────────────────────────────────
+export function KindTab({
+  kind,
+  label,
   access,
   viewerId,
   viewerIsAdmin,
   status,
+  pendingWall,
 }: {
+  kind: 'movie' | 'tv';
+  label: string;
   access: TrashAccess;
   viewerId: string;
   viewerIsAdmin: boolean;
   status: SafetyLike | undefined;
+  /** The live-candidates poster wall — rendered only when there is no open batch. */
+  pendingWall: ReactNode;
 }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
   const utils = trpc.useUtils();
 
-  const kind: 'movie' | 'tv' = searchParams.get('kind') === 'tv' ? 'tv' : 'movie';
   const canManage = access.actions.includes('manage_batches');
   const reachable = status?.reachable === true;
-
-  const setKind = (next: 'movie' | 'tv') => {
-    // Kind switch starts fresh (keeps ONLY tab+kind — the ?batch selection belongs to a kind).
-    const params = new URLSearchParams();
-    params.set('tab', 'batches');
-    if (next === 'tv') params.set('kind', 'tv');
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-  };
-  const selectBatch = (id: string) => {
-    const params = new URLSearchParams(window.location.search);
-    params.set('batch', id);
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-  };
 
   const list = trpc.trash.batches.list.useQuery(undefined, {
     placeholderData: (prev) => prev,
   });
   const batches: BatchSummaryWire[] = (list.data ?? []).filter((b) => b.mediaKind === kind);
   const openBatch = batches.find((b) => OPEN_STATES.includes(b.state));
-  const batchParam = searchParams.get('batch');
-  const selectedId =
-    batchParam !== null && batches.some((b) => b.id === batchParam)
-      ? batchParam
-      : (openBatch?.id ?? batches[0]?.id);
+  const pastBatches = batches.filter((b) => TERMINAL_STATES.includes(b.state));
 
+  // The open batch's items (curation / Leaving-Soon wall) — only when one is open.
   const detail = trpc.trash.batches.get.useQuery(
-    { batchId: selectedId ?? '00000000-0000-0000-0000-000000000000' },
-    { enabled: selectedId !== undefined, placeholderData: (prev) => prev },
+    { batchId: openBatch?.id ?? '00000000-0000-0000-0000-000000000000' },
+    { enabled: openBatch !== undefined, placeholderData: (prev) => prev },
   );
   const stats = trpc.trash.batches.saveStats.useQuery(
-    { batchId: selectedId ?? '00000000-0000-0000-0000-000000000000' },
-    { enabled: selectedId !== undefined, placeholderData: (prev) => prev },
+    { batchId: openBatch?.id ?? '00000000-0000-0000-0000-000000000000' },
+    { enabled: openBatch !== undefined, placeholderData: (prev) => prev },
   );
-  // The candidate peek for the empty state — how many pending items a new batch would snapshot.
-  const candidates = trpc.trash.pending.useQuery(
+  // The pending set powers BOTH the candidate count (no open batch) and the new-candidates diff
+  // (open batch). Shared react-query key with the pendingWall's own read — deduped.
+  const pending = trpc.trash.pending.useQuery(
     { media: kind },
-    { enabled: canManage && openBatch === undefined && reachable },
+    { enabled: canManage && reachable },
   );
-  // Green-light's window default: the admin-readable setting; non-admin batch managers fall back
-  // to the batch's own column default (the settings surface is adminProcedure — D-05).
   const settings = trpc.trash.settings.get.useQuery(undefined, { enabled: viewerIsAdmin });
 
-  const [createError, setCreateError] = useState<string | null>(null);
-  const create = trpc.trash.batches.create.useMutation({
-    onSuccess: (res: { batchId: string }) => {
-      setCreateError(null);
-      void utils.trash.batches.invalidate();
-      selectBatch(res.batchId);
-    },
-    // The server error NAMES the blocker (open batch id + state, or "nothing to batch").
-    onError: (err: unknown) => setCreateError(describeMutationError(err)),
-  });
-
-  // placeholderData keeps the PREVIOUS batch's payload rendered during a switch — only trust the
-  // detail/stats payloads once they belong to the currently-selected batch (else the strip would
-  // briefly show another batch's state).
   const detailData =
-    detail.data !== undefined && (detail.data as BatchSummaryWire).id === selectedId
+    detail.data !== undefined && (detail.data as BatchSummaryWire).id === openBatch?.id
       ? detail.data
       : undefined;
   const statsData =
-    stats.data !== undefined && stats.data.batchId === selectedId ? stats.data : undefined;
-  const selectedSummary: BatchSummaryWire | undefined =
-    (detailData as BatchSummaryWire | undefined) ?? batches.find((b) => b.id === selectedId);
+    stats.data !== undefined && stats.data.batchId === openBatch?.id ? stats.data : undefined;
+  const openSummary: BatchSummaryWire | undefined =
+    (detailData as BatchSummaryWire | undefined) ?? openBatch;
   const defaultWindowDays =
-    settings.data?.trash_default_window_days ?? selectedSummary?.windowDays ?? 21;
+    settings.data?.trash_default_window_days ?? openSummary?.windowDays ?? 21;
+
+  // The new-candidates diff (pending items whose Maintainerr id isn't in the open batch).
+  const batchMediaIds = new Set(
+    ((detailData?.items as BatchItemWire[] | undefined) ?? []).map((i) => i.maintainerrMediaId),
+  );
+  const newCandidates: PendingCandidate[] = ((pending.data?.items as PendingCandidate[] | undefined) ?? [])
+    .filter((p) => p.maintainerrMediaId !== null && !batchMediaIds.has(p.maintainerrMediaId));
+
+  // ── create (Start a batch) — admin-only, only when none is open ──
+  const [createError, setCreateError] = useState<string | null>(null);
+  const create = trpc.trash.batches.create.useMutation({
+    onSuccess: () => {
+      setCreateError(null);
+      void utils.trash.batches.invalidate();
+    },
+    onError: (err: unknown) => setCreateError(describeMutationError(err)),
+  });
+
+  const kindNoun = kind === 'movie' ? 'movie' : 'TV';
+
+  if (list.isLoading) {
+    return (
+      <div data-testid="kind-tab">
+        <p className="muted">Loading {label}…</p>
+      </div>
+    );
+  }
+  if (list.error) {
+    return (
+      <div data-testid="kind-tab">
+        <p className="alert" role="alert">
+          Couldn’t load {label}: {list.error.message}
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div data-testid="batches-tab">
-      <div className="batches-head">
-        <div className="seg" role="group" aria-label="Batch media kind">
-          <button
-            type="button"
-            className={kind === 'movie' ? 'is-active' : undefined}
-            onClick={() => setKind('movie')}
-          >
-            Movies
-          </button>
-          <button
-            type="button"
-            className={kind === 'tv' ? 'is-active' : undefined}
-            onClick={() => setKind('tv')}
-          >
-            TV
-          </button>
-        </div>
-        <span className="batch-strip__spacer" />
-        {canManage ? (
-          <button
-            type="button"
-            className="btn sm"
-            data-testid="batch-create"
-            disabled={create.isPending || !reachable}
-            title={
-              reachable
-                ? `Snapshot the current pending ${kind === 'movie' ? 'movies' : 'TV'} into a new batch`
-                : 'Disabled — Maintainerr is unreachable (see the banner).'
-            }
-            onClick={() => create.mutate({ mediaKind: kind })}
-          >
-            {create.isPending ? 'Creating…' : 'Create batch'}
-          </button>
-        ) : null}
-      </div>
-      {createError !== null ? (
-        <p className="alert" role="alert" data-testid="batch-create-error">
-          {createError}
-        </p>
-      ) : null}
-      {canManage && openBatch === undefined ? (
-        <p className="muted batches-hint" data-testid="batch-candidates">
-          {candidates.data !== undefined
-            ? `${candidates.data.count} ${kind === 'movie' ? 'movie' : 'TV'} candidate${candidates.data.count === 1 ? '' : 's'} currently proposed by the rules.`
-            : reachable
-              ? 'Checking the current candidates…'
-              : 'Maintainerr is unreachable — candidates can’t be read right now.'}
-        </p>
-      ) : null}
-
-      {list.isLoading ? (
-        <p className="muted">Loading batches…</p>
-      ) : list.error ? (
-        <p className="alert" role="alert">
-          Couldn’t load the batches: {list.error.message}
-        </p>
-      ) : selectedSummary === undefined ? (
-        <section className="card empty-state" data-testid="batches-empty">
-          <p>No {kind === 'movie' ? 'movie' : 'TV'} batches yet.</p>
-          <p className="muted">
-            {canManage
-              ? 'Create one to snapshot the current proposed deletions into a poster review.'
-              : 'When an admin opens a curation batch, its poster wall shows up here.'}
-          </p>
-        </section>
-      ) : (
-        <BatchPanel
-          key={selectedSummary.id}
-          batch={selectedSummary}
+    <div data-testid="kind-tab" data-kind={kind}>
+      {openSummary !== undefined ? (
+        <LifecycleView
+          key={openSummary.id}
+          batch={openSummary}
           items={detailData?.items as BatchItemWire[] | undefined}
           itemsLoading={detailData === undefined}
           kind={kind}
@@ -1008,69 +1022,48 @@ export function BatchesTab({
           status={status}
           defaultWindowDays={defaultWindowDays}
           saveStats={statsData}
+          newCandidates={newCandidates}
+          canManage={canManage}
         />
+      ) : (
+        <>
+          {/* No open batch — the live candidates wall + an admin-only "Start a batch". */}
+          {canManage ? (
+            <div className="batches-head" data-testid="batch-start-head">
+              <p className="batches-hint muted" data-testid="batch-candidates">
+                {pending.data !== undefined
+                  ? `${pending.data.count} ${kindNoun} candidate${pending.data.count === 1 ? '' : 's'} currently proposed by the rules.`
+                  : reachable
+                    ? 'Checking the current candidates…'
+                    : 'Maintainerr is unreachable — candidates can’t be read right now.'}
+              </p>
+              <span className="batch-strip__spacer" />
+              <button
+                type="button"
+                className="btn sm primary"
+                data-testid="batch-start"
+                disabled={create.isPending || !reachable}
+                title={
+                  reachable
+                    ? `Snapshot the current pending ${label} into a review batch`
+                    : 'Disabled — Maintainerr is unreachable (see the banner).'
+                }
+                onClick={() => create.mutate({ mediaKind: kind })}
+              >
+                {create.isPending ? 'Starting…' : 'Start a batch'}
+              </button>
+            </div>
+          ) : null}
+          {createError !== null ? (
+            <p className="alert" role="alert" data-testid="batch-create-error">
+              {createError}
+            </p>
+          ) : null}
+          {pendingWall}
+        </>
       )}
 
-      {batches.length > 1 ? (
-        <div className="batch-history" data-testid="batch-history">
-          <h3 className="batch-savers__title">Past batches</h3>
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th>Created</th>
-                <th>State</th>
-                <th>Items</th>
-                <th>Rescued</th>
-                <th>Freed</th>
-                <th aria-label="Select" />
-              </tr>
-            </thead>
-            <tbody>
-              {batches.map((b) => (
-                <tr
-                  key={b.id}
-                  data-testid="batch-history-row"
-                  className={b.id === selectedId ? 'is-selected' : undefined}
-                >
-                  <td data-label="Created">{formatDay(b.createdAt)}</td>
-                  <td data-label="State">
-                    <span className="batch-state" data-tone={batchStateTone(b.state)}>
-                      {BATCH_STATE_LABELS[b.state]}
-                    </span>
-                    {b.gateSkipped ? (
-                      <span
-                        className="badge badge--warn"
-                        title="Promoted by the audited skip-gate — no admin review."
-                      >
-                        Gate skipped
-                      </span>
-                    ) : null}
-                  </td>
-                  <td data-label="Items">{b.counts.total}</td>
-                  <td data-label="Rescued">{b.counts.saved}</td>
-                  <td data-label="Freed">
-                    {b.reclaimedBytes > 0 ? formatBytes(b.reclaimedBytes) : '—'}
-                  </td>
-                  <td data-label="">
-                    {b.id === selectedId ? (
-                      <span className="muted">Viewing</span>
-                    ) : (
-                      <button
-                        type="button"
-                        className="btn sm"
-                        data-testid="batch-history-view"
-                        onClick={() => selectBatch(b.id)}
-                      >
-                        View
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
+      <PastBatches batches={pastBatches} kind={kind} />
     </div>
   );
 }

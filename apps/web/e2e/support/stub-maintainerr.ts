@@ -43,6 +43,7 @@ export const STUB_MAINT_RUNNER_ID = 'ms-880002'; // Stub Runner — dnd-tagged
 export const STUB_MAINT_VANISHED_ID = 'ms-880004'; // Vanished Heist — cold (deletable)
 export const STUB_MAINT_UNKNOWN_ID = 'ms-990009'; // not in the ledger — unverifiable
 export const STUB_MAINT_TV_ID = 'ms-990001'; // Breaking Prod — requested
+export const STUB_MAINT_NEWCAND_ID = 'ms-990010'; // injected post-snapshot (new-candidates strip)
 
 const daysAgo = (n: number): string => new Date(Date.now() - n * 86_400_000).toISOString();
 
@@ -256,6 +257,30 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
         const body = JSON.parse(await readBody(req)) as { mediaServerId: string; excluded?: boolean };
         if (body.excluded === false) exclusions.delete(body.mediaServerId);
         else exclusions.add(body.mediaServerId);
+        res.writeHead(204);
+        return res.end();
+      }
+      // ADR-033 — push a NEW pending item into a collection AFTER a batch snapshot, so the
+      // "new candidates since this batch" strip has something to show (the batch froze the old
+      // set; a fresh candidate joins the live pending set but not the batch).
+      if (url.pathname === '/_stub/add-pending' && method === 'POST') {
+        const body = JSON.parse(await readBody(req)) as {
+          collectionId: number;
+          mediaServerId: string;
+          tmdbId?: number;
+          tvdbId?: number;
+          sizeBytes?: number;
+        };
+        const col = collections.find((c) => c.id === body.collectionId);
+        if (col && !col.items.some((i) => i.mediaServerId === body.mediaServerId)) {
+          col.items.push({
+            mediaServerId: body.mediaServerId,
+            tmdbId: body.tmdbId,
+            tvdbId: body.tvdbId,
+            sizeBytes: body.sizeBytes ?? 1_073_741_824,
+            addDate: daysAgo(1),
+          });
+        }
         res.writeHead(204);
         return res.end();
       }

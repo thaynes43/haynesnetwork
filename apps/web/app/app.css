@@ -2895,12 +2895,15 @@ input[aria-invalid='true'] {
   transition: opacity 0.15s ease;
 }
 .pwall-tile {
-  position: relative; /* the corner pucks anchor to the TILE (siblings of the poster link) */
+  position: relative; /* the corner puck anchors to the TILE (a sibling of the poster toggle) */
 }
-/* The corner pucks — same geometry as .bwall-overlay so both walls read as one system. */
+/* The corner LIBRARY-nav puck — same geometry as .bwall-overlay so both walls read as one
+   system, but sits in the OPPOSITE (top-left) corner and is visually distinct (a book glyph,
+   never a state glyph) so it is not a tap-by-accident on the toggle (owner refinement 2026-07-07). */
 .pwall-corner {
   position: absolute;
   top: 6px;
+  left: 6px;
   width: 30px;
   height: 30px;
   padding: 0;
@@ -2911,71 +2914,24 @@ input[aria-invalid='true'] {
   background: color-mix(in srgb, var(--color-surface) 84%, transparent);
   color: var(--color-text-muted);
 }
-.pwall-shield {
-  right: 6px;
-}
-.pwall-expedite {
-  left: 6px;
-  color: var(--color-danger);
-  border-color: var(--color-danger);
+.pwall-liblink {
   cursor: pointer;
+  text-decoration: none;
 }
-button.pwall-shield {
-  cursor: pointer;
-}
-button.pwall-corner:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-}
-/* Shield states: outline (unprotected — muted, hover leans accent) → check (protected
-   elsewhere — accent outline, inert) → filled (saved by YOU — the deepened accent fill). */
-button.pwall-shield[data-glyph='outline']:hover {
+.pwall-liblink:hover {
   color: var(--color-accent);
   border-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
 }
-.pwall-shield[data-glyph='check'] {
-  color: var(--color-accent);
-  border-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
-}
-.pwall-shield[data-glyph='shield'] {
-  color: var(--color-accent-contrast);
-  border-color: var(--color-accent);
-  background: var(--color-accent);
-}
-button.pwall-shield[data-glyph='shield']:hover {
-  background: color-mix(in srgb, var(--color-accent) 84%, var(--color-text));
-}
-button.pwall-expedite:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--color-danger) 16%, var(--color-surface));
-}
-.pwall-expedite:disabled {
-  cursor: default;
-  opacity: 0.55;
-}
-/* A protected/saved poster earns the accent ring (mirrors the Batches lock treatment). */
-.pwall-tile[data-glyph='shield'] .poster-box,
-.pwall-tile[data-glyph='check'] .poster-box {
+.pwall-corner:focus-visible {
   outline: 2px solid var(--color-accent);
-  outline-offset: -2px;
-}
-/* The glyph swap re-mounts this inner span so the pop replays (transform-only — ADR-015;
-   killed by the global prefers-reduced-motion rule). */
-.pwall-glyphpop {
-  display: grid;
-  place-items: center;
-  animation: bwall-pop 0.22s ease-out;
+  outline-offset: 2px;
 }
 @media (max-width: 480px) {
   .pwall-corner {
     top: 5px;
+    left: 5px;
     width: 27px;
     height: 27px;
-  }
-  .pwall-shield {
-    right: 5px;
-  }
-  .pwall-expedite {
-    left: 5px;
   }
 }
 
@@ -3173,6 +3129,7 @@ button.pwall-expedite:hover:not(:disabled) {
 }
 .bwall-tile {
   min-width: 0;
+  position: relative; /* the library-nav corner (a .bwall-tap sibling) anchors to the tile */
 }
 .bwall-tap {
   display: block;
@@ -3223,22 +3180,24 @@ button.bwall-tap:focus-visible {
     transform: scale(1);
   }
 }
-.bwall-overlay[data-glyph='x'] {
+/* ADR-033 unified glyphs (both walls): trash (slated, danger) · shield (saved, filled accent) ·
+   check (protected elsewhere, accent outline, inert) · eye (watched) · skip · gone. */
+.bwall-overlay[data-glyph='trash'] {
   color: var(--color-danger);
   border-color: var(--color-danger);
 }
-.bwall-overlay[data-glyph='lock'] {
+.bwall-overlay[data-glyph='shield'] {
   color: var(--color-accent-contrast);
   border-color: var(--color-accent);
   background: var(--color-accent);
 }
+.bwall-overlay[data-glyph='check'] {
+  color: var(--color-accent);
+  border-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
+}
 .bwall-overlay[data-glyph='eye'] {
   color: var(--color-info);
   border-color: var(--color-info);
-}
-.bwall-overlay[data-glyph='shield'] {
-  color: var(--color-accent);
-  border-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
 }
 .bwall-overlay[data-glyph='skip'] {
   color: var(--color-warning);
@@ -3248,9 +3207,10 @@ button.bwall-tap:focus-visible {
   color: var(--color-text-muted);
   border-color: var(--color-border);
 }
-/* Poster treatment per state — filters/outlines only (no geometry): a rescued poster gets an
-   accent ring; swept/skipped posters recede. */
-.bwall-tile[data-glyph='lock'] .poster-box {
+/* Poster treatment per state — filters/outlines only (no geometry): a saved/protected poster
+   gets an accent ring; swept/skipped posters recede. */
+.bwall-tile[data-glyph='shield'] .poster-box,
+.bwall-tile[data-glyph='check'] .poster-box {
   outline: 2px solid var(--color-accent);
   outline-offset: -2px;
 }
@@ -3262,10 +3222,10 @@ button.bwall-tap:focus-visible {
 .bwall-tile[data-glyph='skip'] .poster-fallback {
   filter: grayscale(0.5) brightness(0.85);
 }
-button.bwall-tap:hover .bwall-overlay[data-glyph='x'] {
+button.bwall-tap:hover .bwall-overlay[data-glyph='trash'] {
   background: color-mix(in srgb, var(--color-danger) 16%, var(--color-surface));
 }
-button.bwall-tap:hover .bwall-overlay[data-glyph='lock'] {
+button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
   background: color-mix(in srgb, var(--color-accent) 84%, var(--color-text));
 }
 
@@ -3350,6 +3310,76 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='lock'] {
 }
 .batch-history .batch-state {
   margin-right: 6px;
+}
+
+/* ADR-033 — the admin-only "new candidates since this batch" strip: small, non-interactive
+   thumbnails under the batch wall (eligible for the NEXT batch). Constant footprint (ADR-015). */
+.batch-newcands {
+  margin: 4px 0 18px;
+}
+.batch-newcands__head {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+}
+.batch-newcands__grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+  gap: 8px;
+}
+.batch-newcands__tile {
+  min-width: 0;
+  opacity: 0.72; /* muted — these are not yet actionable */
+}
+.batch-newcands__tile .poster-box {
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+@media (max-width: 480px) {
+  .batch-newcands__grid {
+    grid-template-columns: repeat(5, 1fr);
+    gap: 6px;
+  }
+}
+
+/* ADR-033 — the Past-batches strip: terminal batches as a collapsible list, each expanding to
+   its final report (the terminal PosterWall). Replaces the old selectable history table. */
+.batch-past {
+  margin: 0 0 18px;
+}
+.batch-past__row {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  margin: 0 0 8px;
+  padding: 0 10px;
+}
+.batch-past__summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  cursor: pointer;
+  list-style: none;
+}
+.batch-past__summary::-webkit-details-marker {
+  display: none;
+}
+.batch-past__summary:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.batch-past__meta {
+  font-size: 12.5px;
+  min-width: 0;
+}
+.batch-past__row[open] {
+  padding-bottom: 10px;
+}
+.batch-past__loading {
+  padding: 8px 2px;
 }
 
 /* The admin settings card (skip-gate + default window — audited, ADR-025 C-06/C-07). */

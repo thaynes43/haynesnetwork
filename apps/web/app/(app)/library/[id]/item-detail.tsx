@@ -15,10 +15,11 @@
 // FixAlreadyOpenError toast; the buttons re-arm when the live phase lands a
 // terminal. Every slot reserves width (hard rule 9), so button ↔ chip swaps and
 // percent ticks never reflow the row.
-import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useMemo, useState, type ReactNode } from 'react';
 import { trpc } from '@/lib/trpc-client';
 import { PhaseChip } from '@hnet/ui';
+import { BackLink } from '@/components/back-link';
 import {
   ARR_KIND_LABELS,
   EVENT_TYPE_LABELS,
@@ -188,6 +189,8 @@ export function ItemDetail({
   trashAccess?: ItemTrashAccess;
 }) {
   const utils = trpc.useUtils();
+  const searchParams = useSearchParams();
+  const fromKey = searchParams.get('from');
   const [action, setAction] = useState<PendingAction | null>(null);
   // D-21 — force searches leave no durable row, so the grains THIS session searched
   // are tracked here; each keeps its slot locked behind the live chip until terminal.
@@ -389,9 +392,7 @@ export function ItemDetail({
 
   return (
     <>
-      <p className="crumbs">
-        <Link href="/library">← Library</Link>
-      </p>
+      <BackLink from={fromKey} />
 
       <section className="card detail-head">
         {/* DESIGN-008 D-11 — the fixed 2:3 poster box replaces the kind icon; the KindIcon

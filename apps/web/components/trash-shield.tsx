@@ -12,11 +12,13 @@
 // (protect-in-context) — saveExclusion needs the Maintainerr mediaServerId (a Plex ratingKey),
 // which exists only on pending rows; Maintainerr has no tmdb/tvdb lookup endpoint to resolve
 // one for arbitrary ledger items (D-02), and we never guess ratingKeys.
+import Link from 'next/link';
 import { useState } from 'react';
 import { trpc } from '@/lib/trpc-client';
 import { formatBytes, formatDay } from '@/lib/media';
 import { describeMutationError } from '@/lib/app-error';
 import { daysLeftLabel, daysLeftTone, daysUntil, type TrashActionName } from '@/lib/trash';
+import { ItemExpediteModal } from '@/components/trash-expedite';
 
 /** The caller's Trash access, resolved server-side and passed down (session-carried). */
 export interface TrashAccess {
@@ -88,9 +90,143 @@ export function TrashCanGlyph() {
   );
 }
 
-// The old per-row ExpediteButton retired with the pending tables (2026-07-07) — the poster
-// wall's fixed-corner trash-can (trash-client.tsx) is the per-item Expedite affordance now,
-// still only ever TRIGGERING the ADR-014 confirm Modal.
+/** The recently-watched EYE — the guardian keeps it; inert on both walls (a delete-glyph here
+ *  would be dishonest). Same 16×16 box + stroke weight as its siblings. */
+export function EyeGlyph() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3 12s3.2-5.5 9-5.5S21 12 21 12s-3.2 5.5-9 5.5S3 12 3 12Z" />
+      <circle cx="12" cy="12" r="2.4" />
+    </svg>
+  );
+}
+
+/** The SKIP ⊘ — the sweep kept it (unverifiable / guardian at sweep time); kept, NOT saved
+ *  (skipped ≠ protected, ADR-023 C-07b). Terminal-batch glyph. */
+export function SkipGlyph() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M6.2 6.2l11.6 11.6" />
+    </svg>
+  );
+}
+
+/** The GONE tombstone — deleted by the sweep. Terminal-batch glyph (the poster grays out too). */
+export function GoneGlyph() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M5 7.5h14" />
+      <path d="M9.5 7.5V6a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1.5" />
+      <path d="M7 7.5l1 11h8l1-11" />
+    </svg>
+  );
+}
+
+/** The corner LIBRARY-nav glyph (an open book) — the poster now toggles, so /library/[id]
+ *  navigation moves to this dedicated corner icon (owner refinement 2026-07-07). Visually
+ *  distinct from the shield/trash toggle so it is never a tap-by-accident. */
+export function LibraryLinkGlyph() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 6.5C10.5 5.2 8.5 4.5 5.5 4.5H4v13.5h1.5c3 0 5 .7 6.5 2 1.5-1.3 3.5-2 6.5-2H20V4.5h-1.5c-3 0-5 .7-6.5 2Z" />
+      <path d="M12 6.5v13" />
+    </svg>
+  );
+}
+
+/**
+ * The corner LIBRARY-nav link for a wall tile (owner refinement 2026-07-07 — the poster toggles,
+ * so /library/[id] navigation moves to this dedicated, visually-distinct corner). Carries the
+ * `?from=` context (Part 2) so the item page's back link returns here with scroll/filters intact.
+ */
+export function LibraryCornerLink({
+  href,
+  title,
+  ariaLabel,
+}: {
+  href: string;
+  title: string;
+  ariaLabel: string;
+}) {
+  return (
+    <Link
+      className="pwall-corner pwall-liblink"
+      href={href}
+      data-testid="wall-lib-link"
+      title={title}
+      aria-label={ariaLabel}
+    >
+      <LibraryLinkGlyph />
+    </Link>
+  );
+}
+
+/**
+ * The shared wall overlay glyph (both the /trash pending candidates wall and the batch curation
+ * wall — owner-directed unification 2026-07-07). Keep the keys in lockstep with
+ * `lib/trash-batches.ts` `WallGlyph` and `lib/trash.ts` `PendingWallGlyph`.
+ */
+export function WallGlyphSvg({
+  glyph,
+}: {
+  glyph: 'trash' | 'shield' | 'check' | 'eye' | 'skip' | 'gone';
+}) {
+  switch (glyph) {
+    case 'trash':
+      return <TrashCanGlyph />;
+    case 'shield':
+      return <ShieldGlyph filled />;
+    case 'check':
+      return <ShieldCheckGlyph />;
+    case 'eye':
+      return <EyeGlyph />;
+    case 'skip':
+      return <SkipGlyph />;
+    case 'gone':
+      return <GoneGlyph />;
+  }
+}
 
 export interface ShieldButtonProps {
   /** Is the item currently protected (excluded / dnd-tagged / saved this session)? */
@@ -155,10 +291,16 @@ export function TrashPendingNotice({
   const utils = trpc.useUtils();
   const media = arrKind === 'radarr' ? 'movie' : 'tv';
   const pending = trpc.trash.pending.useQuery({ media });
+  // The safety verdict gates "Delete now…" exactly like the wall's Expedite (destructive needs a
+  // safe install); the shared trash.status query is cached with the /trash banner's read.
+  const status = trpc.trash.status.useQuery(undefined, {
+    enabled: access.actions.includes('expedite_item'),
+  });
   // Session-local shield override: the dnd tag only lands on the NEXT *arr sync, so a fresh
   // save/un-save is reflected here rather than waiting for protectedByTag to catch up.
   const [override, setOverride] = useState<'saved' | 'unsaved' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [expediteOpen, setExpediteOpen] = useState(false);
 
   const invalidate = () => void utils.trash.pending.invalidate({ media });
   const save = trpc.trash.saveExclusion.useMutation({
@@ -188,6 +330,11 @@ export function TrashPendingNotice({
   const days = daysUntil(item.scheduledDeleteAt);
   const canSave = access.actions.includes('save_exclude');
   const canUnsave = access.actions.includes('remove_exclude');
+  // "Delete now…" — the per-item Expedite relocated off the wall (owner refinement 2026-07-07):
+  // admin/expedite_item-gated, only while the item is still slated (not saved/protected) and the
+  // install is safe. Always the ADR-014 Modal (never one-click) — via ItemExpediteModal.
+  const canExpedite = access.actions.includes('expedite_item');
+  const safe = status.data?.safe === true;
 
   return (
     <section className="card trash-panel" data-testid="trash-guard" role="status">
@@ -218,25 +365,61 @@ export function TrashPendingNotice({
           </p>
         ) : null}
       </div>
-      {canSave || canUnsave ? (
-        <ShieldButton
-          on={on}
-          itemTitle={item.title}
-          canSave={canSave}
-          canUnsave={canUnsave}
-          busy={save.isPending || unsave.isPending}
-          onSave={() =>
-            save.mutate({
-              maintainerrMediaId: item.maintainerrMediaId!,
-              mediaItemId: item.mediaItemId,
-            })
-          }
-          onUnsave={() =>
-            unsave.mutate({
-              maintainerrMediaId: item.maintainerrMediaId!,
-              mediaItemId: item.mediaItemId,
-            })
-          }
+      <div className="trash-panel__actions">
+        {canExpedite && !on ? (
+          <button
+            type="button"
+            className="btn sm danger"
+            data-testid="trash-delete-now"
+            disabled={!safe}
+            title={
+              safe
+                ? 'Expedite this item’s deletion now'
+                : 'Disabled — Maintainerr is not in a safe state (see the Trash banner).'
+            }
+            onClick={() => setExpediteOpen(true)}
+          >
+            Delete now…
+          </button>
+        ) : null}
+        {canSave || canUnsave ? (
+          <ShieldButton
+            on={on}
+            itemTitle={item.title}
+            canSave={canSave}
+            canUnsave={canUnsave}
+            busy={save.isPending || unsave.isPending}
+            onSave={() =>
+              save.mutate({
+                maintainerrMediaId: item.maintainerrMediaId!,
+                mediaItemId: item.mediaItemId,
+              })
+            }
+            onUnsave={() =>
+              unsave.mutate({
+                maintainerrMediaId: item.maintainerrMediaId!,
+                mediaItemId: item.mediaItemId,
+              })
+            }
+          />
+        ) : null}
+      </div>
+      {expediteOpen && item.maintainerrMediaId !== null ? (
+        <ItemExpediteModal
+          media={media}
+          item={{
+            collectionId: item.collectionId,
+            maintainerrMediaId: item.maintainerrMediaId,
+            mediaItemId: item.mediaItemId,
+            title: item.title,
+            year: item.year,
+            sizeBytes: item.sizeBytes,
+            protectedByTag: item.protectedByTag,
+            recentlyWatched: item.recentlyWatched,
+            requesters: item.requesters,
+          }}
+          safe={safe}
+          onClose={() => setExpediteOpen(false)}
         />
       ) : null}
     </section>

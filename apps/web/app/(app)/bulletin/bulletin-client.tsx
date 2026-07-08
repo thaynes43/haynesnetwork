@@ -69,7 +69,7 @@ function MediaLink({
 }) {
   if (mediaItemId === null) return <span className="muted">—</span>;
   return (
-    <Link className="row-link" href={`/library/${mediaItemId}`}>
+    <Link className="row-link" href={`/library/${mediaItemId}?from=bulletin-feed`}>
       {mediaTitle ?? 'Media item'}
     </Link>
   );
@@ -127,7 +127,7 @@ function MessageMediaChip({
   return (
     <Link
       className="media-chip"
-      href={`/library/${mediaItemId}`}
+      href={`/library/${mediaItemId}?from=bulletin`}
       data-testid="message-media-chip"
       aria-label={`Open ${mediaTitle ?? 'the media item'} — view its history and repairs`}
     >
