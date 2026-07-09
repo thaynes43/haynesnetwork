@@ -50,11 +50,15 @@ function stubMaintainerr(): MaintainerrClientBundle {
     if (method === 'GET' && path === '/rules') return ok([]);
     if (method === 'GET' && path === '/collections')
       return ok([
-        { id: 7, isActive: true, deleteAfterDays: 30, type: 'movie', title: 'Least watched', libraryId: 1, media: [] },
+        // Rule pool: aging-safe horizon + DELETE arrAction (DESIGN-010 errata) so the audit permits sweeps.
+        { id: 7, isActive: true, deleteAfterDays: 9999, arrAction: 0, manualCollection: false, type: 'movie', title: 'Least watched', libraryId: 1, media: [] },
         ...[...manualCollections].map(([id, title]) => ({
           id,
           isActive: true,
           deleteAfterDays: 0,
+          // Leaving-Soon manual collections are created with DO_NOTHING(4) — the aging audit requires it.
+          arrAction: 4,
+          manualCollection: true,
           type: 'movie',
           title,
           libraryId: 1,

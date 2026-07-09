@@ -2,7 +2,8 @@
 
 - **Status:** Draft (backend vertical shipped; **UX shipped 2026-07-06** — D-09 records the
   as-built; **pending tables → poster walls 2026-07-07**, see the D-09 amendment)
-- **Last updated:** 2026-07-09 (D-12 build C — watch indicators never occupy the action corner; every tile stays saveable)
+- **Last updated:** 2026-07-09 (errata — Maintainerr aging-invariant safeguard, ADR-036 / incident;
+  D-12 build C — watch indicators never occupy the action corner; every tile stays saveable)
 - **Satisfies:** PRD-001 **R-79..R-87** + **US-10** / **AC-14..AC-16**; governed by **ADR-023**
   (Trash/Maintainerr + per-action grants + safety gate). Reuses **ADR-021** (section levels),
   **ADR-008/011** (write-back confinement), **DESIGN-005 D-16** (Restore), **DESIGN-008/009 D-09**
@@ -579,3 +580,38 @@ CHECK for the new key and adds the `pending_pool_refresh` marker table.
 3. In Maintainerr, enable **"Tag excluded content"** on Radarr + Sonarr with the tag `dnd` and
    **"Remove tag on un-exclude" = ON** (or call `PATCH /api/settings` via our write client). This is
    what stamps/removes the protective tag our ledger reads as `protectedByTag`.
+
+## Errata — Maintainerr aging-invariant safeguard (2026-07-09, ADR-036)
+
+**Incident.** A live audit found the two production **rule collections** (`hnet — unwatched low-value
+movies` ~741 items / ~16 TB; `hnet — unwatched low-value TV` ~13 items) configured with
+`deleteAfterDays: 60` and `arrAction: 0` (DELETE). Maintainerr's **own** aging worker
+(`collection-worker.service.ts`, v3.17.0) deletes any member whose `addDate <= now −
+deleteAfterDays·86_400_000` and skips **only** `arrAction === DO_NOTHING (4)` — with **no** null/0
+guard (a null/0 horizon deletes immediately). That worker path **bypasses this app's entire pipeline**
+(batch, Leaving-Soon window, cross-server guardian, ledger attribution). Unaddressed, the movie pool
+would have been mass-deleted ~Sep 5–7, 2026.
+
+**Immediate ops fix.** Raised `deleteAfterDays` `60 → 9999` on **both** rule groups via the guarded
+`upsertTrashRule` (`PUT /api/rules`), changing **only** `collection.deleteAfterDays`. Verified from the
+v3.17.0 `updateRules` source that the change does **not** trip the crucial-change wipe (which compares
+only `dataType` / `manualCollection` / `manualCollectionName` / `libraryId`). Before/after: collection
+ids stable (1, 3), `arrAction` unchanged (0), `mediaCount` stable (741 / 13), rule-content hashes
+IDENTICAL, exclusions IDENTICAL (198 each). `deleteAfterDays: 9999` puts dangerDate ~27 years in the
+past ⇒ zero eligible items, while `arrAction: 0` keeps the app's per-item `/collections/media/handle`
+delete working.
+
+**Standing invariant (D-15).** `auditMaintainerr` now evaluates two invariants over every **active**
+collection and folds any breach into the existing `safe` gate (blocking `expediteDeletion` +
+`sweepExpiredBatches` unchanged), surfacing a specific human reason in the safety banner:
+
+- **Rule pool** (active, not a Leaving-Soon manual collection): `deleteAfterDays >=
+  AGING_HORIZON_MIN_DAYS (3650)` **AND** `arrAction === 0`. Breach ⇒ e.g. *"Maintainerr would
+  self-delete the '<pool>' pool in N days — raise its delete-after horizon"*.
+- **App-managed Leaving-Soon manual collection** (matched by title, ADR-025): `arrAction === 4`
+  (DO_NOTHING). Breach ⇒ *"… Maintainerr could delete curated items outside the batch pipeline"*.
+
+A `GET /collections` read failure fails **closed**. The invariant core is the pure, unit-tested
+`evaluateAgingInvariants` (`packages/domain/src/trash-flow.ts`); the audit wire shape gains
+`agingViolations: string[]`; the banner (`apps/web/components/trash-safety.tsx`) renders the reasons.
+Read schema `maintainerrCollectionSchema` was extended to carry `arrAction` / `manualCollection`.

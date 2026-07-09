@@ -15,6 +15,9 @@ export interface SafetyStatus {
   integrations: Record<string, boolean>;
   armedRules: number;
   activeCollections: number;
+  /** DESIGN-010 errata (2026-07-09) — human reasons Maintainerr could self-delete a pool outside
+   *  the app pipeline (short delete-after horizon / wrong arrAction). Non-empty ⇒ unsafe. */
+  agingViolations?: string[];
 }
 
 const INTEGRATION_LABELS: Record<string, string> = {
@@ -49,17 +52,29 @@ export function SafetyBanner({
       </span>
     );
   } else if (!status.safe) {
-    const down = Object.entries(status.integrations)
-      .filter(([, ok]) => !ok)
-      .map(([k]) => INTEGRATION_LABELS[k] ?? k);
     state = 'warn';
-    body = (
-      <span>
-        <strong>Maintainerr safety check failed</strong> — {down.join(', ')} not connected. Deletion
-        actions are disabled until every integration is back (the watch/keep signal chain can’t be
-        trusted without them).
-      </span>
-    );
+    const aging = status.agingViolations ?? [];
+    if (aging.length > 0) {
+      // The auto-delete safeguard tripped: Maintainerr's own worker could mass-delete a pool
+      // outside the batch/guardian pipeline. Surface the specific pool + reason (DESIGN-010 errata).
+      body = (
+        <span>
+          <strong>Maintainerr auto-delete safeguard tripped</strong> — {aging.join('; ')}. Deletion
+          actions are disabled until this is corrected.
+        </span>
+      );
+    } else {
+      const down = Object.entries(status.integrations)
+        .filter(([, ok]) => !ok)
+        .map(([k]) => INTEGRATION_LABELS[k] ?? k);
+      body = (
+        <span>
+          <strong>Maintainerr safety check failed</strong> — {down.join(', ')} not connected.
+          Deletion actions are disabled until every integration is back (the watch/keep signal chain
+          can’t be trusted without them).
+        </span>
+      );
+    }
   } else {
     state = 'safe';
     body = (

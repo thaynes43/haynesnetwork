@@ -62,7 +62,8 @@ function stubMaintainerr(state: MaintState): MaintainerrClientBundle {
     if (method === 'GET' && path === '/rules') return ok(state.rules);
     if (method === 'GET' && path === '/collections') {
       if (state.counters) state.counters.collectionsReads += 1;
-      return ok(state.collections.map((c) => ({ ...c, media: [] })));
+      // Aging audit reads arrAction/manualCollection; default a rule collection (0 / false) unless set.
+      return ok(state.collections.map((c) => ({ arrAction: 0, manualCollection: false, ...c, media: [] })));
     }
     const cm = path.match(/^\/collections\/media\/(\d+)\/content\/(\d+)$/);
     if (method === 'GET' && cm) {
@@ -116,7 +117,8 @@ const state = (over: Partial<MaintState> = {}): MaintState => ({
     {
       id: 7,
       isActive: true,
-      deleteAfterDays: 30,
+      // Aging-safe horizon (DESIGN-010 errata 2026-07-09) so the audit stays SAFE for expedite/status.
+      deleteAfterDays: 9999,
       type: 'movie',
       title: 'Least watched',
       items: [{ mediaServerId: 'ms-1', tmdbId: 55001, sizeBytes: 1_000_000_000, addDate: '2026-06-01T00:00:00Z' }],
@@ -255,7 +257,7 @@ describe('trash router — happy paths (ADR-023 D-02/D-04/D-05)', () => {
     expect(res.expeditePreview).toMatchObject({ deletable: 1, deletableBytes: 1_000_000_000 });
     expect(res.items[0]).toMatchObject({ tmdbId: 55001, title: 'Pending Movie', maintainerrMediaId: 'ms-1' });
     expect(res.items[0]!.scheduledDeleteAt).toBe(
-      new Date(Date.parse('2026-06-01T00:00:00Z') + 30 * 86_400_000).toISOString(),
+      new Date(Date.parse('2026-06-01T00:00:00Z') + 9999 * 86_400_000).toISOString(),
     );
   });
 
@@ -430,7 +432,7 @@ describe('trash router — paginated pending wall + future-batch strip (owner-di
       {
         id: 7,
         isActive: true,
-        deleteAfterDays: 30,
+        deleteAfterDays: 9999, // aging-safe (DESIGN-010 errata) so expedite stays permitted
         type: 'movie',
         title: 'Least watched',
         items: Array.from({ length: n }, (_, i) => ({

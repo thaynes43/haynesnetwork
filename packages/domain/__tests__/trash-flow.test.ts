@@ -8,12 +8,15 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { desc, eq } from 'drizzle-orm';
 import { ledgerEvents, mediaItems, notifications } from '@hnet/db/schema';
 import {
+  AGING_HORIZON_MIN_DAYS,
+  LEAVING_SOON_COLLECTION_TITLES,
   MaintainerrUnsafeError,
   MaintainerrUpstreamError,
   TrashMusicUnsupportedError,
   auditMaintainerr,
   buildMaintainerrClientBundle,
   classifyGuardian,
+  evaluateAgingInvariants,
   expediteDeletion,
   guardRecentlyWatched,
   listNotifications,
@@ -46,6 +49,10 @@ interface MaintState {
     id: number;
     isActive: boolean;
     deleteAfterDays: number;
+    /** ServarrAction (0=DELETE … 4=DO_NOTHING). Default 0 in the GET handler when omitted. */
+    arrAction?: number;
+    /** true for app-managed Leaving-Soon manual collections; default false (rule collection). */
+    manualCollection?: boolean;
     type: string;
     title: string;
     items: Array<{
@@ -120,6 +127,8 @@ function makeMaintainerr(state: MaintState): {
           id: c.id,
           isActive: c.isActive,
           deleteAfterDays: c.deleteAfterDays,
+          arrAction: c.arrAction ?? 0,
+          manualCollection: c.manualCollection ?? false,
           type: c.type,
           title: c.title,
           media: [],
@@ -261,6 +270,212 @@ describe('auditMaintainerr (ADR-023 D-04)', () => {
     const { bundle } = makeMaintainerr(baseState({ reachable: false }));
     const audit = await auditMaintainerr({ maintainerr: bundle });
     expect(audit).toMatchObject({ safe: false, reachable: false });
+  });
+});
+
+describe('aging invariants (DESIGN-010 errata 2026-07-09 — Maintainerr self-delete safeguard)', () => {
+  // --- the pure, unit-testable core ---
+  it('flags a 60-day rule pool with the specific horizon reason', () => {
+    const v = evaluateAgingInvariants([
+      {
+        title: 'hnet — unwatched low-value movies',
+        isActive: true,
+        deleteAfterDays: 60,
+        arrAction: 0,
+        manualCollection: false,
+      },
+    ]);
+    expect(v).toHaveLength(1);
+    expect(v[0]).toContain("Maintainerr would self-delete the 'hnet — unwatched low-value movies' pool");
+    expect(v[0]).toContain('in 60 days');
+    expect(v[0]).toContain('raise its delete-after horizon');
+  });
+
+  it('is clean once the rule pool horizon reaches AGING_HORIZON_MIN_DAYS (9999 >= 3650)', () => {
+    expect(AGING_HORIZON_MIN_DAYS).toBe(3650);
+    expect(
+      evaluateAgingInvariants([
+        { title: 'pool', isActive: true, deleteAfterDays: 9999, arrAction: 0, manualCollection: false },
+      ]),
+    ).toEqual([]);
+    // Exactly at the threshold is safe; one day short is not.
+    expect(
+      evaluateAgingInvariants([
+        { title: 'pool', isActive: true, deleteAfterDays: 3650, arrAction: 0, manualCollection: false },
+      ]),
+    ).toEqual([]);
+    expect(
+      evaluateAgingInvariants([
+        { title: 'pool', isActive: true, deleteAfterDays: 3649, arrAction: 0, manualCollection: false },
+      ]),
+    ).toHaveLength(1);
+  });
+
+  it('reads a null/0 rule-pool horizon as imminent (no null guard in Maintainerr)', () => {
+    for (const horizon of [null, 0]) {
+      const v = evaluateAgingInvariants([
+        { title: 'pool', isActive: true, deleteAfterDays: horizon, arrAction: 0, manualCollection: false },
+      ]);
+      expect(v[0]).toContain('imminently');
+    }
+  });
+
+  it('flags a rule pool whose arrAction is not DELETE/0 (app can no longer manage deletions)', () => {
+    const v = evaluateAgingInvariants([
+      { title: 'pool', isActive: true, deleteAfterDays: 9999, arrAction: 3, manualCollection: false },
+    ]);
+    expect(v.some((m) => m.includes('arrAction 3') && m.includes('must be Delete/0'))).toBe(true);
+  });
+
+  it('flags an app-managed Leaving-Soon pool that is NOT Do-Nothing/4', () => {
+    const v = evaluateAgingInvariants([
+      {
+        title: LEAVING_SOON_COLLECTION_TITLES.movie,
+        isActive: true,
+        deleteAfterDays: 0,
+        arrAction: 0,
+        manualCollection: true,
+      },
+    ]);
+    expect(v).toHaveLength(1);
+    expect(v[0]).toContain('Leaving-Soon');
+    expect(v[0]).toContain('outside the batch pipeline');
+  });
+
+  it('accepts a Leaving-Soon pool that IS Do-Nothing/4 (its short horizon is irrelevant)', () => {
+    expect(
+      evaluateAgingInvariants([
+        {
+          title: LEAVING_SOON_COLLECTION_TITLES.tv,
+          isActive: true,
+          deleteAfterDays: 0,
+          arrAction: 4,
+          manualCollection: true,
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it('ignores inactive collections entirely', () => {
+    expect(
+      evaluateAgingInvariants([
+        { title: 'pool', isActive: false, deleteAfterDays: 1, arrAction: 0, manualCollection: false },
+      ]),
+    ).toEqual([]);
+  });
+
+  // --- end-to-end through auditMaintainerr → the SAFE gate ---
+  const ruleColState = (deleteAfterDays: number) =>
+    baseState({
+      collections: [
+        {
+          id: 1,
+          isActive: true,
+          deleteAfterDays,
+          arrAction: 0,
+          type: 'movie',
+          title: 'hnet — unwatched low-value movies',
+          items: [],
+        },
+      ],
+    });
+
+  it('auditMaintainerr: a 60-day rule pool forces safe:false while integrations stay green', async () => {
+    const { bundle } = makeMaintainerr(ruleColState(60));
+    const audit = await auditMaintainerr({ maintainerr: bundle });
+    expect(audit.safe).toBe(false);
+    // integrations are all fine — the aging invariant is the sole reason.
+    expect(audit.integrations).toMatchObject({
+      plex: true,
+      radarr: true,
+      sonarr: true,
+      tautulli: true,
+      seerr: true,
+    });
+    expect(audit.agingViolations).toHaveLength(1);
+    expect(audit.agingViolations[0]).toContain('in 60 days');
+  });
+
+  it('auditMaintainerr: raising the same pool to 9999 is SAFE again', async () => {
+    const { bundle } = makeMaintainerr(ruleColState(9999));
+    const audit = await auditMaintainerr({ maintainerr: bundle });
+    expect(audit.safe).toBe(true);
+    expect(audit.agingViolations).toEqual([]);
+  });
+
+  it('auditMaintainerr: a Leaving-Soon manual collection not set to Do-Nothing forces safe:false', async () => {
+    const { bundle } = makeMaintainerr(
+      baseState({
+        collections: [
+          {
+            id: 1,
+            isActive: true,
+            deleteAfterDays: 9999,
+            arrAction: 0,
+            type: 'movie',
+            title: 'hnet — unwatched low-value movies',
+            items: [],
+          },
+          {
+            id: 2,
+            isActive: true,
+            deleteAfterDays: 0,
+            arrAction: 0, // WRONG — should be 4/DO_NOTHING
+            manualCollection: true,
+            type: 'movie',
+            title: LEAVING_SOON_COLLECTION_TITLES.movie,
+            items: [],
+          },
+        ],
+      }),
+    );
+    const audit = await auditMaintainerr({ maintainerr: bundle });
+    expect(audit.safe).toBe(false);
+    expect(audit.agingViolations.some((m) => m.includes('Leaving-Soon'))).toBe(true);
+  });
+
+  it('auditMaintainerr: a healthy estate (defused rule pool + Do-Nothing Leaving-Soon) is SAFE', async () => {
+    const { bundle } = makeMaintainerr(
+      baseState({
+        collections: [
+          {
+            id: 1,
+            isActive: true,
+            deleteAfterDays: 9999,
+            arrAction: 0,
+            type: 'movie',
+            title: 'hnet — unwatched low-value movies',
+            items: [],
+          },
+          {
+            id: 2,
+            isActive: true,
+            deleteAfterDays: 0,
+            arrAction: 4,
+            manualCollection: true,
+            type: 'movie',
+            title: LEAVING_SOON_COLLECTION_TITLES.movie,
+            items: [],
+          },
+        ],
+      }),
+    );
+    const audit = await auditMaintainerr({ maintainerr: bundle });
+    expect(audit.safe).toBe(true);
+    expect(audit.agingViolations).toEqual([]);
+  });
+
+  it('auditMaintainerr: a 60-day pool blocks the destructive expedite path (MaintainerrUnsafeError)', async () => {
+    const { bundle } = makeMaintainerr(ruleColState(60));
+    await expect(
+      expediteDeletion({
+        maintainerr: bundle,
+        scope: 'all',
+        media: 'movie',
+        actorId: null,
+        snapshotMediaIds: [],
+      }),
+    ).rejects.toBeInstanceOf(MaintainerrUnsafeError);
   });
 });
 
@@ -413,7 +628,10 @@ describe('listTrashPending + guardian + expedite (ADR-023 D-02/D-04/D-05)', () =
         {
           id: 7,
           isActive: true,
-          deleteAfterDays: 30,
+          // Aging-safe horizon (>= AGING_HORIZON_MIN_DAYS) so the audit stays SAFE and the destructive
+          // expedite paths in this block are exercised — the invariant itself is tested separately.
+          deleteAfterDays: 9999,
+          arrAction: 0,
           type: 'movie',
           title: 'Least watched movies',
           items: [
@@ -433,7 +651,7 @@ describe('listTrashPending + guardian + expedite (ADR-023 D-02/D-04/D-05)', () =
     expect(watched.title).toBe('Watched Movie');
     expect(watched.recentlyWatched).toBe(true);
     expect(watched.scheduledDeleteAt).toBe(
-      new Date(Date.parse('2026-06-01T00:00:00Z') + 30 * 86_400_000).toISOString(),
+      new Date(Date.parse('2026-06-01T00:00:00Z') + 9999 * 86_400_000).toISOString(),
     );
     const cold = res.items.find((i) => i.tmdbId === 8002)!;
     expect(cold.recentlyWatched).toBe(false);
@@ -733,7 +951,8 @@ describe('expedite deletion audit — Recently Deleted + Activity (deletion-trac
         {
           id: 9,
           isActive: true,
-          deleteAfterDays: 30,
+          deleteAfterDays: 9999, // aging-safe (see pendingState note) — expedite must reach the delete
+          arrAction: 0,
           type: 'movie',
           title: 'Least watched movies',
           items: [
