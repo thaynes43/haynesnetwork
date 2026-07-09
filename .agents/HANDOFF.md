@@ -3,7 +3,28 @@
 > The single resume point for agents. Update this in the same change as any milestone.
 > Derive current state from this file's top; you should not have to reconcile anything.
 
-- **Last updated:** 2026-07-07 — 🏁 **THE BOARD IS COMPLETE. ALL PLANS 002–015 are shipped and
+- **Last updated:** 2026-07-08 — ✅ **TRASH AUTOMATION LOOP CLOSED. Latest release v0.22.0**
+  (PLAN-016 Pushover batch notifications). The full **curate → notify → delete** loop is now armed
+  in production; every buildable plan **002–016** is shipped and live. What remains is the owner's
+  short personal checklist (in the loop block just below). Derive current state from here down.
+
+- **TRASH AUTOMATION LOOP — CLOSED (2026-07-08):**
+  - **Production Maintainerr rules armed.** `hnet — unwatched low-value movies` (IMDb **< 4.0**,
+    votes **20–999**, never watched) → **15 candidates**; `hnet — unwatched low-value TV` (same
+    semantics) → **1 candidate** (*The Baldwins*, owner-requested → **guardian-protected**). The
+    **4.0 ceiling was chosen empirically** — 4.5 pulls in kids' content; candidate counts at
+    4.5 / 5.0 / 5.5 = **24 / 44 / 62**. **Requester / cross-server-watch protection is enforced by
+    the app guardian at the deletion gate, NOT the rule** — Maintainerr's Seerr predicate zeroes
+    never-requested sets. **Re-add a ">60d added" age guard once the library matures.**
+  - **Space policy ARMED.** haynestower, target **80%** (currently **78.8%**, so a live no-op),
+    cooldown **7d**, minCandidates **10**, `sync-space-policy` CronJob **unsuspended**. Movie
+    proposals are blocked until the open batch closes **Jul 21** (one-open-per-kind).
+  - **Pushover live** per PLAN-016 (v0.22.0).
+  - **Owner's remaining list:** **MFA** (deferred by owner until this loop settled); the **Jul 21**
+    batch poster pass + Default-role family save grants; optional **Cloudflare WAF / HSTS**.
+    **Zscaler categorization RESOLVED** (owner's request approved).
+
+- **2026-07-07 —** 🏁 **THE BOARD WAS COMPLETE. ALL PLANS 002–015 are shipped and
   live-validated on the PUBLIC origin, latest v0.18.0.** Today additionally: the **public cutover was
   executed** (site LIVE at https://haynesnetwork.com); **Authentik was rebranded** (option C +
   Plex-primary login card + RP-initiated SSO logout, incl. the provider invalidation-flow fix);
@@ -37,7 +58,19 @@
   `.agents/plans/completed/001-gate-a-pr-cutover.md`).
   `main` is branch-protected: branch → PR → required checks `lint-and-typecheck`, `test`,
   `build` green → squash-merge. `e2e` advisory. Conventional-commit titles drive release-please.
-- **Latest release: v0.18.0 (signed)** — **PLAN-014 rules tuning + space policy (ADR-031 / DESIGN-014;
+- **Latest release: v0.22.0 (signed)** — **PLAN-016 Pushover batch notifications** (ADR-034 /
+  DESIGN-015; PRD R-115/R-116; glossary T-100/T-101; migration 0024). A transactional
+  `notification_outbox` enqueued in the SAME tx as the transition on **batch created / green-lit /
+  day-before-expiry reminder / swept**; an admin-editable **delivery window** (`notify_window`,
+  default **18–22 America/New_York**, audited) surfaced as a **Notifications card on
+  `/admin/storage`**; and a **`notify-outbox` sync mode (13-min CronJob)** that drains due rows to
+  Pushover — **no env ⇒ a clean no-op that leaves rows queued**. Creds reuse the `media-stack`
+  1Password item (`HAYNESNETWORK_PUSHOVER_*` → env `PUSHOVER_APP_TOKEN` / `PUSHOVER_USER_KEY`).
+  Live: CronJob drains clean (verified no-op with creds present). As-built:
+  `completed/016-pushover-batch-notify.md`. Prior releases **v0.19.0–v0.21.0** folded the Trash
+  section into a per-kind lifecycle (Overview landing + kind count badges, poster-wall pending
+  views, universal top nav + role-gated user menu). Prior:
+  **v0.18.0 (signed)** — **PLAN-014 rules tuning + space policy (ADR-031 / DESIGN-014;
   PRD R-112..R-114; glossary T-98..T-99; migration 0022).** A **propose-only** space policy delivered
   **OFF by default**: a `space-policy` `@hnet/sync` mode + `evaluateSpacePolicy`
   (`packages/domain/src/space-policy.ts`) that, for each opted-in over-target array past cooldown with

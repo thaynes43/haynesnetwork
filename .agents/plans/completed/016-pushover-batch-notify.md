@@ -1,6 +1,9 @@
 # PLAN-016: Pushover notifications for the Trash batch lifecycle (outbox + delivery window)
 
-- **Status:** In progress (2026-07-08) — owner-directed. Docs-first per CLAUDE.md.
+- **Status:** Completed (2026-07-08) — shipped v0.22.0; live: creds from the media-stack
+  1Password item, notify-outbox CronJob draining every 13 min (verified clean no-op with creds
+  present), Notifications window card on /admin/storage (default 6-10PM ET). Enqueues on batch
+  created / green-lit / day-before-expiry reminder / swept.
 - **Satisfies:** new **ADR-034**, **DESIGN-015**; PRD-001 new **R-115/R-116**; glossary
   **T-100/T-101**; migration **0024**. New `notify-outbox` sync kind + `notify_window` app
   setting + `notification_outbox` table (all CHECK-relaxed / created in 0024). Numbers verified
