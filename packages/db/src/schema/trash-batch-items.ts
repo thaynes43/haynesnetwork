@@ -4,6 +4,7 @@ import {
   text,
   integer,
   bigint,
+  boolean,
   numeric,
   timestamp,
   check,
@@ -51,6 +52,13 @@ export const trashBatchItems = pgTable(
     // The CURRENT save holder (cleared on un-save); the full flip history is trash_batch_saves.
     savedBy: uuid('saved_by').references(() => users.id, { onDelete: 'set null' }),
     savedAt: timestamp('saved_at', { withTimezone: true }),
+    // ADR-025 errata / DESIGN-011 amendment (2026-07-09, build B) — "requested items start saved".
+    // saved_reason is NULL for an ordinary human rescue (filled shield) and 'requested' for the SYSTEM
+    // auto-save of a requester-carrying item at snapshot (person-shield; saved_by NULL, no Maintainerr
+    // exclusion — the guardian is the real protection). requested_override is the sticky flag a human
+    // un-save of such an auto-save sets, so the sweep guardian's requester keep is overridden for it.
+    savedReason: text('saved_reason').$type<'requested'>(),
+    requestedOverride: boolean('requested_override').notNull().default(false),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     // Deletion snapshot (Q-08) — written at sweep-delete time, same tx as state='deleted':
     deletedSizeBytes: bigint('deleted_size_bytes', { mode: 'number' }),

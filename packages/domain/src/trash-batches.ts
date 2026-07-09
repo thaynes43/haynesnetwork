@@ -378,22 +378,41 @@ export async function createBatchFromPending(input: {
         .returning({ id: trashBatches.id });
       if (!batch) throw new Error('trash_batches insert returned no row');
 
+      const snapshotAt = nowDate();
       await tx.insert(trashBatchItems).values(
-        selected.map((p) => ({
-          batchId: batch.id,
-          maintainerrMediaId: p.maintainerrMediaId,
-          collectionId: p.collectionId,
-          mediaItemId: p.mediaItemId,
-          title: p.title,
-          year: p.year,
-          tmdbId: p.tmdbId,
-          tvdbId: p.tvdbId,
-          sizeBytes: p.sizeBytes,
-          posterSource: p.posterSource,
+        selected.map((p) => {
           // A tag-protected (dnd) item is already whitelisted — snapshot it as `protected`, never a
-          // delete candidate. Everything else is `pending` (re-evaluated fresh at sweep time).
-          state: (p.protectedByTag ? 'protected' : 'pending') as TrashBatchItemState,
-        })),
+          // delete candidate. A requester-carrying item (mediarequests / a known requester) starts
+          // SAVED as a SYSTEM auto-save (ADR-025 errata / DESIGN-011 amendment 2026-07-09, build B):
+          // saved_reason 'requested', saved_by NULL, and NO Maintainerr exclusion — the sweep guardian
+          // already keeps requester items, so auto-creating exclusions would mass-mutate Maintainerr;
+          // the batch `saved` state is the honest person-shield display, the guardian is the real keep.
+          // MATCHES the guardian PRECEDENCE (classifyGuardian: tag > watched > requested): a recently-
+          // watched item is kept for WATCH, not requester, so it stays `pending` (the wall's eye), never
+          // auto-saved. Everything else is `pending` (re-evaluated fresh at sweep time).
+          const requested = !p.protectedByTag && !p.recentlyWatched && p.requesters.length > 0;
+          const state: TrashBatchItemState = p.protectedByTag
+            ? 'protected'
+            : requested
+              ? 'saved'
+              : 'pending';
+          return {
+            batchId: batch.id,
+            maintainerrMediaId: p.maintainerrMediaId,
+            collectionId: p.collectionId,
+            mediaItemId: p.mediaItemId,
+            title: p.title,
+            year: p.year,
+            tmdbId: p.tmdbId,
+            tvdbId: p.tvdbId,
+            sizeBytes: p.sizeBytes,
+            posterSource: p.posterSource,
+            state,
+            savedReason: requested ? ('requested' as const) : null,
+            // saved_by stays NULL (system) — a requested auto-save has no human saver.
+            savedAt: requested ? snapshotAt : null,
+          };
+        }),
       );
 
       await writeTransitionEvent(tx, {
@@ -710,10 +729,15 @@ export async function setBatchItemSaved(input: {
   // release ONLY their OWN rescue; releasing another member's save needs `manage_batches`/admin. Fail
   // closed BEFORE any external Maintainerr write. (admin_review un-saves are already manage_batches-
   // gated at the API — the manager rules there are unchanged.)
+  //
+  // ADR-025 errata (2026-07-09, build B): the ownership rule governs HUMAN rescues. A SYSTEM
+  // requested auto-save (saved_reason 'requested', saved_by NULL) has no human owner, so it is
+  // un-savable by ANYONE holding save rights for the phase — the ownership gate is skipped for it.
   if (
     !input.saved &&
     batch.state === 'leaving_soon' &&
     !input.callerCanManage &&
+    item.savedReason !== 'requested' &&
     item.savedBy !== input.actorId
   ) {
     throw new TrashSaveNotOwnedError(
@@ -739,11 +763,12 @@ export async function setBatchItemSaved(input: {
         ]),
       );
     }
-    // 3) State + the tuning save-event row, same tx.
+    // 3) State + the tuning save-event row, same tx. A human save clears saved_reason — it is now an
+    //    ordinary rescue (the filled shield), never a system 'requested' auto-save.
     await inTransaction(input.db, async (tx) => {
       await tx
         .update(trashBatchItems)
-        .set({ state: 'saved', savedBy: input.actorId, savedAt: nowDate() })
+        .set({ state: 'saved', savedBy: input.actorId, savedAt: nowDate(), savedReason: null })
         .where(eq(trashBatchItems.id, input.itemId));
       await tx
         .insert(trashBatchSaves)
@@ -753,6 +778,10 @@ export async function setBatchItemSaved(input: {
   }
 
   // Un-save: release the exclusion (external-first) + re-add to Leaving-Soon + record the unsave.
+  // ADR-025 errata (2026-07-09, build B) — un-saving a SYSTEM requested auto-save is the explicit human
+  // OVERRIDE: set the sticky `requested_override` flag so the sweep guardian's requester keep no longer
+  // protects it (requested + never-unsaved → kept; requested + explicitly-unsaved → deleted). Audited.
+  const overrodeRequested = item.savedReason === 'requested';
   await removeExclusion({
     db: input.db,
     maintainerr: input.maintainerr,
@@ -770,11 +799,33 @@ export async function setBatchItemSaved(input: {
   await inTransaction(input.db, async (tx) => {
     await tx
       .update(trashBatchItems)
-      .set({ state: 'pending', savedBy: null, savedAt: null })
+      .set({
+        state: 'pending',
+        savedBy: null,
+        savedAt: null,
+        savedReason: null,
+        ...(overrodeRequested ? { requestedOverride: true } : {}),
+      })
       .where(eq(trashBatchItems.id, input.itemId));
     await tx
       .insert(trashBatchSaves)
       .values({ batchItemId: input.itemId, userId: input.actorId, action: 'unsave' });
+    if (overrodeRequested) {
+      // The durable, attributable note that a human overrode a requester auto-keep (ledger audit).
+      await tx.insert(ledgerEvents).values({
+        mediaItemId: item.mediaItemId,
+        eventType: 'trash_excluded',
+        source: 'maintainerr',
+        occurredAt: nowDate(),
+        requestedByUserId: input.actorId,
+        payload: {
+          action: 'unsave',
+          batchItemId: input.itemId,
+          maintainerrMediaId: item.maintainerrMediaId,
+          overrodeRequested: true,
+        },
+      });
+    }
   });
   return { changed: true, state: 'pending' };
 }
@@ -960,9 +1011,18 @@ async function expireOneBatch(input: {
     if (verdict.keep) {
       // dnd / recently-watched / requester / unevaluable — never deleted (C-07b). Skip, no whitelist:
       // a repeat next batch is the intended stronger tuning signal (Q-03), Save is the permanent lever.
-      if (await markItemSkipped(input.db, item.id)) skippedCount += 1;
-      else raceSkipped += 1;
-      continue;
+      //
+      // ADR-025 errata (2026-07-09, build B) — the ONE exception: a human explicitly un-saved a
+      // requester auto-save (item.requestedOverride). That override defeats ONLY the requester keep, so
+      // an overridden item falls through to deletion below; every other keep reason (and a requester
+      // keep with no override) is still honored.
+      const requesterOverridden =
+        verdict.reason === 'requested' && item.requestedOverride === true;
+      if (!requesterOverridden) {
+        if (await markItemSkipped(input.db, item.id)) skippedCount += 1;
+        else raceSkipped += 1;
+        continue;
+      }
     }
     // Cold + positively evaluated ⇒ delete this one item. F2 — the state flip is a GUARDED UPDATE
     // (`... AND state='pending'`): if a concurrent Save flipped the row between the candidate-select
@@ -1285,6 +1345,12 @@ export interface BatchDetailItem {
   state: TrashBatchItemState;
   savedBy: string | null;
   savedAt: string | null;
+  /** ADR-025 errata (build B) — 'requested' when this is a SYSTEM auto-save of a requester-carrying
+   *  item (the person-shield, distinct from a human filled shield); null for an ordinary rescue. */
+  savedReason: 'requested' | null;
+  /** ADR-025 errata (build B) — a human explicitly un-saved a requester auto-save, so the sweep
+   *  guardian's requester keep no longer protects it (it becomes deletable). */
+  requestedOverride: boolean;
   // Poster-wall display join (DESIGN-011 D-05/D-07 — read-only media_metadata enrichment): the
   // caption rating and the "recently watched ⇒ the guardian keeps it" eye overlay. Both are live
   // reads (not part of the frozen snapshot); recentlyWatched mirrors listTrashPending's window so
@@ -1366,6 +1432,8 @@ export async function getBatchDetail(input: {
       state: it.state,
       savedBy: it.savedBy,
       savedAt: it.savedAt?.toISOString() ?? null,
+      savedReason: it.savedReason ?? null,
+      requestedOverride: it.requestedOverride,
       imdbRating: numOrNull(imdbRating),
       tmdbRating: numOrNull(tmdbRating),
       recentlyWatched: lastViewedAt !== null && lastViewedAt.getTime() >= watchedCutoff,
@@ -1409,7 +1477,10 @@ export async function getBatchSaveStats(input: {
 }): Promise<BatchSaveStats> {
   const db = resolveDb(input.db);
 
-  // Net SAVES — current holders, straight from item state (matches counts.saved + the wall).
+  // Net SAVES — current HUMAN holders, straight from item state. ADR-025 errata (build B): SYSTEM
+  // requested auto-saves (saved_reason 'requested', saved_by NULL) are EXCLUDED — this card is the
+  // "who rescued what" HUMAN tuning dataset (PLAN-014 labelled false positives); a machine auto-keep
+  // is not a rescue and must not inflate anyone's tally (they never write a trash_batch_saves row).
   const savedRows = await db
     .select({
       userId: trashBatchItems.savedBy,
@@ -1418,7 +1489,13 @@ export async function getBatchSaveStats(input: {
     })
     .from(trashBatchItems)
     .leftJoin(users, eq(users.id, trashBatchItems.savedBy))
-    .where(and(eq(trashBatchItems.batchId, input.batchId), eq(trashBatchItems.state, 'saved')))
+    .where(
+      and(
+        eq(trashBatchItems.batchId, input.batchId),
+        eq(trashBatchItems.state, 'saved'),
+        sql`${trashBatchItems.savedReason} IS DISTINCT FROM 'requested'`,
+      ),
+    )
     .groupBy(trashBatchItems.savedBy, users.displayName);
 
   // Net UNSAVES — one row per still-released item (its latest audit event, which is always an un-save

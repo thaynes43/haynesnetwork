@@ -3953,6 +3953,14 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
   margin-top: 4px;
   border-top: 1px solid var(--color-border);
 }
+/* Reserved status slot beside the Save — text appearing recolors, never reflows (ADR-015). */
+.batch-settings__status {
+  align-self: center;
+  min-width: 6em;
+  font-size: 13px;
+  text-align: right;
+  color: var(--color-text-muted);
+}
 
 /* ---------- /settings/trash (ADR-032 / DESIGN-004 D-16) ---------- */
 /* The relocated Rules section rides the same card language as the pipeline card. */

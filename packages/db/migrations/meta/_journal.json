@@ -176,6 +176,13 @@
       "when": 1782950425000,
       "tag": "0025_fix_terminal_statuses",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1782950426000,
+      "tag": "0026_trash_requested_autosave",
+      "breakpoints": true
     }
   ]
 }

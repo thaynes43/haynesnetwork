@@ -54,6 +54,16 @@ describe('wallGlyph — the overlay language (ADR-033 unified: trash/shield/chec
     // no requester ⇒ the slated trash-can, unchanged.
     expect(wallGlyph('pending', false, [])).toBe('trash');
   });
+
+  it('build B — a SAVED requested auto-save is the person-shield; a human save stays the filled shield', () => {
+    // savedReason 'requested' ⇒ the DISTINCT person-shield (a machine auto-keep), not the human shield.
+    expect(wallGlyph('saved', false, ['alice'], { savedReason: 'requested' })).toBe('requested');
+    expect(wallGlyph('saved', false, [], { savedReason: null })).toBe('shield');
+    // A requester item a human explicitly UN-SAVED (requestedOverride) is genuinely slated ⇒ trash-can.
+    expect(wallGlyph('pending', false, ['alice'], { requestedOverride: true })).toBe('trash');
+    // …but a requester item that was NOT overridden still reads as the inert person-shield.
+    expect(wallGlyph('pending', false, ['alice'], { requestedOverride: false })).toBe('requested');
+  });
 });
 
 describe('wallInteractive — phase gate (mirrors trash.batches.setItemSaved)', () => {
@@ -111,6 +121,16 @@ describe('tileTappable — per-tile rules', () => {
       expect(tileTappable(admin, glyph, null)).toBe(false);
     }
   });
+
+  it('build B — a SAVED requested auto-save (person-shield) is un-savable by ANY saver; pending is inert', () => {
+    // A system requested auto-save has no human owner, so ownership never blocks it: any saver may tap
+    // it to un-save (family window OR manager). A `pending` requested item (edge) stays inert.
+    expect(tileTappable(family, 'requested', null, { state: 'saved' })).toBe(true);
+    expect(tileTappable(admin, 'requested', null, { state: 'saved' })).toBe(true);
+    expect(tileTappable(family, 'requested', null, { state: 'pending' })).toBe(false);
+    // With no opts (a pending requested tile) it is inert — the old contract is preserved.
+    expect(tileTappable(admin, 'requested', null)).toBe(false);
+  });
 });
 
 describe('wallCounts — the running header agrees with the glyphs', () => {
@@ -120,7 +140,8 @@ describe('wallCounts — the running header agrees with the glyphs', () => {
       { state: 'pending', recentlyWatched: false, sizeBytes: 50 }, // trash
       { state: 'pending', recentlyWatched: true, sizeBytes: 999 }, // eye → kept
       { state: 'pending', recentlyWatched: false, requesters: ['manofoz'], sizeBytes: 42 }, // requested → kept
-      { state: 'saved', recentlyWatched: false, sizeBytes: 10 }, // shield
+      { state: 'saved', recentlyWatched: false, sizeBytes: 10 }, // shield (human) → rescued
+      { state: 'saved', recentlyWatched: false, requesters: ['alice'], savedReason: 'requested', sizeBytes: 8 }, // person-shield → kept
       { state: 'protected', recentlyWatched: false, sizeBytes: 1 }, // check → kept
       { state: 'skipped', recentlyWatched: false, sizeBytes: 2 }, // skip → kept
       { state: 'deleted', recentlyWatched: false, sizeBytes: 3 }, // gone
@@ -128,8 +149,8 @@ describe('wallCounts — the running header agrees with the glyphs', () => {
     expect(counts).toEqual({
       slated: 2,
       slatedBytes: 150,
-      rescued: 1,
-      kept: 4,
+      rescued: 1, // only the HUMAN save is 'rescued'; the requested auto-save reads as 'kept'
+      kept: 5,
       deleted: 1,
     });
   });

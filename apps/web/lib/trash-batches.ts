@@ -64,14 +64,25 @@ export const LEAVING_SOON_NAMES: Record<'movie' | 'tv', string> = {
  */
 export type WallGlyph = 'trash' | 'shield' | 'check' | 'eye' | 'requested' | 'skip' | 'gone';
 
+/** ADR-025 errata (2026-07-09, build B) — the requested-auto-save signals that steer the batch-wall
+ *  glyph: `savedReason` distinguishes a SYSTEM requested auto-save (person-shield) from a human rescue
+ *  (filled shield) while SAVED; `requestedOverride` marks a requester item a human un-saved (now slated). */
+export interface WallGlyphOpts {
+  savedReason?: string | null;
+  requestedOverride?: boolean;
+}
+
 export function wallGlyph(
   state: BatchItemStateName,
   recentlyWatched: boolean,
   requesters: readonly string[] = [],
+  opts?: WallGlyphOpts,
 ): WallGlyph {
   switch (state) {
     case 'saved':
-      return 'shield';
+      // A SYSTEM requested auto-save shows the person-shield — deliberately DISTINCT from the filled
+      // shield of a human rescue (owner-directed, build B). Both are `saved`; only the glyph differs.
+      return opts?.savedReason === 'requested' ? 'requested' : 'shield';
     case 'protected':
       return 'check';
     case 'skipped':
@@ -80,8 +91,10 @@ export function wallGlyph(
       return 'gone';
     case 'pending':
       // Guardian precedence: a watched keep reads first, then a requester keep — both inert (the
-      // sweep will refuse to delete them), so neither shows the tappable trash-can.
+      // sweep will refuse to delete them), so neither shows the tappable trash-can. EXCEPT a requester
+      // item a human explicitly un-saved (requestedOverride) is genuinely slated now — the trash-can.
       if (recentlyWatched) return 'eye';
+      if (opts?.requestedOverride) return 'trash';
       if (requesters.length > 0) return 'requested';
       return 'trash';
   }
@@ -135,12 +148,19 @@ export function tileTappable(
   ctx: WallTapContext,
   glyph: WallGlyph,
   savedBy: string | null,
+  opts?: { state?: BatchItemStateName },
 ): boolean {
   if (!wallInteractive(ctx)) return false;
   if (glyph === 'trash') return true;
   if (glyph === 'shield') {
     if (ctx.canManage) return true;
     return savedBy === null || savedBy === ctx.viewerId;
+  }
+  if (glyph === 'requested') {
+    // On the batch wall the person-shield is a SAVED requested auto-save — un-savable (tap to slate)
+    // by ANYONE with save rights for the phase (build B: a system save has no human owner, so the
+    // ownership gate does not apply). A `pending` requested item (edge) stays inert.
+    return opts?.state === 'saved';
   }
   return false;
 }
@@ -150,6 +170,9 @@ export interface WallCountInput {
   recentlyWatched: boolean;
   requesters?: readonly string[];
   sizeBytes: number;
+  /** build B — so the header counts read from the SAME glyph the tiles show (person-shield vs shield). */
+  savedReason?: string | null;
+  requestedOverride?: boolean;
 }
 
 export interface WallCounts {
@@ -169,7 +192,12 @@ export interface WallCounts {
 export function wallCounts(items: ReadonlyArray<WallCountInput>): WallCounts {
   const out: WallCounts = { slated: 0, slatedBytes: 0, rescued: 0, kept: 0, deleted: 0 };
   for (const item of items) {
-    switch (wallGlyph(item.state, item.recentlyWatched, item.requesters)) {
+    switch (
+      wallGlyph(item.state, item.recentlyWatched, item.requesters, {
+        savedReason: item.savedReason,
+        requestedOverride: item.requestedOverride,
+      })
+    ) {
       case 'trash':
         out.slated += 1;
         out.slatedBytes += item.sizeBytes;

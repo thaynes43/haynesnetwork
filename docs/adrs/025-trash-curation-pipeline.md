@@ -118,6 +118,18 @@ This ADR records the binding decisions and resolves the plan's open questions (Q
   > `createBatchFromPending` gains optional reclaim targeting (DESIGN-011 D-09b) — an additive param,
   > default-all, no change to this ADR's snapshot semantics.
 
+  > **Errata (2026-07-09, owner-directed, build B) — requested items start saved, and the sweep guardian
+  > honors an explicit human un-save override.** Requester-carrying items must never be inert protected
+  > shields. `createBatchFromPending` now snapshots a non-tag-protected requester item **`saved`** with
+  > `saved_reason='requested'`, `saved_by=NULL`, and **no Maintainerr exclusion** (the guardian is the real
+  > keep — auto-creating exclusions would mass-mutate Maintainerr; migration 0026 adds `saved_reason` +
+  > `requested_override`). Such a system save is **un-savable by any holder of save rights for the phase**
+  > (the D-05 ownership gate governs human rescues only). Un-saving one sets the sticky `requested_override`
+  > flag (audited: a `trash_excluded` event flagged `overrodeRequested:true`). At sweep, `classifyGuardian`
+  > still keeps a requester item **unless** `requested_override` is set — the override defeats **only** the
+  > requester keep (dnd/watched/unevaluable keeps are unchanged): **requested + never-unsaved → kept;
+  > requested + explicitly-unsaved → deleted.** UI + wall glyphs: DESIGN-011 D-11.
+
 - **C-06 — Settings live in a generic `app_settings` store (Q-06).** A small audited key→jsonb table
   (`key` CHECK from `APP_SETTING_KEYS`, `value`, `updated_at`, `updated_by`) written ONLY by the
   `setAppSetting` single-writer, which co-writes an `update_app_setting` permission_audit row same-tx
