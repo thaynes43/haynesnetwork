@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.24.0](https://github.com/thaynes43/haynesnetwork/compare/v0.23.0...v0.24.0) (2026-07-09)
+
+
+### Features
+
+* continuous batch mode + per-kind caps, all-day notify default, countdown fix, label cleanup ([#134](https://github.com/thaynes43/haynesnetwork/issues/134)) ([2a38a8b](https://github.com/thaynes43/haynesnetwork/commit/2a38a8b053851f167cd33d73f4f14050c8573e07))
+* tabbed Trash Settings hub + requested items start saved (overridable) ([#135](https://github.com/thaynes43/haynesnetwork/issues/135)) ([eeca4f9](https://github.com/thaynes43/haynesnetwork/commit/eeca4f9927299926317bffd5c2c0a7e3191ddd3e))
+
+
+### Bug Fixes
+
+* fix-request timeouts, close-on-import, human history copy ([#132](https://github.com/thaynes43/haynesnetwork/issues/132)) ([38d92f1](https://github.com/thaynes43/haynesnetwork/commit/38d92f1c6b8605934bea30a74416259c8862f4e6))
+
 ## [0.23.0](https://github.com/thaynes43/haynesnetwork/compare/v0.22.0...v0.23.0) (2026-07-09)
 
 
