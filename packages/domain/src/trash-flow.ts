@@ -492,8 +492,12 @@ export async function listTrashPending(input: {
 // ---------------------------------------------------------------------------
 
 /** How long a materialized per-kind pending set is reused across page reads (in-process; no infra).
- *  Disabled under test (each caller gets a fresh set) so fixtures never bleed between cases. */
-let pendingCacheTtlMs = process.env.NODE_ENV === 'test' ? 0 : 8000;
+ *  PRODUCTION-ONLY: the memo is a pure perf win for rapid scroll paging, and the app busts it on
+ *  every exclusion/expedite mutation. It is DISABLED outside production (dev, e2e, vitest) so a
+ *  brief cross-request memo can never make a fixture/stub state change (an e2e `resetMaintainerr`,
+ *  a prior test's expedite) bleed into the next read — the paginated path stays deterministic there,
+ *  and the headline fix (page-scoped exclusion reads) applies in every environment regardless. */
+let pendingCacheTtlMs = process.env.NODE_ENV === 'production' ? 8000 : 0;
 /** Test seam — control the cache TTL (and implicitly enable it) for the paging perf-guard test. */
 export function __setPendingCacheTtlMsForTests(ms: number): void {
   pendingCacheTtlMs = ms;

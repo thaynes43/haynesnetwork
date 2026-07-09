@@ -538,9 +538,15 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     ).toBe(true);
 
     // A fresh candidate joins the LIVE set (not the frozen batch) ⇒ the admin-only strip appears.
+    // Owner-directed 2026-07-09: the strip is now the full interactive "Potential in future batches"
+    // wall (paginated, tap-to-save) — the header keeps the honest server count.
     await addPendingCandidate(page);
     await page.goto('/trash?tab=movies');
-    await expect(page.getByTestId('batch-new-candidates')).toContainText('New candidates since this batch (1)');
+    await expect(page.getByTestId('batch-new-candidates')).toContainText(
+      'Potential in future batches (1)',
+    );
+    // The fresh candidate renders as an interactive save tile (tap ⇒ save it out of a future batch).
+    await expect(page.getByTestId('future-wall').getByTestId('trash-tile')).toHaveCount(1);
   });
 
   test('Start refuses gracefully while a batch is open — the error names the blocker', async ({
