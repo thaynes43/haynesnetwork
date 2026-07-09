@@ -1,8 +1,10 @@
 // Screenshot harness for DESIGN-010 D-12 (cross-server watch visibility — owner visual sign-off).
-// Boots the SAME hermetic stack the e2e suite uses and captures the muted "watched a while ago"
-// indicator + the detail-card last-watched line, in dark + light + mobile 390:
-//   • Vanished Heist — a SLATED (trash) movie watched ~1yr ago on HaynesKube: the muted meta-line
+// Boots the SAME hermetic stack the e2e suite uses and captures BOTH watch-chip states + the
+// detail-card last-watched line, in dark + light + mobile 390 (build C — the eye-corner bug fix):
+//   • Vanished Heist — a SLATED (trash) movie watched ~1yr ago on HaynesKube: the MUTED meta-line
 //     eye (info, not protection) with its "Last watched on HaynesKube · <Mon YYYY>" tooltip.
+//   • The Fixture — recently-watched (3d) + requested: the SAVEABLE person-shield corner (no more
+//     inert eye) + the INFO-tone "Watched recently on HaynesOps" meta chip.
 //   • Breaking Prod (TV) — REQUESTED + watched-long-ago: the person-shield keeps the corner, the
 //     watch info rides the muted caption (the documented precedence).
 //   • The Fixture detail deletion card — the "Last watched on HaynesOps · <Mon YYYY>" line.
@@ -79,9 +81,11 @@ async function main(): Promise<void> {
     await setTheme(page, 'hnet-dark');
     await hidePortal(page);
     await shootTile(page, 'Vanished Heist', 'tile-vanished-dark');
+    await shootTile(page, 'The Fixture', 'tile-fixture-recent-dark');
     await setTheme(page, 'hnet-light');
     await hidePortal(page);
     await shootTile(page, 'Vanished Heist', 'tile-vanished-light');
+    await shootTile(page, 'The Fixture', 'tile-fixture-recent-light');
 
     // TV: requested + watched-long-ago (person-shield corner + muted watch caption).
     await setTheme(page, 'hnet-dark');

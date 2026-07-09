@@ -14,16 +14,15 @@
 import { useEffect, useState, type RefObject } from 'react';
 import { trpc } from '@/lib/trpc-client';
 import { MediaPoster } from '@/components/media-poster';
-import { LibraryCornerLink, WallGlyphSvg, WatchedAgoNote } from '@/components/trash-shield';
+import { LibraryCornerLink, WallGlyphSvg, WatchNoteBadge } from '@/components/trash-shield';
 import { formatBytes, formatDay, formatRating, ratingOrNull } from '@/lib/media';
 import { describeMutationError } from '@/lib/app-error';
 import {
   daysLeftLabel,
   daysUntil,
-  lastWatchedLabel,
   pendingWallGlyph,
   pendingWallTappable,
-  watchedLongAgo,
+  watchNote,
   type PendingWallGlyph,
 } from '@/lib/trash';
 
@@ -67,13 +66,13 @@ function tileInfo(item: PendingWallItem, glyph: PendingWallGlyph): string {
     );
   else if (glyph === 'requested')
     lines.push(`Requested by ${item.requesters.join(', ')} — tap to save it`);
-  if (item.recentlyWatched) lines.push('Recently watched — the guardian keeps it');
-  // DESIGN-010 D-12 — the watched-a-while-ago line (info, not protection). Never shown for a
-  // recently-watched item (that carries its own eye glyph + "the guardian keeps it" line above).
-  if (watchedLongAgo(item)) {
-    const watched = lastWatchedLabel(item.lastWatchedAt, item.lastWatchedServer);
-    if (watched !== null) lines.push(`${watched} — still deletable`);
-  }
+  // DESIGN-010 D-12 (build C) — the cross-server watch line (info, not protection). BOTH watch
+  // states surface here now (the action corner never carries watch info): "Watched recently on
+  // <server> — the guardian keeps it at the sweep" or "Last watched on <server> · <Mon YYYY> —
+  // still deletable". It never gates the corner action.
+  const note = watchNote(item);
+  if (note !== null)
+    lines.push(note.recent ? `${note.label} — the guardian keeps it at the sweep` : `${note.label} — still deletable`);
   if (item.requesters.length > 0 && glyph !== 'requested')
     lines.push(`Requested by ${item.requesters.join(', ')}`);
   if (item.collectionTitle !== null) lines.push(`Rule: ${item.collectionTitle}`);
@@ -164,10 +163,9 @@ function PendingTile({
   const tappable =
     item.maintainerrMediaId !== null && pendingWallTappable(glyph, canSave, canUnsave);
   const info = tileInfo(item, glyph);
-  // DESIGN-010 D-12 — the muted "watched a while ago" indicator (null unless watched-not-recently).
-  const watchLabel = watchedLongAgo(item)
-    ? lastWatchedLabel(item.lastWatchedAt, item.lastWatchedServer)
-    : null;
+  // DESIGN-010 D-12 (build C) — the meta-line watch chip: info-tone eye (recently watched) or muted
+  // eye (watched a while ago). Null when there is no watch signal. NEVER in the action corner.
+  const note = watchNote(item);
   const titleYear = `${item.title}${item.year !== null ? ` (${item.year})` : ''}`;
   const toggleLabel =
     glyph === 'shield'
@@ -176,15 +174,13 @@ function PendingTile({
         : `${item.title} is saved — protected from deletion`
       : glyph === 'check'
         ? `${item.title} is protected from deletion`
-        : glyph === 'eye'
-          ? `${item.title} was watched recently — the guardian keeps it`
-          : glyph === 'requested'
-            ? tappable
-              ? `Save ${item.title} — requested by ${item.requesters.join(', ')}; tap to protect it`
-              : `${item.title} was requested by ${item.requesters.join(', ')} — protected from deletion`
-            : tappable
-              ? `${item.title} is slated to delete — tap to save it`
-              : `${item.title} is slated to delete`;
+        : glyph === 'requested'
+          ? tappable
+            ? `Save ${item.title} — requested by ${item.requesters.join(', ')}; tap to protect it`
+            : `${item.title} was requested by ${item.requesters.join(', ')} — protected from deletion`
+          : tappable
+            ? `${item.title} is slated to delete — tap to save it`
+            : `${item.title} is slated to delete`;
   const inner = (
     <>
       <MediaPoster posterUrl={item.posterUrl} kind={media === 'movie' ? 'radarr' : 'sonarr'} alt="" />
@@ -238,7 +234,7 @@ function PendingTile({
           {item.sizeBytes > 0 ? formatBytes(item.sizeBytes) : '—'}
           {rating !== null ? ` · ★ ${rating}` : ''}
         </span>
-        {watchLabel !== null ? <WatchedAgoNote label={watchLabel} /> : null}
+        {note !== null ? <WatchNoteBadge label={note.label} tone={note.tone} /> : null}
       </span>
     </li>
   );

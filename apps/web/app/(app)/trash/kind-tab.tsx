@@ -25,7 +25,7 @@ import { MediaPoster } from '@/components/media-poster';
 import {
   LibraryCornerLink,
   WallGlyphSvg,
-  WatchedAgoNote,
+  WatchNoteBadge,
   type TrashAccess,
 } from '@/components/trash-shield';
 import {
@@ -40,8 +40,7 @@ import {
   candidatesAsOfLabel,
   daysUntil,
   deadlineCountdown,
-  lastWatchedLabel,
-  watchedLongAgo,
+  watchNote,
 } from '@/lib/trash';
 import {
   BATCH_STATE_LABELS,
@@ -151,6 +150,7 @@ function tileLabel(
   tappable: boolean,
   savedByName: string | null,
   requesters: readonly string[] = [],
+  state?: BatchItemStateName,
 ): string {
   switch (glyph) {
     case 'trash':
@@ -166,14 +166,15 @@ function tileLabel(
       return tappable
         ? `${title} is protected — tap to un-protect it`
         : `${title} is protected — already safe from deletion`;
-    case 'eye':
-      return `${title} was watched recently — the guardian keeps it`;
     case 'requested': {
       const who =
         requesters.length > 0 ? `${title} was requested by ${requesters.join(', ')}` : `${title} was requested`;
-      // build B — on the batch wall the person-shield is a system auto-save: tappable ⇒ un-save it
-      // (it then deletes at sweep). Inert ⇒ the read-only "protected from deletion".
-      return tappable ? `${who} — auto-saved; tap to un-save it` : `${who} — protected from deletion`;
+      if (!tappable) return `${who} — protected from deletion`;
+      // Person-shield, tappable: a SAVED auto-save un-saves (then it slates); a `pending` requester
+      // keep (a recently-watched requester item, no longer the inert eye) saves it.
+      return state === 'saved'
+        ? `${who} — auto-saved; tap to un-save it`
+        : `${who} — the guardian keeps it; tap to save it too`;
     }
     case 'skip':
       return `${title} was kept — it couldn’t be verified safe, so it was never deleted`;
@@ -294,17 +295,19 @@ function PosterWall({
             savedReason: item.savedReason,
             requestedOverride: item.requestedOverride,
           });
-          const tappable = tileTappable(ctx, glyph, item.savedBy, { state });
+          const tappable = tileTappable(ctx, glyph, item.savedBy);
           const savedByName = item.savedBy !== null ? (saverNames.get(item.savedBy) ?? null) : null;
-          const label = tileLabel(item.title, glyph, tappable, savedByName, item.requesters);
+          const label = tileLabel(item.title, glyph, tappable, savedByName, item.requesters, state);
           const rating = formatRating(
             ratingOrNull(item.imdbRating) ?? ratingOrNull(item.tmdbRating),
           );
-          // DESIGN-010 D-12 — the muted "watched a while ago" indicator (info, not protection); null
-          // unless watched longer ago than the recently-watched window.
-          const watchLabel = watchedLongAgo(item)
-            ? lastWatchedLabel(item.lastWatchedAt, item.lastWatchedServer)
-            : null;
+          // DESIGN-010 D-12 (build C) — the meta-line watch chip: info-tone (recently watched) or muted
+          // (watched a while ago); null with no watch signal. NEVER in the action corner.
+          const note = watchNote(item);
+          // A person-shield / protected tile reads "pressed" (kept) only when it is actually saved or
+          // protected; a `pending` requester keep (tap ⇒ save) is not yet pressed.
+          const pressed =
+            glyph === 'shield' || glyph === 'check' || (glyph === 'requested' && state === 'saved');
           const titleYear = `${item.title}${item.year !== null ? ` (${item.year})` : ''}`;
           const inner = (
             <>
@@ -326,7 +329,7 @@ function PosterWall({
                 <button
                   type="button"
                   className="bwall-tap"
-                  aria-pressed={glyph === 'shield' || glyph === 'requested' || glyph === 'check'}
+                  aria-pressed={pressed}
                   aria-label={label}
                   title={label}
                   aria-busy={inFlight.has(item.id) || undefined}
@@ -356,7 +359,7 @@ function PosterWall({
                   {item.sizeBytes > 0 ? formatBytes(item.sizeBytes) : '—'}
                   {rating !== null ? ` · ★ ${rating}` : ''}
                 </span>
-                {watchLabel !== null ? <WatchedAgoNote label={watchLabel} /> : null}
+                {note !== null ? <WatchNoteBadge label={note.label} tone={note.tone} /> : null}
               </span>
             </li>
           );
