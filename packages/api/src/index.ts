@@ -38,3 +38,23 @@ export {
 } from './ledger-export';
 export type { MyApp } from './routers/catalog';
 export type { MyServer, MyLibrary } from './routers/plex';
+// ADR-030 amendment (2026-07-09) / DESIGN-013 D-07 — the native free-space trend: wire types (the
+// Storage tab imports these TYPE-ONLY, erased at compile) + the thin Prometheus read client.
+export {
+  TREND_WINDOWS,
+  TREND_WINDOW_SPECS,
+  FREESPACE_TREND_QUERY,
+  mapTrendSeries,
+  getStorageTrend,
+  type TrendWindow,
+  type TrendPoint,
+  type StorageTrendSeries,
+  type StorageTrendReport,
+} from './storage-trend';
+export {
+  createPrometheusClient,
+  prometheusClientFromEnv,
+  PROMETHEUS_DEFAULT_URL,
+  type PrometheusRangeReader,
+  type PromMatrixSeries,
+} from './prometheus';

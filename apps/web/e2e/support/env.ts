@@ -66,6 +66,10 @@ export interface RuntimeEnv {
   MAINTAINERR_URL: string;
   MAINTAINERR_API_KEY: string;
   MAINTAINERR_WEBHOOK_SECRET: string;
+  /** ADR-030 amendment (2026-07-09) — stub Prometheus origin (specs POST its /_stub/state) + the
+   *  free-space-trend contract (storage.trend queries PROMETHEUS_URL's /api/v1/query_range). */
+  STUB_PROMETHEUS_URL: string;
+  PROMETHEUS_URL: string;
   /** ADR-026 / DESIGN-012 — per-source Bulletin webhook shared secrets (Seerr + Tautulli). */
   SEERR_WEBHOOK_SECRET: string;
   TAUTULLI_WEBHOOK_SECRET: string;
@@ -97,6 +101,7 @@ export function composeRuntimeEnv(opts: {
   stubBazarrBaseUrl: string;
   stubPlexBaseUrl: string;
   stubMaintainerrBaseUrl: string;
+  stubPrometheusBaseUrl: string;
   appUrl: string;
 }): RuntimeEnv {
   return {
@@ -134,6 +139,8 @@ export function composeRuntimeEnv(opts: {
     MAINTAINERR_URL: opts.stubMaintainerrBaseUrl,
     MAINTAINERR_API_KEY: STUB_MAINTAINERR_API_KEY,
     MAINTAINERR_WEBHOOK_SECRET: STUB_MAINTAINERR_WEBHOOK_SECRET,
+    STUB_PROMETHEUS_URL: opts.stubPrometheusBaseUrl,
+    PROMETHEUS_URL: opts.stubPrometheusBaseUrl,
     SEERR_WEBHOOK_SECRET: STUB_SEERR_WEBHOOK_SECRET,
     TAUTULLI_WEBHOOK_SECRET: STUB_TAUTULLI_WEBHOOK_SECRET,
     // 30 s (vs 15 min in prod): long enough that fresh submits deterministically read

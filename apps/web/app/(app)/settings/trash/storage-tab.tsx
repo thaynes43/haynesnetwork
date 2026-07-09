@@ -5,7 +5,8 @@
 // /admin/storage page (the storage.* + trash.* routers/procedures are UNCHANGED — only the UI moved):
 //   1. Utilization — one capacity meter per media array + the inline space-TARGET editor (each array
 //      keeps its own optimistic, reflow-free tick save — a direct manipulation, ADR-015, not a form).
-//   2. Grafana deep-link — the fill/drain TIME-SERIES lives in Grafana, deep-linked (ADR-030 C-04).
+//   2. Free-space trend — the fill/drain TIME-SERIES, now a NATIVE chart off in-cluster Prometheus
+//      (ADR-030 C-04 amendment 2026-07-09 — the LAN-only Grafana deep-link retired to a footnote).
 //   3. Space policy — the propose-only automatic policy: enable ceremony + per-array opt-in + the
 //      rules-tuning / graduation block (ADR-031).
 // Admin-only (this whole tab is adminProcedure reads). The Batch policy form (#134) MOVED to the
@@ -22,6 +23,7 @@ import {
   utilizationTone,
   type StorageArrayUtilization,
 } from '@/lib/storage';
+import { FreespaceTrend } from './freespace-trend';
 import {
   POLICY_ARRAY_KEY,
   POLICY_ARRAY_LABEL,
@@ -34,9 +36,6 @@ import {
   withArrayConfig,
   withEnabled,
 } from '@/lib/space-policy';
-
-/** ADR-030 C-04 / OPS-007 — the deep-linked (never embedded) free-space trend dashboard. */
-const GRAFANA_TREND_URL = 'https://grafana.haynesops.com/d/media-storage-utilization';
 
 // ---------------------------------------------------------------------------------------------------
 // Utilization card (meter + inline target editor) — moved verbatim from /admin/storage.
@@ -512,19 +511,9 @@ export function StorageTab() {
         ))}
       </section>
 
-      {/* ADR-030 C-04 — the fill/drain history is Grafana, deep-linked (never an iframe). */}
-      <a
-        className="card storage-grafana"
-        href={GRAFANA_TREND_URL}
-        target="_blank"
-        rel="noreferrer"
-        data-testid="grafana-trend-link"
-      >
-        <span className="storage-grafana__title">Free-space trend &amp; history →</span>
-        <span className="muted">
-          Opens the Grafana dashboard in a new tab — same Authentik sign-in you already hold.
-        </span>
-      </a>
+      {/* ADR-030 C-04 amendment (2026-07-09) — the fill/drain history is now a NATIVE chart off
+          in-cluster Prometheus; the LAN-only Grafana dashboard survives as the card's footnote. */}
+      <FreespaceTrend />
 
       <SpacePolicyCard />
     </>

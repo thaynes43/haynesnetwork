@@ -18,6 +18,7 @@ import { startStubArr, type StubArrServer } from './stub-arr';
 import { startStubBazarr, type StubBazarrServer } from './stub-bazarr';
 import { startStubPlex, type StubPlexServer } from './stub-plex';
 import { startStubMaintainerr, type StubMaintainerrServer } from './stub-maintainerr';
+import { startStubPrometheus, type StubPrometheusServer } from './stub-prometheus';
 import { composeRuntimeEnv, DEFAULT_APP_PORT, type RuntimeEnv } from './env';
 
 const DEV_READY_TIMEOUT_MS = 180_000;
@@ -47,10 +48,12 @@ export interface RunningStack {
   plex: StubPlexServer;
   /** Stub Maintainerr stand-in — Trash section e2e layer (ADR-023 / DESIGN-010). */
   maintainerr: StubMaintainerrServer;
+  /** Stub Prometheus stand-in — free-space-trend e2e layer (ADR-030 amendment 2026-07-09). */
+  prometheus: StubPrometheusServer;
   devServer: ChildProcess;
   /** The DESIGN-002 D-08 env the dev server was booted with. */
   env: RuntimeEnv;
-  /** Idempotent, reverse-order teardown: dev server → stub Maintainerr → stub Plex → stub Bazarr → stub *arr → stub OIDC → Postgres. */
+  /** Idempotent, reverse-order teardown: dev server → stub Prometheus → stub Maintainerr → stub Plex → stub Bazarr → stub *arr → stub OIDC → Postgres. */
   stop: () => Promise<void>;
 }
 
@@ -140,6 +143,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
   let bazarr: StubBazarrServer | undefined;
   let plex: StubPlexServer | undefined;
   let maintainerr: StubMaintainerrServer | undefined;
+  let prometheus: StubPrometheusServer | undefined;
   let dev: ChildProcess | undefined;
   try {
     const migrate = spawnSync('pnpm', ['--filter', '@hnet/db', 'migrate'], {
@@ -170,6 +174,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     bazarr = await startStubBazarr();
     plex = await startStubPlex();
     maintainerr = await startStubMaintainerr();
+    prometheus = await startStubPrometheus();
     const env = composeRuntimeEnv({
       databaseUrl: pg.connectionString,
       stubOidcBaseUrl: oidc.baseUrl,
@@ -178,6 +183,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       stubBazarrBaseUrl: bazarr.baseUrl,
       stubPlexBaseUrl: plex.baseUrl,
       stubMaintainerrBaseUrl: maintainerr.baseUrl,
+      stubPrometheusBaseUrl: prometheus.baseUrl,
       appUrl,
     });
 
@@ -204,6 +210,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     const runningBazarr = bazarr;
     const runningPlex = plex;
     const runningMaintainerr = maintainerr;
+    const runningPrometheus = prometheus;
     let stopped = false;
     return {
       appUrl,
@@ -213,12 +220,14 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       bazarr: runningBazarr,
       plex: runningPlex,
       maintainerr: runningMaintainerr,
+      prometheus: runningPrometheus,
       devServer: running,
       env,
       stop: async () => {
         if (stopped) return;
         stopped = true;
         await killDevServer(running);
+        await runningPrometheus.stop().catch(() => undefined);
         await runningMaintainerr.stop().catch(() => undefined);
         await runningPlex.stop().catch(() => undefined);
         await runningBazarr.stop().catch(() => undefined);
@@ -230,6 +239,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
   } catch (err) {
     // Partial-boot cleanup, best effort in reverse order.
     if (dev) await killDevServer(dev).catch(() => undefined);
+    if (prometheus) await prometheus.stop().catch(() => undefined);
     if (maintainerr) await maintainerr.stop().catch(() => undefined);
     if (plex) await plex.stop().catch(() => undefined);
     if (bazarr) await bazarr.stop().catch(() => undefined);
