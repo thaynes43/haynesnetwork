@@ -3704,6 +3704,64 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
   font-size: 13px;
 }
 
+/* Start-a-batch target picker (DESIGN-011 amendment) — the mode radios + the target fields. */
+.batch-start-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0 12px;
+}
+.batch-start-mode {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.35;
+  cursor: pointer;
+}
+.batch-start-mode input {
+  margin-top: 2px;
+  flex: none;
+}
+.batch-start-target {
+  border-top: 1px solid var(--color-border);
+  padding-top: 12px;
+  margin: 0 0 4px;
+}
+.batch-strategy-select {
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 13px;
+}
+.batch-target-preview {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+
+/* Force-expire (mid-window admin override) typed confirmation. */
+.batch-force-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 12px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+.batch-force-input {
+  width: 160px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 13px;
+}
+
 /* Who-rescued-what (the tuning record) + past batches. */
 .batch-savers {
   margin: 0 0 18px;

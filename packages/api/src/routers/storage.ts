@@ -55,6 +55,8 @@ export const SpacePolicyInput = z
     cooldownDays: z.number().int().min(0).max(365),
     minCandidates: z.number().int().min(0).max(100000),
     perArray: z.record(z.string(), spacePolicyArrayCfg),
+    // DESIGN-011/014 amendment (2026-07-08) — optional per-batch reclaim cap (bytes); absent ⇒ all.
+    targetBytesPerBatch: z.number().int().positive().optional(),
   })
   .strict();
 

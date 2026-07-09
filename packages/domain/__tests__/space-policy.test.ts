@@ -5,7 +5,7 @@
 // (not special-cased), the settings audit, and the ledger-derived status read.
 import { afterEach, beforeAll, beforeEach, afterAll, describe, expect, it } from 'vitest';
 import { eq, inArray } from 'drizzle-orm';
-import { ledgerEvents, notifications, permissionAudit, trashBatches } from '@hnet/db/schema';
+import { ledgerEvents, notifications, permissionAudit, trashBatchItems, trashBatches } from '@hnet/db/schema';
 import {
   buildArrClientBundle,
   evaluateSpacePolicy,
@@ -131,6 +131,25 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
     const [note] = await t.db.select().from(notifications).where(eq(notifications.type, 'space_policy'));
     expect(note!.source).toBe('trash');
     expect(note!.title).toContain('Movies');
+  });
+
+  it('targetBytesPerBatch caps the proposed batch to the reclaim target (largest-first)', async () => {
+    // movieCollection: 9001(4e9), 9002(3e9), 9003(2e9). Target 6e9 largest ⇒ 4e9+3e9 crosses ⇒ {9001,9002}.
+    await setPolicy({ ...ENABLED, targetBytesPerBatch: 6_000_000_000 });
+    const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
+    const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: overBundle(), actorId });
+
+    const movie = report.arrays
+      .find((a) => a.key === 'haynestower')!
+      .proposals.find((p) => p.mediaKind === 'movie')!;
+    expect(movie.outcome).toBe('proposed');
+    expect(movie.candidateCount).toBe(2); // capped from the full pool of 3
+
+    const items = await t.db
+      .select()
+      .from(trashBatchItems)
+      .where(eq(trashBatchItems.batchId, movie.batchId!));
+    expect(items.map((i) => i.maintainerrMediaId).sort()).toEqual(['ms-9001', 'ms-9002']);
   });
 
   it('proposes BOTH movie and tv when both rule collections have candidates', async () => {

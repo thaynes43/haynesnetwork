@@ -86,6 +86,12 @@ export interface SpacePolicy {
   /** Per-physical-array (STORAGE_ARRAYS key) opt-in + overrides. Absent/`enabled:false` ⇒ that array
    *  never proposes, even over target. */
   perArray: Record<string, SpacePolicyArrayConfig>;
+  /**
+   * DESIGN-011/014 amendment (2026-07-08) — cap the SIZE of a policy-proposed batch: free at least
+   * this many bytes, largest-first (reclaim-targeted creation). ABSENT ⇒ propose ALL candidates
+   * (today's behavior). No migration — a free-form jsonb key value; fail-safe to absent when the
+   * stored value is non-numeric. */
+  targetBytesPerBatch?: number;
 }
 
 /**

@@ -41,9 +41,19 @@ interface SpacePolicy {
   cooldownDays: number;      // default 7  — don't re-propose a kind within N days of its last policy batch
   minCandidates: number;     // default 1  — don't propose unless ≥ N actionable pending
   perArray: Record<string, SpacePolicyArrayConfig>; // keyed by STORAGE_ARRAYS key; an entry OPTS IN
+  targetBytesPerBatch?: number; // AMENDMENT 2026-07-08 — cap a proposed batch to a reclaim target
+                                //   (largest-first, DESIGN-011 D-09b); absent ⇒ propose ALL candidates
 }
-// default: { enabled:false, cooldownDays:7, minCandidates:1, perArray:{} }
+// default: { enabled:false, cooldownDays:7, minCandidates:1, perArray:{} }  (targetBytesPerBatch absent)
 ```
+
+> **Amendment 2026-07-08 (owner-directed) — `targetBytesPerBatch`.** An optional top-level jsonb key
+> (no migration — a free-form value shape on the existing `space_policy` row; `getSpacePolicy`
+> typeof-guards it, fail-safe to absent when non-numeric ≤ 0). When set, a policy proposal caps its
+> batch to that many bytes, **largest-first**, by passing `targeting: { targetBytes, strategy:'largest' }`
+> to `createBatchFromPending` (DESIGN-011 D-09b — the min-candidates gate still measures the full
+> pending pool; the cap only trims what the proposed batch snapshots). `storage.policy.set` accepts it
+> (`SpacePolicyInput` — `z.number().int().positive().optional()`, still `.strict()`).
 
 `getSpacePolicy(db)` reads the row merged over the defaults (a partial/hand-edited jsonb can never leave a
 required field undefined — fail-safe to OFF).

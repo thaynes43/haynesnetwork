@@ -32,9 +32,14 @@ import { appCodeOf, describeMutationError } from '@/lib/app-error';
 import { daysLeftLabel, daysLeftTone, daysUntil } from '@/lib/trash';
 import {
   BATCH_STATE_LABELS,
+  BYTES_PER_GB,
   LEAVING_SOON_NAMES,
+  TARGET_STRATEGIES,
+  TARGET_STRATEGY_LABELS,
   batchStateTone,
   countdownCopy,
+  forceExpireConfirmMatches,
+  previewTargetSelection,
   sweepReportRows,
   tileTappable,
   wallCounts,
@@ -42,6 +47,8 @@ import {
   wallInteractive,
   type BatchItemStateName,
   type BatchStateName,
+  type TargetCandidate,
+  type TargetStrategy,
   type WallGlyph,
   type WallTapContext,
 } from '@/lib/trash-batches';
@@ -90,13 +97,18 @@ interface BatchItemWire {
   requesters: string[];
 }
 
-/** The pending-candidate fields the new-candidates diff reads (a subset of trash.pending items). */
+/** The pending-candidate fields the new-candidates diff + the Start-a-batch target preview read (a
+ *  subset of trash.pending items). Size/rating/protectedByTag feed `previewTargetSelection`. */
 interface PendingCandidate {
   maintainerrMediaId: string | null;
   mediaItemId: string | null;
   title: string;
   year: number | null;
   posterUrl: string | null;
+  sizeBytes: number;
+  imdbRating: number | null;
+  tmdbRating: number | null;
+  protectedByTag: boolean;
 }
 
 interface SafetyLike {
@@ -416,17 +428,21 @@ function ExpireModal({
   batch,
   items,
   safe,
+  windowOpen,
   onClose,
 }: {
   batch: BatchSummaryWire;
   items: BatchItemWire[];
   safe: boolean;
+  /** The save window is still open ⇒ this is the owner-directed ADMIN OVERRIDE (danger + typed confirm). */
+  windowOpen: boolean;
   onClose: () => void;
 }) {
   const utils = trpc.useUtils();
   const [result, setResult] = useState<SweepBatchWire | null>(null);
   const [stale, setStale] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [typed, setTyped] = useState('');
   const expire = trpc.trash.batches.expire.useMutation({
     onSuccess: (res: { batchesSwept: number; batches: SweepBatchWire[] }) => {
       setError(null);
@@ -459,11 +475,20 @@ function ExpireModal({
   ).length;
   const willKeep = pending.length - willDelete;
   const savedCount = batch.counts.saved;
+  const daysLeft = daysUntil(batch.expiresAt);
+  // Mid-window force ⇒ require a TYPED confirmation (the word DELETE or the delete count) before arming.
+  const typedOk = !windowOpen || forceExpireConfirmMatches(typed, willDelete);
 
   return (
     <Modal
       open
-      title={result !== null ? 'Deletion report' : 'Expire this batch now'}
+      title={
+        result !== null
+          ? 'Deletion report'
+          : windowOpen
+            ? 'Force-expire this batch now'
+            : 'Expire this batch now'
+      }
       onClose={close}
       banner={
         error !== null ? (
@@ -526,6 +551,20 @@ function ExpireModal({
         </div>
       ) : (
         <div className="trash-confirm" data-testid="batch-expire-confirm">
+          {windowOpen ? (
+            <p className="alert" role="alert" data-testid="batch-expire-override-warn">
+              <strong className="trash-danger-text">The save window hasn’t closed yet</strong> — it
+              still has{' '}
+              <strong>
+                {daysLeft ?? 0} more day{(daysLeft ?? 0) === 1 ? '' : 's'}
+              </strong>{' '}
+              to run. This is an admin override: deleting now ends the window early, so anyone still
+              hoping to rescue a title loses the chance.
+              {savedCount > 0
+                ? ` The ${savedCount} already-rescued item${savedCount === 1 ? '' : 's'} stay${savedCount === 1 ? 's' : ''} protected.`
+                : ''}
+            </p>
+          ) : null}
           <p className="alert" role="alert">
             This runs the deletion sweep <strong>NOW</strong> — immediate and permanent for every
             unsaved item that passes the fresh safety checks. There is no undo beyond a re-download
@@ -550,20 +589,45 @@ function ExpireModal({
               unverifiable, or guardian-protected at sweep time.
             </li>
           </ul>
+          {windowOpen ? (
+            <label className="form-row batch-force-confirm" data-testid="batch-expire-typed-row">
+              <span>
+                Type <strong>DELETE</strong> (or the number <strong>{willDelete}</strong>) to
+                confirm this early override:
+              </span>
+              <input
+                type="text"
+                className="batch-force-input"
+                autoComplete="off"
+                value={typed}
+                data-testid="batch-expire-typed"
+                aria-label="Type DELETE to confirm the early override"
+                onChange={(e) => setTyped(e.target.value)}
+              />
+            </label>
+          ) : null}
           <div className="form-actions">
             <button
               type="button"
               className="btn danger"
               data-testid="batch-expire-submit"
-              disabled={expire.isPending || !safe}
+              disabled={expire.isPending || !safe || !typedOk}
               title={
-                safe
-                  ? 'Run the deletion sweep for this batch now'
-                  : 'Disabled — Maintainerr is not in a safe state (see the banner).'
+                !safe
+                  ? 'Disabled — Maintainerr is not in a safe state (see the banner).'
+                  : !typedOk
+                    ? 'Type DELETE (or the delete count) to confirm the early override.'
+                    : windowOpen
+                      ? 'Force the deletion sweep now — the save window has not closed (admin override).'
+                      : 'Run the deletion sweep for this batch now'
               }
-              onClick={() => expire.mutate({ batchId: batch.id })}
+              onClick={() => expire.mutate({ batchId: batch.id, forceOverride: windowOpen })}
             >
-              {expire.isPending ? 'Deleting…' : 'Delete the remaining items now'}
+              {expire.isPending
+                ? 'Deleting…'
+                : windowOpen
+                  ? 'Force-delete the remaining items now'
+                  : 'Delete the remaining items now'}
             </button>
             <button type="button" className="btn" disabled={expire.isPending} onClick={close}>
               Cancel
@@ -571,6 +635,167 @@ function ExpireModal({
           </div>
         </div>
       )}
+    </Modal>
+  );
+}
+
+// ── Start-a-batch Modal (DESIGN-011 amendment 2026-07-08 — reclaim-targeted creation) ─────
+function StartBatchModal({
+  kind,
+  label,
+  candidates,
+  onClose,
+}: {
+  kind: 'movie' | 'tv';
+  label: string;
+  /** The LIVE actionable pending rows (maintainerrMediaId present) — the preview source. */
+  candidates: TargetCandidate[];
+  onClose: () => void;
+}) {
+  const utils = trpc.useUtils();
+  const [mode, setMode] = useState<'all' | 'target'>('all');
+  const [gb, setGb] = useState('20');
+  const [strategy, setStrategy] = useState<TargetStrategy>('largest');
+  const [error, setError] = useState<string | null>(null);
+  const create = trpc.trash.batches.create.useMutation({
+    onSuccess: () => {
+      setError(null);
+      void utils.trash.batches.invalidate();
+      onClose();
+    },
+    onError: (err: unknown) => setError(describeMutationError(err)),
+  });
+
+  const gbNum = Number(gb);
+  const gbValid = Number.isFinite(gbNum) && gbNum > 0;
+  const targetBytes = gbValid ? Math.round(gbNum * BYTES_PER_GB) : undefined;
+
+  // The default "all" batch snapshots every actionable item; only tag-unprotected items free space.
+  const allCount = candidates.length;
+  const freeableBytes = candidates
+    .filter((c) => !c.protectedByTag)
+    .reduce((n, c) => n + c.sizeBytes, 0);
+  const preview = previewTargetSelection(candidates, { targetBytes, strategy });
+
+  const plural = (n: number) => (n === 1 ? '' : 's');
+  const canSubmit =
+    !create.isPending &&
+    (mode === 'all' ? allCount > 0 : gbValid && preview.poolCount > 0);
+
+  const submit = () => {
+    if (mode === 'all') {
+      create.mutate({ mediaKind: kind });
+    } else {
+      create.mutate({ mediaKind: kind, targetBytes, strategy });
+    }
+  };
+
+  return (
+    <Modal
+      open
+      title={`Start a ${label} batch`}
+      onClose={() => {
+        if (!create.isPending) onClose();
+      }}
+      banner={
+        error !== null ? (
+          <p className="alert" role="alert">
+            {error}
+          </p>
+        ) : null
+      }
+    >
+      <div className="trash-confirm" data-testid="batch-start-modal">
+        <p>
+          Snapshot the current candidates into a review batch. Choose how much to free — the server
+          re-picks from a fresh snapshot when you start.
+        </p>
+        <div className="batch-start-modes" role="radiogroup" aria-label="Batch size">
+          <label className="batch-start-mode">
+            <input
+              type="radio"
+              name="batch-size-mode"
+              checked={mode === 'all'}
+              data-testid="batch-mode-all"
+              onChange={() => setMode('all')}
+            />
+            <span>
+              <strong>All current candidates</strong> — {allCount} item{plural(allCount)} · frees{' '}
+              {formatBytes(freeableBytes)}
+            </span>
+          </label>
+          <label className="batch-start-mode">
+            <input
+              type="radio"
+              name="batch-size-mode"
+              checked={mode === 'target'}
+              data-testid="batch-mode-target"
+              onChange={() => setMode('target')}
+            />
+            <span>
+              <strong>Target an amount to free</strong> — take just enough of the candidates.
+            </span>
+          </label>
+        </div>
+        {mode === 'target' ? (
+          <div className="batch-start-target" data-testid="batch-target-fields">
+            <label className="form-row batch-window-row">
+              Free about
+              <input
+                type="number"
+                className="batch-window-input"
+                min={1}
+                value={gb}
+                data-testid="batch-target-gb"
+                aria-label="Target amount to free, in GB"
+                onChange={(e) => setGb(e.target.value)}
+              />
+              GB
+            </label>
+            <label className="form-row batch-window-row">
+              Take the
+              <select
+                className="batch-strategy-select"
+                value={strategy}
+                data-testid="batch-target-strategy"
+                aria-label="Which candidates to take first"
+                onChange={(e) => setStrategy(e.target.value as TargetStrategy)}
+              >
+                {TARGET_STRATEGIES.map((s) => (
+                  <option key={s} value={s}>
+                    {TARGET_STRATEGY_LABELS[s]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="muted batch-target-preview" data-testid="batch-target-preview">
+              {gbValid
+                ? preview.poolCount === 0
+                  ? 'No deletable candidates to target — everything pending is protected.'
+                  : `≈ ${preview.count} item${plural(preview.count)} · frees ${formatBytes(preview.bytes)} (of ${preview.poolCount} candidate${plural(preview.poolCount)} · ${formatBytes(preview.poolBytes)} available)`
+                : 'Enter a target amount to free.'}
+            </p>
+          </div>
+        ) : null}
+        <div className="form-actions">
+          <button
+            type="button"
+            className="btn primary"
+            data-testid="batch-start-submit"
+            disabled={!canSubmit}
+            onClick={submit}
+          >
+            {create.isPending
+              ? 'Starting…'
+              : mode === 'all'
+                ? `Start with ${allCount} item${plural(allCount)}`
+                : `Start — free ~${formatBytes(preview.bytes)}`}
+          </button>
+          <button type="button" className="btn" disabled={create.isPending} onClick={onClose}>
+            Cancel
+          </button>
+        </div>
+      </div>
     </Modal>
   );
 }
@@ -692,11 +917,12 @@ function LifecycleView({
       <>created {formatDay(batch.createdAt)}</>
     );
 
+  // The window-open case is NO LONGER a block: a manager may force-expire mid-window (owner-directed
+  // admin override — DESIGN-011 amendment 2026-07-08). Only an unsafe install disables the button; the
+  // override's danger + typed confirm live in the Modal.
   const expireBlocked = !safe
     ? 'Disabled — Maintainerr is not in a safe state (see the banner).'
-    : windowOpen && batch.expiresAt !== null
-      ? `The save window hasn’t closed yet — the sweep can only run after ${formatDay(batch.expiresAt)}.`
-      : null;
+    : null;
 
   return (
     <section data-testid="batch-panel">
@@ -745,7 +971,12 @@ function LifecycleView({
             className="btn sm danger"
             data-testid="batch-expire"
             disabled={expireBlocked !== null}
-            title={expireBlocked ?? 'Run the deletion sweep for this batch now'}
+            title={
+              expireBlocked ??
+              (windowOpen
+                ? 'Force the deletion sweep now — the save window has not closed (admin override)'
+                : 'Run the deletion sweep for this batch now')
+            }
             onClick={() => setModal('expire')}
           >
             Expire now…
@@ -843,7 +1074,13 @@ function LifecycleView({
         />
       ) : null}
       {modal === 'expire' ? (
-        <ExpireModal batch={batch} items={items ?? []} safe={safe} onClose={() => setModal(null)} />
+        <ExpireModal
+          batch={batch}
+          items={items ?? []}
+          safe={safe}
+          windowOpen={windowOpen}
+          onClose={() => setModal(null)}
+        />
       ) : null}
     </section>
   );
@@ -942,8 +1179,6 @@ export function KindTab({
   /** The live-candidates poster wall — rendered only when there is no open batch. */
   pendingWall: ReactNode;
 }) {
-  const utils = trpc.useUtils();
-
   const canManage = access.actions.includes('manage_batches');
   const reachable = status?.reachable === true;
 
@@ -989,15 +1224,19 @@ export function KindTab({
   const newCandidates: PendingCandidate[] = ((pending.data?.items as PendingCandidate[] | undefined) ?? [])
     .filter((p) => p.maintainerrMediaId !== null && !batchMediaIds.has(p.maintainerrMediaId));
 
-  // ── create (Start a batch) — admin-only, only when none is open ──
-  const [createError, setCreateError] = useState<string | null>(null);
-  const create = trpc.trash.batches.create.useMutation({
-    onSuccess: () => {
-      setCreateError(null);
-      void utils.trash.batches.invalidate();
-    },
-    onError: (err: unknown) => setCreateError(describeMutationError(err)),
-  });
+  // ── create (Start a batch) — admin-only, only when none is open; opens the target-picker Modal ──
+  const [showStart, setShowStart] = useState(false);
+  // The LIVE actionable candidates (a Maintainerr id present) — the Start modal's preview source.
+  const pendingCandidates: TargetCandidate[] = (
+    (pending.data?.items as PendingCandidate[] | undefined) ?? []
+  )
+    .filter((p) => p.maintainerrMediaId !== null)
+    .map((p) => ({
+      sizeBytes: p.sizeBytes,
+      imdbRating: p.imdbRating,
+      tmdbRating: p.tmdbRating,
+      protectedByTag: p.protectedByTag,
+    }));
 
   const kindNoun = kind === 'movie' ? 'movie' : 'TV';
 
@@ -1052,26 +1291,30 @@ export function KindTab({
                 type="button"
                 className="btn sm primary"
                 data-testid="batch-start"
-                disabled={create.isPending || !reachable}
+                disabled={!reachable}
                 title={
                   reachable
                     ? `Snapshot the current pending ${label} into a review batch`
                     : 'Disabled — Maintainerr is unreachable (see the banner).'
                 }
-                onClick={() => create.mutate({ mediaKind: kind })}
+                onClick={() => setShowStart(true)}
               >
-                {create.isPending ? 'Starting…' : 'Start a batch'}
+                Start a batch…
               </button>
             </div>
-          ) : null}
-          {createError !== null ? (
-            <p className="alert" role="alert" data-testid="batch-create-error">
-              {createError}
-            </p>
           ) : null}
           {pendingWall}
         </>
       )}
+
+      {showStart ? (
+        <StartBatchModal
+          kind={kind}
+          label={label}
+          candidates={pendingCandidates}
+          onClose={() => setShowStart(false)}
+        />
+      ) : null}
 
       <PastBatches batches={pastBatches} kind={kind} />
     </div>

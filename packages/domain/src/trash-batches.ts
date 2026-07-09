@@ -236,6 +236,68 @@ export interface CreateBatchResult {
   expiresAt: string | null;
 }
 
+/** How much space one batch should aim to free (DESIGN-011 amendment 2026-07-08 — reclaim-targeted
+ *  creation). Absent ⇒ the batch snapshots ALL current candidates (today's behavior). */
+export interface BatchTargeting {
+  /** Free at LEAST this many bytes: rank the deletable candidates by `strategy` and take greedily
+   *  until the running total crosses it (the crossing item is INCLUDED — we never split a title). */
+  targetBytes?: number;
+  /** Hard cap on the number of items taken (an independent stop condition — whichever hits first). */
+  maxItems?: number;
+  /** The greedy ranking (default 'largest'). */
+  strategy?: 'largest' | 'worst-rated';
+}
+
+type ActionableItem = TrashPendingItem & { maintainerrMediaId: string };
+
+/**
+ * DESIGN-011 amendment (2026-07-08) — the reclaim-targeted candidate pick. With no targeting the
+ * batch is EVERY actionable candidate (unchanged default). With a `targetBytes`/`maxItems` cap the
+ * candidates are ranked by `strategy` and taken GREEDILY until the target/cap is met:
+ *   - `largest`      → sizeBytes desc (free the most with the fewest deletions);
+ *   - `worst-rated`  → rating asc with UNRATED FIRST (imdbRating ?? tmdbRating; a null rating is
+ *                      treated as the worst), ties broken by size desc.
+ * The crossing item is always INCLUDED (we never split a title below one item), so a target smaller
+ * than the first item still yields one item. Only tag-UNPROTECTED items free space, so a targeted
+ * batch is exactly the chosen deletable subset — tag-protected (`dnd`) items free nothing and are
+ * left out of a targeted batch (they are still snapshotted `protected` in an untargeted one).
+ */
+export function selectBatchCandidates(
+  actionable: readonly ActionableItem[],
+  targeting?: BatchTargeting,
+): ActionableItem[] {
+  const capped =
+    targeting !== undefined &&
+    (targeting.targetBytes !== undefined || targeting.maxItems !== undefined);
+  if (!capped) return [...actionable];
+
+  const strategy = targeting?.strategy ?? 'largest';
+  const deletable = actionable.filter((p) => !p.protectedByTag);
+  const ranked = [...deletable].sort((a, b) => {
+    if (strategy === 'worst-rated') {
+      const ra = a.imdbRating ?? a.tmdbRating;
+      const rb = b.imdbRating ?? b.tmdbRating;
+      if (ra === null && rb !== null) return -1; // unrated is the worst — take it first
+      if (ra !== null && rb === null) return 1;
+      if (ra !== null && rb !== null && ra !== rb) return ra - rb;
+    }
+    // largest, and the shared tie-break: bigger frees more, then title for determinism.
+    if (a.sizeBytes !== b.sizeBytes) return b.sizeBytes - a.sizeBytes;
+    return a.title.localeCompare(b.title);
+  });
+
+  const out: ActionableItem[] = [];
+  let total = 0;
+  for (const item of ranked) {
+    out.push(item);
+    total += item.sizeBytes;
+    const hitTarget = targeting?.targetBytes !== undefined && total >= targeting.targetBytes;
+    const hitCap = targeting?.maxItems !== undefined && out.length >= targeting.maxItems;
+    if (hitTarget || hitCap) break;
+  }
+  return out;
+}
+
 /**
  * ADR-025 (Q-01 manual-first) — snapshot the current pending set for one media kind into a new
  * batch. Refuses if an OPEN batch already exists for that kind (one live batch per kind). Items with
@@ -253,6 +315,9 @@ export async function createBatchFromPending(input: {
   /** How this batch was posted (for the "batch created" push copy/attribution). Defaults 'manual';
    *  the space policy passes 'policy' (ADR-031 reuses this writer). */
   source?: 'manual' | 'policy';
+  /** DESIGN-011 amendment (2026-07-08) — reclaim-targeted creation. Absent ⇒ ALL candidates. When
+   *  set, the snapshot is the greedily-chosen deletable subset (see `selectBatchCandidates`). */
+  targeting?: BatchTargeting;
 }): Promise<CreateBatchResult> {
   const skipGate = await getAppSetting(input.db, 'trash_skip_admin_gate');
 
@@ -268,6 +333,14 @@ export async function createBatchFromPending(input: {
   if (actionable.length === 0) {
     throw new TrashBatchEmptyError(
       `No actionable pending ${input.mediaKind} items to batch (nothing pending, or no Maintainerr ids).`,
+    );
+  }
+
+  // DESIGN-011 amendment — reclaim-targeted pick (absent targeting ⇒ ALL candidates, unchanged).
+  const selected = selectBatchCandidates(actionable, input.targeting);
+  if (selected.length === 0) {
+    throw new TrashBatchEmptyError(
+      `No deletable pending ${input.mediaKind} items match the target (all remaining candidates are protected).`,
     );
   }
 
@@ -293,7 +366,7 @@ export async function createBatchFromPending(input: {
   // with the batch (never lost, never phantom). Fires for BOTH manual and space-policy-proposed
   // batches (both flow through here). A skip-gate batch also pings 'leaving_soon' from the promotion
   // below — two intentional pings (created → leaving soon), delivered together inside the window.
-  const totalBytes = actionable.reduce((n, p) => n + (p.sizeBytes ?? 0), 0);
+  const totalBytes = selected.reduce((n, p) => n + (p.sizeBytes ?? 0), 0);
   const createdEarliest = computeEarliestSend(nowDate(), await getNotifyWindow(input.db));
 
   let batchId: string;
@@ -306,7 +379,7 @@ export async function createBatchFromPending(input: {
       if (!batch) throw new Error('trash_batches insert returned no row');
 
       await tx.insert(trashBatchItems).values(
-        actionable.map((p) => ({
+        selected.map((p) => ({
           batchId: batch.id,
           maintainerrMediaId: p.maintainerrMediaId,
           collectionId: p.collectionId,
@@ -329,7 +402,7 @@ export async function createBatchFromPending(input: {
         from: null,
         to: initialState,
         actorId: input.actorId,
-        extra: { itemCount: actionable.length },
+        extra: { itemCount: selected.length },
       });
 
       // Same-tx: enqueue the "batch posted" push (ADR-034 C-01).
@@ -339,7 +412,7 @@ export async function createBatchFromPending(input: {
         payload: {
           batchId: batch.id,
           mediaKind: input.mediaKind,
-          itemCount: actionable.length,
+          itemCount: selected.length,
           totalBytes,
           source: input.source ?? 'manual',
         },
@@ -360,7 +433,7 @@ export async function createBatchFromPending(input: {
       batchId,
       state: 'admin_review',
       mediaKind: input.mediaKind,
-      itemCount: actionable.length,
+      itemCount: selected.length,
       gateSkipped: false,
       expiresAt: null,
     };
@@ -383,7 +456,7 @@ export async function createBatchFromPending(input: {
     batchId,
     state: 'leaving_soon',
     mediaKind: input.mediaKind,
-    itemCount: actionable.length,
+    itemCount: selected.length,
     gateSkipped: true,
     expiresAt: promoted.expiresAt,
   };
@@ -743,7 +816,13 @@ export interface SweepReport {
  * stale / live-excluded items land `skipped`. After 3 CONSECUTIVE handle failures the batch's sweep
  * aborts (F3 → `aborted`), leaving it `leaving_soon` for the next sweep to resume. When `batchId` is
  * given (the manual "Expire now" trigger) only that batch is swept (and must be leaving_soon +
- * expired).
+ * expired) — UNLESS `forceOverride` is set (DESIGN-011 amendment 2026-07-08, owner-directed): an
+ * admin/`manage_batches` override may sweep a `leaving_soon` batch whose window has NOT closed yet.
+ * The override bypasses ONLY the `expires_at <= now` gate — every per-item safety layer (guardian
+ * keeps, live exclusions, saved items, the circuit breaker, the deletion snapshot) is unchanged. A
+ * forced sweep is AUDITED: the batch close transition event + the `batch_swept` push carry
+ * `forcedEarly: true` + the actor (`forcedBy`). `forceOverride` applies only with `batchId` (the
+ * manual procedure) — the scheduled path ignores it and still only sweeps genuinely-closed windows.
  */
 export async function sweepExpiredBatches(input: {
   db?: DbClient;
@@ -751,6 +830,9 @@ export async function sweepExpiredBatches(input: {
   actorId?: string | null;
   watchWindowDays?: number;
   batchId?: string;
+  /** Manual "Expire now" ADMIN OVERRIDE — sweep a leaving_soon batch whose window is still open
+   *  (bypasses only the expiry gate; audited `forcedEarly`). Only honored alongside `batchId`. */
+  forceOverride?: boolean;
 }): Promise<SweepReport> {
   const actorId = input.actorId ?? null;
   // Fail closed on an unsafe install — refuse the whole sweep (ADR-023 C-04).
@@ -776,21 +858,26 @@ export async function sweepExpiredBatches(input: {
 
   const results: BatchSweepResult[] = [];
   for (const c of candidates) {
+    let forcedEarly = false;
     if (input.batchId !== undefined) {
-      // Manual trigger: validate it is genuinely a leaving_soon + expired batch.
+      // Manual trigger: validate it is genuinely a leaving_soon batch.
       const [full] = await db.select().from(trashBatches).where(eq(trashBatches.id, c.id));
       if (!full || full.state !== 'leaving_soon') {
         throw new TrashBatchStateError(
           `Batch ${c.id} is not in 'leaving_soon' — cannot expire.`,
         );
       }
-      if (full.expiresAt !== null && full.expiresAt.getTime() > Date.now()) {
+      const windowOpen = full.expiresAt !== null && full.expiresAt.getTime() > Date.now();
+      if (windowOpen && input.forceOverride !== true) {
+        // Window still open and no override ⇒ refuse (today's behavior).
         throw new TrashBatchStateError(
-          `Batch ${c.id}'s save window has not closed yet (expires ${full.expiresAt.toISOString()}).`,
+          `Batch ${c.id}'s save window has not closed yet (expires ${full.expiresAt!.toISOString()}).`,
         );
       }
+      // The override actually did something only when the window was genuinely still open.
+      forcedEarly = windowOpen && input.forceOverride === true;
     } else {
-      // Scheduled: only sweep windows that have actually closed.
+      // Scheduled: only sweep windows that have actually closed (forceOverride is ignored here).
       if (c.expiresAt === null || c.expiresAt.getTime() > now.getTime()) continue;
     }
     results.push(
@@ -801,6 +888,7 @@ export async function sweepExpiredBatches(input: {
         mediaKind: c.mediaKind,
         actorId,
         watchWindowDays: input.watchWindowDays,
+        forcedEarly,
       }),
     );
   }
@@ -815,6 +903,8 @@ async function expireOneBatch(input: {
   mediaKind: TrashMediaKind;
   actorId: string | null;
   watchWindowDays?: number;
+  /** DESIGN-011 amendment — this batch was force-expired mid-window (audited on the close event/push). */
+  forcedEarly?: boolean;
 }): Promise<BatchSweepResult> {
   const db = resolveDb(input.db);
   // Deletion-audit attribution (Recently Deleted "By" + the Activity notification), resolved once.
@@ -986,7 +1076,15 @@ async function expireOneBatch(input: {
       from: 'leaving_soon',
       to: 'deleted',
       actorId: input.actorId,
-      extra: { deletedCount, skippedCount, raceSkipped, handleErrors, counts: finalCounts },
+      extra: {
+        deletedCount,
+        skippedCount,
+        raceSkipped,
+        handleErrors,
+        counts: finalCounts,
+        // DESIGN-011 amendment — an audited admin override that expired the batch mid-window.
+        ...(input.forcedEarly ? { forcedEarly: true, forcedBy: input.actorId } : {}),
+      },
     });
     await enqueueOutbox(tx, {
       eventType: 'batch_swept',
@@ -996,6 +1094,7 @@ async function expireOneBatch(input: {
         mediaKind: input.mediaKind,
         deletedCount,
         reclaimedBytes,
+        ...(input.forcedEarly ? { forcedEarly: true, forcedBy: input.actorId } : {}),
       },
     });
   });

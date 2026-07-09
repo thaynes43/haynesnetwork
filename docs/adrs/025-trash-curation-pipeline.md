@@ -104,6 +104,20 @@ This ADR records the binding decisions and resolves the plan's open questions (Q
   orchestrator for one batch. The sweep's audit trail is the ledger + batch rows (never a `sync_runs`
   row — it touches no *arr source, exactly like expedite).
 
+  > **Errata (2026-07-08, owner-directed) — the manual "Expire now" gains an AUDITED admin override.**
+  > The owner found the save window too tight and asked for a way to *"force the batch to be deleted and
+  > allow a new batch to be created"* early. `sweepExpiredBatches` gains a `forceOverride` flag honored
+  > **only** on the manual `batchId` path (`trash.batches.expire`, still `manage_batches`-gated — a
+  > member without the grant can never force). It bypasses **only** the `expires_at <= now` gate for a
+  > `leaving_soon` batch; **every other safety layer of this C-05 is unchanged** (the per-item guarded
+  > loop, the guardian keeps, LIVE exclusions, saved items untouched, the F3 breaker, the Q-08 deletion
+  > snapshots, the swept push). The override is **audited**: the batch-close `trash_batch_transition`
+  > event and the `batch_swept` push carry `forcedEarly: true` + `forcedBy: <actorId>` (true only when
+  > the window was genuinely still open). A forced sweep closes the batch terminal, freeing the kind's
+  > one-open slot. UI: DESIGN-011 D-09a (DANGER Modal + typed confirmation). Also 2026-07-08:
+  > `createBatchFromPending` gains optional reclaim targeting (DESIGN-011 D-09b) — an additive param,
+  > default-all, no change to this ADR's snapshot semantics.
+
 - **C-06 — Settings live in a generic `app_settings` store (Q-06).** A small audited key→jsonb table
   (`key` CHECK from `APP_SETTING_KEYS`, `value`, `updated_at`, `updated_by`) written ONLY by the
   `setAppSetting` single-writer, which co-writes an `update_app_setting` permission_audit row same-tx

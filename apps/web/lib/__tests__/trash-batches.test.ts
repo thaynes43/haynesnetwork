@@ -7,11 +7,14 @@ import { describe, expect, it } from 'vitest';
 import {
   batchStateTone,
   countdownCopy,
+  forceExpireConfirmMatches,
+  previewTargetSelection,
   sweepReportRows,
   tileTappable,
   wallCounts,
   wallGlyph,
   wallInteractive,
+  type TargetCandidate,
   type WallTapContext,
 } from '../trash-batches';
 
@@ -185,5 +188,58 @@ describe('batchStateTone', () => {
     expect(batchStateTone('deleted')).toBe('danger');
     expect(batchStateTone('cancelled')).toBe('muted');
     expect(batchStateTone('draft')).toBe('muted');
+  });
+});
+
+describe('previewTargetSelection — the Start-a-batch client preview (mirrors selectBatchCandidates)', () => {
+  const c = (sizeBytes: number, over: Partial<TargetCandidate> = {}): TargetCandidate => ({
+    sizeBytes,
+    imdbRating: null,
+    tmdbRating: null,
+    protectedByTag: false,
+    ...over,
+  });
+  // a=4, b=3, c=2(protected), d=1 (×1e9)
+  const pool = [c(4e9), c(3e9), c(2e9, { protectedByTag: true }), c(1e9)];
+
+  it('no target ⇒ the whole DELETABLE pool (protected excluded from count/bytes)', () => {
+    expect(previewTargetSelection(pool, {})).toMatchObject({ count: 3, bytes: 8e9, poolCount: 3 });
+  });
+
+  it('targetBytes largest ⇒ crossing item included; poolCount/Bytes describe the deletable pool', () => {
+    const p = previewTargetSelection(pool, { targetBytes: 6e9, strategy: 'largest' });
+    expect(p).toMatchObject({ count: 2, bytes: 7e9, poolCount: 3, poolBytes: 8e9 });
+  });
+
+  it('maxItems caps; a target under the first item still yields one', () => {
+    expect(previewTargetSelection(pool, { maxItems: 1 })).toMatchObject({ count: 1, bytes: 4e9 });
+    expect(previewTargetSelection(pool, { targetBytes: 1 })).toMatchObject({ count: 1, bytes: 4e9 });
+  });
+
+  it('worst-rated ⇒ unrated first, then rating asc (ties by size desc)', () => {
+    const rated = [
+      c(1e9, { imdbRating: 8 }),
+      c(2e9, { imdbRating: 4 }),
+      c(5e9), // unrated
+    ];
+    // unrated (5e9) → rating 4 (2e9) → rating 8 (1e9); maxItems 2 ⇒ first two.
+    expect(previewTargetSelection(rated, { maxItems: 2, strategy: 'worst-rated' }).bytes).toBe(7e9);
+  });
+
+  it('all-protected pool ⇒ nothing to target', () => {
+    const allProt = [c(4e9, { protectedByTag: true })];
+    expect(previewTargetSelection(allProt, { targetBytes: 1e9 })).toMatchObject({ count: 0, poolCount: 0 });
+  });
+});
+
+describe('forceExpireConfirmMatches — the mid-window force-expire typed gate', () => {
+  it('accepts the word DELETE (case-insensitive) or the exact delete count; rejects anything else', () => {
+    expect(forceExpireConfirmMatches('DELETE', 3)).toBe(true);
+    expect(forceExpireConfirmMatches('delete', 3)).toBe(true);
+    expect(forceExpireConfirmMatches(' Delete ', 3)).toBe(true);
+    expect(forceExpireConfirmMatches('3', 3)).toBe(true);
+    expect(forceExpireConfirmMatches('', 3)).toBe(false);
+    expect(forceExpireConfirmMatches('nope', 3)).toBe(false);
+    expect(forceExpireConfirmMatches('2', 3)).toBe(false);
   });
 });

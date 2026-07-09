@@ -4,6 +4,7 @@
 // (extended with the manual-collection endpoints). Gates read the session (AC-13), so gating cases
 // only need session overrides.
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { eq } from 'drizzle-orm';
 import { trashBatches } from '@hnet/db/schema';
 import {
   buildMaintainerrClientBundle,
@@ -157,6 +158,45 @@ describe('trash.batches + trash.settings (ADR-025 / DESIGN-011)', () => {
     } catch (err) {
       expect(wireShape(err, 'trash.batches.create').data.appCode).toBe('TRASH_BATCH_ALREADY_OPEN');
     }
+  });
+
+  it('create with targeting snapshots the greedily-chosen subset (targetBytes, largest-first)', async () => {
+    // Stub pool: ms-1 (4e9) + ms-2 (2e9). Target 3e9 largest ⇒ ms-1 alone crosses ⇒ 1 item.
+    const res = await adminCall().trash.batches.create({
+      mediaKind: 'movie',
+      targetBytes: 3_000_000_000,
+      strategy: 'largest',
+    });
+    expect(res.itemCount).toBe(1);
+    const detail = await adminCall().trash.batches.get({ batchId: res.batchId });
+    expect(detail.items).toHaveLength(1);
+    expect(detail.items[0]!.maintainerrMediaId).toBe('ms-1');
+  });
+
+  it('force-expire is manage_batches-gated; an admin overrides a still-open window, a member cannot', async () => {
+    const admin = adminCall();
+    const { batchId } = await admin.trash.batches.create({ mediaKind: 'movie' });
+    await admin.trash.batches.greenlight({ batchId, windowDays: 21 }); // FUTURE window (mid-window)
+
+    // A member WITHOUT manage_batches cannot force (nor plain-expire) — FORBIDDEN.
+    await expect(
+      memberCall('read_only').trash.batches.expire({ batchId, forceOverride: true }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+
+    // Even the admin is refused mid-window WITHOUT the override (window not closed → CONFLICT).
+    try {
+      await admin.trash.batches.expire({ batchId });
+      throw new Error('expected conflict');
+    } catch (err) {
+      expect(wireShape(err, 'trash.batches.expire').data.appCode).toBe('TRASH_BATCH_STATE');
+    }
+
+    // WITH the override the admin sweeps NOW → the batch is terminal (its kind slot frees).
+    const report = await admin.trash.batches.expire({ batchId, forceOverride: true });
+    expect(report.batchesSwept).toBe(1);
+    expect(report.batches[0]!.deletedCount).toBeGreaterThanOrEqual(1);
+    const [row] = await t.db.select().from(trashBatches).where(eq(trashBatches.id, batchId));
+    expect(row!.state).toBe('deleted');
   });
 
   it('batches.get returns the poster-grid shape (posterUrl per resolved item)', async () => {

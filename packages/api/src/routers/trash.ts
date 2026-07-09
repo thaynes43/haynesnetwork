@@ -328,16 +328,40 @@ export const trashRouter = router({
         return mapDomainErrors(() => getBatchSaveStats({ db: ctx.db, batchId: input.batchId }));
       }),
 
-    /** Create a batch from the current pending set for one media kind (manage_batches; admin ⇒ ok). */
+    /**
+     * Create a batch from the current pending set for one media kind (manage_batches; admin ⇒ ok).
+     * DESIGN-011 amendment (2026-07-08) — optional reclaim targeting: `targetBytes` (free at least N
+     * bytes) and/or `maxItems` cap the snapshot to the greedily-chosen deletable subset ranked by
+     * `strategy` (default 'largest'). Absent ⇒ ALL current candidates (today's behavior). The server
+     * does the authoritative pick from a FRESH snapshot; the client preview is advisory.
+     */
     create: trashActionProcedure('manage_batches')
-      .input(z.object({ mediaKind: trashMedia }))
+      .input(
+        z.object({
+          mediaKind: trashMedia,
+          targetBytes: z.number().int().positive().optional(),
+          maxItems: z.number().int().positive().max(100000).optional(),
+          strategy: z.enum(['largest', 'worst-rated']).optional(),
+        }),
+      )
       .mutation(async ({ ctx, input }) => {
+        const targeting =
+          input.targetBytes !== undefined ||
+          input.maxItems !== undefined ||
+          input.strategy !== undefined
+            ? {
+                targetBytes: input.targetBytes,
+                maxItems: input.maxItems,
+                strategy: input.strategy,
+              }
+            : undefined;
         return mapDomainErrors(() =>
           createBatchFromPending({
             db: ctx.db,
             maintainerr: resolveMaintainerrBundle(ctx),
             mediaKind: input.mediaKind,
             actorId: ctx.user.id,
+            targeting,
           }),
         );
       }),
@@ -371,16 +395,23 @@ export const trashRouter = router({
         );
       }),
 
-    /** Manually expire ONE batch NOW (manage_batches; mostly validation). Runs the guarded sweep for it.
-     *  The scheduled path is the `trash-batch-sweep` sync job, which calls the domain orchestrator. */
+    /**
+     * Manually expire ONE batch NOW (manage_batches; mostly validation). Runs the guarded sweep for it.
+     * The scheduled path is the `trash-batch-sweep` sync job, which calls the domain orchestrator.
+     * DESIGN-011 amendment (2026-07-08) — `forceOverride` is the owner-directed ADMIN OVERRIDE: sweep a
+     * `leaving_soon` batch whose save window has NOT closed yet (bypasses ONLY the expiry gate — every
+     * per-item safety layer still runs; the sweep is audited `forcedEarly`). Gated by `manage_batches`
+     * exactly like the rest of the batch lifecycle, so a member without it can never force.
+     */
     expire: trashActionProcedure('manage_batches')
-      .input(z.object({ batchId: z.uuid() }))
+      .input(z.object({ batchId: z.uuid(), forceOverride: z.boolean().optional() }))
       .mutation(async ({ ctx, input }) => {
         return mapDomainErrors(() =>
           sweepExpiredBatches({
             db: ctx.db,
             maintainerr: resolveMaintainerrBundle(ctx),
             batchId: input.batchId,
+            forceOverride: input.forceOverride,
             actorId: ctx.user.id,
           }),
         );
