@@ -478,6 +478,49 @@ function projectRollup(
   };
 }
 
+/**
+ * Best-effort supplemental read for the close-on-import lag (the 300: Rise of an Empire hole):
+ * the newest LIVE *arr grab dated at/after the anchor, or null. Used ONLY when the queue is empty
+ * and no grabbed/imported ledger milestone has been ingested yet — i.e. exactly the window where a
+ * completed-but-not-yet-synced import would otherwise regress the phase to `searching`/`nothing_found`.
+ * The grab-history endpoints are already filtered to `grabbed`; an old bad grab we blocklisted sits
+ * BEFORE the anchor, so the `>= anchor` filter isolates the replacement pull. Never throws — a read
+ * failure just leaves the ledger-only phase in place.
+ */
+async function liveReplacementGrabSinceAnchor(
+  arr: Pick<ArrClientBundle, 'read'>,
+  kind: ArrKind,
+  parentArrItemId: number,
+  childId: number | null,
+  anchorAt: Date,
+): Promise<Date | null> {
+  try {
+    let dates: string[];
+    if (kind === 'radarr') {
+      const records = await arr.read.radarr.getMovieGrabHistory(parentArrItemId);
+      dates = records.map((r) => r.date);
+    } else if (kind === 'sonarr') {
+      if (childId === null) return null; // whole-series has no single grab target
+      const page = await arr.read.sonarr.getEpisodeGrabHistory(childId);
+      dates = page.records.map((r) => r.date);
+    } else {
+      if (childId === null) return null;
+      const page = await arr.read.lidarr.getAlbumGrabHistory(childId);
+      dates = page.records.map((r) => r.date);
+    }
+    let latest: number | null = null;
+    for (const d of dates) {
+      const t = Date.parse(d);
+      if (!Number.isNaN(t) && t >= anchorAt.getTime()) {
+        latest = latest === null ? t : Math.max(latest, t);
+      }
+    }
+    return latest === null ? null : new Date(latest);
+  } catch {
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // The two projectors — the tRPC procedures call these (queries, never mutations).
 // ---------------------------------------------------------------------------
@@ -521,6 +564,18 @@ export async function computeFixProgress(input: ComputeFixProgressInput): Promis
     throw new NotFoundError(`Fix request ${input.fixRequestId} not found`);
   }
 
+  // A fix closed to a non-open terminal the projection has no live phase for (timed_out /
+  // closed_manually) reports a terminal phase so the client stops polling — no *arr read needed.
+  if (fix.status === 'timed_out' || fix.status === 'closed_manually') {
+    return {
+      phase: 'nothing_found',
+      message:
+        fix.status === 'closed_manually'
+          ? 'this fix was closed manually'
+          : 'this fix was closed automatically (timed out)',
+    };
+  }
+
   const now = new Date();
   const anchorAt = fix.createdAt;
   const kind = fix.arrKind;
@@ -548,6 +603,38 @@ export async function computeFixProgress(input: ComputeFixProgressInput): Promis
   const childId = fix.targetArrChildId; // null for radarr / item / season-fallback
   const records = childId === null ? queue : queue.filter((r) => r.childId === childId);
   const flags = flagsForTarget(events, childId);
+  let hasGrabbed = flags.hasGrabbed;
+  let lastActivityAt = flags.lastActivityAt;
+
+  // Close-on-import correctness (the 300: Rise of an Empire hole): once an import completes, the
+  // *arr clears the queue record, but the grabbed/imported ledger milestones lag by up to one sync
+  // interval. With an empty queue and no in-window milestone, the derivation would REGRESS to
+  // `searching` (then the false terminal `nothing_found`) even though a real grab+import happened.
+  // Only in that ambiguous window, consult the live *arr grab history: a grab at/after the anchor
+  // means a replacement WAS pulled → feed it as `hasGrabbed` so the phase stays forward (grabbed, or
+  // stalled if genuinely old), never regressing. completeFixRequests still closes the row to
+  // `completed` once the import event is ingested.
+  if (
+    !isSubtitle &&
+    rowTerminal === undefined &&
+    records.length === 0 &&
+    !flags.hasGrabbed &&
+    !flags.hasImported &&
+    !flags.hasDownloadFailed
+  ) {
+    const grabAt = await liveReplacementGrabSinceAnchor(
+      input.arr,
+      kind,
+      fix.arrItemId,
+      childId,
+      anchorAt,
+    );
+    if (grabAt !== null) {
+      hasGrabbed = true;
+      lastActivityAt = grabAt;
+    }
+  }
+
   return derivePhaseForTarget({
     now,
     anchorAt,
@@ -555,9 +642,9 @@ export async function computeFixProgress(input: ComputeFixProgressInput): Promis
     isSubtitle,
     queueRecords: records,
     hasImported: flags.hasImported,
-    hasGrabbed: flags.hasGrabbed,
+    hasGrabbed,
     hasDownloadFailed: flags.hasDownloadFailed,
-    lastActivityAt: flags.lastActivityAt,
+    lastActivityAt,
   });
 }
 
@@ -658,13 +745,38 @@ export async function computeSearchProgress(
   // A whole-show search has no single completion — don't let one episode's import read as complete.
   const treatImportAsComplete = resolved.scope !== 'show';
   const flags = flagsForTarget(events, childId);
+  let hasGrabbed = flags.hasGrabbed;
+  let lastActivityAt = flags.lastActivityAt;
+
+  // Same close-on-import lag guard as computeFixProgress: in the empty-queue / no-milestone window,
+  // consult the live grab history so a completed-but-unsynced grab doesn't regress the phase.
+  // (whole-show has no single grab target, so the helper returns null and we fall through.)
+  if (
+    records.length === 0 &&
+    !flags.hasGrabbed &&
+    !flags.hasImported &&
+    !flags.hasDownloadFailed
+  ) {
+    const grabAt = await liveReplacementGrabSinceAnchor(
+      input.arr,
+      kind,
+      item.arrItemId,
+      childId,
+      anchorAt,
+    );
+    if (grabAt !== null) {
+      hasGrabbed = true;
+      lastActivityAt = grabAt;
+    }
+  }
+
   return derivePhaseForTarget({
     now,
     anchorAt,
     queueRecords: records,
     hasImported: treatImportAsComplete && flags.hasImported,
-    hasGrabbed: flags.hasGrabbed,
+    hasGrabbed,
     hasDownloadFailed: flags.hasDownloadFailed,
-    lastActivityAt: flags.lastActivityAt,
+    lastActivityAt,
   });
 }

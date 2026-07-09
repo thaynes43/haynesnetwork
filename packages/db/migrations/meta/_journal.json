@@ -169,6 +169,13 @@
       "when": 1782950424000,
       "tag": "0024_pushover_notify_outbox",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1782950425000,
+      "tag": "0025_fix_terminal_statuses",
+      "breakpoints": true
     }
   ]
 }

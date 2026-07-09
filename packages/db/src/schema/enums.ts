@@ -94,6 +94,14 @@ export const FIX_STATUSES = [
   'search_triggered',
   'failed',
   'completed',
+  // Two terminal outcomes for fixes that never reach a confirmed import (migration 0025 relaxes
+  // the status CHECK): 'timed_out' is the never-stuck safety net — a fix (incl. fire-and-forget
+  // bazarr_subtitle fixes, which completeFixRequests deliberately never closes) auto-closes after
+  // FIX_TIMEOUT_HORIZON_MS (48h) so it stops blocking the one-open-fix-per-target rule. Neither is
+  // an OPEN_FIX_STATUS, so both release the block. 'closed_manually' is the admin/requester escape
+  // hatch (fix.close). Both are honest: we stopped tracking, we did NOT claim completed/failed.
+  'timed_out',
+  'closed_manually',
 ] as const; // Fix Lifecycle, DDD-001 T-43
 export type FixStatus = (typeof FIX_STATUSES)[number];
 

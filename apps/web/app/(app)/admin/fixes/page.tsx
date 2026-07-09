@@ -4,6 +4,7 @@
 // requester, outcome, and the raw *arr actions taken (fix.adminList).
 import Link from 'next/link';
 import { useState } from 'react';
+import { ConfirmButton } from '@hnet/ui';
 import { trpc } from '@/lib/trpc-client';
 import {
   ARR_KIND_LABELS,
@@ -21,15 +22,24 @@ const STATUS_FILTERS = [
   'search_triggered',
   'failed',
   'completed',
+  'timed_out',
+  'closed_manually',
 ] as const;
 type StatusFilter = (typeof STATUS_FILTERS)[number];
 
+/** Client mirror of @hnet/domain OPEN_FIX_STATUSES — only these can be closed manually. */
+const OPEN_FIX_STATUSES = new Set(['pending', 'actioned', 'search_triggered']);
+
 export default function AdminFixesPage() {
   const [status, setStatus] = useState<StatusFilter>(undefined);
+  const utils = trpc.useUtils();
   const list = trpc.fix.adminList.useInfiniteQuery(
     { status, limit: 50 },
     { getNextPageParam: (last) => last.nextCursor ?? undefined, placeholderData: (prev) => prev },
   );
+  const closeFix = trpc.fix.close.useMutation({
+    onSuccess: () => void utils.fix.adminList.invalidate(),
+  });
 
   const rows = list.data?.pages.flatMap((p) => p.items) ?? [];
 
@@ -104,6 +114,19 @@ export default function AdminFixesPage() {
                           ? 'blocklist+search'
                           : 'delete+search'}
                     </span>
+                  ) : null}
+                  {OPEN_FIX_STATUSES.has(fix.status) ? (
+                    <div className="fix-close-action">
+                      <ConfirmButton
+                        className="btn btn--sm"
+                        label="Close fix"
+                        confirmLabel="Confirm close"
+                        restingAriaLabel={`Close the open fix for ${fix.item.title} — click twice to confirm`}
+                        confirmAriaLabel={`Confirm closing the fix for ${fix.item.title}`}
+                        disabled={closeFix.isPending}
+                        onConfirm={() => closeFix.mutate({ fixRequestId: fix.id })}
+                      />
+                    </div>
                   ) : null}
                 </td>
                 <td data-label="Actions taken">

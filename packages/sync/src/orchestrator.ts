@@ -9,6 +9,7 @@ import {
   MassTombstoneAbortedError,
   backfillEventAttribution,
   completeFixRequests,
+  expireStaleFixRequests,
   deliverOutbox,
   evaluateSpacePolicy,
   finishSyncRun,
@@ -81,8 +82,12 @@ export interface SyncReport {
   /** Post-step results (null when the step itself errored — see backfillError). */
   backfill: { itemsLinked: number; usersLinked: number } | null;
   fixesCompleted: number | null;
+  /** Count of OPEN fixes auto-closed to 'timed_out' this run (null for modes that skip the sweep). */
+  fixesTimedOut?: number | null;
   backfillError?: string;
   fixCompletionError?: string;
+  /** The timeout sweep's error, if it threw (the completion step is independent). */
+  fixTimeoutError?: string;
   /** ADR-025 — the `trash-batch-sweep` result (null for every other mode / when the sweep errored). */
   sweep?: SweepReport | null;
   /** The sweep's error (e.g. an unsafe-Maintainerr refusal) — sets totalFailure for the CLI exit. */
@@ -336,6 +341,8 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
   let backfillError: string | undefined;
   let fixesCompleted: number | null = null;
   let fixCompletionError: string | undefined;
+  let fixesTimedOut: number | null = null;
+  let fixTimeoutError: string | undefined;
   if (options.mode === 'metadata-refresh') {
     const totalFailure = reports.length > 0 && reports.every((r) => r.status !== 'succeeded');
     return {
@@ -369,6 +376,20 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
     logger.error('fix completion matching failed', { error: fixCompletionError });
   }
 
+  // Never-stuck safety net: close OPEN fixes older than the horizon (48h) to 'timed_out' so a
+  // fire-and-forget subtitle fix (never closed by completeFixRequests) or a search that never
+  // landed stops blocking the one-open-fix-per-target rule. Isolated from the completion step.
+  try {
+    const { timedOut } = await expireStaleFixRequests({ db });
+    fixesTimedOut = timedOut.length;
+    if (timedOut.length > 0) {
+      logger.info('stale fix requests timed out', { count: timedOut.length });
+    }
+  } catch (error) {
+    fixTimeoutError = error instanceof Error ? error.message : String(error);
+    logger.error('fix timeout sweep failed', { error: fixTimeoutError });
+  }
+
   const totalFailure = reports.length > 0 && reports.every((r) => r.status !== 'succeeded');
   return {
     mode: options.mode,
@@ -377,8 +398,10 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
     sources: reports,
     backfill,
     fixesCompleted,
+    fixesTimedOut,
     ...(backfillError !== undefined ? { backfillError } : {}),
     ...(fixCompletionError !== undefined ? { fixCompletionError } : {}),
+    ...(fixTimeoutError !== undefined ? { fixTimeoutError } : {}),
     totalFailure,
   };
 }

@@ -27,6 +27,28 @@ export const FIX_RATE_LIMIT_PER_HOUR = 5;
 /** D-09: statuses that count as an open fix for the one-open-fix-per-target rule. */
 export const OPEN_FIX_STATUSES = ['pending', 'actioned', 'search_triggered'] as const;
 
+/** Terminal statuses a fix rests at — none block a new fix on the same target. */
+export const TERMINAL_FIX_STATUSES = [
+  'completed',
+  'failed',
+  'timed_out',
+  'closed_manually',
+] as const;
+
+/**
+ * The auto-close horizon (default 48h) for an OPEN fix that never reaches a confirmed import.
+ * A fire-and-forget bazarr_subtitle fix (completeFixRequests never closes it) or any search that
+ * simply never landed a replacement would otherwise sit in an OPEN status forever, permanently
+ * tripping FixAlreadyOpenError on that target. expireStaleFixRequests sweeps them to 'timed_out'.
+ * Env-tunable (cluster CronJob) like the ADR-028 windows; unset/invalid ⇒ the 48h default.
+ */
+export const FIX_TIMEOUT_HORIZON_MS = ((): number => {
+  const raw = process.env.FIX_TIMEOUT_HORIZON_MS;
+  if (raw === undefined || raw === '') return 48 * 60 * 60 * 1000;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : 48 * 60 * 60 * 1000;
+})();
+
 /**
  * DESIGN-005 D-09/D-17 — the SHARED per-requester hourly budget: a Fix and a Force
  * Search both draw down the same 5/hour allowance, so a member can't sidestep the
@@ -386,5 +408,126 @@ export async function completeFixRequests(
     }
 
     return { completed };
+  });
+}
+
+export interface ExpireStaleFixRequestsInput {
+  db?: DbClient;
+  /** Override the age horizon (tests); default FIX_TIMEOUT_HORIZON_MS (48h, env-tunable). */
+  horizonMs?: number;
+  /** Reference "now" for the cutoff (tests/replay); default the DB clock. */
+  asOf?: Date;
+}
+
+export interface TimedOutFix {
+  fixRequestId: string;
+}
+
+/**
+ * The never-stuck safety net (runs in the sync cron path alongside completeFixRequests). Any fix
+ * still in an OPEN status (pending / actioned / search_triggered) older than the horizon closes to
+ * the terminal 'timed_out' with an actions_taken audit note — no ledger event type is added (the
+ * row IS the BC-03 audit record, exactly as the search_triggered step writes none). This is the
+ * ONLY lifecycle path that closes a bazarr_subtitle fix: it is fire-and-forget (completeFixRequests
+ * excludes it — no 'imported' event ever lands), so without a timeout it would hold the
+ * one-open-fix-per-target lock forever. 'timed_out' is NOT an OPEN status, so the block releases.
+ * Anchored on created_at (updated_at only advances on a lifecycle transition, which stops at
+ * search_triggered, so it can't distinguish a live download); 48h is well beyond any real import.
+ */
+export async function expireStaleFixRequests(
+  input: ExpireStaleFixRequestsInput = {},
+): Promise<{ timedOut: TimedOutFix[] }> {
+  const horizonMs = input.horizonMs ?? FIX_TIMEOUT_HORIZON_MS;
+  const horizonHours = Math.max(1, Math.round(horizonMs / 3_600_000));
+  const ref = input.asOf ? sql`${input.asOf.toISOString()}::timestamptz` : sql`now()`;
+  return inTransaction(input.db, async (tx) => {
+    const stale = await tx
+      .select({ id: fixRequests.id })
+      .from(fixRequests)
+      .where(
+        and(
+          inArray(fixRequests.status, [...OPEN_FIX_STATUSES]),
+          sql`${fixRequests.createdAt} < ${ref} - (interval '1 millisecond' * ${horizonMs})`,
+        ),
+      )
+      .for('update');
+
+    const timedOut: TimedOutFix[] = [];
+    for (const fix of stale) {
+      const note: FixActionEntry = {
+        step: 'timed_out',
+        at: new Date().toISOString(),
+        note: `auto-closed after ${horizonHours}h with no confirmed import`,
+      };
+      await tx
+        .update(fixRequests)
+        .set({
+          status: 'timed_out',
+          actionsTaken: sql`${fixRequests.actionsTaken} || ${JSON.stringify([note])}::jsonb`,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(fixRequests.id, fix.id));
+      timedOut.push({ fixRequestId: fix.id });
+    }
+    return { timedOut };
+  });
+}
+
+export interface CloseFixManuallyInput {
+  db?: DbClient;
+  fixRequestId: string;
+  /** The actor closing the fix — must be the requester or an admin (else NOT_FOUND, no leak). */
+  actorId: string;
+  actorIsAdmin?: boolean;
+}
+
+/**
+ * The manual unblock (fix.close) — cheap insurance when a fix is stuck open but the requester or an
+ * admin knows it is done/abandoned. Closes an OPEN fix to the terminal 'closed_manually' with an
+ * actions_taken audit note (actor + timestamp). Own-fix or admin only; a non-owner gets NOT_FOUND
+ * (never reveal another member's fix). An already-terminal fix throws InvalidFixTransitionError.
+ * Like 'timed_out', 'closed_manually' is not an OPEN status, so it releases the one-open-fix block.
+ */
+export async function closeFixManually(
+  input: CloseFixManuallyInput,
+): Promise<{ status: FixStatus }> {
+  return inTransaction(input.db, async (tx) => {
+    const [fix] = await tx
+      .select({
+        id: fixRequests.id,
+        status: fixRequests.status,
+        requesterId: fixRequests.requesterId,
+      })
+      .from(fixRequests)
+      .where(eq(fixRequests.id, input.fixRequestId))
+      .for('update');
+    if (!fix) {
+      throw new NotFoundError(`Fix request ${input.fixRequestId} not found`);
+    }
+    // Own-fix or admin. Non-owners get NOT_FOUND (mirrors computeFixProgress — no leak).
+    if (fix.requesterId !== input.actorId && !input.actorIsAdmin) {
+      throw new NotFoundError(`Fix request ${input.fixRequestId} not found`);
+    }
+    if (!(OPEN_FIX_STATUSES as readonly string[]).includes(fix.status)) {
+      throw new InvalidFixTransitionError(
+        `Fix request ${fix.id} is already '${fix.status}' — nothing to close`,
+      );
+    }
+
+    const note: FixActionEntry = {
+      step: 'closed_manually',
+      at: new Date().toISOString(),
+      by: input.actorId,
+      priorStatus: fix.status,
+    };
+    await tx
+      .update(fixRequests)
+      .set({
+        status: 'closed_manually',
+        actionsTaken: sql`${fixRequests.actionsTaken} || ${JSON.stringify([note])}::jsonb`,
+        updatedAt: sql`now()`,
+      })
+      .where(eq(fixRequests.id, fix.id));
+    return { status: 'closed_manually' };
   });
 }

@@ -8,8 +8,11 @@ import {
   FixTargetRequiredError,
   InvalidFixTransitionError,
   LedgerItemTombstonedError,
+  NotFoundError,
+  closeFixManually,
   completeFixRequests,
   createFixRequest,
+  expireStaleFixRequests,
   ingestLedgerEvents,
   isPostgresCheckViolation,
   recordFixAction,
@@ -480,6 +483,147 @@ describe('fix lifecycle single-writers (DESIGN-005 D-09/D-12, ADR-007)', () => {
       await expect(
         recordFixAction({ db: t.db, fixRequestId, transition: 'failed' }),
       ).rejects.toThrow(InvalidFixTransitionError);
+    });
+  });
+
+  describe('expireStaleFixRequests — the never-stuck safety net (timeouts)', () => {
+    it('times out an OPEN fix past the horizon and STOPS it blocking a new fix on the same target', async () => {
+      const requester = (await createUser(t.db, { email: 'timeout@example.com' })).id;
+      const child = 55501;
+      const { fixRequestId } = await createFixRequest({
+        db: t.db,
+        requesterId: requester,
+        requesterIsAdmin: true,
+        mediaItemId: sonarrItemId,
+        targetArrChildId: child,
+        reason: 'wont_play_corrupt',
+      });
+      // Still open ⇒ a duplicate is blocked.
+      await expect(
+        createFixRequest({
+          db: t.db,
+          requesterId: requester,
+          requesterIsAdmin: true,
+          mediaItemId: sonarrItemId,
+          targetArrChildId: child,
+          reason: 'wrong_language',
+        }),
+      ).rejects.toThrow(FixAlreadyOpenError);
+
+      // Inside the horizon ⇒ no-op.
+      const early = await expireStaleFixRequests({ db: t.db, horizonMs: 48 * 3_600_000 });
+      expect(early.timedOut.map((f) => f.fixRequestId)).not.toContain(fixRequestId);
+
+      // 49h later (asOf) ⇒ closes to 'timed_out' with an audit note.
+      const { timedOut } = await expireStaleFixRequests({
+        db: t.db,
+        horizonMs: 48 * 3_600_000,
+        asOf: new Date(Date.now() + 49 * 3_600_000),
+      });
+      expect(timedOut.map((f) => f.fixRequestId)).toContain(fixRequestId);
+      const [row] = await t.db.select().from(fixRequests).where(eq(fixRequests.id, fixRequestId));
+      expect(row!.status).toBe('timed_out');
+      expect(row!.actionsTaken.at(-1)).toMatchObject({ step: 'timed_out' });
+
+      // The block is released — a fresh fix on the SAME target is now allowed.
+      const reopened = await createFixRequest({
+        db: t.db,
+        requesterId: requester,
+        requesterIsAdmin: true,
+        mediaItemId: sonarrItemId,
+        targetArrChildId: child,
+        reason: 'wrong_language',
+      });
+      expect(reopened.status).toBe('pending');
+    });
+
+    it('times out a fire-and-forget bazarr_subtitle fix (completeFixRequests never would)', async () => {
+      const requester = (await createUser(t.db, { email: 'sub-timeout@example.com' })).id;
+      const child = 55510;
+      const { fixRequestId } = await createFixRequest({
+        db: t.db,
+        requesterId: requester,
+        requesterIsAdmin: true,
+        mediaItemId: sonarrItemId,
+        targetArrChildId: child,
+        reason: 'missing_subtitles',
+      });
+      await recordFixAction({
+        db: t.db,
+        fixRequestId,
+        transition: 'actioned',
+        pathTaken: 'bazarr_subtitle',
+      });
+      await recordFixAction({ db: t.db, fixRequestId, transition: 'search_triggered' });
+      // completeFixRequests deliberately excludes bazarr_subtitle → it never closes here.
+      expect((await completeFixRequests({ db: t.db })).completed.map((c) => c.fixRequestId)).not.toContain(
+        fixRequestId,
+      );
+      // The timeout is the ONLY path that closes it.
+      const { timedOut } = await expireStaleFixRequests({
+        db: t.db,
+        horizonMs: 48 * 3_600_000,
+        asOf: new Date(Date.now() + 49 * 3_600_000),
+      });
+      expect(timedOut.map((f) => f.fixRequestId)).toContain(fixRequestId);
+    });
+  });
+
+  describe('closeFixManually — the manual unblock', () => {
+    it('owner or admin closes an OPEN fix; a stranger gets NOT_FOUND; terminal is guarded', async () => {
+      const owner = (await createUser(t.db, { email: 'closer-owner@example.com' })).id;
+      const stranger = (await createUser(t.db, { email: 'closer-stranger@example.com' })).id;
+      const child = 55601;
+      const { fixRequestId } = await createFixRequest({
+        db: t.db,
+        requesterId: owner,
+        requesterIsAdmin: true,
+        mediaItemId: sonarrItemId,
+        targetArrChildId: child,
+        reason: 'wont_play_corrupt',
+      });
+
+      // A non-owner, non-admin sees NOT_FOUND (never reveal another member's fix).
+      await expect(
+        closeFixManually({ db: t.db, fixRequestId, actorId: stranger }),
+      ).rejects.toThrow(NotFoundError);
+
+      // The owner closes it.
+      expect(await closeFixManually({ db: t.db, fixRequestId, actorId: owner })).toEqual({
+        status: 'closed_manually',
+      });
+      const [row] = await t.db.select().from(fixRequests).where(eq(fixRequests.id, fixRequestId));
+      expect(row!.status).toBe('closed_manually');
+      expect(row!.actionsTaken.at(-1)).toMatchObject({ step: 'closed_manually', by: owner });
+
+      // Already terminal ⇒ InvalidFixTransitionError.
+      await expect(
+        closeFixManually({ db: t.db, fixRequestId, actorId: owner }),
+      ).rejects.toThrow(InvalidFixTransitionError);
+
+      // The block is released.
+      const reopened = await createFixRequest({
+        db: t.db,
+        requesterId: owner,
+        requesterIsAdmin: true,
+        mediaItemId: sonarrItemId,
+        targetArrChildId: child,
+        reason: 'wrong_language',
+      });
+      expect(reopened.status).toBe('pending');
+
+      // An admin may close a fix they did not open.
+      const { fixRequestId: adminTarget } = await createFixRequest({
+        db: t.db,
+        requesterId: owner,
+        requesterIsAdmin: true,
+        mediaItemId: sonarrItemId,
+        targetArrChildId: 55602,
+        reason: 'wont_play_corrupt',
+      });
+      expect(
+        await closeFixManually({ db: t.db, fixRequestId: adminTarget, actorId: stranger, actorIsAdmin: true }),
+      ).toEqual({ status: 'closed_manually' });
     });
   });
 });
