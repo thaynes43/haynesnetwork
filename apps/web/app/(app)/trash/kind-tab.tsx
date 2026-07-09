@@ -87,6 +87,7 @@ interface BatchItemWire {
   imdbRating: number | null;
   tmdbRating: number | null;
   recentlyWatched: boolean;
+  requesters: string[];
 }
 
 /** The pending-candidate fields the new-candidates diff reads (a subset of trash.pending items). */
@@ -117,6 +118,7 @@ function tileLabel(
   glyph: WallGlyph,
   tappable: boolean,
   savedByName: string | null,
+  requesters: readonly string[] = [],
 ): string {
   switch (glyph) {
     case 'trash':
@@ -130,6 +132,10 @@ function tileLabel(
       return `${title} is protected — already safe from deletion`;
     case 'eye':
       return `${title} was watched recently — the guardian keeps it`;
+    case 'requested':
+      return requesters.length > 0
+        ? `${title} was requested by ${requesters.join(', ')} — protected from deletion`
+        : `${title} was requested — protected from deletion`;
     case 'skip':
       return `${title} was kept — it couldn’t be verified safe, so it was never deleted`;
     case 'gone':
@@ -208,6 +214,7 @@ function PosterWall({
     effective.map(({ item, state }) => ({
       state,
       recentlyWatched: item.recentlyWatched,
+      requesters: item.requesters,
       sizeBytes: item.sizeBytes,
     })),
   );
@@ -231,10 +238,10 @@ function PosterWall({
       </p>
       <ul className="bwall" data-testid="batch-wall">
         {effective.map(({ item, state }) => {
-          const glyph = wallGlyph(state, item.recentlyWatched);
+          const glyph = wallGlyph(state, item.recentlyWatched, item.requesters);
           const tappable = tileTappable(ctx, glyph, item.savedBy);
           const savedByName = item.savedBy !== null ? (saverNames.get(item.savedBy) ?? null) : null;
-          const label = tileLabel(item.title, glyph, tappable, savedByName);
+          const label = tileLabel(item.title, glyph, tappable, savedByName, item.requesters);
           const rating = formatRating(
             ratingOrNull(item.imdbRating) ?? ratingOrNull(item.tmdbRating),
           );
@@ -444,9 +451,12 @@ function ExpireModal({
     onClose();
   };
 
-  // Honest preview over the batch's remaining `pending` items (the sweep's only candidates).
+  // Honest preview over the batch's remaining `pending` items (the sweep's only candidates). The
+  // sweep guardian keeps recently-watched AND requested items, so neither counts toward willDelete.
   const pending = items.filter((i) => i.state === 'pending');
-  const willDelete = pending.filter((i) => !i.recentlyWatched && i.mediaItemId !== null).length;
+  const willDelete = pending.filter(
+    (i) => !i.recentlyWatched && i.requesters.length === 0 && i.mediaItemId !== null,
+  ).length;
   const willKeep = pending.length - willDelete;
   const savedCount = batch.counts.saved;
 

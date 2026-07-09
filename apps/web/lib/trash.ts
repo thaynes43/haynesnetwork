@@ -29,8 +29,8 @@ export type TrashActionName = (typeof TRASH_ACTION_NAMES)[number];
 export const TRASH_ACTION_LABELS: Record<TrashActionName, string> = {
   save_exclude: 'Save items — anytime (whitelists any flagged item)',
   remove_exclude: 'Un-save items',
-  expedite_item: 'Expedite one item — destructive',
-  expedite_all: 'Expedite the whole pending set — destructive',
+  expedite_item: 'Delete one item now — destructive',
+  expedite_all: 'Delete the whole pending set now — destructive',
   edit_rules: 'Edit deletion rules (also needs Trash access = Edit)',
   restore_deleted: 'Restore recently deleted items',
   save_leaving_soon: 'Save items — during a Leaving-Soon window only',
@@ -134,22 +134,35 @@ export function expediteErrorAction(
  *               /library/[id] guard panel keeps that power for remove_exclude holders).
  * - `eye`     — recently watched: the guardian keeps it regardless, so a save is pointless; inert
  *               (mirrors the batch wall — a trash-can here would be dishonest, it cannot delete).
+ * - `requested` — a personal requester is on record: the guardian refuses its deletion at
+ *               expedite/sweep (protected_requested), so — like `eye` — a slated trash-can would be
+ *               dishonest. Inert, its own person-shield glyph (distinct from the `check` exclusion).
  */
-export type PendingWallGlyph = 'trash' | 'shield' | 'check' | 'eye';
+export type PendingWallGlyph = 'trash' | 'shield' | 'check' | 'eye' | 'requested';
 
 export function pendingWallGlyph(
-  item: { protectedByTag: boolean; protectedByExclusion: boolean; recentlyWatched: boolean },
+  item: {
+    protectedByTag: boolean;
+    protectedByExclusion: boolean;
+    recentlyWatched: boolean;
+    requesters: readonly string[];
+  },
   override: 'saved' | 'unsaved' | undefined,
 ): PendingWallGlyph {
   if (override === 'saved') return 'shield';
   if (override !== 'unsaved' && (item.protectedByTag || item.protectedByExclusion)) return 'check';
   if (override !== 'unsaved' && item.recentlyWatched) return 'eye';
+  // A requester keeps the item at expedite/sweep (the guardian refuses its deletion), so a
+  // trash-can here would be dishonest — surface it as the inert protected 'requested' glyph. Ranks
+  // AFTER tag/exclusion + watched to mirror the guardian's precedence (previewGuardian).
+  if (override !== 'unsaved' && item.requesters.length > 0) return 'requested';
   return 'trash';
 }
 
 /** May THIS tile be tapped to toggle? Mirrors the wire gates the caller resolved (canSave /
- *  canUnsave already fold in reachability). `check` / `eye` are always inert — protection made
- *  outside this session (or the watch guardian's automatic keep) reads as state, never a button. */
+ *  canUnsave already fold in reachability). `check` / `eye` / `requested` are always inert —
+ *  protection made outside this session (the watch guardian's automatic keep, or a personal
+ *  requester's protection) reads as state, never a button. */
 export function pendingWallTappable(
   glyph: PendingWallGlyph,
   canSave: boolean,

@@ -40,6 +40,17 @@ describe('wallGlyph — the overlay language (ADR-033 unified: trash/shield/chec
     expect(wallGlyph('skipped', true)).toBe('skip');
     expect(wallGlyph('deleted', true)).toBe('gone');
   });
+
+  it('a requester on a PENDING item ⇒ the inert requested glyph (the sweep keeps it)', () => {
+    expect(wallGlyph('pending', false, ['manofoz'])).toBe('requested');
+    // watched outranks the requester (both inert; the eye reads first — guardian precedence).
+    expect(wallGlyph('pending', true, ['manofoz'])).toBe('eye');
+    // an explicit saved/protected/terminal state keeps its own glyph regardless of a requester.
+    expect(wallGlyph('saved', false, ['manofoz'])).toBe('shield');
+    expect(wallGlyph('protected', false, ['manofoz'])).toBe('check');
+    // no requester ⇒ the slated trash-can, unchanged.
+    expect(wallGlyph('pending', false, [])).toBe('trash');
+  });
 });
 
 describe('wallInteractive — phase gate (mirrors trash.batches.setItemSaved)', () => {
@@ -105,6 +116,7 @@ describe('wallCounts — the running header agrees with the glyphs', () => {
       { state: 'pending', recentlyWatched: false, sizeBytes: 100 }, // trash
       { state: 'pending', recentlyWatched: false, sizeBytes: 50 }, // trash
       { state: 'pending', recentlyWatched: true, sizeBytes: 999 }, // eye → kept
+      { state: 'pending', recentlyWatched: false, requesters: ['manofoz'], sizeBytes: 42 }, // requested → kept
       { state: 'saved', recentlyWatched: false, sizeBytes: 10 }, // shield
       { state: 'protected', recentlyWatched: false, sizeBytes: 1 }, // check → kept
       { state: 'skipped', recentlyWatched: false, sizeBytes: 2 }, // skip → kept
@@ -114,7 +126,7 @@ describe('wallCounts — the running header agrees with the glyphs', () => {
       slated: 2,
       slatedBytes: 150,
       rescued: 1,
-      kept: 3,
+      kept: 4,
       deleted: 1,
     });
   });

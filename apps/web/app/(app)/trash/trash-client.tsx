@@ -236,8 +236,13 @@ function tileInfo(item: PendingItem, glyph: PendingWallGlyph): string {
         ? 'Protected — carries the dnd tag'
         : 'Protected — excluded in Maintainerr',
     );
+  else if (glyph === 'requested')
+    lines.push(`Requested by ${item.requesters.join(', ')} — protected from deletion`);
   if (item.recentlyWatched) lines.push('Recently watched — the guardian keeps it');
-  if (item.requesters.length > 0) lines.push(`Requested by ${item.requesters.join(', ')}`);
+  // The requester names ride the dedicated 'requested' line above; only add the plain fact for the
+  // OTHER glyphs (e.g. a watched or saved item that also happens to carry a requester).
+  if (item.requesters.length > 0 && glyph !== 'requested')
+    lines.push(`Requested by ${item.requesters.join(', ')}`);
   if (item.collectionTitle !== null) lines.push(`Rule: ${item.collectionTitle}`);
   lines.push(
     item.mediaItemId !== null
@@ -558,12 +563,12 @@ function PendingTab({
             disabled={!safe || allItems.length === 0}
             title={
               safe
-                ? `Expedite the entire pending ${label} set`
+                ? `Delete the entire pending ${label} set now`
                 : 'Disabled — Maintainerr is not in a safe state (see the banner).'
             }
             onClick={() => openExpedite({ scope: 'all' })}
           >
-            Expedite all…
+            Delete all now…
           </button>
         ) : null}
       </div>
@@ -631,9 +636,11 @@ function PendingTab({
                   ? `${item.title} is protected from deletion`
                   : glyph === 'eye'
                     ? `${item.title} was watched recently — the guardian keeps it`
-                    : tappable
-                      ? `${item.title} is slated to delete — tap to save it`
-                      : `${item.title} is slated to delete`;
+                    : glyph === 'requested'
+                      ? `${item.title} was requested by ${item.requesters.join(', ')} — protected from deletion`
+                      : tappable
+                        ? `${item.title} is slated to delete — tap to save it`
+                        : `${item.title} is slated to delete`;
             const inner = (
               <>
                 <MediaPoster
@@ -708,7 +715,7 @@ function PendingTab({
       {/* ADR-014 — the Expedite Modal (never one-click delete). */}
       <Modal
         open={expedite !== null}
-        title={outcome !== null ? 'Expedite report' : 'Expedite deletion'}
+        title={outcome !== null ? 'Deletion report' : 'Delete all pending now'}
         onClose={closeExpedite}
         banner={
           modalError !== null ? (
@@ -736,12 +743,12 @@ function PendingTab({
         ) : hasFilters ? (
           <div className="trash-confirm" data-testid="trash-expedite-refusal">
             <p className="alert" role="alert">
-              Filters can’t scope “Expedite all” — it processes the <strong>entire</strong> pending{' '}
+              Filters can’t scope “Delete all now” — it processes the <strong>entire</strong> pending{' '}
               {label} set ({allItems.length} item{allItems.length === 1 ? '' : 's'}), including the{' '}
               {allItems.length - items.length} your filters currently hide.
             </p>
             <p className="muted">
-              Clear the filters to expedite the whole set, or open a specific title and use{' '}
+              Clear the filters to delete the whole set, or open a specific title and use{' '}
               <strong>Delete now…</strong> on its page.
             </p>
             <div className="form-actions">
@@ -762,7 +769,7 @@ function PendingTab({
         ) : (
           <div className="trash-confirm" data-testid="trash-expedite-all-confirm">
             <p>
-              Expedite the <strong>entire pending {label} set</strong> — {allItems.length} item
+              Delete the <strong>entire pending {label} set</strong> now — {allItems.length} item
               {allItems.length === 1 ? '' : 's'}. Maintainerr will process each item individually:
             </p>
             <ul className="ledger-confirm__outcomes">

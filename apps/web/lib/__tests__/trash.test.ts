@@ -90,7 +90,12 @@ describe('expediteErrorAction (F3 — always re-partition on ANY expedite error)
 });
 
 describe('pendingWallGlyph / pendingWallTappable (the pending WALL tap-toggle — ADR-033)', () => {
-  const cold = { protectedByTag: false, protectedByExclusion: false, recentlyWatched: false };
+  const cold = {
+    protectedByTag: false,
+    protectedByExclusion: false,
+    recentlyWatched: false,
+    requesters: [] as string[],
+  };
   it('unprotected cold ⇒ trash (slated); tappable to SAVE only with save_exclude', () => {
     expect(pendingWallGlyph(cold, undefined)).toBe('trash');
     expect(pendingWallTappable('trash', true, false)).toBe(true);
@@ -116,14 +121,32 @@ describe('pendingWallGlyph / pendingWallTappable (the pending WALL tap-toggle �
     expect(pendingWallTappable('eye', true, true)).toBe(false);
     // protection from elsewhere outranks the watch signal (both are inert, check reads first).
     expect(
-      pendingWallGlyph({ protectedByTag: true, protectedByExclusion: false, recentlyWatched: true }, undefined),
+      pendingWallGlyph(
+        { ...cold, protectedByTag: true, recentlyWatched: true },
+        undefined,
+      ),
     ).toBe('check');
     // a save this session still wins — the watched item can be deliberately protected.
     expect(pendingWallGlyph({ ...cold, recentlyWatched: true }, 'saved')).toBe('shield');
   });
+  it('a personal requester (and no stronger keep) ⇒ the inert requested glyph, never a trash-can', () => {
+    // The guardian refuses a requested item's deletion (previewGuardian ⇒ protected_requested), so a
+    // slated trash-can would be dishonest — it renders inert like eye/check.
+    expect(pendingWallGlyph({ ...cold, requesters: ['manofoz'] }, undefined)).toBe('requested');
+    expect(pendingWallTappable('requested', true, true)).toBe(false);
+    // tag/exclusion and the watch keep both outrank the requester (mirrors the guardian precedence).
+    expect(
+      pendingWallGlyph({ ...cold, protectedByTag: true, requesters: ['manofoz'] }, undefined),
+    ).toBe('check');
+    expect(
+      pendingWallGlyph({ ...cold, recentlyWatched: true, requesters: ['manofoz'] }, undefined),
+    ).toBe('eye');
+    // a save this session still wins — the requested item can be deliberately saved by you.
+    expect(pendingWallGlyph({ ...cold, requesters: ['manofoz'] }, 'saved')).toBe('shield');
+  });
   it('an un-save this session ⇒ back to trash even while the stale protection signal lingers', () => {
     expect(
-      pendingWallGlyph({ protectedByTag: false, protectedByExclusion: true, recentlyWatched: false }, 'unsaved'),
+      pendingWallGlyph({ ...cold, protectedByExclusion: true }, 'unsaved'),
     ).toBe('trash');
   });
 });

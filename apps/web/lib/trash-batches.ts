@@ -56,13 +56,19 @@ export const LEAVING_SOON_NAMES: Record<'movie' | 'tv', string> = {
  *              elsewhere): already safe, inert (a shield-check, distinct from the filled save).
  * - `eye`    — pending but recently watched: the sweep's guardian will keep it; not tappable
  *              toward the delete state (a trash-can here would be dishonest — it cannot delete).
+ * - `requested` — pending but a personal requester is on record: the sweep's guardian keeps it
+ *              (protected_requested), so — like `eye` — a trash-can would be dishonest. Inert.
  * - `skip`   — sweep kept it (guardian / unverifiable / live-excluded) — kept, NOT deliberately
  *              saved (skipped ≠ protected, ADR-023 C-07b).
  * - `gone`   — deleted by the sweep.
  */
-export type WallGlyph = 'trash' | 'shield' | 'check' | 'eye' | 'skip' | 'gone';
+export type WallGlyph = 'trash' | 'shield' | 'check' | 'eye' | 'requested' | 'skip' | 'gone';
 
-export function wallGlyph(state: BatchItemStateName, recentlyWatched: boolean): WallGlyph {
+export function wallGlyph(
+  state: BatchItemStateName,
+  recentlyWatched: boolean,
+  requesters: readonly string[] = [],
+): WallGlyph {
   switch (state) {
     case 'saved':
       return 'shield';
@@ -73,7 +79,11 @@ export function wallGlyph(state: BatchItemStateName, recentlyWatched: boolean): 
     case 'deleted':
       return 'gone';
     case 'pending':
-      return recentlyWatched ? 'eye' : 'trash';
+      // Guardian precedence: a watched keep reads first, then a requester keep — both inert (the
+      // sweep will refuse to delete them), so neither shows the tappable trash-can.
+      if (recentlyWatched) return 'eye';
+      if (requesters.length > 0) return 'requested';
+      return 'trash';
   }
 }
 
@@ -83,6 +93,7 @@ export const WALL_GLYPH_MEANING: Record<WallGlyph, string> = {
   shield: 'saved — it will be kept',
   check: 'protected — already safe from deletion',
   eye: 'recently watched — the guardian keeps it',
+  requested: 'requested — protected from deletion',
   skip: 'kept — could not be verified safe, never deleted',
   gone: 'deleted',
 };
@@ -137,6 +148,7 @@ export function tileTappable(
 export interface WallCountInput {
   state: BatchItemStateName;
   recentlyWatched: boolean;
+  requesters?: readonly string[];
   sizeBytes: number;
 }
 
@@ -157,7 +169,7 @@ export interface WallCounts {
 export function wallCounts(items: ReadonlyArray<WallCountInput>): WallCounts {
   const out: WallCounts = { slated: 0, slatedBytes: 0, rescued: 0, kept: 0, deleted: 0 };
   for (const item of items) {
-    switch (wallGlyph(item.state, item.recentlyWatched)) {
+    switch (wallGlyph(item.state, item.recentlyWatched, item.requesters)) {
       case 'trash':
         out.slated += 1;
         out.slatedBytes += item.sizeBytes;
