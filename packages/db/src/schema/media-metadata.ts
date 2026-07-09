@@ -70,6 +70,14 @@ export const mediaMetadata = pgTable(
     // Watch-stats, unified across the three Tautulli instances (addendum): SUM / MAX.
     playCount: integer('play_count'),
     lastViewedAt: timestamp('last_viewed_at', { withTimezone: true }),
+    // DESIGN-010 D-12 — the cross-server watch-VISIBILITY pair the trash walls + item detail card
+    // surface ("Last watched on <server> · <Mon YYYY>"). last_watched_at is the SAME max-across-all-
+    // three-Tautulli-histories instant as last_viewed_at above (full history, TV rolled up to the
+    // show), stored alongside last_watched_server (the winning estate slug) so the timestamp and its
+    // origin server are always written together. INFO ONLY: recentlyWatched (≤30d) + the guardian
+    // keep still derive from last_viewed_at — these columns change no protection semantics.
+    lastWatchedAt: timestamp('last_watched_at', { withTimezone: true }),
+    lastWatchedServer: text('last_watched_server'), // haynesops | hayneskube | haynestower
     // Parsed *arr-tag semantics (DESIGN-008 D-07): requester tags (`\d+-<user>`) → a KEEP
     // signal; all other tags → the auto-collection provenance. Raw media_items.arr_tags is
     // untouched; these are the structured, filterable projections.

@@ -14,14 +14,16 @@
 import { useEffect, useState, type RefObject } from 'react';
 import { trpc } from '@/lib/trpc-client';
 import { MediaPoster } from '@/components/media-poster';
-import { LibraryCornerLink, WallGlyphSvg } from '@/components/trash-shield';
+import { LibraryCornerLink, WallGlyphSvg, WatchedAgoNote } from '@/components/trash-shield';
 import { formatBytes, formatDay, formatRating, ratingOrNull } from '@/lib/media';
 import { describeMutationError } from '@/lib/app-error';
 import {
   daysLeftLabel,
   daysUntil,
+  lastWatchedLabel,
   pendingWallGlyph,
   pendingWallTappable,
+  watchedLongAgo,
   type PendingWallGlyph,
 } from '@/lib/trash';
 
@@ -38,6 +40,9 @@ export interface PendingWallItem {
   protectedByTag: boolean;
   protectedByExclusion: boolean;
   recentlyWatched: boolean;
+  /** DESIGN-010 D-12 — cross-server watch visibility (info, not protection). */
+  lastWatchedAt: string | null;
+  lastWatchedServer: string | null;
   requesters: string[];
   posterUrl: string | null;
   imdbRating: number | null;
@@ -63,6 +68,12 @@ function tileInfo(item: PendingWallItem, glyph: PendingWallGlyph): string {
   else if (glyph === 'requested')
     lines.push(`Requested by ${item.requesters.join(', ')} — tap to save it`);
   if (item.recentlyWatched) lines.push('Recently watched — the guardian keeps it');
+  // DESIGN-010 D-12 — the watched-a-while-ago line (info, not protection). Never shown for a
+  // recently-watched item (that carries its own eye glyph + "the guardian keeps it" line above).
+  if (watchedLongAgo(item)) {
+    const watched = lastWatchedLabel(item.lastWatchedAt, item.lastWatchedServer);
+    if (watched !== null) lines.push(`${watched} — still deletable`);
+  }
   if (item.requesters.length > 0 && glyph !== 'requested')
     lines.push(`Requested by ${item.requesters.join(', ')}`);
   if (item.collectionTitle !== null) lines.push(`Rule: ${item.collectionTitle}`);
@@ -153,6 +164,10 @@ function PendingTile({
   const tappable =
     item.maintainerrMediaId !== null && pendingWallTappable(glyph, canSave, canUnsave);
   const info = tileInfo(item, glyph);
+  // DESIGN-010 D-12 — the muted "watched a while ago" indicator (null unless watched-not-recently).
+  const watchLabel = watchedLongAgo(item)
+    ? lastWatchedLabel(item.lastWatchedAt, item.lastWatchedServer)
+    : null;
   const titleYear = `${item.title}${item.year !== null ? ` (${item.year})` : ''}`;
   const toggleLabel =
     glyph === 'shield'
@@ -219,8 +234,11 @@ function PendingTile({
         {item.year !== null ? <span className="muted"> ({item.year})</span> : null}
       </span>
       <span className="bwall-meta">
-        {item.sizeBytes > 0 ? formatBytes(item.sizeBytes) : '—'}
-        {rating !== null ? ` · ★ ${rating}` : ''}
+        <span className="bwall-meta-text">
+          {item.sizeBytes > 0 ? formatBytes(item.sizeBytes) : '—'}
+          {rating !== null ? ` · ★ ${rating}` : ''}
+        </span>
+        {watchLabel !== null ? <WatchedAgoNote label={watchLabel} /> : null}
       </span>
     </li>
   );

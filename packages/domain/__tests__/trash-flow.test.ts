@@ -13,6 +13,7 @@ import {
   TrashMusicUnsupportedError,
   auditMaintainerr,
   buildMaintainerrClientBundle,
+  classifyGuardian,
   expediteDeletion,
   guardRecentlyWatched,
   listNotifications,
@@ -382,12 +383,21 @@ describe('listTrashPending + guardian + expedite (ADR-023 D-02/D-04/D-05)', () =
     await upsertMediaMetadataBatch({
       db: t.db,
       rows: [
-        { mediaItemId: watchedId, lastViewedAt: new Date(RECENT) },
+        {
+          mediaItemId: watchedId,
+          lastViewedAt: new Date(RECENT),
+          lastWatchedAt: new Date(RECENT),
+          lastWatchedServer: 'haynesops',
+        },
         // PLAN-013 reclaim forward-capture: the cold item carries a resolution + ratings so the
         // expedite-freeze test can assert they land in the trash_expedited payload + notification.
+        // DESIGN-010 D-12 — it is ALSO an ever-watched-but-not-recent item (watched 400d ago on
+        // hayneskube): the watch-visibility pair flows to the wall, but it must remain sweep-deletable.
         {
           mediaItemId: coldId,
           lastViewedAt: new Date(OLD),
+          lastWatchedAt: new Date(OLD),
+          lastWatchedServer: 'hayneskube',
           resolution: '2160p',
           imdbRating: 8.5,
           tmdbRating: 7.9,
@@ -427,6 +437,25 @@ describe('listTrashPending + guardian + expedite (ADR-023 D-02/D-04/D-05)', () =
     );
     const cold = res.items.find((i) => i.tmdbId === 8002)!;
     expect(cold.recentlyWatched).toBe(false);
+    // DESIGN-010 D-12 — the watch-visibility pair rides the wire (snapshot carry-through) for BOTH
+    // items: the cross-server MAX instant + its server, independent of the 30-day window.
+    expect(watched.lastWatchedAt).toBe(RECENT);
+    expect(watched.lastWatchedServer).toBe('haynesops');
+    expect(cold.lastWatchedAt).toBe(OLD);
+    expect(cold.lastWatchedServer).toBe('hayneskube');
+  });
+
+  it('D-12 — an ever-watched-but-not-recent item stays SWEEP-DELETABLE (info, not protection)', async () => {
+    const { bundle } = makeMaintainerr(pendingState());
+    const res = await listTrashPending({ db: t.db, maintainerr: bundle, media: 'movie' });
+    const cold = res.items.find((i) => i.tmdbId === 8002)!;
+    // It carries a last-watched signal (watched 400d ago) but is NOT recentlyWatched…
+    expect(cold.lastWatchedAt).not.toBeNull();
+    expect(cold.recentlyWatched).toBe(false);
+    // …so the guardian does NOT keep it — it remains deletable. The recent item is kept as before.
+    expect(classifyGuardian(cold)).toEqual({ keep: false });
+    const watched = res.items.find((i) => i.tmdbId === 8001)!;
+    expect(classifyGuardian(watched)).toEqual({ keep: true, reason: 'recently_watched' });
   });
 
   it('guardRecentlyWatched auto-protects the recently-watched item, leaves the cold one expeditable', async () => {

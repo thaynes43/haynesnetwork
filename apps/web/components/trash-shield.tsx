@@ -17,7 +17,13 @@ import { useState } from 'react';
 import { trpc } from '@/lib/trpc-client';
 import { formatBytes, formatDay } from '@/lib/media';
 import { describeMutationError } from '@/lib/app-error';
-import { daysLeftLabel, daysLeftTone, daysUntil, type TrashActionName } from '@/lib/trash';
+import {
+  daysLeftLabel,
+  daysLeftTone,
+  daysUntil,
+  lastWatchedLabel,
+  type TrashActionName,
+} from '@/lib/trash';
 import { ItemExpediteModal } from '@/components/trash-expedite';
 
 /** The caller's Trash access, resolved server-side and passed down (session-carried). */
@@ -253,6 +259,22 @@ export function WallGlyphSvg({
   }
 }
 
+/**
+ * DESIGN-010 D-12 — the MUTED "watched a while ago" indicator for a wall tile's meta line (info,
+ * NOT protection). A small muted eye + tooltip ("Last watched on <server> · <Mon YYYY>"), rendered
+ * only for items watched longer ago than the recently-watched window (a recently-watched item shows
+ * its own inert `eye` CORNER glyph instead). Deliberately in the caption/meta zone, muted, and never
+ * a corner puck — so it can't be mistaken for the protective shield/check/eye state glyphs, and the
+ * requester/person-shield still owns the corner. The tile stays fully actionable.
+ */
+export function WatchedAgoNote({ label }: { label: string }) {
+  return (
+    <span className="bwall-watched" data-testid="wall-watched" role="img" aria-label={label} title={label}>
+      <EyeGlyph />
+    </span>
+  );
+}
+
 export interface ShieldButtonProps {
   /** Is the item currently protected (excluded / dnd-tagged / saved this session)? */
   on: boolean;
@@ -384,6 +406,19 @@ export function TrashPendingNotice({
             ? 'Maintainerr will keep this item — un-saving puts it back under its deletion rules.'
             : `Maintainerr’s “${item.collectionTitle ?? 'deletion'}” rule flagged it — deleting frees ${formatBytes(item.sizeBytes)}. Save it to keep it.`}
         </p>
+        {/* DESIGN-010 D-12 — cross-server watch visibility (info, not protection): the last-watch
+            line when we have one. It never gates the actions above. */}
+        {(() => {
+          const watched = lastWatchedLabel(item.lastWatchedAt, item.lastWatchedServer);
+          return watched === null ? null : (
+            <p className="muted trash-panel__watched" data-testid="trash-last-watched">
+              <span className="trash-panel__watched-icon" aria-hidden="true">
+                <EyeGlyph />
+              </span>
+              {watched}
+            </p>
+          );
+        })()}
         {error !== null ? (
           <p className="alert" role="alert">
             {error}

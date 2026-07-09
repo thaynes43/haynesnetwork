@@ -25,6 +25,7 @@ import { MediaPoster } from '@/components/media-poster';
 import {
   LibraryCornerLink,
   WallGlyphSvg,
+  WatchedAgoNote,
   type TrashAccess,
 } from '@/components/trash-shield';
 import {
@@ -35,7 +36,13 @@ import {
 } from '@/components/pending-wall';
 import { formatBytes, formatDay, formatRating, ratingOrNull } from '@/lib/media';
 import { appCodeOf, describeMutationError } from '@/lib/app-error';
-import { candidatesAsOfLabel, daysUntil, deadlineCountdown } from '@/lib/trash';
+import {
+  candidatesAsOfLabel,
+  daysUntil,
+  deadlineCountdown,
+  lastWatchedLabel,
+  watchedLongAgo,
+} from '@/lib/trash';
 import {
   BATCH_STATE_LABELS,
   BYTES_PER_GB,
@@ -104,6 +111,9 @@ interface BatchItemWire {
   imdbRating: number | null;
   tmdbRating: number | null;
   recentlyWatched: boolean;
+  /** DESIGN-010 D-12 — cross-server watch visibility (info, not protection). */
+  lastWatchedAt: string | null;
+  lastWatchedServer: string | null;
   requesters: string[];
 }
 
@@ -290,6 +300,11 @@ function PosterWall({
           const rating = formatRating(
             ratingOrNull(item.imdbRating) ?? ratingOrNull(item.tmdbRating),
           );
+          // DESIGN-010 D-12 — the muted "watched a while ago" indicator (info, not protection); null
+          // unless watched longer ago than the recently-watched window.
+          const watchLabel = watchedLongAgo(item)
+            ? lastWatchedLabel(item.lastWatchedAt, item.lastWatchedServer)
+            : null;
           const titleYear = `${item.title}${item.year !== null ? ` (${item.year})` : ''}`;
           const inner = (
             <>
@@ -337,8 +352,11 @@ function PosterWall({
                 {item.year !== null ? <span className="muted"> ({item.year})</span> : null}
               </span>
               <span className="bwall-meta">
-                {item.sizeBytes > 0 ? formatBytes(item.sizeBytes) : '—'}
-                {rating !== null ? ` · ★ ${rating}` : ''}
+                <span className="bwall-meta-text">
+                  {item.sizeBytes > 0 ? formatBytes(item.sizeBytes) : '—'}
+                  {rating !== null ? ` · ★ ${rating}` : ''}
+                </span>
+                {watchLabel !== null ? <WatchedAgoNote label={watchLabel} /> : null}
               </span>
             </li>
           );

@@ -217,6 +217,12 @@ export interface TrashPendingItem {
   /** last_viewed_at (cross-server MAX) is within RECENTLY_WATCHED_WINDOW_DAYS — never delete. */
   recentlyWatched: boolean;
   lastViewedAt: string | null;
+  /** DESIGN-010 D-12 — cross-server watch VISIBILITY (info, NOT protection). lastWatchedAt is the
+   *  MAX last-watch instant across all three Tautulli histories (full history); lastWatchedServer is
+   *  the estate slug that owns it. The wall shows a muted "watched a while ago" indicator when
+   *  lastWatchedAt is set but the item is NOT recentlyWatched — the tile stays fully actionable. */
+  lastWatchedAt: string | null;
+  lastWatchedServer: string | null;
   requesters: string[];
   sourceCollections: string[];
   posterSource: string | null;
@@ -384,6 +390,8 @@ export async function shapePendingItems(input: {
     arrTags: string[];
     posterSource: string | null;
     lastViewedAt: Date | null;
+    lastWatchedAt: Date | null;
+    lastWatchedServer: string | null;
     requesters: string[];
     sourceCollections: string[];
     genres: string[];
@@ -406,6 +414,8 @@ export async function shapePendingItems(input: {
         arrTags: mediaItems.arrTags,
         posterSource: mediaMetadata.posterSource,
         lastViewedAt: mediaMetadata.lastViewedAt,
+        lastWatchedAt: mediaMetadata.lastWatchedAt,
+        lastWatchedServer: mediaMetadata.lastWatchedServer,
         requesters: mediaMetadata.requesters,
         sourceCollections: mediaMetadata.sourceCollections,
         genres: mediaMetadata.genres,
@@ -425,6 +435,8 @@ export async function shapePendingItems(input: {
         arrTags: r.arrTags ?? [],
         posterSource: r.posterSource,
         lastViewedAt: r.lastViewedAt,
+        lastWatchedAt: r.lastWatchedAt,
+        lastWatchedServer: r.lastWatchedServer,
         requesters: r.requesters ?? [],
         sourceCollections: r.sourceCollections ?? [],
         genres: r.genres ?? [],
@@ -464,6 +476,8 @@ export async function shapePendingItems(input: {
       protectedByExclusion: false,
       recentlyWatched,
       lastViewedAt: lastViewed === null ? null : lastViewed.toISOString(),
+      lastWatchedAt: joined?.lastWatchedAt ? joined.lastWatchedAt.toISOString() : null,
+      lastWatchedServer: joined?.lastWatchedServer ?? null,
       requesters: joined?.requesters ?? [],
       sourceCollections: joined?.sourceCollections ?? [],
       posterSource: joined?.posterSource ?? null,

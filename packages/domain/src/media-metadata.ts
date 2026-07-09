@@ -27,6 +27,10 @@ export interface MediaMetadataFields {
   arrAddedAt?: Date | null;
   playCount?: number | null;
   lastViewedAt?: Date | null;
+  /** DESIGN-010 D-12 — the cross-server watch-visibility pair (same MAX instant as lastViewedAt, plus
+   *  its origin estate slug). Info only — no protection semantics ride these. */
+  lastWatchedAt?: Date | null;
+  lastWatchedServer?: string | null;
   requesters?: string[];
   sourceCollections?: string[];
   posterSource?: PosterSource | null;
@@ -84,6 +88,8 @@ export async function upsertMediaMetadataBatch(
       arrAddedAt: r.arrAddedAt ?? null,
       playCount: int(r.playCount),
       lastViewedAt: r.lastViewedAt ?? null,
+      lastWatchedAt: r.lastWatchedAt ?? null,
+      lastWatchedServer: r.lastWatchedServer ?? null,
       requesters: r.requesters ?? [],
       sourceCollections: r.sourceCollections ?? [],
       posterSource: r.posterSource ?? null,
@@ -111,6 +117,8 @@ export async function upsertMediaMetadataBatch(
           arrAddedAt: sql`excluded.arr_added_at`,
           playCount: sql`excluded.play_count`,
           lastViewedAt: sql`excluded.last_viewed_at`,
+          lastWatchedAt: sql`excluded.last_watched_at`,
+          lastWatchedServer: sql`excluded.last_watched_server`,
           requesters: sql`excluded.requesters`,
           sourceCollections: sql`excluded.source_collections`,
           posterSource: sql`excluded.poster_source`,

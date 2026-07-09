@@ -247,6 +247,57 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await expect(page.getByTestId('trash-total')).toHaveText('Reclaiming 20 GB across 1 item');
   });
 
+  test('D-12 cross-server watch visibility: a watched-long-ago tile shows the muted indicator + tooltip and STAYS actionable (info, not protection); the detail card gains the line; requested still wins the corner', async ({
+    page,
+  }) => {
+    await resetMaintainerr(page);
+    await signIn(page, 'admin');
+    await openTrashMovies(page);
+
+    // Vanished Heist was last watched ~1yr ago on HaynesKube: it is SLATED (a cold trash-can), NOT
+    // protected, and now carries the MUTED "watched a while ago" indicator (info, not protection).
+    const vanished = page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' });
+    await expect(vanished).toHaveAttribute('data-glyph', 'trash'); // NOT eye/check/shield/requested
+    const indicator = vanished.getByTestId('wall-watched');
+    await expect(indicator).toHaveCount(1);
+    await expect(indicator).toHaveAttribute('title', /Last watched on HaynesKube · \w+ \d{4}/);
+    // A RECENTLY-watched tile keeps its inert eye corner and gets NO muted indicator (never doubles).
+    await expect(
+      page.getByTestId('trash-tile').filter({ hasText: 'The Fixture' }).getByTestId('wall-watched'),
+    ).toHaveCount(0);
+
+    // STILL fully actionable: the poster tap toggles trash⇄shield (the indicator never blocks it).
+    const toggle = vanished.getByTestId('trash-toggle');
+    await page.waitForLoadState('networkidle');
+    await toggle.scrollIntoViewIfNeeded();
+    const saved = page.waitForResponse((r) => r.url().includes('trash.saveExclusion'));
+    await toggle.click();
+    await expect(vanished).toHaveAttribute('data-glyph', 'shield');
+    await saved;
+    const unsaved = page.waitForResponse((r) => r.url().includes('trash.removeExclusion'));
+    await toggle.click();
+    await expect(vanished).toHaveAttribute('data-glyph', 'trash');
+    await unsaved;
+    await resetMaintainerr(page);
+
+    // TV: Breaking Prod is REQUESTED and also watched-long-ago — the person-shield keeps the CORNER,
+    // the watch info moves to the muted caption indicator (the documented precedence, D-12).
+    await page.getByRole('tab', { name: 'TV' }).click();
+    const tv = page.getByTestId('trash-tile').filter({ hasText: 'Breaking Prod' });
+    await expect(tv).toHaveAttribute('data-glyph', 'requested');
+    await expect(tv.getByTestId('wall-watched')).toHaveAttribute('title', /Last watched on HaynesTower/);
+
+    // The item detail deletion-guard card gains the last-watched line (The Fixture, watched recently).
+    await openTrashMovies(page);
+    await page
+      .getByTestId('trash-tile')
+      .filter({ hasText: 'The Fixture' })
+      .getByTestId('wall-lib-link')
+      .click();
+    await page.waitForURL(/\/library\/[0-9a-f-]{36}\?from=trash-movies$/);
+    await expect(page.getByTestId('trash-last-watched')).toContainText('Last watched on HaynesOps');
+  });
+
   test('the poster tap-toggle saves ⇄ un-saves (optimistic, reflow-free); Maintainerr calls (stub-verified)', async ({
     page,
   }) => {

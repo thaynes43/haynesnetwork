@@ -149,6 +149,8 @@ describe('mergeWatchContributions (D-04 cross-server — SUM playcount, MAX last
     const merged = mergeWatchContributions(contributions);
     expect(merged.playCount).toBe(5);
     expect(merged.lastViewedAt?.toISOString()).toBe('2026-06-01T00:00:00.000Z');
+    // DESIGN-010 D-12 — the attribution: the server that OWNS the max last-watch.
+    expect(merged.lastWatchedServer).toBe('haynestower');
     expect(merged.perInstance.haynesops).toEqual({
       playCount: 2,
       lastViewedAt: '2026-01-01T00:00:00.000Z',
@@ -162,6 +164,29 @@ describe('mergeWatchContributions (D-04 cross-server — SUM playcount, MAX last
     ]);
     expect(merged.playCount).toBe(1);
     expect(merged.lastViewedAt).toBeNull();
+    // No watch instant ⇒ no attributed server (null-safe — D-12).
+    expect(merged.lastWatchedServer).toBeNull();
+  });
+
+  it('attributes the MAX across all three servers, ignoring nulls (D-12 watch visibility)', () => {
+    // TV show-level rollup already happened upstream (episodes → the series rating_key); here the
+    // three servers' series contributions merge, and the newest one wins the attribution.
+    const merged = mergeWatchContributions([
+      { instanceSlug: 'haynesops', playCount: 4, lastViewedAt: new Date('2024-03-10T00:00:00Z') },
+      { instanceSlug: 'hayneskube', playCount: 0, lastViewedAt: null },
+      { instanceSlug: 'haynestower', playCount: 2, lastViewedAt: new Date('2025-11-20T00:00:00Z') },
+    ]);
+    expect(merged.playCount).toBe(6);
+    expect(merged.lastViewedAt?.toISOString()).toBe('2025-11-20T00:00:00.000Z');
+    expect(merged.lastWatchedServer).toBe('haynestower');
+  });
+
+  it('keeps the FIRST server on an exact last-watch tie (deterministic attribution)', () => {
+    const merged = mergeWatchContributions([
+      { instanceSlug: 'haynesops', playCount: 1, lastViewedAt: new Date('2025-01-01T00:00:00Z') },
+      { instanceSlug: 'hayneskube', playCount: 1, lastViewedAt: new Date('2025-01-01T00:00:00Z') },
+    ]);
+    expect(merged.lastWatchedServer).toBe('haynesops');
   });
 });
 

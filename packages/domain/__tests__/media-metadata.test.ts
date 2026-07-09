@@ -77,6 +77,10 @@ describe('upsertMediaMetadataBatch (ADR-018 / DESIGN-008 D-12)', () => {
           posterSource: 'arr',
           posterRef: '/MediaCover/42/poster.jpg?lastWrite=1',
           playCount: 3,
+          lastViewedAt: new Date('2024-05-01T00:00:00Z'),
+          // DESIGN-010 D-12 — the cross-server watch-visibility pair.
+          lastWatchedAt: new Date('2024-05-01T00:00:00Z'),
+          lastWatchedServer: 'hayneskube',
           sources: { arr: true, tautulli: true },
           extra: { tautulli: { haynesops: { playCount: 3, lastViewedAt: null } } },
         },
@@ -95,7 +99,9 @@ describe('upsertMediaMetadataBatch (ADR-018 / DESIGN-008 D-12)', () => {
       genres: ['Drama', 'Thriller'],
       requesters: ['manofoz'],
       posterSource: 'arr',
+      lastWatchedServer: 'hayneskube',
     });
+    expect(meta!.lastWatchedAt?.toISOString()).toBe('2024-05-01T00:00:00.000Z');
     expect(meta!.sources).toEqual({ arr: true, tautulli: true });
   });
 
@@ -116,6 +122,9 @@ describe('upsertMediaMetadataBatch (ADR-018 / DESIGN-008 D-12)', () => {
     expect(rows).toHaveLength(1); // still 1:1 — replaced, not duplicated
     expect(rows[0]!.imdbRating).toBe('9.0');
     expect(rows[0]!.rtTomatometer).toBeNull(); // full replace cleared the prior RT value
+    // The full replace also clears the prior watch-visibility pair (D-12) — synced-copy semantics.
+    expect(rows[0]!.lastWatchedAt).toBeNull();
+    expect(rows[0]!.lastWatchedServer).toBeNull();
     expect(rows[0]!.fetchedAt.getTime()).toBeGreaterThan(before!.fetchedAt.getTime());
   });
 

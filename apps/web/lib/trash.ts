@@ -186,6 +186,63 @@ export function pendingWallTappable(
   return false;
 }
 
+// ── cross-server watch visibility (DESIGN-010 D-12 amendment 2026-07-09) ──────────────────────
+// INFO, NOT protection. `lastWatchedAt`/`lastWatchedServer` are the harvested cross-server MAX
+// last-watch instant (full history) + its estate server. The walls surface a MUTED "watched a
+// while ago" indicator ONLY for items watched longer ago than the recently-watched window — a
+// recently-watched item keeps its (protective, inert) `eye` corner glyph unchanged, and this
+// indicator never appears there. It changes no guardian/keep semantics: the tile stays fully
+// actionable (tap-save / slate / delete). Requested/person-shield still WIN the corner glyph;
+// watch info lives in the caption/tooltip so the two never collide.
+
+/** Friendly estate-server labels for the watch-visibility line (slug → display name). */
+export const WATCH_SERVER_LABELS: Record<string, string> = {
+  haynesops: 'HaynesOps',
+  hayneskube: 'HaynesKube',
+  haynestower: 'HaynesTower',
+};
+
+/** Map a stored estate slug to its display label; an unknown slug renders verbatim (never blank). */
+export function watchServerLabel(slug: string | null): string | null {
+  if (slug === null || slug.trim() === '') return null;
+  return WATCH_SERVER_LABELS[slug] ?? slug;
+}
+
+/** "Jul 2024" — the compact month+year of a watch instant, read in the app display tz. Bad ISO → null. */
+export function formatWatchMonth(iso: string | null, tz: string = DISPLAY_TZ): string | null {
+  if (iso === null) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString('en-US', { timeZone: tz, month: 'short', year: 'numeric' });
+}
+
+/**
+ * Whether to show the muted "watched a while ago" indicator: the item has a known last-watch
+ * instant AND is not within the recently-watched window (a recently-watched item is already
+ * flagged by its own inert `eye` corner glyph, so it never doubles up here).
+ */
+export function watchedLongAgo(item: {
+  lastWatchedAt: string | null;
+  recentlyWatched: boolean;
+}): boolean {
+  return item.lastWatchedAt !== null && !item.recentlyWatched;
+}
+
+/** "Last watched on HaynesKube · Jul 2024" (server known) / "Last watched Jul 2024" (server unknown)
+ *  / "Last watched on HaynesKube" (date unparseable). Null when there is no last-watch instant. */
+export function lastWatchedLabel(
+  lastWatchedAt: string | null,
+  lastWatchedServer: string | null,
+  tz: string = DISPLAY_TZ,
+): string | null {
+  if (lastWatchedAt === null) return null;
+  const server = watchServerLabel(lastWatchedServer);
+  const month = formatWatchMonth(lastWatchedAt, tz);
+  const where = server === null ? '' : ` on ${server}`;
+  const when = month === null ? '' : `${server === null ? ' ' : ' · '}${month}`;
+  return `Last watched${where}${when}`;
+}
+
 // ── deadline countdown (DESIGN-011/014 amendment 2026-07-09, build A — tz-correct + hour-level) ──
 // Day words and countdowns are computed in the app's DISPLAY timezone (America/New_York), never the
 // browser's and never a raw UTC ms-diff. The pre-2026-07-09 ms-ceil mislabeled a batch that expires

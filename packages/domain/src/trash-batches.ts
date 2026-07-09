@@ -1498,6 +1498,11 @@ export interface BatchDetailItem {
   imdbRating: number | null;
   tmdbRating: number | null;
   recentlyWatched: boolean;
+  /** DESIGN-010 D-12 — cross-server watch VISIBILITY (info, not protection): the MAX last-watch
+   *  instant across all three Tautulli histories + its estate slug. The batch wall shows a muted
+   *  "watched a while ago" indicator when set but NOT recentlyWatched; it never changes actionability. */
+  lastWatchedAt: string | null;
+  lastWatchedServer: string | null;
   /** The ledger's known requesters — a non-empty list means the sweep guardian keeps the item
    *  (protected_requested), so the wall shows the inert 'requested' glyph, not a slated trash-can. */
   requesters: string[];
@@ -1524,6 +1529,8 @@ export async function getBatchDetail(input: {
       imdbRating: mediaMetadata.imdbRating,
       tmdbRating: mediaMetadata.tmdbRating,
       lastViewedAt: mediaMetadata.lastViewedAt,
+      lastWatchedAt: mediaMetadata.lastWatchedAt,
+      lastWatchedServer: mediaMetadata.lastWatchedServer,
       requesters: mediaMetadata.requesters,
     })
     .from(trashBatchItems)
@@ -1558,7 +1565,7 @@ export async function getBatchDetail(input: {
     counts: toCounts(raw),
     reclaimedBytes,
     pendingBytes,
-    items: rows.map(({ item: it, imdbRating, tmdbRating, lastViewedAt, requesters }) => ({
+    items: rows.map(({ item: it, imdbRating, tmdbRating, lastViewedAt, lastWatchedAt, lastWatchedServer, requesters }) => ({
       id: it.id,
       maintainerrMediaId: it.maintainerrMediaId,
       mediaItemId: it.mediaItemId,
@@ -1587,6 +1594,8 @@ export async function getBatchDetail(input: {
       imdbRating: numOrNull(imdbRating),
       tmdbRating: numOrNull(tmdbRating),
       recentlyWatched: lastViewedAt !== null && lastViewedAt.getTime() >= watchedCutoff,
+      lastWatchedAt: lastWatchedAt?.toISOString() ?? null,
+      lastWatchedServer: lastWatchedServer ?? null,
       requesters: requesters ?? [],
     })),
   };
