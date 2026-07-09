@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.25.0](https://github.com/thaynes43/haynesnetwork/compare/v0.24.0...v0.25.0) (2026-07-09)
+
+
+### Features
+
+* paginated trash walls + interactive future-batch candidates ([#139](https://github.com/thaynes43/haynesnetwork/issues/139)) ([a3f14f9](https://github.com/thaynes43/haynesnetwork/commit/a3f14f9efba277b742122897411e656ec7900348))
+
+
+### Bug Fixes
+
+* batch-wall exclusion unprotect + legacy requested reclassification ([#136](https://github.com/thaynes43/haynesnetwork/issues/136)) ([91aba71](https://github.com/thaynes43/haynesnetwork/commit/91aba7126285815ed53eaa234ac774a0bab64be9))
+* themed settings inputs + Batch policy under General ([#138](https://github.com/thaynes43/haynesnetwork/issues/138)) ([129521c](https://github.com/thaynes43/haynesnetwork/commit/129521cf6b51d279e4174da985ead50cbefac8f7))
+
 ## [0.24.0](https://github.com/thaynes43/haynesnetwork/compare/v0.23.0...v0.24.0) (2026-07-09)
 
 
