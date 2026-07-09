@@ -145,7 +145,11 @@ function tileLabel(
       if (tappable) return `${title} is saved — tap to un-save it`;
       return savedByName !== null ? `${title} — saved by ${savedByName}` : `${title} is saved`;
     case 'check':
-      return `${title} is protected — already safe from deletion`;
+      // ADR-025 errata — a protected batch item is held by a live exclusion; tap un-protects it (removes
+      // the exclusion, then re-classifies). Inert copy is kept for read-only phases.
+      return tappable
+        ? `${title} is protected — tap to un-protect it`
+        : `${title} is protected — already safe from deletion`;
     case 'eye':
       return `${title} was watched recently — the guardian keeps it`;
     case 'requested': {
@@ -187,6 +191,7 @@ function PosterWall({
   const [inFlight, setInFlight] = useState<ReadonlySet<string>>(() => new Set());
   const [wallError, setWallError] = useState<string | null>(null);
   const setSaved = trpc.trash.batches.setItemSaved.useMutation();
+  const unprotect = trpc.trash.batches.unprotectItem.useMutation();
   const fromKey = fromKeyFor(kind);
 
   const effectiveState = (item: BatchItemWire): BatchItemStateName =>
@@ -194,38 +199,48 @@ function PosterWall({
 
   const tap = (item: BatchItemWire) => {
     if (inFlight.has(item.id)) return; // one flip at a time per tile — no queued double-toggles
-    const desired = effectiveState(item) !== 'saved';
-    setOverrides((prev) => new Map(prev).set(item.id, desired ? 'saved' : 'pending'));
+    const current = effectiveState(item);
     setInFlight((prev) => new Set(prev).add(item.id));
     setWallError(null);
-    setSaved.mutate(
-      { batchId, itemId: item.id, saved: desired },
-      {
-        onSuccess: (res) => {
-          // Authoritative reconcile. On an INERT tap (changed:false) `state` is the item's REAL
-          // current state — protected/skipped/deleted render their own glyph (D-05).
-          setOverrides((prev) => new Map(prev).set(item.id, res.state));
-          void utils.trash.batches.get.invalidate({ batchId });
-          void utils.trash.batches.list.invalidate();
-          void utils.trash.batches.saveStats.invalidate({ batchId });
-        },
-        onError: (err: unknown) => {
-          setOverrides((prev) => {
-            const next = new Map(prev);
-            next.delete(item.id); // revert the optimistic flip
-            return next;
-          });
-          setWallError(describeMutationError(err));
-        },
-        onSettled: () => {
-          setInFlight((prev) => {
-            const next = new Set(prev);
-            next.delete(item.id);
-            return next;
-          });
-        },
+    // Shared reconcile — the server verdict is authoritative. On an INERT tap (changed:false) `state`
+    // is the item's REAL current state; the refetch also lands the person-shield savedReason.
+    const handlers = {
+      onSuccess: (res: { state: BatchItemStateName }) => {
+        setOverrides((prev) => new Map(prev).set(item.id, res.state));
+        void utils.trash.batches.get.invalidate({ batchId });
+        void utils.trash.batches.list.invalidate();
+        void utils.trash.batches.saveStats.invalidate({ batchId });
       },
-    );
+      onError: (err: unknown) => {
+        setOverrides((prev) => {
+          const next = new Map(prev);
+          next.delete(item.id); // revert the optimistic flip
+          return next;
+        });
+        setWallError(describeMutationError(err));
+      },
+      onSettled: () => {
+        setInFlight((prev) => {
+          const next = new Set(prev);
+          next.delete(item.id);
+          return next;
+        });
+      },
+    };
+
+    // A `protected` (check) tile UN-PROTECTS: the server removes the live exclusion and re-classifies
+    // the row. The optimistic landing mirrors the domain rule (requester-carrying ⇒ the person-shield
+    // 'saved'; else the slated 'pending'); the refetch reconciles the exact verdict + savedReason.
+    if (current === 'protected') {
+      const optimistic: BatchItemStateName = item.requesters.length > 0 ? 'saved' : 'pending';
+      setOverrides((prev) => new Map(prev).set(item.id, optimistic));
+      unprotect.mutate({ batchId, itemId: item.id }, handlers);
+      return;
+    }
+
+    const desired = current !== 'saved';
+    setOverrides((prev) => new Map(prev).set(item.id, desired ? 'saved' : 'pending'));
+    setSaved.mutate({ batchId, itemId: item.id, saved: desired }, handlers);
   };
 
   const effective = items.map((item) => ({ item, state: effectiveState(item) }));
@@ -290,7 +305,7 @@ function PosterWall({
                 <button
                   type="button"
                   className="bwall-tap"
-                  aria-pressed={glyph === 'shield' || glyph === 'requested'}
+                  aria-pressed={glyph === 'shield' || glyph === 'requested' || glyph === 'check'}
                   aria-label={label}
                   title={label}
                   aria-busy={inFlight.has(item.id) || undefined}

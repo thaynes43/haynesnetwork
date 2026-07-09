@@ -116,10 +116,20 @@ describe('tileTappable — per-tile rules', () => {
     expect(tileTappable(managing, 'shield', 'someone-else')).toBe(true);
   });
 
-  it('check/eye/skip/gone are inert for everyone', () => {
-    for (const glyph of ['check', 'eye', 'skip', 'gone'] as const) {
+  it('eye/skip/gone are inert for everyone', () => {
+    for (const glyph of ['eye', 'skip', 'gone'] as const) {
       expect(tileTappable(admin, glyph, null)).toBe(false);
     }
+  });
+
+  it('a check (protected) tile is now tappable to un-protect it (ADR-025 errata — the Baldwins fix)', () => {
+    // A protected item is held by a live Maintainerr exclusion; tapping removes it + re-classifies. Any
+    // saver for the phase may act (a manager in admin_review, a family saver in the open window).
+    expect(tileTappable(admin, 'check', null)).toBe(true);
+    expect(tileTappable(family, 'check', null)).toBe(true);
+    // …but only while the phase is interactive — terminal / read-only walls keep it inert.
+    const readOnly = ctx({ batchState: 'deleted' });
+    expect(tileTappable(readOnly, 'check', null)).toBe(false);
   });
 
   it('build B — a SAVED requested auto-save (person-shield) is un-savable by ANY saver; pending is inert', () => {
