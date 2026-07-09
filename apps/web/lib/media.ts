@@ -119,6 +119,8 @@ export const FIX_STATUS_LABELS: Record<string, string> = {
   search_triggered: 'Search triggered',
   failed: 'Failed',
   completed: 'Completed',
+  timed_out: 'Timed out',
+  closed_manually: 'Closed',
 };
 
 export type BadgeTone = 'info' | 'ok' | 'warn' | 'danger' | 'muted';
@@ -290,9 +292,9 @@ export const EVENT_TYPE_LABELS: Record<string, string> = {
   requested: 'Requested',
   search_requested: 'Search requested',
   fix_requested: 'Fix requested',
-  fix_actioned: 'Fix actioned',
-  fix_completed: 'Fix completed',
-  fix_failed: 'Fix failed',
+  fix_actioned: 'Started fixing',
+  fix_completed: 'Fixed',
+  fix_failed: "Fix didn't work",
   restored: 'Restored',
 };
 

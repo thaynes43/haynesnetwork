@@ -305,6 +305,70 @@ describe('computeFixProgress / computeSearchProgress (projectors)', () => {
     expect(progress.progressPct).toBe(80);
   });
 
+  // ADR-028 close-on-import hole (the live 300: Rise of an Empire case): after the import completes
+  // the *arr clears the queue record, but the grabbed/imported ledger milestones lag by up to one
+  // sync interval. In that window (empty queue + no in-window milestone), the phase must NOT regress
+  // to `searching`/`nothing_found` — the live grab history proves a replacement WAS pulled.
+  it('does not regress to searching after a real grab+import (radarr, queue cleared, milestone not yet synced)', async () => {
+    await upsertMediaItemsBatch({
+      db: t.db,
+      arrKind: 'radarr',
+      items: [
+        {
+          arrItemId: 9355,
+          tmdbId: 191862,
+          title: '300: Rise of an Empire',
+          sortTitle: '300 rise of an empire',
+          monitored: true,
+          qualityProfileId: 1,
+          qualityProfileName: 'Any',
+          rootFolder: '/movies',
+        },
+      ],
+    });
+    const [radarrItem] = await t.db.select().from(mediaItems).where(eq(mediaItems.arrItemId, 9355));
+    const { fixRequestId } = await createFixRequest({
+      db: t.db,
+      requesterId: memberId,
+      requesterIsAdmin: true,
+      mediaItemId: radarrItem!.id,
+      reason: 'other',
+      reasonText: 'TEST',
+    });
+    await recordFixAction({ db: t.db, fixRequestId, transition: 'actioned', pathTaken: 'delete_search' });
+    await recordFixAction({ db: t.db, fixRequestId, transition: 'search_triggered' });
+
+    // Grab dated after the fix anchor, still live in the *arr history — but not yet ingested to the ledger.
+    const grabDate = new Date(Date.now() + 1000).toISOString();
+    const grabHistory = [{ id: 1275, eventType: 'grabbed', date: grabDate, movieId: 9355 }];
+
+    // With the grab visible in the *arr history, the phase holds at `grabbed` (forward), not searching.
+    const withGrab = stubBundle([
+      { path: '/api/v3/queue', body: queuePage([]) },
+      { path: '/api/v3/history/movie', body: grabHistory },
+    ]);
+    const progress = await computeFixProgress({
+      db: t.db,
+      arr: withGrab,
+      fixRequestId,
+      requesterId: memberId,
+    });
+    expect(progress.phase).toBe('grabbed');
+
+    // Control: with NO grab in the *arr history either, it honestly reads `searching` (inside the window).
+    const noGrab = stubBundle([
+      { path: '/api/v3/queue', body: queuePage([]) },
+      { path: '/api/v3/history/movie', body: [] },
+    ]);
+    const control = await computeFixProgress({
+      db: t.db,
+      arr: noGrab,
+      fixRequestId,
+      requesterId: memberId,
+    });
+    expect(control.phase).toBe('searching');
+  });
+
   it('own-fix or admin may read; a different member gets NOT_FOUND (no leak)', async () => {
     const fixId = await openFix(memberId, 91002);
     const arr = stubBundle([{ path: '/api/v3/queue', body: queuePage([]) }]);

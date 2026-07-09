@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { and, desc, eq, sql, type SQL } from 'drizzle-orm';
 import { FIX_REASONS, FIX_STATUSES, fixRequests, mediaItems, users } from '@hnet/db';
 import {
+  closeFixManually,
   computeFixProgress,
   computeSearchProgress,
   runFixRequest,
@@ -176,6 +177,24 @@ export const fixRouter = router({
           seasonNumber: input.seasonNumber,
           requesterId: ctx.user.id,
           requesterIsAdmin: ctx.user.role.isAdmin,
+        }),
+      );
+    }),
+
+  /**
+   * Manual unblock — close a stuck OPEN fix to the terminal 'closed_manually' so it stops tripping
+   * FixAlreadyOpenError on that target. Own-fix or admin (the domain enforces it: a non-owner sees
+   * NOT_FOUND); an already-terminal fix surfaces as a CONFLICT/precondition error via mapDomainErrors.
+   */
+  close: authedProcedure
+    .input(z.object({ fixRequestId: z.uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      return mapDomainErrors(async () =>
+        closeFixManually({
+          db: ctx.db,
+          fixRequestId: input.fixRequestId,
+          actorId: ctx.user.id,
+          actorIsAdmin: ctx.user.role.isAdmin,
         }),
       );
     }),
