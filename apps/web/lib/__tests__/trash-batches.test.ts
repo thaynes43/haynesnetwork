@@ -1,5 +1,6 @@
 // ADR-025 / DESIGN-011 D-07 (ADR-033 unification) — unit coverage for the poster wall's
-// safety-critical client rules: the glyph language (trash/shield/check/eye/skip/gone), the
+// safety-critical client rules: the glyph language (trash/shield/check/requested/skip/gone — the
+// eye was retired from the corner 2026-07-09), the
 // phase-and-grant tap permissions (mirrors
 // the server's setItemSaved gate), the running header counts (must agree with the glyphs), and
 // the Expire report rows (raceSkipped/aborted semantics surfaced honestly).
@@ -28,26 +29,29 @@ const ctx = (over: Partial<WallTapContext> = {}): WallTapContext => ({
   ...over,
 });
 
-describe('wallGlyph — the overlay language (ADR-033 unified: trash/shield/check/eye/skip/gone)', () => {
-  it('maps every item state, with recently-watched pending items getting the eye (not trash)', () => {
+describe('wallGlyph — the overlay language (ADR-033 unified: trash/shield/check/requested/skip/gone)', () => {
+  it('BUG FIX 2026-07-09 — the eye is retired from the corner: a recently-watched pending item reads as its normal glyph', () => {
     expect(wallGlyph('pending', false)).toBe('trash');
-    expect(wallGlyph('pending', true)).toBe('eye');
+    // recently watched no longer produces the inert eye — the corner is the action (a saveable trash-can).
+    expect(wallGlyph('pending', true)).toBe('trash');
     expect(wallGlyph('saved', false)).toBe('shield');
     expect(wallGlyph('protected', false)).toBe('check');
     expect(wallGlyph('skipped', false)).toBe('skip');
     expect(wallGlyph('deleted', false)).toBe('gone');
   });
 
-  it('recently-watched only softens PENDING — terminal/saved states keep their own glyph', () => {
+  it('recently-watched never changes the glyph now (in ANY state) — the watch fact is a meta note', () => {
+    expect(wallGlyph('pending', true)).toBe('trash');
     expect(wallGlyph('saved', true)).toBe('shield');
+    expect(wallGlyph('protected', true)).toBe('check');
     expect(wallGlyph('skipped', true)).toBe('skip');
     expect(wallGlyph('deleted', true)).toBe('gone');
   });
 
-  it('a requester on a PENDING item ⇒ the inert requested glyph (the sweep keeps it)', () => {
+  it('a requester on a PENDING item ⇒ the requested person-shield (a recently-watched requester keep, saveable)', () => {
     expect(wallGlyph('pending', false, ['manofoz'])).toBe('requested');
-    // watched outranks the requester (both inert; the eye reads first — guardian precedence).
-    expect(wallGlyph('pending', true, ['manofoz'])).toBe('eye');
+    // recently-watched + requester ⇒ still the person-shield (no eye — the corner is the action).
+    expect(wallGlyph('pending', true, ['manofoz'])).toBe('requested');
     // an explicit saved/protected/terminal state keeps its own glyph regardless of a requester.
     expect(wallGlyph('saved', false, ['manofoz'])).toBe('shield');
     expect(wallGlyph('protected', false, ['manofoz'])).toBe('check');
@@ -116,8 +120,8 @@ describe('tileTappable — per-tile rules', () => {
     expect(tileTappable(managing, 'shield', 'someone-else')).toBe(true);
   });
 
-  it('eye/skip/gone are inert for everyone', () => {
-    for (const glyph of ['eye', 'skip', 'gone'] as const) {
+  it('skip/gone are inert for everyone (there is no longer an eye glyph)', () => {
+    for (const glyph of ['skip', 'gone'] as const) {
       expect(tileTappable(admin, glyph, null)).toBe(false);
     }
   });
@@ -132,23 +136,24 @@ describe('tileTappable — per-tile rules', () => {
     expect(tileTappable(readOnly, 'check', null)).toBe(false);
   });
 
-  it('build B — a SAVED requested auto-save (person-shield) is un-savable by ANY saver; pending is inert', () => {
+  it('the person-shield is tappable for any saver in an interactive phase: SAVED ⇒ un-save, PENDING ⇒ save (the batch eye-corner fix)', () => {
     // A system requested auto-save has no human owner, so ownership never blocks it: any saver may tap
-    // it to un-save (family window OR manager). A `pending` requested item (edge) stays inert.
-    expect(tileTappable(family, 'requested', null, { state: 'saved' })).toBe(true);
-    expect(tileTappable(admin, 'requested', null, { state: 'saved' })).toBe(true);
-    expect(tileTappable(family, 'requested', null, { state: 'pending' })).toBe(false);
-    // With no opts (a pending requested tile) it is inert — the old contract is preserved.
-    expect(tileTappable(admin, 'requested', null)).toBe(false);
+    // it to un-save (family window OR manager). BUG FIX 2026-07-09 — a `pending` requested item (a
+    // recently-watched requester keep that stayed pending, no longer the inert eye) is likewise SAVEABLE
+    // by any saver: tap ⇒ create the exclusion. Either direction, whenever the phase is interactive.
+    expect(tileTappable(family, 'requested', null)).toBe(true);
+    expect(tileTappable(admin, 'requested', null)).toBe(true);
+    // …but only in an interactive phase — a terminal/read-only wall keeps it inert.
+    expect(tileTappable(ctx({ batchState: 'deleted' }), 'requested', null)).toBe(false);
   });
 });
 
 describe('wallCounts — the running header agrees with the glyphs', () => {
   it('partitions slated/rescued/kept/deleted and sums slated bytes only', () => {
     const counts = wallCounts([
-      { state: 'pending', recentlyWatched: false, sizeBytes: 100 }, // trash
-      { state: 'pending', recentlyWatched: false, sizeBytes: 50 }, // trash
-      { state: 'pending', recentlyWatched: true, sizeBytes: 999 }, // eye → kept
+      { state: 'pending', recentlyWatched: false, sizeBytes: 100 }, // trash → slated
+      { state: 'pending', recentlyWatched: false, sizeBytes: 50 }, // trash → slated
+      { state: 'pending', recentlyWatched: true, sizeBytes: 999 }, // trash → slated (recently-watched: the eye is retired, the sweep-time guardian still keeps it)
       { state: 'pending', recentlyWatched: false, requesters: ['manofoz'], sizeBytes: 42 }, // requested → kept
       { state: 'saved', recentlyWatched: false, sizeBytes: 10 }, // shield (human) → rescued
       { state: 'saved', recentlyWatched: false, requesters: ['alice'], savedReason: 'requested', sizeBytes: 8 }, // person-shield → kept
@@ -157,10 +162,10 @@ describe('wallCounts — the running header agrees with the glyphs', () => {
       { state: 'deleted', recentlyWatched: false, sizeBytes: 3 }, // gone
     ]);
     expect(counts).toEqual({
-      slated: 2,
-      slatedBytes: 150,
+      slated: 3,
+      slatedBytes: 1149,
       rescued: 1, // only the HUMAN save is 'rescued'; the requested auto-save reads as 'kept'
-      kept: 5,
+      kept: 4,
       deleted: 1,
     });
   });

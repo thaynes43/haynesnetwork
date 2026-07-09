@@ -167,7 +167,7 @@ describe('trash router — section + per-action gating (ADR-023 C-03)', () => {
     await expect(c.trash.status()).resolves.toBeTruthy();
     await expect(c.trash.overview()).resolves.toBeTruthy();
     await expect(
-      c.trash.saveExclusion({ maintainerrMediaId: 'ms-1' }),
+      c.trash.saveExclusion({ media: 'movie', maintainerrMediaId: 'ms-1' }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
     await expect(
       c.trash.expediteAll({ media: 'movie', maintainerrMediaIds: ['ms-1'] }),
@@ -179,7 +179,7 @@ describe('trash router — section + per-action gating (ADR-023 C-03)', () => {
 
   it('a save_exclude grant unlocks saveExclusion but not expedite (per-action)', async () => {
     const c = call('read_only', ['save_exclude']);
-    await expect(c.trash.saveExclusion({ maintainerrMediaId: 'ms-1' })).resolves.toMatchObject({
+    await expect(c.trash.saveExclusion({ media: 'movie', maintainerrMediaId: 'ms-1' })).resolves.toMatchObject({
       excluded: true,
     });
     await expect(
@@ -201,7 +201,7 @@ describe('trash router — section + per-action gating (ADR-023 C-03)', () => {
     // whitelist arbitrary flagged items on the live pending wall (that is the save_exclude power).
     const c = call('read_only', ['save_leaving_soon']);
     await expect(
-      c.trash.saveExclusion({ maintainerrMediaId: 'ms-1' }),
+      c.trash.saveExclusion({ media: 'movie', maintainerrMediaId: 'ms-1' }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 
@@ -349,7 +349,7 @@ describe('trash router — happy paths (ADR-023 D-02/D-04/D-05)', () => {
   });
 
   it('saveExclusion records a trash_excluded event (source maintainerr)', async () => {
-    const res = await adminCaller(state()).trash.saveExclusion({ maintainerrMediaId: 'ms-1' });
+    const res = await adminCaller(state()).trash.saveExclusion({ media: 'movie', maintainerrMediaId: 'ms-1' });
     expect(res).toMatchObject({ excluded: true });
     const events = await t.db
       .select()
@@ -607,7 +607,7 @@ describe('trash router — paginated pending wall + future-batch strip (owner-di
 
     // Tapping a future candidate to save it = the guarded Maintainerr exclusion → excluded from
     // candidates → never enters a future batch. A fresh read reflects it (page-scoped live check).
-    await c.trash.saveExclusion({ maintainerrMediaId: 'ms-3' });
+    await c.trash.saveExclusion({ media: 'movie', maintainerrMediaId: 'ms-3' });
     expect(s.exclusions.has('ms-3')).toBe(true);
     const after = await c.trash.pending({ media: 'movie', excludeOpenBatch: true, limit: 50 });
     const saved = after.items.find((i) => i.maintainerrMediaId === 'ms-3')!;

@@ -119,8 +119,9 @@ export function RequesterShieldGlyph() {
   );
 }
 
-/** The recently-watched EYE — the guardian keeps it; inert on both walls (a delete-glyph here
- *  would be dishonest). Same 16×16 box + stroke weight as its siblings. */
+/** The watch-visibility EYE — cross-server watch INFO (not protection). It lives on the tile meta
+ *  line + the detail card, never in the action corner (owner ruling 2026-07-09). Same 16×16 box +
+ *  stroke weight as its siblings; the meta chip renders it small (info tone recent / muted long-ago). */
 export function EyeGlyph() {
   return (
     <svg
@@ -239,7 +240,7 @@ export function LibraryCornerLink({
 export function WallGlyphSvg({
   glyph,
 }: {
-  glyph: 'trash' | 'shield' | 'check' | 'eye' | 'requested' | 'skip' | 'gone';
+  glyph: 'trash' | 'shield' | 'check' | 'requested' | 'skip' | 'gone';
 }) {
   switch (glyph) {
     case 'trash':
@@ -248,8 +249,6 @@ export function WallGlyphSvg({
       return <ShieldGlyph filled />;
     case 'check':
       return <ShieldCheckGlyph />;
-    case 'eye':
-      return <EyeGlyph />;
     case 'requested':
       return <RequesterShieldGlyph />;
     case 'skip':
@@ -260,16 +259,25 @@ export function WallGlyphSvg({
 }
 
 /**
- * DESIGN-010 D-12 — the MUTED "watched a while ago" indicator for a wall tile's meta line (info,
- * NOT protection). A small muted eye + tooltip ("Last watched on <server> · <Mon YYYY>"), rendered
- * only for items watched longer ago than the recently-watched window (a recently-watched item shows
- * its own inert `eye` CORNER glyph instead). Deliberately in the caption/meta zone, muted, and never
- * a corner puck — so it can't be mistaken for the protective shield/check/eye state glyphs, and the
- * requester/person-shield still owns the corner. The tile stays fully actionable.
+ * DESIGN-010 D-12 (build C) — the cross-server watch-visibility CHIP for a wall tile's meta line
+ * (info, NOT protection). An eye + tooltip, rendered for BOTH watch states now that the action corner
+ * never carries watch info (owner ruling 2026-07-09):
+ *   • tone="info"  ⇒ recently watched — "Watched recently on <server>" (the guardian keeps it at the
+ *     sweep, but the corner is a normal, saveable trash/requested tile).
+ *   • tone="muted" ⇒ watched a while ago — "Last watched on <server> · <Mon YYYY>".
+ * Deliberately a small meta-line chip (never a corner puck), fixed size ⇒ the tile never reflows
+ * (ADR-015); the full date/server ride the tooltip / the item detail card.
  */
-export function WatchedAgoNote({ label }: { label: string }) {
+export function WatchNoteBadge({ label, tone }: { label: string; tone: 'info' | 'muted' }) {
   return (
-    <span className="bwall-watched" data-testid="wall-watched" role="img" aria-label={label} title={label}>
+    <span
+      className={`bwall-watched bwall-watched--${tone}`}
+      data-testid="wall-watched"
+      data-tone={tone}
+      role="img"
+      aria-label={label}
+      title={label}
+    >
       <EyeGlyph />
     </span>
   );
@@ -451,12 +459,14 @@ export function TrashPendingNotice({
             busy={save.isPending || unsave.isPending}
             onSave={() =>
               save.mutate({
+                media,
                 maintainerrMediaId: item.maintainerrMediaId!,
                 mediaItemId: item.mediaItemId,
               })
             }
             onUnsave={() =>
               unsave.mutate({
+                media,
                 maintainerrMediaId: item.maintainerrMediaId!,
                 mediaItemId: item.mediaItemId,
               })

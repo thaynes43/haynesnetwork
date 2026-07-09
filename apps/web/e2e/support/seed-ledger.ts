@@ -191,12 +191,13 @@ async function main(): Promise<void> {
               requesters: ['manofoz'],
               posterSource: 'arr' as const,
               posterRef: '/MediaCover/601/poster.jpg?lastWrite=1',
-              // DESIGN-010 D-09 — watched 3 days ago (inside the 30-day guardian window), so the
-              // Trash pending wall has a RECENTLY-WATCHED tile the expedite guardian protects.
+              // DESIGN-010 D-09 / D-12 build C — watched 3 days ago (inside the 30-day guardian
+              // window). The expedite/sweep guardian STILL protects it, but on the wall it is no
+              // longer the inert eye corner (owner ruling 2026-07-09): with its requester it reads as
+              // the SAVEABLE person-shield (requested), and the recent watch is an info-tone meta chip
+              // ("Watched recently on HaynesOps"). Its /library deletion-guard card keeps the line too.
               playCount: 2,
               lastViewedAt: new Date(Date.now() - 3 * 86_400_000),
-              // DESIGN-010 D-12 — the same recent watch, now attributed: its /library deletion-guard
-              // card gains the "Last watched on HaynesOps · <Mon YYYY>" line.
               lastWatchedAt: new Date(Date.now() - 3 * 86_400_000),
               lastWatchedServer: 'haynesops',
               sources: { arr: true, tautulli: true },

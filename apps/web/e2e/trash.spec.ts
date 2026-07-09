@@ -171,24 +171,27 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await expect(page.getByTestId('trash-tile')).toHaveCount(4);
     await expect(page.getByTestId('trash-tablewrap')).toHaveCount(0);
 
-    // The unified glyph model: cold ⇒ trash, watched ⇒ eye (inert), dnd-tagged ⇒ check (inert),
-    // unknown-to-ledger ⇒ trash (savable; the sweep would skip it).
+    // The unified glyph model: cold ⇒ trash, dnd-tagged ⇒ check (inert), unknown-to-ledger ⇒ trash
+    // (savable; the sweep would skip it). The Fixture is recently-watched AND requested: the
+    // eye-corner bug fix (2026-07-09) retires the inert eye — it now reads as the SAVEABLE person-shield
+    // (requested), with the watch fact on the meta line (info-tone eye).
     const vanished = page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' });
     const fixture = page.getByTestId('trash-tile').filter({ hasText: 'The Fixture' });
     const runner = page.getByTestId('trash-tile').filter({ hasText: 'Stub Runner' });
     const unknown = page.getByTestId('trash-tile').filter({ hasText: 'tmdb:990009' });
     await expect(vanished).toHaveAttribute('data-glyph', 'trash');
-    await expect(fixture).toHaveAttribute('data-glyph', 'eye');
+    await expect(fixture).toHaveAttribute('data-glyph', 'requested'); // NOT the retired inert eye
     await expect(runner).toHaveAttribute('data-glyph', 'check');
     await expect(unknown).toHaveAttribute('data-glyph', 'trash');
 
-    // eye/check are inert — the toggle is a non-button span (state reads, no action).
-    await expect(fixture.locator('span[data-testid="trash-toggle"]')).toHaveCount(1);
+    // Only the dnd-tagged `check` is inert (a non-button span). The recently-watched Fixture is NO
+    // LONGER inert — its corner is the tappable save toggle (a button), the whole point of the fix.
     await expect(runner.locator('span[data-testid="trash-toggle"]')).toHaveCount(1);
-    await expect(fixture.locator('button[data-testid="trash-toggle"]')).toHaveCount(0);
+    await expect(fixture.locator('button[data-testid="trash-toggle"]')).toHaveCount(1);
 
-    // The guardian fact + scheduled date live in the tile tooltip now.
-    await expect(fixture.getByTestId('trash-toggle')).toHaveAttribute('title', /Recently watched/);
+    // The guardian fact + scheduled date live in the tile tooltip now; the recently-watched Fixture's
+    // tooltip carries the "Watched recently" line (info, not a corner state).
+    await expect(fixture.getByTestId('trash-toggle')).toHaveAttribute('title', /Watched recently/);
     await expect(vanished.getByTestId('trash-toggle')).toHaveAttribute('title', /Deletes /);
 
     // The unknown item carries no library-nav corner (not in the ledger).
@@ -205,11 +208,21 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     const wallBox = (await page.getByTestId('trash-wall').boundingBox())!;
     expect(barBox.y).toBeLessThan(wallBox.y);
 
+    // DESIGN-014 build D — the DEFAULT sort is "Next up" (strategy-mirrored). With the seed's ratings the
+    // active strategy is worst-rated, so the UNRATED Vanished Heist (the front of the deletion queue)
+    // leads the wall ahead of the rated titles — not the retired soonest-to-delete order.
+    await expect(page.getByTestId('trash-tile').first()).toContainText('Vanished Heist');
+    await expect(page.getByRole('group', { name: 'Sort' }).getByRole('button', { name: 'Next up' })).toBeVisible();
+    // The retired "Deletes" sort is gone.
+    await expect(page.getByRole('group', { name: 'Sort' }).getByRole('button', { name: 'Deletes' })).toHaveCount(0);
+
     // The sort bar replaces the table headers (same ?sort contract): Size ⇒ biggest first.
     await page.getByRole('group', { name: 'Sort' }).getByRole('button', { name: 'Size' }).click();
     await expect(page).toHaveURL(/sort=size%3Adesc|sort=size:desc/);
     await expect(page.getByTestId('trash-tile').first()).toContainText('Stub Runner');
-    await page.getByRole('group', { name: 'Sort' }).getByRole('button', { name: 'Deletes' }).click();
+    // DESIGN-014 build D — the dead "Deletes" sort is retired; "Next up" (the strategy default) clears
+    // the ?sort param when re-selected (it is the default order).
+    await page.getByRole('group', { name: 'Sort' }).getByRole('button', { name: 'Next up' }).click();
     await expect(page).not.toHaveURL(/sort=/);
 
     // Filter-aware: Genre=Action keeps only Stub Runner and the counts bar says so.
@@ -247,7 +260,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await expect(page.getByTestId('trash-total')).toHaveText('Reclaiming 20 GB across 1 item');
   });
 
-  test('D-12 cross-server watch visibility: a watched-long-ago tile shows the muted indicator + tooltip and STAYS actionable (info, not protection); the detail card gains the line; requested still wins the corner', async ({
+  test('D-12 cross-server watch visibility (build C): BOTH watch states show a meta chip (info vs muted), the corner is always the action, and the detail card gains the line', async ({
     page,
   }) => {
     await resetMaintainerr(page);
@@ -255,16 +268,23 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await openTrashMovies(page);
 
     // Vanished Heist was last watched ~1yr ago on HaynesKube: it is SLATED (a cold trash-can), NOT
-    // protected, and now carries the MUTED "watched a while ago" indicator (info, not protection).
+    // protected, and carries the MUTED "watched a while ago" chip (info, not protection).
     const vanished = page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' });
     await expect(vanished).toHaveAttribute('data-glyph', 'trash'); // NOT eye/check/shield/requested
     const indicator = vanished.getByTestId('wall-watched');
     await expect(indicator).toHaveCount(1);
+    await expect(indicator).toHaveAttribute('data-tone', 'muted');
     await expect(indicator).toHaveAttribute('title', /Last watched on HaynesKube · \w+ \d{4}/);
-    // A RECENTLY-watched tile keeps its inert eye corner and gets NO muted indicator (never doubles).
-    await expect(
-      page.getByTestId('trash-tile').filter({ hasText: 'The Fixture' }).getByTestId('wall-watched'),
-    ).toHaveCount(0);
+    // BUG FIX 2026-07-09 — a RECENTLY-watched tile no longer hides behind an inert eye corner: its
+    // corner is the SAVEABLE person-shield, and the watch fact is an INFO-tone meta chip (not muted,
+    // not a corner puck). The Fixture is recently-watched (3d) + requested.
+    const fixtureIndicator = page
+      .getByTestId('trash-tile')
+      .filter({ hasText: 'The Fixture' })
+      .getByTestId('wall-watched');
+    await expect(fixtureIndicator).toHaveCount(1);
+    await expect(fixtureIndicator).toHaveAttribute('data-tone', 'info');
+    await expect(fixtureIndicator).toHaveAttribute('title', /Watched recently on HaynesOps/);
 
     // STILL fully actionable: the poster tap toggles trash⇄shield (the indicator never blocks it).
     const toggle = vanished.getByTestId('trash-toggle');
@@ -281,10 +301,11 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await resetMaintainerr(page);
 
     // TV: Breaking Prod is REQUESTED and also watched-long-ago — the person-shield keeps the CORNER,
-    // the watch info moves to the muted caption indicator (the documented precedence, D-12).
+    // the watch info is the muted meta chip (the documented precedence, D-12).
     await page.getByRole('tab', { name: 'TV' }).click();
     const tv = page.getByTestId('trash-tile').filter({ hasText: 'Breaking Prod' });
     await expect(tv).toHaveAttribute('data-glyph', 'requested');
+    await expect(tv.getByTestId('wall-watched')).toHaveAttribute('data-tone', 'muted');
     await expect(tv.getByTestId('wall-watched')).toHaveAttribute('title', /Last watched on HaynesTower/);
 
     // The item detail deletion-guard card gains the last-watched line (The Fixture, watched recently).
@@ -340,6 +361,35 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
       (c) => c.method === 'DELETE' && c.path === `/rules/exclusions/${STUB_MAINT_VANISHED_ID}`,
     );
     expect(removes).toHaveLength(1);
+  });
+
+  test('BUG FIX 2026-07-09 — a recently-watched candidate is SAVEABLE via tap (no more inert eye corner)', async ({
+    page,
+  }) => {
+    await resetMaintainerr(page);
+    await signIn(page, 'admin');
+    await openTrashMovies(page);
+
+    // The reported bug (PAW Patrol): a recently-watched candidate showed the inert eye corner and a tap
+    // did nothing — it could not be saved. The Fixture is recently-watched (3d ago) + requested; its
+    // corner is now the SAVEABLE person-shield, and the watch fact is an info-tone meta chip.
+    const fixture = page.getByTestId('trash-tile').filter({ hasText: 'The Fixture' });
+    await expect(fixture).toHaveAttribute('data-glyph', 'requested');
+    const toggle = fixture.getByTestId('trash-toggle');
+    await page.waitForLoadState('networkidle');
+    await toggle.scrollIntoViewIfNeeded();
+    const saved = page.waitForResponse((r) => r.url().includes('trash.saveExclusion'));
+    await toggle.click();
+    // It SAVED — the tap now does something (the whole fix). The person-shield flips to the filled shield.
+    await expect(fixture).toHaveAttribute('data-glyph', 'shield');
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    await saved;
+
+    const calls = await maintainerrCalls(page);
+    const adds = calls.filter((c) => c.method === 'POST' && c.path === '/rules/exclusion');
+    expect(adds).toHaveLength(1);
+    expect(adds[0]!.body).toMatchObject({ mediaId: STUB_MAINT_FIXTURE_ID });
+    await resetMaintainerr(page);
   });
 
   test('a live exclusion made outside the session shows the inert protected check', async ({
@@ -564,7 +614,13 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await expect(page.getByTestId('wall-tile')).toHaveCount(4);
     const vanished = page.getByTestId('wall-tile').filter({ hasText: 'Vanished Heist' });
     await expect(vanished).toHaveAttribute('data-glyph', 'trash');
-    await expect(page.getByTestId('wall-tile').filter({ hasText: 'The Fixture' })).toHaveAttribute('data-glyph', 'eye');
+    // The Fixture is recently-watched + requested: the eye-corner bug fix (2026-07-09) retires the
+    // inert eye here too — it snapshots as `pending` and reads as the person-shield (requested), now
+    // SAVEABLE (a batch item that was previously stuck inert). It still counts as Kept (a requester keep).
+    const fixtureTile = page.getByTestId('wall-tile').filter({ hasText: 'The Fixture' });
+    await expect(fixtureTile).toHaveAttribute('data-glyph', 'requested');
+    await expect(fixtureTile.getByRole('button')).toHaveCount(1); // tappable — not the old inert eye
+    await expect(fixtureTile.getByTestId('wall-watched')).toHaveAttribute('data-tone', 'info');
     await expect(page.getByTestId('wall-tile').filter({ hasText: 'Stub Runner' })).toHaveAttribute('data-glyph', 'check');
     await expect(page.getByTestId('wall-counts')).toHaveText('Deleting 2 · Rescued 0 · Kept 2 · frees 3.0 GB');
 

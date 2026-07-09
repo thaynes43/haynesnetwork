@@ -18,6 +18,8 @@ import {
 } from '@hnet/db';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { inTransaction, resolveDb } from './db-client';
+import { activeBatchStrategy, getAppSetting } from './app-settings';
+import { compareByStrategy, type BatchStrategy } from './trash-strategy';
 import type { MaintainerrClientBundle } from './maintainerr-clients';
 import {
   bucketFlatPendingForMedia,
@@ -240,8 +242,14 @@ export async function readCandidateSnapshot(input: {
 // The user-facing pending reads (page / candidate list / count) — snapshot-backed
 // ---------------------------------------------------------------------------
 
-/** The wire sort fields the pending wall offers (mirrors the client sort bar). */
-export type TrashPendingSortField = 'scheduled' | 'title' | 'size' | 'rating';
+/**
+ * The wire sort fields the pending wall offers (mirrors the client sort bar). DESIGN-010/014 amendment
+ * (2026-07-09, build D): the dead 'scheduled' ("Deletes ↑") sort is RETIRED — Maintainerr's per-item
+ * countdown is defused (deleteAfterDays 9999), so a delete date is meaningless. It is replaced by
+ * 'strategy' ("Next up"), the NEW DEFAULT, which mirrors the active batch-selection strategy (see
+ * comparePending / activeBatchStrategy) so the top of the wall is the front of the deletion queue.
+ */
+export type TrashPendingSortField = 'strategy' | 'title' | 'size' | 'rating';
 export interface TrashPendingSort {
   field: TrashPendingSortField;
   dir: 'asc' | 'desc';
@@ -304,8 +312,19 @@ const ratingOf = (i: TrashPendingItem): number | null => {
   return imdb ?? tmdb;
 };
 
-/** Nulls-last comparator over the wire sort fields, tie-broken by a stable per-item key. */
-function comparePending(a: TrashPendingItem, b: TrashPendingItem, sort: TrashPendingSort): number {
+/**
+ * Comparator over the wire sort fields, tie-broken by a stable per-item key. The 'strategy' ("Next up")
+ * field defers to the SHARED compareByStrategy (identical to selectBatchCandidates' ranking) for the
+ * resolved kind `strategy` — worst-rated = rating asc with UNRATED FIRST, ties size desc; largest = size
+ * desc — so the wall's top is the front of the deletion queue. Title/Size/Rating keep the generic
+ * nulls-LAST numeric ordering (an item with no size/rating sinks regardless of direction).
+ */
+function comparePending(
+  a: TrashPendingItem,
+  b: TrashPendingItem,
+  sort: TrashPendingSort,
+  strategy: BatchStrategy,
+): number {
   const sign = sort.dir === 'asc' ? 1 : -1;
   const num = (x: number | null, y: number | null): number => {
     if (x === null && y === null) return 0;
@@ -315,6 +334,11 @@ function comparePending(a: TrashPendingItem, b: TrashPendingItem, sort: TrashPen
   };
   let primary = 0;
   switch (sort.field) {
+    case 'strategy':
+      // asc = the strategy order (front of the deletion queue first); desc reverses it. The strategy
+      // ranking already fully orders (incl. its own size/title tiebreak), so a 0 here is a true tie.
+      primary = compareByStrategy(a, b, strategy) * sign;
+      break;
     case 'title':
       primary = a.title.localeCompare(b.title) * sign;
       break;
@@ -323,12 +347,6 @@ function comparePending(a: TrashPendingItem, b: TrashPendingItem, sort: TrashPen
       break;
     case 'rating':
       primary = num(ratingOf(a), ratingOf(b));
-      break;
-    case 'scheduled':
-      primary = num(
-        a.scheduledDeleteAt === null ? null : Date.parse(a.scheduledDeleteAt),
-        b.scheduledDeleteAt === null ? null : Date.parse(b.scheduledDeleteAt),
-      );
       break;
   }
   if (primary !== 0) return primary;
@@ -452,7 +470,14 @@ export async function listTrashPendingPage(input: {
   excludeMaintainerrIds?: readonly string[];
 }): Promise<TrashPendingPage> {
   const base = await materializeSnapshotPending(input);
-  const sort: TrashPendingSort = input.sort ?? { field: 'scheduled', dir: 'asc' };
+  // DESIGN-014 amendment (build D) — mirror the ACTIVE batch-selection strategy for this kind so the
+  // default 'strategy' ("Next up") sort orders the wall exactly like the next batch's pick would. Read
+  // the raw space_policy setting (fail-safe resolver); default 'worst-rated' when unset.
+  const strategy = activeBatchStrategy(
+    await getAppSetting(input.db, 'space_policy'),
+    input.media as TrashMediaKind,
+  );
+  const sort: TrashPendingSort = input.sort ?? { field: 'strategy', dir: 'asc' };
 
   const exclude =
     input.excludeMaintainerrIds && input.excludeMaintainerrIds.length > 0
@@ -473,7 +498,7 @@ export async function listTrashPendingPage(input: {
   const filteredCount = filtered.length;
   const filteredSizeBytes = filtered.reduce((n, i) => n + i.sizeBytes, 0);
 
-  const sorted = [...filtered].sort((a, b) => comparePending(a, b, sort));
+  const sorted = [...filtered].sort((a, b) => comparePending(a, b, sort, strategy));
   const offset = Math.max(0, input.offset);
   const slice = sorted.slice(offset, offset + input.limit);
   const nextCursor = offset + input.limit < filteredCount ? offset + input.limit : null;

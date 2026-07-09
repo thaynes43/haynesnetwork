@@ -54,15 +54,21 @@ export const LEAVING_SOON_NAMES: Record<'movie' | 'tv', string> = {
  *              deepens-color flip.
  * - `check`  — protected OUTSIDE this action (dnd-tagged at snapshot / a live exclusion made
  *              elsewhere): already safe, inert (a shield-check, distinct from the filled save).
- * - `eye`    — pending but recently watched: the sweep's guardian will keep it; not tappable
- *              toward the delete state (a trash-can here would be dishonest — it cannot delete).
- * - `requested` — pending but a personal requester is on record: the sweep's guardian keeps it
- *              (protected_requested), so — like `eye` — a trash-can would be dishonest. Inert.
+ * - `requested` — a personal requester is on record: the person-shield. A SAVED requested auto-save
+ *              (tap ⇒ un-save) OR a `pending` requester keep (a recently-watched requester item that
+ *              stayed pending — tap ⇒ save). Never inert in an interactive phase (owner ruling
+ *              2026-07-09 — the corner is always the action).
  * - `skip`   — sweep kept it (guardian / unverifiable / live-excluded) — kept, NOT deliberately
  *              saved (skipped ≠ protected, ADR-023 C-07b).
  * - `gone`   — deleted by the sweep.
+ *
+ * The `eye` glyph was RETIRED from the corner (owner ruling 2026-07-09 — the eye-corner bug fix):
+ * a recently-watched pending item no longer blocks the save both ways. It now reads as its normal
+ * glyph (a requester person-shield, else the slated trash-can) and is saveable; the watch fact moves
+ * OUT to the meta line as an info-tone note (lib/trash `watchNote`). The guardian still keeps it at
+ * the SWEEP — that sweep-time protection is unchanged.
  */
-export type WallGlyph = 'trash' | 'shield' | 'check' | 'eye' | 'requested' | 'skip' | 'gone';
+export type WallGlyph = 'trash' | 'shield' | 'check' | 'requested' | 'skip' | 'gone';
 
 /** ADR-025 errata (2026-07-09, build B) — the requested-auto-save signals that steer the batch-wall
  *  glyph: `savedReason` distinguishes a SYSTEM requested auto-save (person-shield) from a human rescue
@@ -74,6 +80,9 @@ export interface WallGlyphOpts {
 
 export function wallGlyph(
   state: BatchItemStateName,
+  // Retained for call-site symmetry with the pending wall + the counts input; it no longer changes
+  // the glyph (the eye corner was retired — a recently-watched pending item reads as its normal
+  // glyph and its watch fact moves to the meta line). ESLint keeps it (a before-used positional arg).
   recentlyWatched: boolean,
   requesters: readonly string[] = [],
   opts?: WallGlyphOpts,
@@ -90,10 +99,10 @@ export function wallGlyph(
     case 'deleted':
       return 'gone';
     case 'pending':
-      // Guardian precedence: a watched keep reads first, then a requester keep — both inert (the
-      // sweep will refuse to delete them), so neither shows the tappable trash-can. EXCEPT a requester
-      // item a human explicitly un-saved (requestedOverride) is genuinely slated now — the trash-can.
-      if (recentlyWatched) return 'eye';
+      // The corner is ALWAYS the action (owner ruling 2026-07-09): a recently-watched pending item no
+      // longer shows the inert eye — it reads as its normal glyph and is saveable, with the watch fact
+      // on the meta line. A requester item a human explicitly un-saved (requestedOverride) is genuinely
+      // slated ⇒ the trash-can; a requester keep is the person-shield (tap ⇒ save); else the trash-can.
       if (opts?.requestedOverride) return 'trash';
       if (requesters.length > 0) return 'requested';
       return 'trash';
@@ -105,7 +114,6 @@ export const WALL_GLYPH_MEANING: Record<WallGlyph, string> = {
   trash: 'slated to delete — tap to save it',
   shield: 'saved — it will be kept',
   check: 'protected — already safe from deletion',
-  eye: 'recently watched — the guardian keeps it',
   requested: 'requested — protected from deletion',
   skip: 'kept — could not be verified safe, never deleted',
   gone: 'deleted',
@@ -143,13 +151,14 @@ export function wallInteractive(ctx: WallTapContext): boolean {
  * made — savedBy null until the refetch lands) but not someone else's (the server contract would
  * allow it; the wall keeps the family flow polite — a manager can always release a foreign save).
  * A `check` (protected) tile is now tappable to UN-PROTECT (remove its live exclusion, then re-classify).
- * eye/skip/gone stay inert: there is nothing honest a tap could do (changed:false anyway).
+ * A `requested` (person-shield) tile is tappable in an interactive phase — un-save (saved auto-save) or
+ * save (a `pending` recently-watched requester keep, the eye-corner fix). skip/gone stay inert: there
+ * is nothing honest a tap could do (changed:false anyway).
  */
 export function tileTappable(
   ctx: WallTapContext,
   glyph: WallGlyph,
   savedBy: string | null,
-  opts?: { state?: BatchItemStateName },
 ): boolean {
   if (!wallInteractive(ctx)) return false;
   if (glyph === 'trash') return true;
@@ -158,10 +167,11 @@ export function tileTappable(
     return savedBy === null || savedBy === ctx.viewerId;
   }
   if (glyph === 'requested') {
-    // On the batch wall the person-shield is a SAVED requested auto-save — un-savable (tap to slate)
-    // by ANYONE with save rights for the phase (build B: a system save has no human owner, so the
-    // ownership gate does not apply). A `pending` requested item (edge) stays inert.
-    return opts?.state === 'saved';
+    // The person-shield: a SAVED requested auto-save (tap ⇒ un-save it → it slates) OR a `pending`
+    // requester keep — a recently-watched requester item that stayed pending (no longer the inert
+    // eye — tap ⇒ save it, creating the exclusion). Either direction is valid for ANY saver in an
+    // interactive phase (a system save has no human owner, so the ownership gate never applies).
+    return true;
   }
   if (glyph === 'check') {
     // ADR-025 errata (2026-07-09) — a `protected` (check) batch item is held by a live Maintainerr
@@ -189,7 +199,7 @@ export interface WallCounts {
   slatedBytes: number;
   /** shield (saved) tiles. */
   rescued: number;
-  /** eye + check + skip tiles — kept without being a deliberate save. */
+  /** requested (person-shield) + check + skip tiles — kept without being a deliberate human save. */
   kept: number;
   /** gone tiles. */
   deleted: number;
@@ -217,7 +227,7 @@ export function wallCounts(items: ReadonlyArray<WallCountInput>): WallCounts {
         out.deleted += 1;
         break;
       default:
-        out.kept += 1; // eye / check / skip
+        out.kept += 1; // requested (person-shield) / check / skip
     }
   }
   return out;

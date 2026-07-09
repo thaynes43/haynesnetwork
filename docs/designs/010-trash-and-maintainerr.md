@@ -2,7 +2,8 @@
 
 - **Status:** Draft (backend vertical shipped; **UX shipped 2026-07-06** — D-09 records the
   as-built; **pending tables → poster walls 2026-07-07**, see the D-09 amendment)
-- **Last updated:** 2026-07-09 (errata — Maintainerr aging-invariant safeguard; ADR-036 / incident)
+- **Last updated:** 2026-07-09 (errata — Maintainerr aging-invariant safeguard, ADR-036 / incident;
+  D-12 build C — watch indicators never occupy the action corner; every tile stays saveable)
 - **Satisfies:** PRD-001 **R-79..R-87** + **US-10** / **AC-14..AC-16**; governed by **ADR-023**
   (Trash/Maintainerr + per-action grants + safety gate). Reuses **ADR-021** (section levels),
   **ADR-008/011** (write-back confinement), **DESIGN-005 D-16** (Restore), **DESIGN-008/009 D-09**
@@ -467,6 +468,107 @@ unchanged. Regression-asserted: an ever-watched-but-not-recent item ⇒ `classif
 
 **Pure client helpers** (`apps/web/lib/trash.ts`, unit-tested): `watchServerLabel` (slug → display
 name), `formatWatchMonth`, `watchedLongAgo`, `lastWatchedLabel`.
+
+> **⚠ Superseded in part by the D-12 build-C amendment below (2026-07-09).** The bullets above that
+> describe a recently-watched item keeping an inert `eye` **corner** glyph are RETIRED: the corner is
+> now always the action toggle, and the watch fact (both recent AND long-ago) lives on the meta line.
+
+### D-12 build C — watch indicators never occupy the action corner (owner ruling 2026-07-09)
+
+> **Owner ruling (2026-07-09), verbatim intent:** after the watch-visibility deploy, a pending-wall
+> tile (PAW Patrol: The Mighty Movie) showed the `eye` in the top-right corner and **clicking did
+> nothing** — the owner expects **tap → save**. "We may want to put the watched icon in a different
+> spot, whatever is good UI design, so it doesn't conflict with our normal trash/shield flow."
+
+**Diagnosis.** PAW Patrol is a cold candidate on HOps (never watched there → the guardian rule) but
+recently-watched **cross-server** (HNet). #142's cross-server harvest made `recentlyWatched` true for
+such titles far more often, so the tile got the legacy `eye` corner glyph — which had **always** been
+inert (pre-existing: recently-watched = the guardian will keep it = "nothing to do"). The flaw #142
+exposed: an inert corner blocks **both** directions — the owner also can't **Save** (permanent
+whitelist) a recently-watched item. The eye was doing two jobs (state + a dead affordance) in the one
+slot reserved for the action.
+
+**Ruling / IA as built.**
+
+1. **The top-right corner is ALWAYS the action toggle** (trash ⇄ shield; the tag-protected `check` is
+   tappable-to-unprotect per the ADR-025 errata; the requester `requested`/person-shield is a
+   tappable save/un-save). A recently-watched item now gets the **normal** toggle like everything
+   else — the `eye` corner glyph is **retired** on every wall (pending, future strip, batch). Saving a
+   recently-watched item is the standard exclusion (it leaves the pool); **slating stays honest** — the
+   guardian still keeps it at the **sweep** (a sweep-time protection, unchanged, `classifyGuardian`
+   untouched). It simply is no longer a wall-corner state that dead-ends the tap.
+2. **Watch info moves OUT of the action corner entirely**, onto the meta line, for **both** watch
+   states (unified `watchNote`, `WatchNoteBadge`, `data-testid="wall-watched"`, `data-tone`):
+   - **recently watched ⇒ INFO-tone eye** (`--color-info`) + `Watched recently on <server>` (tooltip
+     w/ month). Always present (a recently-watched item always earns its note, even before the
+     cross-server instant is attributed → a bare "Watched recently").
+   - **watched a while ago ⇒ MUTED eye** (`--color-text-muted` @ 0.8) + `Last watched on <server> ·
+     <Mon YYYY>` — the D-12 build-A/B behavior, unchanged.
+   The chip is a fixed-size meta-line element (never a corner puck); TONE carries the state at a
+   glance, the full label rides the tooltip/aria (the meta line is one fixed-height row — ADR-015, no
+   reflow). Requester/person-shield still WIN the corner; watch info + corner never collide.
+3. **Batch wall — same flaw, same fix.** A recently-watched batch item snapshots as `pending` (the
+   requester auto-save is gated on `!recentlyWatched`, so it is NOT auto-saved) and previously showed
+   the inert `eye` — a recently-watched batch item **could not be rescued**. Now it reads as its normal
+   glyph (`trash`, or the `requested` person-shield when a requester is on record) and is **saveable**:
+   `tileTappable` makes a `pending` person-shield tap-to-save (either direction is valid for any saver
+   in an interactive phase). **Batch save semantics are unchanged** — only the corner became actionable.
+   Counts follow the glyph (a recently-watched pending item counts as **slated**, mirroring the pending
+   wall; the sweep-time guardian keep is surfaced by the meta chip, not a "kept" tally).
+4. **Precedence (documented, unit-tested).** Corner glyph precedence: `dnd` tag → live exclusion →
+   requester person-shield → trash. Watch is **no input to the corner** — it is purely the meta note.
+   A requested + recently-watched tile shows the tappable person-shield corner **and** the info-tone
+   watch chip; they co-exist.
+
+**No guardian changes (still).** `classifyGuardian`, `RECENTLY_WATCHED_WINDOW_DAYS`, `recentlyWatched`,
+the sweep, the expedite preview (`previewGuardian`), and every keep partition are byte-for-byte
+unchanged — a recently-watched item is still *protected at the sweep*, it is just no longer *inert on
+the wall*. Both themes; legible at 390px (3-col grid).
+
+**Client surface** (`apps/web/lib/trash.ts` + `trash-batches.ts`, unit-tested; `pending-wall.tsx`,
+`kind-tab.tsx`, `trash-shield.tsx`): `pendingWallGlyph`/`wallGlyph` drop the `eye` branch (and the
+glyph unions drop `'eye'`); `pendingWallTappable` no longer special-cases `eye`; `tileTappable`'s
+`requested` branch is tappable in both directions; new `recentlyWatchedLabel` + `watchNote` +
+`WatchNoteBadge` (replacing `WatchedAgoNote`).
+
+## D-13 — Strategy-mirrored wall order + honest cadence + debounced pool refresh (amendment 2026-07-09, build D)
+
+Owner-greenlit. Three coherent pieces on the pending walls now that Maintainerr's per-item countdown is
+defused (`deleteAfterDays 9999` — a delete date is meaningless):
+
+1. **Strategy-mirrored default sort.** The dead **"Deletes" (`scheduled`) sort is RETIRED** — removed
+   from the wall's sort bar and the wire enum. The new DEFAULT is **"Next up" (`strategy`)**, which
+   mirrors the ACTIVE batch-selection strategy for the kind (`activeBatchStrategy(policy, kind)` — the
+   kind's `space_policy.perKind[kind].strategy`, else the owner default `worst-rated`) so the TOP of the
+   wall = the front of the deletion queue. The ordering is the SHARED `compareByStrategy` (`packages/
+   domain/src/trash-strategy.ts`) that `selectBatchCandidates` also uses: `worst-rated` = rating asc
+   with UNRATED FIRST, ties size desc, then title; `largest` = size desc, then title. Server-side sort
+   (`listTrashPendingPage` → `comparePending`) reads the strategy and orders the paginated read; the
+   "Potential in future batches" strip inherits the same default. The sort bar keeps Title/Size/Rating
+   as manual overrides. `buildKindTargeting` now reads the same resolver (behaviour-preserving: an unset
+   per-kind strategy still yields `worst-rated`, the prior hard-coded value).
+
+2. **Honest pool re-evaluation cadence.** The walls' counts bar extends the "candidates as of N min ago
+   · Refresh" line with **"pool re-evaluates every N h"** — Maintainerr's OWN rule-handler cron read
+   from `GET /api/settings` (`rules_handler_job_cron`; the live install is `0 0-23/8 * * *` → every 8 h,
+   the v3.17.0 default). Parsed by `parseCronEveryHours`, fetched via the read client, cached in-process
+   (`getPoolRefreshCadence`, `trash.poolCadence`), and gracefully omitted when Maintainerr is unreachable.
+
+3. **Debounced post-save rule re-execution.** A new audited app-setting `pool_refresh_after_save`
+   (`{ enabled, delayMinutes }`, DEFAULT `{ true, 5 }`) on **/settings/trash → General** (inside the
+   single-green-Save form). On a save/un-save the server upserts a per-kind `pending_pool_refresh`
+   marker with `due_at = now + delayMinutes` (a TRAILING debounce — each save pushes `due_at` out, so a
+   burst coalesces to one run after the last save) and arms an in-process web timer. Draining (the timer
+   OR the crash-safe incremental-sync backstop) coalesces to ONE `POST /api/rules/execute` — Maintainerr
+   re-evaluates all active rule groups, dropping excluded/shielded items from the pool. This is the RULE
+   handler, NOT the collection handler (`handleAllCollections`, still deliberately never called): it
+   re-computes membership and does NOT delete media, so it does not bypass the guardian and is safe to
+   trigger from a user save. Maintainerr's own single-run guard (`409` "already running") is the
+   cross-process backstop; a non-confirmed run keeps the marker for the next tick. `enabled=false` is
+   respected at both arm and drain.
+
+Migration **0029** (`0029_pool_refresh_after_save.sql`, journal idx 28) relaxes the `app_settings.key`
+CHECK for the new key and adds the `pending_pool_refresh` marker table.
 
 ## Ops / deploy-time checklist (owner)
 

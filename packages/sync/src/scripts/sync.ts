@@ -143,10 +143,19 @@ async function main(): Promise<number> {
   // space-policy proposal mode (throws one ArrConfigError naming MAINTAINERR_API_KEY if absent). The
   // mutating client is constructed INSIDE @hnet/domain (maintainerrClientBundleFromEnv), so the
   // confined write surface stays domain-only (ADR-008 guard).
-  const maintainerr =
-    args.mode === 'trash-batch-sweep' || args.mode === 'space-policy'
-      ? maintainerrClientBundleFromEnv()
-      : undefined;
+  // trash-batch-sweep / space-policy REQUIRE the bundle (throw if the key is absent). full/incremental
+  // build it OPTIONALLY (DESIGN-014 build D — the pool-refresh backstop needs the WRITE surface); a
+  // Maintainerr-less env just skips the backstop, like the candidate-refresh read handle below.
+  let maintainerr: ReturnType<typeof maintainerrClientBundleFromEnv> | undefined;
+  if (args.mode === 'trash-batch-sweep' || args.mode === 'space-policy') {
+    maintainerr = maintainerrClientBundleFromEnv();
+  } else if (args.mode === 'full' || args.mode === 'incremental') {
+    try {
+      maintainerr = maintainerrClientBundleFromEnv();
+    } catch {
+      maintainerr = undefined; // no MAINTAINERR_API_KEY — skip the backstop cleanly
+    }
+  }
   // ADR-035 — the OPTIONAL Maintainerr READ handle: full/incremental end by refreshing the Trash
   // candidate snapshot (skip-if-absent — a Maintainerr-less env just skips the step).
   const maintainerrRead =
@@ -210,6 +219,10 @@ async function main(): Promise<number> {
     ...(report.candidateRefreshError !== undefined
       ? { candidateRefreshError: report.candidateRefreshError }
       : {}),
+    ...(report.poolRefresh && report.poolRefresh.dueKinds.length > 0
+      ? { poolRefresh: report.poolRefresh }
+      : {}),
+    ...(report.poolRefreshError !== undefined ? { poolRefreshError: report.poolRefreshError } : {}),
     ...(report.sweep ? { sweep: { batchesSwept: report.sweep.batchesSwept, batches: report.sweep.batches } } : {}),
     ...(report.sweepError !== undefined ? { sweepError: report.sweepError } : {}),
     ...(report.spacePolicy

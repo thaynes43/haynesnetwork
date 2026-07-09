@@ -3642,12 +3642,11 @@ button.bwall-tap:focus-visible {
   color: var(--color-accent);
   border-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
 }
-.bwall-overlay[data-glyph='eye'] {
-  color: var(--color-info);
-  border-color: var(--color-info);
-}
-/* requested — a personal requester protects it from deletion; inert, accent like the exclusion
-   check (both are "kept, safe") but its own person-shield glyph keeps them distinguishable. */
+/* NOTE: there is no `data-glyph='eye'` corner rule — the recently-watched eye was RETIRED from the
+   action corner (owner ruling 2026-07-09). Watch info now rides the meta-line chip (.bwall-watched)
+   so the corner is always the save/slate toggle. */
+/* requested — a personal requester protects it from deletion; the person-shield glyph. accent like the
+   exclusion check (both are "kept, safe") but its own glyph keeps them distinguishable. */
 .bwall-overlay[data-glyph='requested'] {
   color: var(--color-accent);
   border-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
@@ -3711,16 +3710,22 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-/* DESIGN-010 D-12 — the muted "watched a while ago" indicator: a small subdued eye pinned at the end
-   of the meta line (INFO, not protection). Deliberately muted + OUT of the top-corner glyph zone so
-   it can never read as the protective shield/check/eye state pucks; fixed size ⇒ the tile never
-   reflows (ADR-015). The date + server ride the tile tooltip / the item detail card. */
+/* DESIGN-010 D-12 (build C) — the cross-server watch chip: a small eye pinned at the end of the meta
+   line (INFO, not protection). BOTH watch states live here now — the action corner never carries watch
+   info (owner ruling 2026-07-09). Tone tells them apart at a glance: `--info` (recently watched, the
+   guardian keeps it at the sweep) vs `--muted` (watched a while ago). Fixed size ⇒ the tile never
+   reflows (ADR-015). The date + server ride the tooltip / the item detail card. */
 .bwall-watched {
   flex: none;
   display: inline-flex;
   align-items: center;
+}
+.bwall-watched--muted {
   color: var(--color-text-muted);
   opacity: 0.8;
+}
+.bwall-watched--info {
+  color: var(--color-info);
 }
 .bwall-watched svg {
   width: 13px;

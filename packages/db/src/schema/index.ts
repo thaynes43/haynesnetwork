@@ -41,6 +41,8 @@ export * from './trash-batches';
 export * from './trash-batch-items';
 export * from './trash-batch-saves';
 export * from './trash-candidates';
+// DESIGN-010/014 amendment (2026-07-09) — the debounced pool-refresh-after-save marker (pending_pool_refresh)
+export * from './pending-pool-refresh';
 // ADR-034 / DESIGN-015 (PLAN-016) — the Pushover notification outbox (transactional; drained by the
 // notify-outbox sync mode). Enqueued same-tx by the batch writers; guarded single-writer table.
 export * from './notification-outbox';

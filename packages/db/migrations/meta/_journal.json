@@ -197,6 +197,13 @@
       "when": 1782950428000,
       "tag": "0028_media_metadata_last_watched",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1782950429000,
+      "tag": "0029_pool_refresh_after_save",
+      "breakpoints": true
     }
   ]
 }

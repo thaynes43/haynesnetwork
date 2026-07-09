@@ -19,6 +19,8 @@ import {
   pendingWallTappable,
   previewGuardian,
   reclaimLabel,
+  recentlyWatchedLabel,
+  watchNote,
   watchedLongAgo,
   watchServerLabel,
   type GuardianPreviewInput,
@@ -122,15 +124,21 @@ describe('pendingWallGlyph / pendingWallTappable (the pending WALL tap-toggle �
     expect(pendingWallGlyph({ ...cold, protectedByExclusion: true }, undefined)).toBe('check');
     expect(pendingWallTappable('check', true, true)).toBe(false);
   });
-  it('recently watched (and not saved) ⇒ the inert eye — the guardian keeps it regardless', () => {
-    expect(pendingWallGlyph({ ...cold, recentlyWatched: true }, undefined)).toBe('eye');
-    expect(pendingWallTappable('eye', true, true)).toBe(false);
-    // protection from elsewhere outranks the watch signal (both are inert, check reads first).
+  it('BUG FIX 2026-07-09 — recently watched no longer produces the inert eye corner: it is a normal, SAVEABLE tile', () => {
+    // The owner-reported bug: a recently-watched candidate (PAW Patrol) showed the inert eye corner
+    // and clicking did nothing — could not be saved. The eye is retired from the corner; the tile is
+    // the slated trash-can (tap ⇒ save), and the watch fact moves to the meta line (watchNote).
+    expect(pendingWallGlyph({ ...cold, recentlyWatched: true }, undefined)).toBe('trash');
+    expect(pendingWallTappable('trash', true, false)).toBe(true); // now saveable with save_exclude
+    // A recently-watched REQUESTER item is the tappable person-shield (requested wins over the plain
+    // trash-can, exactly like a non-watched requester).
     expect(
-      pendingWallGlyph(
-        { ...cold, protectedByTag: true, recentlyWatched: true },
-        undefined,
-      ),
+      pendingWallGlyph({ ...cold, recentlyWatched: true, requesters: ['manofoz'] }, undefined),
+    ).toBe('requested');
+    expect(pendingWallTappable('requested', true, false)).toBe(true);
+    // Hard protection (dnd tag / a foreign exclusion) still outranks — the inert check, unchanged.
+    expect(
+      pendingWallGlyph({ ...cold, protectedByTag: true, recentlyWatched: true }, undefined),
     ).toBe('check');
     // a save this session still wins — the watched item can be deliberately protected.
     expect(pendingWallGlyph({ ...cold, recentlyWatched: true }, 'saved')).toBe('shield');
@@ -151,10 +159,11 @@ describe('pendingWallGlyph / pendingWallTappable (the pending WALL tap-toggle �
     expect(
       pendingWallGlyph({ ...cold, protectedByTag: true, requesters: ['manofoz'] }, undefined),
     ).toBe('check');
-    // The watch keep still outranks the requester (a watched item is genuinely guardian-kept).
+    // A recently-watched requester item is STILL the tappable person-shield (the watch signal no
+    // longer produces an inert eye — the corner is the action).
     expect(
       pendingWallGlyph({ ...cold, recentlyWatched: true, requesters: ['manofoz'] }, undefined),
-    ).toBe('eye');
+    ).toBe('requested');
     // a save this session still wins — the requested item can be deliberately saved by you.
     expect(pendingWallGlyph({ ...cold, requesters: ['manofoz'] }, 'saved')).toBe('shield');
   });
@@ -164,15 +173,14 @@ describe('pendingWallGlyph / pendingWallTappable (the pending WALL tap-toggle �
     ).toBe('trash');
   });
 
-  // DESIGN-010 D-12 — the watch-visibility indicator NEVER touches the corner glyph. A watched-a-
-  // while-ago item still resolves to its normal glyph (trash / requested / …); the muted indicator
-  // is a separate meta-line element, and the corner precedence is unchanged. requested wins the
-  // corner; the watch info moves to the caption/tooltip (this is the documented precedence).
-  it('D-12 — a watched-long-ago item keeps its corner glyph (requested wins; watch → caption)', () => {
-    // requested + watched-long-ago ⇒ still the person-shield corner (watch info is a separate note).
+  // DESIGN-010 D-12 (build C) — the watch-visibility indicator NEVER touches the corner glyph, in
+  // EITHER watch state. Both recently-watched and watched-long-ago items resolve to their normal
+  // glyph (trash / requested / …); the eye chip is a separate meta-line element (info vs muted tone),
+  // and the corner precedence is unchanged. requested wins the corner; the watch info is the meta note.
+  it('D-12 — a watched item (recent OR long-ago) keeps its normal corner glyph (watch → meta note)', () => {
+    // requested + watched ⇒ still the person-shield corner (watch info is a separate note).
     expect(pendingWallGlyph({ ...cold, requesters: ['manofoz'] }, undefined)).toBe('requested');
-    // unprotected + watched-long-ago ⇒ still the slated trash-can (deletable), NOT the inert eye
-    // (the eye corner is reserved for RECENTLY-watched; long-ago is info-only).
+    // unprotected + watched (either state) ⇒ the slated, saveable trash-can — the eye corner is gone.
     expect(pendingWallGlyph(cold, undefined)).toBe('trash');
   });
 });
@@ -198,10 +206,38 @@ describe('watch visibility helpers (DESIGN-010 D-12 — info, not protection)', 
 
   it('watchedLongAgo is true only for a known last-watch that is NOT recently watched', () => {
     expect(watchedLongAgo({ lastWatchedAt: '2024-01-01T00:00:00Z', recentlyWatched: false })).toBe(true);
-    // recently watched ⇒ the eye corner owns it, no muted indicator.
+    // recently watched ⇒ the info-tone note owns it (watchNote), not the muted long-ago predicate.
     expect(watchedLongAgo({ lastWatchedAt: '2024-01-01T00:00:00Z', recentlyWatched: true })).toBe(false);
     // never watched ⇒ nothing.
     expect(watchedLongAgo({ lastWatchedAt: null, recentlyWatched: false })).toBe(false);
+  });
+
+  it('recentlyWatchedLabel composes "Watched recently on <server> · <Mon YYYY>", degrading gracefully', () => {
+    expect(recentlyWatchedLabel('2024-07-15T02:00:00Z', 'haynesops')).toBe('Watched recently on HaynesOps · Jul 2024');
+    // no server ⇒ drop " on <server>" (space, not " · ", before the month).
+    expect(recentlyWatchedLabel('2024-07-15T02:00:00Z', null)).toBe('Watched recently Jul 2024');
+    // server, unparseable date ⇒ just the server clause.
+    expect(recentlyWatchedLabel('not-a-date', 'hayneskube')).toBe('Watched recently on HaynesKube');
+    // neither ⇒ a bare "Watched recently" (never blank — a recent item always earns its note).
+    expect(recentlyWatchedLabel(null, null)).toBe('Watched recently');
+  });
+
+  it('watchNote — build C: BOTH watch states resolve to a meta note (info vs muted); no watch ⇒ null', () => {
+    // recently watched ⇒ the INFO-tone note, ALWAYS present (even unattributed).
+    expect(
+      watchNote({ lastWatchedAt: '2024-07-15T02:00:00Z', lastWatchedServer: 'haynesops', recentlyWatched: true }),
+    ).toEqual({ label: 'Watched recently on HaynesOps · Jul 2024', tone: 'info', recent: true });
+    expect(
+      watchNote({ lastWatchedAt: null, lastWatchedServer: null, recentlyWatched: true }),
+    ).toEqual({ label: 'Watched recently', tone: 'info', recent: true });
+    // watched a while ago ⇒ the MUTED note.
+    expect(
+      watchNote({ lastWatchedAt: '2024-07-15T02:00:00Z', lastWatchedServer: 'hayneskube', recentlyWatched: false }),
+    ).toEqual({ label: 'Last watched on HaynesKube · Jul 2024', tone: 'muted', recent: false });
+    // never watched ⇒ null (the chip is suppressed).
+    expect(
+      watchNote({ lastWatchedAt: null, lastWatchedServer: null, recentlyWatched: false }),
+    ).toBeNull();
   });
 
   it('lastWatchedLabel composes "Last watched on <server> · <Mon YYYY>", degrading gracefully', () => {

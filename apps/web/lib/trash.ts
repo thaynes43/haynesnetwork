@@ -132,16 +132,21 @@ export function expediteErrorAction(
  * - `check`   — protected by the *arr `dnd` tag or a live Maintainerr exclusion made OUTSIDE this
  *               session. Inert: the wall never un-saves someone else's protection (the
  *               /library/[id] guard panel keeps that power for remove_exclude holders).
- * - `eye`     — recently watched: the guardian keeps it regardless, so a save is pointless; inert
- *               (mirrors the batch wall — a trash-can here would be dishonest, it cannot delete).
  * - `requested` — a personal requester is on record but the item is NOT yet excluded: its own
  *               person-shield glyph (distinct from the `check` exclusion). Owner ruling (2026-07-09,
  *               build B): a requested item is NEVER inert on the live wall — the person-shield is a
  *               normal save-toggle (tap ⇒ save = add the exclusion). Once excluded it reads as the
  *               ordinary `shield`/`check` (tap ⇒ un-save where permitted). "Person-shield when no
  *               exclusion, shield when both."
+ *
+ * The corner is ALWAYS the action toggle (owner ruling 2026-07-09 — the eye-corner bug fix). The
+ * recently-watched `eye` glyph was RETIRED from the corner: a recently-watched item is now a normal,
+ * fully-saveable tile (its requester person-shield or the slated trash-can), and the watch fact moves
+ * OUT to the meta line as an info-tone note (see `watchNote`). Slating a recently-watched item stays
+ * honest — the guardian still keeps it at the SWEEP (a sweep-time protection), it just is no longer a
+ * wall-corner state that blocks the save both ways.
  */
-export type PendingWallGlyph = 'trash' | 'shield' | 'check' | 'eye' | 'requested';
+export type PendingWallGlyph = 'trash' | 'shield' | 'check' | 'requested';
 
 export function pendingWallGlyph(
   item: {
@@ -164,18 +169,18 @@ export function pendingWallGlyph(
     // non-requester exclusion made elsewhere stays the inert `check`.
     return requested ? 'shield' : 'check';
   }
-  if (override !== 'unsaved' && item.recentlyWatched) return 'eye';
-  // A requester with no exclusion: the person-shield — a live, tappable save-toggle (tap ⇒ save),
-  // NOT the old inert marker. Ranks AFTER tag/exclusion + watched to mirror the guardian precedence.
+  // NOTE: `recentlyWatched` no longer produces a corner glyph. The corner is the action; the watch
+  // fact is surfaced on the meta line (watchNote). A requester with no exclusion is the tappable
+  // person-shield (tap ⇒ save); everything else falls through to the slated, tappable trash-can.
   if (override !== 'unsaved' && requested) return 'requested';
   return 'trash';
 }
 
 /** May THIS tile be tapped to toggle? Mirrors the wire gates the caller resolved (canSave /
  *  canUnsave already fold in reachability). `trash` and `requested` (the person-shield) both save
- *  (tap ⇒ add the exclusion); `shield` un-saves. `check` / `eye` stay inert — protection made
- *  outside this session (a foreign exclusion, or the watch guardian's automatic keep) reads as
- *  state, never a button. */
+ *  (tap ⇒ add the exclusion); `shield` un-saves. `check` stays inert — protection made outside this
+ *  session (a foreign exclusion / the dnd tag) reads as state, never a button. (There is no longer an
+ *  `eye` glyph: recently-watched items are ordinary, saveable tiles now.) */
 export function pendingWallTappable(
   glyph: PendingWallGlyph,
   canSave: boolean,
@@ -186,14 +191,17 @@ export function pendingWallTappable(
   return false;
 }
 
-// ── cross-server watch visibility (DESIGN-010 D-12 amendment 2026-07-09) ──────────────────────
+// ── cross-server watch visibility (DESIGN-010 D-12 amendment 2026-07-09, build C) ─────────────
 // INFO, NOT protection. `lastWatchedAt`/`lastWatchedServer` are the harvested cross-server MAX
-// last-watch instant (full history) + its estate server. The walls surface a MUTED "watched a
-// while ago" indicator ONLY for items watched longer ago than the recently-watched window — a
-// recently-watched item keeps its (protective, inert) `eye` corner glyph unchanged, and this
-// indicator never appears there. It changes no guardian/keep semantics: the tile stays fully
-// actionable (tap-save / slate / delete). Requested/person-shield still WIN the corner glyph;
-// watch info lives in the caption/tooltip so the two never collide.
+// last-watch instant (full history) + its estate server. Watch info NEVER occupies the action
+// corner (owner ruling 2026-07-09 — the eye-corner bug fix): the corner is always the save/slate
+// toggle, and BOTH watch states now live on the tile meta line:
+//   • recently watched  ⇒ an INFO-tone eye + "Watched recently on <server>" (the guardian still
+//     keeps it at the SWEEP, but the tile is a normal, saveable trash/requested tile).
+//   • watched a while ago ⇒ the MUTED eye + "Last watched on <server> · <Mon YYYY>" (unchanged).
+// It changes no guardian/keep semantics: the tile stays fully actionable (tap-save / slate /
+// delete). Requested/person-shield still WIN the corner glyph; watch info lives on the meta line +
+// tooltip so the two never collide.
 
 /** Friendly estate-server labels for the watch-visibility line (slug → display name). */
 export const WATCH_SERVER_LABELS: Record<string, string> = {
@@ -217,15 +225,66 @@ export function formatWatchMonth(iso: string | null, tz: string = DISPLAY_TZ): s
 }
 
 /**
- * Whether to show the muted "watched a while ago" indicator: the item has a known last-watch
- * instant AND is not within the recently-watched window (a recently-watched item is already
- * flagged by its own inert `eye` corner glyph, so it never doubles up here).
+ * Whether an item qualifies for the MUTED "watched a while ago" meta note: it has a known last-watch
+ * instant AND is not within the recently-watched window (a recently-watched item shows the INFO-tone
+ * note instead — see `watchNote`). Retained as a standalone predicate; `watchNote` is the unified
+ * entry point the wall tiles use.
  */
 export function watchedLongAgo(item: {
   lastWatchedAt: string | null;
   recentlyWatched: boolean;
 }): boolean {
   return item.lastWatchedAt !== null && !item.recentlyWatched;
+}
+
+/** "Watched recently on HaynesKube · Jul 2024" — the INFO-tone note for an item inside the
+ *  recently-watched window (its corner is now the normal save toggle, so the watch fact lives on the
+ *  meta line). Degrades exactly like `lastWatchedLabel`: no server ⇒ drop " on <server>"; bad/absent
+ *  date ⇒ drop the month; both absent ⇒ a bare "Watched recently" (never blank — a recently-watched
+ *  item always earns its note even when the cross-server instant hasn't been attributed yet). */
+export function recentlyWatchedLabel(
+  lastWatchedAt: string | null,
+  lastWatchedServer: string | null,
+  tz: string = DISPLAY_TZ,
+): string {
+  const server = watchServerLabel(lastWatchedServer);
+  const month = formatWatchMonth(lastWatchedAt, tz);
+  const where = server === null ? '' : ` on ${server}`;
+  const when = month === null ? '' : `${server === null ? ' ' : ' · '}${month}`;
+  return `Watched recently${where}${when}`;
+}
+
+/** The tile meta note's shape: the visible/tooltip label, its tone, and whether it is the recent
+ *  (info) or long-ago (muted) state. */
+export interface WatchNote {
+  label: string;
+  tone: 'info' | 'muted';
+  recent: boolean;
+}
+
+/**
+ * The unified cross-server watch-visibility note for a wall tile (DESIGN-010 D-12 build C — watch
+ * info NEVER occupies the action corner). Both watch states resolve to a meta-line note:
+ *  • recentlyWatched ⇒ the INFO-tone "Watched recently on <server>" (always present — the corner is
+ *    now the normal save toggle, so this is the ONLY place the watch fact shows).
+ *  • watched a while ago ⇒ the MUTED "Last watched on <server> · <Mon YYYY>".
+ * Null only when there is no watch signal at all (never watched). The visible chip is an eye whose
+ * TONE carries the state at a glance; the full label rides the tooltip / aria (tile geometry keeps
+ * the meta line to one fixed-height row — ADR-015).
+ */
+export function watchNote(
+  item: { lastWatchedAt: string | null; lastWatchedServer: string | null; recentlyWatched: boolean },
+  tz: string = DISPLAY_TZ,
+): WatchNote | null {
+  if (item.recentlyWatched) {
+    return {
+      label: recentlyWatchedLabel(item.lastWatchedAt, item.lastWatchedServer, tz),
+      tone: 'info',
+      recent: true,
+    };
+  }
+  const label = lastWatchedLabel(item.lastWatchedAt, item.lastWatchedServer, tz);
+  return label === null ? null : { label, tone: 'muted', recent: false };
 }
 
 /** "Last watched on HaynesKube · Jul 2024" (server known) / "Last watched Jul 2024" (server unknown)
