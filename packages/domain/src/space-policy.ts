@@ -71,6 +71,10 @@ export async function getSpacePolicy(db?: DbClient): Promise<SpacePolicy> {
     minCandidates:
       typeof stored?.minCandidates === 'number' ? stored.minCandidates : d.minCandidates,
     perArray: stored?.perArray ?? {},
+    // DESIGN-014 amendment — optional per-batch reclaim cap; fail-safe to absent (all) when non-numeric.
+    ...(typeof stored?.targetBytesPerBatch === 'number' && stored.targetBytesPerBatch > 0
+      ? { targetBytesPerBatch: stored.targetBytesPerBatch }
+      : {}),
   };
 }
 
@@ -216,6 +220,7 @@ export async function evaluateSpacePolicy(input: {
         target: util.target,
         cooldownDays: arrCfg.cooldownDays,
         minCandidates: arrCfg.minCandidates,
+        targetBytesPerBatch: policy.targetBytesPerBatch,
       });
       if (proposal.outcome === 'proposed') proposedCount += 1;
       result.proposals.push(proposal);
@@ -238,6 +243,8 @@ async function proposeForKind(input: {
   target: number | null;
   cooldownDays: number;
   minCandidates: number;
+  /** DESIGN-014 amendment — optional reclaim cap for the proposed batch (largest-first); absent ⇒ all. */
+  targetBytesPerBatch?: number;
 }): Promise<SpacePolicyProposal> {
   const base = {
     mediaKind: input.mediaKind,
@@ -311,6 +318,11 @@ async function proposeForKind(input: {
       mediaKind: input.mediaKind,
       actorId: input.actorId,
       source: 'policy', // ADR-034 — the "batch posted" push records it was the space policy
+      // DESIGN-014 amendment — optionally cap the proposed batch to a reclaim target (largest-first);
+      // absent ⇒ all candidates. The min-candidates gate above still measures the full pending pool.
+      ...(input.targetBytesPerBatch !== undefined
+        ? { targeting: { targetBytes: input.targetBytesPerBatch, strategy: 'largest' as const } }
+        : {}),
     });
   } catch (err) {
     if (err instanceof TrashBatchOpenError) {

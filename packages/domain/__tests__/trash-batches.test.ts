@@ -29,12 +29,14 @@ import {
   getBatchSaveStats,
   greenlightBatch,
   listBatches,
+  selectBatchCandidates,
   setAppSetting,
   setBatchItemSaved,
   sweepExpiredBatches,
   upsertMediaItemsBatch,
   upsertMediaMetadataBatch,
   type MaintainerrClientBundle,
+  type TrashPendingItem,
 } from '../src/index';
 import { bootMigratedDb, createUser, type TestDb } from './helpers';
 
@@ -544,6 +546,87 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     ).rejects.toBeInstanceOf(TrashBatchStateError);
   });
 
+  it('forced mid-window expire (override) deletes cold survivors, keeps guardian+saved, and audits forcedEarly', async () => {
+    const { bundle, calls } = makeMaintainerr(baseState());
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    const items = await itemsOf(batchId);
+    // Save the requested item (9004) before green-light — a saved item must be UNTOUCHED under force.
+    await setBatchItemSaved({
+      db: t.db, maintainerr: bundle, batchId, itemId: items.find((i) => i.maintainerrMediaId === 'ms-9004')!.id, saved: true, actorId,
+    });
+    // Green-light with a FUTURE window ⇒ the batch is leaving_soon MID-window.
+    await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: 21, actorId });
+
+    // Without the override, the manual expire still refuses (window not closed).
+    await expect(
+      sweepExpiredBatches({ db: t.db, maintainerr: bundle, actorId, batchId }),
+    ).rejects.toBeInstanceOf(TrashBatchStateError);
+
+    // WITH the override it sweeps now — every safety layer still runs.
+    const report = await sweepExpiredBatches({ db: t.db, maintainerr: bundle, actorId, batchId, forceOverride: true });
+    const r = report.batches[0]!;
+    expect(r.deletedCount).toBe(1); // only 9001 (cold) deletes
+    expect(r.savedCount).toBe(1); // 9004 was saved — untouched
+    expect(r.protectedCount).toBe(1); // 9003 dnd
+    expect(r.skippedCount).toBe(2); // 9002 watched + 9009 unevaluable (probe: the guardian kept them)
+
+    const after = await itemsOf(batchId);
+    expect(after.find((i) => i.maintainerrMediaId === 'ms-9001')!.state).toBe('deleted');
+    expect(after.find((i) => i.maintainerrMediaId === 'ms-9004')!.state).toBe('saved'); // saved item untouched
+    expect(after.find((i) => i.maintainerrMediaId === 'ms-9002')!.state).toBe('skipped');
+    expect(after.find((i) => i.maintainerrMediaId === 'ms-9003')!.state).toBe('protected');
+
+    // Only the cold item's per-item handle fired.
+    const handles = calls.filter((c) => c.pathname === '/collections/media/handle');
+    expect(handles).toHaveLength(1);
+    expect((handles[0]!.body as { mediaId: string }).mediaId).toBe('ms-9001');
+
+    const [row] = await t.db.select().from(trashBatches).where(eq(trashBatches.id, batchId));
+    expect(row!.state).toBe('deleted'); // terminal ⇒ the kind's slot frees
+
+    // AUDIT: the batch-close transition event carries forcedEarly + the actor.
+    const evs = await t.db.select().from(ledgerEvents).where(eq(ledgerEvents.eventType, 'trash_batch_transition'));
+    const close = evs.find((e) => {
+      const p = e.payload as Record<string, unknown>;
+      return p.batchId === batchId && p.to === 'deleted';
+    });
+    expect((close!.payload as Record<string, unknown>).forcedEarly).toBe(true);
+    expect((close!.payload as Record<string, unknown>).forcedBy).toBe(actorId);
+  });
+
+  it('createBatchFromPending targeting: targetBytes takes the largest greedy subset (protected excluded)', async () => {
+    const { bundle } = makeMaintainerr(baseState());
+    // Deletable pool by size desc: 9001(4e9), 9002(3e9), 9004(1e9), 9009(0.5e9); 9003 is dnd (excluded).
+    // Target 6e9 largest ⇒ 4e9 + 3e9 = 7e9 crosses 6e9 ⇒ exactly {9001, 9002}.
+    const res = await createBatchFromPending({
+      db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId,
+      targeting: { targetBytes: 6_000_000_000, strategy: 'largest' },
+    });
+    expect(res.itemCount).toBe(2);
+    const ids = (await itemsOf(res.batchId)).map((i) => i.maintainerrMediaId).sort();
+    expect(ids).toEqual(['ms-9001', 'ms-9002']);
+  });
+
+  it('createBatchFromPending targeting: maxItems caps the count; worst-rated takes unrated first', async () => {
+    const { bundle } = makeMaintainerr(baseState());
+    // maxItems 1, largest ⇒ just the biggest deletable (9001).
+    const capped = await createBatchFromPending({
+      db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId, targeting: { maxItems: 1 },
+    });
+    expect(capped.itemCount).toBe(1);
+    expect((await itemsOf(capped.batchId)).map((i) => i.maintainerrMediaId)).toEqual(['ms-9001']);
+    await cancelBatch({ db: t.db, maintainerr: bundle, batchId: capped.batchId, actorId });
+
+    // worst-rated, maxItems 2 ⇒ unrated first (9002/9004/9009 have no rating; 9001 is rated 7.5),
+    // ties broken by size desc ⇒ {9002(3e9), 9004(1e9)} — the two worst, biggest-first among unrated.
+    const worst = await createBatchFromPending({
+      db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId,
+      targeting: { maxItems: 2, strategy: 'worst-rated' },
+    });
+    const worstIds = (await itemsOf(worst.batchId)).map((i) => i.maintainerrMediaId).sort();
+    expect(worstIds).toEqual(['ms-9002', 'ms-9004']);
+  });
+
   it('listBatches + getBatchDetail + getBatchSaveStats expose the poster-grid + tuning shapes', async () => {
     const { bundle } = makeMaintainerr(baseState());
     const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
@@ -750,6 +833,107 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     expect(second.batches[0]!.deletedCount).toBe(1);
     const [done] = await t.db.select().from(trashBatches).where(eq(trashBatches.id, batchId));
     expect(done!.state).toBe('deleted');
+  });
+});
+
+describe('selectBatchCandidates — reclaim-targeted pick (DESIGN-011 amendment)', () => {
+  const p = (
+    id: string,
+    sizeBytes: number,
+    extra: Partial<TrashPendingItem> = {},
+  ): TrashPendingItem & { maintainerrMediaId: string } =>
+    ({
+      maintainerrMediaId: id,
+      collectionId: 7,
+      collectionTitle: null,
+      tmdbId: null,
+      tvdbId: null,
+      sizeBytes,
+      addedToCollectionAt: null,
+      deleteAfterDays: null,
+      scheduledDeleteAt: null,
+      mediaItemId: null,
+      title: id,
+      year: null,
+      arrKind: 'radarr',
+      arrTags: [],
+      protectedByTag: false,
+      protectedByExclusion: false,
+      recentlyWatched: false,
+      lastViewedAt: null,
+      requesters: [],
+      sourceCollections: [],
+      posterSource: null,
+      genres: [],
+      resolution: null,
+      imdbRating: null,
+      tmdbRating: null,
+      ...extra,
+    }) as TrashPendingItem & { maintainerrMediaId: string };
+
+  const ids = (
+    xs: ReadonlyArray<TrashPendingItem & { maintainerrMediaId: string }>,
+    targeting?: Parameters<typeof selectBatchCandidates>[1],
+  ) => selectBatchCandidates(xs, targeting).map((i) => i.maintainerrMediaId);
+
+  // sizes: a=4, b=3, c=2, d=1 (×1e9). `c` is dnd-protected (frees nothing).
+  const pool = [p('a', 4e9), p('b', 3e9), p('c', 2e9, { protectedByTag: true }), p('d', 1e9)];
+
+  it('no targeting ⇒ ALL candidates (protected included, order preserved)', () => {
+    expect(ids(pool)).toEqual(['a', 'b', 'c', 'd']);
+    expect(ids(pool, undefined)).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('targetBytes largest: crossed target includes the crossing item; protected excluded', () => {
+    // 4e9 < 6e9, +3e9 = 7e9 ≥ 6e9 ⇒ {a,b}. `c` (protected) never counts.
+    expect(ids(pool, { targetBytes: 6e9, strategy: 'largest' })).toEqual(['a', 'b']);
+  });
+
+  it('targetBytes largest: EXACT hit stops precisely at the target', () => {
+    // 4e9 + 3e9 = 7e9 exactly ⇒ {a,b} (does not pull in `d`).
+    expect(ids(pool, { targetBytes: 7e9 })).toEqual(['a', 'b']);
+  });
+
+  it('targetBytes exceeding the deletable pool ⇒ the whole deletable pool (never protected)', () => {
+    expect(ids(pool, { targetBytes: 999e9 })).toEqual(['a', 'b', 'd']);
+  });
+
+  it('never splits below one item — a target under the first item still yields one', () => {
+    expect(ids(pool, { targetBytes: 1 })).toEqual(['a']);
+    expect(ids(pool, { targetBytes: 0 })).toEqual(['a']);
+  });
+
+  it('maxItems caps the count (largest first); target + cap stop at whichever hits first', () => {
+    expect(ids(pool, { maxItems: 2 })).toEqual(['a', 'b']);
+    // cap 1 wins even though the byte target would take more.
+    expect(ids(pool, { maxItems: 1, targetBytes: 999e9 })).toEqual(['a']);
+    // target hits first (a alone already ≥ 4e9) even though cap allows 3.
+    expect(ids(pool, { maxItems: 3, targetBytes: 4e9 })).toEqual(['a']);
+  });
+
+  it('worst-rated: UNRATED first, then rating asc, ties broken by size desc', () => {
+    const rated = [
+      p('hi', 1e9, { imdbRating: 8.5 }),
+      p('mid', 1e9, { imdbRating: 6.0 }),
+      p('lo', 1e9, { tmdbRating: 3.0 }),
+      p('unrated-big', 5e9),
+      p('unrated-small', 2e9),
+    ];
+    // unrated (big before small) → lo(3) → mid(6) → hi(8.5).
+    expect(ids(rated, { maxItems: 5, strategy: 'worst-rated' })).toEqual([
+      'unrated-big',
+      'unrated-small',
+      'lo',
+      'mid',
+      'hi',
+    ]);
+    // Just the two worst.
+    expect(ids(rated, { maxItems: 2, strategy: 'worst-rated' })).toEqual(['unrated-big', 'unrated-small']);
+  });
+
+  it('a pool of only protected items yields nothing to target (empty selection)', () => {
+    const allProtected = [p('x', 4e9, { protectedByTag: true }), p('y', 2e9, { protectedByTag: true })];
+    expect(ids(allProtected, { targetBytes: 1e9 })).toEqual([]);
   });
 });
 

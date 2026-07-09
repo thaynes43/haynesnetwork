@@ -176,14 +176,18 @@ trash.batches.saveStats   // in: { batchId: uuid }
 //   trash_batch_saves is the untouched audit/tuning DATASET behind this — never the count.
 
 // ---- lifecycle (trashActionProcedure('manage_batches') — admin ⇒ ok) ----
-trash.batches.create      // in: { mediaKind: 'movie'|'tv' }
+trash.batches.create      // in: { mediaKind: 'movie'|'tv',
+//   targetBytes?: >0, maxItems?: >0, strategy?: 'largest'|'worst-rated' }  (reclaim targeting —
+//   amendment 2026-07-08; absent ⇒ ALL candidates)
 // out: { batchId, state, mediaKind, itemCount, gateSkipped, expiresAt }
 
 trash.batches.greenlight  // in: { batchId: uuid, windowDays?: 1..365 }
 // out: { state:'leaving_soon', expiresAt, windowDays, collectionId }
 
 trash.batches.cancel      // in: { batchId: uuid }               -> { state:'cancelled' }
-trash.batches.expire      // in: { batchId: uuid }  (manual "Expire now")
+trash.batches.expire      // in: { batchId: uuid, forceOverride?: boolean }  (manual "Expire now";
+//   forceOverride is the amendment-2026-07-08 admin override — sweep a leaving_soon batch whose
+//   window is still OPEN. Bypasses ONLY the expiry gate; audited forcedEarly. manage_batches-gated.)
 // out: SweepReport = { batchesSwept, batches: [{ batchId, mediaKind, deletedCount, skippedCount,
 //                       savedCount, protectedCount, handleErrors,
 //                       raceSkipped,   // F2: items Saved mid-sweep (guarded write lost the race)
@@ -319,3 +323,59 @@ running counts → **the wall** → save-stats → history → settings.
 3. Grant `save_leaving_soon` / `manage_batches` to the intended roles via `/admin/roles` (not seeded).
 4. Optionally set `trash_default_window_days` via `trash.settings.set`; leave `trash_skip_admin_gate`
    OFF until PLAN-014's graduation criteria.
+
+---
+
+## D-09 — Amendment 2026-07-08 (owner-directed) — two batch controls
+
+Two additive, backend-first controls; no schema change (both ride existing tables/columns/jsonb).
+
+### D-09a — Expire-now becomes a true audited ADMIN OVERRIDE
+
+The owner's note: *"the window is so tight it would make more sense to have an admin override to force
+the batch to be deleted and allow a new batch to be created."* `sweepExpiredBatches` gains a
+`forceOverride?: boolean` flag, honored **only** on the manual `batchId` path
+(`trash.batches.expire`, `manage_batches`-gated — a member without it can never force). It bypasses
+**only** the `expires_at <= now` check for a `leaving_soon` batch; **everything else is unchanged** —
+the per-item guarded loop, the guardian keeps (requested / recently-watched / dnd / unevaluable), LIVE
+Maintainerr exclusions, saved items untouched, the F3 circuit breaker, the Q-08 deletion snapshots,
+and the Pushover swept summary all still run. The forced sweep is **AUDITED**: the batch-close
+`trash_batch_transition` event **and** the `batch_swept` outbox payload carry `forcedEarly: true` +
+`forcedBy: <actorId>` (the transition event also already carries the actor as `requestedByUserId`).
+`forcedEarly` is true only when the window was *genuinely still open* at sweep time (an override that
+finds a closed window is an ordinary sweep). After a forced sweep the batch is terminal ⇒ the kind's
+one-open slot frees and "Start a batch" reappears.
+
+**UI (`kind-tab.tsx` `ExpireModal`):** the "Expire now…" button is now **enabled mid-window** for a
+manager (the open window is no longer a block — only an unsafe Maintainerr install disables it).
+Mid-window it opens the same DANGER Modal (ADR-014 explanatory class) with an extra danger line
+(the window hasn't closed, the days remaining, the already-rescued count) and a **typed confirmation**
+gate — the destructive button stays disabled until the admin types the word `DELETE` (case-insensitive)
+or the exact delete count (`forceExpireConfirmMatches`, unit-tested). Post-window it behaves exactly as
+before (no typed gate — the window closed as promised). ADR-015 holds: the modal is an explanatory
+overlay, the wall behind it never reflows.
+
+### D-09b — Reclaim-targeted batch creation
+
+The owner's note: *"I'd like to be able to control the amount of space we free up."*
+`createBatchFromPending` gains an optional `targeting: { targetBytes?, maxItems?, strategy?:
+'largest'|'worst-rated' }` (pure helper `selectBatchCandidates`, unit-tested). When set, the deletable
+candidates (tag-protected/`dnd` items free nothing, so they are **excluded from a targeted batch**) are
+ranked by strategy and taken **greedily** until the target/cap is met, whichever first:
+- `largest` = `sizeBytes` desc (free the most with the fewest deletions);
+- `worst-rated` = rating asc with **unrated first** (`imdbRating ?? tmdbRating`; a null rating is the
+  worst), ties broken by size desc.
+
+The **crossing item is included** — we never split a title below one item, so a target smaller than the
+first item still yields one. **Absent targeting ⇒ ALL candidates (unchanged default);** snapshot
+semantics are otherwise identical. Empty result (a target against an all-protected pool) ⇒
+`TrashBatchEmptyError`.
+
+**UI (`kind-tab.tsx` `StartBatchModal`):** "Start a batch…" now opens a small Modal — **"All current
+candidates (N items · frees X GB)"** (default) OR **"Target an amount to free"** with a GB input + a
+strategy select, **live-previewing** the resulting count/GB from the already-loaded pending rows
+(`previewTargetSelection`, client-side; the **server does the authoritative pick** from a fresh
+snapshot — the preview is advisory). The green-light flow downstream is unchanged.
+
+**Space policy (DESIGN-014):** `space_policy` gains an optional `targetBytesPerBatch` so a policy
+proposal can cap its own size (largest-first); absent ⇒ all. See DESIGN-014 D-01 amendment.

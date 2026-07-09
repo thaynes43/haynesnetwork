@@ -91,6 +91,13 @@ function greenlightExpired(kind: 'movie' | 'tv'): void {
   if (res.status !== 0) throw new Error(`greenlight-expired failed:\n${res.stdout}\n${res.stderr}`);
 }
 
+/** Start a batch via the target-picker Modal, taking the default "All current candidates". */
+async function startBatchAll(page: Page): Promise<void> {
+  await page.getByTestId('batch-start').click();
+  await expect(page.getByTestId('batch-start-modal')).toBeVisible();
+  await page.getByTestId('batch-start-submit').click();
+}
+
 /** ADR-015: the two boxes are the same place and size (float-tolerant). */
 function expectSameBox(
   a: { x: number; y: number; width: number; height: number } | null,
@@ -493,7 +500,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await expect(page.getByTestId('batch-candidates')).toHaveText(
       '4 movie candidates currently proposed by the rules.',
     );
-    await page.getByTestId('batch-start').click();
+    await startBatchAll(page);
 
     // The lifecycle header renders: Admin review, 4 items; the batch wall replaces the pending wall.
     await expect(page.getByTestId('batch-state')).toHaveText('Admin review');
@@ -564,7 +571,9 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await expect(page.getByTestId('batch-countdown')).toHaveText(
       'These delete in 14 days — tap anything you want to keep.',
     );
-    await expect(page.getByTestId('batch-expire')).toBeDisabled();
+    // DESIGN-011 amendment (2026-07-08) — mid-window "Expire now…" is ENABLED for a manager as an
+    // admin override (danger + typed confirm live in the Modal), not disabled by the open window.
+    await expect(page.getByTestId('batch-expire')).toBeEnabled();
 
     const creates = (await maintainerrCalls(page)).filter(
       (c) => c.method === 'POST' && c.path === '/collections',
@@ -686,6 +695,10 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     const limitedTile = memberPage.getByTestId('wall-tile').filter({ hasText: 'tmdb:990009' });
     await limitedTile.getByRole('button').click();
     await expect(limitedTile).toHaveAttribute('data-glyph', 'shield');
+    // Let the save SETTLE server-side before releasing — the wall drops a re-tap while a flip is in
+    // flight (inFlight guard), so the un-save below must wait for the save round-trip (mirrors the
+    // Trash Family block above, which waits on the savers line between its save and un-save).
+    await expect(memberPage.getByTestId('batch-savers')).toContainText('Marge Member · 1 saved');
     // Own save ⇒ can release it again (leaves the wall clean for the next test).
     await limitedTile.getByRole('button').click();
     await expect(limitedTile).toHaveAttribute('data-glyph', 'trash');
@@ -721,7 +734,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await expect(page.getByTestId('trash-wall')).toBeVisible();
     await expect(page.getByTestId('batch-history')).toBeVisible();
 
-    await page.getByTestId('batch-start').click();
+    await startBatchAll(page);
     await expect(page.getByTestId('batch-state')).toHaveText('Admin review');
 
     // Time-travel: green-light with an already-expired window via the domain single-writer.
@@ -777,7 +790,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await signIn(page, 'admin');
     // Fresh batch for the mobile shot (the previous one is terminal).
     await page.goto('/trash?tab=movies');
-    await page.getByTestId('batch-start').click();
+    await startBatchAll(page);
     await expect(page.getByTestId('batch-state')).toHaveText('Admin review');
 
     const tiles = page.getByTestId('wall-tile');
@@ -810,7 +823,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     // A fresh TV batch skips admin review entirely: born Leaving Soon, flagged gate-skipped.
     await page.goto('/trash?tab=tv');
     await expect(page.getByTestId('batch-candidates')).toContainText('TV candidate');
-    await page.getByTestId('batch-start').click();
+    await startBatchAll(page);
     await expect(page.getByTestId('batch-state')).toHaveText('Leaving Soon');
     await expect(page.getByTestId('batch-gate-skipped')).toBeVisible();
     await expect(page.getByTestId('batch-countdown')).toContainText('These delete in 21 days');
@@ -1042,5 +1055,100 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     expect(toggleBox.width).toBeGreaterThan(100);
     expect(libBox.width).toBeGreaterThanOrEqual(26);
     await expectViewportFit(page);
+  });
+
+  // ── DESIGN-011 amendment (2026-07-08, owner-directed) — the two batch controls ────────────
+
+  test('reclaim-targeted creation: "Target 20 GB" snapshots the largest subset, not all candidates', async ({
+    page,
+  }) => {
+    await resetMaintainerr(page);
+    await signIn(page, 'admin');
+    await openTrashMovies(page);
+    await expect(page.getByTestId('batch-start')).toBeVisible(); // clean start — no open batch
+
+    // Inflate the deletable pool with three big cold candidates so a 20 GB target is a STRICT subset
+    // (the seeded pool alone is small; the 8 GiB Runner is dnd-protected and never counts).
+    for (const [id, tmdb, gib] of [
+      ['ms-990020', 990020, 15],
+      ['ms-990021', 990021, 12],
+      ['ms-990022', 990022, 10],
+    ] as const) {
+      await page.request.post(`${env().STUB_MAINTAINERR_URL}/_stub/add-pending`, {
+        data: { collectionId: 7, mediaServerId: id, tmdbId: tmdb, sizeBytes: gib * 1024 ** 3 },
+      });
+    }
+    await page.goto('/trash?tab=movies');
+
+    // Open the target picker and switch to "Target an amount".
+    await page.getByTestId('batch-start').click();
+    await expect(page.getByTestId('batch-start-modal')).toBeVisible();
+    await page.getByTestId('batch-mode-target').check();
+    await page.getByTestId('batch-target-gb').fill('20');
+    // Largest-first: 15 + 12 GiB crosses 20 GiB ⇒ 2 items · 27 GB (the crossing item is INCLUDED).
+    await expect(page.getByTestId('batch-target-preview')).toContainText('2 items');
+    await expect(page.getByTestId('batch-target-preview')).toContainText('27 GB');
+
+    await page.getByTestId('batch-start-submit').click();
+    await expect(page.getByTestId('batch-state')).toHaveText('Admin review');
+    await expect(page.getByTestId('batch-lifecycle')).toContainText('2 items');
+    await expect(page.getByTestId('wall-tile')).toHaveCount(2);
+    // Exactly the two largest — the smaller cold titles are below the target, Runner is protected.
+    await expect(page.getByTestId('wall-tile').filter({ hasText: 'tmdb:990020' })).toHaveCount(1);
+    await expect(page.getByTestId('wall-tile').filter({ hasText: 'tmdb:990021' })).toHaveCount(1);
+    await expect(page.getByTestId('wall-tile').filter({ hasText: 'Vanished Heist' })).toHaveCount(0);
+    await expect(page.getByTestId('wall-counts')).toContainText('frees 27 GB');
+
+    // Clean up — cancel so the next test starts with no open batch.
+    await armAndConfirm(page.getByTestId('batch-cancel'));
+    await expect(page.getByTestId('trash-wall')).toBeVisible();
+    await resetMaintainerr(page);
+  });
+
+  test('mid-window force expire: the admin override needs a typed confirm, then sweeps now', async ({
+    page,
+  }) => {
+    await resetMaintainerr(page);
+    await signIn(page, 'admin');
+    await openTrashMovies(page);
+    await startBatchAll(page);
+    await expect(page.getByTestId('batch-state')).toHaveText('Admin review');
+
+    // Green-light with a 30-day (future) window ⇒ the batch is leaving_soon MID-window.
+    await page.getByTestId('batch-greenlight').click();
+    await page.getByTestId('batch-window-days').fill('30');
+    await page.getByTestId('batch-greenlight-submit').click();
+    await expect(page.getByTestId('batch-state')).toHaveText('Leaving Soon');
+    await expect(page.getByTestId('batch-countdown')).toContainText('tap anything you want to keep');
+
+    // "Expire now…" is ENABLED mid-window (admin override) and opens the DANGER force modal.
+    const expire = page.getByTestId('batch-expire');
+    await expect(expire).toBeEnabled();
+    await expire.click();
+    await expect(page.getByTestId('batch-expire-override-warn')).toContainText('admin override');
+    await expect(page.getByTestId('batch-expire-confirm')).toContainText('Up to 1 item will be deleted');
+
+    // The typed gate: submit stays disabled until DELETE (or the delete count) is typed.
+    const submit = page.getByTestId('batch-expire-submit');
+    await expect(submit).toBeDisabled();
+    await page.getByTestId('batch-expire-typed').fill('nope');
+    await expect(submit).toBeDisabled();
+    await page.getByTestId('batch-expire-typed').fill('DELETE');
+    await expect(submit).toBeEnabled();
+    await submit.click();
+
+    // The report: the one cold survivor (Vanished) is deleted NOW via the per-item handle.
+    await expect(page.getByTestId('batch-expire-report')).toBeVisible();
+    await expect(page.getByTestId('batch-expire-summary')).toContainText('1 deleted');
+    const calls = await maintainerrCalls(page);
+    const handles = calls.filter((c) => c.method === 'POST' && c.path === '/collections/media/handle');
+    expect(handles).toHaveLength(1);
+    expect(handles[0]!.body).toMatchObject({ mediaId: STUB_MAINT_VANISHED_ID });
+    expect(calls.some((c) => c.path === '/collections/handle')).toBe(false);
+
+    // Done ⇒ the batch is terminal, the pending wall returns.
+    await page.getByRole('button', { name: 'Done' }).click();
+    await expect(page.getByTestId('trash-wall')).toBeVisible();
+    await resetMaintainerr(page);
   });
 });

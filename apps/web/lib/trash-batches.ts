@@ -201,6 +201,94 @@ export function countdownCopy(daysLeftLabel: string, windowOpen: boolean, canSav
   return `These delete ${daysLeftLabel}.`;
 }
 
+// ── reclaim-targeted batch creation (DESIGN-011 amendment 2026-07-08) ───────────────────────
+// The client PREVIEW of the greedy target pick. The server does the authoritative selection from a
+// fresh snapshot (selectBatchCandidates in @hnet/domain); this mirrors that math over the
+// already-loaded pending rows so the Start-a-batch picker can show a live count/GB. Kept in lockstep
+// with the domain function — the two are unit-tested against the same cases.
+
+/** 1 "GB" in the UI is a GiB (formatBytes divides by 1024) — match it so the preview reads the same. */
+export const BYTES_PER_GB = 1024 ** 3;
+
+/** The reclaim-target ranking strategies (mirrors @hnet/domain BatchTargeting['strategy']). */
+export const TARGET_STRATEGIES = ['largest', 'worst-rated'] as const;
+export type TargetStrategy = (typeof TARGET_STRATEGIES)[number];
+export const TARGET_STRATEGY_LABELS: Record<TargetStrategy, string> = {
+  largest: 'Biggest files first',
+  'worst-rated': 'Worst rated first',
+};
+
+export interface TargetCandidate {
+  sizeBytes: number;
+  imdbRating: number | null;
+  tmdbRating: number | null;
+  protectedByTag: boolean;
+}
+
+export interface TargetPreview {
+  /** Items the greedy pick would take (server re-picks authoritatively — this is advisory). */
+  count: number;
+  /** Their summed frozen size — the batch's "frees X". */
+  bytes: number;
+  /** Deletable candidates available to target (tag-protected items free nothing, so they're excluded). */
+  poolCount: number;
+  poolBytes: number;
+}
+
+export interface TargetSpec {
+  targetBytes?: number;
+  maxItems?: number;
+  strategy?: TargetStrategy;
+}
+
+/**
+ * Preview the greedy target selection (mirrors selectBatchCandidates). Absent target/cap ⇒ the whole
+ * deletable pool. Tag-protected items free nothing so they never count toward a targeted batch; the
+ * crossing item is always included (never split below one item).
+ */
+export function previewTargetSelection(
+  candidates: readonly TargetCandidate[],
+  spec: TargetSpec,
+): TargetPreview {
+  const deletable = candidates.filter((c) => !c.protectedByTag);
+  const poolBytes = deletable.reduce((n, c) => n + c.sizeBytes, 0);
+  const capped = spec.targetBytes !== undefined || spec.maxItems !== undefined;
+  if (!capped) {
+    return { count: deletable.length, bytes: poolBytes, poolCount: deletable.length, poolBytes };
+  }
+  const strategy = spec.strategy ?? 'largest';
+  const ranked = [...deletable].sort((a, b) => {
+    if (strategy === 'worst-rated') {
+      const ra = a.imdbRating ?? a.tmdbRating;
+      const rb = b.imdbRating ?? b.tmdbRating;
+      if (ra === null && rb !== null) return -1;
+      if (ra !== null && rb === null) return 1;
+      if (ra !== null && rb !== null && ra !== rb) return ra - rb;
+    }
+    return b.sizeBytes - a.sizeBytes;
+  });
+  let count = 0;
+  let bytes = 0;
+  for (const item of ranked) {
+    count += 1;
+    bytes += item.sizeBytes;
+    const hitTarget = spec.targetBytes !== undefined && bytes >= spec.targetBytes;
+    const hitCap = spec.maxItems !== undefined && count >= spec.maxItems;
+    if (hitTarget || hitCap) break;
+  }
+  return { count, bytes, poolCount: deletable.length, poolBytes };
+}
+
+/**
+ * The DANGER typed-confirm gate for a mid-window force-expire: the admin must type the word DELETE
+ * (case-insensitive) OR the exact number of items that will be deleted. Empty input never matches.
+ */
+export function forceExpireConfirmMatches(input: string, deleteCount: number): boolean {
+  const v = input.trim();
+  if (v.length === 0) return false;
+  return v.toUpperCase() === 'DELETE' || v === String(deleteCount);
+}
+
 /** One batch's slice of the SweepReport wire shape (trash.batches.expire → SweepReport.batches[n]). */
 export interface SweepBatchResult {
   deletedCount: number;
