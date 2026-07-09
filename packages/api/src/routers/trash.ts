@@ -16,10 +16,13 @@ import {
   getAppSettings,
   getBatchDetail,
   getBatchSaveStats,
+  getPoolRefreshCadence,
   getTrashOverview,
   getTuningReport,
   greenlightBatch,
   listBatches,
+  POOL_REFRESH_DELAY_MAX,
+  POOL_REFRESH_DELAY_MIN,
   listNotifications,
   listOpenBatchMediaIds,
   listRecentlyDeleted,
@@ -28,6 +31,7 @@ import {
   refreshTrashCandidates,
   removeExclusion,
   removeTrashCandidateRows,
+  requestPoolRefreshAfterSave,
   restoreDeleted,
   saveExclusion,
   setAppSetting,
@@ -38,7 +42,13 @@ import {
   upsertTrashRule,
   type TrashPendingSort,
 } from '@hnet/domain';
-import { mapDomainErrors, resolveArrBundle, resolveMaintainerrBundle, router } from '../trpc';
+import {
+  mapDomainErrors,
+  resolveArrBundle,
+  resolveMaintainerrBundle,
+  router,
+  type TRPCContext,
+} from '../trpc';
 import { decodeCursor, encodeCursor } from '../cursor';
 import {
   adminProcedure,
@@ -51,6 +61,25 @@ import { TRPCError } from '@trpc/server';
 
 /** movie|tv only — Lidarr/music is structurally undeletable (R-87). */
 const trashMedia = z.enum(['movie', 'tv']);
+
+/**
+ * DESIGN-010/014 amendment (build D) — arm the debounced post-save Maintainerr rule re-execution for a
+ * kind after a save/un-save. Best-effort and non-blocking on failure: the exclusion write already
+ * succeeded and is the durable outcome, so a marker-write or Maintainerr-config hiccup must NEVER fail
+ * the user's save. A no-op when `pool_refresh_after_save` is off (checked inside the domain helper).
+ */
+async function schedulePoolRefresh(ctx: TRPCContext, media: 'movie' | 'tv'): Promise<void> {
+  try {
+    await requestPoolRefreshAfterSave({
+      db: ctx.db,
+      maintainerr: resolveMaintainerrBundle(ctx),
+      kind: media,
+      actorId: ctx.user?.id ?? null,
+    });
+  } catch {
+    // swallowed — see the doc comment (the save is the durable outcome).
+  }
+}
 
 export const trashRouter = router({
   /**
@@ -98,7 +127,9 @@ export const trashRouter = router({
         ratingMax: z.number().min(0).max(10).optional(),
         sort: z
           .object({
-            field: z.enum(['scheduled', 'title', 'size', 'rating']),
+            // DESIGN-010/014 amendment (build D) — 'scheduled' ("Deletes") retired; 'strategy' ("Next up",
+            // the default) mirrors the active batch-selection strategy so the top = the front of the queue.
+            field: z.enum(['strategy', 'title', 'size', 'rating']),
             dir: z.enum(['asc', 'desc']),
           })
           .optional(),
@@ -195,6 +226,16 @@ export const trashRouter = router({
     );
   }),
 
+  /**
+   * DESIGN-010/014 amendment (build D) — the HONEST pool re-evaluation cadence for the walls' counts
+   * bar ("pool re-evaluates every N h"). Reads Maintainerr's own rule-handler cron (GET /api/settings),
+   * cached in-process; degrades to `everyHours: null` (label omitted) when Maintainerr is unreachable.
+   * Read-Only+ — a plain honesty readout, not an action.
+   */
+  poolCadence: sectionProcedure('trash', 'read_only').query(async ({ ctx }) => {
+    return getPoolRefreshCadence({ maintainerr: resolveMaintainerrBundle(ctx) });
+  }),
+
   /** DESIGN-010 D-02 — the raw Maintainerr collections (rules-editor context + admin insight). */
   collections: sectionProcedure('trash', 'read_only').query(async ({ ctx }) => {
     return mapDomainErrors(() => resolveMaintainerrBundle(ctx).read.getCollections());
@@ -217,6 +258,8 @@ export const trashRouter = router({
   saveExclusion: trashActionProcedure('save_exclude')
     .input(
       z.object({
+        // The saved item's kind (movie|tv) — drives the per-kind debounced pool-refresh marker.
+        media: trashMedia,
         maintainerrMediaId: z.string().min(1),
         mediaItemId: z.uuid().nullish(),
         collectionId: z.number().int().nullish(),
@@ -234,7 +277,10 @@ export const trashRouter = router({
         });
         // No candidate-snapshot invalidation needed: an exclusion never changes collection
         // MEMBERSHIP (Maintainerr drops the item on ITS next rule run → the next refresh), and the
-        // wall's protection badge is cross-checked LIVE per page (ADR-035).
+        // wall's protection badge is cross-checked LIVE per page (ADR-035). DESIGN-014 amendment
+        // (build D) — but DO enqueue the debounced pool refresh so that rule run happens minutes
+        // (not up to 8 h) from now; a no-op when the setting is off. Best-effort — never fail the save.
+        await schedulePoolRefresh(ctx, input.media);
         return res;
       });
     }),
@@ -243,6 +289,7 @@ export const trashRouter = router({
   removeExclusion: trashActionProcedure('remove_exclude')
     .input(
       z.object({
+        media: trashMedia,
         maintainerrMediaId: z.string().min(1),
         mediaItemId: z.uuid().nullish(),
       }),
@@ -256,7 +303,9 @@ export const trashRouter = router({
           mediaItemId: input.mediaItemId ?? null,
           actorId: ctx.user.id,
         });
-        // Same as saveExclusion — membership unchanged; protection is read live per page.
+        // Same as saveExclusion — membership unchanged; protection is read live per page. An un-save
+        // reshapes the pool too (a rescued item may re-enter), so it also arms the debounced refresh.
+        await schedulePoolRefresh(ctx, input.media);
         return res;
       });
     }),
@@ -617,6 +666,17 @@ export const trashRouter = router({
         z.object({
           trashSkipAdminGate: z.boolean().optional(),
           trashDefaultWindowDays: z.number().int().min(1).max(365).optional(),
+          // DESIGN-010/014 amendment (build D) — the debounced post-save pool refresh (enable + delay).
+          poolRefreshAfterSave: z
+            .object({
+              enabled: z.boolean(),
+              delayMinutes: z
+                .number()
+                .int()
+                .min(POOL_REFRESH_DELAY_MIN)
+                .max(POOL_REFRESH_DELAY_MAX),
+            })
+            .optional(),
         }),
       )
       .mutation(async ({ ctx, input }) => {
@@ -634,6 +694,15 @@ export const trashRouter = router({
               db: ctx.db,
               key: 'trash_default_window_days',
               value: input.trashDefaultWindowDays,
+              actorId: ctx.user.id,
+            });
+          }
+          if (input.poolRefreshAfterSave !== undefined) {
+            // Same audited single-writer (update_app_setting row same-tx); no new audit action needed.
+            await setAppSetting({
+              db: ctx.db,
+              key: 'pool_refresh_after_save',
+              value: input.poolRefreshAfterSave,
               actorId: ctx.user.id,
             });
           }

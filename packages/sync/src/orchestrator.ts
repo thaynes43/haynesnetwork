@@ -9,6 +9,7 @@ import {
   MassTombstoneAbortedError,
   backfillEventAttribution,
   completeFixRequests,
+  drainDuePoolRefreshes,
   expireStaleFixRequests,
   deliverOutbox,
   evaluateSpacePolicy,
@@ -16,6 +17,7 @@ import {
   refreshTrashCandidates,
   startSyncRun,
   sweepExpiredBatches,
+  type DrainPoolRefreshResult,
   type MaintainerrClientBundle,
   type OutboxDeliveryReport,
   type SpacePolicyReport,
@@ -112,6 +114,12 @@ export interface SyncReport {
   /** The candidate-refresh step's error. NEVER sets totalFailure — a Maintainerr outage must not
    *  fail the *arr sync run; the walls keep serving the previous snapshot ("as of N min ago"). */
   candidateRefreshError?: string;
+  /** DESIGN-010/014 amendment (build D) — the debounced pool-refresh BACKSTOP: full/incremental with a
+   *  write-capable Maintainerr bundle drain any overdue `pending_pool_refresh` marker (a save whose
+   *  in-process timer was lost to a pod restart). Null when skipped or errored. Never sets totalFailure. */
+  poolRefresh?: DrainPoolRefreshResult | null;
+  /** The pool-refresh backstop's error (isolated — a Maintainerr outage never fails the sync run). */
+  poolRefreshError?: string;
   /** True when EVERY requested source failed/aborted — the CLI's nonzero-exit signal. */
   totalFailure: boolean;
 }
@@ -419,6 +427,29 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
     }
   }
 
+  // DESIGN-010/014 amendment (build D) — the debounced pool-refresh BACKSTOP. Isolated + skip-if-absent
+  // exactly like the candidate refresh: with a write-capable Maintainerr bundle, drain any overdue
+  // pending_pool_refresh marker (a save whose in-process web timer was lost to a restart) so the rule
+  // re-execution still fires. Cheap no-op when nothing is due; a Maintainerr outage keeps the marker for
+  // the next tick and never fails the sync.
+  let poolRefresh: DrainPoolRefreshResult | null = null;
+  let poolRefreshError: string | undefined;
+  if (options.maintainerr !== undefined) {
+    try {
+      poolRefresh = await drainDuePoolRefreshes({ db, maintainerr: options.maintainerr });
+      if (poolRefresh.dueKinds.length > 0) {
+        logger.info('pool-refresh backstop drained', {
+          dueKinds: poolRefresh.dueKinds,
+          executed: poolRefresh.executed,
+          disabled: poolRefresh.disabled,
+        });
+      }
+    } catch (error) {
+      poolRefreshError = error instanceof Error ? error.message : String(error);
+      logger.error('pool-refresh backstop failed', { error: poolRefreshError });
+    }
+  }
+
   const totalFailure = reports.length > 0 && reports.every((r) => r.status !== 'succeeded');
   return {
     mode: options.mode,
@@ -429,10 +460,12 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
     fixesCompleted,
     fixesTimedOut,
     candidateRefresh,
+    poolRefresh,
     ...(backfillError !== undefined ? { backfillError } : {}),
     ...(fixCompletionError !== undefined ? { fixCompletionError } : {}),
     ...(fixTimeoutError !== undefined ? { fixTimeoutError } : {}),
     ...(candidateRefreshError !== undefined ? { candidateRefreshError } : {}),
+    ...(poolRefreshError !== undefined ? { poolRefreshError } : {}),
     totalFailure,
   };
 }

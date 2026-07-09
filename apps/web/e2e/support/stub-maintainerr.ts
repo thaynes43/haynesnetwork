@@ -466,6 +466,10 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
             sonarr_tag_exclusions: true,
             sonarr_exclusion_tag: 'dnd',
             sonarr_untag_on_unexclude: true,
+            // DESIGN-014 build D — Maintainerr's own handler crons (mirror the live install's defaults) so
+            // the wall's honest "pool re-evaluates every 8 h" cadence line renders in dev/e2e too.
+            rules_handler_job_cron: '0 0-23/8 * * *',
+            collection_handler_job_cron: '0 0-23/12 * * *',
           });
         case path === '/collections':
           return json(res, 200, [

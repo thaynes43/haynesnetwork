@@ -113,20 +113,24 @@ const FILTER_FIELDS: ReadonlyArray<{ field: PendingField; param: string; label: 
   { field: 'sourceCollections', param: 'col', label: 'Collection' },
 ];
 
-const SORT_FIELDS = ['scheduled', 'title', 'size', 'rating'] as const;
+// DESIGN-010/014 amendment (2026-07-09, build D) — the dead "Deletes" (scheduled) sort is RETIRED
+// (Maintainerr's per-item countdown is defused: deleteAfterDays 9999, so a delete date is meaningless).
+// The new DEFAULT is "Next up" (`strategy`): the server mirrors the ACTIVE batch-selection strategy for
+// the kind (worst-rated-first by default), so the TOP of the wall is the front of the deletion queue.
+const SORT_FIELDS = ['strategy', 'title', 'size', 'rating'] as const;
 type SortField = (typeof SORT_FIELDS)[number];
 type SortToken = `${SortField}:${'asc' | 'desc'}`;
-const DEFAULT_SORT: SortToken = 'scheduled:asc';
+const DEFAULT_SORT: SortToken = 'strategy:asc';
 
-/** The wall's sort bar (the table headers were the old sort affordance — same /library
- *  nextSort/arrowFor engine, same `?sort` token contract, soonest-deleting first by default). */
+/** The wall's sort bar (same /library nextSort/arrowFor engine + `?sort` token contract). "Next up"
+ *  (asc) is the strategy-mirrored deletion-queue order; Title/Size/Rating are the manual overrides. */
 const SORT_COLUMNS: ReadonlyArray<{
   col: string;
   label: string;
   field: SortField;
   firstDir: 'asc' | 'desc';
 }> = [
-  { col: 'scheduled', label: 'Deletes', field: 'scheduled', firstDir: 'asc' },
+  { col: 'strategy', label: 'Next up', field: 'strategy', firstDir: 'asc' },
   { col: 'title', label: 'Title', field: 'title', firstDir: 'asc' },
   { col: 'size', label: 'Size', field: 'size', firstDir: 'desc' },
   { col: 'rating', label: 'Rating', field: 'rating', firstDir: 'desc' },
@@ -140,7 +144,8 @@ function parseSortToken(raw: string | null): { field: SortField; dir: 'asc' | 'd
   ) {
     return { field: field as SortField, dir };
   }
-  return { field: 'scheduled', dir: 'asc' };
+  // Old `?sort=scheduled:*` deep links (and anything invalid) fall back to the "Next up" default.
+  return { field: 'strategy', dir: 'asc' };
 }
 
 function parseRatingBound(raw: string | null): number | undefined {
@@ -266,6 +271,10 @@ function PendingTab({
   // ADR-035 — the wall serves the candidate READ-MODEL (refreshed by sync every 15 min + on
   // demand); the counts bar carries the honest "as of" age and a manage-gated Refresh.
   const refreshedAt = first?.refreshedAt ?? null;
+  // DESIGN-014 amendment (build D) — the honest pool re-evaluation cadence (Maintainerr's own rule-handler
+  // cron, cached server-side; degrades to null when unavailable). Surfaced beside the "as of" age.
+  const poolCadence = trpc.trash.poolCadence.useQuery(undefined, { staleTime: 10 * 60_000 });
+  const cadenceHours = poolCadence.data?.everyHours ?? null;
   const canRefresh = access.actions.includes('manage_batches') && reachable;
   const refreshCandidates = trpc.trash.refreshCandidates.useMutation({
     onSuccess: () => {
@@ -466,7 +475,13 @@ function PendingTab({
         <span className="muted" data-testid="trash-asof">
           {refreshCandidates.isPending
             ? 'refreshing candidates…'
-            : (candidatesAsOfLabel(refreshedAt) ?? '')}
+            : (() => {
+                const asOf = candidatesAsOfLabel(refreshedAt) ?? '';
+                // ADR-035 + DESIGN-014 (build D) — honest snapshot age · honest pool re-eval cadence.
+                const cadence =
+                  cadenceHours !== null ? `pool re-evaluates every ${cadenceHours} h` : '';
+                return [asOf, cadence].filter((s) => s !== '').join(' · ');
+              })()}
         </span>
         {canRefresh ? (
           <button

@@ -355,6 +355,21 @@ export class MaintainerrWriteClient {
     });
   }
 
+  /**
+   * `POST /api/rules/execute` — ask Maintainerr to RE-EVALUATE all active rule groups now (verified
+   * against the v3.17.0 source `apps/server/src/modules/rules/rules.controller.ts` `executeRules()`).
+   * This is the RULE handler, NOT the collection handler: it re-computes collection MEMBERSHIP (so
+   * excluded/shielded items drop out of the pending pool) and does NOT delete media — the collection
+   * handler owns deletion — so unlike `handleAllCollections` it does NOT bypass the guardian and is
+   * safe to trigger from a user save (DESIGN-010/014 amendment, build D). The controller enqueues the
+   * run fire-and-forget and returns no body → a tolerant VOID request. It responds 409
+   * (ConflictException 'The rule executor is already running') when a run is already in flight — that
+   * is Maintainerr's own single-run guard; the caller (pool-refresh) treats a failure as "retry on the
+   * next backstop tick", never a phantom success. A non-2xx throws ArrHttpError (fail closed). */
+  executeAllRules(): Promise<void> {
+    return this.http.requestVoid('POST', 'rules/execute');
+  }
+
   /** `POST /api/rules` — create a rule group (RulesDto). Returns a ReturnStatus (`code:0` fails closed). */
   createRuleGroup(payload: Record<string, unknown>): Promise<void> {
     return this.requestReturnStatus('POST', 'rules', { body: payload });

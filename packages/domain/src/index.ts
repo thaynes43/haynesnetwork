@@ -23,7 +23,13 @@ export * from './trash-flow';
 export * from './trash-candidates';
 // ADR-025 / DESIGN-011 — Trash curation pipeline: generic app settings + batch state machine
 export * from './app-settings';
+// DESIGN-014 amendment (build D) — the shared batch-selection ranking (walls' "Next up" = the batch pick)
+export * from './trash-strategy';
 export * from './trash-batches';
+// DESIGN-010/014 amendment (build D) — debounced post-save Maintainerr rule re-execution + the honest
+// pool re-evaluation cadence surfaced on the walls.
+export * from './pool-refresh';
+export * from './pool-cadence';
 // ADR-034 / DESIGN-015 (PLAN-016) — Pushover batch-lifecycle notifications: delivery-window math +
 // the transactional outbox (enqueue same-tx from the batch writers; drained by the notify-outbox mode)
 export * from './notify-window';

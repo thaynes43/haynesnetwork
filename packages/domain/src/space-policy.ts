@@ -24,6 +24,7 @@ import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   APP_SETTING_DEFAULTS,
   SPACE_POLICY_MODES,
+  activeBatchStrategy,
   defaultPerKind,
   effectiveArrayPolicy,
   effectiveKindTargeting,
@@ -93,9 +94,13 @@ function resolvePerKind(stored: SpacePolicy | undefined): SpacePolicyPerKind {
     for (const kind of TRASH_MEDIA_KINDS) {
       const sk = storedPerKind[kind];
       if (sk !== null && typeof sk === 'object') {
+        // DESIGN-014 amendment (build D) — preserve a valid per-kind `strategy` fail-safe (only the two
+        // known rankings survive; anything else drops so activeBatchStrategy falls back to the default).
+        const strat = (sk as { strategy?: unknown }).strategy;
         out[kind] = {
           maxItems: resolveCap(sk.maxItems, out[kind].maxItems),
           targetBytes: resolveCap(sk.targetBytes, out[kind].targetBytes),
+          ...(strat === 'largest' || strat === 'worst-rated' ? { strategy: strat } : {}),
         };
       }
     }
@@ -141,7 +146,10 @@ export function buildKindTargeting(
 ): BatchTargeting | undefined {
   const caps = effectiveKindTargeting(policy, mediaKind);
   if (caps.targetBytes === undefined && caps.maxItems === undefined) return undefined;
-  return { ...caps, strategy: 'worst-rated' };
+  // DESIGN-014 amendment (build D) — the ranking comes from the shared resolver (the kind's configured
+  // strategy, else the owner default 'worst-rated'), so the policy pick and the wall's "Next up" sort
+  // stay identical. Default-unchanged: an unset per-kind strategy still yields 'worst-rated' as before.
+  return { ...caps, strategy: activeBatchStrategy(policy, mediaKind) };
 }
 
 // ---------------------------------------------------------------------------

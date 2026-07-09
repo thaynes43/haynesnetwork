@@ -276,3 +276,15 @@ gate stays a **separate immediate action**, its ConfirmButton ceremony unchanged
 ACTION on the gate itself: **"Disable"** when the gate is ON, **"Enable"** when it is OFF. The
 `/admin/storage` "Space policy" card (enable + per-array opt-in) is untouched and still round-trips the
 whole object (its merges preserve `mode`/`perKind`).
+
+## D-10 — Amendment 2026-07-09 (owner-directed, build D) — per-kind `strategy` + the shared ranking
+
+The batch-selection ranking `selectBatchCandidates` used (worst-rated / largest) is now the **single
+seam** `compareByStrategy` in `packages/domain/src/trash-strategy.ts`, shared with the pending walls'
+"Next up" default sort (DESIGN-010 D-13) so a wall's top is exactly the front of the next batch's pick.
+
+`SpacePolicyKindCaps` gains an optional `strategy?: 'worst-rated' | 'largest'`. `activeBatchStrategy(policy,
+kind)` resolves it fail-safe to the owner default `worst-rated` when unset/garbage. `buildKindTargeting`
+now reads that resolver instead of the hard-coded `'worst-rated'` — **behaviour-preserving** (an unset
+strategy still yields `worst-rated`), but the policy pick and the wall order now share one configurable
+source. `getSpacePolicy`/`resolvePerKind` preserve a valid stored per-kind strategy (jsonb; no migration).

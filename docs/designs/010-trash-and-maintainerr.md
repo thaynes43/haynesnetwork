@@ -530,6 +530,45 @@ glyph unions drop `'eye'`); `pendingWallTappable` no longer special-cases `eye`;
 `requested` branch is tappable in both directions; new `recentlyWatchedLabel` + `watchNote` +
 `WatchNoteBadge` (replacing `WatchedAgoNote`).
 
+## D-13 — Strategy-mirrored wall order + honest cadence + debounced pool refresh (amendment 2026-07-09, build D)
+
+Owner-greenlit. Three coherent pieces on the pending walls now that Maintainerr's per-item countdown is
+defused (`deleteAfterDays 9999` — a delete date is meaningless):
+
+1. **Strategy-mirrored default sort.** The dead **"Deletes" (`scheduled`) sort is RETIRED** — removed
+   from the wall's sort bar and the wire enum. The new DEFAULT is **"Next up" (`strategy`)**, which
+   mirrors the ACTIVE batch-selection strategy for the kind (`activeBatchStrategy(policy, kind)` — the
+   kind's `space_policy.perKind[kind].strategy`, else the owner default `worst-rated`) so the TOP of the
+   wall = the front of the deletion queue. The ordering is the SHARED `compareByStrategy` (`packages/
+   domain/src/trash-strategy.ts`) that `selectBatchCandidates` also uses: `worst-rated` = rating asc
+   with UNRATED FIRST, ties size desc, then title; `largest` = size desc, then title. Server-side sort
+   (`listTrashPendingPage` → `comparePending`) reads the strategy and orders the paginated read; the
+   "Potential in future batches" strip inherits the same default. The sort bar keeps Title/Size/Rating
+   as manual overrides. `buildKindTargeting` now reads the same resolver (behaviour-preserving: an unset
+   per-kind strategy still yields `worst-rated`, the prior hard-coded value).
+
+2. **Honest pool re-evaluation cadence.** The walls' counts bar extends the "candidates as of N min ago
+   · Refresh" line with **"pool re-evaluates every N h"** — Maintainerr's OWN rule-handler cron read
+   from `GET /api/settings` (`rules_handler_job_cron`; the live install is `0 0-23/8 * * *` → every 8 h,
+   the v3.17.0 default). Parsed by `parseCronEveryHours`, fetched via the read client, cached in-process
+   (`getPoolRefreshCadence`, `trash.poolCadence`), and gracefully omitted when Maintainerr is unreachable.
+
+3. **Debounced post-save rule re-execution.** A new audited app-setting `pool_refresh_after_save`
+   (`{ enabled, delayMinutes }`, DEFAULT `{ true, 5 }`) on **/settings/trash → General** (inside the
+   single-green-Save form). On a save/un-save the server upserts a per-kind `pending_pool_refresh`
+   marker with `due_at = now + delayMinutes` (a TRAILING debounce — each save pushes `due_at` out, so a
+   burst coalesces to one run after the last save) and arms an in-process web timer. Draining (the timer
+   OR the crash-safe incremental-sync backstop) coalesces to ONE `POST /api/rules/execute` — Maintainerr
+   re-evaluates all active rule groups, dropping excluded/shielded items from the pool. This is the RULE
+   handler, NOT the collection handler (`handleAllCollections`, still deliberately never called): it
+   re-computes membership and does NOT delete media, so it does not bypass the guardian and is safe to
+   trigger from a user save. Maintainerr's own single-run guard (`409` "already running") is the
+   cross-process backstop; a non-confirmed run keeps the marker for the next tick. `enabled=false` is
+   respected at both arm and drain.
+
+Migration **0029** (`0029_pool_refresh_after_save.sql`, journal idx 28) relaxes the `app_settings.key`
+CHECK for the new key and adds the `pending_pool_refresh` marker table.
+
 ## Ops / deploy-time checklist (owner)
 
 1. Place `MAINTAINERR_API_KEY` (Maintainerr's own first-run key) in 1Password `HaynesKube`; add
