@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.1](https://github.com/thaynes43/haynesnetwork/compare/v0.25.0...v0.25.1) (2026-07-09)
+
+
+### Performance
+
+* trash candidates read-model — instant walls (ADR-035) ([#140](https://github.com/thaynes43/haynesnetwork/issues/140)) ([78ee442](https://github.com/thaynes43/haynesnetwork/commit/78ee442f4eebc8913a924562f908f9f5ce771de0))
+
 ## [0.25.0](https://github.com/thaynes43/haynesnetwork/compare/v0.24.0...v0.25.0) (2026-07-09)
 
 
