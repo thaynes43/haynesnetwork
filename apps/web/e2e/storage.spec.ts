@@ -4,12 +4,28 @@
 //   • /admin/storage REDIRECTS to /settings/trash?tab=storage (old deep links stay alive);
 //   • Storage tab: both physical arrays render with the stub-derived % + capacity + target tick; the
 //     inline targets editor round-trips (optimistic tick move, persisted) and is reflow-free (ADR-015);
-//     the Grafana trend surface is a DEEP LINK (never an iframe — ADR-030 C-04);
+//     the free-space trend is the NATIVE chart (ADR-030 C-04 amendment 2026-07-09): both series
+//     lines + the dashed target floor + the values legend render off the stub Prometheus, the
+//     window switcher redrives storage.trend without reflow, Prometheus-down degrades to a note
+//     (never a crashed tab), and Grafana survives only as the LAN footnote link (never an iframe);
 //   • Reclaim tab: production-faithfully EMPTY, and the window switcher redrives the query;
 //   • the Storage tab fits a phone (AC-10 spot check at 390×844).
-// Leaves the seeded target back at 80 so later specs (and re-runs) see the seeded state.
+// Leaves the seeded target back at 80 (and the stub Prometheus back in 'ok' mode) so later specs
+// and re-runs see the seeded state.
 import { test, expect, type Page } from '@playwright/test';
 import { armAndConfirm, expectViewportFit, signIn } from './support/helpers';
+import { readRuntimeEnv } from './support/env';
+
+/** Script the stub Prometheus (ok ⇄ down) — the trend's degrade journey. */
+async function setPrometheusMode(mode: 'ok' | 'down'): Promise<void> {
+  const env = readRuntimeEnv();
+  const res = await fetch(`${env.STUB_PROMETHEUS_URL}/_stub/state`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ mode }),
+  });
+  if (!res.ok) throw new Error(`stub prometheus state change failed: HTTP ${res.status}`);
+}
 
 /** Open a tab of the Trash Settings hub directly (admins pass the trash-edit page gate). */
 async function openTab(page: Page, tab: 'general' | 'storage' | 'reclaim' | 'rules'): Promise<void> {
@@ -120,20 +136,91 @@ test.describe('storage metrics (ADR-030 HYBRID, native half) — on the Trash Se
     );
   });
 
-  test('Grafana trend is a deep link (new tab, same Authentik SSO) — never an embed', async ({
+  test('free-space trend: native chart — series lines, dashed target floor, values legend; Grafana demoted to a footnote', async ({
     page,
   }) => {
     await signIn(page, 'admin');
     await openTab(page, 'storage');
 
+    const trend = page.getByTestId('storage-trend');
+    await expect(trend.getByRole('heading', { name: 'Free-space trend' })).toBeVisible();
+
+    // Both physical arrays draw a line (the stub emits radarr+sonarr+lidarr series; the shared
+    // HaynesTower array dedupes to ONE line) and the seeded 80% target renders as the dashed
+    // free-bytes floor: 20% free of 529.96 TB = 106 TB.
+    await expect(page.getByTestId('trend-chart')).toBeVisible();
+    await expect(page.getByTestId('trend-line-haynestower')).toBeVisible();
+    // The music pool holds steady in the stub — a FLAT path has a zero-height bounding box, which
+    // Playwright's toBeVisible treats as hidden even though the 2px stroke renders. Assert the
+    // drawn geometry instead: attached, with a real multi-point line in its `d`.
+    const cephLine = page.getByTestId('trend-line-cephfs');
+    await expect(cephLine).toBeAttached();
+    await expect(cephLine).toHaveAttribute('d', /^M [\d.]+ [\d.]+ L /);
+    await expect(page.getByTestId('trend-target')).toBeVisible();
+    await expect(page.getByTestId('trend-target-label')).toHaveText('Target · 106 TB free');
+
+    // Direct end-labels + the legend carry the current readings — no hover needed (mobile-first).
+    await expect(page.getByTestId('trend-endlabel-haynestower')).toHaveText('HaynesTower');
+    await expect(page.getByTestId('trend-endlabel-cephfs')).toHaveText('Music (CephFS)');
+    const legend = page.getByTestId('trend-legend');
+    await expect(legend).toContainText('HaynesTower · 112.4 TB free');
+    await expect(legend).toContainText(/Music \(CephFS\) · 130\.[45] TB free/);
+    await expect(legend).toContainText('Target · 106 TB free');
+
+    // The old dashboard is a muted footnote LINK now (LAN power tool) — still never an iframe.
     const link = page.getByTestId('grafana-trend-link');
     await expect(link).toHaveAttribute(
       'href',
       'https://grafana.haynesops.com/d/media-storage-utilization',
     );
     await expect(link).toHaveAttribute('target', '_blank');
-    await expect(link).toContainText('Free-space trend & history');
     await expect(page.locator('iframe')).toHaveCount(0);
+  });
+
+  test('trend window switcher redrives storage.trend without reflow (ADR-015)', async ({
+    page,
+  }) => {
+    await signIn(page, 'admin');
+    await openTab(page, 'storage');
+    await expect(page.getByTestId('trend-chart')).toBeVisible();
+    const before = await page.getByTestId('trend-chart').boundingBox();
+
+    await Promise.all([
+      page.waitForResponse((r) => r.url().includes('storage.trend')),
+      page.getByTestId('trend-window-7d').click(),
+    ]);
+    await expect(page.locator('.storage-trend__plotwrap')).toHaveAttribute('data-window', '7d');
+    await expect(page.getByTestId('trend-line-haynestower')).toBeVisible();
+
+    // The plot region kept its exact geometry — the switch dims + swaps, never reflows.
+    const after = await page.getByTestId('trend-chart').boundingBox();
+    expect(Math.abs(after!.y - before!.y)).toBeLessThanOrEqual(1);
+    expect(Math.abs(after!.height - before!.height)).toBeLessThanOrEqual(1);
+
+    // Switching BACK hits the React Query cache (no network) — assert the swap only.
+    await page.getByTestId('trend-window-30d').click();
+    await expect(page.locator('.storage-trend__plotwrap')).toHaveAttribute('data-window', '30d');
+  });
+
+  test('Prometheus down ⇒ the trend degrades to a note; the meters keep working', async ({
+    page,
+  }) => {
+    await setPrometheusMode('down');
+    try {
+      await signIn(page, 'admin');
+      await openTab(page, 'storage');
+
+      const note = page.getByTestId('trend-degraded');
+      await expect(note).toBeVisible();
+      await expect(note).toContainText('couldn’t reach Prometheus');
+      await expect(page.getByTestId('trend-chart')).toHaveCount(0);
+      // The rest of the tab is untouched by the trend source being down (C-03 posture).
+      await expect(page.getByTestId('array-stats-haynestower')).toHaveText(
+        '78.8% used · 112.4 TB free of 530 TB',
+      );
+    } finally {
+      await setPrometheusMode('ok'); // later specs + re-runs see the healthy default
+    }
   });
 
   test('phone (390×844): the Storage + Reclaim tabs fit with no page-level overflow', async ({
@@ -143,6 +230,9 @@ test.describe('storage metrics (ADR-030 HYBRID, native half) — on the Trash Se
     await signIn(page, 'admin');
     await openTab(page, 'storage');
     await expect(page.getByTestId('array-stats-haynestower')).toBeVisible();
+    // The trend chart stays legible + inside the viewport at phone width too.
+    await expect(page.getByTestId('trend-chart')).toBeVisible();
+    await expect(page.getByTestId('trend-legend')).toBeVisible();
     await expectViewportFit(page);
     await openTab(page, 'reclaim');
     await expect(page.getByTestId('reclaim-empty')).toBeVisible();

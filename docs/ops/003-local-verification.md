@@ -114,6 +114,11 @@ e2e suite uses** — embedded PG16 → real migrations + catalog seed → stub O
   subtitle-state reads and accepts the `search-missing` PATCH, so the **missing-subtitles
   Fix** (ADR-016 / DESIGN-005 D-19) runs end-to-end without a real Bazarr. It records its
   writes at `/_stub/calls` just like the stub *arr.
+- **Stub Prometheus** (`PROMETHEUS_URL` points at it; ADR-030 C-04 amendment 2026-07-09)
+  synthesizes the exportarr free-space matrix across any `query_range` window, so the
+  Storage tab's **native free-space trend chart** renders full 7d–1y lines locally.
+  `POST <stub-prometheus>/_stub/state` with `{"mode":"down"}` flips it unreachable (the
+  chart's `unavailable` degrade); `{"mode":"ok"}` restores it.
 - Everything is **throwaway**: the database is a temp dir deleted on Ctrl-C; restart for a
   pristine seeded catalog.
 - Phone/tablet/PC layouts: use the browser devtools device toolbar.

@@ -38,11 +38,20 @@ share the array); lidarr music ~130.45 TB free ≈ 25.4% used.
 
 ## 2. Deep-link (NOT embed) — the app coupling (ADR-030 C-04)
 
-The app links out to `https://grafana.haynesops.com/d/media-storage-utilization` (opens behind the same
-Authentik SSO). It is **deliberately not iframe-embedded**: today the app + Grafana share
+> **Amendment (2026-07-09, ADR-030 C-04 amendment / DESIGN-013 D-07):** the deep-link is **retired
+> as the app's user-facing trend surface** — `grafana.haynesops.com` resolves LAN-only, so the card
+> was a dead link off-LAN. The Storage tab now renders a **native trend chart** off `storage.trend`,
+> which queries the in-cluster Prometheus directly:
+> `http://prometheus-operated.observability.svc.cluster.local:9090` (the same URL this Grafana's
+> datasource uses), **defaulted in code** and overridable via a `PROMETHEUS_URL` env on the
+> haynesnetwork helmrelease (no env line is required for the default). This dashboard is unchanged
+> and remains the LAN power tool; the app keeps a muted footnote link to it under the chart.
+
+The app linked out to `https://grafana.haynesops.com/d/media-storage-utilization` (opens behind the
+same Authentik SSO). It was **deliberately not iframe-embedded**: today the app + Grafana share
 `haynesops.com` so an embed would be same-site, but at the `haynesnetwork.com` cutover (PLAN-008 R-64)
 the Grafana session cookie becomes cross-site (SameSite=Lax stops flowing) and Authentik refuses
-in-iframe login. Record the uid + deep-link in DESIGN-013 D-05 for the app's deep-link card.
+in-iframe login. The uid + deep-link are recorded in DESIGN-013 D-05 (now the footnote target).
 
 ## 3. Dashboard-as-code delivery (mirrors media-pipeline-resilience)
 

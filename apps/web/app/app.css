@@ -4386,27 +4386,227 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
   font-weight: 600;
 }
 
-/* Grafana deep-link — a QUIET secondary card (ADR-030 C-04: link out, never embed): flat surface
-   (no brand-paper gradient), muted until hover deepens the border. */
-.storage-grafana {
+/* Free-space trend (ADR-030 C-04 amendment 2026-07-09 / DESIGN-013 D-07) — the native fill/drain
+   chart replacing the LAN-only Grafana deep-link. Inline-SVG lines in a normalized space (x = % of
+   width, y = px of the fixed 200px plot) so labels are plain HTML sharing the same coordinates —
+   responsive with no measurement code. Dataviz school: 2px round-cap lines, SOLID hairline grid
+   (dashes are reserved for the target threshold), zero-based byte axis on round ticks, direct
+   end-labels + a values legend (identity never color-alone), text in text tokens only. ADR-015:
+   every state (chart / loading / degraded / empty) occupies the same fixed-height region; a window
+   switch dims + swaps in place. */
+.storage-trend {
+  margin-top: 12px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-top: 12px;
-  padding: 14px 20px;
-  background: var(--color-surface);
-  text-decoration: none;
-  color: var(--color-text);
+  gap: 10px;
 }
-.storage-grafana:hover {
-  border-color: var(--color-accent);
+.storage-trend__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
 }
-.storage-grafana__title {
-  font-weight: 600;
-  font-size: 14px;
+.storage-trend__head h2 {
+  margin: 0;
+  font-size: 15px;
 }
-.storage-grafana .muted {
+.storage-trend__caption {
+  margin: 0;
   font-size: 12px;
+}
+/* Series identity — theme tokens ONLY: brand accent = HaynesTower, the progress blue = Music.
+   Color follows the entity (never a position), so a series can never swap hues across windows. */
+.trend-series--haynestower {
+  --series-color: var(--color-accent);
+}
+.trend-series--cephfs {
+  --series-color: var(--color-progress);
+}
+.storage-trend__plotwrap {
+  margin: 0;
+  position: relative;
+  transition: opacity 0.15s ease;
+}
+.storage-trend__plotwrap[data-refreshing] {
+  opacity: 0.55; /* hold the previous chart dimmed during a window switch — never a skeleton flash */
+}
+.storage-trend__canvas,
+.storage-trend__note {
+  position: relative;
+  height: 200px; /* must equal freespace-trend.tsx PLOT_H — every state keeps this geometry */
+  border-bottom: 1px solid var(--color-border); /* the zero baseline (free space is zero-based) */
+}
+.storage-trend__note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0 16px;
+}
+.storage-trend__note p {
+  margin: 0;
+  font-size: 13px;
+  max-width: 44ch;
+}
+.storage-trend__canvas svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.storage-trend__grid {
+  stroke: var(--color-border);
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.6;
+}
+.storage-trend__line {
+  fill: none;
+  stroke: var(--series-color);
+  stroke-width: 2px;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+/* Axis tick labels sit just BELOW their gridline (above would clip out of the canvas top);
+   a soft surface glow keeps them legible where a line passes through. */
+.storage-trend__ytick {
+  position: absolute;
+  left: 0;
+  transform: translateY(2px);
+  font-size: 10px;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  text-shadow:
+    0 0 4px var(--color-surface),
+    0 0 4px var(--color-surface);
+  pointer-events: none;
+}
+/* The explicit non-zero baseline label (fitted-domain honesty) — pinned inside the axis corner. */
+.storage-trend__ytick--baseline {
+  top: auto;
+  bottom: 2px;
+  transform: none;
+}
+/* The space-target floor: an HTML dashed rule (CSS dashes stay crisp at any width — an SVG
+   dasharray would stretch with the non-uniform viewBox). Dashing is RESERVED for this threshold. */
+.storage-trend__target {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  transform: translateY(-1px);
+  background: repeating-linear-gradient(
+    90deg,
+    var(--color-text-muted) 0 6px,
+    transparent 6px 12px
+  );
+  opacity: 0.9;
+  pointer-events: none;
+}
+/* Its label rides below-right of the line — away from the end-labels (which center on line ends
+   ABOVE the target, free space being above its floor) and from the left-side axis ticks. */
+.storage-trend__target-label {
+  position: absolute;
+  right: 0;
+  transform: translateY(4px);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-shadow:
+    0 0 4px var(--color-surface),
+    0 0 4px var(--color-surface);
+  pointer-events: none;
+}
+/* End marker: ≥8px dot with a 2px surface ring so it reads where lines/labels cross. */
+.storage-trend__dot {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--series-color);
+  box-shadow: 0 0 0 2px var(--color-surface);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+/* Direct end-labels: text wears TEXT ink; the small line-key beside it carries the series color.
+   Geometry pre-nudges labelY apart when the two line ends converge. */
+.storage-trend__endlabel {
+  position: absolute;
+  transform: translate(calc(-100% - 10px), -50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text);
+  white-space: nowrap;
+  text-shadow:
+    0 0 4px var(--color-surface),
+    0 0 4px var(--color-surface);
+  pointer-events: none;
+}
+.storage-trend__key {
+  width: 10px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--series-color);
+  flex: none;
+}
+.storage-trend__xaxis {
+  position: relative;
+  height: 18px;
+}
+.storage-trend__xaxis span {
+  position: absolute;
+  top: 4px;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* Legend with current values — the hover-free chart's dependable reading channel. Wraps into a
+   stack at phone widths; min-height reserves one row so a state change never collapses the card. */
+.storage-trend__legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  font-size: 12px;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+  min-height: 18px;
+}
+.storage-trend__legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.storage-trend__swatch {
+  width: 12px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--series-color);
+  flex: none;
+}
+.storage-trend__swatch--dashed {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--color-text-muted) 0 3px,
+    transparent 3px 6px
+  );
+}
+.storage-trend__legend-target,
+.storage-trend__legend-note {
+  color: var(--color-text-muted);
+}
+.storage-trend__footnote {
+  margin: 0;
+  font-size: 11px;
 }
 
 /* Reclaim section. */

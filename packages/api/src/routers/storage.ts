@@ -2,6 +2,8 @@
 // one write, all ADMIN-gated for v1 (operational data; DESIGN-013 notes a future section-permission if
 // this ever goes member-facing):
 //   storage.utilization       — current disk utilization per media array (*arr /diskspace, resilient).
+//   storage.trend({window})   — the native free-space trend (Prometheus exportarr history + targets;
+//                               ADR-030 amendment 2026-07-09 — replaces the Grafana deep-link).
 //   storage.reclaim({window}) — reclaim attribution over a window (PG deletion snapshots + expedite).
 //   storage.targets.get       — the per-server space_targets map (drives the reference line).
 //   storage.targets.set       — set the targets (audited via the app_settings single-writer).
@@ -17,8 +19,9 @@ import {
   RECLAIM_WINDOWS,
   SPACE_POLICY_MODES,
 } from '@hnet/domain';
-import { mapDomainErrors, resolveArrBundle, router } from '../trpc';
+import { mapDomainErrors, resolveArrBundle, resolvePrometheusReader, router } from '../trpc';
 import { adminProcedure } from '../middleware/role';
+import { getStorageTrend, TREND_WINDOWS } from '../storage-trend';
 
 /**
  * Per-server space targets: a SPARSE map of Plex-server slug → percent-used ceiling (0..100). The keys
@@ -97,6 +100,24 @@ export const storageRouter = router({
   utilization: adminProcedure.query(({ ctx }) =>
     mapDomainErrors(() => getUtilization({ db: ctx.db, arr: resolveArrBundle(ctx) })),
   ),
+
+  /**
+   * The native free-space trend (ADR-030 amendment 2026-07-09 / DESIGN-013 D-07): exportarr
+   * history from Prometheus grouped to the SAME arrays as `utilization`, plus the space-target
+   * drawn as a free-bytes floor. Prometheus down ⇒ `unavailable: true`, never a crashed tab.
+   */
+  trend: adminProcedure
+    .input(z.object({ window: z.enum(TREND_WINDOWS).default('30d') }))
+    .query(({ ctx, input }) =>
+      mapDomainErrors(() =>
+        getStorageTrend({
+          db: ctx.db,
+          arr: resolveArrBundle(ctx),
+          prometheus: resolvePrometheusReader(ctx),
+          window: input.window,
+        }),
+      ),
+    ),
 
   /** Reclaim attribution over a window (30d/90d/365d/all) — category × resolution, curve, per batch. */
   reclaim: adminProcedure

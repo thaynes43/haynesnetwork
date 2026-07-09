@@ -73,11 +73,25 @@ Chosen option: **3 (HYBRID)**, with Grafana **deep-linked, not iframe-embedded**
 | C-01b | **Direct-expedite forward-capture.** The direct-Expedite path previously froze NO size/resolution into any durable record. PLAN-013 enriches the `trash_expedited` ledger-event payload **and** the deletion-audit notification payload with frozen `{sizeBytes, resolution, imdbRating, tmdbRating}` from the same live/pending row already in scope (jsonb payloads — no new table/migration). `getReclaim` UNIONs a best-effort expedite total from those payloads; the owner's 2 pre-capture historical expedites carry no size and are excluded (documented). |
 | C-02 | **Infra disk trend (fill/drain) surfaces via Grafana** off exportarr `{radarr,sonarr,lidarr}_rootfolder_freespace_bytes` — **not** node-exporter/kubelet, neither of which observes the media libraries. Dashboard-as-code in `haynes-ops` (OPS-007), sidecar-imported into the **Media** folder. |
 | C-03 | **Utilization source of record = the *arr `GET /diskspace` API** (the only read carrying `totalSpace`, so the only source for a utilization %). exportarr freeSpace is the trend/history source; the two agree to ~0.03% live. The native card reads diskspace; a downed *arr yields a partial result (`unavailable`), never a crash. |
-| C-04 | **Grafana surface = deep-link, not iframe embed, for v1.** The cross-site Grafana session cookie breaks the embed after the `haynesnetwork.com` cutover and Authentik refuses in-iframe login. `GF_SECURITY_ALLOW_EMBEDDING: true` is left as-is so a *later* same-root embed remains possible, but v1 links out to the dashboard by uid (`media-storage-utilization`), which opens behind the same Authentik SSO the user already holds — best mobile experience, zero cross-site-cookie risk, no `SameSite=none` loosening. |
+| C-04 | **Grafana surface = deep-link, not iframe embed, for v1.** The cross-site Grafana session cookie breaks the embed after the `haynesnetwork.com` cutover and Authentik refuses in-iframe login. `GF_SECURITY_ALLOW_EMBEDDING: true` is left as-is so a *later* same-root embed remains possible, but v1 links out to the dashboard by uid (`media-storage-utilization`), which opens behind the same Authentik SSO the user already holds — best mobile experience, zero cross-site-cookie risk, no `SameSite=none` loosening. **Amended 2026-07-09 — the deep-link is retired as the user-facing trend surface; see the dated amendment under "More information".** |
 | C-05 | **The space target lives in `app_settings`** under a new `space_targets` key (jsonb, keyed by `plex_servers.slug` → percent-used ceiling; default `{}`), set through the audited `setAppSetting` single-writer. Owned + displayed here (013); **acted on by PLAN-014** (Q-03 split). CHECK-relax migration **0021** admits the key (mirrors 0019's `motd`). A documented slug→rootfolder-path map (DESIGN-013 §4) reconciles the owner's per-server model with the physical mounts. |
 | C-06 | (Cost/risk) **The media-library disk trend depends on the exportarr sidecars staying scraped.** There is **no HaynesTower node-exporter/SMART fallback** — it is external to the cluster and unscraped. If exportarr stops, the Grafana trend goes blank (the native diskspace card still works, as it reads the live *arr API). A utilization-% *trend* additionally needs the total baked in as a constant (exportarr has no total), which is fragile as the array grows — hence the trend plots free-bytes with a static target line, not a %. |
 
 ## More information
+
+### Amendment (2026-07-09) — C-04 deep-link retired for the user-facing trend (owner-greenlit)
+
+`grafana.haynesops.com` resolves **LAN-only**, so the C-04 deep-link card was a dead link for anyone
+off the LAN — exactly the mobile audience the drivers prioritized. The owner green-lit replacing it
+with a **native trend chart**: the app now queries the in-cluster Prometheus directly
+(`GET /api/v1/query_range` on `http://prometheus-operated.observability.svc.cluster.local:9090`,
+overridable via `PROMETHEUS_URL`) for the same exportarr `*_rootfolder_freespace_bytes` series
+(C-02), grouped onto the SAME physical arrays as `getUtilization` and drawn with the space target as
+a free-bytes floor (the C-06 framing — free-bytes + target line, never a % trend). `storage.trend`
+is adminProcedure like the rest; Prometheus being unreachable degrades to a note, never a crashed
+tab (the C-03 posture). **Option 2's rejection stands** — no second time-series store was built;
+Prometheus remains the retention. The Grafana dashboard (OPS-007) is unchanged and stays the **LAN
+power tool**, reachable from a muted footnote under the chart. Design: DESIGN-013 **D-07**.
 
 - Native reads are **admin-gated** for v1 (`storage.*` = adminProcedure): operational data. DESIGN-013
   notes a future section-permission if it ever goes member-facing.

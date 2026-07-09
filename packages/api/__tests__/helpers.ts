@@ -28,6 +28,7 @@ import {
 } from '@hnet/db/schema';
 import { appRouter } from '../src/routers/index';
 import { createCallerFactory, type TRPCContext } from '../src/trpc';
+import type { PrometheusRangeReader } from '../src/prometheus';
 
 export interface TestDb {
   db: Database;
@@ -136,6 +137,8 @@ export function makeCtx(
   arr?: ArrClientBundle,
   plex?: PlexClientBundle,
   maintainerr?: MaintainerrClientBundle,
+  /** ADR-030 amendment (2026-07-09) — a stubbed Prometheus range reader for storage.trend tests. */
+  prometheus?: PrometheusRangeReader,
 ): TRPCContext {
   return {
     db,
@@ -143,6 +146,7 @@ export function makeCtx(
     ...(arr !== undefined ? { arr } : {}),
     ...(plex !== undefined ? { plex } : {}),
     ...(maintainerr !== undefined ? { maintainerr } : {}),
+    ...(prometheus !== undefined ? { prometheus } : {}),
   };
 }
 

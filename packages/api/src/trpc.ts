@@ -41,6 +41,7 @@ import {
   type MaintainerrClientBundle,
   type PlexClientBundle,
 } from '@hnet/domain';
+import { prometheusClientFromEnv, type PrometheusRangeReader } from './prometheus';
 
 export type { SessionUser };
 
@@ -66,6 +67,12 @@ export interface TRPCContext {
    * requires MAINTAINERR_API_KEY), stubbed bundle in tests.
    */
   maintainerr?: MaintainerrClientBundle;
+  /**
+   * ADR-030 amendment (2026-07-09) / DESIGN-013 D-07 — the Prometheus range reader the
+   * `storage.trend` read runs against. Same injection model: env-built singleton in production
+   * (PROMETHEUS_URL, in-cluster default), stubbed reader in tests.
+   */
+  prometheus?: PrometheusRangeReader;
 }
 
 let envArrBundle: ArrClientBundle | undefined;
@@ -93,6 +100,15 @@ export function resolvePlexBundle(ctx: TRPCContext): PlexClientBundle {
   if (ctx.plex) return ctx.plex;
   envPlexBundle ??= plexClientBundleFromEnv();
   return envPlexBundle;
+}
+
+let envPrometheus: PrometheusRangeReader | undefined;
+
+/** The Prometheus reader for this request: injected (tests) or the env-built singleton (D-07). */
+export function resolvePrometheusReader(ctx: TRPCContext): PrometheusRangeReader {
+  if (ctx.prometheus) return ctx.prometheus;
+  envPrometheus ??= prometheusClientFromEnv();
+  return envPrometheus;
 }
 
 function hasKnownRole(user: SessionUser): boolean {
