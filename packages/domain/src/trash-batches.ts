@@ -57,6 +57,7 @@ import {
   type TrashPendingItem,
 } from './trash-flow';
 import { removeTrashCandidateRows } from './trash-candidates';
+import { compareByStrategy, type BatchStrategy } from './trash-strategy';
 
 const nowDate = () => new Date();
 const OPEN_STATES = TRASH_BATCH_OPEN_STATES as readonly TrashBatchState[];
@@ -245,8 +246,8 @@ export interface BatchTargeting {
   targetBytes?: number;
   /** Hard cap on the number of items taken (an independent stop condition — whichever hits first). */
   maxItems?: number;
-  /** The greedy ranking (default 'largest'). */
-  strategy?: 'largest' | 'worst-rated';
+  /** The greedy ranking (default 'largest'; policy batches pass 'worst-rated'). */
+  strategy?: BatchStrategy;
 }
 
 type ActionableItem = TrashPendingItem & { maintainerrMediaId: string };
@@ -274,18 +275,10 @@ export function selectBatchCandidates(
 
   const strategy = targeting?.strategy ?? 'largest';
   const deletable = actionable.filter((p) => !p.protectedByTag);
-  const ranked = [...deletable].sort((a, b) => {
-    if (strategy === 'worst-rated') {
-      const ra = a.imdbRating ?? a.tmdbRating;
-      const rb = b.imdbRating ?? b.tmdbRating;
-      if (ra === null && rb !== null) return -1; // unrated is the worst — take it first
-      if (ra !== null && rb === null) return 1;
-      if (ra !== null && rb !== null && ra !== rb) return ra - rb;
-    }
-    // largest, and the shared tie-break: bigger frees more, then title for determinism.
-    if (a.sizeBytes !== b.sizeBytes) return b.sizeBytes - a.sizeBytes;
-    return a.title.localeCompare(b.title);
-  });
+  // DESIGN-014 amendment (2026-07-09, build D) — the ranking is the SHARED compareByStrategy so the
+  // pending walls' "Next up" default sort orders identically (the top of the wall = the front of the
+  // deletion queue). Keep this call the single ordering seam.
+  const ranked = [...deletable].sort((a, b) => compareByStrategy(a, b, strategy));
 
   const out: ActionableItem[] = [];
   let total = 0;

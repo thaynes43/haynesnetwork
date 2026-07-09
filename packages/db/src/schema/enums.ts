@@ -354,6 +354,14 @@ export const APP_SETTING_KEYS = [
   // notification_outbox row's earliest_send_at against it (in-window ⇒ ASAP; outside ⇒ next window-open).
   // Admin-gated + audited through the same setAppSetting single-writer; migration 0024 relaxes the CHECK.
   'notify_window',
+  // DESIGN-010/014 amendment (2026-07-09, build D) — POOL REFRESH AFTER SAVE (jsonb object:
+  // { enabled, delayMinutes }; DEFAULT { enabled:true, delayMinutes:5 }). When on, a save/un-save on a
+  // pending wall enqueues a debounced Maintainerr RULE re-execution `delayMinutes` later (coalesced per
+  // kind via the pending_pool_refresh marker + an in-process timer; the incremental sync is the crash-safe
+  // backstop) so shielded items leave the pending list quickly. Rule runs are heavy — the helper text
+  // steers the delay ≥ a few minutes. Admin-gated + audited through setAppSetting; migration 0029 relaxes
+  // the CHECK (and adds the pending_pool_refresh marker table).
+  'pool_refresh_after_save',
 ] as const;
 export type AppSettingKey = (typeof APP_SETTING_KEYS)[number];
 

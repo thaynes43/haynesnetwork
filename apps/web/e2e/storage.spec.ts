@@ -342,4 +342,41 @@ test.describe('notifications delivery window (ADR-034) — General tab', () => {
     ]);
     await expect(page.getByTestId('notify-window-summary')).toContainText('All day');
   });
+
+  // DESIGN-010/014 amendment (build D) — the "Refresh pool after saves" knob (the debounced post-save
+  // Maintainerr rule re-execution) is part of the same consolidated General form + single green Save.
+  test('the Refresh-pool-after-saves setting renders and round-trips via the single green Save', async ({
+    page,
+  }) => {
+    await signIn(page, 'admin');
+    await openTab(page, 'general');
+
+    const row = page.getByTestId('pool-refresh-row');
+    await expect(row).toBeVisible();
+    await expect(row).toContainText('re-evaluate the rules');
+    // Defaults: ON, 5-minute debounce.
+    await expect(page.getByTestId('pool-refresh-enabled')).toBeChecked();
+    await expect(page.getByTestId('pool-refresh-delay')).toHaveValue('5');
+
+    // Change the delay and commit via the single green Save (audited trash.settings.set).
+    await page.getByTestId('pool-refresh-delay').fill('8');
+    await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().includes('trash.settings.set') && r.request().method() === 'POST',
+      ),
+      page.getByTestId('general-save').click(),
+    ]);
+    await page.reload();
+    await expect(page.getByTestId('pool-refresh-delay')).toHaveValue('8');
+
+    // Restore the 5-minute default for later specs/re-runs.
+    await page.getByTestId('pool-refresh-delay').fill('5');
+    await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().includes('trash.settings.set') && r.request().method() === 'POST',
+      ),
+      page.getByTestId('general-save').click(),
+    ]);
+    await expect(page.getByTestId('pool-refresh-delay')).toHaveValue('5');
+  });
 });

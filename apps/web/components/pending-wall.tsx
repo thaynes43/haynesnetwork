@@ -112,7 +112,8 @@ export function usePendingSaves(media: 'movie' | 'tv') {
     setError(null);
     const mutation = saving ? save : unsave;
     mutation.mutate(
-      { maintainerrMediaId: id, mediaItemId: item.mediaItemId },
+      // `media` drives the server's per-kind debounced pool-refresh marker (DESIGN-014 build D).
+      { media, maintainerrMediaId: id, mediaItemId: item.mediaItemId },
       {
         onSuccess: () => void utils.trash.pending.invalidate({ media }),
         onError: (err: unknown) => {

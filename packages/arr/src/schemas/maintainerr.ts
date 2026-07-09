@@ -135,6 +135,12 @@ export const maintainerrSettingsSchema = z
     sonarr_tag_exclusions: z.boolean().nullish(),
     sonarr_exclusion_tag: z.string().nullish(),
     sonarr_untag_on_unexclude: z.boolean().nullish(),
+    // DESIGN-010/014 amendment (2026-07-09) — Maintainerr's OWN handler CRON schedules (crontab strings,
+    // e.g. "0 0-23/8 * * *"). We surface the RULE handler cadence honestly on the walls ("pool re-evaluates
+    // every N h"); the collection handler is kept for completeness. Nullish — an older/stubbed install may
+    // omit them and the label degrades gracefully.
+    rules_handler_job_cron: z.string().nullish(),
+    collection_handler_job_cron: z.string().nullish(),
   })
   .passthrough();
 export type MaintainerrSettings = z.infer<typeof maintainerrSettingsSchema>;

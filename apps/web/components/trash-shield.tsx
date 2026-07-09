@@ -459,12 +459,14 @@ export function TrashPendingNotice({
             busy={save.isPending || unsave.isPending}
             onSave={() =>
               save.mutate({
+                media,
                 maintainerrMediaId: item.maintainerrMediaId!,
                 mediaItemId: item.mediaItemId,
               })
             }
             onUnsave={() =>
               unsave.mutate({
+                media,
                 maintainerrMediaId: item.maintainerrMediaId!,
                 mediaItemId: item.mediaItemId,
               })

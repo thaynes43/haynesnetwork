@@ -27,6 +27,9 @@ interface GeneralDraft {
   notifyStart: string;
   notifyEnd: string;
   notifyTz: string;
+  // DESIGN-010/014 amendment (build D) — the debounced post-save pool refresh.
+  poolRefreshEnabled: boolean;
+  poolRefreshDelay: string;
 }
 
 const intOrNaN = (s: string): number => (/^-?\d+$/.test(s.trim()) ? Number(s) : NaN);
@@ -51,12 +54,15 @@ export function GeneralTab() {
 
   const skipGate = settings.data?.trash_skip_admin_gate === true;
   const loaded = settings.data !== undefined && notify.data !== undefined;
+  const pool = settings.data?.pool_refresh_after_save;
   const server: GeneralDraft | null = loaded
     ? {
         windowDays: String(settings.data?.trash_default_window_days ?? 21),
         notifyStart: String(notify.data!.startHour),
         notifyEnd: String(notify.data!.endHour),
         notifyTz: notify.data!.tz,
+        poolRefreshEnabled: pool?.enabled ?? true,
+        poolRefreshDelay: String(pool?.delayMinutes ?? 5),
       }
     : null;
   const form = draft ?? server;
@@ -67,7 +73,10 @@ export function GeneralTab() {
   const notifyStart = form ? Number(form.notifyStart) : NaN;
   const notifyEnd = form ? Number(form.notifyEnd) : NaN;
   const notifyValid = isValidWindow(notifyStart, notifyEnd);
-  const valid = winValid && notifyValid;
+  const poolDelayVal = form ? intOrNaN(form.poolRefreshDelay) : NaN;
+  // Off ⇒ the delay is inert (not validated); on ⇒ 1–1440 minutes (a run is heavy — keep it ≥ a few).
+  const poolValid = !form?.poolRefreshEnabled || (poolDelayVal >= 1 && poolDelayVal <= 1440);
+  const valid = winValid && notifyValid && poolValid;
   const saving = saveWindow.isPending || saveNotify.isPending;
 
   const patch = (next: Partial<GeneralDraft>) => {
@@ -103,6 +112,17 @@ export function GeneralTab() {
           startHour: notifyStart,
           endHour: notifyEnd,
           tz: form.notifyTz,
+        });
+      }
+      if (
+        form.poolRefreshEnabled !== server.poolRefreshEnabled ||
+        form.poolRefreshDelay !== server.poolRefreshDelay
+      ) {
+        // When disabled the delay is inert; still submit a valid number (clamp) so the zod min(1) holds.
+        const delayMinutes =
+          Number.isFinite(poolDelayVal) && poolDelayVal >= 1 ? Math.min(1440, poolDelayVal) : 5;
+        await saveWindow.mutateAsync({
+          poolRefreshAfterSave: { enabled: form.poolRefreshEnabled, delayMinutes },
         });
       }
       setDraft(null);
@@ -269,6 +289,44 @@ export function GeneralTab() {
           </div>
         </div>
 
+        {/* Pool refresh after save (DESIGN-010/014 build D) — part of the shared form. */}
+        <div className="batch-settings__row" data-testid="pool-refresh-row">
+          <div className="batch-settings__copy">
+            <strong>Refresh pool after saves</strong>
+            <p className="muted">
+              After someone saves an item, ask Maintainerr to re-evaluate the rules a few minutes
+              later so shielded items leave the list quickly. Rule runs are heavy — keep this{' '}
+              <strong>≥ a few minutes</strong>. Off waits for Maintainerr&apos;s own schedule.
+            </p>
+          </div>
+          <span className="batch-settings__field">
+            <label className="notify-window__field">
+              <input
+                type="checkbox"
+                checked={form?.poolRefreshEnabled ?? true}
+                disabled={!loaded}
+                data-testid="pool-refresh-enabled"
+                aria-label="Refresh the pool after saves"
+                onChange={(e) => patch({ poolRefreshEnabled: e.target.checked })}
+              />
+              <span>Enabled</span>
+            </label>
+            <input
+              type="number"
+              className="batch-window-input"
+              min={1}
+              max={1440}
+              value={form?.poolRefreshDelay ?? ''}
+              disabled={!loaded || !(form?.poolRefreshEnabled ?? true)}
+              data-testid="pool-refresh-delay"
+              aria-label="Pool refresh delay in minutes"
+              aria-invalid={(form !== null && !poolValid) || undefined}
+              onChange={(e) => patch({ poolRefreshDelay: e.target.value })}
+            />
+            <span className="muted">min</span>
+          </span>
+        </div>
+
         {/* The single green Save for the whole form (gate stays its own action above). */}
         <div className="form-actions batch-settings__save">
           <button
@@ -286,11 +344,13 @@ export function GeneralTab() {
               ? '1–365 days'
               : !notifyValid && form !== null
                 ? 'Start must be before end'
-                : saved
-                  ? 'Saved'
-                  : dirty
-                    ? 'Unsaved'
-                    : ' '}
+                : !poolValid && form !== null
+                  ? 'Refresh delay: 1–1440 minutes'
+                  : saved
+                    ? 'Saved'
+                    : dirty
+                      ? 'Unsaved'
+                      : ' '}
           </span>
         </div>
       </section>

@@ -17,6 +17,7 @@ import {
 import { eq } from 'drizzle-orm';
 import { NotFoundError } from './errors';
 import { inTransaction, resolveDb } from './db-client';
+import { type BatchStrategy } from './trash-strategy';
 
 /**
  * ADR-027 / DESIGN-004 D-15 (PLAN-010) — the Message-of-the-Day record stored as the `motd`
@@ -90,6 +91,13 @@ export interface SpacePolicyKindCaps {
   maxItems: SpacePolicyCap;
   /** Free at least this many BYTES (largest/worst-rated-first greedy fill). */
   targetBytes: SpacePolicyCap;
+  /**
+   * DESIGN-014 amendment (2026-07-09, build D) — the batch-selection RANKING for this kind. Drives BOTH
+   * the policy batch's greedy pick (buildKindTargeting → selectBatchCandidates) AND the pending walls'
+   * "Next up" default sort, so the wall's top is the front of the deletion queue. Optional — absent ⇒
+   * the owner default 'worst-rated' (see `activeBatchStrategy`).
+   */
+  strategy?: BatchStrategy;
 }
 
 /** The per-kind cap map — one entry per batchable Trash kind (movie, tv). */
@@ -169,6 +177,22 @@ export function effectiveKindTargeting(
 }
 
 /**
+ * DESIGN-014 amendment (2026-07-09, build D) — the ACTIVE batch-selection strategy for one kind: the
+ * kind's configured `perKind[kind].strategy`, else the owner default 'worst-rated' (the same ranking
+ * policy-proposed batches use — buildKindTargeting). Fail-safe: a hand-edited/garbage jsonb value that
+ * isn't one of the two strategies reads as the default. This single resolver is mirrored by both the
+ * policy batch pick (selectBatchCandidates) and the pending walls' "Next up" sort so the wall's top is
+ * the front of the deletion queue. Accepts a partial policy (only `perKind` is read).
+ */
+export function activeBatchStrategy(
+  policy: { perKind?: Partial<Record<TrashMediaKind, Partial<SpacePolicyKindCaps>>> } | null | undefined,
+  kind: TrashMediaKind,
+): BatchStrategy {
+  const s = policy?.perKind?.[kind]?.strategy;
+  return s === 'largest' || s === 'worst-rated' ? s : 'worst-rated';
+}
+
+/**
  * ADR-034 / DESIGN-015 (PLAN-016) — the DELIVERY WINDOW for Pushover batch-lifecycle pushes (T-101).
  * The owner's quiet-hours control: pushes only leave inside `[startHour, endHour)` in `tz`. Enqueue
  * computes each `notification_outbox` row's `earliest_send_at` against it. Stored as the `notify_window`
@@ -201,6 +225,30 @@ export const NOTIFY_WINDOW_DEFAULT: NotifyWindow = {
   tz: 'America/New_York',
 };
 
+/**
+ * DESIGN-010/014 amendment (2026-07-09, build D) — POOL REFRESH AFTER SAVE. When `enabled`, a save/
+ * un-save on a pending wall enqueues a DEBOUNCED Maintainerr rule re-execution `delayMinutes` later so
+ * shielded items leave the pending list quickly (rule runs are heavy — the helper text steers the delay
+ * ≥ a few minutes). Stored as the `pool_refresh_after_save` app_settings jsonb value; admin-set + audited
+ * through setAppSetting. Read fail-safe by `getPoolRefreshAfterSave` (a garbage jsonb row can't disable a
+ * gate into a truthy string / yield a NaN delay).
+ */
+export interface PoolRefreshAfterSave {
+  enabled: boolean;
+  /** Minutes to wait after the LAST save before asking Maintainerr to re-evaluate (trailing debounce). */
+  delayMinutes: number;
+}
+
+/** The floor/ceiling for a hand-set delay (a run is heavy — never sub-minute; a day is plenty of ceiling). */
+export const POOL_REFRESH_DELAY_MIN = 1;
+export const POOL_REFRESH_DELAY_MAX = 1440;
+
+/** ON out of the box (the owner wants saved items to leave the list quickly), 5-minute debounce. */
+export const POOL_REFRESH_AFTER_SAVE_DEFAULT: PoolRefreshAfterSave = {
+  enabled: true,
+  delayMinutes: 5,
+};
+
 /** The typed value shape per key — the jsonb column holds exactly these. */
 export interface AppSettingValueMap {
   trash_skip_admin_gate: boolean;
@@ -209,6 +257,7 @@ export interface AppSettingValueMap {
   space_targets: SpaceTargets;
   space_policy: SpacePolicy;
   notify_window: NotifyWindow;
+  pool_refresh_after_save: PoolRefreshAfterSave;
 }
 
 /** The documented default returned when a key has no row (never null — every key has a default). */
@@ -233,6 +282,9 @@ export const APP_SETTING_DEFAULTS: AppSettingValueMap = {
   // ADR-034 — the delivery window defaults to 6 PM–10 PM Eastern (the owner's example). An object so
   // the getAppSetting typeof-guard treats it like motd; getNotifyWindow further per-field-guards it.
   notify_window: NOTIFY_WINDOW_DEFAULT,
+  // DESIGN-010/014 amendment (2026-07-09, build D) — pool refresh after save (ON, 5-min debounce). An
+  // object so the getAppSetting typeof-guard treats it like motd; getPoolRefreshAfterSave per-field-guards.
+  pool_refresh_after_save: POOL_REFRESH_AFTER_SAVE_DEFAULT,
 };
 
 /**
@@ -338,4 +390,23 @@ export async function setAppSetting<K extends AppSettingKey>(
 
     return { changed: before !== input.value, before, after: input.value };
   });
+}
+
+/**
+ * DESIGN-010/014 amendment (2026-07-09, build D) — read `pool_refresh_after_save`, per-field fail-safe
+ * (mirrors getSpacePolicy discipline): a non-boolean `enabled` reads as the default (ON — the owner
+ * wants saved items to leave the list, and a garbage row must never SILENTLY disable the nicety); a
+ * non-finite / out-of-range `delayMinutes` clamps to [POOL_REFRESH_DELAY_MIN, POOL_REFRESH_DELAY_MAX]
+ * around the 5-minute default. So a hand-edited jsonb row can never yield a `NaN`/sub-minute delay.
+ */
+export async function getPoolRefreshAfterSave(db?: DbClient): Promise<PoolRefreshAfterSave> {
+  const stored = await getAppSetting(db, 'pool_refresh_after_save');
+  const d = POOL_REFRESH_AFTER_SAVE_DEFAULT;
+  const enabled = typeof stored?.enabled === 'boolean' ? stored.enabled : d.enabled;
+  const raw = stored?.delayMinutes;
+  const delayMinutes =
+    typeof raw === 'number' && Number.isFinite(raw)
+      ? Math.min(POOL_REFRESH_DELAY_MAX, Math.max(POOL_REFRESH_DELAY_MIN, Math.round(raw)))
+      : d.delayMinutes;
+  return { enabled, delayMinutes };
 }

@@ -208,11 +208,21 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     const wallBox = (await page.getByTestId('trash-wall').boundingBox())!;
     expect(barBox.y).toBeLessThan(wallBox.y);
 
+    // DESIGN-014 build D — the DEFAULT sort is "Next up" (strategy-mirrored). With the seed's ratings the
+    // active strategy is worst-rated, so the UNRATED Vanished Heist (the front of the deletion queue)
+    // leads the wall ahead of the rated titles — not the retired soonest-to-delete order.
+    await expect(page.getByTestId('trash-tile').first()).toContainText('Vanished Heist');
+    await expect(page.getByRole('group', { name: 'Sort' }).getByRole('button', { name: 'Next up' })).toBeVisible();
+    // The retired "Deletes" sort is gone.
+    await expect(page.getByRole('group', { name: 'Sort' }).getByRole('button', { name: 'Deletes' })).toHaveCount(0);
+
     // The sort bar replaces the table headers (same ?sort contract): Size ⇒ biggest first.
     await page.getByRole('group', { name: 'Sort' }).getByRole('button', { name: 'Size' }).click();
     await expect(page).toHaveURL(/sort=size%3Adesc|sort=size:desc/);
     await expect(page.getByTestId('trash-tile').first()).toContainText('Stub Runner');
-    await page.getByRole('group', { name: 'Sort' }).getByRole('button', { name: 'Deletes' }).click();
+    // DESIGN-014 build D — the dead "Deletes" sort is retired; "Next up" (the strategy default) clears
+    // the ?sort param when re-selected (it is the default order).
+    await page.getByRole('group', { name: 'Sort' }).getByRole('button', { name: 'Next up' }).click();
     await expect(page).not.toHaveURL(/sort=/);
 
     // Filter-aware: Genre=Action keeps only Stub Runner and the counts bar says so.

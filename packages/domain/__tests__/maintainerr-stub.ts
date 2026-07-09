@@ -104,6 +104,10 @@ export function makeMaintainerr(state: MaintState): {
       return ok(present ? [{ id: 1, mediaServerId: id, ruleGroupId: null, parent: id }] : []);
     }
 
+    // writes — re-evaluate all active rule groups (DESIGN-014 build D — pool refresh after save).
+    // v3.17.0 enqueues fire-and-forget and returns no body; `POST /rules/execute` in `state.fail`
+    // stands in for the 409 'already running' / outage path.
+    if (method === 'POST' && path === '/rules/execute') return ok(undefined, 201);
     // writes — exclusions
     if (method === 'POST' && path === '/rules/exclusion') {
       state.exclusions.add(String((body as { mediaId: string }).mediaId));
