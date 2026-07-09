@@ -15,6 +15,7 @@ import {
   getSpacePolicyStatus,
   setAppSetting,
   RECLAIM_WINDOWS,
+  SPACE_POLICY_MODES,
 } from '@hnet/domain';
 import { mapDomainErrors, resolveArrBundle, router } from '../trpc';
 import { adminProcedure } from '../middleware/role';
@@ -49,14 +50,27 @@ const spacePolicyArrayCfg = z
     minCandidates: z.number().int().min(0).max(100000).optional(),
   })
   .strict();
+// DESIGN-014 amendment (2026-07-09, build A) — a per-kind composition cap and the movie/tv cap map.
+// `value` is an item count (maxItems) or bytes (targetBytes); the domain applies only ENABLED caps and
+// re-guards each field, so bounds here are just sanity rails. Both kinds are required (getSpacePolicy
+// always emits a fully-populated perKind, so the UI round-trips the whole object like perArray).
+const spacePolicyCap = z
+  .object({ enabled: z.boolean(), value: z.number().nonnegative().max(Number.MAX_SAFE_INTEGER) })
+  .strict();
+const spacePolicyKindCaps = z
+  .object({ maxItems: spacePolicyCap, targetBytes: spacePolicyCap })
+  .strict();
 export const SpacePolicyInput = z
   .object({
     enabled: z.boolean(),
+    // DESIGN-014 amendment (2026-07-09, build A) — the proposal mode.
+    mode: z.enum(SPACE_POLICY_MODES),
     cooldownDays: z.number().int().min(0).max(365),
     minCandidates: z.number().int().min(0).max(100000),
     perArray: z.record(z.string(), spacePolicyArrayCfg),
-    // DESIGN-011/014 amendment (2026-07-08) — optional per-batch reclaim cap (bytes); absent ⇒ all.
-    targetBytesPerBatch: z.number().int().positive().optional(),
+    // DESIGN-014 amendment (2026-07-09, build A) — per-kind caps (replaces the retired flat
+    // targetBytesPerBatch, which getSpacePolicy still migrates when reading an old stored row).
+    perKind: z.object({ movie: spacePolicyKindCaps, tv: spacePolicyKindCaps }).strict(),
   })
   .strict();
 

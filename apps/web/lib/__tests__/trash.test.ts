@@ -6,6 +6,7 @@ import {
   daysLeftLabel,
   daysLeftTone,
   daysUntil,
+  deadlineCountdown,
   expediteErrorAction,
   overviewBadge,
   overviewCardTone,
@@ -152,14 +153,22 @@ describe('pendingWallGlyph / pendingWallTappable (the pending WALL tap-toggle �
 });
 
 describe('daysUntil / daysLeftLabel / daysLeftTone', () => {
+  // 2026-07-06T12:00:00Z = 08:00 EDT on Jul 6 (America/New_York, UTC-4).
   const now = new Date('2026-07-06T12:00:00Z');
-  it('counts whole days (ceil) and handles null/garbage', () => {
+  it('counts CALENDAR days in the display tz and handles null/garbage', () => {
     expect(daysUntil('2026-07-18T12:00:00Z', now)).toBe(12);
-    expect(daysUntil('2026-07-06T18:00:00Z', now)).toBe(1);
+    // A same-calendar-day-but-later time is TODAY (0), not tomorrow — the pre-build-A ms-ceil bug.
+    expect(daysUntil('2026-07-06T18:00:00Z', now)).toBe(0);
     expect(daysUntil('2026-07-06T12:00:00Z', now)).toBe(0);
     expect(daysUntil('2026-07-01T00:00:00Z', now)).toBeLessThan(0);
     expect(daysUntil(null, now)).toBeNull();
     expect(daysUntil('not-a-date', now)).toBeNull();
+  });
+  it('crosses the calendar boundary in ET, not UTC', () => {
+    // 2026-07-07T02:00:00Z is still 10:00 PM EDT on Jul 6 — so from 08:00 EDT Jul 6 it is TODAY (0).
+    expect(daysUntil('2026-07-07T02:00:00Z', now)).toBe(0);
+    // 2026-07-07T05:00:00Z is 01:00 EDT on Jul 7 — the next ET calendar day (tomorrow, 1).
+    expect(daysUntil('2026-07-07T05:00:00Z', now)).toBe(1);
   });
   it('labels read naturally', () => {
     expect(daysLeftLabel(12)).toBe('in 12 days');
@@ -174,6 +183,40 @@ describe('daysUntil / daysLeftLabel / daysLeftTone', () => {
     expect(daysLeftTone(3)).toBe('danger');
     expect(daysLeftTone(-1)).toBe('danger');
     expect(daysLeftTone(null)).toBe('muted');
+  });
+});
+
+// ── the tz-correct, hour-aware deadline countdown (DESIGN-011/014 amendment 2026-07-09, build A) ──
+describe('deadlineCountdown', () => {
+  it('REGRESSION: an 11:04 PM-ET-today expiry reads "today", never "tomorrow" (UTC-day bug)', () => {
+    // now = 8:04 AM EDT Jul 9; expiry = 11:04 PM EDT the SAME day (2026-07-10T03:04Z is 11:04 PM Jul 9 ET).
+    const now = new Date('2026-07-09T12:04:00Z');
+    const c = deadlineCountdown('2026-07-10T03:04:00Z', now);
+    expect(c.hourLevel).toBe(true);
+    expect(c.days).toBe(0);
+    expect(c.whenLabel).toBe('today 11:04 PM');
+    expect(c.relLabel).toBe('in 15h');
+    expect(c.tone).toBe('danger');
+  });
+  it('a tomorrow-morning expiry under 48h reads "tomorrow <time> · in Nh"', () => {
+    // now = 8:35 AM EDT Jul 9; expiry = 7:35 AM EDT Jul 10 (2026-07-10T11:35Z) ⇒ 23h, ET calendar +1.
+    const now = new Date('2026-07-09T12:35:00Z');
+    const c = deadlineCountdown('2026-07-10T11:35:00Z', now);
+    expect(c.hourLevel).toBe(true);
+    expect(c.whenLabel).toBe('tomorrow 7:35 AM');
+    expect(c.relLabel).toBe('in 23h');
+  });
+  it('48h+ falls back to the calendar-day label ("Jul 21" + "in 12 days")', () => {
+    const now = new Date('2026-07-09T12:00:00Z');
+    const c = deadlineCountdown('2026-07-21T12:00:00Z', now);
+    expect(c.hourLevel).toBe(false);
+    expect(c.whenLabel).toBe('Jul 21');
+    expect(c.relLabel).toBe('in 12 days');
+    expect(c.tone).toBe('muted');
+  });
+  it('no/garbage date is calm', () => {
+    const c = deadlineCountdown(null);
+    expect(c).toMatchObject({ whenLabel: '', relLabel: 'no date', hourLevel: false, days: null });
   });
 });
 
@@ -200,8 +243,6 @@ describe('overviewCardTone / overviewBadge / overviewDeadlineLabel', () => {
     expiresAt: '2026-07-10T12:00:00Z', // 2 days out ⇒ danger
     pendingCount: 4,
   };
-  const fmtDay = (iso: string) => (iso.startsWith('2026-07-21') ? 'Jul 21' : 'Jul 10');
-
   it('card tone: neutral no-batch → info admin-review → warn leaving-soon → danger ≤3 days', () => {
     expect(overviewCardTone(null, now)).toBe('neutral');
     expect(overviewCardTone(admin, now)).toBe('info');
@@ -211,15 +252,25 @@ describe('overviewCardTone / overviewBadge / overviewDeadlineLabel', () => {
     expect(overviewCardTone({ state: 'draft', expiresAt: null, pendingCount: 1 }, now)).toBe('info');
   });
 
-  it('deadline line reads the owner examples', () => {
-    expect(overviewDeadlineLabel(admin, fmtDay, now)).toBe('Admin review — 18 items');
-    expect(overviewDeadlineLabel({ ...admin, pendingCount: 1 }, fmtDay, now)).toBe(
-      'Admin review — 1 item',
-    );
-    expect(overviewDeadlineLabel(leavingFar, fmtDay, now)).toBe(
+  it('deadline line reads the owner examples (tz-correct, day-level at 48h+)', () => {
+    expect(overviewDeadlineLabel(admin, now)).toBe('Admin review — 18 items');
+    expect(overviewDeadlineLabel({ ...admin, pendingCount: 1 }, now)).toBe('Admin review — 1 item');
+    expect(overviewDeadlineLabel(leavingFar, now)).toBe(
       'Leaving Soon — window closes Jul 21 (in 13 days)',
     );
-    expect(overviewDeadlineLabel(null, fmtDay, now)).toBe('');
+    expect(overviewDeadlineLabel(null, now)).toBe('');
+  });
+
+  it('deadline line goes hour-level under 48h ("closes today <time> · in Nh")', () => {
+    const hourNow = new Date('2026-07-09T12:04:00Z'); // 8:04 AM EDT
+    const closingToday: OverviewBatchLike = {
+      state: 'leaving_soon',
+      expiresAt: '2026-07-10T03:04:00Z', // 11:04 PM EDT the same ET day
+      pendingCount: 3,
+    };
+    expect(overviewDeadlineLabel(closingToday, hourNow)).toBe(
+      'Leaving Soon — window closes today 11:04 PM · in 15h',
+    );
   });
 
   it('badge: suppressed at zero / unknown, warn while the window is open, danger ≤3 days', () => {

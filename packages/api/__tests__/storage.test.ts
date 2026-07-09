@@ -59,9 +59,14 @@ describe('storage admin gate — every procedure is adminProcedure (v1)', () => 
     await expect(
       memberCaller.storage.policy.set({
         enabled: false,
+        mode: 'over-target',
         cooldownDays: 7,
         minCandidates: 1,
         perArray: {},
+        perKind: {
+          movie: { maxItems: { enabled: false, value: 25 }, targetBytes: { enabled: false, value: 1 } },
+          tv: { maxItems: { enabled: false, value: 25 }, targetBytes: { enabled: false, value: 1 } },
+        },
       }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
     await expect(memberCaller.trash.tuning()).rejects.toMatchObject({ code: 'FORBIDDEN' });

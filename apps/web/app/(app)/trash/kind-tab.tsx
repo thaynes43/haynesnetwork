@@ -29,7 +29,7 @@ import {
 } from '@/components/trash-shield';
 import { formatBytes, formatDay, formatRating, ratingOrNull } from '@/lib/media';
 import { appCodeOf, describeMutationError } from '@/lib/app-error';
-import { daysLeftLabel, daysLeftTone, daysUntil } from '@/lib/trash';
+import { daysUntil, deadlineCountdown } from '@/lib/trash';
 import {
   BATCH_STATE_LABELS,
   BYTES_PER_GB,
@@ -486,8 +486,8 @@ function ExpireModal({
         result !== null
           ? 'Deletion report'
           : windowOpen
-            ? 'Force-expire this batch now'
-            : 'Expire this batch now'
+            ? 'Force-delete this batch now'
+            : 'Delete this batch now'
       }
       onClose={close}
       banner={
@@ -644,18 +644,34 @@ function StartBatchModal({
   kind,
   label,
   candidates,
+  caps,
   onClose,
 }: {
   kind: 'movie' | 'tv';
   label: string;
   /** The LIVE actionable pending rows (maintainerrMediaId present) — the preview source. */
   candidates: TargetCandidate[];
+  /** The space-policy per-kind caps (DESIGN-014 amendment 2026-07-09, build A) — PRE-FILL the picker
+   *  when an admin has configured them; absent ⇒ the plain defaults (all candidates / 20 GB). */
+  caps?: {
+    maxItems: { enabled: boolean; value: number };
+    targetBytes: { enabled: boolean; value: number };
+  };
   onClose: () => void;
 }) {
   const utils = trpc.useUtils();
-  const [mode, setMode] = useState<'all' | 'target'>('all');
-  const [gb, setGb] = useState('20');
-  const [strategy, setStrategy] = useState<TargetStrategy>('largest');
+  const capSize = caps?.targetBytes.enabled === true;
+  const capCount = caps?.maxItems.enabled === true;
+  const anyCap = capSize || capCount;
+  const [mode, setMode] = useState<'all' | 'target'>(anyCap ? 'target' : 'all');
+  // With no policy caps configured, "Cap the batch" defaults to the SIZE cap on (the classic GB
+  // target). A policy maxItems-only cap respects that (size off); a targetBytes cap turns size on.
+  const [useSize, setUseSize] = useState<boolean>(capSize || !anyCap);
+  const [gb, setGb] = useState(capSize ? String(Math.round((caps!.targetBytes.value / BYTES_PER_GB) * 10) / 10) : '20');
+  const [useCount, setUseCount] = useState<boolean>(capCount);
+  const [maxItemsStr, setMaxItemsStr] = useState(capCount ? String(caps!.maxItems.value) : '25');
+  // Policy batches trim worst-rated first, so pre-fill that when caps drove the picker into target mode.
+  const [strategy, setStrategy] = useState<TargetStrategy>(anyCap ? 'worst-rated' : 'largest');
   const [error, setError] = useState<string | null>(null);
   const create = trpc.trash.batches.create.useMutation({
     onSuccess: () => {
@@ -668,25 +684,29 @@ function StartBatchModal({
 
   const gbNum = Number(gb);
   const gbValid = Number.isFinite(gbNum) && gbNum > 0;
-  const targetBytes = gbValid ? Math.round(gbNum * BYTES_PER_GB) : undefined;
+  const maxNum = Number(maxItemsStr);
+  const maxValid = Number.isInteger(maxNum) && maxNum > 0;
+  const targetBytes = useSize && gbValid ? Math.round(gbNum * BYTES_PER_GB) : undefined;
+  const maxItems = useCount && maxValid ? maxNum : undefined;
 
   // The default "all" batch snapshots every actionable item; only tag-unprotected items free space.
   const allCount = candidates.length;
   const freeableBytes = candidates
     .filter((c) => !c.protectedByTag)
     .reduce((n, c) => n + c.sizeBytes, 0);
-  const preview = previewTargetSelection(candidates, { targetBytes, strategy });
+  const preview = previewTargetSelection(candidates, { targetBytes, maxItems, strategy });
 
   const plural = (n: number) => (n === 1 ? '' : 's');
+  const capsChosen = (useSize && gbValid) || (useCount && maxValid);
   const canSubmit =
     !create.isPending &&
-    (mode === 'all' ? allCount > 0 : gbValid && preview.poolCount > 0);
+    (mode === 'all' ? allCount > 0 : capsChosen && preview.poolCount > 0);
 
   const submit = () => {
     if (mode === 'all') {
       create.mutate({ mediaKind: kind });
     } else {
-      create.mutate({ mediaKind: kind, targetBytes, strategy });
+      create.mutate({ mediaKind: kind, targetBytes, maxItems, strategy });
     }
   };
 
@@ -733,24 +753,53 @@ function StartBatchModal({
               onChange={() => setMode('target')}
             />
             <span>
-              <strong>Target an amount to free</strong> — take just enough of the candidates.
+              <strong>Cap the batch</strong> — take just enough by size and/or item count.
             </span>
           </label>
         </div>
         {mode === 'target' ? (
           <div className="batch-start-target" data-testid="batch-target-fields">
             <label className="form-row batch-window-row">
+              <input
+                type="checkbox"
+                checked={useSize}
+                data-testid="batch-target-usesize"
+                aria-label="Cap the batch by size"
+                onChange={(e) => setUseSize(e.target.checked)}
+              />
               Free about
               <input
                 type="number"
                 className="batch-window-input"
                 min={1}
                 value={gb}
+                disabled={!useSize}
                 data-testid="batch-target-gb"
                 aria-label="Target amount to free, in GB"
                 onChange={(e) => setGb(e.target.value)}
               />
               GB
+            </label>
+            <label className="form-row batch-window-row">
+              <input
+                type="checkbox"
+                checked={useCount}
+                data-testid="batch-target-usecount"
+                aria-label="Cap the batch by item count"
+                onChange={(e) => setUseCount(e.target.checked)}
+              />
+              Up to
+              <input
+                type="number"
+                className="batch-window-input"
+                min={1}
+                value={maxItemsStr}
+                disabled={!useCount}
+                data-testid="batch-target-maxitems"
+                aria-label="Maximum items in the batch"
+                onChange={(e) => setMaxItemsStr(e.target.value)}
+              />
+              items
             </label>
             <label className="form-row batch-window-row">
               Take the
@@ -769,11 +818,11 @@ function StartBatchModal({
               </select>
             </label>
             <p className="muted batch-target-preview" data-testid="batch-target-preview">
-              {gbValid
+              {capsChosen
                 ? preview.poolCount === 0
                   ? 'No deletable candidates to target — everything pending is protected.'
                   : `≈ ${preview.count} item${plural(preview.count)} · frees ${formatBytes(preview.bytes)} (of ${preview.poolCount} candidate${plural(preview.poolCount)} · ${formatBytes(preview.poolBytes)} available)`
-                : 'Enter a target amount to free.'}
+                : 'Pick a size and/or item cap (both stop at whichever hits first).'}
             </p>
           </div>
         ) : null}
@@ -899,7 +948,10 @@ function LifecycleView({
     }
   };
 
-  const days = daysUntil(batch.expiresAt);
+  // tz-correct + hour-aware countdown (DESIGN-011/014 amendment 2026-07-09, build A). Under 48h this
+  // reads "closes today 11:04 PM · in 15h"; at 48h+ "closes Jul 21 · in 9 days". Day words are ET
+  // calendar comparisons, so an 11:04 PM-ET-today expiry never mislabels as "tomorrow".
+  const countdown = deadlineCountdown(batch.expiresAt);
   const saverNames = new Map<string, string>();
   for (const u of saveStats?.byUser ?? []) {
     if (u.userId !== null && u.displayName !== null) saverNames.set(u.userId, u.displayName);
@@ -908,10 +960,9 @@ function LifecycleView({
   const windowMeta =
     batch.state === 'leaving_soon' && batch.expiresAt !== null ? (
       <>
-        window closes {formatDay(batch.expiresAt)}{' '}
-        <span className={`trash-days trash-days--${daysLeftTone(days)}`}>
-          {daysLeftLabel(days)}
-        </span>
+        window closes {countdown.whenLabel}
+        {countdown.hourLevel ? ' · ' : ' '}
+        <span className={`trash-days trash-days--${countdown.tone}`}>{countdown.relLabel}</span>
       </>
     ) : (
       <>created {formatDay(batch.createdAt)}</>
@@ -962,7 +1013,7 @@ function LifecycleView({
             }
             onClick={() => setModal('greenlight')}
           >
-            Green-light…
+            Green-light
           </button>
         ) : null}
         {canManage && batch.state === 'leaving_soon' ? (
@@ -979,7 +1030,7 @@ function LifecycleView({
             }
             onClick={() => setModal('expire')}
           >
-            Expire now…
+            Delete now
           </button>
         ) : null}
         {canManage && OPEN_STATES.includes(batch.state) ? (
@@ -1004,11 +1055,11 @@ function LifecycleView({
       {batch.state === 'leaving_soon' ? (
         <div
           className="batch-countdown"
-          data-tone={windowOpen ? daysLeftTone(days) : 'muted'}
+          data-tone={windowOpen ? countdown.tone : 'muted'}
           data-testid="batch-countdown"
           role="status"
         >
-          {countdownCopy(daysLeftLabel(days), windowOpen, wallInteractive(ctx))}
+          {countdownCopy(countdown.relLabel, windowOpen, wallInteractive(ctx))}
         </div>
       ) : null}
       {batch.state === 'draft' ? (
@@ -1205,6 +1256,11 @@ export function KindTab({
     { enabled: canManage && reachable },
   );
   const settings = trpc.trash.settings.get.useQuery(undefined, { enabled: viewerIsAdmin });
+  // Admin-only: the space-policy per-kind caps PRE-FILL the Start-a-batch picker (DESIGN-014 amendment
+  // 2026-07-09, build A). storage.policy.get is adminProcedure, so gate the read on viewerIsAdmin — a
+  // non-admin batch manager simply gets the un-prefilled picker.
+  const policy = trpc.storage.policy.get.useQuery(undefined, { enabled: viewerIsAdmin });
+  const kindCaps = policy.data?.perKind?.[kind];
 
   const detailData =
     detail.data !== undefined && (detail.data as BatchSummaryWire).id === openBatch?.id
@@ -1299,7 +1355,7 @@ export function KindTab({
                 }
                 onClick={() => setShowStart(true)}
               >
-                Start a batch…
+                Start a batch
               </button>
             </div>
           ) : null}
@@ -1312,6 +1368,7 @@ export function KindTab({
           kind={kind}
           label={label}
           candidates={pendingCandidates}
+          caps={kindCaps}
           onClose={() => setShowStart(false)}
         />
       ) : null}

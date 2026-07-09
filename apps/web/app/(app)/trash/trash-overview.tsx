@@ -8,7 +8,7 @@
 // — it's a <button>). Below, a light RECENT STRIP: the newest Recently-Deleted rows + Activity
 // events, one line each, linking to those tabs. ADR-015: the cards reserve their height; a refetch
 // dims in place, never reflows.
-import { formatBytes, formatDay, formatWhen } from '@/lib/media';
+import { formatBytes, formatWhen } from '@/lib/media';
 import { overviewCardTone, overviewDeadlineLabel } from '@/lib/trash';
 
 // ── wire-shape aliases (structural mirrors of the trash.overview contract; the client never imports
@@ -50,7 +50,7 @@ function KindCard({ kind, onOpen }: { kind: OverviewKind; onOpen: () => void }) 
   const hasBatch = kind.batch !== null;
   const unknown = !kind.live && !hasBatch;
   const empty = kind.live && kind.slatedCount === 0 && !hasBatch;
-  const deadline = overviewDeadlineLabel(kind.batch, formatDay);
+  const deadline = overviewDeadlineLabel(kind.batch);
   // The card is one button so the whole surface is the target (keyboard-accessible by default).
   const aria = unknown
     ? `${label}: candidates unavailable — open the ${label} tab`

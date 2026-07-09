@@ -699,7 +699,7 @@ function MessagesTab({ access, viewerId }: { access: BulletinAccess; viewerId: s
                             disabled={busy}
                             onClick={() => openTriage(m)}
                           >
-                            Triage…
+                            Triage
                           </button>
                         </>
                       ) : null}

@@ -620,7 +620,7 @@ function LedgerBrowser({
             disabled={selected.size === 0}
             onClick={openConfirm}
           >
-            Monitor &amp; search…
+            Monitor &amp; search
           </button>
         ) : null}
       </div>

@@ -568,7 +568,7 @@ function PendingTab({
             }
             onClick={() => openExpedite({ scope: 'all' })}
           >
-            Delete all now…
+            Delete all now
           </button>
         ) : null}
       </div>

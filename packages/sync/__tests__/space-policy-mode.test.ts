@@ -5,6 +5,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   buildMaintainerrClientBundle,
+  defaultPerKind,
   setAppSetting,
   type MaintainerrClientBundle,
   type UtilizationArrBundle,
@@ -55,7 +56,14 @@ describe('runSync — space-policy mode (ADR-031)', () => {
     await setAppSetting({
       db: t.db,
       key: 'space_policy',
-      value: { enabled: true, cooldownDays: 7, minCandidates: 1, perArray: { haynestower: { enabled: true } } },
+      value: {
+        enabled: true,
+        mode: 'over-target',
+        cooldownDays: 7,
+        minCandidates: 1,
+        perArray: { haynestower: { enabled: true } },
+        perKind: defaultPerKind(),
+      },
       actorId: null,
     });
     const report = await runSync({
