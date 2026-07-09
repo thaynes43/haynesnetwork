@@ -196,6 +196,11 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
 
     // The reclaim counts bar sits ABOVE the wall: 4+8+2+1 GiB = 15 GB across 4 items.
     await expect(page.getByTestId('trash-total')).toHaveText('Reclaiming 15 GB across 4 items');
+
+    // ADR-035 — the snapshot honesty line + the manage-gated Refresh affordance ride the bar.
+    // (dev/e2e refresh inline per read, so the age always reads "just now" here.)
+    await expect(page.getByTestId('trash-asof')).toContainText('candidates as of');
+    await expect(page.getByTestId('trash-refresh-candidates')).toBeEnabled();
     const barBox = (await page.getByTestId('trash-total').boundingBox())!;
     const wallBox = (await page.getByTestId('trash-wall').boundingBox())!;
     expect(barBox.y).toBeLessThan(wallBox.y);

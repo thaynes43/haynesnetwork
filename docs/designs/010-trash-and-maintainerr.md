@@ -365,6 +365,48 @@ session's `sectionPermissions.trash ≠ disabled` (no-row default is _disabled_ 
   Movies tab badge shows the count in warn tone; a card click opens its kind tab; a direct
   `?tab=movies` deep link is unaffected; the landing fits 390px.
 
+## D-11 — Candidate read-model: snapshot-backed walls (amendment 2026-07-09, ADR-035)
+
+**Why.** The paginated D-02 read was still READ-THROUGH: every `trash.pending` /
+`trash.pendingCandidates` / no-batch `trash.overview` call re-crawled Maintainerr's collection API.
+The 2026-07-09 live profile (742 movie candidates, v0.25.0) measured `content/:page` at **0.4–5.8 s
+per call in-cluster regardless of page size** (15 serial `size=50` calls ≈ 6–9 s; ONE `size=750`
+call ≈ 0.16 s warm), one tab load firing up to four concurrent crawls (no in-flight dedup on the 8 s
+memo), and `httpBatchLink` gating first paint on the slowest call in the flight → **first wall tile
+9.1 s** even when an open batch made the wall's own data DB-fast.
+
+**What (ADR-035).**
+
+- **`trash_candidates` + `trash_candidates_state` (migration 0027)** — the per-kind flat snapshot of
+  Maintainerr's pending set (Maintainerr-owned facts only; verbatim `addDate`; crawl-order `ord`) +
+  per-kind `refreshed_at`/count/bytes bookkeeping. Single writer:
+  `@hnet/domain trash-candidates.ts` (`refreshTrashCandidates` — advisory-locked snapshot-replace;
+  `removeTrashCandidateRows` — expedite/sweep cleanup). Guard list updated. Derived, rebuildable
+  state ⇒ the writers append no ledger audit rows (ADR-035 C-05).
+- **Reads.** `listTrashPendingPage`, `listTrashPendingCandidates`, `countTrashPending` (Overview)
+  now serve from the snapshot; the ledger/metadata join stays AT READ TIME (facets track the media
+  sync); the visible page's exclusion cross-check stays LIVE (≈2 ms/item in-cluster). The page wire
+  gains **`refreshedAt`** and the router a **`trash.refreshCandidates`** mutation
+  (`manage_batches`-gated).
+- **Freshness.** Prod: serve instantly; older than 20 min ⇒ background deduped refresh; inline only
+  when no snapshot exists. Non-prod (dev/e2e/vitest): inline refresh on EVERY read — read-through
+  equivalence (the D-02 memo determinism rationale, now structural). Refresh cadence: the
+  full/incremental sync post-step (15 min), rule-edit triggers, the walls' Refresh affordance;
+  expedite/sweep drop their deleted ids immediately.
+- **UX.** The counts bar carries the honest "candidates as of N min ago" + a manage-gated
+  **Refresh**; the future-batch strip head shows the same age. Fixed slots — no reflow (ADR-015).
+- **Live paths unchanged (safety).** `listTrashPending` (whole-set live read) still backs the
+  guardian/expedite/batch-create/sweep/space-policy flows — every deletion decision re-reads
+  Maintainerr fresh. `fetchMaintainerrPending` itself now pages at 500 with bounded-parallel
+  collections, and the D-04 audit's sub-reads run concurrently, so those paths got faster too.
+
+**Measured (before → after, 742 candidates; hermetic bench with the live-measured latency model).**
+One BEFORE materialization crawl: **9.8 s** (16 serial content calls — matches the live 6.1–9.2 s
+`trash.pending` cold). AFTER: `trash.pending` page **34–46 ms** (incl. 50 live exclusion checks),
+`pendingCandidates` 9 ms, Overview count 1 ms — zero collection calls on the request path; snapshot
+rebuild **1.4 s** modeled / ~0.5 s live warm Maintainerr, always off the paint path in prod.
+Details: `.agents/context/2026-07-09-trash-wall-perf.md`.
+
 ## Ops / deploy-time checklist (owner)
 
 1. Place `MAINTAINERR_API_KEY` (Maintainerr's own first-run key) in 1Password `HaynesKube`; add

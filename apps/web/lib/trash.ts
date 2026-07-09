@@ -237,6 +237,20 @@ export function daysUntil(
   return Math.round((Date.UTC(b.y, b.m - 1, b.d) - Date.UTC(a.y, a.m - 1, a.d)) / DAY_MS);
 }
 
+/** ADR-035 — the candidate-snapshot honesty line: "candidates as of just now / N min ago /
+ *  N h ago" (the wall serves a read-model refreshed by sync + on demand, never a live crawl).
+ *  Bad/absent ISO → null (the slot renders empty; never a bogus age). */
+export function candidatesAsOfLabel(iso: string | null, now: Date = new Date()): string | null {
+  if (iso === null) return null;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return null;
+  const mins = Math.max(0, Math.floor((now.getTime() - t) / 60_000));
+  if (mins < 1) return 'candidates as of just now';
+  if (mins < 60) return `candidates as of ${mins} min ago`;
+  const hours = Math.floor(mins / 60);
+  return `candidates as of ${hours} h ago`;
+}
+
 /** The days-left pill copy: "in 12 days" / "tomorrow" / "today" / "overdue". */
 export function daysLeftLabel(days: number | null): string {
   if (days === null) return 'no date';

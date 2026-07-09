@@ -13,12 +13,14 @@ import {
   deliverOutbox,
   evaluateSpacePolicy,
   finishSyncRun,
+  refreshTrashCandidates,
   startSyncRun,
   sweepExpiredBatches,
   type MaintainerrClientBundle,
   type OutboxDeliveryReport,
   type SpacePolicyReport,
   type SweepReport,
+  type TrashCandidatesRefreshReport,
   type UtilizationArrBundle,
 } from '@hnet/domain';
 import { runArrFullSync } from './arr-full';
@@ -57,6 +59,10 @@ export interface RunSyncOptions {
   /** ADR-031 / DESIGN-014 — the diskspace-only *arr read bundle the `space-policy` mode reads
    *  utilization from (getUtilization). Required only for that mode; tests inject a stubbed bundle. */
   arr?: UtilizationArrBundle;
+  /** ADR-035 — the OPTIONAL Maintainerr READ handle: when present, the full/incremental modes end
+   *  by rebuilding the Trash candidate snapshot (the walls' read-model) so it stays ≤ one sync tick
+   *  stale. Absent (a Maintainerr-less env) ⇒ the step is skipped cleanly. */
+  maintainerrRead?: Pick<MaintainerrClientBundle, 'read'>;
   /** Injected DB (tests); defaults to the lazy @hnet/db client. */
   db?: DbClient;
   logger?: SyncLogger;
@@ -100,6 +106,12 @@ export interface SyncReport {
   outbox?: OutboxDeliveryReport | null;
   /** The notify-outbox run's error — sets totalFailure for the CLI exit. */
   outboxError?: string;
+  /** ADR-035 — the candidate-snapshot refresh post-step (full/incremental with a Maintainerr
+   *  handle; null when skipped or failed). */
+  candidateRefresh?: TrashCandidatesRefreshReport | null;
+  /** The candidate-refresh step's error. NEVER sets totalFailure — a Maintainerr outage must not
+   *  fail the *arr sync run; the walls keep serving the previous snapshot ("as of N min ago"). */
+  candidateRefreshError?: string;
   /** True when EVERY requested source failed/aborted — the CLI's nonzero-exit signal. */
   totalFailure: boolean;
 }
@@ -390,6 +402,23 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
     logger.error('fix timeout sweep failed', { error: fixTimeoutError });
   }
 
+  // ADR-035 — refresh the Trash candidate read-model (skip-if-absent, isolated like every other
+  // post-step: a Maintainerr outage never fails the sync run).
+  let candidateRefresh: TrashCandidatesRefreshReport | null = null;
+  let candidateRefreshError: string | undefined;
+  if (options.maintainerrRead !== undefined) {
+    try {
+      candidateRefresh = await refreshTrashCandidates({ db, maintainerr: options.maintainerrRead });
+      logger.info('trash candidate snapshot refreshed', {
+        durationMs: candidateRefresh.durationMs,
+        kinds: candidateRefresh.kinds,
+      });
+    } catch (error) {
+      candidateRefreshError = error instanceof Error ? error.message : String(error);
+      logger.error('trash candidate snapshot refresh failed', { error: candidateRefreshError });
+    }
+  }
+
   const totalFailure = reports.length > 0 && reports.every((r) => r.status !== 'succeeded');
   return {
     mode: options.mode,
@@ -399,9 +428,11 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
     backfill,
     fixesCompleted,
     fixesTimedOut,
+    candidateRefresh,
     ...(backfillError !== undefined ? { backfillError } : {}),
     ...(fixCompletionError !== undefined ? { fixCompletionError } : {}),
     ...(fixTimeoutError !== undefined ? { fixTimeoutError } : {}),
+    ...(candidateRefreshError !== undefined ? { candidateRefreshError } : {}),
     totalFailure,
   };
 }

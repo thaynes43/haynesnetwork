@@ -9,7 +9,6 @@ import {
   APP_SETTING_DEFAULTS,
   arrKindForTrashMedia,
   auditMaintainerr,
-  bustPendingCache,
   cancelBatch,
   createBatchFromPending,
   deleteTrashRule,
@@ -26,12 +25,15 @@ import {
   listRecentlyDeleted,
   listTrashPendingCandidates,
   listTrashPendingPage,
+  refreshTrashCandidates,
   removeExclusion,
+  removeTrashCandidateRows,
   restoreDeleted,
   saveExclusion,
   setAppSetting,
   setBatchItemSaved,
   sweepExpiredBatches,
+  triggerCandidateRefresh,
   unprotectBatchItem,
   upsertTrashRule,
   type TrashPendingSort,
@@ -138,6 +140,7 @@ export const trashRouter = router({
           totalSizeBytes: page.totalSizeBytes,
           filteredCount: page.filteredCount,
           filteredSizeBytes: page.filteredSizeBytes,
+          refreshedAt: page.refreshedAt,
           facets: page.facets,
           expeditePreview: page.expeditePreview,
           allActionableIds: page.allActionableIds,
@@ -170,6 +173,7 @@ export const trashRouter = router({
         return {
           media: input.media,
           count: result.count,
+          refreshedAt: result.refreshedAt,
           candidates: result.candidates.map((c) => ({
             ...c,
             posterUrl:
@@ -178,6 +182,18 @@ export const trashRouter = router({
         };
       });
     }),
+
+  /**
+   * ADR-035 — rebuild the Trash candidate snapshot ON DEMAND (the walls' "Refresh" affordance).
+   * Read-model only: crawls Maintainerr's rule collections and replaces trash_candidates — no
+   * Maintainerr write, nothing destructive — but gated like the batch lifecycle (manage_batches;
+   * admin ⇒ ok) since it drives upstream load and belongs to the curation workflow.
+   */
+  refreshCandidates: trashActionProcedure('manage_batches').mutation(async ({ ctx }) => {
+    return mapDomainErrors(() =>
+      refreshTrashCandidates({ db: ctx.db, maintainerr: resolveMaintainerrBundle(ctx) }),
+    );
+  }),
 
   /** DESIGN-010 D-02 — the raw Maintainerr collections (rules-editor context + admin insight). */
   collections: sectionProcedure('trash', 'read_only').query(async ({ ctx }) => {
@@ -216,7 +232,9 @@ export const trashRouter = router({
           collectionId: input.collectionId ?? undefined,
           actorId: ctx.user.id,
         });
-        bustPendingCache();
+        // No candidate-snapshot invalidation needed: an exclusion never changes collection
+        // MEMBERSHIP (Maintainerr drops the item on ITS next rule run → the next refresh), and the
+        // wall's protection badge is cross-checked LIVE per page (ADR-035).
         return res;
       });
     }),
@@ -238,7 +256,7 @@ export const trashRouter = router({
           mediaItemId: input.mediaItemId ?? null,
           actorId: ctx.user.id,
         });
-        bustPendingCache();
+        // Same as saveExclusion — membership unchanged; protection is read live per page.
         return res;
       });
     }),
@@ -270,7 +288,9 @@ export const trashRouter = router({
             mediaItemId: input.mediaItemId ?? null,
           },
         });
-        bustPendingCache(input.media);
+        // ADR-035 — drop the just-deleted items from the candidate read-model so the wall reflects
+        // the deletion on its next paint (the next sync refresh would catch it anyway).
+        await removeTrashCandidateRows({ db: ctx.db, maintainerrMediaIds: res.expeditedIds });
         return res;
       });
     }),
@@ -299,7 +319,8 @@ export const trashRouter = router({
           actorId: ctx.user.id,
           snapshotMediaIds: input.maintainerrMediaIds,
         });
-        bustPendingCache(input.media);
+        // ADR-035 — same read-model cleanup as expediteItem.
+        await removeTrashCandidateRows({ db: ctx.db, maintainerrMediaIds: res.expeditedIds });
         return res;
       });
     }),
@@ -359,21 +380,32 @@ export const trashRouter = router({
   saveRule: trashActionProcedure('edit_rules', 'edit')
     .input(z.object({ payload: z.record(z.string(), z.unknown()) }))
     .mutation(async ({ ctx, input }) => {
-      return mapDomainErrors(() =>
-        upsertTrashRule({ maintainerr: resolveMaintainerrBundle(ctx), payload: input.payload }),
-      );
+      return mapDomainErrors(async () => {
+        const res = await upsertTrashRule({
+          maintainerr: resolveMaintainerrBundle(ctx),
+          payload: input.payload,
+        });
+        // ADR-035 — a rule edit reshapes the candidate pool; refresh the snapshot in the
+        // background (Maintainerr re-evaluates rules on its own schedule, so the sync cadence
+        // still provides the eventual truth — this just shortens the window).
+        triggerCandidateRefresh({ db: ctx.db, maintainerr: resolveMaintainerrBundle(ctx) });
+        return res;
+      });
     }),
 
   /** DESIGN-010 — delete a Maintainerr rule group (edit_rules grant + section Edit). */
   deleteRule: trashActionProcedure('edit_rules', 'edit')
     .input(z.object({ ruleGroupId: z.number().int() }))
     .mutation(async ({ ctx, input }) => {
-      return mapDomainErrors(() =>
-        deleteTrashRule({
+      return mapDomainErrors(async () => {
+        const res = await deleteTrashRule({
           maintainerr: resolveMaintainerrBundle(ctx),
           ruleGroupId: input.ruleGroupId,
-        }),
-      );
+        });
+        // ADR-035 — same background snapshot refresh as saveRule.
+        triggerCandidateRefresh({ db: ctx.db, maintainerr: resolveMaintainerrBundle(ctx) });
+        return res;
+      });
     }),
 
   // ADR-025 / DESIGN-011 — the CURATION PIPELINE surface (batches, poster review, Leaving Soon,

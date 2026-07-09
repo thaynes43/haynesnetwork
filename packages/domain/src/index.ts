@@ -18,6 +18,9 @@ export * from './messages';
 // ADR-023 / DESIGN-010 — Trash orchestrators over Maintainerr (confined write surface — guard test)
 export * from './maintainerr-clients';
 export * from './trash-flow';
+// ADR-035 / DESIGN-010 amendment — the Trash candidate read-model (snapshot refresher + the
+// snapshot-backed pending page/candidates/count reads; single writer for trash_candidates*)
+export * from './trash-candidates';
 // ADR-025 / DESIGN-011 — Trash curation pipeline: generic app settings + batch state machine
 export * from './app-settings';
 export * from './trash-batches';

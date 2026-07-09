@@ -139,7 +139,11 @@ One multi-stage `node:22-alpine` image (repo `Dockerfile`) with `tsx` installed 
 `concurrencyPolicy: Forbid`):**
 
 - `sync-incremental` — schedule `*/15 * * * *` (every 15 min), `--mode=incremental`
-  (*arr history cursors + Seerr requests).
+  (*arr history cursors + Seerr requests). **ADR-035:** both this and `sync-full` end with a
+  skip-if-absent post-step that rebuilds the **Trash candidate snapshot** (`trash_candidates` —
+  the walls'/Overview's read-model) from Maintainerr; it activates automatically because the
+  CronJobs already receive `MAINTAINERR_API_KEY` via the shared secret (no manifest change), and
+  a Maintainerr outage there never fails the sync run (`candidateRefreshError` in the job log).
 - `sync-full` — schedule `30 4 * * *` (**04:30 daily**), `--mode=full` (full upsert +
   guarded tombstones).
 

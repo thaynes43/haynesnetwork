@@ -35,7 +35,7 @@ import {
 } from '@/components/pending-wall';
 import { formatBytes, formatDay, formatRating, ratingOrNull } from '@/lib/media';
 import { appCodeOf, describeMutationError } from '@/lib/app-error';
-import { daysUntil, deadlineCountdown } from '@/lib/trash';
+import { candidatesAsOfLabel, daysUntil, deadlineCountdown } from '@/lib/trash';
 import {
   BATCH_STATE_LABELS,
   BYTES_PER_GB,
@@ -914,6 +914,8 @@ function FutureCandidatesWall({
   const pages = q.data?.pages ?? [];
   const items: PendingWallItem[] = pages.flatMap((p) => p.items);
   const total = pages[0]?.total ?? 0;
+  // ADR-035 — the strip serves the candidate snapshot; carry its honest age in the head line.
+  const asOf = candidatesAsOfLabel(pages[0]?.refreshedAt ?? null);
   const refreshing = q.isPlaceholderData && q.isFetching;
 
   const { overrides, busy, error, toggle } = usePendingSaves(kind);
@@ -929,7 +931,7 @@ function FutureCandidatesWall({
     <div className="batch-newcands" data-testid="batch-new-candidates">
       <p className="batch-newcands__head muted">
         Potential in future batches ({total}) — eligible for the next batch; tap a poster to save it
-        out.
+        out.{asOf !== null ? ` ${asOf}.` : ''}
       </p>
       <p className="bwall-error" role="alert" data-testid="future-wall-error">
         {error ?? ''}
