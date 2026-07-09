@@ -910,6 +910,8 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await openUserMenu(page);
     await page.getByRole('menuitem', { name: 'Trash settings' }).click();
     await page.waitForURL('/settings/trash');
+    // Build-B: the "Trash settings" menu link lands on the General tab; Rules is a sibling tab.
+    await page.goto('/settings/trash?tab=rules');
 
     const rule = page.getByTestId('trash-rule-row').filter({ hasText: 'Purge stale movies' });
     await expect(rule.locator('.badge')).toHaveText('Armed');

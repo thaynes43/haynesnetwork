@@ -56,35 +56,20 @@ import { trpc } from '@/lib/trpc-client';
 import { Modal } from '@/components/modal';
 import { MediaPoster } from '@/components/media-poster';
 import { CHIP_LABELS, RatingChip } from '@/components/filter-chips';
+import { type TrashAccess } from '@/components/trash-shield';
 import {
-  LibraryCornerLink,
-  WallGlyphSvg,
-  type TrashAccess,
-} from '@/components/trash-shield';
+  PendingWall,
+  useInfiniteScroll,
+  usePendingSaves,
+  type PendingWallItem,
+} from '@/components/pending-wall';
 import { SafetyBanner, type SafetyStatus } from '@/components/trash-safety';
 import { ExpediteReport, type ExpediteOutcome } from '@/components/trash-expedite';
 import { KindTab } from './kind-tab';
 import { TrashOverview, type OverviewData } from './trash-overview';
-import {
-  RESOLUTION_LABELS,
-  formatBytes,
-  formatDay,
-  formatRating,
-  formatWhen,
-  ratingOrNull,
-} from '@/lib/media';
+import { RESOLUTION_LABELS, formatBytes, formatDay, formatWhen } from '@/lib/media';
 import { appCodeOf, describeMutationError } from '@/lib/app-error';
-import {
-  daysLeftLabel,
-  daysUntil,
-  expediteErrorAction,
-  overviewBadge,
-  partitionForExpedite,
-  pendingWallGlyph,
-  pendingWallTappable,
-  reclaimLabel,
-  type PendingWallGlyph,
-} from '@/lib/trash';
+import { expediteErrorAction, overviewBadge, reclaimLabel } from '@/lib/trash';
 
 export type { TrashAccess };
 
@@ -112,28 +97,8 @@ function resolveTab(raw: string | null): TabKey {
   return TRASH_TABS.some((t) => t.key === raw) ? (raw as TabKey) : 'overview';
 }
 
-// ── shared wire-shape aliases (inferred from the tRPC hooks at the use sites; these
-//    structural types keep the child components honest without importing server packages) ──
-interface PendingItem {
-  maintainerrMediaId: string | null;
-  collectionId: number;
-  collectionTitle: string | null;
-  sizeBytes: number;
-  scheduledDeleteAt: string | null;
-  mediaItemId: string | null;
-  title: string;
-  year: number | null;
-  protectedByTag: boolean;
-  protectedByExclusion: boolean;
-  recentlyWatched: boolean;
-  requesters: string[];
-  sourceCollections: string[];
-  genres: string[];
-  resolution: string | null;
-  imdbRating: number | null;
-  tmdbRating: number | null;
-  posterUrl: string | null;
-}
+// The pending-item wire shape (PendingWallItem) lives in components/pending-wall.tsx — the shared
+// tile wall consumes it; the toolbar here only reads the server-computed totals + facets.
 
 // The safety banner + its SafetyStatus wire mirror live in components/trash-safety.tsx
 // (shared with /settings/trash — ADR-032).
@@ -184,74 +149,11 @@ function parseRatingBound(raw: string | null): number | undefined {
   return Number.isFinite(n) && n >= 0 && n <= 10 ? n : undefined;
 }
 
-const itemRating = (item: PendingItem): number | null =>
-  ratingOrNull(item.imdbRating) ?? ratingOrNull(item.tmdbRating);
-
-const fieldValuesOf = (item: PendingItem, field: PendingField): string[] =>
-  field === 'resolution' ? (item.resolution === null ? [] : [item.resolution]) : item[field];
-
-/** Nulls-last comparator over the client sort fields (the pending set is small — D-08 returns
- *  the whole kind's set, so shaping is honest to do in the browser). */
-function compareItems(
-  a: PendingItem,
-  b: PendingItem,
-  field: SortField,
-  dir: 'asc' | 'desc',
-): number {
-  const sign = dir === 'asc' ? 1 : -1;
-  const num = (x: number | null, y: number | null): number => {
-    if (x === null && y === null) return 0;
-    if (x === null) return 1; // nulls last regardless of direction
-    if (y === null) return -1;
-    return (x - y) * sign;
-  };
-  switch (field) {
-    case 'title':
-      return a.title.localeCompare(b.title) * sign;
-    case 'size':
-      return num(a.sizeBytes, b.sizeBytes);
-    case 'rating':
-      return num(itemRating(a), itemRating(b));
-    case 'scheduled':
-      return num(
-        a.scheduledDeleteAt === null ? null : Date.parse(a.scheduledDeleteAt),
-        b.scheduledDeleteAt === null ? null : Date.parse(b.scheduledDeleteAt),
-      );
-  }
-}
-
-/** The tile tooltip — the detail the table's columns carried (scheduled date + days-left,
- *  protection reason, guardian facts, requesters, source rule), phone-first: title-attr on the
- *  poster; the full history lives one tap away on /library/[id]. */
-function tileInfo(item: PendingItem, glyph: PendingWallGlyph): string {
-  const lines: string[] = [
-    item.scheduledDeleteAt !== null
-      ? `Deletes ${formatDay(item.scheduledDeleteAt)} (${daysLeftLabel(daysUntil(item.scheduledDeleteAt))})`
-      : 'No scheduled delete date',
-  ];
-  if (glyph === 'shield') lines.push('Saved by you — protected from deletion');
-  else if (glyph === 'check')
-    lines.push(
-      item.protectedByTag
-        ? 'Protected — carries the dnd tag'
-        : 'Protected — excluded in Maintainerr',
-    );
-  else if (glyph === 'requested')
-    // build B — the person-shield is a live save-toggle now, not an inert marker: tap ⇒ save it.
-    lines.push(`Requested by ${item.requesters.join(', ')} — tap to save it`);
-  if (item.recentlyWatched) lines.push('Recently watched — the guardian keeps it');
-  // The requester names ride the dedicated 'requested' line above; only add the plain fact for the
-  // OTHER glyphs (e.g. a watched or saved item that also happens to carry a requester).
-  if (item.requesters.length > 0 && glyph !== 'requested')
-    lines.push(`Requested by ${item.requesters.join(', ')}`);
-  if (item.collectionTitle !== null) lines.push(`Rule: ${item.collectionTitle}`);
-  lines.push(
-    item.mediaItemId !== null
-      ? 'Tap the poster for history and fixes'
-      : 'Not in our ledger — it can never be expedited (fail closed), only saved',
-  );
-  return lines.join('\n');
-}
+// The tile rendering + tooltip + glyph derivation + the client-side sort comparator moved into the
+// shared components/pending-wall.tsx (owner-directed 2026-07-09) now that the wall is server-
+// paginated: the browser no longer holds the whole kind's set, so search/filter/sort run server-side
+// and a tile is just a page item. What stays here is the toolbar (chips/sort URL contract) + the
+// counts bar + the Expedite-all Modal.
 
 // Per-item expedite moved to the item page (owner refinement 2026-07-07); the wall keeps only the
 // bulk "Expedite all…". ExpediteOutcome is the shared partition shape (trash-expedite.tsx).
@@ -320,45 +222,64 @@ function PendingTab({
     patchParams({ [param]: values.length > 0 ? values : null });
   };
 
-  // ── data ──
-  const pending = trpc.trash.pending.useQuery({ media }, { placeholderData: (prev) => prev });
-  const allItems: PendingItem[] = pending.data?.items ?? [];
+  // ── data (SERVER-PAGINATED — owner-directed 2026-07-09) ──
+  // The wall no longer pulls the whole kind at once (776 tiles / 776 exclusion reads = 15-30 s).
+  // Search/filter/sort are applied SERVER-SIDE and the result is sliced into ~50-item pages; the
+  // counts bar reads the server's TRUE totals, and infinite scroll pulls the next page on approach.
+  const genres = filterValues(filters, 'genres');
+  const resolutions = filterValues(filters, 'resolution');
+  const requesters = filterValues(filters, 'requesters');
+  const sourceCollections = filterValues(filters, 'sourceCollections');
+  const trimmedQuery = qParam.trim();
+  const pending = trpc.trash.pending.useInfiniteQuery(
+    {
+      media,
+      ...(trimmedQuery !== '' ? { query: trimmedQuery } : {}),
+      ...(genres.length > 0 ? { genres } : {}),
+      ...(resolutions.length > 0 ? { resolutions } : {}),
+      ...(requesters.length > 0 ? { requesters } : {}),
+      ...(sourceCollections.length > 0 ? { sourceCollections } : {}),
+      ...(ratingMin !== undefined ? { ratingMin } : {}),
+      ...(ratingMax !== undefined ? { ratingMax } : {}),
+      sort,
+      limit: 50,
+    },
+    {
+      getNextPageParam: (last) => last.nextCursor ?? undefined,
+      // Keep the previous grid rendered (dimmed) while a filter/sort refetch resolves (ADR-015).
+      placeholderData: (prev) => prev,
+    },
+  );
+  const pages = pending.data?.pages ?? [];
+  const first = pages[0];
+  const items: PendingWallItem[] = pages.flatMap((p) => p.items);
   const refreshing = pending.isPlaceholderData && pending.isFetching;
 
-  // Session-local shield overrides (the dnd tag lands on the next *arr sync — D-09). A 'saved'
-  // override is ALSO the wall's "saved by YOU" signal: pending items carry no ownership, so only
-  // the save you just made renders as the tappable filled shield — protection that arrives from
-  // the server (tag / exclusion made elsewhere or in an earlier session) is the inert check.
-  const [shieldOverrides, setShieldOverrides] = useState<ReadonlyMap<string, 'saved' | 'unsaved'>>(
-    () => new Map(),
-  );
-  const [shieldBusy, setShieldBusy] = useState<ReadonlySet<string>>(() => new Set());
+  // Server totals (the first page carries the whole-set aggregates; every page repeats total/
+  // filteredCount so the counts bar is correct from the first paint).
+  const total = first?.total ?? 0;
+  const filteredCount = first?.filteredCount ?? 0;
+  const filteredBytes = first?.filteredSizeBytes ?? 0;
+  const facets = first?.facets ?? null;
+  const expeditePreview = first?.expeditePreview ?? null;
+  const allActionableIds = first?.allActionableIds ?? [];
 
-  // ── client-side shaping (filter → sort) over the full pending set ──
+  // Facet menus come from the server (computed over the FULL kind set, so the chips stay complete
+  // even while a filter narrows the wall).
   const facetValues = (field: PendingField): readonly string[] => {
-    const set = new Set<string>();
-    for (const item of allItems) for (const v of fieldValuesOf(item, field)) set.add(v);
-    return [...set].sort((a, b) => a.localeCompare(b));
+    if (facets === null) return [];
+    switch (field) {
+      case 'genres':
+        return facets.genres;
+      case 'resolution':
+        return facets.resolutions;
+      case 'requesters':
+        return facets.requesters;
+      case 'sourceCollections':
+        return facets.sourceCollections;
+    }
   };
 
-  const trimmedQuery = qParam.trim().toLowerCase();
-  const filtered = allItems.filter((item) => {
-    if (trimmedQuery !== '' && !item.title.toLowerCase().includes(trimmedQuery)) return false;
-    for (const f of FILTER_FIELDS) {
-      const wanted = filterValues(filters, f.field);
-      if (wanted.length === 0) continue;
-      const have = fieldValuesOf(item, f.field);
-      if (!wanted.some((w) => have.includes(w))) return false;
-    }
-    if (ratingMin !== undefined || ratingMax !== undefined) {
-      const r = itemRating(item);
-      if (r === null) return false;
-      if (ratingMin !== undefined && r < ratingMin) return false;
-      if (ratingMax !== undefined && r > ratingMax) return false;
-    }
-    return true;
-  });
-  const items = [...filtered].sort((a, b) => compareItems(a, b, sort.field, sort.dir));
   const hasFilters =
     trimmedQuery !== '' ||
     FILTER_FIELDS.some((f) => filterValues(filters, f.field).length > 0) ||
@@ -369,47 +290,12 @@ function PendingTab({
     patchParams({ q: null, genre: null, res: null, req: null, col: null, rmin: null, rmax: null });
   };
 
-  const filteredBytes = items.reduce((sum, i) => sum + i.sizeBytes, 0);
-
-  // ── save / un-save (same wire calls; the whole poster is now the OPTIMISTIC tap-toggle like the
-  //    batch wall — owner refinement 2026-07-07: the overlay glyph swaps immediately (trash⇄shield),
-  //    reconciles with the response, reverts on error; one flip in flight per tile) ──
-  const [rowError, setRowError] = useState<string | null>(null);
-  const save = trpc.trash.saveExclusion.useMutation();
-  const unsave = trpc.trash.removeExclusion.useMutation();
-  const toggleShield = (item: PendingItem, glyph: PendingWallGlyph) => {
-    const id = item.maintainerrMediaId;
-    if (id === null || shieldBusy.has(id)) return;
-    // build B — the requested person-shield saves like a trash tile (tap ⇒ add the exclusion);
-    // only the filled `shield` un-saves.
-    const saving = glyph === 'trash' || glyph === 'requested';
-    const prev = shieldOverrides.get(id);
-    setShieldOverrides((m) => new Map(m).set(id, saving ? 'saved' : 'unsaved'));
-    setShieldBusy((s) => new Set(s).add(id));
-    setRowError(null);
-    const mutation = saving ? save : unsave;
-    mutation.mutate(
-      { maintainerrMediaId: id, mediaItemId: item.mediaItemId },
-      {
-        onSuccess: () => void utils.trash.pending.invalidate({ media }),
-        onError: (err: unknown) => {
-          setShieldOverrides((m) => {
-            const next = new Map(m);
-            if (prev === undefined) next.delete(id);
-            else next.set(id, prev);
-            return next;
-          });
-          setRowError(describeMutationError(err));
-        },
-        onSettled: () =>
-          setShieldBusy((s) => {
-            const next = new Set(s);
-            next.delete(id);
-            return next;
-          }),
-      },
-    );
-  };
+  // ── save / un-save (the shared optimistic tap-toggle) + infinite scroll ──
+  const { overrides, busy: shieldBusy, error: rowError, toggle } = usePendingSaves(media);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const canLoadMore =
+    pending.hasNextPage === true && !pending.isFetchingNextPage && !pending.isPlaceholderData;
+  useInfiniteScroll(sentinelRef, canLoadMore, () => void pending.fetchNextPage());
 
   // ── expedite (THE destructive path — Modal every time, ADR-014) ──
   const [expedite, setExpedite] = useState<ExpediteTarget | null>(null);
@@ -454,8 +340,15 @@ function PendingTab({
     setStale(false);
   };
 
-  // The Modal's honest preview — the ENTIRE pending set for 'all' (never the filtered view).
-  const partition = partitionForExpedite(allItems);
+  // The Modal's honest preview — the ENTIRE pending set for 'all' (never the filtered view),
+  // computed SERVER-SIDE over the whole kind and returned on the first page (the client no longer
+  // holds every item). Falls back to zeros until the first page lands.
+  const partition = expeditePreview ?? {
+    deletable: 0,
+    deletableBytes: 0,
+    protected: 0,
+    unverifiable: 0,
+  };
 
   // ── the sort bar (shared nextSort/arrowFor cycle over SORT_COLUMNS) ──
   const clickCycle = Object.fromEntries(
@@ -553,8 +446,8 @@ function PendingTab({
         <span className="trash-countsbar__total" data-testid="trash-total">
           {pending.isLoading
             ? 'Totaling…'
-            : `${reclaimLabel(filteredBytes, items.length, formatBytes)}${
-                hasFilters ? ` · filtered from ${allItems.length} pending` : ''
+            : `${reclaimLabel(filteredBytes, filteredCount, formatBytes)}${
+                hasFilters ? ` · filtered from ${total} pending` : ''
               }`}
         </span>
         <span className="ledger-actionsbar__spacer" />
@@ -563,7 +456,7 @@ function PendingTab({
             type="button"
             className="btn sm danger"
             data-testid="trash-expedite-all"
-            disabled={!safe || allItems.length === 0}
+            disabled={!safe || total === 0}
             title={
               safe
                 ? `Delete the entire pending ${label} set now`
@@ -581,140 +474,36 @@ function PendingTab({
         {rowError ?? ''}
       </p>
 
-      {/* THE PENDING WALL — the Batches wall grammar over the pending set (tables retired
-          2026-07-07). Poster taps open /library/[id]; the corners carry the actions. */}
-      {pending.isLoading ? (
-        <ul className="bwall" aria-hidden="true" data-testid="trash-wall-skeleton">
-          {Array.from({ length: 8 }, (_, i) => (
-            <li key={i} className="bwall-tile">
-              <span className="bwall-tap">
-                <div className="poster-box" />
-              </span>
-              <span className="bwall-caption">
-                <span className="skeleton-line" />
-              </span>
-              <span className="bwall-meta">
-                <span className="skeleton-line skeleton-line--short" />
-              </span>
-            </li>
-          ))}
-        </ul>
-      ) : pending.error ? (
+      {/* THE PENDING WALL — the shared interactive infinite-scroll poster wall (server-paginated).
+          Poster taps open /library/[id] via the corner nav; the whole tile is the save tap-toggle. */}
+      {pending.error ? (
         <p className="alert" role="alert">
           Couldn’t load the pending list: {pending.error.message}
         </p>
-      ) : items.length === 0 ? (
-        <p className="muted trash-wall-empty" data-testid="trash-wall-empty">
-          {allItems.length === 0
-            ? `Nothing pending — no ${label.toLowerCase()} are scheduled for deletion.`
-            : 'Nothing matches the filters.'}
-        </p>
       ) : (
-        <ul
-          className={`bwall pwall${refreshing ? ' is-refreshing' : ''}`}
-          aria-busy={refreshing}
-          aria-label={`Pending ${label} deletions`}
-          data-testid="trash-wall"
-        >
-          {items.map((item) => {
-            const rating = formatRating(itemRating(item));
-            const override =
-              item.maintainerrMediaId === null
-                ? undefined
-                : shieldOverrides.get(item.maintainerrMediaId);
-            const glyph = pendingWallGlyph(item, override);
-            const tappable =
-              item.maintainerrMediaId !== null &&
-              pendingWallTappable(glyph, canSave, canUnsave);
-            const tileKey = `${item.collectionId}:${item.maintainerrMediaId ?? item.title}`;
-            const info = tileInfo(item, glyph);
-            const titleYear = `${item.title}${item.year !== null ? ` (${item.year})` : ''}`;
-            // The whole poster is the tap-toggle (owner refinement): trash ⇄ shield.
-            const toggleLabel =
-              glyph === 'shield'
-                ? tappable
-                  ? `Un-save ${item.title} — remove its deletion protection`
-                  : `${item.title} is saved — protected from deletion`
-                : glyph === 'check'
-                  ? `${item.title} is protected from deletion`
-                  : glyph === 'eye'
-                    ? `${item.title} was watched recently — the guardian keeps it`
-                    : glyph === 'requested'
-                      ? tappable
-                        ? `Save ${item.title} — requested by ${item.requesters.join(', ')}; tap to protect it`
-                        : `${item.title} was requested by ${item.requesters.join(', ')} — protected from deletion`
-                      : tappable
-                        ? `${item.title} is slated to delete — tap to save it`
-                        : `${item.title} is slated to delete`;
-            const inner = (
-              <>
-                <MediaPoster
-                  posterUrl={item.posterUrl}
-                  kind={media === 'movie' ? 'radarr' : 'sonarr'}
-                  alt=""
-                />
-                <span key={glyph} className="bwall-overlay" data-glyph={glyph} aria-hidden="true">
-                  <WallGlyphSvg glyph={glyph} />
-                </span>
-              </>
-            );
-            return (
-              <li
-                key={tileKey}
-                className="bwall-tile pwall-tile"
-                data-glyph={glyph}
-                data-testid="trash-tile"
-              >
-                {tappable ? (
-                  <button
-                    type="button"
-                    className="bwall-tap"
-                    data-testid="trash-toggle"
-                    aria-pressed={glyph === 'shield'}
-                    aria-label={toggleLabel}
-                    title={info}
-                    aria-busy={
-                      (item.maintainerrMediaId !== null &&
-                        shieldBusy.has(item.maintainerrMediaId)) ||
-                      undefined
-                    }
-                    onClick={() => toggleShield(item, glyph)}
-                  >
-                    {inner}
-                  </button>
-                ) : (
-                  <span
-                    className="bwall-tap"
-                    data-testid="trash-toggle"
-                    data-inert="true"
-                    role="img"
-                    aria-label={toggleLabel}
-                    title={info}
-                  >
-                    {inner}
-                  </span>
-                )}
-                {/* The /library nav corner — distinct from the poster toggle (owner refinement),
-                    carrying the ?from context so the item page returns here (Part 2). */}
-                {item.mediaItemId !== null ? (
-                  <LibraryCornerLink
-                    href={`/library/${item.mediaItemId}?from=${fromKey}`}
-                    title={`Open ${titleYear} — history and fixes`}
-                    ariaLabel={`Open ${titleYear} — its library page`}
-                  />
-                ) : null}
-                <span className="bwall-caption">
-                  {item.title}
-                  {item.year !== null ? <span className="muted"> ({item.year})</span> : null}
-                </span>
-                <span className="bwall-meta">
-                  {item.sizeBytes > 0 ? formatBytes(item.sizeBytes) : '—'}
-                  {rating !== null ? ` · ★ ${rating}` : ''}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
+        <PendingWall
+          items={items}
+          media={media}
+          fromKey={fromKey}
+          overrides={overrides}
+          busy={shieldBusy}
+          canSave={canSave}
+          canUnsave={canUnsave}
+          onToggle={toggle}
+          loading={pending.isLoading}
+          refreshing={refreshing}
+          emptyLabel={
+            hasFilters
+              ? 'Nothing matches the filters.'
+              : `Nothing pending — no ${label.toLowerCase()} are scheduled for deletion.`
+          }
+          wallLabel={`Pending ${label} deletions`}
+          sentinelRef={sentinelRef}
+          hasNextPage={pending.hasNextPage === true}
+          isFetchingNextPage={pending.isFetchingNextPage}
+          onLoadMore={() => void pending.fetchNextPage()}
+          testId="trash-wall"
+        />
       )}
 
       {/* ADR-014 — the Expedite Modal (never one-click delete). */}
@@ -749,8 +538,8 @@ function PendingTab({
           <div className="trash-confirm" data-testid="trash-expedite-refusal">
             <p className="alert" role="alert">
               Filters can’t scope “Delete all now” — it processes the <strong>entire</strong> pending{' '}
-              {label} set ({allItems.length} item{allItems.length === 1 ? '' : 's'}), including the{' '}
-              {allItems.length - items.length} your filters currently hide.
+              {label} set ({total} item{total === 1 ? '' : 's'}), including the{' '}
+              {total - filteredCount} your filters currently hide.
             </p>
             <p className="muted">
               Clear the filters to delete the whole set, or open a specific title and use{' '}
@@ -774,8 +563,8 @@ function PendingTab({
         ) : (
           <div className="trash-confirm" data-testid="trash-expedite-all-confirm">
             <p>
-              Delete the <strong>entire pending {label} set</strong> now — {allItems.length} item
-              {allItems.length === 1 ? '' : 's'}. Maintainerr will process each item individually:
+              Delete the <strong>entire pending {label} set</strong> now — {total} item
+              {total === 1 ? '' : 's'}. Maintainerr will process each item individually:
             </p>
             <ul className="ledger-confirm__outcomes">
               <li>
@@ -806,14 +595,10 @@ function PendingTab({
                 disabled={expediteBusy || partition.deletable === 0}
                 onClick={() =>
                   // F2 — pin the run to the snapshot the user SAW (the entire pending set; filters
-                  // can't scope Expedite all). The server processes only this ∩ the current pending
-                  // set, so items that became pending after the modal opened are never deleted.
-                  expediteAll.mutate({
-                    media,
-                    maintainerrMediaIds: allItems
-                      .map((i) => i.maintainerrMediaId)
-                      .filter((id): id is string => id !== null),
-                  })
+                  // can't scope Expedite all). The server returns the full actionable-id snapshot on
+                  // the first page and processes only this ∩ the current pending set, so items that
+                  // became pending after the modal opened are never deleted.
+                  expediteAll.mutate({ media, maintainerrMediaIds: allActionableIds })
                 }
               >
                 {expediteBusy

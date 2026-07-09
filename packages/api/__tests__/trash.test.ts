@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { ledgerEvents, mediaItems } from '@hnet/db/schema';
 import {
+  __setPendingCacheTtlMsForTests,
   buildMaintainerrClientBundle,
   upsertMediaItemsBatch,
   type MaintainerrClientBundle,
@@ -33,6 +34,8 @@ interface MaintState {
   }>;
   /** rule groups GET /rules serves (the Rules tab's data); default []. */
   rules: Array<Record<string, unknown>>;
+  /** Test instrumentation — bumped on each Maintainerr GET (paging perf guards read these). */
+  counters?: { exclusionReads: number; collectionsReads: number };
 }
 
 function stubMaintainerr(state: MaintState): MaintainerrClientBundle {
@@ -57,8 +60,10 @@ function stubMaintainerr(state: MaintState): MaintainerrClientBundle {
           : [{ name: 'Sonarr' }],
       });
     if (method === 'GET' && path === '/rules') return ok(state.rules);
-    if (method === 'GET' && path === '/collections')
+    if (method === 'GET' && path === '/collections') {
+      if (state.counters) state.counters.collectionsReads += 1;
       return ok(state.collections.map((c) => ({ ...c, media: [] })));
+    }
     const cm = path.match(/^\/collections\/media\/(\d+)\/content\/(\d+)$/);
     if (method === 'GET' && cm) {
       const col = state.collections.find((c) => c.id === Number(cm[1]));
@@ -66,6 +71,7 @@ function stubMaintainerr(state: MaintState): MaintainerrClientBundle {
       return ok({ totalSize: items.length, items });
     }
     if (method === 'GET' && path === '/rules/exclusion') {
+      if (state.counters) state.counters.exclusionReads += 1;
       const id = q.mediaServerId;
       return ok(id !== undefined && state.exclusions.has(id) ? [{ id: 1, mediaServerId: id }] : []);
     }
@@ -228,10 +234,16 @@ describe('trash router — happy paths (ADR-023 D-02/D-04/D-05)', () => {
   const adminCaller = (s: MaintState) =>
     caller(makeCtx(t.db, sessionUser(adminRow), undefined, undefined, stubMaintainerr(s)));
 
-  it('pending merges Maintainerr media with the ledger + returns total size', async () => {
+  it('pending merges Maintainerr media with the ledger + returns total size (paginated)', async () => {
     const res = await adminCaller(state()).trash.pending({ media: 'movie' });
-    expect(res.count).toBe(1);
+    // Paginated shape (owner-directed 2026-07-09): `total` is the TRUE kind count; the first page
+    // carries the facet menus + Expedite-all preview + the actionable-id snapshot.
+    expect(res.total).toBe(1);
+    expect(res.filteredCount).toBe(1);
     expect(res.totalSizeBytes).toBe(1_000_000_000);
+    expect(res.nextCursor).toBeNull();
+    expect(res.allActionableIds).toEqual(['ms-1']);
+    expect(res.expeditePreview).toMatchObject({ deletable: 1, deletableBytes: 1_000_000_000 });
     expect(res.items[0]).toMatchObject({ tmdbId: 55001, title: 'Pending Movie', maintainerrMediaId: 'ms-1' });
     expect(res.items[0]!.scheduledDeleteAt).toBe(
       new Date(Date.parse('2026-06-01T00:00:00Z') + 30 * 86_400_000).toISOString(),
@@ -379,5 +391,154 @@ describe('trash router — happy paths (ADR-023 D-02/D-04/D-05)', () => {
     await expect(
       adminCaller(state()).trash.expediteAll({ media: 'movie', maintainerrMediaIds: [] }),
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+  });
+});
+
+// Owner-directed 2026-07-09 — the Trash walls were 15-30 s at 776/42 items because the pending TAB
+// issued one Maintainerr exclusion GET per candidate (a serial N+1). The read is now PAGINATED:
+// search/filter/sort server-side, ~50-item pages, and the live-exclusion cross-check scoped to the
+// returned page. These cover the pagination journey, server-side shaping, the perf guard (the root
+// cause), and the interactive future-batch strip.
+describe('trash router — paginated pending wall + future-batch strip (owner-directed 2026-07-09)', () => {
+  let t: TestDb;
+  let adminRow: Awaited<ReturnType<typeof createUser>>;
+
+  beforeAll(async () => {
+    t = await bootMigratedDb();
+    adminRow = await createUser(t.db, { email: 'trash-paging@example.com', admin: true });
+  });
+  afterAll(async () => t?.stop());
+
+  const adminCaller = (s: MaintState) =>
+    caller(makeCtx(t.db, sessionUser(adminRow), undefined, undefined, stubMaintainerr(s)));
+
+  /** A pool of `n` movie candidates (ms-0..ms-(n-1); size grows with the index). */
+  const bigState = (n: number, over: Partial<MaintState> = {}): MaintState => ({
+    safe: true,
+    exclusions: new Set(),
+    rules: [],
+    collections: [
+      {
+        id: 7,
+        isActive: true,
+        deleteAfterDays: 30,
+        type: 'movie',
+        title: 'Least watched',
+        items: Array.from({ length: n }, (_, i) => ({
+          mediaServerId: `ms-${i}`,
+          tmdbId: 60000 + i,
+          sizeBytes: (i + 1) * 1_000_000,
+          addDate: '2026-06-01T00:00:00Z',
+        })),
+      },
+    ],
+    ...over,
+  });
+
+  it('pages a 120-item pool at limit 50, with a TRUE total, a forward cursor, and no overlap', async () => {
+    const c = adminCaller(bigState(120));
+    const p1 = await c.trash.pending({ media: 'movie', limit: 50 });
+    expect(p1.items).toHaveLength(50);
+    expect(p1.total).toBe(120); // the counts-bar number is the WHOLE kind, not the loaded page
+    expect(p1.filteredCount).toBe(120);
+    expect(p1.nextCursor).not.toBeNull();
+    // First-page-only extras (kept off later pages to keep payloads lean).
+    expect(p1.facets).not.toBeNull();
+    expect(p1.expeditePreview).not.toBeNull();
+    expect(p1.allActionableIds).toHaveLength(120);
+
+    const p2 = await c.trash.pending({ media: 'movie', limit: 50, cursor: p1.nextCursor! });
+    expect(p2.items).toHaveLength(50);
+    expect(p2.facets).toBeNull();
+    expect(p2.allActionableIds).toBeNull();
+    expect(p2.nextCursor).not.toBeNull();
+
+    const p3 = await c.trash.pending({ media: 'movie', limit: 50, cursor: p2.nextCursor! });
+    expect(p3.items).toHaveLength(20);
+    expect(p3.nextCursor).toBeNull(); // last page
+
+    // The three pages tile the whole set exactly once (stable offset ordering — no gaps/overlaps).
+    const ids = new Set(
+      [...p1.items, ...p2.items, ...p3.items].map((i) => i.maintainerrMediaId),
+    );
+    expect(ids.size).toBe(120);
+  });
+
+  it('search + sort are applied SERVER-SIDE before the page slice', async () => {
+    const c = adminCaller(bigState(120));
+    // Title search narrows to the one matching item (titles fall back to `tmdb:<id>` with no ledger).
+    const searched = await c.trash.pending({ media: 'movie', query: 'tmdb:60005', limit: 50 });
+    expect(searched.total).toBe(120); // total = the whole set
+    expect(searched.filteredCount).toBe(1); // filtered narrows
+    expect(searched.items).toHaveLength(1);
+    expect(searched.items[0]!.title).toContain('60005');
+
+    // Sort by size desc → the largest candidate leads the first page.
+    const bySize = await c.trash.pending({
+      media: 'movie',
+      sort: { field: 'size', dir: 'desc' },
+      limit: 50,
+    });
+    expect(bySize.items[0]!.sizeBytes).toBe(120 * 1_000_000);
+  });
+
+  it('perf (root cause): live-exclusion reads are scoped to the PAGE — ≤ limit, not one per candidate', async () => {
+    const s = bigState(120);
+    s.counters = { exclusionReads: 0, collectionsReads: 0 };
+    await adminCaller(s).trash.pending({ media: 'movie', limit: 50 });
+    // The 15-30 s regression was 120 serial exclusion GETs (one per candidate). The paginated read
+    // cross-checks ONLY the returned page.
+    expect(s.counters.exclusionReads).toBeGreaterThan(0);
+    expect(s.counters.exclusionReads).toBeLessThanOrEqual(50);
+  });
+
+  it('perf: the materialized set is memoized briefly — a second page does not re-fetch collections', async () => {
+    __setPendingCacheTtlMsForTests(5000);
+    try {
+      const s = bigState(120);
+      s.counters = { exclusionReads: 0, collectionsReads: 0 };
+      const c = adminCaller(s);
+      const p1 = await c.trash.pending({ media: 'movie', limit: 50 });
+      const afterFirst = s.counters.collectionsReads;
+      expect(afterFirst).toBeGreaterThan(0);
+      await c.trash.pending({ media: 'movie', limit: 50, cursor: p1.nextCursor! });
+      expect(s.counters.collectionsReads).toBe(afterFirst); // second page served from the memo
+    } finally {
+      __setPendingCacheTtlMsForTests(0); // restore the test default (memo disabled between cases)
+    }
+  });
+
+  it('future-batch strip: excludeOpenBatch drops the open batch members; a save excludes the candidate', async () => {
+    // Seed an OPEN batch by snapshotting the current pending set through the domain single-writer
+    // (trash.batches.create → createBatchFromPending; direct trash_batch* inserts are forbidden by
+    // the single-writer guard). bigState(3) ⇒ the batch holds ms-0, ms-1, ms-2.
+    const s = bigState(3);
+    const c = adminCaller(s);
+    const created = await c.trash.batches.create({ mediaKind: 'movie' });
+    expect(created.state).toBe('admin_review');
+
+    // With every current candidate now IN the open batch, the future strip is empty.
+    const emptyStrip = await c.trash.pending({ media: 'movie', excludeOpenBatch: true, limit: 50 });
+    expect(emptyStrip.total).toBe(0);
+
+    // A NEW candidate appears (rules flagged ms-3) — it's eligible for the NEXT batch, so the strip
+    // now shows exactly it (the open batch's members stay subtracted).
+    s.collections[0]!.items.push({
+      mediaServerId: 'ms-3',
+      tmdbId: 60003,
+      sizeBytes: 9_000_000,
+      addDate: '2026-06-01T00:00:00Z',
+    });
+    const strip = await c.trash.pending({ media: 'movie', excludeOpenBatch: true, limit: 50 });
+    expect(strip.total).toBe(1);
+    expect(strip.items.map((i) => i.maintainerrMediaId)).toEqual(['ms-3']);
+
+    // Tapping a future candidate to save it = the guarded Maintainerr exclusion → excluded from
+    // candidates → never enters a future batch. A fresh read reflects it (page-scoped live check).
+    await c.trash.saveExclusion({ maintainerrMediaId: 'ms-3' });
+    expect(s.exclusions.has('ms-3')).toBe(true);
+    const after = await c.trash.pending({ media: 'movie', excludeOpenBatch: true, limit: 50 });
+    const saved = after.items.find((i) => i.maintainerrMediaId === 'ms-3')!;
+    expect(saved.protectedByExclusion).toBe(true);
   });
 });

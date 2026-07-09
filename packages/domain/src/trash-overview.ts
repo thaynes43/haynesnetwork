@@ -21,7 +21,7 @@ import {
 import { resolveDb } from './db-client';
 import type { MaintainerrClientBundle } from './maintainerr-clients';
 import { listBatches } from './trash-batches';
-import { listRecentlyDeleted, listTrashPending, type TrashMedia } from './trash-flow';
+import { countTrashPending, listRecentlyDeleted, type TrashMedia } from './trash-flow';
 import { listNotifications } from './notifications';
 
 /** One kind card's data (Movies, TV). */
@@ -99,10 +99,13 @@ export async function getTrashOverview(input: {
       });
       continue;
     }
-    // No open batch → the LIVE candidate read. Degrade (never throw) when Maintainerr can't answer:
-    // the landing must render for every OTHER kind + the recent strip.
+    // No open batch → the LIVE candidate count. CHEAP path (owner-directed 2026-07-09): count +
+    // bytes come straight off Maintainerr's flat set (no ledger join, no per-item exclusion reads)
+    // and share the paginated read's brief memo, so the Overview never full-scans the expensive
+    // path per load. Degrade (never throw) when Maintainerr can't answer — the landing must render
+    // for every OTHER kind + the recent strip.
     try {
-      const pending = await listTrashPending({ db, maintainerr: input.maintainerr, media: kind });
+      const pending = await countTrashPending({ maintainerr: input.maintainerr, media: kind });
       kinds.push({
         kind,
         slatedCount: pending.count,

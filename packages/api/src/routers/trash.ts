@@ -9,6 +9,7 @@ import {
   APP_SETTING_DEFAULTS,
   arrKindForTrashMedia,
   auditMaintainerr,
+  bustPendingCache,
   cancelBatch,
   createBatchFromPending,
   deleteTrashRule,
@@ -21,8 +22,10 @@ import {
   greenlightBatch,
   listBatches,
   listNotifications,
+  listOpenBatchMediaIds,
   listRecentlyDeleted,
-  listTrashPending,
+  listTrashPendingCandidates,
+  listTrashPendingPage,
   removeExclusion,
   restoreDeleted,
   saveExclusion,
@@ -31,8 +34,10 @@ import {
   sweepExpiredBatches,
   unprotectBatchItem,
   upsertTrashRule,
+  type TrashPendingSort,
 } from '@hnet/domain';
 import { mapDomainErrors, resolveArrBundle, resolveMaintainerrBundle, router } from '../trpc';
+import { decodeCursor, encodeCursor } from '../cursor';
 import {
   adminProcedure,
   hasTrashAction,
@@ -70,31 +75,105 @@ export const trashRouter = router({
   }),
 
   /**
-   * DESIGN-010 D-02 — the pending-deletion table for ONE media kind (movie|tv, never combined).
-   * Read-through merge of Maintainerr's collections/media with our ledger; per-item size + a total.
+   * DESIGN-010 D-02 (owner-directed 2026-07-09) — the PAGINATED pending-deletion wall for ONE media
+   * kind (movie|tv, never combined). Read-through merge of Maintainerr's collections/media with our
+   * ledger, shaped SERVER-SIDE (search/filter/sort) and sliced into ~50-item pages so the wall no
+   * longer loads 776 tiles (and 776 exclusion reads) at once — the live-exclusion cross-check is
+   * scoped to the returned page. `excludeOpenBatch` subtracts the open batch's members so the same
+   * endpoint drives the "Potential in future batches" strip. The first page carries the facet menus,
+   * the Expedite-all preview, and the full actionable-id snapshot the confirm pins the run to.
    */
   pending: sectionProcedure('trash', 'read_only')
-    .input(z.object({ media: trashMedia }))
+    .input(
+      z.object({
+        media: trashMedia,
+        query: z.string().optional(),
+        genres: z.array(z.string()).optional(),
+        resolutions: z.array(z.string()).optional(),
+        requesters: z.array(z.string()).optional(),
+        sourceCollections: z.array(z.string()).optional(),
+        ratingMin: z.number().min(0).max(10).optional(),
+        ratingMax: z.number().min(0).max(10).optional(),
+        sort: z
+          .object({
+            field: z.enum(['scheduled', 'title', 'size', 'rating']),
+            dir: z.enum(['asc', 'desc']),
+          })
+          .optional(),
+        limit: z.number().int().min(1).max(100).default(50),
+        cursor: z.string().optional(),
+        /** The future-batch strip: drop the open batch's members from the candidate set. */
+        excludeOpenBatch: z.boolean().optional(),
+      }),
+    )
     .query(async ({ ctx, input }) => {
       return mapDomainErrors(async () => {
-        const result = await listTrashPending({
+        const offset =
+          input.cursor !== undefined ? Number(decodeCursor(input.cursor, ['number'])[0]) : 0;
+        const excludeMaintainerrIds =
+          input.excludeOpenBatch === true
+            ? await listOpenBatchMediaIds({ db: ctx.db, media: input.media })
+            : undefined;
+        const page = await listTrashPendingPage({
           db: ctx.db,
           maintainerr: resolveMaintainerrBundle(ctx),
           media: input.media,
-          // DESIGN-010 D-08/D-09 — reflect exclusions made outside this session as Protected before
-          // the `dnd` tag round-trips (the pending TAB is the only live-exclusion-aware read).
-          includeLiveExclusions: true,
+          filters: {
+            query: input.query,
+            genres: input.genres,
+            resolutions: input.resolutions,
+            requesters: input.requesters,
+            sourceCollections: input.sourceCollections,
+            ratingMin: input.ratingMin,
+            ratingMax: input.ratingMax,
+          },
+          sort: input.sort as TrashPendingSort | undefined,
+          limit: input.limit,
+          offset,
+          excludeMaintainerrIds,
         });
         return {
           media: input.media,
-          totalSizeBytes: result.totalSizeBytes,
-          count: result.count,
-          items: result.items.map((item) => ({
+          total: page.total,
+          totalSizeBytes: page.totalSizeBytes,
+          filteredCount: page.filteredCount,
+          filteredSizeBytes: page.filteredSizeBytes,
+          facets: page.facets,
+          expeditePreview: page.expeditePreview,
+          allActionableIds: page.allActionableIds,
+          nextCursor: page.nextCursor === null ? null : encodeCursor([page.nextCursor]),
+          items: page.items.map((item) => ({
             ...item,
             posterUrl:
               item.mediaItemId === null
                 ? null
                 : posterUrlFor(item.mediaItemId, item.posterSource),
+          })),
+        };
+      });
+    }),
+
+  /**
+   * The full actionable-candidate list for a kind + the TRUE candidate count — backs the admin
+   * Start-a-batch target preview and the per-kind "N candidates" header without the paginated wall's
+   * per-page live-exclusion cost. Read-Only+ (the header is admin-gated client-side).
+   */
+  pendingCandidates: sectionProcedure('trash', 'read_only')
+    .input(z.object({ media: trashMedia }))
+    .query(async ({ ctx, input }) => {
+      return mapDomainErrors(async () => {
+        const result = await listTrashPendingCandidates({
+          db: ctx.db,
+          maintainerr: resolveMaintainerrBundle(ctx),
+          media: input.media,
+        });
+        return {
+          media: input.media,
+          count: result.count,
+          candidates: result.candidates.map((c) => ({
+            ...c,
+            posterUrl:
+              c.mediaItemId === null ? null : posterUrlFor(c.mediaItemId, c.posterSource),
           })),
         };
       });
@@ -128,16 +207,18 @@ export const trashRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      return mapDomainErrors(() =>
-        saveExclusion({
+      return mapDomainErrors(async () => {
+        const res = await saveExclusion({
           db: ctx.db,
           maintainerr: resolveMaintainerrBundle(ctx),
           maintainerrMediaId: input.maintainerrMediaId,
           mediaItemId: input.mediaItemId ?? null,
           collectionId: input.collectionId ?? undefined,
           actorId: ctx.user.id,
-        }),
-      );
+        });
+        bustPendingCache();
+        return res;
+      });
     }),
 
   /** DESIGN-010 D-05 — un-save (remove_exclude grant). */
@@ -149,15 +230,17 @@ export const trashRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      return mapDomainErrors(() =>
-        removeExclusion({
+      return mapDomainErrors(async () => {
+        const res = await removeExclusion({
           db: ctx.db,
           maintainerr: resolveMaintainerrBundle(ctx),
           maintainerrMediaId: input.maintainerrMediaId,
           mediaItemId: input.mediaItemId ?? null,
           actorId: ctx.user.id,
-        }),
-      );
+        });
+        bustPendingCache();
+        return res;
+      });
     }),
 
   /**
@@ -174,8 +257,8 @@ export const trashRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      return mapDomainErrors(() =>
-        expediteDeletion({
+      return mapDomainErrors(async () => {
+        const res = await expediteDeletion({
           db: ctx.db,
           maintainerr: resolveMaintainerrBundle(ctx),
           scope: 'item',
@@ -186,8 +269,10 @@ export const trashRouter = router({
             maintainerrMediaId: input.maintainerrMediaId,
             mediaItemId: input.mediaItemId ?? null,
           },
-        }),
-      );
+        });
+        bustPendingCache(input.media);
+        return res;
+      });
     }),
 
   /**
@@ -205,16 +290,18 @@ export const trashRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      return mapDomainErrors(() =>
-        expediteDeletion({
+      return mapDomainErrors(async () => {
+        const res = await expediteDeletion({
           db: ctx.db,
           maintainerr: resolveMaintainerrBundle(ctx),
           scope: 'all',
           media: input.media,
           actorId: ctx.user.id,
           snapshotMediaIds: input.maintainerrMediaIds,
-        }),
-      );
+        });
+        bustPendingCache(input.media);
+        return res;
+      });
     }),
 
   /** DESIGN-010 D-02 — Recently Deleted (our tombstoned ledger rows), newest first. Read-Only+. */

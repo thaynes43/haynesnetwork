@@ -17,7 +17,7 @@
 //
 // Owner refinement 2026-07-07: the wall is a FAST tap-toggle (poster/glyph flips trash⇄shield);
 // /library nav is a distinct corner icon; per-item expedite lives on the item page now.
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { ConfirmButton } from '@hnet/ui';
 import { trpc } from '@/lib/trpc-client';
 import { Modal } from '@/components/modal';
@@ -27,6 +27,12 @@ import {
   WallGlyphSvg,
   type TrashAccess,
 } from '@/components/trash-shield';
+import {
+  PendingWall,
+  useInfiniteScroll,
+  usePendingSaves,
+  type PendingWallItem,
+} from '@/components/pending-wall';
 import { formatBytes, formatDay, formatRating, ratingOrNull } from '@/lib/media';
 import { appCodeOf, describeMutationError } from '@/lib/app-error';
 import { daysUntil, deadlineCountdown } from '@/lib/trash';
@@ -876,34 +882,77 @@ function StartBatchModal({
   );
 }
 
-// ── the "new candidates since this batch" strip (admin-only; DESIGN-011 D-07 amendment) ──
-function NewCandidatesStrip({
-  candidates,
+// ── "Potential in future batches" — a FULL interactive paginated wall (owner-directed 2026-07-09) ──
+// When a batch is open this strip shows the LIVE candidates NOT in that batch (the server subtracts
+// the open batch's members via excludeOpenBatch). It is now the SAME wall as the live pending wall:
+// infinite scroll + the fast tap-to-save toggle. A save = the guarded Maintainerr exclusion → the
+// item is whitelisted → it never enters a future batch; requested items show the person-shield per
+// the shipped precedence. The header keeps the honest server count.
+function FutureCandidatesWall({
   kind,
+  access,
+  status,
 }: {
-  candidates: PendingCandidate[];
   kind: 'movie' | 'tv';
+  access: TrashAccess;
+  status: SafetyLike | undefined;
 }) {
-  if (candidates.length === 0) return null;
+  const label = kind === 'movie' ? 'Movies' : 'TV';
+  const reachable = status?.reachable === true;
+  const canSave = access.actions.includes('save_exclude') && reachable;
+  const canUnsave = access.actions.includes('remove_exclude') && reachable;
+  const fromKey = fromKeyFor(kind);
+
+  const q = trpc.trash.pending.useInfiniteQuery(
+    { media: kind, excludeOpenBatch: true, limit: 50 },
+    {
+      getNextPageParam: (last) => last.nextCursor ?? undefined,
+      placeholderData: (prev) => prev,
+      enabled: reachable,
+    },
+  );
+  const pages = q.data?.pages ?? [];
+  const items: PendingWallItem[] = pages.flatMap((p) => p.items);
+  const total = pages[0]?.total ?? 0;
+  const refreshing = q.isPlaceholderData && q.isFetching;
+
+  const { overrides, busy, error, toggle } = usePendingSaves(kind);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const canLoadMore = q.hasNextPage === true && !q.isFetchingNextPage && !q.isPlaceholderData;
+  useInfiniteScroll(sentinelRef, canLoadMore, () => void q.fetchNextPage());
+
+  // Nothing to show: unreachable Maintainerr, or no candidates left outside the batch. Hide the strip.
+  if (!reachable) return null;
+  if (!q.isLoading && total === 0) return null;
+
   return (
     <div className="batch-newcands" data-testid="batch-new-candidates">
       <p className="batch-newcands__head muted">
-        New candidates since this batch ({candidates.length}) — eligible for the next batch.
+        Potential in future batches ({total}) — eligible for the next batch; tap a poster to save it
+        out.
       </p>
-      <ul className="batch-newcands__grid" aria-label="New candidates since this batch">
-        {candidates.map((c) => {
-          const titleYear = `${c.title}${c.year !== null ? ` (${c.year})` : ''}`;
-          return (
-            <li key={c.maintainerrMediaId ?? c.title} className="batch-newcands__tile" title={titleYear}>
-              <MediaPoster
-                posterUrl={c.posterUrl}
-                kind={kind === 'movie' ? 'radarr' : 'sonarr'}
-                alt=""
-              />
-            </li>
-          );
-        })}
-      </ul>
+      <p className="bwall-error" role="alert" data-testid="future-wall-error">
+        {error ?? ''}
+      </p>
+      <PendingWall
+        items={items}
+        media={kind}
+        fromKey={fromKey}
+        overrides={overrides}
+        busy={busy}
+        canSave={canSave}
+        canUnsave={canUnsave}
+        onToggle={toggle}
+        loading={q.isLoading}
+        refreshing={refreshing}
+        emptyLabel="Nothing else is eligible for a future batch."
+        wallLabel={`Potential future-batch ${label}`}
+        sentinelRef={sentinelRef}
+        hasNextPage={q.hasNextPage === true}
+        isFetchingNextPage={q.isFetchingNextPage}
+        onLoadMore={() => void q.fetchNextPage()}
+        testId="future-wall"
+      />
     </div>
   );
 }
@@ -919,7 +968,6 @@ function LifecycleView({
   status,
   defaultWindowDays,
   saveStats,
-  newCandidates,
   canManage,
 }: {
   batch: BatchSummaryWire;
@@ -942,7 +990,6 @@ function LifecycleView({
         }>;
       }
     | undefined;
-  newCandidates: PendingCandidate[];
   canManage: boolean;
 }) {
   const utils = trpc.useUtils();
@@ -1141,8 +1188,9 @@ function LifecycleView({
         </div>
       ) : null}
 
-      {/* Admin-only: live pending items NOT in this batch — eligible for the next one. */}
-      {canManage ? <NewCandidatesStrip candidates={newCandidates} kind={kind} /> : null}
+      {/* Admin-only: the full interactive paginated wall of live candidates NOT in this batch —
+          eligible for the NEXT batch; tap-to-save works exactly like the live wall. */}
+      {canManage ? <FutureCandidatesWall kind={kind} access={access} status={status} /> : null}
 
       {modal === 'greenlight' ? (
         <GreenlightModal
@@ -1276,9 +1324,11 @@ export function KindTab({
     { batchId: openBatch?.id ?? '00000000-0000-0000-0000-000000000000' },
     { enabled: openBatch !== undefined, placeholderData: (prev) => prev },
   );
-  // The pending set powers BOTH the candidate count (no open batch) and the new-candidates diff
-  // (open batch). Shared react-query key with the pendingWall's own read — deduped.
-  const pending = trpc.trash.pending.useQuery(
+  // The actionable-candidate list + TRUE count (owner-directed 2026-07-09): the paginated pending
+  // wall no longer returns the whole set, so the candidate COUNT header and the Start-a-batch target
+  // preview read this lean endpoint (all actionable candidates, no per-page live-exclusion cost). The
+  // open-batch "Potential in future batches" wall paginates independently (FutureCandidatesWall).
+  const candidates = trpc.trash.pendingCandidates.useQuery(
     { media: kind },
     { enabled: canManage && reachable },
   );
@@ -1300,26 +1350,17 @@ export function KindTab({
   const defaultWindowDays =
     settings.data?.trash_default_window_days ?? openSummary?.windowDays ?? 21;
 
-  // The new-candidates diff (pending items whose Maintainerr id isn't in the open batch).
-  const batchMediaIds = new Set(
-    ((detailData?.items as BatchItemWire[] | undefined) ?? []).map((i) => i.maintainerrMediaId),
-  );
-  const newCandidates: PendingCandidate[] = ((pending.data?.items as PendingCandidate[] | undefined) ?? [])
-    .filter((p) => p.maintainerrMediaId !== null && !batchMediaIds.has(p.maintainerrMediaId));
-
   // ── create (Start a batch) — admin-only, only when none is open; opens the target-picker Modal ──
   const [showStart, setShowStart] = useState(false);
   // The LIVE actionable candidates (a Maintainerr id present) — the Start modal's preview source.
   const pendingCandidates: TargetCandidate[] = (
-    (pending.data?.items as PendingCandidate[] | undefined) ?? []
-  )
-    .filter((p) => p.maintainerrMediaId !== null)
-    .map((p) => ({
-      sizeBytes: p.sizeBytes,
-      imdbRating: p.imdbRating,
-      tmdbRating: p.tmdbRating,
-      protectedByTag: p.protectedByTag,
-    }));
+    (candidates.data?.candidates as PendingCandidate[] | undefined) ?? []
+  ).map((p) => ({
+    sizeBytes: p.sizeBytes,
+    imdbRating: p.imdbRating,
+    tmdbRating: p.tmdbRating,
+    protectedByTag: p.protectedByTag,
+  }));
 
   const kindNoun = kind === 'movie' ? 'movie' : 'TV';
 
@@ -1354,7 +1395,6 @@ export function KindTab({
           status={status}
           defaultWindowDays={defaultWindowDays}
           saveStats={statsData}
-          newCandidates={newCandidates}
           canManage={canManage}
         />
       ) : (
@@ -1363,8 +1403,8 @@ export function KindTab({
           {canManage ? (
             <div className="batches-head" data-testid="batch-start-head">
               <p className="batches-hint muted" data-testid="batch-candidates">
-                {pending.data !== undefined
-                  ? `${pending.data.count} ${kindNoun} candidate${pending.data.count === 1 ? '' : 's'} currently proposed by the rules.`
+                {candidates.data !== undefined
+                  ? `${candidates.data.count} ${kindNoun} candidate${candidates.data.count === 1 ? '' : 's'} currently proposed by the rules.`
                   : reachable
                     ? 'Checking the current candidates…'
                     : 'Maintainerr is unreachable — candidates can’t be read right now.'}
