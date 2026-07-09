@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.27.0](https://github.com/thaynes43/haynesnetwork/compare/v0.26.0...v0.27.0) (2026-07-09)
+
+
+### Features
+
+* strategy-mirrored wall order + debounced pool refresh after saves ([#148](https://github.com/thaynes43/haynesnetwork/issues/148)) ([f60b521](https://github.com/thaynes43/haynesnetwork/commit/f60b521aeb7d3b2c929856d96d8c189639a130e0))
+
+
+### Bug Fixes
+
+* SAFE audit enforces Maintainerr aging invariants (rule pools never self-delete) ([#146](https://github.com/thaynes43/haynesnetwork/issues/146)) ([72c0b58](https://github.com/thaynes43/haynesnetwork/commit/72c0b58c457c00779f41c42eb72372663e943366))
+* watch indicators never occupy the action corner — every tile stays saveable ([#145](https://github.com/thaynes43/haynesnetwork/issues/145)) ([f4718f0](https://github.com/thaynes43/haynesnetwork/commit/f4718f065e1d6a83e70d26857f59d80b470085ac))
+
 ## [0.26.0](https://github.com/thaynes43/haynesnetwork/compare/v0.25.1...v0.26.0) (2026-07-09)
 
 
