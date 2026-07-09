@@ -129,49 +129,55 @@ export async function auditMaintainerr(input: {
     };
   }
 
-  let plex = false;
-  try {
-    const test = await read.testPlex();
-    plex = (test.status ?? '').toUpperCase() === 'OK';
-  } catch {
-    plex = false;
-  }
-
-  // Integration presence: the constants `applications` names are only present for CONFIGURED
-  // integrations (Radarr/Sonarr/Tautulli/Seerr dropped if not set up — Maintainerr filters at
-  // runtime). Match by lowercased application name.
-  let radarr = false;
-  let sonarr = false;
-  let tautulli = false;
-  let seerr = false;
-  try {
-    const constants = await read.getRuleConstants();
-    const names = (constants.applications ?? []).map((a) => (a.name ?? '').toLowerCase());
-    for (const n of names) {
-      if (n.includes('radarr')) radarr = true;
-      if (n.includes('sonarr')) sonarr = true;
-      if (n.includes('tautulli')) tautulli = true;
-      if (includesAny(n, ['overseerr', 'jellyseerr', 'seerr'])) seerr = true;
-    }
-  } catch {
-    // Leave the integration flags false — fail closed.
-  }
-
-  let armedRules = 0;
-  try {
-    const rules = await read.getRules();
-    armedRules = rules.filter((r) => r.isActive === true).length;
-  } catch {
-    armedRules = 0;
-  }
-
-  let activeCollections = 0;
-  try {
-    const collections = await read.getCollections();
-    activeCollections = collections.filter((c) => c.isActive === true).length;
-  } catch {
-    activeCollections = 0;
-  }
+  // The four post-reachability sub-reads are independent and each fails closed on its own, so run
+  // them CONCURRENTLY (ADR-035 perf pass — the serial chain cost ~1.7 s cold on the live install,
+  // and the audit rides the same request flight as the first wall paint).
+  const [plex, integrationFlags, armedRules, activeCollections] = await Promise.all([
+    (async () => {
+      try {
+        const test = await read.testPlex();
+        return (test.status ?? '').toUpperCase() === 'OK';
+      } catch {
+        return false;
+      }
+    })(),
+    (async () => {
+      // Integration presence: the constants `applications` names are only present for CONFIGURED
+      // integrations (Radarr/Sonarr/Tautulli/Seerr dropped if not set up — Maintainerr filters at
+      // runtime). Match by lowercased application name.
+      const flags = { radarr: false, sonarr: false, tautulli: false, seerr: false };
+      try {
+        const constants = await read.getRuleConstants();
+        const names = (constants.applications ?? []).map((a) => (a.name ?? '').toLowerCase());
+        for (const n of names) {
+          if (n.includes('radarr')) flags.radarr = true;
+          if (n.includes('sonarr')) flags.sonarr = true;
+          if (n.includes('tautulli')) flags.tautulli = true;
+          if (includesAny(n, ['overseerr', 'jellyseerr', 'seerr'])) flags.seerr = true;
+        }
+      } catch {
+        // Leave the integration flags false — fail closed.
+      }
+      return flags;
+    })(),
+    (async () => {
+      try {
+        const rules = await read.getRules();
+        return rules.filter((r) => r.isActive === true).length;
+      } catch {
+        return 0;
+      }
+    })(),
+    (async () => {
+      try {
+        const collections = await read.getCollections();
+        return collections.filter((c) => c.isActive === true).length;
+      } catch {
+        return 0;
+      }
+    })(),
+  ]);
+  const { radarr, sonarr, tautulli, seerr } = integrationFlags;
 
   const integrations: MaintainerrIntegrations = { plex, radarr, sonarr, tautulli, seerr };
   const safe = reachable && REQUIRED_INTEGRATIONS.every((k) => integrations[k]);
@@ -247,7 +253,7 @@ function collectionMediaKind(type: unknown): 'movie' | 'tv' | null {
 const asString = (v: string | number | null | undefined): string | null =>
   v === null || v === undefined ? null : String(v);
 
-interface FlatPending {
+export interface FlatPending {
   collectionId: number;
   collectionTitle: string | null;
   deleteAfterDays: number | null;
@@ -259,35 +265,50 @@ interface FlatPending {
   addDate: string | null;
 }
 
-/** Fetch every active collection's FULL membership (paged) with per-item size + ids. */
-async function fetchMaintainerrPending(
+/** Collection-content page size (ADR-035 live profile, 2026-07-09): Maintainerr's PER-CALL cost
+ *  dominates — a 50-item page cost 0.4–5.8 s in-cluster while ONE 742-item call answered in
+ *  ~0.16 s — so we page BIG (typically one call per collection at household scale). */
+const CONTENT_PAGE_SIZE = 500;
+/** How many collections crawl in flight at once (polite to an in-cluster service). */
+const COLLECTION_READ_CONCURRENCY = 4;
+
+/** Fetch every active collection's FULL membership (paged) with per-item size + ids.
+ *  ADR-035 — big pages + bounded-parallel collections (see constants above); the result is
+ *  deterministic (collections order, then page order) regardless of completion order. Shared by
+ *  the LIVE safety paths (guardian/expedite/batch snapshot) and the candidate-snapshot refresher. */
+export async function fetchMaintainerrPending(
   maintainerr: Pick<MaintainerrClientBundle, 'read'>,
 ): Promise<FlatPending[]> {
   const collections = await guardMaintainerrCall('maintainerr GET /collections', () =>
     maintainerr.read.getCollections(),
   );
-  const out: FlatPending[] = [];
-  const PAGE_SIZE = 50;
-  for (const c of collections) {
-    if (c.isActive !== true || c.id === null || c.id === undefined) continue;
-    // OUR manually-driven Leaving-Soon collections are NOT rule-collection sources (ADR-025 C-04):
-    // their members are the SAME physical media the rule collections already surface, so folding them
-    // in would double-count sizes AND — worse — let the sweep re-derive an item's collectionId to the
-    // Leaving-Soon collection, whose arrAction is DO_NOTHING → a per-item handle there deletes nothing.
-    // Skip them (verified 2026-07-07: v3.17.0 GET /api/collections returns manual collections too).
-    if (isLeavingSoonCollectionTitle(c.title)) continue;
+  // OUR manually-driven Leaving-Soon collections are NOT rule-collection sources (ADR-025 C-04):
+  // their members are the SAME physical media the rule collections already surface, so folding them
+  // in would double-count sizes AND — worse — let the sweep re-derive an item's collectionId to the
+  // Leaving-Soon collection, whose arrAction is DO_NOTHING → a per-item handle there deletes nothing.
+  // Skip them (verified 2026-07-07: v3.17.0 GET /api/collections returns manual collections too).
+  const active = collections.filter(
+    (c): c is typeof c & { id: number } =>
+      c.isActive === true &&
+      c.id !== null &&
+      c.id !== undefined &&
+      !isLeavingSoonCollectionTitle(c.title),
+  );
+  const perCollection = new Map<number, FlatPending[]>();
+  await mapWithConcurrency(active, COLLECTION_READ_CONCURRENCY, async (c) => {
     const collectionId = c.id;
     const collectionKind = collectionMediaKind(c.type);
+    const rows: FlatPending[] = [];
     let page = 1;
     let seen = 0;
     // Page until we've collected the reported totalSize (bounded — household scale).
     for (;;) {
       const content = await guardMaintainerrCall(
         `maintainerr GET /collections/media/${collectionId}/content/${page}`,
-        () => maintainerr.read.getCollectionContent(collectionId, page, PAGE_SIZE),
+        () => maintainerr.read.getCollectionContent(collectionId, page, CONTENT_PAGE_SIZE),
       );
       for (const m of content.items) {
-        out.push({
+        rows.push({
           collectionId,
           collectionTitle: c.title ?? null,
           deleteAfterDays: c.deleteAfterDays ?? null,
@@ -303,8 +324,21 @@ async function fetchMaintainerrPending(
       if (content.items.length === 0 || seen >= content.totalSize) break;
       page += 1;
     }
-  }
-  return out;
+    perCollection.set(collectionId, rows);
+  });
+  return active.flatMap((c) => perCollection.get(c.id) ?? []);
+}
+
+/** Bucket the flat crawl by media kind: the collection's declared kind wins; a kind-less
+ *  collection falls back to which external id the item carries (movie→tmdbId, tv→tvdbId). */
+export function bucketFlatPendingForMedia(
+  flat: readonly FlatPending[],
+  media: TrashMedia,
+): FlatPending[] {
+  return flat.filter((f) => {
+    if (f.collectionKind !== null) return f.collectionKind === media;
+    return media === 'movie' ? f.tmdbId !== null : f.tvdbId !== null;
+  });
 }
 
 /** addDate + deleteAfterDays days → ISO, or null when either is missing/unparseable. */
@@ -316,31 +350,25 @@ function scheduledDeleteAt(addDate: string | null, deleteAfterDays: number | nul
 }
 
 /**
- * Materialize the pending set for one media kind: Maintainerr's collections+media merged with our
- * media_items/media_metadata by tmdbId (movie→radarr) / tvdbId (tv→sonarr). The join supplies
- * title/poster/facets, but an item unknown to our ledger is STILL listed with Maintainerr's own
- * fields. `protectedByExclusion` is left FALSE here — the LIVE-exclusion cross-check is applied by
- * the callers that need it (page-scoped in the paginated read; whole-set in listTrashPending's
- * legacy path) so this materialization stays a pure read the brief page cache can memoize.
+ * Shape one media kind's FLAT pending rows into wire items: merged with our media_items/
+ * media_metadata by tmdbId (movie→radarr) / tvdbId (tv→sonarr). The join supplies title/poster/
+ * facets — resolved AT READ TIME so they stay as fresh as the media sync regardless of where the
+ * flat rows came from (a live Maintainerr crawl OR the ADR-035 candidate snapshot). An item
+ * unknown to our ledger is STILL listed with Maintainerr's own fields. `protectedByExclusion` is
+ * left FALSE here — the LIVE-exclusion cross-check is applied by the callers that need it
+ * (page-scoped in the paginated read; whole-set in listTrashPending's live path).
  */
-async function buildPendingItems(input: {
+export async function shapePendingItems(input: {
   db?: DbClient;
-  maintainerr: Pick<MaintainerrClientBundle, 'read'>;
   media: TrashMedia;
+  flat: readonly FlatPending[];
   watchWindowDays?: number;
 }): Promise<TrashPendingResult> {
   const db = resolveDb(input.db);
   const arrKind = arrKindForTrashMedia(input.media);
   const windowMs = (input.watchWindowDays ?? RECENTLY_WATCHED_WINDOW_DAYS) * 86_400_000;
   const now = Date.now();
-
-  const flat = await fetchMaintainerrPending(input.maintainerr);
-  // Bucket by requested media: prefer the collection's declared kind; fall back to which external
-  // id the item carries (movie→tmdbId, tv→tvdbId).
-  const forMedia = flat.filter((f) => {
-    if (f.collectionKind !== null) return f.collectionKind === input.media;
-    return input.media === 'movie' ? f.tmdbId !== null : f.tvdbId !== null;
-  });
+  const forMedia = input.flat;
 
   // Gather the external ids to join our ledger on.
   const ids = new Set<number>();
@@ -469,7 +497,13 @@ export async function listTrashPending(input: {
    */
   includeLiveExclusions?: boolean;
 }): Promise<TrashPendingResult> {
-  const base = await buildPendingItems(input);
+  const flat = await fetchMaintainerrPending(input.maintainerr);
+  const base = await shapePendingItems({
+    db: input.db,
+    media: input.media,
+    flat: bucketFlatPendingForMedia(flat, input.media),
+    watchWindowDays: input.watchWindowDays,
+  });
   if (input.includeLiveExclusions !== true) return base;
   const liveExcludedIds = await fetchLiveExclusions(input.maintainerr, [
     ...new Set(
@@ -484,363 +518,6 @@ export async function listTrashPending(input: {
   return { items, totalSizeBytes: base.totalSizeBytes, count: items.length };
 }
 
-// ---------------------------------------------------------------------------
-// Paginated pending read (owner-directed 2026-07-09 — the Trash walls were 15-30 s at 776/42
-// items). The materialized set (Maintainerr fetch + ledger join) is memoized for a few seconds so
-// scrolling pages don't re-fetch every collection, filter/search/sort run server-side over that
-// set, and the costly LIVE-exclusion cross-check is scoped to the RETURNED PAGE only.
-// ---------------------------------------------------------------------------
-
-/** How long a materialized per-kind pending set is reused across page reads (in-process; no infra).
- *  PRODUCTION-ONLY: the memo is a pure perf win for rapid scroll paging, and the app busts it on
- *  every exclusion/expedite mutation. It is DISABLED outside production (dev, e2e, vitest) so a
- *  brief cross-request memo can never make a fixture/stub state change (an e2e `resetMaintainerr`,
- *  a prior test's expedite) bleed into the next read — the paginated path stays deterministic there,
- *  and the headline fix (page-scoped exclusion reads) applies in every environment regardless. */
-let pendingCacheTtlMs = process.env.NODE_ENV === 'production' ? 8000 : 0;
-/** Test seam — control the cache TTL (and implicitly enable it) for the paging perf-guard test. */
-export function __setPendingCacheTtlMsForTests(ms: number): void {
-  pendingCacheTtlMs = ms;
-}
-interface PendingCacheEntry {
-  at: number;
-  value: TrashPendingResult;
-}
-const pendingCache = new Map<TrashMedia, PendingCacheEntry>();
-/** Drop the memoized set (a mutation just changed the truth). Clears one kind, or all. */
-export function bustPendingCache(media?: TrashMedia): void {
-  if (media === undefined) pendingCache.clear();
-  else pendingCache.delete(media);
-}
-
-async function materializePending(input: {
-  db?: DbClient;
-  maintainerr: Pick<MaintainerrClientBundle, 'read'>;
-  media: TrashMedia;
-  watchWindowDays?: number;
-}): Promise<TrashPendingResult> {
-  const hit = pendingCache.get(input.media);
-  if (hit !== undefined && Date.now() - hit.at < pendingCacheTtlMs) return hit.value;
-  const value = await buildPendingItems(input);
-  if (pendingCacheTtlMs > 0) pendingCache.set(input.media, { at: Date.now(), value });
-  return value;
-}
-
-/** The wire sort fields the pending wall offers (mirrors the client sort bar). */
-export type TrashPendingSortField = 'scheduled' | 'title' | 'size' | 'rating';
-export interface TrashPendingSort {
-  field: TrashPendingSortField;
-  dir: 'asc' | 'desc';
-}
-
-/** The facet filters the pending wall's chips narrow by (OR within a field, AND across fields). */
-export interface TrashPendingFilters {
-  query?: string;
-  genres?: string[];
-  resolutions?: string[];
-  requesters?: string[];
-  sourceCollections?: string[];
-  ratingMin?: number;
-  ratingMax?: number;
-}
-
-/** The distinct facet values across a set (drives the chip menus without shipping the whole set). */
-export interface TrashPendingFacets {
-  genres: string[];
-  resolutions: string[];
-  requesters: string[];
-  sourceCollections: string[];
-}
-
-/** The Expedite-all preview partition computed server-side over the WHOLE kind set (mirrors the
- *  client previewGuardian) so the confirm modal is honest without loading every tile. */
-export interface TrashExpeditePreview {
-  deletable: number;
-  deletableBytes: number;
-  protected: number;
-  unverifiable: number;
-}
-
-export interface TrashPendingPage {
-  /** The page slice, in the requested sort order, with page-scoped `protectedByExclusion`. */
-  items: TrashPendingItem[];
-  /** Opaque forward cursor (an offset into the shaped set); null when this is the last page. */
-  nextCursor: number | null;
-  /** TRUE total for the kind AFTER any excludeMaintainerrIds (the honest counts-bar number). */
-  total: number;
-  /** Total bytes of that same set (unfiltered). */
-  totalSizeBytes: number;
-  /** Count after the filters/search are applied. */
-  filteredCount: number;
-  /** Bytes after the filters/search are applied. */
-  filteredSizeBytes: number;
-  /** First-page-only extras (null on later pages to keep payloads lean): the facet menus, the
-   *  Expedite-all preview, and the full actionable-id snapshot the confirm pins the run to. */
-  facets: TrashPendingFacets | null;
-  expeditePreview: TrashExpeditePreview | null;
-  allActionableIds: string[] | null;
-}
-
-const ratingOf = (i: TrashPendingItem): number | null => {
-  const imdb = i.imdbRating !== null && i.imdbRating > 0 ? i.imdbRating : null;
-  const tmdb = i.tmdbRating !== null && i.tmdbRating > 0 ? i.tmdbRating : null;
-  return imdb ?? tmdb;
-};
-
-/** Nulls-last comparator over the wire sort fields, tie-broken by a stable per-item key. */
-function comparePending(a: TrashPendingItem, b: TrashPendingItem, sort: TrashPendingSort): number {
-  const sign = sort.dir === 'asc' ? 1 : -1;
-  const num = (x: number | null, y: number | null): number => {
-    if (x === null && y === null) return 0;
-    if (x === null) return 1; // nulls last regardless of direction
-    if (y === null) return -1;
-    return (x - y) * sign;
-  };
-  let primary = 0;
-  switch (sort.field) {
-    case 'title':
-      primary = a.title.localeCompare(b.title) * sign;
-      break;
-    case 'size':
-      primary = num(a.sizeBytes, b.sizeBytes);
-      break;
-    case 'rating':
-      primary = num(ratingOf(a), ratingOf(b));
-      break;
-    case 'scheduled':
-      primary = num(
-        a.scheduledDeleteAt === null ? null : Date.parse(a.scheduledDeleteAt),
-        b.scheduledDeleteAt === null ? null : Date.parse(b.scheduledDeleteAt),
-      );
-      break;
-  }
-  if (primary !== 0) return primary;
-  // Stable tiebreak so offset paging never overlaps/skips within equal keys.
-  return stableKey(a).localeCompare(stableKey(b));
-}
-
-const stableKey = (i: TrashPendingItem): string =>
-  `${i.collectionId}:${i.maintainerrMediaId ?? ''}:${i.title}`;
-
-function matchesFilters(item: TrashPendingItem, f: TrashPendingFilters): boolean {
-  const q = f.query?.trim().toLowerCase();
-  if (q !== undefined && q !== '' && !item.title.toLowerCase().includes(q)) return false;
-  if (f.genres && f.genres.length > 0 && !f.genres.some((g) => item.genres.includes(g)))
-    return false;
-  if (
-    f.resolutions &&
-    f.resolutions.length > 0 &&
-    (item.resolution === null || !f.resolutions.includes(item.resolution))
-  )
-    return false;
-  if (
-    f.requesters &&
-    f.requesters.length > 0 &&
-    !f.requesters.some((r) => item.requesters.includes(r))
-  )
-    return false;
-  if (
-    f.sourceCollections &&
-    f.sourceCollections.length > 0 &&
-    !f.sourceCollections.some((c) => item.sourceCollections.includes(c))
-  )
-    return false;
-  if (f.ratingMin !== undefined || f.ratingMax !== undefined) {
-    const r = ratingOf(item);
-    if (r === null) return false;
-    if (f.ratingMin !== undefined && r < f.ratingMin) return false;
-    if (f.ratingMax !== undefined && r > f.ratingMax) return false;
-  }
-  return true;
-}
-
-function pendingFacets(items: readonly TrashPendingItem[]): TrashPendingFacets {
-  const g = new Set<string>();
-  const res = new Set<string>();
-  const req = new Set<string>();
-  const col = new Set<string>();
-  for (const i of items) {
-    for (const v of i.genres) g.add(v);
-    if (i.resolution !== null) res.add(i.resolution);
-    for (const v of i.requesters) req.add(v);
-    for (const v of i.sourceCollections) col.add(v);
-  }
-  const sorted = (s: Set<string>) => [...s].sort((a, b) => a.localeCompare(b));
-  return {
-    genres: sorted(g),
-    resolutions: sorted(res),
-    requesters: sorted(req),
-    sourceCollections: sorted(col),
-  };
-}
-
-/** Partition the way expediteDeletion scope 'all' will (mirrors the client previewGuardian). */
-function partitionPendingForExpedite(items: readonly TrashPendingItem[]): TrashExpeditePreview {
-  const out: TrashExpeditePreview = { deletable: 0, deletableBytes: 0, protected: 0, unverifiable: 0 };
-  for (const i of items) {
-    if (i.maintainerrMediaId === null) {
-      out.unverifiable += 1;
-    } else if (i.protectedByTag) {
-      out.protected += 1;
-    } else if (i.recentlyWatched) {
-      out.protected += 1;
-    } else if (i.requesters.length > 0) {
-      out.protected += 1;
-    } else if (i.mediaItemId === null) {
-      out.unverifiable += 1;
-    } else {
-      out.deletable += 1;
-      out.deletableBytes += i.sizeBytes;
-    }
-  }
-  return out;
-}
-
-/**
- * DESIGN-010 D-02 (owner-directed 2026-07-09) — the PAGINATED pending read. Materializes the kind's
- * set once (memoized briefly), optionally drops `excludeMaintainerrIds` (the open batch's members —
- * the "Potential in future batches" strip), applies filter/search/sort server-side, slices the
- * requested page, and cross-checks LIVE Maintainerr exclusions for THAT PAGE ONLY. The first page
- * also carries the facet menus, the Expedite-all preview, and the full actionable-id snapshot.
- */
-export async function listTrashPendingPage(input: {
-  db?: DbClient;
-  maintainerr: Pick<MaintainerrClientBundle, 'read'>;
-  media: TrashMedia;
-  watchWindowDays?: number;
-  filters?: TrashPendingFilters;
-  sort?: TrashPendingSort;
-  limit: number;
-  offset: number;
-  /** Exclude these Maintainerr ids from the whole read (the future-batch strip omits batch members). */
-  excludeMaintainerrIds?: readonly string[];
-}): Promise<TrashPendingPage> {
-  const base = await materializePending(input);
-  const sort: TrashPendingSort = input.sort ?? { field: 'scheduled', dir: 'asc' };
-
-  const exclude =
-    input.excludeMaintainerrIds && input.excludeMaintainerrIds.length > 0
-      ? new Set(input.excludeMaintainerrIds)
-      : null;
-  const universe =
-    exclude === null
-      ? base.items
-      : base.items.filter(
-          (i) => i.maintainerrMediaId === null || !exclude.has(i.maintainerrMediaId),
-        );
-
-  const total = universe.length;
-  const totalSizeBytes = universe.reduce((n, i) => n + i.sizeBytes, 0);
-
-  const filters = input.filters ?? {};
-  const filtered = universe.filter((i) => matchesFilters(i, filters));
-  const filteredCount = filtered.length;
-  const filteredSizeBytes = filtered.reduce((n, i) => n + i.sizeBytes, 0);
-
-  const sorted = [...filtered].sort((a, b) => comparePending(a, b, sort));
-  const offset = Math.max(0, input.offset);
-  const slice = sorted.slice(offset, offset + input.limit);
-  const nextCursor = offset + input.limit < filteredCount ? offset + input.limit : null;
-
-  // Page-scoped LIVE-exclusion cross-check — the whole point of the perf fix: ≤ limit reads, not one
-  // per item in the entire kind set. (F1/D-08/D-09 semantics preserved for the visible page.)
-  const liveExcluded = await fetchLiveExclusions(
-    input.maintainerr,
-    slice.map((i) => i.maintainerrMediaId).filter((id): id is string => id !== null),
-  );
-  const items = slice.map((i) => ({
-    ...i,
-    protectedByExclusion:
-      i.maintainerrMediaId !== null && liveExcluded.has(i.maintainerrMediaId),
-  }));
-
-  const firstPage = offset === 0;
-  return {
-    items,
-    nextCursor,
-    total,
-    totalSizeBytes,
-    filteredCount,
-    filteredSizeBytes,
-    facets: firstPage ? pendingFacets(universe) : null,
-    expeditePreview: firstPage ? partitionPendingForExpedite(universe) : null,
-    allActionableIds: firstPage
-      ? universe
-          .map((i) => i.maintainerrMediaId)
-          .filter((id): id is string => id !== null)
-      : null,
-  };
-}
-
-/** One actionable candidate — the minimal shape the Start-a-batch preview + count header read. */
-export interface TrashPendingCandidate {
-  maintainerrMediaId: string;
-  mediaItemId: string | null;
-  title: string;
-  year: number | null;
-  posterSource: string | null;
-  sizeBytes: number;
-  imdbRating: number | null;
-  tmdbRating: number | null;
-  protectedByTag: boolean;
-}
-
-/**
- * The full actionable-candidate list for a kind (a Maintainerr id present) + the TRUE candidate
- * count. Backs the admin Start-a-batch target preview and the "N candidates" header without the
- * per-item live-exclusion cost or shipping poster-heavy tiles. Uses the shared brief memo.
- */
-export async function listTrashPendingCandidates(input: {
-  db?: DbClient;
-  maintainerr: Pick<MaintainerrClientBundle, 'read'>;
-  media: TrashMedia;
-  watchWindowDays?: number;
-}): Promise<{ candidates: TrashPendingCandidate[]; count: number }> {
-  const base = await materializePending(input);
-  const candidates = base.items
-    .filter((i): i is TrashPendingItem & { maintainerrMediaId: string } => i.maintainerrMediaId !== null)
-    .map((i) => ({
-      maintainerrMediaId: i.maintainerrMediaId,
-      mediaItemId: i.mediaItemId,
-      title: i.title,
-      year: i.year,
-      posterSource: i.posterSource,
-      sizeBytes: i.sizeBytes,
-      imdbRating: i.imdbRating,
-      tmdbRating: i.tmdbRating,
-      protectedByTag: i.protectedByTag,
-    }));
-  return { candidates, count: candidates.length };
-}
-
-/**
- * DESIGN-010 amendment — the CHEAP per-kind count + reclaimable bytes for the Overview cards/badges.
- * Skips the ledger join and the live-exclusion cross-check entirely (count + size come purely from
- * Maintainerr's flat set) and shares the brief memo with the paginated read, so the Overview no
- * longer full-scans the expensive path per load.
- */
-export async function countTrashPending(input: {
-  maintainerr: Pick<MaintainerrClientBundle, 'read'>;
-  media: TrashMedia;
-}): Promise<{ count: number; totalSizeBytes: number }> {
-  const hit = pendingCache.get(input.media);
-  if (hit !== undefined && Date.now() - hit.at < pendingCacheTtlMs) {
-    return { count: hit.value.count, totalSizeBytes: hit.value.totalSizeBytes };
-  }
-  // No cached materialization — count straight off Maintainerr's flat set (no DB join).
-  const flat = await fetchMaintainerrPending(input.maintainerr);
-  const forMedia = flat.filter((f) =>
-    f.collectionKind !== null
-      ? f.collectionKind === input.media
-      : input.media === 'movie'
-        ? f.tmdbId !== null
-        : f.tvdbId !== null,
-  );
-  return {
-    count: forMedia.length,
-    totalSizeBytes: forMedia.reduce((n, f) => n + f.sizeBytes, 0),
-  };
-}
 
 /** The Maintainerr ids that belong to the OPEN batch (if any) for a kind — the set the future-batch
  *  strip subtracts from the live candidates so the strip shows only what could enter a NEXT batch. */
@@ -1235,6 +912,9 @@ export interface ExpediteDeletionResult {
    *  under the user). Not deleted, not an error — just no longer applicable. Always 0 for scope 'item'
    *  and for an unpinned 'all' run. */
   stalePending: number;
+  /** ADR-035 — the Maintainerr ids actually handed to the per-item delete handler this run, so the
+   *  caller can drop them from the candidate read-model without waiting for the next refresh. */
+  expeditedIds: string[];
 }
 
 /**
@@ -1249,7 +929,7 @@ export interface ExpediteDeletionResult {
  * with no params, so we query per candidate by mediaServerId — bounded by the (household-scale)
  * candidate set. Read-only; failures fail closed via guardMaintainerrCall like every other call.
  */
-async function fetchLiveExclusions(
+export async function fetchLiveExclusions(
   maintainerr: Pick<MaintainerrClientBundle, 'read'>,
   ids: readonly string[],
 ): Promise<Set<string>> {
@@ -1274,7 +954,7 @@ async function fetchLiveExclusions(
 const EXCLUSION_READ_CONCURRENCY = 8;
 
 /** Run `worker` over `items` with at most `limit` promises in flight (order-independent). */
-async function mapWithConcurrency<T>(
+export async function mapWithConcurrency<T>(
   items: readonly T[],
   limit: number,
   worker: (item: T) => Promise<void>,
@@ -1494,7 +1174,7 @@ export async function expediteDeletion(
     // Checked BEFORE the guardian so a just-saved cold item is never handled (closes the race).
     const liveExcluded = await fetchLiveExclusions(input.maintainerr, [targetMediaId]);
     if (liveExcluded.has(targetMediaId)) {
-      return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0 };
+      return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [] };
     }
     const verdict = classifyGuardian(target);
     if (verdict.keep) {
@@ -1508,13 +1188,13 @@ export async function expediteDeletion(
           actorId: input.actorId,
           reason: 'watch_guardian',
         });
-        return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0 };
+        return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [] };
       }
       if (verdict.reason === 'tag') {
-        return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0 };
+        return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [] };
       }
       // unevaluable — not deleted, not force-whitelisted.
-      return { scope: 'item', protectedCount: 0, expeditedCount: 0, skippedCount: 1, stalePending: 0 };
+      return { scope: 'item', protectedCount: 0, expeditedCount: 0, skippedCount: 1, stalePending: 0, expeditedIds: [] };
     }
 
     // Cold + positively evaluated ⇒ delete this one item (intent-first). Use the RESOLVED
@@ -1532,7 +1212,7 @@ export async function expediteDeletion(
       imdbRating: target.imdbRating,
       tmdbRating: target.tmdbRating,
     });
-    return { scope: 'item', protectedCount: 0, expeditedCount: 1, skippedCount: 0, stalePending: 0 };
+    return { scope: 'item', protectedCount: 0, expeditedCount: 1, skippedCount: 0, stalePending: 0, expeditedIds: [targetMediaId] };
   }
 
   // scope 'all' — per-item loop over the REQUESTED kind's pending set (never /collections/handle).
@@ -1630,12 +1310,14 @@ export async function expediteDeletion(
 
   // PASS 2 — delete each survivor individually (intent-first, then per-item handle).
   let expeditedCount = 0;
+  const expeditedIds: string[] = [];
   for (const survivor of survivors) {
     await expediteOneSurvivor(input, 'all', actorName, survivor);
     expeditedCount += 1;
+    expeditedIds.push(survivor.maintainerrMediaId);
   }
 
-  return { scope: 'all', protectedCount, expeditedCount, skippedCount, stalePending };
+  return { scope: 'all', protectedCount, expeditedCount, skippedCount, stalePending, expeditedIds };
 }
 
 /**

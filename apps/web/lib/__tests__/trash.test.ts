@@ -3,6 +3,7 @@
 // (an optimistic preview that under-counts "deleted" would make the confirm Modal lie).
 import { describe, expect, it } from 'vitest';
 import {
+  candidatesAsOfLabel,
   daysLeftLabel,
   daysLeftTone,
   daysUntil,
@@ -157,6 +158,20 @@ describe('pendingWallGlyph / pendingWallTappable (the pending WALL tap-toggle �
     expect(
       pendingWallGlyph({ ...cold, protectedByExclusion: true }, 'unsaved'),
     ).toBe('trash');
+  });
+});
+
+describe('candidatesAsOfLabel (ADR-035 — snapshot honesty line)', () => {
+  const now = new Date('2026-07-09T12:00:00Z');
+  it('formats just-now / minutes / hours', () => {
+    expect(candidatesAsOfLabel('2026-07-09T11:59:40Z', now)).toBe('candidates as of just now');
+    expect(candidatesAsOfLabel('2026-07-09T11:47:00Z', now)).toBe('candidates as of 13 min ago');
+    expect(candidatesAsOfLabel('2026-07-09T09:00:00Z', now)).toBe('candidates as of 3 h ago');
+  });
+  it('never fabricates an age: null/garbage/future → null or just-now', () => {
+    expect(candidatesAsOfLabel(null, now)).toBeNull();
+    expect(candidatesAsOfLabel('not-a-date', now)).toBeNull();
+    expect(candidatesAsOfLabel('2026-07-09T12:05:00Z', now)).toBe('candidates as of just now');
   });
 });
 

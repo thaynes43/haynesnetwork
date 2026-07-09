@@ -56,6 +56,7 @@ import {
   type TrashMedia,
   type TrashPendingItem,
 } from './trash-flow';
+import { removeTrashCandidateRows } from './trash-candidates';
 
 const nowDate = () => new Date();
 const OPEN_STATES = TRASH_BATCH_OPEN_STATES as readonly TrashBatchState[];
@@ -1123,6 +1124,9 @@ async function expireOneBatch(input: {
   const HANDLE_FAILURE_LIMIT = 3;
 
   let deletedCount = 0;
+  // ADR-035 — the handled ids, dropped from the candidate read-model after the sweep so the wall
+  // never re-shows a just-deleted item while waiting for the next snapshot refresh.
+  const sweptMediaIds: string[] = [];
   let reclaimedBytes = 0; // ADR-034 — summed for the batch_swept push (frozen deletion-snapshot size)
   let skippedCount = 0;
   let handleErrors = 0;
@@ -1212,6 +1216,7 @@ async function expireOneBatch(input: {
       continue;
     }
     deletedCount += 1; // the row is durably 'deleted' (intent-first) whether or not the handle lands
+    sweptMediaIds.push(item.maintainerrMediaId);
     reclaimedBytes += fresh.sizeBytes ?? 0;
     // The destructive per-item handle. A single failure is tolerated (intent + snapshot are durable;
     // Maintainerr reconciles a genuinely-missed delete), but N consecutive failures trip the breaker.
@@ -1229,6 +1234,10 @@ async function expireOneBatch(input: {
       }
     }
   }
+
+  // ADR-035 — read-model cleanup for everything this sweep durably deleted (abort included: those
+  // items' intents are committed, so they must not re-surface as candidates).
+  await removeTrashCandidateRows({ db: input.db, maintainerrMediaIds: sweptMediaIds });
 
   const finalCounts = await countItemStates(input.db, input.batchId);
   // F3 — on a circuit-breaker abort, DO NOT close the batch: leave it `leaving_soon` so the next sweep

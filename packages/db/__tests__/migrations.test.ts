@@ -402,4 +402,45 @@ describe('migrations against embedded Postgres 16', () => {
       await client.query(`DELETE FROM sync_runs WHERE run_kind = 'notify-outbox'`);
     });
   });
+
+  describe('0027 Trash candidate read-model (ADR-035 — snapshot + state tables)', () => {
+    it('creates trash_candidates (kind CHECK + kind index) and trash_candidates_state', async () => {
+      const cols = await client.query(
+        `SELECT column_name FROM information_schema.columns WHERE table_name = 'trash_candidates'`,
+      );
+      const names = cols.rows.map((r) => r.column_name as string);
+      for (const c of ['id', 'media_kind', 'collection_id', 'collection_title', 'delete_after_days', 'maintainerr_media_id', 'tmdb_id', 'tvdb_id', 'size_bytes', 'add_date', 'ord']) {
+        expect(names).toContain(c);
+      }
+      const idx = await client.query(
+        `SELECT indexname FROM pg_indexes WHERE tablename = 'trash_candidates'`,
+      );
+      expect(idx.rows.map((r) => r.indexname)).toContain('trash_candidates_kind_idx');
+      const stateCols = await client.query(
+        `SELECT column_name FROM information_schema.columns WHERE table_name = 'trash_candidates_state'`,
+      );
+      expect(stateCols.rows.map((r) => r.column_name as string).sort()).toEqual([
+        'item_count',
+        'media_kind',
+        'refreshed_at',
+        'total_size_bytes',
+      ]);
+    });
+
+    it('both tables reject an unknown media_kind (movie|tv only — R-87)', async () => {
+      await client.query(
+        `INSERT INTO trash_candidates (media_kind, collection_id) VALUES ('movie', 1)`,
+      );
+      await expect(
+        client.query(`INSERT INTO trash_candidates (media_kind, collection_id) VALUES ('music', 1)`),
+      ).rejects.toMatchObject({ code: '23514' });
+      await expect(
+        client.query(
+          `INSERT INTO trash_candidates_state (media_kind, refreshed_at, item_count, total_size_bytes)
+           VALUES ('music', now(), 0, 0)`,
+        ),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query(`DELETE FROM trash_candidates`);
+    });
+  });
 });

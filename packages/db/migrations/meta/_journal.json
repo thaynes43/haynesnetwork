@@ -183,6 +183,13 @@
       "when": 1782950426000,
       "tag": "0026_trash_requested_autosave",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1782950427000,
+      "tag": "0027_trash_candidates",
+      "breakpoints": true
     }
   ]
 }

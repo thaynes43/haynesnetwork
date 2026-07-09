@@ -93,6 +93,16 @@ export interface MetadataSourceClients {
   maintainerr?: MaintainerrClient;
 }
 
+/** ADR-035 — the OPTIONAL Maintainerr READ handle the full/incremental modes use to refresh the
+ *  Trash candidate snapshot post-step. Skip-if-absent like every metadata tier: neither
+ *  MAINTAINERR_URL nor MAINTAINERR_API_KEY set ⇒ undefined and the refresh step is skipped. */
+export function buildOptionalMaintainerrRead(
+  env: Record<string, string | undefined> = process.env,
+): { read: MaintainerrClient } | undefined {
+  const config = resolveMaintainerrConfig(env);
+  return config ? { read: new MaintainerrClient(config) } : undefined;
+}
+
 /** Build the metadata-source clients from env — each tier included only when configured. */
 export function buildMetadataSourceClients(
   env: Record<string, string | undefined> = process.env,

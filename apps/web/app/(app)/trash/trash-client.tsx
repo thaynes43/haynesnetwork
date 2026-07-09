@@ -69,7 +69,7 @@ import { KindTab } from './kind-tab';
 import { TrashOverview, type OverviewData } from './trash-overview';
 import { RESOLUTION_LABELS, formatBytes, formatDay, formatWhen } from '@/lib/media';
 import { appCodeOf, describeMutationError } from '@/lib/app-error';
-import { expediteErrorAction, overviewBadge, reclaimLabel } from '@/lib/trash';
+import { candidatesAsOfLabel, expediteErrorAction, overviewBadge, reclaimLabel } from '@/lib/trash';
 
 export type { TrashAccess };
 
@@ -263,6 +263,17 @@ function PendingTab({
   const facets = first?.facets ?? null;
   const expeditePreview = first?.expeditePreview ?? null;
   const allActionableIds = first?.allActionableIds ?? [];
+  // ADR-035 — the wall serves the candidate READ-MODEL (refreshed by sync every 15 min + on
+  // demand); the counts bar carries the honest "as of" age and a manage-gated Refresh.
+  const refreshedAt = first?.refreshedAt ?? null;
+  const canRefresh = access.actions.includes('manage_batches') && reachable;
+  const refreshCandidates = trpc.trash.refreshCandidates.useMutation({
+    onSuccess: () => {
+      void utils.trash.pending.invalidate();
+      void utils.trash.pendingCandidates.invalidate();
+      void utils.trash.overview.invalidate();
+    },
+  });
 
   // Facet menus come from the server (computed over the FULL kind set, so the chips stay complete
   // even while a filter narrows the wall).
@@ -450,6 +461,25 @@ function PendingTab({
                 hasFilters ? ` · filtered from ${total} pending` : ''
               }`}
         </span>
+        {/* ADR-035 — snapshot honesty: age + manage-gated Refresh. Constant-slot text (ADR-015:
+            the muted span sits inline in the flex bar; refreshing only swaps its label). */}
+        <span className="muted" data-testid="trash-asof">
+          {refreshCandidates.isPending
+            ? 'refreshing candidates…'
+            : (candidatesAsOfLabel(refreshedAt) ?? '')}
+        </span>
+        {canRefresh ? (
+          <button
+            type="button"
+            className="btn sm"
+            data-testid="trash-refresh-candidates"
+            disabled={refreshCandidates.isPending}
+            title="Re-read the candidate list from Maintainerr now"
+            onClick={() => refreshCandidates.mutate()}
+          >
+            Refresh
+          </button>
+        ) : null}
         <span className="ledger-actionsbar__spacer" />
         {canExpediteAll ? (
           <button

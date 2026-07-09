@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { ledgerEvents, mediaItems } from '@hnet/db/schema';
 import {
-  __setPendingCacheTtlMsForTests,
+  __setCandidateFreshnessForTests,
   buildMaintainerrClientBundle,
   upsertMediaItemsBatch,
   type MaintainerrClientBundle,
@@ -183,6 +183,15 @@ describe('trash router — section + per-action gating (ADR-023 C-03)', () => {
     await expect(
       c.trash.expediteItem({ media: 'movie', collectionId: 7, maintainerrMediaId: 'ms-1' }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it('ADR-035 — refreshCandidates needs the manage_batches grant (read-model rebuild, curation-gated)', async () => {
+    await expect(call('read_only').trash.refreshCandidates()).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
+    const granted = await call('read_only', ['manage_batches']).trash.refreshCandidates();
+    expect(granted.kinds.map((k) => k.mediaKind).sort()).toEqual(['movie', 'tv']);
+    expect(Date.parse(granted.refreshedAt)).toBeGreaterThan(0);
   });
 
   it('the Save implication is ONE-DIRECTIONAL — save_leaving_soon does NOT unlock the anytime pending-wall save (ADR-025 errata)', async () => {
@@ -492,19 +501,80 @@ describe('trash router — paginated pending wall + future-batch strip (owner-di
     expect(s.counters.exclusionReads).toBeLessThanOrEqual(50);
   });
 
-  it('perf: the materialized set is memoized briefly — a second page does not re-fetch collections', async () => {
-    __setPendingCacheTtlMsForTests(5000);
+  it('perf (ADR-035): within the freshness window later pages serve from the SNAPSHOT — zero re-crawl', async () => {
+    __setCandidateFreshnessForTests({ maxAgeMs: 5000, serveStale: false });
     try {
       const s = bigState(120);
       s.counters = { exclusionReads: 0, collectionsReads: 0 };
       const c = adminCaller(s);
+      // Rebuild the (DB-persistent) snapshot from THIS test's stub state — the one crawl.
+      await c.trash.refreshCandidates();
+      const afterRefresh = s.counters.collectionsReads;
+      expect(afterRefresh).toBeGreaterThan(0);
       const p1 = await c.trash.pending({ media: 'movie', limit: 50 });
-      const afterFirst = s.counters.collectionsReads;
-      expect(afterFirst).toBeGreaterThan(0);
+      expect(p1.total).toBe(120);
       await c.trash.pending({ media: 'movie', limit: 50, cursor: p1.nextCursor! });
-      expect(s.counters.collectionsReads).toBe(afterFirst); // second page served from the memo
+      expect(s.counters.collectionsReads).toBe(afterRefresh); // both pages: Postgres only
     } finally {
-      __setPendingCacheTtlMsForTests(0); // restore the test default (memo disabled between cases)
+      __setCandidateFreshnessForTests(null); // restore the non-prod read-through default
+    }
+  });
+
+  it('ADR-035: the page carries the snapshot refreshedAt; an expedite drops the deleted rows from the read-model without a re-crawl', async () => {
+    __setCandidateFreshnessForTests({ maxAgeMs: 60_000, serveStale: false });
+    try {
+      // ms-0 (tmdb 60000) must be ledger-known + cold to be deletable by the guardian.
+      await upsertMediaItemsBatch({
+        db: t.db,
+        arrKind: 'radarr',
+        items: [
+          { arrItemId: 900, tmdbId: 60000, title: 'Doomed Movie', sortTitle: 'doomed movie', monitored: true, qualityProfileId: 1, qualityProfileName: 'Any', rootFolder: '/movies' },
+        ],
+      });
+      const s = bigState(3);
+      s.counters = { exclusionReads: 0, collectionsReads: 0 };
+      const c = adminCaller(s);
+      await c.trash.refreshCandidates(); // rebuild the persistent snapshot from THIS stub state
+      const p1 = await c.trash.pending({ media: 'movie', limit: 50 });
+      expect(p1.total).toBe(3);
+      expect(Date.parse(p1.refreshedAt)).toBeGreaterThan(0);
+
+      const run = await c.trash.expediteAll({ media: 'movie', maintainerrMediaIds: ['ms-0'] });
+      expect(run.expeditedCount).toBe(1);
+
+      // The wall reflects the deletion IMMEDIATELY — served from the read-model (the expedite's own
+      // live safety crawl bumped the counter; the page read after it must not).
+      const crawlsAfterExpedite = s.counters.collectionsReads;
+      const p2 = await c.trash.pending({ media: 'movie', limit: 50 });
+      expect(p2.total).toBe(2);
+      expect(p2.items.map((i) => i.maintainerrMediaId)).not.toContain('ms-0');
+      expect(p2.refreshedAt).toBe(p1.refreshedAt); // honest: the snapshot is no fresher
+      expect(s.counters.collectionsReads).toBe(crawlsAfterExpedite);
+    } finally {
+      __setCandidateFreshnessForTests(null);
+    }
+  });
+
+  it('ADR-035: serve-stale mode paints from the stale snapshot instantly and refreshes in the background', async () => {
+    __setCandidateFreshnessForTests({ maxAgeMs: 60_000, serveStale: true });
+    try {
+      const s = bigState(4);
+      const c = adminCaller(s);
+      await c.trash.refreshCandidates(); // rebuild the persistent snapshot from THIS stub state
+      const warm = await c.trash.pending({ media: 'movie', limit: 50 });
+      expect(warm.total).toBe(4);
+      // Maintainerr moves on (a candidate vanishes) — within the window the wall still serves the
+      // snapshot (stale but instant + honest refreshedAt), never blocking on a crawl.
+      s.collections[0]!.items = s.collections[0]!.items.slice(1);
+      const stale = await c.trash.pending({ media: 'movie', limit: 50 });
+      expect(stale.total).toBe(4);
+      expect(stale.refreshedAt).toBe(warm.refreshedAt);
+      // An explicit refresh re-crawls and the next read serves the new truth.
+      await c.trash.refreshCandidates();
+      const fresh = await c.trash.pending({ media: 'movie', limit: 50 });
+      expect(fresh.total).toBe(3);
+    } finally {
+      __setCandidateFreshnessForTests(null);
     }
   });
 

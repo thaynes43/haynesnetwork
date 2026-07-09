@@ -15,7 +15,7 @@ import {
   type SyncSource,
 } from '@hnet/db';
 import { maintainerrClientBundleFromEnv, type UtilizationArrBundle } from '@hnet/domain';
-import { buildMetadataSourceClients, buildSyncClients, requireClient } from '../clients';
+import { buildMetadataSourceClients, buildOptionalMaintainerrRead, buildSyncClients, requireClient } from '../clients';
 import { createConsoleLogger } from '../logger';
 import { runSync } from '../orchestrator';
 
@@ -147,6 +147,12 @@ async function main(): Promise<number> {
     args.mode === 'trash-batch-sweep' || args.mode === 'space-policy'
       ? maintainerrClientBundleFromEnv()
       : undefined;
+  // ADR-035 — the OPTIONAL Maintainerr READ handle: full/incremental end by refreshing the Trash
+  // candidate snapshot (skip-if-absent — a Maintainerr-less env just skips the step).
+  const maintainerrRead =
+    args.mode === 'full' || args.mode === 'incremental'
+      ? buildOptionalMaintainerrRead()
+      : undefined;
   // ADR-031 — the diskspace-only *arr read bundle for space-policy's getUtilization (needs the three
   // *arr keys; throws one ArrConfigError naming any absent). Wrapped as the minimal UtilizationArrBundle
   // shape — no bazarr, no confined write surface.
@@ -183,6 +189,7 @@ async function main(): Promise<number> {
     ...(metadataSources ? { metadataSources } : {}),
     ...(maintainerr ? { maintainerr } : {}),
     ...(arr ? { arr } : {}),
+    ...(maintainerrRead ? { maintainerrRead } : {}),
     logger,
   });
 
@@ -192,6 +199,17 @@ async function main(): Promise<number> {
     totalFailure: report.totalFailure,
     backfill: report.backfill,
     fixesCompleted: report.fixesCompleted,
+    ...(report.candidateRefresh
+      ? {
+          candidateRefresh: {
+            durationMs: report.candidateRefresh.durationMs,
+            kinds: report.candidateRefresh.kinds,
+          },
+        }
+      : {}),
+    ...(report.candidateRefreshError !== undefined
+      ? { candidateRefreshError: report.candidateRefreshError }
+      : {}),
     ...(report.sweep ? { sweep: { batchesSwept: report.sweep.batchesSwept, batches: report.sweep.batches } } : {}),
     ...(report.sweepError !== undefined ? { sweepError: report.sweepError } : {}),
     ...(report.spacePolicy
