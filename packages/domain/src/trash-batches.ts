@@ -28,6 +28,9 @@ import {
 import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { getAppSetting } from './app-settings';
 import { inTransaction, resolveDb } from './db-client';
+// ADR-034 / DESIGN-015 (PLAN-016) — same-tx Pushover enqueue on batch lifecycle transitions.
+import { computeEarliestSend, computeReminderSend, getNotifyWindow } from './notify-window';
+import { enqueueOutbox } from './notify-outbox';
 import {
   MaintainerrUnsafeError,
   NotFoundError,
@@ -247,6 +250,9 @@ export async function createBatchFromPending(input: {
   maintainerr: MaintainerrClientBundle;
   mediaKind: TrashMediaKind;
   actorId: string | null;
+  /** How this batch was posted (for the "batch created" push copy/attribution). Defaults 'manual';
+   *  the space policy passes 'policy' (ADR-031 reuses this writer). */
+  source?: 'manual' | 'policy';
 }): Promise<CreateBatchResult> {
   const skipGate = await getAppSetting(input.db, 'trash_skip_admin_gate');
 
@@ -282,6 +288,14 @@ export async function createBatchFromPending(input: {
 
   const initialState: TrashBatchState = skipGate ? 'draft' : 'admin_review';
 
+  // ADR-034 — the "batch posted" Pushover push. Read the window + compute earliest_send_at BEFORE the
+  // tx (a stale-by-seconds read is harmless); the outbox row is enqueued INSIDE the tx so it commits
+  // with the batch (never lost, never phantom). Fires for BOTH manual and space-policy-proposed
+  // batches (both flow through here). A skip-gate batch also pings 'leaving_soon' from the promotion
+  // below — two intentional pings (created → leaving soon), delivered together inside the window.
+  const totalBytes = actionable.reduce((n, p) => n + (p.sizeBytes ?? 0), 0);
+  const createdEarliest = computeEarliestSend(nowDate(), await getNotifyWindow(input.db));
+
   let batchId: string;
   try {
     batchId = await inTransaction(input.db, async (tx) => {
@@ -316,6 +330,19 @@ export async function createBatchFromPending(input: {
         to: initialState,
         actorId: input.actorId,
         extra: { itemCount: actionable.length },
+      });
+
+      // Same-tx: enqueue the "batch posted" push (ADR-034 C-01).
+      await enqueueOutbox(tx, {
+        eventType: 'batch_created',
+        earliestSendAt: createdEarliest,
+        payload: {
+          batchId: batch.id,
+          mediaKind: input.mediaKind,
+          itemCount: actionable.length,
+          totalBytes,
+          source: input.source ?? 'manual',
+        },
       });
       return batch.id;
     });
@@ -394,6 +421,7 @@ async function promoteToLeavingSoon(input: {
     .select({
       maintainerrMediaId: trashBatchItems.maintainerrMediaId,
       collectionId: trashBatchItems.collectionId,
+      sizeBytes: trashBatchItems.sizeBytes,
     })
     .from(trashBatchItems)
     .where(and(eq(trashBatchItems.batchId, input.batchId), eq(trashBatchItems.state, 'pending')));
@@ -406,6 +434,14 @@ async function promoteToLeavingSoon(input: {
 
   const now = nowDate();
   const expiresAt = new Date(now.getTime() + input.windowDays * 86_400_000);
+
+  // ADR-034 — the "Leaving Soon" push + the day-before-expiry reminder. Window/earliest computed
+  // BEFORE the tx; the two outbox rows are enqueued INSIDE it (commit with the transition).
+  const window = await getNotifyWindow(input.db);
+  const leavingEarliest = computeEarliestSend(now, window);
+  const reminderEarliest = computeReminderSend(expiresAt, window, now);
+  const pendingCount = items.length;
+  const pendingBytes = items.reduce((n, it) => n + (it.sizeBytes ?? 0), 0);
 
   await inTransaction(input.db, async (tx) => {
     const updated = await tx
@@ -438,6 +474,25 @@ async function promoteToLeavingSoon(input: {
         expiresAt: expiresAt.toISOString(),
         maintainerrCollectionId: collectionId,
       },
+    });
+
+    const leavingPayload = {
+      batchId: input.batchId,
+      mediaKind: input.mediaKind,
+      pendingCount,
+      pendingBytes,
+      expiresAt: expiresAt.toISOString(),
+    };
+    // The immediate "Leaving Soon" notice (next in-window) + the day-before-expiry reminder.
+    await enqueueOutbox(tx, {
+      eventType: 'batch_leaving_soon',
+      earliestSendAt: leavingEarliest,
+      payload: leavingPayload,
+    });
+    await enqueueOutbox(tx, {
+      eventType: 'batch_leaving_soon_reminder',
+      earliestSendAt: reminderEarliest,
+      payload: leavingPayload,
     });
   });
 
@@ -796,6 +851,7 @@ async function expireOneBatch(input: {
   const HANDLE_FAILURE_LIMIT = 3;
 
   let deletedCount = 0;
+  let reclaimedBytes = 0; // ADR-034 — summed for the batch_swept push (frozen deletion-snapshot size)
   let skippedCount = 0;
   let handleErrors = 0;
   let raceSkipped = 0;
@@ -875,6 +931,7 @@ async function expireOneBatch(input: {
       continue;
     }
     deletedCount += 1; // the row is durably 'deleted' (intent-first) whether or not the handle lands
+    reclaimedBytes += fresh.sizeBytes ?? 0;
     // The destructive per-item handle. A single failure is tolerated (intent + snapshot are durable;
     // Maintainerr reconciles a genuinely-missed delete), but N consecutive failures trip the breaker.
     try {
@@ -909,6 +966,10 @@ async function expireOneBatch(input: {
     };
   }
 
+  // ADR-034 — the "batch swept" summary push (only on a clean close, never on a breaker abort). Window
+  // computed before the close tx; the outbox row commits with the terminal transition.
+  const sweptEarliest = computeEarliestSend(nowDate(), await getNotifyWindow(input.db));
+
   // Tally the settled states + close the batch (guarded UPDATE + transition event same-tx).
   await inTransaction(input.db, async (tx) => {
     const updated = await tx
@@ -926,6 +987,16 @@ async function expireOneBatch(input: {
       to: 'deleted',
       actorId: input.actorId,
       extra: { deletedCount, skippedCount, raceSkipped, handleErrors, counts: finalCounts },
+    });
+    await enqueueOutbox(tx, {
+      eventType: 'batch_swept',
+      earliestSendAt: sweptEarliest,
+      payload: {
+        batchId: input.batchId,
+        mediaKind: input.mediaKind,
+        deletedCount,
+        reclaimedBytes,
+      },
     });
   });
 

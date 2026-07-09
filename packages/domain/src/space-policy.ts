@@ -310,6 +310,7 @@ async function proposeForKind(input: {
       maintainerr: input.maintainerr,
       mediaKind: input.mediaKind,
       actorId: input.actorId,
+      source: 'policy', // ADR-034 — the "batch posted" push records it was the space policy
     });
   } catch (err) {
     if (err instanceof TrashBatchOpenError) {

@@ -21,6 +21,10 @@ export * from './trash-flow';
 // ADR-025 / DESIGN-011 — Trash curation pipeline: generic app settings + batch state machine
 export * from './app-settings';
 export * from './trash-batches';
+// ADR-034 / DESIGN-015 (PLAN-016) — Pushover batch-lifecycle notifications: delivery-window math +
+// the transactional outbox (enqueue same-tx from the batch writers; drained by the notify-outbox mode)
+export * from './notify-window';
+export * from './notify-outbox';
 // DESIGN-010 amendment — the Trash Overview landing aggregate (composes the reads above)
 export * from './trash-overview';
 export * from './storage-metrics';

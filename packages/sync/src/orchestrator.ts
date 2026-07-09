@@ -9,11 +9,13 @@ import {
   MassTombstoneAbortedError,
   backfillEventAttribution,
   completeFixRequests,
+  deliverOutbox,
   evaluateSpacePolicy,
   finishSyncRun,
   startSyncRun,
   sweepExpiredBatches,
   type MaintainerrClientBundle,
+  type OutboxDeliveryReport,
   type SpacePolicyReport,
   type SweepReport,
   type UtilizationArrBundle,
@@ -89,6 +91,10 @@ export interface SyncReport {
   spacePolicy?: SpacePolicyReport | null;
   /** The space-policy run's error — sets totalFailure for the CLI exit. */
   spacePolicyError?: string;
+  /** ADR-034 — the `notify-outbox` drainer result (null for every other mode / when it errored). */
+  outbox?: OutboxDeliveryReport | null;
+  /** The notify-outbox run's error — sets totalFailure for the CLI exit. */
+  outboxError?: string;
   /** True when EVERY requested source failed/aborted — the CLI's nonzero-exit signal. */
   totalFailure: boolean;
 }
@@ -238,6 +244,42 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       spacePolicy,
       ...(spacePolicyError !== undefined ? { spacePolicyError } : {}),
       totalFailure: spacePolicyError !== undefined,
+    };
+  }
+
+  // ADR-034 / DESIGN-015 — the `notify-outbox` drainer is also NOT a per-source loop: it reads DUE
+  // notification_outbox rows and delivers them to Pushover (disabled-safe — a clean no-op when the
+  // PUSHOVER_* env is absent). No *arr source, no sync_runs row — its trail is the outbox rows.
+  // Returns early with an `outbox` report. A delivery failure of an individual row is recorded on that
+  // row (attempts/backoff) — only a wholesale failure (e.g. the DB read) sets outboxError/totalFailure.
+  if (options.mode === 'notify-outbox') {
+    const startedAt = new Date();
+    let outbox: OutboxDeliveryReport | null = null;
+    let outboxError: string | undefined;
+    try {
+      outbox = await deliverOutbox({ db, logger });
+      logger.info('notify-outbox drained', {
+        dueCount: outbox.dueCount,
+        sent: outbox.sent,
+        failed: outbox.failed,
+        parked: outbox.parked,
+        skipped: outbox.skipped,
+        ...(outbox.reason !== undefined ? { reason: outbox.reason } : {}),
+      });
+    } catch (error) {
+      outboxError = error instanceof Error ? error.message : String(error);
+      logger.error('notify-outbox drain failed', { error: outboxError });
+    }
+    return {
+      mode: options.mode,
+      startedAt,
+      finishedAt: new Date(),
+      sources: [],
+      backfill: null,
+      fixesCompleted: null,
+      outbox,
+      ...(outboxError !== undefined ? { outboxError } : {}),
+      totalFailure: outboxError !== undefined,
     };
   }
 

@@ -44,6 +44,7 @@ import {
   withArrayConfig,
   withEnabled,
 } from '@/lib/space-policy';
+import { NOTIFY_TZ_OPTIONS, describeWindow, isValidWindow } from '@/lib/notify-window';
 
 /** ADR-030 C-04 / OPS-007 — the deep-linked (never embedded) free-space trend dashboard. */
 const GRAFANA_TREND_URL = 'https://grafana.haynesops.com/d/media-storage-utilization';
@@ -649,6 +650,149 @@ function SpacePolicyCard() {
 }
 
 // ---------------------------------------------------------------------------------------------------
+// Notifications card (ADR-034 / DESIGN-015 — the Pushover delivery window / quiet hours)
+// ---------------------------------------------------------------------------------------------------
+
+function NotificationsCard() {
+  const utils = trpc.useUtils();
+  const window = trpc.storage.notify.window.get.useQuery();
+
+  // Drafts overlay the stored window once edited (the target-editor pattern — no prefill effect).
+  const [startDraft, setStartDraft] = useState<string | null>(null);
+  const [endDraft, setEndDraft] = useState<string | null>(null);
+  const [tzDraft, setTzDraft] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  const stored = window.data ?? null;
+  const startValue = startDraft ?? (stored ? String(stored.startHour) : '18');
+  const endValue = endDraft ?? (stored ? String(stored.endHour) : '22');
+  const tzValue = tzDraft ?? stored?.tz ?? 'America/New_York';
+
+  const start = Number(startValue);
+  const end = Number(endValue);
+  const valid = isValidWindow(start, end);
+  const dirty =
+    stored != null && (start !== stored.startHour || end !== stored.endHour || tzValue !== stored.tz);
+
+  const save = trpc.storage.notify.window.set.useMutation({
+    onSuccess: () => {
+      setError(null);
+      setSaved(true);
+      setStartDraft(null);
+      setEndDraft(null);
+      setTzDraft(null);
+      void utils.storage.notify.window.get.invalidate();
+    },
+    onError: (err: unknown) => {
+      setError(describeMutationError(err));
+      setSaved(false);
+    },
+  });
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!valid || !dirty) return;
+    setSaved(false);
+    save.mutate({ startHour: start, endHour: end, tz: tzValue });
+  }
+
+  return (
+    <section
+      className="card admin-section notify-window"
+      data-testid="notify-window"
+      aria-label="Notifications"
+    >
+      <h2>Notifications</h2>
+      <p className="muted">
+        Pushover pings when a Trash batch is posted and the day before it leaves. Choose the hours you
+        want to be notified in — a ping raised outside the window waits until it next opens.
+      </p>
+      {error !== null ? (
+        <p className="alert" role="alert">
+          {error}
+        </p>
+      ) : null}
+
+      <p className="muted" data-testid="notify-window-summary">
+        {window.isLoading ? 'Loading…' : stored ? `Currently: ${describeWindow(stored)}` : ''}
+      </p>
+
+      <form className="notify-window__form" onSubmit={submit}>
+        <label className="notify-window__field">
+          <span>From</span>
+          <input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={23}
+            step={1}
+            value={startValue}
+            aria-label="Delivery window start hour (0–23)"
+            aria-invalid={!valid || undefined}
+            data-testid="notify-start"
+            onChange={(e) => {
+              setStartDraft(e.target.value);
+              setSaved(false);
+            }}
+          />
+          <span className="muted">:00</span>
+        </label>
+        <label className="notify-window__field">
+          <span>To</span>
+          <input
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={24}
+            step={1}
+            value={endValue}
+            aria-label="Delivery window end hour (1–24)"
+            aria-invalid={!valid || undefined}
+            data-testid="notify-end"
+            onChange={(e) => {
+              setEndDraft(e.target.value);
+              setSaved(false);
+            }}
+          />
+          <span className="muted">:00</span>
+        </label>
+        <label className="notify-window__field">
+          <span>Timezone</span>
+          <select
+            value={tzValue}
+            aria-label="Delivery window timezone"
+            data-testid="notify-tz"
+            onChange={(e) => {
+              setTzDraft(e.target.value);
+              setSaved(false);
+            }}
+          >
+            {NOTIFY_TZ_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="submit"
+          className="btn sm"
+          data-testid="notify-save"
+          disabled={!dirty || !valid || save.isPending}
+        >
+          Save
+        </button>
+        {/* Reserved status slot — appearing text recolors, never reflows (ADR-015). */}
+        <span className="notify-window__status" role="status">
+          {!valid ? 'Start must be before end' : saved ? 'Saved' : dirty ? 'Unsaved' : ' '}
+        </span>
+      </form>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------------------------------
 
@@ -680,6 +824,9 @@ export default function AdminStoragePage() {
 
       {/* ADR-031 / DESIGN-014 — the propose-only space policy + rules-tuning / graduation block. */}
       <SpacePolicyCard />
+
+      {/* ADR-034 / DESIGN-015 — the Pushover delivery window (quiet hours). */}
+      <NotificationsCard />
 
       {/* ADR-030 C-04 — the fill/drain history is Grafana, deep-linked (never an iframe). */}
       <a

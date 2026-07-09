@@ -19,7 +19,7 @@ import { buildMetadataSourceClients, buildSyncClients, requireClient } from '../
 import { createConsoleLogger } from '../logger';
 import { runSync } from '../orchestrator';
 
-const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
+const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy|notify-outbox [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
 
   --mode=full              item-list upsert + tombstone pass per *arr (+ Seerr requests)
   --mode=incremental       history/since cursor polling per *arr (+ Seerr requests)
@@ -33,6 +33,10 @@ const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-bat
                            stays the human check). Needs SONARR/RADARR/LIDARR_URL/_API_KEY +
                            MAINTAINERR_URL/MAINTAINERR_API_KEY. No --source. No-op unless space_policy
                            is enabled in app_settings.
+  --mode=notify-outbox     drain DUE notification_outbox rows to Pushover (ADR-034 — batch-lifecycle
+                           pushes; sent_at null + attempts<5 + earliest_send_at<=now). Needs
+                           PUSHOVER_APP_TOKEN + PUSHOVER_USER_KEY; disabled-safe — a clean no-op that
+                           leaves rows queued when either is absent. No --source. Writes no sync_runs row.
   --source=NAME            limit the run to one source (repeatable; default: all sources; for
                            metadata-refresh the default is the three *arr kinds)
   --force-tombstones       override the mass-tombstone guard (DESIGN-005 D-14/Q-03)
@@ -79,17 +83,20 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
   }
   if (mode === undefined) {
     throw new CliUsageError(
-      '--mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy is required',
+      '--mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy|notify-outbox is required',
     );
   }
-  if ((mode === 'trash-batch-sweep' || mode === 'space-policy') && sources.length > 0) {
-    throw new CliUsageError(`--source is not valid for --mode=${mode} (it drives Maintainerr)`);
+  if (
+    (mode === 'trash-batch-sweep' || mode === 'space-policy' || mode === 'notify-outbox') &&
+    sources.length > 0
+  ) {
+    throw new CliUsageError(`--source is not valid for --mode=${mode}`);
   }
   // metadata-refresh defaults to the *arr kinds (Seerr has no metadata); trash-batch-sweep +
-  // space-policy use no *arr SOURCE loop at all (they drive Maintainerr / read diskspace directly);
-  // other modes default to all four sources.
+  // space-policy + notify-outbox use no *arr SOURCE loop at all (they drive Maintainerr / read
+  // diskspace / drain the outbox directly); other modes default to all four sources.
   const defaultSources =
-    mode === 'trash-batch-sweep' || mode === 'space-policy'
+    mode === 'trash-batch-sweep' || mode === 'space-policy' || mode === 'notify-outbox'
       ? []
       : mode === 'metadata-refresh'
         ? [...ARR_KINDS]
@@ -197,6 +204,18 @@ async function main(): Promise<number> {
         }
       : {}),
     ...(report.spacePolicyError !== undefined ? { spacePolicyError: report.spacePolicyError } : {}),
+    ...(report.outbox
+      ? {
+          outbox: {
+            dueCount: report.outbox.dueCount,
+            sent: report.outbox.sent,
+            failed: report.outbox.failed,
+            parked: report.outbox.parked,
+            skipped: report.outbox.skipped,
+          },
+        }
+      : {}),
+    ...(report.outboxError !== undefined ? { outboxError: report.outboxError } : {}),
     sources: report.sources.map((s) => ({
       source: s.source,
       status: s.status,

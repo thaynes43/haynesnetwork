@@ -4393,6 +4393,43 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
 .space-policy__kinds li {
   margin: 2px 0;
 }
+
+/* ADR-034 / DESIGN-015 — the Notifications (delivery-window) card. */
+.notify-window h2 {
+  margin: 0 0 4px;
+}
+.notify-window > p.muted {
+  margin: 0 0 12px;
+}
+.notify-window__form {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.notify-window__field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.notify-window__field > span:first-child {
+  font-size: 13px;
+}
+.notify-window__field input {
+  width: 4.5em;
+}
+.notify-window .btn {
+  flex: none;
+}
+/* Reserved status slot — appearing text recolors, never reflows the row (ADR-015). */
+.notify-window__status {
+  min-width: 12em;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+.notify-window__form:has(input[aria-invalid='true']) .notify-window__status {
+  color: var(--color-danger);
+}
 .policy-tuning {
   margin-top: 12px;
   padding-top: 12px;

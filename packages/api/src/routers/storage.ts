@@ -10,6 +10,7 @@ import {
   getReclaim,
   getUtilization,
   getAppSetting,
+  getNotifyWindow,
   getSpacePolicy,
   getSpacePolicyStatus,
   setAppSetting,
@@ -56,6 +57,24 @@ export const SpacePolicyInput = z
     perArray: z.record(z.string(), spacePolicyArrayCfg),
   })
   .strict();
+
+/**
+ * ADR-034 / DESIGN-015 — the Pushover delivery window the Notifications card writes. `[startHour,
+ * endHour)` in `tz`; `startHour < endHour` is enforced (overnight windows are out of scope, DESIGN-015
+ * Q-03). `tz` is a non-empty IANA name (the domain re-validates via Intl before use). The inferred
+ * shape is exactly @hnet/domain's NotifyWindow — no cast needed.
+ */
+export const NotifyWindowInput = z
+  .object({
+    startHour: z.number().int().min(0).max(23),
+    endHour: z.number().int().min(1).max(24),
+    tz: z.string().min(1).max(64),
+  })
+  .strict()
+  .refine((w) => w.startHour < w.endHour, {
+    message: 'startHour must be before endHour (overnight windows are not supported)',
+    path: ['endHour'],
+  });
 
 export const storageRouter = router({
   /** Current disk utilization per media array — the utilization card. Resilient to a downed *arr. */
@@ -110,5 +129,26 @@ export const storageRouter = router({
         }),
       ),
     ),
+  }),
+
+  // ADR-034 / DESIGN-015 (PLAN-016) — the Pushover delivery window (the owner's quiet-hours control).
+  // adminProcedure (operator setting); audited through the app_settings single-writer.
+  notify: router({
+    window: router({
+      /** The effective delivery window (default merged + fail-safe validated). */
+      get: adminProcedure.query(({ ctx }) => getNotifyWindow(ctx.db)),
+
+      /** Replace the delivery window — audited via setAppSetting (update_app_setting). */
+      set: adminProcedure.input(NotifyWindowInput).mutation(({ ctx, input }) =>
+        mapDomainErrors(() =>
+          setAppSetting({
+            db: ctx.db,
+            key: 'notify_window',
+            value: input,
+            actorId: ctx.user.id,
+          }),
+        ),
+      ),
+    }),
   }),
 });

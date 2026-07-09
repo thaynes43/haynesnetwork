@@ -88,6 +88,29 @@ export interface SpacePolicy {
   perArray: Record<string, SpacePolicyArrayConfig>;
 }
 
+/**
+ * ADR-034 / DESIGN-015 (PLAN-016) — the DELIVERY WINDOW for Pushover batch-lifecycle pushes (T-101).
+ * The owner's quiet-hours control: pushes only leave inside `[startHour, endHour)` in `tz`. Enqueue
+ * computes each `notification_outbox` row's `earliest_send_at` against it. Stored as the `notify_window`
+ * app_settings jsonb value; admin-set + audited through setAppSetting. Overnight windows (start >= end)
+ * are out of scope (rejected at the zod edge).
+ */
+export interface NotifyWindow {
+  /** Hour the window opens (0..23), local to `tz`. */
+  startHour: number;
+  /** Hour the window closes (1..24), local to `tz`; must be > startHour. */
+  endHour: number;
+  /** IANA timezone name the hours are read in (e.g. 'America/New_York'). */
+  tz: string;
+}
+
+/** The delivery-window default — 6 PM to 10 PM Eastern (the owner's example). */
+export const NOTIFY_WINDOW_DEFAULT: NotifyWindow = {
+  startHour: 18,
+  endHour: 22,
+  tz: 'America/New_York',
+};
+
 /** The typed value shape per key — the jsonb column holds exactly these. */
 export interface AppSettingValueMap {
   trash_skip_admin_gate: boolean;
@@ -95,6 +118,7 @@ export interface AppSettingValueMap {
   motd: MotdRecord;
   space_targets: SpaceTargets;
   space_policy: SpacePolicy;
+  notify_window: NotifyWindow;
 }
 
 /** The documented default returned when a key has no row (never null — every key has a default). */
@@ -108,6 +132,9 @@ export const APP_SETTING_DEFAULTS: AppSettingValueMap = {
   // The space-driven policy is OFF out of the box (the owner's conservative-first instruction) — an
   // unset key proposes nothing. An object so the getAppSetting typeof-guard treats it like motd.
   space_policy: { enabled: false, cooldownDays: 7, minCandidates: 1, perArray: {} },
+  // ADR-034 — the delivery window defaults to 6 PM–10 PM Eastern (the owner's example). An object so
+  // the getAppSetting typeof-guard treats it like motd; getNotifyWindow further per-field-guards it.
+  notify_window: NOTIFY_WINDOW_DEFAULT,
 };
 
 /**
