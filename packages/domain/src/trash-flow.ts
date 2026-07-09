@@ -83,6 +83,11 @@ export interface MaintainerrAudit {
   armedRules: number;
   /** Active collections currently holding pending-deletion items. */
   activeCollections: number;
+  /** DESIGN-010 errata (2026-07-09 aging-invariant incident) — human-readable reasons the
+   *  Maintainerr aging worker could self-delete a pool OUTSIDE this app's batch/guardian pipeline
+   *  (a rule pool with too-short a delete-after horizon or a non-DELETE arrAction; a Leaving-Soon
+   *  pool that is not Do-Nothing). Non-empty ⇒ `safe` is false and destructive actions stay gated. */
+  agingViolations: string[];
 }
 
 /** The integrations that MUST be connected for a destructive Trash action to be SAFE (the plan's
@@ -98,6 +103,79 @@ const REQUIRED_INTEGRATIONS: Array<keyof MaintainerrIntegrations> = [
 
 const includesAny = (haystack: string, needles: string[]): boolean =>
   needles.some((n) => haystack.includes(n));
+
+// ---------------------------------------------------------------------------
+// Aging-invariant safeguard (DESIGN-010 errata / ADR-036 — incident 2026-07-09)
+// ---------------------------------------------------------------------------
+// Maintainerr's OWN aging worker deletes a collection's media when
+// `addDate <= now - deleteAfterDays * 86_400_000`, skipping ONLY collections whose
+// `arrAction === ServarrAction.DO_NOTHING` (verified against v3.17.0 collection-worker.service.ts —
+// there is NO null/0 guard, so a null/0 horizon deletes IMMEDIATELY). That path bypasses this app's
+// batch/save/guardian pipeline entirely. To keep the *arrs the source of truth and every deletion on
+// the app's rails, we assert two invariants on every ACTIVE collection and fold any breach into the
+// SAFE gate that already blocks the destructive paths (expedite + batch sweep).
+
+/** ServarrAction the aging worker DELETEs with. Rule pools MUST stay here so the app's per-item
+ *  `/collections/media/handle` still deletes; raising the horizon (below) is what defuses AUTO-delete. */
+const RULE_POOL_ARR_ACTION = 0;
+/** ServarrAction the aging worker SKIPS (DO_NOTHING). Our app-managed Leaving-Soon manual
+ *  collections MUST be this so Maintainerr never deletes curated items out from under the pipeline. */
+const LEAVING_SOON_ARR_ACTION = 4;
+/** Minimum delete-after horizon (days) an active rule pool must carry to be considered defused —
+ *  ~10 years pushes Maintainerr's dangerDate far enough in the past that no real item qualifies. */
+export const AGING_HORIZON_MIN_DAYS = 3650;
+
+/** The collection fields the aging invariant reads (a structural subset of a Maintainerr collection,
+ *  so the check is unit-testable without the read client). */
+export interface AgingCollectionView {
+  title: string | null | undefined;
+  isActive: boolean | null | undefined;
+  deleteAfterDays: number | null | undefined;
+  arrAction: number | null | undefined;
+  manualCollection: boolean | null | undefined;
+}
+
+/**
+ * Evaluate the aging invariants over the live collections; returns a human-readable violation string
+ * per breach (empty ⇒ all pools are on the app's rails). A violation makes the audit UNSAFE.
+ *
+ * Rule pool (an active NON-Leaving-Soon collection — Maintainerr's aging worker owns it):
+ *   MUST have deleteAfterDays >= AGING_HORIZON_MIN_DAYS (else Maintainerr auto-deletes it) AND
+ *   arrAction === 0 (else the app can no longer drive its deletions).
+ * App-managed Leaving-Soon manual collection (title match, ADR-025):
+ *   MUST have arrAction === 4 (DO_NOTHING) so Maintainerr never deletes its curated members.
+ */
+export function evaluateAgingInvariants(collections: readonly AgingCollectionView[]): string[] {
+  const violations: string[] = [];
+  for (const c of collections) {
+    if (c.isActive !== true) continue;
+    const label = c.title ?? 'untitled collection';
+    if (isLeavingSoonCollectionTitle(c.title)) {
+      if (c.arrAction !== LEAVING_SOON_ARR_ACTION) {
+        violations.push(
+          `The Leaving-Soon '${label}' collection is set to auto-delete (arrAction ${c.arrAction ?? 'unset'}, must be Do-Nothing) — Maintainerr could delete curated items outside the batch pipeline`,
+        );
+      }
+      continue;
+    }
+    const horizon = c.deleteAfterDays;
+    if (typeof horizon !== 'number' || horizon < AGING_HORIZON_MIN_DAYS) {
+      const when =
+        typeof horizon === 'number' && horizon > 0
+          ? `in ${horizon} day${horizon === 1 ? '' : 's'}`
+          : 'imminently (no delete-after horizon set)';
+      violations.push(
+        `Maintainerr would self-delete the '${label}' pool ${when} — raise its delete-after horizon`,
+      );
+    }
+    if (c.arrAction !== RULE_POOL_ARR_ACTION) {
+      violations.push(
+        `The '${label}' rule pool has arrAction ${c.arrAction ?? 'unset'} (must be Delete/0) — the app can no longer manage its deletions`,
+      );
+    }
+  }
+  return violations;
+}
 
 /**
  * ADR-023 D-04 — the read-only preflight audit. Writes NO state. Reachability + version come from
@@ -126,13 +204,14 @@ export async function auditMaintainerr(input: {
       integrations: { plex: false, radarr: false, sonarr: false, tautulli: false, seerr: false },
       armedRules: 0,
       activeCollections: 0,
+      agingViolations: [],
     };
   }
 
   // The four post-reachability sub-reads are independent and each fails closed on its own, so run
   // them CONCURRENTLY (ADR-035 perf pass — the serial chain cost ~1.7 s cold on the live install,
   // and the audit rides the same request flight as the first wall paint).
-  const [plex, integrationFlags, armedRules, activeCollections] = await Promise.all([
+  const [plex, integrationFlags, armedRules, collectionsResult] = await Promise.all([
     (async () => {
       try {
         const test = await read.testPlex();
@@ -171,17 +250,39 @@ export async function auditMaintainerr(input: {
     (async () => {
       try {
         const collections = await read.getCollections();
-        return collections.filter((c) => c.isActive === true).length;
+        const activeCollections = collections.filter((c) => c.isActive === true).length;
+        // Aging safeguard (DESIGN-010 errata 2026-07-09): a rule pool with too-short a horizon (or a
+        // Leaving-Soon pool that isn't Do-Nothing) would let Maintainerr's own worker mass-delete
+        // outside this app's pipeline. Evaluate over the SAME read; a breach forces safe:false.
+        const agingViolations = evaluateAgingInvariants(
+          collections.map((c) => ({
+            title: c.title ?? null,
+            isActive: c.isActive,
+            deleteAfterDays: c.deleteAfterDays ?? null,
+            arrAction: c.arrAction ?? null,
+            manualCollection: c.manualCollection ?? null,
+          })),
+        );
+        return { activeCollections, agingViolations };
       } catch {
-        return 0;
+        // Fail closed: if we cannot read the collections we cannot prove the pools are defused, so
+        // block the destructive paths rather than assume safety.
+        return {
+          activeCollections: 0,
+          agingViolations: [
+            'Could not read Maintainerr collections to verify the auto-delete safeguard — destructive actions are blocked until it can be confirmed',
+          ],
+        };
       }
     })(),
   ]);
   const { radarr, sonarr, tautulli, seerr } = integrationFlags;
+  const { activeCollections, agingViolations } = collectionsResult;
 
   const integrations: MaintainerrIntegrations = { plex, radarr, sonarr, tautulli, seerr };
-  const safe = reachable && REQUIRED_INTEGRATIONS.every((k) => integrations[k]);
-  return { safe, reachable, version, integrations, armedRules, activeCollections };
+  const safe =
+    reachable && REQUIRED_INTEGRATIONS.every((k) => integrations[k]) && agingViolations.length === 0;
+  return { safe, reachable, version, integrations, armedRules, activeCollections, agingViolations };
 }
 
 // ---------------------------------------------------------------------------

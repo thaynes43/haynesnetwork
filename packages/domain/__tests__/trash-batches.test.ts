@@ -57,6 +57,10 @@ interface StubCollection {
   id: number;
   isActive: boolean;
   deleteAfterDays: number;
+  /** ServarrAction (0=DELETE … 4=DO_NOTHING). Default 0 (rule collection) in the GET handler. */
+  arrAction?: number;
+  /** true for app-managed Leaving-Soon manual collections; default false (rule collection). */
+  manualCollection?: boolean;
   type: string;
   title: string;
   libraryId: number;
@@ -124,6 +128,8 @@ function makeMaintainerr(state: MaintState): {
           id: c.id,
           isActive: c.isActive,
           deleteAfterDays: c.deleteAfterDays,
+          arrAction: c.arrAction ?? 0,
+          manualCollection: c.manualCollection ?? false,
           type: c.type,
           title: c.title,
           libraryId: c.libraryId,
@@ -202,6 +208,10 @@ function makeMaintainerr(state: MaintState): {
         id,
         isActive: true,
         deleteAfterDays: coerced,
+        // Preserve the created arrAction (v3.17.0 requires DO_NOTHING=4 for a Leaving-Soon manual
+        // collection — validated above) so the aging audit reads it back as a Do-Nothing pool.
+        arrAction: Number(col.arrAction),
+        manualCollection: true,
         type,
         title: String(col.title ?? ''),
         libraryId: Number(col.libraryId ?? 0),
@@ -239,7 +249,11 @@ function movieCollection(over: Partial<StubCollection> = {}): StubCollection {
   return {
     id: 7,
     isActive: true,
-    deleteAfterDays: 30,
+    // Aging-safe default (DESIGN-010 errata 2026-07-09): a rule pool must carry a long delete-after
+    // horizon + DELETE arrAction, else the audit blocks the sweep. Invariant probes override these.
+    deleteAfterDays: 9999,
+    arrAction: 0,
+    manualCollection: false,
     type: 'movie',
     title: 'Least watched movies',
     libraryId: 1,
@@ -1010,7 +1024,8 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     const coldCollection = {
       id: 70,
       isActive: true,
-      deleteAfterDays: 30,
+      deleteAfterDays: 9999, // aging-safe (DESIGN-010 errata) so the sweep audit passes
+      arrAction: 0,
       type: 'movie',
       title: 'Cold movies',
       libraryId: 1,

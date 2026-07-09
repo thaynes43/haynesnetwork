@@ -16,6 +16,10 @@ export interface StubCollection {
   id: number;
   isActive: boolean;
   deleteAfterDays: number;
+  /** ServarrAction (0=DELETE … 4=DO_NOTHING). Default 0 (a rule collection) in the GET handler. */
+  arrAction?: number;
+  /** true for app-managed Leaving-Soon manual collections; default false (rule collection). */
+  manualCollection?: boolean;
   type: string;
   title: string;
   libraryId: number;
@@ -82,6 +86,8 @@ export function makeMaintainerr(state: MaintState): {
           id: c.id,
           isActive: c.isActive,
           deleteAfterDays: c.deleteAfterDays,
+          arrAction: c.arrAction ?? 0,
+          manualCollection: c.manualCollection ?? false,
           type: c.type,
           title: c.title,
           libraryId: c.libraryId,
@@ -188,7 +194,11 @@ export function movieCollection(over: Partial<StubCollection> = {}): StubCollect
   return {
     id: 7,
     isActive: true,
-    deleteAfterDays: 30,
+    // Healthy-estate default: an aging-safe horizon + DELETE arrAction, so the audit's aging invariant
+    // (DESIGN-010 errata 2026-07-09) is SAFE by default; tests that probe the invariant override these.
+    deleteAfterDays: 9999,
+    arrAction: 0,
+    manualCollection: false,
     type: 'movie',
     title: 'Least watched movies',
     libraryId: 1,
@@ -206,7 +216,9 @@ export function tvCollection(over: Partial<StubCollection> = {}): StubCollection
   return {
     id: 8,
     isActive: true,
-    deleteAfterDays: 30,
+    deleteAfterDays: 9999, // aging-safe default (see movieCollection)
+    arrAction: 0,
+    manualCollection: false,
     type: 'show',
     title: 'Least watched shows',
     libraryId: 2,

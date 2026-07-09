@@ -33,6 +33,12 @@ export const maintainerrCollectionSchema = z.object({
   isActive: z.boolean().nullish(),
   /** Days after addDate an item is deleted — the (constant per collection) delete-date driver. */
   deleteAfterDays: z.number().int().nullish(),
+  /** ServarrAction the aging worker applies (0=DELETE … 4=DO_NOTHING). The aging-invariant audit
+   *  (DESIGN-010 errata 2026-07-09) reads this: a rule pool MUST be 0; a Leaving-Soon pool MUST be 4. */
+  arrAction: z.number().int().nullish(),
+  /** true for our app-managed Leaving-Soon collections (ADR-025); false for rule collections. */
+  manualCollection: z.boolean().nullish(),
+  manualCollectionName: z.string().nullish(),
   libraryId: z.union([z.string(), z.number()]).nullish(),
   type: z.union([z.string(), z.number()]).nullish(), // MediaItemType (movie|show|… as string OR 1..4)
   mediaCount: z.number().int().nullish(),

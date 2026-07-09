@@ -55,6 +55,8 @@ interface StubCollection {
   title: string;
   isActive: boolean;
   deleteAfterDays: number;
+  /** ServarrAction (0=DELETE … 4=DO_NOTHING). Default 0 in the GET emit — a healthy rule pool. */
+  arrAction?: number;
   type: string;
   libraryId: number;
   items: Array<{
@@ -73,7 +75,10 @@ function freshCollections(): StubCollection[] {
       id: 7,
       title: 'Least watched movies',
       isActive: true,
-      deleteAfterDays: 30,
+      // Aging-safe horizon + DELETE arrAction (DESIGN-010 errata 2026-07-09): a healthy rule pool so
+      // the app's live audit stays SAFE (Maintainerr's own worker never mass-deletes outside the pipeline).
+      deleteAfterDays: 9999,
+      arrAction: 0,
       type: 'movie',
       libraryId: 1,
       items: [
@@ -107,7 +112,8 @@ function freshCollections(): StubCollection[] {
       id: 8,
       title: 'Stale shows',
       isActive: true,
-      deleteAfterDays: 45,
+      deleteAfterDays: 9999, // aging-safe (see id 7)
+      arrAction: 0,
       type: 'show',
       libraryId: 2,
       items: [
@@ -474,6 +480,8 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
               title: c.title,
               isActive: c.isActive,
               deleteAfterDays: c.deleteAfterDays,
+              arrAction: c.arrAction ?? 0, // rule pool — DELETE (aging audit reads this)
+              manualCollection: false,
               type: c.type,
               libraryId: c.libraryId,
               media: [], // the list serves a PREVIEW subset — content is the paged endpoint
@@ -485,6 +493,9 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
               title: mc.title,
               isActive: true,
               deleteAfterDays: 0,
+              // Leaving-Soon manual collections are created DO_NOTHING(4) — the aging audit requires it.
+              arrAction: 4,
+              manualCollection: true,
               type: mc.type,
               libraryId: mc.libraryId,
               media: [],
