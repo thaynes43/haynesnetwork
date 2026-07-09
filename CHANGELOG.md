@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.23.0](https://github.com/thaynes43/haynesnetwork/compare/v0.22.0...v0.23.0) (2026-07-09)
+
+
+### Features
+
+* mid-window expire override (typed confirm, audited) + reclaim-targeted batch creation ([#131](https://github.com/thaynes43/haynesnetwork/issues/131)) ([40ece7a](https://github.com/thaynes43/haynesnetwork/commit/40ece7a442e8d18546313002b101392c9f79c833))
+
+
+### Bug Fixes
+
+* 'Delete all now' naming + requester-protected glyphs on trash walls ([#130](https://github.com/thaynes43/haynesnetwork/issues/130)) ([19a79de](https://github.com/thaynes43/haynesnetwork/commit/19a79de7922d7204ba155c8784db990d4162ce96))
+
+
+### Documentation
+
+* complete plan 016 (Pushover) — trash automation loop closed ([#128](https://github.com/thaynes43/haynesnetwork/issues/128)) ([0e9a506](https://github.com/thaynes43/haynesnetwork/commit/0e9a506196c214d02c2ad43eb43c72c925387a00))
+
 ## [0.22.0](https://github.com/thaynes43/haynesnetwork/compare/v0.21.0...v0.22.0) (2026-07-09)
 
 
