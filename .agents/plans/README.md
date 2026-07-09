@@ -62,6 +62,7 @@ For each plan, in order:
 | 013 | Disk utilization + reclaim metrics | owner 2026-07-06 | 012 (deletion snapshots) + 008 | ✅ completed/ (v0.17.0) |
 | 014 | Rules tuning + space policy (skip-gate graduation) | owner 2026-07-06 | 013 + accumulated 012 save-data | ✅ completed/ (v0.18.0) |
 | 015 | Downstream *arr action feedback (live Fix/Force-Search status) | owner 2026-07-07 | — (extends the on-`main` Fix/Force-Search vertical) | ✅ completed/ (v0.15.0) |
+| 016 | Pushover batch notifications (outbox + delivery window) | owner 2026-07-08 | 012 (batch lifecycle) + 014 (space policy reuses `createBatchFromPending`) | ✅ completed/ (v0.22.0) |
 
 **Owner-ordered sequence (2026-07-06):** 006 → 012 → 011 → 009 → 010 → 008 → 013 → 014, with 015
 (owner 2026-07-07) landed alongside. **THE BOARD IS COMPLETE:** every buildable plan **002–015**
