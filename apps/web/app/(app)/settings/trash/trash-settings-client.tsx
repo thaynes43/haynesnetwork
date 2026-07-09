@@ -5,10 +5,10 @@
 // are the URL-driven `?tab=` pattern shared with /trash · /library · /ledger (role="tablist" +
 // roving-tabindex keyboard nav, `.library-tabs`):
 //
-//   • General — admin gate + default save window + the Notifications delivery window (moved from
-//               /admin/storage). Admin-only.
-//   • Storage — utilization meters + space targets + Space policy + Batch policy + the Grafana
-//               deep-link (everything storage/target/policy, moved from /admin/storage). Admin-only.
+//   • General — admin gate + default save window + the Notifications delivery window + the Batch
+//               policy form (batch composition is pipeline behavior, not storage). Admin-only.
+//   • Storage — utilization meters + space targets + Space policy + the Grafana deep-link
+//               (everything storage/target, moved from /admin/storage). Admin-only.
 //   • Reclaim — the reclaim-attribution report (moved from /admin/storage). Admin-only.
 //   • Rules   — the Maintainerr deletion-rules list (arm/disarm/delete). Trash-EDIT (the page gate).
 //

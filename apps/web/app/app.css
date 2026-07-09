@@ -950,7 +950,15 @@ tr.drop-after td {
    default white background in dark mode. */
 .bulletin-composer input,
 .bulletin-composer textarea,
-.bulletin-mediapick input {
+.bulletin-mediapick input,
+/* /settings/trash hub — the compact inline controls on the General tab (Notifications delivery-window
+   From/To hour inputs + the Timezone select) and the Storage tab (the Space-policy cooldown input)
+   fell through to the browser-default WHITE surface in dark mode. Theme them from this SHARED group
+   too — same fix class as the .bulletin-composer one above. Their own rule blocks keep the compact
+   width/height (below); this group only supplies the themed surface (color/background/border/focus). */
+.notify-window__field input,
+.notify-window__field select,
+.space-policy__field input {
   font: inherit;
   font-size: 13px;
   color: var(--color-text);
@@ -971,7 +979,10 @@ tr.drop-after td {
 .admin-form select:focus,
 .bulletin-composer input:focus,
 .bulletin-composer textarea:focus,
-.bulletin-mediapick input:focus {
+.bulletin-mediapick input:focus,
+.notify-window__field input:focus,
+.notify-window__field select:focus,
+.space-policy__field input:focus {
   border-color: var(--color-accent);
 }
 .field-hint {
