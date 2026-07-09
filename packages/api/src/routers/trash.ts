@@ -29,6 +29,7 @@ import {
   setAppSetting,
   setBatchItemSaved,
   sweepExpiredBatches,
+  unprotectBatchItem,
   upsertTrashRule,
 } from '@hnet/domain';
 import { mapDomainErrors, resolveArrBundle, resolveMaintainerrBundle, router } from '../trpc';
@@ -444,6 +445,32 @@ export const trashRouter = router({
             // holding `manage_batches`/admin may release ANY family member's rescue; a bare
             // `save_leaving_soon` holder only their own (TrashSaveNotOwnedError otherwise).
             callerCanManage: hasTrashAction(ctx.user.role, 'manage_batches'),
+          });
+        });
+      }),
+
+    /**
+     * ADR-025 errata (2026-07-09) — un-protect a `protected` (exclusion-held) wall item so the owner
+     * can act on it. Removes the standing Maintainerr exclusion (the audited guarded seam) and
+     * re-classifies the frozen row (requester-carrying ⇒ the requested person-shield; else pending).
+     * Same PHASE gate as setItemSaved: `leaving_soon` ⇒ `save_leaving_soon`; otherwise `manage_batches`.
+     */
+    unprotectItem: sectionProcedure('trash', 'read_only')
+      .input(z.object({ batchId: z.uuid(), itemId: z.uuid() }))
+      .mutation(async ({ ctx, input }) => {
+        return mapDomainErrors(async () => {
+          const detail = await getBatchDetail({ db: ctx.db, batchId: input.batchId });
+          const requiredAction =
+            detail.state === 'leaving_soon' ? 'save_leaving_soon' : 'manage_batches';
+          if (!hasTrashAction(ctx.user.role, requiredAction)) {
+            throw new TRPCError({ code: 'FORBIDDEN' });
+          }
+          return unprotectBatchItem({
+            db: ctx.db,
+            maintainerr: resolveMaintainerrBundle(ctx),
+            batchId: input.batchId,
+            itemId: input.itemId,
+            actorId: ctx.user.id,
           });
         });
       }),

@@ -142,7 +142,8 @@ export function wallInteractive(ctx: WallTapContext): boolean {
  * family window a saver may undo their OWN save (savedBy === viewer, or a save this session just
  * made — savedBy null until the refetch lands) but not someone else's (the server contract would
  * allow it; the wall keeps the family flow polite — a manager can always release a foreign save).
- * check/eye/skip/gone are inert: there is nothing honest a tap could do (changed:false anyway).
+ * A `check` (protected) tile is now tappable to UN-PROTECT (remove its live exclusion, then re-classify).
+ * eye/skip/gone stay inert: there is nothing honest a tap could do (changed:false anyway).
  */
 export function tileTappable(
   ctx: WallTapContext,
@@ -161,6 +162,13 @@ export function tileTappable(
     // by ANYONE with save rights for the phase (build B: a system save has no human owner, so the
     // ownership gate does not apply). A `pending` requested item (edge) stays inert.
     return opts?.state === 'saved';
+  }
+  if (glyph === 'check') {
+    // ADR-025 errata (2026-07-09) — a `protected` (check) batch item is held by a live Maintainerr
+    // exclusion (a `dnd`/whitelist frozen into the snapshot). It is now UN-PROTECTABLE (tap removes the
+    // exclusion and re-classifies the row) by anyone with save rights for the phase, so it is no longer
+    // inert — the owner could otherwise never act on such an item (the "Kept 1" Baldwins).
+    return true;
   }
   return false;
 }

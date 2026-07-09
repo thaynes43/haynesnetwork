@@ -831,6 +831,137 @@ export async function setBatchItemSaved(input: {
 }
 
 // ---------------------------------------------------------------------------
+// unprotectBatchItem — un-protect a `protected` (exclusion-held) batch-wall item
+// ---------------------------------------------------------------------------
+
+/**
+ * ADR-025 errata (2026-07-09) — the reclassification rule for a batch item that is being SAVED without
+ * a human saver. `saved_reason` is authoritative when present ('requested' ⇒ the person-shield). For a
+ * LEGACY row (pre-migration-0026, so `saved_reason` is NULL) a requester-carrying item with NO human
+ * saver is a SYSTEM requested keep — surface it as 'requested' so its glyph AND its un-save semantics
+ * (any-saver un-save → requested_override → sweep-deletable) match a natively auto-saved requester item.
+ * Everything else stays a plain (null) save. Pure — used both on read (getBatchDetail) and when the
+ * un-protect flow decides where a freed `protected` item lands.
+ */
+export function reclassifyRequestedSave(input: {
+  savedReason: 'requested' | null;
+  savedBy: string | null;
+  requesters: readonly string[];
+}): 'requested' | null {
+  if (input.savedReason === 'requested') return 'requested';
+  if (input.savedReason === null && input.savedBy === null && input.requesters.length > 0) {
+    return 'requested';
+  }
+  return null;
+}
+
+/**
+ * ADR-025 errata (2026-07-09) — un-protect a `protected` batch-wall item that is held by a live
+ * Maintainerr exclusion (a `dnd` tag / cross-session whitelist frozen into the snapshot as `protected`,
+ * e.g. a legacy pre-0026 batch item). The wall's `check` glyph was INERT, stranding such an item as
+ * both un-savable and un-deletable (the owner-reported "Kept 1" Baldwins). Tapping it now removes the
+ * exclusion through the SAME guarded seam the live wall uses (removeExclusion — external-first + the
+ * audited `trash_excluded` 'unsave' event) and RE-CLASSIFIES the frozen row honestly:
+ *   - a requester-carrying item with no human saver → the requested default-saved person-shield
+ *     (state 'saved', saved_reason 'requested'; the sweep guardian is its real keep — NO exclusion);
+ *   - anything else → plain `pending` (the slated trash-can).
+ * Phase-gated exactly like setBatchItemSaved (admin_review / open leaving_soon only). Idempotent: a
+ * non-`protected` item is an inert no-op. The reclassification UPDATE is guarded (`AND state='protected'`)
+ * so a concurrent transition loses the race rather than double-acting.
+ */
+export async function unprotectBatchItem(input: {
+  db?: DbClient;
+  maintainerr: MaintainerrClientBundle;
+  batchId: string;
+  itemId: string;
+  actorId: string | null;
+}): Promise<{ changed: boolean; state: TrashBatchItemState }> {
+  const db = resolveDb(input.db);
+  const batch = await loadBatch(input.db, input.batchId);
+  if (batch.state !== 'admin_review' && batch.state !== 'leaving_soon') {
+    throw new TrashBatchStateError(
+      `Batch ${input.batchId} is '${batch.state}' — items can only be un-protected in admin_review or leaving_soon.`,
+    );
+  }
+  if (
+    batch.state === 'leaving_soon' &&
+    batch.expiresAt !== null &&
+    batch.expiresAt.getTime() <= Date.now()
+  ) {
+    throw new TrashBatchStateError(
+      `The save window for batch ${input.batchId} has closed — items can no longer be curated.`,
+    );
+  }
+
+  const [item] = await db
+    .select()
+    .from(trashBatchItems)
+    .where(and(eq(trashBatchItems.id, input.itemId), eq(trashBatchItems.batchId, input.batchId)));
+  if (!item) throw new NotFoundError(`Batch item ${input.itemId} not found in batch ${input.batchId}`);
+
+  // Only a `protected` item is un-protectable; saved/pending/skipped/deleted are inert here (the wall
+  // never taps them into this path — mirror setBatchItemSaved's idempotent no-op contract).
+  if (item.state !== 'protected') return { changed: false, state: item.state };
+
+  // The item's known requesters (the same media_metadata signal the wall + sweep guardian read) decide
+  // where the freed row lands. Unknown-to-ledger (media_item_id NULL) ⇒ no requester signal ⇒ pending.
+  const requesters =
+    item.mediaItemId === null
+      ? []
+      : ((
+          await db
+            .select({ requesters: mediaMetadata.requesters })
+            .from(mediaMetadata)
+            .where(eq(mediaMetadata.mediaItemId, item.mediaItemId))
+        )[0]?.requesters ?? []);
+  const reclassified = reclassifyRequestedSave({
+    savedReason: item.savedReason,
+    savedBy: item.savedBy,
+    requesters,
+  });
+
+  // 1) Remove the standing exclusion FIRST (external, protective ordering) — the shared audited seam.
+  await removeExclusion({
+    db: input.db,
+    maintainerr: input.maintainerr,
+    maintainerrMediaId: item.maintainerrMediaId,
+    mediaItemId: item.mediaItemId,
+    actorId: input.actorId,
+  });
+  // 2) Surface it back into the visible Leaving-Soon collection (it was hidden while protected).
+  if (batch.maintainerrCollectionId !== null) {
+    await guardMaintainerrCall('maintainerr POST /collections/add', () =>
+      input.maintainerr.write.addToCollection(batch.maintainerrCollectionId as number, [
+        item.maintainerrMediaId,
+      ]),
+    );
+  }
+
+  // 3) Re-classify the frozen row (guarded on state='protected' — a concurrent flip loses the race).
+  const nextState: TrashBatchItemState = reclassified === 'requested' ? 'saved' : 'pending';
+  const claimed = await inTransaction(input.db, async (tx) => {
+    const updated = await tx
+      .update(trashBatchItems)
+      .set(
+        reclassified === 'requested'
+          ? { state: 'saved', savedBy: null, savedAt: nowDate(), savedReason: 'requested' }
+          : { state: 'pending', savedBy: null, savedAt: null, savedReason: null },
+      )
+      .where(and(eq(trashBatchItems.id, input.itemId), eq(trashBatchItems.state, 'protected')))
+      .returning({ id: trashBatchItems.id });
+    return updated.length > 0;
+  });
+  if (!claimed) {
+    const [now] = await db
+      .select({ state: trashBatchItems.state })
+      .from(trashBatchItems)
+      .where(eq(trashBatchItems.id, input.itemId));
+    return { changed: false, state: now?.state ?? item.state };
+  }
+  return { changed: true, state: nextState };
+}
+
+// ---------------------------------------------------------------------------
 // sweepExpiredBatches — the windowed, guarded, per-item deletion
 // ---------------------------------------------------------------------------
 
@@ -1432,7 +1563,17 @@ export async function getBatchDetail(input: {
       state: it.state,
       savedBy: it.savedBy,
       savedAt: it.savedAt?.toISOString() ?? null,
-      savedReason: it.savedReason ?? null,
+      // ADR-025 errata (2026-07-09) — a legacy `saved` row (pre-0026, saved_reason NULL) that is a
+      // requester keep with no human saver reads as the person-shield ('requested'), matching a
+      // natively auto-saved requester item. Only `saved` rows reclassify; others pass through raw.
+      savedReason:
+        it.state === 'saved'
+          ? reclassifyRequestedSave({
+              savedReason: it.savedReason ?? null,
+              savedBy: it.savedBy,
+              requesters: requesters ?? [],
+            })
+          : (it.savedReason ?? null),
       requestedOverride: it.requestedOverride,
       imdbRating: numOrNull(imdbRating),
       tmdbRating: numOrNull(tmdbRating),

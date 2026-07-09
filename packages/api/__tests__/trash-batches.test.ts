@@ -227,6 +227,30 @@ describe('trash.batches + trash.settings (ADR-025 / DESIGN-011)', () => {
     expect(ok.state).toBe('saved');
   });
 
+  it('unprotectItem is PHASE-gated exactly like setItemSaved (admin_review→manage_batches, leaving_soon→save_leaving_soon)', async () => {
+    // The api layer OWNS the phase gate; the un-protect + reclassification behaviour is proven against a
+    // real `protected` item in the @hnet/domain suite (direct guarded-table writes are domain-only).
+    const { batchId } = await adminCall().trash.batches.create({ mediaKind: 'movie' });
+    const detail = await adminCall().trash.batches.get({ batchId });
+    const itemId = detail.items[0]!.id;
+
+    // admin_review phase — save_leaving_soon alone is NOT enough; manage_batches is.
+    await expect(
+      memberCall('read_only', ['save_leaving_soon']).trash.batches.unprotectItem({ batchId, itemId }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    // A manage_batches holder passes the gate (the item is not protected, so the domain call is an inert no-op).
+    const reviewOk = await memberCall('read_only', ['manage_batches']).trash.batches.unprotectItem({ batchId, itemId });
+    expect(reviewOk).toHaveProperty('state');
+
+    // Green-light → leaving_soon phase — now save_leaving_soon passes and manage_batches-only does NOT.
+    await adminCall().trash.batches.greenlight({ batchId, windowDays: 14 });
+    await expect(
+      memberCall('read_only', ['manage_batches']).trash.batches.unprotectItem({ batchId, itemId }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    const windowOk = await memberCall('read_only', ['save_leaving_soon']).trash.batches.unprotectItem({ batchId, itemId });
+    expect(windowOk).toHaveProperty('state');
+  });
+
   it('save_exclude (global Save) IMPLIES save_leaving_soon — a save_exclude-only role rescues in the window (ADR-025 errata)', async () => {
     const { batchId } = await adminCall().trash.batches.create({ mediaKind: 'movie' });
     const detail = await adminCall().trash.batches.get({ batchId });
