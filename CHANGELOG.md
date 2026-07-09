@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.26.0](https://github.com/thaynes43/haynesnetwork/compare/v0.25.1...v0.26.0) (2026-07-09)
+
+
+### Features
+
+* cross-server watch visibility on trash walls (info, not protection) ([#142](https://github.com/thaynes43/haynesnetwork/issues/142)) ([0677ca0](https://github.com/thaynes43/haynesnetwork/commit/0677ca0c0ee71a2c3dbfea5611c3485396a0d9f5))
+* native free-space trend chart (replaces LAN-only Grafana link) ([#144](https://github.com/thaynes43/haynesnetwork/issues/144)) ([ef1c859](https://github.com/thaynes43/haynesnetwork/commit/ef1c85983c3c6aeecc954685888eae44cf048d12))
+
 ## [0.25.1](https://github.com/thaynes43/haynesnetwork/compare/v0.25.0...v0.25.1) (2026-07-09)
 
 
