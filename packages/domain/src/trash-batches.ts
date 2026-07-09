@@ -1193,6 +1193,9 @@ export interface BatchDetailItem {
   imdbRating: number | null;
   tmdbRating: number | null;
   recentlyWatched: boolean;
+  /** The ledger's known requesters — a non-empty list means the sweep guardian keeps the item
+   *  (protected_requested), so the wall shows the inert 'requested' glyph, not a slated trash-can. */
+  requesters: string[];
 }
 
 export interface BatchDetail extends BatchSummary {
@@ -1216,6 +1219,7 @@ export async function getBatchDetail(input: {
       imdbRating: mediaMetadata.imdbRating,
       tmdbRating: mediaMetadata.tmdbRating,
       lastViewedAt: mediaMetadata.lastViewedAt,
+      requesters: mediaMetadata.requesters,
     })
     .from(trashBatchItems)
     .leftJoin(mediaMetadata, eq(mediaMetadata.mediaItemId, trashBatchItems.mediaItemId))
@@ -1249,7 +1253,7 @@ export async function getBatchDetail(input: {
     counts: toCounts(raw),
     reclaimedBytes,
     pendingBytes,
-    items: rows.map(({ item: it, imdbRating, tmdbRating, lastViewedAt }) => ({
+    items: rows.map(({ item: it, imdbRating, tmdbRating, lastViewedAt, requesters }) => ({
       id: it.id,
       maintainerrMediaId: it.maintainerrMediaId,
       mediaItemId: it.mediaItemId,
@@ -1266,6 +1270,7 @@ export async function getBatchDetail(input: {
       imdbRating: numOrNull(imdbRating),
       tmdbRating: numOrNull(tmdbRating),
       recentlyWatched: lastViewedAt !== null && lastViewedAt.getTime() >= watchedCutoff,
+      requesters: requesters ?? [],
     })),
   };
 }

@@ -217,12 +217,21 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     const libHref = await runner.getByTestId('wall-lib-link').getAttribute('href');
     expect(libHref).toMatch(/\/library\/[0-9a-f-]{36}\?from=trash-movies$/);
 
-    // TV is a separate tab (never combined): Breaking Prod, requested → tooltip fact.
+    // TV is a separate tab (never combined): Breaking Prod is REQUESTED — the guardian refuses its
+    // deletion, so the wall shows the inert 'requested' glyph (not a slated trash-can), with the
+    // requester + protection fact in the tooltip and NO tappable delete/save path.
     await page.getByRole('tab', { name: 'TV' }).click();
     await expect(page).toHaveURL(/\/trash\?tab=tv$/);
     const tvTile = page.getByTestId('trash-tile').filter({ hasText: 'Breaking Prod' });
     await expect(tvTile).toHaveCount(1);
-    await expect(tvTile.getByTestId('trash-toggle')).toHaveAttribute('title', /Requested by/);
+    await expect(tvTile).toHaveAttribute('data-glyph', 'requested');
+    // Inert: the toggle is a non-button span (state reads, no delete/save action).
+    await expect(tvTile.locator('span[data-testid="trash-toggle"]')).toHaveCount(1);
+    await expect(tvTile.locator('button[data-testid="trash-toggle"]')).toHaveCount(0);
+    await expect(tvTile.getByTestId('trash-toggle')).toHaveAttribute(
+      'title',
+      /Requested by .* — protected from deletion/,
+    );
     await expect(page.getByTestId('trash-total')).toHaveText('Reclaiming 20 GB across 1 item');
   });
 
@@ -345,7 +354,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await signIn(page, 'admin');
     await openTrashMovies(page);
 
-    // With a filter active the Modal REFUSES — filters cannot scope Expedite all.
+    // With a filter active the Modal REFUSES — filters cannot scope Delete-all-now.
     await page.getByTitle('Edit the Genre filter').click();
     await page
       .getByRole('dialog', { name: 'Edit the Genre filter' })
@@ -356,7 +365,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await page.getByTestId('trash-expedite-all').click();
     await expect(page.getByTestId('trash-expedite-refusal')).toBeVisible();
     await expect(page.getByTestId('trash-expedite-refusal')).toContainText(
-      'Filters can’t scope “Expedite all”',
+      'Filters can’t scope “Delete all now”',
     );
 
     // Clearing the filters reveals the real confirm with the honest partition.

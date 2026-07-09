@@ -90,6 +90,29 @@ export function TrashCanGlyph() {
   );
 }
 
+/** The requester PERSON-SHIELD — a personal requester is on record, so the guardian refuses the
+ *  item's deletion at expedite/sweep; inert (a trash-can would be dishonest). A person inside the
+ *  shield, deliberately DISTINCT from the exclusion shield-check. Same 16×16 box + stroke weight. */
+export function RequesterShieldGlyph() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3Z" />
+      <circle cx="12" cy="10" r="1.9" />
+      <path d="M8.7 15.2c0-1.7 1.5-2.7 3.3-2.7s3.3 1 3.3 2.7" />
+    </svg>
+  );
+}
+
 /** The recently-watched EYE — the guardian keeps it; inert on both walls (a delete-glyph here
  *  would be dishonest). Same 16×16 box + stroke weight as its siblings. */
 export function EyeGlyph() {
@@ -210,7 +233,7 @@ export function LibraryCornerLink({
 export function WallGlyphSvg({
   glyph,
 }: {
-  glyph: 'trash' | 'shield' | 'check' | 'eye' | 'skip' | 'gone';
+  glyph: 'trash' | 'shield' | 'check' | 'eye' | 'requested' | 'skip' | 'gone';
 }) {
   switch (glyph) {
     case 'trash':
@@ -221,6 +244,8 @@ export function WallGlyphSvg({
       return <ShieldCheckGlyph />;
     case 'eye':
       return <EyeGlyph />;
+    case 'requested':
+      return <RequesterShieldGlyph />;
     case 'skip':
       return <SkipGlyph />;
     case 'gone':
