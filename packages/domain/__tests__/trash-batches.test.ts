@@ -454,6 +454,81 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     expect(unsaveByManager).toEqual({ changed: true, state: 'pending' });
   });
 
+  // ── build B — requested items start saved (overridable) ─────────────────────────────────
+
+  it('createBatchFromPending auto-saves requester items as a SYSTEM save (savedReason requested, no exclusion)', async () => {
+    const { bundle, calls } = makeMaintainerr(baseState());
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    const req = (await itemsOf(batchId)).find((i) => i.maintainerrMediaId === 'ms-9004')!;
+    // 9004 (requesters ['alice'], cold) starts SAVED, tagged 'requested', with NO human saver…
+    expect(req.state).toBe('saved');
+    expect(req.savedReason).toBe('requested');
+    expect(req.savedBy).toBeNull();
+    expect(req.requestedOverride).toBe(false);
+    // …and NO Maintainerr exclusion was written for it (the guardian is the real keep, not a mass mutation).
+    expect(calls.some((c) => c.method === 'POST' && c.pathname === '/rules/exclusion')).toBe(false);
+    // It is excluded from the human "who rescued what" tuning stats (system save, not a rescue).
+    const stats = await getBatchSaveStats({ db: t.db, batchId });
+    expect(stats.totalSaves).toBe(0);
+  });
+
+  it('un-saving a requested auto-save is allowed for any saver, sets requestedOverride, and audits overrodeRequested', async () => {
+    const { bundle } = makeMaintainerr(baseState());
+    const saver = (await createUser(t.db, { email: 'req-saver@example.com' })).id;
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: 14, actorId }); // open window
+    const req = (await itemsOf(batchId)).find((i) => i.maintainerrMediaId === 'ms-9004')!;
+
+    // A bare save-window holder (NOT the owner, NOT a manager) may un-save it — a system save has no
+    // human owner, so the ownership gate does not apply (would throw for an ordinary human rescue).
+    const res = await setBatchItemSaved({
+      db: t.db, maintainerr: bundle, batchId, itemId: req.id, saved: false, actorId: saver, callerCanManage: false,
+    });
+    expect(res).toEqual({ changed: true, state: 'pending' });
+    const [after] = await t.db.select().from(trashBatchItems).where(eq(trashBatchItems.id, req.id));
+    expect(after!.state).toBe('pending');
+    expect(after!.requestedOverride).toBe(true);
+    expect(after!.savedReason).toBeNull();
+    // The override is audited (a trash_excluded event flagged overrodeRequested).
+    const evs = await t.db.select().from(ledgerEvents).where(eq(ledgerEvents.eventType, 'trash_excluded'));
+    expect(
+      evs.some((e) => (e.payload as Record<string, unknown>).overrodeRequested === true),
+    ).toBe(true);
+  });
+
+  it('guardian override: a NEVER-unsaved requested item is KEPT at sweep; an explicitly-unsaved one is DELETED', async () => {
+    const { bundle, calls } = makeMaintainerr(baseState());
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    const req = (await itemsOf(batchId)).find((i) => i.maintainerrMediaId === 'ms-9004')!;
+    // Explicitly un-save the requested item → requestedOverride true (it becomes a delete candidate).
+    await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: req.id, saved: false, actorId });
+    await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: -1, actorId }); // expired
+    const report = await sweepExpiredBatches({ db: t.db, maintainerr: bundle, actorId });
+
+    const after = await itemsOf(batchId);
+    // 9004 (requested, OVERRIDDEN) is now deleted alongside 9001 (cold); the requester keep no longer protects it.
+    expect(after.find((i) => i.maintainerrMediaId === 'ms-9004')!.state).toBe('deleted');
+    expect(after.find((i) => i.maintainerrMediaId === 'ms-9001')!.state).toBe('deleted');
+    expect(report.batches[0]!.deletedCount).toBe(2);
+    const handled = calls
+      .filter((c) => c.pathname === '/collections/media/handle')
+      .map((c) => (c.body as { mediaId: string }).mediaId)
+      .sort();
+    expect(handled).toEqual(['ms-9001', 'ms-9004']);
+  });
+
+  it('guardian override is per-item: an un-saved requested item deletes, but a re-SAVED one is kept', async () => {
+    const { bundle } = makeMaintainerr(baseState());
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    const req = (await itemsOf(batchId)).find((i) => i.maintainerrMediaId === 'ms-9004')!;
+    // Override it, then a human RE-saves it — a re-saved item is 'saved' again and never swept.
+    await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: req.id, saved: false, actorId });
+    await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: req.id, saved: true, actorId });
+    await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: -1, actorId });
+    await sweepExpiredBatches({ db: t.db, maintainerr: bundle, actorId });
+    expect((await itemsOf(batchId)).find((i) => i.maintainerrMediaId === 'ms-9004')!.state).toBe('saved');
+  });
+
   it('skip-gate: with the setting ON, createBatch auto-green-lights straight to leaving_soon (audited gate_skipped)', async () => {
     await setAppSetting({ db: t.db, key: 'trash_skip_admin_gate', value: true, actorId });
     const { bundle } = makeMaintainerr(baseState({ nextCollectionId: 42 }));
@@ -495,7 +570,10 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     expect(report.batchesSwept).toBe(1);
     const r = report.batches[0]!;
     expect(r.deletedCount).toBe(1); // only 9001 (cold)
-    expect(r.skippedCount).toBe(3); // 9002 watched, 9004 requested, 9009 unevaluable
+    // build B — 9004 (requested) now starts as a SYSTEM auto-save, so it is no longer a pending
+    // candidate at sweep: only 9002 (watched) + 9009 (unevaluable) land skipped, and 9004 is saved.
+    expect(r.skippedCount).toBe(2);
+    expect(r.savedCount).toBe(1); // 9004 requested auto-save
     expect(r.protectedCount).toBe(1); // 9003 dnd
 
     // Exactly one per-item handle fired — for the cold item.
@@ -531,7 +609,7 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     const report = await sweepExpiredBatches({ db: t.db, maintainerr: bundle, actorId });
 
     expect(report.batches[0]!.deletedCount).toBe(0); // the only cold item was saved
-    expect(report.batches[0]!.savedCount).toBe(1);
+    expect(report.batches[0]!.savedCount).toBe(2); // 9001 (human save) + 9004 (requested auto-save)
     expect(calls.some((c) => c.pathname === '/collections/media/handle')).toBe(false);
     const saved = (await itemsOf(batchId)).find((i) => i.maintainerrMediaId === 'ms-9001')!;
     expect(saved.state).toBe('saved'); // untouched by the sweep
@@ -631,12 +709,13 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     const { bundle } = makeMaintainerr(baseState());
     const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
     const items = await itemsOf(batchId);
-    await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: items.find((i) => i.maintainerrMediaId === 'ms-9004')!.id, saved: true, actorId });
+    // A HUMAN rescue of a cold item (9001). 9004 already auto-saved (requested, system) at snapshot.
+    await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: items.find((i) => i.maintainerrMediaId === 'ms-9001')!.id, saved: true, actorId });
 
     const list = await listBatches({ db: t.db, mediaKind: 'movie' });
     const summary = list.find((b) => b.id === batchId)!;
     expect(summary.counts.total).toBe(5);
-    expect(summary.counts.saved).toBe(1);
+    expect(summary.counts.saved).toBe(2); // 9001 human rescue + 9004 requested auto-save
 
     const detail = await getBatchDetail({ db: t.db, batchId });
     expect(detail.items).toHaveLength(5);
@@ -662,7 +741,9 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
     const items = await itemsOf(batchId);
     const kept = items.find((i) => i.maintainerrMediaId === 'ms-9001')!;
-    const dropped = items.find((i) => i.maintainerrMediaId === 'ms-9004')!;
+    // 9002 (a cold, non-requested candidate) — 9004 now auto-saves (requested), so it never writes a
+    // human 'save' flip and would skew the raw-log count; use a plain pending item for the churn test.
+    const dropped = items.find((i) => i.maintainerrMediaId === 'ms-9002')!;
 
     // Item A: save → unsave → save ⇒ nets to 1 save (still held). Item B: save → unsave ⇒ nets to 0.
     await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: kept.id, saved: true, actorId });

@@ -224,20 +224,20 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     const libHref = await runner.getByTestId('wall-lib-link').getAttribute('href');
     expect(libHref).toMatch(/\/library\/[0-9a-f-]{36}\?from=trash-movies$/);
 
-    // TV is a separate tab (never combined): Breaking Prod is REQUESTED — the guardian refuses its
-    // deletion, so the wall shows the inert 'requested' glyph (not a slated trash-can), with the
-    // requester + protection fact in the tooltip and NO tappable delete/save path.
+    // TV is a separate tab (never combined): Breaking Prod is REQUESTED. Build B — the requester
+    // person-shield is NEVER inert on the live wall: it is a normal save-toggle (tap ⇒ SAVE = add
+    // the exclusion), showing the person-shield glyph with the "tap to save it" fact in the tooltip.
     await page.getByRole('tab', { name: 'TV' }).click();
     await expect(page).toHaveURL(/\/trash\?tab=tv$/);
     const tvTile = page.getByTestId('trash-tile').filter({ hasText: 'Breaking Prod' });
     await expect(tvTile).toHaveCount(1);
     await expect(tvTile).toHaveAttribute('data-glyph', 'requested');
-    // Inert: the toggle is a non-button span (state reads, no delete/save action).
-    await expect(tvTile.locator('span[data-testid="trash-toggle"]')).toHaveCount(1);
-    await expect(tvTile.locator('button[data-testid="trash-toggle"]')).toHaveCount(0);
+    // Tappable now: the toggle is a BUTTON (a save-toggle), not an inert span.
+    await expect(tvTile.locator('button[data-testid="trash-toggle"]')).toHaveCount(1);
+    await expect(tvTile.locator('span[data-testid="trash-toggle"]')).toHaveCount(0);
     await expect(tvTile.getByTestId('trash-toggle')).toHaveAttribute(
       'title',
-      /Requested by .* — protected from deletion/,
+      /Requested by .* — tap to save it/,
     );
     await expect(page.getByTestId('trash-total')).toHaveText('Reclaiming 20 GB across 1 item');
   });
@@ -843,13 +843,12 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     page,
   }) => {
     await signIn(page, 'admin');
-    await page.goto('/settings/trash');
+    // IA reshuffle (build B) — the Batch policy form lives on the STORAGE tab now (the admin gate +
+    // default window moved to General). One green Save commits the whole form.
+    await page.goto('/settings/trash?tab=storage');
 
-    // The Batch policy section renders (DESIGN-014 amendment 2026-07-09, build A).
     await expect(page.getByTestId('batch-policy')).toBeVisible();
     await expect(page.getByTestId('policy-mode')).toBeVisible();
-    // The gate control is action-labelled, and there is exactly ONE form Save at the bottom.
-    await expect(page.getByTestId('gate-disable')).toHaveText('Disable');
     await expect(page.getByTestId('settings-save')).toHaveText('Save');
 
     // Edit the whole form, then commit it with the single green Save.
@@ -866,7 +865,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     ]);
 
     // Reload — the audited settings persisted.
-    await page.goto('/settings/trash');
+    await page.goto('/settings/trash?tab=storage');
     await expect(page.getByTestId('policy-mode')).toHaveValue('continuous');
     await expect(page.getByTestId('policy-mincandidates')).toHaveValue('5');
     await expect(page.getByTestId('policy-cap-maxitems-movie-enabled')).toBeChecked();

@@ -410,3 +410,39 @@ regression test). `overviewDeadlineLabel` no longer takes an injected `formatDay
 `space_policy.perKind` caps for the kind, the picker **pre-fills** from them (target mode on, the enabled
 caps populated, strategy defaulted to worst-rated). `trash.batches.create` already accepted
 `maxItems`/`strategy`; no wire change.
+
+## D-11 — Amendment 2026-07-09 (owner-directed, build B) — requested items start saved (overridable)
+
+Requester-carrying items (a `mediarequests` tag / a known requester on record) must never render as inert
+"protected" shields — the family should always be able to act on them. This amendment makes "requested"
+a **live, overridable saved state** rather than an inert guardian keep, on both the pending walls and the
+curation batch, backed by two additive columns (**migration 0026**): `trash_batch_items.saved_reason`
+(`'requested'` for a system auto-save; `NULL` for a human rescue) and `requested_override` (a sticky flag).
+
+**Batch snapshot (`createBatchFromPending`).** A non-tag-protected item that carries a requester is
+snapshotted **`saved`** with `saved_reason='requested'`, `saved_by=NULL` (no human saver) and **no
+Maintainerr exclusion** — auto-creating exclusions would mass-mutate Maintainerr, and the sweep guardian
+already keeps requester items, so the auto-save is an honest *display/curation* state (the person-shield),
+not a protection write. Because it is `saved`, it is excluded from the Leaving-Soon collection at
+green-light and is never a sweep candidate.
+
+**The un-save override (`setBatchItemSaved`).** A system requested auto-save is **un-savable by anyone with
+save rights for the phase** — the DESIGN-011 D-05 ownership gate governs HUMAN rescues, and a machine
+auto-keep has no human owner, so it is skipped for `saved_reason='requested'`. Un-saving one sets the sticky
+`requested_override` flag (and clears `saved_reason`), re-adds it to the Leaving-Soon collection, and writes
+an audited `trash_excluded` ledger event flagged `overrodeRequested:true`.
+
+**The sweep guardian honors the override (`sweepExpiredBatches`).** `classifyGuardian` still keeps a
+requester item, but a candidate whose keep reason is **`requested` AND `requested_override=true`** falls
+through to deletion — the override defeats *only* the requester keep (a dnd/watched/unevaluable keep still
+protects). Regression-tested precisely: **requested + never-unsaved → kept; requested + explicitly-unsaved
+→ deleted.**
+
+**Icons + walls.** User-saved = the existing filled **shield**; a requested auto-save = the **person-shield**
+(`RequesterShieldGlyph`, distinct, both-theme legible at 3-col 390px). On the **batch wall** the person-shield
+is tappable (un-save), and an overridden requester item reads as the slated trash-can. On the **live pending
+wall** a requested item is **never inert**: with no exclusion it is the person-shield and tapping SAVES it
+(adds the exclusion) exactly like a trash tile; once excluded it reads as the ordinary shield ("person-shield
+when no exclusion, shield when both"). The `getBatchSaveStats` "who rescued what" tuning card **excludes**
+system requested auto-saves (they are not human rescues and never write a `trash_batch_saves` row);
+`counts.saved` still counts them (they are genuinely `saved`).

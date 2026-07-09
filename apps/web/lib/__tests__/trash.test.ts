@@ -130,15 +130,23 @@ describe('pendingWallGlyph / pendingWallTappable (the pending WALL tap-toggle �
     // a save this session still wins — the watched item can be deliberately protected.
     expect(pendingWallGlyph({ ...cold, recentlyWatched: true }, 'saved')).toBe('shield');
   });
-  it('a personal requester (and no stronger keep) ⇒ the inert requested glyph, never a trash-can', () => {
-    // The guardian refuses a requested item's deletion (previewGuardian ⇒ protected_requested), so a
-    // slated trash-can would be dishonest — it renders inert like eye/check.
+  it('build B — a personal requester with NO exclusion ⇒ the person-shield, TAPPABLE as a save-toggle', () => {
+    // Owner ruling (build B): a requested item is NEVER inert on the live wall. Unprotected ⇒ the
+    // person-shield ('requested'), tappable ⇒ SAVE (tap adds the exclusion), exactly like a trash tile.
     expect(pendingWallGlyph({ ...cold, requesters: ['manofoz'] }, undefined)).toBe('requested');
-    expect(pendingWallTappable('requested', true, true)).toBe(false);
-    // tag/exclusion and the watch keep both outrank the requester (mirrors the guardian precedence).
+    expect(pendingWallTappable('requested', true, false)).toBe(true); // saves with save_exclude
+    expect(pendingWallTappable('requested', false, true)).toBe(false); // not a save right ⇒ inert
+    // "Shield when both": a requested item that is ALSO live-EXCLUDED (the reversible save) reads as
+    // the ordinary save shield (never inert) — tappable to UN-save — not the inert `check`.
+    expect(
+      pendingWallGlyph({ ...cold, protectedByExclusion: true, requesters: ['manofoz'] }, undefined),
+    ).toBe('shield');
+    // …but the deliberate dnd TAG (hard protection, un-protect on /library) stays the inert `check`
+    // even for a requester item.
     expect(
       pendingWallGlyph({ ...cold, protectedByTag: true, requesters: ['manofoz'] }, undefined),
     ).toBe('check');
+    // The watch keep still outranks the requester (a watched item is genuinely guardian-kept).
     expect(
       pendingWallGlyph({ ...cold, recentlyWatched: true, requesters: ['manofoz'] }, undefined),
     ).toBe('eye');

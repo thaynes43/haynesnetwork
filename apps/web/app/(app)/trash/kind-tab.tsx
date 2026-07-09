@@ -90,6 +90,10 @@ interface BatchItemWire {
   state: BatchItemStateName;
   savedBy: string | null;
   savedAt: string | null;
+  /** build B — 'requested' marks a SYSTEM auto-save (person-shield); null is an ordinary rescue. */
+  savedReason: 'requested' | null;
+  /** build B — a human un-saved a requester auto-save (the sweep will delete it). */
+  requestedOverride: boolean;
   posterUrl: string | null;
   imdbRating: number | null;
   tmdbRating: number | null;
@@ -144,10 +148,13 @@ function tileLabel(
       return `${title} is protected — already safe from deletion`;
     case 'eye':
       return `${title} was watched recently — the guardian keeps it`;
-    case 'requested':
-      return requesters.length > 0
-        ? `${title} was requested by ${requesters.join(', ')} — protected from deletion`
-        : `${title} was requested — protected from deletion`;
+    case 'requested': {
+      const who =
+        requesters.length > 0 ? `${title} was requested by ${requesters.join(', ')}` : `${title} was requested`;
+      // build B — on the batch wall the person-shield is a system auto-save: tappable ⇒ un-save it
+      // (it then deletes at sweep). Inert ⇒ the read-only "protected from deletion".
+      return tappable ? `${who} — auto-saved; tap to un-save it` : `${who} — protected from deletion`;
+    }
     case 'skip':
       return `${title} was kept — it couldn’t be verified safe, so it was never deleted`;
     case 'gone':
@@ -228,6 +235,8 @@ function PosterWall({
       recentlyWatched: item.recentlyWatched,
       requesters: item.requesters,
       sizeBytes: item.sizeBytes,
+      savedReason: item.savedReason,
+      requestedOverride: item.requestedOverride,
     })),
   );
 
@@ -250,8 +259,11 @@ function PosterWall({
       </p>
       <ul className="bwall" data-testid="batch-wall">
         {effective.map(({ item, state }) => {
-          const glyph = wallGlyph(state, item.recentlyWatched, item.requesters);
-          const tappable = tileTappable(ctx, glyph, item.savedBy);
+          const glyph = wallGlyph(state, item.recentlyWatched, item.requesters, {
+            savedReason: item.savedReason,
+            requestedOverride: item.requestedOverride,
+          });
+          const tappable = tileTappable(ctx, glyph, item.savedBy, { state });
           const savedByName = item.savedBy !== null ? (saverNames.get(item.savedBy) ?? null) : null;
           const label = tileLabel(item.title, glyph, tappable, savedByName, item.requesters);
           const rating = formatRating(
@@ -278,7 +290,7 @@ function PosterWall({
                 <button
                   type="button"
                   className="bwall-tap"
-                  aria-pressed={glyph === 'shield'}
+                  aria-pressed={glyph === 'shield' || glyph === 'requested'}
                   aria-label={label}
                   title={label}
                   aria-busy={inFlight.has(item.id) || undefined}

@@ -1,21 +1,24 @@
-// ADR-030 / DESIGN-013 D-05 (PLAN-013) — the /admin/storage page against the stubbed *arr
-// /diskspace route + the seeded space_targets (HaynesTower 80). Journeys:
-//   • both physical arrays render with the stub-derived % + capacity copy and the target tick;
-//   • the inline targets editor round-trips (optimistic tick move, persisted after reload) and is
-//     reflow-free (ADR-015);
-//   • reclaim is production-faithfully EMPTY (no batch has swept yet — trash-batches.spec runs
-//     later) with the first-class empty state, and the window switcher redrives the query;
-//   • the Grafana trend surface is a DEEP LINK (never an iframe — ADR-030 C-04);
-//   • the page fits a phone (AC-10 spot check at 390×844).
+// ADR-030/031/034 · IA reshuffle (2026-07-09, build B) — storage / policy / reclaim / notifications
+// now live on the tabbed Trash Settings hub (/settings/trash), NOT the retired /admin/storage page.
+// The storage.* routers/procedures are unchanged; only the UI moved. Journeys:
+//   • /admin/storage REDIRECTS to /settings/trash?tab=storage (old deep links stay alive);
+//   • Storage tab: both physical arrays render with the stub-derived % + capacity + target tick; the
+//     inline targets editor round-trips (optimistic tick move, persisted) and is reflow-free (ADR-015);
+//     the Grafana trend surface is a DEEP LINK (never an iframe — ADR-030 C-04);
+//   • Reclaim tab: production-faithfully EMPTY, and the window switcher redrives the query;
+//   • the Storage tab fits a phone (AC-10 spot check at 390×844).
 // Leaves the seeded target back at 80 so later specs (and re-runs) see the seeded state.
 import { test, expect, type Page } from '@playwright/test';
 import { armAndConfirm, expectViewportFit, signIn } from './support/helpers';
 
-async function openStorage(page: Page): Promise<void> {
-  await page.goto('/admin');
-  await page.locator('.admin-nav').getByRole('link', { name: 'Storage' }).click();
-  await page.waitForURL('/admin/storage');
-  await expect(page.getByRole('heading', { name: 'Storage' })).toBeVisible();
+/** Open a tab of the Trash Settings hub directly (admins pass the trash-edit page gate). */
+async function openTab(page: Page, tab: 'general' | 'storage' | 'reclaim' | 'rules'): Promise<void> {
+  await page.goto(`/settings/trash?tab=${tab}`);
+  await expect(page.getByRole('tab', { name: tabLabel(tab) })).toHaveAttribute('aria-selected', 'true');
+}
+
+function tabLabel(tab: string): string {
+  return tab.charAt(0).toUpperCase() + tab.slice(1);
 }
 
 /** Save the HaynesTower target and wait for the persisted round-trip ("Saved" status). */
@@ -25,14 +28,22 @@ async function saveTarget(page: Page, value: string): Promise<void> {
   await expect(page.getByTestId('array-haynestower').getByRole('status')).toHaveText('Saved');
 }
 
-test.describe('storage metrics (ADR-030 HYBRID, native half)', () => {
+test.describe('storage metrics (ADR-030 HYBRID, native half) — on the Trash Settings hub', () => {
   test.describe.configure({ mode: 'serial' });
+
+  test('/admin/storage redirects to the Storage tab (old deep links stay alive)', async ({ page }) => {
+    await signIn(page, 'admin');
+    await page.goto('/admin/storage');
+    await page.waitForURL('**/settings/trash?tab=storage');
+    await expect(page.getByRole('tab', { name: 'Storage' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByTestId('array-haynestower')).toBeVisible();
+  });
 
   test('utilization: both arrays render the stub-derived % · capacity · target tick', async ({
     page,
   }) => {
     await signIn(page, 'admin');
-    await openStorage(page);
+    await openTab(page, 'storage');
 
     // HaynesTower: 112.43/529.96 TB ⇒ 78.8% used (the owner's cross-check number), target 80 seeded.
     const tower = page.getByTestId('array-haynestower');
@@ -59,13 +70,12 @@ test.describe('storage metrics (ADR-030 HYBRID, native half)', () => {
     page,
   }) => {
     await signIn(page, 'admin');
-    await openStorage(page);
+    await openTab(page, 'storage');
 
     const meter = page.getByTestId('array-haynestower').getByRole('meter');
     const before = await meter.boundingBox();
 
     await saveTarget(page, '85');
-    // The tick moved (optimistically, then confirmed) — and ONLY recolored/slid: no reflow.
     await expect(page.getByTestId('target-tick-haynestower')).toHaveAttribute('data-target', '85');
     const after = await meter.boundingBox();
     expect(Math.abs(after!.y - before!.y)).toBeLessThanOrEqual(1);
@@ -81,9 +91,9 @@ test.describe('storage metrics (ADR-030 HYBRID, native half)', () => {
     await expect(page.getByTestId('target-tick-haynestower')).toHaveAttribute('data-target', '80');
   });
 
-  test('reclaim: graceful empty state + window switcher redrives the report', async ({ page }) => {
+  test('reclaim tab: graceful empty state + window switcher redrives the report', async ({ page }) => {
     await signIn(page, 'admin');
-    await openStorage(page);
+    await openTab(page, 'reclaim');
 
     // Production-faithful: nothing has swept yet, and that is a first-class state.
     await expect(page.getByTestId('reclaim-headline')).toHaveText(
@@ -91,7 +101,6 @@ test.describe('storage metrics (ADR-030 HYBRID, native half)', () => {
     );
     const empty = page.getByTestId('reclaim-empty');
     await expect(empty).toContainText('Reclaim accrues when Leaving-Soon batches expire and sweep');
-    // No bars/curve/table pretending to be data.
     await expect(page.getByTestId('reclaim-bars')).toHaveCount(0);
     await expect(page.getByTestId('reclaim-batches')).toHaveCount(0);
 
@@ -115,7 +124,7 @@ test.describe('storage metrics (ADR-030 HYBRID, native half)', () => {
     page,
   }) => {
     await signIn(page, 'admin');
-    await openStorage(page);
+    await openTab(page, 'storage');
 
     const link = page.getByTestId('grafana-trend-link');
     await expect(link).toHaveAttribute(
@@ -124,38 +133,38 @@ test.describe('storage metrics (ADR-030 HYBRID, native half)', () => {
     );
     await expect(link).toHaveAttribute('target', '_blank');
     await expect(link).toContainText('Free-space trend & history');
-    // C-04: the dashboard is linked out, not framed in.
     await expect(page.locator('iframe')).toHaveCount(0);
   });
 
-  test('phone (390×844): cards, editor and reclaim fit with no page-level overflow', async ({
+  test('phone (390×844): the Storage + Reclaim tabs fit with no page-level overflow', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await signIn(page, 'admin');
-    await page.goto('/admin/storage');
+    await openTab(page, 'storage');
     await expect(page.getByTestId('array-stats-haynestower')).toBeVisible();
+    await expectViewportFit(page);
+    await openTab(page, 'reclaim');
     await expect(page.getByTestId('reclaim-empty')).toBeVisible();
     await expectViewportFit(page);
   });
 });
 
-// ADR-031 / DESIGN-014 (PLAN-014) — the propose-only "Space policy" card + the rules-tuning /
-// graduation block. Journeys: default OFF; the enable ceremony (two-step ConfirmButton) flips it ON;
-// the per-array opt-in; the tuning block renders its (production-faithful) empty state + graduation
+// ADR-031 / DESIGN-014 — the propose-only "Space policy" card + the rules-tuning / graduation block,
+// now on the Storage tab. Journeys: default OFF; the enable ceremony (two-step ConfirmButton) flips it
+// ON; the per-array opt-in; the tuning block renders its (production-faithful) empty state + graduation
 // readiness. Leaves the policy OFF + the array opted out so later specs see the default.
-test.describe('space policy (ADR-031, propose-only)', () => {
+test.describe('space policy (ADR-031, propose-only) — Storage tab', () => {
   test.describe.configure({ mode: 'serial' });
 
   test('card defaults OFF, enables via two-step confirm, opts the array in, and disables', async ({
     page,
   }) => {
     await signIn(page, 'admin');
-    await openStorage(page);
+    await openTab(page, 'storage');
 
     const card = page.getByTestId('space-policy');
     await expect(card.getByRole('heading', { name: 'Space policy' })).toBeVisible();
-    // Default OFF — no batches proposed automatically.
     await expect(page.getByTestId('policy-state')).toContainText('OFF');
 
     // Enable is a two-step ConfirmButton (ADR-014) — it never deletes, only proposes for review.
@@ -163,11 +172,9 @@ test.describe('space policy (ADR-031, propose-only)', () => {
     await expect(page.getByTestId('policy-state')).toContainText('ON');
     await expect(page.getByTestId('policy-disable')).toBeVisible();
 
-    // Per-array opt-in (HaynesTower is over/under its 80% target from the stub — either way opt-in works).
     await page.getByTestId('policy-array-enable').click();
     await expect(page.getByTestId('policy-array-state')).toContainText('Opted in');
 
-    // Status line is present (no proposal yet in a fresh seed).
     await expect(page.getByTestId('policy-status')).toContainText('Last proposal');
 
     // Restore defaults for later specs: opt out, then turn the policy off.
@@ -179,38 +186,43 @@ test.describe('space policy (ADR-031, propose-only)', () => {
 
   test('tuning + graduation block renders (empty-state, not-yet graduation)', async ({ page }) => {
     await signIn(page, 'admin');
-    await openStorage(page);
+    await openTab(page, 'storage');
 
     const tuning = page.getByTestId('policy-tuning');
     await expect(tuning.getByRole('heading', { name: 'Rules tuning & graduation' })).toBeVisible();
-    // Production-faithful: no curated batch has reached a verdict yet.
     await expect(page.getByTestId('tuning-empty')).toBeVisible();
-    // Graduation readiness reads "not yet" against the suggested bar.
     await expect(page.getByTestId('graduation-verdict')).toContainText('Not yet');
     await expect(page.getByTestId('graduation-verdict')).toContainText('of 3');
   });
 });
 
-// ADR-034 / DESIGN-015 (PLAN-016) — the Pushover delivery-window "Notifications" card. Light journey:
-// it renders the default 6 PM–10 PM ET summary, a hour edit round-trips (persisted, "Saved" status),
-// and it is reflow-free (ADR-015). Leaves the window back at the seeded default for later runs.
-test.describe('notifications delivery window (ADR-034)', () => {
-  test('card renders the all-day default and a save round-trips', async ({ page }) => {
+// ADR-034 / DESIGN-015 (PLAN-016) — the Pushover delivery-window "Notifications" card, relocated to
+// the GENERAL tab and folded into that tab's single green Save (build B). Light journey: it renders
+// the all-day default 0..24 summary, an hour edit round-trips (persisted), and it is reflow-free. Leaves
+// the window back at the seeded all-day default for later runs.
+test.describe('notifications delivery window (ADR-034) — General tab', () => {
+  test('the card lives in General and a save round-trips via the single green Save', async ({
+    page,
+  }) => {
     await signIn(page, 'admin');
-    await openStorage(page);
+    await openTab(page, 'general');
 
     const card = page.getByTestId('notify-window');
     await expect(card.getByRole('heading', { name: 'Notifications' })).toBeVisible();
-    // Build-A default: ALL DAY (no gating) — 0..24 Eastern (was 6 PM – 10 PM).
     await expect(page.getByTestId('notify-window-summary')).toContainText('All day');
     await expect(page.getByTestId('notify-start')).toHaveValue('0');
     await expect(page.getByTestId('notify-end')).toHaveValue('24');
 
-    // Narrow to a real quiet-hours window and save — the audited storage.notify.window.set round-trips.
+    // Narrow to a real quiet-hours window and save — the audited storage.notify.window.set round-trips
+    // through the General tab's single green Save (not a per-card Save).
     await page.getByTestId('notify-start').fill('18');
     await page.getByTestId('notify-end').fill('22');
-    await page.getByTestId('notify-save').click();
-    await expect(card.getByRole('status')).toHaveText('Saved');
+    await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().includes('storage.notify.window.set') && r.request().method() === 'POST',
+      ),
+      page.getByTestId('general-save').click(),
+    ]);
     await page.reload();
     await expect(page.getByTestId('notify-start')).toHaveValue('18');
     await expect(page.getByTestId('notify-window-summary')).toContainText('6 PM – 10 PM');
@@ -218,7 +230,12 @@ test.describe('notifications delivery window (ADR-034)', () => {
     // Restore the all-day default so later specs/re-runs see it.
     await page.getByTestId('notify-start').fill('0');
     await page.getByTestId('notify-end').fill('24');
-    await page.getByTestId('notify-save').click();
-    await expect(card.getByRole('status')).toHaveText('Saved');
+    await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().includes('storage.notify.window.set') && r.request().method() === 'POST',
+      ),
+      page.getByTestId('general-save').click(),
+    ]);
+    await expect(page.getByTestId('notify-window-summary')).toContainText('All day');
   });
 });

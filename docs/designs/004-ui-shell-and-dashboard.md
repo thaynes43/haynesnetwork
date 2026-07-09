@@ -411,7 +411,7 @@ re-listing routes.
 | `/library/[id]`     | authed | `(app)/library/[id]/page.tsx`     | Item detail + write-back actions: Fix, Force Search, roll-up scopes (ADR-011); `item-detail.tsx` + `fix-dialog.tsx` + `force-search-dialog.tsx`.    |
 | `/my-fixes`         | authed | `(app)/my-fixes/page.tsx`         | **Legacy route — server-redirects to `/library?tab=my-fixes` (2026-07-05).** My Fixes is now a Library sub-tab; the redirect keeps old deep links working.                                                                           |
 | `/ledger`           | authed, Ledger section ≥ Read-Only | `(app)/ledger/page.tsx` | **(PLAN-005 — DESIGN-009.)** The Ledger section: Movies · TV · Music sub-tabs over a frozen-pane spreadsheet of the WHOLE ledger (tombstones included), the shared filter chips + `?mon`/`?file` dims, JSONL export of the current filter, and the Edit-gated bulk **Monitor & search** (Modal confirm → per-item run report). Disabled roles get a clean "not available" state (`ledger-client.tsx` renders the section; the server page gates). |
-| `/settings/trash`   | authed, Trash section = Edit | `(app)/settings/trash/page.tsx` | **(ADR-032 — D-16.)** The relocated Trash settings: safety banner + the Maintainerr **Rules** list (arm/disarm/delete — moved from the `/trash` Rules tab) + the admin-only **Batch pipeline** card (skip-gate, default save window — moved from the Batches tab). Reached from the user menu ("Trash settings"). Below Edit renders the clean "not available" state (`trash-settings-unavailable`). |
+| `/settings/trash`   | authed, Trash section = Edit | `(app)/settings/trash/page.tsx` | **(ADR-032 — D-16; TABBED hub as of build B, D-16a.)** The Trash settings hub: safety banner above a `?tab=`-driven tablist (`.library-tabs`) — **General** (admin gate + default save window + the Notifications delivery window, moved from `/admin/storage`), **Storage** (utilization meters + space targets + Space policy + Batch policy + the Grafana deep-link, all moved from `/admin/storage`), **Reclaim** (the reclaim-attribution report, moved from `/admin/storage`), and **Rules** (the Maintainerr rules list). Page gate is Trash-Edit; General/Storage/Reclaim read adminProcedures so they are admin-only tabs — a trash-edit-but-not-admin viewer sees only **Rules**. Reached from the user menu ("Trash settings"). Below Edit renders the clean "not available" state (`trash-settings-unavailable`). |
 | `/admin`            | Admin  | `(app)/admin/page.tsx`            | Users list: table (cards <760px) of displayName, email, **Role** (ADR-012 — no Family/Tags/Grants columns) → row links to detail.                    |
 | `/admin/users/[id]` | Admin  | `(app)/admin/users/[id]/page.tsx` | A single **Role `<select>`** → `users.setRole` (ADR-012); the role's apps shown read-only for context (edit them on `/admin/roles`); LAST_ADMIN/not-found surface in the alert (`user-detail.tsx`). |
 | `/admin/catalog`    | Admin  | `(app)/admin/catalog/page.tsx`    | Entries table. **Add** opens a `Modal` (`components/modal.tsx`) with the create form; **Edit** expands the row *in place* into an inline editor (no shared bottom form). The **URL is a plain text field** (ADR-013 — any `http(s)` URL, any host): the admin types a URL and the client normalizes it for live feedback via `normalizeCatalogUrl`/`catalogUrlError` (mirror in `lib/catalog-url.ts` of the authoritative `packages/domain` copy — DESIGN-003 D-04); the domain re-normalizes and is authoritative on write. Bare hosts default to `https://`, an explicit scheme is preserved; an unparseable/non-http(s) value surfaces inline. Icon picker, reorder → `catalog.reorder`. The slug input's `pattern` is `[a-z0-9\-]+` (the un-escaped `[a-z0-9-]+` is invalid under the browser `v`-flag regex engine and silently blocked the Add form's native submit); inline validation errors render as a prominent `.field-error` pill. Icon picker; **reorder is native-HTML5 drag-and-drop + keyboard arrow-move** (grip glyph `⠿` doubles as the keyboard handle, `aria-live` announces each move) — the whole row drags, and the drop commits the **full `orderedIds` array to `catalog.reorder`** optimistically (ADR-015 / D-14; replaces the old `↑`/`↓` buttons). _(ADR-012: the "Default" column + defaultVisible checkbox are removed.)_ |
@@ -680,6 +680,36 @@ process call — no new plan doc).
   `data-theme` before hydration completes; per-role visibility with stubbed OIDC —
   Member sees default tiles only (AC-04) and no Admin menu entry; Admin sees the admin
   link; every tile href is a valid `http(s)` URL (AC-04; ADR-013 dropped the host match).
+
+### D-16a — Amendment 2026-07-09 (owner-directed, build B) — Trash Settings becomes a tabbed hub
+
+`/settings/trash` is now a **tabbed hub** and `/admin/storage` is **retired**. Everything storage / target
+/ policy / reclaim / notifications moved off the standalone `/admin/storage` page into the hub; the
+`storage.*` (and `trash.settings.*` / `trash.tuning`) routers and procedures are **unchanged** — only the
+UI moved.
+
+- **Tabs** (URL `?tab=`-driven `role="tablist"` reusing `.library-tabs`, roving-tabindex keyboard nav — the
+  same contract as `/trash` · `/library` · `/ledger`): **General** · **Storage** · **Reclaim** · **Rules**.
+  The safety banner sits **above** the tab strip (it governs rule edits regardless of tab).
+- **General** — the admin gate (a separate immediate ConfirmButton ceremony) + a single green Save form
+  combining the default save window and the Notifications delivery window (moved from `/admin/storage`).
+- **Storage** — utilization meters + per-array space targets (each keeps its optimistic tick save — a
+  direct manipulation, ADR-015, not a form) + the Space policy card (enable ceremony / per-array opt-in /
+  tuning + graduation) + the **Batch policy** #134 form (mode / min candidates / cooldown / per-kind caps,
+  one green Save) + the Grafana deep-link.
+- **Reclaim** — the reclaim-attribution report (window switcher + bang-for-buck bars + cumulative + per-batch
+  table). A read surface, no Save.
+- **Rules** — the Maintainerr rules list (arm/disarm/delete), unchanged.
+- **Save discipline** — "single green primary Save per form per tab" (the #134 pattern): the knobs that
+  logically commit together share ONE green Save; genuinely-separate immediate audited actions (the admin
+  gate + the policy-enable ConfirmButtons, per-array opt-in) stay their own immediate ceremonies; and the
+  per-array space-target editors keep their inline optimistic saves (ADR-015 direct manipulation).
+- **Gating** — the page gate is Trash-Edit (ADR-032); admins imply it. General/Storage/Reclaim read
+  adminProcedures, so those three tabs are **admin-only** (the tab strip lists only what the viewer can
+  use); a trash-edit-but-not-admin viewer lands on **Rules**.
+- **Routing** — `/admin/storage` server-redirects to `/settings/trash?tab=storage` (old deep links + book-
+  marks stay alive, mirroring `/admin/restore` → `/trash`); the **Storage** item is removed from the admin
+  sub-nav (other `/admin/*` links unchanged).
 
 ## Open questions
 

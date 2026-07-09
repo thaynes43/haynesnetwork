@@ -237,7 +237,8 @@ function tileInfo(item: PendingItem, glyph: PendingWallGlyph): string {
         : 'Protected — excluded in Maintainerr',
     );
   else if (glyph === 'requested')
-    lines.push(`Requested by ${item.requesters.join(', ')} — protected from deletion`);
+    // build B — the person-shield is a live save-toggle now, not an inert marker: tap ⇒ save it.
+    lines.push(`Requested by ${item.requesters.join(', ')} — tap to save it`);
   if (item.recentlyWatched) lines.push('Recently watched — the guardian keeps it');
   // The requester names ride the dedicated 'requested' line above; only add the plain fact for the
   // OTHER glyphs (e.g. a watched or saved item that also happens to carry a requester).
@@ -379,7 +380,9 @@ function PendingTab({
   const toggleShield = (item: PendingItem, glyph: PendingWallGlyph) => {
     const id = item.maintainerrMediaId;
     if (id === null || shieldBusy.has(id)) return;
-    const saving = glyph === 'trash';
+    // build B — the requested person-shield saves like a trash tile (tap ⇒ add the exclusion);
+    // only the filled `shield` un-saves.
+    const saving = glyph === 'trash' || glyph === 'requested';
     const prev = shieldOverrides.get(id);
     setShieldOverrides((m) => new Map(m).set(id, saving ? 'saved' : 'unsaved'));
     setShieldBusy((s) => new Set(s).add(id));
@@ -637,7 +640,9 @@ function PendingTab({
                   : glyph === 'eye'
                     ? `${item.title} was watched recently — the guardian keeps it`
                     : glyph === 'requested'
-                      ? `${item.title} was requested by ${item.requesters.join(', ')} — protected from deletion`
+                      ? tappable
+                        ? `Save ${item.title} — requested by ${item.requesters.join(', ')}; tap to protect it`
+                        : `${item.title} was requested by ${item.requesters.join(', ')} — protected from deletion`
                       : tappable
                         ? `${item.title} is slated to delete — tap to save it`
                         : `${item.title} is slated to delete`;

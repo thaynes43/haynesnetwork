@@ -22,8 +22,9 @@ export default async function AdminLayout({ children }: { children: ReactNode })
         <Link href="/admin/fixes">Fixes</Link>
         {/* ADR-027 / DESIGN-004 D-15 (PLAN-010) — the dashboard Message-of-the-Day compose surface. */}
         <Link href="/admin/motd">MOTD</Link>
-        {/* ADR-030 / DESIGN-013 D-05 (PLAN-013) — disk utilization + reclaim metrics (HYBRID native half). */}
-        <Link href="/admin/storage">Storage</Link>
+        {/* IA reshuffle (2026-07-09, build B) — the Storage nav item is retired: disk utilization +
+            reclaim + policy moved into the tabbed Trash Settings hub (user menu → Trash settings →
+            Storage/Reclaim). /admin/storage now redirects to /settings/trash?tab=storage. */}
         {/* ADR-023 / DESIGN-010 D-08 — the Restore nav item is retired: its capability re-homes
             into the Trash section's Recently-Deleted (and PLAN-005's Ledger). /admin/restore now
             redirects to /trash; restoreRouter stays callable. */}

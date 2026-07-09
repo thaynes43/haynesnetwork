@@ -83,14 +83,22 @@ async function main(): Promise<void> {
     await shoot(dpage, 'dropdown-admin-desktop-light');
     await dpage.keyboard.press('Escape');
 
-    // ── ADMIN: /settings/trash (rules + pipeline card) ───────────────────────────────────
+    // ── ADMIN: /settings/trash — the tabbed hub (build B). Land on General, then shoot each tab. ──
     await setTheme(dpage, 'hnet-dark');
     await openMenu(dpage);
     await dpage.getByRole('menuitem', { name: 'Trash settings' }).click();
-    await dpage.waitForURL('**/settings/trash');
+    await dpage.waitForURL('**/settings/trash**');
+    await dpage.getByTestId('trash-settings').waitFor(); // General card
+    await shoot(dpage, 'settings-trash-general-desktop-dark');
+    await dpage.getByTestId('settingstab-storage').click();
+    await dpage.getByTestId('space-policy').waitFor();
+    await shoot(dpage, 'settings-trash-storage-desktop-dark');
+    await dpage.getByTestId('settingstab-reclaim').click();
+    await dpage.getByTestId('reclaim-headline').waitFor();
+    await shoot(dpage, 'settings-trash-reclaim-desktop-dark');
+    await dpage.getByTestId('settingstab-rules').click();
     await dpage.getByTestId('trash-rules').waitFor();
-    await dpage.getByTestId('trash-settings').waitFor();
-    await shoot(dpage, 'settings-trash-desktop-dark');
+    await shoot(dpage, 'settings-trash-rules-desktop-dark');
     await desktop.close();
 
     // ── ADMIN: mobile 390 — the four-link row breathes now ───────────────────────────────
