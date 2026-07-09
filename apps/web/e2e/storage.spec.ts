@@ -213,6 +213,20 @@ test.describe('notifications delivery window (ADR-034) — General tab', () => {
     await expect(page.getByTestId('notify-start')).toHaveValue('0');
     await expect(page.getByTestId('notify-end')).toHaveValue('24');
 
+    // Fable UX regression guard (owner 2026-07-09): the delivery-window From/To hour inputs and the
+    // Timezone select use the SHARED themed input surface — never the browser-default WHITE that stood
+    // out on the dark UI (same defect class as the earlier Bulletin-composer fix). Their background must
+    // resolve to a themed color, never `rgb(255, 255, 255)` / transparent, in whichever theme runs.
+    for (const control of [
+      page.getByTestId('notify-start'),
+      page.getByTestId('notify-end'),
+      page.getByTestId('notify-tz'),
+    ]) {
+      const bg = await control.evaluate((el) => getComputedStyle(el).backgroundColor);
+      expect(bg).not.toBe('rgb(255, 255, 255)');
+      expect(bg).not.toBe('rgba(0, 0, 0, 0)');
+    }
+
     // Narrow to a real quiet-hours window and save — the audited storage.notify.window.set round-trips
     // through the General tab's single green Save (not a per-card Save).
     await page.getByTestId('notify-start').fill('18');

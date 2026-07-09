@@ -843,13 +843,18 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     page,
   }) => {
     await signIn(page, 'admin');
-    // IA reshuffle (build B) — the Batch policy form lives on the STORAGE tab now (the admin gate +
-    // default window moved to General). One green Save commits the whole form.
-    await page.goto('/settings/trash?tab=storage');
+    // IA reshuffle (build C) — the Batch policy form lives on the GENERAL tab now (batch composition is
+    // pipeline behavior, not storage). It keeps its OWN single green Save, a sibling card below the
+    // consolidated admin-gate/save-window/Notifications form. One green Save commits the whole form.
+    await page.goto('/settings/trash?tab=general');
 
     await expect(page.getByTestId('batch-policy')).toBeVisible();
     await expect(page.getByTestId('policy-mode')).toBeVisible();
     await expect(page.getByTestId('settings-save')).toHaveText('Save');
+    // And it's GONE from the Storage tab (the move, not a copy).
+    await page.goto('/settings/trash?tab=storage');
+    await expect(page.getByTestId('batch-policy')).toHaveCount(0);
+    await page.goto('/settings/trash?tab=general');
 
     // Edit the whole form, then commit it with the single green Save.
     await page.getByTestId('policy-mode').selectOption('continuous');
@@ -865,7 +870,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     ]);
 
     // Reload — the audited settings persisted.
-    await page.goto('/settings/trash?tab=storage');
+    await page.goto('/settings/trash?tab=general');
     await expect(page.getByTestId('policy-mode')).toHaveValue('continuous');
     await expect(page.getByTestId('policy-mincandidates')).toHaveValue('5');
     await expect(page.getByTestId('policy-cap-maxitems-movie-enabled')).toBeChecked();
