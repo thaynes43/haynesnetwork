@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.0](https://github.com/thaynes43/haynesnetwork/compare/v0.21.0...v0.22.0) (2026-07-09)
+
+
+### Features
+
+* Pushover batch notifications with delivery window (PLAN-016) ([#126](https://github.com/thaynes43/haynesnetwork/issues/126)) ([9b408dd](https://github.com/thaynes43/haynesnetwork/commit/9b408ddce1f12b188dc99326922deb1289ce33b9))
+
 ## [0.21.0](https://github.com/thaynes43/haynesnetwork/compare/v0.20.1...v0.21.0) (2026-07-08)
 
 
