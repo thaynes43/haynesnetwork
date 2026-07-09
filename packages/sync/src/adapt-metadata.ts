@@ -244,6 +244,11 @@ export function tautulliDate(value: number | string | null | undefined): Date | 
 export interface WatchStat {
   playCount: number;
   lastViewedAt: Date | null;
+  /** DESIGN-010 D-12 — the estate slug (instanceSlug) whose contribution produced `lastViewedAt`
+   *  (the cross-server MAX): the attribution the trash walls surface as "Last watched on <server>".
+   *  Null when the title was never watched on any server (lastViewedAt null). Derived here from the
+   *  SAME per-instance data the harvest already collects — no extra Tautulli calls. */
+  lastWatchedServer: string | null;
   perInstance: Record<string, { playCount: number; lastViewedAt: string | null }>;
 }
 
@@ -257,16 +262,22 @@ export interface WatchContribution {
 /**
  * DESIGN-008 D-04 (cross-server addendum) — merge one title's per-instance contributions into
  * the UNIFIED signal: play_count = SUM across servers, last_viewed_at = MAX across servers,
- * with the per-instance breakdown preserved for extra.tautulli. Pure + heavily unit-tested.
+ * with the per-instance breakdown preserved for extra.tautulli. DESIGN-010 D-12 additionally
+ * records `lastWatchedServer` = the instance that OWNS that max (the watch-visibility attribution),
+ * from the same data (no extra reads). Pure + heavily unit-tested.
  */
 export function mergeWatchContributions(contributions: readonly WatchContribution[]): WatchStat {
   let playCount = 0;
   let lastViewedAt: Date | null = null;
+  let lastWatchedServer: string | null = null;
   const perInstance: WatchStat['perInstance'] = {};
   for (const c of contributions) {
     playCount += c.playCount;
+    // Strict `>` — the FIRST server to reach a given max keeps the attribution (deterministic given
+    // the contribution order); a later tie doesn't steal it.
     if (c.lastViewedAt && (!lastViewedAt || c.lastViewedAt > lastViewedAt)) {
       lastViewedAt = c.lastViewedAt;
+      lastWatchedServer = c.instanceSlug;
     }
     const prev = perInstance[c.instanceSlug];
     perInstance[c.instanceSlug] = {
@@ -277,7 +288,7 @@ export function mergeWatchContributions(contributions: readonly WatchContributio
           : (prev?.lastViewedAt ?? null),
     };
   }
-  return { playCount, lastViewedAt, perInstance };
+  return { playCount, lastViewedAt, lastWatchedServer, perInstance };
 }
 
 /** Map a resolved Tautulli metadata record to its join ids (movies map by tmdb/imdb; episodes

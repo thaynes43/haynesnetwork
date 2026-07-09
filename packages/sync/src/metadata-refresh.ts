@@ -239,6 +239,11 @@ export async function runMetadataRefreshForKind(
       sourceCollections,
       playCount: watch?.playCount ?? null,
       lastViewedAt: watch?.lastViewedAt ?? null,
+      // DESIGN-010 D-12 — the watch-visibility pair: the SAME cross-server MAX instant as
+      // lastViewedAt, stored with the server that owns it so the walls/detail can show
+      // "Last watched on <server> · <Mon YYYY>". Info only — protection reads lastViewedAt.
+      lastWatchedAt: watch?.lastViewedAt ?? null,
+      lastWatchedServer: watch?.lastWatchedServer ?? null,
       sources: sourcesFlags,
       extra,
     });

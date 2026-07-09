@@ -150,6 +150,10 @@ async function main(): Promise<void> {
     `SELECT id FROM media_items WHERE arr_kind = 'radarr' AND arr_item_id = 602`,
   );
   const runnerItemId = runnerRows[0]?.id;
+  const { rows: vanishedRows } = await getPool().query<{ id: string }>(
+    `SELECT id FROM media_items WHERE arr_kind = 'radarr' AND arr_item_id = 604`,
+  );
+  const vanishedItemId = vanishedRows[0]?.id;
   await upsertMediaMetadataBatch({
     rows: [
       {
@@ -164,6 +168,12 @@ async function main(): Promise<void> {
         posterSource: 'arr',
         posterRef: '/MediaCover/501/poster.jpg?lastWrite=1',
         playCount: 3,
+        // DESIGN-010 D-12 — Breaking Prod was last watched ~1yr ago on HaynesTower: NOT recently
+        // watched. On the (requested) TV tile the person-shield keeps the CORNER and the muted watch
+        // indicator rides the caption/tooltip — the documented precedence (requested wins the corner).
+        lastViewedAt: new Date(Date.now() - 365 * 86_400_000),
+        lastWatchedAt: new Date(Date.now() - 365 * 86_400_000),
+        lastWatchedServer: 'haynestower',
         sources: { arr: true, tautulli: true },
         extra: { tautulli: { haynestower: { playCount: 3, lastViewedAt: null } } },
       },
@@ -185,7 +195,27 @@ async function main(): Promise<void> {
               // Trash pending wall has a RECENTLY-WATCHED tile the expedite guardian protects.
               playCount: 2,
               lastViewedAt: new Date(Date.now() - 3 * 86_400_000),
+              // DESIGN-010 D-12 — the same recent watch, now attributed: its /library deletion-guard
+              // card gains the "Last watched on HaynesOps · <Mon YYYY>" line.
+              lastWatchedAt: new Date(Date.now() - 3 * 86_400_000),
+              lastWatchedServer: 'haynesops',
               sources: { arr: true, tautulli: true },
+            },
+          ]
+        : []),
+      // DESIGN-010 D-12 — Vanished Heist is a WATCHED-A-WHILE-AGO slated candidate (watched ~1yr ago
+      // on HaynesKube): NOT recently watched, so it stays the slated trash-can (fully actionable —
+      // save/slate/delete) AND shows the muted watch indicator + "Last watched on HaynesKube" tooltip
+      // (info, not protection). Watch-ONLY (no genres/rating) so the Genre=Action filter + Size sort
+      // + rating specs are unmoved. (Vanished is tombstoned; metadata survives a tombstone.)
+      ...(vanishedItemId
+        ? [
+            {
+              mediaItemId: vanishedItemId,
+              lastViewedAt: new Date(Date.now() - 400 * 86_400_000),
+              lastWatchedAt: new Date(Date.now() - 400 * 86_400_000),
+              lastWatchedServer: 'hayneskube',
+              sources: { tautulli: true },
             },
           ]
         : []),

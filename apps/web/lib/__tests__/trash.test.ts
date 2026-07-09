@@ -9,6 +9,8 @@ import {
   daysUntil,
   deadlineCountdown,
   expediteErrorAction,
+  formatWatchMonth,
+  lastWatchedLabel,
   overviewBadge,
   overviewCardTone,
   overviewDeadlineLabel,
@@ -17,6 +19,8 @@ import {
   pendingWallTappable,
   previewGuardian,
   reclaimLabel,
+  watchedLongAgo,
+  watchServerLabel,
   type GuardianPreviewInput,
   type OverviewBatchLike,
 } from '../trash';
@@ -158,6 +162,58 @@ describe('pendingWallGlyph / pendingWallTappable (the pending WALL tap-toggle �
     expect(
       pendingWallGlyph({ ...cold, protectedByExclusion: true }, 'unsaved'),
     ).toBe('trash');
+  });
+
+  // DESIGN-010 D-12 — the watch-visibility indicator NEVER touches the corner glyph. A watched-a-
+  // while-ago item still resolves to its normal glyph (trash / requested / …); the muted indicator
+  // is a separate meta-line element, and the corner precedence is unchanged. requested wins the
+  // corner; the watch info moves to the caption/tooltip (this is the documented precedence).
+  it('D-12 — a watched-long-ago item keeps its corner glyph (requested wins; watch → caption)', () => {
+    // requested + watched-long-ago ⇒ still the person-shield corner (watch info is a separate note).
+    expect(pendingWallGlyph({ ...cold, requesters: ['manofoz'] }, undefined)).toBe('requested');
+    // unprotected + watched-long-ago ⇒ still the slated trash-can (deletable), NOT the inert eye
+    // (the eye corner is reserved for RECENTLY-watched; long-ago is info-only).
+    expect(pendingWallGlyph(cold, undefined)).toBe('trash');
+  });
+});
+
+describe('watch visibility helpers (DESIGN-010 D-12 — info, not protection)', () => {
+  it('watchServerLabel maps estate slugs to display names; unknown slug is verbatim; blank → null', () => {
+    expect(watchServerLabel('haynesops')).toBe('HaynesOps');
+    expect(watchServerLabel('hayneskube')).toBe('HaynesKube');
+    expect(watchServerLabel('haynestower')).toBe('HaynesTower');
+    expect(watchServerLabel('somethingelse')).toBe('somethingelse');
+    expect(watchServerLabel(null)).toBeNull();
+    expect(watchServerLabel('  ')).toBeNull();
+  });
+
+  it('formatWatchMonth renders "Mon YYYY" in the app tz; bad/absent input → null', () => {
+    // 2024-07-15T02:00:00Z = Jul 14 22:00 EDT — still July in ET.
+    expect(formatWatchMonth('2024-07-15T02:00:00Z')).toBe('Jul 2024');
+    // 2025-01-01T02:00:00Z = Dec 31 2024 21:00 EST — the ET calendar month is Dec 2024.
+    expect(formatWatchMonth('2025-01-01T02:00:00Z')).toBe('Dec 2024');
+    expect(formatWatchMonth(null)).toBeNull();
+    expect(formatWatchMonth('not-a-date')).toBeNull();
+  });
+
+  it('watchedLongAgo is true only for a known last-watch that is NOT recently watched', () => {
+    expect(watchedLongAgo({ lastWatchedAt: '2024-01-01T00:00:00Z', recentlyWatched: false })).toBe(true);
+    // recently watched ⇒ the eye corner owns it, no muted indicator.
+    expect(watchedLongAgo({ lastWatchedAt: '2024-01-01T00:00:00Z', recentlyWatched: true })).toBe(false);
+    // never watched ⇒ nothing.
+    expect(watchedLongAgo({ lastWatchedAt: null, recentlyWatched: false })).toBe(false);
+  });
+
+  it('lastWatchedLabel composes "Last watched on <server> · <Mon YYYY>", degrading gracefully', () => {
+    expect(lastWatchedLabel('2024-07-15T02:00:00Z', 'hayneskube')).toBe('Last watched on HaynesKube · Jul 2024');
+    // unknown server slug is still shown verbatim.
+    expect(lastWatchedLabel('2024-07-15T02:00:00Z', 'legacybox')).toBe('Last watched on legacybox · Jul 2024');
+    // no server ⇒ drop the "on <server>".
+    expect(lastWatchedLabel('2024-07-15T02:00:00Z', null)).toBe('Last watched Jul 2024');
+    // bad date, known server ⇒ just the server clause.
+    expect(lastWatchedLabel('not-a-date', 'haynesops')).toBe('Last watched on HaynesOps');
+    // no instant at all ⇒ null (the indicator is suppressed).
+    expect(lastWatchedLabel(null, 'haynesops')).toBeNull();
   });
 });
 

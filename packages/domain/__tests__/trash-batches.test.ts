@@ -287,7 +287,7 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     await upsertMediaMetadataBatch({
       db: t.db,
       rows: [
-        { mediaItemId: byTmdb.get(9001)!, lastViewedAt: new Date(OLD), resolution: '2160p', imdbRating: 7.5, tmdbRating: 8.1 },
+        { mediaItemId: byTmdb.get(9001)!, lastViewedAt: new Date(OLD), lastWatchedAt: new Date(OLD), lastWatchedServer: 'haynestower', resolution: '2160p', imdbRating: 7.5, tmdbRating: 8.1 },
         { mediaItemId: byTmdb.get(9002)!, lastViewedAt: new Date(RECENT) },
         { mediaItemId: byTmdb.get(9003)!, lastViewedAt: new Date(OLD) },
         { mediaItemId: byTmdb.get(9004)!, lastViewedAt: new Date(OLD), requesters: ['alice'] },
@@ -842,6 +842,13 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     const detail = await getBatchDetail({ db: t.db, batchId });
     expect(detail.items).toHaveLength(5);
     expect(detail.items[0]!.sizeBytes).toBeGreaterThanOrEqual(detail.items[1]!.sizeBytes); // sorted by size desc
+
+    // DESIGN-010 D-12 — the cross-server watch-visibility pair rides the batch-wall item too (9001
+    // was last watched 400d ago on haynestower); it is NOT recentlyWatched, so it's info only.
+    const it9001 = detail.items.find((i) => i.maintainerrMediaId === 'ms-9001')!;
+    expect(it9001.lastWatchedAt).toBe(new Date(OLD).toISOString());
+    expect(it9001.lastWatchedServer).toBe('haynestower');
+    expect(it9001.recentlyWatched).toBe(false);
 
     // DESIGN-010 amendment — the Overview card's "frees X" for an open batch reads pendingBytes: the
     // frozen size of the STILL-`pending` (not-yet-saved) items. listBatches + getBatchDetail agree.

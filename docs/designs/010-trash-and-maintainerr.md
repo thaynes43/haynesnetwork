@@ -2,7 +2,7 @@
 
 - **Status:** Draft (backend vertical shipped; **UX shipped 2026-07-06** — D-09 records the
   as-built; **pending tables → poster walls 2026-07-07**, see the D-09 amendment)
-- **Last updated:** 2026-07-08 (D-10 — Overview landing + kind tab count badges)
+- **Last updated:** 2026-07-09 (D-12 — cross-server watch VISIBILITY on the trash walls: info, not protection)
 - **Satisfies:** PRD-001 **R-79..R-87** + **US-10** / **AC-14..AC-16**; governed by **ADR-023**
   (Trash/Maintainerr + per-action grants + safety gate). Reuses **ADR-021** (section levels),
   **ADR-008/011** (write-back confinement), **DESIGN-005 D-16** (Restore), **DESIGN-008/009 D-09**
@@ -406,6 +406,67 @@ One BEFORE materialization crawl: **9.8 s** (16 serial content calls — matches
 `pendingCandidates` 9 ms, Overview count 1 ms — zero collection calls on the request path; snapshot
 rebuild **1.4 s** modeled / ~0.5 s live warm Maintainerr, always off the paint path in prod.
 Details: `.agents/context/2026-07-09-trash-wall-perf.md`.
+
+## D-12 — Cross-server watch VISIBILITY on the trash walls (amendment 2026-07-09, owner-directed)
+
+> **Owner ruling (2026-07-09), option B ONLY — SHOW watch history, change NO protection semantics.**
+> Kometa rolls junk in fast and the owner wants FAST deletion, so this amendment adds *visibility*
+> of when/where a slated title was last watched across the estate — it does **not** extend any
+> guardian keep. An ever-watched-but-not-recent item stays sweep-deletable and wall-actionable.
+
+**Why.** The wall already surfaces a *recently* watched (`≤ RECENTLY_WATCHED_WINDOW_DAYS`, 30d) item
+as the inert `eye` corner glyph (the guardian keeps it). But a title watched **longer ago** read as a
+plain cold candidate — the family had no signal that "we watched this in 2024, maybe don't nuke it
+blind." The owner wanted that context *visible* without turning it into protection.
+
+**Data (migration 0028).** Two additive, nullable columns on `media_metadata`:
+`last_watched_at` (timestamptz) + `last_watched_server` (text — the estate slug
+`haynesops | hayneskube | haynestower`). `last_watched_at` is the **MAX last-watch instant across all
+three Tautulli histories** (full history, NOT the 30-day window; TV rolled up to the show — the same
+episodes→series `grandparent_rating_key` rollup the harvest already does), and `last_watched_server`
+is the server that owns that max. **Relationship to `last_viewed_at` (0012):** they hold the SAME
+source instant — `last_viewed_at` is the guardian's watch-stat (recentlyWatched derives from it,
+UNCHANGED); `last_watched_at`/`last_watched_server` is the wall/detail-facing **display pair**, stored
+together so the timestamp and its attribution are always consistent. (A future cleanup could collapse
+the two; kept separate here so this change touches no guardian input.)
+
+**Harvest (no new Tautulli cost — DESIGN-008 D-04 piggyback).** The 6h metadata-refresh already pages
+each of the three Tautulli histories ONCE, groups by rating key (movie) / grandparent rating key
+(episode→series), resolves guids, and merges the per-instance contributions
+(`mergeWatchContributions`: `play_count` = SUM, `last_viewed_at` = MAX). D-12 extends that SAME merge
+to also record **which instance owns the max** (`lastWatchedServer`) — zero extra requests, no
+per-title `get_history&rating_key=` storm. The harvest writes `last_watched_at = last_viewed_at` +
+`last_watched_server` on the existing single-writer upsert.
+
+**Read-model.** The fields ride the existing `media_items ⟕ media_metadata` join at READ time in
+`shapePendingItems` (so they flow to the ADR-035 snapshot walls for free — the snapshot itself is
+unchanged) and in `getBatchDetail`. `TrashPendingItem` + `BatchDetailItem` gain
+`lastWatchedAt`/`lastWatchedServer`.
+
+**Surfacing (both pending walls + batch wall + future strip).**
+
+- **Recently watched (≤30d):** UNCHANGED — the inert `eye` corner glyph; the guardian keeps it. No
+  muted indicator (never doubles up).
+- **Watched longer ago** (`lastWatchedAt` set AND NOT `recentlyWatched`): a **muted small watch
+  indicator** in the tile's **meta line** — a subdued eye (`WatchedAgoNote`, `data-testid="wall-watched"`)
+  pinned at the end of `size · ★rating`, `--color-text-muted` at 0.8 opacity, 13px. Deliberately in the
+  caption/meta zone (NOT a corner puck) so it can never read as the protective shield/check/eye state
+  glyphs. Tooltip + `role="img"` label: `Last watched on <server> · <Mon YYYY>` (tz America/New_York).
+  The tile stays **fully actionable** (tap-save / slate / delete exactly as before).
+- **Glyph precedence (documented).** The corner glyph is unchanged: a **requested / person-shield item
+  keeps the corner**; the watch info moves to the meta-line indicator + tooltip. So a requested,
+  watched-long-ago tile shows the person-shield corner **and** the muted watch note — they co-exist,
+  requested wins the corner (unit-tested `pendingWallGlyph`, e2e on Breaking Prod).
+- **Item detail deletion card** (`TrashPendingNotice`): gains a `Last watched on <server> · <Mon YYYY>`
+  line (`data-testid="trash-last-watched"`) when present. It never gates the card's actions.
+
+**No guardian changes. No candidate filtering. No new keeps.** `classifyGuardian`,
+`RECENTLY_WATCHED_WINDOW_DAYS`, `recentlyWatched`, the sweep, and every keep partition are byte-for-byte
+unchanged. Regression-asserted: an ever-watched-but-not-recent item ⇒ `classifyGuardian` `{keep:false}`
+(deletable) and a tappable wall tile.
+
+**Pure client helpers** (`apps/web/lib/trash.ts`, unit-tested): `watchServerLabel` (slug → display
+name), `formatWatchMonth`, `watchedLongAgo`, `lastWatchedLabel`.
 
 ## Ops / deploy-time checklist (owner)
 
