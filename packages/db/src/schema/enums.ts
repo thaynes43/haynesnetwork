@@ -339,16 +339,20 @@ export const APP_SETTING_KEYS = [
   // app_settings.key CHECK is relaxed to admit this value in migration 0021.
   'space_targets',
   // ADR-031 / DESIGN-014 (PLAN-014 space-driven policy) — the space-policy CONFIG (jsonb object:
-  // { enabled, cooldownDays, minCandidates, perArray: { <arrayKey>: { enabled, cooldownDays?,
-  // minCandidates? } } }). DEFAULT OFF (enabled:false). When on, the space-policy sync mode proposes
-  // (never deletes) a draft batch for an array over its space_targets ceiling. Admin-gated + audited
-  // through the same setAppSetting single-writer; migration 0022 relaxes the app_settings.key CHECK.
+  // { enabled, mode, cooldownDays, minCandidates, perArray: { <arrayKey>: { enabled, cooldownDays?,
+  // minCandidates? } }, perKind: { movie|tv: { maxItems:{enabled,value}, targetBytes:{enabled,value} } } }).
+  // DEFAULT OFF (enabled:false), mode 'over-target', no per-kind caps. When on, the space-policy sync mode
+  // proposes (never deletes) a draft batch: over-target mode fires only over the space_targets ceiling;
+  // continuous mode fires on candidates+cooldown alone (DESIGN-014 amendment 2026-07-09, build A).
+  // getSpacePolicy migrates the retired flat `targetBytesPerBatch` key into per-kind targetBytes caps.
+  // Admin-gated + audited through the same setAppSetting single-writer; migration 0022 relaxed the CHECK.
   'space_policy',
   // ADR-034 / DESIGN-015 (PLAN-016 Pushover batch notifications) — the DELIVERY WINDOW (jsonb object:
-  // { startHour, endHour, tz }; default { 18, 22, 'America/New_York' }). The owner's quiet-hours
-  // control: enqueue computes each notification_outbox row's earliest_send_at against it (in-window ⇒
-  // ASAP; outside ⇒ next window-open). Admin-gated + audited through the same setAppSetting
-  // single-writer; migration 0024 relaxes the app_settings.key CHECK.
+  // { startHour, endHour, tz }; DEFAULT ALL-DAY { 0, 24, 'America/New_York' } — no gating, every push
+  // leaves ASAP (build-A owner change 2026-07-09; was { 18, 22 }). `endHour` is EXCLUSIVE ([start,end)),
+  // so 24 = through 23:59:59.999. The owner's quiet-hours control: enqueue computes each
+  // notification_outbox row's earliest_send_at against it (in-window ⇒ ASAP; outside ⇒ next window-open).
+  // Admin-gated + audited through the same setAppSetting single-writer; migration 0024 relaxes the CHECK.
   'notify_window',
 ] as const;
 export type AppSettingKey = (typeof APP_SETTING_KEYS)[number];

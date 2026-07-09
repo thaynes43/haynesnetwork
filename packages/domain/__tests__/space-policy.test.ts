@@ -8,6 +8,7 @@ import { eq, inArray } from 'drizzle-orm';
 import { ledgerEvents, notifications, permissionAudit, trashBatchItems, trashBatches } from '@hnet/db/schema';
 import {
   buildArrClientBundle,
+  defaultPerKind,
   evaluateSpacePolicy,
   getSpacePolicy,
   getSpacePolicyStatus,
@@ -56,10 +57,20 @@ const underBundle = () => makeArrBundle({ radarr: TOWER_UNDER, sonarr: TOWER_UND
 
 const ENABLED: SpacePolicy = {
   enabled: true,
+  mode: 'over-target',
   cooldownDays: 7,
   minCandidates: 1,
   perArray: { haynestower: { enabled: true } },
+  perKind: defaultPerKind(),
 };
+
+/** ENABLED with the movie kind's caps overridden (DESIGN-014 amendment 2026-07-09, build A). */
+const withMovieCaps = (
+  movie: Partial<SpacePolicy['perKind']['movie']>,
+): SpacePolicy => ({
+  ...ENABLED,
+  perKind: { ...defaultPerKind(), movie: { ...defaultPerKind().movie, ...movie } },
+});
 
 describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => {
   let t: TestDb;
@@ -133,23 +144,59 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
     expect(note!.title).toContain('Movies');
   });
 
-  it('targetBytesPerBatch caps the proposed batch to the reclaim target (largest-first)', async () => {
-    // movieCollection: 9001(4e9), 9002(3e9), 9003(2e9). Target 6e9 largest ⇒ 4e9+3e9 crosses ⇒ {9001,9002}.
-    await setPolicy({ ...ENABLED, targetBytesPerBatch: 6_000_000_000 });
+  // ── per-kind composition caps (DESIGN-014 amendment 2026-07-09, build A) ─────────────────────
+  // movieCollection: 9001(4e9), 9002(3e9), 9003(2e9), all UNRATED — so worst-rated (the policy default)
+  // ranks by size desc (unrated tie-break), i.e. 9001 → 9002 → 9003.
+  const proposeMovie = async (policy: SpacePolicy) => {
+    await setPolicy(policy);
     const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
     const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: overBundle(), actorId });
-
-    const movie = report.arrays
+    return report.arrays
       .find((a) => a.key === 'haynestower')!
       .proposals.find((p) => p.mediaKind === 'movie')!;
-    expect(movie.outcome).toBe('proposed');
-    expect(movie.candidateCount).toBe(2); // capped from the full pool of 3
+  };
+  const batchIds = async (batchId: string) =>
+    (
+      await t.db.select().from(trashBatchItems).where(eq(trashBatchItems.batchId, batchId))
+    )
+      .map((i) => i.maintainerrMediaId)
+      .sort();
 
-    const items = await t.db
-      .select()
-      .from(trashBatchItems)
-      .where(eq(trashBatchItems.batchId, movie.batchId!));
-    expect(items.map((i) => i.maintainerrMediaId).sort()).toEqual(['ms-9001', 'ms-9002']);
+  it('per-kind targetBytes cap trims the batch to the reclaim target (worst-rated/size-first)', async () => {
+    // Target 6e9 ⇒ 4e9+3e9 crosses ⇒ {9001,9002} (the crossing item is included).
+    const movie = await proposeMovie(
+      withMovieCaps({ targetBytes: { enabled: true, value: 6_000_000_000 } }),
+    );
+    expect(movie.outcome).toBe('proposed');
+    expect(movie.candidateCount).toBe(2);
+    expect(await batchIds(movie.batchId!)).toEqual(['ms-9001', 'ms-9002']);
+  });
+
+  it('per-kind maxItems cap trims the batch to the item count', async () => {
+    const movie = await proposeMovie(withMovieCaps({ maxItems: { enabled: true, value: 2 } }));
+    expect(movie.outcome).toBe('proposed');
+    expect(movie.candidateCount).toBe(2);
+    expect(await batchIds(movie.batchId!)).toEqual(['ms-9001', 'ms-9002']);
+  });
+
+  it('both caps combine — the batch stops at the FIRST cap hit (maxItems 1 beats a 6e9 target)', async () => {
+    const movie = await proposeMovie(
+      withMovieCaps({
+        maxItems: { enabled: true, value: 1 },
+        targetBytes: { enabled: true, value: 6_000_000_000 },
+      }),
+    );
+    expect(movie.outcome).toBe('proposed');
+    expect(movie.candidateCount).toBe(1); // maxItems:1 hits before the 6e9 target (4e9)
+    expect(await batchIds(movie.batchId!)).toEqual(['ms-9001']);
+  });
+
+  it('a DISABLED cap is ignored — the whole pool is proposed', async () => {
+    const movie = await proposeMovie(
+      withMovieCaps({ maxItems: { enabled: false, value: 1 }, targetBytes: { enabled: false, value: 1 } }),
+    );
+    expect(movie.outcome).toBe('proposed');
+    expect(movie.candidateCount).toBe(3); // both caps off ⇒ all three
   });
 
   it('proposes BOTH movie and tv when both rule collections have candidates', async () => {
@@ -299,6 +346,68 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
     expect(batch!.gateSkipped).toBe(true);
   });
 
+  // ── continuous mode (DESIGN-014 amendment 2026-07-09, build A) ───────────────────────────────
+  const CONTINUOUS: SpacePolicy = { ...ENABLED, mode: 'continuous' };
+
+  it('continuous mode PROPOSES under target (the disk target is not required)', async () => {
+    await setPolicy(CONTINUOUS);
+    const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
+    // underBundle ⇒ 70% used, UNDER the 80% target — over-target mode would skip; continuous proposes.
+    const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: underBundle(), actorId });
+    expect(report.proposedCount).toBe(1);
+    const tower = report.arrays.find((a) => a.key === 'haynestower')!;
+    expect(tower.overTarget).toBe(false); // utilization is still read for reporting
+    expect(tower.usedPct).toBe(70);
+    expect(tower.proposals.find((p) => p.mediaKind === 'movie')!.outcome).toBe('proposed');
+  });
+
+  it('continuous mode STILL requires the array to be opted in (per-array off ⇒ no proposal)', async () => {
+    await setPolicy({ ...CONTINUOUS, perArray: { haynestower: { enabled: false } } });
+    const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
+    const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: underBundle(), actorId });
+    expect(report.proposedCount).toBe(0);
+    expect(report.arrays.find((a) => a.key === 'haynestower')!.proposals).toEqual([]);
+  });
+
+  it('continuous mode honors the cooldown (skips a kind within N days of its last proposal)', async () => {
+    await setPolicy(CONTINUOUS);
+    const [b] = await t.db
+      .insert(trashBatches)
+      .values({ mediaKind: 'movie', state: 'cancelled', createdBy: actorId })
+      .returning();
+    await t.db.insert(ledgerEvents).values({
+      mediaItemId: null,
+      eventType: 'trash_space_policy',
+      source: 'maintainerr',
+      occurredAt: new Date(Date.now() - 2 * 86_400_000), // 2d ago, inside the 7d cooldown
+      payload: { batchId: b!.id, mediaKind: 'movie' },
+    });
+    const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
+    const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: underBundle(), actorId });
+    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    expect(movie.outcome).toBe('skipped_cooldown');
+    expect(report.proposedCount).toBe(0);
+  });
+
+  it('continuous mode skips when a batch is already open (idempotence)', async () => {
+    await setPolicy(CONTINUOUS);
+    await t.db.insert(trashBatches).values({ mediaKind: 'movie', state: 'admin_review', createdBy: actorId });
+    const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
+    const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: underBundle(), actorId });
+    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    expect(movie.outcome).toBe('skipped_open_batch');
+    expect(report.proposedCount).toBe(0);
+  });
+
+  it('continuous mode still respects min-candidates', async () => {
+    await setPolicy({ ...CONTINUOUS, minCandidates: 10 }); // only 3 pending
+    const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
+    const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: underBundle(), actorId });
+    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    expect(movie.outcome).toBe('skipped_min_candidates');
+    expect(report.proposedCount).toBe(0);
+  });
+
   it('setAppSetting(space_policy) writes an update_app_setting audit row (audited config)', async () => {
     const before = await t.db
       .select()
@@ -314,12 +423,51 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
     expect((last.detail as Record<string, unknown>).key).toBe('space_policy');
   });
 
-  it('getSpacePolicy merges defaults over a partial/absent row (fail-safe OFF)', async () => {
+  it('getSpacePolicy merges defaults over a partial/absent row (fail-safe OFF; mode+perKind filled)', async () => {
     await t.db.delete(trashBatches);
-    // Never set ⇒ the documented default.
-    await setAppSetting({ db: t.db, key: 'space_policy', value: { enabled: true, cooldownDays: 3, minCandidates: 2, perArray: {} }, actorId });
+    // A pre-build-A row with no `mode`/`perKind` ⇒ getSpacePolicy fills mode='over-target' + empty caps.
+    await setAppSetting({
+      db: t.db,
+      key: 'space_policy',
+      value: { enabled: true, cooldownDays: 3, minCandidates: 2, perArray: {} } as unknown as SpacePolicy,
+      actorId,
+    });
     const p = await getSpacePolicy(t.db);
-    expect(p).toMatchObject({ enabled: true, cooldownDays: 3, minCandidates: 2 });
+    expect(p).toMatchObject({ enabled: true, mode: 'over-target', cooldownDays: 3, minCandidates: 2 });
+    expect(p.perKind.movie.targetBytes.enabled).toBe(false);
+    expect(p.perKind.tv.maxItems.enabled).toBe(false);
+  });
+
+  it('getSpacePolicy MIGRATES a legacy flat targetBytesPerBatch to movie+tv targetBytes caps', async () => {
+    await setAppSetting({
+      db: t.db,
+      key: 'space_policy',
+      value: {
+        enabled: true,
+        cooldownDays: 7,
+        minCandidates: 1,
+        perArray: { haynestower: { enabled: true } },
+        targetBytesPerBatch: 5_000_000_000,
+      } as unknown as SpacePolicy,
+      actorId,
+    });
+    const p = await getSpacePolicy(t.db);
+    expect(p.perKind.movie.targetBytes).toEqual({ enabled: true, value: 5_000_000_000 });
+    expect(p.perKind.tv.targetBytes).toEqual({ enabled: true, value: 5_000_000_000 });
+    // The new perKind shape (when present) wins over the legacy key.
+    await setAppSetting({
+      db: t.db,
+      key: 'space_policy',
+      value: {
+        ...ENABLED,
+        perKind: { ...defaultPerKind(), movie: { ...defaultPerKind().movie, maxItems: { enabled: true, value: 4 } } },
+        targetBytesPerBatch: 5_000_000_000,
+      } as unknown as SpacePolicy,
+      actorId,
+    });
+    const p2 = await getSpacePolicy(t.db);
+    expect(p2.perKind.movie.maxItems).toEqual({ enabled: true, value: 4 });
+    expect(p2.perKind.movie.targetBytes.enabled).toBe(false); // legacy IGNORED once perKind is present
   });
 
   it('getSpacePolicyStatus reflects a fresh proposal (last proposal + cooldown next-eligible)', async () => {

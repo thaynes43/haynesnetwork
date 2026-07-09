@@ -14,7 +14,18 @@ import {
   withEnabled,
 } from '../space-policy';
 
-const P: SpacePolicy = { enabled: false, cooldownDays: 7, minCandidates: 1, perArray: {} };
+const CAPS = {
+  maxItems: { enabled: false, value: 25 },
+  targetBytes: { enabled: false, value: 1 },
+};
+const P: SpacePolicy = {
+  enabled: false,
+  mode: 'over-target',
+  cooldownDays: 7,
+  minCandidates: 1,
+  perArray: {},
+  perKind: { movie: { ...CAPS }, tv: { ...CAPS } },
+};
 
 describe('policy merges (immutable, whole-object replace)', () => {
   it('withEnabled flips the global flag without mutating the source', () => {

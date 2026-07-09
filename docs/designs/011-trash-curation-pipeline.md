@@ -379,3 +379,34 @@ snapshot — the preview is advisory). The green-light flow downstream is unchan
 
 **Space policy (DESIGN-014):** `space_policy` gains an optional `targetBytesPerBatch` so a policy
 proposal can cap its own size (largest-first); absent ⇒ all. See DESIGN-014 D-01 amendment.
+
+## D-10 — Amendment 2026-07-09 (owner-directed, build A) — labels, countdown, picker
+
+### D-10a — Ellipsis purge on action buttons
+
+Action-button resting labels drop the trailing ellipsis (it read as "opens a dialog" but was noise):
+**"Expire now…" → "Delete now"** (the batch force-sweep; its Modal retitles from "Expire this batch
+now" → **"Delete this batch now"** / "Force-expire…" → "Force-delete…", typed-confirm behavior
+unchanged), **"Green-light…" → "Green-light"**, **"Start a batch…" → "Start a batch"**, **"Delete all
+now…" → "Delete all now"** (bulk pending), item-page **"Delete now…" → "Delete now"**, plus ledger
+"Monitor & search…" and bulletin "Triage…". Enum values, testids, and progress/placeholder text
+("Deleting…", "Search…") are untouched — this is literal resting-label text only.
+
+### D-10b — Timezone-correct, hour-aware deadline countdown
+
+Batch header, Overview cards, and tab-badge tones compute day words as **CALENDAR-day comparisons in the
+app display timezone (America/New_York)** — never a raw UTC ms-diff. The old ms-ceil mislabeled a batch
+expiring **11:04 PM ET today** as "tomorrow" (a >12h gap ceils to 1); `daysUntil` now compares the ET
+calendar dates of `now` and `expiresAt`. Under **48h** the countdown drops to **hour precision**:
+"window closes today 11:04 PM · in 15h" / "closes tomorrow 7:35 AM · in 23h"; at 48h+ it stays day-level
+("closes Jul 21 · in 9 days"). Pure helpers `daysUntil` / `deadlineCountdown` / `formatDeadlineDay` /
+`formatDeadlineTime` / `hoursUntil` in `lib/trash.ts` (unit-tested; the 11:04-PM-today case is a
+regression test). `overviewDeadlineLabel` no longer takes an injected `formatDay` (it localizes to ET).
+
+### D-10c — Start-a-batch picker gains an item-count cap + policy pre-fill
+
+`StartBatchModal` target mode now offers **two independent caps** — "Free about N GB" and "Up to N items"
+— that combine (stop at the first hit, matching `selectBatchCandidates`). When an admin has configured
+`space_policy.perKind` caps for the kind, the picker **pre-fills** from them (target mode on, the enabled
+caps populated, strategy defaulted to worst-rated). `trash.batches.create` already accepted
+`maxItems`/`strategy`; no wire change.

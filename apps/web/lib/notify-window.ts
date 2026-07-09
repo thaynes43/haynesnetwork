@@ -39,7 +39,10 @@ export function isValidWindow(startHour: number, endHour: number): boolean {
   );
 }
 
-/** The human summary the card shows, e.g. "6 PM – 10 PM · Eastern (America/New_York)". */
+/** The human summary the card shows, e.g. "6 PM – 10 PM · Eastern (America/New_York)". The all-day
+ *  window (`[0, 24)` — the build-A default) reads as "All day (no quiet hours)" rather than the
+ *  ambiguous "12 AM – 12 AM". */
 export function describeWindow(w: NotifyWindow): string {
+  if (w.startHour <= 0 && w.endHour >= 24) return `All day (no quiet hours) · ${tzLabel(w.tz)}`;
   return `${formatHour(w.startHour)} – ${formatHour(w.endHour)} · ${tzLabel(w.tz)}`;
 }

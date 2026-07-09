@@ -173,12 +173,55 @@ export function pendingWallTappable(
   return false;
 }
 
-/** Whole days until an ISO instant (ceil): 0 ⇒ today, negative ⇒ overdue. Null-safe. */
-export function daysUntil(iso: string | null, now: Date = new Date()): number | null {
+// ── deadline countdown (DESIGN-011/014 amendment 2026-07-09, build A — tz-correct + hour-level) ──
+// Day words and countdowns are computed in the app's DISPLAY timezone (America/New_York), never the
+// browser's and never a raw UTC ms-diff. The pre-2026-07-09 ms-ceil mislabeled a batch that expires
+// 11:04 PM ET *today* as "tomorrow" (a >12h gap ceils to 1 day); a CALENDAR-day comparison in ET reads
+// it as "today". Under 48h the countdown drops to hour precision ("closes today 11:04 PM · in 15h").
+
+/** The app's canonical display timezone — every user-facing deadline is localized to Eastern. */
+export const DISPLAY_TZ = 'America/New_York';
+const DAY_MS = 86_400_000;
+const HOUR_MS = 3_600_000;
+/** Below this many ms left, the countdown switches from day-level to hour-level (48h). */
+const HOUR_LEVEL_MS = 48 * HOUR_MS;
+
+/** The (y, m, d) calendar date of an instant read in `tz` (via en-CA YYYY-MM-DD parts). null on NaN. */
+function zonedDateParts(date: Date, tz: string): { y: number; m: number; d: number } | null {
+  if (Number.isNaN(date.getTime())) return null;
+  const map: Record<string, string> = {};
+  for (const p of new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date)) {
+    if (p.type !== 'literal') map[p.type] = p.value;
+  }
+  const y = Number(map.year);
+  const m = Number(map.month);
+  const d = Number(map.day);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
+  return { y, m, d };
+}
+
+/**
+ * Whole CALENDAR days from `now`→`iso`, both read in `tz` (0 ⇒ today, 1 ⇒ tomorrow, negative ⇒ past).
+ * Null-safe. The tz-correct replacement for the old ms-ceil that mislabeled a same-calendar-day-but-
+ * later time (e.g. a batch expiring 11:04 PM ET today) as "tomorrow".
+ */
+export function daysUntil(
+  iso: string | null,
+  now: Date = new Date(),
+  tz: string = DISPLAY_TZ,
+): number | null {
   if (iso === null) return null;
-  const target = Date.parse(iso);
-  if (Number.isNaN(target)) return null;
-  return Math.ceil((target - now.getTime()) / 86_400_000);
+  const target = new Date(iso);
+  if (Number.isNaN(target.getTime())) return null;
+  const a = zonedDateParts(now, tz);
+  const b = zonedDateParts(target, tz);
+  if (a === null || b === null) return null;
+  return Math.round((Date.UTC(b.y, b.m - 1, b.d) - Date.UTC(a.y, a.m - 1, a.d)) / DAY_MS);
 }
 
 /** The days-left pill copy: "in 12 days" / "tomorrow" / "today" / "overdue". */
@@ -196,6 +239,78 @@ export function daysLeftTone(days: number | null): 'danger' | 'warn' | 'muted' {
   if (days <= 3) return 'danger';
   if (days <= 7) return 'warn';
   return 'muted';
+}
+
+/** "Jul 21" — month+day of `iso` read in `tz` (no year; the compact deadline form). Bad ISO → as-is. */
+export function formatDeadlineDay(iso: string, tz: string = DISPLAY_TZ): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('en-US', { timeZone: tz, month: 'short', day: 'numeric' });
+}
+
+/** "11:04 PM" — hour+minute of `iso` read in `tz`. Bad ISO → as-is. */
+export function formatDeadlineTime(iso: string, tz: string = DISPLAY_TZ): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleTimeString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit' });
+}
+
+/** Whole hours remaining until `iso` (rounded, floored at 1 while still future), else null. */
+export function hoursUntil(iso: string | null, now: Date = new Date()): number | null {
+  if (iso === null) return null;
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return null;
+  const ms = t - now.getTime();
+  if (ms <= 0) return null;
+  return Math.max(1, Math.round(ms / HOUR_MS));
+}
+
+export interface DeadlineCountdown {
+  /** WHEN it closes: "today 11:04 PM" / "tomorrow 7:35 AM" (<48h) or "Jul 21" (48h+); '' when no date. */
+  whenLabel: string;
+  /** The relative pill: "in 15h" (<48h) / "in 9 days" / "tomorrow" / "today" / "overdue" / "no date". */
+  relLabel: string;
+  /** Pill tone (danger ≤3 days / overdue / <48h; warn ≤7; muted after). */
+  tone: 'danger' | 'warn' | 'muted';
+  /** True when the hour-level (<48h) form is in use — the caller joins whenLabel · relLabel with a "·". */
+  hourLevel: boolean;
+  /** Calendar days remaining in `tz` (null when no/garbage date). */
+  days: number | null;
+}
+
+/**
+ * The tz-correct, hour-aware deadline countdown for a leaving-soon window. Under 48h it uses hour
+ * precision with a today/tomorrow day word ("today 11:04 PM · in 15h"); at 48h+ it uses the calendar-day
+ * label ("Jul 21" + "in 9 days"). All day words are CALENDAR comparisons in `tz` (America/New_York).
+ */
+export function deadlineCountdown(
+  iso: string | null,
+  now: Date = new Date(),
+  tz: string = DISPLAY_TZ,
+): DeadlineCountdown {
+  const days = daysUntil(iso, now, tz);
+  if (iso === null || days === null) {
+    return { whenLabel: '', relLabel: 'no date', tone: 'muted', hourLevel: false, days: null };
+  }
+  const ms = Date.parse(iso) - now.getTime();
+  if (ms > 0 && ms < HOUR_LEVEL_MS) {
+    const hrs = hoursUntil(iso, now) ?? 1;
+    const dayWord = days <= 0 ? 'today' : days === 1 ? 'tomorrow' : formatDeadlineDay(iso, tz);
+    return {
+      whenLabel: `${dayWord} ${formatDeadlineTime(iso, tz)}`,
+      relLabel: `in ${hrs}h`,
+      tone: 'danger', // anything under 48h is within the ≤3-day danger band
+      hourLevel: true,
+      days,
+    };
+  }
+  return {
+    whenLabel: formatDeadlineDay(iso, tz),
+    relLabel: daysLeftLabel(days),
+    tone: daysLeftTone(days),
+    hourLevel: false,
+    days,
+  };
 }
 
 /** "Reclaiming 4.0 GB across 3 items" — the filter-aware footer line. */
@@ -246,18 +361,20 @@ export function overviewCardTone(batch: OverviewBatchLike | null, now: Date = ne
 }
 
 /** The lifecycle line on the card when a batch is open: "Admin review — 18 items" /
- *  "Leaving Soon — window closes Jul 21 (in 9 days)". Empty string when no batch is open. */
+ *  "Leaving Soon — window closes Jul 21 (in 9 days)" / (<48h) "Leaving Soon — window closes today
+ *  11:04 PM · in 15h". Deadlines are tz-correct (America/New_York). Empty string when no batch open. */
 export function overviewDeadlineLabel(
   batch: OverviewBatchLike | null,
-  formatDay: (iso: string) => string,
   now: Date = new Date(),
+  tz: string = DISPLAY_TZ,
 ): string {
   if (batch === null) return '';
   if (batch.state === 'leaving_soon') {
     if (batch.expiresAt === null) return 'Leaving Soon';
-    return `Leaving Soon — window closes ${formatDay(batch.expiresAt)} (${daysLeftLabel(
-      daysUntil(batch.expiresAt, now),
-    )})`;
+    const c = deadlineCountdown(batch.expiresAt, now, tz);
+    return c.hourLevel
+      ? `Leaving Soon — window closes ${c.whenLabel} · ${c.relLabel}`
+      : `Leaving Soon — window closes ${c.whenLabel} (${c.relLabel})`;
   }
   if (batch.state === 'admin_review' || batch.state === 'draft') {
     return `Admin review — ${batch.pendingCount} item${batch.pendingCount === 1 ? '' : 's'}`;

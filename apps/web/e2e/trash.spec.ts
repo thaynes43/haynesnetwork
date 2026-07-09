@@ -817,12 +817,15 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
 
     await page.goto('/settings/trash');
     await expect(page.getByTestId('trash-settings')).toContainText('straight to Leaving Soon');
-    await armAndConfirm(page.getByTestId('skipgate-enable'));
-    await expect(page.getByTestId('skipgate-state')).toContainText('Skip-gate is ON');
+    // Admin gate control (build A): the ACTION-labelled button — "Disable" turns the gate OFF.
+    await armAndConfirm(page.getByTestId('gate-disable'));
+    await expect(page.getByTestId('skipgate-state')).toContainText('Admin gate is OFF');
 
     // A fresh TV batch skips admin review entirely: born Leaving Soon, flagged gate-skipped.
     await page.goto('/trash?tab=tv');
     await expect(page.getByTestId('batch-candidates')).toContainText('TV candidate');
+    // Ellipsis purge (build A): the action button reads "Start a batch", no trailing "…".
+    await expect(page.getByTestId('batch-start')).toHaveText('Start a batch');
     await startBatchAll(page);
     await expect(page.getByTestId('batch-state')).toHaveText('Leaving Soon');
     await expect(page.getByTestId('batch-gate-skipped')).toBeVisible();
@@ -830,10 +833,56 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await armAndConfirm(page.getByTestId('batch-cancel'));
     await expect(page.getByTestId('trash-wall')).toBeVisible(); // terminal ⇒ TV pending wall returns
 
-    // Restore the gate.
+    // Restore the gate — "Enable" turns it back ON (the safe direction, a plain button).
     await page.goto('/settings/trash');
-    await page.getByTestId('skipgate-disable').click();
-    await expect(page.getByTestId('skipgate-state')).toContainText('Gate is ON');
+    await page.getByTestId('gate-enable').click();
+    await expect(page.getByTestId('skipgate-state')).toContainText('Admin gate is ON');
+  });
+
+  test('batch policy: the single Save round-trips mode + minCandidates + per-kind caps', async ({
+    page,
+  }) => {
+    await signIn(page, 'admin');
+    await page.goto('/settings/trash');
+
+    // The Batch policy section renders (DESIGN-014 amendment 2026-07-09, build A).
+    await expect(page.getByTestId('batch-policy')).toBeVisible();
+    await expect(page.getByTestId('policy-mode')).toBeVisible();
+    // The gate control is action-labelled, and there is exactly ONE form Save at the bottom.
+    await expect(page.getByTestId('gate-disable')).toHaveText('Disable');
+    await expect(page.getByTestId('settings-save')).toHaveText('Save');
+
+    // Edit the whole form, then commit it with the single green Save.
+    await page.getByTestId('policy-mode').selectOption('continuous');
+    await page.getByTestId('policy-mincandidates').fill('5');
+    await page.getByTestId('policy-cap-maxitems-movie-enabled').check();
+    await page.getByTestId('policy-cap-maxitems-movie-value').fill('7');
+    // Wait for the audited save to COMMIT before navigating (the mutation is async).
+    await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().includes('storage.policy.set') && r.request().method() === 'POST',
+      ),
+      page.getByTestId('settings-save').click(),
+    ]);
+
+    // Reload — the audited settings persisted.
+    await page.goto('/settings/trash');
+    await expect(page.getByTestId('policy-mode')).toHaveValue('continuous');
+    await expect(page.getByTestId('policy-mincandidates')).toHaveValue('5');
+    await expect(page.getByTestId('policy-cap-maxitems-movie-enabled')).toBeChecked();
+    await expect(page.getByTestId('policy-cap-maxitems-movie-value')).toHaveValue('7');
+    await expect(page.getByTestId('policy-mode-help')).toContainText('disk target is NOT required');
+
+    // Restore over-target for later tests (single Save again).
+    await page.getByTestId('policy-mode').selectOption('over-target');
+    await page.getByTestId('policy-cap-maxitems-movie-enabled').uncheck();
+    await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().includes('storage.policy.set') && r.request().method() === 'POST',
+      ),
+      page.getByTestId('settings-save').click(),
+    ]);
+    await expect(page.getByTestId('settings-save')).toBeDisabled();
   });
 
   test('Recently Deleted lists the tombstoned item; Restore re-adds through the failsafe path', async ({

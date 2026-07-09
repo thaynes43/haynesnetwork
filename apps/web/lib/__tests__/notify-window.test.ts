@@ -35,6 +35,10 @@ describe('notify-window helpers (ADR-034 / DESIGN-015 D-06)', () => {
     expect(describeWindow({ startHour: 18, endHour: 22, tz: 'America/New_York' })).toBe(
       '6 PM – 10 PM · Eastern (America/New_York)',
     );
+    // The all-day default reads honestly, not "12 AM – 12 AM".
+    expect(describeWindow({ startHour: 0, endHour: 24, tz: 'America/New_York' })).toBe(
+      'All day (no quiet hours) · Eastern (America/New_York)',
+    );
   });
 
   it('every tz option is a real IANA zone Intl accepts', () => {

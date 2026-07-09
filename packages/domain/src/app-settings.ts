@@ -7,10 +7,12 @@ import {
   appSettings,
   permissionAudit,
   APP_SETTING_KEYS,
+  TRASH_MEDIA_KINDS,
   type AppSettingKey,
   type DbClient,
   type MotdSeverity,
   type PlexServerSlug,
+  type TrashMediaKind,
 } from '@hnet/db';
 import { eq } from 'drizzle-orm';
 import { NotFoundError } from './errors';
@@ -67,31 +69,103 @@ export interface SpacePolicyArrayConfig {
   minCandidates?: number;
 }
 
+/** The space-policy proposal MODES (DESIGN-014 amendment 2026-07-09, build A). */
+export const SPACE_POLICY_MODES = ['over-target', 'continuous'] as const;
+export type SpacePolicyMode = (typeof SPACE_POLICY_MODES)[number];
+
+/**
+ * DESIGN-014 amendment (2026-07-09, build A) — one composition cap. `enabled` gates it; `value` is the
+ * cap (an item count for `maxItems`, or BYTES for `targetBytes`). Both caps on a kind combine — the
+ * batch stops at the FIRST cap it hits (selectBatchCandidates). A disabled cap is ignored (its `value`
+ * is retained so the admin's last number survives an off/on toggle).
+ */
+export interface SpacePolicyCap {
+  enabled: boolean;
+  value: number;
+}
+
+/** DESIGN-014 amendment (2026-07-09, build A) — the per-kind composition caps (both default OFF). */
+export interface SpacePolicyKindCaps {
+  /** Cap the number of items taken into a proposed batch. */
+  maxItems: SpacePolicyCap;
+  /** Free at least this many BYTES (largest/worst-rated-first greedy fill). */
+  targetBytes: SpacePolicyCap;
+}
+
+/** The per-kind cap map — one entry per batchable Trash kind (movie, tv). */
+export type SpacePolicyPerKind = Record<TrashMediaKind, SpacePolicyKindCaps>;
+
 /**
  * ADR-031 / DESIGN-014 (PLAN-014) — the space-driven-policy CONFIG. **Propose-only, DEFAULT OFF.**
- * When `enabled`, the hourly-ish `space-policy` sync mode reads getUtilization() and, for each
- * per-array-enabled array whose usedPct is over its `space_targets` ceiling AND has no open batch for
- * the backing kind(s), PROPOSES a draft batch (createBatchFromPending — the normal admin_review
- * path). It NEVER greenlights and NEVER deletes: the admin gate stays the human check. `cooldownDays`
- * blocks re-proposing for a kind within N days of its last policy-created batch (anti-spam while a
- * batch is mid-window); `minCandidates` skips a proposal when too few items are pending to be worth a
- * batch. Both have top-level defaults and optional per-array overrides.
+ * When `enabled`, the hourly-ish `space-policy` sync mode proposes a draft batch (createBatchFromPending
+ * — the normal admin_review path) per backing kind. It NEVER greenlights and NEVER deletes: the admin
+ * gate stays the human check. `cooldownDays` blocks re-proposing for a kind within N days of its last
+ * policy-created batch (anti-spam while a batch is mid-window); `minCandidates` skips a proposal when
+ * too few items are pending to be worth a batch. Both have top-level defaults and optional per-array
+ * overrides.
+ *
+ * DESIGN-014 amendment (2026-07-09, build A):
+ * - `mode` — 'over-target' (default; propose only for a per-array-enabled array whose usedPct is over
+ *   its `space_targets` ceiling) or 'continuous' (propose for a per-array-enabled kind whenever there
+ *   are ≥ minCandidates candidates and the cooldown has elapsed with no open batch — the disk target is
+ *   NOT required; utilization is still read for reporting).
+ * - `perKind` — per-kind composition caps (maxItems / targetBytes, each enable-checkboxed and
+ *   combinable). Applied in BOTH modes to the policy-proposed batch (worst-rated-first) and pre-fill the
+ *   manual "Start a batch" picker.
  */
 export interface SpacePolicy {
   enabled: boolean;
+  /** How proposals are triggered (default 'over-target'). */
+  mode: SpacePolicyMode;
   /** Don't re-propose a kind within this many days of its last policy-created batch (default 7). */
   cooldownDays: number;
   /** Don't propose unless at least this many actionable items are pending (default 1). */
   minCandidates: number;
   /** Per-physical-array (STORAGE_ARRAYS key) opt-in + overrides. Absent/`enabled:false` ⇒ that array
-   *  never proposes, even over target. */
+   *  never proposes (over target in 'over-target' mode; ever in 'continuous' mode). */
   perArray: Record<string, SpacePolicyArrayConfig>;
-  /**
-   * DESIGN-011/014 amendment (2026-07-08) — cap the SIZE of a policy-proposed batch: free at least
-   * this many bytes, largest-first (reclaim-targeted creation). ABSENT ⇒ propose ALL candidates
-   * (today's behavior). No migration — a free-form jsonb key value; fail-safe to absent when the
-   * stored value is non-numeric. */
-  targetBytesPerBatch?: number;
+  /** Per-kind composition caps (movie, tv). Always fully populated by getSpacePolicy (defaults + the
+   *  graceful migration of the retired flat `targetBytesPerBatch` key). */
+  perKind: SpacePolicyPerKind;
+}
+
+/** The default cap value floor for a targetBytes cap the admin newly enables (100 GiB). */
+const DEFAULT_TARGET_BYTES = 100 * 1024 ** 3;
+/** The default cap value for a maxItems cap the admin newly enables. */
+const DEFAULT_MAX_ITEMS = 25;
+
+/** A fresh, both-caps-OFF kind-caps object (retained default values for a later enable). */
+export function defaultKindCaps(): SpacePolicyKindCaps {
+  return {
+    maxItems: { enabled: false, value: DEFAULT_MAX_ITEMS },
+    targetBytes: { enabled: false, value: DEFAULT_TARGET_BYTES },
+  };
+}
+
+/** A fresh per-kind map with every kind's caps OFF (the DEFAULT — no caps applied). */
+export function defaultPerKind(): SpacePolicyPerKind {
+  const out = {} as SpacePolicyPerKind;
+  for (const kind of TRASH_MEDIA_KINDS) out[kind] = defaultKindCaps();
+  return out;
+}
+
+/**
+ * The effective reclaim targeting for one kind, derived from its ENABLED caps (both combine — the
+ * batch stops at the first hit). Every field is typeof-guarded (ADR-031 fail-safe): a non-boolean
+ * `enabled` reads as OFF, a non-numeric/≤0 `value` drops the cap. Returns `{}` (no targeting ⇒ ALL
+ * candidates) when neither cap is on — never `NaN`/`Infinity` caps.
+ */
+export function effectiveKindTargeting(
+  policy: SpacePolicy,
+  kind: TrashMediaKind,
+): { targetBytes?: number; maxItems?: number } {
+  const caps = policy.perKind?.[kind];
+  const out: { targetBytes?: number; maxItems?: number } = {};
+  const tb = caps?.targetBytes;
+  if (tb?.enabled === true && typeof tb.value === 'number' && tb.value > 0) out.targetBytes = tb.value;
+  const mi = caps?.maxItems;
+  if (mi?.enabled === true && typeof mi.value === 'number' && mi.value > 0) out.maxItems = mi.value;
+  return out;
 }
 
 /**
@@ -102,18 +176,28 @@ export interface SpacePolicy {
  * are out of scope (rejected at the zod edge).
  */
 export interface NotifyWindow {
-  /** Hour the window opens (0..23), local to `tz`. */
+  /** Hour the window opens (0..23), local to `tz`. INCLUSIVE. */
   startHour: number;
-  /** Hour the window closes (1..24), local to `tz`; must be > startHour. */
+  /**
+   * Hour the window closes (1..24), local to `tz`; must be > startHour. EXCLUSIVE — the window is the
+   * half-open interval `[startHour, endHour)`, so `endHour: 24` means "through 23:59:59.999" (an
+   * all-day window that never gates). `endHour: 22` closes at 10 PM sharp (22:00 is already outside).
+   */
   endHour: number;
   /** IANA timezone name the hours are read in (e.g. 'America/New_York'). */
   tz: string;
 }
 
-/** The delivery-window default — 6 PM to 10 PM Eastern (the owner's example). */
+/**
+ * The delivery-window default — ALL DAY, no gating (build-A owner change 2026-07-09). `[0, 24)` in
+ * Eastern covers every hour, so out of the box every batch push leaves ASAP (computeEarliestSend
+ * returns `now`); the admin can still narrow it to quiet-hours on /admin/storage. (Was 6 PM–10 PM
+ * Eastern.) `endHour` is EXCLUSIVE, so `24` = through 23:59:59.999 — the widest window resolveWindow
+ * accepts (`endHour <= 24`).
+ */
 export const NOTIFY_WINDOW_DEFAULT: NotifyWindow = {
-  startHour: 18,
-  endHour: 22,
+  startHour: 0,
+  endHour: 24,
   tz: 'America/New_York',
 };
 
@@ -137,7 +221,15 @@ export const APP_SETTING_DEFAULTS: AppSettingValueMap = {
   space_targets: {},
   // The space-driven policy is OFF out of the box (the owner's conservative-first instruction) — an
   // unset key proposes nothing. An object so the getAppSetting typeof-guard treats it like motd.
-  space_policy: { enabled: false, cooldownDays: 7, minCandidates: 1, perArray: {} },
+  // 'over-target' mode + no per-kind caps (propose ALL candidates) is the conservative default.
+  space_policy: {
+    enabled: false,
+    mode: 'over-target',
+    cooldownDays: 7,
+    minCandidates: 1,
+    perArray: {},
+    perKind: defaultPerKind(),
+  },
   // ADR-034 — the delivery window defaults to 6 PM–10 PM Eastern (the owner's example). An object so
   // the getAppSetting typeof-guard treats it like motd; getNotifyWindow further per-field-guards it.
   notify_window: NOTIFY_WINDOW_DEFAULT,

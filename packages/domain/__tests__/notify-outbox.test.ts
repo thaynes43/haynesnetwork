@@ -65,8 +65,8 @@ describe('delivery-window math (T-101)', () => {
   it('an inverted/garbage window falls back to the default pair (never empty)', () => {
     const bad = { startHour: 22, endHour: 6, tz: 'America/New_York' } as NotifyWindow;
     const now = new Date('2026-07-08T14:00:00.000Z'); // 10:00 ET
-    // Falls back to the 18–22 default ⇒ same as the ET "before" case.
-    expect(computeEarliestSend(now, bad).toISOString()).toBe('2026-07-08T22:00:00.000Z');
+    // Inverted (start >= end) ⇒ both hours revert to the default pair, now ALL-DAY [0,24) ⇒ ASAP.
+    expect(computeEarliestSend(now, bad).getTime()).toBe(now.getTime());
   });
 });
 
@@ -348,9 +348,18 @@ describe('getNotifyWindow + audited settings', () => {
   });
   afterAll(async () => t?.stop());
 
-  it('defaults to 18–22 America/New_York when unset', async () => {
+  it('defaults to ALL DAY (0–24 America/New_York, no gating) when unset', async () => {
     const w = await getNotifyWindow(t.db);
-    expect(w).toEqual({ startHour: 18, endHour: 22, tz: 'America/New_York' });
+    expect(w).toEqual({ startHour: 0, endHour: 24, tz: 'America/New_York' });
+  });
+
+  it('the all-day default sends every push ASAP (enqueue math is a no-op — no gating)', async () => {
+    const w = await getNotifyWindow(t.db);
+    // At any wall-clock hour, [0,24) contains it ⇒ earliest_send_at == now (send immediately).
+    for (const iso of ['2026-07-08T00:30:00Z', '2026-07-08T12:00:00Z', '2026-07-08T06:15:00Z']) {
+      const now = new Date(iso);
+      expect(computeEarliestSend(now, w).getTime()).toBe(now.getTime());
+    }
   });
 
   it('setAppSetting(notify_window) writes an update_app_setting audit row and round-trips', async () => {
@@ -376,17 +385,17 @@ describe('getNotifyWindow + audited settings', () => {
     });
   });
 
-  it('fails safe on a garbage stored row (per-field default fallback)', async () => {
+  it('fails safe on a garbage stored row (both hours non-numeric ⇒ all-day default)', async () => {
     await setAppSetting({
       db: t.db,
       key: 'notify_window',
-      value: { startHour: 'nope', endHour: 5, tz: 'Not/AZone' } as unknown as NotifyWindow,
+      value: { startHour: 'nope', endHour: 'nah', tz: 'Not/AZone' } as unknown as NotifyWindow,
       actorId,
     });
-    // start is non-numeric ⇒ both hours revert to the default pair; tz invalid ⇒ default tz.
+    // Both hours non-numeric ⇒ revert to the default pair (now all-day 0–24); tz invalid ⇒ default tz.
     expect(await getNotifyWindow(t.db)).toEqual({
-      startHour: 18,
-      endHour: 22,
+      startHour: 0,
+      endHour: 24,
       tz: 'America/New_York',
     });
   });

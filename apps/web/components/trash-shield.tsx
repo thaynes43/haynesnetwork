@@ -404,7 +404,7 @@ export function TrashPendingNotice({
             }
             onClick={() => setExpediteOpen(true)}
           >
-            Delete now…
+            Delete now
           </button>
         ) : null}
         {canSave || canUnsave ? (

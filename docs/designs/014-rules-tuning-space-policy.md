@@ -225,3 +225,54 @@ Sync: `runSync` `space-policy` mode wiring (report shape, requires both bundles,
 - **Q-01 (resolved, ADR-031 C-05):** graduation thresholds — ≥3 batches, ≤10% save-rate, 0 restores.
 - **Q-02 (resolved, ADR-031 C-06):** rule attribution — collection-grain; rule-group-exact is a future map.
 - **Q-03 (resolved, ADR-031 C-06):** no auto-tuning — the report is human-driven.
+
+## D-09 — Amendment 2026-07-09 (owner-directed, build A) — modes + per-kind caps, relocated config
+
+Three owner changes to the space policy, layered on the propose-only core (still NEVER deletes):
+
+### D-09a — Proposal `mode`
+
+`space_policy.mode: 'over-target' | 'continuous'` (default `'over-target'`).
+
+- **`over-target`** (unchanged behavior): propose for a per-array-enabled array only when its `usedPct`
+  is over its `space_targets` ceiling AND no open batch for the backing kind.
+- **`continuous`**: propose for a per-array-enabled kind whenever there are ≥ `minCandidates` candidates,
+  the cooldown has elapsed, and no batch is open — **the disk target is NOT required.** Utilization is
+  still read (getUtilization) so the report/notification can cite `usedPct`, but a null/under-target read
+  no longer blocks. The per-array **opt-in still gates** continuous mode (turning the policy on can never
+  surprise-propose on an array you forgot — ADR-031 safety valve preserved).
+
+`evaluateSpacePolicy` branches the array-level gate on `mode`; everything downstream (idempotence,
+cooldown, min-candidates, the ledger event + notification, the skip-gate pass-through) is identical.
+
+### D-09b — Per-kind composition caps (`perKind`) — absorbs the retired `targetBytesPerBatch`
+
+```ts
+perKind: {
+  movie: { maxItems: { enabled, value }, targetBytes: { enabled, value } },
+  tv:    { maxItems: { enabled, value }, targetBytes: { enabled, value } },
+}
+```
+
+Each cap is independently enable-checkboxed; both combine — the greedy fill stops at the **first cap
+hit** (`selectBatchCandidates`, DESIGN-011 D-09b). Policy batches take the **worst-rated first** (the
+owner default — trim the least-loved titles; `strategy: 'worst-rated'`). Applied in **BOTH** modes via
+`buildKindTargeting`, and the same per-kind caps **pre-fill the manual "Start a batch" picker** (which
+gains a matching size + item-count cap pair). `effectiveKindTargeting` typeof-guards every field
+(fail-safe per ADR-031): a non-boolean `enabled` reads OFF, a non-finite/≤0 `value` drops the cap.
+
+**Migration (graceful, no SQL):** the retired flat `targetBytesPerBatch` key is read by `getSpacePolicy`
+as a **movie + tv `targetBytes` cap** (`enabled: true`, that value). Once a real `perKind` object is
+stored it is authoritative and the legacy key is ignored. Zod `SpacePolicyInput` is `.strict()` and now
+carries `mode` + `perKind` (drops `targetBytesPerBatch`); audited through `setAppSetting`.
+
+### D-09c — Config relocated to Trash SETTINGS (`/settings/trash`)
+
+The mode select, per-kind cap rows, and `minCandidates` + `cooldownDays` are surfaced on
+**`/settings/trash`** (the "Batch policy" section), not `/admin/storage` (the fuller IA reshuffle is a
+follow-up). The whole page is ONE form with a **single green Save at the bottom** (the save-window
+inline Save is absorbed; each changed app-setting is still written/audited individually). The Admin
+gate stays a **separate immediate action**, its ConfirmButton ceremony unchanged, but re-labelled to the
+ACTION on the gate itself: **"Disable"** when the gate is ON, **"Enable"** when it is OFF. The
+`/admin/storage` "Space policy" card (enable + per-array opt-in) is untouched and still round-trips the
+whole object (its merges preserve `mode`/`perKind`).

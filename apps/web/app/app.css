@@ -3899,6 +3899,61 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
   flex: none;
 }
 
+/* Batch policy sub-section (DESIGN-014 amendment 2026-07-09, build A). */
+.batch-settings__subhead {
+  margin: 4px 0 2px;
+  font-size: 14px;
+}
+.batch-policy {
+  padding-top: 6px;
+  border-top: 1px solid var(--color-border);
+}
+.batch-policy > .muted {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+/* A row whose controls stack UNDER the copy (the per-kind cap grid needs the width). */
+.batch-settings__row--stack {
+  flex-direction: column;
+  align-items: stretch;
+}
+.batch-policy__kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 6px;
+}
+.batch-policy__kind {
+  flex: 1 1 220px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 8px);
+  background: var(--color-surface-2, var(--color-surface));
+}
+.batch-policy__kind-label {
+  font-size: 13px;
+}
+.batch-policy__cap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.batch-policy__cap .batch-window-input {
+  margin-left: auto;
+}
+/* The single green Save for the whole form (gate stays its own action above). */
+.batch-settings__save {
+  justify-content: flex-end;
+  padding-top: 12px;
+  margin-top: 4px;
+  border-top: 1px solid var(--color-border);
+}
+
 /* ---------- /settings/trash (ADR-032 / DESIGN-004 D-16) ---------- */
 /* The relocated Rules section rides the same card language as the pipeline card. */
 .settings-section {

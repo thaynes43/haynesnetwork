@@ -195,27 +195,29 @@ test.describe('space policy (ADR-031, propose-only)', () => {
 // it renders the default 6 PM–10 PM ET summary, a hour edit round-trips (persisted, "Saved" status),
 // and it is reflow-free (ADR-015). Leaves the window back at the seeded default for later runs.
 test.describe('notifications delivery window (ADR-034)', () => {
-  test('card renders the default window and a save round-trips', async ({ page }) => {
+  test('card renders the all-day default and a save round-trips', async ({ page }) => {
     await signIn(page, 'admin');
     await openStorage(page);
 
     const card = page.getByTestId('notify-window');
     await expect(card.getByRole('heading', { name: 'Notifications' })).toBeVisible();
-    // Default 6 PM – 10 PM Eastern.
-    await expect(page.getByTestId('notify-window-summary')).toContainText('6 PM – 10 PM');
-    await expect(page.getByTestId('notify-start')).toHaveValue('18');
-    await expect(page.getByTestId('notify-end')).toHaveValue('22');
+    // Build-A default: ALL DAY (no gating) — 0..24 Eastern (was 6 PM – 10 PM).
+    await expect(page.getByTestId('notify-window-summary')).toContainText('All day');
+    await expect(page.getByTestId('notify-start')).toHaveValue('0');
+    await expect(page.getByTestId('notify-end')).toHaveValue('24');
 
-    // Edit the start hour and save — the audited storage.notify.window.set round-trips.
-    await page.getByTestId('notify-start').fill('19');
+    // Narrow to a real quiet-hours window and save — the audited storage.notify.window.set round-trips.
+    await page.getByTestId('notify-start').fill('18');
+    await page.getByTestId('notify-end').fill('22');
     await page.getByTestId('notify-save').click();
     await expect(card.getByRole('status')).toHaveText('Saved');
     await page.reload();
-    await expect(page.getByTestId('notify-start')).toHaveValue('19');
-    await expect(page.getByTestId('notify-window-summary')).toContainText('7 PM – 10 PM');
+    await expect(page.getByTestId('notify-start')).toHaveValue('18');
+    await expect(page.getByTestId('notify-window-summary')).toContainText('6 PM – 10 PM');
 
-    // Restore the default so later specs/re-runs see the seeded window.
-    await page.getByTestId('notify-start').fill('18');
+    // Restore the all-day default so later specs/re-runs see it.
+    await page.getByTestId('notify-start').fill('0');
+    await page.getByTestId('notify-end').fill('24');
     await page.getByTestId('notify-save').click();
     await expect(card.getByRole('status')).toHaveText('Saved');
   });

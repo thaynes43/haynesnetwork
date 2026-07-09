@@ -15,6 +15,7 @@ import {
   ledgerEvents,
   trashBatches,
   TRASH_BATCH_OPEN_STATES,
+  TRASH_MEDIA_KINDS,
   type DbClient,
   type TrashBatchState,
   type TrashMediaKind,
@@ -22,13 +23,21 @@ import {
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   APP_SETTING_DEFAULTS,
+  SPACE_POLICY_MODES,
+  defaultPerKind,
   effectiveArrayPolicy,
+  effectiveKindTargeting,
   getAppSetting,
   type SpacePolicy,
+  type SpacePolicyCap,
+  type SpacePolicyKindCaps,
+  type SpacePolicyMode,
+  type SpacePolicyPerKind,
 } from './app-settings';
 import { resolveDb } from './db-client';
 import {
   createBatchFromPending,
+  type BatchTargeting,
   type CreateBatchResult,
 } from './trash-batches';
 import { TrashBatchEmptyError, TrashBatchOpenError } from './errors';
@@ -60,22 +69,79 @@ export function trashKindsForArray(arrayKey: string): TrashMediaKind[] {
   return kinds;
 }
 
+/** One cap, per-field guarded (fail-safe): non-boolean `enabled` ⇒ OFF; non-finite/≤0 `value` ⇒ the
+ *  fallback's value (so a garbage jsonb value can never yield a `NaN`/`Infinity` cap). */
+function resolveCap(raw: unknown, fallback: SpacePolicyCap): SpacePolicyCap {
+  const r = raw as Partial<SpacePolicyCap> | null | undefined;
+  const valueOk = typeof r?.value === 'number' && Number.isFinite(r.value) && r.value > 0;
+  return { enabled: r?.enabled === true, value: valueOk ? (r!.value as number) : fallback.value };
+}
+
+/**
+ * Resolve the per-kind caps, fail-safe. When the stored value carries the NEW `perKind` shape it is
+ * authoritative (per-field guarded over the defaults). When it does not, the retired flat
+ * `targetBytesPerBatch` key (DESIGN-011/014 2026-07-08) is MIGRATED gracefully — read as a movie+tv
+ * `targetBytes` cap (enabled). Absent both ⇒ every kind's caps OFF (propose ALL candidates).
+ */
+function resolvePerKind(stored: SpacePolicy | undefined): SpacePolicyPerKind {
+  const out = defaultPerKind();
+  const storedPerKind = stored?.perKind as
+    | Partial<Record<TrashMediaKind, Partial<SpacePolicyKindCaps>>>
+    | null
+    | undefined;
+  if (storedPerKind !== null && typeof storedPerKind === 'object') {
+    for (const kind of TRASH_MEDIA_KINDS) {
+      const sk = storedPerKind[kind];
+      if (sk !== null && typeof sk === 'object') {
+        out[kind] = {
+          maxItems: resolveCap(sk.maxItems, out[kind].maxItems),
+          targetBytes: resolveCap(sk.targetBytes, out[kind].targetBytes),
+        };
+      }
+    }
+    return out;
+  }
+  // No new-shape perKind — graceful migration of the retired flat targetBytesPerBatch key.
+  const legacy = (stored as { targetBytesPerBatch?: unknown } | undefined)?.targetBytesPerBatch;
+  if (typeof legacy === 'number' && Number.isFinite(legacy) && legacy > 0) {
+    for (const kind of TRASH_MEDIA_KINDS) out[kind].targetBytes = { enabled: true, value: legacy };
+  }
+  return out;
+}
+
 /** Read the space-policy config, merged over its documented defaults so a partial/hand-edited jsonb
  *  row can never leave a required field undefined (fail-safe: missing `enabled` reads as false). */
 export async function getSpacePolicy(db?: DbClient): Promise<SpacePolicy> {
   const stored = await getAppSetting(db, 'space_policy');
   const d = APP_SETTING_DEFAULTS.space_policy;
+  const mode = (SPACE_POLICY_MODES as readonly string[]).includes(stored?.mode as string)
+    ? (stored!.mode as SpacePolicyMode)
+    : d.mode;
   return {
     enabled: stored?.enabled === true,
+    mode,
     cooldownDays: typeof stored?.cooldownDays === 'number' ? stored.cooldownDays : d.cooldownDays,
     minCandidates:
       typeof stored?.minCandidates === 'number' ? stored.minCandidates : d.minCandidates,
     perArray: stored?.perArray ?? {},
-    // DESIGN-014 amendment — optional per-batch reclaim cap; fail-safe to absent (all) when non-numeric.
-    ...(typeof stored?.targetBytesPerBatch === 'number' && stored.targetBytesPerBatch > 0
-      ? { targetBytesPerBatch: stored.targetBytesPerBatch }
-      : {}),
+    // DESIGN-014 amendment (2026-07-09, build A) — per-kind caps, migrating the retired flat key.
+    perKind: resolvePerKind(stored),
   };
+}
+
+/**
+ * The reclaim targeting for a policy-proposed batch of `mediaKind` — the kind's ENABLED caps
+ * (maxItems / targetBytes, whichever the greedy fill hits FIRST), taken WORST-RATED-FIRST (policy
+ * batches trim the least-loved titles by default; DESIGN-014 amendment 2026-07-09, build A). Returns
+ * undefined when neither cap is on ⇒ createBatchFromPending snapshots ALL candidates (the default).
+ */
+export function buildKindTargeting(
+  policy: SpacePolicy,
+  mediaKind: TrashMediaKind,
+): BatchTargeting | undefined {
+  const caps = effectiveKindTargeting(policy, mediaKind);
+  if (caps.targetBytes === undefined && caps.maxItems === undefined) return undefined;
+  return { ...caps, strategy: 'worst-rated' };
 }
 
 // ---------------------------------------------------------------------------
@@ -200,9 +266,16 @@ export async function evaluateSpacePolicy(input: {
       proposals: [],
     };
 
-    // Skip unless: opted in, reachable, has a target, and is actually over it. (Not opted in / under
-    // target / unavailable / no target ⇒ no proposals; the array still appears in the report.)
-    if (!arrCfg.enabled || util.unavailable || util.target === null || !overTarget) {
+    // Gate the proposal by MODE (DESIGN-014 amendment 2026-07-09, build A):
+    //  - 'over-target' (default): opted in, reachable, has a target, AND actually over it.
+    //  - 'continuous': opted in is ENOUGH — the disk target is not required (candidates come from
+    //    Maintainerr, not the *arr disk read); utilization is still read above for the report.
+    // Not proposing ⇒ the array still appears in the report (its verdict), just with no proposals.
+    const proposeHere =
+      policy.mode === 'continuous'
+        ? arrCfg.enabled
+        : arrCfg.enabled && !util.unavailable && util.target !== null && overTarget;
+    if (!proposeHere) {
       arrays.push(result);
       continue;
     }
@@ -213,6 +286,7 @@ export async function evaluateSpacePolicy(input: {
         maintainerr: input.maintainerr,
         actorId,
         now,
+        mode: policy.mode,
         mediaKind,
         arrayKey: util.key,
         arrayLabel: util.label,
@@ -220,7 +294,9 @@ export async function evaluateSpacePolicy(input: {
         target: util.target,
         cooldownDays: arrCfg.cooldownDays,
         minCandidates: arrCfg.minCandidates,
-        targetBytesPerBatch: policy.targetBytesPerBatch,
+        // Per-kind composition caps (maxItems / targetBytes, whichever hits first), worst-rated-first
+        // for policy batches (the owner default — take the least-loved titles). Absent caps ⇒ ALL.
+        targeting: buildKindTargeting(policy, mediaKind),
       });
       if (proposal.outcome === 'proposed') proposedCount += 1;
       result.proposals.push(proposal);
@@ -236,6 +312,7 @@ async function proposeForKind(input: {
   maintainerr: MaintainerrClientBundle;
   actorId: string | null;
   now: Date;
+  mode: SpacePolicyMode;
   mediaKind: TrashMediaKind;
   arrayKey: string;
   arrayLabel: string;
@@ -243,8 +320,9 @@ async function proposeForKind(input: {
   target: number | null;
   cooldownDays: number;
   minCandidates: number;
-  /** DESIGN-014 amendment — optional reclaim cap for the proposed batch (largest-first); absent ⇒ all. */
-  targetBytesPerBatch?: number;
+  /** DESIGN-014 amendment — per-kind composition caps (maxItems/targetBytes, worst-rated-first);
+   *  absent ⇒ ALL candidates. */
+  targeting?: BatchTargeting;
 }): Promise<SpacePolicyProposal> {
   const base = {
     mediaKind: input.mediaKind,
@@ -318,11 +396,10 @@ async function proposeForKind(input: {
       mediaKind: input.mediaKind,
       actorId: input.actorId,
       source: 'policy', // ADR-034 — the "batch posted" push records it was the space policy
-      // DESIGN-014 amendment — optionally cap the proposed batch to a reclaim target (largest-first);
-      // absent ⇒ all candidates. The min-candidates gate above still measures the full pending pool.
-      ...(input.targetBytesPerBatch !== undefined
-        ? { targeting: { targetBytes: input.targetBytesPerBatch, strategy: 'largest' as const } }
-        : {}),
+      // DESIGN-014 amendment (2026-07-09, build A) — optionally cap the proposed batch by the kind's
+      // enabled composition caps (maxItems/targetBytes, worst-rated-first); absent ⇒ all candidates.
+      // The min-candidates gate above still measures the full pending pool.
+      ...(input.targeting !== undefined ? { targeting: input.targeting } : {}),
     });
   } catch (err) {
     if (err instanceof TrashBatchOpenError) {
@@ -348,6 +425,7 @@ async function proposeForKind(input: {
     await recordSpacePolicyProposal({
       db: input.db,
       batchId: created.batchId,
+      mode: input.mode,
       mediaKind: input.mediaKind,
       arrayKey: input.arrayKey,
       arrayLabel: input.arrayLabel,
@@ -363,6 +441,12 @@ async function proposeForKind(input: {
     attributionNote = ` (attribution write failed: ${err instanceof Error ? err.message : String(err)})`;
   }
 
+  // Mode-aware rationale: over-target names the ceiling it crossed; continuous names the mode (the disk
+  // target isn't the trigger, and in continuous mode usedPct/target can be null when the *arr was down).
+  const rationale =
+    input.mode === 'continuous'
+      ? `continuous mode${input.usedPct !== null ? ` — ${input.arrayLabel} is ${input.usedPct}% used` : ` (${input.arrayLabel})`}`
+      : `${input.arrayLabel} is ${input.usedPct}% used vs a ${input.target}% target`;
   return {
     ...base,
     batchId: created.batchId,
@@ -370,8 +454,7 @@ async function proposeForKind(input: {
     candidateCount: created.itemCount,
     outcome: 'proposed',
     reason:
-      `Proposed a ${input.mediaKind} batch of ${created.itemCount} item(s) — ${input.arrayLabel} is ` +
-      `${input.usedPct}% used vs a ${input.target}% target` +
+      `Proposed a ${input.mediaKind} batch of ${created.itemCount} item(s) — ${rationale}` +
       (created.gateSkipped ? ' (skip-gate ON — straight to Leaving Soon).' : ' (awaiting admin review).') +
       attributionNote,
   };
@@ -381,6 +464,7 @@ async function proposeForKind(input: {
 async function recordSpacePolicyProposal(input: {
   db?: DbClient;
   batchId: string;
+  mode: SpacePolicyMode;
   mediaKind: TrashMediaKind;
   arrayKey: string;
   arrayLabel: string;
@@ -396,6 +480,7 @@ async function recordSpacePolicyProposal(input: {
   const payload = {
     batchId: input.batchId,
     mediaKind: input.mediaKind,
+    mode: input.mode,
     array: input.arrayKey,
     arrayLabel: input.arrayLabel,
     usedPct: input.usedPct,
@@ -404,6 +489,12 @@ async function recordSpacePolicyProposal(input: {
     candidateBytes: input.candidateBytes,
     gateSkipped: input.gateSkipped,
   };
+  // Mode-aware lead: over-target cites the crossed ceiling; continuous cites the mode (usedPct/target
+  // may be null when the *arr disk read was unavailable).
+  const lead =
+    input.mode === 'continuous'
+      ? `Continuous mode${input.usedPct !== null ? ` — ${input.arrayLabel} is ${input.usedPct}% used` : ` (${input.arrayLabel})`}.`
+      : `${input.arrayLabel} is ${input.usedPct}% used (target ${input.target}%).`;
 
   // Batch-scoped ledger event (mediaItemId null) — the durable WHY the tuning report joins on.
   await resolveDb(input.db)
@@ -424,7 +515,7 @@ async function recordSpacePolicyProposal(input: {
     type: 'space_policy',
     title: `Space policy proposed a ${kindLabel} batch`,
     body:
-      `${input.arrayLabel} is ${input.usedPct}% used (target ${input.target}%). Proposed ` +
+      `${lead} Proposed ` +
       `${input.candidateCount} ${kindLabel} item${input.candidateCount === 1 ? '' : 's'} for ` +
       (input.gateSkipped ? 'Leaving Soon (skip-gate ON).' : 'admin review.'),
     occurredAt: input.occurredAt,
