@@ -40,3 +40,6 @@ export * from './app-settings';
 export * from './trash-batches';
 export * from './trash-batch-items';
 export * from './trash-batch-saves';
+// ADR-034 / DESIGN-015 (PLAN-016) — the Pushover notification outbox (transactional; drained by the
+// notify-outbox sync mode). Enqueued same-tx by the batch writers; guarded single-writer table.
+export * from './notification-outbox';

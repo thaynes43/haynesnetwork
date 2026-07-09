@@ -142,12 +142,19 @@ export type SyncSource = (typeof SYNC_SOURCES)[number];
 // its audit trail is the trash_space_policy ledger event + the space_policy notification + the
 // proposed batch's own transition events. It joins SYNC_RUN_KINDS so the CLI `--mode` parser +
 // `SyncMode` accept it (migration 0022 rebuilds the sync_runs.run_kind CHECK to keep parity).
+// ADR-034 / DESIGN-015 — 'notify-outbox' is the Pushover DRAINER sync mode: it reads DUE rows from
+// the notification_outbox (sent_at IS NULL AND attempts < 5 AND earliest_send_at <= now) and delivers
+// them to Pushover, marking sent_at / backing off on failure. Like trash-batch-sweep + space-policy it
+// touches NO *arr source (no --source) and writes NO sync_runs row — its audit trail IS the outbox
+// rows. It joins SYNC_RUN_KINDS so the CLI `--mode` parser + `SyncMode` accept it (migration 0024
+// rebuilds the sync_runs.run_kind CHECK to keep the const array and CHECK in parity).
 export const SYNC_RUN_KINDS = [
   'full',
   'incremental',
   'metadata-refresh',
   'trash-batch-sweep',
   'space-policy',
+  'notify-outbox',
 ] as const;
 export type SyncRunKind = (typeof SYNC_RUN_KINDS)[number];
 
@@ -329,6 +336,12 @@ export const APP_SETTING_KEYS = [
   // (never deletes) a draft batch for an array over its space_targets ceiling. Admin-gated + audited
   // through the same setAppSetting single-writer; migration 0022 relaxes the app_settings.key CHECK.
   'space_policy',
+  // ADR-034 / DESIGN-015 (PLAN-016 Pushover batch notifications) — the DELIVERY WINDOW (jsonb object:
+  // { startHour, endHour, tz }; default { 18, 22, 'America/New_York' }). The owner's quiet-hours
+  // control: enqueue computes each notification_outbox row's earliest_send_at against it (in-window ⇒
+  // ASAP; outside ⇒ next window-open). Admin-gated + audited through the same setAppSetting
+  // single-writer; migration 0024 relaxes the app_settings.key CHECK.
+  'notify_window',
 ] as const;
 export type AppSettingKey = (typeof APP_SETTING_KEYS)[number];
 
@@ -417,3 +430,27 @@ export type Resolution = (typeof RESOLUTIONS)[number];
 // tombstoned / lookup-sourced rows. Nullable on the row: null ⇒ the UI shows the KindIcon.
 export const POSTER_SOURCES = ['arr', 'tmdb'] as const;
 export type PosterSource = (typeof POSTER_SOURCES)[number];
+
+// ---------------------------------------------------------------------------
+// ADR-034 / DESIGN-015 — Pushover batch-lifecycle notifications: the transactional
+// OUTBOX enums (migration 0024). text+CHECK, single source of truth for TS + the SQL
+// CHECKs (DESIGN-001 D-02 / HARD RULE — enums are text+CHECK, never Postgres enum types).
+// ---------------------------------------------------------------------------
+
+// The delivery channel of an outbox row. Only 'pushover' ships; the column leaves room for a
+// future email/SMS channel without a schema change (the sender switches on it).
+export const NOTIFY_OUTBOX_CHANNELS = ['pushover'] as const;
+export type NotifyOutboxChannel = (typeof NOTIFY_OUTBOX_CHANNELS)[number];
+
+// The batch-lifecycle moment a row notifies (the sender renders title/message/url per type):
+//   batch_created               — a batch was posted (manual OR space-policy-proposed): "review it".
+//   batch_leaving_soon          — a batch was green-lit into Leaving Soon (deadline date carried).
+//   batch_leaving_soon_reminder — the DAY BEFORE expiry: last chance to save.
+//   batch_swept                 — the windowed sweep closed the batch (summary).
+export const NOTIFY_OUTBOX_EVENT_TYPES = [
+  'batch_created',
+  'batch_leaving_soon',
+  'batch_leaving_soon_reminder',
+  'batch_swept',
+] as const;
+export type NotifyOutboxEventType = (typeof NOTIFY_OUTBOX_EVENT_TYPES)[number];

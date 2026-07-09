@@ -342,4 +342,64 @@ describe('migrations against embedded Postgres 16', () => {
       await client.query(`DELETE FROM app_settings WHERE key IN ('trash_skip_admin_gate','trash_default_window_days','motd')`);
     });
   });
+
+  // ADR-034 / DESIGN-015 (migration 0024) — the Pushover notification outbox + two CHECK relaxes.
+  describe('0024 Pushover notify outbox (ADR-034 — new table + CHECK relaxes)', () => {
+    it('creates notification_outbox with the partial due index', async () => {
+      const cols = await client.query(
+        `SELECT column_name FROM information_schema.columns WHERE table_name = 'notification_outbox'`,
+      );
+      const names = cols.rows.map((r) => r.column_name as string);
+      for (const c of ['id', 'channel', 'event_type', 'payload', 'created_at', 'earliest_send_at', 'sent_at', 'attempts', 'last_error']) {
+        expect(names).toContain(c);
+      }
+      const idx = await client.query(
+        `SELECT indexname FROM pg_indexes WHERE tablename = 'notification_outbox'`,
+      );
+      expect(idx.rows.map((r) => r.indexname)).toContain('notification_outbox_due_idx');
+    });
+
+    it('notification_outbox CHECKs admit the known channel/event types, reject unknown', async () => {
+      await client.query(
+        `INSERT INTO notification_outbox (event_type) VALUES ('batch_created')`,
+      );
+      await client.query(
+        `INSERT INTO notification_outbox (channel, event_type) VALUES ('pushover', 'batch_leaving_soon_reminder')`,
+      );
+      await expect(
+        client.query(`INSERT INTO notification_outbox (channel, event_type) VALUES ('sms', 'batch_created')`),
+      ).rejects.toMatchObject({ code: '23514' });
+      await expect(
+        client.query(`INSERT INTO notification_outbox (event_type) VALUES ('bogus_event')`),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query(`DELETE FROM notification_outbox`);
+    });
+
+    it('app_settings_key_enum admits notify_window + the prior keys (preservation)', async () => {
+      for (const key of ['trash_skip_admin_gate', 'space_policy', 'notify_window']) {
+        await client.query({
+          text: `INSERT INTO app_settings (key, value) VALUES ($1, '{}'::jsonb)
+                   ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+          values: [key],
+        });
+      }
+      await expect(
+        client.query(`INSERT INTO app_settings (key, value) VALUES ('nope_key', '{}'::jsonb)`),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query(`DELETE FROM app_settings WHERE key IN ('trash_skip_admin_gate','space_policy','notify_window')`);
+    });
+
+    it('sync_runs_run_kind_enum admits notify-outbox + the prior kinds (preservation)', async () => {
+      for (const kind of ['full', 'trash-batch-sweep', 'space-policy', 'notify-outbox']) {
+        await client.query({
+          text: `INSERT INTO sync_runs (source, run_kind, status) VALUES ('radarr', $1, 'running')`,
+          values: [kind],
+        });
+      }
+      await expect(
+        client.query(`INSERT INTO sync_runs (source, run_kind, status) VALUES ('radarr', 'bogus-mode', 'running')`),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query(`DELETE FROM sync_runs WHERE run_kind = 'notify-outbox'`);
+    });
+  });
 });
