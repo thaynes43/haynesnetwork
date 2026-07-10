@@ -108,6 +108,72 @@ describe('metrics.overview — level invariant (ADR-037 C-03)', () => {
   });
 });
 
+/** A stub reader answering the Apps sub-tab series (DESIGN-018 D-03) with plausible non-empty vectors. */
+function stubAppsReader(): { reader: PrometheusReader; queries: string[] } {
+  const queries: string[] = [];
+  const query = vi.fn(async (promQL: string): Promise<PromVectorSample[]> => {
+    queries.push(promQL);
+    if (promQL.includes('sabnzbd_speed_bps'))
+      return [sample(12_000_000, { job: 'sabnzbd' }), sample(0, { job: 'sabnzbd-fast' })];
+    if (promQL.includes('up{job=~"sabnzbd'))
+      return [sample(1, { job: 'sabnzbd' }), sample(1, { job: 'sabnzbd-fast' })];
+    if (promQL.includes('prowlarr_indexer_average_response_time_ms'))
+      return [sample(335, { indexer: 'DrunkenSlug' }), sample(225, { indexer: 'NinjaCentral' })];
+    if (promQL.includes('rate(prowlarr_indexer_queries_total'))
+      return [sample(12, { indexer: 'DrunkenSlug' })];
+    // Every other scalar (library totals, queues, up{job="qbittorrent"}, enabled, …) → a non-empty 1.
+    return [sample(1)];
+  });
+  return { reader: { query, queryRange: async () => [] }, queries };
+}
+
+describe('metrics.apps — both-levels + the plumbed full-only seam (ADR-037 C-03 / R-126)', () => {
+  it('returns the four groups at BOTH levels; the requester seam is present at full, absent at limited', async () => {
+    const admin = await createUser(testDb.db, { admin: true });
+    const member = await createUser(testDb.db);
+
+    const fullStub = stubAppsReader();
+    const full = await caller(
+      makeCtx(testDb.db, sessionUser(admin), undefined, undefined, undefined, undefined, fullStub.reader),
+    ).metrics.apps();
+    expect(full.collection.rows).toHaveLength(3);
+    expect(full.pipeline.rows).toHaveLength(3);
+    expect(full.downloads.usenet).toHaveLength(2);
+    expect(full.indexers.rows.map((r) => r.indexer)).toEqual(['DrunkenSlug', 'NinjaCentral']);
+    // Full-only seam present-but-empty at full.
+    expect('requesterActivity' in full).toBe(true);
+    expect(full.requesterActivity).toEqual([]);
+
+    const limitedStub = stubAppsReader();
+    const limited = await caller(
+      makeCtx(
+        testDb.db,
+        sessionUser(member, { metrics: 'read_only' }, undefined, undefined, undefined, 'limited'),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        limitedStub.reader,
+      ),
+    ).metrics.apps();
+    // Same data at limited (no user-aware series to drop) but the full-only seam is OMITTED.
+    expect(limited.collection).toEqual(full.collection);
+    expect(limited.indexers).toEqual(full.indexers);
+    expect('requesterActivity' in limited).toBe(false);
+    expect(limited.requesterActivity).toBeUndefined();
+  });
+
+  it('a caller whose metrics section is DISABLED is FORBIDDEN', async () => {
+    const member = await createUser(testDb.db);
+    const stub = stubAppsReader();
+    await expect(
+      caller(
+        makeCtx(testDb.db, sessionUser(member), undefined, undefined, undefined, undefined, stub.reader),
+      ).metrics.apps(),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+});
+
 describe('metrics.access', () => {
   it('reports the caller’s own level + whether the section is visible', async () => {
     const member = await createUser(testDb.db);

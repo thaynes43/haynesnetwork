@@ -31,3 +31,24 @@ export function formatMbps(mbps: number | null): string {
 export function formatPct(pct: number | null): string {
   return pct === null ? '—' : `${pct}%`;
 }
+
+// DESIGN-018 — Apps sub-tab formatters (pure; the byte scale reuses lib/storage's formatCapacity).
+
+/** "9,564" / "—" — an integer count with thousands separators (null-safe). */
+export function formatCount(n: number | null): string {
+  if (n === null || !Number.isFinite(n)) return '—';
+  return Math.round(n).toLocaleString('en-US');
+}
+
+/** "18/hr" / "—" — an events-per-hour rate, rounded (sub-1 non-zero rates show "<1/hr"). */
+export function formatPerHour(n: number | null): string {
+  if (n === null || !Number.isFinite(n)) return '—';
+  if (n > 0 && n < 1) return '<1/hr';
+  return `${Math.round(n)}/hr`;
+}
+
+/** "335 ms" / "—" — a millisecond latency, rounded. */
+export function formatMs(ms: number | null): string {
+  if (ms === null || !Number.isFinite(ms)) return '—';
+  return `${Math.round(ms)} ms`;
+}

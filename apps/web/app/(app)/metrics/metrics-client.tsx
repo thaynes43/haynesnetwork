@@ -8,6 +8,7 @@ import { Suspense, useEffect, useRef, type KeyboardEvent } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import type { MetricsLevel } from '@hnet/db';
 import { OverviewTab } from './overview-tab';
+import { AppsTab } from './apps-tab';
 
 const METRICS_TABS = [
   { key: 'overview', label: 'Overview' },
@@ -86,6 +87,8 @@ function MetricsContent({ metricsLevel }: { metricsLevel: MetricsLevel }) {
       <div id="metrics-panel" role="tabpanel" aria-labelledby={`metricstab-${active}`}>
         {active === 'overview' ? (
           <OverviewTab active metricsLevel={metricsLevel} />
+        ) : active === 'apps' ? (
+          <AppsTab active metricsLevel={metricsLevel} />
         ) : (
           <section className="card empty-state" data-testid={`metrics-comingsoon-${active}`}>
             <p className="muted">Coming soon — this view lands in a later release.</p>

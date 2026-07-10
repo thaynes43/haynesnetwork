@@ -5079,3 +5079,61 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
   display: grid;
   gap: 8px;
 }
+
+/* DESIGN-018 — Metrics → Apps sub-tab: curated group cards + compact per-app/indexer tables.
+   Tokens only (no raw hex, hard rule 2); reflow-free (ADR-015 — tone recolors, never relayout). */
+.metrics-group {
+  display: grid;
+  gap: var(--space);
+  padding: var(--space);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+.metrics-group__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.metrics-group__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+}
+.metrics-group__link {
+  font-size: 13px;
+  white-space: nowrap;
+}
+.metrics-apps-tablewrap {
+  overflow-x: auto;
+}
+.metrics-apps-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.metrics-apps-table th,
+.metrics-apps-table td {
+  padding: 6px 8px;
+  text-align: right;
+  white-space: nowrap;
+}
+.metrics-apps-table thead th {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border);
+}
+.metrics-apps-table th[scope='row'] {
+  text-align: left;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.metrics-apps-table tbody tr + tr th,
+.metrics-apps-table tbody tr + tr td {
+  border-top: 1px solid var(--color-border);
+}
+.metrics-apps-warn {
+  color: var(--color-warning);
+}
