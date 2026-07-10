@@ -1,0 +1,7 @@
+{
+  "branding_title": "authentik",
+  "branding_logo": "/static/dist/assets/icons/icon_left_brand.svg",
+  "branding_favicon": "/static/dist/assets/icons/icon.png",
+  "branding_custom_css": "",
+  "branding_default_flow_background": "/static/dist/assets/images/flow_background.jpg"
+}

@@ -1,0 +1,287 @@
+/* ============================================================================
+   haynesnetwork brand CSS for Authentik 2026.5.3 (PLAN-011, Q-03 mechanism).
+   Applied as Brand.branding_custom_css. Authentik adopts this stylesheet into
+   the document AND into every web component's shadow root (AKElement styleRoot
+   -> adoptedStyleSheets), so plain class selectors reach the flow card, form
+   controls and buttons inside their shadow DOM.
+
+   Architecture is the app's own token seam (ADR-005 / DESIGN-006) ported as a
+   MECHANISM: custom properties declared on :root inherit through shadow
+   boundaries; [data-theme] on <html> (managed by Authentik's theme script)
+   switches the palette. Values are the shipped hnet-dark / hnet-light palettes
+   from packages/ui/src/theme/tokens.css.
+   ==========================================================================*/
+
+/* ---- tokens ---------------------------------------------------------------*/
+:root {
+  --hnet-accent: #78be20;
+  --hnet-accent-contrast: #0f1115;
+  --hnet-radius: 16px;
+  --hnet-radius-sm: 10px;
+  --hnet-font: 'Outfit', 'Segoe UI', system-ui, -apple-system, Roboto, Helvetica, Arial,
+    sans-serif;
+  /* Authentik seams (vars consumed by flow.css, incl. its !important shadow) */
+  --ak-c-login--MaxWidth: 420px;
+  --ak-c-login__main--BoxShadow: var(--hnet-shadow);
+}
+:root[data-theme='dark'] {
+  --hnet-bg: #000000;
+  --hnet-surface: #111317;
+  --hnet-surface-2: #1a1d22;
+  --hnet-border: #2b2f36;
+  --hnet-text: #f2f4f5;
+  --hnet-muted: #a8acb2;
+  --hnet-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 6px 20px rgba(0, 0, 0, 0.4);
+  --ak-global--background-color: #000000;
+}
+:root[data-theme='light'] {
+  --hnet-bg: #f2f4f5;
+  --hnet-surface: #ffffff;
+  --hnet-surface-2: #eef1f3;
+  --hnet-border: #c6c9ca;
+  --hnet-text: #53565a;
+  --hnet-muted: #9aa0a6;
+  --hnet-shadow: 0 1px 2px rgba(20, 30, 50, 0.06), 0 4px 16px rgba(20, 30, 50, 0.06);
+  --ak-global--background-color: #f2f4f5;
+}
+
+/* ---- login card (DESIGN-006 D-03: brand-paper gradient, soft 16px radius) -*/
+.pf-c-login__main {
+  background: linear-gradient(
+    155deg,
+    color-mix(in srgb, var(--hnet-surface) 97%, var(--hnet-accent)),
+    var(--hnet-surface) 65%
+  );
+  border: 1px solid var(--hnet-border);
+  border-radius: var(--hnet-radius);
+  color: var(--hnet-text);
+  font-family: var(--hnet-font);
+}
+/* Full-bleed at phone widths (flow.css already drops the bg image <35rem). */
+@media (max-width: 34.99rem) {
+  .pf-c-login__main {
+    border: 0;
+    border-radius: 0;
+  }
+}
+
+/* ---- brand block: the lockup logo at its /login hero size -----------------*/
+.pf-c-login__main-header.pf-c-brand .branding-logo {
+  height: 108px;
+  width: auto;
+  max-width: 80%;
+}
+
+/* ---- flow title -----------------------------------------------------------*/
+.pf-c-title {
+  font-family: var(--hnet-font);
+  font-weight: 600;
+  font-size: 20px;
+  text-align: center;
+  color: var(--hnet-text);
+}
+
+/* ---- form -----------------------------------------------------------------*/
+.pf-c-form {
+  font-family: var(--hnet-font);
+}
+.pf-c-form__label-text {
+  font-family: var(--hnet-font);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--hnet-muted);
+}
+.pf-c-form-control {
+  font-family: var(--hnet-font);
+  font-size: 14px;
+  color: var(--hnet-text);
+  background: var(--hnet-surface-2);
+  border: 1px solid var(--hnet-border);
+  border-radius: var(--hnet-radius-sm);
+  min-height: 44px;
+  padding: 8px 14px;
+}
+.pf-c-form-control::placeholder {
+  color: var(--hnet-muted);
+  opacity: 0.8;
+}
+.pf-c-form-control:focus,
+.pf-c-form-control:focus-visible {
+  outline: 2px solid var(--hnet-accent);
+  outline-offset: 1px;
+}
+
+/* ---- buttons are pills (D-03) ---------------------------------------------*/
+.pf-c-button {
+  font-family: var(--hnet-font);
+  border-radius: 999px;
+}
+.pf-c-button.pf-m-primary {
+  background: var(--hnet-accent);
+  color: var(--hnet-accent-contrast);
+  border: 1px solid var(--hnet-accent);
+  font-size: 14px;
+  font-weight: 600;
+  min-height: 46px;
+}
+.pf-c-button.pf-m-primary:hover {
+  filter: brightness(1.06);
+}
+/* External source (Plex) entry: ghost pill with the accent hover ring. */
+.pf-c-button.source-button {
+  background: transparent;
+  color: var(--hnet-text);
+  border: 1px solid var(--hnet-border);
+  min-height: 44px;
+}
+.pf-c-button.source-button:hover {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--hnet-accent) 22%, transparent);
+}
+
+/* ---- password stage: matched-user banner + links --------------------------*/
+ak-form-static .username,
+.pf-c-form .username {
+  font-family: var(--hnet-font);
+  color: var(--hnet-text);
+}
+a {
+  color: var(--hnet-accent);
+}
+
+/* ---- chrome: locale select + footer ---------------------------------------*/
+select#locale-selector {
+  font-family: var(--hnet-font);
+  color: var(--hnet-muted);
+  background: transparent;
+  border: 0;
+}
+.pf-c-login__footer {
+  font-family: var(--hnet-font);
+  color: var(--hnet-muted);
+}
+/* Q-03: the "Powered by authentik" entry is hard-appended by ak-brand-links
+   (light DOM, href-less => data-kind="text"); real footer links keep
+   data-kind="link" and stay visible. */
+ak-brand-links li[data-kind='text'] {
+  display: none;
+}
+
+/* ============================================================================
+   PLAN-011b — Plex is the PRIMARY action on the sign-in card (owner feedback
+   2026-07-07: "make the Plex login button more obvious … that will be people's
+   primary form of login"). The local username/password form stays fully
+   functional (admins + the hnet-e2e automation type into uidField/password)
+   but becomes visually secondary, below an "or" divider.
+
+   Mechanism notes (verified against the shipped 2026.5.3 bundle):
+   - The Plex source is `promoted: true` (supported Source field): the
+     identification stage then renders it as a full-width
+     `pf-m-primary pf-m-block source-button source-button-promoted` button.
+   - `part="flow-card"` is set on ak-flow-card ONLY by the identification
+     stage, so `:host([part='flow-card'])` scopes the section reorder to that
+     stage; the password/MFA/enrollment cards keep their stock order.
+   - The visible label is swapped to "Log in with Plex" in CSS (font-size: 0
+     + ::after). The source NAME stays "Plex" so user-settings/link pages and
+     the "Continue with Plex" aria-label read sanely.
+   ==========================================================================*/
+
+/* 1. Reorder the identification card: title → Plex → divider → local form. */
+:host([part='flow-card']) {
+  display: flex;
+  flex-direction: column;
+}
+:host([part='flow-card']) .pf-c-login__main-header {
+  order: 1;
+}
+:host([part='flow-card']) .pf-c-login__main-footer {
+  order: 2;
+  margin-block-start: 0.25rem;
+  margin-block-end: 0;
+  padding-block-end: 0;
+}
+:host([part='flow-card']) .pf-c-login__main-body {
+  order: 3;
+}
+
+/* 2. Divider microcopy between the Plex zone and the local-account form. */
+:host([part='flow-card']) .pf-c-login__main-body::before {
+  content: 'or sign in with a local account';
+  display: block;
+  text-align: center;
+  font-family: var(--hnet-font);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--hnet-muted);
+  border-top: 1px solid var(--hnet-border);
+  padding-top: 14px;
+  margin: 4px 0 14px;
+}
+
+/* 3. The promoted Plex button: big green primary pill, "Log in with Plex".
+   The stage's own nested rules desugar to
+   :is(…, ak-stage-identification.style-scope fieldset[name="login-sources"]) .source-button
+   = specificity (0,3,2), so ours are prefixed with the fieldset to win. */
+fieldset[name='login-sources'] .pf-c-button.source-button.source-button-promoted {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: center;
+  background: var(--hnet-accent);
+  color: var(--hnet-accent-contrast);
+  border: 1px solid var(--hnet-accent);
+  border-radius: 999px;
+  min-height: 52px;
+  gap: 10px;
+  font-size: 0; /* hides the templated "Continue with Plex" text node */
+}
+fieldset[name='login-sources'] .pf-c-button.source-button.source-button-promoted::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%230f1115' d='M11.643 0H4.68l7.679 12L4.68 24h6.963l7.677-12-7.677-12'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+}
+fieldset[name='login-sources'] .pf-c-button.source-button.source-button-promoted::after {
+  content: 'Log in with Plex';
+  /* PatternFly uses .pf-c-button::after as an absolutely-positioned border
+     overlay — neutralize that so this renders as the inline label. */
+  position: static;
+  border: 0;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+}
+fieldset[name='login-sources'] .pf-c-button.source-button.source-button-promoted:hover {
+  filter: brightness(1.06);
+  box-shadow: none;
+}
+
+/* Align the sources block with the form column (the stage pads the fieldset
+   with --ak-c-login-sources-padding-inline !important; feeding the var is
+   enough — xl matches the card body below 768px, 2xl above). */
+:host(ak-stage-identification) fieldset[name='login-sources'].ak-c-fieldset.pf-c-form__group {
+  --ak-c-login-sources-padding-inline: var(--pf-global--spacer--xl);
+}
+@media (min-width: 768px) {
+  :host(ak-stage-identification) fieldset[name='login-sources'].ak-c-fieldset.pf-c-form__group {
+    --ak-c-login-sources-padding-inline: var(--pf-global--spacer--2xl);
+  }
+}
+
+/* 4. De-emphasize the local form's submit on the identification stage only
+   (the password stage's Continue keeps the full green primary). */
+:host(ak-stage-identification) .pf-c-form .pf-c-button.pf-m-primary {
+  background: transparent;
+  color: var(--hnet-text);
+  border: 1px solid var(--hnet-border);
+  font-size: 13px;
+  font-weight: 600;
+  min-height: 42px;
+}
+:host(ak-stage-identification) .pf-c-form .pf-c-button.pf-m-primary:hover {
+  filter: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--hnet-accent) 22%, transparent);
+}

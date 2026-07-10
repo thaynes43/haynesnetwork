@@ -106,7 +106,9 @@ protection). Cross-server watch visibility on the walls is **informational, not 
 1. **Larger site features** (owner will direct).
 2. **Authentik MFA hardening**, including **migrating Authentik to blueprints / GitOps**. Every live
    Authentik change made this session is documented **with rollbacks** in
-   `docs/ops/001-authentik-provisioning.md` **and** `scratchpad/ux-011/APPLY.md` — treat that pair as
+   `docs/ops/001-authentik-provisioning.md` **and** `docs/ops/authentik-apply-seed/` (the applied
+   option-C + 011b Plex-primary rebrand and its exact rollback payloads, promoted out of the
+   session-local `scratchpad/ux-011/` — see that dir's `README.md` + `APPLY.md`) — treat that pair as
    the **blueprint seed** when codifying Authentik into GitOps.
 
 ## Morning check owed
