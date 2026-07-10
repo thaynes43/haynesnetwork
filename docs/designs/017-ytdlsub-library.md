@@ -1,12 +1,15 @@
 # DESIGN-017: ytdl-sub Library sub-tabs — direct Plex read, section-gated, Plex-thumb proxy
 
 - **Status:** Accepted
-- **Last updated:** 2026-07-10
-- **Satisfies:** PRD-001 **R-121..R-124**; governed by **ADR-038** (direct-Plex read model + `ytdlsub`
-  section gate + Plex-thumb proxy). Reuses ADR-017/DESIGN-007 (`@hnet/plex` read client + registry),
+- **Last updated:** 2026-07-10 (v2 — the owner's morning UX package: **D-07** poster streamlining per
+  **ADR-041**, **D-08** Library tab order, **D-09** read-only series drill-in; R-131..R-132, T-120)
+- **Satisfies:** PRD-001 **R-121..R-124** + **R-131..R-132**; governed by **ADR-038** (direct-Plex read
+  model + `ytdlsub` section gate + Plex-thumb proxy) and **ADR-041** (poster transcode variants + LRU +
+  ETag). Reuses ADR-017/DESIGN-007 (`@hnet/plex` read client + registry),
   ADR-019 (the authed poster **proxy** pattern), ADR-021/DESIGN-009 (Section Permissions), ADR-037/
   DESIGN-016 (the `disabled`-default rollout + the `?tab=` sub-tab shell), and the PLAN-004 `@hnet/ui`
-  filter engine + the `MediaPoster` / `.poster-grid` Library idioms (DESIGN-008 D-11). Glossary **T-110..T-112**.
+  filter engine + the `MediaPoster` / `.poster-grid` Library idioms (DESIGN-008 D-11). Glossary
+  **T-110..T-112**, **T-120**.
 
 ## Overview
 
@@ -166,8 +169,9 @@ because the current client page can't resolve the session:
   `FilterChip`-adjacent `nextSort`/`arrowFor` + `sortRowsClientSide` — client-side because the show counts
   are small (ADR-038 C-07/C-08). Loading → the existing skeleton poster boxes; `found: false` →
   a muted "This library isn't on the server yet" empty-state; `unavailable` → a muted "couldn't reach the
-  library" note. No poll (one-shot load). Tiles are action-free (no drill-in this round — season/episode
-  counts are shown in the caption; deeper browse is a Phase-2 follow-up).
+  library" note. No poll (one-shot load). ~~Tiles are action-free (no drill-in this round — season/episode
+  counts are shown in the caption; deeper browse is a Phase-2 follow-up).~~ **Superseded by D-09
+  (2026-07-10):** tiles are now click-through links to the read-only drill-in.
 - **`apps/web/components/kind-icon.tsx`:** add `kind === 'show'` (reuses the sonarr TV-frame glyph,
   `currentColor` — no new asset, no hex) so a missing-poster tile falls back to a video frame, not the
   film frame.
@@ -194,6 +198,99 @@ The `@hnet/plex` client is the production reader; the stub speaks the same JSON 
 `env.ts` need **no** new stub — the existing stub-plex server stands in for k8plex. The
 `packages/api/__tests__/plex-stubs.ts` fake `read` gains `listSectionContents` so router tests compile.
 
+---
+
+The following sections (D-07..D-09) are the **2026-07-10 owner UX package** — the morning-review
+refinements to the shipped v0.31.0 feature. D-07 is governed by **ADR-041**; D-08/D-09 refine D-05
+within the existing ADR-038 decisions (the "no drill-in this round" scope note in D-05 is superseded
+by D-09).
+
+### D-07 — Poster streamlining: transcode variants + in-process LRU + ETag (ADR-041; R-131)
+
+The proxy route contract grows one **allow-listed** parameter and two caching layers; the URL shape the
+router emits (`/api/ytdlsub/poster?thumb=…`) is unchanged (no `size` ⇒ `grid`).
+
+- **Variants** (`@hnet/api` `ytdlsub-poster.ts`): `YTDLSUB_THUMB_SIZES = ['grid', 'still']` —
+  `grid` = 300×450 (2:3; ≈2× the 132–160 px poster tile), `still` = 320×180 (16:9 episode rows).
+  `resolveYtdlsubThumbUpstream(thumb, size, env)` validates the thumb exactly as before
+  (`isValidPlexThumbPath`) and builds the k8plex **photo-transcode** upstream
+  `{baseUrl}/photo/:/transcode?width=W&height=H&minSize=1&upscale=1&format=webp&url=<encodeURIComponent(thumb)>`
+  (verified live on k8plex 2026-07-10: header token honored, 401 unauthenticated, `format=webp` turns a
+  2.35 MB Peloton JPEG into a 3.5 KB 300×450 WebP), plus a `fallbackUrl` = the original `{baseUrl}{thumb}`
+  and a strong `etag` = hash of `(size, thumb)` — self-versioning because the Plex thumb path embeds
+  `lastWrite` (ADR-041 C-03).
+- **LRU** (`ThumbLruCache`, module singleton in `@hnet/api`): byte-capped memoization (32 MiB total,
+  1 MiB/entry) of `{body, contentType, etag}` per `(size, thumb)`; recency-refreshing get,
+  evict-oldest set, over-cap bodies served-not-cached. Process-local — NOT a store (ADR-041 C-04).
+- **Route** (`apps/web/app/api/ytdlsub/poster/route.ts`): after the unchanged session + section + path
+  gates — `If-None-Match` match ⇒ **304** (no upstream); LRU hit ⇒ 200 from memory; miss ⇒ fetch the
+  transcode upstream, buffer, memoize, 200 with `ETag` + the existing
+  `Cache-Control: private, max-age=86400, stale-while-revalidate=604800`. A transcode failure retries
+  the **original-art fallback** (ADR-041 C-02), which is served **without memoization or ETag** and a
+  short `max-age=300` — a transient transcoder outage never makes megabyte originals sticky in the LRU
+  or in browser caches. Unknown `size` ⇒ 404. Double miss ⇒ 404 ⇒ the `MediaPoster` fallback tile
+  (unchanged).
+- **Progressive reveal** (`MediaPoster`): the `<img>` inside the reserved 2:3 `.poster-box` starts
+  transparent and fades in on load (`.poster-img.is-loaded`, opacity-only — ADR-015-safe by
+  construction; the global reduced-motion rule kills the transition). Applies to every wall that uses
+  `MediaPoster` (Movies|TV|Music included) — pure polish, no geometry change.
+- **Measured (deployed pod → k8plex, 2026-07-10):** Peloton wall 12 thumbs **29,279,059 B → 46,460 B**;
+  YouTube wall 70 thumbs **6,937,403 B → 856,008 B**; sequential upstream wall pull 159→27 ms /
+  530→142 ms. The WAN transfer (the user-facing wait) shrinks proportionally.
+
+### D-08 — Library tab order (owner ruling 2026-07-10)
+
+`Movies | TV | Music | Peloton | YouTube | My Fixes` — the ytdl-sub tabs sit **after Music** (they are
+media, browsed like media) and **My Fixes moves LAST** (it is a personal utility view, not a library).
+`library-client.tsx` composes the strip as `MEDIA_TABS + (ytdlsubVisible ? YTDLSUB_TABS : []) +
+MY_FIXES_TAB`; for a caller without the `ytdlsub` section the visible strip is `Movies | TV | Music |
+My Fixes` (order preserved, nothing else changes). The `?tab=` contract, roving tabindex, and keyed
+remounts are untouched.
+
+### D-09 — Read-only series drill-in: show → seasons → episodes (R-132)
+
+Clicking a Peloton/YouTube poster now opens a **read-only** detail view (the D-05 "action-free tiles /
+no drill-in" scope note is superseded). Same visual language as `/library/[id]`; **no ledger, no
+actions, no write surface**.
+
+- **`@hnet/plex` reads** (read.ts; no import-confinement — reads only):
+  `getMetadataItem(ratingKey)` → `GET /library/metadata/{key}` and
+  `listMetadataChildren(ratingKey, {limit})` → `GET /library/metadata/{key}/children`
+  (container-size bounded like `listSectionContents`), both parsed by a shared
+  `metadataContainerSchema` whose items extend `sectionItemSchema` with `index`, `duration` (ms),
+  `originallyAvailableAt`, and `librarySectionID` (item- and container-level, coerced to string).
+- **tRPC** (`ytdlsubRouter`, both `ytdlsubProcedure`):
+
+  | Procedure | Input | Returns |
+  | --------- | ----- | ------- |
+  | `ytdlsub.detail` | `{ library, ratingKey }` | `{ found, unavailable, show: {ratingKey,title,summary,posterUrl,seasonCount,episodeCount,year}, seasons: [{ratingKey,title,index,episodeCount}] }` |
+  | `ytdlsub.episodes` | `{ library, seasonRatingKey }` | `{ found, unavailable, episodes: [{ratingKey,title,index,airDate,durationMs,stillUrl}] }` |
+
+  **Section confinement:** both resolve the library's section key by title (ADR-038 C-03) and verify
+  the metadata's `librarySectionID` matches — a ratingKey from any other k8plex section (Music, or a
+  cross-library probe) is `found:false`, so the drill-in surface is exactly the two gated libraries.
+  A Plex 404 ⇒ `found:false`; any other read failure ⇒ `unavailable:true` (the D-04 degrade grammar).
+  Episode `stillUrl` rides the poster proxy with `size=still`.
+- **Route** — `apps/web/app/(app)/library/ytdlsub/[library]/[ratingKey]/page.tsx` (server component,
+  the D-05 gate pattern): anonymous → `/login`; `ytdlsub` `disabled`, a bad `library`, or a
+  non-numeric ratingKey → `redirect('/library')`. Renders `<YtdlsubItemDetail/>` (client).
+- **UI** (`ytdlsub-item-detail.tsx`): the `/library/[id]` idioms verbatim — `BackLink` (the fixed
+  dictionary gains `peloton`/`youtube` keys → `/library?tab=…`), a `.card.detail-head` (2:3
+  `MediaPoster` + title + a muted "N seasons · M episodes" badge row + the show summary when present),
+  then one `.card.admin-section` of collapsible `.season` `<details>` blocks (the sonarr season
+  grammar). Expanding a season lazily queries `ytdlsub.episodes` (enabled-on-open — a 261-episode
+  Peloton season never loads up front) and renders read-only episode rows: a reserved 16:9 still box
+  (`.epi-still`, token colors only) + title + muted `date · duration` (`formatDay` /
+  `formatRuntime`). `<details>` expansion is the sanctioned ADR-015 in-place exception; loading states
+  are muted text inside the expanded body (no reflow of neighbors).
+- **Grid cards become links:** `ytdlsub-browser.tsx` tiles wrap in
+  `<Link href={/library/ytdlsub/{library}/{ratingKey}}>` (the `MediaBrowser` card idiom; hover/focus
+  affordances inherited).
+- **Stubs:** `stub-plex.ts` gains `/library/metadata/{key}` + `/{key}/children` handlers over a canned
+  show→season→episode hierarchy (with `librarySectionID`) and a `/photo/:/transcode` handler that
+  serves the tiny image (webp-labeled) so the D-07 pipeline round-trips in e2e; the
+  `plex-stubs.ts` fake read mirrors `getMetadataItem`/`listMetadataChildren`.
+
 ## Alternatives considered
 
 - **Ledger sync of Peloton/YouTube** — rejected (ADR-038 option 2; this content has no \*arr of record).
@@ -217,6 +314,19 @@ The `@hnet/plex` client is the production reader; the stub speaks the same JSON 
   the stub shows in the poster grid (posters resolve via the proxy), search/sort work in place (no reflow);
   a **member** (no `ytdlsub` row) sees **neither tab** and `ytdlsub.list` is `FORBIDDEN`; opening the member
   role's `ytdlsub` to `read_only` in the role editor makes the tabs appear.
+- **v2 hermetic (D-07..D-09):** `resolveYtdlsubThumbUpstream` builds the allow-listed webp transcode
+  variant per size (encoded thumb, token in the header, never the URL) + the original-art `fallbackUrl`,
+  keeps rejecting scheme/`..`/non-library paths, and its ETag is stable per `(size, thumb)` and differs
+  across sizes/thumbs; `ThumbLruCache` refreshes recency on get, evicts oldest at the byte cap, and
+  never caches an over-cap body; `ytdlsub.detail`/`ytdlsub.episodes` map seasons/episodes (index-sorted,
+  still URLs carry `size=still`), return `found:false` for a ratingKey **outside the resolved library
+  section** (the confinement check) or a Plex 404, degrade to `unavailable` on a read throw, and stay
+  `FORBIDDEN` for a `disabled` caller; `@hnet/plex` `getMetadataItem`/`listMetadataChildren` parse
+  fixtures (coerced `librarySectionID`, duration, air date) with the container bound in the query.
+- **v2 e2e (advisory):** the admin tab strip reads Movies | TV | Music | Peloton | YouTube | My Fixes
+  (member: Movies | TV | Music | My Fixes); clicking a Peloton show opens the drill-in — the detail
+  head renders, seasons list, expanding one loads its episodes (title/date/duration, stub still) —
+  and the back link returns to the Peloton tab.
 
 ## Open questions
 

@@ -51,14 +51,13 @@ import { MyFixesPanel } from '@/components/my-fixes-panel';
 import { CHIP_LABELS, RatingChip } from '@/components/filter-chips';
 import { YtdlsubBrowser } from './ytdlsub-browser';
 
-const LIBRARY_TABS = [
+const MEDIA_TABS = [
   { key: 'movies', label: 'Movies', arrKind: 'radarr' },
   { key: 'tv', label: 'TV', arrKind: 'sonarr' },
   { key: 'music', label: 'Music', arrKind: 'lidarr' },
-  { key: 'my-fixes', label: 'My Fixes', arrKind: undefined },
 ] as const satisfies ReadonlyArray<{ key: string; label: string; arrKind?: ArrKindName }>;
 
-// ADR-038 / DESIGN-017 (PLAN-022) — the ytdl-sub Library sub-tabs (Peloton, YouTube). Appended to the
+// ADR-038 / DESIGN-017 (PLAN-022) — the ytdl-sub Library sub-tabs (Peloton, YouTube). Spliced into the
 // visible tab set ONLY when the caller can see the `ytdlsub` section (server-resolved in page.tsx and
 // passed down as `ytdlsubVisible`). They read the k8plex Plex libraries directly (no *arr, no ledger).
 const YTDLSUB_TABS = [
@@ -66,7 +65,18 @@ const YTDLSUB_TABS = [
   { key: 'youtube', label: 'YouTube', arrKind: undefined },
 ] as const satisfies ReadonlyArray<{ key: string; label: string; arrKind?: ArrKindName }>;
 
-type TabKey = (typeof LIBRARY_TABS)[number]['key'] | (typeof YTDLSUB_TABS)[number]['key'];
+// DESIGN-017 D-08 (owner ruling 2026-07-10) — My Fixes is a personal utility view, not a library:
+// it sits LAST, after the media tabs and the ytdl-sub tabs.
+const MY_FIXES_TAB = { key: 'my-fixes', label: 'My Fixes', arrKind: undefined } as const satisfies {
+  key: string;
+  label: string;
+  arrKind?: ArrKindName;
+};
+
+type TabKey =
+  | (typeof MEDIA_TABS)[number]['key']
+  | (typeof YTDLSUB_TABS)[number]['key']
+  | (typeof MY_FIXES_TAB)['key'];
 type YtdlsubTabKey = (typeof YTDLSUB_TABS)[number]['key'];
 
 const ON_DISK_FILTERS = [
@@ -145,13 +155,14 @@ function LibraryContent({ ytdlsubVisible }: { ytdlsubVisible: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  // ADR-038 — the ytdl-sub sub-tabs are appended ONLY when the caller can see the `ytdlsub` section.
-  // `resolveTab` validates against the VISIBLE set, so a hidden caller who deep-links `?tab=peloton`
-  // falls back to Movies (never a phantom tab).
-  const tabs = ytdlsubVisible ? [...LIBRARY_TABS, ...YTDLSUB_TABS] : LIBRARY_TABS;
+  // ADR-038 / DESIGN-017 D-08 — Movies | TV | Music | Peloton | YouTube | My Fixes: the ytdl-sub
+  // tabs sit after Music ONLY when the caller can see the `ytdlsub` section, and My Fixes is always
+  // LAST. The active-tab resolution validates against the VISIBLE set, so a hidden caller who
+  // deep-links `?tab=peloton` falls back to Movies (never a phantom tab).
+  const tabs = [...MEDIA_TABS, ...(ytdlsubVisible ? YTDLSUB_TABS : []), MY_FIXES_TAB];
   const rawTab = searchParams.get('tab');
   const active: TabKey = tabs.some((t) => t.key === rawTab) ? (rawTab as TabKey) : 'movies';
-  const activeTab = tabs.find((t) => t.key === active) ?? tabs[0];
+  const activeTab = tabs.find((t) => t.key === active) ?? MEDIA_TABS[0];
 
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 

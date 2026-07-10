@@ -12,6 +12,7 @@ import {
   librarySectionsSchema,
   plexAccountSchema,
   plexFriendSchema,
+  metadataContainerSchema,
   plexServerSectionSchema,
   sectionContentsSchema,
   sharedServerSchema,
@@ -104,6 +105,52 @@ export class PlexReadClient {
       { query: { 'X-Plex-Container-Start': 0, 'X-Plex-Container-Size': size } },
     );
     return body.MediaContainer.Metadata;
+  }
+
+  /**
+   * DESIGN-017 D-09 (ytdl-sub drill-in) — `GET /library/metadata/{ratingKey}`: one item (a show /
+   * season / episode) plus the library section that owns it (the drill-in's section-confinement
+   * check). Read-only; token in the header. A bogus ratingKey throws the typed 404 PlexHttpError —
+   * callers map it to their not-found shape.
+   */
+  async getMetadataItem(
+    ratingKey: string,
+  ): Promise<{ item: PlexSectionItem; librarySectionId: string | null } | null> {
+    const body = await this.http.requestJson(
+      'GET',
+      `${this.baseUrl}/library/metadata/${encodeURIComponent(ratingKey)}`,
+      metadataContainerSchema,
+    );
+    const item = body.MediaContainer.Metadata[0];
+    if (!item) return null;
+    return {
+      item,
+      librarySectionId: item.librarySectionID ?? body.MediaContainer.librarySectionID ?? null,
+    };
+  }
+
+  /**
+   * DESIGN-017 D-09 (ytdl-sub drill-in) — `GET /library/metadata/{ratingKey}/children`: a show's
+   * seasons or a season's episodes, container-size bounded like listSectionContents (ADR-038 C-08).
+   * Returns the items plus the owning librarySectionID (container-level) for section confinement.
+   */
+  async listMetadataChildren(
+    ratingKey: string,
+    opts?: { limit?: number },
+  ): Promise<{ items: PlexSectionItem[]; librarySectionId: string | null; totalSize: number | null }> {
+    const size = Math.min(Math.max(opts?.limit ?? 500, 1), 1000);
+    const body = await this.http.requestJson(
+      'GET',
+      `${this.baseUrl}/library/metadata/${encodeURIComponent(ratingKey)}/children`,
+      metadataContainerSchema,
+      { query: { 'X-Plex-Container-Start': 0, 'X-Plex-Container-Size': size } },
+    );
+    const mc = body.MediaContainer;
+    return {
+      items: mc.Metadata,
+      librarySectionId: mc.librarySectionID ?? mc.Metadata[0]?.librarySectionID ?? null,
+      totalSize: mc.totalSize ?? null,
+    };
   }
 
   // ---- plex.tv account read (owner identity) ----

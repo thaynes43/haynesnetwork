@@ -70,6 +70,11 @@ interface StubSectionItem {
   leafCount?: number;
   year?: number;
   addedAt?: number;
+  // DESIGN-017 D-09 (drill-in) — hierarchy fields for /library/metadata/{key}[/children] items.
+  index?: number;
+  duration?: number; // ms
+  originallyAvailableAt?: string; // 'YYYY-MM-DD'
+  summary?: string;
 }
 
 // ADR-038 — canned `/library/sections/{key}/all` contents per (slug, sectionKey). One show carries a
@@ -102,6 +107,98 @@ const SECTION_CONTENTS: Partial<Record<Slug, Record<string, StubSectionItem[]>>>
     ],
   },
 };
+
+// DESIGN-017 D-09 — the drill-in hierarchy for the k8plex stub: show ratingKey → its seasons;
+// season ratingKey → its episodes. Every metadata item also records the section that owns it
+// (`librarySectionID` — the router's confinement check). Bike Bootcamp (9001, section 4) mirrors the
+// real Peloton shape: duration-encoded season titles, dated episodes with runtimes and stills.
+const METADATA_SECTION: Record<string, string> = {
+  '9001': '4',
+  '9002': '4',
+  '7001': '5',
+  '9101': '4', // Bike Bootcamp — Season 30
+  '9102': '4', // Bike Bootcamp — Season 45
+  '9201': '4', // episodes…
+  '9202': '4',
+  '9203': '4',
+  '7101': '5', // Documentaries — Season 2024
+  '7201': '5',
+};
+
+const METADATA_CHILDREN: Record<string, StubSectionItem[]> = {
+  // Bike Bootcamp → seasons (duration-encoded titles, the T-111 idiom).
+  '9001': [
+    {
+      ratingKey: '9101',
+      title: 'Season 30',
+      type: 'season',
+      index: 30,
+      leafCount: 2,
+      thumb: '/library/metadata/9101/thumb/1700',
+    },
+    { ratingKey: '9102', title: 'Season 45', type: 'season', index: 45, leafCount: 1 },
+  ],
+  // Season 30 → episodes.
+  '9101': [
+    {
+      ratingKey: '9201',
+      title: '2026-06-09 - 30 min Bootcamp',
+      type: 'episode',
+      index: 701,
+      duration: 1_991_936,
+      originallyAvailableAt: '2026-06-09',
+      thumb: '/library/metadata/9201/thumb/1701',
+    },
+    {
+      ratingKey: '9202',
+      title: '2026-06-02 - 30 min Bootcamp',
+      type: 'episode',
+      index: 700,
+      duration: 1_800_000,
+      originallyAvailableAt: '2026-06-02',
+    },
+  ],
+  // Season 45 → one episode.
+  '9102': [
+    {
+      ratingKey: '9203',
+      title: '2026-05-20 - 45 min Bootcamp',
+      type: 'episode',
+      index: 650,
+      duration: 2_700_000,
+      originallyAvailableAt: '2026-05-20',
+      thumb: '/library/metadata/9203/thumb/1702',
+    },
+  ],
+  // Documentaries (YouTube) → one season → one episode.
+  '7001': [
+    { ratingKey: '7101', title: 'Season 2024', type: 'season', index: 2024, leafCount: 1 },
+  ],
+  '7101': [
+    {
+      ratingKey: '7201',
+      title: 'A Stub Documentary',
+      type: 'episode',
+      index: 1,
+      duration: 3_600_000,
+      originallyAvailableAt: '2024-03-15',
+      thumb: '/library/metadata/7201/thumb/1703',
+    },
+  ],
+};
+
+/** Find one metadata item (show/season/episode) by ratingKey across the canned hierarchy. */
+function findMetadataItem(ratingKey: string): StubSectionItem | undefined {
+  for (const items of Object.values(SECTION_CONTENTS.hayneskube ?? {})) {
+    const hit = items.find((i) => i.ratingKey === ratingKey);
+    if (hit) return hit;
+  }
+  for (const items of Object.values(METADATA_CHILDREN)) {
+    const hit = items.find((i) => i.ratingKey === ratingKey);
+    if (hit) return hit;
+  }
+  return undefined;
+}
 
 // A 1x1 transparent PNG the stub streams for any Plex thumb path (so the poster proxy returns a 200).
 const TINY_PNG = Buffer.from(
@@ -289,6 +386,43 @@ export async function startStubPlex(): Promise<StubPlexServer> {
       if (/^\/library\/metadata\/[^/]+\/thumb\//.test(path)) {
         res.writeHead(200, { 'content-type': 'image/png', 'content-length': String(TINY_PNG.length) });
         return res.end(TINY_PNG);
+      }
+      // ADR-041 D-07 — the photo-transcode endpoint the sized poster variants ride. The stub serves
+      // the same tiny image (webp-labelled) for any known /library/… url= target; an unknown target
+      // 404s so the route's original-art fallback is exercised in tests that want it.
+      if (path === '/photo/:/transcode') {
+        const target = url.searchParams.get('url') ?? '';
+        if (!target.startsWith('/library/')) return json(res, 404, { message: 'bad transcode url' });
+        res.writeHead(200, { 'content-type': 'image/webp', 'content-length': String(TINY_PNG.length) });
+        return res.end(TINY_PNG);
+      }
+      // DESIGN-017 D-09 — a show's/season's children (seasons/episodes) with the owning section id.
+      const childrenMatch = path.match(/^\/library\/metadata\/([^/]+)\/children$/);
+      if (childrenMatch) {
+        const key = childrenMatch[1]!;
+        const Metadata = METADATA_CHILDREN[key] ?? [];
+        return json(res, 200, {
+          MediaContainer: {
+            size: Metadata.length,
+            totalSize: Metadata.length,
+            librarySectionID: METADATA_SECTION[key] ? Number(METADATA_SECTION[key]) : undefined,
+            Metadata,
+          },
+        });
+      }
+      // DESIGN-017 D-09 — one metadata item (the drill-in head), with librarySectionID on the item.
+      const metaMatch = path.match(/^\/library\/metadata\/([^/]+)$/);
+      if (metaMatch) {
+        const key = metaMatch[1]!;
+        const item = findMetadataItem(key);
+        if (!item) return json(res, 404, { message: 'no such metadata' });
+        const sectionId = METADATA_SECTION[key];
+        return json(res, 200, {
+          MediaContainer: {
+            size: 1,
+            Metadata: [{ ...item, librarySectionID: sectionId ? Number(sectionId) : undefined }],
+          },
+        });
       }
 
       // ---- plex.tv sharing API (disambiguated by machineId in the path) ----

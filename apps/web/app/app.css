@@ -1548,6 +1548,13 @@ input[aria-invalid='true'] {
   height: 100%;
   object-fit: cover;
   display: block;
+  /* ADR-041 / DESIGN-017 D-07 — progressive reveal: transparent until loaded, fading in over the
+     tinted box. Opacity only (no geometry — ADR-015); the global reduced-motion rule kills it. */
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+.poster-img.is-loaded {
+  opacity: 1;
 }
 .poster-fallback {
   display: grid;
@@ -1752,6 +1759,58 @@ input[aria-invalid='true'] {
 }
 .season .child-list {
   padding: 0 10px 10px;
+}
+
+/* DESIGN-017 D-09 (R-132) — read-only episode rows in the ytdl-sub drill-in. The 16:9 still box
+   RESERVES its space (aspect-ratio, ADR-015) and shows the tinted skeleton tone until the still
+   fades in (the shared .poster-img reveal); no-thumb episodes keep the tinted box (no icon —
+   denser than the 2:3 fallback tile at this size). Rows are static — nothing here re-orients. */
+.epi-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.epi-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.epi-still {
+  position: relative;
+  width: 108px;
+  aspect-ratio: 16 / 9;
+  flex: none;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: color-mix(in srgb, var(--color-accent) 7%, var(--color-surface-2));
+}
+.epi-still .poster-img {
+  border-radius: inherit;
+}
+.epi-row__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.epi-row__title {
+  font-size: 13.5px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.epi-row__meta {
+  font-size: 12px;
+}
+@media (max-width: 480px) {
+  .epi-still {
+    width: 88px;
+  }
 }
 
 /* Badge tones (status chips) — all through the token palette. */

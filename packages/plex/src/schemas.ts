@@ -59,6 +59,13 @@ export const sectionItemSchema = z.object({
   childCount: z.union([z.string(), z.number()]).transform(Number).optional(), // seasons
   leafCount: z.union([z.string(), z.number()]).transform(Number).optional(), // episodes
   addedAt: z.union([z.string(), z.number()]).transform(Number).optional(), // epoch secs
+  // DESIGN-017 D-09 (drill-in) — hierarchy fields present on /library/metadata/{key}[/children]
+  // items: a season's/episode's ordinal, an episode's runtime + air date, and the owning library
+  // section (the drill-in's section-confinement check — coerced, Plex serves it as a number).
+  index: z.union([z.string(), z.number()]).transform(Number).optional(),
+  duration: z.union([z.string(), z.number()]).transform(Number).optional(), // episode runtime, ms
+  originallyAvailableAt: z.string().optional(), // 'YYYY-MM-DD'
+  librarySectionID: z.union([z.string(), z.number()]).transform(String).optional(),
 });
 export type PlexSectionItem = z.infer<typeof sectionItemSchema>;
 
@@ -70,6 +77,22 @@ export const sectionContentsSchema = z.object({
   }),
 });
 export type PlexSectionContents = z.infer<typeof sectionContentsSchema>;
+
+/**
+ * DESIGN-017 D-09 (drill-in) — `GET /library/metadata/{key}` and `GET /library/metadata/{key}/children`.
+ * Same item shape as a section listing; the container additionally carries the owning
+ * `librarySectionID` (the drill-in verifies it against the resolved ytdl-sub section so a ratingKey
+ * can never browse outside the gated libraries) and `totalSize` when the children read is paged.
+ */
+export const metadataContainerSchema = z.object({
+  MediaContainer: z.object({
+    size: z.union([z.string(), z.number()]).transform(Number).optional(),
+    totalSize: z.union([z.string(), z.number()]).transform(Number).optional(),
+    librarySectionID: z.union([z.string(), z.number()]).transform(String).optional(),
+    Metadata: z.array(sectionItemSchema).optional().default([]),
+  }),
+});
+export type PlexMetadataContainer = z.infer<typeof metadataContainerSchema>;
 
 // ---------------------------------------------------------------------------
 // plex.tv v1 sharing API (XML) — the read client extracts attributes into these plain

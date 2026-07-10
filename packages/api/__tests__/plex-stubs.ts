@@ -28,8 +28,25 @@ export interface FakeServerConfig {
       leafCount?: number;
       year?: number;
       addedAt?: number;
+      summary?: string;
     }>
   >;
+  /** DESIGN-017 D-09 (drill-in) — `/library/metadata/{key}/children` per parent ratingKey. */
+  metadataChildren?: Record<
+    string,
+    Array<{
+      ratingKey: string;
+      title: string;
+      type?: string;
+      thumb?: string;
+      index?: number;
+      leafCount?: number;
+      duration?: number;
+      originallyAvailableAt?: string;
+    }>
+  >;
+  /** D-09 — the owning section key per metadata ratingKey (the confinement check's source). */
+  metadataSection?: Record<string, string>;
   /** Seeded current shares: userId → shared plex.tv section ids (+ optional all-libraries flag). */
   shared?: Record<string, { id: string; sectionIds: number[]; allLibraries?: boolean }>;
 }
@@ -64,6 +81,37 @@ function makeServer(slug: PlexServerName, cfg: FakeServerConfig, writes: Recorde
     // ADR-038 — the ytdl-sub section-contents read (a section's shows).
     async listSectionContents(sectionKey: string) {
       return (cfg.sectionContents?.[sectionKey] ?? []).map((i) => ({ type: 'show', ...i }));
+    },
+    // DESIGN-017 D-09 — the drill-in reads. A missing ratingKey mirrors the real client's 404 by
+    // returning null (getMetadataItem) / an empty, section-less container (listMetadataChildren).
+    async getMetadataItem(ratingKey: string) {
+      for (const [sectionKey, items] of Object.entries(cfg.sectionContents ?? {})) {
+        const hit = items.find((i) => i.ratingKey === ratingKey);
+        if (hit) {
+          return {
+            item: { type: 'show', ...hit },
+            librarySectionId: cfg.metadataSection?.[ratingKey] ?? sectionKey,
+          };
+        }
+      }
+      for (const items of Object.values(cfg.metadataChildren ?? {})) {
+        const hit = items.find((i) => i.ratingKey === ratingKey);
+        if (hit) {
+          return {
+            item: { type: 'season', ...hit },
+            librarySectionId: cfg.metadataSection?.[ratingKey] ?? null,
+          };
+        }
+      }
+      return null;
+    },
+    async listMetadataChildren(ratingKey: string) {
+      const items = cfg.metadataChildren?.[ratingKey] ?? [];
+      return {
+        items: items.map((i) => ({ type: 'season', ...i })),
+        librarySectionId: cfg.metadataSection?.[ratingKey] ?? null,
+        totalSize: items.length,
+      };
     },
     async getIdentity() {
       return { machineIdentifier: cfg.machineIdentifier, version: '1.43.2' };

@@ -7,6 +7,7 @@
 // server via `ytdlsub.list` (no *arr, no ledger). Filter + sort are client-side over the (small) show set;
 // a one-shot query (no poll). Reflow-free (ADR-015): fixed 2:3 poster boxes, dim-in-place on refetch, a
 // fixed-height sort row, and skeleton tiles on first load.
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import {
   arrowFor,
@@ -17,6 +18,7 @@ import {
   type FieldSpec,
 } from '@hnet/ui';
 import { trpc } from '@/lib/trpc-client';
+import { formatSeasonEpisodeCounts } from '@/lib/media';
 import { MediaPoster } from '@/components/media-poster';
 import type { YtdlsubShow } from '@hnet/api';
 
@@ -40,17 +42,6 @@ const SORT_FIELDS: Partial<Record<SortToken, FieldSpec<YtdlsubShow>>> = {
   'added:desc': { get: (r) => r.addedAt, compare: cmpNum, dir: 'desc' },
 };
 
-/** "4 seasons · 128 episodes" — omits either half when the count is absent. */
-function countLine(show: YtdlsubShow): string | null {
-  const parts: string[] = [];
-  if (show.seasonCount !== null) {
-    parts.push(`${show.seasonCount} ${show.seasonCount === 1 ? 'season' : 'seasons'}`);
-  }
-  if (show.episodeCount !== null) {
-    parts.push(`${show.episodeCount} ${show.episodeCount === 1 ? 'episode' : 'episodes'}`);
-  }
-  return parts.length > 0 ? parts.join(' · ') : null;
-}
 
 export function YtdlsubBrowser({ library, label }: { library: 'peloton' | 'youtube'; label: string }) {
   const [query, setQuery] = useState('');
@@ -144,9 +135,15 @@ export function YtdlsubBrowser({ library, label }: { library: 'peloton' | 'youtu
           data-testid="ytdlsub-grid"
         >
           {shows.map((show) => {
-            const counts = countLine(show);
+            const counts = formatSeasonEpisodeCounts(show.seasonCount, show.episodeCount);
             return (
-              <article key={show.ratingKey} className="media-card poster-card">
+              // DESIGN-017 D-09 (R-132) — tiles are click-throughs to the read-only drill-in
+              // (the MediaBrowser card idiom; supersedes the action-free-tile scope note).
+              <Link
+                key={show.ratingKey}
+                href={`/library/ytdlsub/${library}/${show.ratingKey}`}
+                className="media-card poster-card"
+              >
                 <MediaPoster posterUrl={show.posterUrl} kind="show" alt="" />
                 <span className="poster-card__body">
                   <span className="media-card__title">
@@ -159,7 +156,7 @@ export function YtdlsubBrowser({ library, label }: { library: 'peloton' | 'youtu
                     </span>
                   ) : null}
                 </span>
-              </article>
+              </Link>
             );
           })}
         </div>

@@ -6,6 +6,8 @@ import {
   ACCOUNT_JSON,
   IDENTITY_JSON,
   LIBRARY_SECTIONS_JSON,
+  METADATA_CHILDREN_JSON,
+  METADATA_ITEM_JSON,
   SECTION_CONTENTS_JSON,
   SERVER_SECTIONS_XML,
   SHARED_SERVERS_XML,
@@ -64,6 +66,42 @@ describe('PlexReadClient — listSectionContents (ADR-038)', () => {
     const call = stub.calls[0]!;
     expect(call.headers['X-Plex-Token']).toBe('owner-secret-token');
     expect(call.url.searchParams.get('X-Plex-Container-Size')).toBe('250');
+    expect(call.url.toString()).not.toContain('owner-secret-token');
+  });
+});
+
+// DESIGN-017 D-09 (R-132) — the drill-in metadata reads.
+describe('PlexReadClient — getMetadataItem / listMetadataChildren (D-09)', () => {
+  it('getMetadataItem parses one item + the owning librarySectionID (coerced to string)', async () => {
+    const stub = plexStub([{ path: /\/library\/metadata\/9001$/, body: METADATA_ITEM_JSON }]);
+    const meta = await client(stub).getMetadataItem('9001');
+    expect(meta).not.toBeNull();
+    expect(meta!.item.title).toBe('Bike Bootcamp');
+    expect(meta!.item.childCount).toBe(4);
+    expect(meta!.librarySectionId).toBe('4'); // number in the wire JSON → string
+  });
+
+  it('listMetadataChildren parses episodes (index/duration/air date), the container section id, and the page total', async () => {
+    const stub = plexStub([
+      { path: /\/library\/metadata\/448161\/children$/, body: METADATA_CHILDREN_JSON },
+    ]);
+    const res = await client(stub).listMetadataChildren('448161');
+    expect(res.librarySectionId).toBe('4');
+    expect(res.totalSize).toBe(261);
+    expect(res.items.map((i) => [i.ratingKey, i.index, i.duration, i.originallyAvailableAt])).toEqual([
+      ['579874', 701, 1_991_936, '2026-06-09'],
+      ['579875', 700, 1_800_000, undefined],
+    ]);
+  });
+
+  it('bounds the children container and keeps the token in the header, never the URL', async () => {
+    const stub = plexStub([
+      { path: /\/library\/metadata\/448161\/children$/, body: METADATA_CHILDREN_JSON },
+    ]);
+    await client(stub).listMetadataChildren('448161', { limit: 5000 });
+    const call = stub.calls[0]!;
+    expect(call.headers['X-Plex-Token']).toBe('owner-secret-token');
+    expect(call.url.searchParams.get('X-Plex-Container-Size')).toBe('1000'); // clamped
     expect(call.url.toString()).not.toContain('owner-secret-token');
   });
 });

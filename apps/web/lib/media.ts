@@ -378,6 +378,19 @@ export function formatRuntime(minutes: number | null): string | null {
   return h > 0 ? `${h}h${m > 0 ? ` ${m}m` : ''}` : `${m}m`;
 }
 
+/** DESIGN-017 (T-111) — "4 seasons · 128 episodes": either half omitted when absent, null when both. */
+export function formatSeasonEpisodeCounts(
+  seasonCount: number | null,
+  episodeCount: number | null,
+): string | null {
+  const parts: string[] = [];
+  if (seasonCount !== null) parts.push(`${seasonCount} ${seasonCount === 1 ? 'season' : 'seasons'}`);
+  if (episodeCount !== null) {
+    parts.push(`${episodeCount} ${episodeCount === 1 ? 'episode' : 'episodes'}`);
+  }
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
 /** Day-precision local date for dense table cells (ISO in, "Jul 6, 2026" out); bad ISO → as-is. */
 export function formatDay(iso: string): string {
   const date = new Date(iso);

@@ -38,12 +38,28 @@ export type { MetricsOverview } from './routers/metrics';
 // gate reuses `effectiveSectionLevel`), the Plex-thumb proxy upstream resolver (used by the app poster
 // route), and the wire types the ytdl-sub browser imports TYPE-ONLY.
 export { ytdlsubProcedure } from './middleware/role';
-export { resolveYtdlsubThumbUpstream, isValidPlexThumbPath } from './ytdlsub-poster';
+// ADR-041 / DESIGN-017 D-07 — thumb VARIANTS (closed size allow-list), the strong (size, thumb) ETag,
+// and the in-process LRU the poster route memoizes transcoded variants in (NOT a store).
+export {
+  resolveYtdlsubThumbUpstream,
+  isValidPlexThumbPath,
+  isYtdlsubThumbSize,
+  ytdlsubThumbEtag,
+  ytdlsubThumbCache,
+  ThumbLruCache,
+  YTDLSUB_THUMB_SIZES,
+} from './ytdlsub-poster';
+export type { YtdlsubThumbSize, YtdlsubThumbUpstream, CachedThumb } from './ytdlsub-poster';
 export type {
   YtdlsubShow,
   YtdlsubListResult,
   YtdlsubLibraryId,
   YtdlsubLibrarySummary,
+  YtdlsubShowDetail,
+  YtdlsubSeason,
+  YtdlsubDetailResult,
+  YtdlsubEpisode,
+  YtdlsubEpisodesResult,
 } from './routers/ytdlsub';
 // ADR-022 / DESIGN-009 D-06 — the emergency Ledger JSONL export (used by the app export route).
 export {
