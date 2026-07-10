@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.0](https://github.com/thaynes43/haynesnetwork/compare/v0.30.0...v0.31.0) (2026-07-10)
+
+
+### Features
+
+* ytdl-sub Library sub-tabs — Peloton + YouTube read direct from k8plex Plex, admin-gated (PLAN-022) ([#159](https://github.com/thaynes43/haynesnetwork/issues/159)) ([f2739a2](https://github.com/thaynes43/haynesnetwork/commit/f2739a2a4a7aa7c41f6f47441e0a5149cf4d3e0a))
+
 ## [0.30.0](https://github.com/thaynes43/haynesnetwork/compare/v0.29.0...v0.30.0) (2026-07-10)
 
 
