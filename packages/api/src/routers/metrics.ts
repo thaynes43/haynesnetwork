@@ -18,11 +18,13 @@ import {
   getHardwareOverview,
   getNetworkMetrics,
   getNetworkOverview,
+  overviewGrafanaLinks,
   type AppsMetrics,
   type HardwareMetrics,
   type HardwareOverview,
   type NetworkMetrics,
   type NetworkOverview,
+  type OverviewGrafanaLinks,
 } from '@hnet/metrics';
 import type { MetricsLevel } from '@hnet/db';
 import {
@@ -47,6 +49,12 @@ export interface MetricsOverview {
   hardware: HardwareOverview;
   /** REUSES the 013 `getUtilization` snapshot (not user-aware) — shown at both levels. */
   storage: StorageArrayUtilization[];
+  /**
+   * ADMIN-ONLY (DESIGN-016 D-07). The LAN-only Grafana footnote link. Present ONLY when the caller is
+   * an admin; OMITTED for every non-admin caller at BOTH levels — a member/family response never carries
+   * a Grafana URL. Gated on ADMIN status (LAN reachability), not the metrics level.
+   */
+  grafana?: OverviewGrafanaLinks;
 }
 
 /** The storage snapshot must never crash the Overview — a missing arr env / down *arr degrades to []. */
@@ -89,7 +97,10 @@ export const metricsRouter = router({
       getHardwareOverview({ prometheus }),
       safeStorage(ctx),
     ]);
-    return { level, network, hardware, storage };
+    const payload: MetricsOverview = { level, network, hardware, storage };
+    // Admin-only: the LAN-only Grafana footnote link is attached ONLY for an admin caller (D-07).
+    if (ctx.user.role.isAdmin) payload.grafana = overviewGrafanaLinks();
+    return payload;
   }),
 
   /**
@@ -105,6 +116,8 @@ export const metricsRouter = router({
     return getAppsMetrics({
       prometheus: resolveMetricsReader(ctx),
       includeUserAware: level === 'full',
+      // Admin-only: the LAN-only Grafana deep-links (D-07) — gated on admin, not level.
+      includeGrafanaLinks: ctx.user.role.isAdmin,
     });
   }),
 
@@ -116,7 +129,12 @@ export const metricsRouter = router({
    * here (unlike apps/network). Every field degrades independently in the read model — never a throw.
    */
   hardware: metricsProcedure.query(({ ctx }): Promise<HardwareMetrics> =>
-    getHardwareMetrics({ prometheus: resolveMetricsReader(ctx) }),
+    getHardwareMetrics({
+      prometheus: resolveMetricsReader(ctx),
+      // Admin-only: the LAN-only Grafana deep-links (D-07) — hardware is ungated by level, but the
+      // Grafana links are still admin-gated (LAN reachability, not detail).
+      includeGrafanaLinks: ctx.user.role.isAdmin,
+    }),
   ),
 
   /**
@@ -139,6 +157,8 @@ export const metricsRouter = router({
       uploadCapacityMbps,
       downloadCapacityMbps,
       includeInfra: level === 'full',
+      // Admin-only: the LAN-only Grafana deep-links (D-07) — gated on admin, not level.
+      includeGrafanaLinks: ctx.user.role.isAdmin,
     });
   }),
 

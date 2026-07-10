@@ -172,6 +172,13 @@ Ungated: `page.tsx` still gates the whole `metrics` section (`disabled` ⇒ unav
 inside, Hardware renders the same payload at both levels. A `full` and a `limited` role see identical
 hardware data — verified live (R-129).
 
+> **Amendment (2026-07-10) — the per-group Grafana deep-links are ADMIN-ONLY (DESIGN-016 D-07).** The
+> board URLs (the `nas-haynestower` pool board, the smartctl drive board, Node Exporter Full, and the
+> Grafana Explore Proxmox link) are LAN-only, so `metrics.hardware` attaches the `grafana` link object
+> (`{ nas, smart, nodes, pve }`) ONLY for an admin caller (`includeGrafanaLinks: role.isAdmin`). Hardware
+> is ungated by metrics LEVEL (R-129), but the Grafana links are still admin-gated (LAN reachability, not
+> detail); the tab renders each `GrafanaLink` only when its `href` is present (reflow-free, ADR-015).
+
 ## Alternatives considered
 
 - **glances scrape THIS release** (temps/disk-IO) — deferred (ADR-040 option A): temps already exist

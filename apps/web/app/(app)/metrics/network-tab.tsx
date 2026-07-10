@@ -22,18 +22,20 @@ import {
 
 type NetworkMetrics = RouterOutputs['metrics']['network'];
 type DeviceRow = NonNullable<NetworkMetrics['infra']>['devices'][number];
+type NetworkGrafana = NonNullable<NetworkMetrics['grafana']>;
 
-/** Grafana stays the LAN power tool — deep-linked, never embedded (ADR-030 C-04 / ADR-037 C-09). The
- *  Client-Insights board is DELIBERATELY not linked — the privacy line holds in the deep-links too. */
-const GRAFANA_URL = 'https://grafana.haynesops.com';
-const BOARD_SITES = `${GRAFANA_URL}/d/9WaGWZaZk`; // UniFi-Poller: Network Sites (WAN + site + gateway)
-const BOARD_UAP = `${GRAFANA_URL}/d/g5wFWqxZk`; // UniFi-Poller: UAP Insights (access points)
-const BOARD_USW = `${GRAFANA_URL}/d/FsfxpWaZz`; // UniFi-Poller: USW Insights (switches)
+// Grafana stays the LAN power tool — deep-linked, never embedded (ADR-030 C-04 / ADR-037 C-09). The
+// Client-Insights board is DELIBERATELY not linked — the privacy line holds in the deep-links too. The
+// board URLs resolve ONLY on the owner's LAN/VPN, so they are ADMIN-ONLY (DESIGN-016 D-07): the server
+// sends `data.grafana` only to an admin caller, so `href` is undefined for a non-admin (even a `full`
+// Family viewer who sees the infra tables) and the per-group link is simply not rendered. Reflow-free
+// (ADR-015) — presence is fixed for the session, nothing toggles on an interaction.
 
 /** Show at most this many device rows per group; the rest live in Grafana (curated, phone-friendly). */
 const MAX_DEVICE_ROWS = 8;
 
-function GrafanaLink({ href, testId }: { href: string; testId: string }) {
+function GrafanaLink({ href, testId }: { href?: string; testId: string }) {
+  if (!href) return null;
   return (
     <a
       className="metrics-group__link muted"
@@ -56,7 +58,7 @@ function GroupCard({
   children,
 }: {
   title: string;
-  href: string;
+  href?: string;
   linkTestId: string;
   testId: string;
   unavailable: boolean;
@@ -151,7 +153,7 @@ function DeviceTable({
 }: {
   title: string;
   rows: DeviceRow[];
-  href: string;
+  href?: string;
   linkTestId: string;
   testId: string;
 }) {
@@ -193,11 +195,18 @@ function DeviceTable({
       </div>
       {hidden > 0 ? (
         <p className="muted metrics-overview__footnote">
-          +{hidden} more in{' '}
-          <a href={href} target="_blank" rel="noreferrer">
-            Grafana
-          </a>
-          .
+          {/* Admin-only (D-07): only link out to Grafana when the server sent the board URL. */}
+          {href ? (
+            <>
+              +{hidden} more in{' '}
+              <a href={href} target="_blank" rel="noreferrer">
+                Grafana
+              </a>
+              .
+            </>
+          ) : (
+            `+${hidden} more.`
+          )}
         </p>
       ) : null}
     </GroupCard>
@@ -230,6 +239,8 @@ export function NetworkTab({ active }: { active: boolean; metricsLevel: MetricsL
   const gateways = infra?.devices.filter((d) => d.category === 'gateway') ?? [];
   const switches = infra?.devices.filter((d) => d.category === 'switch') ?? [];
   const aps = infra?.devices.filter((d) => d.category === 'ap') ?? [];
+  // Admin-only (D-07): `data.grafana` is present only for an admin caller — non-admins get no board links.
+  const g: NetworkGrafana | undefined = data.grafana;
 
   return (
     <section className="metrics-overview" data-testid="metrics-network">
@@ -270,7 +281,7 @@ export function NetworkTab({ active }: { active: boolean; metricsLevel: MetricsL
         <section className="metrics-group" data-testid="metrics-net-history">
           <div className="metrics-group__head">
             <h2 className="metrics-group__title">WAN throughput · last {data.history.rangeDays} days</h2>
-            <GrafanaLink href={BOARD_SITES} testId="metrics-net-history-grafana" />
+            <GrafanaLink href={g?.sites} testId="metrics-net-history-grafana" />
           </div>
           <div className="metrics-overview__grid">
             <Sparkline
@@ -293,7 +304,7 @@ export function NetworkTab({ active }: { active: boolean; metricsLevel: MetricsL
           <DeviceTable
             title="Gateway"
             rows={gateways}
-            href={BOARD_SITES}
+            href={g?.sites}
             linkTestId="metrics-net-gateway-grafana"
             testId="metrics-net-gateway"
           />
@@ -301,7 +312,7 @@ export function NetworkTab({ active }: { active: boolean; metricsLevel: MetricsL
           {/* WAN health — the gateway speedtest + internet-path latency. */}
           <GroupCard
             title="WAN health"
-            href={BOARD_SITES}
+            href={g?.sites}
             linkTestId="metrics-net-wanhealth-grafana"
             testId="metrics-net-wanhealth"
             unavailable={infra.wanHealth.unavailable}
@@ -328,14 +339,14 @@ export function NetworkTab({ active }: { active: boolean; metricsLevel: MetricsL
           <DeviceTable
             title="Switches"
             rows={switches}
-            href={BOARD_USW}
+            href={g?.usw}
             linkTestId="metrics-net-switch-grafana"
             testId="metrics-net-switch"
           />
           <DeviceTable
             title="Access points"
             rows={aps}
-            href={BOARD_UAP}
+            href={g?.uap}
             linkTestId="metrics-net-ap-grafana"
             testId="metrics-net-ap"
           />
@@ -345,7 +356,7 @@ export function NetworkTab({ active }: { active: boolean; metricsLevel: MetricsL
             <section className="metrics-group" data-testid="metrics-net-wanlinks">
               <div className="metrics-group__head">
                 <h2 className="metrics-group__title">Internet uplinks</h2>
-                <GrafanaLink href={BOARD_SITES} testId="metrics-net-wanlinks-grafana" />
+                <GrafanaLink href={g?.sites} testId="metrics-net-wanlinks-grafana" />
               </div>
               <div className="metrics-overview__grid">
                 {wan.wanLinks.map((link) => (
@@ -363,7 +374,7 @@ export function NetworkTab({ active }: { active: boolean; metricsLevel: MetricsL
           {/* Site rollup COUNTS — aggregates, never per-client rows. */}
           <GroupCard
             title="Site rollup"
-            href={BOARD_SITES}
+            href={g?.sites}
             linkTestId="metrics-net-site-grafana"
             testId="metrics-net-site"
             unavailable={infra.site.unavailable}
@@ -391,13 +402,15 @@ export function NetworkTab({ active }: { active: boolean; metricsLevel: MetricsL
         </>
       ) : null}
 
-      <p className="muted metrics-overview__footnote">
-        Curated highlights — no client devices are shown here by design. Full network dashboards live in{' '}
-        <a href={BOARD_SITES} target="_blank" rel="noreferrer" data-testid="metrics-net-grafana-link">
-          Grafana
-        </a>{' '}
-        (LAN only).
-      </p>
+      {g ? (
+        <p className="muted metrics-overview__footnote">
+          Curated highlights — no client devices are shown here by design. Full network dashboards live in{' '}
+          <a href={g.sites} target="_blank" rel="noreferrer" data-testid="metrics-net-grafana-link">
+            Grafana
+          </a>{' '}
+          (LAN only).
+        </p>
+      ) : null}
     </section>
   );
 }

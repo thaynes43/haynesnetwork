@@ -95,7 +95,7 @@ const LIVE: Record<string, PromVectorSample[]> = {
 describe('getAppsMetrics', () => {
   it('maps the four groups from the live series', async () => {
     const { reader } = stubReader(LIVE);
-    const out = await getAppsMetrics({ prometheus: reader, includeUserAware: true });
+    const out = await getAppsMetrics({ prometheus: reader, includeUserAware: true, includeGrafanaLinks: false });
 
     // Group A — Collection
     expect(out.collection.unavailable).toBe(false);
@@ -133,11 +133,11 @@ describe('getAppsMetrics', () => {
 
   it('keeps the full-only requester seam present-but-empty at full and OMITTED at limited', async () => {
     const { reader } = stubReader(LIVE);
-    const full = await getAppsMetrics({ prometheus: reader, includeUserAware: true });
+    const full = await getAppsMetrics({ prometheus: reader, includeUserAware: true, includeGrafanaLinks: false });
     expect('requesterActivity' in full).toBe(true);
     expect(full.requesterActivity).toEqual([]);
 
-    const limited = await getAppsMetrics({ prometheus: reader, includeUserAware: false });
+    const limited = await getAppsMetrics({ prometheus: reader, includeUserAware: false, includeGrafanaLinks: false });
     expect('requesterActivity' in limited).toBe(false);
     expect(limited.requesterActivity).toBeUndefined();
     // The four data groups are identical at both levels (no user-aware series to drop).
@@ -147,7 +147,7 @@ describe('getAppsMetrics', () => {
 
   it('degrades every group to unavailable when all queries fail, never throwing', async () => {
     const { reader } = stubReader({}); // every query throws
-    const out = await getAppsMetrics({ prometheus: reader, includeUserAware: false });
+    const out = await getAppsMetrics({ prometheus: reader, includeUserAware: false, includeGrafanaLinks: false });
     expect(out.collection.unavailable).toBe(true);
     expect(out.pipeline.unavailable).toBe(true);
     expect(out.downloads.unavailable).toBe(true);
@@ -161,9 +161,25 @@ describe('getAppsMetrics', () => {
 
   it('reports a client offline when its up series is 0', async () => {
     const { reader } = stubReader({ ...LIVE, [QBITTORRENT_UP_QUERY]: [sample(0)] });
-    const out = await getAppsMetrics({ prometheus: reader, includeUserAware: false });
+    const out = await getAppsMetrics({ prometheus: reader, includeUserAware: false, includeGrafanaLinks: false });
     const qbt = out.downloads.clients.find((c) => c.key === 'qbittorrent')!;
     expect(qbt.up).toBe(false);
     expect(qbt.detail).toBe('unreachable');
+  });
+
+  // DESIGN-016 D-07 — the LAN-only Grafana board links are attached ONLY when includeGrafanaLinks (admin),
+  // and are OMITTED otherwise, independent of the level (includeUserAware) seam.
+  it('attaches the admin-only Grafana links when includeGrafanaLinks, omits them otherwise', async () => {
+    const { reader } = stubReader(LIVE);
+    const admin = await getAppsMetrics({ prometheus: reader, includeUserAware: true, includeGrafanaLinks: true });
+    expect(admin.grafana).toEqual({
+      library: 'https://grafana.haynesops.com/d/arr-library-overview',
+      downloads: 'https://grafana.haynesops.com/d/downloads-clients-indexers',
+    });
+
+    // A full (includeUserAware) NON-admin caller still gets NO Grafana key.
+    const fullMember = await getAppsMetrics({ prometheus: reader, includeUserAware: true, includeGrafanaLinks: false });
+    expect('grafana' in fullMember).toBe(false);
+    expect(fullMember.grafana).toBeUndefined();
   });
 });

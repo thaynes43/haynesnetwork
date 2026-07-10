@@ -112,6 +112,7 @@ export interface MetricsOverview {
   network: NetworkOverview;            // wanLinks present ONLY when level === 'full'
   hardware: HardwareOverview;          // ungated (both levels)
   storage: StorageArrayUtilization[];  // REUSE getUtilization (013) — not user-aware, both levels
+  grafana?: OverviewGrafanaLinks;      // ADMIN-ONLY (D-07) — the LAN-only Grafana footnote link
 }
 ```
 
@@ -163,9 +164,41 @@ shapes), reusing its `POST /_stub/state {mode:'ok'|'down'}` toggle for the degra
 already points at this stub for `dev:local` + e2e (no harness/env change). `@hnet/metrics`'s client is
 the production reader; the stub speaks the same wire shapes.
 
+### D-07 — Grafana deep-links are ADMIN-ONLY (LAN-only URLs), enforced in the payload shape
+
+**Refinement (2026-07-10, owner-approved).** Every Grafana deep-link across the Metrics surfaces — the
+Overview footnote (D-05), the Apps per-group boards (DESIGN-018), the Network per-group boards
+(DESIGN-019), and the Hardware pool / drive / node / Proxmox boards incl. the `nas-haynestower` board +
+the Grafana Explore link (DESIGN-020) — targets `https://grafana.haynesops.com`, which resolves **ONLY on
+the owner's LAN/VPN**. A non-admin viewer would only ever get dead links, so the deep-links are now
+**admin-only**.
+
+- **Gate on ADMIN status specifically — NOT the metrics level.** A `full` non-admin (e.g. a Family role
+  with `metrics_level='full'`) has the *detail* grant but not necessarily LAN/VPN reachability, so the
+  gate is `role.isAdmin`, orthogonal to the `full`|`limited` shaping. (Admin already implies `full`, so an
+  admin always both sees full detail and gets the links.)
+- **Enforced SERVER-SIDE in the payload shape** (the same never-serialize seam ADR-037 C-03 established
+  for the level-shaped keys): each read model gains an optional `grafana?` link object, attached **only**
+  when the router passes `includeGrafanaLinks: ctx.user.role.isAdmin`. A non-admin response therefore
+  **never contains a Grafana URL at all** — at BOTH levels. The link URLs live in one place,
+  `@hnet/metrics` `grafana.ts` (`OverviewGrafanaLinks` / `AppsGrafanaLinks` / `NetworkGrafanaLinks` /
+  `HardwareGrafanaLinks`), retiring the per-tab client constants that previously hard-coded them.
+- **UI renders links only when present** — each tab reads `data.grafana?.…` and omits the anchor when the
+  object is absent. This is **reflow-free (ADR-015)**: the object's presence is fixed for the session by
+  the caller's admin status, so no link appears/disappears on an interaction; a member panel simply has
+  the group heads/footnotes without a link (collapse-cleanly, not reserve — there is no armed/disarmed
+  state to keep stable). `/admin/storage` is untouched (already admin-only by section).
+- **Test invariant:** the router unit tests (`packages/api/__tests__/metrics.test.ts`) prove `grafana` is
+  PRESENT for an admin and ABSENT for a non-admin at BOTH `full` and `limited`, for each of
+  `overview`/`apps`/`hardware`/`network`; the `@hnet/metrics` read-model tests prove the same at the
+  `includeGrafanaLinks` seam. No new ADR (reuses ADR-030 C-04 / ADR-037 C-09 "deep-link, never embed");
+  no new PRD requirement or glossary term (a gating refinement, not a new concept).
+
 ## Alternatives considered
 
 - **Grant table for the level** — rejected (single scalar per role; a column is the right analog). ADR-037.
+- **Gate the deep-links on the metrics `level` (full) instead of admin** — rejected (D-07): `full` is a
+  *detail* grant, not a LAN-reachability signal; a `full` Family viewer off-LAN would still get dead links.
 - **A bespoke `metrics_visible` flag** instead of the section mechanism — rejected; the section-permission
   machinery already gives audited, per-role, Admin-defaults-on visibility for free. ADR-037.
 - **Embedding Grafana** — rejected (ADR-030 C-04 cross-site cookie break; native is best on mobile).
@@ -180,7 +213,9 @@ the production reader; the stub speaks the same wire shapes.
   (limited omits `network.wanLinks`, full includes it, disabled-section ⇒ FORBIDDEN); `getNetworkOverview`
   / `getHardwareOverview` PromQL→shape mapping + independent degrade (a down query ⇒ `unavailable`, never
   a throw); the Prometheus client's instant/range URL + zod contract + HTTP-failure throw; the capacity
-  `app_settings` round-trip (audited); the migration-parity CHECK test.
+  `app_settings` round-trip (audited); the migration-parity CHECK test; the **admin-only Grafana
+  deep-link invariant (D-07)** — `grafana` PRESENT for an admin, ABSENT for a non-admin at BOTH levels,
+  across `overview`/`apps`/`hardware`/`network`.
 - **Pure helpers:** `apps/web/lib/metrics.ts` (mbps format, tone thresholds, pct).
 - **e2e (advisory):** `metrics.spec.ts` — the section is Admin-only by default (a Default user sees the
   unavailable card until opted in); with `metrics` opened, the Overview renders both meters against the

@@ -139,7 +139,7 @@ const LIVE: Record<string, PromVectorSample[]> = {
 
 describe('getHardwareMetrics', () => {
   it('folds the live NAS pools, drives, nodes, and PVE hosts', async () => {
-    const data = await getHardwareMetrics({ prometheus: stubReader(LIVE) });
+    const data = await getHardwareMetrics({ prometheus: stubReader(LIVE), includeGrafanaLinks: false });
 
     // Two NVMe pools, CRITICAL (Cache-apps) first.
     expect(data.pools.map((p) => p.name)).toEqual(['Cache-apps', 'Cache-staging']);
@@ -187,12 +187,28 @@ describe('getHardwareMetrics', () => {
         throw new Error('prometheus down');
       }),
     };
-    const data = await getHardwareMetrics({ prometheus: reader });
+    const data = await getHardwareMetrics({ prometheus: reader, includeGrafanaLinks: false });
     expect(data.pools).toEqual([]);
     expect(data.drives).toEqual([]);
     expect(data.nodes).toEqual([]);
     expect(data.pveHosts).toEqual([]);
     expect(data.unavailable).toBe(true);
+  });
+
+  // DESIGN-016 D-07 — the LAN-only Grafana board links are attached ONLY when includeGrafanaLinks (admin).
+  // Hardware is ungated by metrics LEVEL, but the Grafana links are still admin-gated.
+  it('attaches the admin-only Grafana links when includeGrafanaLinks, omits them otherwise', async () => {
+    const admin = await getHardwareMetrics({ prometheus: stubReader(LIVE), includeGrafanaLinks: true });
+    expect(admin.grafana).toEqual({
+      nas: 'https://grafana.haynesops.com/d/nas-haynestower',
+      smart: 'https://grafana.haynesops.com/d/f8f249a0-be78-41b1-97fe-8d0a92a71b93',
+      nodes: 'https://grafana.haynesops.com/d/rYdddlPWk',
+      pve: 'https://grafana.haynesops.com/explore',
+    });
+
+    const member = await getHardwareMetrics({ prometheus: stubReader(LIVE), includeGrafanaLinks: false });
+    expect('grafana' in member).toBe(false);
+    expect(member.grafana).toBeUndefined();
   });
 });
 

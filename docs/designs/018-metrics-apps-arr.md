@@ -174,6 +174,11 @@ toggle.
 - **A new ADR for the deep-link contract.** Unnecessary — ADR-030 C-04 / ADR-037 C-09 already decided
   deep-link-not-embed; this reuses it.
 
+> **Amendment (2026-07-10) — the per-group Grafana deep-links are ADMIN-ONLY (DESIGN-016 D-07).** The
+> board URLs are LAN-only, so `metrics.apps` attaches the `grafana` link object (`{ library, downloads }`)
+> ONLY for an admin caller (`includeGrafanaLinks: role.isAdmin`); a non-admin response omits it at both
+> levels, and the tab renders each `GrafanaLink` only when its `href` is present (reflow-free, ADR-015).
+
 ## Test strategy
 
 - **`packages/metrics/__tests__/apps.test.ts`** — a stub `PrometheusReader` returns canned vectors;

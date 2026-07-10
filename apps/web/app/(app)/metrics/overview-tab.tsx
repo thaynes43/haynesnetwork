@@ -10,8 +10,10 @@ import { trpc } from '@/lib/trpc-client';
 import { formatMbps, formatPct, meterTone, meterWidth, type MeterTone } from '@/lib/metrics';
 import { formatCapacity, utilizationTone } from '@/lib/storage';
 
-/** Grafana stays the LAN power tool — deep-linked, never embedded (ADR-030 C-04 / ADR-037 C-09). */
-const GRAFANA_URL = 'https://grafana.haynesops.com';
+// Grafana stays the LAN power tool — deep-linked, never embedded (ADR-030 C-04 / ADR-037 C-09). The
+// deep-link URLs resolve ONLY on the owner's LAN/VPN, so they are ADMIN-ONLY (DESIGN-016 D-07): the
+// server sends `data.grafana` only to an admin caller, and this tab renders the footnote link only when
+// that object is present. A member simply has no footnote — reflow-free (nothing toggles on interaction).
 
 function Meter({
   testId,
@@ -178,13 +180,21 @@ export function OverviewTab({
         </div>
       ) : null}
 
-      <p className="muted metrics-overview__footnote">
-        Full infra dashboards:{' '}
-        <a href={GRAFANA_URL} target="_blank" rel="noreferrer" data-testid="metrics-grafana-link">
-          Grafana
-        </a>{' '}
-        (LAN only).
-      </p>
+      {/* Admin-only (D-07): the LAN-only Grafana footnote renders only when the server sent the link. */}
+      {data.grafana ? (
+        <p className="muted metrics-overview__footnote">
+          Full infra dashboards:{' '}
+          <a
+            href={data.grafana.base}
+            target="_blank"
+            rel="noreferrer"
+            data-testid="metrics-grafana-link"
+          >
+            Grafana
+          </a>{' '}
+          (LAN only).
+        </p>
+      ) : null}
     </section>
   );
 }
