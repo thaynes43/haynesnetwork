@@ -4,7 +4,23 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-- **Last updated:** 2026-07-10 — **PLAN-020 Metrics → Network sub-tab shipped (v0.33.0), live.**
+- **Last updated:** 2026-07-10 — **ytdl-sub UX package (the owner's morning-review fixes to PLAN-022).**
+  One release, three items (ADR-040 / DESIGN-017 D-07..D-09 / R-129..R-130 / T-117; **no migration**):
+  **(1) Wall perf** — the `/api/ytdlsub/poster` proxy now serves **fixed-size WebP variants** from
+  k8plex's own photo-transcode endpoint (closed `size=grid|still` allow-list; original-art fallback on
+  a transcode miss), memoized in an in-process byte-capped `ThumbLruCache` (NOT a store) with a strong
+  `(size, thumb)` ETag → browser 304s. Measured pod→k8plex: **Peloton wall 29.3 MB → 46 KB (630×)**,
+  YouTube 6.9 MB → 856 KB (8×). `MediaPoster` tiles fade in over the reserved 2:3 box (ADR-015-safe).
+  **(2) Tab order** — Movies | TV | Music | Peloton | YouTube | **My Fixes last** (D-08).
+  **(3) Read-only drill-in** — poster tiles click through to `/library/ytdlsub/[library]/[ratingKey]`:
+  show → collapsible seasons → **lazily-loaded** episodes (title · air date · duration + a 16:9
+  `size=still` thumb), via new `@hnet/plex` `getMetadataItem`/`listMetadataChildren` reads and
+  `ytdlsub.detail`/`ytdlsub.episodes` (both `ytdlsubProcedure`-gated AND **section-confined** by
+  `librarySectionID` — a cross-library ratingKey is found:false). No ledger, no actions, no write
+  surface. The `ytdlsub` section is **still Admin-only** (no role rows as of this change — the owner's
+  flip is still pending, plan Q-03), and the durable-poster sink (PRD **Q-06**) remains open — ADR-040
+  C-07 keeps the override seam ready, nothing here makes it harder.
+  Prior milestone — **PLAN-020 Metrics → Network sub-tab shipped (v0.33.0), live.**
   The 017-scaffolded **Network** tab now renders off the live in-cluster Prometheus via a new
   `@hnet/metrics` `getNetworkMetrics` read (which REUSES `getNetworkOverview` for the WAN meters —
   one denominator) + a `metrics.network` procedure. **`limited`** = the two WAN upload/download
