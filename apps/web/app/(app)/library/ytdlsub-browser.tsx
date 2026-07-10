@@ -18,6 +18,7 @@ import {
   type FieldSpec,
 } from '@hnet/ui';
 import { trpc } from '@/lib/trpc-client';
+import { formatSeasonEpisodeCounts } from '@/lib/media';
 import { MediaPoster } from '@/components/media-poster';
 import type { YtdlsubShow } from '@hnet/api';
 
@@ -41,17 +42,6 @@ const SORT_FIELDS: Partial<Record<SortToken, FieldSpec<YtdlsubShow>>> = {
   'added:desc': { get: (r) => r.addedAt, compare: cmpNum, dir: 'desc' },
 };
 
-/** "4 seasons · 128 episodes" — omits either half when the count is absent. */
-function countLine(show: YtdlsubShow): string | null {
-  const parts: string[] = [];
-  if (show.seasonCount !== null) {
-    parts.push(`${show.seasonCount} ${show.seasonCount === 1 ? 'season' : 'seasons'}`);
-  }
-  if (show.episodeCount !== null) {
-    parts.push(`${show.episodeCount} ${show.episodeCount === 1 ? 'episode' : 'episodes'}`);
-  }
-  return parts.length > 0 ? parts.join(' · ') : null;
-}
 
 export function YtdlsubBrowser({ library, label }: { library: 'peloton' | 'youtube'; label: string }) {
   const [query, setQuery] = useState('');
@@ -145,7 +135,7 @@ export function YtdlsubBrowser({ library, label }: { library: 'peloton' | 'youtu
           data-testid="ytdlsub-grid"
         >
           {shows.map((show) => {
-            const counts = countLine(show);
+            const counts = formatSeasonEpisodeCounts(show.seasonCount, show.episodeCount);
             return (
               // DESIGN-017 D-09 (R-132) — tiles are click-throughs to the read-only drill-in
               // (the MediaBrowser card idiom; supersedes the action-free-tile scope note).

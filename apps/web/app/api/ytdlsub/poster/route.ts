@@ -75,17 +75,26 @@ export async function GET(req: Request): Promise<Response> {
   const cached = cache.get(cacheKey);
   if (cached) return ok(cached.body as BodyInit, cached.contentType, cached.etag);
 
-  // Miss: the sized transcode variant, then the original art (ADR-041 C-02 — a transcode quirk on a
-  // specific image degrades to exactly the pre-ADR-041 behavior, never a broken tile).
-  const image =
-    (await fetchImage(target.url, target.headers)) ??
-    (await fetchImage(target.fallbackUrl, target.headers));
-  if (!image) return NOT_FOUND();
+  // Miss: the sized transcode variant. Only THIS tier is memoized and ETagged — see below.
+  const transcoded = await fetchImage(target.url, target.headers);
+  if (transcoded) {
+    cache.set(cacheKey, {
+      body: new Uint8Array(transcoded.body),
+      contentType: transcoded.contentType,
+      etag: target.etag,
+    });
+    return ok(transcoded.body, transcoded.contentType, target.etag);
+  }
 
-  cache.set(cacheKey, {
-    body: new Uint8Array(image.body),
-    contentType: image.contentType,
-    etag: target.etag,
+  // ADR-041 C-02 — the original-art fallback (a transcode quirk on a specific image degrades to
+  // exactly the pre-ADR-041 behavior, never a broken tile). Deliberately NOT memoized and NOT
+  // ETagged with the variant etag: a transient transcoder outage must not make megabyte originals
+  // sticky in the LRU or in browser caches — a short max-age lets recovery swap the sized variant
+  // back in on the next visit.
+  const original = await fetchImage(target.fallbackUrl, target.headers);
+  if (!original) return NOT_FOUND();
+  return new Response(original.body, {
+    status: 200,
+    headers: { 'Content-Type': original.contentType, 'Cache-Control': 'private, max-age=300' },
   });
-  return ok(image.body, image.contentType, target.etag);
 }

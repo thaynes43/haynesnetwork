@@ -8,11 +8,11 @@
 // a reserved 16:9 still (the ADR-041 `size=still` proxy variant, fading in — ADR-015 reflow-free),
 // title, and a muted "date · duration" line. <details> expansion is the sanctioned ADR-015 in-place
 // exception (the same one the sonarr seasons use).
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { trpc } from '@/lib/trpc-client';
 import { BackLink } from '@/components/back-link';
 import { MediaPoster } from '@/components/media-poster';
-import { formatDay, formatRuntime } from '@/lib/media';
+import { formatDay, formatRuntime, formatSeasonEpisodeCounts } from '@/lib/media';
 import type { YtdlsubEpisode, YtdlsubSeason } from '@hnet/api';
 
 type YtdlsubLibraryId = 'peloton' | 'youtube';
@@ -31,33 +31,6 @@ function episodeMeta(ep: YtdlsubEpisode): string | null {
   const runtime = ep.durationMs !== null ? formatRuntime(Math.round(ep.durationMs / 60_000)) : null;
   if (runtime !== null) parts.push(runtime);
   return parts.length > 0 ? parts.join(' · ') : null;
-}
-
-/** The reserved 16:9 still box — the shared .poster-img fade-in over the tinted box. */
-function EpisodeStill({ stillUrl, alt }: { stillUrl: string | null; alt: string }) {
-  const [failed, setFailed] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-  const imgRef = useRef<HTMLImageElement | null>(null);
-  useEffect(() => {
-    setLoaded(imgRef.current?.complete === true);
-  }, [stillUrl]);
-  return (
-    <span className="epi-still" aria-hidden={stillUrl === null || failed ? 'true' : undefined}>
-      {stillUrl !== null && !failed ? (
-        // eslint-disable-next-line @next/next/no-img-element -- authed proxy route, not a static asset
-        <img
-          ref={imgRef}
-          className={`poster-img${loaded ? ' is-loaded' : ''}`}
-          src={stillUrl}
-          alt={alt}
-          loading="lazy"
-          decoding="async"
-          onLoad={() => setLoaded(true)}
-          onError={() => setFailed(true)}
-        />
-      ) : null}
-    </span>
-  );
 }
 
 /** One season's lazily-loaded episode list (queried only once the season has been opened). */
@@ -97,7 +70,8 @@ function SeasonEpisodes({
         const meta = episodeMeta(ep);
         return (
           <li key={ep.ratingKey} className="epi-row">
-            <EpisodeStill stillUrl={ep.stillUrl} alt="" />
+            {/* the shared MediaPoster reveal in its 16:9 `still` shape (DESIGN-017 D-09) */}
+            <MediaPoster posterUrl={ep.stillUrl} kind="show" alt="" shape="still" />
             <span className="epi-row__body">
               <span className="epi-row__title">{ep.title}</span>
               {meta !== null ? <span className="epi-row__meta muted">{meta}</span> : null}
@@ -165,14 +139,7 @@ export function YtdlsubItemDetail({
     );
   }
   const { show, seasons } = data;
-
-  const countParts: string[] = [];
-  if (show.seasonCount !== null) {
-    countParts.push(`${show.seasonCount} ${show.seasonCount === 1 ? 'season' : 'seasons'}`);
-  }
-  if (show.episodeCount !== null) {
-    countParts.push(`${show.episodeCount} ${show.episodeCount === 1 ? 'episode' : 'episodes'}`);
-  }
+  const counts = formatSeasonEpisodeCounts(show.seasonCount, show.episodeCount);
 
   return (
     <>
@@ -189,7 +156,7 @@ export function YtdlsubItemDetail({
           </h1>
           <div className="media-card__badges">
             <span className="badge badge--muted">{label}</span>
-            {countParts.length > 0 ? <span className="badge">{countParts.join(' · ')}</span> : null}
+            {counts !== null ? <span className="badge">{counts}</span> : null}
           </div>
           {show.summary !== null ? <p className="detail-head__meta muted">{show.summary}</p> : null}
         </div>

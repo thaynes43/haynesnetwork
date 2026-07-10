@@ -224,9 +224,12 @@ router emits (`/api/ytdlsub/poster?thumb=…`) is unchanged (no `size` ⇒ `grid
   evict-oldest set, over-cap bodies served-not-cached. Process-local — NOT a store (ADR-041 C-04).
 - **Route** (`apps/web/app/api/ytdlsub/poster/route.ts`): after the unchanged session + section + path
   gates — `If-None-Match` match ⇒ **304** (no upstream); LRU hit ⇒ 200 from memory; miss ⇒ fetch the
-  transcode upstream, on upstream failure retry the **original-art fallback** (ADR-041 C-02), buffer,
-  memoize, 200 with `ETag` + the existing `Cache-Control: private, max-age=86400, stale-while-revalidate=604800`.
-  Unknown `size` ⇒ 404. Double miss ⇒ 404 ⇒ the `MediaPoster` fallback tile (unchanged).
+  transcode upstream, buffer, memoize, 200 with `ETag` + the existing
+  `Cache-Control: private, max-age=86400, stale-while-revalidate=604800`. A transcode failure retries
+  the **original-art fallback** (ADR-041 C-02), which is served **without memoization or ETag** and a
+  short `max-age=300` — a transient transcoder outage never makes megabyte originals sticky in the LRU
+  or in browser caches. Unknown `size` ⇒ 404. Double miss ⇒ 404 ⇒ the `MediaPoster` fallback tile
+  (unchanged).
 - **Progressive reveal** (`MediaPoster`): the `<img>` inside the reserved 2:3 `.poster-box` starts
   transparent and fades in on load (`.poster-img.is-loaded`, opacity-only — ADR-015-safe by
   construction; the global reduced-motion rule kills the transition). Applies to every wall that uses
