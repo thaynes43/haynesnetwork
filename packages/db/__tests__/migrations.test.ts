@@ -16,6 +16,9 @@ const SEED_SLUGS = [
   'open-webui',
   'paperless',
   'tautulli',
+  // ADR-046 (PLAN-023, migration 0037) — the two book-server cards (seeded rows; no role grants).
+  'kavita',
+  'audiobookshelf',
 ];
 describe('withMigratedDb', () => {
   it('boots an embedded Postgres 16, applies both migrations, and tears down', async () => {
@@ -24,7 +27,7 @@ describe('withMigratedDb', () => {
       await client.connect();
       try {
         const seeded = await client.query('SELECT count(*)::int AS n FROM app_catalog');
-        expect(seeded.rows[0].n).toBe(8);
+        expect(seeded.rows[0].n).toBe(10);
         const v = await client.query('SHOW server_version');
         return String(v.rows[0].server_version);
       } finally {
@@ -84,7 +87,7 @@ describe('migrations against embedded Postgres 16', () => {
   it('is idempotent: re-running runMigrations applies nothing new', async () => {
     await runMigrations({ databaseUrl: pg.connectionString });
     const seeded = await client.query('SELECT count(*)::int AS n FROM app_catalog');
-    expect(seeded.rows[0].n).toBe(8);
+    expect(seeded.rows[0].n).toBe(10);
   });
 
   it('seeds the catalog exactly per DESIGN-001 D-14', async () => {
@@ -101,7 +104,12 @@ describe('migrations against embedded Postgres 16', () => {
     expect(bySlug.get('open-webui').url).toBe('https://ai.haynesnetwork.com');
     expect(bySlug.get('paperless').url).toBe('https://paperless.haynesnetwork.com');
     expect(bySlug.get('tautulli').url).toBe('https://tautulli.haynesnetwork.com');
-    expect(rows.rows.map((r) => r.sort_order)).toEqual([10, 20, 30, 40, 50, 60, 70, 80]);
+    // ADR-046 (PLAN-023, migration 0037) — the book-server cards.
+    expect(bySlug.get('kavita').url).toBe('https://kavita.haynesnetwork.com');
+    expect(bySlug.get('kavita').icon).toBe('kavita');
+    expect(bySlug.get('audiobookshelf').url).toBe('https://audiobookshelf.haynesnetwork.com');
+    expect(bySlug.get('audiobookshelf').icon).toBe('audiobookshelf');
+    expect(rows.rows.map((r) => r.sort_order)).toEqual([10, 20, 30, 40, 50, 60, 70, 80, 90, 100]);
   });
 
   it('seeds Admin + Default + Family roles with the right app sets (ADR-012)', async () => {

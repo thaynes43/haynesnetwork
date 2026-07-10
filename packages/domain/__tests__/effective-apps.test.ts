@@ -38,9 +38,10 @@ describe('effectiveAppsForUser (ADR-012 — role-based, replaces the tri-union v
       initiator: { id: null, kind: 'system' },
     });
     const slugs = (await effectiveAppsForUser(admin.id, t.db)).map((a) => a.slug);
-    expect(slugs).toHaveLength(9); // 8 seeded + 'extra'
+    expect(slugs).toHaveLength(11); // 10 seeded (+ kavita/audiobookshelf, ADR-046) + 'extra'
     expect(slugs).toContain('extra');
     expect(slugs).toContain('tautulli'); // a normally-hidden app — admins still see it
+    expect(slugs).toContain('kavita'); // ADR-046 — seeded book-server card, admins see it implicitly
   });
 
   it('a custom role grants exactly its app set, and editing the role updates effective apps', async () => {

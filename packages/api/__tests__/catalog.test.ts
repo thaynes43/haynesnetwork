@@ -70,6 +70,8 @@ describe('catalog.myApps — role-based visible apps (R-10, ADR-012)', () => {
       'open-webui',
       'paperless',
       'tautulli',
+      'kavita',
+      'audiobookshelf',
     ]);
   });
 
@@ -105,6 +107,8 @@ describe('catalog.adminList (R-11)', () => {
       'open-webui',
       'paperless',
       'tautulli',
+      'kavita',
+      'audiobookshelf',
     ]);
     const seerr = rows[0]!;
     expect(seerr.sortOrder).toBe(10);

@@ -90,3 +90,6 @@ export * from './ai-usage';
 export * from './authentik-clients';
 export * from './authentik-portal';
 export * from './authentik-users';
+// ADR-046 / DESIGN-024 (PLAN-023) — the books ledger single-writer (syncBooks upserts the synced Kavita +
+// Audiobookshelf mirror books_items and tombstones vanished rows). READ-ONLY against the book servers.
+export * from './books';

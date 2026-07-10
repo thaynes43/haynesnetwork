@@ -15,6 +15,7 @@ import { motdRouter } from './motd';
 import { storageRouter } from './storage';
 import { metricsRouter } from './metrics';
 import { ytdlsubRouter } from './ytdlsub';
+import { booksRouter } from './books';
 import { authentikPortalRouter } from './authentik-portal';
 
 export const appRouter = router({
@@ -49,6 +50,10 @@ export const appRouter = router({
   // ADR-038 / DESIGN-017 (PLAN-022): the ytdl-sub Library sub-tabs — Peloton + YouTube read DIRECTLY from
   // the k8plex Plex server (no ledger sync), gated by the `ytdlsub` section (ships Admin-only).
   ytdlsub: ytdlsubRouter,
+  // ADR-046 / DESIGN-024 (PLAN-023): the Books Library sub-tabs — Books/Audiobooks/Comics read from the
+  // app-owned books_items ledger (synced from Kavita + Audiobookshelf), gated by the `books` section
+  // (ships Admin-only). Read-only — no Fix/Restore for books (the book servers are the source of truth).
+  books: booksRouter,
   // ADR-045 / DESIGN-023 (PLAN-026): the Authentik user/role portal — /admin/users directory (all
   // Authentik identities) + role assignment that writes owned Authentik group membership (+ OWUI tier
   // pre-create), admin-only, audited + import-confined.

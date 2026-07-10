@@ -76,7 +76,7 @@ describe('0003_media_ledger against embedded Postgres 16', () => {
   it('is idempotent: re-running runMigrations applies nothing new', async () => {
     await runMigrations({ databaseUrl: pg.connectionString });
     const seeded = await client.query('SELECT count(*)::int AS n FROM app_catalog');
-    expect(seeded.rows[0].n).toBe(8);
+    expect(seeded.rows[0].n).toBe(10); // ADR-046 (0037) added the two book-server cards
   });
 
   describe('media_items (D-05)', () => {

@@ -32,6 +32,25 @@ export function KindIcon({ kind, className }: { kind: string; className?: string
       </svg>
     );
   }
+  // ADR-046 (PLAN-023) — books ledger fallback glyphs (currentColor only, no new asset/hex).
+  if (kind === 'book' || kind === 'comic') {
+    return (
+      <svg {...common}>
+        <path d="M12 6c-1.8-1.2-4-1.8-6.5-1.8V17c2.5 0 4.7.6 6.5 1.8" />
+        <path d="M12 6c1.8-1.2 4-1.8 6.5-1.8V17c-2.5 0-4.7.6-6.5 1.8" />
+        <path d="M12 6v12.8" />
+      </svg>
+    );
+  }
+  if (kind === 'audiobook') {
+    return (
+      <svg {...common}>
+        <path d="M4 13v-1a8 8 0 0 1 16 0v1" />
+        <rect x="3" y="13" width="4" height="6" rx="1.5" />
+        <rect x="17" y="13" width="4" height="6" rx="1.5" />
+      </svg>
+    );
+  }
   // radarr / fallback: film frame
   return (
     <svg {...common}>

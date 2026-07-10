@@ -12,6 +12,9 @@ export const ICON_KEYS = [
   'open-webui',
   'paperless',
   'tautulli',
+  // ADR-046 / DESIGN-024 (PLAN-023) — the two book-server catalog cards.
+  'kavita',
+  'audiobookshelf',
 ] as const;
 
 export type IconKey = (typeof ICON_KEYS)[number];

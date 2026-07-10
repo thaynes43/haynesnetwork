@@ -16,6 +16,7 @@ import { STUB_PLEX_TOKENS } from './stub-plex';
 import { STUB_MAINTAINERR_API_KEY } from './stub-maintainerr';
 import { STUB_OPENWEBUI_API_KEY } from './stub-openwebui';
 import { STUB_AUTHENTIK_API_TOKEN } from './stub-authentik';
+import { STUB_ABS_PASSWORD, STUB_KAVITA_PASSWORD } from './stub-books';
 
 /** Default app port — off 3000 so the stack coexists with a running `pnpm dev`.
  *  playwright.config.ts's baseURL derives from this. */
@@ -82,6 +83,17 @@ export interface RuntimeEnv {
   STUB_AUTHENTIK_URL: string;
   AUTHENTIK_URL: string;
   AUTHENTIK_API_TOKEN: string;
+  /** ADR-046 / DESIGN-024 — stub books-server origin + the books-sync/cover contract (KAVITA_* +
+   *  AUDIOBOOKSHELF_* point at the one stub; the public URLs seed the stored deep links). */
+  STUB_BOOKS_URL: string;
+  KAVITA_URL: string;
+  KAVITA_USERNAME: string;
+  KAVITA_PASSWORD: string;
+  KAVITA_PUBLIC_URL: string;
+  AUDIOBOOKSHELF_URL: string;
+  AUDIOBOOKSHELF_USERNAME: string;
+  AUDIOBOOKSHELF_PASSWORD: string;
+  AUDIOBOOKSHELF_PUBLIC_URL: string;
   /** ADR-026 / DESIGN-012 — per-source Bulletin webhook shared secrets (Seerr + Tautulli). */
   SEERR_WEBHOOK_SECRET: string;
   TAUTULLI_WEBHOOK_SECRET: string;
@@ -116,6 +128,7 @@ export function composeRuntimeEnv(opts: {
   stubPrometheusBaseUrl: string;
   stubOpenWebUiBaseUrl: string;
   stubAuthentikBaseUrl: string;
+  stubBooksBaseUrl: string;
   appUrl: string;
 }): RuntimeEnv {
   return {
@@ -161,6 +174,15 @@ export function composeRuntimeEnv(opts: {
     STUB_AUTHENTIK_URL: opts.stubAuthentikBaseUrl,
     AUTHENTIK_URL: opts.stubAuthentikBaseUrl,
     AUTHENTIK_API_TOKEN: STUB_AUTHENTIK_API_TOKEN,
+    STUB_BOOKS_URL: opts.stubBooksBaseUrl,
+    KAVITA_URL: opts.stubBooksBaseUrl,
+    KAVITA_USERNAME: 'hnetadmin',
+    KAVITA_PASSWORD: STUB_KAVITA_PASSWORD,
+    KAVITA_PUBLIC_URL: 'https://kavita.haynesnetwork.com',
+    AUDIOBOOKSHELF_URL: opts.stubBooksBaseUrl,
+    AUDIOBOOKSHELF_USERNAME: 'root',
+    AUDIOBOOKSHELF_PASSWORD: STUB_ABS_PASSWORD,
+    AUDIOBOOKSHELF_PUBLIC_URL: 'https://audiobookshelf.haynesnetwork.com',
     SEERR_WEBHOOK_SECRET: STUB_SEERR_WEBHOOK_SECRET,
     TAUTULLI_WEBHOOK_SECRET: STUB_TAUTULLI_WEBHOOK_SECRET,
     // 30 s (vs 15 min in prod): long enough that fresh submits deterministically read
