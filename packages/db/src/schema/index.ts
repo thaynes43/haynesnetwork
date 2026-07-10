@@ -55,3 +55,9 @@ export * from './poster-guard-applications';
 // ADR-044 / DESIGN-022 (PLAN-021) — the synced Open WebUI chat-usage mirror the ai-usage-sync mode
 // upserts (the Metrics → AI sub-tab's substrate). Guarded single-writer table (syncAiUsage).
 export * from './ai-usage-chats';
+// ADR-045 / DESIGN-023 (PLAN-026) — the Authentik role portal: the synced Authentik-directory mirror
+// (authentik-users sync), the parked role intents for Authentik-only identities (consumed on first
+// login), and the append-only external group-write ledger. All guarded single-writer tables.
+export * from './authentik-users';
+export * from './pending-role-assignments';
+export * from './authentik-group-audit';

@@ -26,6 +26,9 @@ export const RoleInput = z.object({
   description: z.string().trim().max(280).default(''),
   appIds: z.array(z.uuid()).default([]),
   grantsAll: z.boolean().default(false), // "All apps" — grants every app, incl. future ones
+  // ADR-045 (PLAN-026) — create as a synced tier: the role projects to an Authentik group (auto-created
+  // in Authentik + Open WebUI on create; roles.setSyncedTier flips it later). Default off.
+  syncedTier: z.boolean().default(false),
 });
 
 /** ADR-012 — roles.update: id required, every editable field optional (true PATCH). */

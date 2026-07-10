@@ -6,7 +6,7 @@
 // The canned data (3 users, 5 chats, 4 assistant image files across 2 chats, 3 models) makes the AI tab
 // render non-trivial counts + trends + the full-only per-user/model tables at admin, and the aggregate
 // counts + "admins see more" note at limited.
-import { createServer, type Server } from 'node:http';
+import { createServer, type IncomingMessage, type Server } from 'node:http';
 
 /** The throwaway api key the stub OWUI accepts (never a real credential). */
 export const STUB_OPENWEBUI_API_KEY = 'stub-owui-key';
@@ -65,33 +65,72 @@ const CHATS = [
 
 export interface StubOpenWebUiServer {
   baseUrl: string;
+  /** ADR-045 — the groups created via POST /api/v1/groups/create this run (portal tier pre-create). */
+  createdGroups: Array<{ name: string; description: string }>;
   stop: () => Promise<void>;
 }
 
 export async function startStubOpenWebUi(): Promise<StubOpenWebUiServer> {
+  // ADR-045 / DESIGN-023 (PLAN-026) — OWUI group management surface. Seeded with `family` (the Phase-1
+  // tier) so the portal's ensure-family is a no-op; a NEW synced tier (e.g. `friends`) is created here.
+  const groups: Array<{ id: string; name: string; description: string | null }> = [
+    { id: 'g-family', name: 'family', description: 'Family tier' },
+  ];
+  const createdGroups: Array<{ name: string; description: string }> = [];
+
+  const readBody = (req: IncomingMessage): Promise<string> =>
+    new Promise((resolve) => {
+      let data = '';
+      req.on('data', (c) => (data += c));
+      req.on('end', () => resolve(data));
+    });
+
   const server: Server = createServer((req, res) => {
-    const url = new URL(req.url ?? '/', 'http://localhost');
-    const json = (status: number, body: unknown) => {
-      res.writeHead(status, { 'content-type': 'application/json' });
-      res.end(JSON.stringify(body));
-    };
+    void (async () => {
+      const url = new URL(req.url ?? '/', 'http://localhost');
+      const json = (status: number, body: unknown) => {
+        res.writeHead(status, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(body));
+      };
 
-    // The admin api-key bearer is required (the unauth-401 contract).
-    const auth = req.headers['authorization'];
-    if (auth !== `Bearer ${STUB_OPENWEBUI_API_KEY}`) {
-      return json(401, { detail: 'Not authenticated' });
-    }
+      // Control surface (no auth) — specs GET the live group state to assert tier pre-create (ADR-045).
+      if (req.method === 'GET' && url.pathname === '/_stub/groups') {
+        return json(200, { groups, createdGroups });
+      }
 
-    if (req.method === 'GET' && url.pathname === '/api/v1/chats/all/db') {
-      return json(200, CHATS);
-    }
-    if (req.method === 'GET' && url.pathname === '/api/v1/users/') {
-      return json(200, { users: USERS, total: USERS.length });
-    }
-    if (req.method === 'GET' && url.pathname === '/health') {
-      return json(200, { status: true });
-    }
-    return json(404, { detail: `stub-openwebui: no handler for ${req.method} ${url.pathname}` });
+      // The admin api-key bearer is required (the unauth-401 contract).
+      const auth = req.headers['authorization'];
+      if (auth !== `Bearer ${STUB_OPENWEBUI_API_KEY}`) {
+        return json(401, { detail: 'Not authenticated' });
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/v1/chats/all/db') {
+        return json(200, CHATS);
+      }
+      if (req.method === 'GET' && url.pathname === '/api/v1/users/') {
+        return json(200, { users: USERS, total: USERS.length });
+      }
+      // ADR-045 — the group portal surface.
+      if (req.method === 'GET' && url.pathname === '/api/v1/groups/') {
+        return json(200, groups);
+      }
+      if (req.method === 'POST' && url.pathname === '/api/v1/groups/create') {
+        const parsed = JSON.parse((await readBody(req)) || '{}') as {
+          name?: string;
+          description?: string;
+        };
+        const name = parsed.name ?? '';
+        const description = parsed.description ?? '';
+        const created = { id: `g-${name}`, name, description };
+        groups.push(created);
+        createdGroups.push({ name, description });
+        return json(200, created);
+      }
+      if (req.method === 'GET' && url.pathname === '/health') {
+        return json(200, { status: true });
+      }
+      return json(404, { detail: `stub-openwebui: no handler for ${req.method} ${url.pathname}` });
+    })();
   });
 
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -101,6 +140,7 @@ export async function startStubOpenWebUi(): Promise<StubOpenWebUiServer> {
   }
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,
+    createdGroups,
     stop: () =>
       new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve()))),
   };

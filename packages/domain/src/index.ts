@@ -84,3 +84,9 @@ export * from './poster-guard';
 // ADR-044 / DESIGN-022 (PLAN-021) — the AI usage single-writer (syncAiUsage upserts the Open WebUI chat
 // mirror) + the level-gated AI usage read model (getAiUsage) the Metrics → AI sub-tab renders.
 export * from './ai-usage';
+// ADR-045 / DESIGN-023 (PLAN-026) — the Authentik role portal: the confined Authentik/OWUI client bundle,
+// the group-portal write orchestrators (provisionSyncedTier / assignRolePortal / the owned-groups
+// guardrail), and the directory mirror single-writer + /admin/users read model.
+export * from './authentik-clients';
+export * from './authentik-portal';
+export * from './authentik-users';

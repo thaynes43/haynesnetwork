@@ -5394,3 +5394,48 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
 .metrics-host__down {
   color: var(--color-danger);
 }
+
+/* ---------- Authentik directory (ADR-045 / DESIGN-023, PLAN-026) ---------- */
+/* /admin/users source filter: a single-select pill row (aria-pressed radios, the same control
+   language as the Ledger runs filter). Switching recolors the constant-width pills and filters
+   table rows — nothing else moves (ADR-015). Tokens only (hard rule 2). */
+.dir-filterbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  margin-bottom: 10px;
+  padding: 4px 0;
+  flex-wrap: nowrap;
+  overflow-x: auto; /* pan-not-grow at phone widths, like the Ledger runs bar */
+  scrollbar-width: none;
+}
+.dir-filterbar::-webkit-scrollbar {
+  display: none;
+}
+.dir-filter {
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  min-height: 34px;
+  padding: 4px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex: none;
+}
+.dir-filter:hover {
+  background: var(--color-surface-2);
+  color: var(--color-text);
+}
+.dir-filter[aria-pressed='true'] {
+  color: var(--color-accent);
+  border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
+[data-theme='hnet-light'] .dir-filter[aria-pressed='true'] {
+  color: color-mix(in srgb, var(--color-accent) 62%, var(--color-text));
+}

@@ -20,12 +20,13 @@ import {
   type UtilizationArrBundle,
 } from '@hnet/domain';
 import { prometheusClientFromEnv } from '@hnet/metrics';
+import { assertAuthentikEnv, authentikReadClient } from '@hnet/authentik';
 import { buildMetadataSourceClients, buildOptionalMaintainerrRead, buildSyncClients, requireClient } from '../clients';
 import { openWebUiClientFromEnv } from '../openwebui';
 import { createConsoleLogger } from '../logger';
 import { runSync } from '../orchestrator';
 
-const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy|notify-outbox|smart-alerts|poster-guard|ai-usage-sync [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
+const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy|notify-outbox|smart-alerts|poster-guard|ai-usage-sync|authentik-users [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
 
   --mode=full              item-list upsert + tombstone pass per *arr (+ Seerr requests)
   --mode=incremental       history/since cursor polling per *arr (+ Seerr requests)
@@ -61,6 +62,11 @@ const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-bat
                            READ-ONLY against OWUI; counts chats + image generations (assistant image files)
                            + per-user/model detail. Needs OPENWEBUI_API_KEY (OPENWEBUI_URL defaults to the
                            in-cluster service DNS). No --source. Writes no sync_runs row.
+  --mode=authentik-users   page the Authentik directory (GET /api/v3/core/users/ incl. external + never-
+                           logged-in identities + /groups/) and UPSERT the authentik_users mirror the
+                           /admin/users portal reads (ADR-045). READ-ONLY against Authentik. Needs
+                           AUTHENTIK_API_TOKEN (AUTHENTIK_URL defaults to the in-cluster Service DNS).
+                           No --source. Writes no sync_runs row.
   --source=NAME            limit the run to one source (repeatable; default: all sources; for
                            metadata-refresh the default is the three *arr kinds)
   --force-tombstones       override the mass-tombstone guard (DESIGN-005 D-14/Q-03)
@@ -116,7 +122,8 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
       mode === 'notify-outbox' ||
       mode === 'smart-alerts' ||
       mode === 'poster-guard' ||
-      mode === 'ai-usage-sync') &&
+      mode === 'ai-usage-sync' ||
+      mode === 'authentik-users') &&
     sources.length > 0
   ) {
     throw new CliUsageError(`--source is not valid for --mode=${mode}`);
@@ -130,7 +137,8 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
     mode === 'notify-outbox' ||
     mode === 'smart-alerts' ||
     mode === 'poster-guard' ||
-    mode === 'ai-usage-sync'
+    mode === 'ai-usage-sync' ||
+    mode === 'authentik-users'
       ? []
       : mode === 'metadata-refresh'
         ? [...ARR_KINDS]
@@ -221,6 +229,16 @@ async function main(): Promise<number> {
   // (OPENWEBUI_URL defaults to the in-cluster service DNS; throws OpenWebUiConfigError if
   // OPENWEBUI_API_KEY is absent). Read-only — it never mutates Open WebUI.
   const openWebUi = args.mode === 'ai-usage-sync' ? openWebUiClientFromEnv() : undefined;
+  // ADR-045 / DESIGN-023 — the read-only Authentik directory client the `authentik-users` mode pages
+  // (AUTHENTIK_URL defaults to the in-cluster Service DNS; throws AuthentikConfigError if
+  // AUTHENTIK_API_TOKEN is absent). Read-only — it never mutates Authentik.
+  const authentik =
+    args.mode === 'authentik-users'
+      ? (() => {
+          const cfg = assertAuthentikEnv();
+          return authentikReadClient({ baseUrl: cfg.baseUrl, token: cfg.token });
+        })()
+      : undefined;
 
   logger.info('sync starting', {
     mode: args.mode,
@@ -247,6 +265,7 @@ async function main(): Promise<number> {
     ...(smartReader ? { smartReader } : {}),
     ...(plex ? { plex } : {}),
     ...(openWebUi ? { openWebUi } : {}),
+    ...(authentik ? { authentik } : {}),
     logger,
   });
 

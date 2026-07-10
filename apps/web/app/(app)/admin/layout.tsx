@@ -17,6 +17,8 @@ export default async function AdminLayout({ children }: { children: ReactNode })
     <div className="admin">
       <nav className="admin-nav" aria-label="Admin sections">
         <Link href="/admin">Users</Link>
+        {/* ADR-045 / DESIGN-023 (PLAN-026) — the full Authentik directory (superset of Users). */}
+        <Link href="/admin/users">Directory</Link>
         <Link href="/admin/catalog">Catalog</Link>
         <Link href="/admin/roles">Roles</Link>
         <Link href="/admin/fixes">Fixes</Link>

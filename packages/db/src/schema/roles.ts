@@ -43,6 +43,13 @@ export const roles = pgTable(
     // (like grants_all); default 'limited'. Admin implies 'full' via the session short-circuit. Written
     // ONLY by the @hnet/domain setRoleMetricsLevel single-writer (co-writes permission_audit in-tx).
     metricsLevel: text('metrics_level').$type<MetricsLevel>().notNull().default('limited'),
+    // ADR-045 C-01 (PLAN-026 Authentik role portal) — opt-in: when true this role PROJECTS to an
+    // Authentik group (the cross-app role primitive). Creating/flipping-on a synced tier auto-creates
+    // the Authentik group (name = role name lowercased) + the same-named Open WebUI group and adds it to
+    // the owned-groups allowlist; assigning the role then writes that owned-group membership. Internal /
+    // experimental roles keep this false and stay app-local. Admin/Default are NOT synced tiers; the
+    // seeded Family role IS (migration 0036 backfills it — it projects to the pre-existing `family` group).
+    syncedTier: boolean('synced_tier').notNull().default(false),
     sortOrder: integer('sort_order').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

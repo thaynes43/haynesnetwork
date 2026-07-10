@@ -69,7 +69,18 @@ Four bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across 
   top-level section** (`role_section_permissions`) is a permission concern owned here,
   alongside Effective Permissions — carried on the session and consumed by BC-03's Ledger
   (and later BC-03's Trash) nav + `sectionProcedure` gate.
-- **External systems:** none in Phase 1; follow-on push of app permissions into Authentik (R-30).
+- **External systems:** none in Phase 1; the follow-on push of app permissions into Authentik (R-30)
+  is now **built** — the **Authentik Role Portal** (ADR-045 / DESIGN-023, PLAN-026). A synced-tier Role
+  projects to an **Authentik group**; assigning it writes the identity's **group membership** (exclusive
+  across owned tier groups), which propagates to every Authentik-backed app (Open WebUI, later
+  Kavita/ABS). This is the BC-04 posture applied to identity: BC-02 **decides** (the Role), an
+  import-confined write client (`@hnet/authentik/write`, `@hnet/openwebui/write`) **applies** — only to
+  groups on a positive owned-groups allowlist (`assertGroupOwned`, → FORBIDDEN before any call), never
+  the admin-managed flows/stages/brand/MFA groups the ADR-042 blueprints own. External group writes are
+  audited **after** the apply (`authentik_group_audit`, the `plex_share_audit` seam); the local
+  allowlist/role→group-map and pending-assignment writes are same-tx audited. A read-only
+  `authentik-users` sync mirrors the whole Authentik directory (`authentik_users`) for the `/admin/users`
+  roster.
 
 ### BC-03 — Media Ledger
 
@@ -172,3 +183,4 @@ Four bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across 
 | 2026-07-03 | Tom Haynes | Initial contexts BC-01..BC-04 identified from PRD-001 (Accepted). |
 | 2026-07-06 | Fable 5 | BC-04 Plex Sharing promoted intent → **built** (ADR-017 / DESIGN-007): owns `plex_servers`/`plex_libraries`/`plex_share_audit`; family gating is a `Family`-role grant (no `is_family_only` flag); BC-02→BC-04 reference named as `role_library_grants` → `plex_libraries (server_id, section_key)`; server slugs corrected to `haynestower`/`haynesops`/`hayneskube`. |
 | 2026-07-07 | Fable 5 | Added **BC-05 Media Communication** (ADR-026 / DESIGN-012, PLAN-009 Bulletin, backend built): owns Notification (`notifications`, widened), Message (`messages`), Message Action Grant (`role_message_action_grants`); inbound-only webhook adapters (Seerr/Tautulli/Maintainerr); reuses BC-03's single email/media attribution path; complements (never replaces) BC-03's Fix. The Feed/Messages UX lands as a Fable follow-up. |
+| 2026-07-10 | Fable 5 | BC-02 Entitlements gains an **outbound apply into Authentik** — the R-30 follow-on is now built as the **Authentik Role Portal** (ADR-045 / DESIGN-023, PLAN-026): a synced-tier Role projects to an Authentik group and role assignment writes group membership (exclusive across owned tier groups) through the import-confined `@hnet/authentik/write` + `@hnet/openwebui/write`, gated by a positive owned-groups allowlist (never the admin/MFA groups or ADR-042 blueprint-owned flows/stages/brand). The BC-04 "decide here, apply externally" posture applied to identity; external writes audited after the apply (`authentik_group_audit`), local changes same-tx audited. No BC renumbering. |

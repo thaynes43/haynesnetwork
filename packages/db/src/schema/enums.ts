@@ -20,8 +20,31 @@ export const PERMISSION_AUDIT_ACTIONS = [
   'update_app_setting', // ADR-025 C-06 — a generic app_settings key was changed (skip-gate, window default)
   'update_message_actions', // ADR-026 C-04 — a role's fine-grained Bulletin message action grants were replaced
   'update_role_metrics_level', // ADR-037 C-01 — a role's metrics access level (full|limited) was changed
+  'assign_pending_role', // ADR-045 C-05 (PLAN-026) — a role was assigned to an Authentik-only identity that has no app user row yet; the intent is parked in pending_role_assignments and consumed on that identity's first app login
 ] as const;
 export type PermissionAuditAction = (typeof PERMISSION_AUDIT_ACTIONS)[number];
+
+// ADR-045 / DESIGN-023 (PLAN-026) — the Authentik group-portal write ledger. haynesnetwork writes
+// Authentik group MEMBERSHIP for the groups it OWNS (the owned-groups allowlist), and pre-creates the
+// synced-tier group in Authentik AND Open WebUI. Because these are EXTERNAL side-effects (Authentik /
+// OWUI REST), they cannot co-commit with a local DB row — so, exactly like plex_share_audit (BC-04),
+// each successful external write appends one authentik_group_audit row AFTER the apply (never a
+// permission_audit row). `add_member`/`remove_member` flip owned-group membership; `create_group`
+// pre-creates the Authentik tier group; `ensure_owui_group` pre-creates the same-named Open WebUI group.
+export const AUTHENTIK_GROUP_AUDIT_ACTIONS = [
+  'add_member',
+  'remove_member',
+  'create_group',
+  'ensure_owui_group',
+] as const;
+export type AuthentikGroupAuditAction = (typeof AUTHENTIK_GROUP_AUDIT_ACTIONS)[number];
+
+// ADR-045 / DESIGN-023 (PLAN-026) — the Authentik user `type` values observed live 2026-07-10 against
+// `GET /api/v3/core/users/`: `external` (Plex-source social-login identities, path goauthentik.io/sources/*),
+// `internal` (native Authentik accounts), `internal_service_account` (outposts + the hnet-portal SA). The
+// authentik_users mirror stores this so /admin/users can render a source badge without re-deriving it.
+export const AUTHENTIK_USER_TYPES = ['external', 'internal', 'internal_service_account'] as const;
+export type AuthentikUserType = (typeof AUTHENTIK_USER_TYPES)[number];
 
 // ---------------------------------------------------------------------------
 // DESIGN-005 Phase 2 — media ledger enums (D-05, D-07, D-09, D-10, D-11).
@@ -191,6 +214,13 @@ export const SYNC_RUN_KINDS = [
   'smart-alerts',
   'poster-guard',
   'ai-usage-sync',
+  // ADR-045 / DESIGN-023 (PLAN-026) — 'authentik-users' is the one-way Authentik directory read sync: it
+  // pages `GET /api/v3/core/users/` (incl. external / never-logged-in identities) + `GET .../groups/` and
+  // UPSERTS the snapshot into the authentik_users mirror via the domain syncAuthentikUsers single-writer.
+  // Read-only against Authentik. Like ai-usage-sync it is a standalone mode (no --source, writes NO
+  // sync_runs row — its trail is the authentik_users table). It joins SYNC_RUN_KINDS so the CLI `--mode`
+  // parser + `SyncMode` accept it (migration 0036 rebuilds the sync_runs.run_kind CHECK).
+  'authentik-users',
 ] as const;
 export type SyncRunKind = (typeof SYNC_RUN_KINDS)[number];
 
@@ -438,6 +468,16 @@ export const APP_SETTING_KEYS = [
   // Admin-editable + audited through the same setAppSetting single-writer; migration 0031 relaxes the CHECK.
   'upload_capacity_mbps',
   'download_capacity_mbps',
+  // ADR-045 / DESIGN-023 (PLAN-026 Authentik role portal) — the two guardrail settings that scope which
+  // Authentik groups the app may write. `authentik_owned_groups` (jsonb string[] of group NAMES; DEFAULT
+  // ['family']) is the allowlist: membership writes are REFUSED for any group not in it, so the portal can
+  // never touch authentik-admin-managed groups (authentik Admins, mfa-exempt, …). `authentik_group_map`
+  // (jsonb object roleId → group name; DEFAULT {}) records each synced tier's role→Authentik-group binding
+  // so a later role RENAME doesn't orphan the group (absent entry falls back to name.toLowerCase()).
+  // Both are admin-mutated + audited through the same setAppSetting single-writer; migration 0036 relaxes
+  // the CHECK. Auto-creating a synced tier appends its group to the allowlist + records the map entry.
+  'authentik_owned_groups',
+  'authentik_group_map',
 ] as const;
 export type AppSettingKey = (typeof APP_SETTING_KEYS)[number];
 

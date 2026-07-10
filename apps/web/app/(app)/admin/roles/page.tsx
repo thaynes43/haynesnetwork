@@ -32,6 +32,10 @@ interface RoleForm {
   trashActions: TrashActionName[];
   // ADR-026 C-04 — the fine-grained Bulletin message action grants (post / moderate).
   messageActions: MessageActionName[];
+  // ADR-045 (PLAN-026) — create as a SYNCED TIER: the role projects to an Authentik group (auto-created
+  // in Authentik + Open WebUI on create). Only meaningful on the Add-role form (the per-row toggle flips
+  // an existing role via setSyncedTier).
+  syncedTier: boolean;
 }
 
 const EMPTY_FORM: RoleForm = {
@@ -43,6 +47,7 @@ const EMPTY_FORM: RoleForm = {
   allServerIds: [],
   trashActions: [],
   messageActions: [],
+  syncedTier: false,
 };
 
 export default function AdminRolesPage() {
@@ -129,6 +134,14 @@ export default function AdminRolesPage() {
     onSuccess: () => setError(null),
     onSettled: invalidate,
   });
+  // ADR-045 (PLAN-026) — flip a role's "synced tier" opt-in. ON provisions the Authentik + OWUI groups +
+  // the owned-groups allowlist; OFF stops managing it (non-destructive). Reaches Authentik/OWUI, so its
+  // errors (BAD_GATEWAY on an upstream outage) surface on the top-level banner. Applied on change.
+  const setSyncedTier = trpc.roles.setSyncedTier.useMutation({
+    onError: (err: unknown) => setError(describeMutationError(err)),
+    onSuccess: () => setError(null),
+    onSettled: invalidate,
+  });
   const busy =
     create.isPending ||
     update.isPending ||
@@ -138,7 +151,8 @@ export default function AdminRolesPage() {
     setSection.isPending ||
     setTrash.isPending ||
     setMessages.isPending ||
-    setMetricsLevel.isPending;
+    setMetricsLevel.isPending ||
+    setSyncedTier.isPending;
 
   const roleRows = roles.data ?? [];
   const entries = catalog.data ?? [];
@@ -162,6 +176,8 @@ export default function AdminRolesPage() {
         description: addForm.description.trim(),
         appIds: addForm.grantsAll ? [] : addForm.appIds,
         grantsAll: addForm.grantsAll,
+        // ADR-045 — a synced tier auto-creates its Authentik + Open WebUI group on create.
+        syncedTier: addForm.syncedTier,
       });
       // Library grants are independent of grants_all (ADR-017 D-08) — always persisted.
       if (libs.data)
@@ -193,6 +209,9 @@ export default function AdminRolesPage() {
       allServerIds: [...(allGrantsByRole[role.id] ?? [])],
       trashActions: [...role.trashActions] as TrashActionName[],
       messageActions: [...role.messageActions] as MessageActionName[],
+      // Carried for form-type completeness; the synced-tier flag is edited via the per-row toggle
+      // (setSyncedTier), NOT the inline editor (which never sends it — RolePatchInput has no syncedTier).
+      syncedTier: role.syncedTier,
     });
     setEditError(null);
   }
@@ -588,6 +607,12 @@ export default function AdminRolesPage() {
                   {role.isAdmin ? <span className="tag"> superuser</span> : null}
                   {role.isDefault ? <span className="tag"> default</span> : null}
                   {role.grantsAll && !role.isAdmin ? <span className="tag"> all apps</span> : null}
+                  {role.syncedTier ? (
+                    <span className="tag" title={`Projects to the Authentik/Open WebUI group “${role.name.toLowerCase()}”`}>
+                      {' '}
+                      synced tier
+                    </span>
+                  ) : null}
                   {role.description ? <span className="muted"> — {role.description}</span> : null}
                 </td>
                 <td data-label="Apps">
@@ -814,6 +839,25 @@ export default function AdminRolesPage() {
                     <span className="muted">locked</span>
                   ) : (
                     <span className="row-actions">
+                      {/* ADR-045 — synced-tier toggle: ON provisions the Authentik + OWUI group; OFF stops
+                          managing it (non-destructive). Apply-on-change; constant width (ADR-015). */}
+                      <label
+                        className="check-row"
+                        data-disabled={busy || editingElsewhere || undefined}
+                        title="Project this role to an Authentik group (auto-creates the Authentik + Open WebUI group)"
+                      >
+                        <input
+                          type="checkbox"
+                          aria-label={`Synced tier for ${role.name}`}
+                          data-testid={`synced-tier-${role.name}`}
+                          checked={role.syncedTier}
+                          disabled={busy || editingElsewhere}
+                          onChange={(e) =>
+                            setSyncedTier.mutate({ roleId: role.id, syncedTier: e.target.checked })
+                          }
+                        />
+                        <span>Synced tier</span>
+                      </label>
                       <button
                         type="button"
                         className="btn sm"
@@ -879,6 +923,34 @@ export default function AdminRolesPage() {
             />
           </label>
           {appChecklist(addForm, setAddForm)}
+          {/* ADR-045 (PLAN-026) — synced-tier opt-in. Creating this role auto-creates the same-named
+              Authentik group AND the Open WebUI group so the cross-app role plumbing is instant. */}
+          <fieldset className="field">
+            <legend>Cross-app tier</legend>
+            <label className="check-row">
+              <input
+                type="checkbox"
+                data-testid="synced-tier-add"
+                checked={addForm.syncedTier}
+                onChange={(e) => setAddForm({ ...addForm, syncedTier: e.target.checked })}
+              />
+              <span>
+                <strong>Synced tier</strong>
+                <span className="muted">
+                  {' '}
+                  — project this role to an Authentik group (name = the role name, lowercased)
+                </span>
+              </span>
+            </label>
+            {addForm.syncedTier ? (
+              <p className="field-hint">
+                On create, the Authentik group and the same-named Open WebUI group are created and the
+                role starts managing that group’s membership. The tier’s <strong>existence</strong>{' '}
+                propagates automatically — configure each app’s <strong>entitlements</strong> (e.g. Open
+                WebUI model access, Kavita libraries) in that app.
+              </p>
+            ) : null}
+          </fieldset>
           {libraryChecklist(addForm, setAddForm)}
           {trashChecklist(addForm, setAddForm)}
           {bulletinChecklist(addForm, setAddForm)}

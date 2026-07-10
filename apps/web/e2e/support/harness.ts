@@ -20,6 +20,7 @@ import { startStubPlex, type StubPlexServer } from './stub-plex';
 import { startStubMaintainerr, type StubMaintainerrServer } from './stub-maintainerr';
 import { startStubPrometheus, type StubPrometheusServer } from './stub-prometheus';
 import { startStubOpenWebUi, type StubOpenWebUiServer } from './stub-openwebui';
+import { startStubAuthentik, type StubAuthentikServer } from './stub-authentik';
 import { composeRuntimeEnv, DEFAULT_APP_PORT, type RuntimeEnv } from './env';
 
 const DEV_READY_TIMEOUT_MS = 180_000;
@@ -53,6 +54,7 @@ export interface RunningStack {
   prometheus: StubPrometheusServer;
   /** Stub Open WebUI stand-in — AI-usage sub-tab e2e layer (ADR-044 / DESIGN-022). */
   openWebUi: StubOpenWebUiServer;
+  authentik: StubAuthentikServer;
   devServer: ChildProcess;
   /** The DESIGN-002 D-08 env the dev server was booted with. */
   env: RuntimeEnv;
@@ -170,6 +172,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
   let maintainerr: StubMaintainerrServer | undefined;
   let prometheus: StubPrometheusServer | undefined;
   let openWebUi: StubOpenWebUiServer | undefined;
+  let authentik: StubAuthentikServer | undefined;
   let dev: ChildProcess | undefined;
   try {
     const migrate = spawnSync('pnpm', ['--filter', '@hnet/db', 'migrate'], {
@@ -202,6 +205,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     maintainerr = await startStubMaintainerr();
     prometheus = await startStubPrometheus();
     openWebUi = await startStubOpenWebUi();
+    authentik = await startStubAuthentik();
     const env = composeRuntimeEnv({
       databaseUrl: pg.connectionString,
       stubOidcBaseUrl: oidc.baseUrl,
@@ -212,6 +216,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       stubMaintainerrBaseUrl: maintainerr.baseUrl,
       stubPrometheusBaseUrl: prometheus.baseUrl,
       stubOpenWebUiBaseUrl: openWebUi.baseUrl,
+      stubAuthentikBaseUrl: authentik.baseUrl,
       appUrl,
     });
 
@@ -225,6 +230,17 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       { ...process.env, ...env },
       cwd,
       'ai-usage-sync seed',
+    );
+
+    // ADR-045 / DESIGN-023 — seed the authentik_users mirror by RUNNING the real authentik-users sync
+    // against the stub Authentik (exercises client → normalizer → single-writer, exactly like prod), so
+    // /admin/users renders the directory on first load without needing the Refresh button.
+    await runToCompletion(
+      join(cwd, 'node_modules', '.bin', 'tsx'),
+      [join(cwd, '..', '..', 'packages', 'sync', 'src', 'scripts', 'sync.ts'), '--mode=authentik-users'],
+      { ...process.env, ...env },
+      cwd,
+      'authentik-users seed',
     );
 
     // Spawn .bin/next directly — some pnpm versions filter child env vars.
@@ -252,6 +268,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     const runningMaintainerr = maintainerr;
     const runningPrometheus = prometheus;
     const runningOpenWebUi = openWebUi;
+    const runningAuthentik = authentik;
     let stopped = false;
     return {
       appUrl,
@@ -263,12 +280,14 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       maintainerr: runningMaintainerr,
       prometheus: runningPrometheus,
       openWebUi: runningOpenWebUi,
+      authentik: runningAuthentik,
       devServer: running,
       env,
       stop: async () => {
         if (stopped) return;
         stopped = true;
         await killDevServer(running);
+        await runningAuthentik.stop().catch(() => undefined);
         await runningOpenWebUi.stop().catch(() => undefined);
         await runningPrometheus.stop().catch(() => undefined);
         await runningMaintainerr.stop().catch(() => undefined);
@@ -282,6 +301,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
   } catch (err) {
     // Partial-boot cleanup, best effort in reverse order.
     if (dev) await killDevServer(dev).catch(() => undefined);
+    if (authentik) await authentik.stop().catch(() => undefined);
     if (openWebUi) await openWebUi.stop().catch(() => undefined);
     if (prometheus) await prometheus.stop().catch(() => undefined);
     if (maintainerr) await maintainerr.stop().catch(() => undefined);

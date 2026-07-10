@@ -15,6 +15,7 @@ import { STUB_BAZARR_API_KEY } from './stub-bazarr';
 import { STUB_PLEX_TOKENS } from './stub-plex';
 import { STUB_MAINTAINERR_API_KEY } from './stub-maintainerr';
 import { STUB_OPENWEBUI_API_KEY } from './stub-openwebui';
+import { STUB_AUTHENTIK_API_TOKEN } from './stub-authentik';
 
 /** Default app port — off 3000 so the stack coexists with a running `pnpm dev`.
  *  playwright.config.ts's baseURL derives from this. */
@@ -76,6 +77,11 @@ export interface RuntimeEnv {
   STUB_OPENWEBUI_URL: string;
   OPENWEBUI_URL: string;
   OPENWEBUI_API_KEY: string;
+  /** ADR-045 / DESIGN-023 — stub Authentik origin + the portal contract (the authentik-users sync +
+   *  /admin/users portal read AUTHENTIK_URL's API with AUTHENTIK_API_TOKEN). */
+  STUB_AUTHENTIK_URL: string;
+  AUTHENTIK_URL: string;
+  AUTHENTIK_API_TOKEN: string;
   /** ADR-026 / DESIGN-012 — per-source Bulletin webhook shared secrets (Seerr + Tautulli). */
   SEERR_WEBHOOK_SECRET: string;
   TAUTULLI_WEBHOOK_SECRET: string;
@@ -109,6 +115,7 @@ export function composeRuntimeEnv(opts: {
   stubMaintainerrBaseUrl: string;
   stubPrometheusBaseUrl: string;
   stubOpenWebUiBaseUrl: string;
+  stubAuthentikBaseUrl: string;
   appUrl: string;
 }): RuntimeEnv {
   return {
@@ -151,6 +158,9 @@ export function composeRuntimeEnv(opts: {
     STUB_OPENWEBUI_URL: opts.stubOpenWebUiBaseUrl,
     OPENWEBUI_URL: opts.stubOpenWebUiBaseUrl,
     OPENWEBUI_API_KEY: STUB_OPENWEBUI_API_KEY,
+    STUB_AUTHENTIK_URL: opts.stubAuthentikBaseUrl,
+    AUTHENTIK_URL: opts.stubAuthentikBaseUrl,
+    AUTHENTIK_API_TOKEN: STUB_AUTHENTIK_API_TOKEN,
     SEERR_WEBHOOK_SECRET: STUB_SEERR_WEBHOOK_SECRET,
     TAUTULLI_WEBHOOK_SECRET: STUB_TAUTULLI_WEBHOOK_SECRET,
     // 30 s (vs 15 min in prod): long enough that fresh submits deterministically read

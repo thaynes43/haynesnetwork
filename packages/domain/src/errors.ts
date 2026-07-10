@@ -289,6 +289,47 @@ export class MessageModeratedError extends Error {
   readonly code = 'MESSAGE_MODERATED' as const;
 }
 
+// ---------------------------------------------------------------------------
+// ADR-045 / DESIGN-023 (PLAN-026) — Authentik role-portal errors.
+// ---------------------------------------------------------------------------
+
+/**
+ * THE GUARDRAIL (ADR-045 C-02): a membership write was attempted against a group NOT in the owned-groups
+ * allowlist. The domain orchestrator throws this BEFORE any external Authentik call, so the app can never
+ * touch an authentik-admin-managed group (authentik Admins, mfa-exempt, …). Surfaced as FORBIDDEN. This
+ * is the negative-path invariant proven by unit test AND live spot-check.
+ */
+export class AuthentikGroupNotOwnedError extends Error {
+  readonly code = 'AUTHENTIK_GROUP_NOT_OWNED' as const;
+  constructor(readonly groupName: string) {
+    super(
+      `refusing to write membership for '${groupName}': not in the owned-groups allowlist ` +
+        `(the app manages only the groups it owns; edit the allowlist to opt a group in)`,
+    );
+  }
+}
+
+/** The Authentik API was unreachable/failed during a portal read or write (wraps the typed cause). */
+export class AuthentikUnavailableError extends Error {
+  readonly code = 'AUTHENTIK_UNAVAILABLE' as const;
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+  }
+}
+
+/** The Open WebUI group API was unreachable/failed during a synced-tier provision (wraps the cause). */
+export class OwuiUnavailableError extends Error {
+  readonly code = 'OWUI_UNAVAILABLE' as const;
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+  }
+}
+
+/** A synced-tier operation was requested for a role that is not (or can't be) a synced tier. */
+export class SyncedTierInvalidError extends Error {
+  readonly code = 'SYNCED_TIER_INVALID' as const;
+}
+
 function pgErrorCode(err: unknown): string | undefined {
   if (typeof err !== 'object' || err === null) return undefined;
   const code = (err as { code?: unknown }).code;

@@ -22,14 +22,16 @@ import {
 } from '@hnet/db';
 import {
   createRole,
+  deactivateSyncedTier,
   deleteRole,
+  provisionSyncedTier,
   setRoleMessageActions,
   setRoleMetricsLevel,
   setRoleTrashActions,
   setSectionPermission,
   updateRole,
 } from '@hnet/domain';
-import { mapDomainErrors, router } from '../trpc';
+import { mapDomainErrors, resolveAuthentikPortalBundle, router } from '../trpc';
 import { adminProcedure } from '../middleware/role';
 import {
   MessageActionsInput,
@@ -51,6 +53,7 @@ export const rolesRouter = router({
         isDefault: roles.isDefault,
         grantsAll: roles.grantsAll,
         metricsLevel: roles.metricsLevel,
+        syncedTier: roles.syncedTier,
         sortOrder: roles.sortOrder,
       })
       .from(roles)
@@ -144,8 +147,22 @@ export const rolesRouter = router({
   }),
 
   create: adminProcedure.input(RoleInput).mutation(async ({ ctx, input }) => {
-    // Audits 'create_role'; duplicate name → ROLE_NAME_CONFLICT (D-13).
-    return mapDomainErrors(() => createRole({ db: ctx.db, ...input, actorId: ctx.user.id }));
+    // Audits 'create_role'; duplicate name → ROLE_NAME_CONFLICT (D-13). ADR-045 — when created as a
+    // synced tier, the local flag is set by createRole and the external group PRE-CREATE (Authentik +
+    // OWUI) + owned-allowlist append run in provisionSyncedTier right after.
+    return mapDomainErrors(async () => {
+      const { roleId } = await createRole({ db: ctx.db, ...input, actorId: ctx.user.id });
+      if (input.syncedTier) {
+        const tier = await provisionSyncedTier({
+          db: ctx.db,
+          bundle: resolveAuthentikPortalBundle(ctx),
+          roleId,
+          actorId: ctx.user.id,
+        });
+        return { roleId, tier };
+      }
+      return { roleId };
+    });
   }),
 
   update: adminProcedure.input(RolePatchInput).mutation(async ({ ctx, input }) => {
@@ -229,5 +246,28 @@ export const rolesRouter = router({
           actorId: ctx.user.id,
         }),
       );
+    }),
+
+  /**
+   * ADR-045 (PLAN-026) — flip a role's "synced tier" opt-in. ON ⇒ provisionSyncedTier: PRE-CREATE the
+   * Authentik group (name = role name lowercased) + the same-named Open WebUI group, add it to the
+   * owned-groups allowlist + role→group map (all idempotent). OFF ⇒ deactivateSyncedTier: stop managing
+   * it (remove from the allowlist) — NON-destructive, the groups + memberships are left intact (group
+   * deletion is out of scope). Reaches Authentik/OWUI ⇒ BAD_GATEWAY on an upstream outage (D-13).
+   */
+  setSyncedTier: adminProcedure
+    .input(z.object({ roleId: z.uuid(), syncedTier: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      return mapDomainErrors(async () => {
+        if (input.syncedTier) {
+          return await provisionSyncedTier({
+            db: ctx.db,
+            bundle: resolveAuthentikPortalBundle(ctx),
+            roleId: input.roleId,
+            actorId: ctx.user.id,
+          });
+        }
+        return await deactivateSyncedTier({ db: ctx.db, roleId: input.roleId, actorId: ctx.user.id });
+      });
     }),
 });

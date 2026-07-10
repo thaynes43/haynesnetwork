@@ -15,6 +15,7 @@ import { motdRouter } from './motd';
 import { storageRouter } from './storage';
 import { metricsRouter } from './metrics';
 import { ytdlsubRouter } from './ytdlsub';
+import { authentikPortalRouter } from './authentik-portal';
 
 export const appRouter = router({
   profile: profileRouter,
@@ -48,6 +49,10 @@ export const appRouter = router({
   // ADR-038 / DESIGN-017 (PLAN-022): the ytdl-sub Library sub-tabs — Peloton + YouTube read DIRECTLY from
   // the k8plex Plex server (no ledger sync), gated by the `ytdlsub` section (ships Admin-only).
   ytdlsub: ytdlsubRouter,
+  // ADR-045 / DESIGN-023 (PLAN-026): the Authentik user/role portal — /admin/users directory (all
+  // Authentik identities) + role assignment that writes owned Authentik group membership (+ OWUI tier
+  // pre-create), admin-only, audited + import-confined.
+  authentikPortal: authentikPortalRouter,
 });
 
 export type AppRouter = typeof appRouter;
