@@ -1,8 +1,14 @@
 # PLAN-017: Metrics section foundation — top-level tab, Full/Limited access model, Overview
 
-- **Status:** Executing (2026-07-10, Fable 5 build run). <!-- flips Draft → Executing → Completed -->
-  IDs consumed: **ADR-037**, **DESIGN-016**, migration **0031**, PRD **R-117..R-120**, glossary
-  **T-106..T-109**, audit action `update_role_metrics_level`, section id `metrics`, app-setting keys
+- **Status:** Completed (2026-07-10, Fable 5 — **v0.30.0**, PR #157). <!-- Draft → Executing → Completed -->
+  Shipped the Metrics section foundation + Overview, the per-role Full/Limited access model, and the
+  read-only `@hnet/metrics` Prometheus client; merge gate green, released v0.30.0, deployed to staging
+  (`haynesnetwork-main` on `v0.30.0`), migration 0031 verified live (roles.metrics_level =
+  Admin/full · Default/limited · Family/limited), and the deployed pod fetches live WAN data from the
+  in-cluster Prometheus. **Ships Admin-only** — the OWNER's morning action opens it to Default(limited)
+  and verifies the Limited view live (the ship-gate tail). IDs consumed: **ADR-037**, **DESIGN-016**,
+  migration **0031**, PRD **R-117..R-120**, glossary **T-106..T-109**, audit action
+  `update_role_metrics_level`, section id `metrics`, app-setting keys
   `upload_capacity_mbps`/`download_capacity_mbps`.
 - **Satisfies:** PRD-001 new R-NN block (Metrics section; Full/Limited metric access levels;
   Overview upload/download-vs-capacity); new ADR-NN (metrics access model + in-cluster

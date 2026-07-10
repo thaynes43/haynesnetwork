@@ -4,19 +4,27 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-- **Last updated:** 2026-07-10 — session-2 wrap. **Latest release: v0.29.0 (signed), live at
-  https://haynesnetwork.com.** The site is public; every published image is keyless-cosign-signed and
-  admitted under a dedicated Kyverno **Enforce** policy. **The trash automation loop is armed AND
-  proven in production** (first real sweep ran 2026-07-09 — see below). Every buildable plan
-  **002–016** is shipped, deployed, and live-validated. What remains is the owner's personal
-  checklist + the next-session agenda, both below. Session-2 chronicle:
+- **Last updated:** 2026-07-10 — **PLAN-017 Metrics section foundation shipped (v0.30.0), live on
+  staging.** A new top-level **Metrics** section (nav after Bulletin) with an Overview (WAN
+  upload/download usage-vs-capacity meters + cluster load/memory + a storage snapshot reusing 013's
+  `getUtilization`), a per-role **Full/Limited** access model (`roles.metrics_level`, server-side
+  payload-shape enforcement), and a new read-only **`@hnet/metrics`** Prometheus client against the
+  in-cluster `kube-prometheus-stack`. Migration 0031 verified live; the deployed pod fetches real WAN
+  data. **Ships Admin-only** — the OWNER's morning action opens it to Default(limited) + verifies the
+  Limited view live (the one remaining ship-gate tail). Docs: ADR-037 / DESIGN-016 / R-117..R-120 /
+  T-106..T-109. Q-02: download capacity seeded **2256 Mbps provisionally** — owner to confirm.
+  Prior milestone — session-2 wrap: **v0.29.0 (signed), live at https://haynesnetwork.com**; every
+  published image is keyless-cosign-signed under a Kyverno **Enforce** policy; the trash automation
+  loop is armed AND proven in production (first real sweep 2026-07-09). Every buildable plan
+  **002–017** is shipped, deployed, and live-validated. Session-2 chronicle:
   `.agents/context/2026-07-10-session-wrap.md`.
 
 ## Current state
 
 **What this is.** haynesnetwork is the SSO front door for `*.haynesnetwork.com` — an Authentik-OIDC
 (Plex-primary) web app giving Haynes-Plex users a permissioned dashboard, Plex library self-service,
-and media fix/ledger/trash tooling backed by the *arr stack. Nine `@hnet/*` workspace packages:
+and media fix/ledger/trash tooling backed by the *arr stack. Ten `@hnet/*` workspace packages
+(+ **metrics** — a read-only Prometheus client, ADR-037):
 **db** (Drizzle + Postgres 16), **domain** (single-writer logic; audit/ledger rows written in the
 same tx as the mutation), **arr** (Sonarr/Radarr/Lidarr; `/write` import-confined to domain),
 **plex** (server + plex.tv XML-ACL sharing; `/write` import-confined, ADR-017), **sync** (one-way
