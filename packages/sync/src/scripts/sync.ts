@@ -14,7 +14,11 @@ import {
   type SyncRunKind,
   type SyncSource,
 } from '@hnet/db';
-import { maintainerrClientBundleFromEnv, type UtilizationArrBundle } from '@hnet/domain';
+import {
+  maintainerrClientBundleFromEnv,
+  plexClientBundleFromEnv,
+  type UtilizationArrBundle,
+} from '@hnet/domain';
 import { prometheusClientFromEnv } from '@hnet/metrics';
 import { buildMetadataSourceClients, buildOptionalMaintainerrRead, buildSyncClients, requireClient } from '../clients';
 import { createConsoleLogger } from '../logger';
@@ -45,6 +49,12 @@ const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-bat
                            update. First sight of a drive records a BASELINE and pages nothing. Reads the
                            in-cluster Prometheus (PROMETHEUS_URL, in-cluster default; no secret). No
                            --source. Writes no sync_runs row.
+  --mode=poster-guard      re-apply drifted Peloton override posters on k8plex (ADR-043 — read HOps
+                           Peloton, resolve each show→series art + season→duration art from the durable
+                           assets baked into the image, and re-push ONLY the targets whose Plex thumb
+                           drifted since the last apply). Appends one poster_guard_applications ledger row
+                           per re-apply (drift baseline + audit). Needs PLEX_HAYNESKUBE_TOKEN. No --source.
+                           Writes no sync_runs row.
   --source=NAME            limit the run to one source (repeatable; default: all sources; for
                            metadata-refresh the default is the three *arr kinds)
   --force-tombstones       override the mass-tombstone guard (DESIGN-005 D-14/Q-03)
@@ -98,7 +108,8 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
     (mode === 'trash-batch-sweep' ||
       mode === 'space-policy' ||
       mode === 'notify-outbox' ||
-      mode === 'smart-alerts') &&
+      mode === 'smart-alerts' ||
+      mode === 'poster-guard') &&
     sources.length > 0
   ) {
     throw new CliUsageError(`--source is not valid for --mode=${mode}`);
@@ -110,7 +121,8 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
     mode === 'trash-batch-sweep' ||
     mode === 'space-policy' ||
     mode === 'notify-outbox' ||
-    mode === 'smart-alerts'
+    mode === 'smart-alerts' ||
+    mode === 'poster-guard'
       ? []
       : mode === 'metadata-refresh'
         ? [...ARR_KINDS]
@@ -193,6 +205,10 @@ async function main(): Promise<number> {
   // ADR-040 / DESIGN-020 — the read-only @hnet/metrics Prometheus reader the `smart-alerts` mode reads
   // the smartctl series through (PROMETHEUS_URL, in-cluster default; no secret).
   const smartReader = args.mode === 'smart-alerts' ? prometheusClientFromEnv() : undefined;
+  // ADR-043 / DESIGN-021 — the Plex client bundle (read + confined write) the `poster-guard` mode uses.
+  // Built INSIDE @hnet/domain (plexClientBundleFromEnv), so the confined Plex write surface stays
+  // domain-only (ADR-017 guard); throws one PlexConfigError if PLEX_HAYNESKUBE_TOKEN is absent.
+  const plex = args.mode === 'poster-guard' ? plexClientBundleFromEnv() : undefined;
 
   logger.info('sync starting', {
     mode: args.mode,
@@ -217,6 +233,7 @@ async function main(): Promise<number> {
     ...(arr ? { arr } : {}),
     ...(maintainerrRead ? { maintainerrRead } : {}),
     ...(smartReader ? { smartReader } : {}),
+    ...(plex ? { plex } : {}),
     logger,
   });
 
@@ -267,6 +284,19 @@ async function main(): Promise<number> {
     ...(report.outboxError !== undefined ? { outboxError: report.outboxError } : {}),
     ...(report.smartAlerts ? { smartAlerts: report.smartAlerts } : {}),
     ...(report.smartAlertsError !== undefined ? { smartAlertsError: report.smartAlertsError } : {}),
+    ...(report.posterGuard
+      ? {
+          posterGuard: {
+            found: report.posterGuard.found,
+            checked: report.posterGuard.checked,
+            inSync: report.posterGuard.inSync,
+            reapplied: report.posterGuard.reapplied.length,
+            unmapped: report.posterGuard.unmapped.length,
+            missingAssets: report.posterGuard.missingAssets,
+          },
+        }
+      : {}),
+    ...(report.posterGuardError !== undefined ? { posterGuardError: report.posterGuardError } : {}),
     sources: report.sources.map((s) => ({
       source: s.source,
       status: s.status,

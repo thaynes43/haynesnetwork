@@ -382,6 +382,17 @@ export async function startStubPlex(): Promise<StubPlexServer> {
         const Metadata = (slug && SECTION_CONTENTS[slug]?.[key]) || [];
         return json(res, 200, { MediaContainer: { size: Metadata.length, Metadata } });
       }
+      // ADR-043 (PLAN-024) — the poster-upload WRITE surface (the confined Plex write client's uploadPoster): the poster
+      // guard POSTs raw image bytes to select a durable override poster. Record the call (so a guard
+      // integration test can assert which ratingKeys were re-pushed) and 200. This is the ONLY direct-PMS
+      // write the stub accepts.
+      const postersMatch = path.match(/^\/library\/metadata\/([^/]+)\/posters$/);
+      if (postersMatch && method === 'POST') {
+        const raw = await readBody(req);
+        const slug = tokenStr ? SLUG_BY_TOKEN.get(tokenStr) : undefined;
+        calls.push({ method, path, machineId: slug ?? '', body: `poster:${raw.length}` });
+        return json(res, 200, { MediaContainer: { size: 1 } });
+      }
       // ADR-038 — the Plex thumb the poster proxy streams (a tiny PNG for any /library/…/thumb/… path).
       if (/^\/library\/metadata\/[^/]+\/thumb\//.test(path)) {
         res.writeHead(200, { 'content-type': 'image/png', 'content-length': String(TINY_PNG.length) });

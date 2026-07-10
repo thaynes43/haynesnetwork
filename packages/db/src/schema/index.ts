@@ -49,3 +49,6 @@ export * from './notification-outbox';
 // ADR-040 / DESIGN-020 (PLAN-019) — the per-drive last-known SMART state the smart-alerts sync mode
 // diffs against for transition detection. Guarded single-writer table (evaluateSmartAlerts).
 export * from './smart-drive-state';
+// ADR-043 / DESIGN-021 (PLAN-024) — the append-only Peloton poster apply ledger the poster-guard sync
+// mode writes (drift baseline + audit). Guarded single-writer table (runPelotonPosterGuard).
+export * from './poster-guard-applications';

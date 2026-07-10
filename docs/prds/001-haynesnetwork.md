@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Owner:** Tom Haynes
-- **Last updated:** 2026-07-10 (R-133..R-136 Authentik hardening — config-as-code + native MFA, ADR-042 / OPS-009, PLAN-011)
+- **Last updated:** 2026-07-10 (R-137..R-140 Peloton poster guard — durable override art + drift-restore sync mode, ADR-043 / DESIGN-021 / OPS-010, PLAN-024)
 
 ## Summary
 
@@ -332,6 +332,18 @@ surface to this app.
 | R-134 | **Plex-source pass-through — never double-gated.** "Log in with Plex" accounts (and even a native user who signs in via the Plex button) traverse `default-source-authentication`, a **login-only** source flow with no password/MFA stage, so this app **never** applies a second MFA gate — their MFA posture is whatever their Plex account enforces. **Owner ruling (2026-07-10):** `thaynes`' own Plex-source login path is accepted as-is (Plex 2FA covers it); native MFA guards the **password path only**. Verified live: a Plex-source login sees no challenge. | Must     |
 | R-135 | **MFA exemption group (automation).** An **`mfa-exempt`** group (members `hnet-e2e`, `hnet-e2e-member`) **skips** the MFA challenge so the Playwright automation and other non-interactive accounts stay green. The skip policy is **fail-closed** — an unresolved pending user enforces MFA rather than skipping it — and the exempt policy-binding is `failure_result: true` (a policy error enforces, never exempts). ak-outpost service accounts run no interactive flow and are unaffected. This is the only sanctioned exception to R-133. | Must     |
 | R-136 | **Authentik config-as-code (GitOps).** The login estate is expressed as **Authentik blueprints** in `haynes-ops` (one file per concern — brand, flows, sources, MFA), delivered via a kustomize `configMapGenerator` → chart `blueprints.configMaps` → worker mount + discovery, and reconciled by Authentik. The baseline is **drift-zero** (reproduces the live estate with no observable change on apply) so it is a faithful, reviewable, revertible mirror; MFA rides on top of it. The OIDC provider/application stay API-managed for now (Q-11); provider secrets stay in 1Password. Rollback is a commit revert plus a fast live `ak`-shell unbind. | Must     |
+
+### Peloton poster guard (PLAN-024)
+
+(The owner's durable Peloton override posters — the PLAN-022 Q-01 / Q-06 tail. ADR-043 / DESIGN-021 /
+OPS-010; glossary T-124..T-125.)
+
+| ID   | Requirement                                                                                                                                                                                                                                        | Priority |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| R-137 | **Durable Peloton posters survive re-scans.** The owner's override art for the k8plex **HOps Peloton** shows (class-type series art) and seasons (per-duration "N MINUTES" art) must be **kept applied** despite `peloton-config-manager` re-downloads / Plex re-scans. Realized by a `poster-guard` sync mode that re-applies drifted posters on the server (not just in-app), so native Plex clients see them too. The durable assets are **versioned in the app repo/image** (ADR-043 — not a ConfigMap, not DB `bytea`, not an NFS mount); the mapping resolves by **live show title + season index** so it survives Plex re-indexing. | Should |
+| R-138 | **Re-apply only on drift; never destructive.** The guard re-applies a poster **only** when the live art differs from the baseline it recorded at last apply (or the mapped asset's bytes changed, or it was never applied) — a steady state does nothing. It **never deletes** gallery art (`POST …/posters` selects the new poster; Plex keeps the prior one in the item's gallery), so every apply and the one sanctioned drift-test are reversible. | Should |
+| R-139 | **Auditable + single-writer.** Each re-apply appends one row to an **append-only `poster_guard_applications`** ledger (the drift baseline + `reason` ∈ initial/drift/asset-updated + previous thumb), written **only** by a `@hnet/domain` single-writer in the same transaction (guard-listed). Like the `smart-alerts` mode it writes **no `sync_runs` row** (the ledger is its trail); the poster upload is a **confined** Plex write (`@hnet/plex` write subpath, domain-only — ADR-017). | Should |
+| R-140 | **Bounded + unmapped-safe.** The guard is bounded (~1 section list + one children read per show ≈ 14 reads, writes only on drift) and runs **hourly-or-less** as a haynes-ops CronJob mirroring `sync-smart-alerts`. Targets with **no mapping** (an unknown show, a season index with no asset — e.g. `0` Specials, `75`) are **reported, never guessed**; a mapped asset missing from the image is reported and skipped, not fatal. | Should |
 
 ### Platform & non-functional
 

@@ -232,6 +232,13 @@
       "when": 1782950433000,
       "tag": "0033_smart_alert_state",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1782950434000,
+      "tag": "0034_peloton_poster_guard",
+      "breakpoints": true
     }
   ]
 }

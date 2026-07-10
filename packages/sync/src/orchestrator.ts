@@ -16,17 +16,24 @@ import {
   evaluateSpacePolicy,
   finishSyncRun,
   refreshTrashCandidates,
+  runPelotonPosterGuard,
   startSyncRun,
   sweepExpiredBatches,
   type DrainPoolRefreshResult,
   type MaintainerrClientBundle,
   type OutboxDeliveryReport,
+  type PlexClientBundle,
+  type PosterGuardReport,
   type SmartAlertsReport,
   type SpacePolicyReport,
   type SweepReport,
   type TrashCandidatesRefreshReport,
   type UtilizationArrBundle,
 } from '@hnet/domain';
+// ADR-043 / DESIGN-021 (PLAN-024) — the durable Peloton poster mapping + the image-backed asset source
+// the `poster-guard` mode hands to the domain guard (the confined Plex write upload stays in
+// packages/domain — the bundle arrives here as an opaque PlexClientBundle, never constructed in sync).
+import { PELOTON_POSTER_MAPPING, createFilePosterAssetSource } from './peloton-poster-map';
 // ADR-040 / DESIGN-020 (PLAN-019) — the `smart-alerts` mode reads the smartctl series through the
 // read-only @hnet/metrics client (no write surface ⇒ no import-confinement) and hands the readings to
 // the domain evaluator, which does the transition detection + the same-tx outbox enqueue.
@@ -74,6 +81,9 @@ export interface RunSyncOptions {
   /** ADR-040 / DESIGN-020 — the read-only @hnet/metrics Prometheus reader the `smart-alerts` mode reads
    *  the smartctl series through. Required only for that mode; tests inject a stubbed reader. */
   smartReader?: PrometheusReader;
+  /** ADR-043 / DESIGN-021 — the Plex client bundle (read + confined write) the `poster-guard` mode uses to
+   *  read the k8plex Peloton library and re-apply drifted override posters. Required only for that mode. */
+  plex?: PlexClientBundle;
   /** Injected DB (tests); defaults to the lazy @hnet/db client. */
   db?: DbClient;
   logger?: SyncLogger;
@@ -121,6 +131,10 @@ export interface SyncReport {
   smartAlerts?: SmartAlertsReport | null;
   /** The smart-alerts run's error — sets totalFailure for the CLI exit. */
   smartAlertsError?: string;
+  /** ADR-043 — the `poster-guard` result (null for every other mode / when it errored). */
+  posterGuard?: PosterGuardReport | null;
+  /** The poster-guard run's error — sets totalFailure for the CLI exit. */
+  posterGuardError?: string;
   /** ADR-035 — the candidate-snapshot refresh post-step (full/incremental with a Maintainerr
    *  handle; null when skipped or failed). */
   candidateRefresh?: TrashCandidatesRefreshReport | null;
@@ -359,6 +373,51 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       smartAlerts,
       ...(smartAlertsError !== undefined ? { smartAlertsError } : {}),
       totalFailure: smartAlertsError !== undefined,
+    };
+  }
+
+  // ADR-043 / DESIGN-021 — the `poster-guard` detector is NOT a per-source loop: it reads the k8plex
+  // Peloton library, resolves each show/season to its durable override poster (baked into the image), and
+  // re-applies ONLY the targets that drifted since the last apply — appending one poster_guard_applications
+  // ledger row per re-apply (the drift baseline + audit; no sync_runs row, like smart-alerts). Bounded to
+  // ~14 reads/run + drift-gated writes. Returns early with a `posterGuard` report.
+  if (options.mode === 'poster-guard') {
+    const startedAt = new Date();
+    if (!options.plex) {
+      throw new Error('poster-guard requires a Plex client bundle (plex)');
+    }
+    let posterGuard: PosterGuardReport | null = null;
+    let posterGuardError: string | undefined;
+    try {
+      posterGuard = await runPelotonPosterGuard({
+        db,
+        read: options.plex.read.hayneskube,
+        write: options.plex.write.hayneskube,
+        assets: createFilePosterAssetSource(),
+        mapping: PELOTON_POSTER_MAPPING,
+      });
+      logger.info('poster-guard evaluated', {
+        found: posterGuard.found,
+        checked: posterGuard.checked,
+        inSync: posterGuard.inSync,
+        reapplied: posterGuard.reapplied.length,
+        unmapped: posterGuard.unmapped.length,
+        missingAssets: posterGuard.missingAssets,
+      });
+    } catch (error) {
+      posterGuardError = error instanceof Error ? error.message : String(error);
+      logger.error('poster-guard evaluation failed', { error: posterGuardError });
+    }
+    return {
+      mode: options.mode,
+      startedAt,
+      finishedAt: new Date(),
+      sources: [],
+      backfill: null,
+      fixesCompleted: null,
+      posterGuard,
+      ...(posterGuardError !== undefined ? { posterGuardError } : {}),
+      totalFailure: posterGuardError !== undefined,
     };
   }
 

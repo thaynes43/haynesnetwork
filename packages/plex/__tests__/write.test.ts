@@ -51,4 +51,20 @@ describe('PlexWriteClient — the sharing write surface', () => {
     expect(call.headers['X-Plex-Token']).toBe('owner-secret-token');
     expect(call.url.toString()).not.toContain('owner-secret-token');
   });
+
+  // ADR-043 (PLAN-024) — the poster-upload write (the only direct-PMS write) goes to the SERVER baseUrl,
+  // not plex.tv, with image/png bytes and the token header-only.
+  it('uploadPoster POSTs image bytes to {baseUrl}/library/metadata/{id}/posters, token header-only', async () => {
+    const stub = plexStub([
+      { method: 'POST', path: /\/library\/metadata\/[^/]+\/posters$/, body: '<ok/>' },
+    ]);
+    await client(stub).uploadPoster({ ratingKey: '448155', body: new Uint8Array([137, 80, 78, 71]) });
+    const call = stub.callsFor('POST', '/library/metadata/448155/posters')[0]!;
+    // The upload targets the PMS server (baseUrl), NOT the plex.tv sharing host.
+    expect(call.url.origin).toBe('http://plexops.test:32400');
+    expect(call.url.pathname).toBe('/library/metadata/448155/posters');
+    expect(call.headers['Content-Type']).toBe('image/png');
+    expect(call.headers['X-Plex-Token']).toBe('owner-secret-token');
+    expect(call.url.toString()).not.toContain('owner-secret-token');
+  });
 });

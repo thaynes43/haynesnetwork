@@ -78,3 +78,6 @@ export * from './plex-registry';
 export * from './plex-shares';
 // fix/plex-identity-mapping — the users.plex_email/plex_username override single-writer.
 export * from './user-identity';
+// ADR-043 / DESIGN-021 (PLAN-024) — the Peloton poster GUARD single-writer (drift-restore of durable
+// override posters on k8plex; the confined @hnet/plex/write poster upload stays in this package).
+export * from './poster-guard';
