@@ -4,7 +4,27 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-- **Last updated:** 2026-07-10 — **ytdl-sub UX package (the owner's morning-review fixes to PLAN-022).**
+- **Last updated:** 2026-07-10 — **PLAN-011 Authentik hardening COMPLETE (owner-present): config-as-code
+  blueprints + native-account MFA, live.** The Authentik login estate (brand · flows · sources · MFA) is
+  now **GitOps blueprints** in `haynes-ops` (`…/network/authentik/app/blueprints/`, one file per concern,
+  mounted onto the worker as a ConfigMap) — a **drift-zero** baseline (`10`/`20`/`30`, proven to change
+  nothing on apply) with **native-account MFA** (`40-hnet-mfa`) on top. Native (internal-type) accounts —
+  `thaynes`, `akadmin`, hand-created locals — now present a **WebAuthn passkey or TOTP** on the
+  **username+password** path (enroll on first challenge; friendly chooser "Passkey (recommended)" /
+  "Authenticator app (6-digit codes)"). **Plex-source logins are never challenged** (login-only source
+  flow — owner ruling: `thaynes`' Plex path accepted, Plex 2FA covers it); the **`mfa-exempt`** group
+  (`hnet-e2e`, `hnet-e2e-member`) skips MFA **fail-closed** so Playwright stays green. Owner enrolled a
+  **1Password passkey + TOTP backup** on `thaynes` (round-trip verified). **Credentials now:** `akadmin`
+  password **rotated + valid in 1Password** (the stale-bootstrap gotcha is GONE; akadmin is break-glass and
+  MFA-enrolls on next interactive login); `hnet-e2e` / `hnet-e2e-member` passwords rotated (owner-stored in
+  1P); the API token stays in the 1P `homepage` item; provider `client_secret` in the 1P `haynesnetwork`
+  item. Live-verified: all four blueprints report `successful`; the MFA stage reads `configure` +
+  `[totp, webauthn]`. **Client caveat:** Safari/WebKit fails the TOTP-setup flow — use Chrome (server
+  healthy throughout). Docs: **ADR-042 / OPS-009 / R-133..R-136 / T-121..T-123**; haynes-ops PR #2014 +
+  `a8bd665b`/`42347d80`/`58355768`. **Open:** Q-10 (akadmin: keep break-glass-with-MFA vs disable
+  interactive login), Q-11 (blueprint the OIDC provider/app for full GitOps). Prior milestone — the
+  ytdl-sub UX package (below).
+- **Prior:** 2026-07-10 — **ytdl-sub UX package (the owner's morning-review fixes to PLAN-022).**
   One release, three items (ADR-041 / DESIGN-017 D-07..D-09 / R-131..R-132 / T-120; **no migration**):
   **(1) Wall perf** — the `/api/ytdlsub/poster` proxy now serves **fixed-size WebP variants** from
   k8plex's own photo-transcode endpoint (closed `size=grid|still` allow-list; original-art fallback on
@@ -189,7 +209,9 @@ protection). Cross-server watch visibility on the walls is **informational, not 
 
 ## Owner's remaining personal items
 
-- **MFA** — next session, via Authentik blueprints (see agenda).
+- **MFA** — ✅ DONE (PLAN-011, 2026-07-10): native-account MFA live via Authentik blueprints; owner
+  enrolled a 1Password passkey + TOTP backup. See the top block + ADR-042 / OPS-009. Only Q-10
+  (akadmin interactive-login policy) / Q-11 (blueprint the OIDC provider/app) remain.
 - **Optional Cloudflare WAF / HSTS** — deferred; the zone-scoped token was never provided, so this
   stays owner-gated.
 - **Zscaler categorization** — RESOLVED (owner's request approved).
@@ -197,12 +219,13 @@ protection). Cross-server watch visibility on the walls is **informational, not 
 ## NEXT SESSION AGENDA (owner-stated)
 
 1. **Larger site features** (owner will direct).
-2. **Authentik MFA hardening**, including **migrating Authentik to blueprints / GitOps**. Every live
-   Authentik change made this session is documented **with rollbacks** in
-   `docs/ops/001-authentik-provisioning.md` **and** `docs/ops/authentik-apply-seed/` (the applied
-   option-C + 011b Plex-primary rebrand and its exact rollback payloads, promoted out of the
-   session-local `scratchpad/ux-011/` — see that dir's `README.md` + `APPLY.md`) — treat that pair as
-   the **blueprint seed** when codifying Authentik into GitOps.
+2. **Authentik MFA hardening + blueprints/GitOps migration** — ✅ DONE (PLAN-011, 2026-07-10).
+   The login estate is now config-as-code blueprints in `haynes-ops`
+   (`kubernetes/main/apps/network/authentik/app/blueprints/`) with native-account MFA live; the
+   executed record (objects, pks, apply/verify/rollback, the Safari caveat, credential locations) is
+   **`docs/ops/009-authentik-blueprints-and-mfa.md`** and the decision is **ADR-042**. The branding-era
+   API seed (`docs/ops/authentik-apply-seed/` + `docs/ops/001-authentik-provisioning.md`) remains the
+   content-rollback source and the record for the still-API-managed OIDC provider (Q-11).
 
 ## Morning check owed
 
