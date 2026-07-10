@@ -249,6 +249,33 @@ export const POOL_REFRESH_AFTER_SAVE_DEFAULT: PoolRefreshAfterSave = {
   delayMinutes: 5,
 };
 
+/**
+ * DESIGN-015 amendment (2026-07-09) — the CONFIGURABLE FINAL-WARNING push. When `enabled`, green-light
+ * enqueues a `batch_final_warning` outbox row `hoursBefore` hours before the save window closes — a
+ * "last call" ahead of the sweep, distinct from the day-before `batch_leaving_soon_reminder`. The lead
+ * time is READ AT GREEN-LIGHT and frozen into the row's `earliest_send_at` (`expires_at − hoursBefore`);
+ * a later setting change never moves already-enqueued rows. The enqueue is SKIPPED when that instant is
+ * already past — i.e. the window is shorter than `hoursBefore` (see `promoteToLeavingSoon`). Stored as
+ * the `final_warning` app_settings jsonb value; admin-set + audited through setAppSetting. Read fail-safe
+ * by `getFinalWarning` (a garbage jsonb row can't disable the gate into a truthy string / yield a NaN
+ * lead time).
+ */
+export interface FinalWarning {
+  enabled: boolean;
+  /** Hours before the window closes to send the last-call ping (clamped to [MIN, MAX] on read). */
+  hoursBefore: number;
+}
+
+/** The floor/ceiling for a hand-set lead time (sub-hour is too tight to act on; a week is plenty). */
+export const FINAL_WARNING_HOURS_MIN = 1;
+export const FINAL_WARNING_HOURS_MAX = 168;
+
+/** ON out of the box, 2 hours before close (the owner's example). */
+export const FINAL_WARNING_DEFAULT: FinalWarning = {
+  enabled: true,
+  hoursBefore: 2,
+};
+
 /** The typed value shape per key — the jsonb column holds exactly these. */
 export interface AppSettingValueMap {
   trash_skip_admin_gate: boolean;
@@ -258,6 +285,7 @@ export interface AppSettingValueMap {
   space_policy: SpacePolicy;
   notify_window: NotifyWindow;
   pool_refresh_after_save: PoolRefreshAfterSave;
+  final_warning: FinalWarning;
 }
 
 /** The documented default returned when a key has no row (never null — every key has a default). */
@@ -285,6 +313,9 @@ export const APP_SETTING_DEFAULTS: AppSettingValueMap = {
   // DESIGN-010/014 amendment (2026-07-09, build D) — pool refresh after save (ON, 5-min debounce). An
   // object so the getAppSetting typeof-guard treats it like motd; getPoolRefreshAfterSave per-field-guards.
   pool_refresh_after_save: POOL_REFRESH_AFTER_SAVE_DEFAULT,
+  // DESIGN-015 amendment (2026-07-09) — the configurable final-warning push (ON, 2 hours before close).
+  // An object so the getAppSetting typeof-guard treats it like motd; getFinalWarning per-field-guards.
+  final_warning: FINAL_WARNING_DEFAULT,
 };
 
 /**
@@ -409,4 +440,23 @@ export async function getPoolRefreshAfterSave(db?: DbClient): Promise<PoolRefres
       ? Math.min(POOL_REFRESH_DELAY_MAX, Math.max(POOL_REFRESH_DELAY_MIN, Math.round(raw)))
       : d.delayMinutes;
   return { enabled, delayMinutes };
+}
+
+/**
+ * DESIGN-015 amendment (2026-07-09) — read `final_warning`, per-field fail-safe (mirrors
+ * getPoolRefreshAfterSave discipline): a non-boolean `enabled` reads as the default (ON); a non-finite /
+ * out-of-range `hoursBefore` clamps to [FINAL_WARNING_HOURS_MIN, FINAL_WARNING_HOURS_MAX] around the
+ * 2-hour default. So a hand-edited jsonb row can never yield a `NaN`/sub-hour lead time nor a truthy-
+ * string enable.
+ */
+export async function getFinalWarning(db?: DbClient): Promise<FinalWarning> {
+  const stored = await getAppSetting(db, 'final_warning');
+  const d = FINAL_WARNING_DEFAULT;
+  const enabled = typeof stored?.enabled === 'boolean' ? stored.enabled : d.enabled;
+  const raw = stored?.hoursBefore;
+  const hoursBefore =
+    typeof raw === 'number' && Number.isFinite(raw)
+      ? Math.min(FINAL_WARNING_HOURS_MAX, Math.max(FINAL_WARNING_HOURS_MIN, Math.round(raw)))
+      : d.hoursBefore;
+  return { enabled, hoursBefore };
 }

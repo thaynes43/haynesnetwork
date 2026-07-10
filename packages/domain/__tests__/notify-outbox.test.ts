@@ -11,6 +11,7 @@ import {
   computeReminderSend,
   createBatchFromPending,
   deliverOutbox,
+  getFinalWarning,
   getNotifyWindow,
   greenlightBatch,
   renderOutboxMessage,
@@ -144,7 +145,12 @@ describe('enqueue (same-tx from the batch writers)', () => {
 
     const rows = await t.db.select().from(notificationOutbox);
     const types = rows.map((r) => r.eventType).sort();
-    expect(types).toEqual(['batch_leaving_soon', 'batch_leaving_soon_reminder']);
+    // The final-warning ping (ON by default, DESIGN-015) rides along on a window ≫ its 2h lead.
+    expect(types).toEqual([
+      'batch_final_warning',
+      'batch_leaving_soon',
+      'batch_leaving_soon_reminder',
+    ]);
     for (const r of rows) {
       const p = r.payload as Record<string, unknown>;
       expect(p.batchId).toBe(created.batchId);
@@ -156,6 +162,105 @@ describe('enqueue (same-tx from the batch writers)', () => {
     const reminder = rows.find((r) => r.eventType === 'batch_leaving_soon_reminder')!;
     const notice = rows.find((r) => r.eventType === 'batch_leaving_soon')!;
     expect(reminder.earliestSendAt.getTime()).toBeGreaterThan(notice.earliestSendAt.getTime());
+  });
+
+  it('green-light enqueues a batch_final_warning at expires_at − N hours (DESIGN-015 amendment)', async () => {
+    // N is READ AT GREEN-LIGHT (default { enabled:true, hoursBefore:2 }, unset here).
+    const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
+    const created = await createBatchFromPending({
+      db: t.db,
+      maintainerr: bundle,
+      mediaKind: 'movie',
+      actorId,
+    });
+    await t.db.delete(notificationOutbox);
+
+    const promoted = await greenlightBatch({
+      db: t.db,
+      maintainerr: bundle,
+      batchId: created.batchId,
+      windowDays: 21, // 504h window ≫ the 2h lead ⇒ enqueued
+      actorId,
+    });
+
+    const rows = await t.db.select().from(notificationOutbox);
+    const finalWarn = rows.find((r) => r.eventType === 'batch_final_warning');
+    expect(finalWarn).toBeDefined();
+    // earliest_send_at == expires_at − 2h EXACTLY (deadline-relative, NOT run through the quiet-hours window).
+    expect(finalWarn!.earliestSendAt.getTime()).toBe(
+      Date.parse(promoted.expiresAt) - 2 * 3_600_000,
+    );
+    const p = finalWarn!.payload as Record<string, unknown>;
+    expect(p.pendingCount).toBe(3);
+    expect(p.expiresAt).toBe(promoted.expiresAt);
+  });
+
+  it('SKIPS the final warning when the window is shorter than N hours', async () => {
+    // N = 48h but the window is 1 day (24h) ⇒ expires_at − 48h is already past ⇒ no row.
+    await setAppSetting({
+      db: t.db,
+      key: 'final_warning',
+      value: { enabled: true, hoursBefore: 48 },
+      actorId,
+    });
+    const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
+    const created = await createBatchFromPending({
+      db: t.db,
+      maintainerr: bundle,
+      mediaKind: 'movie',
+      actorId,
+    });
+    await t.db.delete(notificationOutbox);
+    await greenlightBatch({
+      db: t.db,
+      maintainerr: bundle,
+      batchId: created.batchId,
+      windowDays: 1,
+      actorId,
+    });
+    const rows = await t.db.select().from(notificationOutbox);
+    expect(rows.some((r) => r.eventType === 'batch_final_warning')).toBe(false);
+    // The leaving-soon + reminder rows still enqueue (only the final warning is window-gated).
+    expect(rows.some((r) => r.eventType === 'batch_leaving_soon')).toBe(true);
+    // Reset for the sibling tests.
+    await setAppSetting({
+      db: t.db,
+      key: 'final_warning',
+      value: { enabled: true, hoursBefore: 2 },
+      actorId,
+    });
+  });
+
+  it('enqueues NO final warning when the setting is disabled', async () => {
+    await setAppSetting({
+      db: t.db,
+      key: 'final_warning',
+      value: { enabled: false, hoursBefore: 2 },
+      actorId,
+    });
+    const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
+    const created = await createBatchFromPending({
+      db: t.db,
+      maintainerr: bundle,
+      mediaKind: 'movie',
+      actorId,
+    });
+    await t.db.delete(notificationOutbox);
+    await greenlightBatch({
+      db: t.db,
+      maintainerr: bundle,
+      batchId: created.batchId,
+      windowDays: 21,
+      actorId,
+    });
+    const rows = await t.db.select().from(notificationOutbox);
+    expect(rows.some((r) => r.eventType === 'batch_final_warning')).toBe(false);
+    await setAppSetting({
+      db: t.db,
+      key: 'final_warning',
+      value: { enabled: true, hoursBefore: 2 },
+      actorId,
+    });
   });
 
   it('source: policy is recorded on the batch_created row (space policy reuses createBatchFromPending)', async () => {
@@ -331,6 +436,22 @@ describe('deliverOutbox (the notify-outbox drainer)', () => {
     expect(msg.message).toContain('Sep 4');
     expect(msg.message).toContain('5 items');
   });
+
+  it('renderOutboxMessage renders the final-warning last-call copy with the close TIME (DESIGN-015)', () => {
+    const msg = renderOutboxMessage(
+      {
+        eventType: 'batch_final_warning',
+        // 2026-09-04 11:04 PM EDT.
+        payload: { mediaKind: 'tv', pendingCount: 7, expiresAt: '2026-09-05T03:04:00Z' },
+      },
+      'America/New_York',
+    );
+    expect(msg.title).toBe('Last call — TV batch');
+    expect(msg.message).toBe(
+      'Last call: the TV batch closes at 11:04 PM — 7 items still slated. Save anything you want to keep.',
+    );
+    expect(msg.url).toBe('https://haynesnetwork.com/trash?tab=tv');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -383,6 +504,40 @@ describe('getNotifyWindow + audited settings', () => {
       endHour: 23,
       tz: 'America/Chicago',
     });
+  });
+
+  it('final_warning defaults to { enabled:true, hoursBefore:2 } and round-trips with an audit row (DESIGN-015)', async () => {
+    expect(await getFinalWarning(t.db)).toEqual({ enabled: true, hoursBefore: 2 });
+    const before = await t.db
+      .select()
+      .from(permissionAudit)
+      .where(eq(permissionAudit.action, 'update_app_setting'));
+    await setAppSetting({
+      db: t.db,
+      key: 'final_warning',
+      value: { enabled: true, hoursBefore: 6 },
+      actorId,
+    });
+    const after = await t.db
+      .select()
+      .from(permissionAudit)
+      .where(eq(permissionAudit.action, 'update_app_setting'));
+    expect(after.length).toBeGreaterThan(before.length);
+    expect(await getFinalWarning(t.db)).toEqual({ enabled: true, hoursBefore: 6 });
+  });
+
+  it('final_warning fails safe on a garbage row (non-numeric hours / truthy-string enable ⇒ default)', async () => {
+    await setAppSetting({
+      db: t.db,
+      key: 'final_warning',
+      value: { enabled: 'yes', hoursBefore: 'lots' } as unknown as {
+        enabled: boolean;
+        hoursBefore: number;
+      },
+      actorId,
+    });
+    // enabled non-boolean ⇒ default ON; hoursBefore non-finite ⇒ clamped to the 2h default.
+    expect(await getFinalWarning(t.db)).toEqual({ enabled: true, hoursBefore: 2 });
   });
 
   it('fails safe on a garbage stored row (both hours non-numeric ⇒ all-day default)', async () => {

@@ -85,6 +85,18 @@ function formatDate(iso: unknown, tz: string): string {
   );
 }
 
+/** A clock time ("11:04 PM") in the owner's timezone — for the final-warning "closes at <time>". */
+function formatClockTime(iso: unknown, tz: string): string {
+  if (typeof iso !== 'string') return 'soon';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return 'soon';
+  return new Intl.DateTimeFormat('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: tz,
+  }).format(d);
+}
+
 const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
 const plural = (n: number): string => (n === 1 ? '' : 's');
 
@@ -126,6 +138,17 @@ export function renderOutboxMessage(
       return {
         title: `${kindLabel} batch leaves ${date}`,
         message: `Last chance — ${items} item${plural(items)} still slated. Save the ones you want before it sweeps.`,
+        url,
+        urlTitle,
+      };
+    }
+    case 'batch_final_warning': {
+      // DESIGN-015 amendment (2026-07-09) — the configurable last-call ping, N hours before close.
+      const items = num(p.pendingCount);
+      const time = formatClockTime(p.expiresAt, tz);
+      return {
+        title: `Last call — ${kindLabel} batch`,
+        message: `Last call: the ${kindLabel} batch closes at ${time} — ${items} item${plural(items)} still slated. Save anything you want to keep.`,
         url,
         urlTitle,
       };

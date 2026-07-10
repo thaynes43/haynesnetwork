@@ -157,6 +157,33 @@ status text (ADR-015). Reads `storage.notify.window.get`; writes `storage.notify
   `--mode=notify-outbox`, **suspend: false** (it is a safe no-op without creds, and creds are
   present). Mirrors the sweep block; the owner deploys it.
 
+### D-08 — Amendment 2026-07-09 (owner-directed) — the configurable FINAL-WARNING ping
+
+A fifth outbox event, `batch_final_warning` (migration 0030 relaxes the `event_type` CHECK), and a
+sixth app-setting key, `final_warning` (same migration relaxes the `app_settings.key` CHECK). It is a
+**configurable last-call** — distinct from the day-before `batch_leaving_soon_reminder` — that fires a
+tunable N hours before the save window closes, right ahead of the sweep.
+
+- **Setting** `final_warning` — jsonb `{ enabled: boolean, hoursBefore: number }`, **DEFAULT
+  `{ enabled: true, hoursBefore: 2 }`**. Read fail-safe by `getFinalWarning` (typeof-guarded exactly like
+  `getPoolRefreshAfterSave`: a non-boolean `enabled` reads ON; a non-finite / out-of-range `hoursBefore`
+  clamps to `[FINAL_WARNING_HOURS_MIN=1, FINAL_WARNING_HOURS_MAX=168]` around the 2-hour default). Written
+  through the same audited `setAppSetting` single-writer; surfaced in the General Trash-settings
+  "Notifications" area, inside the one consolidated single-Save form (no separate Save) via
+  `trash.settings.set { finalWarning }`.
+- **Enqueue** — in `promoteToLeavingSoon` (green-light), alongside the existing `batch_leaving_soon` +
+  `_reminder` rows. `N` (`hoursBefore`) is **read at green-light** and frozen into the row's
+  `earliest_send_at = expires_at − N hours` (a later setting change never moves already-enqueued rows).
+  The row is **skipped** when (a) the setting is disabled, or (b) `expires_at − N ≤ now` — i.e. the
+  window is shorter than N hours (equivalently `windowDays·24 ≤ N`). Unlike the other events it is
+  **NOT** passed through the delivery window (`computeEarliestSend`): a last call is deadline-relative,
+  not quiet-hours-shiftable — it must land before the sweep, never after.
+- **Copy** (`renderOutboxMessage`) — title `"Last call — <Kind> batch"`, message
+  `"Last call: the <Kind> batch closes at <time> — N items still slated. Save anything you want to keep."`
+  where `<time>` is the close time in the owner's tz and `N` is `pendingCount`; the deep link is the
+  same per-kind `?tab=movies|tv`. Reuses the green-light `leavingPayload` (`{ batchId, mediaKind,
+  pendingCount, pendingBytes, expiresAt }`).
+
 ## Alternatives considered
 
 - **Reuse the `notifications` table (ADR-026) as the queue.** Rejected: that store is the
@@ -181,8 +208,14 @@ status text (ADR-015). Reads `storage.notify.window.get`; writes `storage.notify
 - **Settings gating**: `setAppSetting('notify_window')` writes an `update_app_setting` audit row;
   `getNotifyWindow` merges defaults / fails safe on a garbage row.
 - **Migration**: `notification_outbox` exists with the due index; the two CHECK relaxes admit the
-  new values and preserve the prior ones.
-- **e2e (light)**: the Notifications card renders on `/admin/storage` and a Save round-trips.
+  new values and preserve the prior ones. **0030 (D-08)**: the `event_type` CHECK admits
+  `batch_final_warning` and the `app_settings.key` CHECK admits `final_warning`, both preserving the
+  prior values.
+- **Final-warning (D-08)**: green-light enqueues `batch_final_warning` at `expires_at − N h`; the row is
+  skipped when the window is shorter than N / the setting is off; `final_warning` round-trips with an
+  audit row and fails safe on a garbage value; the last-call copy renders the close time.
+- **e2e (light)**: the Notifications card (delivery window + the Last-call warning row) renders on the
+  General Trash-settings tab and a Save round-trips.
 
 ## Open questions
 

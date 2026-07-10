@@ -13,6 +13,8 @@ import {
   createBatchFromPending,
   deleteTrashRule,
   expediteDeletion,
+  FINAL_WARNING_HOURS_MAX,
+  FINAL_WARNING_HOURS_MIN,
   getAppSettings,
   getBatchDetail,
   getBatchSaveStats,
@@ -677,6 +679,17 @@ export const trashRouter = router({
                 .max(POOL_REFRESH_DELAY_MAX),
             })
             .optional(),
+          // DESIGN-015 amendment (2026-07-09) — the configurable last-call ping (enable + lead hours).
+          finalWarning: z
+            .object({
+              enabled: z.boolean(),
+              hoursBefore: z
+                .number()
+                .int()
+                .min(FINAL_WARNING_HOURS_MIN)
+                .max(FINAL_WARNING_HOURS_MAX),
+            })
+            .optional(),
         }),
       )
       .mutation(async ({ ctx, input }) => {
@@ -703,6 +716,15 @@ export const trashRouter = router({
               db: ctx.db,
               key: 'pool_refresh_after_save',
               value: input.poolRefreshAfterSave,
+              actorId: ctx.user.id,
+            });
+          }
+          if (input.finalWarning !== undefined) {
+            // Same audited single-writer (update_app_setting row same-tx); no new audit action needed.
+            await setAppSetting({
+              db: ctx.db,
+              key: 'final_warning',
+              value: input.finalWarning,
               actorId: ctx.user.id,
             });
           }

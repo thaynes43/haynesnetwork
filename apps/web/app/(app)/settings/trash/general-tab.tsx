@@ -27,6 +27,9 @@ interface GeneralDraft {
   notifyStart: string;
   notifyEnd: string;
   notifyTz: string;
+  // DESIGN-015 amendment (2026-07-09) — the configurable last-call ping (enable + lead hours).
+  finalWarningEnabled: boolean;
+  finalWarningHours: string;
   // DESIGN-010/014 amendment (build D) — the debounced post-save pool refresh.
   poolRefreshEnabled: boolean;
   poolRefreshDelay: string;
@@ -55,12 +58,15 @@ export function GeneralTab() {
   const skipGate = settings.data?.trash_skip_admin_gate === true;
   const loaded = settings.data !== undefined && notify.data !== undefined;
   const pool = settings.data?.pool_refresh_after_save;
+  const finalWarn = settings.data?.final_warning;
   const server: GeneralDraft | null = loaded
     ? {
         windowDays: String(settings.data?.trash_default_window_days ?? 21),
         notifyStart: String(notify.data!.startHour),
         notifyEnd: String(notify.data!.endHour),
         notifyTz: notify.data!.tz,
+        finalWarningEnabled: finalWarn?.enabled ?? true,
+        finalWarningHours: String(finalWarn?.hoursBefore ?? 2),
         poolRefreshEnabled: pool?.enabled ?? true,
         poolRefreshDelay: String(pool?.delayMinutes ?? 5),
       }
@@ -76,7 +82,11 @@ export function GeneralTab() {
   const poolDelayVal = form ? intOrNaN(form.poolRefreshDelay) : NaN;
   // Off ⇒ the delay is inert (not validated); on ⇒ 1–1440 minutes (a run is heavy — keep it ≥ a few).
   const poolValid = !form?.poolRefreshEnabled || (poolDelayVal >= 1 && poolDelayVal <= 1440);
-  const valid = winValid && notifyValid && poolValid;
+  const finalWarnHoursVal = form ? intOrNaN(form.finalWarningHours) : NaN;
+  // Off ⇒ the lead time is inert; on ⇒ 1–168 hours (mirrors FINAL_WARNING_HOURS_MIN/MAX).
+  const finalWarnValid =
+    !form?.finalWarningEnabled || (finalWarnHoursVal >= 1 && finalWarnHoursVal <= 168);
+  const valid = winValid && notifyValid && poolValid && finalWarnValid;
   const saving = saveWindow.isPending || saveNotify.isPending;
 
   const patch = (next: Partial<GeneralDraft>) => {
@@ -123,6 +133,19 @@ export function GeneralTab() {
           Number.isFinite(poolDelayVal) && poolDelayVal >= 1 ? Math.min(1440, poolDelayVal) : 5;
         await saveWindow.mutateAsync({
           poolRefreshAfterSave: { enabled: form.poolRefreshEnabled, delayMinutes },
+        });
+      }
+      if (
+        form.finalWarningEnabled !== server.finalWarningEnabled ||
+        form.finalWarningHours !== server.finalWarningHours
+      ) {
+        // When disabled the lead time is inert; still submit a valid number (clamp) so zod min(1) holds.
+        const hoursBefore =
+          Number.isFinite(finalWarnHoursVal) && finalWarnHoursVal >= 1
+            ? Math.min(168, finalWarnHoursVal)
+            : 2;
+        await saveWindow.mutateAsync({
+          finalWarning: { enabled: form.finalWarningEnabled, hoursBefore },
         });
       }
       setDraft(null);
@@ -287,6 +310,44 @@ export function GeneralTab() {
               </label>
             </span>
           </div>
+
+          {/* Final-warning last-call ping (DESIGN-015 amendment 2026-07-09) — part of the shared form. */}
+          <div className="batch-settings__row" data-testid="final-warning-row">
+            <div className="batch-settings__copy">
+              <strong>Last-call warning</strong>
+              <p className="muted">
+                A final Pushover ping a few hours before a batch&apos;s window closes — a last chance
+                to save anything before the sweep deletes it. Sent in addition to the day-before
+                reminder. Skipped when the window is shorter than this lead time.
+              </p>
+            </div>
+            <span className="batch-settings__field">
+              <label className="notify-window__field">
+                <input
+                  type="checkbox"
+                  checked={form?.finalWarningEnabled ?? true}
+                  disabled={!loaded}
+                  data-testid="final-warning-enabled"
+                  aria-label="Send a last-call warning before the window closes"
+                  onChange={(e) => patch({ finalWarningEnabled: e.target.checked })}
+                />
+                <span>Enabled</span>
+              </label>
+              <input
+                type="number"
+                className="batch-window-input"
+                min={1}
+                max={168}
+                value={form?.finalWarningHours ?? ''}
+                disabled={!loaded || !(form?.finalWarningEnabled ?? true)}
+                data-testid="final-warning-hours"
+                aria-label="Hours before the window closes to send the last-call warning"
+                aria-invalid={(form !== null && !finalWarnValid) || undefined}
+                onChange={(e) => patch({ finalWarningHours: e.target.value })}
+              />
+              <span className="muted">h before</span>
+            </span>
+          </div>
         </div>
 
         {/* Pool refresh after save (DESIGN-010/014 build D) — part of the shared form. */}
@@ -344,13 +405,15 @@ export function GeneralTab() {
               ? '1–365 days'
               : !notifyValid && form !== null
                 ? 'Start must be before end'
-                : !poolValid && form !== null
-                  ? 'Refresh delay: 1–1440 minutes'
-                  : saved
-                    ? 'Saved'
-                    : dirty
-                      ? 'Unsaved'
-                      : ' '}
+                : !finalWarnValid && form !== null
+                  ? 'Last-call lead: 1–168 hours'
+                  : !poolValid && form !== null
+                    ? 'Refresh delay: 1–1440 minutes'
+                    : saved
+                      ? 'Saved'
+                      : dirty
+                        ? 'Unsaved'
+                        : ' '}
           </span>
         </div>
       </section>

@@ -414,4 +414,42 @@ test.describe('notifications delivery window (ADR-034) — General tab', () => {
     ]);
     await expect(page.getByTestId('pool-refresh-delay')).toHaveValue('5');
   });
+
+  // DESIGN-015 amendment (2026-07-09) — the "Last-call warning" knob (the configurable final Pushover
+  // ping N hours before a batch's window closes) lives in the Notifications area of the same
+  // consolidated General form + single green Save.
+  test('the Last-call warning setting renders in Notifications and round-trips via the single green Save', async ({
+    page,
+  }) => {
+    await signIn(page, 'admin');
+    await openTab(page, 'general');
+
+    const row = page.getByTestId('final-warning-row');
+    await expect(row).toBeVisible();
+    await expect(row).toContainText('Last-call warning');
+    // Defaults: ON, 2 hours before close.
+    await expect(page.getByTestId('final-warning-enabled')).toBeChecked();
+    await expect(page.getByTestId('final-warning-hours')).toHaveValue('2');
+
+    // Change the lead time and commit via the single green Save (audited trash.settings.set).
+    await page.getByTestId('final-warning-hours').fill('4');
+    await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().includes('trash.settings.set') && r.request().method() === 'POST',
+      ),
+      page.getByTestId('general-save').click(),
+    ]);
+    await page.reload();
+    await expect(page.getByTestId('final-warning-hours')).toHaveValue('4');
+
+    // Restore the 2-hour default for later specs/re-runs.
+    await page.getByTestId('final-warning-hours').fill('2');
+    await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().includes('trash.settings.set') && r.request().method() === 'POST',
+      ),
+      page.getByTestId('general-save').click(),
+    ]);
+    await expect(page.getByTestId('final-warning-hours')).toHaveValue('2');
+  });
 });

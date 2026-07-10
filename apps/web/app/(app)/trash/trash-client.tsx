@@ -69,7 +69,14 @@ import { KindTab } from './kind-tab';
 import { TrashOverview, type OverviewData } from './trash-overview';
 import { RESOLUTION_LABELS, formatBytes, formatDay, formatWhen } from '@/lib/media';
 import { appCodeOf, describeMutationError } from '@/lib/app-error';
-import { candidatesAsOfLabel, expediteErrorAction, overviewBadge, reclaimLabel } from '@/lib/trash';
+import {
+  candidatesAsOfLabel,
+  expediteErrorAction,
+  overviewBadge,
+  reclaimLabel,
+  sweepTimeLabel,
+  windowClosed,
+} from '@/lib/trash';
 
 export type { TrashAccess };
 
@@ -904,9 +911,15 @@ function TrashContent({
           const kind = TAB_KIND[tab.key];
           const kd = kind !== undefined ? overviewByKind.get(kind) : undefined;
           const badge = kd !== undefined ? overviewBadge(kd) : { show: false, count: 0, tone: 'muted' as const };
+          // DESIGN-011 amendment (2026-07-09) — aligned with the batch countdown: a still-open window
+          // shows its close day; a closed window (awaiting the sweep) names the actual sweep time.
+          const badgeExpiresAt =
+            badge.tone !== 'muted' && kd?.batch?.expiresAt != null ? kd.batch.expiresAt : null;
           const windowCloses =
-            badge.tone !== 'muted' && kd?.batch?.expiresAt != null
-              ? `window closes ${formatDay(kd.batch.expiresAt)}`
+            badgeExpiresAt !== null
+              ? windowClosed(badgeExpiresAt)
+                ? `window closed — deletes at ${sweepTimeLabel(badgeExpiresAt) ?? 'the next sweep'}`
+                : `window closes ${formatDay(badgeExpiresAt)}`
               : null;
           return (
             <button

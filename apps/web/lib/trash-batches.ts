@@ -196,18 +196,34 @@ export function wallCounts(items: ReadonlyArray<WallCountInput>): WallCounts {
   return out;
 }
 
+export interface CountdownCopyInput {
+  /** deadlineCountdown.whenLabel — "today 11:04 PM" / "Jul 21". Shown while the window is open. */
+  whenLabel: string;
+  /** The next-sweep clock time ("11:45 PM") from lib/trash `sweepTimeLabel`. Null ⇒ vague fallback. */
+  sweepLabel: string | null;
+  /** True while the window is open (expiresAt still in the future). */
+  windowOpen: boolean;
+  /** The viewer may save (invites the tap). */
+  canSave: boolean;
+}
+
 /**
- * The countdown banner copy (leaving_soon). Family phrasing when the viewer can actually save;
- * plain when they are read-only; the closed state is calm and explains what happens next.
+ * The countdown banner copy (leaving_soon). DESIGN-011 amendment (2026-07-09) — it now names the ACTUAL
+ * next-sweep time ("deletes at 11:45 PM") instead of a vague "the next sweep", sourced from the deployed
+ * `45 * * * *` CronJob minute (SWEEP_CRON_MINUTE). Family phrasing (tap invite) when the viewer can save;
+ * plain when read-only; the closed state names the imminent sweep. Falls back to the old vague copy only
+ * when the sweep time can't be computed (a garbage deadline).
  */
-export function countdownCopy(daysLeftLabel: string, windowOpen: boolean, canSave: boolean): string {
+export function countdownCopy(input: CountdownCopyInput): string {
+  const { whenLabel, sweepLabel, windowOpen, canSave } = input;
   if (!windowOpen) {
-    return 'The save window has closed — the remaining items delete on the next sweep.';
+    return sweepLabel !== null
+      ? `window closed — deletes at ${sweepLabel}`
+      : 'The save window has closed — the remaining items delete on the next sweep.';
   }
-  if (canSave) {
-    return `These delete ${daysLeftLabel} — tap anything you want to keep.`;
-  }
-  return `These delete ${daysLeftLabel}.`;
+  const sweepClause = sweepLabel !== null ? ` · deletes at the ${sweepLabel} sweep` : '';
+  const base = `window closes ${whenLabel}${sweepClause}`;
+  return canSave ? `${base} — tap anything you want to keep` : base;
 }
 
 // ── reclaim-targeted batch creation (DESIGN-011 amendment 2026-07-08) ───────────────────────

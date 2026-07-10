@@ -443,4 +443,43 @@ describe('migrations against embedded Postgres 16', () => {
       await client.query(`DELETE FROM trash_candidates`);
     });
   });
+
+  // DESIGN-015 amendment (migration 0030) — the final-warning push + honest sweep copy: two CHECK
+  // relaxes that must admit the new values AND preserve every prior one.
+  describe('0030 final-warning outbox (DESIGN-015 amendment — CHECK relaxes, preservation)', () => {
+    it('notification_outbox event_type admits batch_final_warning + the prior events, rejects unknown', async () => {
+      for (const evt of [
+        'batch_created',
+        'batch_leaving_soon',
+        'batch_leaving_soon_reminder',
+        'batch_final_warning',
+        'batch_swept',
+      ]) {
+        await client.query({
+          text: `INSERT INTO notification_outbox (event_type) VALUES ($1)`,
+          values: [evt],
+        });
+      }
+      await expect(
+        client.query(`INSERT INTO notification_outbox (event_type) VALUES ('bogus_event')`),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query(`DELETE FROM notification_outbox`);
+    });
+
+    it('app_settings_key_enum admits final_warning + the prior keys (preservation)', async () => {
+      for (const key of ['motd', 'notify_window', 'pool_refresh_after_save', 'final_warning']) {
+        await client.query({
+          text: `INSERT INTO app_settings (key, value) VALUES ($1, '{}'::jsonb)
+                   ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+          values: [key],
+        });
+      }
+      await expect(
+        client.query(`INSERT INTO app_settings (key, value) VALUES ('nope_key', '{}'::jsonb)`),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query(
+        `DELETE FROM app_settings WHERE key IN ('motd','notify_window','pool_refresh_after_save','final_warning')`,
+      );
+    });
+  });
 });

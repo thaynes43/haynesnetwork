@@ -270,9 +270,17 @@ describe('trash.batches + trash.settings (ADR-025 / DESIGN-011)', () => {
     await expect(memberCall('edit', ['manage_batches']).trash.settings.get()).rejects.toMatchObject({ code: 'FORBIDDEN' });
     const defaults = await adminCall().trash.settings.get();
     expect(defaults).toMatchObject({ trash_skip_admin_gate: false, trash_default_window_days: 21 });
+    expect(defaults).toMatchObject({ final_warning: { enabled: true, hoursBefore: 2 } });
     const updated = await adminCall().trash.settings.set({ trashDefaultWindowDays: 30, trashSkipAdminGate: true });
     expect(updated).toMatchObject({ trash_skip_admin_gate: true, trash_default_window_days: 30 });
-    // reset so the skip-gate does not leak into other tests
-    await adminCall().trash.settings.set({ trashSkipAdminGate: false, trashDefaultWindowDays: 21 });
+    // DESIGN-015 amendment — the final-warning knob round-trips through the same admin-only set.
+    const fw = await adminCall().trash.settings.set({ finalWarning: { enabled: false, hoursBefore: 6 } });
+    expect(fw).toMatchObject({ final_warning: { enabled: false, hoursBefore: 6 } });
+    // reset so the skip-gate / final-warning changes do not leak into other tests
+    await adminCall().trash.settings.set({
+      trashSkipAdminGate: false,
+      trashDefaultWindowDays: 21,
+      finalWarning: { enabled: true, hoursBefore: 2 },
+    });
   });
 });

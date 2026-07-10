@@ -702,9 +702,12 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await page.getByTestId('batch-greenlight-submit').click();
 
     await expect(page.getByTestId('batch-state')).toHaveText('Leaving Soon');
-    await expect(page.getByTestId('batch-countdown')).toHaveText(
-      'These delete in 14 days — tap anything you want to keep.',
-    );
+    // DESIGN-011 amendment (2026-07-09) — the countdown names the concrete next-sweep time (:45)
+    // instead of a vague "the next sweep"; the sweep clock time is dynamic, so match the shape.
+    const greenlitCountdown = page.getByTestId('batch-countdown');
+    await expect(greenlitCountdown).toContainText('window closes');
+    await expect(greenlitCountdown).toContainText(/deletes at the \d{1,2}:\d{2}\s?(AM|PM) sweep/);
+    await expect(greenlitCountdown).toContainText('tap anything you want to keep');
     // DESIGN-011 amendment (2026-07-08) — mid-window "Expire now…" is ENABLED for a manager as an
     // admin override (danger + typed confirm live in the Modal), not disabled by the open window.
     await expect(page.getByTestId('batch-expire')).toBeEnabled();
@@ -875,7 +878,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await memberPage.goto('/trash?tab=movies');
     await expect(memberPage.getByTestId('wall-tile')).toHaveCount(4);
     await expect(memberPage.getByTestId('batch-wall').getByRole('button')).toHaveCount(0);
-    await expect(memberPage.getByTestId('batch-countdown')).toContainText('These delete in');
+    await expect(memberPage.getByTestId('batch-countdown')).toContainText('window closes');
     await expect(memberPage.getByTestId('batch-countdown')).not.toContainText('tap anything');
 
     // The future strip is visible to this pure read-only role too, but fully READ-ONLY: the fresh
@@ -920,7 +923,12 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     greenlightExpired('movie');
     await page.goto('/trash?tab=movies');
     await expect(page.getByTestId('batch-state')).toHaveText('Leaving Soon');
-    await expect(page.getByTestId('batch-countdown')).toContainText('The save window has closed');
+    // DESIGN-011 amendment (2026-07-09) — a closed window (awaiting the sweep) now names the ACTUAL
+    // sweep time ("window closed — deletes at 11:45 PM"), on the countdown AND the lifecycle header.
+    const closedCountdown = page.getByTestId('batch-countdown');
+    await expect(closedCountdown).toContainText('window closed');
+    await expect(closedCountdown).toContainText(/deletes at \d{1,2}:\d{2}\s?(AM|PM)/);
+    await expect(page.getByTestId('batch-lifecycle')).toContainText('window closed');
     const expire = page.getByTestId('batch-expire');
     await expect(expire).toBeEnabled();
 
@@ -1008,7 +1016,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await startBatchAll(page);
     await expect(page.getByTestId('batch-state')).toHaveText('Leaving Soon');
     await expect(page.getByTestId('batch-gate-skipped')).toBeVisible();
-    await expect(page.getByTestId('batch-countdown')).toContainText('These delete in 21 days');
+    await expect(page.getByTestId('batch-countdown')).toContainText('window closes');
     await armAndConfirm(page.getByTestId('batch-cancel'));
     await expect(page.getByTestId('trash-wall')).toBeVisible(); // terminal ⇒ TV pending wall returns
 
