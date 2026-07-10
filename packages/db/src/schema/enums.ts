@@ -167,6 +167,13 @@ export type SyncSource = (typeof SYNC_SOURCES)[number];
 // and writes NO sync_runs row — its trail is the outbox rows + the smart_drive_state table. It joins
 // SYNC_RUN_KINDS so the CLI --mode parser + SyncMode accept it (migration 0033 rebuilds the
 // sync_runs.run_kind CHECK to keep the const array and CHECK in parity).
+// ADR-043 / DESIGN-021 (PLAN-024) — 'poster-guard' is the Peloton poster drift-restore sync mode: it
+// reads the HOps Peloton library from k8plex, resolves each show/season to its durable override poster
+// (baked into the image, ADR-043 C-01), and RE-APPLIES only the targets that drifted since the last
+// apply (owner ruling R-137). Each re-apply appends one poster_guard_applications ledger row (the drift
+// baseline + audit) in the SAME transaction (CLAUDE.md hard rule 6). It joins SYNC_RUN_KINDS so the CLI
+// --mode parser + SyncMode accept it AND so the run is bracketed by a sync_runs row (migration 0034
+// rebuilds the sync_runs.run_kind CHECK to keep the const array and CHECK in parity).
 export const SYNC_RUN_KINDS = [
   'full',
   'incremental',
@@ -175,8 +182,21 @@ export const SYNC_RUN_KINDS = [
   'space-policy',
   'notify-outbox',
   'smart-alerts',
+  'poster-guard',
 ] as const;
 export type SyncRunKind = (typeof SYNC_RUN_KINDS)[number];
+
+// ADR-043 / DESIGN-021 (PLAN-024) — the two Plex metadata targets the poster guard applies art to: a
+// SHOW poster (the class-type series art) or a SEASON poster (the duration art, keyed by season index).
+export const POSTER_GUARD_TARGET_KINDS = ['show', 'season'] as const;
+export type PosterGuardTargetKind = (typeof POSTER_GUARD_TARGET_KINDS)[number];
+
+// ADR-043 / DESIGN-021 — why a re-apply happened, recorded on each poster_guard_applications ledger row:
+//   'initial'       — no prior applied row for this target (first apply / re-seed).
+//   'drift'         — the live Plex thumb no longer matches the baseline we recorded at last apply.
+//   'asset-updated' — the mapped durable asset's bytes changed (owner swapped the PNG); re-push it.
+export const POSTER_GUARD_REASONS = ['initial', 'drift', 'asset-updated'] as const;
+export type PosterGuardReason = (typeof POSTER_GUARD_REASONS)[number];
 
 export const SYNC_RUN_STATUSES = ['running', 'succeeded', 'failed', 'aborted'] as const;
 export type SyncRunStatus = (typeof SYNC_RUN_STATUSES)[number];

@@ -28,9 +28,15 @@ export interface PlexHttpOptions {
 export interface PlexRequestOptions {
   query?: QueryParams;
   body?: unknown;
+  /**
+   * ADR-043 — a RAW request body sent verbatim (no JSON.stringify), for the poster-upload write
+   * (`POST /library/metadata/{id}/posters` takes the image bytes as the body). When set, `contentType`
+   * is required (e.g. `image/png`) and `body` is ignored. Mutually exclusive with `body`.
+   */
+  rawBody?: Uint8Array;
   /** Accept header. PMS reads default to JSON; the sharing API asks for XML. */
   accept?: string;
-  /** When set with a body, the Content-Type sent. Default application/json. */
+  /** When set with a body (JSON or raw), the Content-Type sent. Default application/json. */
   contentType?: string;
 }
 
@@ -76,7 +82,16 @@ export class PlexHttp {
   ): Promise<Response> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-    const hasBody = options.body !== undefined;
+    const hasRaw = options.rawBody !== undefined;
+    const hasJsonBody = !hasRaw && options.body !== undefined;
+    const hasBody = hasRaw || hasJsonBody;
+    // A raw body (poster bytes) is sent verbatim; a JSON body is stringified. Uint8Array is a valid
+    // fetch BodyInit (ArrayBufferView) but the DOM/undici union types don't narrow it cleanly — assert.
+    const body: BodyInit | undefined = hasRaw
+      ? (options.rawBody as unknown as BodyInit)
+      : hasJsonBody
+        ? JSON.stringify(options.body)
+        : undefined;
     let response: Response;
     try {
       response = await this.fetchImpl(url, {
@@ -88,7 +103,7 @@ export class PlexHttp {
           Accept: options.accept ?? 'application/json',
           ...(hasBody ? { 'Content-Type': options.contentType ?? 'application/json' } : {}),
         },
-        body: hasBody ? JSON.stringify(options.body) : undefined,
+        body,
         signal: controller.signal,
       });
     } catch (error) {

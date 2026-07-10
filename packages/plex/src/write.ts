@@ -38,13 +38,40 @@ interface SharedServerAllBody {
 
 export class PlexWriteClient {
   private readonly http: PlexHttp;
+  /** Direct PMS base URL — the poster-upload write goes to the server itself (not plex.tv). */
+  private readonly baseUrl: string;
   private readonly plexTvBaseUrl: string;
   private readonly machineIdentifier: string;
 
   constructor(options: PlexClientOptions) {
     this.http = new PlexHttp(options);
+    this.baseUrl = options.baseUrl.replace(/\/+$/, '');
     this.plexTvBaseUrl = (options.plexTvBaseUrl ?? PLEX_TV_BASE_URL).replace(/\/+$/, '');
     this.machineIdentifier = options.machineIdentifier;
+  }
+
+  /**
+   * ADR-043 / DESIGN-021 (PLAN-024) — the ONLY direct-PMS write in this app: upload a poster to a
+   * library item and select it. `POST {baseUrl}/library/metadata/{ratingKey}/posters` with the raw
+   * image bytes as the body (token in the X-Plex-Token header, never the URL). Plex stores the upload
+   * and makes it the item's selected poster; the previous art stays in the item's poster GALLERY, so a
+   * re-apply is non-destructive and reversible (ADR-043 C-04). Used ONLY by the @hnet/domain poster
+   * guard (runPelotonPosterGuard) — this write surface is import-confined to packages/domain (ADR-017).
+   */
+  async uploadPoster(input: {
+    ratingKey: string;
+    body: Uint8Array;
+    contentType?: string;
+  }): Promise<void> {
+    await this.http.requestVoid(
+      'POST',
+      `${this.baseUrl}/library/metadata/${encodeURIComponent(input.ratingKey)}/posters`,
+      {
+        rawBody: input.body,
+        contentType: input.contentType ?? 'image/png',
+        accept: 'application/xml',
+      },
+    );
   }
 
   private sharedServersUrl(sharedServerId?: string): string {
