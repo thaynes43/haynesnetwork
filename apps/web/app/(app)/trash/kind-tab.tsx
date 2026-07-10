@@ -909,6 +909,14 @@ function StartBatchModal({
 // infinite scroll + the fast tap-to-save toggle. A save = the guarded Maintainerr exclusion → the
 // item is whitelisted → it never enters a future batch; requested items show the person-shield per
 // the shipped precedence. The header keeps the honest server count.
+//
+// VISIBILITY (owner-directed 2026-07-09 evening): this strip is shown to ANY user with Trash section
+// access (read_only+) — "users who can see the next batch should be able to see what's coming soon".
+// It was formerly ADMIN-gated (a legacy of its original admin-diff design). Interactivity stays
+// grant-governed: tap-to-save requires the anytime-Save grant (save_exclude) exactly as on the
+// pending wall; without it PendingWall renders inert read-only tiles (no action corner) and the
+// header drops the "tap to save" invitation. The underlying read (trash.pending, excludeOpenBatch)
+// is sectionProcedure('trash','read_only') server-side, so read-only users are served honestly.
 function FutureCandidatesWall({
   kind,
   access,
@@ -951,8 +959,8 @@ function FutureCandidatesWall({
   return (
     <div className="batch-newcands" data-testid="batch-new-candidates">
       <p className="batch-newcands__head muted">
-        Potential in future batches ({total}) — eligible for the next batch; tap a poster to save it
-        out.{asOf !== null ? ` ${asOf}.` : ''}
+        Potential in future batches ({total}) — eligible for the next batch
+        {canSave ? '; tap a poster to save it out' : ''}.{asOf !== null ? ` ${asOf}.` : ''}
       </p>
       <p className="bwall-error" role="alert" data-testid="future-wall-error">
         {error ?? ''}
@@ -1211,9 +1219,10 @@ function LifecycleView({
         </div>
       ) : null}
 
-      {/* Admin-only: the full interactive paginated wall of live candidates NOT in this batch —
-          eligible for the NEXT batch; tap-to-save works exactly like the live wall. */}
-      {canManage ? <FutureCandidatesWall kind={kind} access={access} status={status} /> : null}
+      {/* Visible to ANY trash user (owner-directed 2026-07-09 evening): the full interactive paginated
+          wall of live candidates NOT in this batch — eligible for the NEXT batch. Tap-to-save is
+          grant-governed inside (save_exclude); read-only users see inert tiles + the library corner. */}
+      <FutureCandidatesWall kind={kind} access={access} status={status} />
 
       {modal === 'greenlight' ? (
         <GreenlightModal

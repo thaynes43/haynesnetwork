@@ -238,6 +238,41 @@ test.describe('storage metrics (ADR-030 HYBRID, native half) — on the Trash Se
     await expect(page.getByTestId('reclaim-empty')).toBeVisible();
     await expectViewportFit(page);
   });
+
+  // fix/family-strip-mobile-roles (owner screenshot 2026-07-09) — the General tab was the worst
+  // portrait offender: the label|control two-column rows kept desktop proportions, so the copy
+  // crushed to one word per line, the Timezone select bled past the edge, and the pool-refresh
+  // checkbox rendered comically large. It now stacks below 640px. Audit General + Rules at both
+  // portrait bounds (the Storage + Reclaim tabs are covered above).
+  test('portrait (390×844 + 430×932): the General + Rules tabs stack — no page overflow, and the pool-refresh checkbox is a normal-sized control', async ({
+    page,
+  }) => {
+    await signIn(page, 'admin');
+    for (const [w, h] of [
+      [390, 844],
+      [430, 932],
+    ] as const) {
+      await page.setViewportSize({ width: w, height: h });
+
+      await openTab(page, 'general');
+      await expect(page.getByTestId('trash-settings')).toBeVisible();
+      // The Timezone select is reachable and INSIDE the viewport (it used to bleed past the edge).
+      await expect(page.getByTestId('notify-tz')).toBeVisible();
+      await expectViewportFit(page);
+      // The "Enabled" checkbox is a STANDARD ~18px control now, not the native-scaled giant box.
+      const cb = page.getByTestId('pool-refresh-enabled');
+      await cb.scrollIntoViewIfNeeded();
+      const box = (await cb.boundingBox())!;
+      expect(box.width, 'the Enabled checkbox is a normal control').toBeLessThanOrEqual(28);
+      expect(box.height, 'the Enabled checkbox is a normal control').toBeLessThanOrEqual(28);
+
+      // Rules — the deletion-rules table collapses to cards with no sideways overflow.
+      await openTab(page, 'rules');
+      await expect(page.getByTestId('trash-rules')).toBeVisible();
+      await expectViewportFit(page);
+    }
+    await page.setViewportSize({ width: 1280, height: 800 });
+  });
 });
 
 // ADR-031 / DESIGN-014 — the propose-only "Space policy" card + the rules-tuning / graduation block,
