@@ -50,6 +50,19 @@ export {
   YTDLSUB_THUMB_SIZES,
 } from './ytdlsub-poster';
 export type { YtdlsubThumbSize, YtdlsubThumbUpstream, CachedThumb } from './ytdlsub-poster';
+// ADR-046 / DESIGN-024 (PLAN-023) — the Books Library surface: the `books` section rung (the app cover
+// route reuses `effectiveSectionLevel`), the book-cover proxy helper (used by the app /api/books/cover
+// route), and the wire types the Books browser imports TYPE-ONLY.
+export { booksProcedure } from './middleware/role';
+export {
+  fetchBooksCover,
+  booksCoverEtag,
+  isBooksSource,
+  isValidBooksExternalId,
+} from './books-cover';
+export { booksCoverUrlFor, toBooksListItem, BOOKS_SORTS } from './books-query';
+export type { BooksListItem, BooksSort, BooksSearchInput } from './books-query';
+export type { BooksSearchResult } from './routers/books';
 export type {
   YtdlsubShow,
   YtdlsubListResult,

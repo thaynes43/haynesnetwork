@@ -21,7 +21,9 @@ import {
   sweepExpiredBatches,
   syncAiUsage,
   syncAuthentikUsers,
+  syncBooks,
   type DrainPoolRefreshResult,
+  type SyncBooksReport,
   type MaintainerrClientBundle,
   type OutboxDeliveryReport,
   type PlexClientBundle,
@@ -38,6 +40,9 @@ import {
 // polls; the fetched snapshot is handed to the @hnet/domain syncAiUsage single-writer (never a live
 // cross-DB read — the *arr-ledger precedent).
 import { fetchOwuiUsage, type OpenWebUiClient } from './openwebui';
+// ADR-046 / DESIGN-024 (PLAN-023) — the read-only Kavita + Audiobookshelf snapshot fetcher the
+// `books-sync` mode hands to the @hnet/domain syncBooks single-writer (books_items mirror upsert).
+import { fetchBooksSnapshot, type BooksSyncBundle } from './books';
 // ADR-045 / DESIGN-023 (PLAN-026) — the read-only Authentik directory client the `authentik-users` mode
 // pages; the snapshot is handed to the @hnet/domain syncAuthentikUsers single-writer (mirror upsert).
 import type { AuthentikReadClient } from '@hnet/authentik';
@@ -101,6 +106,9 @@ export interface RunSyncOptions {
   /** ADR-045 / DESIGN-023 — the read-only Authentik directory client the `authentik-users` mode pages.
    *  Required only for that mode; tests inject a stubbed client. */
   authentik?: Pick<AuthentikReadClient, 'listUsers'>;
+  /** ADR-046 / DESIGN-024 — the read-only Kavita + Audiobookshelf clients + public deep-link bases the
+   *  `books-sync` mode pages. Required only for that mode; tests inject fetch-stubbed clients. */
+  books?: BooksSyncBundle;
   /** Clock injection for deterministic `ai-usage-sync` tests (synced_at / created_at fallbacks). */
   now?: Date;
   /** Injected DB (tests); defaults to the lazy @hnet/db client. */
@@ -162,6 +170,10 @@ export interface SyncReport {
   authentikUsers?: SyncAuthentikUsersResult | null;
   /** The authentik-users run's error — sets totalFailure for the CLI exit. */
   authentikUsersError?: string;
+  /** ADR-046 — the `books-sync` result (null for every other mode / when it errored). */
+  booksSync?: (SyncBooksReport & { syncedSources: string[] }) | null;
+  /** The books-sync run's error — sets totalFailure for the CLI exit. */
+  booksSyncError?: string;
   /** ADR-035 — the candidate-snapshot refresh post-step (full/incremental with a Maintainerr
    *  handle; null when skipped or failed). */
   candidateRefresh?: TrashCandidatesRefreshReport | null;
@@ -525,6 +537,55 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       authentikUsers: authentikUsersResult,
       ...(authentikUsersError !== undefined ? { authentikUsersError } : {}),
       totalFailure: authentikUsersError !== undefined,
+    };
+  }
+
+  // ADR-046 / DESIGN-024 — the `books-sync` mode pages Kavita (Books + Comics) + Audiobookshelf (Audio
+  // Books) READ-ONLY, normalizes each series/item, and UPSERTS the snapshot via the domain syncBooks
+  // single-writer into books_items (tombstoning vanished rows). Standalone mode: no *arr source, writes
+  // NO sync_runs row — its trail is books_items. A run where NEITHER source could be fully read is a
+  // totalFailure (nonzero exit) so a persistently unreachable server is visible in the CronJob history.
+  if (options.mode === 'books-sync') {
+    const startedAt = new Date();
+    if (!options.books) {
+      throw new Error('books-sync requires Kavita + Audiobookshelf clients (books)');
+    }
+    let booksSync: (SyncBooksReport & { syncedSources: string[] }) | null = null;
+    let booksSyncError: string | undefined;
+    try {
+      const snapshot = await fetchBooksSnapshot(options.books, logger);
+      const report = await syncBooks({
+        db,
+        rows: snapshot.rows,
+        syncedSources: snapshot.syncedSources,
+        now: options.now,
+      });
+      booksSync = { ...report, syncedSources: snapshot.syncedSources };
+      logger.info('books-sync complete', {
+        kavitaSeries: snapshot.counts.kavitaSeries,
+        absItems: snapshot.counts.absItems,
+        upserted: report.upserted,
+        tombstoned: report.tombstoned,
+        byKind: report.byKind,
+        syncedSources: snapshot.syncedSources,
+      });
+      if (snapshot.syncedSources.length === 0) {
+        booksSyncError = 'books-sync: neither Kavita nor Audiobookshelf could be fully read';
+      }
+    } catch (error) {
+      booksSyncError = error instanceof Error ? error.message : String(error);
+      logger.error('books-sync failed', { error: booksSyncError });
+    }
+    return {
+      mode: options.mode,
+      startedAt,
+      finishedAt: new Date(),
+      sources: [],
+      backfill: null,
+      fixesCompleted: null,
+      booksSync,
+      ...(booksSyncError !== undefined ? { booksSyncError } : {}),
+      totalFailure: booksSyncError !== undefined,
     };
   }
 

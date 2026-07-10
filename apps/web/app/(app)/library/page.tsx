@@ -14,5 +14,8 @@ export default async function LibraryPage() {
   const session = await getServerSession(await headers());
   if (!session) redirect('/login'); // defense in depth — the layout already gates
   const ytdlsubVisible = effectiveSectionLevel(session.user.role, 'ytdlsub') !== 'disabled';
-  return <LibraryClient ytdlsubVisible={ytdlsubVisible} />;
+  // ADR-046 C-04 (PLAN-023) — the Books/Audiobooks/Comics sub-tabs' visibility (the `books` section ships
+  // `disabled` = Admin-only until the owner opens it per role after his screenshot review).
+  const booksVisible = effectiveSectionLevel(session.user.role, 'books') !== 'disabled';
+  return <LibraryClient ytdlsubVisible={ytdlsubVisible} booksVisible={booksVisible} />;
 }

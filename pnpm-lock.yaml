@@ -123,6 +123,9 @@ importers:
       '@hnet/auth':
         specifier: workspace:*
         version: link:../auth
+      '@hnet/books':
+        specifier: workspace:*
+        version: link:../books
       '@hnet/db':
         specifier: workspace:*
         version: link:../db
@@ -203,6 +206,16 @@ importers:
         version: 4.1.9(@types/node@22.20.0)(jsdom@25.0.1)(vite@8.1.3(@types/node@22.20.0)(esbuild@0.28.1)(tsx@4.22.5))
 
   packages/authentik:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      vitest:
+        specifier: ^4.1.6
+        version: 4.1.9(@types/node@22.20.0)(jsdom@25.0.1)(vite@8.1.3(@types/node@22.20.0)(esbuild@0.28.1)(tsx@4.22.5))
+
+  packages/books:
     dependencies:
       zod:
         specifier: ^4.4.3
@@ -309,6 +322,9 @@ importers:
       '@hnet/authentik':
         specifier: workspace:*
         version: link:../authentik
+      '@hnet/books':
+        specifier: workspace:*
+        version: link:../books
       '@hnet/db':
         specifier: workspace:*
         version: link:../db

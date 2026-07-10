@@ -55,6 +55,21 @@ export type AuthentikUserType = (typeof AUTHENTIK_USER_TYPES)[number];
 export const ARR_KINDS = ['sonarr', 'radarr', 'lidarr'] as const; // DDD-001 T-22
 export type ArrKind = (typeof ARR_KINDS)[number];
 
+// ---------------------------------------------------------------------------
+// ADR-046 / DESIGN-024 (PLAN-023 — Books & Audiobooks) — the books ledger enums. Books are a
+// SEPARATE ledger from the *arr media_items (they have no monitored/quality/root-folder/Fix
+// semantics — ADR-046 rejects overloading media_items); they get their own books_items mirror.
+// text+CHECK, these const arrays are the single source of truth for the TS types + the SQL CHECKs.
+// ---------------------------------------------------------------------------
+
+/** The two book servers of record (books_items.source). Kavita serves Books+Comics; ABS serves Audio Books. */
+export const BOOKS_SOURCES = ['kavita', 'audiobookshelf'] as const;
+export type BooksSource = (typeof BOOKS_SOURCES)[number];
+
+/** The app media kind of a books_items row (books_items.media_kind) — the three Library sub-tabs. */
+export const BOOKS_MEDIA_KINDS = ['book', 'comic', 'audiobook'] as const;
+export type BooksMediaKind = (typeof BOOKS_MEDIA_KINDS)[number];
+
 export const LEDGER_EVENT_TYPES = [
   'grabbed',
   'imported',
@@ -221,6 +236,13 @@ export const SYNC_RUN_KINDS = [
   // sync_runs row — its trail is the authentik_users table). It joins SYNC_RUN_KINDS so the CLI `--mode`
   // parser + `SyncMode` accept it (migration 0036 rebuilds the sync_runs.run_kind CHECK).
   'authentik-users',
+  // ADR-046 / DESIGN-024 (PLAN-023) — 'books-sync' is the Kavita + Audiobookshelf ledger ingestion
+  // mode: it pages the two book servers READ-ONLY (Kavita `/api/Series/all-v2` per library, ABS
+  // `/api/libraries/{id}/items`) and UPSERTS the snapshot into the books_items mirror via the domain
+  // syncBooks single-writer, tombstoning rows no longer served. Like ai-usage-sync it is a standalone
+  // mode (no --source, writes NO sync_runs row — its trail is books_items). It joins SYNC_RUN_KINDS so
+  // the CLI `--mode` parser + `SyncMode` accept it (migration 0037 rebuilds the sync_runs.run_kind CHECK).
+  'books-sync',
 ] as const;
 export type SyncRunKind = (typeof SYNC_RUN_KINDS)[number];
 
@@ -285,7 +307,11 @@ export type PlexShareEvent = (typeof PLEX_SHARE_EVENTS)[number];
 // ADR-038 / DESIGN-017 — 'ytdlsub' joins the section set (PLAN-022 ytdl-sub Library sub-tabs). It gates
 // the Peloton/YouTube sub-tabs INSIDE the (universal, ungated) Library section — Library itself has no
 // section id; this is the visibility knob for its ytdl-sub content only.
-export const SECTION_IDS = ['ledger', 'trash', 'bulletin', 'metrics', 'ytdlsub'] as const; // 'trash' PLAN-006; 'bulletin' PLAN-009; 'metrics' PLAN-017; 'ytdlsub' PLAN-022
+// ADR-046 / DESIGN-024 — 'books' joins the section set (PLAN-023 Books & Audiobooks). Like 'ytdlsub' it
+// gates NEW Library sub-tabs (Books / Audiobooks / Comics) INSIDE the (universal, ungated) Library
+// section — Library itself has no section id; this is the visibility knob for the books walls only,
+// defaulting to `disabled` so they ship Admin-only until the owner opts a role in after screenshot review.
+export const SECTION_IDS = ['ledger', 'trash', 'bulletin', 'metrics', 'ytdlsub', 'books'] as const; // 'trash' PLAN-006; 'bulletin' PLAN-009; 'metrics' PLAN-017; 'ytdlsub' PLAN-022; 'books' PLAN-023
 export type SectionId = (typeof SECTION_IDS)[number];
 
 export const SECTION_PERMISSION_LEVELS = ['edit', 'read_only', 'disabled'] as const;
@@ -327,6 +353,10 @@ export const SECTION_DEFAULT_LEVELS: Record<SectionId, SectionPermissionLevel> =
   // rollout: the Peloton/YouTube Library sub-tabs are hidden for non-admins until a role row opts them in
   // (an is_admin role implies `edit`). The owner flips visibility per role after his screenshot review.
   ytdlsub: 'disabled',
+  // ADR-046 C-04 (PLAN-023 Books & Audiobooks) — `books` defaults to `disabled`, the same ship-Admin-only
+  // rollout as ytdlsub: the Books/Audiobooks/Comics Library sub-tabs are hidden for non-admins until a role
+  // row opts them in (an is_admin role implies `edit`). The owner flips visibility per role after review.
+  books: 'disabled',
 };
 
 /** disabled < read_only < edit — the total order `sectionProcedure` gates on (ADR-021). */

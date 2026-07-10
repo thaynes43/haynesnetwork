@@ -21,6 +21,7 @@ import { startStubMaintainerr, type StubMaintainerrServer } from './stub-maintai
 import { startStubPrometheus, type StubPrometheusServer } from './stub-prometheus';
 import { startStubOpenWebUi, type StubOpenWebUiServer } from './stub-openwebui';
 import { startStubAuthentik, type StubAuthentikServer } from './stub-authentik';
+import { startStubBooks, type StubBooksServer } from './stub-books';
 import { composeRuntimeEnv, DEFAULT_APP_PORT, type RuntimeEnv } from './env';
 
 const DEV_READY_TIMEOUT_MS = 180_000;
@@ -55,6 +56,8 @@ export interface RunningStack {
   /** Stub Open WebUI stand-in — AI-usage sub-tab e2e layer (ADR-044 / DESIGN-022). */
   openWebUi: StubOpenWebUiServer;
   authentik: StubAuthentikServer;
+  /** Stub Kavita + Audiobookshelf stand-in — Books Library e2e layer (ADR-046 / DESIGN-024). */
+  books: StubBooksServer;
   devServer: ChildProcess;
   /** The DESIGN-002 D-08 env the dev server was booted with. */
   env: RuntimeEnv;
@@ -173,6 +176,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
   let prometheus: StubPrometheusServer | undefined;
   let openWebUi: StubOpenWebUiServer | undefined;
   let authentik: StubAuthentikServer | undefined;
+  let books: StubBooksServer | undefined;
   let dev: ChildProcess | undefined;
   try {
     const migrate = spawnSync('pnpm', ['--filter', '@hnet/db', 'migrate'], {
@@ -206,6 +210,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     prometheus = await startStubPrometheus();
     openWebUi = await startStubOpenWebUi();
     authentik = await startStubAuthentik();
+    books = await startStubBooks();
     const env = composeRuntimeEnv({
       databaseUrl: pg.connectionString,
       stubOidcBaseUrl: oidc.baseUrl,
@@ -217,6 +222,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       stubPrometheusBaseUrl: prometheus.baseUrl,
       stubOpenWebUiBaseUrl: openWebUi.baseUrl,
       stubAuthentikBaseUrl: authentik.baseUrl,
+      stubBooksBaseUrl: books.baseUrl,
       appUrl,
     });
 
@@ -241,6 +247,17 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       { ...process.env, ...env },
       cwd,
       'authentik-users seed',
+    );
+
+    // ADR-046 / DESIGN-024 — seed the books_items ledger by RUNNING the real books-sync mode against the
+    // stub Kavita + Audiobookshelf (exercises client → normalizer → syncBooks single-writer, like prod), so
+    // the Library Books/Audiobooks/Comics walls render content on first load.
+    await runToCompletion(
+      join(cwd, 'node_modules', '.bin', 'tsx'),
+      [join(cwd, '..', '..', 'packages', 'sync', 'src', 'scripts', 'sync.ts'), '--mode=books-sync'],
+      { ...process.env, ...env },
+      cwd,
+      'books-sync seed',
     );
 
     // Spawn .bin/next directly — some pnpm versions filter child env vars.
@@ -269,6 +286,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     const runningPrometheus = prometheus;
     const runningOpenWebUi = openWebUi;
     const runningAuthentik = authentik;
+    const runningBooks = books;
     let stopped = false;
     return {
       appUrl,
@@ -281,12 +299,14 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       prometheus: runningPrometheus,
       openWebUi: runningOpenWebUi,
       authentik: runningAuthentik,
+      books: runningBooks,
       devServer: running,
       env,
       stop: async () => {
         if (stopped) return;
         stopped = true;
         await killDevServer(running);
+        await runningBooks.stop().catch(() => undefined);
         await runningAuthentik.stop().catch(() => undefined);
         await runningOpenWebUi.stop().catch(() => undefined);
         await runningPrometheus.stop().catch(() => undefined);
@@ -301,6 +321,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
   } catch (err) {
     // Partial-boot cleanup, best effort in reverse order.
     if (dev) await killDevServer(dev).catch(() => undefined);
+    if (books) await books.stop().catch(() => undefined);
     if (authentik) await authentik.stop().catch(() => undefined);
     if (openWebUi) await openWebUi.stop().catch(() => undefined);
     if (prometheus) await prometheus.stop().catch(() => undefined);

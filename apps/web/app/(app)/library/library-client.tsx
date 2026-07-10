@@ -50,6 +50,7 @@ import { MediaPoster } from '@/components/media-poster';
 import { MyFixesPanel } from '@/components/my-fixes-panel';
 import { CHIP_LABELS, RatingChip } from '@/components/filter-chips';
 import { YtdlsubBrowser } from './ytdlsub-browser';
+import { BooksBrowser } from './books-browser';
 
 const MEDIA_TABS = [
   { key: 'movies', label: 'Movies', arrKind: 'radarr' },
@@ -65,8 +66,24 @@ const YTDLSUB_TABS = [
   { key: 'youtube', label: 'YouTube', arrKind: undefined },
 ] as const satisfies ReadonlyArray<{ key: string; label: string; arrKind?: ArrKindName }>;
 
+// ADR-046 / DESIGN-024 (PLAN-023) — the Books Library sub-tabs (Books, Audiobooks, Comics). Spliced in
+// AFTER the ytdl-sub tabs (i.e. after YouTube) ONLY when the caller can see the `books` section
+// (server-resolved in page.tsx, passed as `booksVisible`). They read the app-owned books_items ledger.
+const BOOKS_TABS = [
+  { key: 'books', label: 'Books', arrKind: undefined },
+  { key: 'audiobooks', label: 'Audiobooks', arrKind: undefined },
+  { key: 'comics', label: 'Comics', arrKind: undefined },
+] as const satisfies ReadonlyArray<{ key: string; label: string; arrKind?: ArrKindName }>;
+
+/** Each Books sub-tab's books_items media_kind. */
+const BOOKS_TAB_KINDS: Record<(typeof BOOKS_TABS)[number]['key'], 'book' | 'audiobook' | 'comic'> = {
+  books: 'book',
+  audiobooks: 'audiobook',
+  comics: 'comic',
+};
+
 // DESIGN-017 D-08 (owner ruling 2026-07-10) — My Fixes is a personal utility view, not a library:
-// it sits LAST, after the media tabs and the ytdl-sub tabs.
+// it sits LAST, after the media tabs, the ytdl-sub tabs, and the Books tabs.
 const MY_FIXES_TAB = { key: 'my-fixes', label: 'My Fixes', arrKind: undefined } as const satisfies {
   key: string;
   label: string;
@@ -76,8 +93,10 @@ const MY_FIXES_TAB = { key: 'my-fixes', label: 'My Fixes', arrKind: undefined } 
 type TabKey =
   | (typeof MEDIA_TABS)[number]['key']
   | (typeof YTDLSUB_TABS)[number]['key']
+  | (typeof BOOKS_TABS)[number]['key']
   | (typeof MY_FIXES_TAB)['key'];
 type YtdlsubTabKey = (typeof YTDLSUB_TABS)[number]['key'];
+type BooksTabKey = (typeof BOOKS_TABS)[number]['key'];
 
 const ON_DISK_FILTERS = [
   { value: 'any', label: 'Any' },
@@ -151,15 +170,26 @@ function parseRatingBound(raw: string | null): number | undefined {
   return Number.isFinite(n) && n >= 0 && n <= 10 ? n : undefined;
 }
 
-function LibraryContent({ ytdlsubVisible }: { ytdlsubVisible: boolean }) {
+function LibraryContent({
+  ytdlsubVisible,
+  booksVisible,
+}: {
+  ytdlsubVisible: boolean;
+  booksVisible: boolean;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  // ADR-038 / DESIGN-017 D-08 — Movies | TV | Music | Peloton | YouTube | My Fixes: the ytdl-sub
-  // tabs sit after Music ONLY when the caller can see the `ytdlsub` section, and My Fixes is always
-  // LAST. The active-tab resolution validates against the VISIBLE set, so a hidden caller who
-  // deep-links `?tab=peloton` falls back to Movies (never a phantom tab).
-  const tabs = [...MEDIA_TABS, ...(ytdlsubVisible ? YTDLSUB_TABS : []), MY_FIXES_TAB];
+  // ADR-038 / ADR-046 — Movies | TV | Music | Peloton | YouTube | Books | Audiobooks | Comics | My Fixes:
+  // the ytdl-sub tabs sit after Music (when the `ytdlsub` section is visible), the Books tabs after them
+  // (when the `books` section is visible), and My Fixes is always LAST. The active-tab resolution validates
+  // against the VISIBLE set, so a hidden caller who deep-links a gated tab falls back to Movies.
+  const tabs = [
+    ...MEDIA_TABS,
+    ...(ytdlsubVisible ? YTDLSUB_TABS : []),
+    ...(booksVisible ? BOOKS_TABS : []),
+    MY_FIXES_TAB,
+  ];
   const rawTab = searchParams.get('tab');
   const active: TabKey = tabs.some((t) => t.key === rawTab) ? (rawTab as TabKey) : 'movies';
   const activeTab = tabs.find((t) => t.key === active) ?? MEDIA_TABS[0];
@@ -224,6 +254,15 @@ function LibraryContent({ ytdlsubVisible }: { ytdlsubVisible: boolean }) {
           <YtdlsubBrowser
             key={activeTab.key}
             library={activeTab.key as YtdlsubTabKey}
+            label={activeTab.label}
+          />
+        ) : activeTab.key === 'books' ||
+          activeTab.key === 'audiobooks' ||
+          activeTab.key === 'comics' ? (
+          // ADR-046 — the Books Library sub-tabs (read the app-owned books_items ledger; poster grid).
+          <BooksBrowser
+            key={activeTab.key}
+            mediaKind={BOOKS_TAB_KINDS[activeTab.key as BooksTabKey]}
             label={activeTab.label}
           />
         ) : (
@@ -562,10 +601,16 @@ function MediaBrowser({ arrKind, label }: { arrKind: ArrKindName; label: string 
 // The client shell — the `/library` server component (page.tsx) resolves the caller's `ytdlsub` section
 // visibility server-side (ADR-038 C-05) and passes it down so the Peloton/YouTube tabs render only when
 // permitted. Wrapped in Suspense because the tab state is driven by useSearchParams (App Router).
-export function LibraryClient({ ytdlsubVisible }: { ytdlsubVisible: boolean }) {
+export function LibraryClient({
+  ytdlsubVisible,
+  booksVisible,
+}: {
+  ytdlsubVisible: boolean;
+  booksVisible: boolean;
+}) {
   return (
     <Suspense fallback={<p className="muted">Loading…</p>}>
-      <LibraryContent ytdlsubVisible={ytdlsubVisible} />
+      <LibraryContent ytdlsubVisible={ytdlsubVisible} booksVisible={booksVisible} />
     </Suspense>
   );
 }

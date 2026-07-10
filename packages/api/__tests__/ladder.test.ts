@@ -25,6 +25,8 @@ const member: SessionUser = {
       bulletin: 'read_only',
       metrics: 'disabled',
       ytdlsub: 'disabled',
+      // ADR-046 — books ships Admin-only (disabled for non-admins).
+      books: 'disabled',
     },
     trashActions: [],
     messageActions: [],

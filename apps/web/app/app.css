@@ -1584,6 +1584,16 @@ input[aria-invalid='true'] {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* ADR-046 (PLAN-023) — the Books wall's author line: one muted, ellipsized line under the title so
+   varying-length authors never grow the card (heights vary statically only — ADR-015-safe). */
+.poster-card__body .media-card__subtitle {
+  font-size: 11.5px;
+  line-height: 1.3;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 /* Slimmer badges on the dense grid: smaller type + tighter padding, one non-wrapping row. */
 .poster-card__body .media-card__badges {
   gap: 5px;

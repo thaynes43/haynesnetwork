@@ -21,12 +21,15 @@ import {
 } from '@hnet/domain';
 import { prometheusClientFromEnv } from '@hnet/metrics';
 import { assertAuthentikEnv, authentikReadClient } from '@hnet/authentik';
+import { assertBooksEnv } from '@hnet/books';
+import { booksReadClients } from '@hnet/books/read';
 import { buildMetadataSourceClients, buildOptionalMaintainerrRead, buildSyncClients, requireClient } from '../clients';
 import { openWebUiClientFromEnv } from '../openwebui';
+import type { BooksSyncBundle } from '../books';
 import { createConsoleLogger } from '../logger';
 import { runSync } from '../orchestrator';
 
-const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy|notify-outbox|smart-alerts|poster-guard|ai-usage-sync|authentik-users [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
+const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy|notify-outbox|smart-alerts|poster-guard|ai-usage-sync|authentik-users|books-sync [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
 
   --mode=full              item-list upsert + tombstone pass per *arr (+ Seerr requests)
   --mode=incremental       history/since cursor polling per *arr (+ Seerr requests)
@@ -123,7 +126,8 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
       mode === 'smart-alerts' ||
       mode === 'poster-guard' ||
       mode === 'ai-usage-sync' ||
-      mode === 'authentik-users') &&
+      mode === 'authentik-users' ||
+      mode === 'books-sync') &&
     sources.length > 0
   ) {
     throw new CliUsageError(`--source is not valid for --mode=${mode}`);
@@ -138,7 +142,8 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
     mode === 'smart-alerts' ||
     mode === 'poster-guard' ||
     mode === 'ai-usage-sync' ||
-    mode === 'authentik-users'
+    mode === 'authentik-users' ||
+    mode === 'books-sync'
       ? []
       : mode === 'metadata-refresh'
         ? [...ARR_KINDS]
@@ -239,6 +244,22 @@ async function main(): Promise<number> {
           return authentikReadClient({ baseUrl: cfg.baseUrl, token: cfg.token });
         })()
       : undefined;
+  // ADR-046 / DESIGN-024 — the read-only Kavita + Audiobookshelf clients the `books-sync` mode pages
+  // (KAVITA_URL/AUDIOBOOKSHELF_URL default to the in-cluster Service DNS; throws BooksConfigError if a
+  // password is absent). Read-only — never a write to the book servers.
+  const books: BooksSyncBundle | undefined =
+    args.mode === 'books-sync'
+      ? (() => {
+          const cfg = assertBooksEnv();
+          const clients = booksReadClients(cfg);
+          return {
+            kavita: clients.kavita,
+            audiobookshelf: clients.audiobookshelf,
+            kavitaPublicUrl: cfg.kavita.publicUrl,
+            audiobookshelfPublicUrl: cfg.audiobookshelf.publicUrl,
+          };
+        })()
+      : undefined;
 
   logger.info('sync starting', {
     mode: args.mode,
@@ -266,6 +287,7 @@ async function main(): Promise<number> {
     ...(plex ? { plex } : {}),
     ...(openWebUi ? { openWebUi } : {}),
     ...(authentik ? { authentik } : {}),
+    ...(books ? { books } : {}),
     logger,
   });
 

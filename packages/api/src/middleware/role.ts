@@ -75,6 +75,14 @@ export const metricsProcedure = sectionProcedure('metrics', 'read_only');
 export const ytdlsubProcedure = sectionProcedure('ytdlsub', 'read_only');
 
 /**
+ * ADR-046 C-04 (PLAN-023 Books & Audiobooks) — the books rung: authed AND the caller can SEE the `books`
+ * section (≥ read_only). The section defaults to `disabled` (ships Admin-only; a role row opts others in),
+ * so this gate is the visibility check for the Books/Audiobooks/Comics Library sub-tabs AND the book-cover
+ * proxy. Server-authoritative (AC-13) — never client-hidden only.
+ */
+export const booksProcedure = sectionProcedure('books', 'read_only');
+
+/**
  * ADR-025 errata (2026-07-08, owner-directed) — GLOBAL SAVE IS A SUPERSET OF THE WINDOWED RESCUE.
  * Holding `save_exclude` (the anytime whitelist power — "Save items, anytime") IMPLIES
  * `save_leaving_soon` (the narrow "Save during a Leaving-Soon window" grant): if you can whitelist

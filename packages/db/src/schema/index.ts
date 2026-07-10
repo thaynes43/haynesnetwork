@@ -61,3 +61,6 @@ export * from './ai-usage-chats';
 export * from './authentik-users';
 export * from './pending-role-assignments';
 export * from './authentik-group-audit';
+// ADR-046 / DESIGN-024 (PLAN-023) — the books LEDGER: the synced Kavita + Audiobookshelf mirror the
+// Library Books/Audiobooks/Comics walls read (books-sync mode). Guarded single-writer table (syncBooks).
+export * from './books-items';

@@ -87,6 +87,28 @@ function TautulliIcon(props: SvgProps): ReactElement {
   );
 }
 
+/** kavita — reading: an open book. */
+function KavitaIcon(props: SvgProps): ReactElement {
+  return (
+    <svg {...frame(props)}>
+      <path d="M12 6c-1.8-1.2-4-1.8-6.5-1.8V17c2.5 0 4.7.6 6.5 1.8" />
+      <path d="M12 6c1.8-1.2 4-1.8 6.5-1.8V17c-2.5 0-4.7.6-6.5 1.8" />
+      <path d="M12 6v12.8" />
+    </svg>
+  );
+}
+
+/** audiobookshelf — listening: headphones. */
+function AudiobookshelfIcon(props: SvgProps): ReactElement {
+  return (
+    <svg {...frame(props)}>
+      <path d="M4 13v-1a8 8 0 0 1 16 0v1" />
+      <rect x="3" y="13" width="4" height="6" rx="1.5" />
+      <rect x="17" y="13" width="4" height="6" rx="1.5" />
+    </svg>
+  );
+}
+
 /** Fallback tile glyph for null/unknown keys (DESIGN-003 D-10). */
 export function GenericAppIcon(props: SvgProps): ReactElement {
   return (
@@ -106,6 +128,8 @@ export const ICON_COMPONENTS: Record<IconKey, (props: SvgProps) => ReactElement>
   'open-webui': OpenWebuiIcon,
   paperless: PaperlessIcon,
   tautulli: TautulliIcon,
+  kavita: KavitaIcon,
+  audiobookshelf: AudiobookshelfIcon,
 };
 
 /**

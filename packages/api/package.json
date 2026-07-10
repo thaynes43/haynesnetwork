@@ -18,6 +18,7 @@
   "dependencies": {
     "@hnet/arr": "workspace:*",
     "@hnet/auth": "workspace:*",
+    "@hnet/books": "workspace:*",
     "@hnet/db": "workspace:*",
     "@hnet/domain": "workspace:*",
     "@hnet/metrics": "workspace:*",
