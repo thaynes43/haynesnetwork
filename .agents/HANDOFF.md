@@ -4,7 +4,34 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-- **Last updated:** 2026-07-10 — **PLAN-024 Peloton poster guard COMPLETE, live (v0.36.0).** The k8plex
+- **Last updated:** 2026-07-10 — **PLAN-026 Authentik user/role PORTAL COMPLETE, live (v0.38.0).**
+  haynesnetwork now **writes Authentik group membership** — a role change propagates to every
+  Authentik-backed app (Open WebUI today; Kavita/ABS later), for **every** Authentik identity incl.
+  Plex-external + never-logged-in. Two import-confined write surfaces (`@hnet/authentik/write`,
+  `@hnet/openwebui/write`, arr-write-guard extended) driven only by the domain orchestrators
+  (`provisionSyncedTier` / `assignRolePortal`). **Roles gain a `synced_tier` flag** — creating one
+  auto-creates the Authentik group (name = role lowercased) + the same-named OWUI group + an owned-groups
+  allowlist entry. **THE GUARDRAIL:** membership is written ONLY for allowlisted owned groups
+  (`AuthentikGroupNotOwnedError` before any external call) — never flows/stages/policies/providers/brands
+  or `mfa-exempt`/`authentik Admins`; **group deletion is out of scope**. Assigning a role to an app user
+  flips membership + `assignRole`; assigning to an Authentik-only identity writes the group + parks a
+  **`pending_role_assignments`** row consumed on first login (keyed by **email** — the OIDC sub is a
+  `hashed_user_id`). Exclusive across owned tier groups. External writes append a `authentik_group_audit`
+  ledger (plex_share_audit class); local changes are same-tx `permission_audit`. A `sync-authentik-users`
+  CronJob (`7,27,47 * * * *`) mirrors the directory for `/admin/users` (source badges + role assignment);
+  `/admin/roles` gains the synced-tier toggle. **Dedicated Authentik service account `hnet-portal`**
+  (user pk 246; RBAC role `hnet-portal` = view_user/view_group/add_group/add_user_to_group/
+  remove_user_from_group — **least-privilege verified**: users/groups 200, providers/flows 403; use an
+  **`intent:api`** token, NOT the service_account `app_password` one) → cluster secret
+  **`haynesnetwork-authentik-token`** (`AUTHENTIK_API_TOKEN`; the app NEVER uses the homepage token).
+  **Acceptance a/b/c/d PASSED on PROD:** Friends synced tier created (Authentik + OWUI `friends`);
+  mikebi12 (pk 109) → `friends` (left `family`) + pending row + audit; hnet-e2e temp-in-friends → headless
+  OIDC → OWUI **"Adding user to group friends"** → cleaned up; mfa-exempt write refused. Docs: **ADR-045 /
+  DESIGN-023 / OPS-011 / PRD R-144..R-150 / DDD T-129..T-135**; migration 0036; PR #183 → v0.38.0;
+  haynes-ops `20640caa`. **Owner TODO (nicety):** migrate `AUTHENTIK_API_TOKEN` into 1Password + the
+  ExternalSecret (currently a cluster-created secret, the `haynesnetwork-webhook` precedent). Prior
+  milestone — PLAN-024 Peloton poster guard (below).
+- **Recent:** 2026-07-10 — **PLAN-024 Peloton poster guard COMPLETE, live (v0.36.0).** The k8plex
   **HOps Peloton** posters are now durable: a one-time restore reapplied all 88 show/season posters, and a
   new **`poster-guard`** `@hnet/sync` mode (hourly haynes-ops CronJob `sync-poster-guard`, `37 * * * *`)
   **re-applies only DRIFTED posters** and records each in an append-only **`poster_guard_applications`**
