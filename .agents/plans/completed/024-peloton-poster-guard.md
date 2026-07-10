@@ -1,8 +1,14 @@
 # PLAN-024: Peloton poster guard (durable override art + drift-restore)
 
-- **Status:** In progress (2026-07-10) — **Part A executed live**; Part B built + merge-gate green; deploy +
-  live drift-test pending. Two parts: (A) one-time restore of all HOps Peloton posters on k8plex NOW; (B)
-  the durable `poster-guard` sync mode that keeps them applied. Answers PLAN-022 Q-01 / PRD Q-06 / ADR-038 C-09.
+- **Status:** Completed (2026-07-10) — **shipped v0.36.0** (PR #175 → release PR #174; deployed via
+  haynes-ops `d5ab51d0` — image bump + `sync-poster-guard` CronJob `37 * * * *`; Flux-reconciled;
+  `haynesnetwork-main` on v0.36.0). **LIVE-validated on prod k8plex:** the guard's baseline run reported
+  `found · checked 88 · reapplied 88 (initial) · unmapped 6 · missingAssets []`; an immediate re-run was
+  idempotent (`inSync 88 · reapplied 0`); the **drift test** clobbered Bike Bootcamp S30 (rk 448161) with
+  45-minutes.png and the guard restored the correct 30-minute art (byte-identical sha256) and wrote a
+  `poster_guard_applications` **`drift`** row (previous_thumb = the clobber, applied_thumb = the restore);
+  ledger histogram = **88 initial + 1 drift = 89**. Part A restored all 88 posters live earlier the same
+  day. Answers PLAN-022 Q-01 / PRD Q-06 / ADR-038 C-09.
 - **Satisfies:** PRD R-137..R-140; new ADR-043 (durable asset home + guard design), DESIGN-021, OPS-010;
   glossary T-124..T-125; migration 0034 (`poster_guard_applications` + `SYNC_RUN_KINDS += poster-guard`).
 - **Depends on:** PLAN-022 (the direct-Plex read client + ytdl-sub surface) — landed. No plan blocks this.
@@ -47,11 +53,13 @@ so a later move to DB/NFS is trivial.
 
 **Verification:** merge gate green (lint, lint:css, typecheck, test, build). Unit + embedded-Postgres tests
 cover the pure decision, the write surface, the mapping/asset loader, and the full guard (initial / no-drift
-no-op / drift-restore / asset-updated / missing-asset / library-absent). LIVE (pending): reset one season to
-a prior gallery image, run the guard, assert drift detected + asset restored + a `drift` ledger row.
+no-op / drift-restore / asset-updated / missing-asset / library-absent). **LIVE (done):** baseline run
+reapplied 88, re-run idempotent (0), drift test detected + restored one season (byte-identical) + wrote a
+`drift` ledger row — see Status.
 
-**Deploy:** haynes-ops image bump + one `sync-poster-guard` CronJob (`37 * * * *`, mirrors
-`sync-smart-alerts`, `--mode=poster-guard`, `envFrom: haynesnetwork-secret`). No other haynes-ops change.
+**Deploy (done):** haynes-ops `d5ab51d0` — image bump to v0.36.0 + one `sync-poster-guard` CronJob
+(`37 * * * *`, mirrors `sync-smart-alerts`, `--mode=poster-guard`, `envFrom: haynesnetwork-secret`). No
+other haynes-ops change. Flux-reconciled; rollout confirmed.
 
 ## Owner notes
 
