@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.38.0](https://github.com/thaynes43/haynesnetwork/compare/v0.37.0...v0.38.0) (2026-07-10)
+
+
+### Features
+
+* haynesnetwork as the Authentik user/role portal — write-back group membership + synced tiers (PLAN-026) ([#183](https://github.com/thaynes43/haynesnetwork/issues/183)) ([4a47518](https://github.com/thaynes43/haynesnetwork/commit/4a47518f20c41c0e97e22555d9a145850cd75474))
+
 ## [0.37.0](https://github.com/thaynes43/haynesnetwork/compare/v0.36.2...v0.37.0) (2026-07-10)
 
 
