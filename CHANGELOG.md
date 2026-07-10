@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.2](https://github.com/thaynes43/haynesnetwork/compare/v0.36.1...v0.36.2) (2026-07-10)
+
+
+### Bug Fixes
+
+* Metrics Overview admin can edit WAN upload/download capacity (PLAN-017 gap) ([#179](https://github.com/thaynes43/haynesnetwork/issues/179)) ([827ecbb](https://github.com/thaynes43/haynesnetwork/commit/827ecbb61f749114050c55a1339b87e0df4c1f31))
+
 ## [0.36.1](https://github.com/thaynes43/haynesnetwork/compare/v0.36.0...v0.36.1) (2026-07-10)
 
 
