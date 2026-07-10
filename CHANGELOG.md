@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.35.0](https://github.com/thaynes43/haynesnetwork/compare/v0.34.0...v0.35.0) (2026-07-10)
+
+
+### Features
+
+* ytdl-sub UX package — grid-size cached posters (ADR-041), tab order, read-only series drill-in ([#168](https://github.com/thaynes43/haynesnetwork/issues/168)) ([067586f](https://github.com/thaynes43/haynesnetwork/commit/067586fd68c89ac1c78bef9c5fb6e5b1be3ef13f))
+
 ## [0.34.0](https://github.com/thaynes43/haynesnetwork/compare/v0.33.0...v0.34.0) (2026-07-10)
 
 
