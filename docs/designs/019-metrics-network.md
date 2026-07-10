@@ -128,6 +128,12 @@ admin view at desktop + 390px (dark/light) — the sanctioned hermetic substitut
   transits the process; one missed key leaks. The allow-list-by-construction module is stronger.
 - **A dedicated Network capacity setting** — rejected: reuse ADR-037 C-06; one denominator across tabs.
 - **Embedding Grafana panels** — rejected (ADR-037 C-09): deep-link only; Grafana is LAN-only + verbose.
+
+> **Amendment (2026-07-10) — the per-group Grafana deep-links are ADMIN-ONLY (DESIGN-016 D-07).** The
+> board URLs are LAN-only, so `metrics.network` attaches the `grafana` link object (`{ sites, uap, usw }`)
+> ONLY for an admin caller (`includeGrafanaLinks: role.isAdmin`), orthogonal to the `infra` level seam — a
+> `full` non-admin sees the infra tables but NO Grafana URL. The tab renders each `GrafanaLink` (and the
+> "+N more in Grafana" note) only when its `href` is present (reflow-free, ADR-015).
 - **Per-client "top talkers" panel** — rejected permanently: that IS the privacy line (PLAN-020 out of scope).
 
 ## Test strategy

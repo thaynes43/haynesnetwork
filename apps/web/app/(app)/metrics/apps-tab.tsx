@@ -12,13 +12,16 @@ import { formatCount, formatMs, formatPerHour } from '@/lib/metrics';
 import { formatCapacity } from '@/lib/storage';
 
 type AppsMetrics = RouterOutputs['metrics']['apps'];
+type AppsGrafana = NonNullable<AppsMetrics['grafana']>;
 
-/** Grafana stays the LAN power tool — deep-linked, never embedded (ADR-030 C-04 / ADR-037 C-09). */
-const GRAFANA_URL = 'https://grafana.haynesops.com';
-const BOARD_LIBRARY = `${GRAFANA_URL}/d/arr-library-overview`;
-const BOARD_DOWNLOADS = `${GRAFANA_URL}/d/downloads-clients-indexers`;
+// Grafana stays the LAN power tool — deep-linked, never embedded (ADR-030 C-04 / ADR-037 C-09). The
+// board URLs resolve ONLY on the owner's LAN/VPN, so they are ADMIN-ONLY (DESIGN-016 D-07): the server
+// sends `data.grafana` only to an admin caller, so `href` is undefined for a member and the per-group
+// link is simply not rendered. Reflow-free (ADR-015) — the link's presence is fixed for the session, so
+// nothing appears/disappears on an interaction.
 
-function GrafanaLink({ href, testId }: { href: string; testId: string }) {
+function GrafanaLink({ href, testId }: { href?: string; testId: string }) {
+  if (!href) return null;
   return (
     <a
       className="metrics-group__link muted"
@@ -41,7 +44,7 @@ function GroupCard({
   children,
 }: {
   title: string;
-  href: string;
+  href?: string;
   linkTestId: string;
   testId: string;
   unavailable: boolean;
@@ -68,11 +71,11 @@ function num(n: number | null): string {
   return formatCount(n);
 }
 
-function CollectionGroup({ group }: { group: AppsMetrics['collection'] }) {
+function CollectionGroup({ group, href }: { group: AppsMetrics['collection']; href?: string }) {
   return (
     <GroupCard
       title="Collection"
-      href={BOARD_LIBRARY}
+      href={href}
       linkTestId="metrics-apps-collection-grafana"
       testId="metrics-apps-collection"
       unavailable={group.unavailable}
@@ -105,11 +108,11 @@ function CollectionGroup({ group }: { group: AppsMetrics['collection'] }) {
   );
 }
 
-function PipelineGroup({ group }: { group: AppsMetrics['pipeline'] }) {
+function PipelineGroup({ group, href }: { group: AppsMetrics['pipeline']; href?: string }) {
   return (
     <GroupCard
       title="Acquisition pipeline"
-      href={BOARD_LIBRARY}
+      href={href}
       linkTestId="metrics-apps-pipeline-grafana"
       testId="metrics-apps-pipeline"
       unavailable={group.unavailable}
@@ -148,11 +151,11 @@ function formatSpeed(bps: number | null): string {
   return `${formatCapacity(bps)}/s`;
 }
 
-function DownloadsGroup({ group }: { group: AppsMetrics['downloads'] }) {
+function DownloadsGroup({ group, href }: { group: AppsMetrics['downloads']; href?: string }) {
   return (
     <GroupCard
       title="Download clients"
-      href={BOARD_DOWNLOADS}
+      href={href}
       linkTestId="metrics-apps-downloads-grafana"
       testId="metrics-apps-downloads"
       unavailable={group.unavailable}
@@ -189,11 +192,11 @@ function DownloadsGroup({ group }: { group: AppsMetrics['downloads'] }) {
   );
 }
 
-function IndexersGroup({ group }: { group: AppsMetrics['indexers'] }) {
+function IndexersGroup({ group, href }: { group: AppsMetrics['indexers']; href?: string }) {
   return (
     <GroupCard
       title="Indexers · Prowlarr"
-      href={BOARD_DOWNLOADS}
+      href={href}
       linkTestId="metrics-apps-indexers-grafana"
       testId="metrics-apps-indexers"
       unavailable={group.unavailable}
@@ -256,19 +259,24 @@ export function AppsTab({ active }: { active: boolean; metricsLevel: MetricsLeve
     );
   }
 
+  // Admin-only (D-07): `data.grafana` is present only for an admin caller — members get no board links.
+  const g: AppsGrafana | undefined = data.grafana;
+
   return (
     <section className="metrics-overview" data-testid="metrics-apps">
-      <CollectionGroup group={data.collection} />
-      <PipelineGroup group={data.pipeline} />
-      <DownloadsGroup group={data.downloads} />
-      <IndexersGroup group={data.indexers} />
-      <p className="muted metrics-overview__footnote">
-        These are curated highlights. Full app dashboards live in{' '}
-        <a href={BOARD_LIBRARY} target="_blank" rel="noreferrer" data-testid="metrics-apps-grafana-link">
-          Grafana
-        </a>{' '}
-        (LAN only).
-      </p>
+      <CollectionGroup group={data.collection} href={g?.library} />
+      <PipelineGroup group={data.pipeline} href={g?.library} />
+      <DownloadsGroup group={data.downloads} href={g?.downloads} />
+      <IndexersGroup group={data.indexers} href={g?.downloads} />
+      {g ? (
+        <p className="muted metrics-overview__footnote">
+          These are curated highlights. Full app dashboards live in{' '}
+          <a href={g.library} target="_blank" rel="noreferrer" data-testid="metrics-apps-grafana-link">
+            Grafana
+          </a>{' '}
+          (LAN only).
+        </p>
+      ) : null}
     </section>
   );
 }

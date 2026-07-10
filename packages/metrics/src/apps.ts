@@ -11,6 +11,7 @@
 // empty so a future user-aware panel slots in without a refactor (D-05).
 import type { PromVectorSample, PrometheusReader } from './client';
 import { firstScalar } from './overview';
+import { appsGrafanaLinks, type AppsGrafanaLinks } from './grafana';
 
 // ── PromQL (verified live 2026-07-10) ─────────────────────────────────────────────────────────────
 /** The three *arr library apps, in wall order (Movies, TV, Music). */
@@ -162,6 +163,13 @@ export interface AppsMetrics {
    * a future requester panel a slot-in, not a refactor.
    */
   requesterActivity?: RequesterActivityRow[];
+  /**
+   * ADMIN-ONLY (DESIGN-016 D-07). The per-group Grafana board deep-links (LAN-only URLs). Present ONLY
+   * when `includeGrafanaLinks` (the caller is an admin); OMITTED for every non-admin caller at BOTH
+   * levels — a member/family response never carries a Grafana URL. The UI renders links only when this
+   * key is present.
+   */
+  grafana?: AppsGrafanaLinks;
 }
 
 // ── helpers (mirror overview.ts's degrade posture) ────────────────────────────────────────────────
@@ -206,6 +214,8 @@ export interface GetAppsMetricsInput {
   prometheus: PrometheusReader;
   /** level === 'full' — gates the present-but-empty full-only branch (ADR-037 C-03 / D-05). */
   includeUserAware: boolean;
+  /** role.isAdmin — gates the LAN-only Grafana deep-links into the payload (DESIGN-016 D-07). */
+  includeGrafanaLinks: boolean;
 }
 
 export async function getAppsMetrics(input: GetAppsMetricsInput): Promise<AppsMetrics> {
@@ -222,6 +232,8 @@ export async function getAppsMetrics(input: GetAppsMetricsInput): Promise<AppsMe
     // No user-aware *arr/downloader series today — the full-only branch is present-but-empty (D-05).
     metrics.requesterActivity = [];
   }
+  // Admin-only: the LAN-only Grafana deep-links are attached ONLY for an admin caller (D-07).
+  if (input.includeGrafanaLinks) metrics.grafana = appsGrafanaLinks();
   return metrics;
 }
 

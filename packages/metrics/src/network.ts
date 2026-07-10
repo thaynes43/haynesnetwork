@@ -30,6 +30,7 @@ import {
   WAN_UPLOAD_BYTES_QUERY,
   type NetworkOverview,
 } from './overview';
+import { networkGrafanaLinks, type NetworkGrafanaLinks } from './grafana';
 
 // ── PromQL (allow-listed; live-verified 2026-07-10) ─────────────────────────────────────────────────
 // Infra-device performance — each carries `name` (the UniFi device label) + `type` (udm/usw/uap/…).
@@ -144,6 +145,12 @@ export interface NetworkMetrics {
    * never-fetch/never-serialize seam ADR-037 C-03 established. NEVER contains a client series.
    */
   infra?: NetworkInfra;
+  /**
+   * ADMIN-ONLY (DESIGN-016 D-07). The per-group Grafana board deep-links (LAN-only URLs). Present ONLY
+   * when `includeGrafanaLinks` (the caller is an admin); OMITTED for every non-admin caller at BOTH
+   * levels — orthogonal to the `infra` level seam (a `full` non-admin sees `infra` but no Grafana URL).
+   */
+  grafana?: NetworkGrafanaLinks;
 }
 
 const BYTES_PER_SEC_TO_MBPS = 8 / 1_000_000;
@@ -217,6 +224,8 @@ export interface GetNetworkMetricsInput {
   /** level === 'full' — gates whether the infra grain (device perf + WAN health + rollups) is fetched
    *  AND serialized. A `limited` caller never issues those queries and never receives the `infra` key. */
   includeInfra: boolean;
+  /** role.isAdmin — gates the LAN-only Grafana deep-links into the payload (DESIGN-016 D-07). */
+  includeGrafanaLinks: boolean;
   /** Test seam — the history window (days). Defaults to 7. */
   historyDays?: number;
   /** Test seam — "now" in unix seconds. Defaults to Date.now(). */
@@ -242,6 +251,8 @@ export async function getNetworkMetrics(input: GetNetworkMetricsInput): Promise<
 
   const metrics: NetworkMetrics = { level, wan, history };
   if (infra !== null) metrics.infra = infra;
+  // Admin-only: the LAN-only Grafana deep-links are attached ONLY for an admin caller (D-07).
+  if (input.includeGrafanaLinks) metrics.grafana = networkGrafanaLinks();
   return metrics;
 }
 

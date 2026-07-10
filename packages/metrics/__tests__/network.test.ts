@@ -145,6 +145,7 @@ describe('network privacy invariant — the allow-listed PromQL module (ADR-039 
       uploadCapacityMbps: 300,
       downloadCapacityMbps: 2256,
       includeInfra: true,
+      includeGrafanaLinks: false,
       nowSec: 1_700_007_200,
     });
     // Only INFRASTRUCTURE device names appear (UniFi gear); every one maps to an infra category.
@@ -167,6 +168,7 @@ describe('getNetworkMetrics — the disjoint limited/full shape (ADR-039 C-03)',
       uploadCapacityMbps: 300,
       downloadCapacityMbps: 2256,
       includeInfra: false,
+      includeGrafanaLinks: false,
       nowSec: 1_700_007_200,
     });
     expect(limited.level).toBe('limited');
@@ -186,6 +188,7 @@ describe('getNetworkMetrics — the disjoint limited/full shape (ADR-039 C-03)',
       uploadCapacityMbps: 300,
       downloadCapacityMbps: 2256,
       includeInfra: true,
+      includeGrafanaLinks: false,
       nowSec: 1_700_007_200,
     });
     expect(full.level).toBe('full');
@@ -218,6 +221,7 @@ describe('getNetworkMetrics — the disjoint limited/full shape (ADR-039 C-03)',
       uploadCapacityMbps: 300,
       downloadCapacityMbps: 2256,
       includeInfra: true,
+      includeGrafanaLinks: false,
       nowSec: 1_700_007_200,
     });
     expect(out.wan.unavailable).toBe(true);
@@ -225,6 +229,37 @@ describe('getNetworkMetrics — the disjoint limited/full shape (ADR-039 C-03)',
     expect(out.infra!.devices).toEqual([]);
     expect(out.infra!.wanHealth.unavailable).toBe(true);
     expect(out.infra!.site.unavailable).toBe(true);
+  });
+
+  // DESIGN-016 D-07 — the LAN-only Grafana board links are attached ONLY when includeGrafanaLinks (admin),
+  // and are OMITTED otherwise, independent of the infra (level) seam.
+  it('attaches the admin-only Grafana links when includeGrafanaLinks, omits them otherwise', async () => {
+    const { reader } = stubReader(LIVE_INSTANT, LIVE_RANGE);
+    const admin = await getNetworkMetrics({
+      prometheus: reader,
+      uploadCapacityMbps: 300,
+      downloadCapacityMbps: 2256,
+      includeInfra: true,
+      includeGrafanaLinks: true,
+      nowSec: 1_700_007_200,
+    });
+    expect(admin.grafana).toEqual({
+      sites: 'https://grafana.haynesops.com/d/9WaGWZaZk',
+      uap: 'https://grafana.haynesops.com/d/g5wFWqxZk',
+      usw: 'https://grafana.haynesops.com/d/FsfxpWaZz',
+    });
+
+    // A full (includeInfra) NON-admin caller still gets NO Grafana key.
+    const fullMember = await getNetworkMetrics({
+      prometheus: reader,
+      uploadCapacityMbps: 300,
+      downloadCapacityMbps: 2256,
+      includeInfra: true,
+      includeGrafanaLinks: false,
+      nowSec: 1_700_007_200,
+    });
+    expect('grafana' in fullMember).toBe(false);
+    expect(fullMember.grafana).toBeUndefined();
   });
 });
 

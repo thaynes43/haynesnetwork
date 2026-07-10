@@ -18,15 +18,15 @@ type NvmePool = HardwareMetrics['pools'][number];
 type DriveHealth = HardwareMetrics['drives'][number];
 type NodeLoad = HardwareMetrics['nodes'][number];
 type PveHost = HardwareMetrics['pveHosts'][number];
+type HardwareGrafana = NonNullable<HardwareMetrics['grafana']>;
 
-/** Grafana stays the power tool — deep-linked, never embedded (ADR-030 C-04 / ADR-037 C-09). */
-const GRAFANA_URL = 'https://grafana.haynesops.com';
-const BOARD_NAS = `${GRAFANA_URL}/d/nas-haynestower`; // Unraid NAS — HaynesTower (storage, disks & SMART)
-const BOARD_SMART = `${GRAFANA_URL}/d/f8f249a0-be78-41b1-97fe-8d0a92a71b93`; // Dashboard for smartctl_exporter
-const BOARD_NODES = `${GRAFANA_URL}/d/rYdddlPWk`; // Node Exporter Full
-const BOARD_PVE = `${GRAFANA_URL}/explore`; // no dedicated Proxmox board yet (DESIGN-020 Q-02)
+// Grafana stays the power tool — deep-linked, never embedded (ADR-030 C-04 / ADR-037 C-09). The board
+// URLs resolve ONLY on the owner's LAN/VPN, so they are ADMIN-ONLY (DESIGN-016 D-07): the server sends
+// `data.grafana` only to an admin caller, so `href` is undefined for a member and the per-group link is
+// simply not rendered. Reflow-free (ADR-015) — presence is fixed for the session, nothing toggles.
 
-function GrafanaLink({ href, testId }: { href: string; testId: string }) {
+function GrafanaLink({ href, testId }: { href?: string; testId: string }) {
+  if (!href) return null;
   return (
     <a className="metrics-group__link muted" href={href} target="_blank" rel="noreferrer" data-testid={testId}>
       Open in Grafana ↗
@@ -43,7 +43,7 @@ function GroupCard({
   className,
 }: {
   title: string;
-  href: string;
+  href?: string;
   linkTestId: string;
   testId: string;
   children: React.ReactNode;
@@ -113,7 +113,7 @@ function StatusPill({ health }: { health: DriveHealth['health'] }) {
 }
 
 /** NVMe endurance pool card — the acceptance panel (per-pool framing + wear + projection). */
-function PoolCard({ pool }: { pool: NvmePool }) {
+function PoolCard({ pool, href }: { pool: NvmePool; href?: string }) {
   return (
     <section
       className={`metrics-group metrics-pool metrics-pool--${pool.framing}`}
@@ -126,7 +126,7 @@ function PoolCard({ pool }: { pool: NvmePool }) {
             {pool.framing === 'critical' ? 'critical' : 'expendable'}
           </span>
         </h3>
-        <GrafanaLink href={BOARD_NAS} testId={`metrics-hw-pool-grafana-${pool.name}`} />
+        <GrafanaLink href={href} testId={`metrics-hw-pool-grafana-${pool.name}`} />
       </div>
       <p className="metrics-pool__topology">{pool.topology}</p>
       <p className="metrics-pool__status" data-testid={`metrics-hw-pool-status-${pool.name}`}>
@@ -303,13 +303,16 @@ export function HardwareTab({ active }: { active: boolean; metricsLevel: Metrics
     );
   }
 
+  // Admin-only (D-07): `data.grafana` is present only for an admin caller — members get no board links.
+  const g: HardwareGrafana | undefined = data.grafana;
+
   return (
     <section className="metrics-overview" data-testid="metrics-hardware">
       {/* NVMe endurance — the headline (R-129). */}
       {data.pools.length > 0 ? (
         <>
           {data.pools.map((pool) => (
-            <PoolCard key={pool.name} pool={pool} />
+            <PoolCard key={pool.name} pool={pool} href={g?.nas} />
           ))}
         </>
       ) : (
@@ -321,7 +324,7 @@ export function HardwareTab({ active }: { active: boolean; metricsLevel: Metrics
       {/* Drive health — every reporting SMART device (asleep array disks are simply absent). */}
       <GroupCard
         title="Drive health"
-        href={BOARD_SMART}
+        href={g?.smart}
         linkTestId="metrics-hw-drives-grafana"
         testId="metrics-hw-drives"
       >
@@ -338,7 +341,7 @@ export function HardwareTab({ active }: { active: boolean; metricsLevel: Metrics
       </GroupCard>
 
       {/* Node load — cluster + NAS. */}
-      <GroupCard title="Node load" href={BOARD_NODES} linkTestId="metrics-hw-nodes-grafana" testId="metrics-hw-nodes">
+      <GroupCard title="Node load" href={g?.nodes} linkTestId="metrics-hw-nodes-grafana" testId="metrics-hw-nodes">
         {data.nodes.length > 0 ? (
           <div className="metrics-overview__grid">
             {data.nodes.map((node) => (
@@ -355,7 +358,7 @@ export function HardwareTab({ active }: { active: boolean; metricsLevel: Metrics
       {/* Proxmox showcase — host tiles expand in place to their VMs (ADR-015 allowed exception). */}
       <GroupCard
         title="Proxmox hosts"
-        href={BOARD_PVE}
+        href={g?.pve}
         linkTestId="metrics-hw-pve-grafana"
         testId="metrics-hw-pve"
       >
@@ -372,13 +375,15 @@ export function HardwareTab({ active }: { active: boolean; metricsLevel: Metrics
         )}
       </GroupCard>
 
-      <p className="muted metrics-overview__footnote">
-        Curated highlights — the verbose disk, node, and Proxmox dashboards live in{' '}
-        <a href={BOARD_NAS} target="_blank" rel="noreferrer" data-testid="metrics-hw-grafana-link">
-          Grafana
-        </a>
-        .
-      </p>
+      {g ? (
+        <p className="muted metrics-overview__footnote">
+          Curated highlights — the verbose disk, node, and Proxmox dashboards live in{' '}
+          <a href={g.nas} target="_blank" rel="noreferrer" data-testid="metrics-hw-grafana-link">
+            Grafana
+          </a>
+          .
+        </p>
+      ) : null}
     </section>
   );
 }

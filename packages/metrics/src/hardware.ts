@@ -6,6 +6,7 @@
 // live 2026-07-10 against the cluster `prometheus` datasource (smartctl-exporter [in-cluster + NAS],
 // node-exporter [+ NAS], prometheus-pve-exporter); see ADR-040 recon.
 import type { PromMatrixSeries, PromVectorSample, PrometheusReader } from './client';
+import { hardwareGrafanaLinks, type HardwareGrafanaLinks } from './grafana';
 
 // ── PromQL (verified live 2026-07-10) ────────────────────────────────────────────────────────────
 // smartctl — the two jobs (in-cluster DaemonSet + the NAS `role=nas` scrape) share these families.
@@ -160,6 +161,12 @@ export interface HardwareMetrics {
   pveHosts: PveHost[];
   /** true only when EVERY group came back empty (Prometheus unreachable). */
   unavailable: boolean;
+  /**
+   * ADMIN-ONLY (DESIGN-016 D-07). The per-group Grafana board deep-links (LAN-only URLs). Present ONLY
+   * when `includeGrafanaLinks` (the caller is an admin); OMITTED for every non-admin caller. Hardware is
+   * ungated by metrics LEVEL, but the Grafana links are still admin-gated (LAN reachability, not detail).
+   */
+  grafana?: HardwareGrafanaLinks;
 }
 
 /** The narrow SMART reading the `smart-alerts` evaluator consumes (numbers, no null — safe defaults). */
@@ -613,6 +620,8 @@ async function readPve(reader: PrometheusReader): Promise<PveHost[]> {
 // ── the reads ─────────────────────────────────────────────────────────────────────────────────────
 export async function getHardwareMetrics(input: {
   prometheus: PrometheusReader;
+  /** role.isAdmin — gates the LAN-only Grafana deep-links into the payload (DESIGN-016 D-07). */
+  includeGrafanaLinks: boolean;
   /** Test seam — the wear-history window (days). Defaults to 14. */
   historyDays?: number;
   /** Test seam — "now" in unix seconds. Defaults to Date.now(). */
@@ -642,13 +651,16 @@ export async function getHardwareMetrics(input: {
   }
 
   const pools = buildPools(drives, wearHistory);
-  return {
+  const metrics: HardwareMetrics = {
     pools,
     drives,
     nodes,
     pveHosts,
     unavailable: drives.length === 0 && nodes.length === 0 && pveHosts.length === 0,
   };
+  // Admin-only: the LAN-only Grafana deep-links are attached ONLY for an admin caller (D-07).
+  if (input.includeGrafanaLinks) metrics.grafana = hardwareGrafanaLinks();
+  return metrics;
 }
 
 /**

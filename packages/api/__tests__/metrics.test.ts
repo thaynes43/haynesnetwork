@@ -258,6 +258,102 @@ describe('metrics.network — the disjoint limited/full shape + privacy seam (AD
   });
 });
 
+describe('metrics.* — Grafana deep-links are ADMIN-ONLY (DESIGN-016 D-07)', () => {
+  // The Grafana dashboards resolve ONLY on the owner's LAN/VPN, so their URLs are ADMIN-ONLY and enforced
+  // SERVER-SIDE in the payload shape: an admin response carries the `grafana` link object; a NON-admin
+  // response never carries a Grafana URL at all — at BOTH metrics levels (a `full` non-admin, e.g. Family,
+  // has the detail grant but not necessarily LAN access, so it is gated on ADMIN, not the level).
+
+  /** A non-admin caller whose metrics section is opened to read_only, at the given detail level. */
+  function memberCtxFactory(member: Awaited<ReturnType<typeof createUser>>, level: 'full' | 'limited', reader: PrometheusReader) {
+    return makeCtx(
+      testDb.db,
+      sessionUser(member, { metrics: 'read_only' }, undefined, undefined, undefined, level),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      reader,
+    );
+  }
+
+  it('overview: PRESENT for admin, ABSENT for a non-admin at BOTH levels', async () => {
+    const admin = await createUser(testDb.db, { admin: true });
+    const member = await createUser(testDb.db);
+
+    const adminOut = await caller(
+      makeCtx(testDb.db, sessionUser(admin), undefined, undefined, undefined, undefined, stubReader().reader),
+    ).metrics.overview();
+    expect(adminOut.grafana).toEqual({ base: 'https://grafana.haynesops.com' });
+
+    for (const level of ['full', 'limited'] as const) {
+      const out = await caller(memberCtxFactory(member, level, stubReader().reader)).metrics.overview();
+      expect(out.grafana).toBeUndefined();
+      expect('grafana' in out).toBe(false);
+    }
+  });
+
+  it('apps: PRESENT for admin, ABSENT for a non-admin at BOTH levels', async () => {
+    const admin = await createUser(testDb.db, { admin: true });
+    const member = await createUser(testDb.db);
+
+    const adminOut = await caller(
+      makeCtx(testDb.db, sessionUser(admin), undefined, undefined, undefined, undefined, stubAppsReader().reader),
+    ).metrics.apps();
+    expect(adminOut.grafana).toEqual({
+      library: 'https://grafana.haynesops.com/d/arr-library-overview',
+      downloads: 'https://grafana.haynesops.com/d/downloads-clients-indexers',
+    });
+
+    for (const level of ['full', 'limited'] as const) {
+      const out = await caller(memberCtxFactory(member, level, stubAppsReader().reader)).metrics.apps();
+      expect(out.grafana).toBeUndefined();
+      expect('grafana' in out).toBe(false);
+    }
+  });
+
+  it('hardware: PRESENT for admin, ABSENT for a non-admin at BOTH levels', async () => {
+    const admin = await createUser(testDb.db, { admin: true });
+    const member = await createUser(testDb.db);
+
+    const adminOut = await caller(
+      makeCtx(testDb.db, sessionUser(admin), undefined, undefined, undefined, undefined, stubReader().reader),
+    ).metrics.hardware();
+    expect(adminOut.grafana).toEqual({
+      nas: 'https://grafana.haynesops.com/d/nas-haynestower',
+      smart: 'https://grafana.haynesops.com/d/f8f249a0-be78-41b1-97fe-8d0a92a71b93',
+      nodes: 'https://grafana.haynesops.com/d/rYdddlPWk',
+      pve: 'https://grafana.haynesops.com/explore',
+    });
+
+    for (const level of ['full', 'limited'] as const) {
+      const out = await caller(memberCtxFactory(member, level, stubReader().reader)).metrics.hardware();
+      expect(out.grafana).toBeUndefined();
+      expect('grafana' in out).toBe(false);
+    }
+  });
+
+  it('network: PRESENT for admin, ABSENT for a non-admin at BOTH levels', async () => {
+    const admin = await createUser(testDb.db, { admin: true });
+    const member = await createUser(testDb.db);
+
+    const adminOut = await caller(
+      makeCtx(testDb.db, sessionUser(admin), undefined, undefined, undefined, undefined, stubNetworkReader().reader),
+    ).metrics.network();
+    expect(adminOut.grafana).toEqual({
+      sites: 'https://grafana.haynesops.com/d/9WaGWZaZk',
+      uap: 'https://grafana.haynesops.com/d/g5wFWqxZk',
+      usw: 'https://grafana.haynesops.com/d/FsfxpWaZz',
+    });
+
+    for (const level of ['full', 'limited'] as const) {
+      const out = await caller(memberCtxFactory(member, level, stubNetworkReader().reader)).metrics.network();
+      expect(out.grafana).toBeUndefined();
+      expect('grafana' in out).toBe(false);
+    }
+  });
+});
+
 describe('metrics.access', () => {
   it('reports the caller’s own level + whether the section is visible', async () => {
     const member = await createUser(testDb.db);
