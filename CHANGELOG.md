@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.30.0](https://github.com/thaynes43/haynesnetwork/compare/v0.29.0...v0.30.0) (2026-07-10)
+
+
+### Features
+
+* Metrics section foundation — Overview + per-role Full/Limited access + Prometheus read path (PLAN-017) ([#157](https://github.com/thaynes43/haynesnetwork/issues/157)) ([f3f6f23](https://github.com/thaynes43/haynesnetwork/commit/f3f6f23030054d9f987c877d61460fd9dd94f340))
+
+
+### Documentation
+
+* preserve Authentik apply/rollback seed for the blueprints migration ([#156](https://github.com/thaynes43/haynesnetwork/issues/156)) ([81f0ee2](https://github.com/thaynes43/haynesnetwork/commit/81f0ee21c5421eea2e913503d247fcbfd57ec715))
+* session-2 cold-start handoff — v0.29.0, trash automation proven, next: features + authentik blueprints ([#154](https://github.com/thaynes43/haynesnetwork/issues/154)) ([2e998ca](https://github.com/thaynes43/haynesnetwork/commit/2e998ca47296bac9d898cf0869bbae29a1028881))
+
 ## [0.29.0](https://github.com/thaynes43/haynesnetwork/compare/v0.28.0...v0.29.0) (2026-07-10)
 
 
