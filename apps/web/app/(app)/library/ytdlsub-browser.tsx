@@ -7,6 +7,7 @@
 // server via `ytdlsub.list` (no *arr, no ledger). Filter + sort are client-side over the (small) show set;
 // a one-shot query (no poll). Reflow-free (ADR-015): fixed 2:3 poster boxes, dim-in-place on refetch, a
 // fixed-height sort row, and skeleton tiles on first load.
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import {
   arrowFor,
@@ -146,7 +147,13 @@ export function YtdlsubBrowser({ library, label }: { library: 'peloton' | 'youtu
           {shows.map((show) => {
             const counts = countLine(show);
             return (
-              <article key={show.ratingKey} className="media-card poster-card">
+              // DESIGN-017 D-09 (R-132) — tiles are click-throughs to the read-only drill-in
+              // (the MediaBrowser card idiom; supersedes the action-free-tile scope note).
+              <Link
+                key={show.ratingKey}
+                href={`/library/ytdlsub/${library}/${show.ratingKey}`}
+                className="media-card poster-card"
+              >
                 <MediaPoster posterUrl={show.posterUrl} kind="show" alt="" />
                 <span className="poster-card__body">
                   <span className="media-card__title">
@@ -159,7 +166,7 @@ export function YtdlsubBrowser({ library, label }: { library: 'peloton' | 'youtu
                     </span>
                   ) : null}
                 </span>
-              </article>
+              </Link>
             );
           })}
         </div>

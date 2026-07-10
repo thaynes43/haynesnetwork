@@ -6,9 +6,13 @@
 //   ytdlsub.access    — the caller's own ytdlsub visibility (any authed user).
 //   ytdlsub.libraries — the resolved tabs + whether each library was found on the server.
 //   ytdlsub.list      — one library's shows (poster-grid rows), gated by `ytdlsubProcedure`.
+//   ytdlsub.detail    — DESIGN-017 D-09 (R-132): one show + its seasons (read-only drill-in head).
+//   ytdlsub.episodes  — D-09: one season's episodes (lazily fetched per expanded season).
+// Drill-in reads are SECTION-CONFINED: the metadata's librarySectionID must match the library's
+// resolved section key, so a ratingKey can never browse outside the two gated ytdl-sub libraries.
 import { z } from 'zod';
 import type { PlexReadClient } from '@hnet/plex/read';
-import type { PlexSectionItem } from '@hnet/plex';
+import { PlexHttpError, type PlexSectionItem } from '@hnet/plex';
 import { resolvePlexBundle, router, authedProcedure } from '../trpc';
 import { effectiveSectionLevel, ytdlsubProcedure } from '../middleware/role';
 
@@ -53,6 +57,49 @@ export interface YtdlsubLibrarySummary {
   found: boolean;
 }
 
+// ---- DESIGN-017 D-09 (R-132) — the read-only drill-in shapes ----
+
+export interface YtdlsubShowDetail {
+  ratingKey: string;
+  title: string;
+  summary: string | null;
+  posterUrl: string | null; // grid variant (the detail head reuses the wall tile art)
+  seasonCount: number | null;
+  episodeCount: number | null;
+  year: number | null;
+}
+
+export interface YtdlsubSeason {
+  ratingKey: string;
+  title: string; // Plex's own season title (Peloton durations render as e.g. "Season 30")
+  index: number | null;
+  episodeCount: number | null; // leafCount
+}
+
+export interface YtdlsubDetailResult {
+  /** false ⇒ no such show in THIS library (bogus ratingKey, or a cross-section probe). */
+  found: boolean;
+  unavailable: boolean;
+  show: YtdlsubShowDetail | null;
+  seasons: YtdlsubSeason[];
+}
+
+export interface YtdlsubEpisode {
+  ratingKey: string;
+  title: string;
+  index: number | null;
+  airDate: string | null; // 'YYYY-MM-DD' (originallyAvailableAt)
+  durationMs: number | null;
+  /** The `size=still` proxy variant (ADR-041 / T-120), or null → no thumb rendered. */
+  stillUrl: string | null;
+}
+
+export interface YtdlsubEpisodesResult {
+  found: boolean;
+  unavailable: boolean;
+  episodes: YtdlsubEpisode[];
+}
+
 function toShow(item: PlexSectionItem): YtdlsubShow {
   const thumb = item.thumb;
   return {
@@ -75,6 +122,14 @@ async function resolveSectionKey(
   const match = sections.find((s) => LIBRARY_MATCHERS[library].test(s.title));
   return match ? match.key : null;
 }
+
+/** A Plex 404 (bogus/foreign ratingKey) — the drill-in maps it to found:false, not unavailable. */
+function isPlexNotFound(err: unknown): boolean {
+  return err instanceof PlexHttpError && err.status === 404;
+}
+
+/** A drill-in ratingKey: Plex ratingKeys are decimal ids. Zod-enforced, belt-and-braces bounded. */
+const ratingKeyInput = z.string().regex(/^\d{1,12}$/);
 
 export const ytdlsubRouter = router({
   /** Any authed user: whether the ytdl-sub sub-tabs are visible to them (mirrors metrics.access). */
@@ -117,6 +172,100 @@ export const ytdlsubRouter = router({
         return { items: items.map(toShow), found: true, unavailable: false };
       } catch {
         return { items: [], found: true, unavailable: true }; // library exists but read failed
+      }
+    }),
+
+  /**
+   * DESIGN-017 D-09 (R-132) — one show + its seasons for the read-only drill-in. SECTION-CONFINED:
+   * the show's librarySectionID must match the library's resolved section key (a Music/other-section
+   * ratingKey ⇒ found:false, never data). Degrades like list: 404 ⇒ found:false, outage ⇒ unavailable.
+   */
+  detail: ytdlsubProcedure
+    .input(z.object({ library: z.enum(YTDLSUB_LIBRARY_IDS), ratingKey: ratingKeyInput }))
+    .query(async ({ ctx, input }): Promise<YtdlsubDetailResult> => {
+      const read = resolvePlexBundle(ctx).read.hayneskube;
+      const notFound: YtdlsubDetailResult = { found: false, unavailable: false, show: null, seasons: [] };
+      let sectionKey: string | null;
+      try {
+        sectionKey = await resolveSectionKey(read, input.library);
+      } catch {
+        return { ...notFound, unavailable: true };
+      }
+      if (sectionKey === null) return notFound;
+      try {
+        const meta = await read.getMetadataItem(input.ratingKey);
+        if (meta === null || meta.librarySectionId !== sectionKey) return notFound; // confinement
+        const children = await read.listMetadataChildren(input.ratingKey);
+        const item = meta.item;
+        return {
+          found: true,
+          unavailable: false,
+          show: {
+            ratingKey: item.ratingKey,
+            title: item.title,
+            summary: item.summary?.trim() ? item.summary : null,
+            posterUrl: item.thumb
+              ? `/api/ytdlsub/poster?thumb=${encodeURIComponent(item.thumb)}`
+              : null,
+            seasonCount: item.childCount ?? null,
+            episodeCount: item.leafCount ?? null,
+            year: item.year ?? null,
+          },
+          seasons: children.items
+            .filter((c) => c.type === 'season')
+            .map((c) => ({
+              ratingKey: c.ratingKey,
+              title: c.title,
+              index: c.index ?? null,
+              episodeCount: c.leafCount ?? null,
+            }))
+            .sort((a, b) => (a.index ?? Number.MAX_SAFE_INTEGER) - (b.index ?? Number.MAX_SAFE_INTEGER)),
+        };
+      } catch (err) {
+        if (isPlexNotFound(err)) return notFound;
+        return { ...notFound, found: true, unavailable: true };
+      }
+    }),
+
+  /**
+   * D-09 — one season's episodes, fetched lazily when the season expands (a 261-episode Peloton
+   * season never loads up front). Same section confinement via the children container's
+   * librarySectionID; episode stills ride the `size=still` proxy variant (ADR-041 / T-120).
+   */
+  episodes: ytdlsubProcedure
+    .input(z.object({ library: z.enum(YTDLSUB_LIBRARY_IDS), seasonRatingKey: ratingKeyInput }))
+    .query(async ({ ctx, input }): Promise<YtdlsubEpisodesResult> => {
+      const read = resolvePlexBundle(ctx).read.hayneskube;
+      const notFound: YtdlsubEpisodesResult = { found: false, unavailable: false, episodes: [] };
+      let sectionKey: string | null;
+      try {
+        sectionKey = await resolveSectionKey(read, input.library);
+      } catch {
+        return { ...notFound, unavailable: true };
+      }
+      if (sectionKey === null) return notFound;
+      try {
+        const children = await read.listMetadataChildren(input.seasonRatingKey);
+        if (children.librarySectionId !== sectionKey) return notFound; // confinement
+        return {
+          found: true,
+          unavailable: false,
+          episodes: children.items
+            .filter((c) => c.type === 'episode')
+            .map((c) => ({
+              ratingKey: c.ratingKey,
+              title: c.title,
+              index: c.index ?? null,
+              airDate: c.originallyAvailableAt ?? null,
+              durationMs: c.duration ?? null,
+              stillUrl: c.thumb
+                ? `/api/ytdlsub/poster?thumb=${encodeURIComponent(c.thumb)}&size=still`
+                : null,
+            })),
+        };
+      } catch (err) {
+        if (isPlexNotFound(err)) return notFound;
+        return { ...notFound, found: true, unavailable: true };
       }
     }),
 });

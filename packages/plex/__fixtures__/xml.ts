@@ -95,6 +95,63 @@ export const SECTION_CONTENTS_JSON = {
 };
 
 /**
+ * DESIGN-017 D-09 — `GET /library/metadata/{key}` JSON (the drill-in head): one show with the
+ * owning librarySectionID on the ITEM (as Plex emits for a single-metadata read).
+ */
+export const METADATA_ITEM_JSON = {
+  MediaContainer: {
+    size: 1,
+    Metadata: [
+      {
+        ratingKey: '9001',
+        key: '/library/metadata/9001/children',
+        type: 'show',
+        title: 'Bike Bootcamp',
+        summary: '',
+        librarySectionID: 4, // number, coerced to '4'
+        thumb: '/library/metadata/9001/thumb/1699999999',
+        childCount: 4,
+        leafCount: 481,
+        addedAt: 1747617465,
+      },
+    ],
+  },
+};
+
+/**
+ * DESIGN-017 D-09 — `GET /library/metadata/{key}/children` JSON for a SEASON (episodes): the
+ * container carries librarySectionID + totalSize (paged); episodes carry index, duration (ms) and
+ * originallyAvailableAt, mirroring the live k8plex shape probed 2026-07-10.
+ */
+export const METADATA_CHILDREN_JSON = {
+  MediaContainer: {
+    size: 2,
+    totalSize: '261',
+    librarySectionID: 4,
+    Metadata: [
+      {
+        ratingKey: '579874',
+        parentRatingKey: '448161',
+        type: 'episode',
+        title: '2026-06-09 - 30 min Bootcamp',
+        index: '701',
+        duration: '1991936',
+        originallyAvailableAt: '2026-06-09',
+        thumb: '/library/metadata/579874/thumb/1781888110',
+      },
+      {
+        ratingKey: 579875,
+        type: 'episode',
+        title: '2026-06-02 - 30 min Bootcamp',
+        index: 700,
+        duration: 1800000,
+        // no thumb, no air date → nulls downstream
+      },
+    ],
+  },
+};
+
+/**
  * `GET /api/v2/user` JSON (plex.tv) — the token account, i.e. the server OWNER. Shaped like the
  * live response (id is a number; many extra fields) with a fake email/id so no PII lands in the
  * repo. The read client consumes only { id, email, username } (ADR-029).

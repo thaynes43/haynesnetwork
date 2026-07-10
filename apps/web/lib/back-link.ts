@@ -20,6 +20,9 @@ const BACK_LINKS: Record<string, BackLinkTarget> = {
   bulletin: { label: 'Bulletin', href: '/bulletin?tab=messages' },
   'bulletin-feed': { label: 'Bulletin', href: '/bulletin' },
   ledger: { label: 'Ledger', href: '/ledger' },
+  // DESIGN-017 D-09 — the ytdl-sub drill-in's way back to its wall (the key IS the library id).
+  peloton: { label: 'Peloton', href: '/library?tab=peloton' },
+  youtube: { label: 'YouTube', href: '/library?tab=youtube' },
 };
 
 export const DEFAULT_BACK_LINK: BackLinkTarget = { label: 'Library', href: '/library' };
