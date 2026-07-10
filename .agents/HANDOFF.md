@@ -5,7 +5,7 @@
 > the top down; you should not have to reconcile anything.
 
 - **Last updated:** 2026-07-10 — **ytdl-sub UX package (the owner's morning-review fixes to PLAN-022).**
-  One release, three items (ADR-040 / DESIGN-017 D-07..D-09 / R-129..R-130 / T-117; **no migration**):
+  One release, three items (ADR-041 / DESIGN-017 D-07..D-09 / R-131..R-132 / T-120; **no migration**):
   **(1) Wall perf** — the `/api/ytdlsub/poster` proxy now serves **fixed-size WebP variants** from
   k8plex's own photo-transcode endpoint (closed `size=grid|still` allow-list; original-art fallback on
   a transcode miss), memoized in an in-process byte-capped `ThumbLruCache` (NOT a store) with a strong
@@ -18,7 +18,7 @@
   `ytdlsub.detail`/`ytdlsub.episodes` (both `ytdlsubProcedure`-gated AND **section-confined** by
   `librarySectionID` — a cross-library ratingKey is found:false). No ledger, no actions, no write
   surface. The `ytdlsub` section is **still Admin-only** (no role rows as of this change — the owner's
-  flip is still pending, plan Q-03), and the durable-poster sink (PRD **Q-06**) remains open — ADR-040
+  flip is still pending, plan Q-03), and the durable-poster sink (PRD **Q-06**) remains open — ADR-041
   C-07 keeps the override seam ready, nothing here makes it harder.
   Prior milestone — **PLAN-020 Metrics → Network sub-tab shipped (v0.33.0), live.**
   The 017-scaffolded **Network** tab now renders off the live in-cluster Prometheus via a new
