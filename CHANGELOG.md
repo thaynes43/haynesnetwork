@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.33.0](https://github.com/thaynes43/haynesnetwork/compare/v0.32.0...v0.33.0) (2026-07-10)
+
+
+### Features
+
+* Metrics — Network sub-tab (WAN usage-vs-capacity + privacy-scoped infra grain, allow-list-proven) (PLAN-020) ([#165](https://github.com/thaynes43/haynesnetwork/issues/165)) ([b5a24cb](https://github.com/thaynes43/haynesnetwork/commit/b5a24cbdba47b750ffa36776f89c11055ac874ac))
+
 ## [0.32.0](https://github.com/thaynes43/haynesnetwork/compare/v0.31.0...v0.32.0) (2026-07-10)
 
 
