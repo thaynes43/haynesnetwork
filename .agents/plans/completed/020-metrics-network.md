@@ -1,10 +1,17 @@
 # PLAN-020: Metrics — Network sub-tab (WAN usage-vs-capacity; privacy-scoped fine grain)
 
-- **Status:** Executing (2026-07-10, owner-scoped). <!-- Draft → Executing → Completed -->
-  IDs consumed: **ADR-039**, **DESIGN-019**, **R-127/R-128**, **T-114/T-115/T-116**. No migration/ADR-supersede
-  (ADR-039 refines ADR-037 C-03/C-04). Q-02 resolved (reuse 017 capacity `app_settings`); Q-03 resolved
-  (ship the 7-day history sparkline); Q-01 shipped the curated infra set (PoE/port-errors/radio/topology
-  deferred to Grafana — owner may promote).
+- **Status:** Completed (2026-07-10, v0.33.0 live). <!-- Draft → Executing → Completed -->
+  Shipped the Metrics → Network sub-tab: `limited` = WAN up/down usage-vs-capacity meters + 7-day history
+  sparkline; `full` = infra performance (gateway/switch/AP CPU·mem·load + WAN health + per-uplink caps +
+  site rollup counts). Privacy invariant proven by construction: the allow-listed `network.ts` module +
+  the `network privacy invariant — the allow-listed PromQL module` unit test (no query names
+  `unpoller_client_*`/`_remote_user_`/`*_info`); disjoint server-authoritative `limited`/`full` payload.
+  Live-validated on staging + public (v0.33.0 pod: `/api/health` ok, `metrics.network` unauth = 401, pod→
+  Prometheus returns real WAN 46339 B/s up / gateway CPU 42.7% / 7 APs via the app's exact PromQL).
+  IDs consumed: **ADR-039**, **DESIGN-019**, **R-127/R-128**, **T-114/T-115/T-116**. No migration; ADR-039
+  refines (not supersedes) ADR-037 C-03/C-04. Q-02 resolved (reuse 017 capacity `app_settings`); Q-03
+  resolved (7-day sparkline); Q-01 shipped the curated infra set (PoE/port-errors/radio/topology deferred
+  to Grafana — owner may promote).
 - **Satisfies:** PRD-001 new R-NN block (Network metrics sub-tab; Limited = WAN up/down
   usage-vs-capacity; Full = infra performance grain; **hard privacy invariant: no client/device
   identities at ANY level**); new ADR-NN (unpoller series allow-list + the never-expose-clients

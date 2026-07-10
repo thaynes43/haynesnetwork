@@ -4,7 +4,31 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-- **Last updated:** 2026-07-10 — **PLAN-018 Metrics → Apps sub-tab shipped (v0.32.0), live.**
+- **Last updated:** 2026-07-10 — **PLAN-020 Metrics → Network sub-tab shipped (v0.33.0), live.**
+  The 017-scaffolded **Network** tab now renders off the live in-cluster Prometheus via a new
+  `@hnet/metrics` `getNetworkMetrics` read (which REUSES `getNetworkOverview` for the WAN meters —
+  one denominator) + a `metrics.network` procedure. **`limited`** = the two WAN upload/download
+  **usage-vs-capacity** meters + a **7-day WAN throughput history sparkline** (the only value-add
+  over the Overview). **`full`** ADDS **infrastructure-performance** groups — per-gateway/switch/AP
+  **CPU·mem·load**, **WAN health** (gateway speedtest + internet-path latency), per-uplink caps, and
+  **site rollup COUNTS** (APs/switches/gateways/connected-device count) — each with an "Open in
+  Grafana ↗" deep-link to the UniFi-Poller boards (Network Sites / USW / UAP; the **Client-Insights
+  board is deliberately NOT linked**). **HARD PRIVACY INVARIANT — no client identities at ANY
+  level** — enforced by construction: the allow-listed `network.ts` query module is the single place
+  any `unpoller` series is named, and the unit test *"network privacy invariant — the allow-listed
+  PromQL module"* proves every query names only `unpoller_(site|device|wan)_*` and matches none of
+  the deny substrings (`unpoller_client_`/`_remote_user_`/`_info`/`mac`/`hostname`/`rssi`/`signal`);
+  the `limited`/`full` payload is disjoint and server-authoritative (`includeInfra` — `limited` never
+  fetches or receives the infra grain). UniFi device names (an AP "Garage") are infrastructure,
+  allowed at `full`; the only client-adjacent number is the aggregate station COUNT. **NO migration /
+  NO write surface** — rides 017's `metrics` section + `metrics_level`; ADR-039 **refines** (does not
+  supersede) ADR-037 C-03/C-04. Pod-verified live: unauth `metrics.network` = 401; the v0.33.0 pod →
+  Prometheus returns real WAN 46339 B/s up / gateway CPU 42.7% / 7 APs via the app's exact PromQL.
+  Docs: ADR-039 / DESIGN-019 / R-127..R-128 / T-114..T-116. **OWNER's morning:** authenticated
+  full-vs-limited visual confirm (SSO-gated; hermetic admin screenshots are the sanctioned
+  substitution — desktop + 390px, dark/light); Q-01 promote PoE/port-errors/radio/topology? The
+  `metrics` section still ships **Admin-only until the owner flips a role to `limited`**.
+  Prior milestone — **PLAN-018 Metrics → Apps sub-tab shipped (v0.32.0), live.**
   The 017-scaffolded **Apps** tab now renders four curated, phone-friendly groups off the live
   in-cluster Prometheus via a new `@hnet/metrics` `getAppsMetrics` read + a `metrics.apps`
   procedure: **Collection** (radarr/sonarr/lidarr totals · monitored · missing · upgrades),
