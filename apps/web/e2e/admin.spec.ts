@@ -4,7 +4,7 @@
 // member gains that app set as their tiles. Specs clean up what they create so the
 // shared catalog/roles stay canonical for the other spec files.
 import { test, expect } from '@playwright/test';
-import { armAndConfirm, signIn } from './support/helpers';
+import { armAndConfirm, measureFit, signIn } from './support/helpers';
 
 test.describe('catalog CRUD (admin)', () => {
   test('create → edit → delete a catalog entry', async ({ page }) => {
@@ -211,5 +211,121 @@ test.describe('roles (admin)', () => {
     await expect(roleDeleteRow).toHaveCount(0);
 
     await memberContext.close();
+  });
+
+  // fix/family-strip-mobile-roles (owner-directed 2026-07-09) — the owner couldn't change his wife's
+  // role from his phone: the /admin/roles editor broke in portrait and the /admin users card dropped
+  // the desktop role control. These two journeys drive the fixed surfaces at 390×844.
+
+  test('mobile 390: the /admin/roles inline editor stacks — change a role trash level + a trash action, saved (round-trips), no sideways scroll', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await signIn(page, 'admin');
+    await page.goto('/admin/roles');
+
+    // A throwaway role so the seeded roles other specs depend on are never perturbed. The Add-role
+    // modal is also exercised in portrait.
+    await page.getByRole('button', { name: 'Add role' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Add role' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByLabel('Name', { exact: true }).fill('Phone Journey Role');
+    await dialog.getByRole('button', { name: 'Create role' }).click();
+    await expect(dialog).toBeHidden();
+
+    const row = () =>
+      page.locator('.admin-table tbody tr').filter({ hasText: 'Phone Journey Role' });
+    await expect(row()).toHaveCount(1);
+
+    // The reported breakage was sideways overflow — the collapsed 7-col card must fit 390px.
+    const noSideScroll = async () => {
+      const m = await measureFit(page);
+      expect(m.pageHScroll, 'no horizontal page scroll at 390').toBeLessThanOrEqual(1);
+      expect(m.maxRight, 'nothing wider than the viewport at 390').toBeLessThanOrEqual(m.innerW + 1);
+    };
+    await noSideScroll();
+
+    // Change the Trash LEVEL from the card's full-width select (audited setSectionPermission).
+    const trashLevel = page.getByLabel('Trash access for Phone Journey Role');
+    await trashLevel.scrollIntoViewIfNeeded();
+    await Promise.all([
+      page.waitForResponse((r) => r.url().includes('roles.setSectionPermission')),
+      trashLevel.selectOption('read_only'), // seeded default is 'disabled' → a real change
+    ]);
+
+    // Open the inline editor: the action grid is a stack of tap-friendly checkboxes; Save is
+    // reachable at the bottom — and there is still no sideways scroll mid-edit. (exact:true so the
+    // "Edit" button isn't confused with any button whose aria-label merely contains the substring;
+    // the row's controls re-enable once the level write settles.)
+    const editBtn = row().getByRole('button', { name: 'Edit', exact: true });
+    await expect(editBtn).toBeEnabled();
+    await editBtn.click();
+    const grid = page.getByTestId('trash-actions-grid');
+    await expect(grid).toBeVisible();
+    const action = grid.getByTestId('trash-action-save_exclude');
+    await action.scrollIntoViewIfNeeded();
+    await action.check();
+    await noSideScroll();
+    const save = page.getByRole('button', { name: 'Save changes' });
+    await save.scrollIntoViewIfNeeded();
+    await Promise.all([
+      page.waitForResponse((r) => r.url().includes('roles.setTrashActions')),
+      save.click(),
+    ]);
+    // The grant-count badge recounts IN PLACE (ADR-015): one stored action (save_exclude).
+    await expect(page.getByTestId('trash-actions-summary-Phone Journey Role')).toHaveText('1 action');
+
+    // Round-trip: both audited writes persist across a reload (the level + the action grant).
+    await page.reload();
+    await expect(page.getByLabel('Trash access for Phone Journey Role')).toHaveValue('read_only');
+    await expect(page.getByTestId('trash-actions-summary-Phone Journey Role')).toHaveText('1 action');
+
+    // Cleanup — delete the throwaway role (two-step confirm).
+    await armAndConfirm(row().getByTestId('role-row-delete'));
+    await expect(row()).toHaveCount(0);
+  });
+
+  test('mobile 390: the /admin users card exposes an editable role select — reassign a member Default → role → back (audited round-trip), no sideways scroll', async ({
+    page,
+    browser,
+  }) => {
+    // Ensure the member user row exists (first login creates it) without disturbing the admin page.
+    const boot = await browser.newContext();
+    const bootPage = await boot.newPage();
+    await signIn(bootPage, 'member');
+    await boot.close();
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await signIn(page, 'admin');
+    await page.goto('/admin');
+
+    // The per-user card must carry the role CONTROL (was plain text on mobile — the owner's bug).
+    const margeCard = page.locator('.admin-table tbody tr').filter({ hasText: 'Marge Member' });
+    const roleSelect = margeCard.getByTestId('user-role-select');
+    await expect(roleSelect).toBeVisible();
+    const m = await measureFit(page);
+    expect(m.pageHScroll, 'no horizontal page scroll at 390').toBeLessThanOrEqual(1);
+    expect(m.maxRight, 'nothing wider than the viewport at 390').toBeLessThanOrEqual(m.innerW + 1);
+
+    // Default → Trash Viewer (the audited users.setRole write; the same one the desktop detail uses).
+    await Promise.all([
+      page.waitForResponse((r) => r.url().includes('users.setRole')),
+      roleSelect.selectOption({ label: 'Trash Viewer' }),
+    ]);
+    // Round-trip: reload and the card's select reflects the committed role.
+    await page.reload();
+    await expect(
+      margeCard.getByTestId('user-role-select').locator('option:checked'),
+    ).toHaveText('Trash Viewer');
+
+    // …and back to Default (leaves the roster as later specs expect it).
+    await Promise.all([
+      page.waitForResponse((r) => r.url().includes('users.setRole')),
+      margeCard.getByTestId('user-role-select').selectOption({ label: 'Default (default)' }),
+    ]);
+    await page.reload();
+    await expect(
+      margeCard.getByTestId('user-role-select').locator('option:checked'),
+    ).toHaveText(/Default/);
   });
 });

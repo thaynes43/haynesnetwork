@@ -598,7 +598,7 @@ export default function AdminRolesPage() {
                 <td data-label="Members">{role.memberCount}</td>
                 {/* ADR-021 — the Sections editor (Ledger level; Trash reserved for PLAN-006).
                     Admin shows its implicit Edit, uneditable (C-03). */}
-                <td data-label="Ledger">
+                <td className="role-level-cell" data-label="Ledger">
                   {role.isAdmin ? (
                     <span className="muted" title="The Admin role implies Edit on every section">
                       Edit
@@ -626,7 +626,7 @@ export default function AdminRolesPage() {
                 {/* ADR-023 / DESIGN-010 D-09 — the Trash access level + a grant summary. The
                     per-action grid itself lives in the row editor (Edit); the summary keeps the
                     row constant-width (ADR-015 — changing grants recounts, never reflows). */}
-                <td data-label="Trash">
+                <td className="role-level-cell" data-label="Trash">
                   {role.isAdmin ? (
                     <span
                       className="muted"
@@ -672,7 +672,7 @@ export default function AdminRolesPage() {
                 </td>
                 {/* ADR-026 / DESIGN-012 D-04 — the Bulletin access level + a grant summary
                     (same treatment as Trash: the per-action grid lives in the row editor). */}
-                <td data-label="Bulletin">
+                <td className="role-level-cell" data-label="Bulletin">
                   {role.isAdmin ? (
                     <span
                       className="muted"

@@ -6,7 +6,8 @@
 //     tap-toggle (poster flips trash⇄shield), the library-nav corner (→ /library/[id]?from=…),
 //     the reclaim counts bar + Expedite-all; per-item "Delete now…" relocated to the item page;
 //   • the batch lifecycle IN the Movies tab — Start a batch → admin_review curation (+ the
-//     admin-only new-candidates strip) → Green-light → Leaving-Soon countdown + family save
+//     "Potential in future batches" strip, now visible to ANY trash user) → Green-light →
+//     Leaving-Soon countdown + family save
 //     window → Expire sweep → the Past-batches strip (each row expands to its final report);
 //   • the ?tab=batches → ?tab=movies redirect for old deep links;
 //   • the context-aware item back-link (← Trash Movies / ← Bulletin, history.back() with state);
@@ -595,7 +596,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
 
   // ── the batch lifecycle, now IN the Movies tab (ADR-033) ─────────────────────────────────
 
-  test('Start a batch → admin_review curation on the Movies tab; tap trash→shield is reflow-free + records the save; the new-candidates strip is admin-only', async ({
+  test('Start a batch → admin_review curation on the Movies tab; tap trash→shield is reflow-free + records the save; the future-batch strip renders', async ({
     page,
   }) => {
     await resetMaintainerr(page);
@@ -649,16 +650,21 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
       calls.some((c) => c.method === 'DELETE' && c.path === `/rules/exclusions/${STUB_MAINT_VANISHED_ID}`),
     ).toBe(true);
 
-    // A fresh candidate joins the LIVE set (not the frozen batch) ⇒ the admin-only strip appears.
-    // Owner-directed 2026-07-09: the strip is now the full interactive "Potential in future batches"
-    // wall (paginated, tap-to-save) — the header keeps the honest server count.
+    // A fresh candidate joins the LIVE set (not the frozen batch) ⇒ the future-batch strip appears.
+    // Owner-directed 2026-07-09: the strip is the full interactive "Potential in future batches"
+    // wall (paginated, tap-to-save) — the header keeps the honest server count. As a save_exclude
+    // holder the admin sees the tap-to-save invitation in the head line.
     await addPendingCandidate(page);
     await page.goto('/trash?tab=movies');
     await expect(page.getByTestId('batch-new-candidates')).toContainText(
       'Potential in future batches (1)',
     );
+    await expect(page.getByTestId('batch-new-candidates')).toContainText('tap a poster to save it out');
     // The fresh candidate renders as an interactive save tile (tap ⇒ save it out of a future batch).
     await expect(page.getByTestId('future-wall').getByTestId('trash-tile')).toHaveCount(1);
+    await expect(
+      page.getByTestId('future-wall').locator('button[data-testid="trash-toggle"]'),
+    ).toHaveCount(1);
   });
 
   test('Start refuses gracefully while a batch is open — the error names the blocker', async ({
@@ -783,13 +789,23 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await assignMemberRole(page, 'Trash Family');
     await memberPage.goto('/trash?tab=movies');
 
-    // The countdown invites the rescue; the family sees NO lifecycle controls, and (admin-only)
-    // NO new-candidates strip.
+    // The countdown invites the rescue; the family sees NO lifecycle controls.
     await expect(memberPage.getByTestId('batch-countdown')).toContainText('tap anything you want to keep');
     for (const control of ['batch-start', 'batch-greenlight', 'batch-cancel', 'batch-expire']) {
       await expect(memberPage.getByTestId(control)).toHaveCount(0);
     }
-    await expect(memberPage.getByTestId('batch-new-candidates')).toHaveCount(0);
+    // Owner-directed 2026-07-09 (evening): "Potential in future batches" is visible to ANY trash user
+    // now — "users who can see the next batch should be able to see what's coming soon". Trash Family
+    // holds ONLY save_leaving_soon (NOT the anytime save_exclude), so the strip is READ-ONLY here: the
+    // fresh ms-990010 candidate tile renders, but with NO save button and the head line drops the
+    // "tap a poster to save it out" invitation.
+    const familyStrip = memberPage.getByTestId('batch-new-candidates');
+    await expect(familyStrip).toContainText('Potential in future batches (1)');
+    await expect(familyStrip).not.toContainText('tap a poster to save it out');
+    await expect(memberPage.getByTestId('future-wall').getByTestId('trash-tile')).toHaveCount(1);
+    await expect(
+      memberPage.getByTestId('future-wall').locator('button[data-testid="trash-toggle"]'),
+    ).toHaveCount(0);
 
     // The admin's save reads as someone else's — visible but not tappable.
     const vanished = memberPage.getByTestId('wall-tile').filter({ hasText: 'Vanished Heist' });
@@ -821,6 +837,28 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await limitedTile.getByRole('button').click();
     await expect(limitedTile).toHaveAttribute('data-glyph', 'trash');
 
+    // Owner-directed 2026-07-09 (evening): the "Potential in future batches" strip is ALSO interactive
+    // for a save_exclude holder — tap a coming-soon candidate to save it out of the NEXT batch (a real
+    // exclusion write). The head line now carries the "tap a poster to save it out" invitation, and the
+    // fresh ms-990010 tile is a save BUTTON. Save then un-save to leave the strip state clean.
+    await expect(memberPage.getByTestId('batch-new-candidates')).toContainText(
+      'tap a poster to save it out',
+    );
+    const stripTile = memberPage.getByTestId('future-wall').getByTestId('trash-tile').first();
+    await expect(stripTile.locator('button[data-testid="trash-toggle"]')).toHaveCount(1);
+    await expect(stripTile).toHaveAttribute('data-glyph', 'trash');
+    const stripToggle = stripTile.getByTestId('trash-toggle');
+    await stripToggle.scrollIntoViewIfNeeded();
+    const stripSaved = memberPage.waitForResponse((r) => r.url().includes('trash.saveExclusion'));
+    await stripToggle.click();
+    await expect(stripTile).toHaveAttribute('data-glyph', 'shield');
+    await stripSaved;
+    await expect(stripToggle).not.toHaveAttribute('aria-busy', 'true');
+    const stripUnsaved = memberPage.waitForResponse((r) => r.url().includes('trash.removeExclusion'));
+    await stripToggle.click();
+    await expect(stripTile).toHaveAttribute('data-glyph', 'trash');
+    await stripUnsaved;
+
     // A role with NEITHER Save power (Trash Viewer — read-only, zero grants) gets the fully
     // read-only wall: no tap buttons, and the countdown drops the "tap anything" invite.
     await assignMemberRole(page, 'Trash Viewer');
@@ -829,6 +867,19 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await expect(memberPage.getByTestId('batch-wall').getByRole('button')).toHaveCount(0);
     await expect(memberPage.getByTestId('batch-countdown')).toContainText('These delete in');
     await expect(memberPage.getByTestId('batch-countdown')).not.toContainText('tap anything');
+
+    // The future strip is visible to this pure read-only role too, but fully READ-ONLY: the fresh
+    // candidate renders (browse what's coming), with NO save button and no "tap to save" head-line.
+    await expect(memberPage.getByTestId('batch-new-candidates')).toContainText(
+      'Potential in future batches',
+    );
+    await expect(memberPage.getByTestId('batch-new-candidates')).not.toContainText(
+      'tap a poster to save it out',
+    );
+    await expect(memberPage.getByTestId('future-wall').getByTestId('trash-tile')).toHaveCount(1);
+    await expect(
+      memberPage.getByTestId('future-wall').locator('button[data-testid="trash-toggle"]'),
+    ).toHaveCount(0);
 
     await memberContext.close();
     await assignMemberRole(page, 'Default (default)');

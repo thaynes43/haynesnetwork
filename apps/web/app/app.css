@@ -913,6 +913,31 @@ tr.drop-after td {
   .admin-table--roles .row-edit td::before {
     content: none;
   }
+  /* fix/family-strip-mobile-roles (owner-directed 2026-07-09) — the per-role level cells
+     (Ledger / Trash / Bulletin) must be USABLE in portrait: on a phone the label sits ABOVE a
+     FULL-WIDTH, thumb-tappable select, and the grant-count badge drops beneath it instead of being
+     squeezed onto the same line (which clipped at ~390-430px). The card `td` is `display:flex;
+     justify-content:space-between` — restack it to a stretch column for these cells only. ADR-015:
+     the select recolors/reselects and the badge recounts IN PLACE; nothing reflows a neighbor row. */
+  .admin-table--roles td.role-level-cell {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 6px;
+  }
+  .admin-table--roles td.role-level-cell .section-select {
+    width: 100%;
+    min-height: 44px;
+  }
+  .admin-table--roles td.role-level-cell .trash-cell {
+    width: 100%;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .admin-table--roles td.role-level-cell .trash-cell .section-select {
+    flex: 1 1 100%;
+  }
 }
 
 /* ---------- Forms (admin create/edit) ---------- */
@@ -956,7 +981,7 @@ tr.drop-after td {
    fell through to the browser-default WHITE surface in dark mode. Theme them from this SHARED group
    too — same fix class as the .bulletin-composer one above. Their own rule blocks keep the compact
    width/height (below); this group only supplies the themed surface (color/background/border/focus). */
-.notify-window__field input,
+.notify-window__field input:not([type='checkbox']),
 .notify-window__field select,
 .space-policy__field input {
   font: inherit;
@@ -2454,6 +2479,58 @@ input[aria-invalid='true'] {
 }
 .section-select:focus {
   border-color: var(--color-accent);
+}
+
+/* fix/family-strip-mobile-roles (owner-directed 2026-07-09) — the INLINE role assignment on the
+   /admin users list. The role was plain text in the mobile card, so the owner couldn't change his
+   wife's role from a phone; it is now an editable select (same audited users.setRole write). Desktop:
+   a compact themed select with the saving/error state inline. */
+.role-assign {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.role-assign__select {
+  font: inherit;
+  font-size: 13px;
+  color: var(--color-text);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  min-height: 36px;
+  max-width: 100%;
+}
+.role-assign__select:focus {
+  border-color: var(--color-accent);
+}
+.role-assign__status {
+  font-size: 12px;
+}
+/* The LAST_ADMIN / not-found refusal wraps onto its own full-width line beneath the select so a long
+   message never widens the row (ADR-015 — an error is a real state change, but it grows the card
+   downward, it never shifts a neighbouring row sideways). */
+.role-assign__error {
+  flex: 1 1 100%;
+}
+@media (max-width: 759px) {
+  /* In the card the label sits ABOVE a FULL-WIDTH, thumb-tappable select so the role is reassignable
+     on a phone (the whole point of the fix). The users table collapses at 759px (D-06). */
+  .admin-table td.user-role-cell {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 6px;
+  }
+  .role-assign {
+    width: 100%;
+  }
+  .role-assign__select {
+    width: 100%;
+    min-height: 44px;
+  }
 }
 
 /* ---------- Ledger section (DESIGN-009 D-08, ADR-015) ---------- */
@@ -4809,8 +4886,19 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
 .notify-window__field > span:first-child {
   font-size: 13px;
 }
-.notify-window__field input {
+.notify-window__field input:not([type='checkbox']) {
   width: 4.5em;
+}
+/* The pool-refresh "Enabled" checkbox shares .notify-window__field but must NOT inherit the number
+   inputs' width/height/padding (owner screenshot 2026-07-09 — it rendered comically large). Normalize
+   it to the standard 18px control used across the app. */
+.notify-window__field input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  padding: 0;
+  accent-color: var(--color-accent);
+  flex: none;
 }
 .notify-window .btn {
   flex: none;
@@ -4823,6 +4911,42 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
 }
 .notify-window__form:has(input[aria-invalid='true']) .notify-window__status {
   color: var(--color-danger);
+}
+
+/* fix/family-strip-mobile-roles (owner screenshot 2026-07-09) — the /settings/trash rows are a
+   label|control two-column grid tuned for desktop; in portrait (~390-430px) the copy column crushed to
+   one word per line, the "Delivery window" label overlapped the From input, and the Timezone select
+   bled past the viewport edge. Below 640px every settings row STACKS: full-width copy + helper on top,
+   the control row beneath — inputs/selects sized to content and wrapping, the Timezone select going
+   full-width so it never overruns the edge. ADR-015: the reserved status slots still recolor in place. */
+@media (max-width: 640px) {
+  .batch-settings__row,
+  .space-policy__row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  /* Controls sit at the start (button-sized, not stretched full-width) and wrap as a row. */
+  .batch-settings__field,
+  .space-policy__controls {
+    flex-wrap: wrap;
+    align-self: flex-start;
+    max-width: 100%;
+  }
+  .notify-window__form {
+    align-items: flex-start;
+  }
+  /* The Timezone field stacks its label above a full-width select so long zone names can't overrun
+     the viewport; the small From/To hour fields stay inline. */
+  .notify-window__field:has(select) {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+  .notify-window__field select {
+    width: 100%;
+    max-width: 100%;
+  }
 }
 .policy-tuning {
   margin-top: 12px;
