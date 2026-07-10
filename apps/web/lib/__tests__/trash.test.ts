@@ -18,8 +18,11 @@ import {
   pendingWallGlyph,
   pendingWallTappable,
   previewGuardian,
+  nextSweepSlot,
   reclaimLabel,
   recentlyWatchedLabel,
+  SWEEP_CRON_MINUTE,
+  sweepTimeLabel,
   watchNote,
   watchedLongAgo,
   watchServerLabel,
@@ -387,6 +390,18 @@ describe('overviewCardTone / overviewBadge / overviewDeadlineLabel', () => {
     );
   });
 
+  it('deadline line names the sweep time once the window has CLOSED (awaiting the sweep)', () => {
+    const afterClose = new Date('2026-07-10T03:20:00Z'); // 11:20 PM EDT — window already shut
+    const closed: OverviewBatchLike = {
+      state: 'leaving_soon',
+      expiresAt: '2026-07-10T03:04:00Z', // closed at 11:04 PM EDT; next :45 sweep is 11:45 PM
+      pendingCount: 3,
+    };
+    expect(overviewDeadlineLabel(closed, afterClose)).toBe(
+      'Leaving Soon — window closed · deletes at 11:45 PM',
+    );
+  });
+
   it('badge: suppressed at zero / unknown, warn while the window is open, danger ≤3 days', () => {
     // No batch, positive live count ⇒ shown, muted tone.
     expect(overviewBadge({ slatedCount: 5, live: true, batch: null }, now)).toEqual({
@@ -405,5 +420,53 @@ describe('overviewCardTone / overviewBadge / overviewDeadlineLabel', () => {
     );
     // Admin review is informational (muted pill) even with a positive count.
     expect(overviewBadge({ slatedCount: 18, live: true, batch: admin }, now).tone).toBe('muted');
+  });
+});
+
+// ── next-sweep slot math (DESIGN-011 amendment 2026-07-09) ──────────────────────────────────
+describe('nextSweepSlot / sweepTimeLabel — the honest sweep time (hourly at :SWEEP_CRON_MINUTE)', () => {
+  it('SWEEP_CRON_MINUTE mirrors the deployed CronJob minute (45)', () => {
+    expect(SWEEP_CRON_MINUTE).toBe(45);
+  });
+
+  it('rolls to THIS hour :45 when before it', () => {
+    // 11:20:30 → the 11:45:00 sweep this hour.
+    expect(nextSweepSlot(new Date('2026-07-10T11:20:30Z')).toISOString()).toBe(
+      '2026-07-10T11:45:00.000Z',
+    );
+  });
+
+  it('rolls to the NEXT hour :45 when already past this hour’s slot', () => {
+    // 11:50:00 → this hour’s :45 passed → 12:45:00.
+    expect(nextSweepSlot(new Date('2026-07-10T11:50:00Z')).toISOString()).toBe(
+      '2026-07-10T12:45:00.000Z',
+    );
+  });
+
+  it('keeps the slot when the instant is EXACTLY on :45 (the exactly-:45 edge)', () => {
+    expect(nextSweepSlot(new Date('2026-07-10T11:45:00.000Z')).toISOString()).toBe(
+      '2026-07-10T11:45:00.000Z',
+    );
+    // One ms past the slot rolls to the next hour (the :45 sweep already fired).
+    expect(nextSweepSlot(new Date('2026-07-10T11:45:00.001Z')).toISOString()).toBe(
+      '2026-07-10T12:45:00.000Z',
+    );
+  });
+
+  it('sweepTimeLabel PRE-expiry names the :45 after the future deadline (tz-correct)', () => {
+    // now 8:04 AM EDT; deadline 11:04 PM EDT ⇒ sweep 11:45 PM EDT.
+    const now = new Date('2026-07-09T12:04:00Z');
+    expect(sweepTimeLabel('2026-07-10T03:04:00Z', now)).toBe('11:45 PM');
+  });
+
+  it('sweepTimeLabel POST-expiry uses the :45 after max(now, expiresAt)', () => {
+    // Deadline was 11:04 PM EDT; now is 11:50 PM EDT (past this hour’s :45) ⇒ next sweep 12:45 AM.
+    const now = new Date('2026-07-10T03:50:00Z');
+    expect(sweepTimeLabel('2026-07-10T03:04:00Z', now)).toBe('12:45 AM');
+  });
+
+  it('is null on a garbage / absent deadline (caller falls back to vague copy)', () => {
+    expect(sweepTimeLabel(null)).toBeNull();
+    expect(sweepTimeLabel('not-a-date')).toBeNull();
   });
 });

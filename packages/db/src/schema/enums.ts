@@ -362,6 +362,13 @@ export const APP_SETTING_KEYS = [
   // steers the delay ≥ a few minutes. Admin-gated + audited through setAppSetting; migration 0029 relaxes
   // the CHECK (and adds the pending_pool_refresh marker table).
   'pool_refresh_after_save',
+  // DESIGN-015 amendment (2026-07-09) — the FINAL-WARNING push config (jsonb object:
+  // { enabled, hoursBefore }; DEFAULT { enabled:true, hoursBefore:2 }). When on, green-light enqueues a
+  // `batch_final_warning` outbox row `hoursBefore` hours before the window closes (a configurable
+  // "last call" ahead of the sweep). Read fail-safe by `getFinalWarning` (typeof-guarded — a garbage
+  // jsonb row can't disable the gate into a truthy string / yield a NaN lead time). Admin-gated +
+  // audited through setAppSetting; migration 0030 relaxes the CHECK.
+  'final_warning',
 ] as const;
 export type AppSettingKey = (typeof APP_SETTING_KEYS)[number];
 
@@ -466,11 +473,17 @@ export type NotifyOutboxChannel = (typeof NOTIFY_OUTBOX_CHANNELS)[number];
 //   batch_created               — a batch was posted (manual OR space-policy-proposed): "review it".
 //   batch_leaving_soon          — a batch was green-lit into Leaving Soon (deadline date carried).
 //   batch_leaving_soon_reminder — the DAY BEFORE expiry: last chance to save.
+//   batch_final_warning         — DESIGN-015 amendment (2026-07-09) — the CONFIGURABLE last-call ping,
+//                                 enqueued at green-light with `earliest_send_at = expires_at − N hours`
+//                                 (N = the `final_warning.hoursBefore` setting, READ at green-light). It
+//                                 is skipped when that instant is already past / the window is shorter
+//                                 than N. "Last call: … closes at <time> — N items still slated."
 //   batch_swept                 — the windowed sweep closed the batch (summary).
 export const NOTIFY_OUTBOX_EVENT_TYPES = [
   'batch_created',
   'batch_leaving_soon',
   'batch_leaving_soon_reminder',
+  'batch_final_warning',
   'batch_swept',
 ] as const;
 export type NotifyOutboxEventType = (typeof NOTIFY_OUTBOX_EVENT_TYPES)[number];

@@ -141,17 +141,41 @@ describe('wallCounts — the running header agrees with the glyphs', () => {
   });
 });
 
-describe('countdownCopy — the family banner', () => {
-  it('invites the tap while the window is open and the viewer may save', () => {
-    expect(countdownCopy('in 14 days', true, true)).toBe(
-      'These delete in 14 days — tap anything you want to keep.',
-    );
+describe('countdownCopy — the family banner (DESIGN-011 amendment: honest next-sweep time)', () => {
+  it('invites the tap while the window is open, naming the concrete sweep time', () => {
+    expect(
+      countdownCopy({
+        whenLabel: 'today 11:04 PM',
+        sweepLabel: '11:45 PM',
+        windowOpen: true,
+        canSave: true,
+      }),
+    ).toBe('window closes today 11:04 PM · deletes at the 11:45 PM sweep — tap anything you want to keep');
   });
-  it('drops the invitation for read-only viewers and explains the closed window', () => {
-    expect(countdownCopy('in 14 days', true, false)).toBe('These delete in 14 days.');
-    expect(countdownCopy('today', false, true)).toBe(
-      'The save window has closed — the remaining items delete on the next sweep.',
-    );
+  it('drops the invitation for read-only viewers but still names the sweep', () => {
+    expect(
+      countdownCopy({
+        whenLabel: 'Jul 21',
+        sweepLabel: '11:45 PM',
+        windowOpen: true,
+        canSave: false,
+      }),
+    ).toBe('window closes Jul 21 · deletes at the 11:45 PM sweep');
+  });
+  it('the closed window names the actual sweep time, not a vague "the next sweep"', () => {
+    expect(
+      countdownCopy({
+        whenLabel: 'today 11:04 PM',
+        sweepLabel: '11:45 PM',
+        windowOpen: false,
+        canSave: true,
+      }),
+    ).toBe('window closed — deletes at 11:45 PM');
+  });
+  it('falls back to the old vague copy only when the sweep time cannot be computed', () => {
+    expect(
+      countdownCopy({ whenLabel: 'today', sweepLabel: null, windowOpen: false, canSave: true }),
+    ).toBe('The save window has closed — the remaining items delete on the next sweep.');
   });
 });
 

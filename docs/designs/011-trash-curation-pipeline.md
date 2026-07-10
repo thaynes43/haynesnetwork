@@ -467,3 +467,32 @@ system requested auto-saves (they are not human rescues and never write a `trash
 >   toggle. `wallGlyph` depends only on item state; a `pending` item is always the slated `trash`. The
 >   exclusion-held `protected` tile's un-protect flow is unchanged **except** a freed row lands slated
 >   `pending` (never a person-shield). See ADR-025 errata (2026-07-09) and DESIGN-010 D-12 build-C errata.
+
+---
+
+## D-12 — Amendment 2026-07-09 (owner-directed) — honest next-sweep times
+
+The batch header/countdown and the force-expire tooltip stopped saying vague things ("the sweep can
+only run after &lt;date&gt;", "the remaining items delete on the next sweep") and now name the ACTUAL
+sweep clock time. Purely presentational — no schema, no wire change.
+
+- **`SWEEP_CRON_MINUTE` (default 45)** — `apps/web/lib/trash.ts`, env-overridable via
+  `NEXT_PUBLIC_SWEEP_CRON_MINUTE` (garbage/out-of-range ⇒ 45). It **MIRRORS the deployed
+  `sync-trash-batch-sweep` CronJob schedule `45 * * * *`** (haynes-ops
+  `kubernetes/main/apps/frontend/haynesnetwork/app/helmrelease.yaml`, see D-08). **Coupling:** the
+  override and the CronJob minute MUST move together — a mismatch makes the UI lie about when a batch
+  actually deletes. The CronJob carries no `timeZone`, so it fires at :45 UTC; minute-of-hour is
+  timezone-invariant for whole-hour-offset zones (ET), so the slot math needs no tz — only the DISPLAY
+  of the clock time is tz-localized (the #134 tz fix).
+- **`nextSweepSlot(after)` / `sweepTimeLabel(expiresAt, now, tz)`** — the next `:45` at or after
+  `max(now, expiresAt)` (equality on a `:45` boundary keeps that slot — the sweep at that instant
+  deletes it). `sweepTimeLabel` renders it as a clock time ("11:45 PM") in `America/New_York`; null on a
+  garbage/absent deadline (the caller falls back to the old vague copy).
+- **Rendered copy** (`countdownCopy` + the lifecycle strip meta):
+  - pre-expiry: `window closes today 11:04 PM · deletes at the 11:45 PM sweep` (+ `— tap anything you
+    want to keep` when the viewer may save);
+  - post-expiry, awaiting the sweep: `window closed — deletes at 11:45 PM`.
+  The **overview kind cards** (`overviewDeadlineLabel`) and the **Movies/TV tab badge tooltips** are
+  aligned: a still-open window shows its close day; a closed window names the sweep time.
+- **Force-expire tooltip** — the closed-window "Delete now" / submit tooltip now reads "Run the deletion
+  sweep now — otherwise it runs automatically at the 11:45 PM sweep."

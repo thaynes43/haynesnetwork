@@ -41,6 +41,7 @@ import {
   candidatesAsOfLabel,
   daysUntil,
   deadlineCountdown,
+  sweepTimeLabel,
   watchNote,
 } from '@/lib/trash';
 import {
@@ -505,6 +506,9 @@ function ExpireModal({
   const willKeep = pending.length - willDelete;
   const savedCount = batch.counts.saved;
   const daysLeft = daysUntil(batch.expiresAt);
+  // DESIGN-011 amendment (2026-07-09) — the concrete next-sweep time, so the closed-window submit tooltip
+  // names when the automatic sweep would run rather than a vague "run the sweep now".
+  const sweepLabel = sweepTimeLabel(batch.expiresAt);
   // Mid-window force ⇒ require a TYPED confirmation (the word DELETE or the delete count) before arming.
   const typedOk = !windowOpen || forceExpireConfirmMatches(typed, willDelete);
 
@@ -648,7 +652,9 @@ function ExpireModal({
                     ? 'Type DELETE (or the delete count) to confirm the early override.'
                     : windowOpen
                       ? 'Force the deletion sweep now — the save window has not closed (admin override).'
-                      : 'Run the deletion sweep for this batch now'
+                      : sweepLabel !== null
+                        ? `Run the deletion sweep now — otherwise it runs automatically at the ${sweepLabel} sweep.`
+                        : 'Run the deletion sweep for this batch now'
               }
               onClick={() => expire.mutate({ batchId: batch.id, forceOverride: windowOpen })}
             >
@@ -1033,6 +1039,9 @@ function LifecycleView({
   // reads "closes today 11:04 PM · in 15h"; at 48h+ "closes Jul 21 · in 9 days". Day words are ET
   // calendar comparisons, so an 11:04 PM-ET-today expiry never mislabels as "tomorrow".
   const countdown = deadlineCountdown(batch.expiresAt);
+  // DESIGN-011 amendment (2026-07-09) — the concrete next-sweep clock time ("11:45 PM"), so the header
+  // and countdown name WHEN the batch actually deletes instead of a vague "the next sweep".
+  const sweepLabel = sweepTimeLabel(batch.expiresAt);
   const saverNames = new Map<string, string>();
   for (const u of saveStats?.byUser ?? []) {
     if (u.userId !== null && u.displayName !== null) saverNames.set(u.userId, u.displayName);
@@ -1040,11 +1049,19 @@ function LifecycleView({
 
   const windowMeta =
     batch.state === 'leaving_soon' && batch.expiresAt !== null ? (
-      <>
-        window closes {countdown.whenLabel}
-        {countdown.hourLevel ? ' · ' : ' '}
-        <span className={`trash-days trash-days--${countdown.tone}`}>{countdown.relLabel}</span>
-      </>
+      windowOpen ? (
+        <>
+          window closes {countdown.whenLabel}
+          {countdown.hourLevel ? ' · ' : ' '}
+          <span className={`trash-days trash-days--${countdown.tone}`}>{countdown.relLabel}</span>
+        </>
+      ) : (
+        // Window closed but the batch is still awaiting the sweep — name the sweep time, not a stale
+        // "window closes <past date>".
+        <>
+          window closed{sweepLabel !== null ? ` · deletes ${sweepLabel}` : ''}
+        </>
+      )
     ) : (
       <>created {formatDay(batch.createdAt)}</>
     );
@@ -1107,7 +1124,9 @@ function LifecycleView({
               expireBlocked ??
               (windowOpen
                 ? 'Force the deletion sweep now — the save window has not closed (admin override)'
-                : 'Run the deletion sweep for this batch now')
+                : sweepLabel !== null
+                  ? `Run the deletion sweep now — otherwise it runs automatically at the ${sweepLabel} sweep`
+                  : 'Run the deletion sweep for this batch now')
             }
             onClick={() => setModal('expire')}
           >
@@ -1140,7 +1159,12 @@ function LifecycleView({
           data-testid="batch-countdown"
           role="status"
         >
-          {countdownCopy(countdown.relLabel, windowOpen, wallInteractive(ctx))}
+          {countdownCopy({
+            whenLabel: countdown.whenLabel,
+            sweepLabel,
+            windowOpen,
+            canSave: wallInteractive(ctx),
+          })}
         </div>
       ) : null}
       {batch.state === 'draft' ? (

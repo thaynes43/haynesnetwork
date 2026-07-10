@@ -389,6 +389,61 @@ export function formatDeadlineTime(iso: string, tz: string = DISPLAY_TZ): string
   return d.toLocaleTimeString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit' });
 }
 
+// DESIGN-011 amendment (2026-07-09) — the deployed batch-sweep CronJob runs hourly at :45 (`45 * * * *`,
+// haynes-ops kubernetes/main/apps/frontend/haynesnetwork/app/helmrelease.yaml → sync-trash-batch-sweep).
+// This constant MIRRORS that minute so the UI can name the exact sweep time ("deletes at 11:45 PM")
+// instead of a vague "the next sweep". Env-overridable via NEXT_PUBLIC_SWEEP_CRON_MINUTE for non-prod
+// experiments — but the override and the CronJob schedule MUST move together, or the UI lies about when a
+// batch actually deletes (coupling documented in DESIGN-011 D-08). A garbage/out-of-range override
+// fails safe to 45. Minute-of-hour is timezone-invariant for whole-hour-offset zones (ET), so the slot
+// math needs no tz for the minute; only the DISPLAY of the clock time is tz-localized (the #134 tz fix).
+function readSweepMinute(): number {
+  const raw = process.env.NEXT_PUBLIC_SWEEP_CRON_MINUTE;
+  const n = raw !== undefined && raw !== '' ? Number(raw) : NaN;
+  return Number.isInteger(n) && n >= 0 && n <= 59 ? n : 45;
+}
+export const SWEEP_CRON_MINUTE = readSweepMinute();
+
+/**
+ * The next sweep instant — the next occurrence of minute `:SWEEP_CRON_MINUTE` at or after `after`.
+ * Call with `after = max(now, expiresAt)` so a closed window names the upcoming sweep and an open one
+ * names the sweep just past its deadline. `setUTCMinutes` lands in the same hour; if that instant is
+ * strictly before `after` the sweep for this hour already passed, so roll one hour forward. Equality
+ * (`after` sits exactly on a :minute slot — the exactly-:45 edge) KEEPS that slot: the sweep at that
+ * instant deletes it.
+ */
+export function nextSweepSlot(after: Date, minute: number = SWEEP_CRON_MINUTE): Date {
+  const slot = new Date(after.getTime());
+  slot.setUTCSeconds(0, 0);
+  slot.setUTCMinutes(minute);
+  if (slot.getTime() < after.getTime()) slot.setUTCHours(slot.getUTCHours() + 1);
+  return slot;
+}
+
+/** True once a leaving-soon window has closed (its `expiresAt` is at/inside `now`). Null/garbage ⇒
+ *  false. A pure wrapper so callers never do an impure `Date.now()` in a React render body. */
+export function windowClosed(expiresAtIso: string | null, now: Date = new Date()): boolean {
+  if (expiresAtIso === null) return false;
+  const t = Date.parse(expiresAtIso);
+  return !Number.isNaN(t) && t <= now.getTime();
+}
+
+/**
+ * The clock time ("11:45 PM" ET) of the next sweep at or after `max(now, expiresAt)`, formatted in `tz`
+ * (tz-correct per the #134 fix). Null on a garbage/absent deadline — the caller falls back to vague copy.
+ */
+export function sweepTimeLabel(
+  expiresAtIso: string | null,
+  now: Date = new Date(),
+  tz: string = DISPLAY_TZ,
+): string | null {
+  if (expiresAtIso === null) return null;
+  const exp = Date.parse(expiresAtIso);
+  if (Number.isNaN(exp)) return null;
+  const after = new Date(Math.max(now.getTime(), exp));
+  return formatDeadlineTime(nextSweepSlot(after).toISOString(), tz);
+}
+
 /** Whole hours remaining until `iso` (rounded, floored at 1 while still future), else null. */
 export function hoursUntil(iso: string | null, now: Date = new Date()): number | null {
   if (iso === null) return null;
@@ -505,6 +560,14 @@ export function overviewDeadlineLabel(
   if (batch === null) return '';
   if (batch.state === 'leaving_soon') {
     if (batch.expiresAt === null) return 'Leaving Soon';
+    // Window already closed (awaiting the sweep) — name the sweep time, not a stale past deadline
+    // (aligned with the batch countdown banner; DESIGN-011 amendment 2026-07-09).
+    if (Date.parse(batch.expiresAt) <= now.getTime()) {
+      const sweep = sweepTimeLabel(batch.expiresAt, now, tz);
+      return sweep !== null
+        ? `Leaving Soon — window closed · deletes at ${sweep}`
+        : 'Leaving Soon — window closed';
+    }
     const c = deadlineCountdown(batch.expiresAt, now, tz);
     return c.hourLevel
       ? `Leaving Soon — window closes ${c.whenLabel} · ${c.relLabel}`

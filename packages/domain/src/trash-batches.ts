@@ -26,7 +26,7 @@ import {
   type TrashMediaKind,
 } from '@hnet/db';
 import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
-import { getAppSetting } from './app-settings';
+import { getAppSetting, getFinalWarning } from './app-settings';
 import { inTransaction, resolveDb } from './db-client';
 // ADR-034 / DESIGN-015 (PLAN-016) — same-tx Pushover enqueue on batch lifecycle transitions.
 import { computeEarliestSend, computeReminderSend, getNotifyWindow } from './notify-window';
@@ -524,6 +524,17 @@ async function promoteToLeavingSoon(input: {
   const pendingCount = items.length;
   const pendingBytes = items.reduce((n, it) => n + (it.sizeBytes ?? 0), 0);
 
+  // DESIGN-015 amendment (2026-07-09) — the CONFIGURABLE last-call ping. `hoursBefore` (N) is read HERE,
+  // at green-light, and frozen into `earliest_send_at = expires_at − N hours` (a later setting change
+  // never moves this row). The row is enqueued ONLY when that instant is still in the future — which is
+  // exactly "the window is longer than N hours" (expiresAt = now + windowDays·24h, so
+  // `expiresAt − N ≤ now` ⟺ the window is ≤ N hours). NOT run through the delivery window: a last call
+  // is deadline-relative, not quiet-hours-shiftable (it must land before the sweep, never after).
+  const finalWarning = await getFinalWarning(input.db);
+  const finalWarningEarliest = new Date(expiresAt.getTime() - finalWarning.hoursBefore * 3_600_000);
+  const enqueueFinalWarning =
+    finalWarning.enabled && finalWarningEarliest.getTime() > now.getTime();
+
   await inTransaction(input.db, async (tx) => {
     const updated = await tx
       .update(trashBatches)
@@ -575,6 +586,15 @@ async function promoteToLeavingSoon(input: {
       earliestSendAt: reminderEarliest,
       payload: leavingPayload,
     });
+    // The configurable "last call" N hours before close — skipped when it'd already be past (a window
+    // shorter than N hours) or the setting is off.
+    if (enqueueFinalWarning) {
+      await enqueueOutbox(tx, {
+        eventType: 'batch_final_warning',
+        earliestSendAt: finalWarningEarliest,
+        payload: leavingPayload,
+      });
+    }
   });
 
   return { expiresAt: expiresAt.toISOString(), windowDays: input.windowDays, collectionId };
