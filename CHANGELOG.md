@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.34.0](https://github.com/thaynes43/haynesnetwork/compare/v0.33.0...v0.34.0) (2026-07-10)
+
+
+### Features
+
+* Metrics — Hardware sub-tab (SMART health + NVMe endurance, node load/temps, Proxmox showcase) + critical-only SMART alerting (PLAN-019) ([#169](https://github.com/thaynes43/haynesnetwork/issues/169)) ([ba44432](https://github.com/thaynes43/haynesnetwork/commit/ba4443289a650b340f047eed24f0a88ac890c645))
+
 ## [0.33.0](https://github.com/thaynes43/haynesnetwork/compare/v0.32.0...v0.33.0) (2026-07-10)
 
 
