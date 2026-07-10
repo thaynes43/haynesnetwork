@@ -482,4 +482,80 @@ describe('migrations against embedded Postgres 16', () => {
       );
     });
   });
+
+  // ADR-037 / DESIGN-016 (migration 0031) — the Metrics foundation: a new roles.metrics_level column +
+  // three CHECK relaxes (permission_audit action, role_section_permissions section, app_settings key).
+  describe('0031 metrics foundation (ADR-037 — column + CHECK relaxes, preservation)', () => {
+    const DEFAULT_ROLE = '11111111-1111-4111-8111-111111111111';
+    const ADMIN_ROLE = '22222222-2222-4222-8222-222222222222';
+
+    it('roles.metrics_level exists, defaults limited, seeds admin to full, and is CHECK-enforced', async () => {
+      const seed = await client.query(
+        `SELECT metrics_level FROM roles WHERE id = '${ADMIN_ROLE}'`,
+      );
+      expect(seed.rows[0].metrics_level).toBe('full'); // migration seeds is_admin ⇒ full
+      const def = await client.query(
+        `SELECT metrics_level FROM roles WHERE id = '${DEFAULT_ROLE}'`,
+      );
+      expect(def.rows[0].metrics_level).toBe('limited'); // column default
+      for (const level of ['full', 'limited']) {
+        await client.query({
+          text: `UPDATE roles SET metrics_level = $1 WHERE id = '${DEFAULT_ROLE}'`,
+          values: [level],
+        });
+      }
+      await expect(
+        client.query(`UPDATE roles SET metrics_level = 'bogus' WHERE id = '${DEFAULT_ROLE}'`),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query(`UPDATE roles SET metrics_level = 'limited' WHERE id = '${DEFAULT_ROLE}'`);
+    });
+
+    it('role_section_permissions_section_enum admits the new metrics section, rejects unknown', async () => {
+      await client.query(
+        `INSERT INTO role_section_permissions (role_id, section_id, level)
+           VALUES ('${DEFAULT_ROLE}', 'metrics', 'read_only')
+           ON CONFLICT (role_id, section_id) DO UPDATE SET level = EXCLUDED.level`,
+      );
+      await expect(
+        client.query({
+          text: `INSERT INTO role_section_permissions (role_id, section_id, level)
+                   VALUES ('${DEFAULT_ROLE}', 'nope_section', 'read_only')`,
+        }),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query(
+        `DELETE FROM role_section_permissions WHERE role_id = '${DEFAULT_ROLE}' AND section_id = 'metrics'`,
+      );
+    });
+
+    it('permission_audit_action_enum admits update_role_metrics_level + prior actions', async () => {
+      for (const action of ['update_message_actions', 'update_role_metrics_level']) {
+        await client.query({
+          text: `INSERT INTO permission_audit (action) VALUES ($1)`,
+          values: [action],
+        });
+      }
+      await expect(
+        client.query(`INSERT INTO permission_audit (action) VALUES ('bogus_action')`),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query(
+        `DELETE FROM permission_audit WHERE action IN ('update_message_actions','update_role_metrics_level')`,
+      );
+    });
+
+    it('app_settings_key_enum admits the WAN capacity keys + the prior keys (preservation)', async () => {
+      for (const key of ['final_warning', 'upload_capacity_mbps', 'download_capacity_mbps']) {
+        await client.query({
+          text: `INSERT INTO app_settings (key, value) VALUES ($1, '300'::jsonb)
+                   ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+          values: [key],
+        });
+      }
+      await expect(
+        client.query(`INSERT INTO app_settings (key, value) VALUES ('nope_key', '{}'::jsonb)`),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query(
+        `DELETE FROM app_settings WHERE key IN ('final_warning','upload_capacity_mbps','download_capacity_mbps')`,
+      );
+    });
+  });
 });

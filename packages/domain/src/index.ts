@@ -9,6 +9,8 @@ export * from './catalog';
 export * from './effective-apps';
 // ADR-021 / DESIGN-009 — section-level role permissions (Ledger + reserved Trash) single-writer
 export * from './section-permissions';
+// ADR-037 / DESIGN-016 (PLAN-017) — the per-role metrics access level (full|limited) single-writer
+export * from './metrics-level';
 // ADR-023 / DESIGN-010 — Trash (Maintainerr) fine-grained action grants + the notification store
 export * from './trash-permissions';
 export * from './notifications';

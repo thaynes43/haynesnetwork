@@ -32,7 +32,7 @@ export interface TopBarUser {
   email: string;
   role: {
     isAdmin: boolean;
-    sectionPermissions?: Partial<Record<'ledger' | 'trash' | 'bulletin', SectionLevel>>;
+    sectionPermissions?: Partial<Record<'ledger' | 'trash' | 'bulletin' | 'metrics', SectionLevel>>;
   };
 }
 
@@ -241,6 +241,10 @@ export function TopBar({ user }: { user: TopBarUser }) {
   // read_only (C-02 — the Feed is for everyone), so a missing map falls OPEN;
   // the /bulletin route is additionally server-gated.
   const showBulletin = (user.role.sectionPermissions?.bulletin ?? 'read_only') !== 'disabled';
+  // ADR-037 / DESIGN-016 D-05 — the Metrics entry: the no-row DEFAULT for metrics is disabled
+  // (ADR-037 C-02 — ships Admin-only; a role row opts others in), so a missing map falls CLOSED;
+  // the /metrics route is additionally server-gated.
+  const showMetrics = (user.role.sectionPermissions?.metrics ?? 'disabled') !== 'disabled';
   return (
     <header className="topbar">
       <div className="brand">
@@ -262,6 +266,8 @@ export function TopBar({ user }: { user: TopBarUser }) {
         {showTrash ? <Link href="/trash">Trash</Link> : null}
         {/* PLAN-009 (DESIGN-012 D-08): the Bulletin section, level-gated (see showBulletin). */}
         {showBulletin ? <Link href="/bulletin">Bulletin</Link> : null}
+        {/* PLAN-017 (DESIGN-016 D-05): the Metrics section, level-gated (see showMetrics). */}
+        {showMetrics ? <Link href="/metrics">Metrics</Link> : null}
       </nav>
       <div className="topbar__spacer" />
       <div className="topbar__actions">

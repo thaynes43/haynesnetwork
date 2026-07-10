@@ -42,6 +42,13 @@ import {
   type PlexClientBundle,
 } from '@hnet/domain';
 import { prometheusClientFromEnv, type PrometheusRangeReader } from './prometheus';
+// ADR-037 / DESIGN-016 (PLAN-017 Metrics) — the read-only Prometheus reader for the Metrics section.
+// A DISTINCT reader from `./prometheus` (which is range-only, storage-trend): @hnet/metrics adds the
+// instant `query` the Overview needs. Kept separate so the shipped storage vertical stays untouched.
+import {
+  prometheusClientFromEnv as metricsReaderFromEnv,
+  type PrometheusReader as MetricsPrometheusReader,
+} from '@hnet/metrics';
 
 export type { SessionUser };
 
@@ -73,6 +80,12 @@ export interface TRPCContext {
    * (PROMETHEUS_URL, in-cluster default), stubbed reader in tests.
    */
   prometheus?: PrometheusRangeReader;
+  /**
+   * ADR-037 / DESIGN-016 (PLAN-017) — the @hnet/metrics Prometheus reader the `metrics.overview` read
+   * runs against (instant + range). Same injection model: env-built singleton in production
+   * (PROMETHEUS_URL, in-cluster default), stubbed reader in tests.
+   */
+  metrics?: MetricsPrometheusReader;
 }
 
 let envArrBundle: ArrClientBundle | undefined;
@@ -109,6 +122,15 @@ export function resolvePrometheusReader(ctx: TRPCContext): PrometheusRangeReader
   if (ctx.prometheus) return ctx.prometheus;
   envPrometheus ??= prometheusClientFromEnv();
   return envPrometheus;
+}
+
+let envMetricsReader: MetricsPrometheusReader | undefined;
+
+/** The @hnet/metrics reader for this request: injected (tests) or the env-built singleton (ADR-037). */
+export function resolveMetricsReader(ctx: TRPCContext): MetricsPrometheusReader {
+  if (ctx.metrics) return ctx.metrics;
+  envMetricsReader ??= metricsReaderFromEnv();
+  return envMetricsReader;
 }
 
 function hasKnownRole(user: SessionUser): boolean {

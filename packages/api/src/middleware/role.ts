@@ -7,6 +7,7 @@ import {
   SECTION_DEFAULT_LEVELS,
   SECTION_LEVEL_RANK,
   type MessageAction,
+  type MetricsLevel,
   type SectionId,
   type SectionPermissionLevel,
   type TrashAction,
@@ -47,6 +48,23 @@ export function sectionProcedure(sectionId: SectionId, minLevel: SectionPermissi
     return next();
   });
 }
+
+/**
+ * ADR-037 C-01/C-03 — the caller's effective metrics access level, read off the session (no query).
+ * Admin ⇒ 'full' (like admin implies section 'edit'); otherwise the role's stored `metrics_level`.
+ * The `metrics.overview` resolver reads this to SHAPE the payload (full-only fields omitted for
+ * 'limited') — server-authoritative, never client-hidden only.
+ */
+export function effectiveMetricsLevel(role: SessionRole): MetricsLevel {
+  return role.isAdmin ? 'full' : role.metricsLevel;
+}
+
+/**
+ * ADR-037 C-02 — the Metrics rung: authed AND the caller can SEE the `metrics` section (≥ read_only).
+ * The section defaults to `disabled` (ships Admin-only; a role row opts others in), so this gate is the
+ * visibility check; the payload GRANULARITY is decided per `effectiveMetricsLevel` inside the resolver.
+ */
+export const metricsProcedure = sectionProcedure('metrics', 'read_only');
 
 /**
  * ADR-025 errata (2026-07-08, owner-directed) — GLOBAL SAVE IS A SUPERSET OF THE WINDOWED RESCUE.
