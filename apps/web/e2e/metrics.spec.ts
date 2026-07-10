@@ -103,11 +103,32 @@ test.describe('metrics section (PLAN-017 · ADR-037 · DESIGN-016) — Overview 
         }
       }
     });
+
+    // DESIGN-016 D-08 — the admin-only inline capacity editor: present, and a save re-renders the meter
+    // denominator (optimistic → server reconcile). Restores the seeded 300 so re-runs see the default.
+    await test.step('the admin can edit the upload capacity and the denominator re-renders', async () => {
+      const input = page.getByTestId('metrics-capacity-input-upload');
+      await expect(input, 'the upload capacity input is present for an admin').toBeVisible();
+      await expect(page.getByTestId('metrics-capacity-input-download')).toBeVisible();
+
+      await input.fill('600');
+      await page.getByTestId('metrics-capacity-save-upload').click();
+      // The meter denominator picks up the new cap (optimistic + reconcile).
+      await expect(page.getByTestId('metrics-upload-meter')).toBeVisible();
+      await expect(input).toHaveValue('600');
+
+      // Restore the seeded value so later specs / re-runs see 300 Mbps.
+      await input.fill('300');
+      await page.getByTestId('metrics-capacity-save-upload').click();
+      await expect(input).toHaveValue('300');
+    });
   });
 
   // AC: Prometheus-down must DEGRADE, never crash — the page keeps its heading and (if present) shows
   // the network-unavailable note; the meters may vanish but the tab must not throw.
-  test('with Prometheus down the Overview degrades and still shows its heading', async ({ page }) => {
+  test('with Prometheus down the Overview degrades and still shows its heading', async ({
+    page,
+  }) => {
     await setPrometheusMode('down');
     try {
       await signIn(page, 'admin');
@@ -197,7 +218,10 @@ test.describe('metrics Network sub-tab (PLAN-020 · ADR-039 · DESIGN-019) — W
       // Site rollup shows the aggregate station COUNT (a number, never a per-client row).
       await expect(page.getByTestId('metrics-net-stations')).toContainText('181');
       // A curated switch board deep-link (not the Client-Insights board).
-      await expect(page.getByTestId('metrics-net-switch-grafana')).toHaveAttribute('href', /d\/FsfxpWaZz/);
+      await expect(page.getByTestId('metrics-net-switch-grafana')).toHaveAttribute(
+        'href',
+        /d\/FsfxpWaZz/,
+      );
     });
 
     await test.step('PRIVACY: no client-identity board link and no per-client series leak into the DOM', async () => {
@@ -235,7 +259,9 @@ test.describe('metrics Hardware sub-tab (PLAN-019 · ADR-040 · DESIGN-020) — 
       await expect(page.getByTestId('metrics-hw-pool-Cache-apps')).toBeVisible();
       await expect(page.getByTestId('metrics-hw-pool-Cache-staging')).toBeVisible();
       // The acceptance status lines: staging is "holding"; apps is "worn".
-      await expect(page.getByTestId('metrics-hw-pool-status-Cache-staging')).toContainText('holding');
+      await expect(page.getByTestId('metrics-hw-pool-status-Cache-staging')).toContainText(
+        'holding',
+      );
       await expect(page.getByTestId('metrics-hw-pool-status-Cache-apps')).toContainText('worn');
     });
 

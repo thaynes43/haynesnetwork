@@ -3437,7 +3437,9 @@ input[aria-invalid='true'] {
   border-radius: var(--radius-sm);
   background: var(--color-surface);
   color: var(--color-text);
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
 }
 .trash-ovcard:hover {
   border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
@@ -4652,11 +4654,7 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
   right: 0;
   height: 2px;
   transform: translateY(-1px);
-  background: repeating-linear-gradient(
-    90deg,
-    var(--color-text-muted) 0 6px,
-    transparent 6px 12px
-  );
+  background: repeating-linear-gradient(90deg, var(--color-text-muted) 0 6px, transparent 6px 12px);
   opacity: 0.9;
   pointer-events: none;
 }
@@ -4749,11 +4747,7 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
   flex: none;
 }
 .storage-trend__swatch--dashed {
-  background: repeating-linear-gradient(
-    90deg,
-    var(--color-text-muted) 0 3px,
-    transparent 3px 6px
-  );
+  background: repeating-linear-gradient(90deg, var(--color-text-muted) 0 3px, transparent 3px 6px);
 }
 .storage-trend__legend-target,
 .storage-trend__legend-note {
@@ -5115,6 +5109,51 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
 }
 .metrics-meter__foot {
   font-size: 13px;
+}
+/* DESIGN-016 D-08 — the admin-only inline WAN-capacity editor (mirrors the storage-target idiom). Always
+   mounted for an admin, so nothing toggles/reflows (ADR-015); the status label reserves its width so the
+   "Saved"⇄"Whole 0–1,000,000" swap can't nudge the row. No hex — all color rides the --color-* tokens. */
+.metrics-capacity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  min-height: 36px;
+}
+.metrics-capacity__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.metrics-capacity__label input {
+  font: inherit;
+  font-size: 13px;
+  width: 92px;
+  min-height: 32px;
+  padding: 4px 8px;
+  text-align: right;
+  color: var(--color-text);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+.metrics-capacity__label input:focus {
+  border-color: var(--color-accent);
+}
+.metrics-capacity__status {
+  font-size: 12px;
+  min-width: 128px; /* reserved — "Whole 0–1,000,000" never widens the row when it appears */
+}
+.metrics-capacity:has(input[aria-invalid='true']) .metrics-capacity__status {
+  color: var(--color-danger);
+  font-weight: 600;
+}
+.metrics-capacity__error {
+  flex-basis: 100%;
+  margin: 0;
 }
 .metrics-tile {
   display: grid;

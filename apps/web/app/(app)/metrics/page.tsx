@@ -35,5 +35,9 @@ export default async function MetricsPage() {
     );
   }
 
-  return <MetricsClient metricsLevel={effectiveMetricsLevel(role)} />;
+  // DESIGN-016 D-08 — the admin flag is resolved server-side (like every other admin-only affordance,
+  // ADR-012) and threaded to the client so the Overview can render the inline WAN-capacity editor for an
+  // admin only. The mutation it calls is itself adminProcedure-gated + audited — this is UI convenience,
+  // not the security boundary.
+  return <MetricsClient metricsLevel={effectiveMetricsLevel(role)} viewerIsAdmin={role.isAdmin} />;
 }

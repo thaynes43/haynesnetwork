@@ -20,6 +20,28 @@ export function meterWidth(pct: number | null): number {
   return Math.max(0, Math.min(pct, 100));
 }
 
+// DESIGN-016 D-08 — the admin-editable WAN capacity denominators. These bounds MIRROR the server zod
+// input on `metrics.capacity.set{Upload,Download}` (`z.number().int().min(0).max(1_000_000)`) so the
+// inline editor rejects the same values the mutation would, client-side, before a round trip.
+export const CAPACITY_MBPS_MIN = 0;
+export const CAPACITY_MBPS_MAX = 1_000_000;
+
+/** True when `mbps` is NOT a whole number inside [0, 1_000_000] — the client mirror of the server bound. */
+export function capacityOutOfRange(mbps: number): boolean {
+  return !Number.isInteger(mbps) || mbps < CAPACITY_MBPS_MIN || mbps > CAPACITY_MBPS_MAX;
+}
+
+/**
+ * usage/capacity·100, one decimal, clamped ≥ 0; null when usage is unknown or capacity ≤ 0. A pure MIRROR
+ * of `@hnet/metrics` `meterPct` so an OPTIMISTIC capacity edit recomputes the meter fill EXACTLY the way
+ * the server will on reconcile — no flash of a stale-denominator fill (ADR-015: recolor/resize the same
+ * geometry in place, never reflow the neighbors).
+ */
+export function meterPct(usageMbps: number | null, capacityMbps: number): number | null {
+  if (usageMbps === null || capacityMbps <= 0) return null;
+  return Math.round(Math.max(0, (usageMbps / capacityMbps) * 100) * 10) / 10;
+}
+
 /** "11.6 Mbps" (server keeps one decimal) / "2.26 Gbps" for ≥ 1000 / "—" when unknown. */
 export function formatMbps(mbps: number | null): string {
   if (mbps === null) return '—';
