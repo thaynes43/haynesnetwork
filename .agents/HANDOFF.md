@@ -4,7 +4,22 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-- **Last updated:** 2026-07-10 — **PLAN-011 Authentik hardening COMPLETE (owner-present): config-as-code
+- **Last updated:** 2026-07-10 — **PLAN-024 Peloton poster guard COMPLETE, live (v0.36.0).** The k8plex
+  **HOps Peloton** posters are now durable: a one-time restore reapplied all 88 show/season posters, and a
+  new **`poster-guard`** `@hnet/sync` mode (hourly haynes-ops CronJob `sync-poster-guard`, `37 * * * *`)
+  **re-applies only DRIFTED posters** and records each in an append-only **`poster_guard_applications`**
+  ledger (drift baseline + audit; single-writer, guard-listed; no `sync_runs` row). The durable override
+  PNGs live **git-versioned in the app image** (`packages/sync/assets/peloton-posters/`, resolved by live
+  show title / season index) — **ADR-043 chose git-in-image + a DB ledger over the owner's DB-`bytea`
+  lean** (three ADRs reject poster bytes in the DB; the "PLAN-004 stores poster bytes" basis was false — it
+  stores references). **Owner-flagged:** if you'd prefer the DB/NAS as the byte home, it's a one-file seam
+  (`createFilePosterAssetSource`). Poster upload is a new **confined** Plex write (`@hnet/plex` write
+  subpath, domain-only). **Live-validated:** baseline reapplied 88; re-run idempotent (0); drift test
+  restored one clobbered season byte-identically + wrote a `drift` row (ledger 88 initial + 1 drift). Docs:
+  **ADR-043 / DESIGN-021 / OPS-010 / R-137..R-140 / T-124..T-125**; PR #175 → v0.36.0; haynes-ops
+  `d5ab51d0`. **Unmapped (by design, not guessed):** season index 75 (4 shows) + index 0 "Specials" (2);
+  `outdoor-poster.png` unused (no Outdoor show). Prior milestone — PLAN-011 Authentik hardening (below).
+- **Recent:** 2026-07-10 — **PLAN-011 Authentik hardening COMPLETE (owner-present): config-as-code
   blueprints + native-account MFA, live.** The Authentik login estate (brand · flows · sources · MFA) is
   now **GitOps blueprints** in `haynes-ops` (`…/network/authentik/app/blueprints/`, one file per concern,
   mounted onto the worker as a ConfigMap) — a **drift-zero** baseline (`10`/`20`/`30`, proven to change
