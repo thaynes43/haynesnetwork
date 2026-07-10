@@ -17,10 +17,11 @@ const member: SessionUser = {
     id: UUID_B,
     name: 'Default',
     isAdmin: false,
-    // The documented no-row defaults (ADR-032 flipped ledger to disabled).
-    sectionPermissions: { ledger: 'disabled', trash: 'disabled', bulletin: 'read_only' },
+    // The documented no-row defaults (ADR-032 flipped ledger to disabled; ADR-037 metrics disabled).
+    sectionPermissions: { ledger: 'disabled', trash: 'disabled', bulletin: 'read_only', metrics: 'disabled' },
     trashActions: [],
     messageActions: [],
+    metricsLevel: 'limited',
   },
   plexIdentity: { userId: null, email: null, username: null },
 };

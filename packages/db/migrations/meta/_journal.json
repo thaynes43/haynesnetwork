@@ -211,6 +211,13 @@
       "when": 1782950430000,
       "tag": "0030_final_warning_outbox",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1782950431000,
+      "tag": "0031_metrics_foundation",
+      "breakpoints": true
     }
   ]
 }

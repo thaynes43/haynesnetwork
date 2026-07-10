@@ -11,6 +11,7 @@ import {
   roles,
   users,
   MESSAGE_ACTIONS,
+  METRICS_LEVELS,
   SECTION_IDS,
   SECTION_DEFAULT_LEVELS,
   TRASH_ACTIONS,
@@ -23,6 +24,7 @@ import {
   createRole,
   deleteRole,
   setRoleMessageActions,
+  setRoleMetricsLevel,
   setRoleTrashActions,
   setSectionPermission,
   updateRole,
@@ -48,6 +50,7 @@ export const rolesRouter = router({
         isAdmin: roles.isAdmin,
         isDefault: roles.isDefault,
         grantsAll: roles.grantsAll,
+        metricsLevel: roles.metricsLevel,
         sortOrder: roles.sortOrder,
       })
       .from(roles)
@@ -129,6 +132,8 @@ export const rolesRouter = router({
         : MESSAGE_ACTIONS.filter((a) => messageGrantedSet?.has(a));
       return {
         ...row,
+        // ADR-037 C-01 — admin implies 'full' (like admin implies section 'edit'); else the column.
+        metricsLevel: row.isAdmin ? 'full' : row.metricsLevel,
         appIds: appIdsByRole.get(row.id) ?? [],
         memberCount: membersByRole.get(row.id) ?? 0,
         sectionPermissions,
@@ -206,4 +211,23 @@ export const rolesRouter = router({
       }),
     );
   }),
+
+  /**
+   * ADR-037 C-01 — set a role's metrics access level (full | limited). Delegates to the @hnet/domain
+   * single-writer (audits 'update_role_metrics_level' in-tx); the Admin role is immutable (implies
+   * 'full') → ROLE_IMMUTABLE (D-13). Orthogonal to the `metrics` section level (setSectionPermission):
+   * visibility gates whether Metrics is seen, this level shapes how much of it.
+   */
+  setMetricsLevel: adminProcedure
+    .input(z.object({ roleId: z.uuid(), level: z.enum(METRICS_LEVELS) }))
+    .mutation(async ({ ctx, input }) => {
+      return mapDomainErrors(() =>
+        setRoleMetricsLevel({
+          db: ctx.db,
+          roleId: input.roleId,
+          level: input.level,
+          actorId: ctx.user.id,
+        }),
+      );
+    }),
 });

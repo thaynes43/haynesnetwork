@@ -31,12 +31,19 @@ describe('session extension (DESIGN-002 D-06 / DESIGN-003 D-01, ADR-012)', () =>
         name: 'Default',
         isAdmin: false,
         // ADR-021 — no rows ⇒ the documented section defaults (ADR-032 flipped ledger to
-        // disabled; bulletin stays read_only — the Feed is for everyone).
-        sectionPermissions: { ledger: 'disabled', trash: 'disabled', bulletin: 'read_only' },
+        // disabled; bulletin stays read_only — the Feed is for everyone; ADR-037 metrics disabled).
+        sectionPermissions: {
+          ledger: 'disabled',
+          trash: 'disabled',
+          bulletin: 'read_only',
+          metrics: 'disabled',
+        },
         // ADR-023 — no grant rows ⇒ no Trash actions.
         trashActions: [],
         // ADR-026 — no grant rows ⇒ no Bulletin message actions.
         messageActions: [],
+        // ADR-037 — the default role's stored metrics_level column (default 'limited').
+        metricsLevel: 'limited',
       },
       displayName: 'Owner Haynes',
       // fix/plex-identity-mapping — no claim, no override ⇒ empty (matcher falls back to app email).
@@ -58,11 +65,13 @@ describe('session extension (DESIGN-002 D-06 / DESIGN-003 D-01, ADR-012)', () =>
         name: 'Admin',
         isAdmin: true,
         // ADR-021 C-03 — admin implies Edit on every section (no rows).
-        sectionPermissions: { ledger: 'edit', trash: 'edit', bulletin: 'edit' },
+        sectionPermissions: { ledger: 'edit', trash: 'edit', bulletin: 'edit', metrics: 'edit' },
         // ADR-023 C-03 — admin implies EVERY Trash action (no rows).
         trashActions: [...TRASH_ACTIONS],
         // ADR-026 C-04 — admin implies EVERY Bulletin message action (no rows).
         messageActions: [...MESSAGE_ACTIONS],
+        // ADR-037 C-01 — admin implies 'full' metrics access.
+        metricsLevel: 'full',
       },
       displayName: 'Admin Ada',
       plexIdentity: { userId: null, email: null, username: null },
@@ -92,6 +101,7 @@ describe('session extension (DESIGN-002 D-06 / DESIGN-003 D-01, ADR-012)', () =>
       ledger: 'read_only',
       trash: 'disabled',
       bulletin: 'read_only',
+      metrics: 'disabled',
     });
   });
 

@@ -286,6 +286,10 @@ export interface AppSettingValueMap {
   notify_window: NotifyWindow;
   pool_refresh_after_save: PoolRefreshAfterSave;
   final_warning: FinalWarning;
+  // ADR-037 C-06 (PLAN-017 Metrics) — the WAN link capacities (Mbps) the Metrics Overview charts
+  // usage against. Numbers, like trash_default_window_days.
+  upload_capacity_mbps: number;
+  download_capacity_mbps: number;
 }
 
 /** The documented default returned when a key has no row (never null — every key has a default). */
@@ -316,6 +320,12 @@ export const APP_SETTING_DEFAULTS: AppSettingValueMap = {
   // DESIGN-015 amendment (2026-07-09) — the configurable final-warning push (ON, 2 hours before close).
   // An object so the getAppSetting typeof-guard treats it like motd; getFinalWarning per-field-guards.
   final_warning: FINAL_WARNING_DEFAULT,
+  // ADR-037 C-06 (PLAN-017 Metrics) — the WAN capacity denominators for the Overview meters. Upload
+  // seeds 300 Mbps (the owner's practical Plex outbound cap). Download seeds 2256 Mbps — the LIVE
+  // provider figure (2026-07-10 recon); PROVISIONAL, owner to confirm (DESIGN-016 Q-02). Numbers, so
+  // the getAppSetting typeof-guard falls back safely if a hand-edited jsonb row is the wrong type.
+  upload_capacity_mbps: 300,
+  download_capacity_mbps: 2256,
 };
 
 /**

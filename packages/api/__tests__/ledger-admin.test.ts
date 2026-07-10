@@ -295,7 +295,7 @@ describe('roles.setSectionPermission (ADR-021 C-02)', () => {
     expect(
       (await api.roles.list()).find((r) => r.id === schema.SEEDED_ROLE_IDS.admin)!
         .sectionPermissions,
-    ).toEqual({ ledger: 'edit', trash: 'edit', bulletin: 'edit' });
+    ).toEqual({ ledger: 'edit', trash: 'edit', bulletin: 'edit', metrics: 'edit' });
 
     const memberApi = caller(makeCtx(tdb.db, sessionUser(member)));
     await expect(

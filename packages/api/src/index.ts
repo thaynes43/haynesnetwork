@@ -30,6 +30,10 @@ export {
 } from './poster';
 // ADR-021 — the section-level resolver the nav + the Ledger export route gate on (server-authoritative).
 export { effectiveSectionLevel } from './middleware/role';
+// ADR-037 — the metrics-level resolver the /metrics page passes down (admin ⇒ 'full').
+export { effectiveMetricsLevel, metricsProcedure } from './middleware/role';
+// ADR-037 / DESIGN-016 — the Metrics Overview wire type (the /metrics client imports it TYPE-ONLY).
+export type { MetricsOverview } from './routers/metrics';
 // ADR-022 / DESIGN-009 D-06 — the emergency Ledger JSONL export (used by the app export route).
 export {
   buildExportFilterFromParams,

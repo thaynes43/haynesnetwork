@@ -66,6 +66,47 @@ export async function startStubPrometheus(): Promise<StubPrometheusServer> {
       return;
     }
 
+    // PLAN-017 / DESIGN-016 — INSTANT queries for the Metrics Overview. The Overview server code
+    // issues each PromQL `expr` via GET /api/v1/query; we return a canned instant VECTOR chosen by
+    // substring match on `query`, so a re-query yields identical (deterministic) samples that mirror
+    // the WAN/cluster readings the page renders. `{ mode: 'down' }` degrades to 500 like the range
+    // handler. More-specific matches are checked FIRST (the count()-wrapped node_load1 forms before
+    // the bare node_load1; the WAN sum()s before anything).
+    if (url.pathname === '/api/v1/query') {
+      if (mode === 'down') return json(500, { status: 'error', error: 'stub prometheus is down' });
+      const q = url.searchParams.get('query') ?? '';
+      const sample = (metric: Record<string, string>, v: string) => ({
+        metric,
+        value: [Math.floor(Date.now() / 1000), v] as [number, string],
+      });
+      const vector = (result: ReturnType<typeof sample>[]) =>
+        json(200, { status: 'success', data: { resultType: 'vector', result } });
+
+      // WAN throughput (aggregate bytes/sec) — the sum() wrappers still carry these substrings.
+      if (q.includes('transmit_rate_bytes')) return vector([sample({ subsystem: 'wan' }, '1454880')]);
+      if (q.includes('receive_rate_bytes')) return vector([sample({ subsystem: 'wan' }, '844568')]);
+      // Per-uplink capacity kbps (FULL level only) — two uplinks, labelled by wan_name/wan_id.
+      if (q.includes('provider_upload_kbps'))
+        return vector([
+          sample({ wan_name: 'Internet 1', wan_id: 'a' }, '316000'),
+          sample({ wan_name: 'Internet 2', wan_id: 'b' }, '350000'),
+        ]);
+      if (q.includes('provider_download_kbps'))
+        return vector([
+          sample({ wan_name: 'Internet 1', wan_id: 'a' }, '2256000'),
+          sample({ wan_name: 'Internet 2', wan_id: 'b' }, '2300000'),
+        ]);
+      // Cluster CPU / load / memory. The count()-wrapped forms are MORE specific than the bare
+      // node_load1, so they must be matched before it.
+      if (q.includes('count by (instance, cpu)')) return vector([sample({}, '132')]); // total cores
+      if (q.includes('count(node_load1)')) return vector([sample({}, '6')]); // node count
+      if (q.includes('node_load1')) return vector([sample({}, '18.5')]); // sum(node_load1) — cluster load
+      if (q.includes('MemTotal')) return vector([sample({}, '529642733568')]); // total mem bytes
+      if (q.includes('MemAvailable')) return vector([sample({}, '384401444864')]); // available mem bytes
+      // Unknown query → an empty (but still successful) result set.
+      return vector([]);
+    }
+
     if (url.pathname === '/api/v1/query_range') {
       if (mode === 'down') return json(500, { status: 'error', error: 'stub prometheus is down' });
       const start = Number(url.searchParams.get('start'));

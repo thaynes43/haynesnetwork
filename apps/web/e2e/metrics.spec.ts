@@ -1,0 +1,128 @@
+// PLAN-017 / ADR-037 / DESIGN-016 — the Metrics section (foundation + Overview tab). ADVISORY spec:
+// the `/metrics` page is being built alongside this test, so it is written to be RESILIENT (tolerant
+// selectors, test.step) and is NOT a merge gate yet. It mirrors storage.spec's harness exactly:
+//   • sign in through the REAL stub-OIDC round trip (signIn persona);
+//   • script the stub Prometheus ok⇄down by POSTing ${STUB_PROMETHEUS_URL}/_stub/state, so the
+//     Overview's degrade path is exercised against the SAME instant-vector stub production reads.
+//
+// TESTID / SELECTOR ASSUMPTIONS (the `/metrics` page + apps/web/app/(app)/metrics/overview-tab.tsx do
+// not exist yet at the time this was written — these are the names the UI is expected to adopt; adjust
+// the UI to match, or this advisory spec here):
+//   • Metrics nav link ....... role=link name "Metrics" (rendered by components/top-bar.tsx when the
+//                              user's `metrics` section level is not `disabled` — already wired, D-05);
+//   • no-access card ......... data-testid="metrics-unavailable"   (server-gate render for a member
+//                              whose metrics section is disabled);
+//   • Overview tab ........... role=tab name "Overview" inside the page's tablist;
+//   • upload meter ........... data-testid="metrics-upload-meter"   with role="meter";
+//   • download meter ......... data-testid="metrics-download-meter" with role="meter";
+//   • Prometheus-down note ... data-testid="metrics-network-unavailable" (optional degrade note).
+// The meter numbers come off the stub instant vectors added to e2e/support/stub-prometheus.ts:
+//   sum(unpoller_site_transmit_rate_bytes{subsystem="wan"}) ⇒ 1454880 (upload B/s);
+//   sum(unpoller_site_receive_rate_bytes{subsystem="wan"})  ⇒  844568 (download B/s).
+// Leaves the stub Prometheus back in 'ok' mode so later specs and re-runs see the healthy default.
+import { test, expect, type Page } from '@playwright/test';
+import { signIn } from './support/helpers';
+import { readRuntimeEnv } from './support/env';
+
+/** Script the stub Prometheus (ok ⇄ down) — the Overview's degrade journey (mirrors storage.spec). */
+async function setPrometheusMode(mode: 'ok' | 'down'): Promise<void> {
+  const env = readRuntimeEnv();
+  const res = await fetch(`${env.STUB_PROMETHEUS_URL}/_stub/state`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ mode }),
+  });
+  if (!res.ok) throw new Error(`stub prometheus state change failed: HTTP ${res.status}`);
+}
+
+/** Open the Metrics page and settle on its Overview tab (tolerant: the tab may already be selected). */
+async function openOverview(page: Page): Promise<void> {
+  await page.goto('/metrics');
+  const overview = page.getByRole('tab', { name: 'Overview' });
+  if ((await overview.count()) > 0) {
+    if ((await overview.getAttribute('aria-selected')) !== 'true') {
+      await overview.click();
+    }
+    await expect(overview).toHaveAttribute('aria-selected', 'true');
+  }
+}
+
+test.describe('metrics section (PLAN-017 · ADR-037 · DESIGN-016) — Overview reads Prometheus', () => {
+  test.describe.configure({ mode: 'serial' });
+
+  // AC: the `metrics` section defaults to `disabled` (ADR-037 C-02), so a fresh member (never granted
+  // anything) sees NO Metrics nav link, and the server-gate renders the unavailable card at /metrics.
+  test('a default member sees no Metrics nav link and gets the unavailable card at /metrics', async ({
+    page,
+  }) => {
+    await signIn(page, 'fresh-member');
+
+    await test.step('no Metrics entry in the primary nav', async () => {
+      const nav = page.getByRole('navigation', { name: 'Primary' });
+      await expect(nav.getByRole('link', { name: 'Metrics' })).toHaveCount(0);
+    });
+
+    await test.step('/metrics renders the unavailable card, not the Overview', async () => {
+      await page.goto('/metrics');
+      await expect(page.getByTestId('metrics-unavailable')).toBeVisible();
+      await expect(page.getByTestId('metrics-upload-meter')).toHaveCount(0);
+    });
+  });
+
+  // AC: an admin implies `edit` on every section (ADR-021 C-03), so the Metrics link shows and the
+  // Overview renders the upload + download meters off the stub's instant vectors (non-empty readings).
+  test('an admin sees the Metrics link and the Overview renders the upload + download meters', async ({
+    page,
+  }) => {
+    await signIn(page, 'admin');
+
+    await test.step('the Metrics link is present in the primary nav', async () => {
+      const link = page.getByRole('navigation', { name: 'Primary' }).getByRole('link', {
+        name: 'Metrics',
+      });
+      await expect(link).toBeVisible();
+      await link.click();
+      await page.waitForURL('**/metrics');
+    });
+
+    await test.step('the Overview shows two meters with non-empty values', async () => {
+      await openOverview(page);
+      // The page keeps a stable heading regardless of tab (tolerant: any level-1/2 "Metrics" heading).
+      await expect(page.getByRole('heading', { name: /metrics/i }).first()).toBeVisible();
+
+      for (const id of ['metrics-upload-meter', 'metrics-download-meter'] as const) {
+        const meter = page.getByTestId(id);
+        await expect(meter, `${id} renders`).toBeVisible();
+        await expect(meter, `${id} is an ARIA meter`).toHaveAttribute('role', 'meter');
+        // Non-empty reading: an ARIA meter carries aria-valuenow, or (fallback) visible text.
+        const valuenow = await meter.getAttribute('aria-valuenow');
+        if (valuenow !== null) {
+          expect(valuenow.trim(), `${id} has a numeric aria-valuenow`).not.toBe('');
+        } else {
+          await expect(meter, `${id} shows a reading`).not.toHaveText('');
+        }
+      }
+    });
+  });
+
+  // AC: Prometheus-down must DEGRADE, never crash — the page keeps its heading and (if present) shows
+  // the network-unavailable note; the meters may vanish but the tab must not throw.
+  test('with Prometheus down the Overview degrades and still shows its heading', async ({ page }) => {
+    await setPrometheusMode('down');
+    try {
+      await signIn(page, 'admin');
+      await openOverview(page);
+
+      // The page survives the source being down — its heading is still on screen.
+      await expect(page.getByRole('heading', { name: /metrics/i }).first()).toBeVisible();
+
+      // A degrade note is the preferred UX; assert it only when the UI provides it (advisory).
+      const note = page.getByTestId('metrics-network-unavailable');
+      if ((await note.count()) > 0) {
+        await expect(note).toBeVisible();
+      }
+    } finally {
+      await setPrometheusMode('ok'); // later specs + re-runs see the healthy default
+    }
+  });
+});

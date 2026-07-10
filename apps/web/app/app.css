@@ -4988,3 +4988,94 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
 .policy-graduation p {
   margin: 4px 0 0;
 }
+
+/* ---------------------------------------------------------------------------
+   PLAN-017 (ADR-037 / DESIGN-016) — the Metrics Overview: usage-vs-capacity meters + stat tiles.
+   The --meter-tone seam mirrors the storage-array idiom (ADR-028): severity recolors the SAME
+   geometry (ok accent → warn amber → danger red), never a layout change (ADR-015). All color via
+   --color-* tokens — no raw hex (hard rule 2).
+   --------------------------------------------------------------------------- */
+.metrics-overview {
+  display: grid;
+  gap: var(--space);
+}
+.metrics-overview__grid {
+  display: grid;
+  gap: var(--space);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+.metrics-overview__footnote {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+.metrics-meter {
+  --meter-tone: var(--color-accent);
+  display: grid;
+  gap: 6px;
+  padding: var(--space);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+.metrics-meter--warn {
+  --meter-tone: var(--color-warning);
+}
+.metrics-meter--danger {
+  --meter-tone: var(--color-danger);
+}
+.metrics-meter--muted {
+  --meter-tone: var(--color-text-muted);
+}
+.metrics-meter__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: baseline;
+}
+.metrics-meter__label {
+  font-weight: 650;
+}
+.metrics-meter__value {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+.metrics-meter__track {
+  position: relative;
+  height: 16px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--meter-tone) 16%, var(--color-surface-2));
+}
+.metrics-meter__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  min-width: 4px;
+  border-radius: inherit;
+  background: var(--meter-tone);
+  transition: width 0.3s ease;
+}
+.metrics-meter__foot {
+  font-size: 13px;
+}
+.metrics-tile {
+  display: grid;
+  gap: 4px;
+  padding: var(--space);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+.metrics-tile__value {
+  font-size: 24px;
+  font-weight: 650;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+.metrics-tile__label {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+.metrics-wanlinks {
+  display: grid;
+  gap: 8px;
+}

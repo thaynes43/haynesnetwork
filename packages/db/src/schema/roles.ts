@@ -1,5 +1,9 @@
 import { pgTable, uuid, text, timestamp, integer, boolean, check, uniqueIndex } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+import { METRICS_LEVELS, type MetricsLevel } from './enums';
+
+// ADR-037 C-01 — SQL list for the roles.metrics_level CHECK (single source of truth = METRICS_LEVELS).
+const METRICS_LEVELS_SQL_LIST = METRICS_LEVELS.map((l) => `'${l}'`).join(',');
 
 /**
  * Fixed ids for the two seeded system roles (migration 0007). Fixed (not random) so
@@ -35,12 +39,20 @@ export const roles = pgTable(
     // access. Admin implies this via is_admin; a non-admin role sets grants_all directly
     // ("All apps" in the UI). When true, the role stores NO role_app_grants rows.
     grantsAll: boolean('grants_all').notNull().default(false),
+    // ADR-037 C-01 (PLAN-017 Metrics) — the role's metrics access level (T-107). Single value per role
+    // (like grants_all); default 'limited'. Admin implies 'full' via the session short-circuit. Written
+    // ONLY by the @hnet/domain setRoleMetricsLevel single-writer (co-writes permission_audit in-tx).
+    metricsLevel: text('metrics_level').$type<MetricsLevel>().notNull().default('limited'),
     sortOrder: integer('sort_order').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     check('roles_not_admin_and_default', sql`NOT (${table.isAdmin} AND ${table.isDefault})`),
+    check(
+      'roles_metrics_level_enum',
+      sql`${table.metricsLevel} = ANY (ARRAY[${sql.raw(METRICS_LEVELS_SQL_LIST)}])`,
+    ),
     uniqueIndex('roles_single_admin_idx').on(table.isAdmin).where(sql`${table.isAdmin}`),
     uniqueIndex('roles_single_default_idx').on(table.isDefault).where(sql`${table.isDefault}`),
   ],

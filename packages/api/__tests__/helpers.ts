@@ -22,6 +22,7 @@ import {
   MESSAGE_ACTIONS,
   TRASH_ACTIONS,
   type MessageAction,
+  type MetricsLevel,
   type SectionId,
   type SectionPermissionLevel,
   type TrashAction,
@@ -29,6 +30,7 @@ import {
 import { appRouter } from '../src/routers/index';
 import { createCallerFactory, type TRPCContext } from '../src/trpc';
 import type { PrometheusRangeReader } from '../src/prometheus';
+import type { PrometheusReader as MetricsReader } from '@hnet/metrics';
 
 export interface TestDb {
   db: Database;
@@ -103,6 +105,8 @@ export function sessionUser(
    * where getSessionExtension resolves claim → override.
    */
   plexIdentity?: PlexIdentity,
+  /** ADR-037 — override the caller's metrics access level (non-admin only; admin ⇒ 'full'). */
+  metricsLevelOverride?: MetricsLevel,
 ): SessionUser {
   const isAdmin = row.roleId === SEEDED_ROLE_IDS.admin;
   const name = isAdmin ? 'Admin' : row.roleId === SEEDED_ROLE_IDS.default ? 'Default' : 'Custom';
@@ -124,7 +128,15 @@ export function sessionUser(
     id: row.id,
     email: row.email,
     displayName: row.displayName,
-    role: { id: row.roleId, name, isAdmin, sectionPermissions, trashActions, messageActions },
+    role: {
+      id: row.roleId,
+      name,
+      isAdmin,
+      sectionPermissions,
+      trashActions,
+      messageActions,
+      metricsLevel: isAdmin ? 'full' : (metricsLevelOverride ?? 'limited'),
+    },
     plexIdentity:
       plexIdentity ??
       resolvePlexIdentity({ overrideEmail: row.plexEmail, overrideUsername: row.plexUsername }),
@@ -139,6 +151,8 @@ export function makeCtx(
   maintainerr?: MaintainerrClientBundle,
   /** ADR-030 amendment (2026-07-09) — a stubbed Prometheus range reader for storage.trend tests. */
   prometheus?: PrometheusRangeReader,
+  /** ADR-037 — a stubbed @hnet/metrics Prometheus reader for the metrics.overview tests. */
+  metrics?: MetricsReader,
 ): TRPCContext {
   return {
     db,
@@ -147,6 +161,7 @@ export function makeCtx(
     ...(plex !== undefined ? { plex } : {}),
     ...(maintainerr !== undefined ? { maintainerr } : {}),
     ...(prometheus !== undefined ? { prometheus } : {}),
+    ...(metrics !== undefined ? { metrics } : {}),
   };
 }
 

@@ -14,6 +14,7 @@ import {
   type Database,
   type DbClient,
   type MessageAction,
+  type MetricsLevel,
   type SectionId,
   type SectionPermissionLevel,
   type TrashAction,
@@ -44,6 +45,12 @@ export interface SessionRole {
    * the role's granted rows. Layered on top of `sectionPermissions.bulletin` (which gates READ).
    */
   messageActions: MessageAction[];
+  /**
+   * ADR-037 C-01 — the caller's resolved METRICS access level, so `metricsProcedure` + the router's
+   * payload-shaping need no per-request query (mirrors `isAdmin`). Admin ⇒ 'full'; otherwise the
+   * role's stored `roles.metrics_level` column (default 'limited').
+   */
+  metricsLevel: MetricsLevel;
 }
 
 /**
@@ -81,6 +88,9 @@ export async function getSessionExtension(
       displayName: users.displayName,
       roleName: roles.name,
       isAdmin: roles.isAdmin,
+      // ADR-037 C-01 — the role's metrics access level (admin short-circuits to 'full' below). One
+      // more roles column on the existing join — no extra query.
+      metricsLevel: roles.metricsLevel,
       // fix/plex-identity-mapping — the admin-set Plex identity override (fallback for the claim).
       plexEmail: users.plexEmail,
       plexUsername: users.plexUsername,
@@ -154,6 +164,8 @@ export async function getSessionExtension(
       sectionPermissions,
       trashActions,
       messageActions,
+      // ADR-037 C-01 — admin implies 'full' (like admin implies section 'edit'); else the stored column.
+      metricsLevel: row.isAdmin ? 'full' : row.metricsLevel,
     },
     displayName: row.displayName,
     plexIdentity,

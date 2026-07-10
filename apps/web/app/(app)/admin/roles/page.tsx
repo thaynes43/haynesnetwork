@@ -122,6 +122,13 @@ export default function AdminRolesPage() {
     onError: (err: unknown) => setError(describeMutationError(err)),
     onSettled: invalidate,
   });
+  // ADR-037 C-01 / DESIGN-016 D-05 — a role's metrics access level (full|limited; audited
+  // 'update_role_metrics_level' in-tx). Changed inline like the section level (setSection).
+  const setMetricsLevel = trpc.roles.setMetricsLevel.useMutation({
+    onError: (err: unknown) => setError(describeMutationError(err)),
+    onSuccess: () => setError(null),
+    onSettled: invalidate,
+  });
   const busy =
     create.isPending ||
     update.isPending ||
@@ -130,7 +137,8 @@ export default function AdminRolesPage() {
     refresh.isPending ||
     setSection.isPending ||
     setTrash.isPending ||
-    setMessages.isPending;
+    setMessages.isPending ||
+    setMetricsLevel.isPending;
 
   const roleRows = roles.data ?? [];
   const entries = catalog.data ?? [];
@@ -504,6 +512,7 @@ export default function AdminRolesPage() {
             <th>Ledger</th>
             <th>Trash</th>
             <th>Bulletin</th>
+            <th>Metrics</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -512,7 +521,7 @@ export default function AdminRolesPage() {
             if (editingId === role.id) {
               return (
                 <tr key={role.id} className="row-edit">
-                  <td colSpan={7}>
+                  <td colSpan={8}>
                     <form className="admin-form" onSubmit={(e) => submitEdit(role, e)}>
                       <label className="field">
                         <span>
@@ -713,6 +722,56 @@ export default function AdminRolesPage() {
                         {role.messageActions.length}{' '}
                         {role.messageActions.length === 1 ? 'action' : 'actions'}
                       </span>
+                    </span>
+                  )}
+                </td>
+                {/* ADR-037 / DESIGN-016 D-05 — the Metrics access: VISIBILITY (section level; ships
+                    Admin-only via the disabled default) + the DETAIL LEVEL (Full/Limited). Visibility
+                    gates whether the role sees Metrics; the level shapes how much (user-aware data is
+                    Full only). Both audited; the row keeps constant width (ADR-015). */}
+                <td className="role-level-cell" data-label="Metrics">
+                  {role.isAdmin ? (
+                    <span
+                      className="muted"
+                      title="The Admin role implies Edit on every section and Full metrics access"
+                    >
+                      Edit · full
+                    </span>
+                  ) : (
+                    <span className="trash-cell">
+                      <select
+                        className="section-select"
+                        aria-label={`Metrics visibility for ${role.name}`}
+                        value={role.sectionPermissions.metrics}
+                        disabled={busy || editingElsewhere}
+                        onChange={(e) =>
+                          setSection.mutate({
+                            roleId: role.id,
+                            sectionId: 'metrics',
+                            level: e.target.value as 'edit' | 'read_only' | 'disabled',
+                          })
+                        }
+                      >
+                        <option value="edit">Edit</option>
+                        <option value="read_only">Read-only</option>
+                        <option value="disabled">Disabled</option>
+                      </select>
+                      <select
+                        className="section-select"
+                        aria-label={`Metrics detail level for ${role.name}`}
+                        data-testid={`metrics-level-${role.name}`}
+                        value={role.metricsLevel}
+                        disabled={busy || editingElsewhere}
+                        onChange={(e) =>
+                          setMetricsLevel.mutate({
+                            roleId: role.id,
+                            level: e.target.value as 'full' | 'limited',
+                          })
+                        }
+                      >
+                        <option value="full">Full</option>
+                        <option value="limited">Limited</option>
+                      </select>
                     </span>
                   )}
                 </td>

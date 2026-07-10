@@ -277,6 +277,21 @@ Messages UI is a separate UX follow-up.
 | R-103 | Moderators can **triage Messages** — hide / delete / restore (soft status transitions that **preserve content** for audit) with a moderation trail. **Read**, **post**, and **moderate** are distinct per-role grants (`bulletin` section level + `post`/`moderate` action grants); server-enforced.                      | Should          |
 | R-104 | The webhook receiver (`POST /api/webhooks/<source>`) is **session-unauthenticated but per-source shared-secret-gated** and reachable only in-cluster (no public exposure; works before the R-64 public cutover).                                                                                                          | Must (security) |
 
+### Metrics section (Phase 6)
+
+Governed by **ADR-037** / **DESIGN-016** (PLAN-017). A top-level **Metrics** section (nav position after
+Bulletin) with a sub-tab shell — an **Overview** ships now; Apps/Hardware/Network drill-ins follow in
+PLAN-018/019/020. The estate's numbers come from the in-cluster `kube-prometheus-stack` Prometheus
+(read-only), with Grafana deep-linked (never embedded) as the LAN power tool. Member-facing, so it carries
+a per-role **Full/Limited** access model — distinct from the admin-only storage tooling (R-108..R-111).
+
+| ID    | Requirement                                                                                                                                                                                                                                                                                                             | Priority |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| R-117 | A top-level **Metrics** section (nav after Bulletin) with a sub-tab shell; you land on an **Overview** of the most useful numbers. Visibility is role-gated per the Section-Permission model (`metrics` section) and ships **Admin-only** — a role row opts other roles in. Apps/Hardware/Network sub-tabs are reserved for later plans (placeholders until they land). | Should |
+| R-118 | Each role carries a **metrics access level** — **`full`** or **`limited`** (default role → `limited`; Admin implies `full`). `limited` **hides user-aware metrics** (who requested what, per-user space, any username-bearing label). Level flips are **admin actions, audited in the same transaction**, and enforced **server-side in the payload shape** (never client-hidden only). | Should |
+| R-119 | Access-level scoping (owner ruling): **hardware is ungated** (both levels see cluster node load + memory); **network at `limited` is upload/download usage-vs-capacity ONLY**, with finer per-uplink performance at `full`; and **no device identities / "what is on the network" at ANY level**. | Should |
+| R-120 | The **Overview** headline is **WAN upload/download consumption vs capacity** (the ~300 Mbps upload cap is the practical Plex-server limit), rendered with the storage meter idiom; plus a cluster load + memory tile and a storage-utilization snapshot (**reusing** R-108's `getUtilization`, not duplicated). The upload/download **capacity is admin-editable + audited** (the R-95 `app_settings` store; upload seeded 300 Mbps). Meters/tiles **update in place (no reflow, ADR-015)**, poll bounded, and **degrade to a note** when Prometheus is unreachable — never a broken page. | Should |
+
 ### Platform & non-functional
 
 | ID   | Requirement                                                                                                                                                                                                                                        | Priority |

@@ -13,6 +13,7 @@ import { trashRouter } from './trash';
 import { communicationRouter } from './communication';
 import { motdRouter } from './motd';
 import { storageRouter } from './storage';
+import { metricsRouter } from './metrics';
 
 export const appRouter = router({
   profile: profileRouter,
@@ -40,6 +41,9 @@ export const appRouter = router({
   // ADR-030 / DESIGN-013 (PLAN-013): the Storage metrics surface — admin-gated disk utilization
   // (*arr /diskspace) + reclaim attribution (PG deletion snapshots) + per-server space targets.
   storage: storageRouter,
+  // ADR-037 / DESIGN-016 (PLAN-017): the Metrics section — member-facing Overview (WAN usage-vs-
+  // capacity + cluster load/memory + storage snapshot), per-role Full/Limited level, audited capacities.
+  metrics: metricsRouter,
 });
 
 export type AppRouter = typeof appRouter;

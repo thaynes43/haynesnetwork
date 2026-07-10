@@ -19,6 +19,7 @@ export const PERMISSION_AUDIT_ACTIONS = [
   'update_trash_actions', // ADR-023 C-03 — a role's fine-grained Trash action grants were replaced
   'update_app_setting', // ADR-025 C-06 — a generic app_settings key was changed (skip-gate, window default)
   'update_message_actions', // ADR-026 C-04 — a role's fine-grained Bulletin message action grants were replaced
+  'update_role_metrics_level', // ADR-037 C-01 — a role's metrics access level (full|limited) was changed
 ] as const;
 export type PermissionAuditAction = (typeof PERMISSION_AUDIT_ACTIONS)[number];
 
@@ -211,11 +212,23 @@ export type PlexShareEvent = (typeof PLEX_SHARE_EVENTS)[number];
 // ---------------------------------------------------------------------------
 
 // ADR-026 / DESIGN-012 — 'bulletin' joins the section set (PLAN-009 Bulletin: Feed + Messages).
-export const SECTION_IDS = ['ledger', 'trash', 'bulletin'] as const; // 'trash' PLAN-006; 'bulletin' PLAN-009
+// ADR-037 / DESIGN-016 — 'metrics' joins the section set (PLAN-017 Metrics section foundation).
+export const SECTION_IDS = ['ledger', 'trash', 'bulletin', 'metrics'] as const; // 'trash' PLAN-006; 'bulletin' PLAN-009; 'metrics' PLAN-017
 export type SectionId = (typeof SECTION_IDS)[number];
 
 export const SECTION_PERMISSION_LEVELS = ['edit', 'read_only', 'disabled'] as const;
 export type SectionPermissionLevel = (typeof SECTION_PERMISSION_LEVELS)[number];
+
+// ADR-037 C-01 / DESIGN-016 (PLAN-017) — a role's METRICS access level (T-107). A single scalar per
+// role (like `roles.grants_all`), stored on `roles.metrics_level`; text + CHECK, this const array is
+// the single source of truth for the TS type AND the SQL CHECK. `full` sees user-aware + fine-grained
+// metrics; `limited` sees the aggregate/usage-only subset. Admin implies `full` via the session
+// short-circuit. Default (column + no-row) is `limited`.
+export const METRICS_LEVELS = ['full', 'limited'] as const;
+export type MetricsLevel = (typeof METRICS_LEVELS)[number];
+
+/** limited < full — the rank a `metricsProcedure` gates on (mirrors SECTION_LEVEL_RANK). */
+export const METRICS_LEVEL_RANK: Record<MetricsLevel, number> = { limited: 0, full: 1 };
 
 /**
  * The no-row fallback per section (ADR-021 C-01, Q-03 resolved). Ledger defaults to
@@ -234,6 +247,10 @@ export const SECTION_DEFAULT_LEVELS: Record<SectionId, SectionPermissionLevel> =
   // Messages out of the box (no admin touch), while POSTING/MODERATING stay opt-in per-action
   // grants (message action grants, T-87). `disabled` hides the whole section from that role.
   bulletin: 'read_only',
+  // ADR-037 C-02 (PLAN-017 Metrics) — `metrics` defaults to `disabled`, the trash/ledger rollout
+  // pattern: the section ships Admin-only (an is_admin role implies `edit`; every other role needs a
+  // stored row to opt in). The owner opens it to the Default role (`read_only`) after his morning review.
+  metrics: 'disabled',
 };
 
 /** disabled < read_only < edit — the total order `sectionProcedure` gates on (ADR-021). */
@@ -369,6 +386,12 @@ export const APP_SETTING_KEYS = [
   // jsonb row can't disable the gate into a truthy string / yield a NaN lead time). Admin-gated +
   // audited through setAppSetting; migration 0030 relaxes the CHECK.
   'final_warning',
+  // ADR-037 C-06 / DESIGN-016 (PLAN-017 Metrics) — the WAN link capacities the Metrics Overview charts
+  // usage against (Mbps ints). `upload_capacity_mbps` seeds 300 (the owner's practical Plex outbound cap);
+  // `download_capacity_mbps` seeds 2256 (the live provider figure — PROVISIONAL, owner to confirm Q-02).
+  // Admin-editable + audited through the same setAppSetting single-writer; migration 0031 relaxes the CHECK.
+  'upload_capacity_mbps',
+  'download_capacity_mbps',
 ] as const;
 export type AppSettingKey = (typeof APP_SETTING_KEYS)[number];
 
