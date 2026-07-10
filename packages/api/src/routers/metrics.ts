@@ -15,9 +15,11 @@ import {
 import {
   getAppsMetrics,
   getHardwareOverview,
+  getNetworkMetrics,
   getNetworkOverview,
   type AppsMetrics,
   type HardwareOverview,
+  type NetworkMetrics,
   type NetworkOverview,
 } from '@hnet/metrics';
 import type { MetricsLevel } from '@hnet/db';
@@ -101,6 +103,29 @@ export const metricsRouter = router({
     return getAppsMetrics({
       prometheus: resolveMetricsReader(ctx),
       includeUserAware: level === 'full',
+    });
+  }),
+
+  /**
+   * ADR-039 / DESIGN-019 (PLAN-020) — the Network sub-tab payload. Gated by section visibility
+   * (metricsProcedure) and SHAPED by the caller's level (ADR-039 C-03): `limited` gets ONLY the WAN
+   * usage-vs-capacity meters (reusing the Overview's capacity denominators — not duplicated) + the WAN
+   * throughput history; `full` ADDS the infrastructure grain (per-AP/switch/gateway performance, WAN
+   * health, site rollup counts, per-uplink caps). The infra queries are ONLY issued when the caller is
+   * `full` (includeInfra) — never fetched, never serialized for `limited`. The allow-listed `network.ts`
+   * query module structurally never names a client series, so NO shape can leak a client identity.
+   */
+  network: metricsProcedure.query(async ({ ctx }): Promise<NetworkMetrics> => {
+    const level = effectiveMetricsLevel(ctx.user.role);
+    const [uploadCapacityMbps, downloadCapacityMbps] = await Promise.all([
+      getAppSetting(ctx.db, 'upload_capacity_mbps'),
+      getAppSetting(ctx.db, 'download_capacity_mbps'),
+    ]);
+    return getNetworkMetrics({
+      prometheus: resolveMetricsReader(ctx),
+      uploadCapacityMbps,
+      downloadCapacityMbps,
+      includeInfra: level === 'full',
     });
   }),
 

@@ -158,6 +158,37 @@ export async function startStubPrometheus(): Promise<StubPrometheusServer> {
       if (q.includes('rate(prowlarr_indexer_queries_total'))
         return vector([sample({ indexer: 'DrunkenSlug' }, '12'), sample({ indexer: 'NinjaCentral' }, '6')]);
 
+      // PLAN-020 / DESIGN-019 — the Network sub-tab series (unpoller infra performance + site rollups).
+      // Device perf carries name+type (INFRASTRUCTURE labels — no client identity). A pdu is included to
+      // prove the read drops non-network gear. All matched by substring; the sum()/max() wrappers keep
+      // the substrings intact.
+      if (q.includes('cpu_utilization_ratio'))
+        return vector([
+          sample({ name: 'Westford DMSE', type: 'udm' }, '0.454'),
+          sample({ name: 'Switch Pro Max 48 PoE', type: 'usw' }, '0.213'),
+          sample({ name: 'USW Aggregation', type: 'usw' }, '0.044'),
+          sample({ name: 'Garage U7 Outdoor', type: 'uap' }, '0.032'),
+          sample({ name: 'Server Room U7 Pro', type: 'uap' }, '0.016'),
+          sample({ name: 'Power Distribution Hi-Density', type: 'pdu' }, '0.025'),
+        ]);
+      if (q.includes('memory_utilization_ratio'))
+        return vector([
+          sample({ name: 'Westford DMSE', type: 'udm' }, '0.818'),
+          sample({ name: 'Switch Pro Max 48 PoE', type: 'usw' }, '0.401'),
+          sample({ name: 'Garage U7 Outdoor', type: 'uap' }, '0.372'),
+        ]);
+      if (q.includes('load_average_1'))
+        return vector([sample({ name: 'Westford DMSE', type: 'udm' }, '1.24')]);
+      if (q.includes('speedtest_download')) return vector([sample({}, '1526')]);
+      if (q.includes('speedtest_upload')) return vector([sample({}, '312')]);
+      if (q.includes('speedtest_latency_seconds')) return vector([sample({}, '0.012')]);
+      if (q.includes('unpoller_site_latency_seconds')) return vector([sample({}, '0.008')]);
+      if (q.includes('uplink_latency_seconds')) return vector([sample({}, '0')]);
+      if (q.includes('unpoller_site_aps')) return vector([sample({}, '7')]);
+      if (q.includes('unpoller_site_switches')) return vector([sample({}, '15')]);
+      if (q.includes('unpoller_site_gateways')) return vector([sample({}, '1')]);
+      if (q.includes('unpoller_site_stations')) return vector([sample({}, '181')]);
+
       // Unknown query → an empty (but still successful) result set.
       return vector([]);
     }
@@ -167,8 +198,29 @@ export async function startStubPrometheus(): Promise<StubPrometheusServer> {
       const start = Number(url.searchParams.get('start'));
       const end = Number(url.searchParams.get('end'));
       const step = Number(url.searchParams.get('step'));
+      const rangeQuery = url.searchParams.get('query') ?? '';
       if (![start, end, step].every(Number.isFinite) || step <= 0 || end < start) {
         return json(400, { status: 'error', error: 'bad range params' });
+      }
+      // PLAN-020 / DESIGN-019 — the Network sub-tab's WAN throughput history sparkline. The app issues a
+      // range query for sum(unpoller_site_{transmit,receive}_rate_bytes{subsystem="wan"}); synthesize a
+      // deterministic diurnal-ish bytes/sec series (transmit ~10× smaller than receive, like a home WAN).
+      if (rangeQuery.includes('rate_bytes')) {
+        const isUpload = rangeQuery.includes('transmit_rate_bytes');
+        const baseBytes = isUpload ? 1_400_000 : 12_000_000; // ~11 Mbps up / ~96 Mbps down
+        const values: [number, string][] = [];
+        for (let t = start; t <= end; t += step) {
+          // deterministic in t: a smooth wave so the sparkline has visible shape across any window.
+          const wave = 0.6 + 0.4 * Math.sin(t / 21_600); // period ~6h
+          values.push([t, String(Math.round(baseBytes * wave))]);
+        }
+        const name = isUpload
+          ? 'unpoller_site_transmit_rate_bytes'
+          : 'unpoller_site_receive_rate_bytes';
+        return json(200, {
+          status: 'success',
+          data: { resultType: 'matrix', result: [{ metric: { __name__: name, subsystem: 'wan' }, values }] },
+        });
       }
       const result = SERIES.map((s) => {
         const values: [number, string][] = [];

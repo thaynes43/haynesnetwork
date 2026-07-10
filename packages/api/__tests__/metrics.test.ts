@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { permissionAudit, roles } from '@hnet/db/schema';
 import { createRole } from '@hnet/domain';
-import type { PromVectorSample, PrometheusReader } from '@hnet/metrics';
+import type { PromMatrixSeries, PromVectorSample, PrometheusReader } from '@hnet/metrics';
 import {
   bootMigratedDb,
   caller,
@@ -170,6 +170,90 @@ describe('metrics.apps — both-levels + the plumbed full-only seam (ADR-037 C-0
       caller(
         makeCtx(testDb.db, sessionUser(member), undefined, undefined, undefined, undefined, stub.reader),
       ).metrics.apps(),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+});
+
+/** A stub reader answering the Network sub-tab series (ADR-039 / DESIGN-019) + WAN history range. */
+function stubNetworkReader(): { reader: PrometheusReader; queries: string[] } {
+  const queries: string[] = [];
+  const query = vi.fn(async (promQL: string): Promise<PromVectorSample[]> => {
+    queries.push(promQL);
+    if (promQL.includes('transmit_rate_bytes')) return [sample(1_454_880, { subsystem: 'wan' })];
+    if (promQL.includes('receive_rate_bytes')) return [sample(844_568, { subsystem: 'wan' })];
+    if (promQL.includes('provider_upload_kbps'))
+      return [sample(316_000, { wan_name: 'Internet 1', wan_id: 'a' })];
+    if (promQL.includes('provider_download_kbps'))
+      return [sample(2_256_000, { wan_name: 'Internet 1', wan_id: 'a' })];
+    if (promQL.includes('cpu_utilization_ratio'))
+      return [
+        sample(0.454, { name: 'Westford DMSE', type: 'udm' }),
+        sample(0.213, { name: 'Switch Pro Max 48 PoE', type: 'usw' }),
+      ];
+    if (promQL.includes('memory_utilization_ratio'))
+      return [sample(0.818, { name: 'Westford DMSE', type: 'udm' })];
+    if (promQL.includes('load_average_1')) return [sample(1.2, { name: 'Westford DMSE', type: 'udm' })];
+    if (promQL.includes('speedtest_download')) return [sample(1526)];
+    if (promQL.includes('unpoller_site_aps')) return [sample(7)];
+    if (promQL.includes('unpoller_site_stations')) return [sample(181)];
+    return [sample(1)];
+  });
+  const queryRange = vi.fn(async (): Promise<PromMatrixSeries[]> => [
+    { metric: {}, values: [[1_700_000_000, '1250000'], [1_700_003_600, '2500000']] },
+  ]);
+  return { reader: { query, queryRange }, queries };
+}
+
+describe('metrics.network — the disjoint limited/full shape + privacy seam (ADR-039 C-03)', () => {
+  it('full sees infra + per-uplink wanLinks; limited sees only WAN meters + history, never fetching infra', async () => {
+    const admin = await createUser(testDb.db, { admin: true });
+    const member = await createUser(testDb.db);
+
+    const fullStub = stubNetworkReader();
+    const full = await caller(
+      makeCtx(testDb.db, sessionUser(admin), undefined, undefined, undefined, undefined, fullStub.reader),
+    ).metrics.network();
+    expect(full.level).toBe('full');
+    expect(full.wan.upload.usageMbps).toBe(11.6);
+    expect(full.history.upload.length).toBeGreaterThan(0);
+    expect(full.infra).toBeDefined();
+    expect(full.infra!.devices[0]).toMatchObject({ name: 'Westford DMSE', category: 'gateway' });
+    expect(full.infra!.site.stations).toBe(181);
+    expect(full.wan.wanLinks).toBeDefined();
+    expect(fullStub.queries.some((q) => q.includes('cpu_utilization_ratio'))).toBe(true);
+
+    const limitedStub = stubNetworkReader();
+    const limited = await caller(
+      makeCtx(
+        testDb.db,
+        sessionUser(member, { metrics: 'read_only' }, undefined, undefined, undefined, 'limited'),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        limitedStub.reader,
+      ),
+    ).metrics.network();
+    expect(limited.level).toBe('limited');
+    // The full-only infra key is ABSENT and was NEVER fetched (server-authoritative).
+    expect('infra' in limited).toBe(false);
+    expect(limited.infra).toBeUndefined();
+    expect(limited.wan.wanLinks).toBeUndefined();
+    expect(limitedStub.queries.some((q) => q.includes('cpu_utilization_ratio'))).toBe(false);
+    expect(limitedStub.queries.some((q) => q.includes('unpoller_site_aps'))).toBe(false);
+    expect(limitedStub.queries.some((q) => q.includes('provider_upload_kbps'))).toBe(false);
+    // But the WAN meters + history ARE present at limited (its value-add over a bare Overview).
+    expect(limited.wan.upload.usageMbps).toBe(11.6);
+    expect(limited.history.upload.length).toBeGreaterThan(0);
+  });
+
+  it('a caller whose metrics section is DISABLED is FORBIDDEN', async () => {
+    const member = await createUser(testDb.db);
+    const stub = stubNetworkReader();
+    await expect(
+      caller(
+        makeCtx(testDb.db, sessionUser(member), undefined, undefined, undefined, undefined, stub.reader),
+      ).metrics.network(),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 });
