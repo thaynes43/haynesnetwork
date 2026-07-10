@@ -1,6 +1,13 @@
 # PLAN-019: Metrics — Hardware sub-tab (SMART health, node load/temps, Proxmox showcase)
 
-- **Status:** Draft (2026-07-10, owner-scoped). <!-- Draft → Executing → Completed -->
+- **Status:** Completed (2026-07-10, v0.34.0). Shipped the ungated Metrics → Hardware sub-tab (NVMe
+  endurance panel + drive health + node load + Proxmox host→VM showcase) and critical-only, transitions-
+  only SMART alerting (`smart-alerts` sync mode + `evaluateSmartAlerts` + `smart_drive_state`, migration
+  0033, `smart_degraded`/`smart_recovered` outbox types). ADR-040 / DESIGN-020 / R-129–R-130 / T-117–T-119.
+  Live-validated on prod: a `smart-alerts` run over the REAL Prometheus baselined all 43 drives and
+  enqueued ZERO (the known staging pool did not page); a second run baselined 0 / enqueued 0 (no re-page).
+  Glances deferred (ADR-040 Q-01); haynes-ops change was the image bump only. **Follow-up (owner):** add a
+  `smart-alerts` CronJob (mirror notify-outbox) to run detection on schedule. <!-- Draft → Executing → Completed -->
 - **Satisfies:** PRD-001 new R-NN block (Hardware metrics sub-tab; SMART surfacing + alerting;
   Proxmox host/VM capability showcase); new ADR-NN (Proxmox metric source: prometheus-pve-exporter
   primary / glances fallback + SMART-alert delivery reuse of the PLAN-016 outbox); new DESIGN-NN
