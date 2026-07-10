@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.39.0](https://github.com/thaynes43/haynesnetwork/compare/v0.38.0...v0.39.0) (2026-07-10)
+
+
+### Features
+
+* Books & Audiobooks in the Library — Kavita/ABS ledger sync + poster walls + catalog cards (PLAN-023 Phase 4) ([#187](https://github.com/thaynes43/haynesnetwork/issues/187)) ([f3a76f6](https://github.com/thaynes43/haynesnetwork/commit/f3a76f68be6c84239ae1f330cad7f50a51943e38))
+
+
+### Documentation
+
+* mark PLAN-026 completed + OPS-011 as-executed (Authentik role portal live, v0.38.0) ([#185](https://github.com/thaynes43/haynesnetwork/issues/185)) ([31fbaf7](https://github.com/thaynes43/haynesnetwork/commit/31fbaf763cf3904812aec4d60122a4c121608f3e))
+
 ## [0.38.0](https://github.com/thaynes43/haynesnetwork/compare/v0.37.0...v0.38.0) (2026-07-10)
 
 
