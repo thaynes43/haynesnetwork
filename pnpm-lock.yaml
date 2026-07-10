@@ -202,6 +202,16 @@ importers:
         specifier: ^4.1.6
         version: 4.1.9(@types/node@22.20.0)(jsdom@25.0.1)(vite@8.1.3(@types/node@22.20.0)(esbuild@0.28.1)(tsx@4.22.5))
 
+  packages/authentik:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      vitest:
+        specifier: ^4.1.6
+        version: 4.1.9(@types/node@22.20.0)(jsdom@25.0.1)(vite@8.1.3(@types/node@22.20.0)(esbuild@0.28.1)(tsx@4.22.5))
+
   packages/db:
     dependencies:
       drizzle-orm:
@@ -232,9 +242,15 @@ importers:
       '@hnet/arr':
         specifier: workspace:*
         version: link:../arr
+      '@hnet/authentik':
+        specifier: workspace:*
+        version: link:../authentik
       '@hnet/db':
         specifier: workspace:*
         version: link:../db
+      '@hnet/openwebui':
+        specifier: workspace:*
+        version: link:../openwebui
       '@hnet/plex':
         specifier: workspace:*
         version: link:../plex
@@ -265,6 +281,16 @@ importers:
         specifier: ^4.1.6
         version: 4.1.9(@types/node@22.20.0)(jsdom@25.0.1)(vite@8.1.3(@types/node@22.20.0)(esbuild@0.28.1)(tsx@4.22.5))
 
+  packages/openwebui:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      vitest:
+        specifier: ^4.1.6
+        version: 4.1.9(@types/node@22.20.0)(jsdom@25.0.1)(vite@8.1.3(@types/node@22.20.0)(esbuild@0.28.1)(tsx@4.22.5))
+
   packages/plex:
     dependencies:
       zod:
@@ -280,6 +306,9 @@ importers:
       '@hnet/arr':
         specifier: workspace:*
         version: link:../arr
+      '@hnet/authentik':
+        specifier: workspace:*
+        version: link:../authentik
       '@hnet/db':
         specifier: workspace:*
         version: link:../db

@@ -4,12 +4,14 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 /**
- * DESIGN-005 D-12/D-18 (ADR-008 enforceability) + ADR-017 / DESIGN-007 D-03 — the mutating
- * external write surfaces `@hnet/arr/write` (fix/restore *arr write-backs) and
- * `@hnet/plex/write` (Plex share apply/revoke) may be imported ONLY by packages/domain (the
- * orchestrators) and by their own package's source/tests (packages/arr, packages/plex). This
- * keeps "no other code path may call a mutating endpoint" executable: sync, packages/api, and
- * apps/web can only reach the write clients through the domain bundle, never construct them.
+ * DESIGN-005 D-12/D-18 (ADR-008 enforceability) + ADR-017 / DESIGN-007 D-03 + ADR-045 / DESIGN-023 —
+ * the mutating external write surfaces `@hnet/arr/write` (fix/restore *arr write-backs),
+ * `@hnet/plex/write` (Plex share apply/revoke), `@hnet/authentik/write` (Authentik group create +
+ * membership), and `@hnet/openwebui/write` (OWUI tier-group pre-create) may be imported ONLY by
+ * packages/domain (the orchestrators) and by their own package's source/tests (packages/arr,
+ * packages/plex, packages/authentik, packages/openwebui). This keeps "no other code path may call a
+ * mutating endpoint" executable: sync, packages/api, and apps/web can only reach the write clients
+ * through the domain bundles, never construct them.
  */
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -18,9 +20,11 @@ const ALLOWED_DIR_PREFIXES = [
   `packages${sep}domain${sep}`,
   `packages${sep}arr${sep}`,
   `packages${sep}plex${sep}`,
+  `packages${sep}authentik${sep}`,
+  `packages${sep}openwebui${sep}`,
 ];
 
-const IMPORT_PATTERN = /@hnet\/(arr|plex)\/write/;
+const IMPORT_PATTERN = /@hnet\/(arr|plex|authentik|openwebui)\/write/;
 
 const IGNORE_DIRS = new Set([
   'node_modules',
@@ -59,8 +63,8 @@ async function walk(dir: string): Promise<string[]> {
   return files;
 }
 
-describe('static analysis — @hnet/{arr,plex}/write is domain-only (ADR-008 / ADR-017)', () => {
-  it('no @hnet/{arr,plex}/write reference outside packages/domain, packages/arr, packages/plex', async () => {
+describe('static analysis — @hnet/{arr,plex,authentik,openwebui}/write is domain-only (ADR-008 / ADR-017 / ADR-045)', () => {
+  it('no @hnet/{arr,plex,authentik,openwebui}/write reference outside packages/{domain,arr,plex,authentik,openwebui}', async () => {
     const stats = await stat(join(REPO_ROOT, 'pnpm-workspace.yaml'));
     expect(stats.isFile()).toBe(true);
 
@@ -80,10 +84,11 @@ describe('static analysis — @hnet/{arr,plex}/write is domain-only (ADR-008 / A
     if (violations.length > 0) {
       const detail = violations.map((v) => `  ${v.file}:${v.line}`).join('\n');
       throw new Error(
-        `Found ${violations.length} reference(s) to @hnet/{arr,plex}/write outside the allowed dirs.\n` +
+        `Found ${violations.length} reference(s) to @hnet/{arr,plex,authentik,openwebui}/write outside the allowed dirs.\n` +
           `Mutating *arr calls must go through the @hnet/domain fix/restore orchestrators ` +
-          `(runFixRequest, executeRestore) and Plex share calls through shareLibrary/` +
-          `unshareLibrary so every write-back is recorded (ADR-008 / ADR-017).\n` +
+          `(runFixRequest, executeRestore), Plex share calls through shareLibrary/unshareLibrary, and ` +
+          `Authentik/OWUI group calls through the assignRolePortal/provisionSyncedTier orchestrators ` +
+          `so every write-back is recorded (ADR-008 / ADR-017 / ADR-045).\n` +
           detail,
       );
     }

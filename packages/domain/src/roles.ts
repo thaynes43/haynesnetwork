@@ -72,6 +72,10 @@ export interface CreateRoleInput {
   appIds?: string[];
   /** Grant EVERY app, incl. ones added later ("All apps" in the UI). */
   grantsAll?: boolean;
+  /** ADR-045 — opt-in: this role PROJECTS to an Authentik group. The LOCAL flag is set here; the
+   *  external group create + OWUI pre-create + owned-allowlist append run in provisionSyncedTier
+   *  (authentik-portal.ts), called by the API after this returns. */
+  syncedTier?: boolean;
   actorId: string | null;
 }
 
@@ -79,13 +83,14 @@ export interface CreateRoleInput {
 export async function createRole(input: CreateRoleInput): Promise<{ roleId: string }> {
   return inTransaction(input.db, async (tx) => {
     const grantsAll = input.grantsAll ?? false;
+    const syncedTier = input.syncedTier ?? false;
     const apps = grantsAll ? [] : await appRefs(tx, input.appIds ?? []);
 
     let roleRow: { id: string } | undefined;
     try {
       [roleRow] = await tx
         .insert(roles)
-        .values({ name: input.name, description: input.description ?? null, grantsAll })
+        .values({ name: input.name, description: input.description ?? null, grantsAll, syncedTier })
         .returning({ id: roles.id });
     } catch (err) {
       if (isPostgresUniqueViolation(err)) {
@@ -103,7 +108,7 @@ export async function createRole(input: CreateRoleInput): Promise<{ roleId: stri
       actorId: input.actorId,
       action: 'create_role',
       roleId: roleRow.id,
-      detail: { role_name: input.name, grants_all: grantsAll, apps },
+      detail: { role_name: input.name, grants_all: grantsAll, synced_tier: syncedTier, apps },
     });
 
     return { roleId: roleRow.id };
@@ -119,6 +124,9 @@ export interface UpdateRoleInput {
   appIds?: string[];
   /** When provided, toggles the all-apps grant; true clears the explicit app set. */
   grantsAll?: boolean;
+  /** ADR-045 — when provided, sets the synced-tier flag column (the external group create /
+   *  allowlist changes are orchestrated separately in authentik-portal.ts). */
+  syncedTier?: boolean;
   actorId: string | null;
 }
 
@@ -136,6 +144,7 @@ export async function updateRole(input: UpdateRoleInput): Promise<{ changed: boo
         isAdmin: roles.isAdmin,
         isDefault: roles.isDefault,
         grantsAll: roles.grantsAll,
+        syncedTier: roles.syncedTier,
       })
       .from(roles)
       .where(eq(roles.id, input.roleId))
@@ -167,6 +176,7 @@ export async function updateRole(input: UpdateRoleInput): Promise<{ changed: boo
     const afterDescription =
       input.description === undefined ? before.description : input.description;
     const afterGrantsAll = input.grantsAll ?? before.grantsAll;
+    const afterSyncedTier = input.syncedTier ?? before.syncedTier;
     // A grants_all role holds NO explicit app rows; otherwise a provided appIds replaces them.
     const afterApps = afterGrantsAll ? [] : input.appIds ? await appRefs(tx, input.appIds) : beforeApps;
 
@@ -177,6 +187,7 @@ export async function updateRole(input: UpdateRoleInput): Promise<{ changed: boo
           name: afterName,
           description: afterDescription,
           grantsAll: afterGrantsAll,
+          syncedTier: afterSyncedTier,
           updatedAt: sql`now()`,
         })
         .where(eq(roles.id, input.roleId));
@@ -208,12 +219,14 @@ export async function updateRole(input: UpdateRoleInput): Promise<{ changed: boo
           role_name: before.name,
           description: before.description,
           grants_all: before.grantsAll,
+          synced_tier: before.syncedTier,
           apps: beforeApps,
         },
         after: {
           role_name: afterName,
           description: afterDescription,
           grants_all: afterGrantsAll,
+          synced_tier: afterSyncedTier,
           apps: afterApps,
         },
       },

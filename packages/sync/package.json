@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@hnet/arr": "workspace:*",
+    "@hnet/authentik": "workspace:*",
     "@hnet/db": "workspace:*",
     "@hnet/domain": "workspace:*",
     "@hnet/metrics": "workspace:*",

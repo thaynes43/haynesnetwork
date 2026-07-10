@@ -290,6 +290,12 @@ export interface AppSettingValueMap {
   // usage against. Numbers, like trash_default_window_days.
   upload_capacity_mbps: number;
   download_capacity_mbps: number;
+  // ADR-045 (PLAN-026 Authentik role portal) — the owned-groups guardrail allowlist (Authentik group
+  // NAMES the app may write membership for) + the role→group map (roleId → Authentik group name, so a
+  // role rename doesn't orphan the group). Both jsonb; both objects so the getAppSetting typeof-guard
+  // treats them like motd/space_targets.
+  authentik_owned_groups: string[];
+  authentik_group_map: Record<string, string>;
 }
 
 /** The documented default returned when a key has no row (never null — every key has a default). */
@@ -326,6 +332,11 @@ export const APP_SETTING_DEFAULTS: AppSettingValueMap = {
   // the getAppSetting typeof-guard falls back safely if a hand-edited jsonb row is the wrong type.
   upload_capacity_mbps: 300,
   download_capacity_mbps: 2256,
+  // ADR-045 (PLAN-026) — the owned-groups allowlist SHIPS as ['family'] (the Phase-1 seeded tier); an
+  // auto-created synced tier appends its group here. The role→group map ships empty ({}) — the seeded
+  // Family role resolves to 'family' by the name.toLowerCase() convention with no explicit entry.
+  authentik_owned_groups: ['family'],
+  authentik_group_map: {},
 };
 
 /**
@@ -469,4 +480,32 @@ export async function getFinalWarning(db?: DbClient): Promise<FinalWarning> {
       ? Math.min(FINAL_WARNING_HOURS_MAX, Math.max(FINAL_WARNING_HOURS_MIN, Math.round(raw)))
       : d.hoursBefore;
   return { enabled, hoursBefore };
+}
+
+/**
+ * ADR-045 (PLAN-026) — read the owned-groups guardrail allowlist, fail-safe. Only string entries are
+ * kept and each is lowercased + de-duped (group names are case-normalized). A garbage jsonb row (not an
+ * array) reads as the shipped default (['family']) so the guardrail can never silently widen to "any
+ * group". This is the ONLY source of truth for which Authentik groups a membership write may touch.
+ */
+export async function getAuthentikOwnedGroups(db?: DbClient): Promise<string[]> {
+  const stored = await getAppSetting(db, 'authentik_owned_groups');
+  const raw = Array.isArray(stored) ? stored : APP_SETTING_DEFAULTS.authentik_owned_groups;
+  const names = raw.filter((g): g is string => typeof g === 'string').map((g) => g.toLowerCase());
+  return [...new Set(names)];
+}
+
+/**
+ * ADR-045 (PLAN-026) — read the roleId → Authentik-group-name map, fail-safe. Non-string entries are
+ * dropped; a garbage jsonb row reads as {}. Callers resolve a role's group via
+ * `map[roleId] ?? role.name.toLowerCase()` (the naming convention is the fallback).
+ */
+export async function getAuthentikGroupMap(db?: DbClient): Promise<Record<string, string>> {
+  const stored = await getAppSetting(db, 'authentik_group_map');
+  if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return {};
+  const out: Record<string, string> = {};
+  for (const [roleId, name] of Object.entries(stored)) {
+    if (typeof name === 'string' && name.length > 0) out[roleId] = name.toLowerCase();
+  }
+  return out;
 }

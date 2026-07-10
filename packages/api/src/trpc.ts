@@ -8,6 +8,9 @@ import { db, type Database } from '@hnet/db';
 import {
   arrClientBundleFromEnv,
   ArrUpstreamError,
+  AuthentikGroupNotOwnedError,
+  AuthentikUnavailableError,
+  authentikPortalBundleFromEnv,
   ConcurrentTransitionError,
   FixAlreadyOpenError,
   FixRateLimitError,
@@ -22,6 +25,7 @@ import {
   MessageModeratedError,
   MessageNotOwnedError,
   NotFoundError,
+  OwuiUnavailableError,
   PlexAccountUnmatchedError,
   PlexAllStateError,
   PlexServerUnavailableError,
@@ -31,6 +35,7 @@ import {
   RoleNameConflictError,
   SearchCapExceededError,
   SubtitleFixUnsupportedError,
+  SyncedTierInvalidError,
   SystemRoleImmutableError,
   TrashBatchEmptyError,
   TrashBatchOpenError,
@@ -38,6 +43,7 @@ import {
   TrashMusicUnsupportedError,
   TrashSaveNotOwnedError,
   type ArrClientBundle,
+  type AuthentikPortalBundle,
   type MaintainerrClientBundle,
   type PlexClientBundle,
 } from '@hnet/domain';
@@ -86,6 +92,13 @@ export interface TRPCContext {
    * (PROMETHEUS_URL, in-cluster default), stubbed reader in tests.
    */
   metrics?: MetricsPrometheusReader;
+  /**
+   * ADR-045 / DESIGN-023 (PLAN-026) — the Authentik + Open WebUI portal bundle the /admin/users +
+   * synced-tier procedures run against (directory read, group create, membership write). Same injection
+   * model: env-built singleton in production (AUTHENTIK_API_TOKEN + OPENWEBUI_API_KEY), stubbed bundle in
+   * tests.
+   */
+  authentikPortal?: AuthentikPortalBundle;
 }
 
 let envArrBundle: ArrClientBundle | undefined;
@@ -131,6 +144,15 @@ export function resolveMetricsReader(ctx: TRPCContext): MetricsPrometheusReader 
   if (ctx.metrics) return ctx.metrics;
   envMetricsReader ??= metricsReaderFromEnv();
   return envMetricsReader;
+}
+
+let envAuthentikPortalBundle: AuthentikPortalBundle | undefined;
+
+/** The Authentik/OWUI portal bundle: injected (tests) or the env-built singleton (ADR-045). */
+export function resolveAuthentikPortalBundle(ctx: TRPCContext): AuthentikPortalBundle {
+  if (ctx.authentikPortal) return ctx.authentikPortal;
+  envAuthentikPortalBundle ??= authentikPortalBundleFromEnv();
+  return envAuthentikPortalBundle;
 }
 
 function hasKnownRole(user: SessionUser): boolean {
@@ -189,6 +211,10 @@ const APP_CODED_ERRORS = [
   TrashBatchOpenError,
   TrashBatchEmptyError,
   TrashSaveNotOwnedError,
+  AuthentikGroupNotOwnedError,
+  AuthentikUnavailableError,
+  OwuiUnavailableError,
+  SyncedTierInvalidError,
 ] as const;
 
 const t = initTRPC.context<TRPCContext>().create({
@@ -337,6 +363,18 @@ export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
     }
     if (err instanceof MessageModeratedError) {
       throw new TRPCError({ code: 'CONFLICT', message: err.message, cause: err });
+    }
+    if (err instanceof AuthentikGroupNotOwnedError) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: err.message, cause: err });
+    }
+    if (err instanceof SyncedTierInvalidError) {
+      throw new TRPCError({ code: 'UNPROCESSABLE_CONTENT', message: err.message, cause: err });
+    }
+    if (err instanceof AuthentikUnavailableError) {
+      throw new TRPCError({ code: 'BAD_GATEWAY', message: err.message, cause: err });
+    }
+    if (err instanceof OwuiUnavailableError) {
+      throw new TRPCError({ code: 'BAD_GATEWAY', message: err.message, cause: err });
     }
     if (err instanceof NotFoundError) {
       throw new TRPCError({ code: 'NOT_FOUND', message: err.message, cause: err });

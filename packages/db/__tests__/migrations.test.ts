@@ -639,4 +639,100 @@ describe('migrations against embedded Postgres 16', () => {
       await client.query(`DELETE FROM sync_runs WHERE run_kind = 'ai-usage-sync'`);
     });
   });
+
+  // ADR-045 / DESIGN-023 (migration 0036) — the Authentik role portal: roles.synced_tier column (Family
+  // backfilled true) + three new tables (authentik_users / pending_role_assignments / authentik_group_audit)
+  // + three CHECK relaxes (sync_runs.run_kind, permission_audit.action, app_settings.key). Additive.
+  describe('0036 authentik role portal (ADR-045 — column + new tables + CHECK relaxes, preservation)', () => {
+    const DEFAULT_ROLE = '11111111-1111-4111-8111-111111111111';
+
+    it('roles.synced_tier exists (default false); the seeded Family role is backfilled true', async () => {
+      const fam = await client.query(`SELECT synced_tier FROM roles WHERE name = 'Family'`);
+      expect(fam.rows[0].synced_tier).toBe(true); // migration backfills Family
+      const def = await client.query(`SELECT synced_tier FROM roles WHERE id = '${DEFAULT_ROLE}'`);
+      expect(def.rows[0].synced_tier).toBe(false); // Admin/Default stay app-local (column default)
+    });
+
+    it('creates the three portal tables', async () => {
+      const tables = await client.query(
+        `SELECT table_name FROM information_schema.tables
+           WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`,
+      );
+      const names = tables.rows.map((r) => r.table_name as string);
+      for (const expected of ['authentik_users', 'pending_role_assignments', 'authentik_group_audit']) {
+        expect(names).toContain(expected);
+      }
+    });
+
+    it('authentik_users_type_enum admits the 3 types, rejects unknown', async () => {
+      let pk = 900100;
+      for (const type of ['external', 'internal', 'internal_service_account']) {
+        await client.query({
+          text: `INSERT INTO authentik_users (pk, username, user_type) VALUES ($1, 'u', $2)`,
+          values: [pk++, type],
+        });
+      }
+      await expect(
+        client.query(`INSERT INTO authentik_users (pk, username, user_type) VALUES (900199, 'u', 'robot')`),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query(`DELETE FROM authentik_users WHERE pk >= 900100 AND pk < 900200`);
+    });
+
+    it('authentik_group_audit_action_enum admits the 4 actions, rejects unknown', async () => {
+      for (const action of ['add_member', 'remove_member', 'create_group', 'ensure_owui_group']) {
+        await client.query({
+          text: `INSERT INTO authentik_group_audit (action, group_name) VALUES ($1, 'family')`,
+          values: [action],
+        });
+      }
+      await expect(
+        client.query(`INSERT INTO authentik_group_audit (action, group_name) VALUES ('nuke_group', 'family')`),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query(`DELETE FROM authentik_group_audit WHERE group_name = 'family'`);
+    });
+
+    it('sync_runs_run_kind_enum admits authentik-users + the prior kinds (preservation)', async () => {
+      for (const kind of ['ai-usage-sync', 'authentik-users']) {
+        await client.query({
+          text: `INSERT INTO sync_runs (source, run_kind, status) VALUES ('radarr', $1, 'running')`,
+          values: [kind],
+        });
+      }
+      await expect(
+        client.query(`INSERT INTO sync_runs (source, run_kind, status) VALUES ('radarr', 'bogus-mode', 'running')`),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query(`DELETE FROM sync_runs WHERE run_kind = 'authentik-users'`);
+    });
+
+    it('permission_audit_action_enum admits assign_pending_role + the prior actions (preservation)', async () => {
+      for (const action of ['update_role_metrics_level', 'assign_pending_role']) {
+        await client.query({
+          text: `INSERT INTO permission_audit (action) VALUES ($1)`,
+          values: [action],
+        });
+      }
+      await expect(
+        client.query(`INSERT INTO permission_audit (action) VALUES ('bogus_action')`),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query(
+        `DELETE FROM permission_audit WHERE action IN ('update_role_metrics_level','assign_pending_role')`,
+      );
+    });
+
+    it('app_settings_key_enum admits the two Authentik keys + the prior keys (preservation)', async () => {
+      for (const key of ['download_capacity_mbps', 'authentik_owned_groups', 'authentik_group_map']) {
+        await client.query({
+          text: `INSERT INTO app_settings (key, value) VALUES ($1, '{}'::jsonb)
+                   ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+          values: [key],
+        });
+      }
+      await expect(
+        client.query(`INSERT INTO app_settings (key, value) VALUES ('nope_key', '{}'::jsonb)`),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query(
+        `DELETE FROM app_settings WHERE key IN ('download_capacity_mbps','authentik_owned_groups','authentik_group_map')`,
+      );
+    });
+  });
 });

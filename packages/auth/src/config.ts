@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm';
 import { db, users, session, account, verification } from '@hnet/db';
 import { authEnv, OIDC_PROVIDER_ID } from './env';
 import { bootstrapAdminOnSignin } from './hooks/bootstrap-admin';
+import { consumePendingRoleOnSignin } from './hooks/consume-pending-role';
 
 /**
  * DESIGN-002 D-02 — the Better Auth instance. Authentik OIDC via genericOAuth is the
@@ -163,6 +164,8 @@ export const auth = betterAuth({
             .where(eq(users.id, userId));
           if (!row) return;
           await bootstrapAdminOnSignin({ id: userId, email: row.email });
+          // ADR-045 (PLAN-026) — apply any parked Authentik-portal role intent for this identity.
+          await consumePendingRoleOnSignin({ id: userId, email: row.email });
         },
       },
     },

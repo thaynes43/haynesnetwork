@@ -20,6 +20,7 @@ import {
   startSyncRun,
   sweepExpiredBatches,
   syncAiUsage,
+  syncAuthentikUsers,
   type DrainPoolRefreshResult,
   type MaintainerrClientBundle,
   type OutboxDeliveryReport,
@@ -29,6 +30,7 @@ import {
   type SpacePolicyReport,
   type SweepReport,
   type SyncAiUsageReport,
+  type SyncAuthentikUsersResult,
   type TrashCandidatesRefreshReport,
   type UtilizationArrBundle,
 } from '@hnet/domain';
@@ -36,6 +38,9 @@ import {
 // polls; the fetched snapshot is handed to the @hnet/domain syncAiUsage single-writer (never a live
 // cross-DB read — the *arr-ledger precedent).
 import { fetchOwuiUsage, type OpenWebUiClient } from './openwebui';
+// ADR-045 / DESIGN-023 (PLAN-026) — the read-only Authentik directory client the `authentik-users` mode
+// pages; the snapshot is handed to the @hnet/domain syncAuthentikUsers single-writer (mirror upsert).
+import type { AuthentikReadClient } from '@hnet/authentik';
 // ADR-043 / DESIGN-021 (PLAN-024) — the durable Peloton poster mapping + the image-backed asset source
 // the `poster-guard` mode hands to the domain guard (the confined Plex write upload stays in
 // packages/domain — the bundle arrives here as an opaque PlexClientBundle, never constructed in sync).
@@ -93,6 +98,9 @@ export interface RunSyncOptions {
   /** ADR-044 / DESIGN-022 — the read-only Open WebUI admin-API client the `ai-usage-sync` mode polls for
    *  chats + users. Required only for that mode; tests inject a fetch-stubbed client. */
   openWebUi?: OpenWebUiClient;
+  /** ADR-045 / DESIGN-023 — the read-only Authentik directory client the `authentik-users` mode pages.
+   *  Required only for that mode; tests inject a stubbed client. */
+  authentik?: Pick<AuthentikReadClient, 'listUsers'>;
   /** Clock injection for deterministic `ai-usage-sync` tests (synced_at / created_at fallbacks). */
   now?: Date;
   /** Injected DB (tests); defaults to the lazy @hnet/db client. */
@@ -150,6 +158,10 @@ export interface SyncReport {
   aiUsage?: SyncAiUsageReport | null;
   /** The ai-usage-sync run's error — sets totalFailure for the CLI exit. */
   aiUsageError?: string;
+  /** ADR-045 — the `authentik-users` directory-mirror result (null for every other mode / on error). */
+  authentikUsers?: SyncAuthentikUsersResult | null;
+  /** The authentik-users run's error — sets totalFailure for the CLI exit. */
+  authentikUsersError?: string;
   /** ADR-035 — the candidate-snapshot refresh post-step (full/incremental with a Maintainerr
    *  handle; null when skipped or failed). */
   candidateRefresh?: TrashCandidatesRefreshReport | null;
@@ -477,6 +489,42 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       aiUsage,
       ...(aiUsageError !== undefined ? { aiUsageError } : {}),
       totalFailure: aiUsageError !== undefined,
+    };
+  }
+
+  // ADR-045 / DESIGN-023 — the `authentik-users` directory sync is NOT a per-source loop: it pages the
+  // Authentik users API (read-only — never mutates Authentik), normalizes each identity, and UPSERTS them
+  // via the domain syncAuthentikUsers single-writer into the authentik_users mirror. Like ai-usage-sync it
+  // touches no *arr source and writes NO sync_runs row — its trail is the mirror. A page/parse failure sets
+  // authentikUsersError → totalFailure (nonzero exit) so a persistently unreachable Authentik is visible in
+  // the CronJob history.
+  if (options.mode === 'authentik-users') {
+    const startedAt = new Date();
+    if (!options.authentik) {
+      throw new Error('authentik-users requires an Authentik read client (authentik)');
+    }
+    let authentikUsersResult: SyncAuthentikUsersResult | null = null;
+    let authentikUsersError: string | undefined;
+    try {
+      authentikUsersResult = await syncAuthentikUsers({ db, authentik: options.authentik });
+      logger.info('authentik-users sync complete', {
+        fetched: authentikUsersResult.fetched,
+        upserted: authentikUsersResult.upserted,
+      });
+    } catch (error) {
+      authentikUsersError = error instanceof Error ? error.message : String(error);
+      logger.error('authentik-users sync failed', { error: authentikUsersError });
+    }
+    return {
+      mode: options.mode,
+      startedAt,
+      finishedAt: new Date(),
+      sources: [],
+      backfill: null,
+      fixesCompleted: null,
+      authentikUsers: authentikUsersResult,
+      ...(authentikUsersError !== undefined ? { authentikUsersError } : {}),
+      totalFailure: authentikUsersError !== undefined,
     };
   }
 
