@@ -1,11 +1,18 @@
 # PLAN-022: Surface ytdl-sub content (Peloton + YouTube) in the Library section
 
-- **Status:** Executing (2026-07-10, branch `feat/ytdl-sub-library`). <!-- Draft → Executing → Completed -->
-  **IDs consumed (next-free at authoring):** ADR-038, DESIGN-017, migration 0032 (one CHECK rebuild —
-  `role_section_permissions` admits `ytdlsub`; no new table/column), PRD R-121..R-124 + Q-06, glossary
-  T-110..T-112. New `ytdlsub` Section-Permission (`disabled` default ⇒ ships Admin-only). Poster durable
-  store DEFERRED (Q-01 → PRD Q-06); resilient display (proxy + fallback) shipped. Merge gate green; e2e
-  data path validated hermetically (admin sees Peloton/YouTube shows, member gated out).
+- **Status:** Completed (2026-07-10) — **shipped v0.31.0** (PR #159 → release PR #160, deployed via
+  haynes-ops `7ecd3986`, rolled out + live-validated). Peloton + YouTube Library sub-tabs read DIRECT
+  from k8plex via a new `PlexReadClient.listSectionContents`; NO ledger sync (ADR-038). **Ships
+  Admin-only** via the new `ytdlsub` Section Permission (`disabled` no-row default) — the OWNER's
+  morning action: screenshot review → flip role(s) to `read_only` in the role editor (Q-03), plus the
+  durable-poster sink decision (Q-01 → PRD Q-06; resilient display shipped — authed Plex-thumb proxy +
+  fallback tile). **IDs consumed:** ADR-038, DESIGN-017, migration 0032 (ONE CHECK rebuild —
+  `role_section_permissions` admits `ytdlsub`; no new table/column/audit action), PRD R-121..R-124 +
+  Q-06, glossary T-110..T-112. **Live evidence:** k8plex reports `HOps Peloton` (key 4, 12 shows) +
+  `HOps YT` (key 3, 71 shows, 1 thumbless → fallback tile) from the deployed pod; a real thumb streams
+  (2.3 MB JPEG); migration CHECK verified in the prod DB; `/api/ytdlsub/poster` 401s and
+  `ytdlsub.access` UNAUTHORIZED unauthenticated; health ok on pod/staging/public. Visuals: hermetic
+  admin persona (the PLAN-017 substitution), 390px + 1280px screenshots delivered to the owner.
 - **Satisfies:** PRD-001 new R-NN block (ytdl-sub libraries as first-class Library content; read
   direct from the Plex server; admin-gated at ship); new ADR-NN (direct-Plex read for
   non-*arr content — the *arrs-are-source rule is N/A here because this content has no *arr; owner

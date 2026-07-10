@@ -4,15 +4,24 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-- **Last updated:** 2026-07-10 — **PLAN-017 Metrics section foundation shipped (v0.30.0), live on
-  staging.** A new top-level **Metrics** section (nav after Bulletin) with an Overview (WAN
-  upload/download usage-vs-capacity meters + cluster load/memory + a storage snapshot reusing 013's
-  `getUtilization`), a per-role **Full/Limited** access model (`roles.metrics_level`, server-side
-  payload-shape enforcement), and a new read-only **`@hnet/metrics`** Prometheus client against the
-  in-cluster `kube-prometheus-stack`. Migration 0031 verified live; the deployed pod fetches real WAN
-  data. **Ships Admin-only** — the OWNER's morning action opens it to Default(limited) + verifies the
-  Limited view live (the one remaining ship-gate tail). Docs: ADR-037 / DESIGN-016 / R-117..R-120 /
-  T-106..T-109. Q-02: download capacity seeded **2256 Mbps provisionally** — owner to confirm.
+- **Last updated:** 2026-07-10 — **PLAN-022 ytdl-sub Library sub-tabs shipped (v0.31.0), live.**
+  Two new **Library** sub-tabs (Peloton, YouTube) surface the k8plex ytdl-sub libraries
+  (`HOps Peloton` / `HOps YT`), read **DIRECTLY** from the Plex server via a new
+  `PlexReadClient.listSectionContents` — **no ledger sync** (this content has no *arr; ADR-038).
+  Gated by the new **`ytdlsub`** Section Permission (`disabled` no-row default ⇒ **ships
+  Admin-only**); posters stream through a session- + section-gated Plex-thumb proxy
+  (`/api/ytdlsub/poster`, extends ADR-019) with a `MediaPoster` fallback tile. Migration 0032 (one
+  CHECK rebuild) verified live; the deployed pod reads real k8plex data (12 Peloton / 71 YouTube
+  shows). **OWNER's morning actions:** screenshot review → flip role(s)' `ytdlsub` to `read_only`
+  (plan Q-03); answer the durable-poster sink (PRD **Q-06** — store deferred; resilient display
+  shipped). Docs: ADR-038 / DESIGN-017 / R-121..R-124 / T-110..T-112.
+  Prior milestone — **PLAN-017 Metrics section foundation (v0.30.0), live on staging:** a top-level
+  **Metrics** section (nav after Bulletin) with an Overview (WAN usage-vs-capacity meters + cluster
+  load/memory + storage snapshot), per-role **Full/Limited** (`roles.metrics_level`), and the
+  read-only **`@hnet/metrics`** Prometheus client. Migration 0031 verified live. **Ships
+  Admin-only** — the OWNER's morning action opens it to Default(limited) + verifies the Limited
+  view live. Docs: ADR-037 / DESIGN-016 / R-117..R-120 / T-106..T-109. Q-02: download capacity
+  seeded **2256 Mbps provisionally** — owner to confirm.
   Prior milestone — session-2 wrap: **v0.29.0 (signed), live at https://haynesnetwork.com**; every
   published image is keyless-cosign-signed under a Kyverno **Enforce** policy; the trash automation
   loop is armed AND proven in production (first real sweep 2026-07-09). Every buildable plan
