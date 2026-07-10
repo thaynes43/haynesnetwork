@@ -15,11 +15,12 @@ import {
   type SyncSource,
 } from '@hnet/db';
 import { maintainerrClientBundleFromEnv, type UtilizationArrBundle } from '@hnet/domain';
+import { prometheusClientFromEnv } from '@hnet/metrics';
 import { buildMetadataSourceClients, buildOptionalMaintainerrRead, buildSyncClients, requireClient } from '../clients';
 import { createConsoleLogger } from '../logger';
 import { runSync } from '../orchestrator';
 
-const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy|notify-outbox [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
+const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy|notify-outbox|smart-alerts [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
 
   --mode=full              item-list upsert + tombstone pass per *arr (+ Seerr requests)
   --mode=incremental       history/since cursor polling per *arr (+ Seerr requests)
@@ -37,6 +38,13 @@ const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-bat
                            pushes; sent_at null + attempts<5 + earliest_send_at<=now). Needs
                            PUSHOVER_APP_TOKEN + PUSHOVER_USER_KEY; disabled-safe — a clean no-op that
                            leaves rows queued when either is absent. No --source. Writes no sync_runs row.
+  --mode=smart-alerts      detect CRITICAL SMART transitions since the last check (ADR-040 — pass→FAIL,
+                           media_errors 0→n, spare crossing threshold margin, a NEW critical_warning bit,
+                           or the critical appdata pool wear crossing 80/90%) and enqueue ONE
+                           notification_outbox row per transition, same-tx with the smart_drive_state
+                           update. First sight of a drive records a BASELINE and pages nothing. Reads the
+                           in-cluster Prometheus (PROMETHEUS_URL, in-cluster default; no secret). No
+                           --source. Writes no sync_runs row.
   --source=NAME            limit the run to one source (repeatable; default: all sources; for
                            metadata-refresh the default is the three *arr kinds)
   --force-tombstones       override the mass-tombstone guard (DESIGN-005 D-14/Q-03)
@@ -83,20 +91,26 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
   }
   if (mode === undefined) {
     throw new CliUsageError(
-      '--mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy|notify-outbox is required',
+      '--mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy|notify-outbox|smart-alerts is required',
     );
   }
   if (
-    (mode === 'trash-batch-sweep' || mode === 'space-policy' || mode === 'notify-outbox') &&
+    (mode === 'trash-batch-sweep' ||
+      mode === 'space-policy' ||
+      mode === 'notify-outbox' ||
+      mode === 'smart-alerts') &&
     sources.length > 0
   ) {
     throw new CliUsageError(`--source is not valid for --mode=${mode}`);
   }
   // metadata-refresh defaults to the *arr kinds (Seerr has no metadata); trash-batch-sweep +
-  // space-policy + notify-outbox use no *arr SOURCE loop at all (they drive Maintainerr / read
-  // diskspace / drain the outbox directly); other modes default to all four sources.
+  // space-policy + notify-outbox + smart-alerts use no *arr SOURCE loop at all (they drive Maintainerr /
+  // read diskspace / drain the outbox / read Prometheus directly); other modes default to all sources.
   const defaultSources =
-    mode === 'trash-batch-sweep' || mode === 'space-policy' || mode === 'notify-outbox'
+    mode === 'trash-batch-sweep' ||
+    mode === 'space-policy' ||
+    mode === 'notify-outbox' ||
+    mode === 'smart-alerts'
       ? []
       : mode === 'metadata-refresh'
         ? [...ARR_KINDS]
@@ -176,6 +190,9 @@ async function main(): Promise<number> {
       },
     };
   }
+  // ADR-040 / DESIGN-020 — the read-only @hnet/metrics Prometheus reader the `smart-alerts` mode reads
+  // the smartctl series through (PROMETHEUS_URL, in-cluster default; no secret).
+  const smartReader = args.mode === 'smart-alerts' ? prometheusClientFromEnv() : undefined;
 
   logger.info('sync starting', {
     mode: args.mode,
@@ -199,6 +216,7 @@ async function main(): Promise<number> {
     ...(maintainerr ? { maintainerr } : {}),
     ...(arr ? { arr } : {}),
     ...(maintainerrRead ? { maintainerrRead } : {}),
+    ...(smartReader ? { smartReader } : {}),
     logger,
   });
 
@@ -247,6 +265,8 @@ async function main(): Promise<number> {
         }
       : {}),
     ...(report.outboxError !== undefined ? { outboxError: report.outboxError } : {}),
+    ...(report.smartAlerts ? { smartAlerts: report.smartAlerts } : {}),
+    ...(report.smartAlertsError !== undefined ? { smartAlertsError: report.smartAlertsError } : {}),
     sources: report.sources.map((s) => ({
       source: s.source,
       status: s.status,

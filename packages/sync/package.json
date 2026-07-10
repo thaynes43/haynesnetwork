@@ -18,6 +18,7 @@
     "@hnet/arr": "workspace:*",
     "@hnet/db": "workspace:*",
     "@hnet/domain": "workspace:*",
+    "@hnet/metrics": "workspace:*",
     "drizzle-orm": "^0.36.4"
   },
   "devDependencies": {

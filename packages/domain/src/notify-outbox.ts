@@ -100,6 +100,26 @@ function formatClockTime(iso: unknown, tz: string): string {
 const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
 const plural = (n: number): string => (n === 1 ? '' : 's');
 
+/** ADR-040 / DESIGN-020 — map a SMART transition reason code to owner-facing copy. */
+function smartReasonLabel(reason: unknown): string {
+  switch (reason) {
+    case 'smart_status':
+      return 'SMART status FAILED';
+    case 'media_errors':
+      return 'media errors climbing';
+    case 'available_spare':
+      return 'available spare crossed its threshold';
+    case 'critical_warning':
+      return 'a new critical-warning bit';
+    case 'wear_80':
+      return 'wear crossed 80%';
+    case 'wear_90':
+      return 'wear crossed 90%';
+    default:
+      return typeof reason === 'string' ? reason : 'SMART degradation';
+  }
+}
+
 /** Render an outbox row's Pushover title/message/url from its event type + payload. */
 export function renderOutboxMessage(
   row: { eventType: NotifyOutboxEventType; payload: Record<string, unknown> },
@@ -160,6 +180,31 @@ export function renderOutboxMessage(
         message: `Deleted ${items} item${plural(items)}, freed ${formatBytes(num(p.reclaimedBytes))}.`,
         url,
         urlTitle,
+      };
+    }
+    // ADR-040 / DESIGN-020 (PLAN-019) — SMART drive-health transitions deep-link to the Hardware tab
+    // (NOT Trash), so they render their own title/message/url from the drive payload.
+    case 'smart_degraded': {
+      const label = typeof p.label === 'string' ? p.label : 'A drive';
+      const pool = typeof p.pool === 'string' ? ` (${p.pool})` : '';
+      const reasons = Array.isArray(p.reasons)
+        ? p.reasons.map(smartReasonLabel).join(', ')
+        : 'a critical SMART change';
+      return {
+        title: `⚠️ Drive health: ${label}${pool}`,
+        message: `Critical SMART change — ${reasons}. Check the Hardware tab.`,
+        url: 'https://haynesnetwork.com/metrics?tab=hardware',
+        urlTitle: 'Open Hardware metrics',
+      };
+    }
+    case 'smart_recovered': {
+      const label = typeof p.label === 'string' ? p.label : 'A drive';
+      const pool = typeof p.pool === 'string' ? ` (${p.pool})` : '';
+      return {
+        title: `Drive recovered: ${label}${pool}`,
+        message: 'SMART health is back to passing.',
+        url: 'https://haynesnetwork.com/metrics?tab=hardware',
+        urlTitle: 'Open Hardware metrics',
       };
     }
     default:

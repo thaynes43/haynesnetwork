@@ -46,3 +46,6 @@ export * from './pending-pool-refresh';
 // ADR-034 / DESIGN-015 (PLAN-016) — the Pushover notification outbox (transactional; drained by the
 // notify-outbox sync mode). Enqueued same-tx by the batch writers; guarded single-writer table.
 export * from './notification-outbox';
+// ADR-040 / DESIGN-020 (PLAN-019) — the per-drive last-known SMART state the smart-alerts sync mode
+// diffs against for transition detection. Guarded single-writer table (evaluateSmartAlerts).
+export * from './smart-drive-state';

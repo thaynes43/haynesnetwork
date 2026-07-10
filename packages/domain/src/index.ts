@@ -36,6 +36,10 @@ export * from './pool-cadence';
 // the transactional outbox (enqueue same-tx from the batch writers; drained by the notify-outbox mode)
 export * from './notify-window';
 export * from './notify-outbox';
+// ADR-040 / DESIGN-020 (PLAN-019) — the SMART-alert transition detector + single-writer (the
+// smart-alerts sync mode enqueues a smart_degraded/smart_recovered outbox row same-tx with the
+// smart_drive_state update; baseline-on-first-sight never pages the known bad state).
+export * from './smart-alerts';
 // DESIGN-010 amendment — the Trash Overview landing aggregate (composes the reads above)
 export * from './trash-overview';
 export * from './storage-metrics';

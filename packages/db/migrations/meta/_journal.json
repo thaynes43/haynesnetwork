@@ -225,6 +225,13 @@
       "when": 1782950432000,
       "tag": "0032_ytdlsub_section",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1782950433000,
+      "tag": "0033_smart_alert_state",
+      "breakpoints": true
     }
   ]
 }
