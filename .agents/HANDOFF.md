@@ -4,7 +4,36 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-- **Last updated:** 2026-07-10 — **PLAN-026 Authentik user/role PORTAL COMPLETE, live (v0.38.0).**
+- **Last updated:** 2026-07-10 — **PLAN-023 Phase 4 Books & Audiobooks LIBRARY LEDGER COMPLETE, live
+  (v0.39.0).** Books/Audiobooks/Comics are now first-class **Library** content: a one-way synced MIRROR of
+  **Kavita** (Books=EBooks + Comics) and **Audiobookshelf** (Audio Books) in a **dedicated `books_items`
+  table** (owner ruling Q-04 "full ledger integration in v1") — NOT `media_items` (ADR-046: books have no
+  monitored/quality/root-folder/Fix semantics; overloading the *arr ledger would corrupt its invariants +
+  drag books into /ledger's Fix/bulk-add). hard rule 4 EXTENDED: Kavita/ABS are the source of truth for
+  book media; sync flows IN, **NO write-back** (no Fix/Restore for books). New read-only **`@hnet/books`**
+  package (Kavita + ABS clients, lazy login + token cache + 401 re-auth; **no `./write` export**). New
+  **`books-sync`** mode + `@hnet/domain syncBooks` single-writer (upsert + scoped-tombstone in one tx; no
+  `sync_runs` row; standalone like `ai-usage-sync`; guard-listed). Three **Library walls** (poster grid +
+  filter/sort engine + `MediaPoster`) after YouTube, before My Fixes — order **Movies·TV·Music·Peloton·
+  YouTube·Books·Audiobooks·Comics·My Fixes**; rows deep-link OUT to Kavita/ABS. Authed **`/api/books/cover`**
+  proxy (creds server-side, ETag/304; ADR-019 posture; unauth → 401). Gated by a new **`books`
+  Section-Permission** defaulting **`disabled`** = ships **Admin-only** (owner opens per role after review).
+  Two seeded `app_catalog` cards (Kavita, Audiobookshelf) + `kavita`/`audiobookshelf` icon keys — **NO role
+  grants seeded** (owner grants Default/Family after review). migration **0037** (books_items + section/sync
+  CHECK rebuilds + catalog seed). **LIVE-VALIDATED (2026-07-10):** the `sync-books` CronJob ran clean
+  against real Kavita/ABS — **upserted 2116 rows: 1283 books + 10 comics + 823 audiobooks** (DB-confirmed;
+  covers on 1283+823+9); all three walls render real covers via the proxy at desktop + 390px (screenshots
+  captured, admin `hnet-e2e`); unauth cover gate 401; level seam unit-proven (Disabled→FORBIDDEN, Read-Only
+  opts in, Admin sees). Docs: **ADR-046 / DESIGN-024 / PRD R-151..R-156 / DDD T-136..T-138**; PR #187 →
+  v0.39.0; haynes-ops `d865bff1` (image bump + `sync-books` CronJob `22 * * * *` + KAVITA_PASSWORD/
+  AUDIOBOOKSHELF_PASSWORD in the ExternalSecret from the `kavita`/`audiobookshelf` 1P items). **OWNER
+  MUST-DECIDE (morning):** (1) open the `books` section (`read_only`) to which role(s) via `/admin/roles`
+  after the screenshot review; (2) grant the Kavita/ABS **catalog cards** to Default/Family (or keep
+  admin-only) — both reversible in `/admin`; (3) the two cards' copy ("Read — ebooks & comics" / "Listen —
+  audiobooks"). Note: comics currently only 10 series live in Kavita (import still catching up — the migrated
+  1737 files aren't all series-scanned yet); genre filter chips are a deferred follow-up (the
+  `books.filterFacets` endpoint ships + is unit-proven). Prior milestone — PLAN-026 Authentik role portal (below).
+- **Recent:** 2026-07-10 — **PLAN-026 Authentik user/role PORTAL COMPLETE, live (v0.38.0).**
   haynesnetwork now **writes Authentik group membership** — a role change propagates to every
   Authentik-backed app (Open WebUI today; Kavita/ABS later), for **every** Authentik identity incl.
   Plex-external + never-logged-in. Two import-confined write surfaces (`@hnet/authentik/write`,
