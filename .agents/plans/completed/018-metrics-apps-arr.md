@@ -1,6 +1,13 @@
 # PLAN-018: Metrics — Apps sub-tab (*arr + downloaders)
 
-- **Status:** Executing (2026-07-10, Fable 5 build run). <!-- flips Draft → Executing → Completed -->
+- **Status:** Completed (2026-07-10) — **shipped as v0.32.0, live** (PR #162 → release PR #163 →
+  haynes-ops `7659c485` → Flux rollout green, `/api/health` ok on both origins). The Apps sub-tab
+  renders the four curated groups off live Prometheus (pod-verified: 9564 movies / 114118 episodes /
+  55507 albums, SAB 848 GB/60 GB 24h lanes, qbittorrent+slskd up, prowlarr 4 indexers); unauth
+  `metrics.apps` = 401 UNAUTHORIZED; both-levels payload with the full-only seam present-but-empty.
+  Docs consumed: DESIGN-018 / OPS-008 / R-125..R-126 / T-113 — **no ADR, no migration, no guard
+  edit** (as predicted). Owner morning: Q-01 (fast-lane split at limited), Q-02 (bazarr panel
+  group), Q-03 (keep 3 boards), Q-05 (deep-link split — confirmed as built).
   - **As-built ID reconciliation (re-grepped 2026-07-10 on `main` @ v0.31.0):** 017 consumed
     DESIGN-016 / OPS(none — 017 authored no OPS doc) / R-117..R-120 / T-106..T-109; 022 consumed
     ADR-038 / DESIGN-017 / R-121..R-124 / T-110..T-112. **018 takes next-free: DESIGN-018, OPS-008,
