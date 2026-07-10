@@ -126,3 +126,41 @@ test.describe('metrics section (PLAN-017 · ADR-037 · DESIGN-016) — Overview 
     }
   });
 });
+
+// PLAN-018 / DESIGN-018 — the Apps sub-tab. ADVISORY (not a merge gate yet). The four group cards read
+// the *arr/downloader instant vectors added to stub-prometheus.ts; each carries a Grafana deep-link.
+test.describe('metrics Apps sub-tab (PLAN-018 · DESIGN-018) — *arr + downloader panels', () => {
+  test('an admin opens ?tab=apps and the four groups render real numbers + Grafana deep-links', async ({
+    page,
+  }) => {
+    await signIn(page, 'admin');
+    await page.goto('/metrics?tab=apps');
+
+    await test.step('the Apps tab is selected and its four group cards render', async () => {
+      const appsTab = page.getByRole('tab', { name: 'Apps' });
+      await expect(appsTab).toHaveAttribute('aria-selected', 'true');
+      await expect(page.getByTestId('metrics-apps')).toBeVisible();
+      for (const id of [
+        'metrics-apps-collection',
+        'metrics-apps-pipeline',
+        'metrics-apps-downloads',
+        'metrics-apps-indexers',
+      ] as const) {
+        await expect(page.getByTestId(id), `${id} renders`).toBeVisible();
+      }
+    });
+
+    await test.step('a known Collection reading + the per-group Grafana deep-links', async () => {
+      // radarr movie total = 9564 from the stub instant vector.
+      await expect(page.getByTestId('metrics-apps-lib-radarr')).toContainText('9,564');
+      await expect(page.getByTestId('metrics-apps-collection-grafana')).toHaveAttribute(
+        'href',
+        /d\/arr-library-overview/,
+      );
+      await expect(page.getByTestId('metrics-apps-downloads-grafana')).toHaveAttribute(
+        'href',
+        /d\/downloads-clients-indexers/,
+      );
+    });
+  });
+});

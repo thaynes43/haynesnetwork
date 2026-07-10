@@ -103,6 +103,61 @@ export async function startStubPrometheus(): Promise<StubPrometheusServer> {
       if (q.includes('node_load1')) return vector([sample({}, '18.5')]); // sum(node_load1) — cluster load
       if (q.includes('MemTotal')) return vector([sample({}, '529642733568')]); // total mem bytes
       if (q.includes('MemAvailable')) return vector([sample({}, '384401444864')]); // available mem bytes
+
+      // PLAN-018 / DESIGN-018 — the Apps sub-tab series (*arr + downloaders + indexers). Substring
+      // matches (more-specific *_monitored_/_missing_/_cutoff_unmet_total forms are distinct from the
+      // bare *_total, so order among these does not matter). Values mirror the live 2026-07-10 magnitudes.
+      // Collection — Radarr / Sonarr / Lidarr library counts.
+      if (q.includes('radarr_movie_monitored_total')) return vector([sample({}, '9000')]);
+      if (q.includes('radarr_movie_missing_total')) return vector([sample({}, '120')]);
+      if (q.includes('radarr_movie_cutoff_unmet_total')) return vector([sample({}, '45')]);
+      if (q.includes('radarr_movie_total')) return vector([sample({}, '9564')]);
+      if (q.includes('sonarr_series_monitored_total')) return vector([sample({}, '800')]);
+      if (q.includes('sonarr_episode_missing_total')) return vector([sample({}, '300')]);
+      if (q.includes('sonarr_episode_cutoff_unmet_total')) return vector([sample({}, '60')]);
+      if (q.includes('sonarr_episode_total')) return vector([sample({}, '114118')]);
+      if (q.includes('lidarr_artists_monitored_total')) return vector([sample({}, '2100')]);
+      if (q.includes('lidarr_albums_missing_total')) return vector([sample({}, '500')]);
+      if (q.includes('lidarr_albums_total')) return vector([sample({}, '55507')]);
+      // Acquisition pipeline — queue depth / grabs-per-hr (rate ×3600) / system-health issues.
+      if (q.includes('radarr_queue_total')) return vector([sample({}, '3')]);
+      if (q.includes('sonarr_queue_total')) return vector([sample({}, '5')]);
+      if (q.includes('lidarr_queue_total')) return vector([sample({}, '2')]);
+      if (q.includes('radarr_history_total')) return vector([sample({}, '0')]);
+      if (q.includes('sonarr_history_total')) return vector([sample({}, '18')]);
+      if (q.includes('lidarr_history_total')) return vector([sample({}, '0')]);
+      if (q.includes('radarr_system_health_issues')) return vector([sample({}, '1')]);
+      if (q.includes('sonarr_system_health_issues')) return vector([sample({}, '0')]);
+      if (q.includes('lidarr_system_health_issues')) return vector([sample({}, '0')]);
+      // Download clients — SABnzbd per lane (job), qbittorrent + slskd reachability.
+      if (q.includes('sabnzbd_speed_bps'))
+        return vector([sample({ job: 'sabnzbd' }, '12000000'), sample({ job: 'sabnzbd-fast' }, '0')]);
+      if (q.includes('sabnzbd_downloaded_bytes'))
+        return vector([
+          sample({ job: 'sabnzbd' }, '848000000000'),
+          sample({ job: 'sabnzbd-fast' }, '60000000000'),
+        ]);
+      if (q.includes('sabnzbd_remaining_bytes'))
+        return vector([sample({ job: 'sabnzbd' }, '5000000000'), sample({ job: 'sabnzbd-fast' }, '0')]);
+      if (q.includes('sabnzbd_queue_length'))
+        return vector([sample({ job: 'sabnzbd' }, '4'), sample({ job: 'sabnzbd-fast' }, '0')]);
+      if (q.includes('up{job=~"sabnzbd'))
+        return vector([sample({ job: 'sabnzbd' }, '1'), sample({ job: 'sabnzbd-fast' }, '1')]);
+      if (q.includes('up{job="qbittorrent"}')) return vector([sample({}, '1')]);
+      if (q.includes('qbittorrent_torrents_count')) return vector([sample({}, '12')]);
+      if (q.includes('up{job="slskd"}')) return vector([sample({}, '1')]);
+      if (q.includes('slskd_enqueue_queue_depth_current')) return vector([sample({}, '0')]);
+      // Indexers — Prowlarr fleet + per-indexer response time / query rate.
+      if (q.includes('prowlarr_indexer_enabled_total')) return vector([sample({}, '4')]);
+      if (q.includes('prowlarr_indexer_unavailable')) return vector([sample({}, '0')]);
+      if (q.includes('prowlarr_indexer_average_response_time_ms'))
+        return vector([
+          sample({ indexer: 'DrunkenSlug' }, '335'),
+          sample({ indexer: 'NinjaCentral' }, '225'),
+        ]);
+      if (q.includes('rate(prowlarr_indexer_queries_total'))
+        return vector([sample({ indexer: 'DrunkenSlug' }, '12'), sample({ indexer: 'NinjaCentral' }, '6')]);
+
       // Unknown query → an empty (but still successful) result set.
       return vector([]);
     }

@@ -13,8 +13,10 @@ import {
   type StorageArrayUtilization,
 } from '@hnet/domain';
 import {
+  getAppsMetrics,
   getHardwareOverview,
   getNetworkOverview,
+  type AppsMetrics,
   type HardwareOverview,
   type NetworkOverview,
 } from '@hnet/metrics';
@@ -84,6 +86,22 @@ export const metricsRouter = router({
       safeStorage(ctx),
     ]);
     return { level, network, hardware, storage };
+  }),
+
+  /**
+   * DESIGN-018 (PLAN-018) — the Apps sub-tab payload: the media-automation apps (*arr + downloaders +
+   * indexers) in four curated groups, read from the same in-cluster Prometheus. Gated by section
+   * visibility (metricsProcedure). No *arr/downloader series names a user, so the payload is the same
+   * at both levels — but the full-only seam is kept plumbed via `includeUserAware` (ADR-037 C-03): at
+   * `full` a present-but-empty `requesterActivity` key is included; at `limited` it is omitted, so a
+   * future requester panel slots into the full-only branch without a refactor.
+   */
+  apps: metricsProcedure.query(async ({ ctx }): Promise<AppsMetrics> => {
+    const level = effectiveMetricsLevel(ctx.user.role);
+    return getAppsMetrics({
+      prometheus: resolveMetricsReader(ctx),
+      includeUserAware: level === 'full',
+    });
   }),
 
   /** The admin-editable WAN capacity denominators (Mbps). Admin-gated + audited on write. */
