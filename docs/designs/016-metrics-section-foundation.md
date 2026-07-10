@@ -51,7 +51,7 @@ surface — ADR-037 C-07).
 
 - **`client.ts`** — `createPrometheusClient({ baseUrl, fetchImpl?, timeoutMs? }): PrometheusReader` with
   `query(promQL, atSec?)` (instant `GET /api/v1/query`, vector) **and** `queryRange(promQL, start, end,
-  step)` (range `GET /api/v1/query_range`, matrix). zod-validates both envelopes; throws plain `Error`s
+step)` (range `GET /api/v1/query_range`, matrix). zod-validates both envelopes; throws plain `Error`s
   on HTTP/shape failure (callers catch into the degrade). `prometheusClientFromEnv(env)` reads
   `PROMETHEUS_URL ?? PROMETHEUS_DEFAULT_URL` where the default is
   `http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090` (ADR-037 C-08).
@@ -60,18 +60,40 @@ surface — ADR-037 C-07).
 
   ```ts
   // Network — usage-vs-capacity; wanLinks only when includeWanLinks (full).
-  export interface MetricsMeter { usageMbps: number | null; capacityMbps: number; pct: number | null }
-  export interface WanLink { id: string; label: string; capacityUpMbps: number | null;
-    capacityDownMbps: number | null; usageUpMbps: number | null; usageDownMbps: number | null }
-  export interface NetworkOverview { upload: MetricsMeter; download: MetricsMeter;
-    wanLinks?: WanLink[]; unavailable: boolean }
-  export function getNetworkOverview(o: { prometheus: PrometheusReader;
-    uploadCapacityMbps: number; downloadCapacityMbps: number; includeWanLinks: boolean }): Promise<NetworkOverview>
+  export interface MetricsMeter {
+    usageMbps: number | null;
+    capacityMbps: number;
+    pct: number | null;
+  }
+  export interface WanLink {
+    id: string;
+    label: string;
+    capacityUpMbps: number | null;
+    capacityDownMbps: number | null;
+    usageUpMbps: number | null;
+    usageDownMbps: number | null;
+  }
+  export interface NetworkOverview {
+    upload: MetricsMeter;
+    download: MetricsMeter;
+    wanLinks?: WanLink[];
+    unavailable: boolean;
+  }
+  export function getNetworkOverview(o: {
+    prometheus: PrometheusReader;
+    uploadCapacityMbps: number;
+    downloadCapacityMbps: number;
+    includeWanLinks: boolean;
+  }): Promise<NetworkOverview>;
 
   export interface HardwareOverview {
     nodes: { count: number; coresTotal: number; load1Total: number; loadPerCorePct: number } | null;
-    memory: { usedBytes: number; totalBytes: number; pct: number } | null; unavailable: boolean }
-  export function getHardwareOverview(o: { prometheus: PrometheusReader }): Promise<HardwareOverview>
+    memory: { usedBytes: number; totalBytes: number; pct: number } | null;
+    unavailable: boolean;
+  }
+  export function getHardwareOverview(o: {
+    prometheus: PrometheusReader;
+  }): Promise<HardwareOverview>;
   ```
 
   **The verified PromQL (ADR-037 recon):** upload usage `sum(unpoller_site_transmit_rate_bytes{subsystem="wan"})`
@@ -98,21 +120,21 @@ surface — ADR-037 C-07).
 `metrics` router registered in `routers/index.ts`. A Prometheus reader is injected on `ctx`
 (`resolveMetricsReader(ctx)` — stub in tests, env singleton in prod, mirroring `resolvePrometheusReader`):
 
-| Procedure | Gate | Input | Returns |
-| --------- | ---- | ----- | ------- |
-| `metrics.access` | `authedProcedure` | — | `{ level: MetricsLevel; canSee: boolean }` (the caller's own level + whether the section is visible) |
-| `metrics.overview` | `metricsProcedure` | — | `MetricsOverview` (below), shaped by the caller's level |
-| `metrics.capacity.get` | `adminProcedure` | — | `{ uploadMbps: number; downloadMbps: number }` |
-| `metrics.capacity.setUpload` | `adminProcedure` | `{ mbps: int 0..1e6 }` | audited `setAppSetting` result |
-| `metrics.capacity.setDownload` | `adminProcedure` | `{ mbps: int 0..1e6 }` | audited `setAppSetting` result |
+| Procedure                      | Gate               | Input                  | Returns                                                                                              |
+| ------------------------------ | ------------------ | ---------------------- | ---------------------------------------------------------------------------------------------------- |
+| `metrics.access`               | `authedProcedure`  | —                      | `{ level: MetricsLevel; canSee: boolean }` (the caller's own level + whether the section is visible) |
+| `metrics.overview`             | `metricsProcedure` | —                      | `MetricsOverview` (below), shaped by the caller's level                                              |
+| `metrics.capacity.get`         | `adminProcedure`   | —                      | `{ uploadMbps: number; downloadMbps: number }`                                                       |
+| `metrics.capacity.setUpload`   | `adminProcedure`   | `{ mbps: int 0..1e6 }` | audited `setAppSetting` result                                                                       |
+| `metrics.capacity.setDownload` | `adminProcedure`   | `{ mbps: int 0..1e6 }` | audited `setAppSetting` result                                                                       |
 
 ```ts
 export interface MetricsOverview {
-  level: MetricsLevel;                 // echoed so the UI can label the Limited/Full view
-  network: NetworkOverview;            // wanLinks present ONLY when level === 'full'
-  hardware: HardwareOverview;          // ungated (both levels)
-  storage: StorageArrayUtilization[];  // REUSE getUtilization (013) — not user-aware, both levels
-  grafana?: OverviewGrafanaLinks;      // ADMIN-ONLY (D-07) — the LAN-only Grafana footnote link
+  level: MetricsLevel; // echoed so the UI can label the Limited/Full view
+  network: NetworkOverview; // wanLinks present ONLY when level === 'full'
+  hardware: HardwareOverview; // ungated (both levels)
+  storage: StorageArrayUtilization[]; // REUSE getUtilization (013) — not user-aware, both levels
+  grafana?: OverviewGrafanaLinks; // ADMIN-ONLY (D-07) — the LAN-only Grafana footnote link
 }
 ```
 
@@ -174,7 +196,7 @@ the owner's LAN/VPN**. A non-admin viewer would only ever get dead links, so the
 **admin-only**.
 
 - **Gate on ADMIN status specifically — NOT the metrics level.** A `full` non-admin (e.g. a Family role
-  with `metrics_level='full'`) has the *detail* grant but not necessarily LAN/VPN reachability, so the
+  with `metrics_level='full'`) has the _detail_ grant but not necessarily LAN/VPN reachability, so the
   gate is `role.isAdmin`, orthogonal to the `full`|`limited` shaping. (Admin already implies `full`, so an
   admin always both sees full detail and gets the links.)
 - **Enforced SERVER-SIDE in the payload shape** (the same never-serialize seam ADR-037 C-03 established
@@ -194,11 +216,50 @@ the owner's LAN/VPN**. A non-admin viewer would only ever get dead links, so the
   `includeGrafanaLinks` seam. No new ADR (reuses ADR-030 C-04 / ADR-037 C-09 "deep-link, never embed");
   no new PRD requirement or glossary term (a gating refinement, not a new concept).
 
+### D-08 — Overview: admin-only inline WAN-capacity editor (closes the PLAN-017 UI gap)
+
+**Gap-fix (2026-07-10, owner-approved).** The Overview upload/download meters chart usage against the WAN
+capacity denominators, and the audited `metrics.capacity.set{Upload,Download}` mutations (`adminProcedure`,
+`z.number().int().min(0).max(1_000_000)` → `setAppSetting`, D-04) **shipped with PLAN-017** — but no UI ever
+called them, so an admin could only change a cap via a raw API call. D-08 adds the missing edit affordance;
+**no new mutation, ADR, PRD, glossary term, or migration** — the `upload_capacity_mbps` /
+`download_capacity_mbps` settings (ADR-037 C-06) and both mutations already exist. This is purely the
+client control that was omitted.
+
+- **Where** — `apps/web/app/(app)/metrics/overview-tab.tsx`. Each WAN meter (upload + download) gains an
+  optional `editor` slot rendered under its foot. `metrics/page.tsx` resolves `role.isAdmin` server-side
+  (like every admin affordance, ADR-012) and threads `viewerIsAdmin` through `MetricsClient` →
+  `OverviewTab`; the editor renders **only** when `viewerIsAdmin`. A non-admin (read-only or full) receives
+  **no edit control** — the meters render exactly as before. The mutation is itself `adminProcedure`-gated
+  - audited, so this flag is UI convenience, not the security boundary.
+- **Idiom (REUSE, don't invent)** — the `/settings/trash` storage-**target** editor verbatim: an
+  always-present number input + tick **Save**, draft-over-stored, `describeMutationError` for failures, a
+  client-side bound mirror (`capacityOutOfRange`, `int 0..1_000_000`) that rejects the same values the
+  server zod would before a round trip. The editable value **is** the meter's own `capacityMbps` off the
+  Overview payload — no extra admin-only `capacity.get` read.
+- **Optimistic + reconcile** — `onMutate` patches `utils.metrics.overview` (`network[kind].capacityMbps`
+  plus a `meterPct`-recomputed `pct`, a pure mirror of the server `@hnet/metrics` `meterPct`) so the
+  denominator **and** the fill re-render instantly; `onError` rolls the cache back and surfaces the message;
+  `onSettled` invalidates `overview` so the server (which recomputes pct off live usage) reconciles.
+- **Reflow-free (ADR-015)** — the editor is **always mounted** for an admin (never a toggle), so no
+  neighbor moves on interaction; the status label reserves its width so the `Saved`⇄`Whole 0–1,000,000`
+  swap can't nudge the row (the storage-target reservation pattern). New CSS is token-only (no hex).
+- **Tests** — pure `meterPct` / `capacityOutOfRange` unit tests in `apps/web/lib/__tests__/metrics.test.ts`
+  (the optimistic-pct mirror + the bound guard); the `metrics.spec.ts` advisory e2e asserts an admin sees
+  and can save the capacity control (denominator re-renders) while a read-only viewer never sees it. The
+  set/read-back + audit is already covered by the D-04 router round-trip test; the mutation is unchanged.
+
 ## Alternatives considered
 
+- **A pencil→input toggle affordance** — rejected: the storage-target idiom is an always-present input (a
+  direct manipulation, not a form ceremony), and always-mounted is the cleanest way to guarantee ADR-015
+  reflow-freedom (a toggle would have to reserve the input's height anyway). Reuse beats a new pattern.
+- **A dedicated admin settings page for the caps** — rejected: the cap is only meaningful next to the meter
+  it denominates; editing it in place (like the space target next to its utilization meter) keeps the
+  denominator and its control colocated. The mutation stays audited regardless of where it's called.
 - **Grant table for the level** — rejected (single scalar per role; a column is the right analog). ADR-037.
 - **Gate the deep-links on the metrics `level` (full) instead of admin** — rejected (D-07): `full` is a
-  *detail* grant, not a LAN-reachability signal; a `full` Family viewer off-LAN would still get dead links.
+  _detail_ grant, not a LAN-reachability signal; a `full` Family viewer off-LAN would still get dead links.
 - **A bespoke `metrics_visible` flag** instead of the section mechanism — rejected; the section-permission
   machinery already gives audited, per-role, Admin-defaults-on visibility for free. ADR-037.
 - **Embedding Grafana** — rejected (ADR-030 C-04 cross-site cookie break; native is best on mobile).
@@ -216,7 +277,8 @@ the owner's LAN/VPN**. A non-admin viewer would only ever get dead links, so the
   `app_settings` round-trip (audited); the migration-parity CHECK test; the **admin-only Grafana
   deep-link invariant (D-07)** — `grafana` PRESENT for an admin, ABSENT for a non-admin at BOTH levels,
   across `overview`/`apps`/`hardware`/`network`.
-- **Pure helpers:** `apps/web/lib/metrics.ts` (mbps format, tone thresholds, pct).
+- **Pure helpers:** `apps/web/lib/metrics.ts` (mbps format, tone thresholds, pct — incl. the D-08 optimistic
+  `meterPct` mirror + the `capacityOutOfRange` client bound guard).
 - **e2e (advisory):** `metrics.spec.ts` — the section is Admin-only by default (a Default user sees the
   unavailable card until opted in); with `metrics` opened, the Overview renders both meters against the
   stub numbers, the poll dims in place (no reflow), Prometheus-`down` shows the degrade note while the
@@ -224,7 +286,7 @@ the owner's LAN/VPN**. A non-admin viewer would only ever get dead links, so the
 
 ## Open questions
 
-| ID | Question | Resolution |
-|----|----------|------------|
+| ID   | Question                                                                                                                                                                    | Resolution                                                                                                 |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | Q-01 | Overview headline additions beyond upload/download + node load + memory + storage (e.g. active Plex streams once a live session source exists, GPU util once 019/021 land)? | Owner, morning. Plex streams deferred — no trivial live session read today (Tautulli is watch-stats-only). |
-| Q-02 | Exact download capacity to seed `download_capacity_mbps` (upload seeded 300; live provider advertises 2256 Mbps down). | Seeded **2256 provisionally**; owner confirms. |
+| Q-02 | Exact download capacity to seed `download_capacity_mbps` (upload seeded 300; live provider advertises 2256 Mbps down).                                                      | Seeded **2256 provisionally**; owner confirms.                                                             |

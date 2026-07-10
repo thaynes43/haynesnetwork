@@ -24,7 +24,13 @@ function resolveTab(raw: string | null): TabKey {
   return METRICS_TABS.some((t) => t.key === raw) ? (raw as TabKey) : 'overview';
 }
 
-function MetricsContent({ metricsLevel }: { metricsLevel: MetricsLevel }) {
+function MetricsContent({
+  metricsLevel,
+  viewerIsAdmin,
+}: {
+  metricsLevel: MetricsLevel;
+  viewerIsAdmin: boolean;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -49,7 +55,8 @@ function MetricsContent({ metricsLevel }: { metricsLevel: MetricsLevel }) {
 
   const onTabKeyDown = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {
     let nextIndex: number | null = null;
-    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') nextIndex = (index + 1) % METRICS_TABS.length;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown')
+      nextIndex = (index + 1) % METRICS_TABS.length;
     else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp')
       nextIndex = (index - 1 + METRICS_TABS.length) % METRICS_TABS.length;
     else if (e.key === 'Home') nextIndex = 0;
@@ -88,7 +95,7 @@ function MetricsContent({ metricsLevel }: { metricsLevel: MetricsLevel }) {
 
       <div id="metrics-panel" role="tabpanel" aria-labelledby={`metricstab-${active}`}>
         {active === 'overview' ? (
-          <OverviewTab active metricsLevel={metricsLevel} />
+          <OverviewTab active metricsLevel={metricsLevel} viewerIsAdmin={viewerIsAdmin} />
         ) : active === 'apps' ? (
           <AppsTab active metricsLevel={metricsLevel} />
         ) : active === 'hardware' ? (
@@ -105,11 +112,17 @@ function MetricsContent({ metricsLevel }: { metricsLevel: MetricsLevel }) {
   );
 }
 
-export function MetricsClient({ metricsLevel }: { metricsLevel: MetricsLevel }) {
+export function MetricsClient({
+  metricsLevel,
+  viewerIsAdmin,
+}: {
+  metricsLevel: MetricsLevel;
+  viewerIsAdmin: boolean;
+}) {
   // useSearchParams needs a Suspense boundary in the App Router.
   return (
     <Suspense fallback={<p className="muted">Loading…</p>}>
-      <MetricsContent metricsLevel={metricsLevel} />
+      <MetricsContent metricsLevel={metricsLevel} viewerIsAdmin={viewerIsAdmin} />
     </Suspense>
   );
 }
