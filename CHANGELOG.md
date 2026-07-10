@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.0](https://github.com/thaynes43/haynesnetwork/compare/v0.31.0...v0.32.0) (2026-07-10)
+
+
+### Features
+
+* Metrics — Apps sub-tab (*arr + downloaders + indexers), curated + Grafana deep-linked (PLAN-018) ([#162](https://github.com/thaynes43/haynesnetwork/issues/162)) ([f21d2a6](https://github.com/thaynes43/haynesnetwork/commit/f21d2a6e5c4581085a4cec48820e4d2a2dc1b443))
+
 ## [0.31.0](https://github.com/thaynes43/haynesnetwork/compare/v0.30.0...v0.31.0) (2026-07-10)
 
 
