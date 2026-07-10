@@ -48,22 +48,23 @@ export interface GuardianPreviewInput {
 
 /**
  * Why an item survives (or not) an expedite — the CLIENT mirror of the server partition:
- * - `deletable`       — cold + positively evaluated ⇒ the server WILL delete it.
- * - `protected_*`     — kept deliberately (whitelist / watch / requester guardian).
+ * - `deletable`       — cold + positively evaluated ⇒ the server WILL delete it. A requested item
+ *                       is deletable now (owner ruling 2026-07-09 — requested is informational only,
+ *                       never an app-side keep); its requester rides the meta badge, not the verdict.
+ * - `protected_*`     — kept deliberately (whitelist / watch guardian).
  * - `unverifiable`    — kept because it CANNOT be verified safe (no Maintainerr id, or unknown
  *                       to our ledger) ⇒ the server counts it as SKIPPED, never deleted.
  *                       NOT the same thing as protected — surface it distinctly (ADR-023 C-07b).
  */
 export type GuardianPreview =
-  'deletable' | 'protected_tag' | 'protected_watched' | 'protected_requested' | 'unverifiable';
+  'deletable' | 'protected_tag' | 'protected_watched' | 'unverifiable';
 
 export function previewGuardian(item: GuardianPreviewInput): GuardianPreview {
   // The expedite 'all' loop skips unactionable items (no Maintainerr id) BEFORE the guardian.
   if (item.maintainerrMediaId === null) return 'unverifiable';
   if (item.protectedByTag) return 'protected_tag';
   if (item.recentlyWatched) return 'protected_watched';
-  if (item.requesters.length > 0) return 'protected_requested';
-  // Fail closed: unknown to our ledger ⇒ no watch/requester signal ⇒ kept (skipped).
+  // Fail closed: unknown to our ledger ⇒ no watch signal ⇒ kept (skipped).
   if (item.mediaItemId === null) return 'unverifiable';
   return 'deletable';
 }
@@ -132,21 +133,20 @@ export function expediteErrorAction(
  * - `check`   — protected by the *arr `dnd` tag or a live Maintainerr exclusion made OUTSIDE this
  *               session. Inert: the wall never un-saves someone else's protection (the
  *               /library/[id] guard panel keeps that power for remove_exclude holders).
- * - `requested` — a personal requester is on record but the item is NOT yet excluded: its own
- *               person-shield glyph (distinct from the `check` exclusion). Owner ruling (2026-07-09,
- *               build B): a requested item is NEVER inert on the live wall — the person-shield is a
- *               normal save-toggle (tap ⇒ save = add the exclusion). Once excluded it reads as the
- *               ordinary `shield`/`check` (tap ⇒ un-save where permitted). "Person-shield when no
- *               exclusion, shield when both."
  *
- * The corner is ALWAYS the action toggle (owner ruling 2026-07-09 — the eye-corner bug fix). The
- * recently-watched `eye` glyph was RETIRED from the corner: a recently-watched item is now a normal,
- * fully-saveable tile (its requester person-shield or the slated trash-can), and the watch fact moves
- * OUT to the meta line as an info-tone note (see `watchNote`). Slating a recently-watched item stays
- * honest — the guardian still keeps it at the SWEEP (a sweep-time protection), it just is no longer a
- * wall-corner state that blocks the save both ways.
+ * The person-shield `requested` glyph was RETIRED (owner ruling 2026-07-09 — "Maintainerr rules
+ * decide what gets promoted; the app controls how much and when it's deleted"). A requester is
+ * informational only now: it changes NO actionability — a requested candidate reads as its normal
+ * glyph (the slated `trash`, or the `check`/`shield` when protected) and the requester attribution
+ * moves OUT to the meta line as an info badge (a person icon + "Requested by <name>" — see the
+ * RequestedByBadge component). It co-exists with the watch note.
+ *
+ * The corner is ALWAYS the action toggle (owner ruling 2026-07-09). The recently-watched `eye` glyph
+ * was likewise RETIRED from the corner: a recently-watched item is a normal, fully-saveable tile, and
+ * the watch fact rides the meta line (see `watchNote`). Slating a recently-watched item stays honest
+ * — the guardian still keeps it at the SWEEP (a sweep-time protection).
  */
-export type PendingWallGlyph = 'trash' | 'shield' | 'check' | 'requested';
+export type PendingWallGlyph = 'trash' | 'shield' | 'check';
 
 export function pendingWallGlyph(
   item: {
@@ -158,35 +158,26 @@ export function pendingWallGlyph(
   override: 'saved' | 'unsaved' | undefined,
 ): PendingWallGlyph {
   if (override === 'saved') return 'shield';
-  const requested = item.requesters.length > 0;
-  // The Maintainerr-managed dnd TAG is a DELIBERATE hard protection (its un-protect lives on the
-  // /library guard panel); it stays the inert `check` even for a requester item — the owner's build-B
-  // "never inert" ruling targets the reversible save-exclusion, not the hard tag.
-  if (override !== 'unsaved' && item.protectedByTag) return 'check';
-  if (override !== 'unsaved' && item.protectedByExclusion) {
-    // A LIVE (reversible) exclusion: a requester item that is ALSO excluded reads as the ordinary save
-    // shield ("shield when both") — never inert, so it can be un-saved like any other save; a
-    // non-requester exclusion made elsewhere stays the inert `check`.
-    return requested ? 'shield' : 'check';
-  }
-  // NOTE: `recentlyWatched` no longer produces a corner glyph. The corner is the action; the watch
-  // fact is surfaced on the meta line (watchNote). A requester with no exclusion is the tappable
-  // person-shield (tap ⇒ save); everything else falls through to the slated, tappable trash-can.
-  if (override !== 'unsaved' && requested) return 'requested';
+  // Protection made OUTSIDE this session (the dnd tag or a live foreign exclusion) is the inert
+  // `check`; its un-protect lives on the /library guard panel. A requester no longer changes this
+  // (it is informational only now) — a requested candidate is the ordinary slated `trash` until
+  // protected. `recentlyWatched` no longer produces a corner glyph (the corner is the action; the
+  // watch fact rides the meta line).
+  if (override !== 'unsaved' && (item.protectedByTag || item.protectedByExclusion)) return 'check';
   return 'trash';
 }
 
 /** May THIS tile be tapped to toggle? Mirrors the wire gates the caller resolved (canSave /
- *  canUnsave already fold in reachability). `trash` and `requested` (the person-shield) both save
- *  (tap ⇒ add the exclusion); `shield` un-saves. `check` stays inert — protection made outside this
- *  session (a foreign exclusion / the dnd tag) reads as state, never a button. (There is no longer an
- *  `eye` glyph: recently-watched items are ordinary, saveable tiles now.) */
+ *  canUnsave already fold in reachability). `trash` saves (tap ⇒ add the exclusion); `shield`
+ *  un-saves. `check` stays inert — protection made outside this session (a foreign exclusion / the
+ *  dnd tag) reads as state, never a button. (There is no `eye` or person-shield glyph: recently-
+ *  watched and requested items are ordinary, saveable tiles now.) */
 export function pendingWallTappable(
   glyph: PendingWallGlyph,
   canSave: boolean,
   canUnsave: boolean,
 ): boolean {
-  if (glyph === 'trash' || glyph === 'requested') return canSave;
+  if (glyph === 'trash') return canSave;
   if (glyph === 'shield') return canUnsave;
   return false;
 }

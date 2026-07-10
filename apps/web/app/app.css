@@ -3808,6 +3808,20 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
   width: 13px;
   height: 13px;
 }
+/* ADR-025 / DESIGN-011 errata (2026-07-09) — the requester INFO chip: a small person icon pinned on
+   the meta line, co-existing with the watch eye. Requested is informational only now (it changes no
+   actionability); the accent tone reads it as "a person is attached", distinct from the info-tone
+   watch eye. Fixed size ⇒ the tile never reflows (ADR-015); the names ride the tooltip / aria. */
+.bwall-requested {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-accent);
+}
+.bwall-requested svg {
+  width: 13px;
+  height: 13px;
+}
 @media (max-width: 480px) {
   .bwall {
     grid-template-columns: repeat(3, 1fr);

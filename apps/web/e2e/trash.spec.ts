@@ -173,20 +173,24 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await expect(page.getByTestId('trash-tablewrap')).toHaveCount(0);
 
     // The unified glyph model: cold ⇒ trash, dnd-tagged ⇒ check (inert), unknown-to-ledger ⇒ trash
-    // (savable; the sweep would skip it). The Fixture is recently-watched AND requested: the
-    // eye-corner bug fix (2026-07-09) retires the inert eye — it now reads as the SAVEABLE person-shield
-    // (requested), with the watch fact on the meta line (info-tone eye).
+    // (savable; the sweep would skip it). The Fixture is recently-watched AND requested — but a
+    // requester is informational only now (owner ruling 2026-07-09 — the person-shield is retired):
+    // it reads as the SAVEABLE slated trash-can, with the requester + watch facts on the meta line.
     const vanished = page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' });
     const fixture = page.getByTestId('trash-tile').filter({ hasText: 'The Fixture' });
     const runner = page.getByTestId('trash-tile').filter({ hasText: 'Stub Runner' });
     const unknown = page.getByTestId('trash-tile').filter({ hasText: 'tmdb:990009' });
     await expect(vanished).toHaveAttribute('data-glyph', 'trash');
-    await expect(fixture).toHaveAttribute('data-glyph', 'requested'); // NOT the retired inert eye
+    await expect(fixture).toHaveAttribute('data-glyph', 'trash'); // requested is a meta badge, not a glyph
     await expect(runner).toHaveAttribute('data-glyph', 'check');
     await expect(unknown).toHaveAttribute('data-glyph', 'trash');
 
-    // Only the dnd-tagged `check` is inert (a non-button span). The recently-watched Fixture is NO
-    // LONGER inert — its corner is the tappable save toggle (a button), the whole point of the fix.
+    // The requester attribution rides the meta line as an info badge (person icon + tooltip),
+    // co-existing with the watch chip — it never changes the corner action.
+    await expect(fixture.getByTestId('wall-requested')).toHaveAttribute('title', /Requested by /);
+
+    // Only the dnd-tagged `check` is inert (a non-button span). The recently-watched + requested
+    // Fixture is a normal tappable save toggle (a button) — requested/watched never make it inert.
     await expect(runner.locator('span[data-testid="trash-toggle"]')).toHaveCount(1);
     await expect(fixture.locator('button[data-testid="trash-toggle"]')).toHaveCount(1);
 
@@ -243,21 +247,24 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     const libHref = await runner.getByTestId('wall-lib-link').getAttribute('href');
     expect(libHref).toMatch(/\/library\/[0-9a-f-]{36}\?from=trash-movies$/);
 
-    // TV is a separate tab (never combined): Breaking Prod is REQUESTED. Build B — the requester
-    // person-shield is NEVER inert on the live wall: it is a normal save-toggle (tap ⇒ SAVE = add
-    // the exclusion), showing the person-shield glyph with the "tap to save it" fact in the tooltip.
+    // TV is a separate tab (never combined): Breaking Prod is REQUESTED. Requested is informational
+    // only now — it is the ordinary slated trash-can (tap ⇒ SAVE = add the exclusion), with the
+    // requester attribution on a meta-line info badge (person icon + "Requested by <name>" tooltip).
     await page.getByRole('tab', { name: 'TV' }).click();
     await expect(page).toHaveURL(/\/trash\?tab=tv$/);
     const tvTile = page.getByTestId('trash-tile').filter({ hasText: 'Breaking Prod' });
     await expect(tvTile).toHaveCount(1);
-    await expect(tvTile).toHaveAttribute('data-glyph', 'requested');
-    // Tappable now: the toggle is a BUTTON (a save-toggle), not an inert span.
+    await expect(tvTile).toHaveAttribute('data-glyph', 'trash');
+    // Tappable: the toggle is a BUTTON (a save-toggle), not an inert span.
     await expect(tvTile.locator('button[data-testid="trash-toggle"]')).toHaveCount(1);
     await expect(tvTile.locator('span[data-testid="trash-toggle"]')).toHaveCount(0);
+    await expect(tvTile.getByTestId('wall-requested')).toHaveAttribute('title', /Requested by /);
+    // The toggle's aria-label is the save invitation; its tooltip (info) carries the requester line.
     await expect(tvTile.getByTestId('trash-toggle')).toHaveAttribute(
-      'title',
-      /Requested by .* — tap to save it/,
+      'aria-label',
+      /slated to delete — tap to save it/,
     );
+    await expect(tvTile.getByTestId('trash-toggle')).toHaveAttribute('title', /Requested by /);
     await expect(page.getByTestId('trash-total')).toHaveText('Reclaiming 20 GB across 1 item');
   });
 
@@ -277,8 +284,8 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await expect(indicator).toHaveAttribute('data-tone', 'muted');
     await expect(indicator).toHaveAttribute('title', /Last watched on HaynesKube · \w+ \d{4}/);
     // BUG FIX 2026-07-09 — a RECENTLY-watched tile no longer hides behind an inert eye corner: its
-    // corner is the SAVEABLE person-shield, and the watch fact is an INFO-tone meta chip (not muted,
-    // not a corner puck). The Fixture is recently-watched (3d) + requested.
+    // corner is the SAVEABLE slated trash-can, and the watch fact is an INFO-tone meta chip (not muted,
+    // not a corner puck). The Fixture is recently-watched (3d) + requested (a meta badge, not a glyph).
     const fixtureIndicator = page
       .getByTestId('trash-tile')
       .filter({ hasText: 'The Fixture' })
@@ -301,11 +308,12 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await unsaved;
     await resetMaintainerr(page);
 
-    // TV: Breaking Prod is REQUESTED and also watched-long-ago — the person-shield keeps the CORNER,
-    // the watch info is the muted meta chip (the documented precedence, D-12).
+    // TV: Breaking Prod is REQUESTED and also watched-long-ago — the corner is the slated trash-can,
+    // and BOTH facts ride the meta line: the requester info badge + the muted watch chip (D-12).
     await page.getByRole('tab', { name: 'TV' }).click();
     const tv = page.getByTestId('trash-tile').filter({ hasText: 'Breaking Prod' });
-    await expect(tv).toHaveAttribute('data-glyph', 'requested');
+    await expect(tv).toHaveAttribute('data-glyph', 'trash');
+    await expect(tv.getByTestId('wall-requested')).toHaveAttribute('title', /Requested by /);
     await expect(tv.getByTestId('wall-watched')).toHaveAttribute('data-tone', 'muted');
     await expect(tv.getByTestId('wall-watched')).toHaveAttribute('title', /Last watched on HaynesTower/);
 
@@ -373,15 +381,15 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
 
     // The reported bug (PAW Patrol): a recently-watched candidate showed the inert eye corner and a tap
     // did nothing — it could not be saved. The Fixture is recently-watched (3d ago) + requested; its
-    // corner is now the SAVEABLE person-shield, and the watch fact is an info-tone meta chip.
+    // corner is now the SAVEABLE slated trash-can, and the watch + requester facts are meta-line chips.
     const fixture = page.getByTestId('trash-tile').filter({ hasText: 'The Fixture' });
-    await expect(fixture).toHaveAttribute('data-glyph', 'requested');
+    await expect(fixture).toHaveAttribute('data-glyph', 'trash');
     const toggle = fixture.getByTestId('trash-toggle');
     await page.waitForLoadState('networkidle');
     await toggle.scrollIntoViewIfNeeded();
     const saved = page.waitForResponse((r) => r.url().includes('trash.saveExclusion'));
     await toggle.click();
-    // It SAVED — the tap now does something (the whole fix). The person-shield flips to the filled shield.
+    // It SAVED — the tap now does something (the whole fix). The trash-can flips to the filled shield.
     await expect(fixture).toHaveAttribute('data-glyph', 'shield');
     await expect(toggle).toHaveAttribute('aria-pressed', 'true');
     await saved;
@@ -615,15 +623,17 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await expect(page.getByTestId('wall-tile')).toHaveCount(4);
     const vanished = page.getByTestId('wall-tile').filter({ hasText: 'Vanished Heist' });
     await expect(vanished).toHaveAttribute('data-glyph', 'trash');
-    // The Fixture is recently-watched + requested: the eye-corner bug fix (2026-07-09) retires the
-    // inert eye here too — it snapshots as `pending` and reads as the person-shield (requested), now
-    // SAVEABLE (a batch item that was previously stuck inert). It still counts as Kept (a requester keep).
+    // The Fixture is recently-watched + requested: it snapshots as `pending` and reads as the ordinary
+    // slated trash-can (owner ruling 2026-07-09 — requested is informational only, no auto-save). It
+    // is now a SLATED candidate (not a system keep); its requester + watch facts ride the meta line.
     const fixtureTile = page.getByTestId('wall-tile').filter({ hasText: 'The Fixture' });
-    await expect(fixtureTile).toHaveAttribute('data-glyph', 'requested');
-    await expect(fixtureTile.getByRole('button')).toHaveCount(1); // tappable — not the old inert eye
+    await expect(fixtureTile).toHaveAttribute('data-glyph', 'trash');
+    await expect(fixtureTile.getByRole('button')).toHaveCount(1); // tappable save toggle
+    await expect(fixtureTile.getByTestId('wall-requested')).toHaveAttribute('title', /Requested by /);
     await expect(fixtureTile.getByTestId('wall-watched')).toHaveAttribute('data-tone', 'info');
     await expect(page.getByTestId('wall-tile').filter({ hasText: 'Stub Runner' })).toHaveAttribute('data-glyph', 'check');
-    await expect(page.getByTestId('wall-counts')).toHaveText('Deleting 2 · Rescued 0 · Kept 2 · frees 3.0 GB');
+    // The Fixture now counts as slated (was Kept before): Deleting 3 (Vanished 2 + Fixture 4 + unknown 1).
+    await expect(page.getByTestId('wall-counts')).toHaveText('Deleting 3 · Rescued 0 · Kept 1 · frees 7.0 GB');
 
     // Tap trash → shield: overlay swap only — the tile and its neighbor must not move (ADR-015).
     const fixture = page.getByTestId('wall-tile').filter({ hasText: 'The Fixture' });
@@ -634,7 +644,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await expect(vanished).toHaveAttribute('data-glyph', 'shield');
     expectSameBox(tileBefore, await vanished.boundingBox());
     expectSameBox(neighborBefore, await fixture.boundingBox());
-    await expect(page.getByTestId('wall-counts')).toHaveText('Deleting 1 · Rescued 1 · Kept 2 · frees 1.0 GB');
+    await expect(page.getByTestId('wall-counts')).toHaveText('Deleting 2 · Rescued 1 · Kept 1 · frees 5.0 GB');
     await expect(page.getByTestId('batch-savers')).toContainText('Bootstrap Admin · 1 saved');
     let calls = await maintainerrCalls(page);
     const saves = calls.filter((c) => c.method === 'POST' && c.path === '/rules/exclusion');

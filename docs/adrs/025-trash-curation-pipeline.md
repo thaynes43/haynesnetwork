@@ -130,6 +130,30 @@ This ADR records the binding decisions and resolves the plan's open questions (Q
   > requester keep (dnd/watched/unevaluable keeps are unchanged): **requested + never-unsaved → kept;
   > requested + explicitly-unsaved → deleted.** UI + wall glyphs: DESIGN-011 D-11.
 
+  > **Errata (2026-07-09, owner-directed) — SEPARATION OF RESPONSIBILITIES: requested items are
+  > informational only. SUPERSEDES the build-B "requested items start saved" errata above AND the
+  > original C-05 requester guardian keep.** Owner ruling, verbatim: *"Maintainerr rules decide what
+  > gets promoted; the app controls how much and when it's deleted."* All app-side requested-item
+  > **overrules are removed**:
+  >
+  > 1. **Guardian.** `classifyGuardian` no longer returns a `requested` keep — a personal requester is
+  >    **not** a keep reason. A requested item in a batch/sweep/expedite is treated like any other item
+  >    (saves / live exclusions / the dnd tag / the **recently-watched** keep still protect it). The
+  >    recently-watched keep is **unchanged** (owner-ratified exception — it covers viewing that starts
+  >    mid-window). `GuardianKeepReason` is now `tag | recently_watched | unevaluable`.
+  > 2. **Batch creation.** `createBatchFromPending` no longer auto-saves requester items — every item
+  >    snapshots per its **real** state (`pending` unless tag/exclusion-protected). No system auto-saves
+  >    exist any more, so the "who rescued what" stats are unaffected and every `saved` row is a human
+  >    rescue. The read-time reclassification of legacy requester rows (build B) is removed.
+  > 3. **`requested_override` semantics are removed** — there is nothing to override. The `saved_reason`
+  >    and `requested_override` columns are LEFT in place (harmless; no migration) but no code reads or
+  >    writes them for requester purposes; `saved_reason` stays NULL and `requested_override` stays false.
+  > 4. **Walls.** The person-shield `requested` glyph is retired; requested = an **info badge on the
+  >    meta line** (a person icon + "Requested by &lt;name&gt;" tooltip, co-existing with the watch note).
+  >    The corner stays the pure save/slate action toggle. UI: DESIGN-010 D-12 build C errata +
+  >    DESIGN-011 D-11 errata. The exclusion-held `protected` tile's un-protect flow (the Baldwins fix)
+  >    is unchanged **except** a freed row now lands slated `pending` (never a requester person-shield).
+
 - **C-06 — Settings live in a generic `app_settings` store (Q-06).** A small audited key→jsonb table
   (`key` CHECK from `APP_SETTING_KEYS`, `value`, `updated_at`, `updated_by`) written ONLY by the
   `setAppSetting` single-writer, which co-writes an `update_app_setting` permission_audit row same-tx

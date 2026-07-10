@@ -446,3 +446,24 @@ wall** a requested item is **never inert**: with no exclusion it is the person-s
 when no exclusion, shield when both"). The `getBatchSaveStats` "who rescued what" tuning card **excludes**
 system requested auto-saves (they are not human rescues and never write a `trash_batch_saves` row);
 `counts.saved` still counts them (they are genuinely `saved`).
+
+> **Errata (2026-07-09, owner-directed) — SUPERSEDES this D-11 build-B amendment: requested items are
+> informational only.** Owner ruling, verbatim: *"Maintainerr rules decide what gets promoted; the app
+> controls how much and when it's deleted."* The "requested = a live saved state" model above is retired
+> in full — a requester no longer changes any state, protection, or actionability. Concretely:
+>
+> - **No auto-save.** `createBatchFromPending` snapshots a requester item per its **real** state (`pending`
+>   unless tag/exclusion-protected). `saved_reason` is never set; `requested_override` is never set. The
+>   `saved_reason`/`requested_override` columns (migration 0026) are left in place, harmless and unread.
+> - **No override.** `setBatchItemSaved` un-save is the plain release of a **human** rescue back to
+>   `pending` (the D-05 ownership gate now applies uniformly — every `saved` row is a human rescue). The
+>   `overrodeRequested` audit event is gone.
+> - **No guardian keep.** `classifyGuardian` has no `requested` reason; a requested pending item is cold
+>   at the sweep and deletes unless a save / exclusion / the **recently-watched** keep (unchanged,
+>   owner-ratified) protects it. The read-time reclassification of legacy requester rows is removed.
+> - **Walls.** The `RequesterShieldGlyph` person-shield is **retired**. Requested is now a meta-line
+>   **info badge** — a person icon + "Requested by &lt;name&gt;" tooltip (`RequestedByBadge`,
+>   `data-testid="wall-requested"`), co-existing with the watch note; the corner is the pure save/slate
+>   toggle. `wallGlyph` depends only on item state; a `pending` item is always the slated `trash`. The
+>   exclusion-held `protected` tile's un-protect flow is unchanged **except** a freed row lands slated
+>   `pending` (never a person-shield). See ADR-025 errata (2026-07-09) and DESIGN-010 D-12 build-C errata.

@@ -96,10 +96,12 @@ export function TrashCanGlyph() {
   );
 }
 
-/** The requester PERSON-SHIELD — a personal requester is on record, so the guardian refuses the
- *  item's deletion at expedite/sweep; inert (a trash-can would be dishonest). A person inside the
- *  shield, deliberately DISTINCT from the exclusion shield-check. Same 16×16 box + stroke weight. */
-export function RequesterShieldGlyph() {
+/** The requester PERSON mark — a personal requester is on record. It is INFO ONLY now (owner ruling
+ *  2026-07-09 — "Maintainerr rules decide what gets promoted; the app controls how much and when it's
+ *  deleted"): a requester changes no actionability, so this rides the tile meta line as a small chip
+ *  (RequestedByBadge), never the action corner. Same 16×16 box + stroke weight as its siblings; the
+ *  meta chip renders it small. A plain head-and-shoulders (no shield — the app no longer protects). */
+export function PersonGlyph() {
   return (
     <svg
       width="16"
@@ -112,9 +114,8 @@ export function RequesterShieldGlyph() {
       strokeLinejoin="round"
       aria-hidden="true"
     >
-      <path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3Z" />
-      <circle cx="12" cy="10" r="1.9" />
-      <path d="M8.7 15.2c0-1.7 1.5-2.7 3.3-2.7s3.3 1 3.3 2.7" />
+      <circle cx="12" cy="8" r="3.2" />
+      <path d="M5.5 19c0-3.4 2.9-5.4 6.5-5.4s6.5 2 6.5 5.4" />
     </svg>
   );
 }
@@ -240,7 +241,7 @@ export function LibraryCornerLink({
 export function WallGlyphSvg({
   glyph,
 }: {
-  glyph: 'trash' | 'shield' | 'check' | 'requested' | 'skip' | 'gone';
+  glyph: 'trash' | 'shield' | 'check' | 'skip' | 'gone';
 }) {
   switch (glyph) {
     case 'trash':
@@ -249,8 +250,6 @@ export function WallGlyphSvg({
       return <ShieldGlyph filled />;
     case 'check':
       return <ShieldCheckGlyph />;
-    case 'requested':
-      return <RequesterShieldGlyph />;
     case 'skip':
       return <SkipGlyph />;
     case 'gone':
@@ -279,6 +278,30 @@ export function WatchNoteBadge({ label, tone }: { label: string; tone: 'info' | 
       title={label}
     >
       <EyeGlyph />
+    </span>
+  );
+}
+
+/**
+ * ADR-025 / DESIGN-010 D-12 / DESIGN-011 errata (2026-07-09) — the requester INFO chip for a wall
+ * tile's meta line. Requested items are informational only now ("Maintainerr rules decide what gets
+ * promoted; the app controls how much and when it's deleted"): a requester changes NO actionability
+ * (the corner stays the pure save/slate toggle), so the attribution is a person icon + "Requested by
+ * <names>" tooltip that co-exists with the watch note. Deliberately a small meta-line chip (never a
+ * corner puck), fixed size ⇒ the tile never reflows (ADR-015). Renders nothing with no requesters.
+ */
+export function RequestedByBadge({ requesters }: { requesters: readonly string[] }) {
+  if (requesters.length === 0) return null;
+  const label = `Requested by ${requesters.join(', ')}`;
+  return (
+    <span
+      className="bwall-requested"
+      data-testid="wall-requested"
+      role="img"
+      aria-label={label}
+      title={label}
+    >
+      <PersonGlyph />
     </span>
   );
 }

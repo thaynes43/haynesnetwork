@@ -24,6 +24,7 @@ import { Modal } from '@/components/modal';
 import { MediaPoster } from '@/components/media-poster';
 import {
   LibraryCornerLink,
+  RequestedByBadge,
   WallGlyphSvg,
   WatchNoteBadge,
   type TrashAccess,
@@ -102,10 +103,6 @@ interface BatchItemWire {
   state: BatchItemStateName;
   savedBy: string | null;
   savedAt: string | null;
-  /** build B — 'requested' marks a SYSTEM auto-save (person-shield); null is an ordinary rescue. */
-  savedReason: 'requested' | null;
-  /** build B — a human un-saved a requester auto-save (the sweep will delete it). */
-  requestedOverride: boolean;
   posterUrl: string | null;
   imdbRating: number | null;
   tmdbRating: number | null;
@@ -149,8 +146,6 @@ function tileLabel(
   glyph: WallGlyph,
   tappable: boolean,
   savedByName: string | null,
-  requesters: readonly string[] = [],
-  state?: BatchItemStateName,
 ): string {
   switch (glyph) {
     case 'trash':
@@ -162,20 +157,10 @@ function tileLabel(
       return savedByName !== null ? `${title} — saved by ${savedByName}` : `${title} is saved`;
     case 'check':
       // ADR-025 errata — a protected batch item is held by a live exclusion; tap un-protects it (removes
-      // the exclusion, then re-classifies). Inert copy is kept for read-only phases.
+      // the exclusion, then re-classifies to pending). Inert copy is kept for read-only phases.
       return tappable
         ? `${title} is protected — tap to un-protect it`
         : `${title} is protected — already safe from deletion`;
-    case 'requested': {
-      const who =
-        requesters.length > 0 ? `${title} was requested by ${requesters.join(', ')}` : `${title} was requested`;
-      if (!tappable) return `${who} — protected from deletion`;
-      // Person-shield, tappable: a SAVED auto-save un-saves (then it slates); a `pending` requester
-      // keep (a recently-watched requester item, no longer the inert eye) saves it.
-      return state === 'saved'
-        ? `${who} — auto-saved; tap to un-save it`
-        : `${who} — the guardian keeps it; tap to save it too`;
-    }
     case 'skip':
       return `${title} was kept — it couldn’t be verified safe, so it was never deleted`;
     case 'gone':
@@ -220,7 +205,7 @@ function PosterWall({
     setInFlight((prev) => new Set(prev).add(item.id));
     setWallError(null);
     // Shared reconcile — the server verdict is authoritative. On an INERT tap (changed:false) `state`
-    // is the item's REAL current state; the refetch also lands the person-shield savedReason.
+    // is the item's REAL current state; the refetch reconciles the exact server verdict.
     const handlers = {
       onSuccess: (res: { state: BatchItemStateName }) => {
         setOverrides((prev) => new Map(prev).set(item.id, res.state));
@@ -246,11 +231,10 @@ function PosterWall({
     };
 
     // A `protected` (check) tile UN-PROTECTS: the server removes the live exclusion and re-classifies
-    // the row. The optimistic landing mirrors the domain rule (requester-carrying ⇒ the person-shield
-    // 'saved'; else the slated 'pending'); the refetch reconciles the exact verdict + savedReason.
+    // the freed row to the slated 'pending' (owner ruling 2026-07-09 — a requester no longer lands it
+    // saved; requested is informational only). The refetch reconciles the exact verdict.
     if (current === 'protected') {
-      const optimistic: BatchItemStateName = item.requesters.length > 0 ? 'saved' : 'pending';
-      setOverrides((prev) => new Map(prev).set(item.id, optimistic));
+      setOverrides((prev) => new Map(prev).set(item.id, 'pending'));
       unprotect.mutate({ batchId, itemId: item.id }, handlers);
       return;
     }
@@ -262,14 +246,7 @@ function PosterWall({
 
   const effective = items.map((item) => ({ item, state: effectiveState(item) }));
   const counts = wallCounts(
-    effective.map(({ item, state }) => ({
-      state,
-      recentlyWatched: item.recentlyWatched,
-      requesters: item.requesters,
-      sizeBytes: item.sizeBytes,
-      savedReason: item.savedReason,
-      requestedOverride: item.requestedOverride,
-    })),
+    effective.map(({ item, state }) => ({ state, sizeBytes: item.sizeBytes })),
   );
 
   // The running header — numbers change in place (tabular figures), the row never grows.
@@ -291,23 +268,18 @@ function PosterWall({
       </p>
       <ul className="bwall" data-testid="batch-wall">
         {effective.map(({ item, state }) => {
-          const glyph = wallGlyph(state, item.recentlyWatched, item.requesters, {
-            savedReason: item.savedReason,
-            requestedOverride: item.requestedOverride,
-          });
+          const glyph = wallGlyph(state);
           const tappable = tileTappable(ctx, glyph, item.savedBy);
           const savedByName = item.savedBy !== null ? (saverNames.get(item.savedBy) ?? null) : null;
-          const label = tileLabel(item.title, glyph, tappable, savedByName, item.requesters, state);
+          const label = tileLabel(item.title, glyph, tappable, savedByName);
           const rating = formatRating(
             ratingOrNull(item.imdbRating) ?? ratingOrNull(item.tmdbRating),
           );
           // DESIGN-010 D-12 (build C) — the meta-line watch chip: info-tone (recently watched) or muted
           // (watched a while ago); null with no watch signal. NEVER in the action corner.
           const note = watchNote(item);
-          // A person-shield / protected tile reads "pressed" (kept) only when it is actually saved or
-          // protected; a `pending` requester keep (tap ⇒ save) is not yet pressed.
-          const pressed =
-            glyph === 'shield' || glyph === 'check' || (glyph === 'requested' && state === 'saved');
+          // A saved/protected tile reads "pressed" (kept); a slated pending tile is not pressed.
+          const pressed = glyph === 'shield' || glyph === 'check';
           const titleYear = `${item.title}${item.year !== null ? ` (${item.year})` : ''}`;
           const inner = (
             <>
@@ -359,6 +331,7 @@ function PosterWall({
                   {item.sizeBytes > 0 ? formatBytes(item.sizeBytes) : '—'}
                   {rating !== null ? ` · ★ ${rating}` : ''}
                 </span>
+                <RequestedByBadge requesters={item.requesters} />
                 {note !== null ? <WatchNoteBadge label={note.label} tone={note.tone} /> : null}
               </span>
             </li>
@@ -426,8 +399,8 @@ function GreenlightModal({
           </li>
           <li>
             <strong>When the window closes, the sweep deletes what’s left</strong> — one item at a
-            time, each re-checked fresh; watched, requested, protected, or unverifiable items are
-            kept, never deleted blind.
+            time, each re-checked fresh; watched, protected, or unverifiable items are kept, never
+            deleted blind.
           </li>
         </ul>
         <label className="form-row batch-window-row">
@@ -522,10 +495,12 @@ function ExpireModal({
   };
 
   // Honest preview over the batch's remaining `pending` items (the sweep's only candidates). The
-  // sweep guardian keeps recently-watched AND requested items, so neither counts toward willDelete.
+  // sweep guardian keeps recently-watched and unevaluable items; a requester is NO LONGER a keep
+  // (owner ruling 2026-07-09 — requested is informational only), so a requested pending item counts
+  // toward willDelete like any other cold item.
   const pending = items.filter((i) => i.state === 'pending');
   const willDelete = pending.filter(
-    (i) => !i.recentlyWatched && i.requesters.length === 0 && i.mediaItemId !== null,
+    (i) => !i.recentlyWatched && i.mediaItemId !== null,
   ).length;
   const willKeep = pending.length - willDelete;
   const savedCount = batch.counts.saved;
@@ -629,7 +604,7 @@ function ExpireModal({
               <strong className="trash-danger-text">
                 Up to {willDelete} item{willDelete === 1 ? '' : 's'} will be deleted
               </strong>{' '}
-              — each is re-checked fresh first (live whitelist + the watch/requester guardian); only
+              — each is re-checked fresh first (live whitelist + the watch guardian); only
               verified-cold items delete.
             </li>
             <li>
@@ -907,8 +882,9 @@ function StartBatchModal({
 // When a batch is open this strip shows the LIVE candidates NOT in that batch (the server subtracts
 // the open batch's members via excludeOpenBatch). It is now the SAME wall as the live pending wall:
 // infinite scroll + the fast tap-to-save toggle. A save = the guarded Maintainerr exclusion → the
-// item is whitelisted → it never enters a future batch; requested items show the person-shield per
-// the shipped precedence. The header keeps the honest server count.
+// item is whitelisted → it never enters a future batch; requested items are informational only now
+// (owner ruling 2026-07-09 — a person meta badge, not a corner glyph). The header keeps the honest
+// server count.
 //
 // VISIBILITY (owner-directed 2026-07-09 evening): this strip is shown to ANY user with Trash section
 // access (read_only+) — "users who can see the next batch should be able to see what's coming soon".
