@@ -1,488 +1,155 @@
-# HANDOFF — current build state
+# HANDOFF — cold-start resume point
 
-> The single resume point for agents. Update this in the same change as any milestone.
-> Derive current state from this file's top; you should not have to reconcile anything.
+> The single resume point for agents. A fresh session should be able to orient from **only this
+> file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
+> the top down; you should not have to reconcile anything.
 
-- **Last updated:** 2026-07-08 — ✅ **TRASH AUTOMATION LOOP CLOSED. Latest release v0.22.0**
-  (PLAN-016 Pushover batch notifications). The full **curate → notify → delete** loop is now armed
-  in production; every buildable plan **002–016** is shipped and live. What remains is the owner's
-  short personal checklist (in the loop block just below). Derive current state from here down.
-
-- **TRASH AUTOMATION LOOP — CLOSED (2026-07-08):**
-  - **Production Maintainerr rules armed.** `hnet — unwatched low-value movies` (IMDb **< 4.0**,
-    votes **20–999**, never watched) → **15 candidates**; `hnet — unwatched low-value TV` (same
-    semantics) → **1 candidate** (*The Baldwins*, owner-requested → **guardian-protected**). The
-    **4.0 ceiling was chosen empirically** — 4.5 pulls in kids' content; candidate counts at
-    4.5 / 5.0 / 5.5 = **24 / 44 / 62**. **Requester / cross-server-watch protection is enforced by
-    the app guardian at the deletion gate, NOT the rule** — Maintainerr's Seerr predicate zeroes
-    never-requested sets. **Re-add a ">60d added" age guard once the library matures.**
-  - **Space policy ARMED.** haynestower, target **80%** (currently **78.8%**, so a live no-op),
-    cooldown **7d**, minCandidates **10**, `sync-space-policy` CronJob **unsuspended**. Movie
-    proposals are blocked until the open batch closes **Jul 21** (one-open-per-kind).
-  - **Pushover live** per PLAN-016 (v0.22.0).
-  - **Owner's remaining list:** **MFA** (deferred by owner until this loop settled); the **Jul 21**
-    batch poster pass + Default-role family save grants; optional **Cloudflare WAF / HSTS**.
-    **Zscaler categorization RESOLVED** (owner's request approved).
-
-- **2026-07-07 —** 🏁 **THE BOARD WAS COMPLETE. ALL PLANS 002–015 are shipped and
-  live-validated on the PUBLIC origin, latest v0.18.0.** Today additionally: the **public cutover was
-  executed** (site LIVE at https://haynesnetwork.com); **Authentik was rebranded** (option C +
-  Plex-primary login card + RP-initiated SSO logout, incl. the provider invalidation-flow fix);
-  **8 same-day owner-reported fixes** shipped; the **Seerr + Tautulli notification feeds were wired**
-  to the receiver; and **PLAN-014 (rules tuning + space policy) landed OFF by default.** Nothing
-  buildable remains — what's left is the owner's checklist below.
-- 🏁 **BOARD COMPLETE at v0.18.0.** Every buildable plan (002–015) is on `main`, released, deployed,
-  and live-validated against the public origin + real backing servers. PLAN-014 is the last item: the
-  space policy is **propose-only and delivered OFF** (adversarially verified it can only draft batches
-  into the normal admin gate — never delete or promote), with the tuning report + skip-gate graduation
-  readiness live on `/admin/storage`.
-- 🚀 **THE SITE IS PUBLICLY LIVE at https://haynesnetwork.com (2026-07-07).** Apex auth round-trip +
-  every permissioned surface validated live; `www.haynesnetwork.com` **301s to the apex**; TLS is the
-  Cloudflare edge cert (Google Trust Services WE1). Executed as four coupled `haynes-ops` commits
-  (`ea457b43..c9935b9b`) — full log in `docs/ops/005-root-domain-cutover.md` (Status: **Executed**).
-  Staging (`haynesnetwork.haynesops.com`) is **kept warm** as the rollback target.
-- ✅ **OWNER'S REMAINING CHECKLIST** (nothing an agent can do unattended):
-  1. **MFA enrollment + `mfa-exempt` policy** (011) — the validation stage is already at auth-flow
-     order 30; enroll owner MFA and exempt the `hnet-e2e` automation accounts (Plex-source logins exempt).
-  2. **Arm the space policy when ready** — unsuspend the `sync-space-policy` CronJob in `haynes-ops`
-     and enable the card in `/admin/storage`; the live graduation report guides the skip-gate flip
-     later. Delivered **OFF** — nothing acts until the owner arms it.
-  3. **Optional edge hardening** — a Cloudflare WAF / rate-limit rule on `/api/auth/*` + a real HSTS
-     `max-age` (currently `max-age=0` at the edge). Needs a zone-scoped token or the CF dashboard.
-  4. **Leaving-Soon batch expires 2026-07-21** — the owner's poster pass + the Default-role family
-     save grants (Trash `read_only` + `save_leaving_soon`) when desired.
-  5. **Trash webhook secret** is still cluster-created — a 1Password migration nicety, not a blocker.
-  **Post-cutover watch items from OPS-005 stand:** `CF-Connecting-IP` per-user rate-limit bucketing is
-  coded (v0.16.0) but only provable under concurrent real users; two Trash posters 404 (cosmetic).
-- **Workflow mode:** PR flow (GATE A executed — see
-  `.agents/plans/completed/001-gate-a-pr-cutover.md`).
-  `main` is branch-protected: branch → PR → required checks `lint-and-typecheck`, `test`,
-  `build` green → squash-merge. `e2e` advisory. Conventional-commit titles drive release-please.
-- **Latest release: v0.22.0 (signed)** — **PLAN-016 Pushover batch notifications** (ADR-034 /
-  DESIGN-015; PRD R-115/R-116; glossary T-100/T-101; migration 0024). A transactional
-  `notification_outbox` enqueued in the SAME tx as the transition on **batch created / green-lit /
-  day-before-expiry reminder / swept**; an admin-editable **delivery window** (`notify_window`,
-  default **18–22 America/New_York**, audited) surfaced as a **Notifications card on
-  `/admin/storage`**; and a **`notify-outbox` sync mode (13-min CronJob)** that drains due rows to
-  Pushover — **no env ⇒ a clean no-op that leaves rows queued**. Creds reuse the `media-stack`
-  1Password item (`HAYNESNETWORK_PUSHOVER_*` → env `PUSHOVER_APP_TOKEN` / `PUSHOVER_USER_KEY`).
-  Live: CronJob drains clean (verified no-op with creds present). As-built:
-  `completed/016-pushover-batch-notify.md`. Prior releases **v0.19.0–v0.21.0** folded the Trash
-  section into a per-kind lifecycle (Overview landing + kind count badges, poster-wall pending
-  views, universal top nav + role-gated user menu). Prior:
-  **v0.18.0 (signed)** — **PLAN-014 rules tuning + space policy (ADR-031 / DESIGN-014;
-  PRD R-112..R-114; glossary T-98..T-99; migration 0022).** A **propose-only** space policy delivered
-  **OFF by default**: a `space-policy` `@hnet/sync` mode + `evaluateSpacePolicy`
-  (`packages/domain/src/space-policy.ts`) that, for each opted-in over-target array past cooldown with
-  ≥ minCandidates and no open batch, PROPOSES a draft batch via the ordinary `admin_review` path
-  (never greenlights, never sweeps, never special-cases the audited skip-gate) + a `trash_space_policy`
-  ledger event and a `space_policy` notification explaining WHY. A rules-tuning **REPORT** (`getTuningReport`
-  / `trash.tuning`: rescue-vs-delete by resolution / rating band / collection) + the **skip-gate
-  graduation readiness** block, surfaced on a "Space policy" card on `/admin/storage`. Config in
-  `app_settings['space_policy']` (admin-set + audited); `storage.policy.{get,status,set}`. **Adversarially
-  verified** the policy cannot delete or promote under any input permutation. Deferred (documented):
-  collection-grain attribution (Q-02), no auto-tuning (Q-03) — rule edits + the skip-gate flip stay owner
-  actions. The `sync-space-policy` CronJob is owner-deployed **suspended** in `haynes-ops`. Prior:
-  **v0.17.0 (signed)** — **PLAN-013 disk + reclaim metrics (ADR-030 HYBRID; DESIGN-013;
-  OPS-007 dashboard-as-code; PRD R-108..R-111; glossary T-95..T-97; migration 0021 `space_targets` in
-  `app_settings`).** Native `/admin/storage`: per-server utilization meters judged against a configurable
-  space target (HaynesTower **80%**, set + audited via the ADR-025 `app_settings` store under
-  `space_targets`), reclaim-attribution views (bytes by TV/Movies + quality/resolution from PLAN-012's
-  deletion snapshots — accrues from batch sweeps, expedite forward-capture in place), and a **deep-link**
-  (not embed) to the dashboards-as-code `media-storage-utilization` Grafana board for the fill/drain
-  trend. Source-of-record split per ADR-030 Q-02: *arr `GET /diskspace` = utilization (only source with a
-  total), exportarr freeSpace via Grafana = trend (node-exporter can't see the media libraries).
-  **Live-validated on the PUBLIC origin:** HaynesTower 78.8% used vs the 80% target, Music 25.4%, reclaim
-  empty-state correct. Also in the release: the **cosign-verify retry** (from v0.16.1) is **confirmed
-  working in CI** — the attempts step passed on GHCR propagation lag rather than red-flagging the run.
-  Prior: **v0.16.1 (signed)** — v0.16.0 + v0.16.1 shipped 6 owner-reported fixes (2026-07-07), all deployed + verified: Bulletin composer dark-mode inputs; Ledger 'Runs' tab (run history out from under the spreadsheet, media-type filter); My Plex now recognizes the server owner (owner logged in as the LOCAL admin@haynesnetwork.com account — sign in VIA PLEX as manofoz@gmail.com for the Plex-linked owner state); Expedite is now an equal-weight trash-can icon; **Trash deletion audit** — Recently Deleted + Activity now record app-expedited deletions with actor+size (the owner's 2 previously-untracked deletions now surface with 'By: Tom Haynes'); cosign-verify retry so release runs don't red-flag on GHCR propagation lag. Prior: **v0.15.0 (signed) — PLAN-015 downstream *arr action feedback: live
-  Fix/Force-Search progress (ADR-028 / DESIGN-005 D-20/D-21; glossary T-90..T-93; PRD R-106/R-107;
-  NO migration — derived-not-persisted). A read-only, poll-on-demand tRPC progress query
-  (`fix.progress` / `fix.searchProgress`) projects derived phases over the *arrs' `/queue` + recent
-  history (searching → wire-ack → downloading with a Seerr-style meter/ETA → imported |
-  nothing_found | stalled) with NO `FIX_STATUSES` growth and no server-side poller. `@hnet/arr`
-  gained a `getQueue` read client (+ e2e `/queue` stub); the pre-existing server-side one-open-fix
-  lock (`FixAlreadyOpenError`) is now surfaced in the UI as a live chip that REPLACES the
-  Fix/Force-Search control (reserved width, ADR-015 reflow-free) so mashing yields 0 duplicate *arr
-  commands; `@hnet/ui` PhaseChip/ProgressMeter (+ `--color-progress` token); season/roll-up cascades
-  phases per child; live My Fixes rows; polling is bounded and stops on terminal states.
-  Live-validated 6/6 on staging against real Radarr/Sonarr: Force Search searching→nothing_found
-  (15-min window) with wire-ack; anti-mash lock 0 duplicate commands; subtitle Fix rests
-  reassuringly (Bazarr, no poll); season roll-up cascades per-episode phases; UI phase matched the
-  real *arr queue on every cross-check.** Prior: **v0.14.0 (signed) — PLAN-010 MOTD: message-of-the-day dashboard banner
-  (ADR-027 / DESIGN-004 D-15; migration 0019 — `app_settings` key CHECK relax; reuses the ADR-025
-  audited `app_settings` store under a `motd` key, NOT a bespoke table). An admin sets an
-  info/warning MOTD on the compose page; it renders above the dashboard greeting with correct
-  role/severity gating; dismissal is per-user localStorage keyed by a content version (sticky across
-  reload; edit re-shows; Clear removes via ConfirmButton). Live-validated 13/13 on staging. NOTE: a
-  welcome MOTD is currently LIVE on staging for the owner's review.** Prior: **v0.13.0 (signed) —
-  PLAN-009 Bulletin: aggregated notification Feed + moderated
-  user Messages board (ADR-026/DESIGN-012; migration 0018). The Feed renders Maintainerr+Seerr+Tautulli
-  events with distinct source badges + attribution + media links over a generic per-source
-  `POST /api/webhooks/[source]` receiver; Messages is a moderated board (post/edit +
-  content-preserving hide/restore); section + message-action role gating audited. Live-validated 7/7
-  on staging (webhook 202/401/413/404 + idempotent dedupe + oversize cap; URL-synced Feed filters;
-  post/edit/moderation). A seam review found + fixed two real bugs pre-ship (streamed 64KB webhook
-  body cap; author can't rewrite moderated content). REMAINING owner/follow-up config: point the real
-  Seerr + Tautulli notification agents at the receiver — see the PLAN-009 bullet under Current
-  state.** Prior: **v0.12.0 (signed) — PLAN-012 Trash curation pipeline: curation batches →
-  phone-first poster-wall review → Leaving Soon → windowed (guardian-checked) deletion
-  (ADR-025/DESIGN-011; migration 0017; hourly `trash-batch-sweep` CronJob). Live-validated 7/7 on
-  staging: a real 18-candidate batch driven through the whole pipeline (18/18 proxied posters,
-  0.00px reflow on rescue taps; attributed save/unsave tuning rows; greenlight → Maintainerr
-  manual collection `arrAction=DO_NOTHING` visible in real Plex; family save window with
-  server-enforced owner-or-manager un-save; expire-now gated behind window closure; sweep no-op on
-  the unexpired batch). The batch sits in Leaving Soon (expires 2026-07-21) as the owner's morning
-  demo.** Prior: **v0.11.2 (signed) — PLAN-006 Trash section: Maintainerr-backed deletion UI +
-  fine-grained Section/Action role permissions (ADR-023/DESIGN-010; migration 0016). v0.11.0
-  feature + fixes v0.11.1 (trash rule arm/disarm round-trip; pending list reflects live
-  exclusions) and v0.11.2 (rules PUT carries server selection + normalized dataType — no
-  crucial-change wipes). Live-validated on staging with the owner-required non-deleting test
-  rule (18 junk candidates, 60-day horizon, dnd tag-exclusions).** Prior: **v0.10.0 (signed) —
-  ADR-024 role-scoped all-libraries Plex self-service:
-  a role can grant all-libraries-on-a-server; users self-toggle All ↔ specific (leaving All is
-  lossless, seeded with the current full set); no silent demotion (per-library ops throw
-  PLEX_ALL_STATE in the All state); Migration 0015.** Prior: **v0.9.0 (signed) — PLAN-005 Ledger
-  section: section-level role permissions
-  (Edit/Read-Only/Disabled), bulk monitor-and-search, and emergency JSONL export (ADR-021/022);
-  live-validated on staging.** Prior: **v0.8.1 (signed) — PLAN-004 library metadata + posters +
-  filter engine (v0.8.0 feature + v0.8.1 resolution/rating fix; every release signed since
-  v0.7.0).** Prior: **v0.7.0 — first *signed* release (PLAN-007: keyless cosign, Rekor-logged,
-  in-run verified, `.sig` on GHCR; Kyverno dedicated Enforce policy live-validated).** Earlier
-  today: **v0.5.0 (#47) — PLAN-002 Bazarr subtitle Fix (ADR-016), deployed to staging +
-  live-validated 2026-07-06:** `missing_subtitles` fixes route to Bazarr's async
-  `search-missing` (movie: per-movie; sonarr episode/season: series-level — no per-episode async
-  action in Bazarr 1.5.6), rest at `search_triggered`, excluded from `completeFixRequests`;
-  Music no longer offers the reason. Migration 0009; `BazarrClient`/`BazarrWriteClient` in
-  `@hnet/arr`; `BAZARR_API_KEY` wired via the existing media-stack ExternalSecret.
-- **GO-LIVE READINESS (all buildable work done + deployed at v0.16.1; remaining is owner-gated only):** Entry prompt `.agents/KICKOFF.md`; queue in `.agents/plans/`. Shipped and live-validated: **core plans 002–007, 009, 010, 012, 015 + ADR-024** (role-scoped all-libraries Plex self-service) **+ the Ledger UX polish** (task #21; first slice v0.14.1 — Ledger/Library sort affordance + true filtered export count). **Nothing buildable remains on the queue.**
-  **REMAINING = OWNER-GATED ONLY (nothing an agent can build unattended):**
-  (a) **011 Authentik branding** — the owner picks from the 3 login mockups + the one-command apply/rollback runbook in `scratchpad/ux-011/` (recommend **option C**) **+ owner MFA** (validation stage already at auth order 30).
-  (b) **009 Seerr/Tautulli webhook-agent wiring** — point notification agents at the receiver.
-  (c) **owner app-by-app SSO check** (008 precondition).
-  (d) ~~**008 public cutover**~~ ✅ **EXECUTED 2026-07-07 — the site is LIVE at https://haynesnetwork.com**
-  (`completed/008-haynesnetwork-public-cutover.md`; executed log `docs/ops/005-root-domain-cutover.md`).
-  The two recon-found technical gates (www cookie/origin split, tunnel rate-limit-IP) were CLOSED in
-  code via v0.16.0's auth hardening; the `TRUSTED_ORIGINS` env was set in the coupled `haynes-ops`
-  commit. Owner authorized go-live ahead of the 011 MFA/branding gate (Authentik was already public).
-  **POST-CUTOVER:** **013** disk + reclaim metrics — ✅ **shipped v0.17.0** (live-validated on the public
-  origin) → **014** rules tuning + space policy — **now executing** (the last board item; a poster-fallback
-  fix is in flight alongside).
-  **Owner reminders:** the live **Leaving Soon** batch **expires 2026-07-21** (owner's poster pass +
-  the Default-role family save grants are still pending); a **welcome MOTD is live** on the dashboard
-  for the owner's review.
-  v0.4.0 recap: unified roles (ADR-012), arbitrary catalog URLs (ADR-013), two-step `ConfirmButton`,
-  drag-drop catalog reorder, Library sub-tabs.
-- **PLAN-006 (Trash section) COMPLETE — shipped v0.11.0 + fixes v0.11.1/v0.11.2, live-validated
-  on staging** (`.agents/plans/completed/006-trash-section.md`). Maintainerr-backed deletion UI
-  wrapping the live `maintainerr.media.svc.cluster.local` instance behind a friendly `/trash`
-  section: pending Movies/TV tables over the shared filter engine + reclaim footer, Save shield
-  (save/unsave with real `dnd` *arr tagging round-trip), Expedite modals (cancel-only in
-  validation + the filters-can't-scope-expedite-all refusal), the Rules list with wipe-free
-  arm/disarm, the `/library/[id]` protect-in-context guard, `/admin/roles` Section/Action grid,
-  and the webhook → **Activity** feed. ADR-023 + DESIGN-010; migration 0016. The preflight
-  `auditMaintainerr` recorded **SAFE** before any destructive surface was enabled; three
-  adversarial review passes closed every destructive-surface finding (estate-wide collection
-  handle never used, live exclusions always consulted, snapshots pinned, in-band failures fail
-  closed). **Operational notes:** (1) Maintainerr's memory limit was raised to **2Gi** in
-  haynes-ops so rule evaluation doesn't OOM. (2) The Maintainerr **webhook notification agent**
-  is configured with the **Bearer-secret** form (`MAINTAINERR_WEBHOOK_SECRET`) — the receiver
-  contract for `POST /api/webhooks/maintainerr` is documented in the **DESIGN-010 D-07** runbook.
-  (3) The owner-required **non-deleting test rule** is armed with a **60-day** `deleteAfterDays`
-  horizon (18 junk candidates) — **PLAN-012's curation gate must land, or the owner must rearm,
-  before that horizon elapses** so nothing reaches its delete date unattended.
-- **PLAN-007 (cosign image signing) COMPLETE** (`.agents/plans/completed/007-cosign-image-signing.md`).
-  `release-please.yml` keyless-cosign-signs every published `haynesnetwork` image by digest and
-  verifies it in-run (ADR-020); v0.7.0 is the first signed release. Admission is **enforced** by a
-  **dedicated** Kyverno ClusterPolicy `verify-haynesnetwork-images` in `haynes-ops` (spec-level
-  `validationFailureAction: Enforce`) — live-validated: signed admitted (probe + prod rollout),
-  unsigned denied (pod + Deployment). **Gotcha of the day:** on Kyverno v1.18.1 a shared policy's
-  server-defaulted spec-level `validationFailureAction: Audit` **overrides** a per-`verifyImages`
-  entry `failureAction: Enforce`, so a nested rule admitted an unsigned image with only a warning —
-  hence the dedicated Enforce policy. Full detail + validation evidence in **OPS-006**
-  (`docs/ops/006-image-signing.md`).
-- **PLAN-004 (library metadata + posters + filter engine) COMPLETE**
-  (`.agents/plans/completed/004-library-metadata-enrichment.md`; shipped v0.8.0 + fix v0.8.1,
-  live-validated on staging). The `media_metadata` harvest runs as a **6h CronJob — LIVE, first
-  harvests already run**: *arr ratings/genres/runtime + real per-file resolution tiers
-  (1080p×3385/2160p×2711 live), Tautulli watch-stats, cached poster thumbnails. Library renders
-  those posters through an **authed poster proxy** (no hot-linking); zero/absent rating badges are
-  suppressed. The **filter/table engine now lives in `@hnet/ui`** (ported from demo-console,
-  mechanism-shared / look-per-app) — **PLAN-005 (Ledger) + PLAN-006 (Trash) reuse it**, and the
-  **D-09 `ledger.search` sort/filter query contract is the shared substrate** those plans build on.
+- **Last updated:** 2026-07-10 — session-2 wrap. **Latest release: v0.29.0 (signed), live at
+  https://haynesnetwork.com.** The site is public; every published image is keyless-cosign-signed and
+  admitted under a dedicated Kyverno **Enforce** policy. **The trash automation loop is armed AND
+  proven in production** (first real sweep ran 2026-07-09 — see below). Every buildable plan
+  **002–016** is shipped, deployed, and live-validated. What remains is the owner's personal
+  checklist + the next-session agenda, both below. Session-2 chronicle:
+  `.agents/context/2026-07-10-session-wrap.md`.
 
 ## Current state
 
-- **v0.16.0 + v0.16.1 shipped 6 owner-reported fixes (2026-07-07), all deployed + verified:** Bulletin composer dark-mode inputs; Ledger 'Runs' tab (run history out from under the spreadsheet, media-type filter); My Plex now recognizes the server owner (owner logged in as the LOCAL admin@haynesnetwork.com account — sign in VIA PLEX as manofoz@gmail.com for the Plex-linked owner state); Expedite is now an equal-weight trash-can icon; **Trash deletion audit** — Recently Deleted + Activity now record app-expedited deletions with actor+size (the owner's 2 previously-untracked deletions now surface with 'By: Tom Haynes'); cosign-verify retry so release runs don't red-flag on GHCR propagation lag.
-- **PLAN-013 (disk utilization + reclaim metrics) COMPLETE — shipped v0.17.0, live-validated on the
-  PUBLIC origin** (`.agents/plans/completed/013-disk-and-reclaim-metrics.md`). ADR-030 (HYBRID:
-  native reclaim + deep-linked Grafana trend) / DESIGN-013 / OPS-007 (dashboard-as-code); PRD
-  R-108..R-111; glossary T-95..T-97; **migration 0021** (`space_targets` in the ADR-025 `app_settings`
-  store). Native **`/admin/storage`**: per-server utilization meters vs a configurable **space target**,
-  reclaim-attribution views (bytes by TV/Movies + quality/resolution from PLAN-012 deletion snapshots),
-  and a **deep-link** (not embed, per ADR-030 Q-01) to the dashboards-as-code `media-storage-utilization`
-  Grafana board. Source-of-record split (Q-02): *arr `GET /diskspace` = utilization (only source with a
-  total); exportarr freeSpace via Grafana = trend (node-exporter can't see the media libraries).
-  **Live evidence (public origin):** HaynesTower **78.8% used vs the 80% target**, Music 25.4%; reclaim
-  attribution empty-state correct (accrues from batch sweeps; expedite forward-capture in place).
-  **THE SPACE TARGET IS NOW LIVE:** `haynestower: 80` is set + audited in `app_settings` `space_targets`
-  — **PLAN-014's policy engine consumes it** (Q-03 resolved: 013 stores/displays, 014 acts). **OWNER
-  NOTE:** the reclaim ledger only accrues going forward from PLAN-012 sweeps — no pre-012 backfill.
-- **PLAN-015 (downstream *arr action feedback) COMPLETE — shipped v0.15.0, live-validated 6/6 on
-  staging** (`.agents/plans/completed/015-arr-action-feedback.md`). ADR-028 / DESIGN-005 D-20/D-21;
-  glossary T-90..T-93; PRD R-106/R-107; **no migration** (derived-not-persisted). Fix/Force-Search
-  now report status back: a **read-only, poll-on-demand** tRPC progress query (`fix.progress` /
-  `fix.searchProgress`) projects **derived phases** over the *arrs' `/queue` + recent history
-  (searching → wire-ack → downloading with a Seerr-style meter/ETA → imported | nothing_found |
-  stalled) with **no `FIX_STATUSES` growth and no server-side poller**. `@hnet/arr` gained a
-  `getQueue` read client (+ e2e `/queue` stub); the pre-existing server-side one-open-fix lock
-  (`FixAlreadyOpenError`) is surfaced as a **live chip that replaces** the Fix/Force-Search control
-  (reserved width, ADR-015 reflow-free) so mashing yields **0 duplicate *arr commands**; `@hnet/ui`
-  **PhaseChip/ProgressMeter** (+ `--color-progress` token); season/roll-up cascades phases per child;
-  live **My Fixes** rows; polling is bounded and stops on terminal states. **Live evidence:** Force
-  Search searching→nothing_found (15-min window) with wire-ack; anti-mash lock 0 duplicate commands;
-  subtitle Fix rests reassuringly (Bazarr, no poll); season roll-up cascades per-episode phases; UI
-  phase matched the real *arr queue on every cross-check.
-- **PLAN-010 (MOTD dashboard banner) COMPLETE — shipped v0.14.0, live-validated 13/13 on staging**
-  (`.agents/plans/completed/010-motd-dashboard-banner.md`). ADR-027 / DESIGN-004 D-15 / glossary
-  T-89; migration 0019 (`app_settings` key CHECK relax). The MOTD **reuses the shipped ADR-025
-  audited `app_settings` store** under a `motd` key (jsonb `{ message, severity, enabled, startsAt,
-  endsAt, updatedBy }`) — NOT a bespoke table; writes reuse the existing `update_app_setting` audit
-  action. Severity = `info|warning`; a dedicated `motd` router (`getActive` authed; `get`/`set`/
-  `clear` admin); the compose page + "MOTD" admin sub-nav; the banner mounts above `<Greeting>` with
-  ADR-015 reflow-free collapse and a ConfirmButton Clear; dismissal is per-user localStorage keyed
-  by a content version (tokens reused via `color-mix` — no new token/hex). **Live evidence:** admin
-  set info/warning MOTD → renders above the greeting with correct role/severity → per-user versioned
-  dismiss sticky across reload → edit re-shows → Clear removes. **OWNER NOTE:** a welcome MOTD is
-  currently **LIVE on staging** for the owner's review.
-- **PLAN-009 (Bulletin — Feed + Messages board) COMPLETE — shipped v0.13.0, live-validated 7/7 on
-  staging** (`.agents/plans/completed/009-communication-hub.md`). ADR-026 / DESIGN-012; migration
-  0018 (widen `notifications` + `messages` + `role_message_action_grants`). The **`/bulletin`
-  section** = a Feed table (Maintainerr+Seerr+Tautulli events with distinct source badges +
-  attribution + media links; source/media segs; keyset load-more; URL-synced filters) + a moderated
-  **Messages** board (composer with `ledger.search` media picker, author-edit Modal, moderator
-  ConfirmButton hide/delete + restore + Triage Modal, content-preserving hide/restore) + the
-  `/admin/roles` Bulletin section-level + message-action grid. Ingestion is a generic per-source
-  `POST /api/webhooks/[source]` receiver with Seerr/Tautulli/Maintainerr adapters. **Live evidence:**
-  Feed renders all three sources with correct badges/attribution/media links; receiver verified live
-  (202/401/413/404, idempotent dedupe, oversize capped); URL-synced Feed filters; Messages post/edit
-  + moderation with content-preserving hide/restore; section + message-action gating audited. A seam
-  review found + fixed two real bugs pre-ship (streamed **64KB** webhook body cap; author edits of a
-  moderated message rejected `MESSAGE_MODERATED`→CONFLICT so an author can't rewrite hidden content).
-  **REMAINING RUNBOOK STEP — owner/follow-up config task (the receiver + per-source secrets are live
-  and validated with SYNTHETIC posts only):** the real **Seerr (Overseerr)** and **Tautulli**
-  notification agents still need to be pointed at
-  `http://haynesnetwork.frontend.svc.cluster.local:3000/api/webhooks/{seerr,tautulli}` — the exact
-  payloads + secret-header forms are in **DESIGN-012's deploy section** (Maintainerr's agent is
-  already configured from PLAN-006). It's a config task on those services and they choose which event
-  types to emit.
-- **PLAN-012 (Trash curation pipeline) COMPLETE — shipped v0.12.0, live-validated 7/7 on staging**
-  (`.agents/plans/completed/012-trash-curation-pipeline.md`). ADR-025 / DESIGN-011: migration 0017
-  batch tables + `app_settings`, `trash-batches.ts` single-writers, `trash.batches.*` /
-  `trash.settings.*` tRPC, the hourly `trash-batch-sweep` sync mode, and the Maintainerr v3.17.0
-  manual-collection drive with `arrAction: DO_NOTHING`. UX = the **Batches tab on `/trash`**: the
-  phone-first poster wall (X → lock rescue taps, optimistic + server-reconciled, ADR-015
-  reflow-free overlay swaps), the lifecycle strip (Create / Green-light Modal / Cancel two-step /
-  Expire-now DANGER Modal with the SweepReport partition), the Leaving-Soon countdown + family
-  `save_leaving_soon` flow (lock anything, un-save own — owner/manager may un-save any), save-stats,
-  and the admin Trash-settings card (skip-gate + default window). **Live evidence:** a real
-  18-candidate batch driven through the whole pipeline — 18/18 proxied posters, 0.00px reflow on
-  rescue taps; attributed save/unsave tuning rows; greenlight → visible "Leaving Soon" collection
-  in real Plex; family window with server-enforced owner-or-manager un-save; expire-now gated
-  behind window closure; sweep verified no-op on the unexpired batch. Three adversarial-review
-  findings closed pre-ship, incl. an inverted never-ages hazard. **OWNER NOTES:** (a) the live
-  Leaving Soon batch **expires 2026-07-21** and is the owner's morning demo — his poster pass + the
-  family grants (**Default role: Trash `read_only` + `save_leaving_soon` action**) are **one admin
-  visit away, currently OFF**; (b) the **hourly `trash-batch-sweep` CronJob is armed** in
-  haynes-ops — **only expired greenlit batches ever delete**, so the unexpired demo batch is safe
-  until the owner acts.
-- **ADR-024 all-libraries Plex self-service SHIPPED (v0.10.0)** — a role can grant
-  all-libraries-on-a-server; users self-toggle All ↔ specific (leaving All is lossless, seeded
-  with the current full set); no silent demotion (per-library ops throw `PLEX_ALL_STATE` in the
-  All state). Migration 0015. **Open live-validation:** the ENTER-All plex.tv API key
-  (`all_libraries:true`) is inferred, not verified — needs a supervised real-write test with a
-  revert path (leave-All is verified; the KAH517 demote cycle proved the explicit-list PUT).
-  KAH517 is currently in the post-003-test demoted explicit 3-lib state and would be restored to
-  All by that validation.
-- **PLAN-005 (Ledger section) COMPLETE — shipped v0.9.0, live-validated**
-  (`.agents/plans/completed/005-ledger-section.md`). ADR-021 section-level role permissions
-  (`role_section_permissions`, session-carried levels, `sectionProcedure`) — the **base
-  Section-Permission model PLAN-006 (Trash) extends**; ADR-022 `executeArrAdd` **generalizes
-  `executeRestore`** (add / monitor-flip / skip + best-effort search, same-tx `restored` +
-  `search_requested` ledger events, 1000 cap); `ledgerAdmin` browse/bulkAddAndSearch/run/runs;
-  streaming JSONL `/api/ledger/export`. UX: the `/ledger` top-level section (topbar gated on the
-  session's ledger level; Disabled → clean "not available" page), Movies/TV/Music frozen-pane
-  spreadsheet, `?mon`/`?file` chips, sortable Title/Rating/Added headers, actions bar
-  (Export filtered · Monitor & search), ADR-014 Modal confirm → per-item run report,
-  `/admin/roles` Ledger access select (Admin implicit Edit). **Live evidence:** two-item
-  monitor-and-search landed monitored + MoviesSearch in the real Radarr (API-verified), 600-row
-  JSONL export byte-exact vs DB, read_only/disabled gating enforced server-side with audited
-  flips. **Fileless import dropped** on live evidence (all 4,008 backlog ids were already live
-  unmonitored rows) → reframed to filter + bulk monitor-and-search (ADR-022 C-04). **Process
-  note:** an adversarial pre-ship review found + fixed one confirmed defect before ship.
-  As-built record: DESIGN-009 D-01/D-08.
-- **PLAN-003 (Plex library self-service, Phase 3) COMPLETE — shipped v0.6.0 + fix v0.6.1, fully
-  live-validated** (`.agents/plans/completed/003-plex-library-self-service.md`). ADR-017 Plex
-  sharing + role-library-grant model (family = a role grant, not a flag), migration 0010; registry
-  refresh across all three servers (k8plex/plexops/legacy haynestower — family libraries
-  populated) plus role grants + member isolation with same-tx `plex_share_audit` audited flips.
-  **Q-06 RESOLVED:** the real plex.tv share cycle ran against production on an owner-designated
-  friend account (**KAH517**, owner-sanctioned allLibraries demotion) — remove + re-add with
-  read-merge-write preserving every other shared library, `plex_share_audit` trail written in the
-  same transaction, ConfirmButton two-step against production. The invite / friend-account
-  *creation* flow stays **out of scope**. **Follow-on:** the owner-directed (2026-07-06)
-  role-scoped all-libraries self-service model shipped **separately as ADR-024 (v0.10.0)** — see
-  the ADR-024 bullet at the top of Current state (open enter-All live-validation).
-- **Unified Role model (ADR-012) SHIPPED — code complete, all tests pass, docs updated.**
-  One role per user (`users.role_id`), roles-only (no per-user grants/tags/family flag);
-  two seeded system roles — **Admin** (superuser, implicit all-apps, immutable) and
-  **Default** (new-user role, editable app set). Migration
-  **0007_unified_roles** is a clean cut (drops the Member/Admin enum, tags, `user_app_grants`,
-  `is_family`, `default_visible`, the `effective_app_grants` view). `/admin/roles` replaces
-  `/admin/tags`; `users.setRole` replaces grant/revoke/setFamily; session carries
-  `role = { id, name, isAdmin }`. **Shipped-after refinements (docs synced 2026-07-05):**
-  (1) `roles.grants_all` "All apps" — a non-admin role grants every app incl. future ones,
-  no `role_app_grants` rows; effective apps = all when `is_admin OR grants_all`; "All apps"
-  checkbox on `/admin/roles`. (2) Default now seeds **seerr/plex/k8plex/plexops** (PlexOps
-  added). (3) Migration 0007 seeds a **third, normal role `Family`** (editable/deletable) =
-  every app except Tautulli. **Shipped in v0.4.0 (#36).**
-- **Catalog URLs are now arbitrary (ADR-013) — shipped in v0.4.0.** R-14 is
-  reversed: the catalog accepts **any well-formed, normalized `http(s)` URL** (including
-  `*.haynesops.com` and external hosts) — no host allow-list. A shared `normalizeCatalogUrl`
-  (authoritative in `packages/domain`, mirror in the web client) canonicalizes; the domain
-  writer stores the canonical form. `ForbiddenHostError`→`InvalidCatalogUrlError` /
-  `CATALOG_URL_INVALID`. DB CHECK relaxed to scheme-only `app_catalog_url_scheme`
-  (migration 0008). Docs synced 2026-07-05.
-- **Phase 1 + Phase 2 COMPLETE and DEPLOYED.** Phase 2 = media ledger + fix / force-search /
-  restore + *arr→ledger sync, all shipped through v0.4.0.
-- **Sync CronJobs + ExternalSecret media keys are LIVE since v0.2.0** (sync-incremental every
-  15 min, sync-full 04:30) — confirmed in the haynes-ops `externalsecret.yaml` + `helmrelease.yaml`.
-- **PUBLIC (live):** https://haynesnetwork.com + www (Cloudflare Tunnel → `traefik-external`) since
-  the **2026-07-07 cutover**. **Staging** https://haynesnetwork.haynesops.com (`traefik-internal`) is
-  **kept warm** as the rollback target (restored as its own IngressRoute in `haynes-ops` `312dd17a`).
-- **Root-domain cutover COMPLETE (PLAN-008, EXECUTED 2026-07-07)** — the coupled `haynes-ops` set
-  (`ea457b43..c9935b9b`) flipped the ingress to `traefik-external`, `BETTER_AUTH_URL` →
-  `https://haynesnetwork.com` (+ `TRUSTED_ORIGINS` for www), added the tunnel apex rule, 301'd
-  www→apex, and retired `cloudflare-ddns`. Three gotchas closed live (Traefik v3 `Host()` syntax;
-  cloudflare-ddns record ownership; Flux envsubst `${1}`). Executed log: `docs/ops/005-root-domain-cutover.md`.
+**What this is.** haynesnetwork is the SSO front door for `*.haynesnetwork.com` — an Authentik-OIDC
+(Plex-primary) web app giving Haynes-Plex users a permissioned dashboard, Plex library self-service,
+and media fix/ledger/trash tooling backed by the *arr stack. Nine `@hnet/*` workspace packages:
+**db** (Drizzle + Postgres 16), **domain** (single-writer logic; audit/ledger rows written in the
+same tx as the mutation), **arr** (Sonarr/Radarr/Lidarr; `/write` import-confined to domain),
+**plex** (server + plex.tv XML-ACL sharing; `/write` import-confined, ADR-017), **sync** (one-way
+*arr→ledger + all the CronJob sync modes), **auth** (Better Auth + Authentik OIDC), **api** (tRPC
+routers), **ui** (token-themed `data-theme` components; `tokens.css` = the only hex), **test-utils**
+(embedded-PG16 + stub harness).
 
-## Genuinely next
+**Release train.** Conventional commits → **release-please** opens the release PR → merge tags `v*`
+→ CI builds `ghcr.io/thaynes43/haynesnetwork`, **keyless-cosign-signs by digest + verifies in-run**
+(the verify step **retries** on GHCR signature-propagation lag rather than red-flagging — see the
+cosign-verify flake note below) → **manually bump the image tag in the sibling `haynes-ops` repo**
+(`kubernetes/main/apps/frontend/haynesnetwork/app/helmrelease.yaml`) → **Flux reconciles** →
+`kubectl` context **`haynes-ops`** to observe. There is **no Flux image automation** — deploy is the
+manual tag bump. Runbook: `docs/ops/004-deploy-runbook.md`.
 
-The **Fable 5 autonomous run** works the release queue in `.agents/plans/` (start at
-`.agents/KICKOFF.md`). In order:
+**Workflow.** GATE A is executed (PR flow). `main` is branch-protected: branch `<type>/<slug>` → PR
+→ required checks `lint-and-typecheck`, `test`, `build` green → squash-merge. `e2e` is advisory.
+Local merge gate mirrors CI: `pnpm lint && pnpm lint:css && pnpm typecheck && pnpm test && pnpm build`.
+`pnpm dev:local` boots the whole app with no Docker (embedded PG16 + stub OIDC/*arr/Seerr) on :3000.
 
-1. ~~**002 — Bazarr subtitle Fix**~~ ✅ **DONE** (v0.5.0, `completed/002-bazarr-subtitle-fix.md`).
-2. ~~**003 — Plex library self-service (BC-04, Phase 3)**~~ ✅ **DONE** (v0.6.0 + fix v0.6.1,
-   `completed/003-plex-library-self-service.md`; ADR-017 Plex sharing + role-library-grant model,
-   family = a role grant; the real plex.tv share cycle live-validated against production, Q-06
-   resolved). **Follow-on:** ADR-024 role-scoped all-libraries self-service ✅ **SHIPPED** (v0.10.0;
-   open enter-All live-validation — see Current state).
-3. ~~**004 — Library metadata enrichment + posters + shared filter engine**~~ ✅ **DONE**
-   (v0.8.0/v0.8.1, `completed/004-library-metadata-enrichment.md`; filter engine + D-09 search
-   contract now in `@hnet/ui`, reused by 005/006).
-4. ~~**005 — Ledger section**~~ ✅ **DONE** (v0.9.0, `completed/005-ledger-section.md`; native
-   restore via filter→*arr + JSONL export; fileless import dropped per ADR-022 C-04).
-5. ~~**006 — Trash section**~~ ✅ **DONE** (v0.11.0 + fixes v0.11.1/v0.11.2,
-   `completed/006-trash-section.md`; integrates the live Maintainerr instance, replaces the
-   Restore nav, reuses the ADR-021 Section-Permission base 005 shipped). Live-validated with the
-   owner-required NON-DELETING test rule (18 candidates, 60-day `deleteAfterDays`, `dnd` tag
-   settings) whose collections seed plan 012.
-6. ~~**012 — Trash curation pipeline**~~ ✅ **DONE** (v0.12.0,
-   `completed/012-trash-curation-pipeline.md`; owner vision 2026-07-06). Batches
-   (`draft → admin_review → leaving_soon → deleted|cancelled`) → admin poster-grid review
-   (X ⇄ lock) → green-light → "Leaving Soon" Plex collection + role-gated user save window →
-   per-item guardian-checked expiry deletion; every save/unsave durably recorded as rules-tuning
-   data; deletion snapshots recorded for 013. Live-validated 7/7 on staging; the demo batch sits
-   in Leaving Soon (expires 2026-07-21). **Owner: family grants + hourly-sweep detail in the
-   PLAN-012 bullet under Current state.**
-7. ~~**009 — Bulletin**~~ ✅ **DONE** (v0.13.0, `completed/009-communication-hub.md`; ADR-026 /
-   DESIGN-012, migration 0018): aggregated notification Feed + moderated Messages board,
-   live-validated 7/7 on staging. **REMAINING owner config:** point the real Seerr + Tautulli
-   notification agents at the receiver (see the PLAN-009 bullet under Current state).
-8. ~~**010 — MOTD dashboard banner**~~ ✅ **DONE** (v0.14.0, `completed/010-motd-dashboard-banner.md`;
-   ADR-027 / DESIGN-004 D-15, migration 0019): admin-set info/warning message-of-the-day above the
-   dashboard greeting; reuses the ADR-025 audited `app_settings` store; per-user localStorage
-   versioned dismiss. Live-validated 13/13 on staging; a welcome MOTD is currently live on staging
-   for the owner's review. **With this, the CORE QUEUE (002–007, 009, 010, 012) + ADR-024 are all
-   COMPLETE + live-validated.**
-9. **011 — Authentik hardening** (`011-authentik-hardening.md`, owner-scoped 2026-07-06):
-   **owner-gated; deferred PAST the 008 cutover on owner authorization** (Authentik was already
-   publicly exposed, so cutover added no new auth surface — owner applies MFA/branding on his own
-   schedule). (a) **Branding:** 3 login mockups + a one-command
-   apply/rollback runbook are ready in `scratchpad/ux-011/` — the owner picks (recommend **option C,
-   "haynesnetwork"**). (b) **MFA hardening is the owner's task**, not new wiring — the MFA validation
-   stage already exists in the auth flow at **order 30**; this is config + the `mfa-exempt` policy
-   (Plex-source logins exempt; the exempt group keeps the `hnet-e2e` accounts automating).
-   App-by-app SSO verification = owner task in 008's HARD GATE.
-10. ~~**007 — cosign signing**~~ ✅ **DONE** (v0.7.0, `completed/007-cosign-image-signing.md`).
-11. ~~**008 — public cutover**~~ ✅ **DONE — EXECUTED 2026-07-07** (`completed/008-haynesnetwork-public-cutover.md`;
-    executed log `docs/ops/005-root-domain-cutover.md`). **The site is LIVE at https://haynesnetwork.com.**
-    Owner authorized go-live ahead of the 011 MFA/branding gate (Authentik was already public), so the
-    owner's app-by-app SSO re-check moved to a post-cutover owner task rather than a pre-cutover gate.
-12. **Post-cutover backlog (owner 2026-07-06/07) — NOW ACTIVE:** ~~**013 — disk utilization + reclaim
-    metrics**~~ ✅ **DONE** (v0.17.0, `completed/013-disk-and-reclaim-metrics.md`; consumed 012's
-    deletion snapshots; core decision resolved HYBRID per ADR-030 — native reclaim + deep-linked
-    Grafana trend, space target live in `app_settings`) → **014 — rules tuning + space policy**
-    (`014-rules-tuning-space-policy.md`; save-data + metrics → tune rules toward the space target;
-    skip-admin-gate graduation criteria) is **now executing** — the last board item, with a
-    poster-fallback fix in flight alongside.
-    ~~**015 — downstream *arr action feedback**~~ ✅ **DONE** (v0.15.0,
-    `completed/015-arr-action-feedback.md`) and the **Ledger UX polish batch** (task #21; first slice
-    v0.14.1) have already shipped.
+**Board status.** All release-sized plans **001–016 are in `.agents/plans/completed/`** (see
+`.agents/plans/README.md`). Post-016, session 2 shipped v0.14.1→v0.29.0 as a run of owner-feedback
+batches that hardened the trash automation loop into a proven production pipeline. Nothing buildable
+is queued; the next session is owner-directed (agenda below).
 
-The full consolidated backlog (with what is deferred beyond this run) is in
-`context/2026-07-05-backlog-recon.md`.
+## The trash automation pipeline — as-built and PROVEN
 
-## Key gotchas / where to look
+**First production sweep ran 2026-07-09 23:45 ET: 14/15 deleted, 90.7 GiB reclaimed.** The one
+survivor was **honestly guardian-skipped** because it left the rule pool mid-window (the guardian
+re-checks eligibility at the deletion gate — correct behavior, not a bug). Seerr entries for the
+deleted items were cleared via **forceSeerr**; the **Pushover** run summary was delivered. This is
+the loop working end-to-end against real Radarr/Sonarr/Maintainerr/Plex/Seerr.
 
-- **Learned during the 2026-07-06 run:** (1) The 1Password `AUTHENTIK_BOOTSTRAP_PASSWORD` is
-  STALE — it authenticates no Authentik user (akadmin unchanged since 2024-10). Live staging
-  validation logs in as the dedicated local Authentik member **`hnet-e2e`** (created via
-  `ak shell` in the authentik-server pod; Default-role member in the app). (2) Bot-authored
-  release-please PRs sit in an `action_required` CI gate — an admin must re-run the gated
-  workflow run before the required checks report and the release PR can merge. (3) The `57P01`
-  embedded-PG teardown flake also hits `packages/sync` (`incremental-sync.test.ts`), not just
-  `packages/auth`. (4) Live-validation UX finding: at 390px the header wordmark collides with
-  the "Home" nav link — fix during plan 004's UI pass.
+The pipeline is a **separation of responsibilities**: *rules promote candidates, the app schedules
+deletion, humans rescue.* Four layers:
 
-- **Orientation:** `docs/README.md` is the docs index. Per-package READMEs
-  (`packages/{db,domain,sync,arr,api,ui}/README.md`, `apps/web/README.md`) orient by area;
-  `packages/domain/README.md` is the canonical list of the invariants (single-writer,
+1. **Rules (Maintainerr, source of truth for the candidate pool).**
+   - **Movies:** IMDb rating **< 6.0** & votes **≥ 100** & **never-watched-on-HaynesOps** & **NOT a
+     media request** → **~685 candidates**.
+   - **TV:** rating **< 6.0** → **~8–13 candidates**.
+   - `deleteAfterDays 9999` + `arrAction 0` (DO_NOTHING) so **Maintainerr never deletes on its own** —
+     the app owns deletion timing. The **SAFE audit enforces Maintainerr aging invariants** so a rule
+     pool can never self-delete out from under the app (v0.27.0).
+
+2. **Pools → per-kind tabs.** `/trash` is **Overview · Movies · TV · Recently Deleted · Activity**.
+   The pending walls are **poster walls served from a Postgres read-model** (`trash_candidates`,
+   ADR-035, migration 0027) — *not* live Maintainerr crawls (that was the 9.5s→148ms fix; see the
+   incident log). Candidates are **paginated**, **strategy-sorted** ("Next up" mirrors the deletion
+   strategy), refreshed on an **8h Maintainerr cadence label** plus a **5-min post-save refresh**.
+
+3. **Batches.** Admins **create** a batch with **GB- or count-targeting**, the **admin gate is ON**,
+   deletion happens in **green-light windows**. Users get **family save windows** to rescue posters.
+   An admin can **force-expire mid-window** behind a **typed confirmation** (audited). The **sweep
+   runs at :45 hourly** (CronJob) and only ever deletes **expired, green-lit** batches. One open
+   batch per kind is the enforced invariant.
+
+4. **Notifications (Pushover).** Fired on **created / green-lit / final-warning (2h before) /
+   day-before / swept**. Delivery uses an **all-day window by default** now (was 18–22). Transactional
+   `notification_outbox` enqueued in the same tx as the transition; a `notify-outbox` CronJob drains it.
+
+**Space policy (armed).** Over-target mode: **80% target vs 78.8% live**, **7-day cooldown**,
+**minCandidates 10**, **per-kind caps**. A continuous mode is also available. The policy is
+**propose-only** — it drafts batches into the normal admin gate; it never deletes or promotes.
+
+**Separation-of-responsibilities ruling (owner-settled this session):** rules promote / the app
+schedules / humans rescue. There is **NO requester guardian keep** — a requested item shows an
+**info badge only** (it does not block deletion). The **recently-watched keep is retained** (real
+protection). Cross-server watch visibility on the walls is **informational, not protection**.
+
+## Roles
+
+- **Admin ×2** — full control.
+- **Family (KAH517)** — view + save/unsave + restore + window rescue.
+- **Default** — view + save/unsave.
+- **Mobile admin fully works** — Users role-select, the roles editor, and all settings are
+  portrait-safe (fixed this session; the role editor works on phones).
+
+## Owner's remaining personal items
+
+- **MFA** — next session, via Authentik blueprints (see agenda).
+- **Optional Cloudflare WAF / HSTS** — deferred; the zone-scoped token was never provided, so this
+  stays owner-gated.
+- **Zscaler categorization** — RESOLVED (owner's request approved).
+
+## NEXT SESSION AGENDA (owner-stated)
+
+1. **Larger site features** (owner will direct).
+2. **Authentik MFA hardening**, including **migrating Authentik to blueprints / GitOps**. Every live
+   Authentik change made this session is documented **with rollbacks** in
+   `docs/ops/001-authentik-provisioning.md` **and** `scratchpad/ux-011/APPLY.md` — treat that pair as
+   the **blueprint seed** when codifying Authentik into GitOps.
+
+## Morning check owed
+
+**Kometa runs at 6:30 AM.** Verify it does **not** re-import the 14 deleted movies. All 14 are below
+the chart vote floors, so it shouldn't — but confirm. **Lever if it does:** set
+`radarr_add_missing: false` per chart in Kometa config.
+
+## Known flakes / backlog
+
+- **57P01 CI flake** — embedded-PG teardown race hits `packages/auth` and `packages/sync`
+  (`incremental-sync.test.ts`). **Rerun protocol:** just re-run the failed job; it's non-deterministic
+  teardown, not a real failure.
+- **Catalog keyboard-reorder e2e (T-8)** — known flaky.
+- **Family-window e2e** — serial-state flake.
+- **Rules tuning v2** — owner-requested: bring in **non-IMDb metrics** (the current pool is
+  IMDb-rating-driven). Not yet built.
+- **Recently-Deleted "By: System"** for cron sweeps — consider crediting the human who green-lit the
+  batch instead of the cron actor.
+- **`notification_outbox` cleanup** — old `saved_reason` / `requested_override` columns are now
+  unread; candidates for a cleanup migration.
+
+## Where to look
+
+- **Docs index:** `docs/README.md`. Invariants: `packages/domain/README.md` (single-writer,
   audit-in-same-tx, arr-write import confinement).
-- **Local verify (no Docker):** `docs/ops/003-local-verification.md`. Merge gate = `pnpm lint`
-  + `pnpm lint:css` + `pnpm typecheck` + `pnpm test` + `pnpm build`. Tests run embedded PG16 —
-  never SQLite/MySQL; `@embedded-postgres/linux-x64` MUST stay in `pnpm-workspace.yaml`
-  `allowBuilds` or the PG binary is non-functional. `pnpm dev:local` on :3000, e2e on :3100.
-- **Deploy (manual):** `docs/ops/004-deploy-runbook.md`. There is NO Flux image automation —
-  going live = MANUAL edit of the image tag in the SIBLING haynes-ops repo
-  (`kubernetes/main/apps/frontend/haynesnetwork/app/helmrelease.yaml`, currently v0.4.0).
-  Also holds the 1Password `haynesnetwork` secret contract.
-- **overseerr.haynesnetwork.com** catalog tile still points at the legacy Unraid URL — an
-  owner-driven one-field admin edit to flip. The owner's *arr/Seerr stack **has migrated
-  in-cluster**: Seerr + Sonarr/Radarr/Lidarr are reachable at `*.media.svc.cluster.local` (the
-  plans call these directly); legacy HaynesTower (Unraid) stays up as a NAS only. Catalog links
-  are DB data.
-- **Three Plex servers, 1Password key collision:** the `plexops` item's Plex key is *also*
-  named `HAYNESKUBE_PLEX_API_KEY` — do not confuse it with the `homepage` item's key of the
-  same name (see the haynes-ops `frontend/homepage/app/externalsecret.yaml` comment).
-- **Kyverno cosign / image signing (PLAN-007 COMPLETE, both sides shipped):** `release-please.yml`
-  **keyless-cosign-signs** every published `haynesnetwork` image by digest and verifies it in-run
-  (ADR-020). Admission is now **enforced** in `haynes-ops` by a **dedicated** ClusterPolicy
-  `verify-haynesnetwork-images` (spec-level `validationFailureAction: Enforce`) — *not* a rule on
-  the shared `verify-thaynes43-images` policy (that stays Audit for upgrade-agent/shepherd),
-  because a shared policy's server-defaulted spec-level `Audit` overrode a per-entry
-  `failureAction: Enforce` on Kyverno v1.18.1. Rollbacks must target **signed** tags (v0.7.0+);
-  pre-signing tags (≤v0.6.1) are now denied. Break-glass + full validation evidence in **OPS-006**
-  (`docs/ops/006-image-signing.md`).
-- **PLAN-015 downstream *arr action feedback SHIPPED (v0.15.0)** — the derived, poll-on-demand
-  progress model (no `FIX_STATUSES` growth, no new table, no server-side poller) is live; the
-  `@hnet/arr` `getQueue` read client + e2e `/queue` stub, the `fix.progress` / `fix.searchProgress`
-  projectors, and the `@hnet/ui` PhaseChip/ProgressMeter are on `main`. Reconciled identifiers:
-  **ADR-028, DESIGN-005 D-20/D-21, glossary T-90..T-93, PRD R-106/R-107, no migration.** As-built
-  detail in `.agents/plans/completed/015-arr-action-feedback.md`.
+- **Deploy:** `docs/ops/004-deploy-runbook.md` (manual tag bump in `haynes-ops`; the 1Password
+  `haynesnetwork` secret contract).
+- **Local verify (no Docker):** `docs/ops/003-local-verification.md`. Tests run embedded PG16 — never
+  SQLite/MySQL; `@embedded-postgres/linux-x64` MUST stay in `pnpm-workspace.yaml` `allowBuilds`.
+- **Cutover / edge:** `docs/ops/005-root-domain-cutover.md` (Executed). Post-cutover watch items live
+  there.
+- **Image signing / break-glass:** `docs/ops/006-image-signing.md` (dedicated Enforce policy;
+  rollbacks must target signed tags v0.7.0+).
+- **Trash wall perf (ADR-035 read-model):** `.agents/context/2026-07-09-trash-wall-perf.md`.
+- **Session-2 full chronicle:** `.agents/context/2026-07-10-session-wrap.md`.
 
 ## History
 
-Bootstrap → v0.3.1 wave-by-wave build log (waves 1–11) + full historical gotcha list:
-`.agents/context/2026-07-04-waves-1-11-archive.md`. Kickoff decisions of record:
-`.agents/context/2026-07-03-kickoff.md`.
+- **Session-2 chronicle (v0.14.1→v0.29.0):** `.agents/context/2026-07-10-session-wrap.md`.
+- **Session-1 board build (plans 002–016, v0.5.0→v0.22.0):** as-built records in
+  `.agents/plans/completed/`; the pre-session-2 HANDOFF narrative is preserved in git history.
+- **Bootstrap → v0.3.1 (waves 1–11) + historical gotchas:**
+  `.agents/context/2026-07-04-waves-1-11-archive.md`. Kickoff decisions:
+  `.agents/context/2026-07-03-kickoff.md`. Consolidated backlog:
+  `.agents/context/2026-07-05-backlog-recon.md`.

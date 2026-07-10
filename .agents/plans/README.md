@@ -55,7 +55,7 @@ For each plan, in order:
 | 006 | Trash section (Maintainerr) | #4 | 004 + Maintainerr | ✅ completed/ (v0.11.0 + v0.11.1/v0.11.2) |
 | 007 | Cosign image signing | — | — | ✅ completed/ (v0.7.0) |
 | 012 | Trash curation pipeline (batches → poster review → Leaving Soon → windowed deletion) | owner 2026-07-06 | 006 (incl. its test-rule collections) | ✅ completed/ (v0.12.0) |
-| 011 | Authentik hardening (native-account MFA + haynesnetwork sign-in rebrand) | owner 2026-07-06 | — (runs after 012 per owner order) | **branding COMPLETE** (2026-07-07, applied live: option C rebrand + Plex-primary login card + RP-initiated SSO logout); **remaining = owner MFA enrollment + `mfa-exempt` policy** (tracked in the active plan) |
+| 011 | Authentik hardening (native-account MFA + haynesnetwork sign-in rebrand) | owner 2026-07-06 | — (runs after 012 per owner order) | **branding DONE** (applied live: option C rebrand + Plex-primary login card + RP-initiated SSO logout, v0.18.0/v0.18.1); **MFA = NEXT SESSION** — owner will do MFA hardening while migrating Authentik to blueprints/GitOps (seed = `../../docs/ops/001-authentik-provisioning.md` + `scratchpad/ux-011/APPLY.md`). Only non-completed/ plan; kept active for the MFA tail. |
 | 009 | Bulletin — notification Feed + Messages board | stretch | 004, 006 | ✅ completed/ (v0.13.0) |
 | 010 | MOTD dashboard banner | stretch | — | ✅ completed/ (v0.14.0) |
 | 008 | haynesnetwork public cutover (Cloudflare tunnel) | — | 002–006, 012 done | ✅ completed/ (**EXECUTED 2026-07-07** — `haynesnetwork.com` + `www` publicly live; see `../../docs/ops/005-root-domain-cutover.md`) |
@@ -65,12 +65,19 @@ For each plan, in order:
 | 016 | Pushover batch notifications (outbox + delivery window) | owner 2026-07-08 | 012 (batch lifecycle) + 014 (space policy reuses `createBatchFromPending`) | ✅ completed/ (v0.22.0) |
 
 **Owner-ordered sequence (2026-07-06):** 006 → 012 → 011 → 009 → 010 → 008 → 013 → 014, with 015
-(owner 2026-07-07) landed alongside. **THE BOARD IS COMPLETE:** every buildable plan **002–015**
-is shipped and live-validated on the public origin (latest **v0.18.0** = 014 rules tuning + space
-policy, delivered **OFF** by default). **008 cut over to the public root domain 2026-07-07**
-(`haynesnetwork.com` + `www` live). **011 branding is COMPLETE** (option C rebrand + Plex-primary
-login + RP-initiated SSO logout, applied live 2026-07-07); its **only remaining piece is owner MFA
-enrollment + the `mfa-exempt` policy**, tracked in the active `011-authentik-hardening.md`.
+(owner 2026-07-07) and 016 (owner 2026-07-08) landed alongside. **THE BOARD IS COMPLETE:** every
+buildable plan **002–016 is in `completed/`**, shipped and live-validated on the public origin.
+**008 cut over to the public root domain 2026-07-07** (`haynesnetwork.com` + `www` live).
+
+**Session-2 (v0.14.1 → v0.29.0, latest = v0.29.0):** no new plans — the session ran as owner-feedback
+hardening that turned the trash automation loop into a **proven production pipeline** (first real
+sweep 2026-07-09: 14/15 deleted, 90.7 GiB reclaimed). Full narrative + per-release notes in
+`../context/2026-07-10-session-wrap.md`; cold-start state in `../HANDOFF.md`.
+
+**011 is the only non-`completed/` plan:** its **branding is DONE** (option C rebrand + Plex-primary
+login + RP-initiated SSO logout, applied live); its remaining piece — **MFA hardening** — is the
+**owner's NEXT-SESSION agenda**, to be done alongside migrating Authentik to blueprints/GitOps. It
+stays active for that tail (`011-authentik-hardening.md`).
 
 Source brain dump: `TODO.md`. Consolidated backlog + Restore explanation:
 `../context/2026-07-05-backlog-recon.md`. Deleted-items snapshot to import into the Ledger:
