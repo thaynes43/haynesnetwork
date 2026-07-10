@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.28.0](https://github.com/thaynes43/haynesnetwork/compare/v0.27.0...v0.28.0) (2026-07-10)
+
+
+### Features
+
+* requested items are informational only — rules promote, humans decide, the app schedules ([#151](https://github.com/thaynes43/haynesnetwork/issues/151)) ([d706992](https://github.com/thaynes43/haynesnetwork/commit/d706992db528c48bd6760d4c7b497ab0266636b9))
+
+
+### Bug Fixes
+
+* future-batch strip visible to trash users; role editor works on phones ([#149](https://github.com/thaynes43/haynesnetwork/issues/149)) ([754ba2b](https://github.com/thaynes43/haynesnetwork/commit/754ba2bce80edf91b994b2397712bb864338e724))
+
 ## [0.27.0](https://github.com/thaynes43/haynesnetwork/compare/v0.26.0...v0.27.0) (2026-07-09)
 
 
