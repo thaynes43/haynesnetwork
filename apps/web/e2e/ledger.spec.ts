@@ -50,9 +50,10 @@ test.describe('ledger section (DESIGN-009)', () => {
 
     // ADR-032 / DESIGN-004 D-16 — the top row is the UNIVERSAL section nav (Home · Library ·
     // Trash · Bulletin; the admin's implicit trash=edit shows Trash, Bulletin defaults
-    // read_only for everyone). Ledger and My Plex moved into the user menu.
+    // read_only for everyone). Ledger and My Plex moved into the user menu. ADR-037 (PLAN-017)
+    // appended Metrics (admin implies its section visibility).
     const navTexts = await page.locator('.topbar__nav a').allInnerTexts();
-    expect(navTexts).toEqual(['Home', 'Library', 'Trash', 'Bulletin']);
+    expect(navTexts).toEqual(['Home', 'Library', 'Trash', 'Bulletin', 'Metrics']);
     await openUserMenu(page);
     await expect(page.getByRole('menuitem', { name: 'My Plex' })).toBeVisible();
     await page.getByRole('menuitem', { name: 'Ledger' }).click();
