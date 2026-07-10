@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.0](https://github.com/thaynes43/haynesnetwork/compare/v0.28.0...v0.29.0) (2026-07-10)
+
+
+### Features
+
+* final-warning push (configurable) + honest next-sweep times ([#152](https://github.com/thaynes43/haynesnetwork/issues/152)) ([5a3205e](https://github.com/thaynes43/haynesnetwork/commit/5a3205e48b09324b9a8e041a3e3f92d65369aaa7))
+
 ## [0.28.0](https://github.com/thaynes43/haynesnetwork/compare/v0.27.0...v0.28.0) (2026-07-10)
 
 
