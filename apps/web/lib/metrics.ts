@@ -53,6 +53,24 @@ export function formatMs(ms: number | null): string {
   return `${Math.round(ms)} ms`;
 }
 
+// DESIGN-020 — Hardware sub-tab formatters (pure; null-safe).
+
+/** "12,540 h" / "—" — power-on hours with thousands separators. */
+export function formatHours(h: number | null): string {
+  if (h === null || !Number.isFinite(h)) return '—';
+  return `${Math.round(h).toLocaleString('en-US')} h`;
+}
+
+/** A friendly uptime ("12d 4h" / "3h" / "—") from seconds. */
+export function formatUptime(seconds: number | null): string {
+  if (seconds === null || !Number.isFinite(seconds) || seconds < 0) return '—';
+  const days = Math.floor(seconds / 86_400);
+  const hours = Math.floor((seconds % 86_400) / 3600);
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h`;
+  return `${Math.floor(seconds / 60)}m`;
+}
+
 // DESIGN-019 — Network sub-tab formatters + the WAN-history sparkline geometry (pure; no React, no hex).
 
 function round2(n: number): number {

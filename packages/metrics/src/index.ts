@@ -4,3 +4,5 @@ export * from './client';
 export * from './overview';
 export * from './apps';
 export * from './network';
+// ADR-040 / DESIGN-020 (PLAN-019) — the Hardware sub-tab read model + the SMART-alert readings.
+export * from './hardware';

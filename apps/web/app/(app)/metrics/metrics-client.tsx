@@ -2,13 +2,14 @@
 
 // ADR-037 / DESIGN-016 D-05 — the Metrics section SHELL: a `?tab=`-driven sub-tab bar (the
 // role="tablist" + roving-tabindex idiom shared with /trash · /library · /ledger · /settings/trash).
-// Overview, Apps, and Network are live; Hardware is a reserved placeholder for PLAN-019 and renders a
-// muted "coming soon" panel until then. ADR-015: the panel region swaps content in place.
+// Overview, Apps, Hardware (ADR-040 / DESIGN-020, PLAN-019), and Network are all live. ADR-015: the
+// panel region swaps content in place.
 import { Suspense, useEffect, useRef, type KeyboardEvent } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import type { MetricsLevel } from '@hnet/db';
 import { OverviewTab } from './overview-tab';
 import { AppsTab } from './apps-tab';
+import { HardwareTab } from './hardware-tab';
 import { NetworkTab } from './network-tab';
 
 const METRICS_TABS = [
@@ -90,6 +91,8 @@ function MetricsContent({ metricsLevel }: { metricsLevel: MetricsLevel }) {
           <OverviewTab active metricsLevel={metricsLevel} />
         ) : active === 'apps' ? (
           <AppsTab active metricsLevel={metricsLevel} />
+        ) : active === 'hardware' ? (
+          <HardwareTab active metricsLevel={metricsLevel} />
         ) : active === 'network' ? (
           <NetworkTab active metricsLevel={metricsLevel} />
         ) : (

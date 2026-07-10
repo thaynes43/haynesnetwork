@@ -157,6 +157,16 @@ export type SyncSource = (typeof SYNC_SOURCES)[number];
 // touches NO *arr source (no --source) and writes NO sync_runs row — its audit trail IS the outbox
 // rows. It joins SYNC_RUN_KINDS so the CLI `--mode` parser + `SyncMode` accept it (migration 0024
 // rebuilds the sync_runs.run_kind CHECK to keep the const array and CHECK in parity).
+// ADR-040 / DESIGN-020 — 'smart-alerts' is the SMART-health transition detector sync mode (PLAN-019):
+// it reads the smartctl series through @hnet/metrics and, per drive, compares to the persisted
+// smart_drive_state, enqueuing ONE notification_outbox row on a CRITICAL transition (pass→FAIL,
+// media_errors 0→n, available_spare crossing threshold margin, a NEW critical_warning bit, or the
+// critical appdata pool wear crossing 80/90 %) in the SAME transaction as the state update. First
+// sight of a drive records a baseline and pages nothing (so the known staging-pool bad state never
+// pages). Like trash-batch-sweep/space-policy/notify-outbox it touches NO *arr source (no --source)
+// and writes NO sync_runs row — its trail is the outbox rows + the smart_drive_state table. It joins
+// SYNC_RUN_KINDS so the CLI --mode parser + SyncMode accept it (migration 0033 rebuilds the
+// sync_runs.run_kind CHECK to keep the const array and CHECK in parity).
 export const SYNC_RUN_KINDS = [
   'full',
   'incremental',
@@ -164,6 +174,7 @@ export const SYNC_RUN_KINDS = [
   'trash-batch-sweep',
   'space-policy',
   'notify-outbox',
+  'smart-alerts',
 ] as const;
 export type SyncRunKind = (typeof SYNC_RUN_KINDS)[number];
 
@@ -509,11 +520,21 @@ export type NotifyOutboxChannel = (typeof NOTIFY_OUTBOX_CHANNELS)[number];
 //                                 is skipped when that instant is already past / the window is shorter
 //                                 than N. "Last call: … closes at <time> — N items still slated."
 //   batch_swept                 — the windowed sweep closed the batch (summary).
+//   smart_degraded              — ADR-040 / DESIGN-020 (PLAN-019) — a drive crossed a CRITICAL SMART
+//                                 threshold since the last check (pass→FAIL, media_errors 0→n, spare
+//                                 crossing threshold margin, a NEW critical_warning bit, or the
+//                                 critical appdata pool wear crossing 80/90 %). Enqueued by
+//                                 evaluateSmartAlerts in the SAME tx as the smart_drive_state update;
+//                                 the renderer deep-links `…/metrics?tab=hardware`. Baseline-on-first-
+//                                 sight never enqueues, so the known staging-pool bad state never pages.
+//   smart_recovered             — a drive returned to health (FAIL→pass) — a low-noise recovery ping.
 export const NOTIFY_OUTBOX_EVENT_TYPES = [
   'batch_created',
   'batch_leaving_soon',
   'batch_leaving_soon_reminder',
   'batch_final_warning',
   'batch_swept',
+  'smart_degraded',
+  'smart_recovered',
 ] as const;
 export type NotifyOutboxEventType = (typeof NOTIFY_OUTBOX_EVENT_TYPES)[number];

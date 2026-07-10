@@ -12,6 +12,7 @@ import {
   drainDuePoolRefreshes,
   expireStaleFixRequests,
   deliverOutbox,
+  evaluateSmartAlerts,
   evaluateSpacePolicy,
   finishSyncRun,
   refreshTrashCandidates,
@@ -20,11 +21,16 @@ import {
   type DrainPoolRefreshResult,
   type MaintainerrClientBundle,
   type OutboxDeliveryReport,
+  type SmartAlertsReport,
   type SpacePolicyReport,
   type SweepReport,
   type TrashCandidatesRefreshReport,
   type UtilizationArrBundle,
 } from '@hnet/domain';
+// ADR-040 / DESIGN-020 (PLAN-019) — the `smart-alerts` mode reads the smartctl series through the
+// read-only @hnet/metrics client (no write surface ⇒ no import-confinement) and hands the readings to
+// the domain evaluator, which does the transition detection + the same-tx outbox enqueue.
+import { getDriveSmartReadings, type PrometheusReader } from '@hnet/metrics';
 import { runArrFullSync } from './arr-full';
 import { runArrIncrementalSync } from './arr-incremental';
 import type { MetadataSourceClients, SyncClients } from './clients';
@@ -65,6 +71,9 @@ export interface RunSyncOptions {
    *  by rebuilding the Trash candidate snapshot (the walls' read-model) so it stays ≤ one sync tick
    *  stale. Absent (a Maintainerr-less env) ⇒ the step is skipped cleanly. */
   maintainerrRead?: Pick<MaintainerrClientBundle, 'read'>;
+  /** ADR-040 / DESIGN-020 — the read-only @hnet/metrics Prometheus reader the `smart-alerts` mode reads
+   *  the smartctl series through. Required only for that mode; tests inject a stubbed reader. */
+  smartReader?: PrometheusReader;
   /** Injected DB (tests); defaults to the lazy @hnet/db client. */
   db?: DbClient;
   logger?: SyncLogger;
@@ -108,6 +117,10 @@ export interface SyncReport {
   outbox?: OutboxDeliveryReport | null;
   /** The notify-outbox run's error — sets totalFailure for the CLI exit. */
   outboxError?: string;
+  /** ADR-040 — the `smart-alerts` detector result (null for every other mode / when it errored). */
+  smartAlerts?: SmartAlertsReport | null;
+  /** The smart-alerts run's error — sets totalFailure for the CLI exit. */
+  smartAlertsError?: string;
   /** ADR-035 — the candidate-snapshot refresh post-step (full/incremental with a Maintainerr
    *  handle; null when skipped or failed). */
   candidateRefresh?: TrashCandidatesRefreshReport | null;
@@ -305,6 +318,47 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       outbox,
       ...(outboxError !== undefined ? { outboxError } : {}),
       totalFailure: outboxError !== undefined,
+    };
+  }
+
+  // ADR-040 / DESIGN-020 — the `smart-alerts` detector is also NOT a per-source loop: it reads the
+  // smartctl series through @hnet/metrics and, per drive, diffs the reading against the persisted
+  // smart_drive_state, enqueuing ONE notification_outbox row on a CRITICAL transition (same-tx with the
+  // state update). First sight of a drive records a BASELINE and pages nothing — so the known
+  // staging-pool bad state never pages. No *arr source, no sync_runs row — its trail is the outbox rows
+  // + smart_drive_state. Returns early with a `smartAlerts` report. Disabled-safe: the enqueue always
+  // records the transition; the notify-outbox drainer no-ops without PUSHOVER_* creds.
+  if (options.mode === 'smart-alerts') {
+    const startedAt = new Date();
+    if (!options.smartReader) {
+      throw new Error('smart-alerts requires a Prometheus reader (smartReader)');
+    }
+    let smartAlerts: SmartAlertsReport | null = null;
+    let smartAlertsError: string | undefined;
+    try {
+      const drives = await getDriveSmartReadings({ prometheus: options.smartReader });
+      smartAlerts = await evaluateSmartAlerts({ db, drives });
+      logger.info('smart-alerts evaluated', {
+        evaluated: smartAlerts.evaluated,
+        baselined: smartAlerts.baselined,
+        degraded: smartAlerts.degraded,
+        recovered: smartAlerts.recovered,
+        enqueued: smartAlerts.enqueued,
+      });
+    } catch (error) {
+      smartAlertsError = error instanceof Error ? error.message : String(error);
+      logger.error('smart-alerts evaluation failed', { error: smartAlertsError });
+    }
+    return {
+      mode: options.mode,
+      startedAt,
+      finishedAt: new Date(),
+      sources: [],
+      backfill: null,
+      fixesCompleted: null,
+      smartAlerts,
+      ...(smartAlertsError !== undefined ? { smartAlertsError } : {}),
+      totalFailure: smartAlertsError !== undefined,
     };
   }
 

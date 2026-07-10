@@ -96,13 +96,26 @@ export async function startStubPrometheus(): Promise<StubPrometheusServer> {
           sample({ wan_name: 'Internet 1', wan_id: 'a' }, '2256000'),
           sample({ wan_name: 'Internet 2', wan_id: 'b' }, '2300000'),
         ]);
-      // Cluster CPU / load / memory. The count()-wrapped forms are MORE specific than the bare
-      // node_load1, so they must be matched before it.
-      if (q.includes('count by (instance, cpu)')) return vector([sample({}, '132')]); // total cores
-      if (q.includes('count(node_load1)')) return vector([sample({}, '6')]); // node count
-      if (q.includes('node_load1')) return vector([sample({}, '18.5')]); // sum(node_load1) — cluster load
-      if (q.includes('MemTotal')) return vector([sample({}, '529642733568')]); // total mem bytes
-      if (q.includes('MemAvailable')) return vector([sample({}, '384401444864')]); // available mem bytes
+      // Cluster CPU / load / memory. The Overview uses the sum()/count()-WRAPPED forms; the Hardware
+      // sub-tab (PLAN-019) uses the BARE / `by (instance)` forms folded by the `instance` label. The
+      // wrapped forms are matched FIRST so the bare branches below are free for the per-instance fold.
+      if (q.includes('count by (instance, cpu)')) return vector([sample({}, '132')]); // Overview total cores
+      if (q.includes('count(node_load1)')) return vector([sample({}, '6')]); // Overview node count
+      if (q.includes('sum(node_load1)')) return vector([sample({}, '18.5')]); // Overview cluster load
+      if (q.includes('sum(node_memory_MemTotal')) return vector([sample({}, '529642733568')]);
+      if (q.includes('sum(node_memory_MemAvailable')) return vector([sample({}, '384401444864')]);
+      // PLAN-019 / DESIGN-020 — the Hardware node group (per-instance load / cores / memory / temp).
+      // haynestower is the NAS (role=nas in the app's fold via the instance name); a k8s node alongside.
+      if (q.includes('count by (instance) (node_cpu'))
+        return vector([sample({ instance: 'haynestower' }, '24'), sample({ instance: '192.168.40.10:9100' }, '8')]);
+      if (q.includes('node_hwmon_temp_celsius'))
+        return vector([sample({ instance: 'haynestower' }, '48'), sample({ instance: '192.168.40.10:9100' }, '52')]);
+      if (q.includes('node_load1'))
+        return vector([sample({ instance: 'haynestower' }, '3.2'), sample({ instance: '192.168.40.10:9100' }, '1.5')]);
+      if (q.includes('node_memory_MemTotal'))
+        return vector([sample({ instance: 'haynestower' }, '128000000000'), sample({ instance: '192.168.40.10:9100' }, '32000000000')]);
+      if (q.includes('node_memory_MemAvailable'))
+        return vector([sample({ instance: 'haynestower' }, '64000000000'), sample({ instance: '192.168.40.10:9100' }, '16000000000')]);
 
       // PLAN-018 / DESIGN-018 — the Apps sub-tab series (*arr + downloaders + indexers). Substring
       // matches (more-specific *_monitored_/_missing_/_cutoff_unmet_total forms are distinct from the
@@ -189,6 +202,121 @@ export async function startStubPrometheus(): Promise<StubPrometheusServer> {
       if (q.includes('unpoller_site_gateways')) return vector([sample({}, '1')]);
       if (q.includes('unpoller_site_stations')) return vector([sample({}, '181')]);
 
+      // PLAN-019 / DESIGN-020 — the Hardware sub-tab SMART series. Two smartctl jobs: the NAS
+      // (instance="haynestower", role="nas") with the four cache NVMe (the LIVE acceptance state:
+      // nvme1+nvme2 = Cache-staging, over rated endurance/FAILED/bit-2 but holding; nvme0+nvme3 =
+      // Cache-apps mirror, 57–60% worn) + one in-cluster NVMe. Substring-matched on the metric family.
+      const nasDev = (device: string, extra: Record<string, string> = {}) => ({
+        instance: 'haynestower',
+        device,
+        role: 'nas',
+        ...extra,
+      });
+      const clDev = (device: string) => ({ instance: '10.42.0.244:9633', device, namespace: 'observability' });
+      if (q.includes('smartctl_device_smart_status'))
+        return vector([
+          sample(nasDev('nvme0'), '1'),
+          sample(nasDev('nvme1'), '0'),
+          sample(nasDev('nvme2'), '0'),
+          sample(nasDev('nvme3'), '1'),
+          sample(clDev('nvme0n1'), '1'),
+        ]);
+      if (q.includes('smartctl_device_percentage_used'))
+        return vector([
+          sample(nasDev('nvme0'), '57'),
+          sample(nasDev('nvme1'), '100'),
+          sample(nasDev('nvme2'), '100'),
+          sample(nasDev('nvme3'), '60'),
+          sample(clDev('nvme0n1'), '25'),
+        ]);
+      if (q.includes('smartctl_device_temperature'))
+        return vector([sample(nasDev('nvme0'), '55'), sample(nasDev('nvme1'), '58'), sample(clDev('nvme0n1'), '40')]);
+      if (q.includes('smartctl_device_media_errors'))
+        return vector([
+          sample(nasDev('nvme0'), '0'),
+          sample(nasDev('nvme1'), '0'),
+          sample(nasDev('nvme2'), '0'),
+          sample(nasDev('nvme3'), '0'),
+          sample(clDev('nvme0n1'), '0'),
+        ]);
+      if (q.includes('smartctl_device_available_spare_threshold'))
+        return vector([
+          sample(nasDev('nvme0'), '5'),
+          sample(nasDev('nvme1'), '5'),
+          sample(nasDev('nvme2'), '5'),
+          sample(nasDev('nvme3'), '5'),
+          sample(clDev('nvme0n1'), '5'),
+        ]);
+      if (q.includes('smartctl_device_available_spare'))
+        return vector([
+          sample(nasDev('nvme0'), '100'),
+          sample(nasDev('nvme1'), '100'),
+          sample(nasDev('nvme2'), '100'),
+          sample(nasDev('nvme3'), '100'),
+          sample(clDev('nvme0n1'), '100'),
+        ]);
+      if (q.includes('smartctl_device_critical_warning'))
+        return vector([
+          sample(nasDev('nvme0'), '0'),
+          sample(nasDev('nvme1'), '4'),
+          sample(nasDev('nvme2'), '4'),
+          sample(nasDev('nvme3'), '0'),
+        ]);
+      if (q.includes('smartctl_device_power_on_seconds'))
+        return vector([sample(nasDev('nvme0'), '18360000'), sample(nasDev('nvme1'), '18360000')]);
+      if (q.includes('smartctl_device_capacity_bytes'))
+        return vector([sample(nasDev('nvme0'), '2000000000000')]);
+      if (q.includes('smartctl_device'))
+        return vector([
+          sample(nasDev('nvme0', { model_name: 'CT2000P3PSSD8', serial_number: '2331E865B710' }), '1'),
+          sample(nasDev('nvme1', { model_name: 'CT2000P3PSSD8', serial_number: '2331E865B76D' }), '1'),
+          sample(nasDev('nvme2', { model_name: 'CT2000P3PSSD8', serial_number: '2331E865B74C' }), '1'),
+          sample(nasDev('nvme3', { model_name: 'CT2000P3PSSD8', serial_number: '2331E865B742' }), '1'),
+        ]);
+
+      // PLAN-019 / DESIGN-020 — the Proxmox showcase (prometheus-pve-exporter). Two nodes + guests,
+      // folded by the `id` label (node/NAME, qemu/NNN, lxc/NNN).
+      if (q.includes('pve_node_info'))
+        return vector([
+          sample({ id: 'node/HaynesIntelligence', name: 'HaynesIntelligence' }, '1'),
+          sample({ id: 'node/twin-top', name: 'twin-top' }, '1'),
+        ]);
+      if (q.includes('pve_guest_info'))
+        return vector([
+          sample({ id: 'qemu/100', node: 'HaynesIntelligence', name: 'plex-vm', type: 'qemu', vmid: '100' }, '1'),
+          sample({ id: 'lxc/101', node: 'HaynesIntelligence', name: 'nginx-lxc', type: 'lxc', vmid: '101' }, '1'),
+          sample({ id: 'qemu/200', node: 'twin-top', name: 'k8s-worker', type: 'qemu', vmid: '200' }, '1'),
+        ]);
+      if (q.includes('pve_up'))
+        return vector([
+          sample({ id: 'node/HaynesIntelligence' }, '1'),
+          sample({ id: 'node/twin-top' }, '1'),
+          sample({ id: 'qemu/100' }, '1'),
+          sample({ id: 'lxc/101' }, '0'),
+          sample({ id: 'qemu/200' }, '1'),
+        ]);
+      if (q.includes('pve_cpu_usage_ratio'))
+        return vector([
+          sample({ id: 'node/HaynesIntelligence' }, '0.35'),
+          sample({ id: 'node/twin-top' }, '0.12'),
+          sample({ id: 'qemu/100' }, '0.10'),
+          sample({ id: 'qemu/200' }, '0.28'),
+        ]);
+      if (q.includes('pve_memory_usage_bytes'))
+        return vector([
+          sample({ id: 'node/HaynesIntelligence' }, '64000000000'),
+          sample({ id: 'node/twin-top' }, '20000000000'),
+          sample({ id: 'qemu/100' }, '8000000000'),
+        ]);
+      if (q.includes('pve_memory_size_bytes'))
+        return vector([
+          sample({ id: 'node/HaynesIntelligence' }, '256000000000'),
+          sample({ id: 'node/twin-top' }, '64000000000'),
+          sample({ id: 'qemu/100' }, '16000000000'),
+        ]);
+      if (q.includes('pve_uptime_seconds'))
+        return vector([sample({ id: 'node/HaynesIntelligence' }, '1080000'), sample({ id: 'node/twin-top' }, '540000')]);
+
       // Unknown query → an empty (but still successful) result set.
       return vector([]);
     }
@@ -221,6 +349,12 @@ export async function startStubPrometheus(): Promise<StubPrometheusServer> {
           status: 'success',
           data: { resultType: 'matrix', result: [{ metric: { __name__: name, subsystem: 'wan' }, values }] },
         });
+      }
+      // PLAN-019 / DESIGN-020 — the Hardware NVMe-endurance wear history. Scraping only just started, so
+      // there is not yet enough history to fit a wear-rate projection ⇒ answer an EMPTY matrix, which the
+      // read model renders gracefully as "insufficient history yet" (the live acceptance state).
+      if (rangeQuery.includes('smartctl_device_percentage_used')) {
+        return json(200, { status: 'success', data: { resultType: 'matrix', result: [] } });
       }
       const result = SERIES.map((s) => {
         const values: [number, string][] = [];

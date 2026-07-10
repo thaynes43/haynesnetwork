@@ -219,3 +219,52 @@ test.describe('metrics Network sub-tab (PLAN-020 · ADR-039 · DESIGN-019) — W
     await expect(page.getByTestId('metrics-net-upload-meter')).toHaveCount(0);
   });
 });
+
+test.describe('metrics Hardware sub-tab (PLAN-019 · ADR-040 · DESIGN-020) — SMART + endurance + Proxmox', () => {
+  test('an admin opens ?tab=hardware: the NVMe endurance panel, drive health, node load, and Proxmox showcase', async ({
+    page,
+  }) => {
+    await signIn(page, 'admin');
+    await page.goto('/metrics?tab=hardware');
+
+    await test.step('the Hardware tab is selected and the NVMe endurance panel frames both pools', async () => {
+      const hwTab = page.getByRole('tab', { name: 'Hardware' });
+      await expect(hwTab).toHaveAttribute('aria-selected', 'true');
+      await expect(page.getByTestId('metrics-hardware')).toBeVisible();
+      // Cache-apps (critical mirror) + Cache-staging (expendable) pools both render.
+      await expect(page.getByTestId('metrics-hw-pool-Cache-apps')).toBeVisible();
+      await expect(page.getByTestId('metrics-hw-pool-Cache-staging')).toBeVisible();
+      // The acceptance status lines: staging is "holding"; apps is "worn".
+      await expect(page.getByTestId('metrics-hw-pool-status-Cache-staging')).toContainText('holding');
+      await expect(page.getByTestId('metrics-hw-pool-status-Cache-apps')).toContainText('worn');
+    });
+
+    await test.step('the drive-health table shows a SMART-failed drive with a status pill', async () => {
+      await expect(page.getByTestId('metrics-hw-drives')).toBeVisible();
+      await expect(page.getByTestId('metrics-hw-drives')).toContainText('CT2000P3PSSD8');
+      // At least one drive reads "Failed" (the staging pool NVMe).
+      await expect(page.getByTestId('metrics-hw-drives').getByText('Failed').first()).toBeVisible();
+    });
+
+    await test.step('node load + the Proxmox host→VM showcase render', async () => {
+      await expect(page.getByTestId('metrics-hw-nodes')).toBeVisible();
+      await expect(page.getByTestId('metrics-hw-node-haynestower')).toBeVisible();
+      await expect(page.getByTestId('metrics-hw-pve')).toBeVisible();
+      const host = page.getByTestId('metrics-hw-pve-HaynesIntelligence');
+      await expect(host).toBeVisible();
+      // The host tile expands IN PLACE (ADR-015 allowed exception) to reveal its VMs.
+      await host.locator('summary').click();
+      await expect(host.getByText('plex-vm')).toBeVisible();
+    });
+  });
+
+  // Ungated (owner ruling R-129): the section gate still applies, so a member with the metrics section
+  // disabled sees the unavailable card — never the Hardware panel. (The full/limited-identical payload is
+  // a server property — the router does no level shaping for hardware — proven by the @hnet unit tests.)
+  test('a default member gets the unavailable card at /metrics?tab=hardware', async ({ page }) => {
+    await signIn(page, 'fresh-member');
+    await page.goto('/metrics?tab=hardware');
+    await expect(page.getByTestId('metrics-unavailable')).toBeVisible();
+    await expect(page.getByTestId('metrics-hardware')).toHaveCount(0);
+  });
+});

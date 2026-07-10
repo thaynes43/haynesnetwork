@@ -14,10 +14,12 @@ import {
 } from '@hnet/domain';
 import {
   getAppsMetrics,
+  getHardwareMetrics,
   getHardwareOverview,
   getNetworkMetrics,
   getNetworkOverview,
   type AppsMetrics,
+  type HardwareMetrics,
   type HardwareOverview,
   type NetworkMetrics,
   type NetworkOverview,
@@ -105,6 +107,17 @@ export const metricsRouter = router({
       includeUserAware: level === 'full',
     });
   }),
+
+  /**
+   * ADR-040 / DESIGN-020 (PLAN-019) — the Hardware sub-tab payload: SMART drive health + NVMe
+   * endurance, per-node load/temperature, and the Proxmox host→VM showcase. Gated by section
+   * visibility (metricsProcedure) only. **UNGATED beyond that (owner ruling R-129): the payload is
+   * identical at `full` and `limited`** — hardware is not user-aware, so there is no level shaping
+   * here (unlike apps/network). Every field degrades independently in the read model — never a throw.
+   */
+  hardware: metricsProcedure.query(({ ctx }): Promise<HardwareMetrics> =>
+    getHardwareMetrics({ prometheus: resolveMetricsReader(ctx) }),
+  ),
 
   /**
    * ADR-039 / DESIGN-019 (PLAN-020) — the Network sub-tab payload. Gated by section visibility
