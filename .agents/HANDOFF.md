@@ -4,7 +4,22 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-- **Last updated:** 2026-07-10 — **PLAN-022 ytdl-sub Library sub-tabs shipped (v0.31.0), live.**
+- **Last updated:** 2026-07-10 — **PLAN-018 Metrics → Apps sub-tab shipped (v0.32.0), live.**
+  The 017-scaffolded **Apps** tab now renders four curated, phone-friendly groups off the live
+  in-cluster Prometheus via a new `@hnet/metrics` `getAppsMetrics` read + a `metrics.apps`
+  procedure: **Collection** (radarr/sonarr/lidarr totals · monitored · missing · upgrades),
+  **Acquisition pipeline** (queue · grabs/hr · health), **Download clients** (SABnzbd
+  `sabnzbd`/`sabnzbd-fast` lanes + qbittorrent/slskd reachability — the collection wave's new
+  exporters), **Indexers/Prowlarr** (fleet · response times · query rate) — each with a muted
+  "Open in Grafana ↗" deep-link (`d/arr-library-overview`, `d/downloads-clients-indexers`,
+  OPS-008). **Both-levels** (no *arr/downloader series names a user) with the full-only seam kept
+  present-but-empty (`requesterActivity`, ADR-037 C-03) for a future requester panel. **NO
+  migration / NO new ADR / NO guard edit** — rides 017's section + level model; visibility is
+  still the `metrics` section (**Admin-only until the owner's flip**). Pod-verified live: totals
+  9564/114118/55507 match Prometheus; unauth `metrics.apps` = 401. **OWNER's morning:** Q-01
+  fast-lane split at `limited`? Q-02 bazarr panel group (sidecar live, not panelled)? Q-03 keep
+  all 3 Grafana boards? Docs: DESIGN-018 / OPS-008 / R-125..R-126 / T-113.
+  Prior milestone — **PLAN-022 ytdl-sub Library sub-tabs shipped (v0.31.0), live.**
   Two new **Library** sub-tabs (Peloton, YouTube) surface the k8plex ytdl-sub libraries
   (`HOps Peloton` / `HOps YT`), read **DIRECTLY** from the Plex server via a new
   `PlexReadClient.listSectionContents` — **no ledger sync** (this content has no *arr; ADR-038).
