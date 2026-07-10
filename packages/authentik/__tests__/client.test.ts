@@ -53,11 +53,13 @@ describe('assertAuthentikEnv', () => {
 
 describe('sourcesOf', () => {
   it('extracts Plex source names from attributes', () => {
-    const u = { attributes: { 'goauthentik.io/user/sources': ['HaynesTower'] } } as AuthentikUser;
+    const u = {
+      attributes: { 'goauthentik.io/user/sources': ['HaynesTower'] },
+    } as unknown as AuthentikUser;
     expect(sourcesOf(u)).toEqual(['HaynesTower']);
   });
   it('returns [] when there is no sources attribute', () => {
-    expect(sourcesOf({ attributes: null } as AuthentikUser)).toEqual([]);
+    expect(sourcesOf({ attributes: null } as unknown as AuthentikUser)).toEqual([]);
   });
 });
 
