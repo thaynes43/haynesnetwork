@@ -164,3 +164,58 @@ test.describe('metrics Apps sub-tab (PLAN-018 · DESIGN-018) — *arr + download
     });
   });
 });
+
+// PLAN-020 / ADR-039 / DESIGN-019 — the Network sub-tab. ADVISORY (not a merge gate yet). At `full`
+// (admin) the WAN usage-vs-capacity meters + history sparkline + infra-performance groups render off the
+// stub's unpoller instant/range vectors; the PRIVACY invariant is that NO client identity ever renders.
+test.describe('metrics Network sub-tab (PLAN-020 · ADR-039 · DESIGN-019) — WAN + infra, no clients', () => {
+  test('an admin opens ?tab=network: WAN meters, history, infra groups — and zero client identities', async ({
+    page,
+  }) => {
+    await signIn(page, 'admin');
+    await page.goto('/metrics?tab=network');
+
+    await test.step('the Network tab is selected and the WAN meters + history render', async () => {
+      const netTab = page.getByRole('tab', { name: 'Network' });
+      await expect(netTab).toHaveAttribute('aria-selected', 'true');
+      await expect(page.getByTestId('metrics-network')).toBeVisible();
+      for (const id of ['metrics-net-upload-meter', 'metrics-net-download-meter'] as const) {
+        const meter = page.getByTestId(id);
+        await expect(meter, `${id} renders`).toBeVisible();
+        await expect(meter, `${id} is an ARIA meter`).toHaveAttribute('role', 'meter');
+      }
+      await expect(page.getByTestId('metrics-net-history')).toBeVisible();
+      await expect(page.getByTestId('metrics-net-spark-up')).toBeVisible();
+    });
+
+    await test.step('the full-only infra groups render with a known device name (INFRASTRUCTURE, not a client)', async () => {
+      await expect(page.getByTestId('metrics-net-gateway')).toBeVisible();
+      await expect(page.getByTestId('metrics-net-gateway')).toContainText('Westford DMSE');
+      await expect(page.getByTestId('metrics-net-wanhealth')).toBeVisible();
+      await expect(page.getByTestId('metrics-net-switch')).toBeVisible();
+      await expect(page.getByTestId('metrics-net-ap')).toBeVisible();
+      // Site rollup shows the aggregate station COUNT (a number, never a per-client row).
+      await expect(page.getByTestId('metrics-net-stations')).toContainText('181');
+      // A curated switch board deep-link (not the Client-Insights board).
+      await expect(page.getByTestId('metrics-net-switch-grafana')).toHaveAttribute('href', /d\/FsfxpWaZz/);
+    });
+
+    await test.step('PRIVACY: no client-identity board link and no per-client series leak into the DOM', async () => {
+      // The deliberately-unlinked Client-Insights board (jMfvAjxWz) must not appear anywhere.
+      await expect(page.locator('a[href*="jMfvAjxWz"]')).toHaveCount(0);
+      // No unpoller_client_* label text leaks into the rendered tab.
+      const body = (await page.getByTestId('metrics-network').textContent()) ?? '';
+      expect(body.toLowerCase()).not.toContain('unpoller_client');
+      expect(body.toLowerCase()).not.toContain('rssi');
+    });
+  });
+
+  // The disabled-section gate is the same server render as the Overview: a fresh member sees the
+  // unavailable card at /metrics?tab=network (never the Network panel).
+  test('a default member gets the unavailable card at /metrics?tab=network', async ({ page }) => {
+    await signIn(page, 'fresh-member');
+    await page.goto('/metrics?tab=network');
+    await expect(page.getByTestId('metrics-unavailable')).toBeVisible();
+    await expect(page.getByTestId('metrics-net-upload-meter')).toHaveCount(0);
+  });
+});

@@ -52,3 +52,31 @@ export function formatMs(ms: number | null): string {
   if (ms === null || !Number.isFinite(ms)) return '—';
   return `${Math.round(ms)} ms`;
 }
+
+// DESIGN-019 — Network sub-tab formatters + the WAN-history sparkline geometry (pure; no React, no hex).
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/**
+ * Build an SVG polyline `points` string mapping `values` into a `width`×`height` box (the series min sits
+ * on the bottom edge, the max on the top). Empty ⇒ `''` (the caller renders nothing); a single point ⇒ a
+ * flat mid-line. Deterministic + unit-tested so the sparkline needs no snapshot. ADR-015: the box is a
+ * fixed geometry — only the polyline path changes as data refreshes, never the layout around it.
+ */
+export function sparklinePolyline(values: number[], width: number, height: number): string {
+  const finite = values.filter((v) => Number.isFinite(v));
+  if (finite.length === 0) return '';
+  if (finite.length === 1) {
+    const y = round2(height / 2);
+    return `0,${y} ${round2(width)},${y}`;
+  }
+  const min = Math.min(...finite);
+  const max = Math.max(...finite);
+  const span = max - min || 1;
+  const stepX = width / (finite.length - 1);
+  return finite
+    .map((v, i) => `${round2(i * stepX)},${round2(height - ((v - min) / span) * height)}`)
+    .join(' ');
+}
