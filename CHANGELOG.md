@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.1](https://github.com/thaynes43/haynesnetwork/compare/v0.36.0...v0.36.1) (2026-07-10)
+
+
+### Bug Fixes
+
+* Metrics Grafana deep-links are admin-only (LAN-only URLs) ([#176](https://github.com/thaynes43/haynesnetwork/issues/176)) ([2e33c4b](https://github.com/thaynes43/haynesnetwork/commit/2e33c4b2a35234f7862715592371af9ee3829465))
+
 ## [0.36.0](https://github.com/thaynes43/haynesnetwork/compare/v0.35.0...v0.36.0) (2026-07-10)
 
 
