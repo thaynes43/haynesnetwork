@@ -10,4 +10,7 @@ export * from './arr-full';
 export * from './arr-incremental';
 export * from './metadata-refresh';
 export * from './seerr';
+// ADR-044 / DESIGN-022 (PLAN-021) — the read-only Open WebUI admin-API client + blob normalizer the
+// `ai-usage-sync` mode polls (image-gen heuristic lives here).
+export * from './openwebui';
 export * from './orchestrator';

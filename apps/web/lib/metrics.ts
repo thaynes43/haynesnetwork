@@ -83,6 +83,20 @@ export function formatHours(h: number | null): string {
   return `${Math.round(h).toLocaleString('en-US')} h`;
 }
 
+// DESIGN-022 — AI usage sub-tab formatter (pure; null-safe). "how long" from summed ms.
+
+/** A compact duration ("1h 5m" / "2m 30s" / "45s" / "0s" / "—") from milliseconds. */
+export function formatDurationMs(ms: number | null): string {
+  if (ms === null || !Number.isFinite(ms) || ms < 0) return '—';
+  const totalSeconds = Math.round(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+}
+
 /** A friendly uptime ("12d 4h" / "3h" / "—") from seconds. */
 export function formatUptime(seconds: number | null): string {
   if (seconds === null || !Number.isFinite(seconds) || seconds < 0) return '—';

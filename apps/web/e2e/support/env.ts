@@ -14,6 +14,7 @@ import { ADMIN_EMAIL, STUB_CLIENT_ID, STUB_CLIENT_SECRET } from './stub-oidc';
 import { STUB_BAZARR_API_KEY } from './stub-bazarr';
 import { STUB_PLEX_TOKENS } from './stub-plex';
 import { STUB_MAINTAINERR_API_KEY } from './stub-maintainerr';
+import { STUB_OPENWEBUI_API_KEY } from './stub-openwebui';
 
 /** Default app port — off 3000 so the stack coexists with a running `pnpm dev`.
  *  playwright.config.ts's baseURL derives from this. */
@@ -70,6 +71,11 @@ export interface RuntimeEnv {
    *  free-space-trend contract (storage.trend queries PROMETHEUS_URL's /api/v1/query_range). */
   STUB_PROMETHEUS_URL: string;
   PROMETHEUS_URL: string;
+  /** ADR-044 / DESIGN-022 — stub Open WebUI origin + the ai-usage-sync contract (the sync mode polls
+   *  OPENWEBUI_URL's admin API with OPENWEBUI_API_KEY). */
+  STUB_OPENWEBUI_URL: string;
+  OPENWEBUI_URL: string;
+  OPENWEBUI_API_KEY: string;
   /** ADR-026 / DESIGN-012 — per-source Bulletin webhook shared secrets (Seerr + Tautulli). */
   SEERR_WEBHOOK_SECRET: string;
   TAUTULLI_WEBHOOK_SECRET: string;
@@ -102,6 +108,7 @@ export function composeRuntimeEnv(opts: {
   stubPlexBaseUrl: string;
   stubMaintainerrBaseUrl: string;
   stubPrometheusBaseUrl: string;
+  stubOpenWebUiBaseUrl: string;
   appUrl: string;
 }): RuntimeEnv {
   return {
@@ -141,6 +148,9 @@ export function composeRuntimeEnv(opts: {
     MAINTAINERR_WEBHOOK_SECRET: STUB_MAINTAINERR_WEBHOOK_SECRET,
     STUB_PROMETHEUS_URL: opts.stubPrometheusBaseUrl,
     PROMETHEUS_URL: opts.stubPrometheusBaseUrl,
+    STUB_OPENWEBUI_URL: opts.stubOpenWebUiBaseUrl,
+    OPENWEBUI_URL: opts.stubOpenWebUiBaseUrl,
+    OPENWEBUI_API_KEY: STUB_OPENWEBUI_API_KEY,
     SEERR_WEBHOOK_SECRET: STUB_SEERR_WEBHOOK_SECRET,
     TAUTULLI_WEBHOOK_SECRET: STUB_TAUTULLI_WEBHOOK_SECRET,
     // 30 s (vs 15 min in prod): long enough that fresh submits deterministically read

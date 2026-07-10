@@ -7,9 +7,12 @@
 //   metrics.capacity.get/set* — the admin-editable WAN capacity denominators (audited app_settings).
 import { z } from 'zod';
 import {
+  AI_USAGE_RANGES,
+  getAiUsage,
   getAppSetting,
   getUtilization,
   setAppSetting,
+  type AiUsageMetrics,
   type StorageArrayUtilization,
 } from '@hnet/domain';
 import {
@@ -161,6 +164,24 @@ export const metricsRouter = router({
       includeGrafanaLinks: ctx.user.role.isAdmin,
     });
   }),
+
+  /**
+   * ADR-044 / DESIGN-022 (PLAN-021) — the AI sub-tab payload: Open WebUI usage read from the synced
+   * `ai_usage_chats` mirror. Gated by section visibility (metricsProcedure) and SHAPED by the caller's
+   * level (ADR-044 C-03): `limited` gets aggregate counts (# chats, # image generations) + the per-day
+   * trend ONLY; `full`/admin ADDS the per-model ("for what") and per-user ("who / how long") breakdown.
+   * The per-user/identity queries are ONLY issued for a `full` caller (getAiUsage branches internally),
+   * so a `limited` response never carries a user id/name/email. Reads-only; never touches OWUI.
+   */
+  aiUsage: metricsProcedure
+    .input(z.object({ range: z.enum(AI_USAGE_RANGES).optional() }).default({}))
+    .query(({ ctx, input }): Promise<AiUsageMetrics> =>
+      getAiUsage({
+        db: ctx.db,
+        level: effectiveMetricsLevel(ctx.user.role),
+        range: input.range,
+      }),
+    ),
 
   /** The admin-editable WAN capacity denominators (Mbps). Admin-gated + audited on write. */
   capacity: router({

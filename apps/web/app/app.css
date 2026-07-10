@@ -5265,6 +5265,36 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
   font-size: 13px;
 }
 
+/* DESIGN-022 — Metrics → AI sub-tab: the usage-window range control. Reuses the 017/018 tile/group/table
+   idioms for everything else; the only NEW piece is this segmented range toggle. Tokens only (no raw hex,
+   hard rule 2); the pressed button recolors, never relayouts (ADR-015 — the row width is fixed by its
+   buttons, so a press swaps color/emphasis without shifting a neighbor). */
+.metrics-range {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: var(--space);
+}
+.metrics-range__btn {
+  padding: 4px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.metrics-range__btn:hover {
+  border-color: var(--color-accent);
+  color: var(--color-text);
+}
+.metrics-range__btn[aria-pressed='true'] {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 16%, var(--color-surface));
+  color: var(--color-text);
+}
+
 /* DESIGN-020 — Metrics → Hardware sub-tab. Reuses the 017/018/020 meter/tile/group/table idioms; the
    NEW pieces below are the NVMe-endurance pool card, the SMART status pill, and the Proxmox host→VM
    in-place expander. Tokens only (no raw hex, hard rule 2); severity recolors, never reshapes (ADR-015). */

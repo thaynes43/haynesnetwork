@@ -21,10 +21,11 @@ import {
 } from '@hnet/domain';
 import { prometheusClientFromEnv } from '@hnet/metrics';
 import { buildMetadataSourceClients, buildOptionalMaintainerrRead, buildSyncClients, requireClient } from '../clients';
+import { openWebUiClientFromEnv } from '../openwebui';
 import { createConsoleLogger } from '../logger';
 import { runSync } from '../orchestrator';
 
-const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy|notify-outbox|smart-alerts [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
+const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy|notify-outbox|smart-alerts|poster-guard|ai-usage-sync [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
 
   --mode=full              item-list upsert + tombstone pass per *arr (+ Seerr requests)
   --mode=incremental       history/since cursor polling per *arr (+ Seerr requests)
@@ -55,6 +56,11 @@ const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-bat
                            drifted since the last apply). Appends one poster_guard_applications ledger row
                            per re-apply (drift baseline + audit). Needs PLEX_HAYNESKUBE_TOKEN. No --source.
                            Writes no sync_runs row.
+  --mode=ai-usage-sync     poll the Open WebUI admin API (GET /api/v1/chats/all/db + /api/v1/users/) and
+                           UPSERT the ai_usage_chats mirror (ADR-044 — the Metrics AI sub-tab's substrate).
+                           READ-ONLY against OWUI; counts chats + image generations (assistant image files)
+                           + per-user/model detail. Needs OPENWEBUI_API_KEY (OPENWEBUI_URL defaults to the
+                           in-cluster service DNS). No --source. Writes no sync_runs row.
   --source=NAME            limit the run to one source (repeatable; default: all sources; for
                            metadata-refresh the default is the three *arr kinds)
   --force-tombstones       override the mass-tombstone guard (DESIGN-005 D-14/Q-03)
@@ -109,7 +115,8 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
       mode === 'space-policy' ||
       mode === 'notify-outbox' ||
       mode === 'smart-alerts' ||
-      mode === 'poster-guard') &&
+      mode === 'poster-guard' ||
+      mode === 'ai-usage-sync') &&
     sources.length > 0
   ) {
     throw new CliUsageError(`--source is not valid for --mode=${mode}`);
@@ -122,7 +129,8 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
     mode === 'space-policy' ||
     mode === 'notify-outbox' ||
     mode === 'smart-alerts' ||
-    mode === 'poster-guard'
+    mode === 'poster-guard' ||
+    mode === 'ai-usage-sync'
       ? []
       : mode === 'metadata-refresh'
         ? [...ARR_KINDS]
@@ -209,6 +217,10 @@ async function main(): Promise<number> {
   // Built INSIDE @hnet/domain (plexClientBundleFromEnv), so the confined Plex write surface stays
   // domain-only (ADR-017 guard); throws one PlexConfigError if PLEX_HAYNESKUBE_TOKEN is absent.
   const plex = args.mode === 'poster-guard' ? plexClientBundleFromEnv() : undefined;
+  // ADR-044 / DESIGN-022 — the read-only Open WebUI admin-API client the `ai-usage-sync` mode polls
+  // (OPENWEBUI_URL defaults to the in-cluster service DNS; throws OpenWebUiConfigError if
+  // OPENWEBUI_API_KEY is absent). Read-only — it never mutates Open WebUI.
+  const openWebUi = args.mode === 'ai-usage-sync' ? openWebUiClientFromEnv() : undefined;
 
   logger.info('sync starting', {
     mode: args.mode,
@@ -234,6 +246,7 @@ async function main(): Promise<number> {
     ...(maintainerrRead ? { maintainerrRead } : {}),
     ...(smartReader ? { smartReader } : {}),
     ...(plex ? { plex } : {}),
+    ...(openWebUi ? { openWebUi } : {}),
     logger,
   });
 
@@ -297,6 +310,8 @@ async function main(): Promise<number> {
         }
       : {}),
     ...(report.posterGuardError !== undefined ? { posterGuardError: report.posterGuardError } : {}),
+    ...(report.aiUsage ? { aiUsage: report.aiUsage } : {}),
+    ...(report.aiUsageError !== undefined ? { aiUsageError: report.aiUsageError } : {}),
     sources: report.sources.map((s) => ({
       source: s.source,
       status: s.status,

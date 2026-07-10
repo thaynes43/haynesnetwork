@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Owner:** Tom Haynes
-- **Last updated:** 2026-07-10 (R-137..R-140 Peloton poster guard — durable override art + drift-restore sync mode, ADR-043 / DESIGN-021 / OPS-010, PLAN-024)
+- **Last updated:** 2026-07-10 (R-141..R-143 AI usage metrics — Open WebUI admin-API ingestion + level-gated attribution, ADR-044 / DESIGN-022, PLAN-021)
 
 ## Summary
 
@@ -344,6 +344,17 @@ OPS-010; glossary T-124..T-125.)
 | R-138 | **Re-apply only on drift; never destructive.** The guard re-applies a poster **only** when the live art differs from the baseline it recorded at last apply (or the mapped asset's bytes changed, or it was never applied) — a steady state does nothing. It **never deletes** gallery art (`POST …/posters` selects the new poster; Plex keeps the prior one in the item's gallery), so every apply and the one sanctioned drift-test are reversible. | Should |
 | R-139 | **Auditable + single-writer.** Each re-apply appends one row to an **append-only `poster_guard_applications`** ledger (the drift baseline + `reason` ∈ initial/drift/asset-updated + previous thumb), written **only** by a `@hnet/domain` single-writer in the same transaction (guard-listed). Like the `smart-alerts` mode it writes **no `sync_runs` row** (the ledger is its trail); the poster upload is a **confined** Plex write (`@hnet/plex` write subpath, domain-only — ADR-017). | Should |
 | R-140 | **Bounded + unmapped-safe.** The guard is bounded (~1 section list + one children read per show ≈ 14 reads, writes only on drift) and runs **hourly-or-less** as a haynes-ops CronJob mirroring `sync-smart-alerts`. Targets with **no mapping** (an unknown show, a season index with no asset — e.g. `0` Specials, `75`) are **reported, never guessed**; a mapped asset missing from the image is reported and skipped, not fatal. | Should |
+
+#### AI usage metrics (PLAN-021 — ADR-044 / DESIGN-022)
+
+(A usage view distinct from the PLAN-019 hardware/perf metrics: how much the self-hosted AI — Open WebUI
+— is being used. ADR-044 / DESIGN-022; migration 0035; glossary T-126..T-128.)
+
+| ID   | Requirement                                                                                                                                                                                                                                        | Priority |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| R-141 | **AI usage sub-tab.** A **Metrics → AI** sub-tab rides the R-117 shell and surfaces **Open WebUI usage over time**. The data is **synced from Open WebUI's admin API** (`OPENWEBUI_API_KEY`; `GET /api/v1/chats/all/db` + `/api/v1/users/`) by an **`ai-usage-sync`** sync mode into an app-owned mirror (`ai_usage_chats`) — the *arr-ledger pattern, **never a live cross-DB read** and **read-only against Open WebUI** (ADR-044 C-01/C-04). Tiles + per-day **sparklines** (chats, image generations), a range control (7/30/90d/all); tiles update **in place (no reflow, ADR-015)**, poll **bounded**, and degrade to a muted note — never a broken tab. Ships **Admin-only by default** like the other metrics tabs (owner opens it via `/admin/roles`). | Should |
+| R-142 | **Aggregate-for-everyone.** A viewer at the **`limited`** metrics level sees **aggregate-over-time counts only**: **# chats** and **# image generations** (+ # messages) and their trend. **No user identity** is present in a `limited` payload — the user-aware-metrics gating rule (ADR-037) — the server omits the per-user/model keys and the active-user count entirely (server-authoritative, not client-hidden). An **image generation** is counted from an **assistant-message image file** (ADR-044 C-02) — user uploads never inflate it. | Should |
+| R-143 | **Admin sees the backend detail.** A **`full`/admin** viewer additionally sees **who used it, how long, and for what model**: a **by-model** breakdown and a **by-user** table (chats, image generations, total time, models) plus the distinct-active-user count. This per-user attribution is **full-only** (ADR-044 C-03) — proven by unit + tRPC tests. If Open WebUI can't supply a field, the surface **degrades gracefully** (attribution unresolved that cycle; counts still shown) rather than blocking. | Should |
 
 ### Platform & non-functional
 

@@ -19,6 +19,7 @@ import {
   runPelotonPosterGuard,
   startSyncRun,
   sweepExpiredBatches,
+  syncAiUsage,
   type DrainPoolRefreshResult,
   type MaintainerrClientBundle,
   type OutboxDeliveryReport,
@@ -27,9 +28,14 @@ import {
   type SmartAlertsReport,
   type SpacePolicyReport,
   type SweepReport,
+  type SyncAiUsageReport,
   type TrashCandidatesRefreshReport,
   type UtilizationArrBundle,
 } from '@hnet/domain';
+// ADR-044 / DESIGN-022 (PLAN-021) — the read-only Open WebUI admin-API client the `ai-usage-sync` mode
+// polls; the fetched snapshot is handed to the @hnet/domain syncAiUsage single-writer (never a live
+// cross-DB read — the *arr-ledger precedent).
+import { fetchOwuiUsage, type OpenWebUiClient } from './openwebui';
 // ADR-043 / DESIGN-021 (PLAN-024) — the durable Peloton poster mapping + the image-backed asset source
 // the `poster-guard` mode hands to the domain guard (the confined Plex write upload stays in
 // packages/domain — the bundle arrives here as an opaque PlexClientBundle, never constructed in sync).
@@ -84,6 +90,11 @@ export interface RunSyncOptions {
   /** ADR-043 / DESIGN-021 — the Plex client bundle (read + confined write) the `poster-guard` mode uses to
    *  read the k8plex Peloton library and re-apply drifted override posters. Required only for that mode. */
   plex?: PlexClientBundle;
+  /** ADR-044 / DESIGN-022 — the read-only Open WebUI admin-API client the `ai-usage-sync` mode polls for
+   *  chats + users. Required only for that mode; tests inject a fetch-stubbed client. */
+  openWebUi?: OpenWebUiClient;
+  /** Clock injection for deterministic `ai-usage-sync` tests (synced_at / created_at fallbacks). */
+  now?: Date;
   /** Injected DB (tests); defaults to the lazy @hnet/db client. */
   db?: DbClient;
   logger?: SyncLogger;
@@ -135,6 +146,10 @@ export interface SyncReport {
   posterGuard?: PosterGuardReport | null;
   /** The poster-guard run's error — sets totalFailure for the CLI exit. */
   posterGuardError?: string;
+  /** ADR-044 — the `ai-usage-sync` result (null for every other mode / when it errored). */
+  aiUsage?: SyncAiUsageReport | null;
+  /** The ai-usage-sync run's error — sets totalFailure for the CLI exit. */
+  aiUsageError?: string;
   /** ADR-035 — the candidate-snapshot refresh post-step (full/incremental with a Maintainerr
    *  handle; null when skipped or failed). */
   candidateRefresh?: TrashCandidatesRefreshReport | null;
@@ -418,6 +433,50 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       posterGuard,
       ...(posterGuardError !== undefined ? { posterGuardError } : {}),
       totalFailure: posterGuardError !== undefined,
+    };
+  }
+
+  // ADR-044 / DESIGN-022 — the `ai-usage-sync` ingestion is NOT a per-source loop: it polls the Open WebUI
+  // admin API (read-only — never mutates OWUI), normalizes each chat to the mirror aggregates (image-gen
+  // heuristic + duration/token sums), and UPSERTS them via the domain syncAiUsage single-writer. Like the
+  // alert/outbox modes it touches NO *arr source and writes NO sync_runs row — its trail is ai_usage_chats.
+  // Returns early with an `aiUsage` report. A poll/parse failure sets aiUsageError → totalFailure (nonzero
+  // exit), so a persistently unreachable OWUI is visible in the CronJob history.
+  if (options.mode === 'ai-usage-sync') {
+    const startedAt = new Date();
+    if (!options.openWebUi) {
+      throw new Error('ai-usage-sync requires an Open WebUI client (openWebUi)');
+    }
+    let aiUsage: SyncAiUsageReport | null = null;
+    let aiUsageError: string | undefined;
+    try {
+      const snapshot = await fetchOwuiUsage(options.openWebUi, options.now);
+      aiUsage = await syncAiUsage({
+        db,
+        chats: snapshot.chats,
+        users: snapshot.users,
+        now: options.now,
+      });
+      logger.info('ai-usage-sync complete', {
+        chats: aiUsage.chats,
+        upserted: aiUsage.upserted,
+        imageGenerations: aiUsage.imageGenerations,
+        usersResolved: aiUsage.usersResolved,
+      });
+    } catch (error) {
+      aiUsageError = error instanceof Error ? error.message : String(error);
+      logger.error('ai-usage-sync failed', { error: aiUsageError });
+    }
+    return {
+      mode: options.mode,
+      startedAt,
+      finishedAt: new Date(),
+      sources: [],
+      backfill: null,
+      fixesCompleted: null,
+      aiUsage,
+      ...(aiUsageError !== undefined ? { aiUsageError } : {}),
+      totalFailure: aiUsageError !== undefined,
     };
   }
 
