@@ -14,6 +14,7 @@ import { communicationRouter } from './communication';
 import { motdRouter } from './motd';
 import { storageRouter } from './storage';
 import { metricsRouter } from './metrics';
+import { ytdlsubRouter } from './ytdlsub';
 
 export const appRouter = router({
   profile: profileRouter,
@@ -44,6 +45,9 @@ export const appRouter = router({
   // ADR-037 / DESIGN-016 (PLAN-017): the Metrics section — member-facing Overview (WAN usage-vs-
   // capacity + cluster load/memory + storage snapshot), per-role Full/Limited level, audited capacities.
   metrics: metricsRouter,
+  // ADR-038 / DESIGN-017 (PLAN-022): the ytdl-sub Library sub-tabs — Peloton + YouTube read DIRECTLY from
+  // the k8plex Plex server (no ledger sync), gated by the `ytdlsub` section (ships Admin-only).
+  ytdlsub: ytdlsubRouter,
 });
 
 export type AppRouter = typeof appRouter;

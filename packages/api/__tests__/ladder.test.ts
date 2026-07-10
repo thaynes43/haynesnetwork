@@ -17,8 +17,15 @@ const member: SessionUser = {
     id: UUID_B,
     name: 'Default',
     isAdmin: false,
-    // The documented no-row defaults (ADR-032 flipped ledger to disabled; ADR-037 metrics disabled).
-    sectionPermissions: { ledger: 'disabled', trash: 'disabled', bulletin: 'read_only', metrics: 'disabled' },
+    // The documented no-row defaults (ADR-032 flipped ledger to disabled; ADR-037 metrics disabled;
+    // ADR-038 ytdlsub disabled — ships Admin-only).
+    sectionPermissions: {
+      ledger: 'disabled',
+      trash: 'disabled',
+      bulletin: 'read_only',
+      metrics: 'disabled',
+      ytdlsub: 'disabled',
+    },
     trashActions: [],
     messageActions: [],
     metricsLevel: 'limited',
@@ -37,6 +44,7 @@ const AUTHED_CALLS: Array<[string, (c: Caller) => Promise<unknown>]> = [
   ['ledger.wanted', (c) => c.ledger.wanted({})],
   ['fix.create', (c) => c.fix.create({ mediaItemId: UUID_A, reason: 'wrong_language' })],
   ['fix.myFixes', (c) => c.fix.myFixes()],
+  ['ytdlsub.access', (c) => c.ytdlsub.access()],
 ];
 
 /** Every admin procedure, with schema-valid inputs so FORBIDDEN is the only possible rejection. */

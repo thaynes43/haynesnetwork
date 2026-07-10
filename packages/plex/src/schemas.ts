@@ -39,6 +39,38 @@ export const librarySectionsSchema = z.object({
 });
 export type PlexLibrarySections = z.infer<typeof librarySectionsSchema>;
 
+/**
+ * ADR-038 / DESIGN-017 (PLAN-022) — `GET /library/sections/{key}/all` element. A top-level item of a
+ * library section (a "show" for a TV-Show-by-Date ytdl-sub library). `type` is a plain string (the UI
+ * decides how to render — same decoupling as librarySectionSchema). Numeric-ish fields arrive as strings
+ * in Plex JSON, so they are coerced. `thumb` is the Plex-RELATIVE poster path — it is never hot-linked;
+ * the ytdl-sub poster proxy (ADR-038 C-06) streams it server-side with the token.
+ */
+export const sectionItemSchema = z.object({
+  ratingKey: z.union([z.string(), z.number()]).transform(String),
+  key: z.string().optional(),
+  type: z.string(),
+  title: z.string(),
+  titleSort: z.string().optional(),
+  summary: z.string().optional(),
+  thumb: z.string().optional(),
+  art: z.string().optional(),
+  year: z.union([z.string(), z.number()]).transform(Number).optional(),
+  childCount: z.union([z.string(), z.number()]).transform(Number).optional(), // seasons
+  leafCount: z.union([z.string(), z.number()]).transform(Number).optional(), // episodes
+  addedAt: z.union([z.string(), z.number()]).transform(Number).optional(), // epoch secs
+});
+export type PlexSectionItem = z.infer<typeof sectionItemSchema>;
+
+export const sectionContentsSchema = z.object({
+  MediaContainer: z.object({
+    size: z.union([z.string(), z.number()]).transform(Number).optional(),
+    // Absent when the section is empty.
+    Metadata: z.array(sectionItemSchema).optional().default([]),
+  }),
+});
+export type PlexSectionContents = z.infer<typeof sectionContentsSchema>;
+
 // ---------------------------------------------------------------------------
 // plex.tv v1 sharing API (XML) — the read client extracts attributes into these plain
 // objects (all XML attrs are strings) and validates them here. Verified live 2026-07-06.

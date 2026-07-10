@@ -34,6 +34,17 @@ export { effectiveSectionLevel } from './middleware/role';
 export { effectiveMetricsLevel, metricsProcedure } from './middleware/role';
 // ADR-037 / DESIGN-016 — the Metrics Overview wire type (the /metrics client imports it TYPE-ONLY).
 export type { MetricsOverview } from './routers/metrics';
+// ADR-038 / DESIGN-017 (PLAN-022) — the ytdl-sub Library: the `ytdlsub` section rung (the /library route
+// gate reuses `effectiveSectionLevel`), the Plex-thumb proxy upstream resolver (used by the app poster
+// route), and the wire types the ytdl-sub browser imports TYPE-ONLY.
+export { ytdlsubProcedure } from './middleware/role';
+export { resolveYtdlsubThumbUpstream, isValidPlexThumbPath } from './ytdlsub-poster';
+export type {
+  YtdlsubShow,
+  YtdlsubListResult,
+  YtdlsubLibraryId,
+  YtdlsubLibrarySummary,
+} from './routers/ytdlsub';
 // ADR-022 / DESIGN-009 D-06 — the emergency Ledger JSONL export (used by the app export route).
 export {
   buildExportFilterFromParams,

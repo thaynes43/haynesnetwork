@@ -558,4 +558,29 @@ describe('migrations against embedded Postgres 16', () => {
       );
     });
   });
+
+  // ADR-038 / DESIGN-017 (migration 0032) — the ytdl-sub Library section: ONE CHECK relax admitting the
+  // new 'ytdlsub' role_section_permissions section (visibility; ships Admin-only). No new column/table.
+  describe('0032 ytdl-sub section (ADR-038 — role_section_permissions CHECK relax, preservation)', () => {
+    const DEFAULT_ROLE = '11111111-1111-4111-8111-111111111111';
+
+    it('role_section_permissions_section_enum admits the new ytdlsub section + prior sections, rejects unknown', async () => {
+      for (const section of ['metrics', 'ytdlsub']) {
+        await client.query(
+          `INSERT INTO role_section_permissions (role_id, section_id, level)
+             VALUES ('${DEFAULT_ROLE}', '${section}', 'read_only')
+             ON CONFLICT (role_id, section_id) DO UPDATE SET level = EXCLUDED.level`,
+        );
+      }
+      await expect(
+        client.query({
+          text: `INSERT INTO role_section_permissions (role_id, section_id, level)
+                   VALUES ('${DEFAULT_ROLE}', 'nope_section', 'read_only')`,
+        }),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query(
+        `DELETE FROM role_section_permissions WHERE role_id = '${DEFAULT_ROLE}' AND section_id IN ('metrics','ytdlsub')`,
+      );
+    });
+  });
 });

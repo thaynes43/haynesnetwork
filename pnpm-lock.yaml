@@ -132,6 +132,9 @@ importers:
       '@hnet/metrics':
         specifier: workspace:*
         version: link:../metrics
+      '@hnet/plex':
+        specifier: workspace:*
+        version: link:../plex
       '@hnet/ui':
         specifier: workspace:*
         version: link:../ui

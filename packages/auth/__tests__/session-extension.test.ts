@@ -37,6 +37,7 @@ describe('session extension (DESIGN-002 D-06 / DESIGN-003 D-01, ADR-012)', () =>
           trash: 'disabled',
           bulletin: 'read_only',
           metrics: 'disabled',
+          ytdlsub: 'disabled',
         },
         // ADR-023 — no grant rows ⇒ no Trash actions.
         trashActions: [],
@@ -65,7 +66,13 @@ describe('session extension (DESIGN-002 D-06 / DESIGN-003 D-01, ADR-012)', () =>
         name: 'Admin',
         isAdmin: true,
         // ADR-021 C-03 — admin implies Edit on every section (no rows).
-        sectionPermissions: { ledger: 'edit', trash: 'edit', bulletin: 'edit', metrics: 'edit' },
+        sectionPermissions: {
+          ledger: 'edit',
+          trash: 'edit',
+          bulletin: 'edit',
+          metrics: 'edit',
+          ytdlsub: 'edit',
+        },
         // ADR-023 C-03 — admin implies EVERY Trash action (no rows).
         trashActions: [...TRASH_ACTIONS],
         // ADR-026 C-04 — admin implies EVERY Bulletin message action (no rows).
@@ -102,6 +109,7 @@ describe('session extension (DESIGN-002 D-06 / DESIGN-003 D-01, ADR-012)', () =>
       trash: 'disabled',
       bulletin: 'read_only',
       metrics: 'disabled',
+      ytdlsub: 'disabled',
     });
   });
 
