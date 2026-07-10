@@ -1,0 +1,5 @@
+{
+  "default-authentication-flow": "Welcome to authentik!",
+  "default-source-authentication": "Welcome to authentik!",
+  "default-source-enrollment": "Welcome to authentik! Please select a username."
+}
