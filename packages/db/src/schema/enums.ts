@@ -213,7 +213,10 @@ export type PlexShareEvent = (typeof PLEX_SHARE_EVENTS)[number];
 
 // ADR-026 / DESIGN-012 — 'bulletin' joins the section set (PLAN-009 Bulletin: Feed + Messages).
 // ADR-037 / DESIGN-016 — 'metrics' joins the section set (PLAN-017 Metrics section foundation).
-export const SECTION_IDS = ['ledger', 'trash', 'bulletin', 'metrics'] as const; // 'trash' PLAN-006; 'bulletin' PLAN-009; 'metrics' PLAN-017
+// ADR-038 / DESIGN-017 — 'ytdlsub' joins the section set (PLAN-022 ytdl-sub Library sub-tabs). It gates
+// the Peloton/YouTube sub-tabs INSIDE the (universal, ungated) Library section — Library itself has no
+// section id; this is the visibility knob for its ytdl-sub content only.
+export const SECTION_IDS = ['ledger', 'trash', 'bulletin', 'metrics', 'ytdlsub'] as const; // 'trash' PLAN-006; 'bulletin' PLAN-009; 'metrics' PLAN-017; 'ytdlsub' PLAN-022
 export type SectionId = (typeof SECTION_IDS)[number];
 
 export const SECTION_PERMISSION_LEVELS = ['edit', 'read_only', 'disabled'] as const;
@@ -251,6 +254,10 @@ export const SECTION_DEFAULT_LEVELS: Record<SectionId, SectionPermissionLevel> =
   // pattern: the section ships Admin-only (an is_admin role implies `edit`; every other role needs a
   // stored row to opt in). The owner opens it to the Default role (`read_only`) after his morning review.
   metrics: 'disabled',
+  // ADR-038 C-04 (PLAN-022 ytdl-sub Library) — `ytdlsub` defaults to `disabled`, the same ship-Admin-only
+  // rollout: the Peloton/YouTube Library sub-tabs are hidden for non-admins until a role row opts them in
+  // (an is_admin role implies `edit`). The owner flips visibility per role after his screenshot review.
+  ytdlsub: 'disabled',
 };
 
 /** disabled < read_only < edit — the total order `sectionProcedure` gates on (ADR-021). */

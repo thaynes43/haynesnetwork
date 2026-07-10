@@ -13,7 +13,9 @@ export function KindIcon({ kind, className }: { kind: string; className?: string
     strokeLinejoin: 'round' as const,
     'aria-hidden': true,
   };
-  if (kind === 'sonarr') {
+  // ADR-038 (PLAN-022) — ytdl-sub "TV Show by Date" shows fall back to the TV-frame glyph (same as
+  // sonarr TV), currentColor only (no new asset, no hex).
+  if (kind === 'sonarr' || kind === 'show') {
     return (
       <svg {...common}>
         <rect x="3" y="5" width="18" height="12" rx="2" />

@@ -13,11 +13,13 @@ import {
   plexAccountSchema,
   plexFriendSchema,
   plexServerSectionSchema,
+  sectionContentsSchema,
   sharedServerSchema,
   type PlexAccount,
   type PlexFriend,
   type PlexIdentity,
   type PlexLibrarySection,
+  type PlexSectionItem,
   type PlexServerSection,
   type PlexSharedServer,
 } from './schemas';
@@ -83,6 +85,25 @@ export class PlexReadClient {
       librarySectionsSchema,
     );
     return body.MediaContainer.Directory;
+  }
+
+  /**
+   * ADR-038 / DESIGN-017 (PLAN-022) — `GET /library/sections/{key}/all`: the section's top-level items
+   * (the shows of a TV-Show-by-Date ytdl-sub library). Read-only, container-size bounded (ADR-038 C-08);
+   * the token stays in the X-Plex-Token header, never the URL. Consumed by the ytdl-sub Library router.
+   */
+  async listSectionContents(
+    sectionKey: string,
+    opts?: { limit?: number },
+  ): Promise<PlexSectionItem[]> {
+    const size = Math.min(Math.max(opts?.limit ?? 500, 1), 1000);
+    const body = await this.http.requestJson(
+      'GET',
+      `${this.baseUrl}/library/sections/${encodeURIComponent(sectionKey)}/all`,
+      sectionContentsSchema,
+      { query: { 'X-Plex-Container-Start': 0, 'X-Plex-Container-Size': size } },
+    );
+    return body.MediaContainer.Metadata;
   }
 
   // ---- plex.tv account read (owner identity) ----

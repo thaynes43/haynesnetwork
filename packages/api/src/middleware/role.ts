@@ -67,6 +67,14 @@ export function effectiveMetricsLevel(role: SessionRole): MetricsLevel {
 export const metricsProcedure = sectionProcedure('metrics', 'read_only');
 
 /**
+ * ADR-038 C-05 (PLAN-022 ytdl-sub Library) — the ytdl-sub rung: authed AND the caller can SEE the
+ * `ytdlsub` section (≥ read_only). The section defaults to `disabled` (ships Admin-only; a role row opts
+ * others in), so this gate is the visibility check for the Peloton/YouTube Library sub-tabs AND the
+ * Plex-thumb poster proxy. Server-authoritative (AC-13) — never client-hidden only.
+ */
+export const ytdlsubProcedure = sectionProcedure('ytdlsub', 'read_only');
+
+/**
  * ADR-025 errata (2026-07-08, owner-directed) — GLOBAL SAVE IS A SUPERSET OF THE WINDOWED RESCUE.
  * Holding `save_exclude` (the anytime whitelist power — "Save items, anytime") IMPLIES
  * `save_leaving_soon` (the narrow "Save during a Leaving-Soon window" grant): if you can whitelist

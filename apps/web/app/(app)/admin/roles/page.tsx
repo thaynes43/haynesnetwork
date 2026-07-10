@@ -513,6 +513,7 @@ export default function AdminRolesPage() {
             <th>Trash</th>
             <th>Bulletin</th>
             <th>Metrics</th>
+            <th>Library extras</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -773,6 +774,39 @@ export default function AdminRolesPage() {
                         <option value="limited">Limited</option>
                       </select>
                     </span>
+                  )}
+                </td>
+                {/* ADR-038 / DESIGN-017 D-05 (PLAN-022) — the ytdl-sub Library sub-tabs (Peloton /
+                    YouTube) visibility. A plain section-level cell (no fine-grained actions); ships
+                    Admin-only via the `disabled` default. Same audited setSection writer as the other
+                    sections; constant width (ADR-015). */}
+                <td className="role-level-cell" data-label="Library extras">
+                  {role.isAdmin ? (
+                    <span
+                      className="muted"
+                      title="The Admin role implies Edit on every section, including the ytdl-sub Library sub-tabs"
+                    >
+                      Edit
+                    </span>
+                  ) : (
+                    <select
+                      className="section-select"
+                      aria-label={`ytdl-sub Library visibility for ${role.name}`}
+                      data-testid={`ytdlsub-level-${role.name}`}
+                      value={role.sectionPermissions.ytdlsub}
+                      disabled={busy || editingElsewhere}
+                      onChange={(e) =>
+                        setSection.mutate({
+                          roleId: role.id,
+                          sectionId: 'ytdlsub',
+                          level: e.target.value as 'edit' | 'read_only' | 'disabled',
+                        })
+                      }
+                    >
+                      <option value="edit">Edit</option>
+                      <option value="read_only">Read-only</option>
+                      <option value="disabled">Disabled</option>
+                    </select>
                   )}
                 </td>
                 <td data-label="Actions">

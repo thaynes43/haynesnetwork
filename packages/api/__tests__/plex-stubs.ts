@@ -16,6 +16,20 @@ export interface FakeServerConfig {
   serverSections: Array<{ id: string; key: string }>;
   /** PMS `/library/sections`. */
   librarySections: Array<{ key: string; title: string; type: string }>;
+  /** ADR-038 — PMS `/library/sections/{key}/all` per section key (the ytdl-sub shows). */
+  sectionContents?: Record<
+    string,
+    Array<{
+      ratingKey: string;
+      title: string;
+      type?: string;
+      thumb?: string;
+      childCount?: number;
+      leafCount?: number;
+      year?: number;
+      addedAt?: number;
+    }>
+  >;
   /** Seeded current shares: userId → shared plex.tv section ids (+ optional all-libraries flag). */
   shared?: Record<string, { id: string; sectionIds: number[]; allLibraries?: boolean }>;
 }
@@ -46,6 +60,10 @@ function makeServer(slug: PlexServerName, cfg: FakeServerConfig, writes: Recorde
     machineIdentifier: cfg.machineIdentifier,
     async listSections() {
       return cfg.librarySections.map((s) => ({ ...s, agent: '' }));
+    },
+    // ADR-038 — the ytdl-sub section-contents read (a section's shows).
+    async listSectionContents(sectionKey: string) {
+      return (cfg.sectionContents?.[sectionKey] ?? []).map((i) => ({ type: 'show', ...i }));
     },
     async getIdentity() {
       return { machineIdentifier: cfg.machineIdentifier, version: '1.43.2' };

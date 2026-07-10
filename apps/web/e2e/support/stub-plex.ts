@@ -47,14 +47,67 @@ interface StubSection {
 }
 
 // The canonical e2e library set — mirrors what seed-ledger.ts seeds into plex_libraries.
+// ADR-038 (PLAN-022) — k8plex also carries the two ytdl-sub "TV Show by Date" libraries.
 const LIBRARIES: Record<Slug, StubSection[]> = {
   haynestower: [
     { key: '1', title: 'HNet Movies', type: 'movie', plexId: '118181361' },
     { key: '4', title: 'HNet Photos', type: 'photo', plexId: '118278404' }, // family-only
   ],
   haynesops: [{ key: '1', title: 'HOps Movies', type: 'movie', plexId: '200001' }],
-  hayneskube: [{ key: '2', title: 'HOps Music', type: 'artist', plexId: '300002' }],
+  hayneskube: [
+    { key: '2', title: 'HOps Music', type: 'artist', plexId: '300002' },
+    { key: '4', title: 'HOps Peloton', type: 'show', plexId: '300004' },
+    { key: '5', title: 'HOps YT', type: 'show', plexId: '300005' },
+  ],
 };
+
+interface StubSectionItem {
+  ratingKey: string;
+  title: string;
+  type: string;
+  thumb?: string;
+  childCount?: number;
+  leafCount?: number;
+  year?: number;
+  addedAt?: number;
+}
+
+// ADR-038 — canned `/library/sections/{key}/all` contents per (slug, sectionKey). One show carries a
+// Plex thumb (the poster-proxy round-trip); another omits it (the KindIcon fallback tile).
+const SECTION_CONTENTS: Partial<Record<Slug, Record<string, StubSectionItem[]>>> = {
+  hayneskube: {
+    '4': [
+      {
+        ratingKey: '9001',
+        title: 'Bike Bootcamp',
+        type: 'show',
+        thumb: '/library/metadata/9001/thumb/1699',
+        childCount: 4,
+        leafCount: 128,
+        year: 2024,
+        addedAt: 1_699_990_000,
+      },
+      { ratingKey: '9002', title: 'Power Zone Endurance', type: 'show', childCount: 3, leafCount: 57 },
+    ],
+    '5': [
+      {
+        ratingKey: '7001',
+        title: 'Documentaries',
+        type: 'show',
+        thumb: '/library/metadata/7001/thumb/1701',
+        childCount: 6,
+        leafCount: 240,
+        addedAt: 1_701_000_000,
+      },
+    ],
+  },
+};
+
+// A 1x1 transparent PNG the stub streams for any Plex thumb path (so the poster proxy returns a 200).
+const TINY_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+  'base64',
+);
 
 const SLUG_BY_TOKEN = new Map<string, Slug>(
   (Object.entries(STUB_PLEX_TOKENS) as Array<[Slug, string]>).map(([slug, token]) => [token, slug]),
@@ -223,6 +276,19 @@ export async function startStubPlex(): Promise<StubPlexServer> {
           ? LIBRARIES[slug].map((s) => ({ key: s.key, type: s.type, title: s.title, agent: 'tv.plex.agents.none' }))
           : [];
         return json(res, 200, { MediaContainer: { size: Directory.length, Directory } });
+      }
+      // ADR-038 (PLAN-022) — a library section's contents (the ytdl-sub shows).
+      const allMatch = path.match(/^\/library\/sections\/([^/]+)\/all$/);
+      if (allMatch) {
+        const slug = tokenStr ? SLUG_BY_TOKEN.get(tokenStr) : undefined;
+        const key = allMatch[1]!;
+        const Metadata = (slug && SECTION_CONTENTS[slug]?.[key]) || [];
+        return json(res, 200, { MediaContainer: { size: Metadata.length, Metadata } });
+      }
+      // ADR-038 — the Plex thumb the poster proxy streams (a tiny PNG for any /library/…/thumb/… path).
+      if (/^\/library\/metadata\/[^/]+\/thumb\//.test(path)) {
+        res.writeHead(200, { 'content-type': 'image/png', 'content-length': String(TINY_PNG.length) });
+        return res.end(TINY_PNG);
       }
 
       // ---- plex.tv sharing API (disambiguated by machineId in the path) ----

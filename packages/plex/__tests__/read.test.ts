@@ -6,6 +6,7 @@ import {
   ACCOUNT_JSON,
   IDENTITY_JSON,
   LIBRARY_SECTIONS_JSON,
+  SECTION_CONTENTS_JSON,
   SERVER_SECTIONS_XML,
   SHARED_SERVERS_XML,
   USERS_XML,
@@ -41,6 +42,29 @@ describe('PlexReadClient — PMS registry reads', () => {
     expect(call.headers['X-Plex-Token']).toBe('owner-secret-token');
     expect(call.url.toString()).not.toContain('owner-secret-token');
     expect(call.url.search).toBe('');
+  });
+});
+
+// ADR-038 / DESIGN-017 (PLAN-022) — the ytdl-sub section-contents read.
+describe('PlexReadClient — listSectionContents (ADR-038)', () => {
+  it('parses /library/sections/{key}/all into typed shows (coerced numbers, optional thumb)', async () => {
+    const stub = plexStub([{ path: /\/library\/sections\/2\/all$/, body: SECTION_CONTENTS_JSON }]);
+    const items = await client(stub).listSectionContents('2');
+    expect(items.map((i) => [i.ratingKey, i.title, i.childCount, i.leafCount])).toEqual([
+      ['9001', 'Bike Bootcamp', 4, 128],
+      ['9002', 'Power Zone Endurance', 3, 57],
+    ]);
+    expect(items[0]!.thumb).toBe('/library/metadata/9001/thumb/1699999999');
+    expect(items[1]!.thumb).toBeUndefined(); // no thumb → UI fallback tile
+  });
+
+  it('sends a bounded container size in the query and the token stays in the header', async () => {
+    const stub = plexStub([{ path: /\/library\/sections\/2\/all$/, body: SECTION_CONTENTS_JSON }]);
+    await client(stub).listSectionContents('2', { limit: 250 });
+    const call = stub.calls[0]!;
+    expect(call.headers['X-Plex-Token']).toBe('owner-secret-token');
+    expect(call.url.searchParams.get('X-Plex-Container-Size')).toBe('250');
+    expect(call.url.toString()).not.toContain('owner-secret-token');
   });
 });
 

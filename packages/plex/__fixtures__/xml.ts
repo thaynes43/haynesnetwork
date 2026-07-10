@@ -64,6 +64,37 @@ export const IDENTITY_JSON = {
 };
 
 /**
+ * ADR-038 / DESIGN-017 — `GET /library/sections/{key}/all` JSON (PMS read) for a ytdl-sub
+ * "TV Show by Date" library: numeric-ish fields as strings (as Plex emits), a Plex-relative thumb.
+ */
+export const SECTION_CONTENTS_JSON = {
+  MediaContainer: {
+    size: 2,
+    Metadata: [
+      {
+        ratingKey: '9001',
+        key: '/library/metadata/9001/children',
+        type: 'show',
+        title: 'Bike Bootcamp',
+        thumb: '/library/metadata/9001/thumb/1699999999',
+        childCount: '4',
+        leafCount: '128',
+        year: '2024',
+        addedAt: '1699990000',
+      },
+      {
+        ratingKey: 9002, // Plex sometimes emits a number
+        type: 'show',
+        title: 'Power Zone Endurance',
+        // no thumb → the UI falls back to the KindIcon tile
+        childCount: 3,
+        leafCount: 57,
+      },
+    ],
+  },
+};
+
+/**
  * `GET /api/v2/user` JSON (plex.tv) — the token account, i.e. the server OWNER. Shaped like the
  * live response (id is a number; many extra fields) with a fake email/id so no PII lands in the
  * repo. The read client consumes only { id, email, username } (ADR-029).
