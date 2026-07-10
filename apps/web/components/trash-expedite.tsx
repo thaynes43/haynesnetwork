@@ -70,11 +70,7 @@ export function ExpediteItemConfirm({
       ) : (
         <p className="status-note">
           This item is{' '}
-          {verdict === 'protected_watched'
-            ? 'recently watched'
-            : verdict === 'protected_requested'
-              ? 'personally requested'
-              : 'whitelisted'}{' '}
+          {verdict === 'protected_watched' ? 'recently watched' : 'whitelisted'}{' '}
           — instead of deleting, Maintainerr will <strong>protect it</strong> (auto-whitelist).
         </p>
       )}
@@ -132,8 +128,8 @@ export function ExpediteReport({
           being removed now.
         </li>
         <li>
-          <strong>Protected</strong> — deliberately kept: recently watched, requested, or
-          whitelisted/saved (watched/requested items were auto-whitelisted during this run).
+          <strong>Protected</strong> — deliberately kept: recently watched or whitelisted/saved
+          (watched items were auto-whitelisted during this run).
         </li>
         <li>
           <strong>Skipped</strong> — could not be verified safe <em>or</em> its protection could not

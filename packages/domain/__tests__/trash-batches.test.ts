@@ -29,7 +29,6 @@ import {
   getBatchSaveStats,
   greenlightBatch,
   listBatches,
-  reclassifyRequestedSave,
   selectBatchCandidates,
   setAppSetting,
   setBatchItemSaved,
@@ -337,6 +336,11 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     const byMedia = new Map(items.map((i) => [i.maintainerrMediaId, i]));
     expect(byMedia.get('ms-9003')!.state).toBe('protected'); // dnd-tagged
     expect(byMedia.get('ms-9001')!.state).toBe('pending');
+    // A requester-carrying item (9004) snapshots per its REAL state — pending, no system auto-save
+    // (owner ruling 2026-07-09 — requested is informational only, never an app-side keep).
+    expect(byMedia.get('ms-9004')!.state).toBe('pending');
+    expect(byMedia.get('ms-9004')!.savedReason).toBeNull();
+    expect(byMedia.get('ms-9004')!.savedAt).toBeNull();
     expect(byMedia.get('ms-9009')!.state).toBe('pending'); // unresolved but still snapshotted
     expect(byMedia.get('ms-9009')!.mediaItemId).toBeNull();
 
@@ -470,59 +474,34 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     expect(unsaveByManager).toEqual({ changed: true, state: 'pending' });
   });
 
-  // ── build B — requested items start saved (overridable) ─────────────────────────────────
+  // ── ADR-025 errata (2026-07-09) — requested items are informational only ────────────────────
+  // Owner ruling: "Maintainerr rules decide what gets promoted; the app controls how much and when
+  // it's deleted." A requester is NOT an app-side keep — it never auto-saves, never overrules the
+  // sweep, and its attribution is surfaced as an info badge (tested in the app glyph suite).
 
-  it('createBatchFromPending auto-saves requester items as a SYSTEM save (savedReason requested, no exclusion)', async () => {
+  it('createBatchFromPending does NOT auto-save requester items (no save, no exclusion, not a rescue)', async () => {
     const { bundle, calls } = makeMaintainerr(baseState());
     const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
     const req = (await itemsOf(batchId)).find((i) => i.maintainerrMediaId === 'ms-9004')!;
-    // 9004 (requesters ['alice'], cold) starts SAVED, tagged 'requested', with NO human saver…
-    expect(req.state).toBe('saved');
-    expect(req.savedReason).toBe('requested');
+    // 9004 (requesters ['alice'], cold) snapshots PENDING — no system auto-save, no saved_reason.
+    expect(req.state).toBe('pending');
+    expect(req.savedReason).toBeNull();
     expect(req.savedBy).toBeNull();
-    expect(req.requestedOverride).toBe(false);
-    // …and NO Maintainerr exclusion was written for it (the guardian is the real keep, not a mass mutation).
+    // NO Maintainerr exclusion was written for it (nothing is being protected).
     expect(calls.some((c) => c.method === 'POST' && c.pathname === '/rules/exclusion')).toBe(false);
-    // It is excluded from the human "who rescued what" tuning stats (system save, not a rescue).
+    // No system saves exist, so the human "who rescued what" tuning stats stay empty.
     const stats = await getBatchSaveStats({ db: t.db, batchId });
     expect(stats.totalSaves).toBe(0);
   });
 
-  it('un-saving a requested auto-save is allowed for any saver, sets requestedOverride, and audits overrodeRequested', async () => {
-    const { bundle } = makeMaintainerr(baseState());
-    const saver = (await createUser(t.db, { email: 'req-saver@example.com' })).id;
-    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
-    await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: 14, actorId }); // open window
-    const req = (await itemsOf(batchId)).find((i) => i.maintainerrMediaId === 'ms-9004')!;
-
-    // A bare save-window holder (NOT the owner, NOT a manager) may un-save it — a system save has no
-    // human owner, so the ownership gate does not apply (would throw for an ordinary human rescue).
-    const res = await setBatchItemSaved({
-      db: t.db, maintainerr: bundle, batchId, itemId: req.id, saved: false, actorId: saver, callerCanManage: false,
-    });
-    expect(res).toEqual({ changed: true, state: 'pending' });
-    const [after] = await t.db.select().from(trashBatchItems).where(eq(trashBatchItems.id, req.id));
-    expect(after!.state).toBe('pending');
-    expect(after!.requestedOverride).toBe(true);
-    expect(after!.savedReason).toBeNull();
-    // The override is audited (a trash_excluded event flagged overrodeRequested).
-    const evs = await t.db.select().from(ledgerEvents).where(eq(ledgerEvents.eventType, 'trash_excluded'));
-    expect(
-      evs.some((e) => (e.payload as Record<string, unknown>).overrodeRequested === true),
-    ).toBe(true);
-  });
-
-  it('guardian override: a NEVER-unsaved requested item is KEPT at sweep; an explicitly-unsaved one is DELETED', async () => {
+  it('a requested item with no save is DELETED at the sweep (the guardian no longer keeps requesters)', async () => {
     const { bundle, calls } = makeMaintainerr(baseState());
     const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
-    const req = (await itemsOf(batchId)).find((i) => i.maintainerrMediaId === 'ms-9004')!;
-    // Explicitly un-save the requested item → requestedOverride true (it becomes a delete candidate).
-    await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: req.id, saved: false, actorId });
     await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: -1, actorId }); // expired
     const report = await sweepExpiredBatches({ db: t.db, maintainerr: bundle, actorId });
 
     const after = await itemsOf(batchId);
-    // 9004 (requested, OVERRIDDEN) is now deleted alongside 9001 (cold); the requester keep no longer protects it.
+    // 9004 (requested, unsaved) is deleted alongside 9001 (cold) — the requester keep is gone.
     expect(after.find((i) => i.maintainerrMediaId === 'ms-9004')!.state).toBe('deleted');
     expect(after.find((i) => i.maintainerrMediaId === 'ms-9001')!.state).toBe('deleted');
     expect(report.batches[0]!.deletedCount).toBe(2);
@@ -533,53 +512,48 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     expect(handled).toEqual(['ms-9001', 'ms-9004']);
   });
 
-  it('guardian override is per-item: an un-saved requested item deletes, but a re-SAVED one is kept', async () => {
+  it('a requester item a human explicitly SAVES is kept — the save (not the requester) is the keep', async () => {
     const { bundle } = makeMaintainerr(baseState());
     const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
     const req = (await itemsOf(batchId)).find((i) => i.maintainerrMediaId === 'ms-9004')!;
-    // Override it, then a human RE-saves it — a re-saved item is 'saved' again and never swept.
-    await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: req.id, saved: false, actorId });
+    // A human deliberately rescues the requested item — an ordinary save, kept by its save at sweep.
     await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: req.id, saved: true, actorId });
     await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: -1, actorId });
     await sweepExpiredBatches({ db: t.db, maintainerr: bundle, actorId });
-    expect((await itemsOf(batchId)).find((i) => i.maintainerrMediaId === 'ms-9004')!.state).toBe('saved');
+    const saved = (await itemsOf(batchId)).find((i) => i.maintainerrMediaId === 'ms-9004')!;
+    expect(saved.state).toBe('saved');
+    expect(saved.savedBy).toBe(actorId); // a real human rescue, not a system 'requested' auto-save
+    expect(saved.savedReason).toBeNull();
   });
 
   // ── ADR-025 errata (2026-07-09) — un-protect an exclusion-held `protected` item (the Baldwins fix) ──
 
-  /** Simulate a LEGACY pre-0026 snapshot of one item: a `protected` batch row (saved_reason NULL,
-   *  no human saver) held by a live Maintainerr exclusion — exactly the stranded Baldwins shape. */
+  /** Simulate a LEGACY snapshot of one item: a `protected` batch row (saved_reason NULL, no human
+   *  saver) held by a live Maintainerr exclusion — exactly the stranded Baldwins shape. */
   const makeLegacyProtected = async (batchId: string, mediaServerId: string, exclusions: Set<string>) => {
     const item = (await itemsOf(batchId)).find((i) => i.maintainerrMediaId === mediaServerId)!;
     await t.db
       .update(trashBatchItems)
-      .set({ state: 'protected', savedReason: null, savedBy: null, savedAt: null, requestedOverride: false })
+      .set({ state: 'protected', savedReason: null, savedBy: null, savedAt: null })
       .where(eq(trashBatchItems.id, item.id));
     exclusions.add(mediaServerId); // the live whitelist that froze it as `protected`
     return item.id;
   };
 
-  it('reclassifyRequestedSave: requester-carrying + no human saver (legacy null reason) reads as requested', () => {
-    expect(reclassifyRequestedSave({ savedReason: 'requested', savedBy: null, requesters: [] })).toBe('requested');
-    expect(reclassifyRequestedSave({ savedReason: null, savedBy: null, requesters: ['manofoz'] })).toBe('requested');
-    // A human rescue (saved_by set) is an ordinary filled shield, never the person-shield…
-    expect(reclassifyRequestedSave({ savedReason: null, savedBy: 'user-1', requesters: ['manofoz'] })).toBeNull();
-    // …and a no-requester keep is a plain save.
-    expect(reclassifyRequestedSave({ savedReason: null, savedBy: null, requesters: [] })).toBeNull();
-  });
-
-  it('unprotectBatchItem: a REQUESTER-carrying protected item → removes the exclusion + becomes requested-saved (person-shield)', async () => {
+  it('unprotectBatchItem: a REQUESTER-carrying protected item → removes the exclusion + falls to slated pending', async () => {
     const state = baseState();
     const { bundle, calls } = makeMaintainerr(state);
     const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
     // ms-9004 carries requester 'alice'. Freeze it as the legacy protected+excluded Baldwins shape.
     const itemId = await makeLegacyProtected(batchId, 'ms-9004', state.exclusions);
 
+    // Un-protecting is about the EXCLUSION, not the requester — the freed row lands slated `pending`
+    // (a requester no longer lands it on a person-shield 'saved' — requested is informational only).
     const res = await unprotectBatchItem({ db: t.db, maintainerr: bundle, batchId, itemId, actorId });
-    expect(res).toEqual({ changed: true, state: 'saved' });
+    expect(res).toEqual({ changed: true, state: 'pending' });
     const [row] = await t.db.select().from(trashBatchItems).where(eq(trashBatchItems.id, itemId));
-    expect(row!.state).toBe('saved');
-    expect(row!.savedReason).toBe('requested'); // the person-shield — the guardian is its real keep
+    expect(row!.state).toBe('pending');
+    expect(row!.savedReason).toBeNull();
     expect(row!.savedBy).toBeNull();
     // The standing exclusion was removed through the guarded seam (external DELETE fired + no longer excluded).
     expect(state.exclusions.has('ms-9004')).toBe(false);
@@ -614,26 +588,22 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     });
   });
 
-  it('THE BALDWINS CHAIN: protected(exclusion) → un-protect → requested-saved → un-save → slated → sweep DELETES', async () => {
+  it('THE BALDWINS CHAIN: protected(exclusion) → un-protect → slated pending → sweep DELETES', async () => {
     const state = baseState();
     const { bundle, calls } = makeMaintainerr(state);
     const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
     await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: 14, actorId }); // open window
     const itemId = await makeLegacyProtected(batchId, 'ms-9004', state.exclusions);
 
-    // Tap 1 — un-protect: the exclusion is removed and it re-classifies to the requested person-shield.
-    const t1 = await unprotectBatchItem({ db: t.db, maintainerr: bundle, batchId, itemId, actorId });
-    expect(t1).toEqual({ changed: true, state: 'saved' });
-    expect((await t.db.select().from(trashBatchItems).where(eq(trashBatchItems.id, itemId)))[0]!.savedReason).toBe('requested');
-
-    // Tap 2 — un-save the requested auto-save: it slates (pending) and records the guardian override.
-    const t2 = await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId, saved: false, actorId });
-    expect(t2).toEqual({ changed: true, state: 'pending' });
+    // Tap — un-protect: the exclusion is removed and the freed row slates directly to `pending`
+    // (a requester no longer intercepts it into a 'saved' person-shield).
+    const tapped = await unprotectBatchItem({ db: t.db, maintainerr: bundle, batchId, itemId, actorId });
+    expect(tapped).toEqual({ changed: true, state: 'pending' });
     const [slated] = await t.db.select().from(trashBatchItems).where(eq(trashBatchItems.id, itemId));
     expect(slated!.state).toBe('pending');
-    expect(slated!.requestedOverride).toBe(true); // the sweep guardian's requester keep is now overridden
+    expect(slated!.savedReason).toBeNull();
 
-    // Expire the window and sweep — the overridden requester item is DELETED (the owner's goal).
+    // Expire the window and sweep — the freed, unsaved item is DELETED (the owner's goal).
     await t.db.update(trashBatches).set({ expiresAt: new Date(Date.now() - 1000) }).where(eq(trashBatches.id, batchId));
     const report = await sweepExpiredBatches({ db: t.db, maintainerr: bundle, actorId });
     const after = await itemsOf(batchId);
@@ -645,24 +615,23 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     expect(report.batches[0]!.deletedCount).toBeGreaterThanOrEqual(1);
   });
 
-  it('getBatchDetail reclassifies a LEGACY saved requester row (null reason, no saver) to the person-shield on read', async () => {
+  it('getBatchDetail exposes requesters (for the meta badge) but NEVER invents a person-shield save', async () => {
     const { bundle } = makeMaintainerr(baseState());
     const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
-    // Force ms-9004 into the legacy saved shape (state saved, no human saver, saved_reason wiped).
-    const req = (await itemsOf(batchId)).find((i) => i.maintainerrMediaId === 'ms-9004')!;
-    await t.db
-      .update(trashBatchItems)
-      .set({ state: 'saved', savedReason: null, savedBy: null })
-      .where(eq(trashBatchItems.id, req.id));
-    // A human save (ms-9001 saved by the actor) must NOT reclassify — it is a real filled shield.
+    // A human save (ms-9001 saved by the actor) is an ordinary filled shield with no saved_reason.
     const cold = (await itemsOf(batchId)).find((i) => i.maintainerrMediaId === 'ms-9001')!;
     await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: cold.id, saved: true, actorId });
 
     const detail = await getBatchDetail({ db: t.db, batchId });
     const reqItem = detail.items.find((i) => i.maintainerrMediaId === 'ms-9004')!;
     const humanItem = detail.items.find((i) => i.maintainerrMediaId === 'ms-9001')!;
-    expect(reqItem.savedReason).toBe('requested'); // reclassified on read (person-shield)
-    expect(humanItem.savedReason).toBeNull(); // a human rescue stays the filled shield
+    // The requester rides the read model as INFO for the wall's meta badge — but the item stays a
+    // plain slated `pending` (no person-shield reclassification any more).
+    expect(reqItem.requesters).toEqual(['alice']);
+    expect(reqItem.state).toBe('pending');
+    // A human rescue stays the filled shield — an ordinary save, never a 'requested' auto-save.
+    expect(humanItem.state).toBe('saved');
+    expect(humanItem.savedBy).toBe(actorId);
   });
 
   it('skip-gate: with the setting ON, createBatch auto-green-lights straight to leaving_soon (audited gate_skipped)', async () => {
@@ -697,7 +666,7 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     expect(row!.state).toBe('leaving_soon'); // untouched
   });
 
-  it('sweep deletes only cold survivors: guardian keeps watched/requested/unevaluable; snapshot captured', async () => {
+  it('sweep deletes cold survivors incl. an unsaved requested item; keeps watched/unevaluable; snapshot captured', async () => {
     const { bundle, calls } = makeMaintainerr(baseState());
     const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
     await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: -1, actorId });
@@ -705,17 +674,18 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
 
     expect(report.batchesSwept).toBe(1);
     const r = report.batches[0]!;
-    expect(r.deletedCount).toBe(1); // only 9001 (cold)
-    // build B — 9004 (requested) now starts as a SYSTEM auto-save, so it is no longer a pending
-    // candidate at sweep: only 9002 (watched) + 9009 (unevaluable) land skipped, and 9004 is saved.
-    expect(r.skippedCount).toBe(2);
-    expect(r.savedCount).toBe(1); // 9004 requested auto-save
+    // 9004 (requested) is no longer auto-saved — it snapshots pending and is COLD at sweep, so it
+    // deletes alongside 9001. Only 9002 (recently watched — the owner-ratified keep) and 9009
+    // (unevaluable) are kept, and 9003 (dnd) stays protected. No system saves exist.
+    expect(r.deletedCount).toBe(2); // 9001 + 9004 (both cold)
+    expect(r.skippedCount).toBe(2); // 9002 watched + 9009 unevaluable
+    expect(r.savedCount).toBe(0);
     expect(r.protectedCount).toBe(1); // 9003 dnd
 
-    // Exactly one per-item handle fired — for the cold item.
+    // Two per-item handles fired — for the two cold items.
     const handles = calls.filter((c) => c.pathname === '/collections/media/handle');
-    expect(handles).toHaveLength(1);
-    expect((handles[0]!.body as { mediaId: string }).mediaId).toBe('ms-9001');
+    expect(handles).toHaveLength(2);
+    expect(handles.map((h) => (h.body as { mediaId: string }).mediaId).sort()).toEqual(['ms-9001', 'ms-9004']);
 
     const items = await itemsOf(batchId);
     const cold = items.find((i) => i.maintainerrMediaId === 'ms-9001')!;
@@ -723,6 +693,8 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     expect(cold.deletedSizeBytes).toBe(4_000_000_000);
     expect(cold.deletedResolution).toBe('2160p');
     expect(Number(cold.deletedImdbRating)).toBe(7.5);
+    expect(items.find((i) => i.maintainerrMediaId === 'ms-9004')!.state).toBe('deleted');
+    // The recently-watched keep is UNCHANGED (owner-ratified exception — covers mid-window viewing).
     expect(items.find((i) => i.maintainerrMediaId === 'ms-9002')!.state).toBe('skipped');
     expect(items.find((i) => i.maintainerrMediaId === 'ms-9009')!.state).toBe('skipped');
 
@@ -744,9 +716,14 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: -1, actorId });
     const report = await sweepExpiredBatches({ db: t.db, maintainerr: bundle, actorId });
 
-    expect(report.batches[0]!.deletedCount).toBe(0); // the only cold item was saved
-    expect(report.batches[0]!.savedCount).toBe(2); // 9001 (human save) + 9004 (requested auto-save)
-    expect(calls.some((c) => c.pathname === '/collections/media/handle')).toBe(false);
+    // 9001 (human-saved) is untouched; 9004 (requested but UNSAVED) is now cold and deletes — a
+    // requester is no longer a keep. Exactly one handle fires, and never for the saved item.
+    expect(report.batches[0]!.deletedCount).toBe(1); // 9004 (requested, unsaved)
+    expect(report.batches[0]!.savedCount).toBe(1); // only the human save (9001)
+    const handled = calls
+      .filter((c) => c.pathname === '/collections/media/handle')
+      .map((c) => (c.body as { mediaId: string }).mediaId);
+    expect(handled).toEqual(['ms-9004']);
     const saved = (await itemsOf(batchId)).find((i) => i.maintainerrMediaId === 'ms-9001')!;
     expect(saved.state).toBe('saved'); // untouched by the sweep
   });
@@ -845,13 +822,14 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     const { bundle } = makeMaintainerr(baseState());
     const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
     const items = await itemsOf(batchId);
-    // A HUMAN rescue of a cold item (9001). 9004 already auto-saved (requested, system) at snapshot.
+    // A HUMAN rescue of a cold item (9001). Nothing is auto-saved any more — 9004 (requested) stays a
+    // plain slated `pending` item, so this human save is the ONLY save on the batch.
     await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: items.find((i) => i.maintainerrMediaId === 'ms-9001')!.id, saved: true, actorId });
 
     const list = await listBatches({ db: t.db, mediaKind: 'movie' });
     const summary = list.find((b) => b.id === batchId)!;
     expect(summary.counts.total).toBe(5);
-    expect(summary.counts.saved).toBe(2); // 9001 human rescue + 9004 requested auto-save
+    expect(summary.counts.saved).toBe(1); // only the 9001 human rescue (no system auto-saves)
 
     const detail = await getBatchDetail({ db: t.db, batchId });
     expect(detail.items).toHaveLength(5);
@@ -884,8 +862,8 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
     const items = await itemsOf(batchId);
     const kept = items.find((i) => i.maintainerrMediaId === 'ms-9001')!;
-    // 9002 (a cold, non-requested candidate) — 9004 now auto-saves (requested), so it never writes a
-    // human 'save' flip and would skew the raw-log count; use a plain pending item for the churn test.
+    // A second plain pending candidate (9002) for the churn half of the test — any pending item works
+    // now that nothing is auto-saved.
     const dropped = items.find((i) => i.maintainerrMediaId === 'ms-9002')!;
 
     // Item A: save → unsave → save ⇒ nets to 1 save (still held). Item B: save → unsave ⇒ nets to 0.
@@ -982,9 +960,14 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     };
     const report = await sweepExpiredBatches({ db: t.db, maintainerr: bundle, actorId });
     const r = report.batches[0]!;
-    expect(r.deletedCount).toBe(0); // the only cold item was saved just in time
+    // 9001 was saved mid-sweep ⇒ raceSkipped, never handled. 9004 (requested, unsaved) is cold and
+    // deletes — a requester is no longer a keep, so it is the one honest deletion here.
     expect(r.raceSkipped).toBe(1);
-    expect(calls.some((c) => c.pathname === '/collections/media/handle')).toBe(false); // no handle fired
+    expect(r.deletedCount).toBe(1); // 9004 only
+    const handled = calls
+      .filter((c) => c.pathname === '/collections/media/handle')
+      .map((c) => (c.body as { mediaId: string }).mediaId);
+    expect(handled).toEqual(['ms-9004']); // NOT ms-9001 (the raced save was protected)
     const after = (await itemsOf(batchId)).find((i) => i.maintainerrMediaId === 'ms-9001')!;
     expect(after.state).toBe('saved'); // the guarded write did NOT overwrite 'saved' with 'deleted'
     // No trash_expedited intent event was written for the raced item IN THIS batch (the shared ledger

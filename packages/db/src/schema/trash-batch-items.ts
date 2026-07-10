@@ -52,11 +52,13 @@ export const trashBatchItems = pgTable(
     // The CURRENT save holder (cleared on un-save); the full flip history is trash_batch_saves.
     savedBy: uuid('saved_by').references(() => users.id, { onDelete: 'set null' }),
     savedAt: timestamp('saved_at', { withTimezone: true }),
-    // ADR-025 errata / DESIGN-011 amendment (2026-07-09, build B) — "requested items start saved".
-    // saved_reason is NULL for an ordinary human rescue (filled shield) and 'requested' for the SYSTEM
-    // auto-save of a requester-carrying item at snapshot (person-shield; saved_by NULL, no Maintainerr
-    // exclusion — the guardian is the real protection). requested_override is the sticky flag a human
-    // un-save of such an auto-save sets, so the sweep guardian's requester keep is overridden for it.
+    // ADR-025 errata (2026-07-09) — VESTIGIAL. These columns backed the removed "requested items start
+    // saved" auto-save (saved_reason 'requested' = the person-shield; requested_override = a human
+    // un-save of that auto-save). The owner ruling ("Maintainerr rules decide what gets promoted; the
+    // app controls how much and when it's deleted") retired app-side requester overrules, so requested
+    // is informational only now and NO code reads or writes these for requester purposes: saved_reason
+    // stays NULL and requested_override stays false. Columns are LEFT in place (harmless — no migration)
+    // per the errata; a human rescue still uses saved_by/saved_at, never saved_reason.
     savedReason: text('saved_reason').$type<'requested'>(),
     requestedOverride: boolean('requested_override').notNull().default(false),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),

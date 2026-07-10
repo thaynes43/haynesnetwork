@@ -44,7 +44,7 @@ describe('previewGuardian (mirrors classifyGuardian — ADR-023 C-07b, fail clos
       'unverifiable',
     );
   });
-  it('the dnd tag wins over watched/requested (already whitelisted)', () => {
+  it('the dnd tag wins (already whitelisted), even with a watcher/requester present', () => {
     expect(
       previewGuardian({ ...base, protectedByTag: true, recentlyWatched: true, requesters: ['a'] }),
     ).toBe('protected_tag');
@@ -52,8 +52,9 @@ describe('previewGuardian (mirrors classifyGuardian — ADR-023 C-07b, fail clos
   it('recently watched ⇒ protected', () => {
     expect(previewGuardian({ ...base, recentlyWatched: true })).toBe('protected_watched');
   });
-  it('requested ⇒ protected', () => {
-    expect(previewGuardian({ ...base, requesters: ['manofoz'] })).toBe('protected_requested');
+  it('requested ⇒ DELETABLE (owner ruling 2026-07-09 — requested is informational only, not a keep)', () => {
+    // A requester no longer protects an item at expedite; it is cold-deletable like any other item.
+    expect(previewGuardian({ ...base, requesters: ['manofoz'] })).toBe('deletable');
   });
   it('unknown to the ledger ⇒ unverifiable (never deletable)', () => {
     expect(previewGuardian({ ...base, mediaItemId: null })).toBe('unverifiable');
@@ -130,12 +131,11 @@ describe('pendingWallGlyph / pendingWallTappable (the pending WALL tap-toggle �
     // the slated trash-can (tap ⇒ save), and the watch fact moves to the meta line (watchNote).
     expect(pendingWallGlyph({ ...cold, recentlyWatched: true }, undefined)).toBe('trash');
     expect(pendingWallTappable('trash', true, false)).toBe(true); // now saveable with save_exclude
-    // A recently-watched REQUESTER item is the tappable person-shield (requested wins over the plain
-    // trash-can, exactly like a non-watched requester).
+    // A recently-watched REQUESTER item is ALSO the plain slated trash-can now — a requester no longer
+    // wins a corner glyph (owner ruling 2026-07-09 — requested is informational only, a meta badge).
     expect(
       pendingWallGlyph({ ...cold, recentlyWatched: true, requesters: ['manofoz'] }, undefined),
-    ).toBe('requested');
-    expect(pendingWallTappable('requested', true, false)).toBe(true);
+    ).toBe('trash');
     // Hard protection (dnd tag / a foreign exclusion) still outranks — the inert check, unchanged.
     expect(
       pendingWallGlyph({ ...cold, protectedByTag: true, recentlyWatched: true }, undefined),
@@ -143,27 +143,26 @@ describe('pendingWallGlyph / pendingWallTappable (the pending WALL tap-toggle �
     // a save this session still wins — the watched item can be deliberately protected.
     expect(pendingWallGlyph({ ...cold, recentlyWatched: true }, 'saved')).toBe('shield');
   });
-  it('build B — a personal requester with NO exclusion ⇒ the person-shield, TAPPABLE as a save-toggle', () => {
-    // Owner ruling (build B): a requested item is NEVER inert on the live wall. Unprotected ⇒ the
-    // person-shield ('requested'), tappable ⇒ SAVE (tap adds the exclusion), exactly like a trash tile.
-    expect(pendingWallGlyph({ ...cold, requesters: ['manofoz'] }, undefined)).toBe('requested');
-    expect(pendingWallTappable('requested', true, false)).toBe(true); // saves with save_exclude
-    expect(pendingWallTappable('requested', false, true)).toBe(false); // not a save right ⇒ inert
-    // "Shield when both": a requested item that is ALSO live-EXCLUDED (the reversible save) reads as
-    // the ordinary save shield (never inert) — tappable to UN-save — not the inert `check`.
+  it('a personal requester is INFO ONLY — it never changes the corner glyph (owner ruling 2026-07-09)', () => {
+    // "Maintainerr rules decide what gets promoted; the app controls how much and when it's deleted."
+    // A requester no longer wins a corner glyph — the person-shield is retired. An unprotected requested
+    // candidate is the ordinary slated trash-can (tap ⇒ save); its attribution rides the meta badge.
+    expect(pendingWallGlyph({ ...cold, requesters: ['manofoz'] }, undefined)).toBe('trash');
+    expect(pendingWallTappable('trash', true, false)).toBe(true); // saves with save_exclude
+    // A requester item that is live-EXCLUDED reads exactly like any foreign exclusion — the inert
+    // `check` (no more requester carve-out / "shield when both"). Un-protect lives on /library.
     expect(
       pendingWallGlyph({ ...cold, protectedByExclusion: true, requesters: ['manofoz'] }, undefined),
-    ).toBe('shield');
-    // …but the deliberate dnd TAG (hard protection, un-protect on /library) stays the inert `check`
-    // even for a requester item.
+    ).toBe('check');
+    // The dnd TAG (hard protection) is likewise the inert `check` for a requester item.
     expect(
       pendingWallGlyph({ ...cold, protectedByTag: true, requesters: ['manofoz'] }, undefined),
     ).toBe('check');
-    // A recently-watched requester item is STILL the tappable person-shield (the watch signal no
-    // longer produces an inert eye — the corner is the action).
+    // A recently-watched requester item is ALSO the plain slated trash-can (nothing about the requester
+    // or the watch signal changes the corner — both are meta-line info now).
     expect(
       pendingWallGlyph({ ...cold, recentlyWatched: true, requesters: ['manofoz'] }, undefined),
-    ).toBe('requested');
+    ).toBe('trash');
     // a save this session still wins — the requested item can be deliberately saved by you.
     expect(pendingWallGlyph({ ...cold, requesters: ['manofoz'] }, 'saved')).toBe('shield');
   });
@@ -175,11 +174,11 @@ describe('pendingWallGlyph / pendingWallTappable (the pending WALL tap-toggle �
 
   // DESIGN-010 D-12 (build C) — the watch-visibility indicator NEVER touches the corner glyph, in
   // EITHER watch state. Both recently-watched and watched-long-ago items resolve to their normal
-  // glyph (trash / requested / …); the eye chip is a separate meta-line element (info vs muted tone),
-  // and the corner precedence is unchanged. requested wins the corner; the watch info is the meta note.
-  it('D-12 — a watched item (recent OR long-ago) keeps its normal corner glyph (watch → meta note)', () => {
-    // requested + watched ⇒ still the person-shield corner (watch info is a separate note).
-    expect(pendingWallGlyph({ ...cold, requesters: ['manofoz'] }, undefined)).toBe('requested');
+  // glyph (trash / shield / check); the eye chip is a separate meta-line element (info vs muted tone).
+  // The requester attribution is likewise a meta-line badge now, never a corner glyph.
+  it('D-12 — a watched/requested item keeps its normal corner glyph (watch + requester → meta notes)', () => {
+    // requested (unprotected) ⇒ the slated trash-can corner; the requester is a separate meta badge.
+    expect(pendingWallGlyph({ ...cold, requesters: ['manofoz'] }, undefined)).toBe('trash');
     // unprotected + watched (either state) ⇒ the slated, saveable trash-can — the eye corner is gone.
     expect(pendingWallGlyph(cold, undefined)).toBe('trash');
   });

@@ -531,6 +531,22 @@ glyph unions drop `'eye'`); `pendingWallTappable` no longer special-cases `eye`;
 `requested` branch is tappable in both directions; new `recentlyWatchedLabel` + `watchNote` +
 `WatchNoteBadge` (replacing `WatchedAgoNote`).
 
+> **Errata (2026-07-09, owner-directed) — the requester person-shield is retired; requested is a
+> meta-line info badge (like the watch note).** Owner ruling, verbatim: *"Maintainerr rules decide what
+> gets promoted; the app controls how much and when it's deleted."* Points 3 and 4 above are amended:
+> a requester is **no input to the corner glyph** either. The `requested` person-shield glyph is
+> removed from `pendingWallGlyph`/`wallGlyph` and from `WallGlyphSvg`; `wallGlyph` depends only on item
+> state, and a `pending` item (recently-watched, requested, or plain) is always the slated, saveable
+> `trash`-can. The requester attribution moves OUT to the meta line as an **info badge** — a person
+> icon + "Requested by &lt;name&gt;" tooltip (`RequestedByBadge`, `data-testid="wall-requested"`), a
+> fixed-size chip co-existing with the watch note (both are info, neither reflows — ADR-015). So a
+> requested + recently-watched tile now shows the **slated trash-can corner** plus TWO meta chips (the
+> person badge + the info-tone watch eye). The corner-precedence line reduces to `dnd` tag → live
+> exclusion → trash. The guardian is likewise amended (a requester is no longer a keep) — see the
+> ADR-025 errata (2026-07-09); the **recently-watched** sweep keep is unchanged. Batch counts: a
+> requested pending item counts as **slated** (it is no longer a "kept" person-shield). See DESIGN-011
+> D-11 errata.
+
 ## D-13 — Strategy-mirrored wall order + honest cadence + debounced pool refresh (amendment 2026-07-09, build D)
 
 Owner-greenlit. Three coherent pieces on the pending walls now that Maintainerr's per-item countdown is

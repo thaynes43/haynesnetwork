@@ -859,25 +859,33 @@ export async function removeExclusion(input: {
 
 /**
  * Why an item is kept out of a deletion. `tag` ⇒ already whitelisted by the Maintainerr-managed
- * `dnd` tag; `recently_watched`/`requested` ⇒ the watch/requester guardian (auto-whitelist);
- * `unevaluable` ⇒ FAIL-CLOSED: the item is not resolved to our ledger, so we have NO cross-server
- * watch / requester signal to positively clear it (P4) — we never delete what we cannot evaluate.
+ * `dnd` tag; `recently_watched` ⇒ the watch guardian (auto-whitelist, owner-ratified exception —
+ * covers viewing that starts mid-window); `unevaluable` ⇒ FAIL-CLOSED: the item is not resolved to
+ * our ledger, so we have NO cross-server watch signal to positively clear it (P4) — we never delete
+ * what we cannot evaluate.
+ *
+ * SEPARATION OF RESPONSIBILITIES (owner ruling 2026-07-09): "Maintainerr rules decide what gets
+ * promoted; the app controls how much and when it's deleted." A personal requester is NO LONGER a
+ * keep reason — requested items in batches/sweeps/expedites are treated like any other item (rules
+ * promote, humans decide, the app schedules). Requester attribution is informational only now
+ * (surfaced as a wall meta badge), never an app-side overrule. See ADR-025/DESIGN-010/DESIGN-011
+ * errata (2026-07-09).
  */
-export type GuardianKeepReason = 'tag' | 'recently_watched' | 'requested' | 'unevaluable';
+export type GuardianKeepReason = 'tag' | 'recently_watched' | 'unevaluable';
 export type GuardianVerdict = { keep: true; reason: GuardianKeepReason } | { keep: false };
 
 /**
  * The guardian's per-item verdict (P4 — fail closed). An item is expeditable ONLY when it is
- * positively evaluated (resolved to our ledger) AND cold (not tag-protected, not recently watched,
- * no requester). Anything we cannot positively clear — including an item unknown to our ledger — is
- * KEPT. The `media`-param bypass (P3) is defeated by callers running this over the item's REAL
- * pending identity, never a client-declared kind.
+ * positively evaluated (resolved to our ledger) AND cold (not tag-protected, not recently watched).
+ * Anything we cannot positively clear — including an item unknown to our ledger — is KEPT. A personal
+ * requester is NOT a keep (owner ruling 2026-07-09 — requested is informational only). The
+ * `media`-param bypass (P3) is defeated by callers running this over the item's REAL pending
+ * identity, never a client-declared kind.
  */
 export function classifyGuardian(item: TrashPendingItem): GuardianVerdict {
   if (item.protectedByTag) return { keep: true, reason: 'tag' };
   if (item.recentlyWatched) return { keep: true, reason: 'recently_watched' };
-  if (item.requesters.length > 0) return { keep: true, reason: 'requested' };
-  // Fail closed: no ledger resolution ⇒ no watch/requester data ⇒ we cannot confirm it is safe.
+  // Fail closed: no ledger resolution ⇒ no watch data ⇒ we cannot confirm it is safe.
   if (item.mediaItemId === null) return { keep: true, reason: 'unevaluable' };
   return { keep: false };
 }
@@ -910,7 +918,7 @@ export async function guardRecentlyWatched(input: {
     if (item.maintainerrMediaId === null) continue;
     const verdict = classifyGuardian(item);
     if (verdict.keep) {
-      if (verdict.reason === 'recently_watched' || verdict.reason === 'requested') {
+      if (verdict.reason === 'recently_watched') {
         const res = await saveExclusion({
           db: input.db,
           maintainerr: input.maintainerr,
@@ -1293,8 +1301,10 @@ export async function expediteDeletion(
     }
     const verdict = classifyGuardian(target);
     if (verdict.keep) {
-      // Watched/requested ⇒ auto-whitelist; tag ⇒ already protected; unevaluable ⇒ keep (fail closed).
-      if (verdict.reason === 'recently_watched' || verdict.reason === 'requested') {
+      // Watched ⇒ auto-whitelist; tag ⇒ already protected; unevaluable ⇒ keep (fail closed). A
+      // requester is no longer a keep (owner ruling 2026-07-09) — a requested item is cold here and
+      // proceeds to deletion below unless another guard protects it.
+      if (verdict.reason === 'recently_watched') {
         await saveExclusion({
           db: input.db,
           maintainerr: input.maintainerr,
@@ -1366,7 +1376,8 @@ export async function expediteDeletion(
   );
 
   const arrKind = arrKindForTrashMedia(input.media);
-  // PASS 1 — guardian: whitelist watched/requested, skip anything we can't positively clear.
+  // PASS 1 — guardian: whitelist watched, skip anything we can't positively clear. A requester is
+  // no longer a keep (owner ruling 2026-07-09) — a requested item is cold and expedites like any other.
   const survivors: ExpediteSurvivor[] = [];
   let protectedCount = 0;
   // Legacy (unpinned) parity: unactionable items still count as skipped. When pinned they are simply
@@ -1382,7 +1393,7 @@ export async function expediteDeletion(
     }
     const verdict = classifyGuardian(p);
     if (verdict.keep) {
-      if (verdict.reason === 'recently_watched' || verdict.reason === 'requested') {
+      if (verdict.reason === 'recently_watched') {
         // A FAILED protection must never be followed by that item's deletion (P5): skip it.
         try {
           await saveExclusion({

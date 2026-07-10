@@ -10,11 +10,17 @@
 // trpc.trash.pending infinite query (different inputs — the live wall reads the whole kind; the
 // future strip passes excludeOpenBatch) and feeds the flattened page items in. A save = the guarded
 // Maintainerr exclusion (trash.saveExclusion) → the item is whitelisted → it never enters a future
-// batch; requested items show the person-shield per the shipped precedence (lib/trash pendingWallGlyph).
+// batch; requested items are informational only now (owner ruling 2026-07-09 — a person meta badge,
+// not a corner glyph; the corner is the pure save/slate toggle — lib/trash pendingWallGlyph).
 import { useEffect, useState, type RefObject } from 'react';
 import { trpc } from '@/lib/trpc-client';
 import { MediaPoster } from '@/components/media-poster';
-import { LibraryCornerLink, WallGlyphSvg, WatchNoteBadge } from '@/components/trash-shield';
+import {
+  LibraryCornerLink,
+  RequestedByBadge,
+  WallGlyphSvg,
+  WatchNoteBadge,
+} from '@/components/trash-shield';
 import { formatBytes, formatDay, formatRating, ratingOrNull } from '@/lib/media';
 import { describeMutationError } from '@/lib/app-error';
 import {
@@ -64,8 +70,6 @@ function tileInfo(item: PendingWallItem, glyph: PendingWallGlyph): string {
     lines.push(
       item.protectedByTag ? 'Protected — carries the dnd tag' : 'Protected — excluded in Maintainerr',
     );
-  else if (glyph === 'requested')
-    lines.push(`Requested by ${item.requesters.join(', ')} — tap to save it`);
   // DESIGN-010 D-12 (build C) — the cross-server watch line (info, not protection). BOTH watch
   // states surface here now (the action corner never carries watch info): "Watched recently on
   // <server> — the guardian keeps it at the sweep" or "Last watched on <server> · <Mon YYYY> —
@@ -73,8 +77,9 @@ function tileInfo(item: PendingWallItem, glyph: PendingWallGlyph): string {
   const note = watchNote(item);
   if (note !== null)
     lines.push(note.recent ? `${note.label} — the guardian keeps it at the sweep` : `${note.label} — still deletable`);
-  if (item.requesters.length > 0 && glyph !== 'requested')
-    lines.push(`Requested by ${item.requesters.join(', ')}`);
+  // The requester attribution is INFO ONLY now (owner ruling 2026-07-09) — it never changes the
+  // corner action; it rides the tooltip + the meta-line person badge.
+  if (item.requesters.length > 0) lines.push(`Requested by ${item.requesters.join(', ')}`);
   if (item.collectionTitle !== null) lines.push(`Rule: ${item.collectionTitle}`);
   lines.push(
     item.mediaItemId !== null
@@ -103,9 +108,8 @@ export function usePendingSaves(media: 'movie' | 'tv') {
   const toggle = (item: PendingWallItem, glyph: PendingWallGlyph) => {
     const id = item.maintainerrMediaId;
     if (id === null || busy.has(id)) return;
-    // The requested person-shield saves like a trash tile (tap ⇒ add the exclusion); only the filled
-    // `shield` un-saves.
-    const saving = glyph === 'trash' || glyph === 'requested';
+    // A slated `trash` tile saves (tap ⇒ add the exclusion); only the filled `shield` un-saves.
+    const saving = glyph === 'trash';
     const prev = overrides.get(id);
     setOverrides((m) => new Map(m).set(id, saving ? 'saved' : 'unsaved'));
     setBusy((s) => new Set(s).add(id));
@@ -175,13 +179,9 @@ function PendingTile({
         : `${item.title} is saved — protected from deletion`
       : glyph === 'check'
         ? `${item.title} is protected from deletion`
-        : glyph === 'requested'
-          ? tappable
-            ? `Save ${item.title} — requested by ${item.requesters.join(', ')}; tap to protect it`
-            : `${item.title} was requested by ${item.requesters.join(', ')} — protected from deletion`
-          : tappable
-            ? `${item.title} is slated to delete — tap to save it`
-            : `${item.title} is slated to delete`;
+        : tappable
+          ? `${item.title} is slated to delete — tap to save it`
+          : `${item.title} is slated to delete`;
   const inner = (
     <>
       <MediaPoster posterUrl={item.posterUrl} kind={media === 'movie' ? 'radarr' : 'sonarr'} alt="" />
@@ -235,6 +235,7 @@ function PendingTile({
           {item.sizeBytes > 0 ? formatBytes(item.sizeBytes) : '—'}
           {rating !== null ? ` · ★ ${rating}` : ''}
         </span>
+        <RequestedByBadge requesters={item.requesters} />
         {note !== null ? <WatchNoteBadge label={note.label} tone={note.tone} /> : null}
       </span>
     </li>
