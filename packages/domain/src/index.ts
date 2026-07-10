@@ -81,3 +81,6 @@ export * from './user-identity';
 // ADR-043 / DESIGN-021 (PLAN-024) — the Peloton poster GUARD single-writer (drift-restore of durable
 // override posters on k8plex; the confined @hnet/plex/write poster upload stays in this package).
 export * from './poster-guard';
+// ADR-044 / DESIGN-022 (PLAN-021) — the AI usage single-writer (syncAiUsage upserts the Open WebUI chat
+// mirror) + the level-gated AI usage read model (getAiUsage) the Metrics → AI sub-tab renders.
+export * from './ai-usage';

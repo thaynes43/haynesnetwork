@@ -174,6 +174,13 @@ export type SyncSource = (typeof SYNC_SOURCES)[number];
 // baseline + audit) in the SAME transaction (CLAUDE.md hard rule 6). It joins SYNC_RUN_KINDS so the CLI
 // --mode parser + SyncMode accept it AND so the run is bracketed by a sync_runs row (migration 0034
 // rebuilds the sync_runs.run_kind CHECK to keep the const array and CHECK in parity).
+// ADR-044 / DESIGN-022 (PLAN-021) — 'ai-usage-sync' is the Open WebUI usage ingestion sync mode: it
+// polls OWUI's admin API (GET /api/v1/chats/all/db + /api/v1/users/, api-key auth) and UPSERTS one row
+// per chat into the ai_usage_chats mirror (the Metrics → AI sub-tab's substrate). Read-only against
+// OWUI (never mutates it). Like smart-alerts/notify-outbox it touches NO *arr source (no --source) and
+// writes NO sync_runs row — its trail is the ai_usage_chats table. It joins SYNC_RUN_KINDS so the CLI
+// --mode parser + SyncMode accept it (migration 0035 rebuilds the sync_runs.run_kind CHECK to keep the
+// const array and CHECK in parity).
 export const SYNC_RUN_KINDS = [
   'full',
   'incremental',
@@ -183,6 +190,7 @@ export const SYNC_RUN_KINDS = [
   'notify-outbox',
   'smart-alerts',
   'poster-guard',
+  'ai-usage-sync',
 ] as const;
 export type SyncRunKind = (typeof SYNC_RUN_KINDS)[number];
 

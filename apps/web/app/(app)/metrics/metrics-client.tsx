@@ -11,12 +11,15 @@ import { OverviewTab } from './overview-tab';
 import { AppsTab } from './apps-tab';
 import { HardwareTab } from './hardware-tab';
 import { NetworkTab } from './network-tab';
+import { AiTab } from './ai-tab';
 
 const METRICS_TABS = [
   { key: 'overview', label: 'Overview' },
   { key: 'apps', label: 'Apps' },
   { key: 'hardware', label: 'Hardware' },
   { key: 'network', label: 'Network' },
+  // ADR-044 / DESIGN-022 (PLAN-021) — Open WebUI usage (level-shaped: aggregate at limited, per-user at full).
+  { key: 'ai', label: 'AI' },
 ] as const;
 type TabKey = (typeof METRICS_TABS)[number]['key'];
 
@@ -102,6 +105,8 @@ function MetricsContent({
           <HardwareTab active metricsLevel={metricsLevel} />
         ) : active === 'network' ? (
           <NetworkTab active metricsLevel={metricsLevel} />
+        ) : active === 'ai' ? (
+          <AiTab active metricsLevel={metricsLevel} />
         ) : (
           <section className="card empty-state" data-testid={`metrics-comingsoon-${active}`}>
             <p className="muted">Coming soon — this view lands in a later release.</p>

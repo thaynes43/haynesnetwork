@@ -583,4 +583,60 @@ describe('migrations against embedded Postgres 16', () => {
       );
     });
   });
+
+  // ADR-044 / DESIGN-022 (migration 0035) — the AI usage mirror: a new ai_usage_chats table + ONE
+  // sync_runs.run_kind CHECK relax admitting 'ai-usage-sync'. Additive; no existing table altered.
+  describe('0035 AI usage chats (ADR-044 — new table + run_kind CHECK relax, preservation)', () => {
+    it('creates ai_usage_chats with the identity + aggregate columns and both indexes', async () => {
+      const cols = await client.query(
+        `SELECT column_name FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'ai_usage_chats'`,
+      );
+      const names = cols.rows.map((r) => r.column_name as string);
+      for (const expected of [
+        'owui_chat_id',
+        'owui_user_id',
+        'user_name',
+        'title',
+        'models',
+        'image_count',
+        'total_duration_ms',
+        'chat_created_at',
+      ]) {
+        expect(names).toContain(expected);
+      }
+      const idx = await client.query(
+        `SELECT indexname FROM pg_indexes WHERE tablename = 'ai_usage_chats'`,
+      );
+      const idxNames = idx.rows.map((r) => r.indexname as string);
+      expect(idxNames).toContain('ai_usage_chats_created_idx');
+      expect(idxNames).toContain('ai_usage_chats_user_idx');
+    });
+
+    it('upserts a row by owui_chat_id (models jsonb round-trips)', async () => {
+      await client.query(
+        `INSERT INTO ai_usage_chats
+           (owui_chat_id, owui_user_id, models, image_count, total_duration_ms, chat_created_at, chat_updated_at)
+         VALUES ('c1', 'u1', '["gpt-oss:latest"]'::jsonb, 2, 1500, now(), now())
+         ON CONFLICT (owui_chat_id) DO UPDATE SET image_count = EXCLUDED.image_count`,
+      );
+      const row = await client.query(`SELECT models, image_count FROM ai_usage_chats WHERE owui_chat_id = 'c1'`);
+      expect(row.rows[0].image_count).toBe(2);
+      expect(row.rows[0].models).toEqual(['gpt-oss:latest']);
+      await client.query(`DELETE FROM ai_usage_chats WHERE owui_chat_id = 'c1'`);
+    });
+
+    it('sync_runs_run_kind_enum admits ai-usage-sync + the prior kinds (preservation)', async () => {
+      for (const kind of ['smart-alerts', 'poster-guard', 'ai-usage-sync']) {
+        await client.query({
+          text: `INSERT INTO sync_runs (source, run_kind, status) VALUES ('radarr', $1, 'running')`,
+          values: [kind],
+        });
+      }
+      await expect(
+        client.query(`INSERT INTO sync_runs (source, run_kind, status) VALUES ('radarr', 'bogus-mode', 'running')`),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query(`DELETE FROM sync_runs WHERE run_kind = 'ai-usage-sync'`);
+    });
+  });
 });

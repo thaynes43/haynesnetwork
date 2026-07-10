@@ -4,7 +4,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { permissionAudit, roles } from '@hnet/db/schema';
-import { createRole } from '@hnet/domain';
+import { createRole, syncAiUsage, type AiUsageChatInput, type AiUsageUserInput } from '@hnet/domain';
 import type { PromMatrixSeries, PromVectorSample, PrometheusReader } from '@hnet/metrics';
 import {
   bootMigratedDb,
@@ -384,6 +384,69 @@ describe('metrics.capacity (admin-gated, audited)', () => {
     const member = await createUser(testDb.db);
     await expect(
       caller(makeCtx(testDb.db, sessionUser(member))).metrics.capacity.setUpload({ mbps: 999 }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+});
+
+/** Seed the ai_usage_chats mirror through the domain single-writer (two users, mixed models/images). */
+async function seedAiUsage(db: TestDb['db']): Promise<void> {
+  const now = new Date();
+  const daysAgo = (n: number): Date => new Date(now.getTime() - n * 86_400_000);
+  const users: AiUsageUserInput[] = [
+    { id: 'ou1', name: 'Alice', email: 'alice@example.test', role: 'admin' },
+    { id: 'ou2', name: 'Bob', email: 'bob@example.test', role: 'user' },
+  ];
+  const chats: AiUsageChatInput[] = [
+    {
+      owuiChatId: 'oc-a', owuiUserId: 'ou1', title: 'plan', models: ['gpt-oss:latest'],
+      primaryModel: 'gpt-oss:latest', messageCount: 4, imageCount: 2, totalTokens: 100,
+      totalDurationMs: 90_000, chatCreatedAt: daysAgo(2), chatUpdatedAt: daysAgo(2), archived: false,
+    },
+    {
+      owuiChatId: 'oc-b', owuiUserId: 'ou2', title: 'art', models: ['gpt-oss:latest'],
+      primaryModel: 'gpt-oss:latest', messageCount: 2, imageCount: 5, totalTokens: 40,
+      totalDurationMs: 5_000, chatCreatedAt: daysAgo(1), chatUpdatedAt: daysAgo(1), archived: false,
+    },
+  ];
+  await syncAiUsage({ db, chats, users, now });
+}
+
+describe('metrics.aiUsage — level-gated attribution seam (ADR-044 C-03)', () => {
+  it('a FULL (admin) caller gets byUser/byModel + activeUsers; a LIMITED caller gets counts only', async () => {
+    const admin = await createUser(testDb.db, { admin: true });
+    const member = await createUser(testDb.db);
+    await seedAiUsage(testDb.db);
+
+    const full = await caller(makeCtx(testDb.db, sessionUser(admin))).metrics.aiUsage({ range: '30d' });
+    expect(full.level).toBe('full');
+    expect(full.totals.chats).toBe(2);
+    expect(full.totals.imageGenerations).toBe(7);
+    expect(full.totals.activeUsers).toBe(2);
+    expect(full.byModel).toBeDefined();
+    expect(full.byUser).toBeDefined();
+    expect(full.byUser!.some((u) => u.name === 'Alice')).toBe(true);
+
+    const limited = await caller(
+      makeCtx(
+        testDb.db,
+        sessionUser(member, { metrics: 'read_only' }, undefined, undefined, undefined, 'limited'),
+      ),
+    ).metrics.aiUsage({ range: '30d' });
+    expect(limited.level).toBe('limited');
+    // Same aggregate counts…
+    expect(limited.totals.chats).toBe(2);
+    expect(limited.totals.imageGenerations).toBe(7);
+    // …but NO user identity: the full-only keys are OMITTED (server-authoritative, not client-hidden).
+    expect(limited.totals.activeUsers).toBeNull();
+    expect(limited.byModel).toBeUndefined();
+    expect(limited.byUser).toBeUndefined();
+    expect('byUser' in limited).toBe(false);
+  });
+
+  it('a caller whose metrics section is DISABLED is FORBIDDEN', async () => {
+    const member = await createUser(testDb.db);
+    await expect(
+      caller(makeCtx(testDb.db, sessionUser(member))).metrics.aiUsage({ range: '30d' }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 });

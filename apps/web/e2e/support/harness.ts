@@ -19,6 +19,7 @@ import { startStubBazarr, type StubBazarrServer } from './stub-bazarr';
 import { startStubPlex, type StubPlexServer } from './stub-plex';
 import { startStubMaintainerr, type StubMaintainerrServer } from './stub-maintainerr';
 import { startStubPrometheus, type StubPrometheusServer } from './stub-prometheus';
+import { startStubOpenWebUi, type StubOpenWebUiServer } from './stub-openwebui';
 import { composeRuntimeEnv, DEFAULT_APP_PORT, type RuntimeEnv } from './env';
 
 const DEV_READY_TIMEOUT_MS = 180_000;
@@ -50,6 +51,8 @@ export interface RunningStack {
   maintainerr: StubMaintainerrServer;
   /** Stub Prometheus stand-in — free-space-trend e2e layer (ADR-030 amendment 2026-07-09). */
   prometheus: StubPrometheusServer;
+  /** Stub Open WebUI stand-in — AI-usage sub-tab e2e layer (ADR-044 / DESIGN-022). */
+  openWebUi: StubOpenWebUiServer;
   devServer: ChildProcess;
   /** The DESIGN-002 D-08 env the dev server was booted with. */
   env: RuntimeEnv;
@@ -105,6 +108,28 @@ async function prewarmRoutes(baseUrl: string): Promise<void> {
   console.log(`[stack] prewarm: ${routes.length} routes compiled in ${Date.now() - start}ms`);
 }
 
+/**
+ * Run a short-lived command to completion via ASYNC spawn, keeping THIS process's event loop alive
+ * (unlike spawnSync). Needed when the child must reach a stub server hosted in this process. Rejects on a
+ * nonzero exit or spawn error.
+ */
+async function runToCompletion(
+  command: string,
+  args: string[],
+  env: NodeJS.ProcessEnv,
+  cwd: string,
+  label: string,
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(command, args, { env, cwd, stdio: 'inherit' });
+    child.on('error', reject);
+    child.on('exit', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`e2e ${label} failed (exit ${String(code)})`));
+    });
+  });
+}
+
 async function killDevServer(dev: ChildProcess): Promise<void> {
   if (dev.exitCode !== null || dev.signalCode !== null) return;
   await new Promise<void>((resolve) => {
@@ -144,6 +169,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
   let plex: StubPlexServer | undefined;
   let maintainerr: StubMaintainerrServer | undefined;
   let prometheus: StubPrometheusServer | undefined;
+  let openWebUi: StubOpenWebUiServer | undefined;
   let dev: ChildProcess | undefined;
   try {
     const migrate = spawnSync('pnpm', ['--filter', '@hnet/db', 'migrate'], {
@@ -175,6 +201,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     plex = await startStubPlex();
     maintainerr = await startStubMaintainerr();
     prometheus = await startStubPrometheus();
+    openWebUi = await startStubOpenWebUi();
     const env = composeRuntimeEnv({
       databaseUrl: pg.connectionString,
       stubOidcBaseUrl: oidc.baseUrl,
@@ -184,8 +211,21 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       stubPlexBaseUrl: plex.baseUrl,
       stubMaintainerrBaseUrl: maintainerr.baseUrl,
       stubPrometheusBaseUrl: prometheus.baseUrl,
+      stubOpenWebUiBaseUrl: openWebUi.baseUrl,
       appUrl,
     });
+
+    // ADR-044 / DESIGN-022 — seed the ai_usage_chats mirror by RUNNING the real ai-usage-sync mode
+    // against the stub OWUI (the strongest proof — it exercises the client → normalizer → single-writer
+    // path production runs). Uses ASYNC spawn (not spawnSync): the stub OWUI is hosted in THIS process, so
+    // the parent event loop must stay alive to answer the child's HTTP poll (spawnSync would deadlock it).
+    await runToCompletion(
+      join(cwd, 'node_modules', '.bin', 'tsx'),
+      [join(cwd, '..', '..', 'packages', 'sync', 'src', 'scripts', 'sync.ts'), '--mode=ai-usage-sync'],
+      { ...process.env, ...env },
+      cwd,
+      'ai-usage-sync seed',
+    );
 
     // Spawn .bin/next directly — some pnpm versions filter child env vars.
     dev = spawn(join(cwd, 'node_modules', '.bin', 'next'), ['dev', '--port', String(port)], {
@@ -211,6 +251,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     const runningPlex = plex;
     const runningMaintainerr = maintainerr;
     const runningPrometheus = prometheus;
+    const runningOpenWebUi = openWebUi;
     let stopped = false;
     return {
       appUrl,
@@ -221,12 +262,14 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       plex: runningPlex,
       maintainerr: runningMaintainerr,
       prometheus: runningPrometheus,
+      openWebUi: runningOpenWebUi,
       devServer: running,
       env,
       stop: async () => {
         if (stopped) return;
         stopped = true;
         await killDevServer(running);
+        await runningOpenWebUi.stop().catch(() => undefined);
         await runningPrometheus.stop().catch(() => undefined);
         await runningMaintainerr.stop().catch(() => undefined);
         await runningPlex.stop().catch(() => undefined);
@@ -239,6 +282,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
   } catch (err) {
     // Partial-boot cleanup, best effort in reverse order.
     if (dev) await killDevServer(dev).catch(() => undefined);
+    if (openWebUi) await openWebUi.stop().catch(() => undefined);
     if (prometheus) await prometheus.stop().catch(() => undefined);
     if (maintainerr) await maintainerr.stop().catch(() => undefined);
     if (plex) await plex.stop().catch(() => undefined);

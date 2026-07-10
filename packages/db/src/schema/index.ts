@@ -52,3 +52,6 @@ export * from './smart-drive-state';
 // ADR-043 / DESIGN-021 (PLAN-024) — the append-only Peloton poster apply ledger the poster-guard sync
 // mode writes (drift baseline + audit). Guarded single-writer table (runPelotonPosterGuard).
 export * from './poster-guard-applications';
+// ADR-044 / DESIGN-022 (PLAN-021) — the synced Open WebUI chat-usage mirror the ai-usage-sync mode
+// upserts (the Metrics → AI sub-tab's substrate). Guarded single-writer table (syncAiUsage).
+export * from './ai-usage-chats';

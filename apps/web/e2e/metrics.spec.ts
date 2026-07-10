@@ -294,3 +294,35 @@ test.describe('metrics Hardware sub-tab (PLAN-019 · ADR-040 · DESIGN-020) — 
     await expect(page.getByTestId('metrics-hardware')).toHaveCount(0);
   });
 });
+
+// ADR-044 / DESIGN-022 (PLAN-021) — the AI usage sub-tab. The harness runs the ai-usage-sync mode against
+// the stub Open WebUI at boot, so ai_usage_chats is populated with the canned chats (5 chats, 4 image
+// generations across 3 users). An admin (full) sees the per-user table; the section gate still applies.
+test.describe('metrics section — AI usage sub-tab (ADR-044 · DESIGN-022)', () => {
+  test('an admin sees the AI tab with real chat + image counts and the per-user attribution', async ({
+    page,
+  }) => {
+    await signIn(page, 'admin');
+    await page.goto('/metrics?tab=ai');
+
+    await test.step('the AI tab renders the aggregate count tiles from the synced mirror', async () => {
+      await expect(page.getByTestId('metrics-ai')).toBeVisible();
+      // 5 canned chats, 4 assistant-generated images (the image-gen heuristic).
+      await expect(page.getByTestId('metrics-ai-chats')).toContainText('5');
+      await expect(page.getByTestId('metrics-ai-images')).toContainText('4');
+    });
+
+    await test.step('an admin (full) sees the per-user + per-model attribution', async () => {
+      await expect(page.getByTestId('metrics-ai-users')).toBeVisible();
+      await expect(page.getByTestId('metrics-ai-users')).toContainText('Alice Nguyen');
+      await expect(page.getByTestId('metrics-ai-models')).toBeVisible();
+    });
+  });
+
+  test('a default member gets the unavailable card at /metrics?tab=ai', async ({ page }) => {
+    await signIn(page, 'fresh-member');
+    await page.goto('/metrics?tab=ai');
+    await expect(page.getByTestId('metrics-unavailable')).toBeVisible();
+    await expect(page.getByTestId('metrics-ai')).toHaveCount(0);
+  });
+});
