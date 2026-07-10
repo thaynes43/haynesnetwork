@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.36.0](https://github.com/thaynes43/haynesnetwork/compare/v0.35.0...v0.36.0) (2026-07-10)
+
+
+### Features
+
+* Peloton poster guard — durable override art + drift-restore sync mode (PLAN-024) ([#175](https://github.com/thaynes43/haynesnetwork/issues/175)) ([61ec730](https://github.com/thaynes43/haynesnetwork/commit/61ec73055df52b17fb42de687760ecfaaebb1527))
+
+
+### Documentation
+
+* PLAN-011 Authentik hardening completed — blueprints + native MFA (as-executed record) ([#173](https://github.com/thaynes43/haynesnetwork/issues/173)) ([030d8fd](https://github.com/thaynes43/haynesnetwork/commit/030d8fd209ed0466c121fe1c2b25552b22b76ec9))
+
 ## [0.35.0](https://github.com/thaynes43/haynesnetwork/compare/v0.34.0...v0.35.0) (2026-07-10)
 
 
