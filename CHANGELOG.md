@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.37.0](https://github.com/thaynes43/haynesnetwork/compare/v0.36.2...v0.37.0) (2026-07-10)
+
+
+### Features
+
+* AI usage metrics — Open WebUI admin-API ingestion + level-gated attribution (PLAN-021) ([#181](https://github.com/thaynes43/haynesnetwork/issues/181)) ([70ef94a](https://github.com/thaynes43/haynesnetwork/commit/70ef94a2feee6e2973c084f3afbf748f068e92ba))
+
+
+### Documentation
+
+* ADR-044, DESIGN-022, PRD R-141..R-143, glossary T-126..T-128. ([70ef94a](https://github.com/thaynes43/haynesnetwork/commit/70ef94a2feee6e2973c084f3afbf748f068e92ba))
+
 ## [0.36.2](https://github.com/thaynes43/haynesnetwork/compare/v0.36.1...v0.36.2) (2026-07-10)
 
 
