@@ -20,7 +20,28 @@
   surface. The `ytdlsub` section is **still Admin-only** (no role rows as of this change — the owner's
   flip is still pending, plan Q-03), and the durable-poster sink (PRD **Q-06**) remains open — ADR-041
   C-07 keeps the override seam ready, nothing here makes it harder.
-  Prior milestone — **PLAN-020 Metrics → Network sub-tab shipped (v0.33.0), live.**
+  Prior milestone — **PLAN-019 Metrics → Hardware sub-tab + SMART alerting shipped (v0.34.0), live** (below).
+- **Prior:** 2026-07-10 — **PLAN-019 Metrics → Hardware sub-tab + SMART alerting shipped
+  (v0.34.0), live.** The 017-scaffolded **Hardware** tab is now wired: an **UNGATED** (owner ruling —
+  `full` and `limited` see the same payload) read off the live in-cluster Prometheus via a new
+  `@hnet/metrics` `getHardwareMetrics`. Four groups: the headline **NVMe endurance** panel (per-pool
+  framing — **Cache-apps** mirror [critical appdata, 57–60% worn] vs **Cache-staging** [expendable, over
+  rated endurance but *holding*: spare 100%, 0 media errors] — wear odometer + projection-to-90% with a
+  graceful "insufficient history" until it accrues + the real EOL signals), a **Drive health** table (a
+  sleeping array disk emits no series → shown "asleep", never red), **Node load**, and a **Proxmox
+  host→VM showcase** (in-place expander, ADR-015 exception). **SMART alerting** (ADR-040 / DESIGN-020,
+  R-130): a **`smart-alerts` sync mode** + `evaluateSmartAlerts` single-writer + **`smart_drive_state`**
+  table (migration 0033) — critical-only, transitions-only paging via the PLAN-016 `notification_outbox`
+  (new `smart_degraded`/`smart_recovered` event types). **Baseline-on-first-sight NEVER pages** the known
+  staging state; only NEW deterioration does; enqueue + state update commit in one tx. Live-proven on
+  prod: a `smart-alerts` run over REAL Prometheus baselined **43/43 drives, enqueued 0**; a second run
+  baselined 0 / enqueued 0 (no re-page). Sources (pve-exporter + node-exporter + smartctl) already
+  scraped → **haynes-ops change was the image bump only**; **glances deferred** (ADR-040 Q-01).
+  **OWNER FOLLOW-UPS:** (1) add a **`smart-alerts` CronJob** in haynes-ops (mirror the notify-outbox
+  schedule) to run detection on a schedule — the mode ships in the image but no CronJob exists yet;
+  (2) the parallel **ytdl-sub UX PR (#168) also claimed "ADR-040"** — it must renumber (mine merged
+  first). ADR-040 / DESIGN-020 / R-129–R-130 / T-117–T-119 / migration 0033.
+- **Prior:** 2026-07-10 — **PLAN-020 Metrics → Network sub-tab shipped (v0.33.0), live.**
   The 017-scaffolded **Network** tab now renders off the live in-cluster Prometheus via a new
   `@hnet/metrics` `getNetworkMetrics` read (which REUSES `getNetworkOverview` for the WAN meters —
   one denominator) + a `metrics.network` procedure. **`limited`** = the two WAN upload/download
