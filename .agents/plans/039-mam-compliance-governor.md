@@ -1,7 +1,10 @@
 # PLAN-039: MAM compliance governor — cap-aware torrent-fallback pacing
 
-- **Status:** Intake (owner 2026-07-11 eve — "how do we follow the seeding rules and update
-  as my account level advances"). Build AFTER PLAN-031 lands and the first real batches run.
+- **Status:** BUILD (owner ruling 2026-07-11 eve: "governor first, then docs" — the guardrail
+  ships BEFORE any list automation drives grabs; Opus agent dispatched). Supersedes the earlier
+  "wait for miss-rate data" gate: the first 13 real grabs happened 2026-07-11 and exposed the
+  compliance risk directly (see OPS-013 corrections — the qB queueing trap + backwards provider
+  priority). Rank knob starts at 20 (New Member).
 - **The problem (owner-stated):** LL is usenet-first with MAM fallback. A large wanted list
   (say 1000 items, 100 usenet-misses) would burst-grab past MAM's **unsatisfied-torrents cap**
   (New Member 20 → User 50 → PU 100 → VIP 150; exceed ⇒ downloads blocked up to 24h — see

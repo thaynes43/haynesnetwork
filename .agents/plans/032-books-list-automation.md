@@ -1,6 +1,22 @@
 # PLAN-032: List-driven book/audiobook/comic automation — "Kometa/Spotify-lists for books"
 
-- **Status:** Intake (owner 2026-07-11, spitball — needs scoping session). NOT dispatched.
+- **Status:** RESEARCH+DESIGN (owner scoped 2026-07-11 eve). Research dispatched; build follows
+  doc review. **Owner rulings (2026-07-11):**
+  - **Goal restated:** keep MAM seeding strong but pull content **through SABnzbd/usenet as fast
+    as possible** to fill the book/comic/ebook library; lists exist to find *quality* content
+    ("top rated of all time", "popular now", NYT) — not junk.
+  - **Q-01 sources:** NYT bestsellers + Goodreads lists/shelves + Amazon charts + in-app/Kavita
+    curation ALL in scope, **plus a research mandate: find the best free-to-poll list APIs**
+    (note: the official Goodreads API was retired in 2020 — LL scrapes Listopia; verify what
+    still works).
+  - **Q-02 leaning:** if LazyLibrarian's native list providers work reliably, "we are just
+    feeding into that" — prefer LL-native over building a sync mode; research must inventory
+    what our deployed LL build actually supports.
+  - **Q-03 RULED: auto-grab + the PLAN-039 governor** (usenet takes the bulk now that provider
+    priority is actually usenet-first — see OPS-013 correction 2026-07-11; the governor gates
+    MAM fallback at the unsatisfied cap).
+  - **PLAN-033 (requests) is PARKED** (owner: too large for now; evaluate existing solutions
+    before any in-app build) — 032 does NOT depend on it.
 - **Owner vision:** the same pattern as Spotify playlists → Lidarr and Kometa charts → Radarr/
   Sonarr, but for the book layer: curated/external lists drive what gets wanted + grabbed
   automatically, instead of one-at-a-time manual adds.
