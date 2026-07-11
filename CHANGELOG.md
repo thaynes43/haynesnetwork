@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.43.0](https://github.com/thaynes43/haynesnetwork/compare/v0.42.0...v0.43.0) (2026-07-11)
+
+
+### Features
+
+* MOTD markdown + themed SVG severity glyph + aligned banner redesign (DESIGN-004 D-17) ([#202](https://github.com/thaynes43/haynesnetwork/issues/202)) ([f3f26d6](https://github.com/thaynes43/haynesnetwork/commit/f3f26d648dc391b4cc084f6ed913e8ecd42812a1))
+* roles-grid clarity + Bulletin Feed/Messages view grants (PLAN-027) ([#204](https://github.com/thaynes43/haynesnetwork/issues/204)) ([4a73d44](https://github.com/thaynes43/haynesnetwork/commit/4a73d44872712824a73399a1654cc16db75d3212))
+
+
+### Documentation
+
+* mark PLAN-030 completed — season posters + TV episode thumbnails live (v0.41.0) ([#200](https://github.com/thaynes43/haynesnetwork/issues/200)) ([4c1c6d0](https://github.com/thaynes43/haynesnetwork/commit/4c1c6d03e026aa0909ac5d0e94a1c104da69ef2b))
+
 ## [0.42.0](https://github.com/thaynes43/haynesnetwork/compare/v0.41.0...v0.42.0) (2026-07-11)
 
 
