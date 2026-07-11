@@ -16,14 +16,21 @@ import {
 } from '@hnet/db';
 import {
   maintainerrClientBundleFromEnv,
+  mamGovernorBundleFromEnv,
   plexClientBundleFromEnv,
+  resolveGovernorConfig,
   type UtilizationArrBundle,
 } from '@hnet/domain';
 import { prometheusClientFromEnv } from '@hnet/metrics';
 import { assertAuthentikEnv, authentikReadClient } from '@hnet/authentik';
 import { assertBooksEnv } from '@hnet/books';
 import { booksReadClients } from '@hnet/books/read';
-import { buildMetadataSourceClients, buildOptionalMaintainerrRead, buildSyncClients, requireClient } from '../clients';
+import {
+  buildMetadataSourceClients,
+  buildOptionalMaintainerrRead,
+  buildSyncClients,
+  requireClient,
+} from '../clients';
 import { openWebUiClientFromEnv } from '../openwebui';
 import type { BooksSyncBundle } from '../books';
 import { createConsoleLogger } from '../logger';
@@ -76,6 +83,16 @@ const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-bat
                            READS DB media_items (their ids, already synced) + the Plex libraries READ-ONLY —
                            no *arr call, no write to Plex. Needs PLEX_HAYNESTOWER/HAYNESOPS/HAYNESKUBE_TOKEN
                            (URLs default to in-cluster/ingress). No --source. Writes no sync_runs row.
+  --mode=mam-governor      the MAM COMPLIANCE GOVERNOR (ADR-054 — cap-aware torrent-fallback pacing): count
+                           UNSATISFIED torrents locally in qBittorrent (category books-mam, seeding_time
+                           < 72h + still-downloading — ZERO MyAnonaMouse API surface) and, near the rank cap
+                           (unsatisfied ≥ MAM_UNSATISFIED_LIMIT − MAM_UNSATISFIED_BUFFER), PAUSE the
+                           MyAnonaMouse Prowlarr indexer's enable flag (Prowlarr's fullSync propagates it to
+                           LazyLibrarian; usenet keeps flowing); RESUME when headroom returns. Fail-closed: a
+                           failed count ⇒ gate closed. Upserts mam_gate_state + enqueues a transition /
+                           >48h-stuck notification_outbox row same-tx. Needs PROWLARR_API_KEY (URLs +
+                           indexer id default in-cluster; qBittorrent needs no secret). No --source. Writes
+                           no sync_runs row.
   --source=NAME            limit the run to one source (repeatable; default: all sources; for
                            metadata-refresh the default is the three *arr kinds)
   --force-tombstones       override the mass-tombstone guard (DESIGN-005 D-14/Q-03)
@@ -134,7 +151,8 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
       mode === 'ai-usage-sync' ||
       mode === 'authentik-users' ||
       mode === 'books-sync' ||
-      mode === 'plex-match') &&
+      mode === 'plex-match' ||
+      mode === 'mam-governor') &&
     sources.length > 0
   ) {
     throw new CliUsageError(`--source is not valid for --mode=${mode}`);
@@ -151,7 +169,8 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
     mode === 'ai-usage-sync' ||
     mode === 'authentik-users' ||
     mode === 'books-sync' ||
-    mode === 'plex-match'
+    mode === 'plex-match' ||
+    mode === 'mam-governor'
       ? []
       : mode === 'metadata-refresh'
         ? [...ARR_KINDS]
@@ -234,6 +253,13 @@ async function main(): Promise<number> {
   // ADR-040 / DESIGN-020 — the read-only @hnet/metrics Prometheus reader the `smart-alerts` mode reads
   // the smartctl series through (PROMETHEUS_URL, in-cluster default; no secret).
   const smartReader = args.mode === 'smart-alerts' ? prometheusClientFromEnv() : undefined;
+  // ADR-054 / DESIGN-027 — the MAM-governor bundle (qBittorrent count read + the confined Prowlarr indexer
+  // toggle) built INSIDE @hnet/domain (mamGovernorBundleFromEnv), so the confined downloads-stack write
+  // surface stays domain-only (the arr-write import guard). Throws one DownloadsConfigError if
+  // PROWLARR_API_KEY is absent. The tuning (limit/buffer/stuck-hours) is resolved through the
+  // resolveGovernorConfig SEAM (env in v1; PLAN-040 adds a DB-backed admin override behind the same call).
+  const mamGovernor = args.mode === 'mam-governor' ? mamGovernorBundleFromEnv() : undefined;
+  const mamTuning = args.mode === 'mam-governor' ? await resolveGovernorConfig() : undefined;
   // ADR-043 / DESIGN-021 — the Plex client bundle (read + confined write) the `poster-guard` mode uses.
   // ADR-047 / DESIGN-025 — `plex-match` reuses the same bundle (READ side only) to enumerate the Movies/
   // TV/Music libraries. Built INSIDE @hnet/domain (plexClientBundleFromEnv), so the confined Plex write
@@ -296,6 +322,8 @@ async function main(): Promise<number> {
     ...(arr ? { arr } : {}),
     ...(maintainerrRead ? { maintainerrRead } : {}),
     ...(smartReader ? { smartReader } : {}),
+    ...(mamGovernor ? { mamGovernor } : {}),
+    ...(mamTuning ? { mamTuning } : {}),
     ...(plex ? { plex } : {}),
     ...(openWebUi ? { openWebUi } : {}),
     ...(authentik ? { authentik } : {}),
@@ -324,7 +352,9 @@ async function main(): Promise<number> {
       ? { poolRefresh: report.poolRefresh }
       : {}),
     ...(report.poolRefreshError !== undefined ? { poolRefreshError: report.poolRefreshError } : {}),
-    ...(report.sweep ? { sweep: { batchesSwept: report.sweep.batchesSwept, batches: report.sweep.batches } } : {}),
+    ...(report.sweep
+      ? { sweep: { batchesSwept: report.sweep.batchesSwept, batches: report.sweep.batches } }
+      : {}),
     ...(report.sweepError !== undefined ? { sweepError: report.sweepError } : {}),
     ...(report.spacePolicy
       ? {
@@ -350,6 +380,8 @@ async function main(): Promise<number> {
     ...(report.outboxError !== undefined ? { outboxError: report.outboxError } : {}),
     ...(report.smartAlerts ? { smartAlerts: report.smartAlerts } : {}),
     ...(report.smartAlertsError !== undefined ? { smartAlertsError: report.smartAlertsError } : {}),
+    ...(report.mamGovernor ? { mamGovernor: report.mamGovernor } : {}),
+    ...(report.mamGovernorError !== undefined ? { mamGovernorError: report.mamGovernorError } : {}),
     ...(report.posterGuard
       ? {
           posterGuard: {

@@ -252,6 +252,16 @@ export const SYNC_RUN_KINDS = [
   // media_plex_matches). It joins SYNC_RUN_KINDS so the CLI --mode parser + SyncMode accept it (migration
   // 0038 rebuilds the sync_runs.run_kind CHECK to keep the const array + CHECK in parity).
   'plex-match',
+  // ADR-054 / DESIGN-027 (PLAN-039 — MAM compliance governor) — 'mam-governor' counts UNSATISFIED
+  // torrents locally in qBittorrent (`books-mam`, seeding_time < 72h + still-downloading — ZERO MAM API
+  // surface) and, near the rank cap (unsatisfied ≥ limit − buffer), PAUSES the LazyLibrarian MAM Torznab
+  // provider via LL's own changeProvider API (resumes when headroom returns). It upserts the single-row
+  // mam_gate_state via the domain evaluateMamGovernor single-writer and enqueues a notification_outbox row
+  // on a gate transition / >48h zero-headroom (same-tx). Fail-closed: a failed count ⇒ gate closed. Like
+  // smart-alerts/notify-outbox it touches NO *arr source (no --source) and writes NO sync_runs row — its
+  // trail is the outbox rows + mam_gate_state. It joins SYNC_RUN_KINDS so the CLI --mode parser + SyncMode
+  // accept it (migration 0041 rebuilds the sync_runs.run_kind CHECK to keep the const array + CHECK in parity).
+  'mam-governor',
 ] as const;
 export type SyncRunKind = (typeof SYNC_RUN_KINDS)[number];
 
@@ -695,6 +705,18 @@ export type NotifyOutboxChannel = (typeof NOTIFY_OUTBOX_CHANNELS)[number];
 //                                 the ticket + creation-event inserts (ADR-034 C-01), so the admins'
 //                                 Pushover ping commits with the ticket or not at all. The renderer
 //                                 deep-links the ticket detail page. Migration 0040 rebuilds the CHECK.
+//   mam_gate_paused             — ADR-054 / DESIGN-027 (PLAN-039 MAM governor) — the governor PAUSED the
+//                                 LazyLibrarian MAM Torznab provider because unsatisfied torrents reached
+//                                 the rank-cap threshold (limit − buffer) OR the qBittorrent count failed
+//                                 (fail-closed). Enqueued by evaluateMamGovernor in the SAME tx as the
+//                                 mam_gate_state upsert (ADR-034 C-01). Transitions-only (open→paused).
+//   mam_gate_resumed            — the governor RE-ENABLED the MAM provider because headroom returned
+//                                 (unsatisfied dropped below the threshold). Transitions-only (paused→open).
+//   mam_gate_stuck              — headroom has been PINNED at 0 (unsatisfied ≥ the hard limit) for > 48h:
+//                                 demand far exceeds the ~rank-limit-per-72h throughput (the owner may want
+//                                 to prioritise the wanted list / push a rank bump). Fires ONCE per stuck
+//                                 episode (deduped by mam_gate_state.pinned_alerted_at). Migration 0041
+//                                 rebuilds the CHECK.
 export const NOTIFY_OUTBOX_EVENT_TYPES = [
   'batch_created',
   'batch_leaving_soon',
@@ -704,5 +726,8 @@ export const NOTIFY_OUTBOX_EVENT_TYPES = [
   'smart_degraded',
   'smart_recovered',
   'ticket_created',
+  'mam_gate_paused',
+  'mam_gate_resumed',
+  'mam_gate_stuck',
 ] as const;
 export type NotifyOutboxEventType = (typeof NOTIFY_OUTBOX_EVENT_TYPES)[number];

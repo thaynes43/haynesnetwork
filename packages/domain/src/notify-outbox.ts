@@ -227,6 +227,36 @@ export function renderOutboxMessage(
         urlTitle: 'Open the ticket',
       };
     }
+    // ADR-054 / DESIGN-027 (PLAN-039) — the MAM compliance governor's gate transitions. No in-app surface
+    // in v1 (logs + Pushover only — owner ruling Q-03), and the operator UIs (Prowlarr/LazyLibrarian) are
+    // LAN-only, so these carry NO url (a dead link from a phone push helps nobody); the message is the fact.
+    case 'mam_gate_paused': {
+      const u = num(p.unsatisfied);
+      const limit = num(p.limit);
+      const failed = p.reason === 'count_failed';
+      return {
+        title: 'MAM grabs paused',
+        message: failed
+          ? `Couldn't count seeding torrents — paused MAM grabs as a precaution (fail-closed). Usenet keeps flowing.`
+          : `${u}/${limit} unsatisfied torrents (threshold ${num(p.threshold)}) — paused the MAM indexer so grabs stay under the cap. Usenet keeps flowing; auto-resumes as torrents pass 72h.`,
+      };
+    }
+    case 'mam_gate_resumed': {
+      const u = num(p.unsatisfied);
+      const limit = num(p.limit);
+      return {
+        title: 'MAM grabs resumed',
+        message: `Headroom returned (${u}/${limit} unsatisfied) — re-enabled the MAM indexer. Torrent fallback is flowing again.`,
+      };
+    }
+    case 'mam_gate_stuck': {
+      const u = num(p.unsatisfied);
+      const limit = num(p.limit);
+      return {
+        title: 'MAM cap pinned for 48h+',
+        message: `Unsatisfied torrents have sat at the cap (${u}/${limit}) for over 48h — book demand exceeds the ~${limit}-per-72h throughput. Consider prioritising the wanted list or a MAM rank bump.`,
+      };
+    }
     default:
       return {
         title: 'Trash batch update',

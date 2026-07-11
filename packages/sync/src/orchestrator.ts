@@ -4,7 +4,15 @@
 // tombstones unwritten. After the per-source flows, backfillEventAttribution re-links
 // Seerr events whose item/user has since appeared, and completeFixRequests closes
 // fixes whose replacement import was just ingested (ADR-007 C-06).
-import { ARR_KINDS, SYNC_SOURCES, db as defaultDb, type ArrKind, type DbClient, type SyncRunKind, type SyncSource } from '@hnet/db';
+import {
+  ARR_KINDS,
+  SYNC_SOURCES,
+  db as defaultDb,
+  type ArrKind,
+  type DbClient,
+  type SyncRunKind,
+  type SyncSource,
+} from '@hnet/db';
 import {
   MassTombstoneAbortedError,
   backfillEventAttribution,
@@ -12,6 +20,7 @@ import {
   drainDuePoolRefreshes,
   expireStaleFixRequests,
   deliverOutbox,
+  evaluateMamGovernor,
   evaluateSmartAlerts,
   evaluateSpacePolicy,
   finishSyncRun,
@@ -27,6 +36,9 @@ import {
   type SyncBooksReport,
   type SyncPlexMatchesReport,
   type MaintainerrClientBundle,
+  type MamGovernorBundle,
+  type MamGovernorReport,
+  type MamGovernorTuning,
   type OutboxDeliveryReport,
   type PlexClientBundle,
   type PosterGuardReport,
@@ -102,6 +114,12 @@ export interface RunSyncOptions {
   /** ADR-040 / DESIGN-020 — the read-only @hnet/metrics Prometheus reader the `smart-alerts` mode reads
    *  the smartctl series through. Required only for that mode; tests inject a stubbed reader. */
   smartReader?: PrometheusReader;
+  /** ADR-054 / DESIGN-027 — the MAM-governor client bundle (qB count read + the confined Prowlarr indexer
+   *  toggle) the `mam-governor` mode drives. Required only for that mode; tests inject fetch-stubbed clients. */
+  mamGovernor?: MamGovernorBundle;
+  /** ADR-054 / DESIGN-027 — the governor's tuning (limit/buffer/stuck-hours). Resolved once per run via
+   *  the resolveGovernorConfig SEAM (env in v1; PLAN-040 adds a DB override). Required only for that mode. */
+  mamTuning?: MamGovernorTuning;
   /** ADR-043 / DESIGN-021 — the Plex client bundle (read + confined write) the `poster-guard` mode uses to
    *  read the k8plex Peloton library and re-apply drifted override posters. Required only for that mode. */
   plex?: PlexClientBundle;
@@ -163,6 +181,10 @@ export interface SyncReport {
   smartAlerts?: SmartAlertsReport | null;
   /** The smart-alerts run's error — sets totalFailure for the CLI exit. */
   smartAlertsError?: string;
+  /** ADR-054 — the `mam-governor` result (null for every other mode / when it errored). */
+  mamGovernor?: MamGovernorReport | null;
+  /** The mam-governor run's error — sets totalFailure for the CLI exit. */
+  mamGovernorError?: string;
   /** ADR-043 — the `poster-guard` result (null for every other mode / when it errored). */
   posterGuard?: PosterGuardReport | null;
   /** The poster-guard run's error — sets totalFailure for the CLI exit. */
@@ -424,6 +446,70 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
     };
   }
 
+  // ADR-054 / DESIGN-027 — the `mam-governor` mode is NOT a per-source loop: it counts UNSATISFIED torrents
+  // locally in qBittorrent (`books-mam`, seeding_time < 72h + still-downloading — ZERO MAM API surface) and,
+  // near the rank cap (unsatisfied ≥ limit − buffer), toggles the MyAnonaMouse Prowlarr indexer's `enable`
+  // flag (which Prowlarr's fullSync propagates to LazyLibrarian). It upserts the single-row mam_gate_state
+  // and enqueues a gate-transition (or >48h zero-headroom) notification_outbox row same-tx. Fail-closed: a
+  // failed count ⇒ gate closed. No *arr source, no sync_runs row — its trail is the outbox rows +
+  // mam_gate_state. Returns early with a `mamGovernor` report. Disabled-safe: the enqueue always records the
+  // transition; the notify-outbox drainer no-ops without PUSHOVER_* creds.
+  if (options.mode === 'mam-governor') {
+    const startedAt = new Date();
+    if (!options.mamGovernor) {
+      throw new Error('mam-governor requires a client bundle (mamGovernor)');
+    }
+    if (!options.mamTuning) {
+      throw new Error('mam-governor requires resolved tuning (mamTuning)');
+    }
+    let mamGovernor: MamGovernorReport | null = null;
+    let mamGovernorError: string | undefined;
+    try {
+      mamGovernor = await evaluateMamGovernor({
+        db,
+        clients: options.mamGovernor.clients,
+        targets: options.mamGovernor.targets,
+        tuning: options.mamTuning,
+      });
+      logger.info('mam-governor evaluated', {
+        countOk: mamGovernor.countOk,
+        unsatisfied: mamGovernor.unsatisfied,
+        downloading: mamGovernor.downloading,
+        seedingUnder72: mamGovernor.seedingUnder72,
+        limit: mamGovernor.limit,
+        buffer: mamGovernor.buffer,
+        threshold: mamGovernor.threshold,
+        headroom: mamGovernor.headroom,
+        gateOpen: mamGovernor.gateOpen,
+        desiredOpen: mamGovernor.desiredOpen,
+        indexerEnabled: mamGovernor.indexerEnabled,
+        actuated: mamGovernor.actuated,
+        event: mamGovernor.event,
+        stuckAlerted: mamGovernor.stuckAlerted,
+        enqueued: mamGovernor.enqueued,
+        ...(mamGovernor.countError !== undefined ? { countError: mamGovernor.countError } : {}),
+        ...(mamGovernor.readError !== undefined ? { readError: mamGovernor.readError } : {}),
+        ...(mamGovernor.actuationError !== undefined
+          ? { actuationError: mamGovernor.actuationError }
+          : {}),
+      });
+    } catch (error) {
+      mamGovernorError = error instanceof Error ? error.message : String(error);
+      logger.error('mam-governor evaluation failed', { error: mamGovernorError });
+    }
+    return {
+      mode: options.mode,
+      startedAt,
+      finishedAt: new Date(),
+      sources: [],
+      backfill: null,
+      fixesCompleted: null,
+      mamGovernor,
+      ...(mamGovernorError !== undefined ? { mamGovernorError } : {}),
+      totalFailure: mamGovernorError !== undefined,
+    };
+  }
+
   // ADR-043 / DESIGN-021 — the `poster-guard` detector is NOT a per-source loop: it reads the k8plex
   // Peloton library, resolves each show/season to its durable override poster (baked into the image), and
   // re-applies ONLY the targets that drifted since the last apply — appending one poster_guard_applications
@@ -626,7 +712,8 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
         plexTitlesIndexed: snapshot.stats.plexTitlesIndexed,
       });
       if (snapshot.scopedLibraryIds.length === 0) {
-        plexMatchError = 'plex-match: no Plex library could be read (registry empty or all servers down)';
+        plexMatchError =
+          'plex-match: no Plex library could be read (registry empty or all servers down)';
       }
     } catch (error) {
       plexMatchError = error instanceof Error ? error.message : String(error);
