@@ -54,3 +54,75 @@
 ## Out of scope until scoped
 
 Everything. No LL config changes, no new sync modes.
+
+## Proposed v1 shape (research outcome — owner review pending)
+
+Full findings + source matrix + citations: `.agents/context/2026-07-11-books-list-sources-research.md`
+(read-only recon of the live LazyLibrarian pod + web research; **no config changed, no grab
+triggered, MAM untouched**).
+
+### What the research established (headlines)
+
+- **LL already has a native list engine.** A "wishlist" is just an RSS provider whose URL matches
+  a pattern; `search_wishlist()` (every 2 h) marks each item **Wanted** (ebook and/or audiobook
+  per a per-list `DLTYPES` flag), stamps the book's `Requester` column with the list name
+  (provenance), and feeds LL's **normal search** — so list wants **inherit usenet-first
+  `dlpriority` + the PLAN-039 governor automatically** (verified in the pod, not assumed).
+- **But LL's NYT / Amazon / B&N / Listopia / Publishers-Weekly providers are HTML scrapers**, and
+  its **Book Depository** provider scrapes a site that closed in 2023. Only **Goodreads shelf
+  RSS**, **Hardcover reading-list sync** (native `hc.py` GraphQL), and **MAM wishlist** are
+  robust (RSS/API-backed).
+- **The best official free chart source is the NYT Books API** — free key, 1,000/day, returns
+  **rank + author + title + ISBN10/13** and has dedicated **Audio Fiction/Nonfiction** lists.
+  LL's own NYT provider *ignores* the API and scrapes the page (worse + fragile). Google Books
+  (key already in 1P + in LL) and Open Library are free **rating/vote-count** sources for a
+  numeric quality floor; **StoryGraph, Audible, and comics have no usable official list API**.
+- **Metadata-path caveat (blocking):** the add-book resolver (`import_book`/`search_for`) that
+  *every* route depends on is the one PLAN-023 saw broken under OpenLibrary. It is now switched to
+  `BOOK_API=GoogleBooks` with a key present in config, **but unproven for the list flow** (a
+  residual `NoneType` import error is in the log from before the key was set; no list has run
+  since). Must be closed by a supervised test before any bulk list.
+
+### Recommended architecture — HYBRID (two tracks)
+
+- **Track 1 — LL-native, config-only, ship first.** Wire `[RSS_*]` wishlist providers for the
+  *robust* sources only: an owner-curated **Goodreads "want" shelf** (RSS) and/or a **Hardcover
+  list** (`hc_sync`), optionally the MAM wishlist. Free bonus levers: **author-follow**
+  (`NEWBOOK_STATUS=Wanted` for followed authors) + **series-completion** (`ADD_SERIES`). Do **not**
+  wire LL's fragile NYT/Amazon/Listopia scrapers.
+- **Track 2 — a small `@hnet/sync` "list mode" (the durable Kometa-analog).** Poll the **official
+  NYT Books API** (+ optional Google Books/Open Library rating floor), then push **ISBNs** into LL
+  via its documented `addbookbyisbn` API (`api.py`), and record what was added (source/rank/ISBN/
+  result) to the app's sync/ledger surface + Pushover. This replaces LL's fragile NYT scraper with
+  a robust official-API path and gives the observability Track 1 lacks. Its own ADR→DESIGN→plan
+  cycle.
+- **Comics:** no list ecosystem exists (ComicVine = metadata only). Use **Kapowarr
+  volume-completion** + manual; scope comics **out** of list-automation v1.
+
+### First sources to wire (in order)
+
+1. **Goodreads "want" shelf via RSS** (Track 1) — owner-curation home, LL-native, robust, ships
+   tonight (post Q-06 test). Cap: last 100 items (Q-07).
+2. **NYT Books API** (Track 2) — marquee official chart, ISBN-keyed, audio-capable; the backbone.
+3. **Hardcover list** (Track 1, native `hc_sync`) — if the owner prefers Hardcover as the curation
+   home over Goodreads (richer, needs a token).
+
+### Open owner decisions (reusing this plan's Q-ids)
+
+- **Q-01 (sources first):** RECOMMEND NYT Books API (Track 2) + one owner-curation home — **owner
+  to pick Goodreads shelf vs Hardcover list**. Amazon/B&N/Listopia deferred (fragile scrapers).
+- **Q-02 (where logic lives):** RECOMMEND **hybrid** — LL-native for robust RSS/API feeds, a
+  `@hnet/sync` list mode for the NYT official API + quality floor + observability.
+- **Q-03 (auto-grab):** RULED auto-grab + PLAN-039 governor; confirmed compatible. Add a first-run
+  **batch cap** until Q-06 clears.
+- **Q-04 (ebook / audio / both):** LL controls this **per-list** via `DLTYPES`. RECOMMEND charts
+  **default ebook-only**; opt audiobooks in per-list (NYT Audio lists → audio). **Owner to confirm
+  the default + which lists get audio.** (Wanting both for every item ~doubles grabs + MAM
+  pressure.)
+- **Q-05 (surface in Library UI):** `Requester` provenance already exists in LL; a chart badge /
+  "why is this here" ties into **PLAN-029 collections** — defer there.
+- **Q-06 (NEW — metadata-path proof, BLOCKING):** run one supervised single-list/ISBN test and
+  confirm clean `import_book` + Wanted + grab with no `NoneType`/OpenLibrary errors before any bulk
+  list; if it still errors, pin a newer LL build.
+- **Q-07 (NEW — Goodreads RSS 100-item cap):** fine for a curated shelf; larger Goodreads lists
+  must come via Track 2 (paginated) or Hardcover, not shelf RSS.
