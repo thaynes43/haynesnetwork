@@ -77,6 +77,12 @@ const ALLOWED_FILES = new Set<string>([
 // tombstones vanished rows in one transaction). A rebuildable read-model like ai_usage_chats — the data
 // of record lives in Kavita/ABS, so the writer appends no ledger/audit row (documented exemption).
 // Upserted + tombstoned, so the INSERT / UPDATE / .insert / .update forms are guarded (never hard-deleted).
+// ADR-047 / DESIGN-025 (PLAN-028) adds media_plex_matches (the *arr→Plex match cache the plex-match sync
+// mode writes — syncPlexMatches in plex-match.ts is the sole writer; it upserts the resolved matches and
+// HARD-DELETES the ones a fully-read library no longer serves, in one transaction). A rebuildable derived
+// cache like trash_candidates — the *arrs + Plex are the sources of truth, so no ledger/audit row
+// (documented exemption). Upserted + reconciled, so the INSERT / UPDATE / DELETE (+ Drizzle) forms are all
+// guarded.
 const FORBIDDEN_PATTERNS: Array<{ name: string; regex: RegExp }> = [
   {
     name: 'UPDATE users SET role_id (SQL)',
@@ -85,32 +91,32 @@ const FORBIDDEN_PATTERNS: Array<{ name: string; regex: RegExp }> = [
   {
     name: 'INSERT INTO guarded/audit table (SQL)',
     regex:
-      /INSERT\s+INTO\s+(user_role_transitions|permission_audit|roles|role_app_grants|role_section_permissions|role_trash_action_grants|role_message_action_grants|notifications|notification_outbox|smart_drive_state|poster_guard_applications|ai_usage_chats|authentik_users|pending_role_assignments|authentik_group_audit|books_items|messages|app_settings|trash_batches|trash_batch_items|trash_batch_saves|trash_candidates|trash_candidates_state|app_catalog|media_items|media_metadata|ledger_events|fix_requests|restore_runs|sync_runs|sync_state|plex_servers|plex_libraries|role_library_grants|role_plex_server_all_grants|plex_share_audit)\b/i,
+      /INSERT\s+INTO\s+(user_role_transitions|permission_audit|roles|role_app_grants|role_section_permissions|role_trash_action_grants|role_message_action_grants|notifications|notification_outbox|smart_drive_state|poster_guard_applications|ai_usage_chats|authentik_users|pending_role_assignments|authentik_group_audit|books_items|media_plex_matches|messages|app_settings|trash_batches|trash_batch_items|trash_batch_saves|trash_candidates|trash_candidates_state|app_catalog|media_items|media_metadata|ledger_events|fix_requests|restore_runs|sync_runs|sync_state|plex_servers|plex_libraries|role_library_grants|role_plex_server_all_grants|plex_share_audit)\b/i,
   },
   {
     name: 'UPDATE guarded table (SQL)',
     regex:
-      /UPDATE\s+(roles|role_section_permissions|role_trash_action_grants|role_message_action_grants|notifications|notification_outbox|smart_drive_state|ai_usage_chats|authentik_users|pending_role_assignments|books_items|messages|app_settings|trash_batches|trash_batch_items|trash_batch_saves|trash_candidates|trash_candidates_state|app_catalog|media_items|media_metadata|ledger_events|fix_requests|restore_runs|sync_runs|sync_state|plex_servers|plex_libraries|role_library_grants|role_plex_server_all_grants)\s+SET\b/i,
+      /UPDATE\s+(roles|role_section_permissions|role_trash_action_grants|role_message_action_grants|notifications|notification_outbox|smart_drive_state|ai_usage_chats|authentik_users|pending_role_assignments|books_items|media_plex_matches|messages|app_settings|trash_batches|trash_batch_items|trash_batch_saves|trash_candidates|trash_candidates_state|app_catalog|media_items|media_metadata|ledger_events|fix_requests|restore_runs|sync_runs|sync_state|plex_servers|plex_libraries|role_library_grants|role_plex_server_all_grants)\s+SET\b/i,
   },
   {
     name: 'DELETE FROM guarded table (SQL)',
     regex:
-      /DELETE\s+FROM\s+(role_app_grants|role_section_permissions|role_trash_action_grants|role_message_action_grants|notifications|notification_outbox|smart_drive_state|ai_usage_chats|pending_role_assignments|messages|app_settings|trash_batches|trash_batch_items|trash_batch_saves|trash_candidates|trash_candidates_state|roles|app_catalog|media_items|media_metadata|ledger_events|fix_requests|restore_runs|sync_runs|sync_state|plex_servers|plex_libraries|role_library_grants|role_plex_server_all_grants|plex_share_audit)\b/i,
+      /DELETE\s+FROM\s+(role_app_grants|role_section_permissions|role_trash_action_grants|role_message_action_grants|notifications|notification_outbox|smart_drive_state|ai_usage_chats|pending_role_assignments|messages|app_settings|trash_batches|trash_batch_items|trash_batch_saves|trash_candidates|trash_candidates_state|roles|app_catalog|media_items|media_metadata|media_plex_matches|ledger_events|fix_requests|restore_runs|sync_runs|sync_state|plex_servers|plex_libraries|role_library_grants|role_plex_server_all_grants|plex_share_audit)\b/i,
   },
   {
     name: '.insert() into guarded/audit table (Drizzle)',
     regex:
-      /\.insert\(\s*(?:[A-Za-z_$][\w$]*\.)?(userRoleTransitions|permissionAudit|roleAppGrants|roleSectionPermissions|roleTrashActionGrants|roleMessageActionGrants|notifications|notificationOutbox|smartDriveState|posterGuardApplications|aiUsageChats|authentikUsers|pendingRoleAssignments|authentikGroupAudit|booksItems|messages|appSettings|trashBatches|trashBatchItems|trashBatchSaves|trashCandidates|trashCandidatesState|roles|appCatalog|mediaItems|mediaMetadata|ledgerEvents|fixRequests|restoreRuns|syncRuns|syncState|plexServers|plexLibraries|roleLibraryGrants|rolePlexServerAllGrants|plexShareAudit)\s*\)/,
+      /\.insert\(\s*(?:[A-Za-z_$][\w$]*\.)?(userRoleTransitions|permissionAudit|roleAppGrants|roleSectionPermissions|roleTrashActionGrants|roleMessageActionGrants|notifications|notificationOutbox|smartDriveState|posterGuardApplications|aiUsageChats|authentikUsers|pendingRoleAssignments|authentikGroupAudit|booksItems|mediaPlexMatches|messages|appSettings|trashBatches|trashBatchItems|trashBatchSaves|trashCandidates|trashCandidatesState|roles|appCatalog|mediaItems|mediaMetadata|ledgerEvents|fixRequests|restoreRuns|syncRuns|syncState|plexServers|plexLibraries|roleLibraryGrants|rolePlexServerAllGrants|plexShareAudit)\s*\)/,
   },
   {
     name: '.update() on guarded table (Drizzle)',
     regex:
-      /\.update\(\s*(?:[A-Za-z_$][\w$]*\.)?(users|roles|roleSectionPermissions|roleTrashActionGrants|roleMessageActionGrants|notifications|notificationOutbox|smartDriveState|aiUsageChats|authentikUsers|pendingRoleAssignments|booksItems|messages|appSettings|trashBatches|trashBatchItems|trashBatchSaves|trashCandidates|trashCandidatesState|appCatalog|mediaItems|mediaMetadata|ledgerEvents|fixRequests|restoreRuns|syncRuns|syncState|plexServers|plexLibraries|roleLibraryGrants|rolePlexServerAllGrants)\s*\)/,
+      /\.update\(\s*(?:[A-Za-z_$][\w$]*\.)?(users|roles|roleSectionPermissions|roleTrashActionGrants|roleMessageActionGrants|notifications|notificationOutbox|smartDriveState|aiUsageChats|authentikUsers|pendingRoleAssignments|booksItems|mediaPlexMatches|messages|appSettings|trashBatches|trashBatchItems|trashBatchSaves|trashCandidates|trashCandidatesState|appCatalog|mediaItems|mediaMetadata|ledgerEvents|fixRequests|restoreRuns|syncRuns|syncState|plexServers|plexLibraries|roleLibraryGrants|rolePlexServerAllGrants)\s*\)/,
   },
   {
     name: '.delete() on guarded table (Drizzle)',
     regex:
-      /\.delete\(\s*(?:[A-Za-z_$][\w$]*\.)?(roleAppGrants|roleSectionPermissions|roleTrashActionGrants|roleMessageActionGrants|notifications|notificationOutbox|smartDriveState|aiUsageChats|pendingRoleAssignments|messages|appSettings|trashBatches|trashBatchItems|trashBatchSaves|trashCandidates|trashCandidatesState|roles|appCatalog|mediaItems|mediaMetadata|ledgerEvents|fixRequests|restoreRuns|syncRuns|syncState|roleLibraryGrants|rolePlexServerAllGrants|plexLibraries|plexServers)\s*\)/,
+      /\.delete\(\s*(?:[A-Za-z_$][\w$]*\.)?(roleAppGrants|roleSectionPermissions|roleTrashActionGrants|roleMessageActionGrants|notifications|notificationOutbox|smartDriveState|aiUsageChats|pendingRoleAssignments|messages|appSettings|trashBatches|trashBatchItems|trashBatchSaves|trashCandidates|trashCandidatesState|roles|appCatalog|mediaItems|mediaMetadata|mediaPlexMatches|ledgerEvents|fixRequests|restoreRuns|syncRuns|syncState|roleLibraryGrants|rolePlexServerAllGrants|plexLibraries|plexServers)\s*\)/,
   },
 ];
 

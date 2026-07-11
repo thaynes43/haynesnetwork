@@ -3,7 +3,12 @@
 // Session-gated AND section-gated (mirrors the poster route's auth pattern): the caller's Ledger
 // level must be at least Read-Only (Disabled → 403; server-authoritative, AC-13). @hnet/api parses
 // the filter + streams keyset pages; this route only checks access and pipes the stream.
-import { buildExportFilterFromParams, effectiveSectionLevel, streamLedgerExportRows } from '@hnet/api';
+import {
+  buildExportFilterFromParams,
+  effectiveSectionLevel,
+  resolveLibraryAccessGate,
+  streamLedgerExportRows,
+} from '@hnet/api';
 import { getServerSession } from '@hnet/auth';
 import { db } from '@hnet/db';
 
@@ -18,8 +23,11 @@ export async function GET(req: Request): Promise<Response> {
   }
 
   const filter = buildExportFilterFromParams(new URL(req.url).searchParams);
+  // ADR-047 THE INVARIANT — the export is filtered to the caller's accessible Plex libraries (admin ⇒
+  // unrestricted). An inaccessible item never lands in the JSONL.
+  const gate = await resolveLibraryAccessGate(session.user.id, db);
   const encoder = new TextEncoder();
-  const iterator = streamLedgerExportRows(db, filter);
+  const iterator = streamLedgerExportRows(db, filter, gate);
   const stream = new ReadableStream<Uint8Array>({
     async pull(controller) {
       const { value, done } = await iterator.next();

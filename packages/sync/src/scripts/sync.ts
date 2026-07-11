@@ -29,7 +29,7 @@ import type { BooksSyncBundle } from '../books';
 import { createConsoleLogger } from '../logger';
 import { runSync } from '../orchestrator';
 
-const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy|notify-outbox|smart-alerts|poster-guard|ai-usage-sync|authentik-users|books-sync [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
+const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy|notify-outbox|smart-alerts|poster-guard|ai-usage-sync|authentik-users|books-sync|plex-match [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
 
   --mode=full              item-list upsert + tombstone pass per *arr (+ Seerr requests)
   --mode=incremental       history/since cursor polling per *arr (+ Seerr requests)
@@ -70,6 +70,12 @@ const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-bat
                            /admin/users portal reads (ADR-045). READ-ONLY against Authentik. Needs
                            AUTHENTIK_API_TOKEN (AUTHENTIK_URL defaults to the in-cluster Service DNS).
                            No --source. Writes no sync_runs row.
+  --mode=plex-match        resolve each *arr ledger media_item to its exact Plex {library, ratingKey} by
+                           shared-GUID match (tmdb/imdb/tvdb/musicbrainz) and UPSERT the media_plex_matches
+                           cache (ADR-047 — the Library access gate + "Watch on Plex" deep-link substrate).
+                           READS DB media_items (their ids, already synced) + the Plex libraries READ-ONLY —
+                           no *arr call, no write to Plex. Needs PLEX_HAYNESTOWER/HAYNESOPS/HAYNESKUBE_TOKEN
+                           (URLs default to in-cluster/ingress). No --source. Writes no sync_runs row.
   --source=NAME            limit the run to one source (repeatable; default: all sources; for
                            metadata-refresh the default is the three *arr kinds)
   --force-tombstones       override the mass-tombstone guard (DESIGN-005 D-14/Q-03)
@@ -127,7 +133,8 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
       mode === 'poster-guard' ||
       mode === 'ai-usage-sync' ||
       mode === 'authentik-users' ||
-      mode === 'books-sync') &&
+      mode === 'books-sync' ||
+      mode === 'plex-match') &&
     sources.length > 0
   ) {
     throw new CliUsageError(`--source is not valid for --mode=${mode}`);
@@ -143,7 +150,8 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
     mode === 'poster-guard' ||
     mode === 'ai-usage-sync' ||
     mode === 'authentik-users' ||
-    mode === 'books-sync'
+    mode === 'books-sync' ||
+    mode === 'plex-match'
       ? []
       : mode === 'metadata-refresh'
         ? [...ARR_KINDS]
@@ -227,9 +235,13 @@ async function main(): Promise<number> {
   // the smartctl series through (PROMETHEUS_URL, in-cluster default; no secret).
   const smartReader = args.mode === 'smart-alerts' ? prometheusClientFromEnv() : undefined;
   // ADR-043 / DESIGN-021 — the Plex client bundle (read + confined write) the `poster-guard` mode uses.
-  // Built INSIDE @hnet/domain (plexClientBundleFromEnv), so the confined Plex write surface stays
-  // domain-only (ADR-017 guard); throws one PlexConfigError if PLEX_HAYNESKUBE_TOKEN is absent.
-  const plex = args.mode === 'poster-guard' ? plexClientBundleFromEnv() : undefined;
+  // ADR-047 / DESIGN-025 — `plex-match` reuses the same bundle (READ side only) to enumerate the Movies/
+  // TV/Music libraries. Built INSIDE @hnet/domain (plexClientBundleFromEnv), so the confined Plex write
+  // surface stays domain-only (ADR-017 guard); throws one PlexConfigError if a PLEX_*_TOKEN is absent.
+  const plex =
+    args.mode === 'poster-guard' || args.mode === 'plex-match'
+      ? plexClientBundleFromEnv()
+      : undefined;
   // ADR-044 / DESIGN-022 — the read-only Open WebUI admin-API client the `ai-usage-sync` mode polls
   // (OPENWEBUI_URL defaults to the in-cluster service DNS; throws OpenWebUiConfigError if
   // OPENWEBUI_API_KEY is absent). Read-only — it never mutates Open WebUI.
@@ -353,6 +365,18 @@ async function main(): Promise<number> {
     ...(report.posterGuardError !== undefined ? { posterGuardError: report.posterGuardError } : {}),
     ...(report.aiUsage ? { aiUsage: report.aiUsage } : {}),
     ...(report.aiUsageError !== undefined ? { aiUsageError: report.aiUsageError } : {}),
+    ...(report.plexMatch
+      ? {
+          plexMatch: {
+            upserted: report.plexMatch.upserted,
+            removed: report.plexMatch.removed,
+            byKind: report.plexMatch.stats.byKind,
+            plexTitlesIndexed: report.plexMatch.stats.plexTitlesIndexed,
+            unmappedSections: report.plexMatch.stats.unmappedSections,
+          },
+        }
+      : {}),
+    ...(report.plexMatchError !== undefined ? { plexMatchError: report.plexMatchError } : {}),
     sources: report.sources.map((s) => ({
       source: s.source,
       status: s.status,

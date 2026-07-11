@@ -159,6 +159,22 @@ export function YtdlsubItemDetail({
             {counts !== null ? <span className="badge">{counts}</span> : null}
           </div>
           {show.summary !== null ? <p className="detail-head__meta muted">{show.summary}</p> : null}
+          {/* ADR-047 / DESIGN-025 (PLAN-028) — "Watch on Plex" deep link. ytdl-sub content is Plex-native
+              (never "missing"), so an accessible show always carries a playUrl. Static affordance
+              (ADR-015 reflow-free); opens app.plex.tv, hands off to the native app where installed. */}
+          {show.playUrl !== null ? (
+            <p className="detail-head__play">
+              <a
+                className="btn primary"
+                href={show.playUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Watch on Plex
+                <span className="btn__ext" aria-hidden="true"> ↗</span>
+              </a>
+            </p>
+          ) : null}
         </div>
       </section>
 

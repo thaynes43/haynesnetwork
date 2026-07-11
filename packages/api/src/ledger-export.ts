@@ -6,6 +6,9 @@
 import { and, asc, eq, sql, type SQL } from 'drizzle-orm';
 import { ARR_KINDS, mediaItems, mediaMetadata, RESOLUTIONS, type Database } from '@hnet/db';
 import { buildLibraryWhere, HAS_FILE_FILTERS, ON_DISK_FILTERS, type LibraryWhereInput } from './ledger-query';
+// ADR-047 / DESIGN-025 (PLAN-028) — THE INVARIANT: the JSONL export is a payload too, so it is gated to the
+// caller's accessible Plex libraries (the route handler resolves + passes the gate; admin ⇒ unrestricted).
+import { libraryAccessWhere, type LibraryAccessGate } from './library-access';
 
 /** One exported row — the fields needed to re-import into the target *arr (ADR-022 C-03). Key
  *  order is fixed so the JSONL is byte-deterministic for a fixed filtered set (AC-12). */
@@ -107,10 +110,13 @@ const toExportRow = (row: {
 export async function* streamLedgerExportRows(
   db: Database,
   filter: LibraryWhereInput,
+  gate?: LibraryAccessGate,
 ): AsyncGenerator<string> {
   // LEFT JOIN media_metadata unconditionally (matches search/browse) so the metadata facet
   // filters resolve; the projection stays media_items-only (the export is round-trip data).
   const baseWhere = buildLibraryWhere(filter);
+  const access = gate ? libraryAccessWhere(gate) : null;
+  if (access !== null) baseWhere.push(access);
 
   let cursor: { sortTitle: string; id: string } | null = null;
   for (;;) {

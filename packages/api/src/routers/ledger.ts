@@ -15,8 +15,18 @@ import {
   users,
   wantedItems,
 } from '@hnet/db';
-import { listMediaChildren } from '@hnet/domain';
+import { isMediaItemAccessible, listMediaChildren } from '@hnet/domain';
 import { authedProcedure, mapDomainErrors, resolveArrBundle, router } from '../trpc';
+// ADR-047 / DESIGN-025 (PLAN-028) — THE INVARIANT: every media_items read here is gated to the caller's
+// accessible Plex libraries SERVER-SIDE (never UI filtering). The gate + predicates live in library-access.
+import {
+  itemAccessById,
+  libraryAccessConditionRaw,
+  libraryAccessWhere,
+  matchLibraryIdsForItem,
+  resolveLibraryAccessGate,
+  resolvePlexPlayTargets,
+} from '../library-access';
 import { decodeCursor, encodeCursor } from '../cursor';
 import {
   decodeKeysetCursor,
@@ -60,9 +70,14 @@ export const ledgerRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
+      // ADR-047 THE INVARIANT — filter to the caller's accessible Plex libraries SERVER-SIDE (an item in
+      // a library the role can't access never enters the payload). Admin ⇒ unrestricted (no predicate).
+      const gate = await resolveLibraryAccessGate(ctx.user.id, ctx.db);
       // The shared WHERE assembly (unaccent search + onDisk grains + metadata facets + rating
       // bounds + tombstone gate) — single-sourced in ledger-query.ts (DESIGN-008 D-09).
       const where: SQL[] = buildLibraryWhere(input);
+      const access = libraryAccessWhere(gate);
+      if (access !== null) where.push(access);
 
       const spec = SORT_SPECS[input.sort.field];
       const idCol = sql`${mediaItems.id}`;
@@ -134,14 +149,23 @@ export const ledgerRouter = router({
   filterFacets: authedProcedure
     .input(z.object({ arrKind: z.enum(ARR_KINDS).optional() }).default({}))
     .query(async ({ ctx, input }) => {
-      const kindFilter = input.arrKind
-        ? sql`WHERE mi.arr_kind = ${input.arrKind}`
-        : sql``;
+      // ADR-047 THE INVARIANT — facet values are scoped to the caller's accessible items too (a genre /
+      // requester name from an inaccessible library must not leak via the chip bar). The predicate reads
+      // the `mpx` (media_plex_matches) LEFT JOIN; unrestricted (admin) callers skip both.
+      const gate = await resolveLibraryAccessGate(ctx.user.id, ctx.db);
+      const accessCond = libraryAccessConditionRaw(gate); // EXISTS over media_plex_matches — no join needed
+      const conds: SQL[] = [];
+      if (input.arrKind) conds.push(sql`mi.arr_kind = ${input.arrKind}`);
+      if (accessCond !== null) conds.push(accessCond);
+      const whereOf = (extra?: SQL): SQL => {
+        const parts = extra ? [...conds, extra] : conds;
+        return parts.length === 0 ? sql`` : sql`WHERE ${sql.join(parts, sql` AND `)}`;
+      };
       const distinctText = async (col: 'genres' | 'requesters' | 'source_collections') => {
         const rows = await ctx.db.execute<{ value: string }>(
           sql`SELECT DISTINCT jsonb_array_elements_text(mm.${sql.raw(col)}) AS value
                 FROM media_metadata mm JOIN media_items mi ON mi.id = mm.media_item_id
-                ${kindFilter}
+                ${whereOf()}
                ORDER BY value ASC`,
         );
         return (rows.rows ?? (rows as unknown as { value: string }[])).map((r) => r.value);
@@ -149,7 +173,7 @@ export const ledgerRouter = router({
       const resolutionRows = await ctx.db.execute<{ value: string }>(
         sql`SELECT DISTINCT mm.resolution AS value
               FROM media_metadata mm JOIN media_items mi ON mi.id = mm.media_item_id
-             ${kindFilter} ${input.arrKind ? sql`AND` : sql`WHERE`} mm.resolution IS NOT NULL
+             ${whereOf(sql`mm.resolution IS NOT NULL`)}
              ORDER BY value ASC`,
       );
       // Return resolutions in RESOLUTIONS enum order (2160p→sd→unknown), not the DISTINCT's
@@ -174,6 +198,22 @@ export const ledgerRouter = router({
     if (!item) {
       throw new TRPCError({ code: 'NOT_FOUND', message: `Media item ${input.id} not found` });
     }
+    // ADR-047 THE INVARIANT — a direct id fetch must re-gate: an item the caller can access NO library of is
+    // indistinguishable from "not found" (never reveal its existence + external ids). Admin ⇒ ok.
+    const gate = await resolveLibraryAccessGate(ctx.user.id, ctx.db);
+    const matchLibraryIds = await matchLibraryIdsForItem(ctx.db, input.id);
+    if (
+      !isMediaItemAccessible(gate, {
+        arrKind: item.arrKind,
+        arrInstanceId: item.arrInstanceId,
+        matchLibraryIds,
+      })
+    ) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: `Media item ${input.id} not found` });
+    }
+    // ADR-047 Q-D / owner UX ruling — ONE "Watch on Plex — <library>" deep link per library the caller can
+    // access, and ONLY for a PRESENT (on-disk) item (a missing/unfiled item gets none). Empty array otherwise.
+    const play = await resolvePlexPlayTargets(ctx.db, gate, input.id, item.onDiskFileCount > 0);
     // DESIGN-008 D-09 — the harvested metadata block + poster URL for the detail view.
     const [meta] = await ctx.db
       .select(METADATA_SELECT)
@@ -244,6 +284,9 @@ export const ledgerRouter = router({
         posterUrl: posterUrlFor(item.id, meta?.posterSource ?? null),
         // Always the object shape (all-null when unharvested) — identical to search (fix 2026-07-06).
         metadata: metadataBlock(meta),
+        // ADR-047 (PLAN-028) — one "Watch on Plex — <library>" deep link per ACCESSIBLE Plex library the
+        // present item lives in (empty when missing/unmatched/inaccessible). Rendered as primary actions.
+        play,
       },
       events: events.map((e) => ({
         id: e.id,
@@ -281,6 +324,11 @@ export const ledgerRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
+      // ADR-047 THE INVARIANT — the history of a hidden item must not leak by direct id.
+      const gate = await resolveLibraryAccessGate(ctx.user.id, ctx.db);
+      if (!(await itemAccessById(ctx.db, gate, input.mediaItemId))) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: `Media item ${input.mediaItemId} not found` });
+      }
       const where: SQL[] = [eq(ledgerEvents.mediaItemId, input.mediaItemId)];
       if (input.cursor !== undefined) {
         const [millis, id] = decodeCursor(input.cursor, ['number', 'string']);
@@ -328,6 +376,11 @@ export const ledgerRouter = router({
   children: authedProcedure
     .input(z.object({ mediaItemId: z.uuid() }))
     .query(async ({ ctx, input }) => {
+      // ADR-047 THE INVARIANT — the live season/album proxy must not run for a hidden item.
+      const gate = await resolveLibraryAccessGate(ctx.user.id, ctx.db);
+      if (!(await itemAccessById(ctx.db, gate, input.mediaItemId))) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: `Media item ${input.mediaItemId} not found` });
+      }
       return mapDomainErrors(async () => {
         const children = await listMediaChildren({
           db: ctx.db,
@@ -354,8 +407,14 @@ export const ledgerRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
+      // ADR-047 THE INVARIANT — the wanted (missing) view is media_items too; gate it to accessible libs.
+      // Missing items are unmatched, so they resolve via their kind's home library (join media_items for
+      // arr_kind/instance; the access predicate's EXISTS subqueries need no extra join).
+      const gate = await resolveLibraryAccessGate(ctx.user.id, ctx.db);
       const where: SQL[] = [];
       if (input.arrKind) where.push(eq(wantedItems.arrKind, input.arrKind));
+      const access = libraryAccessWhere(gate);
+      if (access !== null) where.push(access);
       if (input.cursor !== undefined) {
         const [sortTitle, id] = decodeCursor(input.cursor, ['string', 'string']);
         where.push(
@@ -373,6 +432,7 @@ export const ledgerRouter = router({
           lastSeenAt: wantedItems.lastSeenAt,
         })
         .from(wantedItems)
+        .innerJoin(mediaItems, eq(mediaItems.id, wantedItems.mediaItemId))
         .where(where.length > 0 ? and(...where) : undefined)
         .orderBy(asc(wantedItems.sortTitle), asc(wantedItems.mediaItemId))
         .limit(input.limit + 1);

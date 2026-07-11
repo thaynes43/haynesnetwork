@@ -4,12 +4,14 @@
 // Library idioms wholesale: the `.media-list.poster-grid` of `.poster-card` tiles, `MediaPoster` (null /
 // load-error → KindIcon fallback), the `.library-toolbar`/`.library-search`/`.library-sortbar` chrome, and
 // the `.sort-btn` idiom. The data is the app-owned `books_items` ledger (synced from Kavita + ABS), read
-// via `books.search` (server-side filter + sort + offset paging). Tiles are EXTERNAL deep-links to the
-// item in Kavita/ABS (public URLs, new tab) — books have no in-app detail page. Reflow-free (ADR-015):
-// fixed 2:3 poster boxes, dim-in-place on refetch, a fixed-height sort row, skeleton tiles on first load.
+// via `books.search` (server-side filter + sort + offset paging). ADR-047 (PLAN-028) — tiles now open the
+// in-app books DETAIL page (like Movies/TV), which carries the "Read in Kavita" / "Listen on Audiobookshelf"
+// deep link as its primary action (no jump-out on the wall itself). Reflow-free (ADR-015): fixed 2:3 poster
+// boxes, dim-in-place on refetch, a fixed-height sort row, skeleton tiles on first load.
 // Pagination is the shared Library scroll idiom (DESIGN-008 D-11 / DESIGN-024 amendment 2026-07-11): a
 // sentinel below the grid pulls the next page as it nears the viewport (rootMargin 600px) — no Load more
 // button — matching the Movies/TV/Music walls. Appending tiles below never shifts existing tiles (ADR-015).
+import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { trpc } from '@/lib/trpc-client';
 import { MediaPoster } from '@/components/media-poster';
@@ -60,6 +62,8 @@ export function BooksBrowser({ mediaKind, label }: { mediaKind: BooksMediaKind; 
   const items = useMemo(() => search.data?.pages.flatMap((p) => p.items) ?? [], [search.data]);
   const refreshing = search.isFetching && !search.isFetchingNextPage && !search.isLoading;
   const sorts = sortsForKind(mediaKind);
+  // The `?from=` back-link key so the detail page returns to THIS wall (ADR-047).
+  const fromKey = mediaKind === 'audiobook' ? 'audiobooks' : mediaKind === 'comic' ? 'comics' : 'books';
 
   // Keyset-style infinite scroll — the exact idiom the Movies/TV/Music walls use (library-client
   // MediaBrowser): a sentinel below the grid pulls the next page as it approaches the viewport, so the
@@ -150,12 +154,10 @@ export function BooksBrowser({ mediaKind, label }: { mediaKind: BooksMediaKind; 
                     ? `${item.pageCount} pp`
                     : null;
               return (
-                // Deep-link to the item in Kavita/ABS (public URL, new tab) — books have no in-app page.
-                <a
+                // ADR-047 — the tile opens the in-app books DETAIL page (the deep link lives there now).
+                <Link
                   key={item.id}
-                  href={item.deepLinkUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  href={`/library/books/${item.id}?from=${fromKey}`}
                   className="media-card poster-card"
                 >
                   <MediaPoster posterUrl={item.posterUrl} kind={item.mediaKind} alt="" />
@@ -173,7 +175,7 @@ export function BooksBrowser({ mediaKind, label }: { mediaKind: BooksMediaKind; 
                       </span>
                     ) : null}
                   </span>
-                </a>
+                </Link>
               );
             })}
           </div>

@@ -13,6 +13,8 @@
 import { z } from 'zod';
 import type { PlexReadClient } from '@hnet/plex/read';
 import { PlexHttpError, type PlexSectionItem } from '@hnet/plex';
+import { buildPlexWebDeepLink, effectiveAllowedLibrariesForUser } from '@hnet/domain';
+import { db as defaultDb, type DbClient } from '@hnet/db';
 import { resolvePlexBundle, router, authedProcedure } from '../trpc';
 import { effectiveSectionLevel, ytdlsubProcedure } from '../middleware/role';
 
@@ -67,6 +69,9 @@ export interface YtdlsubShowDetail {
   seasonCount: number | null;
   episodeCount: number | null;
   year: number | null;
+  // ADR-047 (PLAN-028) — the "Watch on Plex" deep link for this show (hayneskube machineIdentifier +
+  // ratingKey). Always present for an accessible show (ytdl-sub content is Plex-native — never "missing").
+  playUrl: string | null;
 }
 
 export interface YtdlsubSeason {
@@ -123,6 +128,30 @@ async function resolveSectionKey(
   return match ? match.key : null;
 }
 
+/**
+ * ADR-047 / DESIGN-025 (PLAN-028) — THE INVARIANT for the k8plex ytdl-sub libraries (Peloton/YouTube live
+ * on Plex too). A caller may see a library iff their role can access the matching hayneskube Plex library
+ * (ADR-024 role_library_grants — resolved off the SAME effective-library resolver Movies/TV/Music use, by
+ * name regex). Admin ⇒ both (admin implies all libraries). This is the authoritative content gate; the
+ * `ytdlsub` section permission is the coarser visibility knob layered on top.
+ */
+export async function accessibleYtdlsubLibraries(
+  userId: string,
+  isAdmin: boolean,
+  db: DbClient = defaultDb,
+): Promise<Set<YtdlsubLibraryId>> {
+  if (isAdmin) return new Set(YTDLSUB_LIBRARY_IDS);
+  const libs = await effectiveAllowedLibrariesForUser(userId, db);
+  const hits = new Set<YtdlsubLibraryId>();
+  for (const lib of libs) {
+    if (lib.serverSlug !== 'hayneskube') continue;
+    for (const id of YTDLSUB_LIBRARY_IDS) {
+      if (LIBRARY_MATCHERS[id].test(lib.name)) hits.add(id);
+    }
+  }
+  return hits;
+}
+
 /** A Plex 404 (bogus/foreign ratingKey) — the drill-in maps it to found:false, not unavailable. */
 function isPlexNotFound(err: unknown): boolean {
   return err instanceof PlexHttpError && err.status === 404;
@@ -137,9 +166,12 @@ export const ytdlsubRouter = router({
     canSee: effectiveSectionLevel(ctx.user.role, 'ytdlsub') !== 'disabled',
   })),
 
-  /** The two sub-tabs + whether each library was found on k8plex. Degrades to found:false on outage. */
+  /** The two sub-tabs + whether each library was found on k8plex. Degrades to found:false on outage.
+   *  ADR-047 — a library the caller's role can't access is reported found:false (hidden, never an
+   *  empty-state teaser). */
   libraries: ytdlsubProcedure.query(async ({ ctx }): Promise<{ libraries: YtdlsubLibrarySummary[] }> => {
     const read = resolvePlexBundle(ctx).read.hayneskube;
+    const allowed = await accessibleYtdlsubLibraries(ctx.user.id, ctx.user.role.isAdmin, ctx.db);
     let titles: string[] = [];
     try {
       titles = (await read.listSections()).map((s) => s.title);
@@ -150,7 +182,7 @@ export const ytdlsubRouter = router({
       libraries: YTDLSUB_LIBRARY_IDS.map((id) => ({
         id,
         label: YTDLSUB_LIBRARY_LABELS[id],
-        found: titles.some((t) => LIBRARY_MATCHERS[id].test(t)),
+        found: allowed.has(id) && titles.some((t) => LIBRARY_MATCHERS[id].test(t)),
       })),
     };
   }),
@@ -159,6 +191,9 @@ export const ytdlsubRouter = router({
   list: ytdlsubProcedure
     .input(z.object({ library: z.enum(YTDLSUB_LIBRARY_IDS) }))
     .query(async ({ ctx, input }): Promise<YtdlsubListResult> => {
+      // ADR-047 THE INVARIANT — a withheld library returns zero items (never even hits Plex).
+      const allowed = await accessibleYtdlsubLibraries(ctx.user.id, ctx.user.role.isAdmin, ctx.db);
+      if (!allowed.has(input.library)) return { items: [], found: false, unavailable: false };
       const read = resolvePlexBundle(ctx).read.hayneskube;
       let sectionKey: string | null;
       try {
@@ -183,8 +218,11 @@ export const ytdlsubRouter = router({
   detail: ytdlsubProcedure
     .input(z.object({ library: z.enum(YTDLSUB_LIBRARY_IDS), ratingKey: ratingKeyInput }))
     .query(async ({ ctx, input }): Promise<YtdlsubDetailResult> => {
-      const read = resolvePlexBundle(ctx).read.hayneskube;
       const notFound: YtdlsubDetailResult = { found: false, unavailable: false, show: null, seasons: [] };
+      // ADR-047 THE INVARIANT — a withheld library's drill-in is indistinguishable from not-found.
+      const allowed = await accessibleYtdlsubLibraries(ctx.user.id, ctx.user.role.isAdmin, ctx.db);
+      if (!allowed.has(input.library)) return notFound;
+      const read = resolvePlexBundle(ctx).read.hayneskube;
       let sectionKey: string | null;
       try {
         sectionKey = await resolveSectionKey(read, input.library);
@@ -210,6 +248,8 @@ export const ytdlsubRouter = router({
             seasonCount: item.childCount ?? null,
             episodeCount: item.leafCount ?? null,
             year: item.year ?? null,
+            // ADR-047 Q-D — "Watch on Plex" for this show (hayneskube machineIdentifier + ratingKey).
+            playUrl: buildPlexWebDeepLink(read.machineIdentifier, item.ratingKey),
           },
           seasons: children.items
             .filter((c) => c.type === 'season')
@@ -235,8 +275,11 @@ export const ytdlsubRouter = router({
   episodes: ytdlsubProcedure
     .input(z.object({ library: z.enum(YTDLSUB_LIBRARY_IDS), seasonRatingKey: ratingKeyInput }))
     .query(async ({ ctx, input }): Promise<YtdlsubEpisodesResult> => {
-      const read = resolvePlexBundle(ctx).read.hayneskube;
       const notFound: YtdlsubEpisodesResult = { found: false, unavailable: false, episodes: [] };
+      // ADR-047 THE INVARIANT — no episode leaks from a withheld library.
+      const allowed = await accessibleYtdlsubLibraries(ctx.user.id, ctx.user.role.isAdmin, ctx.db);
+      if (!allowed.has(input.library)) return notFound;
+      const read = resolvePlexBundle(ctx).read.hayneskube;
       let sectionKey: string | null;
       try {
         sectionKey = await resolveSectionKey(read, input.library);

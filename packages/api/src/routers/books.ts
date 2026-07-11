@@ -5,11 +5,24 @@
 // `booksProcedure` (the `books` section, ships Admin-only) — server-authoritative (AC-13), never
 // client-hidden only. Same gate protects the /api/books/cover proxy.
 import { z } from 'zod';
+import { TRPCError } from '@trpc/server';
 import { booksItems, BOOKS_MEDIA_KINDS } from '@hnet/db';
 import { and, asc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
 import { authedProcedure, router } from '../trpc';
 import { booksProcedure, effectiveSectionLevel } from '../middleware/role';
 import { booksSearchInputSchema, toBooksListItem, type BooksListItem, type BooksSort } from '../books-query';
+
+/** ADR-047 (PLAN-028) — the app-specific "Read in Kavita" / "Listen on Audiobookshelf" verb, by source. */
+function booksPlayLabel(source: string): string {
+  return source === 'audiobookshelf' ? 'Listen on Audiobookshelf' : 'Read in Kavita';
+}
+
+/** The books detail payload (the in-app drill-in — deep-links OUT to Kavita/ABS, no *arr semantics). */
+export interface BooksDetailResult {
+  item: BooksListItem & { libraryName: string; lastSyncedAt: string };
+  /** The app-specific deep link (books are always PRESENT — synced from the serving app). */
+  play: { app: 'kavita' | 'audiobookshelf'; label: string; url: string };
+}
 
 /** The ORDER BY for a sort option (id/sort_title tiebreakers keep the offset paging stable). */
 function orderForSort(sort: BooksSort) {
@@ -75,6 +88,36 @@ export const booksRouter = router({
       return {
         items: rows.map(toBooksListItem),
         nextCursor: rows.length === input.limit ? input.cursor + input.limit : null,
+      };
+    }),
+
+  /**
+   * ADR-047 (PLAN-028) — one book/audiobook/comic's detail (the in-app drill-in the poster now opens; books
+   * previously jumped straight out). Gated by `booksProcedure` (the `books` section — books gating is
+   * unchanged). Deep-links OUT to Kavita/ABS as the primary action; no Fix/Force-Search (books have no *arr
+   * semantics, ADR-046). Live rows only — a tombstoned/absent id is NOT_FOUND.
+   */
+  detail: booksProcedure
+    .input(z.object({ id: z.uuid() }))
+    .query(async ({ ctx, input }): Promise<BooksDetailResult> => {
+      const [row] = await ctx.db
+        .select()
+        .from(booksItems)
+        .where(and(eq(booksItems.id, input.id), isNull(booksItems.deletedAt)));
+      if (!row) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: `Book ${input.id} not found` });
+      }
+      return {
+        item: {
+          ...toBooksListItem(row),
+          libraryName: row.libraryName,
+          lastSyncedAt: row.lastSeenAt.toISOString(),
+        },
+        play: {
+          app: row.source === 'audiobookshelf' ? 'audiobookshelf' : 'kavita',
+          label: booksPlayLabel(row.source),
+          url: row.deepLinkUrl,
+        },
       };
     }),
 

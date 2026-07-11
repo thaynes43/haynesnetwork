@@ -17,6 +17,9 @@ import {
 import { executeArrAdd } from '@hnet/domain';
 import { mapDomainErrors, resolveArrBundle, router } from '../trpc';
 import { sectionProcedure } from '../middleware/role';
+// ADR-047 / DESIGN-025 (PLAN-028) — THE INVARIANT applies to the admin spreadsheet too: a non-admin Ledger
+// curator only browses/counts items in Plex libraries their role can access (admin ⇒ unrestricted).
+import { libraryAccessWhere, resolveLibraryAccessGate } from '../library-access';
 import {
   LEDGER_FILTER_SHAPE,
   METADATA_SELECT,
@@ -80,8 +83,11 @@ export const ledgerAdminRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
+      const gate = await resolveLibraryAccessGate(ctx.user.id, ctx.db);
       // includeTombstoned is FORCED true — the Ledger is "everything that ever was on the server".
       const where: SQL[] = buildLibraryWhere({ ...input, includeTombstoned: true });
+      const access = libraryAccessWhere(gate);
+      if (access !== null) where.push(access);
       const spec = SORT_SPECS[input.sort.field];
       const idCol = sql`${mediaItems.id}`;
       if (input.cursor !== undefined) {
@@ -177,7 +183,10 @@ export const ledgerAdminRouter = router({
   count: sectionProcedure('ledger', 'read_only')
     .input(z.object({ ...LEDGER_FILTER_SHAPE }))
     .query(async ({ ctx, input }) => {
+      const gate = await resolveLibraryAccessGate(ctx.user.id, ctx.db);
       const where: SQL[] = buildLibraryWhere({ ...input, includeTombstoned: true });
+      const access = libraryAccessWhere(gate);
+      if (access !== null) where.push(access);
       const [row] = await ctx.db
         .select({ total: sql<number>`count(*)::int` })
         .from(mediaItems)

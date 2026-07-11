@@ -9,9 +9,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const getServerSession = vi.hoisted(() => vi.fn());
 const resolvePosterUpstream = vi.hoisted(() => vi.fn());
 const resolveTmdbPosterFallback = vi.hoisted(() => vi.fn());
+// ADR-047 (PLAN-028) — the per-item Library access gate the route now applies (THE INVARIANT:
+// the poster proxy is a parallel art-by-id leak vector). Defaults accessible; the gate test flips it.
+const isMediaItemAccessibleToUser = vi.hoisted(() => vi.fn());
 
 vi.mock('@hnet/auth', () => ({ getServerSession }));
-vi.mock('@hnet/api', () => ({ resolvePosterUpstream, resolveTmdbPosterFallback }));
+vi.mock('@hnet/api', () => ({
+  resolvePosterUpstream,
+  resolveTmdbPosterFallback,
+  isMediaItemAccessibleToUser,
+}));
 
 import { GET } from '../../app/api/posters/[mediaItemId]/route';
 
@@ -46,6 +53,7 @@ beforeEach(() => {
   getServerSession.mockReset().mockResolvedValue({ user: { id: 'u1' } });
   resolvePosterUpstream.mockReset();
   resolveTmdbPosterFallback.mockReset().mockResolvedValue(null);
+  isMediaItemAccessibleToUser.mockReset().mockResolvedValue(true);
   fetchMock = vi.fn();
   vi.stubGlobal('fetch', fetchMock);
 });
@@ -57,6 +65,17 @@ describe('GET /api/posters/[id] — session gate', () => {
     const res = await call();
     expect(res.status).toBe(401);
     expect(resolvePosterUpstream).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /api/posters/[id] — library access gate (ADR-047 THE INVARIANT)', () => {
+  it('an item in a Plex library the caller cannot access → 404, resolver never touched', async () => {
+    isMediaItemAccessibleToUser.mockResolvedValue(false);
+    const res = await call();
+    expect(res.status).toBe(404);
+    expect(isMediaItemAccessibleToUser).toHaveBeenCalledWith('u1', ID);
+    expect(resolvePosterUpstream).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

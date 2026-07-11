@@ -243,6 +243,14 @@ export const SYNC_RUN_KINDS = [
   // mode (no --source, writes NO sync_runs row — its trail is books_items). It joins SYNC_RUN_KINDS so
   // the CLI `--mode` parser + `SyncMode` accept it (migration 0037 rebuilds the sync_runs.run_kind CHECK).
   'books-sync',
+  // ADR-047 / DESIGN-025 (PLAN-028 — Library deep links) — 'plex-match' resolves each *arr ledger
+  // media_item to the exact Plex {library, ratingKey} by shared-GUID match and UPSERTS the
+  // media_plex_matches derived cache via the domain syncPlexMatches single-writer. Reads DB media_items
+  // (their tmdb/tvdb/imdb/musicbrainz ids, already synced) + Plex libraries READ-ONLY — no *arr call, no
+  // write to Plex. Standalone mode (no --source, writes NO sync_runs row — its trail is
+  // media_plex_matches). It joins SYNC_RUN_KINDS so the CLI --mode parser + SyncMode accept it (migration
+  // 0038 rebuilds the sync_runs.run_kind CHECK to keep the const array + CHECK in parity).
+  'plex-match',
 ] as const;
 export type SyncRunKind = (typeof SYNC_RUN_KINDS)[number];
 
@@ -281,6 +289,13 @@ export type PlexServerSlug = (typeof PLEX_SERVER_SLUGS)[number];
 // new `type`; relax this CHECK if that happens.
 export const PLEX_MEDIA_TYPES = ['movie', 'show', 'artist', 'photo'] as const;
 export type PlexMediaType = (typeof PLEX_MEDIA_TYPES)[number];
+
+// ADR-047 / DESIGN-025 (PLAN-028 — Library "Watch/Listen/Read here" deep links) — the shared external
+// GUID a media_items row and a Plex title BOTH carry, used to resolve the *arr → Plex match (which Plex
+// library the item lives in + its ratingKey). Radarr matches on tmdb/imdb, Sonarr on tvdb/imdb, Lidarr
+// on musicbrainz. `media_plex_matches.matched_via` is CHECK-constrained to this set.
+export const PLEX_MATCH_GUID_SOURCES = ['tmdb', 'imdb', 'tvdb', 'musicbrainz'] as const;
+export type PlexMatchGuidSource = (typeof PLEX_MATCH_GUID_SOURCES)[number];
 
 // Plex-share ledger events (ADR-017 D-07 / ADR-024). A per-section library share was applied
 // (share_added) or revoked (share_removed); OR the server-wide all-libraries flag was turned on

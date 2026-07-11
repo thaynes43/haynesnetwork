@@ -64,3 +64,7 @@ export * from './authentik-group-audit';
 // ADR-046 / DESIGN-024 (PLAN-023) — the books LEDGER: the synced Kavita + Audiobookshelf mirror the
 // Library Books/Audiobooks/Comics walls read (books-sync mode). Guarded single-writer table (syncBooks).
 export * from './books-items';
+// ADR-047 / DESIGN-025 (PLAN-028) — the *arr → Plex match cache: per media_item {plex_library, ratingKey}
+// resolved by shared-GUID match (plex-match mode). The Library access gate + "Watch on Plex" deep-link
+// substrate. Guarded single-writer table (syncPlexMatches).
+export * from './plex-match';

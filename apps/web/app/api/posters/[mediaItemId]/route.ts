@@ -9,7 +9,12 @@
 // 404s — because the item was removed from the *arr (a Trash expedite / "Recently Deleted"), so its
 // MediaCover no longer exists while the ledger still says poster_source='arr' — stream the TMDB
 // poster instead so removed items keep their art. TMDB missing too ⇒ the placeholder (as before).
-import { resolvePosterUpstream, resolveTmdbPosterFallback, type PosterUpstream } from '@hnet/api';
+import {
+  isMediaItemAccessibleToUser,
+  resolvePosterUpstream,
+  resolveTmdbPosterFallback,
+  type PosterUpstream,
+} from '@hnet/api';
 import { getServerSession } from '@hnet/auth';
 
 export const runtime = 'nodejs';
@@ -54,6 +59,11 @@ export async function GET(
   if (!session) return new Response('unauthorized', { status: 401 });
 
   const { mediaItemId } = await ctx.params;
+  // ADR-047 THE INVARIANT — the cover proxy is a parallel leak vector (art by id). Apply the SAME per-item
+  // access gate as the tRPC surface: a poster for an item in a Plex library the caller can't access 404s.
+  if (!(await isMediaItemAccessibleToUser(session.user.id, mediaItemId))) {
+    return new Response('not found', { status: 404 });
+  }
   const target = await resolvePosterUpstream(mediaItemId);
   if (target) {
     const served = await serve(req, target);

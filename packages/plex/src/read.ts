@@ -108,6 +108,30 @@ export class PlexReadClient {
   }
 
   /**
+   * ADR-047 / DESIGN-025 (PLAN-028 — plex-match) — ONE page of `GET /library/sections/{key}/all`
+   * (`X-Plex-Container-Start`/`-Size`), returning the items plus the library's `totalSize` so the
+   * match sweep can page a large Movies/TV library to completion. Read-only; token stays in the
+   * header. Callers loop `start += size` until `start >= totalSize` (or a short page returns).
+   */
+  async listSectionContentsPage(
+    sectionKey: string,
+    opts: { start: number; size: number },
+  ): Promise<{ items: PlexSectionItem[]; totalSize: number | null }> {
+    const size = Math.min(Math.max(opts.size, 1), 1000);
+    const start = Math.max(opts.start, 0);
+    const body = await this.http.requestJson(
+      'GET',
+      `${this.baseUrl}/library/sections/${encodeURIComponent(sectionKey)}/all`,
+      sectionContentsSchema,
+      { query: { 'X-Plex-Container-Start': start, 'X-Plex-Container-Size': size } },
+    );
+    return {
+      items: body.MediaContainer.Metadata,
+      totalSize: body.MediaContainer.totalSize ?? body.MediaContainer.size ?? null,
+    };
+  }
+
+  /**
    * DESIGN-017 D-09 (ytdl-sub drill-in) — `GET /library/metadata/{ratingKey}`: one item (a show /
    * season / episode) plus the library section that owns it (the drill-in's section-confinement
    * check). Read-only; token in the header. A bogus ratingKey throws the typed 404 PlexHttpError —

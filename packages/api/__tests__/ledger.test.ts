@@ -22,7 +22,11 @@ let member: Awaited<ReturnType<typeof createUser>>;
 
 beforeAll(async () => {
   tdb = await bootMigratedDb();
-  member = await createUser(tdb.db);
+  // ADR-047 (PLAN-028) — these tests exercise Library BROWSE mechanics (search/sort/keyset/detail/events/
+  // children/wanted), orthogonal to the access gate. An admin caller is `unrestricted` (the gate is a
+  // no-op), so the browse behaviour is asserted exactly as before; the access gate itself is proven
+  // separately in library-access.test.ts.
+  member = await createUser(tdb.db, { admin: true });
 
   // A small mixed library: complete/partial/none on-disk states, three kinds,
   // one tombstoned row.

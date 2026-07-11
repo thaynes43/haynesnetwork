@@ -2,6 +2,8 @@
 // (disabled ⇒ FORBIDDEN; a role opted to read_only can list), the Plex-DIRECT read mapping (shows →
 // poster-grid rows with a proxied poster URL), and the graceful degrade (an absent library ⇒ found:false).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { SEEDED_PLEX_SERVER_IDS, SEEDED_ROLE_IDS } from '@hnet/db';
+import { setRoleLibraries, upsertPlexLibraries } from '@hnet/domain';
 import {
   bootMigratedDb,
   caller,
@@ -16,6 +18,25 @@ let testDb: TestDb;
 
 beforeAll(async () => {
   testDb = await bootMigratedDb();
+  // ADR-047 (PLAN-028) — the k8plex ytdl-sub libraries are Plex libraries too: a caller sees Peloton/YouTube
+  // only when their role can access the matching hayneskube library. Register the sections and grant the
+  // Default role hayneskube-all so a non-admin `read_only` member can list them (admins are unrestricted).
+  await upsertPlexLibraries({
+    db: testDb.db,
+    slug: 'hayneskube',
+    libraries: [
+      { sectionKey: '3', name: 'HOps Music', mediaType: 'artist' },
+      { sectionKey: '4', name: 'HOps Peloton', mediaType: 'show' },
+      { sectionKey: '5', name: 'HOps YT', mediaType: 'show' },
+    ],
+  });
+  await setRoleLibraries({
+    db: testDb.db,
+    roleId: SEEDED_ROLE_IDS.default,
+    libraryIds: [],
+    allServerIds: [SEEDED_PLEX_SERVER_IDS.hayneskube],
+    actorId: null,
+  });
 });
 afterAll(async () => {
   await testDb.stop();
