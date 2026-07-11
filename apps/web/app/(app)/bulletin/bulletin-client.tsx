@@ -1,63 +1,72 @@
 'use client';
 
-// ADR-026 / DESIGN-012 D-08 — the /bulletin section UI over the communication.* wire
-// contracts (D-05/D-06). Two sub-tabs:
+// ADR-050 / DESIGN-012 D-12 (PLAN-034 Helpdesk) — the /bulletin section UI. Two sub-tabs, the
+// HELPDESK FIRST (owner requirement 1):
 //
-// - FEED — the aggregated third-party notification browse (Seerr / Tautulli / Maintainerr),
-//   newest-first keyset pages with simple param filters (source, media link — Q-05: no full
-//   filter-engine port; the segs swap the result set in place, ADR-015).
-// - MESSAGES — the durable board: a composer (the `post` grant; subject optional, body
-//   required, optional Media Item link via a small library search) above the newest-first
-//   list. The author edits their OWN visible message through a Modal (multi-field, ADR-014);
-//   moderators (the `moderate` grant) hide/delete via inline two-step ConfirmButtons
-//   (destructive, ADR-014 — never window.confirm), restore via a plain button (protective),
-//   and attach a status+note through the multi-field Triage Modal. Non-moderators never see
-//   hidden/deleted rows or the moderation trail (server-enforced; the UI simply has nothing
-//   to render).
+// - HELPDESK — the household media-issue ticket system (it replaced the Messages board). A
+//   POSTER WALL in the Library/Trash grammar (owner requirement 8): tickets with a linked title
+//   render its poster, non-media tickets render their intake-category icon in the same 2:3 tile,
+//   and every tile bakes the STATE on as a colored corner puck (the Trash `bwall-overlay` idiom)
+//   plus a status badge in the caption. State filter chips replace the old All/Visible/Hidden/
+//   Deleted (requirement 7). Compose NEVER stacks above the list (requirement 2): the "New
+//   ticket" button opens a Modal (multi-field — ADR-014), mobile-first. A tile click drills into
+//   /bulletin/ticket/[id] (requirement 6).
+// - FEED — the aggregated third-party notification browse (unchanged, ADR-026 D-05).
 //
-// ADR-015 (hard rule 9): interactions recolor, never reflow — the ConfirmButton reserves its
-// armed width, list refetches dim in place (placeholderData), the composer/media-picker
-// results render in an overlay popover, and modals overlay rather than reorient the page.
+// Navigation implements the DESIGN-004 D-19 history contract: tab switches and ticket drill-ins
+// PUSH history entries; the state chips and the Feed's ?src/?media segs REPLACE in place.
+// ADR-015 (hard rule 9): interactions recolor, never reflow — list refetches dim in place
+// (placeholderData), compose overlays (Modal), pickers overlay (popover).
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useRef, useState, type FormEvent } from 'react';
-import { ConfirmButton } from '@hnet/ui';
 import { trpc } from '@/lib/trpc-client';
 import { Modal } from '@/components/modal';
-import { KindIcon } from '@/components/kind-icon';
+import { MediaPoster } from '@/components/media-poster';
+import { TicketCategoryIcon, TicketStatusGlyph, ReplyGlyph } from '@/components/ticket-glyphs';
 import { describeMutationError } from '@/lib/app-error';
 import { ARR_KIND_LABELS, formatWhen, type ArrKindName } from '@/lib/media';
 import {
   FEED_SOURCE_LABELS,
   FEED_SOURCE_NAMES,
-  MESSAGE_STATUS_LABELS,
-  messageStatusTone,
+  HELPDESK_NAME,
+  TICKET_CATEGORY_HINTS,
+  TICKET_CATEGORY_LABELS,
+  TICKET_CATEGORY_NAMES,
+  TICKET_STATUS_LABELS,
+  TICKET_STATUS_NAMES,
+  ticketStatusTone,
   type BulletinViewName,
   type FeedSourceName,
   type MessageActionName,
-  type MessageStatusName,
+  type TicketCategoryName,
+  type TicketStatusName,
 } from '@/lib/bulletin';
 
 export interface BulletinAccess {
   level: 'edit' | 'read_only';
   actions: MessageActionName[];
   // ADR-049 C-02 (PLAN-027) — the granted Bulletin SUB-VIEWS; the client renders ONLY these
-  // sub-tabs (a messages-only role sees no Feed tab; the feed endpoint FORBIDs it server-side too).
+  // sub-tabs (the `messages` view carries the Helpdesk since PLAN-034; the endpoints FORBID
+  // ungranted views server-side regardless).
   views: BulletinViewName[];
 }
 
+// The Helpdesk rides the stored `messages` view grant (ADR-050 option H — renames never migrate
+// grant rows); the tab key + label are display-only.
 const BULLETIN_TABS = [
-  { key: 'feed', label: 'Feed' },
-  { key: 'messages', label: 'Messages' },
+  { key: 'helpdesk', view: 'messages', label: HELPDESK_NAME },
+  { key: 'feed', view: 'feed', label: 'Feed' },
 ] as const;
 type TabKey = (typeof BULLETIN_TABS)[number]['key'];
 
-/** Resolve the active tab against the sub-views the role may see: honour ?tab when it's granted,
- *  else fall back to the FIRST granted view (so a messages-only role lands on Messages, never a
- *  Feed tab that isn't there). */
+/** Resolve the active tab against the sub-views the role may see: honour ?tab when it's granted
+ *  (the retired `?tab=messages` deep-links alias to the Helpdesk), else fall back to the FIRST
+ *  granted tab in display order — so the Helpdesk leads whenever it's granted (requirement 1). */
 function resolveTab(raw: string | null, available: readonly TabKey[]): TabKey {
-  if (raw !== null && (available as readonly string[]).includes(raw)) return raw as TabKey;
-  return available[0] ?? 'messages';
+  const wanted = raw === 'messages' ? 'helpdesk' : raw;
+  if (wanted !== null && (available as readonly string[]).includes(wanted)) return wanted as TabKey;
+  return available[0] ?? 'helpdesk';
 }
 
 function kindLabel(arrKind: string | null): string | null {
@@ -66,8 +75,22 @@ function kindLabel(arrKind: string | null): string | null {
     : null;
 }
 
-/** The media link cell/chip both tabs share: a Library link when the event/message resolved
- *  to a ledger item, else an em dash. */
+/** Tile-compact activity time ("Jul 11"; the year appears only once it differs) — the full
+ *  timestamps live on the detail page. Bad ISO → as-is. */
+function tileWhen(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  });
+}
+
+// ── Feed ─────────────────────────────────────────────────────────────────────────────────
+
+/** The media link cell: a Library link when the event resolved to a ledger item, else an em dash. */
 function MediaLink({
   mediaItemId,
   mediaTitle,
@@ -82,92 +105,6 @@ function MediaLink({
     </Link>
   );
 }
-
-/** The static repair-status cue shown on a linked message's media chip — sourced server-side
- *  (messages.list) from fix_requests for the page's linked ids. An OPEN fix wins; else a count
- *  of recorded repairs; else nothing. This is a HINT, not a live view — the item page owns the
- *  live phases (ADR-028). */
-function RepairHint({ openFix, fixCount }: { openFix: boolean; fixCount: number }) {
-  if (openFix) {
-    return (
-      <span className="repair-hint repair-hint--open" data-testid="repair-hint">
-        <span className="repair-hint__dot" aria-hidden="true" />
-        Fix in progress
-      </span>
-    );
-  }
-  if (fixCount > 0) {
-    return (
-      <span className="repair-hint repair-hint--past" data-testid="repair-hint">
-        {fixCount} {fixCount === 1 ? 'repair' : 'repairs'} recorded
-      </span>
-    );
-  }
-  return null;
-}
-
-/** DESIGN-012 addendum — the prominent, clearly-clickable media chip on a message card. It deep-
- *  links to the item page (/library/[id] — where History + Fix live) so a reader can jump straight
- *  to a referenced title's repair history. Poster thumb when the item has one (authed proxy), else
- *  the kind icon; the thumb box RESERVES its space so a late/failed image never reflows (ADR-015).
- *  The repair cue rides along, static. */
-function MessageMediaChip({
-  mediaItemId,
-  mediaTitle,
-  mediaArrKind,
-  mediaYear,
-  mediaPosterUrl,
-  openFix,
-  fixCount,
-}: {
-  mediaItemId: string;
-  mediaTitle: string | null;
-  mediaArrKind: string | null;
-  mediaYear: number | null;
-  mediaPosterUrl: string | null;
-  openFix: boolean;
-  fixCount: number;
-}) {
-  const [imgFailed, setImgFailed] = useState(false);
-  const kind = mediaArrKind ?? 'radarr';
-  const label = kindLabel(mediaArrKind);
-  const showImage = mediaPosterUrl !== null && !imgFailed;
-  return (
-    <Link
-      className="media-chip"
-      href={`/library/${mediaItemId}?from=bulletin`}
-      data-testid="message-media-chip"
-      aria-label={`Open ${mediaTitle ?? 'the media item'} — view its history and repairs`}
-    >
-      <span className="media-chip__thumb" aria-hidden="true">
-        {showImage ? (
-          // eslint-disable-next-line @next/next/no-img-element -- authed proxy route, not a static asset
-          <img
-            src={mediaPosterUrl}
-            alt=""
-            loading="lazy"
-            decoding="async"
-            onError={() => setImgFailed(true)}
-          />
-        ) : (
-          <KindIcon kind={kind} className="media-chip__icon" />
-        )}
-      </span>
-      <span className="media-chip__text">
-        <span className="media-chip__title">
-          {mediaTitle ?? 'Media item'}
-          {mediaYear !== null ? <span className="media-chip__year"> ({mediaYear})</span> : null}
-        </span>
-        <span className="media-chip__meta">
-          {label !== null ? <span className="media-chip__kind">{label}</span> : null}
-          <RepairHint openFix={openFix} fixCount={fixCount} />
-        </span>
-      </span>
-    </Link>
-  );
-}
-
-// ── Feed ─────────────────────────────────────────────────────────────────────────────────
 
 const MEDIA_FILTERS = [
   { key: 'any', label: 'All events' },
@@ -197,6 +134,7 @@ function FeedTab() {
       if (v !== null && v !== '') params.set(k, v);
     }
     const qs = params.toString();
+    // Refinements REPLACE (DESIGN-004 D-19) — no history entry per chip.
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   };
 
@@ -334,7 +272,7 @@ function FeedTab() {
   );
 }
 
-// ── Messages: the composer ───────────────────────────────────────────────────────────────
+// ── Helpdesk: the compose Modal ──────────────────────────────────────────────────────────
 
 interface MediaPick {
   id: string;
@@ -342,7 +280,7 @@ interface MediaPick {
   arrKind: string;
 }
 
-/** Small library search-select for the optional Media Item link (ledger.search is available to
+/** Small library search-select for the optional linked title (ledger.search is available to
  *  every signed-in user). Results render in an overlay popover — nothing below reflows. */
 function MediaPicker({
   selected,
@@ -385,7 +323,7 @@ function MediaPicker({
       <input
         type="search"
         placeholder="Search the library…"
-        aria-label="Link a media item (search the library)"
+        aria-label="Link the affected title (search the library)"
         data-testid="composer-media-search"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
@@ -423,340 +361,323 @@ function MediaPicker({
   );
 }
 
-function Composer({ onPosted }: { onPosted: () => void }) {
-  const [subject, setSubject] = useState('');
+/** ADR-014 — the multi-field "New ticket" Modal (requirement 2: compose NEVER stacks above the
+ *  wall; a Modal overlays it — the strongest mobile shape). On success the router PUSHES the new
+ *  ticket's detail page (a screen change — D-19), which doubles as the "it's filed" confirmation. */
+function ComposeModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const router = useRouter();
+  const utils = trpc.useUtils();
+  const [title, setTitle] = useState('');
+  const [category, setCategory] = useState<TicketCategoryName>('playback');
   const [body, setBody] = useState('');
   const [media, setMedia] = useState<MediaPick | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const post = trpc.communication.messages.post.useMutation({
+  const create = trpc.communication.tickets.create.useMutation({
     onError: (err: unknown) => setError(describeMutationError(err)),
-    onSuccess: () => {
+    onSuccess: (created) => {
       setError(null);
-      setSubject('');
+      setTitle('');
       setBody('');
       setMedia(null);
-      onPosted();
+      setCategory('playback');
+      void utils.communication.tickets.invalidate();
+      router.push(`/bulletin/ticket/${created.id}`);
     },
   });
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (body.trim() === '') return;
-    post.mutate({
-      ...(subject.trim() !== '' ? { subject: subject.trim() } : {}),
+    if (title.trim() === '' || body.trim() === '') return;
+    create.mutate({
+      title: title.trim(),
       body: body.trim(),
+      category,
       ...(media !== null ? { mediaItemId: media.id } : {}),
     });
   };
 
   return (
-    <form className="card bulletin-composer" data-testid="message-composer" onSubmit={submit}>
-      <label className="field">
-        <span>Subject</span>
-        <input
-          maxLength={200}
-          placeholder="Optional"
-          value={subject}
-          onChange={(e) => setSubject(e.target.value)}
-        />
-      </label>
-      <label className="field">
-        <span>
-          Message{' '}
-          <span className="req" aria-hidden="true">
-            *
-          </span>
-        </span>
-        <textarea
-          required
-          rows={3}
-          maxLength={8000}
-          placeholder="Broken media, a request, or anything for the household…"
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-        />
-      </label>
-      <div className="field">
-        <span>Link the title (optional) — helps others check its history and repairs</span>
-        <MediaPicker selected={media} onSelect={setMedia} />
-      </div>
-      {error !== null ? (
-        <p className="alert" role="alert">
-          {error}
+    <Modal
+      open={open}
+      title="New ticket"
+      onClose={() => {
+        if (!create.isPending) onClose();
+      }}
+      banner={
+        error !== null ? (
+          <p className="alert" role="alert">
+            {error}
+          </p>
+        ) : null
+      }
+    >
+      <form className="admin-form" data-testid="ticket-compose" onSubmit={submit}>
+        <p className="muted tcompose-note">
+          Report an issue with media or playback. Found a bug with the <strong>site itself</strong>?
+          That goes to GitHub instead (linked from the Home banner).
         </p>
-      ) : null}
-      <div className="form-actions">
-        <button
-          type="submit"
-          className="btn primary"
-          data-testid="message-post"
-          disabled={post.isPending || body.trim() === ''}
-        >
-          {post.isPending ? 'Posting…' : 'Post message'}
-        </button>
-      </div>
-    </form>
+        <label className="field">
+          <span>
+            What’s wrong?{' '}
+            <span className="req" aria-hidden="true">
+              *
+            </span>
+          </span>
+          <input
+            required
+            maxLength={200}
+            placeholder="e.g. No sound from minute 3"
+            data-testid="ticket-title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+        </label>
+        <fieldset className="field tcat-field">
+          <legend>Category</legend>
+          <div className="tcat-grid" role="radiogroup" aria-label="Ticket category">
+            {TICKET_CATEGORY_NAMES.map((c) => (
+              <button
+                key={c}
+                type="button"
+                role="radio"
+                aria-checked={category === c}
+                className={`tcat-opt${category === c ? ' is-active' : ''}`}
+                data-testid={`ticket-category-${c}`}
+                onClick={() => setCategory(c)}
+              >
+                <TicketCategoryIcon category={c} className="tcat-opt__icon" />
+                <span className="tcat-opt__label">{TICKET_CATEGORY_LABELS[c]}</span>
+                <span className="tcat-opt__hint muted">{TICKET_CATEGORY_HINTS[c]}</span>
+              </button>
+            ))}
+          </div>
+        </fieldset>
+        <div className="field">
+          <span>Which title? (optional) — its poster becomes the ticket’s tile</span>
+          <MediaPicker selected={media} onSelect={setMedia} />
+        </div>
+        <label className="field">
+          <span>
+            Details{' '}
+            <span className="req" aria-hidden="true">
+              *
+            </span>
+          </span>
+          <textarea
+            required
+            rows={4}
+            maxLength={8000}
+            placeholder="What happened, on which device/app, and when…"
+            data-testid="ticket-body"
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+          />
+        </label>
+        <div className="form-actions">
+          <button
+            type="submit"
+            className="btn primary"
+            data-testid="ticket-create"
+            disabled={create.isPending || title.trim() === '' || body.trim() === ''}
+          >
+            {create.isPending ? 'Filing…' : 'File ticket'}
+          </button>
+          <button type="button" className="btn" disabled={create.isPending} onClick={onClose}>
+            Cancel
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
-// ── Messages: the board ──────────────────────────────────────────────────────────────────
+// ── Helpdesk: the ticket wall ────────────────────────────────────────────────────────────
 
-interface MessageItem {
+interface TicketListItem {
   id: string;
+  title: string;
+  category: TicketCategoryName;
+  status: TicketStatusName;
   authorUserId: string;
   authorName: string | null;
-  subject: string | null;
-  body: string;
   mediaItemId: string | null;
   mediaTitle: string | null;
   mediaArrKind: string | null;
   mediaYear: number | null;
   mediaPosterUrl: string | null;
-  openFix: boolean;
-  fixCount: number;
-  status: MessageStatusName;
+  replyCount: number;
   createdAt: string;
-  editedAt: string | null;
-  moderatedBy: string | null;
-  moderatedAt: string | null;
-  moderationNote: string | null;
+  lastActivityAt: string;
 }
 
-const STATUS_FILTERS = [undefined, 'visible', 'hidden', 'deleted'] as const;
-type StatusFilter = (typeof STATUS_FILTERS)[number];
+/** One wall tile: the linked title's poster (or the category icon tile), the state baked on as a
+ *  colored corner puck (the Trash idiom) + a status badge in the caption, the reply count, and the
+ *  last-activity time. The WHOLE tile is the drill-in link (requirement 6 — a history push). */
+function TicketTile({ ticket }: { ticket: TicketListItem }) {
+  const tone = ticketStatusTone(ticket.status);
+  return (
+    <li className="twall-tile" data-status={ticket.status} data-testid="ticket-tile">
+      <Link
+        className="twall-link"
+        href={`/bulletin/ticket/${ticket.id}`}
+        aria-label={`${ticket.title} — ${TICKET_STATUS_LABELS[ticket.status]}${
+          ticket.mediaTitle !== null ? ` — ${ticket.mediaTitle}` : ''
+        }`}
+      >
+        <span className="twall-poster">
+          {ticket.mediaItemId !== null ? (
+            <MediaPoster
+              posterUrl={ticket.mediaPosterUrl}
+              kind={ticket.mediaArrKind ?? 'radarr'}
+              alt=""
+            />
+          ) : (
+            <span className="poster-box twall-cattile" data-category={ticket.category}>
+              <TicketCategoryIcon category={ticket.category} className="twall-cattile__icon" />
+              <span className="twall-cattile__label">
+                {TICKET_CATEGORY_LABELS[ticket.category]}
+              </span>
+            </span>
+          )}
+          <span className="twall-overlay" data-status={ticket.status} aria-hidden="true">
+            <TicketStatusGlyph status={ticket.status} />
+          </span>
+        </span>
+        <span className="twall-caption">{ticket.title}</span>
+        <span className="twall-sub muted">
+          {ticket.mediaTitle !== null
+            ? `${ticket.mediaTitle}${ticket.mediaYear !== null ? ` (${ticket.mediaYear})` : ''}`
+            : TICKET_CATEGORY_LABELS[ticket.category]}
+        </span>
+        <span className="twall-meta">
+          <span className={`badge badge--${tone}`}>{TICKET_STATUS_LABELS[ticket.status]}</span>
+          {ticket.replyCount > 0 ? (
+            <span className="twall-replies" aria-label={`${ticket.replyCount} replies`}>
+              <ReplyGlyph className="twall-replies__icon" />
+              {ticket.replyCount}
+            </span>
+          ) : null}
+          <span className="muted twall-when">{tileWhen(ticket.lastActivityAt)}</span>
+        </span>
+      </Link>
+    </li>
+  );
+}
 
-function MessagesTab({ access, viewerId }: { access: BulletinAccess; viewerId: string }) {
-  const utils = trpc.useUtils();
-  const canPost = access.actions.includes('post');
-  const canModerate = access.actions.includes('moderate');
+const STATE_FILTERS = [undefined, ...TICKET_STATUS_NAMES] as const;
+type StateFilter = (typeof STATE_FILTERS)[number];
 
-  // Moderator-only status filter (non-moderators only ever receive visible rows — D-06).
-  const [status, setStatus] = useState<StatusFilter>(undefined);
-  const list = trpc.communication.messages.list.useInfiniteQuery(
-    { ...(canModerate && status !== undefined ? { status } : {}), limit: 50 },
+function HelpdeskTab({ access }: { access: BulletinAccess }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const canCreate = access.actions.includes('post');
+
+  // The state filter rides the URL (?state=) — deep-linkable; chip changes REPLACE (D-19).
+  const stateParam = searchParams.get('state');
+  const state: StateFilter = (TICKET_STATUS_NAMES as readonly string[]).includes(stateParam ?? '')
+    ? (stateParam as TicketStatusName)
+    : undefined;
+  const setState = (next: StateFilter) => {
+    const params = new URLSearchParams(window.location.search);
+    params.delete('state');
+    if (next !== undefined) params.set('state', next);
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  };
+
+  const counts = trpc.communication.tickets.counts.useQuery();
+  const list = trpc.communication.tickets.list.useInfiniteQuery(
+    { ...(state !== undefined ? { status: state } : {}), limit: 60 },
     { getNextPageParam: (last) => last.nextCursor ?? undefined, placeholderData: (prev) => prev },
   );
-  const rows = (list.data?.pages.flatMap((p) => p.items) ?? []) as MessageItem[];
+  const rows = (list.data?.pages.flatMap((p) => p.items) ?? []) as TicketListItem[];
   const refreshing = list.isPlaceholderData && list.isFetching;
+  const total =
+    counts.data !== undefined
+      ? counts.data.open + counts.data.in_progress + counts.data.complete + counts.data.rejected
+      : undefined;
 
-  const invalidate = () => void utils.communication.messages.list.invalidate();
-
-  const [rowError, setRowError] = useState<string | null>(null);
-  const moderate = trpc.communication.messages.moderate.useMutation({
-    onError: (err: unknown) => setRowError(describeMutationError(err)),
-    onSuccess: () => {
-      setRowError(null);
-      invalidate();
-    },
-  });
-
-  // ── Edit (author-only, Modal — multi-field, ADR-014) ──
-  const [editing, setEditing] = useState<MessageItem | null>(null);
-  const [editSubject, setEditSubject] = useState('');
-  const [editBody, setEditBody] = useState('');
-  const [editError, setEditError] = useState<string | null>(null);
-  const edit = trpc.communication.messages.edit.useMutation({
-    onError: (err: unknown) => setEditError(describeMutationError(err)),
-    onSuccess: () => {
-      setEditing(null);
-      setEditError(null);
-      invalidate();
-    },
-  });
-  const openEdit = (m: MessageItem) => {
-    setEditSubject(m.subject ?? '');
-    setEditBody(m.body);
-    setEditError(null);
-    setEditing(m);
-  };
-
-  // ── Triage (moderators, Modal — the multi-field status + note transition) ──
-  const [triaging, setTriaging] = useState<MessageItem | null>(null);
-  const [triageStatus, setTriageStatus] = useState<MessageStatusName>('hidden');
-  const [triageNote, setTriageNote] = useState('');
-  const [triageError, setTriageError] = useState<string | null>(null);
-  const triage = trpc.communication.messages.moderate.useMutation({
-    onError: (err: unknown) => setTriageError(describeMutationError(err)),
-    onSuccess: () => {
-      setTriaging(null);
-      setTriageError(null);
-      invalidate();
-    },
-  });
-  const openTriage = (m: MessageItem) => {
-    setTriageStatus(m.status === 'visible' ? 'hidden' : m.status);
-    setTriageNote(m.moderationNote ?? '');
-    setTriageError(null);
-    setTriaging(m);
-  };
-
-  const busy = moderate.isPending || triage.isPending;
+  const [composing, setComposing] = useState(false);
 
   return (
     <>
-      {canPost ? (
-        <Composer onPosted={invalidate} />
-      ) : (
-        <p className="muted" data-testid="composer-absent">
-          You can read the board. Posting needs the post permission — ask an admin if you need it.
-        </p>
-      )}
-
-      {canModerate ? (
-        <div className="library-filters admin-filterbar">
-          <div className="seg" role="group" aria-label="Status">
-            {STATUS_FILTERS.map((value) => (
-              <button
-                key={value ?? 'all'}
-                type="button"
-                className={status === value ? 'is-active' : undefined}
-                onClick={() => setStatus(value)}
-              >
-                {value === undefined ? 'All' : MESSAGE_STATUS_LABELS[value]}
-              </button>
-            ))}
-          </div>
+      <div className="library-filters admin-filterbar twall-bar">
+        <div className="seg" role="group" aria-label="Ticket state">
+          {STATE_FILTERS.map((value) => (
+            <button
+              key={value ?? 'all'}
+              type="button"
+              className={state === value ? 'is-active' : undefined}
+              data-testid={`ticket-filter-${value ?? 'all'}`}
+              onClick={() => setState(value)}
+            >
+              {value === undefined ? 'All' : TICKET_STATUS_LABELS[value]}
+              {value === undefined
+                ? total !== undefined
+                  ? ` · ${total}`
+                  : ''
+                : counts.data !== undefined
+                  ? ` · ${counts.data[value]}`
+                  : ''}
+            </button>
+          ))}
         </div>
-      ) : null}
+        {canCreate ? (
+          <button
+            type="button"
+            className="btn primary twall-new"
+            data-testid="ticket-new"
+            onClick={() => setComposing(true)}
+          >
+            New ticket
+          </button>
+        ) : (
+          <p className="muted twall-new-note" data-testid="composer-absent">
+            You can read and reply. Filing tickets needs the post permission — ask an admin.
+          </p>
+        )}
+      </div>
 
-      {rowError !== null ? (
-        <p className="alert" role="alert">
-          {rowError}
-        </p>
-      ) : null}
-      {list.isLoading ? <p className="muted">Loading messages…</p> : null}
       {list.error ? (
         <p className="alert" role="alert">
-          Couldn’t load the board: {list.error.message}
+          Couldn’t load the {HELPDESK_NAME.toLowerCase()}: {list.error.message}
         </p>
       ) : null}
 
-      {!list.isLoading && !list.error && rows.length === 0 ? (
-        <p className="muted" data-testid="messages-empty">
-          No messages yet{canPost ? ' — start the board with the form above.' : '.'}
-        </p>
+      {list.isLoading ? (
+        <ul className="twall" aria-hidden="true">
+          {Array.from({ length: 6 }, (_, i) => (
+            <li key={i} className="twall-tile twall-tile--skeleton">
+              <span className="poster-box" />
+              <span className="skeleton-line" />
+              <span className="skeleton-line skeleton-line--short" />
+            </li>
+          ))}
+        </ul>
+      ) : !list.error && rows.length === 0 ? (
+        <section className="card empty-state" data-testid="tickets-empty">
+          <p>
+            {state === undefined
+              ? 'No tickets yet — when playback misbehaves or something’s missing, file it here.'
+              : `No ${TICKET_STATUS_LABELS[state].toLowerCase()} tickets.`}
+          </p>
+          <p className="muted">
+            Media or playback problems belong here; bugs with the site itself go to GitHub (linked
+            from the Home banner).
+          </p>
+        </section>
       ) : (
-        <ol
-          className={`bulletin-board${refreshing ? ' is-refreshing' : ''}`}
+        <ul
+          className={`twall${refreshing ? ' is-refreshing' : ''}`}
           aria-busy={refreshing}
-          data-testid="bulletin-messages"
+          data-testid="ticket-wall"
         >
-          {rows.map((m) => {
-            const mine = m.authorUserId === viewerId;
-            return (
-              <li key={m.id}>
-                <article
-                  className="card bulletin-msg"
-                  data-status={m.status}
-                  data-testid="message-card"
-                >
-                  <header className="bulletin-msg__head">
-                    <span className="bulletin-msg__meta">
-                      <strong>{m.authorName ?? '(deleted user)'}</strong>
-                      <span className="muted"> · {formatWhen(m.createdAt)}</span>
-                      {m.editedAt !== null ? <span className="muted"> · edited</span> : null}
-                      {m.status !== 'visible' ? (
-                        <span className={`badge badge--${messageStatusTone(m.status)}`}>
-                          {MESSAGE_STATUS_LABELS[m.status]}
-                        </span>
-                      ) : null}
-                    </span>
-                    <span className="row-actions bulletin-msg__actions">
-                      {mine && canPost && m.status === 'visible' ? (
-                        <button
-                          type="button"
-                          className="btn sm"
-                          data-testid="message-edit"
-                          disabled={busy}
-                          onClick={() => openEdit(m)}
-                        >
-                          Edit
-                        </button>
-                      ) : null}
-                      {canModerate ? (
-                        <>
-                          {m.status === 'visible' ? (
-                            <ConfirmButton
-                              className="btn sm"
-                              data-testid="message-hide"
-                              label="Hide"
-                              disabled={busy}
-                              restingAriaLabel={`Hide this message from the board — content is preserved — click twice to confirm`}
-                              confirmAriaLabel="Confirm hide this message"
-                              onConfirm={() =>
-                                moderate.mutate({ messageId: m.id, status: 'hidden' })
-                              }
-                            />
-                          ) : (
-                            <button
-                              type="button"
-                              className="btn sm"
-                              data-testid="message-restore"
-                              disabled={busy}
-                              onClick={() =>
-                                moderate.mutate({ messageId: m.id, status: 'visible' })
-                              }
-                            >
-                              Restore
-                            </button>
-                          )}
-                          {m.status !== 'deleted' ? (
-                            <ConfirmButton
-                              className="btn sm danger"
-                              data-testid="message-delete"
-                              label="Delete"
-                              disabled={busy}
-                              restingAriaLabel={`Delete this message — soft delete, content preserved for audit — click twice to confirm`}
-                              confirmAriaLabel="Confirm delete this message"
-                              onConfirm={() =>
-                                moderate.mutate({ messageId: m.id, status: 'deleted' })
-                              }
-                            />
-                          ) : null}
-                          <button
-                            type="button"
-                            className="btn sm"
-                            data-testid="message-triage"
-                            disabled={busy}
-                            onClick={() => openTriage(m)}
-                          >
-                            Triage
-                          </button>
-                        </>
-                      ) : null}
-                    </span>
-                  </header>
-                  {m.subject !== null && m.subject !== '' ? (
-                    <p className="bulletin-msg__subject">{m.subject}</p>
-                  ) : null}
-                  <p className="bulletin-msg__body">{m.body}</p>
-                  {m.mediaItemId !== null ? (
-                    <div className="bulletin-msg__media">
-                      <MessageMediaChip
-                        mediaItemId={m.mediaItemId}
-                        mediaTitle={m.mediaTitle}
-                        mediaArrKind={m.mediaArrKind}
-                        mediaYear={m.mediaYear}
-                        mediaPosterUrl={m.mediaPosterUrl}
-                        openFix={m.openFix}
-                        fixCount={m.fixCount}
-                      />
-                    </div>
-                  ) : null}
-                  {canModerate && m.moderatedAt !== null ? (
-                    <p className="muted bulletin-msg__trail" data-testid="message-trail">
-                      Moderated {formatWhen(m.moderatedAt)}
-                      {m.moderationNote !== null && m.moderationNote !== ''
-                        ? ` — “${m.moderationNote}”`
-                        : ''}
-                    </p>
-                  ) : null}
-                </article>
-              </li>
-            );
-          })}
-        </ol>
+          {rows.map((tk) => (
+            <TicketTile key={tk.id} ticket={tk} />
+          ))}
+        </ul>
       )}
 
       {list.hasNextPage ? (
@@ -772,168 +693,21 @@ function MessagesTab({ access, viewerId }: { access: BulletinAccess; viewerId: s
         </div>
       ) : null}
 
-      {/* ADR-014 — the author's Edit Modal (multi-field: subject + body). A message a
-          moderator hid meanwhile edits to a CONFLICT — surfaced on the banner, never silent. */}
-      <Modal
-        open={editing !== null}
-        title="Edit message"
-        onClose={() => {
-          if (!edit.isPending) setEditing(null);
-        }}
-        banner={
-          editError !== null ? (
-            <p className="alert" role="alert">
-              {editError}
-            </p>
-          ) : null
-        }
-      >
-        <form
-          className="admin-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (editing === null || editBody.trim() === '') return;
-            edit.mutate({
-              messageId: editing.id,
-              ...(editSubject.trim() !== '' ? { subject: editSubject.trim() } : {}),
-              body: editBody.trim(),
-            });
-          }}
-        >
-          <label className="field">
-            <span>Subject</span>
-            <input
-              maxLength={200}
-              value={editSubject}
-              onChange={(e) => setEditSubject(e.target.value)}
-            />
-          </label>
-          <label className="field">
-            <span>
-              Message{' '}
-              <span className="req" aria-hidden="true">
-                *
-              </span>
-            </span>
-            <textarea
-              required
-              rows={4}
-              maxLength={8000}
-              value={editBody}
-              onChange={(e) => setEditBody(e.target.value)}
-            />
-          </label>
-          <div className="form-actions">
-            <button
-              type="submit"
-              className="btn primary"
-              data-testid="message-edit-save"
-              disabled={edit.isPending || editBody.trim() === ''}
-            >
-              {edit.isPending ? 'Saving…' : 'Save changes'}
-            </button>
-            <button
-              type="button"
-              className="btn"
-              disabled={edit.isPending}
-              onClick={() => setEditing(null)}
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* ADR-014 — the moderator's multi-field Triage Modal (status + note in one audited
-          transition; the quick Hide/Delete ConfirmButtons above skip the note). */}
-      <Modal
-        open={triaging !== null}
-        title="Triage message"
-        onClose={() => {
-          if (!triage.isPending) setTriaging(null);
-        }}
-        banner={
-          triageError !== null ? (
-            <p className="alert" role="alert">
-              {triageError}
-            </p>
-          ) : null
-        }
-      >
-        <form
-          className="admin-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (triaging === null) return;
-            triage.mutate({
-              messageId: triaging.id,
-              status: triageStatus,
-              ...(triageNote.trim() !== '' ? { note: triageNote.trim() } : {}),
-            });
-          }}
-        >
-          <p className="muted">
-            Transitions are soft — the message content is always preserved as the audit record.
-          </p>
-          <label className="field">
-            <span>Status</span>
-            <select
-              className="section-select"
-              value={triageStatus}
-              onChange={(e) => setTriageStatus(e.target.value as MessageStatusName)}
-            >
-              <option value="visible">Visible (restore)</option>
-              <option value="hidden">Hidden</option>
-              <option value="deleted">Deleted</option>
-            </select>
-          </label>
-          <label className="field">
-            <span>Moderation note</span>
-            <textarea
-              rows={2}
-              maxLength={500}
-              placeholder="Optional — visible to moderators only"
-              value={triageNote}
-              onChange={(e) => setTriageNote(e.target.value)}
-            />
-          </label>
-          <div className="form-actions">
-            <button
-              type="submit"
-              className={`btn ${triageStatus === 'visible' ? 'primary' : 'danger'}`}
-              data-testid="message-triage-apply"
-              disabled={triage.isPending}
-            >
-              {triage.isPending
-                ? 'Applying…'
-                : triageStatus === 'visible'
-                  ? 'Restore message'
-                  : `Mark ${MESSAGE_STATUS_LABELS[triageStatus].toLowerCase()}`}
-            </button>
-            <button
-              type="button"
-              className="btn"
-              disabled={triage.isPending}
-              onClick={() => setTriaging(null)}
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
-      </Modal>
+      {canCreate ? <ComposeModal open={composing} onClose={() => setComposing(false)} /> : null}
     </>
   );
 }
 
 // ── the section shell ────────────────────────────────────────────────────────────────────
 
-function BulletinContent({ access, viewerId }: { access: BulletinAccess; viewerId: string }) {
+function BulletinContent({ access }: { access: BulletinAccess }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   // ADR-049 C-02 (PLAN-027) — only the granted sub-views render as tabs; a role narrowed to
-  // messages-only has NO Feed tab (and the feed endpoint FORBIDs it server-side).
-  const availableTabs = BULLETIN_TABS.filter((t) => access.views.includes(t.key));
+  // messages-only (the Default shape) sees ONLY the Helpdesk (and the feed endpoint FORBIDs it
+  // server-side regardless).
+  const availableTabs = BULLETIN_TABS.filter((t) => access.views.includes(t.view));
   const tabKeys = availableTabs.map((t) => t.key);
   const active = resolveTab(searchParams.get('tab'), tabKeys);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -941,8 +715,8 @@ function BulletinContent({ access, viewerId }: { access: BulletinAccess; viewerI
   const selectTab = (key: TabKey) => {
     // Same contract as /library, /ledger, /trash: switching keeps ONLY ?tab, and a
     // screen-level tab switch PUSHES a history entry (DESIGN-004 D-19) so Back returns to
-    // the prior tab; the feed's ?src/?media refinements stay router.replace. scroll:false
-    // preserves the existing tab-switch scroll behaviour.
+    // the prior tab; the Helpdesk's ?state and the Feed's ?src/?media refinements stay
+    // router.replace. scroll:false preserves the existing tab-switch scroll behaviour.
     const params = new URLSearchParams();
     params.set('tab', key);
     router.push(`${pathname}?${params.toString()}`, { scroll: false });
@@ -989,16 +763,16 @@ function BulletinContent({ access, viewerId }: { access: BulletinAccess; viewerI
       </div>
 
       <div id="bulletin-panel" role="tabpanel" aria-labelledby={`bulletintab-${active}`}>
-        {active === 'feed' ? <FeedTab /> : <MessagesTab access={access} viewerId={viewerId} />}
+        {active === 'feed' ? <FeedTab /> : <HelpdeskTab access={access} />}
       </div>
     </>
   );
 }
 
-export function BulletinClient({ access, viewerId }: { access: BulletinAccess; viewerId: string }) {
+export function BulletinClient({ access }: { access: BulletinAccess }) {
   return (
     <Suspense fallback={<p className="muted">Loading…</p>}>
-      <BulletinContent access={access} viewerId={viewerId} />
+      <BulletinContent access={access} />
     </Suspense>
   );
 }

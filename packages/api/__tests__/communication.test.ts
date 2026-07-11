@@ -1,11 +1,12 @@
-// ADR-026 / DESIGN-012 — the communication router: Feed (keyset + filters + attribution join) and
-// Messages (post/edit/moderate action gating, moderator-only hidden visibility). Embedded PG16.
+// ADR-026 / ADR-050 / DESIGN-012 — the communication router: Feed (keyset + filters + attribution
+// join) and the Helpdesk tickets surface (create/reply/transition gating — the PLAN-034 permission
+// matrix: create = post, transitions = moderate ONLY, replies = any messages-view holder; household
+// visibility). Embedded PG16.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { TRPCError } from '@trpc/server';
 import {
   createFixRequest,
-  moderateMessage,
-  postMessage,
+  createTicket,
   recordFixAction,
   recordNotification,
 } from '@hnet/domain';
@@ -83,9 +84,10 @@ describe('communication.feed (ADR-026 D-05)', () => {
     await forbidden(() => disabled.communication.feed({}));
   });
 
-  it('ADR-049: a role narrowed to messages-only is FORBIDDEN from the feed but can list messages', async () => {
-    // Bulletin ENABLED (read_only) + a messages-ONLY sub-view grant (the owner's Default-role shape):
-    // the feed endpoint FORBIDs — server-side, not a UI hide — while the Messages board stays open.
+  it('ADR-049: a role narrowed to messages-only is FORBIDDEN from the feed but can browse tickets', async () => {
+    // Bulletin ENABLED (read_only) + a messages-ONLY sub-view grant (the owner's Default-role
+    // shape): the feed endpoint FORBIDs — server-side, not a UI hide — while the Helpdesk (which
+    // rides the `messages` view since PLAN-034) stays open.
     const messagesOnly = caller(
       makeCtx(
         t.db,
@@ -93,11 +95,11 @@ describe('communication.feed (ADR-026 D-05)', () => {
       ),
     );
     await forbidden(() => messagesOnly.communication.feed({}));
-    await expect(messagesOnly.communication.messages.list({})).resolves.toMatchObject({
+    await expect(messagesOnly.communication.tickets.list({})).resolves.toMatchObject({
       items: expect.any(Array),
     });
 
-    // The mirror: a feed-only role can read the feed but is FORBIDDEN from the Messages board.
+    // The mirror: a feed-only role can read the feed but is FORBIDDEN from the Helpdesk.
     const feedOnly = caller(
       makeCtx(
         t.db,
@@ -107,7 +109,7 @@ describe('communication.feed (ADR-026 D-05)', () => {
     await expect(feedOnly.communication.feed({})).resolves.toMatchObject({
       items: expect.any(Array),
     });
-    await forbidden(() => feedOnly.communication.messages.list({}));
+    await forbidden(() => feedOnly.communication.tickets.list({}));
   });
 
   it('filters by hasMedia', async () => {
@@ -140,15 +142,15 @@ describe('communication.feed (ADR-026 D-05)', () => {
   });
 });
 
-describe('communication.messages — action gating + moderation (ADR-026 D-06)', () => {
+describe('communication.tickets — the PLAN-034 permission matrix (ADR-050 option H)', () => {
   let t: TestDb;
-  let author: Awaited<ReturnType<typeof createUser>>;
-  let other: Awaited<ReturnType<typeof createUser>>;
+  let member: Awaited<ReturnType<typeof createUser>>;
+  let staff: Awaited<ReturnType<typeof createUser>>;
 
   beforeAll(async () => {
     t = await bootMigratedDb();
-    author = await createUser(t.db, { email: 'author@example.com', displayName: 'Auth Or' });
-    other = await createUser(t.db, { email: 'other@example.com', displayName: 'Oth Er' });
+    member = await createUser(t.db, { email: 'member@example.com', displayName: 'Mem Ber' });
+    staff = await createUser(t.db, { email: 'staff@example.com', displayName: 'Sta Ff' });
   });
 
   afterAll(async () => {
@@ -156,112 +158,190 @@ describe('communication.messages — action gating + moderation (ADR-026 D-06)',
   });
 
   // Callers with each grant shape (bulletin read_only default; message actions overridden).
-  const reader = () => caller(makeCtx(t.db, sessionUser(author)));
-  const poster = () => caller(makeCtx(t.db, sessionUser(author, undefined, undefined, ['post'])));
-  const posterOther = () =>
-    caller(makeCtx(t.db, sessionUser(other, undefined, undefined, ['post'])));
+  const reader = () => caller(makeCtx(t.db, sessionUser(member)));
+  const poster = () => caller(makeCtx(t.db, sessionUser(member, undefined, undefined, ['post'])));
   const moderator = () =>
-    caller(makeCtx(t.db, sessionUser(other, undefined, undefined, ['moderate'])));
+    caller(makeCtx(t.db, sessionUser(staff, undefined, undefined, ['moderate'])));
 
-  it('a reader (no post grant) is FORBIDDEN from posting', async () => {
-    await forbidden(() => reader().communication.messages.post({ body: 'nope' }));
-  });
-
-  it('a poster can post + edit their OWN message but not another’s', async () => {
-    const posted = await poster().communication.messages.post({ subject: 'hi', body: 'first' });
-    expect(posted.id).toBeTruthy();
-    const edited = await poster().communication.messages.edit({
-      messageId: posted.id,
-      body: 'edited',
-    });
-    expect(edited.editedAt).not.toBeNull();
-    // Another poster editing it → domain MessageNotOwned → FORBIDDEN.
+  it('a reader (no post grant) is FORBIDDEN from creating a ticket', async () => {
     await forbidden(() =>
-      posterOther().communication.messages.edit({ messageId: posted.id, body: 'hijack' }),
+      reader().communication.tickets.create({ title: 'nope', body: 'x', category: 'other' }),
     );
   });
 
-  it('a poster (no moderate grant) is FORBIDDEN from moderating', async () => {
-    const posted = await poster().communication.messages.post({ body: 'to moderate' });
+  it('a moderator WITHOUT the post grant is FORBIDDEN from creating (create ≠ triage)', async () => {
     await forbidden(() =>
-      poster().communication.messages.moderate({ messageId: posted.id, status: 'hidden' }),
+      moderator().communication.tickets.create({ title: 'nope', body: 'x', category: 'other' }),
     );
   });
 
-  it('hidden/deleted messages are invisible to members but visible to moderators', async () => {
-    const posted = await poster().communication.messages.post({ body: 'controversial' });
-    await moderator().communication.messages.moderate({
-      messageId: posted.id,
-      status: 'hidden',
-      note: 'off-topic',
+  it('NON-STAFF are FORBIDDEN from EVERY transition — even the ticket’s own author', async () => {
+    const created = await poster().communication.tickets.create({
+      title: 'my own ticket',
+      body: 'it broke',
+      category: 'playback',
     });
-    const memberList = await reader().communication.messages.list({});
-    expect(memberList.items.find((m) => m.id === posted.id)).toBeUndefined();
-
-    const modList = await moderator().communication.messages.list({ status: 'hidden' });
-    const seen = modList.items.find((m) => m.id === posted.id);
-    expect(seen).toBeDefined();
-    expect(seen!.body).toBe('controversial'); // content preserved
-    expect(seen!.moderationNote).toBe('off-topic'); // moderation trail exposed to moderators
-  });
-
-  it('a non-moderator CANNOT reach hidden/deleted content via status-filter injection', async () => {
-    const posted = await poster().communication.messages.post({ body: 'redacted take' });
-    await moderator().communication.messages.moderate({ messageId: posted.id, status: 'deleted' });
-    // Probe every list/filter combination a member could inject — the status filter is ignored
-    // for non-moderators, so ONLY visible rows ever come back and the deleted row never appears.
-    for (const status of ['hidden', 'deleted', 'visible', undefined] as const) {
-      const res = await reader().communication.messages.list(status ? { status } : {});
-      expect(res.items.every((m) => m.status === 'visible')).toBe(true);
-      expect(res.items.find((m) => m.id === posted.id)).toBeUndefined();
+    for (const toStatus of ['in_progress', 'complete', 'rejected'] as const) {
+      // The author with only `post`:
+      await forbidden(() =>
+        poster().communication.tickets.transition({ ticketId: created.id, toStatus }),
+      );
+      // A plain reader:
+      await forbidden(() =>
+        reader().communication.tickets.transition({ ticketId: created.id, toStatus }),
+      );
     }
   });
 
-  it('the AUTHOR cannot edit a message a moderator hid (CONFLICT — audit content preserved)', async () => {
-    const posted = await poster().communication.messages.post({ body: 'original' });
-    await moderator().communication.messages.moderate({ messageId: posted.id, status: 'hidden' });
+  it('ANY member with the messages view may reply — no post/moderate grant needed (Q-02)', async () => {
+    const created = await poster().communication.tickets.create({
+      title: 'reply target',
+      body: 'details',
+      category: 'audio',
+    });
+    const reply = await reader().communication.tickets.reply({
+      ticketId: created.id,
+      body: 'same here on the living-room TV',
+    });
+    expect(reply.id).toBeTruthy();
+    // But a feed-only role (no messages view) cannot reply — or browse at all.
+    const feedOnly = caller(
+      makeCtx(
+        t.db,
+        sessionUser(member, undefined, undefined, undefined, undefined, undefined, ['feed']),
+      ),
+    );
+    await forbidden(() =>
+      feedOnly.communication.tickets.reply({ ticketId: created.id, body: 'nope' }),
+    );
+    await forbidden(() => feedOnly.communication.tickets.detail({ ticketId: created.id }));
+  });
+
+  it('staff transitions work with an optional note; an ILLEGAL edge is a CONFLICT', async () => {
+    const created = await poster().communication.tickets.create({
+      title: 'transition target',
+      body: 'x',
+      category: 'subtitles',
+    });
+    const started = await moderator().communication.tickets.transition({
+      ticketId: created.id,
+      toStatus: 'in_progress',
+      note: 'looking into it',
+    });
+    expect(started.status).toBe('in_progress');
+    const done = await moderator().communication.tickets.transition({
+      ticketId: created.id,
+      toStatus: 'complete',
+      note: 'regrabbed a clean copy',
+    });
+    expect(done.status).toBe('complete');
+    // complete is TERMINAL — any further move is a CONFLICT (TICKET_INVALID_TRANSITION).
     await expect(
-      poster().communication.messages.edit({ messageId: posted.id, body: 'rewritten' }),
+      moderator().communication.tickets.transition({ ticketId: created.id, toStatus: 'open' }),
     ).rejects.toMatchObject({ code: 'CONFLICT' } satisfies Partial<TRPCError>);
   });
 
-  it('the moderation trail is NOT leaked to non-moderators', async () => {
-    // Seed a visible message that was previously moderated (visible again) via the domain writer.
-    const posted = await postMessage({ db: t.db, authorId: author.id, body: 'restored later' });
-    await moderateMessage({
-      db: t.db,
-      messageId: posted.id,
-      moderatorId: other.id,
-      status: 'visible',
-      note: 'ok',
+  it('rejected is RE-OPENABLE by staff (the hide/restore analog)', async () => {
+    const created = await poster().communication.tickets.create({
+      title: 'reopen target',
+      body: 'x',
+      category: 'other',
     });
-    const memberList = await reader().communication.messages.list({});
-    const seen = memberList.items.find((m) => m.id === posted.id);
-    expect(seen).toBeDefined();
-    expect(seen!.moderatedBy).toBeNull();
-    expect(seen!.moderationNote).toBeNull();
+    await moderator().communication.tickets.transition({
+      ticketId: created.id,
+      toStatus: 'rejected',
+      note: 'site bug — belongs on GitHub',
+    });
+    const reopened = await moderator().communication.tickets.transition({
+      ticketId: created.id,
+      toStatus: 'open',
+      note: 'actually a media issue after all',
+    });
+    expect(reopened.status).toBe('open');
   });
 
-  it('list + post are FORBIDDEN when bulletin is disabled', async () => {
+  it('detail carries the FULL timeline (creation + transitions with notes) + the reply thread — household-visible', async () => {
+    const created = await poster().communication.tickets.create({
+      title: 'timeline target',
+      body: 'the audio drops out',
+      category: 'audio',
+    });
+    await reader().communication.tickets.reply({ ticketId: created.id, body: 'which episode?' });
+    await moderator().communication.tickets.transition({
+      ticketId: created.id,
+      toStatus: 'in_progress',
+      note: 'checking the file',
+    });
+
+    // A plain reader (no grants at all) sees everything: household visibility (Q-01).
+    const detail = await reader().communication.tickets.detail({ ticketId: created.id });
+    expect(detail.found).toBe(true);
+    if (!detail.found) throw new Error('unreachable');
+    expect(detail.ticket.status).toBe('in_progress');
+    expect(detail.events).toHaveLength(2);
+    expect(detail.events[0]).toMatchObject({ fromStatus: null, toStatus: 'open' }); // "Filed"
+    expect(detail.events[1]).toMatchObject({
+      fromStatus: 'open',
+      toStatus: 'in_progress',
+      note: 'checking the file',
+      actorName: 'Sta Ff',
+    });
+    expect(detail.replies).toHaveLength(1);
+    expect(detail.replies[0]).toMatchObject({ body: 'which episode?', authorName: 'Mem Ber' });
+  });
+
+  it('detail on an unknown id is found:false (never a throw)', async () => {
+    const res = await reader().communication.tickets.detail({
+      ticketId: '00000000-0000-4000-8000-000000000000',
+    });
+    expect(res).toEqual({ found: false });
+  });
+
+  it('list filters by state, counts tally per state, and a reply BUMPS the wall order', async () => {
+    const a = await poster().communication.tickets.create({
+      title: 'bump A',
+      body: 'x',
+      category: 'quality',
+    });
+    await poster().communication.tickets.create({ title: 'bump B', body: 'x', category: 'missing' });
+    // B is newer, so it leads… until A gets a reply (last_activity_at is the wall's sort key).
+    await reader().communication.tickets.reply({ ticketId: a.id, body: 'bump' });
+    const open = await reader().communication.tickets.list({ status: 'open', limit: 10 });
+    expect(open.items.every((x) => x.status === 'open')).toBe(true);
+    const posA = open.items.findIndex((x) => x.title === 'bump A');
+    const posB = open.items.findIndex((x) => x.title === 'bump B');
+    expect(posA).toBeGreaterThanOrEqual(0);
+    expect(posB).toBeGreaterThanOrEqual(0);
+    expect(posA).toBeLessThan(posB);
+    expect(open.items[posA]!.replyCount).toBe(1);
+
+    const counts = await reader().communication.tickets.counts();
+    expect(counts.open).toBeGreaterThanOrEqual(2);
+    expect(counts.complete).toBeGreaterThanOrEqual(1); // from the transition test above
+    expect(counts.open + counts.in_progress + counts.complete + counts.rejected).toBeGreaterThan(0);
+  });
+
+  it('list + create are FORBIDDEN when bulletin is disabled', async () => {
     const disabled = caller(
-      makeCtx(t.db, sessionUser(author, { bulletin: 'disabled' }, undefined, ['post', 'moderate'])),
+      makeCtx(t.db, sessionUser(member, { bulletin: 'disabled' }, undefined, ['post', 'moderate'])),
     );
-    await forbidden(() => disabled.communication.messages.list({}));
-    await forbidden(() => disabled.communication.messages.post({ body: 'x' }));
+    await forbidden(() => disabled.communication.tickets.list({}));
+    await forbidden(() =>
+      disabled.communication.tickets.create({ title: 'x', body: 'x', category: 'other' }),
+    );
   });
 });
 
-describe('communication.messages.list — repair-status hint (Bulletin title deep-links)', () => {
+describe('communication.tickets — linked-media facts + repair-status hint (ADR-050 D-12)', () => {
   let t: TestDb;
   let author: Awaited<ReturnType<typeof createUser>>;
   let requester: Awaited<ReturnType<typeof createUser>>;
   let itemOpen: Awaited<ReturnType<typeof seedMediaItem>>;
   let itemPast: Awaited<ReturnType<typeof seedMediaItem>>;
-  let itemNone: Awaited<ReturnType<typeof seedMediaItem>>;
 
   beforeAll(async () => {
     t = await bootMigratedDb();
-    author = await createUser(t.db, { email: 'msgauthor@example.com', displayName: 'Msg Author' });
+    author = await createUser(t.db, { email: 'tauthor@example.com', displayName: 'Tick Author' });
     requester = await createUser(t.db, { email: 'fixer@example.com', displayName: 'Fix Er' });
     itemOpen = await seedMediaItem(t.db, 'radarr', {
       title: 'Open Fix Movie',
@@ -273,11 +353,6 @@ describe('communication.messages.list — repair-status hint (Bulletin title dee
       tmdbId: 7002,
       year: 2019,
     });
-    itemNone = await seedMediaItem(t.db, 'radarr', {
-      title: 'No Fix Movie',
-      tmdbId: 7003,
-      year: 2018,
-    });
 
     // itemOpen — one OPEN (pending) fix ⇒ openFix true, fixCount 1.
     await createFixRequest({
@@ -287,8 +362,7 @@ describe('communication.messages.list — repair-status hint (Bulletin title dee
       mediaItemId: itemOpen.id,
       reason: 'wont_play_corrupt',
     });
-    // itemPast — two TERMINAL (failed) fixes ⇒ openFix false, fixCount 2. The first must reach a
-    // terminal state before the second opens (open-fix dedupe blocks a second OPEN on the item).
+    // itemPast — two TERMINAL (failed) fixes ⇒ openFix false, fixCount 2.
     for (let i = 0; i < 2; i++) {
       const f = await createFixRequest({
         db: t.db,
@@ -304,27 +378,30 @@ describe('communication.messages.list — repair-status hint (Bulletin title dee
         actions: [{ step: 'test_failed', at: new Date().toISOString() }],
       });
     }
-    // itemNone — no fixes ⇒ openFix false, fixCount 0.
 
-    await postMessage({
+    await createTicket({
       db: t.db,
       authorId: author.id,
-      body: 'open fix here',
+      title: 'open fix here',
+      body: 'b',
+      category: 'playback',
       mediaItemId: itemOpen.id,
     });
-    await postMessage({
+    await createTicket({
       db: t.db,
       authorId: author.id,
-      body: 'past fixes here',
+      title: 'past fixes here',
+      body: 'b',
+      category: 'playback',
       mediaItemId: itemPast.id,
     });
-    await postMessage({
+    await createTicket({
       db: t.db,
       authorId: author.id,
-      body: 'no fix here',
-      mediaItemId: itemNone.id,
+      title: 'no link here',
+      body: 'b',
+      category: 'other',
     });
-    await postMessage({ db: t.db, authorId: author.id, body: 'no link here' });
   });
 
   afterAll(async () => {
@@ -333,36 +410,42 @@ describe('communication.messages.list — repair-status hint (Bulletin title dee
 
   const reader = () => caller(makeCtx(t.db, sessionUser(author)));
 
-  it('batches openFix + fixCount per linked message, with mediaYear; zeros/nulls when unlinked', async () => {
-    const res = await reader().communication.messages.list({ limit: 50 });
-    const byBody = (b: string) => {
-      const row = res.items.find((m) => m.body === b);
-      if (!row) throw new Error(`message not found: ${b}`);
+  it('list carries the linked-media tile facts; unlinked tickets carry nulls', async () => {
+    const res = await reader().communication.tickets.list({ limit: 50 });
+    const byTitle = (title: string) => {
+      const row = res.items.find((x) => x.title === title);
+      if (!row) throw new Error(`ticket not found: ${title}`);
       return row;
     };
-
-    const open = byBody('open fix here');
-    expect(open.mediaItemId).toBe(itemOpen.id);
-    expect(open.mediaTitle).toBe('Open Fix Movie');
-    expect(open.mediaYear).toBe(2021);
-    expect(open.openFix).toBe(true);
-    expect(open.fixCount).toBe(1);
-
-    const past = byBody('past fixes here');
-    expect(past.mediaItemId).toBe(itemPast.id);
-    expect(past.openFix).toBe(false);
-    expect(past.fixCount).toBe(2);
-
-    const none = byBody('no fix here');
-    expect(none.mediaItemId).toBe(itemNone.id);
-    expect(none.openFix).toBe(false);
-    expect(none.fixCount).toBe(0);
-
-    const unlinked = byBody('no link here');
+    const linked = byTitle('open fix here');
+    expect(linked.mediaItemId).toBe(itemOpen.id);
+    expect(linked.mediaTitle).toBe('Open Fix Movie');
+    expect(linked.mediaYear).toBe(2021);
+    expect(linked.authorName).toBe('Tick Author');
+    const unlinked = byTitle('no link here');
     expect(unlinked.mediaItemId).toBeNull();
     expect(unlinked.mediaYear).toBeNull();
     expect(unlinked.mediaPosterUrl).toBeNull();
-    expect(unlinked.openFix).toBe(false);
-    expect(unlinked.fixCount).toBe(0);
+  });
+
+  it('detail computes the repair hint for the linked title (open / past / none)', async () => {
+    const list = await reader().communication.tickets.list({ limit: 50 });
+    const idOf = (title: string) => list.items.find((x) => x.title === title)!.id;
+
+    const open = await reader().communication.tickets.detail({ ticketId: idOf('open fix here') });
+    if (!open.found) throw new Error('missing');
+    expect(open.ticket.openFix).toBe(true);
+    expect(open.ticket.fixCount).toBe(1);
+
+    const past = await reader().communication.tickets.detail({ ticketId: idOf('past fixes here') });
+    if (!past.found) throw new Error('missing');
+    expect(past.ticket.openFix).toBe(false);
+    expect(past.ticket.fixCount).toBe(2);
+
+    const none = await reader().communication.tickets.detail({ ticketId: idOf('no link here') });
+    if (!none.found) throw new Error('missing');
+    expect(none.ticket.openFix).toBe(false);
+    expect(none.ticket.fixCount).toBe(0);
+    expect(none.ticket.mediaPosterUrl).toBeNull();
   });
 });

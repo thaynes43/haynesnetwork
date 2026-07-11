@@ -22,8 +22,7 @@ import {
   maintainerrClientBundleFromEnv,
   MaintainerrUnsafeError,
   MaintainerrUpstreamError,
-  MessageModeratedError,
-  MessageNotOwnedError,
+  InvalidTicketTransitionError,
   NotFoundError,
   OwuiUnavailableError,
   PlexAccountUnmatchedError,
@@ -275,8 +274,7 @@ export const authedProcedure = t.procedure.use(({ ctx, next }) => {
  * | TrashBatchOpenError         | TRASH_BATCH_ALREADY_OPEN    | CONFLICT              |
  * | TrashBatchEmptyError        | TRASH_BATCH_EMPTY           | UNPROCESSABLE_CONTENT |
  * | TrashSaveNotOwnedError      | TRASH_SAVE_NOT_OWNED        | FORBIDDEN             |
- * | MessageNotOwnedError        | MESSAGE_NOT_OWNED           | FORBIDDEN             |
- * | MessageModeratedError       | MESSAGE_MODERATED           | CONFLICT              |
+ * | InvalidTicketTransitionError| TICKET_INVALID_TRANSITION   | CONFLICT              |
  * | NotFoundError               | —                           | NOT_FOUND             |
  */
 export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
@@ -358,10 +356,7 @@ export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
     if (err instanceof TrashSaveNotOwnedError) {
       throw new TRPCError({ code: 'FORBIDDEN', message: err.message, cause: err });
     }
-    if (err instanceof MessageNotOwnedError) {
-      throw new TRPCError({ code: 'FORBIDDEN', message: err.message, cause: err });
-    }
-    if (err instanceof MessageModeratedError) {
+    if (err instanceof InvalidTicketTransitionError) {
       throw new TRPCError({ code: 'CONFLICT', message: err.message, cause: err });
     }
     if (err instanceof AuthentikGroupNotOwnedError) {

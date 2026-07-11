@@ -5,7 +5,7 @@
 // (email→user, tmdb/tvdb→media) is covered by the @hnet/domain + @hnet/api integration tests
 // (embedded PG16). The Feed/Messages UI is a separate Fable UX follow-up.
 import { test, expect } from '@playwright/test';
-import { armAndConfirm, signIn, signOut } from './support/helpers';
+import { signIn } from './support/helpers';
 import { readRuntimeEnv } from './support/env';
 import { ADMIN_EMAIL } from './support/stub-oidc';
 
@@ -106,16 +106,17 @@ test.describe('Bulletin webhook receiver (ADR-026 / DESIGN-012)', () => {
   });
 });
 
-// ── the section UI (DESIGN-012 D-08) — nav gating, the Feed browse, the Messages board ────
+// ── the section UI (DESIGN-012 D-12) — nav gating + the Feed browse. The Helpdesk ticket
+// journeys (file → transition → reply → filters) live in helpdesk.spec.ts (PLAN-034).
 
-test.describe('Bulletin section UI (ADR-026 / DESIGN-012 D-08)', () => {
-  test('the Default member: nav entry, Messages-only (no Feed tab — ADR-049), read-only board', async ({
+test.describe('Bulletin section UI (ADR-026 / ADR-050 / DESIGN-012)', () => {
+  test('the Default member: nav entry, Helpdesk-only (no Feed tab — ADR-049), no New-ticket button', async ({
     page,
   }) => {
-    // ADR-049 C-02 (PLAN-027) — the Default role is narrowed to the MESSAGES view only (the Feed
-    // carries Family/Friends-oriented ops chatter). So the member sees the Bulletin nav entry and
-    // lands on the Messages board, but there is NO Feed tab (and the feed endpoint FORBIDs it
-    // server-side — covered by the @hnet/domain/@hnet/api unit tests).
+    // ADR-049 C-02 (PLAN-027) — the Default role is narrowed to the MESSAGES view only (which
+    // carries the Helpdesk since PLAN-034; the Feed is Family/Friends-oriented ops chatter). So
+    // the member sees the Bulletin nav entry and lands on the Helpdesk, but there is NO Feed tab
+    // (and the feed endpoint FORBIDs it server-side — covered by the unit tests).
     await signIn(page, 'member');
     await page
       .getByRole('navigation', { name: 'Primary' })
@@ -123,24 +124,25 @@ test.describe('Bulletin section UI (ADR-026 / DESIGN-012 D-08)', () => {
       .click();
     await page.waitForURL(/\/bulletin/);
 
-    // No Feed tab; the Messages tab IS present and is the landing view.
+    // No Feed tab; the Helpdesk tab IS present and is the landing view.
     await expect(page.getByRole('tab', { name: 'Feed' })).toHaveCount(0);
-    await expect(page.getByRole('tab', { name: 'Messages' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Helpdesk' })).toBeVisible();
     await expect(page.getByTestId('feed-row')).toHaveCount(0);
 
-    // Messages: readable, but NO composer without the post grant (R-103).
+    // Helpdesk: readable, but NO New-ticket button without the post grant (R-160/R-162).
     await expect(page.getByTestId('composer-absent')).toBeVisible();
-    await expect(page.getByTestId('message-composer')).toHaveCount(0);
+    await expect(page.getByTestId('ticket-new')).toHaveCount(0);
   });
 
-  test('admin sees BOTH sub-views: the seeded Feed (source-filterable) + the Messages board', async ({
+  test('admin sees BOTH sub-views (Helpdesk FIRST): the seeded Feed stays source-filterable', async ({
     page,
   }) => {
-    // Admin implies both Bulletin views (ADR-049) — the Feed tab is present with the seeded rows.
+    // Admin implies both Bulletin views (ADR-049) — Helpdesk leads (R-160), the Feed follows.
     await signIn(page, 'admin');
     await page.goto('/bulletin?tab=feed');
-    await expect(page.getByRole('tab', { name: 'Feed' })).toBeVisible();
-    await expect(page.getByRole('tab', { name: 'Messages' })).toBeVisible();
+    const tabs = page.getByRole('tablist', { name: 'Bulletin sections' }).getByRole('tab');
+    await expect(tabs.first()).toHaveText('Helpdesk');
+    await expect(tabs.nth(1)).toHaveText('Feed');
 
     const rows = page.getByTestId('feed-row');
     await expect(rows.filter({ hasText: 'The Fixture (2022)' }).first()).toBeVisible();
@@ -153,92 +155,10 @@ test.describe('Bulletin section UI (ADR-026 / DESIGN-012 D-08)', () => {
       .click();
     await expect(rows.filter({ hasText: 'The Fixture (2022)' }).first()).toBeVisible();
     await expect(rows.filter({ hasText: 'playback.start' })).toHaveCount(0);
-  });
 
-  test('admin: post (with a media link) → persists → edit → two-step hide → invisible to members', async ({
-    page,
-  }) => {
-    await signIn(page, 'admin');
+    // The retired ?tab=messages deep link ALIASES to the Helpdesk (ADR-050 C-06 — never a 404).
     await page.goto('/bulletin?tab=messages');
-    const composer = page.getByTestId('message-composer');
-    await expect(composer).toBeVisible();
-
-    // Fable UX regression guard: the composer's Subject/Message/media-search controls use the
-    // SHARED themed input surface (not the browser-default white that stood out in dark mode).
-    // Their background must resolve to a themed color, never `rgb(255, 255, 255)` / transparent.
-    for (const control of [
-      composer.getByLabel('Subject'),
-      composer.getByLabel(/^Message/),
-      page.getByTestId('composer-media-search'),
-    ]) {
-      const bg = await control.evaluate((el) => getComputedStyle(el).backgroundColor);
-      expect(bg).not.toBe('rgb(255, 255, 255)');
-      expect(bg).not.toBe('rgba(0, 0, 0, 0)');
-    }
-
-    // Compose: subject + body + a Media Item link through the picker.
-    await composer.getByLabel('Subject').fill('Buffering again');
-    await composer.getByLabel(/^Message/).fill('The Fixture buffers at 12 minutes, every time.');
-    await page.getByTestId('composer-media-search').fill('Fixture');
-    await page.getByRole('option', { name: /The Fixture/ }).click();
-    await expect(page.getByTestId('composer-media-picked')).toContainText('The Fixture');
-    await page.getByTestId('message-post').click();
-
-    const card = page.getByTestId('message-card').filter({ hasText: 'Buffering again' });
-    await expect(card).toHaveCount(1);
-    await expect(card).toContainText('buffers at 12 minutes');
-
-    // The linked title now renders as a prominent, clickable media chip that DEEP-LINKS to the
-    // item page (/library/[id] — where History + Fix live), carrying a static repair cue sourced
-    // server-side from fix_requests. The Fixture has a seeded (resolved) fix, so the chip shows a
-    // "repairs recorded" hint. This is the owner's ask: jump from a message to the title's history.
-    const chip = card.getByTestId('message-media-chip');
-    await expect(chip).toBeVisible();
-    // Carries ?from=bulletin so the item back-link reads "← Bulletin" (ADR-033 / DESIGN-005 D-17).
-    await expect(chip).toHaveAttribute('href', /^\/library\/[0-9a-f-]{36}\?from=bulletin$/);
-    await expect(chip).toContainText('The Fixture');
-    await expect(chip.getByTestId('repair-hint')).toContainText(/repair/i);
-
-    // Parity: an UNLINKED message renders NO chip (the picker stays optional).
-    await composer.getByLabel(/^Message/).fill('Household heads-up — no title linked here.');
-    await page.getByTestId('message-post').click();
-    const plainCard = page.getByTestId('message-card').filter({ hasText: 'Household heads-up' });
-    await expect(plainCard).toHaveCount(1);
-    await expect(plainCard.getByTestId('message-media-chip')).toHaveCount(0);
-
-    // Durable: a full reload still shows it (R-101).
-    await page.reload();
-    await expect(card).toHaveCount(1);
-
-    // Author edit rides the Modal; the card shows the new body + the edited marker.
-    await card.getByTestId('message-edit').click();
-    await page
-      .getByRole('dialog', { name: 'Edit message' })
-      .getByLabel(/^Message/)
-      .fill('Fixed after a re-download — resolved.');
-    await page.getByTestId('message-edit-save').click();
-    await expect(card).toContainText('resolved');
-    await expect(card).toContainText('edited');
-
-    // Moderation is the inline two-step ConfirmButton (ADR-014) — content preserved, status Hidden.
-    await armAndConfirm(card.getByTestId('message-hide'));
-    await expect(card).toContainText('Hidden');
-
-    // A member (no moderate grant) can NEVER see the hidden message (R-102/AC-16).
-    await signOut(page);
-    await signIn(page, 'member');
-    await page.goto('/bulletin?tab=messages');
-    await expect(
-      page.getByTestId('message-card').filter({ hasText: 'Buffering again' }),
-    ).toHaveCount(0);
-
-    // Moderator restore brings it back for everyone (leaves the suite's shared state visible).
-    await signOut(page);
-    await signIn(page, 'admin');
-    await page.goto('/bulletin?tab=messages');
-    const hiddenCard = page.getByTestId('message-card').filter({ hasText: 'Buffering again' });
-    await hiddenCard.getByTestId('message-restore').click();
-    await expect(hiddenCard).not.toContainText('Hidden');
+    await expect(page.locator('#bulletintab-helpdesk')).toHaveAttribute('aria-selected', 'true');
   });
 
   test('/admin/roles: the Bulletin access select + per-action grid; seeded roles summarized', async ({

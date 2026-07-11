@@ -279,25 +279,9 @@ describe('migrations against embedded Postgres 16', () => {
       await client.query(`DELETE FROM notifications WHERE type = 'ev'`);
     });
 
-    it('messages_status_enum admits visible/hidden/deleted, rejects unknown', async () => {
-      const u = await client.query(
-        `INSERT INTO users (email, display_name, role_id)
-           VALUES ('msg@example.com', 'Msg', (SELECT id FROM roles WHERE is_default)) RETURNING id`,
-      );
-      const author = u.rows[0].id as string;
-      for (const st of ['visible', 'hidden', 'deleted']) {
-        await client.query({
-          text: `INSERT INTO messages (author_user_id, body, status) VALUES ($1, 'b', $2)`,
-          values: [author, st],
-        });
-      }
-      await expect(
-        client.query({
-          text: `INSERT INTO messages (author_user_id, body, status) VALUES ($1, 'b', 'archived')`,
-          values: [author],
-        }),
-      ).rejects.toMatchObject({ code: '23514' });
-    });
+    // NOTE: 0018's `messages` board table (and its messages_status_enum test that lived here) was
+    // retired by migration 0040 (ADR-050 — the Helpdesk ticket system replaced the board; owner
+    // ruling Q-03: the rows were test data). The 0040 block below asserts the drop.
 
     it('role_message_action_grants_action_enum admits post/moderate, rejects unknown', async () => {
       const role = await client.query(`SELECT id FROM roles WHERE is_default`);
@@ -384,6 +368,109 @@ describe('migrations against embedded Postgres 16', () => {
            WHERE role_id <> '11111111-1111-4111-8111-111111111111'`,
       );
       expect(others.rows[0].n).toBe(0);
+    });
+  });
+
+  // ADR-050 / DESIGN-012 D-10 (migration 0040, PLAN-034) — the Helpdesk ticket domain: the three
+  // ticket tables + their CHECKs, the notification_outbox event-type CHECK relax, and the DROP of
+  // the retired `messages` board table (owner ruling Q-03 — its rows were test data).
+  describe('0040 Helpdesk tickets (ADR-050 — ticket tables + outbox CHECK + messages drop)', () => {
+    let authorId: string;
+
+    beforeAll(async () => {
+      const u = await client.query(
+        `INSERT INTO users (email, display_name, role_id)
+           VALUES ('tick@example.com', 'Tick', (SELECT id FROM roles WHERE is_default)) RETURNING id`,
+      );
+      authorId = u.rows[0].id as string;
+    });
+
+    it('tickets_status_enum + tickets_category_enum admit the sets, reject unknown', async () => {
+      for (const st of ['open', 'in_progress', 'complete', 'rejected']) {
+        await client.query({
+          text: `INSERT INTO tickets (author_user_id, title, body, category, status)
+                   VALUES ($1, 't', 'b', 'playback', $2)`,
+          values: [authorId, st],
+        });
+      }
+      for (const cat of ['playback', 'audio', 'subtitles', 'quality', 'missing', 'other']) {
+        await client.query({
+          text: `INSERT INTO tickets (author_user_id, title, body, category) VALUES ($1, 't', 'b', $2)`,
+          values: [authorId, cat],
+        });
+      }
+      await expect(
+        client.query({
+          text: `INSERT INTO tickets (author_user_id, title, body, category, status)
+                   VALUES ($1, 't', 'b', 'playback', 'triage')`,
+          values: [authorId],
+        }),
+      ).rejects.toMatchObject({ code: '23514' });
+      await expect(
+        client.query({
+          text: `INSERT INTO tickets (author_user_id, title, body, category) VALUES ($1, 't', 'b', 'website')`,
+          values: [authorId],
+        }),
+      ).rejects.toMatchObject({ code: '23514' });
+    });
+
+    it('ticket_events admits a NULL from_status (creation) + valid transitions, rejects unknown', async () => {
+      const tk = await client.query({
+        text: `INSERT INTO tickets (author_user_id, title, body, category) VALUES ($1, 'ev', 'b', 'other') RETURNING id`,
+        values: [authorId],
+      });
+      const ticketId = tk.rows[0].id as string;
+      await client.query({
+        text: `INSERT INTO ticket_events (ticket_id, actor_user_id, from_status, to_status)
+                 VALUES ($1, $2, NULL, 'open')`,
+        values: [ticketId, authorId],
+      });
+      await client.query({
+        text: `INSERT INTO ticket_events (ticket_id, actor_user_id, from_status, to_status, note)
+                 VALUES ($1, $2, 'open', 'in_progress', 'why')`,
+        values: [ticketId, authorId],
+      });
+      await expect(
+        client.query({
+          text: `INSERT INTO ticket_events (ticket_id, from_status, to_status) VALUES ($1, 'open', 'archived')`,
+          values: [ticketId],
+        }),
+      ).rejects.toMatchObject({ code: '23514' });
+      // Replies FK-cascade off the ticket.
+      await client.query({
+        text: `INSERT INTO ticket_replies (ticket_id, author_user_id, body) VALUES ($1, $2, 'r')`,
+        values: [ticketId, authorId],
+      });
+    });
+
+    it('notification_outbox_event_type_enum admits ticket_created (preservation)', async () => {
+      await client.query(
+        `INSERT INTO notification_outbox (event_type, payload) VALUES ('ticket_created', '{}'::jsonb)`,
+      );
+      // The prior values still validate (rebuild preserved them).
+      await client.query(
+        `INSERT INTO notification_outbox (event_type, payload) VALUES ('smart_degraded', '{}'::jsonb)`,
+      );
+      await expect(
+        client.query(
+          `INSERT INTO notification_outbox (event_type, payload) VALUES ('ticket_replied', '{}'::jsonb)`,
+        ),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query(
+        `DELETE FROM notification_outbox WHERE event_type IN ('ticket_created','smart_degraded')`,
+      );
+    });
+
+    it('the retired messages board table is GONE (Q-03 — rows were test data)', async () => {
+      const reg = await client.query(`SELECT to_regclass('public.messages') AS t`);
+      expect(reg.rows[0].t).toBeNull();
+      // The grant tables that now gate the Helpdesk survived untouched.
+      const grants = await client.query(
+        `SELECT to_regclass('public.role_message_action_grants') AS a,
+                to_regclass('public.role_bulletin_view_grants') AS b`,
+      );
+      expect(grants.rows[0].a).not.toBeNull();
+      expect(grants.rows[0].b).not.toBeNull();
     });
   });
 

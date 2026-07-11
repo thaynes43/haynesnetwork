@@ -207,6 +207,26 @@ export function renderOutboxMessage(
         urlTitle: 'Open Hardware metrics',
       };
     }
+    // ADR-050 / DESIGN-012 D-13 (PLAN-034) — a member filed a Helpdesk ticket: ping the admins
+    // with the who/what/which-title facts and deep-link the ticket's detail page (triage lives
+    // there). Enqueued by createTicket in the SAME tx as the ticket insert (ADR-034 C-01).
+    case 'ticket_created': {
+      const author =
+        typeof p.authorName === 'string' && p.authorName !== '' ? p.authorName : 'Someone';
+      const title = typeof p.title === 'string' && p.title !== '' ? p.title : 'a new ticket';
+      const media =
+        typeof p.mediaTitle === 'string' && p.mediaTitle !== '' ? ` · ${p.mediaTitle}` : '';
+      const ticketId = typeof p.ticketId === 'string' ? p.ticketId : '';
+      return {
+        title: 'New Helpdesk ticket',
+        message: `${author}: “${title}”${media}`,
+        url:
+          ticketId !== ''
+            ? `https://haynesnetwork.com/bulletin/ticket/${ticketId}`
+            : 'https://haynesnetwork.com/bulletin',
+        urlTitle: 'Open the ticket',
+      };
+    }
     default:
       return {
         title: 'Trash batch update',

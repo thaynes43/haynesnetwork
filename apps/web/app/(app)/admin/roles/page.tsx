@@ -476,7 +476,7 @@ export default function AdminRolesPage() {
   // Feed/board rides the coarse Bulletin level in the table column; post/moderate are opt-in.
   const bulletinChecklist = (form: RoleForm, apply: (next: (f: RoleForm) => RoleForm) => void) => (
     <fieldset className="field" data-testid="message-actions-grid">
-      <legend>Bulletin message actions this role may use</legend>
+      <legend>Helpdesk actions this role may use</legend>
       <p className="field-hint">
         Actions apply only while the role’s Bulletin access is Read-only or Edit. Reading the Feed
         and the board rides the access level alone; posting and moderating are opt-in.

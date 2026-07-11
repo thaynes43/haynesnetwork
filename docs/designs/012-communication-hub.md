@@ -1,10 +1,15 @@
-# DESIGN-012: Communication hub — Bulletin Feed + Messages
+# DESIGN-012: Communication hub — Bulletin Feed + Helpdesk tickets
 
 - **Status:** Draft
-- **Last updated:** 2026-07-07
-- **Satisfies:** PRD-001 R-97..R-104; governed by ADR-026. Reuses ADR-021 (Section Permissions),
-  ADR-023 (Trash action grants + the PLAN-006 notification store/receiver), ADR-008 (attribution),
-  ADR-014/015 (ConfirmButton/Modal + no-reorient — the UX follow-up).
+- **Last updated:** 2026-07-11 — **PLAN-034 amendment (D-10..D-13, ADR-050):** the Messages board
+  became the **Helpdesk** media-issue ticket system (tickets + state machine + event history +
+  reply threads; `messages` dropped). D-01's `messages` model, D-06's API, and D-08's board half
+  are RETIRED — kept below as the historical record; D-10..D-13 are current.
+- **Satisfies:** PRD-001 R-97..R-104 + R-160..R-164; governed by ADR-026 (Feed + grants) and
+  ADR-050 (tickets). Reuses ADR-021 (Section Permissions), ADR-023 (Trash action grants + the
+  PLAN-006 notification store/receiver), ADR-008 (attribution), ADR-014/015 (ConfirmButton/Modal +
+  no-reorient), ADR-034 (transactional outbox), ADR-019 (poster proxy), DESIGN-004 D-19 (history
+  navigation).
 
 ## Overview
 
@@ -250,6 +255,99 @@ The Bulletin section splits into two SEPARATELY GRANTABLE sub-views: the **Feed*
   `messages`-only row (the owner: the Feed is Family/Friends-oriented). Family/Friends/custom roles
   keep both via the no-row default (no backfill, no silent loss); Admin implies both.
 
+### D-10 — Amendment 2026-07-11 (PLAN-034, ADR-050) — the Helpdesk ticket data model
+
+The Messages board (D-01 `messages`, D-06 API, D-08 board UI) is **RETIRED**, replaced by a
+household media-issue **ticket** system ("**Helpdesk**" — the display name is one constant,
+`HELPDESK_NAME` in `apps/web/lib/bulletin.ts`; owner ratifies Helpdesk vs Tickets at screenshot
+review). Migration **0040**:
+
+- **Model.** `tickets` (author FK cascade, required `title` + `body`, `category` CHECK
+  `TICKET_CATEGORIES = ['playback','audio','subtitles','quality','missing','other']`, nullable
+  `media_item_id` SET NULL, `status` CHECK `TICKET_STATUSES = ['open','in_progress','complete',
+  'rejected']` default open, `created_at`, `last_activity_at` — the wall's sort key, bumped by
+  every reply/transition in the same tx). `ticket_events` — the APPEND-ONLY history: creation
+  (`from_status` NULL → open) + every transition, optional household-visible `note`, actor SET
+  NULL (history outlives accounts). `ticket_replies` — the flat thread (GitHub-issue style),
+  immutable v1. All three guard-listed; single-writers `createTicket` / `transitionTicket` /
+  `addTicketReply` in `packages/domain/src/tickets.ts`.
+- **State machine** (`TICKET_TRANSITIONS`, requirement 5): `open ⇄ in_progress`; either →
+  `complete` (TERMINAL — a recurrence is a new ticket) | `rejected` (RE-OPENS to open — the old
+  hide/restore analog). Illegal edges throw `InvalidTicketTransitionError` → CONFLICT
+  (`TICKET_INVALID_TRANSITION`) under the row lock, BEFORE any write.
+- **Drop.** `DROP TABLE messages` — its rows were owner-ruled TEST DATA (PLAN-034 Q-03). The
+  Feed store and both grant tables are untouched. Post-deploy, 3–4 realistic example tickets are
+  filed through the app's own writers and LEFT in prod as onboarding examples.
+
+### D-11 — Amendment 2026-07-11 (PLAN-034, ADR-050) — the tickets API + permission matrix (retires D-06)
+
+`communication.tickets.*` replaces `communication.messages.*`:
+
+- `list` — `bulletinViewProcedure('messages')`, `{ status?, category?, cursor?, limit≤200 }`,
+  keyset `last_activity_at desc, id asc`. **Household visibility (Q-01)**: everyone with the view
+  sees ALL tickets — no hidden rows, no moderator-only fields. Items carry the wall-tile facts:
+  title/category/status/author, linked-media `{ mediaItemId, mediaTitle, mediaArrKind, mediaYear,
+  mediaPosterUrl (ADR-019 proxy, null ⇒ category icon) }`, `replyCount` (batched grouped pass),
+  `createdAt`/`lastActivityAt`.
+- `counts` — same gate; per-state totals for the filter chips (absent states 0).
+- `detail` — same gate, `{ ticketId }` → `{ found:false }` on an unknown id, else the ticket +
+  the FULL `events[]` timeline (actor names + notes) + `replies[]` + the static repair cue
+  (`openFix`/`fixCount` off `fix_requests` — the D-06-era hint pattern kept).
+- `create` — `messageActionProcedure('post')`, `{ title(1..200), body(1..8000), category,
+  mediaItemId? }` → `createTicket` (which also enqueues the D-13 ping in the same tx).
+- `reply` — **`bulletinViewProcedure('messages')` deliberately, NOT an action grant** (Q-02: any
+  member who can see the board may chime in), `{ ticketId, body(1..8000) }` → `addTicketReply`.
+- `transition` — `messageActionProcedure('moderate')` ONLY (Q-02 staff), `{ ticketId, toStatus,
+  note?≤1000 }` → `transitionTicket`.
+
+**The permission matrix (ADR-050 option H — zero new grant machinery):** view/browse/detail/
+reply = the `messages` sub-view grant (D-09); create = message action `post`; transitions =
+message action `moderate`; Admin implies all with no rows. Stored enum values are UNCHANGED —
+only display labels moved to Helpdesk language (D-04's admin grid included).
+
+### D-12 — Amendment 2026-07-11 (PLAN-034, ADR-050) — the Helpdesk UX (retires D-08's board half)
+
+- **Tab order (requirement 1).** `/bulletin` tabs are **Helpdesk** (tab key `helpdesk`; rides the
+  `messages` view grant) then **Feed**. `?tab=messages` deep-links alias to the Helpdesk (C-06 —
+  never a 404). The Feed tab (D-08) is unchanged.
+- **The wall (requirement 8 — the owner's Library-poster lean).** Tickets render as a
+  poster-grid (`.twall`, the `.bwall`/`.poster-grid` grammar: auto-fill 132px 2:3 tiles, 3-up
+  under 480px) sorted by `last_activity_at`. A linked ticket shows its title's poster
+  (`MediaPoster`, ADR-019 authed proxy); a non-media ticket shows its intake-CATEGORY icon large
+  in the same tinted 2:3 box (`ticket-glyphs.tsx` — the intake-driven icon set). Every tile bakes
+  the STATE on: a colored corner puck (the Trash `bwall-overlay` idiom — open=warning
+  issue-dot, in_progress=info half-ring, complete=accent check, rejected=muted slashed ring +
+  grayscale poster) plus a `badge--{tone}` status label, the reply count, and the last-activity
+  time in fixed-height caption rows (grid never staggers). The whole tile links to the detail.
+- **Filters (requirement 7).** The state chips (All · Open · In progress · Complete · Rejected,
+  counts baked in) replace All/Visible/Hidden/Deleted; they ride `?state=` via `router.replace`.
+- **Compose (requirement 2).** NEVER stacks above the wall: a "New ticket" button (the `post`
+  grant) opens a multi-field **Modal** (ADR-014) — title ("What's wrong?"), the category icon
+  grid (single-select, recolor-only), the optional linked-title search (the D-08 popover picker),
+  details. Intake copy routes SITE bugs to GitHub (requirement 3 — the MOTD already links it).
+  Success PUSHES the new ticket's detail page (the "it's filed" confirmation).
+- **Detail (requirement 6).** `/bulletin/ticket/[id]` — the `/library/[id]` drill-in grammar:
+  BackLink (`from=helpdesk`), the `.detail-head` hero (poster/category tile · title · state +
+  category badges · repair cue · filed-by meta · "open in Library" deep link · the STAFF
+  transition buttons the current state allows, each opening a Modal that carries the optional
+  household-visible reason), the report body, the **History timeline** (`.timeline` — Filed +
+  every transition with actor/when/note), and the reply thread with its composer BELOW the
+  thread. Server-gated like `/bulletin` (section level + `messages` view; staff affordances ride
+  the resolved `moderate` grant — AC-13).
+- **Navigation (DESIGN-004 D-19).** Tab switches + ticket drill-ins PUSH history entries; the
+  state chips and the Feed's `?src`/`?media` segs REPLACE. ADR-015 throughout: refetches dim in
+  place, modals overlay, pickers popover, armed states recolor.
+
+### D-13 — Amendment 2026-07-11 (PLAN-034, ADR-050) — the new-ticket admin ping (Q-04)
+
+`createTicket` enqueues ONE `notification_outbox` row — new event type **`ticket_created`**
+(CHECK rebuilt in 0040) — in the SAME transaction as the ticket + creation-event inserts
+(ADR-034 C-01; window read + `computeEarliestSend` BEFORE the tx, the batch-writer pattern).
+Payload `{ ticketId, title, category, authorName, mediaTitle }`; the renderer emits
+"New Helpdesk ticket / <author>: "<title>" · <media>" deep-linking
+`https://haynesnetwork.com/bulletin/ticket/<id>`. The existing `notify-outbox` CronJob drains it —
+no new infra. Requester-facing pings wait for email (PLAN-035).
+
 ## Alternatives considered
 
 See ADR-026 "Considered options" (notifications-in-ledger; Maintainerr-specific route; Messages
@@ -259,20 +357,29 @@ alternative are weighed in ADR-049 (Consequences C-02/C-04).
 ## Test strategy
 
 - **Vitest (embedded PG16):** `recordNotification` attribution/dedupe/unattributed/null-id-insert
-  (`notification-ingest.test.ts`); Messages post/edit-own/moderate soft-status (`messages.test.ts`);
-  `setRoleMessageActions` + matrix (`message-permissions.test.ts`); Feed keyset + filters +
-  attribution join + disabled FORBIDDEN, message action gating matrix + moderator visibility
-  (`communication.test.ts`); widened-CHECK preservation + dedupe index (`migrations.test.ts`);
-  parser normalization (`webhook-sources.test.ts`); the no-direct-writes guard extended
-  (`messages`, `role_message_action_grants`).
-- **e2e (advisory):** `communication.spec.ts` — per-source webhook round-trips.
+  (`notification-ingest.test.ts`); the FULL 4×4 ticket state-machine matrix (const AND
+  DB-enforced), event-history append/notes, activity bumps, and the ticket_created outbox
+  SAME-TX proof in both directions — committed together, rolled back together
+  (`tickets.test.ts`); `setRoleMessageActions` + matrix (`message-permissions.test.ts`); Feed
+  keyset + filters + attribution join + disabled FORBIDDEN, the PLAN-034 permission matrix —
+  non-staff FORBIDDEN from every transition (author included), reply open to any messages-view
+  holder / FORBIDDEN to feed-only, create needs `post` even for moderators, illegal edges
+  CONFLICT, household-visible detail timeline (`communication.test.ts`); 0040 table CHECKs +
+  outbox CHECK preservation + the messages-table DROP (`migrations.test.ts`); parser
+  normalization (`webhook-sources.test.ts`); the no-direct-writes guard extended
+  (`tickets`/`ticket_events`/`ticket_replies`; `messages` removed).
+- **e2e (advisory):** `communication.spec.ts` — per-source webhook round-trips;
+  `helpdesk.spec.ts` — member-files-ticket → staff-transitions-with-reason → member-replies →
+  state filters, against the hermetic stack.
 
 ## Open questions
 
 | ID | Question | Resolution |
 |----|----------|------------|
 | Q-01 | Per-user read/unread vs a global Feed | Global (household simplicity); `notification_reads` join table is the future extension. |
-| Q-02 | Threaded replies / reactions / pinning | Deferred — flat v1 (`messages`, no `parent_message_id`, no reactions). |
-| Q-03 | Can a Message **spawn** a Fix (vs link-only)? | Link-only for v1; the UX surfaces the item's Fix affordance. Bidirectional spawn deferred. |
+| Q-02 | Threaded replies / reactions / pinning | ~~Deferred~~ **Resolved by PLAN-034/ADR-050**: flat reply THREADS shipped on tickets (`ticket_replies`); reactions/pinning still out. |
+| Q-03 | Can a Message **spawn** a Fix (vs link-only)? | Link-only (unchanged for tickets): the detail surfaces the linked item's repair cue + deep link; bidirectional spawn deferred. |
 | Q-04 | The *arrs as notification sources | Deferred — they already feed `ledger_events`; adding them is optional/redundant. |
 | Q-05 | Full filter-engine port for the Feed | Deferred — simple params (source/eventType/hasMedia) backend-side; the UX may layer the `@hnet/ui` chips later. |
+| Q-06 | Ticket reply edit/delete (staff redaction) | Deferred (ADR-050 C-08) — replies are immutable v1; a redaction verb is the extension if ever needed. |
+| Q-07 | Requester notifications on transition/reply | Blocked on email (PLAN-035); Pushover reaches admins only (single owner key — ADR-034). |

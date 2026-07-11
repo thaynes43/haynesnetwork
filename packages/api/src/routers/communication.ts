@@ -1,33 +1,33 @@
-// ADR-026 / DESIGN-012 (PLAN-009 Bulletin) — the Communication hub tRPC surface. The Feed is a
-// keyset-paginated read over the widened `notifications` store (the webhook receiver is a Next.js
-// route handler, NOT tRPC); Messages is user-driven CRUD + moderation over the `messages` board.
-// Access is layered: the coarse `bulletin` section level gates READ (Feed + Messages browse), the
-// fine-grained post/moderate grants gate the write actions (messageActionProcedure). All message
-// mutations go through @hnet/domain single-writers wrapped in mapDomainErrors.
+// ADR-026 / ADR-050 / DESIGN-012 — the Communication hub tRPC surface. The Feed is a keyset-
+// paginated read over the widened `notifications` store (the webhook receiver is a Next.js route
+// handler, NOT tRPC); the HELPDESK (PLAN-034 — it replaced the Messages board) is the household
+// media-issue ticket system over `tickets`/`ticket_events`/`ticket_replies`. Access is layered:
+// the coarse `bulletin` section level gates READ, the `messages` sub-view grant gates the Helpdesk
+// surface as a whole (browse/detail/REPLY — any member with the view may chime in, Q-02), and the
+// fine-grained action grants gate create (`post`) and state transitions (`moderate` — staff only).
+// All ticket mutations go through @hnet/domain single-writers wrapped in mapDomainErrors.
 import { z } from 'zod';
 import {
   fixRequests,
   mediaItems,
   mediaMetadata,
-  messages,
   notifications,
+  tickets,
+  ticketEvents,
+  ticketReplies,
   users,
-  MESSAGE_STATUSES,
   NOTIFICATION_SOURCES,
+  TICKET_CATEGORIES,
+  TICKET_STATUSES,
 } from '@hnet/db';
-import { and, eq, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
-import { editMessage, moderateMessage, postMessage, OPEN_FIX_STATUSES } from '@hnet/domain';
+import { and, asc, eq, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
+import { addTicketReply, createTicket, transitionTicket, OPEN_FIX_STATUSES } from '@hnet/domain';
 import { mapDomainErrors, router } from '../trpc';
 import { posterUrlFor } from '../ledger-query';
-import {
-  bulletinViewProcedure,
-  hasMessageAction,
-  messageActionProcedure,
-} from '../middleware/role';
+import { bulletinViewProcedure, messageActionProcedure } from '../middleware/role';
 import { decodeKeysetCursor, encodeKeysetCursor, keysetAfter, keysetOrderBy } from '../keyset';
 
 const iso = (d: Date) => d.toISOString();
-const isoOrNull = (d: Date | null) => (d === null ? null : d.toISOString());
 
 export const communicationRouter = router({
   /**
@@ -116,38 +116,30 @@ export const communicationRouter = router({
       };
     }),
 
-  messages: router({
+  tickets: router({
     /**
-     * ADR-026 D-06 — the Messages board browse (newest-first keyset). Everyone with Read-Only sees
-     * `visible` messages; a caller with the `moderate` grant additionally sees hidden/deleted rows
-     * (for triage/audit) and may filter by status. Content of soft-hidden/deleted rows is preserved.
-     *
-     * ADR-049 C-02 (PLAN-027) — gated on the role's `messages` SUB-VIEW grant: a role narrowed to
-     * feed-only gets FORBIDDEN here (the post/edit/moderate mutations compose on top of the same
-     * messages-view gate via messageActionProcedure).
+     * ADR-050 / DESIGN-012 D-11 — the Helpdesk wall browse: most-recent-activity-first keyset over
+     * ALL tickets (household visibility, Q-01 — no hidden rows; the old status-based moderator
+     * filtering went with the board). Optional state/category filters (requirement 7). Every item
+     * carries what a wall tile renders: title, category, status, author, the linked-media poster
+     * facts, reply count, and the activity timestamps.
      */
     list: bulletinViewProcedure('messages')
       .input(
         z.object({
-          status: z.enum(MESSAGE_STATUSES).optional(),
-          mediaItemId: z.uuid().optional(),
+          status: z.enum(TICKET_STATUSES).optional(),
+          category: z.enum(TICKET_CATEGORIES).optional(),
           cursor: z.string().optional(),
-          limit: z.number().int().min(1).max(200).default(50),
+          limit: z.number().int().min(1).max(200).default(60),
         }),
       )
       .query(async ({ ctx, input }) => {
-        const canModerate = hasMessageAction(ctx.user.role, 'moderate');
         const where: SQL[] = [];
-        if (canModerate) {
-          if (input.status) where.push(eq(messages.status, input.status));
-        } else {
-          // Non-moderators only ever see visible messages (status filter ignored — never leaks).
-          where.push(eq(messages.status, 'visible'));
-        }
-        if (input.mediaItemId) where.push(eq(messages.mediaItemId, input.mediaItemId));
+        if (input.status) where.push(eq(tickets.status, input.status));
+        if (input.category) where.push(eq(tickets.category, input.category));
 
-        const sortExpr = sql`${messages.createdAt}`;
-        const idCol = sql`${messages.id}`;
+        const sortExpr = sql`${tickets.lastActivityAt}`;
+        const idCol = sql`${tickets.id}`;
         if (input.cursor !== undefined) {
           const { sortValue, id } = decodeKeysetCursor(input.cursor);
           where.push(
@@ -157,27 +149,24 @@ export const communicationRouter = router({
 
         const rows = await ctx.db
           .select({
-            id: messages.id,
-            authorUserId: messages.authorUserId,
+            id: tickets.id,
+            title: tickets.title,
+            category: tickets.category,
+            status: tickets.status,
+            authorUserId: tickets.authorUserId,
             authorName: users.displayName,
-            subject: messages.subject,
-            body: messages.body,
-            mediaItemId: messages.mediaItemId,
+            mediaItemId: tickets.mediaItemId,
             mediaTitle: mediaItems.title,
             mediaArrKind: mediaItems.arrKind,
             mediaYear: mediaItems.year,
             posterSource: mediaMetadata.posterSource,
-            status: messages.status,
-            createdAt: messages.createdAt,
-            editedAt: messages.editedAt,
-            moderatedBy: messages.moderatedBy,
-            moderatedAt: messages.moderatedAt,
-            moderationNote: messages.moderationNote,
+            createdAt: tickets.createdAt,
+            lastActivityAt: tickets.lastActivityAt,
           })
-          .from(messages)
-          .leftJoin(users, eq(users.id, messages.authorUserId))
-          .leftJoin(mediaItems, eq(mediaItems.id, messages.mediaItemId))
-          .leftJoin(mediaMetadata, eq(mediaMetadata.mediaItemId, messages.mediaItemId))
+          .from(tickets)
+          .leftJoin(users, eq(users.id, tickets.authorUserId))
+          .leftJoin(mediaItems, eq(mediaItems.id, tickets.mediaItemId))
+          .leftJoin(mediaMetadata, eq(mediaMetadata.mediaItemId, tickets.mediaItemId))
           .where(where.length ? and(...where) : undefined)
           .orderBy(keysetOrderBy(sortExpr, 'desc', idCol))
           .limit(input.limit + 1);
@@ -185,135 +174,263 @@ export const communicationRouter = router({
         const page = rows.slice(0, input.limit);
         const last = page[page.length - 1];
 
-        // Batched repair-status hint (ADR-026 addendum — Bulletin title deep-links): one grouped
-        // pass over fix_requests for JUST the page's linked media ids, so a message card can show a
-        // static "has an open fix / N repairs recorded" cue that sends the reader to the item page
-        // (where the live phases + History + Fix actually live). openFix mirrors the domain's
-        // OPEN_FIX_STATUSES; fixCount is the total recorded. NO live polling here (D-06 stays a read).
-        const linkedIds = [
-          ...new Set(page.map((r) => r.mediaItemId).filter((id): id is string => id !== null)),
-        ];
-        const fixHints = new Map<string, { fixCount: number; openFix: boolean }>();
-        if (linkedIds.length > 0) {
-          const hintRows = await ctx.db
+        // Batched reply counts for JUST the page (the fix-hint pattern) — one grouped pass.
+        const pageIds = page.map((r) => r.id);
+        const replyCounts = new Map<string, number>();
+        if (pageIds.length > 0) {
+          const countRows = await ctx.db
             .select({
-              mediaItemId: fixRequests.mediaItemId,
+              ticketId: ticketReplies.ticketId,
+              n: sql<number>`count(*)::int`,
+            })
+            .from(ticketReplies)
+            .where(inArray(ticketReplies.ticketId, pageIds))
+            .groupBy(ticketReplies.ticketId);
+          for (const c of countRows) replyCounts.set(c.ticketId, c.n);
+        }
+
+        return {
+          items: page.map((r) => ({
+            id: r.id,
+            title: r.title,
+            category: r.category,
+            status: r.status,
+            authorUserId: r.authorUserId,
+            authorName: r.authorName,
+            mediaItemId: r.mediaItemId,
+            mediaTitle: r.mediaTitle,
+            mediaArrKind: r.mediaArrKind,
+            mediaYear: r.mediaYear,
+            // null poster ⇒ the tile renders the CATEGORY icon (never a broken <img>) — same
+            // authed-proxy contract as the Library grid (ADR-019 posterUrlFor).
+            mediaPosterUrl:
+              r.mediaItemId !== null ? posterUrlFor(r.mediaItemId, r.posterSource) : null,
+            replyCount: replyCounts.get(r.id) ?? 0,
+            createdAt: iso(r.createdAt),
+            lastActivityAt: iso(r.lastActivityAt),
+          })),
+          nextCursor:
+            rows.length > input.limit && last !== undefined
+              ? encodeKeysetCursor(iso(last.lastActivityAt), last.id)
+              : null,
+        };
+      }),
+
+    /**
+     * ADR-050 / DESIGN-012 D-12 — the per-state totals the filter chips bake in ("Open · 3").
+     * One grouped pass; absent states are 0.
+     */
+    counts: bulletinViewProcedure('messages').query(async ({ ctx }) => {
+      const rows = await ctx.db
+        .select({ status: tickets.status, n: sql<number>`count(*)::int` })
+        .from(tickets)
+        .groupBy(tickets.status);
+      const counts: Record<(typeof TICKET_STATUSES)[number], number> = {
+        open: 0,
+        in_progress: 0,
+        complete: 0,
+        rejected: 0,
+      };
+      for (const r of rows) counts[r.status] = r.n;
+      return counts;
+    }),
+
+    /**
+     * ADR-050 / DESIGN-012 D-12 — the ticket drill-in (the movie-detail idiom): the ticket, its
+     * full append-only event timeline (creation + every transition, with actor names and the
+     * household-visible notes), the flat reply thread, the linked-media facts, and the static
+     * repair cue for the linked title (openFix/fixCount — the item page owns the live phases,
+     * ADR-028). Household-visible to every caller with the `messages` sub-view (Q-01); an unknown
+     * id is found:false (the ytdlsub.detail contract), never a throw the client must special-case.
+     */
+    detail: bulletinViewProcedure('messages')
+      .input(z.object({ ticketId: z.uuid() }))
+      .query(async ({ ctx, input }) => {
+        const [row] = await ctx.db
+          .select({
+            id: tickets.id,
+            title: tickets.title,
+            body: tickets.body,
+            category: tickets.category,
+            status: tickets.status,
+            authorUserId: tickets.authorUserId,
+            authorName: users.displayName,
+            mediaItemId: tickets.mediaItemId,
+            mediaTitle: mediaItems.title,
+            mediaArrKind: mediaItems.arrKind,
+            mediaYear: mediaItems.year,
+            posterSource: mediaMetadata.posterSource,
+            createdAt: tickets.createdAt,
+            lastActivityAt: tickets.lastActivityAt,
+          })
+          .from(tickets)
+          .leftJoin(users, eq(users.id, tickets.authorUserId))
+          .leftJoin(mediaItems, eq(mediaItems.id, tickets.mediaItemId))
+          .leftJoin(mediaMetadata, eq(mediaMetadata.mediaItemId, tickets.mediaItemId))
+          .where(eq(tickets.id, input.ticketId))
+          .limit(1);
+        if (!row) return { found: false as const };
+
+        const events = await ctx.db
+          .select({
+            id: ticketEvents.id,
+            actorUserId: ticketEvents.actorUserId,
+            actorName: users.displayName,
+            fromStatus: ticketEvents.fromStatus,
+            toStatus: ticketEvents.toStatus,
+            note: ticketEvents.note,
+            createdAt: ticketEvents.createdAt,
+          })
+          .from(ticketEvents)
+          .leftJoin(users, eq(users.id, ticketEvents.actorUserId))
+          .where(eq(ticketEvents.ticketId, input.ticketId))
+          .orderBy(asc(ticketEvents.createdAt), asc(ticketEvents.id));
+
+        const replies = await ctx.db
+          .select({
+            id: ticketReplies.id,
+            authorUserId: ticketReplies.authorUserId,
+            authorName: users.displayName,
+            body: ticketReplies.body,
+            createdAt: ticketReplies.createdAt,
+          })
+          .from(ticketReplies)
+          .leftJoin(users, eq(users.id, ticketReplies.authorUserId))
+          .where(eq(ticketReplies.ticketId, input.ticketId))
+          .orderBy(asc(ticketReplies.createdAt), asc(ticketReplies.id));
+
+        // The static repair cue for the linked title (the board's pattern kept: a HINT, not a
+        // live view — the item page owns the live fix phases).
+        let openFix = false;
+        let fixCount = 0;
+        if (row.mediaItemId !== null) {
+          const [hint] = await ctx.db
+            .select({
               fixCount: sql<number>`count(*)::int`,
               openCount: sql<number>`(count(*) filter (where ${inArray(fixRequests.status, [
                 ...OPEN_FIX_STATUSES,
               ])}))::int`,
             })
             .from(fixRequests)
-            .where(inArray(fixRequests.mediaItemId, linkedIds))
-            .groupBy(fixRequests.mediaItemId);
-          for (const h of hintRows) {
-            fixHints.set(h.mediaItemId, { fixCount: h.fixCount, openFix: h.openCount > 0 });
-          }
+            .where(eq(fixRequests.mediaItemId, row.mediaItemId));
+          fixCount = hint?.fixCount ?? 0;
+          openFix = (hint?.openCount ?? 0) > 0;
         }
 
         return {
-          items: page.map((r) => {
-            const hint = r.mediaItemId !== null ? fixHints.get(r.mediaItemId) : undefined;
-            return {
-              id: r.id,
-              authorUserId: r.authorUserId,
-              authorName: r.authorName,
-              subject: r.subject,
-              body: r.body,
-              mediaItemId: r.mediaItemId,
-              mediaTitle: r.mediaTitle,
-              mediaArrKind: r.mediaArrKind,
-              mediaYear: r.mediaYear,
-              // null poster ⇒ the card renders the kind icon (never a broken <img>) — same
-              // authed-proxy contract as the Library grid (ADR-019 posterUrlFor).
-              mediaPosterUrl:
-                r.mediaItemId !== null ? posterUrlFor(r.mediaItemId, r.posterSource) : null,
-              // Static repair cue for the linked title (unlinked ⇒ false/0, nothing rendered).
-              openFix: hint?.openFix ?? false,
-              fixCount: hint?.fixCount ?? 0,
-              status: r.status,
-              createdAt: iso(r.createdAt),
-              editedAt: isoOrNull(r.editedAt),
-              // Moderation trail exposed only to moderators (never leak who hid/deleted to members).
-              moderatedBy: canModerate ? r.moderatedBy : null,
-              moderatedAt: canModerate ? isoOrNull(r.moderatedAt) : null,
-              moderationNote: canModerate ? r.moderationNote : null,
-            };
-          }),
-          nextCursor:
-            rows.length > input.limit && last !== undefined
-              ? encodeKeysetCursor(iso(last.createdAt), last.id)
-              : null,
+          found: true as const,
+          ticket: {
+            id: row.id,
+            title: row.title,
+            body: row.body,
+            category: row.category,
+            status: row.status,
+            authorUserId: row.authorUserId,
+            authorName: row.authorName,
+            mediaItemId: row.mediaItemId,
+            mediaTitle: row.mediaTitle,
+            mediaArrKind: row.mediaArrKind,
+            mediaYear: row.mediaYear,
+            mediaPosterUrl:
+              row.mediaItemId !== null ? posterUrlFor(row.mediaItemId, row.posterSource) : null,
+            openFix,
+            fixCount,
+            createdAt: iso(row.createdAt),
+            lastActivityAt: iso(row.lastActivityAt),
+          },
+          events: events.map((e) => ({
+            id: e.id,
+            actorUserId: e.actorUserId,
+            actorName: e.actorName,
+            fromStatus: e.fromStatus,
+            toStatus: e.toStatus,
+            note: e.note,
+            createdAt: iso(e.createdAt),
+          })),
+          replies: replies.map((r) => ({
+            id: r.id,
+            authorUserId: r.authorUserId,
+            authorName: r.authorName,
+            body: r.body,
+            createdAt: iso(r.createdAt),
+          })),
         };
       }),
 
-    /** ADR-026 D-06 — post a new Message (the `post` grant). Optional subject + media-item link. */
-    post: messageActionProcedure('post')
+    /**
+     * ADR-050 D-11 — file a ticket (the `post` grant). The domain writer inserts the ticket, its
+     * creation event, AND the admins' `ticket_created` Pushover outbox row in ONE tx (Q-04).
+     */
+    create: messageActionProcedure('post')
       .input(
         z.object({
-          subject: z.string().trim().max(200).optional(),
+          title: z.string().trim().min(1).max(200),
           body: z.string().trim().min(1).max(8_000),
+          category: z.enum(TICKET_CATEGORIES),
           mediaItemId: z.uuid().optional(),
         }),
       )
       .mutation(async ({ ctx, input }) => {
         return mapDomainErrors(async () => {
-          const row = await postMessage({
+          const row = await createTicket({
             db: ctx.db,
             authorId: ctx.user.id,
-            subject: input.subject ?? null,
+            title: input.title,
             body: input.body,
+            category: input.category,
             mediaItemId: input.mediaItemId ?? null,
           });
           return { id: row.id, status: row.status };
         });
       }),
 
-    /** ADR-026 D-06 — edit one's OWN Message (the `post` grant; domain enforces ownership). */
-    edit: messageActionProcedure('post')
+    /**
+     * ADR-050 D-11 — reply on a ticket's thread. Deliberately the `messages` SUB-VIEW gate, NOT a
+     * message action: any household member who can see the board may chime in (owner ruling Q-02).
+     */
+    reply: bulletinViewProcedure('messages')
       .input(
         z.object({
-          messageId: z.uuid(),
-          subject: z.string().trim().max(200).optional(),
+          ticketId: z.uuid(),
           body: z.string().trim().min(1).max(8_000),
         }),
       )
       .mutation(async ({ ctx, input }) => {
         return mapDomainErrors(async () => {
-          const row = await editMessage({
+          const row = await addTicketReply({
             db: ctx.db,
-            messageId: input.messageId,
-            editorId: ctx.user.id,
-            subject: input.subject ?? null,
+            ticketId: input.ticketId,
+            authorId: ctx.user.id,
             body: input.body,
           });
-          return { id: row.id, editedAt: isoOrNull(row.editedAt) };
+          return { id: row.id, createdAt: iso(row.createdAt) };
         });
       }),
 
     /**
-     * ADR-026 D-06 — moderate ANY Message (the `moderate` grant): hide / delete (soft — content
-     * preserved) / restore (→ visible). Records the moderation trail in the same tx. The UX uses a
-     * ConfirmButton for destructive transitions (ADR-014); this is the server-authoritative gate.
+     * ADR-050 D-11 — drive a ticket's state (the `moderate` grant — STAFF ONLY, Q-02; members
+     * never transition, not even their own tickets). Every transition may carry an optional
+     * household-visible note (requirement 5); an illegal edge is a CONFLICT
+     * (TICKET_INVALID_TRANSITION), enforced by the domain matrix under a row lock.
      */
-    moderate: messageActionProcedure('moderate')
+    transition: messageActionProcedure('moderate')
       .input(
         z.object({
-          messageId: z.uuid(),
-          status: z.enum(MESSAGE_STATUSES),
-          note: z.string().trim().max(500).optional(),
+          ticketId: z.uuid(),
+          toStatus: z.enum(TICKET_STATUSES),
+          note: z.string().trim().max(1_000).optional(),
         }),
       )
       .mutation(async ({ ctx, input }) => {
         return mapDomainErrors(async () => {
-          const row = await moderateMessage({
+          const { ticket, event } = await transitionTicket({
             db: ctx.db,
-            messageId: input.messageId,
-            moderatorId: ctx.user.id,
-            status: input.status,
+            ticketId: input.ticketId,
+            actorId: ctx.user.id,
+            toStatus: input.toStatus,
             note: input.note ?? null,
           });
-          return { id: row.id, status: row.status, moderatedAt: isoOrNull(row.moderatedAt) };
+          return { id: ticket.id, status: ticket.status, eventId: event.id };
         });
       }),
   }),
