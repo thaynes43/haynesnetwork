@@ -81,6 +81,10 @@ Env knobs (helmrelease): `MAM_SEEDBOX_URL`, `MAM_CHECK_URL`, `INTERVAL=3600`, `M
   unset) so Prowlarr never injects a stingy per-indexer share limit — the client seeds forever.
 - `useFreeleechWedge = No` (hoard wedges; do not auto-spend).
 - Torznab feed consumed downstream: `http://prowlarr.downloads.svc.cluster.local:9696/17/api`.
+- **Indexer priority = 50** (lowest preference; set 2026-07-11). Prowlarr runs a
+  **LazyLibrarian APPLICATION (`fullSync`, app id 4)** that owns LL's provider sections — this
+  priority syncs to LL as `dlpriority = 1`, pinning usenet-first durably (mapping + rationale
+  in §5).
 - Prowlarr has **no download client** configured (LazyLibrarian talks to qBittorrent directly).
 - Prowlarr's API key lives in secret `prowlarr-secret` (`PROWLARR__AUTH__APIKEY`, from 1Password
   `media-stack`).
@@ -121,18 +125,25 @@ LL's own API (`addProvider` / `changeProvider` / `writeCFG`, which persist + app
 - **`[Torznab_0]` MyAnonaMouse (Prowlarr)** — `enabled`, host = the indexer-17 Torznab feed,
   `bookcat=7020` (ebooks), `comiccat=7030`, `magcat=7010`. It is a **torrent** provider → routes
   to qBittorrent.
-- **USENET-FIRST (owner ruling Q-05) — CORRECTED 2026-07-11:** the original wiring had the
-  priority direction **backwards**. LazyLibrarian's `find_best_result` picks
+- **USENET-FIRST (owner ruling Q-05) — CORRECTED 2026-07-11, twice:** the original wiring had
+  the priority direction **backwards**. LazyLibrarian's `find_best_result` picks
   `max(matches, key=(score, priority))` (`resultlist.py`) — **higher `dlpriority` wins** among
   equal-scoring results — so the initial `dlpriority=100` made MAM the *preferred* provider over
   the four usenet/Newznab providers (`dlpriority 42–50`), and early grabs routed to MAM even when
-  usenet had the title. Fixed live via `changeProvider`: `[Torznab_0]` **`dlpriority=0`** (LL
-  omits the key from `config.ini` because 0 is the default — absence means 0, not unset). Usenet
-  now outranks MAM on comparable results and **MAM fills gaps**. Nuance: `dlpriority` is the
-  tie-breaker *after* match score — a strictly better-scoring MAM result (title/format match) can
-  still win; that is intended.
-- **Inert stub:** a disabled `[Torznab_1]` section (same indexer-17 host, no `enabled` key — an
-  `addProvider` retry leftover) sits in `config.ini`; harmless, delete at will.
+  usenet had the title.
+  **Second correction — where the knob really lives:** Prowlarr's **LazyLibrarian application
+  (`fullSync`)** owns LL's `[Newznab_*]`/`[Torznab_*]` sections and **clobbers manual LL-side
+  edits** on every sync (a manual `dlpriority=0` set via LL's `changeProvider` was overwritten
+  within the hour). The mapping is **LL `dlpriority` = 51 − Prowlarr indexer priority**. The
+  durable fix is at the Prowlarr layer: MyAnonaMouse indexer **priority = 50** (lowest) → the
+  app-sync writes LL `dlpriority = 1`, firmly below usenet (42–50). Usenet outranks MAM on
+  comparable results and **MAM fills gaps**. Nuances: `dlpriority` is the tie-breaker *after*
+  match score — a strictly better-scoring MAM result (title/format match) can still win
+  (intended); **never hand-edit LL provider sections expecting persistence** — change the
+  Prowlarr indexer and let the application sync propagate.
+- **Inert stub:** a disabled `[Torznab_1]` section (same indexer-17 host, no `enabled` key —
+  most likely an app-sync/`addProvider` artifact) sits in `config.ini`; harmless, delete at
+  will (expect the sync to be authoritative).
 - **Torrent routing:** `qbittorrent_label = books-mam`, `qbittorrent_dir =
   /data/cephfs-hdd/torrents/books/books-mam`. MAM is LazyLibrarian's *only* torrent source, so
   every torrent LL grabs lands in `books-mam`.
