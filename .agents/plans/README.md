@@ -83,6 +83,44 @@ Source brain dump: `TODO.md`. Consolidated backlog + Restore explanation:
 `../context/2026-07-05-backlog-recon.md`. Deleted-items snapshot to import into the Ledger:
 `radarr-fileless-backlog.md`.
 
+## Round 2 queue (2026-07-10)
+
+Second wave, drafted from the owner backlog `../../../haynes-ops/zprompt.md`. Two tracks:
+**Authentik hardening** (011 rescope) and a **Metrics section** (017 foundation + sub-tabs
+018–020), plus **AI** (021), **ytdl-sub Library** (022), and **Books/Audiobooks** (023). All
+`Status: Draft`; take next-free IDs at authoring (see reconciliation note below — these siblings
+consume numbers tonight). One plan = one release, lowest active number first, as always.
+
+| # | Plan | Scope (one line) | Depends on | Owner-gated |
+|---|------|------------------|-----------|-------------|
+| 011 | Authentik hardening (rescope) | Blueprints/GitOps migration (Phase 1, agent-safe, no live writes) then native-account MFA | — | **Phase 2** — apply + enroll + akadmin repair are owner-present |
+| 017 | Metrics section foundation | Top-level Metrics tab (after Bulletin) + Full/Limited access model + Overview (up/down vs ~300 Mbps cap) | — | Owner flips Default→`limited` after morning screenshot review |
+| 018 | Metrics — Apps/*arr sub-tab | exportarr dashboards + gap-fill (per 017 out-of-scope) — **planned slot, not yet drafted** | 017 | — |
+| 019 | Metrics — Hardware sub-tab | SMART health + alerting, node load/temps, Proxmox host→VM showcase; both levels see all | 017 | **Partial** — pve-exporter needs the 1P `proxmox` item; SMART thresholds + which Proxmox nodes await owner |
+| 020 | Metrics — Network sub-tab | WAN up/down usage-vs-capacity (`limited`) + infra performance grain (`full`); no client identities at ANY level | 017 | — (privacy invariant is a hard verification, not owner-gated) |
+| 021 | AI — Open WebUI | GPU repair runbook, Ollama models + budget, RBAC via admin API, ComfyUI image-gen, catalog advertise; Q&A POC stretch | — (soft: catalog, role model) | **GPU repair owner-present; model pulls owner-run; needs 1P `openwebui` key** |
+| 022 | ytdl-sub Library | Surface Peloton + YouTube libraries read direct from Plex via `@hnet/plex`; ships admin-gated | rebase onto 017's sub-tab/nav after it merges | **Posters** — durable-poster sink awaits owner (Q-01); admin-gated at ship for screenshot review |
+| 023 | Books & Audiobooks | **Phases 1–2 DEPLOYED & LIVE (2026-07-10, `haynes-ops`):** Kavita+ABS serving + LazyLibrarian+Kapowarr acquiring, on **gasha01** (libraries migrated off the tower, originals untouched); Prowlarr↔LL + SABnzbd + qBittorrent wired; **usenet grab proven end-to-end for ebook AND audiobook**. Phase 3 (OIDC, `*.haynesops.com`→`*.haynesnetwork.com`) gated on 011; Phase 4 (catalog cards) not started. See plan's "Owner rulings + as-built". | 011 (Phase 3 only) | **Owner TODOs:** ComicVine key (Kapowarr grab); Google-Books key OR LL-build swap (LL `version-40a389ea` OpenLibrary metadata bug blocks auto-grab); private-tracker accounts (book torrents); 1P items for the 4 apps' keys |
+
+**Owner-present / gated tonight+morning:** 011 Phase 2 (Authentik apply), 019 (pve-exporter 1P
+`proxmox` item), 021 (GPU repair + models + 1P `openwebui` key), 022 (poster durable store). The
+owner is adding the 1Password `proxmox` and `openwebui` items tonight, unblocking 019/021.
+
+## Phase-3 queue (2026-07-11, building — owner is still adding backlog items)
+
+| # | Plan | Status | Note |
+|---|------|--------|------|
+| 031 | Books acquisition — MAM wiring | **GREEN-LIT, high priority** | Owner passed the MAM interview 2026-07-11; design+implement approved, dispatch on go. Compliance contract: `../context/2026-07-11-mam-rules-scrape.md` |
+| 029 | Library views/grouping + Sorting & Filtering | **SCOPED** | Owner rulings 2026-07-11; per-user watch-state IN scope; dispatch after 036+034 land, agent types to discuss |
+| 037 | Collections (mirrored + logical) | Backlogged | Split out of 029 by owner ruling; scope after 029 ships |
+| 032 | List-driven book automation (Kometa/Spotify analog) | Intake | Needs scoping session |
+| 033 | Book requests + wanted-not-on-disk view | Intake | Needs scoping session; books write-back ADR required |
+| 036 | History navigation contract (back/forward = screens) | ✅ **DONE v0.43.1** (PR #206) | Screen-level tab switches now `router.push` (Library/Bulletin/Metrics/Trash/Trash-settings/Ledger); refinements + canonicalize redirects stay `router.replace`. DESIGN-004 **D-19**; e2e `history-navigation.spec.ts` |
+| 034 | Helpdesk/Tickets (Bulletin Messages rebrand) | **DISPATCHED 2026-07-11 am** | Fable builder; owner rulings Q-01..Q-05 in plan; rebase over 036 |
+| 035 | Ticket email notifications | Backlogged | BLOCKED by SMTP (F-04) + 034; parked deliberately, do not lose |
+| 025 | ytdl config-manager platform | Roadmap | Own scoping session (3 repos) |
+| — | SMTP relay (F-04) / Feed attribution | Unplanned | Intake questions asked 2026-07-11 |
+
 ## Cross-plan reconciliation — READ before authoring any doc
 
 The seven plans were drafted in parallel, so they could not coordinate shared identifiers or
