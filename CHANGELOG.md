@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.44.0](https://github.com/thaynes43/haynesnetwork/compare/v0.43.1...v0.44.0) (2026-07-11)
+
+
+### Features
+
+* Helpdesk tickets — the Bulletin Messages board becomes a media-issue ticket system (PLAN-034) ([#210](https://github.com/thaynes43/haynesnetwork/issues/210)) ([d926e5f](https://github.com/thaynes43/haynesnetwork/commit/d926e5f72120ad0996bd1c450d2a7872bc6db6ae))
+
+
+### Documentation
+
+* mark PLAN-036 completed — history-navigation contract live (v0.43.1) ([#208](https://github.com/thaynes43/haynesnetwork/issues/208)) ([dd3e36f](https://github.com/thaynes43/haynesnetwork/commit/dd3e36f418a1a53197abd107b8a43a410efd99e7))
+
 ## [0.43.1](https://github.com/thaynes43/haynesnetwork/compare/v0.43.0...v0.43.1) (2026-07-11)
 
 
