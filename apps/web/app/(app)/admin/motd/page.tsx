@@ -1,20 +1,31 @@
 'use client';
 
-// ADR-027 / DESIGN-004 D-15 (PLAN-010) — /admin/motd: compose/enable/clear the dashboard
+// ADR-027 / DESIGN-004 D-15 + D-17 (PLAN-010) — /admin/motd: compose/enable/clear the dashboard
 // Message-of-the-Day. One static form (message textarea, severity select, enabled toggle, optional
-// start/end window) mirroring the /admin/catalog D-11 form. Save → motd.set; Clear → motd.clear behind
-// a @hnet/ui ConfirmButton (inline two-step — clearing removes something users see; never
-// window.confirm, hard rule 8). A live preview reuses the real .motd banner classes; changing severity
-// recolors ONLY the preview, never the layout (ADR-015 / hard rule 9).
+// start/end window) mirroring the /admin/catalog D-11 form. Save → motd.set; Clear → motd.clear
+// behind a @hnet/ui ConfirmButton (inline two-step — clearing removes something users see; never
+// window.confirm, hard rule 8).
+//
+// D-17: the message is MARKDOWN (a sanitized subset — links/bold/italic/code/breaks/lists) and the
+// live preview renders the REAL <MotdSurface> — the exact component the dashboard mounts — so what
+// the admin sees is what users get, glyph and all. A "Markdown supported" affordance plus an
+// Insert-link helper (wraps the selection in [text](https://…) and parks the caret at the URL) keep
+// composing light — deliberately NOT a WYSIWYG. Changing severity/message recolors/refills ONLY the
+// preview, never the surrounding layout (ADR-015 / hard rule 9).
 
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { ConfirmButton } from '@hnet/ui';
 // The enum const comes from the pg-free `@hnet/db/schema` subpath: importing the `@hnet/db` ROOT into
 // a client component would drag the `pg` Pool into the browser bundle (server components may; this may
 // not). The value is client-safe (pure const array); the type is erased.
 import { MOTD_SEVERITIES, type MotdSeverity } from '@hnet/db/schema';
+import { MotdSurface } from '@/components/motd-banner';
 import { trpc } from '@/lib/trpc-client';
 import { describeMutationError } from '@/lib/app-error';
+
+/** Mirrors @hnet/domain MOTD_MAX_LENGTH / the motd.set zod bound (D-17 raised 280 → 500 so a
+ *  markdown link's URL doesn't eat the whole budget). */
+const MAX_MESSAGE = 500;
 
 /** ISO instant → the value a <input type="datetime-local"> expects (local wall time, minute precision). */
 function isoToLocalInput(iso: string | null): string {
@@ -57,6 +68,7 @@ export default function AdminMotdPage() {
   const [draft, setDraft] = useState<FormState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const messageRef = useRef<HTMLTextAreaElement>(null);
 
   const base: FormState = current.data
     ? {
@@ -101,12 +113,31 @@ export default function AdminMotdPage() {
     form.endsAt !== '' &&
     new Date(form.startsAt).getTime() > new Date(form.endsAt).getTime();
   const messageEmpty = form.message.trim() === '';
+  // The Insert-link helper can push a programmatic value past the textarea's maxLength (which only
+  // constrains typing) — guard Save so the zod bound is never hit blind.
+  const messageTooLong = form.message.trim().length > MAX_MESSAGE;
   const busy = save.isPending || clear.isPending;
+
+  /** Wrap the textarea selection in [text](https://…) and park the caret at the URL slot. */
+  function insertLink() {
+    const el = messageRef.current;
+    const start = el?.selectionStart ?? form.message.length;
+    const end = el?.selectionEnd ?? form.message.length;
+    const label = form.message.slice(start, end) || 'link text';
+    const next = `${form.message.slice(0, start)}[${label}](https://)${form.message.slice(end)}`;
+    setForm({ ...form, message: next });
+    // `[` + label + `](` + `https://` — the caret lands just before `)`, ready for a URL paste.
+    const caret = start + 1 + label.length + 2 + 'https://'.length;
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(caret, caret);
+    });
+  }
 
   function submit(e: FormEvent) {
     e.preventDefault();
     setSaved(false);
-    if (messageEmpty || windowInvalid) return;
+    if (messageEmpty || messageTooLong || windowInvalid) return;
     save.mutate({
       message: form.message.trim(),
       severity: form.severity,
@@ -139,32 +170,42 @@ export default function AdminMotdPage() {
         </p>
       ) : null}
 
-      {/* Live preview — reuses the real banner classes; severity recolors this only (ADR-015). */}
-      <div className="motd-preview" aria-hidden="true">
-        <span className="field-hint">Preview</span>
-        <div className={`motd motd--${form.severity}`} data-severity={form.severity}>
-          <span className="motd__icon">{form.severity === 'warning' ? '⚠' : 'ℹ'}</span>
-          <p className="motd__message">{form.message.trim() || 'Your message will appear here.'}</p>
-          <span className="motd__dismiss" role="presentation">
-            ✕
-          </span>
-        </div>
+      {/* Live preview — the REAL MotdSurface the dashboard renders (D-17: markdown + glyph
+          included); severity/message changes refill this only, never the layout (ADR-015). */}
+      <div className="motd-preview" data-testid="motd-preview" aria-hidden="true">
+        <span className="field-hint">Preview — exactly what users will see</span>
+        <MotdSurface
+          message={form.message.trim() || 'Your message will appear here.'}
+          severity={form.severity}
+        />
       </div>
 
       <form className="admin-form" onSubmit={submit}>
         <label className="field">
           <span>
-            Message <span className="req" aria-hidden="true">*</span>
+            Message{' '}
+            <span className="req" aria-hidden="true">
+              *
+            </span>
           </span>
           <textarea
             required
+            ref={messageRef}
             aria-label="Message"
-            maxLength={280}
-            rows={3}
+            maxLength={MAX_MESSAGE}
+            rows={4}
             value={form.message}
             onChange={(e) => setForm({ ...form, message: e.target.value })}
           />
-          <span className="field-hint">{form.message.trim().length}/280 · plain text</span>
+          <span className="motd-hint-row">
+            <span className={messageTooLong ? 'field-error' : 'field-hint'}>
+              {form.message.trim().length}/{MAX_MESSAGE} · Markdown: **bold**, _italic_, {'`code`'},
+              [text](https://…) — blank line starts a new paragraph
+            </span>
+            <button type="button" className="btn sm" onClick={insertLink}>
+              Insert link
+            </button>
+          </span>
         </label>
 
         <label className="field">
@@ -218,7 +259,11 @@ export default function AdminMotdPage() {
         </label>
 
         <div className="form-actions">
-          <button type="submit" className="btn primary" disabled={busy || messageEmpty || windowInvalid}>
+          <button
+            type="submit"
+            className="btn primary"
+            disabled={busy || messageEmpty || messageTooLong || windowInvalid}
+          >
             Save
           </button>
           <ConfirmButton

@@ -1,7 +1,7 @@
 # DESIGN-004: UI shell and dashboard (Phase 1)
 
 - **Status:** Accepted — presentation details partially superseded by DESIGN-006 (visual identity: brand mark, typeface, radii, tile geometry); the mechanism and structure here remain normative
-- **Last updated:** 2026-07-07
+- **Last updated:** 2026-07-10
 - **Satisfies:** PRD-001 R-10, R-12, R-14 (rendering side), R-60, R-61, R-66, AC-01, AC-04, AC-10; governed by ADR-005 (CSS-token theming via `data-theme`) and **ADR-012 (unified Role model)** — API consumed per DESIGN-003 / ADR-004 (API layer: tRPC v11).
 
 > **Amended by ADR-012 (2026-07-05):** the admin permissions UI is now role-based.
@@ -43,6 +43,16 @@
 > group separators. The Trash **Rules** tab and the Batches tab's **settings card** relocate to
 > the new `/settings/trash` page. New section **D-16** is normative; **D-08** and **D-11**
 > carry the amendments; DESIGN-009 D-01 / DESIGN-010 D-09 / DESIGN-011 D-07 carry pointers.
+>
+> **Amended 2026-07-10 (owner design review of the live MOTD):** the MOTD message is now a
+> **sanitized markdown subset** rendered React-element-only (links/bold/italic/code/breaks/lists —
+> no HTML, no `dangerouslySetInnerHTML`, http(s)-only hrefs), the severity glyph is a **themed
+> inline SVG** (the D-09 idiom — **never an OS emoji**), the banner layout is a first-line-aligned
+> glyph · message · dismiss grid, and `/admin/motd` gains a real-component live preview + a
+> "Markdown supported" affordance + an Insert-link helper. Message budget 280 → **500**. New
+> section **D-17** is normative; **D-15** carries a pointer. ADR-027's plain-text message-format
+> point (Open #2) is revised by D-17 with its no-injection-surface property preserved by
+> construction; everything else in ADR-027 stands.
 - **Donors:** `../demo-console/apps/shell/src/shell/theme/` (tokens.css, tokenContract.ts, ThemeProvider.tsx, app.css), `../demo-console/packages/shared/layout/`, `../demo-console/apps/shell/src/shell/chrome/` (TopBar, SettingsDrawer), `../demo-console/scripts/lint-css-hex.mjs`.
 
 ## Overview
@@ -575,6 +585,12 @@ silently outranked `.confirm-btn` (0,1,0), so arming reflowed the row. Corrected
 
 ### D-15 — Dashboard Message-of-the-Day banner (ADR-027 / PLAN-010, R-105)
 
+> **Amended 2026-07-10 (see D-17):** the message is now a **sanitized markdown subset** (was plain
+> text; budget 280 → 500), the severity glyph is a **themed inline SVG** (was a text/emoji glyph),
+> and `/admin/motd` renders its live preview through the real `<MotdSurface>` with a markdown
+> affordance + Insert-link helper. The data model, activation predicate, dismiss-version contract,
+> ARIA roles, and audit path below are unchanged.
+
 An optional admin-set banner broadcasts a notice to every signed-in user, mounted at the **top of the
 dashboard `page.tsx`, above `<Greeting>`** (the D-07 neighbor). It is **present-when-set** and
 **collapses cleanly on dismiss** — never a source of interaction reflow (D-14 / hard rule 9).
@@ -710,6 +726,48 @@ UI moved.
 - **Routing** — `/admin/storage` server-redirects to `/settings/trash?tab=storage` (old deep links + book-
   marks stay alive, mirroring `/admin/restore` → `/trash`); the **Storage** item is removed from the admin
   sub-nav (other `/admin/*` links unchanged).
+
+### D-17 — MOTD markdown + themed severity glyph + compose preview (2026-07-10, owner design review)
+
+Owner review of the live banner (web + phone screenshots): the emoji severity icon renders as a
+jarring OS emoji ("a big no no", worst on mobile), a pasted URL sits unclickable mid-sentence and
+wraps hideously, and the icon/text/dismiss row is misaligned. D-17 amends **D-15** in three parts —
+data model, activation, dismissal, ARIA and audit are all untouched.
+
+- **Message format — sanitized markdown subset, rendered React-element-only.** The stored
+  `motd.message` string is now interpreted as markdown by `apps/web/lib/motd-markdown.tsx`:
+  `[text](https://…)` links, `**bold**`, `*italic*`/`_italic_`, `` `code` ``, `- ` bullet lists,
+  single-newline hard breaks, blank-line paragraphs, and **bare-URL autolinking** (a pasted
+  `https://…` becomes clickable — the exact complaint — so pre-D-17 messages improve without an
+  edit). The parser emits an AST rendered to a fixed element set (`p/ul/li/a/strong/em/code/br`);
+  there is **no HTML parsing, no `dangerouslySetInnerHTML`, zero new dependencies** — admin-authored
+  `<script>`/HTML arrives as literal escaped text, and only absolute **http(s)** targets become
+  anchors (`javascript:`/`data:`/relative stay literal). This preserves ADR-027's Open #2 *property*
+  ("no injection surface") while revising its plain-text *format*; plain text is valid markdown, so
+  **existing messages render unchanged** — no migration, the jsonb record is untouched. Links open
+  in a new tab (`target="_blank" rel="noopener noreferrer"`) and are severity-toned + underlined
+  (the `.status-note` tone-on-tint pairing, proven readable in both themes). Budget **280 → 500**
+  (`MOTD_MAX_LENGTH` + the `motd.set` zod bound): one URL must not eat a third of the message.
+- **Severity glyph — themed inline SVG, never emoji.** The D-09 icon idiom (24×24 round-capped
+  frame, `stroke: currentColor`): a stroked circle-i for `info`, a rounded triangle-! for `warning`,
+  and a stroked ✕ for dismiss, all colored by the token cascade (`--motd-tone` =
+  `--color-info`/`--color-warning`) so they re-theme with `data-theme` and render identically on
+  every OS. **No emoji anywhere in the MOTD.**
+- **Layout — first-line-aligned grid.** `.motd` is a `auto · minmax(0,1fr) · auto` grid (glyph ·
+  message · dismiss); the glyph box and the 32px dismiss target are each optically centered on the
+  **first text line** (`--motd-line`), so multi-line/multi-paragraph messages stay top-aligned. The
+  message column takes `overflow-wrap: anywhere` (no 390px overflow); hover states recolor/thicken
+  underlines only (D-14). The shared presentational surface is exported as **`<MotdSurface>`**
+  (`components/motd-banner.tsx`) so the banner and the compose preview can never drift.
+- **Compose editor (`/admin/motd`).** Still a light textarea — deliberately **not a WYSIWYG** — plus:
+  the live preview now renders the **real `<MotdSurface>`** (markdown + glyph included, placeholder
+  text when empty); a char-count + **"Markdown supported"** affordance under the textarea; and an
+  **Insert link** helper that wraps the selection in `[text](https://…)` and parks the caret at the
+  URL slot. Preview refills recolors only itself; the helper edits only the textarea value (D-14).
+- **Tests.** Unit: the parser AST + rendered-output safety matrix (`motd-markdown.test.ts` — HTML
+  escaping, scheme rejection, back-compat plain text, autolink punctuation). API: the 500 bound.
+  e2e: the member journey asserts the markdown link renders as a real new-tab anchor and the raw
+  syntax never shows.
 
 ## Open questions
 

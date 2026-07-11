@@ -7,15 +7,12 @@
 import { appSettings, type DbClient, type MotdSeverity } from '@hnet/db';
 import { eq } from 'drizzle-orm';
 import { resolveDb } from './db-client';
-import {
-  getAppSetting,
-  setAppSetting,
-  MOTD_DEFAULT,
-  type MotdRecord,
-} from './app-settings';
+import { getAppSetting, setAppSetting, MOTD_DEFAULT, type MotdRecord } from './app-settings';
 
-/** The max stored MOTD length (matches the API zod bound; enforced defensively at the writer too). */
-export const MOTD_MAX_LENGTH = 280;
+/** The max stored MOTD length (matches the API zod bound; enforced defensively at the writer too).
+ *  DESIGN-004 D-17 raised this 280 → 500: the message is now a markdown subset and a single
+ *  `[text](https://…)` link's URL would otherwise eat a third of the budget. */
+export const MOTD_MAX_LENGTH = 500;
 
 /**
  * The wire shape `motd.getActive` returns to the dashboard: the display fields plus a `version`
@@ -48,7 +45,10 @@ function coerceMotd(value: unknown): MotdRecord {
 
 /** A stable, short dismiss version derived from the row's `updated_at` plus a content hash — so any
  *  edit (which bumps updated_at AND usually the content) yields a new version. Pure + testable. */
-export function motdVersion(updatedAt: Date, record: Pick<MotdRecord, 'message' | 'severity'>): string {
+export function motdVersion(
+  updatedAt: Date,
+  record: Pick<MotdRecord, 'message' | 'severity'>,
+): string {
   const basis = `${updatedAt.getTime()}|${record.severity}|${record.message}`;
   let hash = 5381;
   for (let i = 0; i < basis.length; i++) hash = ((hash << 5) + hash + basis.charCodeAt(i)) >>> 0;
@@ -76,7 +76,10 @@ export async function getMotd(db?: DbClient): Promise<MotdRecord> {
  * The dashboard read: return the ACTIVE MOTD (enabled + within window) as a wire shape, or `null`.
  * Reads the row directly so `updated_at` is available for the dismiss version. No audit (read-only).
  */
-export async function getActiveMotd(db?: DbClient, now: Date = new Date()): Promise<ActiveMotd | null> {
+export async function getActiveMotd(
+  db?: DbClient,
+  now: Date = new Date(),
+): Promise<ActiveMotd | null> {
   const executor = resolveDb(db);
   const [row] = await executor
     .select({ value: appSettings.value, updatedAt: appSettings.updatedAt })
@@ -126,7 +129,10 @@ export async function setMotd(input: SetMotdInput): Promise<MotdRecord> {
  * Clear the MOTD: flip `enabled=false` (preserving the message so a re-enable is one edit away) and
  * write an audited `update_app_setting` row in the same tx. The banner disappears immediately.
  */
-export async function clearMotd(input: { db?: DbClient; actorId: string | null }): Promise<MotdRecord> {
+export async function clearMotd(input: {
+  db?: DbClient;
+  actorId: string | null;
+}): Promise<MotdRecord> {
   const current = await getMotd(input.db);
   const value: MotdRecord = { ...current, enabled: false, updatedBy: input.actorId };
   await setAppSetting({ db: input.db, key: 'motd', value, actorId: input.actorId });

@@ -11,22 +11,26 @@ import { adminProcedure } from '../middleware/role';
 
 /** An ISO-8601 instant (the admin page converts its datetime-local field to UTC ISO before sending);
  *  lenient on exact shape so any Date-parseable value passes, strict enough to reject junk. */
-const isoInstant = z.string().refine((s) => !Number.isNaN(Date.parse(s)), 'Enter a valid date/time.');
+const isoInstant = z
+  .string()
+  .refine((s) => !Number.isNaN(Date.parse(s)), 'Enter a valid date/time.');
 
-/** MotdInput (DESIGN-004 D-15): message 1..280, severity from MOTD_SEVERITIES, optional window with a
- *  startsAt <= endsAt refine. Timestamps are optional + nullable (null clears a bound). */
+/** MotdInput (DESIGN-004 D-15/D-17): message 1..500 (a sanitized-markdown subset since D-17 — the
+ *  raise from 280 keeps a [text](https://…) link from eating the budget; rendering is React-element
+ *  only, so the string itself needs no extra validation), severity from MOTD_SEVERITIES, optional
+ *  window with a startsAt <= endsAt refine. Timestamps are optional + nullable (null clears a bound). */
 export const MotdInput = z
   .object({
-    message: z.string().trim().min(1).max(280),
+    message: z.string().trim().min(1).max(500),
     severity: z.enum(MOTD_SEVERITIES),
     enabled: z.boolean(),
     startsAt: isoInstant.nullish(),
     endsAt: isoInstant.nullish(),
   })
-  .refine(
-    (v) => !v.startsAt || !v.endsAt || Date.parse(v.startsAt) <= Date.parse(v.endsAt),
-    { message: 'The start must be on or before the end.', path: ['endsAt'] },
-  );
+  .refine((v) => !v.startsAt || !v.endsAt || Date.parse(v.startsAt) <= Date.parse(v.endsAt), {
+    message: 'The start must be on or before the end.',
+    path: ['endsAt'],
+  });
 
 export const motdRouter = router({
   /** The active MOTD (enabled + within its optional window) or null — read by every user's dashboard. */
