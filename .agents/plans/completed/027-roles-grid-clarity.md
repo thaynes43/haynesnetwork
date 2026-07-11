@@ -1,8 +1,31 @@
 # PLAN-027: Roles-grid clarity — stop rendering no-op permission levels
 
-- **Status:** DISPATCHED + BUILT (2026-07-11) — ADR-049 / DESIGN-004 D-17 + DESIGN-012 D-09 / R-159 /
-  T-143..T-144, migration 0039. Branch `feat/roles-grid-bulletin-views`. Moves to `completed/` in the
-  bookkeeping PR once live-validated.
+- **Status:** COMPLETE — LIVE **v0.43.0** (PR #204, 2026-07-11). ADR-049 / DESIGN-004 D-18 +
+  DESIGN-012 D-09 / PRD R-159 / glossary T-143 (Bulletin View Grant) + T-144 (Section Capability
+  Map), migration 0039. (DESIGN-004 amendment renumbered D-17 → **D-18** on rebase — the MOTD train
+  merged its own D-17 first.)
+- **Delivered:**
+  - **Outcome A (capability map):** `apps/web/lib/role-sections.ts` drives the grid. Verified from
+    the gating code: **Ledger** (`bulkAddAndSearch`=`sectionProcedure('ledger','edit')`) and **Trash**
+    (`saveRule`/`deleteRule`=`trashActionProcedure('edit_rules','edit')` + `/settings/trash` needs
+    `edit`) KEEP Edit/Read-only/Disabled; **Bulletin / Metrics / ytdl-sub / Books** became 2-state
+    Enabled/Disabled (they only ever gate `read_only`). Stored enum + DB values UNCHANGED.
+  - **Outcome B (Bulletin sub-views):** `role_bulletin_view_grants` (+ `setRoleBulletinViews`
+    single-writer, audited `update_bulletin_views`, guard-listed) gates `communication.feed` on
+    `feed` + `communication.messages.*` on `messages` (`bulletinViewProcedure`). Resolution default-ON
+    (no rows ⇒ both; present rows narrow; Admin implies both).
+  - **Seed/backfill:** migration 0039 seeds the **Default** role `messages`-only; every other role
+    (Family, Friends, custom, Admin) keeps BOTH via the no-row default — no one else loses the Feed.
+- **Live validation (v0.43.0 on prod):** `/api/health` → `{"status":"ok"}`; migration 0039 applied
+  ("Migrations applied."); **prod DB confirms** `role_bulletin_view_grants` = { Default → messages }
+  and the 2 other non-admin roles have no rows (⇒ both). A Default persona's `/bulletin` calls ONLY
+  `communication.messages.list` (never `feed`) and shows NO Feed tab. Screenshots (390 + desktop) in
+  the agent context notes. Unit proof: `packages/api communication.test` — messages-only ⇒ feed
+  FORBIDDEN, feed-only ⇒ messages FORBIDDEN.
+- Owner-sign-off harness: `apps/web/e2e/support/capture-roles-bulletin.ts`.
+
+---
+_Original plan below (retained for traceability)._
 - **Problem (owner hit this three times in one day):** `/admin/roles` renders the shared
   Edit/Read-only/Disabled dropdown for every section, but for several sections "Edit" grants
   nothing, and the owner had to ask what each column actually does:
