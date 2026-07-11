@@ -1,7 +1,9 @@
 # DESIGN-012: Communication hub — Bulletin Feed + Helpdesk tickets
 
 - **Status:** Draft
-- **Last updated:** 2026-07-11 — **PLAN-034 amendment (D-10..D-13, ADR-050):** the Messages board
+- **Last updated:** 2026-07-11 — **HP-01 amendment (owner-approved):** the Helpdesk wall's state
+  chips became MULTI-SELECT toggles (default `{open, in_progress}`; Complete/Rejected opt-in) — see
+  D-11's `list` (`statuses` set) and D-12's Filters bullet. **PLAN-034 amendment (D-10..D-13, ADR-050):** the Messages board
   became the **Helpdesk** media-issue ticket system (tickets + state machine + event history +
   reply threads; `messages` dropped). D-01's `messages` model, D-06's API, and D-08's board half
   are RETIRED — kept below as the historical record; D-10..D-13 are current.
@@ -283,7 +285,9 @@ review). Migration **0040**:
 
 `communication.tickets.*` replaces `communication.messages.*`:
 
-- `list` — `bulletinViewProcedure('messages')`, `{ status?, category?, cursor?, limit≤200 }`,
+- `list` — `bulletinViewProcedure('messages')`, `{ statuses?, category?, cursor?, limit≤200 }`
+  (`statuses` = a validated state SET — HP-01 multi-select; absent = every state, explicit `[]` =
+  nothing),
   keyset `last_activity_at desc, id asc`. **Household visibility (Q-01)**: everyone with the view
   sees ALL tickets — no hidden rows, no moderator-only fields. Items carry the wall-tile facts:
   title/category/status/author, linked-media `{ mediaItemId, mediaTitle, mediaArrKind, mediaYear,
@@ -319,8 +323,20 @@ only display labels moved to Helpdesk language (D-04's admin grid included).
   issue-dot, in_progress=info half-ring, complete=accent check, rejected=muted slashed ring +
   grayscale poster) plus a `badge--{tone}` status label, the reply count, and the last-activity
   time in fixed-height caption rows (grid never staggers). The whole tile links to the detail.
-- **Filters (requirement 7).** The state chips (All · Open · In progress · Complete · Rejected,
-  counts baked in) replace All/Visible/Hidden/Deleted; they ride `?state=` via `router.replace`.
+- **Filters (requirement 7; MULTI-SELECT amended 2026-07-11, HP-01 — owner-approved).** The state
+  chips (All · Open · In progress · Complete · Rejected, live per-chip counts baked in) replaced
+  All/Visible/Hidden/Deleted. **They are MULTI-SELECT toggles, not single-select sub-sections** (the
+  Library filter-chip idiom): each chip adds/removes that state from the ONE wall, "All" selects
+  every state, and the visible set is the union of the selected states. **The DEFAULT selection is
+  `{open, in_progress}`** — the wall leads with actionable work; Complete/Rejected are opt-in
+  historical views (re-openable from there — the reject→open edge already exists). The selection is
+  a D-09 refinement carried as **repeated `?state=` params** via `router.replace` (D-19 — shareable,
+  no history entry, no per-user persistence: a fresh visit with no `?state` param ALWAYS resolves to
+  the default). The canonical default writes NO param; a deliberately empty selection (every chip
+  toggled off) writes the `state=none` sentinel and shows the "no states selected" empty state.
+  Chips carry `aria-pressed`; toggling recolors in place — the bar never reflows (ADR-015). The
+  `tickets.list` procedure takes a validated state SET (`statuses: TICKET_STATUSES[]`; absent = every
+  state, an explicit empty array = nothing) — the caller-authoritative visible set.
 - **Compose (requirement 2).** NEVER stacks above the wall: a "New ticket" button (the `post`
   grant) opens a multi-field **Modal** (ADR-014) — title ("What's wrong?"), the category icon
   grid (single-select, recolor-only), the optional linked-title search (the D-08 popover picker),

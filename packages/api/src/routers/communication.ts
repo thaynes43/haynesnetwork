@@ -120,14 +120,16 @@ export const communicationRouter = router({
     /**
      * ADR-050 / DESIGN-012 D-11 — the Helpdesk wall browse: most-recent-activity-first keyset over
      * ALL tickets (household visibility, Q-01 — no hidden rows; the old status-based moderator
-     * filtering went with the board). Optional state/category filters (requirement 7). Every item
-     * carries what a wall tile renders: title, category, status, author, the linked-media poster
-     * facts, reply count, and the activity timestamps.
+     * filtering went with the board). Optional state-SET / category filters (requirement 7 — the
+     * multi-select state chips, HP-01: `statuses` is the caller-authoritative visible set, absent =
+     * every state, an EXPLICIT empty array = deliberately nothing). Every item carries what a wall
+     * tile renders: title, category, status, author, the linked-media poster facts, reply count,
+     * and the activity timestamps.
      */
     list: bulletinViewProcedure('messages')
       .input(
         z.object({
-          status: z.enum(TICKET_STATUSES).optional(),
+          statuses: z.array(z.enum(TICKET_STATUSES)).optional(),
           category: z.enum(TICKET_CATEGORIES).optional(),
           cursor: z.string().optional(),
           limit: z.number().int().min(1).max(200).default(60),
@@ -135,7 +137,13 @@ export const communicationRouter = router({
       )
       .query(async ({ ctx, input }) => {
         const where: SQL[] = [];
-        if (input.status) where.push(eq(tickets.status, input.status));
+        // Absent ⇒ no state filter (all). Present ⇒ exactly that set; an EXPLICIT empty set means
+        // "nothing selected" — `false` short-circuits to zero rows (drizzle `inArray([])` is not
+        // portable), which the client renders as its empty state.
+        if (input.statuses)
+          where.push(
+            input.statuses.length > 0 ? inArray(tickets.status, input.statuses) : sql`false`,
+          );
         if (input.category) where.push(eq(tickets.category, input.category));
 
         const sortExpr = sql`${tickets.lastActivityAt}`;

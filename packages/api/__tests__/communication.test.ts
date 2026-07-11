@@ -297,7 +297,7 @@ describe('communication.tickets — the PLAN-034 permission matrix (ADR-050 opti
     expect(res).toEqual({ found: false });
   });
 
-  it('list filters by state, counts tally per state, and a reply BUMPS the wall order', async () => {
+  it('list filters by a state SET, counts tally per state, and a reply BUMPS the wall order', async () => {
     const a = await poster().communication.tickets.create({
       title: 'bump A',
       body: 'x',
@@ -306,7 +306,9 @@ describe('communication.tickets — the PLAN-034 permission matrix (ADR-050 opti
     await poster().communication.tickets.create({ title: 'bump B', body: 'x', category: 'missing' });
     // B is newer, so it leads… until A gets a reply (last_activity_at is the wall's sort key).
     await reader().communication.tickets.reply({ ticketId: a.id, body: 'bump' });
-    const open = await reader().communication.tickets.list({ status: 'open', limit: 10 });
+    // HP-01 — a single-element state SET narrows to just that state (the multi-select chips send
+    // the caller-authoritative visible set).
+    const open = await reader().communication.tickets.list({ statuses: ['open'], limit: 10 });
     expect(open.items.every((x) => x.status === 'open')).toBe(true);
     const posA = open.items.findIndex((x) => x.title === 'bump A');
     const posB = open.items.findIndex((x) => x.title === 'bump B');
@@ -319,6 +321,48 @@ describe('communication.tickets — the PLAN-034 permission matrix (ADR-050 opti
     expect(counts.open).toBeGreaterThanOrEqual(2);
     expect(counts.complete).toBeGreaterThanOrEqual(1); // from the transition test above
     expect(counts.open + counts.in_progress + counts.complete + counts.rejected).toBeGreaterThan(0);
+  });
+
+  it('list takes a MULTI-state SET (union), an EXPLICIT empty set = nothing, absent = every state (HP-01)', async () => {
+    // A committed mix so open, in_progress, complete, and rejected are all represented.
+    const inProg = await poster().communication.tickets.create({
+      title: 'set in-progress',
+      body: 'x',
+      category: 'playback',
+    });
+    await moderator().communication.tickets.transition({
+      ticketId: inProg.id,
+      toStatus: 'in_progress',
+    });
+
+    // The DEFAULT wall selection {open, in_progress}: every returned row is one of the two, and a
+    // Complete ticket (from the transition test above) is NOT present.
+    const actionable = await reader().communication.tickets.list({
+      statuses: ['open', 'in_progress'],
+      limit: 200,
+    });
+    expect(actionable.items.length).toBeGreaterThan(0);
+    expect(actionable.items.every((x) => x.status === 'open' || x.status === 'in_progress')).toBe(
+      true,
+    );
+    expect(actionable.items.some((x) => x.status === 'complete')).toBe(false);
+    expect(actionable.items.some((x) => x.id === inProg.id)).toBe(true);
+
+    // An EXPLICIT empty set (every chip toggled off) returns nothing — never "all".
+    const none = await reader().communication.tickets.list({ statuses: [], limit: 200 });
+    expect(none.items).toHaveLength(0);
+    expect(none.nextCursor).toBeNull();
+
+    // Absent ⇒ no state filter (all states visible).
+    const all = await reader().communication.tickets.list({ limit: 200 });
+    expect(all.items.length).toBeGreaterThan(actionable.items.length);
+    expect(all.items.some((x) => x.status === 'complete')).toBe(true);
+
+    // The enum array is VALIDATED — an unknown state is rejected before the query runs.
+    await expect(
+      // @ts-expect-error — 'bogus' is not a TICKET_STATUS; the zod enum array must reject it.
+      reader().communication.tickets.list({ statuses: ['bogus'], limit: 10 }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' } satisfies Partial<TRPCError>);
   });
 
   it('list + create are FORBIDDEN when bulletin is disabled', async () => {
