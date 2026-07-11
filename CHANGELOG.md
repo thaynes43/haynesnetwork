@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.40.0](https://github.com/thaynes43/haynesnetwork/compare/v0.39.1...v0.40.0) (2026-07-11)
+
+
+### Features
+
+* access-aware "Watch/Listen/Read here" deep links — *arr→Plex match + library-access invariant (PLAN-028) ([#192](https://github.com/thaynes43/haynesnetwork/issues/192)) ([7f9957c](https://github.com/thaynes43/haynesnetwork/commit/7f9957c03100f91fd2e9caea3920c914de934254))
+
 ## [0.39.1](https://github.com/thaynes43/haynesnetwork/compare/v0.39.0...v0.39.1) (2026-07-11)
 
 
