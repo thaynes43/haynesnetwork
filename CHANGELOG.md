@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.40.1](https://github.com/thaynes43/haynesnetwork/compare/v0.40.0...v0.40.1) (2026-07-11)
+
+
+### Bug Fixes
+
+* plex-match reads section pages with includeGuids=1 — Plex omits the external Guid array without it ([#194](https://github.com/thaynes43/haynesnetwork/issues/194)) ([61e18dd](https://github.com/thaynes43/haynesnetwork/commit/61e18dd05b87c82596d61647928d3ebfdc1f306e))
+
 ## [0.40.0](https://github.com/thaynes43/haynesnetwork/compare/v0.39.1...v0.40.0) (2026-07-11)
 
 
