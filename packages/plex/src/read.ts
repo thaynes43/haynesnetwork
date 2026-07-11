@@ -110,8 +110,11 @@ export class PlexReadClient {
   /**
    * ADR-047 / DESIGN-025 (PLAN-028 — plex-match) — ONE page of `GET /library/sections/{key}/all`
    * (`X-Plex-Container-Start`/`-Size`), returning the items plus the library's `totalSize` so the
-   * match sweep can page a large Movies/TV library to completion. Read-only; token stays in the
-   * header. Callers loop `start += size` until `start >= totalSize` (or a short page returns).
+   * match sweep can page a large Movies/TV library to completion. `includeGuids=1` is REQUIRED:
+   * without it Plex OMITS the external `Guid` array (tmdb://, imdb://, tvdb://, mbid://) from
+   * section listings — verified live against k8plex 2026-07-11 (the v0.40.0 sweep matched 0/17,269
+   * indexed titles without it; with the param the mbid:// GUIDs appear). Read-only; token stays in
+   * the header. Callers loop `start += size` until `start >= totalSize` (or a short page returns).
    */
   async listSectionContentsPage(
     sectionKey: string,
@@ -123,7 +126,13 @@ export class PlexReadClient {
       'GET',
       `${this.baseUrl}/library/sections/${encodeURIComponent(sectionKey)}/all`,
       sectionContentsSchema,
-      { query: { 'X-Plex-Container-Start': start, 'X-Plex-Container-Size': size } },
+      {
+        query: {
+          'X-Plex-Container-Start': start,
+          'X-Plex-Container-Size': size,
+          includeGuids: 1,
+        },
+      },
     );
     return {
       items: body.MediaContainer.Metadata,
