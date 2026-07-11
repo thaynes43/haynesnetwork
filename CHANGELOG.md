@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.39.1](https://github.com/thaynes43/haynesnetwork/compare/v0.39.0...v0.39.1) (2026-07-11)
+
+
+### Bug Fixes
+
+* Books/Audiobooks/Comics walls scroll-paginate like the rest of the Library (drop Load more) ([#191](https://github.com/thaynes43/haynesnetwork/issues/191)) ([8f8edb2](https://github.com/thaynes43/haynesnetwork/commit/8f8edb28f84034deca00c362a87a74414b9a0a77))
+
+
+### Documentation
+
+* HANDOFF — PLAN-023 Phase 4 Books & Audiobooks Library ledger complete (v0.39.0) ([#188](https://github.com/thaynes43/haynesnetwork/issues/188)) ([44329bc](https://github.com/thaynes43/haynesnetwork/commit/44329bce4134440bc32d51934e85ac22567edae3))
+* mark PLAN-023 completed — Books & Audiobooks Library ledger live (v0.39.0) ([#190](https://github.com/thaynes43/haynesnetwork/issues/190)) ([ac71496](https://github.com/thaynes43/haynesnetwork/commit/ac714963dbc12d0ee3c8949b746f1fe54fac83bd))
+
 ## [0.39.0](https://github.com/thaynes43/haynesnetwork/compare/v0.38.0...v0.39.0) (2026-07-10)
 
 

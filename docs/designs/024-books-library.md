@@ -117,10 +117,21 @@ are already thumbnail-sized), no storage.
   deep-links `?tab=books` falls back to Movies (validated against the visible set).
 - `books-browser.tsx` — the wall body: a debounced search box + a single-select sort bar (`.sort-btn`) +
   the `.media-list.poster-grid` of `.poster-card` tiles (`MediaPoster` + fallback glyph), driven by
-  `books.search.useInfiniteQuery` with a "Load more" button. Tiles are **external deep-links** to Kavita/ABS
-  (`target="_blank" rel="noopener noreferrer"`). Reflow-free (ADR-015): fixed 2:3 poster boxes, dim-in-place
-  on refetch, fixed-height sort row, skeleton tiles on first load, a one-line ellipsized author subtitle
-  (`.media-card__subtitle`). No new hex.
+  `books.search.useInfiniteQuery` and **scroll-paginated** (see the amendment below). Tiles are **external
+  deep-links** to Kavita/ABS (`target="_blank" rel="noopener noreferrer"`). Reflow-free (ADR-015): fixed 2:3
+  poster boxes, dim-in-place on refetch, fixed-height sort row, skeleton tiles on first load, a one-line
+  ellipsized author subtitle (`.media-card__subtitle`). No new hex.
+
+> **Amendment (2026-07-11, UX parity fix — presentation-layer only):** the three Books walls originally
+> paginated with a manual "Load more" button. To unify with the Movies/TV/Music (and every other) Library
+> wall, `books-browser.tsx` now reuses the shared **scroll-pagination idiom** verbatim from
+> `library-client.tsx` `MediaBrowser` (DESIGN-008 D-11): an `IntersectionObserver` sentinel below the grid
+> (`rootMargin: '600px 0px'`, gated by `hasNextPage && !isFetchingNextPage && !isPlaceholderData`) calls
+> `fetchNextPage()` as it nears the viewport. The "Load more" button is removed. No endpoint/schema change —
+> the existing `books.search` offset pagination (`limit`/`cursor`/`nextCursor`) feeds the same
+> `useInfiniteQuery`; only page-append plumbing moved from a click to the sentinel. Appending pages below the
+> grid is reflow-free (ADR-015 — existing tiles never move); the fetching hint sits under the grid. The
+> URL-synced tab state (and the search/sort draft state) survive pagination unchanged.
 
 ## D-07 — Section gating (`books`, ADR-046 C-04)
 
