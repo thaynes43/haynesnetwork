@@ -75,6 +75,19 @@ function kindLabel(arrKind: string | null): string | null {
     : null;
 }
 
+/** Tile-compact activity time ("Jul 11"; the year appears only once it differs) — the full
+ *  timestamps live on the detail page. Bad ISO → as-is. */
+function tileWhen(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  });
+}
+
 // ── Feed ─────────────────────────────────────────────────────────────────────────────────
 
 /** The media link cell: a Library link when the event resolved to a ledger item, else an em dash. */
@@ -545,7 +558,7 @@ function TicketTile({ ticket }: { ticket: TicketListItem }) {
               {ticket.replyCount}
             </span>
           ) : null}
-          <span className="muted twall-when">{formatWhen(ticket.lastActivityAt)}</span>
+          <span className="muted twall-when">{tileWhen(ticket.lastActivityAt)}</span>
         </span>
       </Link>
     </li>

@@ -4552,9 +4552,18 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
   white-space: nowrap;
 }
 /* The toolbar: state chips left, the New-ticket button pinned right (compose NEVER stacks above
-   the wall — requirement 2; the button opens a Modal). */
+   the wall — requirement 2; the button opens a Modal). On phones the chip row scrolls INSIDE
+   itself (no wrapped counts, no page h-scroll). */
 .twall-bar {
   align-items: center;
+}
+.twall-bar .seg {
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.twall-bar .seg button {
+  white-space: nowrap;
 }
 .twall-new {
   margin-left: auto;

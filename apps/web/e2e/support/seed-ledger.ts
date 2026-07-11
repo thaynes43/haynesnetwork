@@ -433,21 +433,25 @@ async function main(): Promise<void> {
     actorId: null,
   });
 
-  // ADR-026 / DESIGN-012 (PLAN-009 Bulletin) — roles for the UX agent's Bulletin journeys. The
-  // `bulletin` section defaults read_only for everyone (implicit, no row), so the Feed + Messages
-  // are readable out of the box; these two roles add the fine-grained write grants:
-  //   • Bulletin Poster    — may post/edit own messages (post grant), no moderation.
-  //   • Bulletin Moderator — may hide/delete/restore any message (moderate grant).
+  // ADR-026 / ADR-050 / DESIGN-012 (PLAN-034 Helpdesk) — roles for the Bulletin journeys. The
+  // `bulletin` section defaults read_only for everyone (implicit, no row), so the Feed + Helpdesk
+  // are readable out of the box; these two roles add the fine-grained action grants:
+  //   • Bulletin Poster    — may FILE tickets (post grant), no triage.
+  //   • Bulletin Moderator — may file AND drive ticket state transitions (moderate grant).
   const { roleId: bulletinPosterId } = await createRole({
     name: 'Bulletin Poster',
-    description: 'Read the Feed + post/edit own Messages; no moderation',
+    description: 'Read the Feed + file Helpdesk tickets; no triage',
     appIds: [],
     actorId: null,
   });
   await setRoleMessageActions({ roleId: bulletinPosterId, actions: ['post'], actorId: null });
+  // PLAN-034 — the ticket compose links a library title through ledger.search, which rides the
+  // PLAN-028 library-access matrix (ADR-047): give the poster role the same member library set as
+  // Default so the picker has results (a household member filing tickets can see the library).
+  await setRoleLibraries({ roleId: bulletinPosterId, libraryIds: nonFamily, actorId: null });
   const { roleId: bulletinModeratorId } = await createRole({
     name: 'Bulletin Moderator',
-    description: 'Read + post + moderate (hide/delete/restore) any Message',
+    description: 'Read + file + triage (state transitions) any ticket',
     appIds: [],
     actorId: null,
   });
