@@ -116,7 +116,7 @@ owner is adding the 1Password `proxmox` and `openwebui` items tonight, unblockin
 | 032 | List-driven book automation (Kometa/Spotify analog) | Intake | Needs scoping session |
 | 033 | Book requests + wanted-not-on-disk view | Intake | Needs scoping session; books write-back ADR required |
 | 036 | History navigation contract (back/forward = screens) | ✅ **DONE v0.43.1** (PR #206) | Screen-level tab switches now `router.push` (Library/Bulletin/Metrics/Trash/Trash-settings/Ledger); refinements + canonicalize redirects stay `router.replace`. DESIGN-004 **D-19**; e2e `history-navigation.spec.ts` |
-| 034 | Helpdesk/Tickets (Bulletin Messages rebrand) | **DISPATCHED 2026-07-11 am** | Fable builder; owner rulings Q-01..Q-05 in plan; rebase over 036 |
+| 034 | Helpdesk/Tickets (Bulletin Messages rebrand) | ✅ **DONE v0.44.0** (PR #210) | The **"Helpdesk"** (name = one constant, owner ratifies): ticket poster wall + state machine (`open ⇄ in_progress → complete \| rejected`) + append-only history + household replies + same-tx `ticket_created` Pushover pings; `messages` DROPPED (Q-03), 4 owner-authored example tickets seeded live; ADR-050 / DESIGN-012 D-10..D-13 / R-160..R-164 / T-145..T-148 / migration 0040; as-built in completed/ |
 | 035 | Ticket email notifications | Backlogged | BLOCKED by SMTP (F-04) + 034; parked deliberately, do not lose |
 | 025 | ytdl config-manager platform | Roadmap | Own scoping session (3 repos) |
 | — | SMTP relay (F-04) / Feed attribution | Unplanned | Intake questions asked 2026-07-11 |
