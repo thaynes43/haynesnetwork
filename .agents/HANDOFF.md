@@ -4,7 +4,28 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-- **Last updated:** 2026-07-11 — **PLAN-028 "Watch/Listen/Read here" ACCESS-AWARE DEEP LINKS COMPLETE,
+- **Last updated:** 2026-07-11 — **PLAN-030 SEASON POSTERS + TV EPISODE THUMBNAILS COMPLETE, live
+  (v0.41.0, PR #198).** Every Season row on a show-detail page now shows the season POSTER as a small 2:3
+  icon (reserved box, ADR-015 reflow-free; no icon when absent) — **TV** from the ADR-047
+  `media_plex_matches` → the show's Plex season art; **Peloton** from the live k8plex duration posters
+  (the restored PLAN-024 art, now VISIBLE). TV expanded seasons gain **episode thumbnails** (the ADR-041
+  `still` variant), merged onto the *arr rows by `(season, episode)` number (`episodeNumber` now on
+  `ledger.children`). New READ-ONLY `ledger.plexSeasons`/`ledger.plexEpisodeArt` (re-gate + degrade to
+  `available:false`/no-icons on unmatched/inaccessible/Plex-down) + `ytdlsub.detail.seasons[].posterUrl`.
+  **THE INVARIANT (ADR-047) holds for art:** TV art rides a **signed, item-scoped** `/api/library/plex-art`
+  proxy reference — an HMAC over `(mediaItemId, serverSlug, thumb, size)` minted only after the per-item
+  gate passes, re-verified AND access-rechecked by the proxy — so an inaccessible sibling title's art on
+  the same server is never served (`signPlexArtRef`/`verifyPlexArtRef`, `resolveArtMatchForItem`,
+  `resolvePlexArtUpstream`). One source (Plex via the match, NO TMDB). **NO migration**; reuses the ADR-041
+  transcode/LRU/ETag path on the MATCHED server (server-scoped ETag/LRU key). Signing secret =
+  `BETTER_AUTH_SECRET` (mint+verify in one Next process). ADR-048 / DESIGN-005 D-22 + DESIGN-017 D-09 amend
+  / R-158 / T-142. **Live proof:** `/api/health` 200 on v0.41.0; `/api/library/plex-art` 401 unauth
+  (deployed + session-gated); 390px + desktop dark/light screenshots of the season-poster row + episode
+  stills (`e2e/support/capture-season-art.ts` against the hermetic stub stack). **haynes-ops = image bump
+  ONLY** (`746b1c45`; no new CronJob/secret). Tests: `packages/api/__tests__/library-plex-art.test.ts`
+  (sig tamper-rejection + matched-server transcode) + `ledger-plex-art.test.ts` (season posters + episode
+  stills end-to-end + withheld-item NOT_FOUND) + the `resolveArtMatchForItem` gate + Peloton season poster.
+- **Prior milestone:** **PLAN-028 "Watch/Listen/Read here" ACCESS-AWARE DEEP LINKS COMPLETE,
   live (v0.40.0 + v0.40.1).** Every Library drill-in now deep-links to the app that serves the title, and
   ALL Plex-backed content is gated to the caller's accessible Plex libraries **server-side** (THE
   INVARIANT — ADR-047/DESIGN-025/R-157/T-139..T-141, PR #192 + fix #194). The **`media_plex_matches`**

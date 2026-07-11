@@ -1,7 +1,17 @@
 # PLAN-030: Season posters in season rows + episode-thumbnail parity for TV
 
-- **Status:** Queued (owner 2026-07-11) — **dispatch AFTER PLAN-028 merges** (hard data
-  dependency below), before PLAN-029. Small train.
+- **Status:** Completed (2026-07-11) — **v0.41.0 live** (PR #198). ADR-048 / DESIGN-005 D-22 +
+  DESIGN-017 D-09 amend / R-158 / T-142; NO migration. Season-poster icon in every Season row (TV via
+  the ADR-047 `media_plex_matches` → the show's Plex season art; Peloton via the live k8plex duration
+  posters) + TV episode stills (the ADR-041 `still` variant), merged onto the *arr rows by
+  `(season, episode)` number. TV art rides a **signed, item-scoped** `/api/library/plex-art` proxy
+  reference (HMAC over `(mediaItemId, serverSlug, thumb, size)`) — the proxy verifies the item-bound sig
+  AND re-checks per-item access, so THE INVARIANT (ADR-047) holds for art (an inaccessible sibling title's
+  art is never served). One source (Plex via the match, no TMDB). Live: `/api/health` 200 on v0.41.0,
+  `/api/library/plex-art` 401 unauth (deployed + session-gated); 390px + desktop dark/light screenshots
+  of the season-poster row + episode stills captured via `e2e/support/capture-season-art.ts`. haynes-ops
+  = image bump ONLY (no new CronJob/secret — signs with the existing `BETTER_AUTH_SECRET`).
+- **Superseded original status:** Queued (owner 2026-07-11) — dispatched AFTER PLAN-028 merged. Small train.
 - **Relates:** PLAN-024 (poster guard — the restored Peloton duration/season art this surfaces),
   PLAN-022 (Peloton/YouTube drill-in, live k8plex reads incl. episode thumbs), PLAN-028 (the
   *arr→Plex ratingKey match that unlocks TV art), ADR-041 (the authed transcode/caching proxy —
