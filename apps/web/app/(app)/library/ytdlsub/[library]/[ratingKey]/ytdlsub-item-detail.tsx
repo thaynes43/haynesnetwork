@@ -12,6 +12,7 @@ import { useState } from 'react';
 import { trpc } from '@/lib/trpc-client';
 import { BackLink } from '@/components/back-link';
 import { MediaPoster } from '@/components/media-poster';
+import { NotOnDiskButton } from '@/components/not-on-disk-button';
 import { formatDay, formatRuntime, formatSeasonEpisodeCounts } from '@/lib/media';
 import type { YtdlsubEpisode, YtdlsubSeason } from '@hnet/api';
 
@@ -160,7 +161,7 @@ export function YtdlsubItemDetail({
           </div>
           {show.summary !== null ? <p className="detail-head__meta muted">{show.summary}</p> : null}
           {/* ADR-047 / DESIGN-025 (PLAN-028) — "Watch on Plex" deep link. ytdl-sub content is Plex-native
-              (never "missing"), so an accessible show always carries a playUrl. Static affordance
+              (never "missing"), so an accessible show normally carries a playUrl. Static affordance
               (ADR-015 reflow-free); opens app.plex.tv, hands off to the native app where installed. */}
           {show.playUrl !== null ? (
             <p className="detail-head__play">
@@ -174,7 +175,12 @@ export function YtdlsubItemDetail({
                 <span className="btn__ext" aria-hidden="true"> ↗</span>
               </a>
             </p>
-          ) : null}
+          ) : (
+            // Consistency (DESIGN-025 D-07): should an accessible show ever lack a playUrl, the SAME
+            // disabled "Not on Disk" pill fills the slot — WITHOUT a Force-Search caption (ytdl-sub has
+            // no Force Search). The shared component keeps the control identical to the *arr pages.
+            <NotOnDiskButton />
+          )}
         </div>
       </section>
 

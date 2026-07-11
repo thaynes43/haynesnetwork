@@ -40,6 +40,7 @@ import {
   type SeasonEpisode,
 } from '@/lib/media';
 import { MediaPoster } from '@/components/media-poster';
+import { NotOnDiskButton } from '@/components/not-on-disk-button';
 import { TrashPendingNotice, type TrashAccess } from '@/components/trash-shield';
 import { PROTECTED_TAG } from '@/lib/trash';
 import {
@@ -523,6 +524,15 @@ export function ItemDetail({
                 </a>
               ))}
             </p>
+          ) : !tombstoned && item.onDiskFileCount <= 0 ? (
+            // The MISSING counterpart of the play row (DESIGN-025 D-07, owner UX polish 2026-07-11):
+            // an item with nothing on disk (the same `onDiskFileCount <= 0` the "Not on disk"/"Wanted"
+            // badge reads — for a sonarr show, a WHOLE-show miss; a partial show keeps its per-season
+            // grain below) gets a disabled, muted "Not on Disk" pill in the SAME slot as Watch on Plex,
+            // with a caption tying it to the page's Force Search. Reserved by the flex column so the
+            // on-disk↔missing swap never reflows (ADR-015). Tombstoned items are excluded — they carry
+            // their own "Removed from the manager" badge and their Force Search is disabled.
+            <NotOnDiskButton hint="Force Search can add this title to your library if a release is found." />
           ) : null}
         </div>
         {/* Radarr acts at the movie level (the movie IS the unit — ADR-007). Sonarr/Lidarr
