@@ -101,6 +101,14 @@ Env knobs (helmrelease): `MAM_SEEDBOX_URL`, `MAM_CHECK_URL`, `INTERVAL=3600`, `M
 - **`anonymous_mode = false`** (verified). **Private-flag DHT/PEX/LSD auto-disable is intact** —
   libtorrent disables them per-torrent for private torrents regardless of the global DHT/PEX/LSD
   toggles (verified on the test torrent: `[DHT]/[PeX]/[LSD]` rows show *disabled*).
+- **Torrent queueing DISABLED (live fix 2026-07-11):** qBittorrent's global queueing was found
+  enabled (`max_active_torrents=5`, `max_active_uploads=3`, `dont_count_slow_torrents=false`) —
+  completed MAM torrents beyond the cap sat **`queuedUP` and did not announce**, so MAM listed
+  them as not seeding (hit-and-run exposure; the owner saw 6 flagged on the site). Set
+  `queueing_enabled=false` via the WebAPI; all `books-mam` torrents flipped to active seeding and
+  announce continuously (verified 13/13 tracker `status=2` Working). **Queueing must stay off**
+  (or, if ever re-enabled, `dont_count_slow_torrents=true` with caps far above the fleet size) —
+  a queued torrent accrues no seed time and reads as an H&R to MAM.
 - **Untouched:** fixed torrenting port **50469**, the fail-closed Mullvad readiness probe.
 
 ---
@@ -113,10 +121,18 @@ LL's own API (`addProvider` / `changeProvider` / `writeCFG`, which persist + app
 - **`[Torznab_0]` MyAnonaMouse (Prowlarr)** — `enabled`, host = the indexer-17 Torznab feed,
   `bookcat=7020` (ebooks), `comiccat=7030`, `magcat=7010`. It is a **torrent** provider → routes
   to qBittorrent.
-- **USENET-FIRST (owner ruling Q-05):** the MAM torznab provider's **`dlpriority=100`** sits
-  *below* the four usenet/Newznab providers (`dlpriority 42–50`). LazyLibrarian prefers the
-  lower-numbered (higher-priority) providers, so SABnzbd/usenet is tried first and **MAM fills
-  gaps**. (This also means popular titles available on usenet are grabbed from usenet, not MAM.)
+- **USENET-FIRST (owner ruling Q-05) — CORRECTED 2026-07-11:** the original wiring had the
+  priority direction **backwards**. LazyLibrarian's `find_best_result` picks
+  `max(matches, key=(score, priority))` (`resultlist.py`) — **higher `dlpriority` wins** among
+  equal-scoring results — so the initial `dlpriority=100` made MAM the *preferred* provider over
+  the four usenet/Newznab providers (`dlpriority 42–50`), and early grabs routed to MAM even when
+  usenet had the title. Fixed live via `changeProvider`: `[Torznab_0]` **`dlpriority=0`** (LL
+  omits the key from `config.ini` because 0 is the default — absence means 0, not unset). Usenet
+  now outranks MAM on comparable results and **MAM fills gaps**. Nuance: `dlpriority` is the
+  tie-breaker *after* match score — a strictly better-scoring MAM result (title/format match) can
+  still win; that is intended.
+- **Inert stub:** a disabled `[Torznab_1]` section (same indexer-17 host, no `enabled` key — an
+  `addProvider` retry leftover) sits in `config.ini`; harmless, delete at will.
 - **Torrent routing:** `qbittorrent_label = books-mam`, `qbittorrent_dir =
   /data/cephfs-hdd/torrents/books/books-mam`. MAM is LazyLibrarian's *only* torrent source, so
   every torrent LL grabs lands in `books-mam`.
@@ -149,6 +165,8 @@ alone:
 - **Seed ≥ 72h / no hit-and-run.** `books-mam` seeds forever (global limits disabled, on-limit =
   Pause, never delete); LL copies-and-keeps-seeding. Never manually delete/stop a `books-mam`
   torrent before 72h (and by policy, not at all — we seed indefinitely for points).
+  **qBittorrent torrent queueing must stay disabled** — a `queuedUP` torrent does not announce
+  and reads as not-seeding/H&R on MAM even though nothing is "failing" (bit us 2026-07-11; §4).
 - **No partial downloads.** Never use qBittorrent file-selection on MAM torrents (grab the whole
   torrent).
 - **Approved client, auto-update disabled.** qBittorrent **5.2.1** pinned; Renovate auto-merge is
@@ -196,16 +214,20 @@ If MAM starts rejecting announces (torrent tracker status flips to *not working*
      immediately.
    - Confirm the current exit: `kubectl -n downloads exec deploy/qbittorrent -c app --
      wget -qO- https://am.i.mullvad.net/json`.
-2. **If the ASN changed** (Mullvad rented the new server on a different ASN) and Session B is
+2. **If MAM shows torrents "not seeding" but VPN/tracker look fine:** check the torrent states —
+   `queuedUP` means qBittorrent queueing got re-enabled (WebAPI
+   `/api/v2/app/preferences` → `queueing_enabled` must be `false`, §4). Queued torrents send no
+   announces at all; nothing errors, MAM just stops seeing the seed.
+3. **If the ASN changed** (Mullvad rented the new server on a different ASN) and Session B is
    ASN-locked, the dynamicSeedbox call may fail. Fix on the MAM site (owner-side):
    *Preferences → Security →* the seedbox session → add/allow the new ASN, or re-issue Session B
    and update 1Password `myanonamouse/MAM_ID_SEEDBOX` (the ExternalSecret re-syncs; the sidecar
    re-seeds its jar on next restart because the jar seeds from the env value only when absent —
    delete `/state/mam.cookies` to force a re-seed).
-3. **If Prowlarr searches start failing** (Session A), re-issue Session A from the home WAN
+4. **If Prowlarr searches start failing** (Session A), re-issue Session A from the home WAN
    (ASN-locked), update 1Password `myanonamouse/MAM_ID_PROWLARR`, and paste the new value into the
    Prowlarr MyAnonaMouse indexer (`Test` should go green from the home ASN).
-4. **Longer-term stability:** pin the VLAN-30 gateway's Mullvad tunnel to a single WireGuard
+5. **Longer-term stability:** pin the VLAN-30 gateway's Mullvad tunnel to a single WireGuard
    server (owner-present gateway change, outside k8s) so the exit IP/ASN stops rotating. The
    updater remains the safety net for the occasional renumber. **Deferred** — owner-present.
 
@@ -223,4 +245,4 @@ If MAM starts rejecting announces (torrent tracker status flips to *not working*
   cap-aware governor.
 - **Approved Clients page:** verify qBittorrent 5.2.1 is listed/allowed before merging any
   qbittorrent version bump.
-- **Gateway Mullvad-server pin** (owner-present) — see §8.4.
+- **Gateway Mullvad-server pin** (owner-present) — see §8.5.
