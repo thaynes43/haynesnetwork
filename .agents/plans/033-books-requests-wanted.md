@@ -1,6 +1,9 @@
 # PLAN-033: Book/ebook/comic/audiobook requests + the wanted-not-on-disk view
 
-- **Status:** Intake (owner 2026-07-11, spitball — needs scoping session). NOT dispatched.
+- **Status:** PARKED (owner ruling 2026-07-11 eve): too large a project to take on now; when
+  revisited, START by evaluating existing "Seerr-for-books" solutions rather than building
+  in-app. The near-term content need is covered by PLAN-032 (lists → LL auto-grab) + PLAN-039
+  (MAM cap governor). NOT dispatched.
 - **Owner problem statement:** users have NO way to request books/ebooks (movies/TV have Seerr)
   and NO view of what is wanted-but-not-on-disk for the book layer — so members can't
   participate and the owner can't see the acquisition backlog in-app.
