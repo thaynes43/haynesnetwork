@@ -4,7 +4,51 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-- **Last updated:** 2026-07-11 — **PLAN-036 HISTORY-NAVIGATION CONTRACT COMPLETE, shipped (v0.43.1,
+- **Last updated:** 2026-07-11 — **PLAN-034 HELPDESK TICKETS COMPLETE, live (v0.44.0, feat PR #210 +
+  release PR #209).** The Bulletin **Messages board is now the "Helpdesk"** — a household MEDIA-ISSUE
+  ticket system (site bugs go to GitHub; the intake copy says so). The **name is a Fable proposal the
+  owner ratifies at screenshot review** — it is ONE constant (`HELPDESK_NAME` in `apps/web/lib/
+  bulletin.ts`); a rename to "Tickets" touches no stored value/route/grant. **Domain (ADR-050, migration
+  0040):** `tickets` + APPEND-ONLY `ticket_events` (creation `null→open` + every transition, optional
+  HOUSEHOLD-VISIBLE note) + `ticket_replies` (flat thread); state machine **`open ⇄ in_progress →
+  complete | rejected`** — complete TERMINAL, rejected RE-OPENS (matrix `TICKET_TRANSITIONS`, enforced
+  under a row lock → CONFLICT); **`DROP TABLE messages`** (owner ruling Q-03 — test data; the Feed +
+  grant tables untouched). **Permissions ride the EXISTING grants (option H, zero new machinery):**
+  create = message-action `post`, transitions = `moderate` ONLY (Q-02 — the author can't move their own
+  ticket), view/detail/REPLY = the `messages` sub-view grant (any member may chime in), household
+  visibility (Q-01 — no hidden rows, no moderator-only fields). **Q-04:** `createTicket` enqueues a
+  `ticket_created` Pushover outbox row in the SAME tx (ADR-034 C-01), drained by the existing `*/13`
+  notify-outbox CronJob, deep-linking `/bulletin/ticket/<id>`. **UX (the owner's poster-wall lean):**
+  Helpdesk is the FIRST tab (Feed second; `?tab=messages` aliases); the wall is a `.twall` poster grid
+  (3-up at 390px) — linked titles show their poster (ADR-019 proxy), non-media tickets show their
+  intake-CATEGORY icon tile (playback/audio/subtitles/quality/missing/other, `ticket-glyphs.tsx`), the
+  STATE bakes on as a colored corner puck (open=warning dot · in_progress=info half-ring ·
+  complete=accent check · rejected=muted slash + grayscale) + a badge, reply counts + compact dates;
+  state filter CHIPS with counts replace All/Visible/Hidden/Deleted; **compose never stacks above the
+  list** — a "New ticket" **Modal** (title · category icon grid · linked-title picker · details), and
+  success pushes the new ticket's `/bulletin/ticket/[id]` DETAIL (the movie-detail idiom: hero + staff
+  transition buttons whose Modals carry the optional reason + Report + History timeline + reply
+  thread). DESIGN-004 **D-19** honored (tabs/drill-ins push; chips replace); ADR-015 reflow-free;
+  tokens-only. **Docs:** ADR-050 / DESIGN-012 **D-10..D-13** / PRD **R-160..R-164** / DDD
+  **T-145..T-148**. **Tests:** domain `tickets.test.ts` — the FULL 4×4 matrix (const AND DB-enforced) +
+  the outbox SAME-TX proof in BOTH directions (committed together; a forced enqueue failure rolls the
+  ticket back); api `communication.test.ts` — the permission matrix (author-FORBIDDEN transitions,
+  feed-only FORBIDDEN replies, moderator-needs-post create, illegal-edge CONFLICT, household detail);
+  db 0040 block (CHECKs + the messages DROP); e2e `helpdesk.spec.ts` (member-files → staff-transitions-
+  with-reasons → member-replies → reject/re-open → wall + filters) GREEN. **Live proof (prod v0.44.0):**
+  `/api/health` 200; rollout clean (no kyverno sig denial); `to_regclass` shows the 3 ticket tables +
+  `messages` NULL; **4 owner-authored EXAMPLE tickets seeded through the app's own writers and LEFT as
+  onboarding examples (Q-03)** — Top Gun: Maverick (playback, open) · Severance (audio, in_progress +
+  staff note + reply) · Oppenheimer (subtitles, complete + resolution) · a non-media "website bug"
+  (other, rejected with the GitHub-routing note); 7 events + 1 reply + the 4 queued same-tx pings;
+  unauth gates 307/401. **haynes-ops = image bump ONLY** (`398ce0ff`). **OWNER's morning:** ratify
+  "Helpdesk" vs "Tickets" at the screenshot review (12 hermetic shots captured — wall/compose/detail ×
+  desktop/390 × dark/light); the 4 Pushover pings that announced the example tickets are the live Q-04
+  proof. **Known seam (backlogged):** the hermetic e2e stack seeds NO `media_plex_matches`, so a
+  non-admin's `ledger.search` is gated EMPTY by THE INVARIANT (ADR-047 cold-start deny) — the
+  pre-existing advisory-e2e red on main; the helpdesk spec routes the picker through the admin, and the
+  harness should someday seed matches to restore member library journeys estate-wide.
+- **Prior milestone:** **PLAN-036 HISTORY-NAVIGATION CONTRACT COMPLETE, shipped (v0.43.1,
   fix PR #206 + release PR #207).** Browser **Back/Forward now behave like SCREEN navigation.** Every
   `?tab=`-driven hub switched tabs with `router.replace`, so a tab switch rewrote the current history
   entry and Back exited the app screen; now **screen-level tab switches `router.push`** (keeping
