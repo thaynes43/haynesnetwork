@@ -930,4 +930,82 @@ describe('migrations against embedded Postgres 16', () => {
       );
     });
   });
+
+  // ADR-054 / DESIGN-027 (migration 0041, PLAN-039) — the MAM governor gate state: a new single-row
+  // mam_gate_state table (singleton CHECK) + two CHECK relaxes (sync_runs.run_kind admits 'mam-governor';
+  // notification_outbox.event_type admits the three governor push types). Additive; preservation-checked.
+  describe('0041 MAM governor gate state (ADR-054 — new table + CHECK relaxes, preservation)', () => {
+    it('creates mam_gate_state with the singleton CHECK (id must be mam)', async () => {
+      const cols = await client.query(
+        `SELECT column_name FROM information_schema.columns WHERE table_name = 'mam_gate_state'`,
+      );
+      const names = cols.rows.map((r) => r.column_name as string);
+      for (const c of [
+        'id',
+        'gate_open',
+        'count_ok',
+        'unsatisfied_count',
+        'downloading_count',
+        'seeding_under72_count',
+        'limit_value',
+        'buffer_value',
+        'threshold',
+        'headroom',
+        'zero_headroom_since',
+        'pinned_alerted_at',
+        'last_event_type',
+        'updated_at',
+      ]) {
+        expect(names).toContain(c);
+      }
+      // The singleton row inserts; a second (id <> 'mam') row is rejected by the CHECK.
+      await client.query(
+        `INSERT INTO mam_gate_state (gate_open, count_ok, unsatisfied_count, downloading_count,
+           seeding_under72_count, limit_value, buffer_value, threshold, headroom)
+         VALUES (true, true, 13, 0, 13, 20, 5, 15, 7)`,
+      );
+      await expect(
+        client.query(
+          `INSERT INTO mam_gate_state (id, gate_open, count_ok, unsatisfied_count, downloading_count,
+             seeding_under72_count, limit_value, buffer_value, threshold, headroom)
+           VALUES ('other', true, true, 0, 0, 0, 20, 5, 15, 20)`,
+        ),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query(`DELETE FROM mam_gate_state`);
+    });
+
+    it('sync_runs_run_kind_enum admits mam-governor + the prior kinds (preservation)', async () => {
+      for (const kind of ['plex-match', 'books-sync', 'mam-governor']) {
+        await client.query({
+          text: `INSERT INTO sync_runs (source, run_kind, status) VALUES ('radarr', $1, 'running')`,
+          values: [kind],
+        });
+      }
+      await expect(
+        client.query(
+          `INSERT INTO sync_runs (source, run_kind, status) VALUES ('radarr', 'bogus-mode', 'running')`,
+        ),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query(`DELETE FROM sync_runs WHERE run_kind = 'mam-governor'`);
+    });
+
+    it('notification_outbox_event_type_enum admits the three governor events + the prior ones', async () => {
+      for (const evt of [
+        'mam_gate_paused',
+        'mam_gate_resumed',
+        'mam_gate_stuck',
+        'ticket_created',
+        'smart_degraded',
+      ]) {
+        await client.query({
+          text: `INSERT INTO notification_outbox (event_type) VALUES ($1)`,
+          values: [evt],
+        });
+      }
+      await expect(
+        client.query(`INSERT INTO notification_outbox (event_type) VALUES ('mam_bogus')`),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query(`DELETE FROM notification_outbox`);
+    });
+  });
 });

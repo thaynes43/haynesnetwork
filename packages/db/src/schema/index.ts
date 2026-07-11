@@ -71,3 +71,7 @@ export * from './books-items';
 // resolved by shared-GUID match (plex-match mode). The Library access gate + "Watch on Plex" deep-link
 // substrate. Guarded single-writer table (syncPlexMatches).
 export * from './plex-match';
+// ADR-054 / DESIGN-027 (PLAN-039) — the MAM compliance governor's single-row gate state the mam-governor
+// sync mode upserts (the LL MAM-provider gate + the counts/limit that drove it). Guarded single-writer
+// table (evaluateMamGovernor); its transition trail is the notification_outbox rows (smart-alerts class).
+export * from './mam-gate-state';

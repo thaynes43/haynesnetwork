@@ -17,6 +17,7 @@
     "@hnet/arr": "workspace:*",
     "@hnet/authentik": "workspace:*",
     "@hnet/db": "workspace:*",
+    "@hnet/downloads": "workspace:*",
     "@hnet/openwebui": "workspace:*",
     "@hnet/plex": "workspace:*",
     "drizzle-orm": "^0.36.4"

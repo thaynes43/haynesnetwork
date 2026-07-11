@@ -257,3 +257,65 @@ If MAM starts rejecting announces (torrent tracker status flips to *not working*
 - **Approved Clients page:** verify qBittorrent 5.2.1 is listed/allowed before merging any
   qbittorrent version bump.
 - **Gateway Mullvad-server pin** (owner-present) — see §8.5.
+
+---
+
+## 10. The compliance governor (PLAN-039 / ADR-054 / DESIGN-027)
+
+The **`mam-governor`** sync mode (a ~15-min CronJob in the `frontend` namespace, alongside the other
+`haynesnetwork-sync-*` jobs) keeps automated MAM grabs under the account's **unsatisfied-torrent cap**
+(New Member 20 → User 50 → PU 100 → VIP 150; exceeding it blocks downloads up to 24h — §6). It is the
+automated enforcement of the last two rows of the §6 never-do list. **It adds ZERO MAM API surface** —
+counting is local to qBittorrent and gating is local to Prowlarr; the governor never calls MAM.
+
+### 10.1 What it does each run
+
+1. **Counts unsatisfied LOCALLY from qBittorrent.** `GET /api/v2/torrents/info?category=books-mam` (the qB
+   WebAPI answers **unauthenticated** from the cluster pod network — verified from `frontend`); a torrent is
+   **unsatisfied** if it is still-downloading (`progress < 1`) OR complete-but-`seeding_time < 72h`. This is
+   deliberately conservative (a wire hiccup over-counts, closing the gate earlier).
+2. **Decides the gate.** Pause when `unsatisfied ≥ MAM_UNSATISFIED_LIMIT − buffer` (limit 20, buffer 5 →
+   pause at 15); resume below. **Fail-closed:** if the count can't be obtained, it treats the account as
+   at-cap and pauses.
+3. **Actuates at the Prowlarr indexer.** It toggles the **MyAnonaMouse Prowlarr indexer's `enable`** flag
+   (`GET /api/v1/indexer/17` → set only `enable` → `PUT`), NOT LazyLibrarian's provider directly. **Why:**
+   Prowlarr runs a **LazyLibrarian application with `syncLevel=fullSync` (app id 4)** — it OWNS LL's
+   `[Torznab_*]`/`[Newznab_*]` entries and **clobbers manual LL-side edits on every sync** (it overwrote a
+   manual `dlpriority=0` with 26 within the hour; mapping is `LL dlpriority = 51 − Prowlarr priority`). So an
+   LL-side `enabled=false` is not durable. Disabling the **Prowlarr indexer** instead **propagates
+   `enabled=false` down to LL's `Torznab_0` via that fullSync** (verified live 2026-07-11: within ~6s LL's
+   `listNabProviders` flips MAM `Enabled` 1→0 and `config.ini` drops the `enabled` line), so **LL stops
+   QUERYING the provider entirely — no failed Torznab searches, so LL's provider-failure blocklist is never
+   tripped.** Re-enabling propagates back cleanly. Usenet keeps flowing throughout.
+4. **Records + notifies.** Upserts the single-row `mam_gate_state` (gate + counts + limit/buffer/headroom)
+   and, **only on a gate transition** (`mam_gate_paused`/`mam_gate_resumed`) or when **headroom stays pinned
+   at 0 for > 48h** (`mam_gate_stuck`), enqueues a Pushover row in the existing `notification_outbox` (same
+   tx). First run records a baseline and pages nothing.
+
+### 10.2 Config & credentials
+
+- **Tuning:** `MAM_UNSATISFIED_LIMIT` (default 20 — the owner **bumps this at each MAM rank promotion**:
+  User 50 → PU 100 → VIP 150), `MAM_UNSATISFIED_BUFFER` (default 5), `MAM_ZERO_HEADROOM_ALERT_HOURS`
+  (default 48). All resolve through one seam (`resolveGovernorConfig`); **PLAN-040** moves them to an audited
+  DB-backed admin setting with governor-state visibility.
+- **Credential:** `PROWLARR_API_KEY` — from the shared `media-stack` 1Password item, already `extract`ed
+  into the haynesnetwork ExternalSecret (one added template line; **no new 1Password item**). qBittorrent
+  needs none. URLs + the indexer id (17) default to the in-cluster Services.
+- **Indexer priority pinned to 50** (→ LL `dlpriority` 1) so usenet stays strictly first even when MAM is
+  enabled; the governor's GET-then-PUT changes ONLY `enable`, never priority/fields.
+
+### 10.3 Break-glass
+
+- **"MAM grabs paused" but you didn't expect it:** check the CronJob log
+  (`kubectl -n frontend logs job/haynesnetwork-sync-mam-governor-<id>`) — it prints `unsatisfied`, `limit`,
+  `threshold`, `gateOpen`, `event`. A `count_failed` reason means qBittorrent was unreachable (fail-closed).
+  Confirm the current state row: `SELECT * FROM mam_gate_state;`.
+- **Manually force the gate open/closed:** set the Prowlarr indexer `enable` directly (Prowlarr UI or
+  `PUT /api/v1/indexer/17`); the next governor run reconciles it to what the count calls for, so to keep it
+  forced you must also address the count (or raise `MAM_UNSATISFIED_LIMIT`).
+- **Suspend the governor entirely:** `kubectl -n frontend patch cronjob haynesnetwork-sync-mam-governor -p
+  '{"spec":{"suspend":true}}'` — grabs then flow ungated (watch the cap manually). Un-suspend to resume.
+- **The gate seam depends on Prowlarr's fullSync LL application.** If that application is ever removed or set
+  to a non-syncing level, disabling the indexer would stop propagating and the disabled-indexer-Torznab-error
+  risk returns — re-verify the propagation (flip `enable`, confirm LL `config.ini` flips) after any Prowlarr
+  application change.

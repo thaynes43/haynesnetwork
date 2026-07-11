@@ -45,6 +45,13 @@ export * from './notify-outbox';
 // smart-alerts sync mode enqueues a smart_degraded/smart_recovered outbox row same-tx with the
 // smart_drive_state update; baseline-on-first-sight never pages the known bad state).
 export * from './smart-alerts';
+// ADR-054 / DESIGN-027 (PLAN-039) — the MAM compliance governor: cap-aware torrent-fallback pacer +
+// single-writer (the mam-governor sync mode counts unsatisfied torrents in qBittorrent and toggles the
+// MyAnonaMouse Prowlarr indexer's enable flag near the rank cap; enqueues a gate-transition outbox row
+// same-tx with the mam_gate_state upsert). The Prowlarr WRITE surface @hnet/downloads/write stays confined
+// to this package (guard test). resolveGovernorConfig is the PLAN-040 limit/buffer seam.
+export * from './mam-governor';
+export * from './mam-clients';
 // DESIGN-010 amendment — the Trash Overview landing aggregate (composes the reads above)
 export * from './trash-overview';
 export * from './storage-metrics';

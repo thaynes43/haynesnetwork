@@ -22,9 +22,12 @@ const ALLOWED_DIR_PREFIXES = [
   `packages${sep}plex${sep}`,
   `packages${sep}authentik${sep}`,
   `packages${sep}openwebui${sep}`,
+  // ADR-054 (PLAN-039) — @hnet/downloads/write is the MAM-governor gate seam (the Prowlarr indexer
+  // `enable` toggle); only packages/domain (the governor evaluator) + its own package may import it.
+  `packages${sep}downloads${sep}`,
 ];
 
-const IMPORT_PATTERN = /@hnet\/(arr|plex|authentik|openwebui)\/write/;
+const IMPORT_PATTERN = /@hnet\/(arr|plex|authentik|openwebui|downloads)\/write/;
 
 const IGNORE_DIRS = new Set([
   'node_modules',
@@ -63,8 +66,8 @@ async function walk(dir: string): Promise<string[]> {
   return files;
 }
 
-describe('static analysis — @hnet/{arr,plex,authentik,openwebui}/write is domain-only (ADR-008 / ADR-017 / ADR-045)', () => {
-  it('no @hnet/{arr,plex,authentik,openwebui}/write reference outside packages/{domain,arr,plex,authentik,openwebui}', async () => {
+describe('static analysis — @hnet/{arr,plex,authentik,openwebui,downloads}/write is domain-only (ADR-008 / ADR-017 / ADR-045 / ADR-054)', () => {
+  it('no @hnet/{arr,plex,authentik,openwebui,downloads}/write reference outside packages/{domain,arr,plex,authentik,openwebui,downloads}', async () => {
     const stats = await stat(join(REPO_ROOT, 'pnpm-workspace.yaml'));
     expect(stats.isFile()).toBe(true);
 
@@ -84,11 +87,12 @@ describe('static analysis — @hnet/{arr,plex,authentik,openwebui}/write is doma
     if (violations.length > 0) {
       const detail = violations.map((v) => `  ${v.file}:${v.line}`).join('\n');
       throw new Error(
-        `Found ${violations.length} reference(s) to @hnet/{arr,plex,authentik,openwebui}/write outside the allowed dirs.\n` +
+        `Found ${violations.length} reference(s) to @hnet/{arr,plex,authentik,openwebui,downloads}/write outside the allowed dirs.\n` +
           `Mutating *arr calls must go through the @hnet/domain fix/restore orchestrators ` +
-          `(runFixRequest, executeRestore), Plex share calls through shareLibrary/unshareLibrary, and ` +
-          `Authentik/OWUI group calls through the assignRolePortal/provisionSyncedTier orchestrators ` +
-          `so every write-back is recorded (ADR-008 / ADR-017 / ADR-045).\n` +
+          `(runFixRequest, executeRestore), Plex share calls through shareLibrary/unshareLibrary, ` +
+          `Authentik/OWUI group calls through the assignRolePortal/provisionSyncedTier orchestrators, and ` +
+          `the MAM-governor Prowlarr indexer toggle through evaluateMamGovernor ` +
+          `so every write-back is recorded (ADR-008 / ADR-017 / ADR-045 / ADR-054).\n` +
           detail,
       );
     }
