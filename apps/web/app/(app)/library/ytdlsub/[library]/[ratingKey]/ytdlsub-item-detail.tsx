@@ -198,6 +198,13 @@ export function YtdlsubItemDetail({
                   }
                 >
                   <summary className="season__head">
+                    {/* PLAN-030 — the season poster icon (the restored Peloton duration posters).
+                        Reserved box (ADR-015 reflow-free); absent art keeps the pre-030 no-icon row. */}
+                    {season.posterUrl !== null ? (
+                      <span className="season__poster">
+                        <MediaPoster posterUrl={season.posterUrl} kind="show" alt="" />
+                      </span>
+                    ) : null}
                     <span className="season__title">{season.title}</span>
                     {season.episodeCount !== null ? (
                       <span className="badge badge--muted">

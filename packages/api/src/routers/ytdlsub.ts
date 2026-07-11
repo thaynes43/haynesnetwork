@@ -79,6 +79,9 @@ export interface YtdlsubSeason {
   title: string; // Plex's own season title (Peloton durations render as e.g. "Season 30")
   index: number | null;
   episodeCount: number | null; // leafCount
+  // PLAN-030 (DESIGN-017 D-09 amend) — the season poster (`grid` variant) so the season ROW shows its
+  // small poster icon (Peloton's restored 5/10/…/120-minute duration posters, PLAN-024). null ⇒ no icon.
+  posterUrl: string | null;
 }
 
 export interface YtdlsubDetailResult {
@@ -258,6 +261,11 @@ export const ytdlsubRouter = router({
               title: c.title,
               index: c.index ?? null,
               episodeCount: c.leafCount ?? null,
+              // PLAN-030 — the season poster icon for the row (same authed proxy + `grid` variant as the
+              // show tile). Peloton season art is the restored duration posters (PLAN-024); null ⇒ no icon.
+              posterUrl: c.thumb
+                ? `/api/ytdlsub/poster?thumb=${encodeURIComponent(c.thumb)}&size=grid`
+                : null,
             }))
             .sort((a, b) => (a.index ?? Number.MAX_SAFE_INTEGER) - (b.index ?? Number.MAX_SAFE_INTEGER)),
         };

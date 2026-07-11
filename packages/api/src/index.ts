@@ -37,9 +37,26 @@ export {
   resolveLibraryAccessGate,
   isMediaItemAccessibleToUser,
   resolveMediaTabVisibility,
+  resolveArtMatchForItem,
   type LibraryAccessGate,
   type PlexPlayTarget,
+  type PlexArtMatch,
 } from './library-access';
+// ADR-048 / DESIGN-005 D-22 (PLAN-030) — the TV season/episode art proxy seam: the signed item-scoped
+// thumb reference (mint + verify), the transcode-upstream resolver on the matched server, and the LRU key
+// (used by the /api/library/plex-art app route). THE INVARIANT: art is served only bound to an item the
+// caller can access.
+export {
+  signPlexArtRef,
+  verifyPlexArtRef,
+  buildPlexArtUrl,
+  resolvePlexArtUpstream,
+  plexArtEtag,
+  plexArtCacheKey,
+  isPlexServerSlug,
+  type PlexArtSize,
+  type PlexArtUpstream,
+} from './library-plex-art';
 // ADR-037 — the metrics-level resolver the /metrics page passes down (admin ⇒ 'full').
 export { effectiveMetricsLevel, metricsProcedure } from './middleware/role';
 // ADR-037 / DESIGN-016 — the Metrics Overview wire type (the /metrics client imports it TYPE-ONLY).
@@ -87,6 +104,13 @@ export type {
   YtdlsubEpisode,
   YtdlsubEpisodesResult,
 } from './routers/ytdlsub';
+// ADR-048 / DESIGN-005 D-22 (PLAN-030) — the TV season-poster + episode-thumb wire shapes (client-typed).
+export type {
+  LedgerPlexSeason,
+  LedgerPlexSeasonsResult,
+  LedgerPlexEpisodeArt,
+  LedgerPlexEpisodeArtResult,
+} from './routers/ledger';
 // ADR-022 / DESIGN-009 D-06 — the emergency Ledger JSONL export (used by the app export route).
 export {
   buildExportFilterFromParams,

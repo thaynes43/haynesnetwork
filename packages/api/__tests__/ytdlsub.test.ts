@@ -72,7 +72,15 @@ function ytdlsubBundle() {
       metadataChildren: {
         '9001': [
           { ratingKey: '9102', title: 'Season 45', type: 'season', index: 45, leafCount: 1 },
-          { ratingKey: '9101', title: 'Season 30', type: 'season', index: 30, leafCount: 2 },
+          {
+            ratingKey: '9101',
+            title: 'Season 30',
+            type: 'season',
+            index: 30,
+            leafCount: 2,
+            // PLAN-030 — the season's restored duration poster (surfaces as the season-row icon).
+            thumb: '/library/metadata/9101/thumb/1700',
+          },
         ],
         '9101': [
           {
@@ -184,6 +192,13 @@ describe('ytdlsub.detail + ytdlsub.episodes — drill-in + confinement', () => {
       ['Season 30', 30, 2],
       ['Season 45', 45, 1],
     ]);
+    // PLAN-030 — the season ROW carries its poster (grid variant) when Plex has season art; null otherwise.
+    expect(res.seasons[0]!.posterUrl).toBe(
+      '/api/ytdlsub/poster?thumb=' +
+        encodeURIComponent('/library/metadata/9101/thumb/1700') +
+        '&size=grid',
+    );
+    expect(res.seasons[1]!.posterUrl).toBeNull(); // Season 45 has no thumb ⇒ no icon
   });
 
   it('episodes maps title/index/air date/duration and builds `size=still` proxy URLs', async () => {

@@ -14,7 +14,11 @@ import {
   syncPlexMatches,
   upsertPlexLibraries,
 } from '@hnet/domain';
-import { isMediaItemAccessibleToUser } from '../src/library-access';
+import {
+  isMediaItemAccessibleToUser,
+  resolveArtMatchForItem,
+  resolveLibraryAccessGate,
+} from '../src/library-access';
 import { accessibleYtdlsubLibraries } from '../src/routers/ytdlsub';
 import {
   bootMigratedDb,
@@ -231,6 +235,35 @@ describe('THE INVARIANT — detail / wanted / poster proxy re-gate by direct id 
     const tv = await callerFor(tvOnlyRoleId);
     expect(await isMediaItemAccessibleToUser(tv.userId, showA, t.db)).toBe(true);
     expect(await isMediaItemAccessibleToUser(tv.userId, movieA, t.db)).toBe(false);
+  });
+});
+
+describe('PLAN-030 (ADR-048) — the season/episode ART source is gated exactly like the item', () => {
+  it('resolveArtMatchForItem returns the matched Plex server+ratingKey for an accessible show, null for a withheld one', async () => {
+    // Admin (unrestricted) resolves the show's matched art source (haynestower TV, ratingKey 7001).
+    const admin = await createUser(t.db, { admin: true });
+    const adminGate = await resolveLibraryAccessGate(admin.id, t.db);
+    expect(await resolveArtMatchForItem(t.db, adminGate, showA)).toEqual({
+      serverSlug: 'haynestower',
+      ratingKey: '7001',
+    });
+
+    // A TV-granted role resolves the same source — art comes from a library the role CAN access.
+    const tv = await callerFor(tvOnlyRoleId);
+    const tvGate = await resolveLibraryAccessGate(tv.userId, t.db);
+    expect(await resolveArtMatchForItem(t.db, tvGate, showA)).toEqual({
+      serverSlug: 'haynestower',
+      ratingKey: '7001',
+    });
+
+    // THE INVARIANT — a movies-only role can access NONE of the show's libraries ⇒ NO art source (null),
+    // so its season rows show no icon and no episode-still fetch can resolve a Plex thumb for it.
+    const movies = await callerFor(moviesOnlyRoleId);
+    const moviesGate = await resolveLibraryAccessGate(movies.userId, t.db);
+    expect(await resolveArtMatchForItem(t.db, moviesGate, showA)).toBeNull();
+
+    // An unmatched item (present in the *arr, not yet in Plex) has no art source even for admin.
+    expect(await resolveArtMatchForItem(t.db, adminGate, movieMissing)).toBeNull();
   });
 });
 

@@ -22,6 +22,12 @@ export interface MediaChildTarget {
    * null for lidarr albums / radarr.
    */
   seasonNumber: number | null;
+  /**
+   * PLAN-030 (ADR-048): Sonarr only — the episode's number WITHIN its season. Correlates an *arr
+   * episode row with its Plex episode thumb by `(seasonNumber, episodeNumber)` (the still from the
+   * *arr→Plex match, DESIGN-005 D-22). null for lidarr albums / radarr.
+   */
+  episodeNumber: number | null;
   /** Sonarr only: the episode's file id — the AC-08 fallback's delete target. */
   episodeFileId: number | null;
 }
@@ -83,6 +89,7 @@ export async function listMediaChildren(input: {
         hasFile: ep.hasFile,
         monitored: ep.monitored,
         seasonNumber: ep.seasonNumber,
+        episodeNumber: ep.episodeNumber,
         episodeFileId: ep.episodeFileId ?? null,
       }));
   }
@@ -100,6 +107,7 @@ export async function listMediaChildren(input: {
         hasFile: (album.statistics?.trackFileCount ?? 0) > 0,
         monitored: album.monitored,
         seasonNumber: null,
+        episodeNumber: null,
         episodeFileId: null,
       }));
   }

@@ -24,11 +24,17 @@ import { assertPlexEnv } from '@hnet/plex';
 export const YTDLSUB_THUMB_SIZES = ['grid', 'still'] as const;
 export type YtdlsubThumbSize = (typeof YTDLSUB_THUMB_SIZES)[number];
 
-/** grid = the 2:3 poster tile at ≈2× its 132–160px box; still = the 16:9 episode row. */
-const SIZE_DIMENSIONS: Record<YtdlsubThumbSize, { width: number; height: number }> = {
+/**
+ * grid = the 2:3 poster tile at ≈2× its 132–160px box; still = the 16:9 episode row. PLAN-030 (ADR-048)
+ * reuses this exact allow-list for the TV season-poster (grid) + episode-thumb (still) proxy variants —
+ * the season/episode art path is the same closed-size transcode seam, just on the matched (non-k8plex)
+ * server, so the dimensions are single-sourced here.
+ */
+export const PLEX_TRANSCODE_DIMENSIONS: Record<YtdlsubThumbSize, { width: number; height: number }> = {
   grid: { width: 300, height: 450 },
   still: { width: 320, height: 180 },
 };
+const SIZE_DIMENSIONS = PLEX_TRANSCODE_DIMENSIONS;
 
 export function isYtdlsubThumbSize(value: string): value is YtdlsubThumbSize {
   return (YTDLSUB_THUMB_SIZES as readonly string[]).includes(value);

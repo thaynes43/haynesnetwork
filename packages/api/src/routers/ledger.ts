@@ -16,7 +16,7 @@ import {
   wantedItems,
 } from '@hnet/db';
 import { isMediaItemAccessible, listMediaChildren } from '@hnet/domain';
-import { authedProcedure, mapDomainErrors, resolveArrBundle, router } from '../trpc';
+import { authedProcedure, mapDomainErrors, resolveArrBundle, resolvePlexBundle, router } from '../trpc';
 // ADR-047 / DESIGN-025 (PLAN-028) — THE INVARIANT: every media_items read here is gated to the caller's
 // accessible Plex libraries SERVER-SIDE (never UI filtering). The gate + predicates live in library-access.
 import {
@@ -24,9 +24,14 @@ import {
   libraryAccessConditionRaw,
   libraryAccessWhere,
   matchLibraryIdsForItem,
+  resolveArtMatchForItem,
   resolveLibraryAccessGate,
   resolvePlexPlayTargets,
 } from '../library-access';
+// ADR-048 / DESIGN-005 D-22 (PLAN-030) — TV season/episode art from the matched Plex title, served via the
+// signed, item-scoped transcode proxy (buildPlexArtUrl). THE INVARIANT holds: the thumb is READ only after
+// itemAccessById passes, and the minted URL is bound to this accessible item.
+import { buildPlexArtUrl } from '../library-plex-art';
 import { decodeCursor, encodeCursor } from '../cursor';
 import {
   decodeKeysetCursor,
@@ -52,6 +57,31 @@ const iso = (d: Date) => d.toISOString();
 const isoOrNull = (d: Date | null) => (d === null ? null : d.toISOString());
 
 export { LIBRARY_SORT_FIELDS };
+
+// ADR-048 / DESIGN-005 D-22 (PLAN-030) — the TV season-poster + episode-thumb wire shapes. Both are
+// SOURCED FROM PLEX via the *arr→Plex match (ADR-047), keyed by season/episode NUMBER so the client merges
+// them onto the existing *arr-driven season groups / episode rows. `available:false` = no Plex match (or
+// the caller can access none of the item's libraries) ⇒ the client shows no icons (the pre-030 layout).
+export interface LedgerPlexSeason {
+  /** The Plex season index = the *arr season number (the merge key with groupBySeason). */
+  seasonNumber: number;
+  /** The signed season-poster proxy URL (`grid` variant), or null when the season has no Plex art. */
+  posterUrl: string | null;
+}
+export interface LedgerPlexSeasonsResult {
+  available: boolean;
+  seasons: LedgerPlexSeason[];
+}
+export interface LedgerPlexEpisodeArt {
+  /** The Plex episode index = the *arr episode number (the merge key within a season). */
+  episodeNumber: number;
+  /** The signed episode-still proxy URL (`still` variant), or null when the episode has no Plex art. */
+  stillUrl: string | null;
+}
+export interface LedgerPlexEpisodeArtResult {
+  available: boolean;
+  episodes: LedgerPlexEpisodeArt[];
+}
 
 export const ledgerRouter = router({
   /**
@@ -387,14 +417,92 @@ export const ledgerRouter = router({
           arr: resolveArrBundle(ctx),
           mediaItemId: input.mediaItemId,
         });
-        return children.map(({ arrChildId, label, hasFile, monitored, seasonNumber }) => ({
+        return children.map(({ arrChildId, label, hasFile, monitored, seasonNumber, episodeNumber }) => ({
           arrChildId,
           label,
           hasFile,
           monitored,
           seasonNumber,
+          // PLAN-030 — the merge key for the Plex episode thumb (ledger.plexEpisodeArt), sonarr only.
+          episodeNumber,
         }));
       });
+    }),
+
+  /**
+   * ADR-048 / DESIGN-005 D-22 (PLAN-030) — the TV show's SEASON POSTERS, read from the matched Plex title
+   * (ADR-047 media_plex_matches → the show's ratingKey → its season children). Keyed by season number so the
+   * client merges each poster onto its groupBySeason row. THE INVARIANT: the item is re-gated (itemAccessById,
+   * NOT_FOUND for a hidden item) and the art source resolves ONLY from libraries the caller can access
+   * (resolveArtMatchForItem). Unmatched / inaccessible / Plex-unreachable ⇒ `available:false` (no icons — the
+   * pre-030 layout, PLAN-030 Q-01). Read-only; degrades to no-art, never a crash.
+   */
+  plexSeasons: authedProcedure
+    .input(z.object({ mediaItemId: z.uuid() }))
+    .query(async ({ ctx, input }): Promise<LedgerPlexSeasonsResult> => {
+      const gate = await resolveLibraryAccessGate(ctx.user.id, ctx.db);
+      if (!(await itemAccessById(ctx.db, gate, input.mediaItemId))) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: `Media item ${input.mediaItemId} not found` });
+      }
+      const match = await resolveArtMatchForItem(ctx.db, gate, input.mediaItemId);
+      if (match === null) return { available: false, seasons: [] };
+      try {
+        const read = resolvePlexBundle(ctx).read[match.serverSlug];
+        const children = await read.listMetadataChildren(match.ratingKey);
+        const seasons: LedgerPlexSeason[] = [];
+        for (const c of children.items) {
+          if (c.type !== 'season' || c.index === undefined || c.index === null) continue;
+          seasons.push({
+            seasonNumber: c.index,
+            posterUrl: c.thumb
+              ? buildPlexArtUrl(input.mediaItemId, match.serverSlug, c.thumb, 'grid')
+              : null,
+          });
+        }
+        return { available: true, seasons };
+      } catch {
+        return { available: false, seasons: [] }; // Plex outage / bad match ⇒ no icons, never a crash
+      }
+    }),
+
+  /**
+   * ADR-048 / DESIGN-005 D-22 (PLAN-030) — one TV season's EPISODE STILLS, lazily fetched when a season
+   * expands (mirrors the ytdl-sub drill-in's per-season episode load). Navigates the item's OWN matched
+   * Plex show → the season whose index = seasonNumber → its episode children, so the art stays confined to
+   * the accessible matched title. Keyed by episode number (merges onto the *arr episode row). Same gate +
+   * degrade posture as plexSeasons.
+   */
+  plexEpisodeArt: authedProcedure
+    .input(z.object({ mediaItemId: z.uuid(), seasonNumber: z.number().int().min(0) }))
+    .query(async ({ ctx, input }): Promise<LedgerPlexEpisodeArtResult> => {
+      const gate = await resolveLibraryAccessGate(ctx.user.id, ctx.db);
+      if (!(await itemAccessById(ctx.db, gate, input.mediaItemId))) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: `Media item ${input.mediaItemId} not found` });
+      }
+      const match = await resolveArtMatchForItem(ctx.db, gate, input.mediaItemId);
+      if (match === null) return { available: false, episodes: [] };
+      try {
+        const read = resolvePlexBundle(ctx).read[match.serverSlug];
+        const showChildren = await read.listMetadataChildren(match.ratingKey);
+        const season = showChildren.items.find(
+          (c) => c.type === 'season' && c.index === input.seasonNumber,
+        );
+        if (season === undefined) return { available: true, episodes: [] };
+        const epChildren = await read.listMetadataChildren(season.ratingKey);
+        const episodes: LedgerPlexEpisodeArt[] = [];
+        for (const c of epChildren.items) {
+          if (c.type !== 'episode' || c.index === undefined || c.index === null) continue;
+          episodes.push({
+            episodeNumber: c.index,
+            stillUrl: c.thumb
+              ? buildPlexArtUrl(input.mediaItemId, match.serverSlug, c.thumb, 'still')
+              : null,
+          });
+        }
+        return { available: true, episodes };
+      } catch {
+        return { available: false, episodes: [] };
+      }
     }),
 
   /** R-42 — the wanted_items view (D-08), ordered by sort_title. */

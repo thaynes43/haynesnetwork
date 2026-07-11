@@ -37,6 +37,7 @@ import {
   type ActionScope,
   type ActionTarget,
   type ArrKindName,
+  type SeasonEpisode,
 } from '@/lib/media';
 import { MediaPoster } from '@/components/media-poster';
 import { TrashPendingNotice, type TrashAccess } from '@/components/trash-shield';
@@ -177,6 +178,46 @@ function ActionSlot({
   return <span className={['action-slot', className].filter(Boolean).join(' ')}>{content}</span>;
 }
 
+/**
+ * PLAN-030 (ADR-048 / DESIGN-005 D-22) — one TV season's episode rows, with each episode's Plex STILL
+ * lazily fetched when the season opens (mirrors the ytdl-sub drill-in's per-season episode load — a huge
+ * season never pulls art up front). The still merges onto the *arr episode row by episode number; a row
+ * whose number has no Plex art (or when the show is unmatched) keeps the tinted still box / no box. Rows
+ * are static (ADR-015): the still fades in over its reserved box, never re-orienting neighbors.
+ */
+function TvSeasonEpisodes({
+  mediaItemId,
+  seasonNumber,
+  episodes,
+  open,
+  plexArtAvailable,
+  renderRow,
+}: {
+  mediaItemId: string;
+  seasonNumber: number;
+  episodes: SeasonEpisode[];
+  open: boolean;
+  plexArtAvailable: boolean;
+  renderRow: (ep: SeasonEpisode, stillUrl: string | null) => ReactNode;
+}) {
+  const art = trpc.ledger.plexEpisodeArt.useQuery(
+    { mediaItemId, seasonNumber },
+    { enabled: open && plexArtAvailable, refetchOnWindowFocus: false },
+  );
+  const stillFor = useMemo(() => {
+    const map = new Map<number, string | null>();
+    for (const e of art.data?.episodes ?? []) map.set(e.episodeNumber, e.stillUrl);
+    return map;
+  }, [art.data]);
+  return (
+    <ul className="child-list">
+      {episodes.map((ep) =>
+        renderRow(ep, ep.episodeNumber !== null ? (stillFor.get(ep.episodeNumber) ?? null) : null),
+      )}
+    </ul>
+  );
+}
+
 /** DESIGN-010 D-09 — the caller's Trash access (null when the section is Disabled for them). */
 export type ItemTrashAccess = TrashAccess | null;
 
@@ -195,6 +236,8 @@ export function ItemDetail({
   // D-21 — force searches leave no durable row, so the grains THIS session searched
   // are tracked here; each keeps its slot locked behind the live chip until terminal.
   const [liveSearches, setLiveSearches] = useState<Record<string, LiveSearch>>({});
+  // PLAN-030 — which season <details> are open (episode art loads lazily per open season).
+  const [openSeasons, setOpenSeasons] = useState<Record<number, boolean>>({});
 
   const detail = trpc.ledger.detail.useQuery({ id: mediaItemId });
   const events = trpc.ledger.events.useInfiniteQuery(
@@ -216,6 +259,20 @@ export function ItemDetail({
     () => (arrKind === 'sonarr' ? groupBySeason(children.data ?? []) : []),
     [arrKind, children.data],
   );
+
+  // PLAN-030 (ADR-048) — the show's SEASON POSTERS from the matched Plex title (sonarr only). Keyed by
+  // season number to merge onto each groupBySeason row; `available` also gates the per-season episode-still
+  // fetches below. Unmatched / inaccessible / Plex-down ⇒ available:false ⇒ no icons (the pre-030 layout).
+  const plexSeasons = trpc.ledger.plexSeasons.useQuery(
+    { mediaItemId },
+    { enabled: arrKind === 'sonarr' && !tombstoned, refetchOnWindowFocus: false },
+  );
+  const plexArtAvailable = plexSeasons.data?.available === true;
+  const seasonPosterFor = useMemo(() => {
+    const map = new Map<number, string | null>();
+    for (const s of plexSeasons.data?.seasons ?? []) map.set(s.seasonNumber, s.posterUrl);
+    return map;
+  }, [plexSeasons.data]);
 
   if (detail.isLoading) return <p className="muted">Loading item…</p>;
   if (detail.error) {
@@ -347,8 +404,15 @@ export function ItemDetail({
   const childRow = (
     child: { arrChildId: number; label: string; hasFile: boolean },
     scope: 'episode' | 'album',
+    // PLAN-030 — when the season's Plex art is available (TV only), each episode reserves a 16:9 still box
+    // (the shared `shape="still"` reveal, same as the Peloton drill-in). `url` null ⇒ a tinted box (no
+    // icon), NOT rendered at all for albums (still === undefined). ADR-015 reflow-free.
+    still?: { url: string | null },
   ) => (
     <li key={child.arrChildId} className="child-row">
+      {still !== undefined ? (
+        <MediaPoster posterUrl={still.url} kind="show" alt="" shape="still" />
+      ) : null}
       <span className="child-row__label">{child.label}</span>
       <span className={`badge badge--${child.hasFile ? 'ok' : 'warn'}`}>
         {child.hasFile ? 'On disk' : 'Missing'}
@@ -652,9 +716,28 @@ export function ItemDetail({
           </div>
           {childrenNotReady ?? (
             <div className="season-list">
-              {seasons.map((s) => (
-                <details key={s.seasonNumber} className="season">
+              {seasons.map((s) => {
+                const seasonPoster = seasonPosterFor.get(s.seasonNumber) ?? null;
+                return (
+                <details
+                  key={s.seasonNumber}
+                  className="season"
+                  onToggle={(e) =>
+                    setOpenSeasons((prev) => ({
+                      ...prev,
+                      [s.seasonNumber]: (e.target as HTMLDetailsElement).open,
+                    }))
+                  }
+                >
                   <summary className="season__head">
+                    {/* PLAN-030 — the season poster icon from the matched Plex title. Reserved box
+                        (ADR-015 reflow-free); no icon when the season has no Plex art / the show is
+                        unmatched (the pre-030 layout). */}
+                    {seasonPoster !== null ? (
+                      <span className="season__poster">
+                        <MediaPoster posterUrl={seasonPoster} kind="show" alt="" />
+                      </span>
+                    ) : null}
                     <span className="season__title">{seasonName(s.seasonNumber)}</span>
                     <span
                       className={`badge badge--${s.onDiskCount >= s.total ? 'ok' : s.onDiskCount > 0 ? 'info' : 'warn'}`}
@@ -707,9 +790,19 @@ export function ItemDetail({
                       })}
                     </span>
                   </summary>
-                  <ul className="child-list">{s.episodes.map((ep) => childRow(ep, 'episode'))}</ul>
+                  <TvSeasonEpisodes
+                    mediaItemId={mediaItemId}
+                    seasonNumber={s.seasonNumber}
+                    episodes={s.episodes}
+                    open={openSeasons[s.seasonNumber] === true}
+                    plexArtAvailable={plexArtAvailable}
+                    renderRow={(ep, stillUrl) =>
+                      childRow(ep, 'episode', plexArtAvailable ? { url: stillUrl } : undefined)
+                    }
+                  />
                 </details>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>

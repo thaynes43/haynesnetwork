@@ -1729,6 +1729,18 @@ input[aria-invalid='true'] {
   flex-wrap: wrap;
   justify-content: flex-end;
 }
+/* PLAN-030 (ADR-048) — the episode still in an action-bearing TV child-row (the shared .epi-still 16:9
+   reveal, same as the Peloton drill-in) is a touch smaller than the read-only Peloton row so the
+   Fix / Force Search pair still fits before wrapping. Reserved box (ADR-015): a late still fades in, the
+   no-art episode keeps the tinted box — neither shifts the row. */
+.child-row .epi-still {
+  width: 84px;
+}
+@media (max-width: 480px) {
+  .child-row .epi-still {
+    width: 72px;
+  }
+}
 
 /* Section header with a roll-up action (whole-show / whole-artist Force Search). */
 .section-head {
@@ -1769,6 +1781,20 @@ input[aria-invalid='true'] {
 .season__title {
   font-weight: 600;
   font-size: 14px;
+}
+/* PLAN-030 (ADR-048 / DESIGN-005 D-22, DESIGN-017 D-09) — the small 2:3 season-poster icon in a season
+   row (TV season art via the *arr→Plex match; Peloton duration posters). The box RESERVES its space
+   (aspect-ratio, ADR-015) so the late poster load never shifts the title; a season with no art renders no
+   box at all (the pre-030 no-icon row). Reuses the shared .poster-box / .poster-img reveal inside. */
+.season__poster {
+  width: 34px;
+  aspect-ratio: 2 / 3;
+  flex: none;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.season__poster .poster-box {
+  border-radius: inherit;
 }
 .season__actions {
   flex: 1 1 auto;

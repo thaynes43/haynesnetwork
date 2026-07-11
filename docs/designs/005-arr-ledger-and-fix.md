@@ -1,7 +1,8 @@
 # DESIGN-005: *arr media ledger, Fix, and failsafe Restore — Phase 2
 
 - **Status:** Accepted
-- **Last updated:** 2026-07-05
+- **Last updated:** 2026-07-11 (**D-22** — TV season posters + episode thumbnails from the matched Plex
+  title, ADR-048 / PRD R-158, PLAN-030)
 
 > **Amended 2026-07-05 (Library sub-tabs + My Fixes relocation):** the `/library` page is now a
 > **Movies · TV · Music · My Fixes** sub-tab shell (WAI-ARIA tablist; active tab via the `?tab=`
@@ -1268,6 +1269,38 @@ Fix/Force-Search entry points stay `Modal`s (multi-field/explanatory), never `wi
 **e2e.** `apps/web/e2e/support/stub-arr.ts` gains a scriptable `GET /api/v3/queue` + a `POST
 /_stub/queue` control (server-side filtered by the parent id) so a Playwright spec can drive
 queued → downloading → importing → empty-after-import deterministically once the UX lands.
+
+### D-22 Season posters + episode thumbnails from the matched Plex title (ADR-048, PLAN-030)
+
+The show-detail Seasons table gains ART, sourced from the EXACT Plex title the ledger item matched to
+(ADR-047 `media_plex_matches`) — the same poster/still a user sees in Plex, served through the ADR-041
+transcode proxy. No new external API (no TMDB stills); read-only.
+
+- **Server (`@hnet/api`).** `resolveArtMatchForItem(db, gate, mediaItemId)` (`library-access.ts`) → the FIRST
+  accessible match's `{serverSlug, ratingKey}` (same accessibility filter/ordering as `resolvePlexPlayTargets`;
+  null when unmatched OR the caller can access none of its libraries). Two READ-ONLY ledger endpoints navigate
+  the matched title on that server: **`ledger.plexSeasons({mediaItemId})`** → the show's season children →
+  `{seasonNumber (Plex index), posterUrl}[]` (+ `available`); **`ledger.plexEpisodeArt({mediaItemId,
+  seasonNumber})`** → the season whose `index === seasonNumber` → its episode children → `{episodeNumber (Plex
+  index), stillUrl}[]` (+ `available`), fetched LAZILY per expanded season (a huge season never pulls art up
+  front). Both re-gate the item (`itemAccessById` → NOT_FOUND for a hidden item) and degrade to
+  `available:false` (no icons) on unmatched / inaccessible / Plex-unreachable — never a crash. `posterUrl` /
+  `stillUrl` are **signed, item-scoped** `/api/library/plex-art` URLs (ADR-048): an HMAC over
+  `(mediaItemId, serverSlug, thumb, size)` binds the thumb to the accessible item it was read for, so the
+  proxy can transcode without re-reading Plex yet cannot be pointed at an inaccessible sibling title
+  (THE INVARIANT). `ledger.children` now also returns `episodeNumber` (the Sonarr episode number) as the
+  merge key.
+- **Client (`item-detail.tsx`).** The sonarr season `<details>` becomes controlled (`openSeasons`) so each
+  expanded season lazily loads its episode stills. Each season `<summary>` shows a small 2:3 poster
+  (`.season__poster`, `MediaPoster` in `poster` shape) when `plexSeasons` has art for that season number —
+  a reserved box (ADR-015 reflow-free); no icon when absent (PLAN-030 Q-01/Q-02). Each episode row
+  (`childRow`) reserves a 16:9 still (`MediaPoster shape="still"`, the SAME reveal the Peloton drill-in uses —
+  DESIGN-017 D-09 — not reinvented), merged onto the *arr row by `(seasonNumber, episodeNumber)`; a row with
+  no Plex still keeps the tinted box, and when the show is unmatched no still box renders at all (the pre-030
+  layout). Static rows — the still fades in over its reserved box, never re-orienting neighbors (ADR-015). No
+  new hex (`.season__poster` / `.child-row .epi-still` reuse the token palette).
+- **Correlation caveat.** A Sonarr↔Plex episode-number divergence just yields no still for that row (tinted
+  box) — never a wrong thumb. Specials/Season-0 with no Plex art → no icon.
 
 ## Alternatives considered
 

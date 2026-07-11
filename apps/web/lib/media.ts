@@ -48,17 +48,30 @@ export interface SeasonEpisode {
   arrChildId: number;
   label: string;
   hasFile: boolean;
+  /** PLAN-030 — the merge key for the Plex episode still (ledger.plexEpisodeArt); null pre-correlation. */
+  episodeNumber: number | null;
 }
 
 /** Group the live sonarr episode list into season sections, ordered by season number. */
 export function groupBySeason(
-  children: { arrChildId: number; label: string; hasFile: boolean; seasonNumber: number | null }[],
+  children: {
+    arrChildId: number;
+    label: string;
+    hasFile: boolean;
+    seasonNumber: number | null;
+    episodeNumber?: number | null;
+  }[],
 ): SeasonGroup[] {
   const bySeason = new Map<number, SeasonEpisode[]>();
   for (const child of children) {
     const season = child.seasonNumber ?? 0;
     const list = bySeason.get(season) ?? [];
-    list.push({ arrChildId: child.arrChildId, label: child.label, hasFile: child.hasFile });
+    list.push({
+      arrChildId: child.arrChildId,
+      label: child.label,
+      hasFile: child.hasFile,
+      episodeNumber: child.episodeNumber ?? null,
+    });
     bySeason.set(season, list);
   }
   return [...bySeason.entries()]
