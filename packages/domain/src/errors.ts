@@ -265,28 +265,18 @@ export class TrashSaveNotOwnedError extends Error {
 }
 
 // ---------------------------------------------------------------------------
-// ADR-026 / DESIGN-012 — Bulletin (Messages board) errors.
+// ADR-050 / DESIGN-012 D-10 (PLAN-034) — Bulletin Helpdesk ticket errors. (The ADR-026 Messages
+// board errors — MESSAGE_NOT_OWNED / MESSAGE_MODERATED — retired with the board itself.)
 // ---------------------------------------------------------------------------
 
 /**
- * ADR-026 D-06: an author-only action (edit) was attempted on a Message the caller does not own,
- * by a caller who does not hold the `moderate` grant. The `post` grant unlocks editing one's OWN
- * messages only; changing another user's message requires a moderator. Enforced in the
- * `editMessage` writer BEFORE any update. Surfaced as FORBIDDEN.
+ * ADR-050: the requested ticket state transition is not a legal edge of TICKET_TRANSITIONS
+ * (self-transition, anything out of the terminal `complete`, or `rejected` to anywhere but
+ * `open`). Thrown by `transitionTicket` under the row lock BEFORE any write. Surfaced as CONFLICT
+ * (the ticket's current state precludes the move — mirrors FIX_INVALID_TRANSITION).
  */
-export class MessageNotOwnedError extends Error {
-  readonly code = 'MESSAGE_NOT_OWNED' as const;
-}
-
-/**
- * ADR-026 D-06: an author edit was attempted on a Message that a moderator has hidden/deleted.
- * Moderation soft-states PRESERVE the content as the audit record — letting the author rewrite the
- * body afterwards would destroy what was moderated. Only a `visible` message is editable; a
- * moderator must restore it first. Enforced in the `editMessage` writer BEFORE any update.
- * Surfaced as CONFLICT (the message's moderation state precludes the edit).
- */
-export class MessageModeratedError extends Error {
-  readonly code = 'MESSAGE_MODERATED' as const;
+export class InvalidTicketTransitionError extends Error {
+  readonly code = 'TICKET_INVALID_TRANSITION' as const;
 }
 
 // ---------------------------------------------------------------------------

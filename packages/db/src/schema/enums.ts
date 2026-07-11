@@ -549,23 +549,48 @@ export const NOTIFICATION_SOURCES = ['maintainerr', 'seerr', 'tautulli', 'trash'
 export type NotificationSource = (typeof NOTIFICATION_SOURCES)[number];
 
 // ---------------------------------------------------------------------------
-// ADR-026 / DESIGN-012 — Bulletin: Messages board enums (migration 0018). A Message is a
-// user-posted durable board entry; MESSAGE_STATUSES is its moderation lifecycle and
-// MESSAGE_ACTIONS the fine-grained per-action grants (mirroring TRASH_ACTIONS). text+CHECK,
-// single source of truth for TS + the SQL CHECKs (DESIGN-001 D-02).
+// ADR-050 / DESIGN-012 D-10 (PLAN-034 Helpdesk) — Bulletin: HELPDESK TICKET enums (migration
+// 0040). A Ticket is a household media-issue report with a state machine, an append-only event
+// history and a flat reply thread; it REPLACES the ADR-026 Messages board (the `messages` table
+// and its visible/hidden/deleted moderation lifecycle were dropped in 0040 — owner ruling Q-03).
+// text+CHECK, single source of truth for TS + the SQL CHECKs (DESIGN-001 D-02).
 // ---------------------------------------------------------------------------
 
-// A Message's moderation status. 'visible' (posted, shown in the board); 'hidden' (moderator
-// soft-hide — content preserved, filtered from the default board); 'deleted' (moderator
-// soft-delete — content preserved for audit, never rendered). Content is NEVER physically
-// removed by a status change (soft states preserve the row for the audit trail).
-export const MESSAGE_STATUSES = ['visible', 'hidden', 'deleted'] as const;
-export type MessageStatus = (typeof MESSAGE_STATUSES)[number];
+// A Ticket's state (requirement 5): 'open' (filed, nobody on it yet) → 'in_progress' (staff picked
+// it up — absorbs the old "Triage" concept) → 'complete' (fixed/answered — TERMINAL; a recurrence
+// is a new ticket) | 'rejected' (won't-do / duplicate / GitHub-bound — RE-OPENABLE, the analog of
+// the old hide). The allowed edges live in @hnet/domain `TICKET_TRANSITIONS` (the single matrix
+// `transitionTicket` enforces); every transition appends a ticket_events row with an optional
+// household-visible note.
+export const TICKET_STATUSES = ['open', 'in_progress', 'complete', 'rejected'] as const;
+export type TicketStatus = (typeof TICKET_STATUSES)[number];
+
+// The Helpdesk intake taxonomy (ADR-050 option D — deliberately NOT FIX_REASONS: intake is broader
+// and member-facing; a category never routes an automated action). Drives the icon tile a
+// non-media ticket gets on the wall and the category glyph on media tiles:
+//   playback  — won't play, buffering, errors mid-stream
+//   audio     — no sound, out of sync, wrong language
+//   subtitles — missing, wrong, or out-of-sync subtitles
+//   quality   — bad quality or the wrong version/cut
+//   missing   — an episode/season/title that should be in the library but isn't
+//   other     — anything else about media or playback
+export const TICKET_CATEGORIES = [
+  'playback',
+  'audio',
+  'subtitles',
+  'quality',
+  'missing',
+  'other',
+] as const;
+export type TicketCategory = (typeof TICKET_CATEGORIES)[number];
 
 // The fine-grained Bulletin message actions layered on top of the coarse `bulletin` section level
-// (which gates READ). 'post' = create/edit one's OWN messages; 'moderate' = hide/delete/restore
-// ANY message. A ROW in role_message_action_grants = the action is granted (presence is the grant;
-// no boolean — mirrors TRASH_ACTIONS / role_trash_action_grants). Admin implies both with no rows.
+// (which gates READ). Since PLAN-034 (ADR-050 option H) these gate the HELPDESK: 'post' = create
+// tickets; 'moderate' = drive ticket state transitions (staff triage — Q-02). Replies need NEITHER
+// (any member with the `messages` sub-view grant may reply). The STORED values are unchanged from
+// ADR-026 so no grant row migrates; only display labels changed. A ROW in
+// role_message_action_grants = the action is granted (presence is the grant; no boolean — mirrors
+// TRASH_ACTIONS / role_trash_action_grants). Admin implies both with no rows.
 export const MESSAGE_ACTIONS = ['post', 'moderate'] as const;
 export type MessageAction = (typeof MESSAGE_ACTIONS)[number];
 
@@ -665,6 +690,11 @@ export type NotifyOutboxChannel = (typeof NOTIFY_OUTBOX_CHANNELS)[number];
 //                                 the renderer deep-links `…/metrics?tab=hardware`. Baseline-on-first-
 //                                 sight never enqueues, so the known staging-pool bad state never pages.
 //   smart_recovered             — a drive returned to health (FAIL→pass) — a low-noise recovery ping.
+//   ticket_created              — ADR-050 / DESIGN-012 D-13 (PLAN-034 Helpdesk) — a household member
+//                                 filed a Helpdesk ticket. Enqueued by createTicket in the SAME tx as
+//                                 the ticket + creation-event inserts (ADR-034 C-01), so the admins'
+//                                 Pushover ping commits with the ticket or not at all. The renderer
+//                                 deep-links the ticket detail page. Migration 0040 rebuilds the CHECK.
 export const NOTIFY_OUTBOX_EVENT_TYPES = [
   'batch_created',
   'batch_leaving_soon',
@@ -673,5 +703,6 @@ export const NOTIFY_OUTBOX_EVENT_TYPES = [
   'batch_swept',
   'smart_degraded',
   'smart_recovered',
+  'ticket_created',
 ] as const;
 export type NotifyOutboxEventType = (typeof NOTIFY_OUTBOX_EVENT_TYPES)[number];

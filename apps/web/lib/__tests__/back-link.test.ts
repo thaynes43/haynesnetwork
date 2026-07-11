@@ -14,9 +14,14 @@ describe('resolveBackLink — the fixed `?from=` dictionary', () => {
     expect(resolveBackLink('trash-tv')).toEqual({ label: 'Trash TV', href: '/trash?tab=tv' });
     expect(resolveBackLink('bulletin')).toEqual({
       label: 'Bulletin',
-      href: '/bulletin?tab=messages',
+      href: '/bulletin?tab=helpdesk',
     });
     expect(resolveBackLink('bulletin-feed')).toEqual({ label: 'Bulletin', href: '/bulletin' });
+    // ADR-050 / DESIGN-012 D-12 (PLAN-034) — the ticket detail's way back to the Helpdesk wall.
+    expect(resolveBackLink('helpdesk')).toEqual({
+      label: 'Helpdesk',
+      href: '/bulletin?tab=helpdesk',
+    });
     expect(resolveBackLink('ledger')).toEqual({ label: 'Ledger', href: '/ledger' });
   });
 

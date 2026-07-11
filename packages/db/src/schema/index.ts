@@ -35,8 +35,9 @@ export * from './plex-share-audit';
 // ADR-023 / DESIGN-010 (addendum c) — generic in-app notification store (Maintainerr source #1);
 // ADR-026 / DESIGN-012 (PLAN-009) widens it (Seerr + Tautulli) into the durable Bulletin Feed store
 export * from './notifications';
-// ADR-026 / DESIGN-012 — Bulletin Messages board (user-posted durable board entries)
-export * from './messages';
+// ADR-050 / DESIGN-012 D-10 (PLAN-034) — Bulletin Helpdesk tickets (state machine + event history
+// + reply thread; replaced the ADR-026 Messages board — `messages` dropped in migration 0040)
+export * from './tickets';
 // ADR-025 / DESIGN-011 — Trash curation pipeline: generic app settings + batches/items/save events
 export * from './app-settings';
 export * from './trash-batches';

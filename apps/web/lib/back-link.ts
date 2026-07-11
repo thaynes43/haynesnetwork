@@ -17,8 +17,10 @@ export interface BackLinkTarget {
 const BACK_LINKS: Record<string, BackLinkTarget> = {
   'trash-movies': { label: 'Trash Movies', href: '/trash?tab=movies' },
   'trash-tv': { label: 'Trash TV', href: '/trash?tab=tv' },
-  bulletin: { label: 'Bulletin', href: '/bulletin?tab=messages' },
+  bulletin: { label: 'Bulletin', href: '/bulletin?tab=helpdesk' },
   'bulletin-feed': { label: 'Bulletin', href: '/bulletin' },
+  // ADR-050 / DESIGN-012 D-12 (PLAN-034) — the ticket detail's way back to the Helpdesk wall.
+  helpdesk: { label: 'Helpdesk', href: '/bulletin?tab=helpdesk' },
   ledger: { label: 'Ledger', href: '/ledger' },
   // DESIGN-017 D-09 — the ytdl-sub drill-in's way back to its wall (the key IS the library id).
   peloton: { label: 'Peloton', href: '/library?tab=peloton' },

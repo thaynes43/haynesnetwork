@@ -1025,11 +1025,10 @@ tr.drop-after td {
 .admin-form textarea,
 .admin-form select,
 .form-row select,
-/* The /bulletin Messages composer isn't an .admin-form, so its Subject/Message/media-search
-   controls share the SAME themed surface here — otherwise they fall back to the browser
-   default white background in dark mode. */
-.bulletin-composer input,
-.bulletin-composer textarea,
+/* The /bulletin ticket-reply composer + media-search aren't .admin-forms, so their controls
+   share the SAME themed surface here — otherwise they fall back to the browser default white
+   background in dark mode. */
+.treply-composer textarea,
 .bulletin-mediapick input,
 /* /settings/trash hub — the compact inline controls on the General tab (Notifications delivery-window
    From/To hour inputs + the Timezone select) and the Storage tab (the Space-policy cooldown input)
@@ -1049,7 +1048,7 @@ tr.drop-after td {
   min-height: 44px;
 }
 .admin-form textarea,
-.bulletin-composer textarea {
+.treply-composer textarea {
   resize: vertical;
   min-height: 76px;
   line-height: 1.4;
@@ -1057,8 +1056,7 @@ tr.drop-after td {
 .admin-form input:focus,
 .admin-form textarea:focus,
 .admin-form select:focus,
-.bulletin-composer input:focus,
-.bulletin-composer textarea:focus,
+.treply-composer textarea:focus,
 .bulletin-mediapick input:focus,
 .notify-window__field input:focus,
 .notify-window__field select:focus,
@@ -4334,10 +4332,10 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
   font-size: 15px;
 }
 
-/* ---------- Bulletin (ADR-026 / DESIGN-012 D-08): Feed table + Messages board ---------- */
+/* ---------- Bulletin (ADR-026 / ADR-050 / DESIGN-012): Feed table + Helpdesk wall ---------- */
 /* Refetches dim in place (ADR-015 — results swap, the layout never jumps). */
 .bulletin-feedwrap.is-refreshing,
-.bulletin-board.is-refreshing {
+.twall.is-refreshing {
   opacity: 0.55;
   transition: opacity 0.15s ease;
 }
@@ -4359,13 +4357,9 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
   overflow: hidden;
 }
 
-/* The composer card sits above the board; the media-pick results are an overlay POPOVER so
-   opening/closing them never reflows the form below (ADR-015). */
-.bulletin-composer {
-  margin-bottom: var(--space);
-}
-/* Themed input surface (color/background/border/focus) is shared with .admin-form near the
-   top of this file so the composer matches every other form in dark + light mode. */
+/* The compose Modal's media-pick results are an overlay POPOVER so opening/closing them never
+   reflows the form below (ADR-015). Themed input surface (color/background/border/focus) is
+   shared with .admin-form near the top of this file. */
 .bulletin-mediapick {
   position: relative;
   display: inline-block;
@@ -4406,129 +4400,286 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
   font-size: 13px;
 }
 
-/* The board: one card per message; moderation recolors via the status badge, never re-lays. */
-.bulletin-board {
+/* ---------- Helpdesk ticket wall (ADR-050 / DESIGN-012 D-12, PLAN-034) ----------
+   The Library/Trash poster grammar for TICKETS: an auto-fill 2:3 tile grid (3-up under 480px),
+   the STATE baked onto every tile as a colored corner puck (the .bwall-overlay idiom) + a status
+   badge in the caption, and non-media tickets rendering their intake-CATEGORY icon in the same
+   poster box so the wall stays one visual system. Fixed caption/meta heights keep rows even;
+   interactions recolor, never reflow (ADR-015). */
+.twall {
   list-style: none;
   margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 12px;
+}
+@media (max-width: 480px) {
+  .twall {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+}
+.twall-tile {
+  position: relative;
+  min-width: 0;
+}
+.twall-link {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--color-text);
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+}
+.twall-poster {
+  position: relative;
+  display: block;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.twall-link:hover .twall-poster,
+.twall-link:focus-visible .twall-poster {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+/* The state puck — top-right corner, the Trash-wall grammar: a translucent surface circle whose
+   glyph + ring take the state's tone. Pure recolor per state; geometry identical. */
+.twall-overlay {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface) 78%, transparent);
+}
+.twall-overlay svg {
+  width: 17px;
+  height: 17px;
+}
+.twall-overlay[data-status='open'] {
+  color: var(--color-warning);
+  border-color: var(--color-warning);
+}
+.twall-overlay[data-status='in_progress'] {
+  color: var(--color-info);
+  border-color: var(--color-info);
+}
+.twall-overlay[data-status='complete'] {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+.twall-overlay[data-status='rejected'] {
+  color: var(--color-text-muted);
+}
+/* Closed tickets read settled: complete keeps its poster; rejected dims + desaturates (the
+   Trash 'gone' treatment) — data states, not interaction states, so never a reflow. */
+.twall-tile[data-status='rejected'] .twall-poster {
+  filter: grayscale(0.7);
+  opacity: 0.75;
+}
+/* The intake-category tile a NON-MEDIA ticket gets where a poster would be: the category icon
+   large over the same tinted 2:3 box the Library fallback uses, plus a small label. */
+.twall-cattile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--color-text-muted);
+}
+.twall-cattile__icon {
+  width: 44px;
+  height: 44px;
+}
+.twall-cattile__label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+/* Fixed-height caption rows keep the grid even (the .bwall-caption discipline). */
+.twall-caption {
+  height: 17px;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 17px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.twall-sub {
+  height: 15px;
+  font-size: 11.5px;
+  line-height: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.twall-meta {
+  height: 18px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.twall-meta .badge {
+  font-size: 10px;
+  flex: none;
+}
+.twall-replies {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  flex: none;
+}
+.twall-replies__icon {
+  width: 12px;
+  height: 12px;
+}
+.twall-when {
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The toolbar: state chips left, the New-ticket button pinned right (compose NEVER stacks above
+   the wall — requirement 2; the button opens a Modal). */
+.twall-bar {
+  align-items: center;
+}
+.twall-new {
+  margin-left: auto;
+}
+.twall-new-note {
+  margin: 0 0 0 auto;
+  font-size: 12.5px;
+}
+@media (max-width: 480px) {
+  .twall-new,
+  .twall-new-note {
+    margin-left: 0;
+  }
+}
+.twall-tile--skeleton .poster-box {
+  display: block;
+}
+
+/* The compose Modal's category picker: an icon chip grid (2-up on phones), selected = accent —
+   recolor only, fixed geometry (ADR-015). */
+.tcat-field legend {
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+.tcat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+@media (min-width: 640px) {
+  .tcat-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+.tcat-opt {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+.tcat-opt:hover,
+.tcat-opt:focus-visible {
+  border-color: var(--color-accent);
+}
+.tcat-opt.is-active {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface-2));
+}
+.tcat-opt__icon {
+  width: 20px;
+  height: 20px;
+  color: var(--color-text-muted);
+}
+.tcat-opt.is-active .tcat-opt__icon {
+  color: var(--color-accent);
+}
+.tcat-opt__label {
+  font-size: 13px;
+  font-weight: 600;
+}
+.tcat-opt__hint {
+  font-size: 11px;
+  line-height: 1.3;
+}
+.tcompose-note {
+  margin: 0 0 4px;
+  font-size: 12.5px;
+}
+
+/* The ticket detail (the /library/[id] grammar): the category badge with its inline icon, the
+   report body, and the reply thread + composer. */
+.tdetail-cat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.tdetail-cat__icon {
+  width: 13px;
+  height: 13px;
+}
+.tdetail-body {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.treply-list {
+  list-style: none;
+  margin: 0 0 12px;
   padding: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-.bulletin-msg__head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
+.treply {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  padding: 8px 12px;
 }
-.bulletin-msg__meta {
-  min-width: 0;
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  flex-wrap: wrap;
+.treply__meta {
+  font-size: 13px;
 }
-.bulletin-msg__actions {
-  flex: none;
-}
-.bulletin-msg__subject {
-  margin: 6px 0 0;
-  font-weight: 700;
-}
-.bulletin-msg__body {
+.treply__body {
   margin: 4px 0 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.bulletin-msg__trail {
-  margin: 6px 0 0;
-  font-size: 13px;
+.treply-composer {
+  margin-top: 4px;
 }
-.bulletin-msg__media {
-  margin: 10px 0 0;
-}
-/* Soft-moderated rows (moderator view) read subdued — content stays legible for triage. */
-.bulletin-msg[data-status='hidden'] .bulletin-msg__body,
-.bulletin-msg[data-status='deleted'] .bulletin-msg__body {
-  opacity: 0.6;
+.treply-composer textarea {
+  width: 100%;
 }
 
-/* The referenced-title deep-link chip (DESIGN-012 addendum). A clearly-clickable card that jumps
-   to /library/[id] (History + Fix). The thumb box RESERVES its 2:3 space (aspect-ratio), so a late
-   or failed poster load swaps to the kind icon in place — never a reflow (ADR-015). Hover/focus
-   recolor only; geometry is fixed. Phone-friendly: the whole chip is one ≥44px-tall tap target. */
-.media-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  max-width: 100%;
-  padding: 6px 12px 6px 6px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-2);
-  color: var(--color-text);
-  text-decoration: none;
-  transition:
-    border-color 0.15s ease,
-    background 0.15s ease;
-}
-.media-chip:hover,
-.media-chip:focus-visible {
-  border-color: var(--color-accent);
-  background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface-2));
-}
-.media-chip__thumb {
-  flex: none;
-  width: 34px;
-  aspect-ratio: 2 / 3;
-  border-radius: 6px;
-  overflow: hidden;
-  background: var(--color-surface);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-text-muted);
-}
-.media-chip__thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-.media-chip__icon {
-  width: 18px;
-  height: 18px;
-}
-.media-chip__text {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.media-chip__title {
-  font-weight: 700;
-  font-size: 14px;
-  line-height: 1.2;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.media-chip__year {
-  font-weight: 400;
-  color: var(--color-text-muted);
-}
-.media-chip__meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  line-height: 1.2;
-}
-.media-chip__kind {
-  color: var(--color-text-muted);
-  font-weight: 600;
-}
 /* The static repair cue. Open fix reads in the ADR-028 "actively moving" progress tone (matching
    the item page's live phases); a past-repairs count reads muted. Neither ever changes on
    interaction, so no reflow risk. */

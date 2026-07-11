@@ -555,27 +555,28 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await expect(page.getByTestId('back-link')).toHaveAttribute('href', '/library');
   });
 
-  test('the bulletin media chip carries ?from=bulletin and its item back-link reads ← Bulletin', async ({
+  test('a ticket’s library deep link carries ?from=bulletin and its item back-link reads ← Bulletin', async ({
     page,
   }) => {
+    // PLAN-034 (ADR-050) — the Messages board became the Helpdesk; the linked-title jump now
+    // lives on the ticket DETAIL page ("<title> — history & repairs"), still ?from=bulletin.
     await signIn(page, 'admin');
-    // Post a message linking a library item, so the board has a media chip (body is required).
-    await page.goto('/bulletin?tab=messages');
-    await expect(page.getByTestId('message-composer')).toBeVisible();
-    await page
-      .getByPlaceholder('Broken media, a request, or anything for the household…')
-      .fill('Please check this title.');
+    await page.goto('/bulletin?tab=helpdesk');
+    await page.getByTestId('ticket-new').click();
+    await page.getByTestId('ticket-title').fill('Please check this title.');
     await page.getByTestId('composer-media-search').fill('Fixture');
     await page.getByRole('option', { name: /The Fixture/ }).first().click();
-    await page.getByTestId('message-post').click();
+    await page.getByTestId('ticket-body').fill('Backlink journey ticket.');
+    await page.getByTestId('ticket-create').click();
+    await page.waitForURL(/\/bulletin\/ticket\//);
 
-    const chip = page.getByTestId('message-media-chip').first();
-    await expect(chip).toBeVisible();
-    expect(await chip.getAttribute('href')).toMatch(/\/library\/[0-9a-f-]{36}\?from=bulletin$/);
-    await chip.click();
+    const link = page.getByRole('link', { name: /The Fixture.*history & repairs/ });
+    await expect(link).toBeVisible();
+    expect(await link.getAttribute('href')).toMatch(/\/library\/[0-9a-f-]{36}\?from=bulletin$/);
+    await link.click();
     await page.waitForURL(/\/library\/[0-9a-f-]{36}\?from=bulletin$/);
     await expect(page.getByTestId('back-link')).toHaveText('← Bulletin');
-    await expect(page.getByTestId('back-link')).toHaveAttribute('href', '/bulletin?tab=messages');
+    await expect(page.getByTestId('back-link')).toHaveAttribute('href', '/bulletin?tab=helpdesk');
   });
 
   test('safety banner warns when an integration drops; the destructive controls disable', async ({

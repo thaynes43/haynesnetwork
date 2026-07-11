@@ -14,11 +14,14 @@ export * from './metrics-level';
 // ADR-023 / DESIGN-010 — Trash (Maintainerr) fine-grained action grants + the notification store
 export * from './trash-permissions';
 export * from './notifications';
-// ADR-026 / DESIGN-012 — Bulletin: message action grants + the Messages board single-writers
+// ADR-026 / DESIGN-012 — Bulletin: message action grants (post/moderate — since PLAN-034 they gate
+// the Helpdesk: create tickets / drive ticket transitions)
 export * from './message-permissions';
 // ADR-049 / DESIGN-012 amend (PLAN-027) — Bulletin SUB-VIEW (feed/messages) visibility single-writer
 export * from './bulletin-view-permissions';
-export * from './messages';
+// ADR-050 / DESIGN-012 D-10..D-13 (PLAN-034) — the Helpdesk ticket single-writers (replaced the
+// ADR-026 Messages board writers; `messages` dropped in migration 0040)
+export * from './tickets';
 // ADR-023 / DESIGN-010 — Trash orchestrators over Maintainerr (confined write surface — guard test)
 export * from './maintainerr-clients';
 export * from './trash-flow';
