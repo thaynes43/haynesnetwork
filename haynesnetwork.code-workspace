@@ -11,6 +11,12 @@
 		},
 		{
 			"path": "../../haynes-ops"
+		},
+		{
+			"path": "../../hass-sandbox"
+		},
+		{
+			"path": "../../ytdl-sub-config-manager"
 		}
 	],
 	"settings": {}

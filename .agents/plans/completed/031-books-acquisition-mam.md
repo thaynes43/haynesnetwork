@@ -1,6 +1,11 @@
 # PLAN-031: Books/ebooks/comics acquisition — MAM wiring (Prowlarr + Mullvad-qBittorrent)
 
-- **Status:** ✅ **PHASE B COMPLETE + LIVE (2026-07-11).** As-built runbook:
+- **Status:** ✅ **COMPLETED — PHASE B (the wiring) LIVE (2026-07-11); filed to completed/ in the
+  board audit.** Phase C ("ratio build") is ongoing OWNER-DRIVEN seeding (not an agent build),
+  automated going forward by **PLAN-039** (cap-aware governor). **Small build follow-ups carried in
+  the handoff:** the LazyLibrarian MAM *audiobook* category (3030) didn't persist (only ebook/comic/
+  mag caps auto-detected) — ebooks/comics covered; and the **F-08 comic re-grab list** (24 series +
+  4 issues) is the first content workload. As-built runbook:
   `docs/ops/013-mam-books-acquisition.md`. Delivered: `myanonamouse` ExternalSecret (two 1P
   session cookies) + **`mam-update` seedbox-IP sidecar** in the qBittorrent pod (haynes-ops PR
   #2024, merged; pod rolled 3/3, readiness green) — updater logged `Completed: registered seedbox
