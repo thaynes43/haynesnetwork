@@ -173,69 +173,124 @@ body {
   background: color-mix(in srgb, var(--color-warning) 12%, transparent);
 }
 
-/* ADR-027 / DESIGN-004 D-15 (PLAN-010) — dashboard Message-of-the-Day banner. Full-width, mounted
-   above the greeting; severity drives the border + fill tint + icon color from the existing
-   --color-info / --color-warning tokens via color-mix (no new tokens, no raw hex — hard rule 2).
-   Present-when-set; the dismiss is a SANCTIONED deliberate removal (ADR-015 / hard rule 9) — nothing
-   reflows on hover/arm, only presence toggles the banner. */
+/* ADR-027 / DESIGN-004 D-15 + D-17 (PLAN-010) — dashboard Message-of-the-Day banner. Full-width,
+   mounted above the greeting; `--motd-tone` carries the severity color (from the existing
+   --color-info / --color-warning tokens — no new tokens, no raw hex, hard rule 2) into the border,
+   tint, glyph, and in-message links via color-mix. Present-when-set; the dismiss is a SANCTIONED
+   deliberate removal (ADR-015 / hard rule 9) — nothing reflows on hover/arm, only presence toggles
+   the banner. Layout (D-17): a 3-column grid — glyph · message · dismiss — where the glyph and the
+   dismiss ✕ are each optically centered on the FIRST text line (`--motd-line`), so a multi-line or
+   multi-paragraph message top-aligns cleanly instead of drifting. */
 .motd {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  border: 1px solid var(--color-info);
-  border-left-width: 4px;
-  background: color-mix(in srgb, var(--color-info) 10%, var(--color-surface));
+  --motd-tone: var(--color-info);
+  --motd-line: 21px; /* 14px × 1.5 — one message line box */
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--motd-tone) 45%, var(--color-border));
+  border-left: 4px solid var(--motd-tone);
+  background: color-mix(in srgb, var(--motd-tone) 9%, var(--color-surface));
   border-radius: var(--radius-sm);
-  padding: 12px 14px;
+  padding: 13px 10px 13px 14px;
   margin-bottom: var(--space);
 }
 .motd--warning {
-  border-color: var(--color-warning);
-  background: color-mix(in srgb, var(--color-warning) 12%, var(--color-surface));
+  --motd-tone: var(--color-warning);
 }
 .motd__icon {
-  flex: none;
-  color: var(--color-info);
-  font-weight: 700;
-  line-height: 1.45;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--motd-line);
+  color: var(--motd-tone);
 }
-.motd--warning .motd__icon {
-  color: var(--color-warning);
+.motd__icon svg {
+  width: 19px;
+  height: 19px;
 }
 .motd__message {
-  flex: 1 1 auto;
   min-width: 0;
-  margin: 0;
   color: var(--color-text);
   font-size: 14px;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
+  line-height: 1.5;
+  overflow-wrap: anywhere; /* a long URL/code span wraps instead of overflowing at 390px */
+}
+.motd__message p {
+  margin: 0;
+}
+.motd__message p + p,
+.motd__message p + ul,
+.motd__message ul + p,
+.motd__message ul + ul {
+  margin-top: 6px;
+}
+.motd__message ul {
+  margin: 0;
+  padding-left: 20px;
+}
+/* In-message links (D-17 markdown): severity-toned + underlined — the same tone-on-tint pairing
+   .status-note already proves readable in both themes; hover thickens the underline only (no
+   layout change, ADR-015). */
+.motd__message a {
+  color: var(--motd-tone);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.motd__message a:hover {
+  text-decoration-thickness: 2px;
+}
+.motd__message code {
+  font-family: ui-monospace, 'Cascadia Mono', 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  background: color-mix(in srgb, var(--color-text) 9%, transparent);
+  border-radius: 5px;
+  padding: 1px 5px;
 }
 .motd__dismiss {
-  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-top: calc((var(--motd-line) - 32px) / 2); /* center the ✕ on the first text line */
   border: 0;
   background: transparent;
   color: var(--color-text-muted);
   cursor: pointer;
-  font-size: 14px;
-  line-height: 1;
-  padding: 4px;
   border-radius: var(--radius-sm);
-  min-width: 32px;
-  min-height: 32px;
 }
-.motd__dismiss:hover {
+.motd__dismiss svg {
+  width: 15px;
+  height: 15px;
+}
+button.motd__dismiss:hover {
   color: var(--color-text);
   background: color-mix(in srgb, var(--color-text) 8%, transparent);
 }
-/* Admin compose-page live preview wrapper. */
+/* The /admin/motd preview's inert ✕ occupies the same box (geometry parity) but is not a control. */
+.motd__dismiss--inert {
+  cursor: default;
+}
+/* Admin compose-page live preview wrapper — wide enough to read like the real dashboard banner. */
 .motd-preview {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-width: 480px;
+  max-width: 760px;
   margin-bottom: var(--space);
+}
+/* D-17 compose helpers: the char count + "Markdown supported" affordance and the Insert-link
+   button share one row under the textarea; the row wraps on narrow screens without reflowing
+   anything else. */
+.motd-hint-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
 }
 .badge {
   display: inline-block;

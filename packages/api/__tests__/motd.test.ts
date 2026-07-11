@@ -90,9 +90,9 @@ describe('motd admin gate — set/get/clear require admin', () => {
 });
 
 describe('MotdInput validation (zod edge → BAD_REQUEST)', () => {
-  it('rejects a message longer than 280 chars', async () => {
+  it('rejects a message longer than 500 chars (the D-17 markdown budget)', async () => {
     await expect(
-      adminCaller.motd.set({ message: 'x'.repeat(281), severity: 'info', enabled: true }),
+      adminCaller.motd.set({ message: 'x'.repeat(501), severity: 'info', enabled: true }),
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 

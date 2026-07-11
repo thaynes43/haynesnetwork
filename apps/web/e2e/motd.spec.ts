@@ -1,5 +1,6 @@
-// ADR-027 / DESIGN-004 D-15 (PLAN-010) — Message-of-the-Day dashboard banner. Journeys:
-//   • admin composes + enables an info MOTD → a MEMBER's dashboard shows it (right severity + message);
+// ADR-027 / DESIGN-004 D-15 + D-17 (PLAN-010) — Message-of-the-Day dashboard banner. Journeys:
+//   • admin composes + enables an info MOTD → a MEMBER's dashboard shows it (right severity + message,
+//     D-17 markdown rendered — the [text](url) link is a real new-tab anchor, never literal syntax);
 //   • the member dismisses it → it hides and STAYS hidden on reload (per-user localStorage version);
 //   • the admin edits it (new version) → it RE-SHOWS for the member; warning severity ⇒ role="alert";
 //   • the admin clears it → the member's dashboard shows no banner.
@@ -60,12 +61,23 @@ test('AC-MOTD — set · member sees · dismiss (sticky) · edit re-shows · cle
   // Baseline: no banner before anything is set.
   await expect(banner(memberPage)).toBeHidden();
 
-  // Admin enables an INFO MOTD → the member's dashboard shows it on refresh.
-  await setMotd(adminPage, { message: 'New app added: Immich', severity: 'info' });
+  // Admin enables an INFO MOTD (with a D-17 markdown link) → the member's dashboard shows it on
+  // refresh, message rendered as markdown: the link is a real new-tab anchor, not literal syntax.
+  await setMotd(adminPage, {
+    message:
+      'New app added: Immich — details [on my GitHub](https://github.com/thaynes43/haynesnetwork/issues)',
+    severity: 'info',
+  });
   await memberPage.reload();
   await expect(banner(memberPage)).toBeVisible();
   await expect(banner(memberPage)).toHaveAttribute('data-severity', 'info');
   await expect(banner(memberPage)).toContainText('New app added: Immich');
+  const link = banner(memberPage).getByRole('link', { name: 'on my GitHub' });
+  await expect(link).toHaveAttribute('href', 'https://github.com/thaynes43/haynesnetwork/issues');
+  await expect(link).toHaveAttribute('target', '_blank');
+  await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+  // …and the raw markdown syntax never shows to the user.
+  await expect(banner(memberPage)).not.toContainText('](');
   // Info ⇒ role="status" (a polite live region, not an alert).
   await expect(memberPage.getByRole('status').filter({ hasText: 'New app added' })).toBeVisible();
 
