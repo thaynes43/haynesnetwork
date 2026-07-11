@@ -1,7 +1,20 @@
 # PLAN-028: "Play/Read/Listen here" — access-aware deep links from Library to the app that serves it
 
-- **Status:** Roadmap (owner idea 2026-07-11 early AM). NOT dispatched — thinking-out-loud; scope
-  with the owner before any build (discuss-UX-before-dispatch).
+- **Status:** Completed (2026-07-11) — **v0.40.0 + v0.40.1 live.** ADR-047 / DESIGN-025 / R-157 /
+  T-139..T-141 / migration 0038. THE INVARIANT enforced server-side (reusing the ADR-024 resolver) across
+  every media_items read + the poster proxy + per-library ytdl-sub; `media_plex_matches` GUID match
+  (one row per (item, library)) + hourly `sync-plex-match` CronJob — live match rate radarr 5,445/9,564
+  (57%) · sonarr 840/1,026 (82%) · lidarr 4,428/7,208 (61%), 17,071 rows (unmatched = wanted/missing
+  items never in Plex, gated by their kind's home libraries, no link — never hidden by match state).
+  Owner UX amendment shipped: detail-page-only ↗ buttons, ONE "Watch on Plex — <library>" per accessible
+  library (multi-library titles get several, gated independently), new Books/Audiobooks/Comics detail
+  pages ("Read in Kavita" / "Listen on Audiobookshelf"). Live invariant proof (hnet-e2e-member on a
+  throwaway role deliberately withholding HOps Music, via the app's own audited writers): ZERO items via
+  search/text-query/pagination/facets/wanted, 404 on direct-id detail/events/children AND the poster
+  proxy (accessible control 200), Music tab ABSENT (390px + desktop screenshots); accessible movie
+  showed BOTH library buttons live; everything restored + sessions cleaned after. v0.40.1 fix: Plex
+  omits the external Guid array from section listings without `includeGuids=1` (the first sweep matched
+  0/17,269 — root-caused live against k8plex, one-line fix on the paged reader).
 - **Relates:** ADR-017/024 (Plex share + role-library-grant model — the access data), ADR-038/041
   (ytdl-sub live Plex reads + ratingKeys), ADR-046/PLAN-023 (books ledger with deep_link_url),
   ADR-013 (catalog app cards), the My Plex self-service flow (the "request access" target).

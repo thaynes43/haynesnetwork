@@ -4,7 +4,40 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-- **Last updated:** 2026-07-10 — **PLAN-023 Phase 4 Books & Audiobooks LIBRARY LEDGER COMPLETE, live
+- **Last updated:** 2026-07-11 — **PLAN-028 "Watch/Listen/Read here" ACCESS-AWARE DEEP LINKS COMPLETE,
+  live (v0.40.0 + v0.40.1).** Every Library drill-in now deep-links to the app that serves the title, and
+  ALL Plex-backed content is gated to the caller's accessible Plex libraries **server-side** (THE
+  INVARIANT — ADR-047/DESIGN-025/R-157/T-139..T-141, PR #192 + fix #194). The **`media_plex_matches`**
+  cache (migration 0038; one row per **(media_item, plex_library)** — mirrored titles get several) is
+  resolved by the new **`plex-match`** sync mode by shared GUID (radarr tmdb→imdb, sonarr tvdb→imdb,
+  lidarr mbid) — hourly haynes-ops CronJob `sync-plex-match` (`52 * * * *`; reuses PLEX_*_TOKENs, no new
+  secret). **Live match rate:** radarr 5,445/9,564 (57%) · sonarr 840/1,026 (82%) · lidarr 4,428/7,208
+  (61%) → 17,071 rows; unmatched = wanted/missing items never in Plex (gated by their kind's home
+  libraries, NO link — hidden only by access, never by match state). **v0.40.1 gotcha (remember this):**
+  Plex OMITS the external `Guid` array from `/library/sections/{key}/all` unless **`includeGuids=1`** —
+  the first sweep matched 0/17,269 (root-caused live from the pod; one-line fix on
+  `listSectionContentsPage`). **THE GATE:** `resolveLibraryAccessGate` REUSES `effectiveAllowedLibrariesForUser`
+  (ADR-024; admin ⇒ unrestricted) + a per-(kind,instance) candidate-library derive; EXISTS-subquery WHERE on
+  `ledger.search/detail/events/children/wanted/filterFacets`, `ledgerAdmin.browse/count`, the JSONL export,
+  AND `/api/posters/[id]` (the art-by-id leak closed); ytdl-sub gets a per-k8plex-library gate
+  (`accessibleYtdlsubLibraries`) under the section knob; a withheld library's TAB hides (server-resolved
+  in /library page.tsx). **Deliberate owner-approved tightening:** non-admin Library visibility now
+  follows the role→library grant matrix (Default currently holds all *arr-feeding libraries, so members
+  see no change until the owner withholds one). **Owner UX amendment shipped:** posters ALWAYS open the
+  detail page (no wall jump-outs); ↗-marked PRIMARY buttons — ONE **"Watch on Plex — <library>"** per
+  accessible library; NEW **`/library/books/[id]`** detail pages ("Read in Kavita" / "Listen on
+  Audiobookshelf"; books gating unchanged). **Live invariant proof** (hnet-e2e-member on a throwaway role
+  deliberately withholding HOps Music, set up via the app's own audited writers, then fully restored):
+  ZERO items via search/text-query/pagination/facets/wanted; 404 on direct-id detail/events/children AND
+  the poster proxy (accessible control 200); **Music tab ABSENT** (390px + desktop screenshots); the
+  accessible movie showed BOTH library buttons. Unit proof: `packages/api/__tests__/library-access.test.ts`
+  (zero-leak per endpoint + admin/server-all/no-grants/multi-library) + `packages/sync/__tests__/plex-match.test.ts`.
+  Also landed: the 57P01 teardown-flake hardening (pool 'error' listeners in all four test-harness
+  helpers — the flake hit 3 CI runs in a row before it). haynes-ops `86578465` (bump + CronJob) +
+  `8dfecca4` (v0.40.1). Cosign/kyverno note: a fresh release can be denied "no signatures found" for a
+  few minutes (sig propagation + kyverno cache) — re-`flux reconcile helmrelease --force` after ~5 min
+  clears it. Prior milestone — PLAN-023 Phase 4 (below).
+- **Prior:** 2026-07-10 — **PLAN-023 Phase 4 Books & Audiobooks LIBRARY LEDGER COMPLETE, live
   (v0.39.0).** Books/Audiobooks/Comics are now first-class **Library** content: a one-way synced MIRROR of
   **Kavita** (Books=EBooks + Comics) and **Audiobookshelf** (Audio Books) in a **dedicated `books_items`
   table** (owner ruling Q-04 "full ledger integration in v1") — NOT `media_items` (ADR-046: books have no
