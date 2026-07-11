@@ -3510,6 +3510,30 @@ input[aria-invalid='true'] {
   padding: 2px 9px;
 }
 
+/* ── Bulletin cell (ADR-049 / DESIGN-012 amend, PLAN-027) — the Enabled/Disabled dropdown stacked
+   over the Feed/Messages SUB-VIEW checkboxes + the message-action badge. The views grey (via
+   `.check-row[data-disabled]`) when Bulletin is Disabled; nothing reflows a neighbour (ADR-015 —
+   the boxes toggle state IN PLACE, always rendered). Tokens only (hard rule 2). */
+.bulletin-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.bulletin-view-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 14px;
+}
+/* A compact inline check-row for the grid (the full 44px min-height is for tap-target lists; these
+   ride inside a dense table cell). Still comfortably tappable via the 18px box + padding. */
+.check-row--inline {
+  min-height: 0;
+  gap: 6px;
+  font-size: 12px;
+}
+
 /* ── Trash OVERVIEW landing + tab count badges (DESIGN-010 amendment 2026-07-08) ─────────────
    The default Trash tab: one KIND CARD per kind that aggregates what's slated before you navigate,
    plus a small count pill on the Movies/TV tab labels. The pill matches the roles-table

@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { asc, count } from 'drizzle-orm';
 import {
   roleAppGrants,
+  roleBulletinViewGrants,
   roleMessageActionGrants,
   roleSectionPermissions,
   roleTrashActionGrants,
@@ -15,6 +16,7 @@ import {
   SECTION_IDS,
   SECTION_DEFAULT_LEVELS,
   TRASH_ACTIONS,
+  type BulletinView,
   type MessageAction,
   type SectionId,
   type SectionPermissionLevel,
@@ -25,6 +27,8 @@ import {
   deactivateSyncedTier,
   deleteRole,
   provisionSyncedTier,
+  resolveBulletinViews,
+  setRoleBulletinViews,
   setRoleMessageActions,
   setRoleMetricsLevel,
   setRoleTrashActions,
@@ -34,6 +38,7 @@ import {
 import { mapDomainErrors, resolveAuthentikPortalBundle, router } from '../trpc';
 import { adminProcedure } from '../middleware/role';
 import {
+  BulletinViewsInput,
   MessageActionsInput,
   RoleInput,
   RolePatchInput,
@@ -87,6 +92,14 @@ export const rolesRouter = router({
         action: roleMessageActionGrants.action,
       })
       .from(roleMessageActionGrants);
+    // ADR-049 (PLAN-027) — each role's Bulletin SUB-VIEW visibility grant rows (a row = granted;
+    // NO rows ⇒ the both-views default, resolved per role below).
+    const bulletinViewRows = await ctx.db
+      .select({
+        roleId: roleBulletinViewGrants.roleId,
+        view: roleBulletinViewGrants.view,
+      })
+      .from(roleBulletinViewGrants);
 
     const appIdsByRole = new Map<string, string[]>();
     for (const row of grantRows) {
@@ -113,6 +126,12 @@ export const rolesRouter = router({
       s.add(row.action);
       messageActionsByRole.set(row.roleId, s);
     }
+    const bulletinViewsByRole = new Map<string, BulletinView[]>();
+    for (const row of bulletinViewRows) {
+      const list = bulletinViewsByRole.get(row.roleId) ?? [];
+      list.push(row.view);
+      bulletinViewsByRole.set(row.roleId, list);
+    }
 
     // The Admin role has no explicit grants — it's an implicit all-apps / all-sections superuser.
     return roleRows.map((row) => {
@@ -133,6 +152,12 @@ export const rolesRouter = router({
       const messageActions: MessageAction[] = row.isAdmin
         ? [...MESSAGE_ACTIONS]
         : MESSAGE_ACTIONS.filter((a) => messageGrantedSet?.has(a));
+      // ADR-049 (PLAN-027) — admin ⇒ both views; a role with stored rows ⇒ exactly those; a role
+      // with NO rows ⇒ both (the "Bulletin is for everyone" default). One resolver, no drift.
+      const bulletinViews = resolveBulletinViews(
+        row.isAdmin,
+        bulletinViewsByRole.get(row.id) ?? [],
+      );
       return {
         ...row,
         // ADR-037 C-01 — admin implies 'full' (like admin implies section 'edit'); else the column.
@@ -142,6 +167,7 @@ export const rolesRouter = router({
         sectionPermissions,
         trashActions,
         messageActions,
+        bulletinViews,
       };
     });
   }),
@@ -168,12 +194,16 @@ export const rolesRouter = router({
   update: adminProcedure.input(RolePatchInput).mutation(async ({ ctx, input }) => {
     const { id, ...patch } = input;
     // Admin role → ROLE_IMMUTABLE; Default role rename → ROLE_IMMUTABLE; audits 'update_role'.
-    return mapDomainErrors(() => updateRole({ db: ctx.db, roleId: id, ...patch, actorId: ctx.user.id }));
+    return mapDomainErrors(() =>
+      updateRole({ db: ctx.db, roleId: id, ...patch, actorId: ctx.user.id }),
+    );
   }),
 
   delete: adminProcedure.input(z.object({ id: z.uuid() })).mutation(async ({ ctx, input }) => {
     // Reassigns members to Default, then deletes; system roles → ROLE_IMMUTABLE. Audits 'delete_role'.
-    return mapDomainErrors(() => deleteRole({ db: ctx.db, roleId: input.id, actorId: ctx.user.id }));
+    return mapDomainErrors(() =>
+      deleteRole({ db: ctx.db, roleId: input.id, actorId: ctx.user.id }),
+    );
   }),
 
   /**
@@ -230,6 +260,24 @@ export const rolesRouter = router({
   }),
 
   /**
+   * ADR-049 C-02 (PLAN-027) — replace a role's Bulletin SUB-VIEW visibility grants (feed / messages).
+   * Delegates to the @hnet/domain single-writer (audits 'update_bulletin_views' in-tx); the Admin
+   * role is immutable (implies BOTH views) → ROLE_IMMUTABLE. An EMPTY set clears the rows and
+   * RE-OPENS both views (the "Bulletin is for everyone" default) — to hide Bulletin entirely, set the
+   * `bulletin` section level to Disabled (setSectionPermission), not an empty view set.
+   */
+  setBulletinViews: adminProcedure.input(BulletinViewsInput).mutation(async ({ ctx, input }) => {
+    return mapDomainErrors(() =>
+      setRoleBulletinViews({
+        db: ctx.db,
+        roleId: input.roleId,
+        views: input.views,
+        actorId: ctx.user.id,
+      }),
+    );
+  }),
+
+  /**
    * ADR-037 C-01 — set a role's metrics access level (full | limited). Delegates to the @hnet/domain
    * single-writer (audits 'update_role_metrics_level' in-tx); the Admin role is immutable (implies
    * 'full') → ROLE_IMMUTABLE (D-13). Orthogonal to the `metrics` section level (setSectionPermission):
@@ -267,7 +315,11 @@ export const rolesRouter = router({
             actorId: ctx.user.id,
           });
         }
-        return await deactivateSyncedTier({ db: ctx.db, roleId: input.roleId, actorId: ctx.user.id });
+        return await deactivateSyncedTier({
+          db: ctx.db,
+          roleId: input.roleId,
+          actorId: ctx.user.id,
+        });
       });
     }),
 });

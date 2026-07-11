@@ -231,7 +231,9 @@ describe('migrations against embedded Postgres 16', () => {
         });
       }
       await expect(
-        client.query(`INSERT INTO notifications (source, type, title) VALUES ('overseerr', 'ev', 't')`),
+        client.query(
+          `INSERT INTO notifications (source, type, title) VALUES ('overseerr', 'ev', 't')`,
+        ),
       ).rejects.toMatchObject({ code: '23514' }); // 'overseerr' folds into 'seerr' — not its own value
       await client.query(`DELETE FROM notifications WHERE type = 'ev'`);
     });
@@ -241,7 +243,14 @@ describe('migrations against embedded Postgres 16', () => {
         `SELECT column_name FROM information_schema.columns WHERE table_name = 'notifications'`,
       );
       const names = cols.rows.map((r) => r.column_name as string);
-      for (const c of ['media_item_id', 'tmdb_id', 'tvdb_id', 'actor_user_id', 'occurred_at', 'source_event_id']) {
+      for (const c of [
+        'media_item_id',
+        'tmdb_id',
+        'tvdb_id',
+        'actor_user_id',
+        'occurred_at',
+        'source_event_id',
+      ]) {
         expect(names).toContain(c);
       }
       // occurred_at is NOT NULL with a default (backfilled from created_at).
@@ -261,8 +270,12 @@ describe('migrations against embedded Postgres 16', () => {
         ),
       ).rejects.toMatchObject({ code: '23505' });
       // ...but two NULL source_event_ids are allowed (partial index — WHERE source_event_id IS NOT NULL).
-      await client.query(`INSERT INTO notifications (source, type, title) VALUES ('maintainerr','ev','n1')`);
-      await client.query(`INSERT INTO notifications (source, type, title) VALUES ('maintainerr','ev','n2')`);
+      await client.query(
+        `INSERT INTO notifications (source, type, title) VALUES ('maintainerr','ev','n1')`,
+      );
+      await client.query(
+        `INSERT INTO notifications (source, type, title) VALUES ('maintainerr','ev','n2')`,
+      );
       await client.query(`DELETE FROM notifications WHERE type = 'ev'`);
     });
 
@@ -305,9 +318,7 @@ describe('migrations against embedded Postgres 16', () => {
     });
 
     it('permission_audit_action_enum admits the new update_message_actions (preservation)', async () => {
-      await client.query(
-        `INSERT INTO permission_audit (action) VALUES ('update_message_actions')`,
-      );
+      await client.query(`INSERT INTO permission_audit (action) VALUES ('update_message_actions')`);
       // The prior values still validate (rebuild preserved them).
       await client.query(`INSERT INTO permission_audit (action) VALUES ('update_app_setting')`);
     });
@@ -333,6 +344,49 @@ describe('migrations against embedded Postgres 16', () => {
     });
   });
 
+  // ADR-049 / DESIGN-012 amend (migration 0039, PLAN-027) — the Bulletin SUB-VIEW grants: the new
+  // role_bulletin_view_grants table + CHECK, the preserved+extended permission_audit CHECK, and the
+  // Default-role messages-only seed (the owner's intent).
+  describe('0039 Bulletin sub-view grants (ADR-049 — new table/CHECK + audit + Default seed)', () => {
+    it('role_bulletin_view_grants_view_enum admits feed/messages, rejects unknown', async () => {
+      const role = await client.query(`SELECT id FROM roles WHERE is_admin`); // a role with no seed row
+      const roleId = role.rows[0].id as string;
+      for (const v of ['feed', 'messages']) {
+        await client.query({
+          text: `INSERT INTO role_bulletin_view_grants (role_id, view) VALUES ($1, $2)`,
+          values: [roleId, v],
+        });
+      }
+      await expect(
+        client.query({
+          text: `INSERT INTO role_bulletin_view_grants (role_id, view) VALUES ($1, 'comments')`,
+          values: [roleId],
+        }),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query(`DELETE FROM role_bulletin_view_grants WHERE role_id = '${roleId}'`);
+    });
+
+    it('permission_audit_action_enum admits update_bulletin_views (preservation)', async () => {
+      await client.query(`INSERT INTO permission_audit (action) VALUES ('update_bulletin_views')`);
+      // The prior values still validate (rebuild preserved them).
+      await client.query(`INSERT INTO permission_audit (action) VALUES ('assign_pending_role')`);
+    });
+
+    it('seeds the Default role with the messages view ONLY (Feed off; other roles untouched)', async () => {
+      const rows = await client.query(
+        `SELECT view FROM role_bulletin_view_grants
+           WHERE role_id = '11111111-1111-4111-8111-111111111111' ORDER BY view`,
+      );
+      expect(rows.rows.map((r: { view: string }) => r.view)).toEqual(['messages']);
+      // No other role got a seed row (Family/Admin keep the no-row "both" default).
+      const others = await client.query(
+        `SELECT count(*)::int AS n FROM role_bulletin_view_grants
+           WHERE role_id <> '11111111-1111-4111-8111-111111111111'`,
+      );
+      expect(others.rows[0].n).toBe(0);
+    });
+  });
+
   // ADR-027 / DESIGN-004 D-15 (migration 0019) — the MOTD reuses the app_settings store, so the
   // app_settings.key CHECK is relaxed to admit 'motd' (preserving the prior two keys).
   describe('0019 MOTD app_setting key (ADR-027 — CHECK relax, preservation)', () => {
@@ -347,7 +401,9 @@ describe('migrations against embedded Postgres 16', () => {
       await expect(
         client.query(`INSERT INTO app_settings (key, value) VALUES ('bogus_key', '{}'::jsonb)`),
       ).rejects.toMatchObject({ code: '23514' });
-      await client.query(`DELETE FROM app_settings WHERE key IN ('trash_skip_admin_gate','trash_default_window_days','motd')`);
+      await client.query(
+        `DELETE FROM app_settings WHERE key IN ('trash_skip_admin_gate','trash_default_window_days','motd')`,
+      );
     });
   });
 
@@ -358,7 +414,17 @@ describe('migrations against embedded Postgres 16', () => {
         `SELECT column_name FROM information_schema.columns WHERE table_name = 'notification_outbox'`,
       );
       const names = cols.rows.map((r) => r.column_name as string);
-      for (const c of ['id', 'channel', 'event_type', 'payload', 'created_at', 'earliest_send_at', 'sent_at', 'attempts', 'last_error']) {
+      for (const c of [
+        'id',
+        'channel',
+        'event_type',
+        'payload',
+        'created_at',
+        'earliest_send_at',
+        'sent_at',
+        'attempts',
+        'last_error',
+      ]) {
         expect(names).toContain(c);
       }
       const idx = await client.query(
@@ -368,14 +434,14 @@ describe('migrations against embedded Postgres 16', () => {
     });
 
     it('notification_outbox CHECKs admit the known channel/event types, reject unknown', async () => {
-      await client.query(
-        `INSERT INTO notification_outbox (event_type) VALUES ('batch_created')`,
-      );
+      await client.query(`INSERT INTO notification_outbox (event_type) VALUES ('batch_created')`);
       await client.query(
         `INSERT INTO notification_outbox (channel, event_type) VALUES ('pushover', 'batch_leaving_soon_reminder')`,
       );
       await expect(
-        client.query(`INSERT INTO notification_outbox (channel, event_type) VALUES ('sms', 'batch_created')`),
+        client.query(
+          `INSERT INTO notification_outbox (channel, event_type) VALUES ('sms', 'batch_created')`,
+        ),
       ).rejects.toMatchObject({ code: '23514' });
       await expect(
         client.query(`INSERT INTO notification_outbox (event_type) VALUES ('bogus_event')`),
@@ -394,7 +460,9 @@ describe('migrations against embedded Postgres 16', () => {
       await expect(
         client.query(`INSERT INTO app_settings (key, value) VALUES ('nope_key', '{}'::jsonb)`),
       ).rejects.toMatchObject({ code: '23514' });
-      await client.query(`DELETE FROM app_settings WHERE key IN ('trash_skip_admin_gate','space_policy','notify_window')`);
+      await client.query(
+        `DELETE FROM app_settings WHERE key IN ('trash_skip_admin_gate','space_policy','notify_window')`,
+      );
     });
 
     it('sync_runs_run_kind_enum admits notify-outbox + the prior kinds (preservation)', async () => {
@@ -405,7 +473,9 @@ describe('migrations against embedded Postgres 16', () => {
         });
       }
       await expect(
-        client.query(`INSERT INTO sync_runs (source, run_kind, status) VALUES ('radarr', 'bogus-mode', 'running')`),
+        client.query(
+          `INSERT INTO sync_runs (source, run_kind, status) VALUES ('radarr', 'bogus-mode', 'running')`,
+        ),
       ).rejects.toMatchObject({ code: '23514' });
       await client.query(`DELETE FROM sync_runs WHERE run_kind = 'notify-outbox'`);
     });
@@ -417,7 +487,19 @@ describe('migrations against embedded Postgres 16', () => {
         `SELECT column_name FROM information_schema.columns WHERE table_name = 'trash_candidates'`,
       );
       const names = cols.rows.map((r) => r.column_name as string);
-      for (const c of ['id', 'media_kind', 'collection_id', 'collection_title', 'delete_after_days', 'maintainerr_media_id', 'tmdb_id', 'tvdb_id', 'size_bytes', 'add_date', 'ord']) {
+      for (const c of [
+        'id',
+        'media_kind',
+        'collection_id',
+        'collection_title',
+        'delete_after_days',
+        'maintainerr_media_id',
+        'tmdb_id',
+        'tvdb_id',
+        'size_bytes',
+        'add_date',
+        'ord',
+      ]) {
         expect(names).toContain(c);
       }
       const idx = await client.query(
@@ -440,7 +522,9 @@ describe('migrations against embedded Postgres 16', () => {
         `INSERT INTO trash_candidates (media_kind, collection_id) VALUES ('movie', 1)`,
       );
       await expect(
-        client.query(`INSERT INTO trash_candidates (media_kind, collection_id) VALUES ('music', 1)`),
+        client.query(
+          `INSERT INTO trash_candidates (media_kind, collection_id) VALUES ('music', 1)`,
+        ),
       ).rejects.toMatchObject({ code: '23514' });
       await expect(
         client.query(
@@ -498,9 +582,7 @@ describe('migrations against embedded Postgres 16', () => {
     const ADMIN_ROLE = '22222222-2222-4222-8222-222222222222';
 
     it('roles.metrics_level exists, defaults limited, seeds admin to full, and is CHECK-enforced', async () => {
-      const seed = await client.query(
-        `SELECT metrics_level FROM roles WHERE id = '${ADMIN_ROLE}'`,
-      );
+      const seed = await client.query(`SELECT metrics_level FROM roles WHERE id = '${ADMIN_ROLE}'`);
       expect(seed.rows[0].metrics_level).toBe('full'); // migration seeds is_admin ⇒ full
       const def = await client.query(
         `SELECT metrics_level FROM roles WHERE id = '${DEFAULT_ROLE}'`,
@@ -628,7 +710,9 @@ describe('migrations against embedded Postgres 16', () => {
          VALUES ('c1', 'u1', '["gpt-oss:latest"]'::jsonb, 2, 1500, now(), now())
          ON CONFLICT (owui_chat_id) DO UPDATE SET image_count = EXCLUDED.image_count`,
       );
-      const row = await client.query(`SELECT models, image_count FROM ai_usage_chats WHERE owui_chat_id = 'c1'`);
+      const row = await client.query(
+        `SELECT models, image_count FROM ai_usage_chats WHERE owui_chat_id = 'c1'`,
+      );
       expect(row.rows[0].image_count).toBe(2);
       expect(row.rows[0].models).toEqual(['gpt-oss:latest']);
       await client.query(`DELETE FROM ai_usage_chats WHERE owui_chat_id = 'c1'`);
@@ -642,7 +726,9 @@ describe('migrations against embedded Postgres 16', () => {
         });
       }
       await expect(
-        client.query(`INSERT INTO sync_runs (source, run_kind, status) VALUES ('radarr', 'bogus-mode', 'running')`),
+        client.query(
+          `INSERT INTO sync_runs (source, run_kind, status) VALUES ('radarr', 'bogus-mode', 'running')`,
+        ),
       ).rejects.toMatchObject({ code: '23514' });
       await client.query(`DELETE FROM sync_runs WHERE run_kind = 'ai-usage-sync'`);
     });
@@ -667,7 +753,11 @@ describe('migrations against embedded Postgres 16', () => {
            WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`,
       );
       const names = tables.rows.map((r) => r.table_name as string);
-      for (const expected of ['authentik_users', 'pending_role_assignments', 'authentik_group_audit']) {
+      for (const expected of [
+        'authentik_users',
+        'pending_role_assignments',
+        'authentik_group_audit',
+      ]) {
         expect(names).toContain(expected);
       }
     });
@@ -681,7 +771,9 @@ describe('migrations against embedded Postgres 16', () => {
         });
       }
       await expect(
-        client.query(`INSERT INTO authentik_users (pk, username, user_type) VALUES (900199, 'u', 'robot')`),
+        client.query(
+          `INSERT INTO authentik_users (pk, username, user_type) VALUES (900199, 'u', 'robot')`,
+        ),
       ).rejects.toMatchObject({ code: '23514' });
       await client.query(`DELETE FROM authentik_users WHERE pk >= 900100 AND pk < 900200`);
     });
@@ -694,7 +786,9 @@ describe('migrations against embedded Postgres 16', () => {
         });
       }
       await expect(
-        client.query(`INSERT INTO authentik_group_audit (action, group_name) VALUES ('nuke_group', 'family')`),
+        client.query(
+          `INSERT INTO authentik_group_audit (action, group_name) VALUES ('nuke_group', 'family')`,
+        ),
       ).rejects.toMatchObject({ code: '23514' });
       await client.query(`DELETE FROM authentik_group_audit WHERE group_name = 'family'`);
     });
@@ -707,7 +801,9 @@ describe('migrations against embedded Postgres 16', () => {
         });
       }
       await expect(
-        client.query(`INSERT INTO sync_runs (source, run_kind, status) VALUES ('radarr', 'bogus-mode', 'running')`),
+        client.query(
+          `INSERT INTO sync_runs (source, run_kind, status) VALUES ('radarr', 'bogus-mode', 'running')`,
+        ),
       ).rejects.toMatchObject({ code: '23514' });
       await client.query(`DELETE FROM sync_runs WHERE run_kind = 'authentik-users'`);
     });
@@ -728,7 +824,11 @@ describe('migrations against embedded Postgres 16', () => {
     });
 
     it('app_settings_key_enum admits the two Authentik keys + the prior keys (preservation)', async () => {
-      for (const key of ['download_capacity_mbps', 'authentik_owned_groups', 'authentik_group_map']) {
+      for (const key of [
+        'download_capacity_mbps',
+        'authentik_owned_groups',
+        'authentik_group_map',
+      ]) {
         await client.query({
           text: `INSERT INTO app_settings (key, value) VALUES ($1, '{}'::jsonb)
                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,

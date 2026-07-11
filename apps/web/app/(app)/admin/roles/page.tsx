@@ -13,10 +13,20 @@ import { trpc } from '@/lib/trpc-client';
 import { describeMutationError } from '@/lib/app-error';
 import { TRASH_ACTION_LABELS, TRASH_ACTION_NAMES, type TrashActionName } from '@/lib/trash';
 import {
+  BULLETIN_VIEW_LABELS,
+  BULLETIN_VIEW_NAMES,
   MESSAGE_ACTION_LABELS,
   MESSAGE_ACTION_NAMES,
+  type BulletinViewName,
   type MessageActionName,
 } from '@/lib/bulletin';
+import {
+  isSectionEnabled,
+  sectionLevelOptions,
+  selectValueFor,
+  type GridSectionId,
+  type SectionLevel,
+} from '@/lib/role-sections';
 
 interface RoleForm {
   name: string;
@@ -127,6 +137,14 @@ export default function AdminRolesPage() {
     onError: (err: unknown) => setError(describeMutationError(err)),
     onSettled: invalidate,
   });
+  // ADR-049 C-02 / DESIGN-012 amend (PLAN-027) — a role's Bulletin SUB-VIEW visibility grants
+  // (feed/messages; audited 'update_bulletin_views' in-tx). Apply-on-change from the inline
+  // checkboxes, like setSection/setMetricsLevel; errors surface on the top-level banner.
+  const setBulletinViews = trpc.roles.setBulletinViews.useMutation({
+    onError: (err: unknown) => setError(describeMutationError(err)),
+    onSuccess: () => setError(null),
+    onSettled: invalidate,
+  });
   // ADR-037 C-01 / DESIGN-016 D-05 — a role's metrics access level (full|limited; audited
   // 'update_role_metrics_level' in-tx). Changed inline like the section level (setSection).
   const setMetricsLevel = trpc.roles.setMetricsLevel.useMutation({
@@ -151,6 +169,7 @@ export default function AdminRolesPage() {
     setSection.isPending ||
     setTrash.isPending ||
     setMessages.isPending ||
+    setBulletinViews.isPending ||
     setMetricsLevel.isPending ||
     setSyncedTier.isPending;
 
@@ -270,6 +289,83 @@ export default function AdminRolesPage() {
       ? [...form.allServerIds, serverId]
       : form.allServerIds.filter((id) => id !== serverId),
   });
+
+  // ADR-049 C-01 / DESIGN-004 D-18 (PLAN-027) — the per-section access <select>, its option list
+  // driven by the SECTION CAPABILITY MAP (lib/role-sections): 'tri' sections keep Edit/Read-only/
+  // Disabled, 'toggle' sections (no meaningful Edit) render Enabled/Disabled — the stored enum is
+  // unchanged, "Enabled" persists read_only. Constant width across all sections (ADR-015 — the
+  // dropdown swaps its own options, never the row layout).
+  const levelSelect = (
+    role: (typeof roleRows)[number],
+    sectionId: GridSectionId,
+    ariaLabel: string,
+    testId?: string,
+  ) => (
+    <select
+      className="section-select"
+      aria-label={ariaLabel}
+      {...(testId ? { 'data-testid': testId } : {})}
+      value={selectValueFor(sectionId, role.sectionPermissions[sectionId] as SectionLevel)}
+      disabled={busy || editingId !== null}
+      onChange={(e) =>
+        setSection.mutate({
+          roleId: role.id,
+          sectionId,
+          level: e.target.value as SectionLevel,
+        })
+      }
+    >
+      {sectionLevelOptions(sectionId).map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  );
+
+  // ADR-049 C-02 / DESIGN-012 amend (PLAN-027) — the Bulletin Feed/Messages sub-view checkboxes,
+  // rendered under the Bulletin Enabled/Disabled dropdown. They mirror how the action-grant boxes
+  // render (check-row). GREYED (disabled) when Bulletin is Disabled — the views are moot then. The
+  // boxes reflect the role's RESOLVED views (a role with no rows shows BOTH checked — the default);
+  // toggling one writes the whole set via setBulletinViews (audited). Clearing both re-opens both
+  // (the server default) — to hide Bulletin entirely, set the dropdown to Disabled.
+  const bulletinViewToggles = (role: (typeof roleRows)[number]) => {
+    const enabled = isSectionEnabled(role.sectionPermissions.bulletin as SectionLevel);
+    const current = new Set(role.bulletinViews as BulletinViewName[]);
+    return (
+      <span className="bulletin-view-toggles" data-testid={`bulletin-views-${role.name}`}>
+        {BULLETIN_VIEW_NAMES.map((view) => (
+          <label
+            key={view}
+            className="check-row check-row--inline"
+            data-disabled={!enabled || busy || editingId !== null || undefined}
+            title={
+              enabled
+                ? `Show the Bulletin ${BULLETIN_VIEW_LABELS[view]} view for ${role.name}`
+                : 'Enable Bulletin to choose views'
+            }
+          >
+            <input
+              type="checkbox"
+              data-testid={`bulletin-view-${view}-${role.name}`}
+              disabled={!enabled || busy || editingId !== null}
+              checked={current.has(view)}
+              onChange={(e) => {
+                const next = new Set(current);
+                if (e.target.checked) next.add(view);
+                else next.delete(view);
+                setBulletinViews.mutate({
+                  roleId: role.id,
+                  views: BULLETIN_VIEW_NAMES.filter((v) => next.has(v)),
+                });
+              }}
+            />
+            <span>{BULLETIN_VIEW_LABELS[view]}</span>
+          </label>
+        ))}
+      </span>
+    );
+  };
 
   if (roles.isLoading || catalog.isLoading) return <p className="muted">Loading roles…</p>;
   const loadError = roles.error ?? catalog.error;
@@ -608,7 +704,10 @@ export default function AdminRolesPage() {
                   {role.isDefault ? <span className="tag"> default</span> : null}
                   {role.grantsAll && !role.isAdmin ? <span className="tag"> all apps</span> : null}
                   {role.syncedTier ? (
-                    <span className="tag" title={`Projects to the Authentik/Open WebUI group “${role.name.toLowerCase()}”`}>
+                    <span
+                      className="tag"
+                      title={`Projects to the Authentik/Open WebUI group “${role.name.toLowerCase()}”`}
+                    >
                       {' '}
                       synced tier
                     </span>
@@ -639,23 +738,7 @@ export default function AdminRolesPage() {
                       Edit
                     </span>
                   ) : (
-                    <select
-                      className="section-select"
-                      aria-label={`Ledger access for ${role.name}`}
-                      value={role.sectionPermissions.ledger}
-                      disabled={busy || editingElsewhere}
-                      onChange={(e) =>
-                        setSection.mutate({
-                          roleId: role.id,
-                          sectionId: 'ledger',
-                          level: e.target.value as 'edit' | 'read_only' | 'disabled',
-                        })
-                      }
-                    >
-                      <option value="edit">Edit</option>
-                      <option value="read_only">Read-only</option>
-                      <option value="disabled">Disabled</option>
-                    </select>
+                    levelSelect(role, 'ledger', `Ledger access for ${role.name}`)
                   )}
                 </td>
                 {/* ADR-023 / DESIGN-010 D-09 — the Trash access level + a grant summary. The
@@ -671,23 +754,7 @@ export default function AdminRolesPage() {
                     </span>
                   ) : (
                     <span className="trash-cell">
-                      <select
-                        className="section-select"
-                        aria-label={`Trash access for ${role.name}`}
-                        value={role.sectionPermissions.trash}
-                        disabled={busy || editingElsewhere}
-                        onChange={(e) =>
-                          setSection.mutate({
-                            roleId: role.id,
-                            sectionId: 'trash',
-                            level: e.target.value as 'edit' | 'read_only' | 'disabled',
-                          })
-                        }
-                      >
-                        <option value="edit">Edit</option>
-                        <option value="read_only">Read-only</option>
-                        <option value="disabled">Disabled</option>
-                      </select>
+                      {levelSelect(role, 'trash', `Trash access for ${role.name}`)}
                       <span
                         className="action-badge"
                         data-testid={`trash-actions-summary-${role.name}`}
@@ -705,35 +772,22 @@ export default function AdminRolesPage() {
                     </span>
                   )}
                 </td>
-                {/* ADR-026 / DESIGN-012 D-04 — the Bulletin access level + a grant summary
-                    (same treatment as Trash: the per-action grid lives in the row editor). */}
+                {/* ADR-049 / DESIGN-012 amend (PLAN-027) — Bulletin is a 2-state Enabled/Disabled
+                    section (no meaningful Edit); its Feed/Messages SUB-VIEW checkboxes sit under the
+                    dropdown (greyed when Disabled) + the message-action grant summary. The per-action
+                    grid still lives in the row editor. */}
                 <td className="role-level-cell" data-label="Bulletin">
                   {role.isAdmin ? (
                     <span
                       className="muted"
-                      title="The Admin role implies Edit on every section and every message action"
+                      title="The Admin role sees every Bulletin view and implies every message action"
                     >
-                      Edit · all actions
+                      Enabled · both views · all actions
                     </span>
                   ) : (
-                    <span className="trash-cell">
-                      <select
-                        className="section-select"
-                        aria-label={`Bulletin access for ${role.name}`}
-                        value={role.sectionPermissions.bulletin}
-                        disabled={busy || editingElsewhere}
-                        onChange={(e) =>
-                          setSection.mutate({
-                            roleId: role.id,
-                            sectionId: 'bulletin',
-                            level: e.target.value as 'edit' | 'read_only' | 'disabled',
-                          })
-                        }
-                      >
-                        <option value="edit">Edit</option>
-                        <option value="read_only">Read-only</option>
-                        <option value="disabled">Disabled</option>
-                      </select>
+                    <span className="bulletin-cell">
+                      {levelSelect(role, 'bulletin', `Bulletin access for ${role.name}`)}
+                      {bulletinViewToggles(role)}
                       <span
                         className="action-badge"
                         data-testid={`message-actions-summary-${role.name}`}
@@ -759,29 +813,13 @@ export default function AdminRolesPage() {
                   {role.isAdmin ? (
                     <span
                       className="muted"
-                      title="The Admin role implies Edit on every section and Full metrics access"
+                      title="The Admin role sees every section and Full metrics access"
                     >
-                      Edit · full
+                      Enabled · full
                     </span>
                   ) : (
                     <span className="trash-cell">
-                      <select
-                        className="section-select"
-                        aria-label={`Metrics visibility for ${role.name}`}
-                        value={role.sectionPermissions.metrics}
-                        disabled={busy || editingElsewhere}
-                        onChange={(e) =>
-                          setSection.mutate({
-                            roleId: role.id,
-                            sectionId: 'metrics',
-                            level: e.target.value as 'edit' | 'read_only' | 'disabled',
-                          })
-                        }
-                      >
-                        <option value="edit">Edit</option>
-                        <option value="read_only">Read-only</option>
-                        <option value="disabled">Disabled</option>
-                      </select>
+                      {levelSelect(role, 'metrics', `Metrics visibility for ${role.name}`)}
                       <select
                         className="section-select"
                         aria-label={`Metrics detail level for ${role.name}`}
@@ -809,29 +847,17 @@ export default function AdminRolesPage() {
                   {role.isAdmin ? (
                     <span
                       className="muted"
-                      title="The Admin role implies Edit on every section, including the ytdl-sub Library sub-tabs"
+                      title="The Admin role sees every section, including the ytdl-sub Library sub-tabs"
                     >
-                      Edit
+                      Enabled
                     </span>
                   ) : (
-                    <select
-                      className="section-select"
-                      aria-label={`ytdl-sub Library visibility for ${role.name}`}
-                      data-testid={`ytdlsub-level-${role.name}`}
-                      value={role.sectionPermissions.ytdlsub}
-                      disabled={busy || editingElsewhere}
-                      onChange={(e) =>
-                        setSection.mutate({
-                          roleId: role.id,
-                          sectionId: 'ytdlsub',
-                          level: e.target.value as 'edit' | 'read_only' | 'disabled',
-                        })
-                      }
-                    >
-                      <option value="edit">Edit</option>
-                      <option value="read_only">Read-only</option>
-                      <option value="disabled">Disabled</option>
-                    </select>
+                    levelSelect(
+                      role,
+                      'ytdlsub',
+                      `ytdl-sub Library visibility for ${role.name}`,
+                      `ytdlsub-level-${role.name}`,
+                    )
                   )}
                 </td>
                 <td data-label="Actions">
@@ -944,10 +970,11 @@ export default function AdminRolesPage() {
             </label>
             {addForm.syncedTier ? (
               <p className="field-hint">
-                On create, the Authentik group and the same-named Open WebUI group are created and the
-                role starts managing that group’s membership. The tier’s <strong>existence</strong>{' '}
-                propagates automatically — configure each app’s <strong>entitlements</strong> (e.g. Open
-                WebUI model access, Kavita libraries) in that app.
+                On create, the Authentik group and the same-named Open WebUI group are created and
+                the role starts managing that group’s membership. The tier’s{' '}
+                <strong>existence</strong> propagates automatically — configure each app’s{' '}
+                <strong>entitlements</strong> (e.g. Open WebUI model access, Kavita libraries) in
+                that app.
               </p>
             ) : null}
           </fieldset>

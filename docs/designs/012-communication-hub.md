@@ -220,10 +220,41 @@ attributedUserName }` + `nextCursor`. NO full filter-engine port backend-side (Q
   Poster** + **Bulletin Moderator** roles + two Feed notifications, and `communication.spec.ts` POSTs
   per-source fixtures asserting rows land (attribution/dedupe) + secret gating.
 
+### D-09 — Amendment 2026-07-11 (PLAN-027, ADR-049) — Bulletin sub-view visibility grants
+
+The Bulletin section splits into two SEPARATELY GRANTABLE sub-views: the **Feed** and the
+**Messages** board.
+
+- **Model.** New `role_bulletin_view_grants` table — one row per granted view (`feed`, `messages`),
+  a clone of `role_message_action_grants` in SHAPE (composite PK, FK cascade, CHECK, guard-listed).
+  Written only by the `@hnet/domain` `setRoleBulletinViews` single-writer, which co-writes an
+  `update_bulletin_views` permission_audit row in the same tx (hard rule 6). Migration **0039**.
+- **Resolution (default-ON — the key divergence from message-actions).** A role with **NO** view
+  rows resolves to **BOTH** views (ADR-026 C-02 "Bulletin is for everyone" — the section-default
+  pattern, since these gate VISIBILITY, not an opt-in power). **Present** rows are the exact
+  narrowing allowlist. Admin implies both (no rows). Writing an empty set RE-OPENS both — to hide
+  Bulletin entirely, set the section level Disabled. The session carries the resolved views.
+- **Enforcement (server-side — the correctness bar).** `communication.feed` gates on the `feed`
+  grant, `communication.messages.list/post/edit/moderate` on the `messages` grant
+  (`bulletinViewProcedure`, composed on top of the coarse `('bulletin','read_only')` gate; the
+  message-action rung now builds on the messages-view gate). A role without a view gets **FORBIDDEN**
+  — never a client-only hide. The `/bulletin` client renders only granted sub-tabs (a messages-only
+  role has NO Feed tab and lands on Messages).
+- **Admin UI (amends D-04).** The `/admin/roles` Bulletin cell becomes an **Enabled/Disabled**
+  dropdown (ADR-049 — Bulletin has no meaningful Edit) with **[Feed] [Messages] checkboxes** under
+  it (greyed/disabled when Bulletin is Disabled — the views are moot then; rendered, never removed,
+  so no reflow — ADR-015), alongside the existing message-action count badge. Applied on change via
+  `roles.setBulletinViews`; the boxes reflect the role's RESOLVED views (a no-row role shows both
+  checked).
+- **Seed / backfill.** Only the **Default** role is narrowed — migration 0039 seeds its
+  `messages`-only row (the owner: the Feed is Family/Friends-oriented). Family/Friends/custom roles
+  keep both via the no-row default (no backfill, no silent loss); Admin implies both.
+
 ## Alternatives considered
 
 See ADR-026 "Considered options" (notifications-in-ledger; Maintainerr-specific route; Messages
-absorb Fix; BC-03 extension). All rejected there.
+absorb Fix; BC-03 extension). All rejected there. The sub-view grant model + the deny-by-default
+alternative are weighed in ADR-049 (Consequences C-02/C-04).
 
 ## Test strategy
 

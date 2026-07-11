@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { account } from '@hnet/db';
-import { MESSAGE_ACTIONS, SEEDED_ROLE_IDS, TRASH_ACTIONS } from '@hnet/db/schema';
+import { BULLETIN_VIEWS, MESSAGE_ACTIONS, SEEDED_ROLE_IDS, TRASH_ACTIONS } from '@hnet/db/schema';
 import { assignRole, createRole, setRoleTrashActions, setSectionPermission } from '@hnet/domain';
 import { getSessionExtension } from '../src/index';
 import { OIDC_PROVIDER_ID } from '../src/env';
@@ -44,6 +44,9 @@ describe('session extension (DESIGN-002 D-06 / DESIGN-003 D-01, ADR-012)', () =>
         trashActions: [],
         // ADR-026 — no grant rows ⇒ no Bulletin message actions.
         messageActions: [],
+        // ADR-049 — the Default role is seeded (migration 0039) to the messages view ONLY (the
+        // owner keeps the Feed off Default); a stored row ⇒ the exact allowlist, so no feed.
+        bulletinViews: ['messages'],
         // ADR-037 — the default role's stored metrics_level column (default 'limited').
         metricsLevel: 'limited',
       },
@@ -79,6 +82,8 @@ describe('session extension (DESIGN-002 D-06 / DESIGN-003 D-01, ADR-012)', () =>
         trashActions: [...TRASH_ACTIONS],
         // ADR-026 C-04 — admin implies EVERY Bulletin message action (no rows).
         messageActions: [...MESSAGE_ACTIONS],
+        // ADR-049 C-02 — admin implies BOTH Bulletin views (no rows).
+        bulletinViews: [...BULLETIN_VIEWS],
         // ADR-037 C-01 — admin implies 'full' metrics access.
         metricsLevel: 'full',
       },

@@ -17,6 +17,18 @@ export const FEED_SOURCE_LABELS: Record<FeedSourceName, string> = {
 export const MESSAGE_ACTION_NAMES = ['post', 'moderate'] as const;
 export type MessageActionName = (typeof MESSAGE_ACTION_NAMES)[number];
 
+/** The Bulletin SUB-VIEWS a role's visibility can be scoped to (mirrors @hnet/db BULLETIN_VIEWS —
+ *  ADR-049 C-02, PLAN-027). A role with none granted resolves to BOTH (server default); the owner's
+ *  Default role is narrowed to `messages` only. */
+export const BULLETIN_VIEW_NAMES = ['feed', 'messages'] as const;
+export type BulletinViewName = (typeof BULLETIN_VIEW_NAMES)[number];
+
+/** Human labels for the Bulletin-view checkboxes on /admin/roles. */
+export const BULLETIN_VIEW_LABELS: Record<BulletinViewName, string> = {
+  feed: 'Feed',
+  messages: 'Messages',
+};
+
 /** Human labels for the per-action grant grid (/admin/roles) — destructive ones say so. */
 export const MESSAGE_ACTION_LABELS: Record<MessageActionName, string> = {
   post: 'Post messages (and edit their own)',

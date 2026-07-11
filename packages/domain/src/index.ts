@@ -16,6 +16,8 @@ export * from './trash-permissions';
 export * from './notifications';
 // ADR-026 / DESIGN-012 — Bulletin: message action grants + the Messages board single-writers
 export * from './message-permissions';
+// ADR-049 / DESIGN-012 amend (PLAN-027) — Bulletin SUB-VIEW (feed/messages) visibility single-writer
+export * from './bulletin-view-permissions';
 export * from './messages';
 // ADR-023 / DESIGN-010 — Trash orchestrators over Maintainerr (confined write surface — guard test)
 export * from './maintainerr-clients';

@@ -32,6 +32,7 @@ import {
   FEED_SOURCE_NAMES,
   MESSAGE_STATUS_LABELS,
   messageStatusTone,
+  type BulletinViewName,
   type FeedSourceName,
   type MessageActionName,
   type MessageStatusName,
@@ -40,6 +41,9 @@ import {
 export interface BulletinAccess {
   level: 'edit' | 'read_only';
   actions: MessageActionName[];
+  // ADR-049 C-02 (PLAN-027) — the granted Bulletin SUB-VIEWS; the client renders ONLY these
+  // sub-tabs (a messages-only role sees no Feed tab; the feed endpoint FORBIDs it server-side too).
+  views: BulletinViewName[];
 }
 
 const BULLETIN_TABS = [
@@ -48,8 +52,12 @@ const BULLETIN_TABS = [
 ] as const;
 type TabKey = (typeof BULLETIN_TABS)[number]['key'];
 
-function resolveTab(raw: string | null): TabKey {
-  return BULLETIN_TABS.some((t) => t.key === raw) ? (raw as TabKey) : 'feed';
+/** Resolve the active tab against the sub-views the role may see: honour ?tab when it's granted,
+ *  else fall back to the FIRST granted view (so a messages-only role lands on Messages, never a
+ *  Feed tab that isn't there). */
+function resolveTab(raw: string | null, available: readonly TabKey[]): TabKey {
+  if (raw !== null && (available as readonly string[]).includes(raw)) return raw as TabKey;
+  return available[0] ?? 'messages';
 }
 
 function kindLabel(arrKind: string | null): string | null {
@@ -259,7 +267,11 @@ function FeedTab() {
         </p>
       ) : rows.length > 0 ? (
         <div className={`bulletin-feedwrap${refreshing ? ' is-refreshing' : ''}`}>
-          <table className="admin-table bulletin-feed" aria-busy={refreshing} data-testid="bulletin-feed">
+          <table
+            className="admin-table bulletin-feed"
+            aria-busy={refreshing}
+            data-testid="bulletin-feed"
+          >
             <thead>
               <tr>
                 <th>When</th>
@@ -634,7 +646,11 @@ function MessagesTab({ access, viewerId }: { access: BulletinAccess; viewerId: s
             const mine = m.authorUserId === viewerId;
             return (
               <li key={m.id}>
-                <article className="card bulletin-msg" data-status={m.status} data-testid="message-card">
+                <article
+                  className="card bulletin-msg"
+                  data-status={m.status}
+                  data-testid="message-card"
+                >
                   <header className="bulletin-msg__head">
                     <span className="bulletin-msg__meta">
                       <strong>{m.authorName ?? '(deleted user)'}</strong>
@@ -668,7 +684,9 @@ function MessagesTab({ access, viewerId }: { access: BulletinAccess; viewerId: s
                               disabled={busy}
                               restingAriaLabel={`Hide this message from the board — content is preserved — click twice to confirm`}
                               confirmAriaLabel="Confirm hide this message"
-                              onConfirm={() => moderate.mutate({ messageId: m.id, status: 'hidden' })}
+                              onConfirm={() =>
+                                moderate.mutate({ messageId: m.id, status: 'hidden' })
+                              }
                             />
                           ) : (
                             <button
@@ -676,7 +694,9 @@ function MessagesTab({ access, viewerId }: { access: BulletinAccess; viewerId: s
                               className="btn sm"
                               data-testid="message-restore"
                               disabled={busy}
-                              onClick={() => moderate.mutate({ messageId: m.id, status: 'visible' })}
+                              onClick={() =>
+                                moderate.mutate({ messageId: m.id, status: 'visible' })
+                              }
                             >
                               Restore
                             </button>
@@ -689,7 +709,9 @@ function MessagesTab({ access, viewerId }: { access: BulletinAccess; viewerId: s
                               disabled={busy}
                               restingAriaLabel={`Delete this message — soft delete, content preserved for audit — click twice to confirm`}
                               confirmAriaLabel="Confirm delete this message"
-                              onConfirm={() => moderate.mutate({ messageId: m.id, status: 'deleted' })}
+                              onConfirm={() =>
+                                moderate.mutate({ messageId: m.id, status: 'deleted' })
+                              }
                             />
                           ) : null}
                           <button
@@ -909,7 +931,11 @@ function BulletinContent({ access, viewerId }: { access: BulletinAccess; viewerI
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const active = resolveTab(searchParams.get('tab'));
+  // ADR-049 C-02 (PLAN-027) — only the granted sub-views render as tabs; a role narrowed to
+  // messages-only has NO Feed tab (and the feed endpoint FORBIDs it server-side).
+  const availableTabs = BULLETIN_TABS.filter((t) => access.views.includes(t.key));
+  const tabKeys = availableTabs.map((t) => t.key);
+  const active = resolveTab(searchParams.get('tab'), tabKeys);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   const selectTab = (key: TabKey) => {
@@ -920,14 +946,15 @@ function BulletinContent({ access, viewerId }: { access: BulletinAccess; viewerI
   };
 
   const onTabKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const count = availableTabs.length;
     let next = index;
-    if (e.key === 'ArrowRight') next = (index + 1) % BULLETIN_TABS.length;
-    else if (e.key === 'ArrowLeft') next = (index - 1 + BULLETIN_TABS.length) % BULLETIN_TABS.length;
+    if (e.key === 'ArrowRight') next = (index + 1) % count;
+    else if (e.key === 'ArrowLeft') next = (index - 1 + count) % count;
     else if (e.key === 'Home') next = 0;
-    else if (e.key === 'End') next = BULLETIN_TABS.length - 1;
+    else if (e.key === 'End') next = count - 1;
     else return;
     e.preventDefault();
-    const target = BULLETIN_TABS[next];
+    const target = availableTabs[next];
     if (!target) return;
     selectTab(target.key);
     tabRefs.current[next]?.focus();
@@ -938,7 +965,7 @@ function BulletinContent({ access, viewerId }: { access: BulletinAccess; viewerI
       <h1 className="page-title">Bulletin</h1>
 
       <div className="library-tabs" role="tablist" aria-label="Bulletin sections">
-        {BULLETIN_TABS.map((tab, index) => (
+        {availableTabs.map((tab, index) => (
           <button
             key={tab.key}
             ref={(el) => {

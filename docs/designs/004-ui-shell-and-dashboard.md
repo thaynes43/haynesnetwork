@@ -769,6 +769,29 @@ data model, activation, dismissal, ARIA and audit are all untouched.
   e2e: the member journey asserts the markdown link renders as a real new-tab anchor and the raw
   syntax never shows.
 
+### D-18 — Amendment 2026-07-11 (PLAN-027, ADR-049) — roles-grid section capability map
+
+The `/admin/roles` grid (D-11) stopped rendering no-op permission levels. A **section capability
+map** (`apps/web/lib/role-sections.ts`, the single source of truth) declares, per section, which
+control it renders — DERIVED from the actual gating code (which procedures pass `minLevel: 'edit'`),
+not guessed:
+
+- **`'tri'` — Edit / Read-only / Disabled.** Sections with a real `edit` rung: **Ledger**
+  (`ledger.bulkAddAndSearch` = `sectionProcedure('ledger','edit')`) and **Trash**
+  (`trash.saveRule`/`deleteRule` = `trashActionProcedure('edit_rules','edit')` + `/settings/trash`
+  needs level `edit`).
+- **`'toggle'` — Enabled / Disabled.** Sections that only ever gate on `read_only`: **Bulletin**
+  (feed/messages both gate `('bulletin','read_only')`; post/moderate are message-action grants;
+  Feed/Messages visibility is the ADR-049 sub-view grant), **Metrics** (the full|limited detail is a
+  SEPARATE control), **ytdl-sub** and **Books** (read-only surfaces). "Enabled" persists the stored
+  `read_only`; "Disabled" persists `disabled` — the `SECTION_PERMISSION_LEVELS` enum + DB values are
+  UNCHANGED. A section that later gains a real Edit (e.g. ytdl-sub per PLAN-025) flips its map entry
+  to `'tri'` — no grid rewrite.
+
+The Bulletin cell additionally carries the **Feed/Messages sub-view checkboxes** (greyed when
+Bulletin is Disabled) per DESIGN-012 D-09. Constant width across every section (ADR-015 — a section
+swaps its own dropdown options / toggles its own checkboxes, never a neighbour row).
+
 ## Open questions
 
 | ID   | Question                                                                                                                                                                                           | Resolution                                                                                                            |

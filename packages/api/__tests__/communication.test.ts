@@ -83,6 +83,33 @@ describe('communication.feed (ADR-026 D-05)', () => {
     await forbidden(() => disabled.communication.feed({}));
   });
 
+  it('ADR-049: a role narrowed to messages-only is FORBIDDEN from the feed but can list messages', async () => {
+    // Bulletin ENABLED (read_only) + a messages-ONLY sub-view grant (the owner's Default-role shape):
+    // the feed endpoint FORBIDs — server-side, not a UI hide — while the Messages board stays open.
+    const messagesOnly = caller(
+      makeCtx(
+        t.db,
+        sessionUser(memberRow, undefined, undefined, undefined, undefined, undefined, ['messages']),
+      ),
+    );
+    await forbidden(() => messagesOnly.communication.feed({}));
+    await expect(messagesOnly.communication.messages.list({})).resolves.toMatchObject({
+      items: expect.any(Array),
+    });
+
+    // The mirror: a feed-only role can read the feed but is FORBIDDEN from the Messages board.
+    const feedOnly = caller(
+      makeCtx(
+        t.db,
+        sessionUser(memberRow, undefined, undefined, undefined, undefined, undefined, ['feed']),
+      ),
+    );
+    await expect(feedOnly.communication.feed({})).resolves.toMatchObject({
+      items: expect.any(Array),
+    });
+    await forbidden(() => feedOnly.communication.messages.list({}));
+  });
+
   it('filters by hasMedia', async () => {
     const withMedia = await memberApi().communication.feed({ hasMedia: true });
     expect(withMedia.items.every((i) => i.mediaItemId !== null)).toBe(true);
@@ -95,16 +122,20 @@ describe('communication.feed (ADR-026 D-05)', () => {
     let cursor: string | null | undefined;
     let guard = 0;
     do {
-      const page = await memberApi().communication.feed({ source: 'tautulli', limit: 2, cursor: cursor ?? undefined });
+      const page = await memberApi().communication.feed({
+        source: 'tautulli',
+        limit: 2,
+        cursor: cursor ?? undefined,
+      });
       for (const it of page.items) seen.push(it.id);
       cursor = page.nextCursor;
     } while (cursor && ++guard < 10);
     // All five tautulli rows, each exactly once, newest occurredAt first.
     expect(seen).toHaveLength(5);
     expect(new Set(seen).size).toBe(5);
-    const titles = (await memberApi().communication.feed({ source: 'tautulli', limit: 50 })).items.map(
-      (i) => i.title,
-    );
+    const titles = (
+      await memberApi().communication.feed({ source: 'tautulli', limit: 50 })
+    ).items.map((i) => i.title);
     expect(titles).toEqual(['play 4', 'play 3', 'play 2', 'play 1', 'play 0']);
   });
 });
@@ -127,8 +158,10 @@ describe('communication.messages — action gating + moderation (ADR-026 D-06)',
   // Callers with each grant shape (bulletin read_only default; message actions overridden).
   const reader = () => caller(makeCtx(t.db, sessionUser(author)));
   const poster = () => caller(makeCtx(t.db, sessionUser(author, undefined, undefined, ['post'])));
-  const posterOther = () => caller(makeCtx(t.db, sessionUser(other, undefined, undefined, ['post'])));
-  const moderator = () => caller(makeCtx(t.db, sessionUser(other, undefined, undefined, ['moderate'])));
+  const posterOther = () =>
+    caller(makeCtx(t.db, sessionUser(other, undefined, undefined, ['post'])));
+  const moderator = () =>
+    caller(makeCtx(t.db, sessionUser(other, undefined, undefined, ['moderate'])));
 
   it('a reader (no post grant) is FORBIDDEN from posting', async () => {
     await forbidden(() => reader().communication.messages.post({ body: 'nope' }));
@@ -137,7 +170,10 @@ describe('communication.messages — action gating + moderation (ADR-026 D-06)',
   it('a poster can post + edit their OWN message but not another’s', async () => {
     const posted = await poster().communication.messages.post({ subject: 'hi', body: 'first' });
     expect(posted.id).toBeTruthy();
-    const edited = await poster().communication.messages.edit({ messageId: posted.id, body: 'edited' });
+    const edited = await poster().communication.messages.edit({
+      messageId: posted.id,
+      body: 'edited',
+    });
     expect(edited.editedAt).not.toBeNull();
     // Another poster editing it → domain MessageNotOwned → FORBIDDEN.
     await forbidden(() =>
@@ -192,7 +228,13 @@ describe('communication.messages — action gating + moderation (ADR-026 D-06)',
   it('the moderation trail is NOT leaked to non-moderators', async () => {
     // Seed a visible message that was previously moderated (visible again) via the domain writer.
     const posted = await postMessage({ db: t.db, authorId: author.id, body: 'restored later' });
-    await moderateMessage({ db: t.db, messageId: posted.id, moderatorId: other.id, status: 'visible', note: 'ok' });
+    await moderateMessage({
+      db: t.db,
+      messageId: posted.id,
+      moderatorId: other.id,
+      status: 'visible',
+      note: 'ok',
+    });
     const memberList = await reader().communication.messages.list({});
     const seen = memberList.items.find((m) => m.id === posted.id);
     expect(seen).toBeDefined();
@@ -221,9 +263,21 @@ describe('communication.messages.list — repair-status hint (Bulletin title dee
     t = await bootMigratedDb();
     author = await createUser(t.db, { email: 'msgauthor@example.com', displayName: 'Msg Author' });
     requester = await createUser(t.db, { email: 'fixer@example.com', displayName: 'Fix Er' });
-    itemOpen = await seedMediaItem(t.db, 'radarr', { title: 'Open Fix Movie', tmdbId: 7001, year: 2021 });
-    itemPast = await seedMediaItem(t.db, 'radarr', { title: 'Past Fix Movie', tmdbId: 7002, year: 2019 });
-    itemNone = await seedMediaItem(t.db, 'radarr', { title: 'No Fix Movie', tmdbId: 7003, year: 2018 });
+    itemOpen = await seedMediaItem(t.db, 'radarr', {
+      title: 'Open Fix Movie',
+      tmdbId: 7001,
+      year: 2021,
+    });
+    itemPast = await seedMediaItem(t.db, 'radarr', {
+      title: 'Past Fix Movie',
+      tmdbId: 7002,
+      year: 2019,
+    });
+    itemNone = await seedMediaItem(t.db, 'radarr', {
+      title: 'No Fix Movie',
+      tmdbId: 7003,
+      year: 2018,
+    });
 
     // itemOpen — one OPEN (pending) fix ⇒ openFix true, fixCount 1.
     await createFixRequest({
@@ -252,9 +306,24 @@ describe('communication.messages.list — repair-status hint (Bulletin title dee
     }
     // itemNone — no fixes ⇒ openFix false, fixCount 0.
 
-    await postMessage({ db: t.db, authorId: author.id, body: 'open fix here', mediaItemId: itemOpen.id });
-    await postMessage({ db: t.db, authorId: author.id, body: 'past fixes here', mediaItemId: itemPast.id });
-    await postMessage({ db: t.db, authorId: author.id, body: 'no fix here', mediaItemId: itemNone.id });
+    await postMessage({
+      db: t.db,
+      authorId: author.id,
+      body: 'open fix here',
+      mediaItemId: itemOpen.id,
+    });
+    await postMessage({
+      db: t.db,
+      authorId: author.id,
+      body: 'past fixes here',
+      mediaItemId: itemPast.id,
+    });
+    await postMessage({
+      db: t.db,
+      authorId: author.id,
+      body: 'no fix here',
+      mediaItemId: itemNone.id,
+    });
     await postMessage({ db: t.db, authorId: author.id, body: 'no link here' });
   });
 

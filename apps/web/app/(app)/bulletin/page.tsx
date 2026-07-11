@@ -10,7 +10,7 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { getServerSession } from '@hnet/auth';
 import { effectiveSectionLevel } from '@hnet/api';
-import { MESSAGE_ACTIONS } from '@hnet/db';
+import { BULLETIN_VIEWS, BULLETIN_VIEW_DEFAULTS, MESSAGE_ACTIONS } from '@hnet/db';
 import { BulletinClient } from './bulletin-client';
 
 export default async function BulletinPage() {
@@ -39,5 +39,12 @@ export default async function BulletinPage() {
 
   // ADR-026 C-04 — admin implies both actions with no rows; otherwise the session grants.
   const actions = role.isAdmin ? [...MESSAGE_ACTIONS] : (role.messageActions ?? []);
-  return <BulletinClient access={{ level, actions }} viewerId={session.user.id} />;
+  // ADR-049 C-02 (PLAN-027) — the caller's granted Bulletin SUB-VIEWS: admin ⇒ both; else the
+  // session-resolved set (already carrying the "no rows ⇒ both" default). The client renders only
+  // these sub-tabs — a messages-only role (e.g. Default) sees NO Feed tab, and the feed endpoint
+  // FORBIDs it server-side regardless. Defense in depth if the session lacks the field.
+  const views = role.isAdmin
+    ? [...BULLETIN_VIEWS]
+    : (role.bulletinViews ?? [...BULLETIN_VIEW_DEFAULTS]);
+  return <BulletinClient access={{ level, actions, views }} viewerId={session.user.id} />;
 }
