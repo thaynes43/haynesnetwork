@@ -17,6 +17,7 @@ import {
   type ArrKind,
   type Database,
   type DbClient,
+  type PlexServerSlug,
 } from '@hnet/db';
 import {
   buildPlexWebDeepLink,
@@ -158,6 +159,41 @@ export async function resolvePlexPlayTargets(
       libraryName: r.libraryName,
       url: buildPlexWebDeepLink(r.machineIdentifier, r.ratingKey),
     }));
+}
+
+export interface PlexArtMatch {
+  /** The matched Plex server the season/episode art is read + transcoded from. */
+  serverSlug: PlexServerSlug;
+  /** The matched Plex title's ratingKey (the show, for a TV item) — the art subtree root. */
+  ratingKey: string;
+}
+
+/**
+ * ADR-048 / DESIGN-005 D-22 (PLAN-030) — the FIRST accessible *arr→Plex match for an item's season/episode
+ * art (server slug + the matched title's ratingKey). Reuses the ADR-047 match join + the SAME accessibility
+ * filter as resolvePlexPlayTargets (a title mirrored across several libraries picks the first the caller can
+ * access, ordered by server slug then library name for determinism). null ⇒ unmatched OR the caller can
+ * access none of its libraries — so the season rows simply show no art (PLAN-030 Q-01; THE INVARIANT: a
+ * withheld title never yields an art source). Read-only.
+ */
+export async function resolveArtMatchForItem(
+  database: DbClient,
+  gate: LibraryAccessGate,
+  mediaItemId: string,
+): Promise<PlexArtMatch | null> {
+  const rows = await database
+    .select({
+      plexLibraryId: mediaPlexMatches.plexLibraryId,
+      ratingKey: mediaPlexMatches.ratingKey,
+      serverSlug: plexServers.slug,
+    })
+    .from(mediaPlexMatches)
+    .innerJoin(plexLibraries, eq(plexLibraries.id, mediaPlexMatches.plexLibraryId))
+    .innerJoin(plexServers, eq(plexServers.id, plexLibraries.serverId))
+    .where(eq(mediaPlexMatches.mediaItemId, mediaItemId))
+    .orderBy(plexServers.slug, plexLibraries.name);
+  const hit = rows.find((r) => gate.unrestricted || gate.allowedLibraryIds.has(r.plexLibraryId));
+  return hit ? { serverSlug: hit.serverSlug, ratingKey: hit.ratingKey } : null;
 }
 
 /**

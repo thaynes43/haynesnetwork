@@ -1,8 +1,9 @@
 # DESIGN-017: ytdl-sub Library sub-tabs — direct Plex read, section-gated, Plex-thumb proxy
 
 - **Status:** Accepted
-- **Last updated:** 2026-07-10 (v2 — the owner's morning UX package: **D-07** poster streamlining per
-  **ADR-041**, **D-08** Library tab order, **D-09** read-only series drill-in; R-131..R-132, T-120)
+- **Last updated:** 2026-07-11 (v3 — **D-09 amend:** season-row poster icon, the restored Peloton duration
+  posters; ADR-048 / PLAN-030. v2 2026-07-10 — the owner's morning UX package: **D-07** poster streamlining
+  per **ADR-041**, **D-08** Library tab order, **D-09** read-only series drill-in; R-131..R-132, T-120)
 - **Satisfies:** PRD-001 **R-121..R-124** + **R-131..R-132**; governed by **ADR-038** (direct-Plex read
   model + `ytdlsub` section gate + Plex-thumb proxy) and **ADR-041** (poster transcode variants + LRU +
   ETag). Reuses ADR-017/DESIGN-007 (`@hnet/plex` read client + registry),
@@ -263,7 +264,7 @@ actions, no write surface**.
 
   | Procedure | Input | Returns |
   | --------- | ----- | ------- |
-  | `ytdlsub.detail` | `{ library, ratingKey }` | `{ found, unavailable, show: {ratingKey,title,summary,posterUrl,seasonCount,episodeCount,year}, seasons: [{ratingKey,title,index,episodeCount}] }` |
+  | `ytdlsub.detail` | `{ library, ratingKey }` | `{ found, unavailable, show: {ratingKey,title,summary,posterUrl,seasonCount,episodeCount,year}, seasons: [{ratingKey,title,index,episodeCount,posterUrl}] }` |
   | `ytdlsub.episodes` | `{ library, seasonRatingKey }` | `{ found, unavailable, episodes: [{ratingKey,title,index,airDate,durationMs,stillUrl}] }` |
 
   **Section confinement:** both resolve the library's section key by title (ADR-038 C-03) and verify
@@ -278,8 +279,13 @@ actions, no write surface**.
   dictionary gains `peloton`/`youtube` keys → `/library?tab=…`), a `.card.detail-head` (2:3
   `MediaPoster` + title + a muted "N seasons · M episodes" badge row + the show summary when present),
   then one `.card.admin-section` of collapsible `.season` `<details>` blocks (the sonarr season
-  grammar). Expanding a season lazily queries `ytdlsub.episodes` (enabled-on-open — a 261-episode
-  Peloton season never loads up front) and renders read-only episode rows: a reserved 16:9 still box
+  grammar). **PLAN-030 amend:** each season `<summary>` now shows a small 2:3 season-poster icon
+  (`.season__poster`, `MediaPoster` `poster` shape) when the Plex season carries `thumb` — the season's
+  `posterUrl` is the same `/api/ytdlsub/poster?…&size=grid` proxy URL as the show tile (Peloton's restored
+  5/10/…/120-minute duration posters, PLAN-024, become VISIBLE in the row); a reserved box (ADR-015
+  reflow-free), no icon when absent. Expanding a season lazily queries `ytdlsub.episodes` (enabled-on-open —
+  a 261-episode Peloton season never loads up front) and renders read-only episode rows: a reserved 16:9
+  still box
   (`.epi-still`, token colors only) + title + muted `date · duration` (`formatDay` /
   `formatRuntime`). `<details>` expansion is the sanctioned ADR-015 in-place exception; loading states
   are muted text inside the expanded body (no reflow of neighbors).
