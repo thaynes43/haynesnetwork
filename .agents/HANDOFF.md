@@ -4,7 +4,52 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-- **Last updated:** 2026-07-11 — **PLAN-031 MAM BOOKS ACQUISITION — PHASE B COMPLETE + LIVE
+## ▶ NEXT SESSION — start here (2026-07-11 board audit)
+
+**Site is live at https://haynesnetwork.com; latest release v0.44.1.** This session shipped the
+history-navigation contract (v0.43.1), the **Helpdesk** ticket system (v0.44.0) + its state-filter
+polish (v0.44.1), wired the **books/comics/audiobooks acquisition pipeline** (live + seeding), and
+authored the **full design** for the Library views + sorting/filtering overhaul. Milestone details
+are the dated bullets below; **the forward-looking queue + recommendations live in
+`.agents/plans/README.md` → "Phase-3 queue".** Plans are in `.agents/plans/` (active) and
+`.agents/plans/completed/` (shipped) — the board was audited today, so the split is trustworthy.
+
+**What to build next (in recommended order):**
+1. **PLAN-029 — Library views, grouping, per-view Sorting & Filtering.** DESIGN COMPLETE and the
+   biggest queued value. Docs Accepted: `docs/adrs/051-library-views-and-sort-filter-registries.md`,
+   `052-per-user-library-preferences.md`, `053-per-user-watch-read-state-attribution.md`,
+   `docs/designs/026-library-views-grouping-and-sort-filter.md`; the recon it's grounded in is
+   `.agents/context/2026-07-11-plex-sort-filter-recon.md`. Owner rulings are locked in the plan.
+   **Blocked only on:** the owner's agent-type decision (recommend Opus for the data/domain layer —
+   `released_at` sync-add, prefs table, per-user watch-state mapping — and a Fable agent for the
+   sort/filter UX) and Fable budget (reset Mon 2026-07-13 ~07:59).
+2. **The books content engine — PLAN-032 (lists) + PLAN-033 (requests/wanted-view).** The owner
+   explicitly wants book/comic/audiobook content flowing; there is no Kometa/Lidarr-lists/requests
+   path for this media type yet. Both are Intake — each needs a scoping session. **PLAN-039**
+   (cap-aware pacing governor) pairs with them. First real content workload = the **F-08 comic
+   re-grabs** (24 series + 4 issues, listed in `.agents/context/2026-07-11-polish-loop.md`).
+3. **PLAN-038** (ticket exact-episode linking — scoped, all Qs ruled) and **small polish** (F-06
+   book-cover latency, F-09 bad-epub parsing).
+
+**Owner-side / blocked:** **SMTP relay (F-04)** needs the owner in 1Password (app-password/OAuth) —
+it unblocks PLAN-035 (ticket emails) and estate-wide email. Ratify the **"Helpdesk" vs "Tickets"**
+name at the screenshot review (12 hermetic shots exist; capture script
+`apps/web/e2e/support/capture-helpdesk.ts`).
+
+**Model-switch watch (CRITICAL):** a Fable→Opus safeguard flipped the coordinator session repeatedly
+2026-07-11 — the owner caught each. The probe-before-dispatch cadence checks SUBAGENT models only; it
+does NOT catch a coordinator flip mid-conversation. Keep prompt phrasing neutral; **discuss agent
+type with the owner before every dispatch**; expect the owner to be the backstop. See
+`[[fable-safeguard-model-switch]]` + `[[delegation-fable-ux-opus-fixes]]` (budget note).
+
+---
+
+- **Last updated:** 2026-07-11 — **BOARD AUDIT + SESSION-3 WRAP.** Filed to `completed/`:
+  PLAN-036 (history contract v0.43.1), PLAN-034 (Helpdesk v0.44.0), PLAN-031 (MAM acquisition Phase B),
+  PLAN-021 (AI/Open WebUI — shipped earlier, filed in the audit). Deleted 3 stale active duplicates
+  (023/027/034 pre-completion copies). PLAN-029 design docs merged (plan stays ACTIVE for the build).
+  Milestone detail for the MAM pipeline ↓.
+- **Prior milestone:** 2026-07-11 — **PLAN-031 MAM BOOKS ACQUISITION — PHASE B COMPLETE + LIVE
   (cluster-only; no app-repo/version change).** MyAnonaMouse is wired into the books pipeline end
   to end. **haynes-ops PR #2024 (merged):** `myanonamouse` ExternalSecret (two 1P session cookies
   — Session A ASN-locked→Prowlarr, Session B dynamic-seedbox→updater) + a **`mam-update` sidecar**

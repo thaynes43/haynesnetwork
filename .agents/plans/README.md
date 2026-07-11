@@ -106,27 +106,43 @@ consume numbers tonight). One plan = one release, lowest active number first, as
 `proxmox` item), 021 (GPU repair + models + 1P `openwebui` key), 022 (poster durable store). The
 owner is adding the 1Password `proxmox` and `openwebui` items tonight, unblocking 019/021.
 
-## Phase-3 queue (2026-07-11, building — owner is still adding backlog items)
+## Phase-3 queue (as of 2026-07-11 board audit)
 
-**Owner ordering (2026-07-11 midday):** let in-flight work land (034 Helpdesk) → polish pass →
-then **031 MAM/book pipeline is the highest priority** (content depth + seeding compliance) →
-029 design/build after the Monday usage reset. Budget: 73% Fable / 76% all used — no new
-dispatches this weekend without owner approval (agent types always discussed first).
+**Shipped this session (v0.43.1 → v0.44.1), all in `completed/`:** PLAN-036 (history contract,
+v0.43.1) · PLAN-034 (Helpdesk tickets, v0.44.0) · PLAN-031 (MAM books acquisition Phase B, live) ·
+PLAN-029 **design docs** (ADR-051/052/053 + DESIGN-026 — the plan itself stays ACTIVE for the build)
+· HP-01 Helpdesk state-filter polish (v0.44.1). PLAN-021 (AI/Open WebUI) filed to `completed/` in the
+audit (shipped earlier). The books/comics/audiobooks acquisition pipeline is **live and seeding**.
 
-| # | Plan | Status | Note |
-|---|------|--------|------|
-| 031 | Books acquisition — MAM wiring | ✅ **DONE + LIVE 2026-07-11** | Phase-B wired: `myanonamouse` ExternalSecret + `mam-update` seedbox sidecar (haynes-ops PR #2024), Prowlarr MAM indexer (Test green), qBittorrent `books-mam` (seed-forever), LazyLibrarian Torznab (USENET-FIRST). Proof: freeleech ebook → tracker **Working**, seeding. Runbook `docs/ops/013`. Deferred: gateway Mullvad pin (owner-present) |
-| 029 | Library views/grouping + Sorting & Filtering | **SCOPED** | Owner rulings 2026-07-11; per-user watch-state IN scope; dispatch after 036+034 land, agent types to discuss |
-| 037 | Collections (mirrored + logical) | Backlogged | Split out of 029 by owner ruling; scope after 029 ships |
-| 032 | List-driven book automation (Kometa/Spotify analog) | Intake | Needs scoping session |
-| 033 | Book requests + wanted-not-on-disk view | Intake | Needs scoping session; books write-back ADR required |
-| 036 | History navigation contract (back/forward = screens) | ✅ **DONE v0.43.1** (PR #206) | Screen-level tab switches now `router.push` (Library/Bulletin/Metrics/Trash/Trash-settings/Ledger); refinements + canonicalize redirects stay `router.replace`. DESIGN-004 **D-19**; e2e `history-navigation.spec.ts` |
-| 034 | Helpdesk/Tickets (Bulletin Messages rebrand) | ✅ **DONE v0.44.0** (PR #210) | The **"Helpdesk"** (name = one constant, owner ratifies): ticket poster wall + state machine (`open ⇄ in_progress → complete \| rejected`) + append-only history + household replies + same-tx `ticket_created` Pushover pings; `messages` DROPPED (Q-03), 4 owner-authored example tickets seeded live; ADR-050 / DESIGN-012 D-10..D-13 / R-160..R-164 / T-145..T-148 / migration 0040; as-built in completed/ |
-| 035 | Ticket email notifications | Backlogged | BLOCKED by SMTP (F-04) + 034; parked deliberately, do not lose |
-| 038 | Ticket media precision (exact episode/file linking) | Intake | Owner 2026-07-11 from live v0.44.0 review; all Qs ruled; build post-MAM, Fable UX post-reset |
-| 039 | MAM compliance governor (cap-aware fallback pacing) | Intake | Owner 2026-07-11; unsatisfied-cap throughput governor at the Prowlarr seam; after 031 + first batches |
-| 025 | ytdl config-manager platform | Roadmap | Own scoping session (3 repos) |
-| — | SMTP relay (F-04) / Feed attribution | Unplanned | Intake questions asked 2026-07-11 |
+**Budget + model-switch (READ):** Fable weekly usage was ~73% (all-models ~76%) at last check,
+**resets Mon 2026-07-13 ~07:59**. A Fable→Opus safeguard flipped the coordinator session repeatedly
+2026-07-11 — the owner caught each; the probe cadence only checks SUBAGENT models before dispatch and
+does NOT catch a coordinator flip mid-conversation. Keep prompt phrasing neutral, probe before every
+dispatch, and expect the owner to be the backstop. **Discuss agent type with the owner before every
+dispatch** (standing rule).
+
+### Active build queue (forward-looking)
+
+| # | Plan | Status | Next action |
+|---|------|--------|-------------|
+| 029 | Library views/grouping + Sorting & Filtering | **DESIGN COMPLETE — ready to build** | The biggest queued value. Docs done (ADR-051/052/053, DESIGN-026, R-165..R-171, T-149..T-155); build-phase steps in the plan. Owner rulings locked (server-side per-user prefs, per-view registries, per-user watch-state IN scope, URL-synced views). **Blocked only on:** owner agent-type call (rec: Opus data/domain + Fable sort/filter UX) + Fable budget (post Monday reset). |
+| 032 | List-driven book automation (Kometa/lists analog) | Intake — **owner wants this** | Owner explicitly flagged: no Kometa/Lidarr-lists/requests drive book content today. Needs a scoping session (list sources, LL native vs sync-mode, auto-grab vs propose). Pairs with 039 for pacing. |
+| 033 | Book requests + wanted-not-on-disk view | Intake — **owner wants this** | Users have no way to request books or see what's wanted. Needs scoping (who requests/approves, quotas, build-vs-adopt survey) + a books write-back ADR (`@hnet/books` is read-only today). |
+| 039 | MAM compliance governor (cap-aware pacing) | Intake | Small `@hnet/sync`-mode/CronJob that counts unsatisfied torrents locally and pauses the Prowlarr MAM indexer near the rank cap; rank knob (`MAM_UNSATISFIED_LIMIT`). Build after the first real content batches give miss-rate data. |
+| 038 | Ticket media precision (exact episode/file linking) | Scoped (all Qs ruled) | Progressive drill-down in the ticket linker (TV season→episode, music album→track, etc.); leaf-or-scope choice; every-level-ticketable with parent-art inheritance. Build post-MAM; Fable UX post-reset. |
+| 035 | Ticket email notifications | Backlogged | BLOCKED by SMTP (F-04). Admin-on-create + user opt-in status emails; rides the existing `notification_outbox` as a second channel. |
+| 037 | Collections (mirrored + logical) | Backlogged | Split out of 029 by owner ruling. Scope after 029 ships (reading-order series is the flagship). |
+| 025 | ytdl config-manager platform | Roadmap | Own scoping session; spans 3 repos; hinges on the pure-manager-vs-"arr-for-ytdl" fork. |
+
+### Unplanned intake (owner-gated)
+
+- **SMTP relay (F-04)** — Google Workspace + `noreply@haynesnetwork.com` alias + shared relay; unblocks
+  035 and estate-wide email. Needs the owner in 1Password (app-password/OAuth) → then draftable.
+- **Feed attribution** — the "unattributed" Feed events. Its hard part (app-user↔Plex-account mapping)
+  now ships INSIDE PLAN-029 (ADR-053); the Feed-side consumption is a small follow-up after 029.
+- **Small polish (no scoping):** F-06 book-cover latency (investigate the books cover-proxy vs the
+  cached *arr harvest); F-09 bad-epub parse failures (Kavita). F-08 comic re-grabs = first MAM content
+  workload (24 series + 4 issues, list in `.agents/context/2026-07-11-polish-loop.md`).
 
 ## Cross-plan reconciliation — READ before authoring any doc
 
