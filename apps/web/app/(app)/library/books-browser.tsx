@@ -7,7 +7,10 @@
 // via `books.search` (server-side filter + sort + offset paging). Tiles are EXTERNAL deep-links to the
 // item in Kavita/ABS (public URLs, new tab) — books have no in-app detail page. Reflow-free (ADR-015):
 // fixed 2:3 poster boxes, dim-in-place on refetch, a fixed-height sort row, skeleton tiles on first load.
-import { useEffect, useMemo, useState } from 'react';
+// Pagination is the shared Library scroll idiom (DESIGN-008 D-11 / DESIGN-024 amendment 2026-07-11): a
+// sentinel below the grid pulls the next page as it nears the viewport (rootMargin 600px) — no Load more
+// button — matching the Movies/TV/Music walls. Appending tiles below never shifts existing tiles (ADR-015).
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { trpc } from '@/lib/trpc-client';
 import { MediaPoster } from '@/components/media-poster';
 import type { BooksSort } from '@hnet/api';
@@ -57,6 +60,27 @@ export function BooksBrowser({ mediaKind, label }: { mediaKind: BooksMediaKind; 
   const items = useMemo(() => search.data?.pages.flatMap((p) => p.items) ?? [], [search.data]);
   const refreshing = search.isFetching && !search.isFetchingNextPage && !search.isLoading;
   const sorts = sortsForKind(mediaKind);
+
+  // Keyset-style infinite scroll — the exact idiom the Movies/TV/Music walls use (library-client
+  // MediaBrowser): a sentinel below the grid pulls the next page as it approaches the viewport, so the
+  // wall paginates on scroll with no Load more button. Gated so it never fires mid-fetch or while a
+  // filter/sort refetch shows placeholder pages.
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const canLoadMore =
+    search.hasNextPage === true && !search.isFetchingNextPage && !search.isPlaceholderData;
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (el === null || !canLoadMore) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) void search.fetchNextPage();
+      },
+      { rootMargin: '600px 0px' },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canLoadMore]);
 
   return (
     <>
@@ -154,15 +178,11 @@ export function BooksBrowser({ mediaKind, label }: { mediaKind: BooksMediaKind; 
             })}
           </div>
           {search.hasNextPage ? (
-            <div className="load-more">
-              <button
-                type="button"
-                className="btn"
-                disabled={search.isFetchingNextPage}
-                onClick={() => void search.fetchNextPage()}
-              >
-                {search.isFetchingNextPage ? 'Loading…' : 'Load more'}
-              </button>
+            // The scroll sentinel (reused Library idiom): the observer above watches this element and
+            // fetches the next page as it nears the viewport — no Load more button. The fetching hint
+            // sits BELOW the grid, so appending the next page never shifts existing tiles (ADR-015).
+            <div className="load-more" ref={sentinelRef}>
+              {search.isFetchingNextPage ? <span className="muted">Loading…</span> : null}
             </div>
           ) : null}
         </>
