@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.44.1](https://github.com/thaynes43/haynesnetwork/compare/v0.44.0...v0.44.1) (2026-07-11)
+
+
+### Bug Fixes
+
+* Helpdesk wall state chips become multi-select toggles (HP-01) ([#214](https://github.com/thaynes43/haynesnetwork/issues/214)) ([fada111](https://github.com/thaynes43/haynesnetwork/commit/fada111187a9bdf7b6333293c058ef464cdcbeb4))
+
+
+### Documentation
+
+* mark PLAN-034 completed — Helpdesk tickets live (v0.44.0) ([#212](https://github.com/thaynes43/haynesnetwork/issues/212)) ([dd222d0](https://github.com/thaynes43/haynesnetwork/commit/dd222d070ed26702ca38172ab01de47ce0882a95))
+* PLAN-029 design — Library views/grouping + per-view sort/filter registries (ADR-051/052/053, DESIGN-026) ([#211](https://github.com/thaynes43/haynesnetwork/issues/211)) ([5ebe4c1](https://github.com/thaynes43/haynesnetwork/commit/5ebe4c1208bf9e9b78eb088f30a69d18d7eb5dd0))
+
 ## [0.44.0](https://github.com/thaynes43/haynesnetwork/compare/v0.43.1...v0.44.0) (2026-07-11)
 
 
