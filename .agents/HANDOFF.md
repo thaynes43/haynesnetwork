@@ -4,7 +4,32 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-- **Last updated:** 2026-07-11 — **PLAN-030 SEASON POSTERS + TV EPISODE THUMBNAILS COMPLETE, live
+- **Last updated:** 2026-07-11 — **PLAN-027 ROLES-GRID CLARITY + BULLETIN FEED/MESSAGES VIEW GRANTS
+  COMPLETE, live (v0.43.0, PR #204).** `/admin/roles` stopped offering no-op permission levels: a
+  per-section **capability map** (`apps/web/lib/role-sections.ts`, derived from the gating code) renders
+  a 2-state **Enabled/Disabled** control for **Bulletin / Metrics / ytdl-sub / Books** (they only ever
+  gate `read_only`) and KEEPS **Edit/Read-only/Disabled** for **Ledger** (bulk add-&-search) + **Trash**
+  (rule editing + Trash settings need `edit`). The stored `SECTION_PERMISSION_LEVELS` enum + DB values are
+  UNCHANGED ("Enabled" persists `read_only`); a future real Edit flips one map entry. **Bulletin Feed vs
+  Messages** is now separately grantable per role via a new `role_bulletin_view_grants` table (row-per-view,
+  `setRoleBulletinViews` single-writer, audited `update_bulletin_views` in-tx, guard-listed; migration
+  0039) — **server-enforced**: `communication.feed` needs the `feed` grant, `communication.messages.*`
+  the `messages` grant (`bulletinViewProcedure`); a role without a view gets FORBIDDEN and no such sub-tab.
+  Resolution is **default-ON** (no rows ⇒ both views — ADR-026 C-02; present rows narrow; Admin implies
+  both), so only the **Default** role is narrowed (seeded `messages`-only by 0039 — the Feed is
+  Family/Friends chatter); Family/Friends/custom keep both, none silently lose the Feed. The `/admin/roles`
+  Bulletin cell = Enabled/Disabled dropdown + **[Feed][Messages] checkboxes** (greyed when Disabled) + the
+  message-action badge (ADR-015 reflow-free, no new hex). ADR-049 / DESIGN-004 **D-18** + DESIGN-012 D-09 /
+  R-159 / T-143 (Bulletin View Grant) + T-144 (Section Capability Map). **Live proof:** `/api/health` 200 on
+  v0.43.0; migration 0039 applied; **prod DB** `role_bulletin_view_grants` = { Default → messages } + 2
+  other non-admin roles no-row (⇒ both); a Default persona's `/bulletin` calls ONLY
+  `communication.messages.list` (never `feed`) and shows NO Feed tab; 390 + desktop screenshots via
+  `e2e/support/capture-roles-bulletin.ts`. Tests: `packages/api communication.test` (messages-only ⇒ feed
+  FORBIDDEN; feed-only ⇒ messages FORBIDDEN), `packages/domain bulletin-view-permissions.test` (default-both
+  + Default seed), `packages/db migrations.test` (0039 CHECK + seed). **haynes-ops = image bump ONLY**
+  (`5d00db5e`; no new CronJob/secret). Batched with the MOTD markdown/glyph redesign (DESIGN-004 D-17) in the
+  same v0.43.0 release.
+- **Prior milestone:** **PLAN-030 SEASON POSTERS + TV EPISODE THUMBNAILS COMPLETE, live
   (v0.41.0, PR #198).** Every Season row on a show-detail page now shows the season POSTER as a small 2:3
   icon (reserved box, ADR-015 reflow-free; no icon when absent) — **TV** from the ADR-047
   `media_plex_matches` → the show's Plex season art; **Peloton** from the live k8plex duration posters
