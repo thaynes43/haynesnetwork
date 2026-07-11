@@ -4,7 +4,28 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-- **Last updated:** 2026-07-11 — **PLAN-027 ROLES-GRID CLARITY + BULLETIN FEED/MESSAGES VIEW GRANTS
+- **Last updated:** 2026-07-11 — **PLAN-036 HISTORY-NAVIGATION CONTRACT COMPLETE, shipped (v0.43.1,
+  fix PR #206 + release PR #207).** Browser **Back/Forward now behave like SCREEN navigation.** Every
+  `?tab=`-driven hub switched tabs with `router.replace`, so a tab switch rewrote the current history
+  entry and Back exited the app screen; now **screen-level tab switches `router.push`** (keeping
+  `{ scroll: false }`) so each tab visit is a history entry — **Back restores the prior tab WITH the
+  URL-synced filter state its entry carried** (refinement edits still replace-in-place within that
+  entry), Forward re-applies. **Six `selectTab` sites converted to push:** Library kind tabs, Bulletin
+  Feed/Messages, Metrics sub-tabs, Trash tabs (incl. the Overview jump-to-kind cards), Trash-settings
+  tabs, Ledger tabs. **Left `router.replace` (unchanged):** refinements (filter chips / sort / debounced
+  search / pagination via `patchParams`; the Feed `?src`/`?media` segs; the Ledger Runs `?kind=` filter)
+  and canonicalizing redirects (Metrics + Trash-settings bare/unknown-`?tab` normalization; the retired
+  Trash `?tab=batches` fold) — a redirect must not mint a history entry. **D-09 search semantics
+  unchanged except the tab dimension; no visual change; ADR-015 untouched; deep links + tab-switch
+  scroll preserved.** DESIGN-004 **D-19** carries the contract (no new ADR/PRD/migration/glossary).
+  **Tests:** new `apps/web/e2e/history-navigation.spec.ts` reproduced the defect (pre-fix: Back landed
+  on `/` for all four hubs) then asserts the contract (Library TV→Movies→Back⇒TV filters intact→Forward
+  ⇒Movies; back-restores-tab for Bulletin/Metrics/Trash); full local bar + CI required checks green on
+  #206/#207. **haynes-ops = image bump ONLY** (`71655484`, v0.43.0→v0.43.1; no new CronJob/secret).
+  **Deploy note:** Siderolabs-Omni K8s API was unreachable from the build host at deploy time (known
+  intermittent kubectl outage) — the bump is pushed and Flux reconciles it cluster-side; public
+  `/api/health` = 200; live rollout-to-v0.43.1 confirmation deferred until the Omni API path returns.
+- **Prior milestone:** **PLAN-027 ROLES-GRID CLARITY + BULLETIN FEED/MESSAGES VIEW GRANTS
   COMPLETE, live (v0.43.0, PR #204).** `/admin/roles` stopped offering no-op permission levels: a
   per-section **capability map** (`apps/web/lib/role-sections.ts`, derived from the gating code) renders
   a 2-state **Enabled/Disabled** control for **Bulletin / Metrics / ytdl-sub / Books** (they only ever
