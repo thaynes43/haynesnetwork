@@ -51,9 +51,12 @@ function MetricsContent({
   }, [searchParams, active, pathname, router]);
 
   const selectTab = (key: TabKey) => {
+    // A metrics sub-tab switch is a SCREEN-level view change, so it PUSHES a history entry
+    // (DESIGN-004 D-19) — Back returns to the prior sub-tab. (The normalize effect above stays
+    // router.replace: canonicalizing a bare/unknown ?tab must not mint a history entry.)
     const params = new URLSearchParams();
     params.set('tab', key);
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    router.push(`${pathname}?${params.toString()}`, { scroll: false });
   };
 
   const onTabKeyDown = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {

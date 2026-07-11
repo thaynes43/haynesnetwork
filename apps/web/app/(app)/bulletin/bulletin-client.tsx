@@ -939,10 +939,13 @@ function BulletinContent({ access, viewerId }: { access: BulletinAccess; viewerI
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   const selectTab = (key: TabKey) => {
-    // Same contract as /library, /ledger, /trash: switching keeps ONLY ?tab.
+    // Same contract as /library, /ledger, /trash: switching keeps ONLY ?tab, and a
+    // screen-level tab switch PUSHES a history entry (DESIGN-004 D-19) so Back returns to
+    // the prior tab; the feed's ?src/?media refinements stay router.replace. scroll:false
+    // preserves the existing tab-switch scroll behaviour.
     const params = new URLSearchParams();
     params.set('tab', key);
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    router.push(`${pathname}?${params.toString()}`, { scroll: false });
   };
 
   const onTabKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
