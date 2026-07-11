@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.41.0](https://github.com/thaynes43/haynesnetwork/compare/v0.40.1...v0.41.0) (2026-07-11)
+
+
+### Features
+
+* season poster icons in season rows + episode-thumbnail parity for TV (PLAN-030) ([#198](https://github.com/thaynes43/haynesnetwork/issues/198)) ([eab45b3](https://github.com/thaynes43/haynesnetwork/commit/eab45b3045c6d265b58864abe288586319d1e26d))
+
+
+### Documentation
+
+* mark PLAN-028 completed — access-aware Library deep links live (v0.40.0/v0.40.1) ([#196](https://github.com/thaynes43/haynesnetwork/issues/196)) ([fe9e571](https://github.com/thaynes43/haynesnetwork/commit/fe9e57118fc223c0dffa154f168b3566c4c1ae9a))
+
 ## [0.40.1](https://github.com/thaynes43/haynesnetwork/compare/v0.40.0...v0.40.1) (2026-07-11)
 
 
