@@ -167,10 +167,13 @@ function LedgerContent({ canEdit }: { canEdit: boolean }) {
 
   const selectTab = (key: TabKey) => {
     // Same contract as /library: switching tabs keeps ONLY ?tab — a filter set on Movies
-    // never leaks into TV/Music (the keyed remount re-reads the clean URL).
+    // never leaks into TV/Music (the keyed remount re-reads the clean URL). A screen-level
+    // tab switch PUSHES a history entry (DESIGN-004 D-19) so Back returns to the prior tab;
+    // the per-tab refinements (patchParams, and the Runs tab's ?kind= filter) stay
+    // router.replace. scroll:false preserves the existing tab-switch scroll behaviour.
     const params = new URLSearchParams();
     params.set('tab', key);
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    router.push(`${pathname}?${params.toString()}`, { scroll: false });
   };
 
   const onTabKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, index: number) => {

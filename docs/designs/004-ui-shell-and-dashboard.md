@@ -1,7 +1,7 @@
 # DESIGN-004: UI shell and dashboard (Phase 1)
 
 - **Status:** Accepted — presentation details partially superseded by DESIGN-006 (visual identity: brand mark, typeface, radii, tile geometry); the mechanism and structure here remain normative
-- **Last updated:** 2026-07-10
+- **Last updated:** 2026-07-11
 - **Satisfies:** PRD-001 R-10, R-12, R-14 (rendering side), R-60, R-61, R-66, AC-01, AC-04, AC-10; governed by ADR-005 (CSS-token theming via `data-theme`) and **ADR-012 (unified Role model)** — API consumed per DESIGN-003 / ADR-004 (API layer: tRPC v11).
 
 > **Amended by ADR-012 (2026-07-05):** the admin permissions UI is now role-based.
@@ -53,6 +53,12 @@
 > section **D-17** is normative; **D-15** carries a pointer. ADR-027's plain-text message-format
 > point (Open #2) is revised by D-17 with its no-injection-surface property preserved by
 > construction; everything else in ADR-027 stands.
+>
+> **Amended by PLAN-036 (2026-07-11):** the tabbed hubs' screen-level view switches now `router.push`
+> (a history entry) rather than `router.replace`, so browser Back/Forward navigate between tabs
+> (restoring each tab's URL-carried filter state) instead of exiting the app screen; refinements
+> (filter/sort/search/pagination) and canonicalizing redirects stay `router.replace`. New section
+> **D-19** is normative (the history-navigation contract). No visual change; ADR-015 untouched.
 - **Donors:** `../demo-console/apps/shell/src/shell/theme/` (tokens.css, tokenContract.ts, ThemeProvider.tsx, app.css), `../demo-console/packages/shared/layout/`, `../demo-console/apps/shell/src/shell/chrome/` (TopBar, SettingsDrawer), `../demo-console/scripts/lint-css-hex.mjs`.
 
 ## Overview
@@ -791,6 +797,39 @@ not guessed:
 The Bulletin cell additionally carries the **Feed/Messages sub-view checkboxes** (greyed when
 Bulletin is Disabled) per DESIGN-012 D-09. Constant width across every section (ADR-015 — a section
 swaps its own dropdown options / toggles its own checkboxes, never a neighbour row).
+
+### D-19 — Amendment 2026-07-11 (PLAN-036) — the history-navigation contract
+
+Browser **Back/Forward behave like SCREEN navigation.** The `?tab=`-driven tabbed hubs (D-11
+Library / Ledger, D-05 Metrics, D-09 Trash, D-16 Trash settings, DESIGN-012 D-08 Bulletin) route
+all URL edits through the App Router, and the choice of **`router.push` vs `router.replace`** is
+what decides whether an edit is a history entry. The contract:
+
+- **Screen-level view switches PUSH (a history entry).** Selecting a different tab — a Library kind
+  tab (Movies · TV · Music · Peloton · YouTube · Books · Audiobooks · Comics · My Fixes), a Bulletin
+  **Feed/Messages** tab, a Metrics sub-tab (Overview · Apps · Hardware · Network · AI), a Trash tab
+  (Overview · Movies · TV · Recently Deleted · Activity — including the Overview cards' jump-to-kind
+  affordances), a Trash-settings tab, or a Ledger tab — is a `router.push`, keeping only `?tab`
+  (D-11: a fresh start per tab, so a filter never leaks between tabs). **Back restores the prior tab
+  WITH whatever URL-synced filter/sort/search state that tab's URL carried; Forward re-applies it.**
+  This works because a refinement (below) replaces in place _within_ the tab's single history entry,
+  so the entry Back pops to already carries the filter set. The push keeps `{ scroll: false }`, so a
+  tab switch's scroll behaviour is unchanged.
+- **Refinements REPLACE (no history entry).** Filter chips, the sort bar, the debounced search text,
+  pagination / infinite-scroll cursors, in-place expansions, and the intra-tab narrowers (the Feed's
+  `?src`/`?media` segs, the Ledger Runs tab's `?kind=` filter) stay `router.replace` — the
+  URL-mirror-of-state (D-09) semantics are unchanged **except the tab dimension**, so Back/Forward
+  cross screens, not individual filter edits.
+- **Canonicalizing redirects REPLACE.** Normalizing a bare or unknown `?tab` to the landing tab
+  (Metrics, Trash settings) and folding the retired `?tab=batches` deep link into a per-kind tab
+  (Trash, ADR-033) are `router.replace` — a redirect must not mint a spurious history entry that
+  Back would then land on.
+
+No visual change; deep links keep working; ADR-015 (no reorientation on interaction) is untouched —
+this is purely a history-entry semantics change on the existing navigations. PLAN-029 (Library views
+overhaul) inherits this contract for any new screen-level switch it adds. Reproduced and enforced by
+`apps/web/e2e/history-navigation.spec.ts` (tab switch → `page.goBack()` restored the prior tab; on
+the pre-fix replace-only build Back skipped past the app screen entirely).
 
 ## Open questions
 

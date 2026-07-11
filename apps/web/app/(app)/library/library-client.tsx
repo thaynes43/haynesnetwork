@@ -212,9 +212,13 @@ function LibraryContent({
     // Switching tabs starts fresh: keep ONLY ?tab (drops filter/sort/search params) so a
     // filter set on Movies never leaks into TV/Music — the keyed remount below re-reads the
     // clean URL. Documented in DESIGN-008 D-11.
+    // A tab switch is a SCREEN-level view change, so it PUSHES a history entry (DESIGN-004
+    // D-19): Back restores the prior tab with whatever filter state its URL carried (those
+    // edits replace-in-place within the tab's single entry), Forward re-applies. Refinements
+    // (patchParams below) stay router.replace. scroll:false keeps the tab-switch scroll as-is.
     const params = new URLSearchParams();
     params.set('tab', key);
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    router.push(`${pathname}?${params.toString()}`, { scroll: false });
   };
 
   const onTabKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, index: number) => {

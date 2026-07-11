@@ -207,9 +207,12 @@ export function TrashSettingsClient({
   }, [rawTab, active, pathname, router]);
 
   const selectTab = (key: TabKey) => {
+    // A screen-level tab switch PUSHES a history entry (DESIGN-004 D-19) so Back returns to
+    // the prior tab. (The canonicalize effect above stays router.replace: folding an
+    // unknown/not-permitted ?tab to the first available tab must not mint a history entry.)
     const params = new URLSearchParams();
     params.set('tab', key);
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    router.push(`${pathname}?${params.toString()}`, { scroll: false });
   };
 
   const onTabKeyDown = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {

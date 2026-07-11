@@ -864,10 +864,14 @@ function TrashContent({
   }, [overview.data]);
 
   const selectTab = (key: TabKey) => {
-    // Same contract as /library and /ledger: switching keeps ONLY ?tab.
+    // Same contract as /library and /ledger: switching keeps ONLY ?tab, and a screen-level
+    // tab switch PUSHES a history entry (DESIGN-004 D-19) so Back returns to the prior tab —
+    // this also covers the Overview cards' onOpenKind/onOpenTab jumps. (The retired
+    // ?tab=batches canonicalize effect below stays router.replace — a redirect, not a screen
+    // switch.) scroll:false preserves the existing tab-switch scroll behaviour.
     const params = new URLSearchParams();
     params.set('tab', key);
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    router.push(`${pathname}?${params.toString()}`, { scroll: false });
   };
 
   // ADR-033 — canonicalize the retired `?tab=batches` deep link: the old kind seg (`?kind=tv`)
