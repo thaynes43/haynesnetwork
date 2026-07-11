@@ -4,7 +4,30 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-- **Last updated:** 2026-07-11 — **PLAN-034 HELPDESK TICKETS COMPLETE, live (v0.44.0, feat PR #210 +
+- **Last updated:** 2026-07-11 — **PLAN-031 MAM BOOKS ACQUISITION — PHASE B COMPLETE + LIVE
+  (cluster-only; no app-repo/version change).** MyAnonaMouse is wired into the books pipeline end
+  to end. **haynes-ops PR #2024 (merged):** `myanonamouse` ExternalSecret (two 1P session cookies
+  — Session A ASN-locked→Prowlarr, Session B dynamic-seedbox→updater) + a **`mam-update` sidecar**
+  in the qBittorrent pod (3rd container; shares the macvlan netns so `dynamicSeedbox.php` egresses
+  the exact Mullvad exit qBittorrent announces from). The sidecar confirms `mullvad_exit_ip:true`
+  before every call (fail-closed), self-throttles to ≤1/hr, and **persists the rotating `mam_id`
+  cookie** to a config-PVC subpath (seeded from 1P on first run only). Pod rolled **3/3, readiness
+  green**; updater logged `Completed: registered seedbox IP 87.249.134.9`. **Live imperative
+  config** (in each app's PVC/DB, like the rest of the *arr stack): Prowlarr **MyAnonaMouse**
+  indexer (id 17, `Test` green from the home ASN, seed criteria left empty); qBittorrent
+  **`books-mam`** category → `/data/cephfs-hdd/torrents/books/books-mam` (seed-forever via
+  globally-disabled limits + Pause-not-delete; anonymous off; private DHT/PEX auto-disable intact;
+  port 50469 + readiness untouched); LazyLibrarian **`[Torznab_0]` MAM** provider (enabled,
+  **USENET-FIRST** `dlpriority=100`, routes to `books-mam`, `KEEP_SEEDING`=copy-and-hold, per-provider
+  seed limits 0 so LL sends no share cap). **End-to-end proof (1 authorized freeleech grab):** *Lee
+  Child EBOOKS PACK* (MAM t/151785, 34.5 MB, `dvf=0`) → downloaded 100% into `books-mam` → **MAM
+  tracker status `Working`** (announces from the Mullvad exit accepted, not unregistered) → left
+  **seeding indefinitely**. As-built runbook + break-glass: **`docs/ops/013-mam-books-acquisition.md`**.
+  **Deferred (owner-present):** pin the VLAN-30 gateway's Mullvad server (the updater covers rotation
+  meanwhile). **Owner-side:** regular MAM login, batch pacing under the New-Member cap (20), verify
+  5.2.1 on the Approved Clients page. Next books items: PLAN-039 (cap-aware governor), first
+  freeleech batches, F-08 comic re-grabs.
+- **Prior milestone:** 2026-07-11 — **PLAN-034 HELPDESK TICKETS COMPLETE, live (v0.44.0, feat PR #210 +
   release PR #209).** The Bulletin **Messages board is now the "Helpdesk"** — a household MEDIA-ISSUE
   ticket system (site bugs go to GitHub; the intake copy says so). The **name is a Fable proposal the
   owner ratifies at screenshot review** — it is ONE constant (`HELPDESK_NAME` in `apps/web/lib/

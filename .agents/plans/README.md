@@ -108,9 +108,14 @@ owner is adding the 1Password `proxmox` and `openwebui` items tonight, unblockin
 
 ## Phase-3 queue (2026-07-11, building — owner is still adding backlog items)
 
+**Owner ordering (2026-07-11 midday):** let in-flight work land (034 Helpdesk) → polish pass →
+then **031 MAM/book pipeline is the highest priority** (content depth + seeding compliance) →
+029 design/build after the Monday usage reset. Budget: 73% Fable / 76% all used — no new
+dispatches this weekend without owner approval (agent types always discussed first).
+
 | # | Plan | Status | Note |
 |---|------|--------|------|
-| 031 | Books acquisition — MAM wiring | **GREEN-LIT, high priority** | Owner passed the MAM interview 2026-07-11; design+implement approved, dispatch on go. Compliance contract: `../context/2026-07-11-mam-rules-scrape.md` |
+| 031 | Books acquisition — MAM wiring | ✅ **DONE + LIVE 2026-07-11** | Phase-B wired: `myanonamouse` ExternalSecret + `mam-update` seedbox sidecar (haynes-ops PR #2024), Prowlarr MAM indexer (Test green), qBittorrent `books-mam` (seed-forever), LazyLibrarian Torznab (USENET-FIRST). Proof: freeleech ebook → tracker **Working**, seeding. Runbook `docs/ops/013`. Deferred: gateway Mullvad pin (owner-present) |
 | 029 | Library views/grouping + Sorting & Filtering | **SCOPED** | Owner rulings 2026-07-11; per-user watch-state IN scope; dispatch after 036+034 land, agent types to discuss |
 | 037 | Collections (mirrored + logical) | Backlogged | Split out of 029 by owner ruling; scope after 029 ships |
 | 032 | List-driven book automation (Kometa/Spotify analog) | Intake | Needs scoping session |
@@ -118,6 +123,8 @@ owner is adding the 1Password `proxmox` and `openwebui` items tonight, unblockin
 | 036 | History navigation contract (back/forward = screens) | ✅ **DONE v0.43.1** (PR #206) | Screen-level tab switches now `router.push` (Library/Bulletin/Metrics/Trash/Trash-settings/Ledger); refinements + canonicalize redirects stay `router.replace`. DESIGN-004 **D-19**; e2e `history-navigation.spec.ts` |
 | 034 | Helpdesk/Tickets (Bulletin Messages rebrand) | ✅ **DONE v0.44.0** (PR #210) | The **"Helpdesk"** (name = one constant, owner ratifies): ticket poster wall + state machine (`open ⇄ in_progress → complete \| rejected`) + append-only history + household replies + same-tx `ticket_created` Pushover pings; `messages` DROPPED (Q-03), 4 owner-authored example tickets seeded live; ADR-050 / DESIGN-012 D-10..D-13 / R-160..R-164 / T-145..T-148 / migration 0040; as-built in completed/ |
 | 035 | Ticket email notifications | Backlogged | BLOCKED by SMTP (F-04) + 034; parked deliberately, do not lose |
+| 038 | Ticket media precision (exact episode/file linking) | Intake | Owner 2026-07-11 from live v0.44.0 review; all Qs ruled; build post-MAM, Fable UX post-reset |
+| 039 | MAM compliance governor (cap-aware fallback pacing) | Intake | Owner 2026-07-11; unsatisfied-cap throughput governor at the Prowlarr seam; after 031 + first batches |
 | 025 | ytdl config-manager platform | Roadmap | Own scoping session (3 repos) |
 | — | SMTP relay (F-04) / Feed attribution | Unplanned | Intake questions asked 2026-07-11 |
 
