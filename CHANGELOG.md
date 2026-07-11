@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.43.1](https://github.com/thaynes43/haynesnetwork/compare/v0.43.0...v0.43.1) (2026-07-11)
+
+
+### Bug Fixes
+
+* browser Back/Forward navigate between tabs (history contract, PLAN-036) ([#206](https://github.com/thaynes43/haynesnetwork/issues/206)) ([541ad5b](https://github.com/thaynes43/haynesnetwork/commit/541ad5bf6dc946189b96b9a162d07b56435ea423))
+
 ## [0.43.0](https://github.com/thaynes43/haynesnetwork/compare/v0.42.0...v0.43.0) (2026-07-11)
 
 
