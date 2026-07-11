@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.45.0](https://github.com/thaynes43/haynesnetwork/compare/v0.44.1...v0.45.0) (2026-07-11)
+
+
+### Features
+
+* MAM compliance governor — cap-aware torrent-fallback pacing (PLAN-039) ([#223](https://github.com/thaynes43/haynesnetwork/issues/223)) ([8799a20](https://github.com/thaynes43/haynesnetwork/commit/8799a20564e1f355e3ebf267258b1477a10fa36d))
+
+
+### Documentation
+
+* MAM books acquisition as-built runbook (OPS-013); mark PLAN-031 complete ([#215](https://github.com/thaynes43/haynesnetwork/issues/215)) ([bcc47ac](https://github.com/thaynes43/haynesnetwork/commit/bcc47ac447bbcb03ad57ba7320ee22346cdd9fbf))
+* OPS-013 corrections — LL dlpriority direction was backwards; qB queueing trap ([#218](https://github.com/thaynes43/haynesnetwork/issues/218)) ([89b7af2](https://github.com/thaynes43/haynesnetwork/commit/89b7af23ed6903aa4c18f54bb2c6ebfc637b09f0))
+* OPS-013 second correction — Prowlarr fullSync owns LL provider config ([#222](https://github.com/thaynes43/haynesnetwork/issues/222)) ([97009bf](https://github.com/thaynes43/haynesnetwork/commit/97009bf4430b5047fa7bde99ce5fe752784906d9))
+* PLAN-032 list-sources research + proposed v1 shape ([#221](https://github.com/thaynes43/haynesnetwork/issues/221)) ([9a68e34](https://github.com/thaynes43/haynesnetwork/commit/9a68e34fa88df09b464700655ed09405233eea04))
+* PLAN-040 placeholder — MAM governor admin tool; refresh queue rows for tonight's rulings ([#220](https://github.com/thaynes43/haynesnetwork/issues/220)) ([5a37092](https://github.com/thaynes43/haynesnetwork/commit/5a370921dab3b31f8d0b8617a9c7bb0384680e4b))
+* record owner rulings — 039 to BUILD, 032 to research+design, 033 parked ([#219](https://github.com/thaynes43/haynesnetwork/issues/219)) ([c7ff447](https://github.com/thaynes43/haynesnetwork/commit/c7ff4470d19f61b71328421aa44ba43c12d9acce))
+* session-3 board audit bookkeeping — plan queue, context notes, OPS-012 ([#217](https://github.com/thaynes43/haynesnetwork/issues/217)) ([c99cd4d](https://github.com/thaynes43/haynesnetwork/commit/c99cd4d177ae0b31204151cbec3e3f0a61d31bf3))
+
 ## [0.44.1](https://github.com/thaynes43/haynesnetwork/compare/v0.44.0...v0.44.1) (2026-07-11)
 
 
