@@ -11,8 +11,9 @@
 //     access-unrestricted; the hermetic stack seeds no plex-matches, so a member's ledger.search
 //     is gated empty by THE INVARIANT — ADR-047), then REJECTS it with a GitHub-bound reason and
 //     RE-OPENS it (the rejected → open edge);
-//   • the WALL: poster + category tiles, status pucks/badges, reply count, and the STATE filter
-//     chips (requirement 7) swapping the result set.
+//   • the WALL: poster + category tiles, status pucks/badges, reply count, and the MULTI-SELECT
+//     STATE filter chips (requirement 7 / HP-01) — default {Open, In progress}, add/remove states,
+//     "All", and URL restore of a shared selection.
 import { test, expect, type Page } from '@playwright/test';
 import { signIn } from './support/helpers';
 
@@ -126,8 +127,28 @@ test.describe('Helpdesk tickets (ADR-050 / DESIGN-012 D-10..D-13)', () => {
     await expect(page.getByTestId('ticket-detail-status')).toHaveText('Open');
     await expect(page.getByTestId('ticket-timeline').locator('li')).toHaveCount(3);
 
-    // ── the WALL: tiles, pucks, reply count, and the STATE filter chips (requirement 7) ──
+    // ── the WALL: DEFAULT selection {Open, In progress} (HP-01 multi-select chips) ──
     await memberPage.goto('/bulletin?tab=helpdesk');
+    // "No sound from minute 3" is OPEN (rejected → re-opened); "Buffering on everything" is
+    // COMPLETE. A fresh visit shows ONLY actionable work — the Complete ticket is hidden — but
+    // its chip still carries the live count.
+    await expect(memberPage.getByTestId('ticket-tile')).toHaveCount(1);
+    await expect(memberPage.getByTestId('ticket-tile')).toContainText('No sound from minute 3');
+    await expect(memberPage.getByTestId('ticket-tile')).not.toContainText('Buffering');
+    await expect(memberPage.getByTestId('ticket-filter-open')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(memberPage.getByTestId('ticket-filter-complete')).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    // The un-selected Complete chip still shows its live count (ends with "1").
+    await expect(memberPage.getByTestId('ticket-filter-complete')).toHaveText(/1$/);
+
+    // ── COMBINATION toggle: ADD Complete → it appears alongside the Open ticket ──
+    await memberPage.getByTestId('ticket-filter-complete').click();
+    await expect(memberPage).toHaveURL(/state=complete/); // refinement REPLACEs (D-19), shareable
     const tiles = memberPage.getByTestId('ticket-tile');
     await expect(tiles).toHaveCount(2);
     const bufferTile = tiles.filter({ hasText: 'Buffering on everything' });
@@ -142,14 +163,29 @@ test.describe('Helpdesk tickets (ADR-050 / DESIGN-012 D-10..D-13)', () => {
     await expect(soundTile).toHaveAttribute('data-status', 'open');
     await expect(soundTile).toContainText('The Fixture');
 
-    // State chips swap the result set in place (router.replace — D-19).
+    // ── REMOVE Open → the open ticket hides; only the Complete ticket remains ──
     await memberPage.getByTestId('ticket-filter-open').click();
-    await expect(memberPage).toHaveURL(/state=open/);
-    await expect(memberPage.getByTestId('ticket-tile')).toHaveCount(1);
-    await expect(memberPage.getByTestId('ticket-tile')).toContainText('No sound');
-    await memberPage.getByTestId('ticket-filter-complete').click();
     await expect(memberPage.getByTestId('ticket-tile')).toHaveCount(1);
     await expect(memberPage.getByTestId('ticket-tile')).toContainText('Buffering');
+    await expect(memberPage.getByTestId('ticket-tile')).not.toContainText('No sound');
+    const sharedUrl = memberPage.url(); // the {In progress, Complete} selection
+
+    // ── URL RESTORE: back to default clears it; re-opening the shared URL restores it ──
+    await memberPage.goto('/bulletin?tab=helpdesk');
+    await expect(memberPage.getByTestId('ticket-tile')).toContainText('No sound'); // default again
+    await memberPage.goto(sharedUrl);
+    await expect(memberPage.getByTestId('ticket-filter-complete')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(memberPage.getByTestId('ticket-filter-open')).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    await expect(memberPage.getByTestId('ticket-tile')).toHaveCount(1);
+    await expect(memberPage.getByTestId('ticket-tile')).toContainText('Buffering');
+
+    // ── "All" selects EVERY state ──
     await memberPage.getByTestId('ticket-filter-all').click();
     await expect(memberPage.getByTestId('ticket-tile')).toHaveCount(2);
 

@@ -7,8 +7,10 @@
 //   POSTER WALL in the Library/Trash grammar (owner requirement 8): tickets with a linked title
 //   render its poster, non-media tickets render their intake-category icon in the same 2:3 tile,
 //   and every tile bakes the STATE on as a colored corner puck (the Trash `bwall-overlay` idiom)
-//   plus a status badge in the caption. State filter chips replace the old All/Visible/Hidden/
-//   Deleted (requirement 7). Compose NEVER stacks above the list (requirement 2): the "New
+//   plus a status badge in the caption. MULTI-SELECT state filter chips (HP-01 — each toggles a
+//   state in/out of the one wall; default {Open, In progress}, Complete/Rejected opt-in) replace
+//   the old All/Visible/Hidden/Deleted (requirement 7). Compose NEVER stacks above the list
+//   (requirement 2): the "New
 //   ticket" button opens a Modal (multi-field — ADR-014), mobile-first. A tile click drills into
 //   /bulletin/ticket/[id] (requirement 6).
 // - FEED — the aggregated third-party notification browse (unchanged, ADR-026 D-05).
@@ -565,8 +567,22 @@ function TicketTile({ ticket }: { ticket: TicketListItem }) {
   );
 }
 
-const STATE_FILTERS = [undefined, ...TICKET_STATUS_NAMES] as const;
-type StateFilter = (typeof STATE_FILTERS)[number];
+// HP-01 — the wall's DEFAULT visible states: actionable work only. Complete/Rejected are historical
+// (opt-in). A fresh visit (no ?state param) always resolves to this set — no per-user persistence.
+const DEFAULT_STATES: readonly TicketStatusName[] = ['open', 'in_progress'];
+// Sentinel for a DELIBERATELY empty selection (every chip toggled off) — distinct from "untouched"
+// (no param ⇒ the default), so the URL stays shareable and a share of "show nothing" round-trips.
+const EMPTY_STATE_TOKEN = 'none';
+
+/** Resolve the wall's visible state SET from the URL's repeated ?state= params (HP-01, a D-09
+ *  refinement). No param ⇒ the default {open, in_progress}; one or more ⇒ exactly the valid states
+ *  named (the `none` sentinel — or any unknown value — yields an empty set → the empty state). */
+function selectionFromParams(raw: readonly string[]): Set<TicketStatusName> {
+  if (raw.length === 0) return new Set(DEFAULT_STATES);
+  return new Set(
+    raw.filter((v): v is TicketStatusName => (TICKET_STATUS_NAMES as readonly string[]).includes(v)),
+  );
+}
 
 function HelpdeskTab({ access }: { access: BulletinAccess }) {
   const router = useRouter();
@@ -574,22 +590,39 @@ function HelpdeskTab({ access }: { access: BulletinAccess }) {
   const searchParams = useSearchParams();
   const canCreate = access.actions.includes('post');
 
-  // The state filter rides the URL (?state=) — deep-linkable; chip changes REPLACE (D-19).
-  const stateParam = searchParams.get('state');
-  const state: StateFilter = (TICKET_STATUS_NAMES as readonly string[]).includes(stateParam ?? '')
-    ? (stateParam as TicketStatusName)
-    : undefined;
-  const setState = (next: StateFilter) => {
+  // The state selection rides the URL as repeated ?state= params (HP-01 multi-select) —
+  // deep-linkable/shareable; chip toggles REPLACE, never push (D-19).
+  const selected = selectionFromParams(searchParams.getAll('state'));
+  const allActive = TICKET_STATUS_NAMES.every((s) => selected.has(s));
+
+  const writeSelection = (next: Set<TicketStatusName>) => {
     const params = new URLSearchParams(window.location.search);
     params.delete('state');
-    if (next !== undefined) params.set('state', next);
+    const nextList = TICKET_STATUS_NAMES.filter((s) => next.has(s)); // canonical order
+    const isDefault =
+      nextList.length === DEFAULT_STATES.length && DEFAULT_STATES.every((s) => next.has(s));
+    if (isDefault) {
+      // Canonical default ⇒ NO param (a toggled-to-default URL matches a fresh visit — cleanest).
+    } else if (nextList.length === 0) {
+      params.set('state', EMPTY_STATE_TOKEN);
+    } else {
+      for (const s of nextList) params.append('state', s);
+    }
     const qs = params.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   };
+  const toggleState = (s: TicketStatusName) => {
+    const next = new Set(selected);
+    if (next.has(s)) next.delete(s);
+    else next.add(s);
+    writeSelection(next);
+  };
+  const selectAll = () => writeSelection(new Set(TICKET_STATUS_NAMES));
 
+  const statuses = TICKET_STATUS_NAMES.filter((s) => selected.has(s));
   const counts = trpc.communication.tickets.counts.useQuery();
   const list = trpc.communication.tickets.list.useInfiniteQuery(
-    { ...(state !== undefined ? { status: state } : {}), limit: 60 },
+    { statuses, limit: 60 },
     { getNextPageParam: (last) => last.nextCursor ?? undefined, placeholderData: (prev) => prev },
   );
   const rows = (list.data?.pages.flatMap((p) => p.items) ?? []) as TicketListItem[];
@@ -604,25 +637,35 @@ function HelpdeskTab({ access }: { access: BulletinAccess }) {
   return (
     <>
       <div className="library-filters admin-filterbar twall-bar">
-        <div className="seg" role="group" aria-label="Ticket state">
-          {STATE_FILTERS.map((value) => (
-            <button
-              key={value ?? 'all'}
-              type="button"
-              className={state === value ? 'is-active' : undefined}
-              data-testid={`ticket-filter-${value ?? 'all'}`}
-              onClick={() => setState(value)}
-            >
-              {value === undefined ? 'All' : TICKET_STATUS_LABELS[value]}
-              {value === undefined
-                ? total !== undefined
-                  ? ` · ${total}`
-                  : ''
-                : counts.data !== undefined
-                  ? ` · ${counts.data[value]}`
-                  : ''}
-            </button>
-          ))}
+        <div className="seg" role="group" aria-label="Filter the wall by ticket state">
+          {/* Multi-select toggles (HP-01, the Library filter-chip idiom): each state chip adds/
+              removes that state from the ONE wall; "All" selects every state. Toggling recolors in
+              place — the row never reflows (ADR-015). Live per-chip counts are always shown. */}
+          <button
+            type="button"
+            className={allActive ? 'is-active' : undefined}
+            aria-pressed={allActive}
+            data-testid="ticket-filter-all"
+            onClick={selectAll}
+          >
+            All{total !== undefined ? ` · ${total}` : ''}
+          </button>
+          {TICKET_STATUS_NAMES.map((value) => {
+            const on = selected.has(value);
+            return (
+              <button
+                key={value}
+                type="button"
+                className={on ? 'is-active' : undefined}
+                aria-pressed={on}
+                data-testid={`ticket-filter-${value}`}
+                onClick={() => toggleState(value)}
+              >
+                {TICKET_STATUS_LABELS[value]}
+                {counts.data !== undefined ? ` · ${counts.data[value]}` : ''}
+              </button>
+            );
+          })}
         </div>
         {canCreate ? (
           <button
@@ -659,9 +702,11 @@ function HelpdeskTab({ access }: { access: BulletinAccess }) {
       ) : !list.error && rows.length === 0 ? (
         <section className="card empty-state" data-testid="tickets-empty">
           <p>
-            {state === undefined
-              ? 'No tickets yet — when playback misbehaves or something’s missing, file it here.'
-              : `No ${TICKET_STATUS_LABELS[state].toLowerCase()} tickets.`}
+            {selected.size === 0
+              ? 'No states selected — pick a state chip above to see tickets.'
+              : allActive
+                ? 'No tickets yet — when playback misbehaves or something’s missing, file it here.'
+                : `No tickets in the selected ${selected.size === 1 ? 'state' : 'states'}.`}
           </p>
           <p className="muted">
             Media or playback problems belong here; bugs with the site itself go to GitHub (linked
