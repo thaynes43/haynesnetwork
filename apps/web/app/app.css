@@ -1627,6 +1627,31 @@ input[aria-invalid='true'] {
   opacity: 0.85;
 }
 
+/* DESIGN-025 D-07 (owner UX polish 2026-07-11) — the detail-head MISSING-state affordance.
+   The on-disk head shows green `.btn.primary` "Watch on Plex" pills in `.detail-head__play`; a
+   not-on-disk item shows a DISABLED, muted "Not on Disk" pill in the SAME slot (same top margin,
+   same pill geometry) so the two states occupy one place and never reflow between them (ADR-015).
+   The pill mirrors `.btn`'s shape/size but reads INERT — neutral surface, muted text, no accent
+   (green) and no alarm-red — over the existing disabled/secondary tokens (no new hex). The optional
+   *arr caption sits directly UNDER it (flex column), tying the state to the page's Force Search. */
+.detail-head__missing {
+  margin: 4px 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.btn.btn--missing {
+  background: var(--color-surface-2);
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+}
+.detail-head__missing-hint {
+  margin: 0;
+  font-size: 12px;
+  max-width: 44ch;
+}
+
 /* Skeleton poster cards: the exact grid geometry, pulsing quietly (killed by the global
    prefers-reduced-motion rule). Never a spinner that collapses. */
 .poster-card--skeleton {

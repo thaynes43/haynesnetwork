@@ -84,6 +84,26 @@ ratingKey)`). The coarse `ytdlsub` section knob is layered on top.
 - `/library/page.tsx` resolves per-kind + per-ytdl-sub-library visibility server-side and passes it to the client,
   which SPLICES only accessible Movies/TV/Music/Peloton/YouTube tabs (a fully-withheld library's tab is ABSENT).
 
+### D-07 — the detail-page MISSING-state affordance (owner UX polish 2026-07-11; ADR-015, no new hex)
+
+D-06 renders green `.btn.primary` "Watch on Plex — <library> ↗" pill(s) in `.detail-head__play` for a PRESENT,
+matched, accessible item; a NOT-on-disk item previously rendered NOTHING in that slot (just the "Not on disk" /
+"Wanted" badge + "Size on disk: —"), so the missing state had no affordance to balance the on-disk one. The two
+states now share the ONE slot: an item with nothing on disk — `item.onDiskFileCount <= 0`, the same signal
+`onDiskSummary` reads for the badge — shows a DISABLED, muted **"Not on Disk"** pill (`NotOnDiskButton`, a single
+shared component so the control is identical everywhere). It mirrors the play pill's shape/size but reads INERT:
+`disabled` (not clickable), neutral surface + muted text over the existing disabled/secondary tokens
+(`--color-surface-2` / `--color-text-muted` / `--color-border`) — NO accent (green), NO alarm-red, no new hex.
+The `*arr` pages (Movies/TV/Music) add a small caption directly UNDER the pill — "Force Search can add this title to
+your library if a release is found." — tying the missing state to the page's existing Force Search action; a
+fully-missing sonarr SHOW shows the pill at the head while a PARTIAL show keeps its per-season / per-episode grain in
+the Episodes table below (unchanged). Tombstoned items are EXCLUDED (their "Removed from the manager" badge already
+explains the state and their Force Search is disabled). Media without a Force Search (books / ytdl-sub) are
+Plex-native and normally always carry a deep link, so they show nothing here; IF one ever presents a not-on-disk /
+no-play item it renders the SAME disabled pill WITHOUT the caption. The pill + caption ride a flex column with
+`.detail-head__play`'s top margin, and the on-disk vs missing state is fixed per item load (never a live toggle), so
+the swap never re-orients neighbours (ADR-015).
+
 ## Alternatives considered
 
 Media-type-correspondence gating (leaks across same-type libraries) and storing the Plex link on `media_items`
