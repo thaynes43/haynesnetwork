@@ -93,3 +93,8 @@ export * from './authentik-users';
 // ADR-046 / DESIGN-024 (PLAN-023) — the books ledger single-writer (syncBooks upserts the synced Kavita +
 // Audiobookshelf mirror books_items and tombstones vanished rows). READ-ONLY against the book servers.
 export * from './books';
+// ADR-047 / DESIGN-025 (PLAN-028) — the Library access GATE (resolveLibraryAccessGate — reuses the ADR-024
+// effective-library resolver; THE INVARIANT) + the Plex deep-link builder, and the *arr→Plex match cache
+// single-writer (syncPlexMatches, the plex-match sync mode's writer).
+export * from './library-access';
+export * from './plex-match';

@@ -1612,6 +1612,20 @@ input[aria-invalid='true'] {
 [data-theme='hnet-light'] .badge--rating {
   color: color-mix(in srgb, var(--color-accent) 62%, var(--color-text)); /* D-04 contrast */
 }
+/* ADR-047 / DESIGN-025 (PLAN-028) — the item-detail play deep link(s) sit on their own row under the title
+   meta: one "Watch on Plex — <library>" / "Read on Kavita" / "Listen on Audiobookshelf" button per
+   accessible library, wrapping onto new lines when several exist. The row's own margin reserves its space so
+   its presence/absence never nudges neighbors (ADR-015). */
+.detail-head__play {
+  margin: 4px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* The external-jump caret rides at the end of a play button's label. */
+.btn__ext {
+  opacity: 0.85;
+}
 
 /* Skeleton poster cards: the exact grid geometry, pulsing quietly (killed by the global
    prefers-reduced-motion rule). Never a spinner that collapses. */

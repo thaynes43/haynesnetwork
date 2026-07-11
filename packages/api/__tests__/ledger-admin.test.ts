@@ -4,8 +4,14 @@
 // Add-&-search three-outcome wiring + reason-filtered run report, the deterministic JSONL export,
 // and roles.setSectionPermission surfacing on roles.list.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { and, eq } from 'drizzle-orm';
 import * as schema from '@hnet/db/schema';
-import { tombstoneMissingItems } from '@hnet/domain';
+import {
+  setRoleLibraries,
+  syncPlexMatches,
+  tombstoneMissingItems,
+  upsertPlexLibraries,
+} from '@hnet/domain';
 import { buildExportFilterFromParams, streamLedgerExportRows } from '../src/ledger-export';
 import {
   bootMigratedDb,
@@ -31,7 +37,39 @@ afterAll(async () => {
 describe('ledgerAdmin section gating (AC-13)', () => {
   it('Disabled → browse FORBIDDEN; Read-Only → browse ok but bulk FORBIDDEN; Edit → bulk reached', async () => {
     const member = await createUser(tdb.db);
-    await seedMediaItem(tdb.db, 'radarr', { title: 'Gate Movie', arrItemId: 9001, tmdbId: 990001 });
+    const gate = await seedMediaItem(tdb.db, 'radarr', {
+      title: 'Gate Movie',
+      arrItemId: 9001,
+      tmdbId: 990001,
+    });
+    // ADR-047 (PLAN-028) — the Read-Only member must also have Plex library ACCESS to browse the item
+    // (the invariant applies to the admin spreadsheet too). Grant the Default role a Movies library +
+    // match Gate Movie into it so this section-gating test sees the row it asserts on.
+    await upsertPlexLibraries({
+      db: tdb.db,
+      slug: 'haynestower',
+      libraries: [{ sectionKey: '1', name: 'HNet Movies', mediaType: 'movie' }],
+    });
+    const [movies] = await tdb.db
+      .select({ id: schema.plexLibraries.id })
+      .from(schema.plexLibraries)
+      .where(
+        and(
+          eq(schema.plexLibraries.serverId, schema.SEEDED_PLEX_SERVER_IDS.haynestower),
+          eq(schema.plexLibraries.sectionKey, '1'),
+        ),
+      );
+    await syncPlexMatches({
+      db: tdb.db,
+      matches: [{ mediaItemId: gate.id, plexLibraryId: movies!.id, ratingKey: '1', matchedVia: 'tmdb' }],
+      scopedLibraryIds: [movies!.id],
+    });
+    await setRoleLibraries({
+      db: tdb.db,
+      roleId: schema.SEEDED_ROLE_IDS.default,
+      libraryIds: [movies!.id],
+      actorId: null,
+    });
 
     const disabled = caller(makeCtx(tdb.db, sessionUser(member, { ledger: 'disabled' })));
     await expect(disabled.ledgerAdmin.browse({ arrKind: 'radarr' })).rejects.toMatchObject({

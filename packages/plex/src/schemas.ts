@@ -66,12 +66,22 @@ export const sectionItemSchema = z.object({
   duration: z.union([z.string(), z.number()]).transform(Number).optional(), // episode runtime, ms
   originallyAvailableAt: z.string().optional(), // 'YYYY-MM-DD'
   librarySectionID: z.union([z.string(), z.number()]).transform(String).optional(),
+  // ADR-047 / DESIGN-025 (PLAN-028 — Library deep links) — the external-agent GUIDs Plex carries on a
+  // library title: `Guid` is the array of secondary agent ids (`[{ id: 'tmdb://12345' }, { id:
+  // 'imdb://tt...' }, { id: 'tvdb://...' }]` for movies/shows; `mbid://...` for music artists). The
+  // plex-match sync parses these against the *arr ledger's tmdb/tvdb/imdb/musicbrainz ids to resolve the
+  // exact ratingKey + owning library. The scalar `guid` (e.g. `plex://movie/5d...`) is the Plex-internal
+  // agent id — kept for completeness, not used for matching.
+  guid: z.string().optional(),
+  Guid: z.array(z.object({ id: z.string() })).optional().default([]),
 });
 export type PlexSectionItem = z.infer<typeof sectionItemSchema>;
 
 export const sectionContentsSchema = z.object({
   MediaContainer: z.object({
     size: z.union([z.string(), z.number()]).transform(Number).optional(),
+    // The library's full item count (paged reads compare `start` against it — ADR-047 plex-match sweep).
+    totalSize: z.union([z.string(), z.number()]).transform(Number).optional(),
     // Absent when the section is empty.
     Metadata: z.array(sectionItemSchema).optional().default([]),
   }),

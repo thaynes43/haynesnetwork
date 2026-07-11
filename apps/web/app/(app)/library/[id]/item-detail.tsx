@@ -436,6 +436,30 @@ export function ItemDetail({
                 .join(' · ')}
             </p>
           ) : null}
+          {/* ADR-047 / DESIGN-025 (PLAN-028) — the app-specific "Watch on Plex — <library>" PRIMARY deep
+              link(s). Server attaches one per Plex library the caller can access, ONLY for a PRESENT,
+              GUID-matched item (a missing/unmatched/inaccessible item gets none). Opens app.plex.tv (hands
+              off to the native app where installed); the ↗ marks the external jump. Static affordance — its
+              presence is fixed per item, so it never re-orients on interaction (ADR-015). */}
+          {item.play.length > 0 ? (
+            <p className="detail-head__play">
+              {item.play.map((target) => (
+                <a
+                  key={target.url}
+                  className="btn primary"
+                  href={target.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {target.label}
+                  <span className="btn__ext" aria-hidden="true">
+                    {' '}
+                    ↗
+                  </span>
+                </a>
+              ))}
+            </p>
+          ) : null}
         </div>
         {/* Radarr acts at the movie level (the movie IS the unit — ADR-007). Sonarr/Lidarr
             act per episode/album below, so the show-level nuke is gone (owner feedback).

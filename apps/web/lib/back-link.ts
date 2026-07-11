@@ -23,6 +23,10 @@ const BACK_LINKS: Record<string, BackLinkTarget> = {
   // DESIGN-017 D-09 — the ytdl-sub drill-in's way back to its wall (the key IS the library id).
   peloton: { label: 'Peloton', href: '/library?tab=peloton' },
   youtube: { label: 'YouTube', href: '/library?tab=youtube' },
+  // ADR-047 / DESIGN-025 (PLAN-028) — the Books/Audiobooks/Comics detail pages' way back to their wall.
+  books: { label: 'Books', href: '/library?tab=books' },
+  audiobooks: { label: 'Audiobooks', href: '/library?tab=audiobooks' },
+  comics: { label: 'Comics', href: '/library?tab=comics' },
 };
 
 export const DEFAULT_BACK_LINK: BackLinkTarget = { label: 'Library', href: '/library' };

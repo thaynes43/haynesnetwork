@@ -3,10 +3,14 @@
 import {
   mediaItems,
   mediaMetadata,
+  plexLibraries,
+  plexServers,
   syncState,
   users,
   type ArrKind,
   type DbClient,
+  type PlexMediaType,
+  type PlexServerSlug,
   type SyncSource,
 } from '@hnet/db';
 import { and, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
@@ -73,6 +77,57 @@ export async function selectMetadataTargets(
     arrTags: r.arrTags,
     tombstoned: r.deletedFromArrAt !== null,
   }));
+}
+
+// ADR-047 / DESIGN-025 (PLAN-028 — plex-match) — the read side of the *arr→Plex match sweep.
+
+/** A live ledger item + the external GUIDs it may match a Plex title on. */
+export interface MatchCandidateItem {
+  id: string;
+  arrKind: ArrKind;
+  arrInstanceId: string;
+  tvdbId: number | null;
+  tmdbId: number | null;
+  imdbId: string | null;
+  musicbrainzArtistId: string | null;
+}
+
+/** All LIVE (non-tombstoned) media_items with their external ids — the match sweep's left side. */
+export async function selectMatchCandidateItems(db: DbClient): Promise<MatchCandidateItem[]> {
+  return db
+    .select({
+      id: mediaItems.id,
+      arrKind: mediaItems.arrKind,
+      arrInstanceId: mediaItems.arrInstanceId,
+      tvdbId: mediaItems.tvdbId,
+      tmdbId: mediaItems.tmdbId,
+      imdbId: mediaItems.imdbId,
+      musicbrainzArtistId: mediaItems.musicbrainzArtistId,
+    })
+    .from(mediaItems)
+    .where(isNull(mediaItems.deletedFromArrAt));
+}
+
+/** A Plex library registry row (available only) + its server slug — the match's library lookup. */
+export interface PlexLibraryRef {
+  libraryId: string;
+  serverSlug: PlexServerSlug;
+  sectionKey: string;
+  mediaType: PlexMediaType;
+}
+
+/** Every AVAILABLE plex_libraries row joined to its server slug — maps (slug, sectionKey) → library id. */
+export async function selectPlexLibraryRefs(db: DbClient): Promise<PlexLibraryRef[]> {
+  return db
+    .select({
+      libraryId: plexLibraries.id,
+      serverSlug: plexServers.slug,
+      sectionKey: plexLibraries.sectionKey,
+      mediaType: plexLibraries.mediaType,
+    })
+    .from(plexLibraries)
+    .innerJoin(plexServers, eq(plexServers.id, plexLibraries.serverId))
+    .where(eq(plexLibraries.available, true));
 }
 
 /** The source's history cursor (max ingested history date / Seerr createdAt), if any. */

@@ -98,6 +98,10 @@ type TabKey =
 type YtdlsubTabKey = (typeof YTDLSUB_TABS)[number]['key'];
 type BooksTabKey = (typeof BOOKS_TABS)[number]['key'];
 
+// ADR-047 (PLAN-028) — server-resolved per-Plex-library tab visibility (a withheld library's tab hides).
+type MediaVisible = { movies: boolean; tv: boolean; music: boolean };
+type YtdlsubLibsVisible = { peloton: boolean; youtube: boolean };
+
 const ON_DISK_FILTERS = [
   { value: 'any', label: 'Any' },
   { value: 'complete', label: 'Complete' },
@@ -173,26 +177,34 @@ function parseRatingBound(raw: string | null): number | undefined {
 function LibraryContent({
   ytdlsubVisible,
   booksVisible,
+  mediaVisible,
+  ytdlsubLibraries,
 }: {
   ytdlsubVisible: boolean;
   booksVisible: boolean;
+  mediaVisible: MediaVisible;
+  ytdlsubLibraries: YtdlsubLibsVisible;
 }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  // ADR-038 / ADR-046 — Movies | TV | Music | Peloton | YouTube | Books | Audiobooks | Comics | My Fixes:
-  // the ytdl-sub tabs sit after Music (when the `ytdlsub` section is visible), the Books tabs after them
-  // (when the `books` section is visible), and My Fixes is always LAST. The active-tab resolution validates
-  // against the VISIBLE set, so a hidden caller who deep-links a gated tab falls back to Movies.
+  // ADR-038 / ADR-046 / ADR-047 — Movies | TV | Music | Peloton | YouTube | Books | Audiobooks | Comics |
+  // My Fixes. ADR-047 THE INVARIANT: a Movies/TV/Music tab shows only when the caller's role can access
+  // that kind's Plex library, and a ytdl-sub tab (Peloton/YouTube) only when its k8plex library is granted
+  // (server-resolved in page.tsx). A fully-withheld library's tab is ABSENT (not an empty-state). My Fixes
+  // is always LAST. The active-tab resolution validates against the VISIBLE set, so a hidden caller who
+  // deep-links a gated tab falls back to the first visible tab.
   const tabs = [
-    ...MEDIA_TABS,
-    ...(ytdlsubVisible ? YTDLSUB_TABS : []),
+    ...MEDIA_TABS.filter((t) => mediaVisible[t.key as keyof MediaVisible]),
+    ...(ytdlsubVisible ? YTDLSUB_TABS.filter((t) => ytdlsubLibraries[t.key as keyof YtdlsubLibsVisible]) : []),
     ...(booksVisible ? BOOKS_TABS : []),
     MY_FIXES_TAB,
   ];
   const rawTab = searchParams.get('tab');
-  const active: TabKey = tabs.some((t) => t.key === rawTab) ? (rawTab as TabKey) : 'movies';
-  const activeTab = tabs.find((t) => t.key === active) ?? MEDIA_TABS[0];
+  const active: TabKey = tabs.some((t) => t.key === rawTab)
+    ? (rawTab as TabKey)
+    : (tabs[0]?.key ?? MY_FIXES_TAB.key);
+  const activeTab = tabs.find((t) => t.key === active) ?? tabs[0] ?? MY_FIXES_TAB;
 
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
@@ -604,13 +616,22 @@ function MediaBrowser({ arrKind, label }: { arrKind: ArrKindName; label: string 
 export function LibraryClient({
   ytdlsubVisible,
   booksVisible,
+  mediaVisible,
+  ytdlsubLibraries,
 }: {
   ytdlsubVisible: boolean;
   booksVisible: boolean;
+  mediaVisible: MediaVisible;
+  ytdlsubLibraries: YtdlsubLibsVisible;
 }) {
   return (
     <Suspense fallback={<p className="muted">Loading…</p>}>
-      <LibraryContent ytdlsubVisible={ytdlsubVisible} booksVisible={booksVisible} />
+      <LibraryContent
+        ytdlsubVisible={ytdlsubVisible}
+        booksVisible={booksVisible}
+        mediaVisible={mediaVisible}
+        ytdlsubLibraries={ytdlsubLibraries}
+      />
     </Suspense>
   );
 }

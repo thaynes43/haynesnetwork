@@ -30,6 +30,16 @@ export {
 } from './poster';
 // ADR-021 — the section-level resolver the nav + the Ledger export route gate on (server-authoritative).
 export { effectiveSectionLevel } from './middleware/role';
+// ADR-047 / DESIGN-025 (PLAN-028) — THE INVARIANT surface: the access gate resolver (used by the poster
+// route + the Ledger export route), the per-item poster-proxy check, and the /library page's server-side
+// Movies/TV/Music tab-visibility resolver.
+export {
+  resolveLibraryAccessGate,
+  isMediaItemAccessibleToUser,
+  resolveMediaTabVisibility,
+  type LibraryAccessGate,
+  type PlexPlayTarget,
+} from './library-access';
 // ADR-037 — the metrics-level resolver the /metrics page passes down (admin ⇒ 'full').
 export { effectiveMetricsLevel, metricsProcedure } from './middleware/role';
 // ADR-037 / DESIGN-016 — the Metrics Overview wire type (the /metrics client imports it TYPE-ONLY).
@@ -38,6 +48,9 @@ export type { MetricsOverview } from './routers/metrics';
 // gate reuses `effectiveSectionLevel`), the Plex-thumb proxy upstream resolver (used by the app poster
 // route), and the wire types the ytdl-sub browser imports TYPE-ONLY.
 export { ytdlsubProcedure } from './middleware/role';
+// ADR-047 / DESIGN-025 (PLAN-028) — the per-library k8plex access gate for the Peloton/YouTube sub-tabs
+// (the /library page splices only the libraries the caller's role can access; admin ⇒ both).
+export { accessibleYtdlsubLibraries } from './routers/ytdlsub';
 // ADR-041 / DESIGN-017 D-07 — thumb VARIANTS (closed size allow-list), the strong (size, thumb) ETag,
 // and the in-process LRU the poster route memoizes transcoded variants in (NOT a store).
 export {
@@ -62,7 +75,7 @@ export {
 } from './books-cover';
 export { booksCoverUrlFor, toBooksListItem, BOOKS_SORTS } from './books-query';
 export type { BooksListItem, BooksSort, BooksSearchInput } from './books-query';
-export type { BooksSearchResult } from './routers/books';
+export type { BooksSearchResult, BooksDetailResult } from './routers/books';
 export type {
   YtdlsubShow,
   YtdlsubListResult,

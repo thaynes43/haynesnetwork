@@ -334,6 +334,9 @@ importers:
       '@hnet/metrics':
         specifier: workspace:*
         version: link:../metrics
+      '@hnet/plex':
+        specifier: workspace:*
+        version: link:../plex
       drizzle-orm:
         specifier: ^0.36.4
         version: 0.36.4(@types/pg@8.20.0)(@types/react@19.2.17)(kysely@0.29.2)(pg@8.22.0)(react@19.2.4)

@@ -19,7 +19,9 @@ let api: Caller;
 
 beforeAll(async () => {
   tdb = await bootMigratedDb();
-  const member = await createUser(tdb.db);
+  // ADR-047 (PLAN-028) — metadata sort/filter/facet MECHANICS, orthogonal to the access gate; an admin
+  // caller is `unrestricted` so the gate is a no-op (the gate is proven in library-access.test.ts).
+  const member = await createUser(tdb.db, { admin: true });
   api = caller(makeCtx(tdb.db, sessionUser(member)));
 
   // Five radarr movies with varied ratings incl. TWO with NO metadata (null rating → last).

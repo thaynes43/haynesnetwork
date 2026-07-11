@@ -22,8 +22,10 @@ import {
   syncAiUsage,
   syncAuthentikUsers,
   syncBooks,
+  syncPlexMatches,
   type DrainPoolRefreshResult,
   type SyncBooksReport,
+  type SyncPlexMatchesReport,
   type MaintainerrClientBundle,
   type OutboxDeliveryReport,
   type PlexClientBundle,
@@ -43,6 +45,9 @@ import { fetchOwuiUsage, type OpenWebUiClient } from './openwebui';
 // ADR-046 / DESIGN-024 (PLAN-023) — the read-only Kavita + Audiobookshelf snapshot fetcher the
 // `books-sync` mode hands to the @hnet/domain syncBooks single-writer (books_items mirror upsert).
 import { fetchBooksSnapshot, type BooksSyncBundle } from './books';
+// ADR-047 / DESIGN-025 (PLAN-028) — the read-only *arr→Plex GUID matcher the `plex-match` mode hands to the
+// @hnet/domain syncPlexMatches single-writer (media_plex_matches derived-cache upsert + reconcile).
+import { fetchPlexMatchSnapshot, type PlexMatchStats } from './plex-match';
 // ADR-045 / DESIGN-023 (PLAN-026) — the read-only Authentik directory client the `authentik-users` mode
 // pages; the snapshot is handed to the @hnet/domain syncAuthentikUsers single-writer (mirror upsert).
 import type { AuthentikReadClient } from '@hnet/authentik';
@@ -174,6 +179,10 @@ export interface SyncReport {
   booksSync?: (SyncBooksReport & { syncedSources: string[] }) | null;
   /** The books-sync run's error — sets totalFailure for the CLI exit. */
   booksSyncError?: string;
+  /** ADR-047 — the `plex-match` result (null for every other mode / when it errored). */
+  plexMatch?: (SyncPlexMatchesReport & { stats: PlexMatchStats }) | null;
+  /** The plex-match run's error — sets totalFailure for the CLI exit. */
+  plexMatchError?: string;
   /** ADR-035 — the candidate-snapshot refresh post-step (full/incremental with a Maintainerr
    *  handle; null when skipped or failed). */
   candidateRefresh?: TrashCandidatesRefreshReport | null;
@@ -586,6 +595,53 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       booksSync,
       ...(booksSyncError !== undefined ? { booksSyncError } : {}),
       totalFailure: booksSyncError !== undefined,
+    };
+  }
+
+  // ADR-047 / DESIGN-025 — the `plex-match` mode reads the ledger's live media_items + the Plex libraries
+  // READ-ONLY, resolves each item to its exact Plex {library, ratingKey} by shared-GUID match, and UPSERTS
+  // the media_plex_matches cache via the domain syncPlexMatches single-writer (reconciling titles a fully-
+  // read library no longer serves). Standalone mode: no *arr source, writes NO sync_runs row — its trail is
+  // media_plex_matches. A run that could read NO Plex server at all is a totalFailure (nonzero exit).
+  if (options.mode === 'plex-match') {
+    const startedAt = new Date();
+    if (!options.plex) throw new Error('plex-match requires a Plex client bundle (plex)');
+    let plexMatch: (SyncPlexMatchesReport & { stats: PlexMatchStats }) | null = null;
+    let plexMatchError: string | undefined;
+    try {
+      const snapshot = await fetchPlexMatchSnapshot({ db, plex: options.plex, logger });
+      const report = await syncPlexMatches({
+        db,
+        matches: snapshot.matches,
+        scopedLibraryIds: snapshot.scopedLibraryIds,
+        now: options.now,
+      });
+      plexMatch = { ...report, stats: snapshot.stats };
+      logger.info('plex-match complete', {
+        upserted: report.upserted,
+        removed: report.removed,
+        byKind: snapshot.stats.byKind,
+        scopedLibraries: snapshot.scopedLibraryIds.length,
+        unmappedSections: snapshot.stats.unmappedSections,
+        plexTitlesIndexed: snapshot.stats.plexTitlesIndexed,
+      });
+      if (snapshot.scopedLibraryIds.length === 0) {
+        plexMatchError = 'plex-match: no Plex library could be read (registry empty or all servers down)';
+      }
+    } catch (error) {
+      plexMatchError = error instanceof Error ? error.message : String(error);
+      logger.error('plex-match failed', { error: plexMatchError });
+    }
+    return {
+      mode: options.mode,
+      startedAt,
+      finishedAt: new Date(),
+      sources: [],
+      backfill: null,
+      fixesCompleted: null,
+      plexMatch,
+      ...(plexMatchError !== undefined ? { plexMatchError } : {}),
+      totalFailure: plexMatchError !== undefined,
     };
   }
 
