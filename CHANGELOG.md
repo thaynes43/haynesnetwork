@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.42.0](https://github.com/thaynes43/haynesnetwork/compare/v0.41.0...v0.42.0) (2026-07-11)
+
+
+### Features
+
+* detail-page "Not on Disk" affordance mirrors the "Watch on Plex" slot (DESIGN-025 D-07) ([#199](https://github.com/thaynes43/haynesnetwork/issues/199)) ([a24232c](https://github.com/thaynes43/haynesnetwork/commit/a24232c1f0352d06413eefd96ce85e2eacc0b714))
+
+
+### Documentation
+
+* DESIGN-025 amended with D-07. ([a24232c](https://github.com/thaynes43/haynesnetwork/commit/a24232c1f0352d06413eefd96ce85e2eacc0b714))
+
 ## [0.41.0](https://github.com/thaynes43/haynesnetwork/compare/v0.40.1...v0.41.0) (2026-07-11)
 
 
