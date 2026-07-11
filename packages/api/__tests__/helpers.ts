@@ -19,8 +19,11 @@ import {
   SEEDED_ROLE_IDS,
   SECTION_IDS,
   SECTION_DEFAULT_LEVELS,
+  BULLETIN_VIEWS,
+  BULLETIN_VIEW_DEFAULTS,
   MESSAGE_ACTIONS,
   TRASH_ACTIONS,
+  type BulletinView,
   type MessageAction,
   type MetricsLevel,
   type SectionId,
@@ -112,6 +115,9 @@ export function sessionUser(
   plexIdentity?: PlexIdentity,
   /** ADR-037 — override the caller's metrics access level (non-admin only; admin ⇒ 'full'). */
   metricsLevelOverride?: MetricsLevel,
+  /** ADR-049 — override the caller's Bulletin SUB-VIEWS (non-admin only; admin ⇒ both). Undefined ⇒
+   *  the "no rows ⇒ both" default (BULLETIN_VIEW_DEFAULTS); pass e.g. ['messages'] to narrow. */
+  bulletinViewOverride?: BulletinView[],
 ): SessionUser {
   const isAdmin = row.roleId === SEEDED_ROLE_IDS.admin;
   const name = isAdmin ? 'Admin' : row.roleId === SEEDED_ROLE_IDS.default ? 'Default' : 'Custom';
@@ -129,6 +135,12 @@ export function sessionUser(
   const messageActions: MessageAction[] = isAdmin
     ? [...MESSAGE_ACTIONS]
     : MESSAGE_ACTIONS.filter((a) => messageGrantedSet.has(a));
+  // ADR-049 — admin ⇒ both views; an explicit override narrows; undefined ⇒ the both-views default.
+  const bulletinViews: BulletinView[] = isAdmin
+    ? [...BULLETIN_VIEWS]
+    : bulletinViewOverride !== undefined
+      ? BULLETIN_VIEWS.filter((v) => bulletinViewOverride.includes(v))
+      : [...BULLETIN_VIEW_DEFAULTS];
   return {
     id: row.id,
     email: row.email,
@@ -140,6 +152,7 @@ export function sessionUser(
       sectionPermissions,
       trashActions,
       messageActions,
+      bulletinViews,
       metricsLevel: isAdmin ? 'full' : (metricsLevelOverride ?? 'limited'),
     },
     plexIdentity:

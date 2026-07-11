@@ -2,15 +2,19 @@ import { and, eq } from 'drizzle-orm';
 import {
   account,
   db,
+  roleBulletinViewGrants,
   roleMessageActionGrants,
   roleSectionPermissions,
   roleTrashActionGrants,
   roles,
   users,
+  BULLETIN_VIEWS,
+  BULLETIN_VIEW_DEFAULTS,
   MESSAGE_ACTIONS,
   SECTION_IDS,
   SECTION_DEFAULT_LEVELS,
   TRASH_ACTIONS,
+  type BulletinView,
   type Database,
   type DbClient,
   type MessageAction,
@@ -45,6 +49,14 @@ export interface SessionRole {
    * the role's granted rows. Layered on top of `sectionPermissions.bulletin` (which gates READ).
    */
   messageActions: MessageAction[];
+  /**
+   * ADR-049 C-02 (PLAN-027) — the caller's resolved Bulletin SUB-VIEWS (feed / messages), so the
+   * `bulletinViewProcedure` gate + the Bulletin sub-tab render need no per-request query. Admin ⇒
+   * BOTH; a role with stored grant rows ⇒ exactly those (a narrowing); a role with NO rows ⇒ BOTH
+   * (BULLETIN_VIEW_DEFAULTS — "Bulletin is for everyone", ADR-026 C-02). Layered on top of
+   * `sectionPermissions.bulletin` (which gates the section as a whole).
+   */
+  bulletinViews: BulletinView[];
   /**
    * ADR-037 C-01 — the caller's resolved METRICS access level, so `metricsProcedure` + the router's
    * payload-shaping need no per-request query (mirrors `isAdmin`). Admin ⇒ 'full'; otherwise the
@@ -156,6 +168,23 @@ export async function getSessionExtension(
   const messageActions: MessageAction[] = row.isAdmin
     ? [...MESSAGE_ACTIONS]
     : MESSAGE_ACTIONS.filter((a) => messageGrantedSet.has(a));
+  // ADR-049 C-02 (PLAN-027) — the Bulletin sub-view grants: admin ⇒ BOTH views (no rows); a
+  // non-admin with stored rows ⇒ exactly those (a narrowing); a non-admin with NO rows ⇒ BOTH
+  // (the "Bulletin is for everyone" default). Skipped entirely for admins.
+  const bulletinViewRows = row.isAdmin
+    ? []
+    : await q
+        .select({ view: roleBulletinViewGrants.view })
+        .from(roleBulletinViewGrants)
+        .where(eq(roleBulletinViewGrants.roleId, row.roleId));
+  const bulletinViews: BulletinView[] = row.isAdmin
+    ? [...BULLETIN_VIEWS]
+    : bulletinViewRows.length === 0
+      ? [...BULLETIN_VIEW_DEFAULTS]
+      : (() => {
+          const set = new Set(bulletinViewRows.map((r) => r.view));
+          return BULLETIN_VIEWS.filter((v) => set.has(v));
+        })();
   return {
     role: {
       id: row.roleId,
@@ -164,6 +193,7 @@ export async function getSessionExtension(
       sectionPermissions,
       trashActions,
       messageActions,
+      bulletinViews,
       // ADR-037 C-01 — admin implies 'full' (like admin implies section 'edit'); else the stored column.
       metricsLevel: row.isAdmin ? 'full' : row.metricsLevel,
     },

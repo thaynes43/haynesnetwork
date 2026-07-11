@@ -30,6 +30,8 @@ const member: SessionUser = {
     },
     trashActions: [],
     messageActions: [],
+    // ADR-049 — the both-views default (no view rows ⇒ Bulletin shows Feed + Messages).
+    bulletinViews: ['feed', 'messages'],
     metricsLevel: 'limited',
   },
   plexIdentity: { userId: null, email: null, username: null },

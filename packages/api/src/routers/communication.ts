@@ -19,7 +19,11 @@ import { and, eq, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm'
 import { editMessage, moderateMessage, postMessage, OPEN_FIX_STATUSES } from '@hnet/domain';
 import { mapDomainErrors, router } from '../trpc';
 import { posterUrlFor } from '../ledger-query';
-import { hasMessageAction, messageActionProcedure, sectionProcedure } from '../middleware/role';
+import {
+  bulletinViewProcedure,
+  hasMessageAction,
+  messageActionProcedure,
+} from '../middleware/role';
 import { decodeKeysetCursor, encodeKeysetCursor, keysetAfter, keysetOrderBy } from '../keyset';
 
 const iso = (d: Date) => d.toISOString();
@@ -31,8 +35,12 @@ export const communicationRouter = router({
    * widened notification store, joined to the attributed user + linked Media Item. Simple param
    * filters (source, event type, media-link presence) — no full filter-engine port needed
    * backend-side (Open Decision Q-05). Read-Only and above (Disabled never reaches here).
+   *
+   * ADR-049 C-02 (PLAN-027) — additionally gated on the role's `feed` SUB-VIEW grant: a role
+   * narrowed to messages-only (e.g. the owner's Default role) gets FORBIDDEN here, not an empty
+   * list — server-authoritative, never a client-only hide.
    */
-  feed: sectionProcedure('bulletin', 'read_only')
+  feed: bulletinViewProcedure('feed')
     .input(
       z.object({
         source: z.enum(NOTIFICATION_SOURCES).optional(),
@@ -53,7 +61,9 @@ export const communicationRouter = router({
       const idCol = sql`${notifications.id}`;
       if (input.cursor !== undefined) {
         const { sortValue, id } = decodeKeysetCursor(input.cursor);
-        where.push(keysetAfter({ expr: sortExpr, idCol, kind: 'date', dir: 'desc', value: sortValue, id }));
+        where.push(
+          keysetAfter({ expr: sortExpr, idCol, kind: 'date', dir: 'desc', value: sortValue, id }),
+        );
       }
 
       const rows = await ctx.db
@@ -111,8 +121,12 @@ export const communicationRouter = router({
      * ADR-026 D-06 — the Messages board browse (newest-first keyset). Everyone with Read-Only sees
      * `visible` messages; a caller with the `moderate` grant additionally sees hidden/deleted rows
      * (for triage/audit) and may filter by status. Content of soft-hidden/deleted rows is preserved.
+     *
+     * ADR-049 C-02 (PLAN-027) — gated on the role's `messages` SUB-VIEW grant: a role narrowed to
+     * feed-only gets FORBIDDEN here (the post/edit/moderate mutations compose on top of the same
+     * messages-view gate via messageActionProcedure).
      */
-    list: sectionProcedure('bulletin', 'read_only')
+    list: bulletinViewProcedure('messages')
       .input(
         z.object({
           status: z.enum(MESSAGE_STATUSES).optional(),
@@ -136,7 +150,9 @@ export const communicationRouter = router({
         const idCol = sql`${messages.id}`;
         if (input.cursor !== undefined) {
           const { sortValue, id } = decodeKeysetCursor(input.cursor);
-          where.push(keysetAfter({ expr: sortExpr, idCol, kind: 'date', dir: 'desc', value: sortValue, id }));
+          where.push(
+            keysetAfter({ expr: sortExpr, idCol, kind: 'date', dir: 'desc', value: sortValue, id }),
+          );
         }
 
         const rows = await ctx.db
@@ -183,10 +199,9 @@ export const communicationRouter = router({
             .select({
               mediaItemId: fixRequests.mediaItemId,
               fixCount: sql<number>`count(*)::int`,
-              openCount: sql<number>`(count(*) filter (where ${inArray(
-                fixRequests.status,
-                [...OPEN_FIX_STATUSES],
-              )}))::int`,
+              openCount: sql<number>`(count(*) filter (where ${inArray(fixRequests.status, [
+                ...OPEN_FIX_STATUSES,
+              ])}))::int`,
             })
             .from(fixRequests)
             .where(inArray(fixRequests.mediaItemId, linkedIds))

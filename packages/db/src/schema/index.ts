@@ -7,6 +7,8 @@ export * from './role-section-permissions';
 export * from './role-trash-action-grants';
 // ADR-026 / DESIGN-012 — Bulletin (Messages) fine-grained per-action role grants
 export * from './role-message-action-grants';
+// ADR-049 / DESIGN-012 amend (PLAN-027) — Bulletin SUB-VIEW visibility grants (Feed vs Messages)
+export * from './role-bulletin-view-grants';
 export * from './users';
 export * from './session';
 export * from './account';

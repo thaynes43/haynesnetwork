@@ -2,7 +2,13 @@
 // ADR-001 C-05). These are the sketches from the design doc, verbatim.
 import { z } from 'zod';
 import { ICON_KEYS } from '@hnet/ui/icons';
-import { MESSAGE_ACTIONS, SECTION_IDS, SECTION_PERMISSION_LEVELS, TRASH_ACTIONS } from '@hnet/db';
+import {
+  BULLETIN_VIEWS,
+  MESSAGE_ACTIONS,
+  SECTION_IDS,
+  SECTION_PERMISSION_LEVELS,
+  TRASH_ACTIONS,
+} from '@hnet/db';
 
 /**
  * D-04 layer 1 (edge) — lenient: accept any non-empty string. The catalog now takes any
@@ -115,4 +121,14 @@ export const TrashActionsInput = z.object({
 export const MessageActionsInput = z.object({
   roleId: z.uuid(),
   actions: z.array(z.enum(MESSAGE_ACTIONS)).default([]),
+});
+
+/**
+ * ADR-049 (PLAN-027) — roles.setBulletinViews: replace-whole-set of a role's Bulletin SUB-VIEW
+ * visibility grants (feed / messages). An EMPTY array clears the rows and RE-OPENS both views (the
+ * "Bulletin is for everyone" default), NOT "hide everything" — that is the section-level `disabled`.
+ */
+export const BulletinViewsInput = z.object({
+  roleId: z.uuid(),
+  views: z.array(z.enum(BULLETIN_VIEWS)).default([]),
 });

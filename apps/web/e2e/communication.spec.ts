@@ -21,14 +21,20 @@ test.describe('Bulletin webhook receiver (ADR-026 / DESIGN-012)', () => {
     expect(res.status()).toBe(404);
   });
 
-  test('seerr: wrong secret 401, oversize 413, valid 202, idempotent dedupe', async ({ request }) => {
+  test('seerr: wrong secret 401, oversize 413, valid 202, idempotent dedupe', async ({
+    request,
+  }) => {
     const body = {
       notification_type: 'MEDIA_APPROVED',
       event: 'Request Automatically Approved',
       subject: 'The Fixture (2022)',
       message: 'Your request was approved',
       media: { media_type: 'movie', tmdbId: '880001', tvdbId: '', status: 'PROCESSING' },
-      request: { request_id: 'e2e-seerr-9', requestedBy_email: ADMIN_EMAIL, requestedBy_username: 'admin' },
+      request: {
+        request_id: 'e2e-seerr-9',
+        requestedBy_email: ADMIN_EMAIL,
+        requestedBy_username: 'admin',
+      },
       extra: [],
     };
 
@@ -103,10 +109,13 @@ test.describe('Bulletin webhook receiver (ADR-026 / DESIGN-012)', () => {
 // ── the section UI (DESIGN-012 D-08) — nav gating, the Feed browse, the Messages board ────
 
 test.describe('Bulletin section UI (ADR-026 / DESIGN-012 D-08)', () => {
-  test('a member sees the nav entry, the seeded Feed (source-filterable), and a read-only board', async ({
+  test('the Default member: nav entry, Messages-only (no Feed tab — ADR-049), read-only board', async ({
     page,
   }) => {
-    // The Default role: bulletin defaults READ_ONLY (C-02) with no message actions.
+    // ADR-049 C-02 (PLAN-027) — the Default role is narrowed to the MESSAGES view only (the Feed
+    // carries Family/Friends-oriented ops chatter). So the member sees the Bulletin nav entry and
+    // lands on the Messages board, but there is NO Feed tab (and the feed endpoint FORBIDs it
+    // server-side — covered by the @hnet/domain/@hnet/api unit tests).
     await signIn(page, 'member');
     await page
       .getByRole('navigation', { name: 'Primary' })
@@ -114,20 +123,36 @@ test.describe('Bulletin section UI (ADR-026 / DESIGN-012 D-08)', () => {
       .click();
     await page.waitForURL(/\/bulletin/);
 
-    // Feed (default tab): the seeded notifications render newest-first.
+    // No Feed tab; the Messages tab IS present and is the landing view.
+    await expect(page.getByRole('tab', { name: 'Feed' })).toHaveCount(0);
+    await expect(page.getByRole('tab', { name: 'Messages' })).toBeVisible();
+    await expect(page.getByTestId('feed-row')).toHaveCount(0);
+
+    // Messages: readable, but NO composer without the post grant (R-103).
+    await expect(page.getByTestId('composer-absent')).toBeVisible();
+    await expect(page.getByTestId('message-composer')).toHaveCount(0);
+  });
+
+  test('admin sees BOTH sub-views: the seeded Feed (source-filterable) + the Messages board', async ({
+    page,
+  }) => {
+    // Admin implies both Bulletin views (ADR-049) — the Feed tab is present with the seeded rows.
+    await signIn(page, 'admin');
+    await page.goto('/bulletin?tab=feed');
+    await expect(page.getByRole('tab', { name: 'Feed' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Messages' })).toBeVisible();
+
     const rows = page.getByTestId('feed-row');
     await expect(rows.filter({ hasText: 'The Fixture (2022)' }).first()).toBeVisible();
     await expect(rows.filter({ hasText: 'Breaking Prod' }).first()).toBeVisible();
 
     // Source seg: Seerr-only swaps the result set in place (Tautulli rows gone).
-    await page.getByRole('group', { name: 'Source' }).getByRole('button', { name: 'Seerr' }).click();
+    await page
+      .getByRole('group', { name: 'Source' })
+      .getByRole('button', { name: 'Seerr' })
+      .click();
     await expect(rows.filter({ hasText: 'The Fixture (2022)' }).first()).toBeVisible();
     await expect(rows.filter({ hasText: 'playback.start' })).toHaveCount(0);
-
-    // Messages: readable, but NO composer without the post grant (R-103).
-    await page.getByRole('tab', { name: 'Messages' }).click();
-    await expect(page.getByTestId('composer-absent')).toBeVisible();
-    await expect(page.getByTestId('message-composer')).toHaveCount(0);
   });
 
   test('admin: post (with a media link) → persists → edit → two-step hide → invisible to members', async ({
@@ -187,7 +212,10 @@ test.describe('Bulletin section UI (ADR-026 / DESIGN-012 D-08)', () => {
 
     // Author edit rides the Modal; the card shows the new body + the edited marker.
     await card.getByTestId('message-edit').click();
-    await page.getByRole('dialog', { name: 'Edit message' }).getByLabel(/^Message/).fill('Fixed after a re-download — resolved.');
+    await page
+      .getByRole('dialog', { name: 'Edit message' })
+      .getByLabel(/^Message/)
+      .fill('Fixed after a re-download — resolved.');
     await page.getByTestId('message-edit-save').click();
     await expect(card).toContainText('resolved');
     await expect(card).toContainText('edited');
@@ -200,7 +228,9 @@ test.describe('Bulletin section UI (ADR-026 / DESIGN-012 D-08)', () => {
     await signOut(page);
     await signIn(page, 'member');
     await page.goto('/bulletin?tab=messages');
-    await expect(page.getByTestId('message-card').filter({ hasText: 'Buffering again' })).toHaveCount(0);
+    await expect(
+      page.getByTestId('message-card').filter({ hasText: 'Buffering again' }),
+    ).toHaveCount(0);
 
     // Moderator restore brings it back for everyone (leaves the suite's shared state visible).
     await signOut(page);
@@ -216,9 +246,24 @@ test.describe('Bulletin section UI (ADR-026 / DESIGN-012 D-08)', () => {
   }) => {
     await signIn(page, 'admin');
     await page.goto('/admin/roles');
-    // The seeded Bulletin Poster role: default read_only level + exactly the post grant.
+    // The seeded Bulletin Poster role: Enabled (stored read_only) + exactly the post grant. The
+    // Bulletin cell is now a 2-state Enabled/Disabled dropdown (ADR-049 — no meaningful Edit), whose
+    // "Enabled" option persists read_only, so the stored-value assertion still holds.
     await expect(page.getByLabel('Bulletin access for Bulletin Poster')).toHaveValue('read_only');
-    await expect(page.getByTestId('message-actions-summary-Bulletin Poster')).toHaveText('1 action');
+    await expect(page.getByTestId('message-actions-summary-Bulletin Poster')).toHaveText(
+      '1 action',
+    );
+
+    // ADR-049 C-02 (PLAN-027) — the Feed/Messages SUB-VIEW checkboxes. A role with no view rows
+    // resolves to BOTH (Bulletin Poster); the Default role is narrowed to Messages-only.
+    await expect(page.getByTestId('bulletin-view-feed-Bulletin Poster')).toBeChecked();
+    await expect(page.getByTestId('bulletin-view-messages-Bulletin Poster')).toBeChecked();
+    await expect(page.getByTestId('bulletin-view-feed-Default')).not.toBeChecked();
+    await expect(page.getByTestId('bulletin-view-messages-Default')).toBeChecked();
+    // Disabling Bulletin greys (disables) both view checkboxes (they're moot when hidden).
+    await page.getByLabel('Bulletin access for Bulletin Poster').selectOption('disabled');
+    await expect(page.getByTestId('bulletin-view-feed-Bulletin Poster')).toBeDisabled();
+    await page.getByLabel('Bulletin access for Bulletin Poster').selectOption('read_only');
     await expect(page.getByTestId('message-actions-summary-Bulletin Moderator')).toHaveText(
       '2 actions',
     );

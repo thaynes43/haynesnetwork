@@ -21,6 +21,7 @@ export const PERMISSION_AUDIT_ACTIONS = [
   'update_message_actions', // ADR-026 C-04 — a role's fine-grained Bulletin message action grants were replaced
   'update_role_metrics_level', // ADR-037 C-01 — a role's metrics access level (full|limited) was changed
   'assign_pending_role', // ADR-045 C-05 (PLAN-026) — a role was assigned to an Authentik-only identity that has no app user row yet; the intent is parked in pending_role_assignments and consumed on that identity's first app login
+  'update_bulletin_views', // ADR-049 C-01 (PLAN-027) — a role's Bulletin SUB-VIEW visibility grants (feed/messages) were replaced
 ] as const;
 export type PermissionAuditAction = (typeof PERMISSION_AUDIT_ACTIONS)[number];
 
@@ -567,6 +568,29 @@ export type MessageStatus = (typeof MESSAGE_STATUSES)[number];
 // no boolean — mirrors TRASH_ACTIONS / role_trash_action_grants). Admin implies both with no rows.
 export const MESSAGE_ACTIONS = ['post', 'moderate'] as const;
 export type MessageAction = (typeof MESSAGE_ACTIONS)[number];
+
+// ADR-049 / DESIGN-012 amend (PLAN-027) — the two Bulletin SUB-VIEWS a role's visibility can be
+// scoped to, layered on top of the coarse `bulletin` section level (which gates the section as a
+// whole). A ROW in role_bulletin_view_grants means that view is granted (presence is the grant;
+// mirrors MESSAGE_ACTIONS / role_message_action_grants in SHAPE). Unlike the message-action grants,
+// the RESOLUTION is default-ON: because "Bulletin is for everyone" (ADR-026 C-02) a role with NO
+// rows resolves to BULLETIN_VIEW_DEFAULTS (both views) — the section-default pattern, since these
+// gate VISIBILITY (not additive powers). Present rows are the exact narrowing allowlist; the owner's
+// Default role is narrowed to `messages` only (feed carries Family/Friends-oriented ops chatter). The
+// server gates the feed/messages tRPC surfaces on the resolved set, so a role without a view gets
+// FORBIDDEN — never a client-only hide. Admin implies BOTH with no rows. text+CHECK, single source.
+export const BULLETIN_VIEWS = ['feed', 'messages'] as const;
+export type BulletinView = (typeof BULLETIN_VIEWS)[number];
+
+/**
+ * ADR-049 C-02 — the no-row fallback for a role's Bulletin views (ADR-026 C-02 "Bulletin is for
+ * everyone"). A role with ZERO role_bulletin_view_grants rows resolves to BOTH views; any present
+ * rows are the exact allowlist (a narrowing). This differs from MESSAGE_ACTIONS (which default OFF)
+ * BECAUSE views gate VISIBILITY of a section that ships visible, not an opt-in power — so absence is
+ * "unconfigured ⇒ show all", like SECTION_DEFAULT_LEVELS, not "deny". Admin implies both via the
+ * session short-circuit (no rows). Immutable snapshot so callers can't mutate the shared array.
+ */
+export const BULLETIN_VIEW_DEFAULTS: readonly BulletinView[] = ['feed', 'messages'] as const;
 
 // ADR-022 C-01 — how an *arr-add run was initiated (restore_runs.reason, migration 0014).
 // `restore` = the admin-only diff-driven failsafe (searches OFF, skip-if-present); `ledger_add`
