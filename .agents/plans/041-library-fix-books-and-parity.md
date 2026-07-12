@@ -8,6 +8,19 @@
   source of truth, sync flows in, **no write-back**), so a bad copy (wrong language, corrupt
   epub — F-09, wrong edition, bad quality) can only be fixed by driving LazyLibrarian/Kapowarr
   by hand.
+- **Trigger root cause CLOSED manually (2026-07-12) — two-part defect, both halves are design
+  input:** (1) the on-disk epub was **German** (Rowohlt, `dc:language=de`) — a pre-pipeline file;
+  the 2026-07-11 English re-grab worked (MAM ENG pack imported clean: epub/azw3/mobi), **but LL's
+  import never removes pre-existing files it didn't create**, so the German epub stayed in the
+  series folder. (2) **Kavita merges every file in a series folder into ONE series** (Matilda
+  showed `chapterCount: 2`, and the series metadata — releaseYear 2016 — came from the German
+  file), so the stale copy is what members kept opening. **Manual remediation (the Q-02
+  precedent, proven):** moved the German epub to `/data/cephfs-hdd/data/media/books/quarantine/`
+  (outside both the Kavita library roots and LL's scan dirs — reversible, nothing deleted) +
+  triggered a Kavita Books scan → the series now has 1 chapter backed by the English epub only.
+  **Design implications:** a books Fix that re-grabs WITHOUT clearing the bad copy does not fix
+  what the user sees — replace/quarantine of the old file + a Kavita rescan must be part of the
+  Fix transaction; the quarantine-folder pattern is now field-proven.
 - **Owner intent (2026-07-11):** the same "Fix" buttons TV/Movies have should exist on
   books/ebooks/audiobooks — "and go one step further: a long-term backlog item and goal to have
   it on everything… good UX to have consistent capabilities across all Library items."
