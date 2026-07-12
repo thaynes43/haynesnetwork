@@ -4,47 +4,60 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-## ▶ NEXT SESSION — start here (2026-07-11 board audit)
+## ▶ NEXT SESSION — start here (2026-07-12 session-4 wrap; **MONDAY = GO HARD**)
 
-**Site is live at https://haynesnetwork.com; latest release v0.44.1.** This session shipped the
-history-navigation contract (v0.43.1), the **Helpdesk** ticket system (v0.44.0) + its state-filter
-polish (v0.44.1), wired the **books/comics/audiobooks acquisition pipeline** (live + seeding), and
-authored the **full design** for the Library views + sorting/filtering overhaul. Milestone details
-are the dated bullets below; **the forward-looking queue + recommendations live in
-`.agents/plans/README.md` → "Phase-3 queue".** Plans are in `.agents/plans/` (active) and
-`.agents/plans/completed/` (shipped) — the board was audited today, so the split is trustworthy.
+**Site is live at https://haynesnetwork.com; latest release v0.46.0.** Session 4 (Sat eve →
+Sun 1am): fixed the MAM pipeline live (qB queueing trap + backwards provider priority — twice;
+Prowlarr's fullSync LL application OWNS LL's provider config), shipped **PLAN-039 MAM governor
+(v0.45.0, live-validated)** and **branded link previews (v0.46.0)**, ran the list-sources
+research (#221) + the Seerr-for-books survey (#227 — verdict: **adopt nothing**, build in the
+saga), filed PLAN-040/041, escalated **PLAN-032 → the Books Automation Saga** (owner leans to a
+SEPARATE application; own API; app UI = config/monitoring), and proved the pipeline end-to-end
+with the **Matilda English re-grab** (Q-06 happy-path closed; GB 503-burst/no-retry = saga design
+input). Full chronicle: `.agents/context/2026-07-12-session-4-wrap.md`. The owner is testing over
+the weekend and will report fixes/polish.
 
-**What to build next (in recommended order):**
-1. **PLAN-029 — Library views, grouping, per-view Sorting & Filtering.** DESIGN COMPLETE and the
-   biggest queued value. Docs Accepted: `docs/adrs/051-library-views-and-sort-filter-registries.md`,
-   `052-per-user-library-preferences.md`, `053-per-user-watch-read-state-attribution.md`,
-   `docs/designs/026-library-views-grouping-and-sort-filter.md`; the recon it's grounded in is
-   `.agents/context/2026-07-11-plex-sort-filter-recon.md`. Owner rulings are locked in the plan.
-   **Blocked only on:** the owner's agent-type decision (recommend Opus for the data/domain layer —
-   `released_at` sync-add, prefs table, per-user watch-state mapping — and a Fable agent for the
-   sort/filter UX) and Fable budget (reset Mon 2026-07-13 ~07:59).
-2. **The books content engine — PLAN-032 (lists) + PLAN-033 (requests/wanted-view).** The owner
-   explicitly wants book/comic/audiobook content flowing; there is no Kometa/Lidarr-lists/requests
-   path for this media type yet. Both are Intake — each needs a scoping session. **PLAN-039**
-   (cap-aware pacing governor) pairs with them. First real content workload = the **F-08 comic
-   re-grabs** (24 series + 4 issues, listed in `.agents/context/2026-07-11-polish-loop.md`).
-3. **PLAN-038** (ticket exact-episode linking — scoped, all Qs ruled) and **small polish** (F-06
-   book-cover latency, F-09 bad-epub parsing).
+**Monday plan (owner-stated: "go hard" after the Fable reset, Mon 08:00):**
+1. **PLAN-029 build** — DESIGN COMPLETE (ADR-051/052/053 + DESIGN-026 Accepted). Owner's standing
+   lean: **Opus** on the data/domain layer (`released_at` sync-add, per-user prefs table,
+   watch-state mapping) + a **Fable agent** on the sort/filter UX. Needs only the green light.
+2. **Books Automation Saga scoping session** — the separate-app architecture (list engine driving
+   ebooks/audiobooks/comics the Kometa way, requests in-app per the #227 verdict, wanted-view
+   first, comics-source hunt, Google-Books retry/fallback, PLAN-040/041 fold-in). All research
+   inputs are on the board.
+3. **PLAN-038** (ticket episode-linking — scoped) + owner-test feedback fixes + small polish
+   (F-06 covers, F-09 epubs).
 
-**Owner-side / blocked:** **SMTP relay (F-04)** needs the owner in 1Password (app-password/OAuth) —
-it unblocks PLAN-035 (ticket emails) and estate-wide email. Ratify the **"Helpdesk" vs "Tickets"**
-name at the screenshot review (12 hermetic shots exist; capture script
-`apps/web/e2e/support/capture-helpdesk.ts`).
+**Owner-side (surface Monday):** **SMTP (F-04) is the ONE known 1Password blocker** — Google
+Workspace app password + `noreply@haynesnetwork.com` alias into a 1P item (unblocks PLAN-035 +
+estate email). MAM: 14/20 unsatisfied, matures ~Tue eve; governor enforces the cap (headroom 6) —
+easy on manual grabs; verify qB 5.2.1 on Approved Clients. Test the new Discord embed with
+`https://haynesnetwork.com/?v=2` (embed cache). Standing: ratify "Helpdesk" vs "Tickets";
+usage-credits toggle is ON (weekly-cap overflow spends the credit balance — flip off if unwanted).
 
-**Model-switch watch (CRITICAL):** a Fable→Opus safeguard flipped the coordinator session repeatedly
-2026-07-11 — the owner caught each. The probe-before-dispatch cadence checks SUBAGENT models only; it
-does NOT catch a coordinator flip mid-conversation. Keep prompt phrasing neutral; **discuss agent
-type with the owner before every dispatch**; expect the owner to be the backstop. See
-`[[fable-safeguard-model-switch]]` + `[[delegation-fable-ux-opus-fixes]]` (budget note).
+**Model-switch watch (CRITICAL — now BOTH directions):** the Fable→Opus coordinator safeguard
+(owner is the backstop; probe before every dispatch/PR-merge/cluster-mutation) **plus the new
+finding: ANY post-stop continuation of a subagent — SendMessage resume OR self-resume via its own
+background watcher — re-resolves to the session model (Fable), silently dropping `model: opus`.**
+Proven twice 2026-07-11/12. Countermeasures (now standard): dispatch prompts end with "arm
+`gh pr merge --auto` then END, never wait on CI"; transcript ground-truth
+`grep -o '"model":"[^"]*"' <output-file> | sort | uniq -c` when a finished agent shows new
+activity; TaskStop a flipped continuation and the coordinator takes the tail. See
+`[[subagent-resume-loses-model-override]]` + `[[fable-safeguard-model-switch]]`.
 
 ---
 
-- **Last updated:** 2026-07-11 — **BOARD AUDIT + SESSION-3 WRAP.** Filed to `completed/`:
+- **Last updated:** 2026-07-12 — **SESSION-4 WRAP (the books-pipeline night).** MAM live fixes
+  (queueing trap; provider priority via the Prowlarr-fullSync ownership discovery — OPS-013
+  corrected twice); **PLAN-039 governor COMPLETED v0.45.0** (ADR-054/DESIGN-027/0041/
+  `@hnet/downloads`; live-proven 13→14 unsatisfied across the real Matilda grab); **link-preview
+  branding v0.46.0** (DESIGN-004 D-20; one-constant copy; `/og` banner; `?v=2` to bust Discord's
+  embed cache); list-sources research #221 + Seerr-for-books survey #227 (adopt nothing);
+  PLAN-040/041 filed; **PLAN-032 escalated → Books Automation Saga** (separate-app lean);
+  PLAN-033 survey done; Matilda END-TO-END proof (GB 503/no-retry = saga input); the
+  subagent-resume model-flip mechanism found + countermeasures standardized. Chronicle:
+  `.agents/context/2026-07-12-session-4-wrap.md`.
+- **Prior milestone:** 2026-07-11 — **BOARD AUDIT + SESSION-3 WRAP.** Filed to `completed/`:
   PLAN-036 (history contract v0.43.1), PLAN-034 (Helpdesk v0.44.0), PLAN-031 (MAM acquisition Phase B),
   PLAN-021 (AI/Open WebUI — shipped earlier, filed in the audit). Deleted 3 stale active duplicates
   (023/027/034 pre-completion copies). PLAN-029 design docs merged (plan stays ACTIVE for the build).
