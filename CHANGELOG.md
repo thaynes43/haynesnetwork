@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.2](https://github.com/thaynes43/haynesnetwork/compare/v0.46.1...v0.46.2) (2026-07-12)
+
+
+### Bug Fixes
+
+* trim link-preview copy — end at "members only" (owner embed review) ([#233](https://github.com/thaynes43/haynesnetwork/issues/233)) ([c9b3317](https://github.com/thaynes43/haynesnetwork/commit/c9b3317c81a83970758b86ce1e7d15e1847011e2))
+
 ## [0.46.1](https://github.com/thaynes43/haynesnetwork/compare/v0.46.0...v0.46.1) (2026-07-12)
 
 
