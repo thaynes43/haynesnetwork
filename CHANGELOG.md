@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.46.1](https://github.com/thaynes43/haynesnetwork/compare/v0.46.0...v0.46.1) (2026-07-12)
+
+
+### Bug Fixes
+
+* link-preview OG tags resolved to localhost in prod (metadataBase origin) ([#231](https://github.com/thaynes43/haynesnetwork/issues/231)) ([b92d43e](https://github.com/thaynes43/haynesnetwork/commit/b92d43ebf95517de5459906cf23d2ecdbb6a77af))
+
+
+### Documentation
+
+* PLAN-041 — Matilda root cause closed manually (stale German epub + Kavita folder-merge); quarantine pattern proven ([#232](https://github.com/thaynes43/haynesnetwork/issues/232)) ([f845a38](https://github.com/thaynes43/haynesnetwork/commit/f845a3815c563b11b125a2cf2575203c24dca4d3))
+* session-4 wrap — PLAN-039 completed, Monday plan, chronicle ([#229](https://github.com/thaynes43/haynesnetwork/issues/229)) ([628e9f4](https://github.com/thaynes43/haynesnetwork/commit/628e9f4528523f5bb6d3e63ca35ee4433eab6ac1))
+
 ## [0.46.0](https://github.com/thaynes43/haynesnetwork/compare/v0.45.0...v0.46.0) (2026-07-12)
 
 
