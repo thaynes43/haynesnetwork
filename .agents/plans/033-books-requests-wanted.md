@@ -49,3 +49,51 @@
 ## Out of scope until scoped
 
 Everything — especially any `@hnet/books` write surface (ADR required first).
+
+## Survey outcome (2026-07-12)
+
+Full survey with per-candidate evaluations, comparison matrix, and citations:
+`.agents/context/2026-07-12-seerr-for-books-survey.md` (web research + read-only LL pod recon;
+no config changed, no grab, no MAM contact).
+
+**Verdict: adopt NOTHING as the production requester — BUILD the request flow into the Books
+Automation Saga (in-app), reusing the LL API seam. Keep Libreseerr as a UX reference only.**
+
+- **The "Seerr for books" landscape is real but thin, and NONE covers comics.** Purpose-built
+  candidates are **Libreseerr**, **Shelfarr**, **AudioBookRequest**, **SeerrNG** — all
+  ebook/audiobook only. Mainline **Ombi / Seerr (Jellyseerr+Overseerr, merged Feb'26; Overseerr
+  archived) have no book support** in 2026 (books aren't even in Seerr's music-style preview).
+- **Only Libreseerr fronts OUR exact LazyLibrarian** as a pure request-broker (no deletes/imports,
+  marks wanted → inherits usenet-first + the PLAN-039 governor for free). But it stores identity/
+  roles/requests in **flat JSON outside** haynesnetwork's Postgres audit model (against hard rule 6),
+  has **no approval gate**, and is young/solo (~58★). Marginal — best as a UX reference, not adopted.
+- **Shelfarr (most polished, OIDC-Authentik, /api/v1) and AudioBookRequest (healthiest community)
+  are OUT for coexistence:** they *are* book *arrs (own Prowlarr + download clients + imports + MAM
+  wiring), so adopting one runs a **second acquisition pipeline the MAM governor cannot see or
+  throttle** — the biggest compliance risk in the books program (breaks hard rule 4 + OPS-013 §6).
+  SeerrNG needs a Bookshelf/Readarr backend we don't run (same collision) and is a 6★ fork.
+- **LazyLibrarian ALREADY has native multi-user** (`users` table + per-media permission bitmask;
+  friend role = search + mark-Wanted) and **Authentik-frontable trusted-header proxy auth**
+  (`PROXY_AUTH`/`X-WEBAUTH-USER`/`PROXY_REGISTER`) — but its "request" is thin: the low-priv
+  *Request to Download* button just **emails the admin** (no queue/state/audit), and the only real
+  want-write is giving a user `perm_status` to mark **Wanted with no approval**. Usable as a
+  **zero-build stopgap** behind Authentik forward-auth, not the product the owner pictured.
+
+**What the saga should do with this (answers to Q-03, informs Q-01/Q-02/Q-04):**
+
+1. **Ship the wanted-not-on-disk VIEW first** — it is a **LL+Kapowarr read, decoupled from any
+   requester** (mirror-only, hard rule 4 extended; reuses PLAN-023 read-only LL access). Cheap,
+   high-value, no adopt decision. (Q2 answer: the backlog is readable via LL's API/DB, not via
+   any requester — Libreseerr has no external API and just writes wanted into LL anyway.)
+2. **Build the request FLOW in-app**, layered on **PLAN-032 Track-2's LL-write machinery**
+   (`addbookbyisbn`/mark-wanted) + the metadata search PLAN-032 already scoped (Google Books key
+   in 1P) — so it's a **small addition, not a new pipeline**. Only an in-app build satisfies all
+   four estate constraints at once: Authentik **OIDC** (hard rule 5), Postgres **roles + in-tx
+   audit** (hard rule 6, Bulletin action-grant precedent for request/approve), a real
+   requested→approved→grabbed→on-disk→denied **state machine + attribution**, and a
+   **governor-aware request quota** (Q-02 is a live compliance need). New confined write surface
+   `@hnet/books/write` (own ADR).
+3. **Comics (Q-04): nothing to adopt, build-only later.** No comic requester exists; Kapowarr has
+   no request front-end (the archived Overseerr Kapowarr request never shipped). An in-app request
+   that writes to Kapowarr's API is a later saga increment; near-term comics stay on Kapowarr
+   volume-completion + manual (per PLAN-032).
