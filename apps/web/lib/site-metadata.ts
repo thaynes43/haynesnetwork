@@ -13,7 +13,7 @@ import { BRAND_ACCENT } from './brand';
  * constant to change the embed copy everywhere.
  */
 export const SITE_DESCRIPTION =
-  "Front door to the haynes-ops self hosted apps. Closed site — members only; access isn't given out.";
+  'Front door to the haynes-ops self hosted apps. Closed site — members only.';
 
 /** The embed title / site name (`og:title`, `og:site_name`) — the wordmark, not a page title. */
 export const SITE_NAME = 'haynesnetwork';

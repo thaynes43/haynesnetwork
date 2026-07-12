@@ -850,7 +850,10 @@ which is always the wordmark **haynesnetwork** (`og:site_name` matches).
 **The one copy constant.** `SITE_DESCRIPTION` in `lib/site-metadata.ts` is the single, plain,
 owner-editable string feeding `description` + `og:description` + `twitter:description`:
 
-> Front door to the haynes-ops self hosted apps. Closed site — members only; access isn't given out.
+> Front door to the haynes-ops self hosted apps. Closed site — members only.
+
+(Trimmed 2026-07-12 at the owner's embed review — "access isn't given out" is implied by
+"members only".)
 
 **The banner.** A 1200×630 image is generated on the fly by `app/og/route.tsx` (`next/og`
 ImageResponse — Satori + resvg with the bundled Geist font, no external fetch, CSP-safe) and served
