@@ -25,13 +25,19 @@ export const OG_IMAGE_WIDTH = 1200;
 export const OG_IMAGE_HEIGHT = 630;
 
 /**
- * The app's public origin, matching how the web app already derives it for the tRPC client
- * (apps/web/lib/trpc-provider.tsx). In the cluster `NEXT_PUBLIC_BASE_URL` is the bare apex
- * (`https://haynesnetwork.com`); locally it falls back to the dev origin. `metadataBase` uses
- * this to turn the relative `/og` image URL into the absolute URL crawlers require.
+ * The app's public origin, used ONLY server-side (the root-layout metadata export + the `/og`
+ * route — both server components). `metadataBase` uses it to turn the relative `/og` image URL
+ * into the absolute URL crawlers require. Resolution order:
+ * 1. `NEXT_PUBLIC_BASE_URL` — inlined at BUILD time; not set in CI, so empty in the cluster (kept
+ *    first only so a build-time override would win if ever set).
+ * 2. `BETTER_AUTH_URL` — the canonical public apex (`https://haynesnetwork.com`), set at RUNTIME
+ *    in `haynesnetwork-secret`; this is what actually resolves in production. Safe to read here
+ *    because this function is server-only (a client use would need a NEXT_PUBLIC_ var).
+ * 3. dev-origin fallback for `pnpm dev:local`.
  */
 export function resolvePublicOrigin(): string {
-  return process.env.NEXT_PUBLIC_BASE_URL ?? 'http://localhost:3000';
+  const fromEnv = process.env.NEXT_PUBLIC_BASE_URL || process.env.BETTER_AUTH_URL;
+  return fromEnv || 'http://localhost:3000';
 }
 
 export const siteMetadata: Metadata = {
