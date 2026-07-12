@@ -38,7 +38,11 @@ architecture**:
 
 - **Q-01 — pure manager vs *arr-shaped service:** where on that spectrum? (API-first service is
   what makes the app integration + RBAC story clean; also enables the poster-guard/media hooks to
-  live there instead of in @hnet/sync long-term.)
+  live there instead of in @hnet/sync long-term.) **New driver (owner 2026-07-11, PLAN-041):**
+  the Library **Fix-everywhere parity goal** — YouTube/Peloton items can only get the TV/Movies-
+  style "Fix" (re-download/replace a bad copy) if this becomes the *arr-shaped service; a pure
+  config manager cannot remediate a single item. Weigh that leg of the parity table in the Q-01
+  decision.
 - **Q-02 — the ytdlp source sweep:** which source types are first-class out of the box; what does
   "supported" mean (subscribe/download/organize/present)?
 - **Q-03 — plugin interface:** what does the Peloton port need from it (auth/session handling,
