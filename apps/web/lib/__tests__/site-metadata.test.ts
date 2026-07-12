@@ -67,22 +67,41 @@ describe('link-preview metadata (DESIGN-004 D-20)', () => {
   });
 });
 
-describe('resolvePublicOrigin — env-aware public origin (matches the tRPC client)', () => {
-  const original = process.env.NEXT_PUBLIC_BASE_URL;
+describe('resolvePublicOrigin — env-aware public origin (server-only)', () => {
+  const originalPublic = process.env.NEXT_PUBLIC_BASE_URL;
+  const originalAuth = process.env.BETTER_AUTH_URL;
   afterEach(() => {
-    if (original === undefined) delete process.env.NEXT_PUBLIC_BASE_URL;
-    else process.env.NEXT_PUBLIC_BASE_URL = original;
+    if (originalPublic === undefined) delete process.env.NEXT_PUBLIC_BASE_URL;
+    else process.env.NEXT_PUBLIC_BASE_URL = originalPublic;
+    if (originalAuth === undefined) delete process.env.BETTER_AUTH_URL;
+    else process.env.BETTER_AUTH_URL = originalAuth;
   });
 
-  it('uses NEXT_PUBLIC_BASE_URL (the bare apex in prod) when set', () => {
+  it('prefers NEXT_PUBLIC_BASE_URL (a build-time override) when set', () => {
     process.env.NEXT_PUBLIC_BASE_URL = 'https://haynesnetwork.com';
+    process.env.BETTER_AUTH_URL = 'https://ignored.example';
     expect(resolvePublicOrigin()).toBe('https://haynesnetwork.com');
-    // metadataBase built from it turns /og into the production absolute URL.
     expect(new URL('/og', resolvePublicOrigin()).toString()).toBe('https://haynesnetwork.com/og');
   });
 
-  it('falls back to the local dev origin when unset', () => {
+  it('falls back to BETTER_AUTH_URL (the runtime prod apex) when NEXT_PUBLIC_BASE_URL is empty', () => {
+    // Reproduces the cluster: NEXT_PUBLIC_* is inlined empty at build; BETTER_AUTH_URL is the
+    // real runtime origin (haynesnetwork-secret). Regression guard for the localhost-leak bug.
     delete process.env.NEXT_PUBLIC_BASE_URL;
+    process.env.BETTER_AUTH_URL = 'https://haynesnetwork.com';
+    expect(resolvePublicOrigin()).toBe('https://haynesnetwork.com');
+    expect(new URL('/og', resolvePublicOrigin()).toString()).toBe('https://haynesnetwork.com/og');
+  });
+
+  it('treats an empty-string NEXT_PUBLIC_BASE_URL as unset (build-time inlined empty)', () => {
+    process.env.NEXT_PUBLIC_BASE_URL = '';
+    process.env.BETTER_AUTH_URL = 'https://haynesnetwork.com';
+    expect(resolvePublicOrigin()).toBe('https://haynesnetwork.com');
+  });
+
+  it('falls back to the local dev origin when nothing is set', () => {
+    delete process.env.NEXT_PUBLIC_BASE_URL;
+    delete process.env.BETTER_AUTH_URL;
     expect(resolvePublicOrigin()).toBe('http://localhost:3000');
   });
 });
