@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.46.0](https://github.com/thaynes43/haynesnetwork/compare/v0.45.0...v0.46.0) (2026-07-12)
+
+
+### Features
+
+* branded link previews — Open Graph metadata, banner image, embed color ([#228](https://github.com/thaynes43/haynesnetwork/issues/228)) ([44992d4](https://github.com/thaynes43/haynesnetwork/commit/44992d430a4cc3da24a752c249e4af2bdc642a40))
+
+
+### Documentation
+
+* books late-eve rulings — 032 escalated to Books Automation Saga; 033 survey authorized ([#226](https://github.com/thaynes43/haynesnetwork/issues/226)) ([9effabb](https://github.com/thaynes43/haynesnetwork/commit/9effabb306a5b3cd0da9861a261cec22b13a8170))
+* PLAN-033 Seerr-for-books survey + adopt-vs-build verdict ([#227](https://github.com/thaynes43/haynesnetwork/issues/227)) ([e60f752](https://github.com/thaynes43/haynesnetwork/commit/e60f752d778be6c9d8306806f0be9cca37c3948f))
+* PLAN-041 — Library Fix for books + Fix-everywhere parity goal; queue refresh ([#224](https://github.com/thaynes43/haynesnetwork/issues/224)) ([9800dd8](https://github.com/thaynes43/haynesnetwork/commit/9800dd8477cb0830e436c2a65a7869578101ab30))
+
 ## [0.45.0](https://github.com/thaynes43/haynesnetwork/compare/v0.44.1...v0.45.0) (2026-07-11)
 
 
