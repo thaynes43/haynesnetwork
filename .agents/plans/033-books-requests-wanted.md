@@ -1,9 +1,15 @@
 # PLAN-033: Book/ebook/comic/audiobook requests + the wanted-not-on-disk view
 
-- **Status:** PARKED (owner ruling 2026-07-11 eve): too large a project to take on now; when
-  revisited, START by evaluating existing "Seerr-for-books" solutions rather than building
-  in-app. The near-term content need is covered by PLAN-032 (lists → LL auto-grab) + PLAN-039
-  (MAM cap governor). NOT dispatched.
+- **Status:** **SURVEY DISPATCHED (owner authorized 2026-07-11 late-eve).** The owner restated
+  the need: "I'm really looking for a Seerr type app where you request these things" — so the
+  parked plan's first step (evaluate existing solutions) runs NOW as a research pass: existing
+  request apps for books/audiobooks/comics, including **LazyLibrarian's own built-in
+  user-accounts/request feature**, judged on LL/Kapowarr integration, OIDC/Authentik fit, and
+  the estate's roles/audit posture. Adopt-vs-build follows the survey, likely decided inside
+  the **Books Automation Saga** (see PLAN-032 — the owner leans to a separate books-automation
+  application; a requests surface may belong to it). Confirmed: Kavita "Want To Read" is
+  library-only (cannot request net-new titles) — not a requests substitute. The build itself
+  stays NOT dispatched.
 - **Owner problem statement:** users have NO way to request books/ebooks (movies/TV have Seerr)
   and NO view of what is wanted-but-not-on-disk for the book layer — so members can't
   participate and the owner can't see the acquisition backlog in-app.
