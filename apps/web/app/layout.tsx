@@ -1,8 +1,8 @@
-import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import localFont from 'next/font/local';
 import { ThemeProvider } from '@hnet/ui';
 import { TRPCProvider } from '@/lib/trpc-provider';
+import { siteMetadata, siteViewport } from '@/lib/site-metadata';
 import '@hnet/ui/theme/tokens.css';
 import '@hnet/ui/layout/layout.css';
 import '@hnet/ui/filters/filters.css';
@@ -19,10 +19,11 @@ const outfit = localFont({
   variable: '--font-outfit',
 });
 
-export const metadata: Metadata = {
-  title: 'haynesnetwork',
-  description: 'SSO front door for *.haynesnetwork.com',
-};
+// DESIGN-004 D-20 — link-preview (Open Graph / Twitter) branding + theme-color live in
+// lib/site-metadata.ts (the one editable copy constant) and apply to every route the
+// unauthenticated crawler reaches (it is redirected to /login, which inherits these).
+export const metadata = siteMetadata;
+export const viewport = siteViewport;
 
 // Pre-hydration theme script (DESIGN-004 D-03): the server renders the dark
 // default on <html>; this inline, blocking, dependency-free ES5 script corrects
