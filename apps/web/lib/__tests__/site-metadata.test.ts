@@ -25,7 +25,7 @@ const twImages = siteMetadata.twitter?.images as OgImage[];
 describe('link-preview metadata (DESIGN-004 D-20)', () => {
   it('ships the exact owner-directed description, plain and unchanged', () => {
     expect(SITE_DESCRIPTION).toBe(
-      "Front door to the haynes-ops self hosted apps. Closed site — members only; access isn't given out.",
+      'Front door to the haynes-ops self hosted apps. Closed site — members only.',
     );
     // The one constant feeds both the general description and both card descriptions.
     expect(siteMetadata.description).toBe(SITE_DESCRIPTION);
