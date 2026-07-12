@@ -1,7 +1,24 @@
 # PLAN-032: List-driven book/audiobook/comic automation — "Kometa/Spotify-lists for books"
 
-- **Status:** RESEARCH+DESIGN (owner scoped 2026-07-11 eve). Research dispatched; build follows
-  doc review. **Owner rulings (2026-07-11):**
+- **Status:** **ESCALATED TO THE BOOKS AUTOMATION SAGA (owner ruling 2026-07-11 late-eve)** —
+  research done (#221 + the "Proposed v1 shape" below), but the ARCHITECTURE outgrew a quick
+  ratify: the owner leans to a **separate application** ("a clean split between front and back
+  end, then an API between it and the UI for config and monitoring") — the same *arr-shaped-
+  service instinct as PLAN-025 Q-01. To be "baked out in a Saga later"; explicitly NOT tonight
+  (budget). **Late rulings that reshape v1:**
+  - The owner has **NO Goodreads or Hardcover account** and doesn't want an external curation
+    home — the research's Track-1 (LL-native feeds) is **moot for v1**; Track-2's concepts
+    (official APIs, ISBN-keyed adds, quality floor, **retry/backoff around Google Books** — the
+    Q-06 root cause found live 2026-07-11: GB serves intermittent 503 "backendFailed" bursts
+    and LL's json_request fetches once with no retry, so a burst reads as "book not found")
+    feed the saga design.
+  - **Goal restated (owner verbatim-in-intent):** "lists that update on their own and drive all
+    three — EBooks, Audiobooks, and Comics. Think about how my TV/Movies flow in — most things
+    people want are there because of Kometa and Lidarr lists… We need to fill that gap." Lists
+    are the CONTENT DRIVER; requests (the 033 survey) are the human overlay.
+  - **Comics mandate:** no list ecosystem exists (ComicVine is metadata-only) — the saga must
+    hunt for any pollable comics popularity source or design curated-seed lists honestly.
+- Original scoping rulings (2026-07-11 eve), kept for the record:
   - **Goal restated:** keep MAM seeding strong but pull content **through SABnzbd/usenet as fast
     as possible** to fill the book/comic/ebook library; lists exist to find *quality* content
     ("top rated of all time", "popular now", NYT) — not junk.
