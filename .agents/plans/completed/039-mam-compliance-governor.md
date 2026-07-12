@@ -1,10 +1,23 @@
 # PLAN-039: MAM compliance governor — cap-aware torrent-fallback pacing
 
-- **Status:** BUILD (owner ruling 2026-07-11 eve: "governor first, then docs" — the guardrail
-  ships BEFORE any list automation drives grabs; Opus agent dispatched). Supersedes the earlier
-  "wait for miss-rate data" gate: the first 13 real grabs happened 2026-07-11 and exposed the
-  compliance risk directly (see OPS-013 corrections — the qB queueing trap + backwards provider
-  priority). Rank knob starts at 20 (New Member).
+- **Status:** ✅ **COMPLETED (v0.45.0, 2026-07-11/12).** ADR-054 / DESIGN-027 / migration 0041
+  (`mam_gate_state`) + the confined `@hnet/downloads` package (qB count read + Prowlarr indexer
+  `enable` toggle, import-confined to domain). Seam = the **Prowlarr indexer** (its fullSync LL
+  application propagates the toggle to LazyLibrarian in ~6s, so LL never queries a dead feed —
+  the LL-side toggle was REJECTED as non-durable, fullSync clobbers it). Fail-closed counting,
+  transitions-only Pushover, first-run baseline never pages, config behind one
+  `resolveGovernorConfig()` seam for PLAN-040. Deployed via haynes-ops `726e2b9e` (image bump +
+  `sync-mam-governor` CronJob `4,19,34,49 * * * *` + PROWLARR_API_KEY ExternalSecret line).
+  **Live-proven:** first manual run counted 13/13 unsatisfied (threshold 15, headroom 7, gate
+  open, no page, 86ms); scheduled runs green; after the real Matilda grab the next run read
+  **14 unsatisfied / headroom 6** — the count tracks reality. Build was an Opus agent; the
+  coordinator took over merge→release→deploy after the agent's self-resume flipped it to Fable
+  (see `[[subagent-resume-loses-model-override]]`).
+  Original build ruling (2026-07-11 eve, kept for the record): "governor first, then docs" —
+  the guardrail ships BEFORE any list automation drives grabs; superseded the earlier
+  "wait for miss-rate data" gate after the first 13 real grabs exposed the compliance risk
+  directly (OPS-013 corrections — the qB queueing trap + backwards provider priority). Rank
+  knob starts at 20 (New Member).
 - **The problem (owner-stated):** LL is usenet-first with MAM fallback. A large wanted list
   (say 1000 items, 100 usenet-misses) would burst-grab past MAM's **unsatisfied-torrents cap**
   (New Member 20 → User 50 → PU 100 → VIP 150; exceed ⇒ downloads blocked up to 24h — see
