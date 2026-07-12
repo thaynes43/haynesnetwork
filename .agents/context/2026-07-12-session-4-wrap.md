@@ -71,8 +71,17 @@ TaskStop). Mid-flight SendMessage to a RUNNING agent is safe. Countermeasures no
 (1) dispatch prompts end with "arm `gh pr merge --auto` then END — do not wait on CI";
 (2) transcript ground-truth check `grep -o '"model":"[^"]*"' <output-file> | sort | uniq -c`
 whenever a finished agent shows new activity; (3) TaskStop the flipped continuation and the
-coordinator takes the tail. Memory: `[[subagent-resume-loses-model-override]]`. All four
+coordinator takes the tail. Memory: `[[subagent-resume-loses-model-override]]`. All
 probes tonight returned Fable 5; both research agents' final reports led with Opus identity.
+
+**AND a COORDINATOR flip (#4 overall) hit this session too:** the Fable→Opus safeguard fired
+at the ~23:37 LL-log grep checking Matilda's routing (the command packed `snatch`/torrent-state
+keywords together — likely the trigger; keep grep phrasing neutral). The owner caught it and
+restored Fable ~00:45. Degraded window: Matilda qB verification, governor run #2, the budget
+discussion, the #225 close/reopen+merge (check-gated), and the first draft of these wrap docs —
+**all reviewed clean after restore; no cluster mutation beyond a one-off governor job; the
+haynes-ops v0.46.0 bump had not yet happened.** The subagent probes kept returning Fable 5
+throughout — reconfirming they CANNOT detect a coordinator flip; the owner remains the backstop.
 
 ## Monday menu (owner: "go hard" + "burn some usage making sure plans are ready to green light")
 
