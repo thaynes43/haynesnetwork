@@ -181,3 +181,23 @@ does not apply to them.
 - **Q-11:** adopt the OIDC provider/application (pk 109) into blueprints for full GitOps, or leave
   them API-managed (OPS-001). Provider secrets stay in 1Password either way. A sanitized snapshot
   lives in the sibling repo's `exports/` for reference.
+
+## 2026-07-13 amendment — old-WebKit login crash: compat-mode workaround (partial) + PLAN-042
+
+- **Live deviation from the drift-zero baseline:** `compatibility_mode: true` on all four flows in
+  `20-hnet-flows.yaml` (haynes-ops `571c7a65`) + a brand-CSS specificity pass so the brand green
+  survives the ShadyDOM polyfill (`0d9699a`, `10-hnet-brand.yaml`; `!important` on the
+  load-bearing declarations — a no-op under native rendering).
+- **Why:** the authentik ≥2025.12 flow interface crashes OLD WebKit's renderer (iOS/iPadOS
+  ~16.6–18.3.x, macOS Safari ~17.6) — upstream goauthentik#19814; TRUE root cause is **native CSS
+  nesting** in the web bundles hitting WebKit bug **#290102** (style-invalidation over a freed
+  `StyleRuleNestedDeclarations` selector list; native crash, no console errors). Compat mode fixed
+  Playwright's WebKit builds but **does NOT cover real old-WebKit devices** — the crash is
+  CSS-engine-level. Current-OS WebKit is fixed upstream.
+- **Known compat-mode side effects (accepted meanwhile):** identification-stage Plex-first
+  ordering + divider are inert (local form renders above the Plex button, correctly
+  de-emphasized); the Safari TOTP-enrollment caveat (§ above) likely shares the #19814 root cause.
+- **Disposition:** `.agents/plans/042-*.md` owns the resolution — Option A (post-process the
+  served web assets with CSS-nesting lowering; upstream-RCA-verified recipe), Option B (upstream
+  watch / contribute the fix), Option C (affected users update their OS). Compat mode reverts as
+  part of whichever lands.

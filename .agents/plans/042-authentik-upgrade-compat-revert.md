@@ -1,8 +1,20 @@
-# PLAN-042: Authentik upgrade watch → revert login compatibility mode
+# PLAN-042: Old-WebKit login crash — mitigation + upstream watch (compat-mode revert folded in)
 
-- **Status:** Backlog, UNBLOCKED for the check step — **periodically check whether the upstream
-  Authentik fix has shipped; a fixed release triggers the work below.** The revert work itself is
-  gated only on that release existing (plus the owner-present upgrade rule).
+- **Status:** ESCALATED 2026-07-13 ~01:00 — **the compat-mode workaround does NOT fix real
+  Safari ≤18.3.x** (owner re-tested: still crashes; upstream RCA explains why, below). The plan
+  now has a **dispatchable engineering option** (asset nesting-lowering) awaiting the owner's
+  Monday ruling, plus the original upstream watch.
+- **TRUE ROOT CAUSE (upstream RCA, goauthentik#19814 comment 2026-06-30):** authentik ≥2025.12
+  (PatternFly v6 era) ships **native CSS nesting** pervasively — in `flow-<ver>.css` AND baked
+  into JS-embedded component styles (esbuild loads CSS as raw text, never lowers it). Old WebKit
+  has bug **#290102**: a `StyleRuleNestedDeclarations` selector list is left dangling; the next
+  `setAttribute()` from Lit's render walks the freed list → **native WebContent crash
+  (EXC_BAD_ACCESS), zero console errors**. Affected: iOS/iPadOS ~16.6–18.3.x and macOS Safari
+  ~17.6 (upstream reports); FIXED in newer WebKit (current iOS/macOS are fine — "updating iOS
+  resolves it"). This is why compat mode (ShadyDOM) passed in Playwright's WebKit builds but the
+  owner's Safari 18.3.1 still spins — the crash is CSS-engine-level, not shadow-DOM-level.
+- **Compat mode disposition:** keep `compatibility_mode: true` for now (harmless; helped at least
+  one engine build; reverting churns the login again) — revert it as part of whichever fix lands.
 - **Origin (2026-07-12/13 night):** the Authentik **2026.5.3** flow-interface SPA **crashes the
   WebKit 18.x renderer** at boot (before the first executor call) — iPad Safari, Kiosker Pro
   (WKWebView), and desktop Safari 18.3.1 private mode all spun forever on login. Same defect class
@@ -18,13 +30,33 @@
   covered by our flows (authenticator-setup flows aren't blueprint-managed) — an upstream fix
   should cure it for real.
 
-## The periodic check (cheap, any session; do this until it fires)
+## Option A — OUR mitigation (dispatchable NOW, owner ruling needed): asset nesting-lowering
 
-1. Check upstream: is there an Authentik release whose changelog/issues close **#19814** (or the
-   WebKit-crash class)? Look at goauthentik/authentik releases + the issue thread.
-2. If NO fix yet: note the date checked in this file's log below; done (minutes of work).
-3. If a FIXED release exists → this plan becomes DISPATCHABLE (see work section). Surface it to
-   the owner as a queue item — the upgrade step is **owner-present** (login estate).
+The RCA author **verified** this approach: rebuild/post-process the authentik frontend bundles
+with CSS-nesting **lowering** (lightningcss, target ~Safari 15) across BOTH the CSS bundles and
+the JS-embedded component styles → 0 nesting markers → no `StyleRuleNestedDeclarations` → no
+crash on old WebKit. For OUR estate (no fork): a **post-process step over the served static
+assets** — e.g. an initContainer on the authentik server pod that copies `/web/dist` to an
+emptyDir, runs the lowering over `flow-*.css` + the JS bundles' embedded styles, and mounts it
+over the static path. Scope: haynes-ops-only; must survive authentik image bumps (re-runs each
+start); needs a verify harness (the sso-webkit repro + ideally an OLD-WebKit engine or the iOS
+Simulator note from upstream). Risks: transforming minified JS-embedded CSS safely; size/startup
+cost. **Decide Monday: is old-WebKit reach worth this build?** (Owner is advertising the site;
+upstream reports cover iOS 16–18 devices which are still common.)
+
+## Option B — the upstream watch (cheap, any session; unchanged)
+
+1. Check upstream: an Authentik release that lowers CSS nesting in its web build (or otherwise
+   closes the #19814 class — no mitigation PR existed as of 2026-07-13; 2026.5.4's changelog is
+   silent on it). Also consider FILING/upvoting the mitigation upstream — the RCA comment already
+   contains the verified recipe.
+2. If NO fix yet: note the date checked in the log below; done (minutes).
+3. A FIXED release → the upgrade path becomes dispatchable (owner-present, login estate).
+
+## Option C — user-side (no engineering): affected users update their OS
+
+WebKit fixed the bug — current iOS/iPadOS/macOS don't crash. Owner/sister devices: update. Does
+NOT help anonymous visitors on older devices (that's what A/B are for).
 
 ## The triggered work (dispatch when the check fires)
 
@@ -55,3 +87,6 @@
 ## Check log
 
 - 2026-07-13 (filing): no fixed release yet — 2026.5.3 is current and affected.
+- 2026-07-13 ~01:00 (escalation): owner re-test — compat mode does NOT fix Safari 18.3.1; RCA
+  found in the #19814 thread (CSS nesting + WebKit #290102); 2026.5.4 (2026-07-08) changelog
+  silent; no upstream mitigation PR. Options A/B/C written; owner ruling Monday.

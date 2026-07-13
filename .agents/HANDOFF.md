@@ -4,21 +4,27 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-## ▶ NEXT SESSION — start here (2026-07-12 session-5 wrap; **MONDAY = GO HARD**)
+## ▶ NEXT SESSION — start here (2026-07-13 session-5 FINAL wrap; **MONDAY = GO HARD**)
 
-**Site is live at https://haynesnetwork.com; latest release v0.46.2.** Session 5 (Sun midday,
-weekend-test fixes): **Matilda "still not English" root-caused and fixed live** — the English
-re-grab had worked; a pre-pipeline **German** epub (2016) shared the series folder and **Kavita
-merges all files in a series folder into one series**, so members kept opening the stale copy.
-Fix: German epub moved to `books/quarantine/` (reversible) + Kavita rescan → series is
-English-only; LL `imp_preflang` already `en,…` (config was never the problem — stale
-pre-pipeline files are PLAN-041's job; finding + quarantine pattern recorded there, PR #232,
-answers its Q-02). **Matilda audiobook already existed** in ABS (21 tracks ~4h19m, 2013,
-English) — zero MAM cap spend. Unstuck PR #231 (was BEHIND with auto-merge armed) →
-**v0.46.1** (OG tags no longer resolve to localhost — live-verified) → owner embed review →
-copy trimmed to end at **"members only."** → **v0.46.2 live** (SITE_DESCRIPTION one-constant +
-test + DESIGN-004 D-20). Discord's ALT chip on the embed = its alt-text indicator
-(`og:image:alt`), kept for accessibility. Prior session context below ↓
+**Site is live at https://haynesnetwork.com; latest release v0.46.3.** Session 5 ran Sunday midday
+→ Monday 01:00 — the owner tested with his SISTER (real second-user feedback) and everything she
+hit got fixed same-day. **Full chronicle: `.agents/context/2026-07-13-session-5-wrap.md`** — read
+it; the headline items: **v0.46.1** (OG-localhost fix) → **v0.46.2** (embed copy "members only.")
+→ **v0.46.3** (sister's **nav-overlap on sub-375px phones**, PR #238 + **F-06 cover latency**
+WebP/LRU, PR #237); **THE WEBKIT LOGIN CRISIS — PARTIALLY fixed, ESCALATED at 01:00**
+(compat mode `571c7a65` + brand green `0d9699a` verified in Playwright engines, but the owner's
+REAL Safari 18.3.1 still crashes — TRUE root cause per upstream #19814 RCA: **native CSS nesting
+in authentik ≥2025.12 + WebKit bug #290102**, CSS-engine crash immune to ShadyDOM; current-OS
+WebKit is fixed, old iOS/macOS crashes; **PLAN-042 REWRITTEN — owner must rule Monday between
+A: our asset nesting-lowering mitigation (dispatchable, RCA-verified recipe) / B: upstream
+watch / C: users update OS**; compat mode stays ON meanwhile); **Matilda + Throne-of-Glass German strays root-caused** (Kavita merges series-folder
+files; German audio quarantined; the 7-book Maas batch landed **Kingdom of Ash audio (the
+sister's ask)** + 4 more same-night; ToG bk1/Heir-of-Fire audio/KoA epub in LL's retry queue);
+**F-09 epubs repaired** (15 fixed / 3 quarantined / 7 documented); **F-10 English-language audit
+filed (owner-ordered)**; the MAM **gate is CLOSED post-batch (correct)** — reopens as torrents
+mature ~Tue eve. GB truths for the saga: the key IS wired and 503-bursts hit keyed calls anyway →
+retry/backoff mandatory; `searchItem`≠title search (use GB-volume-id → `addBook`). Prior session
+context below ↓
 
 Session 4 (Sat eve →
 Sun 1am): fixed the MAM pipeline live (qB queueing trap + backwards provider priority — twice;
@@ -37,17 +43,26 @@ the weekend and will report fixes/polish.
    watch-state mapping) + a **Fable agent** on the sort/filter UX. Needs only the green light.
 2. **Books Automation Saga scoping session** — the separate-app architecture (list engine driving
    ebooks/audiobooks/comics the Kometa way, requests in-app per the #227 verdict, wanted-view
-   first, comics-source hunt, Google-Books retry/fallback, PLAN-040/041 fold-in). All research
-   inputs are on the board.
-3. **PLAN-038** (ticket episode-linking — scoped) + owner-test feedback fixes + small polish
-   (F-06 covers, F-09 epubs).
+   first, comics-source hunt, PLAN-040/041 fold-in) — now with session-5's inputs: GB retry
+   MANDATORY even keyed, `searchItem`≠titles, calibre missing from the LL image, and REAL
+   requests already arriving by sister-text.
+3. **F-10 English-language audit** (owner-ordered, Opus-able, governor-paced) — also sweeps the
+   F-09 leftovers (3 corrupt re-grabs + 7 other-defect epubs), azw3-only strays, and empty
+   folders. F-08 comic re-grabs remain the first comic workload.
+4. **PLAN-042 RULING (elevated — the owner is advertising the site):** old-WebKit visitors
+   (iOS ~16–18, older macOS Safari) crash on the login page and compat mode does NOT cover them.
+   Rule between Option A (build our asset nesting-lowering mitigation — dispatchable, recipe in
+   the plan), B (upstream watch / file the fix upstream), C (accept old-OS breakage). Then
+   **PLAN-038** + owner-test feedback fixes.
 
 **Owner-side (surface Monday):** **SMTP (F-04) is the ONE known 1Password blocker** — Google
 Workspace app password + `noreply@haynesnetwork.com` alias into a 1P item (unblocks PLAN-035 +
-estate email). MAM: 14/20 unsatisfied, matures ~Tue eve; governor enforces the cap (headroom 6) —
-easy on manual grabs; verify qB 5.2.1 on Approved Clients. Test the new Discord embed with
-`https://haynesnetwork.com/?v=2` (embed cache). Standing: ratify "Helpdesk" vs "Tickets";
-usage-credits toggle is ON (weekly-cap overflow spends the credit balance — flip off if unwanted).
+estate email). MAM: **gate CLOSED post-batch (correct)** — ~19 in books-mam, reopens as torrents
+mature ~Tue eve; NO manual grabs meanwhile; verify qB 5.2.1 on Approved Clients. Login page:
+ratify the restored **brand-green screenshots** + rule on the Plex-first-ordering follow-up
+(fix now with the same technique vs wait for the PLAN-042 revert). Kavita admin lever for
+cover weight: Media → "Save Media As" = WebP (F-06 residual). Standing: ratify "Helpdesk" vs
+"Tickets"; usage-credits toggle is ON (weekly-cap overflow spends the credit balance).
 
 **Model-switch watch (CRITICAL — now BOTH directions):** the Fable→Opus coordinator safeguard
 (owner is the backstop; probe before every dispatch/PR-merge/cluster-mutation) **plus the new
@@ -61,11 +76,18 @@ activity; TaskStop a flipped continuation and the coordinator takes the tail. Se
 
 ---
 
-- **Last updated:** 2026-07-12 (Sun midday) — **SESSION-5: weekend-test fixes, v0.46.1 + v0.46.2
-  live.** Matilda root cause closed (stale pre-pipeline German epub + Kavita series-folder merge;
-  quarantine + rescan; PLAN-041 Q-02 field-proven — PR #232); audiobook already in ABS; OG
-  localhost fix shipped (unstuck #231 → v0.46.1); embed copy trimmed to "members only."
-  (v0.46.2, live-verified). No new plans; Monday queue unchanged (top block).
+- **Last updated:** 2026-07-13 ~01:00 — **SESSION-5 FINAL (Sunday: the sister-test day).**
+  v0.46.1 (OG localhost) + v0.46.2 (embed copy) + v0.46.3 (sister's nav overlap #238 + F-06
+  cover WebP/LRU #237) all live-verified. WebKit login crisis: compat-mode workaround
+  (`571c7a65`) + brand-green re-win (`0d9699a`) shipped and engine-verified, then **ESCALATED —
+  real Safari ≤18.3.x still crashes; RCA = authentik's native CSS nesting + WebKit #290102;
+  PLAN-042 rewritten, owner rules Monday (options A/B/C)**. Books: Matilda closed (#232); F-09
+  epubs repaired (15/3/7); German ToG audio quarantined; Maas batch landed **Kingdom of Ash
+  audio** + 4 more (3 titles in LL retry); F-10 English audit filed (owner-ordered, #239); GB
+  key confirmed wired, 503-bursts hit keyed calls (retry mandatory; `searchItem`≠titles). MAM
+  gate CLOSED post-batch (correct; reopens ~Tue eve). kubectl/Omni outage mid-session
+  (owner re-auth'd; Grafana fallback proven). Chronicle:
+  `.agents/context/2026-07-13-session-5-wrap.md`.
 - **Prior milestone:** 2026-07-12 — **SESSION-4 WRAP (the books-pipeline night).** MAM live fixes
   (queueing trap; provider priority via the Prowlarr-fullSync ownership discovery — OPS-013
   corrected twice); **PLAN-039 governor COMPLETED v0.45.0** (ADR-054/DESIGN-027/0041/
