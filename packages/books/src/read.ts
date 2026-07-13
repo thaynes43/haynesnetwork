@@ -248,12 +248,20 @@ export class AudiobookshelfClient {
    * Fetch a library-item cover image server-side (bearer in a SERVER-SIDE header — never the browser). The
    * app cover PROXY streams the bytes. Returns the RAW Response so the caller decides on status (a 404 →
    * the fallback tile). Re-auths once on a 401.
+   *
+   * F-06 / ADR-041 idiom: ABS resizes + re-encodes covers UPSTREAM via `?width=&format=` (verified live
+   * 2026-07-12: a ~20 KB JPEG original becomes a ~10–14 KB 300-wide WebP) — pass `variant` to request the
+   * sized tile; omit it for the original (the proxy's per-image fallback tier).
    */
-  async fetchItemCover(itemId: string): Promise<Response> {
+  async fetchItemCover(
+    itemId: string,
+    variant?: { width: number; format: 'webp' | 'jpeg' },
+  ): Promise<Response> {
     const fetchImpl = this.opts.fetchImpl ?? fetch;
+    const query = variant ? `?width=${variant.width}&format=${variant.format}` : '';
     const attempt = async (): Promise<Response> => {
       const token = await this.bearerToken();
-      const url = `${this.baseUrl}/api/items/${encodeURIComponent(itemId)}/cover`;
+      const url = `${this.baseUrl}/api/items/${encodeURIComponent(itemId)}/cover${query}`;
       return fetchImpl(url, {
         headers: { Authorization: `Bearer ${token}`, Accept: 'image/*' },
         signal: AbortSignal.timeout(10_000),

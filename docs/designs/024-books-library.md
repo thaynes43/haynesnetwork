@@ -1,7 +1,7 @@
 # DESIGN-024: Books & Audiobooks Library — the `books_items` ledger, `books-sync`, section-gated walls + cover proxy
 
 - **Status:** Draft
-- **Last updated:** 2026-07-10
+- **Last updated:** 2026-07-12 (D-05 amended — F-06 cover-proxy perf: the ADR-041 idiom ported)
 - **Satisfies:** PRD-001 **R-151..R-156**; governed by **ADR-046** (books ledger source + the
   dedicated-table vs `media_items` decision), reusing **ADR-021 / DESIGN-009** (Section Permissions),
   **ADR-037** (ship-Admin-only rollout), **ADR-019** (authed poster proxy), and the **ADR-044 / DESIGN-022**
@@ -99,11 +99,38 @@ filter/sort/pagination + the cover-url builder + facets).
 `apps/web/app/api/books/cover/route.ts` (Node runtime) — session-gated AND `books`-section-gated
 (`effectiveSectionLevel(role,'books') === 'disabled'` → 404, the same server-authoritative posture as the
 ytdl-sub proxy). Validates `source` (closed enum) + `id` (numeric for Kavita, uuid-shaped for ABS), answers
-`If-None-Match` with a 304, else streams the upstream via `@hnet/api fetchBooksCover` (Kavita apiKey /
+`If-None-Match` with a 304, else serves the upstream via `@hnet/api getBooksCover` (Kavita apiKey /
 ABS bearer applied **server-side** — never the browser). Strong `(source, id, coverVersion)` ETag +
 `Cache-Control: private, max-age=86400, stale-while-revalidate=604800`; any miss → 404 →
-`MediaPoster` KindIcon fallback tile (`book`/`audiobook`/`comic` glyphs, currentColor). No transcode (covers
-are already thumbnail-sized), no storage.
+`MediaPoster` KindIcon fallback tile (`book`/`audiobook`/`comic` glyphs, currentColor). No storage.
+
+**Amended 2026-07-12 (F-06 — wall-scroll cover latency; the ADR-041 idiom ported).** The original
+"no transcode (covers are already thumbnail-sized)" note was half-wrong, measured live 2026-07-12:
+Kavita pre-generates covers at tile-ish dimensions but encodes **PNG** — 309 KB median / 400 KB max
+over a 20-series sample (~15–30× the Movies/TV `poster-250.jpg` tile), and `/api/Image/series-cover`
+**ignores resize params**; ABS originals are modest (10–24 KB JPEG) but every request re-fetched
+upstream (~70–140 ms in-cluster) with no server-side memoization. The port (same shape as DESIGN-017
+D-07, no new ADR — no deviation from ADR-041's pattern):
+
+- **ABS sized variant** (`@hnet/books` `fetchItemCover(id, variant?)` + `@hnet/api` `ABS_COVER_VARIANT`
+  = `{width: 300, format: 'webp'}`, FIXED server-side — never client-chosen): ABS resizes + re-encodes
+  upstream (`?width=300&format=webp` ⇒ ~10–14 KB WebP, verified live), width-only so native cover
+  aspect is kept. A sized-variant miss degrades to the **original-cover fallback tier** (ADR-041 C-02
+  mirror): served with `max-age=300`, **no ETag, never memoized** — a transient resize quirk can't make
+  originals sticky. Kavita has no resize seam, so its pre-generated cover is served as stored.
+- **LRU** (`booksCoverCache()` — a second `ThumbLruCache` singleton, default caps 32 MiB / 1 MiB per
+  entry, separate from the ytdl-sub one): memoizes the primary tier for BOTH sources keyed
+  `source:id:coverVersion` (version-scoped ⇒ replaced art misses; stale entries age out). Memoization,
+  NOT a store — the ADR-019 no-image-storage posture stands. Estate context: ABS fits whole
+  (~823 items × ~12 KB ≈ 10 MB); Kavita (1333 series × ~268 KB avg) keeps its hot ~2 wall pages.
+- **ETag**: unchanged formula for Kavita (`source:id:version` — bytes identical, existing browser
+  caches stay valid); ABS bakes in the variant token (`…:w300webp`) so pre-variant JPEG caches
+  revalidate once into the smaller WebP.
+- **Residual + the remaining lever**: repeat scrolls are now 304s/memory hits everywhere, and
+  Audiobooks first-paint tiles drop to ~10–14 KB — but Kavita first-paint payload stays ~300 KB/tile
+  because only Kavita itself can re-encode its covers. The ops-side lever (owner decision, not this
+  app) is Kavita's admin setting **Media → "Save Media As" = WebP**, which regenerates covers ~10×
+  smaller; the proxy needs no change to benefit.
 
 ## D-06 — Library UI (tabs + the three walls)
 
