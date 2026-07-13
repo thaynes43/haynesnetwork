@@ -135,6 +135,7 @@ dispatch** (standing rule).
 | 035 | Ticket email notifications | Backlogged | BLOCKED by SMTP (F-04). Admin-on-create + user opt-in status emails; rides the existing `notification_outbox` as a second channel. |
 | 037 | Collections (mirrored + logical) | Backlogged | Split out of 029 by owner ruling. Scope after 029 ships (reading-order series is the flagship). |
 | 025 | ytdl config-manager platform | Roadmap | Own scoping session; spans 3 repos; hinges on the pure-manager-vs-"arr-for-ytdl" fork. |
+| 042 | Authentik upgrade watch → revert login compat mode | Backlog — **periodic check is UNBLOCKED** | The 2026-07-12 WebKit login crash (upstream goauthentik#19814-class) is worked around via `compatibility_mode: true` on the four login flows (haynes-ops `571c7a65`). ANY session: check upstream for a fixed release (minutes; log the check in the plan). A fixed release makes the plan DISPATCHABLE: owner-present upgrade → revert compat mode → 4-engine live re-verify → retest the OPS-009 Safari TOTP-enrollment caveat. |
 
 ### Unplanned intake (owner-gated)
 

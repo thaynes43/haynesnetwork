@@ -147,11 +147,36 @@ Library-file collisions) unless flagged URGENT. Each: symptom → root cause (ve
 - OWNER: re-acquire the 24 quarantined series + 4 issues via Kapowarr; optional dedupe of 1293's
   cbr/cbz duplicates.
 
-## F-09 — EBooks: some epubs fail Kavita parsing [NEW, unfixed]
-- Several .epub fail with `Version number '1.1' is invalid` (epub XML declaration issue);
-  `Foundation.epub` fails thumbnail generation. Books library only (audiobooks N/A). Candidate fix:
-  identify the bad epubs + repair XML declarations (calibre convert or sed the declaration) — its own
-  small polish item.
+## F-09 — EBooks: some epubs fail Kavita parsing [RESOLVED 2026-07-12, cluster-only]
+- Kavita's 25 failing epubs decomposed: **15 repaired in place** (the `version="1.1"` XML-declaration
+  class — declaration rewritten to 1.0 with a proper zip rebuild, mimetype-first preserved; all 15
+  verified as new Kavita series post-scan), **3 zip-corrupt quarantined** (`books/quarantine/
+  f09-corrupt/` — Skyward, Sweet and Deadly [0-byte], Skin in the Game; re-grab candidates), **7
+  left untouched** (a DIFFERENT defect class: "Unsupported EPUB version 1.0" package attributes ×5 +
+  EPUB3 nav-structure ×2 — its own future polish item). Foundation.epub diagnosed (thumbnail-only:
+  Kavita hands the OPF guide's XHTML titlepage to libvips; the cover JPEG itself is valid; fix =
+  set/lock cover in Kavita UI or repoint the OPF guide — left untouched, book reads fine). Backups
+  of all touched originals: `books/quarantine/f09-originals/`.
+
+## F-10 — Library-wide English-language audit (Audiobooks / EBooks / Comics) [owner-ordered 2026-07-13, NEW]
+- **Owner directive (2026-07-13 night):** audit ALL of Audiobooks, EBooks, and Comics to verify
+  every item is English. Trigger: German strays are SYSTEMIC, not one-off — Matilda (German epub
+  beside the English re-grab) and then BOTH Throne of Glass audiobook folders turned out to be the
+  German HörbucHHamburg narrations (sister-reported).
+- **Method (proven this weekend):** epubs — read `dc:language` from the zip OPF (the Matilda/Maas
+  sweep script pattern); audio — ABS `metadata.json` + ID3/publisher heuristics (HörbucHHamburg =
+  German tell) + track-name language; comics — filename/metadata pass. Remediate with the
+  field-proven loop: quarantine the foreign copy (`books/quarantine/…`, never delete) → LL re-grab
+  English (keyed GB resolve → `addBook` by volume id → `queueBook`/`searchBook`, WITH 503
+  retry/backoff — GB 503-bursts hit KEYED calls too, twice-proven) → Kavita/ABS rescan.
+- **Also sweep while in there:** azw3-only titles (invisible to Kavita — Maas had 4), empty title
+  folders (Assassin and the Underworld was empty), old-format duplicates left beside fresh imports,
+  the F-09 leftovers (3 quarantined corrupt epubs to re-grab + the 7 other-defect files), and the
+  `No ebook-convert found` preprocessor nit (calibre missing from the LL image — a sidecar or image
+  swap would enable azw3→epub conversion instead of re-grabs).
+- All grabs are governor-paced (MAM gate closed ~2026-07-13 00:00 after the Maas batch; usenet
+  flows regardless; torrents mature ~Tue eve). Feeds PLAN-041 (books Fix) + the Books Automation
+  Saga (language preference + metadata retry are design inputs).
 
 ## Phase-3 bucket (tomorrow, post-polish) — owner-directed
 - SMTP/email integration (F-04) → Phase 3 plan bucket (owner 2026-07-11).
