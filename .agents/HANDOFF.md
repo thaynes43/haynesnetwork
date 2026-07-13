@@ -4,9 +4,23 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-## ▶ NEXT SESSION — start here (2026-07-12 session-4 wrap; **MONDAY = GO HARD**)
+## ▶ NEXT SESSION — start here (2026-07-12 session-5 wrap; **MONDAY = GO HARD**)
 
-**Site is live at https://haynesnetwork.com; latest release v0.46.0.** Session 4 (Sat eve →
+**Site is live at https://haynesnetwork.com; latest release v0.46.2.** Session 5 (Sun midday,
+weekend-test fixes): **Matilda "still not English" root-caused and fixed live** — the English
+re-grab had worked; a pre-pipeline **German** epub (2016) shared the series folder and **Kavita
+merges all files in a series folder into one series**, so members kept opening the stale copy.
+Fix: German epub moved to `books/quarantine/` (reversible) + Kavita rescan → series is
+English-only; LL `imp_preflang` already `en,…` (config was never the problem — stale
+pre-pipeline files are PLAN-041's job; finding + quarantine pattern recorded there, PR #232,
+answers its Q-02). **Matilda audiobook already existed** in ABS (21 tracks ~4h19m, 2013,
+English) — zero MAM cap spend. Unstuck PR #231 (was BEHIND with auto-merge armed) →
+**v0.46.1** (OG tags no longer resolve to localhost — live-verified) → owner embed review →
+copy trimmed to end at **"members only."** → **v0.46.2 live** (SITE_DESCRIPTION one-constant +
+test + DESIGN-004 D-20). Discord's ALT chip on the embed = its alt-text indicator
+(`og:image:alt`), kept for accessibility. Prior session context below ↓
+
+Session 4 (Sat eve →
 Sun 1am): fixed the MAM pipeline live (qB queueing trap + backwards provider priority — twice;
 Prowlarr's fullSync LL application OWNS LL's provider config), shipped **PLAN-039 MAM governor
 (v0.45.0, live-validated)** and **branded link previews (v0.46.0)**, ran the list-sources
@@ -47,7 +61,12 @@ activity; TaskStop a flipped continuation and the coordinator takes the tail. Se
 
 ---
 
-- **Last updated:** 2026-07-12 — **SESSION-4 WRAP (the books-pipeline night).** MAM live fixes
+- **Last updated:** 2026-07-12 (Sun midday) — **SESSION-5: weekend-test fixes, v0.46.1 + v0.46.2
+  live.** Matilda root cause closed (stale pre-pipeline German epub + Kavita series-folder merge;
+  quarantine + rescan; PLAN-041 Q-02 field-proven — PR #232); audiobook already in ABS; OG
+  localhost fix shipped (unstuck #231 → v0.46.1); embed copy trimmed to "members only."
+  (v0.46.2, live-verified). No new plans; Monday queue unchanged (top block).
+- **Prior milestone:** 2026-07-12 — **SESSION-4 WRAP (the books-pipeline night).** MAM live fixes
   (queueing trap; provider priority via the Prowlarr-fullSync ownership discovery — OPS-013
   corrected twice); **PLAN-039 governor COMPLETED v0.45.0** (ADR-054/DESIGN-027/0041/
   `@hnet/downloads`; live-proven 13→14 unsatisfied across the real Matilda grab); **link-preview
