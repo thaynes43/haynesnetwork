@@ -91,6 +91,18 @@ ON meanwhile (harmless, helped some engines). Owner rules Monday. Original (part
 - **F-10 filed (owner-ordered):** library-wide English-language audit (Audiobooks/EBooks/Comics) —
   German strays are systemic. Method + adjacent sweeps recorded in the polish-loop note (#239).
 
+## ~01:30 addendum — the device map corrected; laptop variant closed
+
+The failing `Version/18.3.1` UA in Loki was the **iPad**; the owner's laptop is **macOS Tahoe
+26.5.2 (current WebKit)** and on a console-open retest its private-mode login **worked** — the
+capture showed a healthy SPA boot with only the known `%(theme)s` background request failing
+(Safari "network connection was lost"). Earlier laptop spins were most plausibly transient
+edge/QUIC drops and/or pre-propagation timing — not the WebKit crash. **Owner is updating the
+iPad to current iPadOS overnight (Option C for his own devices) — Monday: retest iPad login**;
+a pass narrows the PLAN-042 A/B/C ruling to anonymous old-WebKit visitors only. New folded-in
+polish: fix the `%(theme)s` placeholder in `10-hnet-brand.yaml` (one doomed request per
+flow-page load, every browser). Full detail in PLAN-042's check log.
+
 ## Ops events
 
 - **kubectl/Omni auth outage** mid-evening (`authcode-browser … context deadline exceeded` — token
