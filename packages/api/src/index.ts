@@ -85,11 +85,14 @@ export type { YtdlsubThumbSize, YtdlsubThumbUpstream, CachedThumb } from './ytdl
 // route), and the wire types the Books browser imports TYPE-ONLY.
 export { booksProcedure } from './middleware/role';
 export {
-  fetchBooksCover,
+  getBooksCover,
+  booksCoverCache,
   booksCoverEtag,
   isBooksSource,
   isValidBooksExternalId,
+  ABS_COVER_VARIANT,
 } from './books-cover';
+export type { BooksCoverResult } from './books-cover';
 export { booksCoverUrlFor, toBooksListItem, BOOKS_SORTS } from './books-query';
 export type { BooksListItem, BooksSort, BooksSearchInput } from './books-query';
 export type { BooksSearchResult, BooksDetailResult } from './routers/books';
