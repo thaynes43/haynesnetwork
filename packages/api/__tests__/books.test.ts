@@ -31,6 +31,7 @@ function bookRow(o: Partial<BooksItemInput> & Pick<BooksItemInput, 'mediaKind' |
     narrator: null,
     seriesName: null,
     year: null,
+    releasedAt: null,
     genres: [],
     coverRef: 'v1_c1.png',
     deepLinkUrl: 'https://kavita.haynesnetwork.com/library/1/series/1',

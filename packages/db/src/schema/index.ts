@@ -75,3 +75,13 @@ export * from './plex-match';
 // sync mode upserts (the LL MAM-provider gate + the counts/limit that drove it). Guarded single-writer
 // table (evaluateMamGovernor); its transition trail is the notification_outbox rows (smart-alerts class).
 export * from './mam-gate-state';
+// ADR-052 / DESIGN-026 D-06 (PLAN-029) — the per-user, per-wall Library preferences (last view +
+// group-by + sort). First per-user store; guarded single-writer table (setLibraryPreference), no audit.
+export * from './library-preferences';
+// ADR-053 / DESIGN-026 D-07 (PLAN-029) — the per-user watch/read-state seam: the app-user↔account
+// mapping (user_account_map), the per-user video watch read-model (user_media_watch), and the per-user
+// ABS book read-state (user_book_progress). All guarded single-writer tables (no audit — synced/
+// descriptive, the media_metadata class). ADDITIVE — the household aggregates on media_metadata stay.
+export * from './user-account-map';
+export * from './user-media-watch';
+export * from './user-book-progress';

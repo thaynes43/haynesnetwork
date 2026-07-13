@@ -60,6 +60,15 @@ const toDate = (v: string | null | undefined): Date | null => {
   return Number.isNaN(d.getTime()) ? null : d;
 };
 
+/**
+ * ADR-051 C-05 / DESIGN-026 D-05 (PLAN-029 — Date Released) — parse the ABS `publishedDate` metadata
+ * string to a Date (e.g. "2020-05-01" or a full ISO instant). Blank / unparseable ⇒ null (the item
+ * keeps only its January-1 `year`). Exported for the ABS normalizer unit tests.
+ */
+export function absReleasedAt(publishedDate: string | null | undefined): Date | null {
+  return toDate(publishedDate);
+}
+
 export function normalizeKavitaSeries(
   series: KavitaSeries,
   mediaKind: 'book' | 'comic',
@@ -80,6 +89,9 @@ export function normalizeKavitaSeries(
     narrator: null,
     seriesName: null,
     year: null,
+    // DESIGN-026 D-05 — Kavita's series list carries no release date → honest null (Release Date is
+    // simply absent from the Kavita registry, not a fabricated column).
+    releasedAt: null,
     genres: [],
     coverRef: series.coverImage ?? null,
     deepLinkUrl: `${publicUrl}/library/${libraryId}/series/${series.id}`,
@@ -107,6 +119,9 @@ export function normalizeAbsItem(
     const y = typeof meta.publishedYear === 'number' ? meta.publishedYear : parseInt(meta.publishedYear, 10);
     if (Number.isFinite(y)) year = y;
   }
+  // DESIGN-026 D-05 — the precise ABS publishedDate (a date string, richer than publishedYear). null
+  // when absent/unparseable (many ABS items carry only a year → released_at stays null, year still sorts).
+  const releasedAt = absReleasedAt(meta?.publishedDate);
   const duration = item.media?.duration;
   return {
     source: 'audiobookshelf',
@@ -120,6 +135,7 @@ export function normalizeAbsItem(
     narrator: meta?.narratorName || null,
     seriesName: meta?.seriesName || null,
     year,
+    releasedAt,
     genres: (meta?.genres ?? []).filter((g): g is string => typeof g === 'string'),
     coverRef: item.updatedAt != null ? String(item.updatedAt) : null,
     deepLinkUrl: `${publicUrl}/item/${item.id}`,

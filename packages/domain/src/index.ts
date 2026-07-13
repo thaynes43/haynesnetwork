@@ -65,6 +65,13 @@ export * from './sync-runs';
 export * from './media-sync';
 // ADR-018 / DESIGN-008 Phase 4 — metadata harvest single-writer + *arr-tag semantics (D-12/D-07)
 export * from './media-metadata';
+// ADR-052 / DESIGN-026 D-06 (PLAN-029) — per-user Library preferences store + URL-precedence resolver.
+export * from './library-preferences';
+// ADR-053 / DESIGN-026 D-07 (PLAN-029) — per-user watch/read-state seam: the app-user↔account mapping,
+// the per-user video watch read-model, and the per-user ABS book read-state (single-writers, no audit).
+export * from './user-account-map';
+export * from './user-media-watch';
+export * from './user-book-progress';
 export * from './ledger-ingest';
 export * from './fix-requests';
 export * from './restore-runs';

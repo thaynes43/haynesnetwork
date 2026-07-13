@@ -288,6 +288,27 @@
       "when": 1783900000000,
       "tag": "0041_mam_governor_state",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1783900100000,
+      "tag": "0042_library_released_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1783900200000,
+      "tag": "0043_library_preferences",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1783900300000,
+      "tag": "0044_per_user_watch_read_state",
+      "breakpoints": true
     }
   ]
 }

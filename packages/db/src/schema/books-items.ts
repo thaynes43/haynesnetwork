@@ -59,6 +59,13 @@ export const booksItems = pgTable(
     seriesName: text('series_name'),
     /** Publication year — ABS publishedYear (Kavita's series list carries none). Nullable. */
     year: integer('year'),
+    /**
+     * ADR-051 C-05 / DESIGN-026 D-05 (PLAN-029) — the precise Date RELEASED for a book item: ABS
+     * `media.metadata.publishedDate` (a full instant where present, richer than the January-1 `year`).
+     * Kavita's series list carries no date → null (Release Date stays honestly absent from the Kavita
+     * registry). The Audiobooks wall's Release-Date sort/facet reads this; a null sorts NULLS-LAST.
+     */
+    releasedAt: timestamp('released_at', { withTimezone: true }),
     /** Genres/tags (ABS metadata.genres; Kavita has none in the series list). */
     genres: jsonb('genres').$type<string[]>().notNull().default([]),
     /**

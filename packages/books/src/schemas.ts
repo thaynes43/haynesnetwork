@@ -89,6 +89,10 @@ export const absItemSchema = z.object({
           seriesName: z.string().nullable().optional(),
           genres: z.array(z.string()).nullable().optional(),
           publishedYear: z.union([z.string(), z.number()]).nullable().optional(),
+          // ADR-051 C-05 / DESIGN-026 D-05 (PLAN-029 — Date Released) — the precise publish date ABS
+          // carries alongside the January-1 `publishedYear` (e.g. "2020-05-01" or an ISO instant). The
+          // books-sync normalizes it to books_items.released_at (Audiobooks Release-Date sort/facet).
+          publishedDate: z.string().nullable().optional(),
           language: z.string().nullable().optional(),
         })
         .nullable()
@@ -109,3 +113,24 @@ export const absItemsPageSchema = z.object({
   page: z.number().int().nullable().optional(),
 });
 export type AbsItemsPage = z.infer<typeof absItemsPageSchema>;
+
+/**
+ * ADR-053 / DESIGN-026 D-07 (PLAN-029 — per-user read-state) — one `mediaProgress[]` entry from
+ * `GET /api/users/{id}` (ADMIN/service-token readable for ANY user). The join key to books_items is
+ * `libraryItemId` (= books_items.external_id for ABS rows). `progress` is a 0..1 fraction;
+ * `isFinished` marks a completed listen. Subset — the many other progress fields are dropped.
+ */
+export const absMediaProgressSchema = z.object({
+  libraryItemId: z.string().nullable().optional(),
+  progress: z.number().nullable().optional(),
+  isFinished: z.boolean().nullable().optional(),
+});
+export type AbsMediaProgress = z.infer<typeof absMediaProgressSchema>;
+
+/** `GET /api/users/{id}` (admin) → the user with their per-item `mediaProgress[]`. Subset. */
+export const absUserSchema = z.object({
+  id: z.string().nullable().optional(),
+  username: z.string().nullable().optional(),
+  mediaProgress: z.array(absMediaProgressSchema).nullable().optional(),
+});
+export type AbsUser = z.infer<typeof absUserSchema>;

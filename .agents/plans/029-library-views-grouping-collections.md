@@ -113,6 +113,10 @@ watch/read-state seam (R7 — the only new sync/domain surface in the plan).
 - Owner + coordinator: agent-type discussion for the build split before dispatch (standing rule).
 - Build-time: assign next-free migration numbers for `released_at` + the two per-user tables
   (PLAN-031 may consume some first — re-grep before authoring build migrations).
+  **RESOLVED (data/domain build, steps 1/4/5):** consumed **0042** (`media_metadata.released_at` +
+  `books_items.released_at`), **0043** (`library_preferences`), **0044** (`user_account_map` +
+  `user_media_watch` + `user_book_progress`). Steps 2/3/6/7 (the registry seam, view/group shells,
+  facet UI + jump bar + URL contract, the UX pass) remain for the UX agent's follow-up PR.
 - DEFERRED to the build UX pass (DESIGN-026 D-11), not lost: view-selector affordance, group-card
   art density, jump-bar placement, facet bucket boundaries, alt view shapes per wall, optional
   Kavita per-series metadata fetch (year/genre facets), optional wider live-Plex read (Season/

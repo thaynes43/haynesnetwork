@@ -63,6 +63,10 @@ export const sonarrSeriesSchema = z.object({
   images: z.array(arrImageSchema).optional(),
   genres: z.array(z.string()).optional(),
   runtime: z.number().int().optional(),
+  // ADR-051 C-05 / DESIGN-026 D-05 (PLAN-029 — Date Released) — the series' first-aired date Sonarr
+  // exposes on `GET /series` (ISO string; absent for an unaired show). The metadata harvest maps it
+  // to media_metadata.released_at (a show's canonical release instant). Nullish-tolerant (strip mode).
+  firstAired: z.string().optional(),
 });
 export type SonarrSeries = z.infer<typeof sonarrSeriesSchema>;
 

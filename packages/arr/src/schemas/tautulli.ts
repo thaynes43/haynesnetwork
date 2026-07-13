@@ -30,6 +30,11 @@ export const tautulliHistoryRowSchema = z.object({
   stopped: z.number().nullish(),
   watched_status: z.number().nullish(), // 1 = watched, 0.x = partial
   user: z.string().nullish(),
+  // ADR-053 / DESIGN-026 D-07 (PLAN-029 — per-user watch-state) — the plex.tv NUMERIC user id (Tautulli
+  // returns it as a number; a string form is tolerated). The join key from a household history row to the
+  // signed-in app user, via user_account_map.plex_user_id. Previously the harvest discarded the per-user
+  // dimension (collapsing to a household SUM/MAX); this one-field add restores it (additively).
+  user_id: z.union([z.number(), z.string()]).nullish(),
   title: z.string().nullish(),
   grandparent_title: z.string().nullish(),
 });

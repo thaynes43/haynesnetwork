@@ -5,7 +5,7 @@
 // primitive lives in ./keyset.
 import { z } from 'zod';
 import { eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
-import { ARR_KINDS, RESOLUTIONS, mediaItems, mediaMetadata } from '@hnet/db';
+import { ARR_KINDS, RESOLUTIONS, mediaItems, mediaMetadata, userMediaWatch } from '@hnet/db';
 import type { KeysetKind } from './keyset';
 
 const isoOrNull = (d: Date | null) => (d === null ? null : d.toISOString());
@@ -16,6 +16,13 @@ export const escapeLike = (q: string) => q.replace(/[\\%_]/g, '\\$&');
 export const ON_DISK_FILTERS = ['any', 'complete', 'partial', 'none'] as const;
 export type OnDiskFilter = (typeof ON_DISK_FILTERS)[number];
 
+// ADR-053 / DESIGN-026 D-07/D-08 (PLAN-029) — the per-user (viewer-scoped) video watch-state facet.
+// 'watched' = the viewer completed it; 'unwatched' = they have no completed play; 'in_progress' = a
+// partial play with no completed one. Populated-value-gated (ADR-051 C-06): the UI offers it only when
+// the viewer has any user_media_watch rows. The predicate is applied ONLY when a viewerUserId is present.
+export const WATCH_STATES = ['watched', 'unwatched', 'in_progress'] as const;
+export type WatchState = (typeof WATCH_STATES)[number];
+
 // ADR-022 / DESIGN-009 D-04 — the Ledger-only completeness facet (superset of onDisk grains):
 // 'none' (nothing on disk) | 'some' (>0 files) | 'all' (complete) | 'any'. 'none' is exactly
 // the Fileless-Set half (T-66) when combined with monitored=false.
@@ -23,12 +30,16 @@ export const HAS_FILE_FILTERS = ['any', 'none', 'some', 'all'] as const;
 export type HasFileFilter = (typeof HAS_FILE_FILTERS)[number];
 
 // The shared sort-field contract (DESIGN-008 D-09). Each maps to its sortable expression + kind.
+// ADR-051 C-05 / DESIGN-026 D-05 (PLAN-029) extends it with `released_at` (the second must-have date
+// dimension) and `year` (Year sort, derived from the already-synced mediaItems.year — no new data).
 export const LIBRARY_SORT_FIELDS = [
   'title',
   'imdb_rating',
   'tmdb_rating',
   'rt_tomatometer',
   'added_at',
+  'released_at',
+  'year',
   'play_count',
   'last_viewed',
   'runtime',
@@ -41,6 +52,10 @@ export const SORT_SPECS: Record<LibrarySortField, { col: SQL; kind: KeysetKind }
   tmdb_rating: { col: sql`${mediaMetadata.tmdbRating}`, kind: 'number' },
   rt_tomatometer: { col: sql`${mediaMetadata.rtTomatometer}`, kind: 'number' },
   added_at: { col: sql`${mediaMetadata.arrAddedAt}`, kind: 'date' },
+  // DESIGN-026 D-05 — Date Released. A null sorts NULLS-LAST like every nullable date (the keyset
+  // already handles it — no cursor change; Lidarr artists / date-less rows land last).
+  released_at: { col: sql`${mediaMetadata.releasedAt}`, kind: 'date' },
+  year: { col: sql`${mediaItems.year}`, kind: 'number' },
   play_count: { col: sql`${mediaMetadata.playCount}`, kind: 'number' },
   last_viewed: { col: sql`${mediaMetadata.lastViewedAt}`, kind: 'date' },
   runtime: { col: sql`${mediaMetadata.runtimeMinutes}`, kind: 'number' },
@@ -58,6 +73,7 @@ export const METADATA_SELECT = {
   resolution: mediaMetadata.resolution,
   genres: mediaMetadata.genres,
   arrAddedAt: mediaMetadata.arrAddedAt,
+  releasedAt: mediaMetadata.releasedAt,
   playCount: mediaMetadata.playCount,
   lastViewedAt: mediaMetadata.lastViewedAt,
   requesters: mediaMetadata.requesters,
@@ -76,6 +92,7 @@ export type MetadataRow = {
   resolution: string | null;
   genres: string[] | null;
   arrAddedAt: Date | null;
+  releasedAt: Date | null;
   playCount: number | null;
   lastViewedAt: Date | null;
   requesters: string[] | null;
@@ -100,6 +117,7 @@ export function metadataBlock(row: MetadataRow | null | undefined) {
     resolution: row?.resolution ?? null,
     genres: row?.genres ?? [],
     addedAt: isoOrNull(row?.arrAddedAt ?? null),
+    releasedAt: isoOrNull(row?.releasedAt ?? null),
     playCount: row?.playCount ?? null,
     lastViewedAt: isoOrNull(row?.lastViewedAt ?? null),
     requesters: row?.requesters ?? [],
@@ -135,6 +153,18 @@ export const LIBRARY_FILTER_SHAPE = {
   sourceCollections: z.array(z.string().min(1)).max(50).optional(),
   ratingMin: z.number().min(0).max(10).optional(), // on COALESCE(imdb_rating, tmdb_rating)
   ratingMax: z.number().min(0).max(10).optional(),
+  // ADR-051 C-05 / DESIGN-026 D-05/D-08 (PLAN-029) — the Release-Date range facet (ISO instants,
+  // inclusive) over media_metadata.released_at.
+  releasedFrom: z.string().datetime().optional(),
+  releasedTo: z.string().datetime().optional(),
+  // DESIGN-026 D-08 — Year/Decade facet, derived from the already-synced mediaItems.year (no new data).
+  // `decades` is a list of decade-start years (e.g. [1990, 2000]); yearMin/yearMax bound a range.
+  yearMin: z.number().int().min(0).max(3000).optional(),
+  yearMax: z.number().int().min(0).max(3000).optional(),
+  decades: z.array(z.number().int().min(0).max(3000)).max(30).optional(),
+  // ADR-053 / DESIGN-026 D-07 — the per-user watch-state facet (viewer-scoped; see WATCH_STATES). The
+  // predicate binds to the viewer via buildLibraryWhere's viewerUserId (set server-side from the session).
+  watchState: z.enum(WATCH_STATES).optional(),
 } as const;
 
 /** The Ledger-section-only filter dims (ADR-022 / DESIGN-009 D-04): monitored + completeness. */
@@ -168,6 +198,17 @@ export interface LibraryWhereInput {
   sourceCollections?: string[];
   ratingMin?: number;
   ratingMax?: number;
+  // PLAN-029 (DESIGN-026 D-05/D-08) — Release-Date range + Year/Decade facets.
+  releasedFrom?: string;
+  releasedTo?: string;
+  yearMin?: number;
+  yearMax?: number;
+  decades?: number[];
+  // ADR-053 / DESIGN-026 D-07 — the per-user watch-state facet + the viewer it is scoped to. The
+  // predicate is applied ONLY when BOTH are present (viewerUserId is set server-side from the session,
+  // never from the wire — a facet on already-gated content, ADR-053 C-07). Undefined ⇒ no predicate.
+  watchState?: WatchState;
+  viewerUserId?: string;
 }
 
 /**
@@ -230,6 +271,44 @@ export function buildLibraryWhere(input: LibraryWhereInput): SQL[] {
     where.push(
       sql`COALESCE(${mediaMetadata.imdbRating}, ${mediaMetadata.tmdbRating}) <= ${input.ratingMax}`,
     );
+  }
+  // ADR-051 C-05 / DESIGN-026 D-05 — the Release-Date range (inclusive) over media_metadata.released_at.
+  if (input.releasedFrom !== undefined) {
+    where.push(sql`${mediaMetadata.releasedAt} >= ${input.releasedFrom}::timestamptz`);
+  }
+  if (input.releasedTo !== undefined) {
+    where.push(sql`${mediaMetadata.releasedAt} <= ${input.releasedTo}::timestamptz`);
+  }
+  // DESIGN-026 D-08 — Year range + Decade facet, derived from mediaItems.year (integer). A decade is
+  // its start year; `(year / 10) * 10` truncates to it (positive years, integer division).
+  if (input.yearMin !== undefined) where.push(sql`${mediaItems.year} >= ${input.yearMin}`);
+  if (input.yearMax !== undefined) where.push(sql`${mediaItems.year} <= ${input.yearMax}`);
+  if (input.decades?.length) {
+    where.push(
+      sql`(${mediaItems.year} / 10) * 10 IN (${sql.join(
+        input.decades.map((d) => sql`${d}`),
+        sql`, `,
+      )})`,
+    );
+  }
+  // ADR-053 / DESIGN-026 D-07 — the per-user watch-state facet (viewer-scoped EXISTS over
+  // user_media_watch). Applied ONLY when a viewerUserId is present (a facet on already-gated content).
+  if (input.watchState !== undefined && input.viewerUserId !== undefined) {
+    const viewer = sql`${input.viewerUserId}::uuid`;
+    if (input.watchState === 'watched') {
+      where.push(
+        sql`EXISTS (SELECT 1 FROM ${userMediaWatch} umw WHERE umw.media_item_id = ${mediaItems.id} AND umw.app_user_id = ${viewer} AND umw.watched = true)`,
+      );
+    } else if (input.watchState === 'in_progress') {
+      where.push(
+        sql`EXISTS (SELECT 1 FROM ${userMediaWatch} umw WHERE umw.media_item_id = ${mediaItems.id} AND umw.app_user_id = ${viewer} AND umw.in_progress = true)`,
+      );
+    } else {
+      // 'unwatched' — the viewer has NO completed play recorded for this item.
+      where.push(
+        sql`NOT EXISTS (SELECT 1 FROM ${userMediaWatch} umw WHERE umw.media_item_id = ${mediaItems.id} AND umw.app_user_id = ${viewer} AND umw.watched = true)`,
+      );
+    }
   }
   return where;
 }

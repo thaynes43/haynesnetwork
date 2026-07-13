@@ -731,3 +731,37 @@ export const NOTIFY_OUTBOX_EVENT_TYPES = [
   'mam_gate_stuck',
 ] as const;
 export type NotifyOutboxEventType = (typeof NOTIFY_OUTBOX_EVENT_TYPES)[number];
+
+// ---------------------------------------------------------------------------
+// ADR-051/052/053 / DESIGN-026 (PLAN-029 — Library views, grouping & the S&F overhaul).
+// text+CHECK, single source of truth for the TS types + the SQL CHECKs (DESIGN-001 D-02).
+// ---------------------------------------------------------------------------
+
+// ADR-052 / DESIGN-026 D-06 — the Library "wall" a per-user preference row is keyed by (one row
+// per (user_id, wall)). One entry per Library kind sub-tab: the *arr walls (movies / tv / music),
+// the live-Plex walls (peloton / youtube) and the book walls (books / audiobooks / comics). This
+// is the presentation scope — NOT a section id (SECTION_IDS gates VISIBILITY; a wall is a tab a
+// role can already see). library_preferences.wall is CHECK-constrained to this set.
+export const LIBRARY_WALLS = [
+  'movies',
+  'tv',
+  'music',
+  'peloton',
+  'youtube',
+  'books',
+  'audiobooks',
+  'comics',
+] as const;
+export type LibraryWall = (typeof LIBRARY_WALLS)[number];
+
+// ADR-051 / DESIGN-026 D-01 — the three view SHAPES a wall renders in: 'flat' (the current poster
+// grid, one card per item), 'grouped' (aggregate cards keyed by a grouping dimension — Author /
+// Series / Channel / Exercise), 'hierarchy' (the existing TV Shows → Seasons → Episodes drill-in,
+// unchanged). library_preferences.view is CHECK-constrained to this set.
+export const LIBRARY_VIEW_SHAPES = ['flat', 'grouped', 'hierarchy'] as const;
+export type LibraryViewShape = (typeof LIBRARY_VIEW_SHAPES)[number];
+
+// ADR-052 / DESIGN-026 D-06 — a stored sort direction. Mirrors the D-09 librarySortShape wire enum
+// so a stored preference round-trips 1:1 with the URL `?sort=field:dir` segment (D-10).
+export const SORT_DIRECTIONS = ['asc', 'desc'] as const;
+export type SortDirection = (typeof SORT_DIRECTIONS)[number];
