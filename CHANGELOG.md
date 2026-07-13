@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.46.3](https://github.com/thaynes43/haynesnetwork/compare/v0.46.2...v0.46.3) (2026-07-13)
+
+
+### Bug Fixes
+
+* book-wall cover latency — ABS sized WebP variant + in-process LRU (F-06, ADR-041 idiom) ([#237](https://github.com/thaynes43/haynesnetwork/issues/237)) ([4e811b4](https://github.com/thaynes43/haynesnetwork/commit/4e811b406acb96fc04a355ddacfec2aceea227f7))
+* top-nav tabs overlap the theme toggle on narrow phones ([#238](https://github.com/thaynes43/haynesnetwork/issues/238)) ([f42c351](https://github.com/thaynes43/haynesnetwork/commit/f42c351964f8888b770ab275c5c9d53664bb09a5))
+
+
+### Documentation
+
+* session-5 wrap — Matilda root cause closed, v0.46.1/v0.46.2 live, HANDOFF current ([#235](https://github.com/thaynes43/haynesnetwork/issues/235)) ([43cd894](https://github.com/thaynes43/haynesnetwork/commit/43cd894722d52eafebb11f3ae463081fe75c857c))
+
 ## [0.46.2](https://github.com/thaynes43/haynesnetwork/compare/v0.46.1...v0.46.2) (2026-07-12)
 
 
