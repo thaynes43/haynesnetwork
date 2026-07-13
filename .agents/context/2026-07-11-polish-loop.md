@@ -110,13 +110,19 @@ Library-file collisions) unless flagged URGENT. Each: symptom → root cause (ve
 - **Lesson:** headless OIDC validation cannot catch CSP/browser-enforced failures — add a note to
   future OIDC dispatches to check CSP form-action for form_post providers.
 
-## F-06 — Book/Comic/Audiobook cover thumbnails load slower than Movies/TV [perf polish]
-- **Owner observation (2026-07-11):** Movies/TV covers "chase the scroll fairly closely" (cached
-  *arr posters via ADR-041 proxy); Book covers lag noticeably. Likely: the books cover proxy fetches
-  from Kavita/ABS live per-request rather than from a pre-warmed cache like the *arr poster harvest
-  (PLAN-004). Candidate fix: pre-cache/warm book covers (a harvest step) and/or the same
-  transcode+ETag caching the ytdl-sub walls got in the PLAN-028-era work. Investigate the books
-  cover-proxy path vs the *arr poster cache. Polish-loop item.
+## F-06 RESOLVED — Book/Comic/Audiobook cover thumbnails load slower than Movies/TV (2026-07-12)
+- **Fix:** ADR-041 idiom ported to `/api/books/cover` — ABS covers now request the upstream-sized
+  300px WebP variant (~20 KB JPEG → ~10–14 KB, original as the non-memoized fallback tier) and BOTH
+  sources memoize hot covers in an in-process byte-capped `ThumbLruCache`; strong ETag/304 + auth
+  gates unchanged. DESIGN-024 D-05 amended with the measurements.
+- **Root cause (measured live 2026-07-12):** every request re-fetched upstream (zero server-side
+  memoization; ABS ~70–140 ms each), and Kavita covers are ~309 KB median PNGs (`series-cover`
+  ignores resize params) vs ~10–20 KB Movies/TV tiles — a 50-tile Books/Comics wall ≈ 13–15 MB.
+- **Residual (ops lever, owner decision):** Kavita first-paint stays ~300 KB/tile until Kavita
+  itself re-encodes covers — its admin setting Media → "Save Media As" = WebP regenerates them ~10×
+  smaller; the proxy benefits with no further change.
+- **Original observation (2026-07-11):** Movies/TV covers "chase the scroll fairly closely" (cached
+  *arr posters via ADR-041 proxy); Book covers lag noticeably.
 
 ## F-07 RESOLVED — ABS auth hardening (2026-07-11)
 - Owner IS admin via a dedicated `abs_role` Authentik scope mapping (`hnet-abs-role`) → ABS

@@ -205,6 +205,48 @@ describe('AudiobookshelfClient', () => {
     expect(itemsCall?.headers.get('authorization')).toBe('Bearer abs-tok');
     expect(await client.bearerToken()).toBe('abs-tok');
   });
+
+  it('fetchItemCover requests the sized upstream variant via ?width=&format= (F-06 / ADR-041 idiom)', async () => {
+    const { fetchImpl, calls } = stubFetch([
+      {
+        method: 'POST',
+        match: (u) => u.pathname === '/login',
+        body: { user: { token: 'abs-tok', username: 'root' } },
+      },
+      {
+        match: (u) => u.pathname === '/api/items/item-1/cover',
+        headers: { 'content-type': 'image/webp' },
+        body: null,
+      },
+    ]);
+    const client = new AudiobookshelfClient({ ...ABS_OPTS, fetchImpl });
+    const sized = await client.fetchItemCover('item-1', { width: 300, format: 'webp' });
+    expect(sized.status).toBe(200);
+    const sizedCall = calls.find((c) => c.url.pathname === '/api/items/item-1/cover');
+    expect(sizedCall?.url.search).toBe('?width=300&format=webp');
+    expect(sizedCall?.headers.get('authorization')).toBe('Bearer abs-tok');
+    // The token rides in a header, never the URL.
+    expect(calls.every((c) => !c.url.search.includes('abs-tok'))).toBe(true);
+  });
+
+  it('fetchItemCover without a variant requests the ORIGINAL cover (the fallback tier)', async () => {
+    const { fetchImpl, calls } = stubFetch([
+      {
+        method: 'POST',
+        match: (u) => u.pathname === '/login',
+        body: { user: { token: 'abs-tok', username: 'root' } },
+      },
+      {
+        match: (u) => u.pathname === '/api/items/item-1/cover',
+        headers: { 'content-type': 'image/jpeg' },
+        body: null,
+      },
+    ]);
+    const client = new AudiobookshelfClient({ ...ABS_OPTS, fetchImpl });
+    await client.fetchItemCover('item-1');
+    const call = calls.find((c) => c.url.pathname === '/api/items/item-1/cover');
+    expect(call?.url.search).toBe('');
+  });
 });
 
 describe('booksReadClients factory', () => {
