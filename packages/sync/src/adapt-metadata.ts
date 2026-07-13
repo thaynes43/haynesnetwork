@@ -90,6 +90,31 @@ function arrAddedAt(added: string | null | undefined): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/** Parse an *arr ISO date string to a Date; blank/invalid ⇒ null (mirrors arrAddedAt). */
+function parseArrDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * ADR-051 C-05 / DESIGN-026 D-05 (PLAN-029 — Date Released) — the canonical release instant for a
+ * Radarr movie: `digitalRelease ?? inCinemas ?? physicalRelease` (the earliest generally-available
+ * date, preferred over the January-1 `year`). Each is a per-item date that may be absent → the first
+ * present, parseable one wins; all absent ⇒ null. Exported for the adapter unit tests.
+ */
+export function radarrReleasedAt(movie: {
+  digitalRelease?: string | null;
+  inCinemas?: string | null;
+  physicalRelease?: string | null;
+}): Date | null {
+  return (
+    parseArrDate(movie.digitalRelease) ??
+    parseArrDate(movie.inCinemas) ??
+    parseArrDate(movie.physicalRelease)
+  );
+}
+
 /** Radarr movie (live list, arr tier) → metadata patch. Resolution is the REAL per-file tier
  *  from the INLINE `movieFile` (no extra request); a movie with no file on disk ⇒ null. */
 export function metadataFromRadarrMovie(movie: RadarrMovie): MetadataPatch {
@@ -104,6 +129,7 @@ export function metadataFromRadarrMovie(movie: RadarrMovie): MetadataPatch {
     runtimeMinutes: movie.runtime ?? null,
     genres: movie.genres ?? [],
     arrAddedAt: arrAddedAt(movie.added),
+    releasedAt: radarrReleasedAt(movie),
     resolution: movie.movieFile
       ? resolutionFromInt(movie.movieFile.quality?.quality?.resolution)
       : null,
@@ -120,6 +146,8 @@ export function metadataFromSonarrSeries(series: SonarrSeries): MetadataPatch {
     runtimeMinutes: series.runtime ?? null,
     genres: series.genres ?? [],
     arrAddedAt: arrAddedAt(series.added),
+    // DESIGN-026 D-05 — a show's canonical release instant is Sonarr `firstAired`.
+    releasedAt: parseArrDate(series.firstAired),
     ...(poster ?? {}),
   };
 }

@@ -16,6 +16,7 @@ import { storageRouter } from './storage';
 import { metricsRouter } from './metrics';
 import { ytdlsubRouter } from './ytdlsub';
 import { booksRouter } from './books';
+import { libraryRouter } from './library';
 import { authentikPortalRouter } from './authentik-portal';
 
 export const appRouter = router({
@@ -54,6 +55,9 @@ export const appRouter = router({
   // app-owned books_items ledger (synced from Kavita + Audiobookshelf), gated by the `books` section
   // (ships Admin-only). Read-only — no Fix/Restore for books (the book servers are the source of truth).
   books: booksRouter,
+  // ADR-052 / DESIGN-026 (PLAN-029): the per-user Library preferences pair (library.preferences.get/set)
+  // — server-side last view + sort per wall (URL overrides for shared links). Session-gated, own-row only.
+  library: libraryRouter,
   // ADR-045 / DESIGN-023 (PLAN-026): the Authentik user/role portal — /admin/users directory (all
   // Authentik identities) + role assignment that writes owned Authentik group membership (+ OWUI tier
   // pre-create), admin-only, audited + import-confined.

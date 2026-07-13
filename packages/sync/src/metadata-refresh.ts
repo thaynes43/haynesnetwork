@@ -11,7 +11,17 @@
 // them, so the orchestrator can bracket one sync_runs row per arr source (D-03) without
 // re-harvesting Tautulli three times.
 import type { ArrKind, DbClient, Resolution } from '@hnet/db';
-import { parseArrTags, upsertMediaMetadataBatch, type MediaMetadataFields } from '@hnet/domain';
+import {
+  getPlexUserIdToAppUserMap,
+  mergeUserWatchContributions,
+  parseArrTags,
+  upsertMediaMetadataBatch,
+  upsertUserMediaWatchBatch,
+  type MediaMetadataFields,
+  type UserMediaWatchInput,
+  type UserWatchContribution,
+  type UserWatchStat,
+} from '@hnet/domain';
 import type { LidarrLookup, RadarrLookup, SonarrLookup, TautulliMetadata } from '@hnet/arr';
 import {
   dominantResolution,
@@ -31,6 +41,7 @@ import {
   type MetadataPatch,
   type ParsedGuids,
   type WatchContribution,
+  type WatchStat,
 } from './adapt-metadata';
 import { requireClient, type MetadataSourceClients, type SyncClients } from './clients';
 import { selectMetadataTargets, type MetadataTarget } from './db-reads';
@@ -123,6 +134,11 @@ export async function runMetadataRefreshForKind(
     arrInstanceId: input.arrInstanceId,
     limit: input.limit,
   });
+
+  // ADR-053 / DESIGN-026 D-07 — the plex.tv user id → app user id map for per-user watch attribution.
+  // Empty (no mapped users) ⇒ the per-user emission is a clean no-op; the household aggregate is unchanged.
+  const plexUserMap = await getPlexUserIdToAppUserMap(db);
+  const userWatchBatch: UserMediaWatchInput[] = [];
 
   // Tier: the *arr live list (base descriptive fields for LIVE rows) — one call, degradable.
   let arrList = new Map<number, MetadataPatch>();
@@ -220,7 +236,21 @@ export async function runMetadataRefreshForKind(
     if (watch) {
       sourcesFlags.tautulli = true;
       stats.tierTautulli += 1;
-      extra.tautulli = watch.perInstance;
+      extra.tautulli = watch.household.perInstance;
+      // ADR-053 / DESIGN-026 D-07 — emit per-user watch rows for the mapped users (additive; the
+      // household aggregate below is untouched). A play by an unmapped/anonymous user attributes to nobody.
+      for (const [plexUserId, stat] of watch.perUser) {
+        const appUserId = plexUserMap.get(plexUserId);
+        if (!appUserId) continue;
+        userWatchBatch.push({
+          mediaItemId: target.id,
+          appUserId,
+          playCount: stat.playCount,
+          lastViewedAt: stat.lastViewedAt,
+          watched: stat.watched,
+          inProgress: stat.inProgress,
+        });
+      }
     }
 
     const collections =
@@ -237,19 +267,31 @@ export async function runMetadataRefreshForKind(
       resolution,
       requesters,
       sourceCollections,
-      playCount: watch?.playCount ?? null,
-      lastViewedAt: watch?.lastViewedAt ?? null,
+      playCount: watch?.household.playCount ?? null,
+      lastViewedAt: watch?.household.lastViewedAt ?? null,
       // DESIGN-010 D-12 — the watch-visibility pair: the SAME cross-server MAX instant as
       // lastViewedAt, stored with the server that owns it so the walls/detail can show
       // "Last watched on <server> · <Mon YYYY>". Info only — protection reads lastViewedAt.
-      lastWatchedAt: watch?.lastViewedAt ?? null,
-      lastWatchedServer: watch?.lastWatchedServer ?? null,
+      lastWatchedAt: watch?.household.lastViewedAt ?? null,
+      lastWatchedServer: watch?.household.lastWatchedServer ?? null,
       sources: sourcesFlags,
       extra,
     });
     if (batch.length >= batchSize) await flush();
   }
   await flush();
+
+  // ADR-053 / DESIGN-026 D-07 — persist the per-user watch rows (additive; the domain writer chunks). A
+  // no-op when no user is mapped. Isolated: a failure here must not lose the household metadata just
+  // written, so it's logged and swallowed (self-heals next cycle).
+  if (userWatchBatch.length > 0) {
+    try {
+      const { written } = await upsertUserMediaWatchBatch({ db, rows: userWatchBatch });
+      stats.userWatchWritten = written;
+    } catch (err) {
+      logger.error('metadata-refresh: per-user watch upsert failed', { kind: arrKind, error: msg(err) });
+    }
+  }
 
   logger.info('metadata-refresh: kind done', { ...stats });
   return stats;
@@ -365,6 +407,19 @@ interface TitleWatch {
   guids: ParsedGuids;
   playCount: number;
   lastViewedAt: Date | null;
+  // ADR-053 / DESIGN-026 D-07 — the per-user breakdown for this (instance, title): plex.tv user id →
+  // that user's contribution. Empty when Tautulli carried no user_id (older data / anonymized).
+  perUser: Map<string, UserWatchContribution>;
+}
+
+/** Normalize a Tautulli history `user_id` (number|string) to the string form user_account_map stores. */
+function plexUserIdString(value: number | string | null | undefined): string | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : null;
+  }
+  return null;
 }
 
 interface WatchIndex {
@@ -398,6 +453,9 @@ async function harvestWatchStats(input: BuildMetadataContextInput): Promise<Watc
   for (const inst of input.sources.tautulli) {
     try {
       const groups = new Map<string, { plays: number; last: Date | null }>();
+      // ADR-053 / DESIGN-026 D-07 — the per-user breakdown per title: ratingKey → (plex user id →
+      // contribution). Built alongside the household aggregate from the same history pages (no extra reads).
+      const perUserGroups = new Map<string, Map<string, UserWatchContribution>>();
       for (let page = 0; page < maxPages; page++) {
         const rows = await inst.client.getHistory({ length: pageSize, start: page * pageSize });
         if (rows.length === 0) break;
@@ -416,6 +474,24 @@ async function harvestWatchStats(input: BuildMetadataContextInput): Promise<Watc
           const when = tautulliDate(row.stopped ?? row.date);
           if (when && (!g.last || when > g.last)) g.last = when;
           groups.set(k, g);
+          // Per-user attribution (additive): key the same play by its plex user id.
+          const userId = plexUserIdString(row.user_id);
+          if (userId !== null) {
+            let byUser = perUserGroups.get(k);
+            if (!byUser) perUserGroups.set(k, (byUser = new Map()));
+            const u = byUser.get(userId) ?? {
+              playCount: 0,
+              lastViewedAt: null,
+              watched: false,
+              inProgress: false,
+            };
+            u.playCount += 1;
+            if (when && (!u.lastViewedAt || when > u.lastViewedAt)) u.lastViewedAt = when;
+            const ws = row.watched_status;
+            if (ws === 1) u.watched = true;
+            else if (typeof ws === 'number' && ws > 0 && ws < 1) u.inProgress = true;
+            byUser.set(userId, u);
+          }
         }
         if (rows.length < pageSize) break;
       }
@@ -430,7 +506,13 @@ async function harvestWatchStats(input: BuildMetadataContextInput): Promise<Watc
         if (guids.tmdbId === undefined && guids.imdbId === undefined && guids.tvdbId === undefined) {
           continue;
         }
-        indexTitle(index, { instanceSlug: inst.slug, guids, playCount: g.plays, lastViewedAt: g.last });
+        indexTitle(index, {
+          instanceSlug: inst.slug,
+          guids,
+          playCount: g.plays,
+          lastViewedAt: g.last,
+          perUser: perUserGroups.get(ratingKey) ?? new Map(),
+        });
       }
     } catch (err) {
       logger.warn('metadata-refresh: tautulli instance failed', {
@@ -442,10 +524,13 @@ async function harvestWatchStats(input: BuildMetadataContextInput): Promise<Watc
   return index;
 }
 
-function matchWatch(
-  index: WatchIndex,
-  target: MetadataTarget,
-): ReturnType<typeof mergeWatchContributions> | null {
+/** The household watch signal for a target PLUS the per-user (plex user id → stat) breakdown (ADR-053). */
+interface TargetWatch {
+  household: WatchStat;
+  perUser: Map<string, UserWatchStat>;
+}
+
+function matchWatch(index: WatchIndex, target: MetadataTarget): TargetWatch | null {
   const matched = new Set<TitleWatch>();
   if (target.tmdbId !== null) for (const tw of index.byTmdb.get(target.tmdbId) ?? []) matched.add(tw);
   if (target.imdbId) for (const tw of index.byImdb.get(target.imdbId) ?? []) matched.add(tw);
@@ -456,7 +541,19 @@ function matchWatch(
     playCount: tw.playCount,
     lastViewedAt: tw.lastViewedAt,
   }));
-  return mergeWatchContributions(contributions);
+  // ADR-053 / DESIGN-026 D-07 — collect each user's contributions across the matched titles/instances,
+  // then merge per user (SUM plays / MAX last-viewed / any-watched). The household signal is untouched.
+  const byUser = new Map<string, UserWatchContribution[]>();
+  for (const tw of matched) {
+    for (const [userId, contrib] of tw.perUser) {
+      const list = byUser.get(userId) ?? [];
+      list.push(contrib);
+      byUser.set(userId, list);
+    }
+  }
+  const perUser = new Map<string, UserWatchStat>();
+  for (const [userId, list] of byUser) perUser.set(userId, mergeUserWatchContributions(list));
+  return { household: mergeWatchContributions(contributions), perUser };
 }
 
 async function harvestMaintainerr(sources: MetadataSourceClients): Promise<Map<number, string[]>> {

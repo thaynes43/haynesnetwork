@@ -6,11 +6,13 @@ import {
   absItemsPageSchema,
   absLibrariesSchema,
   absLoginSchema,
+  absUserSchema,
   kavitaLibrarySchema,
   kavitaLoginSchema,
   kavitaSeriesListSchema,
   type AbsItem,
   type AbsLibrary,
+  type AbsMediaProgress,
   type KavitaLibrary,
   type KavitaSeries,
 } from './schemas';
@@ -242,6 +244,19 @@ export class AudiobookshelfClient {
     const response = await this.authed(path);
     const parsed = await parseJson(response, absItemsPageSchema, 'GET', path);
     return { items: parsed.results, total: parsed.total ?? parsed.results.length };
+  }
+
+  /**
+   * ADR-053 / DESIGN-026 D-07 (PLAN-029 — per-user read-state) — read ANY user's per-item listening
+   * progress via the ADMIN/service token (`GET /api/users/{id}` → `mediaProgress[]`). The join key back
+   * to books_items is each entry's `libraryItemId` (= books_items.external_id for ABS rows). Returns the
+   * (possibly empty) progress array; the per-user book-read seam maps it to user_book_progress.
+   */
+  async getUserProgress(userId: string): Promise<AbsMediaProgress[]> {
+    const path = `/api/users/${encodeURIComponent(userId)}`;
+    const response = await this.authed(path);
+    const parsed = await parseJson(response, absUserSchema, 'GET', path);
+    return parsed.mediaProgress ?? [];
   }
 
   /**

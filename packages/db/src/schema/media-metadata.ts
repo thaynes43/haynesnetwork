@@ -67,6 +67,14 @@ export const mediaMetadata = pgTable(
     resolution: text('resolution').$type<Resolution>(), // CHECK: RESOLUTIONS (D-02, approximate)
     genres: jsonb('genres').$type<string[]>().notNull().default([]),
     arrAddedAt: timestamp('arr_added_at', { withTimezone: true }), // *arr `added`
+    // ADR-051 C-05 / DESIGN-026 D-05 (PLAN-029) — the canonical Date RELEASED for a ledger item, the
+    // second must-have date dimension the walls surface alongside Date Added (arr_added_at). Populated by
+    // the metadata harvest from the *arr list: Radarr `digitalRelease ?? inCinemas ?? physicalRelease`,
+    // Sonarr `firstAired`; Lidarr artists have no release date → null (they mis-sort NULLS-LAST like every
+    // other nullable sort — the D-09 keyset already handles it). Kavita books have no list date; ABS
+    // release date rides books_items.released_at (its own engine). Nullable — an unharvested/date-less row
+    // is honest null, never a fabricated Jan-1 value derived from `year`.
+    releasedAt: timestamp('released_at', { withTimezone: true }),
     // Watch-stats, unified across the three Tautulli instances (addendum): SUM / MAX.
     playCount: integer('play_count'),
     lastViewedAt: timestamp('last_viewed_at', { withTimezone: true }),

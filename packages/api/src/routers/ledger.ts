@@ -104,8 +104,10 @@ export const ledgerRouter = router({
       // a library the role can't access never enters the payload). Admin ⇒ unrestricted (no predicate).
       const gate = await resolveLibraryAccessGate(ctx.user.id, ctx.db);
       // The shared WHERE assembly (unaccent search + onDisk grains + metadata facets + rating
-      // bounds + tombstone gate) — single-sourced in ledger-query.ts (DESIGN-008 D-09).
-      const where: SQL[] = buildLibraryWhere(input);
+      // bounds + tombstone gate) — single-sourced in ledger-query.ts (DESIGN-008 D-09). PLAN-029 adds
+      // the Release-Date/Year/Decade facets + the per-user watch-state facet — the latter binds to the
+      // SESSION user (never the wire), a facet on content the access gate already filtered (ADR-053 C-07).
+      const where: SQL[] = buildLibraryWhere({ ...input, viewerUserId: ctx.user.id });
       const access = libraryAccessWhere(gate);
       if (access !== null) where.push(access);
 

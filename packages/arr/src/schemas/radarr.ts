@@ -54,6 +54,13 @@ export const radarrMovieSchema = z.object({
   images: z.array(arrImageSchema).optional(),
   genres: z.array(z.string()).optional(),
   runtime: z.number().int().optional(),
+  // ADR-051 C-05 / DESIGN-026 D-05 (PLAN-029 — Date Released) — the precise release dates Radarr
+  // exposes on `GET /movie` (ISO strings; any may be absent for an unreleased title). The metadata
+  // harvest derives media_metadata.released_at = digitalRelease ?? inCinemas ?? physicalRelease
+  // (the earliest generally-available date, preferred over the January-1 `year`). Nullish-tolerant.
+  digitalRelease: z.string().optional(),
+  inCinemas: z.string().optional(),
+  physicalRelease: z.string().optional(),
   // The on-disk file is embedded INLINE in the `GET /movie` list when hasFile is true (verified
   // live 2026-07-06: 5473/9558 carry it) — no extra request. Its `quality.quality.resolution` is
   // the REAL per-item resolution tier the harvest derives from (resolution fix, D-02).

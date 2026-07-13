@@ -16,6 +16,8 @@ export * from './openwebui';
 // ADR-046 / DESIGN-024 (PLAN-023) — the read-only Kavita + Audiobookshelf snapshot fetcher + normalizers
 // the `books-sync` mode hands to the domain syncBooks single-writer.
 export * from './books';
+// ADR-053 / DESIGN-026 D-07 (PLAN-029) — the ABS per-user listening-progress read, folded into books-sync.
+export * from './abs-progress';
 // ADR-047 / DESIGN-025 (PLAN-028) — the read-only *arr→Plex GUID matcher the `plex-match` mode hands to the
 // domain syncPlexMatches single-writer (the Library access gate + "Watch on Plex" deep-link substrate).
 export * from './plex-match';

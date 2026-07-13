@@ -25,6 +25,9 @@ export interface MediaMetadataFields {
   resolution?: Resolution | null;
   genres?: string[];
   arrAddedAt?: Date | null;
+  /** ADR-051 C-05 / DESIGN-026 D-05 — the canonical Date RELEASED (Radarr digitalRelease ?? inCinemas
+   *  ?? physicalRelease; Sonarr firstAired; Lidarr null). Null sorts NULLS-LAST like every nullable sort. */
+  releasedAt?: Date | null;
   playCount?: number | null;
   lastViewedAt?: Date | null;
   /** DESIGN-010 D-12 — the cross-server watch-visibility pair (same MAX instant as lastViewedAt, plus
@@ -86,6 +89,7 @@ export async function upsertMediaMetadataBatch(
       resolution: r.resolution ?? null,
       genres: r.genres ?? [],
       arrAddedAt: r.arrAddedAt ?? null,
+      releasedAt: r.releasedAt ?? null,
       playCount: int(r.playCount),
       lastViewedAt: r.lastViewedAt ?? null,
       lastWatchedAt: r.lastWatchedAt ?? null,
@@ -115,6 +119,7 @@ export async function upsertMediaMetadataBatch(
           resolution: sql`excluded.resolution`,
           genres: sql`excluded.genres`,
           arrAddedAt: sql`excluded.arr_added_at`,
+          releasedAt: sql`excluded.released_at`,
           playCount: sql`excluded.play_count`,
           lastViewedAt: sql`excluded.last_viewed_at`,
           lastWatchedAt: sql`excluded.last_watched_at`,

@@ -21,6 +21,8 @@ export interface BooksItemInput {
   narrator: string | null;
   seriesName: string | null;
   year: number | null;
+  /** ADR-051 C-05 / DESIGN-026 D-05 — the precise release instant (ABS publishedDate; Kavita null). */
+  releasedAt: Date | null;
   genres: string[];
   coverRef: string | null;
   deepLinkUrl: string;
@@ -77,6 +79,7 @@ export async function syncBooks(input: SyncBooksInput): Promise<SyncBooksReport>
     narrator: r.narrator,
     seriesName: r.seriesName,
     year: r.year,
+    releasedAt: r.releasedAt,
     genres: r.genres,
     coverRef: r.coverRef,
     deepLinkUrl: r.deepLinkUrl,
@@ -113,6 +116,7 @@ export async function syncBooks(input: SyncBooksInput): Promise<SyncBooksReport>
             narrator: sql`excluded.narrator`,
             seriesName: sql`excluded.series_name`,
             year: sql`excluded.year`,
+            releasedAt: sql`excluded.released_at`,
             genres: sql`excluded.genres`,
             coverRef: sql`excluded.cover_ref`,
             deepLinkUrl: sql`excluded.deep_link_url`,

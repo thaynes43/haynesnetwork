@@ -57,6 +57,9 @@ import { fetchOwuiUsage, type OpenWebUiClient } from './openwebui';
 // ADR-046 / DESIGN-024 (PLAN-023) — the read-only Kavita + Audiobookshelf snapshot fetcher the
 // `books-sync` mode hands to the @hnet/domain syncBooks single-writer (books_items mirror upsert).
 import { fetchBooksSnapshot, type BooksSyncBundle } from './books';
+// ADR-053 / DESIGN-026 D-07 (PLAN-029) — the ABS per-user listening-progress read, folded into books-sync
+// as an isolated post-step (per-user Audiobooks read-state; Kavita DEFERRED).
+import { syncAbsUserProgress, type SyncAbsUserProgressReport } from './abs-progress';
 // ADR-047 / DESIGN-025 (PLAN-028) — the read-only *arr→Plex GUID matcher the `plex-match` mode hands to the
 // @hnet/domain syncPlexMatches single-writer (media_plex_matches derived-cache upsert + reconcile).
 import { fetchPlexMatchSnapshot, type PlexMatchStats } from './plex-match';
@@ -197,8 +200,14 @@ export interface SyncReport {
   authentikUsers?: SyncAuthentikUsersResult | null;
   /** The authentik-users run's error — sets totalFailure for the CLI exit. */
   authentikUsersError?: string;
-  /** ADR-046 — the `books-sync` result (null for every other mode / when it errored). */
-  booksSync?: (SyncBooksReport & { syncedSources: string[] }) | null;
+  /** ADR-046 — the `books-sync` result (null for every other mode / when it errored). ADR-053 folds the
+   *  per-user ABS listening-progress read (absProgress) in as an isolated sub-step. */
+  booksSync?:
+    | (SyncBooksReport & {
+        syncedSources: string[];
+        absProgress?: SyncAbsUserProgressReport | null;
+      })
+    | null;
   /** The books-sync run's error — sets totalFailure for the CLI exit. */
   booksSyncError?: string;
   /** ADR-047 — the `plex-match` result (null for every other mode / when it errored). */
@@ -645,7 +654,12 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
     if (!options.books) {
       throw new Error('books-sync requires Kavita + Audiobookshelf clients (books)');
     }
-    let booksSync: (SyncBooksReport & { syncedSources: string[] }) | null = null;
+    let booksSync:
+      | (SyncBooksReport & {
+          syncedSources: string[];
+          absProgress?: SyncAbsUserProgressReport | null;
+        })
+      | null = null;
     let booksSyncError: string | undefined;
     try {
       const snapshot = await fetchBooksSnapshot(options.books, logger);
@@ -656,6 +670,22 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
         now: options.now,
       });
       booksSync = { ...report, syncedSources: snapshot.syncedSources };
+      // ADR-053 / DESIGN-026 D-07 — per-user ABS listening-progress read (ISOLATED: a failure here never
+      // fails books-sync; a no-op when no user has an ABS handle). Runs after the books mirror upsert so
+      // the external_id → books_items join sees the fresh rows.
+      try {
+        const absProgress = await syncAbsUserProgress({
+          db,
+          abs: options.books.audiobookshelf,
+          logger,
+        });
+        booksSync = { ...booksSync, absProgress };
+      } catch (error) {
+        logger.error('books-sync: abs per-user progress step failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        booksSync = { ...booksSync, absProgress: null };
+      }
       logger.info('books-sync complete', {
         kavitaSeries: snapshot.counts.kavitaSeries,
         absItems: snapshot.counts.absItems,

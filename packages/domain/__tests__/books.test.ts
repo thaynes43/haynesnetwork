@@ -22,6 +22,7 @@ function row(overrides: Partial<BooksItemInput> & Pick<BooksItemInput, 'source' 
     narrator: null,
     seriesName: null,
     year: null,
+    releasedAt: null,
     genres: [],
     coverRef: null,
     deepLinkUrl: 'https://kavita.haynesnetwork.com/library/1/series/1',

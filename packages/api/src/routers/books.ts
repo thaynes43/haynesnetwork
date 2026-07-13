@@ -6,7 +6,7 @@
 // client-hidden only. Same gate protects the /api/books/cover proxy.
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
-import { booksItems, BOOKS_MEDIA_KINDS } from '@hnet/db';
+import { booksItems, userBookProgress, BOOKS_MEDIA_KINDS } from '@hnet/db';
 import { and, asc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
 import { authedProcedure, router } from '../trpc';
 import { booksProcedure, effectiveSectionLevel } from '../middleware/role';
@@ -36,6 +36,13 @@ function orderForSort(sort: BooksSort) {
       ];
     case 'year':
       return [sql`${booksItems.year} DESC NULLS LAST`, asc(booksItems.sortTitle), asc(booksItems.id)];
+    case 'released':
+      // ADR-051 C-05 / DESIGN-026 D-05 — Date Released (ABS publishedDate). Kavita rows (null) sort last.
+      return [
+        sql`${booksItems.releasedAt} DESC NULLS LAST`,
+        asc(booksItems.sortTitle),
+        asc(booksItems.id),
+      ];
     case 'duration':
       return [
         sql`${booksItems.durationSeconds} DESC NULLS LAST`,
@@ -75,6 +82,24 @@ export const booksRouter = router({
         conditions.push(
           sql`EXISTS (SELECT 1 FROM jsonb_array_elements_text(${booksItems.genres}) AS g WHERE g = ANY(${input.genres}))`,
         );
+      }
+      // ADR-053 / DESIGN-026 D-07 — the per-user ABS read-state facet (viewer-scoped, Audiobooks only;
+      // Kavita rows simply never carry user_book_progress). Bound to the SESSION user (never the wire).
+      if (input.readState) {
+        const viewer = sql`${ctx.user.id}::uuid`;
+        if (input.readState === 'read') {
+          conditions.push(
+            sql`EXISTS (SELECT 1 FROM ${userBookProgress} ubp WHERE ubp.books_item_id = ${booksItems.id} AND ubp.app_user_id = ${viewer} AND ubp.is_finished = true)`,
+          );
+        } else if (input.readState === 'in_progress') {
+          conditions.push(
+            sql`EXISTS (SELECT 1 FROM ${userBookProgress} ubp WHERE ubp.books_item_id = ${booksItems.id} AND ubp.app_user_id = ${viewer} AND ubp.in_progress = true)`,
+          );
+        } else {
+          conditions.push(
+            sql`NOT EXISTS (SELECT 1 FROM ${userBookProgress} ubp WHERE ubp.books_item_id = ${booksItems.id} AND ubp.app_user_id = ${viewer} AND ubp.is_finished = true)`,
+          );
+        }
       }
 
       const rows = await ctx.db

@@ -94,8 +94,12 @@ export {
 } from './books-cover';
 export type { BooksCoverResult } from './books-cover';
 export { booksCoverUrlFor, toBooksListItem, BOOKS_SORTS } from './books-query';
-export type { BooksListItem, BooksSort, BooksSearchInput } from './books-query';
+export type { BooksListItem, BooksSort, BooksSearchInput, BookReadState } from './books-query';
+export { BOOK_READ_STATES } from './books-query';
 export type { BooksSearchResult, BooksDetailResult } from './routers/books';
+// ADR-052 / DESIGN-026 D-06 (PLAN-029) — the per-user Library preferences wire type (the /library route
+// + the UX agent's client import it TYPE-ONLY). Re-exported so the inferred caller type stays portable.
+export type { WallPreference } from './routers/library';
 export type {
   YtdlsubShow,
   YtdlsubListResult,
