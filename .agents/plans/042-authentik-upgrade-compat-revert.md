@@ -90,3 +90,17 @@ NOT help anonymous visitors on older devices (that's what A/B are for).
 - 2026-07-13 ~01:00 (escalation): owner re-test — compat mode does NOT fix Safari 18.3.1; RCA
   found in the #19814 thread (CSS nesting + WebKit #290102); 2026.5.4 (2026-07-08) changelog
   silent; no upstream mitigation PR. Options A/B/C written; owner ruling Monday.
+- 2026-07-13 ~01:30 (device-map correction + laptop variant closed): the failing `Version/18.3.1`
+  Loki UA was the **iPad** — the owner's LAPTOP is macOS Tahoe 26.5.2 (current WebKit). On a
+  console-open retest the laptop's private-mode flow page **rendered and logged in fine**: healthy
+  boot (version banner → ws connect → executor GET → identification form), the ONLY failed request
+  being the known **`%(theme)s` background nit** (`files/media/public/hnet/bg-c-%(theme)s.svg` —
+  Safari "The network connection was lost"). Working theory for the earlier laptop spins:
+  transient edge/QUIC connection drops and/or catching the page pre-propagation — NOT the WebKit
+  crash. If a current-WebKit spin recurs, capture the console BEFORE theorizing.
+- **Owner executed Option C for his devices (2026-07-13 overnight):** iPad updating to current
+  iPadOS overnight. **Monday validation: retest the iPad login** — a pass confirms the WebKit-side
+  fix and narrows the A/B/C ruling to ANONYMOUS old-WebKit visitors only.
+- **Folded-in polish item: fix the `%(theme)s` placeholder** in the brand background URL
+  (`10-hnet-brand.yaml`) — one doomed request per flow-page load in every browser; trivial
+  blueprint edit + flow-page reload check. Do it with (or before) whichever option lands.
