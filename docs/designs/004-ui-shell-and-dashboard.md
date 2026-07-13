@@ -361,6 +361,21 @@ English; no i18n in this app) and minus the notifications button:
   > 14px labels / 8px 14px padding at desktop, 13px / 8px 10px under 600px, and the ≤479px
   > rule now tightens only the chrome (topbar gap/padding, action gap) — labels stay 13px
   > with ≥44px targets at 375/390px. The wordmark still yields to the mark alone <600px.
+  >
+  > **Amended 2026-07-12 (nav-overlap fix — ADR-037 added a fifth link):** the Metrics
+  > entry (`/metrics`, D-05 of DESIGN-016) landed after the four-link tuning above, so the
+  > rail now carries **up to five** links (Home · Library · Trash · Bulletin · Metrics).
+  > Below ~375px five links no longer fit, and because `.topbar__nav` had `min-width: 0`
+  > with the default `overflow: visible` the surplus links overflowed **visibly** rightward
+  > and slid under the theme toggle (owner-reported on a 360px-class phone; the resize matrix
+  > never caught it because its smallest size is 375px, where five links still fit). Fix: the
+  > rail is now a **self-contained horizontal scroll pane** — `overflow-x: auto`
+  > (`overflow-y: hidden`, scrollbar hidden), links `flex: none; white-space: nowrap` so they
+  > never squish/wrap, plus a 4px `padding-block` so the scroll clip doesn't eat link focus
+  > rings. A track appears only when the links can't fit, so desktop and ≥375px phones are
+  > untouched; page-level scroll stays impossible (D-05) and the confined overflow can no
+  > longer overrun the actions. Swiping the rail moves nothing else (ADR-015-safe). No
+  > hamburger/menu redesign — the visual identity is unchanged.
 - **Theme toggle:** the donor SettingsDrawer's segmented dark/light control simplified
   to a single topbar `iconbtn` that flips `hnet-dark ↔ hnet-light` via
   `useTheme().setTheme`. Sun and moon SVGs are **both in the DOM**, shown/hidden by
