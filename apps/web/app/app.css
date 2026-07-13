@@ -375,14 +375,34 @@ button.motd__dismiss:hover {
   white-space: nowrap;
 }
 /* Primary topbar nav — the UNIVERSAL section row (ADR-032 / DESIGN-004 D-16): ghost links
-   in the D-03 chrome language, shown at ALL widths. Ledger + My Plex moved to the user
-   menu, so the row tops out at four links (Home · Library · Trash · Bulletin) and the
-   freed width goes into LARGER type + touch targets, especially on phones. */
+   in the D-03 chrome language, shown at ALL widths. Ledger + My Plex moved to the user menu,
+   but ADR-037 later added a Metrics entry, so the row now carries up to FIVE links (Home ·
+   Library · Trash · Bulletin · Metrics). */
 .topbar__nav {
   display: flex;
   align-items: center;
   gap: 2px;
   min-width: 0;
+  /* With five links the intrinsic row width no longer fits below ~375px between the brand
+     mark and the right-pinned actions. Without a scroll container the rail could shrink
+     (min-width: 0) but its links overflowed VISIBLY to the right, sliding under the theme
+     toggle — the narrow-phone overlap bug (owner-reported on a 360px-class device). Make the
+     rail scroll within its own bounds instead: overflow-x: auto shows a track only when the
+     links can't fit, so desktop and ≥375px phones are untouched. Page-level scroll stays
+     impossible (html/body overflow:hidden, D-05), and confining the overflow here means the
+     actions can no longer be overrun. The little vertical padding keeps the 56px bar taller
+     than the rail so link focus rings aren't clipped by the scroll container. A self-contained
+     scroll pane — swiping it never repositions neighbors (ADR-015-safe). */
+  padding-block: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* Hide the horizontal track: a scrollbar inside the 56px bar would eat row height; the rail
+     scrolls by touch swipe / trackpad / shift-wheel / keyboard focus instead. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.topbar__nav::-webkit-scrollbar {
+  display: none;
 }
 .topbar__nav a {
   color: var(--color-text-muted);
@@ -391,6 +411,10 @@ button.motd__dismiss:hover {
   font-weight: 600;
   padding: 8px 14px;
   min-height: 44px;
+  /* Never squish or wrap a link when the rail is tight — it scrolls instead, so every tab
+     keeps its full label and ≥44px target. */
+  flex: none;
+  white-space: nowrap;
   display: inline-flex;
   align-items: center;
   border-radius: 12px;
@@ -404,8 +428,8 @@ button.motd__dismiss:hover {
 }
 /* Phones once hid the top nav entirely (the user menu carried Library). The menu
    no longer does, so the section row must stay reachable here — keep it visible and
-   ease the spacing gently; with four links max (ADR-032) the type no longer has to
-   shrink below 13px. */
+   ease the spacing gently; the type stays 13px and the rail scrolls if the (up to
+   five, ADR-037) links can't all fit. */
 @media (max-width: 599px) {
   .topbar__nav {
     gap: 0;
@@ -421,9 +445,10 @@ button.motd__dismiss:hover {
     display: none;
   }
 }
-/* True phone widths (≤479px, incl. the 375/390 matrix sizes): tighten the CHROME (topbar
-   gaps/padding, action gap) rather than the link type — the four-link row keeps its 13px
-   labels and ≥44px targets. Static layout, not interaction-driven (ADR-015-safe). */
+/* True phone widths (≤479px, incl. the 320/360/375/390 matrix sizes): tighten the CHROME
+   (topbar gaps/padding, action gap) rather than the link type — the rail keeps its 13px
+   labels and ≥44px targets and scrolls when five links can't fit (see .topbar__nav). Static
+   layout, not interaction-driven (ADR-015-safe). */
 @media (max-width: 479px) {
   .topbar {
     gap: 6px;
