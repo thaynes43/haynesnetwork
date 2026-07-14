@@ -32,8 +32,47 @@ export const PERMISSION_AUDIT_ACTIONS = [
   'link_integration',
   'unlink_integration',
   'request_book_search',
+  // ADR-059 / DESIGN-030 (PLAN-048 — Activity / In-Flight) — the two USER-initiated Activity actions on
+  // an import failure that co-write a permission_audit row (actorId = the acting Admin/granted user;
+  // roleId null — these are NOT role/permission mutations; subjectUserId null — they target a media
+  // pipeline item, not a user). `activity_retry_import` records a retry of a stuck import (the confined
+  // LazyLibrarian `forceProcess`); `activity_force_search` records a force re-search (the confined
+  // `searchBook`, the recordManualSearch precedent). The `activity-scan` sync mode's failure upsert is
+  // UNaudited (synced/derived — the mam_gate_state class).
+  'activity_retry_import',
+  'activity_force_search',
+  // ADR-059 / DESIGN-030 (PLAN-048) — a role's fine-grained Activity action grants were replaced (the
+  // update_trash_actions analog; written by setRoleActivityActions with before/after action lists).
+  'update_activity_actions',
 ] as const;
 export type PermissionAuditAction = (typeof PERMISSION_AUDIT_ACTIONS)[number];
+
+// ---------------------------------------------------------------------------
+// ADR-059 / DESIGN-030 (PLAN-048 — Activity / In-Flight) — the fine-grained Activity ACTION grants,
+// layered on the (universal, ungated) Library section exactly as TRASH_ACTIONS layer on `trash`. A ROW in
+// role_activity_action_grants = the action is GRANTED (presence is the grant; no boolean — ADR-023 C-03);
+// an is_admin role implies EVERY action with NO rows. R2: import-failure actions ship Admin-only; a role
+// row opens one to others later. text+CHECK, single source of truth for the TS type + the SQL CHECK.
+// ---------------------------------------------------------------------------
+export const ACTIVITY_ACTIONS = [
+  'retry_import', // re-run the importer for a stuck download (LazyLibrarian forceProcess)
+  'force_research', // force a fresh search for a dead-end grab (searchBook)
+] as const;
+export type ActivityAction = (typeof ACTIVITY_ACTIONS)[number];
+
+// ADR-059 / DESIGN-030 — the failure CLASS of an activity_import_failures row (the UI + actions switch on
+// it). `stranded_import` = downloaded/completed at the client but never imported (the OPS-013 §11 42-book
+// incident — LL row still Snatched while SAB shows Completed); `postprocess_failed` = the importer ran and
+// failed (LL `Failed`/`DLResult`); `download_failed` = the download itself failed (SAB dead nzb / par2);
+// `import_blocked` = a content/type mismatch the importer refuses (an ebook grab against an audiobook want).
+// text+CHECK, single source of truth for the TS type + the activity_import_failures CHECK.
+export const ACTIVITY_FAILURE_KINDS = [
+  'stranded_import',
+  'postprocess_failed',
+  'download_failed',
+  'import_blocked',
+] as const;
+export type ActivityFailureKind = (typeof ACTIVITY_FAILURE_KINDS)[number];
 
 // ADR-045 / DESIGN-023 (PLAN-026) — the Authentik group-portal write ledger. haynesnetwork writes
 // Authentik group MEMBERSHIP for the groups it OWNS (the owned-groups allowlist), and pre-creates the
@@ -282,6 +321,17 @@ export const SYNC_RUN_KINDS = [
   // SYNC_RUN_KINDS so the CLI --mode parser + SyncMode accept it (migration 0045 rebuilds the
   // sync_runs.run_kind CHECK to keep the const array + CHECK in parity).
   'goodreads-sync',
+  // ADR-059 / DESIGN-030 (PLAN-048 — Activity / In-Flight) — 'activity-scan' polls each source family's
+  // queue/import state (SLICE 1: LazyLibrarian wanted-table + SABnzbd queue/history), computes the current
+  // OPEN import-failure set (incl. the stranded_import class), and via the domain evaluateActivityFailures
+  // single-writer UPSERTS the activity_import_failures ledger AND — for each NEWLY-seen failure — enqueues
+  // one 'activity_import_failed' notification_outbox row in the SAME transaction (ADR-034 C-01; first sight
+  // pages once, a cleared failure is closed). The Activity tab + wall badges read LIVE (ADR-059 Q-01), so
+  // this mode owns ONLY the durable failure ledger + the outbox transition. Like mam-governor/notify-outbox
+  // it touches NO *arr source (no --source) and writes NO sync_runs row — its trail is the failure ledger +
+  // the outbox rows. It joins SYNC_RUN_KINDS so the CLI --mode parser + SyncMode accept it (migration 0048
+  // rebuilds the sync_runs.run_kind CHECK to keep the const array + CHECK in parity).
+  'activity-scan',
 ] as const;
 export type SyncRunKind = (typeof SYNC_RUN_KINDS)[number];
 
@@ -765,6 +815,15 @@ export const NOTIFY_OUTBOX_EVENT_TYPES = [
   'mam_gate_paused',
   'mam_gate_resumed',
   'mam_gate_stuck',
+  //   activity_import_failed      — ADR-059 / DESIGN-030 (PLAN-048 Activity/In-Flight) — a media item's
+  //                                 acquisition FAILED to import (incl. the stranded_import class: the
+  //                                 download completed but never landed — the OPS-013 §11 42-book incident).
+  //                                 Enqueued by evaluateActivityFailures in the SAME tx as the
+  //                                 activity_import_failures upsert, ONCE per newly-seen failure (dedupe via
+  //                                 the row's notified_at). Feeds the future admin digest (PLAN-035 channel,
+  //                                 post-SMTP) — NO per-event push in v1 (owner ruled in-app only). The
+  //                                 renderer deep-links the failure detail page. Migration 0048 rebuilds the CHECK.
+  'activity_import_failed',
 ] as const;
 export type NotifyOutboxEventType = (typeof NOTIFY_OUTBOX_EVENT_TYPES)[number];
 

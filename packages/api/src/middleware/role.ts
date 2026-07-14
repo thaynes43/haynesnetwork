@@ -7,6 +7,7 @@ import {
   BULLETIN_VIEW_DEFAULTS,
   SECTION_DEFAULT_LEVELS,
   SECTION_LEVEL_RANK,
+  type ActivityAction,
   type BulletinView,
   type MessageAction,
   type MetricsLevel,
@@ -14,6 +15,7 @@ import {
   type SectionPermissionLevel,
   type TrashAction,
 } from '@hnet/db';
+import { activityActionsForRole } from '@hnet/domain';
 import { authedProcedure } from '../trpc';
 import type { SessionRole } from '@hnet/auth';
 
@@ -120,6 +122,36 @@ export function effectiveTrashActions(actions: readonly TrashAction[]): TrashAct
   const set = new Set<TrashAction>(actions);
   if (set.has('save_exclude')) set.add('save_leaving_soon');
   return [...set];
+}
+
+/**
+ * ADR-059 / DESIGN-030 (PLAN-048 — Activity / In-Flight) — the caller's effective Activity actions.
+ * Admin ⇒ every action (no query). Otherwise a per-call DB read of `role_activity_action_grants` (a
+ * mutation/detail path, so the read is cheap + rare; the grant seam deliberately does NOT yet ride the
+ * session — R2's "openable to roles later"). Used by `activityActionProcedure` (the server gate) + the
+ * failure-detail resolver (the per-viewer canAct flags).
+ */
+export async function resolveActivityActions(
+  db: import('@hnet/db').Database,
+  role: SessionRole,
+): Promise<ActivityAction[]> {
+  return activityActionsForRole({ db, roleId: role.id, isAdmin: role.isAdmin });
+}
+
+/**
+ * ADR-059 / DESIGN-030 (PLAN-048) — the Activity action rung (R2): authed AND (admin OR the caller's role
+ * holds the `role_activity_action_grants` row for `action`). FORBIDDEN otherwise — server-authoritative,
+ * never a client hide. The Activity tab itself is ungated (the LIST resolver does per-section VIEW gating);
+ * these gate only the failure ACTIONS. Rides the ADR-023 grant machinery so opening an action to a role is
+ * a data change, not code.
+ */
+export function activityActionProcedure(action: ActivityAction) {
+  return authedProcedure.use(async ({ ctx, next }) => {
+    if (ctx.user.role.isAdmin) return next();
+    const actions = await activityActionsForRole({ db: ctx.db, roleId: ctx.user.role.id });
+    if (!actions.includes(action)) throw new TRPCError({ code: 'FORBIDDEN' });
+    return next();
+  });
 }
 
 /**

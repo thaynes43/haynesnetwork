@@ -20,6 +20,7 @@ import {
   drainDuePoolRefreshes,
   expireStaleFixRequests,
   deliverOutbox,
+  evaluateActivityFailures,
   evaluateMamGovernor,
   evaluateSmartAlerts,
   evaluateSpacePolicy,
@@ -41,6 +42,11 @@ import {
   type MamGovernorBundle,
   type MamGovernorReport,
   type MamGovernorTuning,
+  type BooksActivityBundle,
+  type ActivityFailuresReport,
+  type ActivityFailureInput,
+  toFailureInputs,
+  BOOKS_ACTIVITY_SOURCE,
   type OutboxDeliveryReport,
   type PlexClientBundle,
   type PosterGuardReport,
@@ -130,6 +136,9 @@ export interface RunSyncOptions {
   /** ADR-054 / DESIGN-027 — the governor's tuning (limit/buffer/stuck-hours). Resolved once per run via
    *  the resolveGovernorConfig SEAM (env in v1; PLAN-040 adds a DB override). Required only for that mode. */
   mamTuning?: MamGovernorTuning;
+  /** ADR-059 / DESIGN-030 — the books activity bundle (the LL+SAB adapter) the `activity-scan` mode scans
+   *  for import failures. Required only for that mode; tests inject a stubbed adapter. */
+  activityBundle?: BooksActivityBundle;
   /** ADR-043 / DESIGN-021 — the Plex client bundle (read + confined write) the `poster-guard` mode uses to
    *  read the k8plex Peloton library and re-apply drifted override posters. Required only for that mode. */
   plex?: PlexClientBundle;
@@ -204,6 +213,10 @@ export interface SyncReport {
   mamGovernor?: MamGovernorReport | null;
   /** The mam-governor run's error — sets totalFailure for the CLI exit. */
   mamGovernorError?: string;
+  /** ADR-059 — the `activity-scan` failure-ledger result (null for every other mode / when it errored). */
+  activity?: ActivityFailuresReport | null;
+  /** The activity-scan run's error — sets totalFailure for the CLI exit. */
+  activityError?: string;
   /** ADR-043 — the `poster-guard` result (null for every other mode / when it errored). */
   posterGuard?: PosterGuardReport | null;
   /** The poster-guard run's error — sets totalFailure for the CLI exit. */
@@ -536,6 +549,59 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       mamGovernor,
       ...(mamGovernorError !== undefined ? { mamGovernorError } : {}),
       totalFailure: mamGovernorError !== undefined,
+    };
+  }
+
+  // ADR-059 / DESIGN-030 (PLAN-048 — Activity / In-Flight) — the `activity-scan` mode polls each source
+  // family's queue/import state (SLICE 1: the books LL+SAB adapter), extracts the current OPEN import
+  // failures, and via evaluateActivityFailures UPSERTS the durable activity_import_failures ledger AND
+  // enqueues one `activity_import_failed` notification_outbox row per NEW failure in the SAME transaction.
+  // No *arr source, no sync_runs row — its trail is the ledger + the outbox rows. Disabled-safe: the
+  // enqueue always records; the notify-outbox drainer no-ops without PUSHOVER_* creds. A source read
+  // failure is logged and treated as "no failures for that source" (never resolves a strand on a wire
+  // hiccup — evaluateActivityFailures only closes failures for the sources actually scanned).
+  if (options.mode === 'activity-scan') {
+    const startedAt = new Date();
+    if (!options.activityBundle) {
+      throw new Error('activity-scan requires a books activity bundle (activityBundle)');
+    }
+    let activity: ActivityFailuresReport | null = null;
+    let activityError: string | undefined;
+    try {
+      const scannedSources: string[] = [];
+      const failures: ActivityFailureInput[] = [];
+      try {
+        const items = await options.activityBundle.adapter.list();
+        scannedSources.push(BOOKS_ACTIVITY_SOURCE);
+        failures.push(...toFailureInputs(BOOKS_ACTIVITY_SOURCE, items));
+      } catch (error) {
+        // The books source is unreachable this run — DON'T reconcile it (leave prior strands open).
+        logger.warn('activity-scan: books source degraded', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      activity = await evaluateActivityFailures({ db, failures, scannedSources });
+      logger.info('activity-scan evaluated', {
+        seen: activity.seen,
+        opened: activity.opened,
+        resolved: activity.resolved,
+        enqueued: activity.enqueued,
+        scannedSources,
+      });
+    } catch (error) {
+      activityError = error instanceof Error ? error.message : String(error);
+      logger.error('activity-scan failed', { error: activityError });
+    }
+    return {
+      mode: options.mode,
+      startedAt,
+      finishedAt: new Date(),
+      sources: [],
+      backfill: null,
+      fixesCompleted: null,
+      activity,
+      ...(activityError !== undefined ? { activityError } : {}),
+      totalFailure: activityError !== undefined,
     };
   }
 

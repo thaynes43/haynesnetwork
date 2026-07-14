@@ -11,6 +11,16 @@ export { MediaCard } from './media-card';
 export { BookCard } from './book-card';
 export { GroupCard } from './group-card';
 export { RequestCard } from './request-card';
+// PLAN-048 / ADR-059 / DESIGN-030 — the Activity grid tile + the shared in-flight badge helper (the wall
+// posters' `inFlight` prop maps through this). Extending the family the sanctioned way: a typed variant HERE
+// + a gallery entry + a spec assertion, in the same change.
+export { ActivityCard } from './activity-card';
+export {
+  activityStageBadge,
+  activityFailureBadge,
+  type InFlightBadge,
+  type CardActivityStage,
+} from './activity-badge';
 export { TicketCard, TicketCategoryTile } from './ticket-card';
 export { TrashCard, type TrashCardGlyph, type TrashCardToggle } from './trash-card';
 export {

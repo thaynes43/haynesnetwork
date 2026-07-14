@@ -74,6 +74,7 @@ import {
 } from '@/lib/library-view-registry';
 import { MediaCard, PosterGrid, PosterGridSkeleton } from '@/components/cards';
 import { MyFixesPanel } from '@/components/my-fixes-panel';
+import { ActivityPanel } from './activity-panel';
 import { CHIP_LABELS, DateRangeChip, RatingChip, SelectChip } from '@/components/filter-chips';
 import { LetterJumpBar } from '@/components/letter-jump-bar';
 import { YtdlsubBrowser } from './ytdlsub-browser';
@@ -109,6 +110,16 @@ const BOOKS_TAB_KINDS: Record<(typeof BOOKS_TABS)[number]['key'], 'book' | 'audi
   comics: 'comic',
 };
 
+// ADR-059 / DESIGN-030 (PLAN-048) — the cross-library Activity sub-tab (the Trash→Activity idiom). Like My
+// Fixes it is ALWAYS-ON (no section id gates the Library shell); the `activity.list` resolver does the
+// per-item section gating server-side, so a role that can see nothing gets an empty Activity, never a
+// forbidden tab. Sits after Books, before My Fixes.
+const ACTIVITY_TAB = { key: 'activity', label: 'Activity', arrKind: undefined } as const satisfies {
+  key: string;
+  label: string;
+  arrKind?: ArrKindName;
+};
+
 // DESIGN-017 D-08 (owner ruling 2026-07-10) — My Fixes is a personal utility view, not a library:
 // it sits LAST, after the media tabs, the ytdl-sub tabs, and the Books tabs.
 const MY_FIXES_TAB = { key: 'my-fixes', label: 'My Fixes', arrKind: undefined } as const satisfies {
@@ -121,6 +132,7 @@ type TabKey =
   | (typeof MEDIA_TABS)[number]['key']
   | (typeof YTDLSUB_TABS)[number]['key']
   | (typeof BOOKS_TABS)[number]['key']
+  | (typeof ACTIVITY_TAB)['key']
   | (typeof MY_FIXES_TAB)['key'];
 type YtdlsubTabKey = (typeof YTDLSUB_TABS)[number]['key'];
 type BooksTabKey = (typeof BOOKS_TABS)[number]['key'];
@@ -202,6 +214,7 @@ function LibraryContent({
     ...MEDIA_TABS.filter((t) => mediaVisible[t.key as keyof MediaVisible]),
     ...(ytdlsubVisible ? YTDLSUB_TABS.filter((t) => ytdlsubLibraries[t.key as keyof YtdlsubLibsVisible]) : []),
     ...(booksVisible ? BOOKS_TABS : []),
+    ACTIVITY_TAB,
     MY_FIXES_TAB,
   ];
   const rawTab = searchParams.get('tab');
@@ -303,6 +316,9 @@ function LibraryContent({
             stored={storedViewFor(prefs.data, activeTab.key as LibraryWallId)}
             gates={gates}
           />
+        ) : activeTab.key === 'activity' ? (
+          // ADR-059 / DESIGN-030 (PLAN-048) — the cross-library Activity sub-tab (live in-flight + failures).
+          <ActivityPanel />
         ) : (
           <MyFixesPanel />
         )}

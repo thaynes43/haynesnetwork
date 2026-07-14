@@ -6,6 +6,7 @@
 // walls). A thin, prop-typed BaseCard extension — never a fork.
 import type { CardBadge } from './poster-card-body';
 import { BaseCard } from './base-card';
+import { activityStageBadge, type InFlightBadge } from './activity-badge';
 
 export function MediaCard({
   href,
@@ -14,6 +15,7 @@ export function MediaCard({
   title,
   year,
   badges,
+  inFlight,
 }: {
   href: string;
   posterUrl: string | null;
@@ -22,14 +24,17 @@ export function MediaCard({
   title: string;
   year?: number | null;
   badges?: ReadonlyArray<CardBadge | null | false | undefined>;
+  /** PLAN-048 / ADR-059 — the in-flight stage badge (leads the caption badge row; DESIGN-030 D-03). */
+  inFlight?: InFlightBadge | null;
 }) {
+  const allBadges = inFlight ? [activityStageBadge(inFlight), ...(badges ?? [])] : badges;
   return (
     <BaseCard
       href={href}
       art={{ type: 'poster', posterUrl, kind }}
       title={title}
       year={year}
-      badges={badges}
+      badges={allBadges}
     />
   );
 }

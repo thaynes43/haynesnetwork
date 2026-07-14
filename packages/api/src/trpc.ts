@@ -20,6 +20,8 @@ import {
   KapowarrUpstreamError,
   kapowarrBundleFromEnv,
   type KapowarrClientBundle,
+  booksActivityBundleFromEnv,
+  type BooksActivityBundle,
   LastAdminError,
   LazyLibrarianUpstreamError,
   lazyLibrarianBundleFromEnv,
@@ -130,6 +132,12 @@ export interface TRPCContext {
    * absent/stubbed in tests (a fresh-link background sync is best-effort — the hourly CronJob is the SoT).
    */
   googleBooks?: GoogleBooksClient;
+  /**
+   * ADR-059 / DESIGN-030 (PLAN-048 — Activity / In-Flight) — the BOOKS activity bundle the `activity.*`
+   * procedures read/act through (the LL wanted-table + SAB queue/history adapter + the confined LL write).
+   * Env-built singleton in production (LAZYLIBRARIAN_* + SABNZBD_*); stubbed bundle in tests.
+   */
+  activity?: BooksActivityBundle;
 }
 
 let envArrBundle: ArrClientBundle | undefined;
@@ -214,6 +222,15 @@ export function resolveGoodreadsRssClient(ctx: TRPCContext): GoodreadsRssClient 
     envGoodreadsClient = new GoodreadsRssClient({ baseUrl: cfg.goodreadsBaseUrl });
   }
   return envGoodreadsClient;
+}
+
+let envActivityBundle: BooksActivityBundle | undefined;
+
+/** The books activity bundle for this request: injected (tests) or the env-built singleton (ADR-059). */
+export function resolveActivityBundle(ctx: TRPCContext): BooksActivityBundle {
+  if (ctx.activity) return ctx.activity;
+  envActivityBundle ??= booksActivityBundleFromEnv();
+  return envActivityBundle;
 }
 
 let envGoogleBooksClient: GoogleBooksClient | undefined;

@@ -16,7 +16,7 @@
 //
 // PLAN-047 / ADR-058 — this file is the model EXTENSION: route knowledge + badge policy over the typed
 // BookCard, never bespoke card markup (the card-anatomy guard forbids it).
-import { BookCard } from '@/components/cards';
+import { BookCard, type InFlightBadge } from '@/components/cards';
 import type { RouterOutputs } from '@/lib/trpc-client';
 
 type BooksMediaKind = 'book' | 'audiobook' | 'comic';
@@ -35,7 +35,16 @@ export function wantedBadge(item: Pick<WantedWire, 'status'>): { label: string; 
 }
 
 /** One wanted item as a Library poster card (identical anatomy to an on-disk book tile). */
-export function WantedCard({ item, mediaKind }: { item: WantedWire; mediaKind: BooksMediaKind }) {
+export function WantedCard({
+  item,
+  mediaKind,
+  inFlight,
+}: {
+  item: WantedWire;
+  mediaKind: BooksMediaKind;
+  /** PLAN-048 / ADR-059 D-03 — the live in-flight stage badge when this want is currently being acquired. */
+  inFlight?: InFlightBadge | null;
+}) {
   const detailHref = `/library/books/wanted/${encodeURIComponent(item.requestId)}?from=${WALL_FROM[mediaKind]}`;
   return (
     <BookCard
@@ -45,6 +54,7 @@ export function WantedCard({ item, mediaKind }: { item: WantedWire; mediaKind: B
       mediaKind={mediaKind}
       title={item.title}
       author={item.author}
+      inFlight={inFlight}
       badges={[wantedBadge(item)]}
       testId="wanted-card"
       data={{ 'data-request-id': item.requestId }}

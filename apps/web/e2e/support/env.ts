@@ -19,6 +19,7 @@ import { STUB_AUTHENTIK_API_TOKEN } from './stub-authentik';
 import { STUB_ABS_PASSWORD, STUB_KAVITA_PASSWORD } from './stub-books';
 import { STUB_GOOGLE_BOOKS_API_KEY } from './stub-goodreads';
 import { STUB_LAZYLIBRARIAN_API_KEY } from './stub-lazylibrarian';
+import { STUB_SABNZBD_API_KEY } from './stub-sabnzbd';
 import { STUB_KAPOWARR_API_KEY } from './stub-kapowarr';
 
 /** Default app port — off 3000 so the stack coexists with a running `pnpm dev`.
@@ -106,6 +107,11 @@ export interface RuntimeEnv {
   GOOGLE_BOOKS_API_KEY: string;
   LAZYLIBRARIAN_URL: string;
   LAZYLIBRARIAN_API_KEY: string;
+  /** ADR-059 / DESIGN-030 (PLAN-048) — stub SABnzbd origin (the Activity books adapter's usenet leg —
+   *  queue/history reads for download %, completion + strand detection). */
+  STUB_SABNZBD_URL: string;
+  SABNZBD_URL: string;
+  SABNZBD_API_KEY: string;
   /** ADR-056 (PLAN-046) — stub Kapowarr origin (comic routing + force-search point here). */
   STUB_KAPOWARR_URL: string;
   KAPOWARR_URL: string;
@@ -147,6 +153,7 @@ export function composeRuntimeEnv(opts: {
   stubBooksBaseUrl: string;
   stubGoodreadsBaseUrl: string;
   stubLazyLibrarianBaseUrl: string;
+  stubSabnzbdBaseUrl: string;
   stubKapowarrBaseUrl: string;
   appUrl: string;
 }): RuntimeEnv {
@@ -209,6 +216,9 @@ export function composeRuntimeEnv(opts: {
     GOOGLE_BOOKS_API_KEY: STUB_GOOGLE_BOOKS_API_KEY,
     LAZYLIBRARIAN_URL: opts.stubLazyLibrarianBaseUrl,
     LAZYLIBRARIAN_API_KEY: STUB_LAZYLIBRARIAN_API_KEY,
+    STUB_SABNZBD_URL: opts.stubSabnzbdBaseUrl,
+    SABNZBD_URL: opts.stubSabnzbdBaseUrl,
+    SABNZBD_API_KEY: STUB_SABNZBD_API_KEY,
     STUB_KAPOWARR_URL: opts.stubKapowarrBaseUrl,
     KAPOWARR_URL: opts.stubKapowarrBaseUrl,
     KAPOWARR_API_KEY: STUB_KAPOWARR_API_KEY,

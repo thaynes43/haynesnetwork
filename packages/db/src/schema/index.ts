@@ -92,3 +92,10 @@ export * from './user-book-progress';
 export * from './user-integrations';
 export * from './integration-shelf-items';
 export * from './book-requests';
+// ADR-059 / DESIGN-030 (PLAN-048 — Activity / In-Flight) — the fine-grained Activity ACTION grants (the
+// role_trash_action_grants idiom, ADR-023; single-writer setRoleActivityActions, audited) and the DURABLE
+// import-failure ledger the `activity-scan` sync mode upserts (the ONLY persisted activity state — the tab
+// + wall badges read LIVE per ADR-059 Q-01). Guarded single-writer table (evaluateActivityFailures); its
+// transition trail is the notification_outbox rows (the mam_gate_state / smart-alerts class).
+export * from './role-activity-action-grants';
+export * from './activity-import-failures';
