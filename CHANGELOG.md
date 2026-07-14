@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.55.0](https://github.com/thaynes43/haynesnetwork/compare/v0.54.0...v0.55.0) (2026-07-14)
+
+
+### Features
+
+* Activity clickability + live-progress — the Fix feel everywhere (PLAN-048 D-09/D-10) ([#279](https://github.com/thaynes43/haynesnetwork/issues/279)) ([c4e667b](https://github.com/thaynes43/haynesnetwork/commit/c4e667b2ea9236444f283069a71a0508c3c4e3c5))
+
+
+### Bug Fixes
+
+* Activity tab robustness — per-source isolation, honest states, single active tab ([#278](https://github.com/thaynes43/haynesnetwork/issues/278)) ([f4c5434](https://github.com/thaynes43/haynesnetwork/commit/f4c5434b776584cf43449e6d68302d03977b5c10))
+
+
+### Documentation
+
+* Tuesday-daytime wrap — v0.50.1..v0.54.0 (anatomy fix, detail parity, card system, Activity complete), import-pipeline rescue, kyverno hardening, model-watch notes ([#276](https://github.com/thaynes43/haynesnetwork/issues/276)) ([5d21177](https://github.com/thaynes43/haynesnetwork/commit/5d21177db49b34fa0c9bd37ced36508a54a4c21a))
+
 ## [0.54.0](https://github.com/thaynes43/haynesnetwork/compare/v0.53.0...v0.54.0) (2026-07-14)
 
 
