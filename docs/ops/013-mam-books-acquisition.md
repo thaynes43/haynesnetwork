@@ -319,3 +319,99 @@ counting is local to qBittorrent and gating is local to Prowlarr; the governor n
   to a non-syncing level, disabling the indexer would stop propagating and the disabled-indexer-Torznab-error
   risk returns — re-verify the propagation (flip `enable`, confirm LL `config.ini` flips) after any Prowlarr
   application change.
+
+---
+
+## 11. The usenet leg — SABnzbd category/dir contract (the LL → SAB import path)
+
+LazyLibrarian is **usenet-first** (§5): the four `[Newznab_*]` providers route grabs to **SABnzbd**
+(`sabnzbd.downloads.svc.cluster.local:8080`), *not* qBittorrent. That leg has its own category/dir
+contract, separate from the MAM/torrent path, and its absence was the missing piece behind a
+stranded-import incident (2026-07-14; see `.agents/context/2026-07-13-f10-english-audit.md` RUN 4).
+
+### 11.1 The two-mount reality (why a category is mandatory)
+
+SAB and LazyLibrarian mount the same storage cluster at **different paths**:
+
+- **SAB** mounts both `haynestower` NFS (`/data/haynestower`; its `complete_dir` root =
+  `/data/haynestower/usenet/complete-k8s`) **and** the gasha01 cephfs (`/data/cephfs-hdd`).
+- **LazyLibrarian** mounts **only** cephfs (`/data/cephfs-hdd`); its post-processor watches
+  `download_dir = /data/cephfs-hdd/data/usenet/complete-k8s/lazylibrarian`.
+
+`/data/haynestower/usenet/complete-k8s` (SAB's default complete root) and
+`/data/cephfs-hdd/data/usenet/complete-k8s` are **different underlying storage** — a job completed at
+SAB's root is *invisible* to LL. The bridge is a **SAB category whose dir is the absolute cephfs
+path**, the same idiom Lidarr uses (`lidarr` category → `/data/cephfs-hdd/data/usenet/complete-k8s/music`).
+
+### 11.2 The contract (both sides must agree)
+
+| Layer | Key | Value |
+|---|---|---|
+| LazyLibrarian `[SABnzbd]` | `sab_cat` | `lazylibrarian` |
+| LazyLibrarian `[SABnzbd]` | `sab_subdir` | *(empty)* — RUN 3 fix; a value here makes LL POST to `…/<subdir>/api` → 404 |
+| LazyLibrarian `[General]` | `download_dir` | `/data/cephfs-hdd/data/usenet/complete-k8s/lazylibrarian` |
+| SABnzbd category `lazylibrarian` | `dir` | `/data/cephfs-hdd/data/usenet/complete-k8s/lazylibrarian` (absolute) |
+
+With `sab_cat` set, LL sends `&category=lazylibrarian` on every add — **one category for both ebook
+and audiobook** (`use_label` returns the single value when `sab_cat` has no comma; a comma-list
+`ebookcat,audiocat,magcat,comiccat` would split by library type). SAB routes the completed job to the
+category's absolute cephfs dir = LL's `download_dir`, and the post-processor imports it (routing ebook
+vs audiobook by the `wanted` row's type, not by folder). **Without `sab_cat` LL sends no category → SAB
+completes at its `*` root on `haynestower` → LL never sees it.** That was the 2026-07-14 incident: 42
+completed books stranded at the haynestower root while LL's watch dir stayed empty. Changes are applied
+live via LL's own API (`writeCFG&group=SABnzbd&name=SAB_CAT&value=lazylibrarian`; LL config is on the
+PVC, live-imperative, **not** GitOps — §5 precedent) and the SAB category via
+`mode=set_config&section=categories` (it already existed here, mirroring `lidarr`).
+
+Verify both sides:
+- LL: `…/api?cmd=readCFG&name=SAB_CAT&group=SABnzbd` → `[lazylibrarian]`.
+- SAB: `…/api?mode=get_config&section=categories` → the `lazylibrarian` category's `dir` == LL's `download_dir`.
+
+### 11.3 Completion-detection caveat (SAB v5 history archive) + stranded-books break-glass
+
+LL's post-processor gates import on `get_download_progress`, which queries SAB
+`mode=history&nzo_ids=<id>`. In **SAB 5.0.4** that filter returns **0** once a job has aged into the
+history **archive** (only `&archive=1` finds it), even though the unfiltered `mode=history` still lists
+it. So a job that sits un-processed long enough vanishes from LL's completion check, LL's Pass-3 timeout
+marks it **Failed** (`DLResult: "… Progress: 0%"`), and it strands. Fresh completions are in the *active*
+history and are caught within LL's 10-min cycle, so the category fix (11.2) is sufficient for steady
+state — the archive quirk only bit the already-stranded backlog.
+
+**Break-glass — rescue stranded usenet books** (used 2026-07-14 to recover 42 → 39 imported):
+1. Enumerate SAB history (`mode=history&limit=500`), map each `nzo_id`→`storage` against LL's `wanted`
+   rows still `Snatched` (`DownloadID`). This is the conservative match set — it excludes the German/
+   wrong-edition orphans and SAB's category subdirs.
+2. If the folders sit at the haynestower root, **move** them into
+   `/data/cephfs-hdd/data/usenet/complete-k8s/lazylibrarian/` from the **SAB** pod (only it mounts both
+   NFS trees). It is a cross-filesystem move (no atomic rename) — **copy + verify byte/file counts +
+   remove source; never delete before verify**. cephfs rejects metadata-preserving copies
+   (`copystat` → `Errno 524 ENOTSUPP`), so copy **data only** (`shutil.copyfile` / `os.makedirs`; not
+   `copy2`/`copytree`).
+3. Bypass the archived-history completion check: set the rescued `wanted` rows `Source='DIRECT'` (LL then
+   trusts the row's existence as 100 % complete) and `Status='Snatched'`, then `forceProcess`.
+4. **Fuzzy-match caveat.** LL matches the `wanted.NZBtitle` against the download folder name via
+   `token_set_ratio ≥ NAME_RATIO (90)`, and `_normalize_title` deliberately **preserves dots** (to keep
+   `J.R.R.`), so **dot-separated scene names** (`Tom.Clancy.Red.Storm.Rising.1987…`) collapse to one token
+   and score < 90 → no match. Fix: rename the folder dots→spaces **and** set the row's `NZBtitle` to the
+   same spaced form (LL compares those two to each other, not to the clean book title).
+5. Genuine content/type mismatches (an ebook grab against an audiobook want, an empty folder, mp3s against
+   an ebook want) will not import — leave them `Failed` so LL re-searches for the correct edition; never
+   delete the download.
+
+### 11.4 REJECT_WORDS / REJECT_AUDIO matching semantics (language guard)
+
+`resultlist.py` rejects a search result when `word in get_list(result_title.lower())` — LL tokenizes the
+release name on **whitespace** (`get_list` folds commas/plus to spaces, then splits) and tests
+**word-membership, NOT substring**. Implications for the German/abridged reject list (added in RUN 3):
+
+- `und` is **safe** — it matches only a standalone `und` token (German "Air **und** Darkness"), never
+  inside `Foundation` / `Thunder` / `Sound` (each a single token). Verified live 2026-07-14, so the
+  substring-danger concern does **not** apply to this LL; keep `und`.
+- A marker glued to punctuation (`[ungekrzt]`) does **not** match — keep the bare token forms too.
+- Dot-separated scene names are a **single token**, so reject words don't filter them
+  (`Foundation.German.Ungekuerzt` is one token) — a known blind spot, not a correctness bug.
+
+The current list (`hörbuch/hoerbuch/hörverlag/lesung/ungekürzt/gekürzt/deutsch/german/dunklen/mächte/
+entscheidung/erzählt/wüstenplanet/goldener/zorn/doppelgängerin/und` + their ascii folds; defaults
+`audiobook,mp3` / `epub,mobi` preserved) is word-boundary-safe as-is — no substring-danger entries, no
+change needed.
