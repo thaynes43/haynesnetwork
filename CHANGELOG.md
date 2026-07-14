@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.55.1](https://github.com/thaynes43/haynesnetwork/compare/v0.55.0...v0.55.1) (2026-07-14)
+
+
+### Bug Fixes
+
+* live-status precedence — a downloading comic no longer reads "Missing" (v0.55.0) ([#280](https://github.com/thaynes43/haynesnetwork/issues/280)) ([56da9d4](https://github.com/thaynes43/haynesnetwork/commit/56da9d4bb8563922ffafd97fe23ee8ca969477e3))
+
 ## [0.55.0](https://github.com/thaynes43/haynesnetwork/compare/v0.54.0...v0.55.0) (2026-07-14)
 
 
