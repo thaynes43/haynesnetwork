@@ -12,11 +12,15 @@
 //     tile elsewhere) + the shared PosterCardBody caption (title, author, ONE shelf + ONE status
 //     badge), the shared filter/sort chrome, and the SHELF CHIPS — exactly the Helpdesk ticket
 //     state-chip semantics (multi-select union, superset "All", counts, repeated `?shelf=` params via
-//     router.replace, populated-value-gated — DESIGN-012 D-12 ported). Force-search rides the compact
-//     ADR-015 corner puck (`.gr-search-puck`) — the only card action; per-format detail is on tooltips.
+//     router.replace, populated-value-gated — DESIGN-012 D-12 ported).
+//
+// PLAN-047 (owner Wanted-parity ruling — DESIGN-029 amendment-2): each item card is now a WHOLE-card
+// click-through (the Movies/TV poster→detail idiom) — a "Have it" card opens the library detail
+// (`/library/books/[id]`), any other want opens the Wanted DETAIL page (`/library/books/wanted/[requestId]`)
+// where per-format Force-Search + requester attribution live. The old corner force-search puck is retired.
 //
 // The v0.49.0 flat Requests & Missing wall FOLDED INTO this sub-section: the items wall subsumes it
-// (poster tiles + status badge + the audited force-search puck), and the overview carries its summary.
+// (poster tiles + status badge), and the overview carries its summary.
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
@@ -24,7 +28,6 @@ import { ConfirmButton, nextSort, arrowFor } from '@hnet/ui';
 import { KindIcon } from '@/components/kind-icon';
 import { MediaPoster } from '@/components/media-poster';
 import { PosterCardBody, type PosterBadge } from '@/components/poster-card-body';
-import { RequestSearchPuck } from '@/components/request-search-puck';
 import { trpc, type RouterOutputs } from '@/lib/trpc-client';
 import { coverageView, isFirstSyncPending } from '@/lib/integrations-coverage';
 import {
@@ -316,8 +319,12 @@ function OverviewTab({
 // ---------------------------------------------------------------------------
 
 function ItemTile({ item, focused }: { item: ItemWire; focused: boolean }) {
-  const utils = trpc.useUtils();
-  const ref = useRef<HTMLDivElement | null>(null);
+  // The card is a <Link> (or a non-interactive <div> for a pre-mint want) — one callback ref stores the
+  // element for the one-time `?focus=` deep-link scroll (legacy links still land + highlight).
+  const ref = useRef<HTMLElement | null>(null);
+  const setRef = (el: HTMLElement | null) => {
+    ref.current = el;
+  };
   useEffect(() => {
     if (focused) ref.current?.scrollIntoView({ block: 'center' });
   }, [focused]);
@@ -334,30 +341,44 @@ function ItemTile({ item, focused }: { item: ItemWire; focused: boolean }) {
       }
     : null;
 
-  return (
-    <div
-      ref={ref}
-      className={`media-card poster-card gr-item${focused ? ' is-focused' : ''}`}
+  const className = `media-card poster-card gr-item${focused ? ' is-focused' : ''}`;
+  const inner = (
+    <>
+      <MediaPoster posterUrl={item.posterUrl} kind={item.isComic ? 'comic' : 'book'} alt="" />
+      <PosterCardBody title={item.title} subtitle={item.author} badges={[shelfBadge, statusBadge(item)]} />
+    </>
+  );
+
+  // PLAN-047 (owner Wanted-parity ruling) — the WHOLE card click-throughs into a detail page (the Movies/TV
+  // poster→detail idiom; the corner force-search puck is retired — force-search lives on the detail page).
+  // "Have it" → the existing library detail (`/library/books/[id]`); any other want → the Wanted detail
+  // parity page. A want with no request row yet (pre-mint) stays non-interactive.
+  const href = item.matchedBooksItemId
+    ? `/library/books/${item.matchedBooksItemId}?from=goodreads-items`
+    : item.requestId
+      ? `/library/books/wanted/${item.requestId}?from=goodreads-items`
+      : null;
+
+  return href !== null ? (
+    <Link
+      ref={setRef}
+      href={href}
+      className={className}
       data-testid="gr-item"
       data-phase={item.phase}
       data-request-id={item.requestId ?? undefined}
     >
-      <div className="poster-card__poster">
-        <MediaPoster posterUrl={item.posterUrl} kind={item.isComic ? 'comic' : 'book'} alt="" />
-        {/* The corner force-search PUCK — the ADR-015 reserved slot, absolute over the 2:3 box; the
-            only action on the card (the "Search again" text button is gone). Shown when searchable. */}
-        {item.searchable && item.requestId ? (
-          <RequestSearchPuck
-            requestId={item.requestId}
-            onSearched={() => void utils.integrations.items.invalidate()}
-          />
-        ) : null}
-      </div>
-      <PosterCardBody
-        title={item.title}
-        subtitle={item.author}
-        badges={[shelfBadge, statusBadge(item)]}
-      />
+      {inner}
+    </Link>
+  ) : (
+    <div
+      ref={setRef}
+      className={className}
+      data-testid="gr-item"
+      data-phase={item.phase}
+      data-request-id={item.requestId ?? undefined}
+    >
+      {inner}
     </div>
   );
 }

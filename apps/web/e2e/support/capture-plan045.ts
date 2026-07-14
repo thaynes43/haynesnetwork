@@ -141,17 +141,20 @@ async function main(): Promise<void> {
       await page.context().close();
     }
 
-    // Phase 3 — the force-search LIVE FEEDBACK (desktop, both themes): fire the ITEMS-wall corner puck
-    // (the Library cards have no search button now) and capture its fired state in place (ADR-015).
+    // Phase 3 — the force-search LIVE FEEDBACK (desktop, both themes): the wall cards now click through to
+    // the Wanted DETAIL page (PLAN-047), where the per-format Force-Search lives. Open Throne of Glass's
+    // detail and fire its Ebook leg, capturing the fired chip in place (ADR-015).
     {
       const page = await signInTo(browser, stack.appUrl, { width: 1280, height: 900 });
       for (const theme of ['hnet-dark', 'hnet-light'] as const) {
         const t = theme === 'hnet-dark' ? 'dark' : 'light';
         await setTheme(page, theme);
         await page.goto('/integrations/goodreads?tab=items');
-        const tile = page.getByTestId('gr-item').filter({ hasText: 'Throne of Glass' });
-        await tile.getByTestId('request-search-btn').click();
-        await tile.locator('.gr-search-puck[data-state="fired"]').waitFor();
+        await page.getByTestId('gr-item').filter({ hasText: 'Throne of Glass' }).click();
+        await page.getByTestId('wanted-detail-head').waitFor();
+        const row = page.getByTestId('format-row').filter({ hasText: 'Ebook' });
+        await row.getByTestId('format-search-btn').click();
+        await row.locator('.phase-chip[data-phase="fired"]').waitFor();
         await hidePortal(page);
         await shoot(page, `items-force-search-feedback-${t}`);
       }

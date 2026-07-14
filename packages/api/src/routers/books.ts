@@ -6,11 +6,18 @@
 // client-hidden only. Same gate protects the /api/books/cover proxy.
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
-import { booksItems, userBookProgress, BOOKS_MEDIA_KINDS, type BooksMediaKind } from '@hnet/db';
+import {
+  booksItems,
+  userBookProgress,
+  BOOKS_MEDIA_KINDS,
+  type BooksMediaKind,
+  type BookRequestStatus,
+} from '@hnet/db';
 import { and, asc, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
-import { getWantedBookRequests, isRequestSearchable } from '@hnet/domain';
+import { getBookRequestDetail, getWantedBookRequests, isRequestSearchable } from '@hnet/domain';
 import { authedProcedure, router } from '../trpc';
-import { booksProcedure, effectiveSectionLevel } from '../middleware/role';
+import { booksOrIntegrationsProcedure, booksProcedure, effectiveSectionLevel } from '../middleware/role';
+import { booksCoverUrlFor } from '../books-query';
 import {
   BOOK_LENGTH_BOUNDS,
   KAVITA_FORMATS,
@@ -196,6 +203,75 @@ export const booksRouter = router({
             canOpenRequest: owns && viewerHasIntegrations,
           };
         }),
+      };
+    }),
+
+  /**
+   * ADR-057 amendment (PLAN-047 — the Wanted DETAIL page) — one request's FULL detail for
+   * `/library/books/wanted/[requestId]`, the Movies/TV parity page the Library-Wanted + Goodreads-items
+   * cards now click through to. Gated by `booksOrIntegrationsProcedure` — reachable by whoever can see the
+   * card that links to it (books-section for the household Library-Wanted cards; integrations for the
+   * Goodreads items wall), server-authoritative. The per-format `searchable` affordance stays owner-scoped
+   * (OWN the integration AND hold `integrations`, exactly what `integrations.search` enforces) — a
+   * books-only viewer sees the status rows but no Force-Search button, and the action itself FORBIDs them.
+   */
+  wantedDetail: booksOrIntegrationsProcedure
+    .input(z.object({ requestId: z.uuid() }))
+    .query(async ({ ctx, input }) => {
+      const view = await getBookRequestDetail({ db: ctx.db, requestId: input.requestId });
+      if (!view) throw new TRPCError({ code: 'NOT_FOUND', message: `Request ${input.requestId} not found` });
+      const owns = view.integrationUserId === ctx.user.id;
+      const viewerHasIntegrations = effectiveSectionLevel(ctx.user.role, 'integrations') !== 'disabled';
+      const canSearch = owns && viewerHasIntegrations;
+      const requestSearchable = isRequestSearchable(view);
+
+      // Per-format status ROWS (the *arr per-grain idiom): a comic is the single Kapowarr leg; a
+      // book/audiobook want carries BOTH LazyLibrarian legs. `searchable` = the viewer may fire it AND
+      // that format is still acquirable (whole-request searchable AND this format hasn't landed).
+      const formats: Array<{ format: 'ebook' | 'audiobook' | 'comic'; status: BookRequestStatus; searchable: boolean }> =
+        view.isComic
+          ? [
+              {
+                format: 'comic',
+                status: view.comicStatus ?? 'requested',
+                searchable: canSearch && requestSearchable,
+              },
+            ]
+          : [
+              {
+                format: 'ebook',
+                status: view.ebookStatus,
+                searchable: canSearch && requestSearchable && view.ebookStatus !== 'landed',
+              },
+              {
+                format: 'audiobook',
+                status: view.audioStatus,
+                searchable: canSearch && requestSearchable && view.audioStatus !== 'landed',
+              },
+            ];
+
+      return {
+        requestId: view.requestId,
+        title: view.title,
+        author: view.author,
+        shelf: view.shelf,
+        shelvedAt: view.shelvedAt ? view.shelvedAt.toISOString() : null,
+        requestedBy: view.requestedBy,
+        isComic: view.isComic,
+        /** The poster GLYPH kind — 'book' covers both LL legs; 'comic' for the Kapowarr leg. */
+        mediaKind: view.isComic ? ('comic' as const) : ('book' as const),
+        /** The cover-proxy art when the want is matched into the library; null ⇒ the designed glyph tile. */
+        posterUrl: view.matched
+          ? booksCoverUrlFor(view.matched.source, view.matched.externalId, view.matched.coverRef)
+          : null,
+        /** Present ⇒ the want is already in the library (the "View in library" link target). */
+        matchedBooksItemId: view.matchedBooksItemId,
+        /** A parked comic (no Kapowarr route yet) — the honest "waiting on a ComicVine match" note. */
+        parked: view.isComic && view.unroutableReason === 'comic',
+        lastSearchedAt: view.lastSearchedAt ? view.lastSearchedAt.toISOString() : null,
+        /** The viewer-level force-search gate (owner + integrations section) — per-format detail below. */
+        canSearch,
+        formats,
       };
     }),
 

@@ -5,6 +5,7 @@ import {
   advanceStatus,
   computeCoverage,
   computeShelfStats,
+  getBookRequestDetail,
   getBookRequestsForIntegration,
   getShelfWallItems,
   getWantedBookRequests,
@@ -374,6 +375,83 @@ describe('syncGoodreadsIntegration (the vertical)', () => {
       actorId: user.id,
     });
     expect(stamped.request.lastSearchedAt).not.toBeNull();
+  });
+
+  it('runManualBookSearch narrows to ONE format when given (the detail page per-format button)', async () => {
+    const { user, integration } = await seed();
+    const ll = stubLl((id) => (id === 'gb-tog' ? { ebookStatus: 'Skipped', audioStatus: 'Skipped' } : null));
+    await syncGoodreadsIntegration({
+      db: t.db,
+      integrationId: integration.id,
+      items,
+      syncedShelves: ['to-read'],
+      ll: ll.bundle,
+      pacer: async () => {},
+    });
+    const [tog] = await t.db
+      .select()
+      .from(bookRequests)
+      .where(and(eq(bookRequests.integrationId, integration.id), eq(bookRequests.llBookId, 'gb-tog')));
+
+    ll.calls.length = 0;
+    const result = await runManualBookSearch({
+      db: t.db,
+      requestId: tog!.id,
+      userId: user.id,
+      actorId: user.id,
+      ll: ll.bundle,
+      format: 'audiobook',
+    });
+    expect(result.searched).toBe(true);
+    expect(result.formats).toEqual(['audiobook']);
+    const searches = ll.calls.filter((c) => c.cmd === 'searchBook');
+    expect(searches).toHaveLength(1);
+    expect(searches[0]!.format).toBe('audiobook');
+  });
+
+  it('getBookRequestDetail resolves shelf, owner, household attribution, cover match, and per-format status', async () => {
+    const { user, integration } = await seed();
+    const ll = stubLl((id) => (id === 'gb-tog' ? { ebookStatus: 'Skipped', audioStatus: 'Skipped' } : null));
+    await syncGoodreadsIntegration({
+      db: t.db,
+      integrationId: integration.id,
+      items,
+      syncedShelves: ['to-read'],
+      ll: ll.bundle,
+      pacer: async () => {},
+    });
+
+    // The routable, UNMATCHED want — a glyph tile (no matched cover), owner + shelf + attribution present.
+    const [tog] = await t.db
+      .select()
+      .from(bookRequests)
+      .where(and(eq(bookRequests.integrationId, integration.id), eq(bookRequests.llBookId, 'gb-tog')));
+    const togDetail = await getBookRequestDetail({ db: t.db, requestId: tog!.id });
+    expect(togDetail).not.toBeNull();
+    expect(togDetail!.title).toBe('Throne of Glass');
+    expect(togDetail!.shelf).toBe('to-read');
+    expect(togDetail!.integrationUserId).toBe(user.id);
+    expect(togDetail!.requestedBy.length).toBeGreaterThanOrEqual(1);
+    expect(togDetail!.requestedBy.every((n) => typeof n === 'string' && n.length > 0)).toBe(true);
+    expect(togDetail!.matched).toBeNull();
+    expect(togDetail!.matchedBooksItemId).toBeNull();
+    expect(togDetail!.ebookStatus).toBe('missing');
+    expect(togDetail!.isComic).toBe(false);
+
+    // The MATCHED want (Ready Player One) — carries the library cover keys (the cover-proxy art source).
+    const [rpo] = await t.db
+      .select()
+      .from(bookRequests)
+      .where(and(eq(bookRequests.integrationId, integration.id), eq(bookRequests.llBookId, 'gb-rpo')));
+    const rpoDetail = await getBookRequestDetail({ db: t.db, requestId: rpo!.id });
+    expect(rpoDetail!.matchedBooksItemId).not.toBeNull();
+    expect(rpoDetail!.matched?.source).toBe('kavita');
+    expect(rpoDetail!.matched?.externalId).toBe('lib-rpo');
+
+    // An unknown id resolves to null (⇒ the API surfaces NOT_FOUND).
+    expect(
+      await getBookRequestDetail({ db: t.db, requestId: '00000000-0000-0000-0000-000000000000' }),
+    ).toBeNull();
   });
 });
 
