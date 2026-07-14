@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.51.0](https://github.com/thaynes43/haynesnetwork/compare/v0.50.1...v0.51.0) (2026-07-14)
+
+
+### Features
+
+* Wanted-parity detail page for book requests — poster→detail→per-format Force-Search (PLAN-047) ([#264](https://github.com/thaynes43/haynesnetwork/issues/264)) ([dd638d4](https://github.com/thaynes43/haynesnetwork/commit/dd638d4461fb3cb3133a6f20434daabc3ecdcfc5))
+
+
+### Documentation
+
+* PLAN-047 shared card system + PLAN-048 Activity/In-Flight (owner rulings; motivated by the stranded-imports incident) ([#266](https://github.com/thaynes43/haynesnetwork/issues/266)) ([395e01a](https://github.com/thaynes43/haynesnetwork/commit/395e01a2b420fc3041ee30288407d84db1820395))
+
 ## [0.50.1](https://github.com/thaynes43/haynesnetwork/compare/v0.50.0...v0.50.1) (2026-07-14)
 
 
