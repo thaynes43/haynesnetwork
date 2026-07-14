@@ -1,0 +1,703 @@
+'use client';
+
+// ADR-057 / DESIGN-029 (PLAN-045) — the Goodreads SUB-SECTION: two ?tab= views over one route (the
+// Metrics/Trash hub precedent; a tab switch is a SCREEN-level change → router.push, D-19):
+//
+//   • OVERVIEW (the stats page) — the fixed link card (PR #258 UX), the WANT-SHELF headline
+//     coverage (owner ruling Q-02), the per-shelf breakdown + request/Missing summary tiles (the
+//     Trash-Overview card idiom; a card click pushes into the items wall pre-filtered), last-sync.
+//   • ITEMS — a REAL library wall over every synced shelf: `.poster-grid` of `MediaPoster` tiles
+//     (cover-proxy art where the want matched the library; the designed KindIcon fallback tile
+//     elsewhere), the shared filter/sort chrome, and the SHELF CHIPS — exactly the Helpdesk ticket
+//     state-chip semantics (multi-select union, superset "All", counts, repeated `?shelf=` params
+//     via router.replace, populated-value-gated — DESIGN-012 D-12 ported). Per-item state rides the
+//     ADR-015 corner puck (`.gwall-overlay`, the twall/bwall idiom) — recolor only, never reflow.
+//
+// The v0.49.0 flat Requests & Missing wall FOLDED INTO this sub-section: the items wall subsumes it
+// (poster tiles + status chips + the audited Search-again), and the overview carries its summary.
+import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { ConfirmButton, PhaseChip, nextSort, arrowFor, type PhaseTone } from '@hnet/ui';
+import { KindIcon } from '@/components/kind-icon';
+import { MediaPoster } from '@/components/media-poster';
+import { RequestPhaseGlyph } from '@/components/request-glyphs';
+import { RequestSearchButton } from '@/components/request-search-button';
+import { trpc, type RouterOutputs } from '@/lib/trpc-client';
+import { coverageView, isFirstSyncPending } from '@/lib/integrations-coverage';
+import {
+  PHASE_META,
+  SHELF_WALL_SORTS,
+  filterShelfWallItems,
+  shelfLabel,
+  shelfParamsForSelection,
+  shelfSelectionFromParams,
+  shelfSort,
+  sortShelfWallItems,
+  toggleShelf,
+  type RequestPhaseName,
+  type ShelfWallSort,
+} from '@/lib/goodreads-shelf-wall';
+import type { BookRequestStatus } from '@hnet/db';
+
+const PENDING_POLL_MS = 4000;
+
+type ItemWire = RouterOutputs['integrations']['items']['items'][number];
+type OverviewWire = RouterOutputs['integrations']['overview'];
+
+const STATUS_LABEL: Record<BookRequestStatus, string> = {
+  requested: 'Requested',
+  wanted: 'Wanted',
+  grabbed: 'Grabbed',
+  landed: 'Have it',
+  missing: 'Missing',
+};
+
+const STATUS_TONE: Record<BookRequestStatus, PhaseTone> = {
+  requested: 'info',
+  wanted: 'warning',
+  grabbed: 'progress',
+  landed: 'success',
+  missing: 'danger',
+};
+
+function StatusChip({ format, status }: { format: string; status: BookRequestStatus }) {
+  return (
+    <PhaseChip
+      phase={status}
+      tone={STATUS_TONE[status]}
+      label={`${format}: ${STATUS_LABEL[status]}`}
+      pulse={status === 'wanted' || status === 'grabbed'}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The link card — the PR #258 UX, moved verbatim from the v0.49.0 flat page.
+// ---------------------------------------------------------------------------
+
+function LinkCard() {
+  const utils = trpc.useUtils();
+  const statusQ = trpc.integrations.status.useQuery(undefined, {
+    refetchInterval: (query) => {
+      const d = query.state.data;
+      return d && isFirstSyncPending(d.integration.linked, d.integration.lastSyncedAt)
+        ? PENDING_POLL_MS
+        : false;
+    },
+  });
+  const [profileRef, setProfileRef] = useState('');
+  const link = trpc.integrations.link.useMutation({
+    onSuccess: () => {
+      setProfileRef('');
+      void utils.integrations.invalidate();
+    },
+  });
+  const unlink = trpc.integrations.unlink.useMutation({
+    onSuccess: () => void utils.integrations.invalidate(),
+  });
+
+  const integration = statusQ.data?.integration;
+  const linked = integration?.linked ?? false;
+
+  const onSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    if (profileRef.trim().length === 0) return;
+    link.mutate({ profileRef: profileRef.trim() });
+  };
+
+  return (
+    <section className="card integrations-card" data-testid="integrations-link-card">
+      <header className="integrations-card__head">
+        <span className="integrations-provider">
+          <span className="integrations-provider__glyph" aria-hidden="true">
+            G
+          </span>
+          <span className="integrations-provider__name">Goodreads</span>
+        </span>
+        {linked ? (
+          <span className="badge badge--ok" data-testid="integrations-linked">
+            Linked
+          </span>
+        ) : (
+          <span className="badge badge--muted">Not linked</span>
+        )}
+      </header>
+
+      {linked && integration ? (
+        <div className="integrations-linked-state">
+          <p className="integrations-linked-state__ref">
+            {integration.profileRef ?? `Goodreads user ${integration.externalUserId}`}
+          </p>
+          <p className="muted integrations-linked-state__sub">
+            Syncing shelves: {integration.shelves.map(shelfLabel).join(' · ')}
+            {integration.lastSyncError ? (
+              <span className="integrations-error"> — last sync: {integration.lastSyncError}</span>
+            ) : null}
+          </p>
+          {/* Unlink is destructive-ish → the two-step confirm (hard rule 8 / ADR-014); reserved
+              armed-label width so the swap never reflows (ADR-015). */}
+          <ConfirmButton
+            className="btn sm danger"
+            data-testid="integrations-unlink-btn"
+            disabled={unlink.isPending}
+            label={unlink.isPending ? 'Unlinking…' : 'Unlink'}
+            confirmLabel="Confirm unlink?"
+            restingAriaLabel="Unlink your Goodreads account — click twice to confirm"
+            confirmAriaLabel="Confirm unlink your Goodreads account"
+            onConfirm={() => unlink.mutate()}
+          />
+        </div>
+      ) : (
+        <form className="integrations-link-form" onSubmit={onSubmit}>
+          <label className="field">
+            <span className="field__label">Your public Goodreads profile</span>
+            <input
+              type="text"
+              inputMode="url"
+              className="integrations-input"
+              placeholder="https://www.goodreads.com/yourname"
+              value={profileRef}
+              onChange={(e) => setProfileRef(e.target.value)}
+              aria-invalid={link.isError || undefined}
+              data-testid="integrations-profile-input"
+            />
+            <span className="field-hint">
+              Paste your profile URL or numeric id. Your shelves must be PUBLIC (Settings → Privacy).
+            </span>
+          </label>
+          {link.isError ? (
+            <p className="field-error" role="alert" data-testid="integrations-link-error">
+              {link.error.message}
+            </p>
+          ) : null}
+          <div className="form-actions">
+            <button
+              type="submit"
+              className="btn primary"
+              data-testid="integrations-link-btn"
+              disabled={link.isPending || profileRef.trim().length === 0}
+            >
+              {link.isPending ? 'Linking…' : 'Link Goodreads'}
+            </button>
+          </div>
+        </form>
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// OVERVIEW — the stats page (headline want-shelf coverage, per-shelf breakdown, phase tiles).
+// ---------------------------------------------------------------------------
+
+function OverviewTab({
+  overview,
+  pending,
+  onOpenItems,
+}: {
+  overview: OverviewWire | undefined;
+  pending: boolean;
+  onOpenItems: (shelf?: string) => void;
+}) {
+  const headline = overview?.headline ?? { total: 0, covered: 0, pct: 0 };
+  const lastSyncedAt = overview?.integration.lastSyncedAt ?? null;
+  const view = coverageView({ lastSyncedAt, coverage: headline });
+  const phases = overview?.phases ?? { have: 0, searching: 0, missing: 0, parked: 0 };
+  const phaseOrder: RequestPhaseName[] = ['have', 'searching', 'missing', 'parked'];
+
+  return (
+    <>
+      {/* The headline stat — WANT-SHELF coverage (Q-02). Pending and data states share one reserved
+          footprint (ADR-015 — the first-sync → coverage swap never reflows the cards below). */}
+      <section className="card integrations-summary" data-testid="integrations-summary">
+        {view.kind === 'pending' ? (
+          <>
+            <div
+              className="integrations-stat integrations-stat--pending"
+              data-testid="integrations-coverage"
+              data-pending="true"
+            >
+              <span className="integrations-stat__spinner" aria-hidden="true" />
+              <span className="integrations-stat__label">First sync in progress</span>
+            </div>
+            <div className="integrations-summary__detail">
+              <p className="integrations-summary__count">Pulling your shelves…</p>
+              <p className="muted">
+                We’re reading your shelves and matching them against the library. Coverage appears
+                here as soon as the first sync finishes.
+              </p>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="integrations-stat" data-testid="integrations-coverage">
+              <span className="integrations-stat__value">{view.pct}%</span>
+              <span className="integrations-stat__label">of your want-to-read shelf</span>
+            </div>
+            <div className="integrations-summary__detail">
+              <p className="integrations-summary__count">
+                We have <strong>{view.covered}</strong> of <strong>{view.total}</strong> books on your
+                want-to-read shelf.
+              </p>
+              <p className="muted">
+                {lastSyncedAt ? `Last synced ${new Date(lastSyncedAt).toLocaleString()}` : ''}
+              </p>
+            </div>
+          </>
+        )}
+      </section>
+
+      {/* Per-shelf breakdown — one card per POPULATED shelf (A3 gate), the Trash-Overview whole-card
+          button idiom: a click opens the items wall pre-filtered to the shelf (a PUSH, D-19). */}
+      {(overview?.shelves.length ?? 0) > 0 ? (
+        <div className="gr-ovcards" data-testid="gr-shelf-cards">
+          {overview!.shelves
+            .filter((s) => s.total > 0)
+            .map((s) => (
+              <button
+                key={s.shelf}
+                type="button"
+                className="gr-ovcard"
+                data-testid={`gr-shelf-card-${s.shelf}`}
+                onClick={() => onOpenItems(s.shelf)}
+              >
+                <span className="gr-ovcard__head">{shelfLabel(s.shelf)}</span>
+                <span className="gr-ovcard__count">
+                  <span className="gr-ovcard__num">{s.total}</span>
+                  <span className="gr-ovcard__unit">{s.total === 1 ? 'book' : 'books'}</span>
+                </span>
+                <span className="gr-ovcard__detail">
+                  {s.covered} in the library · {s.pct}%
+                </span>
+              </button>
+            ))}
+        </div>
+      ) : null}
+
+      {/* Requests & Missing summary tiles (the v0.49.0 wall's rollup — the wall itself lives on the
+          items tab now). Empty phases render muted, populated ones tone up; parked hides at 0. */}
+      {!pending ? (
+        <div className="gr-phases" data-testid="gr-phase-tiles">
+          {phaseOrder
+            .filter((p) => p !== 'parked' || phases[p] > 0)
+            .map((p) => (
+              <button
+                key={p}
+                type="button"
+                className={`gr-phase${phases[p] > 0 ? '' : ' gr-phase--empty'}`}
+                data-phase={p}
+                data-testid={`gr-phase-${p}`}
+                onClick={() => onOpenItems()}
+              >
+                <span className="gr-phase__num">{phases[p]}</span>
+                <span className="gr-phase__label">{PHASE_META[p].label}</span>
+              </button>
+            ))}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ITEMS — the shelf library wall (shelf chips + shared filter/sort chrome + poster grid).
+// ---------------------------------------------------------------------------
+
+function ItemTile({ item, focused }: { item: ItemWire; focused: boolean }) {
+  const utils = trpc.useUtils();
+  const ref = useRef<HTMLLIElement | null>(null);
+  useEffect(() => {
+    if (focused) ref.current?.scrollIntoView({ block: 'center' });
+  }, [focused]);
+
+  return (
+    <li
+      ref={ref}
+      className={`gwall-tile${focused ? ' is-focused' : ''}`}
+      data-testid="gr-item"
+      data-phase={item.phase}
+      data-request-id={item.requestId ?? undefined}
+    >
+      <div className="gwall-tile__poster">
+        <MediaPoster posterUrl={item.posterUrl} kind={item.isComic ? 'comic' : 'book'} alt="" />
+        {/* The corner puck (twall/bwall idiom) — absolute over the reserved 2:3 box; phase recolors,
+            never reflows (ADR-015). */}
+        <span className="gwall-overlay" data-phase={item.phase} aria-hidden="true">
+          <RequestPhaseGlyph phase={item.phase} />
+        </span>
+      </div>
+      <div className="gwall-caption" title={item.title}>
+        {item.title}
+      </div>
+      <div className="gwall-sub muted">{item.author ?? '—'}</div>
+      <div className="gwall-shelves">
+        {item.shelves.map((s) => (
+          <span key={s} className="badge badge--muted gwall-shelf">
+            {shelfLabel(s)}
+          </span>
+        ))}
+      </div>
+      <div className="gwall-chips">
+        {item.isComic ? (
+          <StatusChip format="Comic" status={item.comicStatus!} />
+        ) : item.inLibrary || item.phase === 'have' ? (
+          <PhaseChip phase="landed" tone="success" label="In your library" />
+        ) : (
+          <>
+            <StatusChip format="Ebook" status={item.ebookStatus} />
+            <StatusChip format="Audio" status={item.audioStatus} />
+          </>
+        )}
+      </div>
+      <div className="request-action">
+        {item.searchable && item.requestId ? (
+          <RequestSearchButton
+            requestId={item.requestId}
+            onSearched={() => void utils.integrations.items.invalidate()}
+          />
+        ) : item.unroutableReason === 'comic' ? (
+          <span className="muted request-action__note">Waiting on a ComicVine match.</span>
+        ) : null}
+      </div>
+    </li>
+  );
+}
+
+function ItemsTab({ items, pending }: { items: ItemWire[]; pending: boolean }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  // ── shelf chips (the Helpdesk state-chip semantics — DESIGN-012 D-12 ported) ──
+  // Populated-value-gated: only shelves that actually hold items grow a chip (A3 — an absent
+  // did-not-finish shelf renders nothing).
+  const shelfCounts = new Map<string, number>();
+  for (const item of items) {
+    for (const s of item.shelves) shelfCounts.set(s, (shelfCounts.get(s) ?? 0) + 1);
+  }
+  const populated = shelfSort([...shelfCounts.keys()]);
+  const selected = shelfSelectionFromParams(searchParams.getAll('shelf'), populated);
+  const allActive = populated.length > 0 && populated.every((s) => selected.has(s));
+
+  // Refinements REPLACE (D-19) — shelf chips, the status chip, search text and sort never mint
+  // history entries; only the tab switch (the sub-section screens) pushes.
+  const patchParams = (patch: Record<string, string | string[] | null>) => {
+    const params = new URLSearchParams(window.location.search);
+    for (const [k, v] of Object.entries(patch)) {
+      params.delete(k);
+      if (v === null || v === '') continue;
+      if (Array.isArray(v)) for (const val of v) params.append(k, val);
+      else params.set(k, v);
+    }
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  };
+
+  const writeSelection = (next: Set<string>) => {
+    patchParams({ shelf: shelfParamsForSelection(next, populated) });
+  };
+
+  // ── the status (phase) select — a lean shared-engine narrower ──
+  const phaseRaw = searchParams.get('state');
+  const phase = (['have', 'searching', 'missing', 'parked'] as const).find((p) => p === phaseRaw);
+
+  // ── search + sort ──
+  const qParam = searchParams.get('q') ?? '';
+  const [query, setQuery] = useState(qParam);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const current = new URLSearchParams(window.location.search).get('q') ?? '';
+      if (query !== current) patchParams({ q: query });
+    }, 250);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+
+  const sortKeys = SHELF_WALL_SORTS.map((s) => s.key);
+  const sortRaw = searchParams.get('sort');
+  const parsed = sortRaw?.split(':') ?? [];
+  const sort: { field: ShelfWallSort; dir: 'asc' | 'desc' } =
+    parsed.length === 2 && (sortKeys as string[]).includes(parsed[0]!) && (parsed[1] === 'asc' || parsed[1] === 'desc')
+      ? { field: parsed[0] as ShelfWallSort, dir: parsed[1] }
+      : { field: 'shelved', dir: 'desc' };
+  const sortToken = `${sort.field}:${sort.dir}`;
+  const clickCycle = Object.fromEntries(
+    SHELF_WALL_SORTS.map((c) => [
+      c.key,
+      c.firstDir === 'asc'
+        ? { asc: `${c.key}:asc`, desc: `${c.key}:desc` }
+        : { asc: `${c.key}:desc`, desc: `${c.key}:asc` },
+    ]),
+  ) as Record<string, { asc: string; desc: string }>;
+  const arrowCycle = Object.fromEntries(
+    SHELF_WALL_SORTS.map((c) => [c.key, { asc: `${c.key}:asc`, desc: `${c.key}:desc` }]),
+  ) as Record<string, { asc: string; desc: string }>;
+
+  const focus = searchParams.get('focus');
+
+  const visible = sortShelfWallItems(
+    filterShelfWallItems(items, { query: qParam, shelves: selected, ...(phase ? { phase } : {}) }),
+    sort.field,
+    sort.dir,
+  );
+
+  return (
+    <>
+      <div className="library-toolbar">
+        <div className="library-controls">
+          <input
+            type="search"
+            className="library-search"
+            placeholder="Search your shelves…"
+            aria-label="Search your shelved books"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
+
+        {/* The SHELF CHIPS — the Helpdesk semantics verbatim: additive multi-select union, a
+            superset "All" that lights when every chip is on, counts always visible, aria-pressed,
+            recolor-only toggles (ADR-015). */}
+        {populated.length > 0 ? (
+          <div className="seg gr-shelfbar" role="group" aria-label="Filter by shelf">
+            <button
+              type="button"
+              className={allActive ? 'is-active' : undefined}
+              aria-pressed={allActive}
+              data-testid="shelf-chip-all"
+              onClick={() => writeSelection(new Set(populated))}
+            >
+              All · {items.length}
+            </button>
+            {populated.map((s) => {
+              const on = selected.has(s);
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  className={on ? 'is-active' : undefined}
+                  aria-pressed={on}
+                  data-testid={`shelf-chip-${s}`}
+                  onClick={() => writeSelection(toggleShelf(selected, s))}
+                >
+                  {shelfLabel(s)} · {shelfCounts.get(s) ?? 0}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+
+        {/* Status narrower + sort bar (the shared chrome). */}
+        <div className="library-chipbar" role="group" aria-label="Filters">
+          <div className="seg" role="group" aria-label="Filter by status">
+            {(['have', 'searching', 'missing', 'parked'] as const).map((p) => {
+              const count = items.filter((i) => i.phase === p).length;
+              if (count === 0) return null;
+              const on = phase === p;
+              return (
+                <button
+                  key={p}
+                  type="button"
+                  className={on ? 'is-active' : undefined}
+                  aria-pressed={on}
+                  data-testid={`gr-state-${p}`}
+                  onClick={() => patchParams({ state: on ? null : p })}
+                >
+                  {PHASE_META[p].label} · {count}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="library-sortbar" role="group" aria-label="Sort">
+          <span className="library-sortbar__label">Sort</span>
+          {SHELF_WALL_SORTS.map((c) => {
+            const isActive = sort.field === c.key;
+            return (
+              <button
+                key={c.key}
+                type="button"
+                className={`sort-btn${isActive ? ' is-active' : ''}`}
+                aria-pressed={isActive}
+                onClick={() => patchParams({ sort: nextSort<string, string>(sortToken, c.key, clickCycle) })}
+              >
+                {c.label}
+                <span className="sort-btn__arrow" aria-hidden="true">
+                  {arrowFor<string, string>(sortToken, c.key, arrowCycle).trim()}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {pending ? (
+        <div className="media-list poster-grid" aria-hidden="true" data-testid="gr-items-skeleton">
+          {Array.from({ length: 8 }, (_, i) => (
+            <div key={i} className="poster-card poster-card--skeleton">
+              <div className="poster-box" />
+              <span className="poster-card__body">
+                <span className="skeleton-line" />
+                <span className="skeleton-line skeleton-line--short" />
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : items.length === 0 ? (
+        <section className="card empty-state" data-testid="gr-items-empty">
+          <p>No shelved books yet.</p>
+          <p className="muted">
+            Add books to your Goodreads shelves; the next sync brings them in — and requests the ones
+            we don’t have.
+          </p>
+        </section>
+      ) : visible.length === 0 ? (
+        <section className="card empty-state" data-testid="gr-items-none">
+          <p className="muted">
+            {selected.size === 0
+              ? 'No shelves selected — pick a shelf chip above.'
+              : 'Nothing matches your filters.'}
+          </p>
+        </section>
+      ) : (
+        <ul className="gwall" data-testid="gr-items-grid">
+          {visible.map((item) => (
+            <ItemTile key={item.key} item={item} focused={focus !== null && item.requestId === focus} />
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The sub-section shell — header, link card, tabs (PUSH — D-19).
+// ---------------------------------------------------------------------------
+
+const TABS = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'items', label: 'Items' },
+] as const;
+type TabKey = (typeof TABS)[number]['key'];
+
+function resolveTab(raw: string | null): TabKey {
+  return TABS.some((t) => t.key === raw) ? (raw as TabKey) : 'overview';
+}
+
+export function GoodreadsClient() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const active = resolveTab(searchParams.get('tab'));
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  // Normalize a bare /integrations/goodreads (or an unknown ?tab) to Overview — the hub contract
+  // (replace-only: canonicalizing must not mint a history entry). A deep link that carries a valid
+  // ?tab (e.g. ?tab=items&focus=…) is left untouched, so wanted-tile deep links keep their focus.
+  useEffect(() => {
+    if (searchParams.get('tab') !== active) {
+      const params = new URLSearchParams();
+      params.set('tab', active);
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    }
+  }, [searchParams, active, pathname, router]);
+
+  const statusQ = trpc.integrations.status.useQuery(undefined, {
+    refetchInterval: (query) => {
+      const d = query.state.data;
+      return d && isFirstSyncPending(d.integration.linked, d.integration.lastSyncedAt)
+        ? PENDING_POLL_MS
+        : false;
+    },
+  });
+  const integration = statusQ.data?.integration;
+  const linked = integration?.linked ?? false;
+  const pending = isFirstSyncPending(linked, integration?.lastSyncedAt ?? null);
+
+  const overviewQ = trpc.integrations.overview.useQuery(undefined, {
+    enabled: linked,
+    refetchInterval: pending ? PENDING_POLL_MS : false,
+  });
+  const itemsQ = trpc.integrations.items.useQuery(undefined, {
+    enabled: linked,
+    refetchInterval: pending ? PENDING_POLL_MS : false,
+    placeholderData: (prev) => prev,
+  });
+
+  /** A sub-section tab switch is a SCREEN-level view change → PUSH, keeping only ?tab (+ an
+   *  optional pre-filter the overview cards hand across) — DESIGN-004 D-19: refinements never leak
+   *  across tabs. */
+  const selectTab = (key: TabKey, extra?: Record<string, string>) => {
+    const params = new URLSearchParams();
+    params.set('tab', key);
+    for (const [k, v] of Object.entries(extra ?? {})) params.set(k, v);
+    router.push(`${pathname}?${params.toString()}`, { scroll: false });
+  };
+
+  const onTabKeyDown = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let nextIndex: number | null = null;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') nextIndex = (index + 1) % TABS.length;
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') nextIndex = (index - 1 + TABS.length) % TABS.length;
+    else if (e.key === 'Home') nextIndex = 0;
+    else if (e.key === 'End') nextIndex = TABS.length - 1;
+    if (nextIndex === null) return;
+    e.preventDefault();
+    selectTab(TABS[nextIndex]!.key);
+    tabRefs.current[nextIndex]?.focus();
+  };
+
+  return (
+    <div className="integrations-page">
+      <div className="gr-head">
+        <Link className="btn sm" href="/integrations" data-testid="gr-back">
+          ‹ Integrations
+        </Link>
+        <h1 className="page-title gr-head__title">
+          <KindIcon kind="book" className="gr-head__icon" /> Goodreads
+        </h1>
+      </div>
+
+      <LinkCard />
+
+      {linked ? (
+        <>
+          <div className="library-tabs" role="tablist" aria-label="Goodreads views">
+            {TABS.map((t, index) => (
+              <button
+                key={t.key}
+                ref={(el) => {
+                  tabRefs.current[index] = el;
+                }}
+                type="button"
+                role="tab"
+                id={`grtab-${t.key}`}
+                aria-selected={active === t.key}
+                aria-controls="gr-panel"
+                tabIndex={active === t.key ? 0 : -1}
+                data-testid={`gr-tab-${t.key}`}
+                onClick={() => selectTab(t.key)}
+                onKeyDown={(e) => onTabKeyDown(e, index)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          <div id="gr-panel" role="tabpanel" aria-labelledby={`grtab-${active}`}>
+            {active === 'overview' ? (
+              <OverviewTab
+                overview={overviewQ.data}
+                pending={pending}
+                onOpenItems={(shelf) => selectTab('items', shelf ? { shelf } : undefined)}
+              />
+            ) : (
+              <ItemsTab items={itemsQ.data?.items ?? []} pending={itemsQ.isPending} />
+            )}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}

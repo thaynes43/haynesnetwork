@@ -120,6 +120,16 @@ const READ_FACET: RegistryFacet = {
   param: 'read',
   gate: 'bookProgress',
 };
+/** ADR-057 / DESIGN-029 (PLAN-045) — the composed-Wanted state filter on the book walls: the
+ *  Movies/TV `?wanted=1` narrowing ported as a REGISTRY row (ADR-051 C-01). Value-gated: the chip
+ *  renders only while the wall's `books.wanted` overlay actually holds tiles (no dead chip). */
+const WANTED_FACET: RegistryFacet = {
+  key: 'wanted',
+  label: 'Wanted',
+  kind: 'select',
+  param: 'wanted',
+  dataGated: true,
+};
 const releasedFacet = (label: string): RegistryFacet => ({
   key: 'released',
   label,
@@ -283,6 +293,7 @@ export const LIBRARY_VIEW_REGISTRY: Record<ViewLevelKey, ViewRegistryEntry> = {
       { key: 'authors', label: 'Author', kind: 'suggest', param: 'author', dataGated: true },
       { key: 'formats', label: 'Format', kind: 'enum', param: 'fmt', dataGated: true },
       { key: 'lengths', label: 'Pages', kind: 'buckets', param: 'len' },
+      WANTED_FACET,
     ],
     azSorts: ['title', 'author'],
   }),
@@ -317,6 +328,7 @@ export const LIBRARY_VIEW_REGISTRY: Record<ViewLevelKey, ViewRegistryEntry> = {
       { key: 'languages', label: 'Language', kind: 'enum', param: 'lang', dataGated: true },
       { key: 'lengths', label: 'Length', kind: 'buckets', param: 'len' },
       READ_FACET,
+      WANTED_FACET,
     ],
     azSorts: ['title', 'author'],
   }),
@@ -356,6 +368,7 @@ export const LIBRARY_VIEW_REGISTRY: Record<ViewLevelKey, ViewRegistryEntry> = {
     facets: [
       { key: 'formats', label: 'Format', kind: 'enum', param: 'fmt', dataGated: true },
       { key: 'lengths', label: 'Pages', kind: 'buckets', param: 'len' },
+      WANTED_FACET,
     ],
     azSorts: ['title'],
   }),

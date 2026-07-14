@@ -7,21 +7,27 @@ import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import {
   computeCoverage,
+  computeShelfStats,
   getBookRequestById,
   getBookRequestsForIntegration,
   getIntegrationById,
+  getShelfWallItems,
   getUserIntegration,
   InvalidGoodreadsProfileError,
+  isRequestSearchable,
   linkIntegration,
   markIntegrationSynced,
+  requestPhase,
   runComicVolumeSearch,
   runManualBookSearch,
   syncGoodreadsIntegration,
   unlinkIntegration,
   type BookRequestView,
   type EnrichedShelfItem,
+  type ShelfWallItem,
 } from '@hnet/domain';
-import { isComicText } from '@hnet/goodreads';
+import { isAbsentCustomShelfError, isComicText, type GoodreadsShelfItem } from '@hnet/goodreads';
+import { booksCoverUrlFor } from '../books-query';
 import type { UserIntegrationRow } from '@hnet/db';
 import { router } from '../trpc';
 import {
@@ -68,7 +74,15 @@ async function runFirstGoodreadsSync(ctx: TRPCContext, integration: UserIntegrat
   const enriched: EnrichedShelfItem[] = [];
   const syncedShelves: string[] = [];
   for (const shelf of integration.shelves) {
-    const items = await rss.fetchShelf(integration.externalUserId, shelf);
+    // ADR-057 / A3 — an absent CUSTOM shelf (404 on e.g. 'did-not-finish') reads as EMPTY, not an error;
+    // a built-in shelf failure still throws (private/unreachable — the sync-error path).
+    let items: GoodreadsShelfItem[];
+    try {
+      items = await rss.fetchShelf(integration.externalUserId, shelf);
+    } catch (error) {
+      if (!isAbsentCustomShelfError(shelf, error)) throw error;
+      items = [];
+    }
     for (const item of items) {
       const gb = await googleBooks
         .resolveVolume({ isbn: item.isbn, title: item.title, author: item.author })
@@ -114,17 +128,9 @@ function toIntegrationWire(row: UserIntegrationRow | null) {
   };
 }
 
-function isSearchable(view: BookRequestView): boolean {
-  // ADR-056 — a COMIC is searchable once routed to Kapowarr (has a volume id) and not yet fully landed; a
-  // BOOK is searchable once pushed to LL (has a GB/LL id) and not both-format-landed. A PARKED comic
-  // (no volume id yet — Kapowarr unreachable / no ComicVine match) is not force-searchable.
-  if (view.comicStatus != null) {
-    return view.kapowarrVolumeId != null && view.comicStatus !== 'landed';
-  }
-  if (view.unroutableReason) return false;
-  if (!view.llBookId) return false;
-  return view.ebookStatus !== 'landed' || view.audioStatus !== 'landed';
-}
+// ADR-056/ADR-057 — the shared force-searchability rule now lives in @hnet/domain (isRequestSearchable):
+// one definition for this wall, the Goodreads items wall, and the Library composed-Wanted tiles.
+const isSearchable = (view: BookRequestView): boolean => isRequestSearchable(view);
 
 function toRequestWire(view: BookRequestView) {
   return {
@@ -143,6 +149,52 @@ function toRequestWire(view: BookRequestView) {
     inLibrary: view.matchedBooksItemId !== null,
     searchable: isSearchable(view),
     lastSearchedAt: view.lastSearchedAt ? view.lastSearchedAt.toISOString() : null,
+  };
+}
+
+/** ADR-057 (PLAN-045) — one Goodreads ITEMS-wall tile (a distinct shelf book, shelves aggregated). */
+function toItemWire(item: ShelfWallItem) {
+  const ebookStatus = item.ebookStatus ?? 'requested';
+  const audioStatus = item.audioStatus ?? 'requested';
+  return {
+    /** The Goodreads book id — the stable tile key. */
+    key: item.externalBookId,
+    title: item.title,
+    author: item.author,
+    shelves: item.shelves,
+    shelvedAt: item.shelvedAt ? item.shelvedAt.toISOString() : null,
+    requestId: item.requestId,
+    /** The cover-proxy URL when the want matched a books_items row; null ⇒ the designed fallback tile. */
+    posterUrl: item.matched
+      ? booksCoverUrlFor(item.matched.source, item.matched.externalId, item.matched.coverRef)
+      : null,
+    inLibrary: item.matched !== null,
+    ebookStatus,
+    audioStatus,
+    comicStatus: item.comicStatus,
+    isComic: item.comicStatus != null,
+    unroutableReason: item.unroutableReason,
+    /** The corner-puck phase: have · searching · missing · parked. */
+    phase: item.requestId
+      ? requestPhase({
+          matchedBooksItemId: item.matched ? 'matched' : null,
+          ebookStatus,
+          audioStatus,
+          comicStatus: item.comicStatus,
+          unroutableReason: item.unroutableReason,
+        })
+      : ('searching' as const),
+    searchable: item.requestId
+      ? isRequestSearchable({
+          ebookStatus,
+          audioStatus,
+          comicStatus: item.comicStatus,
+          kapowarrVolumeId: item.kapowarrVolumeId,
+          llBookId: item.llBookId,
+          unroutableReason: item.unroutableReason,
+        })
+      : false,
+    lastSearchedAt: item.lastSearchedAt ? item.lastSearchedAt.toISOString() : null,
   };
 }
 
@@ -218,6 +270,46 @@ export const integrationsRouter = router({
       actorId: ctx.user.id,
     });
     return { changed };
+  }),
+
+  /**
+   * ADR-057 (PLAN-045) — the hub-card + stats-page read: link state, the WANT-SHELF headline coverage
+   * (Q-02 ruling — the headline stays to-read), the per-shelf breakdown, and the request phase rollup
+   * (the Trash-Overview summary-tile idiom). Unlinked ⇒ the wire carries zeros (the hub card renders the
+   * not-linked state).
+   */
+  overview: integrationsProcedure.query(async ({ ctx }) => {
+    const row = await getUserIntegration({ db: ctx.db, userId: ctx.user.id, provider: PROVIDER });
+    if (!row || row.status === 'unlinked') {
+      return {
+        integration: toIntegrationWire(row && row.status !== 'unlinked' ? row : null),
+        headline: { total: 0, covered: 0, pct: 0 },
+        shelves: [] as Array<{ shelf: string; total: number; covered: number; pct: number }>,
+        phases: { have: 0, searching: 0, missing: 0, parked: 0 },
+      };
+    }
+    const stats = await computeShelfStats({ db: ctx.db, integrationId: row.id });
+    const want = stats.shelves.find((s) => s.shelf === 'to-read');
+    return {
+      integration: toIntegrationWire(row),
+      headline: want
+        ? { total: want.total, covered: want.covered, pct: want.pct }
+        : { total: 0, covered: 0, pct: 0 },
+      shelves: stats.shelves,
+      phases: stats.phases,
+    };
+  }),
+
+  /**
+   * ADR-057 (PLAN-045) — the Goodreads ITEMS wall: one tile per distinct shelved book (shelf memberships
+   * aggregated — the shelf chips filter on them), with the library-match cover-proxy art where matched and
+   * the request state riding along (phase → the corner puck; per-format statuses → the focus card chips).
+   */
+  items: integrationsProcedure.query(async ({ ctx }) => {
+    const row = await getUserIntegration({ db: ctx.db, userId: ctx.user.id, provider: PROVIDER });
+    if (!row || row.status === 'unlinked') return { items: [] as ReturnType<typeof toItemWire>[] };
+    const items = await getShelfWallItems({ db: ctx.db, integrationId: row.id });
+    return { items: items.map(toItemWire) };
   }),
 
   /** The shelf summary + coverage % for the caller's integration. */

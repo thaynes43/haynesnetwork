@@ -821,6 +821,16 @@ export type IntegrationProvider = (typeof INTEGRATION_PROVIDERS)[number];
 export const INTEGRATION_STATUSES = ['linked', 'unlinked', 'error'] as const;
 export type IntegrationStatus = (typeof INTEGRATION_STATUSES)[number];
 
+// ADR-057 (PLAN-045 — all shelves acquire, owner ruling A1-overruled). The Goodreads shelves a linked
+// integration syncs, in CANONICAL order (the chip/filter order + the request-attribution priority when one
+// book sits on several shelves). The first three are Goodreads BUILT-IN exclusive shelves (they exist on
+// every account, even empty); 'did-not-finish' is the conventional CUSTOM shelf slug — absent on most
+// accounts, so the sync tolerates a 404 for it (A3) and the UI populated-value-gates its chip. This is the
+// user_integrations.shelves DEFAULT (jsonb string[], no CHECK — a future provider phase may carry other
+// slugs); migration 0047 backfills existing want-shelf-only rows.
+export const GOODREADS_SHELVES = ['to-read', 'currently-reading', 'read', 'did-not-finish'] as const;
+export type GoodreadsShelf = (typeof GOODREADS_SHELVES)[number];
+
 // A book_requests per-FORMAT status (book_requests.ebook_status / audio_status / comic_status). Books queue
 // BOTH ebook+audio formats (owner ruling — "we grab both so it's one for all"); a COMIC request (ADR-056 /
 // PLAN-046) tracks the SINGLE comic_status instead (comics are Kapowarr's domain, never LazyLibrarian's).

@@ -5,6 +5,7 @@
 // exemption). Reads (list linked / get) live here too. Linking is PER-USER (R1). The guard forbids any
 // other module from touching the table.
 import {
+  GOODREADS_SHELVES,
   permissionAudit,
   userIntegrations,
   users,
@@ -50,7 +51,7 @@ export interface LinkIntegrationInput {
   externalUserId: string;
   /** The profile URL / id the user entered (stored as the display + audit copy). */
   profileRef: string;
-  /** Shelves to sync (default the want shelf). */
+  /** Shelves to sync (default ALL four GOODREADS_SHELVES — ADR-057, "all shelves acquire"). */
   shelves?: string[];
   actorId: string | null;
 }
@@ -68,7 +69,8 @@ export interface LinkIntegrationResult {
 export async function linkIntegration(input: LinkIntegrationInput): Promise<LinkIntegrationResult> {
   const externalUserId = input.externalUserId.trim();
   assertGoodreadsUserId(externalUserId);
-  const shelves = input.shelves && input.shelves.length > 0 ? input.shelves : ['to-read'];
+  const shelves =
+    input.shelves && input.shelves.length > 0 ? input.shelves : [...GOODREADS_SHELVES];
   return inTransaction(input.db, async (tx) => {
     const [user] = await tx.select({ id: users.id }).from(users).where(eq(users.id, input.userId));
     if (!user) throw new NotFoundError(`User ${input.userId} not found`);

@@ -6,10 +6,13 @@
 // (recordManualSearch) DOES co-write a permission_audit row (request_book_search). The guard forbids any
 // other module from touching book_requests.
 import {
+  GOODREADS_SHELVES,
   bookRequests,
   booksItems,
   integrationShelfItems,
   permissionAudit,
+  userIntegrations,
+  users,
   type BookRequestFormat,
   type BookRequestRow,
   type BookRequestStatus,
@@ -670,4 +673,407 @@ export function searchableFormats(request: {
   if (request.ebookStatus !== 'landed') formats.push('ebook');
   if (request.audioStatus !== 'landed') formats.push('audiobook');
   return formats;
+}
+
+/**
+ * ADR-056/ADR-057 — is a request FORCE-SEARCHABLE (the `integrations.search` dispatch has a real target)?
+ * A COMIC is searchable once routed to Kapowarr (has a volume id) and not yet fully landed; a BOOK is
+ * searchable once pushed to LL (has a GB/LL id) and not both-format-landed. A PARKED comic (no volume id
+ * yet — Kapowarr unreachable / no ComicVine match) is not force-searchable. One definition shared by the
+ * Integrations sub-section wall AND the Library composed-Wanted tiles (PLAN-045).
+ */
+export function isRequestSearchable(request: {
+  ebookStatus: BookRequestStatus;
+  audioStatus: BookRequestStatus;
+  comicStatus: BookRequestStatus | null;
+  kapowarrVolumeId: string | null;
+  llBookId: string | null;
+  unroutableReason: string | null;
+}): boolean {
+  if (request.comicStatus != null) {
+    return request.kapowarrVolumeId != null && request.comicStatus !== 'landed';
+  }
+  if (request.unroutableReason) return false;
+  if (!request.llBookId) return false;
+  return request.ebookStatus !== 'landed' || request.audioStatus !== 'landed';
+}
+
+// ---------------------------------------------------------------------------
+// ADR-057 (PLAN-045) — the composed read-models: per-shelf stats, the Goodreads items wall, and the
+// household Library-Wanted overlay. All READS over the request ledger + the live shelf mirror — the
+// books_items mirror stays pure (ADR-046); Wanted is a composition, never a mirror row.
+// ---------------------------------------------------------------------------
+
+/** The coarse phase a request is in — drives the corner-puck badge + the stats summary tiles. */
+export type BookRequestPhase = 'have' | 'searching' | 'missing' | 'parked';
+
+/**
+ * Collapse a request's per-format statuses into the wall phase. Priority: a library match or any landed
+ * format ⇒ 'have'; a parked comic ⇒ 'parked'; any format still actively looking (requested/wanted/grabbed)
+ * ⇒ 'searching'; only when EVERY live format dead-ended ⇒ 'missing' (the state that offers Search again).
+ */
+export function requestPhase(request: {
+  matchedBooksItemId: string | null;
+  ebookStatus: BookRequestStatus;
+  audioStatus: BookRequestStatus;
+  comicStatus: BookRequestStatus | null;
+  unroutableReason: string | null;
+}): BookRequestPhase {
+  if (request.matchedBooksItemId) return 'have';
+  if (request.comicStatus != null) {
+    if (request.comicStatus === 'landed') return 'have';
+    if (request.unroutableReason === 'comic') return 'parked';
+    return request.comicStatus === 'missing' ? 'missing' : 'searching';
+  }
+  if (request.ebookStatus === 'landed' || request.audioStatus === 'landed') return 'have';
+  const active = (s: BookRequestStatus) => s === 'requested' || s === 'wanted' || s === 'grabbed';
+  if (active(request.ebookStatus) || active(request.audioStatus)) return 'searching';
+  return 'missing';
+}
+
+export interface ShelfCoverageRow {
+  shelf: string;
+  total: number;
+  covered: number;
+  pct: number;
+}
+
+export interface RequestPhaseSummary {
+  have: number;
+  searching: number;
+  missing: number;
+  parked: number;
+}
+
+export interface ShelfStats {
+  /** Per-shelf coverage, in GOODREADS_SHELVES canonical order (unknown shelves after, A–Z). */
+  shelves: ShelfCoverageRow[];
+  /** Requests bucketed by phase (one bucket per request — the stats summary tiles). */
+  phases: RequestPhaseSummary;
+}
+
+const shelfOrder = (shelf: string): number => {
+  const i = (GOODREADS_SHELVES as readonly string[]).indexOf(shelf);
+  return i === -1 ? GOODREADS_SHELVES.length : i;
+};
+
+/**
+ * Per-shelf coverage + the request phase rollup for one integration (the Goodreads stats page — Q-02:
+ * the headline stays the want shelf; this read supplies the per-shelf breakdown under it). Coverage uses
+ * the computeCoverage predicate per shelf; a book shelved on several shelves counts in EACH shelf's row
+ * (per-shelf coverage is per-shelf honest), while the phase rollup counts each REQUEST once.
+ */
+export async function computeShelfStats(input: {
+  db?: DbClient;
+  integrationId: string;
+}): Promise<ShelfStats> {
+  const rows = await resolveDb(input.db)
+    .select({
+      shelf: integrationShelfItems.shelf,
+      matchedBooksItemId: bookRequests.matchedBooksItemId,
+      ebookStatus: bookRequests.ebookStatus,
+      audioStatus: bookRequests.audioStatus,
+      comicStatus: bookRequests.comicStatus,
+      unroutableReason: bookRequests.unroutableReason,
+    })
+    .from(bookRequests)
+    .innerJoin(integrationShelfItems, eq(bookRequests.shelfItemId, integrationShelfItems.id))
+    .where(
+      and(
+        eq(bookRequests.integrationId, input.integrationId),
+        isNull(integrationShelfItems.deletedAt),
+      ),
+    );
+
+  const perShelf = new Map<string, { total: number; covered: number }>();
+  const phases: RequestPhaseSummary = { have: 0, searching: 0, missing: 0, parked: 0 };
+  for (const row of rows) {
+    const bucket = perShelf.get(row.shelf) ?? { total: 0, covered: 0 };
+    bucket.total += 1;
+    const phase = requestPhase(row);
+    if (phase === 'have') bucket.covered += 1;
+    perShelf.set(row.shelf, bucket);
+    phases[phase] += 1;
+  }
+
+  const shelves = [...perShelf.entries()]
+    .sort((a, b) => shelfOrder(a[0]) - shelfOrder(b[0]) || a[0].localeCompare(b[0]))
+    .map(([shelf, c]) => ({
+      shelf,
+      total: c.total,
+      covered: c.covered,
+      pct: c.total > 0 ? Math.round((c.covered / c.total) * 100) : 0,
+    }));
+  return { shelves, phases };
+}
+
+/** One tile of the Goodreads ITEMS wall — a distinct shelf BOOK (shelf memberships aggregated). */
+export interface ShelfWallItem {
+  /** The Goodreads book id — the stable per-book key (the dedupe/grouping key across shelves). */
+  externalBookId: string;
+  title: string;
+  author: string | null;
+  /** Every live shelf the book sits on, in GOODREADS_SHELVES canonical order (the chip filter target). */
+  shelves: string[];
+  /** The newest shelved-at across its shelves (the wall's default sort key). */
+  shelvedAt: Date | null;
+  /** The canonical request (shelf-priority pick when the book sits on several shelves). */
+  requestId: string | null;
+  /** The matched books_items row's cover keys, when the want is in the library (the cover-proxy art). */
+  matched: { source: string; externalId: string; coverRef: string | null } | null;
+  ebookStatus: BookRequestStatus | null;
+  audioStatus: BookRequestStatus | null;
+  comicStatus: BookRequestStatus | null;
+  unroutableReason: string | null;
+  llBookId: string | null;
+  kapowarrVolumeId: string | null;
+  lastSearchedAt: Date | null;
+}
+
+/**
+ * The Goodreads items wall read (PLAN-045): every live shelf item of an integration joined with its
+ * request + its library match, GROUPED per distinct book (a book on several shelves renders ONE tile
+ * wearing all its shelf memberships; the canonical request follows GOODREADS_SHELVES priority).
+ * Newest-shelved first.
+ */
+export async function getShelfWallItems(input: {
+  db?: DbClient;
+  integrationId: string;
+}): Promise<ShelfWallItem[]> {
+  const rows = await resolveDb(input.db)
+    .select({
+      shelf: integrationShelfItems.shelf,
+      externalBookId: integrationShelfItems.externalBookId,
+      itemTitle: integrationShelfItems.title,
+      itemAuthor: integrationShelfItems.author,
+      shelvedAt: integrationShelfItems.shelvedAt,
+      requestId: bookRequests.id,
+      matchedBooksItemId: bookRequests.matchedBooksItemId,
+      ebookStatus: bookRequests.ebookStatus,
+      audioStatus: bookRequests.audioStatus,
+      comicStatus: bookRequests.comicStatus,
+      unroutableReason: bookRequests.unroutableReason,
+      llBookId: bookRequests.llBookId,
+      kapowarrVolumeId: bookRequests.kapowarrVolumeId,
+      lastSearchedAt: bookRequests.lastSearchedAt,
+      matchedSource: booksItems.source,
+      matchedExternalId: booksItems.externalId,
+      matchedCoverRef: booksItems.coverRef,
+    })
+    .from(integrationShelfItems)
+    .leftJoin(bookRequests, eq(bookRequests.shelfItemId, integrationShelfItems.id))
+    .leftJoin(booksItems, eq(booksItems.id, bookRequests.matchedBooksItemId))
+    .where(
+      and(
+        eq(integrationShelfItems.integrationId, input.integrationId),
+        isNull(integrationShelfItems.deletedAt),
+      ),
+    );
+
+  const byBook = new Map<string, { canonicalRank: number; item: ShelfWallItem }>();
+  for (const row of rows) {
+    const rank = shelfOrder(row.shelf);
+    const existing = byBook.get(row.externalBookId);
+    if (!existing) {
+      byBook.set(row.externalBookId, {
+        canonicalRank: rank,
+        item: {
+          externalBookId: row.externalBookId,
+          title: row.itemTitle,
+          author: row.itemAuthor,
+          shelves: [row.shelf],
+          shelvedAt: row.shelvedAt,
+          requestId: row.requestId,
+          matched:
+            row.matchedSource && row.matchedExternalId
+              ? { source: row.matchedSource, externalId: row.matchedExternalId, coverRef: row.matchedCoverRef }
+              : null,
+          ebookStatus: row.ebookStatus,
+          audioStatus: row.audioStatus,
+          comicStatus: row.comicStatus,
+          unroutableReason: row.unroutableReason,
+          llBookId: row.llBookId,
+          kapowarrVolumeId: row.kapowarrVolumeId,
+          lastSearchedAt: row.lastSearchedAt,
+        },
+      });
+      continue;
+    }
+    if (!existing.item.shelves.includes(row.shelf)) existing.item.shelves.push(row.shelf);
+    if ((row.shelvedAt?.getTime() ?? 0) > (existing.item.shelvedAt?.getTime() ?? 0)) {
+      existing.item.shelvedAt = row.shelvedAt;
+    }
+    if (rank < existing.canonicalRank && row.requestId) {
+      // A higher-priority shelf carries the canonical request/status for the tile.
+      existing.canonicalRank = rank;
+      existing.item.requestId = row.requestId;
+      existing.item.matched =
+        row.matchedSource && row.matchedExternalId
+          ? { source: row.matchedSource, externalId: row.matchedExternalId, coverRef: row.matchedCoverRef }
+          : null;
+      existing.item.ebookStatus = row.ebookStatus;
+      existing.item.audioStatus = row.audioStatus;
+      existing.item.comicStatus = row.comicStatus;
+      existing.item.unroutableReason = row.unroutableReason;
+      existing.item.llBookId = row.llBookId;
+      existing.item.kapowarrVolumeId = row.kapowarrVolumeId;
+      existing.item.lastSearchedAt = row.lastSearchedAt;
+    }
+  }
+
+  const items = [...byBook.values()].map((v) => {
+    v.item.shelves.sort((a, b) => shelfOrder(a) - shelfOrder(b) || a.localeCompare(b));
+    return v.item;
+  });
+  items.sort((a, b) => (b.shelvedAt?.getTime() ?? 0) - (a.shelvedAt?.getTime() ?? 0));
+  return items;
+}
+
+/** A Library-Wanted tile source row (the household composed-Wanted overlay, PLAN-045 / ADR-057). */
+export interface WantedBookRequestView {
+  requestId: string;
+  /** The app user whose integration minted the request (the ownership key for canSearch). */
+  integrationUserId: string;
+  /** Display names of everyone whose shelves want this book (deduped tile — household view). */
+  requestedBy: string[];
+  title: string;
+  author: string | null;
+  /** The canonical source shelf (GOODREADS_SHELVES priority) — the tile's shelf badge. */
+  shelf: string;
+  shelvedAt: Date | null;
+  /** The wall format's own status (ebook_status / audio_status / comic_status per requested format). */
+  status: BookRequestStatus;
+  isComic: boolean;
+  unroutableReason: string | null;
+  ebookStatus: BookRequestStatus;
+  audioStatus: BookRequestStatus;
+  comicStatus: BookRequestStatus | null;
+  llBookId: string | null;
+  kapowarrVolumeId: string | null;
+  externalBookId: string;
+}
+
+/**
+ * The HOUSEHOLD Wanted overlay for one Library book wall (PLAN-045 step 4 — composed from the request
+ * ledger; books_items untouched, ADR-046). Format decides the wall: 'ebook' ⇒ Books, 'audiobook' ⇒
+ * Audiobooks, 'comic' ⇒ Comics. A request is WANTED on a wall while that format hasn't landed and the
+ * want isn't already matched into the library. Reads across ALL linked integrations (household
+ * visibility — the books-section gate is the caller's, Q-01), deduped per distinct book (same Goodreads
+ * id wanted by several users ⇒ one tile listing every requester; the canonical request follows
+ * GOODREADS_SHELVES priority, then age). Newest-shelved first.
+ */
+export async function getWantedBookRequests(input: {
+  db?: DbClient;
+  format: BookRequestFormat;
+}): Promise<WantedBookRequestView[]> {
+  const formatPredicate =
+    input.format === 'comic'
+      ? sql`${bookRequests.comicStatus} IS NOT NULL AND ${bookRequests.comicStatus} <> 'landed'`
+      : input.format === 'audiobook'
+        ? sql`${bookRequests.comicStatus} IS NULL AND ${bookRequests.audioStatus} <> 'landed'`
+        : sql`${bookRequests.comicStatus} IS NULL AND ${bookRequests.ebookStatus} <> 'landed'`;
+
+  const rows = await resolveDb(input.db)
+    .select({
+      requestId: bookRequests.id,
+      integrationUserId: userIntegrations.userId,
+      requesterName: users.displayName,
+      title: bookRequests.title,
+      author: bookRequests.author,
+      shelf: integrationShelfItems.shelf,
+      shelvedAt: integrationShelfItems.shelvedAt,
+      externalBookId: integrationShelfItems.externalBookId,
+      ebookStatus: bookRequests.ebookStatus,
+      audioStatus: bookRequests.audioStatus,
+      comicStatus: bookRequests.comicStatus,
+      unroutableReason: bookRequests.unroutableReason,
+      llBookId: bookRequests.llBookId,
+      kapowarrVolumeId: bookRequests.kapowarrVolumeId,
+      createdAt: bookRequests.createdAt,
+    })
+    .from(bookRequests)
+    .innerJoin(integrationShelfItems, eq(bookRequests.shelfItemId, integrationShelfItems.id))
+    .innerJoin(userIntegrations, eq(bookRequests.integrationId, userIntegrations.id))
+    .innerJoin(users, eq(userIntegrations.userId, users.id))
+    .where(
+      and(
+        isNull(integrationShelfItems.deletedAt),
+        isNull(bookRequests.matchedBooksItemId),
+        eq(userIntegrations.status, 'linked'),
+        formatPredicate,
+      ),
+    );
+
+  const statusFor = (row: (typeof rows)[number]): BookRequestStatus =>
+    input.format === 'comic'
+      ? (row.comicStatus ?? 'requested')
+      : input.format === 'audiobook'
+        ? row.audioStatus
+        : row.ebookStatus;
+
+  const byBook = new Map<string, { rank: number; createdAt: Date; view: WantedBookRequestView }>();
+  for (const row of rows) {
+    const rank = shelfOrder(row.shelf);
+    const existing = byBook.get(row.externalBookId);
+    if (!existing) {
+      byBook.set(row.externalBookId, {
+        rank,
+        createdAt: row.createdAt,
+        view: {
+          requestId: row.requestId,
+          integrationUserId: row.integrationUserId,
+          requestedBy: [row.requesterName],
+          title: row.title,
+          author: row.author,
+          shelf: row.shelf,
+          shelvedAt: row.shelvedAt,
+          status: statusFor(row),
+          isComic: row.comicStatus != null,
+          unroutableReason: row.unroutableReason,
+          ebookStatus: row.ebookStatus,
+          audioStatus: row.audioStatus,
+          comicStatus: row.comicStatus,
+          llBookId: row.llBookId,
+          kapowarrVolumeId: row.kapowarrVolumeId,
+          externalBookId: row.externalBookId,
+        },
+      });
+      continue;
+    }
+    if (!existing.view.requestedBy.includes(row.requesterName)) {
+      existing.view.requestedBy.push(row.requesterName);
+    }
+    if ((row.shelvedAt?.getTime() ?? 0) > (existing.view.shelvedAt?.getTime() ?? 0)) {
+      existing.view.shelvedAt = row.shelvedAt;
+    }
+    const wins =
+      rank < existing.rank ||
+      (rank === existing.rank && row.createdAt.getTime() < existing.createdAt.getTime());
+    if (wins) {
+      existing.rank = rank;
+      existing.createdAt = row.createdAt;
+      const keepRequesters = existing.view.requestedBy;
+      existing.view = {
+        ...existing.view,
+        requestId: row.requestId,
+        integrationUserId: row.integrationUserId,
+        requestedBy: keepRequesters,
+        title: row.title,
+        author: row.author,
+        shelf: row.shelf,
+        status: statusFor(row),
+        isComic: row.comicStatus != null,
+        unroutableReason: row.unroutableReason,
+        ebookStatus: row.ebookStatus,
+        audioStatus: row.audioStatus,
+        comicStatus: row.comicStatus,
+        llBookId: row.llBookId,
+        kapowarrVolumeId: row.kapowarrVolumeId,
+      };
+    }
+  }
+
+  const views = [...byBook.values()].map((v) => v.view);
+  views.sort((a, b) => (b.shelvedAt?.getTime() ?? 0) - (a.shelvedAt?.getTime() ?? 0));
+  return views;
 }

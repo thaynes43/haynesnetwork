@@ -6,8 +6,9 @@
 // client-hidden only. Same gate protects the /api/books/cover proxy.
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
-import { booksItems, userBookProgress, BOOKS_MEDIA_KINDS } from '@hnet/db';
+import { booksItems, userBookProgress, BOOKS_MEDIA_KINDS, type BooksMediaKind } from '@hnet/db';
 import { and, asc, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { getWantedBookRequests, isRequestSearchable } from '@hnet/domain';
 import { authedProcedure, router } from '../trpc';
 import { booksProcedure, effectiveSectionLevel } from '../middleware/role';
 import {
@@ -147,12 +148,56 @@ export interface BooksSearchResult {
   nextCursor: number | null;
 }
 
+/** ADR-057 (PLAN-045) — which request FORMAT composes a wall's Wanted overlay. */
+const WALL_FORMAT: Record<BooksMediaKind, 'ebook' | 'audiobook' | 'comic'> = {
+  book: 'ebook',
+  audiobook: 'audiobook',
+  comic: 'comic',
+};
+
 export const booksRouter = router({
   /** The caller's own books-section visibility (any authed user) — for the client tab gate. */
   access: authedProcedure.query(({ ctx }) => {
     const level = effectiveSectionLevel(ctx.user.role, 'books');
     return { level, visible: level !== 'disabled' };
   }),
+
+  /**
+   * ADR-057 (PLAN-045 step 4) — the Library-Wanted COMPOSITION: household Wanted tiles for one book wall,
+   * composed from the `book_requests` ledger (the *arr monitored-but-missing idiom for books; the
+   * books_items mirror stays PURE, ADR-046). Gated by the BOOKS section like the wall it rides (owner
+   * ruling Q-01 — household visibility wherever the Books walls are granted; the tRPC layer is the
+   * server-authoritative gate). Per-viewer affordances are computed HERE, never client-guessed:
+   * `canSearch` (the force-search button) and `canOpenRequest` (the deep-link into the Goodreads
+   * sub-section) require the viewer to OWN the request's integration AND hold the `integrations`
+   * section — exactly what `integrations.search` enforces server-side.
+   */
+  wanted: booksProcedure
+    .input(z.object({ mediaKind: z.enum(BOOKS_MEDIA_KINDS) }))
+    .query(async ({ ctx, input }) => {
+      const views = await getWantedBookRequests({ db: ctx.db, format: WALL_FORMAT[input.mediaKind] });
+      const viewerHasIntegrations = effectiveSectionLevel(ctx.user.role, 'integrations') !== 'disabled';
+      return {
+        items: views.map((v) => {
+          const owns = v.integrationUserId === ctx.user.id;
+          return {
+            requestId: v.requestId,
+            title: v.title,
+            author: v.author,
+            shelf: v.shelf,
+            shelvedAt: v.shelvedAt ? v.shelvedAt.toISOString() : null,
+            /** The WALL format's own status (requested | wanted | grabbed | missing — never landed here). */
+            status: v.status,
+            isComic: v.isComic,
+            /** A parked comic (no Kapowarr route yet) — the honest "waiting on a ComicVine match" note. */
+            parked: v.isComic && v.unroutableReason === 'comic',
+            requestedBy: v.requestedBy,
+            canSearch: owns && viewerHasIntegrations && isRequestSearchable(v),
+            canOpenRequest: owns && viewerHasIntegrations,
+          };
+        }),
+      };
+    }),
 
   /** One media kind's wall (poster-grid rows), filtered + sorted, offset-paginated. Live rows only. */
   search: booksProcedure

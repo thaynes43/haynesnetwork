@@ -22,6 +22,8 @@ export interface StubLazyLibrarianServer {
 function bookStatus(id: string): { BookID: string; Status: string; AudioStatus: string } {
   if (id === 'gb-rpo') return { BookID: id, Status: 'Open', AudioStatus: 'Open' }; // landed → covered
   if (id === 'gb-tog') return { BookID: id, Status: 'Skipped', AudioStatus: 'Skipped' }; // Missing
+  // ADR-057 (PLAN-045) — the READ-shelf covered book: LL already holds it (landed → covered).
+  if (id === 'gb-martian') return { BookID: id, Status: 'Open', AudioStatus: 'Open' };
   return { BookID: id, Status: 'Wanted', AudioStatus: 'Wanted' };
 }
 
