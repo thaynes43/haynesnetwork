@@ -39,10 +39,42 @@ const KAVITA_COMICS = [
 ];
 const ABS_ITEMS = [
   { id: 'ab50001', libraryId: 'abs-lib', addedAt: 1783702399325, updatedAt: 1783702399325, mediaType: 'book', media: { metadata: { title: 'A Christmas Carol', titleIgnorePrefix: 'Christmas Carol, A', authorName: 'Charles Dickens', narratorName: 'Tim Curry', seriesName: '', genres: ['Audiobook', 'Classics'], publishedYear: 1843, language: 'English' }, numTracks: 6, numChapters: 6, duration: 12600, size: 90000000 } },
-  { id: 'ab50002', libraryId: 'abs-lib', addedAt: 1783602399325, updatedAt: 1783602399325, mediaType: 'book', media: { metadata: { title: 'The Restaurant at the End of the Universe', titleIgnorePrefix: 'Restaurant at the End of the Universe, The', authorName: 'Douglas Adams', narratorName: '', seriesName: "Hitchhiker's Guide", genres: ['Audiobook'], publishedYear: 1980, language: 'English' }, numTracks: 5, numChapters: 5, duration: 19822, size: 36000000 } },
-  { id: 'ab50003', libraryId: 'abs-lib', addedAt: 1783502399325, updatedAt: 1783502399325, mediaType: 'book', media: { metadata: { title: 'Oliver Twist', titleIgnorePrefix: 'Oliver Twist', authorName: 'Charles Dickens', narratorName: '', seriesName: '', genres: ['Audiobook', 'Classics'], publishedYear: 1838, language: 'English' }, numTracks: 12, numChapters: 24, duration: 60200, size: 210000000 } },
+  { id: 'ab50002', libraryId: 'abs-lib', addedAt: 1783602399325, updatedAt: 1783602399325, mediaType: 'book', media: { metadata: { title: 'The Restaurant at the End of the Universe', titleIgnorePrefix: 'Restaurant at the End of the Universe, The', authorName: 'Douglas Adams', narratorName: '', seriesName: "Hitchhiker's Guide", genres: ['Audiobook', 'Science Fiction'], publishedYear: 1980, language: 'English' }, numTracks: 5, numChapters: 5, duration: 19822, size: 36000000 } },
+  { id: 'ab50003', libraryId: 'abs-lib', addedAt: 1783502399325, updatedAt: 1783502399325, mediaType: 'book', media: { metadata: { title: 'Oliver Twist', titleIgnorePrefix: 'Oliver Twist', authorName: 'Charles Dickens', narratorName: '', seriesName: '', genres: ['Audiobook', 'Classics', 'Historical Fiction'], publishedYear: 1838, language: 'English' }, numTracks: 12, numChapters: 24, duration: 60200, size: 210000000 } },
   { id: 'ab50004', libraryId: 'abs-lib', addedAt: 1783402399325, updatedAt: 1783402399325, mediaType: 'book', media: { metadata: { title: 'The Hobbit', titleIgnorePrefix: 'Hobbit, The', authorName: 'J. R. R. Tolkien', narratorName: 'Andy Serkis', seriesName: '', genres: ['Audiobook', 'Fantasy'], publishedYear: 1937, language: 'English' }, numTracks: 10, numChapters: 19, duration: 37800, size: 150000000 } },
 ];
+
+// GROUP-CARD ART pass (DESIGN-026 D-04 amendment) — the ABS AUTHOR directory + author images.
+// Dickens and Tolkien carry a photo (`imagePath` non-null → the wall shows the portrait card);
+// Douglas Adams does NOT (`imagePath: null` → the populated-value gate keeps his card on the
+// cover fan). Mirrors the live shape verified 2026-07-13 (GET /api/libraries/{id}/authors).
+const ABS_AUTHORS = [
+  { id: 'aa900d1c-0000-4000-8000-000000000001', name: 'Charles Dickens', imagePath: '/metadata/authors/dickens.webp', updatedAt: 1783700000001, numBooks: 2, hue: 210 },
+  { id: 'aa900d1c-0000-4000-8000-000000000002', name: 'Douglas Adams', imagePath: null, updatedAt: 1783700000002, numBooks: 1, hue: 0 },
+  { id: 'aa900d1c-0000-4000-8000-000000000003', name: 'J. R. R. Tolkien', imagePath: '/metadata/authors/tolkien.webp', updatedAt: 1783700000003, numBooks: 1, hue: 95 },
+];
+
+/** A portrait-ish SVG avatar (gradient + head-and-shoulders silhouette + initials) so capture
+ *  screenshots show a real image filling the card art box. Browsers render SVG in <img> fine;
+ *  the proxy streams bytes + content-type as-is. (Hex here is stub data, not app CSS — the
+ *  lint-css-hex guard scans stylesheets only.) */
+function authorPortraitSvg(name: string, hue: number): string {
+  const initials = name
+    .split(/\s+/)
+    .filter((w) => /^[A-Za-z]/.test(w))
+    .map((w) => w[0]!.toUpperCase())
+    .slice(0, 3)
+    .join('');
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 300">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="hsl(${hue},45%,38%)"/><stop offset="1" stop-color="hsl(${hue},55%,18%)"/>
+  </linearGradient></defs>
+  <rect width="200" height="300" fill="url(#g)"/>
+  <circle cx="100" cy="118" r="46" fill="hsl(${hue},30%,72%)"/>
+  <path d="M28 300c6-64 34-96 72-96s66 32 72 96z" fill="hsl(${hue},30%,72%)"/>
+  <text x="100" y="272" text-anchor="middle" font-family="sans-serif" font-size="34" font-weight="700" fill="hsl(${hue},60%,90%)">${initials}</text>
+</svg>`;
+}
 
 function json(res: import('node:http').ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}): void {
   const payload = JSON.stringify(body);
@@ -105,6 +137,26 @@ export async function startStubBooks(): Promise<StubBooksServer> {
       if (path.startsWith('/api/libraries/') && path.endsWith('/items')) {
         const page = Number(url.searchParams.get('page') ?? '0');
         return json(res, 200, { results: page === 0 ? ABS_ITEMS : [], total: ABS_ITEMS.length, page });
+      }
+      if (path.startsWith('/api/libraries/') && path.endsWith('/authors')) {
+        return json(res, 200, {
+          authors: ABS_AUTHORS.map((a) => ({
+            id: a.id,
+            name: a.name,
+            imagePath: a.imagePath,
+            updatedAt: a.updatedAt,
+            numBooks: a.numBooks,
+          })),
+        });
+      }
+      if (path.startsWith('/api/authors/') && path.endsWith('/image')) {
+        const authorId = path.slice('/api/authors/'.length, -'/image'.length);
+        const author = ABS_AUTHORS.find((a) => a.id === authorId);
+        if (!author || author.imagePath === null) {
+          return json(res, 404, { message: 'author has no image' });
+        }
+        res.writeHead(200, { 'content-type': 'image/svg+xml' });
+        return res.end(authorPortraitSvg(author.name, author.hue));
       }
       if (path.startsWith('/api/items/') && path.endsWith('/cover')) return png(res);
 

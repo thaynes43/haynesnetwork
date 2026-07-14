@@ -3,6 +3,7 @@
 // book media (hard rule 4 extension); the app only reads (sync IN + authed cover proxy). Both clients
 // manage a session token (Kavita JWT + apiKey, ABS bearer) with lazy login + one 401 re-auth.
 import {
+  absAuthorsResponseSchema,
   absItemsPageSchema,
   absLibrariesSchema,
   absLoginSchema,
@@ -10,6 +11,7 @@ import {
   kavitaLibrarySchema,
   kavitaLoginSchema,
   kavitaSeriesListSchema,
+  type AbsAuthor,
   type AbsItem,
   type AbsLibrary,
   type AbsMediaProgress,
@@ -257,6 +259,48 @@ export class AudiobookshelfClient {
     const response = await this.authed(path);
     const parsed = await parseJson(response, absUserSchema, 'GET', path);
     return parsed.mediaProgress ?? [];
+  }
+
+  /**
+   * DESIGN-026 D-04 amendment (group-card art) — a library's authors (`GET /api/libraries/{id}/authors`).
+   * Feeds the in-process author DIRECTORY the grouped-by-Author walls use to attach portrait art:
+   * `imagePath` presence is the populated-value gate (a card never points at a photo ABS doesn't hold).
+   * Read-only, like every @hnet/books surface.
+   */
+  async listAuthors(libraryId: string): Promise<AbsAuthor[]> {
+    const path = `/api/libraries/${encodeURIComponent(libraryId)}/authors`;
+    const response = await this.authed(path);
+    const parsed = await parseJson(response, absAuthorsResponseSchema, 'GET', path);
+    return parsed.authors;
+  }
+
+  /**
+   * Fetch an AUTHOR photo server-side (`GET /api/authors/{id}/image` — bearer in a SERVER-SIDE
+   * header). Mirrors fetchItemCover exactly: pass `variant` for the upstream-resized tile (verified
+   * live 2026-07-13: a 400×267 WebP original becomes a ~2.7 KB 300-wide WebP), omit it for the
+   * original (the proxy's fallback tier). Returns the RAW Response (an authorless 404 → the caller's
+   * fallback, never a thrown 500); re-auths once on a 401.
+   */
+  async fetchAuthorImage(
+    authorId: string,
+    variant?: { width: number; format: 'webp' | 'jpeg' },
+  ): Promise<Response> {
+    const fetchImpl = this.opts.fetchImpl ?? fetch;
+    const query = variant ? `?width=${variant.width}&format=${variant.format}` : '';
+    const attempt = async (): Promise<Response> => {
+      const token = await this.bearerToken();
+      const url = `${this.baseUrl}/api/authors/${encodeURIComponent(authorId)}/image${query}`;
+      return fetchImpl(url, {
+        headers: { Authorization: `Bearer ${token}`, Accept: 'image/*' },
+        signal: AbortSignal.timeout(10_000),
+      });
+    };
+    const response = await attempt();
+    if (response.status === 401) {
+      this.token = null;
+      return attempt();
+    }
+    return response;
   }
 
   /**

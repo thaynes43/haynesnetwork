@@ -9,21 +9,27 @@
 //
 // PLAN-029 makes the wall's PRESENTATION a real choice (DESIGN-026 D-01/D-04):
 //   • Books/Audiobooks default to the GROUPED-BY-AUTHOR view (R2) — aggregate author cards with an
-//     item count + a stacked-cover motif — with a flat "All …" alternative on the view selector.
-//     Tapping a card DRILLS into the flat grid pre-filtered to that author (`?group=` — a PUSH per
+//     item count — with a flat "All …" alternative on the view selector. Audiobooks additionally
+//     offers the GENRE grouping (the group-card-art pass — the first abstract dimension, `?by=`).
+//     Tapping a card DRILLS into the flat grid pre-filtered to that group (`?group=` — a PUSH per
 //     D-19; Back restores the grouped wall).
+//   • Group-card ART (D-04, art-amended): author cards wear the author's REAL portrait where ABS
+//     holds one (books.groups attaches /api/books/author-image URLs, populated-value-gated), the
+//     stacked-cover fan elsewhere; genre cards wear the designed token-themed GLYPH tile (never
+//     fake art). All inside the same reserved 2:3 box (ADR-015) — see GroupCardArt.
 //   • Comics' R2 grouping (Series) IS the wall — a Kavita row IS a series, so the item grid is the
-//     series grid (one honest shape, no selector).
-//   • Sorts + facet chips are REGISTRY-declared per (wall, view level) — the grouped level sorts its
-//     CARDS (author / count); the flat level offers exactly its answerable dimensions (R5).
+//     series grid (one honest shape, no selector) wearing REAL Kavita series covers.
+//   • Sorts + facet chips are REGISTRY-declared per (wall, view level) — a grouped level sorts its
+//     CARDS (label / count); the flat level offers exactly its answerable dimensions (R5).
 //   • The effective view/sort resolves per ADR-052 (URL wins → stored preference → R2/R6 default);
 //     explicit selections persist via library.preferences.set (event handlers only, never render).
-//     A bare URL on a multi-shape wall is CANONICALIZED to the resolved `?view=` with a replace
-//     (D-10) so Back always restores the exact shape it left.
+//     A bare URL on a multi-shape wall is CANONICALIZED to the resolved `?view=` (+ a non-default
+//     `?by=`) with a replace (D-10) so Back always restores the exact shape it left.
 //
 // URL contract (extends the D-11 idiom; every refinement is a router.replace):
 //   ?view=grouped|flat   the wall shape (multi-shape walls; canonicalized in)   [PUSH on switch]
-//   ?group=<author>      the drilled-into group (implies the flat grid)         [PUSH on drill]
+//   ?by=<dimension>      the grouped dimension (omitted = the wall's default)   [PUSH on switch]
+//   ?group=<key>         the drilled-into group (implies the flat grid)         [PUSH on drill]
 //   ?sort=field:dir      the active level's sort                                [replace]
 //   ?q / ?genre / ?author / ?narr / ?ser / ?lang / ?fmt / ?len / ?read / ?at    [replace]
 //
@@ -45,7 +51,7 @@ import {
 import type { BooksSort, BookReadState } from '@hnet/api';
 import { trpc } from '@/lib/trpc-client';
 import { MediaPoster } from '@/components/media-poster';
-import { KindIcon } from '@/components/kind-icon';
+import { GroupCardArt } from '@/components/group-card-art';
 import { CHIP_LABELS, SelectChip } from '@/components/filter-chips';
 import { LetterJumpBar } from '@/components/letter-jump-bar';
 import {
@@ -65,6 +71,7 @@ import {
   registryFor,
   type ViewLevelKey,
   type ViewRegistryEntry,
+  type WallGrouping,
 } from '@/lib/library-view-registry';
 import type { FacetGates } from './library-client';
 
@@ -116,6 +123,8 @@ export function BooksBrowser({
 
   const booksWall = wall as BooksWall;
   const spec = WALL_VIEWS[booksWall];
+  const groupings = spec.groupings ?? [];
+  const defaultGrouping: WallGrouping | undefined = groupings[0];
   const hasSelector = spec.offers.length > 1;
   const prefsReady = stored !== undefined;
 
@@ -124,17 +133,33 @@ export function BooksBrowser({
   const group = searchParams.get('group');
   const drilled = group !== null && group !== '';
   const urlView = parseWallViewParam(searchParams.get('view'), spec.offers);
+  const byRaw = searchParams.get('by');
+  const urlBy = byRaw !== null && groupings.some((g) => g.dimension === byRaw) ? byRaw : undefined;
   const resolved = resolveWallView({
     wall: booksWall,
-    url: urlView !== undefined ? { view: urlView } : {},
+    url: {
+      ...(urlView !== undefined ? { view: urlView } : {}),
+      ...(urlBy !== undefined ? { groupBy: urlBy } : {}),
+    },
     stored: stored ?? null,
   });
+  // The active grouping DIMENSION (URL ?by= wins → stored preference → the wall's default/first);
+  // an unknown dimension falls back to the default (mangled-shared-link safety).
+  const grouping: WallGrouping | undefined =
+    groupings.find((g) => g.dimension === resolved.groupBy) ?? defaultGrouping;
   // Comics' grouped-by-Series view IS the item grid (a Kavita row IS a series); only the
   // multi-shape walls (Books/Audiobooks) render aggregate cards for their grouped shape.
-  const groupedCards = !drilled && hasSelector && resolved.view === 'grouped';
-  const levelKey = (groupedCards ? `${booksWall}:grouped` : `${booksWall}:wall`) as ViewLevelKey;
+  const groupedCards = !drilled && hasSelector && resolved.view === 'grouped' && grouping !== undefined;
+  // The dimension a DRILLED grid filters on (the drill link carries ?by= for non-default dims).
+  const drillGrouping: WallGrouping | undefined =
+    groupings.find((g) => g.dimension === (urlBy ?? defaultGrouping?.dimension)) ?? defaultGrouping;
+  const levelKey: ViewLevelKey =
+    groupedCards && grouping?.level ? grouping.level : (`${booksWall}:wall` as ViewLevelKey);
   const entry: ViewRegistryEntry = registryFor(levelKey);
-  const sortKeys = useMemo(() => entry.sorts.map((s) => s.key), [entry]);
+  // Plain computations below (sortKeys/facetsForLevel/chipFacets/filters) — the React Compiler
+  // memoizes them; manual useMemo over the registry-derived values trips
+  // react-hooks/preserve-manual-memoization now that the level is grouping-dependent.
+  const sortKeys = entry.sorts.map((s) => s.key);
 
   // ADR-052 — sort resolution: URL token → stored (validated against THIS level's keys) → default.
   const urlSort = parseWallSortToken(searchParams.get('sort'), sortKeys);
@@ -152,22 +177,17 @@ export function BooksBrowser({
   const letterRaw = searchParams.get('at');
   const letter = letterRaw !== null && /^[a-z]$/.test(letterRaw) ? letterRaw : null;
 
-  const facetsForLevel = useMemo(
-    () => entry.facets.filter((f) => !(drilled && f.key === 'authors')), // the drill IS the author filter
-    [entry, drilled],
+  // The drilled dimension's own facet chip hides — the drill IS that filter (author OR genre).
+  const drillFacetKey = drillGrouping?.dimension === 'genre' ? 'genres' : 'authors';
+  const facetsForLevel = entry.facets.filter((f) => !(drilled && f.key === drillFacetKey));
+  const chipFacets = facetsForLevel.filter(
+    (f) => f.kind === 'enum' || f.kind === 'suggest' || f.kind === 'buckets',
   );
-  const chipFacets = useMemo(
-    () => facetsForLevel.filter((f) => f.kind === 'enum' || f.kind === 'suggest' || f.kind === 'buckets'),
-    [facetsForLevel],
-  );
-  const filters = useMemo<FilterMap<BooksField>>(() => {
-    const out: FilterMap<BooksField> = {};
-    for (const f of chipFacets) {
-      const vals = [...new Set(searchParams.getAll(f.param).filter((v) => v !== ''))];
-      if (vals.length > 0) out[f.key as BooksField] = vals;
-    }
-    return out;
-  }, [searchParams, chipFacets]);
+  const filters: FilterMap<BooksField> = {};
+  for (const f of chipFacets) {
+    const vals = [...new Set(searchParams.getAll(f.param).filter((v) => v !== ''))];
+    if (vals.length > 0) filters[f.key as BooksField] = vals;
+  }
 
   // ── URL patching (refinements REPLACE — D-19) ──
   const patchParams = (patch: Record<string, string | string[] | null>) => {
@@ -184,15 +204,20 @@ export function BooksBrowser({
 
   // D-10 — CANONICALIZE a bare URL on a multi-shape wall to the resolved shape (a replace, no
   // history entry) so the entry's URL is explicit and Back restores exactly this view even after
-  // the stored preference changes.
+  // the stored preference changes. A non-default grouping dimension canonicalizes its ?by= too.
   useEffect(() => {
     if (!hasSelector || !prefsReady || drilled) return;
     if (searchParams.get('view') === null) {
-      patchParams({ view: resolved.view === 'flat' ? 'flat' : 'grouped' });
+      patchParams({
+        view: resolved.view === 'flat' ? 'flat' : 'grouped',
+        by: resolved.view !== 'flat' && grouping !== undefined && grouping !== defaultGrouping
+          ? grouping.dimension
+          : null,
+      });
     }
     // patchParams reads the live location; the deps that matter are the resolution inputs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasSelector, prefsReady, drilled, searchParams, resolved.view]);
+  }, [hasSelector, prefsReady, drilled, searchParams, resolved.view, grouping]);
 
   // The search INPUT is a local draft debounced 250ms into the URL (the Library convention).
   const [query, setQuery] = useState(qParam);
@@ -211,17 +236,25 @@ export function BooksBrowser({
     onSuccess: () => utils.library.preferences.getAll.invalidate(),
   });
 
-  /** A view-shape switch: a SCREEN-level change → PUSH a clean URL (refinements drop — the new
-   *  shape starts fresh, like a tab switch) + persist the choice (R1). */
-  const selectView = (shape: 'grouped' | 'flat') => {
-    const current = groupedCards ? 'grouped' : 'flat';
-    if (drilled || shape !== current) {
+  /** A view/dimension switch: a SCREEN-level change → PUSH a clean URL (refinements drop — the
+   *  new shape starts fresh, like a tab switch) + persist the choice (R1). */
+  const selectView = (target: { view: 'flat' } | { view: 'grouped'; grouping: WallGrouping }) => {
+    const currentKey = drilled ? null : groupedCards ? `grouped:${grouping?.dimension}` : 'flat';
+    const targetKey = target.view === 'flat' ? 'flat' : `grouped:${target.grouping.dimension}`;
+    if (currentKey !== targetKey) {
       const params = new URLSearchParams();
       params.set('tab', booksWall);
-      params.set('view', shape);
+      params.set('view', target.view);
+      if (target.view === 'grouped' && target.grouping !== defaultGrouping) {
+        params.set('by', target.grouping.dimension);
+      }
       router.push(`${pathname}?${params.toString()}`, { scroll: false });
     }
-    const level = registryFor(`${booksWall}:${shape === 'grouped' ? 'grouped' : 'wall'}` as ViewLevelKey);
+    const level = registryFor(
+      target.view === 'grouped' && target.grouping.level
+        ? target.grouping.level
+        : (`${booksWall}:wall` as ViewLevelKey),
+    );
     const keys = level.sorts.map((s) => s.key);
     const keep =
       stored != null && keys.includes(stored.sortField)
@@ -229,8 +262,8 @@ export function BooksBrowser({
         : { field: level.defaultSort.field, dir: level.defaultSort.dir };
     setPreference.mutate({
       wall: booksWall,
-      view: shape,
-      groupBy: shape === 'grouped' ? (spec.grouped?.dimension ?? null) : null,
+      view: target.view,
+      groupBy: target.view === 'grouped' ? target.grouping.dimension : null,
       sortField: keep.field,
       sortDir: keep.dir,
     });
@@ -258,7 +291,7 @@ export function BooksBrowser({
       setPreference.mutate({
         wall: booksWall,
         view: groupedCards ? 'grouped' : hasSelector ? 'flat' : WALL_VIEW_DEFAULTS[booksWall].view,
-        groupBy: groupedCards ? (spec.grouped?.dimension ?? null) : hasSelector ? null : WALL_VIEW_DEFAULTS[booksWall].groupBy,
+        groupBy: groupedCards ? (grouping?.dimension ?? null) : hasSelector ? null : WALL_VIEW_DEFAULTS[booksWall].groupBy,
         sortField: field,
         sortDir: dir,
       });
@@ -268,8 +301,13 @@ export function BooksBrowser({
   // ── data ──
   const facets = trpc.books.filterFacets.useQuery({ mediaKind }, { refetchOnWindowFocus: false });
   const groupsQuery = trpc.books.groups.useQuery(
-    { mediaKind, groupBy: 'author' },
+    { mediaKind, groupBy: grouping?.dimension === 'genre' ? 'genre' : 'author' },
     { enabled: groupedCards, refetchOnWindowFocus: false, placeholderData: (prev) => prev },
+  );
+  // The Genres selector segment is populated-value-gated like its facet chip (ADR-051 C-06): once
+  // the facet values confirm the medium carries NO genres, the segment hides (never a dead view).
+  const selectorGroupings = groupings.filter(
+    (g) => g.dimension !== 'genre' || facets.data === undefined || facets.data.genres.length > 0,
   );
 
   const azActive =
@@ -282,9 +320,18 @@ export function BooksBrowser({
       sort: sort.field as BooksSort,
       dir: sort.dir,
       ...(qParam.trim().length > 0 ? { query: qParam.trim() } : {}),
-      ...(filters.genres ? { genres: filters.genres } : {}),
-      // The drilled group IS the author filter (D-04 — the flat grid pre-filtered to the group).
-      ...(drilled ? { authors: [group] } : filters.authors ? { authors: filters.authors } : {}),
+      // The drilled group IS its dimension's filter (D-04 — the flat grid pre-filtered to the
+      // group): an author drill binds authors, a genre drill binds genres.
+      ...(drilled && drillGrouping?.dimension === 'genre'
+        ? { genres: [group] }
+        : filters.genres
+          ? { genres: filters.genres }
+          : {}),
+      ...(drilled && drillGrouping?.dimension !== 'genre'
+        ? { authors: [group] }
+        : filters.authors
+          ? { authors: filters.authors }
+          : {}),
       ...(filters.narrators ? { narrators: filters.narrators } : {}),
       ...(filters.series ? { series: filters.series } : {}),
       ...(filters.languages ? { languages: filters.languages } : {}),
@@ -385,14 +432,16 @@ export function BooksBrowser({
     <>
       {/* Drill-in header (D-04): the drilled group's name + the way back UP to the grouped wall.
           A screen of its own (reached by a PUSH), so this header is static per screen (ADR-015). */}
-      {drilled && spec.grouped ? (
+      {drilled && drillGrouping ? (
         <div className="library-drill" data-testid="library-drill">
           <Link
             className="btn sm library-drill__back"
-            href={`${pathname}?tab=${booksWall}&view=grouped`}
+            href={`${pathname}?tab=${booksWall}&view=grouped${
+              drillGrouping !== defaultGrouping ? `&by=${encodeURIComponent(drillGrouping.dimension)}` : ''
+            }`}
             scroll={false}
           >
-            ‹ {spec.grouped.allLabel}
+            ‹ {drillGrouping.allLabel}
           </Link>
           <span className="library-drill__label">{group}</span>
         </div>
@@ -401,31 +450,38 @@ export function BooksBrowser({
       <div className="library-toolbar">
         <div className="library-controls">
           {/* DESIGN-026 D-01 — the view selector (D-11 affordance call: the `.seg` segmented control,
-              leftmost — the highest-level presentation choice). Only multi-shape walls render it. */}
-          {hasSelector && !drilled && spec.grouped ? (
+              leftmost — the highest-level presentation choice). Only multi-shape walls render it; a
+              grouping dimension is one segment each (Authors | Genres | All …). */}
+          {hasSelector && !drilled && groupings.length > 0 ? (
             <div className="seg" role="group" aria-label="View" data-testid="view-selector">
-              <button
-                type="button"
-                className={groupedCards ? 'is-active' : undefined}
-                aria-pressed={groupedCards}
-                onClick={() => selectView('grouped')}
-              >
-                {spec.grouped.selectorLabel}
-              </button>
+              {selectorGroupings.map((g) => {
+                const isActive = groupedCards && grouping === g;
+                return (
+                  <button
+                    key={g.dimension}
+                    type="button"
+                    className={isActive ? 'is-active' : undefined}
+                    aria-pressed={isActive}
+                    onClick={() => selectView({ view: 'grouped', grouping: g })}
+                  >
+                    {g.selectorLabel}
+                  </button>
+                );
+              })}
               <button
                 type="button"
                 className={!groupedCards ? 'is-active' : undefined}
                 aria-pressed={!groupedCards}
-                onClick={() => selectView('flat')}
+                onClick={() => selectView({ view: 'flat' })}
               >
-                {spec.grouped.flatLabel}
+                {spec.flatLabel}
               </button>
             </div>
           ) : null}
           <input
             type="search"
             className="library-search"
-            placeholder={groupedCards ? `Search ${spec.grouped?.selectorLabel.toLowerCase() ?? 'groups'}…` : `Search ${label.toLowerCase()}…`}
+            placeholder={groupedCards ? `Search ${grouping?.selectorLabel.toLowerCase() ?? 'groups'}…` : `Search ${label.toLowerCase()}…`}
             aria-label={`Search ${label}`}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -525,8 +581,9 @@ export function BooksBrowser({
             </p>
           </section>
         ) : (
-          // DESIGN-026 D-04 — the aggregate author cards: stacked covers (3 — the D-11 art-density
-          // call) in the reserved 2:3 box, the author name, and the member count. Drill-in = PUSH.
+          // DESIGN-026 D-04 (art-amended) — the aggregate cards: the dimension's REAL portrait /
+          // the stacked-cover fan / the designed glyph tile, all in the reserved 2:3 box
+          // (GroupCardArt), plus the group label and the member count. Drill-in = PUSH.
           <div
             className={`media-list poster-grid${groupsRefreshing ? ' is-refreshing' : ''}`}
             aria-busy={groupsRefreshing}
@@ -535,30 +592,20 @@ export function BooksBrowser({
             {groups.map((g) => (
               <Link
                 key={g.key}
-                href={`${pathname}?tab=${booksWall}&group=${encodeURIComponent(g.key)}`}
+                href={`${pathname}?tab=${booksWall}${
+                  grouping !== undefined && grouping !== defaultGrouping
+                    ? `&by=${encodeURIComponent(grouping.dimension)}`
+                    : ''
+                }&group=${encodeURIComponent(g.key)}`}
                 className="media-card poster-card group-card"
               >
-                <span className="poster-box group-card__stack">
-                  {g.coverUrls.length === 0 ? (
-                    <span className="poster-fallback">
-                      <KindIcon kind={mediaKind} className="poster-fallback-icon" />
-                    </span>
-                  ) : (
-                    g.coverUrls.map((url, i) => (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        key={url}
-                        src={url}
-                        alt=""
-                        loading="lazy"
-                        className={`group-card__cover group-card__cover--${i}`}
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.visibility = 'hidden';
-                        }}
-                      />
-                    ))
-                  )}
-                </span>
+                <GroupCardArt
+                  art={grouping?.art ?? 'covers'}
+                  label={g.label}
+                  imageUrl={g.imageUrl}
+                  coverUrls={g.coverUrls}
+                  kind={mediaKind}
+                />
                 <span className="poster-card__body">
                   <span className="media-card__title">{g.label}</span>
                   <span className="media-card__subtitle">

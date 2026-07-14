@@ -101,7 +101,7 @@ export function YtdlsubBrowser({
     setPreference.mutate({
       wall: library,
       view: 'grouped',
-      groupBy: WALL_VIEWS[library].grouped?.dimension ?? null,
+      groupBy: WALL_VIEWS[library].groupings?.[0]?.dimension ?? null,
       sortField: field,
       sortDir: dir,
     });

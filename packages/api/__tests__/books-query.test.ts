@@ -1,8 +1,13 @@
-// PLAN-029 (DESIGN-026 D-04) — pure unit tests for the group-view aggregate helper (no db):
+// PLAN-029 (DESIGN-026 D-04) — pure unit tests for the group-view aggregate helpers (no db):
 // A–Z group order, member counts, the bounded cover sample in wall order, null-key skipping,
-// and the null-cover fallback (a group member without art contributes no cover URL).
+// the null-cover fallback (a group member without art contributes no cover URL), and the genre
+// aggregate (group-card-art pass — multi-genre rows count once per genre; label + count only).
 import { describe, expect, it } from 'vitest';
-import { aggregateBookGroups, type BooksGroupSourceRow } from '../src/books-query';
+import {
+  aggregateBookGenreGroups,
+  aggregateBookGroups,
+  type BooksGroupSourceRow,
+} from '../src/books-query';
 
 const row = (o: Partial<BooksGroupSourceRow> & Pick<BooksGroupSourceRow, 'author' | 'sortTitle'>): BooksGroupSourceRow => ({
   source: 'kavita',
@@ -49,5 +54,40 @@ describe('aggregateBookGroups', () => {
     ]);
     expect(groups[0]?.count).toBe(2);
     expect(groups[0]?.coverUrls).toHaveLength(1);
+  });
+
+  it('ships imageUrl: null — the portrait is a router-level enrichment (ABS directory), not ours', () => {
+    const groups = aggregateBookGroups([row({ author: 'Amy', sortTitle: 'a' })]);
+    expect(groups[0]?.imageUrl).toBeNull();
+  });
+});
+
+describe('aggregateBookGenreGroups (group-card-art pass — the abstract Genre dimension)', () => {
+  it('counts a multi-genre row once per genre, label-A–Z out', () => {
+    const groups = aggregateBookGenreGroups([
+      { genres: ['Fantasy', 'Classics'] },
+      { genres: ['Classics'] },
+      { genres: ['Audiobook'] },
+    ]);
+    expect(groups.map((g) => `${g.key}:${g.count}`)).toEqual([
+      'Audiobook:1',
+      'Classics:2',
+      'Fantasy:1',
+    ]);
+  });
+
+  it('skips null/empty genre lists and blank tags (reachable via the flat view)', () => {
+    const groups = aggregateBookGenreGroups([
+      { genres: null },
+      { genres: [] },
+      { genres: ['  ', 'Mystery'] },
+    ]);
+    expect(groups.map((g) => g.key)).toEqual(['Mystery']);
+  });
+
+  it('ships NO art refs — an abstract dimension renders the designed glyph tile client-side', () => {
+    const groups = aggregateBookGenreGroups([{ genres: ['Fantasy'] }]);
+    expect(groups[0]?.coverUrls).toEqual([]);
+    expect(groups[0]?.imageUrl).toBeNull();
   });
 });

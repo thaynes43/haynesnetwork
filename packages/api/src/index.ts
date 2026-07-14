@@ -93,6 +93,18 @@ export {
   ABS_COVER_VARIANT,
 } from './books-cover';
 export type { BooksCoverResult } from './books-cover';
+// DESIGN-026 D-04 amendment (group-card art) — the ABS author-portrait surface: the directory the
+// books.groups enrichment reads, and the sized-image read the /api/books/author-image route serves.
+export {
+  ABS_AUTHOR_IMAGE_VARIANT,
+  absAuthorDirectory,
+  absAuthorImageEtag,
+  absAuthorImageUrlFor,
+  getAbsAuthorImage,
+  isValidAbsAuthorId,
+  isValidAbsAuthorVersion,
+} from './books-author-art';
+export type { AbsAuthorArtRef, AbsAuthorImageResult } from './books-author-art';
 export { booksCoverUrlFor, toBooksListItem, BOOKS_SORTS } from './books-query';
 export type { BooksListItem, BooksSort, BooksSearchInput, BookReadState } from './books-query';
 export { BOOK_READ_STATES } from './books-query';

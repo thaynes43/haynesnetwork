@@ -91,6 +91,44 @@ test.describe('library views + grouping (PLAN-029 / DESIGN-026)', () => {
     await expect(page.getByTestId('books-grid')).toBeVisible();
   });
 
+  test('Audiobooks group-card ART (D-04 amendment): author portraits where ABS holds a photo, the fan elsewhere; the Genres glyph wall drills by genre', async ({
+    page,
+  }) => {
+    await signIn(page, 'admin');
+    await page.goto('/library?tab=audiobooks&view=grouped');
+    await expect(page.getByTestId('books-groups')).toBeVisible();
+
+    // Dickens + Tolkien carry ABS photos (stub imagePath) → the portrait card; Adams has NONE →
+    // the stacked-cover fan (the populated-value gate: a card never renders a broken slot).
+    await expect(groupCard(page, 'Charles Dickens').locator('.group-card__portrait img')).toHaveCount(1);
+    await expect(groupCard(page, 'J. R. R. Tolkien').locator('.group-card__portrait img')).toHaveCount(1);
+    await expect(groupCard(page, 'Douglas Adams').locator('.group-card__portrait')).toHaveCount(0);
+    await expect(groupCard(page, 'Douglas Adams').locator('.group-card__stack')).toHaveCount(1);
+
+    // The portrait streams through the authed sibling proxy (ADR-019 posture).
+    const src = await groupCard(page, 'Charles Dickens')
+      .locator('.group-card__portrait img')
+      .getAttribute('src');
+    expect(src).toContain('/api/books/author-image?id=');
+
+    // The GENRES grouping (the first abstract dimension) — designed glyph tiles, never fake art.
+    await page.getByTestId('view-selector').getByRole('button', { name: 'Genres' }).click();
+    await expect(page).toHaveURL(/view=grouped/);
+    await expect(page).toHaveURL(/by=genre/);
+    await expect(groupCard(page, 'Fantasy').locator('.glyph-tile svg')).toHaveCount(1);
+    await expect(groupCard(page, 'Classics')).toContainText('2 items');
+    await expect(page.locator('.group-card__portrait, .group-card__cover')).toHaveCount(0);
+
+    // Drilling a genre card filters the flat grid by THAT genre; the header climbs back up.
+    await groupCard(page, 'Fantasy').click();
+    await expect(page).toHaveURL(/group=Fantasy/);
+    await expect(page.getByTestId('books-grid').locator('.poster-card')).toHaveCount(1);
+    await expect(page.getByTestId('books-grid')).toContainText('The Hobbit');
+    await page.getByRole('link', { name: /All genres/ }).click();
+    await expect(page.getByTestId('books-groups')).toBeVisible();
+    await expect(page).toHaveURL(/by=genre/);
+  });
+
   test('Audiobooks facets (D-08): genre chips narrow; sparse facets gated IN by values; Read gated OUT without progress', async ({
     page,
   }) => {

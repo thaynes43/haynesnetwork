@@ -123,6 +123,13 @@ export interface BooksGroup {
   count: number;
   /** Up to `maxCovers` member cover-proxy URLs, in the wall's A–Z order. */
   coverUrls: string[];
+  /**
+   * DESIGN-026 D-04 amendment (group-card art) — the dimension's OWN portrait when a real source
+   * holds one (v1: the ABS author photo via /api/books/author-image), else null → the card keeps
+   * the stacked-cover fan. Populated-value-gated server-side (ADR-051 C-06): attached only when
+   * the source actually has the image — a card never renders a broken slot.
+   */
+  imageUrl: string | null;
 }
 
 /** The slice of a books_items row the group aggregate needs. */
@@ -157,7 +164,28 @@ export function aggregateBookGroups(rows: BooksGroupSourceRow[], maxCovers = 3):
   }
   return [...groups.entries()]
     .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([key, g]) => ({ key, label: key, count: g.count, coverUrls: g.coverUrls }));
+    .map(([key, g]) => ({ key, label: key, count: g.count, coverUrls: g.coverUrls, imageUrl: null }));
+}
+
+/**
+ * DESIGN-026 D-04 amendment — the GENRE aggregate (the first abstract grouping dimension). A row
+ * carries an ARRAY of genres, so it counts once per genre it wears; rows with no genres are
+ * SKIPPED (reachable via the flat wall — same rule as the null-author skip). No cover sample and
+ * no portrait: an abstract dimension renders the designed GLYPH tile client-side (never fake art —
+ * the owner's group-card-art ruling), so the server ships label + count only. Label-A–Z out.
+ */
+export function aggregateBookGenreGroups(rows: Array<{ genres: string[] | null }>): BooksGroup[] {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    for (const raw of row.genres ?? []) {
+      const genre = raw.trim();
+      if (genre === '') continue;
+      counts.set(genre, (counts.get(genre) ?? 0) + 1);
+    }
+  }
+  return [...counts.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([key, count]) => ({ key, label: key, count, coverUrls: [], imageUrl: null }));
 }
 
 /** Project a books_items row to the wall's list-item shape (builds the cover-proxy URL). */
