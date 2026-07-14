@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.50.0](https://github.com/thaynes43/haynesnetwork/compare/v0.49.0...v0.50.0) (2026-07-14)
+
+
+### Features
+
+* Integrations hub + Goodreads library-idiom sub-section + composed Library-Wanted (PLAN-045) ([#260](https://github.com/thaynes43/haynesnetwork/issues/260)) ([9d0e2ce](https://github.com/thaynes43/haynesnetwork/commit/9d0e2cefa409bf259d94322359c7cccecbb24f62))
+* Kapowarr comics acquisition — confined client + comic request routing (PLAN-046) ([#259](https://github.com/thaynes43/haynesnetwork/issues/259)) ([c8d66b5](https://github.com/thaynes43/haynesnetwork/commit/c8d66b54ff39833a51b26ecb33205415b19375bb))
+
+
+### Bug Fixes
+
+* Integrations link-card UX + comic classification (PLAN-044 live acceptance) ([#258](https://github.com/thaynes43/haynesnetwork/issues/258)) ([c439f04](https://github.com/thaynes43/haynesnetwork/commit/c439f04275f2e615463b277feebe54951556db0e))
+
+
+### Documentation
+
+* ADR-056; DDD T-166 (+ T-165 revised); PRD R-185..R-187; DESIGN-028 amendment. ([c8d66b5](https://github.com/thaynes43/haynesnetwork/commit/c8d66b54ff39833a51b26ecb33205415b19375bb))
+* PLAN-045 — Integrations hub + Goodreads library-idiom redesign (owner spec + assumptions A1-A3); 044 status → shipped/acceptance-tail ([#256](https://github.com/thaynes43/haynesnetwork/issues/256)) ([43a3a8f](https://github.com/thaynes43/haynesnetwork/commit/43a3a8fe390b1ded37c9356439d1c6fa6b609b72))
+* PLAN-045 rulings locked (A1 overruled: all shelves acquire; Wanted force-search parity) + PLAN-046 Kapowarr comics acquisition (owner-ruled, Opus tonight) ([#257](https://github.com/thaynes43/haynesnetwork/issues/257)) ([ddf743c](https://github.com/thaynes43/haynesnetwork/commit/ddf743cdf4acffdfb2483e3f065e999bf6d1ffd3))
+* session-6 wrap — v0.47.0/v0.48.0/v0.49.0 shipped; PLAN-042 closed (Option A live, compat reverted); F-10 executed; Integration Tab Saga founded, PLAN-044 pending live acceptance ([#254](https://github.com/thaynes43/haynesnetwork/issues/254)) ([4d0d417](https://github.com/thaynes43/haynesnetwork/commit/4d0d417ffdc01be210b4a698d583ff58521fa626))
+
 ## [0.49.0](https://github.com/thaynes43/haynesnetwork/compare/v0.48.0...v0.49.0) (2026-07-14)
 
 
