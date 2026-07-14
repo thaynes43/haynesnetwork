@@ -137,6 +137,30 @@ detail page:
 5. Extend the adapter fixtures + role-gating tests; add a gallery entry if the source needs a new
    badge state. The card, tab, chips, and detail page require NO change — they are contract-shaped.
 
+### D-08 amendment — the *arr adapter (Radarr / Sonarr / Lidarr), PLAN-048 slice 2 (2026-07-14)
+
+The first fan-out adapter landed (`@hnet/domain/activity/arr-adapter.ts`, pure `buildArrActivity`), filling
+the contract with NO change to the card, tab, chips, or detail page (the recipe held). Coverage per *arr:
+
+- **Source family:** one `arr` family across all three instances (the failure ledger `source`); the item
+  `id` encodes the instance + fix target — `arr:radarr:<movieId>`, `arr:sonarr:<seriesId>:<episodeId>`,
+  `arr:lidarr:<artistId>:<albumId>` — so the wall-badge join (parent id), the ledger `source_ref`, and the
+  per-kind Force-Search dispatch all read one stable ref. `section` is always **null** (movies/tv/music are
+  the ungated universal walls — D-01), so *arr items show for EVERY authed viewer; the aggregator + the
+  `activity.list` resolver add the *arr adapter unconditionally (books stays section-gated).
+- **Stages** (from the `queue` `status` + `trackedDownloadState`/`trackedDownloadStatus`): `downloading`
+  (progress = `(size − sizeleft)/size`), `importing` (`importPending`/`importing` or a completed download),
+  and `completed` (a recent import read from `history`, within a 15-min horizon — deduped against the live
+  queue). **Failure classes:** `import_blocked` (`trackedDownloadState: importBlocked`/`importFailed`, or a
+  completed download the importer flagged — the *arr "manual import required", reason from `statusMessages`/
+  `errorMessage`) and `download_failed` (`failed`/`failedPending`). Read-only otherwise — no new `@hnet/arr`
+  read was needed (the existing `getQueue`/`getHistory` sufficed).
+- **Actions (R2):** `retry_import` → the confined `@hnet/arr/write` `ProcessMonitoredDownloads` command (the
+  `forceProcess` analog — estate-wide completed-download re-import); `force_research` → the existing
+  per-kind Force-Search commands (`MoviesSearch` / `EpisodeSearch` / `AlbumSearch`, PLAN-015 machinery). Both
+  dispatch off the parsed ref, audited same-tx + fired after commit, exactly like the books writes. A blocked
+  import offers both; a dead download offers re-search only.
+
 ## Decisions log
 
 | ID | Decision |
@@ -149,6 +173,7 @@ detail page:
 | D-06 | Actions are `activityActionProcedure(action)`-gated (admin OR grant), audited same-tx, LL write after commit; non-actors get FORBIDDEN. |
 | D-07 | Failures persist in `activity_import_failures`; `activity-scan` upserts + enqueues the outbox same-tx; no per-event push. |
 | D-08 | The fan-out recipe: new adapters fill the contract; the card/tab/chips/detail are source-agnostic. |
+| D-08a | *arr adapter (Radarr/Sonarr/Lidarr) shipped (PLAN-048 slice 2): `source: 'arr'`, `section: null` (universal), `id` encodes instance + fix target; stages downloading/importing/completed + failures import_blocked/download_failed; retry = confined `ProcessMonitoredDownloads`, re-search = the existing per-kind Force-Search. No card/tab/chip/detail change. |
 
 ## Open questions
 

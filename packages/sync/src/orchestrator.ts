@@ -45,8 +45,10 @@ import {
   type BooksActivityBundle,
   type ActivityFailuresReport,
   type ActivityFailureInput,
+  type ActivitySourceAdapter,
   toFailureInputs,
   BOOKS_ACTIVITY_SOURCE,
+  ARR_ACTIVITY_SOURCE,
   type OutboxDeliveryReport,
   type PlexClientBundle,
   type PosterGuardReport,
@@ -139,6 +141,10 @@ export interface RunSyncOptions {
   /** ADR-059 / DESIGN-030 — the books activity bundle (the LL+SAB adapter) the `activity-scan` mode scans
    *  for import failures. Required only for that mode; tests inject a stubbed adapter. */
   activityBundle?: BooksActivityBundle;
+  /** ADR-059 / DESIGN-030 D-08 — the UNIVERSAL *arr activity adapter (Radarr/Sonarr/Lidarr queue + import
+   *  state) the `activity-scan` mode ALSO scans for import failures (import_blocked / download_failed).
+   *  Optional; when present it is reconciled independently of the books source. Tests inject a stub. */
+  arrActivityAdapter?: ActivitySourceAdapter;
   /** ADR-043 / DESIGN-021 — the Plex client bundle (read + confined write) the `poster-guard` mode uses to
    *  read the k8plex Peloton library and re-apply drifted override posters. Required only for that mode. */
   plex?: PlexClientBundle;
@@ -562,23 +568,37 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
   // hiccup — evaluateActivityFailures only closes failures for the sources actually scanned).
   if (options.mode === 'activity-scan') {
     const startedAt = new Date();
-    if (!options.activityBundle) {
-      throw new Error('activity-scan requires a books activity bundle (activityBundle)');
+    if (!options.activityBundle && !options.arrActivityAdapter) {
+      throw new Error('activity-scan requires at least one source (activityBundle and/or arrActivityAdapter)');
     }
     let activity: ActivityFailuresReport | null = null;
     let activityError: string | undefined;
     try {
       const scannedSources: string[] = [];
       const failures: ActivityFailureInput[] = [];
-      try {
-        const items = await options.activityBundle.adapter.list();
-        scannedSources.push(BOOKS_ACTIVITY_SOURCE);
-        failures.push(...toFailureInputs(BOOKS_ACTIVITY_SOURCE, items));
-      } catch (error) {
-        // The books source is unreachable this run — DON'T reconcile it (leave prior strands open).
-        logger.warn('activity-scan: books source degraded', {
-          error: error instanceof Error ? error.message : String(error),
-        });
+      // Each source is scanned + reconciled INDEPENDENTLY: a source unreachable this run is NOT added to
+      // scannedSources, so evaluateActivityFailures never closes its prior strands on a wire hiccup.
+      if (options.activityBundle) {
+        try {
+          const items = await options.activityBundle.adapter.list();
+          scannedSources.push(BOOKS_ACTIVITY_SOURCE);
+          failures.push(...toFailureInputs(BOOKS_ACTIVITY_SOURCE, items));
+        } catch (error) {
+          logger.warn('activity-scan: books source degraded', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+      if (options.arrActivityAdapter) {
+        try {
+          const items = await options.arrActivityAdapter.list();
+          scannedSources.push(ARR_ACTIVITY_SOURCE);
+          failures.push(...toFailureInputs(ARR_ACTIVITY_SOURCE, items));
+        } catch (error) {
+          logger.warn('activity-scan: *arr source degraded', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
       activity = await evaluateActivityFailures({ db, failures, scannedSources });
       logger.info('activity-scan evaluated', {

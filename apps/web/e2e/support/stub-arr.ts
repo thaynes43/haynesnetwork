@@ -62,6 +62,47 @@ export const STUB_MOVIE_TMDB_ID = 880001;
 export const STUB_VANISHED_ID = 604;
 export const STUB_VANISHED_TMDB_ID = 880004;
 
+/**
+ * ADR-059 / DESIGN-030 D-08 (PLAN-048 — Activity / In-Flight) — the *arr Activity queue fixtures: a
+ * DOWNLOADING movie (The Fixture, ~45% → `downloading`) + a manual-import BLOCKED movie (Vanished Heist,
+ * `trackedDownloadState: 'importBlocked'` with a status message → `import_blocked`). Staged via
+ * `POST /_stub/queue` and served by `GET /queue` (unfiltered), these drive the live Activity tab's *arr
+ * leg AND — read by the `activity-scan` seed — the durable import_blocked failure ledger row. `radarr`
+ * queue records carry `movieId` so only the Radarr adapter picks them up (Sonarr/Lidarr skip them).
+ */
+export function arrActivityQueueFixture(): Record<string, unknown>[] {
+  const size = 1_000_000_000;
+  return [
+    {
+      id: 90001,
+      movieId: STUB_MOVIE_ID,
+      status: 'downloading',
+      trackedDownloadStatus: 'ok',
+      trackedDownloadState: 'downloading',
+      size,
+      sizeleft: Math.round(size * 0.55), // ~45%
+      estimatedCompletionTime: '2026-07-14T13:00:00Z',
+      title: 'The.Fixture.2022.1080p.WEB-DL',
+    },
+    {
+      id: 90002,
+      movieId: STUB_VANISHED_ID,
+      status: 'completed',
+      trackedDownloadStatus: 'warning',
+      trackedDownloadState: 'importBlocked',
+      size,
+      sizeleft: 0,
+      title: 'Vanished.Heist.2018.1080p.WEB-DL',
+      statusMessages: [
+        {
+          title: 'Manual import required',
+          messages: ['One or more files were not imported — the release did not match a monitored movie'],
+        },
+      ],
+    },
+  ];
+}
+
 /** The metadata fields DESIGN-008 D-02 harvests off a Radarr movie / Sonarr series. */
 const RADARR_META = {
   runtime: 106,
