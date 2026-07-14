@@ -301,3 +301,113 @@ Quarantine = MOVE only (`books/quarantine/f10-language/…`), never delete; Kavi
 Only the 3 explicit F-09 re-grabs queued (via LL, usenet-first). **No MAM grabs, no qBittorrent adds,
 no Prowlarr indexer/governor toggles, no disturbance to LL's ToG/Kingdom-of-Ash queue, no deletions.**
 Ambiguous items left for the owner. No app code / haynes-ops / other plans / HANDOFF touched. No release.
+
+---
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RUN 3 — ENGLISH RE-GRAB WAVE (2026-07-13 late night; owner GO, Q-04 ruled YES). EXECUTED.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+**Status: COMPLETE.** All 58 RUN-2 quarantined foreign items processed via **LazyLibrarian
+usenet-first** (MAM gate CLOSED throughout — MAM never touched). **57 English re-grab wants queued
+(all verified `Status`/`AudioStatus=Wanted`, `BookLang=en`)**; **1 skipped-ambiguous** (Orwell
+essays). A blocking pipeline defect (LL→SAB) was found and fixed, which is what let usenet-first
+actually land. At exit: **34 wants Snatched (English, downloading), 16 Wanted (awaiting an English
+source), 7 Skipped** (usenet served the German/wrong edition → caught, removed from SAB, flagged for
+MAM/manual). Q-07 folder consolidation done + Kavita rescan.
+
+## R3.1 — Title identification (folder names lie — OPF/ID3 is truth)
+Read OPF `dc:title`+ISBN from all 33 quarantined epubs and `metadata.json`+ID3 (`TALB/TIT2/TPE2/TPUB`)
+from all 25 audiobook folders to resolve the ACTUAL English work behind each foreign/junk folder name.
+Notable corrections vs the RUN-2 folder-name manifest:
+- Paolini `Eragon (Inheritance, Book 1)` folder → OPF "Eragon 04 - Das Erbe der Macht" = **Inheritance (bk4)**.
+- Paolini `Learning Disabilities ; 7 +E` (junk) → OPF "Der Auftrag des Aeltesten" = **Eldest (bk2)**.
+- Follett `The Hammer of Eden…` folder → OPF "Notre-Dame…" = **Notre-Dame** (short history), NOT Hammer of Eden.
+- E.L. James `Mais Livre` → OPF "003…Freed" = **Freed**.
+- Julia Quinn `Buscando esposa` (OPF "Wie bezaubert man einen Viscount") = **The Viscount Who Loved Me** (Bridgerton #2).
+- Follett Dutch→English (GB-ISBN confirmed): Nacht van het kwaad = **Winter of the World**; Het eeuwige
+  vuur = **A Column of Fire**; Nachtwakers = **Hornet Flight**; Val der titanen = Fall of Giants; Nooit
+  = Never; Op vleugels van de adelaar = On Wings of Eagles.
+- Clancy Dutch→English (GB-ISBN confirmed): De ogen van de vijand = **Against All Enemies**; In het
+  vizier = **Locked On**; Op leven en dood = **Dead or Alive**; Operatie Rode Storm = Red Storm Rising.
+- AUDIO ID3 corrections: Koontz `The Face` folder = German **The Other Emily** (Die Doppelgängerin);
+  Herbert `Dune` folder = German **Children of Dune** (Dune III); Gabaldon `Outlander` = **Drums of
+  Autumn** (Band 04); Paolini `Die Weisheit dea Feuers` = **Brisingr**; Wild Cards Band 01 "Vier Asse"
+  = **Wild Cards (#1)**, Band 02 "Der Schwarm" = **Aces High (#2)**.
+- **Clare `Chroniken der Unterwelt 06. City of Heavenly Fire` folder → all 88 tracks' ID3 =
+  City of Fallen Angels (TMI #4).** The folder was mislabeled #6; re-grabbed the ACTUAL content
+  **City of Fallen Angels (#4)**. **Owner note:** if you want #6 (City of Heavenly Fire) too, it needs a
+  separate add — a #6-named English audiobook was never actually present (that entry was #4 German audio).
+- The 2 "AudioBook" folders that were actually **misfiled foreign EPUBs** → queued as EBOOK wants:
+  **Chain of Iron** (Clare) and **Blade Breaker** (Aveyard, ex-"Destructora de espadas").
+- 4 titles quarantined in BOTH formats → one LL book, both eBook+AudioBook wants: **Grey, Aces High,
+  Never, Dead or Alive**.
+- GB lookups: keyed (LL `gb_api`), `langRestrict=en`, mandatory retry/backoff. LL's *internal* GB fetch
+  during `addBook` has **no** backoff, so 503 "backendFailed" bursts walled the add phase → needed **3
+  resumable passes** to add all 53 books. (Design input: the add path should retry GB too.)
+
+## R3.2 — Queue (LL, verified) — the proven pattern held
+53 distinct English books added (`addBook&wait`) → 57 wants set (`queueBook`, `type=eBook|AudioBook`)
+→ **all verified `Wanted` + `BookLang=en`** → `searchBook` fired per want. Baseline LL Wanted
+(ToG E+A, Kingdom of Ash E, Heir of Fire A, Skyward/Sweet and Deadly/Skin in the Game E) **untouched**.
+
+## R3.3 — PIPELINE FIX (LL→SAB) — required to make usenet-first land
+`searchBook` FOUND usenet NZBs but EVERY handoff failed: `Unable to connect to SAB … JSONDecodeError`.
+Root cause: LL `SAB_SUBDIR = lazylibrarian` → POST `…/lazylibrarian/api` → **HTTP 404** (SAB is healthy
+at root `/api`, v5.0.4; the LL apikey is valid at root). Config default is empty; `lazylibrarian` was
+wrong. This latent bug hadn't mattered because prior batches (Maas) landed via MAM **torrents**; with
+the MAM gate CLOSED, usenet-via-SAB is the ONLY path, so it blocked everything.
+- **Fix (live, LL `writeCFG` — LL config is on the PVC, live-only, NOT GitOps): `SAB_SUBDIR = ''`.**
+  Re-fired searches → `… sent to SAB successfully`. **Revert:** `writeCFG SAB_SUBDIR=lazylibrarian group=SABnzbd`.
+
+## R3.4 — LANGUAGE GUARD (LL grabs don't filter language → German re-poison risk)
+LL matches usenet results by title/author and does **not** filter grab language, so several AUDIO
+searches pulled the exact German editions F-10 removed, and 2 ebooks grabbed the wrong English edition:
+Grey audio "von Christian selbst erzählt", Never audio "Die letzte Entscheidung (Gekürzt)", The Other
+Emily "Die Doppelgängerin", Queen of Air **und** Darkness "ungekürzt", Children of Blood and Bone "Band
+01"; Foundation ebook → "Second Foundation" (bk3), Grey ebook → "Fifty Shades of Grey" (original).
+- **Mitigation:** (a) hardened `REJECT_AUDIO`/`REJECT_WORDS` with safe German/abridged tokens
+  (ungekürzt/ungekrzt, gekürzt/gekrzt, hörbuch, hörverlag, lesung, dunklen, mächte/mchte, entscheidung,
+  erzaehlt, deutsch, german, goldener, zorn, doppelgängerin, und, …; defaults `epub,mobi`/`audiobook,mp3`
+  preserved) — LL word-level reject, applied at search AND post-process; (b) **deleted the 7 German/wrong
+  NZBs from SAB** (usenet downloader — no MAM/ratio implication), marked their `wanted` rows Failed, and
+  set the 7 wants **Skipped**. Flagged for owner: usenet serves German/wrong for these → re-queue via
+  **MAM (English) when the gate reopens ~Tue**, or manual.
+
+## R3.5 — State at exit (of 57 queued wants)
+| Outcome | eBook | Audio | total |
+|---|---|---|---|
+| **Snatched** (English, downloading) | 22 | 12 | **34** |
+| **Wanted** (no accepted English usenet result yet) | 10 | 6 | **16** |
+| **Skipped** (usenet German/wrong → removed + flagged) | 2 | 5 | **7** |
+- The 7 Skipped: **Foundation (E)**, **Grey (E+A)**, **Never (A)**, **Queen of Air and Darkness (A)**,
+  **The Other Emily (A)**, **Children of Blood and Bone (A)**.
+- **Skipped-ambiguous, never queued (1):** Orwell **"A Collection of Essays"** — no clean single-title
+  English GB match (only broad "Essays"/"Fifty Essays"/collected omnibuses). Owner picks the edition;
+  suggested `PqGMFPCiBEsC` (Penguin "Essays", comprehensive).
+- 16 Wanted (retry on LL cycle / land via MAM when gate reopens): Lady Midnight (E), Airman (E), Dune (E),
+  Aces High (E+A), White-Jacket (E), Notre-Dame (E), On Wings of Eagles (E), The Evening and the Morning
+  (E), The Man from St. Petersburg (E), Winter of the World (E), I Was Born for This (A), Murtagh (A),
+  Drums of Autumn (A), Nightflyers (A), Rich Dad Poor Dad (A).
+- **Caveat:** the 34 "English" Snatched are trusted by release NAME; content language not byte-verified
+  post-download (German-marked releases WERE caught). Recommend a post-import spot-check / small F-11 audio
+  pass once these import.
+
+## R3.6 — Q-07 (folder rename) DONE
+`EBooks/James S.A. Corey/La Chute du Léviathan - The Expanse 9/` held an **English "Leviathan Wakes"
+(Expanse #1)** epub (OPF title "Leviathan Wakes", ISBN 9780316129084, English text "Prologue: Julie / The
+Scopuli had been taken eight days ago…"; the `pt` lang tag was spurious). The library already had a
+**"Leviathan Wakes"** folder holding only a `.mobi` (invisible to Kavita). A bare rename would collide, so
+**consolidated**: moved the epub → `Leviathan Wakes/James S.A. Corey - Leviathan Wakes.epub` (convention
+name, beside the mobi) and removed the empty French folder. **Kavita "Books" library force-rescanned (HTTP
+200).** Bonus: this also rescued a mobi-only-invisible Leviathan Wakes.
+
+## R3.7 — Constraints honored
+- **LazyLibrarian only.** MAM gate observed **CLOSED** throughout (LL Torznab MyAnonaMouse `Enabled=0`;
+  qBittorrent `books-mam` **19/19 unsatisfied at start AND exit — unchanged**). **No MAM grabs, no
+  qBittorrent adds, Prowlarr MAM indexer untouched, governor untouched.** Usenet (4 Newznab providers) + SAB only.
+- Existing LL Wanted/retry entries (ToG / KoA / Heir of Fire / 3×F-09) unchanged.
+- Quarantined foreign files untouched (nothing deleted from `quarantine/`).
+- SAB deletions = the 7 wrong/German usenet grabs only.
+- **LL live-only config changes (all reversible):** `SAB_SUBDIR=''` (fix), `REJECT_AUDIO` + `REJECT_WORDS`
+  German/abridged tokens added. No app code / haynes-ops / other plans / HANDOFF touched. No release.
