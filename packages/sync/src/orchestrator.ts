@@ -33,6 +33,7 @@ import {
   syncBooks,
   syncPlexMatches,
   type DrainPoolRefreshResult,
+  type KapowarrClientBundle,
   type LazyLibrarianClientBundle,
   type SyncBooksReport,
   type SyncPlexMatchesReport,
@@ -147,6 +148,9 @@ export interface RunSyncOptions {
   /** ADR-055 / DESIGN-028 — the confined LazyLibrarian bundle the `goodreads-sync` mode pushes requests
    *  through (built in packages/domain from env; opaque here). Optional — absent ⇒ mirror + mint only. */
   lazyLibrarian?: LazyLibrarianClientBundle;
+  /** ADR-056 (PLAN-046) — the confined Kapowarr bundle the `goodreads-sync` mode routes COMICS through (built
+   *  in packages/domain from env; opaque here). Optional — absent ⇒ comics stay parked. */
+  kapowarr?: KapowarrClientBundle;
   /** Clock injection for deterministic `ai-usage-sync` tests (synced_at / created_at fallbacks). */
   now?: Date;
   /** Injected DB (tests); defaults to the lazy @hnet/db client. */
@@ -749,6 +753,7 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
         db,
         goodreads: options.goodreads,
         ...(options.lazyLibrarian ? { ll: options.lazyLibrarian } : {}),
+        ...(options.kapowarr ? { kapowarr: options.kapowarr } : {}),
         ...(options.now ? { now: options.now } : {}),
         logger,
       });

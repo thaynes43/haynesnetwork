@@ -17,6 +17,9 @@ import {
   FixTargetRequiredError,
   InvalidCatalogUrlError,
   InvalidGoodreadsProfileError,
+  KapowarrUpstreamError,
+  kapowarrBundleFromEnv,
+  type KapowarrClientBundle,
   LastAdminError,
   LazyLibrarianUpstreamError,
   lazyLibrarianBundleFromEnv,
@@ -111,6 +114,11 @@ export interface TRPCContext {
    */
   lazylibrarian?: LazyLibrarianClientBundle;
   /**
+   * ADR-056 (PLAN-046) — the confined Kapowarr bundle the comic leg of `integrations.search` (comic
+   * force-search) runs against. Env-built singleton in production (KAPOWARR_API_KEY); stubbed in tests.
+   */
+  kapowarr?: KapowarrClientBundle;
+  /**
    * ADR-055 / DESIGN-028 (PLAN-044) — the read-only Goodreads RSS client `integrations.link` resolves a
    * vanity URL + probes shelf reachability with. Env-built singleton in production; stubbed in tests.
    */
@@ -178,6 +186,15 @@ export function resolveLazyLibrarianBundle(ctx: TRPCContext): LazyLibrarianClien
   if (ctx.lazylibrarian) return ctx.lazylibrarian;
   envLazyLibrarianBundle ??= lazyLibrarianBundleFromEnv();
   return envLazyLibrarianBundle;
+}
+
+let envKapowarrBundle: KapowarrClientBundle | undefined;
+
+/** The Kapowarr bundle for this request: injected (tests) or the env-built singleton (ADR-056). */
+export function resolveKapowarrBundle(ctx: TRPCContext): KapowarrClientBundle {
+  if (ctx.kapowarr) return ctx.kapowarr;
+  envKapowarrBundle ??= kapowarrBundleFromEnv();
+  return envKapowarrBundle;
 }
 
 let envGoodreadsClient: GoodreadsRssClient | undefined;
@@ -254,6 +271,7 @@ const APP_CODED_ERRORS = [
   SyncedTierInvalidError,
   InvalidGoodreadsProfileError,
   LazyLibrarianUpstreamError,
+  KapowarrUpstreamError,
 ] as const;
 
 const t = initTRPC.context<TRPCContext>().create({
@@ -415,6 +433,9 @@ export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
       throw new TRPCError({ code: 'UNPROCESSABLE_CONTENT', message: err.message, cause: err });
     }
     if (err instanceof LazyLibrarianUpstreamError) {
+      throw new TRPCError({ code: 'BAD_GATEWAY', message: err.message, cause: err });
+    }
+    if (err instanceof KapowarrUpstreamError) {
       throw new TRPCError({ code: 'BAD_GATEWAY', message: err.message, cause: err });
     }
     if (err instanceof NotFoundError) {

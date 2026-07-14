@@ -28,9 +28,13 @@ const ALLOWED_DIR_PREFIXES = [
   // ADR-055 (PLAN-044) — @hnet/lazylibrarian/write is the Goodreads-request acquisition surface
   // (addBook/queueBook/searchBook); only packages/domain (the goodreads orchestrator) + its own package.
   `packages${sep}lazylibrarian${sep}`,
+  // ADR-056 (PLAN-046) — @hnet/kapowarr/write is the comic-acquisition surface (addVolume / setMonitored /
+  // searchVolume — the auto_search task); only packages/domain (the comic routing + force-search orchestrator)
+  // + its own package may import it. Kapowarr acquires from GetComics DDL — never MAM/qB/Prowlarr/the governor.
+  `packages${sep}kapowarr${sep}`,
 ];
 
-const IMPORT_PATTERN = /@hnet\/(arr|plex|authentik|openwebui|downloads|lazylibrarian)\/write/;
+const IMPORT_PATTERN = /@hnet\/(arr|plex|authentik|openwebui|downloads|lazylibrarian|kapowarr)\/write/;
 
 const IGNORE_DIRS = new Set([
   'node_modules',

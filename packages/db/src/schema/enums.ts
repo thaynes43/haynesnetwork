@@ -821,15 +821,17 @@ export type IntegrationProvider = (typeof INTEGRATION_PROVIDERS)[number];
 export const INTEGRATION_STATUSES = ['linked', 'unlinked', 'error'] as const;
 export type IntegrationStatus = (typeof INTEGRATION_STATUSES)[number];
 
-// A book_requests per-FORMAT status (book_requests.ebook_status / audio_status). Every request queues
-// BOTH formats (owner ruling — "we grab both so it's one for all"); each format tracks its own lifecycle:
-//   requested — minted locally from an unmatched shelf want; not yet pushed to LazyLibrarian.
-//   wanted    — pushed to LL and monitored Wanted (addBook → queueBook → searchBook succeeded). The *arr
-//               "Missing" analog: monitored, actively searching, not yet on disk.
-//   grabbed   — LL reports a release Snatched (downloading).
-//   landed    — LL reports the format Open/Have OR it appears in our books_items library mirror — we HAVE it.
-//   missing   — LL could not obtain the format (Skipped/Ignored/search exhausted). The per-format Missing
-//               entry that supports the manual "Search again" (R3 — the *arr wanted/missing idiom).
+// A book_requests per-FORMAT status (book_requests.ebook_status / audio_status / comic_status). Books queue
+// BOTH ebook+audio formats (owner ruling — "we grab both so it's one for all"); a COMIC request (ADR-056 /
+// PLAN-046) tracks the SINGLE comic_status instead (comics are Kapowarr's domain, never LazyLibrarian's).
+// Each format tracks its own lifecycle:
+//   requested — minted locally from an unmatched shelf want; not yet pushed to LazyLibrarian / Kapowarr.
+//   wanted    — books: pushed to LL + monitored Wanted (addBook → queueBook → searchBook). comics: the volume
+//               is added + MONITORED in Kapowarr. The *arr "Missing" analog: monitored, searching, not on disk.
+//   grabbed   — books: LL reports a release Snatched. comics: some of the volume's issues are downloading.
+//   landed    — the format Open/Have in LL OR it appears in our books_items mirror; comics: all issues on disk.
+//   missing   — could not obtain the format (LL Skipped/Ignored; comics: no ComicVine match / search exhausted).
+//               The per-format Missing entry that supports the manual "Search again" (R3 — the *arr idiom).
 export const BOOK_REQUEST_STATUSES = [
   'requested',
   'wanted',
@@ -839,6 +841,9 @@ export const BOOK_REQUEST_STATUSES = [
 ] as const;
 export type BookRequestStatus = (typeof BOOK_REQUEST_STATUSES)[number];
 
-// The book FORMATS a request tracks (used in the manual re-search API + LL push). Both are always queued.
-export const BOOK_REQUEST_FORMATS = ['ebook', 'audiobook'] as const;
+// The FORMATS a request tracks. Books queue ebook+audiobook (always both); a COMIC (ADR-056 / PLAN-046) is a
+// third routed format tracked by book_requests.comic_status + routed to KAPOWARR (never LL — the ebook/audio
+// LL push is skipped for a comic). The comic leg has no DB CHECK referencing this const (comic_status reuses
+// BOOK_REQUEST_STATUSES); this array documents the three request formats + gates the manual-search dispatch.
+export const BOOK_REQUEST_FORMATS = ['ebook', 'audiobook', 'comic'] as const;
 export type BookRequestFormat = (typeof BOOK_REQUEST_FORMATS)[number];

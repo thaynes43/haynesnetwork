@@ -17,6 +17,7 @@ import {
   type DbClient,
 } from '@hnet/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
+import type { KapowarrSearchCandidate, KapowarrVolume } from '@hnet/kapowarr/read';
 import { NotFoundError } from './errors';
 import { inTransaction, resolveDb } from './db-client';
 
@@ -51,6 +52,91 @@ export function advanceStatus(
   if (incoming === 'landed') return 'landed';
   if (POSITIVE.has(current) && !POSITIVE.has(incoming)) return current;
   return incoming;
+}
+
+// ---------------------------------------------------------------------------
+// ADR-056 (PLAN-046) — Kapowarr comic routing: the ComicVine-volume resolver + the Kapowarr-state reconcile.
+// The domain owns BOTH (the ACL returns raw candidates/volume-counts; the domain decides the pick + status —
+// the mapLlStatus / loadLibraryMatcher precedent). Pure + unit-tested; the orchestrator drives the client.
+// ---------------------------------------------------------------------------
+
+const COMIC_STOP_WORDS = new Set([
+  'the', 'a', 'an', 'of', 'and', 'vol', 'volume', 'part', 'book', 'no', 'tpb', 'edition',
+]);
+
+/**
+ * Tokenize a comic title into meaningful, order-free words (lowercase; punctuation, pure-numeric issue markers
+ * and volume/edition stop words dropped). The whole title is kept — a Goodreads title's parenthetical often
+ * carries the DISAMBIGUATOR (e.g. "Zero Year: Part 1 (DC Comics - … Batman #1)"), so stripping it would lose
+ * the "batman"/"dc" tokens that separate DC's "Batman: Zero Year" from an unrelated "Year Zero".
+ */
+function comicTokens(title: string): string[] {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(' ')
+    .filter((w) => w.length > 0 && !COMIC_STOP_WORDS.has(w) && !/^\d+$/.test(w));
+}
+
+/**
+ * Score + pick the best ComicVine volume for a shelf-item title from Kapowarr's own search candidates. The
+ * shelf title is fuzzy (Goodreads editions, series/issue suffixes), so we rank by shared distinctive tokens:
+ *   1. absolute token overlap (how many of the candidate's words the shelf title contains) — the primary key,
+ *      so "Batman: Zero Year" (3 shared) beats a bare "Year Zero" (2 shared);
+ *   2. overlap RATIO (share of the candidate's own words matched) — prefers the tight "Scott Pilgrim" over
+ *      "Scott Pilgrim Color Collection";
+ *   3. ORIGINAL edition — `translated === false` wins (Oni Press over a German Panini reprint);
+ *   4. a known publish YEAR, then more issues, then the lower (older/canonical) ComicVine id — deterministic.
+ * Returns null when even the best candidate shares no distinctive token (leave the comic parked, never a
+ * fabricated add). Author is intentionally unused — Kapowarr search results don't carry it reliably.
+ */
+export function pickBestVolume(
+  query: string,
+  candidates: readonly KapowarrSearchCandidate[],
+): KapowarrSearchCandidate | null {
+  const queryTokens = new Set(comicTokens(query));
+  if (queryTokens.size === 0) return null;
+
+  let best: { c: KapowarrSearchCandidate; key: number[] } | null = null;
+  for (const c of candidates) {
+    const ct = comicTokens(c.title);
+    if (ct.length === 0) continue;
+    const overlap = ct.filter((t) => queryTokens.has(t)).length;
+    if (overlap === 0) continue;
+    const ratio = overlap / ct.length;
+    // Descending sort key (higher wins): [overlap, ratio×1000, original, hasYear, issueCount, -cvId].
+    const key = [
+      overlap,
+      Math.round(ratio * 1000),
+      c.translated ? 0 : 1,
+      c.year != null ? 1 : 0,
+      c.issueCount ?? 0,
+      -c.comicvineId,
+    ];
+    if (!best || compareDescKey(key, best.key) > 0) best = { c, key };
+  }
+  return best?.c ?? null;
+}
+
+/** Compare two descending sort keys element-wise (first non-equal element decides). */
+function compareDescKey(a: number[], b: number[]): number {
+  for (let i = 0; i < a.length; i += 1) {
+    const d = (a[i] ?? 0) - (b[i] ?? 0);
+    if (d !== 0) return d;
+  }
+  return 0;
+}
+
+/**
+ * Map a Kapowarr volume's live counts to a comic request status. All issues on disk ⇒ landed; some issues in
+ * ⇒ grabbed (downloading/partial); monitored-but-none ⇒ wanted (the *arr Missing analog, actively searching);
+ * unmonitored-and-none ⇒ missing (Kapowarr is not looking — the dead-end that offers "Search again").
+ */
+export function mapKapowarrVolumeStatus(vol: Pick<KapowarrVolume, 'monitored' | 'issueCount' | 'issuesDownloaded'>): BookRequestStatus {
+  if (vol.issueCount > 0 && vol.issuesDownloaded >= vol.issueCount) return 'landed';
+  if (vol.issuesDownloaded > 0) return 'grabbed';
+  if (vol.monitored) return 'wanted';
+  return 'missing';
 }
 
 // ---------------------------------------------------------------------------
@@ -150,12 +236,25 @@ export interface RequestLlTarget {
   llBookId: string;
 }
 
+/**
+ * ADR-056 (PLAN-046) — a comic request the orchestrator should route to / reconcile against Kapowarr.
+ * `kapowarrVolumeId` null ⇒ resolve+add (search ComicVine, pick, add monitored); set ⇒ reconcile its state.
+ */
+export interface ComicRouteTarget {
+  requestId: string;
+  title: string;
+  author: string | null;
+  kapowarrVolumeId: string | null;
+}
+
 export interface SyncShelfRequestsResult {
   minted: number;
   /** Routable, unmatched, freshly-`requested` requests with a GB id — push both formats to LL, paced. */
   toPush: RequestLlTarget[];
   /** Already-pushed requests (llBookId set, not both landed) — reconcile against LL this run. */
   toReconcile: RequestLlTarget[];
+  /** Comic requests not (yet) landed — resolve+add or reconcile against Kapowarr (ADR-056). */
+  toRouteComics: ComicRouteTarget[];
 }
 
 /**
@@ -170,6 +269,7 @@ export async function syncShelfRequests(
   const now = input.now ?? new Date();
   const toPush: RequestLlTarget[] = [];
   const toReconcile: RequestLlTarget[] = [];
+  const toRouteComics: ComicRouteTarget[] = [];
   let minted = 0;
 
   await inTransaction(input.db, async (tx) => {
@@ -180,25 +280,40 @@ export async function syncShelfRequests(
         .where(eq(bookRequests.shelfItemId, item.shelfItemId))
         .for('update');
 
-      const unroutableReason = item.matchedBooksItemId ? null : item.isComic ? 'comic' : null;
       let ebookStatus: BookRequestStatus;
       let audioStatus: BookRequestStatus;
+      let comicStatus: BookRequestStatus | null;
+      let unroutableReason: string | null;
       let llBookId: string | null;
+      // The Kapowarr volume id is preserved across syncs (set by markComicRouted); comic_status routing owns
+      // comicvine_id, so it is not (re)written here on the mint/upsert.
+      const kapowarrVolumeId = existing?.kapowarrVolumeId ?? null;
 
       if (item.matchedBooksItemId) {
+        // In the library — we HAVE it (a book or a comic we already hold).
         ebookStatus = 'landed';
         audioStatus = 'landed';
+        comicStatus = item.isComic ? 'landed' : (existing?.comicStatus ?? null);
+        unroutableReason = null;
         llBookId = existing?.llBookId ?? item.gbVolumeId ?? null;
-      } else if (unroutableReason === 'comic') {
-        ebookStatus = advanceStatus(existing?.ebookStatus ?? 'missing', 'missing');
-        audioStatus = advanceStatus(existing?.audioStatus ?? 'missing', 'missing');
+      } else if (item.isComic) {
+        // ADR-056 — a comic want (Kapowarr's domain, never LL). comic_status is the actionable state; ebook/
+        // audio are N/A (kept 'missing'). Parked (unroutable) until Kapowarr routes it (kapowarr_volume_id set).
+        ebookStatus = 'missing';
+        audioStatus = 'missing';
+        comicStatus = existing?.comicStatus ?? 'requested';
+        unroutableReason = kapowarrVolumeId ? null : 'comic';
         llBookId = null;
       } else {
+        // A routable book/audiobook want.
         ebookStatus = existing?.ebookStatus ?? 'requested';
         audioStatus = existing?.audioStatus ?? 'requested';
+        comicStatus = null;
+        unroutableReason = null;
         llBookId = existing?.llBookId ?? item.gbVolumeId ?? null;
       }
 
+      let requestId: string;
       if (existing) {
         await tx
           .update(bookRequests)
@@ -210,9 +325,11 @@ export async function syncShelfRequests(
             llBookId,
             ebookStatus,
             audioStatus,
+            comicStatus,
             updatedAt: now,
           })
           .where(eq(bookRequests.id, existing.id));
+        requestId = existing.id;
         collectTargets(existing.id, llBookId, ebookStatus, audioStatus, unroutableReason, existing.ebookStatus, existing.audioStatus, toPush, toReconcile);
       } else {
         const [row] = await tx
@@ -227,17 +344,24 @@ export async function syncShelfRequests(
             author: item.author,
             ebookStatus,
             audioStatus,
+            comicStatus,
           })
           .returning({ id: bookRequests.id });
         minted += 1;
+        requestId = row?.id ?? '';
         if (row) {
           collectTargets(row.id, llBookId, ebookStatus, audioStatus, unroutableReason, 'requested', 'requested', toPush, toReconcile);
         }
       }
+
+      // A comic that is not (yet) landed needs Kapowarr work: resolve+add (no volume id) or reconcile.
+      if (requestId && item.isComic && !item.matchedBooksItemId && comicStatus !== 'landed') {
+        toRouteComics.push({ requestId, title: item.title, author: item.author, kapowarrVolumeId });
+      }
     }
   });
 
-  return { minted, toPush, toReconcile };
+  return { minted, toPush, toReconcile, toRouteComics };
 }
 
 function collectTargets(
@@ -312,6 +436,63 @@ export async function applyRequestReconcile(input: {
 }
 
 // ---------------------------------------------------------------------------
+// ADR-056 (PLAN-046) — comic request writers (the LL markRequestPushed / applyRequestReconcile analogs).
+// ---------------------------------------------------------------------------
+
+/**
+ * Mark a comic request ROUTED to Kapowarr: record the added volume id + ComicVine id, set comic_status
+ * (default 'wanted' — monitored+searching), and CLEAR unroutable_reason (it is no longer parked). ebook/audio
+ * stay whatever they were ('missing' for a comic). Unaudited (synced/derived — the markRequestPushed class).
+ */
+export async function markComicRouted(input: {
+  db?: DbClient;
+  requestId: string;
+  kapowarrVolumeId: string;
+  comicvineId: string | null;
+  comicStatus?: BookRequestStatus;
+  now?: Date;
+}): Promise<void> {
+  const now = input.now ?? new Date();
+  await resolveDb(input.db)
+    .update(bookRequests)
+    .set({
+      kapowarrVolumeId: input.kapowarrVolumeId,
+      comicvineId: input.comicvineId,
+      comicStatus: input.comicStatus ?? 'wanted',
+      unroutableReason: null,
+      lastReconciledAt: now,
+      updatedAt: now,
+    })
+    .where(eq(bookRequests.id, input.requestId));
+}
+
+/** Apply a Kapowarr reconcile: advance comic_status (never regressing a positive). */
+export async function applyComicReconcile(input: {
+  db?: DbClient;
+  requestId: string;
+  comicStatus: BookRequestStatus | null;
+  now?: Date;
+}): Promise<void> {
+  const now = input.now ?? new Date();
+  await inTransaction(input.db, async (tx) => {
+    const [req] = await tx
+      .select({ id: bookRequests.id, comicStatus: bookRequests.comicStatus })
+      .from(bookRequests)
+      .where(eq(bookRequests.id, input.requestId))
+      .for('update');
+    if (!req) return;
+    await tx
+      .update(bookRequests)
+      .set({
+        comicStatus: advanceStatus(req.comicStatus ?? 'requested', input.comicStatus),
+        lastReconciledAt: now,
+        updatedAt: now,
+      })
+      .where(eq(bookRequests.id, req.id));
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Manual "Search again" — the USER-initiated, AUDITED write (R3 / AC-04).
 // ---------------------------------------------------------------------------
 
@@ -357,6 +538,8 @@ export async function recordManualSearch(
       detail: {
         request_id: req.id,
         ll_book_id: req.llBookId,
+        kapowarr_volume_id: req.kapowarrVolumeId,
+        comic: req.comicStatus != null,
         title: req.title,
         unroutable_reason: req.unroutableReason,
       },
@@ -383,6 +566,10 @@ export interface BookRequestView {
   llBookId: string | null;
   ebookStatus: BookRequestStatus;
   audioStatus: BookRequestStatus;
+  /** ADR-056 — the comic lifecycle status; null ⇒ this request is a book/audiobook (not a comic). */
+  comicStatus: BookRequestStatus | null;
+  /** ADR-056 — the added Kapowarr volume id (the comic force-search + reconcile key); null until routed. */
+  kapowarrVolumeId: string | null;
   unroutableReason: string | null;
   lastSearchedAt: Date | null;
   createdAt: Date;
@@ -406,6 +593,8 @@ export async function getBookRequestsForIntegration(input: {
       llBookId: bookRequests.llBookId,
       ebookStatus: bookRequests.ebookStatus,
       audioStatus: bookRequests.audioStatus,
+      comicStatus: bookRequests.comicStatus,
+      kapowarrVolumeId: bookRequests.kapowarrVolumeId,
       unroutableReason: bookRequests.unroutableReason,
       lastSearchedAt: bookRequests.lastSearchedAt,
       createdAt: bookRequests.createdAt,
@@ -441,7 +630,7 @@ export async function computeCoverage(input: {
   const [row] = await resolveDb(input.db)
     .select({
       total: sql<number>`count(*)::int`,
-      covered: sql<number>`count(*) FILTER (WHERE ${bookRequests.matchedBooksItemId} IS NOT NULL OR ${bookRequests.ebookStatus} = 'landed' OR ${bookRequests.audioStatus} = 'landed')::int`,
+      covered: sql<number>`count(*) FILTER (WHERE ${bookRequests.matchedBooksItemId} IS NOT NULL OR ${bookRequests.ebookStatus} = 'landed' OR ${bookRequests.audioStatus} = 'landed' OR ${bookRequests.comicStatus} = 'landed')::int`,
     })
     .from(bookRequests)
     .innerJoin(integrationShelfItems, eq(bookRequests.shelfItemId, integrationShelfItems.id))
@@ -469,12 +658,15 @@ export async function getBookRequestById(input: {
   return row ?? null;
 }
 
-/** The formats a request should search on demand (both, unless one has already landed). */
+/**
+ * The LazyLibrarian formats a BOOK request should search on demand (both, unless one has already landed).
+ * Narrowed to the two LL formats — 'comic' (ADR-056) is a Kapowarr format, never an LL searchBook target.
+ */
 export function searchableFormats(request: {
   ebookStatus: BookRequestStatus;
   audioStatus: BookRequestStatus;
-}): BookRequestFormat[] {
-  const formats: BookRequestFormat[] = [];
+}): Array<Extract<BookRequestFormat, 'ebook' | 'audiobook'>> {
+  const formats: Array<Extract<BookRequestFormat, 'ebook' | 'audiobook'>> = [];
   if (request.ebookStatus !== 'landed') formats.push('ebook');
   if (request.audioStatus !== 'landed') formats.push('audiobook');
   return formats;

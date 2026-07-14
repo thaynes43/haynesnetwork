@@ -5,19 +5,25 @@
 // "Search again"). The @hnet/sync mode does the external READS (RSS + GB) and hands the enriched items in;
 // the confined LL WRITES happen here through the injected bundle (the poster-guard precedent).
 import type { BookRequestFormat, DbClient } from '@hnet/db';
-import { LazyLibrarianUpstreamError } from './errors';
+import { KapowarrUpstreamError, LazyLibrarianUpstreamError } from './errors';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
+import type { KapowarrClientBundle } from './kapowarr-clients';
 import { markIntegrationSynced } from './user-integrations';
 import { upsertShelfItems, type ShelfItemInput } from './integration-shelf-items';
 import {
+  applyComicReconcile,
   applyRequestReconcile,
   computeCoverage,
   loadLibraryMatcher,
+  mapKapowarrVolumeStatus,
   mapLlStatus,
+  markComicRouted,
   markRequestPushed,
+  pickBestVolume,
   recordManualSearch,
   searchableFormats,
   syncShelfRequests,
+  type ComicRouteTarget,
   type Coverage,
   type RequestSyncItem,
 } from './book-requests';
@@ -36,6 +42,13 @@ export interface SyncGoodreadsInput {
   syncedShelves: string[];
   /** The confined LazyLibrarian bundle. Absent ⇒ mint + mirror only (push skipped — a degraded run). */
   ll?: LazyLibrarianClientBundle;
+  /**
+   * ADR-056 (PLAN-046) — the confined Kapowarr bundle for COMIC routing. Absent ⇒ comics stay PARKED
+   * (unroutable_reason='comic', comic_status='requested') — the honest degraded run when Kapowarr/ComicVine
+   * is unreachable or unconfigured. Present ⇒ comics resolve to a ComicVine volume, get added monitored
+   * (Wanted), and reconcile their Kapowarr state back into comic_status.
+   */
+  kapowarr?: KapowarrClientBundle;
   now?: Date;
   logger?: {
     info?: (msg: string, meta?: Record<string, unknown>) => void;
@@ -51,6 +64,10 @@ export interface SyncGoodreadsReport {
   requestsMinted: number;
   requestsPushed: number;
   requestsReconciled: number;
+  /** ADR-056 — comics newly routed to Kapowarr this run (resolved + added monitored). */
+  comicsRouted: number;
+  /** ADR-056 — comics whose Kapowarr state was reconciled back this run (incl. the ones just routed). */
+  comicsReconciled: number;
   coverage: Coverage;
 }
 
@@ -97,8 +114,8 @@ export async function syncGoodreadsIntegration(
     };
   });
 
-  // 3. Mint / reconcile the request rows (single-writer) → the LL worklists.
-  const { minted, toPush, toReconcile } = await syncShelfRequests({
+  // 3. Mint / reconcile the request rows (single-writer) → the LL + Kapowarr worklists.
+  const { minted, toPush, toReconcile, toRouteComics } = await syncShelfRequests({
     db: input.db,
     integrationId: input.integrationId,
     items: requestItems,
@@ -159,6 +176,48 @@ export async function syncGoodreadsIntegration(
     }
   }
 
+  // 5b. ADR-056 (PLAN-046) — route comics to Kapowarr (ITS OWN GetComics DDL sources; NEVER MAM/qB/Prowlarr).
+  //     Un-routed comic ⇒ ComicVine search → pick the best volume → add MONITORED (auto-search) → reconcile.
+  //     Already-routed comic ⇒ reconcile its Kapowarr state. A per-comic failure is logged and the request
+  //     stays PARKED for the next run (never fails the whole sync — the LL-push discipline).
+  let comicsRouted = 0;
+  let comicsReconciled = 0;
+  if (input.kapowarr && toRouteComics.length > 0) {
+    const rootFolders = await input.kapowarr.read.getRootFolders().catch((error: unknown) => {
+      log.error?.('goodreads-sync: Kapowarr root-folder read failed — comics stay parked', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return [];
+    });
+    const rootFolderId = rootFolders[0]?.id;
+    for (const comic of toRouteComics) {
+      try {
+        const volumeId = comic.kapowarrVolumeId
+          ? Number(comic.kapowarrVolumeId)
+          : await routeNewComic(input.db, input.kapowarr, comic, rootFolderId, log);
+        if (volumeId == null || Number.isNaN(volumeId)) continue; // no match / no root folder — stays parked
+        if (!comic.kapowarrVolumeId) comicsRouted += 1;
+        // Reconcile the (just-added or existing) volume's live state into comic_status.
+        const vol = await input.kapowarr.read.getVolume(volumeId);
+        if (vol) {
+          await applyComicReconcile({
+            db: input.db,
+            requestId: comic.requestId,
+            comicStatus: mapKapowarrVolumeStatus(vol),
+            now,
+          });
+          comicsReconciled += 1;
+        }
+      } catch (error) {
+        log.error?.('goodreads-sync: Kapowarr comic routing failed (will retry next run)', {
+          requestId: comic.requestId,
+          title: comic.title,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+
   // 6. Mark the integration synced (bookkeeping — unaudited) and compute coverage.
   await markIntegrationSynced({ db: input.db, integrationId: input.integrationId, now });
   const coverage = await computeCoverage({ db: input.db, integrationId: input.integrationId });
@@ -170,6 +229,8 @@ export async function syncGoodreadsIntegration(
     minted,
     pushed,
     reconciled,
+    comicsRouted,
+    comicsReconciled,
     coverage,
   });
 
@@ -179,8 +240,48 @@ export async function syncGoodreadsIntegration(
     requestsMinted: minted,
     requestsPushed: pushed,
     requestsReconciled: reconciled,
+    comicsRouted,
+    comicsReconciled,
     coverage,
   };
+}
+
+/**
+ * Resolve a comic want to a ComicVine volume via Kapowarr's own search, add it MONITORED (auto-search), and
+ * record the routing (markComicRouted clears the parked flag). Returns the local Kapowarr volume id, or null
+ * when there is no ComicVine match / no root folder (the comic stays parked). If Kapowarr already holds the
+ * ComicVine volume (search's `already_added`), that local id is reused rather than double-adding.
+ */
+async function routeNewComic(
+  db: DbClient | undefined,
+  kapowarr: KapowarrClientBundle,
+  comic: ComicRouteTarget,
+  rootFolderId: number | undefined,
+  log: NonNullable<SyncGoodreadsInput['logger']>,
+): Promise<number | null> {
+  if (rootFolderId == null) return null;
+  const candidates = await kapowarr.read.searchVolumes(comic.title);
+  const pick = pickBestVolume(comic.title, candidates);
+  if (!pick) {
+    log.info?.('goodreads-sync: no ComicVine match for comic — parked', { title: comic.title });
+    return null;
+  }
+  const volumeId =
+    pick.alreadyAdded ??
+    (await kapowarr.write.addVolume({
+      comicvineId: pick.comicvineId,
+      rootFolderId,
+      monitor: true,
+      autoSearch: true,
+    }));
+  await markComicRouted({
+    db,
+    requestId: comic.requestId,
+    kapowarrVolumeId: String(volumeId),
+    comicvineId: String(pick.comicvineId),
+    comicStatus: 'wanted',
+  });
+  return volumeId;
 }
 
 // ---------------------------------------------------------------------------
@@ -228,4 +329,54 @@ export async function runManualBookSearch(
     throw new LazyLibrarianUpstreamError('LazyLibrarian search failed', { cause: error });
   }
   return { searched: true, formats };
+}
+
+// ---------------------------------------------------------------------------
+// ADR-056 (PLAN-046) — the COMIC force-search: the audited user action, then the confined Kapowarr auto_search.
+// This is the Kapowarr leg of the `integrations.search` surface (books/audio → runManualBookSearch above;
+// comics → here) that PLAN-045's Library "Force Search" button calls for a comic.
+// ---------------------------------------------------------------------------
+
+export interface RunComicVolumeSearchInput {
+  db?: DbClient;
+  requestId: string;
+  userId: string;
+  actorId: string | null;
+  kapowarr: KapowarrClientBundle;
+}
+
+export interface RunComicVolumeSearchResult {
+  searched: boolean;
+  /** When false: nothing was searched — the comic already landed, or has no resolved Kapowarr volume yet. */
+  reason?: 'landed' | 'no_kapowarr_id';
+}
+
+/**
+ * Manual force-search of a comic request: record the audited `request_book_search` first (it commits — the
+ * intent is recorded even for a not-yet-routed comic), then fire Kapowarr's `auto_search` task for the volume
+ * (search its GetComics DDL sources + grab). A comic with no Kapowarr volume id yet (routing hasn't run /
+ * matched) or one already landed searches nothing but is STILL audited. A Kapowarr failure surfaces as
+ * KapowarrUpstreamError (BAD_GATEWAY) AFTER the audit — the honest "we tried, Kapowarr was down" record.
+ */
+export async function runComicVolumeSearch(
+  input: RunComicVolumeSearchInput,
+): Promise<RunComicVolumeSearchResult> {
+  const { request } = await recordManualSearch({
+    db: input.db,
+    requestId: input.requestId,
+    userId: input.userId,
+    actorId: input.actorId,
+  });
+
+  if (request.comicStatus === 'landed') return { searched: false, reason: 'landed' };
+  if (!request.kapowarrVolumeId) return { searched: false, reason: 'no_kapowarr_id' };
+
+  const volumeId = Number(request.kapowarrVolumeId);
+  if (Number.isNaN(volumeId)) return { searched: false, reason: 'no_kapowarr_id' };
+  try {
+    await input.kapowarr.write.searchVolume(volumeId);
+  } catch (error) {
+    throw new KapowarrUpstreamError('Kapowarr search failed', { cause: error });
+  }
+  return { searched: true };
 }

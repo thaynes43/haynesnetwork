@@ -24,6 +24,7 @@ import { startStubAuthentik, type StubAuthentikServer } from './stub-authentik';
 import { startStubBooks, type StubBooksServer } from './stub-books';
 import { startStubGoodreads, type StubGoodreadsServer } from './stub-goodreads';
 import { startStubLazyLibrarian, type StubLazyLibrarianServer } from './stub-lazylibrarian';
+import { startStubKapowarr, type StubKapowarrServer } from './stub-kapowarr';
 import { composeRuntimeEnv, DEFAULT_APP_PORT, type RuntimeEnv } from './env';
 
 const DEV_READY_TIMEOUT_MS = 180_000;
@@ -64,6 +65,8 @@ export interface RunningStack {
   goodreads: StubGoodreadsServer;
   /** Stub LazyLibrarian (command API + call recorder) — Integrations e2e layer (ADR-055 / DESIGN-028). */
   lazylibrarian: StubLazyLibrarianServer;
+  /** Stub Kapowarr (REST + call recorder) — comic routing e2e layer (ADR-056 / PLAN-046). */
+  kapowarr: StubKapowarrServer;
   devServer: ChildProcess;
   /** The DESIGN-002 D-08 env the dev server was booted with. */
   env: RuntimeEnv;
@@ -186,6 +189,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
   let books: StubBooksServer | undefined;
   let goodreads: StubGoodreadsServer | undefined;
   let lazylibrarian: StubLazyLibrarianServer | undefined;
+  let kapowarr: StubKapowarrServer | undefined;
   let dev: ChildProcess | undefined;
   try {
     const migrate = spawnSync('pnpm', ['--filter', '@hnet/db', 'migrate'], {
@@ -222,6 +226,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     books = await startStubBooks();
     goodreads = await startStubGoodreads();
     lazylibrarian = await startStubLazyLibrarian();
+    kapowarr = await startStubKapowarr();
     const env = composeRuntimeEnv({
       databaseUrl: pg.connectionString,
       stubOidcBaseUrl: oidc.baseUrl,
@@ -236,6 +241,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       stubBooksBaseUrl: books.baseUrl,
       stubGoodreadsBaseUrl: goodreads.baseUrl,
       stubLazyLibrarianBaseUrl: lazylibrarian.baseUrl,
+      stubKapowarrBaseUrl: kapowarr.baseUrl,
       appUrl,
     });
 
@@ -302,6 +308,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     const runningBooks = books;
     const runningGoodreads = goodreads;
     const runningLazyLibrarian = lazylibrarian;
+    const runningKapowarr = kapowarr;
     let stopped = false;
     return {
       appUrl,
@@ -317,12 +324,14 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       books: runningBooks,
       goodreads: runningGoodreads,
       lazylibrarian: runningLazyLibrarian,
+      kapowarr: runningKapowarr,
       devServer: running,
       env,
       stop: async () => {
         if (stopped) return;
         stopped = true;
         await killDevServer(running);
+        await runningKapowarr.stop().catch(() => undefined);
         await runningLazyLibrarian.stop().catch(() => undefined);
         await runningGoodreads.stop().catch(() => undefined);
         await runningBooks.stop().catch(() => undefined);
@@ -340,6 +349,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
   } catch (err) {
     // Partial-boot cleanup, best effort in reverse order.
     if (dev) await killDevServer(dev).catch(() => undefined);
+    if (kapowarr) await kapowarr.stop().catch(() => undefined);
     if (lazylibrarian) await lazylibrarian.stop().catch(() => undefined);
     if (goodreads) await goodreads.stop().catch(() => undefined);
     if (books) await books.stop().catch(() => undefined);

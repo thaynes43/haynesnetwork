@@ -126,3 +126,6 @@ export * from './integration-shelf-items';
 export * from './book-requests';
 export * from './goodreads-sync';
 export * from './lazylibrarian-clients';
+// ADR-056 (PLAN-046 — Kapowarr comics acquisition) — the confined Kapowarr client bundle for comic routing +
+// the comic force-search (@hnet/kapowarr/write stays in this package — the arr-write-import-guard, extended).
+export * from './kapowarr-clients';

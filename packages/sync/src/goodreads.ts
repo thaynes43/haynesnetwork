@@ -10,6 +10,7 @@ import {
   markIntegrationSynced,
   syncGoodreadsIntegration,
   type EnrichedShelfItem,
+  type KapowarrClientBundle,
   type LazyLibrarianClientBundle,
   type SyncGoodreadsReport,
 } from '@hnet/domain';
@@ -46,6 +47,8 @@ export async function runGoodreadsSync(input: {
   db?: DbClient;
   goodreads: GoodreadsSourceBundle;
   ll?: LazyLibrarianClientBundle;
+  /** ADR-056 (PLAN-046) — the confined Kapowarr bundle for comic routing. Absent ⇒ comics stay parked. */
+  kapowarr?: KapowarrClientBundle;
   now?: Date;
   logger?: SyncLogger;
 }): Promise<GoodreadsSyncReport> {
@@ -94,6 +97,7 @@ export async function runGoodreadsSync(input: {
         items: enriched,
         syncedShelves,
         ...(input.ll ? { ll: input.ll } : {}),
+        ...(input.kapowarr ? { kapowarr: input.kapowarr } : {}),
         ...(input.now ? { now: input.now } : {}),
         logger,
       });

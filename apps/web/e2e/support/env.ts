@@ -19,6 +19,7 @@ import { STUB_AUTHENTIK_API_TOKEN } from './stub-authentik';
 import { STUB_ABS_PASSWORD, STUB_KAVITA_PASSWORD } from './stub-books';
 import { STUB_GOOGLE_BOOKS_API_KEY } from './stub-goodreads';
 import { STUB_LAZYLIBRARIAN_API_KEY } from './stub-lazylibrarian';
+import { STUB_KAPOWARR_API_KEY } from './stub-kapowarr';
 
 /** Default app port — off 3000 so the stack coexists with a running `pnpm dev`.
  *  playwright.config.ts's baseURL derives from this. */
@@ -105,6 +106,10 @@ export interface RuntimeEnv {
   GOOGLE_BOOKS_API_KEY: string;
   LAZYLIBRARIAN_URL: string;
   LAZYLIBRARIAN_API_KEY: string;
+  /** ADR-056 (PLAN-046) — stub Kapowarr origin (comic routing + force-search point here). */
+  STUB_KAPOWARR_URL: string;
+  KAPOWARR_URL: string;
+  KAPOWARR_API_KEY: string;
   /** ADR-026 / DESIGN-012 — per-source Bulletin webhook shared secrets (Seerr + Tautulli). */
   SEERR_WEBHOOK_SECRET: string;
   TAUTULLI_WEBHOOK_SECRET: string;
@@ -142,6 +147,7 @@ export function composeRuntimeEnv(opts: {
   stubBooksBaseUrl: string;
   stubGoodreadsBaseUrl: string;
   stubLazyLibrarianBaseUrl: string;
+  stubKapowarrBaseUrl: string;
   appUrl: string;
 }): RuntimeEnv {
   return {
@@ -203,6 +209,9 @@ export function composeRuntimeEnv(opts: {
     GOOGLE_BOOKS_API_KEY: STUB_GOOGLE_BOOKS_API_KEY,
     LAZYLIBRARIAN_URL: opts.stubLazyLibrarianBaseUrl,
     LAZYLIBRARIAN_API_KEY: STUB_LAZYLIBRARIAN_API_KEY,
+    STUB_KAPOWARR_URL: opts.stubKapowarrBaseUrl,
+    KAPOWARR_URL: opts.stubKapowarrBaseUrl,
+    KAPOWARR_API_KEY: STUB_KAPOWARR_API_KEY,
     SEERR_WEBHOOK_SECRET: STUB_SEERR_WEBHOOK_SECRET,
     TAUTULLI_WEBHOOK_SECRET: STUB_TAUTULLI_WEBHOOK_SECRET,
     // 30 s (vs 15 min in prod): long enough that fresh submits deterministically read

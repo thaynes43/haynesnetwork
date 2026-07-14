@@ -18,6 +18,7 @@
     "@hnet/authentik": "workspace:*",
     "@hnet/db": "workspace:*",
     "@hnet/downloads": "workspace:*",
+    "@hnet/kapowarr": "workspace:*",
     "@hnet/lazylibrarian": "workspace:*",
     "@hnet/openwebui": "workspace:*",
     "@hnet/plex": "workspace:*",

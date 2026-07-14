@@ -126,6 +126,27 @@ ConfirmButton], "In your library" / "Queued — searching" / the comic note othe
 | ID | Question | Resolution |
 |----|----------|------------|
 | Q-01 | ISBN match against `books_items`? | Deferred — the mirror has no ISBN column; normalized-title match for MVP (ADR-055 C-06). A books-sync ISBN column enables it. |
-| Q-02 | Comics acquisition route? | Parked (`unroutable_reason='comic'`) — Kapowarr wiring is the saga pairing phase. |
+| Q-02 | Comics acquisition route? | **RESOLVED by ADR-056 / PLAN-046 (see the amendment below):** comics route to KAPOWARR (monitored ComicVine volume + `comic_status` reconcile), no longer merely parked. |
 | Q-03 | Exact LL queueBook/searchBook `type` param names? | Sent `type=eBook|AudioBook` (LL DLTYPES vocabulary). Verify against the live LL API at the owner-present acceptance run; adjust in the write client (one place) if needed. |
 | Q-04 | read / currently-reading shelves + cross-provider coverage? | Later saga phases (point 3). |
+
+## Amendment — ADR-056 / PLAN-046: comic acquisition (Kapowarr routing)
+
+The comics leg deferred at Q-02 is now built (backend; the full Comics-wall poster redesign is PLAN-045).
+
+- **Data.** `book_requests` gains `comic_status` (the five statuses or NULL), `kapowarr_volume_id`, and
+  `comicvine_id` (migration 0046). `comic_status IS NOT NULL` is the durable "is a comic" discriminator; a
+  comic's ebook/audio stay `missing` (N/A). A comic that can't be routed (Kapowarr down / no ComicVine match)
+  stays PARKED (`unroutable_reason='comic'`, `comic_status='requested'`); once routed `unroutable_reason`
+  clears and `comic_status='wanted'`.
+- **Routing (goodreads-sync).** A comic resolves to a ComicVine volume via Kapowarr's own search
+  (`pickBestVolume` — shared-title-token rank, prefer the ORIGINAL `translated=false` edition), is added
+  MONITORED with auto-search, and reconciles its per-volume state back into `comic_status`
+  (`mapKapowarrVolumeStatus`). The confined `@hnet/kapowarr/write` surface stays domain-only.
+- **Requests wall (the 044 tab, kept coherent).** `RequestCard` renders a comic with a single **Comic** status
+  chip (not Ebook/Audio); a parked comic shows the routing note; a routed comic gets the **Search again**
+  button. Reflow-free (ADR-015), tokens-only — no layout change. PLAN-045 supersedes this with the poster wall.
+- **Force-search dispatch.** `integrations.search` (the endpoint PLAN-045's Library Force-Search button calls)
+  routes a comic to Kapowarr's `auto_search` task (`runComicVolumeSearch`) and a book/audiobook to LL's
+  `searchBook` (`runManualBookSearch`) — both audited `request_book_search`, both `integrations`-gated with
+  server-side ownership re-check. Signature: `search({ requestId: uuid }) → { target: 'kapowarr' | 'lazylibrarian', searched, reason?, formats? }`.
