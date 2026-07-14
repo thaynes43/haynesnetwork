@@ -1,7 +1,7 @@
 # DESIGN-026: Library views, grouping, and the per-view Sorting & Filtering overhaul
 
 - **Status:** Accepted <!-- ratified with ADR-051/052/053 on 2026-07-11; the Draft label was a docs-only-PR oversight (noted by the PLAN-029 data/domain build, fixed in the UX build PR) -->
-- **Last updated:** 2026-07-13
+- **Last updated:** 2026-07-13 <!-- group-card ART pass: D-04 art amendment (author portraits / glyph tiles / `?by=` grouping dimension), live art-source grounding table, D-11 art-density closure -->
 - **Satisfies:** PRD-001 **R-165..R-171**; governed by **ADR-051** (views + registries), **ADR-052** (per-user
   preferences), **ADR-053** (per-user watch/read-state). EXTENDS **DESIGN-008 D-09** (the shared `ledger.search`
   filter/sort engine + keyset cursor) and **DESIGN-024** (the `books.search`/`filterFacets` contract); reads the
@@ -36,6 +36,15 @@ contract (view switches PUSH, refinements REPLACE).
 | Household watch is thin | `play_count` non-null: radarr 360/9569, sonarr 193/1026, **lidarr 0** |
 | Book facets | ABS: author 100%, genres 91%, duration 100%, language 100%, **narrator 16%**, **series 3/823**; Kavita book: author 96%, pages 100%, format 100%, **year/genres/series 0**; Kavita comic: pages/format 100%, **author/year/genres 0** |
 | No per-user store | none — ADR-052 + ADR-053 tables are new |
+
+### Live-verified art-source grounding (group-card ART pass, port-forward probes, 2026-07-13)
+
+| Fact | Live result |
+|---|---|
+| ABS author photos | `GET /api/libraries/{id}/authors` carries `imagePath`/`updatedAt`; photos are **Audnexus-backed via ABS's own author match**. Live library: **0/130 matched at probe time**; one probe match (John Grisham) filled the photo and `GET /api/authors/{id}/image?width=300&format=webp` returned a **2.7 KB WebP** (400×267 original) — pipeline proven, population is one owner "Match all authors" run in ABS |
+| Kavita person images | Kavita 0.9.0.2 `POST /api/Person/all`: **0 of 1156 people carry a coverImage** (person art is effectively a Kavita+ feature); `person-cover`/`person-image` 404. **Not wired** — the cover fan stands for Kavita author cards (honest gap) |
+| Peloton / YouTube | discipline/channel cards are Plex shows with posters (Peloton = the PLAN-024 durable poster-guard art) already streaming through `/api/ytdlsub/poster` — no new wiring |
+| Comics | a Kavita row IS a series; the wall already wears real series covers via `/api/books/cover` |
 
 ## Detailed design
 
@@ -143,6 +152,26 @@ A grouped wall (D-01) renders **one aggregate card per group key** instead of on
   grouped view (D-19: the drill-in is a screen-level PUSH).
 - **Access** — the aggregate + its covers pass the ADR-047 gate like any other read; a group whose members are
   all withheld does not appear.
+
+**D-04 art amendment (group-card ART pass, 2026-07-13 — owner directive: real imagery for every slice
+dimension wherever a source exists, at the PLAN-030 Seasons/Episodes bar).** The art SLOT of an aggregate
+card is now a ruled ladder per dimension (one component — `GroupCardArt`; everything renders inside the same
+reserved 2:3 box, ADR-015; portraits fade in via the shared `.poster-img` reveal):
+
+| Slice dimension | Card art (populated-value-gated at every rung) |
+|---|---|
+| **Author (Audiobooks/ABS)** | the author's REAL portrait — ABS's Audnexus-backed author photo, served by the new sibling proxy `/api/books/author-image` (ADR-041 idiom: fixed 300w WebP variant + original fallback tier + strong `(id, updatedAt, variant)` ETag + the shared books LRU; session + `books`-section gated like `/api/books/cover`). `books.groups` attaches the URL through an in-process TTL author DIRECTORY (`@hnet/books` `listAuthors` read — read-only, no ./write) ONLY where `imagePath` is non-null → a card never renders a broken slot. No photo / ABS down → the cover fan. |
+| **Author (Books/Kavita)** | the cover fan stands — live-verified: Kavita person images are 0/1156 (a Kavita+ feature); NOT wired (honest gap, revisit if Kavita+ arrives). |
+| **Channel (YouTube) / Exercise (Peloton)** | already REAL Plex show posters via `/api/ytdlsub/poster` (ADR-041; Peloton = the PLAN-024 poster guard) — these walls ARE their grouped views, unchanged. |
+| **Series (Comics)** | already REAL Kavita series covers via `/api/books/cover` — the wall IS the series grid, unchanged. |
+| **Abstract dimensions (genre; decade/format/length when they ship)** | NO fake art — a designed, token-themed GLYPH tile (`genre-glyphs.tsx`, the TicketCategoryIcon "icon large where a poster would be" precedent): the family glyph inside a thin ring on the tinted box. Genre ships as Audiobooks' second grouping dimension (`?by=genre`, `books.groups groupBy:'genre'` — label+count only), populated-value-gated like its facet chip. |
+| **Universal fallback** | the 3-cover fan, then the KindIcon tile — unchanged. |
+
+The grouped URL contract gains **`?by=<dimension>`** (omitted = the wall's default/first dimension; a
+grouping switch is a screen-level PUSH like a view switch; the drill's `?group=` binds the drilled
+dimension's own filter — author OR genre). `WALL_VIEWS` declares `groupings[]` per wall (default first)
+with each dimension's art source; the genre grouped level (`audiobooks:grouped-genre`) sorts its cards
+label/count like every grouped level.
 
 ### D-05 — The `released_at` data layer (the one new sync/schema surface)
 
@@ -254,7 +283,13 @@ Per the owner directive (polish-level UX judgment applied AT BUILD, not locked h
 - The **view-selector affordance** (segmented control vs menu vs icon toggle) and where it sits on the toolbar.
 - **Which alternative view shapes each wall offers** beyond its R2 default (e.g. a flat A–Z Books grid; a
   grouped Movies-by-Collection view — note: Collections proper are PLAN-037, out of scope here).
+  <!-- PARTIALLY RESOLVED: Books/Audiobooks ship the flat alternative (PLAN-029 build); the group-card ART
+       pass (2026-07-13) adds Audiobooks' second grouping DIMENSION (Genres, ?by=genre). Movies-by-Collection
+       stays with PLAN-037. -->
 - **Group-card art density** — how many stacked covers, fan vs stack vs grid-of-4, count-badge placement.
+  <!-- RESOLVED by the group-card ART pass (2026-07-13, D-04 amendment): 3-cover fan as the universal
+       fallback; a dimension PORTRAIT where a real source exists (ABS author photos); designed GLYPH tiles
+       for abstract dimensions; count in the card body. -->
 - **A–Z jump-bar** placement (edge rail vs floating), the wall-size threshold that shows it, and touch sizing.
 - **Facet bucket boundaries** — duration buckets (e.g. <15m / 15–45m / >45m), page-count buckets, decade
   grouping granularity.

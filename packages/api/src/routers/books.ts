@@ -13,6 +13,7 @@ import { booksProcedure, effectiveSectionLevel } from '../middleware/role';
 import {
   BOOK_LENGTH_BOUNDS,
   KAVITA_FORMATS,
+  aggregateBookGenreGroups,
   aggregateBookGroups,
   booksSearchInputSchema,
   toBooksListItem,
@@ -22,6 +23,7 @@ import {
   type BooksSearchInput,
   type BooksSort,
 } from '../books-query';
+import { absAuthorDirectory, absAuthorImageUrlFor } from '../books-author-art';
 
 /** ADR-047 (PLAN-028) — the app-specific "Read in Kavita" / "Listen on Audiobookshelf" verb, by source. */
 function booksPlayLabel(source: string): string {
@@ -296,15 +298,28 @@ export const booksRouter = router({
     ),
 
   /**
-   * DESIGN-026 D-04 (PLAN-029 step 3) — the grouped view's aggregate cards: one card per author with
-   * an item count + a bounded cover sample (stacked-cover motif). Books/Audiobooks group by Author in
-   * v1 (R2); Comics' Series grouping IS the wall (a Kavita row is a series — no aggregate needed).
-   * Same `booksProcedure` gate as the wall; live rows only. Bounded: the walls are ≤ a few thousand
-   * rows (ADR-046), aggregated in-process from one narrow SELECT.
+   * DESIGN-026 D-04 (PLAN-029 step 3, art amended by the group-card-art pass) — the grouped view's
+   * aggregate cards: one card per author with an item count + a bounded cover sample (stacked-cover
+   * motif), or one card per GENRE (label + count; the client renders the designed glyph tile — the
+   * first abstract grouping dimension). Books/Audiobooks group by Author (R2); Audiobooks also
+   * offers Genre; Comics' Series grouping IS the wall (a Kavita row is a series — no aggregate).
+   *
+   * Author cards on the ABS wall additionally carry the author's PORTRAIT URL when ABS holds a
+   * photo (the in-process author directory — populated-value-gated, ADR-051 C-06; directory
+   * unavailable ⇒ null ⇒ the fan). Same `booksProcedure` gate as the wall; live rows only.
+   * Bounded: the walls are ≤ a few thousand rows (ADR-046), aggregated in-process from one narrow
+   * SELECT.
    */
   groups: booksProcedure
-    .input(z.object({ mediaKind: z.enum(BOOKS_MEDIA_KINDS), groupBy: z.enum(['author']) }))
+    .input(z.object({ mediaKind: z.enum(BOOKS_MEDIA_KINDS), groupBy: z.enum(['author', 'genre']) }))
     .query(async ({ ctx, input }): Promise<{ groups: BooksGroup[] }> => {
+      if (input.groupBy === 'genre') {
+        const rows = await ctx.db
+          .select({ genres: booksItems.genres })
+          .from(booksItems)
+          .where(and(eq(booksItems.mediaKind, input.mediaKind), isNull(booksItems.deletedAt)));
+        return { groups: aggregateBookGenreGroups(rows) };
+      }
       const rows = await ctx.db
         .select({
           author: booksItems.author,
@@ -315,6 +330,14 @@ export const booksRouter = router({
         })
         .from(booksItems)
         .where(and(eq(booksItems.mediaKind, input.mediaKind), isNull(booksItems.deletedAt)));
-      return { groups: aggregateBookGroups(rows) };
+      let groups = aggregateBookGroups(rows);
+      if (input.mediaKind === 'audiobook') {
+        // ABS author portraits (D-04 art): a real photo where ABS holds one, the fan elsewhere.
+        // Kavita walls skip the lookup — live-verified 2026-07-13: Kavita person images are
+        // effectively a Kavita+ feature (0 of 1156 people carry one), the honest gap stands.
+        const directory = await absAuthorDirectory();
+        groups = groups.map((g) => ({ ...g, imageUrl: absAuthorImageUrlFor(directory, g.label) }));
+      }
+      return { groups };
     }),
 });

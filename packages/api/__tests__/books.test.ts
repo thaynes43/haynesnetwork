@@ -284,4 +284,18 @@ describe('books.groups (PLAN-029 D-04 — the grouped view aggregate)', () => {
     const res = await adminCaller.books.groups({ mediaKind: 'audiobook', groupBy: 'author' });
     expect(res.groups.map((g) => `${g.label}:${g.count}`)).toEqual(['Amy Author:1', 'Zed Author:1']);
   });
+
+  it('author cards carry imageUrl: null when ABS is unavailable (env absent — the fan fallback, never an error)', async () => {
+    const res = await adminCaller.books.groups({ mediaKind: 'audiobook', groupBy: 'author' });
+    expect(res.groups.every((g) => g.imageUrl === null)).toBe(true);
+  });
+
+  it('groups audiobooks by GENRE (group-card-art pass): label + count, no art refs (glyph tiles client-side)', async () => {
+    await expect(
+      disabledCaller.books.groups({ mediaKind: 'audiobook', groupBy: 'genre' }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    const res = await adminCaller.books.groups({ mediaKind: 'audiobook', groupBy: 'genre' });
+    expect(res.groups.map((g) => `${g.label}:${g.count}`)).toEqual(['Adventure:1', 'Fantasy:1']);
+    expect(res.groups.every((g) => g.coverUrls.length === 0 && g.imageUrl === null)).toBe(true);
+  });
 });
