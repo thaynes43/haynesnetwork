@@ -50,7 +50,7 @@ import {
 } from '@hnet/ui';
 import type { BooksSort, BookReadState } from '@hnet/api';
 import { trpc } from '@/lib/trpc-client';
-import { BookCard, GroupCard, PosterGrid, PosterGridSkeleton } from '@/components/cards';
+import { BookCard, GroupCard, PosterGrid, PosterGridSkeleton, type InFlightBadge } from '@/components/cards';
 import { CHIP_LABELS, SelectChip } from '@/components/filter-chips';
 import { LetterJumpBar } from '@/components/letter-jump-bar';
 import {
@@ -297,6 +297,24 @@ export function BooksBrowser({
   // list (ADR-051 C-06).
   const wantedQ = trpc.books.wanted.useQuery({ mediaKind }, { refetchOnWindowFocus: false });
   const wantedAll = wantedQ.data?.items ?? [];
+  // PLAN-048 / ADR-059 D-03 (#272 residual) — ONE live wall-stage read per wall view, enabled only when this
+  // wall actually has wanted tiles (cheap: no wants ⇒ no query). Each wanted poster wears the live in-flight
+  // stage badge (searching / downloading % / importing) and updates on the poll, in place (ADR-015). A book/
+  // audiobook want joins by its LL/GB book id; a comic want by its Kapowarr volume id — the `activity.wallStages`
+  // map is keyed exactly so (`{ [wall]: { [joinKey]: WallStage } }`).
+  const wallStagesQ = trpc.activity.wallStages.useQuery(undefined, {
+    enabled: wantedAll.length > 0,
+    refetchInterval: 5000,
+    refetchOnWindowFocus: true,
+    placeholderData: (prev) => prev,
+  });
+  const inFlightFor = (key: string | null | undefined): InFlightBadge | null => {
+    if (key == null) return null;
+    const s = wallStagesQ.data?.[booksWall]?.[key];
+    return s ? { stage: s.stage, progress: s.progress } : null;
+  };
+  const wantedInFlight = (w: (typeof wantedAll)[number]): InFlightBadge | null =>
+    inFlightFor(mediaKind === 'comic' ? w.kapowarrVolumeId : w.llBookId);
   // The wall's top level only (never inside a drilled group); the text query narrows the wanted cards
   // client-side, but other facet refinements hide them — synthetic wants can't honestly answer
   // format/length/read facets (the same "never offer what it can't answer" rule as sorts).
@@ -605,7 +623,7 @@ export function BooksBrowser({
         wantedItems.length > 0 ? (
           <PosterGrid testId="books-grid">
             {wantedItems.map((w) => (
-              <WantedCard key={`w-${w.requestId}`} item={w} mediaKind={mediaKind} />
+              <WantedCard key={`w-${w.requestId}`} item={w} mediaKind={mediaKind} inFlight={wantedInFlight(w)} />
             ))}
           </PosterGrid>
         ) : (
@@ -667,7 +685,12 @@ export function BooksBrowser({
             {/* Wanted cards lead the flat stream — same grid, same poster block as the on-disk books. */}
             {showWantedInline
               ? wantedItems.map((w) => (
-                  <WantedCard key={`w-${w.requestId}`} item={w} mediaKind={mediaKind} />
+                  <WantedCard
+                    key={`w-${w.requestId}`}
+                    item={w}
+                    mediaKind={mediaKind}
+                    inFlight={wantedInFlight(w)}
+                  />
                 ))
               : null}
             {items.map((item) => {

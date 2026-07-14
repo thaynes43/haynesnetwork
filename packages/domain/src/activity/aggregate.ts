@@ -2,8 +2,8 @@
 // LIVE items (each degrade-safe), join the durable failure ledger (fill the failure detail href), apply the
 // per-viewer section gate, and compute the chip counts. Source-agnostic — adding the *arr/Kapowarr adapter
 // is a one-line change to the adapter list the API hands in (DESIGN-030 D-08).
-import { activityImportFailures, type DbClient } from '@hnet/db';
-import { and, eq, isNull } from 'drizzle-orm';
+import { activityImportFailures, bookRequests, mediaItems, type DbClient } from '@hnet/db';
+import { inArray, isNull, or } from 'drizzle-orm';
 import { resolveDb } from '../db-client';
 import {
   ACTIVITY_KINDS,
@@ -53,6 +53,10 @@ interface AggregateLogger {
   warn?: (msg: string, meta?: Record<string, unknown>) => void;
 }
 
+/** The `?from=` back-link key so a detail page reached from Activity returns to the Activity tab (+ its
+ *  URL filters) — the closed-dictionary key added to lib/back-link.ts (never a raw URL). */
+const ACTIVITY_FROM = 'activity';
+
 /** Read the OPEN failure ledger into a `${source}:${sourceRef}` → row-id map (the detail-href join). */
 async function loadFailureHrefs(db: DbClient): Promise<Map<string, string>> {
   const rows = await db
@@ -66,6 +70,117 @@ async function loadFailureHrefs(db: DbClient): Promise<Map<string, string>> {
   const map = new Map<string, string>();
   for (const r of rows) map.set(`${r.source}:${r.sourceRef}`, r.id);
   return map;
+}
+
+/** Derive an item's failure-ledger source family from its id prefix (matches each adapter's `source`
+ *  column: `arr` / `books` / `kapowarr`). The stable ref is self-describing, so the flat item list needs
+ *  no per-adapter bookkeeping to rebuild the failure-href key. */
+export function activityFamilyOf(id: string): 'arr' | 'books' | 'kapowarr' | null {
+  if (id.startsWith('arr:')) return 'arr';
+  if (id.startsWith('books:')) return 'books';
+  if (id.startsWith('kapowarr:')) return 'kapowarr';
+  return null;
+}
+
+/**
+ * DESIGN-030 D-09 (owner CLICKABILITY ruling) — fill EVERY item's in-app `href` in place, not just failures:
+ *  • a `failed` item → its failure-detail page (`/library/activity/<rowId>`), once the ledger row id is known;
+ *  • a non-failed *arr item → its LEDGER detail (`/library/<mediaItemId>`), joined by (arr_kind, arr_item_id);
+ *  • a non-failed book / audiobook item → its Wanted detail (`/library/books/wanted/<requestId>`), joined by
+ *    ll_book_id;
+ *  • a non-failed comic item → its Wanted detail, joined by kapowarr_volume_id.
+ * Every link carries `?from=activity` so the detail page's Back returns to the Activity tab (its filters ride
+ * the tab URL). A join MISS (an in-flight item the ledger/request tables don't yet know — e.g. a brand-new
+ * grab not yet synced) leaves href null: an inert tile, the honest fallback (never a broken link). The pure
+ * per-source adapters stay I/O-free; these joins live at the aggregator seam — the only layer with DB access,
+ * exactly like the pre-existing failure-href join. Two bounded queries, each skipped when it has no candidates.
+ */
+export async function resolveActivityHrefs(db: DbClient, items: ActivityItem[]): Promise<void> {
+  const failureHrefs = await loadFailureHrefs(db);
+
+  // Collect the non-failed join candidates (a failure keeps its failure-detail href, resolved below).
+  const arrItemIds = new Set<number>();
+  const arrKeyById = new Map<string, string>(); // item.id -> `${arrKind}:${parentId}`
+  const bookIdById = new Map<string, string>(); // item.id -> ll_book_id
+  const volumeIdById = new Map<string, number>(); // item.id -> kapowarr volumeId
+  for (const it of items) {
+    if (it.stage === 'failed') continue;
+    const arr = parseArrActivityRef(it.id);
+    if (arr) {
+      arrItemIds.add(arr.parentId);
+      arrKeyById.set(it.id, `${arr.arrKind}:${arr.parentId}`);
+      continue;
+    }
+    const book = /^books:ll:([^:]+):/.exec(it.id);
+    if (book) {
+      bookIdById.set(it.id, book[1]!);
+      continue;
+    }
+    const kapo = parseKapowarrActivityRef(it.id);
+    if (kapo) volumeIdById.set(it.id, kapo.volumeId);
+  }
+
+  // media_items detail hrefs, keyed `${arr_kind}:${arr_item_id}` (a numeric id can repeat across kinds).
+  const arrHrefByKey = new Map<string, string>();
+  if (arrItemIds.size > 0) {
+    const rows = await db
+      .select({ id: mediaItems.id, arrKind: mediaItems.arrKind, arrItemId: mediaItems.arrItemId })
+      .from(mediaItems)
+      .where(inArray(mediaItems.arrItemId, [...arrItemIds]));
+    for (const r of rows) arrHrefByKey.set(`${r.arrKind}:${r.arrItemId}`, r.id);
+  }
+
+  // book_requests wanted-detail hrefs (one book id / volume id can map to several household requests — any
+  // representative requestId opens the household Wanted detail).
+  const bookIds = new Set(bookIdById.values());
+  const volumeIds = new Set(volumeIdById.values());
+  const requestByBookId = new Map<string, string>();
+  const requestByVolumeId = new Map<string, string>();
+  if (bookIds.size > 0 || volumeIds.size > 0) {
+    const conds = [];
+    if (bookIds.size > 0) conds.push(inArray(bookRequests.llBookId, [...bookIds]));
+    if (volumeIds.size > 0) conds.push(inArray(bookRequests.kapowarrVolumeId, [...volumeIds].map(String)));
+    const rows = await db
+      .select({
+        id: bookRequests.id,
+        llBookId: bookRequests.llBookId,
+        kapowarrVolumeId: bookRequests.kapowarrVolumeId,
+      })
+      .from(bookRequests)
+      .where(conds.length === 1 ? conds[0]! : or(...conds));
+    for (const r of rows) {
+      if (r.llBookId != null && !requestByBookId.has(r.llBookId)) requestByBookId.set(r.llBookId, r.id);
+      if (r.kapowarrVolumeId != null && !requestByVolumeId.has(r.kapowarrVolumeId)) {
+        requestByVolumeId.set(r.kapowarrVolumeId, r.id);
+      }
+    }
+  }
+
+  for (const it of items) {
+    if (it.stage === 'failed') {
+      const family = activityFamilyOf(it.id);
+      const rowId = family ? failureHrefs.get(`${family}:${it.id}`) : undefined;
+      if (rowId != null) it.href = `/library/activity/${rowId}?from=${ACTIVITY_FROM}`;
+      continue; // no ledger row yet → keep the adapter default (null)
+    }
+    const arrKey = arrKeyById.get(it.id);
+    if (arrKey !== undefined) {
+      const mediaId = arrHrefByKey.get(arrKey);
+      if (mediaId != null) it.href = `/library/${mediaId}?from=${ACTIVITY_FROM}`;
+      continue;
+    }
+    const bookId = bookIdById.get(it.id);
+    if (bookId !== undefined) {
+      const reqId = requestByBookId.get(bookId);
+      if (reqId != null) it.href = `/library/books/wanted/${reqId}?from=${ACTIVITY_FROM}`;
+      continue;
+    }
+    const volumeId = volumeIdById.get(it.id);
+    if (volumeId !== undefined) {
+      const reqId = requestByVolumeId.get(String(volumeId));
+      if (reqId != null) it.href = `/library/books/wanted/${reqId}?from=${ACTIVITY_FROM}`;
+    }
+  }
 }
 
 /** A terse, non-secret one-line reason for a degraded source (the env-assertion class names the ABSENT
@@ -112,9 +227,11 @@ export async function aggregateActivity(input: {
   /** The sections the viewer may see (e.g. ['books'] when books ≥ read_only). Universal (null) items always pass. */
   visibleSections: ActivitySection[];
   logger?: AggregateLogger;
+  /** Fill each item's click-through `href` (D-09). Default true; the `wallStages`/`itemStatus` reads that
+   *  never render an ActivityCard pass `false` to skip the (bounded) ledger/request join queries. */
+  resolveHrefs?: boolean;
 }): Promise<ActivityListResult> {
   const db = resolveDb(input.db);
-  const hrefByKey = await loadFailureHrefs(db);
   const visible = new Set<ActivitySection>(input.visibleSections);
 
   const collected: ActivityItem[] = [];
@@ -129,16 +246,12 @@ export async function aggregateActivity(input: {
       unavailable.push({ source: adapter.source, label: adapter.label ?? adapter.source, reason });
       continue;
     }
-    for (const item of items) {
-      const withHref =
-        item.stage === 'failed'
-          ? { ...item, href: hrefByKey.get(`${adapter.source}:${item.id}`) != null ? `/library/activity/${hrefByKey.get(`${adapter.source}:${item.id}`)}` : item.href }
-          : item;
-      collected.push(withHref);
-    }
+    // Shallow-copy so href resolution mutates aggregator-owned objects, never the adapter's return value.
+    for (const item of items) collected.push({ ...item });
   }
 
   const gated = collected.filter((it) => it.section === null || visible.has(it.section));
+  if (input.resolveHrefs !== false) await resolveActivityHrefs(db, gated);
   gated.sort((a, b) => (b.updatedAt < a.updatedAt ? -1 : b.updatedAt > a.updatedAt ? 1 : 0));
   return { items: gated, counts: computeActivityCounts(gated), unavailable };
 }

@@ -37,3 +37,18 @@
 
 - Q-01: live-poll vs synced read-model for queues (latency vs load) — ADR at design.
 - Q-02: does "importing" for books need an LL postprocess hook or is dir-watch inference enough?
+
+## Post-ship: CLICKABILITY + LIVE-PROGRESS pass (owner directive 2026-07-14)
+
+After the fan-out landed, the owner ruled the Activity tiles must all CLICK THROUGH and must show live
+progress "like when we click Fix, keep the UX consistent." Shipped (DESIGN-030 D-09 + D-10):
+
+- **D-09 click-through everywhere:** the aggregator fills `href` for every item (failed → failure detail;
+  *arr → ledger detail; book/comic want → Wanted detail), all `?from=activity`; the stage/kind filters moved
+  to the URL so Back restores the tab + filters.
+- **D-10 live progress (the Fix feel):** adaptive `activity.list` poll (2.5 s downloading / 5 s idle); the
+  shared in-flight badge gained a pulsing dot + filling mini-meter (a typed-prop ADR-058 extension, the Fix
+  `PhaseChip` vocabulary); a landed tile flashes before aging out; the failure + Wanted detail poll a new lean
+  `activity.itemStatus` after a fire and walk the stage in a reserved slot; the books walls now wire
+  `activity.wallStages` (`books.wanted` exposes the join keys). Hermetic parity harness at
+  `/e2e/activity-progress` captures the side-by-side against the Fix reference.

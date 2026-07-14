@@ -12,7 +12,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { signIn } from './support/helpers';
 import { readRuntimeEnv } from './support/env';
-import { arrActivityQueueFixture } from './support/stub-arr';
+import { arrActivityQueueFixture, STUB_MOVIE_ID } from './support/stub-arr';
 import { kapowarrActivityQueueFixture } from './support/stub-kapowarr';
 
 interface LlCall {
@@ -48,6 +48,39 @@ async function stageArrQueue(): Promise<void> {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ records: arrActivityQueueFixture() }),
+  });
+}
+
+/** Stage the DOWNLOADING fixture movie (movieId 601 = 'The Fixture', ledger row seeded) at a given percent,
+ *  or flip it to `importing` (the stage transition). Drives the live-progress + click-through assertions. */
+async function stageFixtureMovie(percent: number, opts?: { importing?: boolean }): Promise<void> {
+  const env = readRuntimeEnv();
+  const size = 1_000_000_000;
+  const rec = opts?.importing
+    ? {
+        id: 90001,
+        movieId: STUB_MOVIE_ID,
+        status: 'completed',
+        trackedDownloadStatus: 'ok',
+        trackedDownloadState: 'importing',
+        size,
+        sizeleft: 0,
+        title: 'The.Fixture.2022.1080p.WEB-DL',
+      }
+    : {
+        id: 90001,
+        movieId: STUB_MOVIE_ID,
+        status: 'downloading',
+        trackedDownloadStatus: 'ok',
+        trackedDownloadState: 'downloading',
+        size,
+        sizeleft: Math.round(size * (1 - percent / 100)),
+        title: 'The.Fixture.2022.1080p.WEB-DL',
+      };
+  await fetch(`${env.STUB_ARR_URL}/_stub/queue`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ records: [rec] }),
   });
 }
 
@@ -337,5 +370,91 @@ test.describe('Activity / In-Flight (PLAN-048)', () => {
       'aria-selected',
       'true',
     );
+  });
+
+  // PLAN-048 CLICKABILITY pass (D-09) — every tile clicks through. A NON-failed *arr download opens its
+  // LEDGER detail (media_items join, `?from=activity`); Back restores the Activity tab. (The failed
+  // click-through — a stranded book / blocked movie → failure detail — is proven in the admin journey above.)
+  test('click-through: a downloading *arr tile opens its ledger detail; Back restores Activity', async ({
+    page,
+  }) => {
+    await resetArr();
+    await stageFixtureMovie(45);
+    await signIn(page, 'admin');
+    await page.goto('/library?tab=activity');
+    await expect(page.getByTestId('activity-panel')).toBeVisible();
+
+    const card = page.getByTestId('activity-grid').locator('.poster-card', { hasText: 'The Fixture' });
+    await expect(card).toHaveCount(1);
+    // It is a real link (whole-face click-through), not an inert tile.
+    await expect(card).toHaveJSProperty('tagName', 'A');
+    await card.click();
+
+    // The ledger item detail (a UUID route) — NOT the failure route — reached with the Activity back-origin.
+    await expect(page).toHaveURL(/\/library\/[0-9a-f-]{36}\?from=activity/);
+    const back = page.getByTestId('back-link');
+    await expect(back).toContainText('Activity');
+
+    // Back (a soft-nav history.back) restores the Activity tab.
+    await back.click();
+    await expect(page).toHaveURL(/tab=activity/);
+    await expect(page.getByTestId('activity-panel')).toBeVisible();
+  });
+
+  // PLAN-048 LIVE-PROGRESS pass (D-10) — the download % updates IN PLACE on the poll: the SAME badge DOM node
+  // re-renders with the new percent (no remount, no re-skeleton — #278's placeholderData holds). Also the
+  // stage transition (downloading → importing) swaps the badge in place. Hermetic captures of both.
+  test('live progress: the download % updates on the same DOM node; the stage swaps in place', async ({
+    page,
+  }, testInfo) => {
+    await resetArr();
+    await stageFixtureMovie(45);
+    await signIn(page, 'admin');
+    await page.evaluate(() => localStorage.setItem('hnet-theme', 'hnet-dark'));
+    await page.goto('/library?tab=activity');
+    await expect(page.getByTestId('activity-panel')).toBeVisible();
+    await page.locator('html[data-theme="hnet-dark"]').waitFor();
+
+    const card = page.getByTestId('activity-grid').locator('.poster-card', { hasText: 'The Fixture' });
+    const badge = card.locator('.badge--live');
+    await expect(badge).toContainText('%');
+    // The live meter fill is present (the Fix idiom) — one badge, no extra anatomy.
+    await expect(card.locator('.badge__fill')).toHaveCount(1);
+
+    // Capture the CURRENT badge node; after the poll it must be the SAME node with a higher percent.
+    const handle = await badge.elementHandle();
+    const before = (await handle!.textContent())?.trim() ?? '';
+
+    // Capture: a downloading card mid-progress.
+    for (const [label, w, h] of [
+      ['desktop', 1280, 900],
+      ['390', 390, 844],
+    ] as const) {
+      await page.setViewportSize({ width: w, height: h });
+      const path = testInfo.outputPath(`activity-downloading-${label}-dark.png`);
+      await page.screenshot({ path, fullPage: true });
+      await testInfo.attach(`activity-downloading-${label}-dark`, { path, contentType: 'image/png' });
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
+
+    // Bump the progress; the SAME node (handle still attached) shows the new percent on the adaptive poll.
+    await stageFixtureMovie(85);
+    await expect
+      .poll(async () => (await handle!.textContent())?.trim() ?? '', { timeout: 20_000 })
+      .not.toBe(before);
+    expect(await handle!.evaluate((el) => el.isConnected)).toBe(true); // never remounted — same node
+
+    // The stage transition: downloading → importing swaps the badge in place (still the SAME card).
+    await stageFixtureMovie(100, { importing: true });
+    await expect(card.locator('.badge')).toContainText('Importing', { timeout: 20_000 });
+    for (const [label, w, h] of [
+      ['desktop', 1280, 900],
+      ['390', 390, 844],
+    ] as const) {
+      await page.setViewportSize({ width: w, height: h });
+      const path = testInfo.outputPath(`activity-stage-transition-${label}-dark.png`);
+      await page.screenshot({ path, fullPage: true });
+      await testInfo.attach(`activity-stage-transition-${label}-dark`, { path, contentType: 'image/png' });
+    }
   });
 });

@@ -30,6 +30,7 @@ export function ActivityCard({
   stage,
   progress,
   failureKind,
+  justCompleted,
   testId,
 }: {
   href: string | null;
@@ -44,6 +45,10 @@ export function ActivityCard({
   progress?: number | null;
   /** Present only for a failed item — the second (failure-class) badge. */
   failureKind?: string | null;
+  /** PLAN-048 / ADR-059 D-10 — this tile JUST transitioned to `completed` on this poll: a one-shot accent
+   *  ring plays (recolor-only, ADR-015) so the landing is SEEN before the item ages out — it never just
+   *  vanishes between polls. Rides a `data-*` attr (typed passthrough), never a class fork. */
+  justCompleted?: boolean;
   testId?: string;
 }) {
   const failure = stage === 'failed' ? activityFailureBadge(failureKind) : null;
@@ -57,6 +62,7 @@ export function ActivityCard({
       subtitle={SOURCE_APP_LABELS[sourceApp] ?? sourceApp}
       badges={badges}
       testId={testId}
+      data={justCompleted ? { 'data-just-completed': 'true' } : undefined}
     />
   );
 }

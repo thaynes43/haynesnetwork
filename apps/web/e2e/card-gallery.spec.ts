@@ -111,6 +111,21 @@ test.describe('card gallery — the shared-card-system drift gate (ADR-058)', ()
     await expect(
       page.getByTestId('gallery-media').locator('.poster-card', { hasText: 'Grabbing Now' }).locator('.badge--info'),
     ).toHaveCount(1);
+
+    // PLAN-048 D-10 — the LIVE badge state (the Fix feel): a downloading badge carries the filling mini-meter
+    // + the pulsing dot INSIDE the one badge (still one `.badge`, no new anatomy). Locked here so it can't drift.
+    const downloading = page
+      .getByTestId('gallery-activity')
+      .locator('.poster-card', { hasText: 'Downloading Now' });
+    await expect(downloading.locator('.media-card__badges .badge')).toHaveCount(1);
+    await expect(downloading.locator('.badge--live .badge__fill')).toHaveCount(1);
+    await expect(downloading.locator('.badge--pulse .badge__dot')).toHaveCount(1);
+    // A searching tile pulses (alive) but has no determinate meter fill.
+    const searching = page
+      .getByTestId('gallery-activity')
+      .locator('.poster-card', { hasText: 'Searching For This' });
+    await expect(searching.locator('.badge--pulse .badge__dot')).toHaveCount(1);
+    await expect(searching.locator('.badge__fill')).toHaveCount(0);
   });
 
   test('ticket tiles keep the twall anatomy (state puck + caption/sub + ONE meta row)', async ({

@@ -196,6 +196,12 @@ export const booksRouter = router({
             /** The WALL format's own status (requested | wanted | grabbed | missing — never landed here). */
             status: v.status,
             isComic: v.isComic,
+            // PLAN-048 / ADR-059 D-03 (#272 residual) — the activity wall-badge join keys: a book/audiobook
+            // want joins the live in-flight read by its LL/GB book id; a comic want by its Kapowarr volume id.
+            // The wall passes `inFlightFor(wall, key)` from `activity.wallStages` so a want that is actively
+            // being acquired wears the live stage badge (searching / downloading % / importing).
+            llBookId: v.llBookId,
+            kapowarrVolumeId: v.kapowarrVolumeId,
             /** A parked comic (no Kapowarr route yet) — the honest "waiting on a ComicVine match" note. */
             parked: v.isComic && v.unroutableReason === 'comic',
             requestedBy: v.requestedBy,
@@ -271,6 +277,11 @@ export const booksRouter = router({
         lastSearchedAt: view.lastSearchedAt ? view.lastSearchedAt.toISOString() : null,
         /** The viewer-level force-search gate (owner + integrations section) — per-format detail below. */
         canSearch,
+        // PLAN-048 / ADR-059 D-10 — the live in-flight join keys: the detail polls `activity.itemStatus` per
+        // format (`books:ll:<llBookId>:<format>` / `kapowarr:<volumeId>`) so firing a re-search shows the
+        // format MOVE (searching → downloading → importing) exactly like the Fix dialog.
+        llBookId: view.llBookId,
+        kapowarrVolumeId: view.kapowarrVolumeId,
         formats,
       };
     }),

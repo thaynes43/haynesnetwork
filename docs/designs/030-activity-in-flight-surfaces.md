@@ -9,6 +9,10 @@
 - **Scope (SLICE 1):** the common contract, the Library → Activity sub-tab, the wall poster in-flight
   badge, the failure detail page + role-gated actions, and the BOOKS adapter (LL + SAB). The *arr and
   Kapowarr adapters are the fan-out follow-ups; they fill the SAME contract (D-08).
+- **Amended 2026-07-14 (owner CLICKABILITY + LIVE-PROGRESS pass):** D-09 (every tile clicks through to its
+  detail) and D-10 (adaptive poll + the Fix-idiom in-flight badge + the detail-page live stage read + the
+  wired wall badges). The owner directive: "I can't click on anything in Activity … if something is in
+  progress I should see it progressing like when we click Fix, keep the UX consistent."
 
 ## D-01 — Library → Activity sub-tab (R1, the Trash→Activity idiom)
 
@@ -192,6 +196,58 @@ Coverage:
   retry-import surface, and a comic only ever fails as `download_failed` (which offers re-search only anyway).
   A comic `retry_import` reaching the resolver is an honest no-op (it audits but fires nothing).
 
+## D-09 — click-through EVERYWHERE (owner ruling 2026-07-14 — "I can't click on anything in Activity")
+
+Every Activity tile navigates — not just failures. The aggregator (`resolveActivityHrefs`, the seam that
+holds DB access; the pure per-source adapters stay I/O-free) fills each item's `href`:
+
+| Item | Target | Join |
+|---|---|---|
+| `failed` (any source) | the failure detail `/library/activity/<rowId>` | the open failure ledger (`source`,`sourceRef`) |
+| non-failed *arr | its LEDGER detail `/library/<mediaItemId>` | `media_items` by `(arr_kind, arr_item_id)` |
+| non-failed book / audiobook want | its Wanted detail `/library/books/wanted/<requestId>` | `book_requests` by `ll_book_id` |
+| non-failed comic want | its Wanted detail | `book_requests` by `kapowarr_volume_id` |
+
+Every link carries `?from=activity` so the detail page's Back returns to the Activity tab (`activity` is a new
+closed-dictionary key in `lib/back-link.ts` — never a raw URL). A JOIN MISS (an in-flight item the ledger/
+request tables don't yet know — a brand-new grab not yet synced) leaves `href` null: an inert tile, the honest
+fallback, never a broken link. The whole card face is the click target (the #264 precedent — no nested buttons
+on faces); D-19 push semantics apply, so Back restores the Activity tab AND its filters — which now live in the
+URL (`?stage=` / `?kind=` repeated params) precisely so a soft nav + Back rehydrates them. The downstream
+operator deep link stays Admin-only and secondary (the failure detail only).
+
+## D-10 — LIVE progress, the Fix feel (owner ruling — "see it progressing like when we click Fix")
+
+The reactivity is measured against the PLAN-015 Fix / Force-Search feedback idiom (the named reference: fired →
+downstream state poll → reactive chip in a reserved slot). Four mechanics bring that feel to Activity, all
+recolor/refill-in-place (ADR-015, zero reflow):
+
+- **Adaptive poll cadence.** `activity.list` polls at **2.5 s while ANY item is `downloading`** (the % must
+  visibly tick) and **5 s otherwise** — `activityPollIntervalMs({ hasDownloading })`, mirroring the Fix
+  dialog's `FAST_POLL_MS`/`SLOW_POLL_MS`. #278's `placeholderData` holds the grid across every refetch (no
+  re-skeleton).
+- **The in-flight badge PROGRESSES in place.** The shared caption badge (`activityStageBadge`) gained two
+  typed, optional cues on `PosterBadge` — a **pulsing status dot** (the non-terminal "alive" cue) and a
+  **filling mini-meter** (`progressPct`) — so a `downloading` tile reads exactly like the Fix `PhaseChip`. This
+  is a **typed-prop + gallery** extension of the ADR-058 badge, NOT a new anatomy slot or a fork (still ONE
+  badge row ≤ MAX_CARD_BADGES; the drift gate asserts the meter/pulse render). Because the ActivityCard keys by
+  the stable item id, the poll re-renders the SAME DOM node — the meter width transitions, the label swaps in
+  place; nothing remounts (asserted by the e2e "same DOM node" test).
+- **A landing is SEEN.** The server keeps a `completed` item for its 15-min horizon, so it never vanishes
+  between polls; when an item JUST transitions to `completed` the tile flashes a one-shot accent ring
+  (`data-just-completed`) before it ages out.
+- **The detail pages move too (D-10 live read).** A new lean `activity.itemStatus` procedure returns ONE item's
+  live stage (building ONLY the source family its ref names — never the whole fan-out, and skipping the href
+  joins). The **failure detail** and the **Wanted detail per-format rows** poll it after a retry/re-search fires
+  and render a reserved-slot `PhaseChip` that walks the stage (failed → searching → downloading % → importing →
+  done) — the exact Fix experience. The Wanted detail also polls `books.wantedDetail` while visible so a status
+  reconcile appears without a reload.
+
+The wall in-flight badge (D-03) is now WIRED for the books walls: `books.wanted` exposes each want's
+`ll_book_id` / `kapowarr_volume_id`, and the books browser reads ONE `activity.wallStages` per wall view
+(enabled only when the wall has wanted tiles — cheap) and passes `inFlightFor(wall, joinKey)` to each wanted
+card, which then wears (and updates) the live stage badge.
+
 ## Decisions log
 
 | ID | Decision |
@@ -206,6 +262,8 @@ Coverage:
 | D-08 | The fan-out recipe: new adapters fill the contract; the card/tab/chips/detail are source-agnostic. |
 | D-08a | *arr adapter (Radarr/Sonarr/Lidarr) shipped (PLAN-048 slice 2): `source: 'arr'`, `section: null` (universal), `id` encodes instance + fix target; stages downloading/importing/completed + failures import_blocked/download_failed; retry = confined `ProcessMonitoredDownloads`, re-search = the existing per-kind Force-Search. No card/tab/chip/detail change. |
 | D-08b | Kapowarr (comics) adapter shipped (PLAN-048 slice 3): `source: 'kapowarr'`, `id` = `kapowarr:<volumeId>`, `kind: 'comic'` / `wall: 'comics'`, **`section: 'books'`** (comics ride the books gate — reused value, contract union NOT widened; flagged Q-03). Stages searching/downloading/importing/completed; failure class ONLY `download_failed` (no manual-import queue ⇒ `import_blocked` not detectable). Action: `force_research` → confined `searchVolume` (`auto_search`); **`retry_import` absent** (Kapowarr has no retry-import surface — honest no-op). No card/tab/chip/detail change. |
+| D-09 | Click-through EVERYWHERE (owner ruling): the aggregator fills `href` for every item — failed → failure detail; non-failed *arr → ledger detail (`media_items` join); book/comic want → Wanted detail (`book_requests` join); all `?from=activity` (new back-link key). Join miss → inert (honest). Whole-face target (#264); the Activity stage/kind filters moved to the URL so Back restores the tab AND its filters. |
+| D-10 | LIVE progress, the Fix feel: adaptive `activity.list` poll (2.5 s while any item downloads, else 5 s); the shared in-flight badge gained typed `pulse` + `progressPct` cues (a pulsing dot + filling mini-meter — the Fix `PhaseChip` vocabulary, a typed-prop+gallery ADR-058 extension, NOT a new slot); a just-landed tile flashes a one-shot accent before aging out; the failure + Wanted detail poll a lean new `activity.itemStatus` after a fire and render a reserved-slot stage chip that walks failed → … → done; the books walls now consume `activity.wallStages` (`books.wanted` exposes the join keys). Same DOM node updates in place (no remount). |
 
 ## Open questions
 

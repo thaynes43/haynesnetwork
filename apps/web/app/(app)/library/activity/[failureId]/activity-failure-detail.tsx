@@ -11,6 +11,7 @@ import { trpc, type RouterOutputs } from '@/lib/trpc-client';
 import { PhaseChip, type PhaseTone } from '@hnet/ui';
 import { BackLink } from '@/components/back-link';
 import { MediaPoster } from '@/components/cards';
+import { ActivityStageChip, useActivityItemStatus } from '@/components/activity-live';
 import { formatWhen } from '@/lib/media';
 
 type FailureWire = RouterOutputs['activity']['failure'];
@@ -107,6 +108,12 @@ export function ActivityFailureDetail({ failureId, from }: { failureId: string; 
     onError: (e) => setSearchFired({ kind: 'failed', message: e.message }),
   });
 
+  // D-10 — once a retry/re-search fires, poll the item's LIVE stage so it is SEEN to move off `failed`
+  // (searching → downloading % → importing → done), the exact Fix feel. Enabled only after a fire; it stops
+  // on landing/clear. `sourceRef` (== the ActivityItem id) is the poll key.
+  const anyFired = retryFired?.kind === 'fired' || searchFired?.kind === 'fired';
+  const live = useActivityItemStatus(detail.data?.sourceRef ?? null, anyFired);
+
   if (detail.isLoading) {
     return (
       <>
@@ -189,6 +196,16 @@ export function ActivityFailureDetail({ failureId, from }: { failureId: string; 
                     fired={searchFired}
                     onFire={() => search.mutate({ failureId })}
                   />
+                </span>
+              </li>
+            ) : null}
+            {/* D-10 — the live movement: once fired, this row polls the item's stage and walks it off `failed`
+                (searching → downloading % → importing → done) in the reserved slot, no reflow (ADR-015). */}
+            {anyFired ? (
+              <li className="child-row" data-testid="activity-live-row">
+                <span className="child-row__label">Live status</span>
+                <span className="child-row__actions">
+                  <ActivityStageChip status={live} />
                 </span>
               </li>
             ) : null}

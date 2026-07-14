@@ -21,6 +21,15 @@ export interface PosterBadge {
   tone?: PosterBadgeTone;
   /** Optional hover/tooltip detail (per-format status, rating source, full shelf list). */
   title?: string;
+  /**
+   * PLAN-048 / ADR-059 D-10 — the LIVE in-flight cues (the Fix PhaseChip idiom, brought to the card badge so
+   * an Activity/wall tile "feels" the same as the Fix dialog). `pulse` animates a leading status dot (the
+   * non-terminal "alive" cue); `progressPct` (0–100) renders a filling mini-meter inside the SAME badge. Both
+   * recolor/refill in place across polls — the badge width is reserved, so nothing reflows (ADR-015). Only
+   * the in-flight stage badge sets these; every other badge renders exactly as before (label text only).
+   */
+  pulse?: boolean;
+  progressPct?: number | null;
 }
 
 /** The family-wide badge descriptor (the PosterBadge shape, shared by every card variant). */
@@ -59,11 +68,27 @@ export function PosterCardBody({
       {hasSubtitle ? <span className="media-card__subtitle">{subtitle}</span> : null}
       {shown.length > 0 ? (
         <span className="media-card__badges">
-          {shown.map((b, i) => (
-            <span key={i} className={`badge${b.tone ? ` badge--${b.tone}` : ''}`} title={b.title}>
-              {b.label}
-            </span>
-          ))}
+          {shown.map((b, i) => {
+            const pct = b.progressPct != null ? Math.max(0, Math.min(100, Math.round(b.progressPct))) : null;
+            const live = b.pulse === true || pct != null;
+            return (
+              <span
+                key={i}
+                className={`badge${b.tone ? ` badge--${b.tone}` : ''}${live ? ' badge--live' : ''}${
+                  b.pulse ? ' badge--pulse' : ''
+                }`}
+                title={b.title}
+              >
+                {b.pulse ? <span className="badge__dot" aria-hidden="true" /> : null}
+                {b.label}
+                {pct != null ? (
+                  <span className="badge__track" aria-hidden="true">
+                    <span className="badge__fill" style={{ width: `${pct}%` }} />
+                  </span>
+                ) : null}
+              </span>
+            );
+          })}
         </span>
       ) : null}
     </span>

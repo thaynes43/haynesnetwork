@@ -19,6 +19,7 @@ import { trpc, type RouterOutputs } from '@/lib/trpc-client';
 import { PhaseChip, type PhaseTone } from '@hnet/ui';
 import { BackLink } from '@/components/back-link';
 import { MediaPoster } from '@/components/cards';
+import { ActivityStageChip, useActivityItemStatus } from '@/components/activity-live';
 import { formatWhen } from '@/lib/media';
 import { shelfLabel } from '@/lib/goodreads-shelf-wall';
 import type { BookRequestStatus } from '@hnet/db';
@@ -150,9 +151,56 @@ function FormatSearchSlot({
 
 // ---------------------------------------------------------------------------
 
+/**
+ * D-10 — one per-format row: the status badge + Force-Search slot, PLUS a live in-flight PhaseChip that walks
+ * the stage (searching → downloading % → importing → done) once this format is actively being acquired (its
+ * status is wanted/grabbed) or a re-search has just fired here. The chip polls `activity.itemStatus` for this
+ * format's activity id (`books:ll:<llBookId>:<format>` / `kapowarr:<volumeId>`) so the row MOVES like Fix.
+ */
+function FormatDetailRow({
+  requestId,
+  row,
+  activityId,
+  onFired,
+}: {
+  requestId: string;
+  row: FormatRow;
+  activityId: string | null;
+  onFired: () => void;
+}) {
+  const [fired, setFired] = useState(false);
+  const inFlight = row.status === 'wanted' || row.status === 'grabbed';
+  const live = useActivityItemStatus(activityId, activityId !== null && (fired || inFlight));
+  const showLive = activityId !== null && (fired || inFlight) && (live.pending || live.present);
+  return (
+    <li className="child-row" data-testid="format-row" data-format={row.format}>
+      <span className="child-row__label">{FORMAT_LABEL[row.format]}</span>
+      <span className={`badge badge--${statusTone(row.status)}`}>{STATUS_LABEL[row.status]}</span>
+      <span className="child-row__actions">
+        {showLive ? <ActivityStageChip status={live} /> : null}
+        {row.searchable ? (
+          <FormatSearchSlot
+            requestId={requestId}
+            format={row.format}
+            onFired={() => {
+              setFired(true);
+              onFired();
+            }}
+          />
+        ) : null}
+      </span>
+    </li>
+  );
+}
+
 export function WantedDetail({ requestId, from }: { requestId: string; from: string | null }) {
   const utils = trpc.useUtils();
-  const detail = trpc.books.wantedDetail.useQuery({ requestId });
+  // Poll while the page is visible so a status reconcile (wanted → grabbed → landed) appears without a manual
+  // reload — the same "live-update while visible" contract the Activity tab honors (D-10).
+  const detail = trpc.books.wantedDetail.useQuery(
+    { requestId },
+    { refetchInterval: 8000, refetchOnWindowFocus: true, placeholderData: (prev) => prev },
+  );
 
   if (detail.isLoading) {
     return (
@@ -175,6 +223,16 @@ export function WantedDetail({ requestId, from }: { requestId: string; from: str
   const d = detail.data!;
   const hero = heroBadge(d);
   const refresh = () => void utils.books.wantedDetail.invalidate({ requestId });
+
+  // The live-read activity id for one format — the poll key the per-format live chip watches.
+  const activityIdFor = (format: FormatRow['format']): string | null =>
+    format === 'comic'
+      ? d.kapowarrVolumeId != null
+        ? `kapowarr:${d.kapowarrVolumeId}`
+        : null
+      : d.llBookId != null
+        ? `books:ll:${d.llBookId}:${format}`
+        : null;
 
   return (
     <>
@@ -219,15 +277,13 @@ export function WantedDetail({ requestId, from }: { requestId: string; from: str
         <h2>Formats</h2>
         <ul className="child-list">
           {d.formats.map((f) => (
-            <li key={f.format} className="child-row" data-testid="format-row" data-format={f.format}>
-              <span className="child-row__label">{FORMAT_LABEL[f.format]}</span>
-              <span className={`badge badge--${statusTone(f.status)}`}>{STATUS_LABEL[f.status]}</span>
-              <span className="child-row__actions">
-                {f.searchable ? (
-                  <FormatSearchSlot requestId={d.requestId} format={f.format} onFired={refresh} />
-                ) : null}
-              </span>
-            </li>
+            <FormatDetailRow
+              key={f.format}
+              requestId={d.requestId}
+              row={f}
+              activityId={activityIdFor(f.format)}
+              onFired={refresh}
+            />
           ))}
         </ul>
         {d.parked ? (
