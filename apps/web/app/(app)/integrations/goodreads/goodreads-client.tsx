@@ -9,7 +9,7 @@
 //   • ITEMS — a REAL library wall over every synced shelf, rendered as the SAME cohesive poster block
 //     as the Movies/Books walls (owner-corrected, DESIGN-029 amendment): `.media-list.poster-grid` of
 //     `media-card poster-card` tiles (MediaPoster cover where the want matched, the designed KindIcon
-//     tile elsewhere) + the shared PosterCardBody caption (title, author, ONE shelf + ONE status
+//     tile elsewhere) + the shared card-family caption (title, author, ONE shelf + ONE status
 //     badge), the shared filter/sort chrome, and the SHELF CHIPS — exactly the Helpdesk ticket
 //     state-chip semantics (multi-select union, superset "All", counts, repeated `?shelf=` params via
 //     router.replace, populated-value-gated — DESIGN-012 D-12 ported).

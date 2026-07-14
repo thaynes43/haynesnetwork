@@ -99,6 +99,9 @@ async function prewarmRoutes(baseUrl: string): Promise<void> {
   const routes = [
     '/',
     '/login',
+    // PLAN-047 / ADR-058 — the card-gallery drift gate (dev-only harness route): compile it here so
+    // the first gallery assertion never pays the cold `next dev` compile inside its test budget.
+    '/e2e/card-gallery',
     '/library',
     `/library/${placeholderId}`,
     '/library/plex',

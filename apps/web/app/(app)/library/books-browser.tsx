@@ -16,7 +16,7 @@
 //   • Group-card ART (D-04, art-amended): author cards wear the author's REAL portrait where ABS
 //     holds one (books.groups attaches /api/books/author-image URLs, populated-value-gated), the
 //     stacked-cover fan elsewhere; genre cards wear the designed token-themed GLYPH tile (never
-//     fake art). All inside the same reserved 2:3 box (ADR-015) — see GroupCardArt.
+//     fake art). All inside the same reserved 2:3 box (ADR-015) — see the GroupCard family member.
 //   • Comics' R2 grouping (Series) IS the wall — a Kavita row IS a series, so the item grid is the
 //     series grid (one honest shape, no selector) wearing REAL Kavita series covers.
 //   • Sorts + facet chips are REGISTRY-declared per (wall, view level) — a grouped level sorts its

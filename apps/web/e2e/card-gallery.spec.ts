@@ -15,9 +15,10 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
 
 async function openGallery(page: Page, theme: 'hnet-dark' | 'hnet-light'): Promise<void> {
+  // Drive the theme through the pre-hydration init script's `prefers-color-scheme` branch
+  // (fresh contexts carry no stored theme) — no localStorage/reload round trip to race.
+  await page.emulateMedia({ colorScheme: theme === 'hnet-dark' ? 'dark' : 'light' });
   await page.goto('/e2e/card-gallery');
-  await page.evaluate((t) => localStorage.setItem('hnet-theme', t), theme);
-  await page.reload();
   await page.locator(`html[data-theme="${theme}"]`).waitFor();
   await expect(page.getByTestId('card-gallery')).toBeVisible();
 }
@@ -82,7 +83,7 @@ test.describe('card gallery — the shared-card-system drift gate (ADR-058)', ()
     ).toEqual(['DIV']);
     expect(
       await requests
-        .filter({ hasText: 'Have It' })
+        .filter({ hasText: 'Searching' })
         .evaluateAll((els) => els.map((el) => el.tagName)),
     ).toEqual(['A']);
   });
@@ -163,19 +164,27 @@ test.describe('card gallery — the shared-card-system drift gate (ADR-058)', ()
   });
 
   test('reference captures — dark/light × desktop/390 (the standing artifact)', async ({
-    page,
+    browser,
   }, testInfo) => {
+    // Four theme/viewport combos with full-page shots — give the matrix its own budget, and a
+    // FRESH context per combo (the proven capture-harness pattern; a reused page can wedge on the
+    // second theme swap).
+    testInfo.setTimeout(180_000);
     for (const [label, viewport] of [
       ['desktop', { width: 1280, height: 900 }],
       ['390', { width: 390, height: 844 }],
     ] as const) {
-      await page.setViewportSize(viewport);
       for (const theme of ['hnet-dark', 'hnet-light'] as const) {
+        const context = await browser.newContext({ viewport, baseURL: testInfo.project.use.baseURL });
+        const page = await context.newPage();
         await openGallery(page, theme);
+        // Hide the Next dev overlay badge — the captures are the standing reference artifact.
+        await page.addStyleTag({ content: 'nextjs-portal { display: none !important; }' });
         const t = theme === 'hnet-dark' ? 'dark' : 'light';
         const path = testInfo.outputPath(`card-gallery-${label}-${t}.png`);
         await page.screenshot({ path, fullPage: true });
         await testInfo.attach(`card-gallery-${label}-${t}`, { path, contentType: 'image/png' });
+        await context.close();
       }
     }
   });
