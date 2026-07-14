@@ -4,7 +4,41 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-## ▶ NEXT SESSION — start here (2026-07-13 session-5 FINAL wrap; **MONDAY = GO HARD**)
+## ▶ NEXT SESSION — start here (2026-07-14 session-6 wrap)
+
+**Site live at https://haynesnetwork.com; latest release v0.49.0 (three shipped Monday:
+v0.47.0 → v0.48.0 → v0.49.0, all live-verified).** Session 6 ran Mon 18:00 → Tue ~03:00 on the
+fresh weekly budget. **Full chronicle: `.agents/context/2026-07-14-session-6-wrap.md`** — read
+it. Headlines: **PLAN-029 SHIPPED COMPLETE (v0.47.0)** — released_at + per-user prefs +
+watch/read seam (#243, Opus) + the whole views/grouping/facets/A–Z UX (#245, Fable), owner
+ratified; **group-card ART (v0.48.0, #249)** — ABS author portraits + genre glyph tiles (owner
+ran "Match all authors" overnight — VERIFY the live author wall); **THE WEBKIT LOGIN CRISIS
+CLOSED** — owner ruled Option A, the nesting-lowering initContainer shipped (markers → 0),
+**compat mode REVERTED, old-WebKit native 3/3 green, Plex-first ordering self-healed** (his
+hard criterion), `%(theme)s` fixed, upstream comment POSTED (goauthentik#19814), PLAN-042 →
+completed/ (watch: re-audit lowering "suspects" on authentik image bumps — OPS-009);
+**F-10 EXECUTED** — 58 foreign quarantined (content-scanned, not tags), 57 English re-grabs
+queued (34 landed same night), **LL→SAB was silently 404-ing and got fixed live**
+(`SAB_SUBDIR=''`), German re-poisoning blocked (REJECT_WORDS hardened; **7 titles need
+MAM-English when the gate reopens ~Tue eve**), Orwell-essays ruling OPEN; **the INTEGRATION
+TAB SAGA founded (PLAN-043) + its Goodreads MVP BUILT AND DEPLOYED (PLAN-044, v0.49.0)** —
+app-side shelf-RSS sync, no-gate Missing flow, coverage %, manual search, comics parked;
+`sync-goodreads` CronJob `:41` + LL/GB keys wired (haynes-ops `dddd2126`).
+
+**TUESDAY #1 — PLAN-044 LIVE ACCEPTANCE (owner-present, ~15 min):** /integrations as admin →
+link `goodreads.com/haynesnetwork` (user id **202652880**, to-read shelf PUBLIC, 6 items incl.
+2 comics) → run `sync-goodreads` → verify LL Wanted both formats + coverage math + Missing/
+"Search again" (audited) + comics parked + governor untouched → move PLAN-044 to completed/.
+Then: F-10 tail (gate reopens ~Tue eve → the 7 MAM-English titles; F-11 spot-check candidate),
+next builds (PLAN-038 dispatchable; saga next phases), standing owner items (SMTP F-04, qB
+5.2.1 Approved Clients, Helpdesk ratify, Kavita WebP, Safari TOTP retest, MAM "Not Connectable"
+IPv4 = Mullvad-no-port-forward decision someday).
+
+**Mechanics (fresh confirmations):** release image builds ride the release-please run on main
+(NO tag runs — don't watch for them); flux source = `haynes-ops`, kustomization =
+`cluster-apps`; every release PR needs close/reopen; up-to-date-branch strands everything —
+run un-strand watchers. Probes all clean all session; the model-switch rules below stand.
+Prior session context below ↓
 
 **Site is live at https://haynesnetwork.com; latest release v0.46.3.** Session 5 ran Sunday midday
 → Monday 01:00 — the owner tested with his SISTER (real second-user feedback) and everything she
@@ -76,7 +110,14 @@ activity; TaskStop a flipped continuation and the coordinator takes the tail. Se
 
 ---
 
-- **Last updated:** 2026-07-13 ~01:00 — **SESSION-5 FINAL (Sunday: the sister-test day).**
+- **Last updated:** 2026-07-14 ~03:00 — **SESSION-6 WRAP (Monday "go hard").** v0.47.0
+  (PLAN-029 complete: #243+#245) + v0.48.0 (group-card art #249) + v0.49.0 (PLAN-044 Goodreads
+  MVP #253 + haynes-ops `dddd2126` CronJob/secrets) all live-verified. PLAN-042 CLOSED (Option
+  A built + compat reverted + upstream comment posted; completed/). F-10 executed (58
+  quarantined / 57 re-grabs / 34 landed; LL→SAB SAB_SUBDIR fix; 7 await MAM ~Tue eve; Orwell
+  ruling open). Integration Tab Saga founded (PLAN-043; PLAN-033 subsumed). PLAN-044 ACTIVE
+  pending Tuesday live acceptance. Chronicle: `.agents/context/2026-07-14-session-6-wrap.md`.
+- **Prior milestone:** 2026-07-13 ~01:00 — **SESSION-5 FINAL (Sunday: the sister-test day).**
   v0.46.1 (OG localhost) + v0.46.2 (embed copy) + v0.46.3 (sister's nav overlap #238 + F-06
   cover WebP/LRU #237) all live-verified. WebKit login crisis: compat-mode workaround
   (`571c7a65`) + brand-green re-win (`0d9699a`) shipped and engine-verified, then **ESCALATED —
