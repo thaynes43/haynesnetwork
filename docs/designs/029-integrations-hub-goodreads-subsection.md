@@ -163,3 +163,40 @@ have no per-grab progress feed, a documented residual).
 | Q-01 | Wanted-tile visibility while the integrations rollout is admin-only? | RULED: books-section gating (household), tiles clearly badged; flip is one gate if re-ruled. |
 | Q-02 | Live per-grab feedback for a fired book search (the ledger's `searchProgress` analog)? | Deferred — LL/Kapowarr expose no per-grab progress feed; the fired-chip + next-reconcile is the honest v1. |
 | Q-03 | External-art proxy for unmatched wanted tiles (Goodreads CDN covers)? | Deferred polish (DESIGN-028's original call stands — designed tiles, never hotlinked art). |
+
+## Amendment — 2026-07-14 (owner-corrected card anatomy)
+
+Shipped in v0.50.0, D-07/D-08/D-09 gave the Goodreads items wall and the composed Library-Wanted a
+BESPOKE grammar — a warning-tinted "Wanted · N" STRIP above the book walls, tiles built from
+`.gwall-*` classes with a stack of chips (source shelf + `Ebook: Wanted` + `Audio: Wanted`), a
+`for <requester>` line, a corner phase-glyph puck, and a full-width `Search again` text button. The
+owner rejected it: the book/audiobook/comic walls no longer looked like the rest of the Library — a
+Library item must be **one cohesive poster block**, exactly like a Movies/TV card. This amendment
+CORRECTS the presentation (the data model, gating, sync, and force-search dispatch of ADR-055/056/057
+are unchanged); it supersedes the *visual* specifics of D-07, D-08, and D-09.
+
+- **One shared caption, by construction.** The Movies caption markup is extracted into
+  `components/poster-card-body.tsx` (`PosterCardBody`: title (year) · optional author subtitle · a
+  compact badge row over the shared `.badge--*` tones). The Movies wall, the Books/Audiobooks/Comics
+  on-disk AND Wanted cards, and the Goodreads items cards all render `MediaPoster` + `PosterCardBody`
+  inside a `.media-card.poster-card` in a `.media-list.poster-grid`. The card structure is now
+  identical across every wall — only the glyph and the badge text differ.
+- **The Wanted strip is deleted.** Wanted items merge INLINE at the head of the flat book wall's item
+  stream as the SAME poster card as an on-disk book (glyph tile, since a want is unmatched by
+  definition; title + author; ONE badge — "Wanted" amber / "Missing" red — in the Movies badge slot).
+  The grouped author/genre views show aggregate cards (a want can't participate as an item), so wants
+  surface in the flat "All …" view and under the Wanted-only filter. `WantedStrip`/`.gwall`/`.gwanted`
+  are removed; `wanted-card.tsx` replaces `wanted-strip.tsx`.
+- **The Wanted-only filter** is rendered as the Movies wall's `Wanted only` toggle (a `btn sm`,
+  `primary` when armed) rather than a select chip — same look, same `?wanted=1` facet.
+- **No card-face action or attribution on Library Wanted cards.** There is no `Search again` button and
+  no `for <requester>` line; the whole card is a click-through into the owner's Goodreads request
+  context (`?tab=items&focus=<requestId>`), where force-search and requester attribution live.
+- **Goodreads items wall.** Each item is one cohesive poster block with at most two caption badges (the
+  primary shelf + the dominant status — `Have it` / `Wanted` / `Missing` / `Comic · Wanted`); per-format
+  status and the "waiting on a ComicVine match" note move to the status badge's tooltip, never a stack of
+  pills. Force-search is the ONLY card action and rides a compact corner **puck** (`.gr-search-puck`,
+  `request-search-puck.tsx`) in the ADR-015 reserved slot — a single small icon button, top-right,
+  recoloring in place to narrate `searching → fired → failed` (the big text button is gone).
+- **Retired code:** `request-glyphs.tsx` (`RequestPhaseGlyph`), `request-search-button.tsx`
+  (`RequestSearchButton`), `wanted-strip.tsx`, and the `.gwall*` / `.gwanted` / `.request-action` CSS.

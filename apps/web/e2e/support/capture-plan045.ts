@@ -7,8 +7,8 @@
 //   • the HUB (provider cards, linked state)
 //   • the Goodreads STATS page (want-shelf headline + per-shelf breakdown + phase tiles)
 //   • the ITEMS wall with the shelf chips in a COMBINATION state (to-read toggled off)
-//   • the Library Books wall with its composed-Wanted strip
-//   • the wanted-tile force-search LIVE FEEDBACK (fired chip in the reserved slot)
+//   • the Library Books flat wall with its composed-Wanted cards merged inline (owner-corrected)
+//   • the items-wall force-search LIVE FEEDBACK (the fired corner puck, recolored in place)
 //
 //   pnpm --filter web exec tsx e2e/support/capture-plan045.ts <output-dir>
 import { spawn } from 'node:child_process';
@@ -131,27 +131,29 @@ async function main(): Promise<void> {
         await hidePortal(page);
         await shoot(page, `goodreads-items-${label}-${t}`, true);
 
-        await page.goto('/library?tab=books');
-        await page.getByTestId('wanted-strip').waitFor();
+        // The Books flat wall — the composed Wanted cards merged INLINE as the SAME poster block as
+        // the on-disk books (owner-corrected — no separate strip).
+        await page.goto('/library?tab=books&view=flat');
+        await page.getByTestId('wanted-card').first().waitFor();
         await hidePortal(page);
         await shoot(page, `library-books-wanted-${label}-${t}`, true);
       }
       await page.context().close();
     }
 
-    // Phase 3 — the force-search LIVE FEEDBACK (desktop, both themes): fire a wanted-tile search
-    // and capture the "Search fired — LazyLibrarian" chip sitting in the reserved slot.
+    // Phase 3 — the force-search LIVE FEEDBACK (desktop, both themes): fire the ITEMS-wall corner puck
+    // (the Library cards have no search button now) and capture its fired state in place (ADR-015).
     {
       const page = await signInTo(browser, stack.appUrl, { width: 1280, height: 900 });
       for (const theme of ['hnet-dark', 'hnet-light'] as const) {
         const t = theme === 'hnet-dark' ? 'dark' : 'light';
         await setTheme(page, theme);
-        await page.goto('/library?tab=books');
-        const tile = page.getByTestId('wanted-tile').filter({ hasText: 'Throne of Glass' });
+        await page.goto('/integrations/goodreads?tab=items');
+        const tile = page.getByTestId('gr-item').filter({ hasText: 'Throne of Glass' });
         await tile.getByTestId('request-search-btn').click();
-        await tile.getByText(/Search fired — LazyLibrarian/).waitFor();
+        await tile.locator('.gr-search-puck[data-state="fired"]').waitFor();
         await hidePortal(page);
-        await shoot(page, `wanted-force-search-feedback-${t}`);
+        await shoot(page, `items-force-search-feedback-${t}`);
       }
       await page.context().close();
     }

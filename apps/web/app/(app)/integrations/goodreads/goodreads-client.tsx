@@ -6,23 +6,25 @@
 //   • OVERVIEW (the stats page) — the fixed link card (PR #258 UX), the WANT-SHELF headline
 //     coverage (owner ruling Q-02), the per-shelf breakdown + request/Missing summary tiles (the
 //     Trash-Overview card idiom; a card click pushes into the items wall pre-filtered), last-sync.
-//   • ITEMS — a REAL library wall over every synced shelf: `.poster-grid` of `MediaPoster` tiles
-//     (cover-proxy art where the want matched the library; the designed KindIcon fallback tile
-//     elsewhere), the shared filter/sort chrome, and the SHELF CHIPS — exactly the Helpdesk ticket
-//     state-chip semantics (multi-select union, superset "All", counts, repeated `?shelf=` params
-//     via router.replace, populated-value-gated — DESIGN-012 D-12 ported). Per-item state rides the
-//     ADR-015 corner puck (`.gwall-overlay`, the twall/bwall idiom) — recolor only, never reflow.
+//   • ITEMS — a REAL library wall over every synced shelf, rendered as the SAME cohesive poster block
+//     as the Movies/Books walls (owner-corrected, DESIGN-029 amendment): `.media-list.poster-grid` of
+//     `media-card poster-card` tiles (MediaPoster cover where the want matched, the designed KindIcon
+//     tile elsewhere) + the shared PosterCardBody caption (title, author, ONE shelf + ONE status
+//     badge), the shared filter/sort chrome, and the SHELF CHIPS — exactly the Helpdesk ticket
+//     state-chip semantics (multi-select union, superset "All", counts, repeated `?shelf=` params via
+//     router.replace, populated-value-gated — DESIGN-012 D-12 ported). Force-search rides the compact
+//     ADR-015 corner puck (`.gr-search-puck`) — the only card action; per-format detail is on tooltips.
 //
 // The v0.49.0 flat Requests & Missing wall FOLDED INTO this sub-section: the items wall subsumes it
-// (poster tiles + status chips + the audited Search-again), and the overview carries its summary.
+// (poster tiles + status badge + the audited force-search puck), and the overview carries its summary.
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
-import { ConfirmButton, PhaseChip, nextSort, arrowFor, type PhaseTone } from '@hnet/ui';
+import { ConfirmButton, nextSort, arrowFor } from '@hnet/ui';
 import { KindIcon } from '@/components/kind-icon';
 import { MediaPoster } from '@/components/media-poster';
-import { RequestPhaseGlyph } from '@/components/request-glyphs';
-import { RequestSearchButton } from '@/components/request-search-button';
+import { PosterCardBody, type PosterBadge } from '@/components/poster-card-body';
+import { RequestSearchPuck } from '@/components/request-search-puck';
 import { trpc, type RouterOutputs } from '@/lib/trpc-client';
 import { coverageView, isFirstSyncPending } from '@/lib/integrations-coverage';
 import {
@@ -53,23 +55,32 @@ const STATUS_LABEL: Record<BookRequestStatus, string> = {
   missing: 'Missing',
 };
 
-const STATUS_TONE: Record<BookRequestStatus, PhaseTone> = {
-  requested: 'info',
-  wanted: 'warning',
-  grabbed: 'progress',
-  landed: 'success',
-  missing: 'danger',
+// PLAN-045 owner-correction — the DOMINANT status badge for an items-wall card (the Movies badge slot).
+// One compact badge per card, toned exactly like the Movies/Books walls: Have it (green) · Wanted
+// (amber) · Missing (red) · Parked (muted). Comics carry the "Comic · <status>" label (ADR-056). The
+// per-format detail (Ebook/Audio) rides the badge tooltip, never a stack of pills.
+const PHASE_BADGE: Record<RequestPhaseName, { label: string; tone: 'ok' | 'warn' | 'danger' | 'muted' }> = {
+  have: { label: 'Have it', tone: 'ok' },
+  searching: { label: 'Wanted', tone: 'warn' },
+  missing: { label: 'Missing', tone: 'danger' },
+  parked: { label: 'Parked', tone: 'muted' },
 };
 
-function StatusChip({ format, status }: { format: string; status: BookRequestStatus }) {
-  return (
-    <PhaseChip
-      phase={status}
-      tone={STATUS_TONE[status]}
-      label={`${format}: ${STATUS_LABEL[status]}`}
-      pulse={status === 'wanted' || status === 'grabbed'}
-    />
-  );
+function statusBadge(item: ItemWire): PosterBadge {
+  const base = PHASE_BADGE[item.phase];
+  const label = item.isComic ? `Comic · ${base.label}` : base.label;
+  // The tooltip carries the detail the old stacked pills + routing note used to show (never on-card).
+  const title =
+    item.phase === 'parked' || item.unroutableReason === 'comic'
+      ? 'Waiting on a ComicVine match.'
+      : item.isComic
+        ? item.comicStatus
+          ? `Comic: ${STATUS_LABEL[item.comicStatus]}`
+          : undefined
+        : item.inLibrary || item.phase === 'have'
+          ? 'In your library'
+          : `Ebook: ${STATUS_LABEL[item.ebookStatus]} · Audio: ${STATUS_LABEL[item.audioStatus]}`;
+  return { label, tone: base.tone, title };
 }
 
 // ---------------------------------------------------------------------------
@@ -306,61 +317,48 @@ function OverviewTab({
 
 function ItemTile({ item, focused }: { item: ItemWire; focused: boolean }) {
   const utils = trpc.useUtils();
-  const ref = useRef<HTMLLIElement | null>(null);
+  const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (focused) ref.current?.scrollIntoView({ block: 'center' });
   }, [focused]);
 
+  // The two-badge caption row (max two — the primary shelf + the dominant status). The remaining
+  // shelves ride the shelf badge's tooltip; per-format detail rides the status badge's (never pills).
+  const shelvesSorted = shelfSort(item.shelves);
+  const primaryShelf = shelvesSorted[0];
+  const shelfBadge: PosterBadge | null = primaryShelf
+    ? {
+        label: shelfLabel(primaryShelf),
+        tone: 'muted',
+        title: shelvesSorted.map(shelfLabel).join(' · '),
+      }
+    : null;
+
   return (
-    <li
+    <div
       ref={ref}
-      className={`gwall-tile${focused ? ' is-focused' : ''}`}
+      className={`media-card poster-card gr-item${focused ? ' is-focused' : ''}`}
       data-testid="gr-item"
       data-phase={item.phase}
       data-request-id={item.requestId ?? undefined}
     >
-      <div className="gwall-tile__poster">
+      <div className="poster-card__poster">
         <MediaPoster posterUrl={item.posterUrl} kind={item.isComic ? 'comic' : 'book'} alt="" />
-        {/* The corner puck (twall/bwall idiom) — absolute over the reserved 2:3 box; phase recolors,
-            never reflows (ADR-015). */}
-        <span className="gwall-overlay" data-phase={item.phase} aria-hidden="true">
-          <RequestPhaseGlyph phase={item.phase} />
-        </span>
-      </div>
-      <div className="gwall-caption" title={item.title}>
-        {item.title}
-      </div>
-      <div className="gwall-sub muted">{item.author ?? '—'}</div>
-      <div className="gwall-shelves">
-        {item.shelves.map((s) => (
-          <span key={s} className="badge badge--muted gwall-shelf">
-            {shelfLabel(s)}
-          </span>
-        ))}
-      </div>
-      <div className="gwall-chips">
-        {item.isComic ? (
-          <StatusChip format="Comic" status={item.comicStatus!} />
-        ) : item.inLibrary || item.phase === 'have' ? (
-          <PhaseChip phase="landed" tone="success" label="In your library" />
-        ) : (
-          <>
-            <StatusChip format="Ebook" status={item.ebookStatus} />
-            <StatusChip format="Audio" status={item.audioStatus} />
-          </>
-        )}
-      </div>
-      <div className="request-action">
+        {/* The corner force-search PUCK — the ADR-015 reserved slot, absolute over the 2:3 box; the
+            only action on the card (the "Search again" text button is gone). Shown when searchable. */}
         {item.searchable && item.requestId ? (
-          <RequestSearchButton
+          <RequestSearchPuck
             requestId={item.requestId}
             onSearched={() => void utils.integrations.items.invalidate()}
           />
-        ) : item.unroutableReason === 'comic' ? (
-          <span className="muted request-action__note">Waiting on a ComicVine match.</span>
         ) : null}
       </div>
-    </li>
+      <PosterCardBody
+        title={item.title}
+        subtitle={item.author}
+        badges={[shelfBadge, statusBadge(item)]}
+      />
+    </div>
   );
 }
 
@@ -562,11 +560,12 @@ function ItemsTab({ items, pending }: { items: ItemWire[]; pending: boolean }) {
           </p>
         </section>
       ) : (
-        <ul className="gwall" data-testid="gr-items-grid">
+        // The SAME poster grid as the Movies/Books walls (the owner-corrected cohesive blocks).
+        <div className="media-list poster-grid" data-testid="gr-items-grid">
           {visible.map((item) => (
             <ItemTile key={item.key} item={item} focused={focus !== null && item.requestId === focus} />
           ))}
-        </ul>
+        </div>
       )}
     </>
   );
@@ -595,7 +594,7 @@ export function GoodreadsClient() {
 
   // Normalize a bare /integrations/goodreads (or an unknown ?tab) to Overview — the hub contract
   // (replace-only: canonicalizing must not mint a history entry). A deep link that carries a valid
-  // ?tab (e.g. ?tab=items&focus=…) is left untouched, so wanted-tile deep links keep their focus.
+  // ?tab (e.g. ?tab=items&focus=…) is left untouched, so wanted-card deep links keep their focus.
   useEffect(() => {
     if (searchParams.get('tab') !== active) {
       const params = new URLSearchParams();

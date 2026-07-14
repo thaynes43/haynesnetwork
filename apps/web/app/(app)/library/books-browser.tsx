@@ -51,6 +51,7 @@ import {
 import type { BooksSort, BookReadState } from '@hnet/api';
 import { trpc } from '@/lib/trpc-client';
 import { MediaPoster } from '@/components/media-poster';
+import { PosterCardBody } from '@/components/poster-card-body';
 import { GroupCardArt } from '@/components/group-card-art';
 import { CHIP_LABELS, SelectChip } from '@/components/filter-chips';
 import { LetterJumpBar } from '@/components/letter-jump-bar';
@@ -73,7 +74,7 @@ import {
   type ViewRegistryEntry,
   type WallGrouping,
 } from '@/lib/library-view-registry';
-import { WantedStrip } from './wanted-strip';
+import { WantedCard } from './wanted-card';
 import type { FacetGates } from './library-client';
 
 type BooksMediaKind = 'book' | 'audiobook' | 'comic';
@@ -304,13 +305,15 @@ export function BooksBrowser({
 
   // ── data ──
   const facets = trpc.books.filterFacets.useQuery({ mediaKind }, { refetchOnWindowFocus: false });
-  // ADR-057 (PLAN-045) — the composed-Wanted overlay (household `book_requests`, books-section-gated
-  // server-side). The strip + the Wanted chip are populated-value-gated on this list (ADR-051 C-06).
+  // ADR-057 (PLAN-045, owner-corrected) — the composed-Wanted household `book_requests` (books-section
+  // gated server-side). The Wanted cards are the SAME poster block as an on-disk book and merge INLINE
+  // into the flat item stream — no separate strip. The Wanted-only chip is populated-value-gated on this
+  // list (ADR-051 C-06).
   const wantedQ = trpc.books.wanted.useQuery({ mediaKind }, { refetchOnWindowFocus: false });
   const wantedAll = wantedQ.data?.items ?? [];
-  // The wall's top level only (never inside a drilled group); the text query narrows the wanted
-  // tiles client-side, but other facet refinements hide the strip — synthetic tiles can't honestly
-  // answer format/length/read facets (the same "never offer what it can't answer" rule as sorts).
+  // The wall's top level only (never inside a drilled group); the text query narrows the wanted cards
+  // client-side, but other facet refinements hide them — synthetic wants can't honestly answer
+  // format/length/read facets (the same "never offer what it can't answer" rule as sorts).
   const facetsActive =
     Object.keys(filters).length > 0 || readState !== undefined || letter !== null;
   const wantedItems =
@@ -319,7 +322,11 @@ export function BooksBrowser({
           `${w.title} ${w.author ?? ''}`.toLowerCase().includes(qParam.trim().toLowerCase()),
         )
       : wantedAll;
-  const showWantedStrip = !drilled && wantedItems.length > 0 && (wantedOnly || !facetsActive);
+  // Wanted cards join the FLAT grid (or ARE the wall under the Wanted-only filter). The grouped
+  // author/genre views show aggregate cards, not items, so a want can't participate there — it surfaces
+  // in the flat "All …" view (and via the Wanted-only chip), matching how the wall already mixes items.
+  const showWantedInline =
+    !drilled && !groupedCards && !wantedOnly && wantedItems.length > 0 && !facetsActive;
   const groupsQuery = trpc.books.groups.useQuery(
     { mediaKind, groupBy: grouping?.dimension === 'genre' ? 'genre' : 'author' },
     { enabled: groupedCards, refetchOnWindowFocus: false, placeholderData: (prev) => prev },
@@ -516,16 +523,21 @@ export function BooksBrowser({
           <div className="library-chipbar" role="group" aria-label="Filters">
             {facetsForLevel.map((facet) => {
               if (facet.key === 'wanted') {
-                // ADR-057 — the composed-Wanted narrowing; value-gated on the overlay itself.
+                // ADR-057 (owner-corrected) — the composed-Wanted narrowing, styled EXACTLY like the
+                // Movies wall's "Wanted only" chip (the `btn sm` toggle, primary when armed); value-gated
+                // on the want list itself (ADR-051 C-06 — no dead chip).
                 if (wantedAll.length === 0) return null;
                 return (
-                  <SelectChip
+                  <button
                     key={facet.key}
-                    label={facet.label}
-                    value={wantedOnly ? '1' : undefined}
-                    options={[{ value: '1', label: `Wanted only · ${wantedAll.length}` }]}
-                    onChange={(v) => patchParams({ wanted: v ?? null })}
-                  />
+                    type="button"
+                    className={`btn sm${wantedOnly ? ' primary' : ''}`}
+                    aria-pressed={wantedOnly}
+                    data-testid="books-wanted-toggle"
+                    onClick={() => patchParams({ wanted: wantedOnly ? null : '1' })}
+                  >
+                    Wanted only
+                  </button>
                 );
               }
               if (facet.kind === 'select' && facet.gate === 'bookProgress') {
@@ -600,12 +612,16 @@ export function BooksBrowser({
 
       {jumpVisible ? <LetterJumpBar active={letter} onJump={(l) => patchParams({ at: l })} /> : null}
 
-      {/* ADR-057 (PLAN-045) — the composed-Wanted overlay. Under the Wanted filter the tiles ARE
-          the wall; otherwise the clearly-badged strip precedes the library grid (static per load —
-          no interaction reflows it, ADR-015). */}
+      {/* ADR-057 (PLAN-045, owner-corrected) — the composed-Wanted items. Under the Wanted-only filter
+          the wanted cards ARE the wall; otherwise they merge INLINE at the head of the flat grid as the
+          SAME poster block as an on-disk book (never a separate strip). Static per load — ADR-015. */}
       {wantedOnly ? (
         wantedItems.length > 0 ? (
-          <WantedStrip mediaKind={mediaKind} items={wantedItems} only />
+          <div className="media-list poster-grid" data-testid="books-grid">
+            {wantedItems.map((w) => (
+              <WantedCard key={`w-${w.requestId}`} item={w} mediaKind={mediaKind} />
+            ))}
+          </div>
         ) : (
           <section className="card empty-state" data-testid="wanted-empty">
             <p className="muted">No wanted {label.toLowerCase()} right now.</p>
@@ -613,7 +629,6 @@ export function BooksBrowser({
         )
       ) : (
         <>
-          {showWantedStrip ? <WantedStrip mediaKind={mediaKind} items={wantedItems} /> : null}
           {pending ? (
         SKELETON
       ) : groupedCards ? (
@@ -667,7 +682,7 @@ export function BooksBrowser({
         <p className="alert" role="alert">
           Failed to load {label}: {search.error.message}
         </p>
-      ) : showEmpty ? (
+      ) : showEmpty && !showWantedInline ? (
         <section className="card empty-state">
           <p className="muted">
             {qParam.trim().length > 0 ? 'Nothing matches your search.' : `No ${label.toLowerCase()} yet.`}
@@ -680,6 +695,12 @@ export function BooksBrowser({
             aria-busy={refreshing}
             data-testid="books-grid"
           >
+            {/* Wanted cards lead the flat stream — same grid, same poster block as the on-disk books. */}
+            {showWantedInline
+              ? wantedItems.map((w) => (
+                  <WantedCard key={`w-${w.requestId}`} item={w} mediaKind={mediaKind} />
+                ))
+              : null}
             {items.map((item) => {
               const duration = formatDuration(item.durationSeconds);
               const badge =
@@ -696,20 +717,12 @@ export function BooksBrowser({
                   className="media-card poster-card"
                 >
                   <MediaPoster posterUrl={item.posterUrl} kind={item.mediaKind} alt="" />
-                  <span className="poster-card__body">
-                    <span className="media-card__title">
-                      {item.title}
-                      {item.year !== null ? <span className="muted"> ({item.year})</span> : null}
-                    </span>
-                    {item.author !== null ? (
-                      <span className="media-card__subtitle">{item.author}</span>
-                    ) : null}
-                    {badge !== null ? (
-                      <span className="media-card__badges">
-                        <span className="badge">{badge}</span>
-                      </span>
-                    ) : null}
-                  </span>
+                  <PosterCardBody
+                    title={item.title}
+                    year={item.year}
+                    subtitle={item.author}
+                    badges={[badge ? { label: badge } : null]}
+                  />
                 </Link>
               );
             })}

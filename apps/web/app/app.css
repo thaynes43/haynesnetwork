@@ -6340,150 +6340,70 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
   white-space: nowrap;
 }
 
-/* The Goodreads items wall + the Library-Wanted tiles — the twall/bwall poster-tile grammar:
-   reserved 2:3 poster boxes, an absolute corner puck, fixed-height caption/meta/action rows. */
-.gwall {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 14px 12px;
-}
-@media (max-width: 480px) {
-  .gwall {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-.gwall-tile {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-.gwall-tile__link {
-  display: block;
-  color: inherit;
-  text-decoration: none;
-  border-radius: var(--radius-sm);
-}
-.gwall-tile__link:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-}
-.gwall-tile__poster {
+/* PLAN-045 owner-correction (DESIGN-029 amendment) — the Goodreads items wall AND the composed
+   Library-Wanted cards render as the SAME cohesive poster block as the Movies/Books walls: plain
+   `.media-card.poster-card` tiles in `.media-list.poster-grid` with the shared `.poster-card__body`
+   caption. Only two wall-specific bits remain — the corner force-search puck and the ?focus= outline.
+   (The old bespoke `.gwall*` / `.gwanted` strip grammar is retired.) */
+
+/* The poster wrapper that hosts the absolute corner puck (a relative context over the reserved box). */
+.poster-card__poster {
   position: relative;
 }
-/* The deep-linked request context (?focus=) — an outline, never a geometry change (ADR-015). */
-.gwall-tile.is-focused .gwall-tile__poster {
+/* The ?focus= deep-linked request context — an outline on the poster, never a geometry change (ADR-015). */
+.poster-card.is-focused .poster-box {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
-  border-radius: var(--radius-sm);
 }
-/* The corner puck (the twall-overlay idiom) — absolute over the reserved box; per-phase recolor. */
-.gwall-overlay {
+
+/* The compact force-search PUCK — the ADR-015 reserved corner slot, the ONLY action on a Goodreads
+   items card (the rejected "Search again" text button is gone). Recolors per state IN PLACE; the
+   reserved absolute slot means a state change never reflows the caption or its neighbors. Tokens-only. */
+.gr-search-puck {
   position: absolute;
   top: 6px;
   right: 6px;
   width: 30px;
   height: 30px;
+  padding: 0;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   border: 1.5px solid var(--color-border);
-  background: color-mix(in srgb, var(--color-surface) 78%, transparent);
+  background: color-mix(in srgb, var(--color-surface) 82%, transparent);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease;
 }
-.gwall-overlay svg {
-  width: 17px;
-  height: 17px;
+.gr-search-puck svg {
+  width: 16px;
+  height: 16px;
 }
-.gwall-overlay[data-phase='have'] {
+.gr-search-puck:hover:not(:disabled) {
   color: var(--color-accent);
   border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 16%, var(--color-surface));
 }
-.gwall-overlay[data-phase='searching'] {
+.gr-search-puck:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+/* Live force-search feedback (PLAN-015 idiom) as recolor-only puck states — never a reflowing chip. */
+.gr-search-puck[data-state='searching'] {
   color: var(--color-warning);
   border-color: var(--color-warning);
+  cursor: default;
 }
-.gwall-overlay[data-phase='missing'] {
+.gr-search-puck[data-state='fired'] {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 18%, var(--color-surface));
+}
+.gr-search-puck[data-state='failed'] {
   color: var(--color-danger);
   border-color: var(--color-danger);
-}
-.gwall-overlay[data-phase='parked'] {
-  color: var(--color-text-muted);
-}
-/* Fixed-height caption/meta rows — the grid never staggers (the twall-caption rule). */
-.gwall-caption {
-  height: 17px;
-  font-size: 12.5px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  margin-top: 4px;
-}
-.gwall-sub {
-  height: 15px;
-  font-size: 11.5px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.gwall-shelves {
-  display: flex;
-  gap: 4px;
-  height: 20px;
-  overflow: hidden;
-  align-items: center;
-}
-.gwall-shelf {
-  white-space: nowrap;
-}
-.gwall-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  min-height: 24px;
-  align-content: flex-start;
-}
-/* The reserved force-search slot: button ⇄ live chip ⇄ note swap in place (ADR-015). */
-.request-action {
-  min-height: 32px;
-  display: flex;
-  align-items: center;
-  min-width: 0;
-}
-.request-action__chip {
-  max-width: 100%;
-  min-width: 0;
-  overflow: hidden;
-}
-.request-action__chip .phase-chip__label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.request-action__note {
-  font-size: 0.8rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* The Library-Wanted strip above a book wall's grid — clearly badged, static per load. */
-.gwanted {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-  border: 1px dashed color-mix(in srgb, var(--color-warning) 55%, var(--color-border));
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--color-warning) 4%, var(--color-surface));
-}
-.gwanted__title {
-  margin: 0;
-  font-size: 1rem;
-}
-.wanted-tile__by {
-  font-style: italic;
 }
