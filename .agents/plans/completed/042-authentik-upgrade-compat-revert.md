@@ -1,9 +1,13 @@
 # PLAN-042: Old-WebKit login crash — mitigation + upstream watch (compat-mode revert folded in)
 
-- **Status:** ESCALATED 2026-07-13 ~01:00 — **the compat-mode workaround does NOT fix real
-  Safari ≤18.3.x** (owner re-tested: still crashes; upstream RCA explains why, below). The plan
-  now has a **dispatchable engineering option** (asset nesting-lowering) awaiting the owner's
-  Monday ruling, plus the original upstream watch.
+- **Status:** COMPLETED 2026-07-13 evening — **Option A executed (owner-ruled), verified live,
+  compat mode reverted.** The served authentik web assets are CSS-nesting-LOWERED by server-pod
+  initContainers (haynes-ops); old WebKit 18.2 passes the live login natively 3/3 (vs 3/3
+  renderer crash before); Plex-first ordering + divider self-healed; `%(theme)s` background
+  polish shipped. Full build record in the check log below.
+- *(Superseded status, kept for history:)* ESCALATED 2026-07-13 ~01:00 — the compat-mode
+  workaround does NOT fix real Safari ≤18.3.x (owner re-tested: still crashes; upstream RCA
+  explains why, below).
 - **TRUE ROOT CAUSE (upstream RCA, goauthentik#19814 comment 2026-06-30):** authentik ≥2025.12
   (PatternFly v6 era) ships **native CSS nesting** pervasively — in `flow-<ver>.css` AND baked
   into JS-embedded component styles (esbuild loads CSS as raw text, never lowers it). Old WebKit
@@ -104,3 +108,68 @@ NOT help anonymous visitors on older devices (that's what A/B are for).
 - **Folded-in polish item: fix the `%(theme)s` placeholder** in the brand background URL
   (`10-hnet-brand.yaml`) — one doomed request per flow-page load in every browser; trivial
   blueprint edit + flow-page reload check. Do it with (or before) whichever option lands.
+- 2026-07-13 ~18:05 (session-6 cold-start check): no change — 2026.5.4 still latest; #19814's
+  newest comment is still the 2026-06-30 RCA; no mitigation PR.
+- **2026-07-13 evening — OPTION A EXECUTED (owner-ruled): shipped, live-verified, compat
+  REVERTED. Plan complete.** Build record (haynes-ops, direct commits to main):
+  - `1b11dc69` — `%(theme)s` polish: `branding_default_flow_background` pinned to the concrete
+    `hnet/bg-c-dark.svg` (authentik substitutes the placeholder for `branding_logo` but serves
+    the flow-background URL VERBATIM → one doomed request per flow-page load). Verified live:
+    signed URL 200 `image/svg+xml`, background visibly renders (screenshots), zero `%(theme)s`
+    requests in any engine.
+  - `4a7bc3af` — the core mitigation: server-pod initContainers — `web-dist-copy` (the chart's
+    own server image via tpl'd `{{ .Chart.AppVersion }}` reference → image-bump-proof, re-runs
+    every pod start; copies `/web/dist` to an emptyDir) and `web-dist-lower`
+    (node:22-bookworm-slim; pinned lightningcss@1.30.1 + acorn@8.15.0 installed at pod start;
+    lowers every `*.css` bundle AND every CSS string/expression-free template literal embedded
+    in the JS bundles — `targets: safari >= 15` + `Features.Nesting`; tagged templates stay
+    templates so Lit `css` semantics hold; deletes `.br`/`.gz` siblings; FAIL-LOUD gate) — with
+    the emptyDir mounted OVER `/web/dist`. Script delivered as ConfigMap `authentik-web-lowering`
+    (configMapGenerator + reloader annotation), file
+    `kubernetes/main/apps/network/authentik/app/web-lowering/lower-css-nesting.mjs`.
+  - Three fail-safe landing iterations (login stayed 200 throughout — each failure left the old
+    ReplicaSet serving): `7258fd0f` envsubst safety (the app Kustomization has
+    `postBuild.substitute`; the script's `${}` template-literal interpolations broke the post
+    build for the WHOLE app dir → script rewritten with zero variable-like dollar tokens;
+    pre-flighted with `kubectl kustomize | flux envsubst --strict`); `9392d81f` web-dist-copy
+    CrashLoop (`cp -a`'s utimensat on the root-owned emptyDir mount point → EPERM as the
+    image's non-root user → `cp -r`) + helm wait 15m; `234037a1` gate refinement — the full
+    dist (358 JS files) surfaced 8 false-positive "residuals": Mermaid theme template fragments
+    (stylis flattens `&` at runtime before injection) and Lezer parser tables in the CodeMirror
+    chunk (packed grammar data, not CSS); the gate now fails ONLY on strings that STRICTLY parse
+    as CSS stylesheets with nesting remaining (the actual WebKit #290102 vector) and logs the
+    rest as auditable `suspects`; `716f5cc2` helm wait 20m (also minted a fresh HelmRelease
+    generation after the exhausted-remediation rollbacks).
+  - Origin result: rollout 3/3 ready; per-pod gate log `jsChanged: 20, literalsLowered: 25,
+    residualCount: 0, suspectCount: 8, "OK: zero nesting markers"`. Served `flow-2026.5.3.css`
+    33→0 markers (byte-identical to the local reference transform), `FlowInterface-2026.5.3.js`
+    7→0, identification-stage chunk 0.
+  - `dafdea79` — **compat revert**: `compatibility_mode: true → false` on all four flows
+    (571c7a65's deviation comment replaced with a history note).
+  - Verification (sso-webkit harness rebuilt in scratchpad — Playwright 1.50.1/WebKit 18.2 as
+    the crash proxy + Playwright 1.61.1/WebKit 26.5, Chromium 149, Firefox 151; fresh ephemeral
+    contexts against the live flow page):
+    - Crash CONTROL (original assets + native mode simulated by stripping the ShadyDOM script):
+      WebKit 18.2 renderer crash **3/3** — the proxy still bites.
+    - Pre-proof (original assets lowered on the fly in-route, native): WebKit 18.2 **3/3 pass**.
+    - Post-rollout, compat still ON: all four engines green (cache-busted through the real CDN).
+    - DECISIVE, live native after the revert (no tricks): **WebKit 18.2 3/3 — no crash, form
+      renders, advances past stage 1**; all four engines green; desktop + mobile viewports.
+    - Brand in native mode: dark-green background + mark, brand card, GREEN "Log in with Plex"
+      pill, pill-shaped buttons all hold (the specificity pass was written for both modes).
+      **Plex-first ordering + divider SELF-HEALED** as predicted (probes: Plex button above the
+      username field; `::before` divider content `"or sign in with a local account"` present).
+      After-screenshots (desktop + mobile, old + current WebKit) captured for owner ratification.
+  - Edge cache: Cloudflare canonical asset entries (max-age 14400) refreshed themselves by
+    ~21:53 EDT — canonical CSS/JS now serve the lowered bytes (verified HIT + 0 markers).
+  - Ops notes: kubectl/Omni auth was DOWN the whole evening (`authcode-browser … context
+    deadline exceeded`) — every change landed via Flux's own GitRepository sync ticks (:12/:42,
+    30m interval) and was verified via the Grafana MCP (Loki pod/controller logs, Prometheus
+    kube-state metrics) + public HTTP only. The 30m tick is the change-latency floor when
+    kubectl is out.
+  - Upstream: 👍 reactions added to #19814 and to the RCA comment; a technical confirmation
+    comment is DRAFTED for owner review (NOT posted) —
+    `.agents/context/2026-07-13-plan-042-upstream-draft.md`.
+  - OPS-009 amended in the same PR (mitigation as-built; TOTP-enrollment caveat kept with a
+    "may be cured" note — the lowering covers ALL interfaces' static assets; owner retest
+    pending). iPad Option C retest (updated iPadOS) also still pending owner.
