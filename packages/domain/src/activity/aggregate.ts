@@ -15,6 +15,7 @@ import {
   type ActivityStage,
   type ActivityWall,
 } from './contract';
+import { parseArrActivityRef } from './arr-adapter';
 
 export interface ActivityCounts {
   total: number;
@@ -124,10 +125,18 @@ export function activityWallStages(items: readonly ActivityItem[]): Record<strin
   return out;
 }
 
-/** The wall-badge join key for an item. Books items encode `books:ll:<bookId>:<format>` → the bookId. */
+/**
+ * The wall-badge join key for an item — the id each wall's posters carry. Books items encode
+ * `books:ll:<bookId>:<format>` → the bookId; *arr items encode `arr:<kind>:<parentId>[:<child>]` → the
+ * wall parent (movieId / seriesId / artistId, the `media_items.arr_item_id` the movies/tv/music posters
+ * key by). Each family adds its own parse here (DESIGN-030 D-08 step 3) — the fan-out seam.
+ */
 function wallJoinKey(it: ActivityItem): string | null {
-  const m = /^books:ll:([^:]+):/.exec(it.id);
-  return m ? (m[1] ?? null) : null;
+  const books = /^books:ll:([^:]+):/.exec(it.id);
+  if (books) return books[1] ?? null;
+  const arr = parseArrActivityRef(it.id);
+  if (arr) return String(arr.parentId);
+  return null;
 }
 
 /** The canonical wall list (for the fan-out; unused directly but keeps the type surface documented). */

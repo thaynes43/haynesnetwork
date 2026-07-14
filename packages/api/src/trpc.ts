@@ -21,6 +21,9 @@ import {
   kapowarrBundleFromEnv,
   type KapowarrClientBundle,
   booksActivityBundleFromEnv,
+  buildArrActivityAdapter,
+  resolveArrBaseUrls,
+  type ActivitySourceAdapter,
   type BooksActivityBundle,
   LastAdminError,
   LazyLibrarianUpstreamError,
@@ -231,6 +234,17 @@ export function resolveActivityBundle(ctx: TRPCContext): BooksActivityBundle {
   if (ctx.activity) return ctx.activity;
   envActivityBundle ??= booksActivityBundleFromEnv();
   return envActivityBundle;
+}
+
+/**
+ * ADR-059 / DESIGN-030 D-08 (PLAN-048) — the UNIVERSAL *arr activity adapter for this request: the
+ * Radarr/Sonarr/Lidarr queue + recent-import read, built off the same *arr read-client bundle the
+ * fix/restore procedures use (injected in tests, env-built singleton in prod). Read-only — the failure
+ * ACTIONS fire the confined write clients on `resolveArrBundle(ctx).write` after commit. Base URLs (the
+ * Admin-only downstream link) come from env; a missing one falls back to the in-cluster service DNS.
+ */
+export function resolveArrActivityAdapter(ctx: TRPCContext): ActivitySourceAdapter {
+  return buildArrActivityAdapter(resolveArrBundle(ctx).read, { baseUrls: resolveArrBaseUrls() });
 }
 
 let envGoogleBooksClient: GoogleBooksClient | undefined;

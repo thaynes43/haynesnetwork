@@ -16,11 +16,13 @@ import {
 } from '@hnet/db';
 import {
   booksActivityBundleFromEnv,
+  buildArrActivityAdapter,
   kapowarrBundleFromEnv,
   lazyLibrarianBundleFromEnv,
   maintainerrClientBundleFromEnv,
   mamGovernorBundleFromEnv,
   plexClientBundleFromEnv,
+  resolveArrBaseUrls,
   resolveGovernorConfig,
   type KapowarrClientBundle,
   type LazyLibrarianClientBundle,
@@ -113,12 +115,15 @@ const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-bat
                            book push; absent Kapowarr ⇒ comics parked). NEVER writes LL/Kapowarr provider
                            config. No --source. Writes no sync_runs row.
   --mode=activity-scan     the ACTIVITY / IN-FLIGHT failure scan (ADR-059 — the pipeline made visible): poll
-                           each source family's queue/import state (SLICE 1: the books LL wanted-table + SAB
-                           queue/history), detect OPEN import failures (incl. stranded_import — downloaded but
-                           never imported), UPSERT the activity_import_failures ledger + enqueue one
-                           activity_import_failed notification_outbox row per NEW failure (same-tx). Needs
-                           LAZYLIBRARIAN_API_KEY + SABNZBD_API_KEY (URLs default in-cluster). No --source.
-                           Writes no sync_runs row.
+                           each source family's queue/import state (the books LL wanted-table + SAB queue/
+                           history AND the *arr Radarr/Sonarr/Lidarr queue + recent-import state), detect OPEN
+                           import failures (stranded_import — downloaded but never imported; import_blocked —
+                           the *arr importer needs a manual import; download_failed), UPSERT the
+                           activity_import_failures ledger + enqueue one activity_import_failed
+                           notification_outbox row per NEW failure (same-tx). Each source is reconciled
+                           independently (a source down never closes another's strands). Needs
+                           LAZYLIBRARIAN_API_KEY + SABNZBD_API_KEY + SONARR/RADARR/LIDARR_API_KEY (URLs default
+                           in-cluster). No --source. Writes no sync_runs row.
   --source=NAME            limit the run to one source (repeatable; default: all sources; for
                            metadata-refresh the default is the three *arr kinds)
   --force-tombstones       override the mass-tombstone guard (DESIGN-005 D-14/Q-03)
@@ -295,6 +300,24 @@ async function main(): Promise<number> {
   // surface stays domain-only (the arr-write import guard). Throws one config error if LAZYLIBRARIAN_API_KEY
   // or SABNZBD_API_KEY is absent. Only the `activity-scan` mode uses it (READ side — failure detection).
   const activityBundle = args.mode === 'activity-scan' ? booksActivityBundleFromEnv() : undefined;
+  // ADR-059 / DESIGN-030 D-08 — the UNIVERSAL *arr activity adapter (Radarr/Sonarr/Lidarr queue + recent-
+  // import read) the `activity-scan` mode ALSO scans for import failures (import_blocked / download_failed).
+  // Built from the D-18 *arr read clients (throws one ArrConfigError naming any absent SONARR/RADARR/LIDARR
+  // key). READ-ONLY here — the retry/re-search WRITES fire only from the API action resolver.
+  const arrActivityAdapter =
+    args.mode === 'activity-scan'
+      ? (() => {
+          const arrClients = buildSyncClients(['sonarr', 'radarr', 'lidarr']);
+          return buildArrActivityAdapter(
+            {
+              radarr: requireClient(arrClients, 'radarr'),
+              sonarr: requireClient(arrClients, 'sonarr'),
+              lidarr: requireClient(arrClients, 'lidarr'),
+            },
+            { baseUrls: resolveArrBaseUrls() },
+          );
+        })()
+      : undefined;
   // ADR-043 / DESIGN-021 — the Plex client bundle (read + confined write) the `poster-guard` mode uses.
   // ADR-047 / DESIGN-025 — `plex-match` reuses the same bundle (READ side only) to enumerate the Movies/
   // TV/Music libraries. Built INSIDE @hnet/domain (plexClientBundleFromEnv), so the confined Plex write
@@ -399,6 +422,7 @@ async function main(): Promise<number> {
     ...(mamGovernor ? { mamGovernor } : {}),
     ...(mamTuning ? { mamTuning } : {}),
     ...(activityBundle ? { activityBundle } : {}),
+    ...(arrActivityAdapter ? { arrActivityAdapter } : {}),
     ...(plex ? { plex } : {}),
     ...(openWebUi ? { openWebUi } : {}),
     ...(authentik ? { authentik } : {}),

@@ -14,7 +14,7 @@ import { join } from 'node:path';
 // invalid under the CJS transform); migrations run as a subprocess instead.
 import { startPostgres, type StartedPostgres } from '@hnet/test-utils/postgres';
 import { startStubOidc, type StubOidcServer } from './stub-oidc';
-import { startStubArr, type StubArrServer } from './stub-arr';
+import { startStubArr, arrActivityQueueFixture, type StubArrServer } from './stub-arr';
 import { startStubBazarr, type StubBazarrServer } from './stub-bazarr';
 import { startStubPlex, type StubPlexServer } from './stub-plex';
 import { startStubMaintainerr, type StubMaintainerrServer } from './stub-maintainerr';
@@ -289,9 +289,17 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     );
 
     // ADR-059 / DESIGN-030 (PLAN-048) — populate the activity_import_failures ledger + the outbox by RUNNING
-    // the real activity-scan mode against the stub LL + SAB (exercises the adapter → normalizer →
-    // evaluateActivityFailures single-writer, like prod), so the Activity failure detail pages resolve + the
-    // failed tiles link on first load. The tab/badges themselves read LIVE (no seed needed).
+    // the real activity-scan mode against the stub LL + SAB AND the stub *arr (exercises the adapter →
+    // normalizer → evaluateActivityFailures single-writer, like prod), so the Activity failure detail pages
+    // resolve + the failed tiles link on first load. The tab/badges themselves read LIVE (no seed needed).
+    // Stage the *arr queue (the import_blocked movie) so the scan writes its durable failure row, then CLEAR
+    // it (the ledger row persists in PG) so other specs start with an empty queue; the activity spec
+    // re-stages the live queue itself for the mixed-list view (DESIGN-030 D-08).
+    await fetch(`${arr.baseUrl}/_stub/queue`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ records: arrActivityQueueFixture() }),
+    });
     await runToCompletion(
       join(cwd, 'node_modules', '.bin', 'tsx'),
       [join(cwd, '..', '..', 'packages', 'sync', 'src', 'scripts', 'sync.ts'), '--mode=activity-scan'],
@@ -299,6 +307,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       cwd,
       'activity-scan seed',
     );
+    await fetch(`${arr.baseUrl}/_stub/reset`, { method: 'POST' });
 
     // Spawn .bin/next directly — some pnpm versions filter child env vars.
     dev = spawn(join(cwd, 'node_modules', '.bin', 'next'), ['dev', '--port', String(port)], {

@@ -93,6 +93,20 @@ abstract class ArrWriteClientBase {
     return this.http.requestJson('POST', 'tag', tagSchema, { body: { label } });
   }
 
+  /**
+   * ADR-059 / DESIGN-030 (PLAN-048 — Activity / In-Flight) — `POST /command
+   * {name:'ProcessMonitoredDownloads'}`: re-run the completed-download import handler over the whole
+   * instance queue. This is the *arr analog of the LazyLibrarian `forceProcess` break-glass (OPS-013
+   * §11.3) — the Activity "Retry import" action for a stranded / import-blocked *arr grab. Estate-wide
+   * (no per-item target), exactly like `forceProcess`, so it re-attempts every stuck completed download,
+   * including the blocked one. Shared verbatim by Sonarr/Radarr/Lidarr (the command name is identical
+   * across the three — verified against the shared `ProcessMonitoredDownloadsCommand`). No response body
+   * beyond the command ack.
+   */
+  processMonitoredDownloads(): Promise<ArrCommandResponse> {
+    return this.runCommand({ name: 'ProcessMonitoredDownloads' });
+  }
+
   protected runCommand(body: Record<string, unknown>): Promise<ArrCommandResponse> {
     return this.http.requestJson('POST', 'command', commandResponseSchema, { body });
   }
