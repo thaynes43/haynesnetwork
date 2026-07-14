@@ -17,7 +17,7 @@
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { test, expect } from '@playwright/test';
-import { signIn } from './support/helpers';
+import { signIn, openUserMenu } from './support/helpers';
 import { readRuntimeEnv } from './support/env';
 
 interface LlCall {
@@ -92,9 +92,14 @@ async function stageKapowarr(body: {
 }
 
 test.describe('Integrations hub + Goodreads sub-section', () => {
-  test('a fresh member sees no Integrations tab and a not-available state (hub AND sub-section)', async ({ page }) => {
+  test('a fresh member sees no Integrations entry (nav or menu) and a not-available state (hub AND sub-section)', async ({ page }) => {
     await signIn(page, 'fresh-member');
+    // DESIGN-004 D-22 — Integrations is a user-menu entry now (never a top-row tab); a role without
+    // the `integrations` section sees it in NEITHER place.
     await expect(page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Integrations' })).toHaveCount(0);
+    await openUserMenu(page);
+    await expect(page.getByRole('menuitem', { name: 'Integrations' })).toHaveCount(0);
+    await page.keyboard.press('Escape');
     await page.goto('/integrations');
     await expect(page.getByTestId('integrations-unavailable')).toBeVisible();
     await page.goto('/integrations/goodreads');
@@ -105,8 +110,10 @@ test.describe('Integrations hub + Goodreads sub-section', () => {
     await resetLl();
     await signIn(page, 'admin');
 
-    // ── The HUB: a provider card, pushing into the sub-section (D-19). ──
-    await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Integrations' }).click();
+    // ── Reach the HUB via the user menu (DESIGN-004 D-22 — Integrations moved off the top row);
+    //    a menu-item Link push (D-19). Then a provider card pushes into the sub-section. ──
+    await openUserMenu(page);
+    await page.getByRole('menuitem', { name: 'Integrations' }).click();
     await expect(page.getByTestId('integrations-hub')).toBeVisible();
     await page.getByTestId('hub-card-goodreads').click();
     await expect(page).toHaveURL(/\/integrations\/goodreads/);

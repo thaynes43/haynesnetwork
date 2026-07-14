@@ -66,6 +66,14 @@
 > escape hatch — and the raw card-anatomy classes are lint-locked outside that package. New section
 > **D-21** is normative (the component contract, the guard, and the `/e2e/card-gallery` drift gate).
 > Pixel-neutral: the family emits the pre-refit markup verbatim.
+>
+> **Amended 2026-07-14 (owner-ratified from an approved mockup) — the NAV RESTRUCTURE:** the top row
+> slims to FOUR entries — **Home · Library · Tickets · Trash** — and Metrics + Integrations move into
+> the **user menu** (each gated exactly like its former tab). "Tickets" is the `bulletin` section
+> under its **ratified name** (`HELPDESK_NAME` — a label change; route/section id stay `bulletin`);
+> its page keeps the `[Tickets] [Feed]` inner tabs. Relocated routes leave no stale top-nav tab
+> highlighted. New section **D-22** is normative; **D-16** carries the amendment. No route/grant/
+> migration change; ADR-015 untouched.
 
 - **Donors:** `../demo-console/apps/shell/src/shell/theme/` (tokens.css, tokenContract.ts, ThemeProvider.tsx, app.css), `../demo-console/packages/shared/layout/`, `../demo-console/apps/shell/src/shell/chrome/` (TopBar, SettingsDrawer), `../demo-console/scripts/lint-css-hex.mjs`.
 
@@ -942,6 +950,54 @@ the same change. Forking a card outside the package is a CI failure by construct
 
 ADR-015 (D-14) is unchanged and now structurally enforced on cards: reserved art boxes, fixed
 caption heights, corner pucks that recolor in place.
+
+### D-22 — Amendment 2026-07-14 (owner-ratified from an approved mockup) — the nav restructure
+
+The owner reviewed nav-IA mockups and ratified this exact one (it is the contract):
+
+```
+TOP BAR:  Home | Library | Tickets | Trash        [theme] (avatar)
+USER MENU (avatar dropdown):
+  My Plex
+  Integrations
+  Metrics
+  ────────
+  Sign out
+Tickets page keeps its inner tabs:  [Tickets] [Feed]
+```
+
+This amends **D-16** (the universal top row + role-gated user menu) in three parts. No route, section
+id, grant row, or stored value changes — it is a labelling + placement change, ADR-015 untouched.
+
+- **The top row slims to FOUR entries — `Home · Library · Tickets · Trash`.** Metrics and
+  Integrations LEAVE the row (they had crept on past D-16's original four; see the D-08/`.topbar__nav`
+  history). "Tickets" is the `bulletin` section under its ratified name — a LABEL change: the route
+  stays `/bulletin`, the section id / sub-view grants / deep links stay `bulletin` / `messages`, and
+  the entry stays level-gated (Bulletin's no-row default is `read_only`, so it shows for everyone; a
+  Disabled role hides it). Section gating for the other three is unchanged. Four labels fit **320px**
+  without the rail scrolling (proven by the nav-restructure 320px capture); the v0.46.3 sub-375px
+  scroll-rail stays only as a **safety net** for a future fifth entry.
+- **The user menu gains Integrations + Metrics**, placed with My Plex in the top group (no separator
+  between), each gated **exactly like its former tab** (no-row default `disabled`, so a role without
+  the `metrics` / `integrations` section sees no entry). A user gated to just those two therefore sees
+  the mockup verbatim — `My Plex · Integrations · Metrics · ─── · Sign out`. The tooling group
+  (Ledger / Trash settings / Admin settings, unchanged from D-16) and Sign out follow below the
+  separator. Every item shares the `usermenu__item` styling; navigating is a `<Link>` **push** (D-19).
+- **Active-state:** the universal bar carries **no** active-highlight mechanism (it never has), so a
+  route that is no longer a tab — `/metrics`, `/integrations` — leaves **no** stale tab highlighted;
+  that is the sane, tested treatment. Screen-level tab activeness stays where it belongs: exactly one
+  active inner tab on a tabbed page (e.g. the Tickets page's `[Tickets] [Feed]`, #278 precedent).
+
+**Tickets ratification (settled).** D-16's ADR-050 C-05 open choice — the ticket system's display
+name — is **ratified as "Tickets" on 2026-07-14**. It is the single constant `HELPDESK_NAME`
+(`apps/web/lib/bulletin.ts`), which now also drives the top-nav entry, the section page heading, and
+the lead sub-tab. User-visible "Helpdesk" / section-brand "Bulletin" strings were swept to "Tickets"
+(nav, page headings, empty-state + intake copy, back-links); code identifiers, testids, route/section
+ids, the `/admin/roles` section column, and doc history keep their `bulletin` / `Helpdesk` names.
+
+Enforced by `apps/web/e2e/nav-restructure.spec.ts` (four-tab bar at 320/390/desktop + no rail scroll
+at 320; menu entries + role gating; the Tickets label + inner tabs; menu-item push/Back; no stale
+active tab) with `nav-overlap.spec.ts` updated to the four-tab reality.
 
 ## Open questions
 

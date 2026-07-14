@@ -21,7 +21,7 @@
 //   sum(unpoller_site_receive_rate_bytes{subsystem="wan"})  ⇒  844568 (download B/s).
 // Leaves the stub Prometheus back in 'ok' mode so later specs and re-runs see the healthy default.
 import { test, expect, type Page } from '@playwright/test';
-import { signIn } from './support/helpers';
+import { signIn, openUserMenu } from './support/helpers';
 import { readRuntimeEnv } from './support/env';
 
 /** Script the stub Prometheus (ok ⇄ down) — the Overview's degrade journey (mirrors storage.spec). */
@@ -57,9 +57,14 @@ test.describe('metrics section (PLAN-017 · ADR-037 · DESIGN-016) — Overview 
   }) => {
     await signIn(page, 'fresh-member');
 
-    await test.step('no Metrics entry in the primary nav', async () => {
+    await test.step('no Metrics entry in the primary nav or the user menu', async () => {
+      // DESIGN-004 D-22 — Metrics is a user-menu entry now (never a top-row tab); a role without
+      // the `metrics` section sees it in NEITHER place.
       const nav = page.getByRole('navigation', { name: 'Primary' });
       await expect(nav.getByRole('link', { name: 'Metrics' })).toHaveCount(0);
+      await openUserMenu(page);
+      await expect(page.getByRole('menuitem', { name: 'Metrics' })).toHaveCount(0);
+      await page.keyboard.press('Escape');
     });
 
     await test.step('/metrics renders the unavailable card, not the Overview', async () => {
@@ -76,12 +81,16 @@ test.describe('metrics section (PLAN-017 · ADR-037 · DESIGN-016) — Overview 
   }) => {
     await signIn(page, 'admin');
 
-    await test.step('the Metrics link is present in the primary nav', async () => {
-      const link = page.getByRole('navigation', { name: 'Primary' }).getByRole('link', {
-        name: 'Metrics',
-      });
-      await expect(link).toBeVisible();
-      await link.click();
+    await test.step('the Metrics entry is present in the user menu and navigates', async () => {
+      // DESIGN-004 D-22 — Metrics moved off the top row into the user menu (admin implies the
+      // `metrics` section, so the entry shows); navigating is a Link push (D-19).
+      await expect(
+        page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Metrics' }),
+      ).toHaveCount(0);
+      await openUserMenu(page);
+      const item = page.getByRole('menuitem', { name: 'Metrics' });
+      await expect(item).toBeVisible();
+      await item.click();
       await page.waitForURL('**/metrics');
     });
 

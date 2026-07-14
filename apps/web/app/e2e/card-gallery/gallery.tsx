@@ -330,7 +330,7 @@ export function CardGallery() {
         </PosterGrid>
       </Section>
 
-      <Section title="TicketCard — Helpdesk wall (state puck; poster or category tile)">
+      <Section title="TicketCard — Tickets wall (state puck; poster or category tile)">
         <TicketWall refreshing={false} testId="gallery-tickets">
           <TicketCard
             href="#"

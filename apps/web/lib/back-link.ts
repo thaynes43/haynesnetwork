@@ -6,6 +6,8 @@
 // Library). This module is pure so the mapping is unit-testable; the client component
 // (components/back-link.tsx) layers the history.back() preference on top.
 
+import { HELPDESK_NAME } from './bulletin';
+
 export interface BackLinkTarget {
   /** The label rendered after "← " (e.g. "Trash Movies"). */
   label: string;
@@ -17,10 +19,12 @@ export interface BackLinkTarget {
 const BACK_LINKS: Record<string, BackLinkTarget> = {
   'trash-movies': { label: 'Trash Movies', href: '/trash?tab=movies' },
   'trash-tv': { label: 'Trash TV', href: '/trash?tab=tv' },
-  bulletin: { label: 'Bulletin', href: '/bulletin?tab=helpdesk' },
-  'bulletin-feed': { label: 'Bulletin', href: '/bulletin' },
-  // ADR-050 / DESIGN-012 D-12 (PLAN-034) — the ticket detail's way back to the Helpdesk wall.
-  helpdesk: { label: 'Helpdesk', href: '/bulletin?tab=helpdesk' },
+  // DESIGN-004 D-22 — the `bulletin` section renders under its ratified name (HELPDESK_NAME); the
+  // `?from=` keys and hrefs are unchanged (route/section id stay `bulletin`).
+  bulletin: { label: HELPDESK_NAME, href: '/bulletin?tab=helpdesk' },
+  'bulletin-feed': { label: HELPDESK_NAME, href: '/bulletin' },
+  // ADR-050 / DESIGN-012 D-12 (PLAN-034) — the ticket detail's way back to the ticket wall.
+  helpdesk: { label: HELPDESK_NAME, href: '/bulletin?tab=helpdesk' },
   ledger: { label: 'Ledger', href: '/ledger' },
   // DESIGN-017 D-09 — the ytdl-sub drill-in's way back to its wall (the key IS the library id).
   peloton: { label: 'Peloton', href: '/library?tab=peloton' },

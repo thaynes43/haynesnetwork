@@ -452,7 +452,7 @@ async function main(): Promise<void> {
   //   • Bulletin Moderator — may file AND drive ticket state transitions (moderate grant).
   const { roleId: bulletinPosterId } = await createRole({
     name: 'Bulletin Poster',
-    description: 'Read the Feed + file Helpdesk tickets; no triage',
+    description: 'Read the Feed + file tickets; no triage',
     appIds: [],
     actorId: null,
   });

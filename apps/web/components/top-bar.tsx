@@ -7,21 +7,29 @@
 // mismatches the pre-stamped `data-theme` (D-03). Under 600px the user-menu name
 // collapses to the avatar initial via CSS (D-06).
 //
-// ADR-032 (2026-07-07, owner-directed IA): the top row is the UNIVERSAL section nav —
-// Home · Library · Trash · Bulletin, the same candidates for every role (a Disabled
-// section still hides its entry; the route stays server-gated). The personal and
-// role-gated tooling destinations moved into the user menu: My Plex (everyone — it is
-// the user's own Plex account), Ledger (only when the section isn't Disabled — the
-// shipped default IS Disabled for members now), Trash settings (/settings/trash, only
-// at Trash Edit level), Admin settings (admin). Fewer top-row items = larger touch
-// targets on phones. The menu is an overlay popover — opening it never reflows the
-// page (ADR-015-sanctioned).
+// ADR-032 (2026-07-07, owner-directed IA): the top row is the UNIVERSAL section nav, and the
+// personal + role-gated tooling destinations live in the user menu. The menu is an overlay
+// popover — opening it never reflows the page (ADR-015-sanctioned).
+//
+// NAV RESTRUCTURE (2026-07-14, owner-ratified from an approved mockup — DESIGN-004 D-22): the top
+// row slims to FOUR entries — Home · Library · Tickets · Trash — the same candidate set for every
+// role (a Disabled section still hides its entry; every route stays server-gated). "Tickets" is the
+// `bulletin` section under its ratified name (HELPDESK_NAME — a LABEL change only; the route stays
+// `/bulletin`, the section id / grants stay `bulletin`). Metrics and Integrations LEFT the top row
+// and MOVED INTO the user menu (above the tooling separator), each gated exactly like its former
+// tab. Four labels fit 320px without the rail scrolling; the v0.46.3 scroll-rail stays as a
+// safety net. User-menu destinations, top → bottom: My Plex (everyone — the user's own Plex
+// account), Integrations + Metrics (each when its section ≠ Disabled), then the tooling group —
+// Ledger (when ≠ Disabled — the shipped default is Disabled for members), Trash settings
+// (/settings/trash, only at Trash Edit level), Admin settings (admin) — then Sign out. Navigating
+// from a menu item is a `<Link>` push (D-19).
 
 import Link from 'next/link';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useTheme } from '@hnet/ui';
 import { BrandMark } from '@/components/brand-mark';
 import { initialFor } from '@/lib/initials';
+import { HELPDESK_NAME } from '@/lib/bulletin';
 
 /** ADR-021 — the session-carried section levels (SessionRole.sectionPermissions) the nav
  *  gates on. Typed structurally so this client component needs no server-package import. */
@@ -103,11 +111,20 @@ function UserMenu({ user }: { user: TopBarUser }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
-  // ADR-032 / DESIGN-004 D-16 — the role-gated menu destinations. Ledger's no-row default
-  // is now DISABLED (members see no Ledger anywhere unless a role opts them in); Trash
-  // settings shows only at the Edit level (admin sessions carry 'edit' everywhere, so
-  // admins pass implicitly — ADR-021 C-03). Hiding here is courtesy: every destination is
-  // additionally server-gated.
+  // ADR-032 / DESIGN-004 D-16/D-22 — the role-gated menu destinations. Hiding here is courtesy:
+  // every destination is additionally server-gated.
+  //
+  // Integrations + Metrics (the two entries the 2026-07-14 restructure moved OUT of the top row):
+  // gated EXACTLY like their former tabs — the no-row default is `disabled` for both, so a role
+  // without the section sees no menu entry (a member without `metrics` gets no Metrics item). They
+  // sit with My Plex in the top group (no separator) so a user gated to just these two sees the
+  // approved mockup verbatim: My Plex · Integrations · Metrics · ─── · Sign out.
+  const showMetrics = (user.role.sectionPermissions?.metrics ?? 'disabled') !== 'disabled';
+  const showIntegrations =
+    (user.role.sectionPermissions?.integrations ?? 'disabled') !== 'disabled';
+  // Ledger's no-row default is DISABLED (members see no Ledger anywhere unless a role opts them in);
+  // Trash settings shows only at the Edit level (admin sessions carry 'edit' everywhere, so admins
+  // pass implicitly — ADR-021 C-03).
   const showLedger = (user.role.sectionPermissions?.ledger ?? 'disabled') !== 'disabled';
   const showTrashSettings = (user.role.sectionPermissions?.trash ?? 'disabled') === 'edit';
 
@@ -176,7 +193,8 @@ function UserMenu({ user }: { user: TopBarUser }) {
             <span className="usermenu__display">{user.displayName}</span>
             <span className="usermenu__email">{user.email}</span>
           </div>
-          {/* Personal — the user's own stuff (everyone). */}
+          {/* Personal + the relocated section views (everyone / role-gated) — one group, no
+              separator, so a metrics+integrations user matches the approved mockup exactly. */}
           <Link
             href="/library/plex"
             role="menuitem"
@@ -185,6 +203,30 @@ function UserMenu({ user }: { user: TopBarUser }) {
           >
             My Plex
           </Link>
+          {/* DESIGN-004 D-22 (PLAN-044 / ADR-055): Integrations — moved from the top row, gated
+              like its former tab; navigating pushes a history entry (D-19). */}
+          {showIntegrations ? (
+            <Link
+              href="/integrations"
+              role="menuitem"
+              className="usermenu__item"
+              onClick={() => setOpen(false)}
+            >
+              Integrations
+            </Link>
+          ) : null}
+          {/* DESIGN-004 D-22 (PLAN-017 / ADR-037): Metrics — moved from the top row, gated like its
+              former tab. */}
+          {showMetrics ? (
+            <Link
+              href="/metrics"
+              role="menuitem"
+              className="usermenu__item"
+              onClick={() => setOpen(false)}
+            >
+              Metrics
+            </Link>
+          ) : null}
           {/* Tooling — role-gated destinations (subtle separator, D-16). */}
           {showLedger || showTrashSettings || user.role.isAdmin ? (
             <div className="usermenu__sep" role="separator" aria-hidden="true" />
@@ -243,15 +285,8 @@ export function TopBar({ user }: { user: TopBarUser }) {
   // read_only (C-02 — the Feed is for everyone), so a missing map falls OPEN;
   // the /bulletin route is additionally server-gated.
   const showBulletin = (user.role.sectionPermissions?.bulletin ?? 'read_only') !== 'disabled';
-  // ADR-037 / DESIGN-016 D-05 — the Metrics entry: the no-row DEFAULT for metrics is disabled
-  // (ADR-037 C-02 — ships Admin-only; a role row opts others in), so a missing map falls CLOSED;
-  // the /metrics route is additionally server-gated.
-  const showMetrics = (user.role.sectionPermissions?.metrics ?? 'disabled') !== 'disabled';
-  // ADR-055 / DESIGN-028 D-05 (PLAN-044) — the Integrations entry: the no-row DEFAULT is disabled
-  // (ships Admin-only; a role row opts others in), so a missing map falls CLOSED; the /integrations
-  // route is additionally server-gated.
-  const showIntegrations =
-    (user.role.sectionPermissions?.integrations ?? 'disabled') !== 'disabled';
+  // NAV RESTRUCTURE (DESIGN-004 D-22): Metrics + Integrations no longer ride the top row — they
+  // moved into the user menu (see UserMenu). The row is exactly four candidates now.
   return (
     <header className="topbar">
       <div className="brand">
@@ -262,21 +297,18 @@ export function TopBar({ user }: { user: TopBarUser }) {
         <span className="brand__name" aria-hidden="true" />
         <span className="sr-only">haynesnetwork</span>
       </div>
-      {/* ADR-032 / DESIGN-004 D-16 — the UNIVERSAL primary nav: Home · Library · Trash ·
-          Bulletin, the same candidate set for every role (a Disabled section still hides its
-          entry). Ledger and My Plex moved to the user menu — the freed width buys larger
-          touch targets on phones. Shown at all widths. */}
+      {/* DESIGN-004 D-22 — the UNIVERSAL primary nav, slimmed to FOUR: Home · Library · Tickets ·
+          Trash, the same candidate set for every role (a Disabled section still hides its entry).
+          Metrics + Integrations moved to the user menu; four labels fit 320px without the rail
+          scrolling. Shown at all widths. */}
       <nav className="topbar__nav" aria-label="Primary">
         <Link href="/">Home</Link>
         <Link href="/library">Library</Link>
+        {/* PLAN-009 (DESIGN-012 D-08): the `bulletin` section under its ratified name (HELPDESK_NAME
+            = "Tickets"); the route/section id stay `bulletin`. Level-gated (see showBulletin). */}
+        {showBulletin ? <Link href="/bulletin">{HELPDESK_NAME}</Link> : null}
         {/* PLAN-006 (DESIGN-010 D-09): the Trash section, level-gated (see showTrash). */}
         {showTrash ? <Link href="/trash">Trash</Link> : null}
-        {/* PLAN-009 (DESIGN-012 D-08): the Bulletin section, level-gated (see showBulletin). */}
-        {showBulletin ? <Link href="/bulletin">Bulletin</Link> : null}
-        {/* PLAN-017 (DESIGN-016 D-05): the Metrics section, level-gated (see showMetrics). */}
-        {showMetrics ? <Link href="/metrics">Metrics</Link> : null}
-        {/* PLAN-044 (DESIGN-028 D-05): the Integrations section, level-gated (see showIntegrations). */}
-        {showIntegrations ? <Link href="/integrations">Integrations</Link> : null}
       </nav>
       <div className="topbar__spacer" />
       <div className="topbar__actions">

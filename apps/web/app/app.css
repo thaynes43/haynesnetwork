@@ -374,25 +374,26 @@ button.motd__dismiss:hover {
   font-size: 16px;
   white-space: nowrap;
 }
-/* Primary topbar nav — the UNIVERSAL section row (ADR-032 / DESIGN-004 D-16): ghost links
-   in the D-03 chrome language, shown at ALL widths. Ledger + My Plex moved to the user menu,
-   but ADR-037 later added a Metrics entry, so the row now carries up to FIVE links (Home ·
-   Library · Trash · Bulletin · Metrics). */
+/* Primary topbar nav — the UNIVERSAL section row (ADR-032 / DESIGN-004 D-16/D-22): ghost links
+   in the D-03 chrome language, shown at ALL widths. The 2026-07-14 restructure slimmed the row to
+   FOUR candidates (Home · Library · Tickets · Trash) — Metrics + Integrations moved to the user
+   menu — and four labels FIT 320px without the rail scrolling (proven by the nav-restructure 320px
+   capture). */
 .topbar__nav {
   display: flex;
   align-items: center;
   gap: 2px;
   min-width: 0;
-  /* With five links the intrinsic row width no longer fits below ~375px between the brand
-     mark and the right-pinned actions. Without a scroll container the rail could shrink
-     (min-width: 0) but its links overflowed VISIBLY to the right, sliding under the theme
-     toggle — the narrow-phone overlap bug (owner-reported on a 360px-class device). Make the
-     rail scroll within its own bounds instead: overflow-x: auto shows a track only when the
-     links can't fit, so desktop and ≥375px phones are untouched. Page-level scroll stays
-     impossible (html/body overflow:hidden, D-05), and confining the overflow here means the
-     actions can no longer be overrun. The little vertical padding keeps the 56px bar taller
-     than the rail so link focus rings aren't clipped by the scroll container. A self-contained
-     scroll pane — swiping it never repositions neighbors (ADR-015-safe). */
+  /* SAFETY NET (kept from v0.46.3, when the row briefly carried five links): should the intrinsic
+     row width ever exceed the space between the brand mark and the right-pinned actions, the rail
+     scrolls WITHIN ITS OWN BOUNDS rather than overflowing VISIBLY rightward under the theme toggle
+     (the narrow-phone overlap bug, owner-reported on a 360px-class device). overflow-x: auto shows
+     a track only when the links can't fit — with four links they always do at ≥320px, so this
+     never engages today, but it stays as insurance for a future fifth entry. Page-level scroll
+     stays impossible (html/body overflow:hidden, D-05); confining the overflow here means the
+     actions can't be overrun. The little vertical padding keeps the 56px bar taller than the rail
+     so link focus rings aren't clipped. A self-contained scroll pane — swiping it never
+     repositions neighbors (ADR-015-safe). */
   padding-block: 4px;
   overflow-x: auto;
   overflow-y: hidden;
@@ -428,8 +429,8 @@ button.motd__dismiss:hover {
 }
 /* Phones once hid the top nav entirely (the user menu carried Library). The menu
    no longer does, so the section row must stay reachable here — keep it visible and
-   ease the spacing gently; the type stays 13px and the rail scrolls if the (up to
-   five, ADR-037) links can't all fit. */
+   ease the spacing gently; the type stays 13px. With four links (DESIGN-004 D-22) the
+   rail fits at ≥320px; the scroll safety net stays for a future fifth entry. */
 @media (max-width: 599px) {
   .topbar__nav {
     gap: 0;
@@ -447,8 +448,9 @@ button.motd__dismiss:hover {
 }
 /* True phone widths (≤479px, incl. the 320/360/375/390 matrix sizes): tighten the CHROME
    (topbar gaps/padding, action gap) rather than the link type — the rail keeps its 13px
-   labels and ≥44px targets and scrolls when five links can't fit (see .topbar__nav). Static
-   layout, not interaction-driven (ADR-015-safe). */
+   labels and ≥44px targets. Four links fit here without scrolling; the rail's overflow safety
+   net (see .topbar__nav) only engages if a fifth is ever added. Static layout, not
+   interaction-driven (ADR-015-safe). */
 @media (max-width: 479px) {
   .topbar {
     gap: 6px;
@@ -459,6 +461,24 @@ button.motd__dismiss:hover {
   }
   .topbar__actions {
     gap: 2px;
+  }
+}
+/* DESIGN-004 D-22 — the TRUE narrow band (≤380px, the 320/360 iPhone-SE / budget-Android class).
+   The four-tab bar (Home · Library · Tickets · Trash) needs a touch more room here than the ≤479
+   chrome-tightening gives: at 320px the row's intrinsic width otherwise exceeds the space between
+   the 28px brand mark and the ~96px right actions, which would either overlap the mark (the v0.46.3
+   bug) or engage the scroll rail. Nudge the nav type to 12px and trim link + topbar padding/gap so
+   all four labels FIT with the mark un-clipped and NO rail scroll — while every touch target stays
+   ≥44px (link min-height + the 44px icon buttons are untouched; only horizontal padding shrinks).
+   ≥390px keeps the 13px labels. Static layout, not interaction-driven (ADR-015-safe). */
+@media (max-width: 380px) {
+  .topbar {
+    gap: 2px;
+    padding: 0 4px;
+  }
+  .topbar__nav a {
+    padding: 8px 4px;
+    font-size: 12px;
   }
 }
 .topbar__spacer {
@@ -610,9 +630,9 @@ button.motd__dismiss:hover {
 .usermenu__item:hover {
   background: var(--color-surface-2);
 }
-/* ADR-032 / DESIGN-004 D-16 — subtle group separators inside the popover (personal /
-   role-gated tooling / sign-out). Purely decorative (aria-hidden); the popover is an
-   overlay, so group presence never reflows the page (ADR-015). */
+/* ADR-032 / DESIGN-004 D-16/D-22 — subtle group separators inside the popover (personal + the
+   relocated section views / role-gated tooling / sign-out). Purely decorative (aria-hidden); the
+   popover is an overlay, so group presence never reflows the page (ADR-015). */
 .usermenu__sep {
   height: 1px;
   margin: 6px 4px;

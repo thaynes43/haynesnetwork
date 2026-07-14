@@ -4,6 +4,7 @@
 // fallback.
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_BACK_LINK, resolveBackLink } from '../back-link';
+import { HELPDESK_NAME } from '../bulletin';
 
 describe('resolveBackLink — the fixed `?from=` dictionary', () => {
   it('maps every known origin to its label + in-app href', () => {
@@ -12,14 +13,16 @@ describe('resolveBackLink — the fixed `?from=` dictionary', () => {
       href: '/trash?tab=movies',
     });
     expect(resolveBackLink('trash-tv')).toEqual({ label: 'Trash TV', href: '/trash?tab=tv' });
+    // DESIGN-004 D-22 — the `bulletin` back-links render under the ratified section name; the
+    // `?from=` keys + hrefs are unchanged.
     expect(resolveBackLink('bulletin')).toEqual({
-      label: 'Bulletin',
+      label: HELPDESK_NAME,
       href: '/bulletin?tab=helpdesk',
     });
-    expect(resolveBackLink('bulletin-feed')).toEqual({ label: 'Bulletin', href: '/bulletin' });
-    // ADR-050 / DESIGN-012 D-12 (PLAN-034) — the ticket detail's way back to the Helpdesk wall.
+    expect(resolveBackLink('bulletin-feed')).toEqual({ label: HELPDESK_NAME, href: '/bulletin' });
+    // ADR-050 / DESIGN-012 D-12 (PLAN-034) — the ticket detail's way back to the ticket wall.
     expect(resolveBackLink('helpdesk')).toEqual({
-      label: 'Helpdesk',
+      label: HELPDESK_NAME,
       href: '/bulletin?tab=helpdesk',
     });
     expect(resolveBackLink('ledger')).toEqual({ label: 'Ledger', href: '/ledger' });

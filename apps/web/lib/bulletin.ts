@@ -4,11 +4,14 @@
 // keep in lockstep with NOTIFICATION_SOURCES / MESSAGE_ACTIONS / TICKET_STATUSES / TICKET_CATEGORIES).
 
 /**
- * ADR-050 C-05 (PLAN-034) — THE display name of the ticket system. "Helpdesk" is the Fable
- * proposal; the owner ratifies at screenshot review — a rename to "Tickets" (or anything) is THIS
- * one constant. No stored value, route, or grant row encodes it.
+ * ADR-050 C-05 (PLAN-034) — THE display name of the ticket system, and (since the owner-ratified
+ * nav restructure, 2026-07-14 — DESIGN-004 D-22) the user-visible name of the whole `bulletin`
+ * section: the top-nav entry, the section page heading, and the lead sub-tab all read from here.
+ * "Helpdesk" was the Fable proposal; the owner RATIFIED "Tickets" at screenshot review — the rename
+ * is THIS one constant. No stored value, route, section id, or grant row encodes it (they all stay
+ * `bulletin` / `messages`).
  */
-export const HELPDESK_NAME = 'Helpdesk';
+export const HELPDESK_NAME = 'Tickets';
 
 /** The Feed's notification sources (mirrors @hnet/db NOTIFICATION_SOURCES). */
 export const FEED_SOURCE_NAMES = ['seerr', 'tautulli', 'maintainerr'] as const;
@@ -40,7 +43,9 @@ export const BULLETIN_VIEW_LABELS: Record<BulletinViewName, string> = {
 
 /** Human labels for the per-action grant grid (/admin/roles). */
 export const MESSAGE_ACTION_LABELS: Record<MessageActionName, string> = {
-  post: `File ${HELPDESK_NAME} tickets`,
+  // Not `File ${HELPDESK_NAME} tickets` — with HELPDESK_NAME now "Tickets" that would read
+  // "File Tickets tickets". The bare verb phrase stays correct under any ratified name.
+  post: 'File tickets',
   moderate: 'Triage tickets — drive state transitions (staff)',
 };
 
