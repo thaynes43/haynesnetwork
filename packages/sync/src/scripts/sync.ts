@@ -27,6 +27,7 @@ import {
   resolveGovernorConfig,
   resolveKapowarrBaseUrl,
   type ActivitySourceAdapter,
+  type BooksActivityBundle,
   type KapowarrClientBundle,
   type LazyLibrarianClientBundle,
   type UtilizationArrBundle,
@@ -300,27 +301,46 @@ async function main(): Promise<number> {
   const mamTuning = args.mode === 'mam-governor' ? await resolveGovernorConfig() : undefined;
   // ADR-059 / DESIGN-030 — the books activity bundle (LL wanted-table read + SAB queue/history read + the
   // confined LL write) built INSIDE @hnet/domain (booksActivityBundleFromEnv), so the confined LL write
-  // surface stays domain-only (the arr-write import guard). Throws one config error if LAZYLIBRARIAN_API_KEY
-  // or SABNZBD_API_KEY is absent. Only the `activity-scan` mode uses it (READ side — failure detection).
-  const activityBundle = args.mode === 'activity-scan' ? booksActivityBundleFromEnv() : undefined;
+  // surface stays domain-only (the arr-write import guard). Construction asserts env (throws if
+  // LAZYLIBRARIAN_API_KEY or SABNZBD_API_KEY is absent). Only the `activity-scan` mode uses it (READ side —
+  // failure detection). GUARDED (the Kapowarr idiom): a missing env parks the BOOKS source for this run —
+  // the *arr + comics sources still scan (per-source isolation — the orchestrator won't close book strands
+  // it couldn't read). The exact prod incident: a missing SABNZBD_API_KEY must degrade, never crash the run.
+  let activityBundle: BooksActivityBundle | undefined;
+  if (args.mode === 'activity-scan') {
+    try {
+      activityBundle = booksActivityBundleFromEnv();
+    } catch (error) {
+      activityBundle = undefined;
+      logger.warn('activity-scan: books source unavailable (LL/SAB env) — comics/*arr still scan', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
   // ADR-059 / DESIGN-030 D-08 — the UNIVERSAL *arr activity adapter (Radarr/Sonarr/Lidarr queue + recent-
   // import read) the `activity-scan` mode ALSO scans for import failures (import_blocked / download_failed).
   // Built from the D-18 *arr read clients (throws one ArrConfigError naming any absent SONARR/RADARR/LIDARR
-  // key). READ-ONLY here — the retry/re-search WRITES fire only from the API action resolver.
-  const arrActivityAdapter =
-    args.mode === 'activity-scan'
-      ? (() => {
-          const arrClients = buildSyncClients(['sonarr', 'radarr', 'lidarr']);
-          return buildArrActivityAdapter(
-            {
-              radarr: requireClient(arrClients, 'radarr'),
-              sonarr: requireClient(arrClients, 'sonarr'),
-              lidarr: requireClient(arrClients, 'lidarr'),
-            },
-            { baseUrls: resolveArrBaseUrls() },
-          );
-        })()
-      : undefined;
+  // key). READ-ONLY here — the retry/re-search WRITES fire only from the API action resolver. GUARDED for
+  // the same per-source isolation: a missing *arr key parks the *arr source, never crashes the whole scan.
+  let arrActivityAdapter: ActivitySourceAdapter | undefined;
+  if (args.mode === 'activity-scan') {
+    try {
+      const arrClients = buildSyncClients(['sonarr', 'radarr', 'lidarr']);
+      arrActivityAdapter = buildArrActivityAdapter(
+        {
+          radarr: requireClient(arrClients, 'radarr'),
+          sonarr: requireClient(arrClients, 'sonarr'),
+          lidarr: requireClient(arrClients, 'lidarr'),
+        },
+        { baseUrls: resolveArrBaseUrls() },
+      );
+    } catch (error) {
+      arrActivityAdapter = undefined;
+      logger.warn('activity-scan: *arr source unavailable (Sonarr/Radarr/Lidarr env) — books/comics still scan', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
   // ADR-059 / DESIGN-030 D-08 — the KAPOWARR (comics) activity adapter (queue + tasks + history read) the
   // `activity-scan` mode ALSO scans for comic download failures. OPTIONAL/degrade-safe (the goodreads-sync
   // idiom): absent KAPOWARR_API_KEY ⇒ comics are simply not scanned (parked), never a failed run. READ-ONLY

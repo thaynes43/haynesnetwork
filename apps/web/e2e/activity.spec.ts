@@ -61,6 +61,22 @@ async function stageComicQueue(): Promise<void> {
   });
 }
 
+/** Reset the *arr stub (clears the staged queue, recorded writes, AND the Activity-read fault). */
+async function resetArr(): Promise<void> {
+  const env = readRuntimeEnv();
+  await fetch(`${env.STUB_ARR_URL}/_stub/reset`, { method: 'POST' });
+}
+
+/** Toggle the *arr Activity-read fault (500 on /queue + /history) — the per-source-isolation lever. */
+async function faultArr(on: boolean): Promise<void> {
+  const env = readRuntimeEnv();
+  await fetch(`${env.STUB_ARR_URL}/_stub/fault`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ on }),
+  });
+}
+
 /** Force the dark theme (the capture convention) — the shots are the standing reference. */
 async function setDark(page: Page): Promise<void> {
   await page.evaluate(() => localStorage.setItem('hnet-theme', 'hnet-dark'));
@@ -192,5 +208,134 @@ test.describe('Activity / In-Flight (PLAN-048)', () => {
     await page.goto(`/library/activity/${strandedFailureId}`);
     await expect(page.getByTestId('activity-failure-error')).toBeVisible();
     await expect(page.getByTestId('activity-retry')).toHaveCount(0);
+  });
+
+  // fix/activity-robustness — PER-SOURCE FAILURE ISOLATION. One source down (the *arr stub 500s its Activity
+  // reads) must NOT blank the tab: the reachable books + comics still render, and a small non-blocking notice
+  // names the down family. This is the prod incident made hermetic (a missing SABNZBD_API_KEY made the books
+  // adapter throw and blanked everything) — proven here via the universal *arr leg for determinism.
+  test('unavailable source: *arr down → books + comics still render + a non-blocking notice (no blank tab)', async ({
+    page,
+  }, testInfo) => {
+    await resetLl();
+    await resetArr();
+    await stageComicQueue();
+    await faultArr(true); // the *arr Activity reads now 500 → the adapter degrades
+    try {
+      await signIn(page, 'admin');
+      await page.goto('/library?tab=activity');
+      await expect(page.getByTestId('activity-panel')).toBeVisible();
+
+      // The degraded-source notice names the *arr family (never a total error — the tab lives).
+      const notice = page.getByTestId('activity-unavailable-arr');
+      await expect(notice).toBeVisible();
+      await expect(notice).toContainText(/unavailable/i);
+
+      // The reachable sources STILL flow: a stranded book (LL/SAB) + a comic (Kapowarr) both render…
+      const grid = page.getByTestId('activity-grid');
+      await expect(grid.locator('.poster-card', { hasText: 'The Stranded Import' })).toHaveCount(1);
+      await expect(grid.locator('.poster-card', { hasText: 'Saga' })).toHaveCount(1);
+      // …while the faulted *arr items are absent (degraded, not fabricated).
+      await expect(grid.locator('.poster-card', { hasText: 'Vanished Heist' })).toHaveCount(0);
+
+      // Hermetic captures (dark, desktop + 390) of the unavailable-notice state.
+      await setDark(page);
+      await expect(page.getByTestId('activity-unavailable-arr')).toBeVisible();
+      for (const [label, w, h] of [
+        ['desktop', 1280, 900],
+        ['390', 390, 844],
+      ] as const) {
+        await page.setViewportSize({ width: w, height: h });
+        const path = testInfo.outputPath(`activity-unavailable-${label}-dark.png`);
+        await page.screenshot({ path, fullPage: true });
+        await testInfo.attach(`activity-unavailable-${label}-dark`, { path, contentType: 'image/png' });
+      }
+      await page.setViewportSize({ width: 1280, height: 900 });
+    } finally {
+      await resetArr(); // clear the fault for the following tests
+    }
+  });
+
+  // fix/activity-robustness — the HONEST empty state. A member (books/comics gated) with an empty *arr queue
+  // has a genuinely idle pipeline → the designed "Nothing in flight" card, NOT a skeleton wall and NOT a bare
+  // "0 items" flash. Also proves the skeleton does not reappear on the background poll (no re-flicker).
+  test('empty state: an idle pipeline shows the designed "Nothing in flight" card (no skeleton re-flicker)', async ({
+    page,
+  }, testInfo) => {
+    await resetArr(); // empty *arr queue; /history is [] for the activity read → member sees nothing in flight
+    await signIn(page, 'member');
+    await page.goto('/library?tab=activity');
+    await expect(page.getByTestId('activity-panel')).toBeVisible();
+
+    const empty = page.getByTestId('activity-empty');
+    await expect(empty).toBeVisible();
+    await expect(empty).toContainText(/nothing in flight/i);
+    await expect(page.getByTestId('activity-grid')).toHaveCount(0);
+
+    // The skeleton showed at most on the FIRST paint; across a poll cycle it must never reappear (the flicker
+    // the owner saw is impossible now — refetches keep the resolved view, they don't flip back to skeletons).
+    await page.waitForTimeout(6000); // > the 5s poll interval
+    await expect(page.getByTestId('activity-skeleton')).toHaveCount(0);
+    await expect(empty).toBeVisible();
+
+    await setDark(page);
+    await expect(page.getByTestId('activity-empty')).toBeVisible();
+    for (const [label, w, h] of [
+      ['desktop', 1280, 900],
+      ['390', 390, 844],
+    ] as const) {
+      await page.setViewportSize({ width: w, height: h });
+      const path = testInfo.outputPath(`activity-empty-${label}-dark.png`);
+      await page.screenshot({ path, fullPage: true });
+      await testInfo.attach(`activity-empty-${label}-dark`, { path, contentType: 'image/png' });
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
+  });
+
+  // fix/activity-robustness — EXACTLY ONE active Library tab. The bug: selecting Activity left the prior kind
+  // tab (e.g. TV) lit too, because the hover style was identical to the selected style (a hovered / touch
+  // sticky-hovered neighbour looked "active"). Now hover is a low-emphasis preview; only the ONE selected tab
+  // carries the committed nav-active underline. D-19: a tab switch PUSHES, so Back restores the prior tab.
+  test('exactly one Library tab reads as active; Activity replaces the prior tab; Back restores it (D-19)', async ({
+    page,
+  }) => {
+    await signIn(page, 'admin');
+    await page.goto('/library');
+    const tablist = page.getByRole('tablist', { name: 'Library sections' });
+
+    // The default landing tab (a kind tab) is the single selected tab.
+    await expect(tablist.getByRole('tab', { selected: true })).toHaveCount(1);
+    const priorName = ((await tablist.getByRole('tab', { selected: true }).textContent()) ?? '').trim();
+
+    // Switch to Activity — still EXACTLY ONE selected, and it's Activity (the prior tab is deselected).
+    await tablist.getByRole('tab', { name: 'Activity' }).click();
+    await expect(page).toHaveURL(/tab=activity/);
+    await expect(tablist.getByRole('tab', { selected: true })).toHaveCount(1);
+    await expect(tablist.getByRole('tab', { name: 'Activity' })).toHaveAttribute('aria-selected', 'true');
+    // The prior tab is no longer selected (no double-active).
+    await expect(tablist.getByRole('tab', { name: priorName, exact: true })).toHaveAttribute(
+      'aria-selected',
+      'false',
+    );
+
+    // The CSS de-dup: HOVER the (now-unselected) prior tab. Only the ONE selected (Activity) tab may carry the
+    // committed nav-active underline colour — the hovered neighbour must read as a preview, never "active".
+    const priorTab = tablist.getByRole('tab', { name: priorName, exact: true });
+    await priorTab.hover();
+    const selectedColor = await tablist
+      .getByRole('tab', { name: 'Activity' })
+      .evaluate((el) => getComputedStyle(el).borderBottomColor);
+    const borderColors = await tablist
+      .getByRole('tab')
+      .evaluateAll((els) => els.map((el) => getComputedStyle(el).borderBottomColor));
+    expect(borderColors.filter((c) => c === selectedColor)).toHaveLength(1);
+
+    // D-19: Back restores the prior tab as the single active tab.
+    await page.goBack();
+    await expect(tablist.getByRole('tab', { selected: true })).toHaveCount(1);
+    await expect(tablist.getByRole('tab', { name: priorName, exact: true })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
   });
 });

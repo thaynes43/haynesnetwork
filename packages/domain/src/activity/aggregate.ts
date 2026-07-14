@@ -25,9 +25,22 @@ export interface ActivityCounts {
   kinds: Partial<Record<ActivityKind, number>>;
 }
 
+/**
+ * A source that could not be read this aggregation (its adapter threw — a missing env, an unreachable
+ * upstream, a timeout). Carries the family `source`, the human `label` for the non-blocking notice, and a
+ * `reason` (terse, non-secret). A source that returned [] is NOT here — that's available-with-nothing.
+ */
+export interface ActivityUnavailableSource {
+  source: string;
+  label: string;
+  reason: string;
+}
+
 export interface ActivityListResult {
   items: ActivityItem[];
   counts: ActivityCounts;
+  /** Sources that degraded this read (per-source failure isolation — one down never blanks the rest). */
+  unavailable: ActivityUnavailableSource[];
 }
 
 /** A per-wall in-flight signal keyed by an adapter join key (books: the LL/GB bookId). */
@@ -55,11 +68,43 @@ async function loadFailureHrefs(db: DbClient): Promise<Map<string, string>> {
   return map;
 }
 
+/** A terse, non-secret one-line reason for a degraded source (the env-assertion class names the ABSENT
+ *  variable, never its value — safe to surface). Clamped so a giant stack/message can't bloat the notice. */
+export function describeSourceError(err: unknown): string {
+  const msg = (err instanceof Error ? err.message : String(err)).replace(/\s+/g, ' ').trim();
+  const clean = msg.length > 0 ? msg : 'the source is unreachable';
+  return clean.length > 160 ? `${clean.slice(0, 157)}…` : clean;
+}
+
+/**
+ * Wrap a source FACTORY + label into an adapter whose `list()` also absorbs CONSTRUCTION. The env-built
+ * adapters assert their config at construction time (a missing `SABNZBD_API_KEY` throws there, BEFORE
+ * `list()`), so building them eagerly would throw OUTSIDE the aggregator's per-source try/catch and blank
+ * the whole read (the prod incident). Deferring `resolve()` into `list()` moves that throw INSIDE the
+ * isolation boundary — the aggregator degrades just that source. Pure: no I/O until `list()`.
+ */
+export function lazyActivityAdapter(input: {
+  source: string;
+  label: string;
+  resolve: () => ActivitySourceAdapter;
+}): ActivitySourceAdapter {
+  return {
+    source: input.source,
+    label: input.label,
+    async list() {
+      // resolve() may throw (env assertion) — that now happens inside list(), so the aggregator isolates it.
+      return input.resolve().list();
+    },
+  };
+}
+
 /**
  * Aggregate all source adapters into one gated, counted, ledger-joined activity list. Each adapter is
- * awaited independently; a source that throws is logged + skipped (degrade one source, never the whole
- * read). A `failed` item whose ledger row exists gets its failure-detail href; a not-yet-scanned failure
- * shows as failed with no link until the next `activity-scan` writes its row.
+ * awaited INDEPENDENTLY: a source that throws (missing env, unreachable upstream, timeout) is logged and
+ * recorded as an `unavailable` marker (source + label + terse reason) while the OTHER sources' items still
+ * flow — one down never blanks the read. A source that returns [] is available-with-nothing (NOT
+ * unavailable). A `failed` item whose ledger row exists gets its failure-detail href; a not-yet-scanned
+ * failure shows as failed with no link until the next `activity-scan` writes its row.
  */
 export async function aggregateActivity(input: {
   db?: DbClient;
@@ -73,15 +118,15 @@ export async function aggregateActivity(input: {
   const visible = new Set<ActivitySection>(input.visibleSections);
 
   const collected: ActivityItem[] = [];
+  const unavailable: ActivityUnavailableSource[] = [];
   for (const adapter of input.adapters) {
     let items: ActivityItem[];
     try {
       items = await adapter.list();
     } catch (err) {
-      input.logger?.warn?.('activity: source degraded', {
-        source: adapter.source,
-        error: err instanceof Error ? err.message : String(err),
-      });
+      const reason = describeSourceError(err);
+      input.logger?.warn?.('activity: source degraded', { source: adapter.source, error: reason });
+      unavailable.push({ source: adapter.source, label: adapter.label ?? adapter.source, reason });
       continue;
     }
     for (const item of items) {
@@ -95,7 +140,7 @@ export async function aggregateActivity(input: {
 
   const gated = collected.filter((it) => it.section === null || visible.has(it.section));
   gated.sort((a, b) => (b.updatedAt < a.updatedAt ? -1 : b.updatedAt > a.updatedAt ? 1 : 0));
-  return { items: gated, counts: computeActivityCounts(gated) };
+  return { items: gated, counts: computeActivityCounts(gated), unavailable };
 }
 
 /** Compute the stage + kind chip counts over an item set (pure; stages zero-filled, kinds populated-only). */

@@ -335,6 +335,11 @@ export async function startStubArr(): Promise<StubArrServer> {
   // PLAN-015 / D-20 — the scriptable download queue (staged via POST /_stub/queue). Empty by
   // default so a target with no download derives `searching`/`nothing_found`.
   let queueRecords: Record<string, unknown>[] = [];
+  // PLAN-048 (fix/activity-robustness) — a scriptable FAULT toggle: when on, the Activity read
+  // endpoints (`GET /queue`, `GET /history`) answer 500 so the *arr activity adapter's `list()`
+  // throws. Exercises per-source failure isolation (one source down → the OTHERS still flow + a
+  // per-source `unavailable` marker). Toggled via `POST /_stub/fault {on}`; cleared by reset.
+  let faultReads = false;
 
   const server: Server = createServer((req, res) => {
     void (async () => {
@@ -351,6 +356,7 @@ export async function startStubArr(): Promise<StubArrServer> {
       if (url.pathname === '/_stub/reset' && method === 'POST') {
         calls.length = 0;
         queueRecords = [];
+        faultReads = false;
         res.writeHead(204);
         return res.end();
       }
@@ -361,6 +367,18 @@ export async function startStubArr(): Promise<StubArrServer> {
         queueRecords = Array.isArray(parsed.records) ? parsed.records : [];
         res.writeHead(204);
         return res.end();
+      }
+      // PLAN-048 (fix/activity-robustness) — toggle the Activity-read fault (500 on /queue + /history).
+      if (url.pathname === '/_stub/fault' && method === 'POST') {
+        const raw = await readBody(req);
+        const parsed = raw === '' ? {} : (JSON.parse(raw) as { on?: boolean });
+        faultReads = parsed.on !== false;
+        res.writeHead(204);
+        return res.end();
+      }
+      // When faulted, the *arr Activity reads answer 500 so the adapter degrades (per-source isolation).
+      if (faultReads && method === 'GET' && (path === '/queue' || path.startsWith('/history'))) {
+        return json(res, 500, { error: 'stub fault: *arr Activity read unavailable' });
       }
 
       if (method === 'POST' || method === 'DELETE' || method === 'PUT') {

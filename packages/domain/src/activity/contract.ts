@@ -67,11 +67,15 @@ export interface ActivityItem {
 /**
  * A per-source adapter — the fan-out seam. Each source family (books today; *arr + Kapowarr next) provides
  * a `source` family name (also the failure ledger's `source` column) and a `list()` returning normalized
- * items. `list()` reads LIVE (ADR-059 Q-01); a source that is unreachable should throw so the aggregator
- * can degrade that source without failing the whole read.
+ * items. `list()` reads LIVE (ADR-059 Q-01); a source that is unreachable (or unconfigured — a missing env)
+ * MUST throw so the aggregator can degrade THAT source (an `unavailable` marker + the OTHER sources' items),
+ * never the whole read. A source that merely returns [] is available-with-nothing-in-flight, NOT unavailable.
+ * `label` is the human family name the aggregator surfaces on the degraded-source notice (falls back to
+ * `source` when absent).
  */
 export interface ActivitySourceAdapter {
   readonly source: string;
+  readonly label?: string;
   list(): Promise<ActivityItem[]>;
 }
 
