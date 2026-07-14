@@ -39,7 +39,7 @@ import {
   type ArrKindName,
   type SeasonEpisode,
 } from '@/lib/media';
-import { MediaPoster } from '@/components/media-poster';
+import { MediaPoster } from '@/components/cards';
 import { NotOnDiskButton } from '@/components/not-on-disk-button';
 import { TrashPendingNotice, type TrashAccess } from '@/components/trash-shield';
 import { PROTECTED_TAG } from '@/lib/trash';

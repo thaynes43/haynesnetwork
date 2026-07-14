@@ -15,7 +15,7 @@
 // (`.epi-still`) instead of the 2:3 box; its no-image fallback is the bare tinted box (no icon —
 // denser than the KindIcon tile at row size). One reveal implementation for every poster surface.
 import { useEffect, useRef, useState } from 'react';
-import { KindIcon } from './kind-icon';
+import { KindIcon } from '../kind-icon';
 
 export function MediaPoster({
   posterUrl,

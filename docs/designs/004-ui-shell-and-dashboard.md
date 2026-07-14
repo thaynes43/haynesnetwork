@@ -1,7 +1,7 @@
 # DESIGN-004: UI shell and dashboard (Phase 1)
 
 - **Status:** Accepted — presentation details partially superseded by DESIGN-006 (visual identity: brand mark, typeface, radii, tile geometry); the mechanism and structure here remain normative
-- **Last updated:** 2026-07-11
+- **Last updated:** 2026-07-14
 - **Satisfies:** PRD-001 R-10, R-12, R-14 (rendering side), R-60, R-61, R-66, AC-01, AC-04, AC-10; governed by ADR-005 (CSS-token theming via `data-theme`) and **ADR-012 (unified Role model)** — API consumed per DESIGN-003 / ADR-004 (API layer: tRPC v11).
 
 > **Amended by ADR-012 (2026-07-05):** the admin permissions UI is now role-based.
@@ -59,6 +59,13 @@
 > (restoring each tab's URL-carried filter state) instead of exiting the app screen; refinements
 > (filter/sort/search/pagination) and canonicalizing redirects stay `router.replace`. New section
 > **D-19** is normative (the history-navigation contract). No visual change; ADR-015 untouched.
+>
+> **Amended by ADR-058 (2026-07-14, PLAN-047):** every wall card across the estate (Library kinds,
+> group aggregates, Goodreads items, Trash pending/batch tiles, Helpdesk ticket tiles) is now
+> rendered by the **shared card family** in `apps/web/components/cards/` — typed slots, no children
+> escape hatch — and the raw card-anatomy classes are lint-locked outside that package. New section
+> **D-21** is normative (the component contract, the guard, and the `/e2e/card-gallery` drift gate).
+> Pixel-neutral: the family emits the pre-refit markup verbatim.
 
 - **Donors:** `../demo-console/apps/shell/src/shell/theme/` (tokens.css, tokenContract.ts, ThemeProvider.tsx, app.css), `../demo-console/packages/shared/layout/`, `../demo-console/apps/shell/src/shell/chrome/` (TopBar, SettingsDrawer), `../demo-console/scripts/lint-css-hex.mjs`.
 
@@ -890,6 +897,51 @@ No auth/routing behavior changes — this is metadata plus one public image rout
 page leaks nothing new beyond the deliberate branding. Covered by
 `apps/web/lib/__tests__/site-metadata.test.ts` (exact copy, og/twitter tags, 1200×630, theme-color,
 `metadataBase`). _Note: chat clients cache embeds — after deploy a `?v=2` cache-buster forces a refetch._
+
+### D-21 — Amendment 2026-07-14 (ADR-058 / PLAN-047) — the shared card system + code-enforced cohesion
+
+Owner ruling (PLAN-047): "our base library card is shared everywhere, even Helpdesk tickets, and
+then is extended for different types of media and extended further for advanced use cases. I want
+the code to guarantee the UX doesn't drift as we build." Motivated by the PLAN-045 "Wanted strip"
+incident — card anatomy lived in per-surface JSX an agent could re-invent.
+
+**The family** (`apps/web/components/cards/`, consumed ONLY via the `@/components/cards` barrel):
+
+| Component | Serves | Anatomy notes |
+| --- | --- | --- |
+| `BaseCard` | the canonical poster idiom | typed `art` union (2:3 poster / group-art ladder) + title (year) · ≤1 subtitle · ONE badge row (≤ `MAX_CARD_BADGES` = 3) · typed flavor/focus/data knobs; **no children prop** |
+| `MediaCard` | Movies · TV · Music · Peloton · YouTube | ★ rating / on-disk / tombstone badges; count pill on ytdl-sub walls |
+| `BookCard` | Books · Audiobooks · Comics + composed Wanted | author subtitle; pages/duration badge on disk, Wanted/Missing badge on a want (null poster ⇒ KindIcon tile — never fake art) |
+| `GroupCard` | author/genre aggregate walls | group-art ladder (portrait → cover fan → designed glyph) + label + member count |
+| `RequestCard` | Goodreads items | shelf + dominant-status badges (max two); pre-mint want = same anatomy, non-interactive |
+| `TicketCard` (+`TicketCategoryTile`) | Helpdesk twall | state puck top-right (recolor-only), poster or category tile art, caption/sub + ONE meta row (status badge · replies · when) |
+| `TrashCard` | Trash pending + batch walls | state/action toggle puck top-right, `/library` nav puck top-left, caption + ONE meta row (size·★ text + person/eye chips) |
+| `PosterGrid` / `TicketWall` / `TrashWall` (+ skeletons) | the wall containers | grid geometry + dim-in-place refresh + skeleton idioms owned by the package |
+| `MediaPoster`, `PosterBox` | detail-head hero art / loading box | the only art primitives exported — never a card face |
+
+**The guards (normative):**
+
+1. `apps/web/lint/card-anatomy-guard.mjs` → `no-restricted-syntax` + `no-restricted-imports` in
+   `apps/web/eslint.config.mjs`: outside `components/cards/`, the anatomy class tokens
+   (`media-card`, `poster-card*`, `poster-grid`, `poster-box`, `bwall-*`, `twall-*`, `pwall-*`,
+   `glyph-tile`, `group-card*`, `media-list`, …) may not appear in string/template literals, and
+   the package may only be imported through its barrel. (`media-card__badges` deliberately stays
+   available — it is the detail-head badge-row idiom, not a wall card.) e2e specs/support are out
+   of scope (they select by these classes).
+2. `apps/web/lib/__tests__/card-system-guard.test.ts` — the guard's executable proof (violating
+   fixtures fail, the sanctioned form passes, deep imports confined) in the `test` CI job.
+3. **The card gallery** — `/e2e/card-gallery` (dev-only route; 404 in production) renders every
+   variant/state over inline fixtures; `apps/web/e2e/card-gallery.spec.ts` asserts each tile's
+   DOM shape (one art box, one caption, ONE badge row ≤ 3, pucks only in reserved corners, no
+   buttons on card faces) and always emits dark/light × desktop/390 captures — the standing
+   reference artifact for owner review and future agent briefs.
+
+**Extension contract:** a new media type or advanced state (e.g. PLAN-048 activity/in-flight)
+extends the family — a typed prop/variant in the package + a gallery entry + a spec assertion in
+the same change. Forking a card outside the package is a CI failure by construction.
+
+ADR-015 (D-14) is unchanged and now structurally enforced on cards: reserved art boxes, fixed
+caption heights, corner pucks that recolor in place.
 
 ## Open questions
 

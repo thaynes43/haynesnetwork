@@ -37,7 +37,6 @@
 // chip editors are viewport-clamped fixed-position OVERLAYS; poster boxes reserve their 2:3
 // space; the A–Z rail is a fixed overlay; a filter/sort refetch keeps the previous grid rendered
 // (dimmed) and the initial load shows skeleton poster boxes — never a spinner that collapses.
-import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -73,8 +72,7 @@ import {
   registryFor,
   type ViewRegistryEntry,
 } from '@/lib/library-view-registry';
-import { MediaPoster } from '@/components/media-poster';
-import { PosterCardBody } from '@/components/poster-card-body';
+import { MediaCard, PosterGrid, PosterGridSkeleton } from '@/components/cards';
 import { MyFixesPanel } from '@/components/my-fixes-panel';
 import { CHIP_LABELS, DateRangeChip, RatingChip, SelectChip } from '@/components/filter-chips';
 import { LetterJumpBar } from '@/components/letter-jump-bar';
@@ -683,17 +681,7 @@ function MediaBrowser({
       {!prefsReady || search.isPending ? (
         // Initial load: skeleton poster boxes hold the exact grid geometry (ADR-015 — no
         // spinner that collapses into a differently-sized result).
-        <div className="media-list poster-grid" aria-hidden="true" data-testid="poster-skeleton">
-          {Array.from({ length: 12 }, (_, i) => (
-            <div key={i} className="poster-card poster-card--skeleton">
-              <div className="poster-box" />
-              <span className="poster-card__body">
-                <span className="skeleton-line" />
-                <span className="skeleton-line skeleton-line--short" />
-              </span>
-            </div>
-          ))}
-        </div>
+        <PosterGridSkeleton testId="poster-skeleton" />
       ) : search.error ? (
         <p className="alert" role="alert">
           Failed to load the library: {search.error.message}
@@ -703,10 +691,7 @@ function MediaBrowser({
           <p>Nothing matches — the ledger fills in as sync runs.</p>
         </section>
       ) : (
-        <div
-          className={`media-list poster-grid${refreshing ? ' is-refreshing' : ''}`}
-          aria-busy={refreshing}
-        >
+        <PosterGrid refreshing={refreshing}>
           {items.map((item) => {
             const disk = onDiskSummary(item);
             // A 0 upstream rating means "unrated" — collapse it so no ★ 0.0 badge renders
@@ -716,26 +701,27 @@ function MediaBrowser({
             const rating = formatRating(imdbRating ?? tmdbRating);
             const ratingSource = imdbRating !== null ? 'IMDb' : 'TMDb';
             return (
-              <Link key={item.id} href={`/library/${item.id}`} className="media-card poster-card">
-                <MediaPoster posterUrl={item.posterUrl} kind={item.arrKind} alt="" />
-                {/* Slim badge row (owner densify 2026-07-06): the kind badge is dropped — the active
-                    tab already names the kind — leaving the rating star + on-disk state (Wanted /
-                    On disk — the badge the Books/Goodreads walls now clone) and the tombstone flag. */}
-                <PosterCardBody
-                  title={item.title}
-                  year={item.year}
-                  badges={[
-                    rating !== null
-                      ? { label: `★ ${rating}`, tone: 'rating', title: `${ratingSource} rating` }
-                      : null,
-                    { label: disk.label, tone: disk.tone },
-                    item.tombstoned ? { label: 'Removed', tone: 'danger' } : null,
-                  ]}
-                />
-              </Link>
+              // Slim badge row (owner densify 2026-07-06): the kind badge is dropped — the active
+              // tab already names the kind — leaving the rating star + on-disk state (Wanted /
+              // On disk — the badge the Books/Goodreads walls clone) and the tombstone flag.
+              <MediaCard
+                key={item.id}
+                href={`/library/${item.id}`}
+                posterUrl={item.posterUrl}
+                kind={item.arrKind}
+                title={item.title}
+                year={item.year}
+                badges={[
+                  rating !== null
+                    ? { label: `★ ${rating}`, tone: 'rating', title: `${ratingSource} rating` }
+                    : null,
+                  { label: disk.label, tone: disk.tone },
+                  item.tombstoned ? { label: 'Removed', tone: 'danger' } : null,
+                ]}
+              />
             );
           })}
-        </div>
+        </PosterGrid>
       )}
 
       {search.hasNextPage === true ? (

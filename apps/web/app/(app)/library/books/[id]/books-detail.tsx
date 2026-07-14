@@ -7,7 +7,7 @@
 // books_items.deep_link_url) — opening the item in the serving app (new tab). Reflow-free (ADR-015).
 import { trpc } from '@/lib/trpc-client';
 import { BackLink } from '@/components/back-link';
-import { MediaPoster } from '@/components/media-poster';
+import { MediaPoster } from '@/components/cards';
 import { formatWhen } from '@/lib/media';
 
 /** "3h 12m" / "48m" from whole seconds; null when absent. */

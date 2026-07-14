@@ -20,7 +20,7 @@ import { useState, type FormEvent } from 'react';
 import { trpc } from '@/lib/trpc-client';
 import { Modal } from '@/components/modal';
 import { BackLink } from '@/components/back-link';
-import { MediaPoster } from '@/components/media-poster';
+import { MediaPoster, PosterBox, TicketCategoryTile } from '@/components/cards';
 import { TicketCategoryIcon } from '@/components/ticket-glyphs';
 import { describeMutationError } from '@/lib/app-error';
 import { formatWhen } from '@/lib/media';
@@ -110,7 +110,7 @@ export function TicketDetail({
         <BackLink from="helpdesk" />
         <section className="card detail-head" aria-busy="true">
           <span className="detail-head__poster">
-            <span className="poster-box" />
+            <PosterBox />
           </span>
           <div className="detail-head__body">
             <span className="skeleton-line" />
@@ -160,12 +160,7 @@ export function TicketDetail({
               alt=""
             />
           ) : (
-            <span className="poster-box twall-cattile" data-category={ticket.category}>
-              <TicketCategoryIcon category={ticket.category} className="twall-cattile__icon" />
-              <span className="twall-cattile__label">
-                {TICKET_CATEGORY_LABELS[ticket.category]}
-              </span>
-            </span>
+            <TicketCategoryTile category={ticket.category} />
           )}
         </span>
         <div className="detail-head__body">

@@ -18,7 +18,7 @@ import { useState } from 'react';
 import { trpc, type RouterOutputs } from '@/lib/trpc-client';
 import { PhaseChip, type PhaseTone } from '@hnet/ui';
 import { BackLink } from '@/components/back-link';
-import { MediaPoster } from '@/components/media-poster';
+import { MediaPoster } from '@/components/cards';
 import { formatWhen } from '@/lib/media';
 import { shelfLabel } from '@/lib/goodreads-shelf-wall';
 import type { BookRequestStatus } from '@hnet/db';
