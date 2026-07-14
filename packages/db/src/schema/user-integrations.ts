@@ -1,7 +1,7 @@
 import { pgTable, uuid, text, jsonb, timestamp, check, unique, index } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { users } from './users';
-import { INTEGRATION_PROVIDERS, INTEGRATION_STATUSES } from './enums';
+import { GOODREADS_SHELVES, INTEGRATION_PROVIDERS, INTEGRATION_STATUSES } from './enums';
 import type { IntegrationProvider, IntegrationStatus } from './enums';
 
 const PROVIDERS_SQL_LIST = INTEGRATION_PROVIDERS.map((p) => `'${p}'`).join(',');
@@ -33,8 +33,10 @@ export const userIntegrations = pgTable(
     profileRef: text('profile_ref'),
     /** Link lifecycle: 'linked' | 'unlinked' | 'error'. */
     status: text('status').$type<IntegrationStatus>().notNull(),
-    /** The shelves this integration syncs (Goodreads shelf slugs). v1 default: the want shelf ['to-read']. */
-    shelves: jsonb('shelves').$type<string[]>().notNull().default(['to-read']),
+    /** The shelves this integration syncs (Goodreads shelf slugs). ADR-057 (PLAN-045 — "ALL synced
+     *  shelves acquire"): defaults to all four GOODREADS_SHELVES; migration 0047 backfilled the v1
+     *  want-shelf-only rows. */
+    shelves: jsonb('shelves').$type<string[]>().notNull().default([...GOODREADS_SHELVES]),
     /** Marker of the last SUCCESSFUL shelf sync. Null until the first sync lands. */
     lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }),
     /** The last sync's error message (human-readable) when status = 'error'; cleared on a clean sync. */

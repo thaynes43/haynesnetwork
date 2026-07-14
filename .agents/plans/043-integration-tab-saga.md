@@ -22,9 +22,9 @@
 
 | Phase | Scope | Status |
 |---|---|---|
-| **MVP — PLAN-044** | Goodreads linking (owner first) → shelf RSS sync → dedupe vs library → requests queued BOTH formats → **Missing** view + manual search + coverage % | **Actionable now** (rulings locked) |
-| Integration framework | Second provider generalization (provider registry, per-user link UX hardening, sister + member rollout, per-role visibility) | After MVP learnings |
-| Content syncing (pt 3 full) | Read/watch-state reconciliation vs integrations; "we don't have it yet" retention + auto-clear on arrival; coverage across ALL providers | After MVP |
+| **MVP — PLAN-044** | Goodreads linking (owner first) → shelf RSS sync → dedupe vs library → requests queued BOTH formats → **Missing** view + manual search + coverage % | **SHIPPED** (v0.49.0 + the #258 acceptance fixes) |
+| Integration framework | Second provider generalization (provider registry, per-user link UX hardening, sister + member rollout, per-role visibility) | **Structure pulled forward by PLAN-045** (ADR-057/DESIGN-029): the hub + provider-sub-section shape is BUILT (future providers slot in as sibling cards); the second-provider registry + rollout remain |
+| Content syncing (pt 3 full) | Read/watch-state reconciliation vs integrations; "we don't have it yet" retention + auto-clear on arrival; coverage across ALL providers | **First slice SHIPPED by PLAN-045** (all four shelves sync AND acquire — A1 overruled; per-shelf coverage + the composed Library-Wanted retention view); read/watch-state reconciliation + cross-provider coverage remain |
 | Book ⇄ audiobook pairing (pt 5) | Format-pairing model over books_items; dual/single+search detail buttons; Missing entries per absent format | After MVP; extends PLAN-028 buttons |
 | Streaming integrations | **Trakt is the realistic API** for watched/watchlist TV+movies; Netflix has NO API (CSV viewing-history import only). Feeds the same coverage/missing machinery | Research first |
 | Predictions (pt 2) | Cross-media recommendation model over all integration + estate data (estate already runs Open WebUI/Ollama if we want local inference) | PARKED until data phases land |

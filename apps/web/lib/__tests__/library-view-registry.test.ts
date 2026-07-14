@@ -121,8 +121,8 @@ describe('per-view asymmetry (R5 — a level offers ONLY what it can answer)', (
       expect(sortKeys(level)).toContain('pages');
     }
     // …and no narrator/series/language facets (Kavita carries none of them).
-    expect(facetKeys('books:wall')).toEqual(['authors', 'formats', 'lengths']);
-    expect(facetKeys('comics:wall')).toEqual(['formats', 'lengths']);
+    expect(facetKeys('books:wall')).toEqual(['authors', 'formats', 'lengths', 'wanted']);
+    expect(facetKeys('comics:wall')).toEqual(['formats', 'lengths', 'wanted']);
   });
 
   it('Audiobooks (ABS): the R8 full set — duration + year sorts; genre/author/narrator/series/language/length/read facets', () => {
@@ -138,6 +138,7 @@ describe('per-view asymmetry (R5 — a level offers ONLY what it can answer)', (
       'languages',
       'lengths',
       'read',
+      'wanted',
     ]);
   });
 
@@ -147,6 +148,14 @@ describe('per-view asymmetry (R5 — a level offers ONLY what it can answer)', (
       expect(audioFacets.find((f) => f.key === key)?.dataGated, key).toBe(true);
     }
     expect(audioFacets.find((f) => f.key === 'read')?.gate).toBe('bookProgress');
+    // ADR-057 (PLAN-045) — the composed-Wanted narrowing rides all three book walls, value-gated
+    // on the overlay itself (no dead chip while no wanted tiles exist).
+    for (const level of ['books:wall', 'audiobooks:wall', 'comics:wall'] as const) {
+      const wanted = registryFor(level).facets.find((f) => f.key === 'wanted');
+      expect(wanted?.kind, level).toBe('select');
+      expect(wanted?.param, level).toBe('wanted');
+      expect(wanted?.dataGated, level).toBe(true);
+    }
     expect(registryFor('movies:wall').facets.find((f) => f.key === 'watch')?.gate).toBe('watch');
     expect(registryFor('tv:wall').facets.find((f) => f.key === 'watch')?.gate).toBe('watch');
     // Music offers NO per-user watch facet (D-03 — lidarr watch data is 0%).

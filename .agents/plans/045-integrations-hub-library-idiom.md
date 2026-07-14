@@ -1,8 +1,12 @@
 # PLAN-045: Integrations hub + Goodreads library-idiom redesign (owner-directed, 2026-07-14 ~00:55)
 
-- **Status:** ACTIONABLE — owner spec'd verbally at the v0.49.0 live acceptance (with screenshot),
-  then left for the night ("if you have questions ask away otherwise I'm heading off"). The three
-  coordinator assumptions below were stated back to him in-session; confirm/adjust in the morning.
+- **Status:** BUILT — shipped as `feat/plan-045-integrations-hub` (ADR-057 / DESIGN-029 / PRD
+  R-188..R-191 / glossary T-167..T-169 / migration 0047 in the same PR). All owner rulings honored:
+  A1 OVERRULED (all four shelves sync AND acquire — pacing paths verbatim), Q-01 books-section-gated
+  Library-Wanted, Q-02 want-shelf headline, Q-03 full Wanted force-search parity (the dispatching
+  `integrations.search`). Hermetic only — the coordinator runs the live all-shelves wave post-deploy
+  (expect the ~21-book read-shelf mint; LL/GB pacing + the MAM governor gate as designed).
+  Screenshot matrix captured for the standing owner look-review. Original dispatch brief below.
 - **Depends on:** PLAN-044 (v0.49.0, live) + its owner-feedback fix PR (`fix/integrations-link-ux`
   — input theming, sync-on-link, never-synced state, comic classifier, ConfirmButton unlink) —
   **build ON TOP of that merge**.

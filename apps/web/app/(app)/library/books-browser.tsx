@@ -73,6 +73,7 @@ import {
   type ViewRegistryEntry,
   type WallGrouping,
 } from '@/lib/library-view-registry';
+import { WantedStrip } from './wanted-strip';
 import type { FacetGates } from './library-client';
 
 type BooksMediaKind = 'book' | 'audiobook' | 'comic';
@@ -174,6 +175,9 @@ export function BooksBrowser({
   const readState = READ_STATE_OPTIONS.some((o) => o.value === readRaw)
     ? (readRaw as BookReadState)
     : undefined;
+  // ADR-057 (PLAN-045) — the registry's composed-Wanted state filter (`?wanted=1` — the Movies/TV
+  // narrowing idiom). Active ⇒ the wall shows ONLY the wanted overlay tiles.
+  const wantedOnly = searchParams.get('wanted') === '1';
   const letterRaw = searchParams.get('at');
   const letter = letterRaw !== null && /^[a-z]$/.test(letterRaw) ? letterRaw : null;
 
@@ -300,6 +304,22 @@ export function BooksBrowser({
 
   // ── data ──
   const facets = trpc.books.filterFacets.useQuery({ mediaKind }, { refetchOnWindowFocus: false });
+  // ADR-057 (PLAN-045) — the composed-Wanted overlay (household `book_requests`, books-section-gated
+  // server-side). The strip + the Wanted chip are populated-value-gated on this list (ADR-051 C-06).
+  const wantedQ = trpc.books.wanted.useQuery({ mediaKind }, { refetchOnWindowFocus: false });
+  const wantedAll = wantedQ.data?.items ?? [];
+  // The wall's top level only (never inside a drilled group); the text query narrows the wanted
+  // tiles client-side, but other facet refinements hide the strip — synthetic tiles can't honestly
+  // answer format/length/read facets (the same "never offer what it can't answer" rule as sorts).
+  const facetsActive =
+    Object.keys(filters).length > 0 || readState !== undefined || letter !== null;
+  const wantedItems =
+    qParam.trim().length > 0
+      ? wantedAll.filter((w) =>
+          `${w.title} ${w.author ?? ''}`.toLowerCase().includes(qParam.trim().toLowerCase()),
+        )
+      : wantedAll;
+  const showWantedStrip = !drilled && wantedItems.length > 0 && (wantedOnly || !facetsActive);
   const groupsQuery = trpc.books.groups.useQuery(
     { mediaKind, groupBy: grouping?.dimension === 'genre' ? 'genre' : 'author' },
     { enabled: groupedCards, refetchOnWindowFocus: false, placeholderData: (prev) => prev },
@@ -495,6 +515,19 @@ export function BooksBrowser({
         {facetsForLevel.length > 0 ? (
           <div className="library-chipbar" role="group" aria-label="Filters">
             {facetsForLevel.map((facet) => {
+              if (facet.key === 'wanted') {
+                // ADR-057 — the composed-Wanted narrowing; value-gated on the overlay itself.
+                if (wantedAll.length === 0) return null;
+                return (
+                  <SelectChip
+                    key={facet.key}
+                    label={facet.label}
+                    value={wantedOnly ? '1' : undefined}
+                    options={[{ value: '1', label: `Wanted only · ${wantedAll.length}` }]}
+                    onChange={(v) => patchParams({ wanted: v ?? null })}
+                  />
+                );
+              }
               if (facet.kind === 'select' && facet.gate === 'bookProgress') {
                 if (!gates.bookProgress) return null;
                 return (
@@ -567,7 +600,21 @@ export function BooksBrowser({
 
       {jumpVisible ? <LetterJumpBar active={letter} onJump={(l) => patchParams({ at: l })} /> : null}
 
-      {pending ? (
+      {/* ADR-057 (PLAN-045) — the composed-Wanted overlay. Under the Wanted filter the tiles ARE
+          the wall; otherwise the clearly-badged strip precedes the library grid (static per load —
+          no interaction reflows it, ADR-015). */}
+      {wantedOnly ? (
+        wantedItems.length > 0 ? (
+          <WantedStrip mediaKind={mediaKind} items={wantedItems} only />
+        ) : (
+          <section className="card empty-state" data-testid="wanted-empty">
+            <p className="muted">No wanted {label.toLowerCase()} right now.</p>
+          </section>
+        )
+      ) : (
+        <>
+          {showWantedStrip ? <WantedStrip mediaKind={mediaKind} items={wantedItems} /> : null}
+          {pending ? (
         SKELETON
       ) : groupedCards ? (
         groupsQuery.error ? (
@@ -675,6 +722,8 @@ export function BooksBrowser({
               {search.isFetchingNextPage ? <span className="muted">Loading…</span> : null}
             </div>
           ) : null}
+        </>
+      )}
         </>
       )}
     </>

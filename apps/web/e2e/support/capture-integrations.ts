@@ -1,4 +1,8 @@
-// ADR-055 / DESIGN-028 (PLAN-044) — screenshot harness for owner sign-off of the Integrations tab:
+// ADR-055 / DESIGN-028 (PLAN-044) — screenshot harness for owner sign-off of the Integrations tab.
+// PLAN-045 (ADR-057/DESIGN-029) moved the flat tab into the /integrations/goodreads SUB-SECTION and
+// folded the requests wall into its Items tab — this harness now shoots the sub-section's link card +
+// Overview; the full PLAN-045 matrix (hub / stats / items / Library-Wanted) lives in capture-plan045.ts.
+// Original brief:
 // the empty link card, and the linked state (link card + shelf summary + coverage % + the requests/Missing
 // wall). Desktop + 390px, dark + light — the standing owner screenshot-review rule. It boots its OWN stack
 // (stub Goodreads + stub LazyLibrarian), links the account via the UI, runs the REAL goodreads-sync once
@@ -89,7 +93,7 @@ async function main(): Promise<void> {
       const page = await signInTo(browser, stack.appUrl, viewport);
       for (const theme of ['hnet-dark', 'hnet-light'] as const) {
         await setTheme(page, theme);
-        await page.goto('/integrations');
+        await page.goto('/integrations/goodreads');
         await page.getByTestId('integrations-link-card').waitFor();
         await hidePortal(page);
         await shoot(page, `link-card-${label}-${theme === 'hnet-dark' ? 'dark' : 'light'}`);
@@ -100,7 +104,7 @@ async function main(): Promise<void> {
     // Phase 2 — link the account + run the sync ONCE.
     {
       const page = await signInTo(browser, stack.appUrl, { width: 1280, height: 900 });
-      await page.goto('/integrations');
+      await page.goto('/integrations/goodreads');
       await page.getByTestId('integrations-profile-input').fill('https://www.goodreads.com/haynesnetwork');
       await page.getByTestId('integrations-link-btn').click();
       await page.getByTestId('integrations-linked').waitFor();
@@ -113,9 +117,9 @@ async function main(): Promise<void> {
       const page = await signInTo(browser, stack.appUrl, viewport);
       for (const theme of ['hnet-dark', 'hnet-light'] as const) {
         await setTheme(page, theme);
-        await page.goto('/integrations');
+        await page.goto('/integrations/goodreads');
         await page.getByTestId('integrations-coverage').waitFor();
-        await page.getByTestId('request-card').first().waitFor();
+        await page.getByTestId('gr-phase-have').waitFor();
         await hidePortal(page);
         await shoot(page, `integrations-${label}-${theme === 'hnet-dark' ? 'dark' : 'light'}`, true);
       }

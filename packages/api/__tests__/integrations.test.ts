@@ -19,7 +19,7 @@ afterAll(async () => {
 /** A stub Goodreads RSS client (resolve + probe) injected into the context. */
 function stubGoodreads(opts?: {
   resolveUserId?: (ref: string) => Promise<string>;
-  fetchShelf?: () => Promise<unknown[]>;
+  fetchShelf?: (userId: string, shelf: string) => Promise<unknown[]>;
 }): GoodreadsRssClient {
   return {
     resolveUserId: opts?.resolveUserId ?? (async () => '202652880'),
@@ -105,7 +105,11 @@ describe('integrations router — link + shelf', () => {
     };
     const ctx: TRPCContext = {
       ...makeCtx(t.db, sessionUser(admin)),
-      goodreads: stubGoodreads({ fetchShelf: async () => [shelfItem] }),
+      // ADR-057 — the link now defaults to ALL FOUR shelves; the book lives on to-read only (the
+      // realistic shape — Goodreads exclusive shelves), the rest come back empty.
+      goodreads: stubGoodreads({
+        fetchShelf: async (_userId, shelf) => (shelf === 'to-read' ? [shelfItem] : []),
+      }),
       googleBooks: stubGoogleBooks({
         volumeId: 'gb-dune',
         isbn13: '9780593099322',

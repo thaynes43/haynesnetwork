@@ -15,47 +15,50 @@ export interface StubGoodreadsServer {
   stop: () => Promise<void>;
 }
 
-// The want-to-read shelf mirrors the owner's real v0.49.0 acceptance shelf: a novel that LL LANDS (→
+// ADR-057 (PLAN-045 — all shelves acquire): the stub now serves PER-SHELF RSS keyed off the `?shelf=`
+// param. The want shelf mirrors the owner's real v0.49.0 acceptance shelf: a novel that LL LANDS (→
 // covered), a novel LL can't find (→ Missing + Search-again), and BOTH of his comics — Scott Pilgrim
 // (GB miscategorises the ISBN edition; the /volumes GET carries the real comic BISAC) and Batman "Zero
 // Year" (a category-less GB volume; the "DC Comics" title is the only signal). Both must PARK out of LL.
-const SHELF_RSS = `<?xml version="1.0" encoding="UTF-8"?>
+// currently-reading + read carry the A1-OVERRULED acquisition proof (a READ-shelf unmet want must
+// mint + push), and 'did-not-finish' 404s — the conventional ABSENT custom shelf (A3 tolerance).
+function rssItem(o: { title: string; bookId: string; author: string; isbn?: [string, string]; date: string }): string {
+  return `  <item>
+    <title><![CDATA[${o.title}]]></title>
+    <book_id>${o.bookId}</book_id>
+    <author_name><![CDATA[${o.author}]]></author_name>
+    <isbn>${o.isbn?.[0] ?? ''}</isbn>
+    <isbn13>${o.isbn?.[1] ?? ''}</isbn13>
+    <user_date_added><![CDATA[${o.date}]]></user_date_added>
+  </item>`;
+}
+
+function shelfRss(shelf: string, items: string[]): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"><channel>
-  <title><![CDATA[manofoz's bookshelf: to-read]]></title>
-  <item>
-    <title><![CDATA[Ready Player One]]></title>
-    <book_id>9969571</book_id>
-    <author_name><![CDATA[Ernest Cline]]></author_name>
-    <isbn>0307887436</isbn>
-    <isbn13>9780307887436</isbn13>
-    <book_image_url><![CDATA[https://images.example/rpo.jpg]]></book_image_url>
-    <user_date_added><![CDATA[Mon, 13 Jul 2026 10:00:00 -0700]]></user_date_added>
-  </item>
-  <item>
-    <title><![CDATA[Throne of Glass]]></title>
-    <book_id>7896527</book_id>
-    <author_name><![CDATA[Sarah J. Maas]]></author_name>
-    <isbn>1619630346</isbn>
-    <isbn13>9781619630345</isbn13>
-    <user_date_added><![CDATA[Mon, 13 Jul 2026 09:00:00 -0700]]></user_date_added>
-  </item>
-  <item>
-    <title><![CDATA[Scott Pilgrim's Precious Little Life (Scott Pilgrim, #1)]]></title>
-    <book_id>9312</book_id>
-    <author_name><![CDATA[Bryan Lee O'Malley]]></author_name>
-    <isbn>1932664084</isbn>
-    <isbn13>9781932664089</isbn13>
-    <user_date_added><![CDATA[Mon, 13 Jul 2026 08:00:00 -0700]]></user_date_added>
-  </item>
-  <item>
-    <title><![CDATA[Zero Year: Part 1 (DC Comics - The Legend of Batman #1)]]></title>
-    <book_id>18510</book_id>
-    <author_name><![CDATA[Scott Snyder]]></author_name>
-    <isbn></isbn>
-    <isbn13></isbn13>
-    <user_date_added><![CDATA[Mon, 13 Jul 2026 07:00:00 -0700]]></user_date_added>
-  </item>
+  <title><![CDATA[manofoz's bookshelf: ${shelf}]]></title>
+${items.join('\n')}
 </channel></rss>`;
+}
+
+const SHELVES: Record<string, string> = {
+  'to-read': shelfRss('to-read', [
+    rssItem({ title: 'Ready Player One', bookId: '9969571', author: 'Ernest Cline', isbn: ['0307887436', '9780307887436'], date: 'Mon, 13 Jul 2026 10:00:00 -0700' }),
+    rssItem({ title: 'Throne of Glass', bookId: '7896527', author: 'Sarah J. Maas', isbn: ['1619630346', '9781619630345'], date: 'Mon, 13 Jul 2026 09:00:00 -0700' }),
+    rssItem({ title: "Scott Pilgrim's Precious Little Life (Scott Pilgrim, #1)", bookId: '9312', author: "Bryan Lee O'Malley", isbn: ['1932664084', '9781932664089'], date: 'Mon, 13 Jul 2026 08:00:00 -0700' }),
+    rssItem({ title: 'Zero Year: Part 1 (DC Comics - The Legend of Batman #1)', bookId: '18510', author: 'Scott Snyder', date: 'Mon, 13 Jul 2026 07:00:00 -0700' }),
+  ]),
+  'currently-reading': shelfRss('currently-reading', [
+    rssItem({ title: 'Project Hail Mary', bookId: '54493401', author: 'Andy Weir', date: 'Sun, 12 Jul 2026 10:00:00 -0700' }),
+  ]),
+  read: shelfRss('read', [
+    // Covered: LL already holds it (stub-ll gb-martian → Open/Open → landed).
+    rssItem({ title: 'The Martian', bookId: '18007564', author: 'Andy Weir', date: 'Sat, 11 Jul 2026 10:00:00 -0700' }),
+    // THE acquisition proof: a READ-shelf want we don't hold — must mint + push (LL Wanted).
+    rssItem({ title: 'Hyperion', bookId: '77566', author: 'Dan Simmons', date: 'Fri, 10 Jul 2026 10:00:00 -0700' }),
+  ]),
+  // 'did-not-finish' deliberately ABSENT → the handler 404s it (the A3 tolerance path).
+};
 
 /**
  * A Google Books SEARCH result (`/volumes?q=`) for a query. Faithful to the live quirk that motivated the
@@ -78,6 +81,16 @@ function gbVolumeFor(q: string): { id: string; volumeInfo: Record<string, unknow
   if (s.includes('zero year') || s.includes('batman')) {
     // A sparse catalog volume — NO categories; only the shelved "DC Comics" title marker classifies it.
     return { id: 'gb-batman', volumeInfo: { title: 'Zero Year', publisher: 'Eaglemoss Collections' } };
+  }
+  // ADR-057 (PLAN-045) — the currently-reading / read shelf novels.
+  if (s.includes('hail mary')) {
+    return { id: 'gb-phm', volumeInfo: { title: 'Project Hail Mary', categories: ['Fiction'] } };
+  }
+  if (s.includes('martian')) {
+    return { id: 'gb-martian', volumeInfo: { title: 'The Martian', categories: ['Fiction'] } };
+  }
+  if (s.includes('hyperion')) {
+    return { id: 'gb-hyp', volumeInfo: { title: 'Hyperion', categories: ['Fiction'] } };
   }
   return null;
 }
@@ -120,10 +133,17 @@ export async function startStubGoodreads(): Promise<StubGoodreadsServer> {
       res.end('<html><body>manofoz</body></html>');
       return;
     }
-    // The public shelf RSS.
+    // The public shelf RSS — per-shelf; an unknown shelf 404s (Goodreads' absent-custom-shelf shape).
     if (path.startsWith('/review/list_rss/')) {
+      const shelf = url.searchParams.get('shelf') ?? 'to-read';
+      const rss = SHELVES[shelf];
+      if (rss === undefined) {
+        res.writeHead(404, { 'content-type': 'text/html' });
+        res.end('<html><body>shelf not found</body></html>');
+        return;
+      }
       res.writeHead(200, { 'content-type': 'application/rss+xml' });
-      res.end(SHELF_RSS);
+      res.end(rss);
       return;
     }
     // Google Books single-volume GET (the classifier's full-category confirm step) — must precede the

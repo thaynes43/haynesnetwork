@@ -4,7 +4,12 @@ import { bookRequests, booksItems, integrationShelfItems, permissionAudit, userI
 import {
   advanceStatus,
   computeCoverage,
+  computeShelfStats,
   getBookRequestsForIntegration,
+  getShelfWallItems,
+  getWantedBookRequests,
+  isRequestSearchable,
+  requestPhase,
   linkIntegration,
   listLinkedIntegrations,
   loadLibraryMatcher,
@@ -556,5 +561,222 @@ describe('comic routing (Kapowarr)', () => {
     // Still audited (the intent is recorded).
     const audits = await t.db.select().from(permissionAudit).where(eq(permissionAudit.action, 'request_book_search'));
     expect(audits).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ADR-057 (PLAN-045) — all shelves acquire (owner ruling: A1 OVERRULED) + the composed read-models.
+// ---------------------------------------------------------------------------
+
+describe('all-shelves sync + acquisition (ADR-057)', () => {
+  async function seedAllShelves() {
+    const user = await createUser(t.db);
+    const { integration } = await linkIntegration({
+      db: t.db,
+      userId: user.id,
+      provider: 'goodreads',
+      externalUserId: '202652880',
+      profileRef: '202652880',
+      actorId: user.id,
+    });
+    // linkIntegration now defaults to ALL FOUR shelves (migration 0047's default).
+    expect(integration.shelves).toEqual(['to-read', 'currently-reading', 'read', 'did-not-finish']);
+    // One library book that matches the READ-shelf want (→ covered).
+    await t.db.insert(booksItems).values({
+      source: 'kavita',
+      mediaKind: 'book',
+      externalId: 'lib-owned',
+      libraryId: '1',
+      libraryName: 'EBooks',
+      title: 'Project Hail Mary',
+      sortTitle: 'project hail mary',
+      author: 'Andy Weir',
+      deepLinkUrl: 'http://x',
+    });
+    return { user, integration };
+  }
+
+  const at = (day: number) => new Date(Date.UTC(2026, 6, day));
+  const allShelvesItems: EnrichedShelfItem[] = [
+    // to-read: a routable want (the classic Missing path).
+    { shelf: 'to-read', externalBookId: 'gr-tog', title: 'Throne of Glass', author: 'Sarah J. Maas', isbn: '9781619630345', gbVolumeId: 'gb-tog', coverUrl: null, shelvedAt: at(10), isComic: false },
+    // currently-reading: an unmet want — MUST also acquire (A1 overruled).
+    { shelf: 'currently-reading', externalBookId: 'gr-cr', title: 'The Martian', author: 'Andy Weir', isbn: null, gbVolumeId: 'gb-martian', coverUrl: null, shelvedAt: at(11), isComic: false },
+    // read: one book we HOLD (matched → landed) …
+    { shelf: 'read', externalBookId: 'gr-phm', title: 'Project Hail Mary', author: 'Andy Weir', isbn: null, gbVolumeId: 'gb-phm', coverUrl: null, shelvedAt: at(9), isComic: false },
+    // … and one we do NOT — the READ-shelf acquisition assertion (mint + push, both formats).
+    { shelf: 'read', externalBookId: 'gr-hyp', title: 'Hyperion', author: 'Dan Simmons', isbn: null, gbVolumeId: 'gb-hyp', coverUrl: null, shelvedAt: at(8), isComic: false },
+    // read: a comic we don't hold — routes to Kapowarr from the READ shelf too.
+    { shelf: 'read', externalBookId: 'gr-sp', title: 'Scott Pilgrim, Vol. 1', author: 'Bryan Lee O’Malley', isbn: null, gbVolumeId: 'gb-sp', coverUrl: null, shelvedAt: at(7), isComic: true },
+    // did-not-finish: ABSENT on this account (A3) — no items handed in, shelf still synced.
+  ];
+
+  it('EVERY shelf\'s unmet items mint requests and push BOTH formats to LL (read/currently-reading included); comics route via Kapowarr', async () => {
+    const { integration } = await seedAllShelves();
+    const ll = stubLl(() => ({ ebookStatus: 'Wanted', audioStatus: 'Wanted' }));
+    const kapo = stubKapowarr({ candidates: () => SCOTT_PILGRIM_CANDIDATES });
+
+    const report = await syncGoodreadsIntegration({
+      db: t.db,
+      integrationId: integration.id,
+      items: allShelvesItems,
+      // The DNF shelf was fetched-tolerant (404 ⇒ empty) — it still counts as SYNCED (tombstone scope).
+      syncedShelves: ['to-read', 'currently-reading', 'read', 'did-not-finish'],
+      ll: ll.bundle,
+      kapowarr: kapo.bundle,
+      pacer: async () => {},
+    });
+
+    expect(report.shelfItemsUpserted).toBe(5);
+    expect(report.requestsMinted).toBe(5);
+    // Pushed: to-read ToG + currently-reading Martian + read Hyperion (matched + comic excluded).
+    expect(report.requestsPushed).toBe(3);
+    expect(report.comicsRouted).toBe(1);
+
+    // THE acquisition assertions: the READ-shelf and CURRENTLY-READING wants hit LL with BOTH formats.
+    for (const id of ['gb-hyp', 'gb-martian']) {
+      const calls = ll.calls.filter((c) => c.id === id);
+      expect(calls.filter((c) => c.cmd === 'addBook'), id).toHaveLength(1);
+      expect(calls.filter((c) => c.cmd === 'queueBook').map((c) => c.format).sort(), id).toEqual([
+        'audiobook',
+        'ebook',
+      ]);
+      expect(calls.filter((c) => c.cmd === 'searchBook'), id).toHaveLength(2);
+    }
+    // The matched read-shelf book and the comic never touched LL.
+    expect(ll.calls.some((c) => c.id === 'gb-phm')).toBe(false);
+    expect(ll.calls.some((c) => c.id === 'gb-sp')).toBe(false);
+
+    // Per-shelf stats (the stats page read): canonical order, per-shelf coverage, phase rollup.
+    const stats = await computeShelfStats({ db: t.db, integrationId: integration.id });
+    expect(stats.shelves.map((s) => s.shelf)).toEqual(['to-read', 'currently-reading', 'read']);
+    expect(stats.shelves.find((s) => s.shelf === 'read')).toEqual({
+      shelf: 'read',
+      total: 3,
+      covered: 1,
+      pct: 33,
+    });
+    expect(stats.shelves.find((s) => s.shelf === 'to-read')).toEqual({
+      shelf: 'to-read',
+      total: 1,
+      covered: 0,
+      pct: 0,
+    });
+    // Phases: 1 have (matched), 4 searching (3 LL-wanted + the routed comic), 0 missing/parked.
+    expect(stats.phases).toEqual({ have: 1, searching: 4, missing: 0, parked: 0 });
+  });
+
+  it('getShelfWallItems groups a multi-shelf book into ONE tile wearing all its shelves', async () => {
+    const { integration } = await seedAllShelves();
+    const dup: EnrichedShelfItem[] = [
+      { shelf: 'read', externalBookId: 'gr-dup', title: 'Dune', author: 'Frank Herbert', isbn: null, gbVolumeId: 'gb-dune', coverUrl: null, shelvedAt: at(5), isComic: false },
+      { shelf: 'did-not-finish', externalBookId: 'gr-dup', title: 'Dune', author: 'Frank Herbert', isbn: null, gbVolumeId: 'gb-dune', coverUrl: null, shelvedAt: at(6), isComic: false },
+      { shelf: 'read', externalBookId: 'gr-phm', title: 'Project Hail Mary', author: 'Andy Weir', isbn: null, gbVolumeId: 'gb-phm', coverUrl: null, shelvedAt: at(9), isComic: false },
+    ];
+    await syncGoodreadsIntegration({
+      db: t.db,
+      integrationId: integration.id,
+      items: dup,
+      syncedShelves: ['to-read', 'currently-reading', 'read', 'did-not-finish'],
+      pacer: async () => {},
+    });
+    const wall = await getShelfWallItems({ db: t.db, integrationId: integration.id });
+    expect(wall).toHaveLength(2);
+    const dune = wall.find((w) => w.title === 'Dune')!;
+    expect(dune.shelves).toEqual(['read', 'did-not-finish']); // canonical order, ONE tile
+    expect(dune.requestId).not.toBeNull();
+    expect(dune.shelvedAt?.toISOString()).toBe(at(6).toISOString()); // newest shelved-at wins
+    // The matched book carries its library cover keys (the cover-proxy art path).
+    const phm = wall.find((w) => w.title === 'Project Hail Mary')!;
+    expect(phm.matched?.source).toBe('kavita');
+    expect(phm.matched?.externalId).toBe('lib-owned');
+  });
+
+  it('getWantedBookRequests composes the household overlay: per-wall format, matched excluded, dedupe + requesters', async () => {
+    // TWO users want the same unmet book; one also wants a comic; a third want is matched (excluded).
+    const alice = await createUser(t.db);
+    const bob = await createUser(t.db);
+    const linkFor = async (userId: string, externalUserId: string) =>
+      (await linkIntegration({ db: t.db, userId, provider: 'goodreads', externalUserId, profileRef: externalUserId, actorId: userId }))
+        .integration;
+    const ia = await linkFor(alice.id, '111');
+    const ib = await linkFor(bob.id, '222');
+    await t.db.insert(booksItems).values({
+      source: 'kavita', mediaKind: 'book', externalId: 'lib-owned2', libraryId: '1', libraryName: 'EBooks',
+      title: 'Project Hail Mary', sortTitle: 'project hail mary', author: 'Andy Weir', deepLinkUrl: 'http://x',
+    });
+    const wantHyp = (shelf: string): EnrichedShelfItem => ({
+      shelf, externalBookId: 'gr-hyp', title: 'Hyperion', author: 'Dan Simmons', isbn: null,
+      gbVolumeId: 'gb-hyp', coverUrl: null, shelvedAt: at(8), isComic: false,
+    });
+    const kapo = stubKapowarr({ candidates: () => SCOTT_PILGRIM_CANDIDATES });
+    await syncGoodreadsIntegration({
+      db: t.db, integrationId: ia.id,
+      items: [
+        wantHyp('to-read'),
+        { shelf: 'read', externalBookId: 'gr-phm', title: 'Project Hail Mary', author: 'Andy Weir', isbn: null, gbVolumeId: 'gb-phm', coverUrl: null, shelvedAt: at(9), isComic: false },
+        { shelf: 'read', externalBookId: 'gr-sp', title: 'Scott Pilgrim, Vol. 1', author: 'Bryan Lee O’Malley', isbn: null, gbVolumeId: 'gb-sp', coverUrl: null, shelvedAt: at(7), isComic: true },
+      ],
+      syncedShelves: ['to-read', 'currently-reading', 'read', 'did-not-finish'],
+      kapowarr: kapo.bundle,
+      pacer: async () => {},
+    });
+    await syncGoodreadsIntegration({
+      db: t.db, integrationId: ib.id,
+      items: [wantHyp('read')],
+      syncedShelves: ['to-read', 'currently-reading', 'read', 'did-not-finish'],
+      pacer: async () => {},
+    });
+
+    // Books wall (ebook leg): ONE deduped Hyperion tile with both requesters; PHM (matched) excluded;
+    // the comic excluded (it compos es the Comics wall).
+    const books = await getWantedBookRequests({ db: t.db, format: 'ebook' });
+    expect(books).toHaveLength(1);
+    expect(books[0]!.title).toBe('Hyperion');
+    expect(books[0]!.shelf).toBe('to-read'); // canonical shelf priority picks Alice's to-read row
+    expect(books[0]!.integrationUserId).toBe(alice.id);
+    expect(books[0]!.requestedBy.sort()).toEqual([alice.displayName, bob.displayName].sort());
+    expect(books[0]!.isComic).toBe(false);
+
+    // Audiobooks wall mirrors the audio leg (same unmet want — both formats queue).
+    const audio = await getWantedBookRequests({ db: t.db, format: 'audiobook' });
+    expect(audio.map((a) => a.title)).toEqual(['Hyperion']);
+
+    // Comics wall: the routed comic, wanted.
+    const comics = await getWantedBookRequests({ db: t.db, format: 'comic' });
+    expect(comics).toHaveLength(1);
+    expect(comics[0]!.title).toBe('Scott Pilgrim, Vol. 1');
+    expect(comics[0]!.isComic).toBe(true);
+    expect(comics[0]!.status).toBe('wanted');
+
+    // An UNLINKED integration's wants leave the walls (the overlay reads linked rows only).
+    await unlinkIntegration({ db: t.db, userId: bob.id, provider: 'goodreads', actorId: bob.id });
+    const after = await getWantedBookRequests({ db: t.db, format: 'ebook' });
+    expect(after).toHaveLength(1);
+    expect(after[0]!.requestedBy).toEqual([alice.displayName]);
+  });
+});
+
+describe('requestPhase / isRequestSearchable (the shared presentation + dispatch rules)', () => {
+  it('collapses per-format statuses into the wall phase', () => {
+    const base = { matchedBooksItemId: null, comicStatus: null, unroutableReason: null } as const;
+    expect(requestPhase({ ...base, matchedBooksItemId: 'x', ebookStatus: 'missing', audioStatus: 'missing' })).toBe('have');
+    expect(requestPhase({ ...base, ebookStatus: 'landed', audioStatus: 'missing' })).toBe('have');
+    expect(requestPhase({ ...base, ebookStatus: 'wanted', audioStatus: 'missing' })).toBe('searching');
+    expect(requestPhase({ ...base, ebookStatus: 'missing', audioStatus: 'missing' })).toBe('missing');
+    expect(requestPhase({ ...base, ebookStatus: 'missing', audioStatus: 'missing', comicStatus: 'requested', unroutableReason: 'comic' })).toBe('parked');
+    expect(requestPhase({ ...base, ebookStatus: 'missing', audioStatus: 'missing', comicStatus: 'wanted' })).toBe('searching');
+    expect(requestPhase({ ...base, ebookStatus: 'missing', audioStatus: 'missing', comicStatus: 'landed' })).toBe('have');
+  });
+
+  it('gates force-search: LL id for books, Kapowarr volume for comics, landed excluded', () => {
+    const book = { ebookStatus: 'wanted', audioStatus: 'wanted', comicStatus: null, kapowarrVolumeId: null, unroutableReason: null } as const;
+    expect(isRequestSearchable({ ...book, llBookId: 'gb-x' })).toBe(true);
+    expect(isRequestSearchable({ ...book, llBookId: null })).toBe(false);
+    expect(isRequestSearchable({ ...book, llBookId: 'gb-x', ebookStatus: 'landed', audioStatus: 'landed' })).toBe(false);
+    const comic = { ebookStatus: 'missing', audioStatus: 'missing', comicStatus: 'wanted', llBookId: null, unroutableReason: null } as const;
+    expect(isRequestSearchable({ ...comic, kapowarrVolumeId: '7' })).toBe(true);
+    expect(isRequestSearchable({ ...comic, kapowarrVolumeId: null })).toBe(false);
+    expect(isRequestSearchable({ ...comic, kapowarrVolumeId: '7', comicStatus: 'landed' })).toBe(false);
   });
 });

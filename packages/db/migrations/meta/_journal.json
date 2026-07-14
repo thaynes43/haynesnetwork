@@ -323,6 +323,13 @@
       "when": 1783900500000,
       "tag": "0046_kapowarr_comic_requests",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1783900600000,
+      "tag": "0047_goodreads_all_shelves",
+      "breakpoints": true
     }
   ]
 }

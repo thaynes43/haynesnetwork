@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { GoodreadsRssClient, parseGoodreadsIdFromRef, parseShelfRss } from '../src/index';
+import {
+  GOODREADS_BUILTIN_SHELVES,
+  GoodreadsHttpError,
+  GoodreadsRssClient,
+  isAbsentCustomShelfError,
+  parseGoodreadsIdFromRef,
+  parseShelfRss,
+} from '../src/index';
 
 const FEED = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"><channel>
@@ -75,5 +82,22 @@ describe('GoodreadsRssClient.resolveUserId', () => {
     const client = new GoodreadsRssClient({ baseUrl: 'https://www.goodreads.com', fetchImpl });
     const items = await client.fetchShelf('202652880', 'to-read');
     expect(items).toHaveLength(2);
+  });
+});
+
+// ADR-057 / PLAN-045 A3 — absent-CUSTOM-shelf tolerance ('did-not-finish' usually doesn't exist).
+describe('isAbsentCustomShelfError', () => {
+  it('tolerates a 404 ONLY for a custom shelf — never for a built-in (that means private/unreachable)', () => {
+    const notFound = new GoodreadsHttpError(404, 'http://gr/review/list_rss/1?shelf=did-not-finish');
+    expect(isAbsentCustomShelfError('did-not-finish', notFound)).toBe(true);
+    expect(isAbsentCustomShelfError('some-custom-shelf', notFound)).toBe(true);
+    for (const builtin of GOODREADS_BUILTIN_SHELVES) {
+      expect(isAbsentCustomShelfError(builtin, notFound)).toBe(false);
+    }
+  });
+
+  it('never tolerates a non-404 / non-HTTP failure (transient errors must surface)', () => {
+    expect(isAbsentCustomShelfError('did-not-finish', new GoodreadsHttpError(503, 'http://gr'))).toBe(false);
+    expect(isAbsentCustomShelfError('did-not-finish', new Error('boom'))).toBe(false);
   });
 });

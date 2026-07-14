@@ -176,3 +176,16 @@ The comics leg deferred at Q-02 is now built (backend; the full Comics-wall post
   routes a comic to Kapowarr's `auto_search` task (`runComicVolumeSearch`) and a book/audiobook to LL's
   `searchBook` (`runManualBookSearch`) — both audited `request_book_search`, both `integrations`-gated with
   server-side ownership re-check. Signature: `search({ requestId: uuid }) → { target: 'kapowarr' | 'lazylibrarian', searched, reason?, formats? }`.
+
+## Amendment — ADR-057 / PLAN-045: the D-06 UI shape is superseded by DESIGN-029
+
+The flat single-page tab this design's **D-06** described (link card + coverage + the text-tile
+Requests & Missing wall stacked on `/integrations`) is SUPERSEDED by **DESIGN-029**: `/integrations` is
+now a provider-card HUB and Goodreads a `?tab=` sub-section (Overview stats + a Library-idiom Items
+poster wall with Helpdesk-semantics shelf chips); the Requests & Missing wall folded into the
+sub-section. **D-01..D-05 STAND** (tables, clients, sync flow, API — extended, not replaced): ADR-057
+widens the synced shelves to all four (`GOODREADS_SHELVES`, migration 0047 — every shelf acquires, the
+owner's A1-overruled ruling), adds the absent-custom-shelf tolerance (A3), and composes the Library
+Wanted overlay from `book_requests` (`books.wanted` — the mirror stays pure). Q-04 above is thereby
+RESOLVED (read / currently-reading / did-not-finish now sync AND acquire; cross-provider coverage stays
+a later saga phase).

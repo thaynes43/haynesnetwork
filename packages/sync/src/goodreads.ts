@@ -14,8 +14,33 @@ import {
   type LazyLibrarianClientBundle,
   type SyncGoodreadsReport,
 } from '@hnet/domain';
-import { isComicText, type GoodreadsRssClient, type GoogleBooksClient } from '@hnet/goodreads';
+import {
+  isAbsentCustomShelfError,
+  isComicText,
+  type GoodreadsRssClient,
+  type GoodreadsShelfItem,
+  type GoogleBooksClient,
+} from '@hnet/goodreads';
 import { noopLogger, type SyncLogger } from './logger';
+
+/**
+ * ADR-057 / PLAN-045 A3 — fetch one shelf, tolerating an ABSENT CUSTOM shelf: 'did-not-finish' is a
+ * conventional custom shelf most accounts never created, and Goodreads 404s its RSS. That reads as an
+ * EMPTY shelf (zero items — still synced, so tombstoning stays scoped correctly), never an integration
+ * error. A built-in shelf failure still throws (private/unreachable — the per-integration error path).
+ */
+export async function fetchShelfTolerant(
+  rss: GoodreadsRssClient,
+  externalUserId: string,
+  shelf: string,
+): Promise<GoodreadsShelfItem[]> {
+  try {
+    return await rss.fetchShelf(externalUserId, shelf);
+  } catch (error) {
+    if (isAbsentCustomShelfError(shelf, error)) return [];
+    throw error;
+  }
+}
 
 /** The read clients the goodreads-sync mode needs (RSS + GB enrichment). */
 export interface GoodreadsSourceBundle {
@@ -63,7 +88,7 @@ export async function runGoodreadsSync(input: {
       const enriched: EnrichedShelfItem[] = [];
       const syncedShelves: string[] = [];
       for (const shelf of integ.shelves) {
-        const items = await input.goodreads.rss.fetchShelf(integ.externalUserId, shelf);
+        const items = await fetchShelfTolerant(input.goodreads.rss, integ.externalUserId, shelf);
         for (const item of items) {
           // GB enrichment: mandatory retry/backoff lives in the client; a final failure degrades to no id
           // (the want stays honestly un-pushable rather than fabricating a volume).

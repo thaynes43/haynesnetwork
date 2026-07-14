@@ -97,6 +97,24 @@ export function parseGoodreadsIdFromRef(ref: string): string | null {
   return m?.[1] ?? null;
 }
 
+/**
+ * The three BUILT-IN Goodreads exclusive shelves — they exist on every account (even empty), so a fetch
+ * failure on one of them means "private / unreachable / transient", never "the shelf does not exist".
+ */
+export const GOODREADS_BUILTIN_SHELVES = ['to-read', 'currently-reading', 'read'] as const;
+
+/**
+ * ADR-057 / PLAN-045 A3 — is this fetch failure "a CUSTOM shelf that simply doesn't exist"? Goodreads
+ * 404s the shelf RSS for a slug the account never created (e.g. 'did-not-finish', which is a conventional
+ * custom shelf, not a built-in). The sync treats that as an EMPTY shelf (zero items, still synced), NOT an
+ * integration error. A built-in shelf is never "absent" — a 404 there means the profile went private /
+ * unreachable, which must surface as the integration error it is (and must NOT tombstone the mirror).
+ */
+export function isAbsentCustomShelfError(shelf: string, error: unknown): boolean {
+  if ((GOODREADS_BUILTIN_SHELVES as readonly string[]).includes(shelf)) return false;
+  return error instanceof GoodreadsHttpError && error.status === 404;
+}
+
 export interface GoodreadsRssClientOptions extends GetOptions {
   baseUrl: string;
 }

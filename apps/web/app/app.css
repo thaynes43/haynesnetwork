@@ -6105,80 +6105,385 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
   margin: 0 0 4px;
 }
 
-/* Requests / Missing wall. */
-.integrations-requests {
+/* ─────────────────────────────────────────────────────────────────────────────
+   ADR-057 / DESIGN-029 (PLAN-045) — the Integrations HUB + the Goodreads sub-section
+   + the Library composed-Wanted tiles. Tokens-only, ADR-015 reflow-free (fixed-height
+   caption/meta/action rows, absolute corner pucks over reserved 2:3 boxes, recolor-only
+   chip toggles), 320/390 portrait-safe.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* The hub — provider cards (the Trash-Overview whole-card button idiom). */
+.hub-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  gap: 14px;
+  max-width: 760px;
+}
+.hub-card {
   display: flex;
   flex-direction: column;
+  gap: 12px;
+  min-height: 148px;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+.hub-card:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent) 5%, var(--color-surface));
+}
+.hub-card:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.hub-card--ghost {
+  cursor: default;
+  border-style: dashed;
+  background: transparent;
+}
+.hub-card--ghost:hover {
+  border-color: var(--color-border);
+  background: transparent;
+}
+.hub-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 10px;
 }
-.integrations-section-title {
-  margin: 0;
-  font-size: 1.1rem;
+.integrations-provider__glyph--ghost {
+  background: color-mix(in srgb, var(--color-text-muted) 12%, transparent);
+  color: var(--color-text-muted);
 }
-.integrations-request-grid {
+/* The stat block reserves its footprint so not-linked / pending / linked swaps never reflow. */
+.hub-card__stats {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  flex: 1 1 auto;
+  min-height: 48px;
+}
+.hub-card__hint {
+  color: var(--color-text-muted);
+  font-size: 0.86rem;
+  max-width: 34ch;
+}
+.hub-card__stat {
+  display: flex;
+  flex-direction: column;
+}
+.hub-card__num {
+  font-size: 1.7rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--color-accent);
+  font-variant-numeric: tabular-nums;
+}
+.hub-card__unit {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+.hub-card__open {
+  align-self: flex-end;
+  font-size: 0.85rem;
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+/* Sub-section header — back affordance + provider title on one fixed-height row. */
+.gr-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 34px;
+}
+.gr-head__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+}
+.gr-head__icon {
+  width: 22px;
+  height: 22px;
+  color: var(--color-accent);
+}
+
+/* Overview — per-shelf breakdown cards (the Trash-Overview idiom, shelf-sized). */
+.gr-ovcards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
+  gap: 12px;
+}
+.gr-ovcard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 96px;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+.gr-ovcard:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent) 5%, var(--color-surface));
+}
+.gr-ovcard:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.gr-ovcard__head {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+.gr-ovcard__count {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.gr-ovcard__num {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.gr-ovcard__unit {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+.gr-ovcard__detail {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+/* Overview — the request-phase summary tiles (Have / Searching / Missing / Parked). */
+.gr-phases {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr));
+  gap: 12px;
+  max-width: 640px;
+}
+.gr-phase {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: 72px;
+  justify-content: center;
+  font: inherit;
+  cursor: pointer;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+.gr-phase:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.gr-phase__num {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.gr-phase__label {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+.gr-phase[data-phase='have'] .gr-phase__num {
+  color: var(--color-accent);
+}
+.gr-phase[data-phase='searching'] .gr-phase__num {
+  color: var(--color-warning);
+}
+.gr-phase[data-phase='missing'] .gr-phase__num {
+  color: var(--color-danger);
+}
+.gr-phase[data-phase='parked'] .gr-phase__num {
+  color: var(--color-text-muted);
+}
+.gr-phase--empty .gr-phase__num {
+  color: var(--color-text-muted);
+}
+
+/* The shelf chip rail — the Helpdesk `.twall-bar .seg` treatment: one fixed-height row that pans
+   horizontally on narrow screens (never wraps → never reflows, ADR-015). */
+.gr-shelfbar {
+  overflow-x: auto;
+  scrollbar-width: none;
+  max-width: 100%;
+}
+.gr-shelfbar::-webkit-scrollbar {
+  display: none;
+}
+.gr-shelfbar button {
+  white-space: nowrap;
+}
+
+/* The Goodreads items wall + the Library-Wanted tiles — the twall/bwall poster-tile grammar:
+   reserved 2:3 poster boxes, an absolute corner puck, fixed-height caption/meta/action rows. */
+.gwall {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px 12px;
 }
-@media (max-width: 520px) {
-  .integrations-request-grid {
-    grid-template-columns: 1fr;
+@media (max-width: 480px) {
+  .gwall {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
-.integrations-request {
-  display: flex;
-  gap: 12px;
-  padding: 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  background: var(--color-surface);
-}
-.integrations-request__art {
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  width: 52px;
-  height: 72px;
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--color-text-muted) 12%, var(--color-surface));
-}
-.integrations-request__icon {
-  width: 28px;
-  height: 28px;
-  color: var(--color-text-muted);
-}
-.integrations-request__body {
-  flex: 1 1 auto;
-  min-width: 0;
+.gwall-tile {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
 }
-.integrations-request__title {
-  margin: 0;
+.gwall-tile__link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+}
+.gwall-tile__link:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.gwall-tile__poster {
+  position: relative;
+}
+/* The deep-linked request context (?focus=) — an outline, never a geometry change (ADR-015). */
+.gwall-tile.is-focused .gwall-tile__poster {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+/* The corner puck (the twall-overlay idiom) — absolute over the reserved box; per-phase recolor. */
+.gwall-overlay {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface) 78%, transparent);
+}
+.gwall-overlay svg {
+  width: 17px;
+  height: 17px;
+}
+.gwall-overlay[data-phase='have'] {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+.gwall-overlay[data-phase='searching'] {
+  color: var(--color-warning);
+  border-color: var(--color-warning);
+}
+.gwall-overlay[data-phase='missing'] {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+.gwall-overlay[data-phase='parked'] {
+  color: var(--color-text-muted);
+}
+/* Fixed-height caption/meta rows — the grid never staggers (the twall-caption rule). */
+.gwall-caption {
+  height: 17px;
+  font-size: 12.5px;
   font-weight: 600;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 4px;
 }
-.integrations-request__author {
-  margin: 0;
-  font-size: 0.85rem;
+.gwall-sub {
+  height: 15px;
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.integrations-request__chips {
+.gwall-shelves {
+  display: flex;
+  gap: 4px;
+  height: 20px;
+  overflow: hidden;
+  align-items: center;
+}
+.gwall-shelf {
+  white-space: nowrap;
+}
+.gwall-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 2px;
+  gap: 4px;
+  min-height: 24px;
+  align-content: flex-start;
 }
-/* Reserve the action row so a searching→done swap never reflows the card (ADR-015). */
-.integrations-request__action {
+/* The reserved force-search slot: button ⇄ live chip ⇄ note swap in place (ADR-015). */
+.request-action {
   min-height: 32px;
   display: flex;
   align-items: center;
-  margin-top: 2px;
+  min-width: 0;
 }
-.integrations-request__note {
-  font-size: 0.82rem;
+.request-action__chip {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+.request-action__chip .phase-chip__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.request-action__note {
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The Library-Wanted strip above a book wall's grid — clearly badged, static per load. */
+.gwanted {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px dashed color-mix(in srgb, var(--color-warning) 55%, var(--color-border));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--color-warning) 4%, var(--color-surface));
+}
+.gwanted__title {
+  margin: 0;
+  font-size: 1rem;
+}
+.wanted-tile__by {
+  font-style: italic;
 }
