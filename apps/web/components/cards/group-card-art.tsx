@@ -15,8 +15,8 @@
 // The portrait fades in exactly like MediaPoster (the shared `.poster-img` opacity-only reveal;
 // the global reduced-motion rule kills it).
 import { useEffect, useRef, useState } from 'react';
-import { KindIcon } from './kind-icon';
-import { GenreGlyph } from './genre-glyphs';
+import { KindIcon } from '../kind-icon';
+import { GenreGlyph } from '../genre-glyphs';
 import type { WallGroupingArt } from '@/lib/library-view-registry';
 
 export function GroupCardArt({

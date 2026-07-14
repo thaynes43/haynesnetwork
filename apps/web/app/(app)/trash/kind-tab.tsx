@@ -21,14 +21,8 @@ import { useRef, useState, type ReactNode } from 'react';
 import { ConfirmButton } from '@hnet/ui';
 import { trpc } from '@/lib/trpc-client';
 import { Modal } from '@/components/modal';
-import { MediaPoster } from '@/components/media-poster';
-import {
-  LibraryCornerLink,
-  RequestedByBadge,
-  WallGlyphSvg,
-  WatchNoteBadge,
-  type TrashAccess,
-} from '@/components/trash-shield';
+import { TrashCard, TrashWall, TrashWallSkeleton } from '@/components/cards';
+import { type TrashAccess } from '@/components/trash-shield';
 import {
   PendingWall,
   useInfiniteScroll,
@@ -267,7 +261,7 @@ function PosterWall({
       <p className="bwall-error" role="alert" data-testid="wall-error">
         {wallError ?? ''}
       </p>
-      <ul className="bwall" data-testid="batch-wall">
+      <TrashWall testId="batch-wall">
         {effective.map(({ item, state }) => {
           const glyph = wallGlyph(state);
           const tappable = tileTappable(ctx, glyph, item.savedBy);
@@ -279,66 +273,43 @@ function PosterWall({
           // DESIGN-010 D-12 (build C) — the meta-line watch chip: info-tone (recently watched) or muted
           // (watched a while ago); null with no watch signal. NEVER in the action corner.
           const note = watchNote(item);
-          // A saved/protected tile reads "pressed" (kept); a slated pending tile is not pressed.
-          const pressed = glyph === 'shield' || glyph === 'check';
           const titleYear = `${item.title}${item.year !== null ? ` (${item.year})` : ''}`;
-          const inner = (
-            <>
-              <MediaPoster
-                posterUrl={item.posterUrl}
-                kind={kind === 'movie' ? 'radarr' : 'sonarr'}
-                alt=""
-              />
-              {/* keyed by glyph: a flip re-mounts the badge so the pop animation replays
-                  (transform-only — never layout; killed by prefers-reduced-motion). */}
-              <span key={glyph} className="bwall-overlay" data-glyph={glyph} aria-hidden="true">
-                <WallGlyphSvg glyph={glyph} />
-              </span>
-            </>
-          );
+          // PLAN-047 / ADR-058 — the tile is the shared TrashCard (never bespoke bwall markup).
           return (
-            <li key={item.id} className="bwall-tile" data-glyph={glyph} data-testid="wall-tile">
-              {tappable ? (
-                <button
-                  type="button"
-                  className="bwall-tap"
-                  aria-pressed={pressed}
-                  aria-label={label}
-                  title={label}
-                  aria-busy={inFlight.has(item.id) || undefined}
-                  onClick={() => tap(item)}
-                >
-                  {inner}
-                </button>
-              ) : (
-                <span className="bwall-tap" role="img" aria-label={label} title={label}>
-                  {inner}
-                </span>
-              )}
-              {/* The /library nav corner — distinct from the toggle (owner refinement). */}
-              {item.mediaItemId !== null ? (
-                <LibraryCornerLink
-                  href={`/library/${item.mediaItemId}?from=${fromKey}`}
-                  title={`Open ${titleYear} — history and fixes`}
-                  ariaLabel={`Open ${titleYear} — its library page`}
-                />
-              ) : null}
-              <span className="bwall-caption">
-                {item.title}
-                {item.year !== null ? <span className="muted"> ({item.year})</span> : null}
-              </span>
-              <span className="bwall-meta">
-                <span className="bwall-meta-text">
-                  {item.sizeBytes > 0 ? formatBytes(item.sizeBytes) : '—'}
-                  {rating !== null ? ` · ★ ${rating}` : ''}
-                </span>
-                <RequestedByBadge requesters={item.requesters} />
-                {note !== null ? <WatchNoteBadge label={note.label} tone={note.tone} /> : null}
-              </span>
-            </li>
+            <TrashCard
+              key={item.id}
+              testId="wall-tile"
+              glyph={glyph}
+              posterUrl={item.posterUrl}
+              kind={kind === 'movie' ? 'radarr' : 'sonarr'}
+              title={item.title}
+              year={item.year}
+              toggle={{
+                tappable,
+                // A saved/protected tile reads "pressed" (kept); a slated pending tile is not pressed.
+                pressed: glyph === 'shield' || glyph === 'check',
+                label,
+                title: label,
+                busy: inFlight.has(item.id),
+                onTap: () => tap(item),
+              }}
+              // The /library nav corner — distinct from the toggle (owner refinement).
+              libraryLink={
+                item.mediaItemId !== null
+                  ? {
+                      href: `/library/${item.mediaItemId}?from=${fromKey}`,
+                      title: `Open ${titleYear} — history and fixes`,
+                      ariaLabel: `Open ${titleYear} — its library page`,
+                    }
+                  : null
+              }
+              metaText={`${item.sizeBytes > 0 ? formatBytes(item.sizeBytes) : '—'}${rating !== null ? ` · ★ ${rating}` : ''}`}
+              requesters={item.requesters}
+              watchNote={note !== null ? { label: note.label, tone: note.tone } : null}
+            />
           );
         })}
-      </ul>
+      </TrashWall>
     </>
   );
 }
@@ -1175,21 +1146,7 @@ function LifecycleView({
       ) : null}
 
       {items === undefined || itemsLoading ? (
-        <ul className="bwall" aria-hidden="true" data-testid="wall-skeleton">
-          {Array.from({ length: 6 }, (_, i) => (
-            <li key={i} className="bwall-tile">
-              <span className="bwall-tap">
-                <div className="poster-box" />
-              </span>
-              <span className="bwall-caption">
-                <span className="skeleton-line" />
-              </span>
-              <span className="bwall-meta">
-                <span className="skeleton-line skeleton-line--short" />
-              </span>
-            </li>
-          ))}
-        </ul>
+        <TrashWallSkeleton count={6} testId="wall-skeleton" />
       ) : (
         <PosterWall
           key={batch.id}

@@ -14,13 +14,7 @@
 // not a corner glyph; the corner is the pure save/slate toggle — lib/trash pendingWallGlyph).
 import { useEffect, useState, type RefObject } from 'react';
 import { trpc } from '@/lib/trpc-client';
-import { MediaPoster } from '@/components/media-poster';
-import {
-  LibraryCornerLink,
-  RequestedByBadge,
-  WallGlyphSvg,
-  WatchNoteBadge,
-} from '@/components/trash-shield';
+import { TrashCard, TrashWall, TrashWallSkeleton } from '@/components/cards';
 import { formatBytes, formatDay, formatRating, ratingOrNull } from '@/lib/media';
 import { describeMutationError } from '@/lib/app-error';
 import {
@@ -182,63 +176,39 @@ function PendingTile({
         : tappable
           ? `${item.title} is slated to delete — tap to save it`
           : `${item.title} is slated to delete`;
-  const inner = (
-    <>
-      <MediaPoster posterUrl={item.posterUrl} kind={media === 'movie' ? 'radarr' : 'sonarr'} alt="" />
-      <span key={glyph} className="bwall-overlay" data-glyph={glyph} aria-hidden="true">
-        <WallGlyphSvg glyph={glyph} />
-      </span>
-    </>
-  );
+  // PLAN-047 / ADR-058 — the tile is the shared TrashCard (never bespoke bwall markup).
   return (
-    <li className="bwall-tile pwall-tile" data-glyph={glyph} data-testid="trash-tile">
-      {tappable ? (
-        <button
-          type="button"
-          className="bwall-tap"
-          data-testid="trash-toggle"
-          aria-pressed={glyph === 'shield'}
-          aria-label={toggleLabel}
-          title={info}
-          aria-busy={
-            (item.maintainerrMediaId !== null && busy.has(item.maintainerrMediaId)) || undefined
-          }
-          onClick={() => onToggle(item, glyph)}
-        >
-          {inner}
-        </button>
-      ) : (
-        <span
-          className="bwall-tap"
-          data-testid="trash-toggle"
-          data-inert="true"
-          role="img"
-          aria-label={toggleLabel}
-          title={info}
-        >
-          {inner}
-        </span>
-      )}
-      {item.mediaItemId !== null ? (
-        <LibraryCornerLink
-          href={`/library/${item.mediaItemId}?from=${fromKey}`}
-          title={`Open ${titleYear} — history and fixes`}
-          ariaLabel={`Open ${titleYear} — its library page`}
-        />
-      ) : null}
-      <span className="bwall-caption">
-        {item.title}
-        {item.year !== null ? <span className="muted"> ({item.year})</span> : null}
-      </span>
-      <span className="bwall-meta">
-        <span className="bwall-meta-text">
-          {item.sizeBytes > 0 ? formatBytes(item.sizeBytes) : '—'}
-          {rating !== null ? ` · ★ ${rating}` : ''}
-        </span>
-        <RequestedByBadge requesters={item.requesters} />
-        {note !== null ? <WatchNoteBadge label={note.label} tone={note.tone} /> : null}
-      </span>
-    </li>
+    <TrashCard
+      pwall
+      testId="trash-tile"
+      glyph={glyph}
+      posterUrl={item.posterUrl}
+      kind={media === 'movie' ? 'radarr' : 'sonarr'}
+      title={item.title}
+      year={item.year}
+      toggle={{
+        tappable,
+        pressed: glyph === 'shield',
+        label: toggleLabel,
+        title: info,
+        busy: item.maintainerrMediaId !== null && busy.has(item.maintainerrMediaId),
+        onTap: () => onToggle(item, glyph),
+        testId: 'trash-toggle',
+        markInert: true,
+      }}
+      libraryLink={
+        item.mediaItemId !== null
+          ? {
+              href: `/library/${item.mediaItemId}?from=${fromKey}`,
+              title: `Open ${titleYear} — history and fixes`,
+              ariaLabel: `Open ${titleYear} — its library page`,
+            }
+          : null
+      }
+      metaText={`${item.sizeBytes > 0 ? formatBytes(item.sizeBytes) : '—'}${rating !== null ? ` · ★ ${rating}` : ''}`}
+      requesters={item.requesters}
+      watchNote={note !== null ? { label: note.label, tone: note.tone } : null}
+    />
   );
 }
 
@@ -269,23 +239,7 @@ export function useInfiniteScroll(
 
 /** N skeleton tiles that hold the exact poster-grid geometry (ADR-015 — no collapsing spinner). */
 export function PendingWallSkeleton({ count = 8, testId }: { count?: number; testId?: string }) {
-  return (
-    <ul className="bwall" aria-hidden="true" data-testid={testId}>
-      {Array.from({ length: count }, (_, i) => (
-        <li key={i} className="bwall-tile">
-          <span className="bwall-tap">
-            <div className="poster-box" />
-          </span>
-          <span className="bwall-caption">
-            <span className="skeleton-line" />
-          </span>
-          <span className="bwall-meta">
-            <span className="skeleton-line skeleton-line--short" />
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
+  return <TrashWallSkeleton count={count} testId={testId} />;
 }
 
 /**
@@ -340,12 +294,7 @@ export function PendingWall({
           {emptyLabel}
         </p>
       ) : (
-        <ul
-          className={`bwall pwall${refreshing ? ' is-refreshing' : ''}`}
-          aria-busy={refreshing}
-          aria-label={wallLabel}
-          data-testid={testId}
-        >
+        <TrashWall pwall refreshing={refreshing} label={wallLabel} testId={testId}>
           {items.map((item) => (
             <PendingTile
               key={`${item.collectionId}:${item.maintainerrMediaId ?? item.title}`}
@@ -359,7 +308,7 @@ export function PendingWall({
               onToggle={onToggle}
             />
           ))}
-        </ul>
+        </TrashWall>
       )}
       {hasNextPage ? (
         <div className="load-more" ref={sentinelRef}>

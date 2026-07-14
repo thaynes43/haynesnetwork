@@ -169,6 +169,8 @@ function toItemWire(item: ShelfWallItem) {
       ? booksCoverUrlFor(item.matched.source, item.matched.externalId, item.matched.coverRef)
       : null,
     inLibrary: item.matched !== null,
+    /** ADR-057 amendment (PLAN-047) — the "Have it" card's click-through target (`/library/books/[id]`). */
+    matchedBooksItemId: item.matchedBooksItemId,
     ebookStatus,
     audioStatus,
     comicStatus: item.comicStatus,
@@ -337,7 +339,16 @@ export const integrationsRouter = router({
    * "Force Search" button calls for every book-wall format. Ownership re-checked server-side. Non-destructive.
    */
   search: integrationsProcedure
-    .input(z.object({ requestId: z.string().uuid() }))
+    .input(
+      z.object({
+        requestId: z.string().uuid(),
+        // ADR-057 amendment (PLAN-047 — the Wanted DETAIL page) — the per-format leg the detail page's
+        // "Force Search" button targets (ebook / audiobook, the Movies/TV per-grain idiom). Omitted ⇒ the
+        // whole request's not-yet-landed formats (the wall puck's existing behaviour). Ignored for a comic
+        // (Kapowarr searches the volume, which covers every issue).
+        format: z.enum(['ebook', 'audiobook']).optional(),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
       const request = await getBookRequestById({ db: ctx.db, id: input.requestId });
       if (!request) throw new TRPCError({ code: 'NOT_FOUND' });
@@ -347,7 +358,7 @@ export const integrationsRouter = router({
       }
       return mapDomainErrors(async () => {
         if (request.comicStatus != null) {
-          // A comic → Kapowarr's own sources (the auto_search task).
+          // A comic → Kapowarr's own sources (the auto_search task). The per-format `format` is N/A here.
           const result = await runComicVolumeSearch({
             db: ctx.db,
             requestId: input.requestId,
@@ -363,6 +374,7 @@ export const integrationsRouter = router({
           userId: ctx.user.id,
           actorId: ctx.user.id,
           ll: resolveLazyLibrarianBundle(ctx),
+          ...(input.format ? { format: input.format } : {}),
         });
         return { target: 'lazylibrarian' as const, ...result };
       });

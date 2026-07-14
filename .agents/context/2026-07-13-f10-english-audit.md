@@ -411,3 +411,98 @@ name, beside the mobi) and removed the empty French folder. **Kavita "Books" lib
 - SAB deletions = the 7 wrong/German usenet grabs only.
 - **LL live-only config changes (all reversible):** `SAB_SUBDIR=''` (fix), `REJECT_AUDIO` + `REJECT_WORDS`
   German/abridged tokens added. No app code / haynes-ops / other plans / HANDOFF touched. No release.
+
+---
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RUN 4 — STRANDED-IMPORT INCIDENT + FIX (2026-07-14). Owner: "queued books never arrive."
+# ═══════════════════════════════════════════════════════════════════════════════
+
+**Status: RESOLVED.** RUN 3 fixed LL→SAB *sending* (`SAB_SUBDIR=''`) but the completed usenet books
+still never imported: **42 downloads completed in SAB but stranded at SAB's completed-dir root**, while
+LL's post-processor watched an empty dir. Root cause was a **missing SAB category** (LL sent jobs with no
+category). Fixed the category, **rescued the 42 (39 imported)**, audited REJECT_WORDS, triaged the 94
+Failed grabs. Pipeline contract now documented in `docs/ops/013-mam-books-acquisition.md` §11.
+
+## R4.1 — Diagnosis (verified live)
+- **The two-mount split:** SAB's `complete_dir` root is `/data/haynestower/usenet/complete-k8s`
+  (`haynestower` NFS, 482 T); LL watches `download_dir = /data/cephfs-hdd/data/usenet/complete-k8s/lazylibrarian`
+  (gasha01 cephfs, 159 T) — **different underlying storage.** LL mounts only cephfs; SAB mounts both.
+- **No category ⇒ stranded.** LL `[SABnzbd]` had `sab_host/port/api` but **no `sab_cat`**, so LL sent jobs
+  with no category → SAB completed them under the `*` root on haynestower (`cat:*`, plus a few dir-less
+  `cat:audio`) → LL's cephfs watch dir stayed empty ("Compiled 0 total items" every 10-min cycle).
+- **DB state at entry:** `wanted` = **42 Snatched (all SABNZBD)** / 94 Failed / 6 Seeding (MAM torrents).
+  All 42 confirmed `Completed` in SAB history (`nzo_id`→`storage`, 42/42 match at the haynestower root).
+- **Second latent bug (SAB v5 history archive):** LL confirms completion via `mode=history&nzo_ids=<id>`,
+  which in SAB 5.0.4 returns **0** once a job archives (needs `&archive=1`) → LL's Pass-3 timeout Failed
+  the 42 mid-rescue (`DLResult "… Progress: 0%"`). Fresh completions are caught before archiving, so the
+  category fix suffices going forward; the archive quirk only affected this aged backlog.
+
+## R4.2 — Fix step 1: the category/dir contract (live, reversible)
+- **LL:** `writeCFG&group=SABnzbd&name=SAB_CAT&value=lazylibrarian` → `readCFG` = `[lazylibrarian]`,
+  persisted to `config.ini` (`sab_cat = lazylibrarian`). One category for both types (`use_label` returns
+  the single value; no comma). **Revert:** `writeCFG SAB_CAT='' group=SABnzbd`.
+- **SAB:** the `lazylibrarian` category **already existed** with `dir =
+  /data/cephfs-hdd/data/usenet/complete-k8s/lazylibrarian` (absolute cephfs, mirroring the `lidarr`→music
+  category that proves the shared cephfs mount) — no SAB change needed; verified by API read-back.
+- Contract now == LL `download_dir`. Not GitOps (LL config is PVC/live-imperative). Full contract table
+  in OPS-013 §11.2.
+
+## R4.3 — Fix step 2: rescue the 42 stranded downloads (MOVE only, verified)
+- Match set derived from the **42 Snatched `DownloadID`s** (not by listing the root) → naturally excludes
+  the ~6 German/wrong-edition orphans (`Queen of Air und Darkness [ungekrzt]`, `Grey … erzaehlt`,
+  `Children of Blood and Bone Band 01`, `Second Foundation`, `Fifty Shades of Grey`, `The Other Emily`)
+  and SAB's category subdirs (`comics/ebooks/movies/tv`). Left untouched.
+- **Moved 42 folders (628 files, 7.08 GB)** haynestower root → cephfs `lazylibrarian/` from the **SAB pod**
+  (only pod mounting both trees). Cross-NFS ⇒ **copy + verify byte/file counts + remove source** (never
+  delete before verify). First attempt via `shutil.copytree` failed on `copystat` (`Errno 524 ENOTSUPP` —
+  cephfs rejects metadata preservation) and **rolled back cleanly with sources intact**; redone with
+  data-only `shutil.copyfile` → 42/42 moved, 0 failed.
+- **Import bypass** for the archived-history detection gap: set the 42 `wanted` rows `Source='DIRECT'`
+  (LL trusts the row as 100 %) + `Status='Snatched'`, then `forceProcess`.
+- **Dotted scene-name fix:** 6 grabs (`Tom.Clancy.Red.Storm.Rising.1987…`, Melville×2, Julia Quinn,
+  Patriot Games, Blade Breaker) scored < `NAME_RATIO` (90) because `_normalize_title` preserves dots
+  (one token). Renamed folders dots→spaces **and** aligned each `NZBtitle` to the spaced form (LL compares
+  those two) → all matched (96–97). Silmarillion audiobook renamed to its clean title (88→match).
+
+## R4.4 — Import results (verified in LL DB + on disk + rescans)
+| Outcome | eBook | Audio | total |
+|---|---|---|---|
+| **Processed** (imported; book flipped to **Open**) | 27 | 12 | **39** |
+| **Failed** — genuine content/type mismatch (left for LL re-search) | 1 | 2 | **3** |
+- Books flipped **Snatched→Open**: 27 ebook-Open + 12 audio-Open (matches). On disk:
+  `media/books/EBooks` **+85 files**, `AudioBooks` **+498 files**. Files land at
+  `…/EBooks/<Author>/<Title>/…` and `…/AudioBooks/<Author>/<Title>/…`.
+- **3 mismatches** (set `Failed`, book→`Wanted` to re-search): *Lord of Shadows* (audiobook want, grab was
+  an epub), *Heir of Fire* audio (empty folder — the epub was consumed by its ebook want), *Hornet Flight*
+  (ebook want, grab was mp3s). Their folders left in the download_dir (never deleted).
+- **Rescans triggered (HTTP 200):** Kavita `Books`(id 1) + `Comics`(id 2); ABS `Audio Books`
+  (`4f5bc272-…`). Creds from `frontend/haynesnetwork-secret` (`hnetadmin` / `root`), in-cluster URLs.
+
+## R4.5 — REJECT_WORDS audit (verdict: word-boundary, `und` SAFE, NO change)
+- LL matches reject words via `word in get_list(result_title.lower())` — **whitespace-tokenized
+  word-membership, NOT substring** (`resultlist.py:212`; `formatter.get_list` splits on whitespace after
+  folding `,`/`+`). Verified live: `und` = False for `Foundation`/`Thunder`/`Sound`, True only for a
+  standalone `und` token. The coordinator's substring-danger premise does **not** hold for this LL — the
+  list (incl. `und`, `goldener`, `zorn`) is safe as-is. **No REJECT_WORDS/REJECT_AUDIO change made.**
+- Blind spot noted (not a bug): dot-separated scene names are one token, so reject words don't filter them.
+
+## R4.6 — Failed-grabs triage (94, report-only)
+| Class | count | note |
+|---|---|---|
+| "Failed to send nzb to SAB" | **80** | stale — pre-RUN3 `SAB_SUBDIR=lazylibrarian` 404; mostly duplicate Throne-of-Glass retries; cured, will re-search |
+| F10 language/edition removed (RUN 3 guard) | 6 | deliberate |
+| Dead NZB — par2 repair failed | 5 | genuinely incomplete usenet posts |
+| Prowlarr 500 / aborted / RAR-verify | 3 | transient/corrupt |
+- By indexer (send-time only, not a provider fault): NZBgeek 45, DrunkenSlug 32, NinjaCentral 8, NZBFinder 8, MAM 1.
+- No fix warranted beyond steps 1–3 — the 85 % dominant class is already cured by the SAB config fixes.
+
+## R4.7 — Constraints honored / residuals
+- **MAM/qBittorrent/Prowlarr/governor untouched** (torrents on the MAM path not involved; usenet-only leg).
+  LL **provider** sections untouched — only `SAB_CAT` (download-client config) changed, plus per-row
+  `Source`/`NZBtitle`/`Status` edits on the rescued items. **No deletions** (moves + copy-verify only;
+  the 4 leftover mismatch/residual folders left in place). No music/Lidarr category or dir touched.
+- **App repo = DOCS ONLY** (OPS-013 §11 + this RUN 4). No code / haynes-ops / HANDOFF / release.
+- **Residuals:** (a) 3 content/type mismatches will re-search on LL's cycle; (b) SAB v5 archived-history
+  detection gap is latent — future grabs are caught pre-archive, but a very slow/large grab could re-strand
+  (rescue idiom in §11.3); (c) `No ebook-convert found` (calibre absent from LL image) persists — cosmetic.

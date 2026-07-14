@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.52.0](https://github.com/thaynes43/haynesnetwork/compare/v0.51.0...v0.52.0) (2026-07-14)
+
+
+### Features
+
+* the shared card system — one typed card family, drift-proof by code (PLAN-047, ADR-058, DESIGN-004 D-21) ([#269](https://github.com/thaynes43/haynesnetwork/issues/269)) ([9ba1f6f](https://github.com/thaynes43/haynesnetwork/commit/9ba1f6fc2c1bf1b49c20a7d237cb053242caca8d))
+
+
+### Documentation
+
+* books usenet import contract + stranded-import RCA (OPS-013 §11, F-10 RUN 4) ([#267](https://github.com/thaynes43/haynesnetwork/issues/267)) ([490e774](https://github.com/thaynes43/haynesnetwork/commit/490e7747a676a2e3b39578b811d3578fcdeb0d3a))
+
+## [0.51.0](https://github.com/thaynes43/haynesnetwork/compare/v0.50.1...v0.51.0) (2026-07-14)
+
+
+### Features
+
+* Wanted-parity detail page for book requests — poster→detail→per-format Force-Search (PLAN-047) ([#264](https://github.com/thaynes43/haynesnetwork/issues/264)) ([dd638d4](https://github.com/thaynes43/haynesnetwork/commit/dd638d4461fb3cb3133a6f20434daabc3ecdcfc5))
+
+
+### Documentation
+
+* PLAN-047 shared card system + PLAN-048 Activity/In-Flight (owner rulings; motivated by the stranded-imports incident) ([#266](https://github.com/thaynes43/haynesnetwork/issues/266)) ([395e01a](https://github.com/thaynes43/haynesnetwork/commit/395e01a2b420fc3041ee30288407d84db1820395))
+
+## [0.50.1](https://github.com/thaynes43/haynesnetwork/compare/v0.50.0...v0.50.1) (2026-07-14)
+
+
+### Bug Fixes
+
+* unify Library-Wanted + Goodreads items into the Movies poster-card anatomy (PLAN-045) ([#261](https://github.com/thaynes43/haynesnetwork/issues/261)) ([28d069d](https://github.com/thaynes43/haynesnetwork/commit/28d069d452c2d6dbe0850b2421c08d43b8079ac5))
+
 ## [0.50.0](https://github.com/thaynes43/haynesnetwork/compare/v0.49.0...v0.50.0) (2026-07-14)
 
 

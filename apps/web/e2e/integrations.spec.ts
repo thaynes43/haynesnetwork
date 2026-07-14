@@ -6,10 +6,11 @@
 //     (to-read + currently-reading + read; did-not-finish 404s → tolerated as EMPTY, A3) with the
 //     A1-OVERRULED acquisition proof: READ-shelf + CURRENTLY-READING unmet wants push to LL too;
 //   • the stats page (want-shelf headline coverage + per-shelf breakdown + phase tiles);
-//   • the ITEMS wall (cohesive poster cards + the Helpdesk-semantics shelf chips) + the audited
-//     force-search from the compact corner puck (book → LL searchBook; comic → Kapowarr auto_search);
+//   • the ITEMS wall (cohesive poster cards + the Helpdesk-semantics shelf chips) whose cards now
+//     click-through to the WANTED DETAIL PAGE (PLAN-047 — the Movies/TV poster→detail parity), where the
+//     audited per-format force-search lives (book → LL searchBook per format; comic → Kapowarr auto_search);
 //   • the Library Books/Comics walls' Wanted cards merged INLINE as the same poster block as an
-//     on-disk book (owner-corrected), the Wanted-only chip, and the deep link into the request context.
+//     on-disk book (owner-corrected), the Wanted-only chip, and the click-through into the Wanted detail.
 //
 // NB: the file name keeps this suite ordering-stable; it links the admin's Goodreads account into the
 // shared DB, which only this spec queries.
@@ -152,35 +153,56 @@ test.describe('Integrations hub + Goodreads sub-section', () => {
     await expect(page.getByTestId('gr-item')).toHaveCount(7);
     await expect(page).not.toHaveURL(/shelf=/);
 
-    // ── Force-search from the items wall (the compact corner PUCK — the "Search again" text button GONE). ──
-    // Throne of Glass is Missing (LL Skipped) → the card's status badge reads Missing; the puck fires LL.
+    // ── Force-search now lives on the WANTED DETAIL PAGE (the Movies/TV poster→detail parity, PLAN-047):
+    //    every non-have-it items-wall card click-throughs to it; the corner puck is retired. ──
+    // Throne of Glass is Missing (LL Skipped) — its card badge reads Missing; the card opens the detail.
     const tog = page.getByTestId('gr-item').filter({ hasText: 'Throne of Glass' });
     await expect(tog).toHaveAttribute('data-phase', 'missing');
     await expect(tog).toContainText('Missing');
+    await tog.click();
+    await expect(page).toHaveURL(/\/library\/books\/wanted\//);
+    await expect(page.getByTestId('wanted-detail-head')).toContainText('Throne of Glass');
+
+    // The per-format rows (Ebook + Audiobook) each carry their own status + Force-Search (the per-grain idiom).
     await resetLl();
-    await tog.getByTestId('request-search-btn').click();
+    const ebookRow = page.getByTestId('format-row').filter({ hasText: 'Ebook' });
+    await expect(ebookRow).toContainText('Missing');
+    await ebookRow.getByTestId('format-search-btn').click();
     await expect(async () => {
       const after = await llCalls();
-      expect(after.some((c) => c.cmd === 'searchBook' && c.id === 'gb-tog')).toBe(true);
+      expect(after.some((c) => c.cmd === 'searchBook' && c.id === 'gb-tog' && c.type === 'eBook')).toBe(true);
     }).toPass({ timeout: 10_000 });
-    // PLAN-015-style live feedback recolors the puck IN PLACE (no reflow) — the fired state + tooltip.
-    await expect(tog.getByTestId('request-search-btn')).toHaveAttribute('data-state', 'fired');
-    await expect(tog.getByTestId('request-search-btn')).toHaveAttribute('title', /Search fired — LazyLibrarian/);
+    // PLAN-015-style feedback in the RESERVED slot — the button swaps to a fired PhaseChip, no reflow (ADR-015).
+    await expect(ebookRow.locator('.phase-chip[data-phase="fired"]')).toBeVisible();
+    await expect(ebookRow.locator('.phase-chip[data-phase="fired"]')).toHaveAttribute(
+      'title',
+      /Search fired — LazyLibrarian/,
+    );
 
-    // Scott Pilgrim IS routed (Comic, monitored Wanted) — its status badge reads "Comic · Wanted" and
-    // its puck dispatches to KAPOWARR.
-    const comic = page.getByTestId('gr-item').filter({ hasText: 'Scott Pilgrim' });
-    await expect(comic).toContainText('Comic');
-    await comic.getByTestId('request-search-btn').click();
+    // Scott Pilgrim IS routed (Comic, monitored Wanted) — its detail carries the single Comic leg → KAPOWARR.
+    await page.goto('/integrations/goodreads?tab=items');
+    await page.getByTestId('gr-item').filter({ hasText: 'Scott Pilgrim' }).click();
+    await expect(page.getByTestId('wanted-detail-head')).toContainText('Scott Pilgrim');
+    const comicRow = page.getByTestId('format-row').filter({ hasText: 'Comic' });
+    await comicRow.getByTestId('format-search-btn').click();
     await expect(async () => {
       const after = await kapowarrCalls();
       expect(after.some((c) => c.path === '/api/system/tasks' && c.cmd === 'auto_search')).toBe(true);
     }).toPass({ timeout: 10_000 });
-    await expect(comic.getByTestId('request-search-btn')).toHaveAttribute('title', /Search fired — Kapowarr/);
-    // Batman "Zero Year" has NO ComicVine match → PARKED; the routing note rides the status-badge tooltip.
+    await expect(comicRow.locator('.phase-chip[data-phase="fired"]')).toHaveAttribute(
+      'title',
+      /Search fired — Kapowarr/,
+    );
+
+    // Batman "Zero Year" has NO ComicVine match → PARKED; its detail shows the honest "waiting on ComicVine"
+    // note and NO Force-Search button (nothing to fire).
+    await page.goto('/integrations/goodreads?tab=items');
     const zeroYear = page.getByTestId('gr-item').filter({ hasText: 'Zero Year' });
     await expect(zeroYear).toHaveAttribute('data-phase', 'parked');
-    await expect(zeroYear.locator('.badge', { hasText: 'Comic' })).toHaveAttribute('title', /ComicVine/);
+    await zeroYear.click();
+    await expect(page.getByTestId('wanted-detail-head')).toContainText('Zero Year');
+    await expect(page.getByText(/waiting on a ComicVine match/i)).toBeVisible();
+    await expect(page.getByTestId('format-search-btn')).toHaveCount(0);
 
     // ── The Library composed-Wanted journey (books-section-gated; ADR-046 mirror untouched). Wanted
     //    items merge INLINE into the flat wall as the SAME poster card as an on-disk book — no strip. ──
@@ -189,9 +211,9 @@ test.describe('Integrations hub + Goodreads sub-section', () => {
     await expect(page.getByTestId('wanted-card')).toHaveCount(3);
     const wantedTog = page.getByTestId('wanted-card').filter({ hasText: 'Throne of Glass' });
     await expect(wantedTog).toContainText('Missing');
-    // NO force-search button and NO requester line on the Library card face (attribution lives in the
-    // Goodreads request context) — the card is a plain click-through.
-    await expect(wantedTog.getByTestId('request-search-btn')).toHaveCount(0);
+    // NO force-search button and NO requester line on the Library card face (both live on the detail page
+    // now) — the card is a plain click-through.
+    await expect(wantedTog.getByTestId('format-search-btn')).toHaveCount(0);
     await expect(wantedTog).not.toContainText('for ');
 
     // The Wanted-only chip narrows the wall to the wanted cards (the Movies "Wanted only" idiom).
@@ -203,10 +225,15 @@ test.describe('Integrations hub + Goodreads sub-section', () => {
     await page.goto('/library?tab=comics');
     await expect(page.getByTestId('wanted-card')).toHaveCount(2);
 
-    // A wanted card IS a click-through link into its request context in the sub-section (?focus= highlights it).
+    // A Library Wanted card now click-throughs into the in-app Wanted DETAIL page (the Movies poster→detail
+    // idiom) — the SAME route both walls open, reachable by any books-visible viewer. The requester
+    // attribution + the per-format status rows live here (off the card face).
     await page.goto('/library?tab=books&view=flat');
     await page.getByTestId('wanted-card').filter({ hasText: 'Hyperion' }).click();
-    await expect(page).toHaveURL(/\/integrations\/goodreads\?tab=items&focus=/);
-    await expect(page.locator('.gr-item.is-focused')).toContainText('Hyperion');
+    await expect(page).toHaveURL(/\/library\/books\/wanted\//);
+    const head = page.getByTestId('wanted-detail-head');
+    await expect(head).toContainText('Hyperion');
+    await expect(head).toContainText('Requested by');
+    await expect(page.getByTestId('format-row')).toHaveCount(2); // Ebook + Audiobook legs
   });
 });

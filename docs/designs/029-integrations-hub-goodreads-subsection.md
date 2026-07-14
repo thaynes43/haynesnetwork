@@ -200,3 +200,55 @@ are unchanged); it supersedes the *visual* specifics of D-07, D-08, and D-09.
   recoloring in place to narrate `searching → fired → failed` (the big text button is gone).
 - **Retired code:** `request-glyphs.tsx` (`RequestPhaseGlyph`), `request-search-button.tsx`
   (`RequestSearchButton`), `wanted-strip.tsx`, and the `.gwall*` / `.gwanted` / `.request-action` CSS.
+
+## Amendment 2 — 2026-07-14 (the Wanted DETAIL page — completing the owner parity ruling)
+
+Amendment-1 (v0.50.1, PR #261) unified the *card anatomy* across the walls, but delivered the owner's
+Wanted-parity ruling only **partially**: the poster looked like a Movies/TV card, yet clicking it did NOT
+open a detail page, and force-search was a card-face **corner puck** rather than the Movies/TV
+poster→detail→Force-Search flow. The owner called this out ("I can't click on them to open the details page
+like you can on the Library tab… I also thought we were adding Force Search / Fix identical UX as the
+TV/Movies have"). This amendment builds the missing half — the DETAIL PAGE — and supersedes the *corner-puck*
+mechanism of amendment-1's D-07/D-08 (the data model, gating, sync, and dispatch of ADR-055/056/057 are
+unchanged). PLAN-047.
+
+- **One canonical route, both walls link to it.** `/library/books/wanted/[requestId]` — a sibling of the
+  `/library/books/[id]` books detail (DESIGN-025 / PLAN-028 idiom; static `wanted` segment wins over the
+  `[id]` dynamic sibling). The composed Library-Wanted cards (Books/Audiobooks/Comics) AND every
+  non-have-it Goodreads items-wall card open it; a **have-it** Goodreads card opens the existing library
+  detail (`/library/books/[id]`) of its matched `books_items` row instead (`matchedBooksItemId`, now on the
+  items wire). The old `?tab=items&focus=<id>` deep-link is replaced as the primary click target; existing
+  `?focus=` links still land + highlight on the wall (unchanged in `ItemsTab`).
+- **The detail page (`wanted-detail.tsx`), the /library/[id] visual language by REUSE.** `BackLink` +
+  `.card.detail-head` (2:3 `MediaPoster` — the cover-proxy art when the want is matched, else the designed
+  KindIcon glyph) + title/author + a badges row (source shelf + the dominant phase) + the **requester
+  attribution** (`Requested by` chips — the household roll-up, THIS is where it belongs; it was pulled off
+  the card faces in amendment-1). Then a **Formats** section of `.child-row`s — the *arr per-grain idiom in
+  book words: one row per format (Ebook + Audiobook for a book; the single Comic leg for a comic), each with
+  its own downstream status badge (`requested`/`wanted`/`grabbed`/`landed`/`missing`) and, in the reserved
+  `.action-slot`, a **per-format Force-Search** button that swaps to a live `PhaseChip`
+  (`searching → fired / nothing / failed`) in place — ADR-015, no reflow.
+- **Force-Search dispatch is the existing surface.** The button calls `integrations.search`, extended with
+  an optional `format` (`ebook`/`audiobook`) so a book leg fires ONE `LazyLibrarian.searchBook(bookId,
+  format)`; omitted ⇒ the whole request (the retired puck's behaviour, kept backward-compatible). A comic
+  leg omits `format` — Kapowarr's `auto_search` covers the whole volume. Audited as before
+  (`request_book_search`). Books expose no per-grab progress feed (Q-02 residual restated): the fired chip
+  is the immediate confirmation and the per-format status badge is the downstream signal on the next
+  reconcile — the honest books analog of the ledger's live poll.
+- **Gating (server-authoritative).** VIEW is `booksOrIntegrationsProcedure` (`books` OR `integrations`
+  ≥ read_only) — "reachable by whoever can see the card that links to it": household books cards are
+  books-gated (Q-01), the per-user Goodreads wall is integrations-gated. The page-level server wrapper
+  redirects a caller with NEITHER section to `/library`. The per-format `searchable` affordance stays
+  owner-scoped (OWN the integration AND hold `integrations` — exactly what `integrations.search` enforces);
+  a books-only household viewer sees the status rows read-only, and the search ACTION FORBIDs them.
+- **The corner puck is retired.** With the whole card now a click-through, an in-card button would be an
+  invalid nested-interactive; force-search moves to the detail page (parity with Movies/TV, where the wall
+  card carries no force-search either). `request-search-puck.tsx` and the `.gr-search-puck` CSS are deleted;
+  the unused `.poster-card__poster` wrapper goes with them.
+- **Test strategy (added).** Domain (embedded PG): `getBookRequestDetail` (shelf/owner/household
+  attribution/cover-match/per-format status) + `runManualBookSearch` single-format narrowing. API: the
+  `booksOrIntegrationsProcedure` VIEW gate (anon 401; neither-section FORBIDDEN; NOT_FOUND), household view
+  with owner-scoped per-format `searchable`, and the books-only member's `integrations.search` FORBIDDEN.
+  e2e: both walls click-through to the detail page + per-format LL/Kapowarr round trip with the fired chip +
+  the parked-comic no-search state. Screenshot side-by-side (`capture-wanted-detail-parity.ts`): a Movies/TV
+  WANTED detail beside the new book-wanted detail (dark, desktop + 390) + the force-search feedback states.

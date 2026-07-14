@@ -157,3 +157,75 @@ describe('books.wanted — the household composition', () => {
     expect(res.items.map((i) => i.title)).toEqual(['Hyperion']);
   });
 });
+
+// ADR-057 amendment (PLAN-047) — the Wanted DETAIL surface (`books.wantedDetail`): reachable by whoever can
+// see the card that links to it (books OR integrations section), household attribution + per-format status
+// rows, and per-format `searchable` gated on OWN-the-request + integrations (exactly what integrations.search
+// enforces — a books-only viewer sees the rows read-only, and the search action itself FORBIDs them).
+describe('books.wantedDetail — the Movies/TV parity detail page surface', () => {
+  async function hyperionRequestId(): Promise<string> {
+    const res = await ownerCaller.books.wanted({ mediaKind: 'book' });
+    return res.items.find((i) => i.title === 'Hyperion')!.requestId;
+  }
+  async function comicRequestId(): Promise<string> {
+    const res = await ownerCaller.books.wanted({ mediaKind: 'comic' });
+    return res.items[0]!.requestId;
+  }
+
+  it('rejects an anonymous caller with UNAUTHORIZED', async () => {
+    const anon = caller(makeCtx(t.db, null));
+    const id = await hyperionRequestId();
+    expect(await codeOf(() => anon.books.wantedDetail({ requestId: id }))).toBe('UNAUTHORIZED');
+  });
+
+  it('a caller with NEITHER books NOR integrations is FORBIDDEN (server-refused)', async () => {
+    const id = await hyperionRequestId();
+    expect(await codeOf(() => disabledCaller.books.wantedDetail({ requestId: id }))).toBe('FORBIDDEN');
+  });
+
+  it('NOT_FOUND for an unknown request id', async () => {
+    expect(
+      await codeOf(() =>
+        ownerCaller.books.wantedDetail({ requestId: '00000000-0000-0000-0000-000000000000' }),
+      ),
+    ).toBe('NOT_FOUND');
+  });
+
+  it('the OWNER sees the full detail: shelf, household attribution, per-format rows, per-format searchable', async () => {
+    const detail = await ownerCaller.books.wantedDetail({ requestId: await hyperionRequestId() });
+    expect(detail.title).toBe('Hyperion');
+    expect(detail.shelf).toBe('to-read');
+    expect(detail.isComic).toBe(false);
+    expect(detail.mediaKind).toBe('book');
+    expect(detail.requestedBy).toEqual([ownerName]);
+    expect(detail.canSearch).toBe(true);
+    // BOTH LazyLibrarian legs, each with its own status + a searchable Force-Search (llBookId resolved, not landed).
+    expect(detail.formats.map((f) => f.format)).toEqual(['ebook', 'audiobook']);
+    expect(detail.formats.every((f) => f.status === 'requested')).toBe(true);
+    expect(detail.formats.every((f) => f.searchable)).toBe(true);
+  });
+
+  it('HOUSEHOLD view: a books-only member can VIEW the detail but every per-format Force-Search is withheld', async () => {
+    const detail = await readerCaller.books.wantedDetail({ requestId: await hyperionRequestId() });
+    expect(detail.title).toBe('Hyperion'); // books gating alone lets them reach it (household, Q-01)
+    expect(detail.canSearch).toBe(false);
+    expect(detail.formats.some((f) => f.searchable)).toBe(false);
+  });
+
+  it('and the search ACTION itself FORBIDs a books-only member (integrations + ownership gate)', async () => {
+    const id = await hyperionRequestId();
+    expect(await codeOf(() => readerCaller.integrations.search({ requestId: id }))).toBe('FORBIDDEN');
+    expect(await codeOf(() => readerCaller.integrations.search({ requestId: id, format: 'ebook' }))).toBe(
+      'FORBIDDEN',
+    );
+  });
+
+  it('a PARKED comic renders its single Kapowarr leg, not force-searchable (no volume yet)', async () => {
+    const detail = await ownerCaller.books.wantedDetail({ requestId: await comicRequestId() });
+    expect(detail.isComic).toBe(true);
+    expect(detail.mediaKind).toBe('comic');
+    expect(detail.parked).toBe(true);
+    expect(detail.formats.map((f) => f.format)).toEqual(['comic']);
+    expect(detail.formats[0]!.searchable).toBe(false); // no Kapowarr volume ⇒ nothing to fire
+  });
+});

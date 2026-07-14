@@ -17,7 +17,6 @@
 //
 // Reflow-free (ADR-015): fixed 2:3 poster boxes, dim-in-place on refetch, a fixed-height sort row,
 // and skeleton tiles on first load.
-import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import {
@@ -30,7 +29,7 @@ import {
 } from '@hnet/ui';
 import { trpc } from '@/lib/trpc-client';
 import { formatSeasonEpisodeCounts } from '@/lib/media';
-import { MediaPoster } from '@/components/media-poster';
+import { MediaCard, PosterGrid, PosterGridSkeleton } from '@/components/cards';
 import {
   parseWallSortToken,
   type WallSortDir,
@@ -164,17 +163,7 @@ export function YtdlsubBrowser({
       </div>
 
       {list.isLoading || !prefsReady ? (
-        <div className="media-list poster-grid" aria-hidden="true" data-testid="ytdlsub-skeleton">
-          {Array.from({ length: 12 }, (_, i) => (
-            <div key={i} className="poster-card poster-card--skeleton">
-              <div className="poster-box" />
-              <span className="poster-card__body">
-                <span className="skeleton-line" />
-                <span className="skeleton-line skeleton-line--short" />
-              </span>
-            </div>
-          ))}
-        </div>
+        <PosterGridSkeleton testId="ytdlsub-skeleton" />
       ) : list.error ? (
         <p className="alert" role="alert">
           Failed to load {label}: {list.error.message}
@@ -192,37 +181,24 @@ export function YtdlsubBrowser({
           <p>Nothing matches your search.</p>
         </section>
       ) : (
-        <div
-          className={`media-list poster-grid${refreshing ? ' is-refreshing' : ''}`}
-          aria-busy={refreshing}
-          data-testid="ytdlsub-grid"
-        >
+        <PosterGrid refreshing={refreshing} testId="ytdlsub-grid">
           {shows.map((show) => {
             const counts = formatSeasonEpisodeCounts(show.seasonCount, show.episodeCount);
             return (
               // DESIGN-017 D-09 (R-132) — tiles are click-throughs to the read-only drill-in
               // (the MediaBrowser card idiom; supersedes the action-free-tile scope note).
-              <Link
+              <MediaCard
                 key={show.ratingKey}
                 href={`/library/ytdlsub/${library}/${show.ratingKey}`}
-                className="media-card poster-card"
-              >
-                <MediaPoster posterUrl={show.posterUrl} kind="show" alt="" />
-                <span className="poster-card__body">
-                  <span className="media-card__title">
-                    {show.title}
-                    {show.year !== null ? <span className="muted"> ({show.year})</span> : null}
-                  </span>
-                  {counts !== null ? (
-                    <span className="media-card__badges">
-                      <span className="badge">{counts}</span>
-                    </span>
-                  ) : null}
-                </span>
-              </Link>
+                posterUrl={show.posterUrl}
+                kind="show"
+                title={show.title}
+                year={show.year}
+                badges={[counts !== null ? { label: counts } : null]}
+              />
             );
           })}
-        </div>
+        </PosterGrid>
       )}
     </>
   );

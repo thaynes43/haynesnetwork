@@ -94,6 +94,20 @@ export const booksProcedure = sectionProcedure('books', 'read_only');
 export const integrationsProcedure = sectionProcedure('integrations', 'read_only');
 
 /**
+ * ADR-057 amendment (PLAN-047 — the Wanted DETAIL page) — the rung for a read reachable from EITHER wall
+ * that links to it: the household Library-Wanted cards (books-gated) OR the per-user Goodreads items wall
+ * (integrations-gated). Authed AND the caller can SEE `books` OR `integrations` (≥ read_only); FORBIDDEN
+ * only when BOTH are disabled. This is the VIEW gate for `books.wantedDetail` — "reachable by whoever can
+ * see the card that links to it"; the force-search ACTION keeps its own `integrations` + ownership gate.
+ */
+export const booksOrIntegrationsProcedure = authedProcedure.use(({ ctx, next }) => {
+  const books = effectiveSectionLevel(ctx.user.role, 'books');
+  const integrations = effectiveSectionLevel(ctx.user.role, 'integrations');
+  if (books === 'disabled' && integrations === 'disabled') throw new TRPCError({ code: 'FORBIDDEN' });
+  return next();
+});
+
+/**
  * ADR-025 errata (2026-07-08, owner-directed) — GLOBAL SAVE IS A SUPERSET OF THE WINDOWED RESCUE.
  * Holding `save_exclude` (the anytime whitelist power — "Save items, anytime") IMPLIES
  * `save_leaving_soon` (the narrow "Save during a Leaving-Soon window" grant): if you can whitelist
