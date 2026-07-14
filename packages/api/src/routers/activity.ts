@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import {
   aggregateActivity,
+  activityFamilyOf,
   activityWallStages,
   getActivityFailure,
   lazyActivityAdapter,
@@ -153,13 +154,60 @@ export const activityRouter = router({
   }),
 
   /** The per-wall in-flight badge map the wall posters read (books: keyed by LL/GB bookId; *arr: keyed by
-   *  the movie/series/artist id the movies/tv/music posters carry). */
+   *  the movie/series/artist id the movies/tv/music posters carry). No hrefs (this never renders a card). */
   wallStages: authedProcedure.query(async ({ ctx }) => {
     const visibleSections = visibleSectionsFor(ctx);
     const adapters = buildActivityAdapters(ctx, visibleSections);
-    const result = await aggregateActivity({ db: ctx.db, adapters, visibleSections });
+    const result = await aggregateActivity({ db: ctx.db, adapters, visibleSections, resolveHrefs: false });
     return activityWallStages(result.items);
   }),
+
+  /**
+   * DESIGN-030 D-10 — the LIVE stage of ONE in-flight item (the Fix-feedback idiom for Activity): the failure
+   * detail + the Wanted detail poll this after firing a retry/re-search so the item is seen to MOVE (fired →
+   * searching → downloading % → importing → done) exactly like the Fix dialog. Surgical — it builds ONLY the
+   * one source family the id names (derived from the ref prefix), never the whole fan-out, and skips the href
+   * joins. `present: false` means the item is no longer in any in-flight/failed/completed stage (it cleared).
+   * Section-gated: a books/comics item is invisible (present:false) to a viewer without the books section.
+   */
+  itemStatus: authedProcedure
+    .input(z.object({ itemId: z.string().min(1).max(200) }))
+    .query(async ({ ctx, input }) => {
+      const notPresent = { present: false as const, stage: null, progress: null };
+      const family = activityFamilyOf(input.itemId);
+      if (family === null) return notPresent;
+      const visibleSections = visibleSectionsFor(ctx);
+      // Books + comics ride the books gate; the *arr family is universal.
+      if ((family === 'books' || family === 'kapowarr') && !visibleSections.includes('books')) {
+        return notPresent;
+      }
+      const adapter =
+        family === 'arr'
+          ? lazyActivityAdapter({
+              source: ARR_ACTIVITY_SOURCE,
+              label: 'Movies, TV & music',
+              resolve: () => resolveArrActivityAdapter(ctx),
+            })
+          : family === 'books'
+            ? lazyActivityAdapter({
+                source: BOOKS_ACTIVITY_SOURCE,
+                label: 'Books & audiobooks',
+                resolve: () => resolveActivityBundle(ctx).adapter,
+              })
+            : lazyActivityAdapter({
+                source: KAPOWARR_ACTIVITY_SOURCE,
+                label: 'Comics',
+                resolve: () => resolveKapowarrActivityAdapter(ctx),
+              });
+      const result = await aggregateActivity({
+        db: ctx.db,
+        adapters: [adapter],
+        visibleSections,
+        resolveHrefs: false,
+      });
+      const found = result.items.find((it) => it.id === input.itemId);
+      return found ? { present: true as const, stage: found.stage, progress: found.progress } : notPresent;
+    }),
 
   /** The failure detail (the #264 idiom): the failure facts + the per-viewer canAct flags. */
   failure: authedProcedure
@@ -175,6 +223,9 @@ export const activityRouter = router({
       return {
         id: row.id,
         source: row.source,
+        // The stable adapter ref (== the ActivityItem id) — the client polls `activity.itemStatus` with it to
+        // watch the item MOVE off the failed stage after a retry/re-search fires (the Fix-feedback idiom).
+        sourceRef: row.sourceRef,
         kind: row.kind,
         section: row.section,
         failureKind: row.failureKind,

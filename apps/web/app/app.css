@@ -1729,6 +1729,58 @@ input[aria-invalid='true'] {
   padding: 1px 7px;
   white-space: nowrap;
 }
+/* PLAN-048 / ADR-059 D-10 — the LIVE in-flight badge cues (the Fix PhaseChip idiom brought to the card
+   badge, so an Activity/wall tile progresses in place exactly like the Fix dialog). A `--live` badge lays
+   its dot · label · mini-meter on one flex line; every color rides the badge's OWN tone (currentColor); the
+   fill width TRANSITIONS, so 7% → 100% refills in place without reflow (ADR-015 / hard rule 9). Only the
+   in-flight stage badge sets these — every other badge is untouched. */
+.badge--live {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.badge__dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.badge--pulse .badge__dot {
+  animation: phase-pulse 1.6s ease-in-out infinite;
+}
+.badge__track {
+  flex: none;
+  width: 30px;
+  height: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 26%, transparent);
+  overflow: hidden;
+}
+.badge__fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: currentColor;
+  transition: width 0.5s ease;
+}
+/* The just-landed accent (D-10): a completed Activity tile flashes a one-shot ring so its landing is SEEN
+   before it ages out — recolor only, never layout (ADR-015). Killed by the global reduced-motion rule. */
+.poster-card[data-just-completed] {
+  animation: activity-landed 3.4s ease-out;
+}
+@keyframes activity-landed {
+  0% {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 85%, transparent);
+  }
+  60% {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 55%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
 .badge--rating {
   color: var(--color-accent);
   background: color-mix(in srgb, var(--color-accent) 14%, transparent);
@@ -6431,4 +6483,21 @@ body:has(.gallery) {
   color: var(--color-text-muted);
   border-bottom: 1px solid var(--color-border);
   padding-bottom: 6px;
+}
+/* PLAN-048 D-10 — the live-progress parity harness: the Activity tile idiom beside the Fix reference, so the
+   consistency is a single glance. Pure layout (no color) — two columns that wrap on narrow. */
+.parity {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.parity__col {
+  flex: 1 1 320px;
+  min-width: 280px;
+}
+.parity__col .action-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }

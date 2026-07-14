@@ -23,7 +23,12 @@ const STAGE_META: Record<CardActivityStage, { label: string; tone: PosterBadgeTo
   completed: { label: 'Just added', tone: 'ok' },
 };
 
-/** Map an in-flight stage (+ progress) to the shared caption badge. */
+/** The stages that are actively "in flight" — they pulse the badge dot (the Fix PhaseChip "alive" cue). */
+const IN_FLIGHT: ReadonlySet<CardActivityStage> = new Set(['searching', 'downloading', 'importing']);
+
+/** Map an in-flight stage (+ progress) to the shared caption badge. A downloading badge carries the live
+ *  filling mini-meter + %; every in-flight stage pulses its dot — so an Activity/wall tile progresses in
+ *  place exactly like the Fix dialog (DESIGN-030 D-10), recoloring/refilling without reflow (ADR-015). */
 export function activityStageBadge(input: InFlightBadge): CardBadge {
   const meta = STAGE_META[input.stage];
   const hasPct = input.stage === 'downloading' && input.progress != null;
@@ -32,6 +37,8 @@ export function activityStageBadge(input: InFlightBadge): CardBadge {
     label: pct != null ? `${pct}%` : meta.label,
     tone: meta.tone,
     title: pct != null ? `${meta.label} — ${pct}%` : meta.label,
+    pulse: IN_FLIGHT.has(input.stage),
+    progressPct: pct,
   };
 }
 
