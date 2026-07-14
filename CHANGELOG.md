@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.54.0](https://github.com/thaynes43/haynesnetwork/compare/v0.53.0...v0.54.0) (2026-07-14)
+
+
+### Features
+
+* Activity *arr adapter — Radarr/Sonarr/Lidarr queue + import visibility (PLAN-048, DESIGN-030 D-08) ([#273](https://github.com/thaynes43/haynesnetwork/issues/273)) ([a802743](https://github.com/thaynes43/haynesnetwork/commit/a802743e57c6fe17c3e679c618c670fc87d0e426))
+* Activity Kapowarr adapter — comics queue/import visibility (PLAN-048, DESIGN-030 D-08) ([#275](https://github.com/thaynes43/haynesnetwork/issues/275)) ([a4acc76](https://github.com/thaynes43/haynesnetwork/commit/a4acc76d85b70fbb62fcdee66fd32e12e0d20601))
+
 ## [0.53.0](https://github.com/thaynes43/haynesnetwork/compare/v0.52.0...v0.53.0) (2026-07-14)
 
 
