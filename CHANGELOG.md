@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.47.0](https://github.com/thaynes43/haynesnetwork/compare/v0.46.3...v0.47.0) (2026-07-14)
+
+
+### Features
+
+* PLAN-029 data/domain — released_at, per-user prefs + watch/read seam (steps 1/4/5) ([#243](https://github.com/thaynes43/haynesnetwork/issues/243)) ([259c951](https://github.com/thaynes43/haynesnetwork/commit/259c9515984166779d98faec564454137f4480c3))
+* PLAN-029 UX — per-view sort/filter registries, view+grouping shells, facet UI + A–Z jump (steps 2/3/6/7) ([#245](https://github.com/thaynes43/haynesnetwork/issues/245)) ([610a7c7](https://github.com/thaynes43/haynesnetwork/commit/610a7c7e46681583a9be783ffd78c211e95b1104))
+
+
+### Documentation
+
+* F-10 English audit — run blocked on kubectl/Omni auth outage (run log + reachability) ([#244](https://github.com/thaynes43/haynesnetwork/issues/244)) ([df89720](https://github.com/thaynes43/haynesnetwork/commit/df897207dc64ee51ca2fce5095d8d6a79567badc))
+* PLAN-042 Authentik-fix watch → compat revert; F-10 language audit backlog; F-09 resolved ([#239](https://github.com/thaynes43/haynesnetwork/issues/239)) ([2c36a43](https://github.com/thaynes43/haynesnetwork/commit/2c36a43a97bb45459334a60dd10db3dfea347737))
+* PLAN-042 late findings — laptop variant closed (current WebKit healthy), iPad Option C overnight, %(theme)s bg polish folded in ([#242](https://github.com/thaynes43/haynesnetwork/issues/242)) ([550e1eb](https://github.com/thaynes43/haynesnetwork/commit/550e1eb570141db75045d3a7f4cf71cef33b3653))
+* session-5 final wrap — v0.46.1-3 shipped; WebKit crash RCA (CSS nesting + WebKit[#290102](https://github.com/thaynes43/haynesnetwork/issues/290102)), PLAN-042 escalated to A/B/C ruling; OPS-009 compat-mode amendment ([#241](https://github.com/thaynes43/haynesnetwork/issues/241)) ([3d656aa](https://github.com/thaynes43/haynesnetwork/commit/3d656aab1f58c23077a472af4355ebe92033fe67))
+
 ## [0.46.3](https://github.com/thaynes43/haynesnetwork/compare/v0.46.2...v0.46.3) (2026-07-13)
 
 
