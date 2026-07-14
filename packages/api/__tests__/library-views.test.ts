@@ -34,16 +34,21 @@ beforeAll(async () => {
   adminUserId = admin.id;
   api = caller(makeCtx(tdb.db, sessionUser(admin)));
 
-  // Three released movies + one date-less (null released_at → NULLS LAST).
-  const mk = async (title: string, releasedAt: Date | null) => {
-    const item = await seedMediaItem(tdb.db, 'radarr', { title, sortTitle: title.toLowerCase() });
+  // Three released movies + one date-less (null released_at → NULLS LAST). Years span three
+  // decades so the Decade facet (PLAN-029 step 6) has distinct values.
+  const mk = async (title: string, releasedAt: Date | null, year?: number) => {
+    const item = await seedMediaItem(tdb.db, 'radarr', {
+      title,
+      sortTitle: title.toLowerCase(),
+      ...(year !== undefined ? { year } : {}),
+    });
     await upsertMediaMetadataBatch({ db: tdb.db, rows: [{ mediaItemId: item.id, releasedAt }] });
     return item.id;
   };
-  await mk('Oldest', new Date('2000-01-01T00:00:00Z'));
-  await mk('Middle', new Date('2010-06-15T00:00:00Z'));
-  const newestId = await mk('Newest', new Date('2022-12-31T00:00:00Z'));
-  await mk('NoDate', null);
+  await mk('Oldest', new Date('2000-01-01T00:00:00Z'), 2000);
+  await mk('Middle', new Date('2010-06-15T00:00:00Z'), 2010);
+  const newestId = await mk('Newest', new Date('2022-12-31T00:00:00Z'), 2022);
+  await mk('NoDate', null); // year defaults to 2020 (a second 2020s row)
 
   // Seed the caller's per-user watch on 'Newest' (watched).
   await upsertUserMediaWatchBatch({
@@ -153,6 +158,51 @@ describe('ledger.search — per-user watch facet (ADR-053 / DESIGN-026 D-07), vi
   it('watchState=unwatched excludes the viewer-watched item', async () => {
     const res = await api.ledger.search({ watchState: 'unwatched', limit: 50 });
     expect(idsByTitle(res.items).sort()).toEqual(['Middle', 'NoDate', 'Oldest']);
+  });
+});
+
+describe('ledger.search — Decade/Year facets + the A–Z jump (PLAN-029 step 2/6)', () => {
+  it('filterFacets returns the decades (newest first) alongside the shipped facets', async () => {
+    const facets = await api.ledger.filterFacets({ arrKind: 'radarr' });
+    expect(facets.decades).toEqual([2020, 2010, 2000]);
+  });
+
+  it('decades filter keeps only the chosen decades (same-field OR)', async () => {
+    const one = await api.ledger.search({ decades: [2000], limit: 50 });
+    expect(idsByTitle(one.items)).toEqual(['Oldest']);
+    const two = await api.ledger.search({ decades: [2000, 2010], limit: 50 });
+    expect(idsByTitle(two.items).sort()).toEqual(['Middle', 'Oldest']);
+  });
+
+  it('year range bounds inclusively', async () => {
+    const res = await api.ledger.search({ yearMin: 2010, yearMax: 2020, limit: 50 });
+    expect(idsByTitle(res.items).sort()).toEqual(['Middle', 'NoDate']);
+  });
+
+  it('the release-date range facet bounds on released_at (date-less rows never match)', async () => {
+    const res = await api.ledger.search({
+      releasedFrom: '2005-01-01T00:00:00.000Z',
+      releasedTo: '2015-01-01T00:00:00.000Z',
+      limit: 50,
+    });
+    expect(idsByTitle(res.items)).toEqual(['Middle']);
+  });
+
+  it('the letter jump pages to the first title at/after the letter (composes with title:asc)', async () => {
+    const res = await api.ledger.search({ sort: { field: 'title', dir: 'asc' }, letter: 'n', limit: 50 });
+    expect(idsByTitle(res.items)).toEqual(['Newest', 'NoDate', 'Oldest']); // 'middle' < 'n'
+  });
+});
+
+describe('library.facetGates (ADR-051 C-06 — the per-user populated-value gates)', () => {
+  it('reports true for a viewer with watch + book-progress rows (the seeded admin)', async () => {
+    expect(await api.library.facetGates()).toEqual({ watch: true, bookProgress: true });
+  });
+
+  it('reports false for a viewer with none (never a dead chip)', async () => {
+    const fresh = await createUser(tdb.db, { email: 'lib-gateless@example.com' });
+    const freshApi = caller(makeCtx(tdb.db, sessionUser(fresh)));
+    expect(await freshApi.library.facetGates()).toEqual({ watch: false, bookProgress: false });
   });
 });
 

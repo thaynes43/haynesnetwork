@@ -7,24 +7,36 @@
 // facet values from ledger.filterFacets. Cards stay ACTION-FREE click-throughs to
 // /library/[id] (owner ruling 2026-07-04) — the grid carries badges only.
 //
-// URL-state contract (deep-linkable, Back/Forward safe — documented in DESIGN-008 D-11):
-//   ?tab=movies|tv|music|my-fixes          the sub-tab
-//   ?q=…                                   search text (input debounced 250ms → URL)
-//   ?disk=complete|partial|none            on-disk narrowing ('any' = absent)
-//   ?wanted=1                              the wanted-only toggle
-//   ?genre=…&genre=… / res / req / col     facet filters (REPEATED params — comma-safe)
-//   ?rmin=7&rmax=9                         the bounded rating chip (COALESCE imdb/tmdb, D-09)
-//   ?sort=imdb_rating:desc                 wire sort ('title:asc' = absent default)
+// PLAN-029 (ADR-051/052/053, DESIGN-026) — the walls are now REGISTRY-DRIVEN: each wall's sort
+// keys + facet chips come from lib/library-view-registry.ts (the per-(wall, view-level) capability
+// declaration — a level offers ONLY the dimensions it can answer, R5 "Episodes ≠ Shows"), and the
+// effective view/sort resolves per ADR-052: an explicit URL param WINS (shared-link fidelity, never
+// written back), a bare URL fills from the caller's stored preference (library.preferences.getAll),
+// else the R2/R6 default. Explicit user selections persist via library.preferences.set — only ever
+// from event handlers, never on render.
+//
+// URL-state contract (deep-linkable, Back/Forward safe — documented in DESIGN-008 D-11 + D-10):
+//   ?tab=movies|tv|music|…|my-fixes         the sub-tab (PUSH — a screen-level switch, D-19)
+//   ?q=…                                    search text (input debounced 250ms → URL)
+//   ?disk=complete|partial|none             on-disk narrowing ('any' = absent)
+//   ?wanted=1                               the wanted-only toggle
+//   ?genre=…&genre=… / res / req / col      facet filters (REPEATED params — comma-safe)
+//   ?decade=1990&decade=2000                the Decade facet (PLAN-029 — decade-start years)
+//   ?rfrom=2020-01-01&rto=2021-12-31        the Release-Date range facet (PLAN-029, inclusive)
+//   ?rmin=7&rmax=9                          the bounded rating chip (COALESCE imdb/tmdb, D-09)
+//   ?watch=watched|unwatched|in_progress    the per-user watch-state facet (PLAN-029, gated)
+//   ?at=m                                   the A–Z jump (PLAN-029 D-09; asc Title sorts only)
+//   ?sort=field:dir                         wire sort (absent = the stored/R6 default)
 // Every filter/sort edit uses router.replace — the URL always mirrors the state (shareable),
-// while Back/Forward cross PAGES, not individual filter edits. Switching media tabs keeps
-// ONLY ?tab (fresh start per tab; the keyed remount below re-reads the now-clean URL), so a
-// filter set on Movies never leaks into TV/Music.
+// while Back/Forward cross SCREENS (tabs / views), not individual filter edits. Switching media
+// tabs keeps ONLY ?tab (fresh start per tab; the keyed remount below re-reads the now-clean URL),
+// so a filter set on Movies never leaks into TV/Music.
 //
 // ADR-015 (no reorientation): the chip bar and sort bar are FIXED-HEIGHT single rows that
 // scroll horizontally when crowded — adding/removing chips or wrapping never shifts the grid;
 // chip editors are viewport-clamped fixed-position OVERLAYS; poster boxes reserve their 2:3
-// space; a filter/sort refetch keeps the previous grid rendered (dimmed) and the initial load
-// shows skeleton poster boxes — never a spinner that collapses.
+// space; the A–Z rail is a fixed overlay; a filter/sort refetch keeps the previous grid rendered
+// (dimmed) and the initial load shows skeleton poster boxes — never a spinner that collapses.
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
@@ -37,6 +49,7 @@ import {
   arrowFor,
   type FilterMap,
 } from '@hnet/ui';
+import type { LibrarySortField, WallPreference } from '@hnet/api';
 import { trpc } from '@/lib/trpc-client';
 import {
   RESOLUTION_LABELS,
@@ -46,9 +59,24 @@ import {
   type ArrKindName,
   type ResolutionName,
 } from '@/lib/media';
+import {
+  WALL_VIEW_DEFAULTS,
+  parseWallSortToken,
+  showJumpBar,
+  type LibraryWallId,
+  type WallSortDir,
+  type WallView,
+} from '@/lib/library-views';
+import {
+  WATCH_STATE_OPTIONS,
+  decadeLabel,
+  registryFor,
+  type ViewRegistryEntry,
+} from '@/lib/library-view-registry';
 import { MediaPoster } from '@/components/media-poster';
 import { MyFixesPanel } from '@/components/my-fixes-panel';
-import { CHIP_LABELS, RatingChip } from '@/components/filter-chips';
+import { CHIP_LABELS, DateRangeChip, RatingChip, SelectChip } from '@/components/filter-chips';
+import { LetterJumpBar } from '@/components/letter-jump-bar';
 import { YtdlsubBrowser } from './ytdlsub-browser';
 import { BooksBrowser } from './books-browser';
 
@@ -102,6 +130,13 @@ type BooksTabKey = (typeof BOOKS_TABS)[number]['key'];
 type MediaVisible = { movies: boolean; tv: boolean; music: boolean };
 type YtdlsubLibsVisible = { peloton: boolean; youtube: boolean };
 
+/** The ledger walls' *arr kind → preference-wall mapping (ADR-052 LIBRARY_WALLS). */
+const ARR_WALLS: Record<ArrKindName, LibraryWallId> = {
+  radarr: 'movies',
+  sonarr: 'tv',
+  lidarr: 'music',
+};
+
 const ON_DISK_FILTERS = [
   { value: 'any', label: 'Any' },
   { value: 'complete', label: 'Complete' },
@@ -111,67 +146,37 @@ const ON_DISK_FILTERS = [
 
 type OnDiskFilter = (typeof ON_DISK_FILTERS)[number]['value'];
 
-// DESIGN-008 D-11 — the host's filter field union: each facet maps to a URL param and to the
-// same-named ledger.search input. Values come from ledger.filterFacets (tab-scoped).
-type LibraryField = 'genres' | 'resolutions' | 'requesters' | 'sourceCollections';
-const FILTER_FIELDS: ReadonlyArray<{ field: LibraryField; param: string; label: string }> = [
-  { field: 'genres', param: 'genre', label: 'Genre' },
-  { field: 'resolutions', param: 'res', label: 'Resolution' },
-  { field: 'requesters', param: 'req', label: 'Requester' },
-  { field: 'sourceCollections', param: 'col', label: 'Collection' },
-];
+// DESIGN-026 D-02 — the ledger walls' ENUM facet plumbing: each registry facet key maps to its URL
+// param (registry-declared) and the same-named ledger.search input / ledger.filterFacets list.
+type LibraryField = 'genres' | 'resolutions' | 'requesters' | 'sourceCollections' | 'decade';
 
-// DESIGN-008 D-09 — the wire sort fields this page offers (LIBRARY_SORT_FIELDS subset).
-const SORT_FIELDS = [
-  'title',
-  'imdb_rating',
-  'tmdb_rating',
-  'added_at',
-  'play_count',
-  'last_viewed',
-  'runtime',
-] as const;
-type SortField = (typeof SORT_FIELDS)[number];
-type SortToken = `${SortField}:${'asc' | 'desc'}`;
-const DEFAULT_SORT: SortToken = 'title:asc';
-
-interface SortColumn {
-  col: string;
-  label: string;
-  field: SortField;
-  /** which direction the FIRST click gives ('desc' = best/newest-first columns). */
-  firstDir: 'asc' | 'desc';
-}
-
-/** The sort columns per media tab. "Rating" rides imdb_rating for Movies but tmdb_rating for
- *  TV/Music (Sonarr/Lidarr expose one community rating, mapped to the tmdb slots — ADR-018
- *  C-07); Music drops Runtime (artists have none — D-02). */
-function sortColumnsFor(arrKind: ArrKindName): SortColumn[] {
-  const rating: SortField = arrKind === 'radarr' ? 'imdb_rating' : 'tmdb_rating';
-  return [
-    { col: 'title', label: 'Title', field: 'title', firstDir: 'asc' },
-    { col: 'rating', label: 'Rating', field: rating, firstDir: 'desc' },
-    { col: 'added', label: 'Added', field: 'added_at', firstDir: 'desc' },
-    { col: 'plays', label: 'Plays', field: 'play_count', firstDir: 'desc' },
-    { col: 'watched', label: 'Watched', field: 'last_viewed', firstDir: 'desc' },
-    ...(arrKind === 'lidarr'
-      ? []
-      : [{ col: 'runtime', label: 'Runtime', field: 'runtime', firstDir: 'desc' } as SortColumn]),
-  ];
-}
-
-function parseSortToken(raw: string | null): { field: SortField; dir: 'asc' | 'desc' } {
-  const [field, dir] = (raw ?? '').split(':');
-  if ((SORT_FIELDS as readonly string[]).includes(field ?? '') && (dir === 'asc' || dir === 'desc')) {
-    return { field: field as SortField, dir };
-  }
-  return { field: 'title', dir: 'asc' };
+/** The per-user facet gates (library.facetGates — ADR-051 C-06 populated-value gating). */
+export interface FacetGates {
+  watch: boolean;
+  bookProgress: boolean;
 }
 
 function parseRatingBound(raw: string | null): number | undefined {
   if (raw === null || raw === '') return undefined;
   const n = Number(raw);
   return Number.isFinite(n) && n >= 0 && n <= 10 ? n : undefined;
+}
+
+/** `YYYY-MM-DD` (the date input) or undefined — anything else is treated as absent. */
+function parseDayParam(raw: string | null): string | undefined {
+  return raw !== null && /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : undefined;
+}
+
+/** The stored preference for one wall (null = no stored row; undefined = still loading). */
+function storedViewFor(
+  prefs: WallPreference[] | undefined,
+  wall: LibraryWallId,
+): WallView | null | undefined {
+  if (prefs === undefined) return undefined;
+  const row = prefs.find((p) => p.wall === wall);
+  return row !== undefined && row.source === 'stored'
+    ? { view: row.view, groupBy: row.groupBy, sortField: row.sortField, sortDir: row.sortDir }
+    : null;
 }
 
 function LibraryContent({
@@ -206,12 +211,18 @@ function LibraryContent({
     : (tabs[0]?.key ?? MY_FIXES_TAB.key);
   const activeTab = tabs.find((t) => t.key === active) ?? tabs[0] ?? MY_FIXES_TAB;
 
+  // ADR-052 / DESIGN-026 D-06 (PLAN-029) — hydrate ALL wall preferences once (the browsers resolve
+  // their effective view/sort from these + the URL) and the per-user facet gates (ADR-051 C-06).
+  const prefs = trpc.library.preferences.getAll.useQuery(undefined, { refetchOnWindowFocus: false });
+  const gatesQuery = trpc.library.facetGates.useQuery(undefined, { refetchOnWindowFocus: false });
+  const gates: FacetGates = gatesQuery.data ?? { watch: false, bookProgress: false };
+
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   const selectTab = (key: TabKey) => {
-    // Switching tabs starts fresh: keep ONLY ?tab (drops filter/sort/search params) so a
+    // Switching tabs starts fresh: keep ONLY ?tab (drops filter/sort/search/view params) so a
     // filter set on Movies never leaks into TV/Music — the keyed remount below re-reads the
-    // clean URL. Documented in DESIGN-008 D-11.
+    // clean URL; the per-user preference refills the cleaned state (D-10 "tab-switch reset").
     // A tab switch is a SCREEN-level view change, so it PUSHES a history entry (DESIGN-004
     // D-19): Back restores the prior tab with whatever filter state its URL carried (those
     // edits replace-in-place within the tab's single entry), Forward re-applies. Refinements
@@ -264,22 +275,34 @@ function LibraryContent({
         {activeTab.arrKind ? (
           // Keyed by tab: switching media tabs REMOUNTS with fresh state, so nothing carries
           // over besides what the (tab-cleaned) URL says.
-          <MediaBrowser key={activeTab.key} arrKind={activeTab.arrKind} label={activeTab.label} />
+          <MediaBrowser
+            key={activeTab.key}
+            arrKind={activeTab.arrKind}
+            label={activeTab.label}
+            stored={storedViewFor(prefs.data, ARR_WALLS[activeTab.arrKind])}
+            gates={gates}
+          />
         ) : activeTab.key === 'peloton' || activeTab.key === 'youtube' ? (
           // ADR-038 — the ytdl-sub Library sub-tabs (read direct from k8plex Plex; poster grid).
+          // PLAN-029: these walls ARE the R2 grouped views (a Plex show is a discipline/channel).
           <YtdlsubBrowser
             key={activeTab.key}
             library={activeTab.key as YtdlsubTabKey}
             label={activeTab.label}
+            stored={storedViewFor(prefs.data, activeTab.key as LibraryWallId)}
           />
         ) : activeTab.key === 'books' ||
           activeTab.key === 'audiobooks' ||
           activeTab.key === 'comics' ? (
           // ADR-046 — the Books Library sub-tabs (read the app-owned books_items ledger; poster grid).
+          // PLAN-029: Books/Audiobooks default to the grouped-by-Author view with a flat alternative.
           <BooksBrowser
             key={activeTab.key}
+            wall={activeTab.key as LibraryWallId}
             mediaKind={BOOKS_TAB_KINDS[activeTab.key as BooksTabKey]}
             label={activeTab.label}
+            stored={storedViewFor(prefs.data, activeTab.key as LibraryWallId)}
+            gates={gates}
           />
         ) : (
           <MyFixesPanel />
@@ -289,13 +312,30 @@ function LibraryContent({
   );
 }
 
-// One media tab's browse UI: search + on-disk/wanted controls, the facet chip bar + sort bar
-// (D-10 engine, D-09 contract), and the poster grid with keyset infinite scroll. All result-
-// shaping state lives in the URL (see the contract at the top of this file).
-function MediaBrowser({ arrKind, label }: { arrKind: ArrKindName; label: string }) {
+// One media tab's browse UI: search + on-disk/wanted controls, the registry-declared facet chip
+// bar + sort bar (D-10 engine, D-09 contract, DESIGN-026 D-02/D-03 registry), the A–Z jump rail,
+// and the poster grid with keyset infinite scroll. All result-shaping state lives in the URL (see
+// the contract at the top of this file).
+function MediaBrowser({
+  arrKind,
+  label,
+  stored,
+  gates,
+}: {
+  arrKind: ArrKindName;
+  label: string;
+  /** The caller's stored wall preference (null = none; undefined = still loading). */
+  stored: WallView | null | undefined;
+  gates: FacetGates;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+
+  const wall = ARR_WALLS[arrKind];
+  // DESIGN-026 D-02/D-03 — this wall's capability declaration (sorts + facets it can answer).
+  const entry: ViewRegistryEntry = registryFor(`${wall}:wall`);
+  const sortKeys = useMemo(() => entry.sorts.map((s) => s.key), [entry]);
 
   // ── URL → state (the URL is the single source of truth) ──
   const qParam = searchParams.get('q') ?? '';
@@ -304,18 +344,46 @@ function MediaBrowser({ arrKind, label }: { arrKind: ArrKindName; label: string 
     ? (diskRaw as OnDiskFilter)
     : 'any';
   const wantedOnly = searchParams.get('wanted') === '1';
+  // The registry's enum facets → the FilterMap (repeated URL params, comma-safe).
+  const enumFacets = useMemo(() => entry.facets.filter((f) => f.kind === 'enum'), [entry]);
   const filters = useMemo<FilterMap<LibraryField>>(() => {
     const out: FilterMap<LibraryField> = {};
-    for (const f of FILTER_FIELDS) {
+    for (const f of enumFacets) {
       const vals = [...new Set(searchParams.getAll(f.param).filter((v) => v !== ''))];
-      if (vals.length > 0) out[f.field] = vals;
+      if (vals.length > 0) out[f.key as LibraryField] = vals;
     }
     return out;
-  }, [searchParams]);
+  }, [searchParams, enumFacets]);
   const ratingMin = parseRatingBound(searchParams.get('rmin'));
   const ratingMax = parseRatingBound(searchParams.get('rmax'));
-  const sort = parseSortToken(searchParams.get('sort'));
-  const sortToken: SortToken = `${sort.field}:${sort.dir}`;
+  const releasedFromDay = parseDayParam(searchParams.get('rfrom'));
+  const releasedToDay = parseDayParam(searchParams.get('rto'));
+  const watchRaw = searchParams.get('watch');
+  const watchState = WATCH_STATE_OPTIONS.some((o) => o.value === watchRaw)
+    ? (watchRaw as (typeof WATCH_STATE_OPTIONS)[number]['value'])
+    : undefined;
+  const letterRaw = searchParams.get('at');
+  const letter = letterRaw !== null && /^[a-z]$/.test(letterRaw) ? letterRaw : null;
+
+  // ADR-052 (PLAN-029) — the effective sort: explicit URL token WINS (shared-link fidelity, never
+  // persisted back), else the stored preference (validated against THIS level's registry keys — the
+  // store carries free text), else the R6 default. `prefsReady` gates the first query so the wall
+  // never renders the default and then snaps to the stored sort (ADR-015 — no re-orientation).
+  const prefsReady = stored !== undefined;
+  const urlSort = parseWallSortToken(searchParams.get('sort'), sortKeys);
+  const storedSort =
+    stored != null && sortKeys.includes(stored.sortField)
+      ? { field: stored.sortField, dir: stored.sortDir }
+      : null;
+  const sort = urlSort ?? storedSort ?? { field: entry.defaultSort.field, dir: entry.defaultSort.dir };
+  const sortToken = `${sort.field}:${sort.dir}`;
+
+  // R6 "remember last-used sort" — persisted ONLY on explicit selection (cycleSort below); a
+  // URL-driven render never writes back (the ADR-052 shared-link rule).
+  const utils = trpc.useUtils();
+  const setPreference = trpc.library.preferences.set.useMutation({
+    onSuccess: () => utils.library.preferences.getAll.invalidate(),
+  });
 
   // Merge one patch into the URL (null deletes; arrays become repeated params). Reads the
   // LIVE location rather than the hook value so two quick patches never clobber each other.
@@ -346,61 +414,87 @@ function MediaBrowser({ arrKind, label }: { arrKind: ArrKindName; label: string 
   }, [query]);
 
   const setFieldValues = (field: LibraryField, values: string[]) => {
-    const param = FILTER_FIELDS.find((f) => f.field === field)!.param;
+    const param = enumFacets.find((f) => f.key === field)!.param;
     patchParams({ [param]: values.length > 0 ? values : null });
   };
 
-  // ── sort control (the ported nextSort/arrowFor engine) ──
-  const sortColumns = sortColumnsFor(arrKind);
-  // Two-state click cycle per column: first click → firstDir, then it just toggles direction
-  // (no cleared state — the active column always shows an arrow; Title A–Z is the reachable
-  // default via the Title column).
+  // ── sort control (the ported nextSort/arrowFor engine, columns from the registry) ──
+  // Two-state click cycle per column: first click → the registry's firstDir, then it just toggles
+  // direction (no cleared state — the active column always shows an arrow).
   const clickCycle = Object.fromEntries(
-    sortColumns.map((c) => [
-      c.col,
+    entry.sorts.map((c) => [
+      c.key,
       c.firstDir === 'asc'
-        ? { asc: `${c.field}:asc` as SortToken, desc: `${c.field}:desc` as SortToken }
-        : { asc: `${c.field}:desc` as SortToken, desc: `${c.field}:asc` as SortToken },
+        ? { asc: `${c.key}:asc`, desc: `${c.key}:desc` }
+        : { asc: `${c.key}:desc`, desc: `${c.key}:asc` },
     ]),
-  ) as Record<string, { asc: SortToken; desc: SortToken }>;
+  ) as Record<string, { asc: string; desc: string }>;
   // Direction-true map for the ▲/▼ glyph.
   const arrowCycle = Object.fromEntries(
-    sortColumns.map((c) => [
-      c.col,
-      { asc: `${c.field}:asc` as SortToken, desc: `${c.field}:desc` as SortToken },
-    ]),
-  ) as Record<string, { asc: SortToken; desc: SortToken }>;
+    entry.sorts.map((c) => [c.key, { asc: `${c.key}:asc`, desc: `${c.key}:desc` }]),
+  ) as Record<string, { asc: string; desc: string }>;
   const cycleSort = (col: string) => {
-    const next = nextSort<SortToken, string>(sortToken, col, clickCycle);
-    patchParams({ sort: next === DEFAULT_SORT ? null : next });
+    const next = nextSort<string, string>(sortToken, col, clickCycle);
+    const [field, dir] = next.split(':') as [string, WallSortDir];
+    // A sort change is a REFINEMENT (replace, D-19) and drops any armed A–Z jump; the explicit
+    // token stays in the URL for shareability. Persist the last-used sort (R6) — an explicit
+    // user selection, the one sanctioned write point.
+    patchParams({ sort: next, at: null });
+    // The ledger walls have a single view shape (Movies/Music flat, TV hierarchy — R2), so the
+    // persisted row carries the wall's fixed shape + the newly chosen sort.
+    setPreference.mutate({
+      wall,
+      view: WALL_VIEW_DEFAULTS[wall].view,
+      groupBy: WALL_VIEW_DEFAULTS[wall].groupBy,
+      sortField: field,
+      sortDir: dir,
+    });
   };
 
   // ── facets + search (D-09) ──
   const facets = trpc.ledger.filterFacets.useQuery({ arrKind });
   // filterFacets already returns resolutions in RESOLUTIONS enum order (server-side, D-09) —
-  // no client re-sort needed; every facet is used verbatim.
-  const facetValues = (field: LibraryField): readonly string[] =>
-    facets.data === undefined ? [] : facets.data[field];
+  // no client re-sort needed; every facet is used verbatim. Decades arrive newest-first.
+  const facetValues = (field: LibraryField): readonly string[] => {
+    if (facets.data === undefined) return [];
+    if (field === 'decade') return facets.data.decades.map((d) => String(d));
+    return facets.data[field];
+  };
 
   const resolutionsInput = filterValues(filters, 'resolutions').filter((v): v is ResolutionName =>
     Object.hasOwn(RESOLUTION_LABELS, v),
   );
+  const decadesInput = filterValues(filters, 'decade')
+    .map((v) => Number(v))
+    .filter((n) => Number.isInteger(n));
+  // The active sort must be an A–Z sort for the jump letter to bite (registry azSorts, asc).
+  const azActive = (entry.azSorts as readonly string[]).includes(sort.field) && sort.dir === 'asc';
   const search = trpc.ledger.search.useInfiniteQuery(
     {
       query: qParam.trim() === '' ? undefined : qParam.trim(),
       arrKind,
       onDisk,
       ...(wantedOnly ? { wanted: true } : {}),
-      sort,
+      // The registry pinned this wall's keys to LibrarySortField at compile time (library-view-registry).
+      sort: { field: sort.field as LibrarySortField, dir: sort.dir },
       ...(filters.genres ? { genres: filters.genres } : {}),
       ...(resolutionsInput.length > 0 ? { resolutions: resolutionsInput } : {}),
       ...(filters.requesters ? { requesters: filters.requesters } : {}),
       ...(filters.sourceCollections ? { sourceCollections: filters.sourceCollections } : {}),
       ...(ratingMin !== undefined ? { ratingMin } : {}),
       ...(ratingMax !== undefined ? { ratingMax } : {}),
+      // PLAN-029 — the Decade / Release-Date-range / watch-state facets + the A–Z jump letter.
+      ...(decadesInput.length > 0 ? { decades: decadesInput } : {}),
+      ...(releasedFromDay !== undefined ? { releasedFrom: `${releasedFromDay}T00:00:00.000Z` } : {}),
+      ...(releasedToDay !== undefined ? { releasedTo: `${releasedToDay}T23:59:59.999Z` } : {}),
+      ...(watchState !== undefined ? { watchState } : {}),
+      ...(azActive && letter !== null ? { letter } : {}),
       limit: 50,
     },
     {
+      // Wait for the stored preference so the first paint already wears the resolved sort
+      // (skeleton → resolved grid; never default-then-snap).
+      enabled: prefsReady,
       getNextPageParam: (last) => last.nextCursor ?? undefined,
       // Keep the previous grid rendered (dimmed below) while a filter/sort refetch resolves —
       // results swap in place, the layout never jumps (ADR-015).
@@ -410,6 +504,15 @@ function MediaBrowser({ arrKind, label }: { arrKind: ArrKindName; label: string 
 
   const items = search.data?.pages.flatMap((p) => p.items) ?? [];
   const refreshing = search.isPlaceholderData && search.isFetching;
+
+  // DESIGN-026 D-09 — the A–Z jump rail (a fixed overlay — never reflows the grid; visibility per
+  // the showJumpBar rule: A–Z sort + big wall, or a jump already armed).
+  const jumpVisible = showJumpBar({
+    isAzSort: azActive,
+    activeLetter: letter,
+    itemCount: items.length,
+    hasNextPage: search.hasNextPage === true,
+  });
 
   // Keyset infinite scroll: a sentinel below the grid pulls the next page as it approaches
   // the viewport; the Load more button stays as the visible/manual fallback.
@@ -466,66 +569,107 @@ function MediaBrowser({ arrKind, label }: { arrKind: ArrKindName; label: string 
           </div>
         </div>
 
-        {/* Filter chip bar (D-10 engine): one permanent chip per facet — empty chips are the
-            ghost "add a filter" affordance, active chips carry the OR-ed CSV + the clear ✕.
+        {/* Filter chip bar (D-10 engine, DESIGN-026 D-03 contents): the registry declares exactly
+            which facets THIS wall answers — one permanent chip per declared facet (empty chips are
+            the ghost "add a filter" affordance), rendered in registry order; the per-user watch
+            chip appears only for a viewer with watch data (ADR-051 C-06 — gated, so it sits LAST).
             A FIXED-HEIGHT single row that scrolls horizontally when crowded (ADR-015: the bar
             never grows, so the grid never shifts); editors overlay via fixed positioning. */}
         <div className="library-chipbar" role="group" aria-label="Filters">
-          {FILTER_FIELDS.map((f) => (
-            <FilterChip
-              key={f.field}
-              fieldLabel={f.label}
-              values={filterValues(filters, f.field)}
-              kind="enum"
-              enumValues={facetValues(f.field)}
-              enumLabel={f.field === 'resolutions' ? (v) => RESOLUTION_LABELS[v] ?? v : undefined}
-              labels={CHIP_LABELS}
-              onAdd={(v) =>
-                setFieldValues(f.field, filterValues(addFilterValue(filters, f.field, v), f.field))
-              }
-              onRemove={(v) =>
-                setFieldValues(
-                  f.field,
-                  filterValues(removeFilterValue(filters, f.field, v), f.field),
-                )
-              }
-              onClear={() => setFieldValues(f.field, [])}
-            />
-          ))}
-          {/* The bounded rating chip — on ALL tabs (superseded the Movies-only judgment call,
-              2026-07-06): D-09's ratingMin/Max now COALESCE(imdb_rating, tmdb_rating), so the
-              Sonarr/Lidarr community rating (in the tmdb slots, ADR-018 C-07) filters too. */}
-          <RatingChip
-            min={ratingMin}
-            max={ratingMax}
-            onChange={(min, max) =>
-              patchParams({
-                rmin: min === undefined ? null : String(min),
-                rmax: max === undefined ? null : String(max),
-              })
+          {entry.facets.map((facet) => {
+            if (facet.kind === 'enum') {
+              const field = facet.key as LibraryField;
+              return (
+                <FilterChip
+                  key={facet.key}
+                  fieldLabel={facet.label}
+                  values={filterValues(filters, field)}
+                  kind="enum"
+                  enumValues={facetValues(field)}
+                  enumLabel={
+                    facet.key === 'resolutions'
+                      ? (v) => RESOLUTION_LABELS[v] ?? v
+                      : facet.key === 'decade'
+                        ? decadeLabel
+                        : undefined
+                  }
+                  labels={CHIP_LABELS}
+                  onAdd={(v) =>
+                    setFieldValues(field, filterValues(addFilterValue(filters, field, v), field))
+                  }
+                  onRemove={(v) =>
+                    setFieldValues(field, filterValues(removeFilterValue(filters, field, v), field))
+                  }
+                  onClear={() => setFieldValues(field, [])}
+                />
+              );
             }
-          />
+            if (facet.kind === 'range-date') {
+              return (
+                <DateRangeChip
+                  key={facet.key}
+                  label={facet.label}
+                  from={releasedFromDay}
+                  to={releasedToDay}
+                  onChange={(from, to) => patchParams({ rfrom: from ?? null, rto: to ?? null })}
+                />
+              );
+            }
+            if (facet.kind === 'range-rating') {
+              // The bounded rating chip — D-09's ratingMin/Max COALESCE(imdb_rating, tmdb_rating), so
+              // the Sonarr community rating (in the tmdb slots, ADR-018 C-07) filters too.
+              return (
+                <RatingChip
+                  key={facet.key}
+                  min={ratingMin}
+                  max={ratingMax}
+                  onChange={(min, max) =>
+                    patchParams({
+                      rmin: min === undefined ? null : String(min),
+                      rmax: max === undefined ? null : String(max),
+                    })
+                  }
+                />
+              );
+            }
+            if (facet.kind === 'select' && facet.gate === 'watch') {
+              // ADR-053 / DESIGN-026 D-07 — the per-user watch-state facet, offered ONLY when the
+              // viewer has any attributed watch rows (populated-value gate — never a dead chip).
+              if (!gates.watch) return null;
+              return (
+                <SelectChip
+                  key={facet.key}
+                  label={facet.label}
+                  value={watchState}
+                  options={WATCH_STATE_OPTIONS}
+                  onChange={(v) => patchParams({ watch: v ?? null })}
+                />
+              );
+            }
+            return null;
+          })}
         </div>
 
-        {/* Sort bar (D-10 nextSort/arrowFor): each column toggles best-first ↔ reversed (two-
-            state — the active column always shows an arrow; Title A–Z is the reachable default via
-            the Title column). Same fixed-height scroll-row pattern as the chip bar. */}
+        {/* Sort bar (D-10 nextSort/arrowFor over the REGISTRY's keys — DESIGN-026 D-02: this wall
+            offers exactly the sorts it can answer; R6 default = recently-added for the video walls).
+            Each column toggles best-first ↔ reversed (two-state — the active column always shows an
+            arrow). Same fixed-height scroll-row pattern as the chip bar. */}
         <div className="library-sortbar" role="group" aria-label="Sort">
           <span className="library-sortbar__label">Sort</span>
-          {sortColumns.map((c) => {
-            const isActive = sort.field === c.field;
+          {entry.sorts.map((c) => {
+            const isActive = sort.field === c.key;
             return (
               <button
-                key={c.col}
+                key={c.key}
                 type="button"
                 className={`sort-btn${isActive ? ' is-active' : ''}`}
                 aria-pressed={isActive}
-                onClick={() => cycleSort(c.col)}
+                onClick={() => cycleSort(c.key)}
               >
                 {c.label}
                 {/* fixed-width slot: the arrow appearing never nudges neighbors (ADR-015) */}
                 <span className="sort-btn__arrow" aria-hidden="true">
-                  {arrowFor<SortToken, string>(sortToken, c.col, arrowCycle).trim()}
+                  {arrowFor<string, string>(sortToken, c.key, arrowCycle).trim()}
                 </span>
               </button>
             );
@@ -533,7 +677,9 @@ function MediaBrowser({ arrKind, label }: { arrKind: ArrKindName; label: string 
         </div>
       </div>
 
-      {search.isLoading ? (
+      {jumpVisible ? <LetterJumpBar active={letter} onJump={(l) => patchParams({ at: l })} /> : null}
+
+      {!prefsReady || search.isPending ? (
         // Initial load: skeleton poster boxes hold the exact grid geometry (ADR-015 — no
         // spinner that collapses into a differently-sized result).
         <div className="media-list poster-grid" aria-hidden="true" data-testid="poster-skeleton">

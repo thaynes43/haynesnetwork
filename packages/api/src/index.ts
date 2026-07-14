@@ -97,6 +97,11 @@ export { booksCoverUrlFor, toBooksListItem, BOOKS_SORTS } from './books-query';
 export type { BooksListItem, BooksSort, BooksSearchInput, BookReadState } from './books-query';
 export { BOOK_READ_STATES } from './books-query';
 export type { BooksSearchResult, BooksDetailResult } from './routers/books';
+// ADR-051 / DESIGN-026 (PLAN-029 step 2) — the engine key/facet types the client-side registry
+// type-checks its declarations against (TYPE-ONLY — erased at compile; the registry is authoritative
+// on which (wall, view-level) offers which key, these unions are the per-engine supersets).
+export type { LibrarySortField, WatchState } from './ledger-query';
+export type { BooksGroup, BookLengthBucket, BookFormatKey } from './books-query';
 // ADR-052 / DESIGN-026 D-06 (PLAN-029) — the per-user Library preferences wire type (the /library route
 // + the UX agent's client import it TYPE-ONLY). Re-exported so the inferred caller type stays portable.
 export type { WallPreference } from './routers/library';

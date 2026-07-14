@@ -8,7 +8,10 @@ import { BOOKS_MEDIA_KINDS, type BooksItemRow, type BooksMediaKind } from '@hnet
 // The sort options the Books walls offer (title default; the rest are per-kind-useful). ADR-051 C-05 /
 // DESIGN-026 D-05 (PLAN-029) adds 'released' — the precise ABS publishedDate (books_items.released_at),
 // a peer of 'year' for the Audiobooks Release-Date sort. Kavita rows have null released_at (sort last).
-export const BOOKS_SORTS = ['title', 'author', 'added', 'year', 'released', 'duration'] as const;
+// DESIGN-026 D-03 (PLAN-029 step 2) adds 'pages' — the Kavita page-count sort for Books/Comics. Which
+// wall OFFERS which key is the registry's call (apps/web/lib/library-view-registry.ts — authoritative
+// per ADR-051); this array is the engine-side superset.
+export const BOOKS_SORTS = ['title', 'author', 'added', 'year', 'released', 'duration', 'pages'] as const;
 export type BooksSort = (typeof BOOKS_SORTS)[number];
 
 // ADR-053 / DESIGN-026 D-07 (PLAN-029) — the per-user ABS read-state facet (viewer-scoped; Audiobooks
@@ -17,11 +20,57 @@ export type BooksSort = (typeof BOOKS_SORTS)[number];
 export const BOOK_READ_STATES = ['read', 'unread', 'in_progress'] as const;
 export type BookReadState = (typeof BOOK_READ_STATES)[number];
 
+// ---------------------------------------------------------------------------
+// DESIGN-026 D-08 (PLAN-029 step 2/6) — the per-medium facet vocabulary
+// ---------------------------------------------------------------------------
+
+/** Length buckets (audiobook duration / Kavita page count). The BOUNDARIES are the build-phase UX
+ *  call DESIGN-026 D-11 defers; they live server-side so the wire keys stay stable while the bounds
+ *  stay tunable. min inclusive, max exclusive. */
+export const BOOK_LENGTH_BUCKETS = ['short', 'medium', 'long'] as const;
+export type BookLengthBucket = (typeof BOOK_LENGTH_BUCKETS)[number];
+export const BOOK_LENGTH_BOUNDS: Record<
+  'duration' | 'pages',
+  Record<BookLengthBucket, { min?: number; max?: number }>
+> = {
+  /** Audiobook runtime, whole seconds: <6 h · 6–12 h · >12 h. */
+  duration: { short: { max: 21_600 }, medium: { min: 21_600, max: 43_200 }, long: { min: 43_200 } },
+  /** Kavita page count: <200 · 200–400 · >400. */
+  pages: { short: { max: 200 }, medium: { min: 200, max: 400 }, long: { min: 400 } },
+};
+
+/** Kavita `attrs.format` (MangaFormat) codes → the stable facet keys + user labels the Format chip
+ *  offers (DESIGN-026 D-08 "epub vs cbz/cbr"). ABS rows carry no format (the facet never offers them). */
+export const KAVITA_FORMATS = [
+  { key: 'epub', code: 3, label: 'EPUB' },
+  { key: 'archive', code: 1, label: 'CBZ/CBR' },
+  { key: 'pdf', code: 4, label: 'PDF' },
+  { key: 'image', code: 0, label: 'Image' },
+  { key: 'unknown', code: 2, label: 'Other' },
+] as const;
+export type BookFormatKey = (typeof KAVITA_FORMATS)[number]['key'];
+export const BOOK_FORMAT_KEYS = KAVITA_FORMATS.map((f) => f.key) as [BookFormatKey, ...BookFormatKey[]];
+
 export const booksSearchInputSchema = z.object({
   mediaKind: z.enum(BOOKS_MEDIA_KINDS),
   query: z.string().trim().max(200).optional(),
   genres: z.array(z.string().min(1)).max(50).optional(),
+  // DESIGN-026 D-08 (PLAN-029 step 2) — the per-medium facets. Same chip semantics as the ledger
+  // engine: same-field OR, cross-field AND. Which wall OFFERS which facet is the registry's call.
+  authors: z.array(z.string().min(1)).max(50).optional(),
+  narrators: z.array(z.string().min(1)).max(50).optional(),
+  series: z.array(z.string().min(1)).max(50).optional(),
+  languages: z.array(z.string().min(1)).max(50).optional(),
+  formats: z.array(z.enum(BOOK_FORMAT_KEYS)).max(KAVITA_FORMATS.length).optional(),
+  /** Length buckets — OR-ed ranges over duration_seconds (audiobook) / page_count (book/comic). */
+  lengths: z.array(z.enum(BOOK_LENGTH_BUCKETS)).max(BOOK_LENGTH_BUCKETS.length).optional(),
+  /** DESIGN-026 D-09 — the A–Z jump: page to the first item at this letter (applied to the active
+   *  A–Z sort's column; meaningful only for the asc title/author sorts — the client gates it). */
+  letter: z.string().regex(/^[a-z]$/).optional(),
   sort: z.enum(BOOKS_SORTS).default('title'),
+  /** PLAN-029 (R5 "+direction") — flips the primary sort column; absent = the sort's natural
+   *  direction (A–Z for title/author, newest/most-first for the rest). Nulls stay LAST either way. */
+  dir: z.enum(['asc', 'desc']).optional(),
   /** ADR-053 / DESIGN-026 D-07 — the viewer's read-state facet (applied server-side against the
    *  session user's user_book_progress; ignored for a viewer with no ABS mapping/progress). */
   readState: z.enum(BOOK_READ_STATES).optional(),
@@ -59,6 +108,56 @@ export interface BooksListItem {
 export function booksCoverUrlFor(source: string, externalId: string, coverRef: string | null): string | null {
   if (!coverRef) return null;
   return `/api/books/cover?source=${encodeURIComponent(source)}&id=${encodeURIComponent(externalId)}&v=${encodeURIComponent(coverRef)}`;
+}
+
+// ---------------------------------------------------------------------------
+// DESIGN-026 D-04 (PLAN-029 step 3) — the group-view aggregate
+// ---------------------------------------------------------------------------
+
+/** One aggregate card of a grouped wall: the group key/label, its member count, and a bounded
+ *  cover sample for the stacked-cover motif (art density is the build's D-11 call — 3). */
+export interface BooksGroup {
+  /** The raw grouping value (drill-in filter key — `?group=<key>`). */
+  key: string;
+  label: string;
+  count: number;
+  /** Up to `maxCovers` member cover-proxy URLs, in the wall's A–Z order. */
+  coverUrls: string[];
+}
+
+/** The slice of a books_items row the group aggregate needs. */
+export interface BooksGroupSourceRow {
+  author: string | null;
+  sortTitle: string;
+  source: string;
+  externalId: string;
+  coverRef: string | null;
+}
+
+/**
+ * Aggregate a wall's live rows into author group cards (pure — the router feeds it one bounded
+ * SELECT; the books walls are ≤ a few thousand rows, ADR-046). Rows with a NULL key are SKIPPED
+ * (live-verified ≤4% on the author-grouped walls — they stay reachable via the flat view; an
+ * "Unknown" pseudo-group would need an unfilterable sentinel key). Groups come back label-A–Z;
+ * the client may re-sort by count.
+ */
+export function aggregateBookGroups(rows: BooksGroupSourceRow[], maxCovers = 3): BooksGroup[] {
+  const groups = new Map<string, { count: number; coverUrls: string[] }>();
+  const sorted = [...rows].sort((a, b) => a.sortTitle.localeCompare(b.sortTitle));
+  for (const row of sorted) {
+    const key = row.author?.trim();
+    if (!key) continue;
+    const group = groups.get(key) ?? { count: 0, coverUrls: [] };
+    group.count += 1;
+    if (group.coverUrls.length < maxCovers) {
+      const cover = booksCoverUrlFor(row.source, row.externalId, row.coverRef);
+      if (cover !== null) group.coverUrls.push(cover);
+    }
+    groups.set(key, group);
+  }
+  return [...groups.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([key, g]) => ({ key, label: key, count: g.count, coverUrls: g.coverUrls }));
 }
 
 /** Project a books_items row to the wall's list-item shape (builds the cover-proxy URL). */

@@ -1,10 +1,11 @@
 # PLAN-029: Library views & grouping (Plex-style) + Sorting & Filtering overhaul
 
-- **Status:** DESIGN COMPLETE (2026-07-11 — docs-only PR: ADR-051/052/053 + DESIGN-026 + PRD
-  R-165..R-171 + glossary T-149..T-155; see "Design phase complete" below). NOT dispatched for
-  build; **agent types must be discussed with the owner before dispatch** (standing rule
-  2026-07-11). Sequencing: PLAN-036 (history contract) + PLAN-034 (Helpdesk) have LANDED; owner
-  ordering puts PLAN-031 (MAM) ahead of 029's build. Recon folded in
+- **Status:** BUILD COMPLETE (2026-07-13). Data/domain steps 1/4/5 landed in PR #243 (migrations
+  0042–0044); the UX steps 2/3/6/7 + tests landed in the `feat/plan-029-sort-filter-ux` PR (the
+  registry seam, view/group shells, facet UI + A–Z jump + URL contract, the D-11 pixel pass;
+  DESIGN-026 flipped Draft → Accepted — the ratified status the docs-only PR forgot). Deferred
+  residuals tracked under "Open items" below. Design-phase history: docs-only PR ADR-051/052/053 +
+  DESIGN-026 + PRD R-165..R-171 + glossary T-149..T-155 (2026-07-11); recon folded in
   (`.agents/context/2026-07-11-plex-sort-filter-recon.md`, its unverified claims corrected by live
   SELECTs during the design phase).
 - **Collections are OUT OF SCOPE** (owner ruling: "large chunk, no benefit to increasing its
@@ -74,28 +75,39 @@ Agent-type discussion with the owner still required before any build dispatch (s
 
 ## Build-phase steps (reference the docs above)
 
-1. **`released_at` data layer** (DESIGN-026 D-05 / ADR-051 C-05) — new nullable `media_metadata.released_at`
-   (migration, next-free); Radarr/Sonarr adapter fields + ABS published-date fetch (`@hnet/arr`/`@hnet/sync`);
-   `SORT_SPECS.released_at` + Release-Date range facet.
-2. **The registry seam** (DESIGN-026 D-02/D-03) — the per-(wall, view-level) `LibraryViewRegistry`; extend
-   `LIBRARY_SORT_FIELDS`/`LIBRARY_FILTER_SHAPE` (ledger) + `BOOKS_SORTS`/`books.filterFacets` (books) + the
-   live-Plex read; each level offers ONLY answerable dimensions.
-3. **View + grouping shells** (DESIGN-026 D-01/D-04) — the view selector, flat/grouped/hierarchy shapes, the
-   group-by aggregate cards + drill-in, R2 defaults.
-4. **Per-user preferences** (DESIGN-026 D-06 / ADR-052) — `library_preferences` table (guard-listed,
-   single-writer, migration) + `library.preferences.get`/`set` + the URL-precedence resolver.
-5. **Per-user watch/read seam** (DESIGN-026 D-07 / ADR-053) — the mapping table (guard-listed, single-writer) +
-   Tautulli `user_id` subset add + per-user watch read-model (ADDITIVE) + ABS `mediaProgress` read; the
-   registry's per-user facets; **Kavita read-state NOT in this plan**.
-6. **Facet UI + A–Z jump bar + URL contract** (DESIGN-026 D-08/D-09/D-10) — book genre chips, author/series,
-   narrator, format/length; the jump bar; `?view`/`?group` URL sync riding D-19 (view switches PUSH,
-   refinements REPLACE).
-7. **The build UX pass owns D-11's deferred pixels** — view-selector affordance, group-card art density,
-   jump-bar placement, facet bucket boundaries, per-view sort presentation. Screenshot review per the standing
-   owner rule.
-8. **Tests** (DESIGN-026 Test strategy) — registry-asymmetry unit tests, `released_at` adapter + keyset-null
-   tests, the pref URL-precedence resolver, per-user attribution; integration under the ADR-047 gate; e2e
-   view-switch history + grouped drill-in + shared-link override + 390px.
+1. ✅ **`released_at` data layer** (DESIGN-026 D-05 / ADR-051 C-05) — DONE in PR #243 (migration 0042):
+   `media_metadata.released_at` + `books_items.released_at`; Radarr/Sonarr adapter fields + ABS
+   published-date fetch; `SORT_SPECS.released_at` + Release-Date range facet.
+2. ✅ **The registry seam** (DESIGN-026 D-02/D-03) — DONE (UX PR): `apps/web/lib/library-view-registry.ts`
+   declares per-(wall, view-level) sorts/facets (14 levels; each offers ONLY answerable dimensions —
+   compile-pinned to `LibrarySortField`/`BooksSort`); `BOOKS_SORTS` grew `pages` + an explicit `dir`;
+   `books.filterFacets` grew authors/narrators/series/languages/formats; `books.search` grew the matching
+   predicates + length buckets + the A–Z `letter`; `ledger.filterFacets` grew `decades`;
+   `LIBRARY_FILTER_SHAPE` grew `letter`; the live-Plex episode dims ride the already-parsed fields.
+3. ✅ **View + grouping shells** (DESIGN-026 D-01/D-04) — DONE (UX PR): view selector (Books/Audiobooks
+   grouped⇄flat), `books.groups` author aggregate cards (count + 3-cover stack) + `?group=` drill-in,
+   R2 defaults live via `resolveLibraryView` (Peloton/YouTube/Comics walls ARE their natural grouped
+   shapes; TV hierarchy untouched).
+4. ✅ **Per-user preferences** (DESIGN-026 D-06 / ADR-052) — DONE in PR #243 (migration 0043) +
+   wired in the UX PR (resolution on every wall; persistence on explicit selection only).
+5. ✅ **Per-user watch/read seam** (DESIGN-026 D-07 / ADR-053) — DONE in PR #243 (migration 0044) +
+   the UX PR's `library.facetGates`-gated Watched/Read chips; **Kavita read-state NOT in this plan**.
+6. ✅ **Facet UI + A–Z jump bar + URL contract** (DESIGN-026 D-08/D-09/D-10) — DONE (UX PR): book
+   genre/author/narrator/series/language/format/length chips (value-gated), Decade + Released-range
+   chips on the *arr walls, watch/read select chips (gated), the fixed-overlay A–Z rail (`?at=`),
+   `?view`/`?group` riding D-19 (view switches + drill-ins PUSH, refinements REPLACE, bare URLs on
+   multi-shape walls CANONICALIZE via replace).
+7. ✅ **The build UX pass (D-11 pixels)** — DONE (UX PR): `.seg` segmented view selector (leftmost in
+   the toolbar), 3-cover fanned group-card stacks in the reserved 2:3 box, right-edge fixed letter
+   rail (translucent pill, compact at 390px), length buckets (<6 h/6–12 h/>12 h; <200/200–400/>400 pp),
+   per-view sort pills with reserved arrow slots. Screenshots captured via
+   `e2e/support/capture-library-views.ts` for the owner review.
+8. ✅ **Tests** (DESIGN-026 Test strategy) — #243 shipped the adapter/keyset/resolver/attribution units;
+   the UX PR adds the registry-asymmetry battery + mirror-parity units (`apps/web/lib/__tests__/`),
+   books facet/groups/letter/dir integration (`packages/api/__tests__/books*.test.ts`), decades/letter/
+   facetGates integration (`library-views.test.ts`), and the `library-views.spec.ts` e2e (view-switch
+   history, grouped drill-in + Back, shared-link override without write-back, facet chips + gates,
+   A–Z jump, 390×844).
 
 ## Shape (for the design phase)
 
@@ -117,7 +129,21 @@ watch/read-state seam (R7 — the only new sync/domain surface in the plan).
   `books_items.released_at`), **0043** (`library_preferences`), **0044** (`user_account_map` +
   `user_media_watch` + `user_book_progress`). Steps 2/3/6/7 (the registry seam, view/group shells,
   facet UI + jump bar + URL contract, the UX pass) remain for the UX agent's follow-up PR.
-- DEFERRED to the build UX pass (DESIGN-026 D-11), not lost: view-selector affordance, group-card
+- ~~DEFERRED to the build UX pass (DESIGN-026 D-11), not lost: view-selector affordance, group-card
   art density, jump-bar placement, facet bucket boundaries, alt view shapes per wall, optional
   Kavita per-series metadata fetch (year/genre facets), optional wider live-Plex read (Season/
-  Episode rating/genre/resolution).
+  Episode rating/genre/resolution).~~ RESOLVED by the UX build (see step 7) except the still-open
+  residuals below.
+- **Residuals deferred OUT of the 029 build (honest gaps, all bounded):**
+  - TV Shows "Last Episode Added" rollup sort (D-03) — needs per-episode added dates the ledger
+    does not sync (a Sonarr-episode sync add); the registry omits it rather than fake it.
+  - Kavita per-series metadata fetch for Books/Comics year/genre facets (Q-02 — unchanged).
+  - Wider live-Plex read for Season/Episode rating/genre/resolution facets + Peloton
+    instructor/duration-bucket facets (Q-04 — per-need).
+  - Year-RANGE chip UI on the ledger walls (wire `yearMin`/`yearMax` shipped in #243 and covered by
+    tests; the Decade enum + Released-range chips cover the exploration need — a chip-bar-budget call).
+  - A–Z jump on the client-side walls (ytdl-sub shows, grouped author cards) — the flat/keyset walls
+    carry it; the grouped walls are already condensed.
+  - Gate-ON e2e for the per-user Watched/Read chips — the hermetic personas have no attributed
+    watch/progress rows (seeding them needs a signed-in user id); gate-OFF (chip hidden) is e2e-proven,
+    gate-ON logic is unit-covered (`library.facetGates` + the domain tests from #243).
