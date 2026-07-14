@@ -61,6 +61,26 @@ workflow run** — do NOT re-push the tag:
   gh run rerun <release-please-run-id>   # re-runs the in-job build + push
   ```
 
+### 1b. Deploy gate: wait for the WORKFLOW to complete, not the manifest (2026-07-14)
+
+The image **manifest** appears in GHCR seconds before its **cosign signature** (a separate OCI
+artifact, subject to GHCR read-after-write lag — the same propagation the in-run `cosign verify`
+gate retries through). **Bumping haynes-ops + force-reconciling the moment the manifest returns
+200 races the signature**: Kyverno's admission check sees "no signatures found", helm-controller
+burns its retries, and the HelmRelease STALLS with a rollback (fail-safe — the old pods keep
+serving; hit live on the v0.50.1 deploy). The deterministic gate:
+
+  ```bash
+  # release-please run on main == build + push + sign + verify; success ⇒ signature READABLE
+  gh run list --workflow=release-please.yml --branch=main --limit 1 \
+    --json status,conclusion --jq '.[0] | .status + "/" + (.conclusion // "")'
+  # proceed to the haynes-ops bump ONLY on "completed/success"
+  ```
+
+If a deploy stalls on `no signatures found` anyway: wait ~5 min, then
+`flux reconcile helmrelease haynesnetwork -n frontend --force` — the forced reconcile resets the
+stalled retries and passes once the signature is readable (proven pattern).
+
 Confirm the image exists **and is signed** before touching `haynes-ops`:
 
 ```bash
