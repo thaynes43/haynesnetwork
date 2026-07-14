@@ -85,3 +85,10 @@ export * from './library-preferences';
 export * from './user-account-map';
 export * from './user-media-watch';
 export * from './user-book-progress';
+// ADR-055 / DESIGN-028 (PLAN-044 — Goodreads requests MVP) — the Integration tables: one row per
+// (user, provider) link (user_integrations), the synced shelf-RSS mirror (integration_shelf_items), and
+// the request / Missing ledger tracking both formats (book_requests). All guarded single-writer tables;
+// user link/unlink + manual re-search are audited (permission_audit), sync-driven writes are not.
+export * from './user-integrations';
+export * from './integration-shelf-items';
+export * from './book-requests';

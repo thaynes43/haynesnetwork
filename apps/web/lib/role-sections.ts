@@ -37,7 +37,14 @@
 
 /** The section ids that get a per-role control in the grid (mirrors @hnet/db SECTION_IDS, minus the
  *  ones with no column yet). */
-export type GridSectionId = 'ledger' | 'trash' | 'bulletin' | 'metrics' | 'ytdlsub' | 'books';
+export type GridSectionId =
+  | 'ledger'
+  | 'trash'
+  | 'bulletin'
+  | 'metrics'
+  | 'ytdlsub'
+  | 'books'
+  | 'integrations';
 
 /** A stored section level (mirrors @hnet/db SECTION_PERMISSION_LEVELS). */
 export type SectionLevel = 'edit' | 'read_only' | 'disabled';
@@ -52,6 +59,8 @@ export const SECTION_CONTROL: Record<GridSectionId, SectionControl> = {
   metrics: 'toggle',
   ytdlsub: 'toggle',
   books: 'toggle',
+  // PLAN-044 — the Integrations tab gates on read_only only (no edit rung); 2-state Enabled/Disabled.
+  integrations: 'toggle',
 };
 
 /** The canonical "Enabled" stored value for a 2-state section (read_only — the section only ever

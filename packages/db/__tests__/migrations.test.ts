@@ -1008,4 +1008,84 @@ describe('migrations against embedded Postgres 16', () => {
       await client.query(`DELETE FROM notification_outbox`);
     });
   });
+
+  // ADR-055 / DESIGN-028 (migration 0045) — the Integration tables + three CHECK relaxes. Additive.
+  describe('0045 Goodreads integrations (ADR-055 — three tables + section/run-kind/audit CHECKs)', () => {
+    const DEFAULT_ROLE = '11111111-1111-4111-8111-111111111111';
+
+    it('creates the three tables with their key columns', async () => {
+      const cols = await client.query(
+        `SELECT table_name, column_name FROM information_schema.columns
+           WHERE table_schema = 'public'
+             AND table_name IN ('user_integrations','integration_shelf_items','book_requests')`,
+      );
+      const has = (t: string, c: string) =>
+        cols.rows.some((r) => r.table_name === t && r.column_name === c);
+      expect(has('user_integrations', 'external_user_id')).toBe(true);
+      expect(has('user_integrations', 'status')).toBe(true);
+      expect(has('integration_shelf_items', 'gb_volume_id')).toBe(true);
+      expect(has('integration_shelf_items', 'deleted_at')).toBe(true);
+      expect(has('book_requests', 'ebook_status')).toBe(true);
+      expect(has('book_requests', 'audio_status')).toBe(true);
+      expect(has('book_requests', 'unroutable_reason')).toBe(true);
+    });
+
+    it('book_requests status CHECKs reject an unknown status', async () => {
+      const user = await client.query(
+        `INSERT INTO users (email, display_name) VALUES ('int-mig@example.com', 'Int') RETURNING id`,
+      );
+      const uid = user.rows[0].id as string;
+      const integ = await client.query({
+        text: `INSERT INTO user_integrations (user_id, provider, external_user_id, status)
+                 VALUES ($1, 'goodreads', '202652880', 'linked') RETURNING id`,
+        values: [uid],
+      });
+      const iid = integ.rows[0].id as string;
+      const shelf = await client.query({
+        text: `INSERT INTO integration_shelf_items (integration_id, shelf, external_book_id, title)
+                 VALUES ($1, 'to-read', 'b1', 'A Book') RETURNING id`,
+        values: [iid],
+      });
+      const sid = shelf.rows[0].id as string;
+      await expect(
+        client.query({
+          text: `INSERT INTO book_requests (integration_id, shelf_item_id, title, ebook_status)
+                   VALUES ($1, $2, 'A Book', 'bogus')`,
+          values: [iid, sid],
+        }),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query({ text: `DELETE FROM user_integrations WHERE id = $1`, values: [iid] });
+      await client.query({ text: `DELETE FROM users WHERE id = $1`, values: [uid] });
+    });
+
+    it('role_section_permissions admits integrations, rejects unknown', async () => {
+      await client.query(
+        `INSERT INTO role_section_permissions (role_id, section_id, level)
+           VALUES ('${DEFAULT_ROLE}', 'integrations', 'read_only')
+           ON CONFLICT (role_id, section_id) DO UPDATE SET level = EXCLUDED.level`,
+      );
+      await client.query(
+        `DELETE FROM role_section_permissions WHERE role_id = '${DEFAULT_ROLE}' AND section_id = 'integrations'`,
+      );
+    });
+
+    it('sync_runs admits goodreads-sync', async () => {
+      await client.query(
+        `INSERT INTO sync_runs (source, run_kind, status) VALUES ('radarr', 'goodreads-sync', 'running')`,
+      );
+      await client.query(`DELETE FROM sync_runs WHERE run_kind = 'goodreads-sync'`);
+    });
+
+    it('permission_audit admits the three integration actions', async () => {
+      for (const action of ['link_integration', 'unlink_integration', 'request_book_search']) {
+        await client.query({
+          text: `INSERT INTO permission_audit (action) VALUES ($1)`,
+          values: [action],
+        });
+      }
+      await client.query(
+        `DELETE FROM permission_audit WHERE action IN ('link_integration','unlink_integration','request_book_search')`,
+      );
+    });
+  });
 });

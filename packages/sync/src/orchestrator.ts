@@ -33,6 +33,7 @@ import {
   syncBooks,
   syncPlexMatches,
   type DrainPoolRefreshResult,
+  type LazyLibrarianClientBundle,
   type SyncBooksReport,
   type SyncPlexMatchesReport,
   type MaintainerrClientBundle,
@@ -57,6 +58,11 @@ import { fetchOwuiUsage, type OpenWebUiClient } from './openwebui';
 // ADR-046 / DESIGN-024 (PLAN-023) — the read-only Kavita + Audiobookshelf snapshot fetcher the
 // `books-sync` mode hands to the @hnet/domain syncBooks single-writer (books_items mirror upsert).
 import { fetchBooksSnapshot, type BooksSyncBundle } from './books';
+// ADR-055 / DESIGN-028 (PLAN-044) — the `goodreads-sync` mode's read side: pages each linked user's PUBLIC
+// shelf RSS + GB enrichment and hands the enriched snapshot to the domain syncGoodreadsIntegration
+// orchestrator (which does the DB writes + the confined LazyLibrarian pushes — the bundle arrives here as
+// an opaque type, never constructed in sync — the poster-guard precedent).
+import { runGoodreadsSync, type GoodreadsSourceBundle, type GoodreadsSyncReport } from './goodreads';
 // ADR-053 / DESIGN-026 D-07 (PLAN-029) — the ABS per-user listening-progress read, folded into books-sync
 // as an isolated post-step (per-user Audiobooks read-state; Kavita DEFERRED).
 import { syncAbsUserProgress, type SyncAbsUserProgressReport } from './abs-progress';
@@ -135,6 +141,12 @@ export interface RunSyncOptions {
   /** ADR-046 / DESIGN-024 — the read-only Kavita + Audiobookshelf clients + public deep-link bases the
    *  `books-sync` mode pages. Required only for that mode; tests inject fetch-stubbed clients. */
   books?: BooksSyncBundle;
+  /** ADR-055 / DESIGN-028 — the read-only Goodreads RSS + Google Books clients the `goodreads-sync` mode
+   *  pages. Required only for that mode; tests inject fetch-stubbed clients. */
+  goodreads?: GoodreadsSourceBundle;
+  /** ADR-055 / DESIGN-028 — the confined LazyLibrarian bundle the `goodreads-sync` mode pushes requests
+   *  through (built in packages/domain from env; opaque here). Optional — absent ⇒ mirror + mint only. */
+  lazyLibrarian?: LazyLibrarianClientBundle;
   /** Clock injection for deterministic `ai-usage-sync` tests (synced_at / created_at fallbacks). */
   now?: Date;
   /** Injected DB (tests); defaults to the lazy @hnet/db client. */
@@ -210,6 +222,10 @@ export interface SyncReport {
     | null;
   /** The books-sync run's error — sets totalFailure for the CLI exit. */
   booksSyncError?: string;
+  /** ADR-055 — the `goodreads-sync` result (null for every other mode / when it errored). */
+  goodreadsSync?: GoodreadsSyncReport | null;
+  /** The goodreads-sync run's error — sets totalFailure for the CLI exit. */
+  goodreadsSyncError?: string;
   /** ADR-047 — the `plex-match` result (null for every other mode / when it errored). */
   plexMatch?: (SyncPlexMatchesReport & { stats: PlexMatchStats }) | null;
   /** The plex-match run's error — sets totalFailure for the CLI exit. */
@@ -711,6 +727,50 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       booksSync,
       ...(booksSyncError !== undefined ? { booksSyncError } : {}),
       totalFailure: booksSyncError !== undefined,
+    };
+  }
+
+  // ADR-055 / DESIGN-028 — the `goodreads-sync` mode pages each LINKED Goodreads integration's PUBLIC shelf
+  // RSS + GB enrichment (read-only) and hands the enriched snapshot to the domain syncGoodreadsIntegration
+  // orchestrator (mirror shelf → match library → mint requests → push BOTH formats to LazyLibrarian, paced →
+  // reconcile → coverage). Standalone mode: no --source, writes NO sync_runs row — its trail is the
+  // integration tables. Per-integration isolation; a run with zero linked integrations is a clean no-op.
+  // Returns early with a `goodreadsSync` report. Only a wholesale failure (e.g. the DB read) sets
+  // goodreadsSyncError → totalFailure (nonzero exit).
+  if (options.mode === 'goodreads-sync') {
+    const startedAt = new Date();
+    if (!options.goodreads) {
+      throw new Error('goodreads-sync requires Goodreads RSS + Google Books clients (goodreads)');
+    }
+    let goodreadsSync: GoodreadsSyncReport | null = null;
+    let goodreadsSyncError: string | undefined;
+    try {
+      goodreadsSync = await runGoodreadsSync({
+        db,
+        goodreads: options.goodreads,
+        ...(options.lazyLibrarian ? { ll: options.lazyLibrarian } : {}),
+        ...(options.now ? { now: options.now } : {}),
+        logger,
+      });
+      logger.info('goodreads-sync complete', {
+        integrations: goodreadsSync.integrations,
+        synced: goodreadsSync.synced,
+        failed: goodreadsSync.failed,
+      });
+    } catch (error) {
+      goodreadsSyncError = error instanceof Error ? error.message : String(error);
+      logger.error('goodreads-sync failed', { error: goodreadsSyncError });
+    }
+    return {
+      mode: options.mode,
+      startedAt,
+      finishedAt: new Date(),
+      sources: [],
+      backfill: null,
+      fixesCompleted: null,
+      goodreadsSync,
+      ...(goodreadsSyncError !== undefined ? { goodreadsSyncError } : {}),
+      totalFailure: goodreadsSyncError !== undefined,
     };
   }
 

@@ -85,6 +85,15 @@ export const ytdlsubProcedure = sectionProcedure('ytdlsub', 'read_only');
 export const booksProcedure = sectionProcedure('books', 'read_only');
 
 /**
+ * ADR-055 C-04 (PLAN-044 Goodreads requests MVP) — the integrations rung: authed AND the caller can SEE the
+ * `integrations` section (≥ read_only). The section defaults to `disabled` (ships Admin-only; a role row
+ * opts others in after screenshot review), so this gate is the visibility check for the Integrations tab
+ * (link accounts, shelf sync, requests/Missing wall, manual re-search). Server-authoritative (AC-13) —
+ * never client-hidden only.
+ */
+export const integrationsProcedure = sectionProcedure('integrations', 'read_only');
+
+/**
  * ADR-025 errata (2026-07-08, owner-directed) — GLOBAL SAVE IS A SUPERSET OF THE WINDOWED RESCUE.
  * Holding `save_exclude` (the anytime whitelist power — "Save items, anytime") IMPLIES
  * `save_leaving_soon` (the narrow "Save during a Leaving-Soon window" grant): if you can whitelist

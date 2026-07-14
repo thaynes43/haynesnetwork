@@ -16,7 +16,11 @@ import {
   FixRateLimitError,
   FixTargetRequiredError,
   InvalidCatalogUrlError,
+  InvalidGoodreadsProfileError,
   LastAdminError,
+  LazyLibrarianUpstreamError,
+  lazyLibrarianBundleFromEnv,
+  type LazyLibrarianClientBundle,
   LedgerItemTombstonedError,
   LibraryNotAllowedError,
   maintainerrClientBundleFromEnv,
@@ -54,6 +58,9 @@ import {
   prometheusClientFromEnv as metricsReaderFromEnv,
   type PrometheusReader as MetricsPrometheusReader,
 } from '@hnet/metrics';
+// ADR-055 / DESIGN-028 (PLAN-044) — the read-only Goodreads RSS client the integrations.link mutation uses
+// to resolve a vanity URL → user id + probe the public shelf is reachable (no secret). Read-only.
+import { GoodreadsRssClient, goodreadsConfigFromEnv } from '@hnet/goodreads';
 
 export type { SessionUser };
 
@@ -98,6 +105,16 @@ export interface TRPCContext {
    * tests.
    */
   authentikPortal?: AuthentikPortalBundle;
+  /**
+   * ADR-055 / DESIGN-028 (PLAN-044) — the confined LazyLibrarian bundle the `integrations.search` (manual
+   * re-search) runs against. Env-built singleton in production (LAZYLIBRARIAN_API_KEY); stubbed in tests.
+   */
+  lazylibrarian?: LazyLibrarianClientBundle;
+  /**
+   * ADR-055 / DESIGN-028 (PLAN-044) — the read-only Goodreads RSS client `integrations.link` resolves a
+   * vanity URL + probes shelf reachability with. Env-built singleton in production; stubbed in tests.
+   */
+  goodreads?: GoodreadsRssClient;
 }
 
 let envArrBundle: ArrClientBundle | undefined;
@@ -152,6 +169,27 @@ export function resolveAuthentikPortalBundle(ctx: TRPCContext): AuthentikPortalB
   if (ctx.authentikPortal) return ctx.authentikPortal;
   envAuthentikPortalBundle ??= authentikPortalBundleFromEnv();
   return envAuthentikPortalBundle;
+}
+
+let envLazyLibrarianBundle: LazyLibrarianClientBundle | undefined;
+
+/** The LazyLibrarian bundle for this request: injected (tests) or the env-built singleton (ADR-055). */
+export function resolveLazyLibrarianBundle(ctx: TRPCContext): LazyLibrarianClientBundle {
+  if (ctx.lazylibrarian) return ctx.lazylibrarian;
+  envLazyLibrarianBundle ??= lazyLibrarianBundleFromEnv();
+  return envLazyLibrarianBundle;
+}
+
+let envGoodreadsClient: GoodreadsRssClient | undefined;
+
+/** The Goodreads RSS client for this request: injected (tests) or the env-built singleton (ADR-055). */
+export function resolveGoodreadsRssClient(ctx: TRPCContext): GoodreadsRssClient {
+  if (ctx.goodreads) return ctx.goodreads;
+  if (!envGoodreadsClient) {
+    const cfg = goodreadsConfigFromEnv();
+    envGoodreadsClient = new GoodreadsRssClient({ baseUrl: cfg.goodreadsBaseUrl });
+  }
+  return envGoodreadsClient;
 }
 
 function hasKnownRole(user: SessionUser): boolean {
@@ -214,6 +252,8 @@ const APP_CODED_ERRORS = [
   AuthentikUnavailableError,
   OwuiUnavailableError,
   SyncedTierInvalidError,
+  InvalidGoodreadsProfileError,
+  LazyLibrarianUpstreamError,
 ] as const;
 
 const t = initTRPC.context<TRPCContext>().create({
@@ -369,6 +409,12 @@ export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
       throw new TRPCError({ code: 'BAD_GATEWAY', message: err.message, cause: err });
     }
     if (err instanceof OwuiUnavailableError) {
+      throw new TRPCError({ code: 'BAD_GATEWAY', message: err.message, cause: err });
+    }
+    if (err instanceof InvalidGoodreadsProfileError) {
+      throw new TRPCError({ code: 'UNPROCESSABLE_CONTENT', message: err.message, cause: err });
+    }
+    if (err instanceof LazyLibrarianUpstreamError) {
       throw new TRPCError({ code: 'BAD_GATEWAY', message: err.message, cause: err });
     }
     if (err instanceof NotFoundError) {

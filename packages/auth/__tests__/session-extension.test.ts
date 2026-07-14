@@ -39,6 +39,7 @@ describe('session extension (DESIGN-002 D-06 / DESIGN-003 D-01, ADR-012)', () =>
           metrics: 'disabled',
           ytdlsub: 'disabled',
           books: 'disabled',
+          integrations: 'disabled',
         },
         // ADR-023 — no grant rows ⇒ no Trash actions.
         trashActions: [],
@@ -77,6 +78,7 @@ describe('session extension (DESIGN-002 D-06 / DESIGN-003 D-01, ADR-012)', () =>
           metrics: 'edit',
           ytdlsub: 'edit',
           books: 'edit',
+          integrations: 'edit',
         },
         // ADR-023 C-03 — admin implies EVERY Trash action (no rows).
         trashActions: [...TRASH_ACTIONS],
@@ -118,6 +120,7 @@ describe('session extension (DESIGN-002 D-06 / DESIGN-003 D-01, ADR-012)', () =>
       metrics: 'disabled',
       ytdlsub: 'disabled',
       books: 'disabled',
+      integrations: 'disabled',
     });
   });
 

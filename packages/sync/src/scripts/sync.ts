@@ -15,16 +15,20 @@ import {
   type SyncSource,
 } from '@hnet/db';
 import {
+  lazyLibrarianBundleFromEnv,
   maintainerrClientBundleFromEnv,
   mamGovernorBundleFromEnv,
   plexClientBundleFromEnv,
   resolveGovernorConfig,
+  type LazyLibrarianClientBundle,
   type UtilizationArrBundle,
 } from '@hnet/domain';
 import { prometheusClientFromEnv } from '@hnet/metrics';
 import { assertAuthentikEnv, authentikReadClient } from '@hnet/authentik';
 import { assertBooksEnv } from '@hnet/books';
 import { booksReadClients } from '@hnet/books/read';
+import { GoodreadsRssClient, GoogleBooksClient, goodreadsConfigFromEnv } from '@hnet/goodreads';
+import type { GoodreadsSourceBundle } from '../goodreads';
 import {
   buildMetadataSourceClients,
   buildOptionalMaintainerrRead,
@@ -36,7 +40,7 @@ import type { BooksSyncBundle } from '../books';
 import { createConsoleLogger } from '../logger';
 import { runSync } from '../orchestrator';
 
-const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy|notify-outbox|smart-alerts|poster-guard|ai-usage-sync|authentik-users|books-sync|plex-match [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
+const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy|notify-outbox|smart-alerts|poster-guard|ai-usage-sync|authentik-users|books-sync|plex-match|mam-governor|goodreads-sync [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
 
   --mode=full              item-list upsert + tombstone pass per *arr (+ Seerr requests)
   --mode=incremental       history/since cursor polling per *arr (+ Seerr requests)
@@ -93,6 +97,16 @@ const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-bat
                            >48h-stuck notification_outbox row same-tx. Needs PROWLARR_API_KEY (URLs +
                            indexer id default in-cluster; qBittorrent needs no secret). No --source. Writes
                            no sync_runs row.
+  --mode=goodreads-sync    poll each LINKED Goodreads integration's PUBLIC shelf RSS (ADR-055 — no OAuth,
+                           no secret), enrich against Google Books (mandatory retry/backoff + comic
+                           classification), mirror the shelf, match each want against the books_items
+                           library, mint book_requests for the unmatched, and push BOTH formats to
+                           LazyLibrarian (GB-volume → addBook → queueBook → searchBook, PACED) — then
+                           reconcile LL statuses + compute coverage. Comics are parked OUT of LL (Kapowarr's
+                           domain). GOODREADS_BASE_URL / GOOGLE_BOOKS_URL default to the public hosts;
+                           GOOGLE_BOOKS_API_KEY + LAZYLIBRARIAN_API_KEY are OPTIONAL (absent ⇒ degraded:
+                           mirror + mint, no push). NEVER writes LL provider config. No --source. Writes no
+                           sync_runs row.
   --source=NAME            limit the run to one source (repeatable; default: all sources; for
                            metadata-refresh the default is the three *arr kinds)
   --force-tombstones       override the mass-tombstone guard (DESIGN-005 D-14/Q-03)
@@ -152,7 +166,8 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
       mode === 'authentik-users' ||
       mode === 'books-sync' ||
       mode === 'plex-match' ||
-      mode === 'mam-governor') &&
+      mode === 'mam-governor' ||
+      mode === 'goodreads-sync') &&
     sources.length > 0
   ) {
     throw new CliUsageError(`--source is not valid for --mode=${mode}`);
@@ -170,7 +185,8 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
     mode === 'authentik-users' ||
     mode === 'books-sync' ||
     mode === 'plex-match' ||
-    mode === 'mam-governor'
+    mode === 'mam-governor' ||
+    mode === 'goodreads-sync'
       ? []
       : mode === 'metadata-refresh'
         ? [...ARR_KINDS]
@@ -298,6 +314,33 @@ async function main(): Promise<number> {
           };
         })()
       : undefined;
+  // ADR-055 / DESIGN-028 — the read-only Goodreads RSS + Google Books clients (GOODREADS_BASE_URL /
+  // GOOGLE_BOOKS_URL default to the public hosts; GOOGLE_BOOKS_API_KEY optional). Pull-only.
+  const goodreads: GoodreadsSourceBundle | undefined =
+    args.mode === 'goodreads-sync'
+      ? (() => {
+          const cfg = goodreadsConfigFromEnv();
+          return {
+            rss: new GoodreadsRssClient({ baseUrl: cfg.goodreadsBaseUrl }),
+            googleBooks: new GoogleBooksClient({
+              baseUrl: cfg.googleBooksUrl,
+              ...(cfg.googleBooksApiKey ? { apiKey: cfg.googleBooksApiKey } : {}),
+            }),
+          };
+        })()
+      : undefined;
+  // ADR-055 / DESIGN-028 — the confined LazyLibrarian bundle (built INSIDE @hnet/domain, so the confined
+  // write surface stays domain-only — the arr-write import guard). OPTIONAL for goodreads-sync: absent
+  // LAZYLIBRARIAN_API_KEY ⇒ a degraded run that mirrors + mints requests but pushes nothing (logged).
+  let lazyLibrarian: LazyLibrarianClientBundle | undefined;
+  if (args.mode === 'goodreads-sync') {
+    try {
+      lazyLibrarian = lazyLibrarianBundleFromEnv();
+    } catch {
+      lazyLibrarian = undefined;
+      logger.info('goodreads-sync: no LAZYLIBRARIAN_API_KEY — running in mirror+mint (no push) mode');
+    }
+  }
 
   logger.info('sync starting', {
     mode: args.mode,
@@ -328,6 +371,8 @@ async function main(): Promise<number> {
     ...(openWebUi ? { openWebUi } : {}),
     ...(authentik ? { authentik } : {}),
     ...(books ? { books } : {}),
+    ...(goodreads ? { goodreads } : {}),
+    ...(lazyLibrarian ? { lazyLibrarian } : {}),
     logger,
   });
 
@@ -409,6 +454,18 @@ async function main(): Promise<number> {
         }
       : {}),
     ...(report.plexMatchError !== undefined ? { plexMatchError: report.plexMatchError } : {}),
+    ...(report.goodreadsSync
+      ? {
+          goodreadsSync: {
+            integrations: report.goodreadsSync.integrations,
+            synced: report.goodreadsSync.synced,
+            failed: report.goodreadsSync.failed,
+          },
+        }
+      : {}),
+    ...(report.goodreadsSyncError !== undefined
+      ? { goodreadsSyncError: report.goodreadsSyncError }
+      : {}),
     sources: report.sources.map((s) => ({
       source: s.source,
       status: s.status,

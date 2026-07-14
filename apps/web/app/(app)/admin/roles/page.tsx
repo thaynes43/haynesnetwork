@@ -629,6 +629,7 @@ export default function AdminRolesPage() {
             <th>Bulletin</th>
             <th>Metrics</th>
             <th>Library extras</th>
+            <th>Integrations</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -857,6 +858,26 @@ export default function AdminRolesPage() {
                       'ytdlsub',
                       `ytdl-sub Library visibility for ${role.name}`,
                       `ytdlsub-level-${role.name}`,
+                    )
+                  )}
+                </td>
+                {/* ADR-055 / DESIGN-028 (PLAN-044) — the Integrations tab visibility. A plain
+                    section-level cell (2-state Enabled/Disabled); ships Admin-only via the `disabled`
+                    default. Same audited setSection writer; constant width (ADR-015). */}
+                <td className="role-level-cell" data-label="Integrations">
+                  {role.isAdmin ? (
+                    <span
+                      className="muted"
+                      title="The Admin role sees every section, including the Integrations tab"
+                    >
+                      Enabled
+                    </span>
+                  ) : (
+                    levelSelect(
+                      role,
+                      'integrations',
+                      `Integrations tab visibility for ${role.name}`,
+                      `integrations-level-${role.name}`,
                     )
                   )}
                 </td>

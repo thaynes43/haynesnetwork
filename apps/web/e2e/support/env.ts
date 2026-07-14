@@ -17,6 +17,8 @@ import { STUB_MAINTAINERR_API_KEY } from './stub-maintainerr';
 import { STUB_OPENWEBUI_API_KEY } from './stub-openwebui';
 import { STUB_AUTHENTIK_API_TOKEN } from './stub-authentik';
 import { STUB_ABS_PASSWORD, STUB_KAVITA_PASSWORD } from './stub-books';
+import { STUB_GOOGLE_BOOKS_API_KEY } from './stub-goodreads';
+import { STUB_LAZYLIBRARIAN_API_KEY } from './stub-lazylibrarian';
 
 /** Default app port — off 3000 so the stack coexists with a running `pnpm dev`.
  *  playwright.config.ts's baseURL derives from this. */
@@ -94,6 +96,15 @@ export interface RuntimeEnv {
   AUDIOBOOKSHELF_USERNAME: string;
   AUDIOBOOKSHELF_PASSWORD: string;
   AUDIOBOOKSHELF_PUBLIC_URL: string;
+  /** ADR-055 / DESIGN-028 — stub Goodreads origin (RSS + vanity redirect + Google Books) + stub
+   *  LazyLibrarian origin (the goodreads-sync push + the integrations.link probe point at these). */
+  STUB_GOODREADS_URL: string;
+  STUB_LAZYLIBRARIAN_URL: string;
+  GOODREADS_BASE_URL: string;
+  GOOGLE_BOOKS_URL: string;
+  GOOGLE_BOOKS_API_KEY: string;
+  LAZYLIBRARIAN_URL: string;
+  LAZYLIBRARIAN_API_KEY: string;
   /** ADR-026 / DESIGN-012 — per-source Bulletin webhook shared secrets (Seerr + Tautulli). */
   SEERR_WEBHOOK_SECRET: string;
   TAUTULLI_WEBHOOK_SECRET: string;
@@ -129,6 +140,8 @@ export function composeRuntimeEnv(opts: {
   stubOpenWebUiBaseUrl: string;
   stubAuthentikBaseUrl: string;
   stubBooksBaseUrl: string;
+  stubGoodreadsBaseUrl: string;
+  stubLazyLibrarianBaseUrl: string;
   appUrl: string;
 }): RuntimeEnv {
   return {
@@ -183,6 +196,13 @@ export function composeRuntimeEnv(opts: {
     AUDIOBOOKSHELF_USERNAME: 'root',
     AUDIOBOOKSHELF_PASSWORD: STUB_ABS_PASSWORD,
     AUDIOBOOKSHELF_PUBLIC_URL: 'https://audiobookshelf.haynesnetwork.com',
+    STUB_GOODREADS_URL: opts.stubGoodreadsBaseUrl,
+    STUB_LAZYLIBRARIAN_URL: opts.stubLazyLibrarianBaseUrl,
+    GOODREADS_BASE_URL: opts.stubGoodreadsBaseUrl,
+    GOOGLE_BOOKS_URL: `${opts.stubGoodreadsBaseUrl}/books/v1`,
+    GOOGLE_BOOKS_API_KEY: STUB_GOOGLE_BOOKS_API_KEY,
+    LAZYLIBRARIAN_URL: opts.stubLazyLibrarianBaseUrl,
+    LAZYLIBRARIAN_API_KEY: STUB_LAZYLIBRARIAN_API_KEY,
     SEERR_WEBHOOK_SECRET: STUB_SEERR_WEBHOOK_SECRET,
     TAUTULLI_WEBHOOK_SECRET: STUB_TAUTULLI_WEBHOOK_SECRET,
     // 30 s (vs 15 min in prod): long enough that fresh submits deterministically read

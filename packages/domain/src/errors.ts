@@ -320,6 +320,32 @@ export class SyncedTierInvalidError extends Error {
   readonly code = 'SYNCED_TIER_INVALID' as const;
 }
 
+// ---------------------------------------------------------------------------
+// ADR-055 / DESIGN-028 (PLAN-044) — Integration (Goodreads requests MVP) errors.
+// ---------------------------------------------------------------------------
+
+/**
+ * linkIntegration could not extract a Goodreads user id from the profile reference the user entered.
+ * A Goodreads profile URL looks like `https://www.goodreads.com/user/show/12345-name` (or a bare numeric
+ * id); anything else is refused BEFORE any row is written. Surfaced as UNPROCESSABLE_CONTENT with an
+ * actionable message (never the raw input echoed unbounded).
+ */
+export class InvalidGoodreadsProfileError extends Error {
+  readonly code = 'GOODREADS_PROFILE_INVALID' as const;
+}
+
+/**
+ * A LazyLibrarian read/write failed upstream while serving a request (a manual "Search again" push) —
+ * surfaced to the client as BAD_GATEWAY, exactly like ArrUpstreamError. The original LazyLibrarianError
+ * rides along as `cause`; the API key is never echoed (the taxonomy keeps it query-only + redacted).
+ */
+export class LazyLibrarianUpstreamError extends Error {
+  readonly code = 'LAZYLIBRARIAN_UNAVAILABLE' as const;
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+  }
+}
+
 function pgErrorCode(err: unknown): string | undefined {
   if (typeof err !== 'object' || err === null) return undefined;
   const code = (err as { code?: unknown }).code;
