@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.53.0](https://github.com/thaynes43/haynesnetwork/compare/v0.52.0...v0.53.0) (2026-07-14)
+
+
+### Features
+
+* Activity / In-Flight — the pipeline made visible (PLAN-048 SLICE 1) ([#272](https://github.com/thaynes43/haynesnetwork/issues/272)) ([79f6d4a](https://github.com/thaynes43/haynesnetwork/commit/79f6d4ac77882292a80cca4600cb48d28174723c))
+
+
+### Documentation
+
+* **ops:** deploy gate = release workflow completion (kyverno sig race) ([#263](https://github.com/thaynes43/haynesnetwork/issues/263)) ([510f0cb](https://github.com/thaynes43/haynesnetwork/commit/510f0cbc393294d06c50f85820a734022b3bb7f7))
+
 ## [0.52.0](https://github.com/thaynes43/haynesnetwork/compare/v0.51.0...v0.52.0) (2026-07-14)
 
 
