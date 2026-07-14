@@ -50,9 +50,7 @@ import {
 } from '@hnet/ui';
 import type { BooksSort, BookReadState } from '@hnet/api';
 import { trpc } from '@/lib/trpc-client';
-import { MediaPoster } from '@/components/media-poster';
-import { PosterCardBody } from '@/components/poster-card-body';
-import { GroupCardArt } from '@/components/group-card-art';
+import { BookCard, GroupCard, PosterGrid, PosterGridSkeleton } from '@/components/cards';
 import { CHIP_LABELS, SelectChip } from '@/components/filter-chips';
 import { LetterJumpBar } from '@/components/letter-jump-bar';
 import {
@@ -91,19 +89,7 @@ function formatDuration(seconds: number | null): string | null {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-const SKELETON = (
-  <div className="media-list poster-grid" aria-hidden="true" data-testid="books-skeleton">
-    {Array.from({ length: 12 }, (_, i) => (
-      <div key={i} className="poster-card poster-card--skeleton">
-        <div className="poster-box" />
-        <span className="poster-card__body">
-          <span className="skeleton-line" />
-          <span className="skeleton-line skeleton-line--short" />
-        </span>
-      </div>
-    ))}
-  </div>
-);
+const SKELETON = <PosterGridSkeleton testId="books-skeleton" />;
 
 export function BooksBrowser({
   wall,
@@ -617,11 +603,11 @@ export function BooksBrowser({
           SAME poster block as an on-disk book (never a separate strip). Static per load — ADR-015. */}
       {wantedOnly ? (
         wantedItems.length > 0 ? (
-          <div className="media-list poster-grid" data-testid="books-grid">
+          <PosterGrid testId="books-grid">
             {wantedItems.map((w) => (
               <WantedCard key={`w-${w.requestId}`} item={w} mediaKind={mediaKind} />
             ))}
-          </div>
+          </PosterGrid>
         ) : (
           <section className="card empty-state" data-testid="wanted-empty">
             <p className="muted">No wanted {label.toLowerCase()} right now.</p>
@@ -645,38 +631,25 @@ export function BooksBrowser({
         ) : (
           // DESIGN-026 D-04 (art-amended) — the aggregate cards: the dimension's REAL portrait /
           // the stacked-cover fan / the designed glyph tile, all in the reserved 2:3 box
-          // (GroupCardArt), plus the group label and the member count. Drill-in = PUSH.
-          <div
-            className={`media-list poster-grid${groupsRefreshing ? ' is-refreshing' : ''}`}
-            aria-busy={groupsRefreshing}
-            data-testid="books-groups"
-          >
+          // (GroupCard), plus the group label and the member count. Drill-in = PUSH.
+          <PosterGrid refreshing={groupsRefreshing} testId="books-groups">
             {groups.map((g) => (
-              <Link
+              <GroupCard
                 key={g.key}
                 href={`${pathname}?tab=${booksWall}${
                   grouping !== undefined && grouping !== defaultGrouping
                     ? `&by=${encodeURIComponent(grouping.dimension)}`
                     : ''
                 }&group=${encodeURIComponent(g.key)}`}
-                className="media-card poster-card group-card"
-              >
-                <GroupCardArt
-                  art={grouping?.art ?? 'covers'}
-                  label={g.label}
-                  imageUrl={g.imageUrl}
-                  coverUrls={g.coverUrls}
-                  kind={mediaKind}
-                />
-                <span className="poster-card__body">
-                  <span className="media-card__title">{g.label}</span>
-                  <span className="media-card__subtitle">
-                    {g.count} {g.count === 1 ? 'item' : 'items'}
-                  </span>
-                </span>
-              </Link>
+                art={grouping?.art ?? 'covers'}
+                label={g.label}
+                imageUrl={g.imageUrl}
+                coverUrls={g.coverUrls}
+                kind={mediaKind}
+                count={g.count}
+              />
             ))}
-          </div>
+          </PosterGrid>
         )
       ) : search.error ? (
         <p className="alert" role="alert">
@@ -690,11 +663,7 @@ export function BooksBrowser({
         </section>
       ) : (
         <>
-          <div
-            className={`media-list poster-grid${refreshing ? ' is-refreshing' : ''}`}
-            aria-busy={refreshing}
-            data-testid="books-grid"
-          >
+          <PosterGrid refreshing={refreshing} testId="books-grid">
             {/* Wanted cards lead the flat stream — same grid, same poster block as the on-disk books. */}
             {showWantedInline
               ? wantedItems.map((w) => (
@@ -711,22 +680,19 @@ export function BooksBrowser({
                     : null;
               return (
                 // ADR-047 — the tile opens the in-app books DETAIL page (the deep link lives there now).
-                <Link
+                <BookCard
                   key={item.id}
                   href={`/library/books/${item.id}?from=${fromKey}`}
-                  className="media-card poster-card"
-                >
-                  <MediaPoster posterUrl={item.posterUrl} kind={item.mediaKind} alt="" />
-                  <PosterCardBody
-                    title={item.title}
-                    year={item.year}
-                    subtitle={item.author}
-                    badges={[badge ? { label: badge } : null]}
-                  />
-                </Link>
+                  posterUrl={item.posterUrl}
+                  mediaKind={item.mediaKind}
+                  title={item.title}
+                  year={item.year}
+                  author={item.author}
+                  badges={[badge ? { label: badge } : null]}
+                />
               );
             })}
-          </div>
+          </PosterGrid>
           {search.hasNextPage ? (
             // The scroll sentinel (reused Library idiom): the observer above watches this element and
             // fetches the next page as it nears the viewport — no Load more button. The fetching hint

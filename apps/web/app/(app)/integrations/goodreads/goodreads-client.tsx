@@ -26,8 +26,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { ConfirmButton, nextSort, arrowFor } from '@hnet/ui';
 import { KindIcon } from '@/components/kind-icon';
-import { MediaPoster } from '@/components/media-poster';
-import { PosterCardBody, type PosterBadge } from '@/components/poster-card-body';
+import { PosterGrid, PosterGridSkeleton, RequestCard, type PosterBadge } from '@/components/cards';
 import { trpc, type RouterOutputs } from '@/lib/trpc-client';
 import { coverageView, isFirstSyncPending } from '@/lib/integrations-coverage';
 import {
@@ -319,8 +318,8 @@ function OverviewTab({
 // ---------------------------------------------------------------------------
 
 function ItemTile({ item, focused }: { item: ItemWire; focused: boolean }) {
-  // The card is a <Link> (or a non-interactive <div> for a pre-mint want) — one callback ref stores the
-  // element for the one-time `?focus=` deep-link scroll (legacy links still land + highlight).
+  // One callback ref stores the card element for the one-time `?focus=` deep-link scroll (legacy
+  // links still land + highlight).
   const ref = useRef<HTMLElement | null>(null);
   const setRef = (el: HTMLElement | null) => {
     ref.current = el;
@@ -341,45 +340,30 @@ function ItemTile({ item, focused }: { item: ItemWire; focused: boolean }) {
       }
     : null;
 
-  const className = `media-card poster-card gr-item${focused ? ' is-focused' : ''}`;
-  const inner = (
-    <>
-      <MediaPoster posterUrl={item.posterUrl} kind={item.isComic ? 'comic' : 'book'} alt="" />
-      <PosterCardBody title={item.title} subtitle={item.author} badges={[shelfBadge, statusBadge(item)]} />
-    </>
-  );
-
   // PLAN-047 (owner Wanted-parity ruling) — the WHOLE card click-throughs into a detail page (the Movies/TV
   // poster→detail idiom; the corner force-search puck is retired — force-search lives on the detail page).
   // "Have it" → the existing library detail (`/library/books/[id]`); any other want → the Wanted detail
-  // parity page. A want with no request row yet (pre-mint) stays non-interactive.
+  // parity page. A want with no request row yet (pre-mint) stays non-interactive (RequestCard href null).
   const href = item.matchedBooksItemId
     ? `/library/books/${item.matchedBooksItemId}?from=goodreads-items`
     : item.requestId
       ? `/library/books/wanted/${item.requestId}?from=goodreads-items`
       : null;
 
-  return href !== null ? (
-    <Link
-      ref={setRef}
+  return (
+    <RequestCard
       href={href}
-      className={className}
-      data-testid="gr-item"
-      data-phase={item.phase}
-      data-request-id={item.requestId ?? undefined}
-    >
-      {inner}
-    </Link>
-  ) : (
-    <div
-      ref={setRef}
-      className={className}
-      data-testid="gr-item"
-      data-phase={item.phase}
-      data-request-id={item.requestId ?? undefined}
-    >
-      {inner}
-    </div>
+      posterUrl={item.posterUrl}
+      isComic={item.isComic}
+      title={item.title}
+      author={item.author}
+      shelfBadge={shelfBadge}
+      statusBadge={statusBadge(item)}
+      phase={item.phase}
+      requestId={item.requestId}
+      focused={focused}
+      cardRef={setRef}
+    />
   );
 }
 
@@ -553,17 +537,7 @@ function ItemsTab({ items, pending }: { items: ItemWire[]; pending: boolean }) {
       </div>
 
       {pending ? (
-        <div className="media-list poster-grid" aria-hidden="true" data-testid="gr-items-skeleton">
-          {Array.from({ length: 8 }, (_, i) => (
-            <div key={i} className="poster-card poster-card--skeleton">
-              <div className="poster-box" />
-              <span className="poster-card__body">
-                <span className="skeleton-line" />
-                <span className="skeleton-line skeleton-line--short" />
-              </span>
-            </div>
-          ))}
-        </div>
+        <PosterGridSkeleton count={8} testId="gr-items-skeleton" />
       ) : items.length === 0 ? (
         <section className="card empty-state" data-testid="gr-items-empty">
           <p>No shelved books yet.</p>
@@ -582,11 +556,11 @@ function ItemsTab({ items, pending }: { items: ItemWire[]; pending: boolean }) {
         </section>
       ) : (
         // The SAME poster grid as the Movies/Books walls (the owner-corrected cohesive blocks).
-        <div className="media-list poster-grid" data-testid="gr-items-grid">
+        <PosterGrid testId="gr-items-grid">
           {visible.map((item) => (
             <ItemTile key={item.key} item={item} focused={focus !== null && item.requestId === focus} />
           ))}
-        </div>
+        </PosterGrid>
       )}
     </>
   );

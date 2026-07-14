@@ -12,7 +12,7 @@ import { useState } from 'react';
 import { arrowFor, cmpNum, cmpStr, nextSort, sortRowsClientSide, type FieldSpec } from '@hnet/ui';
 import { trpc } from '@/lib/trpc-client';
 import { BackLink } from '@/components/back-link';
-import { MediaPoster } from '@/components/media-poster';
+import { MediaPoster } from '@/components/cards';
 import { NotOnDiskButton } from '@/components/not-on-disk-button';
 import { formatDay, formatRuntime, formatSeasonEpisodeCounts } from '@/lib/media';
 import { registryFor, type ViewLevelKey } from '@/lib/library-view-registry';

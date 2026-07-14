@@ -24,8 +24,8 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useRef, useState, type FormEvent } from 'react';
 import { trpc } from '@/lib/trpc-client';
 import { Modal } from '@/components/modal';
-import { MediaPoster } from '@/components/media-poster';
-import { TicketCategoryIcon, TicketStatusGlyph, ReplyGlyph } from '@/components/ticket-glyphs';
+import { TicketCard, TicketWall, TicketWallSkeleton } from '@/components/cards';
+import { TicketCategoryIcon } from '@/components/ticket-glyphs';
 import { describeMutationError } from '@/lib/app-error';
 import { ARR_KIND_LABELS, formatWhen, type ArrKindName } from '@/lib/media';
 import {
@@ -37,7 +37,6 @@ import {
   TICKET_CATEGORY_NAMES,
   TICKET_STATUS_LABELS,
   TICKET_STATUS_NAMES,
-  ticketStatusTone,
   type BulletinViewName,
   type FeedSourceName,
   type MessageActionName,
@@ -515,55 +514,28 @@ interface TicketListItem {
 
 /** One wall tile: the linked title's poster (or the category icon tile), the state baked on as a
  *  colored corner puck (the Trash idiom) + a status badge in the caption, the reply count, and the
- *  last-activity time. The WHOLE tile is the drill-in link (requirement 6 — a history push). */
+ *  last-activity time. The WHOLE tile is the drill-in link (requirement 6 — a history push).
+ *  PLAN-047 / ADR-058: rendered by the shared card family (TicketCard) — never bespoke markup. */
 function TicketTile({ ticket }: { ticket: TicketListItem }) {
-  const tone = ticketStatusTone(ticket.status);
   return (
-    <li className="twall-tile" data-status={ticket.status} data-testid="ticket-tile">
-      <Link
-        className="twall-link"
-        href={`/bulletin/ticket/${ticket.id}`}
-        aria-label={`${ticket.title} — ${TICKET_STATUS_LABELS[ticket.status]}${
-          ticket.mediaTitle !== null ? ` — ${ticket.mediaTitle}` : ''
-        }`}
-      >
-        <span className="twall-poster">
-          {ticket.mediaItemId !== null ? (
-            <MediaPoster
-              posterUrl={ticket.mediaPosterUrl}
-              kind={ticket.mediaArrKind ?? 'radarr'}
-              alt=""
-            />
-          ) : (
-            <span className="poster-box twall-cattile" data-category={ticket.category}>
-              <TicketCategoryIcon category={ticket.category} className="twall-cattile__icon" />
-              <span className="twall-cattile__label">
-                {TICKET_CATEGORY_LABELS[ticket.category]}
-              </span>
-            </span>
-          )}
-          <span className="twall-overlay" data-status={ticket.status} aria-hidden="true">
-            <TicketStatusGlyph status={ticket.status} />
-          </span>
-        </span>
-        <span className="twall-caption">{ticket.title}</span>
-        <span className="twall-sub muted">
-          {ticket.mediaTitle !== null
-            ? `${ticket.mediaTitle}${ticket.mediaYear !== null ? ` (${ticket.mediaYear})` : ''}`
-            : TICKET_CATEGORY_LABELS[ticket.category]}
-        </span>
-        <span className="twall-meta">
-          <span className={`badge badge--${tone}`}>{TICKET_STATUS_LABELS[ticket.status]}</span>
-          {ticket.replyCount > 0 ? (
-            <span className="twall-replies" aria-label={`${ticket.replyCount} replies`}>
-              <ReplyGlyph className="twall-replies__icon" />
-              {ticket.replyCount}
-            </span>
-          ) : null}
-          <span className="muted twall-when">{tileWhen(ticket.lastActivityAt)}</span>
-        </span>
-      </Link>
-    </li>
+    <TicketCard
+      href={`/bulletin/ticket/${ticket.id}`}
+      title={ticket.title}
+      status={ticket.status}
+      category={ticket.category}
+      media={
+        ticket.mediaItemId !== null
+          ? {
+              posterUrl: ticket.mediaPosterUrl,
+              kind: ticket.mediaArrKind ?? 'radarr',
+              title: ticket.mediaTitle,
+              year: ticket.mediaYear,
+            }
+          : null
+      }
+      replyCount={ticket.replyCount}
+      whenLabel={tileWhen(ticket.lastActivityAt)}
+    />
   );
 }
 
@@ -690,15 +662,7 @@ function HelpdeskTab({ access }: { access: BulletinAccess }) {
       ) : null}
 
       {list.isLoading ? (
-        <ul className="twall" aria-hidden="true">
-          {Array.from({ length: 6 }, (_, i) => (
-            <li key={i} className="twall-tile twall-tile--skeleton">
-              <span className="poster-box" />
-              <span className="skeleton-line" />
-              <span className="skeleton-line skeleton-line--short" />
-            </li>
-          ))}
-        </ul>
+        <TicketWallSkeleton />
       ) : !list.error && rows.length === 0 ? (
         <section className="card empty-state" data-testid="tickets-empty">
           <p>
@@ -714,15 +678,11 @@ function HelpdeskTab({ access }: { access: BulletinAccess }) {
           </p>
         </section>
       ) : (
-        <ul
-          className={`twall${refreshing ? ' is-refreshing' : ''}`}
-          aria-busy={refreshing}
-          data-testid="ticket-wall"
-        >
+        <TicketWall refreshing={refreshing} testId="ticket-wall">
           {rows.map((tk) => (
             <TicketTile key={tk.id} ticket={tk} />
           ))}
-        </ul>
+        </TicketWall>
       )}
 
       {list.hasNextPage ? (

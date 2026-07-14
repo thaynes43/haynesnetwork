@@ -12,7 +12,6 @@
 // (protect-in-context) — saveExclusion needs the Maintainerr mediaServerId (a Plex ratingKey),
 // which exists only on pending rows; Maintainerr has no tmdb/tvdb lookup endpoint to resolve
 // one for arbitrary ledger items (D-02), and we never guess ratingKeys.
-import Link from 'next/link';
 import { useState } from 'react';
 import { trpc } from '@/lib/trpc-client';
 import { formatBytes, formatDay } from '@/lib/media';
@@ -206,32 +205,10 @@ export function LibraryLinkGlyph() {
   );
 }
 
-/**
- * The corner LIBRARY-nav link for a wall tile (owner refinement 2026-07-07 — the poster toggles,
- * so /library/[id] navigation moves to this dedicated, visually-distinct corner). Carries the
- * `?from=` context (Part 2) so the item page's back link returns here with scroll/filters intact.
- */
-export function LibraryCornerLink({
-  href,
-  title,
-  ariaLabel,
-}: {
-  href: string;
-  title: string;
-  ariaLabel: string;
-}) {
-  return (
-    <Link
-      className="pwall-corner pwall-liblink"
-      href={href}
-      data-testid="wall-lib-link"
-      title={title}
-      aria-label={ariaLabel}
-    >
-      <LibraryLinkGlyph />
-    </Link>
-  );
-}
+// The corner LIBRARY-nav link + the meta-line chips (RequestedByBadge / WatchNoteBadge) moved into
+// the card package (components/cards/trash-card.tsx — PLAN-047 / ADR-058): they are wall-card
+// anatomy, rendered only by TrashCard's typed slots now. The glyph SVGs stay here (shared with the
+// detail-page panels below).
 
 /**
  * The shared wall overlay glyph (both the /trash pending candidates wall and the batch curation
@@ -255,55 +232,6 @@ export function WallGlyphSvg({
     case 'gone':
       return <GoneGlyph />;
   }
-}
-
-/**
- * DESIGN-010 D-12 (build C) — the cross-server watch-visibility CHIP for a wall tile's meta line
- * (info, NOT protection). An eye + tooltip, rendered for BOTH watch states now that the action corner
- * never carries watch info (owner ruling 2026-07-09):
- *   • tone="info"  ⇒ recently watched — "Watched recently on <server>" (the guardian keeps it at the
- *     sweep, but the corner is a normal, saveable trash/requested tile).
- *   • tone="muted" ⇒ watched a while ago — "Last watched on <server> · <Mon YYYY>".
- * Deliberately a small meta-line chip (never a corner puck), fixed size ⇒ the tile never reflows
- * (ADR-015); the full date/server ride the tooltip / the item detail card.
- */
-export function WatchNoteBadge({ label, tone }: { label: string; tone: 'info' | 'muted' }) {
-  return (
-    <span
-      className={`bwall-watched bwall-watched--${tone}`}
-      data-testid="wall-watched"
-      data-tone={tone}
-      role="img"
-      aria-label={label}
-      title={label}
-    >
-      <EyeGlyph />
-    </span>
-  );
-}
-
-/**
- * ADR-025 / DESIGN-010 D-12 / DESIGN-011 errata (2026-07-09) — the requester INFO chip for a wall
- * tile's meta line. Requested items are informational only now ("Maintainerr rules decide what gets
- * promoted; the app controls how much and when it's deleted"): a requester changes NO actionability
- * (the corner stays the pure save/slate toggle), so the attribution is a person icon + "Requested by
- * <names>" tooltip that co-exists with the watch note. Deliberately a small meta-line chip (never a
- * corner puck), fixed size ⇒ the tile never reflows (ADR-015). Renders nothing with no requesters.
- */
-export function RequestedByBadge({ requesters }: { requesters: readonly string[] }) {
-  if (requesters.length === 0) return null;
-  const label = `Requested by ${requesters.join(', ')}`;
-  return (
-    <span
-      className="bwall-requested"
-      data-testid="wall-requested"
-      role="img"
-      aria-label={label}
-      title={label}
-    >
-      <PersonGlyph />
-    </span>
-  );
 }
 
 export interface ShieldButtonProps {

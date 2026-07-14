@@ -6352,3 +6352,33 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
+
+/* ---------- PLAN-047 / ADR-058 — the /e2e/card-gallery harness page ----------
+   A dev-only reference sheet rendering every card-family variant (see
+   components/cards + e2e/card-gallery.spec.ts). It lives OUTSIDE the .app frame, so
+   re-enable document scrolling for it alone (the no-page-scroll rule guards the app
+   chrome column, which this page doesn't use). Tokens only. */
+body:has(.gallery) {
+  overflow: auto;
+  height: auto;
+}
+.gallery {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: calc(var(--space) * 1.5) var(--space) calc(var(--space) * 3);
+}
+.gallery__note {
+  margin: 0 0 18px;
+  font-size: 13px;
+}
+.gallery__section {
+  margin: 0 0 26px;
+}
+.gallery__heading {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 6px;
+}

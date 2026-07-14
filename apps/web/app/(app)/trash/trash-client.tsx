@@ -54,7 +54,7 @@ import {
 } from '@hnet/ui';
 import { trpc } from '@/lib/trpc-client';
 import { Modal } from '@/components/modal';
-import { MediaPoster } from '@/components/media-poster';
+import { MediaPoster } from '@/components/cards';
 import { CHIP_LABELS, RatingChip } from '@/components/filter-chips';
 import { type TrashAccess } from '@/components/trash-shield';
 import {
