@@ -81,3 +81,28 @@ day); **Q-03 comics-section gate ruling**; Orwell essays queue-or-drop (GB `PqGM
 (for tuning); SMTP (F-04) still the 1P blocker; F-11 post-import spot-check candidate;
 ticket-worthy: the advisory e2e suite is red ON MAIN (member persona sees only My Fixes in
 the hermetic stack — evidence files in the 047 scratchpad).
+
+
+## Evening addendum (~19:00–23:30 — the Activity polish arc + rollout)
+
+- **v0.55.0** — Activity robustness (#278: per-source failure isolation w/ unavailable-notice
+  chips — the missing SABNZBD_API_KEY class can never blank the tab again; honest
+  load/empty/error states, no re-skeleton on polls; the double-active-tab CSS hover collision;
+  the Goodreads chip-bar flex-stretch) + **clickability/live-progress (#279: every card
+  click-through w/ ?from=activity + URL-synced filters; adaptive 2.5s/5s poll; PosterBadge
+  pulse+progress meter — the Fix grammar, parity-capture proven; just-landed accent;
+  wallStages wired to wanted cards)**. Owner drove both asks live.
+- **v0.55.1** — live-state precedence (#280): one pure `formatLiveWins` rule — live pipeline
+  state beats the reconciled snapshot ON LOAD everywhere (wanted detail rows + hero, wall
+  wanted badges, Goodreads items overlay); an active grab NEVER reads "Missing" (the owner's
+  Scott-Pilgrim 9%-vs-Missing report). Residual: Goodreads status FILTER chips still bucket by
+  snapshot (display truthful; facet lags — saga-phase item).
+- **Cluster-side:** SABNZBD_API_KEY added to the frontend ExternalSecret (the v0.53.0 deploy
+  gap that caused the blank Activity tab); `KyvernoEnforceBlockingAdmission` retuned to
+  sustained-denial ([10m] window + for:15m — the owner confirmed that alert was what paged
+  him); v0.55.x deploys under the artifact-pair gate ran with zero kyverno noise.
+- **INTEGRATIONS OPENED TO ALL ROLES** (owner action, DB-verified: Default/Family/Friends =
+  Enabled): any member can now link their own Goodreads; per the no-gate ruling their shelves
+  ACQUIRE automatically; actions remain admin-only (`role_activity_action_grants`).
+- **MAM gate correction:** governor @21:34 shows all 19 torrents still seeding-under-72h —
+  maturation is WEDNESDAY evening, not Tuesday; the 7 MAM-English titles re-search then.
