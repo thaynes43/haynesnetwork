@@ -141,6 +141,9 @@ dispatch** (standing rule).
 | 045 | Integrations hub + Goodreads library-idiom redesign | **ACTIONABLE — rulings LOCKED 2026-07-14 ~01:15** | Hub with per-provider sub-sections; Goodreads = stats page + library-idiom items wall with Helpdesk-style shelf chips (All + combos); all-shelves sync; **ALL shelves acquire (A1 overruled)**; every-shelf unmet items = Library WANTED tiles (books-section-gated, composed, mirror pure) **with full TV/Movies Wanted parity incl. force-search**. Fable UX build after the 044 fix PR merges; comics force-search wires to 046. |
 | 046 | Kapowarr comics acquisition layer | **ACTIONABLE — owner-ruled 2026-07-14 ~01:15; Opus tonight** | Confined `@hnet/kapowarr` client (read + import-confined write), comic-request routing (goodreads-sync stops parking when routable), comic force-search surface, stray LL want removed. Verify ComicVine key operability first (PLAN-023 owner-TODO may still be open → surfaced as unblocker, build proceeds on stubs). Never touches MAM/governor/LL-config. |
 
+| 047 | Shared card system (drift-proof base card, site-wide) | **ACTIONABLE — owner-ruled 2026-07-14; Fable, after v0.50.2** | One base card family in code (typed slots + lint guard + card-gallery visual-regression CI) extended per media type incl. Helpdesk; refit every wall. "The code guarantees the UX doesn't drift." |
+| 048 | Activity / In-Flight (all libraries) | **SCOPED — depends on 047; Opus fan-out per source** | Library→Activity tab + wall badges; grabbing/downloading/importing/import-FAILED visibility (*arrs + LL/SAB + Kapowarr); failures = role-gated actions (Admin acts, others read-only); post-SMTP nightly admin digest backlogged. Motivated by the 42-stranded-downloads incident. |
+
 ### Unplanned intake (owner-gated)
 
 - **SMTP relay (F-04)** — Google Workspace + `noreply@haynesnetwork.com` alias + shared relay; unblocks
