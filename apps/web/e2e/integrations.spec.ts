@@ -41,6 +41,21 @@ async function resetLl(): Promise<void> {
   await fetch(`${env.STUB_LAZYLIBRARIAN_URL}/_stub/reset`, { method: 'POST' });
 }
 
+// ADR-056 (PLAN-046) — the Kapowarr stub call recorder (comic add + auto_search force-search).
+interface KapowarrCall {
+  method: string;
+  path: string;
+  comicvineId?: number;
+  volumeId?: number;
+  cmd?: string;
+}
+async function kapowarrCalls(): Promise<KapowarrCall[]> {
+  const env = readRuntimeEnv();
+  const res = await fetch(`${env.STUB_KAPOWARR_URL}/_stub/calls`);
+  const body = (await res.json()) as { calls: KapowarrCall[] };
+  return body.calls;
+}
+
 test.describe('Integrations tab', () => {
   test('a fresh member sees no Integrations tab and a not-available state', async ({ page }) => {
     await signIn(page, 'fresh-member');
@@ -66,7 +81,7 @@ test.describe('Integrations tab', () => {
     runGoodreadsSync();
 
     // The both-format queueBook push + searchBook reached LazyLibrarian for the two routable novels only
-    // (the comic is parked). addBook alone would land Skipped — queueBook is the mandatory follow.
+    // (the comic goes to Kapowarr, never LL). addBook alone would land Skipped — queueBook is the mandatory follow.
     const calls = await llCalls();
     const queued = calls.filter((c) => c.cmd === 'queueBook');
     expect(queued.some((c) => c.type === 'eBook')).toBe(true);
@@ -76,6 +91,10 @@ test.describe('Integrations tab', () => {
     // confirm GET (search truncated it to "Fiction"); Batman by the "DC Comics" title marker (no GB categories).
     expect(calls.some((c) => c.id === 'gb-scottpilgrim')).toBe(false);
     expect(calls.some((c) => c.id === 'gb-batman')).toBe(false);
+
+    // ADR-056 — the comic was routed to KAPOWARR: a volume was ADDED (its own GetComics-DDL source, not LL).
+    const kapo = await kapowarrCalls();
+    expect(kapo.some((c) => c.path === '/api/volumes' && c.method === 'POST')).toBe(true);
 
     await page.reload();
 
@@ -91,20 +110,32 @@ test.describe('Integrations tab', () => {
     const searchBtn = tog.getByTestId('request-search-btn');
     await expect(searchBtn).toBeVisible();
 
-    // Both comics are parked out of LazyLibrarian (no Search again — the Kapowarr note).
-    await expect(page.getByTestId('request-card').filter({ hasText: 'Scott Pilgrim' })).toContainText(
-      'Kapowarr',
-    );
+    // Scott Pilgrim IS routed to Kapowarr (the stub's ComicVine search matches it) — a Comic status chip,
+    // Wanted (monitored), NOT queued in LazyLibrarian; its Force-Search dispatches to Kapowarr below.
+    const comic = page.getByTestId('request-card').filter({ hasText: 'Scott Pilgrim' });
+    await expect(comic).toContainText('Comic');
+    await expect(comic).toContainText('Wanted');
+    // Batman "Zero Year" has NO ComicVine match (the Kapowarr stub returns none) → it stays PARKED out of
+    // LazyLibrarian, showing the Kapowarr routing note (no Search again — the hourly CronJob retries).
     await expect(page.getByTestId('request-card').filter({ hasText: 'Zero Year' })).toContainText(
       'Kapowarr',
     );
 
-    // Manual "Search again" fires a real LL searchBook.
+    // Manual "Search again" on the routable book fires a real LL searchBook.
     await resetLl();
     await searchBtn.click();
     await expect(async () => {
       const after = await llCalls();
       expect(after.some((c) => c.cmd === 'searchBook' && c.id === 'gb-tog')).toBe(true);
+    }).toPass({ timeout: 10_000 });
+
+    // ADR-056 — the comic's Force-Search dispatches to KAPOWARR's auto_search task (never LazyLibrarian).
+    const comicSearchBtn = comic.getByTestId('request-search-btn');
+    await expect(comicSearchBtn).toBeVisible();
+    await comicSearchBtn.click();
+    await expect(async () => {
+      const after = await kapowarrCalls();
+      expect(after.some((c) => c.path === '/api/system/tasks' && c.cmd === 'auto_search')).toBe(true);
     }).toPass({ timeout: 10_000 });
   });
 });

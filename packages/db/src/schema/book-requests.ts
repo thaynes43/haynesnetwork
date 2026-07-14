@@ -40,14 +40,26 @@ export const bookRequests = pgTable(
     /** Denormalized title/author snapshot for the wall (survives a shelf-item edit). */
     title: text('title').notNull(),
     author: text('author'),
-    /** Per-format lifecycle status. Both formats are always queued (unless unroutable — see below). */
+    /** Per-format lifecycle status. Books queue BOTH ebook+audio; a comic uses comic_status instead. */
     ebookStatus: text('ebook_status').$type<BookRequestStatus>().notNull().default('requested'),
     audioStatus: text('audio_status').$type<BookRequestStatus>().notNull().default('requested'),
     /**
-     * Why this request is NOT routed to LazyLibrarian (null = routable, the normal case). v1 value:
-     * 'comic' — GB tags the item a comic / graphic novel, which is Kapowarr's domain, not LL's (owner note
-     * 2026-07-13). The sync leaves an unroutable request in `missing` and NEVER pushes it to LL; the tab
-     * surfaces it honestly ("routes via the saga pairing phase, not queued"). A saga residual (DESIGN-028).
+     * ADR-056 / PLAN-046 — the COMIC format lifecycle. NULL ⇒ this request is NOT a comic (a book/audiobook
+     * want — the ebook/audio path above). Non-null ⇒ a comic (Kapowarr's domain, never LazyLibrarian's):
+     * `comic_status` IS the actionable state (requested → wanted → grabbed → landed / missing) and ebook/audio
+     * stay 'missing' (N/A for a comic). The comic-ness discriminator the API/wall + force-search dispatch read.
+     */
+    comicStatus: text('comic_status').$type<BookRequestStatus>(),
+    /** ADR-056 — the LOCAL Kapowarr volume id the routing added (the ll_book_id analog: reconcile + force-search key). */
+    kapowarrVolumeId: text('kapowarr_volume_id'),
+    /** ADR-056 — the resolved ComicVine volume id (audit/debug + dedupe against a search result's already_added). */
+    comicvineId: text('comicvine_id'),
+    /**
+     * Why this request is NOT routed (null = routed / routable, the normal case). v1 value:
+     * 'comic' — a comic-classified want that could NOT be routed to Kapowarr this run (Kapowarr unreachable /
+     * blocked / no ComicVine match), so it stays PARKED in comic_status='requested'. Once Kapowarr routes it
+     * (comic_status='wanted', kapowarr_volume_id set) this clears to NULL. `comic_status IS NOT NULL` — not
+     * this column — is the durable "is a comic" signal (a parked comic still carries comic_status). (ADR-056.)
      */
     unroutableReason: text('unroutable_reason'),
     /** When a manual "Search again" last fired a real LL searchBook (audited). Nullable. */
@@ -65,6 +77,12 @@ export const bookRequests = pgTable(
     check(
       'book_requests_audio_status_enum',
       sql`${t.audioStatus} = ANY (ARRAY[${sql.raw(REQUEST_STATUS_SQL_LIST)}])`,
+    ),
+    // ADR-056 / PLAN-046 — comic_status is nullable (NULL ⇒ not a comic); when set it is one of the five
+    // BOOK_REQUEST_STATUSES (kept in lockstep with the const via REQUEST_STATUS_SQL_LIST).
+    check(
+      'book_requests_comic_status_enum',
+      sql`${t.comicStatus} IS NULL OR ${t.comicStatus} = ANY (ARRAY[${sql.raw(REQUEST_STATUS_SQL_LIST)}])`,
     ),
     // One request per shelf item (the mint is upsert-on-conflict on this key).
     unique('book_requests_shelf_item_unique').on(t.shelfItemId),

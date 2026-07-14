@@ -15,11 +15,13 @@ import {
   type SyncSource,
 } from '@hnet/db';
 import {
+  kapowarrBundleFromEnv,
   lazyLibrarianBundleFromEnv,
   maintainerrClientBundleFromEnv,
   mamGovernorBundleFromEnv,
   plexClientBundleFromEnv,
   resolveGovernorConfig,
+  type KapowarrClientBundle,
   type LazyLibrarianClientBundle,
   type UtilizationArrBundle,
 } from '@hnet/domain';
@@ -102,11 +104,13 @@ const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-bat
                            classification), mirror the shelf, match each want against the books_items
                            library, mint book_requests for the unmatched, and push BOTH formats to
                            LazyLibrarian (GB-volume → addBook → queueBook → searchBook, PACED) — then
-                           reconcile LL statuses + compute coverage. Comics are parked OUT of LL (Kapowarr's
-                           domain). GOODREADS_BASE_URL / GOOGLE_BOOKS_URL default to the public hosts;
-                           GOOGLE_BOOKS_API_KEY + LAZYLIBRARIAN_API_KEY are OPTIONAL (absent ⇒ degraded:
-                           mirror + mint, no push). NEVER writes LL provider config. No --source. Writes no
-                           sync_runs row.
+                           reconcile LL statuses + compute coverage. COMICS route to KAPOWARR instead (ADR-056:
+                           ComicVine volume search → add MONITORED (auto-search) → reconcile comic_status;
+                           Kapowarr's OWN GetComics DDL sources, NEVER MAM/qB/Prowlarr). GOODREADS_BASE_URL /
+                           GOOGLE_BOOKS_URL default to the public hosts; GOOGLE_BOOKS_API_KEY /
+                           LAZYLIBRARIAN_API_KEY / KAPOWARR_API_KEY are OPTIONAL (absent LL ⇒ mirror + mint, no
+                           book push; absent Kapowarr ⇒ comics parked). NEVER writes LL/Kapowarr provider
+                           config. No --source. Writes no sync_runs row.
   --source=NAME            limit the run to one source (repeatable; default: all sources; for
                            metadata-refresh the default is the three *arr kinds)
   --force-tombstones       override the mass-tombstone guard (DESIGN-005 D-14/Q-03)
@@ -341,6 +345,18 @@ async function main(): Promise<number> {
       logger.info('goodreads-sync: no LAZYLIBRARIAN_API_KEY — running in mirror+mint (no push) mode');
     }
   }
+  // ADR-056 (PLAN-046) — the confined Kapowarr bundle for the goodreads-sync COMIC leg (built INSIDE
+  // @hnet/domain, so the confined write surface stays domain-only — the arr-write import guard). OPTIONAL:
+  // absent KAPOWARR_API_KEY ⇒ comics stay PARKED (unroutable_reason='comic') — the honest degraded run.
+  let kapowarr: KapowarrClientBundle | undefined;
+  if (args.mode === 'goodreads-sync') {
+    try {
+      kapowarr = kapowarrBundleFromEnv();
+    } catch {
+      kapowarr = undefined;
+      logger.info('goodreads-sync: no KAPOWARR_API_KEY — comics parked (no Kapowarr routing)');
+    }
+  }
 
   logger.info('sync starting', {
     mode: args.mode,
@@ -373,6 +389,7 @@ async function main(): Promise<number> {
     ...(books ? { books } : {}),
     ...(goodreads ? { goodreads } : {}),
     ...(lazyLibrarian ? { lazyLibrarian } : {}),
+    ...(kapowarr ? { kapowarr } : {}),
     logger,
   });
 

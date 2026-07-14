@@ -8,15 +8,20 @@ import {
   linkIntegration,
   listLinkedIntegrations,
   loadLibraryMatcher,
+  mapKapowarrVolumeStatus,
   mapLlStatus,
   parseGoodreadsProfile,
+  pickBestVolume,
   recordManualSearch,
+  runComicVolumeSearch,
   runManualBookSearch,
   syncGoodreadsIntegration,
   unlinkIntegration,
   type EnrichedShelfItem,
+  type KapowarrClientBundle,
   type LazyLibrarianClientBundle,
 } from '../src/index';
+import type { KapowarrSearchCandidate } from '@hnet/kapowarr/read';
 import { bootMigratedDb, createUser, type TestDb } from './helpers';
 
 // ADR-055 / DESIGN-028 (PLAN-044) — the Integration domain: link/unlink (audited), the shelf mirror + the
@@ -55,6 +60,73 @@ function stubLl(getBook?: (id: string) => { ebookStatus: string | null; audioSta
   } as unknown as LazyLibrarianClientBundle;
   return { calls, bundle };
 }
+
+// ADR-056 (PLAN-046) — an in-memory Kapowarr stub: `searchVolumes` returns canned ComicVine candidates,
+// `addVolume` mints a monitored volume + records it, `getVolume` reports its live counts (drives the reconcile),
+// and `searchVolume` records the force-search. No network.
+interface KapoCall {
+  op: 'search' | 'add' | 'searchVolume' | 'getVolume';
+  query?: string;
+  comicvineId?: number;
+  rootFolderId?: number;
+  id?: number;
+}
+function stubKapowarr(opts?: {
+  candidates?: (query: string) => KapowarrSearchCandidate[];
+  rootFolders?: Array<{ id: number; folder: string | null }>;
+  issuesDownloaded?: number;
+  issueCount?: number;
+}) {
+  const calls: KapoCall[] = [];
+  const volumes = new Map<number, { monitored: boolean; issueCount: number; issuesDownloaded: number }>();
+  let nextId = 500;
+  const bundle = {
+    read: {
+      searchVolumes: async (query: string) => {
+        calls.push({ op: 'search', query });
+        return opts?.candidates ? opts.candidates(query) : [];
+      },
+      getVolume: async (id: number) => {
+        calls.push({ op: 'getVolume', id });
+        const v = volumes.get(id);
+        return v ? { id, comicvineId: null, title: null, ...v } : null;
+      },
+      listVolumes: async () => [...volumes.entries()].map(([id, v]) => ({ id, comicvineId: null, title: null, ...v })),
+      getRootFolders: async () => opts?.rootFolders ?? [{ id: 1, folder: '/Comics' }],
+    },
+    write: {
+      addVolume: async (input: { comicvineId: number; rootFolderId: number }) => {
+        const id = nextId++;
+        volumes.set(id, {
+          monitored: true,
+          issueCount: opts?.issueCount ?? 6,
+          issuesDownloaded: opts?.issuesDownloaded ?? 0,
+        });
+        calls.push({ op: 'add', comicvineId: input.comicvineId, rootFolderId: input.rootFolderId });
+        return id;
+      },
+      setMonitored: async () => {},
+      searchVolume: async (id: number) => {
+        calls.push({ op: 'searchVolume', id });
+      },
+    },
+  } as unknown as KapowarrClientBundle;
+  return { calls, bundle, volumes };
+}
+
+// The live-shaped Scott Pilgrim + Batman ComicVine candidates (from the real Kapowarr search 2026-07-14) —
+// the resolver must pick the ORIGINAL editions (Oni Press cv 25478; DC "Batman: Zero Year" cv 138641).
+const SCOTT_PILGRIM_CANDIDATES: KapowarrSearchCandidate[] = [
+  { comicvineId: 61857, title: 'Scott Pilgrim', year: 2010, volumeNumber: 1, publisher: 'Panini Verlag', issueCount: 6, translated: true, alreadyAdded: null },
+  { comicvineId: 25478, title: 'Scott Pilgrim', year: 2004, volumeNumber: 1, publisher: 'Oni Press', issueCount: 6, translated: false, alreadyAdded: null },
+  { comicvineId: 151348, title: 'Scott Pilgrim', year: null, volumeNumber: 1, publisher: 'Debols!llo', issueCount: 6, translated: false, alreadyAdded: null },
+  { comicvineId: 51110, title: 'Scott Pilgrim Color', year: 2012, volumeNumber: 1, publisher: 'Oni Press', issueCount: 6, translated: false, alreadyAdded: null },
+];
+const BATMAN_CANDIDATES: KapowarrSearchCandidate[] = [
+  { comicvineId: 138641, title: 'Batman: Zero Year', year: 2021, volumeNumber: 1, publisher: 'DC Comics', issueCount: 1, translated: false, alreadyAdded: null },
+  { comicvineId: 65957, title: "Batman Zero Year Director's Cut", year: 2013, volumeNumber: 1, publisher: 'DC Comics', issueCount: 1, translated: false, alreadyAdded: null },
+  { comicvineId: 145504, title: 'Year Zero', year: 2022, volumeNumber: 1, publisher: 'AWA Studios', issueCount: 5, translated: false, alreadyAdded: null },
+];
 
 let t: TestDb;
 beforeAll(async () => {
@@ -297,5 +369,192 @@ describe('syncGoodreadsIntegration (the vertical)', () => {
       actorId: user.id,
     });
     expect(stamped.request.lastSearchedAt).not.toBeNull();
+  });
+});
+
+// ADR-056 (PLAN-046) — the Kapowarr comic-routing leg.
+
+describe('pickBestVolume (ComicVine resolver)', () => {
+  it('prefers the ORIGINAL edition over a translated reprint (Scott Pilgrim → Oni Press cv 25478)', () => {
+    const pick = pickBestVolume("Scott Pilgrim's Precious Little Life (Scott Pilgrim, #1)", SCOTT_PILGRIM_CANDIDATES);
+    expect(pick?.comicvineId).toBe(25478);
+  });
+
+  it('ranks by shared distinctive tokens (Batman Zero Year → cv 138641, beats a bare "Year Zero")', () => {
+    const pick = pickBestVolume('Zero Year: Part 1 (DC Comics - The Legend of Batman #1)', BATMAN_CANDIDATES);
+    expect(pick?.comicvineId).toBe(138641);
+  });
+
+  it('returns null when nothing shares a token (leave the comic parked, never a fabricated add)', () => {
+    expect(pickBestVolume('A Totally Unrelated Novel', SCOTT_PILGRIM_CANDIDATES)).toBeNull();
+    expect(pickBestVolume('Scott Pilgrim', [])).toBeNull();
+  });
+});
+
+describe('mapKapowarrVolumeStatus', () => {
+  it('maps monitored + downloaded counts to a comic status', () => {
+    expect(mapKapowarrVolumeStatus({ monitored: true, issueCount: 6, issuesDownloaded: 6 })).toBe('landed');
+    expect(mapKapowarrVolumeStatus({ monitored: true, issueCount: 6, issuesDownloaded: 2 })).toBe('grabbed');
+    expect(mapKapowarrVolumeStatus({ monitored: true, issueCount: 6, issuesDownloaded: 0 })).toBe('wanted');
+    expect(mapKapowarrVolumeStatus({ monitored: false, issueCount: 6, issuesDownloaded: 0 })).toBe('missing');
+  });
+});
+
+describe('comic routing (Kapowarr)', () => {
+  async function seedComicOnly() {
+    const user = await createUser(t.db);
+    const { integration } = await linkIntegration({
+      db: t.db,
+      userId: user.id,
+      provider: 'goodreads',
+      externalUserId: '202652880',
+      profileRef: '202652880',
+      actorId: user.id,
+    });
+    return { user, integration };
+  }
+
+  const comicItems: EnrichedShelfItem[] = [
+    { shelf: 'to-read', externalBookId: 'gr-scott', title: "Scott Pilgrim's Precious Little Life (Scott Pilgrim, #1)", author: "Bryan Lee O'Malley", isbn: null, gbVolumeId: null, coverUrl: null, shelvedAt: new Date(), isComic: true },
+  ];
+
+  function candidatesFor(query: string): KapowarrSearchCandidate[] {
+    return /scott|pilgrim/i.test(query) ? SCOTT_PILGRIM_CANDIDATES : [];
+  }
+
+  it('routes a comic to Kapowarr: resolves the volume, adds it monitored, reconciles, clears parking', async () => {
+    const { integration } = await seedComicOnly();
+    const kapo = stubKapowarr({ candidates: candidatesFor });
+
+    const report = await syncGoodreadsIntegration({
+      db: t.db,
+      integrationId: integration.id,
+      items: comicItems,
+      syncedShelves: ['to-read'],
+      kapowarr: kapo.bundle,
+      pacer: async () => {},
+    });
+
+    expect(report.comicsRouted).toBe(1);
+    expect(report.comicsReconciled).toBe(1);
+    // Added the ORIGINAL Oni volume under root folder 1.
+    const add = kapo.calls.find((c) => c.op === 'add');
+    expect(add).toMatchObject({ comicvineId: 25478, rootFolderId: 1 });
+
+    const [req] = await t.db
+      .select()
+      .from(bookRequests)
+      .where(eq(bookRequests.integrationId, integration.id));
+    expect(req!.comicStatus).toBe('wanted'); // monitored in Kapowarr → Wanted
+    expect(req!.kapowarrVolumeId).not.toBeNull();
+    expect(req!.comicvineId).toBe('25478');
+    expect(req!.unroutableReason).toBeNull(); // no longer parked
+    expect(req!.ebookStatus).toBe('missing'); // N/A for a comic (never pushed to LL)
+
+    // A second run reconciles the existing volume (no re-add) and picks up a landed state.
+    kapo.volumes.set(Number(req!.kapowarrVolumeId), { monitored: true, issueCount: 6, issuesDownloaded: 6 });
+    const report2 = await syncGoodreadsIntegration({
+      db: t.db,
+      integrationId: integration.id,
+      items: comicItems,
+      syncedShelves: ['to-read'],
+      kapowarr: kapo.bundle,
+      pacer: async () => {},
+    });
+    expect(report2.comicsRouted).toBe(0); // already routed
+    expect(kapo.calls.filter((c) => c.op === 'add')).toHaveLength(1);
+    const [req2] = await t.db.select().from(bookRequests).where(eq(bookRequests.integrationId, integration.id));
+    expect(req2!.comicStatus).toBe('landed');
+    expect(report2.coverage).toEqual({ total: 1, covered: 1, pct: 100 }); // a landed comic counts as covered
+  });
+
+  it('parks a comic when NO Kapowarr bundle (degraded run) or when ComicVine has no match', async () => {
+    // (a) No Kapowarr bundle at all.
+    const { integration } = await seedComicOnly();
+    const report = await syncGoodreadsIntegration({
+      db: t.db,
+      integrationId: integration.id,
+      items: comicItems,
+      syncedShelves: ['to-read'],
+      pacer: async () => {},
+    });
+    expect(report.comicsRouted).toBe(0);
+    const [parked] = await t.db.select().from(bookRequests).where(eq(bookRequests.integrationId, integration.id));
+    expect(parked!.comicStatus).toBe('requested'); // minted, parked, awaiting Kapowarr
+    expect(parked!.unroutableReason).toBe('comic');
+    expect(parked!.kapowarrVolumeId).toBeNull();
+
+    // (b) Kapowarr present but ComicVine returns no match → still parked, no add.
+    const kapo = stubKapowarr({ candidates: () => [] });
+    const report2 = await syncGoodreadsIntegration({
+      db: t.db,
+      integrationId: integration.id,
+      items: comicItems,
+      syncedShelves: ['to-read'],
+      kapowarr: kapo.bundle,
+      pacer: async () => {},
+    });
+    expect(report2.comicsRouted).toBe(0);
+    expect(kapo.calls.some((c) => c.op === 'add')).toBe(false);
+    const [stillParked] = await t.db.select().from(bookRequests).where(eq(bookRequests.integrationId, integration.id));
+    expect(stillParked!.comicStatus).toBe('requested');
+    expect(stillParked!.unroutableReason).toBe('comic');
+  });
+
+  it('comic force-search audits request_book_search and fires Kapowarr auto_search', async () => {
+    const { user, integration } = await seedComicOnly();
+    const kapo = stubKapowarr({ candidates: candidatesFor });
+    await syncGoodreadsIntegration({
+      db: t.db,
+      integrationId: integration.id,
+      items: comicItems,
+      syncedShelves: ['to-read'],
+      kapowarr: kapo.bundle,
+      pacer: async () => {},
+    });
+    const [req] = await t.db.select().from(bookRequests).where(eq(bookRequests.integrationId, integration.id));
+    kapo.calls.length = 0;
+
+    const result = await runComicVolumeSearch({
+      db: t.db,
+      requestId: req!.id,
+      userId: user.id,
+      actorId: user.id,
+      kapowarr: kapo.bundle,
+    });
+    expect(result.searched).toBe(true);
+    expect(kapo.calls.filter((c) => c.op === 'searchVolume')).toHaveLength(1);
+
+    const audits = await t.db
+      .select()
+      .from(permissionAudit)
+      .where(eq(permissionAudit.action, 'request_book_search'));
+    expect(audits).toHaveLength(1);
+  });
+
+  it('comic force-search on a not-yet-routed comic audits but searches nothing', async () => {
+    const { user, integration } = await seedComicOnly();
+    // Mint the comic WITHOUT Kapowarr (parked, no volume id).
+    await syncGoodreadsIntegration({
+      db: t.db,
+      integrationId: integration.id,
+      items: comicItems,
+      syncedShelves: ['to-read'],
+      pacer: async () => {},
+    });
+    const [req] = await t.db.select().from(bookRequests).where(eq(bookRequests.integrationId, integration.id));
+    const kapo = stubKapowarr();
+    const result = await runComicVolumeSearch({
+      db: t.db,
+      requestId: req!.id,
+      userId: user.id,
+      actorId: user.id,
+      kapowarr: kapo.bundle,
+    });
+    expect(result).toEqual({ searched: false, reason: 'no_kapowarr_id' });
+    expect(kapo.calls.some((c) => c.op === 'searchVolume')).toBe(false);
+    // Still audited (the intent is recorded).
+    const audits = await t.db.select().from(permissionAudit).where(eq(permissionAudit.action, 'request_book_search'));
+    expect(audits).toHaveLength(1);
   });
 });

@@ -346,6 +346,20 @@ export class LazyLibrarianUpstreamError extends Error {
   }
 }
 
+/**
+ * ADR-056 (PLAN-046) — a Kapowarr read/write failed upstream while serving a request (a comic force-search
+ * push, or a routing add) — surfaced to the client as BAD_GATEWAY, exactly like LazyLibrarianUpstreamError.
+ * The original KapowarrError rides along as `cause`; the API key is never echoed (the taxonomy keeps it
+ * query-only + redacted). NOTE: the goodreads-sync routing pass SWALLOWS this per-comic (logged; the request
+ * stays for the next run) — only the USER-initiated force-search surfaces it.
+ */
+export class KapowarrUpstreamError extends Error {
+  readonly code = 'KAPOWARR_UNAVAILABLE' as const;
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+  }
+}
+
 function pgErrorCode(err: unknown): string | undefined {
   if (typeof err !== 'object' || err === null) return undefined;
   const code = (err as { code?: unknown }).code;

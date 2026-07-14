@@ -214,22 +214,33 @@ function ShelfSummary({ pending }: { pending: boolean }) {
 
 function RequestCard({ request, onSearched }: { request: RequestWire; onSearched: () => void }) {
   const search = trpc.integrations.search.useMutation({ onSuccess: onSearched });
+  // ADR-056 (PLAN-046) — a COMIC (comicStatus non-null) is routed to Kapowarr, not LazyLibrarian: it shows a
+  // single Comic status chip (not Ebook/Audio), and a parked comic (no ComicVine match yet) shows the routing
+  // note. The full Comics-wall poster redesign is PLAN-045; this keeps the 044 wall coherent for comics.
+  const isComic = request.comicStatus != null;
+  const landed = request.comicStatus === 'landed' || request.ebookStatus === 'landed' || request.audioStatus === 'landed';
   return (
     <li className="integrations-request" data-testid="request-card" data-request-id={request.id}>
       <div className="integrations-request__art" aria-hidden="true">
-        <KindIcon kind="book" className="integrations-request__icon" />
+        <KindIcon kind={isComic ? 'comic' : 'book'} className="integrations-request__icon" />
       </div>
       <div className="integrations-request__body">
         <p className="integrations-request__title">{request.title}</p>
         <p className="integrations-request__author muted">{request.author ?? 'Unknown author'}</p>
         <div className="integrations-request__chips">
-          <StatusChip format="Ebook" status={request.ebookStatus} />
-          <StatusChip format="Audio" status={request.audioStatus} />
+          {isComic ? (
+            <StatusChip format="Comic" status={request.comicStatus!} />
+          ) : (
+            <>
+              <StatusChip format="Ebook" status={request.ebookStatus} />
+              <StatusChip format="Audio" status={request.audioStatus} />
+            </>
+          )}
         </div>
         <div className="integrations-request__action">
-          {request.unroutableReason === 'comic' ? (
+          {isComic && request.unroutableReason === 'comic' ? (
             <span className="muted integrations-request__note">
-              Comic — routes via Kapowarr (saga pairing phase), not queued in LazyLibrarian.
+              Comic — routing to Kapowarr (waiting on a ComicVine match).
             </span>
           ) : request.searchable ? (
             <button
@@ -241,12 +252,12 @@ function RequestCard({ request, onSearched }: { request: RequestWire; onSearched
             >
               {search.isPending ? 'Searching…' : 'Search again'}
             </button>
-          ) : request.inLibrary ||
-            request.ebookStatus === 'landed' ||
-            request.audioStatus === 'landed' ? (
+          ) : request.inLibrary || landed ? (
             <span className="muted integrations-request__note">In your library.</span>
           ) : (
-            <span className="muted integrations-request__note">Queued — searching.</span>
+            <span className="muted integrations-request__note">
+              {isComic ? 'Monitored in Kapowarr — searching.' : 'Queued — searching.'}
+            </span>
           )}
         </div>
       </div>

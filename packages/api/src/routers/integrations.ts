@@ -14,6 +14,7 @@ import {
   InvalidGoodreadsProfileError,
   linkIntegration,
   markIntegrationSynced,
+  runComicVolumeSearch,
   runManualBookSearch,
   syncGoodreadsIntegration,
   unlinkIntegration,
@@ -27,6 +28,7 @@ import {
   mapDomainErrors,
   resolveGoodreadsRssClient,
   resolveGoogleBooksClient,
+  resolveKapowarrBundle,
   resolveLazyLibrarianBundle,
   type TRPCContext,
 } from '../trpc';
@@ -52,6 +54,15 @@ async function runFirstGoodreadsSync(ctx: TRPCContext, integration: UserIntegrat
     ll = resolveLazyLibrarianBundle(ctx);
   } catch {
     ll = undefined;
+  }
+  // ADR-056 (PLAN-046) — Kapowarr is optional too. When configured, route comics to Kapowarr in this first
+  // sync exactly as the CronJob does (classifier decides comic-vs-book below); absent config ⇒ comics stay
+  // parked (unroutable_reason='comic') and the hourly CronJob routes them on its next run.
+  let kapowarr: ReturnType<typeof resolveKapowarrBundle> | undefined;
+  try {
+    kapowarr = resolveKapowarrBundle(ctx);
+  } catch {
+    kapowarr = undefined;
   }
 
   const enriched: EnrichedShelfItem[] = [];
@@ -83,6 +94,7 @@ async function runFirstGoodreadsSync(ctx: TRPCContext, integration: UserIntegrat
     items: enriched,
     syncedShelves,
     ...(ll ? { ll } : {}),
+    ...(kapowarr ? { kapowarr } : {}),
   });
 }
 
@@ -103,6 +115,12 @@ function toIntegrationWire(row: UserIntegrationRow | null) {
 }
 
 function isSearchable(view: BookRequestView): boolean {
+  // ADR-056 — a COMIC is searchable once routed to Kapowarr (has a volume id) and not yet fully landed; a
+  // BOOK is searchable once pushed to LL (has a GB/LL id) and not both-format-landed. A PARKED comic
+  // (no volume id yet — Kapowarr unreachable / no ComicVine match) is not force-searchable.
+  if (view.comicStatus != null) {
+    return view.kapowarrVolumeId != null && view.comicStatus !== 'landed';
+  }
   if (view.unroutableReason) return false;
   if (!view.llBookId) return false;
   return view.ebookStatus !== 'landed' || view.audioStatus !== 'landed';
@@ -116,6 +134,11 @@ function toRequestWire(view: BookRequestView) {
     shelf: view.shelf,
     ebookStatus: view.ebookStatus,
     audioStatus: view.audioStatus,
+    // ADR-056 — the comic leg: `comicStatus` non-null ⇒ this request is a COMIC (routed via Kapowarr, not
+    // LL). PLAN-045's Comics wall renders it from comicStatus; the force-search button hits the same
+    // `integrations.search` endpoint, which dispatches to Kapowarr for a comic.
+    comicStatus: view.comicStatus,
+    isComic: view.comicStatus != null,
     unroutableReason: view.unroutableReason,
     inLibrary: view.matchedBooksItemId !== null,
     searchable: isSearchable(view),
@@ -216,8 +239,10 @@ export const integrationsRouter = router({
   }),
 
   /**
-   * Manual "Search again" on a Missing request — the audited user action, then a real LazyLibrarian
-   * searchBook (R3 / AC-04). Ownership re-checked server-side. Non-destructive (no ConfirmButton needed).
+   * Manual "Search again" / Force-Search on a Missing request — the audited user action (request_book_search),
+   * then a real acquisition search. DISPATCHES by format (ADR-056): a COMIC fires Kapowarr's `auto_search`
+   * task; a book/audiobook fires LazyLibrarian's `searchBook`. THIS is the endpoint PLAN-045's Library
+   * "Force Search" button calls for every book-wall format. Ownership re-checked server-side. Non-destructive.
    */
   search: integrationsProcedure
     .input(z.object({ requestId: z.string().uuid() }))
@@ -229,6 +254,17 @@ export const integrationsRouter = router({
         throw new TRPCError({ code: 'FORBIDDEN' });
       }
       return mapDomainErrors(async () => {
+        if (request.comicStatus != null) {
+          // A comic → Kapowarr's own sources (the auto_search task).
+          const result = await runComicVolumeSearch({
+            db: ctx.db,
+            requestId: input.requestId,
+            userId: ctx.user.id,
+            actorId: ctx.user.id,
+            kapowarr: resolveKapowarrBundle(ctx),
+          });
+          return { target: 'kapowarr' as const, ...result };
+        }
         const result = await runManualBookSearch({
           db: ctx.db,
           requestId: input.requestId,
@@ -236,7 +272,7 @@ export const integrationsRouter = router({
           actorId: ctx.user.id,
           ll: resolveLazyLibrarianBundle(ctx),
         });
-        return result;
+        return { target: 'lazylibrarian' as const, ...result };
       });
     }),
 });
