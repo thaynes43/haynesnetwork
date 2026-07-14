@@ -106,3 +106,15 @@ the hermetic stack — evidence files in the 047 scratchpad).
   ACQUIRE automatically; actions remain admin-only (`role_activity_action_grants`).
 - **MAM gate correction:** governor @21:34 shows all 19 torrents still seeding-under-72h —
   maturation is WEDNESDAY evening, not Tuesday; the 7 MAM-English titles re-search then.
+
+- **v0.56.0 (late night) — NAV RESTRUCTURE (owner-designed via mockup):** 4-tab bar
+  Home·Library·Tickets·Trash (320px-proven, ≤380px type tier), Integrations + Metrics moved to
+  the avatar user menu (gating preserved: member sees neither), **Helpdesk→Tickets ratified**
+  (the HELPDESK_NAME one-constant flip; routes/section-ids/grants untouched; /admin/roles keeps
+  the canonical "Bulletin" column header). DESIGN-004 D-22. Open owner flag: the Tickets page
+  h1+inner-tab double "Tickets" — trim on request.
+- **MAM (correction of the correction):** the Saturday cohort matured in a cascade Tue ~22:30Z —
+  **the gate is OPEN** (19→6 unsatisfied, indexer re-enabled, headroom 14); only Sunday's 6
+  Maas torrents mature Wed eve. LL's overnight cycles retry the 7 poisoned titles vs MAM.
+- **Integrations enabled for ALL roles** (owner, DB-verified) — member shelves acquire
+  automatically per the no-gate ruling.
