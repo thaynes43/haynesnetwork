@@ -148,6 +148,11 @@ the expected pattern", then fetches that never reached the server. The Authentik
 **client caveat**: enroll TOTP in Chrome (or another Chromium browser) if Safari stalls. WebAuthn
 passkey enrollment was unaffected.
 
+> **2026-07-13 note:** this caveat plausibly shared the goauthentik#19814 root cause (native CSS
+> nesting crashing/derailing old WebKit). The PLAN-042 lowering (amendment below) covers ALL
+> interfaces' static assets — including the authenticator-setup flow's — so this **may now be
+> cured. Owner retest pending**; the caveat stays until a Safari TOTP enrollment succeeds.
+
 ## Credential locations
 
 | Credential | Where it lives | Notes |
@@ -201,3 +206,60 @@ does not apply to them.
   served web assets with CSS-nesting lowering; upstream-RCA-verified recipe), Option B (upstream
   watch / contribute the fix), Option C (affected users update their OS). Compat mode reverts as
   part of whichever lands.
+- **RESOLVED — see the 2026-07-13 evening amendment below** (Option A shipped; compat mode
+  reverted; the deviation above is history).
+
+## 2026-07-13 evening amendment — PLAN-042 Option A SHIPPED: CSS-nesting lowering as-built; compat mode reverted
+
+Owner-ruled Option A executed the same day. The plan's full build/verification record lives in
+`.agents/plans/completed/042-authentik-upgrade-compat-revert.md`; the as-built estate:
+
+- **What serves now:** the authentik **server pods post-process their own web assets at pod
+  start** so no native CSS nesting reaches any browser. Two initContainers on the server
+  Deployment (haynes-ops `kubernetes/main/apps/network/authentik/app/helmrelease.yaml`):
+  1. `web-dist-copy` — runs the chart's own server image (tpl'd
+     `{{ default .Values.global.image.repository … }}:{{ … authentik.defaultTag … }}` reference,
+     so **image/chart bumps re-run the pipeline automatically**, no baked digests) and copies
+     `/web/dist` into an emptyDir (`cp -r`; NOT `-a` — utimensat on the root-owned mount point
+     EPERMs as the non-root user).
+  2. `web-dist-lower` — node:22-bookworm-slim; installs pinned `lightningcss@1.30.1` +
+     `acorn@8.15.0` at start and runs `web-lowering/lower-css-nesting.mjs` (delivered as
+     ConfigMap `authentik-web-lowering`; reloader annotation restarts pods on script change):
+     every `*.css` bundle AND every CSS string/expression-free template literal embedded in the
+     JS bundles is lowered with `targets: safari >= 15` + `Features.Nesting`; `.br`/`.gz`
+     siblings are deleted; the emptyDir is then mounted OVER `/web/dist`.
+- **Fail-loud gate:** the script exits nonzero if any string that STRICTLY parses as a CSS
+  stylesheet still carries nesting → the pod fails, the previous ReplicaSet keeps serving, and
+  login never regresses. Marker-bearing text that is NOT parseable CSS is logged as non-fatal
+  `suspects` (in 2026.5.3: Mermaid theme fragments — stylis flattens them at runtime — and Lezer
+  parser tables in the CodeMirror chunk; audit the pod log on image bumps). The script itself is
+  written **without any `${`/dollar-variable tokens** — the app Kustomization runs
+  `postBuild.substitute` (envsubst) over every manifest, and variable-like tokens in the
+  ConfigMap break the whole app dir's reconciliation (learned the hard way; pre-flight with
+  `kubectl kustomize . | flux envsubst --strict`). `spec.timeout: 20m` on the HelmRelease covers
+  the three sequential pod inits.
+- **Compat mode REVERTED** (`compatibility_mode: false` on all four flows, haynes-ops
+  `dafdea79`): with the crash trigger gone, native rendering returned and **self-healed the
+  Plex-first ordering + the "or sign in with a local account" divider** (the
+  `:host([part='flow-card'])` reorder only works natively). The brand-CSS specificity pass
+  (`0d9699a`) holds in native mode as designed — green Plex pill, pill buttons, dark-green
+  background verified.
+- **`%(theme)s` background fix** (haynes-ops `1b11dc69`): `branding_default_flow_background` is
+  served VERBATIM by authentik (no theme substitution, unlike `branding_logo`) — pinned to the
+  concrete `hnet/bg-c-dark.svg`; the doomed 404 per flow-page load is gone and the background
+  renders in all engines.
+- **Verified live (2026-07-13 ~21:55):** Playwright WebKit **18.2** (the crash proxy — 3/3
+  renderer crash natively on the original assets) now passes **3/3 natively**: identification
+  form renders and advances past stage 1; WebKit 26.5 / Chromium 149 / Firefox 151 green,
+  desktop + mobile viewports; served `flow-<ver>.css` 33→0 nesting markers,
+  `FlowInterface-<ver>.js` 7→0; Cloudflare canonical asset entries refreshed (max-age 14400).
+- **Commit trail (haynes-ops):** `1b11dc69` → `4a7bc3af` → `7258fd0f` → `9392d81f` →
+  `234037a1` → `716f5cc2` → `dafdea79`.
+- **Rollback:** remove the two initContainers + the `web-dist-lowered` volume/volumeMount +
+  the `authentik-web-lowering` generator entry (forward commit) — pods then serve the image's
+  stock assets again. Re-enabling `compatibility_mode` is NOT a rollback path (it never fixed
+  real old Safari).
+- **Scope note:** the lowering covers **ALL interfaces' static assets** (flow, user, admin —
+  everything under `/web/dist`), not just the login flow. The Safari TOTP-enrollment caveat
+  (§ Client-side caveat) plausibly shared the #19814 root cause and **MAY now be cured — owner
+  retest pending**; the caveat stays in place until that retest.
