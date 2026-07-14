@@ -3,7 +3,8 @@
 // implied edit), the link flow (vanity/URL resolve + public-shelf probe via the injected Goodreads client),
 // and the manual re-search ownership check.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { GoodreadsRssClient } from '@hnet/goodreads';
+import type { GbVolume, GoodreadsRssClient, GoodreadsShelfItem, GoogleBooksClient } from '@hnet/goodreads';
+import type { LazyLibrarianClientBundle } from '@hnet/domain';
 import { bootMigratedDb, caller, createUser, makeCtx, sessionUser, type TestDb } from './helpers';
 import type { TRPCContext } from '../src/trpc';
 
@@ -24,6 +25,19 @@ function stubGoodreads(opts?: {
     resolveUserId: opts?.resolveUserId ?? (async () => '202652880'),
     fetchShelf: opts?.fetchShelf ?? (async () => []),
   } as unknown as GoodreadsRssClient;
+}
+
+/** A stub Google Books client (resolve → a fixed volume) injected into the context. */
+function stubGoogleBooks(volume: GbVolume | null): GoogleBooksClient {
+  return { resolveVolume: async () => volume } as unknown as GoogleBooksClient;
+}
+
+/** A no-op LazyLibrarian bundle so the fresh-link first sync pushes instantly (no network). */
+function stubLazyLibrarian(): LazyLibrarianClientBundle {
+  return {
+    read: { getBook: async () => null },
+    write: { addBook: async () => {}, queueBook: async () => {}, searchBook: async () => {} },
+  } as unknown as LazyLibrarianClientBundle;
 }
 
 async function codeOf(fn: () => Promise<unknown>): Promise<string> {
@@ -77,6 +91,49 @@ describe('integrations router — link + shelf', () => {
     const un = await caller(ctx).integrations.unlink();
     expect(un.changed).toBe(true);
     expect((await caller(ctx).integrations.status()).integration.linked).toBe(false);
+  });
+
+  it('runs the FIRST shelf sync on link so the wall is not a "0 of 0" dead-end (fix 3a)', async () => {
+    const admin = await createUser(t.db, { admin: true });
+    const shelfItem: GoodreadsShelfItem = {
+      externalBookId: 'gr-dune',
+      title: 'Dune',
+      author: 'Frank Herbert',
+      isbn: '9780593099322',
+      coverUrl: null,
+      shelvedAt: new Date(),
+    };
+    const ctx: TRPCContext = {
+      ...makeCtx(t.db, sessionUser(admin)),
+      goodreads: stubGoodreads({ fetchShelf: async () => [shelfItem] }),
+      googleBooks: stubGoogleBooks({
+        volumeId: 'gb-dune',
+        isbn13: '9780593099322',
+        categories: ['Fiction'],
+        isComic: false,
+      }),
+      lazylibrarian: stubLazyLibrarian(),
+    };
+
+    // Before the sync stamps last_synced_at, the wire signals PENDING (the UI shows "first sync in progress",
+    // never a 0% dead-end — fix 3b). The background sync then mints the request.
+    const linked = await caller(ctx).integrations.link({ profileRef: '202652880' });
+    expect(linked.integration.linked).toBe(true);
+
+    // The first sync fires in the background — poll until it mirrors + mints the request.
+    let requests: Awaited<ReturnType<ReturnType<typeof caller>['integrations']['requests']>>['requests'] = [];
+    for (let i = 0; i < 50 && requests.length === 0; i += 1) {
+      await new Promise((r) => setTimeout(r, 100));
+      requests = (await caller(ctx).integrations.requests()).requests;
+    }
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.title).toBe('Dune');
+
+    // And once synced, last_synced_at is stamped → the card leaves the pending state.
+    const shelf = await caller(ctx).integrations.shelf();
+    expect(shelf.integration.lastSyncedAt).not.toBeNull();
+
+    await caller(ctx).integrations.unlink();
   });
 
   it('rejects an unreadable/private shelf with UNPROCESSABLE_CONTENT', async () => {

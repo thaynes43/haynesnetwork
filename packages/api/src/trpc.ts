@@ -58,9 +58,10 @@ import {
   prometheusClientFromEnv as metricsReaderFromEnv,
   type PrometheusReader as MetricsPrometheusReader,
 } from '@hnet/metrics';
-// ADR-055 / DESIGN-028 (PLAN-044) — the read-only Goodreads RSS client the integrations.link mutation uses
-// to resolve a vanity URL → user id + probe the public shelf is reachable (no secret). Read-only.
-import { GoodreadsRssClient, goodreadsConfigFromEnv } from '@hnet/goodreads';
+// ADR-055 / DESIGN-028 (PLAN-044) — the read-only Goodreads RSS + Google Books clients the integrations.link
+// mutation uses to resolve a vanity URL → user id, probe the public shelf is reachable (no secret), and run
+// the first shelf sync inline so the coverage card isn't a "0 of 0" dead-end. Read-only.
+import { GoodreadsRssClient, GoogleBooksClient, goodreadsConfigFromEnv } from '@hnet/goodreads';
 
 export type { SessionUser };
 
@@ -115,6 +116,12 @@ export interface TRPCContext {
    * vanity URL + probes shelf reachability with. Env-built singleton in production; stubbed in tests.
    */
   goodreads?: GoodreadsRssClient;
+  /**
+   * ADR-055 / DESIGN-028 (PLAN-044) — the read-only Google Books enrichment client the first-sync-on-link
+   * fast path uses to resolve shelf items to LazyLibrarian volume ids. Env-built singleton in production;
+   * absent/stubbed in tests (a fresh-link background sync is best-effort — the hourly CronJob is the SoT).
+   */
+  googleBooks?: GoogleBooksClient;
 }
 
 let envArrBundle: ArrClientBundle | undefined;
@@ -190,6 +197,21 @@ export function resolveGoodreadsRssClient(ctx: TRPCContext): GoodreadsRssClient 
     envGoodreadsClient = new GoodreadsRssClient({ baseUrl: cfg.goodreadsBaseUrl });
   }
   return envGoodreadsClient;
+}
+
+let envGoogleBooksClient: GoogleBooksClient | undefined;
+
+/** The Google Books client for this request: injected (tests) or the env-built singleton (ADR-055). */
+export function resolveGoogleBooksClient(ctx: TRPCContext): GoogleBooksClient {
+  if (ctx.googleBooks) return ctx.googleBooks;
+  if (!envGoogleBooksClient) {
+    const cfg = goodreadsConfigFromEnv();
+    envGoogleBooksClient = new GoogleBooksClient({
+      baseUrl: cfg.googleBooksUrl,
+      ...(cfg.googleBooksApiKey ? { apiKey: cfg.googleBooksApiKey } : {}),
+    });
+  }
+  return envGoogleBooksClient;
 }
 
 function hasKnownRole(user: SessionUser): boolean {

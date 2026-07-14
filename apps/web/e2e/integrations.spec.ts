@@ -72,16 +72,18 @@ test.describe('Integrations tab', () => {
     expect(queued.some((c) => c.type === 'eBook')).toBe(true);
     expect(queued.some((c) => c.type === 'AudioBook')).toBe(true);
     expect(calls.some((c) => c.cmd === 'addBook')).toBe(true);
-    // The comic (gb-scottpilgrim) never touched LazyLibrarian.
+    // BOTH comics are parked — neither touched LazyLibrarian. Scott Pilgrim is caught by the full-category
+    // confirm GET (search truncated it to "Fiction"); Batman by the "DC Comics" title marker (no GB categories).
     expect(calls.some((c) => c.id === 'gb-scottpilgrim')).toBe(false);
+    expect(calls.some((c) => c.id === 'gb-batman')).toBe(false);
 
     await page.reload();
 
-    // Coverage renders (Ready Player One landed → 1 of 3 = 33%).
-    await expect(page.getByTestId('integrations-coverage')).toContainText('33%');
+    // Coverage renders (Ready Player One landed → 1 of 4 = 25%).
+    await expect(page.getByTestId('integrations-coverage')).toContainText('25%');
 
-    // The requests wall shows all three wants.
-    await expect(page.getByTestId('request-card')).toHaveCount(3);
+    // The requests wall shows all four wants.
+    await expect(page.getByTestId('request-card')).toHaveCount(4);
 
     // Throne of Glass is Missing (LL Skipped) → Search again is offered.
     const tog = page.getByTestId('request-card').filter({ hasText: 'Throne of Glass' });
@@ -89,9 +91,13 @@ test.describe('Integrations tab', () => {
     const searchBtn = tog.getByTestId('request-search-btn');
     await expect(searchBtn).toBeVisible();
 
-    // The comic is parked out of LazyLibrarian (no Search again — the Kapowarr note).
-    const comic = page.getByTestId('request-card').filter({ hasText: 'Scott Pilgrim' });
-    await expect(comic).toContainText('Kapowarr');
+    // Both comics are parked out of LazyLibrarian (no Search again — the Kapowarr note).
+    await expect(page.getByTestId('request-card').filter({ hasText: 'Scott Pilgrim' })).toContainText(
+      'Kapowarr',
+    );
+    await expect(page.getByTestId('request-card').filter({ hasText: 'Zero Year' })).toContainText(
+      'Kapowarr',
+    );
 
     // Manual "Search again" fires a real LL searchBook.
     await resetLl();

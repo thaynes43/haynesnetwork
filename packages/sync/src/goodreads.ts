@@ -13,7 +13,7 @@ import {
   type LazyLibrarianClientBundle,
   type SyncGoodreadsReport,
 } from '@hnet/domain';
-import type { GoodreadsRssClient, GoogleBooksClient } from '@hnet/goodreads';
+import { isComicText, type GoodreadsRssClient, type GoogleBooksClient } from '@hnet/goodreads';
 import { noopLogger, type SyncLogger } from './logger';
 
 /** The read clients the goodreads-sync mode needs (RSS + GB enrichment). */
@@ -82,7 +82,9 @@ export async function runGoodreadsSync(input: {
             gbVolumeId: gb?.volumeId ?? null,
             coverUrl: item.coverUrl,
             shelvedAt: item.shelvedAt,
-            isComic: gb?.isComic ?? false,
+            // GB classification, OR a comic marker in the shelved title/author — the safety net when GB
+            // returns no match (PLAN-044 live leak: a comic must never blind-fire into LazyLibrarian).
+            isComic: (gb?.isComic ?? false) || isComicText(item.title, item.author),
           });
         }
         syncedShelves.push(shelf);
