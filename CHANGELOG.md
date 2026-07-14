@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.49.0](https://github.com/thaynes43/haynesnetwork/compare/v0.48.0...v0.49.0) (2026-07-14)
+
+
+### Features
+
+* Goodreads requests MVP — Integrations tab, shelf sync, Missing + manual search (PLAN-044) ([#253](https://github.com/thaynes43/haynesnetwork/issues/253)) ([96ead3f](https://github.com/thaynes43/haynesnetwork/commit/96ead3f3f160a2e42d9aa17edfa9d7c16beb3618))
+
+
+### Documentation
+
+* **f10:** RUN 3 English re-grab wave — 57 wants queued via LL usenet-first ([#251](https://github.com/thaynes43/haynesnetwork/issues/251)) ([a3d944f](https://github.com/thaynes43/haynesnetwork/commit/a3d944fa8312e269d8050b440abaa638269b3e6d))
+
 ## [0.48.0](https://github.com/thaynes43/haynesnetwork/compare/v0.47.0...v0.48.0) (2026-07-14)
 
 
