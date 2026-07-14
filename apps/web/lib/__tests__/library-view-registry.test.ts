@@ -41,12 +41,27 @@ describe('registry shape invariants', () => {
     }
   });
 
-  it('grouped-capable walls declare their single v1 dimension', () => {
-    expect(WALL_VIEWS.books.grouped?.dimension).toBe('author');
-    expect(WALL_VIEWS.audiobooks.grouped?.dimension).toBe('author');
-    expect(WALL_VIEWS.comics.grouped?.dimension).toBe('series');
-    expect(WALL_VIEWS.peloton.grouped?.dimension).toBe('exercise');
-    expect(WALL_VIEWS.youtube.grouped?.dimension).toBe('channel');
+  it('grouped-capable walls declare their dimensions (default first) with the D-04 art source', () => {
+    expect(WALL_VIEWS.books.groupings?.map((g) => g.dimension)).toEqual(['author']);
+    // The group-card-art pass: Audiobooks adds the Genre dimension — the abstract slice renders
+    // the designed GLYPH tile, never fake imagery; the author cards use the real-cover ladder.
+    expect(WALL_VIEWS.audiobooks.groupings?.map((g) => `${g.dimension}:${g.art}`)).toEqual([
+      'author:covers',
+      'genre:glyph',
+    ]);
+    expect(WALL_VIEWS.comics.groupings?.[0]?.dimension).toBe('series');
+    expect(WALL_VIEWS.peloton.groupings?.[0]?.dimension).toBe('exercise');
+    expect(WALL_VIEWS.youtube.groupings?.[0]?.dimension).toBe('channel');
+  });
+
+  it('every aggregate-card grouping binds a registry level whose default sort it can answer', () => {
+    for (const wall of ['books', 'audiobooks'] as const) {
+      for (const grouping of WALL_VIEWS[wall].groupings ?? []) {
+        expect(grouping.level, `${wall}:${grouping.dimension}`).toBeDefined();
+        const entry = registryFor(grouping.level!);
+        expect(sortKeys(grouping.level!)).toContain(entry.defaultSort.field);
+      }
+    }
   });
 });
 
@@ -143,6 +158,10 @@ describe('per-view asymmetry (R5 — a level offers ONLY what it can answer)', (
       expect(sortKeys(level)).toEqual(['author', 'count']);
       expect(facetKeys(level)).toEqual([]);
     }
+    // The genre grouped level (group-card-art pass) sorts label/count only — an abstract card
+    // answers no item dimension either.
+    expect(sortKeys('audiobooks:grouped-genre')).toEqual(['label', 'count']);
+    expect(facetKeys('audiobooks:grouped-genre')).toEqual([]);
   });
 
   it('the A–Z jump is offered exactly on the big walls’ A–Z sorts (D-09)', () => {

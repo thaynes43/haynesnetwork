@@ -38,6 +38,7 @@ export type ViewLevelKey =
   | 'books:grouped'
   | 'audiobooks:wall'
   | 'audiobooks:grouped'
+  | 'audiobooks:grouped-genre'
   | 'comics:wall';
 
 export interface RegistrySortOf<K extends string> {
@@ -82,8 +83,9 @@ export type ViewRegistryEntry = ViewRegistryEntryOf<string>;
 // Per-engine constructors — pin each entry's keys to its engine's key union at compile time.
 const ledgerLevel = (e: ViewRegistryEntryOf<LibrarySortField>) => e;
 const booksLevel = (e: ViewRegistryEntryOf<BooksSort>) => e;
-/** Grouped levels sort the aggregate CARDS (dimension label / member count) — client-side keys. */
-const groupLevel = (e: ViewRegistryEntryOf<'author' | 'count'>) => e;
+/** Grouped levels sort the aggregate CARDS (dimension label / member count) — client-side keys
+ *  ('author' = the author-grouped label sort; 'label' = an abstract dimension's label sort). */
+const groupLevel = (e: ViewRegistryEntryOf<'author' | 'label' | 'count'>) => e;
 /** Plex-live keys map onto the parsed section/children fields (addedAt / title / originallyAvailableAt /
  *  index / duration — ADR-051: available "for free", no wider Plex read). */
 const plexLevel = (e: ViewRegistryEntryOf<'added_at' | 'title' | 'air_date' | 'index' | 'duration'>) => e;
@@ -328,6 +330,19 @@ export const LIBRARY_VIEW_REGISTRY: Record<ViewLevelKey, ViewRegistryEntry> = {
     facets: [],
     azSorts: [],
   }),
+  // Audiobooks grouped by GENRE (group-card-art pass — the first abstract grouping dimension;
+  // ABS genres live-verified 91% populated). Cards are designed glyph tiles (never fake art);
+  // the level sorts its cards (label/count) like every grouped level.
+  'audiobooks:grouped-genre': groupLevel({
+    engine: 'books',
+    sorts: [
+      { key: 'label', label: 'Genre A–Z', firstDir: 'asc' },
+      { key: 'count', label: 'Most audiobooks', firstDir: 'desc' },
+    ],
+    defaultSort: { field: 'label', dir: 'asc' },
+    facets: [],
+    azSorts: [],
+  }),
   // Comics (Kavita) — the wall IS the grouped-by-Series view (a Kavita row IS a series, so the item
   // grid is the series grid; R2 default). Series A–Z rides sort_title; format/page facets only.
   'comics:wall': booksLevel({
@@ -352,41 +367,76 @@ export function registryFor(key: ViewLevelKey): ViewRegistryEntry {
 }
 
 // ---------------------------------------------------------------------------
-// D-01 — which view SHAPES each wall offers (a build-phase D-11 call: only Books/Audiobooks offer
-// an alternative shape in v1 — the design's own flat-A–Z example; every other wall's R2 shape is
-// its only honest shape today, so no selector renders there).
+// D-01 — which view SHAPES (and grouping DIMENSIONS) each wall offers. Books/Audiobooks offer a
+// flat alternative; Audiobooks additionally offers the Genre grouping (the group-card-art pass —
+// the first abstract dimension; Kavita walls can't: genres 0% in the list read). Every other
+// wall's R2 shape is its only honest shape today, so no selector renders there.
 // ---------------------------------------------------------------------------
+
+/** D-04 (art-amended) — what an aggregate card's ART SLOT renders for a grouping dimension:
+ *  'covers' = the real-imagery ladder (dimension portrait where the source holds one → member
+ *  cover fan → KindIcon); 'glyph' = the designed token-themed glyph tile (abstract dimensions —
+ *  NEVER fake art). */
+export type WallGroupingArt = 'covers' | 'glyph';
+
+export interface WallGrouping {
+  /** The grouping dimension key (`?by=` / the stored ADR-052 groupBy). */
+  dimension: string;
+  /** Selector label for this grouping (e.g. "Authors", "Genres"). */
+  selectorLabel: string;
+  /** The drill-in header's back-to-groups label (e.g. "All authors"). */
+  allLabel: string;
+  /** What the aggregate card's art slot renders (D-04). */
+  art: WallGroupingArt;
+  /** The registry level whose sorts drive the grouped CARDS (aggregate-card walls only). */
+  level?: ViewLevelKey;
+}
 
 export interface WallViewsSpec {
   /** The shapes the wall offers, in selector order (a single shape ⇒ no selector renders). */
   offers: readonly WallViewShape[];
-  /** The grouped view's dimension (v1: exactly one per grouped-capable wall) + its UI copy. */
-  grouped?: {
-    dimension: string;
-    /** Selector label for the grouped shape (e.g. "Authors"). */
-    selectorLabel: string;
-    /** Selector label for the flat shape (e.g. "All books"). */
-    flatLabel: string;
-    /** The drill-in header's back-to-groups label (e.g. "All authors"). */
-    allLabel: string;
-  };
+  /** The grouped shape's dimensions, in selector order (first = the wall's default dimension). */
+  groupings?: readonly WallGrouping[];
+  /** Selector label for the flat shape (multi-shape walls only — e.g. "All books"). */
+  flatLabel?: string;
 }
 
 export const WALL_VIEWS: Record<LibraryWallId, WallViewsSpec> = {
   movies: { offers: ['flat'] },
   tv: { offers: ['hierarchy'] },
   music: { offers: ['flat'] },
-  peloton: { offers: ['grouped'], grouped: { dimension: 'exercise', selectorLabel: 'Exercises', flatLabel: '', allLabel: '' } },
-  youtube: { offers: ['grouped'], grouped: { dimension: 'channel', selectorLabel: 'Channels', flatLabel: '', allLabel: '' } },
+  // Peloton/YouTube walls ARE their grouped views: each card is a Plex show (discipline/channel)
+  // whose REAL poster streams through /api/ytdlsub/poster (ADR-041; Peloton art is the PLAN-024
+  // durable poster guard) — the D-04 art answer for these dimensions needs no aggregate machinery.
+  peloton: {
+    offers: ['grouped'],
+    groupings: [{ dimension: 'exercise', selectorLabel: 'Exercises', allLabel: '', art: 'covers' }],
+  },
+  youtube: {
+    offers: ['grouped'],
+    groupings: [{ dimension: 'channel', selectorLabel: 'Channels', allLabel: '', art: 'covers' }],
+  },
   books: {
     offers: ['grouped', 'flat'],
-    grouped: { dimension: 'author', selectorLabel: 'Authors', flatLabel: 'All books', allLabel: 'All authors' },
+    groupings: [
+      { dimension: 'author', selectorLabel: 'Authors', allLabel: 'All authors', art: 'covers', level: 'books:grouped' },
+    ],
+    flatLabel: 'All books',
   },
   audiobooks: {
     offers: ['grouped', 'flat'],
-    grouped: { dimension: 'author', selectorLabel: 'Authors', flatLabel: 'All audiobooks', allLabel: 'All authors' },
+    groupings: [
+      { dimension: 'author', selectorLabel: 'Authors', allLabel: 'All authors', art: 'covers', level: 'audiobooks:grouped' },
+      { dimension: 'genre', selectorLabel: 'Genres', allLabel: 'All genres', art: 'glyph', level: 'audiobooks:grouped-genre' },
+    ],
+    flatLabel: 'All audiobooks',
   },
-  comics: { offers: ['grouped'], grouped: { dimension: 'series', selectorLabel: 'Series', flatLabel: '', allLabel: '' } },
+  // Comics' Series grouping IS the wall — each tile is a Kavita series wearing its REAL series
+  // cover through /api/books/cover (the D-04 art answer for the Series dimension).
+  comics: {
+    offers: ['grouped'],
+    groupings: [{ dimension: 'series', selectorLabel: 'Series', allLabel: '', art: 'covers' }],
+  },
 };
 
 // ---------------------------------------------------------------------------

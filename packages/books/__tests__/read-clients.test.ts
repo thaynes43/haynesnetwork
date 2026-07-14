@@ -247,6 +247,55 @@ describe('AudiobookshelfClient', () => {
     const call = calls.find((c) => c.url.pathname === '/api/items/item-1/cover');
     expect(call?.url.search).toBe('');
   });
+
+  it('listAuthors reads a library’s authors incl. imagePath/updatedAt (group-card art directory)', async () => {
+    const { fetchImpl, calls } = stubFetch([
+      {
+        method: 'POST',
+        match: (u) => u.pathname === '/login',
+        body: { user: { token: 'abs-tok', username: 'root' } },
+      },
+      {
+        match: (u) => u.pathname === '/api/libraries/lib-1/authors',
+        body: {
+          authors: [
+            { id: 'auth-1', name: 'John Grisham', imagePath: '/metadata/authors/a.jpg', updatedAt: 100, numBooks: 44 },
+            { id: 'auth-2', name: 'Douglas Adams', imagePath: null, updatedAt: 101 },
+          ],
+        },
+      },
+    ]);
+    const client = new AudiobookshelfClient({ ...ABS_OPTS, fetchImpl });
+    const authors = await client.listAuthors('lib-1');
+    expect(authors.map((a) => `${a.name}:${a.imagePath !== null}`)).toEqual([
+      'John Grisham:true',
+      'Douglas Adams:false',
+    ]);
+    const authorsCall = calls.find((c) => c.url.pathname === '/api/libraries/lib-1/authors');
+    expect(authorsCall?.headers.get('authorization')).toBe('Bearer abs-tok');
+  });
+
+  it('fetchAuthorImage requests the sized variant like fetchItemCover (token header-only)', async () => {
+    const { fetchImpl, calls } = stubFetch([
+      {
+        method: 'POST',
+        match: (u) => u.pathname === '/login',
+        body: { user: { token: 'abs-tok', username: 'root' } },
+      },
+      {
+        match: (u) => u.pathname === '/api/authors/auth-1/image',
+        headers: { 'content-type': 'image/webp' },
+        body: null,
+      },
+    ]);
+    const client = new AudiobookshelfClient({ ...ABS_OPTS, fetchImpl });
+    const sized = await client.fetchAuthorImage('auth-1', { width: 300, format: 'webp' });
+    expect(sized.status).toBe(200);
+    const imageCall = calls.find((c) => c.url.pathname === '/api/authors/auth-1/image');
+    expect(imageCall?.url.search).toBe('?width=300&format=webp');
+    expect(imageCall?.headers.get('authorization')).toBe('Bearer abs-tok');
+    expect(calls.every((c) => !c.url.search.includes('abs-tok'))).toBe(true);
+  });
 });
 
 describe('booksReadClients factory', () => {
