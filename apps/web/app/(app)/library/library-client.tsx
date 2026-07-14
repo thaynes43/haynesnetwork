@@ -74,6 +74,7 @@ import {
   type ViewRegistryEntry,
 } from '@/lib/library-view-registry';
 import { MediaPoster } from '@/components/media-poster';
+import { PosterCardBody } from '@/components/poster-card-body';
 import { MyFixesPanel } from '@/components/my-fixes-panel';
 import { CHIP_LABELS, DateRangeChip, RatingChip, SelectChip } from '@/components/filter-chips';
 import { LetterJumpBar } from '@/components/letter-jump-bar';
@@ -717,24 +718,20 @@ function MediaBrowser({
             return (
               <Link key={item.id} href={`/library/${item.id}`} className="media-card poster-card">
                 <MediaPoster posterUrl={item.posterUrl} kind={item.arrKind} alt="" />
-                <span className="poster-card__body">
-                  <span className="media-card__title">
-                    {item.title}
-                    {item.year !== null ? <span className="muted"> ({item.year})</span> : null}
-                  </span>
-                  {/* Slim badge row (owner densify 2026-07-06): the kind badge is dropped — the
-                      active tab already names the kind — leaving the rating star + on-disk state
-                      (and the tombstone flag when set). */}
-                  <span className="media-card__badges">
-                    {rating !== null ? (
-                      <span className="badge badge--rating" title={`${ratingSource} rating`}>
-                        ★ {rating}
-                      </span>
-                    ) : null}
-                    <span className={`badge badge--${disk.tone}`}>{disk.label}</span>
-                    {item.tombstoned ? <span className="badge badge--danger">Removed</span> : null}
-                  </span>
-                </span>
+                {/* Slim badge row (owner densify 2026-07-06): the kind badge is dropped — the active
+                    tab already names the kind — leaving the rating star + on-disk state (Wanted /
+                    On disk — the badge the Books/Goodreads walls now clone) and the tombstone flag. */}
+                <PosterCardBody
+                  title={item.title}
+                  year={item.year}
+                  badges={[
+                    rating !== null
+                      ? { label: `★ ${rating}`, tone: 'rating', title: `${ratingSource} rating` }
+                      : null,
+                    { label: disk.label, tone: disk.tone },
+                    item.tombstoned ? { label: 'Removed', tone: 'danger' } : null,
+                  ]}
+                />
               </Link>
             );
           })}
