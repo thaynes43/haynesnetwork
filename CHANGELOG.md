@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.56.0](https://github.com/thaynes43/haynesnetwork/compare/v0.55.1...v0.56.0) (2026-07-14)
+
+
+### Features
+
+* nav restructure — four-tab bar + Metrics/Integrations to the user menu; ratify "Tickets" ([#284](https://github.com/thaynes43/haynesnetwork/issues/284)) ([3760833](https://github.com/thaynes43/haynesnetwork/commit/376083383dcff3420476b1d30fa9b664e3a077e5))
+
+
+### Documentation
+
+* Tuesday evening addendum — v0.55.0/v0.55.1 (Activity reactive + live precedence), integrations opened to all roles, kyverno alert retuned, MAM maturation Wed ([#282](https://github.com/thaynes43/haynesnetwork/issues/282)) ([9cc8f7f](https://github.com/thaynes43/haynesnetwork/commit/9cc8f7f2d1f7ba86ae5ba6c6665d9d6b9711d984))
+
 ## [0.55.1](https://github.com/thaynes43/haynesnetwork/compare/v0.55.0...v0.55.1) (2026-07-14)
 
 
