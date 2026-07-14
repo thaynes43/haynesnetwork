@@ -22,6 +22,13 @@ remediation retries 10 — v0.53/v0.54 deployed with zero noise. Model watch: tw
 builds verified genuine). UX gate standing rule: reference-pinned briefs + side-by-side proof +
 coordinator visual diff before ANY UX deploy (memory `ux-reference-anatomy-gate`).
 
+**Evening arc (see the chronicle's addendum):** v0.55.0 (Activity robustness + Fix-grammar
+reactivity, every card clickable) + v0.55.1 (live-state precedence — active grabs never read
+"Missing"); SABNZBD_API_KEY deploy gap fixed; the kyverno alert retuned to sustained-denial
+(owner-confirmed it was `KyvernoEnforceBlockingAdmission`); **INTEGRATIONS ENABLED FOR ALL
+ROLES (owner, DB-verified)** — member shelves acquire automatically now; MAM maturation is
+WEDNESDAY eve (governor: 19/19 still under 72h Tue night).
+
 **NEXT: owner ratifications** (Activity tab + card refit + the Goodreads/wanted arc → file
 PLAN-044/045/046/047/048 to completed/), **Q-03 comics-section ruling**, Orwell essays call,
 **the MAM gate reopened ~Tue eve — verify the 7 MAM-English grabs (visible in Activity)**,
