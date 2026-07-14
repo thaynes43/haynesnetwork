@@ -4,7 +4,33 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-## ▶ NEXT SESSION — start here (2026-07-14 session-6 wrap)
+## ▶ NEXT SESSION — start here (2026-07-14 Tuesday-daytime wrap)
+
+**Site live at https://haynesnetwork.com; latest release v0.54.0** (Tuesday shipped FIVE:
+v0.50.1 → v0.54.0 on top of the overnight v0.47–v0.50 run). **Full chronicle:
+`.agents/context/2026-07-14-tuesday-daytime-wrap.md`** — read it (and the session-6 wrap below
+for the overnight arc). Headlines: owner REJECTED the PLAN-045 wanted-strip UX → anatomy fix
+(v0.50.1) → wanted DETAIL parity (v0.51.0) → **PLAN-047 shared card system (v0.52.0, ADR-058:
+typed BaseCard family + lint guard + gallery drift-CI — "the code guarantees the UX doesn't
+drift")** → **PLAN-048 Activity/In-Flight COMPLETE (v0.53.0 + v0.54.0, ADR-059: Library →
+Activity tab, wall badges, books/LL+SAB + *arr + Kapowarr adapters, role-gated failure
+actions)**. **The books import pipeline was rescued live** (42 stranded → 39 imported;
+`sab_cat` fix; OPS-013 §11). **Kyverno paged the owner twice** → deploy gate is now the
+ARTIFACT PAIR (manifest+.sig), dance guardrails + label-verify added (runbook 1b/1c),
+remediation retries 10 — v0.53/v0.54 deployed with zero noise. Model watch: two transient
+`model: opus` probe flips (retry cleared; transcript ground-truth now standard — all Opus
+builds verified genuine). UX gate standing rule: reference-pinned briefs + side-by-side proof +
+coordinator visual diff before ANY UX deploy (memory `ux-reference-anatomy-gate`).
+
+**NEXT: owner ratifications** (Activity tab + card refit + the Goodreads/wanted arc → file
+PLAN-044/045/046/047/048 to completed/), **Q-03 comics-section ruling**, Orwell essays call,
+**the MAM gate reopened ~Tue eve — verify the 7 MAM-English grabs (visible in Activity)**,
+which alert paged (tune to sustained-denial), SMTP F-04, F-11 spot-check candidate, the
+e2e-red-on-main member-persona ticket. Then the PLAN-043 saga's next phases / PLAN-038 /
+PLAN-040 per the queue.
+
+### Prior top block (session-6 overnight wrap)
+
 
 **Site live at https://haynesnetwork.com; latest release v0.49.0 (three shipped Monday:
 v0.47.0 → v0.48.0 → v0.49.0, all live-verified).** Session 6 ran Mon 18:00 → Tue ~03:00 on the
