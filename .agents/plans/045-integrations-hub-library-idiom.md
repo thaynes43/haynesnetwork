@@ -23,12 +23,24 @@
 5. Those shelf filters behave **like the Helpdesk ticket state chips**: an **All** that selects
    all four, or any combination multi-selected.
 
-## Coordinator assumptions (stated to owner in-session; confirm at morning review)
+## Coordinator assumptions → OWNER RULINGS (2026-07-14 ~01:15, asked before he left)
 
-- **A1 — requests stay to-read-only.** The other three shelves sync for display/coverage/
-  retention ("what they read that we don't have"), but do NOT push LL wants and do NOT mint
-  Library-Wanted tiles. Library-Wanted = to-read-sourced requests (per the no-gate Missing
-  ruling in PLAN-044 R3).
+- **A1 OVERRULED — ALL synced shelves acquire.** Read / currently-reading / did-not-finish
+  items we don't hold ALSO mint requests and push LL wants (both formats) — the same no-gate
+  Missing flow: SAB rips, the MAM governor gates. Expect the first all-shelves sync to mint a
+  real wave (~21 read-shelf books); LL/GB pacing rules apply exactly as in the F-10 wave.
+  Library-Wanted tiles therefore come from EVERY shelf's unmet items, badged by source shelf.
+- **Q-01 RULED: books-section gating** for Library-Wanted tiles (household visibility wherever
+  the Books walls are granted; clearly badged).
+- **Q-02 RULED: want-shelf headline** coverage; per-shelf breakdown below it.
+- **Q-03 RULED (scope-expanding):** the stray comic LL want is REMOVED, and **comics acquisition
+  routes to KAPOWARR** — the owner deliberately shelved comics to build comic acquisition on top
+  of the books machinery. Tonight's bar: comics show as **Wanted in the Comics wall**; the
+  Kapowarr routing layer is **PLAN-046** (Opus, dispatched the same night). Additionally: the
+  Library Wanted experience for books/audiobooks/comics gets **ALL the functionality Wanted
+  TV/Movies have in the Library menu, including the force-search button** (the *arr Force-Search
+  idiom + PLAN-015 live-feedback pattern; books/audio → LL `searchBook` via the confined client;
+  comics → the PLAN-046 Kapowarr surface).
 - **A2 — composition, not mirror pollution.** `books_items` stays a pure Kavita/ABS mirror
   (ADR-046 hard rule). The Library walls surface Wanted via a UNION/overlay of the
   `book_requests` read-model — a new ADR (or ADR-055 amendment) records the composed-wanted
