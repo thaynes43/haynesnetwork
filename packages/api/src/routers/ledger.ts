@@ -216,11 +216,24 @@ export const ledgerRouter = router({
         ),
       );
       const resolutions = RESOLUTIONS.filter((r) => harvestedResolutions.has(r));
+      // DESIGN-026 D-08 (PLAN-029 step 6) — the Decade facet values, derived from the already-synced
+      // media_items.year ((year/10)*10 — integer division truncates to the decade start). Same access
+      // scoping as every other facet; newest decade first (the exploration order).
+      const decadeRows = await ctx.db.execute<{ value: number }>(
+        sql`SELECT DISTINCT (mi.year / 10) * 10 AS value
+              FROM media_items mi
+             ${whereOf(sql`mi.year IS NOT NULL`)}
+             ORDER BY value DESC`,
+      );
+      const decades = (decadeRows.rows ?? (decadeRows as unknown as { value: number }[])).map((r) =>
+        Number(r.value),
+      );
       return {
         genres: await distinctText('genres'),
         requesters: await distinctText('requesters'),
         sourceCollections: await distinctText('source_collections'),
         resolutions,
+        decades,
       };
     }),
 

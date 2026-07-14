@@ -1792,6 +1792,147 @@ input[aria-invalid='true'] {
   font-size: 12px;
   margin: 0;
 }
+/* PLAN-029 (DESIGN-026 D-08) — the date-range chip editor reuses the rating-editor geometry;
+   the native date inputs wear the shared control skin (tokens only). */
+.rating-editor__bound input[type='date'] {
+  font: inherit;
+  font-size: 13px;
+  color: var(--color-text);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  min-height: 40px;
+  min-width: 140px;
+  color-scheme: dark;
+}
+[data-theme='hnet-light'] .rating-editor__bound input[type='date'] {
+  color-scheme: light;
+}
+.rating-editor__bound input[type='date']:focus {
+  border-color: var(--color-accent);
+}
+/* PLAN-029 (DESIGN-026 D-07) — the single-select chip's radio rows ride the shared checklist
+   skin; the radio gets the same accent as the checkbox rows. */
+.hnet-chip-check input[type='radio'] {
+  accent-color: var(--color-accent);
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+/* ---------- PLAN-029 (DESIGN-026 D-04) — group-view aggregate cards ---------- */
+/* The stacked-cover motif: up to 3 member covers fanned inside the SAME reserved 2:3 poster box
+   the item tiles use (ADR-015 — load/failure never reflows; a failed cover hides inside its
+   reserved frame). Art density (3, fanned) is the build's D-11 call. */
+.group-card__stack {
+  position: relative;
+}
+.group-card__cover {
+  position: absolute;
+  width: 72%;
+  height: 82%;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 6px 14px color-mix(in srgb, var(--color-text) 22%, transparent);
+  background: var(--color-surface-2);
+}
+.group-card__cover--0 {
+  left: 4%;
+  top: 12%;
+  transform: rotate(-7deg);
+  z-index: 1;
+}
+.group-card__cover--1 {
+  left: 24%;
+  top: 6%;
+  transform: rotate(6deg);
+  z-index: 2;
+}
+.group-card__cover--2 {
+  left: 14%;
+  top: 9%;
+  transform: rotate(-1deg);
+  z-index: 3;
+}
+/* One-cover groups read as a plain (centered) cover, not a lopsided fan. */
+.group-card__cover--0:only-of-type {
+  left: 14%;
+  top: 9%;
+  transform: none;
+}
+
+/* The drill-in header (D-04): back-to-groups + the drilled group's name. A static header of the
+   drilled SCREEN (reached by a push), sized to one fixed row. */
+.library-drill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: var(--space);
+  min-height: 36px;
+}
+.library-drill__back {
+  flex: none;
+}
+.library-drill__label {
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- PLAN-029 (DESIGN-026 D-09) — the A–Z letter jump rail ---------- */
+/* A fixed OVERLAY on the right viewport edge (the D-11 placement call): appearing/disappearing
+   never reflows the wall (ADR-015); the armed letter deepens color only. Compact tap targets in
+   a translucent pill so the rail stays portrait-safe at 320/390px; honors the safe-area inset. */
+.letter-rail {
+  position: fixed;
+  right: max(4px, env(safe-area-inset-right));
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-surface) 82%, transparent);
+  border: 1px solid var(--color-border);
+  backdrop-filter: blur(6px);
+}
+.letter-rail__btn {
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  width: 20px;
+  padding: 3px 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.letter-rail__btn:hover {
+  color: var(--color-text);
+  background: var(--color-surface-2);
+}
+.letter-rail__btn.is-active {
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+}
+[data-theme='hnet-light'] .letter-rail__btn.is-active {
+  color: color-mix(in srgb, var(--color-accent) 62%, var(--color-text)); /* D-04 contrast */
+}
+/* Short viewports (landscape phones): tighten the rail so all 27 targets stay on screen. */
+@media (max-height: 560px) {
+  .letter-rail__btn {
+    font-size: 9px;
+    padding: 2px 0;
+  }
+}
 
 /* Library tiles are action-free click-through cards (owner ruling 2026-07-04) — the
    whole tile is the navigational target; all Fix / Force Search actions live on the

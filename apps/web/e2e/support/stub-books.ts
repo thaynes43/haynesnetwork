@@ -18,16 +18,30 @@ const PNG_1x1 = Buffer.from(
   'base64',
 );
 
+// PLAN-029 (DESIGN-026 D-01/D-04/D-08) — enough variety for the grouped-by-Author walls and the
+// facet chips to demonstrate themselves hermetically: Kavita books span THREE author folders
+// (Charlaine Harris ×3, Arthur Conan Doyle ×2, Various ×1) with mixed formats (epub/pdf) and page
+// counts across the bucket boundaries; ABS audiobooks span three authors with narrator/series/
+// language/duration variety. The books e2e + capture harnesses assert against THIS set.
+// NOTE: the ABS ids are hex-shaped ('ab5000N') on purpose — the cover proxy's
+// isValidBooksExternalId requires an ABS-uuid-ish id (the old 'abs-N' ids 404'd every cover).
 const KAVITA_BOOKS = [
   { id: 101, name: 'The Penny Dreadfuls', sortName: 'Penny Dreadfuls', pages: 320, wordCount: 90000, format: 3, libraryId: 1, libraryName: 'Books', folderPath: '/data/EBooks/Various', lowestFolderPath: '/data/EBooks/Various/The Penny Dreadfuls', coverImage: 'v1_c1.png', created: '2026-07-10T12:00:00', lastChapterAddedUtc: '2026-07-10T12:00:00' },
   { id: 102, name: "Shakespeare's Landlord", sortName: "Shakespeare's Landlord", pages: 210, wordCount: 53000, format: 3, libraryId: 1, libraryName: 'Books', folderPath: '/data/EBooks/Charlaine Harris', lowestFolderPath: "/data/EBooks/Charlaine Harris/Shakespeare's Landlord", coverImage: 'v2_c2.png', created: '2026-07-09T12:00:00', lastChapterAddedUtc: '2026-07-09T12:00:00' },
+  { id: 103, name: "Shakespeare's Champion", sortName: "Shakespeare's Champion", pages: 230, wordCount: 58000, format: 3, libraryId: 1, libraryName: 'Books', folderPath: '/data/EBooks/Charlaine Harris', lowestFolderPath: "/data/EBooks/Charlaine Harris/Shakespeare's Champion", coverImage: 'v4_c4.png', created: '2026-07-07T12:00:00', lastChapterAddedUtc: '2026-07-07T12:00:00' },
+  { id: 104, name: "Shakespeare's Christmas", sortName: "Shakespeare's Christmas", pages: 240, wordCount: 60000, format: 3, libraryId: 1, libraryName: 'Books', folderPath: '/data/EBooks/Charlaine Harris', lowestFolderPath: "/data/EBooks/Charlaine Harris/Shakespeare's Christmas", coverImage: 'v5_c5.png', created: '2026-07-06T12:00:00', lastChapterAddedUtc: '2026-07-06T12:00:00' },
+  { id: 105, name: 'A Study in Scarlet', sortName: 'Study in Scarlet, A', pages: 180, wordCount: 43000, format: 3, libraryId: 1, libraryName: 'Books', folderPath: '/data/EBooks/Arthur Conan Doyle', lowestFolderPath: '/data/EBooks/Arthur Conan Doyle/A Study in Scarlet', coverImage: 'v6_c6.png', created: '2026-07-05T12:00:00', lastChapterAddedUtc: '2026-07-05T12:00:00' },
+  { id: 106, name: 'The Sign of the Four', sortName: 'Sign of the Four, The', pages: 160, wordCount: 40000, format: 4, libraryId: 1, libraryName: 'Books', folderPath: '/data/EBooks/Arthur Conan Doyle', lowestFolderPath: '/data/EBooks/Arthur Conan Doyle/The Sign of the Four', coverImage: 'v7_c7.png', created: '2026-07-04T12:00:00', lastChapterAddedUtc: '2026-07-04T12:00:00' },
 ];
 const KAVITA_COMICS = [
   { id: 201, name: 'Amazing Spider-Man', sortName: 'Amazing Spider-Man', pages: 494, wordCount: 0, format: 1, libraryId: 2, libraryName: 'Comics', folderPath: '/data/Comics/Amazing Spider-Man', lowestFolderPath: '/data/Comics/Amazing Spider-Man', coverImage: 'v3_c3.png', created: '2026-07-08T12:00:00', lastChapterAddedUtc: '2026-07-08T12:00:00' },
+  { id: 202, name: 'Paper Girls', sortName: 'Paper Girls', pages: 160, wordCount: 0, format: 1, libraryId: 2, libraryName: 'Comics', folderPath: '/data/Comics/Paper Girls', lowestFolderPath: '/data/Comics/Paper Girls', coverImage: 'v8_c8.png', created: '2026-07-03T12:00:00', lastChapterAddedUtc: '2026-07-03T12:00:00' },
 ];
 const ABS_ITEMS = [
-  { id: 'abs-1', libraryId: 'abs-lib', addedAt: 1783702399325, updatedAt: 1783702399325, mediaType: 'book', media: { metadata: { title: 'A Christmas Carol', titleIgnorePrefix: 'Christmas Carol, A', authorName: 'Charles Dickens', narratorName: 'Tim Curry', seriesName: '', genres: ['Audiobook', 'Classics'], publishedYear: 1843, language: 'English' }, numTracks: 6, numChapters: 6, duration: 12600, size: 90000000 } },
-  { id: 'abs-2', libraryId: 'abs-lib', addedAt: 1783602399325, updatedAt: 1783602399325, mediaType: 'book', media: { metadata: { title: 'The Restaurant at the End of the Universe', titleIgnorePrefix: 'Restaurant at the End of the Universe, The', authorName: 'Douglas Adams', narratorName: '', seriesName: "Hitchhiker's Guide", genres: ['Audiobook'], publishedYear: 1980, language: 'English' }, numTracks: 5, numChapters: 5, duration: 19822, size: 36000000 } },
+  { id: 'ab50001', libraryId: 'abs-lib', addedAt: 1783702399325, updatedAt: 1783702399325, mediaType: 'book', media: { metadata: { title: 'A Christmas Carol', titleIgnorePrefix: 'Christmas Carol, A', authorName: 'Charles Dickens', narratorName: 'Tim Curry', seriesName: '', genres: ['Audiobook', 'Classics'], publishedYear: 1843, language: 'English' }, numTracks: 6, numChapters: 6, duration: 12600, size: 90000000 } },
+  { id: 'ab50002', libraryId: 'abs-lib', addedAt: 1783602399325, updatedAt: 1783602399325, mediaType: 'book', media: { metadata: { title: 'The Restaurant at the End of the Universe', titleIgnorePrefix: 'Restaurant at the End of the Universe, The', authorName: 'Douglas Adams', narratorName: '', seriesName: "Hitchhiker's Guide", genres: ['Audiobook'], publishedYear: 1980, language: 'English' }, numTracks: 5, numChapters: 5, duration: 19822, size: 36000000 } },
+  { id: 'ab50003', libraryId: 'abs-lib', addedAt: 1783502399325, updatedAt: 1783502399325, mediaType: 'book', media: { metadata: { title: 'Oliver Twist', titleIgnorePrefix: 'Oliver Twist', authorName: 'Charles Dickens', narratorName: '', seriesName: '', genres: ['Audiobook', 'Classics'], publishedYear: 1838, language: 'English' }, numTracks: 12, numChapters: 24, duration: 60200, size: 210000000 } },
+  { id: 'ab50004', libraryId: 'abs-lib', addedAt: 1783402399325, updatedAt: 1783402399325, mediaType: 'book', media: { metadata: { title: 'The Hobbit', titleIgnorePrefix: 'Hobbit, The', authorName: 'J. R. R. Tolkien', narratorName: 'Andy Serkis', seriesName: '', genres: ['Audiobook', 'Fantasy'], publishedYear: 1937, language: 'English' }, numTracks: 10, numChapters: 19, duration: 37800, size: 150000000 } },
 ];
 
 function json(res: import('node:http').ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}): void {

@@ -1,7 +1,7 @@
 # DESIGN-026: Library views, grouping, and the per-view Sorting & Filtering overhaul
 
-- **Status:** Draft
-- **Last updated:** 2026-07-11
+- **Status:** Accepted <!-- ratified with ADR-051/052/053 on 2026-07-11; the Draft label was a docs-only-PR oversight (noted by the PLAN-029 data/domain build, fixed in the UX build PR) -->
+- **Last updated:** 2026-07-13
 - **Satisfies:** PRD-001 **R-165..R-171**; governed by **ADR-051** (views + registries), **ADR-052** (per-user
   preferences), **ADR-053** (per-user watch/read-state). EXTENDS **DESIGN-008 D-09** (the shared `ledger.search`
   filter/sort engine + keyset cursor) and **DESIGN-024** (the `books.search`/`filterFacets` contract); reads the

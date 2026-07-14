@@ -167,6 +167,10 @@ async function main(): Promise<void> {
         sourceCollections: ['emmycollection'],
         posterSource: 'arr',
         posterRef: '/MediaCover/501/poster.jpg?lastWrite=1',
+        // PLAN-029 (DESIGN-026 D-05) — the two must-have dates: Date Added (drives the R6
+        // recently-added default sort deterministically) + Date Released (Sonarr firstAired).
+        arrAddedAt: new Date('2026-06-20T12:00:00Z'),
+        releasedAt: new Date('2019-01-20T00:00:00Z'),
         playCount: 3,
         // DESIGN-010 D-12 — Breaking Prod was last watched ~1yr ago on HaynesTower: NOT recently
         // watched. On the (requested) TV tile the person-shield keeps the CORNER and the muted watch
@@ -191,6 +195,10 @@ async function main(): Promise<void> {
               requesters: ['manofoz'],
               posterSource: 'arr' as const,
               posterRef: '/MediaCover/601/poster.jpg?lastWrite=1',
+              // PLAN-029 — added most recently (the R6 recently-added default lists it FIRST) +
+              // a 2022 release date (the Release-Date range e2e narrows to it).
+              arrAddedAt: new Date('2026-07-01T12:00:00Z'),
+              releasedAt: new Date('2022-03-04T00:00:00Z'),
               // DESIGN-010 D-09 / D-12 build C — watched 3 days ago (inside the 30-day guardian
               // window). The expedite/sweep guardian STILL protects it, but on the wall it is no
               // longer the inert eye corner (owner ruling 2026-07-09): with its requester it reads as
@@ -236,6 +244,10 @@ async function main(): Promise<void> {
               sourceCollections: ['traktrecommended'],
               posterSource: 'arr' as const,
               posterRef: '/MediaCover/602/poster.jpg?lastWrite=1',
+              // PLAN-029 — added BEFORE The Fixture (second under recently-added) + a 2020 release
+              // (outside the Release-Date range the e2e narrows with).
+              arrAddedAt: new Date('2026-06-15T12:00:00Z'),
+              releasedAt: new Date('2020-06-15T00:00:00Z'),
               sources: { arr: true },
             },
           ]

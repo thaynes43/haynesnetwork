@@ -56,19 +56,56 @@ beforeAll(async () => {
   // A member whose role opts into the books section at read_only.
   readerCaller = caller(makeCtx(t.db, sessionUser(reader, { books: 'read_only' })));
 
+  // PLAN-029 (DESIGN-026 D-03/D-08) — the rows carry the facet dimensions the registry offers:
+  // Kavita format codes + page counts, ABS narrator/series/language/duration. Counts stay stable
+  // for the pre-029 assertions (2 books, 1 comic; audiobooks gain one facet-disjoint second row).
   await syncBooks({
     db: t.db,
     syncedSources: ['kavita', 'audiobookshelf'],
     rows: [
-      bookRow({ mediaKind: 'book', externalId: 'k1', title: 'Alpha', author: 'Zed Author' }),
-      bookRow({ mediaKind: 'book', externalId: 'k2', title: 'Beta', author: 'Amy Author' }),
-      bookRow({ mediaKind: 'comic', externalId: 'k3', title: 'Comic One', libraryId: '2', libraryName: 'Comics' }),
+      bookRow({
+        mediaKind: 'book',
+        externalId: 'k1',
+        title: 'Alpha',
+        author: 'Zed Author',
+        pageCount: 500,
+        attrs: { format: 3 }, // epub
+      }),
+      bookRow({
+        mediaKind: 'book',
+        externalId: 'k2',
+        title: 'Beta',
+        author: 'Amy Author',
+        pageCount: 150,
+        attrs: { format: 4 }, // pdf
+      }),
+      bookRow({
+        mediaKind: 'comic',
+        externalId: 'k3',
+        title: 'Comic One',
+        libraryId: '2',
+        libraryName: 'Comics',
+        pageCount: 300,
+        attrs: { format: 1 }, // archive (cbz/cbr)
+      }),
       bookRow({
         mediaKind: 'audiobook',
         externalId: 'a1',
         title: 'Listen One',
-        durationSeconds: 3600,
+        author: 'Zed Author',
+        narrator: 'Nia Narrator',
+        seriesName: 'The Long Saga',
+        durationSeconds: 3600, // 'short' (<6 h)
         genres: ['Fantasy', 'Adventure'],
+        attrs: { language: 'English' },
+      }),
+      bookRow({
+        mediaKind: 'audiobook',
+        externalId: 'a2',
+        title: 'Second Listen',
+        author: 'Amy Author',
+        durationSeconds: 50_400, // 14 h — 'long' (>12 h)
+        attrs: { language: 'German' },
       }),
     ],
   });
@@ -138,11 +175,113 @@ describe('books.search (ADR-046)', () => {
   });
 });
 
-describe('books.filterFacets (ADR-046)', () => {
+describe('books.filterFacets (ADR-046 + PLAN-029 D-08)', () => {
   it('returns the distinct genres for a media kind', async () => {
     const audio = await adminCaller.books.filterFacets({ mediaKind: 'audiobook' });
     expect(audio.genres).toEqual(['Adventure', 'Fantasy']);
     const book = await adminCaller.books.filterFacets({ mediaKind: 'book' });
     expect(book.genres).toEqual([]); // Kavita series carry no genres
+  });
+
+  it('returns the PLAN-029 facet lists — populated-value-gated by construction (ADR-051 C-06)', async () => {
+    const audio = await adminCaller.books.filterFacets({ mediaKind: 'audiobook' });
+    expect(audio.authors).toEqual(['Amy Author', 'Zed Author']);
+    expect(audio.narrators).toEqual(['Nia Narrator']); // only a1 carries one — sparse, still offered
+    expect(audio.series).toEqual(['The Long Saga']);
+    expect(audio.languages).toEqual(['English', 'German']);
+    expect(audio.formats).toEqual([]); // ABS rows carry no Kavita format — empty ⇒ no chip
+
+    const book = await adminCaller.books.filterFacets({ mediaKind: 'book' });
+    expect(book.authors).toEqual(['Amy Author', 'Zed Author']);
+    expect(book.narrators).toEqual([]); // Kavita has no narrators — the honest empty
+    expect(book.formats).toEqual([
+      { key: 'epub', label: 'EPUB' },
+      { key: 'pdf', label: 'PDF' },
+    ]);
+
+    const comic = await adminCaller.books.filterFacets({ mediaKind: 'comic' });
+    expect(comic.formats).toEqual([{ key: 'archive', label: 'CBZ/CBR' }]);
+  });
+});
+
+describe('books.search facets + direction + A–Z jump (PLAN-029 step 2/6)', () => {
+  it('filters by genre (jsonb overlap — regression guard: the shipped ANY(array) form 22P02ed the first time the chips got UI)', async () => {
+    const res = await adminCaller.books.search({ mediaKind: 'audiobook', genres: ['Fantasy'] });
+    expect(res.items.map((i) => i.title)).toEqual(['Listen One']);
+    const orEd = await adminCaller.books.search({ mediaKind: 'audiobook', genres: ['Fantasy', 'Nope'] });
+    expect(orEd.items.map((i) => i.title)).toEqual(['Listen One']); // same-field OR
+  });
+
+  it('filters by author (same-field OR, cross-field AND — the chip semantics)', async () => {
+    const res = await adminCaller.books.search({ mediaKind: 'book', authors: ['Amy Author'] });
+    expect(res.items.map((i) => i.title)).toEqual(['Beta']);
+    const both = await adminCaller.books.search({
+      mediaKind: 'book',
+      authors: ['Amy Author', 'Zed Author'],
+    });
+    expect(both.items).toHaveLength(2);
+  });
+
+  it('filters by narrator / series / language (the ABS facets)', async () => {
+    const narr = await adminCaller.books.search({ mediaKind: 'audiobook', narrators: ['Nia Narrator'] });
+    expect(narr.items.map((i) => i.title)).toEqual(['Listen One']);
+    const ser = await adminCaller.books.search({ mediaKind: 'audiobook', series: ['The Long Saga'] });
+    expect(ser.items.map((i) => i.title)).toEqual(['Listen One']);
+    const lang = await adminCaller.books.search({ mediaKind: 'audiobook', languages: ['German'] });
+    expect(lang.items.map((i) => i.title)).toEqual(['Second Listen']);
+  });
+
+  it('filters by Kavita format keys', async () => {
+    const epub = await adminCaller.books.search({ mediaKind: 'book', formats: ['epub'] });
+    expect(epub.items.map((i) => i.title)).toEqual(['Alpha']);
+    const either = await adminCaller.books.search({ mediaKind: 'book', formats: ['epub', 'pdf'] });
+    expect(either.items).toHaveLength(2);
+  });
+
+  it('filters by length buckets — duration for audiobooks, pages for Kavita (OR-ed ranges)', async () => {
+    const short = await adminCaller.books.search({ mediaKind: 'audiobook', lengths: ['short'] });
+    expect(short.items.map((i) => i.title)).toEqual(['Listen One']); // 1 h
+    const long = await adminCaller.books.search({ mediaKind: 'audiobook', lengths: ['long'] });
+    expect(long.items.map((i) => i.title)).toEqual(['Second Listen']); // 14 h
+    const shortBook = await adminCaller.books.search({ mediaKind: 'book', lengths: ['short'] });
+    expect(shortBook.items.map((i) => i.title)).toEqual(['Beta']); // 150 pp
+    const orEd = await adminCaller.books.search({ mediaKind: 'book', lengths: ['short', 'long'] });
+    expect(orEd.items).toHaveLength(2); // 150 pp OR 500 pp
+  });
+
+  it('the A–Z letter jump narrows the ACTIVE sort column (title vs author)', async () => {
+    const byTitle = await adminCaller.books.search({ mediaKind: 'book', sort: 'title', letter: 'b' });
+    expect(byTitle.items.map((i) => i.title)).toEqual(['Beta']); // 'alpha' < 'b'
+    const byAuthor = await adminCaller.books.search({ mediaKind: 'book', sort: 'author', letter: 'z' });
+    expect(byAuthor.items.map((i) => i.title)).toEqual(['Alpha']); // Zed Author only
+  });
+
+  it('an explicit dir flips the primary column (R5 "+direction"), nulls still last', async () => {
+    const desc = await adminCaller.books.search({ mediaKind: 'book', sort: 'title', dir: 'desc' });
+    expect(desc.items.map((i) => i.title)).toEqual(['Beta', 'Alpha']);
+    const pagesAsc = await adminCaller.books.search({ mediaKind: 'book', sort: 'pages', dir: 'asc' });
+    expect(pagesAsc.items.map((i) => i.pageCount)).toEqual([150, 500]);
+  });
+});
+
+describe('books.groups (PLAN-029 D-04 — the grouped view aggregate)', () => {
+  it('REFUSES a Disabled caller (same booksProcedure gate as the wall)', async () => {
+    await expect(
+      disabledCaller.books.groups({ mediaKind: 'book', groupBy: 'author' }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it('aggregates one card per author with count + a bounded cover sample, label-A–Z', async () => {
+    const res = await adminCaller.books.groups({ mediaKind: 'book', groupBy: 'author' });
+    expect(res.groups.map((g) => ({ key: g.key, count: g.count }))).toEqual([
+      { key: 'Amy Author', count: 1 },
+      { key: 'Zed Author', count: 1 },
+    ]);
+    expect(res.groups[0]?.coverUrls[0]).toBe('/api/books/cover?source=kavita&id=k2&v=v1_c1.png');
+  });
+
+  it('groups audiobooks by author too (the R2 Audiobooks default)', async () => {
+    const res = await adminCaller.books.groups({ mediaKind: 'audiobook', groupBy: 'author' });
+    expect(res.groups.map((g) => `${g.label}:${g.count}`)).toEqual(['Amy Author:1', 'Zed Author:1']);
   });
 });

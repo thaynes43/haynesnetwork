@@ -16,6 +16,8 @@ import {
   getLibraryPreference,
   getLibraryPreferences,
   setLibraryPreference,
+  viewerHasBookProgress,
+  viewerHasWatchData,
   type LibraryView,
 } from '@hnet/domain';
 import { authedProcedure, router } from '../trpc';
@@ -39,6 +41,20 @@ const setInputSchema = z.object({
 });
 
 export const libraryRouter = router({
+  /**
+   * ADR-051 C-06 / DESIGN-026 D-07 (PLAN-029 step 6) — the populated-value gates for the per-user
+   * facet chips: the client offers the Watched/In-progress chips only when the viewer has ANY
+   * user_media_watch rows, and the Audiobooks Read/In-progress chip only when they have ANY
+   * user_book_progress rows (never a dead chip). Session-scoped — a viewer reads only their own gate.
+   */
+  facetGates: authedProcedure.query(async ({ ctx }): Promise<{ watch: boolean; bookProgress: boolean }> => {
+    const [watch, bookProgress] = await Promise.all([
+      viewerHasWatchData(ctx.db, ctx.user.id),
+      viewerHasBookProgress(ctx.db, ctx.user.id),
+    ]);
+    return { watch, bookProgress };
+  }),
+
   preferences: router({
     /** The caller's effective preference for ONE wall (their stored row, else the R2/R6 default). */
     get: authedProcedure

@@ -9,11 +9,13 @@
 // title, and a muted "date · duration" line. <details> expansion is the sanctioned ADR-015 in-place
 // exception (the same one the sonarr seasons use).
 import { useState } from 'react';
+import { arrowFor, cmpNum, cmpStr, nextSort, sortRowsClientSide, type FieldSpec } from '@hnet/ui';
 import { trpc } from '@/lib/trpc-client';
 import { BackLink } from '@/components/back-link';
 import { MediaPoster } from '@/components/media-poster';
 import { NotOnDiskButton } from '@/components/not-on-disk-button';
 import { formatDay, formatRuntime, formatSeasonEpisodeCounts } from '@/lib/media';
+import { registryFor, type ViewLevelKey } from '@/lib/library-view-registry';
 import type { YtdlsubEpisode, YtdlsubSeason } from '@hnet/api';
 
 type YtdlsubLibraryId = 'peloton' | 'youtube';
@@ -34,15 +36,31 @@ function episodeMeta(ep: YtdlsubEpisode): string | null {
   return parts.length > 0 ? parts.join(' · ') : null;
 }
 
+// ADR-051 / DESIGN-026 D-02 (PLAN-029 step 2) — the EPISODE level's registry-declared sort keys
+// (R5 asymmetry made visible: a class/video answers its date, number, title and duration — none of
+// which the discipline/channel wall above can). Applied client-side within each season's loaded
+// list; session-local (the per-user preference stores the WALL's sort — a drill-in sort is a
+// transient refinement).
+const EPISODE_SORT_FIELDS: Record<string, Omit<FieldSpec<YtdlsubEpisode>, 'dir'>> = {
+  index: { get: (ep) => ep.index, compare: cmpNum },
+  // 'YYYY-MM-DD' — lexical order IS chronological order.
+  air_date: { get: (ep) => ep.airDate, compare: cmpStr },
+  title: { get: (ep) => ep.title, compare: cmpStr },
+  duration: { get: (ep) => ep.durationMs, compare: cmpNum },
+};
+
 /** One season's lazily-loaded episode list (queried only once the season has been opened). */
 function SeasonEpisodes({
   library,
   season,
   open,
+  sortToken,
 }: {
   library: YtdlsubLibraryId;
   season: YtdlsubSeason;
   open: boolean;
+  /** The episode-level `field:dir` token (shared across the seasons — one control above them). */
+  sortToken: string;
 }) {
   const episodes = trpc.ytdlsub.episodes.useQuery(
     { library, seasonRatingKey: season.ratingKey },
@@ -65,9 +83,18 @@ function SeasonEpisodes({
   if (!data.found || data.episodes.length === 0) {
     return <p className="muted epi-list">No episodes found for this season.</p>;
   }
+  const [field, dir] = sortToken.split(':') as [string, 'asc' | 'desc'];
+  const spec = EPISODE_SORT_FIELDS[field];
+  const sorted =
+    spec === undefined
+      ? data.episodes
+      : sortRowsClientSide(data.episodes, sortToken, {
+          fields: { [sortToken]: { ...spec, dir } },
+          tiebreaker: (a, b) => cmpNum(a.index ?? 0, b.index ?? 0),
+        });
   return (
     <ul className="epi-list">
-      {data.episodes.map((ep) => {
+      {sorted.map((ep) => {
         const meta = episodeMeta(ep);
         return (
           <li key={ep.ratingKey} className="epi-row">
@@ -94,6 +121,22 @@ export function YtdlsubItemDetail({
   const label = LIBRARY_LABELS[library];
   // Which seasons have been opened (episodes query mounts on first open and stays warm after).
   const [openSeasons, setOpenSeasons] = useState<Record<string, boolean>>({});
+  // PLAN-029 — the episode-level sort (registry-declared; default = the natural episode order).
+  const epEntry = registryFor(`${library}:episode` as ViewLevelKey);
+  const [epSortToken, setEpSortToken] = useState(
+    `${epEntry.defaultSort.field}:${epEntry.defaultSort.dir}`,
+  );
+  const epClickCycle = Object.fromEntries(
+    epEntry.sorts.map((c) => [
+      c.key,
+      c.firstDir === 'asc'
+        ? { asc: `${c.key}:asc`, desc: `${c.key}:desc` }
+        : { asc: `${c.key}:desc`, desc: `${c.key}:asc` },
+    ]),
+  ) as Record<string, { asc: string; desc: string }>;
+  const epArrowCycle = Object.fromEntries(
+    epEntry.sorts.map((c) => [c.key, { asc: `${c.key}:asc`, desc: `${c.key}:desc` }]),
+  ) as Record<string, { asc: string; desc: string }>;
 
   const detail = trpc.ytdlsub.detail.useQuery(
     { library, ratingKey },
@@ -186,6 +229,33 @@ export function YtdlsubItemDetail({
 
       <section className="card admin-section">
         <h2>Seasons</h2>
+        {/* PLAN-029 (DESIGN-026 D-02) — the EPISODE-level sort row: the drill-in's classes/videos
+            answer date/number/title/duration (dimensions the wall above can't — R5). Applies within
+            each opened season's list; the shared fixed-arrow `.sort-btn` idiom (ADR-015). */}
+        {seasons.length > 0 ? (
+          <div className="library-sortbar" role="group" aria-label="Sort episodes">
+            <span className="library-sortbar__label">Sort episodes</span>
+            {epEntry.sorts.map((c) => {
+              const isActive = epSortToken.startsWith(`${c.key}:`);
+              return (
+                <button
+                  key={c.key}
+                  type="button"
+                  className={`sort-btn${isActive ? ' is-active' : ''}`}
+                  aria-pressed={isActive}
+                  onClick={() =>
+                    setEpSortToken(nextSort<string, string>(epSortToken, c.key, epClickCycle))
+                  }
+                >
+                  {c.label}
+                  <span className="sort-btn__arrow" aria-hidden="true">
+                    {arrowFor<string, string>(epSortToken, c.key, epArrowCycle).trim()}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
         {seasons.length === 0 ? (
           <p className="muted">No seasons found on the server.</p>
         ) : (
@@ -218,7 +288,12 @@ export function YtdlsubItemDetail({
                       </span>
                     ) : null}
                   </summary>
-                  <SeasonEpisodes library={library} season={season} open={open} />
+                  <SeasonEpisodes
+                    library={library}
+                    season={season}
+                    open={open}
+                    sortToken={epSortToken}
+                  />
                 </details>
               );
             })}

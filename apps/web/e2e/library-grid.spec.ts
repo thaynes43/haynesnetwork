@@ -27,7 +27,8 @@ test.describe('library poster grid + filter/sort engine (DESIGN-008 D-10/D-11)',
     await signIn(page, 'member');
     await openMovies(page);
 
-    // Both seeded movies render as poster cards (title asc: fixture < stub runner).
+    // Both seeded movies render as poster cards. PLAN-029 R6: the default sort is now
+    // RECENTLY ADDED (desc) — The Fixture (added 2026-07-01) before Stub Runner (2026-06-15).
     expect(await cardTitles(page)).toEqual(['The Fixture', 'Stub Runner']);
 
     // The Fixture's poster is the AUTHED proxy route (never an upstream/*arr URL) and it

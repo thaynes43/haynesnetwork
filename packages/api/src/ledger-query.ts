@@ -165,6 +165,10 @@ export const LIBRARY_FILTER_SHAPE = {
   // ADR-053 / DESIGN-026 D-07 — the per-user watch-state facet (viewer-scoped; see WATCH_STATES). The
   // predicate binds to the viewer via buildLibraryWhere's viewerUserId (set server-side from the session).
   watchState: z.enum(WATCH_STATES).optional(),
+  // DESIGN-026 D-09 (PLAN-029 step 6) — the A–Z letter jump: page to the first item at this letter
+  // (a `sort_title >= letter` narrowing that composes with the keyset cursor for later pages). The
+  // client offers it only on the asc Title sort (the registry's azSorts gate); '#' = cleared.
+  letter: z.string().regex(/^[a-z]$/).optional(),
 } as const;
 
 /** The Ledger-section-only filter dims (ADR-022 / DESIGN-009 D-04): monitored + completeness. */
@@ -209,6 +213,8 @@ export interface LibraryWhereInput {
   // never from the wire — a facet on already-gated content, ADR-053 C-07). Undefined ⇒ no predicate.
   watchState?: WatchState;
   viewerUserId?: string;
+  // DESIGN-026 D-09 — the A–Z jump letter (see LIBRARY_FILTER_SHAPE.letter).
+  letter?: string;
 }
 
 /**
@@ -290,6 +296,11 @@ export function buildLibraryWhere(input: LibraryWhereInput): SQL[] {
         sql`, `,
       )})`,
     );
+  }
+  // DESIGN-026 D-09 — the A–Z jump: narrow to sort_title at/after the letter. Composes with the
+  // keyset cursor (later pages) because both are plain AND predicates over the same asc order.
+  if (input.letter !== undefined) {
+    where.push(sql`LOWER(${mediaItems.sortTitle}) >= ${input.letter}`);
   }
   // ADR-053 / DESIGN-026 D-07 — the per-user watch-state facet (viewer-scoped EXISTS over
   // user_media_watch). Applied ONLY when a viewerUserId is present (a facet on already-gated content).
