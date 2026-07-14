@@ -294,6 +294,13 @@ export interface RunManualBookSearchInput {
   userId: string;
   actorId: string | null;
   ll: LazyLibrarianClientBundle;
+  /**
+   * ADR-057 amendment (PLAN-047 — the Wanted detail page) — narrow the LL searchBook to ONE format
+   * (the detail page's per-format "Force Search" button targets the ebook / audiobook leg separately,
+   * the Movies/TV per-grain idiom). Omitted ⇒ the whole request's not-yet-landed formats (the wall
+   * puck's existing behaviour). A format already landed narrows to nothing (searched:false).
+   */
+  format?: Extract<BookRequestFormat, 'ebook' | 'audiobook'>;
 }
 
 export interface RunManualBookSearchResult {
@@ -305,9 +312,10 @@ export interface RunManualBookSearchResult {
 
 /**
  * Manual re-search of a Missing request: record the audited `request_book_search` first (it commits), then
- * fire a real LL searchBook for each not-yet-landed format. A comic (unroutable) or a want with no resolved
- * LL id searches nothing but is STILL audited (the intent is recorded). An LL failure surfaces as
- * LazyLibrarianUpstreamError (BAD_GATEWAY) AFTER the audit — the honest "we tried, LL was down" record.
+ * fire a real LL searchBook for each not-yet-landed format (or the ONE `input.format`, for the detail page's
+ * per-format button). A comic (unroutable) or a want with no resolved LL id searches nothing but is STILL
+ * audited (the intent is recorded). An LL failure surfaces as LazyLibrarianUpstreamError (BAD_GATEWAY) AFTER
+ * the audit — the honest "we tried, LL was down" record.
  */
 export async function runManualBookSearch(
   input: RunManualBookSearchInput,
@@ -322,13 +330,15 @@ export async function runManualBookSearch(
   if (request.unroutableReason) return { searched: false, formats: [], reason: 'unroutable' };
   if (!request.llBookId) return { searched: false, formats: [], reason: 'no_ll_id' };
 
-  const formats = searchableFormats(request);
+  const notLanded = searchableFormats(request);
+  const formats = input.format ? notLanded.filter((f) => f === input.format) : notLanded;
   try {
     for (const format of formats) await input.ll.write.searchBook(request.llBookId, format);
   } catch (error) {
     throw new LazyLibrarianUpstreamError('LazyLibrarian search failed', { cause: error });
   }
-  return { searched: true, formats };
+  // A per-format request whose format already landed narrows to nothing — honest "nothing fired".
+  return { searched: formats.length > 0, formats };
 }
 
 // ---------------------------------------------------------------------------

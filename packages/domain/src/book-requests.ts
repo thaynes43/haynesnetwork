@@ -662,6 +662,118 @@ export async function getBookRequestById(input: {
 }
 
 /**
+ * ADR-057 amendment (PLAN-047 — the Wanted DETAIL page) — one request resolved for the
+ * `/library/books/wanted/[requestId]` parity page: joined with its live shelf item (source shelf,
+ * externalBookId), its integration OWNER (the `canSearch` ownership key), its library match's cover keys
+ * (the cover-proxy art when the want is in the library), plus the HOUSEHOLD requester roll-up — everyone
+ * whose LINKED shelf wants the same Goodreads book (the attribution that was pulled off the card face,
+ * DESIGN-029 amendment-2). Null when the id is unknown or its shelf item is gone (⇒ NOT_FOUND).
+ */
+export interface BookRequestDetailView {
+  requestId: string;
+  /** The app user whose integration minted the request (the ownership key for canSearch). */
+  integrationUserId: string;
+  /** Display names of everyone whose shelves want this book (deduped, the request's own owner first). */
+  requestedBy: string[];
+  title: string;
+  author: string | null;
+  /** The source shelf this request was minted from (the detail's shelf attribution). */
+  shelf: string;
+  shelvedAt: Date | null;
+  externalBookId: string;
+  matchedBooksItemId: string | null;
+  /** The matched library row's cover keys (the cover-proxy art), when the want is in the library. */
+  matched: { source: string; externalId: string; coverRef: string | null } | null;
+  ebookStatus: BookRequestStatus;
+  audioStatus: BookRequestStatus;
+  comicStatus: BookRequestStatus | null;
+  isComic: boolean;
+  unroutableReason: string | null;
+  llBookId: string | null;
+  kapowarrVolumeId: string | null;
+  lastSearchedAt: Date | null;
+}
+
+export async function getBookRequestDetail(input: {
+  db?: DbClient;
+  requestId: string;
+}): Promise<BookRequestDetailView | null> {
+  const db = resolveDb(input.db);
+  const [row] = await db
+    .select({
+      requestId: bookRequests.id,
+      integrationUserId: userIntegrations.userId,
+      requesterName: users.displayName,
+      title: bookRequests.title,
+      author: bookRequests.author,
+      shelf: integrationShelfItems.shelf,
+      shelvedAt: integrationShelfItems.shelvedAt,
+      externalBookId: integrationShelfItems.externalBookId,
+      matchedBooksItemId: bookRequests.matchedBooksItemId,
+      ebookStatus: bookRequests.ebookStatus,
+      audioStatus: bookRequests.audioStatus,
+      comicStatus: bookRequests.comicStatus,
+      unroutableReason: bookRequests.unroutableReason,
+      llBookId: bookRequests.llBookId,
+      kapowarrVolumeId: bookRequests.kapowarrVolumeId,
+      lastSearchedAt: bookRequests.lastSearchedAt,
+      matchedSource: booksItems.source,
+      matchedExternalId: booksItems.externalId,
+      matchedCoverRef: booksItems.coverRef,
+    })
+    .from(bookRequests)
+    .innerJoin(integrationShelfItems, eq(bookRequests.shelfItemId, integrationShelfItems.id))
+    .innerJoin(userIntegrations, eq(bookRequests.integrationId, userIntegrations.id))
+    .innerJoin(users, eq(userIntegrations.userId, users.id))
+    .leftJoin(booksItems, eq(booksItems.id, bookRequests.matchedBooksItemId))
+    .where(and(eq(bookRequests.id, input.requestId), isNull(integrationShelfItems.deletedAt)));
+  if (!row) return null;
+
+  // Household roll-up: everyone whose LINKED integration wants the same Goodreads book (deduped names).
+  const requesterRows = await db
+    .select({ name: users.displayName })
+    .from(bookRequests)
+    .innerJoin(integrationShelfItems, eq(bookRequests.shelfItemId, integrationShelfItems.id))
+    .innerJoin(userIntegrations, eq(bookRequests.integrationId, userIntegrations.id))
+    .innerJoin(users, eq(userIntegrations.userId, users.id))
+    .where(
+      and(
+        eq(integrationShelfItems.externalBookId, row.externalBookId),
+        eq(userIntegrations.status, 'linked'),
+        isNull(integrationShelfItems.deletedAt),
+      ),
+    );
+  const requestedBy: string[] = [];
+  for (const name of [row.requesterName, ...requesterRows.map((r) => r.name)]) {
+    if (!requestedBy.includes(name)) requestedBy.push(name);
+  }
+
+  return {
+    requestId: row.requestId,
+    integrationUserId: row.integrationUserId,
+    requestedBy,
+    title: row.title,
+    author: row.author,
+    shelf: row.shelf,
+    shelvedAt: row.shelvedAt,
+    externalBookId: row.externalBookId,
+    matchedBooksItemId: row.matchedBooksItemId,
+    matched:
+      row.matchedSource && row.matchedExternalId
+        ? { source: row.matchedSource, externalId: row.matchedExternalId, coverRef: row.matchedCoverRef }
+        : null,
+    ebookStatus: row.ebookStatus,
+    audioStatus: row.audioStatus,
+    comicStatus: row.comicStatus,
+    isComic: row.comicStatus != null,
+    unroutableReason: row.unroutableReason,
+    llBookId: row.llBookId,
+    kapowarrVolumeId: row.kapowarrVolumeId,
+    lastSearchedAt: row.lastSearchedAt,
+  };
+}
+
+/**
  * The LazyLibrarian formats a BOOK request should search on demand (both, unless one has already landed).
  * Narrowed to the two LL formats — 'comic' (ADR-056) is a Kapowarr format, never an LL searchBook target.
  */
@@ -819,6 +931,8 @@ export interface ShelfWallItem {
   shelvedAt: Date | null;
   /** The canonical request (shelf-priority pick when the book sits on several shelves). */
   requestId: string | null;
+  /** The matched books_items row id — the "Have it" card's click-through to `/library/books/[id]`. */
+  matchedBooksItemId: string | null;
   /** The matched books_items row's cover keys, when the want is in the library (the cover-proxy art). */
   matched: { source: string; externalId: string; coverRef: string | null } | null;
   ebookStatus: BookRequestStatus | null;
@@ -884,6 +998,7 @@ export async function getShelfWallItems(input: {
           shelves: [row.shelf],
           shelvedAt: row.shelvedAt,
           requestId: row.requestId,
+          matchedBooksItemId: row.matchedBooksItemId,
           matched:
             row.matchedSource && row.matchedExternalId
               ? { source: row.matchedSource, externalId: row.matchedExternalId, coverRef: row.matchedCoverRef }
@@ -907,6 +1022,7 @@ export async function getShelfWallItems(input: {
       // A higher-priority shelf carries the canonical request/status for the tile.
       existing.canonicalRank = rank;
       existing.item.requestId = row.requestId;
+      existing.item.matchedBooksItemId = row.matchedBooksItemId;
       existing.item.matched =
         row.matchedSource && row.matchedExternalId
           ? { source: row.matchedSource, externalId: row.matchedExternalId, coverRef: row.matchedCoverRef }

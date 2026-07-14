@@ -29,6 +29,8 @@ const BACK_LINKS: Record<string, BackLinkTarget> = {
   books: { label: 'Books', href: '/library?tab=books' },
   audiobooks: { label: 'Audiobooks', href: '/library?tab=audiobooks' },
   comics: { label: 'Comics', href: '/library?tab=comics' },
+  // ADR-057 amendment (PLAN-047) — the Wanted / library detail pages' way back to the Goodreads items wall.
+  'goodreads-items': { label: 'Goodreads', href: '/integrations/goodreads?tab=items' },
 };
 
 export const DEFAULT_BACK_LINK: BackLinkTarget = { label: 'Library', href: '/library' };
