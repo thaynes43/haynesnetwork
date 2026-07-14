@@ -18,10 +18,36 @@ export const PROWLARR_CLUSTER_URL_DEFAULT = 'http://prowlarr.downloads.svc.clust
 /** The Prowlarr indexer id for MyAnonaMouse (verified live: `GET /api/v1/indexer/17` → name "MyAnonaMouse"). */
 export const PROWLARR_MAM_INDEXER_ID_DEFAULT = 17;
 
+/** SABnzbd WebAPI base — the primary `sabnzbd` Service in the `downloads` namespace (port 8080). The
+ *  usenet download client LazyLibrarian hands book grabs to (OPS-013 §11 — the LL→SAB import leg). */
+export const SABNZBD_CLUSTER_URL_DEFAULT = 'http://sabnzbd.downloads.svc.cluster.local:8080';
+
 export interface QbittorrentConfig {
   baseUrl: string;
   /** The qB category the governor counts unsatisfied torrents in. */
   category: string;
+}
+
+/** ADR-059 / DESIGN-030 (PLAN-048) — the SABnzbd read client's env: base URL (defaulted) + REQUIRED
+ *  API key. SAB's WebAPI requires an apikey on every call (unlike qBittorrent, which answers
+ *  unauthenticated from the pod net), so SABNZBD_API_KEY is required and never echoed (hard rule 7). */
+export interface SabnzbdConfig {
+  baseUrl: string;
+  apiKey: string;
+}
+
+/**
+ * Read the Activity books-adapter's SABnzbd env: `SABNZBD_URL` (defaulted) + the REQUIRED `SABNZBD_API_KEY`.
+ * A missing key throws a single DownloadsConfigError naming it (never its value). The LazyLibrarian half of
+ * the books adapter reads its own env via @hnet/lazylibrarian's assertLazyLibrarianEnv.
+ */
+export function assertSabnzbdEnv(
+  env: Record<string, string | undefined> = process.env,
+): SabnzbdConfig {
+  const baseUrl = env.SABNZBD_URL?.trim() || SABNZBD_CLUSTER_URL_DEFAULT;
+  const apiKey = env.SABNZBD_API_KEY?.trim() ?? '';
+  if (!apiKey) throw new DownloadsConfigError(['SABNZBD_API_KEY']);
+  return { baseUrl, apiKey };
 }
 
 export interface ProwlarrConfig {

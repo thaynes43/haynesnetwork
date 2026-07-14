@@ -8,6 +8,7 @@
 import type { ReactNode } from 'react';
 import type { CardBadge } from './poster-card-body';
 import { BaseCard, type CardDataAttrs } from './base-card';
+import { activityStageBadge, type InFlightBadge } from './activity-badge';
 
 export function BookCard({
   href,
@@ -17,6 +18,7 @@ export function BookCard({
   year,
   author,
   badges,
+  inFlight,
   testId,
   data,
 }: {
@@ -28,9 +30,12 @@ export function BookCard({
   /** The muted author/subtitle line (DESIGN-024 amendment). */
   author?: ReactNode;
   badges?: ReadonlyArray<CardBadge | null | false | undefined>;
+  /** PLAN-048 / ADR-059 — the in-flight stage badge (leads the caption badge row; DESIGN-030 D-03). */
+  inFlight?: InFlightBadge | null;
   testId?: string;
   data?: CardDataAttrs;
 }) {
+  const allBadges = inFlight ? [activityStageBadge(inFlight), ...(badges ?? [])] : badges;
   return (
     <BaseCard
       href={href}
@@ -38,7 +43,7 @@ export function BookCard({
       title={title}
       year={year}
       subtitle={author}
-      badges={badges}
+      badges={allBadges}
       testId={testId}
       data={data}
     />

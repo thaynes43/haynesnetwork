@@ -15,6 +15,7 @@ import {
   type SyncSource,
 } from '@hnet/db';
 import {
+  booksActivityBundleFromEnv,
   kapowarrBundleFromEnv,
   lazyLibrarianBundleFromEnv,
   maintainerrClientBundleFromEnv,
@@ -42,7 +43,7 @@ import type { BooksSyncBundle } from '../books';
 import { createConsoleLogger } from '../logger';
 import { runSync } from '../orchestrator';
 
-const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy|notify-outbox|smart-alerts|poster-guard|ai-usage-sync|authentik-users|books-sync|plex-match|mam-governor|goodreads-sync [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
+const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy|notify-outbox|smart-alerts|poster-guard|ai-usage-sync|authentik-users|books-sync|plex-match|mam-governor|goodreads-sync|activity-scan [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
 
   --mode=full              item-list upsert + tombstone pass per *arr (+ Seerr requests)
   --mode=incremental       history/since cursor polling per *arr (+ Seerr requests)
@@ -111,6 +112,13 @@ const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-bat
                            LAZYLIBRARIAN_API_KEY / KAPOWARR_API_KEY are OPTIONAL (absent LL ⇒ mirror + mint, no
                            book push; absent Kapowarr ⇒ comics parked). NEVER writes LL/Kapowarr provider
                            config. No --source. Writes no sync_runs row.
+  --mode=activity-scan     the ACTIVITY / IN-FLIGHT failure scan (ADR-059 — the pipeline made visible): poll
+                           each source family's queue/import state (SLICE 1: the books LL wanted-table + SAB
+                           queue/history), detect OPEN import failures (incl. stranded_import — downloaded but
+                           never imported), UPSERT the activity_import_failures ledger + enqueue one
+                           activity_import_failed notification_outbox row per NEW failure (same-tx). Needs
+                           LAZYLIBRARIAN_API_KEY + SABNZBD_API_KEY (URLs default in-cluster). No --source.
+                           Writes no sync_runs row.
   --source=NAME            limit the run to one source (repeatable; default: all sources; for
                            metadata-refresh the default is the three *arr kinds)
   --force-tombstones       override the mass-tombstone guard (DESIGN-005 D-14/Q-03)
@@ -171,6 +179,7 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
       mode === 'books-sync' ||
       mode === 'plex-match' ||
       mode === 'mam-governor' ||
+      mode === 'activity-scan' ||
       mode === 'goodreads-sync') &&
     sources.length > 0
   ) {
@@ -190,6 +199,7 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
     mode === 'books-sync' ||
     mode === 'plex-match' ||
     mode === 'mam-governor' ||
+    mode === 'activity-scan' ||
     mode === 'goodreads-sync'
       ? []
       : mode === 'metadata-refresh'
@@ -280,6 +290,11 @@ async function main(): Promise<number> {
   // resolveGovernorConfig SEAM (env in v1; PLAN-040 adds a DB-backed admin override behind the same call).
   const mamGovernor = args.mode === 'mam-governor' ? mamGovernorBundleFromEnv() : undefined;
   const mamTuning = args.mode === 'mam-governor' ? await resolveGovernorConfig() : undefined;
+  // ADR-059 / DESIGN-030 — the books activity bundle (LL wanted-table read + SAB queue/history read + the
+  // confined LL write) built INSIDE @hnet/domain (booksActivityBundleFromEnv), so the confined LL write
+  // surface stays domain-only (the arr-write import guard). Throws one config error if LAZYLIBRARIAN_API_KEY
+  // or SABNZBD_API_KEY is absent. Only the `activity-scan` mode uses it (READ side — failure detection).
+  const activityBundle = args.mode === 'activity-scan' ? booksActivityBundleFromEnv() : undefined;
   // ADR-043 / DESIGN-021 — the Plex client bundle (read + confined write) the `poster-guard` mode uses.
   // ADR-047 / DESIGN-025 — `plex-match` reuses the same bundle (READ side only) to enumerate the Movies/
   // TV/Music libraries. Built INSIDE @hnet/domain (plexClientBundleFromEnv), so the confined Plex write
@@ -383,6 +398,7 @@ async function main(): Promise<number> {
     ...(smartReader ? { smartReader } : {}),
     ...(mamGovernor ? { mamGovernor } : {}),
     ...(mamTuning ? { mamTuning } : {}),
+    ...(activityBundle ? { activityBundle } : {}),
     ...(plex ? { plex } : {}),
     ...(openWebUi ? { openWebUi } : {}),
     ...(authentik ? { authentik } : {}),

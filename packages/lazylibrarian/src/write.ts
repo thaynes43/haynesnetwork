@@ -50,6 +50,17 @@ export class LazyLibrarianWriteClient {
   async searchBook(bookId: string, format: LlFormat): Promise<string> {
     return this.http.commandText('searchBook', { id: bookId, type: llTypeParam(format) });
   }
+
+  /**
+   * ADR-059 / DESIGN-030 (PLAN-048 — Activity retry-import) — `cmd=forceProcess` re-runs LazyLibrarian's
+   * post-processor over its download dir, importing any completed-but-stranded grabs (the in-app analog of
+   * the OPS-013 §11.3 break-glass `forceProcess`). This is the write the Admin "Retry import" fires on a
+   * stranded/postprocess-failed book. Read-only to LL's PROVIDER config (never touches it — Prowlarr's
+   * fullSync owns that, OPS-013 hard constraint); it only nudges the import worklist. Returns the ack text.
+   */
+  async forceProcess(): Promise<string> {
+    return this.http.commandText('forceProcess');
+  }
 }
 
 export function lazyLibrarianWriteClient(

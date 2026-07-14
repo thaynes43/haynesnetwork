@@ -27,6 +27,53 @@ function bookStatus(id: string): { BookID: string; Status: string; AudioStatus: 
   return { BookID: id, Status: 'Wanted', AudioStatus: 'Wanted' };
 }
 
+// ADR-059 / DESIGN-030 (PLAN-048 — Activity / In-Flight) — the wanted-table fixture the Activity books
+// adapter reads (`cmd=getWanted`). It spans every in-flight stage + the incident: a searching row, a
+// SAB-downloading row (paired to the SAB queue slot), the STRANDED import (Snatched + SAB-Completed but
+// aged past the horizon — the OPS-013 §11 42-book class), an LL post-process failure, and a dead usenet
+// download (Snatched + SAB-Failed). The DownloadIDs join to the SAB stub's queue/history nzo_ids.
+const AGED = '2020-01-01 00:00:00'; // well past the strand horizon → the SAB-Completed row reads as stranded
+function wantedRows(): Array<Record<string, string>> {
+  return [
+    { BookID: 'act-search', NZBtitle: 'A Book Still Searching', Status: 'Wanted', AuxInfo: 'eBook' },
+    {
+      BookID: 'act-dl',
+      NZBtitle: 'A Book Downloading Now',
+      Status: 'Snatched',
+      Source: 'SABNZBD',
+      DownloadID: 'sab-dl-1',
+      AuxInfo: 'eBook',
+      NZBdate: AGED,
+    },
+    {
+      BookID: 'act-strand',
+      NZBtitle: 'The Stranded Import',
+      Status: 'Snatched',
+      Source: 'SABNZBD',
+      DownloadID: 'sab-strand-1',
+      AuxInfo: 'eBook',
+      NZBdate: AGED,
+    },
+    {
+      BookID: 'act-ppfail',
+      NZBtitle: 'A Book That Failed To Import',
+      Status: 'Failed',
+      AuxInfo: 'AudioBook',
+      DLResult: 'Postprocessing failed — Progress: 0%',
+      NZBdate: AGED,
+    },
+    {
+      BookID: 'act-dlfail',
+      NZBtitle: 'A Dead Usenet Download',
+      Status: 'Snatched',
+      Source: 'SABNZBD',
+      DownloadID: 'sab-dead-1',
+      AuxInfo: 'eBook',
+      NZBdate: AGED,
+    },
+  ];
+}
+
 export async function startStubLazyLibrarian(): Promise<StubLazyLibrarianServer> {
   const calls: LlRecordedCall[] = [];
 
@@ -51,7 +98,7 @@ export async function startStubLazyLibrarian(): Promise<StubLazyLibrarianServer>
       const cmd = url.searchParams.get('cmd') ?? '';
       const id = url.searchParams.get('id');
       const type = url.searchParams.get('type');
-      if (cmd === 'addBook' || cmd === 'queueBook' || cmd === 'searchBook') {
+      if (cmd === 'addBook' || cmd === 'queueBook' || cmd === 'searchBook' || cmd === 'forceProcess') {
         calls.push({ cmd, id, type });
         res.writeHead(200, { 'content-type': 'text/plain' });
         res.end('OK');
@@ -60,6 +107,11 @@ export async function startStubLazyLibrarian(): Promise<StubLazyLibrarianServer>
       if (cmd === 'getBook') {
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify(id ? bookStatus(id) : null));
+        return;
+      }
+      if (cmd === 'getWanted') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(wantedRows()));
         return;
       }
       res.writeHead(200, { 'content-type': 'text/plain' });

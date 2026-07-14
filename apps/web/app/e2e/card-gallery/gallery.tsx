@@ -14,6 +14,7 @@
 // Extending the family = adding the variant HERE and in the spec, in the same change (ADR-058).
 // The route (page.tsx) 404s outside development — this never ships as a user-facing surface.
 import {
+  ActivityCard,
   BookCard,
   GroupCard,
   MediaCard,
@@ -103,6 +104,16 @@ export function CardGallery() {
             year={2024}
             badges={[{ label: '3 seasons · 41 eps' }]}
           />
+          {/* PLAN-048 / ADR-059 D-03 — the wall in-flight badge (a typed prop, leads the badge row). */}
+          <MediaCard
+            href="#"
+            posterUrl={POSTER_B}
+            kind="radarr"
+            title="Grabbing Now"
+            year={2026}
+            inFlight={{ stage: 'downloading', progress: 42 }}
+            badges={[{ label: '★ 7.4', tone: 'rating' }]}
+          />
         </PosterGrid>
       </Section>
 
@@ -145,6 +156,63 @@ export function CardGallery() {
             badges={[{ label: 'Missing', tone: 'danger' }]}
             testId="wanted-card"
             data={{ 'data-request-id': 'fixture-2' }}
+          />
+          {/* PLAN-048 / ADR-059 D-03 — a book wall poster carrying the in-flight (importing) badge. */}
+          <BookCard
+            href="#"
+            posterUrl={null}
+            mediaKind="book"
+            title="Importing Now"
+            author="An Author"
+            inFlight={{ stage: 'importing' }}
+          />
+        </PosterGrid>
+      </Section>
+
+      <Section title="ActivityCard — the Activity sub-tab grid (in-flight + failed states)">
+        <PosterGrid testId="gallery-activity">
+          <ActivityCard
+            href="#"
+            posterUrl={POSTER_A}
+            kind="book"
+            title="Searching For This"
+            sourceApp="lazylibrarian"
+            stage="searching"
+          />
+          <ActivityCard
+            href="#"
+            posterUrl={POSTER_B}
+            kind="book"
+            title="Downloading Now"
+            sourceApp="sabnzbd"
+            stage="downloading"
+            progress={73}
+          />
+          <ActivityCard
+            href="#"
+            posterUrl={null}
+            kind="audiobook"
+            title="Importing An Audiobook"
+            sourceApp="lazylibrarian"
+            stage="importing"
+          />
+          <ActivityCard
+            href="#"
+            posterUrl={null}
+            kind="book"
+            title="Stranded Download"
+            sourceApp="lazylibrarian"
+            stage="failed"
+            failureKind="stranded_import"
+            testId="activity-failed"
+          />
+          <ActivityCard
+            href="#"
+            posterUrl={POSTER_A}
+            kind="book"
+            title="Just Landed"
+            sourceApp="lazylibrarian"
+            stage="completed"
           />
         </PosterGrid>
       </Section>

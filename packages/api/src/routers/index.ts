@@ -19,6 +19,7 @@ import { booksRouter } from './books';
 import { libraryRouter } from './library';
 import { authentikPortalRouter } from './authentik-portal';
 import { integrationsRouter } from './integrations';
+import { activityRouter } from './activity';
 
 export const appRouter = router({
   profile: profileRouter,
@@ -67,6 +68,10 @@ export const appRouter = router({
   // requests/Missing wall + coverage % + manual re-search. Gated by the `integrations` section (ships
   // Admin-only). Book requests push to LazyLibrarian (both formats, paced); comics parked out of LL.
   integrations: integrationsRouter,
+  // ADR-059 / DESIGN-030 (PLAN-048): the Activity / In-Flight surface — the cross-library live pipeline
+  // read (searching/downloading/importing/failed/completed) + the durable import-failure detail with
+  // role-controlled retry-import / force-research. Always-on tab; the LIST resolver does per-section gating.
+  activity: activityRouter,
 });
 
 export type AppRouter = typeof appRouter;

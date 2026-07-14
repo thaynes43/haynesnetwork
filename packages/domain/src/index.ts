@@ -129,3 +129,9 @@ export * from './lazylibrarian-clients';
 // ADR-056 (PLAN-046 — Kapowarr comics acquisition) — the confined Kapowarr client bundle for comic routing +
 // the comic force-search (@hnet/kapowarr/write stays in this package — the arr-write-import-guard, extended).
 export * from './kapowarr-clients';
+// ADR-059 / DESIGN-030 (PLAN-048 — Activity / In-Flight) — the source-agnostic read-model contract +
+// aggregator, the BOOKS adapter (LazyLibrarian + SABnzbd), the durable failure-ledger single-writer +
+// audited retry-import / force-research actions (the confined LL write stays in this package), and the
+// fine-grained Activity action grant seam (setRoleActivityActions, the ADR-023 machinery).
+export * from './activity';
+export * from './activity-permissions';

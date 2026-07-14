@@ -44,7 +44,13 @@ test.describe('card gallery — the shared-card-system drift gate (ADR-058)', ()
   test('every poster-idiom card variant keeps the canonical anatomy', async ({ page }) => {
     await openGallery(page, 'hnet-dark');
 
-    for (const section of ['gallery-media', 'gallery-books', 'gallery-groups', 'gallery-requests']) {
+    for (const section of [
+      'gallery-media',
+      'gallery-books',
+      'gallery-groups',
+      'gallery-requests',
+      'gallery-activity',
+    ]) {
       const cards = page.getByTestId(section).locator('.poster-card');
       const count = await cards.count();
       expect(count, `${section} renders cards`).toBeGreaterThan(2);
@@ -86,6 +92,25 @@ test.describe('card gallery — the shared-card-system drift gate (ADR-058)', ()
         .filter({ hasText: 'Searching' })
         .evaluateAll((els) => els.map((el) => el.tagName)),
     ).toEqual(['A']);
+  });
+
+  test('activity tiles carry the in-flight stage badge (+ failure class) in the ONE badge row', async ({
+    page,
+  }) => {
+    // PLAN-048 / ADR-059 D-03/D-05 — the in-flight signal is a caption BADGE (never a new poster
+    // anatomy): each ActivityCard has exactly the shared caption + a ≤3 badge row leading with the stage.
+    await openGallery(page, 'hnet-dark');
+    const cards = page.getByTestId('gallery-activity').locator('.poster-card');
+    await expect(cards).toHaveCount(5);
+    // The failed tile carries TWO badges (stage "Stuck" + failure class), both in the ONE badge row.
+    const failed = page.getByTestId('activity-failed');
+    await expect(failed.locator('.media-card__badges')).toHaveCount(1);
+    await expect(failed.locator('.media-card__badges .badge')).toHaveCount(2);
+    await expect(failed.locator('.badge--danger')).toHaveCount(2);
+    // The wall in-flight prop lands as the leading badge on a real MediaCard/BookCard too.
+    await expect(
+      page.getByTestId('gallery-media').locator('.poster-card', { hasText: 'Grabbing Now' }).locator('.badge--info'),
+    ).toHaveCount(1);
   });
 
   test('ticket tiles keep the twall anatomy (state puck + caption/sub + ONE meta row)', async ({

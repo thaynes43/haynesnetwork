@@ -24,6 +24,7 @@ import { startStubAuthentik, type StubAuthentikServer } from './stub-authentik';
 import { startStubBooks, type StubBooksServer } from './stub-books';
 import { startStubGoodreads, type StubGoodreadsServer } from './stub-goodreads';
 import { startStubLazyLibrarian, type StubLazyLibrarianServer } from './stub-lazylibrarian';
+import { startStubSabnzbd, type StubSabnzbdServer } from './stub-sabnzbd';
 import { startStubKapowarr, type StubKapowarrServer } from './stub-kapowarr';
 import { composeRuntimeEnv, DEFAULT_APP_PORT, type RuntimeEnv } from './env';
 
@@ -65,6 +66,8 @@ export interface RunningStack {
   goodreads: StubGoodreadsServer;
   /** Stub LazyLibrarian (command API + call recorder) — Integrations e2e layer (ADR-055 / DESIGN-028). */
   lazylibrarian: StubLazyLibrarianServer;
+  /** Stub SABnzbd (queue/history + recorder) — the Activity books adapter's usenet leg (ADR-059 / PLAN-048). */
+  sabnzbd: StubSabnzbdServer;
   /** Stub Kapowarr (REST + call recorder) — comic routing e2e layer (ADR-056 / PLAN-046). */
   kapowarr: StubKapowarrServer;
   devServer: ChildProcess;
@@ -192,6 +195,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
   let books: StubBooksServer | undefined;
   let goodreads: StubGoodreadsServer | undefined;
   let lazylibrarian: StubLazyLibrarianServer | undefined;
+  let sabnzbd: StubSabnzbdServer | undefined;
   let kapowarr: StubKapowarrServer | undefined;
   let dev: ChildProcess | undefined;
   try {
@@ -229,6 +233,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     books = await startStubBooks();
     goodreads = await startStubGoodreads();
     lazylibrarian = await startStubLazyLibrarian();
+    sabnzbd = await startStubSabnzbd();
     kapowarr = await startStubKapowarr();
     const env = composeRuntimeEnv({
       databaseUrl: pg.connectionString,
@@ -244,6 +249,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       stubBooksBaseUrl: books.baseUrl,
       stubGoodreadsBaseUrl: goodreads.baseUrl,
       stubLazyLibrarianBaseUrl: lazylibrarian.baseUrl,
+      stubSabnzbdBaseUrl: sabnzbd.baseUrl,
       stubKapowarrBaseUrl: kapowarr.baseUrl,
       appUrl,
     });
@@ -282,6 +288,18 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       'books-sync seed',
     );
 
+    // ADR-059 / DESIGN-030 (PLAN-048) — populate the activity_import_failures ledger + the outbox by RUNNING
+    // the real activity-scan mode against the stub LL + SAB (exercises the adapter → normalizer →
+    // evaluateActivityFailures single-writer, like prod), so the Activity failure detail pages resolve + the
+    // failed tiles link on first load. The tab/badges themselves read LIVE (no seed needed).
+    await runToCompletion(
+      join(cwd, 'node_modules', '.bin', 'tsx'),
+      [join(cwd, '..', '..', 'packages', 'sync', 'src', 'scripts', 'sync.ts'), '--mode=activity-scan'],
+      { ...process.env, ...env },
+      cwd,
+      'activity-scan seed',
+    );
+
     // Spawn .bin/next directly — some pnpm versions filter child env vars.
     dev = spawn(join(cwd, 'node_modules', '.bin', 'next'), ['dev', '--port', String(port)], {
       env: { ...process.env, ...env },
@@ -311,6 +329,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     const runningBooks = books;
     const runningGoodreads = goodreads;
     const runningLazyLibrarian = lazylibrarian;
+    const runningSabnzbd = sabnzbd;
     const runningKapowarr = kapowarr;
     let stopped = false;
     return {
@@ -327,6 +346,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       books: runningBooks,
       goodreads: runningGoodreads,
       lazylibrarian: runningLazyLibrarian,
+      sabnzbd: runningSabnzbd,
       kapowarr: runningKapowarr,
       devServer: running,
       env,
@@ -335,6 +355,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
         stopped = true;
         await killDevServer(running);
         await runningKapowarr.stop().catch(() => undefined);
+        await runningSabnzbd.stop().catch(() => undefined);
         await runningLazyLibrarian.stop().catch(() => undefined);
         await runningGoodreads.stop().catch(() => undefined);
         await runningBooks.stop().catch(() => undefined);
@@ -353,6 +374,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     // Partial-boot cleanup, best effort in reverse order.
     if (dev) await killDevServer(dev).catch(() => undefined);
     if (kapowarr) await kapowarr.stop().catch(() => undefined);
+    if (sabnzbd) await sabnzbd.stop().catch(() => undefined);
     if (lazylibrarian) await lazylibrarian.stop().catch(() => undefined);
     if (goodreads) await goodreads.stop().catch(() => undefined);
     if (books) await books.stop().catch(() => undefined);
