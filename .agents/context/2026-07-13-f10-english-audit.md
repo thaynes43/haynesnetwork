@@ -144,3 +144,160 @@ observed — it is the carried-forward state, recorded so the next run knows the
 No MAM grabs, no qBittorrent adds, no Prowlarr MAM-indexer toggle, no LL retry-queue disturbance,
 no quarantine moves, no rescans, no deletions — the estate was never reached, let alone modified.
 No auth repair attempted. No app code / haynes-ops / other plans / HANDOFF touched. No release.
+
+---
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RUN 2 — EXECUTED (2026-07-13 night, post-re-auth). Full audit + remediation ran.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+**Status: COMPLETE.** kubectl/Omni re-authed; `haynes-ops` all 6 nodes Ready. The full library-wide
+English audit ran start-to-finish against the live estate. **58 clear-cut foreign items quarantined**
+(33 EBooks + 25 AudioBooks), **Comics 100 % English (0 foreign)**, both Kavita+ABS rescanned, **3 F-09
+corrupt epubs re-grab-queued (English, Wanted)**. Existing LL retry queue untouched; MAM gate observed
+CLOSED (correct). Ambiguity rule honored — leaned-English / genre-tag-only items left for the owner.
+
+## R2.1 — Reachability + tooling (corrections/additions to §1)
+- Storage layout: all book apps mount cephfs at `/data/cephfs-hdd`; the estate lives at
+  **`/data/cephfs-hdd/data/media/books/{EBooks,AudioBooks,Comics,quarantine}`**. Kavita pod =
+  ns `media` `kavita-*` container **`app`**; ABS = ns `media` `audiobookshelf-*`; LL = ns `downloads`
+  `lazylibrarian-*` container **`app`** — all three mount the same books volume.
+- **Kavita pod is minimal** (no python3 / unzip / busybox). **LazyLibrarian's pod HAS python3 3.12**
+  and mounts the same cephfs → **used the LL pod as the read/analysis + move engine** (`kubectl exec`,
+  zipfile/urllib/sqlite3 stdlib, no extra deps). Quarantine `mv` is `os.rename` within one cephfs
+  volume = atomic/instant regardless of size (the 570-track audiobooks moved as fast as a 1-file epub).
+- **Kavita/ABS rescans driven in-cluster**: creds are in `frontend/haynesnetwork-secret`
+  (`KAVITA_PASSWORD`, `AUDIOBOOKSHELF_PASSWORD`); users `hnetadmin` / `root`; in-cluster URLs
+  `http://kavita.media.svc.cluster.local:5000` + `http://audiobookshelf.media.svc.cluster.local:13378`.
+  Kavita `POST /api/Account/login`→JWT→`POST /api/Library/scan?libraryId=1&force=true`. ABS
+  `POST /login`→token→`POST /api/libraries/{id}/scan`. Both returned **HTTP 200**.
+- **LL API**: `http://localhost:5299/api?apikey=<config.ini api_key>&cmd=…`; the keyed GB works
+  (`gb_api` in config.ini). qBittorrent WebAPI answers unauthenticated from the pod net
+  (`http://qbittorrent.downloads.svc.cluster.local:8080`).
+
+## R2.2 — Method that actually worked (tag alone is NOT enough — the key lesson)
+- **EBooks:** scanned **all 1374 epubs** two ways: (a) OPF `dc:language`, (b) a **content
+  stopword-ratio detector** (en/nl/de/fr/es/da/it/pt) over ~1.2–1.5k words of spine text. **Metadata
+  tags are unreliable** — ~40 epubs carry spurious `UND` / `da` / `es` / `inh` tags on plainly-English
+  books (all of John Grisham, Cormac McCarthy, Roald Dahl, Tolkien's HoME, Rick Riordan, Terry
+  Pratchett, Charlaine Harris, etc. detected `en` by content). Only where **content + (title|OPF|tag)
+  agree** was an item called foreign. Full-tree content scan surfaced **no** foreign book hiding under
+  an `en` tag (candidate set from the tag scan was complete).
+- **AudioBooks:** metadata.json (`language`/`publisher`/`description`) MISSES most cases (scraped
+  English metadata over German audio). The decisive signal is **audio-native ID3** across the first
+  ~3 tracks/folder: `TALB`/`TIT2` (German book titles, `Kapitel`, `Teil`, `Ungekürzt`), `TPE2` German
+  narrators (Reinhard Kuhnert, Birgitta Assheuer, Simon Jäger), `TPUB` German labels (Der Hörverlag,
+  Random House Audio Deutschland, Lübbe Audio, Sauerländer). Metadata.json alone found 17; **the ID3
+  pass found 23 true German audiobooks** (Lord of Shadows, City of Ashes, City of Heavenly Fire, DUNE
+  IV, German Dune III, Grey, Dead or Alive, Children of Blood and Bone, De/Das Silmarillion, Rich Dad
+  Poor Dad, The Other Emily — several with **English folder names but German audio**).
+- **Comics:** ComicInfo.xml `LanguageISO` across 946 cbz (148 `en`, 72 no-lang, 726 no-ComicInfo) +
+  all-English series names → **0 foreign**. 787 cbr (RAR) unreadable for ComicInfo but all US-comic
+  series names — no language concern.
+
+## R2.3 — Results (per kind)
+| Kind | Scanned | Foreign found | Quarantined | Re-grabs queued | Ambiguous → owner |
+|---|---|---|---|---|---|
+| EBooks (Kavita) | 1374 epub (+92 azw3/62 mobi) | 33 | 33 | 0 (see Q-04) | 1 (La Chute folder-name) |
+| AudioBooks (ABS) | 826 books / 24.6k audio | 25 | 25 | 0 (see Q-04) | 3 (Truckers/Snuff/Fantastic Mr Fox) + Mosley cluster |
+| Comics (Kavita) | 51 series / 1733 files | 0 | 0 | 0 | 0 |
+| F-09 corrupt epubs | 3 | (already quarantined) | — | **3 (Wanted, EN)** | 0 |
+- EBooks foreign by language: **18 Dutch, 7 German, 7 Danish, 1 French**.
+- AudioBooks foreign: **23 German audiobooks + 2 misfiled foreign epubs** (Chain of Iron = German epub;
+  Destructora de espadas = Spanish epub — both were sitting inside the ABS tree).
+
+## R2.4 — Quarantine manifest (all under `books/quarantine/f10-language/`, MOVE + rescan, reversible)
+Structure mirrors source: `f10-language/EBooks/<Author>/<Title>/` and `…/AudioBooks/<Author>/<Title>/`.
+**EBooks (33):**
+- **nl (18):** Alice Oseman/Heartstopper Deel 3, /Heartstopper Deel 4; E.L. James/Grey; Ken Follett/
+  {De schemering en de dageraad, Het eeuwige vuur, Nacht van het kwaad, Nachtwakers, Nooit, Op vleugels
+  van de adelaar, "The Hammer of Eden…" (EN title, NL text), The Man From St Petersburg (EN title, NL),
+  The Modigliani Scandal (EN title, NL), Val der titanen}; Tom Clancy/{De ogen van de vijand, In het
+  vizier, Operatie Rode Storm, Patriot Games (EN title, NL), Op leven en dood}.
+- **de (7):** Alice Oseman/Solitaire; Cassandra Clare/Lady Midnight (The Dark Artifices)…; Christopher
+  Paolini/{Eragon (Inheritance, Book 1)…, "Learning Disabilities ; 7 +E" (junk name, German Paolini)};
+  E.L. James/Mais Livre; Isaac Asimov/Foundation (**OPF title "Das Foundation Projekt"** — F-09's
+  "reads fine" = renders, NOT English); Julia Quinn/"Buscando esposa (Spanish Edition)…" (**OPF title
+  "Wie bezaubert man einen Viscount" — actually GERMAN**, misnamed folder).
+- **da (7):** Eoin Colfer/Airman; George Orwell/A Collection of Essays…; George R.R. Martin/Aces High;
+  Herman Melville/{Israel Potter, Typee, White Jacket}; Ursula K. Le Guin/Malafrena.
+- **fr (1):** Frank Herbert/Dune (French Dune epub).
+
+**AudioBooks (25):**
+- **German audio (23):** Alice Oseman/I was born for this… (Sauerländer Audio); Cassandra Clare/
+  {Chroniken der Unterwelt 06. City of Heavenly Fire, Lord of Shadows, Queen of Air and Darkness (570
+  trk, Der Hörverlag), The Last Hours Chain of Gold… (Der Hörverlag), The Mortal Instruments 2 - City
+  of Ashes}; Christopher Paolini/{Die Weisheit dea Feuers, Eragon, Murtagh - The World of Eragon (RHDE)};
+  Dean Koontz/"The Face…" (audio = German "The Other Emily – Die Doppelgängerin"); Dennis E. Taylor/
+  Outland (RHDE); Diana Gabaldon/Outlander (German Band 04 "Der Ruf der Trommel", narr. Assheuer);
+  E.L. James/"Grey - Fifty Shades… as Told by Christian" (German audio); Frank Herbert/{DUNE IV - Der
+  Gottkaiser des Wüstenplaneten, Dune (folder "Dune" holds German Dune III)}; George R.R. Martin/
+  {Nightflyers…, Wild Cards…01, Wild Cards…02}; J.R.R. Tolkien/De Silmarillion (German "Das
+  Silmarillion", Der HoerVerlag); Ken Follett/"Pour rien au monde…" (French folder name, **German audio
+  "Never - Die letzte Entscheidung"**, Lübbe); Robert T. Kiyosaki/Rich Dad Poor Dad… (German); Tom
+  Clancy/Dead or Alive (German, "Kapitel 001"); Tomi Adeyemi/Children of Blood and Bone (German "Band
+  01 - Goldener Zorn").
+- **Misfiled foreign epubs in ABS (2):** Cassandra Clare/Chain of Iron (German epub, det de:0.21);
+  Victoria Aveyard/"Destructora de espadas…" (Spanish epub).
+- Empty author folders left after moves (harmless, not deleted): EBooks/Isaac Asimov,
+  AudioBooks/Alice Oseman, AudioBooks/Tomi Adeyemi.
+
+## R2.5 — LL re-grabs queued + governor/LL state observed
+- **F-09 corrupt (explicit mandate) — 3 English re-grabs queued** via GB-volume-id → `addBook` →
+  `queueBook` → `searchBook` (503 backoff fired twice, recovered): **Skyward** (Brandon Sanderson, GB
+  `RPq0DwAAQBAJ`), **Sweet and Deadly** (Charlaine Harris, `vcpmEQAAQBAJ`), **Skin in the Game** (Taleb,
+  `xTFMtAEACAAJ`). All three now **Status=Wanted, BookLang=en** in LL (verified in
+  `/config/lazylibrarian.db`). NOTE: `addBook` alone lands books as **`Skipped`** — must follow with
+  `queueBook` to reach `Wanted` (searchBook won't act on Skipped). Corrupt+original backups remain in
+  `books/quarantine/f09-corrupt/` and `…/f09-originals/` (untouched).
+- **Existing LL retry queue UNTOUCHED:** `getWanted` = Throne of Glass + Kingdom of Ash (as briefed).
+- **Governor / MAM:** qBittorrent `books-mam` = **19 torrents, all 19 unsatisfied** (<72h / maturing
+  ~Tue eve) → over the pause threshold (15) → **gate CLOSED (correct)**. Usenet unaffected. Did not
+  touch the Prowlarr MAM indexer or governor CronJob.
+
+## R2.6 — Adjacent sweeps
+- **azw3/mobi-only titles (invisible to Kavita): 146** (Kavita only indexes epub). Conversion
+  candidates, but **LL image has no calibre — NOT converted** (per constraint), listed only. Notable
+  **foreign** stray among them: `EBooks/Dennis E. Taylor/Potomu chto nas mnogo` = **Russian** ("We Are
+  Legion" translation) `.mobi`. Big clusters: Tom Clancy (~24 mobi guided-tours), Kim Stanley Robinson
+  (~11), James S.A. Corey Expanse origins/novellas (~9), Douglas Adams, Roald Dahl, Veronica Roth.
+- **Empty / no-book EBooks title folders: 60** — includes the expected-empty F-09 shells (Skyward,
+  "Sweet and Deadly by Harris…", Skin in the Game — epubs live in `f09-corrupt/`), plus foreign-titled
+  empties (Charlaine Harris/{Allemaal dood, Echt dood}, John Grisham/{De onschuldigen, Domarens Brev},
+  Ken Follett/Der Mann aus St. Petersburg). All harmless (no content). +1 ABS phantom:
+  `AudioBooks/J.R.R. Tolkien/Der Herr der Ringe - Die zwei Türme` = metadata.json+cover only, **no
+  audio** (German-titled empty ABS entry — reported, not moved).
+- **Mixed-format title dirs: 4** — Roald Dahl/Matilda (azw3+epub+mobi), Sarah J. Maas/{Crown of
+  Midnight, The Assassin and the Underworld, Tower of Dawn} = the session-5 English re-grabs landed
+  beside old azw3/mobi. Old-format duplicates; Kavita prefers the epub. Low-priority cleanup.
+- **F-09 leftovers:** 3 corrupt = re-grab-queued (above). The **7 other-defect epubs** (5× "Unsupported
+  EPUB v1.0" package attrs + 2× EPUB3-nav) remain **untouched/in-library** (readable; distinct defect
+  class; calibre-less image = no in-place fix) — carried forward as their own polish item.
+
+## R2.7 — Owner questions / decisions (Q-04…Q-07)
+- **Q-04 (the big one — English re-grab batch, owner GO):** the 58 quarantined foreign items leave real
+  gaps (the ONLY Foundation/Eragon-ebook/Dune-ebook, and the Queen of Air and Darkness / Murtagh /
+  Outlander-bk4 audio, etc. are now absent). Per the brief's SCOPE only the **3 F-09 corrupt** were an
+  explicit queue mandate; re-grabbing **58** more is a **major acquisition wave** (governor gate closed,
+  ratio economy, "audit not crawl-storm") → **held for an owner GO** rather than auto-queued. The full
+  per-title candidate list is R2.4. On GO, run them usenet-first via LL (GB-volume-id → addBook →
+  queueBook → searchBook, 503 backoff) — small paced batches.
+- **Q-05 (ambiguous audio, left untouched):** `Terry Pratchett/Truckers` and `Terry Pratchett/Snuff`
+  carry a **Dutch genre tag `Luisterboek`** but English album/track titles and (Truckers) `COMM=eng` —
+  evidence leans English; not quarantined. `Roald Dahl/Fantastic Mr Fox` = `luisterboek` genre but
+  **TPUB "BBC Worldwide" + English titles → English** (spurious genre). Confirm on the player?
+- **Q-06 (Walter Mosley "Hoerbuch" cluster — FYI, NOT foreign):** ~25 Walter Mosley audiobooks carry
+  genre `Hoerbuch` but **every substantive tag (album/title/artist) is English** — a German genre label
+  on English audio (same false-positive class as the bad epub tags). Left untouched. Several have
+  `n=1` single-file oddities (possible completeness issue, not language) — flagged for a later check.
+- **Q-07 (naming oddity, left untouched):** `EBooks/James S.A. Corey/La Chute du Léviathan - The Expanse
+  9` has a **French folder name but the epub is ENGLISH** (OPF title "Leviathan Wakes", US-copyright
+  text). Rename the folder; content is fine.
+- Carry-over: the **calibre gap** in LL's image (azw3/mobi→epub) would rescue the 146 azw3/mobi-only
+  strays without re-grabs — a sidecar/image-swap is the durable fix (design input for the Books Saga).
+
+## R2.8 — What was done (all constraints honored)
+Quarantine = MOVE only (`books/quarantine/f10-language/…`), never delete; Kavita+ABS rescanned after.
+Only the 3 explicit F-09 re-grabs queued (via LL, usenet-first). **No MAM grabs, no qBittorrent adds,
+no Prowlarr indexer/governor toggles, no disturbance to LL's ToG/Kingdom-of-Ash queue, no deletions.**
+Ambiguous items left for the owner. No app code / haynes-ops / other plans / HANDOFF touched. No release.
