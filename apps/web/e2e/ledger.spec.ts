@@ -48,12 +48,12 @@ test.describe('ledger section (DESIGN-009)', () => {
   }) => {
     await signIn(page, 'admin');
 
-    // ADR-032 / DESIGN-004 D-16 — the top row is the UNIVERSAL section nav (Home · Library ·
-    // Trash · Bulletin; the admin's implicit trash=edit shows Trash, Bulletin defaults
-    // read_only for everyone). Ledger and My Plex moved into the user menu. ADR-037 (PLAN-017)
-    // appended Metrics (admin implies its section visibility).
+    // DESIGN-004 D-22 — the top row is the UNIVERSAL section nav, slimmed to FOUR: Home · Library ·
+    // Tickets · Trash (Tickets = the `bulletin` section under its ratified name; the admin's
+    // implicit trash=edit shows Trash, Bulletin defaults read_only for everyone). Ledger + My Plex
+    // + Metrics + Integrations all live in the user menu now.
     const navTexts = await page.locator('.topbar__nav a').allInnerTexts();
-    expect(navTexts).toEqual(['Home', 'Library', 'Trash', 'Bulletin', 'Metrics']);
+    expect(navTexts).toEqual(['Home', 'Library', 'Tickets', 'Trash']);
     await openUserMenu(page);
     await expect(page.getByRole('menuitem', { name: 'My Plex' })).toBeVisible();
     await page.getByRole('menuitem', { name: 'Ledger' }).click();
@@ -431,14 +431,14 @@ test.describe('ledger section (DESIGN-009)', () => {
     await signIn(page, 'admin');
     await assignMemberRole(page, 'Default (default)');
 
-    // ADR-032 — the shipped Default role (no ledger row) now resolves DISABLED: no top-row
-    // entry (the row is universal — Home · Library · Bulletin for this role), no user-menu
+    // DESIGN-004 D-22 — the shipped Default role (no ledger row) resolves DISABLED: no top-row
+    // entry (the universal row is Home · Library · Tickets for this role — no Trash), no user-menu
     // Ledger item (My Plex stays — it's personal), and the route dead-ends.
     await memberPage.goto('/');
     expect(await memberPage.locator('.topbar__nav a').allInnerTexts()).toEqual([
       'Home',
       'Library',
-      'Bulletin',
+      'Tickets',
     ]);
     await openUserMenu(memberPage);
     await expect(memberPage.getByRole('menuitem', { name: 'My Plex' })).toBeVisible();
@@ -454,7 +454,7 @@ test.describe('ledger section (DESIGN-009)', () => {
     expect(await memberPage.locator('.topbar__nav a').allInnerTexts()).toEqual([
       'Home',
       'Library',
-      'Bulletin',
+      'Tickets',
     ]);
     await openUserMenu(memberPage);
     await expect(memberPage.getByRole('menuitem', { name: 'Ledger' })).toHaveCount(0);

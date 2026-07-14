@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { getServerSession } from '@hnet/auth';
 import { effectiveSectionLevel } from '@hnet/api';
 import { BULLETIN_VIEW_DEFAULTS, MESSAGE_ACTIONS } from '@hnet/db';
+import { HELPDESK_NAME } from '@/lib/bulletin';
 import { TicketDetail } from './ticket-detail';
 
 export default async function TicketPage({ params }: { params: Promise<{ id: string }> }) {
@@ -25,11 +26,11 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
   if (level === 'disabled' || !views.includes('messages')) {
     return (
       <section className="card empty-state" data-testid="ticket-unavailable">
-        <h1 className="page-title">Helpdesk</h1>
+        <h1 className="page-title">{HELPDESK_NAME}</h1>
         <p>This ticket isn’t available on your account.</p>
         <p className="muted">
-          Your role doesn’t include the Bulletin Helpdesk. If you think it should, ask an admin to
-          update your role’s access.
+          Your role doesn’t include {HELPDESK_NAME}. If you think it should, ask an admin to update
+          your role’s access.
         </p>
         <p>
           <Link className="btn" href="/">

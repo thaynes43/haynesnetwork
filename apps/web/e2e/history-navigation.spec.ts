@@ -54,14 +54,16 @@ test.describe('history-navigation contract (PLAN-036 / DESIGN-004 D-19)', () => 
     await expect(tab(page, 'Movies')).toHaveAttribute('aria-selected', 'true');
   });
 
-  test('Bulletin: Feed→Messages→Back⇒Feed', async ({ page }) => {
-    await signIn(page, 'admin'); // admin sees both Feed + Messages sub-views
+  test('Bulletin: Feed→Tickets→Back⇒Feed', async ({ page }) => {
+    await signIn(page, 'admin'); // admin sees both Feed + Tickets sub-views
     await page.goto('/bulletin?tab=feed');
     await expect(tab(page, 'Feed')).toHaveAttribute('aria-selected', 'true');
 
-    await tab(page, 'Messages').click();
-    await expect(page).toHaveURL(/\/bulletin\?tab=messages$/);
-    await expect(tab(page, 'Messages')).toHaveAttribute('aria-selected', 'true');
+    // DESIGN-004 D-22 — the lead sub-tab reads "Tickets" (HELPDESK_NAME); its tab key stays
+    // `helpdesk`, so the pushed URL is ?tab=helpdesk.
+    await tab(page, 'Tickets').click();
+    await expect(page).toHaveURL(/\/bulletin\?tab=helpdesk$/);
+    await expect(tab(page, 'Tickets')).toHaveAttribute('aria-selected', 'true');
 
     await page.goBack();
     await expect(page).toHaveURL(/\/bulletin\?tab=feed$/);

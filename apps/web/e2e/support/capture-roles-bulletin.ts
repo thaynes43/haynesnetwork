@@ -65,8 +65,8 @@ async function shootRoles(page: Page, name: string): Promise<void> {
 
 async function shootDefaultBulletin(page: Page, name: string): Promise<void> {
   await page.goto('/bulletin');
-  await page.getByRole('heading', { name: 'Bulletin' }).waitFor();
-  await page.getByRole('tablist', { name: 'Bulletin sections' }).waitFor();
+  await page.getByRole('heading', { name: 'Tickets' }).waitFor();
+  await page.getByRole('tablist', { name: 'Tickets sections' }).waitFor();
   await hidePortal(page);
   await page.waitForTimeout(300);
   await page.screenshot({ path: join(OUT, `${name}.png`) });

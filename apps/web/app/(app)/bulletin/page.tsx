@@ -12,6 +12,7 @@ import Link from 'next/link';
 import { getServerSession } from '@hnet/auth';
 import { effectiveSectionLevel } from '@hnet/api';
 import { BULLETIN_VIEWS, BULLETIN_VIEW_DEFAULTS, MESSAGE_ACTIONS } from '@hnet/db';
+import { HELPDESK_NAME } from '@/lib/bulletin';
 import { BulletinClient } from './bulletin-client';
 
 export default async function BulletinPage() {
@@ -23,8 +24,8 @@ export default async function BulletinPage() {
   if (level === 'disabled') {
     return (
       <section className="card empty-state" data-testid="bulletin-unavailable">
-        <h1 className="page-title">Bulletin</h1>
-        <p>Bulletin isn’t available on your account.</p>
+        <h1 className="page-title">{HELPDESK_NAME}</h1>
+        <p>{HELPDESK_NAME} isn’t available on your account.</p>
         <p className="muted">
           Your role doesn’t include this section. If you think it should, ask an admin to update
           your role’s section access.

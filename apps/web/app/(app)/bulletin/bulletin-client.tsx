@@ -744,9 +744,11 @@ function BulletinContent({ access }: { access: BulletinAccess }) {
 
   return (
     <>
-      <h1 className="page-title">Bulletin</h1>
+      {/* DESIGN-004 D-22 — the section reads under its ratified name (HELPDESK_NAME = "Tickets");
+          the route/section id / testids stay `bulletin`. */}
+      <h1 className="page-title">{HELPDESK_NAME}</h1>
 
-      <div className="library-tabs" role="tablist" aria-label="Bulletin sections">
+      <div className="library-tabs" role="tablist" aria-label={`${HELPDESK_NAME} sections`}>
         {availableTabs.map((tab, index) => (
           <button
             key={tab.key}

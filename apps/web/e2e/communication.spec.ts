@@ -118,15 +118,16 @@ test.describe('Bulletin section UI (ADR-026 / ADR-050 / DESIGN-012)', () => {
     // the member sees the Bulletin nav entry and lands on the Helpdesk, but there is NO Feed tab
     // (and the feed endpoint FORBIDs it server-side — covered by the unit tests).
     await signIn(page, 'member');
+    // DESIGN-004 D-22 — the `bulletin` nav entry now reads "Tickets" (label change; route stays).
     await page
       .getByRole('navigation', { name: 'Primary' })
-      .getByRole('link', { name: 'Bulletin' })
+      .getByRole('link', { name: 'Tickets' })
       .click();
     await page.waitForURL(/\/bulletin/);
 
-    // No Feed tab; the Helpdesk tab IS present and is the landing view.
+    // No Feed tab; the Tickets (Helpdesk) tab IS present and is the landing view.
     await expect(page.getByRole('tab', { name: 'Feed' })).toHaveCount(0);
-    await expect(page.getByRole('tab', { name: 'Helpdesk' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Tickets' })).toBeVisible();
     await expect(page.getByTestId('feed-row')).toHaveCount(0);
 
     // Helpdesk: readable, but NO New-ticket button without the post grant (R-160/R-162).
@@ -140,8 +141,8 @@ test.describe('Bulletin section UI (ADR-026 / ADR-050 / DESIGN-012)', () => {
     // Admin implies both Bulletin views (ADR-049) — Helpdesk leads (R-160), the Feed follows.
     await signIn(page, 'admin');
     await page.goto('/bulletin?tab=feed');
-    const tabs = page.getByRole('tablist', { name: 'Bulletin sections' }).getByRole('tab');
-    await expect(tabs.first()).toHaveText('Helpdesk');
+    const tabs = page.getByRole('tablist', { name: 'Tickets sections' }).getByRole('tab');
+    await expect(tabs.first()).toHaveText('Tickets');
     await expect(tabs.nth(1)).toHaveText('Feed');
 
     const rows = page.getByTestId('feed-row');

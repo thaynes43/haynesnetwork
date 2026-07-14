@@ -145,7 +145,7 @@ async function seedTickets(): Promise<void> {
 
 async function shootWall(page: Page, name: string): Promise<void> {
   await page.goto('/bulletin?tab=helpdesk');
-  await page.getByRole('tablist', { name: 'Bulletin sections' }).waitFor();
+  await page.getByRole('tablist', { name: 'Tickets sections' }).waitFor();
   await page.getByTestId('ticket-wall').waitFor();
   // Let the posters stream in from the stub *arr before shooting.
   await hidePortal(page);
