@@ -22,7 +22,9 @@ import {
   type KapowarrClientBundle,
   booksActivityBundleFromEnv,
   buildArrActivityAdapter,
+  buildKapowarrActivityAdapter,
   resolveArrBaseUrls,
+  resolveKapowarrBaseUrl,
   type ActivitySourceAdapter,
   type BooksActivityBundle,
   LastAdminError,
@@ -245,6 +247,17 @@ export function resolveActivityBundle(ctx: TRPCContext): BooksActivityBundle {
  */
 export function resolveArrActivityAdapter(ctx: TRPCContext): ActivitySourceAdapter {
   return buildArrActivityAdapter(resolveArrBundle(ctx).read, { baseUrls: resolveArrBaseUrls() });
+}
+
+/**
+ * ADR-059 / DESIGN-030 D-08 (PLAN-048) — the KAPOWARR (comics) activity adapter for this request: the live
+ * download queue + running search tasks + recent history read, built off the same confined Kapowarr bundle's
+ * READ client the comic force-search uses (injected in tests, env-built singleton in prod). Read-only — the
+ * failure force-search ACTION reuses the confined `searchVolume` write on `resolveKapowarrBundle(ctx).write`
+ * after commit. Comics ride the books section gate, so this adapter is only merged when books is visible.
+ */
+export function resolveKapowarrActivityAdapter(ctx: TRPCContext): ActivitySourceAdapter {
+  return buildKapowarrActivityAdapter(resolveKapowarrBundle(ctx).read, { baseUrl: resolveKapowarrBaseUrl() });
 }
 
 let envGoogleBooksClient: GoogleBooksClient | undefined;

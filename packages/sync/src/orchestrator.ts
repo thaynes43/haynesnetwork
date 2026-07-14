@@ -49,6 +49,7 @@ import {
   toFailureInputs,
   BOOKS_ACTIVITY_SOURCE,
   ARR_ACTIVITY_SOURCE,
+  KAPOWARR_ACTIVITY_SOURCE,
   type OutboxDeliveryReport,
   type PlexClientBundle,
   type PosterGuardReport,
@@ -145,6 +146,10 @@ export interface RunSyncOptions {
    *  state) the `activity-scan` mode ALSO scans for import failures (import_blocked / download_failed).
    *  Optional; when present it is reconciled independently of the books source. Tests inject a stub. */
   arrActivityAdapter?: ActivitySourceAdapter;
+  /** ADR-059 / DESIGN-030 D-08 — the KAPOWARR (comics) activity adapter (queue + tasks + history) the
+   *  `activity-scan` mode ALSO scans for comic download failures (download_failed). Optional; reconciled
+   *  independently of the other sources. Tests inject a stub. */
+  kapowarrActivityAdapter?: ActivitySourceAdapter;
   /** ADR-043 / DESIGN-021 — the Plex client bundle (read + confined write) the `poster-guard` mode uses to
    *  read the k8plex Peloton library and re-apply drifted override posters. Required only for that mode. */
   plex?: PlexClientBundle;
@@ -568,8 +573,10 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
   // hiccup — evaluateActivityFailures only closes failures for the sources actually scanned).
   if (options.mode === 'activity-scan') {
     const startedAt = new Date();
-    if (!options.activityBundle && !options.arrActivityAdapter) {
-      throw new Error('activity-scan requires at least one source (activityBundle and/or arrActivityAdapter)');
+    if (!options.activityBundle && !options.arrActivityAdapter && !options.kapowarrActivityAdapter) {
+      throw new Error(
+        'activity-scan requires at least one source (activityBundle and/or arrActivityAdapter and/or kapowarrActivityAdapter)',
+      );
     }
     let activity: ActivityFailuresReport | null = null;
     let activityError: string | undefined;
@@ -596,6 +603,17 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
           failures.push(...toFailureInputs(ARR_ACTIVITY_SOURCE, items));
         } catch (error) {
           logger.warn('activity-scan: *arr source degraded', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+      if (options.kapowarrActivityAdapter) {
+        try {
+          const items = await options.kapowarrActivityAdapter.list();
+          scannedSources.push(KAPOWARR_ACTIVITY_SOURCE);
+          failures.push(...toFailureInputs(KAPOWARR_ACTIVITY_SOURCE, items));
+        } catch (error) {
+          logger.warn('activity-scan: Kapowarr source degraded', {
             error: error instanceof Error ? error.message : String(error),
           });
         }

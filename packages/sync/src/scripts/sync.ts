@@ -17,6 +17,7 @@ import {
 import {
   booksActivityBundleFromEnv,
   buildArrActivityAdapter,
+  buildKapowarrActivityAdapter,
   kapowarrBundleFromEnv,
   lazyLibrarianBundleFromEnv,
   maintainerrClientBundleFromEnv,
@@ -24,6 +25,8 @@ import {
   plexClientBundleFromEnv,
   resolveArrBaseUrls,
   resolveGovernorConfig,
+  resolveKapowarrBaseUrl,
+  type ActivitySourceAdapter,
   type KapowarrClientBundle,
   type LazyLibrarianClientBundle,
   type UtilizationArrBundle,
@@ -318,6 +321,20 @@ async function main(): Promise<number> {
           );
         })()
       : undefined;
+  // ADR-059 / DESIGN-030 D-08 — the KAPOWARR (comics) activity adapter (queue + tasks + history read) the
+  // `activity-scan` mode ALSO scans for comic download failures. OPTIONAL/degrade-safe (the goodreads-sync
+  // idiom): absent KAPOWARR_API_KEY ⇒ comics are simply not scanned (parked), never a failed run. READ-ONLY
+  // here — the force-search WRITE fires only from the API action resolver via the confined write surface.
+  let kapowarrActivityAdapter: ActivitySourceAdapter | undefined;
+  if (args.mode === 'activity-scan') {
+    try {
+      const bundle = kapowarrBundleFromEnv();
+      kapowarrActivityAdapter = buildKapowarrActivityAdapter(bundle.read, { baseUrl: resolveKapowarrBaseUrl() });
+    } catch {
+      kapowarrActivityAdapter = undefined;
+      logger.info('activity-scan: no KAPOWARR_API_KEY — comics not scanned');
+    }
+  }
   // ADR-043 / DESIGN-021 — the Plex client bundle (read + confined write) the `poster-guard` mode uses.
   // ADR-047 / DESIGN-025 — `plex-match` reuses the same bundle (READ side only) to enumerate the Movies/
   // TV/Music libraries. Built INSIDE @hnet/domain (plexClientBundleFromEnv), so the confined Plex write
@@ -423,6 +440,7 @@ async function main(): Promise<number> {
     ...(mamTuning ? { mamTuning } : {}),
     ...(activityBundle ? { activityBundle } : {}),
     ...(arrActivityAdapter ? { arrActivityAdapter } : {}),
+    ...(kapowarrActivityAdapter ? { kapowarrActivityAdapter } : {}),
     ...(plex ? { plex } : {}),
     ...(openWebUi ? { openWebUi } : {}),
     ...(authentik ? { authentik } : {}),

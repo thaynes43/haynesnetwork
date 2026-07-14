@@ -11,6 +11,7 @@ import {
   activityWallStages,
   getActivityFailure,
   parseArrActivityRef,
+  parseKapowarrActivityRef,
   recordActivityAction,
   type ActivitySection,
   type ActivitySourceAdapter,
@@ -22,6 +23,8 @@ import {
   resolveActivityBundle,
   resolveArrActivityAdapter,
   resolveArrBundle,
+  resolveKapowarrActivityAdapter,
+  resolveKapowarrBundle,
   type TRPCContext,
 } from '../trpc';
 import { authedProcedure } from '../trpc';
@@ -32,13 +35,16 @@ type AuthedCtx = TRPCContext & { user: NonNullable<TRPCContext['user']> };
 /**
  * The source adapters this viewer's Activity read merges. The *arr adapter is UNIVERSAL (its items are
  * `section: null` — the movies/tv/music walls are ungated, DESIGN-030 D-08), so it is ALWAYS included; the
- * books adapter is section-gated, so it is only built/read when the viewer can see the books section (a
- * member never triggers the LL/SAB upstreams for items the aggregator would gate out). Adding the next
- * source family (Kapowarr) is one more `push` here — the contract-shaped fan-out (D-08).
+ * books AND Kapowarr (comics) adapters are section-gated on `books` — comics ride the books section (D-01),
+ * so both are only built/read when the viewer can see the books section (a member never triggers the LL/SAB
+ * or Kapowarr upstreams for items the aggregator would gate out). The contract-shaped fan-out (D-08).
  */
 function buildActivityAdapters(ctx: AuthedCtx, visibleSections: ActivitySection[]): ActivitySourceAdapter[] {
   const adapters: ActivitySourceAdapter[] = [resolveArrActivityAdapter(ctx)];
-  if (visibleSections.includes('books')) adapters.push(resolveActivityBundle(ctx).adapter);
+  if (visibleSections.includes('books')) {
+    adapters.push(resolveActivityBundle(ctx).adapter);
+    adapters.push(resolveKapowarrActivityAdapter(ctx));
+  }
   return adapters;
 }
 
@@ -46,9 +52,10 @@ function buildActivityAdapters(ctx: AuthedCtx, visibleSections: ActivitySection[
  * Fire the confined external write for an audited Activity action AFTER the ledger stamp commits (the
  * fix-flow discipline — external calls stay out of the transaction). Per-kind dispatch off the failure's
  * `sourceRef`: an *arr strand retries via `processMonitoredDownloads` / re-searches via the existing
- * per-kind Force-Search command (PLAN-015 machinery); a books strand fires the confined LL
- * `forceProcess` / `searchBook`. Best-effort — the audit is the durable record; the next `activity-scan`
- * re-detects anything still stuck.
+ * per-kind Force-Search command (PLAN-015 machinery); a Kapowarr (comic) strand re-searches via the confined
+ * PLAN-046 `searchVolume` (auto_search) write — comics have NO retry-import surface (Kapowarr auto-imports),
+ * so a comic retry_import is a no-op; a books strand fires the confined LL `forceProcess` / `searchBook`.
+ * Best-effort — the audit is the durable record; the next `activity-scan` re-detects anything still stuck.
  */
 async function fireActivityWrite(
   ctx: AuthedCtx,
@@ -56,6 +63,7 @@ async function fireActivityWrite(
   action: 'retry_import' | 'force_research',
 ): Promise<void> {
   const arrRef = parseArrActivityRef(failure.sourceRef);
+  const kapoRef = parseKapowarrActivityRef(failure.sourceRef);
   try {
     if (arrRef) {
       const write = resolveArrBundle(ctx).write;
@@ -69,6 +77,14 @@ async function fireActivityWrite(
       } else {
         if (arrRef.targetId != null) await write.lidarr.searchAlbums([arrRef.targetId]);
         else await write.lidarr.searchArtist(arrRef.parentId);
+      }
+      return;
+    }
+    if (kapoRef) {
+      // Comics: only a fresh force-search is possible (Kapowarr's auto_search — the same confined write the
+      // PLAN-046 Library "Force Search" fires). retry_import has no Kapowarr surface, so it is a no-op here.
+      if (action === 'force_research') {
+        await resolveKapowarrBundle(ctx).write.searchVolume(kapoRef.volumeId);
       }
       return;
     }

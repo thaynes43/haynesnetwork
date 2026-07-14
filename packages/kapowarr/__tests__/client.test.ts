@@ -73,6 +73,68 @@ describe('KapowarrReadClient.searchVolumes', () => {
   });
 });
 
+describe('KapowarrReadClient — Activity reads (ADR-059 / DESIGN-030 D-08)', () => {
+  it('getQueue normalizes the live download queue (status lowercased, progress, volume/issue ids)', async () => {
+    const { fetchImpl, calls } = stubFetch([
+      {
+        match: (u) => u.includes('/api/activity/queue'),
+        body: {
+          error: null,
+          result: [
+            { id: 1, volume_id: 701, issue_id: 11, status: 'Downloading', progress: 42.6, web_title: 'Scott.Pilgrim.01', source: 'GetComics (direct)' },
+            { id: 2, volume_id: 702, status: 'failed', title: 'Dead.Grab' },
+          ],
+        },
+      },
+    ]);
+    const client = new KapowarrReadClient(OPTS(fetchImpl));
+    const q = await client.getQueue();
+    expect(q).toEqual([
+      { id: 1, volumeId: 701, issueId: 11, status: 'downloading', progress: 42.6, title: 'Scott.Pilgrim.01', source: 'GetComics (direct)' },
+      { id: 2, volumeId: 702, issueId: null, status: 'failed', progress: null, title: 'Dead.Grab', source: null },
+    ]);
+    expect(calls[0]!.url).toContain('api_key=k-secret');
+  });
+
+  it('getDownloadHistory normalizes epoch-seconds → ms and defaults success', async () => {
+    const { fetchImpl } = stubFetch([
+      {
+        match: (u) => u.includes('/api/activity/history'),
+        body: {
+          error: null,
+          result: [{ volume_id: 701, file_title: 'Scott Pilgrim 01', downloaded_at: 1_700_000_000 }],
+        },
+      },
+    ]);
+    const client = new KapowarrReadClient(OPTS(fetchImpl));
+    const h = await client.getDownloadHistory();
+    expect(h).toEqual([
+      { volumeId: 701, issueId: null, title: 'Scott Pilgrim 01', downloadedAtMs: 1_700_000_000_000, success: true },
+    ]);
+  });
+
+  it('getTasks normalizes the planned/running tasks (action + volume target)', async () => {
+    const { fetchImpl } = stubFetch([
+      {
+        match: (u) => u.includes('/api/system/tasks') && !u.includes('POST'),
+        body: {
+          error: null,
+          result: [
+            { task_id: 5, action: 'auto_search', display_title: 'Search Scott Pilgrim', volume_id: 701 },
+            { task_id: 6, action: 'search_all', display_title: 'Search Monitored', volume_id: null },
+          ],
+        },
+      },
+    ]);
+    const client = new KapowarrReadClient(OPTS(fetchImpl));
+    const t = await client.getTasks();
+    expect(t).toEqual([
+      { action: 'auto_search', volumeId: 701, displayTitle: 'Search Scott Pilgrim' },
+      { action: 'search_all', volumeId: null, displayTitle: 'Search Monitored' },
+    ]);
+  });
+});
+
 describe('KapowarrWriteClient', () => {
   it('addVolume posts the ComicVine id + root folder and returns the new local id', async () => {
     const { fetchImpl, calls } = stubFetch([
