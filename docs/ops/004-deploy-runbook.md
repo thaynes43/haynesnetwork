@@ -61,6 +61,54 @@ workflow run** — do NOT re-push the tag:
   gh run rerun <release-please-run-id>   # re-runs the in-job build + push
   ```
 
+### 1b. Deploy gate: BOTH artifacts readable in GHCR (2026-07-14, hardened same day)
+
+Two distinct failures produced kyverno `no signatures found` denials on 2026-07-14:
+
+1. **v0.50.1 — the propagation race:** the image **manifest** appears in GHCR seconds before its
+   **cosign signature** (a separate OCI artifact under the `sha256-<digest>.sig` tag). Deploying
+   the moment the manifest returns 200 races the signature read.
+2. **v0.52.0 — the no-op success:** a workflow-conclusion gate is SPOOFABLE — a release-please
+   run that tags nothing (see 1c) still reports `completed/success`, so "workflow succeeded"
+   deployed an image that **did not exist**.
+
+**The gate that survives both — verify the artifact PAIR directly:**
+
+  ```bash
+  TOK=$(curl -s "https://ghcr.io/token?scope=repository:thaynes43/haynesnetwork:pull" \
+    | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
+  DIG=$(curl -sI -H "Authorization: Bearer $TOK" \
+    -H "Accept: application/vnd.oci.image.index.v1+json" \
+    "https://ghcr.io/v2/thaynes43/haynesnetwork/manifests/vX.Y.Z" \
+    | tr -d '\r' | awk 'tolower($1)=="docker-content-digest:" {print $2}')
+  # BOTH must be HTTP 200 before touching haynes-ops:
+  #   manifests/vX.Y.Z            (the image)
+  #   manifests/${DIG/:/-}.sig    (its cosign signature, digest-pinned)
+  ```
+
+If a deploy stalls on `no signatures found` anyway: run the artifact-pair check FIRST (a 404
+manifest means the release never built — fix per 1c, don't retry the cluster); if both are 200,
+`flux reconcile helmrelease haynesnetwork -n frontend --force` clears the stall. The HelmRelease
+also now carries `upgrade.remediation.retries: 10` (haynes-ops `4789da14`) so pure propagation
+transients self-heal without operator action.
+
+### 1c. Release-PR "dance" guardrails (2026-07-14 — the label-strip incident)
+
+Bot-authored release PRs run zero CI, so the close/reopen dance re-triggers checks as a real
+actor. TWO hazards found live:
+
+- **Never dance while a release-please run is in flight.** Closing a release PR mid-run collided
+  with the run and left the replacement PR (#270) with **no labels** — release-please tags
+  releases by scanning merged PRs labeled `autorelease: pending`, so the merge produced NO tag,
+  NO release, NO image (the v0.52.0 no-op). Check
+  `gh run list --workflow=release-please.yml --limit 1 --json status` is `completed` first.
+- **After any dance, verify the label survived:**
+  `gh pr view <n> --json labels` must include `autorelease: pending`. If it's missing, re-add it
+  (`gh pr edit <n> --add-label "autorelease: pending"`) — works even post-merge: re-add, then
+  `gh run rerun <last-release-please-run-id>` makes release-please find the merged PR and tag it.
+- A dance that triggers NO checks (reopen event silently dropped — seen once) is fixed by a
+  second close/reopen; verify checks actually went `pending` before arming auto-merge.
+
 Confirm the image exists **and is signed** before touching `haynes-ops`:
 
 ```bash
