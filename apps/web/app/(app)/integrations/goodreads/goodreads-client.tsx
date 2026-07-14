@@ -26,7 +26,15 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { ConfirmButton, nextSort, arrowFor } from '@hnet/ui';
 import { KindIcon } from '@/components/kind-icon';
-import { PosterGrid, PosterGridSkeleton, RequestCard, type PosterBadge } from '@/components/cards';
+import {
+  PosterGrid,
+  PosterGridSkeleton,
+  RequestCard,
+  activityStageBadge,
+  type PosterBadge,
+  type InFlightBadge,
+  type CardActivityStage,
+} from '@/components/cards';
 import { trpc, type RouterOutputs } from '@/lib/trpc-client';
 import { coverageView, isFirstSyncPending } from '@/lib/integrations-coverage';
 import {
@@ -83,6 +91,35 @@ function statusBadge(item: ItemWire): PosterBadge {
           ? 'In your library'
           : `Ebook: ${STATUS_LABEL[item.ebookStatus]} · Audio: ${STATUS_LABEL[item.audioStatus]}`;
   return { label, tone: base.tone, title };
+}
+
+// fix/live-status-precedence — LIVE-STATE-WINS on the Goodreads items wall (the same class the owner hit on the
+// Wanted detail): overlay the live in-flight stage over the reconciled snapshot so a card being actively acquired
+// never reads "Missing". The join is the Library-Wanted wall idiom exactly — one `activity.wallStages` read,
+// keyed by the Kapowarr volume id (comic) or the LL/GB book id (book, whose ebook + audiobook legs ride the
+// `books`/`audiobooks` walls). Most-severe stage wins across the two book legs.
+type WallStagesData = RouterOutputs['activity']['wallStages'];
+const STAGE_SEVERITY: Record<CardActivityStage, number> = {
+  failed: 4,
+  importing: 3,
+  downloading: 2,
+  searching: 1,
+  completed: 0,
+};
+function moreSevere(a: InFlightBadge | null, b: InFlightBadge | null): InFlightBadge | null {
+  if (!a) return b;
+  if (!b) return a;
+  return STAGE_SEVERITY[b.stage] > STAGE_SEVERITY[a.stage] ? b : a;
+}
+function inFlightForItem(item: ItemWire, wallStages: WallStagesData | undefined): InFlightBadge | null {
+  if (!wallStages) return null;
+  const toBadge = (s: { stage: CardActivityStage; progress: number | null } | undefined): InFlightBadge | null =>
+    s ? { stage: s.stage, progress: s.progress } : null;
+  if (item.isComic) {
+    return item.kapowarrVolumeId != null ? toBadge(wallStages.comics?.[item.kapowarrVolumeId]) : null;
+  }
+  if (item.llBookId == null) return null;
+  return moreSevere(toBadge(wallStages.books?.[item.llBookId]), toBadge(wallStages.audiobooks?.[item.llBookId]));
 }
 
 // ---------------------------------------------------------------------------
@@ -317,7 +354,17 @@ function OverviewTab({
 // ITEMS — the shelf library wall (shelf chips + shared filter/sort chrome + poster grid).
 // ---------------------------------------------------------------------------
 
-function ItemTile({ item, focused }: { item: ItemWire; focused: boolean }) {
+function ItemTile({
+  item,
+  focused,
+  inFlight,
+}: {
+  item: ItemWire;
+  focused: boolean;
+  /** fix/live-status-precedence — the live in-flight badge (from `activity.wallStages`) when this want is
+   *  currently being acquired; it OVERRIDES the reconciled snapshot status badge (live-state-wins). */
+  inFlight: InFlightBadge | null;
+}) {
   // One callback ref stores the card element for the one-time `?focus=` deep-link scroll (legacy
   // links still land + highlight).
   const ref = useRef<HTMLElement | null>(null);
@@ -350,6 +397,11 @@ function ItemTile({ item, focused }: { item: ItemWire; focused: boolean }) {
       ? `/library/books/wanted/${item.requestId}?from=goodreads-items`
       : null;
 
+  // LIVE-STATE-WINS: a live in-flight/landed signal replaces the reconciled snapshot badge, so the card never
+  // reads "Missing" while it is actively downloading (the terminology guard). `data-phase` keeps the snapshot
+  // for the filter chips; only the visible badge is overlaid.
+  const status = inFlight ? activityStageBadge(inFlight) : statusBadge(item);
+
   return (
     <RequestCard
       href={href}
@@ -358,7 +410,7 @@ function ItemTile({ item, focused }: { item: ItemWire; focused: boolean }) {
       title={item.title}
       author={item.author}
       shelfBadge={shelfBadge}
-      statusBadge={statusBadge(item)}
+      statusBadge={status}
       phase={item.phase}
       requestId={item.requestId}
       focused={focused}
@@ -371,6 +423,16 @@ function ItemsTab({ items, pending }: { items: ItemWire[]; pending: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+
+  // fix/live-status-precedence — ONE live wall-stage read (the Library-Wanted wall idiom), enabled only when
+  // the wall has items. Each card overlays its live in-flight stage over the reconciled snapshot; polls in
+  // place (ADR-015). Books-gated server-side — an integrations-only viewer just sees the snapshot (no overlay).
+  const wallStagesQ = trpc.activity.wallStages.useQuery(undefined, {
+    enabled: items.length > 0,
+    refetchInterval: 5000,
+    refetchOnWindowFocus: true,
+    placeholderData: (prev) => prev,
+  });
 
   // ── shelf chips (the Helpdesk state-chip semantics — DESIGN-012 D-12 ported) ──
   // Populated-value-gated: only shelves that actually hold items grow a chip (A3 — an absent
@@ -558,7 +620,12 @@ function ItemsTab({ items, pending }: { items: ItemWire[]; pending: boolean }) {
         // The SAME poster grid as the Movies/Books walls (the owner-corrected cohesive blocks).
         <PosterGrid testId="gr-items-grid">
           {visible.map((item) => (
-            <ItemTile key={item.key} item={item} focused={focus !== null && item.requestId === focus} />
+            <ItemTile
+              key={item.key}
+              item={item}
+              focused={focus !== null && item.requestId === focus}
+              inFlight={inFlightForItem(item, wallStagesQ.data)}
+            />
           ))}
         </PosterGrid>
       )}

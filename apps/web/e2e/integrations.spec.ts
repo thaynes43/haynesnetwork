@@ -63,6 +63,34 @@ async function kapowarrCalls(): Promise<KapowarrCall[]> {
   return body.calls;
 }
 
+// fix/live-status-precedence — force the synced Scott Pilgrim comic to a STALE comic_status='missing' (the drift
+// the owner reported) and return its Kapowarr volume id, so the e2e can stage a matching LIVE download.
+function seedComicMissing(): string {
+  const env = readRuntimeEnv();
+  const run = spawnSync(
+    join(process.cwd(), 'node_modules', '.bin', 'tsx'),
+    [join(process.cwd(), 'e2e', 'support', 'seed-comic-missing.ts')],
+    { env: { ...process.env, ...env }, encoding: 'utf8', cwd: process.cwd() },
+  );
+  expect(run.status, run.stderr || 'seed-comic-missing must succeed').toBe(0);
+  const m = /KAPOWARR_VOLUME_ID=(\d+)/.exec(run.stdout ?? '');
+  expect(m, 'seed-comic-missing must print the Kapowarr volume id').not.toBeNull();
+  return m![1]!;
+}
+
+/** Stage the live Kapowarr Activity read (queue / history) — the comics leg of `activity.wallStages`/`itemStatus`. */
+async function stageKapowarr(body: {
+  queue?: Record<string, unknown>[];
+  history?: Record<string, unknown>[];
+}): Promise<void> {
+  const env = readRuntimeEnv();
+  await fetch(`${env.STUB_KAPOWARR_URL}/_stub/queue`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
 test.describe('Integrations hub + Goodreads sub-section', () => {
   test('a fresh member sees no Integrations tab and a not-available state (hub AND sub-section)', async ({ page }) => {
     await signIn(page, 'fresh-member');
@@ -254,5 +282,79 @@ test.describe('Integrations hub + Goodreads sub-section', () => {
     await expect(head).toContainText('Hyperion');
     await expect(head).toContainText('Requested by');
     await expect(page.getByTestId('format-row')).toHaveCount(2); // Ebook + Audiobook legs
+  });
+
+  // fix/live-status-precedence (v0.55.0 owner report) — LIVE-STATE-WINS. A comic whose reconciled snapshot reads
+  // "Missing" (the hourly goodreads-sync lagging behind a fresh grab) but which Kapowarr is ACTIVELY downloading
+  // must show the LIVE stage on the Goodreads items wall AND on the Wanted detail on FIRST load (not only after a
+  // search fires), then flip to landed on the poll — the wall and the detail can never disagree, and an active
+  // grab never reads "Missing". Hermetic captures (dark, desktop + 390): the detail with a live downloading Comic
+  // row (was "Missing").
+  test('live-status precedence: a downloading comic overrides the stale "Missing" snapshot on the wall + detail, then lands', async ({
+    page,
+  }, testInfo) => {
+    // Self-contained: ensure the admin's Goodreads is linked (idempotent with the journey above), reconcile, then
+    // MANUFACTURE the drift — comic_status='missing' while Kapowarr actively downloads the same volume.
+    await signIn(page, 'admin');
+    await page.goto('/integrations/goodreads');
+    await page
+      .getByTestId('integrations-linked')
+      .or(page.getByTestId('integrations-profile-input'))
+      .first()
+      .waitFor();
+    if (await page.getByTestId('integrations-profile-input').isVisible()) {
+      await page.getByTestId('integrations-profile-input').fill('https://www.goodreads.com/haynesnetwork');
+      await page.getByTestId('integrations-link-btn').click();
+      await expect(page.getByTestId('integrations-linked')).toBeVisible();
+    }
+    runGoodreadsSync();
+    const volumeId = seedComicMissing();
+    await stageKapowarr({
+      queue: [{ id: 93001, volume_id: Number(volumeId), status: 'downloading', progress: 30, web_title: 'Scott Pilgrim' }],
+    });
+    await page.evaluate(() => localStorage.setItem('hnet-theme', 'hnet-dark'));
+
+    // ── The WALL sweep (point 2): the Goodreads items card overlays the LIVE stage over the stale snapshot —
+    //    it reads "Downloading 30%" (the filling badge), never "Missing". ──
+    await page.goto('/integrations/goodreads?tab=items');
+    await page.locator('html[data-theme="hnet-dark"]').waitFor();
+    const spCard = page.getByTestId('gr-item').filter({ hasText: 'Scott Pilgrim' });
+    await expect(spCard.locator('.badge--live')).toContainText('30%');
+    await expect(spCard).not.toContainText('Missing');
+
+    // ── The DETAIL (point 1): the Comic row shows the LIVE downloading meter on FIRST load (no search fired),
+    //    overriding the reconciled "Missing"; the hero collapse is live-aware too (never "Missing"). ──
+    await spCard.click();
+    await expect(page.getByTestId('wanted-detail-head')).toContainText('Scott Pilgrim');
+    const comicRow = page.getByTestId('format-row').filter({ hasText: 'Comic' });
+    await expect(comicRow.locator('.phase-chip[data-phase="downloading"]')).toContainText('Downloading');
+    await expect(comicRow.locator('.phase-chip__fill')).toHaveCount(1); // the filling meter (the Fix grammar)
+    await expect(comicRow).not.toContainText('Missing');
+    await expect(page.getByTestId('wanted-detail-head')).not.toContainText('Missing');
+
+    // Hermetic captures — the detail with a live downloading Comic row (was "Missing").
+    for (const [label, w, h] of [
+      ['desktop', 1280, 900],
+      ['390', 390, 844],
+    ] as const) {
+      await page.setViewportSize({ width: w, height: h });
+      const path = testInfo.outputPath(`live-precedence-comic-downloading-${label}-dark.png`);
+      await page.screenshot({ path, fullPage: true });
+      await testInfo.attach(`live-precedence-comic-downloading-${label}-dark`, { path, contentType: 'image/png' });
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
+
+    // ── Flip to LANDED on the poll: the queue clears + a completed-recent history lands → the Comic row shows the
+    //    landed state IMMEDIATELY (before any hourly reconcile), still never "Missing". ──
+    await stageKapowarr({
+      queue: [],
+      history: [
+        { volume_id: Number(volumeId), web_title: 'Scott Pilgrim', downloaded_at: Math.floor(Date.now() / 1000), success: true },
+      ],
+    });
+    await expect(comicRow.locator('.phase-chip[data-phase="completed"]')).toContainText('Landed', {
+      timeout: 20_000,
+    });
+    await expect(comicRow).not.toContainText('Missing');
   });
 });

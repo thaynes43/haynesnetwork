@@ -13,6 +13,16 @@
   detail) and D-10 (adaptive poll + the Fix-idiom in-flight badge + the detail-page live stage read + the
   wired wall badges). The owner directive: "I can't click on anything in Activity … if something is in
   progress I should see it progressing like when we click Fix, keep the UX consistent."
+- **Amended 2026-07-14 (fix/live-status-precedence — LIVE-STATE-WINS):** the owner hit a v0.55.0 drift — a
+  comic whose wall badge showed a live 9% download but whose Wanted-detail Comic row read a stale red
+  "Missing" (the reconciled `book_requests` snapshot; the D-10 `itemStatus` chip engaged only AFTER a search
+  fired that session). Ruling: **live state wins over the reconciled snapshot, on load, everywhere the two
+  meet.** The Wanted detail polls `activity.itemStatus` per format ON MOUNT (not only post-fire); a present
+  live stage overrides the snapshot (the stage chip + filling meter in the reserved slot), completed-live
+  shows landed immediately, and the snapshot renders only with no live signal. The **terminology guard**:
+  a format with an active grab never reads "Missing" — the hero collapse, the Library-Wanted wall cards, and
+  the Goodreads items wall (a one-query `activity.wallStages` overlay) all honor it. The precedence is ONE
+  pure rule (`apps/web/lib/format-live-status.ts`, unit-tested) both the detail and the walls consume.
 
 ## D-01 — Library → Activity sub-tab (R1, the Trash→Activity idiom)
 
