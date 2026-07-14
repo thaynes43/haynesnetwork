@@ -55,7 +55,10 @@ export function WantedCard({
       title={item.title}
       author={item.author}
       inFlight={inFlight}
-      badges={[wantedBadge(item)]}
+      // fix/live-status-precedence — LIVE-STATE-WINS: when a live in-flight/landed badge is present it OVERRIDES
+      // the reconciled snapshot, so a want being actively acquired never shows the stale "Missing"/"Wanted"
+      // beside its live stage badge (the terminology guard). The snapshot badge renders only with no live state.
+      badges={inFlight ? [] : [wantedBadge(item)]}
       testId="wanted-card"
       data={{ 'data-request-id': item.requestId }}
     />

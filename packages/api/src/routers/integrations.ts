@@ -197,6 +197,12 @@ function toItemWire(item: ShelfWallItem) {
         })
       : false,
     lastSearchedAt: item.lastSearchedAt ? item.lastSearchedAt.toISOString() : null,
+    // fix/live-status-precedence — the live in-flight wall-badge join keys (the Library-Wanted wall idiom):
+    // a book/audiobook want joins `activity.wallStages` by its LL/GB book id; a comic by its Kapowarr volume
+    // id. The items wall overlays the live stage badge (searching / downloading % / importing) over the
+    // reconciled snapshot so it can't read "Missing" while a grab is actively in flight.
+    llBookId: item.llBookId,
+    kapowarrVolumeId: item.kapowarrVolumeId,
   };
 }
 

@@ -19,7 +19,8 @@ import { trpc, type RouterOutputs } from '@/lib/trpc-client';
 import { PhaseChip, type PhaseTone } from '@hnet/ui';
 import { BackLink } from '@/components/back-link';
 import { MediaPoster } from '@/components/cards';
-import { ActivityStageChip, useActivityItemStatus } from '@/components/activity-live';
+import { ActivityStageChip, useActivityItemStatus, type ActivityLiveStatus } from '@/components/activity-live';
+import { effectiveFormatStatus, formatActivityId, formatLiveWins } from '@/lib/format-live-status';
 import { formatWhen } from '@/lib/media';
 import { shelfLabel } from '@/lib/goodreads-shelf-wall';
 import type { BookRequestStatus } from '@hnet/db';
@@ -50,12 +51,14 @@ const FORMAT_LABEL: Record<FormatRow['format'], string> = {
   comic: 'Comic',
 };
 
-/** The dominant hero badge — the wall's phase collapse (any landed ⇒ Have it; all missing ⇒ Missing; else Wanted). */
+/** The dominant hero badge — the wall's phase collapse (any landed ⇒ Have it; all missing ⇒ Missing; else
+ *  Wanted). Collapses over the live-EFFECTIVE per-format statuses so the hero can't read "Missing" while a
+ *  format is actively downloading (the terminology guard applied to the hero too). */
 function heroBadge(
-  detail: WantedDetailWire,
+  parked: boolean,
+  statuses: BookRequestStatus[],
 ): { label: string; tone: 'ok' | 'warn' | 'danger' | 'muted' } {
-  if (detail.parked) return { label: 'Parked', tone: 'muted' };
-  const statuses = detail.formats.map((f) => f.status);
+  if (parked) return { label: 'Parked', tone: 'muted' };
   if (statuses.includes('landed')) return { label: 'Have it', tone: 'ok' };
   if (statuses.every((s) => s === 'missing')) return { label: 'Missing', tone: 'danger' };
   return { label: 'Wanted', tone: 'warn' };
@@ -152,41 +155,48 @@ function FormatSearchSlot({
 // ---------------------------------------------------------------------------
 
 /**
- * D-10 — one per-format row: the status badge + Force-Search slot, PLUS a live in-flight PhaseChip that walks
- * the stage (searching → downloading % → importing → done) once this format is actively being acquired (its
- * status is wanted/grabbed) or a re-search has just fired here. The chip polls `activity.itemStatus` for this
- * format's activity id (`books:ll:<llBookId>:<format>` / `kapowarr:<volumeId>`) so the row MOVES like Fix.
+ * D-10 + fix/live-status-precedence — one per-format row: LIVE-STATE-WINS. It polls `activity.itemStatus` for
+ * this format's activity id (`books:ll:<llBookId>:<format>` / `kapowarr:<volumeId>`) ON MOUNT (not only after a
+ * re-search fires here) and while visible (the #279 cadence), so a live in-flight/landed signal OVERRIDES the
+ * reconciled `book_requests` snapshot the instant the page opens — the wall and this detail can never disagree.
+ * When live wins the row shows the live stage chip (searching → downloading % → importing → landed, the Fix
+ * grammar) in the RESERVED action slot and the snapshot status badge is suppressed (so an active grab never
+ * reads "Missing" — the terminology guard). The snapshot renders only when there is no live state.
  */
 function FormatDetailRow({
   requestId,
   row,
   activityId,
+  live,
   onFired,
 }: {
   requestId: string;
   row: FormatRow;
   activityId: string | null;
+  /** This format's live status (polled by the parent, so the hero + row read ONE source of truth). */
+  live: ActivityLiveStatus;
   onFired: () => void;
 }) {
-  const [fired, setFired] = useState(false);
-  const inFlight = row.status === 'wanted' || row.status === 'grabbed';
-  const live = useActivityItemStatus(activityId, activityId !== null && (fired || inFlight));
-  const showLive = activityId !== null && (fired || inFlight) && (live.pending || live.present);
+  const utils = trpc.useUtils();
+  const showLive = formatLiveWins(row.status, live);
+  // Firing a re-search flips this format's live state → nudge itemStatus so the row is seen to MOVE (the
+  // #279 poll may have stopped after a `present:false` idle answer), then refresh the reconciled snapshot.
+  const handleFired = () => {
+    if (activityId !== null) void utils.activity.itemStatus.invalidate({ itemId: activityId });
+    onFired();
+  };
   return (
-    <li className="child-row" data-testid="format-row" data-format={row.format}>
+    <li className="child-row" data-testid="format-row" data-format={row.format} data-live={showLive ? '' : undefined}>
       <span className="child-row__label">{FORMAT_LABEL[row.format]}</span>
-      <span className={`badge badge--${statusTone(row.status)}`}>{STATUS_LABEL[row.status]}</span>
+      {showLive ? null : (
+        <span className={`badge badge--${statusTone(row.status)}`} data-testid="format-status">
+          {STATUS_LABEL[row.status]}
+        </span>
+      )}
       <span className="child-row__actions">
         {showLive ? <ActivityStageChip status={live} /> : null}
         {row.searchable ? (
-          <FormatSearchSlot
-            requestId={requestId}
-            format={row.format}
-            onFired={() => {
-              setFired(true);
-              onFired();
-            }}
-          />
+          <FormatSearchSlot requestId={requestId} format={row.format} onFired={handleFired} />
         ) : null}
       </span>
     </li>
@@ -201,6 +211,24 @@ export function WantedDetail({ requestId, from }: { requestId: string; from: str
     { requestId },
     { refetchInterval: 8000, refetchOnWindowFocus: true, placeholderData: (prev) => prev },
   );
+
+  // fix/live-status-precedence — poll `activity.itemStatus` per format ON MOUNT (not only post-fire) and while
+  // visible, LIFTED here (above the early returns → a fixed hook count) so the hero badge AND each format row
+  // read ONE live source and can't disagree. A request is comic XOR book, so at most these three ids exist;
+  // each poll is disabled when its id is null (not routed yet). When live wins it OVERRIDES the reconciled
+  // snapshot everywhere on this page.
+  const data = detail.data;
+  const refs = { llBookId: data?.llBookId ?? null, kapowarrVolumeId: data?.kapowarrVolumeId ?? null };
+  const comicId = formatActivityId('comic', refs);
+  const ebookId = formatActivityId('ebook', refs);
+  const audioId = formatActivityId('audiobook', refs);
+  const comicLive = useActivityItemStatus(comicId, comicId !== null);
+  const ebookLive = useActivityItemStatus(ebookId, ebookId !== null);
+  const audioLive = useActivityItemStatus(audioId, audioId !== null);
+  const liveFor = (format: FormatRow['format']): ActivityLiveStatus =>
+    format === 'comic' ? comicLive : format === 'ebook' ? ebookLive : audioLive;
+  const idFor = (format: FormatRow['format']): string | null =>
+    format === 'comic' ? comicId : format === 'ebook' ? ebookId : audioId;
 
   if (detail.isLoading) {
     return (
@@ -221,18 +249,11 @@ export function WantedDetail({ requestId, from }: { requestId: string; from: str
     );
   }
   const d = detail.data!;
-  const hero = heroBadge(d);
+  const hero = heroBadge(
+    d.parked,
+    d.formats.map((f) => effectiveFormatStatus(f.status, liveFor(f.format))),
+  );
   const refresh = () => void utils.books.wantedDetail.invalidate({ requestId });
-
-  // The live-read activity id for one format — the poll key the per-format live chip watches.
-  const activityIdFor = (format: FormatRow['format']): string | null =>
-    format === 'comic'
-      ? d.kapowarrVolumeId != null
-        ? `kapowarr:${d.kapowarrVolumeId}`
-        : null
-      : d.llBookId != null
-        ? `books:ll:${d.llBookId}:${format}`
-        : null;
 
   return (
     <>
@@ -281,7 +302,8 @@ export function WantedDetail({ requestId, from }: { requestId: string; from: str
               key={f.format}
               requestId={d.requestId}
               row={f}
-              activityId={activityIdFor(f.format)}
+              activityId={idFor(f.format)}
+              live={liveFor(f.format)}
               onFired={refresh}
             />
           ))}
