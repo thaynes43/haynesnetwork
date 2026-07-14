@@ -5,8 +5,11 @@
 // precedent). All acquisition stays Kapowarr's own (GetComics DDL) — this client NEVER touches MAM/qB/Prowlarr.
 import { KapowarrHttp, type KapowarrHttpOptions } from './http';
 import {
+  kapowarrHistoryListSchema,
+  kapowarrQueueListSchema,
   kapowarrRootFolderListSchema,
   kapowarrSearchResponseSchema,
+  kapowarrTaskListSchema,
   kapowarrVolumeListSchema,
   kapowarrVolumeSchema,
 } from './schemas';
@@ -42,6 +45,37 @@ export interface KapowarrVolume {
 export interface KapowarrRootFolder {
   id: number;
   folder: string | null;
+}
+
+/**
+ * ADR-059 / DESIGN-030 D-08 (PLAN-048) — a normalized live download-queue entry (the Activity adapter's
+ * downloading/importing/failed signal). `status` is the raw Kapowarr `DownloadState`; `progress` 0..100.
+ */
+export interface KapowarrQueueEntry {
+  id: number | null;
+  volumeId: number | null;
+  issueId: number | null;
+  status: string;
+  progress: number | null;
+  title: string | null;
+  source: string | null;
+}
+
+/** A normalized completed-download history row (the Activity adapter's `completed`-recent signal). */
+export interface KapowarrHistoryEntry {
+  volumeId: number | null;
+  issueId: number | null;
+  title: string | null;
+  /** Epoch MILLISECONDS (converted from Kapowarr's `downloaded_at` seconds), or null. */
+  downloadedAtMs: number | null;
+  success: boolean;
+}
+
+/** A normalized planned/running background task (the Activity adapter's `searching` signal). */
+export interface KapowarrTask {
+  action: string | null;
+  volumeId: number | null;
+  displayTitle: string | null;
 }
 
 export class KapowarrReadClient {
@@ -91,6 +125,52 @@ export class KapowarrReadClient {
   async getRootFolders(): Promise<KapowarrRootFolder[]> {
     const rows = await this.http.json('GET', '/rootfolder', kapowarrRootFolderListSchema);
     return rows.map((r) => ({ id: r.id, folder: r.folder ?? null }));
+  }
+
+  /**
+   * `GET /api/activity/queue` — the live download queue (ADR-059 / DESIGN-030 D-08, the Activity adapter's
+   * downloading/importing/failed signal). READ-ONLY. Kapowarr downloads from its OWN GetComics DDL sources.
+   */
+  async getQueue(): Promise<KapowarrQueueEntry[]> {
+    const rows = await this.http.json('GET', '/activity/queue', kapowarrQueueListSchema);
+    return rows.map((r) => ({
+      id: r.id ?? null,
+      volumeId: r.volume_id ?? null,
+      issueId: r.issue_id ?? null,
+      status: (r.status ?? '').toLowerCase(),
+      progress: r.progress ?? null,
+      title: r.web_title ?? r.title ?? null,
+      source: r.source ?? null,
+    }));
+  }
+
+  /**
+   * `GET /api/activity/history` — the completed-download log (the Activity adapter's `completed`-recent
+   * signal). READ-ONLY. `downloaded_at` (epoch seconds) is normalized to ms; `success` defaults true.
+   */
+  async getDownloadHistory(): Promise<KapowarrHistoryEntry[]> {
+    const rows = await this.http.json('GET', '/activity/history', kapowarrHistoryListSchema);
+    return rows.map((r) => ({
+      volumeId: r.volume_id ?? null,
+      issueId: r.issue_id ?? null,
+      title: r.web_title ?? r.file_title ?? r.title ?? null,
+      downloadedAtMs: r.downloaded_at != null ? r.downloaded_at * 1000 : null,
+      success: r.success ?? true,
+    }));
+  }
+
+  /**
+   * `GET /api/system/tasks` — the planned/running background tasks (the Activity adapter's `searching`
+   * signal: a search-shaped task's `volume_id`, or a monitored/mass search with `volume_id: null`).
+   * READ-ONLY — the task SUBMIT (auto_search) lives on the confined write surface.
+   */
+  async getTasks(): Promise<KapowarrTask[]> {
+    const rows = await this.http.json('GET', '/system/tasks', kapowarrTaskListSchema);
+    return rows.map((r) => ({
+      action: r.action ?? null,
+      volumeId: r.volume_id ?? null,
+      displayTitle: r.display_title ?? null,
+    }));
   }
 }
 

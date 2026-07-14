@@ -16,6 +16,7 @@ import {
   type ActivityWall,
 } from './contract';
 import { parseArrActivityRef } from './arr-adapter';
+import { parseKapowarrActivityRef } from './kapowarr-adapter';
 
 export interface ActivityCounts {
   total: number;
@@ -129,13 +130,16 @@ export function activityWallStages(items: readonly ActivityItem[]): Record<strin
  * The wall-badge join key for an item — the id each wall's posters carry. Books items encode
  * `books:ll:<bookId>:<format>` → the bookId; *arr items encode `arr:<kind>:<parentId>[:<child>]` → the
  * wall parent (movieId / seriesId / artistId, the `media_items.arr_item_id` the movies/tv/music posters
- * key by). Each family adds its own parse here (DESIGN-030 D-08 step 3) — the fan-out seam.
+ * key by); Kapowarr items encode `kapowarr:<volumeId>` → the volume id the comics-wall posters carry. Each
+ * family adds its own parse here (DESIGN-030 D-08 step 3) — the fan-out seam.
  */
 function wallJoinKey(it: ActivityItem): string | null {
   const books = /^books:ll:([^:]+):/.exec(it.id);
   if (books) return books[1] ?? null;
   const arr = parseArrActivityRef(it.id);
   if (arr) return String(arr.parentId);
+  const kapowarr = parseKapowarrActivityRef(it.id);
+  if (kapowarr) return String(kapowarr.volumeId);
   return null;
 }
 

@@ -161,6 +161,37 @@ the contract with NO change to the card, tab, chips, or detail page (the recipe 
   dispatch off the parsed ref, audited same-tx + fired after commit, exactly like the books writes. A blocked
   import offers both; a dead download offers re-search only.
 
+### D-08 amendment — the Kapowarr adapter (comics), PLAN-048 slice 3 (2026-07-14)
+
+The final fan-out adapter landed (`@hnet/domain/activity/kapowarr-adapter.ts`, pure `buildKapowarrActivity`),
+filling the contract with NO change to the card, tab, chips, or detail page (the recipe held a third time).
+Coverage:
+
+- **Source family:** `kapowarr`; the item `id` is `kapowarr:<volumeId>` — the SAME volume id the comics-wall
+  posters carry, so the wall-badge join, the ledger `source_ref`, and the force-search dispatch all read one
+  stable ref. **`section: 'books'`** — comics ride the BOOKS section gate today (D-01: the comic wall sits
+  under the books section). This is a deliberate reuse of the existing `'books'` section value, **NOT** a
+  widening of the `ActivitySection` union (`kind: 'comic'` / `wall: 'comics'` already existed in the
+  contract). Consequence: the aggregator + `activity.list` build the Kapowarr adapter only when the viewer
+  can see books — a member sees no comics. **Flagged for the owner** (see Q-03): if comics later earn their
+  own section/gate, the adapter flips one `section` value + the `activity.list` push condition; nothing else.
+- **Stages** (from Kapowarr's own `DownloadState`): `downloading` (`queued`/`paused`/`downloading`/`seeding`,
+  progress = the queue `progress` float), `importing` (`importing`), `completed` (a recent successful
+  `GET /api/activity/history` landing within a 15-min horizon, deduped against the live queue), and
+  `searching` (a monitored + wanted volume backed by an ACTIVE search task — a per-volume `auto_search`'s
+  `volume_id`, or a global `search_all` with `volume_id: null` — only what `GET /api/system/tasks` actually
+  shows; never a fabricated search). **Failure classes:** ONLY `download_failed` (`status: 'failed'`).
+  `canceled`/`shutdown` are skipped (user/app-stopped, not a strand). **`import_blocked` is NOT produced** —
+  Kapowarr has no *arr-style manual-import queue (it auto-imports; a post-process/move failure also surfaces
+  as `failed`), so there is no honest signal to distinguish it. Three READ endpoints were added to
+  `@hnet/kapowarr/read` (queue/history/tasks) — all READ-ONLY; Kapowarr's own GetComics DDL sources, never
+  MAM/qB/Prowlarr.
+- **Actions (R2):** `force_research` → the confined PLAN-046 `searchVolume` (`auto_search`) write — the SAME
+  surface `runComicVolumeSearch` fires; dispatched off the parsed `kapowarr:<volumeId>` ref, audited same-tx +
+  fired after commit. **`retry_import` is ABSENT for comics** (documented, not faked): Kapowarr exposes no
+  retry-import surface, and a comic only ever fails as `download_failed` (which offers re-search only anyway).
+  A comic `retry_import` reaching the resolver is an honest no-op (it audits but fires nothing).
+
 ## Decisions log
 
 | ID | Decision |
@@ -174,6 +205,7 @@ the contract with NO change to the card, tab, chips, or detail page (the recipe 
 | D-07 | Failures persist in `activity_import_failures`; `activity-scan` upserts + enqueues the outbox same-tx; no per-event push. |
 | D-08 | The fan-out recipe: new adapters fill the contract; the card/tab/chips/detail are source-agnostic. |
 | D-08a | *arr adapter (Radarr/Sonarr/Lidarr) shipped (PLAN-048 slice 2): `source: 'arr'`, `section: null` (universal), `id` encodes instance + fix target; stages downloading/importing/completed + failures import_blocked/download_failed; retry = confined `ProcessMonitoredDownloads`, re-search = the existing per-kind Force-Search. No card/tab/chip/detail change. |
+| D-08b | Kapowarr (comics) adapter shipped (PLAN-048 slice 3): `source: 'kapowarr'`, `id` = `kapowarr:<volumeId>`, `kind: 'comic'` / `wall: 'comics'`, **`section: 'books'`** (comics ride the books gate — reused value, contract union NOT widened; flagged Q-03). Stages searching/downloading/importing/completed; failure class ONLY `download_failed` (no manual-import queue ⇒ `import_blocked` not detectable). Action: `force_research` → confined `searchVolume` (`auto_search`); **`retry_import` absent** (Kapowarr has no retry-import surface — honest no-op). No card/tab/chip/detail change. |
 
 ## Open questions
 
@@ -181,3 +213,9 @@ the contract with NO change to the card, tab, chips, or detail page (the recipe 
   lands and real queue volume is observed — a constant, not a schema decision.
 - Q-02: the `stranded_import` staleness horizon (how long `Snatched` + SAB-Completed before it's
   called failed) starts at a conservative constant; owner may tune after the first real strand.
+- Q-03 (**owner decision — comics section gate**): the Kapowarr adapter (D-08b) tags comics `section: 'books'`
+  so they inherit the books gate today (comics have no independent section). If the owner later wants comics
+  gated separately (their own read/act level, distinct from books), add a `'comics'` value to the
+  `ActivitySection` union, flip the adapter's one `section` field, and add a `visibleSections.includes('comics')`
+  push in `activity.list` — no card/tab/chip/detail change. Until then, a viewer who cannot see books also
+  cannot see comics activity. Left as-is pending the owner's ruling.

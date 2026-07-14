@@ -6,5 +6,6 @@ export * from './contract';
 export * from './aggregate';
 export * from './books-adapter';
 export * from './arr-adapter';
+export * from './kapowarr-adapter';
 export * from './failures';
 export * from './clients';

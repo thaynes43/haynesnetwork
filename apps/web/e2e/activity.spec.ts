@@ -13,6 +13,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { signIn } from './support/helpers';
 import { readRuntimeEnv } from './support/env';
 import { arrActivityQueueFixture } from './support/stub-arr';
+import { kapowarrActivityQueueFixture } from './support/stub-kapowarr';
 
 interface LlCall {
   cmd: string;
@@ -50,6 +51,16 @@ async function stageArrQueue(): Promise<void> {
   });
 }
 
+/** Stage the live Kapowarr comics queue (a downloading + a failed comic); the comics leg of the mixed list. */
+async function stageComicQueue(): Promise<void> {
+  const env = readRuntimeEnv();
+  await fetch(`${env.STUB_KAPOWARR_URL}/_stub/queue`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ queue: kapowarrActivityQueueFixture() }),
+  });
+}
+
 /** Force the dark theme (the capture convention) — the shots are the standing reference. */
 async function setDark(page: Page): Promise<void> {
   await page.evaluate(() => localStorage.setItem('hnet-theme', 'hnet-dark'));
@@ -67,6 +78,7 @@ test.describe('Activity / In-Flight (PLAN-048)', () => {
   }, testInfo) => {
     await resetLl();
     await stageArrQueue();
+    await stageComicQueue();
     await signIn(page, 'admin');
     await page.goto('/library?tab=activity');
 
@@ -74,18 +86,27 @@ test.describe('Activity / In-Flight (PLAN-048)', () => {
     await expect(panel).toBeVisible();
 
     // Books (5): searching, downloading, stranded(failed), postprocess-failed(failed), download-failed(failed).
-    // *arr (2): a downloading movie + a manual-import BLOCKED movie (failed). Mixed → 7 total, 4 failed, 2 down.
-    await expect(page.getByTestId('activity-stage-all')).toContainText('· 7');
-    await expect(page.getByTestId('activity-stage-failed')).toContainText('· 4');
-    await expect(page.getByTestId('activity-stage-downloading')).toContainText('· 2');
+    // *arr (2): a downloading movie + a manual-import BLOCKED movie (failed).
+    // Comics (2, Kapowarr): a downloading comic + a failed comic (download_failed).
+    // Mixed → 9 total, 5 failed, 3 downloading.
+    await expect(page.getByTestId('activity-stage-all')).toContainText('· 9');
+    await expect(page.getByTestId('activity-stage-failed')).toContainText('· 5');
+    await expect(page.getByTestId('activity-stage-downloading')).toContainText('· 3');
     const grid = page.getByTestId('activity-grid');
-    await expect(grid.locator('.poster-card')).toHaveCount(7);
+    await expect(grid.locator('.poster-card')).toHaveCount(9);
 
     // The *arr leg is present with Radarr attribution + a populated Movies kind chip (mixed kinds).
     await expect(page.getByTestId('activity-kind-movie')).toBeVisible();
     const radarrCard = grid.locator('.poster-card', { hasText: 'Vanished Heist' });
     await expect(radarrCard).toHaveCount(1);
     await expect(radarrCard).toContainText('Radarr');
+
+    // The COMICS leg (Kapowarr) rides the books gate — an admin sees it: a Comics kind chip + a comic card
+    // with Kapowarr attribution (DESIGN-030 D-08 — the contract-shaped fan-out, no card/tab/chip change).
+    await expect(page.getByTestId('activity-kind-comic')).toBeVisible();
+    const comicCard = grid.locator('.poster-card', { hasText: 'Saga' });
+    await expect(comicCard).toHaveCount(1);
+    await expect(comicCard).toContainText('Kapowarr');
 
     // Dark, desktop + 390 captures of the Activity tab with MIXED *arr + books sources.
     await setDark(page);
