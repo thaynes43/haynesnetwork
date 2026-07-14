@@ -13,22 +13,90 @@ import {
   getUserIntegration,
   InvalidGoodreadsProfileError,
   linkIntegration,
+  markIntegrationSynced,
   runComicVolumeSearch,
   runManualBookSearch,
+  syncGoodreadsIntegration,
   unlinkIntegration,
   type BookRequestView,
+  type EnrichedShelfItem,
 } from '@hnet/domain';
+import { isComicText } from '@hnet/goodreads';
 import type { UserIntegrationRow } from '@hnet/db';
 import { router } from '../trpc';
 import {
   mapDomainErrors,
   resolveGoodreadsRssClient,
+  resolveGoogleBooksClient,
   resolveKapowarrBundle,
   resolveLazyLibrarianBundle,
+  type TRPCContext,
 } from '../trpc';
 import { integrationsProcedure } from '../middleware/role';
 
 const PROVIDER = 'goodreads' as const;
+
+/**
+ * Fresh-link fast path (PLAN-044 live-acceptance fix): run the FIRST shelf sync for a just-linked integration
+ * inline so the coverage card shows real data (or a pending state) instead of a "0% / 0 of 0 / not synced
+ * yet" dead-end until the hourly CronJob. Fired-and-forgotten from the `link` mutation — the link is already
+ * committed, so a sync failure never fails the link (the pending UI + the CronJob are the safety net). This
+ * mirrors the per-integration read+enrich of `@hnet/sync` runGoodreadsSync for a SINGLE integration (kept
+ * here to avoid pulling the heavy @hnet/sync barrel into the web request path). External LL calls stay out of
+ * any DB transaction — the orchestrator's fix-flow discipline.
+ */
+async function runFirstGoodreadsSync(ctx: TRPCContext, integration: UserIntegrationRow): Promise<void> {
+  const rss = resolveGoodreadsRssClient(ctx);
+  const googleBooks = resolveGoogleBooksClient(ctx);
+  // LazyLibrarian is optional — absent config ⇒ a mirror+mint run (no push), same as the CronJob's degraded mode.
+  let ll: ReturnType<typeof resolveLazyLibrarianBundle> | undefined;
+  try {
+    ll = resolveLazyLibrarianBundle(ctx);
+  } catch {
+    ll = undefined;
+  }
+  // ADR-056 (PLAN-046) — Kapowarr is optional too. When configured, route comics to Kapowarr in this first
+  // sync exactly as the CronJob does (classifier decides comic-vs-book below); absent config ⇒ comics stay
+  // parked (unroutable_reason='comic') and the hourly CronJob routes them on its next run.
+  let kapowarr: ReturnType<typeof resolveKapowarrBundle> | undefined;
+  try {
+    kapowarr = resolveKapowarrBundle(ctx);
+  } catch {
+    kapowarr = undefined;
+  }
+
+  const enriched: EnrichedShelfItem[] = [];
+  const syncedShelves: string[] = [];
+  for (const shelf of integration.shelves) {
+    const items = await rss.fetchShelf(integration.externalUserId, shelf);
+    for (const item of items) {
+      const gb = await googleBooks
+        .resolveVolume({ isbn: item.isbn, title: item.title, author: item.author })
+        .catch(() => null);
+      enriched.push({
+        shelf,
+        externalBookId: item.externalBookId,
+        title: item.title,
+        author: item.author,
+        isbn: gb?.isbn13 ?? item.isbn,
+        gbVolumeId: gb?.volumeId ?? null,
+        coverUrl: item.coverUrl,
+        shelvedAt: item.shelvedAt,
+        isComic: (gb?.isComic ?? false) || isComicText(item.title, item.author),
+      });
+    }
+    syncedShelves.push(shelf);
+  }
+
+  await syncGoodreadsIntegration({
+    db: ctx.db,
+    integrationId: integration.id,
+    items: enriched,
+    syncedShelves,
+    ...(ll ? { ll } : {}),
+    ...(kapowarr ? { kapowarr } : {}),
+  });
+}
 
 // NOTE: the wire shapes are intentionally NOT exported named interfaces — the helper functions return
 // inferred object literals so the router's output types stay ANONYMOUS (nameable everywhere, incl. the web
@@ -120,6 +188,22 @@ export const integrationsRouter = router({
           externalUserId,
           profileRef: input.profileRef,
           actorId: ctx.user.id,
+        });
+        // Kick off the FIRST shelf sync in the background so the coverage card shows real data (or a "first
+        // sync in progress" pending state — D-06) rather than a "0% / 0 of 0" dead-end until the hourly
+        // CronJob. Fire-and-forget: the link is already committed, the response returns immediately, and the
+        // pending UI + CronJob cover any failure. A floating promise is fine on the persistent Next server.
+        void runFirstGoodreadsSync(ctx, integration).catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          console.error('integrations.link: first sync failed (CronJob will retry)', {
+            integrationId: integration.id,
+            error: message,
+          });
+          // Record the failure so the card leaves the "first sync in progress" state (which polls) instead
+          // of spinning forever — the CronJob retries. Guarded not to resurrect an already-unlinked row.
+          void markIntegrationSynced({ db: ctx.db, integrationId: integration.id, error: message }).catch(
+            () => {},
+          );
         });
         return { integration: toIntegrationWire(integration) };
       });
