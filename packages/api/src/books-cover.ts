@@ -56,8 +56,9 @@ export function booksCoverEtag(source: BooksSource, id: string, version: string)
 }
 
 let clients: BooksReadClients | null = null;
-/** Lazily build the singleton read clients from env; null if the books env is absent/misconfigured. */
-function getClients(): BooksReadClients | null {
+/** Lazily build the singleton read clients from env; null if the books env is absent/misconfigured.
+ *  Shared with books-author-art.ts (same login/token cache — one session per book server). */
+export function booksClientsSingleton(): BooksReadClients | null {
   if (clients) return clients;
   try {
     clients = booksReadClients(assertBooksEnv());
@@ -120,7 +121,7 @@ export async function getBooksCover(
   const cached = cache.get(key);
   if (cached) return { body: cached.body, contentType: cached.contentType, tier: 'primary' };
 
-  const c = deps.clients !== undefined ? deps.clients : getClients();
+  const c = deps.clients !== undefined ? deps.clients : booksClientsSingleton();
   if (!c) return null;
   const etag = booksCoverEtag(source, id, version);
 

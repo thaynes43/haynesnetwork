@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.48.0](https://github.com/thaynes43/haynesnetwork/compare/v0.47.0...v0.48.0) (2026-07-14)
+
+
+### Features
+
+* group-card ART — ABS author portraits, genre glyph tiles, per-dimension art sources (DESIGN-026 D-04 amendment) ([#249](https://github.com/thaynes43/haynesnetwork/issues/249)) ([67b1679](https://github.com/thaynes43/haynesnetwork/commit/67b167996a1c9d255d35fd3e033bd9a348c074b5))
+
+
+### Documentation
+
+* F-10 English audit RUN 2 — 58 foreign items quarantined, libraries rescanned, F-09 corrupt re-grabs queued ([#246](https://github.com/thaynes43/haynesnetwork/issues/246)) ([c5ed2ab](https://github.com/thaynes43/haynesnetwork/commit/c5ed2ab0159437e0c61f22936e54cc2d9f135fc2))
+* Integration Tab Saga (PLAN-043 master) + Goodreads requests MVP (PLAN-044, rulings locked) — queue updates (029/042 completed, 033 subsumed) ([#250](https://github.com/thaynes43/haynesnetwork/issues/250)) ([d705d69](https://github.com/thaynes43/haynesnetwork/commit/d705d6955ebcf1f30df2ea76af290ac3e98420b3))
+* PLAN-042 COMPLETE — old-WebKit login crash fixed by CSS-nesting lowering; compat mode reverted (haynes-ops 1b11dc69..dafdea79) ([#247](https://github.com/thaynes43/haynesnetwork/issues/247)) ([10d3c13](https://github.com/thaynes43/haynesnetwork/commit/10d3c1306e3a33c680cc255a9f0b60cef9bd7193))
+
 ## [0.47.0](https://github.com/thaynes43/haynesnetwork/compare/v0.46.3...v0.47.0) (2026-07-14)
 
 

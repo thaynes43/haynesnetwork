@@ -1863,6 +1863,36 @@ input[aria-invalid='true'] {
   transform: none;
 }
 
+/* Group-card ART pass (DESIGN-026 D-04 amendment) — the dimension's OWN portrait (ABS author
+   photo) fills the same reserved 2:3 box the fan uses; the image rides the shared .poster-img
+   opacity-only reveal (ADR-015). A load error swaps the fan back in, in place. */
+.group-card__portrait .poster-img {
+  border-radius: var(--radius-sm);
+}
+
+/* The abstract-dimension GLYPH tile (genre; decade/format/length reuse it when they ship): a
+   designed token-themed emblem — the glyph inside a thin ring, centered where a poster would be
+   (the TicketCategoryIcon precedent). Never fake imagery. Same reserved box; color only. */
+.glyph-tile {
+  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface-2));
+  color: color-mix(in srgb, var(--color-accent) 55%, var(--color-text-muted));
+}
+[data-theme='hnet-light'] .glyph-tile {
+  color: color-mix(in srgb, var(--color-accent) 45%, var(--color-text-muted));
+}
+.glyph-tile__ring {
+  width: 58%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, currentColor 40%, transparent);
+  display: grid;
+  place-items: center;
+}
+.glyph-tile__icon {
+  width: 54%;
+  height: 54%;
+}
+
 /* The drill-in header (D-04): back-to-groups + the drilled group's name. A static header of the
    drilled SCREEN (reached by a push), sized to one fixed row. */
 .library-drill {

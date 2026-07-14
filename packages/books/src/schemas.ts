@@ -115,6 +115,24 @@ export const absItemsPageSchema = z.object({
 export type AbsItemsPage = z.infer<typeof absItemsPageSchema>;
 
 /**
+ * DESIGN-026 D-04 amendment (group-card art) — one author from `GET /api/libraries/{id}/authors`.
+ * `imagePath` is non-null ONLY when ABS holds a photo for the author (Audnexus-backed — filled by
+ * ABS's own author match); the app treats it as the populated-value gate for author-portrait cards.
+ * `updatedAt` (ms) rotates when the photo/description changes — the art URL's cache-busting version.
+ */
+export const absAuthorSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  imagePath: z.string().nullable().optional(),
+  updatedAt: z.number().nullable().optional(),
+});
+export type AbsAuthor = z.infer<typeof absAuthorSchema>;
+
+export const absAuthorsResponseSchema = z.object({
+  authors: z.array(absAuthorSchema),
+});
+
+/**
  * ADR-053 / DESIGN-026 D-07 (PLAN-029 — per-user read-state) — one `mediaProgress[]` entry from
  * `GET /api/users/{id}` (ADMIN/service-token readable for ANY user). The join key to books_items is
  * `libraryItemId` (= books_items.external_id for ABS rows). `progress` is a 0..1 fraction;

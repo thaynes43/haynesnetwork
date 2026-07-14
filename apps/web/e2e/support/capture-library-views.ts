@@ -5,6 +5,10 @@
 // registry sort bar + Released/Decade chips + the armed A–Z jump rail (D-09). Desktop + 390px,
 // dark + light — the standing owner screenshot-review rule.
 //
+// GROUP-CARD ART pass (D-04 amendment) adds: the Audiobooks author wall with REAL ABS portraits
+// (+ the gated fan on the photo-less author), the Genres glyph wall (the abstract dimension),
+// and the Peloton grouped wall (real Plex discipline posters via /api/ytdlsub/poster).
+//
 //   pnpm --filter web exec tsx e2e/support/capture-library-views.ts <output-dir>
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -91,11 +95,38 @@ async function openMoviesJump(page: Page): Promise<void> {
   await hidePortal(page);
 }
 
+/** The Audiobooks grouped-by-Author wall: REAL ABS author portraits + the photo-less author's
+ *  gated cover fan (D-04 art amendment). */
+async function openAudiobooksAuthors(page: Page): Promise<void> {
+  await page.goto('/library?tab=audiobooks&view=grouped');
+  await page.getByTestId('books-groups').waitFor();
+  await page.locator('.group-card__portrait img').first().waitFor();
+  await hidePortal(page);
+}
+
+/** The Audiobooks grouped-by-Genre wall: the designed glyph tiles (the abstract dimension). */
+async function openAudiobooksGenres(page: Page): Promise<void> {
+  await page.goto('/library?tab=audiobooks&view=grouped&by=genre');
+  await page.getByTestId('books-groups').waitFor();
+  await page.locator('.glyph-tile').first().waitFor();
+  await hidePortal(page);
+}
+
+/** The Peloton grouped wall — discipline cards wearing real Plex posters (ytdl-sub proxy). */
+async function openPelotonGrouped(page: Page): Promise<void> {
+  await page.goto('/library?tab=peloton');
+  await page.getByTestId('ytdlsub-grid').waitFor();
+  await hidePortal(page);
+}
+
 const SHOTS: Array<{ name: string; open: (page: Page) => Promise<void> }> = [
   { name: 'books-grouped', open: openBooksGrouped },
   { name: 'books-drill', open: openBooksDrill },
   { name: 'audiobook-chips', open: openAudiobookChips },
   { name: 'movies-jump', open: openMoviesJump },
+  { name: 'audiobooks-authors', open: openAudiobooksAuthors },
+  { name: 'audiobooks-genres', open: openAudiobooksGenres },
+  { name: 'peloton-grouped', open: openPelotonGrouped },
 ];
 
 async function main(): Promise<void> {
