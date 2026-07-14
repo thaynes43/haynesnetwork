@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.50.1](https://github.com/thaynes43/haynesnetwork/compare/v0.50.0...v0.50.1) (2026-07-14)
+
+
+### Bug Fixes
+
+* unify Library-Wanted + Goodreads items into the Movies poster-card anatomy (PLAN-045) ([#261](https://github.com/thaynes43/haynesnetwork/issues/261)) ([28d069d](https://github.com/thaynes43/haynesnetwork/commit/28d069d452c2d6dbe0850b2421c08d43b8079ac5))
+
 ## [0.50.0](https://github.com/thaynes43/haynesnetwork/compare/v0.49.0...v0.50.0) (2026-07-14)
 
 
