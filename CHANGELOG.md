@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.51.1](https://github.com/thaynes43/haynesnetwork/compare/v0.51.0...v0.51.1) (2026-07-14)
+
+
+### Documentation
+
+* books usenet import contract + stranded-import RCA (OPS-013 §11, F-10 RUN 4) ([#267](https://github.com/thaynes43/haynesnetwork/issues/267)) ([490e774](https://github.com/thaynes43/haynesnetwork/commit/490e7747a676a2e3b39578b811d3578fcdeb0d3a))
+
 ## [0.51.0](https://github.com/thaynes43/haynesnetwork/compare/v0.50.1...v0.51.0) (2026-07-14)
 
 
