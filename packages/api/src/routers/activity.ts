@@ -10,9 +10,13 @@ import {
   aggregateActivity,
   activityWallStages,
   getActivityFailure,
+  lazyActivityAdapter,
   parseArrActivityRef,
   parseKapowarrActivityRef,
   recordActivityAction,
+  ARR_ACTIVITY_SOURCE,
+  BOOKS_ACTIVITY_SOURCE,
+  KAPOWARR_ACTIVITY_SOURCE,
   type ActivitySection,
   type ActivitySourceAdapter,
 } from '@hnet/domain';
@@ -38,12 +42,34 @@ type AuthedCtx = TRPCContext & { user: NonNullable<TRPCContext['user']> };
  * books AND Kapowarr (comics) adapters are section-gated on `books` — comics ride the books section (D-01),
  * so both are only built/read when the viewer can see the books section (a member never triggers the LL/SAB
  * or Kapowarr upstreams for items the aggregator would gate out). The contract-shaped fan-out (D-08).
+ *
+ * PER-SOURCE FAILURE ISOLATION: each source is wrapped in a `lazyActivityAdapter`, so the `resolveXxx`
+ * CONSTRUCTION (which asserts env — a missing `SABNZBD_API_KEY` throws) is DEFERRED into `list()`, inside
+ * the aggregator's per-source try/catch. A missing env / down upstream / timeout now degrades ONLY that
+ * source (an `unavailable` marker) instead of blanking the whole read (the prod incident). The label is the
+ * human family name the notice shows.
  */
 function buildActivityAdapters(ctx: AuthedCtx, visibleSections: ActivitySection[]): ActivitySourceAdapter[] {
-  const adapters: ActivitySourceAdapter[] = [resolveArrActivityAdapter(ctx)];
+  const adapters: ActivitySourceAdapter[] = [
+    lazyActivityAdapter({
+      source: ARR_ACTIVITY_SOURCE,
+      label: 'Movies, TV & music',
+      resolve: () => resolveArrActivityAdapter(ctx),
+    }),
+  ];
   if (visibleSections.includes('books')) {
-    adapters.push(resolveActivityBundle(ctx).adapter);
-    adapters.push(resolveKapowarrActivityAdapter(ctx));
+    adapters.push(
+      lazyActivityAdapter({
+        source: BOOKS_ACTIVITY_SOURCE,
+        label: 'Books & audiobooks',
+        resolve: () => resolveActivityBundle(ctx).adapter,
+      }),
+      lazyActivityAdapter({
+        source: KAPOWARR_ACTIVITY_SOURCE,
+        label: 'Comics',
+        resolve: () => resolveKapowarrActivityAdapter(ctx),
+      }),
+    );
   }
   return adapters;
 }
@@ -121,7 +147,9 @@ export const activityRouter = router({
     const visibleSections = visibleSectionsFor(ctx);
     const adapters = buildActivityAdapters(ctx, visibleSections);
     const result = await aggregateActivity({ db: ctx.db, adapters, visibleSections });
-    return { items: result.items, counts: result.counts };
+    // `unavailable` carries the per-source degrade markers so the tab can show a non-blocking notice while
+    // the reachable sources render normally (per-source failure isolation — one down never blanks the read).
+    return { items: result.items, counts: result.counts, unavailable: result.unavailable };
   }),
 
   /** The per-wall in-flight badge map the wall posters read (books: keyed by LL/GB bookId; *arr: keyed by

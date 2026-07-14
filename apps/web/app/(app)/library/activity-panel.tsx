@@ -5,6 +5,13 @@
 // grid flashing (ADR-015 recolor-not-reflow), renders the Helpdesk-idiom stage + kind filter chips with
 // server counts (D-02), and a PosterGrid of ActivityCards (D-05 — the card family, never a fork). A failed
 // tile links to its failure detail page; the rest are inert (actions live on the detail page only).
+//
+// STATE MACHINE (the honest-states fix): the skeleton shows ONLY on the first load (`isPending` — no data,
+// no error yet); a resolved-but-empty list shows the designed "Nothing in flight" empty state; a fully-failed
+// read shows an error state with a retry affordance; and a background poll refetch mutates the grid IN PLACE
+// — it NEVER flips the view back to skeletons (react-query keeps the last data while refetching). Per-SOURCE
+// degrade (a missing env / down upstream) never blanks the read: the aggregator returns the reachable items
+// plus an `unavailable` marker, surfaced here as a small non-blocking notice (never a total error).
 import { useMemo, useState } from 'react';
 import { PosterGrid, PosterGridSkeleton, ActivityCard, type CardActivityStage } from '@/components/cards';
 import { trpc, type RouterOutputs } from '@/lib/trpc-client';
@@ -32,7 +39,9 @@ const KIND_LABELS: Record<string, string> = {
 
 export function ActivityPanel() {
   // Live poll — queues change by the second (ADR-059). placeholderData keeps the grid rendered while a
-  // refetch is in flight (ADR-015 — no collapse/flash).
+  // refetch is in flight (ADR-015 — no collapse/flash). `refetchIntervalInBackground` is left at its FALSE
+  // default so the 5s poll PAUSES while the tab is hidden (no runaway polling); it resumes on return and
+  // `refetchOnWindowFocus` catches the view up.
   const query = trpc.activity.list.useQuery(undefined, {
     refetchInterval: 5000,
     refetchOnWindowFocus: true,
@@ -52,12 +61,43 @@ export function ActivityPanel() {
     );
   }, [data, stages, kinds]);
 
-  if (query.isLoading && !data) {
-    return <PosterGridSkeleton testId="activity-skeleton" />;
+  // Initial load ONLY (no data, no error yet) → skeleton. A poll refetch keeps status 'success'/'error' and
+  // the last data on screen, so this branch can never re-fire mid-session (the flicker fix).
+  if (query.isPending) {
+    return (
+      <div className="activity-panel" data-testid="activity-panel">
+        <PosterGridSkeleton testId="activity-skeleton" />
+      </div>
+    );
+  }
+
+  // A TOTAL read failure with nothing to show (the tRPC call itself failed — DB down, network) → an honest
+  // error state with retry. A per-SOURCE degrade never lands here: the aggregator returns the reachable
+  // items + an `unavailable` marker, so `data` is present and we fall through to the normal render.
+  if (query.isError && !data) {
+    return (
+      <div className="activity-panel" data-testid="activity-panel">
+        <section className="card empty-state" data-testid="activity-error">
+          <p>
+            <strong>Activity couldn’t load</strong>
+          </p>
+          <p className="muted">Something went wrong reaching the activity read.</p>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => void query.refetch()}
+            data-testid="activity-retry-load"
+          >
+            Try again
+          </button>
+        </section>
+      </div>
+    );
   }
 
   const counts = data?.counts;
   const total = counts?.total ?? 0;
+  const unavailable = data?.unavailable ?? [];
 
   const toggle = <T,>(set: Set<T>, value: T, apply: (s: Set<T>) => void) => {
     const next = new Set(set);
@@ -120,12 +160,42 @@ export function ActivityPanel() {
         ) : null}
       </div>
 
+      {/* Per-source degrade notice (non-blocking): the reachable sources render normally above/below; a
+          down/unconfigured source shows a small token-styled chip naming the family. ADR-015: a fixed-height
+          scroll row that only RECOLORS between polls — the `unavailable` set is stable per read, so the grid
+          below never jumps. Never a total error — a single source down never blanks the tab (the prod fix). */}
+      {unavailable.length > 0 ? (
+        <div className="activity-notice" role="status" data-testid="activity-unavailable">
+          {unavailable.map((u) => (
+            <span
+              key={u.source}
+              className="activity-notice__chip"
+              title={u.reason}
+              data-testid={`activity-unavailable-${u.source}`}
+            >
+              <span className="activity-notice__dot" aria-hidden="true" />
+              {u.label} unavailable
+            </span>
+          ))}
+        </div>
+      ) : null}
+
       {items.length === 0 ? (
-        <p className="muted empty-note" data-testid="activity-empty">
-          {total === 0
-            ? 'Nothing is in flight right now — searches, downloads, and imports will appear here.'
-            : 'No activity matches the current filters.'}
-        </p>
+        total === 0 && unavailable.length === 0 ? (
+          // The designed empty state — a resolved, reachable, genuinely-idle pipeline (D-01 "nothing in flight").
+          <section className="card empty-state" data-testid="activity-empty">
+            <p>
+              <strong>Nothing in flight</strong>
+            </p>
+            <p className="muted">Searches, downloads, and imports will appear here as they happen.</p>
+          </section>
+        ) : (
+          <p className="muted empty-note" data-testid="activity-empty">
+            {total === 0
+              ? 'No other activity is in flight right now.'
+              : 'No activity matches the current filters.'}
+          </p>
+        )
       ) : (
         <PosterGrid testId="activity-grid">
           {items.map((it) => (

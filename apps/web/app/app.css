@@ -757,6 +757,46 @@ button.motd__dismiss:hover {
   margin: 0;
   color: var(--color-text-muted);
 }
+.empty-state p + p {
+  margin-top: 6px;
+}
+/* A designed empty/error state gives its lead line the full text colour so the title reads (the muted body
+   sits under it). Scoped to the Activity panel so other single-line empty states are unaffected. */
+.activity-panel .empty-state strong {
+  color: var(--color-text);
+}
+
+/* PLAN-048 / ADR-059 — the Activity per-source degrade notice (non-blocking). A row of small token-styled
+   chips, each naming a source FAMILY that couldn't be read this poll (a missing env / down upstream / a
+   timeout). The reachable sources still render above/below — one source down never blanks the tab. ADR-015:
+   a fixed-height row that wraps and only RECOLOURS between polls — never reflows the grid. No raw hex — a
+   soft warning tint is mixed from the tokens (the filter-chip color-mix idiom). */
+.activity-notice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 var(--space);
+}
+.activity-notice__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 45%, var(--color-border));
+  background: color-mix(in srgb, var(--color-warning) 10%, transparent);
+}
+.activity-notice__dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-warning);
+}
 
 /* ---------- Admin area (D-06/D-11) ---------- */
 .admin h1 {
@@ -1345,10 +1385,14 @@ input[aria-invalid='true'] {
   font-weight: 600;
   margin: 4px 0 var(--space);
 }
-/* Library sub-tabs (Movies · TV · Music · My Fixes) — WAI-ARIA tablist styled as
-   underline tabs, mirroring the admin console's .admin-nav idiom: a flex row over a
-   1px border, each tab a borderless button carrying a 2px transparent bottom border
-   that fills with the nav-active token when selected/hovered. */
+/* Library sub-tabs (Movies · TV · Music · … · Activity · My Fixes) — WAI-ARIA tablist styled
+   as underline tabs, mirroring the admin console's .admin-nav idiom: a flex row over a 1px
+   border, each tab a borderless button carrying a 2px transparent bottom border that fills
+   with the nav-active token when SELECTED. Exactly ONE tab reads as active: hover is a
+   LOW-EMPHASIS preview (a faint border), distinct from the committed nav-active underline, so
+   a hovered / touch-sticky-hovered neighbour can never look "active" alongside the selected tab
+   (the double-active bug — both the prior tab and Activity lit at once). The 2px border is
+   always reserved, so recolouring it never shifts the row (ADR-015). */
 .library-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -1370,9 +1414,11 @@ input[aria-invalid='true'] {
   align-items: center;
   cursor: pointer;
 }
-.library-tabs [role='tab']:hover {
+/* Hover on a NON-selected tab is a preview only — brighten the text + a faint border, NEVER the
+   full nav-active underline (that belongs to the one selected tab). */
+.library-tabs [role='tab']:not([aria-selected='true']):hover {
   color: var(--color-text);
-  border-bottom-color: var(--color-nav-active);
+  border-bottom-color: var(--color-border);
 }
 .library-tabs [role='tab'][aria-selected='true'] {
   color: var(--color-text);
@@ -6327,11 +6373,15 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
 }
 
 /* The shelf chip rail — the Helpdesk `.twall-bar .seg` treatment: one fixed-height row that pans
-   horizontally on narrow screens (never wraps → never reflows, ADR-015). */
+   horizontally on narrow screens (never wraps → never reflows, ADR-015). `align-self: flex-start`
+   keeps the surface-2 pill SNUG (content-fit), matching its sibling status-chip row (`.library-chipbar
+   > .seg`) — without it the `.seg` (an inline-flex blockified as a direct flex-item of the column
+   `.library-toolbar`) would stretch to the full row width and read as a misaligned full-width box. */
 .gr-shelfbar {
+  align-self: flex-start;
+  max-width: 100%;
   overflow-x: auto;
   scrollbar-width: none;
-  max-width: 100%;
 }
 .gr-shelfbar::-webkit-scrollbar {
   display: none;

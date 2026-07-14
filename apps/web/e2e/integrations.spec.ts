@@ -73,7 +73,7 @@ test.describe('Integrations hub + Goodreads sub-section', () => {
     await expect(page.getByTestId('integrations-unavailable')).toBeVisible();
   });
 
-  test('admin: hub → sub-section → link → ALL-shelves sync → stats → items wall + chips → force-search → Library Wanted', async ({ page }) => {
+  test('admin: hub → sub-section → link → ALL-shelves sync → stats → items wall + chips → force-search → Library Wanted', async ({ page }, testInfo) => {
     await resetLl();
     await signIn(page, 'admin');
 
@@ -203,6 +203,25 @@ test.describe('Integrations hub + Goodreads sub-section', () => {
     await expect(page.getByTestId('wanted-detail-head')).toContainText('Zero Year');
     await expect(page.getByText(/waiting on a ComicVine match/i)).toBeVisible();
     await expect(page.getByTestId('format-search-btn')).toHaveCount(0);
+
+    // ── fix/activity-robustness (Fix 5) — the SHELF-chip row (All / To read / Read) now wears the SAME snug
+    //    surface-2 pill treatment as its sibling STATUS-chip row (Have it / Searching / Missing), instead of
+    //    the misaligned full-width dark box it was. Capture the aligned chip area (dark, desktop + 390). ──
+    await page.evaluate(() => localStorage.setItem('hnet-theme', 'hnet-dark'));
+    await page.goto('/integrations/goodreads?tab=items');
+    await page.locator('html[data-theme="hnet-dark"]').waitFor();
+    await expect(page.getByTestId('shelf-chip-all')).toBeVisible();
+    await expect(page.getByTestId('gr-state-have')).toBeVisible();
+    for (const [label, w] of [
+      ['desktop', 1280],
+      ['390', 390],
+    ] as const) {
+      await page.setViewportSize({ width: w, height: 900 });
+      const path = testInfo.outputPath(`goodreads-items-chips-${label}-dark.png`);
+      await page.locator('.library-toolbar').first().screenshot({ path });
+      await testInfo.attach(`goodreads-items-chips-${label}-dark`, { path, contentType: 'image/png' });
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
 
     // ── The Library composed-Wanted journey (books-section-gated; ADR-046 mirror untouched). Wanted
     //    items merge INLINE into the flat wall as the SAME poster card as an on-disk book — no strip. ──
