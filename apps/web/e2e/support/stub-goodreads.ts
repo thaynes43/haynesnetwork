@@ -15,8 +15,10 @@ export interface StubGoodreadsServer {
   stop: () => Promise<void>;
 }
 
-// The want-to-read shelf: a novel that LL LANDS (→ covered), a novel LL can't find (→ Missing +
-// Search-again), and a comic (→ parked out of LazyLibrarian).
+// The want-to-read shelf mirrors the owner's real v0.49.0 acceptance shelf: a novel that LL LANDS (→
+// covered), a novel LL can't find (→ Missing + Search-again), and BOTH of his comics — Scott Pilgrim
+// (GB miscategorises the ISBN edition; the /volumes GET carries the real comic BISAC) and Batman "Zero
+// Year" (a category-less GB volume; the "DC Comics" title is the only signal). Both must PARK out of LL.
 const SHELF_RSS = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"><channel>
   <title><![CDATA[manofoz's bookshelf: to-read]]></title>
@@ -45,10 +47,23 @@ const SHELF_RSS = `<?xml version="1.0" encoding="UTF-8"?>
     <isbn13>9781932664089</isbn13>
     <user_date_added><![CDATA[Mon, 13 Jul 2026 08:00:00 -0700]]></user_date_added>
   </item>
+  <item>
+    <title><![CDATA[Zero Year: Part 1 (DC Comics - The Legend of Batman #1)]]></title>
+    <book_id>18510</book_id>
+    <author_name><![CDATA[Scott Snyder]]></author_name>
+    <isbn></isbn>
+    <isbn13></isbn13>
+    <user_date_added><![CDATA[Mon, 13 Jul 2026 07:00:00 -0700]]></user_date_added>
+  </item>
 </channel></rss>`;
 
-/** A Google Books volume for a query, keyed on a substring of the `q` param. Comics get the GB comic tag. */
-function gbVolumeFor(q: string): unknown | null {
+/**
+ * A Google Books SEARCH result (`/volumes?q=`) for a query. Faithful to the live quirk that motivated the
+ * classifier fix: the search endpoint TRUNCATES `categories`, so Scott Pilgrim comes back as ["Fiction"]
+ * (the /volumes GET below carries its true comic BISAC), and Batman's sparse volume has NO categories at
+ * all (only the "DC Comics" title marker classifies it).
+ */
+function gbVolumeFor(q: string): { id: string; volumeInfo: Record<string, unknown> } | null {
   const s = q.toLowerCase();
   if (s.includes('9780307887436') || s.includes('ready')) {
     return { id: 'gb-rpo', volumeInfo: { title: 'Ready Player One', categories: ['Fiction'], industryIdentifiers: [{ type: 'ISBN_13', identifier: '9780307887436' }] } };
@@ -57,9 +72,30 @@ function gbVolumeFor(q: string): unknown | null {
     return { id: 'gb-tog', volumeInfo: { title: 'Throne of Glass', categories: ['Young Adult Fiction'], industryIdentifiers: [{ type: 'ISBN_13', identifier: '9781619630345' }] } };
   }
   if (s.includes('9781932664089') || s.includes('scott') || s.includes('pilgrim')) {
-    return { id: 'gb-scottpilgrim', volumeInfo: { title: 'Scott Pilgrim', categories: ['Comics & Graphic Novels'], industryIdentifiers: [{ type: 'ISBN_13', identifier: '9781932664089' }] } };
+    // TRUNCATED search category — not a comic on its face; the confirm GET recovers the truth.
+    return { id: 'gb-scottpilgrim', volumeInfo: { title: 'Scott Pilgrim', categories: ['Fiction'], industryIdentifiers: [{ type: 'ISBN_13', identifier: '9781932664089' }] } };
+  }
+  if (s.includes('zero year') || s.includes('batman')) {
+    // A sparse catalog volume — NO categories; only the shelved "DC Comics" title marker classifies it.
+    return { id: 'gb-batman', volumeInfo: { title: 'Zero Year', publisher: 'Eaglemoss Collections' } };
   }
   return null;
+}
+
+/** The FULL `/volumes/{id}` record (the untruncated BISAC list). Scott Pilgrim's carries the comic tag. */
+function gbVolumeById(id: string): { id: string; volumeInfo: Record<string, unknown> } | null {
+  if (id === 'gb-scottpilgrim') {
+    return {
+      id,
+      volumeInfo: {
+        title: 'Scott Pilgrim’s Precious Little Life: Volume 1',
+        publisher: 'HarperCollins UK',
+        categories: ['Fiction / Humorous / General', 'Comics & Graphic Novels / Literary'],
+        industryIdentifiers: [{ type: 'ISBN_13', identifier: '9781932664089' }],
+      },
+    };
+  }
+  return gbVolumeFor(id) ?? { id, volumeInfo: {} };
 }
 
 function json(res: ServerResponse, status: number, body: unknown): void {
@@ -90,7 +126,16 @@ export async function startStubGoodreads(): Promise<StubGoodreadsServer> {
       res.end(SHELF_RSS);
       return;
     }
-    // Google Books volumes.
+    // Google Books single-volume GET (the classifier's full-category confirm step) — must precede the
+    // search handler below (this path is more specific).
+    if (path.startsWith('/books/v1/volumes/')) {
+      const id = decodeURIComponent(path.slice('/books/v1/volumes/'.length));
+      const vol = gbVolumeById(id);
+      if (vol) json(res, 200, vol);
+      else json(res, 404, { error: { code: 404, message: 'volume not found' } });
+      return;
+    }
+    // Google Books search.
     if (path === '/books/v1/volumes') {
       const q = url.searchParams.get('q') ?? '';
       const vol = gbVolumeFor(q);

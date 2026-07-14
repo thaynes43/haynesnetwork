@@ -13,7 +13,7 @@ import {
   type IntegrationStatus,
   type UserIntegrationRow,
 } from '@hnet/db';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import { InvalidGoodreadsProfileError, NotFoundError } from './errors';
 import { inTransaction, resolveDb } from './db-client';
 
@@ -172,6 +172,10 @@ export async function unlinkIntegration(
  * Sync bookkeeping (NOT audited — synced-content exemption): record the outcome of a shelf sync. On
  * success advances last_synced_at and clears the error (status 'linked'); on failure records the error
  * and flips status 'error' (leaving last_synced_at untouched — the marker only advances on success).
+ *
+ * Guarded `status <> 'unlinked'`: an in-flight sync (e.g. the fresh-link background first sync, PLAN-044)
+ * that finishes AFTER the user unlinks must NOT resurrect the integration back to 'linked'/'error'. The
+ * CronJob only ever syncs linked integrations, so the guard is a no-op for it.
  */
 export async function markIntegrationSynced(input: {
   db?: DbClient;
@@ -181,17 +185,21 @@ export async function markIntegrationSynced(input: {
 }): Promise<void> {
   const now = input.now ?? new Date();
   const db = resolveDb(input.db);
+  const stillLinked = and(
+    eq(userIntegrations.id, input.integrationId),
+    ne(userIntegrations.status, 'unlinked'),
+  );
   if (input.error) {
     await db
       .update(userIntegrations)
       .set({ status: 'error', lastSyncError: input.error.slice(0, 500), updatedAt: now })
-      .where(eq(userIntegrations.id, input.integrationId));
+      .where(stillLinked);
     return;
   }
   await db
     .update(userIntegrations)
     .set({ status: 'linked', lastSyncError: null, lastSyncedAt: now, updatedAt: now })
-    .where(eq(userIntegrations.id, input.integrationId));
+    .where(stillLinked);
 }
 
 /** Read: every LINKED integration (optionally for one provider) — the goodreads-sync mode's worklist. */

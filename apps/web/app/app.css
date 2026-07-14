@@ -5995,10 +5995,39 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
   flex-direction: column;
   gap: 12px;
 }
+/* The profile input shares the search-box surface (owner: "should look more like the search boxes") —
+   themed dark surface + token colors so it never falls through to the browser-default WHITE input in dark
+   mode. Kept at class specificity (0,1,0) so the global `input[aria-invalid='true']` (0,1,1) still wins the
+   error border/tint — the invalid state changes ONLY the border+tint while the text stays --color-text and
+   readable in BOTH themes (fix 1 + fix 2). */
+.integrations-input {
+  font: inherit;
+  font-size: 13px;
+  width: 100%;
+  color: var(--color-text);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  min-height: 44px;
+}
+.integrations-input::placeholder {
+  color: var(--color-text-muted);
+}
+.integrations-input:focus {
+  border-color: var(--color-accent);
+  outline: none;
+}
 .integrations-linked-state {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+/* The unlink two-step must sit inline-start, not stretch to the card width (owner: "odd full-width pill").
+   .btn.confirm-btn reserves width for the armed label so the swap can't reflow the card (ADR-015). */
+.integrations-linked-state .confirm-btn {
+  align-self: flex-start;
+  margin-top: 4px;
 }
 .integrations-linked-state__ref {
   margin: 0;
@@ -6012,12 +6041,15 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
   color: var(--color-danger);
 }
 
-/* Coverage summary — the big stat + detail, side by side on wide, stacked on phones. */
+/* Coverage summary — the big stat + detail, side by side on wide, stacked on phones. The card + stat
+   reserve a stable min-height so the first-sync PENDING → coverage swap never reflows the requests wall
+   below (ADR-015 — fix 3b). */
 .integrations-summary {
   display: flex;
   align-items: center;
   gap: 20px;
   flex-wrap: wrap;
+  min-height: 108px;
 }
 .integrations-stat {
   display: flex;
@@ -6025,6 +6057,7 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
   align-items: center;
   justify-content: center;
   min-width: 132px;
+  min-height: 84px;
   padding: 12px 18px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
@@ -6042,6 +6075,28 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
   font-size: 0.8rem;
   color: var(--color-text-muted);
   text-align: center;
+}
+/* First-sync pending state — a spinner ring in the same stat box (reserved footprint, ADR-015). */
+.integrations-stat--pending {
+  gap: 8px;
+}
+.integrations-stat__spinner {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 3px solid color-mix(in srgb, var(--color-accent) 28%, transparent);
+  border-top-color: var(--color-accent);
+  animation: integrations-spin 0.8s linear infinite;
+}
+@keyframes integrations-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .integrations-stat__spinner {
+    animation: none;
+  }
 }
 .integrations-summary__detail {
   flex: 1 1 240px;

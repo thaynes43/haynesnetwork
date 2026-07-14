@@ -17,6 +17,7 @@ const volumeSchema = z.object({
     .object({
       title: z.string().optional(),
       authors: z.array(z.string()).optional(),
+      publisher: z.string().optional(),
       categories: z.array(z.string()).optional(),
       printType: z.string().optional(),
       industryIdentifiers: z.array(industryIdentifierSchema).optional(),
@@ -28,12 +29,61 @@ const volumeSchema = z.object({
  * Classify a volume as a COMIC / graphic novel from its GB categories. Comics acquisition is Kapowarr's
  * domain, NOT LazyLibrarian's (owner note 2026-07-13 — his real to-read shelf holds Scott Pilgrim + Batman
  * Zero Year alongside novels), so the goodreads-sync must NOT blind-fire a comic into LL. GB tags comics
- * as "Comics & Graphic Novels" — the signal we use. Unreliable-from-RSS-alone is acceptable (documented):
- * absent a GB match we default to the LL route with the caveat noted (DESIGN-028).
+ * as "Comics & Graphic Novels" (sometimes suffixed, e.g. "Comics & Graphic Novels / Literary") — the
+ * substring is the signal.
  */
 export function isComicCategory(categories: readonly string[] | undefined): boolean {
   if (!categories) return false;
   return categories.some((c) => /comics?\s*&?\s*graphic\s*novels?/i.test(c) || /^comics?$/i.test(c.trim()));
+}
+
+// High-precision COMIC text markers (v0.49.0 live-acceptance finding, PLAN-044). The owner's shelf leaked
+// BOTH comics into LazyLibrarian because GB categories alone missed them: "Batman Zero Year" resolved to a
+// sparse GB volume with NO categories, and the Scott Pilgrim ISBN edition's SEARCH result was truncated to
+// ["Fiction"] (the /volumes GET carries the full BISAC list). The shelved title itself carries the strongest
+// signal GB drops — a comic publisher / imprint ("DC Comics - The Legend of Batman") or a graphic-novel /
+// manga marker. Each pattern is a proper-noun publisher phrase or an unambiguous format word, so a prose
+// novel on a to-read shelf won't false-positive (ADR-055 comic-parking; DESIGN-028 D-03).
+const COMIC_TEXT_MARKERS: readonly RegExp[] = [
+  /\bcomics?\s*&\s*graphic\s+novels?\b/i,
+  /\bgraphic\s+novels?\b/i,
+  /\bcomic\s+books?\b/i,
+  /\bmanga\b/i,
+  /\bdc\s+comics\b/i,
+  /\bmarvel\s+comics\b/i,
+  /\bimage\s+comics\b/i,
+  /\bdark\s+horse\s+comics\b/i,
+  /\bidw\s+publishing\b/i,
+  /\bboom!?\s+studios\b/i,
+  /\bdynamite\s+entertainment\b/i,
+  /\boni\s+press\b/i,
+  /\bkodansha\s+comics\b/i,
+  /\btitan\s+comics\b/i,
+  /\bviz\s+media\b/i,
+  /\bfantagraphics\b/i,
+  /\bdrawn\s*&\s*quarterly\b/i,
+];
+
+/**
+ * True when any text signal (a shelved title/series, an author, a publisher) carries a high-precision comic
+ * marker. This catches the comics GB categories miss — e.g. "Zero Year: Part 1 (DC Comics - The Legend of
+ * Batman #1)" whose resolved GB volume has no categories at all. Used both inside the GB client (combined
+ * with categories) and as the goodreads-sync fallback when GB returns no match.
+ */
+export function isComicText(...parts: Array<string | null | undefined>): boolean {
+  const hay = parts.filter((p): p is string => Boolean(p)).join(' ␟ ');
+  if (!hay) return false;
+  return COMIC_TEXT_MARKERS.some((re) => re.test(hay));
+}
+
+/** Combined comic classification from every signal we hold: GB categories OR a text marker in title/author/publisher. */
+export function classifyComic(sig: {
+  categories?: readonly string[] | undefined;
+  title?: string | null;
+  author?: string | null;
+  publisher?: string | null;
+}): boolean {
+  return isComicCategory(sig.categories) || isComicText(sig.title, sig.author, sig.publisher);
 }
 
 const volumesResponseSchema = z.object({
@@ -89,6 +139,26 @@ export class GoogleBooksClient {
     return parsed.success ? parsed.data : null;
   }
 
+  /**
+   * Fetch the FULL volume record by id. The `/volumes?q=` search endpoint truncates `categories` (it can
+   * drop "Comics & Graphic Novels / Literary" to just "Fiction" — the live PLAN-044 Scott Pilgrim leak),
+   * whereas `/volumes/{id}` returns the complete BISAC list. Used as the comic-classification confirm step.
+   */
+  private async fetchVolume(id: string): Promise<z.infer<typeof volumeSchema> | null> {
+    const params = new URLSearchParams({ country: 'US' });
+    if (this.apiKey) params.set('key', this.apiKey);
+    const url = `${this.baseUrl}/volumes/${encodeURIComponent(id)}?${params.toString()}`;
+    const text = await getText(url, this.opts);
+    let raw: unknown;
+    try {
+      raw = JSON.parse(text);
+    } catch {
+      return null;
+    }
+    const parsed = volumeSchema.safeParse(raw);
+    return parsed.success ? parsed.data : null;
+  }
+
   private static pickIsbn13(vol: z.infer<typeof volumeSchema>): string | null {
     const ids = vol.volumeInfo?.industryIdentifiers ?? [];
     const isbn13 = ids.find((i) => i.type === 'ISBN_13')?.identifier;
@@ -99,6 +169,10 @@ export class GoogleBooksClient {
    * Resolve to a GB volume id. Tries `isbn:<isbn>` first (the most reliable key), then
    * `intitle:<title>+inauthor:<author>`. Returns null when GB has no key configured or no match — the
    * caller keeps the item as `requested` (an honest gap, not a fabricated push).
+   *
+   * Comic classification combines the search categories, the shelved title/author (the "DC Comics" signal
+   * GB categories miss), and — when those say "not a comic" but the search DID carry a (possibly truncated)
+   * category — a `/volumes/{id}` confirm GET for the full BISAC list. Both are PLAN-044 live-leak fixes.
    */
   async resolveVolume(input: GbResolveInput): Promise<GbVolume | null> {
     if (!this.apiKey && this.baseUrl.startsWith('https://www.googleapis.com')) {
@@ -108,23 +182,48 @@ export class GoogleBooksClient {
     if (input.isbn) {
       const byIsbn = await this.query(`isbn:${input.isbn}`);
       const vol = byIsbn?.items?.[0];
-      if (vol) return GoogleBooksClient.toVolume(vol, input.isbn);
+      if (vol) return this.toVolume(vol, input.isbn, input);
     }
     const titlePart = `intitle:${input.title}`;
     const authorPart = input.author ? `+inauthor:${input.author}` : '';
     const byTitle = await this.query(`${titlePart}${authorPart}`);
     const vol = byTitle?.items?.[0];
-    if (vol) return GoogleBooksClient.toVolume(vol, null);
+    if (vol) return this.toVolume(vol, null, input);
     return null;
   }
 
-  private static toVolume(vol: z.infer<typeof volumeSchema>, fallbackIsbn: string | null): GbVolume {
-    const categories = vol.volumeInfo?.categories ?? [];
+  private async toVolume(
+    vol: z.infer<typeof volumeSchema>,
+    fallbackIsbn: string | null,
+    input: GbResolveInput,
+  ): Promise<GbVolume> {
+    let categories = vol.volumeInfo?.categories ?? [];
+    let isComic = classifyComic({
+      categories,
+      title: input.title,
+      author: input.author,
+      publisher: vol.volumeInfo?.publisher,
+    });
+    // Confirm a NEGATIVE against the full volume record only when the search returned a category list that
+    // GB may have truncated (empty ⇒ the /volumes GET won't have them either; skip the quota spend).
+    if (!isComic && this.apiKey && categories.length > 0) {
+      const full = await this.fetchVolume(vol.id).catch(() => null);
+      const fullCategories = full?.volumeInfo?.categories;
+      if (fullCategories && fullCategories.length > 0) {
+        categories = fullCategories;
+        isComic = classifyComic({
+          categories,
+          title: input.title,
+          author: input.author,
+          publisher: full?.volumeInfo?.publisher ?? vol.volumeInfo?.publisher,
+        });
+      }
+    }
     return {
       volumeId: vol.id,
       isbn13: GoogleBooksClient.pickIsbn13(vol) ?? fallbackIsbn,
       categories,
-      isComic: isComicCategory(categories),
+      isComic,
     };
   }
 }
