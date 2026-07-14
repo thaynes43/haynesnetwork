@@ -340,6 +340,7 @@ describe('roles.setSectionPermission (ADR-021 C-02)', () => {
       metrics: 'edit',
       ytdlsub: 'edit',
       books: 'edit',
+      integrations: 'edit',
     });
 
     const memberApi = caller(makeCtx(tdb.db, sessionUser(member)));

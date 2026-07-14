@@ -132,6 +132,9 @@ importers:
       '@hnet/domain':
         specifier: workspace:*
         version: link:../domain
+      '@hnet/goodreads':
+        specifier: workspace:*
+        version: link:../goodreads
       '@hnet/metrics':
         specifier: workspace:*
         version: link:../metrics
@@ -264,6 +267,9 @@ importers:
       '@hnet/downloads':
         specifier: workspace:*
         version: link:../downloads
+      '@hnet/lazylibrarian':
+        specifier: workspace:*
+        version: link:../lazylibrarian
       '@hnet/openwebui':
         specifier: workspace:*
         version: link:../openwebui
@@ -288,6 +294,26 @@ importers:
         version: 4.1.9(@types/node@22.20.0)(jsdom@25.0.1)(vite@8.1.3(@types/node@22.20.0)(esbuild@0.28.1)(tsx@4.22.5))
 
   packages/downloads:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      vitest:
+        specifier: ^4.1.6
+        version: 4.1.9(@types/node@22.20.0)(jsdom@25.0.1)(vite@8.1.3(@types/node@22.20.0)(esbuild@0.28.1)(tsx@4.22.5))
+
+  packages/goodreads:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      vitest:
+        specifier: ^4.1.6
+        version: 4.1.9(@types/node@22.20.0)(jsdom@25.0.1)(vite@8.1.3(@types/node@22.20.0)(esbuild@0.28.1)(tsx@4.22.5))
+
+  packages/lazylibrarian:
     dependencies:
       zod:
         specifier: ^4.4.3
@@ -344,6 +370,9 @@ importers:
       '@hnet/domain':
         specifier: workspace:*
         version: link:../domain
+      '@hnet/goodreads':
+        specifier: workspace:*
+        version: link:../goodreads
       '@hnet/metrics':
         specifier: workspace:*
         version: link:../metrics
@@ -680,11 +709,11 @@ packages:
 
   '@esbuild-kit/core-utils@3.3.2':
     resolution: {integrity: sha512-sPRAnw9CdSsRmEtnsl2WXWdyquogVpB3yZ3dgwJfe8zrOzTsV7cJvmwrKVa+0ma5BoiGJ+BoqkMvawbayKUsqQ==}
-    deprecated: 'Merged into tsx: https://tsx.is'
+    deprecated: 'Merged into tsx: https://tsx.hirok.io'
 
   '@esbuild-kit/esm-loader@2.6.5':
     resolution: {integrity: sha512-FxEMIkJKnodyA1OaCUoEvbYRkoZlLZ4d/eXFu9Fh8CbBBgP5EmZxrfTRyN0qpXZ4vOvqnE5YdRdcrmUUXuU+dA==}
-    deprecated: 'Merged into tsx: https://tsx.is'
+    deprecated: 'Merged into tsx: https://tsx.hirok.io'
 
   '@esbuild/aix-ppc64@0.19.12':
     resolution: {integrity: sha512-bmoCYyWdEL3wDQIVbcyzRyeKLgk2WtWLTWz1ZIAZF/EGbNOwSA6ew3PftJ1PqMiOOGu0OyFMzG53L0zqIpPeNA==}

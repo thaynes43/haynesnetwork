@@ -18,6 +18,7 @@ import { ytdlsubRouter } from './ytdlsub';
 import { booksRouter } from './books';
 import { libraryRouter } from './library';
 import { authentikPortalRouter } from './authentik-portal';
+import { integrationsRouter } from './integrations';
 
 export const appRouter = router({
   profile: profileRouter,
@@ -62,6 +63,10 @@ export const appRouter = router({
   // Authentik identities) + role assignment that writes owned Authentik group membership (+ OWUI tier
   // pre-create), admin-only, audited + import-confined.
   authentikPortal: authentikPortalRouter,
+  // ADR-055 / DESIGN-028 (PLAN-044): the Integrations tab — link a PUBLIC Goodreads profile → shelf sync →
+  // requests/Missing wall + coverage % + manual re-search. Gated by the `integrations` section (ships
+  // Admin-only). Book requests push to LazyLibrarian (both formats, paced); comics parked out of LL.
+  integrations: integrationsRouter,
 });
 
 export type AppRouter = typeof appRouter;

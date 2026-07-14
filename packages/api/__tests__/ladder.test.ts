@@ -27,6 +27,8 @@ const member: SessionUser = {
       ytdlsub: 'disabled',
       // ADR-046 — books ships Admin-only (disabled for non-admins).
       books: 'disabled',
+      // ADR-055 — integrations ships Admin-only (disabled for non-admins).
+      integrations: 'disabled',
     },
     trashActions: [],
     messageActions: [],

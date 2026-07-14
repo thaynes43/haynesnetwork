@@ -5949,3 +5949,181 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
 [data-theme='hnet-light'] .dir-filter[aria-pressed='true'] {
   color: color-mix(in srgb, var(--color-accent) 62%, var(--color-text));
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ADR-055 / DESIGN-028 (PLAN-044) — the Integrations tab. Tokens-only (no raw hex),
+   ADR-015 reflow-free (fixed-height action slots; a status flip recolors, never reflows),
+   320/390 portrait-safe (the request grid collapses to a single column on phones).
+   ───────────────────────────────────────────────────────────────────────────── */
+.integrations-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.integrations-intro {
+  max-width: 70ch;
+  margin: 0;
+}
+.integrations-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.integrations-provider {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+}
+.integrations-provider__glyph {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-accent) 18%, var(--color-surface));
+  color: var(--color-accent);
+  font-weight: 700;
+}
+.integrations-provider__name {
+  font-size: 1.05rem;
+}
+.integrations-link-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.integrations-linked-state {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.integrations-linked-state__ref {
+  margin: 0;
+  font-weight: 500;
+  word-break: break-word;
+}
+.integrations-linked-state__sub {
+  margin: 0;
+}
+.integrations-error {
+  color: var(--color-danger);
+}
+
+/* Coverage summary — the big stat + detail, side by side on wide, stacked on phones. */
+.integrations-summary {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.integrations-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 132px;
+  padding: 12px 18px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface));
+}
+.integrations-stat__value {
+  font-size: 2.4rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--color-accent);
+  font-variant-numeric: tabular-nums;
+}
+.integrations-stat__label {
+  margin-top: 4px;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+.integrations-summary__detail {
+  flex: 1 1 240px;
+}
+.integrations-summary__count {
+  margin: 0 0 4px;
+}
+
+/* Requests / Missing wall. */
+.integrations-requests {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.integrations-section-title {
+  margin: 0;
+  font-size: 1.1rem;
+}
+.integrations-request-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+@media (max-width: 520px) {
+  .integrations-request-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.integrations-request {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+.integrations-request__art {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 72px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-text-muted) 12%, var(--color-surface));
+}
+.integrations-request__icon {
+  width: 28px;
+  height: 28px;
+  color: var(--color-text-muted);
+}
+.integrations-request__body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.integrations-request__title {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.integrations-request__author {
+  margin: 0;
+  font-size: 0.85rem;
+}
+.integrations-request__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+/* Reserve the action row so a searching→done swap never reflows the card (ADR-015). */
+.integrations-request__action {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  margin-top: 2px;
+}
+.integrations-request__note {
+  font-size: 0.82rem;
+}

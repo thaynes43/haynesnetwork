@@ -32,7 +32,9 @@ export interface TopBarUser {
   email: string;
   role: {
     isAdmin: boolean;
-    sectionPermissions?: Partial<Record<'ledger' | 'trash' | 'bulletin' | 'metrics', SectionLevel>>;
+    sectionPermissions?: Partial<
+      Record<'ledger' | 'trash' | 'bulletin' | 'metrics' | 'integrations', SectionLevel>
+    >;
   };
 }
 
@@ -245,6 +247,11 @@ export function TopBar({ user }: { user: TopBarUser }) {
   // (ADR-037 C-02 — ships Admin-only; a role row opts others in), so a missing map falls CLOSED;
   // the /metrics route is additionally server-gated.
   const showMetrics = (user.role.sectionPermissions?.metrics ?? 'disabled') !== 'disabled';
+  // ADR-055 / DESIGN-028 D-05 (PLAN-044) — the Integrations entry: the no-row DEFAULT is disabled
+  // (ships Admin-only; a role row opts others in), so a missing map falls CLOSED; the /integrations
+  // route is additionally server-gated.
+  const showIntegrations =
+    (user.role.sectionPermissions?.integrations ?? 'disabled') !== 'disabled';
   return (
     <header className="topbar">
       <div className="brand">
@@ -268,6 +275,8 @@ export function TopBar({ user }: { user: TopBarUser }) {
         {showBulletin ? <Link href="/bulletin">Bulletin</Link> : null}
         {/* PLAN-017 (DESIGN-016 D-05): the Metrics section, level-gated (see showMetrics). */}
         {showMetrics ? <Link href="/metrics">Metrics</Link> : null}
+        {/* PLAN-044 (DESIGN-028 D-05): the Integrations section, level-gated (see showIntegrations). */}
+        {showIntegrations ? <Link href="/integrations">Integrations</Link> : null}
       </nav>
       <div className="topbar__spacer" />
       <div className="topbar__actions">

@@ -84,6 +84,8 @@ export type { YtdlsubThumbSize, YtdlsubThumbUpstream, CachedThumb } from './ytdl
 // route reuses `effectiveSectionLevel`), the book-cover proxy helper (used by the app /api/books/cover
 // route), and the wire types the Books browser imports TYPE-ONLY.
 export { booksProcedure } from './middleware/role';
+// ADR-055 / DESIGN-028 (PLAN-044) — the Integrations section gate for the Integrations tab surface.
+export { integrationsProcedure } from './middleware/role';
 export {
   getBooksCover,
   booksCoverCache,

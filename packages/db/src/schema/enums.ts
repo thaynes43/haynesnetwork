@@ -22,6 +22,16 @@ export const PERMISSION_AUDIT_ACTIONS = [
   'update_role_metrics_level', // ADR-037 C-01 — a role's metrics access level (full|limited) was changed
   'assign_pending_role', // ADR-045 C-05 (PLAN-026) — a role was assigned to an Authentik-only identity that has no app user row yet; the intent is parked in pending_role_assignments and consumed on that identity's first app login
   'update_bulletin_views', // ADR-049 C-01 (PLAN-027) — a role's Bulletin SUB-VIEW visibility grants (feed/messages) were replaced
+  // ADR-055 / DESIGN-028 (PLAN-044 — Goodreads requests MVP) — the three USER-initiated Integration
+  // actions that co-write a permission_audit row (actorId = the acting user; roleId null — these are NOT
+  // role/permission mutations; subjectUserId = the same user). Sync-driven mutations of the integration
+  // read-model (shelf-item upsert, request minting, LL-status reconcile) write NO audit row (the
+  // synced-content exemption, exactly like books_items / media_items). `link_integration` /
+  // `unlink_integration` record a user linking / unlinking an external account; `request_book_search`
+  // records a manual "Search again" on a Missing book request (the confined LazyLibrarian `searchBook` write).
+  'link_integration',
+  'unlink_integration',
+  'request_book_search',
 ] as const;
 export type PermissionAuditAction = (typeof PERMISSION_AUDIT_ACTIONS)[number];
 
@@ -262,6 +272,16 @@ export const SYNC_RUN_KINDS = [
   // trail is the outbox rows + mam_gate_state. It joins SYNC_RUN_KINDS so the CLI --mode parser + SyncMode
   // accept it (migration 0041 rebuilds the sync_runs.run_kind CHECK to keep the const array + CHECK in parity).
   'mam-governor',
+  // ADR-055 / DESIGN-028 (PLAN-044 — Goodreads requests MVP) — 'goodreads-sync' polls each linked user's
+  // PUBLIC Goodreads shelf RSS (read-only; no OAuth, no secret), mirrors the shelf into
+  // integration_shelf_items, matches each want against the books_items library mirror (ISBN → title/author),
+  // mints book_requests for the unmatched, and pushes BOTH formats to LazyLibrarian via the proven paced
+  // pattern (GB-volume/ISBN → addBook → queueBook → searchBook) through the domain single-writer +
+  // confined LL write bundle, then reconciles LL statuses back to per-format request states. Standalone
+  // like books-sync: no --source, writes NO sync_runs row (its trail is the integration tables). It joins
+  // SYNC_RUN_KINDS so the CLI --mode parser + SyncMode accept it (migration 0045 rebuilds the
+  // sync_runs.run_kind CHECK to keep the const array + CHECK in parity).
+  'goodreads-sync',
 ] as const;
 export type SyncRunKind = (typeof SYNC_RUN_KINDS)[number];
 
@@ -337,7 +357,19 @@ export type PlexShareEvent = (typeof PLEX_SHARE_EVENTS)[number];
 // gates NEW Library sub-tabs (Books / Audiobooks / Comics) INSIDE the (universal, ungated) Library
 // section — Library itself has no section id; this is the visibility knob for the books walls only,
 // defaulting to `disabled` so they ship Admin-only until the owner opts a role in after screenshot review.
-export const SECTION_IDS = ['ledger', 'trash', 'bulletin', 'metrics', 'ytdlsub', 'books'] as const; // 'trash' PLAN-006; 'bulletin' PLAN-009; 'metrics' PLAN-017; 'ytdlsub' PLAN-022; 'books' PLAN-023
+// ADR-055 / DESIGN-028 — 'integrations' joins the section set (PLAN-044 Goodreads requests MVP). It gates
+// the NEW top-level Integrations tab (link external accounts → shelf sync → requests/Missing wall),
+// defaulting to `disabled` so it ships Admin-only until the owner opts a role in after screenshot review —
+// the same rollout as metrics/ytdlsub/books.
+export const SECTION_IDS = [
+  'ledger',
+  'trash',
+  'bulletin',
+  'metrics',
+  'ytdlsub',
+  'books',
+  'integrations',
+] as const; // 'trash' PLAN-006; 'bulletin' PLAN-009; 'metrics' PLAN-017; 'ytdlsub' PLAN-022; 'books' PLAN-023; 'integrations' PLAN-044
 export type SectionId = (typeof SECTION_IDS)[number];
 
 export const SECTION_PERMISSION_LEVELS = ['edit', 'read_only', 'disabled'] as const;
@@ -383,6 +415,10 @@ export const SECTION_DEFAULT_LEVELS: Record<SectionId, SectionPermissionLevel> =
   // rollout as ytdlsub: the Books/Audiobooks/Comics Library sub-tabs are hidden for non-admins until a role
   // row opts them in (an is_admin role implies `edit`). The owner flips visibility per role after review.
   books: 'disabled',
+  // ADR-055 C-04 (PLAN-044 Goodreads requests MVP) — `integrations` defaults to `disabled`, the same
+  // ship-Admin-only rollout: the Integrations tab (link accounts, shelf sync, requests/Missing) is hidden
+  // for non-admins until a role row opts them in (an is_admin role implies `edit`). Owner opens it per role.
+  integrations: 'disabled',
 };
 
 /** disabled < read_only < edit — the total order `sectionProcedure` gates on (ADR-021). */
@@ -765,3 +801,44 @@ export type LibraryViewShape = (typeof LIBRARY_VIEW_SHAPES)[number];
 // so a stored preference round-trips 1:1 with the URL `?sort=field:dir` segment (D-10).
 export const SORT_DIRECTIONS = ['asc', 'desc'] as const;
 export type SortDirection = (typeof SORT_DIRECTIONS)[number];
+
+// ---------------------------------------------------------------------------
+// ADR-055 / DESIGN-028 (PLAN-044 — Goodreads requests MVP). The Integration enums.
+// text+CHECK, these const arrays are the single source of truth for the TS types + the SQL
+// CHECKs (DESIGN-001 D-02 / HARD RULE — enums are text+CHECK, never Postgres enum types).
+// ---------------------------------------------------------------------------
+
+// The external providers a user can link (user_integrations.provider). v1 ships 'goodreads' only —
+// PUBLIC shelf RSS, no OAuth, no secret (the Goodreads API was retired 2020; shelf RSS is the durable
+// path per .agents/context/2026-07-11-books-list-sources-research.md). The framework phase (PLAN-043)
+// generalizes to a provider registry; the column leaves room for Hardcover/Trakt without a type change.
+export const INTEGRATION_PROVIDERS = ['goodreads'] as const;
+export type IntegrationProvider = (typeof INTEGRATION_PROVIDERS)[number];
+
+// A linked integration's lifecycle status (user_integrations.status). 'linked' = actively synced;
+// 'unlinked' = the user removed it (row retained for audit; re-link flips it back to 'linked'); 'error'
+// = the last sync could not reach / parse the public shelf (last_sync_error carries the human message).
+export const INTEGRATION_STATUSES = ['linked', 'unlinked', 'error'] as const;
+export type IntegrationStatus = (typeof INTEGRATION_STATUSES)[number];
+
+// A book_requests per-FORMAT status (book_requests.ebook_status / audio_status). Every request queues
+// BOTH formats (owner ruling — "we grab both so it's one for all"); each format tracks its own lifecycle:
+//   requested — minted locally from an unmatched shelf want; not yet pushed to LazyLibrarian.
+//   wanted    — pushed to LL and monitored Wanted (addBook → queueBook → searchBook succeeded). The *arr
+//               "Missing" analog: monitored, actively searching, not yet on disk.
+//   grabbed   — LL reports a release Snatched (downloading).
+//   landed    — LL reports the format Open/Have OR it appears in our books_items library mirror — we HAVE it.
+//   missing   — LL could not obtain the format (Skipped/Ignored/search exhausted). The per-format Missing
+//               entry that supports the manual "Search again" (R3 — the *arr wanted/missing idiom).
+export const BOOK_REQUEST_STATUSES = [
+  'requested',
+  'wanted',
+  'grabbed',
+  'landed',
+  'missing',
+] as const;
+export type BookRequestStatus = (typeof BOOK_REQUEST_STATUSES)[number];
+
+// The book FORMATS a request tracks (used in the manual re-search API + LL push). Both are always queued.
+export const BOOK_REQUEST_FORMATS = ['ebook', 'audiobook'] as const;
+export type BookRequestFormat = (typeof BOOK_REQUEST_FORMATS)[number];

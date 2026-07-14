@@ -117,3 +117,12 @@ export * from './books';
 // single-writer (syncPlexMatches, the plex-match sync mode's writer).
 export * from './library-access';
 export * from './plex-match';
+// ADR-055 / DESIGN-028 (PLAN-044 — Goodreads requests MVP) — the Integration single-writers (link/unlink
+// audited, shelf-mirror upsert, request mint/reconcile + audited manual re-search), the goodreads-sync
+// orchestrator, and the confined LazyLibrarian client bundle (@hnet/lazylibrarian/write stays in this
+// package — the arr-write-import-guard, extended for it).
+export * from './user-integrations';
+export * from './integration-shelf-items';
+export * from './book-requests';
+export * from './goodreads-sync';
+export * from './lazylibrarian-clients';

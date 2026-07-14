@@ -22,6 +22,8 @@ import { startStubPrometheus, type StubPrometheusServer } from './stub-prometheu
 import { startStubOpenWebUi, type StubOpenWebUiServer } from './stub-openwebui';
 import { startStubAuthentik, type StubAuthentikServer } from './stub-authentik';
 import { startStubBooks, type StubBooksServer } from './stub-books';
+import { startStubGoodreads, type StubGoodreadsServer } from './stub-goodreads';
+import { startStubLazyLibrarian, type StubLazyLibrarianServer } from './stub-lazylibrarian';
 import { composeRuntimeEnv, DEFAULT_APP_PORT, type RuntimeEnv } from './env';
 
 const DEV_READY_TIMEOUT_MS = 180_000;
@@ -58,6 +60,10 @@ export interface RunningStack {
   authentik: StubAuthentikServer;
   /** Stub Kavita + Audiobookshelf stand-in — Books Library e2e layer (ADR-046 / DESIGN-024). */
   books: StubBooksServer;
+  /** Stub Goodreads (RSS + vanity redirect + Google Books) — Integrations e2e layer (ADR-055 / DESIGN-028). */
+  goodreads: StubGoodreadsServer;
+  /** Stub LazyLibrarian (command API + call recorder) — Integrations e2e layer (ADR-055 / DESIGN-028). */
+  lazylibrarian: StubLazyLibrarianServer;
   devServer: ChildProcess;
   /** The DESIGN-002 D-08 env the dev server was booted with. */
   env: RuntimeEnv;
@@ -95,6 +101,7 @@ async function prewarmRoutes(baseUrl: string): Promise<void> {
     '/library/plex',
     '/ledger',
     '/trash',
+    '/integrations',
     '/my-fixes',
     '/admin',
     '/admin/catalog',
@@ -177,6 +184,8 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
   let openWebUi: StubOpenWebUiServer | undefined;
   let authentik: StubAuthentikServer | undefined;
   let books: StubBooksServer | undefined;
+  let goodreads: StubGoodreadsServer | undefined;
+  let lazylibrarian: StubLazyLibrarianServer | undefined;
   let dev: ChildProcess | undefined;
   try {
     const migrate = spawnSync('pnpm', ['--filter', '@hnet/db', 'migrate'], {
@@ -211,6 +220,8 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     openWebUi = await startStubOpenWebUi();
     authentik = await startStubAuthentik();
     books = await startStubBooks();
+    goodreads = await startStubGoodreads();
+    lazylibrarian = await startStubLazyLibrarian();
     const env = composeRuntimeEnv({
       databaseUrl: pg.connectionString,
       stubOidcBaseUrl: oidc.baseUrl,
@@ -223,6 +234,8 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       stubOpenWebUiBaseUrl: openWebUi.baseUrl,
       stubAuthentikBaseUrl: authentik.baseUrl,
       stubBooksBaseUrl: books.baseUrl,
+      stubGoodreadsBaseUrl: goodreads.baseUrl,
+      stubLazyLibrarianBaseUrl: lazylibrarian.baseUrl,
       appUrl,
     });
 
@@ -287,6 +300,8 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     const runningOpenWebUi = openWebUi;
     const runningAuthentik = authentik;
     const runningBooks = books;
+    const runningGoodreads = goodreads;
+    const runningLazyLibrarian = lazylibrarian;
     let stopped = false;
     return {
       appUrl,
@@ -300,12 +315,16 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       openWebUi: runningOpenWebUi,
       authentik: runningAuthentik,
       books: runningBooks,
+      goodreads: runningGoodreads,
+      lazylibrarian: runningLazyLibrarian,
       devServer: running,
       env,
       stop: async () => {
         if (stopped) return;
         stopped = true;
         await killDevServer(running);
+        await runningLazyLibrarian.stop().catch(() => undefined);
+        await runningGoodreads.stop().catch(() => undefined);
         await runningBooks.stop().catch(() => undefined);
         await runningAuthentik.stop().catch(() => undefined);
         await runningOpenWebUi.stop().catch(() => undefined);
@@ -321,6 +340,8 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
   } catch (err) {
     // Partial-boot cleanup, best effort in reverse order.
     if (dev) await killDevServer(dev).catch(() => undefined);
+    if (lazylibrarian) await lazylibrarian.stop().catch(() => undefined);
+    if (goodreads) await goodreads.stop().catch(() => undefined);
     if (books) await books.stop().catch(() => undefined);
     if (authentik) await authentik.stop().catch(() => undefined);
     if (openWebUi) await openWebUi.stop().catch(() => undefined);

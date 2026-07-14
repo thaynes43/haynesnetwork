@@ -25,9 +25,12 @@ const ALLOWED_DIR_PREFIXES = [
   // ADR-054 (PLAN-039) — @hnet/downloads/write is the MAM-governor gate seam (the Prowlarr indexer
   // `enable` toggle); only packages/domain (the governor evaluator) + its own package may import it.
   `packages${sep}downloads${sep}`,
+  // ADR-055 (PLAN-044) — @hnet/lazylibrarian/write is the Goodreads-request acquisition surface
+  // (addBook/queueBook/searchBook); only packages/domain (the goodreads orchestrator) + its own package.
+  `packages${sep}lazylibrarian${sep}`,
 ];
 
-const IMPORT_PATTERN = /@hnet\/(arr|plex|authentik|openwebui|downloads)\/write/;
+const IMPORT_PATTERN = /@hnet\/(arr|plex|authentik|openwebui|downloads|lazylibrarian)\/write/;
 
 const IGNORE_DIRS = new Set([
   'node_modules',
