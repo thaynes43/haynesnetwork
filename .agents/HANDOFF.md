@@ -58,6 +58,17 @@ present. State:
   leaf-or-scope drill; migration 0051 DELETED pre-locator tickets (Q-03); live locator ticket
   c2a20a02 ("Gray" S1, safe to close); ytdlsub/books targets deferred (DESIGN-032 Q-04).
   Coverage note: Goodreads 52%→85% after the sweep. Releases today: v0.57.0→v0.60.0.
+- **EVENING INCIDENT (closed same night): ABS progress loss + missing Matilda.** Root cause =
+  the ABS WEB player's flush-on-abrupt-close (session in memory; persists only on periodic sync /
+  clean Pause; killed tab ⇒ nothing — owner repro'd both directions). NOT the app / storage / a
+  stale restore (the 07-10 volsync bootstrap seeded an EMPTY first-deploy repo — setup-wizard
+  timeline proves it; pre-existing history never existed). mia's "lost" history was never written
+  (iOS-Safari short sessions). FIXES: **AudioBooth adopted** (native iOS client; `audiobooth://oauth`
+  added to ABS `authOpenIDMobileRedirectURIs`, SSO verified — OPS-012 addendum) · 810/844
+  audiobooks patched language=English via ABS API (the Language facet was hiding items — the
+  "missing Matilda"; mirror resynced) · upstream sendBeacon issue DRAFTED not filed (owner's call)
+  · household guidance: native app or pause-before-close. Both Opus investigation agents were
+  clean dispatches (transcript-verified opus-4-8).
 - **Next builds queue:**
   PLAN-038 (scoped), PLAN-040, F-11 spot-check, PLAN-043 next phases (scope with owner).
 
