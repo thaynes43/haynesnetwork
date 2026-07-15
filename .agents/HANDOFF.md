@@ -4,7 +4,47 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-## ▶ NEXT SESSION — start here (2026-07-15 Wednesday cold start; written at the Tue-night wrap)
+## ▶ NEXT SESSION — start here (written 2026-07-15 Wednesday midday, owner-present remote-control session)
+
+**Site live at https://haynesnetwork.com — latest release v0.57.0, live-verified.** Wednesday-morning
+session (first from the in-cluster dev-env pod): the queue's #1/#2/#3 all executed with the owner
+present. State:
+
+- **v0.57.0 SHIPPED + LIVE-VALIDATED** (#289 → release PR #286 → haynes-ops PR #2063): the LL-status
+  reconcile was a **silent no-op since PLAN-044** (the deployed LL build `version-40a389ea` has NO
+  `getBook` command; the tolerant schema ate the 405) — now reads ONE `cmd=getAllBooks` map per sync.
+  Plus the owner-directed **Skipped-want usenet-first sweep**: raw-`Skipped` live wants are re-queued +
+  re-searched each sync (SAB takes the load; MAM gap-fills only when its gate is open; `Ignored`/`Matched`
+  never swept — the dead-end Missing UX keys on `Ignored` now). **Validated in prod: `requeued:10`,
+  LL both-Skipped 14→4** (the 4 left are LL-native F-10 deferred items, correctly untouched), governor
+  steady (15/15, gate closed, 0 downloading). DESIGN-028 amendment documents it.
+- **SMTP (F-04) UNBLOCKED ✅** — owner created the 1P `smtp` item (SMTP_HOST/PORT/USER/PASS/FROM,
+  HaynesKube vault, estate-shareable); wired into `haynesnetwork-secret` via haynes-ops PR #2063 and
+  **ExternalSecret synced clean** (field names validated). PLAN-035 + the PLAN-048 nightly digest are
+  now buildable.
+- **PLAN-044/045/046/047/048 RATIFIED (owner, 2026-07-15) → filed to `completed/`.**
+- **Owner rulings closed:** Orwell essays = **DROP** (recorded in the F-10 audit; quarantine keeps the
+  file); haynes-ops-bypass request withdrawn.
+- **MAM landings verified (morning scorecard):** RUN-5 batch + overnight all landed (Grey e+a, Never a,
+  Hooked e+a, RPO e+a, PHM e+a, Skin in the Game e, QoAD a, Drums of Autumn re-import 07:38, Pillars of
+  the Earth e). **Stragglers:** The Other Emily (a) downloaded-but-not-imported ~17h (watch); Heir of
+  Fire (a) re-set to Wanted (LL retrying); Kingdom of Ash (e) still Wanted; Hornet Flight (e) 2 fails,
+  retrying. CoBaB (a) + Foundation (e) stay budget-deferred (owner-batch when the gate reopens — the 6
+  Maas torrents mature Wed evening).
+- **Doctrine updates (learned live):** (1) **haynes-ops main is now BRANCH-PROTECTED** — PR + flux-local
+  checks required; "forward-only commits to main" is DEAD, use branch → PR → auto-merge (worked in ~4 min);
+  (2) OPS-004 §1b sig-probe needs `Accept: application/vnd.oci.image.manifest.v1+json` or GHCR 404s a
+  signature that EXISTS; (3) the dev-env pod's kubectl SA has scoped writes (pod delete, HR/GitRepo patch
+  → in-pod `flux reconcile`, job create → CronJob triggers); Playwright must target
+  `haynesnetwork.haynesops.com` (prod hostname unreachable in-cluster); GH_TOKEN in-shell goes stale —
+  re-export from `/creds/gh_token`.
+- **Watch/investigate:** Kapowarr `/volumes` HTTP 500 routing "The Hobbit" comic (persistent across
+  runs); The Other Emily import; GB 503 bursts (known, retried); e2e-red member-persona investigation
+  (unchanged); Goodreads facet lag (reconcile fix may improve it — re-check before scoping).
+- **Next builds queue:** PLAN-035 ticket emails (NOW UNBLOCKED — next up), PLAN-048 nightly digest tail,
+  PLAN-038 (scoped), PLAN-040, F-11 spot-check, PLAN-043 next phases (scope with owner).
+
+### Prior top block (Tue-night wrap → Wednesday cold start)
 
 **Site live at https://haynesnetwork.com — latest release v0.56.0, live-verified.** The Mon-eve →
 Tue-night run shipped **ELEVEN releases (v0.47.0 → v0.56.0)**. Chronicles, in reading order:

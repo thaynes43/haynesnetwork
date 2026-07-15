@@ -1,6 +1,6 @@
 # PLAN-048: Activity / In-Flight — the pipeline made visible (all libraries)
 
-- **Status:** SCOPED — owner-ruled 2026-07-14 morning. **Depends on PLAN-047** (the shared card
+- **Status:** Completed — shipped v0.53.0–v0.54.0 (#272/#273/#275, ADR-059/DESIGN-030: Library→Activity, all sources, role-gated failure actions); OWNER RATIFIED 2026-07-15. **Depended on PLAN-047** (the shared card
   system — 048's surfaces are built FROM it; "the code guarantees the UX doesn't drift").
 - **Motivating incident:** 42 completed usenet book downloads sat stranded and invisible (the
   SAB category/dir mismatch, fixed live 2026-07-14) — nothing in the app shows the stage

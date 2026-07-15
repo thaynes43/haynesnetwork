@@ -598,3 +598,7 @@ The REJECT guard held: no German/abridged release was accepted on either leg.
   (`Yp9GDwAAQBAJ`), Foundation ebook (`Q-41ugEACAAJ`). Plus the wider Goodreads to-read `wanted` backlog
   not in this test (Fahrenheit 451, Twilight, The Golden Compass, Catch-22, Bad Blood, Feeling Good,
   Rework, Rich Dad Poor Dad, The Hobbit, HP boxed set, The Art of the Fellowship, …) — owner's call.
+
+# RULING 2026-07-15 (Wednesday, owner in-session): Orwell "A Collection of Essays" — **DROP.**
+# No English edition will be queued (the suggested GB `PqGMFPCiBEsC` stays unused). The quarantined
+# foreign file stays in `quarantine/` per the never-delete policy. The last F-10 open ruling is closed.
