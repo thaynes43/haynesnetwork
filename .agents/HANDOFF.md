@@ -4,37 +4,62 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-## ▶ NEXT SESSION — start here (2026-07-14 Tuesday-daytime wrap)
+## ▶ NEXT SESSION — start here (2026-07-15 Wednesday cold start; written at the Tue-night wrap)
 
-**Site live at https://haynesnetwork.com; latest release v0.54.0** (Tuesday shipped FIVE:
-v0.50.1 → v0.54.0 on top of the overnight v0.47–v0.50 run). **Full chronicle:
-`.agents/context/2026-07-14-tuesday-daytime-wrap.md`** — read it (and the session-6 wrap below
-for the overnight arc). Headlines: owner REJECTED the PLAN-045 wanted-strip UX → anatomy fix
-(v0.50.1) → wanted DETAIL parity (v0.51.0) → **PLAN-047 shared card system (v0.52.0, ADR-058:
-typed BaseCard family + lint guard + gallery drift-CI — "the code guarantees the UX doesn't
-drift")** → **PLAN-048 Activity/In-Flight COMPLETE (v0.53.0 + v0.54.0, ADR-059: Library →
-Activity tab, wall badges, books/LL+SAB + *arr + Kapowarr adapters, role-gated failure
-actions)**. **The books import pipeline was rescued live** (42 stranded → 39 imported;
-`sab_cat` fix; OPS-013 §11). **Kyverno paged the owner twice** → deploy gate is now the
-ARTIFACT PAIR (manifest+.sig), dance guardrails + label-verify added (runbook 1b/1c),
-remediation retries 10 — v0.53/v0.54 deployed with zero noise. Model watch: two transient
-`model: opus` probe flips (retry cleared; transcript ground-truth now standard — all Opus
-builds verified genuine). UX gate standing rule: reference-pinned briefs + side-by-side proof +
-coordinator visual diff before ANY UX deploy (memory `ux-reference-anatomy-gate`).
+**Site live at https://haynesnetwork.com — latest release v0.56.0, live-verified.** The Mon-eve →
+Tue-night run shipped **ELEVEN releases (v0.47.0 → v0.56.0)**. Chronicles, in reading order:
+`.agents/context/2026-07-14-session-6-wrap.md` (overnight: v0.47–v0.50) →
+`.agents/context/2026-07-14-tuesday-daytime-wrap.md` (+ its evening/late-night addenda:
+v0.50.1–v0.56.0). Memory is indexed.
 
-**Evening arc (see the chronicle's addendum):** v0.55.0 (Activity robustness + Fix-grammar
-reactivity, every card clickable) + v0.55.1 (live-state precedence — active grabs never read
-"Missing"); SABNZBD_API_KEY deploy gap fixed; the kyverno alert retuned to sustained-denial
-(owner-confirmed it was `KyvernoEnforceBlockingAdmission`); **INTEGRATIONS ENABLED FOR ALL
-ROLES (owner, DB-verified)** — member shelves acquire automatically now; MAM maturation is
-WEDNESDAY eve (governor: 19/19 still under 72h Tue night).
+**What is LIVE now (the compressed map):**
+- **Library**: views/grouping + per-user sort/filter + watch/read facets + A–Z rail (PLAN-029,
+  ADR-051/052/053); group-card art (ABS author portraits, genre glyphs, ADR-041 idioms).
+- **Integrations** (avatar menu): Goodreads per-user linking → ALL-shelves auto-acquisition
+  (owner's no-gate ruling) → LL both formats / comics → Kapowarr (ADR-055/056/057); wanted items
+  inline in Library walls as Movies-anatomy cards + wanted DETAIL pages w/ per-format Force-Search
+  (#264); **ENABLED FOR ALL ROLES (owner, DB-verified Tue night)**.
+- **The card system** (PLAN-047, ADR-058): typed BaseCard family in `apps/web/components/cards`,
+  ESLint anatomy guard, card-gallery drift-CI — extend via typed props + gallery entries, NEVER fork.
+- **Activity** (PLAN-048, ADR-059/DESIGN-030): Library→Activity tab, all sources (books/LL+SAB,
+  *arrs, Kapowarr), per-source failure isolation, role-gated actions
+  (`role_activity_action_grants`), clickable cards, Fix-grammar live progress (adaptive 2.5s/5s
+  poll), live-state-precedence (`formatLiveWins` — an active grab never reads "Missing").
+- **Nav** (v0.56.0, DESIGN-004 D-22): 4-tab bar Home·Library·Tickets·Trash (fits 320px);
+  Integrations+Metrics in the avatar menu (role-gated); **Helpdesk→Tickets RATIFIED**
+  (HELPDESK_NAME flip; routes/grants untouched).
+- **Books pipeline**: import contract fixed + documented (OPS-013 §11: `sab_cat=lazylibrarian`;
+  the 42-stranded incident → 39 imported); F-10 language purge done (58 quarantined, 57 re-grabs);
+  **MAM gate OPEN** (Tue ~22:30Z cascade; 6 Maas torrents mature Wed eve; LL retries the 7
+  poisoned titles overnight — check landings in Activity).
+- **Ops doctrine (hardened Tue)**: deploy gate = ARTIFACT PAIR (OPS-004 §1b); release-dance
+  guardrails incl. the autorelease-label check (§1c); HelmRelease remediation retries 10; kyverno
+  alert = sustained-denial only; WebKit login mitigation stands (OPS-009 — re-audit lowering
+  suspects on authentik image bumps).
 
-**NEXT: owner ratifications** (Activity tab + card refit + the Goodreads/wanted arc → file
-PLAN-044/045/046/047/048 to completed/), **Q-03 comics-section ruling**, Orwell essays call,
-**the MAM gate reopened ~Tue eve — verify the 7 MAM-English grabs (visible in Activity)**,
-which alert paged (tune to sustained-denial), SMTP F-04, F-11 spot-check candidate, the
-e2e-red-on-main member-persona ticket. Then the PLAN-043 saga's next phases / PLAN-038 /
-PLAN-040 per the queue.
+**WEDNESDAY QUEUE:**
+1. **Owner ratification sweep** → on thumbs-up, file PLAN-044/045/046/047/048 to `completed/`
+   (all live; screenshots reviewed in-chat throughout Tuesday).
+2. **Verify overnight MAM landings** (the 7 poisoned titles + 3 F-09 corrupt + old ToG queue) via
+   Activity/LL history; governor should breathe (re-close near cap) on its own.
+3. **Owner rulings open:** Orwell essays queue-or-drop (GB `PqGMFPCiBEsC`); Tickets-page h1
+   doubling — trim on request; Q-03 comics-activity gate (rides `books`; one-field flip);
+   qB 5.2.1 on MAM Approved Clients; Kavita "Save Media As"=WebP; Safari TOTP retest;
+   **SMTP (F-04) = still the ONE 1P blocker** (unlocks PLAN-035 + the 048 nightly digest);
+   someday: MAM "Not Connectable" IPv4 (Mullvad has no port-forward).
+4. **Next builds:** PLAN-043 saga next phases (content-sync/coverage, book⇄audio pairing, Trakt
+   research); PLAN-038 (scoped, dispatchable); PLAN-040; F-11 post-import English spot-check
+   (Opus-able); the e2e-red-on-main member-persona investigation (library tabs hidden in the
+   hermetic stack — evidence lists in the 047 scratchpad); Goodreads status-filter facets still
+   bucket by snapshot (display is live-true; facet lag = saga item).
+
+**Working rules (as updated Tuesday — full text in `haynes-ops/zprompt.md`):** every turn ends
+with the reply · model watch: probe before every dispatch/merge/mutation + transcript
+ground-truth Opus dispatches (two transient override flips Tue; retries cleared both) ·
+**UX gate:** reference-pinned briefs + agent side-by-side proof + coordinator visual diff BEFORE
+any UX deploy (`ux-reference-anatomy-gate`) · release train per OPS-004 §1b/1c + un-strand
+watchers · haynes-ops pull-first/forward-only; flux names source=`haynes-ops`,
+kustomization=`cluster-apps`, helmrelease=`haynesnetwork -n frontend`.
 
 ### Prior top block (session-6 overnight wrap)
 
@@ -143,7 +168,13 @@ activity; TaskStop a flipped continuation and the coordinator takes the tail. Se
 
 ---
 
-- **Last updated:** 2026-07-14 ~03:00 — **SESSION-6 WRAP (Monday "go hard").** v0.47.0
+- **Last updated:** 2026-07-15 ~00:45 — **TUESDAY FULL-DAY WRAP.** Eleven releases
+  v0.47.0→v0.56.0 (library overhaul → Goodreads/Integrations saga MVP+hub → card system →
+  Activity complete+reactive → nav restructure/Tickets); import pipeline rescued; WebKit crisis
+  closed; F-10 executed; MAM gate OPEN Tue night; integrations all-roles; ops doctrine hardened
+  (artifact-pair gate, dance guardrails, alert retune). Plans 044–048 BUILT+LIVE pending the
+  owner ratification sweep. Chronicles: session-6 wrap + tuesday-daytime wrap (+addenda).
+- **Prior milestone:** 2026-07-14 ~03:00 — **SESSION-6 WRAP (Monday "go hard").** v0.47.0
   (PLAN-029 complete: #243+#245) + v0.48.0 (group-card art #249) + v0.49.0 (PLAN-044 Goodreads
   MVP #253 + haynes-ops `dddd2126` CronJob/secrets) all live-verified. PLAN-042 CLOSED (Option
   A built + compat reverted + upstream comment posted; completed/). F-10 executed (58
