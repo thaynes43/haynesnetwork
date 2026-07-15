@@ -11,9 +11,10 @@ import {
   type TicketRow,
   type TicketCategory,
   type TicketStatus,
+  type TicketTargetKind,
 } from '@hnet/db';
 import { eq } from 'drizzle-orm';
-import { InvalidTicketTransitionError, NotFoundError } from './errors';
+import { InvalidTicketTargetError, InvalidTicketTransitionError, NotFoundError } from './errors';
 import { inTransaction, resolveDb } from './db-client';
 import { enqueueOutbox } from './notify-outbox';
 import { computeEarliestSend, getNotifyWindow } from './notify-window';
@@ -50,14 +51,36 @@ export function canTransitionTicket(from: TicketStatus, to: TicketStatus): boole
 async function assertMediaItemExists(
   db: ReturnType<typeof resolveDb>,
   mediaItemId: string,
-): Promise<void> {
+): Promise<{ arrKind: string }> {
   const [row] = await db
-    .select({ id: mediaItems.id })
+    .select({ id: mediaItems.id, arrKind: mediaItems.arrKind })
     .from(mediaItems)
     .where(eq(mediaItems.id, mediaItemId))
     .limit(1);
   if (!row) throw new NotFoundError(`Media item ${mediaItemId} not found`);
+  return { arrKind: row.arrKind };
 }
+
+/**
+ * ADR-061 / DESIGN-032 D-03 (PLAN-038) — the ticket media LOCATOR the compose drill files:
+ * which level of the linked title's hierarchy the ticket targets. `label` is the SNAPSHOTTED
+ * display string (C-01/C-06). Kind must match the linked item's *arr (validated in createTicket).
+ */
+export interface TicketTargetInput {
+  kind: TicketTargetKind;
+  /** sonarr episodeId / lidarr albumId / lidarr trackId; null for a season scope. */
+  childId?: number | null;
+  season?: number | null;
+  episode?: number | null;
+  label: string;
+}
+
+const TARGET_KIND_ARR: Record<TicketTargetKind, 'sonarr' | 'lidarr'> = {
+  season: 'sonarr',
+  episode: 'sonarr',
+  album: 'lidarr',
+  track: 'lidarr',
+};
 
 /**
  * ADR-060 C-04 / R-195 (PLAN-035) — the admin mailbox the ticket-created email goes to.
@@ -95,6 +118,8 @@ export interface CreateTicketInput {
   body: string;
   category: TicketCategory;
   mediaItemId?: string | null;
+  /** ADR-061 — the optional locator; requires mediaItemId and a kind legal for its *arr. */
+  target?: TicketTargetInput | null;
   now?: Date;
   /** R-195 — the admin recipient override (tests); defaults to `ticketAdminEmail()`. */
   adminEmail?: string;
@@ -110,7 +135,25 @@ export interface CreateTicketInput {
 export async function createTicket(input: CreateTicketInput): Promise<TicketRow> {
   const db = resolveDb(input.db);
   const now = input.now ?? new Date();
-  if (input.mediaItemId) await assertMediaItemExists(db, input.mediaItemId);
+  let arrKind: string | null = null;
+  if (input.mediaItemId) arrKind = (await assertMediaItemExists(db, input.mediaItemId)).arrKind;
+  // ADR-061 D-03 — locator consistency: requires a media link; kind must match the item's *arr;
+  // an episode locator needs its numbers; a leaf locator needs its child id. Season scope is
+  // (kind='season', season=N, no child id). Whole-title = no target at all (unchanged).
+  if (input.target) {
+    if (!input.mediaItemId || arrKind === null)
+      throw new InvalidTicketTargetError('a ticket target requires a linked media item');
+    if (TARGET_KIND_ARR[input.target.kind] !== arrKind)
+      throw new InvalidTicketTargetError(
+        `target kind '${input.target.kind}' is not valid for a ${arrKind} item`,
+      );
+    if (input.target.kind === 'season' && input.target.season == null)
+      throw new InvalidTicketTargetError('a season target needs its season number');
+    if (input.target.kind !== 'season' && input.target.childId == null)
+      throw new InvalidTicketTargetError(`a ${input.target.kind} target needs its child id`);
+    if (input.target.label.trim() === '')
+      throw new InvalidTicketTargetError('a target needs its display label');
+  }
   const window = await getNotifyWindow(input.db);
   const earliestSendAt = computeEarliestSend(now, window);
 
@@ -123,6 +166,11 @@ export async function createTicket(input: CreateTicketInput): Promise<TicketRow>
         body: input.body,
         category: input.category,
         mediaItemId: input.mediaItemId ?? null,
+        targetKind: input.target?.kind ?? null,
+        targetChildId: input.target?.childId ?? null,
+        targetSeason: input.target?.season ?? null,
+        targetEpisode: input.target?.episode ?? null,
+        targetLabel: input.target?.label ?? null,
         status: 'open',
         createdAt: now,
         lastActivityAt: now,
@@ -162,6 +210,7 @@ export async function createTicket(input: CreateTicketInput): Promise<TicketRow>
         category: row.category,
         authorName: author?.displayName ?? null,
         mediaTitle,
+        targetLabel: input.target?.label ?? null,
       },
       earliestSendAt,
     });
@@ -178,6 +227,7 @@ export async function createTicket(input: CreateTicketInput): Promise<TicketRow>
         category: row.category,
         authorName: author?.displayName ?? null,
         mediaTitle,
+        targetLabel: input.target?.label ?? null,
       },
       earliestSendAt,
     });

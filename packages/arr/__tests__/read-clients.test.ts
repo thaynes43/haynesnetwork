@@ -347,6 +347,25 @@ describe('LidarrClient (v1)', () => {
     expect(albums[0]).not.toHaveProperty('overview');
   });
 
+  // ADR-061 / DESIGN-032 D-02 (PLAN-038) — the compose drill's music LEAF list.
+  it('lists an album\'s tracks (ticket locator drill)', async () => {
+    const { client, calls } = lidarr([
+      {
+        path: '/api/v1/track',
+        body: [
+          { id: 501, albumId: 71, trackNumber: '1', title: 'Opening', hasFile: true },
+          { id: 502, albumId: 71, trackNumber: 2, title: 'Second', hasFile: false },
+          { id: 503, albumId: 71, title: 'Untracked' },
+        ],
+      },
+    ]);
+    const tracks = await client.listTracks(71);
+    expect(calls[0]?.url.searchParams.get('albumId')).toBe('71');
+    expect(tracks).toHaveLength(3);
+    expect(tracks[0]).toMatchObject({ id: 501, trackNumber: '1', hasFile: true });
+    expect(tracks[1]?.trackNumber).toBe(2);
+  });
+
   it('fetches album grab history, track files, and metadata profiles', async () => {
     const { client, calls } = lidarr([
       { path: '/api/v1/history', body: fixture('lidarr.history-page') },

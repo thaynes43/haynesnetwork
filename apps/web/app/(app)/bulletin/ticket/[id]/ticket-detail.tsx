@@ -167,6 +167,13 @@ export function TicketDetail({
           <h1 className="detail-head__title" data-testid="ticket-detail-title">
             {ticket.title}
           </h1>
+          {/* ADR-061 D-05 — the SNAPSHOTTED locator label: exactly what the filer targeted. */}
+          {ticket.targetLabel !== null && ticket.targetLabel !== undefined ? (
+            <p className="ticket-target-label" data-testid="ticket-target-label">
+              {ticket.mediaTitle !== null ? `${ticket.mediaTitle} — ` : ''}
+              {ticket.targetLabel}
+            </p>
+          ) : null}
           <div className="media-card__badges">
             <span className={`badge badge--${tone}`} data-testid="ticket-detail-status">
               {TICKET_STATUS_LABELS[ticket.status]}

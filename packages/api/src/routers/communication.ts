@@ -18,6 +18,7 @@ import {
   users,
   NOTIFICATION_SOURCES,
   TICKET_CATEGORIES,
+  TICKET_TARGET_KINDS,
   TICKET_STATUSES,
 } from '@hnet/db';
 import { and, asc, eq, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
@@ -168,6 +169,10 @@ export const communicationRouter = router({
             mediaArrKind: mediaItems.arrKind,
             mediaYear: mediaItems.year,
             posterSource: mediaMetadata.posterSource,
+            targetKind: tickets.targetKind,
+            targetSeason: tickets.targetSeason,
+            targetEpisode: tickets.targetEpisode,
+            targetLabel: tickets.targetLabel,
             createdAt: tickets.createdAt,
             lastActivityAt: tickets.lastActivityAt,
           })
@@ -213,6 +218,9 @@ export const communicationRouter = router({
             // authed-proxy contract as the Library grid (ADR-019 posterUrlFor).
             mediaPosterUrl:
               r.mediaItemId !== null ? posterUrlFor(r.mediaItemId, r.posterSource) : null,
+            // ADR-061 — the locator label joins the card caption (no new anatomy, ADR-058).
+            targetKind: r.targetKind,
+            targetLabel: r.targetLabel,
             replyCount: replyCounts.get(r.id) ?? 0,
             createdAt: iso(r.createdAt),
             lastActivityAt: iso(r.lastActivityAt),
@@ -268,6 +276,10 @@ export const communicationRouter = router({
             mediaArrKind: mediaItems.arrKind,
             mediaYear: mediaItems.year,
             posterSource: mediaMetadata.posterSource,
+            targetKind: tickets.targetKind,
+            targetSeason: tickets.targetSeason,
+            targetEpisode: tickets.targetEpisode,
+            targetLabel: tickets.targetLabel,
             createdAt: tickets.createdAt,
             lastActivityAt: tickets.lastActivityAt,
           })
@@ -341,6 +353,11 @@ export const communicationRouter = router({
             mediaYear: row.mediaYear,
             mediaPosterUrl:
               row.mediaItemId !== null ? posterUrlFor(row.mediaItemId, row.posterSource) : null,
+            // ADR-061 — the locator (label snapshot + the numbers the episode-still lookup needs).
+            targetKind: row.targetKind,
+            targetSeason: row.targetSeason,
+            targetEpisode: row.targetEpisode,
+            targetLabel: row.targetLabel,
             openFix,
             fixCount,
             createdAt: iso(row.createdAt),
@@ -376,6 +393,16 @@ export const communicationRouter = router({
           body: z.string().trim().min(1).max(8_000),
           category: z.enum(TICKET_CATEGORIES),
           mediaItemId: z.uuid().optional(),
+          // ADR-061 / DESIGN-032 D-03 — the optional media LOCATOR the compose drill files.
+          target: z
+            .object({
+              kind: z.enum(TICKET_TARGET_KINDS),
+              childId: z.number().int().nullish(),
+              season: z.number().int().nullish(),
+              episode: z.number().int().nullish(),
+              label: z.string().trim().min(1).max(300),
+            })
+            .optional(),
         }),
       )
       .mutation(async ({ ctx, input }) => {
@@ -387,6 +414,7 @@ export const communicationRouter = router({
             body: input.body,
             category: input.category,
             mediaItemId: input.mediaItemId ?? null,
+            target: input.target ?? null,
           });
           return { id: row.id, status: row.status };
         });

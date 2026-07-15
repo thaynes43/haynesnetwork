@@ -100,6 +100,18 @@ export const lidarrAlbumSchema = z.object({
 });
 export type LidarrAlbum = z.infer<typeof lidarrAlbumSchema>;
 
+// ADR-061 / DESIGN-032 D-02 (PLAN-038) — one track row from `GET /track?albumId=` (the compose
+// drill's music leaf). Tolerant: only the picker-facing fields are parsed.
+export const lidarrTrackSchema = z.object({
+  id: z.number().int(),
+  albumId: z.number().int().optional(),
+  trackNumber: z.union([z.string(), z.number()]).nullish(),
+  absoluteTrackNumber: z.number().int().nullish(),
+  title: z.string().nullish(),
+  hasFile: z.boolean().optional(),
+});
+export type LidarrTrack = z.infer<typeof lidarrTrackSchema>;
+
 /**
  * `GET /trackfile?albumId=` element — the Fix fallback's delete targets (D-03: an
  * album fix deletes every track file of that album; Lidarr deletes at track-file

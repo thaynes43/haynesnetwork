@@ -3859,6 +3859,79 @@ input[aria-invalid='true'] {
   font-size: 12px;
 }
 
+/* ── ADR-061 / DESIGN-032 D-04 (PLAN-038) — the compose leaf-or-scope drill ─────────────────
+   Scope chips (single-select pills — recolor only, constant metrics) + an IN-PLACE scrollable
+   panel capped in height so the Modal NEVER grows (ADR-015's deliberate-expansion exception).
+   Tokens only (hard rule 2). */
+.tscope {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.tscope__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tscope__chip {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.tscope__chip:hover {
+  color: var(--color-text);
+}
+.tscope__chip.is-active {
+  border-color: var(--color-accent);
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+}
+.tscope__panel {
+  display: flex;
+  flex-direction: column;
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+}
+.tscope__opt {
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  padding: 7px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+}
+.tscope__opt:last-child {
+  border-bottom: 0;
+}
+.tscope__opt:hover {
+  background: var(--color-surface-2);
+}
+.tscope__back {
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+.tscope__note {
+  font-size: 12px;
+  padding: 4px 2px;
+}
+/* The detail head's locator line (D-05) — muted, under the media title. */
+.ticket-target-label {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
 /* ── Trash OVERVIEW landing + tab count badges (DESIGN-010 amendment 2026-07-08) ─────────────
    The default Trash tab: one KIND CARD per kind that aggregates what's slated before you navigate,
    plus a small count pill on the Movies/TV tab labels. The pill matches the roles-table

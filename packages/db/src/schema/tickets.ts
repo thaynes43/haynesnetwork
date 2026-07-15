@@ -1,16 +1,19 @@
-import { pgTable, uuid, text, timestamp, check, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, integer, timestamp, check, index } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { users } from './users';
 import { mediaItems } from './media-items';
 import {
   TICKET_CATEGORIES,
   TICKET_STATUSES,
+  TICKET_TARGET_KINDS,
   type TicketCategory,
   type TicketStatus,
+  type TicketTargetKind,
 } from './enums';
 
 const TICKET_STATUSES_SQL_LIST = TICKET_STATUSES.map((s) => `'${s}'`).join(',');
 const TICKET_CATEGORIES_SQL_LIST = TICKET_CATEGORIES.map((c) => `'${c}'`).join(',');
+const TICKET_TARGET_KINDS_SQL_LIST = TICKET_TARGET_KINDS.map((k) => `'${k}'`).join(',');
 
 /**
  * ADR-050 / DESIGN-012 D-10 (PLAN-034 Helpdesk) — a household media-issue TICKET. Replaces the
@@ -37,6 +40,18 @@ export const tickets = pgTable(
     category: text('category').$type<TicketCategory>().notNull(),
     /** Optional link to a ledger Media Item (ON DELETE SET NULL — like the ledger/messages). */
     mediaItemId: uuid('media_item_id').references(() => mediaItems.id, { onDelete: 'set null' }),
+    /**
+     * ADR-061 (PLAN-038) — the media LOCATOR: which level of the linked title's hierarchy this
+     * ticket targets. NULL target_kind = the whole title (exactly the pre-locator meaning). The
+     * *arr child id + human season/episode numbers ride along, and `target_label` SNAPSHOTS the
+     * display label ("S06E02 · Rich") so the ticket renders forever without a live child read
+     * (C-01/C-06). Consistency (kind ⇔ arr_kind) is enforced by the createTicket single-writer.
+     */
+    targetKind: text('target_kind').$type<TicketTargetKind>(),
+    targetChildId: integer('target_child_id'),
+    targetSeason: integer('target_season'),
+    targetEpisode: integer('target_episode'),
+    targetLabel: text('target_label'),
     status: text('status').$type<TicketStatus>().notNull().default('open'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     /**
@@ -53,6 +68,11 @@ export const tickets = pgTable(
     check(
       'tickets_category_enum',
       sql`${t.category} = ANY (ARRAY[${sql.raw(TICKET_CATEGORIES_SQL_LIST)}])`,
+    ),
+    // ADR-061 — the locator kind (NULL = whole title).
+    check(
+      'tickets_target_kind_enum',
+      sql`${t.targetKind} IS NULL OR ${t.targetKind} = ANY (ARRAY[${sql.raw(TICKET_TARGET_KINDS_SQL_LIST)}])`,
     ),
     // The wall reads most-recent-activity-first (the keyset sort column); status filters ride it.
     index('tickets_activity_idx').on(t.lastActivityAt.desc()),

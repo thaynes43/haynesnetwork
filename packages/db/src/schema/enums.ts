@@ -677,6 +677,12 @@ export type TicketStatus = (typeof TICKET_STATUSES)[number];
 //   quality   — bad quality or the wrong version/cut
 //   missing   — an episode/season/title that should be in the library but isn't
 //   other     — anything else about media or playback
+// ADR-061 / DESIGN-032 D-01 (PLAN-038 — ticket media precision) — the LOCATOR kind qualifying a
+// ticket's media link: which level of the title's hierarchy the ticket targets. NULL on the
+// column = the whole title (the pre-locator meaning, unchanged). text+CHECK (migration 0051).
+export const TICKET_TARGET_KINDS = ['season', 'episode', 'album', 'track'] as const;
+export type TicketTargetKind = (typeof TICKET_TARGET_KINDS)[number];
+
 export const TICKET_CATEGORIES = [
   'playback',
   'audio',
