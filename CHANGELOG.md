@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.57.0](https://github.com/thaynes43/haynesnetwork/compare/v0.56.0...v0.57.0) (2026-07-15)
+
+
+### Features
+
+* goodreads-sync usenet-first re-search sweep + fix the silent LL status reconcile ([#289](https://github.com/thaynes43/haynesnetwork/issues/289)) ([bd94090](https://github.com/thaynes43/haynesnetwork/commit/bd940901805844a2d324e5b55b42c728fe974e82))
+
+
+### Documentation
+
+* late-night addendum — v0.56.0 nav restructure (Tickets ratified), MAM gate OPEN Tue night, integrations all-roles ([#285](https://github.com/thaynes43/haynesnetwork/issues/285)) ([ef03ba4](https://github.com/thaynes43/haynesnetwork/commit/ef03ba42d3ca142ed0ee196320b8b751715341fa))
+* RUN 5 owner-directed MAM batch — 8 grabs (Goodreads test + F-10 poisoned), gate auto-closed at unsat 16 ([#288](https://github.com/thaynes43/haynesnetwork/issues/288)) ([62ef61c](https://github.com/thaynes43/haynesnetwork/commit/62ef61c5cecce7503a596835818d7d77472a52b6))
+* Wednesday cold-start handoff — consolidated top block (11-release map, queue, rules); plan rows 044-046 → built+live pending ratification ([#287](https://github.com/thaynes43/haynesnetwork/issues/287)) ([c2c96bc](https://github.com/thaynes43/haynesnetwork/commit/c2c96bce82f9f7ffd472f0e61e2d597de2b416bc))
+
 ## [0.56.0](https://github.com/thaynes43/haynesnetwork/compare/v0.55.1...v0.56.0) (2026-07-14)
 
 
