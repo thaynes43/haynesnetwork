@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.59.0](https://github.com/thaynes43/haynesnetwork/compare/v0.58.0...v0.59.0) (2026-07-15)
+
+
+### Features
+
+* nightly admin failure digest — the email channel's second consumer (PLAN-048 tail) ([#296](https://github.com/thaynes43/haynesnetwork/issues/296)) ([6402b52](https://github.com/thaynes43/haynesnetwork/commit/6402b525a70313075568d16af52886c1900df6f3))
+
+
+### Bug Fixes
+
+* comic classification survives a GB enrichment outage (durable comic_status) ([#295](https://github.com/thaynes43/haynesnetwork/issues/295)) ([63c729a](https://github.com/thaynes43/haynesnetwork/commit/63c729a809fd6d20e12eda7cfb43139bbc91cafb))
+
+
+### Documentation
+
+* PLAN-035 -&gt; completed/ (v0.58.0 shipped + prod-validated; admin mailbox confirmed) ([#293](https://github.com/thaynes43/haynesnetwork/issues/293)) ([9e834b0](https://github.com/thaynes43/haynesnetwork/commit/9e834b07f617bc50efc00744bf7277d090034230))
+
 ## [0.58.0](https://github.com/thaynes43/haynesnetwork/compare/v0.57.0...v0.58.0) (2026-07-15)
 
 
