@@ -291,15 +291,20 @@ export async function syncShelfRequests(
       // The Kapowarr volume id is preserved across syncs (set by markComicRouted); comic_status routing owns
       // comicvine_id, so it is not (re)written here on the mint/upsert.
       const kapowarrVolumeId = existing?.kapowarrVolumeId ?? null;
+      // ADR-056 — `comic_status IS NOT NULL` is the DURABLE is-comic discriminator: once classified,
+      // a later run whose GB enrichment failed (a 429/503 burst ⇒ `item.isComic` false) must NOT
+      // declassify the request back into the LL book route. Found live 2026-07-15: the GB daily-quota
+      // 429 clobbered The Hobbit's comic_status and its Kapowarr routing was silently skipped.
+      const isComic = item.isComic || existing?.comicStatus != null;
 
       if (item.matchedBooksItemId) {
         // In the library — we HAVE it (a book or a comic we already hold).
         ebookStatus = 'landed';
         audioStatus = 'landed';
-        comicStatus = item.isComic ? 'landed' : (existing?.comicStatus ?? null);
+        comicStatus = isComic ? 'landed' : (existing?.comicStatus ?? null);
         unroutableReason = null;
         llBookId = existing?.llBookId ?? item.gbVolumeId ?? null;
-      } else if (item.isComic) {
+      } else if (isComic) {
         // ADR-056 — a comic want (Kapowarr's domain, never LL). comic_status is the actionable state; ebook/
         // audio are N/A (kept 'missing'). Parked (unroutable) until Kapowarr routes it (kapowarr_volume_id set).
         ebookStatus = 'missing';
@@ -358,7 +363,7 @@ export async function syncShelfRequests(
       }
 
       // A comic that is not (yet) landed needs Kapowarr work: resolve+add (no volume id) or reconcile.
-      if (requestId && item.isComic && !item.matchedBooksItemId && comicStatus !== 'landed') {
+      if (requestId && isComic && !item.matchedBooksItemId && comicStatus !== 'landed') {
         toRouteComics.push({ requestId, title: item.title, author: item.author, kapowarrVolumeId });
       }
     }

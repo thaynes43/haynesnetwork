@@ -564,6 +564,34 @@ describe('mapKapowarrVolumeStatus', () => {
 });
 
 describe('comic routing (Kapowarr)', () => {
+  // 2026-07-15 live-found regression: a GB daily-quota 429 made enrichment fail ⇒ item.isComic false
+  // ⇒ the upsert CLOBBERED comic_status and the comic silently re-entered the LL book route. The
+  // durable discriminator (comic_status IS NOT NULL) must survive an enrichment outage.
+  it('an enrichment outage (isComic=false this run) never declassifies an existing comic', async () => {
+    const { integration } = await seedComicOnly();
+    const items: EnrichedShelfItem[] = [
+      { shelf: 'to-read', externalBookId: 'gr-hobbit', title: 'The Hobbit, or There and Back Again', author: 'J.R.R. Tolkien', isbn: null, gbVolumeId: 'gb-hobbit', coverUrl: null, shelvedAt: new Date(), isComic: true },
+    ];
+    // Run 1: classified comic (no Kapowarr bundle ⇒ parked).
+    const ll1 = stubLl(() => null);
+    await syncGoodreadsIntegration({ db: t.db, integrationId: integration.id, items, syncedShelves: ['to-read'], ll: ll1.bundle, pacer: async () => {} });
+    // Run 2: GB is down — the item arrives UNclassified.
+    const ll2 = stubLl(() => null);
+    await syncGoodreadsIntegration({
+      db: t.db,
+      integrationId: integration.id,
+      items: items.map((i) => ({ ...i, isComic: false })),
+      syncedShelves: ['to-read'],
+      ll: ll2.bundle,
+      pacer: async () => {},
+    });
+    const requests = await getBookRequestsForIntegration({ db: t.db, integrationId: integration.id });
+    const hobbit = requests.find((r) => r.title.startsWith('The Hobbit'))!;
+    expect(hobbit.comicStatus).not.toBeNull(); // still a comic
+    expect(hobbit.unroutableReason).toBe('comic'); // still parked (no Kapowarr bundle)
+    expect(ll2.calls.some((c) => c.id === 'gb-hobbit')).toBe(false); // NEVER pushed to LL
+  });
+
   async function seedComicOnly() {
     const user = await createUser(t.db);
     const { integration } = await linkIntegration({
