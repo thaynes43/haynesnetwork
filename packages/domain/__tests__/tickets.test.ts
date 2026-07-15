@@ -348,3 +348,116 @@ describe('ticket author opt-in emails (R-196)', () => {
     }
   });
 });
+
+// ADR-061 / DESIGN-032 D-03 (PLAN-038) — the media LOCATOR: consistency matrix + persistence +
+// the snapshotted label riding the notification payloads.
+describe('ticket media locator (ADR-061)', () => {
+  async function seedShow(): Promise<string> {
+    await upsertMediaItemsBatch({
+      db: t.db,
+      arrKind: 'sonarr',
+      items: [
+        {
+          title: 'Locator Show',
+          arrItemId: 880001,
+          tmdbId: null,
+          tvdbId: 880001,
+          musicbrainzArtistId: null,
+          sortTitle: 'locator show',
+          year: 2024,
+          monitored: true,
+          qualityProfileId: 1,
+          qualityProfileName: 'Any',
+          metadataProfileId: null,
+          metadataProfileName: null,
+          rootFolder: '/data/tv',
+          arrTags: [],
+          onDiskFileCount: 10,
+          expectedFileCount: 10,
+          sizeOnDisk: 1000,
+          arrAttrs: {},
+        },
+      ],
+    });
+    const [show] = await t.db
+      .select()
+      .from(mediaItems)
+      .where(sql`${mediaItems.title} = 'Locator Show'`);
+    return show!.id;
+  }
+
+  it('persists an episode locator + the label rides both ticket_created payloads', async () => {
+    const showId = await seedShow();
+    const row = await createTicket({
+      db: t.db,
+      authorId: author.id,
+      title: 'no audio on the finale',
+      body: 'x',
+      category: 'audio',
+      mediaItemId: showId,
+      target: { kind: 'episode', childId: 42, season: 6, episode: 2, label: 'S06E02 · Rich' },
+    });
+    expect(row.targetKind).toBe('episode');
+    expect(row.targetChildId).toBe(42);
+    expect(row.targetSeason).toBe(6);
+    expect(row.targetEpisode).toBe(2);
+    expect(row.targetLabel).toBe('S06E02 · Rich');
+
+    const outbox = await t.db
+      .select()
+      .from(notificationOutbox)
+      .where(sql`${notificationOutbox.eventType} = 'ticket_created'`);
+    const mine = outbox.filter((o) => (o.payload as { ticketId?: string }).ticketId === row.id);
+    expect(mine).toHaveLength(2);
+    for (const o of mine)
+      expect((o.payload as { targetLabel?: string }).targetLabel).toBe('S06E02 · Rich');
+  });
+
+  it('a season scope needs no child id; whole-title tickets stay locator-free', async () => {
+    const showId = await seedShow();
+    const season = await createTicket({
+      db: t.db,
+      authorId: author.id,
+      title: 'season 3 all stutters',
+      body: 'x',
+      category: 'playback',
+      mediaItemId: showId,
+      target: { kind: 'season', season: 3, label: 'Season 3' },
+    });
+    expect(season.targetKind).toBe('season');
+    expect(season.targetChildId).toBeNull();
+
+    const whole = await createTicket({
+      db: t.db,
+      authorId: author.id,
+      title: 'whole show missing',
+      body: 'x',
+      category: 'missing',
+      mediaItemId: showId,
+    });
+    expect(whole.targetKind).toBeNull();
+    expect(whole.targetLabel).toBeNull();
+  });
+
+  it('rejects inconsistent locators BEFORE any write', async () => {
+    const showId = await seedShow();
+    const { InvalidTicketTargetError } = await import('../src/errors');
+    const cases: Array<Parameters<typeof createTicket>[0]> = [
+      // album/track on a sonarr item
+      { db: t.db, authorId: author.id, title: 'x', body: 'x', category: 'audio', mediaItemId: showId, target: { kind: 'album', childId: 1, label: 'A' } },
+      // target without a media link
+      { db: t.db, authorId: author.id, title: 'x', body: 'x', category: 'audio', target: { kind: 'episode', childId: 1, season: 1, episode: 1, label: 'E' } },
+      // season without its number
+      { db: t.db, authorId: author.id, title: 'x', body: 'x', category: 'audio', mediaItemId: showId, target: { kind: 'season', label: 'Season ?' } },
+      // episode without its child id
+      { db: t.db, authorId: author.id, title: 'x', body: 'x', category: 'audio', mediaItemId: showId, target: { kind: 'episode', season: 1, episode: 1, label: 'E' } },
+    ];
+    const before = (await t.db.select().from(tickets)).length;
+    for (const input of cases) {
+      await expect(createTicket(input), JSON.stringify(input.target)).rejects.toBeInstanceOf(
+        InvalidTicketTargetError,
+      );
+    }
+    expect((await t.db.select().from(tickets)).length).toBe(before);
+  });
+});

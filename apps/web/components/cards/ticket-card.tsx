@@ -37,6 +37,7 @@ export function TicketCard({
   status,
   category,
   media,
+  targetLabel,
   replyCount,
   whenLabel,
 }: {
@@ -47,6 +48,8 @@ export function TicketCard({
   /** The linked title (poster + caption sub-line) — null renders the category tile instead.
    *  `title` may be null (a ledger row can vanish); the sub-line then falls back to the category. */
   media: { posterUrl: string | null; kind: string; title: string | null; year: number | null } | null;
+  /** ADR-061 (PLAN-038) — the snapshotted locator label ("S06E02 · Rich"); joins the sub line. */
+  targetLabel?: string | null;
   replyCount: number;
   /** The formatted last-activity label (the host owns time formatting). */
   whenLabel: string;
@@ -74,7 +77,9 @@ export function TicketCard({
         <span className="twall-caption">{title}</span>
         <span className="twall-sub muted">
           {media?.title != null
-            ? `${media.title}${media.year !== null ? ` (${media.year})` : ''}`
+            ? `${media.title}${media.year !== null ? ` (${media.year})` : ''}${
+                targetLabel != null ? ` — ${targetLabel}` : ''
+              }`
             : TICKET_CATEGORY_LABELS[category]}
         </span>
         <span className="twall-meta">

@@ -279,6 +279,15 @@ export class InvalidTicketTransitionError extends Error {
   readonly code = 'TICKET_INVALID_TRANSITION' as const;
 }
 
+/**
+ * ADR-061 / DESIGN-032 D-03 (PLAN-038) — an inconsistent ticket media LOCATOR (kind vs the linked
+ * item's *arr, a leaf without its child id, a season without its number, a target without a media
+ * link). Thrown BEFORE any write; surfaced as BAD_REQUEST.
+ */
+export class InvalidTicketTargetError extends Error {
+  readonly code = 'TICKET_INVALID_TARGET' as const;
+}
+
 // ---------------------------------------------------------------------------
 // ADR-045 / DESIGN-023 (PLAN-026) — Authentik role-portal errors.
 // ---------------------------------------------------------------------------

@@ -15,7 +15,7 @@ import {
   users,
   wantedItems,
 } from '@hnet/db';
-import { isMediaItemAccessible, listMediaChildren } from '@hnet/domain';
+import { isMediaItemAccessible, listAlbumTracks, listMediaChildren } from '@hnet/domain';
 import { authedProcedure, mapDomainErrors, resolveArrBundle, resolvePlexBundle, router } from '../trpc';
 // ADR-047 / DESIGN-025 (PLAN-028) — THE INVARIANT: every media_items read here is gated to the caller's
 // accessible Plex libraries SERVER-SIDE (never UI filtering). The gate + predicates live in library-access.
@@ -442,6 +442,27 @@ export const ledgerRouter = router({
           episodeNumber,
         }));
       });
+    }),
+
+  /**
+   * ADR-061 / DESIGN-032 D-02 (PLAN-038) — a lidarr album's TRACKS, live (the compose drill's
+   * music leaf; owner ruling Q-02 = track-level ticketing). Same ADR-047 gate as `children`.
+   */
+  albumTracks: authedProcedure
+    .input(z.object({ mediaItemId: z.uuid(), albumId: z.number().int() }))
+    .query(async ({ ctx, input }) => {
+      const gate = await resolveLibraryAccessGate(ctx.user.id, ctx.db);
+      if (!(await itemAccessById(ctx.db, gate, input.mediaItemId))) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: `Media item ${input.mediaItemId} not found` });
+      }
+      return mapDomainErrors(() =>
+        listAlbumTracks({
+          db: ctx.db,
+          arr: resolveArrBundle(ctx),
+          mediaItemId: input.mediaItemId,
+          albumId: input.albumId,
+        }),
+      );
     }),
 
   /**

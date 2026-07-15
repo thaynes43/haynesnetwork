@@ -46,6 +46,7 @@ import {
 import {
   LIDARR_GRABBED_EVENT_TYPE,
   lidarrAlbumSchema,
+  lidarrTrackSchema,
   lidarrArtistSchema,
   lidarrHistoryRecordSchema,
   lidarrLookupSchema,
@@ -54,6 +55,7 @@ import {
   lidarrTrackFileSchema,
   type LidarrAlbum,
   type LidarrArtist,
+  type LidarrTrack,
   type LidarrHistoryRecord,
   type LidarrLookup,
   type LidarrMetadataProfile,
@@ -368,6 +370,17 @@ export class LidarrClient extends ArrReadClientBase {
         albumId,
         eventType: LIDARR_GRABBED_EVENT_TYPE,
       },
+    });
+  }
+
+  /**
+   * ADR-061 / DESIGN-032 D-02 (PLAN-038) — `GET /track?albumId=` — the compose drill's music
+   * LEAF list (track-level ticketing, owner ruling Q-02). Read-only, resolved live like
+   * listAlbums; never synced.
+   */
+  listTracks(albumId: number): Promise<LidarrTrack[]> {
+    return this.http.requestJson('GET', 'track', z.array(lidarrTrackSchema), {
+      query: { albumId },
     });
   }
 

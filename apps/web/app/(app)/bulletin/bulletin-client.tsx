@@ -281,6 +281,206 @@ interface MediaPick {
   arrKind: string;
 }
 
+// ── ADR-061 / DESIGN-032 D-04 (PLAN-038) — the ticket media LOCATOR the compose drill files ──
+
+/** The compose-side target choice; 'all' = the whole title (files NO locator). */
+type TargetChoice =
+  | { kind: 'all'; label: string }
+  | { kind: 'season'; season: number; label: string }
+  | { kind: 'episode'; childId: number; season: number | null; episode: number | null; label: string }
+  | { kind: 'album'; childId: number; label: string }
+  | { kind: 'track'; childId: number; label: string };
+
+const HIERARCHICAL_KINDS = new Set(['sonarr', 'lidarr']);
+/** Q-01 — the playback-class categories nudge HARD toward a leaf (drill opens, nothing preselected). */
+const LEAF_NUDGE_CATEGORIES = new Set(['playback', 'audio', 'subtitles', 'quality']);
+
+/**
+ * The leaf-or-scope drill (R-200): scope chips + an IN-PLACE scrollable panel (the modal never
+ * grows — ADR-015's deliberate-expansion exception). TV: Season list / grouped episode list
+ * (ledger.children); Music: album list / album→track drill (ledger.albumTracks). A resolved
+ * choice collapses to a chip; × reopens the drill.
+ */
+function TargetPicker({
+  media,
+  category,
+  value,
+  onChange,
+}: {
+  media: MediaPick;
+  category: TicketCategoryName;
+  value: TargetChoice | null;
+  onChange: (t: TargetChoice | null) => void;
+}) {
+  const isTv = media.arrKind === 'sonarr';
+  const [mode, setMode] = useState<'season' | 'leaf' | null>(
+    LEAF_NUDGE_CATEGORIES.has(category) ? 'leaf' : null,
+  );
+  const [openAlbum, setOpenAlbum] = useState<{ id: number; label: string } | null>(null);
+  const children = trpc.ledger.children.useQuery(
+    { mediaItemId: media.id },
+    { enabled: mode !== null && value === null },
+  );
+  const tracks = trpc.ledger.albumTracks.useQuery(
+    { mediaItemId: media.id, albumId: openAlbum?.id ?? 0 },
+    { enabled: !isTv && mode === 'leaf' && openAlbum !== null && value === null },
+  );
+
+  if (value !== null) {
+    return (
+      <span className="chips" data-testid="composer-target-picked">
+        <span className="chip">
+          {value.label}
+          <button
+            type="button"
+            className="chip__remove"
+            aria-label="Change the target"
+            onClick={() => onChange(null)}
+          >
+            ×
+          </button>
+        </span>
+      </span>
+    );
+  }
+
+  const rows = children.data ?? [];
+  const seasons = isTv
+    ? [...new Set(rows.map((r) => r.seasonNumber).filter((n): n is number => n !== null))]
+    : [];
+
+  const scopeChip = (
+    key: string,
+    label: string,
+    active: boolean,
+    onClick: () => void,
+  ) => (
+    <button
+      key={key}
+      type="button"
+      role="radio"
+      aria-checked={active}
+      className={`tscope__chip${active ? ' is-active' : ''}`}
+      data-testid={`composer-scope-${key}`}
+      onClick={onClick}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div className="tscope" data-testid="composer-target">
+      <div className="tscope__chips" role="radiogroup" aria-label="Which part of it?">
+        {scopeChip('all', isTv ? 'Entire show' : 'Entire artist', false, () =>
+          onChange({ kind: 'all', label: isTv ? 'Entire show' : 'Entire artist' }),
+        )}
+        {isTv
+          ? scopeChip('season', 'A season…', mode === 'season', () => setMode('season'))
+          : scopeChip('album', 'An album…', mode === 'season', () => setMode('season'))}
+        {isTv
+          ? scopeChip('episode', 'An episode…', mode === 'leaf', () => setMode('leaf'))
+          : scopeChip('track', 'A track…', mode === 'leaf', () => setMode('leaf'))}
+      </div>
+      {mode !== null ? (
+        <div className="tscope__panel" role="listbox" aria-label="Pick the target">
+          {children.isLoading ? (
+            <span className="muted tscope__note">Loading…</span>
+          ) : rows.length === 0 ? (
+            <span className="muted tscope__note">Nothing to drill into — use “Entire …”.</span>
+          ) : isTv && mode === 'season' ? (
+            seasons.map((n) => (
+              <button
+                key={n}
+                type="button"
+                role="option"
+                aria-selected="false"
+                className="tscope__opt"
+                data-testid={`composer-drill-season-${n}`}
+                onClick={() => onChange({ kind: 'season', season: n, label: `Season ${n}` })}
+              >
+                Season {n}
+              </button>
+            ))
+          ) : isTv ? (
+            rows.map((r) => (
+              <button
+                key={r.arrChildId}
+                type="button"
+                role="option"
+                aria-selected="false"
+                className="tscope__opt"
+                data-testid={`composer-drill-episode-${r.arrChildId}`}
+                onClick={() =>
+                  onChange({
+                    kind: 'episode',
+                    childId: r.arrChildId,
+                    season: r.seasonNumber,
+                    episode: r.episodeNumber,
+                    label: r.label,
+                  })
+                }
+              >
+                {r.label}
+              </button>
+            ))
+          ) : mode === 'season' ? (
+            rows.map((r) => (
+              <button
+                key={r.arrChildId}
+                type="button"
+                role="option"
+                aria-selected="false"
+                className="tscope__opt"
+                data-testid={`composer-drill-album-${r.arrChildId}`}
+                onClick={() => onChange({ kind: 'album', childId: r.arrChildId, label: r.label })}
+              >
+                {r.label}
+              </button>
+            ))
+          ) : openAlbum === null ? (
+            rows.map((r) => (
+              <button
+                key={r.arrChildId}
+                type="button"
+                role="option"
+                aria-selected="false"
+                className="tscope__opt"
+                data-testid={`composer-drill-album-${r.arrChildId}`}
+                onClick={() => setOpenAlbum({ id: r.arrChildId, label: r.label })}
+              >
+                {r.label} <span className="muted">→ tracks</span>
+              </button>
+            ))
+          ) : tracks.isLoading ? (
+            <span className="muted tscope__note">Loading tracks…</span>
+          ) : (
+            <>
+              <button type="button" className="tscope__opt tscope__back" onClick={() => setOpenAlbum(null)}>
+                ← {openAlbum.label}
+              </button>
+              {(tracks.data ?? []).map((t) => (
+                <button
+                  key={t.trackId}
+                  type="button"
+                  role="option"
+                  aria-selected="false"
+                  className="tscope__opt"
+                  data-testid={`composer-drill-track-${t.trackId}`}
+                  onClick={() =>
+                    onChange({ kind: 'track', childId: t.trackId, label: `${openAlbum.label} · ${t.label}` })
+                  }
+                >
+                  {t.label}
+                </button>
+              ))}
+            </>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /** Small library search-select for the optional linked title (ledger.search is available to
  *  every signed-in user). Results render in an overlay popover — nothing below reflows. */
 function MediaPicker({
@@ -372,6 +572,8 @@ function ComposeModal({ open, onClose }: { open: boolean; onClose: () => void })
   const [category, setCategory] = useState<TicketCategoryName>('playback');
   const [body, setBody] = useState('');
   const [media, setMedia] = useState<MediaPick | null>(null);
+  // ADR-061 R-200 — the leaf-or-scope choice; null on a hierarchical pick BLOCKS submit.
+  const [target, setTarget] = useState<TargetChoice | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const create = trpc.communication.tickets.create.useMutation({
@@ -381,20 +583,36 @@ function ComposeModal({ open, onClose }: { open: boolean; onClose: () => void })
       setTitle('');
       setBody('');
       setMedia(null);
+      setTarget(null);
       setCategory('playback');
       void utils.communication.tickets.invalidate();
       router.push(`/bulletin/ticket/${created.id}`);
     },
   });
 
+  const needsScope = media !== null && HIERARCHICAL_KINDS.has(media.arrKind);
+  const scopeMissing = needsScope && target === null;
+
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (title.trim() === '' || body.trim() === '') return;
+    if (title.trim() === '' || body.trim() === '' || scopeMissing) return;
     create.mutate({
       title: title.trim(),
       body: body.trim(),
       category,
       ...(media !== null ? { mediaItemId: media.id } : {}),
+      // 'all' = the whole title — no locator filed (ADR-061 C-01: NULL target_kind).
+      ...(media !== null && target !== null && target.kind !== 'all'
+        ? {
+            target: {
+              kind: target.kind,
+              childId: 'childId' in target ? target.childId : null,
+              season: target.kind === 'season' ? target.season : target.kind === 'episode' ? target.season : null,
+              episode: target.kind === 'episode' ? target.episode : null,
+              label: target.label,
+            },
+          }
+        : {}),
     });
   };
 
@@ -456,7 +674,22 @@ function ComposeModal({ open, onClose }: { open: boolean; onClose: () => void })
         </fieldset>
         <div className="field">
           <span>Which title? (optional) — its poster becomes the ticket’s tile</span>
-          <MediaPicker selected={media} onSelect={setMedia} />
+          <MediaPicker
+            selected={media}
+            onSelect={(pick) => {
+              setMedia(pick);
+              setTarget(null); // a new title restarts the leaf-or-scope choice (R-200)
+            }}
+          />
+          {media !== null && HIERARCHICAL_KINDS.has(media.arrKind) ? (
+            <TargetPicker media={media} category={category} value={target} onChange={setTarget} />
+          ) : null}
+          {scopeMissing ? (
+            <span className="muted tscope__note" data-testid="composer-scope-hint">
+              Pick the exact {media.arrKind === 'sonarr' ? 'episode/season' : 'track/album'} — or
+              choose “Entire {media.arrKind === 'sonarr' ? 'show' : 'artist'}”.
+            </span>
+          ) : null}
         </div>
         <label className="field">
           <span>
@@ -480,7 +713,8 @@ function ComposeModal({ open, onClose }: { open: boolean; onClose: () => void })
             type="submit"
             className="btn primary"
             data-testid="ticket-create"
-            disabled={create.isPending || title.trim() === '' || body.trim() === ''}
+            disabled={create.isPending || title.trim() === '' || body.trim() === '' || scopeMissing}
+            title={scopeMissing ? 'Pick a target or an explicit "Entire …" scope first' : undefined}
           >
             {create.isPending ? 'Filing…' : 'File ticket'}
           </button>
@@ -498,6 +732,7 @@ function ComposeModal({ open, onClose }: { open: boolean; onClose: () => void })
 interface TicketListItem {
   id: string;
   title: string;
+  targetLabel?: string | null;
   category: TicketCategoryName;
   status: TicketStatusName;
   authorUserId: string;
@@ -533,6 +768,7 @@ function TicketTile({ ticket }: { ticket: TicketListItem }) {
             }
           : null
       }
+      targetLabel={ticket.targetLabel ?? null}
       replyCount={ticket.replyCount}
       whenLabel={tileWhen(ticket.lastActivityAt)}
     />

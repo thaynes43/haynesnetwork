@@ -114,3 +114,63 @@ export async function listMediaChildren(input: {
 
   return []; // radarr — the movie is the target (D-06)
 }
+
+// ---------------------------------------------------------------------------
+// ADR-061 / DESIGN-032 D-02 (PLAN-038) — the music TRACK leaf (album → track drill).
+// ---------------------------------------------------------------------------
+
+export interface AlbumTrackTarget {
+  /** Lidarr track id — the ticket locator's target_child_id for kind 'track'. */
+  trackId: number;
+  /** Display-durable label, e.g. '05 · Song Title' (the episodeLabel idiom). */
+  label: string;
+  trackNumber: number | null;
+  hasFile: boolean;
+}
+
+/**
+ * List a lidarr album's tracks LIVE (the compose drill's music leaf — owner ruling Q-02:
+ * track-level ticketing). Validates the media item is a live lidarr artist; the caller gates
+ * access (ADR-047, the ledger.children discipline). Tombstoned ⇒ [].
+ */
+export async function listAlbumTracks(input: {
+  db?: DbClient;
+  arr: Pick<ArrClientBundle, 'read'>;
+  mediaItemId: string;
+  albumId: number;
+}): Promise<AlbumTrackTarget[]> {
+  const db = resolveDb(input.db);
+  const [item] = await db
+    .select({
+      id: mediaItems.id,
+      arrKind: mediaItems.arrKind,
+      deletedFromArrAt: mediaItems.deletedFromArrAt,
+    })
+    .from(mediaItems)
+    .where(eq(mediaItems.id, input.mediaItemId));
+  if (!item) throw new NotFoundError(`Media item ${input.mediaItemId} not found`);
+  if (item.arrKind !== 'lidarr') throw new NotFoundError(`Media item ${input.mediaItemId} has no albums`);
+  if (item.deletedFromArrAt !== null) return [];
+
+  const tracks = await guardArrCall(`lidarr GET /track?albumId=${input.albumId}`, () =>
+    input.arr.read.lidarr.listTracks(input.albumId),
+  );
+  return tracks
+    .slice()
+    .map((t) => {
+      const n =
+        typeof t.trackNumber === 'number'
+          ? t.trackNumber
+          : t.trackNumber != null && /^\d+$/.test(t.trackNumber)
+            ? Number(t.trackNumber)
+            : (t.absoluteTrackNumber ?? null);
+      const title = t.title ?? '';
+      return {
+        trackId: t.id,
+        label: n !== null ? `${pad2(n)} · ${title}`.trim() : title || `Track ${t.id}`,
+        trackNumber: n,
+        hasFile: t.hasFile ?? false,
+      };
+    })
+    .sort((a, b) => (a.trackNumber ?? 9999) - (b.trackNumber ?? 9999));
+}

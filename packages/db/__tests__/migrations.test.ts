@@ -1154,4 +1154,26 @@ describe('migrations against embedded Postgres 16', () => {
       await client.query(`DELETE FROM sync_runs WHERE run_kind = 'failure-digest'`);
     });
   });
+
+  describe('0051 ticket media locator (ADR-061 — columns + kind CHECK + the Q-03 delete)', () => {
+    it('accepts a locator row, rejects an unknown kind, and the old tickets are GONE', async () => {
+      const authorId = (
+        await client.query(
+          `INSERT INTO users (email, display_name) VALUES ('locator-mig@example.com', 'Loc Mig') RETURNING id`,
+        )
+      ).rows[0].id;
+      await client.query({
+        text: `INSERT INTO tickets (author_user_id, title, body, category, target_kind, target_child_id, target_season, target_episode, target_label)
+               VALUES ($1, 't', 'b', 'audio', 'episode', 42, 6, 2, 'S06E02 · Rich')`,
+        values: [authorId],
+      });
+      await expect(
+        client.query({
+          text: `INSERT INTO tickets (author_user_id, title, body, category, target_kind) VALUES ($1, 't', 'b', 'audio', 'scene')`,
+          values: [authorId],
+        }),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query({ text: `DELETE FROM users WHERE id = $1`, values: [authorId] });
+    });
+  });
 });

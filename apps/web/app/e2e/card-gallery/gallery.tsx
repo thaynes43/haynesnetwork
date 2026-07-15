@@ -341,6 +341,18 @@ export function CardGallery() {
             replyCount={3}
             whenLabel="Jul 14"
           />
+          {/* ADR-061 (PLAN-038) — the LOCATOR variant: the snapshotted target label joins the
+              sub line (no new anatomy; the drift-CI pins it). */}
+          <TicketCard
+            href="#"
+            title="No audio on one episode"
+            status="open"
+            category="audio"
+            media={{ posterUrl: POSTER_A, kind: 'sonarr', title: 'The Reference', year: 2026 }}
+            targetLabel="S06E02 · Rich"
+            replyCount={0}
+            whenLabel="Jul 15"
+          />
           <TicketCard
             href="#"
             title="No sound from minute 3"

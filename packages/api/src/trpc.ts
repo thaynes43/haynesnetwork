@@ -36,6 +36,7 @@ import {
   maintainerrClientBundleFromEnv,
   MaintainerrUnsafeError,
   MaintainerrUpstreamError,
+  InvalidTicketTargetError,
   InvalidTicketTransitionError,
   NotFoundError,
   OwuiUnavailableError,
@@ -482,6 +483,9 @@ export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
     }
     if (err instanceof InvalidTicketTransitionError) {
       throw new TRPCError({ code: 'CONFLICT', message: err.message, cause: err });
+    }
+    if (err instanceof InvalidTicketTargetError) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: err.message, cause: err });
     }
     if (err instanceof AuthentikGroupNotOwnedError) {
       throw new TRPCError({ code: 'FORBIDDEN', message: err.message, cause: err });
