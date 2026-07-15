@@ -6,7 +6,7 @@
   lint:css, typecheck, test [domain 488 / api 387 / sync 75 / db 81 / kapowarr 9], build). ComicVine verified
   OPERABLE live. LIVE remediation done: both stray LL wants Skipped; both shelf comics monitored in Kapowarr
   (Scott Pilgrim cv 25478→vol 1; Legend-of-Batman cv 121720→vol 2); the two rows flipped to comic routing.
-- **Status:** ACTIONABLE — owner ruling at the PLAN-045 question round ("Remove it and route
+- **Status:** Completed — shipped #259 (confined @hnet/kapowarr, ComicVine routing live, comic force-search); OWNER RATIFIED 2026-07-15. Origin: owner ruling at the PLAN-045 question round ("Remove it and route
   comics to Kapowarr. I added them to my want so we have them there to rest comic acquisition on
   top of books. Dispatch Opus agents for this work tonight too but first they should at least
   show as Wanted in comics."). Opus build, same night.

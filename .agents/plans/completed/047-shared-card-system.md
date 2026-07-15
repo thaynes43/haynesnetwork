@@ -1,6 +1,6 @@
 # PLAN-047: The shared card system — one base card, extended per media type, drift-proof by code
 
-- **Status:** ACTIONABLE — owner-ruled 2026-07-14 morning (the In-Flight question round). His
+- **Status:** Completed — shipped v0.52.0 (#269, ADR-058: typed BaseCard family + ESLint anatomy guard + card-gallery drift-CI); OWNER RATIFIED 2026-07-15. Origin: owner-ruled 2026-07-14 morning (the In-Flight question round). His
   words: "different Opus subagents dispatched after Fable does the UX work in a way that forces
   a cohesive look and feel across the entire site. We should refactor so our base library card
   is shared everywhere, even Helpdesk tickets, and then is extended for different types of media

@@ -1,6 +1,6 @@
 # PLAN-044: Goodreads requests MVP — Integrations tab, shelf sync, Missing + manual search
 
-- **Status:** ACTIONABLE — owner rulings locked 2026-07-13 (session 6). The MVP of the
+- **Status:** Completed — shipped v0.49.0 (#253) + the v0.50.x–v0.55.x owner-feedback arc; live sync proven on the owner's real account; OWNER RATIFIED 2026-07-15. The MVP of the
   **Integration Tab Saga (PLAN-043)**. One plan = one release.
 - **Depends on:** nothing open (PLAN-029 shipped v0.47.0; the LL API pattern is proven; the
   Goodreads RSS mechanism is verified in `.agents/context/2026-07-11-books-list-sources-research.md`).
