@@ -1,7 +1,12 @@
 # PLAN-038: Helpdesk ticket media precision — link tickets to the exact episode/file
 
-- **Status:** Intake (owner 2026-07-11, from the live v0.44.0 Helpdesk review — "worth looking
-  into"). NOT dispatched; budget-gated + agent-type discussion required.
+- **Status:** Completed — shipped v0.60.0 (2026-07-15, #297; ADR-061 / DESIGN-032 / migration
+  0051). The locator (nullable target_* + snapshotted label) + the compose leaf-or-scope drill
+  (TV season→episode via ledger.children; music album→track via NEW lidarr listTracks +
+  ledger.albumTracks, ADR-047-gated). Q-01 nudge = default focus only; Q-02 art inheritance;
+  Q-03 executed (migration deleted the pre-locator tickets). ytdlsub/books targets deferred
+  (DESIGN-032 Q-04). e2e drill journey green; LIVE-VALIDATED in prod (locator ticket c2a20a02,
+  "safe to close"). Was: Intake (owner 2026-07-11).
 - **Owner problem statement (verbatim-in-intent):** tickets should be able to point at the
   exact media item that needs attention — ideally 1:1 with files (an episode, a track) — not
   just the top-level title; otherwise we rely on human prose to identify the item. When the
