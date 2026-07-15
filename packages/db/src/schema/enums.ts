@@ -763,9 +763,11 @@ export type PosterSource = (typeof POSTER_SOURCES)[number];
 // CHECKs (DESIGN-001 D-02 / HARD RULE — enums are text+CHECK, never Postgres enum types).
 // ---------------------------------------------------------------------------
 
-// The delivery channel of an outbox row. Only 'pushover' ships; the column leaves room for a
-// future email/SMS channel without a schema change (the sender switches on it).
-export const NOTIFY_OUTBOX_CHANNELS = ['pushover'] as const;
+// The delivery channel of an outbox row. 'email' opened by ADR-060 (PLAN-035, migration 0049):
+// email rows carry their resolved recipient in payload.to (enqueue-time, same-tx — ADR-060 C-02)
+// and deliver over the F-04 SMTP relay; the drainer routes rows to per-channel senders and skips
+// (never fails) a channel whose credentials are absent.
+export const NOTIFY_OUTBOX_CHANNELS = ['pushover', 'email'] as const;
 export type NotifyOutboxChannel = (typeof NOTIFY_OUTBOX_CHANNELS)[number];
 
 // The batch-lifecycle moment a row notifies (the sender renders title/message/url per type):
@@ -824,6 +826,11 @@ export const NOTIFY_OUTBOX_EVENT_TYPES = [
   //                                 post-SMTP) — NO per-event push in v1 (owner ruled in-app only). The
   //                                 renderer deep-links the failure detail page. Migration 0048 rebuilds the CHECK.
   'activity_import_failed',
+  //   ticket_replied / ticket_status_changed — ADR-060 / DESIGN-031 D-02 (PLAN-035) — the ticket
+  //                                 AUTHOR's opt-in email moments (email channel only; never enqueued
+  //                                 for the author's own action). Migration 0049 rebuilds the CHECK.
+  'ticket_replied',
+  'ticket_status_changed',
 ] as const;
 export type NotifyOutboxEventType = (typeof NOTIFY_OUTBOX_EVENT_TYPES)[number];
 

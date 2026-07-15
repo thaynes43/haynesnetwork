@@ -14,8 +14,10 @@ import {
   getFinalWarning,
   getNotifyWindow,
   greenlightBatch,
+  renderOutboxEmail,
   renderOutboxMessage,
   setAppSetting,
+  smtpSenderFromEnv,
   type NotifyWindow,
   type OutboxMessage,
 } from '../src/index';
@@ -553,5 +555,118 @@ describe('getNotifyWindow + audited settings', () => {
       endHour: 24,
       tz: 'America/New_York',
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ADR-060 / DESIGN-031 (PLAN-035) — the EMAIL channel: renderer, per-channel routing,
+// per-channel disabled-safety (R-197), and the env-contract sender gate.
+// ---------------------------------------------------------------------------
+describe('the email channel (ADR-060)', () => {
+  let t: TestDb;
+  beforeAll(async () => {
+    t = await bootMigratedDb();
+  });
+  afterAll(async () => t?.stop());
+  beforeEach(async () => {
+    await t.db.delete(notificationOutbox);
+  });
+
+  type OutboxEmail = NonNullable<ReturnType<typeof renderOutboxEmail>>;
+
+  const seed = (over: Partial<typeof notificationOutbox.$inferInsert> = {}) =>
+    t.db
+      .insert(notificationOutbox)
+      .values({
+        channel: 'email',
+        eventType: 'ticket_created',
+        payload: { to: 'admin@haynesnetwork.com', ticketId: 'tk-1', title: 'No audio', authorName: 'Mem Ber' },
+        earliestSendAt: new Date(Date.now() - 60_000),
+        ...over,
+      })
+      .returning()
+      .then((r) => r[0]!);
+
+  it('renderOutboxEmail renders the three ticket events; null without payload.to or for foreign events', () => {
+    const created = renderOutboxEmail({
+      eventType: 'ticket_created',
+      payload: { to: 'a@x.com', ticketId: 't1', title: 'No audio', authorName: 'Mem Ber', category: 'audio' },
+    })!;
+    expect(created.to).toBe('a@x.com');
+    expect(created.subject).toContain('New ticket: No audio');
+    expect(created.text).toContain('Mem Ber');
+    expect(created.text).toContain('https://haynesnetwork.com/bulletin/ticket/t1');
+
+    const replied = renderOutboxEmail({
+      eventType: 'ticket_replied',
+      payload: { to: 'a@x.com', ticketId: 't1', title: 'No audio', replyAuthorName: 'Sta Ff', snippet: 'on it' },
+    })!;
+    expect(replied.subject).toContain('Re: No audio');
+    expect(replied.text).toContain('on it');
+
+    const moved = renderOutboxEmail({
+      eventType: 'ticket_status_changed',
+      payload: { to: 'a@x.com', ticketId: 't1', title: 'No audio', toStatus: 'in_progress', actorName: 'Sta Ff' },
+    })!;
+    expect(moved.subject).toContain('in progress');
+
+    expect(renderOutboxEmail({ eventType: 'ticket_created', payload: { ticketId: 't1' } })).toBeNull();
+    expect(renderOutboxEmail({ eventType: 'batch_created', payload: { to: 'a@x.com' } })).toBeNull();
+  });
+
+  it('routes rows per channel: email rows to the email sender, pushover rows to pushover', async () => {
+    const mailRow = await seed();
+    await seed({ channel: 'pushover', eventType: 'mam_gate_paused', payload: { unsatisfied: 15, limit: 20 } });
+    const mails: OutboxEmail[] = [];
+    const pushes: OutboxMessage[] = [];
+    const report = await deliverOutbox({
+      db: t.db,
+      senders: { pushover: async (m) => void pushes.push(m), email: async (m) => void mails.push(m) },
+    });
+    expect(report.sent).toBe(2);
+    expect(report.skippedChannels).toBeUndefined();
+    expect(mails).toHaveLength(1);
+    expect(mails[0]!.to).toBe('admin@haynesnetwork.com');
+    expect(mails[0]!.subject).toContain('No audio');
+    expect(pushes).toHaveLength(1);
+    const [sentRow] = await t.db.select().from(notificationOutbox).where(eq(notificationOutbox.id, mailRow.id));
+    expect(sentRow!.sentAt).not.toBeNull();
+  });
+
+  it('R-197 — a channel without credentials is EXCLUDED: its rows wait untouched, no attempts burned', async () => {
+    const mailRow = await seed();
+    await seed({ channel: 'pushover', eventType: 'mam_gate_paused', payload: { unsatisfied: 15, limit: 20 } });
+    const pushes: OutboxMessage[] = [];
+    const report = await deliverOutbox({
+      db: t.db,
+      senders: { pushover: async (m) => void pushes.push(m), email: null },
+    });
+    expect(report.sent).toBe(1); // the pushover row only
+    expect(report.skippedChannels).toEqual(['email']);
+    const [waiting] = await t.db.select().from(notificationOutbox).where(eq(notificationOutbox.id, mailRow.id));
+    expect(waiting!.sentAt).toBeNull();
+    expect(waiting!.attempts).toBe(0); // NOT failed — waiting for credentials
+  });
+
+  it('an unrenderable email row (payload.to missing) FAILS loudly into backoff, never sends empty', async () => {
+    const bad = await seed({ payload: { ticketId: 'tk-9', title: 'orphan' } });
+    const mails: OutboxEmail[] = [];
+    const report = await deliverOutbox({
+      db: t.db,
+      senders: { pushover: null, email: async (m) => void mails.push(m) },
+    });
+    expect(mails).toHaveLength(0);
+    expect(report.failed).toBe(1);
+    const [row] = await t.db.select().from(notificationOutbox).where(eq(notificationOutbox.id, bad.id));
+    expect(row!.attempts).toBe(1);
+    expect(row!.lastError).toContain('unrenderable');
+  });
+
+  it('smtpSenderFromEnv gates on the FULL five-var contract', () => {
+    const full = { SMTP_HOST: 'h', SMTP_PORT: '587', SMTP_USER: 'u', SMTP_PASS: 'p', SMTP_FROM: 'f@x' };
+    expect(smtpSenderFromEnv(full)).not.toBeNull();
+    for (const missing of Object.keys(full)) {
+      expect(smtpSenderFromEnv({ ...full, [missing]: undefined }), missing).toBeNull();
+    }
   });
 });

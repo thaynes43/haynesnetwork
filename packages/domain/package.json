@@ -22,10 +22,12 @@
     "@hnet/lazylibrarian": "workspace:*",
     "@hnet/openwebui": "workspace:*",
     "@hnet/plex": "workspace:*",
-    "drizzle-orm": "^0.36.4"
+    "drizzle-orm": "^0.36.4",
+    "nodemailer": "^9.0.3"
   },
   "devDependencies": {
     "@hnet/test-utils": "workspace:*",
+    "@types/nodemailer": "^8.0.1",
     "@types/pg": "^8.11.10",
     "pg": "^8.13.1",
     "vitest": "^4.1.6"

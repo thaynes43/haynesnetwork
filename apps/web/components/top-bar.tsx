@@ -28,6 +28,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useTheme } from '@hnet/ui';
 import { BrandMark } from '@/components/brand-mark';
+import { EmailUpdatesToggle } from '@/components/email-updates-toggle';
 import { initialFor } from '@/lib/initials';
 import { HELPDESK_NAME } from '@/lib/bulletin';
 
@@ -193,6 +194,9 @@ function UserMenu({ user }: { user: TopBarUser }) {
             <span className="usermenu__display">{user.displayName}</span>
             <span className="usermenu__email">{user.email}</span>
           </div>
+          {/* ADR-060 / DESIGN-031 D-07 (PLAN-035) — the personal email opt-in (R-196). Lives with
+              the identity header (it is ABOUT this account), before the destination items. */}
+          <EmailUpdatesToggle />
           {/* Personal + the relocated section views (everyone / role-gated) — one group, no
               separator, so a metrics+integrations user matches the approved mockup exactly. */}
           <Link

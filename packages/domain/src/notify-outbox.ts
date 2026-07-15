@@ -10,7 +10,7 @@ import {
   type NotifyOutboxEventType,
   type NotificationOutboxRow,
 } from '@hnet/db';
-import { and, asc, eq, isNull, lt, lte } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lt, lte } from 'drizzle-orm';
 import { resolveDb } from './db-client';
 import { getNotifyWindow } from './notify-window';
 
@@ -315,6 +315,111 @@ export function pushoverSenderFromEnv(fetchImpl: typeof fetch = fetch): OutboxSe
 }
 
 // ---------------------------------------------------------------------------
+// The email channel (ADR-060 / DESIGN-031 — PLAN-035)
+// ---------------------------------------------------------------------------
+
+/** A rendered email-channel delivery: the resolved recipient + plain-text subject/body (D-03). */
+export interface OutboxEmail {
+  to: string;
+  subject: string;
+  text: string;
+}
+
+export type OutboxEmailSender = (mail: OutboxEmail) => Promise<void>;
+
+const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+
+/**
+ * Render an email-channel row's subject/body from its event type + payload (DESIGN-031 D-03 — the
+ * `renderOutboxMessage` sibling; plain text, deep link in the last line). Returns `null` for an event
+ * type email does not render OR a row missing its `payload.to` — such a row is a bug (email rows
+ * resolve their recipient at ENQUEUE time, ADR-060 C-02) and the drainer fails it loudly rather than
+ * sending an empty/misaddressed mail.
+ */
+export function renderOutboxEmail(row: {
+  eventType: NotifyOutboxEventType;
+  payload: Record<string, unknown>;
+}): OutboxEmail | null {
+  const p = row.payload ?? {};
+  const to = str(p.to);
+  if (to === '') return null;
+  const ticketId = str(p.ticketId);
+  const ticketUrl =
+    ticketId !== ''
+      ? `https://haynesnetwork.com/bulletin/ticket/${ticketId}`
+      : 'https://haynesnetwork.com/bulletin';
+  const title = str(p.title) || 'a ticket';
+
+  switch (row.eventType) {
+    // R-195 — the unconditional admin alert on ticket creation.
+    case 'ticket_created': {
+      const author = str(p.authorName) || 'Someone';
+      const media = str(p.mediaTitle) !== '' ? `\nMedia: ${str(p.mediaTitle)}` : '';
+      const category = str(p.category) !== '' ? `\nCategory: ${str(p.category)}` : '';
+      return {
+        to,
+        subject: `[haynesnetwork] New ticket: ${title}`,
+        text: `${author} filed a new Helpdesk ticket.\n\nTitle: ${title}${category}${media}\n\nOpen it: ${ticketUrl}\n`,
+      };
+    }
+    // R-196 — the author's opt-in reply notification.
+    case 'ticket_replied': {
+      const replyAuthor = str(p.replyAuthorName) || 'Someone';
+      const snippet = str(p.snippet);
+      return {
+        to,
+        subject: `[haynesnetwork] Re: ${title}`,
+        text: `${replyAuthor} replied to your ticket “${title}”.\n\n${snippet}${snippet !== '' ? '\n\n' : ''}Open it: ${ticketUrl}\n`,
+      };
+    }
+    // R-196 — the author's opt-in status-transition notification.
+    case 'ticket_status_changed': {
+      const actor = str(p.actorName) || 'An admin';
+      const toStatus = str(p.toStatus) || 'updated';
+      const note = str(p.note) !== '' ? `\nNote: ${str(p.note)}` : '';
+      return {
+        to,
+        subject: `[haynesnetwork] ${title} → ${toStatus.replace('_', ' ')}`,
+        text: `${actor} moved your ticket “${title}” to ${toStatus.replace('_', ' ')}.${note}\n\nOpen it: ${ticketUrl}\n`,
+      };
+    }
+    default:
+      return null;
+  }
+}
+
+/**
+ * Build the SMTP email sender from the F-04 env contract (`SMTP_HOST/PORT/USER/PASS/FROM` — the 1P
+ * `smtp` item via the haynesnetwork ExternalSecret). Returns `null` unless ALL five are present — the
+ * drainer's per-channel disabled path (R-197): email rows WAIT, no attempts burned. nodemailer SMTP
+ * submission with STARTTLS (port 587).
+ */
+export function smtpSenderFromEnv(env: Record<string, string | undefined> = process.env): OutboxEmailSender | null {
+  const host = env.SMTP_HOST;
+  const port = env.SMTP_PORT;
+  const user = env.SMTP_USER;
+  const pass = env.SMTP_PASS;
+  const from = env.SMTP_FROM;
+  if (!host || !port || !user || !pass || !from) return null;
+  return async (mail) => {
+    // Lazy import so the drainer (and every consumer of @hnet/domain) pays for nodemailer only when
+    // email is actually configured AND a row is due.
+    const { createTransport } = await import('nodemailer');
+    const transporter = createTransport({
+      host,
+      port: Number(port),
+      secure: false, // STARTTLS upgrade on 587 (Google submission)
+      auth: { user, pass },
+    });
+    try {
+      await transporter.sendMail({ from, to: mail.to, subject: mail.subject, text: mail.text });
+    } finally {
+      transporter.close();
+    }
+  };
+}
+
+// ---------------------------------------------------------------------------
 // deliverOutbox — the `notify-outbox` sync mode's body
 // ---------------------------------------------------------------------------
 
@@ -325,9 +430,14 @@ export interface OutboxDeliveryReport {
   failed: number;
   /** Rows that reached MAX_ATTEMPTS this run (now parked out of the due scan). */
   parked: number;
-  /** True when no sender was available (credentials absent) — no row was touched. */
+  /** True when NO sender was available for ANY channel (credentials absent) — no row was touched. */
   skipped: boolean;
   reason?: string;
+  /**
+   * ADR-060 / R-197 — channels excluded from this run because their credentials are absent; their
+   * rows WAIT untouched (no attempts burned). Absent when every channel had a sender.
+   */
+  skippedChannels?: NotifyOutboxChannel[];
 }
 
 const MAX_ATTEMPTS = 5;
@@ -341,17 +451,24 @@ interface OutboxLogger {
 }
 
 /**
- * Drain the outbox: deliver every DUE row to Pushover (or the injected `sender`), setting `sent_at` on
- * success or incrementing `attempts` + recording `last_error` + backing off `earliest_send_at` on
- * failure (parked at MAX_ATTEMPTS). When no sender is available (`PUSHOVER_*` absent) it no-ops and
- * leaves rows queued. At-least-once (ADR-034 C-05): a crash between a successful POST and the `sent_at`
- * write re-sends next run; single job + Forbid concurrency keeps it single-sender.
+ * Drain the outbox: deliver every DUE row to its CHANNEL's sender (ADR-060 — pushover and/or email),
+ * setting `sent_at` on success or incrementing `attempts` + recording `last_error` + backing off
+ * `earliest_send_at` on failure (parked at MAX_ATTEMPTS). A channel whose credentials are absent is
+ * EXCLUDED from the due scan — its rows wait untouched (per-channel disabled-safe, R-197); when no
+ * channel has a sender the run no-ops entirely. At-least-once (ADR-034 C-05): a crash between a
+ * successful send and the `sent_at` write re-sends next run; single job + Forbid concurrency keeps it
+ * single-sender.
  */
 export async function deliverOutbox(input: {
   db?: DbClient;
   now?: Date;
-  /** Injected sender (tests). `undefined` ⇒ build from env; explicit `null` ⇒ force the no-creds path. */
+  /**
+   * DEPRECATED alias for `senders.pushover` (pre-ADR-060 tests/callers). `undefined` ⇒ build from
+   * env; explicit `null` ⇒ force the pushover no-creds path.
+   */
   sender?: OutboxSender | null;
+  /** Per-channel injected senders (tests). Per channel: `undefined` ⇒ env; `null` ⇒ disabled. */
+  senders?: { pushover?: OutboxSender | null; email?: OutboxEmailSender | null };
   limit?: number;
   logger?: OutboxLogger;
 }): Promise<OutboxDeliveryReport> {
@@ -359,7 +476,18 @@ export async function deliverOutbox(input: {
   const now = input.now ?? new Date();
   const limit = input.limit ?? 100;
   const log = input.logger;
-  const sender = input.sender === undefined ? pushoverSenderFromEnv() : input.sender;
+  const pushoverSender =
+    input.senders?.pushover !== undefined
+      ? input.senders.pushover
+      : input.sender !== undefined
+        ? input.sender
+        : pushoverSenderFromEnv();
+  const emailSender = input.senders?.email !== undefined ? input.senders.email : smtpSenderFromEnv();
+
+  const availableChannels: NotifyOutboxChannel[] = [];
+  const skippedChannels: NotifyOutboxChannel[] = [];
+  (pushoverSender ? availableChannels : skippedChannels).push('pushover');
+  (emailSender ? availableChannels : skippedChannels).push('email');
 
   const due: NotificationOutboxRow[] = await db
     .select()
@@ -369,14 +497,17 @@ export async function deliverOutbox(input: {
         isNull(notificationOutbox.sentAt),
         lt(notificationOutbox.attempts, MAX_ATTEMPTS),
         lte(notificationOutbox.earliestSendAt, now),
+        availableChannels.length > 0
+          ? inArray(notificationOutbox.channel, availableChannels)
+          : undefined,
       ),
     )
     .orderBy(asc(notificationOutbox.earliestSendAt))
     .limit(limit);
 
-  if (sender === null) {
+  if (availableChannels.length === 0) {
     if (due.length > 0) {
-      log?.info?.('notify-outbox: pushover credentials absent — leaving rows queued', {
+      log?.info?.('notify-outbox: no channel credentials — leaving rows queued', {
         dueCount: due.length,
       });
     }
@@ -387,6 +518,7 @@ export async function deliverOutbox(input: {
       parked: 0,
       skipped: true,
       reason: 'no_credentials',
+      skippedChannels,
     };
   }
 
@@ -397,9 +529,19 @@ export async function deliverOutbox(input: {
   let failed = 0;
   let parked = 0;
   for (const row of due) {
-    const msg = renderOutboxMessage(row, window.tz);
     try {
-      await sender(msg);
+      if (row.channel === 'email') {
+        const mail = renderOutboxEmail(row);
+        if (mail === null) {
+          throw new Error(
+            `email row unrenderable (event_type=${row.eventType}, payload.to ${typeof row.payload?.to === 'string' ? 'set' : 'MISSING'})`,
+          );
+        }
+        await emailSender!(mail);
+      } else {
+        const msg = renderOutboxMessage(row, window.tz);
+        await pushoverSender!(msg);
+      }
       await db
         .update(notificationOutbox)
         .set({ sentAt: new Date() })
@@ -419,7 +561,20 @@ export async function deliverOutbox(input: {
     }
   }
   if (sent > 0 || failed > 0) {
-    log?.info?.('notify-outbox drained', { sent, failed, parked, dueCount: due.length });
+    log?.info?.('notify-outbox drained', {
+      sent,
+      failed,
+      parked,
+      dueCount: due.length,
+      ...(skippedChannels.length > 0 ? { skippedChannels } : {}),
+    });
   }
-  return { dueCount: due.length, sent, failed, parked, skipped: false };
+  return {
+    dueCount: due.length,
+    sent,
+    failed,
+    parked,
+    skipped: false,
+    ...(skippedChannels.length > 0 ? { skippedChannels } : {}),
+  };
 }

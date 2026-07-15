@@ -78,6 +78,10 @@ export * from './mam-gate-state';
 // ADR-052 / DESIGN-026 D-06 (PLAN-029) — the per-user, per-wall Library preferences (last view +
 // group-by + sort). First per-user store; guarded single-writer table (setLibraryPreference), no audit.
 export * from './library-preferences';
+// ADR-060 C-05 / DESIGN-031 D-01 (PLAN-035) — the per-user notification opt-ins (first field:
+// email_ticket_updates). Guarded single-writer table (setNotificationPreference), no audit —
+// the library_preferences class.
+export * from './notification-preferences';
 // ADR-053 / DESIGN-026 D-07 (PLAN-029) — the per-user watch/read-state seam: the app-user↔account
 // mapping (user_account_map), the per-user video watch read-model (user_media_watch), and the per-user
 // ABS book read-state (user_book_progress). All guarded single-writer tables (no audit — synced/

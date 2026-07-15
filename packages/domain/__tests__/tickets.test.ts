@@ -233,16 +233,23 @@ describe('the ticket_created outbox — SAME-TX with the ticket insert (ADR-034 
     const mine = outbox.filter(
       (o) => (o.payload as { ticketId?: string }).ticketId === row.id,
     );
-    expect(mine).toHaveLength(1);
-    expect(mine[0]!.channel).toBe('pushover');
-    expect(mine[0]!.payload).toMatchObject({
-      ticketId: row.id,
-      title: 'no sound on Outbox Movie',
-      category: 'audio',
-      authorName: 'Auth Or',
-      mediaTitle: 'Outbox Movie',
-    });
-    expect(mine[0]!.sentAt).toBeNull(); // queued for the notify-outbox drainer
+    // ADR-060 / R-195 (PLAN-035) — creation enqueues TWO rows: the owner Pushover ping AND the
+    // unconditional admin email (payload.to resolved at enqueue time).
+    expect(mine).toHaveLength(2);
+    const push = mine.find((o) => o.channel === 'pushover')!;
+    const mail = mine.find((o) => o.channel === 'email')!;
+    for (const o of [push, mail]) {
+      expect(o.payload).toMatchObject({
+        ticketId: row.id,
+        title: 'no sound on Outbox Movie',
+        category: 'audio',
+        authorName: 'Auth Or',
+        mediaTitle: 'Outbox Movie',
+      });
+      expect(o.sentAt).toBeNull(); // queued for the notify-outbox drainer
+    }
+    expect((push.payload as { to?: string }).to).toBeUndefined();
+    expect((mail.payload as { to?: string }).to).toBe('admin@haynesnetwork.com');
   });
 
   it('when the outbox INSERT fails, the whole creation ROLLS BACK — no ticket without a ping', async () => {
@@ -285,5 +292,59 @@ describe('the ticket_created outbox — SAME-TX with the ticket insert (ADR-034 
         mediaItemId: '00000000-0000-4000-8000-000000000000',
       }),
     ).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+// ADR-060 / DESIGN-031 D-02 (PLAN-035) — the R-196 author opt-in email enqueues on replies and
+// state transitions: OFF ⇒ no row; ON + someone ELSE acts ⇒ one email row to the author;
+// ON + the author's own action ⇒ no row.
+describe('ticket author opt-in emails (R-196)', () => {
+  const emailRowsFor = async (ticketId: string) =>
+    (await t.db.select().from(notificationOutbox).where(sql`${notificationOutbox.channel} = 'email'`)).filter(
+      (o) => (o.payload as { ticketId?: string }).ticketId === ticketId,
+    );
+
+  it('enqueues NOTHING for reply/transition while the author has not opted in (default OFF)', async () => {
+    const row = await file('opt-out ticket');
+    await addTicketReply({ db: t.db, ticketId: row.id, authorId: staff.id, body: 'a staff reply' });
+    await transitionTicket({ db: t.db, ticketId: row.id, actorId: staff.id, toStatus: 'in_progress' });
+    expect((await emailRowsFor(row.id)).filter((o) => o.eventType !== 'ticket_created')).toHaveLength(0);
+  });
+
+  it('opted in: someone ELSE replying/transitioning enqueues the author email; own actions never do', async () => {
+    const { setNotificationPreference } = await import('../src/index');
+    await setNotificationPreference({ db: t.db, userId: author.id, emailTicketUpdates: true });
+    try {
+      const row = await file('opt-in ticket');
+
+      // The author's OWN reply — no email.
+      await addTicketReply({ db: t.db, ticketId: row.id, authorId: author.id, body: 'my own note' });
+      expect((await emailRowsFor(row.id)).filter((o) => o.eventType === 'ticket_replied')).toHaveLength(0);
+
+      // Staff replies — ONE ticket_replied email to the author.
+      await addTicketReply({ db: t.db, ticketId: row.id, authorId: staff.id, body: 'we are on it — checking the transcode logs now' });
+      const replied = (await emailRowsFor(row.id)).filter((o) => o.eventType === 'ticket_replied');
+      expect(replied).toHaveLength(1);
+      expect(replied[0]!.payload).toMatchObject({
+        to: 'author@example.com',
+        title: 'opt-in ticket',
+        replyAuthorName: 'Sta Ff',
+      });
+      expect((replied[0]!.payload as { snippet?: string }).snippet).toContain('transcode logs');
+
+      // Staff transitions — ONE ticket_status_changed email to the author, note carried.
+      await transitionTicket({ db: t.db, ticketId: row.id, actorId: staff.id, toStatus: 'in_progress', note: 'repro confirmed' });
+      const moved = (await emailRowsFor(row.id)).filter((o) => o.eventType === 'ticket_status_changed');
+      expect(moved).toHaveLength(1);
+      expect(moved[0]!.payload).toMatchObject({
+        to: 'author@example.com',
+        fromStatus: 'open',
+        toStatus: 'in_progress',
+        actorName: 'Sta Ff',
+        note: 'repro confirmed',
+      });
+    } finally {
+      await setNotificationPreference({ db: t.db, userId: author.id, emailTicketUpdates: false });
+    }
   });
 });
