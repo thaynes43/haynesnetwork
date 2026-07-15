@@ -1,5 +1,6 @@
 import {
   mediaItems,
+  notificationPreferences,
   tickets,
   ticketEvents,
   ticketReplies,
@@ -58,6 +59,35 @@ async function assertMediaItemExists(
   if (!row) throw new NotFoundError(`Media item ${mediaItemId} not found`);
 }
 
+/**
+ * ADR-060 C-04 / R-195 (PLAN-035) — the admin mailbox the ticket-created email goes to.
+ * Env-configured (`TICKET_ADMIN_EMAIL`), defaulting to the owner's stated address.
+ */
+export function ticketAdminEmail(env: Record<string, string | undefined> = process.env): string {
+  return env.TICKET_ADMIN_EMAIL?.trim() || 'admin@haynesnetwork.com';
+}
+
+/**
+ * DESIGN-031 D-02 — the ticket AUTHOR's email, ONLY when they opted into ticket-update emails
+ * (R-196; `notification_preferences.email_ticket_updates`). Read inside the mutation's tx so the
+ * gate is transactionally consistent with the enqueue. Null ⇒ no email row.
+ */
+async function optedInAuthorEmail(
+  tx: { select: DbClient['select'] },
+  authorUserId: string,
+): Promise<string | null> {
+  const [row] = await tx
+    .select({
+      email: users.email,
+      optedIn: notificationPreferences.emailTicketUpdates,
+    })
+    .from(users)
+    .leftJoin(notificationPreferences, eq(notificationPreferences.userId, users.id))
+    .where(eq(users.id, authorUserId))
+    .limit(1);
+  return row?.optedIn === true && row.email ? row.email : null;
+}
+
 export interface CreateTicketInput {
   db?: DbClient;
   authorId: string;
@@ -66,6 +96,8 @@ export interface CreateTicketInput {
   category: TicketCategory;
   mediaItemId?: string | null;
   now?: Date;
+  /** R-195 — the admin recipient override (tests); defaults to `ticketAdminEmail()`. */
+  adminEmail?: string;
 }
 
 /**
@@ -134,6 +166,22 @@ export async function createTicket(input: CreateTicketInput): Promise<TicketRow>
       earliestSendAt,
     });
 
+    // R-195 (ADR-060 / DESIGN-031 D-02) — the UNCONDITIONAL admin email, same tx, same facts. The
+    // recipient rides payload.to (resolved here, at enqueue time — ADR-060 C-02).
+    await enqueueOutbox(tx, {
+      channel: 'email',
+      eventType: 'ticket_created',
+      payload: {
+        to: input.adminEmail ?? ticketAdminEmail(),
+        ticketId: row.id,
+        title: row.title,
+        category: row.category,
+        authorName: author?.displayName ?? null,
+        mediaTitle,
+      },
+      earliestSendAt,
+    });
+
     return row;
   });
 }
@@ -163,9 +211,13 @@ export async function transitionTicket(
   input: TransitionTicketInput,
 ): Promise<TransitionTicketResult> {
   const now = input.now ?? new Date();
+  // R-196 — the (possible) author email rides the same window discipline as every outbox row:
+  // window read BEFORE the tx opens (the batch-writer pattern).
+  const window = await getNotifyWindow(input.db);
+  const earliestSendAt = computeEarliestSend(now, window);
   return inTransaction(input.db, async (tx) => {
     const [existing] = await tx
-      .select({ id: tickets.id, status: tickets.status })
+      .select({ id: tickets.id, status: tickets.status, authorUserId: tickets.authorUserId })
       .from(tickets)
       .where(eq(tickets.id, input.ticketId))
       .for('update');
@@ -193,6 +245,33 @@ export async function transitionTicket(
       })
       .returning();
     if (!event) throw new Error('ticket event insert returned no row');
+
+    // R-196 (ADR-060 / DESIGN-031 D-02) — email the ticket AUTHOR on a status change, only when
+    // opted in and NOT for their own action. Same tx as the transition (ADR-034 C-01).
+    if (existing.authorUserId !== null && existing.authorUserId !== input.actorId) {
+      const to = await optedInAuthorEmail(tx, existing.authorUserId);
+      if (to !== null) {
+        const [actor] = await tx
+          .select({ displayName: users.displayName })
+          .from(users)
+          .where(eq(users.id, input.actorId))
+          .limit(1);
+        await enqueueOutbox(tx, {
+          channel: 'email',
+          eventType: 'ticket_status_changed',
+          payload: {
+            to,
+            ticketId: ticket.id,
+            title: ticket.title,
+            fromStatus: existing.status,
+            toStatus: input.toStatus,
+            actorName: actor?.displayName ?? null,
+            note: input.note ?? null,
+          },
+          earliestSendAt,
+        });
+      }
+    }
     return { ticket, event };
   });
 }
@@ -213,9 +292,12 @@ export interface AddTicketReplyInput {
  */
 export async function addTicketReply(input: AddTicketReplyInput): Promise<TicketReplyRow> {
   const now = input.now ?? new Date();
+  // R-196 — window read before the tx (see transitionTicket).
+  const window = await getNotifyWindow(input.db);
+  const earliestSendAt = computeEarliestSend(now, window);
   return inTransaction(input.db, async (tx) => {
     const [existing] = await tx
-      .select({ id: tickets.id })
+      .select({ id: tickets.id, title: tickets.title, authorUserId: tickets.authorUserId })
       .from(tickets)
       .where(eq(tickets.id, input.ticketId))
       .for('update');
@@ -234,6 +316,31 @@ export async function addTicketReply(input: AddTicketReplyInput): Promise<Ticket
       .update(tickets)
       .set({ lastActivityAt: now })
       .where(eq(tickets.id, input.ticketId));
+
+    // R-196 (ADR-060 / DESIGN-031 D-02) — email the ticket AUTHOR on a reply, only when opted in
+    // and the reply is SOMEONE ELSE's. Same tx as the reply insert (ADR-034 C-01).
+    if (existing.authorUserId !== null && existing.authorUserId !== input.authorId) {
+      const to = await optedInAuthorEmail(tx, existing.authorUserId);
+      if (to !== null) {
+        const [replyAuthor] = await tx
+          .select({ displayName: users.displayName })
+          .from(users)
+          .where(eq(users.id, input.authorId))
+          .limit(1);
+        await enqueueOutbox(tx, {
+          channel: 'email',
+          eventType: 'ticket_replied',
+          payload: {
+            to,
+            ticketId: existing.id,
+            title: existing.title,
+            replyAuthorName: replyAuthor?.displayName ?? null,
+            snippet: input.body.slice(0, 200),
+          },
+          earliestSendAt,
+        });
+      }
+    }
     return reply;
   });
 }

@@ -602,6 +602,19 @@ button.motd__dismiss:hover {
   border-bottom: 1px solid var(--color-border);
   margin-bottom: 6px;
 }
+/* ADR-060 / DESIGN-031 D-07 (PLAN-035) — the personal email opt-in row inside the user menu.
+   Menu-item metrics (padding/size) with the check-row mechanics; recolor-only, never reflows
+   (ADR-015). Tokens only (hard rule 2). */
+.usermenu__pref {
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 6px;
+}
+.usermenu__pref:hover {
+  color: var(--color-text);
+}
 .usermenu__display {
   font-weight: 600;
   font-size: 13px;

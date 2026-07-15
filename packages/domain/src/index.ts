@@ -67,6 +67,7 @@ export * from './media-sync';
 export * from './media-metadata';
 // ADR-052 / DESIGN-026 D-06 (PLAN-029) — per-user Library preferences store + URL-precedence resolver.
 export * from './library-preferences';
+export * from './notification-preferences';
 // ADR-053 / DESIGN-026 D-07 (PLAN-029) — per-user watch/read-state seam: the app-user↔account mapping,
 // the per-user video watch read-model, and the per-user ABS book read-state (single-writers, no audit).
 export * from './user-account-map';

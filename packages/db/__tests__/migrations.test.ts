@@ -451,9 +451,10 @@ describe('migrations against embedded Postgres 16', () => {
       await client.query(
         `INSERT INTO notification_outbox (event_type, payload) VALUES ('smart_degraded', '{}'::jsonb)`,
       );
+      // (`ticket_replied` was this test's rejected example until migration 0049 legalized it — ADR-060.)
       await expect(
         client.query(
-          `INSERT INTO notification_outbox (event_type, payload) VALUES ('ticket_replied', '{}'::jsonb)`,
+          `INSERT INTO notification_outbox (event_type, payload) VALUES ('ticket_eaten', '{}'::jsonb)`,
         ),
       ).rejects.toMatchObject({ code: '23514' });
       await client.query(
@@ -1085,6 +1086,58 @@ describe('migrations against embedded Postgres 16', () => {
       }
       await client.query(
         `DELETE FROM permission_audit WHERE action IN ('link_integration','unlink_integration','request_book_search')`,
+      );
+    });
+  });
+
+  describe('0049 ticket email notifications (ADR-060 — notification_preferences + channel/event CHECK relaxes)', () => {
+    it('notification_preferences exists with the one-row-per-user unique + cascade', async () => {
+      const userId = (
+        await client.query(
+          `INSERT INTO users (email, display_name) VALUES ('pref-mig@example.com', 'Pref Mig') RETURNING id`,
+        )
+      ).rows[0].id;
+      await client.query({
+        text: `INSERT INTO notification_preferences (user_id, email_ticket_updates) VALUES ($1, true)`,
+        values: [userId],
+      });
+      // Unique per user — a second row for the same user violates.
+      await expect(
+        client.query({
+          text: `INSERT INTO notification_preferences (user_id) VALUES ($1)`,
+          values: [userId],
+        }),
+      ).rejects.toMatchObject({ code: '23505' });
+      // Cascade on user delete.
+      await client.query({ text: `DELETE FROM users WHERE id = $1`, values: [userId] });
+      const left = await client.query({
+        text: `SELECT count(*)::int AS n FROM notification_preferences WHERE user_id = $1`,
+        values: [userId],
+      });
+      expect(left.rows[0].n).toBe(0);
+    });
+
+    it('the channel CHECK admits email (and still rejects an unknown channel)', async () => {
+      await client.query(
+        `INSERT INTO notification_outbox (channel, event_type, payload) VALUES ('email', 'ticket_created', '{"to":"a@x.com"}'::jsonb)`,
+      );
+      await expect(
+        client.query(
+          `INSERT INTO notification_outbox (channel, event_type, payload) VALUES ('sms', 'ticket_created', '{}'::jsonb)`,
+        ),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query(`DELETE FROM notification_outbox WHERE channel = 'email'`);
+    });
+
+    it('the event-type CHECK admits ticket_replied + ticket_status_changed (preservation intact)', async () => {
+      for (const et of ['ticket_replied', 'ticket_status_changed', 'ticket_created']) {
+        await client.query({
+          text: `INSERT INTO notification_outbox (event_type, payload) VALUES ($1, '{}'::jsonb)`,
+          values: [et],
+        });
+      }
+      await client.query(
+        `DELETE FROM notification_outbox WHERE event_type IN ('ticket_replied','ticket_status_changed','ticket_created')`,
       );
     });
   });

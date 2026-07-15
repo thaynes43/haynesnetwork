@@ -337,6 +337,13 @@
       "when": 1783900700000,
       "tag": "0048_activity_in_flight",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1783900800000,
+      "tag": "0049_ticket_email_notifications",
+      "breakpoints": true
     }
   ]
 }
