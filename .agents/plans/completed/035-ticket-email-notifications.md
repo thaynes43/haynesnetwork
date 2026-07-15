@@ -1,8 +1,12 @@
 # PLAN-035: Ticket email notifications — admin alerts + user-opt-in status updates
 
-- **Status:** Backlogged (owner 2026-07-11) — **BLOCKED BY suite-wide SMTP integration (F-04)**
-  and by PLAN-034 (the ticket system it notifies about). Deliberately parked "until a lot of
-  other work is done but I do not want to lose track" (owner, verbatim).
+- **Status:** Completed — shipped v0.58.0 (2026-07-15, #292; ADR-060 / DESIGN-031 / migration 0049).
+  F-04 unblocked same morning (owner's 1P `smtp` item + haynes-ops #2063). LIVE-VALIDATED on prod:
+  a real validation ticket delivered the admin email over the Google relay (`sent:2, failed:0`;
+  ticket 5c94e8e1 — "safe to close"). Owner defaults recorded (DESIGN-031 Q-01..Q-03): one opt-in
+  switch / trash email follow-up / admin immediate. Admin recipient = admin@haynesnetwork.com
+  (owner-confirmed the only deliverable mailbox). Was: Backlogged (owner 2026-07-11), blocked by
+  F-04 + PLAN-034.
 - **Relates:** PLAN-034 (Helpdesk/Tickets), F-04 SMTP relay (Google Workspace +
   noreply@haynesnetwork.com alias — the enabling plan, still unplanned), PLAN-016-era
   `notification_outbox` (the transactional-outbox pattern email should ride — add an email

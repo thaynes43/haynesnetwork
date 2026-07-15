@@ -41,7 +41,13 @@ present. State:
 - **Watch/investigate:** Kapowarr `/volumes` HTTP 500 routing "The Hobbit" comic (persistent across
   runs); The Other Emily import; GB 503 bursts (known, retried); e2e-red member-persona investigation
   (unchanged); Goodreads facet lag (reconcile fix may improve it — re-check before scoping).
-- **Next builds queue:** PLAN-035 ticket emails (NOW UNBLOCKED — next up), PLAN-048 nightly digest tail,
+- **PLAN-035 SHIPPED + LIVE-VALIDATED (v0.58.0, same day):** email outbox channel (ADR-060 /
+  DESIGN-031 / migration 0049) — admin-on-create to admin@haynesnetwork.com (owner-confirmed the only
+  deliverable mailbox) + author opt-in (user-menu toggle, default OFF) + per-channel disabled-safe
+  drainer. Prod validation ticket 5c94e8e1 delivered `sent:2, failed:0` over the real Google relay.
+  NOTE the HelmRelease upgrade LAGS the kustomization apply — re-run `flux reconcile helmrelease
+  haynesnetwork -n frontend` and re-read the deploy image before declaring a roll stuck.
+- **Next builds queue:** PLAN-048 nightly digest tail (email channel now exists — small),
   PLAN-038 (scoped), PLAN-040, F-11 spot-check, PLAN-043 next phases (scope with owner).
 
 ### Prior top block (Tue-night wrap → Wednesday cold start)
