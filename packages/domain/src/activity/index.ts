@@ -9,3 +9,4 @@ export * from './arr-adapter';
 export * from './kapowarr-adapter';
 export * from './failures';
 export * from './clients';
+export * from './digest';

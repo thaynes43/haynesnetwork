@@ -372,6 +372,20 @@ export function renderOutboxEmail(row: {
         text: `${replyAuthor} replied to your ticket “${title}”.\n\n${snippet}${snippet !== '' ? '\n\n' : ''}Open it: ${ticketUrl}\n`,
       };
     }
+    // ADR-060 follow-up (PLAN-048 tail) — the nightly OPEN-failures digest (one row per run).
+    case 'activity_failure_digest': {
+      const count = typeof p.count === 'number' ? p.count : 0;
+      const items = Array.isArray(p.items) ? (p.items as Array<Record<string, unknown>>) : [];
+      const lines = items
+        .map((f) => ` • ${str(f.title) || 'unknown'} — ${str(f.failureKind).replace(/_/g, ' ')}${str(f.sourceApp) !== '' ? ` (${str(f.sourceApp)})` : ''}`)
+        .join('\n');
+      const more = count > items.length ? `\n…and ${count - items.length} more.` : '';
+      return {
+        to,
+        subject: `[haynesnetwork] ${count} stuck import${count === 1 ? '' : 's'} need attention`,
+        text: `Open import failures at digest time:\n\n${lines}${more}\n\nReview + retry: https://haynesnetwork.com/library/activity\n`,
+      };
+    }
     // R-196 — the author's opt-in status-transition notification.
     case 'ticket_status_changed': {
       const actor = str(p.actorName) || 'An admin';

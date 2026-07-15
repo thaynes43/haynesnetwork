@@ -119,3 +119,14 @@ member's ticket → run the drainer → assert one recorded message to the membe
 | Q-01 | Opt-in granularity — per-event-type or one switch? | **DEFAULTED 2026-07-15 (owner may veto): one switch** (`email_ticket_updates`); schema leaves room for sibling columns. |
 | Q-02 | Trash pipeline email in the same release? | **DEFAULTED: follow-up release** (ADR-060 C-07 beachhead). |
 | Q-03 | Admin digest vs immediate? | **DEFAULTED: immediate** — household ticket volume; the PLAN-048 nightly digest remains the separate digest surface. |
+
+## Amendment — 2026-07-15 (same day): the nightly admin failure digest (PLAN-048 tail)
+
+The PLAN-048 "post-SMTP nightly admin digest" ships as the email channel's second consumer
+(ADR-060 C-07's beachhead prediction, PRD R-198). A new **`failure-digest`** sync mode (nightly
+CronJob; migration 0050 grows both CHECKs) reads OPEN `activity_import_failures`
+(`resolved_at IS NULL`) and enqueues **ONE** `activity_failure_digest` email-channel outbox row to
+the R-195 admin mailbox — count + the oldest 20 titles/kinds, deep-linking `/library/activity`.
+**A clean ledger enqueues nothing** (quiet success). Delivery, retries, quiet hours: the unchanged
+D-04 drainer. `runFailureDigest` (`@hnet/domain` activity/digest); no sync_runs row (the
+notify-outbox class).

@@ -332,6 +332,13 @@ export const SYNC_RUN_KINDS = [
   // the outbox rows. It joins SYNC_RUN_KINDS so the CLI --mode parser + SyncMode accept it (migration 0048
   // rebuilds the sync_runs.run_kind CHECK to keep the const array + CHECK in parity).
   'activity-scan',
+  // ADR-060 follow-up (PLAN-048 tail, 2026-07-15) — 'failure-digest' reads OPEN
+  // activity_import_failures (resolved_at IS NULL) and enqueues ONE email-channel
+  // notification_outbox row (`activity_failure_digest`) to the admin mailbox — none when the
+  // ledger is clean. Nightly CronJob; the notify-outbox drainer delivers. Like notify-outbox it
+  // touches NO *arr source and writes NO sync_runs row — its trail is the outbox row. It joins
+  // SYNC_RUN_KINDS so the CLI --mode parser + SyncMode accept it (migration 0050 rebuilds the CHECK).
+  'failure-digest',
 ] as const;
 export type SyncRunKind = (typeof SYNC_RUN_KINDS)[number];
 
@@ -831,6 +838,11 @@ export const NOTIFY_OUTBOX_EVENT_TYPES = [
   //                                 for the author's own action). Migration 0049 rebuilds the CHECK.
   'ticket_replied',
   'ticket_status_changed',
+  //   activity_failure_digest     — ADR-060 follow-up (PLAN-048 tail, 2026-07-15) — the NIGHTLY admin
+  //                                 email summarizing OPEN activity_import_failures (email channel only;
+  //                                 the failure-digest sync mode enqueues ONE row per run, none when the
+  //                                 ledger is clean). Migration 0050 rebuilds the CHECK.
+  'activity_failure_digest',
 ] as const;
 export type NotifyOutboxEventType = (typeof NOTIFY_OUTBOX_EVENT_TYPES)[number];
 
