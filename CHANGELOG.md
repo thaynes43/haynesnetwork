@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.58.0](https://github.com/thaynes43/haynesnetwork/compare/v0.57.0...v0.58.0) (2026-07-15)
+
+
+### Features
+
+* ticket email notifications — email outbox channel + author opt-in (PLAN-035 / ADR-060) ([#292](https://github.com/thaynes43/haynesnetwork/issues/292)) ([3b0b6c2](https://github.com/thaynes43/haynesnetwork/commit/3b0b6c245893f32977faee064b495c827700b720))
+
+
+### Documentation
+
+* ratify PLAN-044..048 -&gt; completed/ + Wednesday midday handoff (v0.57.0, SMTP unblocked, Orwell DROP) ([#290](https://github.com/thaynes43/haynesnetwork/issues/290)) ([936ddfc](https://github.com/thaynes43/haynesnetwork/commit/936ddfc04c79e454ba9b2067079a4cc67ad4beb2))
+
 ## [0.57.0](https://github.com/thaynes43/haynesnetwork/compare/v0.56.0...v0.57.0) (2026-07-15)
 
 
