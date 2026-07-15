@@ -110,3 +110,26 @@ it back, in order of preference:
 `HOMEPAGE_VAR_ABS_API_TOKEN` is non-admin (401 on `/api/settings`,`/api/users`). To hit the admin
 settings/users APIs, authenticate as `root`: `POST /login` with `root` + `ABS_ROOT_PASS`; the response
 `user.accessToken` (JWT) and `user.token` (long-lived) both work as `Authorization: Bearer`.
+
+## Addendum — 2026-07-15: AudioBooth mobile client + the progress-loss incident
+
+**AudioBooth (third-party iOS client) adopted; SSO verified live.** Its OAuth callback scheme was
+added to ABS's mobile allowlist (`PATCH /api/auth-settings`):
+`authOpenIDMobileRedirectURIs = ["audiobookshelf://oauth", "audiobooth://oauth"]`. No
+Authentik-side change — ABS mediates the OIDC flow, so Authentik only sees ABS's own callback;
+the app scheme is enforced by this allowlist. Owner logged in via "Login with SSO" same evening.
+
+**The progress-loss incident (root-caused same evening).** User reports of ABS "not saving
+progress" came down to the WEB player's flush semantics — NOT the app, NOT storage, NOT a stale
+backup: the web player holds the playback session in memory and persists only on its periodic
+sync or a clean Pause/stop; a tab closed before the first sync persists NOTHING (server sees
+only a socket `transport close`; verified against a live owner repro, and the pause-first
+variant persists fine). iOS-Safari listeners lose most short sessions this way. Mitigations:
+native apps (AudioBooth — above) instead of the Safari web player; pause before closing; an
+upstream `sendBeacon`-on-pagehide issue is drafted (not yet filed). Two red herrings, disproven
+with evidence: (1) the volsync restore at the 2026-07-10 deploy seeded an EMPTY repo — first-ever
+deployment, proven by the root account being created via the setup wizard 35 min later; (2) no
+SQLite/storage faults (PVC 0.7% full, zero DB write errors). Related hygiene done the same
+evening: 810 of 844 audiobooks had NULL language metadata (hiding items behind the app's
+Language facet — the "missing Matilda" report); all patched to `English` via the ABS API
+(estate is English-only by F-10 decree) and the books mirror resynced.
