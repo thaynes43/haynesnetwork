@@ -47,7 +47,18 @@ present. State:
   drainer. Prod validation ticket 5c94e8e1 delivered `sent:2, failed:0` over the real Google relay.
   NOTE the HelmRelease upgrade LAGS the kustomization apply — re-run `flux reconcile helmrelease
   haynesnetwork -n frontend` and re-read the deploy image before declaring a roll stuck.
-- **Next builds queue:** PLAN-048 nightly digest tail (email channel now exists — small),
+- **AFTERNOON CLEANUP RUN (owner-directed, all four DONE):** (1) The Other Emily — LL cannot import
+  the multi-part "Chapterized" torrent layout (silent postprocess skip + importBook false; debug-log
+  proven); snatch reset to Wanted + re-searched, seeding payload intact. WATCH: it may re-grab the
+  same torrent. (2) Kapowarr Hobbit — SQLite "database is locked" (pod restarted) + the REAL bug:
+  GB-outage declassified comics — fixed (durable comic_status, #295); Hobbit reclassifies when GB
+  quota resets (GB hit its DAILY 429 today — go easy on manual goodreads-sync). (3) **Nightly
+  failure digest SHIPPED (v0.59.0)** — `failure-digest` CronJob 21:05 + email channel; validated
+  live (clean ledger ⇒ silent). (4) **PLAN-038 SHIPPED (v0.60.0)** — ADR-061 locator + compose
+  leaf-or-scope drill; migration 0051 DELETED pre-locator tickets (Q-03); live locator ticket
+  c2a20a02 ("Gray" S1, safe to close); ytdlsub/books targets deferred (DESIGN-032 Q-04).
+  Coverage note: Goodreads 52%→85% after the sweep. Releases today: v0.57.0→v0.60.0.
+- **Next builds queue:**
   PLAN-038 (scoped), PLAN-040, F-11 spot-check, PLAN-043 next phases (scope with owner).
 
 ### Prior top block (Tue-night wrap → Wednesday cold start)
