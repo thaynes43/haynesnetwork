@@ -5,10 +5,9 @@
 import { z } from 'zod';
 
 /**
- * `cmd=getBook&id=<bookid>` — the LL book row. LL uses capitalized keys; `Status` is the EBOOK status and
- * `AudioStatus` the AUDIOBOOK status (both from the LL vocabulary: Wanted / Skipped / Open / Have / Snatched
- * / Ignored / Matched). Some builds nest the book under a `data`/array — we accept the flat object and let
- * the read client pick the first element of an array shape.
+ * One LL book row (as served inside `cmd=getAllBooks`). LL uses capitalized keys; `Status` is the EBOOK
+ * status and `AudioStatus` the AUDIOBOOK status (both from the LL vocabulary: Wanted / Skipped / Open /
+ * Have / Snatched / Ignored / Matched).
  */
 export const llBookSchema = z
   .object({
@@ -21,17 +20,24 @@ export const llBookSchema = z
 
 export type LlBook = z.infer<typeof llBookSchema>;
 
-/** `getBook` may return the object directly, wrapped in `{ data }`, or as a single-element array. */
-export const llGetBookResponseSchema = z.union([
-  llBookSchema,
-  z.object({ data: z.union([llBookSchema, z.array(llBookSchema)]) }).passthrough(),
+/**
+ * `cmd=getAllBooks` — every book LL tracks, one row per book with the two per-format statuses. This is the
+ * reconcile source of truth: the deployed LL build (`version-40a389ea`) has NO `getBook` command (its API
+ * answers `Unknown command: getBook` — found 2026-07-15, the reconcile had been a silent no-op since
+ * PLAN-044 shipped), so per-book status reads are impossible — the sync fetches the full list once per run
+ * instead (~100s of rows; cheaper than N per-book calls anyway, and immune to per-call 503 bursts).
+ * Array / `{ data }` / error-string shapes all tolerated (→ empty map in the read client).
+ */
+export const llGetAllBooksResponseSchema = z.union([
   z.array(llBookSchema),
-  // An unknown-book / error response is a bare string or empty — tolerate it (→ null in the read client).
+  z.object({ data: z.array(llBookSchema) }).passthrough(),
   z.string(),
   z.null(),
+  // An error object (e.g. `{ Success: false, Error: {...} }` — the unknown-command shape) → empty map.
+  z.object({}).passthrough(),
 ]);
 
-export type LlGetBookResponse = z.infer<typeof llGetBookResponseSchema>;
+export type LlGetAllBooksResponse = z.infer<typeof llGetAllBooksResponseSchema>;
 
 /**
  * ADR-059 / DESIGN-030 (PLAN-048 — Activity / In-Flight) — a LazyLibrarian WANTED-TABLE row (`cmd=getWanted`).

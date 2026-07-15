@@ -4,8 +4,7 @@
 // ./write and is import-confined to packages/domain (ADR-055, the @hnet/arr / @hnet/plex precedent).
 import { LazyLibrarianHttp, type LazyLibrarianHttpOptions } from './http';
 import {
-  llBookSchema,
-  llGetBookResponseSchema,
+  llGetAllBooksResponseSchema,
   llGetWantedResponseSchema,
   type LlBook,
   type LlWantedRow,
@@ -45,21 +44,6 @@ export interface LlWantedEntry {
   snatchedAt: string | null;
 }
 
-/** Pull the first LlBook out of the several response shapes LL builds (object / {data} / array). */
-function extractBook(raw: unknown): LlBook | null {
-  if (raw == null || typeof raw === 'string') return null;
-  if (Array.isArray(raw)) return raw.length > 0 ? (raw[0] as LlBook) : null;
-  const obj = raw as Record<string, unknown>;
-  if ('data' in obj) {
-    const data = obj.data;
-    if (Array.isArray(data)) return data.length > 0 ? (data[0] as LlBook) : null;
-    const parsed = llBookSchema.safeParse(data);
-    return parsed.success ? parsed.data : null;
-  }
-  const parsed = llBookSchema.safeParse(obj);
-  return parsed.success ? parsed.data : null;
-}
-
 export class LazyLibrarianReadClient {
   private readonly http: LazyLibrarianHttp;
 
@@ -68,18 +52,29 @@ export class LazyLibrarianReadClient {
   }
 
   /**
-   * `cmd=getBook&id=<bookId>` — the current per-format status of a book LL knows. Returns null when LL has
-   * no such book (unknown id / error response). The status strings are returned RAW for the domain to map.
+   * `cmd=getAllBooks` — the per-format status of EVERY book LL tracks, keyed by BookID. The deployed LL
+   * build has no `getBook` command (it answers `Unknown command`), so reconcile reads the whole list once
+   * per sync run and looks books up locally. Returns an empty map on an unknown/error response (the domain
+   * treats a missing entry as "LL doesn't know this book" and leaves the request untouched).
    */
-  async getBook(bookId: string): Promise<LlBookStatus | null> {
-    const raw = await this.http.commandJson('getBook', llGetBookResponseSchema, { id: bookId });
-    const book = extractBook(raw);
-    if (!book) return null;
-    return {
-      bookId: book.BookID != null ? String(book.BookID) : bookId,
-      ebookStatus: book.Status ?? null,
-      audioStatus: book.AudioStatus ?? null,
-    };
+  async getAllBookStatuses(): Promise<Map<string, LlBookStatus>> {
+    const raw = await this.http.commandJson('getAllBooks', llGetAllBooksResponseSchema);
+    const rows: LlBook[] = Array.isArray(raw)
+      ? raw
+      : raw != null && typeof raw === 'object' && 'data' in raw
+        ? (raw as { data: LlBook[] }).data
+        : [];
+    const byId = new Map<string, LlBookStatus>();
+    for (const row of rows) {
+      if (row.BookID == null) continue;
+      const bookId = String(row.BookID);
+      byId.set(bookId, {
+        bookId,
+        ebookStatus: row.Status ?? null,
+        audioStatus: row.AudioStatus ?? null,
+      });
+    }
+    return byId;
   }
 
   /**

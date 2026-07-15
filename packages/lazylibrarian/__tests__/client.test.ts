@@ -5,21 +5,32 @@ import { LazyLibrarianWriteClient } from '../src/write';
 
 const OPTS = { baseUrl: 'http://ll:5299', apiKey: 'secret-key', backoffMs: 1, sleepImpl: async () => {} };
 
-describe('LazyLibrarianReadClient.getBook', () => {
-  it('parses the flat, {data}, and array shapes and returns null for an unknown book', async () => {
-    const flat = new Response(JSON.stringify({ BookID: 'b1', Status: 'Wanted', AudioStatus: 'Open' }), {
-      status: 200,
-    });
-    const client = new LazyLibrarianReadClient({ ...OPTS, fetchImpl: (async () => flat) as unknown as typeof fetch });
-    expect(await client.getBook('b1')).toEqual({ bookId: 'b1', ebookStatus: 'Wanted', audioStatus: 'Open' });
+describe('LazyLibrarianReadClient.getAllBookStatuses', () => {
+  it('parses the array and {data} shapes into a BookID-keyed map, skipping id-less rows', async () => {
+    const rows = [
+      { BookID: 'b1', Status: 'Wanted', AudioStatus: 'Open' },
+      { BookID: 'b2', Status: 'Skipped' },
+      { Status: 'Orphan' }, // no BookID — unaddressable, dropped
+    ];
+    const arr = new Response(JSON.stringify(rows), { status: 200 });
+    const client = new LazyLibrarianReadClient({ ...OPTS, fetchImpl: (async () => arr) as unknown as typeof fetch });
+    const map = await client.getAllBookStatuses();
+    expect(map.size).toBe(2);
+    expect(map.get('b1')).toEqual({ bookId: 'b1', ebookStatus: 'Wanted', audioStatus: 'Open' });
+    expect(map.get('b2')).toEqual({ bookId: 'b2', ebookStatus: 'Skipped', audioStatus: null });
 
-    const arr = new Response(JSON.stringify([{ BookID: 'b2', Status: 'Skipped' }]), { status: 200 });
-    const c2 = new LazyLibrarianReadClient({ ...OPTS, fetchImpl: (async () => arr) as unknown as typeof fetch });
-    expect((await c2.getBook('b2'))?.ebookStatus).toBe('Skipped');
+    const wrapped = new Response(JSON.stringify({ data: rows.slice(0, 1) }), { status: 200 });
+    const c2 = new LazyLibrarianReadClient({ ...OPTS, fetchImpl: (async () => wrapped) as unknown as typeof fetch });
+    expect((await c2.getAllBookStatuses()).size).toBe(1);
+  });
 
-    const empty = new Response('null', { status: 200 });
-    const c3 = new LazyLibrarianReadClient({ ...OPTS, fetchImpl: (async () => empty) as unknown as typeof fetch });
-    expect(await c3.getBook('nope')).toBeNull();
+  it('returns an empty map on the unknown-command error shape (the real-build getBook lesson)', async () => {
+    const err = new Response(
+      JSON.stringify({ Success: false, Data: '', Error: { Code: 405, Message: 'Unknown command' } }),
+      { status: 200 },
+    );
+    const client = new LazyLibrarianReadClient({ ...OPTS, fetchImpl: (async () => err) as unknown as typeof fetch });
+    expect((await client.getAllBookStatuses()).size).toBe(0);
   });
 });
 
