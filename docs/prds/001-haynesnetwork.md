@@ -455,6 +455,7 @@ T-129..T-135.)
 | R-195 | **Ticket-created admin email (PLAN-035 / ADR-060).** Creating a ticket enqueues an `email`-channel `notification_outbox` row to the admin mailbox (`TICKET_ADMIN_EMAIL`, default `admin@haynesnetwork.com`) in the SAME transaction as the ticket insert — an admin knows without visiting the site. Unconditional (no per-admin opt-out this release). | Must |
 | R-196 | **User opt-in ticket status emails (PLAN-035 / ADR-060).** A user may opt in (profile toggle, default OFF, `notification_preferences.email_ticket_updates`) to email on REPLIES and STATE TRANSITIONS of tickets they authored; a user is never emailed about their OWN action. Enqueued same-tx, delivered by the outbox drainer over the F-04 SMTP relay, quiet-hours window honored. | Must |
 | R-197 | **Email is disabled-safe (ADR-060 C-03).** Absent/incomplete `SMTP_*` credentials leave email-channel rows waiting (never failed, never parked, no attempts burned) while other channels deliver normally; the drainer report names the skipped channel. | Must |
+| R-198 | **Nightly admin failure digest (PLAN-048 tail / ADR-060 follow-up).** A nightly job summarizes all OPEN import failures in ONE email to the admin mailbox (count + oldest 20, deep link to Library→Activity); a clean failure ledger sends nothing. Rides the R-197 email channel unchanged. | Must |
 
 ### Platform & non-functional
 

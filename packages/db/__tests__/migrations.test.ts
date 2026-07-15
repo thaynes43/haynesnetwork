@@ -1141,4 +1141,17 @@ describe('migrations against embedded Postgres 16', () => {
       );
     });
   });
+
+  describe('0050 failure digest (ADR-060 follow-up — event-type + run-kind CHECK relaxes)', () => {
+    it('admits activity_failure_digest + failure-digest (preservation intact)', async () => {
+      await client.query(
+        `INSERT INTO notification_outbox (channel, event_type, payload) VALUES ('email', 'activity_failure_digest', '{"to":"a@x.com"}'::jsonb)`,
+      );
+      await client.query(`DELETE FROM notification_outbox WHERE event_type = 'activity_failure_digest'`);
+      await client.query(
+        `INSERT INTO sync_runs (source, run_kind, status) VALUES ('radarr', 'failure-digest', 'running')`,
+      );
+      await client.query(`DELETE FROM sync_runs WHERE run_kind = 'failure-digest'`);
+    });
+  });
 });

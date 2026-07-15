@@ -20,6 +20,7 @@ import {
   drainDuePoolRefreshes,
   expireStaleFixRequests,
   deliverOutbox,
+  runFailureDigest,
   evaluateActivityFailures,
   evaluateMamGovernor,
   evaluateSmartAlerts,
@@ -214,6 +215,8 @@ export interface SyncReport {
   spacePolicyError?: string;
   /** ADR-034 — the `notify-outbox` drainer result (null for every other mode / when it errored). */
   outbox?: OutboxDeliveryReport | null;
+  /** ADR-060 follow-up — the failure-digest mode report (openCount + enqueued). */
+  failureDigest?: { openCount: number; enqueued: number } | null;
   /** The notify-outbox run's error — sets totalFailure for the CLI exit. */
   outboxError?: string;
   /** ADR-040 — the `smart-alerts` detector result (null for every other mode / when it errored). */
@@ -455,6 +458,33 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       outbox,
       ...(outboxError !== undefined ? { outboxError } : {}),
       totalFailure: outboxError !== undefined,
+    };
+  }
+
+  // ADR-060 follow-up (PLAN-048 tail) — the nightly `failure-digest` mode: reads OPEN
+  // activity_import_failures and enqueues ONE admin email-channel outbox row (none when clean).
+  // No *arr source, no sync_runs row — its trail is the outbox row; the notify-outbox drainer
+  // delivers it (disabled-safe without SMTP creds per R-197).
+  if (options.mode === 'failure-digest') {
+    const startedAt = new Date();
+    let failureDigest: { openCount: number; enqueued: number } | null = null;
+    let digestError: string | undefined;
+    try {
+      failureDigest = await runFailureDigest({ db });
+      logger.info('failure-digest evaluated', { ...failureDigest });
+    } catch (error) {
+      digestError = error instanceof Error ? error.message : String(error);
+      logger.error('failure-digest failed', { error: digestError });
+    }
+    return {
+      mode: options.mode,
+      startedAt,
+      finishedAt: new Date(),
+      sources: [],
+      backfill: null,
+      fixesCompleted: null,
+      failureDigest,
+      totalFailure: digestError !== undefined,
     };
   }
 
