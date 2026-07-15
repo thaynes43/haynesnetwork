@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.60.0](https://github.com/thaynes43/haynesnetwork/compare/v0.59.0...v0.60.0) (2026-07-15)
+
+
+### Features
+
+* ticket media precision — the compose drill + the ticket locator (PLAN-038 / ADR-061) ([#297](https://github.com/thaynes43/haynesnetwork/issues/297)) ([eeb3a5b](https://github.com/thaynes43/haynesnetwork/commit/eeb3a5b5d9e5a8c8c48f429394ab256d92a06574))
+
 ## [0.59.0](https://github.com/thaynes43/haynesnetwork/compare/v0.58.0...v0.59.0) (2026-07-15)
 
 
