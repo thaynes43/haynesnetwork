@@ -1,7 +1,7 @@
 // ADR-055 / DESIGN-028 (PLAN-044) — the hermetic LazyLibrarian stub: the query-string command API
 // (`/api?cmd=…&id=…&apikey=…`) the confined LL client drives, plus a call RECORDER (`/_stub/calls` +
 // `/_stub/reset`, the stub-arr idiom) so a spec can assert the both-format queueBook push + the manual
-// searchBook. Canned per-book statuses: gb-rpo LANDS (Open), gb-tog is Missing (Skipped) — the
+// searchBook. Canned per-book statuses: gb-rpo LANDS (Open), gb-tog is dead-end Missing (Ignored) — the
 // Search-again target. NEVER models LL provider config (out of scope by design).
 import { createServer, type Server } from 'node:http';
 
@@ -18,14 +18,21 @@ export interface StubLazyLibrarianServer {
   stop: () => Promise<void>;
 }
 
-/** The per-book status the stub reports (drives the reconcile → per-format request state). */
+/**
+ * The per-book status the stub reports (drives the reconcile → per-format request state). gb-tog is
+ * `Ignored` — the remaining DEAD-END Missing (the Search-again target): raw `Skipped` now auto-requeues
+ * via the sweep (DESIGN-028 amendment 2026-07-15), so a fixture that must STAY Missing pins Ignored.
+ */
 function bookStatus(id: string): { BookID: string; Status: string; AudioStatus: string } {
   if (id === 'gb-rpo') return { BookID: id, Status: 'Open', AudioStatus: 'Open' }; // landed → covered
-  if (id === 'gb-tog') return { BookID: id, Status: 'Skipped', AudioStatus: 'Skipped' }; // Missing
+  if (id === 'gb-tog') return { BookID: id, Status: 'Ignored', AudioStatus: 'Ignored' }; // dead-end Missing
   // ADR-057 (PLAN-045) — the READ-shelf covered book: LL already holds it (landed → covered).
   if (id === 'gb-martian') return { BookID: id, Status: 'Open', AudioStatus: 'Open' };
   return { BookID: id, Status: 'Wanted', AudioStatus: 'Wanted' };
 }
+
+/** Every book id the stub "knows" — the `getAllBooks` universe (comics never reach LL). */
+const KNOWN_BOOK_IDS = ['gb-rpo', 'gb-tog', 'gb-martian', 'gb-hyp', 'gb-phm'];
 
 // ADR-059 / DESIGN-030 (PLAN-048 — Activity / In-Flight) — the wanted-table fixture the Activity books
 // adapter reads (`cmd=getWanted`). It spans every in-flight stage + the incident: a searching row, a
@@ -104,9 +111,16 @@ export async function startStubLazyLibrarian(): Promise<StubLazyLibrarianServer>
         res.end('OK');
         return;
       }
-      if (cmd === 'getBook') {
+      if (cmd === 'getAllBooks') {
         res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify(id ? bookStatus(id) : null));
+        res.end(JSON.stringify(KNOWN_BOOK_IDS.map(bookStatus)));
+        return;
+      }
+      if (cmd === 'getBook') {
+        // Mirror the REAL deployed LL build: it has no getBook command (found 2026-07-15) — any caller
+        // that reaches for it must fail visibly here too, never get a comforting canned answer.
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ Success: false, Data: '', Error: { Code: 405, Message: 'Unknown command: getBook, try cmd=help' } }));
         return;
       }
       if (cmd === 'getWanted') {

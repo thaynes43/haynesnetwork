@@ -189,3 +189,28 @@ owner's A1-overruled ruling), adds the absent-custom-shelf tolerance (A3), and c
 Wanted overlay from `book_requests` (`books.wanted` — the mirror stays pure). Q-04 above is thereby
 RESOLVED (read / currently-reading / did-not-finish now sync AND acquire; cross-provider coverage stays
 a later saga phase).
+
+## Amendment — 2026-07-15: reconcile via `getAllBooks` + the Skipped-want usenet-first sweep
+
+**The bug.** D-04's reconcile step read per-book LL status with `cmd=getBook` — a command the deployed
+LL build (`linuxserver/lazylibrarian:version-40a389ea`) does not have (its API answers
+`Unknown command: getBook`). The tolerant ACL schema parsed that error object as an empty book row, so
+reconcile had been a **silent no-op since PLAN-044 shipped**: request rows never learned LL's statuses
+(`reconciled` counted null-writes). Found 2026-07-15 while verifying overnight MAM landings.
+
+**The fix.** `@hnet/lazylibrarian/read` replaces `getBook(id)` with **`getAllBookStatuses()`** —
+one `cmd=getAllBooks` fetch per sync run returning a BookID-keyed map (cheaper than N per-book calls;
+immune to per-call GB 503 bursts). A book absent from the map is one LL doesn't know — the request
+stays untouched (the honest gap). The e2e LL stub now mirrors the real build: `getAllBooks` serves the
+canned statuses and `getBook` answers the real 405 unknown-command shape.
+
+**The sweep (owner-directed 2026-07-15).** A live want whose LL status is **raw `Skipped`** is a book
+LL is NOT looking for — the `addBook` race and the pre-`searchBook` PLAN-044 pushes both leave rows in
+this state (the RUN-5 field observation: "minted, never actually searched, Skipped in LL"). Reconcile
+now **re-queues + re-searches** each such format immediately (`queueBook → searchBook`, paced, request
+advances `missing → wanted`, `requestsRequeued` reported): usenet (SAB) grabs it first on LL's
+usenet-first provider priority (OPS-013 §5), and MAM only fills gaps when its gate is open — the
+PLAN-039 governor still caps that side. **Raw `Skipped` ONLY**: `Ignored` is an owner ruling and
+`Matched` means LL believes it already holds a file — neither is ever swept. The dead-end Missing
+(+ manual "Search again") UX therefore keys on `Ignored`/unknown books from here on; e2e fixture
+`gb-tog` pins `Ignored`.

@@ -35,7 +35,7 @@ function stubGoogleBooks(volume: GbVolume | null): GoogleBooksClient {
 /** A no-op LazyLibrarian bundle so the fresh-link first sync pushes instantly (no network). */
 function stubLazyLibrarian(): LazyLibrarianClientBundle {
   return {
-    read: { getBook: async () => null },
+    read: { getAllBookStatuses: async () => new Map() },
     write: { addBook: async () => {}, queueBook: async () => {}, searchBook: async () => {} },
   } as unknown as LazyLibrarianClientBundle;
 }

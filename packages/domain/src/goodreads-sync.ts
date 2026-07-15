@@ -18,6 +18,7 @@ import {
   mapKapowarrVolumeStatus,
   mapLlStatus,
   markComicRouted,
+  markRequestFormatsRequeued,
   markRequestPushed,
   pickBestVolume,
   recordManualSearch,
@@ -64,6 +65,11 @@ export interface SyncGoodreadsReport {
   requestsMinted: number;
   requestsPushed: number;
   requestsReconciled: number;
+  /**
+   * DESIGN-028 amendment (2026-07-15) — wants LL had parked as `Skipped` that this run re-queued +
+   * re-searched (usenet-first by LL's provider priority; MAM only fills gaps when its gate is open).
+   */
+  requestsRequeued: number;
   /** ADR-056 — comics newly routed to Kapowarr this run (resolved + added monitored). */
   comicsRouted: number;
   /** ADR-056 — comics whose Kapowarr state was reconciled back this run (incl. the ones just routed). */
@@ -152,20 +158,54 @@ export async function syncGoodreadsIntegration(
   }
 
   // 5. Reconcile LL per-format statuses back onto the requests (both freshly-pushed + prior-run wants).
+  //    One `getAllBooks` fetch per run (the deployed LL build has no `getBook`; a book absent from the map
+  //    is one LL doesn't know — the request stays untouched, the honest gap).
+  // 5a. The Skipped-want sweep (DESIGN-028 amendment 2026-07-15, owner-directed): a live want whose LL
+  //     status is raw `Skipped` is a book LL is NOT looking for — addBook races and the pre-searchBook
+  //     PLAN-044 pushes both left rows in this state. Re-queue + re-search each such format immediately so
+  //     usenet (SAB) grabs it on LL's usenet-first provider priority — MAM only fills the gaps when its
+  //     gate is open (the governor still caps it). Raw `Skipped` ONLY: `Ignored` is an owner ruling and
+  //     `Matched` means LL thinks it already holds a file — neither may be re-queued.
   let reconciled = 0;
+  let requeued = 0;
   if (input.ll) {
+    let statuses: Map<string, { ebookStatus: string | null; audioStatus: string | null }>;
+    try {
+      statuses = await input.ll.read.getAllBookStatuses();
+    } catch (error) {
+      statuses = new Map();
+      log.error?.('goodreads-sync: LL getAllBooks failed — reconcile skipped this run', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     for (const target of [...toPush, ...toReconcile]) {
+      const status = statuses.get(target.llBookId);
+      if (!status) continue;
       try {
-        const status = await input.ll.read.getBook(target.llBookId);
-        if (status) {
-          await applyRequestReconcile({
+        await applyRequestReconcile({
+          db: input.db,
+          requestId: target.requestId,
+          ebookStatus: mapLlStatus(status.ebookStatus),
+          audioStatus: mapLlStatus(status.audioStatus),
+          now,
+        });
+        reconciled += 1;
+        const skippedFormats: Array<'ebook' | 'audiobook'> = [];
+        if (status.ebookStatus?.trim().toLowerCase() === 'skipped') skippedFormats.push('ebook');
+        if (status.audioStatus?.trim().toLowerCase() === 'skipped') skippedFormats.push('audiobook');
+        if (skippedFormats.length > 0) {
+          await pace(requeued + 1);
+          for (const format of skippedFormats) {
+            await input.ll.write.queueBook(target.llBookId, format);
+            await input.ll.write.searchBook(target.llBookId, format);
+          }
+          await markRequestFormatsRequeued({
             db: input.db,
             requestId: target.requestId,
-            ebookStatus: mapLlStatus(status.ebookStatus),
-            audioStatus: mapLlStatus(status.audioStatus),
+            formats: skippedFormats,
             now,
           });
-          reconciled += 1;
+          requeued += 1;
         }
       } catch (error) {
         log.error?.('goodreads-sync: LL reconcile failed', {
@@ -229,6 +269,7 @@ export async function syncGoodreadsIntegration(
     minted,
     pushed,
     reconciled,
+    requeued,
     comicsRouted,
     comicsReconciled,
     coverage,
@@ -240,6 +281,7 @@ export async function syncGoodreadsIntegration(
     requestsMinted: minted,
     requestsPushed: pushed,
     requestsReconciled: reconciled,
+    requestsRequeued: requeued,
     comicsRouted,
     comicsReconciled,
     coverage,

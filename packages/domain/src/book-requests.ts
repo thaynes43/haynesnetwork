@@ -438,6 +438,39 @@ export async function applyRequestReconcile(input: {
   });
 }
 
+/**
+ * Mark formats RE-QUEUED into LL (the Skipped-want sweep, DESIGN-028 amendment 2026-07-15): each named
+ * format advances to 'wanted' — LL is now looking again — without regressing a positive (grabbed/landed).
+ * Unaudited (synced/derived — the markRequestPushed class).
+ */
+export async function markRequestFormatsRequeued(input: {
+  db?: DbClient;
+  requestId: string;
+  formats: ReadonlyArray<'ebook' | 'audiobook'>;
+  now?: Date;
+}): Promise<void> {
+  if (input.formats.length === 0) return;
+  const now = input.now ?? new Date();
+  await inTransaction(input.db, async (tx) => {
+    const [req] = await tx
+      .select({ id: bookRequests.id, ebookStatus: bookRequests.ebookStatus, audioStatus: bookRequests.audioStatus })
+      .from(bookRequests)
+      .where(eq(bookRequests.id, input.requestId))
+      .for('update');
+    if (!req) return;
+    await tx
+      .update(bookRequests)
+      .set({
+        ebookStatus: input.formats.includes('ebook') ? advanceStatus(req.ebookStatus, 'wanted') : req.ebookStatus,
+        audioStatus: input.formats.includes('audiobook') ? advanceStatus(req.audioStatus, 'wanted') : req.audioStatus,
+        lastSearchedAt: now,
+        lastReconciledAt: now,
+        updatedAt: now,
+      })
+      .where(eq(bookRequests.id, req.id));
+  });
+}
+
 // ---------------------------------------------------------------------------
 // ADR-056 (PLAN-046) — comic request writers (the LL markRequestPushed / applyRequestReconcile analogs).
 // ---------------------------------------------------------------------------
