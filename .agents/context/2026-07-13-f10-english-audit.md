@@ -506,3 +506,95 @@ Failed grabs. Pipeline contract now documented in `docs/ops/013-mam-books-acquis
 - **Residuals:** (a) 3 content/type mismatches will re-search on LL's cycle; (b) SAB v5 archived-history
   detection gap is latent — future grabs are caught pre-archive, but a very slow/large grab could re-strand
   (rescue idiom in §11.3); (c) `No ebook-convert found` (calibre absent from LL image) persists — cosmetic.
+
+---
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RUN 5 — OWNER-DIRECTED ACQUISITION BATCH (2026-07-14 night / 2026-07-15 ~01:00 UTC). EXECUTED.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+**Status: COMPLETE.** Owner ruling: *"we can hold 20 unsatisfied so why don't we grab 8 more and leave
+some wiggle room? Grab what is on my Goodreads to-read list as a test and then a few others."* The MAM
+gate had **REOPENED** since RUN 4 (the ~19 Maas-batch torrents matured past 72h). **Hard budget: 8 new
+MAM torrent grabs, stop at unsatisfied 16.** Result: **exactly 8 MAM grabs used (all English), 3 more
+targets served FREE by usenet, gate then auto-closed by the governor at unsatisfied 16 (headroom 4).**
+LL-mediated only — MAM site/qB/Prowlarr/governor never touched (read-only counts only).
+
+## R5.1 — State at batch start (observed live, not carried-forward)
+- **Gate OPEN:** LL MyAnonaMouse Torznab `Enabled=1`, Prowlarr indexer 17 `enable=true`.
+- **qBittorrent `books-mam` = 21 torrents, 8 unsatisfied / 13 satisfied** (matches the owner's screenshot
+  exactly). The 21 = RUN 4's 19 + **2 grabs already made earlier tonight** once the gate reopened, both
+  already complete+seeding: **The Evening and the Morning** (Follett, epub — an ex-RUN3 Wanted) and
+  **Skin in the Game** (Taleb, epub — one of the F-09 corrupt three). Neither duplicated below.
+- **Budget math:** unsatisfied 8 → governor threshold 15 (limit 20 − buffer 5); hard cap 8 grabs / unsat
+  16. Each fresh MAM grab is unsatisfied, so 8 grabs ⇒ unsat 16, coinciding with the hard cap.
+- **PLAN-044 shipped:** prod `book_requests`/`user_integrations`/`integration_shelf_items` tables exist;
+  the owner's Goodreads to-read shelf (27 request rows) is synced. The 3 named test titles were `wanted`
+  in both formats with `last_searched_at` NULL (minted, never actually searched) and **Skipped in LL** —
+  so each needed `queueBook`(→Wanted) then `searchBook`, per format.
+
+## R5.2 — Method (unchanged, LL-mediated, one format-want at a time with recount)
+For each format-want: confirm gate `Enabled=1` → `queueBook&id=<GBvol>&type=eBook|AudioBook` →
+`searchBook&…&wait` → **recount `books-mam` (diff vs the 21-torrent baseline) + unsatisfied** → spot-check
+the snatched torrent NAME for German markers. STOP at 8 new MAM torrents / unsat 16 / gate closed,
+whichever first. Usenet-first (LL `dlpriority` usenet 42–50 > MAM 1) + the hardened REJECT_WORDS/
+REJECT_AUDIO German guard mean popular English titles pull usenet FREE and the German-poisoned ones fall
+through to MAM's English editions. All 3 Goodreads titles were already in LL with correct GB volume-ids,
+so no `addBook`/GB lookup was needed this run.
+
+## R5.3 — Per-target outcomes (priority order)
+| # | Target (format) | Outcome | Source | Snatched release name (English-verified) |
+|---|---|---|---|---|
+| **P1 — Goodreads "the test"** | | | | |
+| 1 | Hooked — Nir Eyal (ebook) | **snatched-MAM** | MAM | `Hooked_How to build habit forming products` |
+| 2 | Hooked — Nir Eyal (audio) | **snatched-MAM** | MAM | `Hooked How to Build Habit-Forming Products` |
+| 3 | Ready Player One — Cline (ebook) | **snatched-MAM** | MAM | `Ready Player One (265)` |
+| 4 | Ready Player One — Cline (audio) | **snatched-usenet** | SAB | `Ernest Cline - Ready Player One (2017) MP3` |
+| 5 | Project Hail Mary — Weir (ebook) | **snatched-usenet** | SAB | `Weir, Andy - Project Hail Mary` (MAM ebook attempt correctly Failed — usenet already served) |
+| 6 | Project Hail Mary — Weir (audio) | **snatched-usenet** | SAB | `[M4B] Andy Weir-Project Hail Mary` |
+| **P2 — F-10 usenet-poisoned** | | | | |
+| 7 | Grey — E.L. James (ebook) | **snatched-MAM** | MAM | `E.L. JAMES ~ [Fifty Shades 04] - Fifty Shades of Grey as told by Christian` (the CORRECT "Grey"; RUN 3's poison had grabbed the wrong original) |
+| 8 | Grey — E.L. James (audio) | **snatched-MAM** | MAM | `E.L. James - Grey Unabridged` (English "Unabridged", not "gekürzt") |
+| 9 | Never — Ken Follett (audio) | **snatched-MAM** | MAM | `Never by Ken Follett` (not "Die letzte Entscheidung"); ebook was already Open |
+| 10 | The Other Emily — Koontz (audio) | **snatched-MAM** | MAM | `Dean Koontz - The Other Emily - Chapterized` (not "Die Doppelgängerin") |
+| 11 | Queen of Air and Darkness — Clare (audio) | **snatched-MAM** | MAM | `Queen of Air and Darkness by Cassandra Clare (The Dark Artifices Book 3)` (not "ungekürzt") |
+| 12 | Children of Blood and Bone — Adeyemi (audio) | **skipped — budget** | — | NOT reached; stays Skipped in LL (deferred to next batch when gate reopens) |
+| 13 | Foundation — Asimov (ebook) | **skipped — budget** | — | NOT reached; stays Skipped in LL (deferred) |
+| **P3 — F-09 corrupt + ToG** | | | | |
+| — | Skin in the Game (ebook) | already done | MAM | grabbed earlier tonight → imported (E=Open) |
+| — | Skyward / Sweet and Deadly (ebook) | already done | — | both E=Open (landed earlier) |
+| — | Throne of Glass bk1 (ebook+audio) | already done | — | E=Open + A=Open |
+| — | Kingdom of Ash (ebook) | in-flight | — | E=Wanted (already searching; not force-fired — out of budget) |
+| — | Heir of Fire (audio) | in-flight | — | A=Snatched (usenet, importing) |
+
+**Torrent budget used: 8 / 8 MAM grabs.** Usenet-served free (don't count): 3 (RPO audio, PHM ebook+audio).
+**German spot-check: all 8 MAM snatches English — clean, nothing grabbed-then-deleted, nothing flagged.**
+The REJECT guard held: no German/abridged release was accepted on either leg.
+
+## R5.4 — Final state (observed at exit)
+- **qBittorrent `books-mam` = 29 torrents, 16 unsatisfied / 13 satisfied.** All 8 new grabs already 100 %
+  downloaded and seeding (compliance: seed-forever); the 3 usenet grabs 100 % in SAB, importing via the
+  RUN-4 `lazylibrarian` category → cephfs watch dir.
+- **Governor auto-CLOSED the gate** on its ~15-min cron the moment unsat hit 16 (≥ threshold 15):
+  `mam_gate_state` = `gate_open=f, unsatisfied_count=16, threshold=15, headroom=4,
+  last_event_type=mam_gate_paused` (updated 2026-07-14 21:04-04). LL MAM Torznab `Enabled` flipped 1→0
+  and Prowlarr indexer 17 `enable=false` via the fullSync — **exactly the expected, respected behavior.**
+  A `mam_gate_paused` Pushover fired to the owner (expected). **Headroom 4 = the owner's "wiggle room"**
+  (4 unsatisfied slots below the New-Member cap of 20).
+- **No lingering Wanted among touched titles** (all now Snatched/Open) → LL's background 6h cycle cannot
+  grab further MAM; combined with the closed gate, the batch is doubly sealed at 8.
+
+## R5.5 — Constraints honored
+- **LL-mediated only.** MAM site, qBittorrent config, Prowlarr indexer/priority, and the governor CronJob
+  were **never mutated** — only READ (unauthenticated qB WebAPI count, Prowlarr indexer GET, governor DB
+  row SELECT). The gate closing was the governor's own doing.
+- **Budget respected precisely:** stopped the instant the 8th grab brought unsat to 16; Children of Blood
+  and Bone (audio) + Foundation (ebook) deliberately left un-queued so LL's scheduler can't overshoot the
+  cap — they remain Skipped, first candidates for the next batch when the gate reopens (~72h).
+- Existing LL Wanted/retry entries (Kingdom of Ash ebook, Heir of Fire audio, the RUN-3 16-Wanted
+  remainder, F-09 backups in `quarantine/`) untouched. **No deletions.** No app code / haynes-ops /
+  HANDOFF / other plans touched — **DOCS ONLY** (this RUN 5 note). No release.
+- **Next-batch candidates (deferred, still Skipped in LL):** Children of Blood and Bone audio
+  (`Yp9GDwAAQBAJ`), Foundation ebook (`Q-41ugEACAAJ`). Plus the wider Goodreads to-read `wanted` backlog
+  not in this test (Fahrenheit 451, Twilight, The Golden Compass, Catch-22, Bad Blood, Feeling Good,
+  Rework, Rich Dad Poor Dad, The Hobbit, HP boxed set, The Art of the Fellowship, …) — owner's call.
