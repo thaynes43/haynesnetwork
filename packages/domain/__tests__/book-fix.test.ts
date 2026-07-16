@@ -4,15 +4,24 @@
 // addBook→queueBook→searchBook order; the GB-resolution fallback + honest-failure path; the
 // reason-text-iff-other CHECK; and setRoleBookActions (the Q-01 flip) with its audit. Embedded PG16.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { bookFixRequests, booksItems, permissionAudit, roles, roleBooksActionGrants } from '@hnet/db';
+import {
+  bookFixRequests,
+  booksItems,
+  gbQuotaState,
+  permissionAudit,
+  roles,
+  roleBooksActionGrants,
+} from '@hnet/db';
 import { and, eq, sql } from 'drizzle-orm';
 import {
   BookFixAlreadyOpenError,
   BookFixRateLimitError,
   bookActionsForRole,
   createBookFixRequest,
+  retryQueuedBookFixes,
   runBookFixRequest,
   setRoleBookActions,
+  tripGbQuotaBreaker,
 } from '../src/index';
 import { bootMigratedDb, createUser, type TestDb } from './helpers';
 
@@ -28,6 +37,7 @@ beforeEach(async () => {
   await t.db.delete(roleBooksActionGrants);
   await t.db.delete(booksItems);
   await t.db.delete(permissionAudit);
+  await t.db.delete(gbQuotaState);
 });
 
 let extSeq = 0;
@@ -171,6 +181,166 @@ describe('runBookFixRequest (the orchestrator)', () => {
     const res = await runBookFixRequest({ db: t.db, fix: { ...row, kapowarrVolumeId: 501 }, kapowarr: kapo.bundle });
     expect(res.status).toBe('search_triggered');
     expect(kapo.calls.map((c) => c.op)).toEqual(['monitor', 'search']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ADR-067 / DESIGN-039 (PLAN-055) — quota weather QUEUES a fix (never fails it); the
+// goodreads-sync-hosted retry pass completes queued fixes through the normal chain.
+// ---------------------------------------------------------------------------
+describe('runBookFixRequest — the GB quota breaker (ADR-067 C-05)', () => {
+  it('an OPEN breaker lands the fix `queued` (zero LL calls, step recorded) and the dedupe still holds', async () => {
+    const user = await createUser(t.db);
+    const id = await seedBook('book', 'Whispers');
+    const row = await createBookFixRequest({ db: t.db, requesterId: user.id, booksItemId: id, reason: 'corrupt_file' });
+    await tripGbQuotaBreaker({ db: t.db, kind: 'daily' });
+    const ll = stubLl();
+    let resolves = 0;
+    const res = await runBookFixRequest({
+      db: t.db,
+      fix: row,
+      ll: ll.bundle,
+      gb: { resolveVolume: async () => (resolves += 1, { volumeId: 'never' }) },
+    });
+    expect(res.status).toBe('queued');
+    expect(resolves).toBe(0); // breaker open ⇒ no GB call at all
+    expect(ll.calls).toHaveLength(0);
+    const [fresh] = await t.db.select().from(bookFixRequests).where(eq(bookFixRequests.id, row.id));
+    expect(fresh!.status).toBe('queued');
+    const steps = fresh!.actionsTaken;
+    expect(steps.some((s) => s.step === 'queued' && s.reason === 'gb_quota')).toBe(true);
+    // queued is OPEN — a second fix on the same (item, kind) still conflicts.
+    await expect(
+      createBookFixRequest({ db: t.db, requesterId: user.id, booksItemId: id, reason: 'corrupt_file' }),
+    ).rejects.toBeInstanceOf(BookFixAlreadyOpenError);
+  });
+
+  it('a DAILY-quota 429 during the resolve trips the breaker and queues the fix (the incident path)', async () => {
+    const user = await createUser(t.db);
+    const id = await seedBook('book', 'Dead Ever After');
+    const row = await createBookFixRequest({ db: t.db, requesterId: user.id, booksItemId: id, reason: 'bad_quality' });
+    const ll = stubLl();
+    const res = await runBookFixRequest({
+      db: t.db,
+      fix: row,
+      ll: ll.bundle,
+      gb: {
+        resolveVolume: async () => {
+          throw Object.assign(new Error("HTTP 429 — limit 'Queries per day'"), {
+            status: 429,
+            bodySnippet: "limit 'Queries per day'",
+          });
+        },
+      },
+    });
+    expect(res.status).toBe('queued');
+    expect(ll.calls).toHaveLength(0);
+    const [fresh] = await t.db.select().from(bookFixRequests).where(eq(bookFixRequests.id, row.id));
+    expect(fresh!.status).toBe('queued');
+    // …and the trip persisted for every other consumer.
+    const [state] = await t.db.select().from(gbQuotaState);
+    expect(state?.exhaustedUntil).not.toBeNull();
+  });
+});
+
+describe('retryQueuedBookFixes (the goodreads-sync-hosted retry pass — ADR-067 C-06)', () => {
+  async function seedQueuedFix(title: string, requesterId: string): Promise<string> {
+    const itemId = await seedBook('book', title);
+    const row = await createBookFixRequest({ db: t.db, requesterId, booksItemId: itemId, reason: 'corrupt_file' });
+    await tripGbQuotaBreaker({ db: t.db, kind: 'daily' });
+    const ll = stubLl();
+    await runBookFixRequest({ db: t.db, fix: row, ll: ll.bundle, gb: { resolveVolume: async () => null } });
+    return row.id;
+  }
+
+  it('completes a queued fix END-TO-END through the normal chain once the quota returns', async () => {
+    const user = await createUser(t.db);
+    const fixId = await seedQueuedFix('Whispers', user.id);
+    // The quota returns: expire the window (a fresh clear also works — this exercises the probe).
+    await t.db.delete(gbQuotaState);
+    const ll = stubLl();
+    const report = await retryQueuedBookFixes({
+      db: t.db,
+      ll: ll.bundle,
+      gb: { resolveVolume: async () => ({ volumeId: 'gb-whispers' }) },
+      pacer: async () => {},
+    });
+    expect(report).toMatchObject({ queued: 1, attempted: 1, completed: 1, failed: 0, skippedQuota: 0 });
+    expect(ll.calls.map((c) => c.cmd)).toEqual(['addBook', 'queueBook', 'searchBook']);
+    const [fresh] = await t.db.select().from(bookFixRequests).where(eq(bookFixRequests.id, fixId));
+    expect(fresh!.status).toBe('search_triggered');
+    expect(fresh!.llBookId).toBe('gb-whispers');
+    // The trail is CUMULATIVE: the original queued step precedes the retry-pass chain steps.
+    const stepNames = fresh!.actionsTaken.map((s) => s.step);
+    expect(stepNames).toContain('queued');
+    expect(stepNames).toContain('gb_resolved');
+    expect(stepNames).toContain('ll_search_book');
+  });
+
+  it('honors an OPEN breaker: attempted 0, the fix stays queued untouched', async () => {
+    const user = await createUser(t.db);
+    const fixId = await seedQueuedFix('Whispers', user.id);
+    // Breaker still open (seedQueuedFix tripped daily).
+    const ll = stubLl();
+    let resolves = 0;
+    const report = await retryQueuedBookFixes({
+      db: t.db,
+      ll: ll.bundle,
+      gb: { resolveVolume: async () => (resolves += 1, { volumeId: 'never' }) },
+      pacer: async () => {},
+    });
+    expect(report).toMatchObject({ queued: 1, attempted: 0, completed: 0, failed: 0, skippedQuota: 1 });
+    expect(resolves).toBe(0);
+    expect(ll.calls).toHaveLength(0);
+    const [fresh] = await t.db.select().from(bookFixRequests).where(eq(bookFixRequests.id, fixId));
+    expect(fresh!.status).toBe('queued');
+  });
+
+  it('a PERMANENT failure (GB no-match) fails the fix honestly', async () => {
+    const user = await createUser(t.db);
+    const fixId = await seedQueuedFix('Gone Forever', user.id);
+    await t.db.delete(gbQuotaState);
+    const ll = stubLl();
+    const report = await retryQueuedBookFixes({
+      db: t.db,
+      ll: ll.bundle,
+      gb: { resolveVolume: async () => null },
+      pacer: async () => {},
+    });
+    expect(report).toMatchObject({ queued: 1, attempted: 1, completed: 0, failed: 1 });
+    const [fresh] = await t.db.select().from(bookFixRequests).where(eq(bookFixRequests.id, fixId));
+    expect(fresh!.status).toBe('failed');
+    expect(JSON.stringify(fresh!.actionsTaken)).toContain('retry_pass');
+  });
+
+  it('works oldest-first and respects the cap', async () => {
+    const user = await createUser(t.db);
+    const first = await seedQueuedFix('Oldest', user.id);
+    const second = await seedQueuedFix('Middle', user.id);
+    const third = await seedQueuedFix('Newest', user.id);
+    // Stagger created_at explicitly (same-ms inserts would tie-break by id).
+    const base = Date.now();
+    for (const [i, id] of [first, second, third].entries()) {
+      await t.db
+        .update(bookFixRequests)
+        .set({ createdAt: new Date(base - (3 - i) * 60_000) })
+        .where(eq(bookFixRequests.id, id));
+    }
+    await t.db.delete(gbQuotaState);
+    const ll = stubLl();
+    const report = await retryQueuedBookFixes({
+      db: t.db,
+      ll: ll.bundle,
+      gb: { resolveVolume: async () => ({ volumeId: 'gb-x' }) },
+      cap: 2,
+      pacer: async () => {},
+    });
+    expect(report).toMatchObject({ queued: 3, attempted: 2, completed: 2 });
+    const rows = await t.db.select().from(bookFixRequests);
+    const byId = new Map(rows.map((r) => [r.id, r.status]));
+    expect(byId.get(first)).toBe('search_triggered');
+    expect(byId.get(second)).toBe('search_triggered');
+    expect(byId.get(third)).toBe('queued'); // over-cap — the next run's work
   });
 });
 

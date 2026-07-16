@@ -1505,8 +1505,8 @@ describe('migrations against embedded Postgres 16', () => {
       expect(cols.rows.map((r) => r.column_name).sort()).toEqual([
         'exhausted_until',
         'id',
-        'tripped_at',
         'trip_reason',
+        'tripped_at',
         'updated_at',
       ]);
       // The default-id row inserts (nullable state columns — the clear shape)…

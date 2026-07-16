@@ -10,6 +10,7 @@ import {
   bookRequests,
   booksFormatPairs,
   booksItems,
+  gbQuotaState,
   integrationShelfItems,
   permissionAudit,
   userIntegrations,
@@ -22,6 +23,7 @@ import {
   pairingTitleKey,
   runFormatPairing,
   syncFormatPairs,
+  tripGbQuotaBreaker,
   type LazyLibrarianClientBundle,
   type PairableItem,
 } from '../src/index';
@@ -195,6 +197,7 @@ beforeEach(async () => {
   await t.db.delete(userIntegrations);
   await t.db.delete(booksItems);
   await t.db.delete(permissionAudit);
+  await t.db.delete(gbQuotaState);
 });
 
 let extSeq = 0;
@@ -379,6 +382,80 @@ describe('mintPairingWants (the paced estate-wide backfill)', () => {
     await syncFormatPairs({ db: t.db });
     const report = await mintPairingWants({ db: t.db, ll: stubLl().bundle, gb: stubGb(() => 'gb-x').gb, pacer: async () => {} });
     expect(report.candidates).toBe(0);
+  });
+
+  // -------------------------------------------------------------------------
+  // ADR-067 C-08 (PLAN-055) — the GB quota breaker closes the PLAN-050 residual: doomed resolves
+  // no longer burn the mint cap, and identity-holding mints still drain the backlog on quota days.
+  // -------------------------------------------------------------------------
+
+  it('an OPEN breaker skips GB-requiring candidates WITHOUT burning the cap; a reuse-mint still proceeds', async () => {
+    // Two GB-needing candidates (oldest — the old behavior would have burned the whole cap here)…
+    await seedItem({ title: 'Needs GB One', author: 'Author One', mediaKind: 'book', firstSeenAt: day(1) });
+    await seedItem({ title: 'Needs GB Two', author: 'Author Two', mediaKind: 'book', firstSeenAt: day(2) });
+    // …and a NEWEST candidate whose LL identity reuses a goodreads request (no GB call needed).
+    await seedItem({ title: 'The Martian', author: 'Andy Weir', mediaKind: 'book', firstSeenAt: day(3) });
+    const user = await createUser(t.db);
+    const [integ] = await t.db
+      .insert(userIntegrations)
+      .values({ userId: user.id, provider: 'goodreads', externalUserId: '1', status: 'linked' })
+      .returning({ id: userIntegrations.id });
+    const [shelf] = await t.db
+      .insert(integrationShelfItems)
+      .values({ integrationId: integ!.id, shelf: 'to-read', externalBookId: 'gr-m', title: 'The Martian' })
+      .returning({ id: integrationShelfItems.id });
+    await t.db.insert(bookRequests).values({
+      integrationId: integ!.id,
+      shelfItemId: shelf!.id,
+      title: 'The Martian',
+      author: 'Andy Weir',
+      llBookId: 'gb-reused',
+    });
+
+    await tripGbQuotaBreaker({ db: t.db, kind: 'daily' });
+    const ll = stubLl();
+    const gb = stubGb(() => 'gb-never');
+    const report = await mintPairingWants({ db: t.db, ll: ll.bundle, gb: gb.gb, cap: 2, pacer: async () => {} });
+
+    // The two doomed candidates were SKIPPED (no cap spent, no rows minted, resolver untouched);
+    // the reuse candidate — behind them in the queue — still minted and pushed.
+    expect(report).toMatchObject({ candidates: 3, attempted: 1, minted: 1, pushed: 1, skippedQuota: 2 });
+    expect(gb.calls).toHaveLength(0); // the breaker gates BEFORE the resolver
+    const wants = await t.db.select().from(bookRequests).where(eq(bookRequests.origin, 'pairing'));
+    expect(wants).toHaveLength(1);
+    expect(wants[0]!.llBookId).toBe('gb-reused');
+  });
+
+  it('a mid-run daily 429 trips ONCE, stops further GB calls, and never churns existing wants', async () => {
+    await seedItem({ title: 'Solo Alpha', author: 'Author A', mediaKind: 'book', firstSeenAt: day(1) });
+    await seedItem({ title: 'Solo Beta', author: 'Author B', mediaKind: 'book', firstSeenAt: day(2) });
+    const t0 = new Date('2026-07-16T10:00:00Z');
+    // Run 1 (quota fine, GB has no match): two honest unmintable wants exist.
+    const run1 = await mintPairingWants({ db: t.db, ll: stubLl().bundle, gb: stubGb(() => null).gb, now: t0, pacer: async () => {} });
+    expect(run1).toMatchObject({ attempted: 2, minted: 2, unmintable: 2, skippedQuota: 0 });
+    const before = await t.db.select().from(bookRequests).orderBy(bookRequests.id);
+
+    // Run 2: GB is exhausted — the FIRST resolve 429s (daily), the second is never made.
+    let calls = 0;
+    const gb429 = {
+      resolveVolume: async () => {
+        calls += 1;
+        throw Object.assign(new Error("HTTP 429 — limit 'Queries per day'"), {
+          status: 429,
+          bodySnippet: "limit 'Queries per day'",
+        });
+      },
+    };
+    const t1 = new Date('2026-07-16T11:00:00Z');
+    const ll = stubLl();
+    const run2 = await mintPairingWants({ db: t.db, ll: ll.bundle, gb: gb429, now: t1, pacer: async () => {} });
+    expect(run2).toMatchObject({ attempted: 0, minted: 0, pushed: 0, skippedQuota: 2 });
+    expect(calls).toBe(1);
+    expect(ll.calls).toHaveLength(0);
+
+    // The retry-recency key did NOT advance — a skipped candidate keeps its place in the queue.
+    const after = await t.db.select().from(bookRequests).orderBy(bookRequests.id);
+    expect(after.map((w) => w.updatedAt.getTime())).toEqual(before.map((w) => w.updatedAt.getTime()));
   });
 });
 
