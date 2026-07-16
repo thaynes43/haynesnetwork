@@ -41,13 +41,13 @@ export default async function DashboardPage() {
         </span>
         <span className="tile__name">About haynesnetwork.com</span>
         <span className="tile__desc">
-          How it all works — the Plex servers, Fix, Trash, requests, books, and more.
+          How it all works: the Plex servers, Fix, Trash, requests, books, and more.
         </span>
       </Link>
       <hr className="tile-rule" />
       {apps.length === 0 ? (
         <section className="card empty-state">
-          <p>No apps yet — ask your admin.</p>
+          <p>No apps yet. Ask your admin.</p>
         </section>
       ) : (
         <div className="tile-grid">
