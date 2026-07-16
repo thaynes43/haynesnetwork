@@ -124,9 +124,11 @@ resolves from the group listing.
 ### D-06 — URL contract (rides DESIGN-026 D-10 / D-19 verbatim)
 
 - `?view=grouped&by=collection` — the Collections view (a screen-level **PUSH**; `by=` may be
-  omitted since `collection` is the walls' only/default grouping dimension — the books canonicalize
-  rule applies on these now-multi-shape walls: a bare URL canonicalizes to the resolved `?view=`
-  with a replace).
+  omitted since `collection` is the walls' only/default grouping dimension). A bare URL that
+  RESOLVES to grouped (a stored Collections preference) canonicalizes to `?view=grouped` with a
+  replace; a bare URL resolving to the wall's DEFAULT shape stays bare — the D-10 rule ("`?view`
+  omitted when it equals the wall's R2 default") is shipped contract on these walls, and existing
+  deep links / the history e2e assert the bare `?tab=` form.
 - `?group=<ratingKey>` — the drilled collection (a **PUSH**; implies the flat/item grid). The drill
   header shows the collection title + a back link to the grouped wall. Sorts/filters inside the
   drill stay **replace** refinements; the drilled sort is transient (not persisted — the books

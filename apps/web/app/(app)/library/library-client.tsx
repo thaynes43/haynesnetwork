@@ -447,18 +447,18 @@ function MediaBrowser({
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   };
 
-  // D-10 (PLAN-037) — CANONICALIZE a bare URL on a multi-shape wall to the resolved shape (a
-  // replace, no history entry) so the entry's URL is explicit and Back restores exactly this view
-  // even after the stored preference changes (the books-browser rule).
+  // D-10 (PLAN-037) — CANONICALIZE a bare URL that resolved to the GROUPED shape (a replace, no
+  // history entry) so the Collections entry's URL is explicit and Back restores exactly this view
+  // even after the stored preference changes. A bare URL resolving to the wall's DEFAULT shape
+  // stays bare — the D-10 rule ("?view omitted when it equals the wall's R2 default") is shipped
+  // contract on these walls (deep links + the history e2e assert the bare ?tab= form).
   useEffect(() => {
     if (!hasSelector || !prefsReady || drilled) return;
-    if (searchParams.get('view') === null) {
+    if (searchParams.get('view') === null && resolved.view === 'grouped') {
       patchParams({
-        view: resolved.view === 'grouped' ? 'grouped' : WALL_VIEW_DEFAULTS[wall].view,
+        view: 'grouped',
         by:
-          resolved.view === 'grouped' && grouping !== undefined && grouping !== defaultGrouping
-            ? grouping.dimension
-            : null,
+          grouping !== undefined && grouping !== defaultGrouping ? grouping.dimension : null,
       });
     }
     // patchParams reads the live location; the deps that matter are the resolution inputs.
