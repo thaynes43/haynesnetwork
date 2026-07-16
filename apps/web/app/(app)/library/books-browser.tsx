@@ -113,7 +113,10 @@ export function BooksBrowser({
   const spec = WALL_VIEWS[booksWall];
   const groupings = spec.groupings ?? [];
   const defaultGrouping: WallGrouping | undefined = groupings[0];
-  const hasSelector = spec.offers.length > 1;
+  // DESIGN-038 D-07 — the selector renders for multiple SHAPES or multiple grouping DIMENSIONS
+  // (Comics gains it via the Collections sibling without gaining a flat shape).
+  const hasSelector = spec.offers.length > 1 || groupings.length > 1;
+  const offersFlat = spec.offers.includes('flat');
   const prefsReady = stored !== undefined;
 
   // ── URL → state ──
@@ -135,27 +138,65 @@ export function BooksBrowser({
   // an unknown dimension falls back to the default (mangled-shared-link safety).
   const grouping: WallGrouping | undefined =
     groupings.find((g) => g.dimension === resolved.groupBy) ?? defaultGrouping;
-  // Comics' grouped-by-Series view IS the item grid (a Kavita row IS a series); only the
-  // multi-shape walls (Books/Audiobooks) render aggregate cards for their grouped shape.
-  const groupedCards = !drilled && hasSelector && resolved.view === 'grouped' && grouping !== undefined;
+  // A grouping WITH a bound registry level renders aggregate cards; one without (Comics' Series —
+  // the wall IS that grouping, a Kavita row IS a series) renders the item grid (DESIGN-038 D-07).
+  const groupedCards =
+    !drilled && resolved.view === 'grouped' && grouping !== undefined && grouping.level !== undefined;
   // The dimension a DRILLED grid filters on (the drill link carries ?by= for non-default dims).
   const drillGrouping: WallGrouping | undefined =
     groupings.find((g) => g.dimension === (urlBy ?? defaultGrouping?.dimension)) ?? defaultGrouping;
-  const levelKey: ViewLevelKey =
-    groupedCards && grouping?.level ? grouping.level : (`${booksWall}:wall` as ViewLevelKey);
+  const drillDim = drillGrouping?.dimension;
+  // ADR-066 / DESIGN-038 (PLAN-051) — the Collections dimension: aggregate cards come from
+  // books.collectionGroups; the drill is a `collection` predicate keyed by the mirror row uuid.
+  const collectionCards = groupedCards && grouping?.dimension === 'collection';
+  const drilledCollection = drilled && drillDim === 'collection';
+  const levelKey: ViewLevelKey = drilledCollection
+    ? (`${booksWall}:collection-items` as ViewLevelKey)
+    : groupedCards && grouping?.level
+      ? grouping.level
+      : (`${booksWall}:wall` as ViewLevelKey);
   const entry: ViewRegistryEntry = registryFor(levelKey);
+
+  // ONE bounded collections read per wall (the facets/wanted always-on idiom): the grouped
+  // Collections cards, the drill header label + `ordered` flag, and the selector's populated gate
+  // all read it (books-section gated server-side like everything else here).
+  const collectionsQ = trpc.books.collectionGroups.useQuery(
+    { mediaKind },
+    { refetchOnWindowFocus: false, placeholderData: (prev) => prev },
+  );
+  const drilledMeta = drilledCollection
+    ? collectionsQ.data?.groups.find((g) => g.key === group)
+    : undefined;
+  // A drilled ?group= that is not one of this wall's collections (mangled/shared-stale link).
+  const drilledMissing =
+    drilledCollection && collectionsQ.data !== undefined && drilledMeta === undefined;
+  // DESIGN-038 D-06 — the ordered-drill sort contract: an UNORDERED collection's drill drops the
+  // position sort (the `ordered` flag is the data-honesty gate, the dataGated idiom applied to a
+  // sort) and falls back to the wall level's default. Ordered drills default to List order.
+  const positionOffered = !drilledCollection || drilledMeta?.ordered === true;
+  const levelSorts = positionOffered
+    ? entry.sorts
+    : entry.sorts.filter((s) => s.key !== 'position');
+  const levelDefaultSort = positionOffered
+    ? entry.defaultSort
+    : registryFor(`${booksWall}:wall` as ViewLevelKey).defaultSort;
   // Plain computations below (sortKeys/facetsForLevel/chipFacets/filters) — the React Compiler
   // memoizes them; manual useMemo over the registry-derived values trips
   // react-hooks/preserve-manual-memoization now that the level is grouping-dependent.
-  const sortKeys = entry.sorts.map((s) => s.key);
+  const sortKeys = levelSorts.map((s) => s.key);
 
   // ADR-052 — sort resolution: URL token → stored (validated against THIS level's keys) → default.
+  // A drilled COLLECTION ignores the stored wall sort (D-06 — the drill default is the point:
+  // reading order for an ordered list); an explicit ?sort= still wins (shared links stay exact).
   const urlSort = parseWallSortToken(searchParams.get('sort'), sortKeys);
   const storedSort =
     stored != null && sortKeys.includes(stored.sortField)
       ? { field: stored.sortField, dir: stored.sortDir }
       : null;
-  const sort = urlSort ?? storedSort ?? { field: entry.defaultSort.field, dir: entry.defaultSort.dir };
+  const sort =
+    urlSort ??
+    (drilledCollection ? null : storedSort) ??
+    { field: levelDefaultSort.field, dir: levelDefaultSort.dir };
   const sortToken = `${sort.field}:${sort.dir}`;
 
   const readRaw = searchParams.get('read');
@@ -169,8 +210,12 @@ export function BooksBrowser({
   const letter = letterRaw !== null && /^[a-z]$/.test(letterRaw) ? letterRaw : null;
 
   // The drilled dimension's own facet chip hides — the drill IS that filter (author OR genre).
-  const drillFacetKey = drillGrouping?.dimension === 'genre' ? 'genres' : 'authors';
-  const facetsForLevel = entry.facets.filter((f) => !(drilled && f.key === drillFacetKey));
+  // A collection drill hides none: `collection` is not an item facet (its level omits `wanted`).
+  const drillFacetKey =
+    drillDim === 'genre' ? 'genres' : drillDim === 'collection' ? null : 'authors';
+  const facetsForLevel = entry.facets.filter(
+    (f) => !(drilled && drillFacetKey !== null && f.key === drillFacetKey),
+  );
   const chipFacets = facetsForLevel.filter(
     (f) => f.kind === 'enum' || f.kind === 'suggest' || f.kind === 'buckets',
   );
@@ -197,7 +242,9 @@ export function BooksBrowser({
   // history entry) so the entry's URL is explicit and Back restores exactly this view even after
   // the stored preference changes. A non-default grouping dimension canonicalizes its ?by= too.
   useEffect(() => {
-    if (!hasSelector || !prefsReady || drilled) return;
+    // Multi-SHAPE walls only (Comics — single-shape, selector-by-dimensions — keeps bare URLs;
+    // its dimension switches PUSH explicit ?view=grouped&by=collection URLs).
+    if (spec.offers.length <= 1 || !prefsReady || drilled) return;
     if (searchParams.get('view') === null) {
       patchParams({
         view: resolved.view === 'flat' ? 'flat' : 'grouped',
@@ -208,7 +255,7 @@ export function BooksBrowser({
     }
     // patchParams reads the live location; the deps that matter are the resolution inputs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasSelector, prefsReady, drilled, searchParams, resolved.view, grouping]);
+  }, [spec.offers.length, prefsReady, drilled, searchParams, resolved.view, grouping]);
 
   // The search INPUT is a local draft debounced 250ms into the URL (the Library convention).
   const [query, setQuery] = useState(qParam);
@@ -230,7 +277,12 @@ export function BooksBrowser({
   /** A view/dimension switch: a SCREEN-level change → PUSH a clean URL (refinements drop — the
    *  new shape starts fresh, like a tab switch) + persist the choice (R1). */
   const selectView = (target: { view: 'flat' } | { view: 'grouped'; grouping: WallGrouping }) => {
-    const currentKey = drilled ? null : groupedCards ? `grouped:${grouping?.dimension}` : 'flat';
+    // The active key covers item-grid groupings too (Comics' Series — grouped without cards).
+    const currentKey = drilled
+      ? null
+      : resolved.view === 'grouped' && grouping !== undefined
+        ? `grouped:${grouping.dimension}`
+        : 'flat';
     const targetKey = target.view === 'flat' ? 'flat' : `grouped:${target.grouping.dimension}`;
     if (currentKey !== targetKey) {
       const params = new URLSearchParams();
@@ -260,9 +312,9 @@ export function BooksBrowser({
     });
   };
 
-  // ── sort control (registry-declared keys; two-state cycle) ──
+  // ── sort control (registry-declared keys, ordered-gated for a collection drill; two-state cycle) ──
   const clickCycle = Object.fromEntries(
-    entry.sorts.map((c) => [
+    levelSorts.map((c) => [
       c.key,
       c.firstDir === 'asc'
         ? { asc: `${c.key}:asc`, desc: `${c.key}:desc` }
@@ -270,7 +322,7 @@ export function BooksBrowser({
     ]),
   ) as Record<string, { asc: string; desc: string }>;
   const arrowCycle = Object.fromEntries(
-    entry.sorts.map((c) => [c.key, { asc: `${c.key}:asc`, desc: `${c.key}:desc` }]),
+    levelSorts.map((c) => [c.key, { asc: `${c.key}:asc`, desc: `${c.key}:desc` }]),
   ) as Record<string, { asc: string; desc: string }>;
   const cycleSort = (col: string) => {
     const next = nextSort<string, string>(sortToken, col, clickCycle);
@@ -281,8 +333,9 @@ export function BooksBrowser({
     if (!drilled) {
       setPreference.mutate({
         wall: booksWall,
-        view: groupedCards ? 'grouped' : hasSelector ? 'flat' : WALL_VIEW_DEFAULTS[booksWall].view,
-        groupBy: groupedCards ? (grouping?.dimension ?? null) : hasSelector ? null : WALL_VIEW_DEFAULTS[booksWall].groupBy,
+        // A wall without a flat shape (Comics) persists its default grouped shape/dimension.
+        view: groupedCards ? 'grouped' : offersFlat ? 'flat' : WALL_VIEW_DEFAULTS[booksWall].view,
+        groupBy: groupedCards ? (grouping?.dimension ?? null) : offersFlat ? null : WALL_VIEW_DEFAULTS[booksWall].groupBy,
         sortField: field,
         sortDir: dir,
       });
@@ -333,12 +386,25 @@ export function BooksBrowser({
     !drilled && !groupedCards && !wantedOnly && wantedItems.length > 0 && !facetsActive;
   const groupsQuery = trpc.books.groups.useQuery(
     { mediaKind, groupBy: grouping?.dimension === 'genre' ? 'genre' : 'author' },
-    { enabled: groupedCards, refetchOnWindowFocus: false, placeholderData: (prev) => prev },
+    {
+      enabled: groupedCards && !collectionCards,
+      refetchOnWindowFocus: false,
+      placeholderData: (prev) => prev,
+    },
   );
-  // The Genres selector segment is populated-value-gated like its facet chip (ADR-051 C-06): once
-  // the facet values confirm the medium carries NO genres, the segment hides (never a dead view).
+  // The ACTIVE grouped-cards source: books.collectionGroups for the Collections dimension (cards
+  // carry the ordered flag), books.groups for author/genre.
+  const groupsError = collectionCards ? collectionsQ.error : groupsQuery.error;
+  const groupsPending = collectionCards ? collectionsQ.isPending : groupsQuery.isPending;
+  // The Genres/Collections selector segments are populated-value-gated like their facet chips
+  // (ADR-051 C-06): once the data confirms the medium carries NONE, the segment hides (never a
+  // dead view). While loading (undefined) the segment shows — the same optimistic rule as Genres.
   const selectorGroupings = groupings.filter(
-    (g) => g.dimension !== 'genre' || facets.data === undefined || facets.data.genres.length > 0,
+    (g) =>
+      (g.dimension !== 'genre' || facets.data === undefined || facets.data.genres.length > 0) &&
+      (g.dimension !== 'collection' ||
+        collectionsQ.data === undefined ||
+        collectionsQ.data.groups.length > 0),
   );
 
   const azActive =
@@ -352,17 +418,19 @@ export function BooksBrowser({
       dir: sort.dir,
       ...(qParam.trim().length > 0 ? { query: qParam.trim() } : {}),
       // The drilled group IS its dimension's filter (D-04 — the flat grid pre-filtered to the
-      // group): an author drill binds authors, a genre drill binds genres.
-      ...(drilled && drillGrouping?.dimension === 'genre'
+      // group): an author drill binds authors, a genre drill binds genres, a COLLECTION drill
+      // binds the mirror membership predicate (DESIGN-038 D-06 — one EXISTS inside books.search).
+      ...(drilled && drillDim === 'genre'
         ? { genres: [group] }
         : filters.genres
           ? { genres: filters.genres }
           : {}),
-      ...(drilled && drillGrouping?.dimension !== 'genre'
+      ...(drilled && drillDim !== 'genre' && drillDim !== 'collection'
         ? { authors: [group] }
         : filters.authors
           ? { authors: filters.authors }
           : {}),
+      ...(drilledCollection && group !== null ? { collection: group } : {}),
       ...(filters.narrators ? { narrators: filters.narrators } : {}),
       ...(filters.series ? { series: filters.series } : {}),
       ...(filters.languages ? { languages: filters.languages } : {}),
@@ -372,7 +440,9 @@ export function BooksBrowser({
       ...(azActive && letter !== null ? { letter } : {}),
     },
     {
-      enabled: prefsReady && !groupedCards,
+      // A collection drill waits for its meta (label + ordered — the sort default depends on it)
+      // and never fires for a mangled/unknown ?group= (the empty state renders instead).
+      enabled: prefsReady && !groupedCards && (!drilledCollection || drilledMeta !== undefined),
       getNextPageParam: (last) => last.nextCursor ?? undefined,
       initialCursor: 0,
       placeholderData: (prev) => prev,
@@ -383,10 +453,12 @@ export function BooksBrowser({
   const items = useMemo(() => search.data?.pages.flatMap((p) => p.items) ?? [], [search.data]);
   const refreshing = search.isFetching && !search.isFetchingNextPage && !search.isPending;
 
-  // Grouped cards: client-side label search + card sort (the level's registry keys — author/count).
-  // Plain computation — the React Compiler memoizes it (a manual useMemo on `sort.*` deps trips
-  // react-hooks/preserve-manual-memoization); the group lists are small (bounded walls, ADR-046).
-  const groupList = groupsQuery.data?.groups ?? [];
+  // Grouped cards: client-side label search + card sort (the level's registry keys — author/label/
+  // count). Plain computation — the React Compiler memoizes it (a manual useMemo on `sort.*` deps
+  // trips react-hooks/preserve-manual-memoization); the group lists are small (bounded walls).
+  const groupList = collectionCards
+    ? (collectionsQ.data?.groups ?? [])
+    : (groupsQuery.data?.groups ?? []);
   const groupQ = qParam.trim().toLowerCase();
   const groupsFound = groupQ === '' ? groupList : groupList.filter((g) => g.label.toLowerCase().includes(groupQ));
   const groupDir = sort.dir === 'desc' ? -1 : 1;
@@ -394,7 +466,9 @@ export function BooksBrowser({
     sort.field === 'count'
       ? [...groupsFound].sort((a, b) => (a.count - b.count) * groupDir || a.label.localeCompare(b.label))
       : [...groupsFound].sort((a, b) => a.label.localeCompare(b.label) * groupDir);
-  const groupsRefreshing = groupsQuery.isPlaceholderData && groupsQuery.isFetching;
+  const groupsRefreshing = collectionCards
+    ? collectionsQ.isPlaceholderData && collectionsQ.isFetching
+    : groupsQuery.isPlaceholderData && groupsQuery.isFetching;
 
   // The `?from=` back-link key so the detail page returns to THIS wall (ADR-047).
   const fromKey = booksWall;
@@ -455,9 +529,11 @@ export function BooksBrowser({
   };
 
   const showEmpty = groupedCards
-    ? !groupsQuery.isPending && groups.length === 0
-    : !search.isPending && items.length === 0 && !search.error;
-  const pending = !prefsReady || (groupedCards ? groupsQuery.isPending : search.isPending);
+    ? !groupsPending && groups.length === 0
+    : (!search.isPending && items.length === 0 && !search.error) || drilledMissing;
+  const pending =
+    !prefsReady ||
+    (groupedCards ? groupsPending : drilledMissing ? false : search.isPending);
 
   return (
     <>
@@ -474,7 +550,11 @@ export function BooksBrowser({
           >
             ‹ {drillGrouping.allLabel}
           </Link>
-          <span className="library-drill__label">{group}</span>
+          {/* A collection drill's key is the mirror row uuid — the label resolves from the group
+              listing (D-08); dimension drills (author/genre) key by the label itself. */}
+          <span className="library-drill__label">
+            {drilledCollection ? (drilledMeta?.label ?? '') : group}
+          </span>
         </div>
       ) : null}
 
@@ -486,7 +566,8 @@ export function BooksBrowser({
           {hasSelector && !drilled && groupings.length > 0 ? (
             <div className="seg" role="group" aria-label="View" data-testid="view-selector">
               {selectorGroupings.map((g) => {
-                const isActive = groupedCards && grouping === g;
+                // An item-grid grouping (Comics' Series) is active in the grouped shape too.
+                const isActive = !drilled && resolved.view === 'grouped' && grouping === g;
                 return (
                   <button
                     key={g.dimension}
@@ -499,14 +580,16 @@ export function BooksBrowser({
                   </button>
                 );
               })}
-              <button
-                type="button"
-                className={!groupedCards ? 'is-active' : undefined}
-                aria-pressed={!groupedCards}
-                onClick={() => selectView({ view: 'flat' })}
-              >
-                {spec.flatLabel}
-              </button>
+              {offersFlat ? (
+                <button
+                  type="button"
+                  className={!groupedCards ? 'is-active' : undefined}
+                  aria-pressed={!groupedCards}
+                  onClick={() => selectView({ view: 'flat' })}
+                >
+                  {spec.flatLabel}
+                </button>
+              ) : null}
             </div>
           ) : null}
           <input
@@ -636,14 +719,18 @@ export function BooksBrowser({
           {pending ? (
         SKELETON
       ) : groupedCards ? (
-        groupsQuery.error ? (
+        groupsError ? (
           <p className="alert" role="alert">
-            Failed to load {label}: {groupsQuery.error.message}
+            Failed to load {label}: {groupsError.message}
           </p>
         ) : showEmpty ? (
           <section className="card empty-state">
             <p className="muted">
-              {qParam.trim().length > 0 ? 'Nothing matches your search.' : `No ${label.toLowerCase()} yet.`}
+              {qParam.trim().length > 0
+                ? 'Nothing matches your search.'
+                : collectionCards
+                  ? 'No collections yet.'
+                  : `No ${label.toLowerCase()} yet.`}
             </p>
           </section>
         ) : (

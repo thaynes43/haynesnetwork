@@ -43,14 +43,19 @@ describe('registry shape invariants', () => {
   });
 
   it('grouped-capable walls declare their dimensions (default first) with the D-04 art source', () => {
-    expect(WALL_VIEWS.books.groupings?.map((g) => g.dimension)).toEqual(['author']);
+    // PLAN-051 (ADR-066 / DESIGN-038 D-07): the book walls gain `collection` as a SIBLING
+    // dimension — always LAST in selector order, defaults untouched (author/genre/series first).
+    expect(WALL_VIEWS.books.groupings?.map((g) => g.dimension)).toEqual(['author', 'collection']);
     // The group-card-art pass: Audiobooks adds the Genre dimension — the abstract slice renders
     // the designed GLYPH tile, never fake imagery; the author cards use the real-cover ladder.
     expect(WALL_VIEWS.audiobooks.groupings?.map((g) => `${g.dimension}:${g.art}`)).toEqual([
       'author:covers',
       'genre:glyph',
+      'collection:covers',
     ]);
-    expect(WALL_VIEWS.comics.groupings?.[0]?.dimension).toBe('series');
+    expect(WALL_VIEWS.comics.groupings?.map((g) => g.dimension)).toEqual(['series', 'collection']);
+    // Comics stays single-SHAPE (no flat) — the selector renders by dimensions (D-07 rule).
+    expect(WALL_VIEWS.comics.offers).toEqual(['grouped']);
     expect(WALL_VIEWS.peloton.groupings?.[0]?.dimension).toBe('exercise');
     expect(WALL_VIEWS.youtube.groupings?.[0]?.dimension).toBe('channel');
   });
@@ -99,6 +104,54 @@ describe('registry shape invariants', () => {
     expect(WALL_VIEWS.tv.offers).toEqual(['hierarchy', 'grouped']);
     expect(WALL_VIEW_DEFAULTS.movies.view).toBe('flat');
     expect(WALL_VIEW_DEFAULTS.tv.view).toBe('hierarchy');
+  });
+
+  it('the books Collections levels: card sorts + NO facets (grouped) and the position-first drill contract (PLAN-051)', () => {
+    for (const level of [
+      'books:grouped-collection',
+      'audiobooks:grouped-collection',
+      'comics:grouped-collection',
+    ] as const) {
+      // Card levels sort the CARDS only — and unlike Movies/TV there is NO Type facet (the
+      // PLAN-053 classifier is movie-estate-specific; an honest gap, DESIGN-038 D-05).
+      expect(sortKeys(level)).toEqual(['label', 'count']);
+      expect(facetKeys(level)).toEqual([]);
+      expect(registryFor(level).azSorts).toEqual([]);
+    }
+    for (const level of [
+      'books:collection-items',
+      'audiobooks:collection-items',
+      'comics:collection-items',
+    ] as const) {
+      // The drilled grid: 'position' ("List order") is the FIRST sort and the level DEFAULT
+      // (ordered collections drill into reading order — DESIGN-038 D-06; the client drops the
+      // key for unordered collections, the ordered-flag data gate). asc-first.
+      expect(sortKeys(level)[0]).toBe('position');
+      expect(registryFor(level).defaultSort).toEqual({ field: 'position', dir: 'asc' });
+      expect(registryFor(level).sorts[0]?.firstDir).toBe('asc');
+      // …and the wall's `wanted` facet is deliberately absent (a want is not a collection member).
+      expect(facetKeys(level)).not.toContain('wanted');
+    }
+    // The drilled levels offer the WALL's own item sorts alongside position (the 037 rule —
+    // a drilled grid keeps the wall's dimensions).
+    expect(sortKeys('books:collection-items')).toEqual(expect.arrayContaining(['title', 'author', 'added', 'pages']));
+    expect(sortKeys('audiobooks:collection-items')).toEqual(expect.arrayContaining(['title', 'author', 'year', 'duration', 'added']));
+    expect(sortKeys('comics:collection-items')).toEqual(expect.arrayContaining(['title', 'added', 'pages']));
+    // …but never a dimension the wall itself cannot answer (the R5 asymmetry holds in the drill).
+    expect(sortKeys('books:collection-items')).not.toContain('duration');
+    expect(sortKeys('comics:collection-items')).not.toContain('author');
+    // Every collection grouping binds its grouped-card level (comics included — its Series
+    // sibling is the item grid and deliberately binds none).
+    for (const wall of ['books', 'audiobooks', 'comics'] as const) {
+      const collection = WALL_VIEWS[wall].groupings?.find((g) => g.dimension === 'collection');
+      expect(collection?.level).toBe(`${wall}:grouped-collection`);
+      expect(collection?.art).toBe('covers');
+      expect(collection?.allLabel).toBe('All collections');
+    }
+    // Wall DEFAULTS are untouched — Collections is opt-in (ADR-066 / R-216).
+    expect(WALL_VIEW_DEFAULTS.books).toMatchObject({ view: 'grouped', groupBy: 'author' });
+    expect(WALL_VIEW_DEFAULTS.audiobooks).toMatchObject({ view: 'grouped', groupBy: 'author' });
+    expect(WALL_VIEW_DEFAULTS.comics).toMatchObject({ view: 'grouped', groupBy: 'series' });
   });
 });
 

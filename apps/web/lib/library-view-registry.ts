@@ -38,10 +38,16 @@ export type ViewLevelKey =
   | 'youtube:episode'
   | 'books:wall'
   | 'books:grouped'
+  | 'books:grouped-collection'
+  | 'books:collection-items'
   | 'audiobooks:wall'
   | 'audiobooks:grouped'
   | 'audiobooks:grouped-genre'
-  | 'comics:wall';
+  | 'audiobooks:grouped-collection'
+  | 'audiobooks:collection-items'
+  | 'comics:wall'
+  | 'comics:grouped-collection'
+  | 'comics:collection-items';
 
 export interface RegistrySortOf<K extends string> {
   key: K;
@@ -345,6 +351,41 @@ export const LIBRARY_VIEW_REGISTRY: Record<ViewLevelKey, ViewRegistryEntry> = {
     facets: [],
     azSorts: [],
   }),
+  // ADR-066 / DESIGN-038 D-07 (PLAN-051) — the books Collections grouped level: sorts the aggregate
+  // CARDS (label/count) like every grouped level. NO facets (the PLAN-053 Type classifier is
+  // movie-estate-specific — an honest gap, not an omission); no A–Z rail.
+  'books:grouped-collection': groupLevel({
+    engine: 'books',
+    sorts: [
+      { key: 'label', label: 'Collection A–Z', firstDir: 'asc' },
+      { key: 'count', label: 'Most items', firstDir: 'desc' },
+    ],
+    defaultSort: { field: 'label', dir: 'asc' },
+    facets: [],
+    azSorts: [],
+  }),
+  // DESIGN-038 D-06/D-07 — the DRILLED collection grid: the wall's own sorts + 'position' ("List
+  // order" — the reading-order payoff, asc-first, the level DEFAULT). The client narrows honestly:
+  // an UNORDERED collection's drill drops the position sort and falls back to the wall default
+  // (the `ordered` flag is the data-honesty gate — the dataGated idiom applied to a sort). Facets =
+  // the wall's minus `wanted` (a want is not a collection member).
+  'books:collection-items': booksLevel({
+    engine: 'books',
+    sorts: [
+      { key: 'position', label: 'List order', firstDir: 'asc' },
+      { key: 'title', label: 'Title', firstDir: 'asc' },
+      { key: 'author', label: 'Author', firstDir: 'asc' },
+      { key: 'added', label: 'Added', firstDir: 'desc' },
+      { key: 'pages', label: 'Pages', firstDir: 'desc' },
+    ],
+    defaultSort: { field: 'position', dir: 'asc' },
+    facets: [
+      { key: 'authors', label: 'Author', kind: 'suggest', param: 'author', dataGated: true },
+      { key: 'formats', label: 'Format', kind: 'enum', param: 'fmt', dataGated: true },
+      { key: 'lengths', label: 'Pages', kind: 'buckets', param: 'len' },
+    ],
+    azSorts: ['title', 'author'],
+  }),
   // Audiobooks (ABS) — the richest book registry (R8 "all"): genre/author/narrator/series/language
   // facets (narrator + series + language populated-value-gated — live-verified sparse), duration
   // length buckets, Year sort (ABS publishedYear), per-user Read facet (ADR-053, gated).
@@ -393,6 +434,40 @@ export const LIBRARY_VIEW_REGISTRY: Record<ViewLevelKey, ViewRegistryEntry> = {
     facets: [],
     azSorts: [],
   }),
+  // ADR-066 / DESIGN-038 D-07 (PLAN-051) — the Audiobooks Collections grouped + drilled levels
+  // (same contract as the books ones; the drill keeps the ABS item facets minus `wanted`).
+  'audiobooks:grouped-collection': groupLevel({
+    engine: 'books',
+    sorts: [
+      { key: 'label', label: 'Collection A–Z', firstDir: 'asc' },
+      { key: 'count', label: 'Most items', firstDir: 'desc' },
+    ],
+    defaultSort: { field: 'label', dir: 'asc' },
+    facets: [],
+    azSorts: [],
+  }),
+  'audiobooks:collection-items': booksLevel({
+    engine: 'books',
+    sorts: [
+      { key: 'position', label: 'List order', firstDir: 'asc' },
+      { key: 'title', label: 'Title', firstDir: 'asc' },
+      { key: 'author', label: 'Author', firstDir: 'asc' },
+      { key: 'year', label: 'Year', firstDir: 'desc' },
+      { key: 'duration', label: 'Length', firstDir: 'desc' },
+      { key: 'added', label: 'Added', firstDir: 'desc' },
+    ],
+    defaultSort: { field: 'position', dir: 'asc' },
+    facets: [
+      { key: 'genres', label: 'Genre', kind: 'enum', param: 'genre', dataGated: true },
+      { key: 'authors', label: 'Author', kind: 'suggest', param: 'author', dataGated: true },
+      { key: 'narrators', label: 'Narrator', kind: 'suggest', param: 'narr', dataGated: true },
+      { key: 'series', label: 'Series', kind: 'suggest', param: 'ser', dataGated: true },
+      { key: 'languages', label: 'Language', kind: 'enum', param: 'lang', dataGated: true },
+      { key: 'lengths', label: 'Length', kind: 'buckets', param: 'len' },
+      READ_FACET,
+    ],
+    azSorts: ['title', 'author'],
+  }),
   // Comics (Kavita) — the wall IS the grouped-by-Series view (a Kavita row IS a series, so the item
   // grid is the series grid; R2 default). Series A–Z rides sort_title; format/page facets only.
   'comics:wall': booksLevel({
@@ -407,6 +482,34 @@ export const LIBRARY_VIEW_REGISTRY: Record<ViewLevelKey, ViewRegistryEntry> = {
       { key: 'formats', label: 'Format', kind: 'enum', param: 'fmt', dataGated: true },
       { key: 'lengths', label: 'Pages', kind: 'buckets', param: 'len' },
       WANTED_FACET,
+    ],
+    azSorts: ['title'],
+  }),
+  // ADR-066 / DESIGN-038 D-07 (PLAN-051) — the Comics Collections grouped + drilled levels. The
+  // wall itself stays the grouped-by-Series item grid (no level); Collections is its first
+  // aggregate-card SIBLING dimension.
+  'comics:grouped-collection': groupLevel({
+    engine: 'books',
+    sorts: [
+      { key: 'label', label: 'Collection A–Z', firstDir: 'asc' },
+      { key: 'count', label: 'Most items', firstDir: 'desc' },
+    ],
+    defaultSort: { field: 'label', dir: 'asc' },
+    facets: [],
+    azSorts: [],
+  }),
+  'comics:collection-items': booksLevel({
+    engine: 'books',
+    sorts: [
+      { key: 'position', label: 'List order', firstDir: 'asc' },
+      { key: 'title', label: 'Series', firstDir: 'asc' },
+      { key: 'added', label: 'Added', firstDir: 'desc' },
+      { key: 'pages', label: 'Pages', firstDir: 'desc' },
+    ],
+    defaultSort: { field: 'position', dir: 'asc' },
+    facets: [
+      { key: 'formats', label: 'Format', kind: 'enum', param: 'fmt', dataGated: true },
+      { key: 'lengths', label: 'Pages', kind: 'buckets', param: 'len' },
     ],
     azSorts: ['title'],
   }),
@@ -494,10 +597,15 @@ export const WALL_VIEWS: Record<LibraryWallId, WallViewsSpec> = {
     offers: ['grouped'],
     groupings: [{ dimension: 'channel', selectorLabel: 'Channels', allLabel: '', art: 'covers' }],
   },
+  // ADR-066 / DESIGN-038 D-07 (PLAN-051) — the three book walls gain the `collection` grouping as a
+  // SIBLING dimension (mirrored Kavita/ABS collections + reading lists; cover-fan cards). The
+  // DEFAULT shapes/dimensions are unchanged (WALL_VIEW_DEFAULTS untouched) — Collections is opt-in
+  // via the selector / `?view=grouped&by=collection`.
   books: {
     offers: ['grouped', 'flat'],
     groupings: [
       { dimension: 'author', selectorLabel: 'Authors', allLabel: 'All authors', art: 'covers', level: 'books:grouped' },
+      { dimension: 'collection', selectorLabel: 'Collections', allLabel: 'All collections', art: 'covers', level: 'books:grouped-collection' },
     ],
     flatLabel: 'All books',
   },
@@ -506,14 +614,20 @@ export const WALL_VIEWS: Record<LibraryWallId, WallViewsSpec> = {
     groupings: [
       { dimension: 'author', selectorLabel: 'Authors', allLabel: 'All authors', art: 'covers', level: 'audiobooks:grouped' },
       { dimension: 'genre', selectorLabel: 'Genres', allLabel: 'All genres', art: 'glyph', level: 'audiobooks:grouped-genre' },
+      { dimension: 'collection', selectorLabel: 'Collections', allLabel: 'All collections', art: 'covers', level: 'audiobooks:grouped-collection' },
     ],
     flatLabel: 'All audiobooks',
   },
   // Comics' Series grouping IS the wall — each tile is a Kavita series wearing its REAL series
-  // cover through /api/books/cover (the D-04 art answer for the Series dimension).
+  // cover through /api/books/cover (the D-04 art answer for the Series dimension). PLAN-051 adds
+  // Collections as its first aggregate-card sibling (the wall gains a selector WITHOUT gaining a
+  // flat shape — the D-07 selector rule).
   comics: {
     offers: ['grouped'],
-    groupings: [{ dimension: 'series', selectorLabel: 'Series', allLabel: '', art: 'covers' }],
+    groupings: [
+      { dimension: 'series', selectorLabel: 'Series', allLabel: '', art: 'covers' },
+      { dimension: 'collection', selectorLabel: 'Collections', allLabel: 'All collections', art: 'covers', level: 'comics:grouped-collection' },
+    ],
   },
 };
 
