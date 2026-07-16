@@ -27,8 +27,10 @@ displays them with ZERO site changes.
 
 ## Open questions
 
-- Q-01: Kavita Reading Lists vs Collections — mirror one, both, or fold reading lists in as
-  ordered collections? (Ordering is the series case; research doc will settle API shape.)
+- Q-01: Kavita Reading Lists vs Collections — RESEARCH INPUT (2026-07-16): Kavita
+  collections are UNORDERED; reading lists carry explicit positions (update-position API);
+  ABS collections ARE ordered. Lean: mirror BOTH Kavita concepts, rendering reading lists
+  as ordered collections (reading order is the series case).
 - Q-02: cross-source collection identity — a series existing in BOTH Kavita and ABS (ebook +
   audio) shows as two collections or one merged card? (PLAN-050 pairing data could merge;
   lean: two honest source-scoped collections v1, merge later.)

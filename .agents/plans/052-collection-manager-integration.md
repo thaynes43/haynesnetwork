@@ -1,7 +1,24 @@
 # PLAN-052: Collection-manager integration — Kometa knobs + provider-agnostic UI
 
-- **Status:** Intake, research-gated (owner-ratified roadmap 2026-07-16; Kometa deep-research
-  dispatched same day → `.agents/context/2026-07-16-kometa-integration-research.md` when filed).
+- **Status:** Intake — RESEARCH LANDED same day
+  (`.agents/context/2026-07-16-kometa-integration-research.md`); scope-ready. Research
+  verdicts now normative for this plan:
+  - **Write path = Git PRs.** Our Kometa collection files are a git-managed ConfigMap
+    (haynes-ops `apps/media/kometa/app/config/*.yml`), hot on every run — the managed file
+    is pure PR flow, no PVC writes. Only Defaults `template_variables` live in config.yml
+    (ExternalSecret seed → PVC, re-seed required) — those knobs are "PR + re-seed"
+    owner-approved operations, deferred past v1.
+  - **CI gate = `--validate-file`** against the pinned image (v2.4.4; validation framework
+    landed v2.4.2). No --dry-run exists; --validate-level full connects but mutates nothing.
+  - **Run-now = `kubectl create job --from=cronjob` with `--run --run-files
+    "hnet-managed.yml"`** (bounded; the dev-env SA already holds job-create).
+  - **Safety contract for the managed file:** namespace collection names (title collision is
+    the only cross-file interference), `sync_mode: sync` per collection, expect
+    `minimum_items: 2` auto-delete, and canary-test orphan cleanup before shipping delete.
+  - **Run-state readback:** K8s Job status (MediaAutomationJobFailed alert exists) +
+    meta.log + optionally Kometa's OUTBOUND run_end/error webhook pointed at hnet.
+  - **Provider-parity contract (R2) sketched in research §6** — recipe/validate/apply/run/
+    read-back nouns the books app implements natively from day one.
 - **Owner rulings (2026-07-16, normative):**
   - **R1 — KISS, absolutely.** Kometa configs are complex and take YAML breaking changes; the
     app exposes "limited, basic" control only.
