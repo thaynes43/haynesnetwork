@@ -211,7 +211,7 @@ describe('Force Search single-writer (DESIGN-005 D-07/D-17)', () => {
 
   it('shares the hourly budget with Fix: a Fix then searches to the limit → blocked', async () => {
     const user = (await createUser(t.db, { email: 'budget@example.com' })).id;
-    // One Fix consumes one unit of the shared 5/hour budget.
+    // One Fix consumes one unit of the shared 25/hour budget.
     await createFixRequest({
       db: t.db,
       requesterId: user,
