@@ -32,6 +32,7 @@
 //   ?group=<key>         the drilled-into group (implies the flat grid)         [PUSH on drill]
 //   ?sort=field:dir      the active level's sort                                [replace]
 //   ?q / ?genre / ?author / ?narr / ?ser / ?lang / ?fmt / ?len / ?read / ?at    [replace]
+//   ?wanted=only|hide    the three-state composed-Wanted filter (absent = All)  [replace]
 //
 // ADR-015: fixed 2:3 boxes (item tiles AND group-card stacks), dim-in-place on refetch, fixed-height
 // chip/sort rows that pan horizontally, overlay chip editors, the A–Z rail as a fixed overlay,
@@ -48,7 +49,7 @@ import {
   arrowFor,
   type FilterMap,
 } from '@hnet/ui';
-import type { BooksSort, BookReadState } from '@hnet/api';
+import type { BooksSort, BooksWantedState, BookReadState } from '@hnet/api';
 import { trpc } from '@/lib/trpc-client';
 import { BookCard, GroupCard, PosterGrid, PosterGridSkeleton, type InFlightBadge } from '@/components/cards';
 import { CHIP_LABELS, SelectChip } from '@/components/filter-chips';
@@ -203,9 +204,12 @@ export function BooksBrowser({
   const readState = READ_STATE_OPTIONS.some((o) => o.value === readRaw)
     ? (readRaw as BookReadState)
     : undefined;
-  // ADR-057 (PLAN-045) — the registry's composed-Wanted state filter (`?wanted=1` — the Movies/TV
-  // narrowing idiom). Active ⇒ the wall shows ONLY the wanted overlay tiles.
-  const wantedOnly = searchParams.get('wanted') === '1';
+  // PLAN-056 / DESIGN-029 amendment 3 — the THREE-state composed-Wanted filter (All · Wanted only ·
+  // Hide wanted; absent = All). Server-authoritative: the state rides the books.search input and the
+  // server composes/excludes there. Legacy `?wanted=1` links read as Wanted-only.
+  const wantedRaw = searchParams.get('wanted');
+  const wantedState: BooksWantedState =
+    wantedRaw === 'only' || wantedRaw === '1' ? 'only' : wantedRaw === 'hide' ? 'hide' : 'all';
   const letterRaw = searchParams.get('at');
   const letter = letterRaw !== null && /^[a-z]$/.test(letterRaw) ? letterRaw : null;
 
@@ -344,10 +348,10 @@ export function BooksBrowser({
 
   // ── data ──
   const facets = trpc.books.filterFacets.useQuery({ mediaKind }, { refetchOnWindowFocus: false });
-  // ADR-057 (PLAN-045, owner-corrected) — the composed-Wanted household `book_requests` (books-section
-  // gated server-side). The Wanted cards are the SAME poster block as an on-disk book and merge INLINE
-  // into the flat item stream — no separate strip. The Wanted-only chip is populated-value-gated on this
-  // list (ADR-051 C-06).
+  // ADR-057 (PLAN-045, owner-corrected) + PLAN-056 — the composed-Wanted household `book_requests`
+  // (books-section gated server-side). Since PLAN-056 the wanted rows arrive INSIDE books.search
+  // (composed into the active sort server-side); this always-on read remains as the three-state
+  // selector's populated-value gate (ADR-051 C-06) and the wall-stage poll's enable signal.
   const wantedQ = trpc.books.wanted.useQuery({ mediaKind }, { refetchOnWindowFocus: false });
   const wantedAll = wantedQ.data?.items ?? [];
   // PLAN-048 / ADR-059 D-03 (#272 residual) — ONE live wall-stage read per wall view, enabled only when this
@@ -366,24 +370,10 @@ export function BooksBrowser({
     const s = wallStagesQ.data?.[booksWall]?.[key];
     return s ? { stage: s.stage, progress: s.progress } : null;
   };
-  const wantedInFlight = (w: (typeof wantedAll)[number]): InFlightBadge | null =>
-    inFlightFor(mediaKind === 'comic' ? w.kapowarrVolumeId : w.llBookId);
-  // The wall's top level only (never inside a drilled group); the text query narrows the wanted cards
-  // client-side, but other facet refinements hide them — synthetic wants can't honestly answer
-  // format/length/read facets (the same "never offer what it can't answer" rule as sorts).
-  const facetsActive =
-    Object.keys(filters).length > 0 || readState !== undefined || letter !== null;
-  const wantedItems =
-    qParam.trim().length > 0
-      ? wantedAll.filter((w) =>
-          `${w.title} ${w.author ?? ''}`.toLowerCase().includes(qParam.trim().toLowerCase()),
-        )
-      : wantedAll;
-  // Wanted cards join the FLAT grid (or ARE the wall under the Wanted-only filter). The grouped
-  // author/genre views show aggregate cards, not items, so a want can't participate there — it surfaces
-  // in the flat "All …" view (and via the Wanted-only chip), matching how the wall already mixes items.
-  const showWantedInline =
-    !drilled && !groupedCards && !wantedOnly && wantedItems.length > 0 && !facetsActive;
+  const wantedInFlight = (w: {
+    llBookId: string | null;
+    kapowarrVolumeId: string | null;
+  }): InFlightBadge | null => inFlightFor(mediaKind === 'comic' ? w.kapowarrVolumeId : w.llBookId);
   const groupsQuery = trpc.books.groups.useQuery(
     { mediaKind, groupBy: grouping?.dimension === 'genre' ? 'genre' : 'author' },
     {
@@ -438,6 +428,10 @@ export function BooksBrowser({
       ...(filters.lengths ? { lengths: filters.lengths as ('short' | 'medium' | 'long')[] } : {}),
       ...(readState !== undefined ? { readState } : {}),
       ...(azActive && letter !== null ? { letter } : {}),
+      // PLAN-056 — the three-state Wanted filter, applied SERVER-side ('all' composes wants into
+      // the sorted stream; 'hide' excludes them there — never a client hide). A drilled group
+      // forces 'hide': a want is not a group/collection member (the D-09 honesty rule).
+      wanted: drilled ? ('hide' as const) : wantedState,
     },
     {
       // A collection drill waits for its meta (label + ordered — the sort default depends on it)
@@ -475,6 +469,8 @@ export function BooksBrowser({
 
   const jumpVisible =
     !groupedCards &&
+    // Wanted-only ignores the A–Z jump (a letter is an item refinement wants can't answer).
+    wantedState !== 'only' &&
     showJumpBar({
       isAzSort: azActive,
       activeLetter: letter,
@@ -610,21 +606,39 @@ export function BooksBrowser({
           <div className="library-chipbar" role="group" aria-label="Filters">
             {facetsForLevel.map((facet) => {
               if (facet.key === 'wanted') {
-                // ADR-057 (owner-corrected) — the composed-Wanted narrowing, styled EXACTLY like the
-                // Movies wall's "Wanted only" chip (the `btn sm` toggle, primary when armed); value-gated
-                // on the want list itself (ADR-051 C-06 — no dead chip).
-                if (wantedAll.length === 0) return null;
+                // PLAN-056 / DESIGN-029 amendment 3 — the THREE-state composed-Wanted selector
+                // (All · Wanted only · Hide wanted) on the wall's existing `.seg` idiom: fixed
+                // per-segment labels, recolor-not-reflow (ADR-015); `?wanted=` is a replace-in-place
+                // refinement (D-19). Value-gated on the overlay itself (ADR-051 C-06 — no dead
+                // control) and absent inside a drill (a want is not a group member; the server
+                // excludes it there regardless).
+                if (drilled || wantedAll.length === 0) return null;
+                const wantedSegments = [
+                  { value: 'all', label: 'All', testId: 'books-wanted-all' },
+                  { value: 'only', label: 'Wanted only', testId: 'books-wanted-only' },
+                  { value: 'hide', label: 'Hide wanted', testId: 'books-wanted-hide' },
+                ] as const;
                 return (
-                  <button
+                  <div
                     key={facet.key}
-                    type="button"
-                    className={`btn sm${wantedOnly ? ' primary' : ''}`}
-                    aria-pressed={wantedOnly}
-                    data-testid="books-wanted-toggle"
-                    onClick={() => patchParams({ wanted: wantedOnly ? null : '1' })}
+                    className="seg"
+                    role="group"
+                    aria-label="Wanted"
+                    data-testid="books-wanted-filter"
                   >
-                    Wanted only
-                  </button>
+                    {wantedSegments.map((s) => (
+                      <button
+                        key={s.value}
+                        type="button"
+                        className={wantedState === s.value ? 'is-active' : undefined}
+                        aria-pressed={wantedState === s.value}
+                        data-testid={s.testId}
+                        onClick={() => patchParams({ wanted: s.value === 'all' ? null : s.value })}
+                      >
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
                 );
               }
               if (facet.kind === 'select' && facet.gate === 'bookProgress') {
@@ -700,24 +714,7 @@ export function BooksBrowser({
 
       {jumpVisible ? <LetterJumpBar active={letter} onJump={(l) => patchParams({ at: l })} /> : null}
 
-      {/* ADR-057 (PLAN-045, owner-corrected) — the composed-Wanted items. Under the Wanted-only filter
-          the wanted cards ARE the wall; otherwise they merge INLINE at the head of the flat grid as the
-          SAME poster block as an on-disk book (never a separate strip). Static per load — ADR-015. */}
-      {wantedOnly ? (
-        wantedItems.length > 0 ? (
-          <PosterGrid testId="books-grid">
-            {wantedItems.map((w) => (
-              <WantedCard key={`w-${w.requestId}`} item={w} mediaKind={mediaKind} inFlight={wantedInFlight(w)} />
-            ))}
-          </PosterGrid>
-        ) : (
-          <section className="card empty-state" data-testid="wanted-empty">
-            <p className="muted">No wanted {label.toLowerCase()} right now.</p>
-          </section>
-        )
-      ) : (
-        <>
-          {pending ? (
+      {pending ? (
         SKELETON
       ) : groupedCards ? (
         groupsError ? (
@@ -761,54 +758,63 @@ export function BooksBrowser({
         <p className="alert" role="alert">
           Failed to load {label}: {search.error.message}
         </p>
-      ) : showEmpty && !showWantedInline ? (
-        <section className="card empty-state">
+      ) : showEmpty ? (
+        <section
+          className="card empty-state"
+          data-testid={wantedState === 'only' ? 'wanted-empty' : undefined}
+        >
           <p className="muted">
-            {qParam.trim().length > 0 ? 'Nothing matches your search.' : `No ${label.toLowerCase()} yet.`}
+            {qParam.trim().length > 0
+              ? 'Nothing matches your search.'
+              : wantedState === 'only'
+                ? `No wanted ${label.toLowerCase()} right now.`
+                : `No ${label.toLowerCase()} yet.`}
           </p>
         </section>
       ) : (
         <>
           <PosterGrid refreshing={refreshing} testId="books-grid">
-            {/* Wanted cards lead the flat stream — same grid, same poster block as the on-disk books. */}
-            {showWantedInline
-              ? wantedItems.map((w) => (
+            {/* PLAN-056 / DESIGN-029 amendment 3 — ONE composed stream from books.search: a wanted
+                entry lands exactly where the active sort puts it (never pinned to the head) and
+                renders the SAME poster block as an on-disk book. */}
+            {items.map((entry) => {
+              if (entry.kind === 'wanted') {
+                return (
                   <WantedCard
-                    key={`w-${w.requestId}`}
-                    item={w}
+                    key={`w-${entry.requestId}`}
+                    item={entry}
                     mediaKind={mediaKind}
-                    inFlight={wantedInFlight(w)}
+                    inFlight={wantedInFlight(entry)}
                   />
-                ))
-              : null}
-            {items.map((item) => {
-              const duration = formatDuration(item.durationSeconds);
+                );
+              }
+              const duration = formatDuration(entry.durationSeconds);
               const badge =
                 mediaKind === 'audiobook'
                   ? duration
-                  : item.pageCount
-                    ? `${item.pageCount} pp`
+                  : entry.pageCount
+                    ? `${entry.pageCount} pp`
                     : null;
               // ADR-065 / DESIGN-036 D-09 — the format-coverage badge ("Ebook + Audio" when the title
               // is paired; the honest single-format label otherwise). Comics carry none (null).
               const coverage =
-                item.formatCoverage === 'both'
+                entry.formatCoverage === 'both'
                   ? 'Ebook + Audio'
-                  : item.formatCoverage === 'ebook'
+                  : entry.formatCoverage === 'ebook'
                     ? 'Ebook only'
-                    : item.formatCoverage === 'audio'
+                    : entry.formatCoverage === 'audio'
                       ? 'Audio only'
                       : null;
               return (
                 // ADR-047 — the tile opens the in-app books DETAIL page (the deep link lives there now).
                 <BookCard
-                  key={item.id}
-                  href={`/library/books/${item.id}?from=${fromKey}`}
-                  posterUrl={item.posterUrl}
-                  mediaKind={item.mediaKind}
-                  title={item.title}
-                  year={item.year}
-                  author={item.author}
+                  key={entry.id}
+                  href={`/library/books/${entry.id}?from=${fromKey}`}
+                  posterUrl={entry.posterUrl}
+                  mediaKind={entry.mediaKind}
+                  title={entry.title}
+                  year={entry.year}
+                  author={entry.author}
                   badges={[badge ? { label: badge } : null, coverage ? { label: coverage } : null]}
                 />
               );
@@ -822,8 +828,6 @@ export function BooksBrowser({
               {search.isFetchingNextPage ? <span className="muted">Loading…</span> : null}
             </div>
           ) : null}
-        </>
-      )}
         </>
       )}
     </>

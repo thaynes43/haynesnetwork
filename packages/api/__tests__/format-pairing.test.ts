@@ -27,6 +27,7 @@ import {
   type TestDb,
 } from './helpers';
 import type { TRPCContext } from '../src/trpc';
+import type { BooksSearchEntry } from '../src';
 
 let t: TestDb;
 let adminCaller: Caller; // admin — books + integrations implied
@@ -164,6 +165,10 @@ async function codeOf(fn: () => Promise<unknown>): Promise<string> {
   }
 }
 
+/** PLAN-056 — narrow the composed stream to its ON-DISK rows (these assertions target library
+ *  items; wanted entries carry no item metadata). */
+const onDisk = (items: BooksSearchEntry[]) => items.flatMap((i) => (i.kind === 'item' ? [i] : []));
+
 describe('books.detail — the pairing state (DESIGN-036 D-09)', () => {
   it('a PAIRED title carries BOTH consume plays, each its own deep link', async () => {
     const detail = await readerCaller.books.detail({ id: pairedBookId });
@@ -197,15 +202,15 @@ describe('books.detail — the pairing state (DESIGN-036 D-09)', () => {
 describe('books.search — formatCoverage (the wall badge signal)', () => {
   it('the Books wall reports both / ebook; the Audiobooks wall reports both; comics stay null', async () => {
     const books = await readerCaller.books.search({ mediaKind: 'book', sort: 'title', limit: 24, cursor: 0 });
-    const byTitle = Object.fromEntries(books.items.map((i) => [i.title, i.formatCoverage]));
+    const byTitle = Object.fromEntries(onDisk(books.items).map((i) => [i.title, i.formatCoverage]));
     expect(byTitle['Hyperion']).toBe('both');
     expect(byTitle['The Martian']).toBe('ebook');
 
     const audio = await readerCaller.books.search({ mediaKind: 'audiobook', sort: 'title', limit: 24, cursor: 0 });
-    expect(audio.items[0]!.formatCoverage).toBe('both');
+    expect(onDisk(audio.items)[0]!.formatCoverage).toBe('both');
 
     const comics = await readerCaller.books.search({ mediaKind: 'comic', sort: 'title', limit: 24, cursor: 0 });
-    expect(comics.items[0]!.formatCoverage).toBeNull();
+    expect(onDisk(comics.items)[0]!.formatCoverage).toBeNull();
   });
 });
 

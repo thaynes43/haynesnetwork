@@ -10,6 +10,7 @@ import {
   type BooksItemInput,
 } from '@hnet/domain';
 import { booksItems } from '@hnet/db/schema';
+import type { BooksSearchEntry } from '../src';
 import { eq } from 'drizzle-orm';
 import {
   bootMigratedDb,
@@ -206,11 +207,15 @@ describe('library.facetGates (ADR-051 C-06 — the per-user populated-value gate
   });
 });
 
+/** PLAN-056 — narrow the composed stream to its ON-DISK rows (these assertions target library
+ *  items; wanted entries carry no item metadata). */
+const onDisk = (items: BooksSearchEntry[]) => items.flatMap((i) => (i.kind === 'item' ? [i] : []));
+
 describe('books.search — released sort + per-user read facet (PLAN-029)', () => {
   it('released sort puts the dated audiobook before the date-less one', async () => {
     const res = await api.books.search({ mediaKind: 'audiobook', sort: 'released', limit: 50 });
     expect(res.items.map((i) => i.title)).toEqual(['AudioNew', 'AudioNoDate']);
-    expect(res.items[0]!.releasedAt).toBe('2021-01-01T00:00:00.000Z');
+    expect(onDisk(res.items)[0]!.releasedAt).toBe('2021-01-01T00:00:00.000Z');
   });
 
   it('readState=read returns only the viewer-finished audiobook; unread excludes it', async () => {

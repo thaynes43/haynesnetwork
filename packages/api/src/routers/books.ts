@@ -16,6 +16,7 @@ import {
   BOOKS_MEDIA_KINDS,
   type BooksMediaKind,
   type BooksItemRow,
+  type BookRequestOrigin,
   type BookRequestStatus,
   type Database,
 } from '@hnet/db';
@@ -28,6 +29,7 @@ import {
   isRequestSearchable,
   missingFormatFor,
   runManualBookSearch,
+  type WantedBookRequestView,
 } from '@hnet/domain';
 import { authedProcedure, mapDomainErrors, resolveLazyLibrarianBundle, router } from '../trpc';
 import { booksOrIntegrationsProcedure, booksProcedure, effectiveSectionLevel } from '../middleware/role';
@@ -39,6 +41,8 @@ import {
   aggregateBookGroups,
   booksSearchInputSchema,
   toBooksListItem,
+  wantedPrimarySortValue,
+  wantedSortTitle,
   type BookLengthBucket,
   type BooksGroup,
   type BooksListItem,
@@ -135,18 +139,19 @@ async function resolvePairingState(
  * ADR-066 / DESIGN-038 D-06 (PLAN-051): 'position' orders a DRILLED collection by member position
  * (reading order — asc natural); the schema refinement guarantees `collection` is present.
  */
+const BOOKS_SORT_NATURAL_DIR: Record<BooksSort, 'asc' | 'desc'> = {
+  title: 'asc',
+  author: 'asc',
+  added: 'desc',
+  year: 'desc',
+  released: 'desc',
+  duration: 'desc',
+  pages: 'desc',
+  position: 'asc',
+};
+
 function orderForSort(sort: BooksSort, dir?: 'asc' | 'desc', collection?: string) {
-  const natural: Record<BooksSort, 'asc' | 'desc'> = {
-    title: 'asc',
-    author: 'asc',
-    added: 'desc',
-    year: 'desc',
-    released: 'desc',
-    duration: 'desc',
-    pages: 'desc',
-    position: 'asc',
-  };
-  const d = sql.raw((dir ?? natural[sort]).toUpperCase());
+  const d = sql.raw((dir ?? BOOKS_SORT_NATURAL_DIR[sort]).toUpperCase());
   switch (sort) {
     case 'author':
       return [sql`${booksItems.author} ${d} NULLS LAST`, asc(booksItems.sortTitle), asc(booksItems.id)];
@@ -245,9 +250,76 @@ function facetConditions(input: BooksSearchInput) {
   return conditions;
 }
 
+/**
+ * One composed Library-Wanted wire item (ADR-057 / DESIGN-029). Per-viewer affordances are computed
+ * SERVER-side, never client-guessed: `canSearch` (the force-search button) and `canOpenRequest`
+ * (the deep-link into the Goodreads sub-section) require the viewer to OWN the request's
+ * integration AND hold the `integrations` section — exactly what `integrations.search` enforces.
+ * ADR-065 C-05 — a pairing (system) want has no owner: its search rides the books gate the calling
+ * resolver already passed; the Goodreads-sub-section deep link stays goodreads-only.
+ */
+export interface BooksWantedItem {
+  requestId: string;
+  /** ADR-065 — 'pairing' rows are the estate's format wants (attributed "Format pairing"). */
+  origin: BookRequestOrigin;
+  title: string;
+  author: string | null;
+  shelf: string;
+  shelvedAt: string | null;
+  /** The WALL format's own status (requested | wanted | grabbed | missing — never landed here). */
+  status: BookRequestStatus;
+  isComic: boolean;
+  // PLAN-048 / ADR-059 D-03 — the activity wall-badge join keys: a book/audiobook want joins the
+  // live in-flight read by its LL/GB book id; a comic want by its Kapowarr volume id.
+  llBookId: string | null;
+  kapowarrVolumeId: string | null;
+  /** A parked comic (no Kapowarr route yet) — the honest "waiting on a ComicVine match" note. */
+  parked: boolean;
+  requestedBy: string[];
+  canSearch: boolean;
+  canOpenRequest: boolean;
+}
+
+/** Map a wanted view to its wire item for one viewer (shared by `books.wanted` + `books.search`). */
+function toWantedWireItem(
+  v: WantedBookRequestView,
+  viewer: { id: string; hasIntegrations: boolean },
+): BooksWantedItem {
+  const owns = v.integrationUserId !== null && v.integrationUserId === viewer.id;
+  const isPairing = v.origin === 'pairing';
+  return {
+    requestId: v.requestId,
+    origin: v.origin,
+    title: v.title,
+    author: v.author,
+    shelf: v.shelf,
+    shelvedAt: v.shelvedAt ? v.shelvedAt.toISOString() : null,
+    status: v.status,
+    isComic: v.isComic,
+    llBookId: v.llBookId,
+    kapowarrVolumeId: v.kapowarrVolumeId,
+    parked: v.isComic && v.unroutableReason === 'comic',
+    requestedBy: v.requestedBy,
+    canSearch: isPairing
+      ? isRequestSearchable(v)
+      : owns && viewer.hasIntegrations && isRequestSearchable(v),
+    canOpenRequest: !isPairing && owns && viewer.hasIntegrations,
+  };
+}
+
+/**
+ * PLAN-056 / DESIGN-029 amendment 3 — one entry of the composed wall stream: an on-disk library
+ * row or a wanted overlay row, discriminated by `kind` (the client renders BookCard vs WantedCard).
+ */
+export type BooksSearchEntry =
+  | ({ kind: 'item' } & BooksListItem & {
+      /** ADR-065 — feeds the wall's coverage badge (null for a comic — no pairing). */
+      formatCoverage: BooksFormatCoverage | null;
+    })
+  | ({ kind: 'wanted' } & BooksWantedItem);
+
 export interface BooksSearchResult {
-  /** ADR-065 — `formatCoverage` feeds the wall's coverage badge (null for a comic — no pairing). */
-  items: Array<BooksListItem & { formatCoverage: BooksFormatCoverage | null }>;
+  items: BooksSearchEntry[];
   /** Next offset cursor, or null when the last page was reached. */
   nextCursor: number | null;
 }
@@ -258,6 +330,96 @@ const WALL_FORMAT: Record<BooksMediaKind, 'ebook' | 'audiobook' | 'comic'> = {
   audiobook: 'audiobook',
   comic: 'comic',
 };
+
+/** The one refinement a want CAN answer: the text query (title/author substring — the same rule
+ *  the client applied before PLAN-056 moved the composition server-side). */
+function filterWantedByQuery(
+  views: WantedBookRequestView[],
+  query: string | undefined,
+): WantedBookRequestView[] {
+  const q = query?.trim().toLowerCase();
+  if (q === undefined || q === '') return views;
+  return views.filter((v) => `${v.title} ${v.author ?? ''}`.toLowerCase().includes(q));
+}
+
+/**
+ * PLAN-056 — the composed union's per-sort PRIMARY key: the item-side SQL expression (exactly the
+ * orderForSort primary column), the SQL type the wanted VALUES bind casts to, and whether the sort
+ * carries the sort_title tiebreak (mirroring orderForSort so a facet toggle never reshuffles
+ * equal-keyed items). 'position' never composes — a want is not a collection member.
+ */
+const COMPOSED_SORT_KEYS: Record<
+  Exclude<BooksSort, 'position'>,
+  { itemExpr: () => SQL; cast: 'text' | 'timestamptz' | 'integer'; titleTiebreak: boolean }
+> = {
+  title: { itemExpr: () => sql`${booksItems.sortTitle}`, cast: 'text', titleTiebreak: false },
+  author: { itemExpr: () => sql`${booksItems.author}`, cast: 'text', titleTiebreak: true },
+  added: {
+    itemExpr: () => sql`COALESCE(${booksItems.sourceAddedAt}, ${booksItems.firstSeenAt})`,
+    cast: 'timestamptz',
+    titleTiebreak: false,
+  },
+  year: { itemExpr: () => sql`${booksItems.year}`, cast: 'integer', titleTiebreak: true },
+  released: { itemExpr: () => sql`${booksItems.releasedAt}`, cast: 'timestamptz', titleTiebreak: true },
+  duration: { itemExpr: () => sql`${booksItems.durationSeconds}`, cast: 'integer', titleTiebreak: true },
+  pages: { itemExpr: () => sql`${booksItems.pageCount}`, cast: 'integer', titleTiebreak: true },
+};
+
+/** PLAN-056 — the wanted-only page's in-process sort: the SAME key mapping + NULLS-LAST + tiebreak
+ *  contract as the composed union's ORDER BY, applied to the (bounded) wanted list alone. */
+function sortWantedViews(
+  views: WantedBookRequestView[],
+  sort: BooksSort,
+  dir?: 'asc' | 'desc',
+): WantedBookRequestView[] {
+  const d = (dir ?? BOOKS_SORT_NATURAL_DIR[sort]) === 'desc' ? -1 : 1;
+  return [...views].sort((a, b) => {
+    const pa = wantedPrimarySortValue(a, sort);
+    const pb = wantedPrimarySortValue(b, sort);
+    if (pa !== null || pb !== null) {
+      if (pa === null) return 1; // NULLS LAST in either direction (the D-09 convention)
+      if (pb === null) return -1;
+      const cmp =
+        pa instanceof Date
+          ? pa.getTime() - (pb as Date).getTime()
+          : String(pa).localeCompare(String(pb));
+      if (cmp !== 0) return cmp * d;
+    }
+    return (
+      wantedSortTitle(a.title).localeCompare(wantedSortTitle(b.title)) ||
+      a.requestId.localeCompare(b.requestId)
+    );
+  });
+}
+
+/** ADR-065 / DESIGN-036 D-09 — the page's format-coverage lookup: one bounded read over the pair
+ *  cache for THIS page's ids (≤ limit rows). Comics never pair — their coverage stays null. */
+async function coverageLookup(
+  db: Database,
+  mediaKind: BooksMediaKind,
+  rows: BooksItemRow[],
+): Promise<(row: BooksItemRow) => BooksFormatCoverage | null> {
+  const pairedIds = new Set<string>();
+  if (mediaKind !== 'comic' && rows.length > 0) {
+    const sideColumn =
+      mediaKind === 'book' ? booksFormatPairs.bookItemId : booksFormatPairs.audioItemId;
+    const pairRows = await db
+      .select({ id: sideColumn })
+      .from(booksFormatPairs)
+      .where(
+        inArray(
+          sideColumn,
+          rows.map((r) => r.id),
+        ),
+      );
+    for (const p of pairRows) pairedIds.add(p.id);
+  }
+  return (row: BooksItemRow): BooksFormatCoverage | null => {
+    if (row.mediaKind === 'comic') return null;
+    if (pairedIds.has(row.id)) return 'both';
+    return row.mediaKind === 'book' ? 'ebook' : 'audio';
+  };
+}
 
 /** ADR-066 / DESIGN-038 D-05 — the group card's cover-fan sample bound (the PLAN-037 idiom). */
 const BOOKS_COLLECTION_COVER_SAMPLE = 4;
@@ -305,40 +467,11 @@ export const booksRouter = router({
     .input(z.object({ mediaKind: z.enum(BOOKS_MEDIA_KINDS) }))
     .query(async ({ ctx, input }) => {
       const views = await getWantedBookRequests({ db: ctx.db, format: WALL_FORMAT[input.mediaKind] });
-      const viewerHasIntegrations = effectiveSectionLevel(ctx.user.role, 'integrations') !== 'disabled';
-      return {
-        items: views.map((v) => {
-          const owns = v.integrationUserId !== null && v.integrationUserId === ctx.user.id;
-          // ADR-065 C-05 — a pairing (system) want has no owner: its search rides the books gate this
-          // resolver already passed; the Goodreads-sub-section deep link stays goodreads-only.
-          const isPairing = v.origin === 'pairing';
-          return {
-            requestId: v.requestId,
-            /** ADR-065 — 'pairing' rows are the estate's format wants (attributed "Format pairing"). */
-            origin: v.origin,
-            title: v.title,
-            author: v.author,
-            shelf: v.shelf,
-            shelvedAt: v.shelvedAt ? v.shelvedAt.toISOString() : null,
-            /** The WALL format's own status (requested | wanted | grabbed | missing — never landed here). */
-            status: v.status,
-            isComic: v.isComic,
-            // PLAN-048 / ADR-059 D-03 (#272 residual) — the activity wall-badge join keys: a book/audiobook
-            // want joins the live in-flight read by its LL/GB book id; a comic want by its Kapowarr volume id.
-            // The wall passes `inFlightFor(wall, key)` from `activity.wallStages` so a want that is actively
-            // being acquired wears the live stage badge (searching / downloading % / importing).
-            llBookId: v.llBookId,
-            kapowarrVolumeId: v.kapowarrVolumeId,
-            /** A parked comic (no Kapowarr route yet) — the honest "waiting on a ComicVine match" note. */
-            parked: v.isComic && v.unroutableReason === 'comic',
-            requestedBy: v.requestedBy,
-            canSearch: isPairing
-              ? isRequestSearchable(v)
-              : owns && viewerHasIntegrations && isRequestSearchable(v),
-            canOpenRequest: !isPairing && owns && viewerHasIntegrations,
-          };
-        }),
+      const viewer = {
+        id: ctx.user.id,
+        hasIntegrations: effectiveSectionLevel(ctx.user.role, 'integrations') !== 'disabled',
       };
+      return { items: views.map((v) => toWantedWireItem(v, viewer)) };
     }),
 
   /**
@@ -422,10 +555,57 @@ export const booksRouter = router({
       };
     }),
 
-  /** One media kind's wall (poster-grid rows), filtered + sorted, offset-paginated. Live rows only. */
+  /**
+   * One media kind's wall (poster-grid rows), filtered + sorted, offset-paginated. Live library
+   * rows PLUS, per the three-state `wanted` input (PLAN-056 / DESIGN-029 amendment 3), the
+   * composed household Wanted overlay:
+   *   • 'all' (default) — wanted rows JOIN the stream and participate HONESTLY in the active sort
+   *     (real keys where a want has them — wantedPrimarySortValue documents the mapping; a want is
+   *     never pinned to the top);
+   *   • 'only' — the wanted rows alone, in the active sort;
+   *   • 'hide' — library rows only (the wanted rows are excluded HERE, never client-hidden).
+   * The D-09 honesty rule is enforced server-side too: a want answers only the text query — any
+   * other refinement (facet chips, A–Z letter, read-state, a collection drill) excludes wants from
+   * the 'all' stream ('only' keeps its query-narrowed list: the caller asked for exactly the wants).
+   */
   search: booksProcedure
     .input(booksSearchInputSchema)
     .query(async ({ ctx, input }): Promise<BooksSearchResult> => {
+      const viewer = {
+        id: ctx.user.id,
+        hasIntegrations: effectiveSectionLevel(ctx.user.role, 'integrations') !== 'disabled',
+      };
+      // Refinements a synthetic want cannot answer (the D-09 rule, now server-authoritative).
+      const narrowed =
+        (input.genres?.length ?? 0) > 0 ||
+        (input.authors?.length ?? 0) > 0 ||
+        (input.narrators?.length ?? 0) > 0 ||
+        (input.series?.length ?? 0) > 0 ||
+        (input.languages?.length ?? 0) > 0 ||
+        (input.formats?.length ?? 0) > 0 ||
+        (input.lengths?.length ?? 0) > 0 ||
+        input.readState !== undefined ||
+        input.letter !== undefined ||
+        input.collection !== undefined;
+      const composeWanted =
+        input.sort !== 'position' &&
+        (input.wanted === 'only' || (input.wanted === 'all' && !narrowed));
+      const wantedViews = composeWanted
+        ? filterWantedByQuery(
+            await getWantedBookRequests({ db: ctx.db, format: WALL_FORMAT[input.mediaKind] }),
+            input.query,
+          )
+        : [];
+
+      if (input.wanted === 'only') {
+        const sorted = sortWantedViews(wantedViews, input.sort, input.dir);
+        const page = sorted.slice(input.cursor, input.cursor + input.limit);
+        return {
+          items: page.map((v) => ({ kind: 'wanted' as const, ...toWantedWireItem(v, viewer) })),
+          nextCursor: input.cursor + input.limit < sorted.length ? input.cursor + input.limit : null,
+        };
+      }
+
       const conditions = [eq(booksItems.mediaKind, input.mediaKind), isNull(booksItems.deletedAt)];
       if (input.query && input.query.length > 0) {
         const like = `%${input.query}%`;
@@ -472,6 +652,57 @@ export const booksRouter = router({
         }
       }
 
+      // PLAN-056 / DESIGN-029 amendment 3 — the COMPOSED page ('all' with live wants): one UNION of
+      // the item query and the (bounded) wanted list as a VALUES bind, each side carrying the SAME
+      // per-sort key columns, ordered + paged by Postgres — so a wanted card lands exactly where
+      // the active sort says (the offset cursor counts composed entries).
+      if (input.wanted === 'all' && wantedViews.length > 0 && input.sort !== 'position') {
+        const key = COMPOSED_SORT_KEYS[input.sort];
+        const castRaw = sql.raw(key.cast);
+        const values = sql.join(
+          wantedViews.map(
+            (v) =>
+              sql`(${v.requestId}::uuid, ${wantedPrimarySortValue(v, input.sort)}::${castRaw}, ${wantedSortTitle(v.title)}::text)`,
+          ),
+          sql`, `,
+        );
+        const dirWord = sql.raw((input.dir ?? BOOKS_SORT_NATURAL_DIR[input.sort]).toUpperCase());
+        const tiebreak = key.titleTiebreak ? sql.raw(', sk2 ASC') : sql.raw('');
+        const composed = await ctx.db.execute<{ kind: 'item' | 'wanted'; id: string }>(sql`
+          SELECT kind, id FROM (
+            SELECT 'item' AS kind, ${booksItems.id} AS id,
+                   ${key.itemExpr()} AS sk1, ${booksItems.sortTitle} AS sk2
+              FROM ${booksItems}
+             WHERE ${and(...conditions)}
+            UNION ALL
+            SELECT 'wanted' AS kind, w.id, w.sk1, w.sk2
+              FROM (VALUES ${values}) AS w(id, sk1, sk2)
+          ) AS u
+          ORDER BY sk1 ${dirWord} NULLS LAST${tiebreak}, id ASC
+          LIMIT ${input.limit} OFFSET ${input.cursor}
+        `);
+        const refs =
+          composed.rows ?? (composed as unknown as Array<{ kind: 'item' | 'wanted'; id: string }>);
+        const itemIds = refs.filter((r) => r.kind === 'item').map((r) => r.id);
+        const itemRows =
+          itemIds.length > 0
+            ? await ctx.db.select().from(booksItems).where(inArray(booksItems.id, itemIds))
+            : [];
+        const itemById = new Map(itemRows.map((r) => [r.id, r]));
+        const coverageFor = await coverageLookup(ctx.db, input.mediaKind, itemRows);
+        const wantedById = new Map(wantedViews.map((v) => [v.requestId, v]));
+        return {
+          items: refs.map((r): BooksSearchEntry => {
+            if (r.kind === 'item') {
+              const row = itemById.get(r.id)!;
+              return { kind: 'item', ...toBooksListItem(row), formatCoverage: coverageFor(row) };
+            }
+            return { kind: 'wanted', ...toWantedWireItem(wantedById.get(r.id)!, viewer) };
+          }),
+          nextCursor: refs.length === input.limit ? input.cursor + input.limit : null,
+        };
+      }
+
       const rows = await ctx.db
         .select()
         .from(booksItems)
@@ -480,31 +711,15 @@ export const booksRouter = router({
         .limit(input.limit)
         .offset(input.cursor);
 
-      // ADR-065 / DESIGN-036 D-09 — the page's format-coverage lookup: one bounded read over the pair
-      // cache for THIS page's ids (≤ limit rows). Comics never pair — their coverage stays null.
-      const pairedIds = new Set<string>();
-      if (input.mediaKind !== 'comic' && rows.length > 0) {
-        const sideColumn =
-          input.mediaKind === 'book' ? booksFormatPairs.bookItemId : booksFormatPairs.audioItemId;
-        const pairRows = await ctx.db
-          .select({ id: sideColumn })
-          .from(booksFormatPairs)
-          .where(
-            inArray(
-              sideColumn,
-              rows.map((r) => r.id),
-            ),
-          );
-        for (const p of pairRows) pairedIds.add(p.id);
-      }
-      const coverageFor = (row: BooksItemRow): BooksFormatCoverage | null => {
-        if (row.mediaKind === 'comic') return null;
-        if (pairedIds.has(row.id)) return 'both';
-        return row.mediaKind === 'book' ? 'ebook' : 'audio';
-      };
-
+      const coverageFor = await coverageLookup(ctx.db, input.mediaKind, rows);
       return {
-        items: rows.map((row) => ({ ...toBooksListItem(row), formatCoverage: coverageFor(row) })),
+        items: rows.map(
+          (row): BooksSearchEntry => ({
+            kind: 'item',
+            ...toBooksListItem(row),
+            formatCoverage: coverageFor(row),
+          }),
+        ),
         nextCursor: rows.length === input.limit ? input.cursor + input.limit : null,
       };
     }),

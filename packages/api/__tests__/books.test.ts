@@ -6,6 +6,7 @@
 //     insert — the no-direct-state-writes guard).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { syncBooks, type BooksItemInput } from '@hnet/domain';
+import type { BooksSearchEntry } from '../src';
 import {
   bootMigratedDb,
   caller,
@@ -15,6 +16,11 @@ import {
   type Caller,
   type TestDb,
 } from './helpers';
+
+
+/** PLAN-056 — narrow the composed stream to its ON-DISK rows (these assertions target library
+ *  items; wanted entries carry no item metadata). */
+const onDisk = (items: BooksSearchEntry[]) => items.flatMap((i) => (i.kind === 'item' ? [i] : []));
 
 let t: TestDb;
 let adminCaller: Caller;
@@ -144,7 +150,7 @@ describe('books.search (ADR-046)', () => {
     const comics = await adminCaller.books.search({ mediaKind: 'comic' });
     expect(comics.items.map((i) => i.title)).toEqual(['Comic One']);
     const audio = await adminCaller.books.search({ mediaKind: 'audiobook' });
-    expect(audio.items[0]?.durationSeconds).toBe(3600);
+    expect(onDisk(audio.items)[0]?.durationSeconds).toBe(3600);
   });
 
   it('filters by query over title/author', async () => {
@@ -162,7 +168,7 @@ describe('books.search (ADR-046)', () => {
 
   it('builds an authed cover-proxy URL from the coverRef', async () => {
     const res = await adminCaller.books.search({ mediaKind: 'book' });
-    expect(res.items[0]?.posterUrl).toBe('/api/books/cover?source=kavita&id=k1&v=v1_c1.png');
+    expect(onDisk(res.items)[0]?.posterUrl).toBe('/api/books/cover?source=kavita&id=k1&v=v1_c1.png');
   });
 
   it('paginates with an offset cursor', async () => {
@@ -260,7 +266,7 @@ describe('books.search facets + direction + A–Z jump (PLAN-029 step 2/6)', () 
     const desc = await adminCaller.books.search({ mediaKind: 'book', sort: 'title', dir: 'desc' });
     expect(desc.items.map((i) => i.title)).toEqual(['Beta', 'Alpha']);
     const pagesAsc = await adminCaller.books.search({ mediaKind: 'book', sort: 'pages', dir: 'asc' });
-    expect(pagesAsc.items.map((i) => i.pageCount)).toEqual([150, 500]);
+    expect(onDisk(pagesAsc.items).map((i) => i.pageCount)).toEqual([150, 500]);
   });
 });
 

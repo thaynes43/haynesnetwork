@@ -110,7 +110,16 @@ export type { AbsAuthorArtRef, AbsAuthorImageResult } from './books-author-art';
 export { booksCoverUrlFor, toBooksListItem, BOOKS_SORTS } from './books-query';
 export type { BooksListItem, BooksSort, BooksSearchInput, BookReadState } from './books-query';
 export { BOOK_READ_STATES } from './books-query';
-export type { BooksSearchResult, BooksDetailResult, BooksCollectionGroup } from './routers/books';
+// PLAN-056 / DESIGN-029 amendment 3 — the three-state composed-Wanted filter + the entry union.
+export { BOOKS_WANTED_STATES } from './books-query';
+export type { BooksWantedState } from './books-query';
+export type {
+  BooksSearchResult,
+  BooksSearchEntry,
+  BooksWantedItem,
+  BooksDetailResult,
+  BooksCollectionGroup,
+} from './routers/books';
 // ADR-051 / DESIGN-026 (PLAN-029 step 2) — the engine key/facet types the client-side registry
 // type-checks its declarations against (TYPE-ONLY — erased at compile; the registry is authoritative
 // on which (wall, view-level) offers which key, these unions are the per-engine supersets).
