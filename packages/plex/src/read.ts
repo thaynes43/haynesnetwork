@@ -8,6 +8,7 @@ import { PlexHttp } from './http';
 import { childrenNamed, parseXml, type XmlElement } from './xml';
 import { PlexParseError } from './errors';
 import {
+  collectionsContainerSchema,
   identitySchema,
   librarySectionsSchema,
   plexAccountSchema,
@@ -17,6 +18,7 @@ import {
   sectionContentsSchema,
   sharedServerSchema,
   type PlexAccount,
+  type PlexCollection,
   type PlexFriend,
   type PlexIdentity,
   type PlexLibrarySection,
@@ -43,6 +45,11 @@ export interface PlexClientOptions {
 }
 
 const xmlBool = (v: string | undefined): boolean => v === '1' || v === 'true';
+
+/** ADR-064 — the /collections read pages in this container size … */
+const COLLECTIONS_PAGE_SIZE = 200;
+/** … under a safety cap so a bad totalSize can never loop forever (the plex-match MAX_PAGES idiom). */
+const MAX_COLLECTION_PAGES = 50;
 
 function attr(el: XmlElement, name: string): string | undefined {
   return el.attrs[name];
@@ -138,6 +145,38 @@ export class PlexReadClient {
       items: body.MediaContainer.Metadata,
       totalSize: body.MediaContainer.totalSize ?? body.MediaContainer.size ?? null,
     };
+  }
+
+  /**
+   * ADR-064 / DESIGN-035 D-02 (PLAN-037 — mirrored collections) — `GET
+   * /library/sections/{key}/collections`: a section's Plex collections, paged to completion with the
+   * X-Plex-Container-Start/-Size loop (the /collections listing is container-bounded like /all —
+   * the plex-match lesson) under a MAX_COLLECTION_PAGES cap. Read-only; token stays in the header.
+   * A collection's MEMBERS are its `/library/metadata/{ratingKey}/children` — read via the existing
+   * listMetadataChildren.
+   */
+  async listCollections(sectionKey: string): Promise<PlexCollection[]> {
+    const collections: PlexCollection[] = [];
+    let start = 0;
+    for (let page = 0; page < MAX_COLLECTION_PAGES; page += 1) {
+      const body = await this.http.requestJson(
+        'GET',
+        `${this.baseUrl}/library/sections/${encodeURIComponent(sectionKey)}/collections`,
+        collectionsContainerSchema,
+        {
+          query: {
+            'X-Plex-Container-Start': start,
+            'X-Plex-Container-Size': COLLECTIONS_PAGE_SIZE,
+          },
+        },
+      );
+      const mc = body.MediaContainer;
+      collections.push(...mc.Metadata);
+      start += mc.Metadata.length;
+      const totalSize = mc.totalSize ?? mc.size ?? null;
+      if (mc.Metadata.length === 0 || (totalSize !== null && start >= totalSize)) break;
+    }
+    return collections;
   }
 
   /**
@@ -336,4 +375,11 @@ export function plexReadClient(options: PlexClientOptions): PlexReadClient {
 }
 
 export { parseXml };
-export type { PlexAccount, PlexFriend, PlexServerSection, PlexSharedServer, PlexLibrarySection };
+export type {
+  PlexAccount,
+  PlexCollection,
+  PlexFriend,
+  PlexServerSection,
+  PlexSharedServer,
+  PlexLibrarySection,
+};

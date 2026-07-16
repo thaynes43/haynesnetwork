@@ -4,6 +4,8 @@ import { PlexParseError } from '../src/errors';
 import { plexStub, TEST_CLIENT_OPTIONS, type RecordedPlexCall } from './helpers';
 import {
   ACCOUNT_JSON,
+  COLLECTIONS_PAGE_1_JSON,
+  COLLECTIONS_PAGE_2_JSON,
   IDENTITY_JSON,
   LIBRARY_SECTIONS_JSON,
   METADATA_CHILDREN_JSON,
@@ -67,6 +69,47 @@ describe('PlexReadClient — listSectionContents (ADR-038)', () => {
     expect(call.headers['X-Plex-Token']).toBe('owner-secret-token');
     expect(call.url.searchParams.get('X-Plex-Container-Size')).toBe('250');
     expect(call.url.toString()).not.toContain('owner-secret-token');
+  });
+});
+
+// ADR-064 / DESIGN-035 D-02 (PLAN-037) — the paged collections listing.
+describe('PlexReadClient — listCollections (ADR-064)', () => {
+  const pagedRoute = {
+    path: /\/library\/sections\/1\/collections$/,
+    body: (url: URL) =>
+      url.searchParams.get('X-Plex-Container-Start') === '0'
+        ? COLLECTIONS_PAGE_1_JSON
+        : COLLECTIONS_PAGE_2_JSON,
+  };
+
+  it('pages /library/sections/{key}/collections to completion (coerced keys + childCount)', async () => {
+    const stub = plexStub([pagedRoute]);
+    const collections = await client(stub).listCollections('1');
+    expect(collections.map((c) => [c.ratingKey, c.title, c.childCount])).toEqual([
+      ['77001', 'IMDb Top 250', 250],
+      ['77002', 'The Fixture Franchise', 2],
+      ['77003', 'Trakt Trending', 10],
+    ]);
+    // Two container pages: start=0 then start=2 (totalSize 3 ends the loop).
+    const starts = stub
+      .callsFor('GET', '/collections')
+      .map((c) => c.url.searchParams.get('X-Plex-Container-Start'));
+    expect(starts).toEqual(['0', '2']);
+  });
+
+  it('keeps the token in the header, never the URL', async () => {
+    const stub = plexStub([pagedRoute]);
+    await client(stub).listCollections('1');
+    const call = stub.calls[0]!;
+    expect(call.headers['X-Plex-Token']).toBe('owner-secret-token');
+    expect(call.url.toString()).not.toContain('owner-secret-token');
+  });
+
+  it('an empty section (no Metadata array) yields an empty list', async () => {
+    const stub = plexStub([
+      { path: /\/collections$/, body: { MediaContainer: { size: 0, totalSize: 0 } } },
+    ]);
+    expect(await client(stub).listCollections('1')).toEqual([]);
   });
 });
 

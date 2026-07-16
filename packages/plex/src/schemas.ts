@@ -89,6 +89,35 @@ export const sectionContentsSchema = z.object({
 export type PlexSectionContents = z.infer<typeof sectionContentsSchema>;
 
 /**
+ * ADR-064 / DESIGN-035 (PLAN-037 — mirrored collections) — `GET /library/sections/{key}/collections`
+ * element: one Plex collection (type `collection`) of a movie/show section. `ratingKey` is the
+ * collection's own metadata id (the mirror identity within its library + the drill-in group key);
+ * `childCount` is the RAW Plex member count (mirrored for diagnostics, never shown as the wall
+ * count). Members are read via the existing `/library/metadata/{ratingKey}/children`. Numeric-ish
+ * fields coerce like sectionItemSchema (Plex JSON emits both forms).
+ */
+export const plexCollectionSchema = z.object({
+  ratingKey: z.union([z.string(), z.number()]).transform(String),
+  key: z.string().optional(),
+  type: z.string().optional(),
+  title: z.string(),
+  childCount: z.union([z.string(), z.number()]).transform(Number).optional(),
+  thumb: z.string().optional(),
+});
+export type PlexCollection = z.infer<typeof plexCollectionSchema>;
+
+export const collectionsContainerSchema = z.object({
+  MediaContainer: z.object({
+    size: z.union([z.string(), z.number()]).transform(Number).optional(),
+    // The section's full collection count (paged reads compare `start` against it).
+    totalSize: z.union([z.string(), z.number()]).transform(Number).optional(),
+    // Absent when the section has no collections.
+    Metadata: z.array(plexCollectionSchema).optional().default([]),
+  }),
+});
+export type PlexCollectionsContainer = z.infer<typeof collectionsContainerSchema>;
+
+/**
  * DESIGN-017 D-09 (drill-in) — `GET /library/metadata/{key}` and `GET /library/metadata/{key}/children`.
  * Same item shape as a section listing; the container additionally carries the owning
  * `librarySectionID` (the drill-in verifies it against the resolved ytdl-sub section so a ratingKey
