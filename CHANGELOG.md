@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.61.0](https://github.com/thaynes43/haynesnetwork/compare/v0.60.0...v0.61.0) (2026-07-16)
+
+
+### Features
+
+* books/audiobooks/comics Fix — audited acquisition-layer re-grab (PLAN-041 / ADR-062) ([#304](https://github.com/thaynes43/haynesnetwork/issues/304)) ([1ef367f](https://github.com/thaynes43/haynesnetwork/commit/1ef367fcd74502554493e70e98c46c5357755af4))
+* raise the Fix hourly budget 5 → 25 per user (owner ruling) ([#303](https://github.com/thaynes43/haynesnetwork/issues/303)) ([6daf42a](https://github.com/thaynes43/haynesnetwork/commit/6daf42afb6a17cdd5df8be793a2cf996b52fb86c))
+
+
+### Documentation
+
+* OPS-012 addendum — AudioBooth SSO + the ABS progress-loss incident (root-caused, closed) ([#301](https://github.com/thaynes43/haynesnetwork/issues/301)) ([ab8e8b7](https://github.com/thaynes43/haynesnetwork/commit/ab8e8b75b0cb5c898d5ce02f185753c36700c294))
+* PLAN-038 -&gt; completed/ (v0.60.0 shipped + prod-validated) + afternoon cleanup-run handoff ([#299](https://github.com/thaynes43/haynesnetwork/issues/299)) ([4f527f6](https://github.com/thaynes43/haynesnetwork/commit/4f527f6ad5259b08deb374ff42020b463e02d8aa))
+* PLAN-041 Part 1 planned — ADR-062 (Proposed) + DESIGN-033 + actionable plan (two-Opus planning pass) ([#302](https://github.com/thaynes43/haynesnetwork/issues/302)) ([c77a8fa](https://github.com/thaynes43/haynesnetwork/commit/c77a8fa723c547afcdf1aa836c549db04485dff2))
+
 ## [0.60.0](https://github.com/thaynes43/haynesnetwork/compare/v0.59.0...v0.60.0) (2026-07-15)
 
 
