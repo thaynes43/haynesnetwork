@@ -1,8 +1,8 @@
 // DESIGN-005 D-17 — the fix router (ADR-007, R-43..R-47). `create` runs the full
 // D-15 orchestration server-side through @hnet/domain's runFixRequest (pending row +
 // event first, then blocklist-or-delete + search against the owning *arr); the rate
-// limit (5/user/hour, R-47) and open-fix dedupe live inside createFixRequest and
-// surface here as TOO_MANY_REQUESTS / CONFLICT appCodes.
+// limit (25/user/hour, R-47 — owner ruling 2026-07-15 raised 5 → 25) and open-fix dedupe
+// live inside createFixRequest and surface here as TOO_MANY_REQUESTS / CONFLICT appCodes.
 import { z } from 'zod';
 import { and, desc, eq, sql, type SQL } from 'drizzle-orm';
 import { FIX_REASONS, FIX_STATUSES, fixRequests, mediaItems, users } from '@hnet/db';
