@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.67.0](https://github.com/thaynes43/haynesnetwork/compare/v0.66.0...v0.67.0) (2026-07-16)
+
+
+### Features
+
+* books collections mirror — Kavita/ABS collections and reading lists on the Library walls (PLAN-051) ([#332](https://github.com/thaynes43/haynesnetwork/issues/332)) ([9d48d93](https://github.com/thaynes43/haynesnetwork/commit/9d48d938eeb7103776df3173fca19ee8b21032ac))
+
+
+### Bug Fixes
+
+* scoreboard labels read as play totals, not item counts (owner review) ([#330](https://github.com/thaynes43/haynesnetwork/issues/330)) ([49cabb3](https://github.com/thaynes43/haynesnetwork/commit/49cabb373e9d87be4b65aa95ae3feff08b0b586d))
+
 ## [0.66.0](https://github.com/thaynes43/haynesnetwork/compare/v0.65.0...v0.66.0) (2026-07-16)
 
 
