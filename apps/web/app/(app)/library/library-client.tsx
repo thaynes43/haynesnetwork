@@ -37,8 +37,9 @@
 // chip editors are viewport-clamped fixed-position OVERLAYS; poster boxes reserve their 2:3
 // space; the A–Z rail is a fixed overlay; a filter/sort refetch keeps the previous grid rendered
 // (dimmed) and the initial load shows skeleton poster boxes — never a spinner that collapses.
+import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import {
   FilterChip,
   addFilterValue,
@@ -61,18 +62,23 @@ import {
 import {
   WALL_VIEW_DEFAULTS,
   parseWallSortToken,
+  parseWallViewParam,
+  resolveWallView,
   showJumpBar,
   type LibraryWallId,
   type WallSortDir,
   type WallView,
 } from '@/lib/library-views';
 import {
+  WALL_VIEWS,
   WATCH_STATE_OPTIONS,
   decadeLabel,
   registryFor,
+  type ViewLevelKey,
   type ViewRegistryEntry,
+  type WallGrouping,
 } from '@/lib/library-view-registry';
-import { MediaCard, PosterGrid, PosterGridSkeleton } from '@/components/cards';
+import { GroupCard, MediaCard, PosterGrid, PosterGridSkeleton } from '@/components/cards';
 import { MyFixesPanel } from '@/components/my-fixes-panel';
 import { ActivityPanel } from './activity-panel';
 import { CHIP_LABELS, DateRangeChip, RatingChip, SelectChip } from '@/components/filter-chips';
@@ -348,9 +354,39 @@ function MediaBrowser({
   const searchParams = useSearchParams();
 
   const wall = ARR_WALLS[arrKind];
-  // DESIGN-026 D-02/D-03 — this wall's capability declaration (sorts + facets it can answer).
-  const entry: ViewRegistryEntry = registryFor(`${wall}:wall`);
-  const sortKeys = useMemo(() => entry.sorts.map((s) => s.key), [entry]);
+  // ADR-064 / DESIGN-035 D-05/D-09 (PLAN-037) — Movies/TV are multi-shape walls now (the base
+  // flat/hierarchy grid + the opt-in Collections grouped view); Music stays single-shape. The view
+  // resolves per ADR-052 (URL wins → stored preference → the unchanged R2 default).
+  const spec = WALL_VIEWS[wall];
+  const groupings = spec.groupings ?? [];
+  const defaultGrouping: WallGrouping | undefined = groupings[0];
+  const hasSelector = spec.offers.length > 1;
+  const group = searchParams.get('group');
+  const drilled = hasSelector && group !== null && group !== '';
+  const urlView = parseWallViewParam(searchParams.get('view'), spec.offers);
+  const byRaw = searchParams.get('by');
+  const urlBy = byRaw !== null && groupings.some((g) => g.dimension === byRaw) ? byRaw : undefined;
+  const resolved = resolveWallView({
+    wall,
+    url: {
+      ...(urlView !== undefined ? { view: urlView } : {}),
+      ...(urlBy !== undefined ? { groupBy: urlBy } : {}),
+    },
+    stored: stored ?? null,
+  });
+  const grouping: WallGrouping | undefined =
+    groupings.find((g) => g.dimension === resolved.groupBy) ?? defaultGrouping;
+  const groupedCards =
+    !drilled && hasSelector && resolved.view === 'grouped' && grouping !== undefined;
+  // DESIGN-026 D-02/D-03 — the ACTIVE LEVEL's capability declaration (the grouped level sorts the
+  // aggregate CARDS — label/count; the item grid keeps the wall's answerable sorts + facets).
+  const levelKey: ViewLevelKey =
+    groupedCards && grouping?.level !== undefined ? grouping.level : (`${wall}:wall` as ViewLevelKey);
+  const entry: ViewRegistryEntry = registryFor(levelKey);
+  // Plain computations below (sortKeys/enumFacets/filters) — the React Compiler memoizes them;
+  // manual useMemo over registry-derived values trips react-hooks/preserve-manual-memoization now
+  // that the level is grouping-dependent (the books-browser precedent).
+  const sortKeys = entry.sorts.map((s) => s.key);
 
   // ── URL → state (the URL is the single source of truth) ──
   const qParam = searchParams.get('q') ?? '';
@@ -360,15 +396,12 @@ function MediaBrowser({
     : 'any';
   const wantedOnly = searchParams.get('wanted') === '1';
   // The registry's enum facets → the FilterMap (repeated URL params, comma-safe).
-  const enumFacets = useMemo(() => entry.facets.filter((f) => f.kind === 'enum'), [entry]);
-  const filters = useMemo<FilterMap<LibraryField>>(() => {
-    const out: FilterMap<LibraryField> = {};
-    for (const f of enumFacets) {
-      const vals = [...new Set(searchParams.getAll(f.param).filter((v) => v !== ''))];
-      if (vals.length > 0) out[f.key as LibraryField] = vals;
-    }
-    return out;
-  }, [searchParams, enumFacets]);
+  const enumFacets = entry.facets.filter((f) => f.kind === 'enum');
+  const filters: FilterMap<LibraryField> = {};
+  for (const f of enumFacets) {
+    const vals = [...new Set(searchParams.getAll(f.param).filter((v) => v !== ''))];
+    if (vals.length > 0) filters[f.key as LibraryField] = vals;
+  }
   const ratingMin = parseRatingBound(searchParams.get('rmin'));
   const ratingMax = parseRatingBound(searchParams.get('rmax'));
   const releasedFromDay = parseDayParam(searchParams.get('rfrom'));
@@ -414,6 +447,57 @@ function MediaBrowser({
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   };
 
+  // D-10 (PLAN-037) — CANONICALIZE a bare URL on a multi-shape wall to the resolved shape (a
+  // replace, no history entry) so the entry's URL is explicit and Back restores exactly this view
+  // even after the stored preference changes (the books-browser rule).
+  useEffect(() => {
+    if (!hasSelector || !prefsReady || drilled) return;
+    if (searchParams.get('view') === null) {
+      patchParams({
+        view: resolved.view === 'grouped' ? 'grouped' : WALL_VIEW_DEFAULTS[wall].view,
+        by:
+          resolved.view === 'grouped' && grouping !== undefined && grouping !== defaultGrouping
+            ? grouping.dimension
+            : null,
+      });
+    }
+    // patchParams reads the live location; the deps that matter are the resolution inputs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasSelector, prefsReady, drilled, searchParams, resolved.view, grouping]);
+
+  /** ADR-064 / DESIGN-035 D-06 — a view switch: a SCREEN-level change → PUSH a clean URL
+   *  (refinements drop — the new shape starts fresh, like a tab switch) + persist the choice. */
+  const selectView = (target: { view: 'base' } | { view: 'grouped'; grouping: WallGrouping }) => {
+    const currentKey = drilled ? null : groupedCards ? `grouped:${grouping?.dimension}` : 'base';
+    const targetKey = target.view === 'base' ? 'base' : `grouped:${target.grouping.dimension}`;
+    if (currentKey !== targetKey) {
+      const params = new URLSearchParams();
+      params.set('tab', wall);
+      params.set('view', target.view === 'base' ? WALL_VIEW_DEFAULTS[wall].view : 'grouped');
+      if (target.view === 'grouped' && target.grouping !== defaultGrouping) {
+        params.set('by', target.grouping.dimension);
+      }
+      router.push(`${pathname}?${params.toString()}`, { scroll: false });
+    }
+    const level = registryFor(
+      target.view === 'grouped' && target.grouping.level !== undefined
+        ? target.grouping.level
+        : (`${wall}:wall` as ViewLevelKey),
+    );
+    const keys = level.sorts.map((s) => s.key);
+    const keep =
+      stored != null && keys.includes(stored.sortField)
+        ? { field: stored.sortField, dir: stored.sortDir }
+        : { field: level.defaultSort.field, dir: level.defaultSort.dir };
+    setPreference.mutate({
+      wall,
+      view: target.view === 'base' ? WALL_VIEW_DEFAULTS[wall].view : 'grouped',
+      groupBy: target.view === 'grouped' ? target.grouping.dimension : null,
+      sortField: keep.field,
+      sortDir: keep.dir,
+    });
+  };
+
   // The search INPUT is a local draft (initialised from ?q on mount — tab switches remount
   // via the key) debounced 250ms into the URL; the QUERY reads ?q, so URL and results always
   // agree and a shared link restores the text.
@@ -453,17 +537,20 @@ function MediaBrowser({
     const [field, dir] = next.split(':') as [string, WallSortDir];
     // A sort change is a REFINEMENT (replace, D-19) and drops any armed A–Z jump; the explicit
     // token stays in the URL for shareability. Persist the last-used sort (R6) — an explicit
-    // user selection, the one sanctioned write point.
+    // user selection, the one sanctioned write point. A DRILLED grid's sort is a transient
+    // refinement of that one collection screen, not the wall preference (the books-drill rule).
     patchParams({ sort: next, at: null });
-    // The ledger walls have a single view shape (Movies/Music flat, TV hierarchy — R2), so the
-    // persisted row carries the wall's fixed shape + the newly chosen sort.
-    setPreference.mutate({
-      wall,
-      view: WALL_VIEW_DEFAULTS[wall].view,
-      groupBy: WALL_VIEW_DEFAULTS[wall].groupBy,
-      sortField: field,
-      sortDir: dir,
-    });
+    if (!drilled) {
+      // The persisted row carries the ACTIVE shape (the base flat/hierarchy grid, or the grouped
+      // Collections view with its dimension — PLAN-037) + the newly chosen sort.
+      setPreference.mutate({
+        wall,
+        view: groupedCards ? 'grouped' : WALL_VIEW_DEFAULTS[wall].view,
+        groupBy: groupedCards ? (grouping?.dimension ?? null) : WALL_VIEW_DEFAULTS[wall].groupBy,
+        sortField: field,
+        sortDir: dir,
+      });
+    }
   };
 
   // ── facets + search (D-09) ──
@@ -482,6 +569,17 @@ function MediaBrowser({
   const decadesInput = filterValues(filters, 'decade')
     .map((v) => Number(v))
     .filter((n) => Number.isInteger(n));
+  // ADR-064 / DESIGN-035 D-03 (PLAN-037) — the Collections group cards (grouped view), also read
+  // while DRILLED so the drill header can name the collection (the key is a ratingKey, not a title).
+  const groupsQuery = trpc.ledger.collectionGroups.useQuery(
+    { arrKind: arrKind as 'radarr' | 'sonarr' },
+    {
+      enabled: hasSelector && (groupedCards || drilled),
+      refetchOnWindowFocus: false,
+      placeholderData: (prev) => prev,
+    },
+  );
+
   // The active sort must be an A–Z sort for the jump letter to bite (registry azSorts, asc).
   const azActive = (entry.azSorts as readonly string[]).includes(sort.field) && sort.dir === 'asc';
   const search = trpc.ledger.search.useInfiniteQuery(
@@ -504,12 +602,16 @@ function MediaBrowser({
       ...(releasedToDay !== undefined ? { releasedTo: `${releasedToDay}T23:59:59.999Z` } : {}),
       ...(watchState !== undefined ? { watchState } : {}),
       ...(azActive && letter !== null ? { letter } : {}),
+      // ADR-064 / DESIGN-035 D-04 (PLAN-037) — the drilled collection IS its filter: one EXISTS
+      // predicate server-side; everything else about the wall composes unchanged.
+      ...(drilled ? { collection: group! } : {}),
       limit: 50,
     },
     {
       // Wait for the stored preference so the first paint already wears the resolved sort
-      // (skeleton → resolved grid; never default-then-snap).
-      enabled: prefsReady,
+      // (skeleton → resolved grid; never default-then-snap). The grouped CARD view reads
+      // collectionGroups instead — the item query stays off until a drill or a view switch.
+      enabled: prefsReady && !groupedCards,
       getNextPageParam: (last) => last.nextCursor ?? undefined,
       // Keep the previous grid rendered (dimmed below) while a filter/sort refetch resolves —
       // results swap in place, the layout never jumps (ADR-015).
@@ -520,14 +622,32 @@ function MediaBrowser({
   const items = search.data?.pages.flatMap((p) => p.items) ?? [];
   const refreshing = search.isPlaceholderData && search.isFetching;
 
+  // Grouped cards: client-side label search + card sort (the level's registry keys — label/count).
+  // Plain computations — the React Compiler memoizes them; the group lists are small (a household
+  // server carries tens-to-hundreds of collections).
+  const groupList = groupsQuery.data?.groups ?? [];
+  const groupQ = qParam.trim().toLowerCase();
+  const groupsFound =
+    groupQ === '' ? groupList : groupList.filter((g) => g.label.toLowerCase().includes(groupQ));
+  const groupDir = sort.dir === 'desc' ? -1 : 1;
+  const groups =
+    sort.field === 'count'
+      ? [...groupsFound].sort((a, b) => (a.count - b.count) * groupDir || a.label.localeCompare(b.label))
+      : [...groupsFound].sort((a, b) => a.label.localeCompare(b.label) * groupDir);
+  const groupsRefreshing = groupsQuery.isPlaceholderData && groupsQuery.isFetching;
+  // The drill header names the collection (the ?group= key is a ratingKey, not a title).
+  const drilledLabel = drilled ? (groupList.find((g) => g.key === group)?.label ?? '') : '';
+
   // DESIGN-026 D-09 — the A–Z jump rail (a fixed overlay — never reflows the grid; visibility per
-  // the showJumpBar rule: A–Z sort + big wall, or a jump already armed).
-  const jumpVisible = showJumpBar({
-    isAzSort: azActive,
-    activeLetter: letter,
-    itemCount: items.length,
-    hasNextPage: search.hasNextPage === true,
-  });
+  // the showJumpBar rule: A–Z sort + big wall, or a jump already armed). Never over group cards.
+  const jumpVisible =
+    !groupedCards &&
+    showJumpBar({
+      isAzSort: azActive,
+      activeLetter: letter,
+      itemCount: items.length,
+      hasNextPage: search.hasNextPage === true,
+    });
 
   // Keyset infinite scroll: a sentinel below the grid pulls the next page as it approaches
   // the viewport; the Load more button stays as the visible/manual fallback.
@@ -550,38 +670,92 @@ function MediaBrowser({
 
   return (
     <>
+      {/* ADR-064 / DESIGN-035 D-04 (PLAN-037) — the drill-in header: the collection's name + the way
+          back UP to the grouped wall. A screen of its own (reached by a PUSH), so this header is
+          static per screen (ADR-015). */}
+      {drilled && grouping !== undefined ? (
+        <div className="library-drill" data-testid="library-drill">
+          <Link
+            className="btn sm library-drill__back"
+            href={`${pathname}?tab=${wall}&view=grouped${
+              grouping !== defaultGrouping ? `&by=${encodeURIComponent(grouping.dimension)}` : ''
+            }`}
+            scroll={false}
+          >
+            ‹ {grouping.allLabel}
+          </Link>
+          <span className="library-drill__label">{drilledLabel}</span>
+        </div>
+      ) : null}
+
       <div className="library-toolbar">
         <div className="library-controls">
+          {/* DESIGN-035 D-09 — the view selector (the books-browser `.seg` idiom): Collections | the
+              base grid. Renders only on multi-shape walls, never inside a drill. */}
+          {hasSelector && !drilled && groupings.length > 0 ? (
+            <div className="seg" role="group" aria-label="View" data-testid="view-selector">
+              {groupings.map((g) => {
+                const isActive = groupedCards && grouping === g;
+                return (
+                  <button
+                    key={g.dimension}
+                    type="button"
+                    className={isActive ? 'is-active' : undefined}
+                    aria-pressed={isActive}
+                    onClick={() => selectView({ view: 'grouped', grouping: g })}
+                  >
+                    {g.selectorLabel}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                className={!groupedCards ? 'is-active' : undefined}
+                aria-pressed={!groupedCards}
+                onClick={() => selectView({ view: 'base' })}
+              >
+                {spec.flatLabel}
+              </button>
+            </div>
+          ) : null}
           <input
             type="search"
             className="library-search"
-            placeholder={`Search ${label.toLowerCase()}…`}
+            placeholder={
+              groupedCards
+                ? `Search ${grouping?.selectorLabel.toLowerCase() ?? 'groups'}…`
+                : `Search ${label.toLowerCase()}…`
+            }
             aria-label="Search the library"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          <div className="library-filters">
-            <div className="seg" role="group" aria-label="On disk">
-              {ON_DISK_FILTERS.map((f) => (
-                <button
-                  key={f.value}
-                  type="button"
-                  className={onDisk === f.value ? 'is-active' : undefined}
-                  onClick={() => patchParams({ disk: f.value === 'any' ? null : f.value })}
-                >
-                  {f.label}
-                </button>
-              ))}
+          {/* Item-only narrowings (on-disk / Wanted) hide over group cards — a card grid can't
+              answer them (the registry's never-offer-what-it-can't-answer rule). */}
+          {!groupedCards ? (
+            <div className="library-filters">
+              <div className="seg" role="group" aria-label="On disk">
+                {ON_DISK_FILTERS.map((f) => (
+                  <button
+                    key={f.value}
+                    type="button"
+                    className={onDisk === f.value ? 'is-active' : undefined}
+                    onClick={() => patchParams({ disk: f.value === 'any' ? null : f.value })}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className={`btn sm${wantedOnly ? ' primary' : ''}`}
+                aria-pressed={wantedOnly}
+                onClick={() => patchParams({ wanted: wantedOnly ? null : '1' })}
+              >
+                Wanted only
+              </button>
             </div>
-            <button
-              type="button"
-              className={`btn sm${wantedOnly ? ' primary' : ''}`}
-              aria-pressed={wantedOnly}
-              onClick={() => patchParams({ wanted: wantedOnly ? null : '1' })}
-            >
-              Wanted only
-            </button>
-          </div>
+          ) : null}
         </div>
 
         {/* Filter chip bar (D-10 engine, DESIGN-026 D-03 contents): the registry declares exactly
@@ -589,7 +763,9 @@ function MediaBrowser({
             the ghost "add a filter" affordance), rendered in registry order; the per-user watch
             chip appears only for a viewer with watch data (ADR-051 C-06 — gated, so it sits LAST).
             A FIXED-HEIGHT single row that scrolls horizontally when crowded (ADR-015: the bar
-            never grows, so the grid never shifts); editors overlay via fixed positioning. */}
+            never grows, so the grid never shifts); editors overlay via fixed positioning.
+            A grouped level declares NO facets (registry-enforced), so no bar renders there. */}
+        {entry.facets.length > 0 ? (
         <div className="library-chipbar" role="group" aria-label="Filters">
           {entry.facets.map((facet) => {
             if (facet.kind === 'enum') {
@@ -664,6 +840,7 @@ function MediaBrowser({
             return null;
           })}
         </div>
+        ) : null}
 
         {/* Sort bar (D-10 nextSort/arrowFor over the REGISTRY's keys — DESIGN-026 D-02: this wall
             offers exactly the sorts it can answer; R6 default = recently-added for the video walls).
@@ -694,10 +871,45 @@ function MediaBrowser({
 
       {jumpVisible ? <LetterJumpBar active={letter} onJump={(l) => patchParams({ at: l })} /> : null}
 
-      {!prefsReady || search.isPending ? (
+      {!prefsReady || (groupedCards ? groupsQuery.isPending : search.isPending) ? (
         // Initial load: skeleton poster boxes hold the exact grid geometry (ADR-015 — no
         // spinner that collapses into a differently-sized result).
         <PosterGridSkeleton testId="poster-skeleton" />
+      ) : groupedCards ? (
+        // ADR-064 / DESIGN-035 D-03/D-09 (PLAN-037) — the Collections group cards (GroupCard: the
+        // member cover fan in the reserved 2:3 box + label + accessible count). Drill-in = PUSH.
+        groupsQuery.error ? (
+          <p className="alert" role="alert">
+            Failed to load collections: {groupsQuery.error.message}
+          </p>
+        ) : groups.length === 0 ? (
+          <section className="card empty-state" data-testid="collections-empty">
+            <p className="muted">
+              {groupQ !== ''
+                ? 'Nothing matches your search.'
+                : 'No collections yet. They fill in as the Plex mirror syncs.'}
+            </p>
+          </section>
+        ) : (
+          <PosterGrid refreshing={groupsRefreshing} testId="collections-groups">
+            {groups.map((g) => (
+              <GroupCard
+                key={g.key}
+                href={`${pathname}?tab=${wall}${
+                  grouping !== undefined && grouping !== defaultGrouping
+                    ? `&by=${encodeURIComponent(grouping.dimension)}`
+                    : ''
+                }&group=${encodeURIComponent(g.key)}`}
+                art={grouping?.art ?? 'covers'}
+                label={g.label}
+                imageUrl={g.imageUrl}
+                coverUrls={g.coverUrls}
+                kind={arrKind}
+                count={g.count}
+              />
+            ))}
+          </PosterGrid>
+        )
       ) : search.error ? (
         <p className="alert" role="alert">
           Failed to load the library: {search.error.message}

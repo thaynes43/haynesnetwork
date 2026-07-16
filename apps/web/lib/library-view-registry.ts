@@ -26,7 +26,9 @@ export type RegistryEngine = 'ledger' | 'plex-live' | 'books';
  */
 export type ViewLevelKey =
   | 'movies:wall'
+  | 'movies:grouped-collection'
   | 'tv:wall'
+  | 'tv:grouped-collection'
   | 'tv:season'
   | 'tv:episode'
   | 'music:wall'
@@ -173,6 +175,19 @@ export const LIBRARY_VIEW_REGISTRY: Record<ViewLevelKey, ViewRegistryEntry> = {
     ],
     azSorts: ['title'],
   }),
+  // ADR-064 / DESIGN-035 D-05 (PLAN-037) — the Movies Collections grouped level: sorts the aggregate
+  // CARDS (collection label / accessible-member count) like every grouped level; no facets (a card
+  // grid answers none). Mirrors audiobooks:grouped-genre.
+  'movies:grouped-collection': groupLevel({
+    engine: 'ledger',
+    sorts: [
+      { key: 'label', label: 'Collection A–Z', firstDir: 'asc' },
+      { key: 'count', label: 'Most items', firstDir: 'desc' },
+    ],
+    defaultSort: { field: 'label', dir: 'asc' },
+    facets: [],
+    azSorts: [],
+  }),
   // TV Shows — no Runtime (a show has no single runtime), no Resolution facet (nor a single tier);
   // released_at = Sonarr firstAired (D-05).
   'tv:wall': ledgerLevel({
@@ -189,6 +204,18 @@ export const LIBRARY_VIEW_REGISTRY: Record<ViewLevelKey, ViewRegistryEntry> = {
     defaultSort: { field: 'added_at', dir: 'desc' },
     facets: [GENRE_FACET, DECADE_FACET, releasedFacet('First aired'), RATING_FACET, COLLECTION_FACET, WATCH_FACET],
     azSorts: ['title'],
+  }),
+  // ADR-064 / DESIGN-035 D-05 (PLAN-037) — the TV Collections grouped level (same shape as the
+  // Movies one; the hierarchy drill below is untouched — owner R2).
+  'tv:grouped-collection': groupLevel({
+    engine: 'ledger',
+    sorts: [
+      { key: 'label', label: 'Collection A–Z', firstDir: 'asc' },
+      { key: 'count', label: 'Most items', firstDir: 'desc' },
+    ],
+    defaultSort: { field: 'label', dir: 'asc' },
+    facets: [],
+    azSorts: [],
   }),
   // TV drill-in levels (capability declarations — the Shows → Seasons → Episodes presentation is
   // unchanged, owner R2). A season answers its number/added/title ONLY; an episode adds air date +
@@ -415,8 +442,35 @@ export interface WallViewsSpec {
 }
 
 export const WALL_VIEWS: Record<LibraryWallId, WallViewsSpec> = {
-  movies: { offers: ['flat'] },
-  tv: { offers: ['hierarchy'] },
+  // ADR-064 / DESIGN-035 D-05 (PLAN-037) — Movies/TV gain the opt-in Collections grouping (mirrored
+  // Plex collections, cover-fan cards). The DEFAULT shapes are unchanged (flat / hierarchy —
+  // WALL_VIEW_DEFAULTS untouched); the selector renders now that the walls offer two shapes.
+  movies: {
+    offers: ['flat', 'grouped'],
+    groupings: [
+      {
+        dimension: 'collection',
+        selectorLabel: 'Collections',
+        allLabel: 'All collections',
+        art: 'covers',
+        level: 'movies:grouped-collection',
+      },
+    ],
+    flatLabel: 'All movies',
+  },
+  tv: {
+    offers: ['hierarchy', 'grouped'],
+    groupings: [
+      {
+        dimension: 'collection',
+        selectorLabel: 'Collections',
+        allLabel: 'All collections',
+        art: 'covers',
+        level: 'tv:grouped-collection',
+      },
+    ],
+    flatLabel: 'All shows',
+  },
   music: { offers: ['flat'] },
   // Peloton/YouTube walls ARE their grouped views: each card is a Plex show (discipline/channel)
   // whose REAL poster streams through /api/ytdlsub/poster (ADR-041; Peloton art is the PLAN-024
