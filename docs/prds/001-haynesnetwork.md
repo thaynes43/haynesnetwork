@@ -487,6 +487,15 @@ T-129..T-135.)
 | R-212 | **Estate-wide auto-mint of the missing format, PACED (owner rulings R1/R1a).** Every library title holding one format auto-mints a system want (`book_requests.origin='pairing'`, no user/shelf keys, one want per item for its lifetime, self-healing when a pair breaks) for the absent format, capped at `PAIRING_MINT_CAP_PER_RUN` (25, env-tunable) attempts per `format-pairing` run, oldest-first deterministic, behind the existing 250ms pacer — the confined LL chain pushes ONLY the missing format (addBook → queueBook → searchBook). An unresolvable Google Books identity leaves the want honestly unmintable (nothing fabricated) and retries on later runs; comics are out of scope; the MAM governor is structurally untouched. | Must |
 | R-213 | **Both-format UI + system-want visibility and search gating (ADR-065 C-04/C-05).** A paired title's detail renders BOTH consume buttons ("Read in Kavita" + "Listen on Audiobookshelf", each its own deep link); an unpaired title keeps its active button plus the missing format's honest affordance (wanted-detail link when minted; an audited reserved-slot search button when actionable). Wall cards wear a format-coverage badge ("Ebook + Audio" / "Ebook only" / "Audio only"). Pairing wants surface on the composed Wanted walls + wanted-detail attributed "Format pairing"; their force-search is books-section-gated (≥ read_only, audited `request_book_search`, FORBIDDEN otherwise) while goodreads wants keep the existing ownership gate. | Must |
 
+### Estate play scoreboard (PLAN-057 — ADR-068 / DESIGN-040)
+
+<!-- R-215..R-217 and R-218..R-220 are held by parallel in-flight tracks; this section takes
+     R-221 (IDs are stable — the gap is deliberate, never renumbered). -->
+
+| ID | Requirement | Priority |
+| --- | --- | --- |
+| R-221 | **Dashboard estate play scoreboard (owner spec 2026-07-16).** The logged-in dashboard renders a slim GitHub-readme-badge row between the greeting and the About card: two-segment pills (muted label + accent value, ~21 px, tokens only) for **Movies · TV episodes · Music · Hours watched**, compact-formatted (`25.2k`), aggregated from ALL THREE Tautulli instances' lifetime `get_libraries_table` totals summed by section type (photo excluded). Semi-live = server-rendered from a ~10-minute in-process memo (no persistence, no client fetch — numbers baked at SSR, ADR-015); a failed/slow instance (3 s deadline) contributes nothing and never blocks; ALL instances failed ⇒ the row is absent entirely (no empty chrome). Visible to every signed-in member (the About-tile posture); aggregate totals only — never who watched (`aria-label="Estate lifetime plays"`). | Must |
+
 ### Platform & non-functional
 
 | ID   | Requirement                                                                                                                                                                                                                                        | Priority |
