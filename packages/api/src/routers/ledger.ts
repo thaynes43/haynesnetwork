@@ -7,6 +7,7 @@ import { TRPCError } from '@trpc/server';
 import { and, asc, desc, eq, sql, type SQL } from 'drizzle-orm';
 import {
   ARR_KINDS,
+  COLLECTION_TYPES,
   RESOLUTIONS,
   fixRequests,
   ledgerEvents,
@@ -14,6 +15,7 @@ import {
   mediaMetadata,
   users,
   wantedItems,
+  type CollectionType,
 } from '@hnet/db';
 import { isMediaItemAccessible, listAlbumTracks, listMediaChildren } from '@hnet/domain';
 import { authedProcedure, mapDomainErrors, resolveArrBundle, resolvePlexBundle, router } from '../trpc';
@@ -94,7 +96,12 @@ export interface LedgerCollectionGroup {
   count: number;
   coverUrls: string[];
   imageUrl: null;
+  /** DESIGN-035 D-10/D-11 (PLAN-053) — the collection's owner-ruled Type bucket (T-186). */
+  type: CollectionType;
 }
+
+/** D-11 — the chip row's accessible-collection counts (every bucket present, zeros included). */
+export type LedgerCollectionTypeCounts = Record<CollectionType, number>;
 
 /** DESIGN-035 D-03 — the group-card cover-fan sample size. */
 const COLLECTION_COVER_SAMPLE = 4;
@@ -265,68 +272,96 @@ export const ledgerRouter = router({
    * re-sorts by the grouped level's registry keys (label | count).
    */
   collectionGroups: authedProcedure
-    .input(z.object({ arrKind: z.enum(['radarr', 'sonarr']) }))
-    .query(async ({ ctx, input }): Promise<{ groups: LedgerCollectionGroup[] }> => {
-      const gate = await resolveLibraryAccessGate(ctx.user.id, ctx.db);
-      const accessCond = libraryAccessConditionRaw(gate); // EXISTS over media_plex_matches ('mi' alias)
-      const conds: SQL[] = [
-        sql`mi.arr_kind = ${input.arrKind}`,
-        sql`mi.deleted_from_arr_at IS NULL`,
-      ];
-      if (accessCond !== null) conds.push(accessCond);
-      // One bounded SELECT (accessible members only), aggregated in-process — the books.groups shape.
-      // `cmx` is this query's own match alias; the gate's subqueries use their own `m2`.
-      const result = await ctx.db.execute<{
-        key: string;
-        label: string;
-        media_item_id: string;
-        poster_source: string | null;
-      }>(
-        sql`SELECT pc.rating_key AS key, pc.title AS label,
-                   mi.id AS media_item_id, mm.poster_source AS poster_source
-              FROM plex_collections pc
-              JOIN plex_collection_members pcm ON pcm.collection_id = pc.id
-              JOIN media_plex_matches cmx
-                ON cmx.plex_library_id = pc.plex_library_id
-               AND cmx.rating_key = pcm.rating_key
-              JOIN media_items mi ON mi.id = cmx.media_item_id
-              LEFT JOIN media_metadata mm ON mm.media_item_id = mi.id
-             WHERE ${sql.join(conds, sql` AND `)}
-             ORDER BY pc.title ASC, pc.rating_key ASC, pcm.sort_order ASC`,
-      );
-      const rows =
-        result.rows ??
-        (result as unknown as {
+    .input(
+      z.object({
+        arrKind: z.enum(['radarr', 'sonarr']),
+        // DESIGN-035 D-11 (PLAN-053) — the Type chip's SERVER-SIDE card filter (absent = All).
+        ctype: z.enum(COLLECTION_TYPES).optional(),
+      }),
+    )
+    .query(
+      async ({
+        ctx,
+        input,
+      }): Promise<{ groups: LedgerCollectionGroup[]; typeCounts: LedgerCollectionTypeCounts }> => {
+        const gate = await resolveLibraryAccessGate(ctx.user.id, ctx.db);
+        const accessCond = libraryAccessConditionRaw(gate); // EXISTS over media_plex_matches ('mi' alias)
+        const conds: SQL[] = [
+          sql`mi.arr_kind = ${input.arrKind}`,
+          sql`mi.deleted_from_arr_at IS NULL`,
+        ];
+        if (accessCond !== null) conds.push(accessCond);
+        // One bounded SELECT (accessible members only), aggregated in-process — the books.groups
+        // shape. `cmx` is this query's own match alias; the gate's subqueries use their own `m2`.
+        // The `ctype` narrowing deliberately happens AFTER aggregation (in-process): typeCounts
+        // must cover ALL accessible collections so the chip numbers hold steady while filtering.
+        const result = await ctx.db.execute<{
           key: string;
           label: string;
+          ctype: CollectionType;
           media_item_id: string;
           poster_source: string | null;
-        }[]);
-      const groups = new Map<
-        string,
-        { label: string; memberIds: Set<string>; coverUrls: string[] }
-      >();
-      for (const row of rows) {
-        const group =
-          groups.get(row.key) ??
-          groups.set(row.key, { label: row.label, memberIds: new Set(), coverUrls: [] }).get(row.key)!;
-        if (group.memberIds.has(row.media_item_id)) continue;
-        group.memberIds.add(row.media_item_id);
-        if (group.coverUrls.length < COLLECTION_COVER_SAMPLE) {
-          const cover = posterUrlFor(row.media_item_id, row.poster_source);
-          if (cover !== null) group.coverUrls.push(cover);
+        }>(
+          sql`SELECT pc.rating_key AS key, pc.title AS label, pc.collection_type AS ctype,
+                     mi.id AS media_item_id, mm.poster_source AS poster_source
+                FROM plex_collections pc
+                JOIN plex_collection_members pcm ON pcm.collection_id = pc.id
+                JOIN media_plex_matches cmx
+                  ON cmx.plex_library_id = pc.plex_library_id
+                 AND cmx.rating_key = pcm.rating_key
+                JOIN media_items mi ON mi.id = cmx.media_item_id
+                LEFT JOIN media_metadata mm ON mm.media_item_id = mi.id
+               WHERE ${sql.join(conds, sql` AND `)}
+               ORDER BY pc.title ASC, pc.rating_key ASC, pcm.sort_order ASC`,
+        );
+        const rows =
+          result.rows ??
+          (result as unknown as {
+            key: string;
+            label: string;
+            ctype: CollectionType;
+            media_item_id: string;
+            poster_source: string | null;
+          }[]);
+        const groups = new Map<
+          string,
+          { label: string; type: CollectionType; memberIds: Set<string>; coverUrls: string[] }
+        >();
+        for (const row of rows) {
+          const group =
+            groups.get(row.key) ??
+            groups
+              .set(row.key, { label: row.label, type: row.ctype, memberIds: new Set(), coverUrls: [] })
+              .get(row.key)!;
+          if (group.memberIds.has(row.media_item_id)) continue;
+          group.memberIds.add(row.media_item_id);
+          if (group.coverUrls.length < COLLECTION_COVER_SAMPLE) {
+            const cover = posterUrlFor(row.media_item_id, row.poster_source);
+            if (cover !== null) group.coverUrls.push(cover);
+          }
         }
-      }
-      return {
-        groups: [...groups.entries()].map(([key, g]) => ({
-          key,
-          label: g.label,
-          count: g.memberIds.size,
-          coverUrls: g.coverUrls,
-          imageUrl: null,
-        })),
-      };
-    }),
+        // D-11 — accessible-COLLECTION counts per bucket (zeros included): the aggregation above
+        // already applied THE INVARIANT (a zero-accessible collection never entered the map), so
+        // a chip count can never leak a collection its caller couldn't see as a card (R-214).
+        const typeCounts = Object.fromEntries(
+          COLLECTION_TYPES.map((t) => [t, 0]),
+        ) as LedgerCollectionTypeCounts;
+        for (const g of groups.values()) typeCounts[g.type] += 1;
+        return {
+          groups: [...groups.entries()]
+            .filter(([, g]) => input.ctype === undefined || g.type === input.ctype)
+            .map(([key, g]) => ({
+              key,
+              label: g.label,
+              count: g.memberIds.size,
+              coverUrls: g.coverUrls,
+              imageUrl: null,
+              type: g.type,
+            })),
+          typeCounts,
+        };
+      },
+    ),
 
   /** Full item + latest event page + open/recent fixes (the /library/[id] payload). */
   detail: authedProcedure.input(z.object({ id: z.uuid() })).query(async ({ ctx, input }) => {
