@@ -9,3 +9,6 @@ export * from './hardware';
 // DESIGN-016 D-07 — the admin-only Grafana deep-link URLs (single source of truth; attached to a
 // payload only for admin callers, so a non-admin response never carries a Grafana URL).
 export * from './grafana';
+// ADR-068 / DESIGN-040 (PLAN-057) — the estate play scoreboard read model (Tautulli
+// get_libraries_table aggregation behind the in-process TTL memo).
+export * from './plays';
