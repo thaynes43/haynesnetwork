@@ -49,7 +49,7 @@ import type { BooksSyncBundle } from '../books';
 import { createConsoleLogger } from '../logger';
 import { runSync } from '../orchestrator';
 
-const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy|notify-outbox|smart-alerts|poster-guard|ai-usage-sync|authentik-users|books-sync|plex-match|collections-sync|mam-governor|goodreads-sync|format-pairing|activity-scan [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
+const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy|notify-outbox|smart-alerts|poster-guard|ai-usage-sync|authentik-users|books-sync|plex-match|collections-sync|books-collections-sync|mam-governor|goodreads-sync|format-pairing|activity-scan [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
 
   --mode=full              item-list upsert + tombstone pass per *arr (+ Seerr requests)
   --mode=incremental       history/since cursor polling per *arr (+ Seerr requests)
@@ -102,6 +102,16 @@ const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-bat
                            READ-ONLY and UPSERT the plex_collections/plex_collection_members mirror
                            (reconcile scoped to fully-read sections/collections). Needs
                            PLEX_HAYNESOPS_TOKEN (the bundle asserts all three PLEX_*_TOKENs). No
+                           --source. Writes no sync_runs row.
+  --mode=books-collections-sync
+                           mirror the BOOK servers' collections (ADR-066 — the ADR-064 model applied
+                           to books; external software is ALWAYS the collections source of truth):
+                           read Kavita collections + Kavita reading lists (mirrored as ORDERED
+                           collections) + ABS collections READ-ONLY and UPSERT the
+                           books_collections/books_collection_members mirror (reconcile scoped to
+                           fully-read (source, kind) families; member refs resolve against the fresh
+                           books_items mirror — run it AFTER books-sync). Needs KAVITA_PASSWORD +
+                           AUDIOBOOKSHELF_PASSWORD (the books-sync env, URLs default in-cluster). No
                            --source. Writes no sync_runs row.
   --mode=mam-governor      the MAM COMPLIANCE GOVERNOR (ADR-054 — cap-aware torrent-fallback pacing): count
                            UNSATISFIED torrents locally in qBittorrent (category books-mam, seeding_time
@@ -206,6 +216,7 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
       mode === 'books-sync' ||
       mode === 'plex-match' ||
       mode === 'collections-sync' ||
+      mode === 'books-collections-sync' ||
       mode === 'mam-governor' ||
       mode === 'activity-scan' ||
       mode === 'goodreads-sync' ||
@@ -228,6 +239,7 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
     mode === 'books-sync' ||
     mode === 'plex-match' ||
     mode === 'collections-sync' ||
+    mode === 'books-collections-sync' ||
     mode === 'mam-governor' ||
     mode === 'activity-scan' ||
     mode === 'goodreads-sync' ||
@@ -403,8 +415,9 @@ async function main(): Promise<number> {
   // ADR-046 / DESIGN-024 — the read-only Kavita + Audiobookshelf clients the `books-sync` mode pages
   // (KAVITA_URL/AUDIOBOOKSHELF_URL default to the in-cluster Service DNS; throws BooksConfigError if a
   // password is absent). Read-only — never a write to the book servers.
+  // ADR-066 / DESIGN-038 — `books-collections-sync` rides the SAME read-only bundle (no new env).
   const books: BooksSyncBundle | undefined =
-    args.mode === 'books-sync'
+    args.mode === 'books-sync' || args.mode === 'books-collections-sync'
       ? (() => {
           const cfg = assertBooksEnv();
           const clients = booksReadClients(cfg);
@@ -603,6 +616,22 @@ async function main(): Promise<number> {
       : {}),
     ...(report.collectionsSyncError !== undefined
       ? { collectionsSyncError: report.collectionsSyncError }
+      : {}),
+    ...(report.booksCollectionsSync
+      ? {
+          booksCollectionsSync: {
+            collectionsUpserted: report.booksCollectionsSync.collectionsUpserted,
+            membersUpserted: report.booksCollectionsSync.membersUpserted,
+            membersResolved: report.booksCollectionsSync.membersResolved,
+            collectionsRemoved: report.booksCollectionsSync.collectionsRemoved,
+            membersRemoved: report.booksCollectionsSync.membersRemoved,
+            truncatedCollections: report.booksCollectionsSync.stats.truncatedCollections,
+            unscopedFamilies: report.booksCollectionsSync.stats.unscopedFamilies,
+          },
+        }
+      : {}),
+    ...(report.booksCollectionsSyncError !== undefined
+      ? { booksCollectionsSyncError: report.booksCollectionsSyncError }
       : {}),
     ...(report.goodreadsSync
       ? {
