@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.63.0](https://github.com/thaynes43/haynesnetwork/compare/v0.62.1...v0.63.0) (2026-07-16)
+
+
+### Features
+
+* mirrored Plex collections — Collections group-by view for Movies/TV (PLAN-037) ([#316](https://github.com/thaynes43/haynesnetwork/issues/316)) ([e7becec](https://github.com/thaynes43/haynesnetwork/commit/e7becec5aad1d738c6b466b48c45010937f893de))
+
+
+### Documentation
+
+* collections roadmap ratified — PLAN-051 (books collections mirror) + PLAN-052 (collection-manager integration parity) + saga books-app phase (owner rulings 2026-07-16) ([#313](https://github.com/thaynes43/haynesnetwork/issues/313)) ([489eef9](https://github.com/thaynes43/haynesnetwork/commit/489eef9d1fa76d2c6dac7446d802b4a25eebc6de))
+* Kometa deep-research filed — PLAN-052 verdicts (git-PR write path, validate-file gate, run-files run-now) + PLAN-051 ordering input ([#315](https://github.com/thaynes43/haynesnetwork/issues/315)) ([f3580e6](https://github.com/thaynes43/haynesnetwork/commit/f3580e68fad431df2af83008775165240b48905f))
+
 ## [0.62.1](https://github.com/thaynes43/haynesnetwork/compare/v0.62.0...v0.62.1) (2026-07-16)
 
 
