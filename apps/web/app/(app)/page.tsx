@@ -4,11 +4,13 @@
 // the API (arbitrary admin-curated http(s) URLs, any host — ADR-013). The UI never constructs
 // URLs, and rel="noopener noreferrer" below guards these now-external links from tabnabbing.
 import { headers } from 'next/headers';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getServerSession } from '@hnet/auth';
 import { AppIcon } from '@hnet/ui';
 import { getServerCaller } from '@/lib/trpc-server';
 import { MotdBanner } from '@/components/motd-banner';
+import { InfoGlyph } from './about/glyphs';
 import { Greeting } from './greeting';
 
 export default async function DashboardPage() {
@@ -26,6 +28,23 @@ export default async function DashboardPage() {
     <>
       <MotdBanner motd={motd} />
       <Greeting displayName={session.user.displayName} />
+      {/* DESIGN-034 D-01/D-02 (R-206) — the About/Help entry: a full-width INVERTED tile above
+          the app grid (accent fill, internal link — no new tab; hover deepens color only,
+          ADR-015), set apart from the SSO cards by the perforated rule. Renders in the
+          empty-catalog state too — a fresh member still gets the front door to the docs. */}
+      <Link href="/about" className="tile tile--about">
+        <span className="tile__top">
+          <InfoGlyph className="tile__icon" width={28} height={28} />
+          <span className="tile__ext" aria-hidden="true">
+            →
+          </span>
+        </span>
+        <span className="tile__name">About haynesnetwork.com</span>
+        <span className="tile__desc">
+          How it all works — the Plex servers, Fix, Trash, requests, books, and more.
+        </span>
+      </Link>
+      <hr className="tile-rule" />
       {apps.length === 0 ? (
         <section className="card empty-state">
           <p>No apps yet — ask your admin.</p>
