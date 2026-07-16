@@ -379,6 +379,13 @@
       "when": 1783901300000,
       "tag": "0054_format_pairing",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1783901400000,
+      "tag": "0055_collection_type",
+      "breakpoints": true
     }
   ]
 }

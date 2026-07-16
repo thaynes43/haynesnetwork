@@ -8,6 +8,10 @@
 import { plexCollections, plexCollectionMembers, type DbClient } from '@hnet/db';
 import { and, eq, inArray, lt, sql } from 'drizzle-orm';
 import { inTransaction } from './db-client';
+// DESIGN-035 D-10 (PLAN-053) — the versioned Collection Type classifier: the annotation is
+// recomputed from the title at EVERY upsert (insert AND conflict-update), so the whole column
+// rebuilds each sync — a classifier version bump re-annotates the estate, nothing migrates.
+import { classifyCollectionType } from './collection-type';
 
 /** One collection (with its raw membership) the collections-sync fetcher produced. */
 export interface PlexCollectionSyncInput {
@@ -78,6 +82,8 @@ export async function syncPlexCollections(
           ratingKey: collection.ratingKey,
           title: collection.title,
           childCount: collection.childCount,
+          // D-10 (PLAN-053) — the Collection Type annotation, from the title, every sync.
+          collectionType: classifyCollectionType(collection.title),
           firstSeenAt: runStart,
           lastSeenAt: runStart,
           updatedAt: runStart,
@@ -87,6 +93,8 @@ export async function syncPlexCollections(
           set: {
             title: sql`excluded.title`,
             childCount: sql`excluded.child_count`,
+            // A retitle reclassifies in the same statement (excluded carries the fresh value).
+            collectionType: sql`excluded.collection_type`,
             lastSeenAt: sql`excluded.last_seen_at`,
             updatedAt: sql`excluded.updated_at`,
             // firstSeenAt / createdAt keep their original values (not in the set).

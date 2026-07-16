@@ -365,6 +365,22 @@ export const SYNC_RUN_KINDS = [
 ] as const;
 export type SyncRunKind = (typeof SYNC_RUN_KINDS)[number];
 
+// DESIGN-035 D-10 / R-214 (PLAN-053 — Collection Type facet) — the six owner-ruled kind buckets a
+// mirrored Plex collection is annotated with (2026-07-16 rulings, FINAL: producer/writer fold into
+// 'director'; anything the versioned classifier can't place explicitly is honestly 'other').
+// Stored on plex_collections.collection_type (migration 0055 CHECK — kept in parity with this
+// array) and RECOMPUTED from the title at every collections-sync upsert (a rebuildable annotation,
+// never migrated state). The ledger.collectionGroups `ctype` facet + typeCounts speak these values.
+export const COLLECTION_TYPES = [
+  'trilogy',
+  'franchise_universe',
+  'director',
+  'actor',
+  'list',
+  'other',
+] as const;
+export type CollectionType = (typeof COLLECTION_TYPES)[number];
+
 // ADR-043 / DESIGN-021 (PLAN-024) — the two Plex metadata targets the poster guard applies art to: a
 // SHOW poster (the class-type series art) or a SEASON poster (the duration art, keyed by season index).
 export const POSTER_GUARD_TARGET_KINDS = ['show', 'season'] as const;

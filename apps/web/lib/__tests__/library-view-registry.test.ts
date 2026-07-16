@@ -4,6 +4,7 @@
 // (Resolution on a Season, Runtime on Music, Genre on Kavita) fails here first.
 import { describe, expect, it } from 'vitest';
 import {
+  COLLECTION_TYPE_OPTIONS,
   LIBRARY_VIEW_REGISTRY,
   WALL_VIEWS,
   registryFor,
@@ -65,12 +66,28 @@ describe('registry shape invariants', () => {
     }
   });
 
-  it('the Movies/TV Collections grouped levels sort the CARDS only (label/count, no facets — PLAN-037)', () => {
+  it('the Movies/TV Collections grouped levels sort the CARDS (label/count) and declare ONLY the Type facet (PLAN-037 + PLAN-053)', () => {
     for (const level of ['movies:grouped-collection', 'tv:grouped-collection'] as const) {
       expect(sortKeys(level)).toEqual(['label', 'count']);
-      expect(facetKeys(level)).toEqual([]);
+      // DESIGN-035 D-11 / R-214 — exactly ONE facet: the Collection Type chip row. Item facets
+      // (genre/decade/resolution/…) must never leak onto a card grid (the D-09 asymmetry).
+      expect(facetKeys(level)).toEqual(['collectionType']);
+      const typeFacet = registryFor(level).facets[0]!;
+      expect(typeFacet).toMatchObject({ label: 'Type', kind: 'select', param: 'ctype' });
+      // Owner ruling — the chip FILTERS, never hides: no per-user gate, no data gating.
+      expect(typeFacet.gate).toBeUndefined();
+      expect(typeFacet.dataGated).toBeUndefined();
       expect(registryFor(level).azSorts).toEqual([]);
     }
+    // The chip vocabulary — six buckets in ruled order (All is the renderer's absent-param default).
+    expect(COLLECTION_TYPE_OPTIONS.map((o) => `${o.value}:${o.label}`)).toEqual([
+      'trilogy:Trilogies',
+      'franchise_universe:Franchise & Universe',
+      'director:Director',
+      'actor:Actor',
+      'list:Lists',
+      'other:Other',
+    ]);
     expect(WALL_VIEWS.movies.groupings?.map((g) => `${g.dimension}:${g.art}`)).toEqual([
       'collection:covers',
     ]);

@@ -92,6 +92,8 @@ async function collectionRows(db: Database) {
       ratingKey: plexCollections.ratingKey,
       title: plexCollections.title,
       childCount: plexCollections.childCount,
+      // DESIGN-035 D-10 (PLAN-053) — the Collection Type annotation the writer computes per upsert.
+      collectionType: plexCollections.collectionType,
     })
     .from(plexCollections)
     .orderBy(asc(plexCollections.ratingKey));
@@ -134,8 +136,9 @@ describe('fetchPlexCollectionsSnapshot + syncPlexCollections (ADR-064)', () => {
     expect(report.collectionsUpserted).toBe(2);
     expect(report.membersUpserted).toBe(3);
     expect(await collectionRows(t.db)).toEqual([
-      { ratingKey: '77001', title: 'IMDb Top 250', childCount: 250 },
-      { ratingKey: '77002', title: 'The Fixture Franchise', childCount: 2 },
+      // D-10 — the writer annotates at upsert: a chart classifies 'list', an idiom-free name 'other'.
+      { ratingKey: '77001', title: 'IMDb Top 250', childCount: 250, collectionType: 'list' },
+      { ratingKey: '77002', title: 'The Fixture Franchise', childCount: 2, collectionType: 'other' },
     ]);
     // RAW membership regardless of ledger match (owner R3) — no media_items exist at all here.
     expect(await memberRows(t.db, '77001')).toEqual([
@@ -188,7 +191,7 @@ describe('fetchPlexCollectionsSnapshot + syncPlexCollections (ADR-064)', () => {
     expect(report.membersRemoved).toBe(1); // 9002 left the fully-read 77001
     expect(report.collectionsRemoved).toBe(1); // 77002 vanished from the scoped library
     expect(await collectionRows(t.db)).toEqual([
-      { ratingKey: '77001', title: 'IMDb Top 250 (2026)', childCount: 249 },
+      { ratingKey: '77001', title: 'IMDb Top 250 (2026)', childCount: 249, collectionType: 'list' },
     ]);
     expect(await memberRows(t.db, '77001')).toEqual([{ ratingKey: '9001', sortOrder: 0 }]);
     // 77002's members CASCADEd away with it.
@@ -246,7 +249,7 @@ describe('fetchPlexCollectionsSnapshot + syncPlexCollections (ADR-064)', () => {
     });
     // Title advanced; the existing member survived (no reconcile without a full member read).
     expect(await collectionRows(t.db)).toEqual([
-      { ratingKey: '77001', title: 'IMDb Top 250 (2027)', childCount: 251 },
+      { ratingKey: '77001', title: 'IMDb Top 250 (2027)', childCount: 251, collectionType: 'list' },
     ]);
     expect(await memberRows(t.db, '77001')).toEqual([{ ratingKey: '9001', sortOrder: 0 }]);
   });
@@ -282,5 +285,28 @@ describe('fetchPlexCollectionsSnapshot + syncPlexCollections (ADR-064)', () => {
     expect((await collectionRows(t.db)).map((c) => c.ratingKey)).toEqual(['77001', '77009']);
     expect(await memberRows(t.db, '77001')).toEqual([{ ratingKey: '9001', sortOrder: 0 }]);
     expect(await memberRows(t.db, '77009')).toEqual([{ ratingKey: '9009', sortOrder: 0 }]);
+  });
+
+  // DESIGN-035 D-10 (PLAN-053) — the annotation is RECOMPUTED at every upsert: a retitle that
+  // changes the bucket flips collection_type in the same conflict-update (rebuildable, no backfill).
+  it('recomputes the Collection Type when a retitle changes the bucket', async () => {
+    const before = (await collectionRows(t.db)).find((c) => c.ratingKey === '77009')!;
+    expect(before).toMatchObject({ title: 'Beyond The Cap', collectionType: 'other' });
+    await syncPlexCollections({
+      db: t.db,
+      collections: [
+        {
+          plexLibraryId: moviesLib,
+          ratingKey: '77009',
+          title: 'Beyond The Cap Trilogy',
+          childCount: 3,
+          members: [],
+          fullyRead: false,
+        },
+      ],
+      scopedLibraryIds: [],
+    });
+    const after = (await collectionRows(t.db)).find((c) => c.ratingKey === '77009')!;
+    expect(after).toMatchObject({ title: 'Beyond The Cap Trilogy', collectionType: 'trilogy' });
   });
 });

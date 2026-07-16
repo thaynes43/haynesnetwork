@@ -1375,4 +1375,47 @@ describe('migrations against embedded Postgres 16', () => {
       await client.query(`DELETE FROM sync_runs WHERE run_kind = 'format-pairing'`);
     });
   });
+
+  // DESIGN-035 D-10 / R-214 (PLAN-053 — migration 0055): the Collection Type annotation column —
+  // NOT NULL DEFAULT 'other' (pre-existing mirror rows start honestly un-bucketed; the next sync
+  // re-annotates), CHECK over the six owner-ruled buckets.
+  describe('0055 collection type (DESIGN-035 D-10 — six-bucket annotation on plex_collections)', () => {
+    it("defaults to 'other', accepts each ruled bucket, and CHECK-rejects anything else", async () => {
+      const serverId = (await client.query(`SELECT id FROM plex_servers WHERE slug = 'haynesops'`))
+        .rows[0].id;
+      const libId = (
+        await client.query({
+          text: `INSERT INTO plex_libraries (server_id, section_key, name, media_type)
+                 VALUES ($1, '92', 'HOps Movies (0055)', 'movie') RETURNING id`,
+          values: [serverId],
+        })
+      ).rows[0].id;
+      // Default — a row inserted without the column lands 'other'.
+      const defaulted = await client.query({
+        text: `INSERT INTO plex_collections (plex_library_id, rating_key, title)
+               VALUES ($1, '78001', 'Curated for Jackson') RETURNING collection_type`,
+        values: [libId],
+      });
+      expect(defaulted.rows[0].collection_type).toBe('other');
+      // Every ruled bucket is accepted.
+      const buckets = ['trilogy', 'franchise_universe', 'director', 'actor', 'list', 'other'];
+      for (const [i, bucket] of buckets.entries()) {
+        await client.query({
+          text: `INSERT INTO plex_collections (plex_library_id, rating_key, title, collection_type)
+                 VALUES ($1, $2, 'Bucket Fixture', $3)`,
+          values: [libId, `781${i}0`, bucket],
+        });
+      }
+      // …and an unknown value violates the CHECK.
+      await expect(
+        client.query({
+          text: `INSERT INTO plex_collections (plex_library_id, rating_key, title, collection_type)
+                 VALUES ($1, '78999', 'Bad Bucket', 'saga_of_vibes')`,
+          values: [libId],
+        }),
+      ).rejects.toMatchObject({ code: '23514' });
+      // Cleanup via the library cascade.
+      await client.query({ text: `DELETE FROM plex_libraries WHERE id = $1`, values: [libId] });
+    });
+  });
 });

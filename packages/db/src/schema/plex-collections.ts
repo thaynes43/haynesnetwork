@@ -1,5 +1,9 @@
-import { pgTable, uuid, text, integer, timestamp, unique, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, integer, timestamp, unique, index, check } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import { plexLibraries } from './plex-libraries';
+import { COLLECTION_TYPES } from './enums';
+
+const COLLECTION_TYPES_SQL = COLLECTION_TYPES.map((v) => `'${v}'`).join(',');
 
 /**
  * ADR-064 / DESIGN-035 D-01 (PLAN-037 — mirrored Plex collections). External software (Plex/Kometa)
@@ -28,6 +32,13 @@ export const plexCollections = pgTable(
     title: text('title').notNull(),
     /** The RAW Plex member count (diagnostics only — never shown; the wall count is access-gated). */
     childCount: integer('child_count').notNull().default(0),
+    /**
+     * DESIGN-035 D-10 / R-214 (PLAN-053) — the owner-ruled six-bucket Collection Type ANNOTATION
+     * (T-186). Recomputed from the title at EVERY sync upsert by the versioned @hnet/domain
+     * classifier (`classifyCollectionType`) — rebuildable like the row it sits on, never migrated
+     * state. Drives the grouped walls' `?ctype=` Type chip row + the gated typeCounts.
+     */
+    collectionType: text('collection_type', { enum: COLLECTION_TYPES }).notNull().default('other'),
     firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -36,6 +47,11 @@ export const plexCollections = pgTable(
   (t) => [
     // Identity — the sync upserts on this key; the drill-in resolves a ?group=<ratingKey> through it.
     unique('plex_collections_library_rating_key_unique').on(t.plexLibraryId, t.ratingKey),
+    // D-10 — the six owner-ruled buckets, in parity with COLLECTION_TYPES (migration 0055).
+    check(
+      'plex_collections_collection_type_enum',
+      sql`${t.collectionType} = ANY (ARRAY[${sql.raw(COLLECTION_TYPES_SQL)}])`,
+    ),
   ],
 );
 
