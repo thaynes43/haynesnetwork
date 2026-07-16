@@ -50,6 +50,7 @@ import { createConsoleLogger } from '../logger';
 import { runSync } from '../orchestrator';
 
 const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy|notify-outbox|smart-alerts|poster-guard|ai-usage-sync|authentik-users|books-sync|plex-match|collections-sync|mam-governor|goodreads-sync|activity-scan [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
+const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy|notify-outbox|smart-alerts|poster-guard|ai-usage-sync|authentik-users|books-sync|plex-match|mam-governor|goodreads-sync|format-pairing|activity-scan [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
 
   --mode=full              item-list upsert + tombstone pass per *arr (+ Seerr requests)
   --mode=incremental       history/since cursor polling per *arr (+ Seerr requests)
@@ -125,6 +126,17 @@ const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-bat
                            LAZYLIBRARIAN_API_KEY / KAPOWARR_API_KEY are OPTIONAL (absent LL ⇒ mirror + mint, no
                            book push; absent Kapowarr ⇒ comics parked). NEVER writes LL/Kapowarr provider
                            config. No --source. Writes no sync_runs row.
+  --mode=format-pairing    book ⇄ audiobook FORMAT PAIRING (ADR-065 — PLAN-050): rebuild the
+                           books_format_pairs derived cache from the books_items mirror (conservative
+                           normalized-title + author-agreement matcher; comics excluded; never a wrong
+                           pair), mint the PACED estate-wide system wants for unpaired titles' missing
+                           formats (book_requests origin='pairing', capped at PAIRING_MINT_CAP_PER_RUN
+                           attempts/run, missing-format-only addBook → queueBook → searchBook), and
+                           reconcile open pairing wants against LL. Fetches NOTHING external for the
+                           pair pass — run it AFTER books-sync. LAZYLIBRARIAN_API_KEY /
+                           GOOGLE_BOOKS_API_KEY are OPTIONAL (absent LL ⇒ pair + mint only; absent GB
+                           key ⇒ keyless GB lookups, reuse-first). NEVER touches LL provider config.
+                           No --source. Writes no sync_runs row.
   --mode=activity-scan     the ACTIVITY / IN-FLIGHT failure scan (ADR-059 — the pipeline made visible): poll
                            each source family's queue/import state (the books LL wanted-table + SAB queue/
                            history AND the *arr Radarr/Sonarr/Lidarr queue + recent-import state), detect OPEN
@@ -197,7 +209,8 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
       mode === 'collections-sync' ||
       mode === 'mam-governor' ||
       mode === 'activity-scan' ||
-      mode === 'goodreads-sync') &&
+      mode === 'goodreads-sync' ||
+      mode === 'format-pairing') &&
     sources.length > 0
   ) {
     throw new CliUsageError(`--source is not valid for --mode=${mode}`);
@@ -218,7 +231,8 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
     mode === 'collections-sync' ||
     mode === 'mam-governor' ||
     mode === 'activity-scan' ||
-    mode === 'goodreads-sync'
+    mode === 'goodreads-sync' ||
+    mode === 'format-pairing'
       ? []
       : mode === 'metadata-refresh'
         ? [...ARR_KINDS]
@@ -421,15 +435,30 @@ async function main(): Promise<number> {
   // ADR-055 / DESIGN-028 — the confined LazyLibrarian bundle (built INSIDE @hnet/domain, so the confined
   // write surface stays domain-only — the arr-write import guard). OPTIONAL for goodreads-sync: absent
   // LAZYLIBRARIAN_API_KEY ⇒ a degraded run that mirrors + mints requests but pushes nothing (logged).
+  // ADR-065 — the `format-pairing` mode rides the SAME confined bundle for its missing-format pushes.
   let lazyLibrarian: LazyLibrarianClientBundle | undefined;
-  if (args.mode === 'goodreads-sync') {
+  if (args.mode === 'goodreads-sync' || args.mode === 'format-pairing') {
     try {
       lazyLibrarian = lazyLibrarianBundleFromEnv();
     } catch {
       lazyLibrarian = undefined;
-      logger.info('goodreads-sync: no LAZYLIBRARIAN_API_KEY — running in mirror+mint (no push) mode');
+      logger.info(
+        `${args.mode}: no LAZYLIBRARIAN_API_KEY — running in mint-only (no push) mode`,
+      );
     }
   }
+  // ADR-065 / DESIGN-036 — the GB resolver the `format-pairing` mode falls back to (reuse-first) for a
+  // pairing want's LL identity. Keyless GB works (rate-limited) — the client is always constructible.
+  const pairingGb =
+    args.mode === 'format-pairing'
+      ? (() => {
+          const cfg = goodreadsConfigFromEnv();
+          return new GoogleBooksClient({
+            baseUrl: cfg.googleBooksUrl,
+            ...(cfg.googleBooksApiKey ? { apiKey: cfg.googleBooksApiKey } : {}),
+          });
+        })()
+      : undefined;
   // ADR-056 (PLAN-046) — the confined Kapowarr bundle for the goodreads-sync COMIC leg (built INSIDE
   // @hnet/domain, so the confined write surface stays domain-only — the arr-write import guard). OPTIONAL:
   // absent KAPOWARR_API_KEY ⇒ comics stay PARKED (unroutable_reason='comic') — the honest degraded run.
@@ -478,6 +507,7 @@ async function main(): Promise<number> {
     ...(goodreads ? { goodreads } : {}),
     ...(lazyLibrarian ? { lazyLibrarian } : {}),
     ...(kapowarr ? { kapowarr } : {}),
+    ...(pairingGb ? { pairingGb } : {}),
     logger,
   });
 
@@ -586,6 +616,10 @@ async function main(): Promise<number> {
       : {}),
     ...(report.goodreadsSyncError !== undefined
       ? { goodreadsSyncError: report.goodreadsSyncError }
+      : {}),
+    ...(report.formatPairing ? { formatPairing: report.formatPairing } : {}),
+    ...(report.formatPairingError !== undefined
+      ? { formatPairingError: report.formatPairingError }
       : {}),
     sources: report.sources.map((s) => ({
       source: s.source,
