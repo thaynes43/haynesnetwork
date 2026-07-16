@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.65.0](https://github.com/thaynes43/haynesnetwork/compare/v0.64.0...v0.65.0) (2026-07-16)
+
+
+### Features
+
+* Collection Type facet — six-bucket classifier + Type chips on the Collections view (PLAN-053) ([#323](https://github.com/thaynes43/haynesnetwork/issues/323)) ([3cd052f](https://github.com/thaynes43/haynesnetwork/commit/3cd052f14d9a1a846dd6ddff36e6e9204e041d0d))
+
+
+### Documentation
+
+* DESIGN-037 amended — Libretto is stateless (owner ruling 2026-07-16) ([#324](https://github.com/thaynes43/haynesnetwork/issues/324)) ([0fe0c0c](https://github.com/thaynes43/haynesnetwork/commit/0fe0c0c95885269a0dbbbbc6d73dd947e086a50c))
+* PLAN-053 queued — Collection Type facet on the Collections view ([#319](https://github.com/thaynes43/haynesnetwork/issues/319)) ([1a553de](https://github.com/thaynes43/haynesnetwork/commit/1a553de3488061862ffa8e7d869e7043be860e5c))
+* PLAN-054 + DESIGN-037 — Libretto architecture (design phase, owner review = M0 gate) ([#322](https://github.com/thaynes43/haynesnetwork/issues/322)) ([b256843](https://github.com/thaynes43/haynesnetwork/commit/b2568438d9bde1958e36af129709e81079ce858e))
+* Thursday wrap — PLAN-037 (v0.63.0) + PLAN-050 (v0.64.0) completed + live-validated; Libretto named + design open; PLAN-053 ready; train doctrine hardened ([#320](https://github.com/thaynes43/haynesnetwork/issues/320)) ([5ce98f5](https://github.com/thaynes43/haynesnetwork/commit/5ce98f5f0d3d7d831b3f788ebd9ad9d0b37bfe59))
+
 ## [0.64.0](https://github.com/thaynes43/haynesnetwork/compare/v0.63.0...v0.64.0) (2026-07-16)
 
 
