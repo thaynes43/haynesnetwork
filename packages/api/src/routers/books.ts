@@ -8,6 +8,8 @@ import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import {
   bookRequests,
+  booksCollections,
+  booksCollectionMembers,
   booksFormatPairs,
   booksItems,
   userBookProgress,
@@ -130,8 +132,10 @@ async function resolvePairingState(
  * PLAN-029 (R5 "+direction"): an explicit `dir` flips the PRIMARY column; nulls stay LAST in either
  * direction (the D-09 convention) and the tiebreakers stay ascending. Absent dir = the option's
  * natural direction (A–Z for title/author, newest/most-first for the rest — the pre-029 behavior).
+ * ADR-066 / DESIGN-038 D-06 (PLAN-051): 'position' orders a DRILLED collection by member position
+ * (reading order — asc natural); the schema refinement guarantees `collection` is present.
  */
-function orderForSort(sort: BooksSort, dir?: 'asc' | 'desc') {
+function orderForSort(sort: BooksSort, dir?: 'asc' | 'desc', collection?: string) {
   const natural: Record<BooksSort, 'asc' | 'desc'> = {
     title: 'asc',
     author: 'asc',
@@ -140,6 +144,7 @@ function orderForSort(sort: BooksSort, dir?: 'asc' | 'desc') {
     released: 'desc',
     duration: 'desc',
     pages: 'desc',
+    position: 'asc',
   };
   const d = sql.raw((dir ?? natural[sort]).toUpperCase());
   switch (sort) {
@@ -169,6 +174,17 @@ function orderForSort(sort: BooksSort, dir?: 'asc' | 'desc') {
       // DESIGN-026 D-03 (PLAN-029 step 2) — the Kavita page-count sort (Books/Comics).
       return [
         sql`${booksItems.pageCount} ${d} NULLS LAST`,
+        asc(booksItems.sortTitle),
+        asc(booksItems.id),
+      ];
+    case 'position':
+      // DESIGN-038 D-06 — the drilled collection's member position ("List order"). A correlated
+      // subquery against the ONE drilled collection (the same rows the EXISTS predicate admits, so
+      // NULLS LAST is a formality). Never offered outside a drill (registry + schema refinement).
+      return [
+        sql`(SELECT bcm.position FROM books_collection_members bcm
+              WHERE bcm.collection_id = ${collection ?? null}
+                AND bcm.books_item_id = ${booksItems.id}) ${d} NULLS LAST`,
         asc(booksItems.sortTitle),
         asc(booksItems.id),
       ];
@@ -242,6 +258,31 @@ const WALL_FORMAT: Record<BooksMediaKind, 'ebook' | 'audiobook' | 'comic'> = {
   audiobook: 'audiobook',
   comic: 'comic',
 };
+
+/** ADR-066 / DESIGN-038 D-05 — the group card's cover-fan sample bound (the PLAN-037 idiom). */
+const BOOKS_COLLECTION_COVER_SAMPLE = 4;
+
+/**
+ * DESIGN-038 D-05 — the wall-mapping tie order: a collection whose resolved live members split
+ * evenly between kinds maps to the FIRST kind here (book → comic → audiobook; in practice ties are
+ * the mixed-Kavita-list case — ABS collections are all-audiobook).
+ */
+const WALL_MAPPING_TIE_ORDER: readonly BooksMediaKind[] = ['book', 'comic', 'audiobook'];
+
+/** One Collections group card on a book wall (the GroupCard contract + the D-06 ordered flag). */
+export interface BooksCollectionGroup {
+  /** The books_collections row uuid (the `?group=` drill key — stable, key-not-name). */
+  key: string;
+  label: string;
+  /** Resolved live members of the WALL's kind (never the raw source item_count — R-217). */
+  count: number;
+  /** Up to 4 member cover-proxy URLs, in member-position order (the cover-fan art). */
+  coverUrls: string[];
+  /** Always null — a collection has no portrait source; the cover fan is the art. */
+  imageUrl: null;
+  /** Whether the SOURCE carries an explicit member order — drives the drill's position sort. */
+  ordered: boolean;
+}
 
 export const booksRouter = router({
   /** The caller's own books-section visibility (any authed user) — for the client tab gate. */
@@ -402,6 +443,16 @@ export const booksRouter = router({
       // DESIGN-026 D-08/D-09 (PLAN-029) — author/narrator/series/language/format/length facets + the
       // A–Z letter jump (same-field OR, cross-field AND — the shared chip semantics).
       conditions.push(...facetConditions(input));
+      // ADR-066 / DESIGN-038 D-06 (PLAN-051) — the drilled COLLECTION narrowing: one EXISTS
+      // predicate over the mirror's resolved members, so the drilled wall inherits every other
+      // filter/sort/pager (and the books gate) unchanged.
+      if (input.collection) {
+        conditions.push(
+          sql`EXISTS (SELECT 1 FROM ${booksCollectionMembers} bcm
+                WHERE bcm.collection_id = ${input.collection}
+                  AND bcm.books_item_id = ${booksItems.id})`,
+        );
+      }
       // ADR-053 / DESIGN-026 D-07 — the per-user ABS read-state facet (viewer-scoped, Audiobooks only;
       // Kavita rows simply never carry user_book_progress). Bound to the SESSION user (never the wire).
       if (input.readState) {
@@ -425,7 +476,7 @@ export const booksRouter = router({
         .select()
         .from(booksItems)
         .where(and(...conditions))
-        .orderBy(...orderForSort(input.sort, input.dir))
+        .orderBy(...orderForSort(input.sort, input.dir, input.collection))
         .limit(input.limit)
         .offset(input.cursor);
 
@@ -628,6 +679,93 @@ export const booksRouter = router({
         const directory = await absAuthorDirectory();
         groups = groups.map((g) => ({ ...g, imageUrl: absAuthorImageUrlFor(directory, g.label) }));
       }
+      return { groups };
+    }),
+
+  /**
+   * ADR-066 / DESIGN-038 D-05 (PLAN-051) — the books Collections group listing: one card per
+   * mirrored collection WHOSE MAJORITY of resolved live members is this wall's kind (the
+   * wall-mapping rule, R-217 — ties break book → comic → audiobook; a collection surfaces on
+   * exactly ONE wall). The card count and cover fan are the WALL's kind only — exactly what the
+   * `?group=` drill will show; the raw source `item_count` is never the wire count. Members
+   * resolve `books_collection_members.books_item_id` → live `books_items` rows (an unresolved raw
+   * ref is invisible here — the walls are books_items walls, ADR-066 C-06). Same server-
+   * authoritative `booksProcedure` gate as the wall the cards ride (D-10). One bounded query,
+   * in-process aggregation (the books.groups shape); cards come back label-A–Z and the client
+   * re-sorts by the grouped level's registry keys (label | count).
+   */
+  collectionGroups: booksProcedure
+    .input(z.object({ mediaKind: z.enum(BOOKS_MEDIA_KINDS) }))
+    .query(async ({ ctx, input }): Promise<{ groups: BooksCollectionGroup[] }> => {
+      const rows = await ctx.db
+        .select({
+          id: booksCollections.id,
+          title: booksCollections.title,
+          ordered: booksCollections.ordered,
+          memberKind: booksItems.mediaKind,
+          source: booksItems.source,
+          externalId: booksItems.externalId,
+          coverRef: booksItems.coverRef,
+        })
+        .from(booksCollections)
+        .innerJoin(
+          booksCollectionMembers,
+          eq(booksCollectionMembers.collectionId, booksCollections.id),
+        )
+        // Resolved LIVE members only (the inner join drops null resolutions by construction).
+        .innerJoin(booksItems, eq(booksItems.id, booksCollectionMembers.booksItemId))
+        .where(isNull(booksItems.deletedAt))
+        .orderBy(
+          asc(booksCollections.title),
+          asc(booksCollections.id),
+          asc(booksCollectionMembers.position),
+        );
+      interface Agg {
+        label: string;
+        ordered: boolean;
+        counts: Record<BooksMediaKind, number>;
+        coverUrls: Record<BooksMediaKind, string[]>;
+      }
+      const byCollection = new Map<string, Agg>();
+      for (const row of rows) {
+        const agg =
+          byCollection.get(row.id) ??
+          byCollection
+            .set(row.id, {
+              label: row.title,
+              ordered: row.ordered,
+              counts: { book: 0, comic: 0, audiobook: 0 },
+              coverUrls: { book: [], comic: [], audiobook: [] },
+            })
+            .get(row.id)!;
+        agg.counts[row.memberKind] += 1;
+        const covers = agg.coverUrls[row.memberKind];
+        if (covers.length < BOOKS_COLLECTION_COVER_SAMPLE) {
+          const cover = booksCoverUrlFor(row.source, row.externalId, row.coverRef);
+          if (cover !== null) covers.push(cover);
+        }
+      }
+      const groups: BooksCollectionGroup[] = [];
+      for (const [key, agg] of byCollection) {
+        // The wall-mapping MAJORITY rule (D-05): the kind with the most resolved live members
+        // wins; ties break in WALL_MAPPING_TIE_ORDER. Cards surface on exactly ONE wall.
+        let majority: BooksMediaKind = WALL_MAPPING_TIE_ORDER[0]!;
+        for (const kind of WALL_MAPPING_TIE_ORDER) {
+          if (agg.counts[kind] > agg.counts[majority]) majority = kind;
+        }
+        if (majority !== input.mediaKind) continue;
+        const count = agg.counts[input.mediaKind];
+        if (count === 0) continue; // nothing this wall could show — no card
+        groups.push({
+          key,
+          label: agg.label,
+          count,
+          coverUrls: agg.coverUrls[input.mediaKind],
+          imageUrl: null,
+          ordered: agg.ordered,
+        });
+      }
+      groups.sort((a, b) => a.label.localeCompare(b.label) || a.key.localeCompare(b.key));
       return { groups };
     }),
 });
