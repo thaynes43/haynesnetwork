@@ -1278,6 +1278,9 @@ describe('migrations against embedded Postgres 16', () => {
         `INSERT INTO sync_runs (source, run_kind, status) VALUES ('radarr', 'collections-sync', 'running')`,
       );
       await client.query(`DELETE FROM sync_runs WHERE run_kind = 'collections-sync'`);
+    });
+  });
+
   // ADR-065 / DESIGN-036 (migration 0054) — the format-pairing surfaces: books_format_pairs + the
   // book_requests system-want widening + the run-kind CHECK relax. Additive.
   describe('0054 format pairing (ADR-065 — pair cache + system wants + run-kind CHECK)', () => {
