@@ -358,6 +358,10 @@ export const integrationsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const request = await getBookRequestById({ db: ctx.db, id: input.requestId });
       if (!request) throw new TRPCError({ code: 'NOT_FOUND' });
+      // ADR-065 C-05 — a PAIRING (system) want has no integration/owner: it is not this surface's
+      // request (its search is the books-gated `books.searchPairingWant`). Ownership stays load-bearing
+      // for every goodreads want below.
+      if (request.integrationId === null) throw new TRPCError({ code: 'FORBIDDEN' });
       const integration = await getIntegrationById({ db: ctx.db, id: request.integrationId });
       if (!integration || integration.userId !== ctx.user.id) {
         throw new TRPCError({ code: 'FORBIDDEN' });
