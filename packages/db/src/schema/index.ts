@@ -101,6 +101,11 @@ export * from './user-book-progress';
 export * from './user-integrations';
 export * from './integration-shelf-items';
 export * from './book-requests';
+// ADR-065 / DESIGN-036 (PLAN-050 — book ⇄ audiobook pairing) — the FORMAT PAIR derived cache: one row
+// per conservatively-matched Kavita-book ⇄ ABS-audiobook pair (format-pairing mode). The dual consume
+// buttons, the coverage badge, and the pairing-want mint all read it. Guarded single-writer table
+// (syncFormatPairs); rebuildable, no audit — the media_plex_matches class.
+export * from './books-format-pairs';
 // ADR-059 / DESIGN-030 (PLAN-048 — Activity / In-Flight) — the fine-grained Activity ACTION grants (the
 // role_trash_action_grants idiom, ADR-023; single-writer setRoleActivityActions, audited) and the DURABLE
 // import-failure ledger the `activity-scan` sync mode upserts (the ONLY persisted activity state — the tab

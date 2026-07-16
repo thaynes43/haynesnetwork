@@ -1,12 +1,22 @@
-import { pgTable, uuid, text, timestamp, check, unique, index } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  uuid,
+  text,
+  timestamp,
+  check,
+  unique,
+  uniqueIndex,
+  index,
+} from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { userIntegrations } from './user-integrations';
 import { integrationShelfItems } from './integration-shelf-items';
 import { booksItems } from './books-items';
-import { BOOK_REQUEST_STATUSES } from './enums';
-import type { BookRequestStatus } from './enums';
+import { BOOK_REQUEST_ORIGINS, BOOK_REQUEST_STATUSES } from './enums';
+import type { BookRequestOrigin, BookRequestStatus } from './enums';
 
 const REQUEST_STATUS_SQL_LIST = BOOK_REQUEST_STATUSES.map((s) => `'${s}'`).join(',');
+const REQUEST_ORIGIN_SQL_LIST = BOOK_REQUEST_ORIGINS.map((o) => `'${o}'`).join(',');
 
 /**
  * ADR-055 / DESIGN-028 (PLAN-044 — Goodreads requests MVP) — the request / Missing LEDGER: one row per
@@ -19,18 +29,38 @@ const REQUEST_STATUS_SQL_LIST = BOOK_REQUEST_STATUSES.map((s) => `'${s}'`).join(
  * the mirror. Single-writer (@hnet/domain book-requests.ts, guard-listed). The SYNC-driven mint/status
  * reconcile is NOT audited (synced/derived read-model, the media_items class). The USER-initiated manual
  * "Search again" DOES write a `permission_audit` row (request_book_search) — R3/AC-04.
+ *
+ * ADR-065 / DESIGN-036 (PLAN-050 — book ⇄ audiobook pairing) widens the ledger with the SYSTEM-WANT
+ * seat: `origin` discriminates who minted the row ('goodreads' = a user's shelf want, the keys above
+ * NOT NULL; 'pairing' = the estate's want for an unpaired library title's missing format — no user, no
+ * shelf, `pairing_books_item_id` names the anchor). The origin↔keys coherence is CHECK-enforced and a
+ * partial unique caps pairing wants at ONE open want per anchor item (the missing format is implied by
+ * the anchor's media_kind). On a pairing want the HELD format sits `landed`; only the missing format
+ * runs the lifecycle. One ledger, one status machine, one reconcile path — never a parallel table.
  */
 export const bookRequests = pgTable(
   'book_requests',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    integrationId: uuid('integration_id')
-      .notNull()
-      .references(() => userIntegrations.id, { onDelete: 'cascade' }),
-    /** The shelf want this request was minted from — one request per shelf item. */
-    shelfItemId: uuid('shelf_item_id')
-      .notNull()
-      .references(() => integrationShelfItems.id, { onDelete: 'cascade' }),
+    /** The minting user's integration. NULL ⇔ a system want (origin='pairing') — ADR-065 C-03. */
+    integrationId: uuid('integration_id').references(() => userIntegrations.id, {
+      onDelete: 'cascade',
+    }),
+    /** The shelf want this request was minted from — one request per shelf item. NULL ⇔ origin='pairing'. */
+    shelfItemId: uuid('shelf_item_id').references(() => integrationShelfItems.id, {
+      onDelete: 'cascade',
+    }),
+    /** WHO minted the row: 'goodreads' (a user's shelf want) | 'pairing' (the estate's system want). */
+    origin: text('origin').$type<BookRequestOrigin>().notNull().default('goodreads'),
+    /**
+     * ADR-065 — the ANCHOR library item whose MISSING format this pairing want fills (a `book` anchor
+     * wants the audiobook; an `audiobook` anchor wants the ebook). NULL ⇔ origin='goodreads'. Distinct
+     * from `matched_books_item_id` (which links the want's OWN format into the library and stays NULL
+     * on a pairing want — the wanted composition excludes matched rows).
+     */
+    pairingBooksItemId: uuid('pairing_books_item_id').references(() => booksItems.id, {
+      onDelete: 'cascade',
+    }),
     /** The library mirror match, when present (ISBN → title/author). Null = not (yet) in the library. */
     matchedBooksItemId: uuid('matched_books_item_id').references(() => booksItems.id, {
       onDelete: 'set null',
@@ -84,8 +114,25 @@ export const bookRequests = pgTable(
       'book_requests_comic_status_enum',
       sql`${t.comicStatus} IS NULL OR ${t.comicStatus} = ANY (ARRAY[${sql.raw(REQUEST_STATUS_SQL_LIST)}])`,
     ),
-    // One request per shelf item (the mint is upsert-on-conflict on this key).
+    // ADR-065 — origin is one of the two known minters.
+    check(
+      'book_requests_origin_enum',
+      sql`${t.origin} = ANY (ARRAY[${sql.raw(REQUEST_ORIGIN_SQL_LIST)}])`,
+    ),
+    // ADR-065 C-03 — origin↔keys coherence: a goodreads want carries its shelf+integration keys; a
+    // pairing want carries its library anchor. No half-keyed row is representable.
+    check(
+      'book_requests_origin_keys',
+      sql`(${t.origin} = 'goodreads' AND ${t.shelfItemId} IS NOT NULL AND ${t.integrationId} IS NOT NULL) OR (${t.origin} = 'pairing' AND ${t.pairingBooksItemId} IS NOT NULL)`,
+    ),
+    // One request per shelf item (the mint is upsert-on-conflict on this key; NULLs — the pairing
+    // wants — are exempt by Postgres unique semantics).
     unique('book_requests_shelf_item_unique').on(t.shelfItemId),
+    // ADR-065 C-03 — ONE open pairing want per (books_item, format): the missing format is implied by
+    // the anchor's media_kind, so the item-scoped partial unique realizes the (item, format) rule.
+    uniqueIndex('book_requests_pairing_item_unique')
+      .on(t.pairingBooksItemId)
+      .where(sql`${t.pairingBooksItemId} IS NOT NULL`),
     // The requests/Missing wall reads one integration's requests.
     index('book_requests_integration_idx').on(t.integrationId),
   ],
