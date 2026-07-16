@@ -1,6 +1,6 @@
 # PLAN-053: Collection Type facet — six-bucket annotation + Type chips on the Collections walls
 
-- **Status:** BUILT (2026-07-16 — docs + code on `feat/plan-053-collection-type`, committed
+- **Status:** Completed (v0.65.0, 2026-07-16 eve — feat #323, release #321, haynes-ops #2074; LIVE: all 461 collections classified on the post-deploy sync, Type chips live on Movies/TV Collections views). Was: BUILT (2026-07-16 — docs + code on `feat/plan-053-collection-type`, committed
   locally, awaiting coordinator review/PR). Docs: DESIGN-035 **D-10/D-11 amendment** (NO new
   ADR — this is an annotation + facet on ADR-064's read-model, the ADR-039-refines-ADR-037
   precedent) + PRD **R-214** + glossary **T-186**.

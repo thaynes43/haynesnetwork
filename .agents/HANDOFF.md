@@ -33,6 +33,19 @@ owner's "churn through something good" directive as TWO PARALLEL TRACKS, both sh
   built-in UI — DESIGN PHASE OPEN.** Kometa deep research filed
   (`.agents/context/2026-07-16-kometa-integration-research.md`).
 
+**EVENING ADDENDUM (same day):** **PLAN-053 → completed/ (v0.65.0)** — six-bucket Collection
+Type classifier + Type chips, live with all 461 collections classified. **LIBRETTO IS BORN:**
+repo github.com/thaynes43/libretto (AGPL-3.0, owner-created), design ratified through THREE
+owner rulings (SQLite → then FULLY STATELESS Kometa-style — the targets are the state store,
+LL is the acquisition ledger, YAML recipes, no DB ever — DESIGN-037 amended #324), **M1
+walking skeleton MERGED with green CI** (46 tests, contract REST surface, marker-based
+ownership, fake target; M2 next = real Kavita/ABS clients + the Kavita description-field
+spike + Hardcover series builder). Owner provisioned HARDCOVER_TOKEN + NYT_API_KEY (1P
+`libretto`, HaynesKube; NYT secret NOT needed). New stall class for the train doctrine:
+**DIRTY** (real conflict — a feature branch racing its own docs PR on the same plan file;
+watcher detects BEHIND but DIRTY needs a manual rebase). Train also learned: never run two
+watchers on one PR (double-dance risk — TaskStop the old one first).
+
 **NEXT (owner-agreed order):** finish any Libretto design docs in flight → PLAN-053 build →
 PLAN-051 → PLAN-052. Libretto design runs parallel to hnet builds (separate repo, docs-only).
 
