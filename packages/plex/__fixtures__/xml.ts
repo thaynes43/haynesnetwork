@@ -152,6 +152,49 @@ export const METADATA_CHILDREN_JSON = {
 };
 
 /**
+ * ADR-064 / DESIGN-035 (PLAN-037) — `GET /library/sections/{key}/collections` JSON, TWO pages of a
+ * three-collection section (totalSize 3) so the paged listCollections loop is exercised: page one
+ * (start=0) carries two collections, page two (start=2) the third. Numeric-ish fields appear in
+ * both wire forms (string + number) like the other fixtures.
+ */
+export const COLLECTIONS_PAGE_1_JSON = {
+  MediaContainer: {
+    size: 2,
+    totalSize: '3',
+    Metadata: [
+      {
+        ratingKey: '77001',
+        key: '/library/collections/77001/children',
+        type: 'collection',
+        title: 'IMDb Top 250',
+        childCount: '250',
+        thumb: '/library/collections/77001/composite/1781888110',
+      },
+      {
+        ratingKey: 77002, // Plex sometimes emits a number
+        type: 'collection',
+        title: 'The Fixture Franchise',
+        childCount: 2,
+      },
+    ],
+  },
+};
+export const COLLECTIONS_PAGE_2_JSON = {
+  MediaContainer: {
+    size: 1,
+    totalSize: 3,
+    Metadata: [
+      {
+        ratingKey: '77003',
+        type: 'collection',
+        title: 'Trakt Trending',
+        childCount: '10',
+      },
+    ],
+  },
+};
+
+/**
  * `GET /api/v2/user` JSON (plex.tv) — the token account, i.e. the server OWNER. Shaped like the
  * live response (id is a number; many extra fields) with a fake email/id so no PII lands in the
  * repo. The read client consumes only { id, email, username } (ADR-029).

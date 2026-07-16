@@ -49,7 +49,7 @@ import type { BooksSyncBundle } from '../books';
 import { createConsoleLogger } from '../logger';
 import { runSync } from '../orchestrator';
 
-const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy|notify-outbox|smart-alerts|poster-guard|ai-usage-sync|authentik-users|books-sync|plex-match|mam-governor|goodreads-sync|activity-scan [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
+const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy|notify-outbox|smart-alerts|poster-guard|ai-usage-sync|authentik-users|books-sync|plex-match|collections-sync|mam-governor|goodreads-sync|activity-scan [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
 
   --mode=full              item-list upsert + tombstone pass per *arr (+ Seerr requests)
   --mode=incremental       history/since cursor polling per *arr (+ Seerr requests)
@@ -96,6 +96,13 @@ const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-bat
                            READS DB media_items (their ids, already synced) + the Plex libraries READ-ONLY —
                            no *arr call, no write to Plex. Needs PLEX_HAYNESTOWER/HAYNESOPS/HAYNESKUBE_TOKEN
                            (URLs default to in-cluster/ingress). No --source. Writes no sync_runs row.
+  --mode=collections-sync  mirror the HOps Plex server's collections (ADR-064 — external software is
+                           ALWAYS the collections source of truth; charts included): page each
+                           registered movie/show section's /collections + each collection's children
+                           READ-ONLY and UPSERT the plex_collections/plex_collection_members mirror
+                           (reconcile scoped to fully-read sections/collections). Needs
+                           PLEX_HAYNESOPS_TOKEN (the bundle asserts all three PLEX_*_TOKENs). No
+                           --source. Writes no sync_runs row.
   --mode=mam-governor      the MAM COMPLIANCE GOVERNOR (ADR-054 — cap-aware torrent-fallback pacing): count
                            UNSATISFIED torrents locally in qBittorrent (category books-mam, seeding_time
                            < 72h + still-downloading — ZERO MyAnonaMouse API surface) and, near the rank cap
@@ -187,6 +194,7 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
       mode === 'authentik-users' ||
       mode === 'books-sync' ||
       mode === 'plex-match' ||
+      mode === 'collections-sync' ||
       mode === 'mam-governor' ||
       mode === 'activity-scan' ||
       mode === 'goodreads-sync') &&
@@ -207,6 +215,7 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
     mode === 'authentik-users' ||
     mode === 'books-sync' ||
     mode === 'plex-match' ||
+    mode === 'collections-sync' ||
     mode === 'mam-governor' ||
     mode === 'activity-scan' ||
     mode === 'goodreads-sync'
@@ -359,8 +368,9 @@ async function main(): Promise<number> {
   // ADR-047 / DESIGN-025 — `plex-match` reuses the same bundle (READ side only) to enumerate the Movies/
   // TV/Music libraries. Built INSIDE @hnet/domain (plexClientBundleFromEnv), so the confined Plex write
   // surface stays domain-only (ADR-017 guard); throws one PlexConfigError if a PLEX_*_TOKEN is absent.
+  // ADR-064 / DESIGN-035 — `collections-sync` reuses the same bundle (READ side only, haynesops).
   const plex =
-    args.mode === 'poster-guard' || args.mode === 'plex-match'
+    args.mode === 'poster-guard' || args.mode === 'plex-match' || args.mode === 'collections-sync'
       ? plexClientBundleFromEnv()
       : undefined;
   // ADR-044 / DESIGN-022 — the read-only Open WebUI admin-API client the `ai-usage-sync` mode polls
@@ -549,6 +559,22 @@ async function main(): Promise<number> {
         }
       : {}),
     ...(report.plexMatchError !== undefined ? { plexMatchError: report.plexMatchError } : {}),
+    ...(report.collectionsSync
+      ? {
+          collectionsSync: {
+            collectionsUpserted: report.collectionsSync.collectionsUpserted,
+            membersUpserted: report.collectionsSync.membersUpserted,
+            collectionsRemoved: report.collectionsSync.collectionsRemoved,
+            membersRemoved: report.collectionsSync.membersRemoved,
+            truncatedCollections: report.collectionsSync.stats.truncatedCollections,
+            truncatedSections: report.collectionsSync.stats.truncatedSections,
+            unmappedSections: report.collectionsSync.stats.unmappedSections,
+          },
+        }
+      : {}),
+    ...(report.collectionsSyncError !== undefined
+      ? { collectionsSyncError: report.collectionsSyncError }
+      : {}),
     ...(report.goodreadsSync
       ? {
           goodreadsSync: {

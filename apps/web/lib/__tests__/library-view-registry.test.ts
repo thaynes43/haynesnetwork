@@ -55,13 +55,33 @@ describe('registry shape invariants', () => {
   });
 
   it('every aggregate-card grouping binds a registry level whose default sort it can answer', () => {
-    for (const wall of ['books', 'audiobooks'] as const) {
+    // movies/tv — the PLAN-037 Collections grouped levels ride the same contract.
+    for (const wall of ['books', 'audiobooks', 'movies', 'tv'] as const) {
       for (const grouping of WALL_VIEWS[wall].groupings ?? []) {
         expect(grouping.level, `${wall}:${grouping.dimension}`).toBeDefined();
         const entry = registryFor(grouping.level!);
         expect(sortKeys(grouping.level!)).toContain(entry.defaultSort.field);
       }
     }
+  });
+
+  it('the Movies/TV Collections grouped levels sort the CARDS only (label/count, no facets — PLAN-037)', () => {
+    for (const level of ['movies:grouped-collection', 'tv:grouped-collection'] as const) {
+      expect(sortKeys(level)).toEqual(['label', 'count']);
+      expect(facetKeys(level)).toEqual([]);
+      expect(registryFor(level).azSorts).toEqual([]);
+    }
+    expect(WALL_VIEWS.movies.groupings?.map((g) => `${g.dimension}:${g.art}`)).toEqual([
+      'collection:covers',
+    ]);
+    expect(WALL_VIEWS.tv.groupings?.map((g) => `${g.dimension}:${g.art}`)).toEqual([
+      'collection:covers',
+    ]);
+    // The DEFAULT shapes are unchanged (opt-in Collections — ADR-064): flat / hierarchy first.
+    expect(WALL_VIEWS.movies.offers).toEqual(['flat', 'grouped']);
+    expect(WALL_VIEWS.tv.offers).toEqual(['hierarchy', 'grouped']);
+    expect(WALL_VIEW_DEFAULTS.movies.view).toBe('flat');
+    expect(WALL_VIEW_DEFAULTS.tv.view).toBe('hierarchy');
   });
 });
 

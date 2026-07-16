@@ -108,6 +108,18 @@ const SECTION_CONTENTS: Partial<Record<Slug, Record<string, StubSectionItem[]>>>
   },
 };
 
+// ADR-064 / DESIGN-035 (PLAN-037) — canned `/library/sections/{key}/collections` per (slug,
+// sectionKey): the HOps Movies section carries one mirrored collection whose members are the two
+// seeded ledger movies' would-be Plex titles. A collections-sync run pointed at this stub mirrors
+// it end-to-end; the members ride METADATA_CHILDREN like every drill-in read. (The seeded e2e
+// journey itself is deferred — see the PLAN-037 plan file: the shared seed keeps its movies
+// UNMATCHED, and a collections wall needs media_plex_matches rows.)
+const SECTION_COLLECTIONS: Partial<Record<Slug, Record<string, StubSectionItem[]>>> = {
+  haynesops: {
+    '1': [{ ratingKey: '77001', title: 'Stub Franchise', type: 'collection', childCount: 2 }],
+  },
+};
+
 // DESIGN-017 D-09 — the drill-in hierarchy for the k8plex stub: show ratingKey → its seasons;
 // season ratingKey → its episodes. Every metadata item also records the section that owns it
 // (`librarySectionID` — the router's confinement check). Bike Bootcamp (9001, section 4) mirrors the
@@ -123,6 +135,7 @@ const METADATA_SECTION: Record<string, string> = {
   '9203': '4',
   '7101': '5', // Documentaries — Season 2024
   '7201': '5',
+  '77001': '1', // Stub Franchise (HOps Movies collection — ADR-064)
 };
 
 const METADATA_CHILDREN: Record<string, StubSectionItem[]> = {
@@ -169,6 +182,12 @@ const METADATA_CHILDREN: Record<string, StubSectionItem[]> = {
       originallyAvailableAt: '2026-05-20',
       thumb: '/library/metadata/9203/thumb/1702',
     },
+  ],
+  // ADR-064 (PLAN-037) — Stub Franchise (HOps Movies collection) → its member movies. The
+  // ratingKeys are the HOps Plex ids the seeded ledger movies WOULD match into (tmdb 880001/880002).
+  '77001': [
+    { ratingKey: '6001', title: 'The Fixture', type: 'movie', year: 2022 },
+    { ratingKey: '6002', title: 'Stub Runner', type: 'movie', year: 2020 },
   ],
   // Documentaries (YouTube) → one season → one episode.
   '7001': [
@@ -381,6 +400,17 @@ export async function startStubPlex(): Promise<StubPlexServer> {
         const key = allMatch[1]!;
         const Metadata = (slug && SECTION_CONTENTS[slug]?.[key]) || [];
         return json(res, 200, { MediaContainer: { size: Metadata.length, Metadata } });
+      }
+      // ADR-064 (PLAN-037) — a section's Plex collections (the collections-sync fetcher's listing).
+      // The fixture fits one container page; totalSize ends the client's paging loop immediately.
+      const collectionsMatch = path.match(/^\/library\/sections\/([^/]+)\/collections$/);
+      if (collectionsMatch) {
+        const slug = tokenStr ? SLUG_BY_TOKEN.get(tokenStr) : undefined;
+        const key = collectionsMatch[1]!;
+        const Metadata = (slug && SECTION_COLLECTIONS[slug]?.[key]) || [];
+        return json(res, 200, {
+          MediaContainer: { size: Metadata.length, totalSize: Metadata.length, Metadata },
+        });
       }
       // ADR-043 (PLAN-024) — the poster-upload WRITE surface (the confined Plex write client's uploadPoster): the poster
       // guard POSTs raw image bytes to select a durable override poster. Record the call (so a guard

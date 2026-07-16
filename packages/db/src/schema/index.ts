@@ -71,6 +71,11 @@ export * from './books-items';
 // resolved by shared-GUID match (plex-match mode). The Library access gate + "Watch on Plex" deep-link
 // substrate. Guarded single-writer table (syncPlexMatches).
 export * from './plex-match';
+// ADR-064 / DESIGN-035 (PLAN-037) — the mirrored Plex collections: one row per HOps collection +
+// its RAW membership (collections-sync mode). External software is always the collections source of
+// truth (owner doctrine R1); guarded single-writer tables (syncPlexCollections), no audit — the
+// media_plex_matches derived-cache class.
+export * from './plex-collections';
 // ADR-054 / DESIGN-027 (PLAN-039) — the MAM compliance governor's single-row gate state the mam-governor
 // sync mode upserts (the LL MAM-provider gate + the counts/limit that drove it). Guarded single-writer
 // table (evaluateMamGovernor); its transition trail is the notification_outbox rows (smart-alerts class).

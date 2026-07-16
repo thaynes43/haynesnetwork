@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { PlexReadClient } from '../src/read';
+import { COLLECTIONS_PAGE_SIZE, MAX_COLLECTION_PAGES, PlexReadClient } from '../src/read';
 import { PlexParseError } from '../src/errors';
 import { plexStub, TEST_CLIENT_OPTIONS, type RecordedPlexCall } from './helpers';
 import {
   ACCOUNT_JSON,
+  COLLECTIONS_PAGE_1_JSON,
+  COLLECTIONS_PAGE_2_JSON,
   IDENTITY_JSON,
   LIBRARY_SECTIONS_JSON,
   METADATA_CHILDREN_JSON,
@@ -67,6 +69,115 @@ describe('PlexReadClient — listSectionContents (ADR-038)', () => {
     expect(call.headers['X-Plex-Token']).toBe('owner-secret-token');
     expect(call.url.searchParams.get('X-Plex-Container-Size')).toBe('250');
     expect(call.url.toString()).not.toContain('owner-secret-token');
+  });
+});
+
+// ADR-064 / DESIGN-035 D-02 (PLAN-037) — the paged collections listing.
+describe('PlexReadClient — listCollections (ADR-064)', () => {
+  const pagedRoute = {
+    path: /\/library\/sections\/1\/collections$/,
+    body: (url: URL) =>
+      url.searchParams.get('X-Plex-Container-Start') === '0'
+        ? COLLECTIONS_PAGE_1_JSON
+        : COLLECTIONS_PAGE_2_JSON,
+  };
+
+  /** A generated collection page: `count` items starting at `start`, optionally totalSize-less. */
+  const generatedPage = (start: number, count: number, totalSize?: number) => ({
+    MediaContainer: {
+      size: count,
+      ...(totalSize !== undefined ? { totalSize } : {}),
+      Metadata: Array.from({ length: count }, (_, i) => ({
+        ratingKey: String(50_000 + start + i),
+        type: 'collection',
+        title: `Collection ${start + i}`,
+        childCount: 1,
+      })),
+    },
+  });
+
+  it('pages /library/sections/{key}/collections to completion (coerced keys + childCount)', async () => {
+    const stub = plexStub([pagedRoute]);
+    const { collections, truncated } = await client(stub).listCollections('1');
+    expect(truncated).toBe(false);
+    expect(collections.map((c) => [c.ratingKey, c.title, c.childCount])).toEqual([
+      ['77001', 'IMDb Top 250', 250],
+      ['77002', 'The Fixture Franchise', 2],
+      ['77003', 'Trakt Trending', 10],
+    ]);
+    // Two container pages: start=0 then start=2 (totalSize 3 ends the loop).
+    const starts = stub
+      .callsFor('GET', '/collections')
+      .map((c) => c.url.searchParams.get('X-Plex-Container-Start'));
+    expect(starts).toEqual(['0', '2']);
+  });
+
+  // Adversarial-review fix — `size` (the returned PAGE count) must never stand in for the grand
+  // total: a totalSize-less response would otherwise end the loop after page 1 and a reconciling
+  // caller would tombstone everything past it.
+  it('without totalSize it pages past FULL pages and stops only on a short page (all pages collected)', async () => {
+    const stub = plexStub([
+      {
+        path: /\/collections$/,
+        body: (url: URL) => {
+          const start = Number(url.searchParams.get('X-Plex-Container-Start'));
+          // Two FULL pages, then a short third page — no totalSize anywhere on the wire.
+          return start < 2 * COLLECTIONS_PAGE_SIZE
+            ? generatedPage(start, COLLECTIONS_PAGE_SIZE)
+            : generatedPage(start, 1);
+        },
+      },
+    ]);
+    const { collections, truncated } = await client(stub).listCollections('1');
+    expect(collections).toHaveLength(2 * COLLECTIONS_PAGE_SIZE + 1);
+    expect(truncated).toBe(false);
+    expect(stub.callsFor('GET', '/collections')).toHaveLength(3);
+  });
+
+  // Adversarial-review fix — the page cap is not silent: a cap-ended read reports `truncated`, so
+  // the fetcher leaves the library UNSCOPED (upserts land, reconcile never runs on a partial read).
+  it('flags a page-cap-ended read as truncated (endless full pages, no totalSize)', async () => {
+    const stub = plexStub([
+      {
+        path: /\/collections$/,
+        body: (url: URL) =>
+          generatedPage(Number(url.searchParams.get('X-Plex-Container-Start')), COLLECTIONS_PAGE_SIZE),
+      },
+    ]);
+    const { collections, truncated } = await client(stub).listCollections('1');
+    expect(truncated).toBe(true);
+    expect(collections).toHaveLength(MAX_COLLECTION_PAGES * COLLECTIONS_PAGE_SIZE);
+    expect(stub.callsFor('GET', '/collections')).toHaveLength(MAX_COLLECTION_PAGES);
+  });
+
+  it('flags a totalSize-contradicting EMPTY page as truncated (server under-delivered)', async () => {
+    const stub = plexStub([
+      {
+        path: /\/collections$/,
+        body: (url: URL) => {
+          const start = Number(url.searchParams.get('X-Plex-Container-Start'));
+          return start === 0 ? generatedPage(0, 2, 10) : generatedPage(start, 0, 10);
+        },
+      },
+    ]);
+    const { collections, truncated } = await client(stub).listCollections('1');
+    expect(collections).toHaveLength(2);
+    expect(truncated).toBe(true);
+  });
+
+  it('keeps the token in the header, never the URL', async () => {
+    const stub = plexStub([pagedRoute]);
+    await client(stub).listCollections('1');
+    const call = stub.calls[0]!;
+    expect(call.headers['X-Plex-Token']).toBe('owner-secret-token');
+    expect(call.url.toString()).not.toContain('owner-secret-token');
+  });
+
+  it('an empty section (no Metadata array) yields an empty, complete list', async () => {
+    const stub = plexStub([
+      { path: /\/collections$/, body: { MediaContainer: { size: 0, totalSize: 0 } } },
+    ]);
+    expect(await client(stub).listCollections('1')).toEqual({ collections: [], truncated: false });
   });
 });
 

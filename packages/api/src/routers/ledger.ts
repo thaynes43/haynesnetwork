@@ -83,6 +83,22 @@ export interface LedgerPlexEpisodeArtResult {
   episodes: LedgerPlexEpisodeArt[];
 }
 
+// ADR-064 / DESIGN-035 D-03 (PLAN-037) — one aggregate card of the Movies/TV Collections group view
+// (the BooksGroup wire shape, so GroupCard renders it unchanged). `key` is the collection's Plex
+// rating_key (the ?group= drill key); `count` is the ACCESSIBLE ledger-member count (never the raw
+// Plex child_count — counts are leak vectors); `coverUrls` is a bounded member-poster sample for the
+// cover fan; `imageUrl` stays null (a collection has no portrait source — the fan is the art).
+export interface LedgerCollectionGroup {
+  key: string;
+  label: string;
+  count: number;
+  coverUrls: string[];
+  imageUrl: null;
+}
+
+/** DESIGN-035 D-03 — the group-card cover-fan sample size. */
+const COLLECTION_COVER_SAMPLE = 4;
+
 export const ledgerRouter = router({
   /**
    * R-43 / DESIGN-008 D-09 — search/browse with metadata sort + filters; keyset-paginated by
@@ -234,6 +250,81 @@ export const ledgerRouter = router({
         sourceCollections: await distinctText('source_collections'),
         resolutions,
         decades,
+      };
+    }),
+
+  /**
+   * ADR-064 / DESIGN-035 D-03 (PLAN-037) — the Movies/TV Collections group listing (the books.groups
+   * idiom on the ledger engine): one card per mirrored Plex collection that has ≥ 1 ACCESSIBLE
+   * ledger-matched member of the wall's kind. Members resolve member-ratingKey →
+   * media_plex_matches (within the collection's own library) → media_items, under the ADR-047 gate
+   * (THE INVARIANT): a member in a withheld library is excluded from the count AND the cover fan,
+   * and a collection with zero accessible members is ABSENT entirely (no title leak). The count is
+   * always the accessible ledger count — never the raw Plex child_count. Covers are the first
+   * members' posters in source order (bounded sample). Cards come back label-A–Z; the client
+   * re-sorts by the grouped level's registry keys (label | count).
+   */
+  collectionGroups: authedProcedure
+    .input(z.object({ arrKind: z.enum(['radarr', 'sonarr']) }))
+    .query(async ({ ctx, input }): Promise<{ groups: LedgerCollectionGroup[] }> => {
+      const gate = await resolveLibraryAccessGate(ctx.user.id, ctx.db);
+      const accessCond = libraryAccessConditionRaw(gate); // EXISTS over media_plex_matches ('mi' alias)
+      const conds: SQL[] = [
+        sql`mi.arr_kind = ${input.arrKind}`,
+        sql`mi.deleted_from_arr_at IS NULL`,
+      ];
+      if (accessCond !== null) conds.push(accessCond);
+      // One bounded SELECT (accessible members only), aggregated in-process — the books.groups shape.
+      // `cmx` is this query's own match alias; the gate's subqueries use their own `m2`.
+      const result = await ctx.db.execute<{
+        key: string;
+        label: string;
+        media_item_id: string;
+        poster_source: string | null;
+      }>(
+        sql`SELECT pc.rating_key AS key, pc.title AS label,
+                   mi.id AS media_item_id, mm.poster_source AS poster_source
+              FROM plex_collections pc
+              JOIN plex_collection_members pcm ON pcm.collection_id = pc.id
+              JOIN media_plex_matches cmx
+                ON cmx.plex_library_id = pc.plex_library_id
+               AND cmx.rating_key = pcm.rating_key
+              JOIN media_items mi ON mi.id = cmx.media_item_id
+              LEFT JOIN media_metadata mm ON mm.media_item_id = mi.id
+             WHERE ${sql.join(conds, sql` AND `)}
+             ORDER BY pc.title ASC, pc.rating_key ASC, pcm.sort_order ASC`,
+      );
+      const rows =
+        result.rows ??
+        (result as unknown as {
+          key: string;
+          label: string;
+          media_item_id: string;
+          poster_source: string | null;
+        }[]);
+      const groups = new Map<
+        string,
+        { label: string; memberIds: Set<string>; coverUrls: string[] }
+      >();
+      for (const row of rows) {
+        const group =
+          groups.get(row.key) ??
+          groups.set(row.key, { label: row.label, memberIds: new Set(), coverUrls: [] }).get(row.key)!;
+        if (group.memberIds.has(row.media_item_id)) continue;
+        group.memberIds.add(row.media_item_id);
+        if (group.coverUrls.length < COLLECTION_COVER_SAMPLE) {
+          const cover = posterUrlFor(row.media_item_id, row.poster_source);
+          if (cover !== null) group.coverUrls.push(cover);
+        }
+      }
+      return {
+        groups: [...groups.entries()].map(([key, g]) => ({
+          key,
+          label: g.label,
+          count: g.memberIds.size,
+          coverUrls: g.coverUrls,
+          imageUrl: null,
+        })),
       };
     }),
 

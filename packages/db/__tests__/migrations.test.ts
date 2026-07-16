@@ -1226,4 +1226,58 @@ describe('migrations against embedded Postgres 16', () => {
       await client.query({ text: `DELETE FROM users WHERE id = $1`, values: [userId] });
     });
   });
+
+  describe('0053 mirrored Plex collections (ADR-064 — two derived-cache tables + run-kind CHECK)', () => {
+    it('accepts a collection + member, enforces the identity uniques, and cascades cleanly', async () => {
+      // A plex_libraries row to hang the collection off (the servers are seeded by migration 0010).
+      const serverId = (await client.query(`SELECT id FROM plex_servers WHERE slug = 'haynesops'`))
+        .rows[0].id;
+      const libId = (
+        await client.query({
+          text: `INSERT INTO plex_libraries (server_id, section_key, name, media_type)
+                 VALUES ($1, '91', 'HOps Movies (mig)', 'movie') RETURNING id`,
+          values: [serverId],
+        })
+      ).rows[0].id;
+      const colId = (
+        await client.query({
+          text: `INSERT INTO plex_collections (plex_library_id, rating_key, title, child_count)
+                 VALUES ($1, '77001', 'IMDb Top 250', 250) RETURNING id`,
+          values: [libId],
+        })
+      ).rows[0].id;
+      // Identity — a second row for the same (library, rating_key) violates.
+      await expect(
+        client.query({
+          text: `INSERT INTO plex_collections (plex_library_id, rating_key, title) VALUES ($1, '77001', 'Renamed')`,
+          values: [libId],
+        }),
+      ).rejects.toMatchObject({ code: '23505' });
+      await client.query({
+        text: `INSERT INTO plex_collection_members (collection_id, rating_key, sort_order) VALUES ($1, '9001', 0)`,
+        values: [colId],
+      });
+      await expect(
+        client.query({
+          text: `INSERT INTO plex_collection_members (collection_id, rating_key, sort_order) VALUES ($1, '9001', 1)`,
+          values: [colId],
+        }),
+      ).rejects.toMatchObject({ code: '23505' });
+      // Cascade: deleting the LIBRARY removes the collection AND its members.
+      await client.query({ text: `DELETE FROM plex_libraries WHERE id = $1`, values: [libId] });
+      const left = await client.query({
+        text: `SELECT (SELECT count(*)::int FROM plex_collections WHERE id = $1) AS cols,
+                      (SELECT count(*)::int FROM plex_collection_members WHERE collection_id = $1) AS members`,
+        values: [colId],
+      });
+      expect(left.rows[0]).toEqual({ cols: 0, members: 0 });
+    });
+
+    it('sync_runs.run_kind admits collections-sync (parity — the mode writes no row itself)', async () => {
+      await client.query(
+        `INSERT INTO sync_runs (source, run_kind, status) VALUES ('radarr', 'collections-sync', 'running')`,
+      );
+      await client.query(`DELETE FROM sync_runs WHERE run_kind = 'collections-sync'`);
+    });
+  });
 });

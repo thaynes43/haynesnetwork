@@ -137,6 +137,8 @@ export type {
   LedgerPlexEpisodeArt,
   LedgerPlexEpisodeArtResult,
 } from './routers/ledger';
+// ADR-064 / DESIGN-035 D-03 (PLAN-037) — the Movies/TV Collections group-card wire shape (client-typed).
+export type { LedgerCollectionGroup } from './routers/ledger';
 // ADR-022 / DESIGN-009 D-06 — the emergency Ledger JSONL export (used by the app export route).
 export {
   buildExportFilterFromParams,
