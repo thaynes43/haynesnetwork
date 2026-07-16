@@ -259,7 +259,8 @@ test.describe('Integrations hub + Goodreads sub-section', () => {
     await page.setViewportSize({ width: 1280, height: 900 });
 
     // ── The Library composed-Wanted journey (books-section-gated; ADR-046 mirror untouched). Wanted
-    //    items merge INLINE into the flat wall as the SAME poster card as an on-disk book — no strip. ──
+    //    items compose INTO the flat wall as the SAME poster card as an on-disk book — no strip, and
+    //    since PLAN-056 no head-of-grid pinning: they land where the active sort puts them. ──
     await page.goto('/library?tab=books&view=flat');
     // The ebook leg: ToG (missing) + PHM + Hyperion (wanted) — matched/landed wants never compose.
     await expect(page.getByTestId('wanted-card')).toHaveCount(3);
@@ -270,9 +271,30 @@ test.describe('Integrations hub + Goodreads sub-section', () => {
     await expect(wantedTog.getByTestId('format-search-btn')).toHaveCount(0);
     await expect(wantedTog).not.toContainText('for ');
 
-    // The Wanted-only chip narrows the wall to the wanted cards (the Movies "Wanted only" idiom).
-    await page.getByTestId('books-wanted-toggle').click();
-    await expect(page).toHaveURL(/wanted=1/);
+    // PLAN-056 — sort participation (the old pinning asserted GONE): under the default Title A–Z
+    // 'Throne of Glass' lands at the END of the wall, and the on-disk 'Penny Dreadfuls' precedes
+    // the wanted 'Project Hail Mary'.
+    const cardTitles = await page.locator('[data-testid="books-grid"] .poster-card').allInnerTexts();
+    expect(cardTitles.findIndex((c) => c.includes('Throne of Glass'))).toBe(cardTitles.length - 1);
+    expect(cardTitles.findIndex((c) => c.includes('Penny Dreadfuls'))).toBeLessThan(
+      cardTitles.findIndex((c) => c.includes('Project Hail Mary')),
+    );
+
+    // PLAN-056 — the THREE-state Wanted selector (All · Wanted only · Hide wanted; `?wanted=` is a
+    // replace-in-place refinement). Wanted-only: the wants ARE the wall (on-disk rows excluded
+    // server-side, not CSS-hidden).
+    await page.getByTestId('books-wanted-only').click();
+    await expect(page).toHaveURL(/wanted=only/);
+    await expect(page.getByTestId('wanted-card')).toHaveCount(3);
+    await expect(page.locator('[data-testid="books-grid"] .poster-card')).toHaveCount(3);
+    // Hide wanted: the wants drop out server-side — only on-disk rows remain.
+    await page.getByTestId('books-wanted-hide').click();
+    await expect(page).toHaveURL(/wanted=hide/);
+    await expect(page.getByTestId('wanted-card')).toHaveCount(0);
+    await expect(page.locator('[data-testid="books-grid"] .poster-card').first()).toBeVisible();
+    // Back to All (the default): the param clears and both kinds compose again.
+    await page.getByTestId('books-wanted-all').click();
+    await expect(page).not.toHaveURL(/wanted=/);
     await expect(page.getByTestId('wanted-card')).toHaveCount(3);
 
     // The Comics wall composes the comic legs inline: routed Scott Pilgrim + parked Batman.
