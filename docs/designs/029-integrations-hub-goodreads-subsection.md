@@ -252,3 +252,53 @@ unchanged). PLAN-047.
   e2e: both walls click-through to the detail page + per-format LL/Kapowarr round trip with the fired chip +
   the parked-comic no-search state. Screenshot side-by-side (`capture-wanted-detail-parity.ts`): a Movies/TV
   WANTED detail beside the new book-wanted detail (dark, desktop + 390) + the force-search feedback states.
+
+## Amendment 3 — 2026-07-16 (PLAN-056: honest sort participation + the three-state Wanted filter)
+
+Owner live report (2026-07-16): "Wanted is always at the top for Books and Audiobooks in Library …
+I'd also like to work in 'Hide Wanted' somehow to the selector." **Triage finding:** the pinning was
+DELIBERATE composition order, not a null-sort-key artifact — amendment-1 ruled "Wanted items merge
+INLINE at the head of the flat book wall's item stream", and the client implemented that literally
+(concatenate `books.wanted` ahead of the `books.search` page); the overlay never participated in the
+active sort at all. This amendment supersedes amendment-1's *head-of-the-stream placement* and its
+*two-state `?wanted=1` toggle* (the card anatomy, gating, data model, and detail-page flow all
+stand). PLAN-056.
+
+- **Server-composed stream.** `books.search` gains a three-state `wanted` input
+  (`all | only | hide`, default `all`) and, under `all`, composes the wanted overlay INTO the paged
+  item stream server-side: one SQL UNION of the item query and the (bounded) wanted list bound as a
+  `VALUES` row-set, each side carrying the same per-sort key columns, ordered and offset-paged by
+  Postgres. A wanted card lands exactly where the active sort says — never pinned. The client's
+  flat grid renders the discriminated entries (`kind: 'item' | 'wanted'`) as the same poster blocks
+  as before; the always-on `books.wanted` read remains only as the selector's populated-value gate
+  and the wall-stage poll's enable signal.
+- **The wanted sort-key mapping** (`wantedPrimarySortValue` — a want answers what it honestly can):
+  *Title* → the request's title snapshot, normalized like an item's `sort_title` (trim+lowercase);
+  *Author* → the author snapshot (null ⇒ NULLS LAST, like any author-less item); *Added* → the
+  request's `created_at` (when the app minted the want — the honest peer of an item's
+  `COALESCE(source_added_at, first_seen_at)`; newly exposed on `WantedBookRequestView`);
+  *Year / Released / Length / Pages* → null (no edition metadata — the want sorts with the
+  null-valued items, NULLS LAST in either direction); *List order* → never composed (a want is not
+  a collection member). Tiebreaks mirror the item ORDER BY (`sort_title` asc, id asc); the `added`
+  sort gains the `sort_title` tiebreak on BOTH paths (same-instant batches are real — one sync
+  transaction stamps many rows).
+- **The three-state selector.** The `btn sm` "Wanted only" toggle becomes an
+  **All · Wanted only · Hide wanted** `.seg` segmented group in the chip bar (the wall's existing
+  idiom — zero new components; fixed per-segment labels, recolor-not-reflow per ADR-015).
+  URL: `?wanted=only|hide`, absent = All (the default — current behavior minus the pinning,
+  Q-01 lean confirmed); a replace-in-place refinement (D-19); legacy `?wanted=1` links read as
+  Wanted-only. Value-gated on the overlay itself (no dead control), absent inside a drill, and it
+  applies to all three walls (`WANTED_FACET` is unchanged in the registry — `kind:'select'`,
+  `param:'wanted'`, dataGated).
+- **Server-authoritative states.** `hide` excludes the wanted rows in `books.search` itself (never
+  a client/CSS hide); `only` returns the query-narrowed wants alone, sorted by the active sort
+  (facet chips still cannot narrow synthetic rows — unchanged semantics, now server-held); the
+  D-09 honesty rule rides the server too: any refinement beyond the text query (facets, A–Z letter,
+  read-state, a collection drill) excludes wants from the `all` stream.
+- **Test strategy (added).** API (embedded PG, `books-wanted-sort.test.ts`): a wanted 'Aardvark'
+  sorts FIRST under Title A–Z and NOT first under Pages (NULLS LAST) — the pinning asserted GONE;
+  author-snapshot + created_at participation; the composed offset cursor pages the union without
+  duplicating a want; the three states (hide excludes / only exclusive / all both); the honesty
+  rule (query narrows wants, facets and letter exclude them). e2e: the three-state selector
+  round-trip (`?wanted=only|hide` → URL → wall) + the sorted-composition assertions on the books
+  wall.

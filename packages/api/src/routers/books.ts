@@ -156,8 +156,12 @@ function orderForSort(sort: BooksSort, dir?: 'asc' | 'desc', collection?: string
     case 'author':
       return [sql`${booksItems.author} ${d} NULLS LAST`, asc(booksItems.sortTitle), asc(booksItems.id)];
     case 'added':
+      // PLAN-056 — sort_title tiebreak (was id-only): a bulk sync stamps many rows with one
+      // transaction instant, so same-instant ties are REAL — break them alphabetically, exactly
+      // like the composed union path (COMPOSED_SORT_KEYS), so the two paths never disagree.
       return [
         sql`COALESCE(${booksItems.sourceAddedAt}, ${booksItems.firstSeenAt}) ${d}`,
+        asc(booksItems.sortTitle),
         asc(booksItems.id),
       ];
     case 'year':
@@ -355,9 +359,11 @@ const COMPOSED_SORT_KEYS: Record<
   title: { itemExpr: () => sql`${booksItems.sortTitle}`, cast: 'text', titleTiebreak: false },
   author: { itemExpr: () => sql`${booksItems.author}`, cast: 'text', titleTiebreak: true },
   added: {
+    // titleTiebreak — requests minted in one sync share a created_at (transaction now()), exactly
+    // like a bulk-synced item batch shares first_seen_at: alphabetical within the tie, not uuid.
     itemExpr: () => sql`COALESCE(${booksItems.sourceAddedAt}, ${booksItems.firstSeenAt})`,
     cast: 'timestamptz',
-    titleTiebreak: false,
+    titleTiebreak: true,
   },
   year: { itemExpr: () => sql`${booksItems.year}`, cast: 'integer', titleTiebreak: true },
   released: { itemExpr: () => sql`${booksItems.releasedAt}`, cast: 'timestamptz', titleTiebreak: true },
