@@ -277,14 +277,19 @@ are the existing gated `/api/books/cover` proxy — no new art path.
   grouping rows (sibling dimension, defaults unchanged) extend the existing parity/asymmetry tests.
 - **Guard** — both new tables in all six regex families (the existing no-direct-state-writes test
   enforces it repo-wide once listed).
-- **e2e** — deferred honestly (Q-01): the stub-books harness serves the walls' items but no
-  collection endpoints yet; a collections journey needs stub `/api/Collection` + `/api/collections`
-  fixtures + a seeded mirror pass. Tracked in the plan file, not half-built here.
+- **e2e substrate (shipped)** — the stub-books harness gained the collection endpoints
+  (`/api/Collection`, the all-v2 CollectionTags branch, `POST /api/ReadingList/lists`,
+  `/api/ReadingList/items`, ABS `/api/collections` — one fixture per concept incl. a chapter-dupe
+  reading list) and the harness seeds the mirror by RUNNING the real `books-collections-sync` mode
+  after the books-sync seed — so dev:local and every e2e run render the Collections views
+  hermetically. The dedicated journey SPEC is deferred (Q-01); the flows were driven live against
+  dev:local during the build (cards, ordered "List order" drill, unordered no-position drill,
+  Comics selector gating).
 
 ## Open questions
 
 | ID | Question | Resolution |
 |----|----------|------------|
-| Q-01 | e2e smoke spec for the books Collections view? | DEFERRED — the stub-books harness carries no collection fixtures yet; adding them + a seeded journey is a follow-up (plan file), not half-built here. |
+| Q-01 | e2e smoke spec for the books Collections view? | SUBSTRATE SHIPPED, SPEC DEFERRED — the stub collection fixtures + the harness `books-collections-sync` seed landed with the build (dev:local + every e2e run render the views), so the journey spec is now a cheap follow-up; the flows were hand-driven against dev:local during the build. |
 | Q-02 | Merge cross-source collections (the same series in Kavita + ABS) into one card via PLAN-050 pairing data? | DEFERRED (owner lean: two honest source-scoped collections v1; merge later after the owner sees the mirror live). |
 | Q-03 | Kavita response shapes verified from the tagged 0.9.0.2 SOURCE + live route probes, not an authed live call (no creds in the build env). | Accepted risk, mitigated: strip-mode zod + the fixture battery; the deployed image is pinned to the exact verified tag. First staging `books-collections-sync` run validates live; any drift is a client-schema patch, not a schema migration. |
