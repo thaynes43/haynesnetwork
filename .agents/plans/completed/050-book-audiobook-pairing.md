@@ -1,8 +1,11 @@
 # PLAN-050: Book ⇄ audiobook format pairing (Integration Saga pt 5)
 
-- **Status:** BUILT (2026-07-16 — docs + code + tests on `feat/plan-050-format-pairing`, awaiting
-  coordinator review/PR; owner green-lit 2026-07-16 morning; runs PARALLEL to PLAN-037 — separate
-  branches, releases serialize).
+- **Status:** Completed (v0.64.0, 2026-07-16 — feat #317, release #318, haynes-ops #2073;
+  LIVE-VALIDATED: first run paired 321 titles, queued 1,519 candidates, minted exactly the
+  25-cap with 24 honestly unmintable on the exhausted GB daily quota — designed degradation,
+  resumes at reset). **Residual:** consider a GB-429 circuit breaker so hourly runs skip the
+  mint pass during a dead quota window instead of burning attempt budget (DESIGN-036 Q-01
+  adjacent).
 - **Docs:** ADR-065 (Accepted) · DESIGN-036 · PRD R-211..R-213 · glossary T-183..T-185.
 - **Shipped shape:** migration 0054 (`books_format_pairs` + the `book_requests` system-want widening
   + `format-pairing` run kind); domain `matchFormatPairs`/`syncFormatPairs`/`mintPairingWants`/
