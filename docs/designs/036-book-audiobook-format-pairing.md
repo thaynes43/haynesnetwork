@@ -37,28 +37,41 @@ admit multiple NULLs). New `origin` text NOT NULL DEFAULT `'goodreads'`, CHECK �
 `('goodreads','pairing')`. New `pairing_books_item_id` FK → `books_items` (CASCADE) — the anchor
 library item whose missing format the want fills. Coherence CHECK: `origin='goodreads'` ⇒
 shelf+integration keys NOT NULL; `origin='pairing'` ⇒ `pairing_books_item_id` NOT NULL. PARTIAL
-UNIQUE index on `pairing_books_item_id` WHERE NOT NULL — one open pairing want per (books_item,
-format); the missing format is implied by the anchor's `media_kind` (ADR-065 C-03). On a pairing
+UNIQUE index on `pairing_books_item_id` WHERE NOT NULL — ONE pairing want per anchor item for its
+LIFETIME (the missing format is implied by the anchor's `media_kind`), self-healing on re-vanish
+via the D-04 reconcile (ADR-065 C-03). On a pairing
 want the held format is `landed`; only the missing format runs the lifecycle;
 `comic_status`/`matched_books_item_id` stay NULL. `SYNC_RUN_KINDS` grows `format-pairing`
 (run_kind CHECK rebuilt — the 0050 relax pattern).
 
-### D-03 — The conservative matcher (kind-partitioned)
+### D-03 — The conservative matcher (kind-partitioned; review-hardened 2026-07-16)
 
 `matchFormatPairs(items)` — a PURE function over live, non-comic `books_items` projections:
-partition by `media_kind` (`book` vs `audiobook`), index audiobooks by `normTitle`, then for each
-book (deterministic order: `sortTitle`, then id) take the first unclaimed audiobook with the same
-`normTitle` AND author agreement — both `normAuthor` values non-empty and one a substring of the
-other. Null/empty author on either side ⇒ no pair. Greedy one-to-one (both sides UNIQUE in D-01).
-`normTitle`/`normAuthor` are the EXISTING goodreads-match idioms, exported from
-`book-requests.ts` — one normalizer, never a fork.
+partition by `media_kind` (`book` vs `audiobook`), index audiobooks by the PAIRING TITLE KEY
+(`pairingTitleKey`), then for each book (deterministic order: `sortTitle`, then id) take the first
+unclaimed audiobook with the IDENTICAL key AND author agreement — both `normAuthor` values
+non-empty and one a substring of the other. Null/empty author on either side ⇒ no pair. Greedy
+one-to-one (both sides UNIQUE in D-01).
+
+The pairing key is deliberately NOT the goodreads `normTitle` (its cut at the first `:`/`(` would
+collapse distinct franchise works — "Star Wars: Heir to the Empire" vs "Star Wars: Thrawn"): it
+keeps the FULL title, lowercases, collapses non-alphanumerics to single spaces, drops ONLY the
+edition-noise tokens {a, an, the, novel, unabridged, abridged, edition}, and the matcher requires
+full equality of the remaining token sequence. "Project Hail Mary: A Novel" ⇄ "Project Hail Mary
+(Unabridged)" pair; a bare "Dune" vs "Dune: Book One of the Dune Chronicles" honestly does not
+(the conservative miss; Q-02 is the upgrade path). The goodreads want→library matcher keeps its
+own `normTitle` untouched; `normAuthor` stays the shared author normalizer.
 
 ### D-04 — `syncFormatPairs` single-writer
 
 Reads the live mirror, computes the fresh pair set (D-03), then in ONE transaction: deletes rows no
 longer in the set (either side tombstoned, or the match no longer holds — the reconcile), inserts
-new pairs, and advances `last_seen_at`/`updated_at` on survivors. Report:
-`{ paired, added, dropped }`. Unaudited (derived cache, D-01).
+new pairs, and advances `last_seen_at`/`updated_at` on survivors. The SAME transaction runs the
+RE-VANISH self-heal: a pairing want whose anchor is live, non-comic, and UNPAIRED again while its
+missing-format status reads `landed` (the both-landed inert state left behind when the pair stood)
+has that missing format reset to `requested` — the want re-enters the D-05 retry queue and the
+estate keeps wanting the vanished format. Report: `{ paired, added, dropped, revived }`. Unaudited
+(derived cache, D-01).
 
 ### D-05 — `mintPairingWants` (paced, capped, honest)
 
@@ -143,9 +156,11 @@ surface for an estate want); an uncapped backfill (rejected — owner ruling R1a
 
 ## Test strategy
 
-Domain: matcher unit tests (author agreement REQUIRED, null-author no-pair, subtitle/edition
-variants pairing via normTitle, comic exclusion, substring-either-direction); `syncFormatPairs`
-upsert + tombstone-reconcile; mint-cap (backlog N > cap mints exactly cap, deterministic order,
+Domain: matcher unit tests (author agreement REQUIRED, null-author no-pair, edition-noise variants
+pairing via pairingTitleKey, franchise subtitles NOT collapsing, bare-stem vs subtitled edition NOT
+pairing, comic exclusion, substring-either-direction); `syncFormatPairs` upsert +
+tombstone-reconcile + the re-vanish reset (pair forms → want lands → side tombstones → requested
+again → re-mints under the cap); mint-cap (backlog N > cap mints exactly cap, deterministic order,
 resumes next run), llBookId reuse-before-resolve, unresolvable ⇒ unmintable row retried later; the
 LL push chain against the existing stub (missing-format-ONLY queue/search, one addBook); reconcile
 rides mapLlStatus/advanceStatus; governor-untouched pinned by asserting the pairing path invokes

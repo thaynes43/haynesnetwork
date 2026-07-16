@@ -8,7 +8,8 @@ const MATCH_KIND_SQL_LIST = FORMAT_PAIR_MATCH_KINDS.map((k) => `'${k}'`).join(',
 /**
  * ADR-065 / DESIGN-036 (PLAN-050 — book ⇄ audiobook pairing) — the FORMAT PAIR: one row per declared
  * "this Kavita book row and this ABS audiobook row are the SAME title". Matched CONSERVATIVELY
- * (normalized title + author agreement — never a wrong pair; an ambiguous or author-less title stays
+ * (the FULL noise-stripped pairing title key + author agreement — a wrong pair would need identical
+ * noise-stripped full titles AND agreeing authors; an ambiguous or author-less title stays
  * honestly UNPAIRED with no row here). Both sides are UNIQUE — each library row sits in at most one
  * pair — and comics never participate (ADR-065 C-01).
  *

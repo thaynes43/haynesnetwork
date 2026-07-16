@@ -19,6 +19,7 @@ import {
   matchFormatPairs,
   mintPairingWants,
   missingFormatFor,
+  pairingTitleKey,
   runFormatPairing,
   syncFormatPairs,
   type LazyLibrarianClientBundle,
@@ -122,10 +123,27 @@ describe('matchFormatPairs (the conservative matcher)', () => {
     ]);
   });
 
-  it('pairs across subtitle/edition variants (the normTitle cut at ":" / "(")', () => {
+  it('pairs across edition-noise variants (": A Novel" / "(Unabridged)" strip to the same key)', () => {
     const book = pi({ title: 'Project Hail Mary: A Novel', author: 'Andy Weir', mediaKind: 'book' });
     const audio = pi({ title: 'Project Hail Mary (Unabridged)', author: 'Andy Weir', mediaKind: 'audiobook' });
     expect(matchFormatPairs([book, audio])).toHaveLength(1);
+    expect(pairingTitleKey('Project Hail Mary: A Novel')).toBe('project hail mary');
+    expect(pairingTitleKey('Project Hail Mary (Unabridged)')).toBe('project hail mary');
+  });
+
+  it('NEVER collapses distinct franchise works — the full title is load-bearing (review finding 1)', () => {
+    // The subtitle-cutting goodreads normTitle would key BOTH as "star wars" and mispair them.
+    const book = pi({ title: 'Star Wars: Heir to the Empire', author: 'Timothy Zahn', mediaKind: 'book' });
+    const audio = pi({ title: 'Star Wars: Thrawn', author: 'Timothy Zahn', mediaKind: 'audiobook' });
+    expect(matchFormatPairs([book, audio])).toEqual([]);
+    expect(pairingTitleKey('Star Wars: Heir to the Empire')).toBe('star wars heir to empire');
+    expect(pairingTitleKey('Star Wars: Thrawn')).toBe('star wars thrawn');
+  });
+
+  it('a bare stem does NOT pair with a subtitled edition — the conservative miss is correct', () => {
+    const book = pi({ title: 'Dune', author: 'Frank Herbert', mediaKind: 'book' });
+    const audio = pi({ title: 'Dune: Book One of the Dune Chronicles', author: 'Frank Herbert', mediaKind: 'audiobook' });
+    expect(matchFormatPairs([book, audio])).toEqual([]);
   });
 
   it('REQUIRES author agreement — a same-title different-author audio never pairs', () => {
@@ -205,18 +223,18 @@ describe('syncFormatPairs (the derived-cache single-writer)', () => {
     await seedItem({ title: 'Lonely Book', author: 'Someone Else', mediaKind: 'book' });
 
     const first = await syncFormatPairs({ db: t.db });
-    expect(first).toEqual({ paired: 1, added: 1, dropped: 0 });
+    expect(first).toEqual({ paired: 1, added: 1, dropped: 0, revived: 0 });
     const [pair] = await t.db.select().from(booksFormatPairs);
     expect(pair).toMatchObject({ bookItemId: bookId, audioItemId: audioId, matchedVia: 'title_author' });
 
     // An unchanged re-run adds/drops nothing (the survivor advances last_seen_at).
     const second = await syncFormatPairs({ db: t.db, now: new Date(Date.now() + 1000) });
-    expect(second).toEqual({ paired: 1, added: 0, dropped: 0 });
+    expect(second).toEqual({ paired: 1, added: 0, dropped: 0, revived: 0 });
 
     // Tombstone the audio side — the pair drops on the next run (the reconcile).
     await t.db.update(booksItems).set({ deletedAt: new Date() }).where(eq(booksItems.id, audioId));
     const third = await syncFormatPairs({ db: t.db });
-    expect(third).toEqual({ paired: 0, added: 0, dropped: 1 });
+    expect(third).toEqual({ paired: 0, added: 0, dropped: 1, revived: 0 });
     expect(await t.db.select().from(booksFormatPairs)).toHaveLength(0);
   });
 });
@@ -411,6 +429,35 @@ describe('runFormatPairing (the mode body: pairs → mint → reconcile)', () =>
       expect(['addBook', 'queueBook', 'searchBook']).toContain(prop);
     }
     expect(ll.writeAccessed.size).toBeGreaterThan(0);
+  });
+
+  it('RE-VANISH self-heal (review finding 3): pair forms, want lands, the audio side tombstones — the want resets to requested and re-mints under the cap', async () => {
+    // 1. Only the book exists — the mint pushes the audio want.
+    const bookId = await seedItem({ title: 'Hyperion', author: 'Dan Simmons', mediaKind: 'book' });
+    const gb = stubGb(() => 'gb-hyp');
+    await runFormatPairing({ db: t.db, ll: stubLl(() => null).bundle, gb: gb.gb, pacer: async () => {} });
+
+    // 2. The audiobook arrives: the pair forms and LL reports both legs Open — the want goes
+    //    both-landed (inert). Nothing revives while the pair stands.
+    const audioId = await seedItem({ title: 'Hyperion', author: 'Dan Simmons', mediaKind: 'audiobook' });
+    const llLanded = stubLl((id) => (id === 'gb-hyp' ? { ebookStatus: 'Open', audioStatus: 'Open' } : null));
+    const run2 = await runFormatPairing({ db: t.db, ll: llLanded.bundle, gb: gb.gb, pacer: async () => {} });
+    expect(run2).toMatchObject({ paired: 1, added: 1, revived: 0 });
+    const [landed] = await t.db.select().from(bookRequests);
+    expect(landed!.ebookStatus).toBe('landed');
+    expect(landed!.audioStatus).toBe('landed');
+
+    // 3. The audio side vanishes: the pair drops AND the inert want's missing format resets to
+    //    `requested` in the same run — the mint retry re-pushes it under the cap.
+    await t.db.update(booksItems).set({ deletedAt: new Date() }).where(eq(booksItems.id, audioId));
+    const ll3 = stubLl(() => null);
+    const run3 = await runFormatPairing({ db: t.db, ll: ll3.bundle, gb: gb.gb, pacer: async () => {} });
+    expect(run3).toMatchObject({ paired: 0, dropped: 1, revived: 1, minted: 0, pushed: 1 });
+    const [revived] = await t.db.select().from(bookRequests);
+    expect(revived!.pairingBooksItemId).toBe(bookId);
+    expect(revived!.ebookStatus).toBe('landed'); // the held format stays ours
+    expect(revived!.audioStatus).toBe('wanted'); // reset to requested, then re-pushed
+    expect(ll3.calls.filter((c) => c.cmd === 'queueBook').map((c) => c.format)).toEqual(['audiobook']);
   });
 
   it('degrades honestly with NO LL bundle: pairs + mints, pushes nothing, statuses stay requested', async () => {

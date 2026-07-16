@@ -63,13 +63,21 @@ backfill (rejected — R1a); **CHOSEN: estate-wide auto-mint, paced by a per-run
 
 ## Decision outcome
 
-- **C-01 — Conservative matcher.** A pair is declared ONLY when a live Kavita `book` row and a live
-  ABS `audiobook` row agree on normalized title (the existing `normTitle` idiom: lowercase, strip
-  leading articles, cut at the first `:`/`(`, collapse non-alphanumerics) AND on author — a
-  non-empty `normAuthor` substring match in either direction. A null/empty author on EITHER side ⇒
-  no auto-pair. Comics never participate. NEVER a wrong pair: an ambiguous or author-less title
-  stays honestly UNPAIRED. Kind-partitioned matching (books map vs audiobooks map) — the
-  `loadLibraryMatcher` idiom, not a reuse of its kind-collapsing instance.
+- **C-01 — Conservative matcher (review-hardened 2026-07-16).** A pair is declared ONLY when a live
+  Kavita `book` row and a live ABS `audiobook` row agree on the PAIRING TITLE KEY — the FULL title
+  (deliberately NOT the goodreads `normTitle`, whose cut at the first `:`/`(` would collapse
+  distinct franchise works like "Star Wars: Heir to the Empire" vs "Star Wars: Thrawn"): lowercase,
+  collapse non-alphanumerics to single spaces, drop ONLY the edition-noise tokens
+  {a, an, the, novel, unabridged, abridged, edition}, and require FULL EQUALITY of the remaining
+  token sequence — AND on author (a non-empty `normAuthor` substring match in either direction). So
+  "Project Hail Mary: A Novel" ⇄ "Project Hail Mary (Unabridged)" pair while a bare "Dune" and
+  "Dune: Book One of the Dune Chronicles" honestly do not (the conservative miss). A null/empty
+  author on EITHER side ⇒ no auto-pair. Comics never participate. The guarantee, stated honestly: a
+  WRONG pair requires two DIFFERENT works to carry identical noise-stripped full titles AND agreeing
+  authors — everything short of that stays UNPAIRED; identifier-backed matching (ISBN/ASIN) remains
+  the upgrade path (DESIGN-036 Q-02). The goodreads want→library matcher keeps its own `normTitle`
+  untouched. Kind-partitioned matching (books map vs audiobooks map) — the `loadLibraryMatcher`
+  idiom, not a reuse of its kind-collapsing instance.
 - **C-02 — `books_format_pairs` (migration 0054).** One row per declared pair:
   `book_item_id`/`audio_item_id` FK → `books_items` (CASCADE), each UNIQUE (a row is at most one
   pair per side), `matched_via` (v1: `title_author`), `first_seen_at`/`last_seen_at` + timestamps.
@@ -81,11 +89,14 @@ backfill (rejected — R1a); **CHOSEN: estate-wide auto-mint, paced by a per-run
   CHECK-constrained; a new `pairing_books_item_id` FK → `books_items` (CASCADE) names the library
   item whose missing format the want fills. A coherence CHECK enforces origin↔keys (goodreads ⇒
   shelf+integration keys present; pairing ⇒ the pairing anchor present). A PARTIAL UNIQUE index on
-  `pairing_books_item_id` (WHERE NOT NULL) enforces ONE open pairing want per (books_item, format)
-  — the missing format is fully implied by the anchor's `media_kind` (a `book` anchor wants the
-  audiobook; an `audiobook` anchor wants the ebook), so the item-scoped unique realizes the
-  (item, format) rule exactly. On a pairing want the HELD format's status is `landed` (honest — it
-  is in the library) and only the missing format runs the lifecycle.
+  `pairing_books_item_id` (WHERE NOT NULL) caps the ledger at ONE pairing want per anchor item FOR
+  ITS LIFETIME — the missing format is fully implied by the anchor's `media_kind` (a `book` anchor
+  wants the audiobook; an `audiobook` anchor wants the ebook), so the row IS the (item, format)
+  want. The want SELF-HEALS on re-vanish: when a pair breaks after the want went both-landed
+  (inert), the pair reconcile resets the missing format to `requested` in the same transaction,
+  putting the want back on the mint retry queue — the estate never silently stops wanting a
+  vanished format. On a pairing want the HELD format's status is `landed` (honest — it is in the
+  library) and only the missing format runs the lifecycle.
 - **C-04 — Wanted reads widen from inner-join to origin-aware.** `getWantedBookRequests` and
   `getBookRequestDetail` LEFT-join the integration tables and include `origin='pairing'` rows;
   attribution renders the label "Format pairing" in place of a requester name. The per-integration

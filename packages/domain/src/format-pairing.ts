@@ -1,10 +1,13 @@
 // ADR-065 / DESIGN-036 (PLAN-050 — book ⇄ audiobook format pairing). Three pieces, one file:
-//   • matchFormatPairs — the PURE, CONSERVATIVE matcher (normTitle + author agreement, comics
-//     excluded, greedy one-to-one; NEVER a wrong pair — ambiguity stays honestly UNPAIRED);
+//   • matchFormatPairs — the PURE, CONSERVATIVE matcher (the pairing FULL-title key + author
+//     agreement, comics excluded, greedy one-to-one). A wrong pair requires IDENTICAL
+//     noise-stripped full titles AND agreeing authors; anything less stays honestly UNPAIRED
+//     (identifier-backed matching is the known upgrade path — DESIGN-036 Q-02);
 //   • syncFormatPairs — the SINGLE WRITER for the books_format_pairs derived cache (guard-listed;
 //     rebuildable, no audit row — the media_plex_matches class): fresh pairs insert, survivors
 //     advance last_seen_at, a pair whose either side tombstoned (or whose match no longer holds)
-//     drops;
+//     drops — and a both-landed pairing want whose pair just broke has its missing format reset to
+//     `requested` in the SAME tx (the re-vanish self-heal) so it re-enters the mint retry queue;
 //   • mintPairingWants + runFormatPairing — the PACED estate-wide system-want mint (owner rulings
 //     R1/R1a): unpaired items lacking the other format mint book_requests rows (origin='pairing'),
 //     capped at PAIRING_MINT_CAP_PER_RUN attempts per run, LL identity resolved reuse-first then
@@ -23,7 +26,7 @@ import {
   type DbClient,
   type FormatPairMatchKind,
 } from '@hnet/db';
-import { and, eq, inArray, isNotNull, isNull, ne } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import { inTransaction, resolveDb } from './db-client';
 import {
   applyRequestReconcile,
@@ -65,14 +68,42 @@ function authorsAgree(a: string, b: string): boolean {
   return a.length > 0 && b.length > 0 && (a.includes(b) || b.includes(a));
 }
 
+/**
+ * ADR-065 C-01 (review-hardened 2026-07-16) — the EDITION-NOISE tokens the pairing key drops.
+ * Exactly these: the articles plus the packaging words the two ecosystems decorate the SAME work
+ * with ("… : A Novel", "… (Unabridged)"). Nothing else — subtitles stay load-bearing.
+ */
+const PAIRING_NOISE_TOKENS = new Set(['a', 'an', 'the', 'novel', 'unabridged', 'abridged', 'edition']);
+
+/**
+ * The PAIRING title key — deliberately NOT the goodreads-match `normTitle` (which cuts at the first
+ * ':'/'(' and would collapse DISTINCT franchise works: "Star Wars: Heir to the Empire" and
+ * "Star Wars: Thrawn" share an author, and a subtitle-cutting key would mispair them). This key
+ * keeps the FULL title: lowercase, collapse non-alphanumerics to single spaces, drop ONLY the
+ * PAIRING_NOISE_TOKENS, and the matcher requires FULL EQUALITY of the remaining token sequence.
+ * "Project Hail Mary: A Novel" ⇄ "Project Hail Mary (Unabridged)" both reduce to
+ * "project hail mary"; "star wars heir to empire" ≠ "star wars thrawn". A bare stem vs a subtitled
+ * edition ("Dune" vs "Dune: Book One of the Dune Chronicles") does NOT pair — the conservative
+ * miss is correct (DESIGN-036 Q-02 is the upgrade path).
+ */
+export function pairingTitleKey(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(' ')
+    .filter((w) => w.length > 0 && !PAIRING_NOISE_TOKENS.has(w))
+    .join(' ');
+}
+
 const byDeterministicOrder = (a: PairableItem, b: PairableItem): number =>
   a.sortTitle.localeCompare(b.sortTitle) || a.id.localeCompare(b.id);
 
 /**
  * The CONSERVATIVE, kind-partitioned matcher (ADR-065 C-01): a Kavita `book` pairs with an ABS
- * `audiobook` only on normalized-title equality (the normTitle idiom) PLUS author agreement. A
- * null/empty author on either side pairs nothing; comics never participate. Greedy one-to-one in
- * deterministic order (sortTitle, id) — each side lands in at most one pair (the schema uniques).
+ * `audiobook` only on FULL noise-stripped title equality (pairingTitleKey — never the
+ * subtitle-cutting goodreads normTitle) PLUS author agreement. A null/empty author on either side
+ * pairs nothing; comics never participate. Greedy one-to-one in deterministic order (sortTitle, id)
+ * — each side lands in at most one pair (the schema uniques).
  */
 export function matchFormatPairs(items: readonly PairableItem[]): FormatPairMatch[] {
   const books = items.filter((i) => i.mediaKind === 'book').sort(byDeterministicOrder);
@@ -80,7 +111,7 @@ export function matchFormatPairs(items: readonly PairableItem[]): FormatPairMatc
 
   const audioByTitle = new Map<string, PairableItem[]>();
   for (const a of audios) {
-    const key = normTitle(a.title);
+    const key = pairingTitleKey(a.title);
     if (!key) continue;
     const bucket = audioByTitle.get(key) ?? [];
     bucket.push(a);
@@ -90,7 +121,7 @@ export function matchFormatPairs(items: readonly PairableItem[]): FormatPairMatc
   const taken = new Set<string>();
   const pairs: FormatPairMatch[] = [];
   for (const book of books) {
-    const key = normTitle(book.title);
+    const key = pairingTitleKey(book.title);
     if (!key) continue;
     const bookAuthor = normAuthor(book.author);
     if (!bookAuthor) continue; // null/empty author ⇒ no auto-pair, ever
@@ -116,12 +147,22 @@ export interface SyncFormatPairsReport {
   added: number;
   /** Pairs dropped (a side tombstoned, or the match no longer holds — the reconcile). */
   dropped: number;
+  /**
+   * RE-VANISH self-heal (review finding 3): both-landed pairing wants whose anchor is unpaired
+   * again — the missing format was reset to `requested` so the mint retry queue picks it back up.
+   */
+  revived: number;
 }
 
 /**
  * Rebuild the books_format_pairs derived cache from the LIVE mirror: compute the fresh pair set
  * (matchFormatPairs), then in ONE transaction drop rows no longer declared, insert the new pairs,
  * and advance last_seen_at on survivors. No per-row audit (rebuildable derived cache — ADR-065 C-02).
+ *
+ * The SAME transaction runs the RE-VANISH reconcile: a pairing want exists once per anchor for its
+ * lifetime (the partial unique), and one whose formats are BOTH landed is inert — so when its
+ * anchor is unpaired again (the counterpart vanished) the missing format is reset to `requested`,
+ * putting the want back on the mint retry queue (ADR-065 C-03 self-heal).
  */
 export async function syncFormatPairs(input: {
   db?: DbClient;
@@ -143,6 +184,7 @@ export async function syncFormatPairs(input: {
 
   let added = 0;
   let dropped = 0;
+  let revived = 0;
   await inTransaction(input.db, async (tx) => {
     const existing = await tx
       .select({
@@ -189,9 +231,44 @@ export async function syncFormatPairs(input: {
         .set({ lastSeenAt: now, updatedAt: now })
         .where(inArray(booksFormatPairs.bookItemId, [...surviving]));
     }
+
+    // RE-VANISH reconcile (same tx as the pair drop): a want per anchor exists for its LIFETIME —
+    // when the counterpart vanishes after the want went both-landed (inert), reset the MISSING
+    // format to `requested` so the estate wants it again (the mint retry queue re-pushes it).
+    const liveById = new Map(rows.map((r) => [r.id, r]));
+    const pairedIds = new Set<string>();
+    for (const p of fresh) {
+      pairedIds.add(p.bookItemId);
+      pairedIds.add(p.audioItemId);
+    }
+    const pairingWants = await tx
+      .select({
+        id: bookRequests.id,
+        pairingBooksItemId: bookRequests.pairingBooksItemId,
+        ebookStatus: bookRequests.ebookStatus,
+        audioStatus: bookRequests.audioStatus,
+      })
+      .from(bookRequests)
+      .where(eq(bookRequests.origin, 'pairing'));
+    for (const want of pairingWants) {
+      const anchor = want.pairingBooksItemId ? liveById.get(want.pairingBooksItemId) : undefined;
+      if (!anchor || anchor.mediaKind === 'comic' || pairedIds.has(anchor.id)) continue;
+      const missing = missingFormatFor(anchor.mediaKind);
+      const missingStatus = missing === 'ebook' ? want.ebookStatus : want.audioStatus;
+      if (missingStatus !== 'landed') continue; // still in flight / already retryable — nothing to heal
+      await tx
+        .update(bookRequests)
+        .set({
+          ebookStatus: missing === 'ebook' ? 'requested' : want.ebookStatus,
+          audioStatus: missing === 'audiobook' ? 'requested' : want.audioStatus,
+          updatedAt: now,
+        })
+        .where(eq(bookRequests.id, want.id));
+      revived += 1;
+    }
   });
 
-  return { paired: fresh.length, added, dropped };
+  return { paired: fresh.length, added, dropped, revived };
 }
 
 // ---------------------------------------------------------------------------
@@ -258,12 +335,7 @@ async function upsertPairingWant(input: {
 }): Promise<{ row: BookRequestRow; minted: boolean }> {
   const missing = missingFormatFor(input.item.mediaKind);
   return inTransaction(input.db, async (tx) => {
-    const [existing] = await tx
-      .select()
-      .from(bookRequests)
-      .where(eq(bookRequests.pairingBooksItemId, input.item.id))
-      .for('update');
-    if (existing) {
+    const refresh = async (existing: BookRequestRow): Promise<{ row: BookRequestRow; minted: boolean }> => {
       const llBookId = existing.llBookId ?? input.llBookId;
       const [row] = await tx
         .update(bookRequests)
@@ -271,7 +343,18 @@ async function upsertPairingWant(input: {
         .where(eq(bookRequests.id, existing.id))
         .returning();
       return { row: row!, minted: false };
-    }
+    };
+
+    const [existing] = await tx
+      .select()
+      .from(bookRequests)
+      .where(eq(bookRequests.pairingBooksItemId, input.item.id))
+      .for('update');
+    if (existing) return refresh(existing);
+
+    // Review finding 2 (TOCTOU): the select-then-insert races a concurrent minter — land the insert
+    // ON CONFLICT DO NOTHING against the pairing partial unique so a 23505 can never abort the run,
+    // and re-select (the row the rival won) when the insert returns nothing.
     const [row] = await tx
       .insert(bookRequests)
       .values({
@@ -287,8 +370,19 @@ async function upsertPairingWant(input: {
         createdAt: input.now,
         updatedAt: input.now,
       })
+      .onConflictDoNothing({
+        target: bookRequests.pairingBooksItemId,
+        where: sql`${bookRequests.pairingBooksItemId} IS NOT NULL`,
+      })
       .returning();
-    return { row: row!, minted: true };
+    if (row) return { row, minted: true };
+    const [raced] = await tx
+      .select()
+      .from(bookRequests)
+      .where(eq(bookRequests.pairingBooksItemId, input.item.id))
+      .for('update');
+    if (!raced) throw new Error('pairing want insert conflicted but no row exists'); // unreachable
+    return refresh(raced);
   });
 }
 

@@ -5,8 +5,8 @@
 --   • book_requests grows the SYSTEM-WANT seat: integration_id/shelf_item_id go NULLABLE, a new
 --     `origin` discriminator ('goodreads' default | 'pairing'), a new `pairing_books_item_id` FK
 --     (the anchor library item whose missing format the want fills), an origin↔keys coherence
---     CHECK, and a partial unique — ONE open pairing want per anchor item (the missing format is
---     implied by the anchor's media_kind).
+--     CHECK, and a partial unique — ONE pairing want per anchor item for its lifetime (the missing
+--     format is implied by the anchor's media_kind; the pair reconcile self-heals it on re-vanish).
 --   • SYNC_RUN_KINDS grows 'format-pairing' — parity run-kind CHECK rebuild (the 0050 pattern; the
 --     mode writes NO sync_runs row).
 -- A down-migration drops the pair table + the three book_requests additions, restores the NOT

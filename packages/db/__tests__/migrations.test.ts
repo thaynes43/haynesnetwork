@@ -1334,7 +1334,7 @@ describe('migrations against embedded Postgres 16', () => {
                VALUES ('pairing', $1, 'Pairing Target', 'An Author', 'landed', 'requested')`,
         values: [anchorId],
       });
-      // ONE open pairing want per anchor item — the partial unique rejects a second.
+      // ONE pairing want per anchor item (lifetime) — the partial unique rejects a second.
       await expect(
         client.query({
           text: `INSERT INTO book_requests (origin, pairing_books_item_id, title) VALUES ('pairing', $1, 'Pairing Target')`,

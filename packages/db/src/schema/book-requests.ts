@@ -34,8 +34,9 @@ const REQUEST_ORIGIN_SQL_LIST = BOOK_REQUEST_ORIGINS.map((o) => `'${o}'`).join('
  * seat: `origin` discriminates who minted the row ('goodreads' = a user's shelf want, the keys above
  * NOT NULL; 'pairing' = the estate's want for an unpaired library title's missing format — no user, no
  * shelf, `pairing_books_item_id` names the anchor). The origin↔keys coherence is CHECK-enforced and a
- * partial unique caps pairing wants at ONE open want per anchor item (the missing format is implied by
- * the anchor's media_kind). On a pairing want the HELD format sits `landed`; only the missing format
+ * partial unique caps the ledger at ONE pairing want per anchor item for its LIFETIME (the missing
+ * format is implied by the anchor's media_kind; the pair reconcile self-heals a both-landed want when
+ * its pair breaks). On a pairing want the HELD format sits `landed`; only the missing format
  * runs the lifecycle. One ledger, one status machine, one reconcile path — never a parallel table.
  */
 export const bookRequests = pgTable(
@@ -128,8 +129,9 @@ export const bookRequests = pgTable(
     // One request per shelf item (the mint is upsert-on-conflict on this key; NULLs — the pairing
     // wants — are exempt by Postgres unique semantics).
     unique('book_requests_shelf_item_unique').on(t.shelfItemId),
-    // ADR-065 C-03 — ONE open pairing want per (books_item, format): the missing format is implied by
-    // the anchor's media_kind, so the item-scoped partial unique realizes the (item, format) rule.
+    // ADR-065 C-03 — ONE pairing want per anchor item for its LIFETIME (the missing format is implied
+    // by the anchor's media_kind, so the row IS the (item, format) want). Self-healing: the pair
+    // reconcile resets a both-landed want's missing format to 'requested' when its pair breaks.
     uniqueIndex('book_requests_pairing_item_unique')
       .on(t.pairingBooksItemId)
       .where(sql`${t.pairingBooksItemId} IS NOT NULL`),
