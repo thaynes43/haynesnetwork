@@ -51,28 +51,43 @@ export function kavitaLibraryKind(type: number): 'book' | 'comic' | null {
 
 const paginationHeaderSchema = z.object({ totalItems: z.number().int().nullable().optional() });
 
-/** Read the list total from Kavita's `Pagination` response header (fallback: the page length). */
-function totalFromPaginationHeader(response: Response, fallback: number): number {
+/**
+ * Read the list total from Kavita's `Pagination` response header. Returns NULL when the header is
+ * absent or malformed — the caller decides what a missing total means (adversarial-review fix: a
+ * silent page-length fallback PROVES completion on a full first page, which would let a paged
+ * reconcile delete the unseen tail).
+ */
+function totalFromPaginationHeader(response: Response): number | null {
   const header = response.headers.get('Pagination');
   if (header) {
     try {
       const parsed = paginationHeaderSchema.safeParse(JSON.parse(header));
       if (parsed.success && typeof parsed.data.totalItems === 'number') return parsed.data.totalItems;
     } catch {
-      // malformed header — keep the fallback
+      // malformed header — not authoritative
     }
   }
-  return fallback;
+  return null;
 }
 
 export interface KavitaSeriesPage {
   items: KavitaSeries[];
+  /** The header total when authoritative, else the PAGE length (the legacy fallback value). */
   total: number;
+  /**
+   * True when `total` came from the `Pagination` response header. False = the page-length
+   * fallback — a FULL page with this false cannot prove the read is complete, so
+   * completion-sensitive callers (the books-collections-sync reconcile scoping) must treat it as
+   * TRUNCATED unless the page came back SHORT (a short page is an honest end-of-list).
+   */
+  hasAuthoritativeTotal: boolean;
 }
 
 export interface KavitaReadingListPage {
   items: KavitaReadingList[];
   total: number;
+  /** Same contract as KavitaSeriesPage.hasAuthoritativeTotal. */
+  hasAuthoritativeTotal: boolean;
 }
 
 export class KavitaClient {
@@ -164,7 +179,12 @@ export class KavitaClient {
     };
     const response = await this.authed('POST', path, filter);
     const items = await parseJson(response, kavitaSeriesListSchema, 'POST', path);
-    return { items, total: totalFromPaginationHeader(response, items.length) };
+    const headerTotal = totalFromPaginationHeader(response);
+    return {
+      items,
+      total: headerTotal ?? items.length,
+      hasAuthoritativeTotal: headerTotal !== null,
+    };
   }
 
   /**
@@ -194,7 +214,12 @@ export class KavitaClient {
     };
     const response = await this.authed('POST', path, filter);
     const items = await parseJson(response, kavitaSeriesListSchema, 'POST', path);
-    return { items, total: totalFromPaginationHeader(response, items.length) };
+    const headerTotal = totalFromPaginationHeader(response);
+    return {
+      items,
+      total: headerTotal ?? items.length,
+      hasAuthoritativeTotal: headerTotal !== null,
+    };
   }
 
   /**
@@ -206,7 +231,12 @@ export class KavitaClient {
     const path = `/api/ReadingList/lists?PageNumber=${pageNumber}&PageSize=${pageSize}&includePromoted=true`;
     const response = await this.authed('POST', path);
     const items = await parseJson(response, kavitaReadingListListSchema, 'POST', path);
-    return { items, total: totalFromPaginationHeader(response, items.length) };
+    const headerTotal = totalFromPaginationHeader(response);
+    return {
+      items,
+      total: headerTotal ?? items.length,
+      hasAuthoritativeTotal: headerTotal !== null,
+    };
   }
 
   /**

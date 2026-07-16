@@ -8,7 +8,12 @@ import { booksCollections, booksCollectionMembers } from '@hnet/db';
 import type { Database } from '@hnet/db';
 import { syncBooks, syncBooksCollections, type BooksItemInput } from '@hnet/domain';
 import type { AudiobookshelfClient, KavitaClient } from '@hnet/books/read';
-import { dedupeReadingListItems, fetchBooksCollectionsSnapshot } from '../src/books-collections';
+import {
+  KAVITA_COLLECTION_PAGE_SIZE,
+  KAVITA_READING_LIST_PAGE_SIZE,
+  dedupeReadingListItems,
+  fetchBooksCollectionsSnapshot,
+} from '../src/books-collections';
 import type { BooksSyncBundle } from '../src/books';
 import { bootMigratedDb, type TestDb } from './helpers';
 
@@ -26,10 +31,15 @@ function fakeKavita(overrides: Partial<KavitaClient> = {}): KavitaClient {
           { id: 502, name: 'HP Book 2', libraryId: 1 },
         ],
         total: 2,
+        hasAuthoritativeTotal: true,
       };
     },
     async listReadingListsPage() {
-      return { items: [{ id: 11, title: 'HP Reading Order', promoted: false, itemCount: 3 }], total: 1 };
+      return {
+        items: [{ id: 11, title: 'HP Reading Order', promoted: false, itemCount: 3 }],
+        total: 1,
+        hasAuthoritativeTotal: true,
+      };
     },
     async listReadingListItems(readingListId: number) {
       if (readingListId !== 11) throw new Error(`unexpected list ${readingListId}`);
@@ -268,7 +278,7 @@ describe('fetchBooksCollectionsSnapshot + syncBooksCollections (ADR-066)', () =>
 
   it('reconciles a vanished reading list once its family reads fully again (members CASCADE)', async () => {
     const noListsKavita = fakeKavita({
-      listReadingListsPage: async () => ({ items: [], total: 0 }),
+      listReadingListsPage: async () => ({ items: [], total: 0, hasAuthoritativeTotal: true }),
     } as Partial<KavitaClient>);
     const snap = await fetchBooksCollectionsSnapshot({ books: bundle(noListsKavita, fakeAbs()) });
     const report = await syncBooksCollections({
@@ -282,5 +292,130 @@ describe('fetchBooksCollectionsSnapshot + syncBooksCollections (ADR-066)', () =>
       'kavita/collection/4',
     ]);
     expect(await memberRows(t.db, '11', 'reading_list')).toHaveLength(0);
+  });
+
+  // Adversarial-review fix — a page-length total is NOT authoritative: a FULL page without the
+  // Pagination header can never prove completion, so degradation is keep-don't-reconcile.
+  describe('missing/malformed Pagination header (the non-authoritative-total contract)', () => {
+    it('a FULL member page WITHOUT an authoritative total is TRUNCATED — never member-reconciled', async () => {
+      const fullPageKavita = fakeKavita({
+        listCollectionSeriesPage: async () => ({
+          items: Array.from({ length: KAVITA_COLLECTION_PAGE_SIZE }, (_, i) => ({
+            id: 10_000 + i,
+            name: `Tail Book ${i}`,
+            libraryId: 1,
+          })),
+          total: KAVITA_COLLECTION_PAGE_SIZE, // the legacy page-length fallback value
+          hasAuthoritativeTotal: false,
+        }),
+      } as Partial<KavitaClient>);
+      const snap = await fetchBooksCollectionsSnapshot({ books: bundle(fullPageKavita, fakeAbs()) });
+      const kavitaCol = snap.collections.find((c) => c.kind === 'collection' && c.source === 'kavita')!;
+      expect(kavitaCol.fullyRead).toBe(false); // cannot prove completion — truncated
+      expect(kavitaCol.members).toHaveLength(KAVITA_COLLECTION_PAGE_SIZE);
+      expect(snap.stats.truncatedCollections).toBe(1);
+      // The write keeps the previously-mirrored members alongside the fresh page: ZERO deletes.
+      const report = await syncBooksCollections({
+        db: t.db,
+        collections: snap.collections,
+        scopedFamilies: snap.scopedFamilies,
+      });
+      expect(report.membersRemoved).toBe(0);
+      expect(report.collectionsRemoved).toBe(0);
+      const members = await memberRows(t.db, '4', 'collection');
+      expect(members).toHaveLength(KAVITA_COLLECTION_PAGE_SIZE + 2); // the fresh page + old 501/502
+      expect(members.map((m) => m.externalRef)).toEqual(expect.arrayContaining(['501', '502']));
+    });
+
+    it('a SHORT member page WITHOUT a header is an honest completion (fullyRead)', async () => {
+      const shortPageKavita = fakeKavita({
+        listCollectionSeriesPage: async () => ({
+          items: [
+            { id: 501, name: 'HP Book 1', libraryId: 1 },
+            { id: 502, name: 'HP Book 2', libraryId: 1 },
+          ],
+          total: 2,
+          hasAuthoritativeTotal: false,
+        }),
+      } as Partial<KavitaClient>);
+      const snap = await fetchBooksCollectionsSnapshot({ books: bundle(shortPageKavita, fakeAbs()) });
+      const kavitaCol = snap.collections.find((c) => c.kind === 'collection' && c.source === 'kavita')!;
+      expect(kavitaCol.fullyRead).toBe(true);
+      expect(snap.stats.truncatedCollections).toBe(0);
+      // A fully-read write reconciles the truncation-test tail back out (the rebuildable cache).
+      const report = await syncBooksCollections({
+        db: t.db,
+        collections: snap.collections,
+        scopedFamilies: snap.scopedFamilies,
+      });
+      expect(report.membersRemoved).toBe(KAVITA_COLLECTION_PAGE_SIZE);
+      expect((await memberRows(t.db, '4', 'collection')).map((m) => m.externalRef).sort()).toEqual([
+        '501',
+        '502',
+      ]);
+    });
+
+    it('a FULL reading-list LISTING page WITHOUT a header never scopes the family (no hard-deletes)', async () => {
+      // Seed reading list 11 back first (it reconciled away in the vanish test above).
+      await syncBooksCollections({
+        db: t.db,
+        collections: [
+          {
+            source: 'kavita',
+            externalId: '11',
+            kind: 'reading_list',
+            libraryId: null,
+            title: 'HP Reading Order',
+            itemCount: 2,
+            ordered: true,
+            members: [{ externalRef: '501', position: 0 }],
+            fullyRead: true,
+          },
+        ],
+        scopedFamilies: [],
+      });
+      // The truncated listing returns a FULL page of OTHER lists — 11 is beyond the page.
+      const fullListingKavita = fakeKavita({
+        listReadingListsPage: async () => ({
+          items: Array.from({ length: KAVITA_READING_LIST_PAGE_SIZE }, (_, i) => ({
+            id: 5_000 + i,
+            title: `Tail List ${i}`,
+            promoted: false,
+            itemCount: 0,
+          })),
+          total: KAVITA_READING_LIST_PAGE_SIZE, // the legacy page-length fallback value
+          hasAuthoritativeTotal: false,
+        }),
+        listReadingListItems: async () => [],
+      } as Partial<KavitaClient>);
+      const snap = await fetchBooksCollectionsSnapshot({ books: bundle(fullListingKavita, fakeAbs()) });
+      expect(snap.scopedFamilies).not.toContainEqual({ source: 'kavita', kind: 'reading_list' });
+      expect(snap.stats.unscopedFamilies).toBe(1);
+      const report = await syncBooksCollections({
+        db: t.db,
+        collections: snap.collections,
+        scopedFamilies: snap.scopedFamilies,
+      });
+      // List 11 is ABSENT from the truncated listing yet SURVIVES (the family never reconciles).
+      expect(report.collectionsRemoved).toBe(0);
+      expect(await collectionKeys(t.db)).toContain('kavita/reading_list/11');
+    });
+
+    it('a SHORT listing page WITHOUT a header is an honest completion (family scoped)', async () => {
+      const snap = await fetchBooksCollectionsSnapshot({
+        books: bundle(
+          fakeKavita({
+            listReadingListsPage: async () => ({
+              items: [{ id: 11, title: 'HP Reading Order', promoted: false, itemCount: 3 }],
+              total: 1,
+              hasAuthoritativeTotal: false,
+            }),
+          } as Partial<KavitaClient>),
+          fakeAbs(),
+        ),
+      });
+      expect(snap.scopedFamilies).toContainEqual({ source: 'kavita', kind: 'reading_list' });
+      expect(snap.stats.unscopedFamilies).toBe(0);
+    });
   });
 });

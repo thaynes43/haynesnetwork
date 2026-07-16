@@ -119,7 +119,40 @@ describe('KavitaClient', () => {
     const client = new KavitaClient({ ...KAVITA_OPTS, fetchImpl });
     const page = await client.listSeriesPage(1, 1, 100);
     expect(page.total).toBe(1283);
+    expect(page.hasAuthoritativeTotal).toBe(true);
     expect(page.items[0]?.id).toBe(1169);
+  });
+
+  it('flags a MISSING or MALFORMED Pagination header as non-authoritative (adversarial fix — a page-length total must never prove completion)', async () => {
+    const { fetchImpl } = stubFetch([
+      {
+        method: 'POST',
+        match: (u) => u.pathname === '/api/Account/login',
+        body: { token: 'jwt', apiKey: 'key' },
+      },
+      {
+        method: 'POST',
+        match: (u) => u.pathname === '/api/Series/all-v2',
+        // NO Pagination header at all.
+        body: [{ id: 1169, name: "Shakespeare's Landlord", libraryId: 1 }],
+      },
+      {
+        method: 'POST',
+        match: (u) => u.pathname === '/api/ReadingList/lists',
+        // MALFORMED Pagination header (not JSON).
+        headers: { Pagination: 'not-json' },
+        body: [{ id: 11, title: 'HP Reading Order', promoted: false, itemCount: 3 }],
+      },
+    ]);
+    const client = new KavitaClient({ ...KAVITA_OPTS, fetchImpl });
+    const seriesPage = await client.listSeriesPage(1, 1, 100);
+    expect(seriesPage.total).toBe(1); // the legacy fallback value (the page length)…
+    expect(seriesPage.hasAuthoritativeTotal).toBe(false); // …but honestly non-authoritative
+    const collectionPage = await client.listCollectionSeriesPage(4, 1, 100);
+    expect(collectionPage.hasAuthoritativeTotal).toBe(false);
+    const listsPage = await client.listReadingListsPage(1, 100);
+    expect(listsPage.total).toBe(1);
+    expect(listsPage.hasAuthoritativeTotal).toBe(false);
   });
 
   it('re-authenticates once on a 401 and retries the request', async () => {
@@ -347,6 +380,7 @@ describe('collection reads (PLAN-051)', () => {
     const client = new KavitaClient({ ...KAVITA_OPTS, fetchImpl });
     const page = await client.listCollectionSeriesPage(4, 1, 500);
     expect(page.total).toBe(7);
+    expect(page.hasAuthoritativeTotal).toBe(true);
     expect(page.items[0]?.id).toBe(501);
     const call = calls.find((c) => c.url.pathname === '/api/Series/all-v2');
     // The shipped library-filter idiom, collection-flavored: field 7 = CollectionTags, Equal.
@@ -373,6 +407,7 @@ describe('collection reads (PLAN-051)', () => {
     const client = new KavitaClient({ ...KAVITA_OPTS, fetchImpl });
     const page = await client.listReadingListsPage(1, 100);
     expect(page.total).toBe(2);
+    expect(page.hasAuthoritativeTotal).toBe(true);
     expect(page.items.map((l) => l.title)).toEqual(['HP Reading Order', 'Cosmere Order']);
     const call = calls.find((c) => c.url.pathname === '/api/ReadingList/lists');
     expect(call?.method).toBe('POST');

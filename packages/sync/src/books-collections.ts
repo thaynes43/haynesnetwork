@@ -12,8 +12,9 @@ import type { BooksCollectionFamily, BooksCollectionSyncInput } from '@hnet/doma
 import type { BooksSyncBundle } from './books';
 import { noopLogger, type SyncLogger } from './logger';
 
-const KAVITA_COLLECTION_PAGE_SIZE = 500;
-const KAVITA_READING_LIST_PAGE_SIZE = 100;
+// Exported for the truncation tests (a "full page" is defined by these bounds).
+export const KAVITA_COLLECTION_PAGE_SIZE = 500;
+export const KAVITA_READING_LIST_PAGE_SIZE = 100;
 /** Safety cap on pages per listing/collection so a bad total can never loop forever. */
 const MAX_PAGES = 200;
 
@@ -85,13 +86,25 @@ export async function fetchBooksCollectionsSnapshot(input: {
         let page = 1;
         let truncated = false;
         for (;;) {
-          const { items, total } = await input.books.kavita.listCollectionSeriesPage(
-            collection.id,
-            page,
-            KAVITA_COLLECTION_PAGE_SIZE,
-          );
+          const { items, total, hasAuthoritativeTotal } =
+            await input.books.kavita.listCollectionSeriesPage(
+              collection.id,
+              page,
+              KAVITA_COLLECTION_PAGE_SIZE,
+            );
           for (const s of items) seriesIds.push(s.id);
-          if (items.length === 0 || page * KAVITA_COLLECTION_PAGE_SIZE >= total) break;
+          if (items.length === 0) break; // an empty page is an honest end-of-list
+          if (hasAuthoritativeTotal) {
+            if (page * KAVITA_COLLECTION_PAGE_SIZE >= total) break; // complete per the header
+          } else if (items.length < KAVITA_COLLECTION_PAGE_SIZE) {
+            break; // a SHORT page without a header is an honest end-of-list too
+          } else {
+            // Adversarial-review fix — a FULL page with NO authoritative Pagination header cannot
+            // prove completion (the page-length fallback would claim it): treat the read as
+            // TRUNCATED so degradation is keep-don't-reconcile, never a tail delete.
+            truncated = true;
+            break;
+          }
           if (page >= MAX_PAGES) {
             truncated = true; // page cap hit with more upstream — never member-reconcile
             break;
@@ -144,12 +157,23 @@ export async function fetchBooksCollectionsSnapshot(input: {
     let page = 1;
     let listingTruncated = false;
     for (;;) {
-      const { items, total } = await input.books.kavita.listReadingListsPage(
+      const { items, total, hasAuthoritativeTotal } = await input.books.kavita.listReadingListsPage(
         page,
         KAVITA_READING_LIST_PAGE_SIZE,
       );
       for (const l of items) lists.push({ id: l.id, title: l.title, itemCount: l.itemCount });
-      if (items.length === 0 || page * KAVITA_READING_LIST_PAGE_SIZE >= total) break;
+      if (items.length === 0) break; // an empty page is an honest end-of-list
+      if (hasAuthoritativeTotal) {
+        if (page * KAVITA_READING_LIST_PAGE_SIZE >= total) break; // complete per the header
+      } else if (items.length < KAVITA_READING_LIST_PAGE_SIZE) {
+        break; // a SHORT page without a header is an honest end-of-list too
+      } else {
+        // Adversarial-review fix — a FULL page with NO authoritative header cannot prove the
+        // LISTING complete: truncated ⇒ the family is NOT scoped, so nothing beyond what this
+        // run saw can ever be reconcile-deleted from it.
+        listingTruncated = true;
+        break;
+      }
       if (page >= MAX_PAGES) {
         listingTruncated = true;
         break;

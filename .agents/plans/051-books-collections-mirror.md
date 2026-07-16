@@ -59,7 +59,20 @@ displays them with ZERO site changes.
 - **Web:** Collections as a SIBLING dimension on books/audiobooks/comics (defaults untouched;
   Comics gains the selector without a flat shape); six new ViewLevelKeys; ordered-gated position
   sort in the drill (transient — stored wall sort never overrides the drill default).
-- **Deferred honestly:** e2e journey (DESIGN-038 Q-01 — the stub-books harness carries no
-  collection fixtures; add stub `/api/Collection` + `/api/collections` fixtures + a seeded mirror
-  pass in a follow-up); haynes-ops CronJob (books-collections-sync after books-sync) lands with
-  the release PR, like every sync mode.
+- **Adversarial-review fix (MEDIUM, landed on the branch):** a missing/malformed Kavita
+  `Pagination` header used to fall back to the PAGE length as the total — a FULL first page would
+  have "proved" completion and let the reconcile delete the unseen tail. The client now reports
+  `hasAuthoritativeTotal`; the books-collections-sync paged loops treat a FULL page without an
+  authoritative total as TRUNCATED (member read ⇒ un-fullyRead; reading-list LISTING ⇒ family not
+  scoped) while a SHORT header-less page stays honest completion. Unit-covered both ways on both
+  loops + at the client.
+- **FOLLOW-UP (do not forget):** `packages/sync/src/books.ts` (the PLAN-023 books-sync fetcher)
+  has the SAME latent exposure — its `listSeriesPage`/`listItemsPage` loops terminate on a
+  fallback total, so a header-less full first page would mark the source fully synced and
+  TOMBSTONE the tail. `listSeriesPage` now carries `hasAuthoritativeTotal` (unused there); wire it
+  into the books-sync loop in its own change (deliberately NOT touched on this branch — reviewer
+  scoping).
+- **Deferred honestly:** the dedicated e2e journey SPEC (DESIGN-038 Q-01 — the stub collection
+  fixtures + the harness `books-collections-sync` seed DID land, so the spec is a cheap follow-up);
+  haynes-ops CronJob (books-collections-sync after books-sync) lands with the release PR, like
+  every sync mode.
