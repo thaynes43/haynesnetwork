@@ -6644,6 +6644,51 @@ body:has(.gallery) {
   margin: var(--space) 0;
 }
 
+/* ---------- Estate play scoreboard (ADR-068 / DESIGN-040 D-05/D-06) ---------- */
+/* The GitHub-readme-shields row between the greeting and the About tile: each badge is a
+   two-segment pill (muted label + accent value) ~21px tall; the row wraps at phone widths
+   (initial layout, not interaction — nothing here is interactive, so ADR-015 holds).
+   Tokens only — the established color-mix tint idiom, no new tokens. */
+.scoreboard {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin: 0 0 var(--space);
+}
+.scoreboard__badge {
+  display: inline-flex;
+  align-items: stretch;
+  height: 21px;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+.scoreboard__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px;
+  background: color-mix(in srgb, var(--color-text-muted) 12%, transparent);
+  color: var(--color-text-muted);
+}
+.scoreboard__value {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 7px;
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  color: var(--color-accent);
+  font-variant-numeric: tabular-nums;
+}
+.scoreboard__glyph {
+  width: 8px;
+  height: 8px;
+  flex: none;
+}
+
 /* D-03/D-09 — the /about page: ONE centered phone-first column. Long URLs wrap instead of
    forcing a horizontal scroll (overflow-wrap on the column catches every leaf). */
 .about {

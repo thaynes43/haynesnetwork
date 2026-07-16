@@ -10,6 +10,7 @@ import { getServerSession } from '@hnet/auth';
 import { AppIcon } from '@hnet/ui';
 import { getServerCaller } from '@/lib/trpc-server';
 import { MotdBanner } from '@/components/motd-banner';
+import { Scoreboard } from '@/components/scoreboard';
 import { InfoGlyph } from './about/glyphs';
 import { Greeting } from './greeting';
 
@@ -22,12 +23,21 @@ export default async function DashboardPage() {
   const caller = await getServerCaller();
   // DESIGN-004 D-15 — the active MOTD (or null) is server-fetched alongside the tiles so the banner
   // renders with no loading flash, anchored ABOVE the greeting (D-07 neighbor).
-  const [apps, motd] = await Promise.all([caller.catalog.myApps(), caller.motd.getActive()]);
+  // ADR-068 / DESIGN-040 D-04/D-06 — the play scoreboard rides the same server fetch (the
+  // ~10-min in-process memo makes it cheap); numbers are baked at SSR, zero client fetch.
+  const [apps, motd, plays] = await Promise.all([
+    caller.catalog.myApps(),
+    caller.motd.getActive(),
+    caller.metrics.playScoreboard(),
+  ]);
 
   return (
     <>
       <MotdBanner motd={motd} />
       <Greeting displayName={session.user.displayName} />
+      {/* DESIGN-040 D-06/D-07 (R-221) — the estate play scoreboard badge row, above the About
+          tile; renders NOTHING when no Tautulli answered (no empty chrome). */}
+      <Scoreboard totals={plays} />
       {/* DESIGN-034 D-01/D-02 (R-206) — the About/Help entry: a full-width INVERTED tile above
           the app grid (accent fill, internal link — no new tab; hover deepens color only,
           ADR-015), set apart from the SSO cards by the perforated rule. Renders in the
