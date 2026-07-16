@@ -4,6 +4,55 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ NEXT SESSION — start here (written 2026-07-16 ~06:00 UTC — Wednesday overnight run, owner asleep)
+
+**Site live at https://haynesnetwork.com — latest release v0.62.0, deployed + health-verified.**
+The owner directed the overnight build at cold start: the **About/Help page — PLAN-049 SHIPPED
+(v0.62.0, feat #307 + release #306 + haynes-ops #2068)**: an inverted "About haynesnetwork.com"
+tile above a perforated rule on the dashboard (R-206) + the ungated mobile-first `/about`
+accordion (R-207) — intro + haynes-ops pane, then Plex Servers / Fix & Activity / Tickets /
+Trash (reads the LIVE `trash_default_window_days`) / Requests / Goodreads / Kavita / ABS /
+Plex best practices / Plexamp, all in the owner's voice from three Opus fact sheets (code,
+external docs, play totals). ADR-063 / DESIGN-034 / R-206..207. Live proof: pod Running
+v0.62.0, `/api/health` 200, unauth `/about` → `/login`; authenticated visuals = hermetic
+screenshots (the sanctioned substitution; sent to the owner's session).
+
+**OWNER MORNING QUEUE (answers via remote-control; page edits are quick PRs):**
+1. **Review /about live** + the 5 screenshots in-session. Feedback → polish PRs.
+2. **THE FLIP (still #1):** books `fix_book` via `setRoleBookActions` after your Fix UI test —
+   **and now also flip the `integrations` section to member roles** (PLAN-049 Q-07): the About
+   page teaches everyone Goodreads, but the tab is still Admin-only.
+3. **Q-06 Haynestower play totals:** NOT obtainable in-cluster (the two Tautullis watch
+   PlexOps/K8plex only; Haynestower history lives on the NAS). Your NAS Tautulli → Libraries
+   shows per-section total plays — text the three numbers, they slot into a ready TODO.
+4. **Q-04 Panels-on-iOS steps** (flagged in-page until you test) · **Q-05 Plex language
+   recipe** (flagged; research verdict: **Plex has NO "prefer original language" option** —
+   recipe = auto-select ON + Preferred audio English + Subtitle Mode "Shown with foreign
+   audio"; manual per-title pick persists). · **Trash window:** code default is **21 days**;
+   if you want 7, set `trash_default_window_days` — the page reads the live value.
+
+**Working-rule lessons (tonight — release-train, BOTH new):** (1) **release-please can RACE
+GitHub's commit indexing** — the run triggered by a merge computed the release WITHOUT that
+merge's commit (#306 opened as 0.61.1 missing the feat); fix = any fresh push to main
+recomputes (we used the queued fix.ts stale-comment cleanup, #308). (2) **Release-PR checks
+NEVER start on release-please's own push** (GITHUB_TOKEN pushes don't trigger workflows) —
+auto-merge sits BLOCKED with "no checks reported" forever; **the dance = `gh pr close` +
+`gh pr reopen` (App-token events DO trigger CI) + re-arm auto-merge.** Any release watcher
+must include the dance before waiting on the merge. Flux names: source `haynes-ops`
+(flux-system), kustomization+hr `haynesnetwork` (frontend); deploy = `haynesnetwork-main`.
+
+**Estate (overnight checks):** MAM governor: the gate **reopened overnight then re-paused
+05:34 UTC** (15 unsatisfied / threshold 15; 15 seeding <72h; 0 downloading) — correct; it
+reopens as the Maas six mature. CoBaB audio + Foundation ebook remain OWNER-DIRECTED next-batch
+grabs. **GB quota still 429 at 05:41 UTC** — resets midnight Pacific (07:00 UTC); the Hobbit
+comic re-classify check (`comicsRouted≥1`) belongs to the first post-07:00 goodreads-sync (a
+log watcher may already be armed — check /tasks). The Other Emily / Kingdom of Ash / Hornet
+Flight straggler checks: still owed. **Model-watch:** all three Opus dispatches
+transcript-verified `opus-4-8`; the documented SendMessage-resume flip reproduced exactly
+(resumed fact-sheet agent tail ran Fable — accepted knowingly, assembly-only tail).
+
+### Prior top block (Wednesday night)
+
 ## ▶ NEXT SESSION — start here (written 2026-07-15 Wednesday NIGHT — overnight cold start)
 
 **Site live at https://haynesnetwork.com — latest release v0.61.0, live-verified.** Wednesday shipped

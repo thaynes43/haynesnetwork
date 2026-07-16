@@ -1,6 +1,6 @@
 # PLAN-049: About/Help page — "About haynesnetwork.com"
 
-- **Status:** ACTIVE (owner-directed overnight build, 2026-07-15 night)
+- **Status:** Completed (v0.62.0, 2026-07-16 — feat #307, release #306, haynes-ops #2068; owner morning review + Q-04/05/06/07 answers pending as fast-follow polish PRs)
 - **Owner intent (2026-07-15, condensed from his brief):** a Help/About page reachable from a
   button at the TOP of the logged-in dashboard — styled like the SSO app cards but visually
   distinct ("a little cooler than the links, invert the colors or something") and separated
