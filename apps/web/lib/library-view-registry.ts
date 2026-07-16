@@ -12,7 +12,7 @@
 // @hnet/api (erased; the client bundle never pulls server code). Adding a dimension to a wall is a
 // registry-row edit (+ an engine expression when it needs new data) — never a new component
 // (ADR-051 C-01).
-import type { BooksSort, LibrarySortField, WatchState, BookReadState } from '@hnet/api';
+import type { BooksSort, CollectionType, LibrarySortField, WatchState, BookReadState } from '@hnet/api';
 import type { LibraryWallId, WallSortDir, WallViewShape } from './library-views';
 
 export type RegistryEngine = 'ledger' | 'plex-live' | 'books';
@@ -139,6 +139,16 @@ const releasedFacet = (label: string): RegistryFacet => ({
   param: 'rfrom',
   param2: 'rto',
 });
+/** DESIGN-035 D-11 / R-214 (PLAN-053) — the Collections grouped levels' ONE facet: the Type chip
+ *  row (single-select, All default, `?ctype=` replace refinement — D-19). Owner ruling: the chip
+ *  FILTERS, never hides — so it is neither gated nor dataGated (a 0-count chip still renders);
+ *  the server (`ledger.collectionGroups` ctype) does the card filtering. */
+const COLLECTION_TYPE_FACET: RegistryFacet = {
+  key: 'collectionType',
+  label: 'Type',
+  kind: 'select',
+  param: 'ctype',
+};
 
 /**
  * DESIGN-026 D-03 — the per-wall registry CONTENTS (the live-verified strawman, ruled normative).
@@ -176,8 +186,9 @@ export const LIBRARY_VIEW_REGISTRY: Record<ViewLevelKey, ViewRegistryEntry> = {
     azSorts: ['title'],
   }),
   // ADR-064 / DESIGN-035 D-05 (PLAN-037) — the Movies Collections grouped level: sorts the aggregate
-  // CARDS (collection label / accessible-member count) like every grouped level; no facets (a card
-  // grid answers none). Mirrors audiobooks:grouped-genre.
+  // CARDS (collection label / accessible-member count) like every grouped level. ONE facet (PLAN-053
+  // D-11): the Type chip row — the only question a collection-card grid can answer; item facets stay
+  // absent (the D-09 asymmetry).
   'movies:grouped-collection': groupLevel({
     engine: 'ledger',
     sorts: [
@@ -185,7 +196,7 @@ export const LIBRARY_VIEW_REGISTRY: Record<ViewLevelKey, ViewRegistryEntry> = {
       { key: 'count', label: 'Most items', firstDir: 'desc' },
     ],
     defaultSort: { field: 'label', dir: 'asc' },
-    facets: [],
+    facets: [COLLECTION_TYPE_FACET],
     azSorts: [],
   }),
   // TV Shows — no Runtime (a show has no single runtime), no Resolution facet (nor a single tier);
@@ -206,7 +217,7 @@ export const LIBRARY_VIEW_REGISTRY: Record<ViewLevelKey, ViewRegistryEntry> = {
     azSorts: ['title'],
   }),
   // ADR-064 / DESIGN-035 D-05 (PLAN-037) — the TV Collections grouped level (same shape as the
-  // Movies one; the hierarchy drill below is untouched — owner R2).
+  // Movies one, incl. the PLAN-053 Type facet; the hierarchy drill below is untouched — owner R2).
   'tv:grouped-collection': groupLevel({
     engine: 'ledger',
     sorts: [
@@ -214,7 +225,7 @@ export const LIBRARY_VIEW_REGISTRY: Record<ViewLevelKey, ViewRegistryEntry> = {
       { key: 'count', label: 'Most items', firstDir: 'desc' },
     ],
     defaultSort: { field: 'label', dir: 'asc' },
-    facets: [],
+    facets: [COLLECTION_TYPE_FACET],
     azSorts: [],
   }),
   // TV drill-in levels (capability declarations — the Shows → Seasons → Episodes presentation is
@@ -522,6 +533,19 @@ export const READ_STATE_OPTIONS: ReadonlyArray<{ value: BookReadState; label: st
   { value: 'read', label: 'Finished' },
   { value: 'in_progress', label: 'In progress' },
   { value: 'unread', label: 'Unread' },
+];
+
+/** DESIGN-035 D-10/D-11 / R-214 (PLAN-053) — the six owner-ruled Collection Type chips, in chip-row
+ *  order (the URL/wire values are the `@hnet/db` COLLECTION_TYPES buckets — TYPE-pinned here so a
+ *  drifted value fails the build; the All chip is the absent-param default and lives in the row
+ *  renderer, not this vocabulary). */
+export const COLLECTION_TYPE_OPTIONS: ReadonlyArray<{ value: CollectionType; label: string }> = [
+  { value: 'trilogy', label: 'Trilogies' },
+  { value: 'franchise_universe', label: 'Franchise & Universe' },
+  { value: 'director', label: 'Director' },
+  { value: 'actor', label: 'Actor' },
+  { value: 'list', label: 'Lists' },
+  { value: 'other', label: 'Other' },
 ];
 
 /** Length-bucket labels per medium (boundaries live server-side — BOOK_LENGTH_BOUNDS; D-11 call:

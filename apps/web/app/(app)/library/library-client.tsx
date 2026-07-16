@@ -70,6 +70,7 @@ import {
   type WallView,
 } from '@/lib/library-views';
 import {
+  COLLECTION_TYPE_OPTIONS,
   WALL_VIEWS,
   WATCH_STATE_OPTIONS,
   decadeLabel,
@@ -410,6 +411,12 @@ function MediaBrowser({
   const watchState = WATCH_STATE_OPTIONS.some((o) => o.value === watchRaw)
     ? (watchRaw as (typeof WATCH_STATE_OPTIONS)[number]['value'])
     : undefined;
+  // DESIGN-035 D-11 (PLAN-053) — the Collection Type chip (?ctype=, replace refinement — D-19).
+  // Grouped-card concern only: the drill URL never carries it and the item grid never reads it.
+  const ctypeRaw = searchParams.get('ctype');
+  const ctype = COLLECTION_TYPE_OPTIONS.some((o) => o.value === ctypeRaw)
+    ? (ctypeRaw as (typeof COLLECTION_TYPE_OPTIONS)[number]['value'])
+    : undefined;
   const letterRaw = searchParams.get('at');
   const letter = letterRaw !== null && /^[a-z]$/.test(letterRaw) ? letterRaw : null;
 
@@ -572,7 +579,12 @@ function MediaBrowser({
   // ADR-064 / DESIGN-035 D-03 (PLAN-037) — the Collections group cards (grouped view), also read
   // while DRILLED so the drill header can name the collection (the key is a ratingKey, not a title).
   const groupsQuery = trpc.ledger.collectionGroups.useQuery(
-    { arrKind: arrKind as 'radarr' | 'sonarr' },
+    {
+      arrKind: arrKind as 'radarr' | 'sonarr',
+      // D-11 (PLAN-053) — the server filters the CARDS; typeCounts come back unfiltered, so the
+      // chip numbers hold steady while toggling. Never applied to the drill's label lookup.
+      ...(groupedCards && ctype !== undefined ? { ctype } : {}),
+    },
     {
       enabled: hasSelector && (groupedCards || drilled),
       refetchOnWindowFocus: false,
@@ -764,10 +776,44 @@ function MediaBrowser({
             chip appears only for a viewer with watch data (ADR-051 C-06 — gated, so it sits LAST).
             A FIXED-HEIGHT single row that scrolls horizontally when crowded (ADR-015: the bar
             never grows, so the grid never shifts); editors overlay via fixed positioning.
-            A grouped level declares NO facets (registry-enforced), so no bar renders there. */}
+            The grouped-collection levels declare exactly ONE facet — the PLAN-053 Type chip row
+            (DESIGN-035 D-11); item facets stay absent from grouped levels (registry-enforced). */}
         {entry.facets.length > 0 ? (
         <div className="library-chipbar" role="group" aria-label="Filters">
           {entry.facets.map((facet) => {
+            if (facet.key === 'collectionType') {
+              // DESIGN-035 D-11 / R-214 (PLAN-053) — the Collection Type chip row: single-select,
+              // All default, always visible (owner ruling: the chip FILTERS, never hides — a
+              // 0-count chip still renders). ?ctype= is a D-19 replace refinement; the SERVER
+              // filters the cards and the counts are the gated accessible-collection typeCounts
+              // (rendered from the same query that paints the cards — placeholder-kept, so a chip
+              // toggle recolors without the numbers churning; ADR-015: recolor, never reflow).
+              const typeCounts = groupsQuery.data?.typeCounts;
+              return (
+                <div key={facet.key} className="seg" role="group" aria-label="Collection type">
+                  <button
+                    type="button"
+                    className={ctype === undefined ? 'is-active' : undefined}
+                    aria-pressed={ctype === undefined}
+                    onClick={() => patchParams({ [facet.param]: null })}
+                  >
+                    All
+                  </button>
+                  {COLLECTION_TYPE_OPTIONS.map((o) => (
+                    <button
+                      key={o.value}
+                      type="button"
+                      className={ctype === o.value ? 'is-active' : undefined}
+                      aria-pressed={ctype === o.value}
+                      onClick={() => patchParams({ [facet.param]: ctype === o.value ? null : o.value })}
+                    >
+                      {o.label}
+                      {typeCounts !== undefined ? ` (${typeCounts[o.value]})` : ''}
+                    </button>
+                  ))}
+                </div>
+              );
+            }
             if (facet.kind === 'enum') {
               const field = facet.key as LibraryField;
               return (
@@ -885,8 +931,8 @@ function MediaBrowser({
         ) : groups.length === 0 ? (
           <section className="card empty-state" data-testid="collections-empty">
             <p className="muted">
-              {groupQ !== ''
-                ? 'Nothing matches your search.'
+              {groupQ !== '' || ctype !== undefined
+                ? 'Nothing matches your filters.'
                 : 'No collections yet. They fill in as the Plex mirror syncs.'}
             </p>
           </section>
