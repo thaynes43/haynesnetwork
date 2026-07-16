@@ -40,7 +40,7 @@ CRUD + run monitoring.
 
 ### D-01 — Service shape: headless API-first app, recipes as DB rows
 
-One Node/TS service (the hnet package idioms: zod, drizzle, Postgres 16) exposing a REST API
+One Node/TS service (the hnet package idioms: zod + drizzle, on SQLite per D-03) exposing a REST API
 plus a minimal built-in web UI served from the same container. There is no YAML recipe file
 and no config self-rewrite — the two Kometa pain points our own deployment documents
 (research §4: the config.yml PVC seed/rewrite hybrid, git edits not reaching the pod) are
@@ -48,7 +48,7 @@ designed out:
 
 - **Recipes, collections, runs, missing reports = DB rows** owned by Libretto's reconciler.
 - **Connection config = environment/secrets only** (target URLs + API keys, source API keys,
-  LL URL + key, `DATABASE_URL`, Libretto API keys). Nothing secret in the DB; nothing
+  LL URL + key, the SQLite file path, Libretto API keys). Nothing secret in the DB; nothing
   behavioral in env beyond caps/toggles.
 - Schedules **trigger** runs (in-process cron, D-11) — a deliberate delta from Kometa, whose
   schedules only gate an already-running batch (research §1).
