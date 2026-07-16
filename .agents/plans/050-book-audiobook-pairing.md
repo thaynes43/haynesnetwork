@@ -1,7 +1,18 @@
 # PLAN-050: Book ⇄ audiobook format pairing (Integration Saga pt 5)
 
-- **Status:** ACTIVE (owner green-lit 2026-07-16 morning; runs PARALLEL to PLAN-037 — separate
+- **Status:** BUILT (2026-07-16 — docs + code + tests on `feat/plan-050-format-pairing`, awaiting
+  coordinator review/PR; owner green-lit 2026-07-16 morning; runs PARALLEL to PLAN-037 — separate
   branches, releases serialize).
+- **Docs:** ADR-065 (Accepted) · DESIGN-036 · PRD R-211..R-213 · glossary T-183..T-185.
+- **Shipped shape:** migration 0054 (`books_format_pairs` + the `book_requests` system-want widening
+  + `format-pairing` run kind); domain `matchFormatPairs`/`syncFormatPairs`/`mintPairingWants`/
+  `runFormatPairing` (cap `PAIRING_MINT_CAP_PER_RUN`=25, env-tunable); the `format-pairing` sync
+  mode (runs AFTER books-sync); wanted reads widened for `origin='pairing'` ("Format pairing"
+  attribution); books-gated audited `books.searchPairingWant`; detail dual consume buttons +
+  missing-format affordance + wall coverage badge.
+- **Follow-ups:** haynes-ops CronJob block for `--mode=format-pairing` (after the books-sync tick) —
+  a deploy-repo change, out of this branch; DESIGN-036 Q-01 (unmintable digest?) and Q-02
+  (identifier-backed matching) stay open.
 - **Saga:** PLAN-043 phase "Book ⇄ audiobook pairing (pt 5)". Owner's original spec (near-verbatim,
   saga file): "attempt a copy of EACH format per title; the one we lack is a Missing entry.
   Library items with both show 'Listen on Audiobookshelf' AND 'Read in Kavita'; otherwise one

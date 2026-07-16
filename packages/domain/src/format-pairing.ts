@@ -478,7 +478,7 @@ export interface FormatPairingReport extends SyncFormatPairsReport, MintPairingW
   requeued: number;
 }
 
-export interface RunFormatPairingInput extends MintPairingWantsInput {}
+export type RunFormatPairingInput = MintPairingWantsInput;
 
 /**
  * One format-pairing run: rebuild the pair cache (syncFormatPairs), mint the paced system wants
