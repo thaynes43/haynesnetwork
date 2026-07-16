@@ -674,10 +674,11 @@ export function BooksBrowser({
         ) : null}
 
         {/* Sort bar — the ACTIVE LEVEL's registry keys (grouped: author/count over the cards; flat:
-            the wall's answerable sorts). Two-state cycle with the reserved arrow slot (ADR-015). */}
+            the wall's answerable sorts; a collection drill's keys are ordered-gated — levelSorts).
+            Two-state cycle with the reserved arrow slot (ADR-015). */}
         <div className="library-sortbar" role="group" aria-label="Sort">
           <span className="library-sortbar__label">Sort</span>
-          {entry.sorts.map((c) => {
+          {levelSorts.map((c) => {
             const isActive = sort.field === c.key;
             return (
               <button
