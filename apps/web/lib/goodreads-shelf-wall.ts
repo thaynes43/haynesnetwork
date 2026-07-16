@@ -14,6 +14,8 @@ export const SHELF_LABELS: Record<string, string> = {
   'currently-reading': 'Currently reading',
   read: 'Read',
   'did-not-finish': 'Did not finish',
+  // ADR-065 (PLAN-050) — the SYSTEM want's source slug: no shelf, the estate's format pairing.
+  pairing: 'Format pairing',
 };
 
 export function shelfLabel(shelf: string): string {

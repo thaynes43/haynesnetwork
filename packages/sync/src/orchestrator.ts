@@ -27,6 +27,7 @@ import {
   evaluateSpacePolicy,
   finishSyncRun,
   refreshTrashCandidates,
+  runFormatPairing,
   runPelotonPosterGuard,
   startSyncRun,
   sweepExpiredBatches,
@@ -36,8 +37,10 @@ import {
   syncPlexMatches,
   syncPlexCollections,
   type DrainPoolRefreshResult,
+  type FormatPairingReport,
   type KapowarrClientBundle,
   type LazyLibrarianClientBundle,
+  type PairingGbResolver,
   type SyncBooksReport,
   type SyncPlexMatchesReport,
   type SyncPlexCollectionsReport,
@@ -177,6 +180,10 @@ export interface RunSyncOptions {
   /** ADR-056 (PLAN-046) — the confined Kapowarr bundle the `goodreads-sync` mode routes COMICS through (built
    *  in packages/domain from env; opaque here). Optional — absent ⇒ comics stay parked. */
   kapowarr?: KapowarrClientBundle;
+  /** ADR-065 / DESIGN-036 — the Google Books resolver the `format-pairing` mode falls back to for a
+   *  pairing want's LL identity (reuse-first). Optional — absent ⇒ reuse-only resolution. The mode's LL
+   *  pushes ride the same `lazyLibrarian` bundle as goodreads-sync (also optional — absent ⇒ mint only). */
+  pairingGb?: PairingGbResolver;
   /** Clock injection for deterministic `ai-usage-sync` tests (synced_at / created_at fallbacks). */
   now?: Date;
   /** Injected DB (tests); defaults to the lazy @hnet/db client. */
@@ -270,6 +277,10 @@ export interface SyncReport {
   collectionsSync?: (SyncPlexCollectionsReport & { stats: PlexCollectionsStats }) | null;
   /** The collections-sync run's error — sets totalFailure for the CLI exit. */
   collectionsSyncError?: string;
+  /** ADR-065 — the `format-pairing` result (null for every other mode / when it errored). */
+  formatPairing?: FormatPairingReport | null;
+  /** The format-pairing run's error — sets totalFailure for the CLI exit. */
+  formatPairingError?: string;
   /** ADR-035 — the candidate-snapshot refresh post-step (full/incremental with a Maintainerr
    *  handle; null when skipped or failed). */
   candidateRefresh?: TrashCandidatesRefreshReport | null;
@@ -919,6 +930,44 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       goodreadsSync,
       ...(goodreadsSyncError !== undefined ? { goodreadsSyncError } : {}),
       totalFailure: goodreadsSyncError !== undefined,
+    };
+  }
+
+  // ADR-065 / DESIGN-036 (PLAN-050) — the `format-pairing` mode is NOT a per-source loop and fetches NO
+  // external snapshot: it derives from the books_items mirror (so its CronJob runs AFTER books-sync),
+  // rebuilding the books_format_pairs derived cache (the conservative matcher), minting the PACED
+  // estate-wide pairing wants (capped at PAIRING_MINT_CAP_PER_RUN attempts; missing-format-only confined
+  // LL pushes behind the 250ms pacer), and reconciling open pairing wants against ONE LL getAllBookStatuses
+  // read. LL + GB are OPTIONAL (absent LL ⇒ pair + mint only; absent GB ⇒ reuse-only identity resolution) —
+  // the honest degraded runs. Standalone like plex-match: no --source, writes NO sync_runs row — its trail
+  // is books_format_pairs + the pairing book_requests rows. Returns early with a `formatPairing` report.
+  if (options.mode === 'format-pairing') {
+    const startedAt = new Date();
+    let formatPairing: FormatPairingReport | null = null;
+    let formatPairingError: string | undefined;
+    try {
+      formatPairing = await runFormatPairing({
+        db,
+        ...(options.lazyLibrarian ? { ll: options.lazyLibrarian } : {}),
+        ...(options.pairingGb ? { gb: options.pairingGb } : {}),
+        ...(options.now ? { now: options.now } : {}),
+        logger,
+      });
+      logger.info('format-pairing complete', { ...formatPairing });
+    } catch (error) {
+      formatPairingError = error instanceof Error ? error.message : String(error);
+      logger.error('format-pairing failed', { error: formatPairingError });
+    }
+    return {
+      mode: options.mode,
+      startedAt,
+      finishedAt: new Date(),
+      sources: [],
+      backfill: null,
+      fixesCompleted: null,
+      formatPairing,
+      ...(formatPairingError !== undefined ? { formatPairingError } : {}),
+      totalFailure: formatPairingError !== undefined,
     };
   }
 

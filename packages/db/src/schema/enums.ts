@@ -352,6 +352,16 @@ export const SYNC_RUN_KINDS = [
   // writes NO sync_runs row — its trail is the mirror tables). It joins SYNC_RUN_KINDS so the CLI
   // --mode parser + SyncMode accept it (migration 0053 rebuilds the sync_runs.run_kind CHECK).
   'collections-sync',
+  // ADR-065 / DESIGN-036 (PLAN-050 — book ⇄ audiobook pairing) — 'format-pairing' rebuilds the
+  // books_format_pairs derived cache from the books_items mirror (the conservative normTitle+author
+  // matcher, comics excluded), then mints the PACED estate-wide system wants for unpaired items'
+  // missing formats (book_requests origin='pairing', capped at PAIRING_MINT_CAP_PER_RUN attempts/run,
+  // missing-format-only confined LL push) and reconciles the open pairing wants against ONE LL
+  // getAllBookStatuses read. Fetches NO external snapshot — it derives from books_items, so its
+  // CronJob runs AFTER books-sync. Standalone like plex-match: no --source, writes NO sync_runs row —
+  // its trail is books_format_pairs + the pairing book_requests rows. It joins SYNC_RUN_KINDS so the
+  // CLI --mode parser + SyncMode accept it (migration 0054 rebuilds the sync_runs.run_kind CHECK).
+  'format-pairing',
 ] as const;
 export type SyncRunKind = (typeof SYNC_RUN_KINDS)[number];
 
@@ -983,3 +993,17 @@ export type BookRequestStatus = (typeof BOOK_REQUEST_STATUSES)[number];
 // BOOK_REQUEST_STATUSES); this array documents the three request formats + gates the manual-search dispatch.
 export const BOOK_REQUEST_FORMATS = ['ebook', 'audiobook', 'comic'] as const;
 export type BookRequestFormat = (typeof BOOK_REQUEST_FORMATS)[number];
+
+// ADR-065 / DESIGN-036 (PLAN-050) — WHO minted a book_requests row:
+//   goodreads — a user's shelf want (the ADR-055 path; shelf_item_id/integration_id NOT NULL).
+//   pairing   — the ESTATE's system want for an unpaired library title's missing format (no user, no
+//               shelf; pairing_books_item_id names the anchor library item). The origin↔keys coherence
+//               is CHECK-enforced (migration 0054).
+export const BOOK_REQUEST_ORIGINS = ['goodreads', 'pairing'] as const;
+export type BookRequestOrigin = (typeof BOOK_REQUEST_ORIGINS)[number];
+
+// ADR-065 C-02 — HOW a books_format_pairs row was matched. v1 has exactly the conservative
+// normalized-title + author-agreement matcher; an identifier-backed matcher (ISBN/ASIN — DESIGN-036
+// Q-02) would join this const + relax the CHECK.
+export const FORMAT_PAIR_MATCH_KINDS = ['title_author'] as const;
+export type FormatPairMatchKind = (typeof FORMAT_PAIR_MATCH_KINDS)[number];

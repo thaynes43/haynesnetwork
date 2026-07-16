@@ -130,6 +130,10 @@ export * from './user-integrations';
 export * from './integration-shelf-items';
 export * from './book-requests';
 export * from './goodreads-sync';
+// ADR-065 / DESIGN-036 (PLAN-050 — book ⇄ audiobook pairing) — the conservative matcher, the
+// books_format_pairs single-writer, and the PACED estate-wide system-want mint + run orchestrator
+// (the format-pairing sync mode's body).
+export * from './format-pairing';
 export * from './lazylibrarian-clients';
 // ADR-056 (PLAN-046 — Kapowarr comics acquisition) — the confined Kapowarr client bundle for comic routing +
 // the comic force-search (@hnet/kapowarr/write stays in this package — the arr-write-import-guard, extended).

@@ -1280,4 +1280,99 @@ describe('migrations against embedded Postgres 16', () => {
       await client.query(`DELETE FROM sync_runs WHERE run_kind = 'collections-sync'`);
     });
   });
+
+  // ADR-065 / DESIGN-036 (migration 0054) — the format-pairing surfaces: books_format_pairs + the
+  // book_requests system-want widening + the run-kind CHECK relax. Additive.
+  describe('0054 format pairing (ADR-065 — pair cache + system wants + run-kind CHECK)', () => {
+    async function seedBooksItem(externalId: string, mediaKind: 'book' | 'audiobook'): Promise<string> {
+      const source = mediaKind === 'audiobook' ? 'audiobookshelf' : 'kavita';
+      const row = await client.query({
+        text: `INSERT INTO books_items (source, media_kind, external_id, library_id, library_name, title, sort_title, author, deep_link_url)
+               VALUES ($1, $2, $3, '1', 'Lib', 'Pairing Target', 'pairing target', 'An Author', 'http://x') RETURNING id`,
+        values: [source, mediaKind, externalId],
+      });
+      return row.rows[0].id as string;
+    }
+
+    it('books_format_pairs accepts a pair, enforces per-side uniques + the matched_via CHECK, cascades', async () => {
+      const bookId = await seedBooksItem('pair-b1', 'book');
+      const audioId = await seedBooksItem('pair-a1', 'audiobook');
+      const audioId2 = await seedBooksItem('pair-a2', 'audiobook');
+      await client.query({
+        text: `INSERT INTO books_format_pairs (book_item_id, audio_item_id, matched_via) VALUES ($1, $2, 'title_author')`,
+        values: [bookId, audioId],
+      });
+      // The book side is UNIQUE — a second pair for the same book violates.
+      await expect(
+        client.query({
+          text: `INSERT INTO books_format_pairs (book_item_id, audio_item_id, matched_via) VALUES ($1, $2, 'title_author')`,
+          values: [bookId, audioId2],
+        }),
+      ).rejects.toMatchObject({ code: '23505' });
+      // matched_via is CHECK-constrained.
+      const bookId2 = await seedBooksItem('pair-b2', 'book');
+      await expect(
+        client.query({
+          text: `INSERT INTO books_format_pairs (book_item_id, audio_item_id, matched_via) VALUES ($1, $2, 'vibes')`,
+          values: [bookId2, audioId2],
+        }),
+      ).rejects.toMatchObject({ code: '23514' });
+      // Deleting a side cascades the pair away.
+      await client.query({ text: `DELETE FROM books_items WHERE id = $1`, values: [audioId] });
+      const left = await client.query({
+        text: `SELECT count(*)::int AS n FROM books_format_pairs WHERE book_item_id = $1`,
+        values: [bookId],
+      });
+      expect(left.rows[0].n).toBe(0);
+      await client.query(
+        `DELETE FROM books_items WHERE external_id IN ('pair-b1','pair-a2','pair-b2')`,
+      );
+    });
+
+    it('book_requests admits an origin=pairing SYSTEM want (null keys) and enforces origin coherence + the partial unique', async () => {
+      const anchorId = await seedBooksItem('pair-anchor', 'book');
+      // A pairing want: no integration, no shelf item — the anchor carries the identity.
+      await client.query({
+        text: `INSERT INTO book_requests (origin, pairing_books_item_id, title, author, ebook_status, audio_status)
+               VALUES ('pairing', $1, 'Pairing Target', 'An Author', 'landed', 'requested')`,
+        values: [anchorId],
+      });
+      // ONE pairing want per anchor item (lifetime) — the partial unique rejects a second.
+      await expect(
+        client.query({
+          text: `INSERT INTO book_requests (origin, pairing_books_item_id, title) VALUES ('pairing', $1, 'Pairing Target')`,
+          values: [anchorId],
+        }),
+      ).rejects.toMatchObject({ code: '23505' });
+      // Coherence: a pairing want without its anchor is not representable …
+      await expect(
+        client.query(`INSERT INTO book_requests (origin, title) VALUES ('pairing', 'No Anchor')`),
+      ).rejects.toMatchObject({ code: '23514' });
+      // … nor a goodreads want without its shelf/integration keys …
+      await expect(
+        client.query(`INSERT INTO book_requests (title) VALUES ('Keyless Goodreads')`),
+      ).rejects.toMatchObject({ code: '23514' });
+      // … nor an unknown origin.
+      await expect(
+        client.query({
+          text: `INSERT INTO book_requests (origin, pairing_books_item_id, title) VALUES ('estate', $1, 'Bad Origin')`,
+          values: [anchorId],
+        }),
+      ).rejects.toMatchObject({ code: '23514' });
+      // The anchor cascade cleans the want up.
+      await client.query({ text: `DELETE FROM books_items WHERE id = $1`, values: [anchorId] });
+      const left = await client.query({
+        text: `SELECT count(*)::int AS n FROM book_requests WHERE pairing_books_item_id = $1`,
+        values: [anchorId],
+      });
+      expect(left.rows[0].n).toBe(0);
+    });
+
+    it('sync_runs admits format-pairing (preservation intact)', async () => {
+      await client.query(
+        `INSERT INTO sync_runs (source, run_kind, status) VALUES ('radarr', 'format-pairing', 'running')`,
+      );
+      await client.query(`DELETE FROM sync_runs WHERE run_kind = 'format-pairing'`);
+    });
+  });
 });

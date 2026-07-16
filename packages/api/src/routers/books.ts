@@ -7,16 +7,27 @@
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import {
+  bookRequests,
+  booksFormatPairs,
   booksItems,
   userBookProgress,
   BOOKS_MEDIA_KINDS,
   type BooksMediaKind,
+  type BooksItemRow,
   type BookRequestStatus,
+  type Database,
 } from '@hnet/db';
-import { and, asc, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, ilike, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 import {
-  bookActionsForRole, getBookRequestDetail, getWantedBookRequests, isRequestSearchable } from '@hnet/domain';
-import { authedProcedure, router } from '../trpc';
+  bookActionsForRole,
+  getBookRequestById,
+  getBookRequestDetail,
+  getWantedBookRequests,
+  isRequestSearchable,
+  missingFormatFor,
+  runManualBookSearch,
+} from '@hnet/domain';
+import { authedProcedure, mapDomainErrors, resolveLazyLibrarianBundle, router } from '../trpc';
 import { booksOrIntegrationsProcedure, booksProcedure, effectiveSectionLevel } from '../middleware/role';
 import { booksCoverUrlFor } from '../books-query';
 import {
@@ -39,6 +50,16 @@ function booksPlayLabel(source: string): string {
   return source === 'audiobookshelf' ? 'Listen on Audiobookshelf' : 'Read in Kavita';
 }
 
+/** ADR-065 / DESIGN-036 D-09 — a title's format-pairing state on the detail page. Null for a comic. */
+export interface BooksPairingState {
+  /** Present when the title is PAIRED — the counterpart format's OWN deep link (the second button). */
+  pairedPlay: { app: 'kavita' | 'audiobookshelf'; label: string; url: string } | null;
+  /** The absent format when UNPAIRED (a book lacks the audiobook; an audiobook lacks the ebook). */
+  missingFormat: 'ebook' | 'audiobook' | null;
+  /** The minted pairing want for the missing format, when the paced backfill has reached this title. */
+  want: { requestId: string; status: BookRequestStatus; searchable: boolean } | null;
+}
+
 /** The books detail payload (the in-app drill-in — deep-links OUT to Kavita/ABS, no *arr semantics). */
 export interface BooksDetailResult {
   /** ADR-062 — the caller may fire a books Fix (admin or fix_book grant). */
@@ -46,6 +67,62 @@ export interface BooksDetailResult {
   item: BooksListItem & { libraryName: string; lastSyncedAt: string };
   /** The app-specific deep link (books are always PRESENT — synced from the serving app). */
   play: { app: 'kavita' | 'audiobookshelf'; label: string; url: string };
+  /** ADR-065 — the format-pairing state (dual buttons / the missing format's affordance). Null = comic. */
+  pairing: BooksPairingState | null;
+}
+
+/** ADR-065 / DESIGN-036 D-09 — the wall's format-coverage signal ('both' wears "Ebook + Audio"). */
+export type BooksFormatCoverage = 'both' | 'ebook' | 'audio';
+
+/**
+ * Resolve one non-comic row's pairing state (DESIGN-036 D-09): a pair row ⇒ the counterpart's own
+ * deep link; unpaired ⇒ the missing format + its pairing want (when the paced backfill minted one).
+ * `searchable` = the want has an LL identity and the format has not landed — the books-gated
+ * `searchPairingWant` is the action it arms (the caller already passed the books gate).
+ */
+async function resolvePairingState(
+  db: Database,
+  row: BooksItemRow,
+): Promise<BooksPairingState | null> {
+  if (row.mediaKind === 'comic') return null;
+  const sideColumn =
+    row.mediaKind === 'book' ? booksFormatPairs.bookItemId : booksFormatPairs.audioItemId;
+  const [pair] = await db.select().from(booksFormatPairs).where(eq(sideColumn, row.id));
+  if (pair) {
+    const otherId = row.mediaKind === 'book' ? pair.audioItemId : pair.bookItemId;
+    const [other] = await db
+      .select()
+      .from(booksItems)
+      .where(and(eq(booksItems.id, otherId), isNull(booksItems.deletedAt)));
+    if (other) {
+      return {
+        pairedPlay: {
+          app: other.source === 'audiobookshelf' ? 'audiobookshelf' : 'kavita',
+          label: booksPlayLabel(other.source),
+          url: other.deepLinkUrl,
+        },
+        missingFormat: null,
+        want: null,
+      };
+    }
+    // The counterpart tombstoned since the last pair rebuild — honest unpaired until the next run.
+  }
+  const missingFormat = missingFormatFor(row.mediaKind);
+  const [want] = await db
+    .select()
+    .from(bookRequests)
+    .where(eq(bookRequests.pairingBooksItemId, row.id));
+  if (!want) return { pairedPlay: null, missingFormat, want: null };
+  const status = missingFormat === 'ebook' ? want.ebookStatus : want.audioStatus;
+  return {
+    pairedPlay: null,
+    missingFormat,
+    want: {
+      requestId: want.id,
+      status,
+      searchable: want.llBookId !== null && status !== 'landed',
+    },
+  };
 }
 
 /**
@@ -153,7 +230,8 @@ function facetConditions(input: BooksSearchInput) {
 }
 
 export interface BooksSearchResult {
-  items: BooksListItem[];
+  /** ADR-065 — `formatCoverage` feeds the wall's coverage badge (null for a comic — no pairing). */
+  items: Array<BooksListItem & { formatCoverage: BooksFormatCoverage | null }>;
   /** Next offset cursor, or null when the last page was reached. */
   nextCursor: number | null;
 }
@@ -189,9 +267,14 @@ export const booksRouter = router({
       const viewerHasIntegrations = effectiveSectionLevel(ctx.user.role, 'integrations') !== 'disabled';
       return {
         items: views.map((v) => {
-          const owns = v.integrationUserId === ctx.user.id;
+          const owns = v.integrationUserId !== null && v.integrationUserId === ctx.user.id;
+          // ADR-065 C-05 — a pairing (system) want has no owner: its search rides the books gate this
+          // resolver already passed; the Goodreads-sub-section deep link stays goodreads-only.
+          const isPairing = v.origin === 'pairing';
           return {
             requestId: v.requestId,
+            /** ADR-065 — 'pairing' rows are the estate's format wants (attributed "Format pairing"). */
+            origin: v.origin,
             title: v.title,
             author: v.author,
             shelf: v.shelf,
@@ -208,8 +291,10 @@ export const booksRouter = router({
             /** A parked comic (no Kapowarr route yet) — the honest "waiting on a ComicVine match" note. */
             parked: v.isComic && v.unroutableReason === 'comic',
             requestedBy: v.requestedBy,
-            canSearch: owns && viewerHasIntegrations && isRequestSearchable(v),
-            canOpenRequest: owns && viewerHasIntegrations,
+            canSearch: isPairing
+              ? isRequestSearchable(v)
+              : owns && viewerHasIntegrations && isRequestSearchable(v),
+            canOpenRequest: !isPairing && owns && viewerHasIntegrations,
           };
         }),
       };
@@ -229,9 +314,14 @@ export const booksRouter = router({
     .query(async ({ ctx, input }) => {
       const view = await getBookRequestDetail({ db: ctx.db, requestId: input.requestId });
       if (!view) throw new TRPCError({ code: 'NOT_FOUND', message: `Request ${input.requestId} not found` });
-      const owns = view.integrationUserId === ctx.user.id;
+      const owns = view.integrationUserId !== null && view.integrationUserId === ctx.user.id;
       const viewerHasIntegrations = effectiveSectionLevel(ctx.user.role, 'integrations') !== 'disabled';
-      const canSearch = owns && viewerHasIntegrations;
+      // ADR-065 C-05 — a pairing want has no owner: its per-format search is BOOKS-gated (the estate's
+      // want belongs to everyone the books walls belong to); goodreads wants keep owner + integrations.
+      const canSearch =
+        view.origin === 'pairing'
+          ? effectiveSectionLevel(ctx.user.role, 'books') !== 'disabled'
+          : owns && viewerHasIntegrations;
       const requestSearchable = isRequestSearchable(view);
 
       // Per-format status ROWS (the *arr per-grain idiom): a comic is the single Kapowarr leg; a
@@ -261,6 +351,8 @@ export const booksRouter = router({
 
       return {
         requestId: view.requestId,
+        /** ADR-065 — the client dispatches the right search mutation on this ('pairing' ⇒ books-gated). */
+        origin: view.origin,
         title: view.title,
         author: view.author,
         shelf: view.shelf,
@@ -337,8 +429,31 @@ export const booksRouter = router({
         .limit(input.limit)
         .offset(input.cursor);
 
+      // ADR-065 / DESIGN-036 D-09 — the page's format-coverage lookup: one bounded read over the pair
+      // cache for THIS page's ids (≤ limit rows). Comics never pair — their coverage stays null.
+      const pairedIds = new Set<string>();
+      if (input.mediaKind !== 'comic' && rows.length > 0) {
+        const sideColumn =
+          input.mediaKind === 'book' ? booksFormatPairs.bookItemId : booksFormatPairs.audioItemId;
+        const pairRows = await ctx.db
+          .select({ id: sideColumn })
+          .from(booksFormatPairs)
+          .where(
+            inArray(
+              sideColumn,
+              rows.map((r) => r.id),
+            ),
+          );
+        for (const p of pairRows) pairedIds.add(p.id);
+      }
+      const coverageFor = (row: BooksItemRow): BooksFormatCoverage | null => {
+        if (row.mediaKind === 'comic') return null;
+        if (pairedIds.has(row.id)) return 'both';
+        return row.mediaKind === 'book' ? 'ebook' : 'audio';
+      };
+
       return {
-        items: rows.map(toBooksListItem),
+        items: rows.map((row) => ({ ...toBooksListItem(row), formatCoverage: coverageFor(row) })),
         nextCursor: rows.length === input.limit ? input.cursor + input.limit : null,
       };
     }),
@@ -364,6 +479,9 @@ export const booksRouter = router({
       const canFix =
         ctx.user.role.isAdmin ||
         (await bookActionsForRole({ db: ctx.db, roleId: ctx.user.role.id })).includes('fix_book');
+      // ADR-065 / DESIGN-036 D-09 — the pairing state: paired ⇒ the counterpart's own deep link (the
+      // second consume button); unpaired ⇒ the missing format + its pairing want. Comics carry none.
+      const pairing = await resolvePairingState(ctx.db, row);
       return {
         canFix,
         item: {
@@ -376,7 +494,38 @@ export const booksRouter = router({
           label: booksPlayLabel(row.source),
           url: row.deepLinkUrl,
         },
+        pairing,
       };
+    }),
+
+  /**
+   * ADR-065 C-05 / DESIGN-036 D-08 — the BOOKS-gated force-search for a PAIRING want. A system want
+   * has no owner, so the ADR-057 ownership gate cannot apply: whoever the books walls belong to may
+   * nudge the estate's own want (server-authoritative `booksProcedure`, ≥ read_only). Audited exactly
+   * like every manual search (`request_book_search` via recordManualSearch — the actor is the caller),
+   * then the confined LL searchBook fires for the not-yet-landed format (the held `landed` format
+   * narrows itself out). A GOODREADS want is FORBIDDEN here — it keeps `integrations.search` and its
+   * ownership semantics untouched.
+   */
+  searchPairingWant: booksProcedure
+    .input(z.object({ requestId: z.uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const request = await getBookRequestById({ db: ctx.db, id: input.requestId });
+      if (!request) throw new TRPCError({ code: 'NOT_FOUND' });
+      if (request.origin !== 'pairing') {
+        // Not this surface's want — goodreads requests keep the owner-gated integrations.search.
+        throw new TRPCError({ code: 'FORBIDDEN' });
+      }
+      return mapDomainErrors(async () => {
+        const result = await runManualBookSearch({
+          db: ctx.db,
+          requestId: input.requestId,
+          userId: ctx.user.id,
+          actorId: ctx.user.id,
+          ll: resolveLazyLibrarianBundle(ctx),
+        });
+        return { target: 'lazylibrarian' as const, ...result };
+      });
     }),
 
   /**
