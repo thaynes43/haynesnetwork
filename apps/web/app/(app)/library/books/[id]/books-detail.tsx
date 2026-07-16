@@ -2,13 +2,14 @@
 
 // ADR-047 / DESIGN-025 (PLAN-028) — the Books/Audiobooks/Comics READ-ONLY drill-in. Mirrors the /library/[id]
 // visual language (BackLink + `.card.detail-head` with a 2:3 MediaPoster, title/year, a badges row, an About
-// block, last-synced) but LEAN: no Fix/Force-Search (books have no *arr semantics, ADR-046). The PRIMARY
+// block, last-synced) but the PRIMARY action is the deep link; ADR-062 (PLAN-041) adds a server-gated Fix control. The PRIMARY
 // action is the app-specific deep link — "Read in Kavita ↗" / "Listen on Audiobookshelf ↗" (from
 // books_items.deep_link_url) — opening the item in the serving app (new tab). Reflow-free (ADR-015).
 import { trpc } from '@/lib/trpc-client';
 import { BackLink } from '@/components/back-link';
 import { MediaPoster } from '@/components/cards';
 import { formatWhen } from '@/lib/media';
+import { BookFixControl } from './book-fix-dialog';
 
 /** "3h 12m" / "48m" from whole seconds; null when absent. */
 function formatDuration(seconds: number | null): string | null {
@@ -39,7 +40,7 @@ export function BooksDetail({ id, from }: { id: string; from: string | null }) {
       </>
     );
   }
-  const { item, play } = detail.data!;
+  const { item, play, canFix } = detail.data!;
   const duration = formatDuration(item.durationSeconds);
   const badges = [
     item.pageCount ? `${item.pageCount} pages` : null,
@@ -71,6 +72,8 @@ export function BooksDetail({ id, from }: { id: string; from: string | null }) {
               {play.label}
               <span className="btn__ext" aria-hidden="true"> ↗</span>
             </a>
+            {/* ADR-062 (PLAN-041) — the Fix control (server-gated by canFix). */}
+            {canFix ? <BookFixControl booksItemId={item.id} title={item.title} /> : null}
           </p>
         </div>
       </section>

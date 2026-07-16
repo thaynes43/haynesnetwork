@@ -77,8 +77,10 @@ rate → TOO_MANY_REQUESTS, open-dupe → CONFLICT (the fix router idiom).
 ### D-07 — UI anatomy
 
 On-disk tile ⇒ **Fix**; Wanted overlay ⇒ existing Force Search (the DESIGN-005 D-15 rule ported).
-Surface: a lightweight book detail SHEET (ADR-058 card family; no heavy per-book page — Q-04)
-opened from a landed tile: cover, metadata, deep-link-out, and Fix. The Fix opens a **Modal**
+Surface (Q-04 owner ruling: consistency with the Library's existing pages): the EXISTING
+`/library/books/[id]` landed-detail page (`books-detail.tsx` — until now read-only) gains the Fix
+action in the item-detail `.action-slot` idiom; the wall tile keeps linking through to it. No new
+sheet, no new page. The Fix opens a **Modal**
 (ADR-014; multi-field): reason radios, free-text on `other`, language pick on `wrong_language`,
 and the honest stale-file note ("a replacement will be searched; the current file stays until
 quarantined — how"). After submit the modal's done-block is the live feedback: PhaseChip driven
@@ -115,11 +117,11 @@ phase flip (ADR-015); no-grant ⇒ no affordance (server-enforced).
 
 | ID | Question | Resolution |
 |----|----------|------------|
-| Q-01 | Role rollout | DEFAULT: ship Admin-only (no grant rows); owner opens per role later. |
-| Q-02 | Keep `wrong_content` explicit? | DEFAULT: fold into `other`. |
-| Q-03 | Per-Fix language pin / manual result pick | DEFAULT: defer; v1 rides REJECT_WORDS + usenet-first (Matilda-proven). |
-| Q-04 | Book detail sheet vs full page | DEFAULT: sheet (ADR-058 card), no heavy page. |
-| Q-05 | Comics in v1 | DEFAULT: yes (route branch is near-free via ADR-056). |
-| Q-06 | Proactive epub structural QA | DEFAULT: defer to a detection research spike (separate track; Fix's `bad_quality` covers reported cases). |
-| Q-07 | Mode-2 quarantine automation | DEFAULT: defer (own ADR; needs a cephfs-mounted surface). |
-| Q-08 | Fix budget | DEFAULT: books-scoped hourly sibling counter (don't consume the *arr Fix budget); one open Fix per (books_item, media_kind). |
+| Q-01 | Role rollout | RULED 2026-07-15: Admin-only for the TEST window, then FLIP TO ALL ROLES — tracked post-validation step, must not be forgotten. |
+| Q-02 | Keep `wrong_content` explicit? | RULED: fold into `other`. |
+| Q-03 | Per-Fix language pin / manual result pick | RULED: defer (v1 rides REJECT_WORDS + usenet-first). |
+| Q-04 | Book detail sheet vs full page | RULED: neither — use the EXISTING /library/books/[id] detail page (Library consistency). |
+| Q-05 | Comics in v1 | RULED: yes. |
+| Q-06 | Proactive epub structural QA | RULED: defer (separate detection spike). |
+| Q-07 | Mode-2 quarantine automation | RULED: defer — detail session later; v1 lets users fix. |
+| Q-08 | Fix budget | RULED: books-scoped counter, generous (owner: never lock the small user group out) — 25/user/hour env-tunable (`BOOK_FIX_RATE_LIMIT_PER_HOUR`; owner ruling 2026-07-15 — parity with the *arr Fix budget, raised the same evening), admins exempt, one open Fix per (books_item, media_kind) is the real spam guard. |

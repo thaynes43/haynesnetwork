@@ -1176,4 +1176,54 @@ describe('migrations against embedded Postgres 16', () => {
       await client.query({ text: `DELETE FROM users WHERE id = $1`, values: [authorId] });
     });
   });
+
+  describe('0052 books fix (ADR-062 — fix aggregate + grants + audit CHECK)', () => {
+    it('accepts a fix row, enforces reason-text-iff-other, and admits the new audit actions', async () => {
+      const userId = (
+        await client.query(
+          `INSERT INTO users (email, display_name) VALUES ('bookfix-mig@example.com', 'Fix Mig') RETURNING id`,
+        )
+      ).rows[0].id;
+      const itemId = (
+        await client.query(
+          `INSERT INTO books_items (source, media_kind, external_id, library_id, library_name, title, sort_title, deep_link_url)
+           VALUES ('kavita', 'book', 'mig-ext-1', '1', 'EBooks', 'Fix Target', 'fix target', 'http://kavita/x') RETURNING id`,
+        )
+      ).rows[0].id;
+      await client.query({
+        text: `INSERT INTO book_fix_requests (requester_id, books_item_id, source, external_id, media_kind, title_snapshot, route, reason)
+               VALUES ($1, $2, 'kavita', 'mig-ext-1', 'book', 'Fix Target', 'lazylibrarian', 'wrong_language')`,
+        values: [userId, itemId],
+      });
+      // reason 'other' REQUIRES reason_text (and vice versa).
+      await expect(
+        client.query({
+          text: `INSERT INTO book_fix_requests (requester_id, books_item_id, source, external_id, media_kind, title_snapshot, route, reason)
+                 VALUES ($1, $2, 'kavita', 'mig-ext-1', 'book', 'Fix Target', 'lazylibrarian', 'other')`,
+          values: [userId, itemId],
+        }),
+      ).rejects.toMatchObject({ code: '23514' });
+      // grants: a fix_book row inserts; an unknown action rejects.
+      const roleId = (await client.query(`SELECT id FROM roles WHERE name = 'Default'`)).rows[0].id;
+      await client.query({
+        text: `INSERT INTO role_books_action_grants (role_id, action) VALUES ($1, 'fix_book')`,
+        values: [roleId],
+      });
+      await expect(
+        client.query({
+          text: `INSERT INTO role_books_action_grants (role_id, action) VALUES ($1, 'delete_book')`,
+          values: [roleId],
+        }),
+      ).rejects.toMatchObject({ code: '23514' });
+      for (const action of ['request_book_fix', 'update_book_actions']) {
+        await client.query({ text: `INSERT INTO permission_audit (action) VALUES ($1)`, values: [action] });
+      }
+      // cleanup (books_item is RESTRICT-referenced — remove the fix rows first).
+      await client.query({ text: `DELETE FROM role_books_action_grants WHERE role_id = $1`, values: [roleId] });
+      await client.query(`DELETE FROM permission_audit WHERE action IN ('request_book_fix','update_book_actions')`);
+      await client.query({ text: `DELETE FROM book_fix_requests WHERE books_item_id = $1`, values: [itemId] });
+      await client.query({ text: `DELETE FROM books_items WHERE id = $1`, values: [itemId] });
+      await client.query({ text: `DELETE FROM users WHERE id = $1`, values: [userId] });
+    });
+  });
 });

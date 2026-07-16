@@ -1,6 +1,6 @@
 # ADR-062: Books/Audiobooks/Comics "Fix" — a confined acquisition-layer re-grab for a LANDED bad copy
 
-- **Status:** Proposed
+- **Status:** Accepted (owner ratified Q-01..Q-08 2026-07-15 evening; Accept authority per plan-loop)
 - **Date:** 2026-07-15
 - **Deciders:** Tom Haynes (PLAN-041 owner intent 2026-07-11, re-affirmed 2026-07-15)
 - **Builds on / refines:** ADR-046 (books_items pure mirror; no write-back to the LIBRARY layer —
@@ -79,7 +79,9 @@ with no rows ⇒ Admin-only.
   epubs, the F-09 class).
 - **C-07** Role gate: `role_books_action_grants` action `fix_book` (a row IS the grant; Admin
   implies all; `setRoleBookActions` single-writer co-writes `update_book_actions` audit). Ships
-  with NO rows ⇒ Admin-only. Ownership NOT required.
+  with NO rows ⇒ Admin-only FOR THE TEST WINDOW ONLY — the owner ruling (Q-01) is that once
+  validated it opens to ALL roles; the flip is a TRACKED post-validation step (PLAN-041 phase 5 +
+  HANDOFF watch item), not an afterthought. Ownership NOT required.
 - **C-08** Feedback + compliance reuse: live status via the ADR-059 Activity read-model (the book
   stage machine exists) + the ADR-028/PLAN-015 idiom in a reserved reflow-free slot; a fired Fix
   appears in the Activity tab. Re-grabs are governed (PLAN-039) by construction.

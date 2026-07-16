@@ -103,3 +103,8 @@ export * from './book-requests';
 // transition trail is the notification_outbox rows (the mam_gate_state / smart-alerts class).
 export * from './role-activity-action-grants';
 export * from './activity-import-failures';
+// ADR-062 / DESIGN-033 (PLAN-041 — books Fix) — the audited landed-bad-copy fix aggregate + the
+// fine-grained books action grants (fix_book — Admin-only until the Q-01 all-roles flip). Both
+// guarded single-writer tables (createBookFixRequest / setRoleBookActions).
+export * from './book-fix-requests';
+export * from './role-books-action-grants';

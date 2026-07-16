@@ -28,8 +28,9 @@ re-acquires + records + guides** (`stale_file_action` seam); **Mode-2 "quarantin
 3. **API:** `bookFix.create/.progress/.myFixes/.adminList` behind `bookActionProcedure('fix_book')`.
 4. **UI:** landed-tile Fix → book detail SHEET (ADR-058) → reason Modal (ADR-014) → live
    PhaseChip via the ADR-059 Activity read (reflow-free, ADR-015). Fired fixes visible in Activity.
-5. **Rollout:** ships Admin-only (no grant rows); owner opens `fix_book` per role after
-   screenshot review. e2e advisory.
+5. **Rollout (Q-01 RULED):** ships Admin-only for the owner's TEST ONLY — then **FLIP `fix_book`
+   TO ALL ROLES** (a tracked, must-not-forget post-validation step: seed the grant for every
+   non-admin role via `setRoleBookActions` once the owner validates). e2e advisory.
 
 ## Dependencies (all LIVE)
 
@@ -37,7 +38,7 @@ ADR-055/056 confined clients · ADR-059 Activity read-model · PLAN-039 governor
 feedback primitives · ADR-058 cards. No new external write surface. Deployed-LL gotcha: no
 `getBook` — reconcile via `getAllBookStatuses()`.
 
-## Open questions for the owner (defaults recommended — see DESIGN-033 Q-01..Q-08)
+## Owner rulings 2026-07-15 evening (all eight answered — see DESIGN-033 Q table)
 
 Q-01 Admin-only ship (default: yes) · Q-02 fold `wrong_content` into `other` (default: yes) ·
 Q-03 defer language pin / manual pick (default: yes) · Q-04 detail SHEET not page (default: yes) ·
