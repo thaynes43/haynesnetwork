@@ -73,3 +73,10 @@
 - Cross-media-type membership — MOOT for v1 (mirror carries whatever Plex holds; walls are per-kind).
 - New domain `collections` + ordered `collection_items` — REJECTED permanently (R1; ADR-064 option 2).
 - Mirrored vs native precedence — MOOT (there is no native).
+
+## Roadmap (phases 2+ — owner-ratified 2026-07-16)
+
+- **PLAN-051** — books collections mirror (the external book-list tool first, then sync — R1).
+- **PLAN-052** — collection-manager integration parity (Kometa-side authoring workflow).
+- **PLAN-043 books-app phase** — the books application track's collections leg.
+- Research grounding: `.agents/context/2026-07-16-kometa-integration-research.md`.

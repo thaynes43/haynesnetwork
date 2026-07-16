@@ -30,6 +30,9 @@ export interface PlexCollectionsStats {
   membersFetched: number;
   /** Collections whose member read was TRUNCATED (totalSize > items — D-08: never member-reconciled). */
   truncatedCollections: number;
+  /** Sections whose /collections LISTING was truncated (page cap / totalSize contradiction) —
+   *  their collections upsert but the library is NOT scoped, so nothing of theirs reconciles. */
+  truncatedSections: number;
   /** Plex sections present on the server but absent from the plex_libraries registry (skipped). */
   unmappedSections: number;
 }
@@ -73,6 +76,7 @@ export async function fetchPlexCollectionsSnapshot(input: {
     collectionsFetched: 0,
     membersFetched: 0,
     truncatedCollections: 0,
+    truncatedSections: 0,
     unmappedSections: 0,
   };
 
@@ -100,7 +104,8 @@ export async function fetchPlexCollectionsSnapshot(input: {
       continue; // no plex_libraries row — cannot FK a collection; run a registry refresh first
     }
     try {
-      const sectionCollections = await read.listCollections(section.key);
+      const { collections: sectionCollections, truncated: listingTruncated } =
+        await read.listCollections(section.key);
       stats.sectionsRead += 1;
       for (const collection of sectionCollections) {
         stats.collectionsFetched += 1;
@@ -141,7 +146,19 @@ export async function fetchPlexCollectionsSnapshot(input: {
           fullyRead,
         });
       }
-      scopedLibraryIds.add(lib.libraryId); // listing fully read → in collection-reconcile scope
+      if (listingTruncated) {
+        // Adversarial-review fix — a truncated LISTING (page cap / totalSize contradiction) is the
+        // section-level fullyRead discipline: upsert everything we saw, but the library is NOT
+        // scoped, so no collection of it can be reconcile-deleted from a partial read.
+        stats.truncatedSections += 1;
+        logger.warn('collections-sync: collections listing truncated (library not scoped)', {
+          server: COLLECTIONS_SERVER_SLUG,
+          section: section.key,
+          fetched: sectionCollections.length,
+        });
+      } else {
+        scopedLibraryIds.add(lib.libraryId); // listing fully read → in collection-reconcile scope
+      }
     } catch (error) {
       logger.error('collections-sync: section collections read failed', {
         server: COLLECTIONS_SERVER_SLUG,

@@ -567,6 +567,7 @@ async function main(): Promise<number> {
             collectionsRemoved: report.collectionsSync.collectionsRemoved,
             membersRemoved: report.collectionsSync.membersRemoved,
             truncatedCollections: report.collectionsSync.stats.truncatedCollections,
+            truncatedSections: report.collectionsSync.stats.truncatedSections,
             unmappedSections: report.collectionsSync.stats.unmappedSections,
           },
         }

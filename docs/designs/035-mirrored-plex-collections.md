@@ -81,6 +81,11 @@ a collection has no portrait source, the cover fan is the art, DESIGN-026 D-04 l
 - **THE INVARIANT** — a collection whose accessible ledger-member count is ZERO (all members
   withheld, unmatched, or non-ledger) is DROPPED from the listing entirely: no card, no label leak.
   Admin (unrestricted) sees every collection with ≥ 1 ledger-matched member of the kind.
+- **Collection-existence visibility note (intended, pending owner confirmation):** access is
+  ITEM-level (the ADR-047 gate), not collection-home-level — a member accessible through ANOTHER
+  library (e.g. mirrored into a granted HNet library) still counts toward, and therefore surfaces,
+  the HOps collection's title even for a caller not granted the HOps library itself; the card
+  exposes only that collection's name plus items the caller could already see.
 
 ### D-04 — Drill-in: `?group=<ratingKey>` is a `ledger.search` predicate
 

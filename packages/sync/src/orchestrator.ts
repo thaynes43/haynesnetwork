@@ -998,9 +998,12 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
         membersRemoved: report.membersRemoved,
         scopedLibraries: snapshot.scopedLibraryIds.length,
         truncatedCollections: snapshot.stats.truncatedCollections,
+        truncatedSections: snapshot.stats.truncatedSections,
         unmappedSections: snapshot.stats.unmappedSections,
       });
-      if (snapshot.scopedLibraryIds.length === 0) {
+      // A run that READ nothing is a failure; a truncated-but-read run is a degraded success
+      // (upserts landed, reconcile skipped — the stats carry the truncation).
+      if (snapshot.stats.sectionsRead === 0) {
         collectionsSyncError =
           'collections-sync: no HOps section could be read (registry empty or server down)';
       }

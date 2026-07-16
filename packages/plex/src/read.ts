@@ -47,9 +47,20 @@ export interface PlexClientOptions {
 const xmlBool = (v: string | undefined): boolean => v === '1' || v === 'true';
 
 /** ADR-064 — the /collections read pages in this container size … */
-const COLLECTIONS_PAGE_SIZE = 200;
+export const COLLECTIONS_PAGE_SIZE = 200;
 /** … under a safety cap so a bad totalSize can never loop forever (the plex-match MAX_PAGES idiom). */
-const MAX_COLLECTION_PAGES = 50;
+export const MAX_COLLECTION_PAGES = 50;
+
+/** ADR-064 — a section's paged /collections listing plus its completeness flag. */
+export interface PlexCollectionsListing {
+  collections: PlexCollection[];
+  /**
+   * True when the read ended WITHOUT proof of completion (the MAX_COLLECTION_PAGES cap, or a
+   * totalSize-contradicting empty page). A truncated listing is PARTIAL: reconcile-deleting
+   * against it would tombstone everything past the cut — callers must not scope it.
+   */
+  truncated: boolean;
+}
 
 function attr(el: XmlElement, name: string): string | undefined {
   return el.attrs[name];
@@ -149,15 +160,24 @@ export class PlexReadClient {
 
   /**
    * ADR-064 / DESIGN-035 D-02 (PLAN-037 — mirrored collections) — `GET
-   * /library/sections/{key}/collections`: a section's Plex collections, paged to completion with the
+   * /library/sections/{key}/collections`: a section's Plex collections, paged with the
    * X-Plex-Container-Start/-Size loop (the /collections listing is container-bounded like /all —
    * the plex-match lesson) under a MAX_COLLECTION_PAGES cap. Read-only; token stays in the header.
    * A collection's MEMBERS are its `/library/metadata/{ratingKey}/children` — read via the existing
    * listMetadataChildren.
+   *
+   * Termination (adversarial-review fix): `size` (the RETURNED PAGE COUNT) is NEVER substituted
+   * for the grand total — that would end the loop after one page and let a reconciling caller
+   * tombstone everything past it. With `totalSize` on the wire the loop ends at
+   * `start >= totalSize`; without it, only an EMPTY or SHORT page (< COLLECTIONS_PAGE_SIZE) ends
+   * it. Any other exit — the page cap, or a totalSize-contradicting empty page — marks the
+   * listing `truncated`: callers must treat it as PARTIAL (upsert what was seen, never reconcile
+   * on it — the fetcher leaves the library unscoped).
    */
-  async listCollections(sectionKey: string): Promise<PlexCollection[]> {
+  async listCollections(sectionKey: string): Promise<PlexCollectionsListing> {
     const collections: PlexCollection[] = [];
     let start = 0;
+    let truncated = true; // proven complete only by a terminating condition below
     for (let page = 0; page < MAX_COLLECTION_PAGES; page += 1) {
       const body = await this.http.requestJson(
         'GET',
@@ -173,10 +193,21 @@ export class PlexReadClient {
       const mc = body.MediaContainer;
       collections.push(...mc.Metadata);
       start += mc.Metadata.length;
-      const totalSize = mc.totalSize ?? mc.size ?? null;
-      if (mc.Metadata.length === 0 || (totalSize !== null && start >= totalSize)) break;
+      const totalSize = mc.totalSize ?? null;
+      if (totalSize !== null) {
+        if (start >= totalSize) {
+          truncated = false;
+          break;
+        }
+        // The server under-delivered against its own totalSize — stop, but stay PARTIAL.
+        if (mc.Metadata.length === 0) break;
+      } else if (mc.Metadata.length < COLLECTIONS_PAGE_SIZE) {
+        // No totalSize on the wire: an empty/short page is the only honest completion signal.
+        truncated = false;
+        break;
+      }
     }
-    return collections;
+    return { collections, truncated };
   }
 
   /**

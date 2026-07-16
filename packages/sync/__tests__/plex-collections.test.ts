@@ -35,10 +35,13 @@ function fakeHopsRead(): PlexReadClient {
     },
     async listCollections(sectionKey: string) {
       if (sectionKey !== '1') throw new Error(`unexpected section ${sectionKey}`);
-      return [
-        { ratingKey: '77001', title: 'IMDb Top 250', childCount: 250 },
-        { ratingKey: '77002', title: 'The Fixture Franchise', childCount: 2 },
-      ];
+      return {
+        collections: [
+          { ratingKey: '77001', title: 'IMDb Top 250', childCount: 250 },
+          { ratingKey: '77002', title: 'The Fixture Franchise', childCount: 2 },
+        ],
+        truncated: false,
+      };
     },
     async listMetadataChildren(ratingKey: string) {
       if (ratingKey === '77001') {
@@ -216,7 +219,10 @@ describe('fetchPlexCollectionsSnapshot + syncPlexCollections (ADR-064)', () => {
     const memberFailRead = {
       ...fakeHopsRead(),
       async listCollections() {
-        return [{ ratingKey: '77001', title: 'IMDb Top 250 (2027)', childCount: 251 }];
+        return {
+          collections: [{ ratingKey: '77001', title: 'IMDb Top 250 (2027)', childCount: 251 }],
+          truncated: false,
+        };
       },
       async listMetadataChildren() {
         throw new Error('children read failed');
@@ -243,5 +249,38 @@ describe('fetchPlexCollectionsSnapshot + syncPlexCollections (ADR-064)', () => {
       { ratingKey: '77001', title: 'IMDb Top 250 (2027)', childCount: 251 },
     ]);
     expect(await memberRows(t.db, '77001')).toEqual([{ ratingKey: '9001', sortOrder: 0 }]);
+  });
+
+  // Adversarial-review fix — a truncated /collections LISTING (page cap / totalSize contradiction)
+  // mirrors the member-path fullyRead discipline at SECTION grain: everything seen upserts, but the
+  // library is NOT scoped, so nothing of it can reconcile-delete from a partial read.
+  it('a truncated collections LISTING never scopes the library (upserts land, zero deletes)', async () => {
+    const truncatedListingRead = {
+      ...fakeHopsRead(),
+      async listCollections() {
+        return {
+          collections: [{ ratingKey: '77009', title: 'Beyond The Cap', childCount: 1 }],
+          truncated: true,
+        };
+      },
+      async listMetadataChildren() {
+        return { items: [{ ratingKey: '9009' }], librarySectionId: '1', totalSize: 1 };
+      },
+    } as unknown as PlexReadClient;
+    const snap = await fetchPlexCollectionsSnapshot({ db: t.db, plex: bundle(truncatedListingRead) });
+    expect(snap.stats.sectionsRead).toBe(1);
+    expect(snap.stats.truncatedSections).toBe(1);
+    expect(snap.scopedLibraryIds).toHaveLength(0); // NOT scoped — the writer's reconcile must skip
+    const report = await syncPlexCollections({
+      db: t.db,
+      collections: snap.collections,
+      scopedLibraryIds: snap.scopedLibraryIds,
+    });
+    // 77001 is ABSENT from the partial read yet SURVIVES; the newly-seen 77009 upserts alongside.
+    expect(report.collectionsRemoved).toBe(0);
+    expect(report.membersRemoved).toBe(0);
+    expect((await collectionRows(t.db)).map((c) => c.ratingKey)).toEqual(['77001', '77009']);
+    expect(await memberRows(t.db, '77001')).toEqual([{ ratingKey: '9001', sortOrder: 0 }]);
+    expect(await memberRows(t.db, '77009')).toEqual([{ ratingKey: '9009', sortOrder: 0 }]);
   });
 });
