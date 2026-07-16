@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.66.0](https://github.com/thaynes43/haynesnetwork/compare/v0.65.0...v0.66.0) (2026-07-16)
+
+
+### Features
+
+* estate play scoreboard — semi-live Tautulli badges on the dashboard (PLAN-057) ([#329](https://github.com/thaynes43/haynesnetwork/issues/329)) ([9caeb8d](https://github.com/thaynes43/haynesnetwork/commit/9caeb8dd4825db57642bbd4db64a5db369ba921c))
+
+
+### Bug Fixes
+
+* Haynestower lifetime play totals on the About page (PLAN-049 Q-06 resolved via NAS Tautulli) ([#327](https://github.com/thaynes43/haynesnetwork/issues/327)) ([9b9d580](https://github.com/thaynes43/haynesnetwork/commit/9b9d58049934da19753ce67bf33f131b189cfb5a))
+
+
+### Documentation
+
+* evening wrap — PLAN-053 completed (v0.65.0 live), Libretto M1 merged + stateless ruling recorded ([#325](https://github.com/thaynes43/haynesnetwork/issues/325)) ([b93049c](https://github.com/thaynes43/haynesnetwork/commit/b93049cb4d19593a36f268085ad7b56afb8698b7))
+
 ## [0.65.0](https://github.com/thaynes43/haynesnetwork/compare/v0.64.0...v0.65.0) (2026-07-16)
 
 
