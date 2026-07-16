@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.62.1](https://github.com/thaynes43/haynesnetwork/compare/v0.62.0...v0.62.1) (2026-07-16)
+
+
+### Bug Fixes
+
+* About page copy tone pass (owner review round 1) ([#312](https://github.com/thaynes43/haynesnetwork/issues/312)) ([6df5211](https://github.com/thaynes43/haynesnetwork/commit/6df521105e40e7ffa0a847aa9616df33ca0c4573))
+
+
+### Documentation
+
+* overnight wrap — v0.62.0 About/Help page live (PLAN-049 → completed/) + release-train dance lessons + owner morning queue ([#309](https://github.com/thaynes43/haynesnetwork/issues/309)) ([72f9ab2](https://github.com/thaynes43/haynesnetwork/commit/72f9ab2dfcf4f3664ea081d760d8cb64b8233004))
+
 ## [0.62.0](https://github.com/thaynes43/haynesnetwork/compare/v0.61.0...v0.62.0) (2026-07-16)
 
 
