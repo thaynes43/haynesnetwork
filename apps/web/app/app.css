@@ -6607,3 +6607,158 @@ body:has(.gallery) {
   flex-direction: column;
   gap: 12px;
 }
+
+/* ---------- About/Help (ADR-063 / DESIGN-034) ---------- */
+/* D-01 — the dashboard entry card: .tile anatomy, INVERTED via the accent-fill idiom
+   (.btn.primary precedent — no new tokens). Hover deepens the fill toward the contrast
+   tone; color ONLY — no ring, no lift, nothing moves (ADR-015). Tokens only (hard rule 2). */
+.tile--about {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-accent-contrast);
+}
+.tile--about:hover {
+  background: color-mix(in srgb, var(--color-accent) 86%, var(--color-accent-contrast));
+  border-color: color-mix(in srgb, var(--color-accent) 86%, var(--color-accent-contrast));
+  box-shadow: var(--shadow);
+  transform: none;
+}
+.tile--about .tile__icon {
+  background: color-mix(in srgb, var(--color-accent-contrast) 14%, transparent);
+  color: var(--color-accent-contrast);
+}
+/* The light-theme icon deepen (DESIGN-006 contrast note) must not wash the inverted well. */
+[data-theme='hnet-light'] .tile--about .tile__icon {
+  color: var(--color-accent-contrast);
+}
+.tile--about .tile__desc,
+.tile--about .tile__ext {
+  color: color-mix(in srgb, var(--color-accent-contrast) 78%, var(--color-accent));
+}
+
+/* D-02 — the perforation between the About card and the app grid. Pure separator, zero
+   interaction (CSS dashes stay crisp at any width — the established dashed-border idiom). */
+.tile-rule {
+  border: 0;
+  border-top: 1px dashed var(--color-border);
+  margin: var(--space) 0;
+}
+
+/* D-03/D-09 — the /about page: ONE centered phone-first column. Long URLs wrap instead of
+   forcing a horizontal scroll (overflow-wrap on the column catches every leaf). */
+.about {
+  max-width: 720px;
+  margin: 0 auto;
+  overflow-wrap: anywhere;
+}
+.about p {
+  margin: 0 0 10px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.about ul,
+.about ol {
+  margin: 0 0 10px;
+  padding-left: 22px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.about li {
+  margin: 4px 0;
+}
+/* Links: accent-toned + underlined (the .motd__message idiom); hover thickens the underline
+   only — no layout change (ADR-015). Light theme deepens toward text (DESIGN-006 contrast). */
+.about a {
+  color: var(--color-accent);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+[data-theme='hnet-light'] .about a {
+  color: color-mix(in srgb, var(--color-accent) 62%, var(--color-text));
+}
+.about a:hover {
+  text-decoration-thickness: 2px;
+}
+.about__intro p:last-child {
+  color: var(--color-text-muted);
+}
+
+/* D-05 — the haynes-ops info pane: a .card aside between the intro and the sections. */
+.about-pane {
+  padding: 14px 16px;
+  margin: 0 0 var(--space);
+}
+.about-pane p {
+  margin: 0;
+}
+
+/* D-04 — collapsible sections: native <details>, all collapsed by default. The summary row
+   (glyph + title + chevron) is a ≥44px tap target; opening rotates the chevron (transform
+   only) and reveals the body BELOW — the sanctioned ADR-015 in-place expansion. */
+.about-sec {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  margin: 0 0 10px;
+}
+.about-sec__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  min-height: 48px;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600;
+  font-size: 14px;
+}
+.about-sec__head::-webkit-details-marker {
+  display: none;
+}
+.about-sec__glyph {
+  display: inline-flex;
+  flex: none;
+  color: var(--color-accent);
+}
+[data-theme='hnet-light'] .about-sec__glyph {
+  color: color-mix(in srgb, var(--color-accent) 62%, var(--color-text));
+}
+.about-sec__title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.about-sec__chevron {
+  display: inline-flex;
+  flex: none;
+  color: var(--color-text-muted);
+  transition: transform 0.15s ease;
+}
+.about-sec[open] > .about-sec__head .about-sec__chevron {
+  transform: rotate(90deg);
+}
+.about-sec[open] > .about-sec__head {
+  border-bottom: 1px solid var(--color-border);
+}
+.about-sec__body {
+  padding: 12px 14px 6px;
+}
+.about-sec__body h3 {
+  margin: 12px 0 6px;
+  font-size: 14px;
+}
+.about-sec__body h3:first-child {
+  margin-top: 0;
+}
+
+/* D-08 — owner-unvalidated instructions carry this muted note until he confirms
+   (iOS Panels steps, Plex language recipe — PLAN-049 Q-04/Q-05). */
+.about-flag {
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-muted);
+  font-size: 13px;
+  padding: 8px 12px;
+}

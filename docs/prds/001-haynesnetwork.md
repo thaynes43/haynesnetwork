@@ -464,6 +464,13 @@ T-129..T-135.)
 | R-204 | **Books Fix gating + the flip.** `fix_book` is a fine-grained role action grant (ADR-023 idiom); it SHIPS ungranted (Admin-only) for the owner's test window and is then FLIPPED TO ALL ROLES (owner ruling Q-01 — a tracked post-validation step). Budget: 25/user/hour (books-scoped; admins exempt); one OPEN fix per (item, kind). | Must |
 | R-205 | **Honest stale-file semantics (ADR-062 C-03).** v1 never moves library files; the fix records `stale_file_action='owner_quarantine'` and the UI says so plainly ("the current file stays until quarantined"). The automated quarantine assist is deferred (its own ADR). | Must |
 
+### About/Help page (PLAN-049 — ADR-063 / DESIGN-034)
+
+| ID | Requirement | Priority |
+| --- | --- | --- |
+| R-206 | **About entry card on the dashboard.** The logged-in dashboard's first element below the greeting is an "About haynesnetwork.com" card — tile-anatomy kin to the SSO cards but inverted (accent fill, `--color-accent-contrast` text), separated from the catalog grid by a perforated (dashed) rule. It links to `/about`, never reflows on interaction (ADR-015), and introduces no new tokens. | Must |
+| R-207 | **`/about` — a mobile-first help page for every signed-in user.** An ungated `(app)` route (auth-only, no section permission — ADR-063 C-04): a short migration intro with a haynes-ops info pane, then collapsed `<details>` sections (the sanctioned ADR-015 in-place expansion) covering Plex servers + My Plex, Fix/Force Search + Activity states, Tickets, Trash, requests (Seerr), the Goodreads integration, and consuming media (Kavita/reader apps, Audiobookshelf/AudioBooth, Plex best practices, Plexamp). Copy uses only real product labels/routes; unvalidated instructions carry a "verify" flag until the owner confirms; dynamic values (the trash save-window default) are read live, never hard-coded. Sections deep-link by hash (`/about#fix` arrives expanded). | Must |
+
 ### Platform & non-functional
 
 | ID   | Requirement                                                                                                                                                                                                                                        | Priority |
