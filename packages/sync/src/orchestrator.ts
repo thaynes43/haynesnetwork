@@ -34,6 +34,7 @@ import {
   syncAiUsage,
   syncAuthentikUsers,
   syncBooks,
+  syncBooksCollections,
   syncPlexMatches,
   syncPlexCollections,
   type DrainPoolRefreshResult,
@@ -42,6 +43,7 @@ import {
   type LazyLibrarianClientBundle,
   type PairingGbResolver,
   type SyncBooksReport,
+  type SyncBooksCollectionsReport,
   type SyncPlexMatchesReport,
   type SyncPlexCollectionsReport,
   type MaintainerrClientBundle,
@@ -88,6 +90,10 @@ import { fetchPlexMatchSnapshot, type PlexMatchStats } from './plex-match';
 // ADR-064 / DESIGN-035 (PLAN-037) — the read-only HOps collections fetcher the `collections-sync`
 // mode hands to the @hnet/domain syncPlexCollections single-writer (mirror upsert + scoped reconcile).
 import { fetchPlexCollectionsSnapshot, type PlexCollectionsStats } from './plex-collections';
+// ADR-066 / DESIGN-038 (PLAN-051) — the read-only Kavita/ABS collections fetcher the
+// `books-collections-sync` mode hands to the @hnet/domain syncBooksCollections single-writer
+// (mirror upsert + (source, kind)-family-scoped reconcile). Rides the SAME BooksSyncBundle.
+import { fetchBooksCollectionsSnapshot, type BooksCollectionsStats } from './books-collections';
 // ADR-045 / DESIGN-023 (PLAN-026) — the read-only Authentik directory client the `authentik-users` mode
 // pages; the snapshot is handed to the @hnet/domain syncAuthentikUsers single-writer (mirror upsert).
 import type { AuthentikReadClient } from '@hnet/authentik';
@@ -277,6 +283,10 @@ export interface SyncReport {
   collectionsSync?: (SyncPlexCollectionsReport & { stats: PlexCollectionsStats }) | null;
   /** The collections-sync run's error — sets totalFailure for the CLI exit. */
   collectionsSyncError?: string;
+  /** ADR-066 — the `books-collections-sync` result (null for every other mode / when it errored). */
+  booksCollectionsSync?: (SyncBooksCollectionsReport & { stats: BooksCollectionsStats }) | null;
+  /** The books-collections-sync run's error — sets totalFailure for the CLI exit. */
+  booksCollectionsSyncError?: string;
   /** ADR-065 — the `format-pairing` result (null for every other mode / when it errored). */
   formatPairing?: FormatPairingReport | null;
   /** The format-pairing run's error — sets totalFailure for the CLI exit. */
@@ -1070,6 +1080,66 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       collectionsSync,
       ...(collectionsSyncError !== undefined ? { collectionsSyncError } : {}),
       totalFailure: collectionsSyncError !== undefined,
+    };
+  }
+
+  // ADR-066 / DESIGN-038 — the `books-collections-sync` mode reads both book servers' collection
+  // families READ-ONLY (Kavita collections + Kavita reading lists as ORDERED collections + ABS
+  // collections; external software is ALWAYS the collections source of truth — owner doctrine R1)
+  // and UPSERTS the books_collections / books_collection_members mirror via the domain
+  // syncBooksCollections single-writer, reconciling collections/members a fully-read family/
+  // collection no longer serves. Member refs resolve against the fresh books_items mirror, so this
+  // mode's CronJob runs AFTER books-sync. Standalone mode: no *arr source, writes NO sync_runs row
+  // — its trail is the mirror tables. A run that could scope NO family at all (neither server
+  // readable) is a totalFailure (nonzero exit).
+  if (options.mode === 'books-collections-sync') {
+    const startedAt = new Date();
+    if (!options.books) {
+      throw new Error('books-collections-sync requires Kavita + Audiobookshelf clients (books)');
+    }
+    let booksCollectionsSync:
+      | (SyncBooksCollectionsReport & { stats: BooksCollectionsStats })
+      | null = null;
+    let booksCollectionsSyncError: string | undefined;
+    try {
+      const snapshot = await fetchBooksCollectionsSnapshot({ books: options.books, logger });
+      const report = await syncBooksCollections({
+        db,
+        collections: snapshot.collections,
+        scopedFamilies: snapshot.scopedFamilies,
+        ...(options.now ? { now: options.now } : {}),
+      });
+      booksCollectionsSync = { ...report, stats: snapshot.stats };
+      logger.info('books-collections-sync complete', {
+        collectionsUpserted: report.collectionsUpserted,
+        membersUpserted: report.membersUpserted,
+        membersResolved: report.membersResolved,
+        collectionsRemoved: report.collectionsRemoved,
+        membersRemoved: report.membersRemoved,
+        scopedFamilies: snapshot.scopedFamilies.map((f) => `${f.source}/${f.kind}`),
+        truncatedCollections: snapshot.stats.truncatedCollections,
+        unscopedFamilies: snapshot.stats.unscopedFamilies,
+      });
+      // A run that could scope NOTHING read nothing usable; a partially-scoped run is a degraded
+      // success (upserts landed, the unread families' reconcile skipped — the stats carry it).
+      if (snapshot.scopedFamilies.length === 0) {
+        booksCollectionsSyncError =
+          'books-collections-sync: neither book server could be read (both families unscoped)';
+      }
+    } catch (error) {
+      booksCollectionsSyncError = error instanceof Error ? error.message : String(error);
+      logger.error('books-collections-sync failed', { error: booksCollectionsSyncError });
+    }
+    return {
+      mode: options.mode,
+      startedAt,
+      finishedAt: new Date(),
+      sources: [],
+      backfill: null,
+      fixesCompleted: null,
+      booksCollectionsSync,
+      ...(booksCollectionsSyncError !== undefined ? { booksCollectionsSyncError } : {}),
+      totalFailure: booksCollectionsSyncError !== undefined,
     };
   }
 

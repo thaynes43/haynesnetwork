@@ -1418,4 +1418,80 @@ describe('migrations against embedded Postgres 16', () => {
       await client.query({ text: `DELETE FROM plex_libraries WHERE id = $1`, values: [libId] });
     });
   });
+
+  // ADR-066 / DESIGN-038 (migration 0056) — the books collections mirror: two derived-cache tables
+  // (identity uniques, source/kind CHECKs, collection CASCADE, member SET NULL) + the run-kind
+  // CHECK relax. Additive.
+  describe('0056 books collections (ADR-066 — mirror tables + run-kind CHECK)', () => {
+    it('accepts a collection + member, enforces identity + enum CHECKs, cascades and SET-NULLs cleanly', async () => {
+      // A books_items row for the member resolution FK.
+      const itemId = (
+        await client.query(
+          `INSERT INTO books_items (source, media_kind, external_id, library_id, library_name, title, sort_title, deep_link_url)
+           VALUES ('kavita', 'book', 'col-series-1', '1', 'EBooks', 'Collected Book', 'collected book', 'http://x')
+           RETURNING id`,
+        )
+      ).rows[0].id;
+      const colId = (
+        await client.query(
+          `INSERT INTO books_collections (source, external_id, kind, title, item_count, ordered)
+           VALUES ('kavita', '5', 'reading_list', 'HP Reading Order', 7, true) RETURNING id`,
+        )
+      ).rows[0].id;
+      // Identity — the same (source, external_id, kind) violates …
+      await expect(
+        client.query(
+          `INSERT INTO books_collections (source, external_id, kind, title) VALUES ('kavita', '5', 'reading_list', 'Renamed')`,
+        ),
+      ).rejects.toMatchObject({ code: '23505' });
+      // … but the SAME id in the OTHER kind space is a different row (reading lists ≠ collections).
+      await client.query(
+        `INSERT INTO books_collections (source, external_id, kind, title) VALUES ('kavita', '5', 'collection', 'HP Collection')`,
+      );
+      // The source/kind CHECKs bite.
+      await expect(
+        client.query(
+          `INSERT INTO books_collections (source, external_id, kind, title) VALUES ('plex', '9', 'collection', 'Bad Source')`,
+        ),
+      ).rejects.toMatchObject({ code: '23514' });
+      await expect(
+        client.query(
+          `INSERT INTO books_collections (source, external_id, kind, title) VALUES ('kavita', '9', 'playlist', 'Bad Kind')`,
+        ),
+      ).rejects.toMatchObject({ code: '23514' });
+      // Members: RAW ref + resolved id; the (collection, external_ref) identity bites.
+      await client.query({
+        text: `INSERT INTO books_collection_members (collection_id, external_ref, books_item_id, position) VALUES ($1, 'col-series-1', $2, 0)`,
+        values: [colId, itemId],
+      });
+      await expect(
+        client.query({
+          text: `INSERT INTO books_collection_members (collection_id, external_ref, position) VALUES ($1, 'col-series-1', 1)`,
+          values: [colId],
+        }),
+      ).rejects.toMatchObject({ code: '23505' });
+      // Deleting the resolved ITEM nulls the resolution but keeps the raw member row (SET NULL).
+      await client.query({ text: `DELETE FROM books_items WHERE id = $1`, values: [itemId] });
+      const member = await client.query({
+        text: `SELECT external_ref, books_item_id FROM books_collection_members WHERE collection_id = $1`,
+        values: [colId],
+      });
+      expect(member.rows).toEqual([{ external_ref: 'col-series-1', books_item_id: null }]);
+      // Deleting the COLLECTION cascades its members away.
+      await client.query({ text: `DELETE FROM books_collections WHERE id = $1`, values: [colId] });
+      const left = await client.query({
+        text: `SELECT count(*)::int AS n FROM books_collection_members WHERE collection_id = $1`,
+        values: [colId],
+      });
+      expect(left.rows[0].n).toBe(0);
+      await client.query(`DELETE FROM books_collections WHERE source = 'kavita' AND external_id = '5'`);
+    });
+
+    it('sync_runs.run_kind admits books-collections-sync (parity — the mode writes no row itself)', async () => {
+      await client.query(
+        `INSERT INTO sync_runs (source, run_kind, status) VALUES ('radarr', 'books-collections-sync', 'running')`,
+      );
+      await client.query(`DELETE FROM sync_runs WHERE run_kind = 'books-collections-sync'`);
+    });
+  });
 });

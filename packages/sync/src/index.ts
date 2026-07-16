@@ -27,4 +27,8 @@ export * from './plex-match';
 // ADR-064 / DESIGN-035 (PLAN-037) — the read-only HOps collections fetcher the `collections-sync` mode
 // hands to the domain syncPlexCollections single-writer (the Movies/TV Collections group view's mirror).
 export * from './plex-collections';
+// ADR-066 / DESIGN-038 (PLAN-051) — the read-only Kavita/ABS collections fetcher the
+// `books-collections-sync` mode hands to the domain syncBooksCollections single-writer (the books
+// walls' Collections group view's mirror; runs after books-sync).
+export * from './books-collections';
 export * from './orchestrator';

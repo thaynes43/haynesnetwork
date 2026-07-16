@@ -294,6 +294,21 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       'books-sync seed',
     );
 
+    // ADR-066 / DESIGN-038 (PLAN-051) — mirror the stub Kavita/ABS COLLECTIONS by RUNNING the real
+    // books-collections-sync mode (client -> fetcher -> syncBooksCollections single-writer, like
+    // prod). AFTER books-sync (member refs resolve against the fresh books_items mirror), so the
+    // book walls' Collections view + the ordered "List order" drill render on first load.
+    await runToCompletion(
+      join(cwd, 'node_modules', '.bin', 'tsx'),
+      [
+        join(cwd, '..', '..', 'packages', 'sync', 'src', 'scripts', 'sync.ts'),
+        '--mode=books-collections-sync',
+      ],
+      { ...process.env, ...env },
+      cwd,
+      'books-collections-sync seed',
+    );
+
     // ADR-059 / DESIGN-030 (PLAN-048) — populate the activity_import_failures ledger + the outbox by RUNNING
     // the real activity-scan mode against the stub LL + SAB AND the stub *arr (exercises the adapter →
     // normalizer → evaluateActivityFailures single-writer, like prod), so the Activity failure detail pages
