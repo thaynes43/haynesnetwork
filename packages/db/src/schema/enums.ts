@@ -342,6 +342,16 @@ export const SYNC_RUN_KINDS = [
   // touches NO *arr source and writes NO sync_runs row — its trail is the outbox row. It joins
   // SYNC_RUN_KINDS so the CLI --mode parser + SyncMode accept it (migration 0050 rebuilds the CHECK).
   'failure-digest',
+  // ADR-064 / DESIGN-035 (PLAN-037 — mirrored Plex collections) — 'collections-sync' mirrors the HOps
+  // Plex server's collections (charts included — owner R3) into the plex_collections /
+  // plex_collection_members derived cache via the domain syncPlexCollections single-writer: the
+  // fetcher pages each registered movie/show section's /collections + each collection's children
+  // READ-ONLY (slug haynesops only — owner R4), the writer upserts + reconcile-deletes scoped to
+  // fully-read sections/collections. External software is ALWAYS the collections source of truth
+  // (owner doctrine R1); no write to Plex ever. Like plex-match it is a standalone mode (no --source,
+  // writes NO sync_runs row — its trail is the mirror tables). It joins SYNC_RUN_KINDS so the CLI
+  // --mode parser + SyncMode accept it (migration 0053 rebuilds the sync_runs.run_kind CHECK).
+  'collections-sync',
 ] as const;
 export type SyncRunKind = (typeof SYNC_RUN_KINDS)[number];
 
