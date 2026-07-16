@@ -80,16 +80,23 @@ Four aggregates. The Recipe field set is the provider-parity contract's noun, ve
   firstSeenAt, lastSeenAt, resolution (open | pushed | landed | unmintable), llBookId? }` —
   the acquisition leg's input (D-09) and the contract's `missing[]` read (D-10).
 
-### D-03 — Persistence: Postgres 16 + drizzle
+### D-03 — Persistence: SQLite (WAL) + drizzle — AMENDED per owner ruling 2026-07-16
 
-Tables: `recipes`, `collections`, `collection_items` (FK collection, `position` int, target
-member id, matched work identity), `runs`, `missing_items`, `identifier_cache` (D-04's
-resolved external-id lookups, TTL'd), `settings` (few, typed). Drizzle schema + generated
-migrations; embedded-Postgres test harness exactly as hnet's `@hnet/test-utils` does it
-(PG16 only — the hard-rule discipline travels with the idiom). Collections/collection_items
-are a **rebuildable derived cache** of what Libretto wrote (the media_plex_matches class);
-recipes/runs/missing_items are durable state. Whether the production DB is a new database in
-hnet's Postgres cluster or Libretto's own instance is **Q-03**.
+**Owner ruling (resolves Q-03): no Postgres.** "Kometa is super lightweight" is the bar for
+the standalone audience — Libretto persists to a **single SQLite file on the app volume**
+(WAL mode; drizzle's sqlite dialect). One container + one volume is the whole deployment.
+The single-process reconciler (D-11's serialized worker queue) means no concurrent-writer
+pressure; if a future need outgrows SQLite the drizzle schema ports. Note: hnet's PG16-only
+hard rule is a haynesnetwork-repo rule; Libretto's governing constraint is trivial
+self-hosting.
+
+Tables (unchanged): `recipes`, `collections`, `collection_items` (FK collection, `position`
+int, target member id, matched work identity), `runs`, `missing_items`, `identifier_cache`
+(D-04's resolved external-id lookups, TTL'd — extra valuable under source rate limits),
+`settings` (few, typed). Drizzle schema + generated migrations; tests run against a temp-file
+SQLite db (no embedded-PG harness needed). Collections/collection_items are a **rebuildable
+derived cache** of what Libretto wrote (the media_plex_matches class); recipes/runs/
+missing_items are durable state.
 
 ### D-04 — Identifier resolution: IDs first, never title/author fuzz alone
 
@@ -242,7 +249,7 @@ structural.
   three, research §4), ExternalSecrets from the 1Password `HaynesKube` vault (Kavita/ABS/LL
   keys exist there today; Hardcover/NYT keys are Q-02), internal ingress
   `libretto.haynesops.com`, egress allowlist for `api.hardcover.app`,
-  `api.nytimes.com`, `openlibrary.org`, `query.wikidata.org`. DB per Q-03.
+  `api.nytimes.com`, `openlibrary.org`, `query.wikidata.org`. No DB service — SQLite on the PVC (D-03).
 - **Observability v1:** structured logs (pino), `GET /health` (liveness + DB ping), run
   history in the DB as the primary run-state surface (the contract's noun 4). Prometheus
   `/metrics` is explicitly later; alerting rides "no successful run in N hours" via the
@@ -293,10 +300,10 @@ compatibility promise hnet binds to).
 
 | ID | Question | Resolution |
 |----|----------|------------|
-| Q-01 | Repo license for the public repo — MIT (ecosystem default) vs AGPL (self-hosted-tool protective)? Owner call before the repo is created. | (open) |
-| Q-02 | Source API key provisioning: owner creates the Hardcover account + token (expiry behavior UNVERIFIED) and the NYT Books API key (rate limit UNVERIFIED); both land in 1Password `HaynesKube`. | (open) |
-| Q-03 | Does Libretto share hnet's Postgres cluster (new database, one less StatefulSet) or get its own instance in its namespace (isolation, standalone-shaped)? | (open — lean: own CNPG instance, matching the standalone story) |
-| Q-04 | Public repo home + name check: `github.com/thaynes43/libretto` (name availability on GHCR/npm unchecked). | (open) |
+| Q-01 | Repo license for the public repo — MIT (ecosystem default) vs AGPL (self-hosted-tool protective)? Owner call before the repo is created. | **RESOLVED (owner 2026-07-16): AGPL-3.0.** |
+| Q-02 | Source API key provisioning: owner creates the Hardcover account + token (expiry behavior UNVERIFIED) and the NYT Books API key (rate limit UNVERIFIED); both land in 1Password `HaynesKube`. | Instructions delivered 2026-07-16 (env contract: HARDCOVER_TOKEN, NYT_API_KEY; 1P item `libretto` in HaynesKube); owner provisioning. |
+| Q-03 | Does Libretto share hnet's Postgres cluster (new database, one less StatefulSet) or get its own instance in its namespace (isolation, standalone-shaped)? | **RESOLVED (owner 2026-07-16): NEITHER — no Postgres at all; SQLite on the app volume (D-03 amended).** |
+| Q-04 | Public repo home + name check: `github.com/thaynes43/libretto` (name availability on GHCR/npm unchecked). | **RESOLVED (owner 2026-07-16): name works; repo created by the owner at github.com/thaynes43/libretto (bot cannot create user repos); AGPL-3.0.** |
 
 ## Appendix A — the hnet binding sequence (the doctrine payoff)
 
