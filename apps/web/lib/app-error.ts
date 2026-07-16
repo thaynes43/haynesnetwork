@@ -10,7 +10,7 @@ const APP_CODE_COPY: Record<string, string> = {
   LAST_ADMIN: 'You can’t remove the last Admin — assign another user to Admin first.',
   CONCURRENT_TRANSITION: 'That user’s role changed under you — refresh and try again.',
   // DESIGN-005 D-17 — media ledger / fix / restore codes.
-  FIX_RATE_LIMIT_EXCEEDED: 'Fix limit reached (5 per hour). Try again in a bit.',
+  FIX_RATE_LIMIT_EXCEEDED: 'Fix limit reached (25 per hour). Try again in a bit.',
   FIX_ALREADY_OPEN: 'A fix is already open for this target — check its status below.',
   FIX_TARGET_REQUIRED: 'Pick the episode or album that needs fixing first.',
   LEDGER_ITEM_TOMBSTONED: 'This item is no longer in the media manager — nothing to fix.',
