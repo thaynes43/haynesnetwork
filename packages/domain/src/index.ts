@@ -122,6 +122,10 @@ export * from './plex-match';
 // ADR-064 / DESIGN-035 (PLAN-037) — the mirrored Plex collections single-writer (syncPlexCollections,
 // the collections-sync mode's writer). External software is always the collections source of truth.
 export * from './plex-collections';
+// ADR-066 / DESIGN-038 (PLAN-051) — the books collections mirror single-writer (syncBooksCollections,
+// the books-collections-sync mode's writer). Kavita/ABS are always the collections source of truth;
+// member refs resolve opportunistically against the fresh books_items mirror (run after books-sync).
+export * from './books-collections';
 // DESIGN-035 D-10 (PLAN-053) — the versioned Collection Type classifier (pure; the sync writer
 // recomputes the plex_collections.collection_type annotation from it at every upsert).
 export * from './collection-type';
