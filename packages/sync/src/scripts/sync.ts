@@ -639,6 +639,11 @@ async function main(): Promise<number> {
             integrations: report.goodreadsSync.integrations,
             synced: report.goodreadsSync.synced,
             failed: report.goodreadsSync.failed,
+            // ADR-067 (PLAN-055) — quota-skipped enrichment + the queued-fix retry pass.
+            skippedEnrichment: report.goodreadsSync.skippedEnrichment,
+            ...(report.goodreadsSync.fixRetries
+              ? { fixRetries: report.goodreadsSync.fixRetries }
+              : {}),
           },
         }
       : {}),

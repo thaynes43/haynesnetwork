@@ -85,6 +85,10 @@ export * from './books-collections';
 // sync mode upserts (the LL MAM-provider gate + the counts/limit that drove it). Guarded single-writer
 // table (evaluateMamGovernor); its transition trail is the notification_outbox rows (smart-alerts class).
 export * from './mam-gate-state';
+// ADR-067 / DESIGN-039 (PLAN-055) — the Google Books quota circuit breaker's single-row state (the
+// mam_gate_state class): daily/minute 429 trips consulted by every GB call site through the domain
+// guardedGbResolve seam. Guarded single-writer table (gb-quota-breaker.ts); no audit/outbox trail.
+export * from './gb-quota-state';
 // ADR-052 / DESIGN-026 D-06 (PLAN-029) — the per-user, per-wall Library preferences (last view +
 // group-by + sort). First per-user store; guarded single-writer table (setLibraryPreference), no audit.
 export * from './library-preferences';
