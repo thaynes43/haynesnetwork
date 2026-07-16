@@ -4,6 +4,55 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ NEXT SESSION — start here (written 2026-07-16 evening — the collections + pairing day, owner present)
+
+**Site live at https://haynesnetwork.com — latest release v0.64.0, live-verified.** Thursday ran the
+owner's "churn through something good" directive as TWO PARALLEL TRACKS, both shipped + live-validated:
+
+- **PLAN-037 Collections → completed/ (v0.63.0, #316/#314/haynes-ops #2072).** Mirrored Plex
+  collections (ADR-064 — the owner DOCTRINE: external software is ALWAYS the collections source
+  of truth, the app only syncs; extends hard rule 4), Collections group-by view on Movies/TV.
+  LIVE: first sync mirrored **461 collections / 7,910 members** from HOps Plex; the
+  adversarial-review paging hardening exercised immediately (two 1,300-member Kometa collections
+  truncation-flagged, never reconciled). `sync-collections` CronJob :57. Follow-up: paged member
+  reads for >1000-member collections.
+- **PLAN-050 Pairing → completed/ (v0.64.0, #317/#318/haynes-ops #2073).** Book⇄audiobook format
+  pairing (ADR-065): conservative full-title matcher (review-hardened vs franchise mispairs),
+  dual consume buttons, coverage badges, system wants (origin='pairing'), estate-wide auto-mint
+  PACED 25/run (owner ruling). LIVE: first run **paired 321, queued 1,519 candidates, minted the
+  exact 25 cap; 24 unmintable on the exhausted GB daily quota** (designed degradation — resumes
+  at the 07:00 UTC reset). `sync-format-pairing` CronJob :32. Residual: GB-429 circuit breaker.
+- **v0.62.0/v0.62.1 (overnight + morning): the About/Help page** (PLAN-049 completed/) + the
+  owner's copy-tone pass (rules now in memory: no em-dashes, no names, "cluster" not k8s, links
+  everywhere).
+- **Roadmap ratified + researched:** PLAN-051 (Kavita/ABS collections mirror — queued),
+  PLAN-052 (collection-manager integration — scope-ready; git-PR write path, --validate-file
+  gate, --run-files run-now), **PLAN-053 (Collection Type facet — READY TO BUILD, both Qs
+  resolved: six buckets, crew folds into Director; wall shows all, chips filter)**, and the
+  PLAN-043 books app: **named LIBRETTO (owner 2026-07-16), headless API-first service + minimal
+  built-in UI — DESIGN PHASE OPEN.** Kometa deep research filed
+  (`.agents/context/2026-07-16-kometa-integration-research.md`).
+
+**NEXT (owner-agreed order):** finish any Libretto design docs in flight → PLAN-053 build →
+PLAN-051 → PLAN-052. Libretto design runs parallel to hnet builds (separate repo, docs-only).
+
+**Release-train doctrine (hardened today, script at scratchpad/release-train-v3.sh):** the
+watcher is now dance-aware (release-PR checks never start on GITHUB_TOKEN pushes — close/reopen),
+**BEHIND-aware** (branch protection requires up-to-date branches; auto-merge silently stalls —
+the watcher now calls update-branch), and **e2e-tolerant** (e2e is advisory; local ground truth
+2026-07-16: 156/156 pass — the CI e2e lane red is environmental). Lesson: never merge docs PRs
+while a train is mid-flight (knocks the release PR BEHIND). Parallel-track rebases: migration
+journal entries + guard regex families + SYNC_RUN_KINDS CHECKs conflict — the SECOND track's
+CHECK rebuild must be the UNION of kinds; union-resolve regex lines by MERGING not concatenating.
+
+**Owner items still open from the overnight block:** THE FLIP (books fix_book + integrations
+section), Haynestower play totals (Q-06 TODO slot), Panels-iOS + Plex-language-recipe
+validation (About page flags), trash_default_window_days → 7 if wanted, collection-existence
+visibility note (DESIGN-035 D-03 — item-level access surfaces an HOps collection title to
+non-HOps users; confirm or tighten).
+
+### Prior top block (Wednesday overnight)
+
 ## ▶ NEXT SESSION — start here (written 2026-07-16 ~06:00 UTC — Wednesday overnight run, owner asleep)
 
 **Site live at https://haynesnetwork.com — latest release v0.62.0, deployed + health-verified.**
