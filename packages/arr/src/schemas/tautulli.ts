@@ -48,6 +48,26 @@ export const tautulliHistoryDataSchema = z.object({
 export type TautulliHistoryData = z.infer<typeof tautulliHistoryDataSchema>;
 
 /**
+ * `cmd=get_libraries_table` row (subset — ADR-068 / DESIGN-040 D-02, the estate play
+ * scoreboard read). Verified live 2026-07-16 against the HaynesTower instance: rows live
+ * under `response.data.data[]`; `plays`/`duration` are numbers (duration = SECONDS) and
+ * `section_type ∈ movie|show|artist|photo` — but Tautulli is loose with numerics elsewhere,
+ * so string forms are tolerated (the aggregator coerces; non-finite ⇒ 0).
+ */
+export const tautulliLibrariesTableRowSchema = z.object({
+  section_name: z.string().nullish(),
+  section_type: z.string().nullish(),
+  plays: z.union([z.number(), z.string()]).nullish(),
+  duration: z.union([z.number(), z.string()]).nullish(),
+});
+export type TautulliLibrariesTableRow = z.infer<typeof tautulliLibrariesTableRowSchema>;
+
+export const tautulliLibrariesTableDataSchema = z.object({
+  data: z.array(tautulliLibrariesTableRowSchema),
+});
+export type TautulliLibrariesTableData = z.infer<typeof tautulliLibrariesTableDataSchema>;
+
+/**
  * `cmd=get_metadata` payload (subset). `guids` carries the external ids as scheme URIs
  * (`imdb://tt…`, `tmdb://…`, `tvdb://…`) — the join key to media_items. `last_viewed_at`
  * is unix seconds. An unknown rating_key returns an empty object, so all fields are optional.

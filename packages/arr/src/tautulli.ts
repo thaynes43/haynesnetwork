@@ -7,8 +7,10 @@ import { ArrHttp } from './http';
 import {
   tautulliEnvelopeSchema,
   tautulliHistoryDataSchema,
+  tautulliLibrariesTableDataSchema,
   tautulliMetadataSchema,
   type TautulliHistoryRow,
+  type TautulliLibrariesTableRow,
   type TautulliMetadata,
 } from './schemas/tautulli';
 
@@ -54,6 +56,20 @@ export class TautulliClient {
           ...(params.mediaType ? { media_type: params.mediaType } : {}),
         },
       },
+    );
+    return response.data.data;
+  }
+
+  /**
+   * `cmd=get_libraries_table` — per-library LIFETIME play/duration totals (ADR-068 /
+   * DESIGN-040 D-02, the estate play scoreboard). READ-ONLY like everything here.
+   */
+  async getLibrariesTable(): Promise<TautulliLibrariesTableRow[]> {
+    const { response } = await this.http.requestJson(
+      'GET',
+      'v2',
+      tautulliEnvelopeSchema(tautulliLibrariesTableDataSchema),
+      { query: { apikey: this.apiKey, cmd: 'get_libraries_table' } },
     );
     return response.data.data;
   }
