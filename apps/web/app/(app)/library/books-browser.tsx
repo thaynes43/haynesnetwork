@@ -701,6 +701,16 @@ export function BooksBrowser({
                   : item.pageCount
                     ? `${item.pageCount} pp`
                     : null;
+              // ADR-065 / DESIGN-036 D-09 — the format-coverage badge ("Ebook + Audio" when the title
+              // is paired; the honest single-format label otherwise). Comics carry none (null).
+              const coverage =
+                item.formatCoverage === 'both'
+                  ? 'Ebook + Audio'
+                  : item.formatCoverage === 'ebook'
+                    ? 'Ebook only'
+                    : item.formatCoverage === 'audio'
+                      ? 'Audio only'
+                      : null;
               return (
                 // ADR-047 — the tile opens the in-app books DETAIL page (the deep link lives there now).
                 <BookCard
@@ -711,7 +721,7 @@ export function BooksBrowser({
                   title={item.title}
                   year={item.year}
                   author={item.author}
-                  badges={[badge ? { label: badge } : null]}
+                  badges={[badge ? { label: badge } : null, coverage ? { label: coverage } : null]}
                 />
               );
             })}

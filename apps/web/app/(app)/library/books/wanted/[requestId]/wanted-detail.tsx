@@ -93,15 +93,24 @@ function firedTitle(fired: Extract<Fired, { kind: 'fired' }>): string {
 function FormatSearchSlot({
   requestId,
   format,
+  origin,
   onFired,
 }: {
   requestId: string;
   format: FormatRow['format'];
+  /** ADR-065 — picks the endpoint: a goodreads want fires the owner-gated `integrations.search`;
+   *  a pairing (system) want fires the books-gated `books.searchPairingWant`. */
+  origin: 'goodreads' | 'pairing';
   onFired: () => void;
 }) {
   const [fired, setFired] = useState<Fired | null>(null);
-  const search = trpc.integrations.search.useMutation({
-    onSuccess: (result) => {
+  const handlers = {
+    onSuccess: (result: {
+      searched: boolean;
+      target: 'kapowarr' | 'lazylibrarian';
+      formats?: string[];
+      reason?: string;
+    }) => {
       if (result.searched) {
         setFired({
           kind: 'fired',
@@ -113,8 +122,11 @@ function FormatSearchSlot({
         setFired({ kind: 'noop', reason: 'reason' in result ? result.reason : undefined });
       }
     },
-    onError: (error) => setFired({ kind: 'failed', message: error.message }),
-  });
+    onError: (error: { message: string }) => setFired({ kind: 'failed', message: error.message }),
+  };
+  const searchGoodreads = trpc.integrations.search.useMutation(handlers);
+  const searchPairing = trpc.books.searchPairingWant.useMutation(handlers);
+  const search = origin === 'pairing' ? searchPairing : searchGoodreads;
 
   const chip = (phase: string, label: string, tone: PhaseTone, opts?: { pulse?: boolean; title?: string }) => (
     <PhaseChip phase={phase} label={label} tone={tone} pulse={opts?.pulse} meter={opts?.pulse} title={opts?.title} />
@@ -132,13 +144,18 @@ function FormatSearchSlot({
   } else if (fired?.kind === 'failed') {
     content = chip('failed', 'Search failed', 'danger', { title: fired.message });
   } else {
-    // The comic leg searches the whole Kapowarr volume (no per-format param); a book leg targets its format.
+    // The comic leg searches the whole Kapowarr volume (no per-format param); a book leg targets its
+    // format; a pairing want has exactly one open leg so its endpoint needs no format param.
     content = (
       <button
         type="button"
         className="btn sm"
         data-testid="format-search-btn"
-        onClick={() => search.mutate(format === 'comic' ? { requestId } : { requestId, format })}
+        onClick={() =>
+          origin === 'pairing'
+            ? searchPairing.mutate({ requestId })
+            : searchGoodreads.mutate(format === 'comic' ? { requestId } : { requestId, format })
+        }
       >
         Force Search
       </button>
@@ -166,12 +183,14 @@ function FormatSearchSlot({
 function FormatDetailRow({
   requestId,
   row,
+  origin,
   activityId,
   live,
   onFired,
 }: {
   requestId: string;
   row: FormatRow;
+  origin: 'goodreads' | 'pairing';
   activityId: string | null;
   /** This format's live status (polled by the parent, so the hero + row read ONE source of truth). */
   live: ActivityLiveStatus;
@@ -196,7 +215,7 @@ function FormatDetailRow({
       <span className="child-row__actions">
         {showLive ? <ActivityStageChip status={live} /> : null}
         {row.searchable ? (
-          <FormatSearchSlot requestId={requestId} format={row.format} onFired={handleFired} />
+          <FormatSearchSlot requestId={requestId} format={row.format} origin={origin} onFired={handleFired} />
         ) : null}
       </span>
     </li>
@@ -302,6 +321,7 @@ export function WantedDetail({ requestId, from }: { requestId: string; from: str
               key={f.format}
               requestId={d.requestId}
               row={f}
+              origin={d.origin}
               activityId={idFor(f.format)}
               live={liveFor(f.format)}
               onFired={refresh}
@@ -315,8 +335,9 @@ export function WantedDetail({ requestId, from }: { requestId: string; from: str
           </p>
         ) : !d.canSearch ? (
           <p className="muted">
-            Force Search is available to the person who shelved this want. The library keeps looking on the
-            hourly sync in the meantime.
+            {d.origin === 'pairing'
+              ? 'Force Search on a pairing want comes with books access. The library keeps looking on the scheduled sync in the meantime.'
+              : 'Force Search is available to the person who shelved this want. The library keeps looking on the hourly sync in the meantime.'}
           </p>
         ) : null}
       </section>
