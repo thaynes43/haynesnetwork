@@ -14,12 +14,13 @@ import {
   userIntegrations,
   users,
   type BookRequestFormat,
+  type BookRequestOrigin,
   type BookRequestRow,
   type BookRequestStatus,
   type BooksMediaKind,
   type DbClient,
 } from '@hnet/db';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, or, sql } from 'drizzle-orm';
 import type { KapowarrSearchCandidate, KapowarrVolume } from '@hnet/kapowarr/read';
 import { NotFoundError } from './errors';
 import { inTransaction, resolveDb } from './db-client';
@@ -154,7 +155,9 @@ export interface LibraryMatch {
   mediaKind: BooksMediaKind;
 }
 
-function normTitle(t: string): string {
+/** THE normalized-title idiom (lowercase, strip leading articles, cut at ':'/'(', collapse
+ *  non-alphanumerics). Exported for the ADR-065 format-pairing matcher — one normalizer, never a fork. */
+export function normTitle(t: string): string {
   return t
     .toLowerCase()
     .replace(/^(the|a|an)\s+/, '')
@@ -163,7 +166,8 @@ function normTitle(t: string): string {
     .trim();
 }
 
-function normAuthor(a: string | null): string {
+/** The normalized-author companion (exported for the same reason — ADR-065). */
+export function normAuthor(a: string | null): string {
   return (a ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
@@ -597,7 +601,8 @@ export async function recordManualSearch(
 /** A request row joined with its live shelf item, for the requests/Missing wall. */
 export interface BookRequestView {
   id: string;
-  shelfItemId: string;
+  /** Nullable at the column since ADR-065, but this per-integration read only yields goodreads rows. */
+  shelfItemId: string | null;
   shelf: string;
   externalBookId: string;
   title: string;
@@ -709,16 +714,20 @@ export async function getBookRequestById(input: {
  */
 export interface BookRequestDetailView {
   requestId: string;
-  /** The app user whose integration minted the request (the ownership key for canSearch). */
-  integrationUserId: string;
-  /** Display names of everyone whose shelves want this book (deduped, the request's own owner first). */
+  /** ADR-065 — who minted the request: a user's shelf ('goodreads') or the estate ('pairing'). */
+  origin: BookRequestOrigin;
+  /** The app user whose integration minted the request (the ownership key for canSearch).
+   *  NULL for a pairing want — a system want has no owner (ADR-065 C-05). */
+  integrationUserId: string | null;
+  /** Display names of everyone whose shelves want this book (deduped, the request's own owner first).
+   *  A pairing want carries the attribution label 'Format pairing'. */
   requestedBy: string[];
   title: string;
   author: string | null;
-  /** The source shelf this request was minted from (the detail's shelf attribution). */
+  /** The source shelf this request was minted from ('pairing' for a system want). */
   shelf: string;
   shelvedAt: Date | null;
-  externalBookId: string;
+  externalBookId: string | null;
   matchedBooksItemId: string | null;
   /** The matched library row's cover keys (the cover-proxy art), when the want is in the library. */
   matched: { source: string; externalId: string; coverRef: string | null } | null;
@@ -737,9 +746,12 @@ export async function getBookRequestDetail(input: {
   requestId: string;
 }): Promise<BookRequestDetailView | null> {
   const db = resolveDb(input.db);
+  // ADR-065 C-04 — LEFT joins (not inner): a pairing want has no shelf item / integration / owner. A
+  // goodreads want still requires its live shelf item (a tombstoned want stays NOT_FOUND, as before).
   const [row] = await db
     .select({
       requestId: bookRequests.id,
+      origin: bookRequests.origin,
       integrationUserId: userIntegrations.userId,
       requesterName: users.displayName,
       title: bookRequests.title,
@@ -760,39 +772,49 @@ export async function getBookRequestDetail(input: {
       matchedCoverRef: booksItems.coverRef,
     })
     .from(bookRequests)
-    .innerJoin(integrationShelfItems, eq(bookRequests.shelfItemId, integrationShelfItems.id))
-    .innerJoin(userIntegrations, eq(bookRequests.integrationId, userIntegrations.id))
-    .innerJoin(users, eq(userIntegrations.userId, users.id))
+    .leftJoin(integrationShelfItems, eq(bookRequests.shelfItemId, integrationShelfItems.id))
+    .leftJoin(userIntegrations, eq(bookRequests.integrationId, userIntegrations.id))
+    .leftJoin(users, eq(userIntegrations.userId, users.id))
     .leftJoin(booksItems, eq(booksItems.id, bookRequests.matchedBooksItemId))
-    .where(and(eq(bookRequests.id, input.requestId), isNull(integrationShelfItems.deletedAt)));
+    .where(
+      and(
+        eq(bookRequests.id, input.requestId),
+        or(eq(bookRequests.origin, 'pairing'), isNull(integrationShelfItems.deletedAt)),
+      ),
+    );
   if (!row) return null;
 
   // Household roll-up: everyone whose LINKED integration wants the same Goodreads book (deduped names).
-  const requesterRows = await db
-    .select({ name: users.displayName })
-    .from(bookRequests)
-    .innerJoin(integrationShelfItems, eq(bookRequests.shelfItemId, integrationShelfItems.id))
-    .innerJoin(userIntegrations, eq(bookRequests.integrationId, userIntegrations.id))
-    .innerJoin(users, eq(userIntegrations.userId, users.id))
-    .where(
-      and(
-        eq(integrationShelfItems.externalBookId, row.externalBookId),
-        eq(userIntegrations.status, 'linked'),
-        isNull(integrationShelfItems.deletedAt),
-      ),
-    );
+  // A pairing want has no shelf/household — its attribution is the system label (ADR-065 C-04).
   const requestedBy: string[] = [];
-  for (const name of [row.requesterName, ...requesterRows.map((r) => r.name)]) {
-    if (!requestedBy.includes(name)) requestedBy.push(name);
+  if (row.externalBookId !== null) {
+    const requesterRows = await db
+      .select({ name: users.displayName })
+      .from(bookRequests)
+      .innerJoin(integrationShelfItems, eq(bookRequests.shelfItemId, integrationShelfItems.id))
+      .innerJoin(userIntegrations, eq(bookRequests.integrationId, userIntegrations.id))
+      .innerJoin(users, eq(userIntegrations.userId, users.id))
+      .where(
+        and(
+          eq(integrationShelfItems.externalBookId, row.externalBookId),
+          eq(userIntegrations.status, 'linked'),
+          isNull(integrationShelfItems.deletedAt),
+        ),
+      );
+    for (const name of [row.requesterName, ...requesterRows.map((r) => r.name)]) {
+      if (name !== null && !requestedBy.includes(name)) requestedBy.push(name);
+    }
   }
+  if (requestedBy.length === 0) requestedBy.push(PAIRING_REQUESTER_LABEL);
 
   return {
     requestId: row.requestId,
+    origin: row.origin,
     integrationUserId: row.integrationUserId,
     requestedBy,
     title: row.title,
     author: row.author,
-    shelf: row.shelf,
+    shelf: row.shelf ?? PAIRING_SHELF,
     shelvedAt: row.shelvedAt,
     externalBookId: row.externalBookId,
     matchedBooksItemId: row.matchedBooksItemId,
@@ -1083,16 +1105,26 @@ export async function getShelfWallItems(input: {
   return items;
 }
 
+// ADR-065 C-04 — the SYSTEM want's presentation constants: the shelf slug the pairing wants wear on
+// the wanted surfaces (labelled "Format pairing" client-side) and the attribution label that stands
+// in for a requester name (a pairing want has no user).
+export const PAIRING_SHELF = 'pairing';
+export const PAIRING_REQUESTER_LABEL = 'Format pairing';
+
 /** A Library-Wanted tile source row (the household composed-Wanted overlay, PLAN-045 / ADR-057). */
 export interface WantedBookRequestView {
   requestId: string;
-  /** The app user whose integration minted the request (the ownership key for canSearch). */
-  integrationUserId: string;
-  /** Display names of everyone whose shelves want this book (deduped tile — household view). */
+  /** ADR-065 — who minted the request: a user's shelf ('goodreads') or the estate ('pairing'). */
+  origin: BookRequestOrigin;
+  /** The app user whose integration minted the request (the ownership key for canSearch).
+   *  NULL for a pairing want — no owner (ADR-065 C-05). */
+  integrationUserId: string | null;
+  /** Display names of everyone whose shelves want this book (deduped tile — household view).
+   *  A pairing want carries the attribution label 'Format pairing'. */
   requestedBy: string[];
   title: string;
   author: string | null;
-  /** The canonical source shelf (GOODREADS_SHELVES priority) — the tile's shelf badge. */
+  /** The canonical source shelf (GOODREADS_SHELVES priority; 'pairing' for a system want). */
   shelf: string;
   shelvedAt: Date | null;
   /** The wall format's own status (ebook_status / audio_status / comic_status per requested format). */
@@ -1104,7 +1136,7 @@ export interface WantedBookRequestView {
   comicStatus: BookRequestStatus | null;
   llBookId: string | null;
   kapowarrVolumeId: string | null;
-  externalBookId: string;
+  externalBookId: string | null;
 }
 
 /**
@@ -1127,9 +1159,13 @@ export async function getWantedBookRequests(input: {
         ? sql`${bookRequests.comicStatus} IS NULL AND ${bookRequests.audioStatus} <> 'landed'`
         : sql`${bookRequests.comicStatus} IS NULL AND ${bookRequests.ebookStatus} <> 'landed'`;
 
+  // ADR-065 C-04 — the wanted composition admits TWO origins: a goodreads want rides its live shelf
+  // item + LINKED integration (as before, now via LEFT joins), and a pairing (system) want rides
+  // nothing — it composes on its own row. One read, one dedupe, one sort.
   const rows = await resolveDb(input.db)
     .select({
       requestId: bookRequests.id,
+      origin: bookRequests.origin,
       integrationUserId: userIntegrations.userId,
       requesterName: users.displayName,
       title: bookRequests.title,
@@ -1146,15 +1182,17 @@ export async function getWantedBookRequests(input: {
       createdAt: bookRequests.createdAt,
     })
     .from(bookRequests)
-    .innerJoin(integrationShelfItems, eq(bookRequests.shelfItemId, integrationShelfItems.id))
-    .innerJoin(userIntegrations, eq(bookRequests.integrationId, userIntegrations.id))
-    .innerJoin(users, eq(userIntegrations.userId, users.id))
+    .leftJoin(integrationShelfItems, eq(bookRequests.shelfItemId, integrationShelfItems.id))
+    .leftJoin(userIntegrations, eq(bookRequests.integrationId, userIntegrations.id))
+    .leftJoin(users, eq(userIntegrations.userId, users.id))
     .where(
       and(
-        isNull(integrationShelfItems.deletedAt),
         isNull(bookRequests.matchedBooksItemId),
-        eq(userIntegrations.status, 'linked'),
         formatPredicate,
+        or(
+          eq(bookRequests.origin, 'pairing'),
+          and(isNull(integrationShelfItems.deletedAt), eq(userIntegrations.status, 'linked')),
+        ),
       ),
     );
 
@@ -1167,20 +1205,27 @@ export async function getWantedBookRequests(input: {
 
   const byBook = new Map<string, { rank: number; createdAt: Date; view: WantedBookRequestView }>();
   for (const row of rows) {
-    const rank = shelfOrder(row.shelf);
-    const existing = byBook.get(row.externalBookId);
+    const shelf = row.shelf ?? PAIRING_SHELF;
+    const requesterName = row.requesterName ?? PAIRING_REQUESTER_LABEL;
+    // A pairing want has no Goodreads book id — it dedupes on itself (one want per anchor item by
+    // schema, so there is nothing to merge). Minted-at stands in for shelved-at on the wall sort.
+    const dedupeKey = row.externalBookId ?? `pairing:${row.requestId}`;
+    const shelvedAt = row.shelvedAt ?? (row.origin === 'pairing' ? row.createdAt : null);
+    const rank = shelfOrder(shelf);
+    const existing = byBook.get(dedupeKey);
     if (!existing) {
-      byBook.set(row.externalBookId, {
+      byBook.set(dedupeKey, {
         rank,
         createdAt: row.createdAt,
         view: {
           requestId: row.requestId,
+          origin: row.origin,
           integrationUserId: row.integrationUserId,
-          requestedBy: [row.requesterName],
+          requestedBy: [requesterName],
           title: row.title,
           author: row.author,
-          shelf: row.shelf,
-          shelvedAt: row.shelvedAt,
+          shelf,
+          shelvedAt,
           status: statusFor(row),
           isComic: row.comicStatus != null,
           unroutableReason: row.unroutableReason,
@@ -1194,11 +1239,11 @@ export async function getWantedBookRequests(input: {
       });
       continue;
     }
-    if (!existing.view.requestedBy.includes(row.requesterName)) {
-      existing.view.requestedBy.push(row.requesterName);
+    if (!existing.view.requestedBy.includes(requesterName)) {
+      existing.view.requestedBy.push(requesterName);
     }
-    if ((row.shelvedAt?.getTime() ?? 0) > (existing.view.shelvedAt?.getTime() ?? 0)) {
-      existing.view.shelvedAt = row.shelvedAt;
+    if ((shelvedAt?.getTime() ?? 0) > (existing.view.shelvedAt?.getTime() ?? 0)) {
+      existing.view.shelvedAt = shelvedAt;
     }
     const wins =
       rank < existing.rank ||
@@ -1210,11 +1255,12 @@ export async function getWantedBookRequests(input: {
       existing.view = {
         ...existing.view,
         requestId: row.requestId,
+        origin: row.origin,
         integrationUserId: row.integrationUserId,
         requestedBy: keepRequesters,
         title: row.title,
         author: row.author,
-        shelf: row.shelf,
+        shelf,
         status: statusFor(row),
         isComic: row.comicStatus != null,
         unroutableReason: row.unroutableReason,
