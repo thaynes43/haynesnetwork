@@ -1,3 +1,59 @@
+# PLAN-041: Library "Fix" for books/audiobooks/comics — Part 1 (buildable release)
+
+- **Status:** ACTIONABLE — planned 2026-07-15 (owner-directed, two-Opus planning pass:
+  code mapper + architect, synthesized). Part 2 (Fix-everywhere parity) stays a standing goal.
+- **Docs-first artifacts:** **ADR-062** (Proposed — the books-Fix boundary) + **DESIGN-033**
+  (Draft) — authored this pass; ratify (or Accept per granted authority) before code.
+- **Owner intent (2026-07-11, re-affirmed 2026-07-15):** the SAME Fix UX movies/TV have — Fix
+  button + REASON modal + live progress + audit — for a LANDED bad book/audiobook/comic.
+  Trigger class: German *Matilda*; the 2026-07-15 suspected-bad epub (which turned out to be a
+  Kavita reader-mode issue — but the class is real, see F-09).
+
+## The design crux (both planning agents converged)
+
+A landed book is `Open`/satisfied in LL — a plain re-search is a NO-OP. A real Fix =
+re-drive to Wanted (`addBook → queueBook`) → `searchBook`; and the stale bad file on disk is NOT
+cleaned by the re-grab (LL never removes files it didn't create; Kavita merges series folders).
+The app cannot move library files (no cephfs mount). Hence ADR-062's two-mode ruling: **v1
+re-acquires + records + guides** (`stale_file_action` seam); **Mode-2 "quarantine assist"**
+(a cephfs-mounted book-janitor) is deferred to its own ADR.
+
+## Phases (one release)
+
+1. **Schema + grants (migration 0052):** `book_fix_requests` + `role_books_action_grants` +
+   permission_audit CHECK rebuild + guard-list entries.
+2. **Domain:** `createBookFixRequest` (tx: rate/dedupe/insert/audit) + `runBookFixRequest`
+   (LL route: addBook→queueBook→searchBook, language guard on wrong_language; Kapowarr route:
+   idempotent add → auto_search) + `recordBookFixAction` + `setRoleBookActions`.
+3. **API:** `bookFix.create/.progress/.myFixes/.adminList` behind `bookActionProcedure('fix_book')`.
+4. **UI:** landed-tile Fix → book detail SHEET (ADR-058) → reason Modal (ADR-014) → live
+   PhaseChip via the ADR-059 Activity read (reflow-free, ADR-015). Fired fixes visible in Activity.
+5. **Rollout:** ships Admin-only (no grant rows); owner opens `fix_book` per role after
+   screenshot review. e2e advisory.
+
+## Dependencies (all LIVE)
+
+ADR-055/056 confined clients · ADR-059 Activity read-model · PLAN-039 governor · ADR-028/PLAN-015
+feedback primitives · ADR-058 cards. No new external write surface. Deployed-LL gotcha: no
+`getBook` — reconcile via `getAllBookStatuses()`.
+
+## Open questions for the owner (defaults recommended — see DESIGN-033 Q-01..Q-08)
+
+Q-01 Admin-only ship (default: yes) · Q-02 fold `wrong_content` into `other` (default: yes) ·
+Q-03 defer language pin / manual pick (default: yes) · Q-04 detail SHEET not page (default: yes) ·
+Q-05 comics included in v1 (default: yes) · Q-06 epub structural-QA = separate detection spike
+(default: defer) · Q-07 Mode-2 quarantine automation deferred (default: yes) · Q-08 books-scoped
+Fix budget, one open Fix per (books_item, media_kind) (default: yes).
+
+## Out of scope
+
+Part 2 parity legs (ytdl — PLAN-025 dependency), Mode-2 file moves, proactive epub QA, any
+Kavita/ABS write-back, LL provider/config changes (Prowlarr-fullSync-owned).
+
+---
+
+## Historical intake (2026-07-11, superseded by the plan above)
+
 # PLAN-041: Library "Fix" for books/ebooks/audiobooks/comics — and the Fix-everywhere parity goal
 
 - **Status:** Intake (owner 2026-07-11 eve). Needs a scoping session; the north-star section is
