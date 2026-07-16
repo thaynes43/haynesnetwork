@@ -1,6 +1,6 @@
 # PLAN-053: Collection Type facet on the Collections group view
 
-- **Status:** Queued (owner feedback at the v0.63.0 live review, 2026-07-16: "we should be
+- **Status:** READY TO BUILD (both Qs resolved 2026-07-16 eve). Was: Queued (owner feedback at the v0.63.0 live review, 2026-07-16: "we should be
   able to filter by Collection Type... doesn't have to be broken too far down —
   'Trilogies, Franchise/Universe, Director, Actor, List, Other' something like that").
 - **Depends on:** 037 (shipped v0.63.0). Relates: 052 (provenance data could later come from
@@ -28,8 +28,5 @@
 
 ## Open questions
 
-- Q-01: buckets final? (Owner listed six; producer/writer collections exist in the people
-  file — fold into Director or add a "Crew" bucket?)
-- Q-02: should `list`-type (charts) be down-ranked/hidden by default on the group wall, or
-  equal citizens? (Owner earlier: "mirror everything, filter later" — this facet IS the
-  "filter later"; default-all seems right.)
+- Q-01: RESOLVED (owner 2026-07-16): fold producer/writer into Director — the six buckets stand as listed.
+- Q-02: RESOLVED (owner 2026-07-16): show all, filter by chip — the wall defaults to everything.
