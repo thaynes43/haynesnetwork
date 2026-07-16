@@ -128,9 +128,11 @@ const READ_FACET: RegistryFacet = {
   param: 'read',
   gate: 'bookProgress',
 };
-/** ADR-057 / DESIGN-029 (PLAN-045) — the composed-Wanted state filter on the book walls: the
- *  Movies/TV `?wanted=1` narrowing ported as a REGISTRY row (ADR-051 C-01). Value-gated: the chip
- *  renders only while the wall's `books.wanted` overlay actually holds tiles (no dead chip). */
+/** ADR-057 / DESIGN-029 (PLAN-045; three-state per amendment 3, PLAN-056) — the composed-Wanted
+ *  state filter on the book walls: All · Wanted only · Hide wanted (`?wanted=only|hide`, absent =
+ *  All; legacy `?wanted=1` reads as only). Single-select, server-authoritative (the state rides the
+ *  books.search input). Value-gated: the control renders only while the wall's `books.wanted`
+ *  overlay actually holds tiles (no dead chip). */
 const WANTED_FACET: RegistryFacet = {
   key: 'wanted',
   label: 'Wanted',

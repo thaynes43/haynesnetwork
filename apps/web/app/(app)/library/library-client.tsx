@@ -19,7 +19,8 @@
 //   ?tab=movies|tv|music|…|my-fixes         the sub-tab (PUSH — a screen-level switch, D-19)
 //   ?q=…                                    search text (input debounced 250ms → URL)
 //   ?disk=complete|partial|none             on-disk narrowing ('any' = absent)
-//   ?wanted=1                               the wanted-only toggle
+//   ?wanted=1                               the wanted-only toggle (Movies/TV; the book walls
+//                                           use the PLAN-056 three-state ?wanted=only|hide)
 //   ?genre=…&genre=… / res / req / col      facet filters (REPEATED params — comma-safe)
 //   ?decade=1990&decade=2000                the Decade facet (PLAN-029 — decade-start years)
 //   ?rfrom=2020-01-01&rto=2021-12-31        the Release-Date range facet (PLAN-029, inclusive)

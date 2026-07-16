@@ -1127,6 +1127,10 @@ export interface WantedBookRequestView {
   /** The canonical source shelf (GOODREADS_SHELVES priority; 'pairing' for a system want). */
   shelf: string;
   shelvedAt: Date | null;
+  /** The canonical request's mint instant — the want's ADDED-class sort key on the composed walls
+   *  (PLAN-056 / DESIGN-029 amendment 3: a want participates in the wall's Added sort by when the
+   *  app minted its request, the honest peer of an item's source_added_at). */
+  createdAt: Date;
   /** The wall format's own status (ebook_status / audio_status / comic_status per requested format). */
   status: BookRequestStatus;
   isComic: boolean;
@@ -1226,6 +1230,7 @@ export async function getWantedBookRequests(input: {
           author: row.author,
           shelf,
           shelvedAt,
+          createdAt: row.createdAt,
           status: statusFor(row),
           isComic: row.comicStatus != null,
           unroutableReason: row.unroutableReason,
@@ -1261,6 +1266,7 @@ export async function getWantedBookRequests(input: {
         title: row.title,
         author: row.author,
         shelf,
+        createdAt: row.createdAt,
         status: statusFor(row),
         isComic: row.comicStatus != null,
         unroutableReason: row.unroutableReason,

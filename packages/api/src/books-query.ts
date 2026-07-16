@@ -54,6 +54,12 @@ export const KAVITA_FORMATS = [
 export type BookFormatKey = (typeof KAVITA_FORMATS)[number]['key'];
 export const BOOK_FORMAT_KEYS = KAVITA_FORMATS.map((f) => f.key) as [BookFormatKey, ...BookFormatKey[]];
 
+// PLAN-056 / DESIGN-029 amendment 3 — the three-state composed-Wanted filter: 'all' composes the
+// wanted overlay INTO the sorted item stream (the default), 'only' returns the wanted rows alone,
+// 'hide' excludes them server-side (never a client hide). URL param `wanted` (absent = 'all').
+export const BOOKS_WANTED_STATES = ['all', 'only', 'hide'] as const;
+export type BooksWantedState = (typeof BOOKS_WANTED_STATES)[number];
+
 export const booksSearchInputSchema = z
   .object({
   mediaKind: z.enum(BOOKS_MEDIA_KINDS),
@@ -81,6 +87,10 @@ export const booksSearchInputSchema = z
   /** ADR-053 / DESIGN-026 D-07 — the viewer's read-state facet (applied server-side against the
    *  session user's user_book_progress; ignored for a viewer with no ABS mapping/progress). */
   readState: z.enum(BOOK_READ_STATES).optional(),
+  /** PLAN-056 / DESIGN-029 amendment 3 — the composed-Wanted state (All · Wanted only · Hide
+   *  wanted). Server-authoritative: 'hide' excludes the wanted rows from the stream here, 'only'
+   *  returns them alone, 'all' (default) composes them into the active sort. */
+  wanted: z.enum(BOOKS_WANTED_STATES).default('all'),
   limit: z.number().int().min(1).max(100).default(50),
   /** Opaque numeric offset cursor (the walls are bounded — offset paging, not keyset). */
   cursor: z.number().int().min(0).default(0),
@@ -199,6 +209,52 @@ export function aggregateBookGenreGroups(rows: Array<{ genres: string[] | null }
   return [...counts.entries()]
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([key, count]) => ({ key, label: key, count, coverUrls: [], imageUrl: null }));
+}
+
+// ---------------------------------------------------------------------------
+// PLAN-056 / DESIGN-029 amendment 3 — the wanted rows' HONEST sort keys
+// ---------------------------------------------------------------------------
+
+/** The slice of a wanted view the sort-key mapping needs. */
+export interface WantedSortSource {
+  requestId: string;
+  title: string;
+  author: string | null;
+  /** The request's mint instant (the added-class key — WantedBookRequestView.createdAt). */
+  createdAt: Date;
+}
+
+/** A want's sort-title: the same normalization the sync writes to books_items.sort_title
+ *  (trimmed + lowercased; requests carry no sortName/titleIgnorePrefix source field). */
+export function wantedSortTitle(title: string): string {
+  return title.trim().toLowerCase();
+}
+
+/**
+ * The want's PRIMARY sort value for a wall sort — the documented mapping (a want answers what it
+ * honestly can, and nothing more):
+ *   • title  → the request's title snapshot (normalized like an item's sort_title);
+ *   • author → the request's author snapshot (null ⇒ NULLS LAST, like a null-author item);
+ *   • added  → the request's created_at (when the app minted the want — the honest peer of an
+ *              item's COALESCE(source_added_at, first_seen_at));
+ *   • year / released / duration / pages → null (a want has no edition metadata — it sorts with
+ *     the null-valued items, NULLS LAST in either direction, per the D-09 convention);
+ *   • position → never composed (a want is not a collection member; the drill excludes wants).
+ */
+export function wantedPrimarySortValue(
+  want: WantedSortSource,
+  sort: BooksSort,
+): string | Date | null {
+  switch (sort) {
+    case 'title':
+      return wantedSortTitle(want.title);
+    case 'author':
+      return want.author;
+    case 'added':
+      return want.createdAt;
+    default:
+      return null;
+  }
 }
 
 /** Project a books_items row to the wall's list-item shape (builds the cover-proxy URL). */
