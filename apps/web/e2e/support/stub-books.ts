@@ -44,6 +44,40 @@ const ABS_ITEMS = [
   { id: 'ab50004', libraryId: 'abs-lib', addedAt: 1783402399325, updatedAt: 1783402399325, mediaType: 'book', media: { metadata: { title: 'The Hobbit', titleIgnorePrefix: 'Hobbit, The', authorName: 'J. R. R. Tolkien', narratorName: 'Andy Serkis', seriesName: '', genres: ['Audiobook', 'Fantasy'], publishedYear: 1937, language: 'English' }, numTracks: 10, numChapters: 19, duration: 37800, size: 150000000 } },
 ];
 
+// ADR-066 / DESIGN-038 (PLAN-051) — the COLLECTION fixtures the `books-collections-sync` seed
+// mirrors (verified wire shapes: Kavita GET /api/Collection + the all-v2 CollectionTags filter +
+// POST /api/ReadingList/lists + GET /api/ReadingList/items; ABS GET /api/collections, books[]
+// ordered). One of each concept:
+//   • a Kavita COLLECTION (unordered) over the three Lily Bard books → the Books wall;
+//   • a Kavita READING LIST (ordered, chapter-grain — series 105 repeats to prove the dedupe)
+//     over the two Doyle books → the Books wall, "List order" drill;
+//   • an ABS COLLECTION (ordered) over two Dickens audiobooks → the Audiobooks wall.
+const KAVITA_COLLECTIONS = [{ id: 4, title: 'Lily Bard Mysteries', promoted: false, itemCount: 3 }];
+const KAVITA_COLLECTION_SERIES: Record<number, number[]> = { 4: [102, 103, 104] };
+const KAVITA_READING_LISTS = [
+  { id: 11, title: 'Sherlock Holmes in Order', promoted: false, itemCount: 3 },
+];
+const KAVITA_READING_LIST_ITEMS: Record<number, Array<{ id: number; order: number; chapterId: number; seriesId: number }>> = {
+  11: [
+    { id: 900, order: 0, chapterId: 70, seriesId: 105 },
+    { id: 901, order: 1, chapterId: 71, seriesId: 105 }, // same series again — dedupes to order 0
+    { id: 902, order: 2, chapterId: 80, seriesId: 106 },
+  ],
+};
+const ABS_COLLECTIONS = [
+  {
+    id: 'ab5c0001',
+    libraryId: 'abs-lib',
+    name: 'Dickens in Order',
+    description: null,
+    // collectionBook.order ASC — Oliver Twist deliberately BEFORE A Christmas Carol so the
+    // drilled "List order" differs from every alphabetical/date sort.
+    books: [ABS_ITEMS[2], ABS_ITEMS[0]],
+    lastUpdate: 1783702399325,
+    createdAt: 1783702399325,
+  },
+];
+
 // GROUP-CARD ART pass (DESIGN-026 D-04 amendment) — the ABS AUTHOR directory + author images.
 // Dickens and Tolkien carry a photo (`imagePath` non-null → the wall shows the portrait card);
 // Douglas Adams does NOT (`imagePath: null` → the populated-value gate keeps his card on the
@@ -113,17 +147,45 @@ export async function startStubBooks(): Promise<StubBooksServer> {
       if (path === '/api/Series/all-v2' && method === 'POST') {
         const body = await readBody(req);
         let libraryId = 1;
+        let collectionId: number | null = null;
         try {
           const parsed = JSON.parse(body) as { statements?: Array<{ field?: number; value?: string }> };
-          const stmt = parsed.statements?.find((s) => s.field === 19);
-          if (stmt?.value) libraryId = Number(stmt.value);
+          const lib = parsed.statements?.find((s) => s.field === 19);
+          if (lib?.value) libraryId = Number(lib.value);
+          // ADR-066 / DESIGN-038 D-02 — the CollectionTags filter (field 7, the collection drill).
+          const col = parsed.statements?.find((s) => s.field === 7);
+          if (col?.value) collectionId = Number(col.value);
         } catch {
           /* default lib 1 */
         }
-        const items = libraryId === 2 ? KAVITA_COMICS : KAVITA_BOOKS;
+        const all = [...KAVITA_BOOKS, ...KAVITA_COMICS];
+        const items =
+          collectionId !== null
+            ? all.filter((s) => (KAVITA_COLLECTION_SERIES[collectionId!] ?? []).includes(s.id))
+            : libraryId === 2
+              ? KAVITA_COMICS
+              : KAVITA_BOOKS;
         return json(res, 200, items, {
           Pagination: JSON.stringify({ currentPage: 1, itemsPerPage: 500, totalItems: items.length, totalPages: 1 }),
         });
+      }
+      // ADR-066 / DESIGN-038 D-02 (PLAN-051) — the collection reads the books-collections-sync
+      // seed mirrors (route shapes verified against Kavita v0.9.0.2: GET /api/Collection;
+      // POST-with-query-pagination /api/ReadingList/lists; GET /api/ReadingList/items).
+      if (path === '/api/Collection') return json(res, 200, KAVITA_COLLECTIONS);
+      if (path === '/api/ReadingList/lists' && method === 'POST') {
+        return json(res, 200, KAVITA_READING_LISTS, {
+          Pagination: JSON.stringify({
+            currentPage: 1,
+            itemsPerPage: 100,
+            totalItems: KAVITA_READING_LISTS.length,
+            totalPages: 1,
+          }),
+        });
+      }
+      if (path === '/api/ReadingList/items') {
+        const listId = Number(url.searchParams.get('readingListId') ?? '0');
+        return json(res, 200, KAVITA_READING_LIST_ITEMS[listId] ?? []);
       }
       if (path === '/api/Image/series-cover') return png(res);
 
@@ -134,6 +196,8 @@ export async function startStubBooks(): Promise<StubBooksServer> {
       if (path === '/api/libraries') {
         return json(res, 200, { libraries: [{ id: 'abs-lib', name: 'Audio Books', mediaType: 'book' }] });
       }
+      // ADR-066 / DESIGN-038 D-02 (PLAN-051) — the ORDERED ABS collections (books[] IS the order).
+      if (path === '/api/collections') return json(res, 200, { collections: ABS_COLLECTIONS });
       if (path.startsWith('/api/libraries/') && path.endsWith('/items')) {
         const page = Number(url.searchParams.get('page') ?? '0');
         return json(res, 200, { results: page === 0 ? ABS_ITEMS : [], total: ABS_ITEMS.length, page });
