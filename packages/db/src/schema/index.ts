@@ -76,6 +76,11 @@ export * from './plex-match';
 // truth (owner doctrine R1); guarded single-writer tables (syncPlexCollections), no audit — the
 // media_plex_matches derived-cache class.
 export * from './plex-collections';
+// ADR-066 / DESIGN-038 (PLAN-051) — the books collections mirror: Kavita collections + Kavita reading
+// lists (ORDERED) + ABS collections with their RAW membership (books-collections-sync mode). External
+// software is always the collections source of truth (owner doctrine R1 applied to books); guarded
+// single-writer tables (syncBooksCollections), no audit — the plex_collections derived-cache class.
+export * from './books-collections';
 // ADR-054 / DESIGN-027 (PLAN-039) — the MAM compliance governor's single-row gate state the mam-governor
 // sync mode upserts (the LL MAM-provider gate + the counts/limit that drove it). Guarded single-writer
 // table (evaluateMamGovernor); its transition trail is the notification_outbox rows (smart-alerts class).

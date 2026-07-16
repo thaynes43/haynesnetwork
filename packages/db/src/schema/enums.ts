@@ -123,6 +123,16 @@ export type BooksSource = (typeof BOOKS_SOURCES)[number];
 export const BOOKS_MEDIA_KINDS = ['book', 'comic', 'audiobook'] as const;
 export type BooksMediaKind = (typeof BOOKS_MEDIA_KINDS)[number];
 
+/**
+ * ADR-066 / DESIGN-038 D-01 (PLAN-051 — books collections mirror) — the KIND of a mirrored books
+ * collection (`books_collections.kind`). A Kavita READING LIST is a distinct id space from Kavita
+ * collections (both mirror; reading lists render as ORDERED collections — PLAN-051 Q-01), so kind
+ * is part of the row identity `(source, external_id, kind)`. ABS exposes only `collection`.
+ * text+CHECK; this const array is the single source of truth for the TS type + the SQL CHECK.
+ */
+export const BOOKS_COLLECTION_KINDS = ['collection', 'reading_list'] as const;
+export type BooksCollectionKind = (typeof BOOKS_COLLECTION_KINDS)[number];
+
 export const LEDGER_EVENT_TYPES = [
   'grabbed',
   'imported',
@@ -362,6 +372,19 @@ export const SYNC_RUN_KINDS = [
   // its trail is books_format_pairs + the pairing book_requests rows. It joins SYNC_RUN_KINDS so the
   // CLI --mode parser + SyncMode accept it (migration 0054 rebuilds the sync_runs.run_kind CHECK).
   'format-pairing',
+  // ADR-066 / DESIGN-038 (PLAN-051 — books collections mirror) — 'books-collections-sync' mirrors the
+  // BOOK sources' collections (Kavita collections + Kavita reading lists as ORDERED collections + ABS
+  // collections) into the books_collections / books_collection_members derived cache via the domain
+  // syncBooksCollections single-writer: the fetcher reads both servers READ-ONLY through the SAME
+  // BooksSyncBundle as books-sync, the writer upserts + reconcile-deletes scoped to fully-read
+  // (source, kind) families and fully-read collections (a partial read never tombstones), resolving
+  // member refs opportunistically against the fresh books_items mirror — so its CronJob runs AFTER
+  // books-sync. External software is ALWAYS the collections source of truth (owner doctrine R1); no
+  // write to Kavita/ABS ever (@hnet/books has no write surface). Like collections-sync it is a
+  // standalone mode (no --source, writes NO sync_runs row — its trail is the mirror tables). It joins
+  // SYNC_RUN_KINDS so the CLI --mode parser + SyncMode accept it (migration 0056 rebuilds the
+  // sync_runs.run_kind CHECK).
+  'books-collections-sync',
 ] as const;
 export type SyncRunKind = (typeof SYNC_RUN_KINDS)[number];
 

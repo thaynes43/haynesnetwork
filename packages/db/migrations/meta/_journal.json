@@ -386,6 +386,13 @@
       "when": 1783901400000,
       "tag": "0055_collection_type",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1783901500000,
+      "tag": "0056_books_collections",
+      "breakpoints": true
     }
   ]
 }
