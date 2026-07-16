@@ -1,6 +1,10 @@
 # PLAN-041: Library "Fix" for books/audiobooks/comics — Part 1 (buildable release)
 
-- **Status:** ACTIONABLE — planned 2026-07-15 (owner-directed, two-Opus planning pass:
+- **Status:** BUILT + LIVE (v0.61.0, 2026-07-15 night; #304) — **ACTIVE for ONE remaining step:
+  THE Q-01 FLIP** (owner tests the Fix as Admin, then `setRoleBookActions` opens `fix_book` to all
+  roles — DO NOT FORGET). Live-validated in prod: fix c7a0fe19 on Project Hail Mary (controlled
+  fire → search_triggered, audit row, ll_book_id seeded from the request row with NO GB call,
+  reverted via unqueueBook+rescan). Planned 2026-07-15 (owner-directed, two-Opus planning pass:
   code mapper + architect, synthesized). Part 2 (Fix-everywhere parity) stays a standing goal.
 - **Docs-first artifacts:** **ADR-062** (Proposed — the books-Fix boundary) + **DESIGN-033**
   (Draft) — authored this pass; ratify (or Accept per granted authority) before code.
