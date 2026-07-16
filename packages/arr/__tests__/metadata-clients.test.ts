@@ -66,6 +66,42 @@ describe('TautulliClient (DESIGN-008 D-04)', () => {
     expect(rows[0]!.media_type).toBe('movie');
   });
 
+  it('get_libraries_table (ADR-068 scoreboard): apikey + cmd in the query; unwraps the row subset', async () => {
+    const stub = stubFetch([
+      {
+        path: '/api/v2',
+        body: {
+          response: {
+            result: 'success',
+            data: {
+              recordsTotal: 2,
+              data: [
+                {
+                  section_id: 1,
+                  section_name: 'Movies',
+                  section_type: 'movie',
+                  plays: 3449,
+                  duration: 100,
+                  extra: 'stripped',
+                },
+                { section_name: 'TV Shows', section_type: 'show', plays: '25238', duration: '200' },
+              ],
+            },
+          },
+        },
+      },
+    ]);
+    const client = new TautulliClient({ baseUrl: 'http://taut.test:8181', fetchImpl: stub.fetchImpl, ...TAUT_OPTS });
+    const rows = await client.getLibrariesTable();
+    expect(stub.calls[0]!.url.searchParams.get('cmd')).toBe('get_libraries_table');
+    expect(stub.calls[0]!.url.searchParams.get('apikey')).toBe('taut-key');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.section_type).toBe('movie');
+    expect(rows[0]!.plays).toBe(3449);
+    expect(rows[1]!.plays).toBe('25238'); // string numerics tolerated (the aggregator coerces)
+    expect(rows[0]).not.toHaveProperty('extra'); // BC-03 ACL
+  });
+
   it('get_metadata: returns the external-id guids (the join key)', async () => {
     const stub = stubFetch([
       {

@@ -23,6 +23,7 @@ import {
   getNetworkOverview,
   overviewGrafanaLinks,
   type AppsMetrics,
+  type EstatePlayTotals,
   type HardwareMetrics,
   type HardwareOverview,
   type NetworkMetrics,
@@ -34,6 +35,7 @@ import {
   mapDomainErrors,
   resolveArrBundle,
   resolveMetricsReader,
+  resolvePlayScoreboardSource,
   router,
   authedProcedure,
   type TRPCContext,
@@ -77,6 +79,17 @@ export const metricsRouter = router({
     level: effectiveMetricsLevel(ctx.user.role),
     canSee: effectiveSectionLevel(ctx.user.role, 'metrics') !== 'disabled',
   })),
+
+  /**
+   * ADR-068 / DESIGN-040 D-04 (PLAN-057) — the dashboard estate play scoreboard: lifetime
+   * Tautulli play totals from the ~10-min in-process memo. DELIBERATELY `authedProcedure`,
+   * not `metricsProcedure` — the About-tile posture (every signed-in member), and the payload
+   * is aggregate-only (no user, no title — D-09). Never throws: an unreachable/unconfigured
+   * estate degrades to `unavailable: true` and the dashboard renders nothing for it.
+   */
+  playScoreboard: authedProcedure.query(
+    ({ ctx }): Promise<EstatePlayTotals> => resolvePlayScoreboardSource(ctx).get(),
+  ),
 
   /**
    * The Overview. Gated by section visibility (metricsProcedure); the payload GRANULARITY is decided

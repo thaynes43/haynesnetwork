@@ -72,6 +72,17 @@ import {
   prometheusClientFromEnv as metricsReaderFromEnv,
   type PrometheusReader as MetricsPrometheusReader,
 } from '@hnet/metrics';
+// ADR-068 / DESIGN-040 (PLAN-057) — the estate play scoreboard: the TTL-memoized read-only
+// Tautulli aggregation source. `@hnet/arr`'s TautulliClient satisfies ScoreboardReader
+// structurally; clients are built with a 3s timeout so a slow instance loses the D-02
+// deadline race instead of riding ArrHttp's GET retries into a slow dashboard.
+import {
+  createPlayScoreboard,
+  SCOREBOARD_DEADLINE_MS,
+  type PlayScoreboardSource,
+} from '@hnet/metrics';
+import { resolveTautulliInstances } from '@hnet/arr';
+import { TautulliClient } from '@hnet/arr/read';
 // ADR-055 / DESIGN-028 (PLAN-044) — the read-only Goodreads RSS + Google Books clients the integrations.link
 // mutation uses to resolve a vanity URL → user id, probe the public shelf is reachable (no secret), and run
 // the first shelf sync inline so the coverage card isn't a "0 of 0" dead-end. Read-only.
@@ -147,6 +158,13 @@ export interface TRPCContext {
    * Env-built singleton in production (LAZYLIBRARIAN_* + SABNZBD_*); stubbed bundle in tests.
    */
   activity?: BooksActivityBundle;
+  /**
+   * ADR-068 / DESIGN-040 (PLAN-057) — the estate play scoreboard source `metrics.playScoreboard`
+   * reads (the ~10-min TTL memo over the three Tautullis). Env-built singleton in production
+   * (resolveTautulliInstances — absent env ⇒ zero readers ⇒ `unavailable`, never an error);
+   * injected fake in tests.
+   */
+  playScoreboard?: PlayScoreboardSource;
 }
 
 let envArrBundle: ArrClientBundle | undefined;
@@ -192,6 +210,27 @@ export function resolveMetricsReader(ctx: TRPCContext): MetricsPrometheusReader 
   if (ctx.metrics) return ctx.metrics;
   envMetricsReader ??= metricsReaderFromEnv();
   return envMetricsReader;
+}
+
+let envPlayScoreboard: PlayScoreboardSource | undefined;
+
+/**
+ * The play-scoreboard source for this request: injected (tests) or the env-built singleton
+ * (ADR-068). The memo lives inside the source, so the singleton IS the cache.
+ */
+export function resolvePlayScoreboardSource(ctx: TRPCContext): PlayScoreboardSource {
+  if (ctx.playScoreboard) return ctx.playScoreboard;
+  envPlayScoreboard ??= createPlayScoreboard({
+    readers: resolveTautulliInstances().map((inst) => {
+      const client = new TautulliClient({
+        baseUrl: inst.baseUrl,
+        apiKey: inst.apiKey,
+        timeoutMs: SCOREBOARD_DEADLINE_MS,
+      });
+      return { slug: inst.slug, getLibrariesTable: () => client.getLibrariesTable() };
+    }),
+  });
+  return envPlayScoreboard;
 }
 
 let envAuthentikPortalBundle: AuthentikPortalBundle | undefined;
