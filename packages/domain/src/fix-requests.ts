@@ -21,8 +21,12 @@ import {
 import { inTransaction } from './db-client';
 import { resolveFixTarget, type SearchScope } from './action-scope';
 
-/** R-47 / PRD Q-05 default: max fix requests per requester per rolling hour (admins bypass). */
-export const FIX_RATE_LIMIT_PER_HOUR = 5;
+/**
+ * R-47 / PRD Q-05 default: max fix requests per requester per rolling hour (admins bypass).
+ * Owner ruling 2026-07-15: raised 5 → 25 so the friends-and-family group effectively never
+ * hits it. Still a fixed constant (Q-05 keeps admin-configurability out of scope).
+ */
+export const FIX_RATE_LIMIT_PER_HOUR = 25;
 
 /** D-09: statuses that count as an open fix for the one-open-fix-per-target rule. */
 export const OPEN_FIX_STATUSES = ['pending', 'actioned', 'search_triggered'] as const;
@@ -51,7 +55,7 @@ export const FIX_TIMEOUT_HORIZON_MS = ((): number => {
 
 /**
  * DESIGN-005 D-09/D-17 — the SHARED per-requester hourly budget: a Fix and a Force
- * Search both draw down the same 5/hour allowance, so a member can't sidestep the
+ * Search both draw down the same 25/hour allowance, so a member can't sidestep the
  * limit by alternating the two actions. Counts this requester's fix_requests plus
  * their 'search_requested' ledger events inside the rolling hour. Callers run this
  * under the per-requester advisory lock so parallel submissions can't race past it.

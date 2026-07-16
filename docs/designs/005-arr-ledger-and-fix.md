@@ -437,7 +437,11 @@ pending ──(blocklist or delete succeeded)──> actioned ──(search comm
 - `failed`: any step errored; response captured; surfaced to admins (R-46). Terminal
   alongside `completed`; users re-raise rather than retry in place.
 
-**Rate guard (R-47, PRD Q-05 default):** constant `FIX_RATE_LIMIT_PER_HOUR = 5` in
+**Amendment — Fix budget raised 5 → 25 (owner ruling 2026-07-15).** `FIX_RATE_LIMIT_PER_HOUR`
+is now `25` (still a fixed constant per Q-05) so the friends-and-family group effectively never
+hits the cap; the "5" figures below are historical.
+
+**Rate guard (R-47, PRD Q-05 default):** constant `FIX_RATE_LIMIT_PER_HOUR = 25` in
 `packages/domain` — `createFixRequest` counts the requester's rows with
 `created_at > now() - interval '1 hour'` inside the insert transaction (under a
 per-requester `pg_advisory_xact_lock` so parallel submissions can't slip past) and throws
@@ -646,7 +650,7 @@ sequenceDiagram
 
     U->>W: ledger.detail → picks item (+ episode/album via ledger.children, live)
     U->>W: fix.create { mediaItemId, targetChildId?, reason, reasonText? }
-    W->>D: createFixRequest (rate limit 5/h, open-fix dedupe)
+    W->>D: createFixRequest (rate limit 25/h, open-fix dedupe)
     D-->>W: fix_requests row (pending) + fix_requested event  [one tx]
     W->>A: GET latest grab — paged /history?episodeId|albumId=&eventType=1 (INTEGER enum; grabbed=1); Radarr /history/movie?movieId=&eventType=grabbed (tolerant)
     alt grab history exists (primary — AC-07)
@@ -666,7 +670,7 @@ sequenceDiagram
 ```
 
 Rules already fixed above: mandatory reason taxonomy with `reason_text` iff `other`
-(D-09 CHECK), per-user rate limit `FIX_RATE_LIMIT_PER_HOUR = 5` (constant per PRD Q-05;
+(D-09 CHECK), per-user rate limit `FIX_RATE_LIMIT_PER_HOUR = 25` (constant per PRD Q-05;
 admin-configurable later), every step's raw *arr response persisted in `actions_taken`,
 any step failure → `failed` + `fix_failed` event. Target validation lives in
 `createFixRequest`: sonarr requires an episode target, lidarr an album target, radarr
@@ -1350,7 +1354,7 @@ Per ADR-010 (embedded PG16, no Docker, no live-API tests in CI):
     NULL FK, then backfill resolves it after the item syncs.
   - *Fix lifecycle:* every legal transition via the D-12 writers; illegal transitions
     throw; `reason_text` iff-other CHECK (SQLSTATE 23514 both directions); rate limit at
-    5/h incl. the advisory-lock race test; open-fix dedupe; `completeFixRequests` closes
+    25/h incl. the advisory-lock race test; open-fix dedupe; `completeFixRequests` closes
     the loop from an ingested import event; failure path records responses and lands
     `failed`.
   - *Restore:* profile-name → id remapping (incl. unmapped failure), tag label

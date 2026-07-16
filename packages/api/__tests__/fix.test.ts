@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { and, asc, eq } from 'drizzle-orm';
 import * as schema from '@hnet/db/schema';
-import { tombstoneMissingItems } from '@hnet/domain';
+import { FIX_RATE_LIMIT_PER_HOUR, tombstoneMissingItems } from '@hnet/domain';
 import {
   bootMigratedDb,
   caller,
@@ -287,13 +287,13 @@ describe('fix.create — failures land failed + ARR_UPSTREAM_UNAVAILABLE', () =>
 });
 
 describe('fix.create — rate limit (R-47)', () => {
-  it('trips at the 6th request within an hour with FIX_RATE_LIMIT_EXCEEDED', async () => {
+  it(`trips at request #${FIX_RATE_LIMIT_PER_HOUR + 1} within an hour with FIX_RATE_LIMIT_EXCEEDED`, async () => {
     const member = await createUser(tdb.db);
     const item = await seedMediaItem(tdb.db, 'sonarr', { title: 'Delta Show', arrItemId: 504 });
     const stub = stubArrBundle([
       {
         path: '/api/v3/episode',
-        body: Array.from({ length: 6 }, (_, i) =>
+        body: Array.from({ length: FIX_RATE_LIMIT_PER_HOUR + 1 }, (_, i) =>
           episodeJson(50400 + i + 1, 1, i + 1, { seriesId: 504 }),
         ),
       },
@@ -321,7 +321,7 @@ describe('fix.create — rate limit (R-47)', () => {
     ]);
     const api = caller(makeCtx(tdb.db, sessionUser(member), stub.bundle));
 
-    for (let i = 1; i <= 5; i++) {
+    for (let i = 1; i <= FIX_RATE_LIMIT_PER_HOUR; i++) {
       const res = await api.fix.create({
         mediaItemId: item.id,
         targetChildId: 50400 + i,
@@ -330,13 +330,17 @@ describe('fix.create — rate limit (R-47)', () => {
       expect(res.status).toBe('search_triggered');
     }
     const err = await api.fix
-      .create({ mediaItemId: item.id, targetChildId: 50406, reason: 'wrong_language' })
+      .create({
+        mediaItemId: item.id,
+        targetChildId: 50400 + FIX_RATE_LIMIT_PER_HOUR + 1,
+        reason: 'wrong_language',
+      })
       .catch((e: unknown) => e);
     const shape = wireShape(err, 'fix.create');
     expect(shape.data.code).toBe('TOO_MANY_REQUESTS');
     expect(shape.data.appCode).toBe('FIX_RATE_LIMIT_EXCEEDED');
 
-    // Exactly 5 rows landed; the 6th never created a pending row.
+    // Exactly FIX_RATE_LIMIT_PER_HOUR rows landed; the over-limit one never created a pending row.
     const rows = await tdb.db
       .select({ id: schema.fixRequests.id })
       .from(schema.fixRequests)
@@ -346,7 +350,7 @@ describe('fix.create — rate limit (R-47)', () => {
           eq(schema.fixRequests.requesterId, member.id),
         ),
       );
-    expect(rows).toHaveLength(5);
+    expect(rows).toHaveLength(FIX_RATE_LIMIT_PER_HOUR);
   });
 
   it('dedupes an open fix on the same target (FIX_ALREADY_OPEN)', async () => {
