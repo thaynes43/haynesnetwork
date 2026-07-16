@@ -1,11 +1,13 @@
 # DESIGN-035: Mirrored Plex collections — the Movies/TV Collections group view
 
 - **Status:** Accepted
-- **Last updated:** 2026-07-16
-- **Satisfies:** PRD-001 **R-208..R-210**; governed by **ADR-064** (mirror-only doctrine, owner R1–R4)
-  on top of **ADR-047** (THE INVARIANT + `media_plex_matches`), **ADR-051/052** (view engine +
-  per-user preferences), **DESIGN-026** (D-01 view model, D-02 registry seam, D-04 group cards,
-  D-10 URL contract, D-19 PUSH/REPLACE via DESIGN-004). Glossary **T-179..T-182**.
+- **Last updated:** 2026-07-16 (amended same day by PLAN-053: **D-10/D-11** — the Collection Type
+  annotation + Type facet chip row on the grouped walls; the ADR-039-refines-ADR-037 precedent, no
+  new ADR — this is an annotation + facet on ADR-064's read-model)
+- **Satisfies:** PRD-001 **R-208..R-210, R-214**; governed by **ADR-064** (mirror-only doctrine,
+  owner R1–R4) on top of **ADR-047** (THE INVARIANT + `media_plex_matches`), **ADR-051/052** (view
+  engine + per-user preferences), **DESIGN-026** (D-01 view model, D-02 registry seam, D-04 group
+  cards, D-10 URL contract, D-19 PUSH/REPLACE via DESIGN-004). Glossary **T-179..T-182, T-186**.
 
 ## Overview
 
@@ -78,6 +80,10 @@ a collection has no portrait source, the cover fan is the art, DESIGN-026 D-04 l
   poster URLs via the existing `posterUrlFor` path (the group-card cover fan; a member with no
   poster contributes none). Cards come back label-A–Z; the client re-sorts by the grouped level's
   registry keys (label | count).
+- **PLAN-053 amendment (D-10/D-11)** — each card also carries the collection's `type` (the D-10
+  annotation), the input takes an optional `ctype` (the D-11 facet — the SERVER filters the cards),
+  and the wire adds `typeCounts` (accessible-collection counts per type, computed BEFORE the
+  `ctype` narrowing so the chip row's numbers are stable while filtering).
 - **THE INVARIANT** — a collection whose accessible ledger-member count is ZERO (all members
   withheld, unmatched, or non-ledger) is DROPPED from the listing entirely: no card, no label leak.
   Admin (unrestricted) sees every collection with ≥ 1 ledger-matched member of the kind.
@@ -169,10 +175,73 @@ multi-shape reality: the `.seg` view selector (Collections | All movies/All show
 card grid (`GroupCard`, cover-fan art, PUSH drill), the drill header (back link + collection
 title), client-side card search (label contains) + card sort (label/count), and the D-06
 canonicalization. In grouped mode the item-only controls (on-disk segment, Wanted-only, facet
-chips) do not render — a grouped level declares no facets (registry-enforced); the drilled grid is
-the ordinary wall and keeps them all. All copy is plain and friendly, no em-dashes, no personal
-names ("Collections", "All movies", "All collections", "No collections yet."). ADR-015 holds: the
-selector/toolbar heights are fixed, cards reserve the 2:3 box, refetches dim in place.
+chips) do not render — a grouped level declares no facets *(amended by D-11: the grouped-collection
+levels now declare exactly ONE facet, the Type chip row — still registry-enforced; item facets
+remain absent)*; the drilled grid is the ordinary wall and keeps them all. All copy is plain and
+friendly, no em-dashes, no personal names ("Collections", "All movies", "All collections", "No
+collections yet."). ADR-015 holds: the selector/toolbar heights are fixed, cards reserve the 2:3
+box, refetches dim in place.
+
+### D-10 — The Collection Type annotation (`collection_type`, migration 0055 — PLAN-053)
+
+Owner rulings (2026-07-16, final): **six buckets** — Trilogies, Franchise/Universe, Director,
+Actor, List, Other (producer/writer FOLD INTO Director); the wall shows ALL types by default and
+the chip filters — never hides.
+
+- **Column** — `plex_collections.collection_type text NOT NULL DEFAULT 'other'`, CHECK
+  `('trilogy','franchise_universe','director','actor','list','other')` (migration 0055; the
+  `COLLECTION_TYPES` enum in `@hnet/db` mirrors it). It is an ANNOTATION on the mirror row, not
+  new state: `syncPlexCollections` recomputes it from the title at every upsert (insert AND
+  conflict-update), so the whole column rebuilds on the next sync — the same rebuildable
+  derived-cache class as the row it sits on. No audit, no widening of the single-writer surface.
+- **Classifier** — ONE versioned pure module, `@hnet/domain` `collection-type.ts`
+  (`classifyCollectionType(title) → CollectionType`, `COLLECTION_CLASSIFIER_VERSION`). Bumping the
+  rules bumps the version; the next `collections-sync` re-annotates the estate (nothing migrates).
+  Rule order (first match wins), explicit patterns + estate-seeded name lists — a bare person-name
+  heuristic is TOO LOOSE, so anything ambiguous stays honestly `other`:
+  1. **trilogy** — "… Trilogy" and the explicit n-ology variants (duology/dilogy, tetralogy,
+     quadrilogy, pentalogy, hexalogy, heptalogy, septology, octology, ennealogy, decalogy).
+     ("Anthology" does NOT match — the prefix list is closed.)
+  2. **franchise_universe** — the TMDb "… Collection" franchise idiom (title ENDS with
+     "Collection" — the franchise Default's canonical names) + "… Saga", the "…verse" /
+     "… Universe" idiom (Marvel Cinematic Universe, Arrowverse, Shondaverse, Monsterverse), and
+     the universe-Default names our estate runs (Kometa research §4: Star Wars, Wizarding World,
+     Middle Earth, X-Men, Alien / Predator, Fast & Furious, Rocky / Creed, Star Trek, In
+     Association with Marvel/DC — exact-title matches).
+  3. **director / actor** — the people-file idiom: exact (case-insensitive) title match against
+     the known-name lists seeded from our Kometa config's outputs (`movies-people.yml` —
+     Producers/Directors section → `director`, Actors section → `actor`). A person name NOT in
+     the lists (e.g. the "Roald Dahl" author list) is honestly `other`.
+  4. **list** — charts (IMDb …/Top 250/Top Rated/Top Grossing/Popular/Trending/Now Playing/In
+     Theaters/Best of …/"… Chart(s)"; decade charts "…1980s…"; seasonal charts — Christmas,
+     Halloween, Thanksgiving, Valentine's, Easter, New Year, …) and awards (Oscars/Academy
+     Award, Golden Globe, BAFTA, Cannes/Palme, Emmy, Razzie, Sundance, Venice, Berlinale,
+     Critics Choice, Independent Spirit).
+  5. **other** — everything else ("Curated for Jackson", "A24", "Disney Animation", "Dolby
+     Atmos", bare franchise names like "Sharknado"/"Breaking Bad" that carry no idiom).
+
+### D-11 — The Type facet chip row (`?ctype=` — PLAN-053)
+
+- **Registry seam (ADR-051 C-01)** — the two grouped-collection levels
+  (`movies:grouped-collection` / `tv:grouped-collection`) declare exactly ONE facet:
+  `{ key: 'collectionType', label: 'Type', kind: 'select', param: 'ctype' }`. It is never gated
+  and never data-hidden (owner ruling: the chip filters, never hides — a 0-count chip still
+  renders). Item facets stay absent from the grouped levels (D-09 asymmetry).
+- **Chips** — one always-visible single-select row over the grouped CARDS: **All** (default) ·
+  Trilogies · Franchise & Universe · Director · Actor · Lists · Other, each type chip wearing its
+  count. Counts are **accessible-collection counts** — computed from the SAME gated aggregation
+  that produces the cards (a collection with zero accessible members is neither carded nor
+  counted; THE INVARIANT applies to counts exactly as to cards — R-210/R-214).
+- **Server-side filtering** — the chip narrows the group cards in `ledger.collectionGroups`
+  (`ctype` input), never in the client; `typeCounts` come back UNFILTERED so the row's numbers
+  don't churn as chips toggle.
+- **URL contract** — `?ctype=<type>` is a D-19 REFINEMENT (replace-in-place, no history entry;
+  All = param absent). A view switch PUSHes a clean URL, so `ctype` drops with the other
+  refinements; the `?group=` drill (a PUSH) does not carry it — the drilled wall is the ordinary
+  item grid and the facet is a card-grid concern.
+- **ADR-015** — chips recolor (`is-active`), never reflow: static labels, counts rendered from
+  the same query that paints the cards (placeholder-kept across refetches), fixed-height chip bar
+  (the existing `.library-chipbar`/`.seg` skins — zero new CSS, tokens only).
 
 ## Alternatives considered
 
@@ -205,6 +274,14 @@ selector/toolbar heights are fixed, cards reserve the 2:3 box, refetches dim in 
 - **Migration (packages/db)** — 0053 block: tables exist, the `(plex_library_id, rating_key)` /
   `(collection_id, rating_key)` uniques bite, FK cascades clean members with their collection and
   collections with their library, and `sync_runs.run_kind` admits `collections-sync`.
+- **Classifier (packages/domain, pure — PLAN-053)** — one unit per bucket using REAL estate names
+  (the Kometa config's outputs), plus ambiguous cases asserting honest `other` (a person name not
+  in the seeded lists; a bare franchise name; "Anthology" not matching the n-ology rule).
+- **Type facet (packages/api + packages/db + registry — PLAN-053)** — `ctype` filters the cards
+  server-side; `typeCounts` respect the ADR-047 gate (an all-withheld collection counts for
+  NOBODY restricted); migration 0055 block (default `'other'`, CHECK bites); the registry
+  asymmetry test pins the grouped-collection levels to exactly the `collectionType` facet; the
+  sync test proves the annotation persists and RECOMPUTES on retitle.
 - **e2e** — see Q-03 (deferred honestly, not half-built).
 
 ## Open questions
