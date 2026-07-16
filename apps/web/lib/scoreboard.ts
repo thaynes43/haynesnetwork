@@ -45,9 +45,9 @@ export function formatPlays(n: number): string {
 export function scoreboardBadges(totals: ScoreboardTotals): ScoreboardBadge[] | null {
   if (totals.unavailable) return null;
   return [
-    { label: 'Movies', value: formatPlays(totals.moviePlays) },
-    { label: 'TV episodes', value: formatPlays(totals.episodePlays) },
-    { label: 'Music', value: formatPlays(totals.trackPlays) },
+    { label: 'Movies watched', value: formatPlays(totals.moviePlays) },
+    { label: 'TV episodes watched', value: formatPlays(totals.episodePlays) },
+    { label: 'Music plays', value: formatPlays(totals.trackPlays) },
     { label: 'Hours watched', value: formatPlays(totals.hoursWatched) },
   ];
 }

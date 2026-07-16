@@ -33,9 +33,9 @@ describe('formatPlays (D-08)', () => {
 describe('scoreboardBadges (D-06/D-07)', () => {
   it('fixed order: Movies · TV episodes · Music · Hours watched', () => {
     expect(scoreboardBadges(TOTALS)).toEqual([
-      { label: 'Movies', value: '3.5k' },
-      { label: 'TV episodes', value: '25.2k' },
-      { label: 'Music', value: '2.3k' },
+      { label: 'Movies watched', value: '3.5k' },
+      { label: 'TV episodes watched', value: '25.2k' },
+      { label: 'Music plays', value: '2.3k' },
       { label: 'Hours watched', value: '17.2k' },
     ]);
   });
