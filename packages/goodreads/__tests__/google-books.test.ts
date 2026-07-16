@@ -108,6 +108,49 @@ describe('GoogleBooksClient.resolveVolume', () => {
     expect(calls).toBe(3);
   });
 
+  // ADR-067 (PLAN-055) — a DAILY-quota 429 cannot succeed before the reset: retrying it is
+  // pointless by definition, so it throws IMMEDIATELY (one call, body preserved for the
+  // domain-side breaker classification). A per-minute 429 keeps the backoff loop above.
+  it('does NOT retry a daily-quota 429 (throws immediately with the body snippet)', async () => {
+    let calls = 0;
+    const dailyBody = `Quota exceeded for quota metric 'Queries' and limit 'Queries per day' of service 'books.googleapis.com'`;
+    const fetchImpl = vi.fn(async () => {
+      calls += 1;
+      return new Response(dailyBody, { status: 429 });
+    }) as unknown as typeof fetch;
+    const gb = new GoogleBooksClient({
+      baseUrl: 'http://stub/books/v1',
+      apiKey: 'k',
+      fetchImpl,
+      backoffMs: 1,
+      sleepImpl: async () => {},
+    });
+    await expect(gb.resolveVolume({ isbn: '123', title: 'Z' })).rejects.toMatchObject({
+      status: 429,
+      bodySnippet: expect.stringContaining('Queries per day') as unknown,
+    });
+    expect(calls).toBe(1);
+  });
+
+  it('still retries a PER-MINUTE 429 with backoff (transient burst quota)', async () => {
+    let calls = 0;
+    const fetchImpl = vi.fn(async () => {
+      calls += 1;
+      if (calls < 2) return new Response(`limit 'Queries per minute' exceeded`, { status: 429 });
+      return volResponse([{ id: 'gb-ok', volumeInfo: {} }]);
+    }) as unknown as typeof fetch;
+    const gb = new GoogleBooksClient({
+      baseUrl: 'http://stub/books/v1',
+      apiKey: 'k',
+      fetchImpl,
+      backoffMs: 1,
+      sleepImpl: async () => {},
+    });
+    const res = await gb.resolveVolume({ isbn: '123', title: 'Z' });
+    expect(res?.volumeId).toBe('gb-ok');
+    expect(calls).toBe(2);
+  });
+
   // Regression — PLAN-044 v0.49.0 live acceptance leaked BOTH of the owner's comics into LazyLibrarian.
   it('flags a comic from a "DC Comics" title marker when the resolved GB volume has NO categories', async () => {
     // The Batman Zero Year leak: the intitle match was a sparse Eaglemoss catalog volume with no categories.
