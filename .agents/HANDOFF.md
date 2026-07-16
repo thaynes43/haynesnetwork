@@ -4,6 +4,54 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ NEXT SESSION — start here (written 2026-07-15 Wednesday NIGHT — overnight cold start)
+
+**Site live at https://haynesnetwork.com — latest release v0.61.0, live-verified.** Wednesday shipped
+FIVE releases (v0.57.0 → v0.61.0), all from the in-cluster dev-env pod, owner remote-controlling.
+Read the midday block below for the morning/afternoon detail; tonight's state:
+
+**LIVE tonight (v0.61.0):**
+- **PLAN-041 books/audiobooks/comics Fix (ADR-062/DESIGN-033, #304):** Fix button on
+  `/library/books/[id]` (reason modal → audited `book_fix_requests` → confined LL/Kapowarr re-grab;
+  migration 0052; 25/user/hr books budget; one-open-per-item). **ADMIN-ONLY — ⚠ THE Q-01 FLIP IS
+  THE #1 OPEN ITEM:** owner tests the Fix in the UI, then `setRoleBookActions` grants `fix_book`
+  to all roles (owner ruling: "if it works it'll be available to everyone... just don't want to
+  forget to flip it"). Live-validated (fix c7a0fe19, PHM, controlled fire+revert).
+- **Fix budget 25/user/hr** — both *arr (#303, Opus-dispatched) and books.
+- **v0.60.0 ticket media locator + v0.59.0 digest/comic-fix + v0.58.0 ticket emails + v0.57.0
+  goodreads sweep** — all validated earlier (midday block).
+
+**THE ABS EVENING INCIDENT (closed, midday-block addendum):** web player flush-on-abrupt-close eats
+progress (server-proven); **AudioBooth adopted** (`audiobooth://oauth` in ABS mobile redirect URIs,
+SSO verified); 810 audiobooks language-patched; upstream sendBeacon issue DRAFTED not filed
+(owner's call). Tell mia: AudioBooth, or pause-before-close. Kavita ebook reading UX: due a look at
+OPDS readers (Yomu) — Kavita's web reader has no real pagination feel (owner hit it on PHM; the
+epub itself is FINE — retail epub3; it was reader Layout Mode, but even 1-Column "sucks" per owner).
+
+**OVERNIGHT/TOMORROW QUEUE (owner cold-starting overnight):**
+1. **THE FLIP** (after owner's UI test of the Fix — one `setRoleBookActions` call per role + a
+   screenshot check; then move PLAN-041 → completed/).
+2. **Morning checks:** GB quota RESET (the Hobbit comic should re-classify + route on the next
+   goodreads-sync — verify comicsRouted≥1); MAM gate reopened overnight? (Maas 6 matured Wed eve —
+   check governor unsatisfied; CoBaB audio `Yp9GDwAAQBAJ` + Foundation ebook `Q-41ugEACAAJ` are the
+   owner-ruled next-batch candidates, OWNER-DIRECTED grabs only); The Other Emily audio re-search
+   (fired Wed) — landed? Also Kingdom of Ash ebook + Hornet Flight ebook wants.
+3. **Builds:** PLAN-040 (governor admin knob — scoped, next release-sized item); PLAN-043 saga next
+   phases (scope WITH the owner); F-11 English spot-check; the member-persona e2e red; epub-QA
+   detection spike (Q-06, deferred); Mode-2 quarantine-assist ADR (Q-07, deferred).
+4. **Owner items:** ABS upstream issue (draft ready); nightly digest fires 21:05 (first real one
+   whenever failures exist); PLAN-035 admin email = admin@haynesnetwork.com confirmed.
+
+**Working rules addenda (tonight's lessons):** haynes-ops main is PR-only now (branch+PR+auto-merge;
+flux-local checks ~3min) · OPS-004 §1b sig-probe needs `Accept: application/vnd.oci.image.manifest.v1+json`
+· HelmRelease upgrade LAGS the kustomization apply — reconcile hr again + re-read before declaring
+a stall · release-train pattern: single background watcher does dance→merge→run→pair · GH_TOKEN
+stale in shells (`export GH_TOKEN="$(cat /creds/gh_token)"`) · a REAL coordinator Fable→Opus flip
+happened 2026-07-15 ~22:50 — the OWNER caught it (probes can't); he reset via /model; keep watching
+· one full-suite embedded-PG boot flake (plex-registry) — rerun before diagnosing.
+
+### Prior top block (Wednesday midday)
+
 ## ▶ NEXT SESSION — start here (written 2026-07-15 Wednesday midday, owner-present remote-control session)
 
 **Site live at https://haynesnetwork.com — latest release v0.57.0, live-verified.** Wednesday-morning
