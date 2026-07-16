@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.64.0](https://github.com/thaynes43/haynesnetwork/compare/v0.63.0...v0.64.0) (2026-07-16)
+
+
+### Features
+
+* book ⇄ audiobook format pairing — dual buttons, coverage badges, paced estate-wide auto-mint (PLAN-050) ([#317](https://github.com/thaynes43/haynesnetwork/issues/317)) ([7bdceb4](https://github.com/thaynes43/haynesnetwork/commit/7bdceb42978bb508aa374c82c4ce288c23ea2b5b))
+
 ## [0.63.0](https://github.com/thaynes43/haynesnetwork/compare/v0.62.1...v0.63.0) (2026-07-16)
 
 
