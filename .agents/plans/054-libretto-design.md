@@ -1,8 +1,9 @@
 # PLAN-054: Libretto — design phase for the books collection-manager app
 
-- **Status:** Design authored (2026-07-16) — DESIGN-037 is the owner-review artifact; NO code
-  and NO new repo until the owner rules on its Q-01..Q-04. This plan is the phase map from
-  ruling → repo scaffold → MVP → contract → hnet binding.
+- **Status:** Design authored + M0 rulings landed (2026-07-16, incl. the evening STATELESS
+  amendment) — DESIGN-037 is the owner-review artifact and Q-01..Q-04 are ruled; build is
+  green-lit. This plan is the phase map from ruling → repo scaffold → MVP → contract → hnet
+  binding.
 - **Saga:** PLAN-043 phase "Books collection-manager app ('Kometa for books')". Subsumes the
   engine half of PLAN-032 (the Books Automation Saga escalation — list-driven acquisition now
   lives in Libretto; PLAN-032 closes into this plan's completion record when the MVP ships,
@@ -16,14 +17,22 @@
   - **Name: Libretto.** Own public repo; standalone-valuable to Kavita/ABS/LazyLibrarian
     users without haynesnetwork.
   - **Shape:** headless API-first Node/TS service + minimal built-in config/monitoring web UI
-    (hnet package idioms: zod, drizzle, Postgres).
+    (zod idioms; storage ruling evolved same-day — see the stateless ruling below).
   - **Owns BOTH acquisition lists AND collections, "just like Kometa does":** list builders
     drive LL wants for missing items; collection builders write results INTO Kavita/ABS (the
     sources of truth) — haynesnetwork only mirrors (PLAN-051).
   - **hnet integrates ONLY via the provider-parity contract** (PLAN-052 R2:
     recipes/validate/apply/runs/produced-collections), implemented natively from day one.
-  - **KISS discipline;** the Kometa idiom kept as the contract SHAPE, but Libretto is an APP:
-    recipes are DB rows with a reconciler, not YAML files (research §5.4).
+  - **KISS discipline;** the Kometa idiom kept as the contract SHAPE, and Libretto is an APP
+    (resident service, real API, reconciler, triggering schedules).
+  - **STATELESS (2026-07-16 eve, FINAL — supersedes both the original "recipes are DB rows"
+    ruling and the same-day SQLite amendment; all three kept for the record):** "Kometa has
+    no database... It just reads its YAML and searches its sources... Stateless." Recipes =
+    YAML files on the config volume (never self-rewritten); produced-collection ownership
+    recovered from the targets via a description-embedded recipe-id marker; acquisition
+    state lives in LazyLibrarian (hard rule 4 applied to books); run history = logs + a
+    rotating last-runs JSON; identifier cache = TTL'd disk dir. DESIGN-037 D-01/D-03
+    amended.
 - **Depends on:** owner review of DESIGN-037 (M0 gate). Relates: PLAN-050 (shipped — format
   coverage the series logic leans on), PLAN-051 (mirror; independent, no ordering
   dependency), PLAN-052 (binds after the contract is live), PLAN-037 (shipped pattern).
@@ -35,13 +44,13 @@ Repo column: **libretto** = the new public repo · **haynes-ops** = deployment �
 
 | # | Milestone | Repo | Scope | Exit criterion |
 |---|-----------|------|-------|----------------|
-| M0 | Owner review | hnet | DESIGN-037 read; Q-01 license, Q-02 source keys, Q-03 DB placement, Q-04 repo home ruled | Rulings recorded here; repo green-lit |
-| M1 | Scaffold + walking skeleton | libretto | Public repo (license per Q-01), pnpm/TS/ESLint/Vitest + embedded-PG16 harness, drizzle schema for the D-02/D-03 tables, `/health`, API-key auth (D-12), recipes CRUD + runs endpoints live (contract-first — the nouns exist before the features behind them), CI + release-please + Dockerfile | CI green; `POST /recipes` persists a recipe; container boots against PG |
-| M2 | Tracer vertical | libretto | `static_ids` builder → Kavita target end-to-end: identifier match (D-04 steps 2–3), target mapping (D-07: reading list when ordered, collection otherwise), sync_mode append+sync (D-08), Run records, `GET /collections` read-back, in-process cron (D-11). Stub Kavita in tests; probe real Kavita identifier exposure (the D-04 UNVERIFIED) | A static recipe materializes an ordered Kavita reading list; re-run reconciles; run history reads back |
-| M3 | **MVP: series completion** | libretto | `hardcover_series` builder (positions → ordered membership), full identifier-resolution chain (Open Library + Wikidata glue, `identifier_cache`), MissingReport computed + `GET /recipes/:id/missing`, `POST /validate` real | **One source, one target, one recipe type end-to-end:** "complete the series I started" produces an ordered Kavita reading list + an honest missing[] — acquisition still OFF |
-| M4 | Acquisition leg | libretto | Confined LL write module (addBook → queueBook → searchBook ONLY, import-confined + three-writes-only test pin), `acquisitionEnabled` per recipe (default false), pacing cap (default 25/run, env-tunable), unmintable retry with backoff-by-recency, landed reconcile (D-09) | Missing items become LL wants under the cap; the governor/provider-config invariants are test-pinned |
+| M0 | Owner review | hnet | DESIGN-037 read; Q-01 license, Q-02 source keys, Q-03 storage, Q-04 repo home ruled | **DONE 2026-07-16:** AGPL-3.0; key instructions delivered; Q-03 = STATELESS (final, after a same-day SQLite step); repo created by the owner |
+| M1 | Scaffold + walking skeleton | libretto | Public repo (AGPL-3.0), pnpm/TS/ESLint/Vitest (temp-config-dir test harness — no DB), the D-01 recipes dir + YAML schema (zod), `/health`, API-key auth (D-12), recipes CRUD + runs endpoints live (contract-first — the nouns exist before the features behind them), CI + release-please + Dockerfile. **SPIKE: Kavita collection/reading-list description writability (the D-03 provenance marker; UNVERIFIED)** — if unwritable, wire the sidecar ownership JSON fallback | CI green; `POST /recipes` validates then writes a YAML file; container boots with only a config volume; spike verdict recorded |
+| M2 | Tracer vertical | libretto | `static_ids` builder → Kavita target end-to-end: identifier match (D-04 steps 2–3), target mapping (D-07: reading list when ordered, collection otherwise), sync_mode append+sync (D-08), ownership recovery via the marker (or the M1-spike fallback), run-state file + `GET /runs`, `GET /collections` read-back FROM the target, in-process cron (D-11). Stub Kavita in tests; probe real Kavita identifier exposure (the D-04 UNVERIFIED) | A static recipe materializes an ordered Kavita reading list; re-run reconciles; wipe the volume's cache/run file ⇒ next run converges (statelessness proven); run history reads back |
+| M3 | **MVP: series completion** | libretto | `hardcover_series` builder (positions → ordered membership), full identifier-resolution chain (Open Library + Wikidata glue, TTL'd disk cache), MissingReport recomputed per run + `GET /recipes/:id/missing`, `POST /validate` real | **One source, one target, one recipe type end-to-end:** "complete the series I started" produces an ordered Kavita reading list + an honest missing[] — acquisition still OFF |
+| M4 | Acquisition leg | libretto | Confined LL write module (addBook → queueBook → searchBook ONLY, import-confined + three-writes-only test pin), `acquisitionEnabled` per recipe (default false), pacing cap (default 25/run, env-tunable; recency rotation in the run-state file), LL queried as the want ledger (D-09 — probe whether `Requester` provenance is settable via the API path, UNVERIFIED), landed by recomputation | Missing items become LL wants under the cap; the governor/provider-config invariants are test-pinned |
 | M5 | Built-in UI | libretto | Recipes CRUD (form from `GET /builders` schemas + validate-before-save), Runs monitor, Status page — D-13's bound, nothing more | An operator can run Libretto standalone with no hnet |
-| M6 | Deploy | haynes-ops | HelmRelease (bjw-s app-template, single Deployment), ESO secrets (Kavita/ABS/LL + Q-02 source keys), DB per Q-03, internal ingress `libretto.haynesops.com`, egress allowlist (D-14) | First real run against estate Kavita; a real series reading list exists and survives re-runs |
+| M6 | Deploy | haynes-ops | HelmRelease (bjw-s app-template, single Deployment + one small config/cache PVC — the Kometa shape, no DB service), ESO secrets (Kavita/ABS/LL + Q-02 source keys), internal ingress `libretto.haynesops.com`, egress allowlist (D-14) | First real run against estate Kavita; a real series reading list exists and survives re-runs |
 | M7 | hnet binding | hnet | PLAN-052 provider registry consumes the contract (Appendix A step 1); PLAN-051 mirror displays Libretto-written collections with ZERO changes (Appendix A step 2 — a validation checkpoint, not work) | Libretto collections visible on the hnet books walls; recipe CRUD from the hnet UI |
 | M8 | Breadth | libretto | ABS collection target, `nyt_list` + `wikidata_award` builders, Goodreads RSS seed-import command, sync hardening from M6 field experience | Second target + second source class live |
 
@@ -69,6 +78,8 @@ is the proof it needs none for Libretto).
 
 ## Open questions
 
-Owner-facing questions live in DESIGN-037 (Q-01 license, Q-02 Hardcover/NYT key
-provisioning, Q-03 shared-vs-own Postgres, Q-04 repo home/name availability). This plan adds
-none — M0 is the gate where they get ruled.
+Owner-facing questions live in DESIGN-037 — all four now carry resolutions (Q-01 AGPL-3.0;
+Q-02 key provisioning in flight; Q-03 STATELESS, final, with the same-day ruling progression
+kept for the record; Q-04 repo created by the owner). The remaining UNVERIFIEDs are build-time
+spikes, not owner questions: Kavita description writability (M1) and LL `Requester` via the
+API path (M4).
