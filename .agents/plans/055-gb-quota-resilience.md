@@ -78,5 +78,9 @@ documented PLAN-050 residual.
 ## BUILT
 
 2026-07-16 — all checklist items landed on `feat/plan-055-gb-resilience` (local commits,
-not pushed); five-green local gate run recorded in the PR-prep notes. Owner follow-ups:
-none required at deploy — the breaker seeds itself on first trip (no seed row needed).
+not pushed). Local gate: `lint` (0 errors; pre-existing unused-import warnings only),
+`typecheck`, `lint:css`, `test` (all packages green — two UNRELATED embedded-PG boot-hook
+flakes on the first full run [domain arr-add-flow, api metrics/one sibling] each passed on
+the sanctioned single rerun), `build` — five green. Owner follow-ups: none required at
+deploy — the breaker seeds itself on first trip (no seed row needed); haynes-ops needs only
+the usual image bump (the retry pass rides the existing sync-goodreads CronJob).
