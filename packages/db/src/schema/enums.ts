@@ -760,7 +760,12 @@ export type BookFixRoute = (typeof BOOK_FIX_ROUTES)[number];
 // Lifecycle (D-02): pending (audited row committed BEFORE any external call) → search_triggered →
 // completed (async — the landed replacement observed) | failed. No blocklist/actioned step: LL and
 // Kapowarr have no *arr mark-failed analog (ADR-062 C-02).
-export const BOOK_FIX_STATUSES = ['pending', 'search_triggered', 'failed', 'completed'] as const;
+// ADR-067 / DESIGN-039 (PLAN-055) — 'queued' joins the set (migration 0057 rebuilds the CHECK): a
+// fix whose GB identity resolve met the OPEN quota breaker (or tripped it) parks here instead of
+// failing — an OPEN status (the one-open-per-(item, kind) dedupe holds) completed automatically by
+// the goodreads-sync-hosted retryQueuedBookFixes pass. Quota weather ONLY: permanent failures
+// (GB no-match, non-429 errors, LL step errors) still land 'failed' honestly.
+export const BOOK_FIX_STATUSES = ['pending', 'queued', 'search_triggered', 'failed', 'completed'] as const;
 export type BookFixStatus = (typeof BOOK_FIX_STATUSES)[number];
 
 // The honest stale-file seam (ADR-062 C-03): v1 never moves library files; 'owner_quarantine'

@@ -1494,4 +1494,65 @@ describe('migrations against embedded Postgres 16', () => {
       await client.query(`DELETE FROM sync_runs WHERE run_kind = 'books-collections-sync'`);
     });
   });
+
+  // ADR-067 / DESIGN-039 (PLAN-055 — migration 0057, journal idx 56): the GB quota breaker
+  // singleton + the book_fix_requests status CHECK rebuild.
+  describe('0057 gb quota state (ADR-067 — breaker singleton + queued fix status)', () => {
+    it('creates gb_quota_state with the singleton CHECK (id must be gb, one row ever)', async () => {
+      const cols = await client.query(
+        `SELECT column_name FROM information_schema.columns WHERE table_name = 'gb_quota_state'`,
+      );
+      expect(cols.rows.map((r) => r.column_name).sort()).toEqual([
+        'exhausted_until',
+        'id',
+        'tripped_at',
+        'trip_reason',
+        'updated_at',
+      ]);
+      // The default-id row inserts (nullable state columns — the clear shape)…
+      await client.query(
+        `INSERT INTO gb_quota_state (exhausted_until, tripped_at, trip_reason)
+         VALUES (now() + interval '1 hour', now(), 'daily')`,
+      );
+      // …a non-'gb' id violates the singleton CHECK…
+      await expect(
+        client.query(`INSERT INTO gb_quota_state (id) VALUES ('gb2')`),
+      ).rejects.toMatchObject({ code: '23514' });
+      // …and a second 'gb' row violates the PK.
+      await expect(client.query(`INSERT INTO gb_quota_state (id) VALUES ('gb')`)).rejects.toMatchObject(
+        { code: '23505' },
+      );
+      await client.query(`DELETE FROM gb_quota_state`);
+    });
+
+    it("the rebuilt book_fix_requests status CHECK admits 'queued' and still rejects garbage", async () => {
+      const userId = (
+        await client.query(
+          `INSERT INTO users (email, display_name) VALUES ('gbq-mig@example.com', 'GBQ Mig') RETURNING id`,
+        )
+      ).rows[0].id;
+      const itemId = (
+        await client.query(
+          `INSERT INTO books_items (source, media_kind, external_id, library_id, library_name, title, sort_title, deep_link_url)
+           VALUES ('kavita', 'book', 'gbq-ext-1', '1', 'EBooks', 'Queued Target', 'queued target', 'http://kavita/q') RETURNING id`,
+        )
+      ).rows[0].id;
+      await client.query({
+        text: `INSERT INTO book_fix_requests (requester_id, books_item_id, source, external_id, media_kind, title_snapshot, route, reason, status)
+               VALUES ($1, $2, 'kavita', 'gbq-ext-1', 'book', 'Queued Target', 'lazylibrarian', 'corrupt_file', 'queued')`,
+        values: [userId, itemId],
+      });
+      await expect(
+        client.query({
+          text: `INSERT INTO book_fix_requests (requester_id, books_item_id, source, external_id, media_kind, title_snapshot, route, reason, status)
+                 VALUES ($1, $2, 'kavita', 'gbq-ext-1', 'book', 'Queued Target', 'lazylibrarian', 'corrupt_file', 'parked')`,
+          values: [userId, itemId],
+        }),
+      ).rejects.toMatchObject({ code: '23514' });
+      // cleanup (books_item is RESTRICT-referenced — remove the fix rows first).
+      await client.query({ text: `DELETE FROM book_fix_requests WHERE books_item_id = $1`, values: [itemId] });
+      await client.query({ text: `DELETE FROM books_items WHERE id = $1`, values: [itemId] });
+      await client.query({ text: `DELETE FROM users WHERE id = $1`, values: [userId] });
+    });
+  });
 });
