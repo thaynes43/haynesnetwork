@@ -4,18 +4,26 @@
 // manage a session token (Kavita JWT + apiKey, ABS bearer) with lazy login + one 401 re-auth.
 import {
   absAuthorsResponseSchema,
+  absCollectionsResponseSchema,
   absItemsPageSchema,
   absLibrariesSchema,
   absLoginSchema,
   absUserSchema,
+  kavitaCollectionListSchema,
   kavitaLibrarySchema,
   kavitaLoginSchema,
+  kavitaReadingListItemListSchema,
+  kavitaReadingListListSchema,
   kavitaSeriesListSchema,
   type AbsAuthor,
+  type AbsCollection,
   type AbsItem,
   type AbsLibrary,
   type AbsMediaProgress,
+  type KavitaCollection,
   type KavitaLibrary,
+  type KavitaReadingList,
+  type KavitaReadingListItem,
   type KavitaSeries,
 } from './schemas';
 import { z } from 'zod';
@@ -43,8 +51,27 @@ export function kavitaLibraryKind(type: number): 'book' | 'comic' | null {
 
 const paginationHeaderSchema = z.object({ totalItems: z.number().int().nullable().optional() });
 
+/** Read the list total from Kavita's `Pagination` response header (fallback: the page length). */
+function totalFromPaginationHeader(response: Response, fallback: number): number {
+  const header = response.headers.get('Pagination');
+  if (header) {
+    try {
+      const parsed = paginationHeaderSchema.safeParse(JSON.parse(header));
+      if (parsed.success && typeof parsed.data.totalItems === 'number') return parsed.data.totalItems;
+    } catch {
+      // malformed header — keep the fallback
+    }
+  }
+  return fallback;
+}
+
 export interface KavitaSeriesPage {
   items: KavitaSeries[];
+  total: number;
+}
+
+export interface KavitaReadingListPage {
+  items: KavitaReadingList[];
   total: number;
 }
 
@@ -137,13 +164,60 @@ export class KavitaClient {
     };
     const response = await this.authed('POST', path, filter);
     const items = await parseJson(response, kavitaSeriesListSchema, 'POST', path);
-    let total = items.length;
-    const header = response.headers.get('Pagination');
-    if (header) {
-      const parsed = paginationHeaderSchema.safeParse(JSON.parse(header));
-      if (parsed.success && typeof parsed.data.totalItems === 'number') total = parsed.data.totalItems;
-    }
-    return { items, total };
+    return { items, total: totalFromPaginationHeader(response, items.length) };
+  }
+
+  /**
+   * ADR-066 / DESIGN-038 D-02 (PLAN-051) — all collections visible to the service user
+   * (`GET /api/Collection` — AppUserCollectionDto[], verified v0.9.0.2). Unpaged upstream.
+   */
+  async listCollections(): Promise<KavitaCollection[]> {
+    const response = await this.authed('GET', '/api/Collection');
+    return parseJson(response, kavitaCollectionListSchema, 'GET', '/api/Collection');
+  }
+
+  /**
+   * DESIGN-038 D-02 — one page of a COLLECTION's series, filtered server-side (the shipped
+   * `listSeriesPage` idiom on the same all-v2 endpoint: field 7 = CollectionTags, comparison 0 =
+   * Equal — `HasCollectionTags` treats Equal/Contains identically, verified v0.9.0.2 source).
+   */
+  async listCollectionSeriesPage(
+    collectionId: number,
+    pageNumber: number,
+    pageSize: number,
+  ): Promise<KavitaSeriesPage> {
+    const path = `/api/Series/all-v2?PageNumber=${pageNumber}&PageSize=${pageSize}`;
+    const filter = {
+      statements: [{ comparison: 0, field: 7, value: String(collectionId) }],
+      combination: 1,
+      limitTo: 0,
+    };
+    const response = await this.authed('POST', path, filter);
+    const items = await parseJson(response, kavitaSeriesListSchema, 'POST', path);
+    return { items, total: totalFromPaginationHeader(response, items.length) };
+  }
+
+  /**
+   * DESIGN-038 D-02 — one page of the user's reading lists
+   * (`POST /api/ReadingList/lists?PageNumber=&PageSize=&includePromoted=true` — the route is
+   * POST-with-query-pagination, verified v0.9.0.2 + live-probed; total from the Pagination header).
+   */
+  async listReadingListsPage(pageNumber: number, pageSize: number): Promise<KavitaReadingListPage> {
+    const path = `/api/ReadingList/lists?PageNumber=${pageNumber}&PageSize=${pageSize}&includePromoted=true`;
+    const response = await this.authed('POST', path);
+    const items = await parseJson(response, kavitaReadingListListSchema, 'POST', path);
+    return { items, total: totalFromPaginationHeader(response, items.length) };
+  }
+
+  /**
+   * DESIGN-038 D-02/D-09 — a reading list's items WITH their explicit positions
+   * (`GET /api/ReadingList/items?readingListId=` — ReadingListItemDto[], CHAPTER-grain; the
+   * mirror dedupes to series grain at the earliest `order`). Unpaged upstream.
+   */
+  async listReadingListItems(readingListId: number): Promise<KavitaReadingListItem[]> {
+    const path = `/api/ReadingList/items?readingListId=${readingListId}`;
+    const response = await this.authed('GET', path);
+    return parseJson(response, kavitaReadingListItemListSchema, 'GET', path);
   }
 
   /**
@@ -239,6 +313,18 @@ export class AudiobookshelfClient {
     const response = await this.authed('/api/libraries');
     const parsed = await parseJson(response, absLibrariesSchema, 'GET', '/api/libraries');
     return parsed.libraries;
+  }
+
+  /**
+   * ADR-066 / DESIGN-038 D-02 (PLAN-051) — all collections visible to the service user
+   * (`GET /api/collections`). The per-collection `books` array is returned
+   * `collectionBook.order ASC` (verified v2.35.1 source) — the array order IS the curated order,
+   * so ABS collections mirror as ORDERED.
+   */
+  async listCollections(): Promise<AbsCollection[]> {
+    const response = await this.authed('/api/collections');
+    const parsed = await parseJson(response, absCollectionsResponseSchema, 'GET', '/api/collections');
+    return parsed.collections;
   }
 
   async listItemsPage(libraryId: string, page: number, limit: number): Promise<AbsItemsPageResult> {

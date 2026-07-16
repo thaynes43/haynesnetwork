@@ -47,6 +47,49 @@ export type KavitaSeries = z.infer<typeof kavitaSeriesSchema>;
 
 export const kavitaSeriesListSchema = z.array(kavitaSeriesSchema);
 
+/**
+ * ADR-066 / DESIGN-038 D-02 (PLAN-051 — books collections mirror) — one collection from
+ * `GET /api/Collection` (AppUserCollectionDto, verified against the deployed v0.9.0.2 source).
+ * Subset: identity + title + the RAW itemCount (diagnostics only — the wall count is resolved).
+ * Kavita collections are UNORDERED (no member-order API) — the mirror stores `ordered=false`.
+ */
+export const kavitaCollectionSchema = z.object({
+  id: z.number().int(),
+  title: z.string(),
+  promoted: z.boolean().nullable().optional(),
+  itemCount: z.number().int().nullable().optional(),
+});
+export type KavitaCollection = z.infer<typeof kavitaCollectionSchema>;
+export const kavitaCollectionListSchema = z.array(kavitaCollectionSchema);
+
+/**
+ * DESIGN-038 D-02 — one reading list from `POST /api/ReadingList/lists` (ReadingListDto, verified
+ * v0.9.0.2; the route is POST-with-query-pagination — GET 404s, live-probed 2026-07-16). Reading
+ * lists carry an EXPLICIT member order (update-position API) — mirrored as ORDERED collections.
+ */
+export const kavitaReadingListSchema = z.object({
+  id: z.number().int(),
+  title: z.string(),
+  promoted: z.boolean().nullable().optional(),
+  itemCount: z.number().int().nullable().optional(),
+});
+export type KavitaReadingList = z.infer<typeof kavitaReadingListSchema>;
+export const kavitaReadingListListSchema = z.array(kavitaReadingListSchema);
+
+/**
+ * DESIGN-038 D-02/D-09 — one reading-list item from `GET /api/ReadingList/items?readingListId=`
+ * (ReadingListItemDto, verified v0.9.0.2). CHAPTER-grain: `order` is the explicit list position,
+ * `seriesId` the series the chapter belongs to — the mirror dedupes to series grain keeping each
+ * series' EARLIEST order (ADR-066 C-05).
+ */
+export const kavitaReadingListItemSchema = z.object({
+  id: z.number().int(),
+  order: z.number().int(),
+  seriesId: z.number().int(),
+});
+export type KavitaReadingListItem = z.infer<typeof kavitaReadingListItemSchema>;
+export const kavitaReadingListItemListSchema = z.array(kavitaReadingListItemSchema);
+
 // ---------------------------------------------------------------------------
 // Audiobookshelf
 // ---------------------------------------------------------------------------
@@ -113,6 +156,26 @@ export const absItemsPageSchema = z.object({
   page: z.number().int().nullable().optional(),
 });
 export type AbsItemsPage = z.infer<typeof absItemsPageSchema>;
+
+/**
+ * ADR-066 / DESIGN-038 D-02 (PLAN-051) — one collection from `GET /api/collections` (verified
+ * against the deployed ABS v2.35.1 source: `toOldJSONExpanded`). The `books` array is the expanded
+ * library items returned **`collectionBook.order ASC`** (verified in
+ * `Collection.getOldCollectionsJsonExpanded`) — the array order IS the curated order, so ABS
+ * collections mirror as ORDERED. We consume only each book's library-item `id` (the
+ * books_items.external_id join key for ABS rows).
+ */
+export const absCollectionSchema = z.object({
+  id: z.string(),
+  libraryId: z.string().nullable().optional(),
+  name: z.string(),
+  books: z.array(z.object({ id: z.string() })).nullable().optional(),
+});
+export type AbsCollection = z.infer<typeof absCollectionSchema>;
+
+export const absCollectionsResponseSchema = z.object({
+  collections: z.array(absCollectionSchema),
+});
 
 /**
  * DESIGN-026 D-04 amendment (group-card art) — one author from `GET /api/libraries/{id}/authors`.

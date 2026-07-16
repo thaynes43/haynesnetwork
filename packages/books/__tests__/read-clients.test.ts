@@ -298,6 +298,153 @@ describe('AudiobookshelfClient', () => {
   });
 });
 
+// ADR-066 / DESIGN-038 D-02 (PLAN-051) — the collection READ extensions, fixture-shaped from the
+// verified v0.9.0.2 / v2.35.1 DTOs (strip-mode zod: extra upstream fields drop, never break).
+describe('collection reads (PLAN-051)', () => {
+  const kavitaLogin: Route = {
+    method: 'POST',
+    match: (u) => u.pathname === '/api/Account/login',
+    body: { token: 'jwt', apiKey: 'key' },
+  };
+
+  it('Kavita listCollections parses the AppUserCollectionDto subset and drops extras', async () => {
+    const { fetchImpl, calls } = stubFetch([
+      kavitaLogin,
+      {
+        match: (u) => u.pathname === '/api/Collection',
+        body: [
+          {
+            id: 4,
+            title: 'Harry Potter Collection',
+            summary: null,
+            promoted: false,
+            itemCount: 7,
+            coverImage: 'c4.png',
+            ageRating: 0,
+            source: 1,
+            totalSourceCount: 0,
+          },
+        ],
+      },
+    ]);
+    const client = new KavitaClient({ ...KAVITA_OPTS, fetchImpl });
+    const collections = await client.listCollections();
+    expect(collections).toEqual([{ id: 4, title: 'Harry Potter Collection', promoted: false, itemCount: 7 }]);
+    const call = calls.find((c) => c.url.pathname === '/api/Collection');
+    expect(call?.headers.get('authorization')).toBe('Bearer jwt');
+  });
+
+  it('Kavita listCollectionSeriesPage filters all-v2 by CollectionTags (field 7, Equal) + reads the Pagination total', async () => {
+    const { fetchImpl, calls } = stubFetch([
+      kavitaLogin,
+      {
+        method: 'POST',
+        match: (u) => u.pathname === '/api/Series/all-v2',
+        headers: { Pagination: JSON.stringify({ currentPage: 1, totalItems: 7 }) },
+        body: [{ id: 501, name: 'HP Book 1', libraryId: 1 }],
+      },
+    ]);
+    const client = new KavitaClient({ ...KAVITA_OPTS, fetchImpl });
+    const page = await client.listCollectionSeriesPage(4, 1, 500);
+    expect(page.total).toBe(7);
+    expect(page.items[0]?.id).toBe(501);
+    const call = calls.find((c) => c.url.pathname === '/api/Series/all-v2');
+    // The shipped library-filter idiom, collection-flavored: field 7 = CollectionTags, Equal.
+    expect(call?.body).toEqual({
+      statements: [{ comparison: 0, field: 7, value: '4' }],
+      combination: 1,
+      limitTo: 0,
+    });
+  });
+
+  it('Kavita listReadingListsPage POSTs with query pagination (the verified route shape)', async () => {
+    const { fetchImpl, calls } = stubFetch([
+      kavitaLogin,
+      {
+        method: 'POST',
+        match: (u) => u.pathname === '/api/ReadingList/lists',
+        headers: { Pagination: JSON.stringify({ currentPage: 1, totalItems: 2 }) },
+        body: [
+          { id: 11, title: 'HP Reading Order', promoted: false, itemCount: 7, startingYear: 0 },
+          { id: 12, title: 'Cosmere Order', promoted: true, itemCount: 12 },
+        ],
+      },
+    ]);
+    const client = new KavitaClient({ ...KAVITA_OPTS, fetchImpl });
+    const page = await client.listReadingListsPage(1, 100);
+    expect(page.total).toBe(2);
+    expect(page.items.map((l) => l.title)).toEqual(['HP Reading Order', 'Cosmere Order']);
+    const call = calls.find((c) => c.url.pathname === '/api/ReadingList/lists');
+    expect(call?.method).toBe('POST');
+    expect(call?.url.searchParams.get('PageNumber')).toBe('1');
+    expect(call?.url.searchParams.get('PageSize')).toBe('100');
+    expect(call?.url.searchParams.get('includePromoted')).toBe('true');
+  });
+
+  it('Kavita listReadingListItems parses order + seriesId (chapter grain — the mirror dedupes)', async () => {
+    const { fetchImpl } = stubFetch([
+      kavitaLogin,
+      {
+        match: (u) => u.pathname === '/api/ReadingList/items',
+        body: [
+          { id: 900, order: 0, chapterId: 70, seriesId: 501, title: 'Ch 1', pagesRead: 0 },
+          { id: 901, order: 1, chapterId: 71, seriesId: 501, title: 'Ch 2' },
+          { id: 902, order: 2, chapterId: 80, seriesId: 502 },
+        ],
+      },
+    ]);
+    const client = new KavitaClient({ ...KAVITA_OPTS, fetchImpl });
+    const items = await client.listReadingListItems(11);
+    expect(items).toEqual([
+      { id: 900, order: 0, seriesId: 501 },
+      { id: 901, order: 1, seriesId: 501 },
+      { id: 902, order: 2, seriesId: 502 },
+    ]);
+  });
+
+  it('ABS listCollections parses the ordered books array (collectionBook.order ASC — verified)', async () => {
+    const { fetchImpl, calls } = stubFetch([
+      {
+        method: 'POST',
+        match: (u) => u.pathname === '/login',
+        body: { user: { token: 'abs-tok', username: 'root' } },
+      },
+      {
+        match: (u) => u.pathname === '/api/collections',
+        body: {
+          collections: [
+            {
+              id: 'col-abs-1',
+              libraryId: 'lib-1',
+              name: 'Discworld in Order',
+              description: null,
+              books: [
+                { id: 'item-2', libraryId: 'lib-1', media: { metadata: { title: 'Book Two' } } },
+                { id: 'item-1', libraryId: 'lib-1', media: { metadata: { title: 'Book One' } } },
+              ],
+              lastUpdate: 1783702399325,
+              createdAt: 1783702399325,
+            },
+          ],
+        },
+      },
+    ]);
+    const client = new AudiobookshelfClient({ ...ABS_OPTS, fetchImpl });
+    const collections = await client.listCollections();
+    expect(collections).toEqual([
+      {
+        id: 'col-abs-1',
+        libraryId: 'lib-1',
+        name: 'Discworld in Order',
+        // The array order is the curated order — position derives from the index.
+        books: [{ id: 'item-2' }, { id: 'item-1' }],
+      },
+    ]);
+    const call = calls.find((c) => c.url.pathname === '/api/collections');
+    expect(call?.headers.get('authorization')).toBe('Bearer abs-tok');
+  });
+});
+
 describe('booksReadClients factory', () => {
   it('constructs both clients from a config', () => {
     const clients = booksReadClients({ kavita: KAVITA_OPTS, audiobookshelf: ABS_OPTS });
