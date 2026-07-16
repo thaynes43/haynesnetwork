@@ -7,6 +7,7 @@ import { rolesRouter } from './roles';
 import { ledgerRouter } from './ledger';
 import { ledgerAdminRouter } from './ledger-admin';
 import { fixRouter } from './fix';
+import { bookFixRouter } from './book-fix';
 import { restoreRouter } from './restore';
 import { plexRouter } from './plex';
 import { trashRouter } from './trash';
@@ -32,6 +33,8 @@ export const appRouter = router({
   // ADR-021/022 / DESIGN-009 (PLAN-005): the Ledger section — section-gated browse/export/bulk.
   ledgerAdmin: ledgerAdminRouter,
   fix: fixRouter,
+  // ADR-062 / DESIGN-033 (PLAN-041) — the books/audiobooks/comics Fix.
+  bookFix: bookFixRouter,
   restore: restoreRouter,
   // Phase 3 (ADR-017 / DESIGN-007 D-05): Plex library self-service.
   plex: plexRouter,

@@ -100,6 +100,7 @@ const ALLOWED_FILES = new Set<string>([
 // state / rebuildable synced read-models (the ADR-052 C-04 / media_metadata class, documented exemption):
 //   • library_preferences   — the per-user, per-wall view/sort store (setLibraryPreference is the sole writer).
 //   • notification_preferences — the per-user notification opt-ins (setNotificationPreference is the sole writer; ADR-060).
+//   • book_fix_requests / role_books_action_grants — the books Fix aggregate + its grants (createBookFixRequest / setRoleBookActions — ADR-062).
 //   • user_account_map       — the app-user↔account mapping (upsertUserAccountHandles / ensurePlexUserIdMapping).
 //   • user_media_watch       — the per-user video watch read-model (upsertUserMediaWatchBatch).
 //   • user_book_progress     — the per-user ABS book read-state (upsertUserBookProgressBatch).
@@ -120,7 +121,7 @@ const FORBIDDEN_PATTERNS: Array<{ name: string; regex: RegExp }> = [
   {
     name: 'INSERT INTO guarded/audit table (SQL)',
     regex:
-      /INSERT\s+INTO\s+(user_role_transitions|permission_audit|roles|role_app_grants|role_section_permissions|role_trash_action_grants|role_message_action_grants|role_bulletin_view_grants|notifications|notification_outbox|smart_drive_state|mam_gate_state|library_preferences|notification_preferences|user_account_map|user_media_watch|user_book_progress|poster_guard_applications|ai_usage_chats|authentik_users|pending_role_assignments|authentik_group_audit|books_items|media_plex_matches|tickets|ticket_events|ticket_replies|app_settings|trash_batches|trash_batch_items|trash_batch_saves|trash_candidates|trash_candidates_state|app_catalog|media_items|media_metadata|ledger_events|fix_requests|restore_runs|sync_runs|sync_state|plex_servers|plex_libraries|role_library_grants|role_plex_server_all_grants|plex_share_audit|user_integrations|integration_shelf_items|book_requests)\b/i,
+      /INSERT\s+INTO\s+(user_role_transitions|permission_audit|roles|role_app_grants|role_section_permissions|role_trash_action_grants|role_message_action_grants|role_bulletin_view_grants|notifications|notification_outbox|smart_drive_state|mam_gate_state|library_preferences|notification_preferences|book_fix_requests|role_books_action_grants|user_account_map|user_media_watch|user_book_progress|poster_guard_applications|ai_usage_chats|authentik_users|pending_role_assignments|authentik_group_audit|books_items|media_plex_matches|tickets|ticket_events|ticket_replies|app_settings|trash_batches|trash_batch_items|trash_batch_saves|trash_candidates|trash_candidates_state|app_catalog|media_items|media_metadata|ledger_events|fix_requests|restore_runs|sync_runs|sync_state|plex_servers|plex_libraries|role_library_grants|role_plex_server_all_grants|plex_share_audit|user_integrations|integration_shelf_items|book_requests)\b/i,
   },
   {
     name: 'UPDATE guarded table (SQL)',

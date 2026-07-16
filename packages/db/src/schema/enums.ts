@@ -32,6 +32,9 @@ export const PERMISSION_AUDIT_ACTIONS = [
   'link_integration',
   'unlink_integration',
   'request_book_search',
+  // ADR-062 / DESIGN-033 (PLAN-041) — the books Fix (audited request) + its grant management.
+  'request_book_fix',
+  'update_book_actions',
   // ADR-059 / DESIGN-030 (PLAN-048 — Activity / In-Flight) — the two USER-initiated Activity actions on
   // an import failure that co-write a permission_audit row (actorId = the acting Admin/granted user;
   // roleId null — these are NOT role/permission mutations; subjectUserId null — they target a media
@@ -682,6 +685,35 @@ export type TicketStatus = (typeof TICKET_STATUSES)[number];
 // column = the whole title (the pre-locator meaning, unchanged). text+CHECK (migration 0051).
 export const TICKET_TARGET_KINDS = ['season', 'episode', 'album', 'track'] as const;
 export type TicketTargetKind = (typeof TICKET_TARGET_KINDS)[number];
+
+// ---------------------------------------------------------------------------
+// ADR-062 / DESIGN-033 (PLAN-041 — books/audiobooks/comics Fix). text+CHECK (DESIGN-001 D-02).
+// ---------------------------------------------------------------------------
+
+// The books Fix reason taxonomy (C-06). reason_text is required IFF 'other' (CHECKed).
+export const BOOK_FIX_REASONS = ['wrong_language', 'corrupt_file', 'wrong_edition', 'bad_quality', 'other'] as const;
+export type BookFixReason = (typeof BOOK_FIX_REASONS)[number];
+
+// The acquisition route a books Fix takes — derived from media_kind (book/audiobook → LL; comic → Kapowarr).
+export const BOOK_FIX_ROUTES = ['lazylibrarian', 'kapowarr'] as const;
+export type BookFixRoute = (typeof BOOK_FIX_ROUTES)[number];
+
+// Lifecycle (D-02): pending (audited row committed BEFORE any external call) → search_triggered →
+// completed (async — the landed replacement observed) | failed. No blocklist/actioned step: LL and
+// Kapowarr have no *arr mark-failed analog (ADR-062 C-02).
+export const BOOK_FIX_STATUSES = ['pending', 'search_triggered', 'failed', 'completed'] as const;
+export type BookFixStatus = (typeof BOOK_FIX_STATUSES)[number];
+
+// The honest stale-file seam (ADR-062 C-03): v1 never moves library files; 'owner_quarantine'
+// flags a fix whose bad copy needs the owner-side OPS-013 quarantine (the deferred Mode-2 signal).
+export const BOOK_STALE_FILE_ACTIONS = ['none', 'owner_quarantine'] as const;
+export type BookStaleFileAction = (typeof BOOK_STALE_FILE_ACTIONS)[number];
+
+// The fine-grained books actions a role may be granted (the ADR-023/059 idiom; a ROW is the grant;
+// Admin implies all). Ships UNGRANTED (Admin-only) for the owner's test window — then the Q-01
+// ruling FLIPS it to all roles (tracked post-validation step; do not forget).
+export const BOOK_ACTIONS = ['fix_book'] as const;
+export type BookAction = (typeof BOOK_ACTIONS)[number];
 
 export const TICKET_CATEGORIES = [
   'playback',

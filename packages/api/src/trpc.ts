@@ -36,6 +36,9 @@ import {
   maintainerrClientBundleFromEnv,
   MaintainerrUnsafeError,
   MaintainerrUpstreamError,
+  BookFixAlreadyOpenError,
+  BookFixRateLimitError,
+  BookFixUnroutableError,
   InvalidTicketTargetError,
   InvalidTicketTransitionError,
   NotFoundError,
@@ -486,6 +489,15 @@ export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
     }
     if (err instanceof InvalidTicketTargetError) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: err.message, cause: err });
+    }
+    if (err instanceof BookFixRateLimitError) {
+      throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: err.message, cause: err });
+    }
+    if (err instanceof BookFixAlreadyOpenError) {
+      throw new TRPCError({ code: 'CONFLICT', message: err.message, cause: err });
+    }
+    if (err instanceof BookFixUnroutableError) {
+      throw new TRPCError({ code: 'UNPROCESSABLE_CONTENT', message: err.message, cause: err });
     }
     if (err instanceof AuthentikGroupNotOwnedError) {
       throw new TRPCError({ code: 'FORBIDDEN', message: err.message, cause: err });

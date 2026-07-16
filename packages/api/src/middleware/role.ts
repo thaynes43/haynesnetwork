@@ -8,6 +8,7 @@ import {
   SECTION_DEFAULT_LEVELS,
   SECTION_LEVEL_RANK,
   type ActivityAction,
+  type BookAction,
   type BulletinView,
   type MessageAction,
   type MetricsLevel,
@@ -15,7 +16,7 @@ import {
   type SectionPermissionLevel,
   type TrashAction,
 } from '@hnet/db';
-import { activityActionsForRole } from '@hnet/domain';
+import { activityActionsForRole, bookActionsForRole } from '@hnet/domain';
 import { authedProcedure } from '../trpc';
 import type { SessionRole } from '@hnet/auth';
 
@@ -149,6 +150,22 @@ export function activityActionProcedure(action: ActivityAction) {
   return authedProcedure.use(async ({ ctx, next }) => {
     if (ctx.user.role.isAdmin) return next();
     const actions = await activityActionsForRole({ db: ctx.db, roleId: ctx.user.role.id });
+    if (!actions.includes(action)) throw new TRPCError({ code: 'FORBIDDEN' });
+    return next();
+  });
+}
+
+/**
+ * ADR-062 / DESIGN-033 D-03 (PLAN-041) — the books Fix action rung: the `books` section at
+ * read_only or better (visibility floor) AND (admin OR the caller's role holds the
+ * `role_books_action_grants` row for `action`). Ships UNGRANTED ⇒ Admin-only for the owner's test
+ * window; the Q-01 ruling then flips `fix_book` to all roles via `setRoleBookActions` — a data
+ * change, not code. Server-authoritative, never a client hide.
+ */
+export function bookActionProcedure(action: BookAction) {
+  return sectionProcedure('books', 'read_only').use(async ({ ctx, next }) => {
+    if (ctx.user.role.isAdmin) return next();
+    const actions = await bookActionsForRole({ db: ctx.db, roleId: ctx.user.role.id });
     if (!actions.includes(action)) throw new TRPCError({ code: 'FORBIDDEN' });
     return next();
   });

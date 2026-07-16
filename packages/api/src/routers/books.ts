@@ -14,7 +14,8 @@ import {
   type BookRequestStatus,
 } from '@hnet/db';
 import { and, asc, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
-import { getBookRequestDetail, getWantedBookRequests, isRequestSearchable } from '@hnet/domain';
+import {
+  bookActionsForRole, getBookRequestDetail, getWantedBookRequests, isRequestSearchable } from '@hnet/domain';
 import { authedProcedure, router } from '../trpc';
 import { booksOrIntegrationsProcedure, booksProcedure, effectiveSectionLevel } from '../middleware/role';
 import { booksCoverUrlFor } from '../books-query';
@@ -40,6 +41,8 @@ function booksPlayLabel(source: string): string {
 
 /** The books detail payload (the in-app drill-in — deep-links OUT to Kavita/ABS, no *arr semantics). */
 export interface BooksDetailResult {
+  /** ADR-062 — the caller may fire a books Fix (admin or fix_book grant). */
+  canFix: boolean;
   item: BooksListItem & { libraryName: string; lastSyncedAt: string };
   /** The app-specific deep link (books are always PRESENT — synced from the serving app). */
   play: { app: 'kavita' | 'audiobookshelf'; label: string; url: string };
@@ -356,7 +359,13 @@ export const booksRouter = router({
       if (!row) {
         throw new TRPCError({ code: 'NOT_FOUND', message: `Book ${input.id} not found` });
       }
+      // ADR-062 (PLAN-041) — may THIS caller fire a Fix? Server-computed so the button is never a
+      // client-side guess (Admin-only until the owner's Q-01 all-roles flip).
+      const canFix =
+        ctx.user.role.isAdmin ||
+        (await bookActionsForRole({ db: ctx.db, roleId: ctx.user.role.id })).includes('fix_book');
       return {
+        canFix,
         item: {
           ...toBooksListItem(row),
           libraryName: row.libraryName,
