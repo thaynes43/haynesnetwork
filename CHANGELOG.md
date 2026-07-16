@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.62.0](https://github.com/thaynes43/haynesnetwork/compare/v0.61.0...v0.62.0) (2026-07-16)
+
+
+### Features
+
+* About/Help page — dashboard entry card + /about accordion (PLAN-049 / ADR-063 / DESIGN-034) ([#307](https://github.com/thaynes43/haynesnetwork/issues/307)) ([59e0630](https://github.com/thaynes43/haynesnetwork/commit/59e06304785dbb10878091a6c00aeb8c351c7011))
+
+
+### Documentation
+
+* Wednesday-night wrap — v0.61.0 books Fix live (Q-01 FLIP = [#1](https://github.com/thaynes43/haynesnetwork/issues/1) open item) + overnight cold-start block ([#305](https://github.com/thaynes43/haynesnetwork/issues/305)) ([8878758](https://github.com/thaynes43/haynesnetwork/commit/887875894b74fcc180744642ef524a6b71be9dd9))
+
 ## [0.61.0](https://github.com/thaynes43/haynesnetwork/compare/v0.60.0...v0.61.0) (2026-07-16)
 
 
