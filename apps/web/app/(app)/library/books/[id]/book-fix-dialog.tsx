@@ -38,19 +38,30 @@ export function BookFixControl({ booksItemId, title }: { booksItemId: string; ti
 
   const fired = create.isSuccess ? create.data : null;
 
-  // Once fired, the button slot shows the honest downstream chip (searching/fired/failed).
+  // Once fired, the button slot shows the honest downstream chip (searching/fired/queued/failed).
+  // ADR-067 (PLAN-055): 'queued' is quota weather, not a failure — the fix is saved and the
+  // goodreads-sync retry pass fires it automatically. Copy per owner tone: no em-dashes, no jargon.
   if (fired !== null) {
     const failed = fired.status === 'failed';
+    const queued = fired.status === 'queued';
     return (
       <span className="action-slot" data-testid="book-fix-status">
         <PhaseChip
-          phase={failed ? 'failed' : 'fired'}
-          label={failed ? 'Fix failed' : 'Fix requested — searching for a replacement'}
+          phase={failed ? 'failed' : queued ? 'queued' : 'fired'}
+          label={
+            failed
+              ? 'Fix failed'
+              : queued
+                ? 'Fix queued. It will run by itself.'
+                : 'Fix requested — searching for a replacement'
+          }
           tone={failed ? 'danger' : 'info'}
           title={
             failed
               ? 'The re-grab could not start — try again later'
-              : 'A replacement is being searched; the current file stays until you quarantine it'
+              : queued
+                ? 'The book lookup is at its daily limit. Your fix is saved and runs automatically when the limit resets. Nothing else to do.'
+                : 'A replacement is being searched; the current file stays until you quarantine it'
           }
         />
       </span>

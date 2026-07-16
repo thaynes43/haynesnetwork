@@ -69,6 +69,9 @@ export * from './media-metadata';
 export * from './library-preferences';
 export * from './notification-preferences';
 export * from './book-fix';
+// ADR-067 / DESIGN-039 (PLAN-055) — the shared Google Books quota circuit breaker (single-row
+// gb_quota_state single-writers + the guardedGbResolve seam every GB call site consults).
+export * from './gb-quota-breaker';
 // ADR-053 / DESIGN-026 D-07 (PLAN-029) — per-user watch/read-state seam: the app-user↔account mapping,
 // the per-user video watch read-model, and the per-user ABS book read-state (single-writers, no audit).
 export * from './user-account-map';

@@ -59,12 +59,17 @@ export async function getText(url: string, options: GetOptions = {}): Promise<st
     clearTimeout(timer);
 
     if (!response.ok) {
-      if (RETRYABLE_STATUS.has(response.status) && attempt < retries) {
+      const snippet = (await response.text().catch(() => '')).slice(0, 300);
+      // ADR-067 (PLAN-055): a 429 whose body names the DAILY quota ("Queries per day") cannot
+      // succeed before the reset — retrying it is pointless by definition, so it throws
+      // immediately (the domain-side quota breaker classifies it from the body snippet). Every
+      // other retryable status keeps the mandatory backoff loop.
+      const dailyQuota429 = response.status === 429 && /per day/i.test(snippet);
+      if (RETRYABLE_STATUS.has(response.status) && !dailyQuota429 && attempt < retries) {
         attempt += 1;
         await sleepImpl(backoffMs * attempt);
         continue;
       }
-      const snippet = (await response.text().catch(() => '')).slice(0, 300);
       throw new GoodreadsHttpError(response.status, redacted, snippet || undefined);
     }
     return response.text();

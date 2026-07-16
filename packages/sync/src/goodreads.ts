@@ -6,17 +6,22 @@
 // normalize here; the single-writers + confined writes in packages/domain).
 import type { DbClient } from '@hnet/db';
 import {
+  guardedGbResolve,
   listLinkedIntegrations,
   markIntegrationSynced,
+  peekGbQuotaGate,
+  retryQueuedBookFixes,
   syncGoodreadsIntegration,
   type EnrichedShelfItem,
   type KapowarrClientBundle,
   type LazyLibrarianClientBundle,
+  type RetryQueuedBookFixesReport,
   type SyncGoodreadsReport,
 } from '@hnet/domain';
 import {
   isAbsentCustomShelfError,
   isComicText,
+  type GbVolume,
   type GoodreadsRssClient,
   type GoodreadsShelfItem,
   type GoogleBooksClient,
@@ -53,6 +58,13 @@ export interface GoodreadsSyncReport {
   integrations: number;
   synced: number;
   failed: number;
+  /**
+   * ADR-067 C-07 (PLAN-055) — shelf items whose GB enrichment was SKIPPED because the quota
+   * breaker was/went open this run (they mirror honestly un-enriched; one log line, zero 429s).
+   */
+  skippedEnrichment: number;
+  /** ADR-067 C-06 — the queued-book-fix retry pass hosted in this run (absent when LL/GB missing). */
+  fixRetries?: RetryQueuedBookFixesReport;
   perIntegration: Array<{
     integrationId: string;
     userId: string;
@@ -83,6 +95,21 @@ export async function runGoodreadsSync(input: {
   let synced = 0;
   let failed = 0;
 
+  // ADR-067 C-07 — the GB quota breaker, consulted ONCE up front (an expired window peeks closed,
+  // so the run's first guarded resolve below makes the half-open probe). When open: ZERO GB calls
+  // this run, ONE log line, items mirror honestly un-enriched (the text-marker comic fallback
+  // still applies) and are counted as skippedEnrichment.
+  let quotaOpen = false;
+  let skippedEnrichment = 0;
+  const gate = await peekGbQuotaGate({ db: input.db, ...(input.now ? { now: input.now } : {}) });
+  if (gate.open) {
+    quotaOpen = true;
+    logger.info('goodreads-sync: GB quota exhausted — enrichment skipped this run', {
+      until: gate.until?.toISOString(),
+      reason: gate.reason,
+    });
+  }
+
   for (const integ of integrations) {
     try {
       const enriched: EnrichedShelfItem[] = [];
@@ -90,17 +117,37 @@ export async function runGoodreadsSync(input: {
       for (const shelf of integ.shelves) {
         const items = await fetchShelfTolerant(input.goodreads.rss, integ.externalUserId, shelf);
         for (const item of items) {
-          // GB enrichment: mandatory retry/backoff lives in the client; a final failure degrades to no id
-          // (the want stays honestly un-pushable rather than fabricating a volume).
-          const gb = await input.goodreads.googleBooks
-            .resolveVolume({ isbn: item.isbn, title: item.title, author: item.author })
-            .catch((error: unknown) => {
+          // GB enrichment through the breaker seam: per-attempt retry/backoff stays in the client;
+          // a quota 429 trips the shared breaker (skipping the REST of the run — one line, not
+          // dozens of doomed errors); any other final failure degrades to no id as before (the
+          // want stays honestly un-pushable rather than fabricating a volume).
+          let gb: GbVolume | null = null;
+          if (quotaOpen) {
+            skippedEnrichment += 1;
+          } else {
+            try {
+              const guarded = await guardedGbResolve({
+                db: input.db,
+                gb: input.goodreads.googleBooks,
+                query: { isbn: item.isbn, title: item.title, author: item.author },
+              });
+              if (guarded.outcome === 'quota_blocked' || guarded.outcome === 'quota_tripped') {
+                quotaOpen = true;
+                skippedEnrichment += 1;
+                logger.info(
+                  'goodreads-sync: GB quota exhausted — enrichment skipped for the rest of the run',
+                  { retryAfter: guarded.until.toISOString() },
+                );
+              } else if (guarded.outcome === 'resolved') {
+                gb = guarded.volume;
+              }
+            } catch (error) {
               logger.error('goodreads-sync: GB enrichment failed', {
                 title: item.title,
                 error: error instanceof Error ? error.message : String(error),
               });
-              return null;
-            });
+            }
+          }
           enriched.push({
             shelf,
             externalBookId: item.externalBookId,
@@ -141,5 +188,29 @@ export async function runGoodreadsSync(input: {
     }
   }
 
-  return { integrations: integrations.length, synced, failed, perIntegration };
+  // ADR-067 C-06 — the queued-book-fix RETRY PASS rides this run (it already holds the GB client
+  // + the confined LL bundle): oldest-first, capped, breaker-honoring; permanent failures land
+  // `failed` honestly inside the pass. Absent LL ⇒ skipped (the degraded run), reported honestly.
+  let fixRetries: RetryQueuedBookFixesReport | undefined;
+  if (input.ll) {
+    fixRetries = await retryQueuedBookFixes({
+      db: input.db,
+      ll: input.ll,
+      gb: input.goodreads.googleBooks,
+      ...(input.now ? { now: input.now } : {}),
+      logger,
+    });
+    if (fixRetries.queued > 0) {
+      logger.info('goodreads-sync: queued book-fix retry pass complete', { ...fixRetries });
+    }
+  }
+
+  return {
+    integrations: integrations.length,
+    synced,
+    failed,
+    skippedEnrichment,
+    ...(fixRetries !== undefined ? { fixRetries } : {}),
+    perIntegration,
+  };
 }

@@ -20,8 +20,9 @@ import {
   type BookFixRoute,
   type DbClient,
 } from '@hnet/db';
-import { and, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, sql } from 'drizzle-orm';
 import { inTransaction, resolveDb } from './db-client';
+import { guardedGbResolve, peekGbQuotaGate } from './gb-quota-breaker';
 import { NotFoundError } from './errors';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
 import type { KapowarrClientBundle } from './kapowarr-clients';
@@ -48,7 +49,8 @@ export class BookFixUnroutableError extends Error {
 /** Owner ruling 2026-07-15 — generous for the friends-and-family group; env-tunable. */
 export const BOOK_FIX_RATE_LIMIT_PER_HOUR = Number(process.env.BOOK_FIX_RATE_LIMIT_PER_HOUR ?? 25);
 
-const OPEN_BOOK_FIX_STATUSES = ['pending', 'search_triggered'] as const;
+// ADR-067 — 'queued' is OPEN: a quota-parked fix still blocks a duplicate on the same (item, kind).
+const OPEN_BOOK_FIX_STATUSES = ['pending', 'queued', 'search_triggered'] as const;
 
 // ---------------------------------------------------------------------------
 // Grants (the ADR-023/059 idiom — setRoleBookActions is the sole writer).
@@ -231,7 +233,7 @@ export async function createBookFixRequest(input: CreateBookFixInput): Promise<B
 export async function recordBookFixAction(input: {
   db?: DbClient;
   fixId: string;
-  status?: 'search_triggered' | 'failed' | 'completed';
+  status?: 'queued' | 'search_triggered' | 'failed' | 'completed';
   actions: Record<string, unknown>[];
   llBookId?: string | null;
   kapowarrVolumeId?: number | null;
@@ -282,7 +284,9 @@ export interface RunBookFixInput {
  * Fire the acquisition-layer re-grab for a created fix. Books/audiobooks: resolve the LL book id
  * (fix row seed → GB lookup fallback) → addBook → queueBook(format) → searchBook(format). Comics:
  * resolve the Kapowarr volume (fix row seed only in v1) → setMonitored → auto_search. Each step's
- * raw response is appended; any failure lands the fix `failed` with the honest error.
+ * raw response is appended; any failure lands the fix `failed` with the honest error — EXCEPT
+ * quota weather (ADR-067 C-05): an open/tripping GB quota breaker lands the fix `queued` for the
+ * retryQueuedBookFixes pass instead.
  */
 export async function runBookFixRequest(input: RunBookFixInput): Promise<{ status: string }> {
   const fix = input.fix;
@@ -311,15 +315,40 @@ export async function runBookFixRequest(input: RunBookFixInput): Promise<{ statu
     if (!input.ll) throw new BookFixUnroutableError('LazyLibrarian is not configured');
     let llBookId = fix.llBookId;
     if (llBookId == null) {
-      const resolved = input.gb
-        ? await input.gb.resolveVolume({ title: fix.titleSnapshot, author: null })
-        : null;
-      if (resolved == null) {
+      if (!input.gb) {
         throw new BookFixUnroutableError(
           'Could not resolve this book against Google Books (no request row to reuse) — try again later',
         );
       }
-      llBookId = resolved.volumeId;
+      // ADR-067 C-05 — the GB fallback rides the shared quota breaker: quota weather QUEUES the
+      // fix (the goodreads-sync-hosted retry pass completes it) instead of failing it; a real
+      // no-match still fails honestly below.
+      const guarded = await guardedGbResolve({
+        db: input.db,
+        gb: input.gb,
+        query: { title: fix.titleSnapshot, author: null },
+      });
+      if (guarded.outcome === 'quota_blocked' || guarded.outcome === 'quota_tripped') {
+        steps.push({
+          step: 'queued',
+          at: stamp(),
+          reason: 'gb_quota',
+          ...(guarded.outcome === 'quota_tripped' ? { kind: guarded.kind } : {}),
+          retryAfter: guarded.until.toISOString(),
+        });
+        log.info?.('book-fix: GB quota exhausted — fix queued for the retry pass', {
+          fixId: fix.id,
+          retryAfter: guarded.until.toISOString(),
+        });
+        await recordBookFixAction({ db: input.db, fixId: fix.id, status: 'queued', actions: steps });
+        return { status: 'queued' };
+      }
+      if (guarded.outcome === 'no_match') {
+        throw new BookFixUnroutableError(
+          'Could not resolve this book against Google Books (no request row to reuse) — try again later',
+        );
+      }
+      llBookId = guarded.volume.volumeId;
       steps.push({ step: 'gb_resolved', at: stamp(), llBookId });
     }
     const format = fix.mediaKind === 'audiobook' ? ('audiobook' as const) : ('ebook' as const);
@@ -344,6 +373,148 @@ export async function runBookFixRequest(input: RunBookFixInput): Promise<{ statu
     await recordBookFixAction({ db: input.db, fixId: fix.id, status: 'failed', actions: steps });
     return { status: 'failed' };
   }
+}
+
+// ---------------------------------------------------------------------------
+// The retry pass (ADR-067 C-06 / DESIGN-039 D-05) — completes queued fixes once the quota returns.
+// Hosted in the goodreads-sync run (it already holds the GB client + the confined LL bundle).
+// ---------------------------------------------------------------------------
+
+/** The per-run queued-fix retry budget (ADR-067 C-06; env-tunable). */
+export const BOOK_FIX_RETRY_CAP_PER_RUN = Number(process.env.BOOK_FIX_RETRY_CAP_PER_RUN ?? 10);
+
+export interface RetryQueuedBookFixesReport {
+  /** Queued fixes found (pre-cap). */
+  queued: number;
+  /** Fixes this run actually worked (≤ cap). */
+  attempted: number;
+  /** Fixes that reached search_triggered. */
+  completed: number;
+  /** Permanent failures (GB no-match, non-429 errors, LL step errors) — landed `failed` honestly. */
+  failed: number;
+  /** Fixes left `queued` because the breaker was/went open (no churn — retried next run). */
+  skippedQuota: number;
+}
+
+const defaultRetryPacer = (index: number): Promise<void> =>
+  index === 0 ? Promise.resolve() : new Promise((r) => setTimeout(r, 250));
+
+/**
+ * Complete `queued` book fixes: oldest-first (created_at), capped at BOOK_FIX_RETRY_CAP_PER_RUN,
+ * breaker-honoring — an OPEN gate skips the whole pass with one log line; a mid-pass
+ * blocked/tripped outcome stops it (remaining fixes stay queued, nothing is churned). On a
+ * successful resolve the NORMAL ADR-062 chain continues (addBook → queueBook(format) →
+ * searchBook(format) → `search_triggered`) with the steps APPENDED to the fix's existing
+ * actions_taken trail. Permanent failures (a GB no-match, a non-429 resolve error, an LL step
+ * error) land `failed` honestly — `queued` is for quota weather only. Paced (250ms politeness).
+ */
+export async function retryQueuedBookFixes(input: {
+  db?: DbClient;
+  ll?: LazyLibrarianClientBundle;
+  gb?: BookFixGbResolver | null;
+  cap?: number;
+  now?: Date;
+  logger?: { info?: (m: string, x?: Record<string, unknown>) => void; error?: (m: string, x?: Record<string, unknown>) => void };
+  pacer?: (index: number) => Promise<void>;
+}): Promise<RetryQueuedBookFixesReport> {
+  const cap = input.cap ?? BOOK_FIX_RETRY_CAP_PER_RUN;
+  const log = input.logger ?? {};
+  const pace = input.pacer ?? defaultRetryPacer;
+  const report: RetryQueuedBookFixesReport = {
+    queued: 0,
+    attempted: 0,
+    completed: 0,
+    failed: 0,
+    skippedQuota: 0,
+  };
+
+  const queued = await resolveDb(input.db)
+    .select()
+    .from(bookFixRequests)
+    .where(eq(bookFixRequests.status, 'queued'))
+    .orderBy(asc(bookFixRequests.createdAt), asc(bookFixRequests.id));
+  report.queued = queued.length;
+  if (queued.length === 0) return report;
+
+  if (!input.ll || !input.gb) {
+    log.info?.('book-fix retry: LL/GB not configured — queued fixes wait for the next run', {
+      queued: queued.length,
+    });
+    report.skippedQuota = queued.length;
+    return report;
+  }
+
+  // Honor the breaker up front (one line, zero churn). An EXPIRED window peeks closed — the first
+  // guardedGbResolve below is then the half-open probe.
+  const gate = await peekGbQuotaGate({ db: input.db, ...(input.now ? { now: input.now } : {}) });
+  if (gate.open) {
+    log.info?.('book-fix retry: GB quota exhausted — pass skipped this run', {
+      queued: queued.length,
+      until: gate.until?.toISOString(),
+    });
+    report.skippedQuota = queued.length;
+    return report;
+  }
+
+  const worklist = queued.slice(0, cap);
+  for (let i = 0; i < worklist.length; i += 1) {
+    const fix = worklist[i]!;
+    await pace(i);
+    report.attempted += 1;
+    const steps: Record<string, unknown>[] = [];
+    const stamp = () => new Date().toISOString();
+    try {
+      let llBookId = fix.llBookId;
+      if (llBookId == null) {
+        const guarded = await guardedGbResolve({
+          db: input.db,
+          gb: input.gb,
+          query: { title: fix.titleSnapshot, author: null },
+        });
+        if (guarded.outcome === 'quota_blocked' || guarded.outcome === 'quota_tripped') {
+          // Quota weather again — stop the pass; everything not yet worked stays queued unchanged.
+          report.attempted -= 1;
+          report.skippedQuota = queued.length - report.completed - report.failed;
+          log.info?.('book-fix retry: GB quota tripped mid-pass — remaining fixes stay queued', {
+            retryAfter: guarded.until.toISOString(),
+          });
+          return report;
+        }
+        if (guarded.outcome === 'no_match') {
+          throw new BookFixUnroutableError(
+            'Could not resolve this book against Google Books (no request row to reuse)',
+          );
+        }
+        llBookId = guarded.volume.volumeId;
+        steps.push({ step: 'gb_resolved', at: stamp(), llBookId, via: 'retry_pass' });
+      }
+      const format = fix.mediaKind === 'audiobook' ? ('audiobook' as const) : ('ebook' as const);
+      await input.ll.write.addBook(llBookId);
+      steps.push({ step: 'll_add_book', at: stamp(), llBookId });
+      await input.ll.write.queueBook(llBookId, format); // MANDATORY — addBook alone lands Skipped.
+      steps.push({ step: 'll_queue_book', at: stamp(), llBookId, format });
+      await input.ll.write.searchBook(llBookId, format);
+      steps.push({ step: 'll_search_book', at: stamp(), llBookId, format });
+      await recordBookFixAction({
+        db: input.db,
+        fixId: fix.id,
+        status: 'search_triggered',
+        actions: steps,
+        llBookId,
+      });
+      report.completed += 1;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log.error?.('book-fix retry: permanent failure — fix failed honestly', {
+        fixId: fix.id,
+        error: message,
+      });
+      steps.push({ step: 'failed', at: stamp(), error: message, via: 'retry_pass' });
+      await recordBookFixAction({ db: input.db, fixId: fix.id, status: 'failed', actions: steps });
+      report.failed += 1;
+    }
+  }
+  return report;
 }
 
 // ---------------------------------------------------------------------------

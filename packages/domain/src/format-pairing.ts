@@ -28,6 +28,7 @@ import {
 } from '@hnet/db';
 import { and, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import { inTransaction, resolveDb } from './db-client';
+import { guardedGbResolve } from './gb-quota-breaker';
 import {
   applyRequestReconcile,
   mapLlStatus,
@@ -313,6 +314,12 @@ export interface MintPairingWantsReport {
   pushed: number;
   /** Attempts that ended honestly unmintable (no LL identity) — retried on later runs. */
   unmintable: number;
+  /**
+   * ADR-067 C-08 (PLAN-055) — GB-requiring candidates skipped because the quota breaker was/went
+   * OPEN: NOT attempts (the cap is not consumed, the want row is not touched — `updated_at`, the
+   * retry-recency key, does not advance). Closes the PLAN-050 residual.
+   */
+  skippedQuota: number;
 }
 
 const defaultPacer = (index: number): Promise<void> =>
@@ -428,10 +435,13 @@ export async function markPairingWantPushed(input: {
  * format is a candidate; at most `cap` are ATTEMPTED per run — fresh candidates oldest-first
  * (first_seen_at, id), then retryable existing wants (unmintable / never-pushed) least-recently-
  * tried first (the backoff-by-recency). Per attempt: resolve the LL identity (reuse a goodreads
- * request's llBookId for the same normalized title+author, else gb.resolveVolume), upsert the want
- * (single-writer), and — when resolvable — push the confined chain for ONLY the missing format
- * (addBook → queueBook(missing) → searchBook(missing)), paced. A resolve/push failure leaves the
- * want honestly unmintable/`requested` for the next run; nothing is ever fabricated.
+ * request's llBookId for the same normalized title+author, else gb.resolveVolume through the
+ * ADR-067 quota breaker), upsert the want (single-writer), and — when resolvable — push the
+ * confined chain for ONLY the missing format (addBook → queueBook(missing) → searchBook(missing)),
+ * paced. A resolve/push failure leaves the want honestly unmintable/`requested` for the next run;
+ * nothing is ever fabricated. QUOTA WEATHER is different (ADR-067 C-08, the PLAN-050 residual):
+ * an open/tripping breaker SKIPS GB-requiring candidates without consuming the cap or touching
+ * their rows — llBookId-reusing mints still proceed, so the backlog drains on quota days.
  */
 export async function mintPairingWants(
   input: MintPairingWantsInput,
@@ -468,7 +478,10 @@ export async function mintPairingWants(
   const wants = await db.select().from(bookRequests).where(eq(bookRequests.origin, 'pairing'));
   const wantByAnchor = new Map(wants.map((w) => [w.pairingBooksItemId!, w] as const));
 
-  // 3. The capped worklist: fresh mints oldest-first, then retries least-recently-tried first.
+  // 3. The ordered candidate list: fresh mints oldest-first, then retries least-recently-tried
+  //    first. NOT pre-capped (ADR-067 C-08): only REAL attempts consume the cap — a GB-requiring
+  //    candidate met while the quota breaker is open is skipped without burning budget, so the
+  //    identity-holding candidates behind it still mint on a quota day.
   const fresh = unpaired
     .filter((i) => !wantByAnchor.has(i.id))
     .sort(
@@ -485,7 +498,7 @@ export async function mintPairingWants(
       const wb = wantByAnchor.get(b.id)!;
       return wa.updatedAt.getTime() - wb.updatedAt.getTime() || a.id.localeCompare(b.id);
     });
-  const worklist = [...fresh, ...retry].slice(0, cap);
+  const candidates = [...fresh, ...retry];
 
   // 4. The llBookId reuse index over goodreads requests (same normalized title + author agreement).
   const reuseRows = await db
@@ -508,28 +521,55 @@ export async function mintPairingWants(
     return bucket?.find((r) => authorsAgree(author, r.author))?.llBookId ?? null;
   };
 
-  // 5. Attempt each worklist item, paced.
+  // 5. Attempt candidates in order, paced, until the cap of REAL attempts is spent. A candidate
+  //    that would need a Google Books resolve while the breaker is open (or after it trips
+  //    mid-run) is SKIPPED — no cap consumed, no upsert (updated_at is the retry-recency key and
+  //    must not advance on a non-attempt), no per-item error spam (ADR-067 C-08).
   let minted = 0;
   let pushed = 0;
   let unmintable = 0;
-  for (let i = 0; i < worklist.length; i += 1) {
-    const item = worklist[i]!;
-    await pace(i);
+  let skippedQuota = 0;
+  let attempted = 0;
+  let paceSeq = 0;
+  let quotaOpen = false;
+  for (const item of candidates) {
+    if (attempted >= cap) break;
     const missing = missingFormatFor(item.mediaKind);
     let llBookId = wantByAnchor.get(item.id)?.llBookId ?? reuseLlBookId(item) ?? null;
-    if (llBookId === null && input.gb) {
-      llBookId = await input.gb
-        .resolveVolume({ title: item.title, author: item.author })
-        .then((v) => v?.volumeId ?? null)
-        .catch((error: unknown) => {
-          log.error?.('format-pairing: GB resolve failed (want stays unmintable)', {
-            title: item.title,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          return null;
+    const needsGb = llBookId === null && input.gb != null;
+    if (needsGb && quotaOpen) {
+      skippedQuota += 1;
+      continue;
+    }
+    await pace(paceSeq);
+    paceSeq += 1;
+    if (needsGb) {
+      try {
+        const guarded = await guardedGbResolve({
+          db: input.db,
+          gb: input.gb!,
+          query: { title: item.title, author: item.author },
         });
+        if (guarded.outcome === 'quota_blocked' || guarded.outcome === 'quota_tripped') {
+          quotaOpen = true;
+          skippedQuota += 1;
+          log.info?.('format-pairing: GB quota exhausted — GB-requiring mints skipped, cap preserved', {
+            retryAfter: guarded.until.toISOString(),
+          });
+          continue;
+        }
+        llBookId = guarded.outcome === 'resolved' ? guarded.volume.volumeId : null;
+      } catch (error) {
+        // Non-429 failure — today's semantics: an honest unmintable ATTEMPT (cap consumed below).
+        log.error?.('format-pairing: GB resolve failed (want stays unmintable)', {
+          title: item.title,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        llBookId = null;
+      }
     }
 
+    attempted += 1;
     const { row, minted: isNew } = await upsertPairingWant({ db: input.db, item, llBookId, now });
     if (isNew) minted += 1;
     if (llBookId === null) {
@@ -558,7 +598,7 @@ export async function mintPairingWants(
     }
   }
 
-  return { candidates: unpaired.length, attempted: worklist.length, minted, pushed, unmintable };
+  return { candidates: unpaired.length, attempted, minted, pushed, unmintable, skippedQuota };
 }
 
 // ---------------------------------------------------------------------------
