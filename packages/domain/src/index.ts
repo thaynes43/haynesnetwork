@@ -119,6 +119,9 @@ export * from './books';
 // single-writer (syncPlexMatches, the plex-match sync mode's writer).
 export * from './library-access';
 export * from './plex-match';
+// ADR-064 / DESIGN-035 (PLAN-037) — the mirrored Plex collections single-writer (syncPlexCollections,
+// the collections-sync mode's writer). External software is always the collections source of truth.
+export * from './plex-collections';
 // ADR-055 / DESIGN-028 (PLAN-044 — Goodreads requests MVP) — the Integration single-writers (link/unlink
 // audited, shelf-mirror upsert, request mint/reconcile + audited manual re-search), the goodreads-sync
 // orchestrator, and the confined LazyLibrarian client bundle (@hnet/lazylibrarian/write stays in this

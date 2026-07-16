@@ -34,11 +34,13 @@ import {
   syncAuthentikUsers,
   syncBooks,
   syncPlexMatches,
+  syncPlexCollections,
   type DrainPoolRefreshResult,
   type KapowarrClientBundle,
   type LazyLibrarianClientBundle,
   type SyncBooksReport,
   type SyncPlexMatchesReport,
+  type SyncPlexCollectionsReport,
   type MaintainerrClientBundle,
   type MamGovernorBundle,
   type MamGovernorReport,
@@ -80,6 +82,9 @@ import { syncAbsUserProgress, type SyncAbsUserProgressReport } from './abs-progr
 // ADR-047 / DESIGN-025 (PLAN-028) — the read-only *arr→Plex GUID matcher the `plex-match` mode hands to the
 // @hnet/domain syncPlexMatches single-writer (media_plex_matches derived-cache upsert + reconcile).
 import { fetchPlexMatchSnapshot, type PlexMatchStats } from './plex-match';
+// ADR-064 / DESIGN-035 (PLAN-037) — the read-only HOps collections fetcher the `collections-sync`
+// mode hands to the @hnet/domain syncPlexCollections single-writer (mirror upsert + scoped reconcile).
+import { fetchPlexCollectionsSnapshot, type PlexCollectionsStats } from './plex-collections';
 // ADR-045 / DESIGN-023 (PLAN-026) — the read-only Authentik directory client the `authentik-users` mode
 // pages; the snapshot is handed to the @hnet/domain syncAuthentikUsers single-writer (mirror upsert).
 import type { AuthentikReadClient } from '@hnet/authentik';
@@ -261,6 +266,10 @@ export interface SyncReport {
   plexMatch?: (SyncPlexMatchesReport & { stats: PlexMatchStats }) | null;
   /** The plex-match run's error — sets totalFailure for the CLI exit. */
   plexMatchError?: string;
+  /** ADR-064 — the `collections-sync` result (null for every other mode / when it errored). */
+  collectionsSync?: (SyncPlexCollectionsReport & { stats: PlexCollectionsStats }) | null;
+  /** The collections-sync run's error — sets totalFailure for the CLI exit. */
+  collectionsSyncError?: string;
   /** ADR-035 — the candidate-snapshot refresh post-step (full/incremental with a Maintainerr
    *  handle; null when skipped or failed). */
   candidateRefresh?: TrashCandidatesRefreshReport | null;
@@ -958,6 +967,57 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       plexMatch,
       ...(plexMatchError !== undefined ? { plexMatchError } : {}),
       totalFailure: plexMatchError !== undefined,
+    };
+  }
+
+  // ADR-064 / DESIGN-035 — the `collections-sync` mode reads the HOps server's registered movie/show
+  // sections' collections + members READ-ONLY (external software is ALWAYS the collections source of
+  // truth — owner doctrine R1; slug haynesops only — R4) and UPSERTS the plex_collections /
+  // plex_collection_members mirror via the domain syncPlexCollections single-writer, reconciling
+  // collections/members a fully-read section/collection no longer serves. Standalone mode: no *arr
+  // source, writes NO sync_runs row — its trail is the mirror tables. A run that could read NO
+  // section at all is a totalFailure (nonzero exit).
+  if (options.mode === 'collections-sync') {
+    const startedAt = new Date();
+    if (!options.plex) throw new Error('collections-sync requires a Plex client bundle (plex)');
+    let collectionsSync: (SyncPlexCollectionsReport & { stats: PlexCollectionsStats }) | null = null;
+    let collectionsSyncError: string | undefined;
+    try {
+      const snapshot = await fetchPlexCollectionsSnapshot({ db, plex: options.plex, logger });
+      const report = await syncPlexCollections({
+        db,
+        collections: snapshot.collections,
+        scopedLibraryIds: snapshot.scopedLibraryIds,
+        ...(options.now ? { now: options.now } : {}),
+      });
+      collectionsSync = { ...report, stats: snapshot.stats };
+      logger.info('collections-sync complete', {
+        collectionsUpserted: report.collectionsUpserted,
+        membersUpserted: report.membersUpserted,
+        collectionsRemoved: report.collectionsRemoved,
+        membersRemoved: report.membersRemoved,
+        scopedLibraries: snapshot.scopedLibraryIds.length,
+        truncatedCollections: snapshot.stats.truncatedCollections,
+        unmappedSections: snapshot.stats.unmappedSections,
+      });
+      if (snapshot.scopedLibraryIds.length === 0) {
+        collectionsSyncError =
+          'collections-sync: no HOps section could be read (registry empty or server down)';
+      }
+    } catch (error) {
+      collectionsSyncError = error instanceof Error ? error.message : String(error);
+      logger.error('collections-sync failed', { error: collectionsSyncError });
+    }
+    return {
+      mode: options.mode,
+      startedAt,
+      finishedAt: new Date(),
+      sources: [],
+      backfill: null,
+      fixesCompleted: null,
+      collectionsSync,
+      ...(collectionsSyncError !== undefined ? { collectionsSyncError } : {}),
+      totalFailure: collectionsSyncError !== undefined,
     };
   }
 
