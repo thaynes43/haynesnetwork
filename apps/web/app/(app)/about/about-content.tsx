@@ -75,8 +75,9 @@ export function AboutContent({ trashWindowDays }: { trashWindowDays: number }) {
         <h3>Haynestower</h3>
         <p>
           The original server, online since September 2023, and the last piece of software still
-          running on the NAS. It stays exactly as it is until that hardware retires.
-          {/* TODO: play totals by Movie/TV/Music — owner supplying from NAS Tautulli (PLAN-049 Q-06) */}
+          running on the NAS. It has served the household 3,449 movie plays, 25,238 TV episode
+          plays, and 2,316 music plays (as of July 2026), and it stays exactly as it is until
+          that hardware retires.
         </p>
         <h3>k8splex</h3>
         <p>
