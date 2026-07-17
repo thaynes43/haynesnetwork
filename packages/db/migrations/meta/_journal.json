@@ -435,6 +435,13 @@
       "when": 1783902000000,
       "tag": "0062_collection_category",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1783902100000,
+      "tag": "0063_clear_legacy_collection_categories",
+      "breakpoints": true
     }
   ]
 }

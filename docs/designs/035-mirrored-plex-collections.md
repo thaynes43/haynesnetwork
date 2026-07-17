@@ -280,7 +280,12 @@ and the closed `collection_type` enum.
   CHECK enum, migration 0055) becomes **`category` (text, nullable, NO CHECK — migration 0062)**.
   There is NO fixed vocabulary and NO "Other" bucket: a new label the owner coins becomes a new
   stored category and a new chip on the next sync, zero migration. `null` = no owner/section label
-  (the collection shows only under "All", contributes no chip).
+  (the collection shows only under "All", contributes no chip). *Follow-up (live-verified,
+  2026-07-17): 0062 preserved the renamed column's values expecting the next sync to overwrite
+  them all, but a NULL-deriving collection is COALESCE-preserved, so its stale title-classifier
+  bucket survived (8 live rows, all `'other'`) and would have surfaced as an unwanted "other"
+  chip. Migration 0063 clears every legacy six-bucket value to NULL (the legacy vocabulary is
+  all-lowercase and disjoint from the owner labels, so derived categories are untouched).*
 - **`deriveCollectionCategory(labels)`** (`@hnet/domain`, replacing `classifyCollectionType(title)`;
   `COLLECTION_CLASSIFIER_VERSION` → 2) picks the category with a ratified precedence:
   1. **Owner inline label wins** — the first label that is neither the reserved `Kometa` provenance
