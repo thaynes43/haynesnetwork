@@ -7,7 +7,7 @@
 // source of truth (owner doctrine R1). Sections/servers that error mid-read are NOT scoped, so the
 // writer can never reconcile-drop what this run couldn't see (the plex-match discipline).
 import type { PlexReadClient } from '@hnet/plex/read';
-import { derivePlexCollectionProvenance } from '@hnet/domain';
+import { derivePlexCollectionProvenance, deriveCollectionCategory } from '@hnet/domain';
 import type { PlexClientBundle, PlexCollectionSyncInput } from '@hnet/domain';
 import type { DbClient, PlexServerSlug } from '@hnet/db';
 import { selectPlexLibraryRefs } from './db-reads';
@@ -110,10 +110,12 @@ export async function fetchPlexCollectionsSnapshot(input: {
       stats.sectionsRead += 1;
       for (const collection of sectionCollections) {
         stats.collectionsFetched += 1;
-        // Provenance (owner directive 2026-07-16) — read the collection's LABELS (Kometa stamps
-        // `Kometa` on what it manages). The listing carries no labels, so this is a per-collection
-        // read. A read FAILURE leaves labels null → createdBy null → the writer preserves the prior
-        // value (a transient failure never re-tags a collection as hand-made).
+        // Provenance + CATEGORY (owner directives 2026-07-16 / 2026-07-17) — read the collection's
+        // LABELS once (Kometa stamps `Kometa` on what it manages, plus the owner's category label
+        // and Kometa's section labels). The listing carries no labels, so this is one per-collection
+        // read that feeds BOTH `createdBy` (provenance) and `category` (D-10'). A read FAILURE leaves
+        // labels null → both derive null → the writer preserves the prior values (a transient
+        // failure never re-tags a collection or wipes its category). Zero extra Plex I/O.
         let labels: string[] | null = null;
         try {
           labels = await read.readCollectionLabels(collection.ratingKey);
@@ -158,6 +160,7 @@ export async function fetchPlexCollectionsSnapshot(input: {
           title: collection.title,
           childCount: collection.childCount ?? 0,
           createdBy: derivePlexCollectionProvenance(labels),
+          category: deriveCollectionCategory(labels),
           members,
           fullyRead,
         });

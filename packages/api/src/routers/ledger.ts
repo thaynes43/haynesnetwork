@@ -7,7 +7,6 @@ import { TRPCError } from '@trpc/server';
 import { and, asc, desc, eq, sql, type SQL } from 'drizzle-orm';
 import {
   ARR_KINDS,
-  COLLECTION_TYPES,
   RESOLUTIONS,
   fixRequests,
   ledgerEvents,
@@ -15,7 +14,6 @@ import {
   mediaMetadata,
   users,
   wantedItems,
-  type CollectionType,
 } from '@hnet/db';
 import {
   isMediaItemAccessible,
@@ -101,8 +99,9 @@ export interface LedgerCollectionGroup {
   count: number;
   coverUrls: string[];
   imageUrl: null;
-  /** DESIGN-035 D-10/D-11 (PLAN-053) — the collection's owner-ruled Type bucket (T-186). */
-  type: CollectionType;
+  /** DESIGN-035 D-10'/D-11 — the collection's OPEN, free-form owner category (T-186), or null when
+   *  it carries no owner/section label (no chip; shows only under "All"). */
+  category: string | null;
   /**
    * PROVENANCE badge (owner directive 2026-07-16) — the display name of the software that created
    * the collection ("Kometa" / "Plex"), or null when unknown (no badge). Resolved server-side from
@@ -111,8 +110,9 @@ export interface LedgerCollectionGroup {
   provenance: string | null;
 }
 
-/** D-11 — the chip row's accessible-collection counts (every bucket present, zeros included). */
-export type LedgerCollectionTypeCounts = Record<CollectionType, number>;
+/** D-11' — the chip row's accessible-collection counts, keyed by the DISTINCT categories actually
+ *  present (only non-null categories appear; the client orders them hint-list-then-alphabetical). */
+export type LedgerCollectionCategoryCounts = Record<string, number>;
 
 /** DESIGN-035 D-03 — the group-card cover-fan sample size. */
 const COLLECTION_COVER_SAMPLE = 4;
@@ -286,15 +286,19 @@ export const ledgerRouter = router({
     .input(
       z.object({
         arrKind: z.enum(['radarr', 'sonarr']),
-        // DESIGN-035 D-11 (PLAN-053) — the Type chip's SERVER-SIDE card filter (absent = All).
-        ctype: z.enum(COLLECTION_TYPES).optional(),
+        // DESIGN-035 D-11' — the category chip's SERVER-SIDE card filter (absent = All). OPEN string:
+        // the vocabulary is whatever the owner labels, so this is free-form, not an enum.
+        category: z.string().min(1).optional(),
       }),
     )
     .query(
       async ({
         ctx,
         input,
-      }): Promise<{ groups: LedgerCollectionGroup[]; typeCounts: LedgerCollectionTypeCounts }> => {
+      }): Promise<{
+        groups: LedgerCollectionGroup[];
+        categoryCounts: LedgerCollectionCategoryCounts;
+      }> => {
         const gate = await resolveLibraryAccessGate(ctx.user.id, ctx.db);
         const accessCond = libraryAccessConditionRaw(gate); // EXISTS over media_plex_matches ('mi' alias)
         const conds: SQL[] = [
@@ -304,17 +308,17 @@ export const ledgerRouter = router({
         if (accessCond !== null) conds.push(accessCond);
         // One bounded SELECT (accessible members only), aggregated in-process — the books.groups
         // shape. `cmx` is this query's own match alias; the gate's subqueries use their own `m2`.
-        // The `ctype` narrowing deliberately happens AFTER aggregation (in-process): typeCounts
+        // The `category` narrowing deliberately happens AFTER aggregation (in-process): categoryCounts
         // must cover ALL accessible collections so the chip numbers hold steady while filtering.
         const result = await ctx.db.execute<{
           key: string;
           label: string;
-          ctype: CollectionType;
+          category: string | null;
           provenance: string | null;
           media_item_id: string;
           poster_source: string | null;
         }>(
-          sql`SELECT pc.rating_key AS key, pc.title AS label, pc.collection_type AS ctype,
+          sql`SELECT pc.rating_key AS key, pc.title AS label, pc.category AS category,
                      pc.created_by AS provenance,
                      mi.id AS media_item_id, mm.poster_source AS poster_source
                 FROM plex_collections pc
@@ -332,7 +336,7 @@ export const ledgerRouter = router({
           (result as unknown as {
             key: string;
             label: string;
-            ctype: CollectionType;
+            category: string | null;
             provenance: string | null;
             media_item_id: string;
             poster_source: string | null;
@@ -341,7 +345,7 @@ export const ledgerRouter = router({
           string,
           {
             label: string;
-            type: CollectionType;
+            category: string | null;
             provenance: string | null;
             memberIds: Set<string>;
             coverUrls: string[];
@@ -353,7 +357,7 @@ export const ledgerRouter = router({
             groups
               .set(row.key, {
                 label: row.label,
-                type: row.ctype,
+                category: row.category,
                 provenance: row.provenance,
                 memberIds: new Set(),
                 coverUrls: [],
@@ -366,26 +370,29 @@ export const ledgerRouter = router({
             if (cover !== null) group.coverUrls.push(cover);
           }
         }
-        // D-11 — accessible-COLLECTION counts per bucket (zeros included): the aggregation above
+        // D-11' — accessible-COLLECTION counts per DISTINCT present category (only non-null
+        // categories appear; an unlabeled collection contributes no chip). The aggregation above
         // already applied THE INVARIANT (a zero-accessible collection never entered the map), so
-        // a chip count can never leak a collection its caller couldn't see as a card (R-214).
-        const typeCounts = Object.fromEntries(
-          COLLECTION_TYPES.map((t) => [t, 0]),
-        ) as LedgerCollectionTypeCounts;
-        for (const g of groups.values()) typeCounts[g.type] += 1;
+        // a chip count can never leak a collection its caller couldn't see as a card (R-214). The
+        // client orders the keys hint-list-then-alphabetical and prepends the All chip.
+        const categoryCounts: LedgerCollectionCategoryCounts = {};
+        for (const g of groups.values()) {
+          if (g.category === null) continue;
+          categoryCounts[g.category] = (categoryCounts[g.category] ?? 0) + 1;
+        }
         return {
           groups: [...groups.entries()]
-            .filter(([, g]) => input.ctype === undefined || g.type === input.ctype)
+            .filter(([, g]) => input.category === undefined || g.category === input.category)
             .map(([key, g]) => ({
               key,
               label: g.label,
               count: g.memberIds.size,
               coverUrls: g.coverUrls,
               imageUrl: null,
-              type: g.type,
+              category: g.category,
               provenance: provenanceDisplayName(g.provenance),
             })),
-          typeCounts,
+          categoryCounts,
         };
       },
     ),

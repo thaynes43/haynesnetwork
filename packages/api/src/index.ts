@@ -148,10 +148,9 @@ export type {
 } from './routers/ledger';
 // ADR-064 / DESIGN-035 D-03 (PLAN-037) — the Movies/TV Collections group-card wire shape (client-typed).
 export type { LedgerCollectionGroup } from './routers/ledger';
-// DESIGN-035 D-10/D-11 (PLAN-053) — the Collection Type bucket + the chip row's gated counts
-// (TYPE-ONLY: the client registry/options are typed against the six buckets, no server code pulled).
-export type { LedgerCollectionTypeCounts } from './routers/ledger';
-export type { CollectionType } from '@hnet/db';
+// DESIGN-035 D-10'/D-11' — the chip row's gated per-category counts (OPEN vocabulary: the client
+// orders whatever categories are present hint-list-then-alphabetical; no fixed enum to pull).
+export type { LedgerCollectionCategoryCounts } from './routers/ledger';
 // ADR-022 / DESIGN-009 D-06 — the emergency Ledger JSONL export (used by the app export route).
 export {
   buildExportFilterFromParams,

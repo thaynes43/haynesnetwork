@@ -428,6 +428,13 @@
       "when": 1783901900000,
       "tag": "0061_delete_dormant_plex_catalog_rows",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1783902000000,
+      "tag": "0062_collection_category",
+      "breakpoints": true
     }
   ]
 }

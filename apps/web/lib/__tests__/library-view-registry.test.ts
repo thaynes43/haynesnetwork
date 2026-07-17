@@ -4,8 +4,8 @@
 // (Resolution on a Season, Runtime on Music, Genre on Kavita) fails here first.
 import { describe, expect, it } from 'vitest';
 import {
-  COLLECTION_TYPE_OPTIONS,
-  collectionTypeOptionsForWall,
+  CATEGORY_CHIP_HINT_ORDER,
+  orderCollectionCategories,
   LIBRARY_VIEW_REGISTRY,
   WALL_VIEWS,
   registryFor,
@@ -72,12 +72,12 @@ describe('registry shape invariants', () => {
     }
   });
 
-  it('the Movies/TV Collections grouped levels sort the CARDS (label/count) and declare ONLY the Type facet (PLAN-037 + PLAN-053)', () => {
+  it('the Movies/TV Collections grouped levels sort the CARDS (label/count) and declare ONLY the category facet (PLAN-037 + D-11\')', () => {
     for (const level of ['movies:grouped-collection', 'tv:grouped-collection'] as const) {
       expect(sortKeys(level)).toEqual(['label', 'count']);
-      // DESIGN-035 D-11 / R-214 — exactly ONE facet: the Collection Type chip row. Item facets
+      // DESIGN-035 D-11' / R-214 — exactly ONE facet: the category chip row. Item facets
       // (genre/decade/resolution/…) must never leak onto a card grid (the D-09 asymmetry).
-      expect(facetKeys(level)).toEqual(['collectionType']);
+      expect(facetKeys(level)).toEqual(['category']);
       const typeFacet = registryFor(level).facets[0]!;
       expect(typeFacet).toMatchObject({ label: 'Type', kind: 'select', param: 'ctype' });
       // Owner ruling — the chip FILTERS, never hides: no per-user gate, no data gating.
@@ -85,34 +85,29 @@ describe('registry shape invariants', () => {
       expect(typeFacet.dataGated).toBeUndefined();
       expect(registryFor(level).azSorts).toEqual([]);
     }
-    // The chip vocabulary — six buckets in ruled order (All is the renderer's absent-param default).
-    // Owner amendment (2026-07-17): 'Franchise & Universe' shortened to 'Franchise' (display label
-    // only — the stored `franchise_universe` key is unchanged, a stable ID).
-    expect(COLLECTION_TYPE_OPTIONS.map((o) => `${o.value}:${o.label}`)).toEqual([
-      'trilogy:Trilogies',
-      'franchise_universe:Franchise',
-      'director:Director',
-      'actor:Actor',
-      'list:Lists',
-      'other:Other',
+    // The chip vocabulary is DYNAMIC (supplied at request time from the present categories), so the
+    // registry declares NO static options. The ordering HINT pins the familiar categories first;
+    // anything else sorts alphabetically after them, and both walls order identically.
+    expect(CATEGORY_CHIP_HINT_ORDER).toEqual([
+      'Universe',
+      'Sequels',
+      'Director',
+      'Actor',
+      'List',
+      'Studio',
+      'Audio',
     ]);
-    // Owner amendment (2026-07-17): Trilogies is movies-only — the TV wall hides that chip while
-    // the stored keys / classifier stay whole (a display filter, not a data change).
-    expect(collectionTypeOptionsForWall('movies').map((o) => o.value)).toEqual([
-      'trilogy',
-      'franchise_universe',
-      'director',
-      'actor',
-      'list',
-      'other',
+    // Hint-listed categories come first in hint order; unknowns append alphabetically (case-insensitive).
+    expect(orderCollectionCategories(['List', 'Universe', 'Zephyr', 'Director', 'anime'])).toEqual([
+      'Universe',
+      'Director',
+      'List',
+      'anime',
+      'Zephyr',
     ]);
-    expect(collectionTypeOptionsForWall('tv').map((o) => o.value)).toEqual([
-      'franchise_universe',
-      'director',
-      'actor',
-      'list',
-      'other',
-    ]);
+    // Only present categories are ordered (no phantom hint entries), and the result is deterministic.
+    expect(orderCollectionCategories(['Sequels'])).toEqual(['Sequels']);
+    expect(orderCollectionCategories([])).toEqual([]);
     expect(WALL_VIEWS.movies.groupings?.map((g) => `${g.dimension}:${g.art}`)).toEqual([
       'collection:covers',
     ]);

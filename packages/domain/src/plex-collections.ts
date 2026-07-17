@@ -8,10 +8,10 @@
 import { plexCollections, plexCollectionMembers, type DbClient } from '@hnet/db';
 import { and, eq, inArray, lt, sql } from 'drizzle-orm';
 import { inTransaction } from './db-client';
-// DESIGN-035 D-10 (PLAN-053) — the versioned Collection Type classifier: the annotation is
-// recomputed from the title at EVERY upsert (insert AND conflict-update), so the whole column
+// DESIGN-035 D-10' — the CATEGORY is derived from the collection's LABELS by the versioned
+// @hnet/domain `deriveCollectionCategory` in the sync fetcher and passed in here. It is recomputed
+// each sync and COALESCE-preserved on null (a failed label read never wipes it), so the whole column
 // rebuilds each sync — a classifier version bump re-annotates the estate, nothing migrates.
-import { classifyCollectionType } from './collection-type';
 
 /** One collection (with its raw membership) the collections-sync fetcher produced. */
 export interface PlexCollectionSyncInput {
@@ -27,6 +27,13 @@ export interface PlexCollectionSyncInput {
    * COALESCE, so a transient label-read failure never re-tags a collection).
    */
   createdBy: string | null;
+  /**
+   * CATEGORY (DESIGN-035 D-10') — the OPEN, free-form owner category derived from the collection's
+   * labels (owner inline label first, else Kometa's section-label map). null = no owner/section
+   * label OR the label read did not run this sync; the upsert PRESERVES the prior category via
+   * COALESCE on null, so a transient label-read failure never wipes it (symmetric with createdBy).
+   */
+  category: string | null;
   /** RAW membership in source-read order (owner R3 — stored regardless of ledger match). */
   members: Array<{ ratingKey: string; sortOrder: number }>;
   /**
@@ -88,8 +95,8 @@ export async function syncPlexCollections(
           ratingKey: collection.ratingKey,
           title: collection.title,
           childCount: collection.childCount,
-          // D-10 (PLAN-053) — the Collection Type annotation, from the title, every sync.
-          collectionType: classifyCollectionType(collection.title),
+          // D-10' — the category annotation, derived from the collection's labels this sync.
+          category: collection.category,
           // Provenance — the software that created it (from the collection's labels, this sync).
           createdBy: collection.createdBy,
           firstSeenAt: runStart,
@@ -101,8 +108,10 @@ export async function syncPlexCollections(
           set: {
             title: sql`excluded.title`,
             childCount: sql`excluded.child_count`,
-            // A retitle reclassifies in the same statement (excluded carries the fresh value).
-            collectionType: sql`excluded.collection_type`,
+            // The category refreshes when this sync derived one (non-null); a null (labels unread
+            // this run, or no owner/section label) PRESERVES the prior value — a transient label-read
+            // failure never wipes the category (symmetric with created_by below).
+            category: sql`COALESCE(excluded.category, ${plexCollections.category})`,
             // Provenance refreshes when this sync READ the labels (non-null); a null (unread this
             // run) PRESERVES the prior value — a transient label-read failure never re-tags a row.
             createdBy: sql`COALESCE(excluded.created_by, ${plexCollections.createdBy})`,

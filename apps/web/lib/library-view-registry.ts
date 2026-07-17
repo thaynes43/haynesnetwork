@@ -12,7 +12,7 @@
 // @hnet/api (erased; the client bundle never pulls server code). Adding a dimension to a wall is a
 // registry-row edit (+ an engine expression when it needs new data) — never a new component
 // (ADR-051 C-01).
-import type { BooksSort, CollectionType, LibrarySortField, WatchState, BookReadState } from '@hnet/api';
+import type { BooksSort, LibrarySortField, WatchState, BookReadState } from '@hnet/api';
 import type { LibraryWallId, WallSortDir, WallViewShape } from './library-views';
 
 export type RegistryEngine = 'ledger' | 'plex-live' | 'books';
@@ -147,12 +147,13 @@ const releasedFacet = (label: string): RegistryFacet => ({
   param: 'rfrom',
   param2: 'rto',
 });
-/** DESIGN-035 D-11 / R-214 (PLAN-053) — the Collections grouped levels' ONE facet: the Type chip
- *  row (single-select, All default, `?ctype=` replace refinement — D-19). Owner ruling: the chip
- *  FILTERS, never hides — so it is neither gated nor dataGated (a 0-count chip still renders);
- *  the server (`ledger.collectionGroups` ctype) does the card filtering. */
+/** DESIGN-035 D-11' / R-214 — the Collections grouped levels' ONE facet: the category chip row
+ *  (single-select, All default, `?ctype=` replace refinement — D-19). Owner ruling: the chip
+ *  FILTERS, never hides. The chip vocabulary is DYNAMIC — supplied at request time from the present
+ *  categories (`ledger.collectionGroups` categoryCounts), not a static option registry — so this
+ *  facet declares no options; the server does the card filtering by the `category` input. */
 const COLLECTION_TYPE_FACET: RegistryFacet = {
-  key: 'collectionType',
+  key: 'category',
   label: 'Type',
   kind: 'select',
   param: 'ctype',
@@ -651,34 +652,32 @@ export const READ_STATE_OPTIONS: ReadonlyArray<{ value: BookReadState; label: st
   { value: 'unread', label: 'Unread' },
 ];
 
-/** DESIGN-035 D-10/D-11 / R-214 (PLAN-053) — the six owner-ruled Collection Type chips, in chip-row
- *  order (the URL/wire values are the `@hnet/db` COLLECTION_TYPES buckets — TYPE-pinned here so a
- *  drifted value fails the build; the All chip is the absent-param default and lives in the row
- *  renderer, not this vocabulary).
- *
- *  PLAN-053 owner amendment (2026-07-17): the chip LABELS are display-only — the stored
- *  `collection_type` keys are unchanged (stable IDs). 'Franchise & Universe' shortens to
- *  'Franchise' so the row fits a 320px phone on one line; per-chip counts were removed (a global
- *  total is backlogged, see `.agents/plans/TODO.md`). */
-export const COLLECTION_TYPE_OPTIONS: ReadonlyArray<{ value: CollectionType; label: string }> = [
-  { value: 'trilogy', label: 'Trilogies' },
-  { value: 'franchise_universe', label: 'Franchise' },
-  { value: 'director', label: 'Director' },
-  { value: 'actor', label: 'Actor' },
-  { value: 'list', label: 'Lists' },
-  { value: 'other', label: 'Other' },
+/** DESIGN-035 D-11' / R-214 — the DYNAMIC category chips. There is no static option registry: the
+ *  chip vocabulary is whatever categories are actually present (`ledger.collectionGroups`
+ *  categoryCounts), so a new label the owner coins becomes a new chip with zero code change. This
+ *  HINT list pins the familiar categories to a stable, sensible order at the front; any category
+ *  present but not listed here is appended alphabetically after them (see `orderCollectionCategories`).
+ *  Category strings are the owner's labels verbatim, so they double as the chip labels. */
+export const CATEGORY_CHIP_HINT_ORDER: readonly string[] = [
+  'Universe',
+  'Sequels',
+  'Director',
+  'Actor',
+  'List',
+  'Studio',
+  'Audio',
 ];
 
-/** PLAN-053 owner amendment (2026-07-17) — the VISIBLE Type-chip set is per-wall: Trilogies is a
- *  movies-only concept (TV franchises don't ship as trilogies, and the mirror classifies ~0 of
- *  them), so the TV Collections wall hides that bucket. Movies show all six. The stored keys and
- *  the classifier are untouched — this is a display filter only. */
-export function collectionTypeOptionsForWall(
-  wall: LibraryWallId,
-): ReadonlyArray<{ value: CollectionType; label: string }> {
-  return wall === 'tv'
-    ? COLLECTION_TYPE_OPTIONS.filter((o) => o.value !== 'trilogy')
-    : COLLECTION_TYPE_OPTIONS;
+/** Order the present categories for the chip row: hint-listed ones first (in hint order), then any
+ *  others alphabetically (case-insensitive). Deterministic — a novel category is never random. The
+ *  All chip is the absent-param default and lives in the row renderer, not this vocabulary. */
+export function orderCollectionCategories(categories: readonly string[]): string[] {
+  const seen = new Set(categories);
+  const hinted = CATEGORY_CHIP_HINT_ORDER.filter((c) => seen.has(c));
+  const rest = categories
+    .filter((c) => !CATEGORY_CHIP_HINT_ORDER.includes(c))
+    .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  return [...hinted, ...rest];
 }
 
 /** Length-bucket labels per medium (boundaries live server-side — BOOK_LENGTH_BOUNDS; D-11 call:

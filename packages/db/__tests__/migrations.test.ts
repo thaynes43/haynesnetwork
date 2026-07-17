@@ -1387,44 +1387,50 @@ describe('migrations against embedded Postgres 16', () => {
     });
   });
 
-  // DESIGN-035 D-10 / R-214 (PLAN-053 — migration 0055): the Collection Type annotation column —
-  // NOT NULL DEFAULT 'other' (pre-existing mirror rows start honestly un-bucketed; the next sync
-  // re-annotates), CHECK over the six owner-ruled buckets.
-  describe('0055 collection type (DESIGN-035 D-10 — six-bucket annotation on plex_collections)', () => {
-    it("defaults to 'other', accepts each ruled bucket, and CHECK-rejects anything else", async () => {
+  // DESIGN-035 D-10' / R-214 (migration 0055 then 0062): the Collection Type annotation started as a
+  // NOT-NULL DEFAULT-'other' six-bucket CHECK enum column `collection_type` (0055). Migration 0062
+  // retired the closed enum for the OPEN, label-driven `category` (nullable free text, no CHECK). The
+  // final state after ALL migrations is what this block asserts.
+  describe("0062 collection category (DESIGN-035 D-10' — open free-form category, no enum)", () => {
+    it('renamed collection_type -> category (nullable, no CHECK): any free-form label is accepted', async () => {
       const serverId = (await client.query(`SELECT id FROM plex_servers WHERE slug = 'haynesops'`))
         .rows[0].id;
       const libId = (
         await client.query({
           text: `INSERT INTO plex_libraries (server_id, section_key, name, media_type)
-                 VALUES ($1, '92', 'HOps Movies (0055)', 'movie') RETURNING id`,
+                 VALUES ($1, '92', 'HOps Movies (0062)', 'movie') RETURNING id`,
           values: [serverId],
         })
       ).rows[0].id;
-      // Default — a row inserted without the column lands 'other'.
+      // The old collection_type column is GONE; `category` replaced it.
+      const cols = await client.query(
+        `SELECT column_name, is_nullable, column_default FROM information_schema.columns
+           WHERE table_name = 'plex_collections' AND column_name IN ('collection_type','category')`,
+      );
+      const byName = new Map(cols.rows.map((r) => [r.column_name as string, r]));
+      expect(byName.has('collection_type')).toBe(false);
+      expect(byName.get('category')?.is_nullable).toBe('YES');
+      expect(byName.get('category')?.column_default).toBeNull();
+      // No collection_type CHECK survives.
+      const check = await client.query(
+        `SELECT 1 FROM pg_constraint WHERE conname = 'plex_collections_collection_type_enum'`,
+      );
+      expect(check.rowCount).toBe(0);
+      // A row inserted without the column lands NULL (no owner/section label yet).
       const defaulted = await client.query({
         text: `INSERT INTO plex_collections (plex_library_id, rating_key, title)
-               VALUES ($1, '78001', 'Curated for Jackson') RETURNING collection_type`,
+               VALUES ($1, '78001', 'Curated for Jackson') RETURNING category`,
         values: [libId],
       });
-      expect(defaulted.rows[0].collection_type).toBe('other');
-      // Every ruled bucket is accepted.
-      const buckets = ['trilogy', 'franchise_universe', 'director', 'actor', 'list', 'other'];
-      for (const [i, bucket] of buckets.entries()) {
+      expect(defaulted.rows[0].category).toBeNull();
+      // The vocabulary is OPEN — any free-form category the owner coins is accepted (no CHECK).
+      for (const [i, category] of ['Universe', 'Sequels', 'Studio', 'Audio', 'A Coined One'].entries()) {
         await client.query({
-          text: `INSERT INTO plex_collections (plex_library_id, rating_key, title, collection_type)
-                 VALUES ($1, $2, 'Bucket Fixture', $3)`,
-          values: [libId, `781${i}0`, bucket],
+          text: `INSERT INTO plex_collections (plex_library_id, rating_key, title, category)
+                 VALUES ($1, $2, 'Category Fixture', $3)`,
+          values: [libId, `781${i}0`, category],
         });
       }
-      // …and an unknown value violates the CHECK.
-      await expect(
-        client.query({
-          text: `INSERT INTO plex_collections (plex_library_id, rating_key, title, collection_type)
-                 VALUES ($1, '78999', 'Bad Bucket', 'saga_of_vibes')`,
-          values: [libId],
-        }),
-      ).rejects.toMatchObject({ code: '23514' });
       // Cleanup via the library cascade.
       await client.query({ text: `DELETE FROM plex_libraries WHERE id = $1`, values: [libId] });
     });

@@ -1,9 +1,11 @@
 # DESIGN-035: Mirrored Plex collections — the Movies/TV Collections group view
 
 - **Status:** Accepted
-- **Last updated:** 2026-07-16 (amended same day by PLAN-053: **D-10/D-11** — the Collection Type
-  annotation + Type facet chip row on the grouped walls; the ADR-039-refines-ADR-037 precedent, no
-  new ADR — this is an annotation + facet on ADR-064's read-model)
+- **Last updated:** 2026-07-17 (amended: **D-10'/D-11'** SUPERSEDE D-10/D-11 — the collection
+  category is now LABEL-DRIVEN and OPEN, not a title-guessed closed enum; see the dated amendment
+  below. No new ADR — still an annotation + facet on ADR-064's read-model)
+- **Prior update:** 2026-07-16 (PLAN-053: **D-10/D-11** — the title-based Collection Type annotation
+  + Type facet chip row on the grouped walls)
 - **Satisfies:** PRD-001 **R-208..R-210, R-214**; governed by **ADR-064** (mirror-only doctrine,
   owner R1–R4) on top of **ADR-047** (THE INVARIANT + `media_plex_matches`), **ADR-051/052** (view
   engine + per-user preferences), **DESIGN-026** (D-01 view model, D-02 registry seam, D-04 group
@@ -265,6 +267,53 @@ containing a `…logy` word. This estate names collections BARE (no "Trilogy"/"C
 real trilogies. There is no safe fix: member-count = 3 is not a trilogy signal (that set includes
 "Iron Man", "Guardians of the Galaxy", "Avatar"), and the mirror carries titles only (Q-01). The
 classifier is left UNCHANGED — trilogies are honestly near-empty for movies, hidden on TV.
+
+### D-10' / D-11' amendment — LABEL-DRIVEN, OPEN categories (2026-07-17, SUPERSEDES D-10/D-11)
+
+The Trilogies diagnosis above is the tell: a TITLE-only classifier cannot recover categories the
+owner knows but the titles don't spell out. Owner directive (2026-07-17): stop guessing from titles
+and MIRROR labels we own. The owner deliberately labels every collection in the Kometa config
+(haynes-ops), and those labels ARE the category chips. This retires the six-bucket title classifier
+and the closed `collection_type` enum.
+
+- **Category is OPEN, free-form, and label-derived.** `plex_collections.collection_type` (text +
+  CHECK enum, migration 0055) becomes **`category` (text, nullable, NO CHECK — migration 0062)**.
+  There is NO fixed vocabulary and NO "Other" bucket: a new label the owner coins becomes a new
+  stored category and a new chip on the next sync, zero migration. `null` = no owner/section label
+  (the collection shows only under "All", contributes no chip).
+- **`deriveCollectionCategory(labels)`** (`@hnet/domain`, replacing `classifyCollectionType(title)`;
+  `COLLECTION_CLASSIFIER_VERSION` → 2) picks the category with a ratified precedence:
+  1. **Owner inline label wins** — the first label that is neither the reserved `Kometa` provenance
+     label nor a Kometa SECTION label is returned verbatim (Universe / Sequels / Director / Actor /
+     List / Studio / Audio / a coined one).
+  2. **Section-label fallback** — for Default-produced collections with no inline owner label, map
+     the section label Kometa already applies: `TMDb Collections` → Sequels, `Universe Collections`
+     → Universe, `Oscars Winners Awards` / `Golden Globes Awards` → List, legacy TV
+     `Show Franchise Collections` → Universe. (This is why the app needs NO Kometa change for the
+     ~300 in-run franchise/universe Default collections — they are born labeled.)
+  3. Otherwise `null`. A `null` labels array (read failed) → `null`, so the writer COALESCE-preserves
+     the prior category (symmetric with `created_by` / D-12).
+  The precedence matters where a collection carries BOTH kinds — e.g. Game of Thrones has the legacy
+  `Show Franchise Collections` section label (→ Universe) AND an inline `Sequels`; the owner label
+  wins (Sequels).
+- **Zero new Plex I/O.** The sync fetcher already reads each collection's labels once (for D-12
+  provenance); `category` is derived from that same read and threaded through
+  `PlexCollectionSyncInput` beside `createdBy`.
+- **D-11' — DYNAMIC chips.** The Type chip row is no longer a static registry vocabulary. The
+  registry facet stays (`{ key: 'category', label: 'Type', param: 'ctype' }`) but declares no
+  options; `ledger.collectionGroups` returns **`categoryCounts`** = the DISTINCT categories actually
+  present (non-null only), and the client renders one chip per present category ordered by a HINT
+  list `['Universe','Sequels','Director','Actor','List','Studio','Audio']` then alphabetical for any
+  novel category. Both walls render identically (the movies-only Trilogies special-case is gone). The
+  chip still FILTERS server-side (`category` input), never hides; ADR-015 holds (fixed-height row,
+  horizontal pan when crowded). THE INVARIANT (R-214) is unchanged — a zero-accessible collection is
+  neither carded nor counted.
+- **Kometa side (haynes-ops).** Hand-authored defs carry an inline `label:`; the four award "Best
+  Winners" static Defaults are re-authored as customs with `label: List`; two movie/TV orphans get a
+  `blank_collection` + `label:` companion; a new `A Song of Ice and Fire` Universe umbrella is added.
+  A same-name `blank_collection` companion CANNOT relabel an in-run Default collection (Kometa
+  duplicate-skips it — proven by the 2026-07-17 dry-run), which is exactly why the section-label
+  fallback map (rule 2) carries those.
 
 ### D-12 — Collection provenance (`created_by`, migration 0058 — owner directive 2026-07-16)
 
