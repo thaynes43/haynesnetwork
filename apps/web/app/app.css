@@ -1612,6 +1612,17 @@ input[aria-invalid='true'] {
 .library-chipbar {
   min-height: 44px;
 }
+/* PLAN-053 owner amendment — the Collection Type chip row is a single `.seg` pill. Keep it
+   content-sized (never shrunk by the flex bar) and keep its labels on one line; the outer
+   `.library-chipbar` already pans horizontally when the pill outgrows a narrow phone, so the pill
+   travels as a whole and never wraps → never reflows the grid (ADR-015). Matches the Tickets
+   `.twall-bar .seg` idiom. */
+.library-chipbar > .seg {
+  flex: none;
+}
+.library-chipbar > .seg button {
+  white-space: nowrap;
+}
 .library-sortbar {
   min-height: 40px;
 }

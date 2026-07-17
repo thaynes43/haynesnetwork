@@ -228,20 +228,43 @@ the chip filters — never hides.
   and never data-hidden (owner ruling: the chip filters, never hides — a 0-count chip still
   renders). Item facets stay absent from the grouped levels (D-09 asymmetry).
 - **Chips** — one always-visible single-select row over the grouped CARDS: **All** (default) ·
-  Trilogies · Franchise & Universe · Director · Actor · Lists · Other, each type chip wearing its
-  count. Counts are **accessible-collection counts** — computed from the SAME gated aggregation
-  that produces the cards (a collection with zero accessible members is neither carded nor
-  counted; THE INVARIANT applies to counts exactly as to cards — R-210/R-214).
+  Trilogies · Franchise · Director · Actor · Lists · Other. *(Owner amendment 2026-07-17 — see
+  below: labels are display-only, counts removed, Trilogies is movies-only.)*
 - **Server-side filtering** — the chip narrows the group cards in `ledger.collectionGroups`
-  (`ctype` input), never in the client; `typeCounts` come back UNFILTERED so the row's numbers
-  don't churn as chips toggle.
+  (`ctype` input), never in the client; the gated `typeCounts` still come back on the wire
+  (accessible-collection counts — a collection with zero accessible members is neither carded nor
+  counted; THE INVARIANT applies to counts exactly as to cards — R-210/R-214) and back the
+  backlogged global total, though they are no longer painted per chip.
 - **URL contract** — `?ctype=<type>` is a D-19 REFINEMENT (replace-in-place, no history entry;
   All = param absent). A view switch PUSHes a clean URL, so `ctype` drops with the other
   refinements; the `?group=` drill (a PUSH) does not carry it — the drilled wall is the ordinary
   item grid and the facet is a card-grid concern.
-- **ADR-015** — chips recolor (`is-active`), never reflow: static labels, counts rendered from
-  the same query that paints the cards (placeholder-kept across refetches), fixed-height chip bar
-  (the existing `.library-chipbar`/`.seg` skins — zero new CSS, tokens only).
+- **ADR-015** — chips recolor (`is-active`), never reflow: static labels, fixed-height chip bar
+  (the existing `.library-chipbar`/`.seg` skins — tokens only). The bar pans horizontally when
+  crowded (`.library-chipbar > .seg { flex: none }` + `white-space: nowrap`, the Tickets
+  `.twall-bar .seg` idiom) so a narrow phone scrolls the row instead of wrapping it.
+
+#### D-11 amendment — owner mobile review (2026-07-17, PLAN-053 amendment)
+
+The owner reviewed the live chips on his phone and directed four DISPLAY-only changes (stored keys
+/ classifier / DB untouched — stable IDs):
+
+- **Per-chip counts removed.** The `(N)` suffix bloated the row on mobile. A **global** total (one
+  number, not per-category) is backlogged (`.agents/plans/TODO.md`); the gated `typeCounts` stay on
+  the wire as its seed.
+- **"Franchise & Universe" → "Franchise"** (label map only; the `franchise_universe` key is stable).
+- **Trilogies hidden on TV** (`collectionTypeOptionsForWall` — movies keep all six). Trilogies are a
+  movies concept; the mirror classifies ~0 of them either way (see the diagnosis below).
+- **Mobile fit** — the row now fits a 320px phone on one line; horizontal pan is the overflow
+  fallback (never a wrap/reflow — ADR-015).
+
+**Trilogies diagnosis (data-backed).** A live query (461 collections) found the `trilogy` bucket
+holds exactly ONE collection — "The Barrytown Trilogy" (child_count 2) — the only estate title
+containing a `…logy` word. This estate names collections BARE (no "Trilogy"/"Collection" suffix —
+"Back to the Future", "Men in Black", "Ocean's"…), so the title-only classifier can't find the
+real trilogies. There is no safe fix: member-count = 3 is not a trilogy signal (that set includes
+"Iron Man", "Guardians of the Galaxy", "Avatar"), and the mirror carries titles only (Q-01). The
+classifier is left UNCHANGED — trilogies are honestly near-empty for movies, hidden on TV.
 
 ## Alternatives considered
 

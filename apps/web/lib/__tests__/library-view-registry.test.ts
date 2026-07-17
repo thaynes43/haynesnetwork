@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   COLLECTION_TYPE_OPTIONS,
+  collectionTypeOptionsForWall,
   LIBRARY_VIEW_REGISTRY,
   WALL_VIEWS,
   registryFor,
@@ -85,13 +86,32 @@ describe('registry shape invariants', () => {
       expect(registryFor(level).azSorts).toEqual([]);
     }
     // The chip vocabulary — six buckets in ruled order (All is the renderer's absent-param default).
+    // Owner amendment (2026-07-17): 'Franchise & Universe' shortened to 'Franchise' (display label
+    // only — the stored `franchise_universe` key is unchanged, a stable ID).
     expect(COLLECTION_TYPE_OPTIONS.map((o) => `${o.value}:${o.label}`)).toEqual([
       'trilogy:Trilogies',
-      'franchise_universe:Franchise & Universe',
+      'franchise_universe:Franchise',
       'director:Director',
       'actor:Actor',
       'list:Lists',
       'other:Other',
+    ]);
+    // Owner amendment (2026-07-17): Trilogies is movies-only — the TV wall hides that chip while
+    // the stored keys / classifier stay whole (a display filter, not a data change).
+    expect(collectionTypeOptionsForWall('movies').map((o) => o.value)).toEqual([
+      'trilogy',
+      'franchise_universe',
+      'director',
+      'actor',
+      'list',
+      'other',
+    ]);
+    expect(collectionTypeOptionsForWall('tv').map((o) => o.value)).toEqual([
+      'franchise_universe',
+      'director',
+      'actor',
+      'list',
+      'other',
     ]);
     expect(WALL_VIEWS.movies.groupings?.map((g) => `${g.dimension}:${g.art}`)).toEqual([
       'collection:covers',

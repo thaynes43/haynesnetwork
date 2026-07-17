@@ -654,15 +654,32 @@ export const READ_STATE_OPTIONS: ReadonlyArray<{ value: BookReadState; label: st
 /** DESIGN-035 D-10/D-11 / R-214 (PLAN-053) — the six owner-ruled Collection Type chips, in chip-row
  *  order (the URL/wire values are the `@hnet/db` COLLECTION_TYPES buckets — TYPE-pinned here so a
  *  drifted value fails the build; the All chip is the absent-param default and lives in the row
- *  renderer, not this vocabulary). */
+ *  renderer, not this vocabulary).
+ *
+ *  PLAN-053 owner amendment (2026-07-17): the chip LABELS are display-only — the stored
+ *  `collection_type` keys are unchanged (stable IDs). 'Franchise & Universe' shortens to
+ *  'Franchise' so the row fits a 320px phone on one line; per-chip counts were removed (a global
+ *  total is backlogged, see `.agents/plans/TODO.md`). */
 export const COLLECTION_TYPE_OPTIONS: ReadonlyArray<{ value: CollectionType; label: string }> = [
   { value: 'trilogy', label: 'Trilogies' },
-  { value: 'franchise_universe', label: 'Franchise & Universe' },
+  { value: 'franchise_universe', label: 'Franchise' },
   { value: 'director', label: 'Director' },
   { value: 'actor', label: 'Actor' },
   { value: 'list', label: 'Lists' },
   { value: 'other', label: 'Other' },
 ];
+
+/** PLAN-053 owner amendment (2026-07-17) — the VISIBLE Type-chip set is per-wall: Trilogies is a
+ *  movies-only concept (TV franchises don't ship as trilogies, and the mirror classifies ~0 of
+ *  them), so the TV Collections wall hides that bucket. Movies show all six. The stored keys and
+ *  the classifier are untouched — this is a display filter only. */
+export function collectionTypeOptionsForWall(
+  wall: LibraryWallId,
+): ReadonlyArray<{ value: CollectionType; label: string }> {
+  return wall === 'tv'
+    ? COLLECTION_TYPE_OPTIONS.filter((o) => o.value !== 'trilogy')
+    : COLLECTION_TYPE_OPTIONS;
+}
 
 /** Length-bucket labels per medium (boundaries live server-side — BOOK_LENGTH_BOUNDS; D-11 call:
  *  <6 h · 6–12 h · >12 h for audiobook runtime, <200 · 200–400 · >400 for Kavita pages). */

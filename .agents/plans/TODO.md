@@ -30,3 +30,15 @@ We need to make sure everything is in 1Password for Fable 5 before tomorrow. Thi
 
 2. API keys for any services like RT/TMDB/IMDB that are needed for metadata, though if Radarr and Sonarr can get that data maybe we don't need a direct key just rate limited logic on public APIs
 3. TBD?
+
+----------------------------------------
+
+## Smaller backlog items
+
+- **Global collection totals (from PLAN-053 owner review, 2026-07-17).** The per-chip Type
+  counts were removed from the Collections wall chip row (they bloated the mobile banner). The
+  owner's call: "if we were going to do totals we'd do it globally." So the backlog item is a
+  SINGLE global count of accessible collections shown once (not one number per Type chip) — e.g.
+  a "N collections" label on the Collections view header. The gated aggregate already exists on
+  the wire (`ledger.collectionGroups` still returns the ADR-047-gated `typeCounts`), so this is a
+  small display add, not new data plumbing.
