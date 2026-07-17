@@ -47,7 +47,9 @@ afterAll(async () => {
 describe('catalog.myApps — role-based visible apps (R-10, ADR-012)', () => {
   it('a Default-role user sees exactly the Default role app set, ordered by sort_order', async () => {
     const apps = await memberCaller.catalog.myApps();
-    expect(apps.map((a) => a.slug)).toEqual(['seerr', 'plex', 'k8plex', 'plexops']);
+    // Default seeded {seerr, plex, k8plex, plexops}; the three Plex cards + grants were
+    // removed by migration 0061 (DESIGN-004 Q-04), leaving just seerr.
+    expect(apps.map((a) => a.slug)).toEqual(['seerr']);
     // Provenance-free projection: no sortOrder on the wire (D-05).
     expect(Object.keys(apps[0]!).sort()).toEqual([
       'description',
@@ -63,9 +65,6 @@ describe('catalog.myApps — role-based visible apps (R-10, ADR-012)', () => {
     const apps = await adminCaller.catalog.myApps();
     expect(apps.map((a) => a.slug)).toEqual([
       'seerr',
-      'plex',
-      'k8plex',
-      'plexops',
       'immich',
       'open-webui',
       'paperless',
@@ -86,23 +85,16 @@ describe('catalog.myApps — role-based visible apps (R-10, ADR-012)', () => {
 
     // Restore to Default so later tests observe the default set again.
     await adminCaller.users.setRole({ userId: member.id, roleId: SEEDED_ROLE_IDS.default });
-    expect((await memberCaller.catalog.myApps()).map((a) => a.slug)).toEqual([
-      'seerr',
-      'plex',
-      'k8plex',
-      'plexops',
-    ]);
+    expect((await memberCaller.catalog.myApps()).map((a) => a.slug)).toEqual(['seerr']);
   });
 });
 
 describe('catalog.adminList (R-11)', () => {
   it('returns every entry incl. hidden ones, ordered, with ISO-8601 timestamps (D-03)', async () => {
     const rows = await adminCaller.catalog.adminList();
+    // The three direct Plex cards (plex/k8plex/plexops) were deleted by migration 0061.
     expect(rows.map((r) => r.slug)).toEqual([
       'seerr',
-      'plex',
-      'k8plex',
-      'plexops',
       'immich',
       'open-webui',
       'paperless',

@@ -76,7 +76,8 @@ describe('0003_media_ledger against embedded Postgres 16', () => {
   it('is idempotent: re-running runMigrations applies nothing new', async () => {
     await runMigrations({ databaseUrl: pg.connectionString });
     const seeded = await client.query('SELECT count(*)::int AS n FROM app_catalog');
-    expect(seeded.rows[0].n).toBe(10); // ADR-046 (0037) added the two book-server cards
+    // 8 from 0002, +2 book cards (ADR-046/0037), -3 Plex cards deleted by 0061 (DESIGN-004 Q-04) = 7.
+    expect(seeded.rows[0].n).toBe(7);
   });
 
   describe('media_items (D-05)', () => {
@@ -249,7 +250,9 @@ describe('0003_media_ledger against embedded Postgres 16', () => {
 
     it("sync_runs accepts the 'metadata-refresh' run_kind (0012, ADR-018)", async () => {
       await expect(
-        client.query(`INSERT INTO sync_runs (source, run_kind) VALUES ('radarr', 'metadata-refresh')`),
+        client.query(
+          `INSERT INTO sync_runs (source, run_kind) VALUES ('radarr', 'metadata-refresh')`,
+        ),
       ).resolves.toBeDefined();
     });
 

@@ -264,7 +264,7 @@ Cross-cutting risks:
 
 | ID | Question | Resolution |
 |----|----------|------------|
-| Q-01 | **Seerr:** wait for upstream OIDC to reach stable (O1, default) or run the experimental `preview-new-oidc` image now (O2 — backup + rollback plan, JSON config, no role mapping, known preview login regressions)? | (open — owner ruling) |
+| Q-01 | **Seerr:** wait for upstream OIDC to reach stable (O1, default) or run the experimental `preview-new-oidc` image now (O2 — backup + rollback plan, JSON config, no role mapping, known preview login regressions)? | **RESOLVED (owner, 2026-07-17): O1 — wait for upstream OIDC to reach stable.** Do not run the experimental `preview-new-oidc` image; revisit when upstream ships a stable OIDC release. |
 | Q-02 | **Tautulli:** is the all-admin shared-identity model behind the Authentik front door acceptable (per-user Plex guest views retired)? Which Authentik groups/tiers may reach Tautulli at all? | **RESOLVED (owner, 2026-07-17): proxy accepted; login allowed to admins + the Family tier only** ("it doesn't get much use anyway" — the pilot for role-governed app login, see the amendment below). |
 | Q-03 | **v1 scope:** catalog cards only, or also estate apps outside the catalog (Grafana, Home Assistant, homepage, headlamp)? | (open — owner ruling; this design assumes catalog-only) |
 | Q-04 | **Immich:** is OAuth already configured live (runtime state, not in git)? And is Auto Launch wanted given the card is currently admin-grantable/hidden? | (open — verify + owner ruling) |
