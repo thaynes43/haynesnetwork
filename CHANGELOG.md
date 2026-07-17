@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.72.0](https://github.com/thaynes43/haynesnetwork/compare/v0.71.0...v0.72.0) (2026-07-17)
+
+
+### Features
+
+* books/audiobooks/comics detail-page parity with the movie anatomy (R-221) ([#355](https://github.com/thaynes43/haynesnetwork/issues/355)) ([bcb830d](https://github.com/thaynes43/haynesnetwork/commit/bcb830deed2c0315f76802e44790f4134e331625))
+
+
+### Bug Fixes
+
+* Home rule between the glances and the About tile ([#361](https://github.com/thaynes43/haynesnetwork/issues/361)) ([582781c](https://github.com/thaynes43/haynesnetwork/commit/582781cbc3d4979f3d5d17fec685eb822f31d0c4))
+
+
+### Documentation
+
+* pre-bounce handoff — v0.71.0, comic route live-proven, the owner UI-verification ruling ([#359](https://github.com/thaynes43/haynesnetwork/issues/359)) ([56443c2](https://github.com/thaynes43/haynesnetwork/commit/56443c28f506142e8375941cb79b4f4f06e195c7))
+
 ## [0.71.0](https://github.com/thaynes43/haynesnetwork/compare/v0.70.1...v0.71.0) (2026-07-17)
 
 
