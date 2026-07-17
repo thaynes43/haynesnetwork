@@ -16,6 +16,7 @@ const volumeSchema = z.object({
   volumeInfo: z
     .object({
       title: z.string().optional(),
+      subtitle: z.string().optional(),
       authors: z.array(z.string()).optional(),
       publisher: z.string().optional(),
       categories: z.array(z.string()).optional(),
@@ -74,6 +75,51 @@ export function isComicText(...parts: Array<string | null | undefined>): boolean
   const hay = parts.filter((p): p is string => Boolean(p)).join(' ␟ ');
   if (!hay) return false;
   return COMIC_TEXT_MARKERS.some((re) => re.test(hay));
+}
+
+/**
+ * Strip the TRAILING Goodreads series parenthetical ("(Crowns of Nyaxia, #1)") for the `intitle:` query.
+ * Left in, it dilutes GB's title matching enough to resolve a different work entirely — the 2026-07-16
+ * live incident: "The Serpent and the Wings of Night (Crowns of Nyaxia, #1)" (a prose novel) resolved to
+ * a comic-categorized volume, was durably classified a comic (ADR-056), and routed a junk 319-issue
+ * ComicVine volume into Kapowarr. The RAW title still feeds isComicText + pickBestVolume — only the GB
+ * query is de-noised.
+ */
+export function gbQueryTitle(title: string): string {
+  const stripped = title.replace(/\s*\([^()]*\)\s*$/, '').trim();
+  return stripped.length > 0 ? stripped : title;
+}
+
+const TITLE_STOP_WORDS = new Set([
+  'the', 'a', 'an', 'of', 'and', 'or', 'in', 'on', 'at', 'to', 'for', 'with', 'by',
+  'vol', 'volume', 'part', 'book', 'no', 'edition',
+]);
+
+/** Lowercased DISTINCTIVE tokens for the resolve-guard overlap check (mirrors the comicTokens idiom) —
+ * stop words dropped so "the/and/of" overlap can't fake a title match. */
+function titleTokens(title: string): string[] {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(' ')
+    .filter((w) => w.length > 0 && !TITLE_STOP_WORDS.has(w) && !/^\d+$/.test(w));
+}
+
+/**
+ * Guard a TITLE-SEARCH resolve (the fuzzy leg — ISBN resolves skip this): the resolved volume's own title
+ * must cover at least half of the queried title's distinctive tokens, or the resolve is rejected as a
+ * different work. The GB volume id is the LazyLibrarian addBook key AND the comic-classification source,
+ * so a wrong-work resolve mints the wrong book / mis-classifies — null (an honest gap) is strictly better.
+ */
+export function gbResolveTitleMatches(queryTitle: string, resolvedTitle: string | undefined): boolean {
+  if (!resolvedTitle) return false;
+  const q = titleTokens(gbQueryTitle(queryTitle));
+  if (q.length === 0) return true;
+  const resolved = new Set(titleTokens(resolvedTitle));
+  const covered = q.filter((t) => resolved.has(t)).length;
+  // 60% coverage: a 2-token title must cover both ("Kingdom of Ash" ≠ "Kingdom Hearts"), longer titles
+  // tolerate a missing word or two ("The Serpent … Night" still accepts an "&"-styled edition).
+  return covered >= Math.max(1, Math.ceil(q.length * 0.6));
 }
 
 /** Combined comic classification from every signal we hold: GB categories OR a text marker in title/author/publisher. */
@@ -184,11 +230,17 @@ export class GoogleBooksClient {
       const vol = byIsbn?.items?.[0];
       if (vol) return this.toVolume(vol, input.isbn, input);
     }
-    const titlePart = `intitle:${input.title}`;
+    const titlePart = `intitle:${gbQueryTitle(input.title)}`;
     const authorPart = input.author ? `+inauthor:${input.author}` : '';
     const byTitle = await this.query(`${titlePart}${authorPart}`);
     const vol = byTitle?.items?.[0];
-    if (vol) return this.toVolume(vol, null, input);
+    // The title leg is fuzzy — reject a resolve whose own title doesn't cover the queried one (2026-07-16
+    // wrong-work incident; see gbResolveTitleMatches). GB splits title/subtitle, and a Goodreads title
+    // often carries the subtitle after a colon — compare against BOTH. ISBN resolves above stay guard-free.
+    const resolvedTitle = [vol?.volumeInfo?.title, vol?.volumeInfo?.subtitle].filter(Boolean).join(' ');
+    if (vol && gbResolveTitleMatches(input.title, resolvedTitle || undefined)) {
+      return this.toVolume(vol, null, input);
+    }
     return null;
   }
 

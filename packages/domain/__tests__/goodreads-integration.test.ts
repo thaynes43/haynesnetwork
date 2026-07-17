@@ -552,6 +552,23 @@ describe('pickBestVolume (ComicVine resolver)', () => {
     expect(pickBestVolume('A Totally Unrelated Novel', SCOTT_PILGRIM_CANDIDATES)).toBeNull();
     expect(pickBestVolume('Scott Pilgrim', [])).toBeNull();
   });
+
+  it('rejects a single stray-token match on a multi-token title (the 2026-07-16 "Wings" misroute)', () => {
+    // "The Serpent and the Wings of Night" (a prose novel, 6 distinctive tokens) must NOT match the 1982
+    // Japanese magazine "Wings" (cv 100145) on the lone shared token — that live misroute added a 319-issue
+    // junk volume whose auto-search rate-limited the whole getcomics pipeline.
+    const wings: KapowarrSearchCandidate[] = [
+      { comicvineId: 100145, title: 'Wings', year: 1982, volumeNumber: 1, publisher: 'Shinshokan', issueCount: 319, translated: false, alreadyAdded: null },
+    ];
+    expect(pickBestVolume('The Serpent and the Wings of Night (Crowns of Nyaxia, #1)', wings)).toBeNull();
+  });
+
+  it('keeps the single-token path for genuinely short titles (Hobbit)', () => {
+    const hobbit: KapowarrSearchCandidate[] = [
+      { comicvineId: 18166, title: 'The Hobbit', year: 1989, volumeNumber: 1, publisher: 'Eclipse Books', issueCount: 3, translated: false, alreadyAdded: null },
+    ];
+    expect(pickBestVolume('The Hobbit', hobbit)?.comicvineId).toBe(18166);
+  });
 });
 
 describe('mapKapowarrVolumeStatus', () => {

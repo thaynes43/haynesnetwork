@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { GoogleBooksClient, classifyComic, isComicCategory, isComicText } from '../src/index';
+import {
+  GoogleBooksClient,
+  classifyComic,
+  gbQueryTitle,
+  gbResolveTitleMatches,
+  isComicCategory,
+  isComicText,
+} from '../src/index';
 
 function volResponse(items: unknown[]): Response {
   return new Response(JSON.stringify({ totalItems: items.length, items }), {
@@ -49,7 +56,57 @@ describe('isComicText (PLAN-044 live-leak fix — signals GB categories miss)', 
   });
 });
 
+describe('gbQueryTitle / gbResolveTitleMatches (the 2026-07-16 wrong-work resolve guard)', () => {
+  it('strips only the trailing Goodreads series parenthetical', () => {
+    expect(gbQueryTitle('The Serpent and the Wings of Night (Crowns of Nyaxia, #1)')).toBe(
+      'The Serpent and the Wings of Night',
+    );
+    expect(gbQueryTitle('Zero Year: Part 1 (DC Comics - The Legend of Batman #1)')).toBe('Zero Year: Part 1');
+    expect(gbQueryTitle('Project Hail Mary')).toBe('Project Hail Mary');
+    expect(gbQueryTitle('(anonymous)')).toBe('(anonymous)'); // never strip to empty
+  });
+
+  it('rejects a resolved volume whose title does not cover the queried one', () => {
+    // The live incident shape: a prose novel resolving to an unrelated comic-categorized volume.
+    expect(gbResolveTitleMatches('The Serpent and the Wings of Night (Crowns of Nyaxia, #1)', 'Wings')).toBe(false);
+    expect(gbResolveTitleMatches('Kingdom of Ash (Throne of Glass, #7)', 'Kingdom Hearts')).toBe(false);
+    expect(gbResolveTitleMatches('Dune', undefined)).toBe(false);
+  });
+
+  it('accepts near-identical and subtitle-extended titles', () => {
+    expect(
+      gbResolveTitleMatches('The Serpent and the Wings of Night (Crowns of Nyaxia, #1)', 'The Serpent & the Wings of Night'),
+    ).toBe(true);
+    expect(gbResolveTitleMatches('Zero Year: Part 1 (DC Comics - The Legend of Batman #1)', 'Zero Year')).toBe(true);
+    expect(gbResolveTitleMatches('Hooked', 'Hooked: How to Build Habit-Forming Products')).toBe(true);
+  });
+});
+
 describe('GoogleBooksClient.resolveVolume', () => {
+  it('rejects a title-search resolve of a DIFFERENT work (no wrong-work volume id, no misclassification)', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes('intitle')) {
+        // GB's fuzzy title match returning an unrelated comic — the Serpent incident shape.
+        return volResponse([
+          { id: 'gb-wrong', volumeInfo: { title: 'Wings', categories: ['Comics & Graphic Novels'] } },
+        ]);
+      }
+      return volResponse([]);
+    });
+    const fetchImpl = fetchMock as unknown as typeof fetch;
+    const gb = new GoogleBooksClient({ baseUrl: 'http://stub/books/v1', apiKey: 'k', fetchImpl });
+    const res = await gb.resolveVolume({
+      title: 'The Serpent and the Wings of Night (Crowns of Nyaxia, #1)',
+      author: 'Carissa Broadbent',
+    });
+    expect(res).toBeNull();
+    // The query itself must carry the de-noised title (no series parenthetical).
+    const calledUrl = fetchMock.mock.calls[0]?.[0] ?? '';
+    const decoded = decodeURIComponent(calledUrl).replace(/\+/g, ' ');
+    expect(decoded).toContain('The Serpent and the Wings of Night');
+    expect(decoded).not.toContain('Nyaxia');
+  });
+
   it('resolves by ISBN first and flags comics', async () => {
     const fetchImpl = vi.fn(async (url: string) => {
       if (url.includes('isbn')) {

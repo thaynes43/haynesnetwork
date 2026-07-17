@@ -214,3 +214,29 @@ PLAN-039 governor still caps that side. **Raw `Skipped` ONLY**: `Ignored` is an 
 `Matched` means LL believes it already holds a file — neither is ever swept. The dead-end Missing
 (+ manual "Search again") UX therefore keys on `Ignored`/unknown books from here on; e2e fixture
 `gb-tog` pins `Ignored`.
+
+## Amendment — 2026-07-17: the wrong-work resolve guard + ComicVine overlap floor
+
+**The incident.** "The Serpent and the Wings of Night (Crowns of Nyaxia, #1)" — a prose novel — was
+durably classified a COMIC and routed to Kapowarr as ComicVine volume 100145 **"Wings"**, a 1982
+Japanese magazine with 319 issues. Two compounding failures: (1) the GB title-search leg queried
+`intitle:` with the RAW Goodreads title (series parenthetical included) and trusted `items[0]`
+unconditionally — GB resolved a different work whose categories said comic, and ADR-056's durable
+`comic_status` then (correctly) refused to let later enrichment outages declassify it; (2)
+`pickBestVolume` accepted a single shared token ("wings") as a match for a six-token title. The junk
+volume's monitored auto-search then made ~1,500 getcomics requests and rate-limited the pipeline's
+egress IP (the Kapowarr 429 storm).
+
+**The guards (all three shipped together).**
+1. **De-noised GB query** — `gbQueryTitle` strips the TRAILING Goodreads series parenthetical for the
+   `intitle:` leg only; the raw title still feeds `isComicText` and `pickBestVolume`.
+2. **Resolve-title guard** — a TITLE-SEARCH resolve (never the ISBN leg) is rejected unless the
+   resolved volume's `title + subtitle` covers ≥60% of the query's distinctive tokens
+   (`gbResolveTitleMatches`). The GB volume id is BOTH the LL `addBook` key and the comic-classification
+   source, so a wrong-work resolve could mint the wrong book or mis-classify — null (an honest,
+   retried-next-sync gap) is strictly better.
+3. **ComicVine overlap floor** — `pickBestVolume` now requires ≥2 shared distinctive tokens when the
+   shelf title has ≥2 (single-token titles like "Hobbit" keep the 1-token path).
+
+**Data repair (live, 2026-07-17):** the request row was un-comic'd (`comic_status`/`kapowarr_volume_id`/
+`comicvine_id` → NULL — it re-enters the LL book route on the next sync) and Kapowarr volume 3 deleted.

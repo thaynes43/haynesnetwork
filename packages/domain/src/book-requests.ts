@@ -107,6 +107,11 @@ export function pickBestVolume(
     if (ct.length === 0) continue;
     const overlap = ct.filter((t) => queryTokens.has(t)).length;
     if (overlap === 0) continue;
+    // A multi-token shelf title must share ≥2 distinctive tokens — one stray word is not a match. Live
+    // incident 2026-07-16: "The Serpent and the Wings of Night (…)" (6 tokens) matched CV "Wings" (a 1982
+    // Japanese magazine, 319 issues) on the single token "wings" and Kapowarr auto-search hammered
+    // getcomics into an IP rate-limit. Single-token titles ("Hobbit") keep the 1-token path.
+    if (queryTokens.size >= 2 && overlap < 2) continue;
     const ratio = overlap / ct.length;
     // Descending sort key (higher wins): [overlap, ratio×1000, original, hasYear, issueCount, -cvId].
     const key = [
