@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.73.0](https://github.com/thaynes43/haynesnetwork/compare/v0.72.1...v0.73.0) (2026-07-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* label-driven, open collection categories (supersede title classifier) ([#367](https://github.com/thaynes43/haynesnetwork/issues/367))
+
+### Features
+
+* label-driven, open collection categories (supersede title classifier) ([#367](https://github.com/thaynes43/haynesnetwork/issues/367)) ([22c7171](https://github.com/thaynes43/haynesnetwork/commit/22c7171e85cab08d87afe4745a1a3f677364d47f))
+
+
+### Bug Fixes
+
+* delete the three dormant direct Plex server catalog rows (DESIGN-004 Q-04) ([#365](https://github.com/thaynes43/haynesnetwork/issues/365)) ([7fbbf4d](https://github.com/thaynes43/haynesnetwork/commit/7fbbf4dee218b4c57b0985f2d0f3e2badc204a27))
+
 ## [0.72.1](https://github.com/thaynes43/haynesnetwork/compare/v0.72.0...v0.72.1) (2026-07-17)
 
 
