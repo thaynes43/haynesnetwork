@@ -11,7 +11,7 @@
 // missing format's honest affordance below it — a link to the pairing want's wanted-detail when the
 // paced backfill minted one, plus the audited Search button (the FormatSearchSlot reserved-slot
 // idiom: button swaps to a PhaseChip IN PLACE, recolor never reflow) when actionable.
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { PhaseChip } from '@hnet/ui';
 import { trpc } from '@/lib/trpc-client';
@@ -120,6 +120,48 @@ function PairingSearchSlot({ requestId, missingLabel }: { requestId: string; mis
     <span className="action-slot action-slot--roll" data-testid="pairing-search">
       {content}
     </span>
+  );
+}
+
+/**
+ * The About summary prose. Kavita/ABS descriptions frequently carry the FULL jacket copy — the
+ * blurb plus "Praise for…" review pull-quotes — so the block clamps to a few lines and offers an
+ * in-place Show more / Show less toggle. This is a deliberate in-place expansion (the ADR-015
+ * exception): the toggle reveals/collapses this block only, it never reflows a neighbour. The
+ * toggle appears only when the prose actually overflows the clamp (short summaries stay plain).
+ */
+function AboutSummary({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const [overflows, setOverflows] = useState(false);
+  const ref = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (el === null) return;
+    // Measured while clamped (the initial render is collapsed): a positive delta means the prose
+    // exceeds the clamp, so the toggle is worth showing. Deps are [text] only — never re-run on
+    // expand, or the un-clamped element would measure flush and hide the "Show less" affordance.
+    setOverflows(el.scrollHeight - el.clientHeight > 4);
+  }, [text]);
+  return (
+    <div className="about-summary-wrap">
+      <p
+        ref={ref}
+        className={`about-summary${expanded ? '' : ' about-summary--clamped'}`}
+        data-testid="books-about-summary"
+      >
+        {text}
+      </p>
+      {overflows ? (
+        <button
+          type="button"
+          className="about-summary__toggle"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {expanded ? 'Show less' : 'Show more'}
+        </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -243,7 +285,7 @@ export function BooksDetail({ id, from }: { id: string; from: string | null }) {
       {hasAbout ? (
         <section className="card admin-section" data-testid="books-about">
           <h2>About</h2>
-          {item.summary !== null ? <p className="about-summary">{item.summary}</p> : null}
+          {item.summary !== null ? <AboutSummary text={item.summary} /> : null}
           {hasAboutFacts ? (
             <dl className="about-facts">
               {item.year !== null ? (
