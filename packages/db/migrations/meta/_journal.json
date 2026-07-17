@@ -414,6 +414,13 @@
       "when": 1783901700000,
       "tag": "0059_collection_manager",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1783901800000,
+      "tag": "0060_books_detail_enrichment",
+      "breakpoints": true
     }
   ]
 }

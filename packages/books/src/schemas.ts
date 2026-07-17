@@ -48,6 +48,31 @@ export type KavitaSeries = z.infer<typeof kavitaSeriesSchema>;
 export const kavitaSeriesListSchema = z.array(kavitaSeriesSchema);
 
 /**
+ * A named entity in a Kavita metadata response. Kavita's `GenreTagDto` uses `title`; its `PersonDto`
+ * (publishers/writers) uses `name` (verified live 2026-07-17 — publishers came back `{id,name}`).
+ * We tolerate either key (or a bare string) and the sync normalizer reads `title ?? name`.
+ */
+const kavitaNamedSchema = z
+  .object({ name: z.string().optional(), title: z.string().optional() })
+  .passthrough();
+
+/**
+ * DESIGN-024 D-01 amendment (detail-page parity) — one series' rich metadata from
+ * `GET /api/Series/metadata?seriesId=` (SeriesMetadataDto, verified live 2026-07-17 against the
+ * deployed Kavita 0.9.x: fields `summary` (HTML), `genres[]{title}`, `tags[]{title}`,
+ * `publishers[]{name}`, `language`, `releaseYear`). The series LIST (`all-v2`) carries none of these,
+ * so the books-sync fetches this per changed series (the change-gate). Strip mode: extras dropped.
+ */
+export const kavitaSeriesMetadataSchema = z.object({
+  summary: z.string().nullable().optional(),
+  genres: z.array(kavitaNamedSchema.or(z.string())).nullable().optional(),
+  publishers: z.array(kavitaNamedSchema.or(z.string())).nullable().optional(),
+  language: z.string().nullable().optional(),
+  releaseYear: z.number().int().nullable().optional(),
+});
+export type KavitaSeriesMetadata = z.infer<typeof kavitaSeriesMetadataSchema>;
+
+/**
  * ADR-066 / DESIGN-038 D-02 (PLAN-051 — books collections mirror) — one collection from
  * `GET /api/Collection` (AppUserCollectionDto, verified against the deployed v0.9.0.2 source).
  * Subset: identity + title + the RAW itemCount (diagnostics only — the wall count is resolved).
@@ -145,10 +170,17 @@ export const absItemSchema = z.object({
           // books-sync normalizes it to books_items.released_at (Audiobooks Release-Date sort/facet).
           publishedDate: z.string().nullable().optional(),
           language: z.string().nullable().optional(),
+          // DESIGN-024 D-01 amendment (detail-page parity) — the About/Details enrichment ABS carries
+          // INLINE in the list read (no extra call): description (may hold light HTML → stripped),
+          // publisher, isbn. Verified live 2026-07-17 (`media.metadata`).
+          description: z.string().nullable().optional(),
+          publisher: z.string().nullable().optional(),
+          isbn: z.string().nullable().optional(),
         })
         .nullable()
         .optional(),
       numTracks: z.number().int().nullable().optional(),
+      numAudioFiles: z.number().int().nullable().optional(),
       numChapters: z.number().int().nullable().optional(),
       duration: z.number().nullable().optional(),
       size: z.number().nullable().optional(),

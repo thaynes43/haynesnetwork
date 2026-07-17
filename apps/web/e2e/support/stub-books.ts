@@ -37,11 +37,28 @@ const KAVITA_COMICS = [
   { id: 201, name: 'Amazing Spider-Man', sortName: 'Amazing Spider-Man', pages: 494, wordCount: 0, format: 1, libraryId: 2, libraryName: 'Comics', folderPath: '/data/Comics/Amazing Spider-Man', lowestFolderPath: '/data/Comics/Amazing Spider-Man', coverImage: 'v3_c3.png', created: '2026-07-08T12:00:00', lastChapterAddedUtc: '2026-07-08T12:00:00' },
   { id: 202, name: 'Paper Girls', sortName: 'Paper Girls', pages: 160, wordCount: 0, format: 1, libraryId: 2, libraryName: 'Comics', folderPath: '/data/Comics/Paper Girls', lowestFolderPath: '/data/Comics/Paper Girls', coverImage: 'v8_c8.png', created: '2026-07-03T12:00:00', lastChapterAddedUtc: '2026-07-03T12:00:00' },
 ];
+
+// DESIGN-025 D-08 (detail-page parity) — the per-series Kavita metadata the enrichment call reads
+// (`GET /api/Series/metadata?seriesId=`). Shapes mirror the live SeriesMetadataDto probed 2026-07-17:
+// summary carries HTML (the sync strips it); genres/tags are {title}; publishers are {name}. Comics
+// often carry sparse metadata (Spider-Man has genres, Paper Girls is empty → its About collapses).
+const KAVITA_METADATA: Record<number, unknown> = {
+  101: { summary: '<div><div class="blurb">A collection of Victorian serialized thrillers, cheaply printed and wildly popular.</div></div>', genres: [{ title: 'Horror' }, { title: 'Anthology' }], publishers: [{ name: 'Routledge' }], language: 'en', releaseYear: 1860 },
+  102: { summary: '<div class="blurb">Lily Bard, a loner with a mysterious past, becomes the prime suspect when her landlord is murdered.</div>', genres: [{ title: 'Mystery' }, { title: 'Crime' }], publishers: [{ name: 'Penguin' }], language: 'en', releaseYear: 1996 },
+  103: { summary: 'Lily Bard returns as tensions rise in the small town of Shakespeare.', genres: [{ title: 'Mystery' }], publishers: [{ name: 'Penguin' }], language: 'en', releaseYear: 1997 },
+  104: { summary: 'A wedding brings old secrets to the surface in the third Lily Bard mystery.', genres: [{ title: 'Mystery' }], publishers: [{ name: 'Penguin' }], language: 'en', releaseYear: 1998 },
+  105: { summary: '<p>Dr. Watson meets Sherlock Holmes, and together they investigate a baffling murder.</p>', genres: [{ title: 'Mystery' }, { title: 'Detective' }], publishers: [{ name: 'Ward Lock & Co' }], language: 'en', releaseYear: 1887 },
+  106: { summary: 'Holmes and Watson take on a case of stolen treasure and a broken promise.', genres: [{ title: 'Mystery' }, { title: 'Detective' }], publishers: [{ name: 'Spencer Blackett' }], language: 'en', releaseYear: 1890 },
+  201: { summary: '<div class="blurb">Peter Parker balances life as a teenager with great responsibility as the web-slinging hero.</div>', genres: [{ title: 'Superhero' }, { title: 'Action' }], publishers: [{ name: 'Marvel' }], language: 'en', releaseYear: 1963 },
+  202: { summary: '', genres: [], publishers: [], language: 'en', releaseYear: 0 },
+};
+// DESIGN-025 D-08 (detail-page parity) — ABS enrichment (description/publisher/isbn/numAudioFiles)
+// rides the list read INLINE (no extra call), so it lives right here on the items the sync pages.
 const ABS_ITEMS = [
-  { id: 'ab50001', libraryId: 'abs-lib', addedAt: 1783702399325, updatedAt: 1783702399325, mediaType: 'book', media: { metadata: { title: 'A Christmas Carol', titleIgnorePrefix: 'Christmas Carol, A', authorName: 'Charles Dickens', narratorName: 'Tim Curry', seriesName: '', genres: ['Audiobook', 'Classics'], publishedYear: 1843, language: 'English' }, numTracks: 6, numChapters: 6, duration: 12600, size: 90000000 } },
-  { id: 'ab50002', libraryId: 'abs-lib', addedAt: 1783602399325, updatedAt: 1783602399325, mediaType: 'book', media: { metadata: { title: 'The Restaurant at the End of the Universe', titleIgnorePrefix: 'Restaurant at the End of the Universe, The', authorName: 'Douglas Adams', narratorName: '', seriesName: "Hitchhiker's Guide", genres: ['Audiobook', 'Science Fiction'], publishedYear: 1980, language: 'English' }, numTracks: 5, numChapters: 5, duration: 19822, size: 36000000 } },
-  { id: 'ab50003', libraryId: 'abs-lib', addedAt: 1783502399325, updatedAt: 1783502399325, mediaType: 'book', media: { metadata: { title: 'Oliver Twist', titleIgnorePrefix: 'Oliver Twist', authorName: 'Charles Dickens', narratorName: '', seriesName: '', genres: ['Audiobook', 'Classics', 'Historical Fiction'], publishedYear: 1838, language: 'English' }, numTracks: 12, numChapters: 24, duration: 60200, size: 210000000 } },
-  { id: 'ab50004', libraryId: 'abs-lib', addedAt: 1783402399325, updatedAt: 1783402399325, mediaType: 'book', media: { metadata: { title: 'The Hobbit', titleIgnorePrefix: 'Hobbit, The', authorName: 'J. R. R. Tolkien', narratorName: 'Andy Serkis', seriesName: '', genres: ['Audiobook', 'Fantasy'], publishedYear: 1937, language: 'English' }, numTracks: 10, numChapters: 19, duration: 37800, size: 150000000 } },
+  { id: 'ab50001', libraryId: 'abs-lib', addedAt: 1783702399325, updatedAt: 1783702399325, mediaType: 'book', media: { metadata: { title: 'A Christmas Carol', titleIgnorePrefix: 'Christmas Carol, A', authorName: 'Charles Dickens', narratorName: 'Tim Curry', seriesName: '', genres: ['Audiobook', 'Classics'], publishedYear: 1843, language: 'English', description: 'A miserly old man is visited by three spirits on Christmas Eve and given a chance to change his fate.', publisher: 'Penguin Audio', isbn: '9780140620481' }, numTracks: 6, numAudioFiles: 6, numChapters: 6, duration: 12600, size: 90000000 } },
+  { id: 'ab50002', libraryId: 'abs-lib', addedAt: 1783602399325, updatedAt: 1783602399325, mediaType: 'book', media: { metadata: { title: 'The Restaurant at the End of the Universe', titleIgnorePrefix: 'Restaurant at the End of the Universe, The', authorName: 'Douglas Adams', narratorName: '', seriesName: "Hitchhiker's Guide", genres: ['Audiobook', 'Science Fiction'], publishedYear: 1980, language: 'English', description: '<p>The second book in the Hitchhiker\'s Guide trilogy of five, following the galaxy\'s unlikeliest heroes.</p>', publisher: 'Pan Books', isbn: null }, numTracks: 5, numAudioFiles: 5, numChapters: 5, duration: 19822, size: 36000000 } },
+  { id: 'ab50003', libraryId: 'abs-lib', addedAt: 1783502399325, updatedAt: 1783502399325, mediaType: 'book', media: { metadata: { title: 'Oliver Twist', titleIgnorePrefix: 'Oliver Twist', authorName: 'Charles Dickens', narratorName: '', seriesName: '', genres: ['Audiobook', 'Classics', 'Historical Fiction'], publishedYear: 1838, language: 'English', description: 'An orphan boy makes his way through the London underworld in Dickens\' second novel.', publisher: 'Penguin Audio', isbn: '9780141439747' }, numTracks: 12, numAudioFiles: 12, numChapters: 24, duration: 60200, size: 210000000 } },
+  { id: 'ab50004', libraryId: 'abs-lib', addedAt: 1783402399325, updatedAt: 1783402399325, mediaType: 'book', media: { metadata: { title: 'The Hobbit', titleIgnorePrefix: 'Hobbit, The', authorName: 'J. R. R. Tolkien', narratorName: 'Andy Serkis', seriesName: '', genres: ['Audiobook', 'Fantasy'], publishedYear: 1937, language: 'English', description: 'Bilbo Baggins is swept into a quest to reclaim a treasure guarded by the dragon Smaug.', publisher: 'HarperCollins', isbn: '9780007487295' }, numTracks: 10, numAudioFiles: 10, numChapters: 19, duration: 37800, size: 150000000 } },
 ];
 
 // ADR-066 / DESIGN-038 (PLAN-051) — the COLLECTION fixtures the `books-collections-sync` seed
@@ -186,6 +203,16 @@ export async function startStubBooks(): Promise<StubBooksServer> {
       if (path === '/api/ReadingList/items') {
         const listId = Number(url.searchParams.get('readingListId') ?? '0');
         return json(res, 200, KAVITA_READING_LIST_ITEMS[listId] ?? []);
+      }
+      // DESIGN-025 D-08 (detail-page parity) — the per-series metadata enrichment call. An unknown
+      // series returns the honest empty shape (all-absent → its About collapses).
+      if (path === '/api/Series/metadata') {
+        const seriesId = Number(url.searchParams.get('seriesId') ?? '0');
+        return json(
+          res,
+          200,
+          KAVITA_METADATA[seriesId] ?? { summary: '', genres: [], publishers: [], language: null, releaseYear: 0 },
+        );
       }
       if (path === '/api/Image/series-cover') return png(res);
 

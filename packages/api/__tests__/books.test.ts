@@ -76,6 +76,12 @@ beforeAll(async () => {
         author: 'Zed Author',
         pageCount: 500,
         attrs: { format: 3 }, // epub
+        // DESIGN-025 D-08 — About/Details enrichment (Kavita: summary/publisher/genres/year; no isbn/size).
+        summary: 'A sweeping opening volume.',
+        publisher: 'Kavita Press',
+        genres: ['Epic'],
+        year: 2001,
+        metadataSyncedAt: new Date('2026-07-17T00:00:00Z'),
       }),
       bookRow({
         mediaKind: 'book',
@@ -104,6 +110,12 @@ beforeAll(async () => {
         durationSeconds: 3600, // 'short' (<6 h)
         genres: ['Fantasy', 'Adventure'],
         attrs: { language: 'English' },
+        // DESIGN-025 D-08 — ABS inline enrichment (summary/publisher/isbn/file_count/size all present).
+        summary: 'An epic listen.',
+        publisher: 'ABS Audio',
+        isbn: '9781234567890',
+        fileCount: 9,
+        sizeBytes: 90_000_000,
       }),
       bookRow({
         mediaKind: 'audiobook',
@@ -186,7 +198,8 @@ describe('books.filterFacets (ADR-046 + PLAN-029 D-08)', () => {
     const audio = await adminCaller.books.filterFacets({ mediaKind: 'audiobook' });
     expect(audio.genres).toEqual(['Adventure', 'Fantasy']);
     const book = await adminCaller.books.filterFacets({ mediaKind: 'book' });
-    expect(book.genres).toEqual([]); // Kavita series carry no genres
+    // DESIGN-025 D-08 — Kavita books now carry genres from the metadata enrichment call (was []).
+    expect(book.genres).toEqual(['Epic']);
   });
 
   it('returns the PLAN-029 facet lists — populated-value-gated by construction (ADR-051 C-06)', async () => {
@@ -303,5 +316,49 @@ describe('books.groups (PLAN-029 D-04 — the grouped view aggregate)', () => {
     const res = await adminCaller.books.groups({ mediaKind: 'audiobook', groupBy: 'genre' });
     expect(res.groups.map((g) => `${g.label}:${g.count}`)).toEqual(['Adventure:1', 'Fantasy:1']);
     expect(res.groups.every((g) => g.coverUrls.length === 0 && g.imageUrl === null)).toBe(true);
+  });
+});
+
+describe('books.detail — enrichment + collections + history (DESIGN-025 D-08)', () => {
+  async function idFor(mediaKind: 'book' | 'audiobook', title: string): Promise<string> {
+    const res = await adminCaller.books.search({ mediaKind });
+    const item = res.items.flatMap((i) => (i.kind === 'item' ? [i] : [])).find((i) => i.title === title);
+    if (!item) throw new Error(`no ${mediaKind} titled ${title}`);
+    return item.id;
+  }
+
+  it('a Kavita book carries summary/publisher/genres/year + an EPUB format label; no isbn/size (the gap)', async () => {
+    const id = await idFor('book', 'Alpha');
+    const res = await adminCaller.books.detail({ id });
+    expect(res.item.summary).toBe('A sweeping opening volume.');
+    expect(res.item.publisher).toBe('Kavita Press');
+    expect(res.item.genres).toEqual(['Epic']);
+    expect(res.item.year).toBe(2001);
+    expect(res.item.formatLabel).toBe('EPUB');
+    // Kavita rows keep the honest gap (series-detail skipped).
+    expect(res.item.isbn).toBeNull();
+    expect(res.item.fileCount).toBeNull();
+    // Empty history collapses (no fixes/requests/collections seeded for this item).
+    expect(res.collections).toEqual([]);
+    expect(res.fixes).toEqual([]);
+    expect(res.requests).toEqual([]);
+  });
+
+  it('an ABS audiobook carries the inline enrichment (summary/publisher/isbn/file_count/size/language)', async () => {
+    const id = await idFor('audiobook', 'Listen One');
+    const res = await adminCaller.books.detail({ id });
+    expect(res.item.summary).toBe('An epic listen.');
+    expect(res.item.publisher).toBe('ABS Audio');
+    expect(res.item.isbn).toBe('9781234567890');
+    expect(res.item.fileCount).toBe(9);
+    expect(res.item.sizeBytes).toBe(90_000_000);
+    expect(res.item.language).toBe('English');
+    expect(res.item.formatLabel).toBe('Audiobook');
+    expect(res.item.narrator).toBe('Nia Narrator');
+  });
+
+  it('is refused for a Disabled caller (same books gate as the walls)', async () => {
+    const id = await idFor('book', 'Alpha');
+    await expect(disabledCaller.books.detail({ id })).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 });

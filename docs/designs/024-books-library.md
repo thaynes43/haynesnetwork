@@ -1,8 +1,9 @@
 # DESIGN-024: Books & Audiobooks Library — the `books_items` ledger, `books-sync`, section-gated walls + cover proxy
 
 - **Status:** Draft
-- **Last updated:** 2026-07-12 (D-05 amended — F-06 cover-proxy perf: the ADR-041 idiom ported)
-- **Satisfies:** PRD-001 **R-151..R-156**; governed by **ADR-046** (books ledger source + the
+- **Last updated:** 2026-07-17 (D-01/D-03 amended — detail-page enrichment: five nullable columns + the
+  Kavita `/api/Series/metadata` change-gate; migration 0060, R-221)
+- **Satisfies:** PRD-001 **R-151..R-156**, **R-221** (detail-page enrichment data layer); governed by **ADR-046** (books ledger source + the
   dedicated-table vs `media_items` decision), reusing **ADR-021 / DESIGN-009** (Section Permissions),
   **ADR-037** (ship-Admin-only rollout), **ADR-019** (authed poster proxy), and the **ADR-044 / DESIGN-022**
   ingestion-mode shape (`ai-usage-sync`). Bounded context DDD-002 **BC-03 Media Ledger** (a new book-media
@@ -31,6 +32,14 @@ end — Kavita/ABS are the source of truth; the app never writes back (no Fix/Re
   ms — self-versioning for the cover ETag).
 - Per-medium metrics (honest, all nullable): `page_count`/`word_count` (Kavita), `duration_seconds`/
   `size_bytes` (ABS); `attrs` jsonb for source-specific extras (Kavita format int; ABS numTracks/chapters/language).
+- **Detail-page enrichment (amendment 2026-07-17; migration 0060 — five additive nullable columns):**
+  `summary` (the About blurb — Kavita `/api/Series/metadata` summary HTML-stripped; ABS `description`),
+  `publisher` (Kavita `publishers[0].name` / ABS `media.metadata.publisher`), `isbn` (ABS
+  `media.metadata.isbn`; Kavita null — the M2 caveat, series-detail skipped), `file_count` (ABS
+  `numAudioFiles`; Kavita null), and `metadata_synced_at` (the change-gate bookkeeping — when the
+  per-series Kavita metadata call last ran). `genres` (existing) and `year` are now POPULATED for
+  Kavita too (from the metadata call's genres/`releaseYear`; the series list carries neither). Language
+  stays in `attrs.language` (the facet reads it there) — filled for Kavita from the metadata call.
 - Sync bookkeeping: `first_seen_at`/`last_seen_at`, `deleted_at` (TOMBSTONE — null = live; the walls show
   live only), `source_added_at`/`source_updated_at`, `created_at`/`updated_at`.
 - Indexes: `(media_kind, sort_title)` (the wall's ordered scan) + `(media_kind, deleted_at)` (live filter).
@@ -73,6 +82,22 @@ never tombstones the source it couldn't read. No `sync_runs` row (the mirror is 
 (`no-direct-state-writes` — INSERT/UPDATE forms). Orchestrator branch mirrors `ai-usage-sync`; a
 neither-source-complete run is a `totalFailure`. Unit-proven: `packages/domain/__tests__/books.test.ts`
 (upsert, idempotent re-sync, tombstone-on-vanish, un-tombstone, scoped tombstoning, per-kind counts).
+
+**Enrichment + change-gate (amendment 2026-07-17).** `fetchBooksSnapshot(bundle, logger, {existingKavita, now})`
+now ENRICHES each row for the detail page (D-01 columns). **ABS** enrichment is INLINE - description/publisher/
+isbn/numAudioFiles ride the existing `/api/libraries/{id}/items` list read, so ABS costs no extra request.
+**Kavita** enrichment needs a per-series `GET /api/Series/metadata?seriesId=` (summary/genres/publishers/
+language/releaseYear - the series list carries none), so it is **change-gated**: the orchestrator reads the
+existing live-Kavita enrichment once (`loadExistingKavitaEnrichment` - source updated-stamp + last-enriched-at
++ the enrichment columns), and the fetcher calls the metadata endpoint ONLY for a series that is new, never
+enriched (`metadata_synced_at` null), or whose `lastChapterAddedUtc` changed since the last run; an unchanged
+series CARRIES its last enrichment forward (no request) so the upsert stays a clean full-replace. The calls are
+paced (a small concurrency pool); a per-series metadata failure is non-fatal (carry existing forward, retry
+next run). Steady state issues ZERO per-series calls for the ~1,400 unchanged Kavita series - only the initial
+backfill and genuine changes pay. Kavita size/ISBN/file-count would need the heavier `/api/Series/series-detail`
+per series (the M2 ISBN caveat: ISBNs are usually absent) - deliberately SKIPPED, so those Details rows show
+for audiobooks only (the honest gap). Unit-proven: `packages/sync/__tests__/books-enrichment.test.ts`
+(HTML-strip, the metadata reduce, ABS inline mapping, the change-gate skip/refetch/carry-forward-on-failure).
 
 ## D-04 — The Books read contract (`books.search` / `books.filterFacets`)
 

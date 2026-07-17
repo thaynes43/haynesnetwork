@@ -7,20 +7,24 @@
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import {
+  bookFixRequests,
   bookRequests,
   booksCollections,
   booksCollectionMembers,
   booksFormatPairs,
   booksItems,
   userBookProgress,
+  users,
   BOOKS_MEDIA_KINDS,
   type BooksMediaKind,
   type BooksItemRow,
+  type BookFixReason,
+  type BookFixStatus,
   type BookRequestOrigin,
   type BookRequestStatus,
   type Database,
 } from '@hnet/db';
-import { and, asc, eq, ilike, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 import {
   bookActionsForRole,
   getBookRequestById,
@@ -67,15 +71,78 @@ export interface BooksPairingState {
   want: { requestId: string; status: BookRequestStatus; searchable: boolean } | null;
 }
 
+/**
+ * DESIGN-025 D-08 (detail-page parity) — the enriched detail item: the wall row plus the About/Details
+ * enrichment (summary, publisher, language, isbn, fileCount, a format label, the added instant) and the
+ * provenance the Details section shows. Every enrichment field is nullable — the UI collapses an empty
+ * About/Details row exactly like the movie page (never a fabricated blank).
+ */
+export type BooksDetailItem = BooksListItem & {
+  libraryName: string;
+  lastSyncedAt: string;
+  summary: string | null;
+  publisher: string | null;
+  language: string | null;
+  isbn: string | null;
+  fileCount: number | null;
+  /** A plain format label: Kavita EPUB/CBZ-CBR/PDF (from attrs.format), ABS "Audiobook". Null when unknown. */
+  formatLabel: string | null;
+  /** When the serving app first had this item (source_added_at) as ISO, or null. */
+  addedAt: string | null;
+};
+
+/** DESIGN-025 D-08 — a mirrored books-collection chip (links to the wall's collection drill). */
+export interface BooksCollectionChip {
+  /** books_collections row uuid — the `?group=` drill key (stable app-side). */
+  id: string;
+  title: string;
+}
+
+/** DESIGN-025 D-08 / DESIGN-033 — one book Fix in the item's audited fix trail (the movie-History idiom). */
+export interface BookFixHistoryEntry {
+  id: string;
+  status: BookFixStatus;
+  reason: BookFixReason;
+  reasonText: string | null;
+  requesterDisplayName: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+/** DESIGN-025 D-08 — one linked request's lifecycle (how the title was wanted / landed). */
+export interface BookRequestHistoryEntry {
+  id: string;
+  origin: BookRequestOrigin;
+  ebookStatus: BookRequestStatus;
+  audioStatus: BookRequestStatus;
+  comicStatus: BookRequestStatus | null;
+  lastSearchedAt: string | null;
+  createdAt: string;
+}
+
 /** The books detail payload (the in-app drill-in — deep-links OUT to Kavita/ABS, no *arr semantics). */
 export interface BooksDetailResult {
   /** ADR-062 — the caller may fire a books Fix (admin or fix_book grant). */
   canFix: boolean;
-  item: BooksListItem & { libraryName: string; lastSyncedAt: string };
+  item: BooksDetailItem;
   /** The app-specific deep link (books are always PRESENT — synced from the serving app). */
   play: { app: 'kavita' | 'audiobookshelf'; label: string; url: string };
   /** ADR-065 — the format-pairing state (dual buttons / the missing format's affordance). Null = comic. */
   pairing: BooksPairingState | null;
+  /** DESIGN-025 D-08 — the mirrored books-collections this title belongs to (About chips). */
+  collections: BooksCollectionChip[];
+  /** DESIGN-025 D-08 / DESIGN-033 — the audited book-Fix trail for this item (newest first). */
+  fixes: BookFixHistoryEntry[];
+  /** DESIGN-025 D-08 — the linked request lifecycle rows (newest first). */
+  requests: BookRequestHistoryEntry[];
+}
+
+/** DESIGN-025 D-08 — a plain, kind-aware format label for the Details "Format" row. */
+export function bookFormatLabel(row: BooksItemRow): string | null {
+  if (row.source === 'audiobookshelf') return 'Audiobook';
+  const code = (row.attrs as Record<string, unknown> | null)?.format;
+  if (typeof code !== 'number') return null;
+  return KAVITA_FORMATS.find((f) => f.code === code)?.label ?? null;
 }
 
 /** ADR-065 / DESIGN-036 D-09 — the wall's format-coverage signal ('both' wears "Ebook + Audio"). */
@@ -761,12 +828,67 @@ export const booksRouter = router({
       // ADR-065 / DESIGN-036 D-09 — the pairing state: paired ⇒ the counterpart's own deep link (the
       // second consume button); unpaired ⇒ the missing format + its pairing want. Comics carry none.
       const pairing = await resolvePairingState(ctx.db, row);
+
+      // DESIGN-025 D-08 — the About "Collections" chips: the mirrored books-collections this title is a
+      // live member of (reusing the ADR-066 membership the walls read). A chip links to the wall's
+      // collection drill (`?group=<books_collections.id>`), matching the movie collections-chip behavior.
+      const collectionRows = await ctx.db
+        .select({ id: booksCollections.id, title: booksCollections.title })
+        .from(booksCollectionMembers)
+        .innerJoin(booksCollections, eq(booksCollections.id, booksCollectionMembers.collectionId))
+        .where(eq(booksCollectionMembers.booksItemId, row.id))
+        .orderBy(asc(booksCollections.title));
+
+      // DESIGN-025 D-08 / DESIGN-033 — the History: this item's OWN records. The audited book-Fix trail
+      // (book_fix_requests) + the linked request lifecycle (book_requests — the want that landed / pairs
+      // this title). Newest first, the movie-History idiom. Real owner-visible value (fixes ran today).
+      const fixRows = await ctx.db
+        .select({
+          id: bookFixRequests.id,
+          status: bookFixRequests.status,
+          reason: bookFixRequests.reason,
+          reasonText: bookFixRequests.reasonText,
+          createdAt: bookFixRequests.createdAt,
+          completedAt: bookFixRequests.completedAt,
+          requesterDisplayName: users.displayName,
+        })
+        .from(bookFixRequests)
+        .leftJoin(users, eq(users.id, bookFixRequests.requesterId))
+        .where(eq(bookFixRequests.booksItemId, row.id))
+        .orderBy(desc(bookFixRequests.createdAt));
+
+      const requestRows = await ctx.db
+        .select({
+          id: bookRequests.id,
+          origin: bookRequests.origin,
+          ebookStatus: bookRequests.ebookStatus,
+          audioStatus: bookRequests.audioStatus,
+          comicStatus: bookRequests.comicStatus,
+          lastSearchedAt: bookRequests.lastSearchedAt,
+          createdAt: bookRequests.createdAt,
+        })
+        .from(bookRequests)
+        .where(
+          or(
+            eq(bookRequests.matchedBooksItemId, row.id),
+            eq(bookRequests.pairingBooksItemId, row.id),
+          ),
+        )
+        .orderBy(desc(bookRequests.createdAt));
+
       return {
         canFix,
         item: {
           ...toBooksListItem(row),
           libraryName: row.libraryName,
           lastSyncedAt: row.lastSeenAt.toISOString(),
+          summary: row.summary,
+          publisher: row.publisher,
+          language: ((row.attrs as Record<string, unknown> | null)?.language as string | null) ?? null,
+          isbn: row.isbn,
+          fileCount: row.fileCount,
+          formatLabel: bookFormatLabel(row),
+          addedAt: row.sourceAddedAt ? row.sourceAddedAt.toISOString() : null,
         },
         play: {
           app: row.source === 'audiobookshelf' ? 'audiobookshelf' : 'kavita',
@@ -774,6 +896,25 @@ export const booksRouter = router({
           url: row.deepLinkUrl,
         },
         pairing,
+        collections: collectionRows,
+        fixes: fixRows.map((f) => ({
+          id: f.id,
+          status: f.status,
+          reason: f.reason,
+          reasonText: f.reasonText,
+          requesterDisplayName: f.requesterDisplayName ?? null,
+          createdAt: f.createdAt.toISOString(),
+          completedAt: f.completedAt ? f.completedAt.toISOString() : null,
+        })),
+        requests: requestRows.map((r) => ({
+          id: r.id,
+          origin: r.origin,
+          ebookStatus: r.ebookStatus,
+          audioStatus: r.audioStatus,
+          comicStatus: r.comicStatus ?? null,
+          lastSearchedAt: r.lastSearchedAt ? r.lastSearchedAt.toISOString() : null,
+          createdAt: r.createdAt.toISOString(),
+        })),
       };
     }),
 
