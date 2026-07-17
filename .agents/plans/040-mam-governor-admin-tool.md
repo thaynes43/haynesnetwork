@@ -35,3 +35,24 @@
 ## Out of scope until scoped
 
 Everything — this is a placeholder so the intent isn't lost.
+
+## Research input (2026-07-17) — bonus points / VIP / class-cap mechanics
+
+Full report: `.agents/context/2026-07-17-mam-vip-research.md`. The load-bearing findings for
+this plan:
+
+1. **Freeleech does not touch seed obligations.** Any freeleech flavor zeroes only the
+   download/ratio cost; the 72h seed obligation applies identically. No spend on
+   wedges/VIP-freeleech lifts the governor cap. Wedges: keep hoarding, never buy for this.
+2. **The cap is a CLASS attribute** — New Member 20 → User 50 → Power User 100 → VIP 150 —
+   confirming the preset ladder above. VIP helps because it is a higher class, not because
+   of freeleech.
+3. **VIP must be modeled as a MAINTAINED state:** it is points-bought in weeks (rolling
+   ~90-day window), requires Power User first, and a lapse drops the cap back to 100 — the
+   admin UI's VIP preset needs a "renewal owed" affordance, not a set-and-forget value.
+4. **Optimal spend path (owner-directed):** earn Power User (member ≥4 weeks AND >25 GB
+   uploaded AND ratio ≥2.0 — buy only the minimum upload credit to clear the ratio gate,
+   ~500 points/GB), then points-buy VIP for cap 150. Sustained safe throughput ≈
+   (cap − buffer)/72h: ~5/day at 20 → ~48/day at 150.
+5. **Q-02 refinement:** if auto-read is ever wired, read the account CLASS, not freeleech
+   status. Prices/thresholds are login-walled — the owner verifies in-site before spending.
