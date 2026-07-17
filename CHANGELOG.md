@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.69.0](https://github.com/thaynes43/haynesnetwork/compare/v0.68.1...v0.69.0) (2026-07-17)
+
+
+### Features
+
+* collection provenance tags — "what created this collection" badge (DESIGN-035 D-12 / DESIGN-038 D-11) ([#347](https://github.com/thaynes43/haynesnetwork/issues/347)) ([fd1fae9](https://github.com/thaynes43/haynesnetwork/commit/fd1fae9c1dd280581b67766cbba384a57357ca20))
+
+
+### Bug Fixes
+
+* Collection Type chips mobile polish (PLAN-053 owner amendment) ([#346](https://github.com/thaynes43/haynesnetwork/issues/346)) ([dd5ceb3](https://github.com/thaynes43/haynesnetwork/commit/dd5ceb3e7dd8ddc3e34fa1c5d78208f447759285))
+
+
+### Documentation
+
+* DESIGN-041 — Q-02/Q-09 owner rulings + the role-governed app login amendment ([#345](https://github.com/thaynes43/haynesnetwork/issues/345)) ([87e8279](https://github.com/thaynes43/haynesnetwork/commit/87e8279eafc9ebb63a5ce6a9212d2db40b0930f4))
+* DESIGN-041 Q-09 — Authentik Plex source allowed servers (HOps must join before HOps-only invites) ([#344](https://github.com/thaynes43/haynesnetwork/issues/344)) ([638320b](https://github.com/thaynes43/haynesnetwork/commit/638320b164dae10da5ee363c0a0240aa5f12bedf))
+* MAM VIP research (PLAN-040 input) + PLAN-052 live-contract notes ([#342](https://github.com/thaynes43/haynesnetwork/issues/342)) ([9ab8864](https://github.com/thaynes43/haynesnetwork/commit/9ab8864d6e83786f70c2c9f95f3c366e5e028b8f))
+
 ## [0.68.1](https://github.com/thaynes43/haynesnetwork/compare/v0.68.0...v0.68.1) (2026-07-17)
 
 
