@@ -49,3 +49,29 @@
 ## Out of scope
 
 Full Kometa config editing, raw YAML passthrough, anything the allowlist can't validate.
+
+## Live-contract notes (2026-07-17) — Libretto as the first bound provider
+
+The Libretto surface is now proven live (16 collections: 12 Kavita + 4 ABS, built through the
+API this session). What the manager UI binds against, as observed:
+
+- **Save is idempotent `PUT /api/recipes/:id`** (strictObject schema; unknown key → 400 with
+  per-path issues). `GET /api/recipes` returns `{recipes, issues}` — invalid recipe FILES
+  surface in `issues[]`, never in `recipes[]`.
+- **Apply is async and serialized:** `POST /api/apply {scope}` → 202 `{runId}`; poll
+  `GET /api/runs/:id`. Run history keeps only the last 50 (losable) — the targets are the
+  only source of truth (stateless doctrine holds).
+- **Run verdicts:** `warn` is the NORMAL state for a partial library (fires on any missing
+  item); treat it as informational in the UI. `counts.matchedByTitle` (D-04 flag) is routinely
+  high for Kavita (epubs expose no scheme'd ISBNs) — not a defect indicator.
+- **The biggest composer win is ref preview:** a wrong Hardcover slug → run error, but a slug
+  resolving to a 0-work CONTAINER series (e.g. `mistborn` vs `the-mistborn-saga`) → silent
+  `matched:0`. There is no resolve/preview endpoint today — the UI should search Hardcover and
+  show the resolved series name + ordered work count BEFORE save.
+- **Delete does not cascade** — a deleted recipe orphans its marker-owned target collection;
+  the UI must offer explicit target cleanup.
+- **Recipe `id` is global** (filename + marker key), so per-target variants need distinct ids
+  (`dune` / `dune-audiobooks`). Enforce global uniqueness in the composer.
+- **Judgment gate:** matched ≤1 ⇒ likely wrong ref or an omnibus-only franchise — surface it
+  and offer delete (applied as doctrine this session: the 1/5 hunger-games Kavita recipe was
+  deleted and its orphaned reading list cleaned).
