@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.68.1](https://github.com/thaynes43/haynesnetwork/compare/v0.68.0...v0.68.1) (2026-07-17)
+
+
+### Bug Fixes
+
+* wrong-work GB resolve guard + ComicVine overlap floor (the Wings misroute) ([#341](https://github.com/thaynes43/haynesnetwork/issues/341)) ([8c7e364](https://github.com/thaynes43/haynesnetwork/commit/8c7e3647d38a1d0f2df249b206d7dfd520552f0b))
+
+
+### Documentation
+
+* cold-start handoff — 8 plans completed/, Libretto deployed + D-04 fallback next, comics repair steps, owner directives (Opus wave, MAM VIP research, Fable SSO planning), release-train tooling in-repo ([#339](https://github.com/thaynes43/haynesnetwork/issues/339)) ([1c9184b](https://github.com/thaynes43/haynesnetwork/commit/1c9184baf7872d627a117c3d880781631eaf1ea1))
+* PLAN-058 intake — SSO immersion (auto-login everywhere, retire per-app Plex logins) ([#337](https://github.com/thaynes43/haynesnetwork/issues/337)) ([ec3920f](https://github.com/thaynes43/haynesnetwork/commit/ec3920f7fb183d689f79aa55ed82bdb6f214880b))
+* PLAN-058 planned — DESIGN-041 SSO immersion (estate auto-login inventory + per-app remediation, Q-01..Q-08 for owner review) ([#340](https://github.com/thaynes43/haynesnetwork/issues/340)) ([7413d16](https://github.com/thaynes43/haynesnetwork/commit/7413d16aada203d20af9f847ba58753d7bc45f19))
+
 ## [0.68.0](https://github.com/thaynes43/haynesnetwork/compare/v0.67.0...v0.68.0) (2026-07-17)
 
 
