@@ -1,9 +1,5 @@
-import { pgTable, uuid, text, integer, timestamp, unique, index, check } from 'drizzle-orm/pg-core';
-import { sql } from 'drizzle-orm';
+import { pgTable, uuid, text, integer, timestamp, unique, index } from 'drizzle-orm/pg-core';
 import { plexLibraries } from './plex-libraries';
-import { COLLECTION_TYPES } from './enums';
-
-const COLLECTION_TYPES_SQL = COLLECTION_TYPES.map((v) => `'${v}'`).join(',');
 
 /**
  * ADR-064 / DESIGN-035 D-01 (PLAN-037 — mirrored Plex collections). External software (Plex/Kometa)
@@ -33,12 +29,17 @@ export const plexCollections = pgTable(
     /** The RAW Plex member count (diagnostics only — never shown; the wall count is access-gated). */
     childCount: integer('child_count').notNull().default(0),
     /**
-     * DESIGN-035 D-10 / R-214 (PLAN-053) — the owner-ruled six-bucket Collection Type ANNOTATION
-     * (T-186). Recomputed from the title at EVERY sync upsert by the versioned @hnet/domain
-     * classifier (`classifyCollectionType`) — rebuildable like the row it sits on, never migrated
-     * state. Drives the grouped walls' `?ctype=` Type chip row + the gated typeCounts.
+     * DESIGN-035 D-10' / R-214 (migration 0062) — the OPEN, free-form category ANNOTATION (T-186).
+     * Derived from the collection's own Plex LABELS at EVERY sync upsert by the versioned
+     * @hnet/domain `deriveCollectionCategory` (owner inline label first, else Kometa's section-label
+     * map) — a rebuildable annotation like the row it sits on, never migrated state. Drives the
+     * grouped walls' `?ctype=` category chip row + the dynamic categoryCounts. NULLABLE + OPEN (no
+     * CHECK, no enum): categories are whatever the owner labels, and a new label becomes a new chip
+     * on the next sync with zero migration. A null means either no owner/section label OR that the
+     * label read did not run this sync — the writer's COALESCE preserves the prior value on null so a
+     * transient read failure never wipes the category (symmetric with `created_by`).
      */
-    collectionType: text('collection_type', { enum: COLLECTION_TYPES }).notNull().default('other'),
+    category: text('category'),
     /**
      * PROVENANCE — the software that CREATED this collection (owner directive 2026-07-16 — "tagging
      * collections for what created them"). Kometa LABELS its managed Plex collections (verified live
@@ -58,11 +59,8 @@ export const plexCollections = pgTable(
   (t) => [
     // Identity — the sync upserts on this key; the drill-in resolves a ?group=<ratingKey> through it.
     unique('plex_collections_library_rating_key_unique').on(t.plexLibraryId, t.ratingKey),
-    // D-10 — the six owner-ruled buckets, in parity with COLLECTION_TYPES (migration 0055).
-    check(
-      'plex_collections_collection_type_enum',
-      sql`${t.collectionType} = ANY (ARRAY[${sql.raw(COLLECTION_TYPES_SQL)}])`,
-    ),
+    // D-10' — `category` is OPEN (free-form, no CHECK): the chip vocabulary is whatever the owner
+    // labels in Kometa, derived each sync. A new label needs no migration.
   ],
 );
 

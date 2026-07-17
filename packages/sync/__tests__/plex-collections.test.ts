@@ -54,9 +54,10 @@ function fakeHopsRead(): PlexReadClient {
       // 77002 — TRUNCATED read (totalSize > items): its members must never be reconciled.
       return { items: [{ ratingKey: '9002' }], librarySectionId: '1', totalSize: 5 };
     },
-    // Provenance — Kometa labels 77001; 77002 is hand-made (no labels → 'plex').
+    // Provenance + category — 77001 carries Kometa's managed label plus an owner `List` category
+    // label (→ createdBy 'kometa', category 'List'); 77002 is hand-made (no labels → 'plex', null).
     async readCollectionLabels(ratingKey: string) {
-      return ratingKey === '77001' ? ['Kometa'] : [];
+      return ratingKey === '77001' ? ['Kometa', 'List'] : [];
     },
   } as unknown as PlexReadClient;
 }
@@ -96,8 +97,8 @@ async function collectionRows(db: Database) {
       ratingKey: plexCollections.ratingKey,
       title: plexCollections.title,
       childCount: plexCollections.childCount,
-      // DESIGN-035 D-10 (PLAN-053) — the Collection Type annotation the writer computes per upsert.
-      collectionType: plexCollections.collectionType,
+      // DESIGN-035 D-10' — the label-derived category annotation the writer stores per upsert.
+      category: plexCollections.category,
       // Provenance the writer stored (from the collection's labels this run).
       createdBy: plexCollections.createdBy,
     })
@@ -144,9 +145,10 @@ describe('fetchPlexCollectionsSnapshot + syncPlexCollections (ADR-064)', () => {
     expect(report.collectionsUpserted).toBe(2);
     expect(report.membersUpserted).toBe(3);
     expect(await collectionRows(t.db)).toEqual([
-      // D-10 — the writer annotates at upsert: a chart classifies 'list', an idiom-free name 'other'.
-      { ratingKey: '77001', title: 'IMDb Top 250', childCount: 250, collectionType: 'list', createdBy: 'kometa' },
-      { ratingKey: '77002', title: 'The Fixture Franchise', childCount: 2, collectionType: 'other', createdBy: 'plex' },
+      // D-10' — the writer stores the label-derived category: 77001's owner `List` label → 'List',
+      // 77002 carries no owner/section label → null (shows only under "All", no chip).
+      { ratingKey: '77001', title: 'IMDb Top 250', childCount: 250, category: 'List', createdBy: 'kometa' },
+      { ratingKey: '77002', title: 'The Fixture Franchise', childCount: 2, category: null, createdBy: 'plex' },
     ]);
     // RAW membership regardless of ledger match (owner R3) — no media_items exist at all here.
     expect(await memberRows(t.db, '77001')).toEqual([
@@ -164,6 +166,7 @@ describe('fetchPlexCollectionsSnapshot + syncPlexCollections (ADR-064)', () => {
       title: 'The Fixture Franchise',
       childCount: 2,
       createdBy: null, // this partial re-sync did not read labels — the writer preserves 'plex'
+      category: null, // ...and preserves the prior category (null here) via COALESCE
       members: [{ ratingKey: '9003', sortOrder: 0 }],
       fullyRead: false,
     };
@@ -192,6 +195,7 @@ describe('fetchPlexCollectionsSnapshot + syncPlexCollections (ADR-064)', () => {
           title: 'IMDb Top 250 (2026)',
           childCount: 249,
           createdBy: 'kometa',
+          category: 'List',
           members: [{ ratingKey: '9001', sortOrder: 0 }],
           fullyRead: true,
         },
@@ -201,7 +205,7 @@ describe('fetchPlexCollectionsSnapshot + syncPlexCollections (ADR-064)', () => {
     expect(report.membersRemoved).toBe(1); // 9002 left the fully-read 77001
     expect(report.collectionsRemoved).toBe(1); // 77002 vanished from the scoped library
     expect(await collectionRows(t.db)).toEqual([
-      { ratingKey: '77001', title: 'IMDb Top 250 (2026)', childCount: 249, collectionType: 'list', createdBy: 'kometa' },
+      { ratingKey: '77001', title: 'IMDb Top 250 (2026)', childCount: 249, category: 'List', createdBy: 'kometa' },
     ]);
     expect(await memberRows(t.db, '77001')).toEqual([{ ratingKey: '9001', sortOrder: 0 }]);
     // 77002's members CASCADEd away with it.
@@ -249,6 +253,7 @@ describe('fetchPlexCollectionsSnapshot + syncPlexCollections (ADR-064)', () => {
         title: 'IMDb Top 250 (2027)',
         childCount: 251,
         createdBy: 'kometa', // the label read still succeeded (only the member read failed)
+        category: 'List', // ...so the category derived from those labels too
         members: [],
         fullyRead: false,
       },
@@ -260,7 +265,7 @@ describe('fetchPlexCollectionsSnapshot + syncPlexCollections (ADR-064)', () => {
     });
     // Title advanced; the existing member survived (no reconcile without a full member read).
     expect(await collectionRows(t.db)).toEqual([
-      { ratingKey: '77001', title: 'IMDb Top 250 (2027)', childCount: 251, collectionType: 'list', createdBy: 'kometa' },
+      { ratingKey: '77001', title: 'IMDb Top 250 (2027)', childCount: 251, category: 'List', createdBy: 'kometa' },
     ]);
     expect(await memberRows(t.db, '77001')).toEqual([{ ratingKey: '9001', sortOrder: 0 }]);
   });
@@ -298,27 +303,51 @@ describe('fetchPlexCollectionsSnapshot + syncPlexCollections (ADR-064)', () => {
     expect(await memberRows(t.db, '77009')).toEqual([{ ratingKey: '9009', sortOrder: 0 }]);
   });
 
-  // DESIGN-035 D-10 (PLAN-053) — the annotation is RECOMPUTED at every upsert: a retitle that
-  // changes the bucket flips collection_type in the same conflict-update (rebuildable, no backfill).
-  it('recomputes the Collection Type when a retitle changes the bucket', async () => {
+  // DESIGN-035 D-10' — the category is RECOMPUTED from labels at every upsert: when the owner
+  // relabels a collection the category flips in the same conflict-update; a null (label read failed)
+  // PRESERVES the prior category via COALESCE (a transient read never wipes it). Rebuildable, no backfill.
+  it('recomputes the category when labels change, and preserves it on a null read', async () => {
     const before = (await collectionRows(t.db)).find((c) => c.ratingKey === '77009')!;
-    expect(before).toMatchObject({ title: 'Beyond The Cap', collectionType: 'other' });
+    expect(before).toMatchObject({ title: 'Beyond The Cap', category: null }); // no owner label yet
+    // Owner adds a `Universe` label → the derived category the writer receives is 'Universe'.
     await syncPlexCollections({
       db: t.db,
       collections: [
         {
           plexLibraryId: moviesLib,
           ratingKey: '77009',
-          title: 'Beyond The Cap Trilogy',
+          title: 'Beyond The Cap',
           childCount: 3,
-          createdBy: null,
+          createdBy: 'kometa',
+          category: 'Universe',
           members: [],
           fullyRead: false,
         },
       ],
       scopedLibraryIds: [],
     });
-    const after = (await collectionRows(t.db)).find((c) => c.ratingKey === '77009')!;
-    expect(after).toMatchObject({ title: 'Beyond The Cap Trilogy', collectionType: 'trilogy' });
+    expect((await collectionRows(t.db)).find((c) => c.ratingKey === '77009')).toMatchObject({
+      category: 'Universe',
+    });
+    // A later sync whose label read FAILED (category null) preserves the stored 'Universe'.
+    await syncPlexCollections({
+      db: t.db,
+      collections: [
+        {
+          plexLibraryId: moviesLib,
+          ratingKey: '77009',
+          title: 'Beyond The Cap',
+          childCount: 3,
+          createdBy: null,
+          category: null,
+          members: [],
+          fullyRead: false,
+        },
+      ],
+      scopedLibraryIds: [],
+    });
+    expect((await collectionRows(t.db)).find((c) => c.ratingKey === '77009')).toMatchObject({
+      category: 'Universe',
+    });
   });
 });

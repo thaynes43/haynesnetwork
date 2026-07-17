@@ -129,9 +129,9 @@ export * from './plex-collections';
 // the books-collections-sync mode's writer). Kavita/ABS are always the collections source of truth;
 // member refs resolve opportunistically against the fresh books_items mirror (run after books-sync).
 export * from './books-collections';
-// DESIGN-035 D-10 (PLAN-053) — the versioned Collection Type classifier (pure; the sync writer
-// recomputes the plex_collections.collection_type annotation from it at every upsert).
-export * from './collection-type';
+// DESIGN-035 D-10' — the versioned label-driven category derivation (pure; the sync writer
+// recomputes the plex_collections.category annotation from the collection's labels at every upsert).
+export * from './collection-category';
 // Collection PROVENANCE — "what software created this collection" (owner directive 2026-07-16). The
 // pure derivation both collection syncs call at every upsert (Kometa labels / Libretto marker →
 // created_by), plus the badge display mapping the API layer resolves for the walls.

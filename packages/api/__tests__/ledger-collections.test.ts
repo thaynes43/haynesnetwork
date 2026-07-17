@@ -95,14 +95,15 @@ beforeAll(async () => {
     scopedLibraryIds: [hopsMoviesLib, hnetMoviesLib],
   });
 
-  // Five mirrored HOps collections (titles chosen so the D-10 classifier spreads the buckets):
-  //   • The Fixture Franchise (other) — members Both (9001) + HopsOnly (9002) + a NON-LEDGER
+  // Five mirrored HOps collections (label-derived categories spread the chips; the last is
+  // deliberately UNLABELED to prove a null category contributes no chip yet still cards under All):
+  //   • The Fixture Franchise (Sequels) — members Both (9001) + HopsOnly (9002) + a NON-LEDGER
   //     chart entry (9999).
-  //   • Hops Charts (list) — members HopsOnly (9002) + ChartOnly (9003): ALL inaccessible to
+  //   • Hops Charts (List) — members HopsOnly (9002) + ChartOnly (9003): ALL inaccessible to
   //     hnet-only.
-  //   • IMDb Top 250 (list) — member HopsOnly (9002): inaccessible to hnet-only.
-  //   • Star Wars (franchise_universe) — member Both (9001): accessible to hnet-only via hnet.
-  //   • The Fixture Trilogy (trilogy) — member ChartOnly (9003): inaccessible to hnet-only.
+  //   • IMDb Top 250 (List) — member HopsOnly (9002): inaccessible to hnet-only.
+  //   • Star Wars (Universe) — member Both (9001): accessible to hnet-only via hnet.
+  //   • The Fixture Trilogy (null / unlabeled) — member ChartOnly (9003): inaccessible to hnet-only.
   await syncPlexCollections({
     db: t.db,
     collections: [
@@ -112,6 +113,7 @@ beforeAll(async () => {
         title: 'The Fixture Franchise',
         childCount: 3,
         createdBy: 'kometa',
+        category: 'Sequels',
         members: [
           { ratingKey: '9001', sortOrder: 0 },
           { ratingKey: '9002', sortOrder: 1 },
@@ -125,6 +127,7 @@ beforeAll(async () => {
         title: 'Hops Charts',
         childCount: 2,
         createdBy: 'kometa',
+        category: 'List',
         members: [
           { ratingKey: '9002', sortOrder: 0 },
           { ratingKey: '9003', sortOrder: 1 },
@@ -137,6 +140,7 @@ beforeAll(async () => {
         title: 'IMDb Top 250',
         childCount: 1,
         createdBy: 'kometa',
+        category: 'List',
         members: [{ ratingKey: '9002', sortOrder: 0 }],
         fullyRead: true,
       },
@@ -146,6 +150,7 @@ beforeAll(async () => {
         title: 'Star Wars',
         childCount: 1,
         createdBy: 'plex',
+        category: 'Universe',
         members: [{ ratingKey: '9001', sortOrder: 0 }],
         fullyRead: true,
       },
@@ -155,6 +160,7 @@ beforeAll(async () => {
         title: 'The Fixture Trilogy',
         childCount: 1,
         createdBy: null,
+        category: null,
         members: [{ ratingKey: '9003', sortOrder: 0 }],
         fullyRead: true,
       },
@@ -180,16 +186,17 @@ async function callerFor(roleId: string | 'admin') {
 }
 
 describe('ledger.collectionGroups (ADR-064 / DESIGN-035 D-03)', () => {
-  it('admin sees every collection with ACCESSIBLE ledger counts (never the raw Plex child_count) + its D-10 type', async () => {
+  it('admin sees every collection with ACCESSIBLE ledger counts (never the raw Plex child_count) + its D-10 category', async () => {
     const c = await callerFor('admin');
     const { groups } = await c.ledger.collectionGroups({ arrKind: 'radarr' });
-    expect(groups.map((g) => [g.key, g.label, g.count, g.type])).toEqual([
-      ['77002', 'Hops Charts', 2, 'list'],
-      ['77003', 'IMDb Top 250', 1, 'list'],
-      ['77004', 'Star Wars', 1, 'franchise_universe'],
+    expect(groups.map((g) => [g.key, g.label, g.count, g.category])).toEqual([
+      ['77002', 'Hops Charts', 2, 'List'],
+      ['77003', 'IMDb Top 250', 1, 'List'],
+      ['77004', 'Star Wars', 1, 'Universe'],
       // Franchise childCount is 3 (raw, incl. the non-ledger 9999) but the LEDGER count is 2.
-      ['77001', 'The Fixture Franchise', 2, 'other'],
-      ['77005', 'The Fixture Trilogy', 1, 'trilogy'],
+      ['77001', 'The Fixture Franchise', 2, 'Sequels'],
+      // The unlabeled collection still cards (under All) with a null category (no chip of its own).
+      ['77005', 'The Fixture Trilogy', 1, null],
     ]);
     // Cover fan: the franchise's first ledger member with a poster (Movie Both) contributes.
     const franchise = groups.find((g) => g.key === '77001')!;
@@ -223,44 +230,33 @@ describe('ledger.collectionGroups (ADR-064 / DESIGN-035 D-03)', () => {
   });
 });
 
-describe('ledger.collectionGroups Type facet (DESIGN-035 D-11 / R-214 — PLAN-053)', () => {
-  it('ctype filters the CARDS server-side while typeCounts stay unfiltered (chip numbers hold steady)', async () => {
+describe('ledger.collectionGroups category facet (DESIGN-035 D-11\' / R-214)', () => {
+  it('category filters the CARDS server-side while categoryCounts stay unfiltered (chip set holds steady)', async () => {
     const c = await callerFor('admin');
-    const res = await c.ledger.collectionGroups({ arrKind: 'radarr', ctype: 'list' });
-    expect(res.groups.map((g) => [g.key, g.type])).toEqual([
-      ['77002', 'list'],
-      ['77003', 'list'],
+    const res = await c.ledger.collectionGroups({ arrKind: 'radarr', category: 'List' });
+    expect(res.groups.map((g) => [g.key, g.category])).toEqual([
+      ['77002', 'List'],
+      ['77003', 'List'],
     ]);
-    // Full accessible-collection counts, zeros included — NOT narrowed by the active chip.
-    expect(res.typeCounts).toEqual({
-      trilogy: 1,
-      franchise_universe: 1,
-      director: 0,
-      actor: 0,
-      list: 2,
-      other: 1,
-    });
-    // A bucket with no accessible collections filters to an empty card grid (the chip still
-    // renders client-side — owner ruling: filters, never hides).
-    const none = await c.ledger.collectionGroups({ arrKind: 'radarr', ctype: 'director' });
+    // Full accessible-collection counts per DISTINCT PRESENT category — NOT narrowed by the active
+    // chip, and NO zero/phantom keys (the unlabeled 77005 contributes none).
+    expect(res.categoryCounts).toEqual({ List: 2, Universe: 1, Sequels: 1 });
+    // A category with no accessible collections filters to an empty card grid (the chip set is
+    // dynamic, so this category simply isn't offered — owner ruling: filters, never hides).
+    const none = await c.ledger.collectionGroups({ arrKind: 'radarr', category: 'Director' });
     expect(none.groups).toEqual([]);
   });
 
   it('THE INVARIANT for counts — a chip count respects the same gating as the cards (R-214)', async () => {
     const c = await callerFor(hnetOnlyRoleId);
     const res = await c.ledger.collectionGroups({ arrKind: 'radarr' });
-    // The two list collections + the trilogy are all-withheld for this caller: they are neither
-    // carded NOR counted — a leaked chip count would name what the caller can't see.
-    expect(res.typeCounts).toEqual({
-      trilogy: 0,
-      franchise_universe: 1,
-      director: 0,
-      actor: 0,
-      list: 0,
-      other: 1,
-    });
-    // And filtering to an all-withheld bucket yields nothing (no error, no leak).
-    expect((await c.ledger.collectionGroups({ arrKind: 'radarr', ctype: 'list' })).groups).toEqual([]);
+    // The two List collections + the unlabeled trilogy are all-withheld for this caller: they are
+    // neither carded NOR counted — only the accessible Universe + Sequels categories appear.
+    expect(res.categoryCounts).toEqual({ Universe: 1, Sequels: 1 });
+    // And filtering to an all-withheld category yields nothing (no error, no leak).
+    expect(
+      (await c.ledger.collectionGroups({ arrKind: 'radarr', category: 'List' })).groups,
+    ).toEqual([]);
   });
 });
 

@@ -71,8 +71,7 @@ import {
   type WallView,
 } from '@/lib/library-views';
 import {
-  COLLECTION_TYPE_OPTIONS,
-  collectionTypeOptionsForWall,
+  orderCollectionCategories,
   WALL_VIEWS,
   WATCH_STATE_OPTIONS,
   decadeLabel,
@@ -413,12 +412,12 @@ function MediaBrowser({
   const watchState = WATCH_STATE_OPTIONS.some((o) => o.value === watchRaw)
     ? (watchRaw as (typeof WATCH_STATE_OPTIONS)[number]['value'])
     : undefined;
-  // DESIGN-035 D-11 (PLAN-053) — the Collection Type chip (?ctype=, replace refinement — D-19).
-  // Grouped-card concern only: the drill URL never carries it and the item grid never reads it.
+  // DESIGN-035 D-11' — the category chip (?ctype=, replace refinement — D-19). Grouped-card concern
+  // only: the drill URL never carries it and the item grid never reads it. The vocabulary is OPEN
+  // (dynamic), so ctype is any non-empty string; an unknown value simply matches no cards (the
+  // viewer clicks All to clear) — the chip set itself comes from the present categories below.
   const ctypeRaw = searchParams.get('ctype');
-  const ctype = COLLECTION_TYPE_OPTIONS.some((o) => o.value === ctypeRaw)
-    ? (ctypeRaw as (typeof COLLECTION_TYPE_OPTIONS)[number]['value'])
-    : undefined;
+  const ctype = ctypeRaw !== null && ctypeRaw.trim() !== '' ? ctypeRaw : undefined;
   const letterRaw = searchParams.get('at');
   const letter = letterRaw !== null && /^[a-z]$/.test(letterRaw) ? letterRaw : null;
 
@@ -583,9 +582,9 @@ function MediaBrowser({
   const groupsQuery = trpc.ledger.collectionGroups.useQuery(
     {
       arrKind: arrKind as 'radarr' | 'sonarr',
-      // D-11 (PLAN-053) — the server filters the CARDS; typeCounts come back unfiltered, so the
-      // chip numbers hold steady while toggling. Never applied to the drill's label lookup.
-      ...(groupedCards && ctype !== undefined ? { ctype } : {}),
+      // D-11' — the server filters the CARDS; categoryCounts come back unfiltered, so the chip set
+      // holds steady while toggling. Never applied to the drill's label lookup.
+      ...(groupedCards && ctype !== undefined ? { category: ctype } : {}),
     },
     {
       enabled: hasSelector && (groupedCards || drilled),
@@ -783,17 +782,18 @@ function MediaBrowser({
         {entry.facets.length > 0 ? (
         <div className="library-chipbar" role="group" aria-label="Filters">
           {entry.facets.map((facet) => {
-            if (facet.key === 'collectionType') {
-              // DESIGN-035 D-11 / R-214 (PLAN-053) — the Collection Type chip row: single-select,
-              // All default, always visible (owner ruling: the chip FILTERS, never hides). ?ctype=
-              // is a D-19 replace refinement; the SERVER filters the cards.
-              // Owner amendment (2026-07-17): per-chip counts are GONE (a global total is
-              // backlogged, not per-category — `.agents/plans/TODO.md`); the bucket set is per-wall
-              // (Trilogies is movies-only — collectionTypeOptionsForWall hides it on TV); and the
-              // labels shortened ('Franchise') so the row fits a 320px phone. The `.library-chipbar`
-              // stays a fixed-height row that pans horizontally when crowded (ADR-015: never reflows
-              // the grid).
-              const typeOptions = collectionTypeOptionsForWall(wall);
+            if (facet.key === 'category') {
+              // DESIGN-035 D-11' / R-214 — the category chip row: single-select, All default, always
+              // visible (owner ruling: the chip FILTERS, never hides). ?ctype= is a D-19 replace
+              // refinement; the SERVER filters the cards. The chip vocabulary is DYNAMIC — one chip
+              // per DISTINCT category actually present (categoryCounts keys), ordered
+              // hint-list-then-alphabetical (orderCollectionCategories); a new owner label becomes a
+              // new chip with zero code change, and there is no "Other" bucket. Both walls render it
+              // identically. The `.library-chipbar` stays a fixed-height row that pans horizontally
+              // when crowded (ADR-015: never reflows the grid).
+              const categoryOptions = orderCollectionCategories(
+                Object.keys(groupsQuery.data?.categoryCounts ?? {}),
+              );
               return (
                 <div key={facet.key} className="seg" role="group" aria-label="Collection type">
                   <button
@@ -804,15 +804,15 @@ function MediaBrowser({
                   >
                     All
                   </button>
-                  {typeOptions.map((o) => (
+                  {categoryOptions.map((c) => (
                     <button
-                      key={o.value}
+                      key={c}
                       type="button"
-                      className={ctype === o.value ? 'is-active' : undefined}
-                      aria-pressed={ctype === o.value}
-                      onClick={() => patchParams({ [facet.param]: ctype === o.value ? null : o.value })}
+                      className={ctype === c ? 'is-active' : undefined}
+                      aria-pressed={ctype === c}
+                      onClick={() => patchParams({ [facet.param]: ctype === c ? null : c })}
                     >
-                      {o.label}
+                      {c}
                     </button>
                   ))}
                 </div>
