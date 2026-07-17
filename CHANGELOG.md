@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.72.1](https://github.com/thaynes43/haynesnetwork/compare/v0.72.0...v0.72.1) (2026-07-17)
+
+
+### Bug Fixes
+
+* clamp the books About summary with a Show more/less toggle (DESIGN-025 D-08) ([#364](https://github.com/thaynes43/haynesnetwork/issues/364)) ([d994e4d](https://github.com/thaynes43/haynesnetwork/commit/d994e4d9a0a0a0497fd89f95ccd77063a366cc87))
+
+
+### Documentation
+
+* final board note — all PRs wrapped, v0.72.0 live, board clean for the bounce ([#362](https://github.com/thaynes43/haynesnetwork/issues/362)) ([b72fddb](https://github.com/thaynes43/haynesnetwork/commit/b72fddb1899b93ad8122586040b3231385259516))
+
 ## [0.72.0](https://github.com/thaynes43/haynesnetwork/compare/v0.71.0...v0.72.0) (2026-07-17)
 
 
