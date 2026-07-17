@@ -6818,3 +6818,261 @@ body:has(.gallery) {
   font-size: 13px;
   padding: 8px 12px;
 }
+
+/* ADR-070 / DESIGN-043 (PLAN-052) — the collection manager + the member suggest affordance. Tokens
+   only (hard rule 2); reserved slots + recolor-not-reflow (ADR-015). */
+.collections-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 860px;
+}
+.collections-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.collections-toolbar .muted {
+  max-width: 52ch;
+  font-size: 0.9rem;
+}
+.collections-attention {
+  border-color: color-mix(in srgb, var(--color-warning) 45%, var(--color-border));
+}
+.collections-attention__title {
+  font-size: 0.95rem;
+  margin: 0 0 8px;
+}
+.collections-attention__list,
+.collections-suggestions__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.collections-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.collection-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+.collection-row__main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.collection-row__title {
+  font-weight: 600;
+}
+.collection-row__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+}
+.collection-row__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.collection-row__apply,
+.collection-row__delete {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.collection-row__runcounts {
+  font-size: 0.8rem;
+}
+.collection-row__alsodelete {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+/* The acquisition puck reserves a fixed width so ON/OFF recolors without shifting the row (ADR-015). */
+.acq-puck {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 92px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  border: 1px solid var(--color-border);
+}
+.acq-puck--on {
+  color: var(--color-warning);
+  border-color: color-mix(in srgb, var(--color-warning) 55%, var(--color-border));
+  background: color-mix(in srgb, var(--color-warning) 12%, transparent);
+}
+.acq-puck--off {
+  color: var(--color-text-muted);
+  background: color-mix(in srgb, var(--color-text-muted) 8%, transparent);
+}
+.suggestion-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 0;
+  border-top: 1px solid var(--color-border);
+}
+.suggestion-row__main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.suggestion-row__note {
+  font-size: 0.82rem;
+  margin: 2px 0 0;
+}
+.suggestion-row__actions,
+.suggestion-row__decline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* The composer + suggest Modal forms. */
+.composer-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.composer-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+}
+.composer-field > span {
+  color: var(--color-text-muted);
+}
+.composer-row {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.composer-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+}
+.composer-sync {
+  width: auto;
+}
+.composer-acq {
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--color-warning) 8%, transparent);
+}
+.composer-acq--locked {
+  background: color-mix(in srgb, var(--color-text-muted) 8%, transparent);
+}
+.composer-warn {
+  font-size: 0.82rem;
+  color: var(--color-warning);
+  margin: 0;
+}
+.composer-preview {
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+}
+.composer-preview__issues {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--color-warning);
+}
+.composer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* The member "Suggest a collection" affordance — a small trailing card after the collections grid. */
+.suggest-affordance {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 520px;
+}
+.suggest-affordance__card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  padding: 14px 16px;
+  border: 1px dashed color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--color-accent) 4%, var(--color-surface));
+  color: var(--color-text);
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+.suggest-affordance__card:hover {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface));
+}
+.suggest-affordance__plus {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--color-accent);
+  line-height: 1;
+}
+.suggest-affordance__label {
+  font-weight: 600;
+}
+.suggest-affordance__hint {
+  font-size: 0.82rem;
+}
+.suggest-affordance__mine {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.suggest-affordance__mine-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+}
+.suggest-affordance__reason {
+  font-style: italic;
+}

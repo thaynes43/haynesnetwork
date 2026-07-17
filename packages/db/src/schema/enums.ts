@@ -47,6 +47,15 @@ export const PERMISSION_AUDIT_ACTIONS = [
   // ADR-059 / DESIGN-030 (PLAN-048) — a role's fine-grained Activity action grants were replaced (the
   // update_trash_actions analog; written by setRoleActivityActions with before/after action lists).
   'update_activity_actions',
+  // ADR-070 / DESIGN-043 (PLAN-052 — collection manager). `update_collection_actions` records a role's
+  // fine-grained collection action grants being replaced (the update_book_actions analog; written by
+  // setRoleCollectionActions). `create_collection_suggestion` records a member proposing a collection
+  // (actorId = the suggesting user; roleId null — not a role mutation; subjectUserId = the same user).
+  // `review_collection_suggestion` records a manage admin approving/declining a suggestion (actorId = the
+  // reviewing admin). The suggestion lifecycle rows commit in the SAME tx as the mutation they record.
+  'update_collection_actions',
+  'create_collection_suggestion',
+  'review_collection_suggestion',
 ] as const;
 export type PermissionAuditAction = (typeof PERMISSION_AUDIT_ACTIONS)[number];
 
@@ -778,6 +787,47 @@ export type BookStaleFileAction = (typeof BOOK_STALE_FILE_ACTIONS)[number];
 // ruling FLIPS it to all roles (tracked post-validation step; do not forget).
 export const BOOK_ACTIONS = ['fix_book'] as const;
 export type BookAction = (typeof BOOK_ACTIONS)[number];
+
+// ---------------------------------------------------------------------------
+// ADR-070 / DESIGN-043 (PLAN-052 — collection manager + member contributions). text+CHECK
+// (DESIGN-001 D-02): these const arrays are the single source of truth for the TS types AND the
+// SQL CHECKs. The collection manager binds to Libretto's provider-parity API (DESIGN-037 D-10) —
+// nothing here is a local recipe/collection store; the ONLY durable local state is the role grants
+// (role_collection_action_grants) + the pending member suggestions (collection_suggestions).
+// ---------------------------------------------------------------------------
+
+// The fine-grained collection-manager actions a role may be granted (the ADR-023/059/062 idiom; a
+// ROW is the grant; Admin implies all). Ships UNGRANTED (Admin-only) — the owner opens each per role
+// after review (the books-Fix precedent). `suggest` = propose a collection (the member contribution);
+// `manage` = create/edit/delete recipes + apply runs; `acquire` = flip acquisitionEnabled — THE
+// content-pulling knob, a DISTINCT grant a `manage` role does not automatically hold (ADR-070 C-04).
+export const COLLECTION_ACTIONS = ['suggest', 'manage', 'acquire'] as const;
+export type CollectionAction = (typeof COLLECTION_ACTIONS)[number];
+
+// The collection-manager PROVIDER discriminator (R2 — integration parity). 'libretto' is the books
+// provider bound now; 'kometa' (the movies/TV leg, designed in parallel — DESIGN-037 Appendix A)
+// joins the enum + a second adapter behind the SAME router, no schema change (ADR-070 C-06).
+export const COLLECTION_PROVIDERS = ['libretto'] as const;
+export type CollectionProvider = (typeof COLLECTION_PROVIDERS)[number];
+
+// The Libretto v1 builder set (DESIGN-037 D-05) — what SOURCE a recipe's collection is built from.
+export const COLLECTION_BUILDER_TYPES = [
+  'static_ids',
+  'hardcover_series',
+  'nyt_list',
+  'wikidata_award',
+] as const;
+export type CollectionBuilderType = (typeof COLLECTION_BUILDER_TYPES)[number];
+
+// A recipe's reconcile mode (DESIGN-037 D-08): `sync` reconciles full membership + order to the
+// builder output (adds/removes/repositions); `append` adds only, never removes.
+export const COLLECTION_SYNC_MODES = ['append', 'sync'] as const;
+export type CollectionSyncMode = (typeof COLLECTION_SYNC_MODES)[number];
+
+// A member suggestion's lifecycle (ADR-070 C-05): `pending` (filed; applies nothing) → `approved`
+// (a manage admin materialized the recipe via the confined writer) | `declined` (with a reason).
+export const COLLECTION_SUGGESTION_STATUSES = ['pending', 'approved', 'declined'] as const;
+export type CollectionSuggestionStatus = (typeof COLLECTION_SUGGESTION_STATUSES)[number];
 
 export const TICKET_CATEGORIES = [
   'playback',

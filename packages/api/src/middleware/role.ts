@@ -10,13 +10,14 @@ import {
   type ActivityAction,
   type BookAction,
   type BulletinView,
+  type CollectionAction,
   type MessageAction,
   type MetricsLevel,
   type SectionId,
   type SectionPermissionLevel,
   type TrashAction,
 } from '@hnet/db';
-import { activityActionsForRole, bookActionsForRole } from '@hnet/domain';
+import { activityActionsForRole, bookActionsForRole, collectionActionsForRole } from '@hnet/domain';
 import { authedProcedure } from '../trpc';
 import type { SessionRole } from '@hnet/auth';
 
@@ -170,6 +171,50 @@ export function bookActionProcedure(action: BookAction) {
     return next();
   });
 }
+
+/**
+ * ADR-070 / DESIGN-043 D-01/D-06 (PLAN-052 — collection manager) — the caller's effective collection
+ * actions. Admin ⇒ every action (no query); otherwise a per-call read of `role_collection_action_grants`
+ * (a management path — cheap + rare). Used by `collectionActionProcedure` (the server gate) + the router's
+ * per-viewer `canAcquire` flag (which gates the acquisition toggle in the composer).
+ */
+export async function resolveCollectionActions(
+  db: import('@hnet/db').Database,
+  role: SessionRole,
+): Promise<CollectionAction[]> {
+  return collectionActionsForRole({ db, roleId: role.id, isAdmin: role.isAdmin });
+}
+
+/**
+ * ADR-070 / DESIGN-043 D-06 (PLAN-052) — the collection action rung: the `integrations` section at
+ * read_only or better (visibility floor — the manager lives under the Integrations hub) AND (admin OR the
+ * caller's role holds the `role_collection_action_grants` row for `action`). Ships UNGRANTED ⇒ Admin-only;
+ * the owner opens `suggest` / `manage` / `acquire` per role via `setRoleCollectionActions` — a data change,
+ * not code. `acquire` is a DISTINCT grant a `manage` role does not automatically hold. Server-authoritative,
+ * never a client hide.
+ */
+export function collectionActionProcedure(action: CollectionAction) {
+  return sectionProcedure('integrations', 'read_only').use(async ({ ctx, next }) => {
+    if (ctx.user.role.isAdmin) return next();
+    const actions = await collectionActionsForRole({ db: ctx.db, roleId: ctx.user.role.id });
+    if (!actions.includes(action)) throw new TRPCError({ code: 'FORBIDDEN' });
+    return next();
+  });
+}
+
+/**
+ * ADR-070 / DESIGN-043 D-05 (PLAN-052) — the member-contribution rung: authed AND (admin OR the caller's
+ * role holds the `suggest` grant). Deliberately NO section floor — the "Suggest a collection" affordance
+ * lives on the BOOKS walls (books-section gated for visibility), so a member who can see the walls may
+ * propose without the `integrations` section being open to them. It only PROPOSES (a pending row) — the
+ * content-touching manager mutations keep the integrations-floored `collectionActionProcedure('manage')`.
+ */
+export const collectionSuggestProcedure = authedProcedure.use(async ({ ctx, next }) => {
+  if (ctx.user.role.isAdmin) return next();
+  const actions = await collectionActionsForRole({ db: ctx.db, roleId: ctx.user.role.id });
+  if (!actions.includes('suggest')) throw new TRPCError({ code: 'FORBIDDEN' });
+  return next();
+});
 
 /**
  * ADR-023 C-03 — is the caller granted a fine-grained Trash `action`? Read off the session

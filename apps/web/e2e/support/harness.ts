@@ -26,6 +26,7 @@ import { startStubGoodreads, type StubGoodreadsServer } from './stub-goodreads';
 import { startStubLazyLibrarian, type StubLazyLibrarianServer } from './stub-lazylibrarian';
 import { startStubSabnzbd, type StubSabnzbdServer } from './stub-sabnzbd';
 import { startStubKapowarr, type StubKapowarrServer } from './stub-kapowarr';
+import { startStubLibretto, type StubLibrettoServer } from './stub-libretto';
 import { startStubSmtp, type StubSmtpServer } from './stub-smtp';
 import { composeRuntimeEnv, DEFAULT_APP_PORT, type RuntimeEnv } from './env';
 
@@ -71,6 +72,8 @@ export interface RunningStack {
   sabnzbd: StubSabnzbdServer;
   /** Stub Kapowarr (REST + call recorder) — comic routing e2e layer (ADR-056 / PLAN-046). */
   kapowarr: StubKapowarrServer;
+  /** Stub Libretto (REST + call recorder) — collection manager e2e layer (ADR-070 / DESIGN-043). */
+  libretto: StubLibrettoServer;
   smtp: StubSmtpServer;
   devServer: ChildProcess;
   /** The DESIGN-002 D-08 env the dev server was booted with. */
@@ -199,6 +202,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
   let lazylibrarian: StubLazyLibrarianServer | undefined;
   let sabnzbd: StubSabnzbdServer | undefined;
   let kapowarr: StubKapowarrServer | undefined;
+  let libretto: StubLibrettoServer | undefined;
   let smtp: StubSmtpServer | undefined;
   let dev: ChildProcess | undefined;
   try {
@@ -238,6 +242,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     lazylibrarian = await startStubLazyLibrarian();
     sabnzbd = await startStubSabnzbd();
     kapowarr = await startStubKapowarr();
+    libretto = await startStubLibretto();
     smtp = await startStubSmtp();
     const env = composeRuntimeEnv({
       databaseUrl: pg.connectionString,
@@ -255,6 +260,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       stubLazyLibrarianBaseUrl: lazylibrarian.baseUrl,
       stubSabnzbdBaseUrl: sabnzbd.baseUrl,
       stubKapowarrBaseUrl: kapowarr.baseUrl,
+      stubLibrettoBaseUrl: libretto.baseUrl,
       stubSmtpPort: smtp.port,
       stubSmtpRecorderUrl: smtp.recorderUrl,
       appUrl,
@@ -361,6 +367,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     const runningLazyLibrarian = lazylibrarian;
     const runningSabnzbd = sabnzbd;
     const runningKapowarr = kapowarr;
+    const runningLibretto = libretto;
     const runningSmtp = smtp;
     let stopped = false;
     return {
@@ -379,6 +386,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       lazylibrarian: runningLazyLibrarian,
       sabnzbd: runningSabnzbd,
       kapowarr: runningKapowarr,
+      libretto: runningLibretto,
       smtp: runningSmtp,
       devServer: running,
       env,
@@ -387,6 +395,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
         stopped = true;
         await killDevServer(running);
         await runningSmtp.stop().catch(() => undefined);
+        await runningLibretto.stop().catch(() => undefined);
         await runningKapowarr.stop().catch(() => undefined);
         await runningSabnzbd.stop().catch(() => undefined);
         await runningLazyLibrarian.stop().catch(() => undefined);
@@ -407,6 +416,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     // Partial-boot cleanup, best effort in reverse order.
     if (dev) await killDevServer(dev).catch(() => undefined);
     if (smtp) await smtp.stop().catch(() => undefined);
+    if (libretto) await libretto.stop().catch(() => undefined);
     if (kapowarr) await kapowarr.stop().catch(() => undefined);
     if (sabnzbd) await sabnzbd.stop().catch(() => undefined);
     if (lazylibrarian) await lazylibrarian.stop().catch(() => undefined);

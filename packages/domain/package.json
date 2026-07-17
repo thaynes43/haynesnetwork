@@ -20,6 +20,7 @@
     "@hnet/downloads": "workspace:*",
     "@hnet/kapowarr": "workspace:*",
     "@hnet/lazylibrarian": "workspace:*",
+    "@hnet/libretto": "workspace:*",
     "@hnet/openwebui": "workspace:*",
     "@hnet/plex": "workspace:*",
     "drizzle-orm": "^0.36.4",

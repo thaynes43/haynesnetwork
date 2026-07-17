@@ -21,6 +21,7 @@ import { STUB_GOOGLE_BOOKS_API_KEY } from './stub-goodreads';
 import { STUB_LAZYLIBRARIAN_API_KEY } from './stub-lazylibrarian';
 import { STUB_SABNZBD_API_KEY } from './stub-sabnzbd';
 import { STUB_KAPOWARR_API_KEY } from './stub-kapowarr';
+import { STUB_LIBRETTO_API_KEY } from './stub-libretto';
 import { STUB_SMTP_FROM, STUB_SMTP_PASS, STUB_SMTP_USER } from './stub-smtp';
 
 /** Default app port — off 3000 so the stack coexists with a running `pnpm dev`.
@@ -117,6 +118,10 @@ export interface RuntimeEnv {
   STUB_KAPOWARR_URL: string;
   KAPOWARR_URL: string;
   KAPOWARR_API_KEY: string;
+  /** ADR-070 / DESIGN-043 (PLAN-052) — stub Libretto origin (the collection manager's confined client). */
+  STUB_LIBRETTO_URL: string;
+  LIBRETTO_URL: string;
+  LIBRETTO_API_KEY: string;
   /** ADR-060 / DESIGN-031 D-08 (PLAN-035) — stub SMTP: the recorder origin a spec reads
    *  (`/_stub/messages`) + the five-var contract the notify-outbox email sender gates on. */
   STUB_SMTP_URL: string;
@@ -164,6 +169,7 @@ export function composeRuntimeEnv(opts: {
   stubLazyLibrarianBaseUrl: string;
   stubSabnzbdBaseUrl: string;
   stubKapowarrBaseUrl: string;
+  stubLibrettoBaseUrl: string;
   stubSmtpPort: number;
   stubSmtpRecorderUrl: string;
   appUrl: string;
@@ -233,6 +239,9 @@ export function composeRuntimeEnv(opts: {
     STUB_KAPOWARR_URL: opts.stubKapowarrBaseUrl,
     KAPOWARR_URL: opts.stubKapowarrBaseUrl,
     KAPOWARR_API_KEY: STUB_KAPOWARR_API_KEY,
+    STUB_LIBRETTO_URL: opts.stubLibrettoBaseUrl,
+    LIBRETTO_URL: opts.stubLibrettoBaseUrl,
+    LIBRETTO_API_KEY: STUB_LIBRETTO_API_KEY,
     STUB_SMTP_URL: opts.stubSmtpRecorderUrl,
     SMTP_HOST: '127.0.0.1',
     SMTP_PORT: String(opts.stubSmtpPort),

@@ -79,6 +79,67 @@ function GoodreadsCard() {
   );
 }
 
+// ADR-070 / DESIGN-043 (PLAN-052) — the Collections manager card. Reads the manager overview when the
+// caller can manage (FORBIDDEN for non-managers is swallowed — the card still links, the sub-section shows
+// the honest not-available state on click). Health pulse + recipe count when reachable.
+function CollectionsCard() {
+  const router = useRouter();
+  const overviewQ = trpc.collections.overview.useQuery(undefined, { retry: false });
+  const data = overviewQ.data;
+  const forbidden = overviewQ.error?.data?.code === 'FORBIDDEN';
+  const reachable = data?.reachable ?? null;
+
+  return (
+    <button
+      type="button"
+      className="hub-card"
+      data-testid="hub-card-collections"
+      onClick={() => router.push('/integrations/collections')}
+    >
+      <span className="hub-card__head">
+        <span className="integrations-provider">
+          <span className="integrations-provider__glyph" aria-hidden="true">
+            C
+          </span>
+          <span className="integrations-provider__name">Collections</span>
+        </span>
+        {reachable === true ? (
+          <span className="badge badge--ok">Connected</span>
+        ) : reachable === false ? (
+          <span className="badge badge--warn">Unreachable</span>
+        ) : (
+          <span className="badge badge--muted">Manager</span>
+        )}
+      </span>
+      <span className="hub-card__stats">
+        {forbidden || data === undefined ? (
+          <span className="hub-card__hint">
+            Manage and monitor the recipes that build your book collections, and review member ideas.
+          </span>
+        ) : data.reachable ? (
+          <>
+            <span className="hub-card__stat">
+              <span className="hub-card__num">{data.recipes.length}</span>
+              <span className="hub-card__unit">recipes</span>
+            </span>
+            {data.pendingSuggestions.length > 0 ? (
+              <span className="hub-card__stat">
+                <span className="hub-card__num">{data.pendingSuggestions.length}</span>
+                <span className="hub-card__unit">suggestions to review</span>
+              </span>
+            ) : null}
+          </>
+        ) : (
+          <span className="hub-card__hint">Libretto is unreachable right now. Your walls are unaffected.</span>
+        )}
+      </span>
+      <span className="hub-card__open" aria-hidden="true">
+        Open ›
+      </span>
+    </button>
+  );
+}
+
 export function IntegrationsClient() {
   return (
     <div className="integrations-page">
@@ -89,6 +150,7 @@ export function IntegrationsClient() {
       </p>
       <div className="hub-cards" data-testid="integrations-hub">
         <GoodreadsCard />
+        <CollectionsCard />
         {/* The saga's future providers slot in here as sibling cards — an honest placeholder, not a
             dead control (no button semantics). */}
         <div className="hub-card hub-card--ghost" aria-hidden="true">
