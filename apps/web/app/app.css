@@ -355,11 +355,16 @@ button.motd__dismiss:hover {
   background: var(--color-topbar);
   border-bottom: 1px solid var(--color-border);
 }
+/* DESIGN-004 D-23 — the brand block is an <a> to `/` (Home). Link chrome is neutralized so
+   the mark + wordmark look exactly as before; the global :focus-visible ring (D-10) is the
+   keyboard affordance. Hover changes nothing (the logo IS the page identity; ADR-015 holds). */
 .brand {
   display: flex;
   align-items: center;
   gap: 10px;
   min-width: 0;
+  color: inherit;
+  text-decoration: none;
 }
 .brand__mark {
   width: 28px;
@@ -376,7 +381,8 @@ button.motd__dismiss:hover {
 }
 /* Primary topbar nav — the UNIVERSAL section row (ADR-032 / DESIGN-004 D-16/D-22): ghost links
    in the D-03 chrome language, shown at ALL widths. The 2026-07-14 restructure slimmed the row to
-   FOUR candidates (Home · Library · Tickets · Trash) — Metrics + Integrations moved to the user
+   FOUR candidates (Portal · Library · Tickets · Trash — D-23 renamed the first slot) — Metrics +
+   Integrations moved to the user
    menu — and four labels FIT 320px without the rail scrolling (proven by the nav-restructure 320px
    capture). */
 .topbar__nav {
@@ -464,7 +470,7 @@ button.motd__dismiss:hover {
   }
 }
 /* DESIGN-004 D-22 — the TRUE narrow band (≤380px, the 320/360 iPhone-SE / budget-Android class).
-   The four-tab bar (Home · Library · Tickets · Trash) needs a touch more room here than the ≤479
+   The four-tab bar (Portal · Library · Tickets · Trash) needs a touch more room here than the ≤479
    chrome-tightening gives: at 320px the row's intrinsic width otherwise exceeds the space between
    the 28px brand mark and the ~96px right actions, which would either overlap the mark (the v0.46.3
    bug) or engage the scroll rail. Nudge the nav type to 12px and trim link + topbar padding/gap so
@@ -6619,36 +6625,38 @@ body:has(.gallery) {
   gap: 12px;
 }
 
-/* ---------- About/Help (ADR-063 / DESIGN-034) ---------- */
-/* D-01 — the dashboard entry card: .tile anatomy, INVERTED via the accent-fill idiom
-   (.btn.primary precedent — no new tokens). Hover deepens the fill toward the contrast
-   tone; color ONLY — no ring, no lift, nothing moves (ADR-015). Tokens only (hard rule 2). */
-.tile--about {
+/* ---------- Inverted tile (ADR-063 / DESIGN-034 D-01; generalized by DESIGN-004 D-23) ---------- */
+/* The full-width INVERTED entry card: .tile anatomy, accent-filled (.btn.primary precedent —
+   no new tokens). Hover deepens the fill toward the contrast tone; color ONLY — no ring, no
+   lift, nothing moves (ADR-015). Tokens only (hard rule 2). Two wearers: the About tile on
+   Home (marker class .tile--about) and the Plex web-player link atop /portal (.tile--plex);
+   the marker classes carry no styles of their own. */
+.tile--inverted {
   background: var(--color-accent);
   border-color: var(--color-accent);
   color: var(--color-accent-contrast);
 }
-.tile--about:hover {
+.tile--inverted:hover {
   background: color-mix(in srgb, var(--color-accent) 86%, var(--color-accent-contrast));
   border-color: color-mix(in srgb, var(--color-accent) 86%, var(--color-accent-contrast));
   box-shadow: var(--shadow);
   transform: none;
 }
-.tile--about .tile__icon {
+.tile--inverted .tile__icon {
   background: color-mix(in srgb, var(--color-accent-contrast) 14%, transparent);
   color: var(--color-accent-contrast);
 }
 /* The light-theme icon deepen (DESIGN-006 contrast note) must not wash the inverted well. */
-[data-theme='hnet-light'] .tile--about .tile__icon {
+[data-theme='hnet-light'] .tile--inverted .tile__icon {
   color: var(--color-accent-contrast);
 }
-.tile--about .tile__desc,
-.tile--about .tile__ext {
+.tile--inverted .tile__desc,
+.tile--inverted .tile__ext {
   color: color-mix(in srgb, var(--color-accent-contrast) 78%, var(--color-accent));
 }
 
-/* D-02 — the perforation between the About card and the app grid. Pure separator, zero
-   interaction (CSS dashes stay crisp at any width — the established dashed-border idiom). */
+/* D-02 — the perforation under the inverted card (About on Home, the web-player link on
+   /portal). Pure separator, zero interaction (CSS dashes stay crisp at any width). */
 .tile-rule {
   border: 0;
   border-top: 1px dashed var(--color-border);

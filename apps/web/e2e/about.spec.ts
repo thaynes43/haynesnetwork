@@ -1,8 +1,9 @@
-// ADR-063 / DESIGN-034 (R-206/R-207) — About/Help smoke: the dashboard shows the inverted
-// About card above the perforated rule and it navigates (same tab) to /about; the help
-// sections are native <details> that start collapsed, expand/collapse in place, and honor
-// #hash deep links; the Trash section renders the LIVE save-window default (D-06); an
-// anonymous /about bounces to /login like every (app) route.
+// ADR-063 / DESIGN-034 (R-206/R-207), amended by DESIGN-004 D-23 — About/Help smoke: HOME
+// (the calm landing screen) shows the inverted About card above the perforated rule — with
+// NO app grid below it (the launcher moved to /portal) — and it navigates (same tab) to
+// /about; the help sections are native <details> that start collapsed, expand/collapse in
+// place, and honor #hash deep links; the Trash section renders the LIVE save-window default
+// (D-06); an anonymous /about bounces to /login like every (app) route.
 import { test, expect } from '@playwright/test';
 import { signIn } from './support/helpers';
 
@@ -25,7 +26,7 @@ test('anonymous /about redirects to /login', async ({ page }) => {
   await expect(page).toHaveURL(/\/login$/);
 });
 
-test('dashboard shows the About card above the perforation and it navigates to /about', async ({
+test('Home shows the About card above the perforation (no app grid) and it navigates to /about', async ({
   page,
 }) => {
   await signIn(page, 'member');
@@ -34,10 +35,11 @@ test('dashboard shows the About card above the perforation and it navigates to /
   await expect(card).toBeVisible();
   await expect(card).toHaveAttribute('href', '/about');
   await expect(card.locator('.tile__name')).toHaveText('About haynesnetwork.com');
-  // Internal link — no new tab, unlike the SSO tiles around it.
+  // Internal link — no new tab, unlike the SSO tiles (which live on /portal now).
   await expect(card).not.toHaveAttribute('target', '_blank');
 
-  // D-01/D-02 DOM order: card → perforated rule → tile grid (querySelectorAll is document order).
+  // D-01/D-02 DOM order on HOME (D-23): card → perforated rule; the tile grid is GONE from
+  // this screen — it renders on /portal (querySelectorAll is document order).
   await expect(page.locator('.tile-rule')).toBeVisible();
   const order = await page.evaluate(() =>
     Array.from(document.querySelectorAll('.tile--about, .tile-rule, .tile-grid')).map((el) =>
@@ -48,11 +50,7 @@ test('dashboard shows the About card above the perforation and it navigates to /
           : 'grid',
     ),
   );
-  expect(order, 'About card precedes the rule, rule precedes the grid').toEqual([
-    'card',
-    'rule',
-    'grid',
-  ]);
+  expect(order, 'About card precedes the rule; no grid on Home').toEqual(['card', 'rule']);
 
   await card.click();
   await expect(page).toHaveURL(/\/about$/);

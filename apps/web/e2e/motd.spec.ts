@@ -4,7 +4,9 @@
 //   • the member dismisses it → it hides and STAYS hidden on reload (per-user localStorage version);
 //   • the admin edits it (new version) → it RE-SHOWS for the member; warning severity ⇒ role="alert";
 //   • the admin clears it → the member's dashboard shows no banner.
-//   • ADR-015: dismiss/hover does not shift the tile grid (only presence toggles the banner).
+//   • ADR-015: dismiss/hover does not shift the content below (only presence toggles the banner).
+// D-23 note: the banner's mount is HOME (`/` — the landing screen), where the neighbor below
+// the greeting is the About tile, not the (relocated) tile grid.
 // The suite shares one DB (workers:1); this spec CLEANS UP (clears the MOTD) so it never leaks into
 // later specs' dashboards.
 import { test, expect, type Page } from '@playwright/test';
@@ -105,7 +107,7 @@ test('AC-MOTD — set · member sees · dismiss (sticky) · edit re-shows · cle
   await memberCtx.close();
 });
 
-test('AC-MOTD — ADR-015: hovering the dismiss control does not shift the tile grid', async ({
+test('AC-MOTD — ADR-015: hovering the dismiss control does not shift the content below', async ({
   browser,
 }) => {
   const adminCtx = await browser.newContext();
@@ -119,11 +121,12 @@ test('AC-MOTD — ADR-015: hovering the dismiss control does not shift the tile 
   await memberPage.reload();
   await expect(banner(memberPage)).toBeVisible();
 
-  const grid = memberPage.locator('.tile-grid');
-  const before = await grid.boundingBox();
+  // Home's content below the banner (D-23): the About tile stands in for the old tile grid.
+  const below = memberPage.locator('.tile--about');
+  const before = await below.boundingBox();
   // Hover the dismiss control (an interaction) — it may recolor, but must not reflow neighbors.
   await memberPage.getByTestId('motd-dismiss').hover();
-  const after = await grid.boundingBox();
+  const after = await below.boundingBox();
   expect(after).not.toBeNull();
   expect(Math.abs(after!.y - before!.y)).toBeLessThanOrEqual(1);
   expect(Math.abs(after!.x - before!.x)).toBeLessThanOrEqual(1);

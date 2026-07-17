@@ -98,4 +98,36 @@ test.describe('history-navigation contract (PLAN-036 / DESIGN-004 D-19)', () => 
     await expect(page).toHaveURL(/\/trash\?tab=movies$/);
     await expect(tab(page, 'Movies')).toHaveAttribute('aria-selected', 'true');
   });
+
+  // DESIGN-004 D-23 — the home/portal split rides the same contract: the Portal nav tab and
+  // the topbar logo are both `<Link>` pushes, so Back/Forward walk Home ↔ Portal like screens.
+  test('Home↔Portal (D-23): Portal tab→logo→Back⇒Portal→Back⇒Home→Forward⇒Portal', async ({
+    page,
+  }) => {
+    await signIn(page, 'admin'); // lands on '/' (Home — the post-login landing, D-23)
+    await expect(page.locator('.greeting')).toBeVisible();
+
+    // Nav tab → /portal (push #1).
+    await page.locator('.topbar__nav').getByRole('link', { name: 'Portal' }).click();
+    await expect(page).toHaveURL(/\/portal$/);
+    await expect(page.getByTestId('portal-plex-link')).toBeVisible();
+
+    // Logo → '/' (push #2 — the logo is a plain Link, D-23).
+    await page.locator('a.brand').click();
+    await page.waitForURL((url) => url.pathname === '/');
+    await expect(page.locator('.tile--about')).toBeVisible();
+
+    // Back pops the logo push ⇒ Portal; Back again pops the tab push ⇒ Home.
+    await page.goBack();
+    await expect(page).toHaveURL(/\/portal$/);
+    await expect(page.getByTestId('portal-plex-link')).toBeVisible();
+    await page.goBack();
+    await page.waitForURL((url) => url.pathname === '/');
+    await expect(page.locator('.tile--about')).toBeVisible();
+
+    // Forward re-applies the Portal entry.
+    await page.goForward();
+    await expect(page).toHaveURL(/\/portal$/);
+    await expect(page.getByTestId('portal-plex-link')).toBeVisible();
+  });
 });
