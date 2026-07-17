@@ -157,12 +157,22 @@ describe('KapowarrWriteClient', () => {
   });
 
   it('searchVolume queues the auto_search task for the volume (the Force-Search idiom)', async () => {
+    // The REAL v1.3.1 response shape (live-verified 2026-07-17): result carries the created task id.
+    // The old blind mock said result: null and hid a schema bug that failed every live comic fix.
     const { fetchImpl, calls } = stubFetch([
-      { match: (u, m) => u.includes('/api/system/tasks') && m === 'POST', body: { error: null, result: null } },
+      { match: (u, m) => u.includes('/api/system/tasks') && m === 'POST', body: { error: null, result: { id: 7 } } },
     ]);
     const client = new KapowarrWriteClient(OPTS(fetchImpl));
     await client.searchVolume(42);
     expect(calls[0]!.body).toEqual({ cmd: 'auto_search', volume_id: 42 });
+  });
+
+  it('searchVolume also tolerates a null result (older builds)', async () => {
+    const { fetchImpl } = stubFetch([
+      { match: (u, m) => u.includes('/api/system/tasks') && m === 'POST', body: { error: null, result: null } },
+    ]);
+    const client = new KapowarrWriteClient(OPTS(fetchImpl));
+    await expect(client.searchVolume(42)).resolves.toBeUndefined();
   });
 
   it('setMonitored PUTs the monitored flag', async () => {
