@@ -6,7 +6,7 @@
 //
 //   DATABASE_URL=… tsx e2e/support/seed-books-detail-history.ts
 import { writeFileSync } from 'node:fs';
-import { db, bookFixRequests, bookRequests, booksItems, users } from '@hnet/db';
+import { db, bookFixRequests, booksItems, users } from '@hnet/db';
 
 const HOUR = 60 * 60 * 1000;
 const MIN = 60 * 1000;
@@ -76,18 +76,13 @@ async function main(): Promise<void> {
     },
   ]);
 
-  // A system PAIRING request anchored on the book — the "History" (request lifecycle) section.
-  await db.insert(bookRequests).values({
-    origin: 'pairing',
-    pairingBooksItemId: book,
-    title: "Shakespeare's Landlord",
-    author: 'Charlaine Harris',
-    ebookStatus: 'landed',
-    audioStatus: 'wanted',
-    createdAt: new Date(now - 5 * HOUR),
-  });
+  // NO request-lifecycle seed: book_requests is a GUARDED single-writer table (the
+  // no-direct-state-writes invariant) and its writers are transaction-internal to the pairing
+  // mint — a hermetic fixture is not worth widening that surface. The detail page's
+  // request-History section renders in production from real pairing/goodreads rows; the
+  // hermetic captures cover the fixes-History section.
 
-  console.log('[seed-books-detail-history] seeded fixes + pairing request for book + audiobook');
+  console.log('[seed-books-detail-history] seeded fixes for book + audiobook');
 }
 
 main()
