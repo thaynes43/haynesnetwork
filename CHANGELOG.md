@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.70.0](https://github.com/thaynes43/haynesnetwork/compare/v0.69.0...v0.70.0) (2026-07-17)
+
+
+### Features
+
+* collection manager + member contributions (PLAN-052 Libretto leg — ADR-069/DESIGN-042) ([#350](https://github.com/thaynes43/haynesnetwork/issues/350)) ([406fd46](https://github.com/thaynes43/haynesnetwork/commit/406fd46ad82ffd4cd63fcc79286f56c30579d271))
+
+
+### Documentation
+
+* DESIGN-042 + ADR-069 (Proposed) — Kometa collections manage & contribute ([#348](https://github.com/thaynes43/haynesnetwork/issues/348)) ([293a720](https://github.com/thaynes43/haynesnetwork/commit/293a720905d7a6846f697d685cae19125e5e5e56))
+
 ## [0.69.0](https://github.com/thaynes43/haynesnetwork/compare/v0.68.1...v0.69.0) (2026-07-17)
 
 
