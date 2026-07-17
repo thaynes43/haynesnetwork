@@ -37,10 +37,13 @@ export default async function HomePage() {
       {/* DESIGN-040 D-06/D-07 (R-221) — the estate play scoreboard badge row, above the About
           tile; renders NOTHING when no Tautulli answered (no empty chrome). */}
       <Scoreboard totals={plays} />
+      {/* The perforated rule sits BETWEEN the glance badges and the About tile (owner touch-up
+          2026-07-17 — with the launcher grid gone to /portal, a trailing rule dangled at the
+          page bottom; D-23 amendment note). */}
+      <hr className="tile-rule" />
       {/* DESIGN-034 D-01/D-02 (R-206) — the About/Help entry: a full-width INVERTED tile
-          (accent fill, internal link — no new tab; hover deepens color only, ADR-015) above
-          the perforated rule. On Home it is the one destination card — the launcher grid
-          lives on /portal (D-23). */}
+          (accent fill, internal link — no new tab; hover deepens color only, ADR-015). On Home
+          it is the one destination card — the launcher grid lives on /portal (D-23). */}
       <Link href="/about" className="tile tile--inverted tile--about">
         <span className="tile__top">
           <InfoGlyph className="tile__icon" width={28} height={28} />
@@ -53,7 +56,6 @@ export default async function HomePage() {
           How it all works: the Plex servers, Fix, Trash, requests, books, and more.
         </span>
       </Link>
-      <hr className="tile-rule" />
     </>
   );
 }
