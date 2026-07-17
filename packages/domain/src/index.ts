@@ -132,6 +132,10 @@ export * from './books-collections';
 // DESIGN-035 D-10 (PLAN-053) — the versioned Collection Type classifier (pure; the sync writer
 // recomputes the plex_collections.collection_type annotation from it at every upsert).
 export * from './collection-type';
+// Collection PROVENANCE — "what software created this collection" (owner directive 2026-07-16). The
+// pure derivation both collection syncs call at every upsert (Kometa labels / Libretto marker →
+// created_by), plus the badge display mapping the API layer resolves for the walls.
+export * from './collection-provenance';
 // ADR-055 / DESIGN-028 (PLAN-044 — Goodreads requests MVP) — the Integration single-writers (link/unlink
 // audited, shelf-mirror upsert, request mint/reconcile + audited manual re-search), the goodreads-sync
 // orchestrator, and the confined LazyLibrarian client bundle (@hnet/lazylibrarian/write stays in this

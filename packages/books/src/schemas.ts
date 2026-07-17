@@ -58,6 +58,11 @@ export const kavitaCollectionSchema = z.object({
   title: z.string(),
   promoted: z.boolean().nullable().optional(),
   itemCount: z.number().int().nullable().optional(),
+  // Collection PROVENANCE (owner directive 2026-07-16) — Kavita carries a collection's description
+  // in `summary` (AppUserCollectionDto), where Libretto plants its [libretto:<recipeId>] marker
+  // (verified in the Libretto Kavita target: the marker lives in `summary`). The books-collections
+  // sync parses it to derive books_collections.created_by. Absent on hand-made collections.
+  summary: z.string().nullable().optional(),
 });
 export type KavitaCollection = z.infer<typeof kavitaCollectionSchema>;
 export const kavitaCollectionListSchema = z.array(kavitaCollectionSchema);
@@ -72,6 +77,9 @@ export const kavitaReadingListSchema = z.object({
   title: z.string(),
   promoted: z.boolean().nullable().optional(),
   itemCount: z.number().int().nullable().optional(),
+  // Collection PROVENANCE — a reading list's description also lives in `summary` (ReadingListDto),
+  // where Libretto plants its marker (verified in the Libretto Kavita target). Same parse as above.
+  summary: z.string().nullable().optional(),
 });
 export type KavitaReadingList = z.infer<typeof kavitaReadingListSchema>;
 export const kavitaReadingListListSchema = z.array(kavitaReadingListSchema);
@@ -169,6 +177,10 @@ export const absCollectionSchema = z.object({
   id: z.string(),
   libraryId: z.string().nullable().optional(),
   name: z.string(),
+  // Collection PROVENANCE (owner directive 2026-07-16) — ABS collections carry a writable
+  // `description` (verified in the Libretto ABS target), where Libretto plants its
+  // [libretto:<recipeId>] marker. The books-collections sync parses it to derive created_by.
+  description: z.string().nullable().optional(),
   books: z.array(z.object({ id: z.string() })).nullable().optional(),
 });
 export type AbsCollection = z.infer<typeof absCollectionSchema>;

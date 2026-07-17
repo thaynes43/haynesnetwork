@@ -7,6 +7,7 @@
 // source of truth (owner doctrine R1). Sections/servers that error mid-read are NOT scoped, so the
 // writer can never reconcile-drop what this run couldn't see (the plex-match discipline).
 import type { PlexReadClient } from '@hnet/plex/read';
+import { derivePlexCollectionProvenance } from '@hnet/domain';
 import type { PlexClientBundle, PlexCollectionSyncInput } from '@hnet/domain';
 import type { DbClient, PlexServerSlug } from '@hnet/db';
 import { selectPlexLibraryRefs } from './db-reads';
@@ -109,6 +110,20 @@ export async function fetchPlexCollectionsSnapshot(input: {
       stats.sectionsRead += 1;
       for (const collection of sectionCollections) {
         stats.collectionsFetched += 1;
+        // Provenance (owner directive 2026-07-16) — read the collection's LABELS (Kometa stamps
+        // `Kometa` on what it manages). The listing carries no labels, so this is a per-collection
+        // read. A read FAILURE leaves labels null → createdBy null → the writer preserves the prior
+        // value (a transient failure never re-tags a collection as hand-made).
+        let labels: string[] | null = null;
+        try {
+          labels = await read.readCollectionLabels(collection.ratingKey);
+        } catch (error) {
+          logger.warn('collections-sync: label read failed (provenance preserved)', {
+            section: section.key,
+            collection: collection.ratingKey,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
         let members: Array<{ ratingKey: string; sortOrder: number }> = [];
         let fullyRead = false;
         try {
@@ -142,6 +157,7 @@ export async function fetchPlexCollectionsSnapshot(input: {
           ratingKey: collection.ratingKey,
           title: collection.title,
           childCount: collection.childCount ?? 0,
+          createdBy: derivePlexCollectionProvenance(labels),
           members,
           fullyRead,
         });

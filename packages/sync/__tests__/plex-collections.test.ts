@@ -54,6 +54,10 @@ function fakeHopsRead(): PlexReadClient {
       // 77002 — TRUNCATED read (totalSize > items): its members must never be reconciled.
       return { items: [{ ratingKey: '9002' }], librarySectionId: '1', totalSize: 5 };
     },
+    // Provenance — Kometa labels 77001; 77002 is hand-made (no labels → 'plex').
+    async readCollectionLabels(ratingKey: string) {
+      return ratingKey === '77001' ? ['Kometa'] : [];
+    },
   } as unknown as PlexReadClient;
 }
 
@@ -94,6 +98,8 @@ async function collectionRows(db: Database) {
       childCount: plexCollections.childCount,
       // DESIGN-035 D-10 (PLAN-053) — the Collection Type annotation the writer computes per upsert.
       collectionType: plexCollections.collectionType,
+      // Provenance the writer stored (from the collection's labels this run).
+      createdBy: plexCollections.createdBy,
     })
     .from(plexCollections)
     .orderBy(asc(plexCollections.ratingKey));
@@ -125,8 +131,10 @@ describe('fetchPlexCollectionsSnapshot + syncPlexCollections (ADR-064)', () => {
       { ratingKey: '9001', sortOrder: 0 },
       { ratingKey: '9002', sortOrder: 1 },
     ]);
+    expect(top.createdBy).toBe('kometa'); // Kometa label present → 'kometa'
     const franchise = snap.collections.find((c) => c.ratingKey === '77002')!;
     expect(franchise.fullyRead).toBe(false); // truncated — never member-reconciled
+    expect(franchise.createdBy).toBe('plex'); // no labels → hand-made
 
     const report = await syncPlexCollections({
       db: t.db,
@@ -137,8 +145,8 @@ describe('fetchPlexCollectionsSnapshot + syncPlexCollections (ADR-064)', () => {
     expect(report.membersUpserted).toBe(3);
     expect(await collectionRows(t.db)).toEqual([
       // D-10 — the writer annotates at upsert: a chart classifies 'list', an idiom-free name 'other'.
-      { ratingKey: '77001', title: 'IMDb Top 250', childCount: 250, collectionType: 'list' },
-      { ratingKey: '77002', title: 'The Fixture Franchise', childCount: 2, collectionType: 'other' },
+      { ratingKey: '77001', title: 'IMDb Top 250', childCount: 250, collectionType: 'list', createdBy: 'kometa' },
+      { ratingKey: '77002', title: 'The Fixture Franchise', childCount: 2, collectionType: 'other', createdBy: 'plex' },
     ]);
     // RAW membership regardless of ledger match (owner R3) — no media_items exist at all here.
     expect(await memberRows(t.db, '77001')).toEqual([
@@ -155,6 +163,7 @@ describe('fetchPlexCollectionsSnapshot + syncPlexCollections (ADR-064)', () => {
       ratingKey: '77002',
       title: 'The Fixture Franchise',
       childCount: 2,
+      createdBy: null, // this partial re-sync did not read labels — the writer preserves 'plex'
       members: [{ ratingKey: '9003', sortOrder: 0 }],
       fullyRead: false,
     };
@@ -182,6 +191,7 @@ describe('fetchPlexCollectionsSnapshot + syncPlexCollections (ADR-064)', () => {
           ratingKey: '77001',
           title: 'IMDb Top 250 (2026)',
           childCount: 249,
+          createdBy: 'kometa',
           members: [{ ratingKey: '9001', sortOrder: 0 }],
           fullyRead: true,
         },
@@ -191,7 +201,7 @@ describe('fetchPlexCollectionsSnapshot + syncPlexCollections (ADR-064)', () => {
     expect(report.membersRemoved).toBe(1); // 9002 left the fully-read 77001
     expect(report.collectionsRemoved).toBe(1); // 77002 vanished from the scoped library
     expect(await collectionRows(t.db)).toEqual([
-      { ratingKey: '77001', title: 'IMDb Top 250 (2026)', childCount: 249, collectionType: 'list' },
+      { ratingKey: '77001', title: 'IMDb Top 250 (2026)', childCount: 249, collectionType: 'list', createdBy: 'kometa' },
     ]);
     expect(await memberRows(t.db, '77001')).toEqual([{ ratingKey: '9001', sortOrder: 0 }]);
     // 77002's members CASCADEd away with it.
@@ -238,6 +248,7 @@ describe('fetchPlexCollectionsSnapshot + syncPlexCollections (ADR-064)', () => {
         ratingKey: '77001',
         title: 'IMDb Top 250 (2027)',
         childCount: 251,
+        createdBy: 'kometa', // the label read still succeeded (only the member read failed)
         members: [],
         fullyRead: false,
       },
@@ -249,7 +260,7 @@ describe('fetchPlexCollectionsSnapshot + syncPlexCollections (ADR-064)', () => {
     });
     // Title advanced; the existing member survived (no reconcile without a full member read).
     expect(await collectionRows(t.db)).toEqual([
-      { ratingKey: '77001', title: 'IMDb Top 250 (2027)', childCount: 251, collectionType: 'list' },
+      { ratingKey: '77001', title: 'IMDb Top 250 (2027)', childCount: 251, collectionType: 'list', createdBy: 'kometa' },
     ]);
     expect(await memberRows(t.db, '77001')).toEqual([{ ratingKey: '9001', sortOrder: 0 }]);
   });
@@ -300,6 +311,7 @@ describe('fetchPlexCollectionsSnapshot + syncPlexCollections (ADR-064)', () => {
           ratingKey: '77009',
           title: 'Beyond The Cap Trilogy',
           childCount: 3,
+          createdBy: null,
           members: [],
           fullyRead: false,
         },

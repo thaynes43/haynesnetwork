@@ -74,6 +74,12 @@ export const sectionItemSchema = z.object({
   // agent id — kept for completeness, not used for matching.
   guid: z.string().optional(),
   Guid: z.array(z.object({ id: z.string() })).optional().default([]),
+  // Collection PROVENANCE (owner directive 2026-07-16) — the `Label` array Plex returns on a
+  // collection's metadata read WHEN `?includeLabels=1` is passed (verified live: the /collections
+  // LISTING never carries it, only the per-item /library/metadata/{ratingKey} read does). Kometa
+  // stamps a `Kometa` label on every collection it manages; the collections-sync reads these to
+  // derive plex_collections.created_by. `{ id, filter, tag }` — we consume only `tag`.
+  Label: z.array(z.object({ tag: z.string() })).optional().default([]),
 });
 export type PlexSectionItem = z.infer<typeof sectionItemSchema>;
 

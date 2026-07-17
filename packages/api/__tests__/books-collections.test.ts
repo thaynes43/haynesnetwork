@@ -92,6 +92,7 @@ beforeAll(async () => {
         title: 'HP Reading Order',
         itemCount: 99, // deliberately wrong raw count — must NEVER be the wire count
         ordered: true,
+        createdBy: 'libretto',
         members: [
           { externalRef: '503', position: 0 },
           { externalRef: '502', position: 1 },
@@ -110,6 +111,7 @@ beforeAll(async () => {
         title: 'Capes',
         itemCount: 2,
         ordered: false,
+        createdBy: 'kavita',
         members: [
           { externalRef: '601', position: 0 },
           { externalRef: '602', position: 1 },
@@ -125,6 +127,7 @@ beforeAll(async () => {
         title: 'Discworld in Order',
         itemCount: 2,
         ordered: true,
+        createdBy: 'audiobookshelf',
         members: [
           { externalRef: 'a2', position: 0 },
           { externalRef: 'a1', position: 1 },
@@ -140,6 +143,7 @@ beforeAll(async () => {
         title: 'Ghost Shelf',
         itemCount: 3,
         ordered: false,
+        createdBy: 'kavita',
         members: [{ externalRef: '888', position: 0 }],
         fullyRead: true,
       },
@@ -190,6 +194,8 @@ describe('books.collectionGroups (DESIGN-038 D-05 — wall mapping + honest coun
     expect(card.count).toBe(3); // 3 books — not the comic, not the raw 99, not the ghost ref
     expect(card.ordered).toBe(true);
     expect(card.imageUrl).toBeNull();
+    // PROVENANCE badge — the marker-derived 'libretto' resolves to its display name.
+    expect(card.provenance).toBe('Libretto');
     // Covers in member-position order, cover-less members contribute none (503 has no coverRef).
     expect(card.coverUrls).toEqual([
       '/api/books/cover?source=kavita&id=502&v=v1.png',
@@ -200,10 +206,10 @@ describe('books.collectionGroups (DESIGN-038 D-05 — wall mapping + honest coun
   it('the minority wall never cards the mixed collection; pure collections land on their wall', async () => {
     const { groups: comics } = await adminCaller.books.collectionGroups({ mediaKind: 'comic' });
     expect(comics.map((g) => g.label)).toEqual(['Capes']); // the mixed list is NOT here
-    expect(comics[0]).toMatchObject({ count: 2, ordered: false });
+    expect(comics[0]).toMatchObject({ count: 2, ordered: false, provenance: 'Kavita' });
     const { groups: audiobooks } = await adminCaller.books.collectionGroups({ mediaKind: 'audiobook' });
     expect(audiobooks.map((g) => g.label)).toEqual(['Discworld in Order']);
-    expect(audiobooks[0]).toMatchObject({ count: 2, ordered: true });
+    expect(audiobooks[0]).toMatchObject({ count: 2, ordered: true, provenance: 'Audiobookshelf' });
   });
 
   it('a collection with zero resolved live members is absent from every wall', async () => {

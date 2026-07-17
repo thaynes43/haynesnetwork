@@ -234,6 +234,38 @@ can see a wall can see every collection the wall-mapping rule places there, and 
 only over `books_items` rows that wall would show (live rows of the wall's kind). The cover URLs
 are the existing gated `/api/books/cover` proxy — no new art path.
 
+### D-11 — Collection provenance (`created_by`, migration 0058 — owner directive 2026-07-16)
+
+Owner directive (2026-07-16, near-verbatim): "'NY Times Builder' would be something we'd see over
+in the Books." Every mirrored book collection carries a PROVENANCE — the software that created it —
+stored on the mirror at sync time and shown as a small muted badge on the group-card face. The
+mirror stays a MIRROR (owner R1): provenance is READ from what the source exposes, never invented.
+
+- **Source signal** — Libretto (the "Kometa for books" collection manager, DESIGN-037) plants a
+  provenance MARKER `[libretto:<recipeId>]` in the description it writes: Kavita collections and
+  reading lists carry it in `summary` (AppUserCollectionDto / ReadingListDto), ABS collections in
+  `description` — verified in the deployed Libretto's own target source (the MARKER SPIKE finding:
+  descriptions are API-writable on both Kavita container kinds and the ABS collection). The
+  books-collections sync ALREADY reads these containers; it now reads the marker field off the same
+  read — **no new service dependency** (the directive's preference). The Kavita/ABS schemas gained
+  `summary` / `description`; the marker parse is a pure regex.
+- **Derivation** — `@hnet/domain` `collection-provenance.ts`
+  `deriveBooksCollectionProvenance(source, description)` → `'libretto'` when the marker is present,
+  else the SOURCE app that hand-made it (`'kavita'` / `'audiobookshelf'`). Always derivable (the
+  description rides the mirror read), so never null.
+- **Column** — `books_collections.created_by text` (migration 0058), NULLABLE and OPEN (no CHECK),
+  the `plex_collections.created_by` class: a rebuildable derived-cache annotation recomputed from
+  the source description at every upsert (`excluded.created_by`).
+- **Badge** — `books.collectionGroups` returns `provenance` (resolved server-side via
+  `provenanceDisplayName`: `libretto → "Libretto"`, `kavita → "Kavita"`, `audiobookshelf →
+  "Audiobookshelf"`); the `GroupCard` renders it as one muted badge in the reserved badge row
+  (ADR-015, tokens-only) — only on the Collections dimension (author/genre group cards carry none).
+- **Software-level, not builder-level (v1)** — the marker carries the recipeId but NOT the
+  `builder.type`, so `'libretto'` is the honest software tag. The finer builder identity the owner
+  named ("NY Times", "Hardcover Series") needs the Libretto `/api/recipes` recipeId→builder.type
+  join — a NEW sync dependency, deferred (Q-04). The display mapping for it (`BUILDER_DISPLAY`) is
+  pre-wired data-driven so the join lands in one place; unknown builder tokens title-case honestly.
+
 ## Alternatives considered
 
 - **App-native book collections / authoring UI** — rejected permanently (ADR-066 option 2, owner R1).
@@ -293,3 +325,4 @@ are the existing gated `/api/books/cover` proxy — no new art path.
 | Q-01 | e2e smoke spec for the books Collections view? | SUBSTRATE SHIPPED, SPEC DEFERRED — the stub collection fixtures + the harness `books-collections-sync` seed landed with the build (dev:local + every e2e run render the views), so the journey spec is now a cheap follow-up; the flows were hand-driven against dev:local during the build. |
 | Q-02 | Merge cross-source collections (the same series in Kavita + ABS) into one card via PLAN-050 pairing data? | DEFERRED (owner lean: two honest source-scoped collections v1; merge later after the owner sees the mirror live). |
 | Q-03 | Kavita response shapes verified from the tagged 0.9.0.2 SOURCE + live route probes, not an authed live call (no creds in the build env). | Accepted risk, mitigated: strip-mode zod + the fixture battery; the deployed image is pinned to the exact verified tag. First staging `books-collections-sync` run validates live; any drift is a client-schema patch, not a schema migration. |
+| Q-04 | Builder-LEVEL books provenance (the owner's "NY Times" / "Hardcover Series", not just "Libretto")? | DEFERRED (D-11). The marker carries only the recipeId; resolving `builder.type` needs a Libretto `/api/recipes` join — a NEW sync dependency (LIBRETTO_API_KEY, a client, Libretto-up coupling) the directive preferred to avoid. v1 ships the honest software tag "Libretto"; the `BUILDER_DISPLAY` map is pre-wired for the join. Owner ruling needed on adding the dependency. |

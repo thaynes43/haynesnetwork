@@ -17,7 +17,12 @@ import {
   wantedItems,
   type CollectionType,
 } from '@hnet/db';
-import { isMediaItemAccessible, listAlbumTracks, listMediaChildren } from '@hnet/domain';
+import {
+  isMediaItemAccessible,
+  listAlbumTracks,
+  listMediaChildren,
+  provenanceDisplayName,
+} from '@hnet/domain';
 import { authedProcedure, mapDomainErrors, resolveArrBundle, resolvePlexBundle, router } from '../trpc';
 // ADR-047 / DESIGN-025 (PLAN-028) — THE INVARIANT: every media_items read here is gated to the caller's
 // accessible Plex libraries SERVER-SIDE (never UI filtering). The gate + predicates live in library-access.
@@ -98,6 +103,12 @@ export interface LedgerCollectionGroup {
   imageUrl: null;
   /** DESIGN-035 D-10/D-11 (PLAN-053) — the collection's owner-ruled Type bucket (T-186). */
   type: CollectionType;
+  /**
+   * PROVENANCE badge (owner directive 2026-07-16) — the display name of the software that created
+   * the collection ("Kometa" / "Plex"), or null when unknown (no badge). Resolved server-side from
+   * plex_collections.created_by via provenanceDisplayName.
+   */
+  provenance: string | null;
 }
 
 /** D-11 — the chip row's accessible-collection counts (every bucket present, zeros included). */
@@ -299,10 +310,12 @@ export const ledgerRouter = router({
           key: string;
           label: string;
           ctype: CollectionType;
+          provenance: string | null;
           media_item_id: string;
           poster_source: string | null;
         }>(
           sql`SELECT pc.rating_key AS key, pc.title AS label, pc.collection_type AS ctype,
+                     pc.created_by AS provenance,
                      mi.id AS media_item_id, mm.poster_source AS poster_source
                 FROM plex_collections pc
                 JOIN plex_collection_members pcm ON pcm.collection_id = pc.id
@@ -320,18 +333,31 @@ export const ledgerRouter = router({
             key: string;
             label: string;
             ctype: CollectionType;
+            provenance: string | null;
             media_item_id: string;
             poster_source: string | null;
           }[]);
         const groups = new Map<
           string,
-          { label: string; type: CollectionType; memberIds: Set<string>; coverUrls: string[] }
+          {
+            label: string;
+            type: CollectionType;
+            provenance: string | null;
+            memberIds: Set<string>;
+            coverUrls: string[];
+          }
         >();
         for (const row of rows) {
           const group =
             groups.get(row.key) ??
             groups
-              .set(row.key, { label: row.label, type: row.ctype, memberIds: new Set(), coverUrls: [] })
+              .set(row.key, {
+                label: row.label,
+                type: row.ctype,
+                provenance: row.provenance,
+                memberIds: new Set(),
+                coverUrls: [],
+              })
               .get(row.key)!;
           if (group.memberIds.has(row.media_item_id)) continue;
           group.memberIds.add(row.media_item_id);
@@ -357,6 +383,7 @@ export const ledgerRouter = router({
               coverUrls: g.coverUrls,
               imageUrl: null,
               type: g.type,
+              provenance: provenanceDisplayName(g.provenance),
             })),
           typeCounts,
         };
