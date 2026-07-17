@@ -4,6 +4,88 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ NEXT SESSION — start here (written 2026-07-17 ~16:45 UTC — pre-pod-bounce handoff; owner present and bouncing the dev-env pod)
+
+**Site live at https://haynesnetwork.com — v0.71.0 live-verified** (Home/Portal split + the kapowarr
+schema fix). The comic Fix route is LIVE-PROVEN. One PR rides GitHub-side auto-merge through the
+bounce; the FLIP completes tomorrow morning. Read the OWNER PROCESS RULING below — it changes how
+UX work is verified.
+
+**▶ FIRST MOVES:**
+1. **PR #355 (books detail parity) AND PR #361 (Home rule touch-up: the perforated rule moves
+   between the glance badges and the About tile — owner spec, D-23 amended, NOT yet live-verified
+   per the new ruling)** — both auto-merge armed (GitHub-side, survive the bounce). Likely MERGED
+   by the time you read this → release-please opens/updates the release PR →
+   drive it (dance: close/reopen + re-arm; BEHIND: update-branch; artifact-pair gate) → haynes-ops
+   image bump → flux reconcile hr `haynesnetwork -n frontend` → in-cluster health probe
+   (`haynesnetwork.frontend.svc:3000/api/health` via a frontend-ns job; the dev pod cannot curl the
+   public host). Its `test` lane failed once pre-rebase — if red again it is NOT auto-flake; read it.
+2. **THE FLIP finishes tomorrow ~07:05 UTC** (or the moment the owner bumps the GB daily quota —
+   Cloud Console → Books API → Quotas; still unbumped as of the bounce). Scoreboard:
+   **comic ✓ LIVE-PROVEN** (fix 78446412, the full requested→monitored→auto_search→search_triggered
+   trail, run through the production writers on v0.71.0) · **ebook** = "02 - Grave Surprise" fix
+   sits `queued` and self-completes via the retry pass on the reset (the resolve hardening handles
+   its "02 - " prefix) · **audiobook** = the owner (or a coordinator job, precedent above) re-fires
+   "Whispers" (Dean Koontz item) — the hardened resolver now passes the author. When all three are
+   green + the owner nods: **`setRoleBookActions` fix_book → all roles + open the `integrations`
+   section.** Then DELETE memory `books-fix-flip-pending` (done).
+3. **Owner rulings queue (he answers when ready):** DESIGN-041 Q-01..Q-08 (SSO rollout; Q-09
+   RESOLVED: all three Plex servers allowed) · DESIGN-042 Q-01..Q-08 (Kometa contribution) ·
+   PLAN-052 books-leg Q-01..Q-03 (suggest-grant rollout) · thin recipes keep/cut (mistborn 2/14,
+   stormlight 3/18) · drop Trilogies from movies (estate has ONE "Trilogy"-named collection, 2
+   members — title classification cannot populate it) · DESIGN-004 Q-04 (delete or keep the three
+   dormant Plex catalog rows in /admin).
+
+**▶ OWNER PROCESS RULING (2026-07-17, after the comic-fix debugging chain — BINDING):** "Is any
+agent doing UI testing before throwing these at me?" — NO agent output is handed to the owner as
+testable until it has been LIVE-VERIFIED end-to-end: drive the deployed feature yourself (the
+production writers via a frontend-ns job — the fix-verification precedent — or Playwright against
+`haynesnetwork.haynesops.com`), capture the evidence, and report results, never test requests.
+Hermetic screenshots + mocked unit tests are NOT sufficient for user-facing flows — today a blind
+mock (`result: z.null()`) sat green while every live comic fix failed.
+
+**THE COMIC-FIX DEBUGGING CHAIN (today's big lesson, 3 layers deep):**
+1. Kapowarr's task system was WEDGED by three poisoned pixeldrain queue rows that revived on every
+   pod boot (stall → socket-block → task-queue lock). API deletes wedge harder. FIXED PERMANENTLY
+   by SQLite surgery: HR-patch replicas 0 → job mounts the kapowarr PVC → `DELETE FROM
+   download_queue` → replicas 1 (the full recipe is in memory `kapowarr-ops-doctrine`).
+2. The fix resolver called GB with `author: null` at BOTH resolve sites → "Whispers" (Dean Koontz)
+   wrong-resolved to Beckett's "Whispers of the Dead" and QUEUED THE WRONG BOOK into LL. Hardened
+   in v0.70.1: item author at execute time, surname-token author guard, series-index prefix strip
+   ("02 - Grave Surprise"), pre-colon fallback (un-blocks the Dead Ever After class).
+3. `@hnet/kapowarr` validated the auto_search response as `result: z.null()` while Kapowarr v1.3.1
+   returns `{id}` — every SUCCESSFUL live search fire reported as failure. Fixed in v0.71.0; tests
+   pinned to the real shape. (The route had never been live-fired before today.)
+
+**ALSO LIVE (v0.71.0 + v0.70.x):** the HOME/PORTAL split (logo → calm Home with greeting/scoreboard/
+MOTD/About; `/portal` in the nav carries the launcher grid minus the three Plex server cards +
+an inverted app.plex.tv web-player link — Plex cannot ever SSO via Authentik, plex.tv-only auth,
+confirmed) · the collections manager + member suggestions (`/integrations/collections`, ships
+Admin-only, grants suggest/manage/acquire) · Scott Pilgrim (6 color TPBs) + Guarding the Globe
+landed via the direct Main Server path and are in Kavita + mirrored — the request row was
+HAND-LINKED to the item (matcher gap: "Scott Pilgrim's Precious Little Life" ≠ series "Scott
+Pilgrim"; backlog) · Kapowarr vol 1 left UNMONITORED deliberately (its filename parser cannot
+match the color editions to issues; monitored ⇒ daily getcomics hammering for content we hold).
+
+**STANDING ENGINEERING QUEUE:** the GB/LL RESOLUTION gap (M3 acquisition resolves ~0 wants — the
+PLAN-059 addendum has three candidate directions, owner ruling wanted; acquisition left enabled on
+the seeded recipes so it flows when fixed) · PLAN-059 churn investigation · the T-194 glossary
+double-assignment reconciliation (move the SSO T-194/195/196 block to T-203+; flagged in the
+changelog) · Kapowarr upstream issues worth filing (429 burst rate, the wedge class) · a docs-only
+release PR may be accumulating — it rides the next train.
+
+**Bounce notes:** all background watchers were STOPPED cleanly (nothing depends on this pod);
+GitHub-side auto-merge carries #355; the persistent Grave-Surprise monitor was retired — the fix
+completes via the sync retry pass with no watcher needed. Worktrees pruned. Memory index is
+current (`kapowarr-ops-doctrine`, `authentik-forward-auth-doctrine`,
+`coordinator-model-flip-watch` — READ that one: the Fable→Opus coordinator flip triggered at a
+background-notification re-entry this morning; audit any flipped window BY OUTCOME). A canonical-
+clone hygiene incident during this wrap (a failed && chain committed a stray gitlink to the STALE
+local main and recreated a merged remote branch) was fully reverted — the ground rule stands:
+worktrees only, and never chain `worktree add && cd` through a pipe that eats the exit code.
+
+### Prior top block (2026-07-17 ~08:00 UTC)
+
 ## ▶ NEXT SESSION — start here (written 2026-07-17 ~08:00 UTC — the SSO + collections-saga night, owner retired ~07:00)
 
 **Site live at https://haynesnetwork.com — v0.70.0 live-verified** (health 200 via a frontend-ns

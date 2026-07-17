@@ -1046,7 +1046,9 @@ the keyboard affordance; hover changes nothing). The page renders exactly four t
    welcome callout stays on Home BY CONSTRUCTION — Portal carries no banner);
 2. the **greeting** (D-07 idiom, unchanged);
 3. the **estate play scoreboard** (ADR-068 / DESIGN-040 — already SSR-baked);
-4. the **About tile** above its perforated rule (ADR-063 / DESIGN-034 — the inverted entry card).
+4. the **perforated rule** (owner touch-up 2026-07-17: with the launcher grid gone, a trailing
+   rule dangled at the page bottom — it now separates the glance badges from the About tile);
+5. the **About tile** (ADR-063 / DESIGN-034 — the inverted entry card, now the closing element).
 
 No app cards, no grid — the calm screen. **Post-login landing stays `/`**, so old dashboard deep
 links keep working (it IS `/`); the signIn-lands-on-greeting contract is unchanged.
