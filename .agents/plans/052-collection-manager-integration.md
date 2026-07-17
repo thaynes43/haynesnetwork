@@ -82,3 +82,37 @@ API this session). What the manager UI binds against, as observed:
 - **Judgment gate:** matched ≤1 ⇒ likely wrong ref or an omnibus-only franchise — surface it
   and offer delete (applied as doctrine this session: the 1/5 hunger-games Kavita recipe was
   deleted and its orphaned reading list cleaned).
+
+## Kometa provider scoped (2026-07-17) — DESIGN-042 / ADR-069 (Proposed)
+
+The second provider is now designed (DESIGN-042, Draft; ADR-069, Proposed). It instantiates
+the same recipe/validate/apply/run contract Libretto proves live (R2), movies/TV-flavored:
+
+- **Write path RULED: git-PR managed include.** The Kometa collection files are a git ConfigMap
+  (haynes-ops `apps/media/kometa/app/config/*.yml`, hot every run) — the app owns ONE
+  `hnet-managed-movies.yml` / `-tv.yml`, regenerates its `collections:` block from validated
+  recipes, opens a haynes-ops PR. PVC rejected (only the self-rewritten `config.yml` lives there).
+  Latency is a batch cadence: Flux reconcile + next Kometa run (`30 6 * * *` NY, or a bounded
+  run-now Job `--run-files hnet-managed-*.yml`) + next `collections-sync`. Stated plainly in UI.
+- **Allowlist = the live config's builder types, distilled.** Member-suggestible v1 = the six
+  single-ref types (`imdb_list`, `tmdb_collection_details`, `tvdb_list_details`, `tmdb_movie`,
+  `tmdb_show`, `tvdb_show`) — a validated + previewed ref, NEVER raw YAML. Owner-only:
+  `tmdb_discover` / `imdb_chart` / `imdb_search` / `plex_all` (query/search/regex objects, the
+  tuned engines). Defaults `template_variables` deferred (PVC re-seed).
+- **Roles = the shared `role_collection_action_grants` (books-leg track owns the table):**
+  suggest / manage / acquire; `acquire` (`radarr/sonarr_add_missing`) gated hardest — movies pull
+  GBs/title. Grouping-only builders can never acquire. Ships Admin-only.
+- **Flow = the DESIGN-033 pipeline:** audited `collection_suggestions` row → manage-gated approval
+  → git PR (`--validate-file` CI gate, pinned v2.4.4) → Kometa run → `collections-sync` reconciles
+  to `live` with `provenance: kometa` (T-194). Ref preview (resolve id/URL → name+count) is the
+  top composer win, exactly as on Libretto (a wrong ref silently matches 0; `minimum_items`
+  auto-deletes ≤1).
+- **Monitor (honest):** Kometa has no inbound API — Job status (`MediaAutomationJobFailed` exists)
+  + `meta.log` link; optional outbound `run_end`/`error` webhook → hnet later. No live progress.
+- **Phasing:** P0 read-only monitor → P1 inert suggestions → P2 gated apply (grouping-only) →
+  P3 gated acquire (owner-held, last). Blast-radius rules: app writes ONLY the managed file, never
+  a sibling; namespaced titles; acquisition off by default; run-now scoped to the managed file;
+  orphan-cleanup manage-gated + canary-verified.
+- **Owner rulings open:** DESIGN-042 Q-01..Q-08 (write-path merge human/auto, suggestible-type cut,
+  notification channel, grant rollout, namespacing marker, ref-preview egress, v1-acquires-or-not,
+  Defaults/regex advanced surface).
