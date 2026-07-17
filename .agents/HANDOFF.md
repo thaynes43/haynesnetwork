@@ -4,6 +4,91 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ NEXT SESSION — start here (written 2026-07-17 ~08:00 UTC — the SSO + collections-saga night, owner retired ~07:00)
+
+**Site live at https://haynesnetwork.com — v0.70.0 live-verified** (health 200 via a frontend-ns
+probe against `haynesnetwork.frontend.svc:3000`; the dev pod cannot curl the public host). This
+session shipped SIX releases (v0.68.1 → v0.70.0), stood up TRUE SSO on its hardest app, closed the
+collections-program plans, and built + deployed Libretto M3. The board is clear for the next big
+thing pending the owner rulings below.
+
+**▶ OWNER MORNING LIST (short — all rulings + one UI test):**
+1. **THE FLIP is UNBLOCKED.** The GB quota reset; the two queued fixes were root-caused as 429
+   quota-weather hard-fails that PREDATED the ADR-067 breaker (so they landed `failed`, not
+   `queued`) — reset to `queued`; **Whispers COMPLETED** (proves the fix path end-to-end).
+   Owner fires ONE Fix in the UI → sees it work → **THE FLIP: `setRoleBookActions` fix_book → all
+   roles + open the `integrations` section.** (Dead Ever After FAILED on a real GB resolve miss on
+   its colon-subtitle title — PLAN-059 addendum has the safe pre-colon-fallback fix; re-fire under
+   a cleaner title meanwhile.)
+2. **DESIGN-041 SSO rulings Q-01..Q-09** (auto-login rollout) + **DESIGN-042 Kometa rulings
+   Q-01..Q-08** (write-path merge human/auto, which builder types are member-suggestible, grant
+   rollout, acquire-or-group-only v1).
+3. **Two Tautulli owner-side steps to finish its zero-click** (front door is LIVE + gated to
+   admins+Family; owner logs in fine via LAN): the credential is `admin` + a plaintext password
+   in Tautulli config.ini (`http_hashed_password=0` set tonight) AND the two Authentik group
+   attributes `tautulli_user`/`tautulli_password` on `family` + `authentik Admins` — verify they
+   match. It worked end-to-end in a private window tonight (owner confirmed "smooth, got right in").
+4. **Thin-recipe + Trilogies calls:** keep/cut mistborn (2/14) + stormlight-archive (3/18)
+   (omnibus-only holdings); drop the Trilogies chip from movies too (the estate has exactly ONE
+   "Trilogy"-named collection, a 2-book one — a title classifier cannot populate it).
+
+**WHAT SHIPPED (six releases + SSO + Libretto M3):**
+- **TRUE SSO — the Tautulli pilot is LIVE** (role-governed app login, DESIGN-041): Authentik proxy
+  front door (dedicated outpost, git blueprint, admins+Family policy) + HTTP-Basic injection. Four
+  debugging layers beaten (no basic-auth UI → config-rewrite-on-shutdown → hashed-password literal
+  compare → **the generated forwardAuth middleware DROPS `Authorization`** — custom twin middleware
+  adds it; haynes-ops #2090). **Kavita + ABS audited = already at target** (auto-login ON, all
+  break-glasses verified; zero writes). Memory `authentik-forward-auth-doctrine` has the full
+  gotcha list + the generalizable per-app pattern for the rollout.
+- **Collections program CLOSED:** **PLAN-052 manager BUILT + LIVE (v0.70.0):** `/integrations/collections`
+  — recipe list (builder badge, run health, acquisition puck), composer w/ ref-preview, apply/delete
+  confirms, + the creative **"Suggest a collection"** member flow (pending → manage-approval). Role
+  grants `role_collection_action_grants` (suggest/manage/**acquire** — the content-pull knob gated
+  hardest), ships Admin-only. ADR-070/DESIGN-043, migration 0059, confined `@hnet/libretto` client.
+  **Kometa provider DESIGNED (DESIGN-042/ADR-069, #348):** same manage/suggest/gate distilled to the
+  live config's builder types, git-PR write path, folded into PLAN-052.
+- **Libretto M3 acquisition BUILT + DEPLOYED** (libretto #7, sha-4437da2) + **NYT bestseller builder**
+  (#8, sha-4bfed82): recipes now ACQUIRE their missing works via LazyLibrarian. **BUT the content
+  pipeline does NOT flow yet** — see the resolution gap below.
+- **v0.69.0:** collections chips mobile fix (no counts, "Franchise", no Trilogies on TV, one-line at
+  320px) + collection provenance badges (457 kometa / 4 plex / 16 libretto / 7 kavita, live).
+- **v0.68.1:** the Wings-misroute GB resolve guards.
+
+**⚠ THE ONE OPEN ENGINEERING ITEM — the GB/LL RESOLUTION gap (PLAN-059 addendum, the next
+Libretto-saga step):** M3 acquisition is mechanically perfect (paced 10/run, idempotent, honest
+skips) but produced **~0 LL wants** across the seeded NYT + franchise recipes. Root cause: Libretto
+has NO Google Books key (statelessness, by design) so it relies on LL's `addBookByISBN`, which
+returns "No results" for NEW bestsellers (GB hasn't indexed the 2024-25 ISBN13s) AND `findBook` is
+dead on this LL build (title path). So: new books fail by ISBN, older/franchise books fail by
+no-ISBN + dead findBook. **Not a flag flip.** Candidate fixes (owner ruling): (a) an hnet-side
+resolve broker — the APP has the estate GB key and resolves reliably (Whispers proved it); hand LL a
+resolved volume id; (b) enrich the Hardcover builder to emit GB-indexed edition ISBNs; (c) accept
+GB-indexed-only + let the daily retry catch new books as GB indexes them. **Acquisition is left
+ENABLED** on the seeded recipes (manual-apply, capped, harmless) so it flows the moment this is fixed.
+16 collections live + mirrored (12 Kavita reading lists + 4 ABS) from the earlier buildout.
+
+**COMICS (from the prior block, DONE):** Invincible's full 25-TPB run is in Kavita + on the site
+(fetched direct from getcomics Main Server; Kapowarr can't ingest — memory `kapowarr-ops-doctrine`).
+Volume 4 UNMONITORED (re-monitoring resumes 429-hammering).
+
+**DOC HYGIENE FLAG:** **T-194 is double-assigned on main** (Collection Provenance vs Estate
+Auto-Login — both merged + referenced). Needs a dedicated reconciliation pass (move the SSO
+T-194/195/196 block to a free range + update DESIGN-041 refs); flagged in the glossary changelog,
+NOT silently renumbered.
+
+**Working-rule adds:** driving the release train MANUALLY works (the in-repo script hard-cds to a
+dead worktree + takes a feature-PR arg — fix it before trusting it): dance + BEHIND update-branch +
+artifact-pair gate + haynes-ops bump + flux reconcile hr + in-cluster health probe · parallel Opus
+agents on the SAME plan/doc numbers COLLIDE (two grabbed ADR-069/DESIGN-042 — the later-landing one
+renumbers + resolves the glossary; the code PR references sweep with it) · SendMessage-resumed
+subagents run as FABLE (session model) — fine for operational API work, NOT for the deep synthesis
+they were spawned for (the resumed seeder flaked its report; I read the job logs directly) · book
+fixes created before a breaker deploy can be stuck in a terminal state the retry pass won't touch —
+requeue with an audit step · the goodreads-sync retry pass runs AFTER enrichment in the same job, so
+a high-enrichment run can exhaust per-minute GB and starve the retry (PLAN-055 ordering follow-up).
+
+### Prior top block (2026-07-17 ~05:30 UTC)
+
 ## ▶ NEXT SESSION — start here (written 2026-07-17 ~05:30 UTC — the overnight wave, owner intermittently present)
 
 **Site live at https://haynesnetwork.com — v0.68.1 live-verified** (health 200, in-cluster probe;
