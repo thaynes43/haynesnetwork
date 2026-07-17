@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.70.1](https://github.com/thaynes43/haynesnetwork/compare/v0.70.0...v0.70.1) (2026-07-17)
+
+
+### Bug Fixes
+
+* book-fix GB resolve hardening — item author, author guard, series-prefix strip, pre-colon fallback ([#354](https://github.com/thaynes43/haynesnetwork/issues/354)) ([ddf8361](https://github.com/thaynes43/haynesnetwork/commit/ddf83615ef5212ea29126557bbef1fa95f797951))
+
+
+### Documentation
+
+* fold Kometa section into PLAN-052 + PLAN-059 resolution-gap addendum ([#351](https://github.com/thaynes43/haynesnetwork/issues/351)) ([28a9ab8](https://github.com/thaynes43/haynesnetwork/commit/28a9ab8004b362ee33bc697a9c83bf67c7dffe50))
+* Friday-dawn wrap — v0.70.0, Tautulli SSO pilot live, collections program closed, M3 resolution gap ([#353](https://github.com/thaynes43/haynesnetwork/issues/353)) ([718f337](https://github.com/thaynes43/haynesnetwork/commit/718f337193c6b42e787dfc51e66702f4a3416835))
+
 ## [0.70.0](https://github.com/thaynes43/haynesnetwork/compare/v0.69.0...v0.70.0) (2026-07-17)
 
 
