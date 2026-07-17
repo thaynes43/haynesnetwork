@@ -47,7 +47,7 @@ Surfaced while completing the owner's two queued fixes and seeding acquisition. 
 resolution failures, both rooted in how books resolve to a LazyLibrarian `BookID` (a Google
 Books volume id) on the deployed LL build (`40a389ea`, `BOOK_API=GoogleBooks`):
 
-1. **book-fix resolve miss on subtitle-laden titles.** The owner's "Dead Ever After: A Sookie
+1. **[SHIPPED same-day — the fix-resolve hardening PR: item author passed to both resolve sites, pre-colon fallback, author guard, series-index prefix strip. The Whispers wrong-book incident below made it urgent.] book-fix resolve miss on subtitle-laden titles.** The owner's "Dead Ever After: A Sookie
    Stackhouse Novel" fix landed `failed` with "Could not resolve this book against Google
    Books" — a genuine GB no-match, NOT quota (Whispers, fired the same second, resolved fine
    and completed). The v0.68.1 `gbQueryTitle` de-noiser strips trailing Goodreads
@@ -71,3 +71,16 @@ Books volume id) on the deployed LL build (`40a389ea`, `BOOK_API=GoogleBooks`):
    accept that acquisition only flows for GB-indexed titles and let the daily retry catch new
    books as GB indexes them. Acquisition is left ENABLED on the seeded recipes (manual-apply,
    harmless, capped) so it flows the moment the resolution path is fixed.
+
+
+### The Whispers wrong-book incident (2026-07-17 ~13:15 UTC — found during the owner's pre-FLIP test)
+
+The owner's "Whispers" audiobook fix (item author **Dean Koontz**) resolved and queued **"Whispers
+of the Dead" by Simon Beckett** into LL. Root cause: BOTH book-fix resolve sites called
+`guardedGbResolve` with `author: null` (title-only `intitle:Whispers`), and the v0.68.1 title
+guard passes subtitle-extended titles by design. Hardening shipped same-day: (1) both resolve
+sites now read the item's author at execute time (no schema change) and pass `inauthor`; (2) a
+surname-token author guard rejects a resolved volume whose authors are disjoint from the item's;
+(3) `gbQueryTitle` strips leading series-index prefixes ("02 - Grave Surprise"); (4) the
+pre-colon fallback (item 1 above). Cleanup: the wrong LL want was left `Skipped` (inert; LL has
+no removeBook), the fix row annotated + failed so the owner can re-fire post-deploy.

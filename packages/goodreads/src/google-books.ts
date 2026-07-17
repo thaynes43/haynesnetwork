@@ -86,8 +86,29 @@ export function isComicText(...parts: Array<string | null | undefined>): boolean
  * query is de-noised.
  */
 export function gbQueryTitle(title: string): string {
-  const stripped = title.replace(/\s*\([^()]*\)\s*$/, '').trim();
+  let stripped = title.replace(/\s*\([^()]*\)\s*$/, '').trim();
+  // Kavita/file-derived titles carry a series-index prefix ("02 - Grave Surprise") GB never
+  // indexes under. Strip ONLY digits + a separator followed by real text — bare numeric titles
+  // ("1984") and slash dates ("11/22/63") are untouched.
+  stripped = stripped.replace(/^\d{1,3}\s*[-–.]\s+(?=\S)/, '').trim();
   return stripped.length > 0 ? stripped : title;
+}
+
+/**
+ * Loose author agreement for the title-search resolve guard: the queried author and at least one
+ * resolved-volume author must share a SURNAME-ish token (the longest name token ≥3 chars, so
+ * "Dean Koontz" vs "Simon Beckett" rejects while "C. Harris" vs "Charlaine Harris" accepts).
+ */
+export function gbAuthorsMatch(queryAuthor: string, resolvedAuthors: readonly string[]): boolean {
+  const tokens = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .split(' ')
+      .filter((w) => w.length >= 3);
+  const q = new Set(tokens(queryAuthor));
+  if (q.size === 0) return true; // nothing usable to compare — do not reject on noise
+  return resolvedAuthors.some((a) => tokens(a).some((t) => q.has(t)));
 }
 
 const TITLE_STOP_WORDS = new Set([
@@ -230,18 +251,37 @@ export class GoogleBooksClient {
       const vol = byIsbn?.items?.[0];
       if (vol) return this.toVolume(vol, input.isbn, input);
     }
-    const titlePart = `intitle:${gbQueryTitle(input.title)}`;
+    const primary = await this.resolveByTitle(gbQueryTitle(input.title), input);
+    if (primary) return primary;
+    // Pre-colon fallback (the "Dead Ever After: A Sookie Stackhouse Novel" no-match, 2026-07-17):
+    // colon subtitles are often edition dressing GB doesn't index under. Only fires on a MISS, so
+    // meaningful subtitles never lose to it; one extra GB call on the miss path only.
+    const preColon = input.title.split(':')[0]?.trim();
+    if (preColon && preColon.length >= 3 && preColon !== input.title.trim()) {
+      return this.resolveByTitle(gbQueryTitle(preColon), input);
+    }
+    return null;
+  }
+
+  private async resolveByTitle(queryTitle: string, input: GbResolveInput): Promise<GbVolume | null> {
     const authorPart = input.author ? `+inauthor:${input.author}` : '';
-    const byTitle = await this.query(`${titlePart}${authorPart}`);
+    const byTitle = await this.query(`intitle:${queryTitle}${authorPart}`);
     const vol = byTitle?.items?.[0];
+    if (!vol) return null;
     // The title leg is fuzzy — reject a resolve whose own title doesn't cover the queried one (2026-07-16
     // wrong-work incident; see gbResolveTitleMatches). GB splits title/subtitle, and a Goodreads title
     // often carries the subtitle after a colon — compare against BOTH. ISBN resolves above stay guard-free.
-    const resolvedTitle = [vol?.volumeInfo?.title, vol?.volumeInfo?.subtitle].filter(Boolean).join(' ');
-    if (vol && gbResolveTitleMatches(input.title, resolvedTitle || undefined)) {
-      return this.toVolume(vol, null, input);
+    const resolvedTitle = [vol.volumeInfo?.title, vol.volumeInfo?.subtitle].filter(Boolean).join(' ');
+    // Guard against the title we actually QUERIED (the pre-colon fallback deliberately narrows it).
+    if (!gbResolveTitleMatches(queryTitle, resolvedTitle || undefined)) return null;
+    // Author guard (the "Whispers" wrong-book incident, 2026-07-17: a title-only resolve returned a
+    // DIFFERENT author's similarly-titled work): when the caller knows the author AND the resolved
+    // volume carries authors, require a shared surname token — else reject as a different work.
+    // GB usually honors inauthor, but this holds even when the query ran title-only upstream.
+    if (input.author && (vol.volumeInfo?.authors?.length ?? 0) > 0) {
+      if (!gbAuthorsMatch(input.author, vol.volumeInfo?.authors ?? [])) return null;
     }
-    return null;
+    return this.toVolume(vol, null, input);
   }
 
   private async toVolume(

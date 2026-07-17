@@ -280,6 +280,22 @@ export interface RunBookFixInput {
   logger?: { info?: (m: string, x?: Record<string, unknown>) => void; error?: (m: string, x?: Record<string, unknown>) => void };
 }
 
+
+/**
+ * The fix's item author for the GB resolve (the "Whispers" wrong-book incident, 2026-07-17: a
+ * title-only resolve returned a DIFFERENT author's similarly-titled work). Read at execute time
+ * from the fix's books_item — no schema change; a missing/tombstoned item degrades to null
+ * (the resolve then runs title-only exactly as before).
+ */
+async function bookFixItemAuthor(db: DbClient | undefined, booksItemId: string): Promise<string | null> {
+  const [item] = await resolveDb(db)
+    .select({ author: booksItems.author })
+    .from(booksItems)
+    .where(eq(booksItems.id, booksItemId))
+    .limit(1);
+  return item?.author ?? null;
+}
+
 /**
  * Fire the acquisition-layer re-grab for a created fix. Books/audiobooks: resolve the LL book id
  * (fix row seed → GB lookup fallback) → addBook → queueBook(format) → searchBook(format). Comics:
@@ -326,7 +342,10 @@ export async function runBookFixRequest(input: RunBookFixInput): Promise<{ statu
       const guarded = await guardedGbResolve({
         db: input.db,
         gb: input.gb,
-        query: { title: fix.titleSnapshot, author: null },
+        query: {
+          title: fix.titleSnapshot,
+          author: await bookFixItemAuthor(input.db, fix.booksItemId),
+        },
       });
       if (guarded.outcome === 'quota_blocked' || guarded.outcome === 'quota_tripped') {
         steps.push({
@@ -469,7 +488,10 @@ export async function retryQueuedBookFixes(input: {
         const guarded = await guardedGbResolve({
           db: input.db,
           gb: input.gb,
-          query: { title: fix.titleSnapshot, author: null },
+          query: {
+            title: fix.titleSnapshot,
+            author: await bookFixItemAuthor(input.db, fix.booksItemId),
+          },
         });
         if (guarded.outcome === 'quota_blocked' || guarded.outcome === 'quota_tripped') {
           // Quota weather again — stop the pass; everything not yet worked stays queued unchanged.
