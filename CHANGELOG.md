@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.73.1](https://github.com/thaynes43/haynesnetwork/compare/v0.73.0...v0.73.1) (2026-07-17)
+
+
+### Bug Fixes
+
+* clear legacy collection-category values migration 0062 left behind ([#368](https://github.com/thaynes43/haynesnetwork/issues/368)) ([1e6b1c6](https://github.com/thaynes43/haynesnetwork/commit/1e6b1c68d4a5aed1141a566083789a827c851e90))
+
 ## [0.73.0](https://github.com/thaynes43/haynesnetwork/compare/v0.72.1...v0.73.0) (2026-07-17)
 
 
