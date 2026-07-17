@@ -31,6 +31,10 @@ import {
   LazyLibrarianUpstreamError,
   lazyLibrarianBundleFromEnv,
   type LazyLibrarianClientBundle,
+  librettoBundleFromEnv,
+  type LibrettoClientBundle,
+  CollectionAcquireForbiddenError,
+  CollectionSuggestionNotOpenError,
   LedgerItemTombstonedError,
   LibraryNotAllowedError,
   maintainerrClientBundleFromEnv,
@@ -87,6 +91,10 @@ import { TautulliClient } from '@hnet/arr/read';
 // mutation uses to resolve a vanity URL → user id, probe the public shelf is reachable (no secret), and run
 // the first shelf sync inline so the coverage card isn't a "0 of 0" dead-end. Read-only.
 import { GoodreadsRssClient, GoogleBooksClient, goodreadsConfigFromEnv } from '@hnet/goodreads';
+// ADR-069 / DESIGN-042 (PLAN-052 — collection manager) — the confined Libretto client's error taxonomy,
+// mapped honestly: an unreachable host (network/timeout/5xx) → BAD_GATEWAY (the manager degrades), a 4xx
+// (a bad recipe save — 400 with per-path issues) → BAD_REQUEST carrying the issues.
+import { LibrettoHttpError, LibrettoUnreachableError } from '@hnet/libretto';
 
 export type { SessionUser };
 
@@ -158,6 +166,13 @@ export interface TRPCContext {
    * Env-built singleton in production (LAZYLIBRARIAN_* + SABNZBD_*); stubbed bundle in tests.
    */
   activity?: BooksActivityBundle;
+  /**
+   * ADR-069 / DESIGN-042 (PLAN-052 — collection manager) — the confined Libretto bundle the
+   * `collections.*` manager procedures read/write through (list recipes/collections/runs, validate,
+   * upsert/delete/apply — the content-pulling writes). Env-built singleton in production
+   * (LIBRETTO_API_KEY); stubbed bundle in tests. NEVER constructed in the browser.
+   */
+  libretto?: LibrettoClientBundle;
   /**
    * ADR-068 / DESIGN-040 (PLAN-057) — the estate play scoreboard source `metrics.playScoreboard`
    * reads (the ~10-min TTL memo over the three Tautullis). Env-built singleton in production
@@ -258,6 +273,15 @@ export function resolveKapowarrBundle(ctx: TRPCContext): KapowarrClientBundle {
   if (ctx.kapowarr) return ctx.kapowarr;
   envKapowarrBundle ??= kapowarrBundleFromEnv();
   return envKapowarrBundle;
+}
+
+let envLibrettoBundle: LibrettoClientBundle | undefined;
+
+/** The Libretto bundle for this request: injected (tests) or the env-built singleton (ADR-069). */
+export function resolveLibrettoBundle(ctx: TRPCContext): LibrettoClientBundle {
+  if (ctx.libretto) return ctx.libretto;
+  envLibrettoBundle ??= librettoBundleFromEnv();
+  return envLibrettoBundle;
 }
 
 let envGoodreadsClient: GoodreadsRssClient | undefined;
@@ -519,6 +543,21 @@ export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
     }
     if (err instanceof TrashBatchEmptyError) {
       throw new TRPCError({ code: 'UNPROCESSABLE_CONTENT', message: err.message, cause: err });
+    }
+    if (err instanceof CollectionAcquireForbiddenError) {
+      // ADR-069 C-04 — a manage-only caller tried to enable the content-pull knob.
+      throw new TRPCError({ code: 'FORBIDDEN', message: err.message, cause: err });
+    }
+    if (err instanceof CollectionSuggestionNotOpenError) {
+      throw new TRPCError({ code: 'CONFLICT', message: err.message, cause: err });
+    }
+    if (err instanceof LibrettoUnreachableError) {
+      throw new TRPCError({ code: 'BAD_GATEWAY', message: 'Libretto is unreachable', cause: err });
+    }
+    if (err instanceof LibrettoHttpError) {
+      // A 400 on a recipe save carries per-path validation issues — surface them plainly.
+      const detail = err.issues && err.issues.length > 0 ? `: ${err.issues.slice(0, 5).join('; ')}` : '';
+      throw new TRPCError({ code: 'BAD_REQUEST', message: `Libretto rejected the request${detail}`, cause: err });
     }
     if (err instanceof TrashSaveNotOwnedError) {
       throw new TRPCError({ code: 'FORBIDDEN', message: err.message, cause: err });

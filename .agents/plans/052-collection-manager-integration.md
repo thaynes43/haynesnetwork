@@ -1,5 +1,12 @@
 # PLAN-052: Collection-manager integration — Kometa knobs + provider-agnostic UI
 
+- **Libretto leg: EXECUTED (2026-07-17).** ADR-069 + DESIGN-042 land the collection manager +
+  member contribution surface bound to the PROVEN live Libretto API (the confined `@hnet/libretto`
+  client, read/write split; `role_collection_action_grants` with suggest/manage/acquire, Admin-only;
+  `collection_suggestions` propose→approve flow; the manager sub-section under /integrations +
+  the walls' suggest affordance; migration 0059). Provider-shaped (`provider` column, 'libretto'
+  now) so the Kometa leg (being designed in parallel — DESIGN-037 Appendix A step 1) slots in with
+  no schema change. PRD R-225..R-227, DDD T-200..T-202.
 - **Status:** Intake — RESEARCH LANDED same day
   (`.agents/context/2026-07-16-kometa-integration-research.md`); scope-ready. Research
   verdicts now normative for this plan:

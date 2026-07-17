@@ -74,6 +74,7 @@ import {
   type WallGrouping,
 } from '@/lib/library-view-registry';
 import { WantedCard } from './wanted-card';
+import { SuggestCollectionAffordance } from './suggest-collection';
 import type { FacetGates } from './library-client';
 
 type BooksMediaKind = 'book' | 'audiobook' | 'comic';
@@ -834,6 +835,13 @@ export function BooksBrowser({
           ) : null}
         </>
       )}
+
+      {/* ADR-069 / DESIGN-042 D-05 — the member "Suggest a collection" affordance sits AFTER the
+          collections grid (only on the Collections dimension, not inside a drill), so it never reflows an
+          existing card (ADR-015). It hides itself for members without the `suggest` grant and for comics. */}
+      {collectionCards && !drilled && !pending && !groupsError ? (
+        <SuggestCollectionAffordance mediaKind={mediaKind} />
+      ) : null}
     </>
   );
 }

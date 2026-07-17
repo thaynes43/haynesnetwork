@@ -1608,4 +1608,73 @@ describe('migrations against embedded Postgres 16', () => {
       await client.query(`DELETE FROM books_collections WHERE source = 'audiobookshelf' AND external_id = 'prov-1'`);
     });
   });
+
+  describe('0059 collection manager (ADR-069 — grants + suggestions + audit CHECK)', () => {
+    it('grants enforce the action enum, suggestions enforce their CHECKs, and the new audit actions admit', async () => {
+      const roleId = (await client.query(`SELECT id FROM roles WHERE name = 'Default'`)).rows[0].id;
+      // Grants: the three actions insert; an unknown action rejects (CHECK 23514).
+      for (const action of ['suggest', 'manage', 'acquire']) {
+        await client.query({
+          text: `INSERT INTO role_collection_action_grants (role_id, action) VALUES ($1, $2)`,
+          values: [roleId, action],
+        });
+      }
+      await expect(
+        client.query({
+          text: `INSERT INTO role_collection_action_grants (role_id, action) VALUES ($1, 'delete_everything')`,
+          values: [roleId],
+        }),
+      ).rejects.toMatchObject({ code: '23514' });
+      // Composite PK dedupes.
+      await expect(
+        client.query({
+          text: `INSERT INTO role_collection_action_grants (role_id, action) VALUES ($1, 'manage')`,
+          values: [roleId],
+        }),
+      ).rejects.toMatchObject({ code: '23505' });
+
+      // Suggestions: a valid pending row inserts; bad provider/builder/status reject.
+      const userId = (
+        await client.query(
+          `INSERT INTO users (email, display_name) VALUES ('collmgr-mig@example.com', 'Coll Mig') RETURNING id`,
+        )
+      ).rows[0].id;
+      const sid = (
+        await client.query({
+          text: `INSERT INTO collection_suggestions (suggester_id, name, builder_type, builder_ref)
+                 VALUES ($1, 'The Stormlight Archive', 'hardcover_series', 'stormlight') RETURNING id, provider, status`,
+          values: [userId],
+        })
+      ).rows[0];
+      expect(sid.provider).toBe('libretto'); // column default
+      expect(sid.status).toBe('pending'); // column default
+      await expect(
+        client.query({
+          text: `INSERT INTO collection_suggestions (suggester_id, name, builder_type, builder_ref)
+                 VALUES ($1, 'Bad', 'not_a_builder', 'x')`,
+          values: [userId],
+        }),
+      ).rejects.toMatchObject({ code: '23514' });
+      await expect(
+        client.query({
+          text: `INSERT INTO collection_suggestions (suggester_id, name, builder_type, builder_ref, status)
+                 VALUES ($1, 'Bad2', 'static_ids', 'x', 'maybe')`,
+          values: [userId],
+        }),
+      ).rejects.toMatchObject({ code: '23514' });
+
+      // The three new permission_audit actions admit.
+      for (const action of ['update_collection_actions', 'create_collection_suggestion', 'review_collection_suggestion']) {
+        await client.query({ text: `INSERT INTO permission_audit (action) VALUES ($1)`, values: [action] });
+      }
+
+      // cleanup.
+      await client.query({ text: `DELETE FROM role_collection_action_grants WHERE role_id = $1`, values: [roleId] });
+      await client.query(
+        `DELETE FROM permission_audit WHERE action IN ('update_collection_actions','create_collection_suggestion','review_collection_suggestion')`,
+      );
+      await client.query({ text: `DELETE FROM collection_suggestions WHERE suggester_id = $1`, values: [userId] });
+      await client.query({ text: `DELETE FROM users WHERE id = $1`, values: [userId] });
+    });
+  });
 });

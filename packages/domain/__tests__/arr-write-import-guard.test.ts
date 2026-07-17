@@ -32,9 +32,14 @@ const ALLOWED_DIR_PREFIXES = [
   // searchVolume — the auto_search task); only packages/domain (the comic routing + force-search orchestrator)
   // + its own package may import it. Kapowarr acquires from GetComics DDL — never MAM/qB/Prowlarr/the governor.
   `packages${sep}kapowarr${sep}`,
+  // ADR-069 (PLAN-052) — @hnet/libretto/write is the collection-manager content-pulling surface
+  // (upsertRecipe / deleteRecipe / applyScope); only packages/domain (the collections-manager +
+  // suggestion-approve orchestrators) + its own package may import it. Recipe apply + acquisition
+  // drive content into the estate — the same confinement class as the *arr/LL/Kapowarr writes.
+  `packages${sep}libretto${sep}`,
 ];
 
-const IMPORT_PATTERN = /@hnet\/(arr|plex|authentik|openwebui|downloads|lazylibrarian|kapowarr)\/write/;
+const IMPORT_PATTERN = /@hnet\/(arr|plex|authentik|openwebui|downloads|lazylibrarian|kapowarr|libretto)\/write/;
 
 const IGNORE_DIRS = new Set([
   'node_modules',

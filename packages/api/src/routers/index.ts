@@ -21,6 +21,7 @@ import { libraryRouter } from './library';
 import { authentikPortalRouter } from './authentik-portal';
 import { integrationsRouter } from './integrations';
 import { activityRouter } from './activity';
+import { collectionsRouter } from './collections';
 
 export const appRouter = router({
   profile: profileRouter,
@@ -75,6 +76,10 @@ export const appRouter = router({
   // read (searching/downloading/importing/failed/completed) + the durable import-failure detail with
   // role-controlled retry-import / force-research. Always-on tab; the LIST resolver does per-section gating.
   activity: activityRouter,
+  // ADR-069 / DESIGN-042 (PLAN-052): the collection manager — read/manage Libretto recipes + runs through
+  // the confined @hnet/libretto client (manage/acquire grants, integrations-floored) + the member
+  // propose→approve contribution flow (suggest grant, from the books walls). NEVER a browser Libretto call.
+  collections: collectionsRouter,
 });
 
 export type AppRouter = typeof appRouter;
