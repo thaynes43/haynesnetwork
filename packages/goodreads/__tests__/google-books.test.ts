@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   GoogleBooksClient,
   classifyComic,
+  gbAuthorsMatch,
   gbQueryTitle,
   gbResolveTitleMatches,
   isComicCategory,
@@ -79,6 +80,57 @@ describe('gbQueryTitle / gbResolveTitleMatches (the 2026-07-16 wrong-work resolv
     ).toBe(true);
     expect(gbResolveTitleMatches('Zero Year: Part 1 (DC Comics - The Legend of Batman #1)', 'Zero Year')).toBe(true);
     expect(gbResolveTitleMatches('Hooked', 'Hooked: How to Build Habit-Forming Products')).toBe(true);
+  });
+});
+
+describe('gbQueryTitle series-index prefix + gbAuthorsMatch (the 2026-07-17 fix-path hardening)', () => {
+  it('strips a leading series-index prefix, never bare numeric titles', () => {
+    expect(gbQueryTitle('02 - Grave Surprise')).toBe('Grave Surprise');
+    expect(gbQueryTitle('1. The Colour of Magic')).toBe('The Colour of Magic');
+    expect(gbQueryTitle('1984')).toBe('1984');
+    expect(gbQueryTitle('11/22/63')).toBe('11/22/63');
+  });
+
+  it('author guard: shared surname accepts, disjoint authors reject, noise never rejects', () => {
+    expect(gbAuthorsMatch('Dean Koontz', ['Simon Beckett'])).toBe(false);
+    expect(gbAuthorsMatch('Charlaine Harris', ['Charlaine Harris'])).toBe(true);
+    expect(gbAuthorsMatch('C. Harris', ['Charlaine Harris'])).toBe(true);
+    expect(gbAuthorsMatch('..', ['Anyone'])).toBe(true);
+  });
+});
+
+describe('GoogleBooksClient.resolveVolume (fix-path hardening)', () => {
+  it('rejects a same-title DIFFERENT-author resolve (the Whispers wrong-book incident)', async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.includes('intitle')) {
+        return volResponse([
+          { id: 'gb-wrong-author', volumeInfo: { title: 'Whispers of the Dead', authors: ['Simon Beckett'] } },
+        ]);
+      }
+      return volResponse([]);
+    }) as unknown as typeof fetch;
+    const gb = new GoogleBooksClient({ baseUrl: 'http://stub/books/v1', apiKey: 'k', fetchImpl });
+    expect(await gb.resolveVolume({ title: 'Whispers', author: 'Dean Koontz' })).toBeNull();
+  });
+
+  it('falls back to the pre-colon title on a full-title miss (Dead Ever After)', async () => {
+    const calls: string[] = [];
+    const fetchImpl = vi.fn(async (url: string) => {
+      calls.push(decodeURIComponent(url).replace(/\+/g, ' '));
+      if (url.includes('intitle') && !decodeURIComponent(url).includes('Sookie')) {
+        return volResponse([
+          { id: 'gb-dea', volumeInfo: { title: 'Dead Ever After', authors: ['Charlaine Harris'] } },
+        ]);
+      }
+      return volResponse([]);
+    }) as unknown as typeof fetch;
+    const gb = new GoogleBooksClient({ baseUrl: 'http://stub/books/v1', apiKey: 'k', fetchImpl });
+    const res = await gb.resolveVolume({
+      title: 'Dead Ever After: A Sookie Stackhouse Novel',
+      author: 'Charlaine Harris',
+    });
+    expect(res?.volumeId).toBe('gb-dea');
+    expect(calls.length).toBe(2); // full title missed, pre-colon hit
   });
 });
 
