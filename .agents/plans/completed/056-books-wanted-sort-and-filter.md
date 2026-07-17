@@ -1,6 +1,6 @@
 # PLAN-056: Books walls — Wanted items break sorting + a three-state Wanted selector
 
-- **Status:** BUILT (2026-07-16, branch `fix/plan-056-wanted-sort` — local five-green gate; PR /
+- **Status:** Completed (v0.68.0 live — server-composed honest sort + All·Only·Hide selector). Was: BUILT (2026-07-16, branch `fix/plan-056-wanted-sort` — local five-green gate; PR /
   deploy / live validation pending).
 - **Owner report (verbatim-in-intent):** "There seems to be a problem sorting books. Wanted is
   always at the top for Books and Audiobooks in Library, likely Comics too but we have none

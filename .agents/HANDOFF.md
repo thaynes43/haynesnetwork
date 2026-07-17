@@ -4,6 +4,75 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ NEXT SESSION — start here (written 2026-07-17 ~02:15 UTC — COLD-START HANDOFF; owner present, directives below are HIS)
+
+**Site live at https://haynesnetwork.com — v0.68.0 live-verified.** Thursday totalled SEVEN
+deployed releases (v0.62.0 About page → v0.68.0 collections/breaker/wanted-sort bundle; v0.67.0
+tagged but image-superseded during a GitHub API partial), EIGHT plans to completed/ (049, 037,
+050, 053, 057, 051, 055, 056), and **LIBRETTO** (github.com/thaynes43/libretto, AGPL, fully
+stateless "Kometa for books") from design → M1 → M2 → DEPLOYED (media ns, pod healthy, real
+Kavita+ABS targets authenticated).
+
+**▶ OWNER DIRECTIVES for the next session (2026-07-17 ~01:50, near-verbatim): "plenty of Opus
+usage so you can go hard dispatching them" —**
+1. **Build out book collections** (Opus wave): curate/mirror more Kavita/ABS collections, more
+   Libretto recipes, scope PLAN-052 (manager UI binds Libretto's live contract).
+2. **Easy SAB grabs to build the library** (Opus wave): usenet-first acquisition sweep — the
+   pairing backfill (1,519 candidates, 25/hr cap, env-tunable) + missing-list pushes; grow the
+   book library aggressively while it's cheap.
+3. **MAM bonus points/VIP:** owner has "a TON" and can buy VIP but "IDK what it means" —
+   RESEARCH what VIP/wedges/upload credit do to seed obligations + what the governor can then
+   afford (feeds PLAN-040's rank knob). OWNER-DIRECTED spends only.
+4. **A FABLE agent plans TRUE SSO (PLAN-058, escalated): "SINGLE sign in"** through the site
+   and every app it supports — auto-login everywhere, retire per-app "Log in with Plex"
+   (Seerr/Tautulli are the named immersion breaks). Inventory → per-app remediation design.
+
+**LIBRETTO state + the ONE known gap:** first real recipe ran (id `harry-potter`, manual,
+saved): Hardcover builder returned the series PERFECTLY ordered (10 works incl. #0.5/#1.5);
+run honest `warn`, **matched 0/10 — Kavita epubs expose NO scheme'd OPF ISBNs (the documented
+M2 caveat) so identifier-only matching cannot hit.** NEXT: implement DESIGN-037 **D-04's
+flagged conservative title fallback** (the ADR-065 noise-stripped-title + author matcher;
+`matchedVia` flagged) in the Libretto repo, redeploy (`:latest`, restart pod), re-apply the
+recipe → expect ~6-7/10 (Sorcerer's≠Philosopher's is an honest US/UK miss) → ordered reading
+list lands in Kavita → the site mirrors it at :27. Ops: pod `libretto` (media), secret
+`libretto-secret` (1P: libretto item + KAVITA_API_KEY in media-stack [a dedicated Kavita auth
+key] + ABS token from audiobookshelf item), API via media-ns Jobs envFrom libretto-secret,
+base http://libretto.media.svc.cluster.local:8080, Bearer LIBRETTO_API_KEY.
+
+**COMICS (Kapowarr) — mid-repair, FINISH FIRST:** root cause of never-downloading: getcomics
+429s everything (1,500+/6h; FlareSolverr absent). FlareSolverr DEPLOYED (downloads ns) but
+first pod hit runAsNonRoot-vs-named-user — **UID fix PR haynes-ops #2079 (runAsUser 1000)
+was merging at handoff; VERIFY it rolled**, then wire: PUT
+kapowarr.downloads:5656/api/settings {"flaresolverr_base_url":
+"http://flaresolverr.downloads.svc.cluster.local:8191"} (KAPOWARR_API_KEY in hnet secret,
+frontend-ns job), DELETE /api/activity/queue/1 (wedged Scott Pilgrim), POST /api/system/tasks
+{cmd:"auto_search", volume_id:3} (Hobbit) + volume_id:4 (Invincible TRADES cv 39340, added
+tonight for the owner's son — 25 vols). SUCCESS = /api/activity/history gains its
+FIRST-EVER entry. Later: Kapowarr Library Import over the Mylar3-era comics folders.
+
+**07:00 UTC GB reset chain:** the two owner Fix Failed rows (Dead Ever After, Whispers) —
+v0.68.0's retry pass (rides goodreads-sync hourly, 10/run) completes them automatically →
+tell the owner → his ONE green UI Fix test → **THE FLIP: setRoleBookActions fix_book → all
+roles + open the `integrations` section** (the standing #1). Owner may also raise the GB
+daily quota in Cloud Console (Books API → Quotas; default 1,000/day).
+
+**Kavita/SSO tonight:** FGTVMan fixed (Login+Bookmark+Download) + **Default Roles landed**
+(future members provision working); owner's SSO acct maps to hnetadmin (break-glass =
+OIDC-down fallback only); auto-login + role-sync-via-Authentik deferred INTO PLAN-058.
+
+**Tooling:** the hardened release-train watcher is now IN-REPO at
+`.agents/tools/release-train.sh` (usage: `bash .agents/tools/release-train.sh <PR#>`;
+dance-aware [release-PR checks never start on GITHUB_TOKEN pushes → close/reopen],
+BEHIND-aware [update-branch API], e2e-tolerant [advisory lane ignored]). New stall classes
+learned: DIRTY needs a manual rebase; never run two watchers on one PR; never merge docs PRs
+mid-train; a GitHub API PARTIAL (endpoint-family HTML 5xx, status page green) kills
+release-please in 10-20s — recovery = any nudge commit to main (bot cannot rerun/dispatch).
+Union-resolving parallel-track rebases: journal entries REBUILD as JSON (never text-union),
+guard regex lines MERGE (never concatenate), verify brace balance + typecheck before every
+`rebase --continue`.
+
+### Prior top block (Thursday late evening)
+
 ## ▶ NEXT SESSION — start here (written 2026-07-16 LATE evening — the Libretto + scoreboard evening, owner present)
 
 **Site live at https://haynesnetwork.com — v0.66.0 running; v0.67.0/v0.68.0 queued behind tonight's

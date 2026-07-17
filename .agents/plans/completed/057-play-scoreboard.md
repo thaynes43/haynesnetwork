@@ -1,6 +1,6 @@
 # PLAN-057: Estate play scoreboard — the dashboard Tautulli badge row
 
-- **Status:** BUILT (2026-07-16 — docs + full vertical + tests on
+- **Status:** Completed (v0.66.0 live + label fix in v0.68.0; live-proven vs all three Tautullis). Was: BUILT (2026-07-16 — docs + full vertical + tests on
   `feat/plan-057-play-scoreboard`, local five-green gate; PR/deploy pending)
 - **Owner spec (2026-07-16 eve, verbatim-in-intent):** "let's pull from all three Tautullis
   and have a semi-live display on the front page. Really show off. Have it above the button
