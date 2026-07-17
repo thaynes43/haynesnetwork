@@ -7,11 +7,11 @@ import { runMigrations } from '../src/migrate';
 // semantics) with direct SQL on purpose — it is on the ALLOWED_FILES list of the
 // no-direct-state-writes guard (packages/domain/__tests__), donor pattern.
 
+// The catalog slugs after ALL migrations. The three direct Plex server cards
+// (plex/k8plex/plexops) were seeded by 0002 but DELETED by migration 0061 (owner ruling,
+// DESIGN-004 Q-04, 2026-07-17) — so they are absent from the final state asserted here.
 const SEED_SLUGS = [
   'seerr',
-  'plex',
-  'k8plex',
-  'plexops',
   'immich',
   'open-webui',
   'paperless',
@@ -27,7 +27,7 @@ describe('withMigratedDb', () => {
       await client.connect();
       try {
         const seeded = await client.query('SELECT count(*)::int AS n FROM app_catalog');
-        expect(seeded.rows[0].n).toBe(10);
+        expect(seeded.rows[0].n).toBe(7);
         const v = await client.query('SHOW server_version');
         return String(v.rows[0].server_version);
       } finally {
@@ -87,7 +87,7 @@ describe('migrations against embedded Postgres 16', () => {
   it('is idempotent: re-running runMigrations applies nothing new', async () => {
     await runMigrations({ databaseUrl: pg.connectionString });
     const seeded = await client.query('SELECT count(*)::int AS n FROM app_catalog');
-    expect(seeded.rows[0].n).toBe(10);
+    expect(seeded.rows[0].n).toBe(7);
   });
 
   it('seeds the catalog exactly per DESIGN-001 D-14', async () => {
@@ -97,9 +97,10 @@ describe('migrations against embedded Postgres 16', () => {
     expect(rows.rows.map((r) => r.slug)).toEqual(SEED_SLUGS);
     const bySlug = new Map(rows.rows.map((r) => [r.slug, r]));
     expect(bySlug.get('seerr').url).toBe('https://overseerr.haynesnetwork.com');
-    expect(bySlug.get('plex').url).toBe('https://plex.haynesnetwork.com');
-    expect(bySlug.get('k8plex').url).toBe('https://k8plex.haynesnetwork.com');
-    expect(bySlug.get('plexops').url).toBe('https://plexops.haynesnetwork.com');
+    // plex/k8plex/plexops were deleted by migration 0061 (DESIGN-004 Q-04) — absent here.
+    expect(bySlug.has('plex')).toBe(false);
+    expect(bySlug.has('k8plex')).toBe(false);
+    expect(bySlug.has('plexops')).toBe(false);
     expect(bySlug.get('immich').url).toBe('https://immich.haynesnetwork.com');
     expect(bySlug.get('open-webui').url).toBe('https://ai.haynesnetwork.com');
     expect(bySlug.get('paperless').url).toBe('https://paperless.haynesnetwork.com');
@@ -109,7 +110,8 @@ describe('migrations against embedded Postgres 16', () => {
     expect(bySlug.get('kavita').icon).toBe('kavita');
     expect(bySlug.get('audiobookshelf').url).toBe('https://audiobookshelf.haynesnetwork.com');
     expect(bySlug.get('audiobookshelf').icon).toBe('audiobookshelf');
-    expect(rows.rows.map((r) => r.sort_order)).toEqual([10, 20, 30, 40, 50, 60, 70, 80, 90, 100]);
+    // 20/30/40 (plex/k8plex/plexops) removed by 0061; the surviving rows keep their seed order.
+    expect(rows.rows.map((r) => r.sort_order)).toEqual([10, 50, 60, 70, 80, 90, 100]);
   });
 
   it('seeds Admin + Default + Family roles with the right app sets (ADR-012)', async () => {
@@ -131,18 +133,11 @@ describe('migrations against embedded Postgres 16', () => {
       );
       return res.rows.map((r) => r.slug);
     };
-    // Default = the old default-visible set PLUS plexops.
-    expect(await grantsFor('Default')).toEqual(['seerr', 'plex', 'k8plex', 'plexops']);
-    // Family (extended family) = every app except tautulli.
-    expect(await grantsFor('Family')).toEqual([
-      'seerr',
-      'plex',
-      'k8plex',
-      'plexops',
-      'immich',
-      'open-webui',
-      'paperless',
-    ]);
+    // Default was seeded {seerr, plex, k8plex, plexops}; migration 0061 deleted the three
+    // Plex cards and their grants cascaded away (ON DELETE cascade), leaving just seerr.
+    expect(await grantsFor('Default')).toEqual(['seerr']);
+    // Family was every app except tautulli; the three Plex grants likewise cascaded away.
+    expect(await grantsFor('Family')).toEqual(['seerr', 'immich', 'open-webui', 'paperless']);
     // Admin stores NO explicit grants (all-apps is implicit via is_admin).
     expect(await grantsFor('Admin')).toEqual([]);
   });
@@ -1147,7 +1142,9 @@ describe('migrations against embedded Postgres 16', () => {
       await client.query(
         `INSERT INTO notification_outbox (channel, event_type, payload) VALUES ('email', 'activity_failure_digest', '{"to":"a@x.com"}'::jsonb)`,
       );
-      await client.query(`DELETE FROM notification_outbox WHERE event_type = 'activity_failure_digest'`);
+      await client.query(
+        `DELETE FROM notification_outbox WHERE event_type = 'activity_failure_digest'`,
+      );
       await client.query(
         `INSERT INTO sync_runs (source, run_kind, status) VALUES ('radarr', 'failure-digest', 'running')`,
       );
@@ -1216,12 +1213,23 @@ describe('migrations against embedded Postgres 16', () => {
         }),
       ).rejects.toMatchObject({ code: '23514' });
       for (const action of ['request_book_fix', 'update_book_actions']) {
-        await client.query({ text: `INSERT INTO permission_audit (action) VALUES ($1)`, values: [action] });
+        await client.query({
+          text: `INSERT INTO permission_audit (action) VALUES ($1)`,
+          values: [action],
+        });
       }
       // cleanup (books_item is RESTRICT-referenced — remove the fix rows first).
-      await client.query({ text: `DELETE FROM role_books_action_grants WHERE role_id = $1`, values: [roleId] });
-      await client.query(`DELETE FROM permission_audit WHERE action IN ('request_book_fix','update_book_actions')`);
-      await client.query({ text: `DELETE FROM book_fix_requests WHERE books_item_id = $1`, values: [itemId] });
+      await client.query({
+        text: `DELETE FROM role_books_action_grants WHERE role_id = $1`,
+        values: [roleId],
+      });
+      await client.query(
+        `DELETE FROM permission_audit WHERE action IN ('request_book_fix','update_book_actions')`,
+      );
+      await client.query({
+        text: `DELETE FROM book_fix_requests WHERE books_item_id = $1`,
+        values: [itemId],
+      });
       await client.query({ text: `DELETE FROM books_items WHERE id = $1`, values: [itemId] });
       await client.query({ text: `DELETE FROM users WHERE id = $1`, values: [userId] });
     });
@@ -1284,7 +1292,10 @@ describe('migrations against embedded Postgres 16', () => {
   // ADR-065 / DESIGN-036 (migration 0054) — the format-pairing surfaces: books_format_pairs + the
   // book_requests system-want widening + the run-kind CHECK relax. Additive.
   describe('0054 format pairing (ADR-065 — pair cache + system wants + run-kind CHECK)', () => {
-    async function seedBooksItem(externalId: string, mediaKind: 'book' | 'audiobook'): Promise<string> {
+    async function seedBooksItem(
+      externalId: string,
+      mediaKind: 'book' | 'audiobook',
+    ): Promise<string> {
       const source = mediaKind === 'audiobook' ? 'audiobookshelf' : 'kavita';
       const row = await client.query({
         text: `INSERT INTO books_items (source, media_kind, external_id, library_id, library_name, title, sort_title, author, deep_link_url)
@@ -1484,7 +1495,9 @@ describe('migrations against embedded Postgres 16', () => {
         values: [colId],
       });
       expect(left.rows[0].n).toBe(0);
-      await client.query(`DELETE FROM books_collections WHERE source = 'kavita' AND external_id = '5'`);
+      await client.query(
+        `DELETE FROM books_collections WHERE source = 'kavita' AND external_id = '5'`,
+      );
     });
 
     it('sync_runs.run_kind admits books-collections-sync (parity — the mode writes no row itself)', async () => {
@@ -1519,9 +1532,9 @@ describe('migrations against embedded Postgres 16', () => {
         client.query(`INSERT INTO gb_quota_state (id) VALUES ('gb2')`),
       ).rejects.toMatchObject({ code: '23514' });
       // …and a second 'gb' row violates the PK.
-      await expect(client.query(`INSERT INTO gb_quota_state (id) VALUES ('gb')`)).rejects.toMatchObject(
-        { code: '23505' },
-      );
+      await expect(
+        client.query(`INSERT INTO gb_quota_state (id) VALUES ('gb')`),
+      ).rejects.toMatchObject({ code: '23505' });
       await client.query(`DELETE FROM gb_quota_state`);
     });
 
@@ -1550,7 +1563,10 @@ describe('migrations against embedded Postgres 16', () => {
         }),
       ).rejects.toMatchObject({ code: '23514' });
       // cleanup (books_item is RESTRICT-referenced — remove the fix rows first).
-      await client.query({ text: `DELETE FROM book_fix_requests WHERE books_item_id = $1`, values: [itemId] });
+      await client.query({
+        text: `DELETE FROM book_fix_requests WHERE books_item_id = $1`,
+        values: [itemId],
+      });
       await client.query({ text: `DELETE FROM books_items WHERE id = $1`, values: [itemId] });
       await client.query({ text: `DELETE FROM users WHERE id = $1`, values: [userId] });
     });
@@ -1605,7 +1621,9 @@ describe('migrations against embedded Postgres 16', () => {
         )
       ).rows[0].created_by;
       expect(colId).toBe('libretto');
-      await client.query(`DELETE FROM books_collections WHERE source = 'audiobookshelf' AND external_id = 'prov-1'`);
+      await client.query(
+        `DELETE FROM books_collections WHERE source = 'audiobookshelf' AND external_id = 'prov-1'`,
+      );
     });
   });
 
@@ -1664,16 +1682,29 @@ describe('migrations against embedded Postgres 16', () => {
       ).rejects.toMatchObject({ code: '23514' });
 
       // The three new permission_audit actions admit.
-      for (const action of ['update_collection_actions', 'create_collection_suggestion', 'review_collection_suggestion']) {
-        await client.query({ text: `INSERT INTO permission_audit (action) VALUES ($1)`, values: [action] });
+      for (const action of [
+        'update_collection_actions',
+        'create_collection_suggestion',
+        'review_collection_suggestion',
+      ]) {
+        await client.query({
+          text: `INSERT INTO permission_audit (action) VALUES ($1)`,
+          values: [action],
+        });
       }
 
       // cleanup.
-      await client.query({ text: `DELETE FROM role_collection_action_grants WHERE role_id = $1`, values: [roleId] });
+      await client.query({
+        text: `DELETE FROM role_collection_action_grants WHERE role_id = $1`,
+        values: [roleId],
+      });
       await client.query(
         `DELETE FROM permission_audit WHERE action IN ('update_collection_actions','create_collection_suggestion','review_collection_suggestion')`,
       );
-      await client.query({ text: `DELETE FROM collection_suggestions WHERE suggester_id = $1`, values: [userId] });
+      await client.query({
+        text: `DELETE FROM collection_suggestions WHERE suggester_id = $1`,
+        values: [userId],
+      });
       await client.query({ text: `DELETE FROM users WHERE id = $1`, values: [userId] });
     });
   });
@@ -1725,7 +1756,9 @@ describe('migrations against embedded Postgres 16', () => {
         isbn: '9780140620481',
         file_count: 9,
       });
-      await client.query(`DELETE FROM books_items WHERE external_id IN ('enrich-legacy','enrich-abs')`);
+      await client.query(
+        `DELETE FROM books_items WHERE external_id IN ('enrich-legacy','enrich-abs')`,
+      );
     });
   });
 });

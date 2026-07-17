@@ -1,0 +1,27 @@
+-- Delete the three dormant direct Plex SERVER catalog cards — slugs `plex`, `k8plex`,
+-- `plexops` (owner ruling, DESIGN-004 Q-04, 2026-07-17: DELETE, not keep-as-dormant).
+--
+-- These were seeded by migration 0002 (and granted to the Default/Family roles by 0007).
+-- Since v0.72 the Portal already display-excludes them (PORTAL_HIDDEN_SLUGS, R-230) because
+-- Plex has no Authentik SSO flow (DESIGN-041) and the app.plex.tv web player reaches every
+-- server the account can access — so nothing user-facing is lost by removing the rows. The
+-- owner has now ruled to delete the underlying data too; this migration is the durable,
+-- fresh-deploy-safe form of that delete (shipped migrations are never edited, so the 0002
+-- seed stays as history and this forward migration un-does its three Plex rows — the
+-- supersede-don't-edit rule).
+--
+-- Cascade consequences (both are correct and unavoidable — you cannot keep a grant/audit FK
+-- pointing at a deleted app):
+--   • role_app_grants rows for these three apps cascade away (ON DELETE cascade, migration
+--     0007). Net effect: Default role -> {seerr}; Family role -> {seerr, immich, open-webui,
+--     paperless}. Harmless — those tiles were already Portal-hidden, and Plex library access
+--     / per-server deep links are governed by plex_servers + role_plex_server_all_grants, a
+--     SEPARATE surface untouched here (R-230).
+--   • permission_audit.app_id is SET NULL for any historical audit rows that referenced them
+--     (audit history outlives its subject; the jsonb detail keeps the denormalized snapshot).
+--
+-- No permission_audit / user_role_transitions rows are written here: migrations are a
+-- system-level data operation with no admin actor, not a single-writer domain mutation
+-- (the 0002 seed and 0007 grant-seed likewise wrote no audit). Idempotent — a no-op if an
+-- admin already deleted them via /admin/catalog (R-11).
+DELETE FROM app_catalog WHERE slug IN ('plex', 'k8plex', 'plexops');

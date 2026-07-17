@@ -40,10 +40,20 @@ describe('roles.list', () => {
     const byName = new Map(roles.map((r) => [r.name, r]));
 
     expect(byName.get('Admin')).toMatchObject({ isAdmin: true, isDefault: false, appIds: [] });
-    expect(byName.get('Default')).toMatchObject({ isAdmin: false, isDefault: true, grantsAll: false });
-    expect(byName.get('Default')!.appIds.length).toBe(4); // seerr/plex/k8plex/plexops seeded
-    expect(byName.get('Family')).toMatchObject({ isAdmin: false, isDefault: false, grantsAll: false });
-    expect(byName.get('Family')!.appIds.length).toBe(7); // everything except tautulli
+    expect(byName.get('Default')).toMatchObject({
+      isAdmin: false,
+      isDefault: true,
+      grantsAll: false,
+    });
+    // Default was seeded seerr/plex/k8plex/plexops; migration 0061 (DESIGN-004 Q-04) deleted
+    // the three Plex cards and their grants cascaded away, leaving just seerr.
+    expect(byName.get('Default')!.appIds.length).toBe(1); // seerr
+    expect(byName.get('Family')).toMatchObject({
+      isAdmin: false,
+      isDefault: false,
+      grantsAll: false,
+    });
+    expect(byName.get('Family')!.appIds.length).toBe(4); // seerr/immich/open-webui/paperless (Plex cards deleted)
     expect(byName.get('Admin')!.memberCount).toBe(1); // the admin user created above
   });
 });
@@ -56,7 +66,12 @@ describe('roles.create / update / delete', () => {
       appIds: [seerrId],
     });
     const created = (await adminCaller.roles.list()).find((r) => r.id === roleId)!;
-    expect(created).toMatchObject({ name: 'friends', appIds: [seerrId], memberCount: 0, grantsAll: false });
+    expect(created).toMatchObject({
+      name: 'friends',
+      appIds: [seerrId],
+      memberCount: 0,
+      grantsAll: false,
+    });
   });
 
   it('an "All apps" role (grantsAll) stores no explicit app rows', async () => {
@@ -97,9 +112,9 @@ describe('roles.create / update / delete', () => {
   });
 
   it('deleting a system role → FORBIDDEN; a custom role deletes cleanly', async () => {
-    await expect(
-      adminCaller.roles.delete({ id: SEEDED_ROLE_IDS.default }),
-    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(adminCaller.roles.delete({ id: SEEDED_ROLE_IDS.default })).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
 
     const { roleId } = await adminCaller.roles.create({ name: 'temp' });
     await adminCaller.roles.delete({ id: roleId });

@@ -1079,6 +1079,13 @@ re-creating a card under one of the three seeded slugs stays hidden (documented,
 delete the rows in `/admin/catalog` to make the set a no-op, which the owner can do at leisure,
 Q-04). The Library detail pages' per-server "Watch on Plex" deep links (ADR-047) are UNTOUCHED.
 
+**Amendment 2026-07-17 (Q-04 resolved — DELETE).** The owner ruled to delete the three rows.
+Migration `0061_delete_dormant_plex_catalog_rows` now removes them durably (fresh-deploy-safe),
+so `PORTAL_HIDDEN_SLUGS` becomes a defensive no-op (retained, not removed). This supersedes the
+"no code deletes rows" framing above for these three slugs only; the display-exclusion mechanism
+and the arbitrary-URL catalog model (R-11) are otherwise unchanged, and the ADR-047 deep links
+stay untouched (they read `plex_servers`, a separate surface).
+
 **History (D-19).** Portal is a first-class screen: the nav tab and the logo are both `<Link>`
 pushes, so Back/Forward walk Home ↔ Portal like screens. No replace semantics anywhere in the
 split; D-19 is inherited, not amended.
@@ -1103,4 +1110,4 @@ Home has no grid; the Portal shape — player link/rule/grid order, server cards
 | Q-01 | Brand mark: the donor's placeholder four-square SVG ships initially — does the owner want a real haynesnetwork logo (SVG) for topbar + `/login`?                                                   | Resolved 2026-07-03: hub-and-spoke mark, DESIGN-006 D-01                                                                                                                 |
 | Q-02 | Topbar avatar: initial-letter circle only, or render `users.image` (Better Auth stores the OIDC `picture` claim there — DESIGN-001 D-02) when present?                                             | Resolved: initial-letter circle only — `initialFor(displayName)` in `apps/web/lib/initials.ts` (first letter uppercased, `?` fallback). `users.image` is never rendered. |
 | Q-03 | Final brand palette: initial tokens keep demo-console's green `#78be20` accent verbatim (D-01). What accent/surfaces does the owner want for the haynesnetwork rebrand (a `tokens.css`-only edit)? | Resolved 2026-07-03: palette values stay (owner: "colors are good"); identity comes from mark/type/shape — DESIGN-006                                                    |
-| Q-04 | (D-23) The three direct Plex server catalog rows (`plex`/`k8plex`/`plexops`) are display-excluded from Portal but still live in `/admin/catalog`. Owner: delete the rows (making `PORTAL_HIDDEN_SLUGS` a no-op), or keep them as dormant admin records? Either is safe — no code change needed. | **Open — owner, at leisure.**                                                                                                                                            |
+| Q-04 | (D-23) The three direct Plex server catalog rows (`plex`/`k8plex`/`plexops`) are display-excluded from Portal but still live in `/admin/catalog`. Owner: delete the rows (making `PORTAL_HIDDEN_SLUGS` a no-op), or keep them as dormant admin records? Either is safe — no code change needed. | **Resolved 2026-07-17 (owner ruling): DELETE.** Migration `0061_delete_dormant_plex_catalog_rows` deletes the three rows durably (fresh-deploy-safe; shipped migrations are never edited, so 0002 stays as history and 0061 un-does its three Plex rows). Their `role_app_grants` cascade away (Default → `{seerr}`; Family → `{seerr, immich, open-webui, paperless}`); `permission_audit.app_id` is SET NULL. `PORTAL_HIDDEN_SLUGS` is now a defensive no-op — kept as cheap insurance (a re-created `plex`/`k8plex`/`plexops` card stays hidden), not removed. Verified at the DB layer before/after (10 → 7 rows, three Plex slugs gone). |

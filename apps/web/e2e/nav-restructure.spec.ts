@@ -40,10 +40,15 @@ test.describe('nav restructure — the four-tab universal bar (DESIGN-004 D-22/D
       await signIn(page, 'admin'); // admin surfaces all four candidates (trash=edit implied)
 
       // Exactly four links, in the approved order, and NOT the relocated pair.
-      await expect(page.locator('.topbar__nav a')).toHaveText(['Portal', 'Library', 'Tickets', 'Trash']);
-      await expect(
-        page.locator('.topbar__nav').getByRole('link', { name: 'Metrics' }),
-      ).toHaveCount(0);
+      await expect(page.locator('.topbar__nav a')).toHaveText([
+        'Portal',
+        'Library',
+        'Tickets',
+        'Trash',
+      ]);
+      await expect(page.locator('.topbar__nav').getByRole('link', { name: 'Metrics' })).toHaveCount(
+        0,
+      );
       await expect(
         page.locator('.topbar__nav').getByRole('link', { name: 'Integrations' }),
       ).toHaveCount(0);
@@ -51,7 +56,10 @@ test.describe('nav restructure — the four-tab universal bar (DESIGN-004 D-22/D
       // At 320px the four tabs fit their rail with no scroll (the restructure's headline goal;
       // the scroll pane stays only as a safety net).
       if (vp.w <= 360) {
-        expect(await navScrollOverflow(page), 'four tabs fit 320px with no rail scroll').toBeLessThanOrEqual(1);
+        expect(
+          await navScrollOverflow(page),
+          'four tabs fit 320px with no rail scroll',
+        ).toBeLessThanOrEqual(1);
       }
     });
   }
@@ -108,20 +116,24 @@ test.describe('home/portal split — logo → Home, Portal = the launcher (DESIG
     );
     expect(order).toEqual(['player', 'rule', 'grid']);
 
-    // Admin sees every catalog app EXCEPT the three direct Plex server cards (a display
-    // exclusion keyed on the seeded slugs — the catalog rows themselves stay).
+    // Admin sees every catalog app EXCEPT the three direct Plex server cards. These were
+    // display-excluded by PORTAL_HIDDEN_SLUGS and, per DESIGN-004 Q-04 (owner ruling
+    // 2026-07-17), the underlying rows are now DELETED by migration 0061 — so they are gone
+    // from both the Portal grid AND /admin/catalog.
     const names = page.locator('.tile-grid .tile .tile__name');
     await expect(names.filter({ hasText: 'Seerr' })).toHaveCount(1);
     await expect(names.filter({ hasText: /^K8Plex/ })).toHaveCount(0);
     await expect(names.filter({ hasText: /^PlexOps/ })).toHaveCount(0);
     await expect(names.filter({ hasText: /^Plex\b/ })).toHaveCount(0);
-    // The rows are NOT deleted: /admin/catalog still lists all three (R-11).
+    // The rows are deleted (0061): /admin/catalog no longer lists any of the three.
     await page.goto('/admin/catalog');
-    for (const name of ['Plex', 'K8Plex', 'PlexOps'] as const) {
-      await expect(
-        page.locator('.admin-table tbody tr').filter({ hasText: name }).first(),
-      ).toBeVisible();
+    await expect(page.locator('.admin-table tbody tr').first()).toBeVisible();
+    for (const name of ['K8Plex', 'PlexOps'] as const) {
+      await expect(page.locator('.admin-table tbody tr').filter({ hasText: name })).toHaveCount(0);
     }
+    await expect(page.locator('.admin-table tbody tr').filter({ hasText: /^Plex\b/ })).toHaveCount(
+      0,
+    );
   });
 });
 
@@ -204,6 +216,11 @@ test.describe('nav restructure — menu-item push + active-state correctness (DE
     await expect(page.locator('.topbar__nav a[aria-current]')).toHaveCount(0);
     await expect(page.locator('.topbar__nav a.is-active')).toHaveCount(0);
     // The bar is still exactly the four universal tabs.
-    await expect(page.locator('.topbar__nav a')).toHaveText(['Portal', 'Library', 'Tickets', 'Trash']);
+    await expect(page.locator('.topbar__nav a')).toHaveText([
+      'Portal',
+      'Library',
+      'Tickets',
+      'Trash',
+    ]);
   });
 });

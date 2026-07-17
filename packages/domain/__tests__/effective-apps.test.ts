@@ -23,10 +23,12 @@ describe('effectiveAppsForUser (ADR-012 — role-based, replaces the tri-union v
     await t?.stop();
   });
 
-  it('a Default-role user sees exactly the Default role app set (seeded default-visible + plexops)', async () => {
+  it('a Default-role user sees exactly the Default role app set (just seerr after the Plex-card delete)', async () => {
     const user = await createUser(t.db); // role_id defaults to Default
     const apps = await effectiveAppsForUser(user.id, t.db);
-    expect(apps.map((a) => a.slug)).toEqual(['seerr', 'plex', 'k8plex', 'plexops']);
+    // Default seeded {seerr, plex, k8plex, plexops}; migration 0061 (DESIGN-004 Q-04) deleted
+    // the three Plex cards and their grants cascaded away, leaving just seerr.
+    expect(apps.map((a) => a.slug)).toEqual(['seerr']);
   });
 
   it('an Admin-role user sees EVERY catalog app (implicit all-apps, including hidden/new ones)', async () => {
@@ -38,7 +40,9 @@ describe('effectiveAppsForUser (ADR-012 — role-based, replaces the tri-union v
       initiator: { id: null, kind: 'system' },
     });
     const slugs = (await effectiveAppsForUser(admin.id, t.db)).map((a) => a.slug);
-    expect(slugs).toHaveLength(11); // 10 seeded (+ kavita/audiobookshelf, ADR-046) + 'extra'
+    // 7 surviving seeded cards (0002 minus plex/k8plex/plexops deleted by 0061; + kavita/
+    // audiobookshelf, ADR-046) + the 'extra' app created in beforeAll.
+    expect(slugs).toHaveLength(8);
     expect(slugs).toContain('extra');
     expect(slugs).toContain('tautulli'); // a normally-hidden app — admins still see it
     expect(slugs).toContain('kavita'); // ADR-046 — seeded book-server card, admins see it implicitly
@@ -46,8 +50,18 @@ describe('effectiveAppsForUser (ADR-012 — role-based, replaces the tri-union v
 
   it('a custom role grants exactly its app set, and editing the role updates effective apps', async () => {
     const user = await createUser(t.db);
-    const { roleId } = await createRole({ db: t.db, name: 'extra-only', appIds: [appA], actorId: null });
-    await assignRole({ db: t.db, userId: user.id, toRoleId: roleId, initiator: { id: null, kind: 'system' } });
+    const { roleId } = await createRole({
+      db: t.db,
+      name: 'extra-only',
+      appIds: [appA],
+      actorId: null,
+    });
+    await assignRole({
+      db: t.db,
+      userId: user.id,
+      toRoleId: roleId,
+      initiator: { id: null, kind: 'system' },
+    });
     expect((await effectiveAppsForUser(user.id, t.db)).map((a) => a.slug)).toEqual(['extra']);
 
     await updateRole({ db: t.db, roleId, appIds: [], actorId: null }); // empty the set
@@ -57,8 +71,18 @@ describe('effectiveAppsForUser (ADR-012 — role-based, replaces the tri-union v
   // Runs LAST — it adds a catalog app, which would perturb the exact-count assertions above.
   it('a grants_all role sees EVERY app — including one added after the role was created', async () => {
     const user = await createUser(t.db);
-    const { roleId } = await createRole({ db: t.db, name: 'all-access', grantsAll: true, actorId: null });
-    await assignRole({ db: t.db, userId: user.id, toRoleId: roleId, initiator: { id: null, kind: 'system' } });
+    const { roleId } = await createRole({
+      db: t.db,
+      name: 'all-access',
+      grantsAll: true,
+      actorId: null,
+    });
+    await assignRole({
+      db: t.db,
+      userId: user.id,
+      toRoleId: roleId,
+      initiator: { id: null, kind: 'system' },
+    });
     const before = (await effectiveAppsForUser(user.id, t.db)).map((a) => a.slug);
     expect(before).toContain('extra');
     expect(before).toContain('tautulli'); // grants_all includes normally-hidden apps

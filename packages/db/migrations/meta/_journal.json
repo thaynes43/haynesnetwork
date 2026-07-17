@@ -421,6 +421,13 @@
       "when": 1783901800000,
       "tag": "0060_books_detail_enrichment",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1783901900000,
+      "tag": "0061_delete_dormant_plex_catalog_rows",
+      "breakpoints": true
     }
   ]
 }
