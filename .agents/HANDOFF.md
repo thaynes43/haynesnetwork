@@ -4,6 +4,88 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ NEXT SESSION — start here (written 2026-07-17 ~05:30 UTC — the overnight wave, owner intermittently present)
+
+**Site live at https://haynesnetwork.com — v0.68.1 live-verified** (health 200, in-cluster probe;
+the dev pod cannot curl the public hostname — probe via a frontend-ns job against
+`haynesnetwork.frontend.svc:3000`). All four owner directives from the 02:15 handoff EXECUTED,
+plus the comics repair finished. The board: PLAN-058 planned (DESIGN-041 merged, Q-01..Q-08 await
+owner), PLAN-059 filed (LL format-mismatch churn), PLAN-040/052 enriched with research inputs.
+
+**THE ONE REMAINING #1 — the GB reset chain (UNCHANGED, do first):** after 07:00 UTC (or sooner
+if the owner bumped the GB daily quota — he asked about it ~03:20 UTC, no confirmation yet; if he
+did, clear the `gb_quota_state` breaker row so the retry pass runs immediately) → v0.68.1's hourly
+retry pass completes the two owner fixes (Dead Ever After, Whispers) → owner's ONE green Fix test
+→ **THE FLIP: `setRoleBookActions` fix_book → all roles + open the `integrations` section.**
+
+**Tonight, in order of owner impact:**
+- **INVINCIBLE IS READABLE (the son's ask):** the complete 25-TPB run (v01–v25) is in Kavita
+  (series "Invincible", Comics library) + mirrored to the site (books-sync 2,222 items).
+  Kapowarr could NOT deliver it — see the doctrine below — the files came via a paced direct
+  fetch from getcomics' Main Server (six.comicfiles.ru) into the volume folder (a documented
+  acquisition-layer exception; "Guarding the Globe" extras moved to their own series folder).
+  Kapowarr volume 4 is deliberately UNMONITORED (content present; monitoring it would resume
+  429-hammering). FlareSolverr IS deployed + wired (runAsUser fix #2079, `flaresolverr_base_url`
+  set) — for real CF challenges only.
+- **THE COLLECTIONS WAVE: 16 live** (12 Kavita ordered reading lists + 4 ABS audiobook
+  collections: HP, Throne of Glass, Outlander, Discworld, Sookie ×2, Wheel of Time, Bridgerton,
+  ACOTAR, Dune ×2, Percy Jackson ×2, Stormlight, Mistborn, Hunger Games audio), all mirrored
+  (books-collections-sync: 23 collections / 132 members resolved). Owner review: mistborn (2/14)
+  + stormlight-archive (3/18) are honest-but-thin (omnibus-only holdings) — keep or cut.
+  PLAN-052 now carries the proven live contract (ref-preview is the top composer win).
+- **LIBRETTO D-04 SHIPPED AND PROVEN** (libretto #5 + #6): conservative flagged title fallback;
+  harry-potter matched 6/10 (`matchedByTitle:6`; Sorcerer's/Philosopher's stays an honest miss).
+  TWO deploy traps found: (1) the node's pull path serves a STALE `:latest` — libretto is now
+  PINNED to sha-<commit> tags in haynes-ops (#2080/#2084/#2085 pattern; bump per deploy);
+  (2) ANY WorkItem shape change must bump the `hardcover:series-works:vN` disk-cache key or a
+  live pod serves pre-change entries for the full TTL (#6).
+- **THE WINGS MISROUTE (v0.68.1's payload):** "The Serpent and the Wings of Night" (a NOVEL) had
+  been GB-misresolved → durably comic-classified → routed to CV 100145 "Wings" (1982 Japanese
+  magazine, 319 issues) whose auto-search caused the whole getcomics 429 storm. Fixed live (row
+  un-comic'd → back on the LL route; junk volume deleted) + three guards shipped (#341):
+  de-noised `intitle:` query, ≥60%-coverage resolve-title guard (the GB volume id is the LL
+  addBook key — a wrong resolve could mint the WRONG BOOK), ≥2-token ComicVine overlap floor.
+  DESIGN-028 amendment documents it.
+- **PLAN-058 TRUE SSO planned** (#340, DESIGN-041): full estate inventory. Quick wins = Kavita
+  `AutoLogin=true` + ABS `authOpenIDAutoLaunch=true` (both runtime flags, break-glasses verified).
+  Seerr has NO stable OIDC upstream (watch seerr#2715); Tautulli needs an Authentik proxy front
+  door (all-admin tradeoff). Q-01..Q-08 for the owner. Paperless is the reference implementation.
+- **MAM RESEARCH (feeds PLAN-040):** freeleech does NOT reduce seed obligations — the unsatisfied
+  cap is a CLASS attribute (NM 20 → User 50 → PU 100 → VIP 150). Optimal: minimum upload-credit
+  spend to clear ratio 2.0 → earn Power User (~6x throughput) → maintain VIP (cap 150; a lapse
+  drops to 100). Wedges: hoard, never buy. Owner verifies prices in-site before ANY spend.
+  Full report: `.agents/context/2026-07-17-mam-vip-research.md`.
+- **SAB sweep:** 27 searches fired (all Wanted books, both formats); governor correctly paused
+  (15/15); pairing backfill draining at exactly 25/hr (~1,195 left ≈ 48h). Found PLAN-059 (the
+  format-mismatch churn — Rework/Feeling Good re-downloaded 4+×/day; details in the plan).
+
+**KAPOWARR DOCTRINE (hard-won tonight — memory `kapowarr-ops-doctrine` has the full version):**
+getcomics 429s are BURST-RATE (its own link-check/auto-search bursts trip a CF rate rule;
+FlareSolverr never helps — it only fires on 403+CF-challenge); the direct-link add
+(`POST /api/volumes/<id>/download?link=<page>&force_match=`) is the only reliable ingest and only
+for SMALL pages (a 151-link collection page can never ingest — the /dls/ resolutions alone trip
+the rule); a stalled download WEDGES the whole API on any delete (remedy: pod restart; never
+remove-all while downloading; boot-race is unwinnable); Pixeldrain caps ~1GB/stream/IP-day, Mega
+rate-limits the cluster IP (API -6), Main Server (six.comicfiles.ru) is unlimited and alive.
+`service_preference` is now GetComics-first, `concurrent_direct_downloads` 3. Batman vol 2 remains
+monitored/wanted — its auto-search will 429 until Kapowarr upstream paces its requests.
+
+**Working-rule addenda:** release-train: the in-repo script hard-cds to a dead worktree and takes
+a FEATURE PR number — driving the release PR manually worked: dance (close/reopen/re-arm) +
+BEHIND update-branch + artifact-pair gate + haynes-ops bump + `flux reconcile hr` + in-cluster
+health probe (the full sequence is in this session's transcript; fix the script before trusting
+it again) · docs PRs held mid-train then update-branch after · media/downloads-ns Jobs need the
+restricted-PodSecurity contexts (frontend does not) · NFS media mount for jobs:
+`gasha01.haynesnetwork:/hdd-nfs-repl` → `/data/cephfs-hdd` (nfs volume type warns but runs) ·
+Kavita comics = library 2; Kavita search API finds series the FilterV2 page-walk also sees.
+
+**Open next:** the GB chain + THE FLIP (above) · owner rulings: DESIGN-041 Q-01..Q-08, thin
+recipes keep/cut, MAM spend go/no-go (in-site price check first) · PLAN-059 investigate ·
+PLAN-052 build (contract enriched, scope-ready) · PLAN-040 build (research folded) · Kapowarr
+upstream: consider filing the burst-rate + wedge issues.
+
+### Prior top block (2026-07-17 ~02:15 UTC)
+
 ## ▶ NEXT SESSION — start here (written 2026-07-17 ~02:15 UTC — COLD-START HANDOFF; owner present, directives below are HIS)
 
 **Site live at https://haynesnetwork.com — v0.68.0 live-verified.** Thursday totalled SEVEN
