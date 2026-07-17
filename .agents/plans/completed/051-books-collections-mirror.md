@@ -1,6 +1,6 @@
 # PLAN-051: Books collections mirror (Kavita + Audiobookshelf)
 
-- **Status:** BUILT (2026-07-16, `feat/plan-051-books-collections` — docs ADR-066 / DESIGN-038 /
+- **Status:** Completed (v0.68.0, 2026-07-16 eve — feat #332, release #336, haynes-ops #2077; LIVE: first sync mirrored 7 collections / 12 members from real Kavita+ABS, all families scoped, CronJob :27). Was: BUILT (2026-07-16, `feat/plan-051-books-collections` — docs ADR-066 / DESIGN-038 /
   PRD R-215..R-217 / glossary T-187..T-190; migration 0056; the `books-collections-sync` mode;
   `books.collectionGroups` + the `collection` drill + `position` sort; the Collections sibling
   dimension + six registry levels on the three book walls. Five-green local gate on the branch.)

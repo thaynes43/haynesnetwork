@@ -1,6 +1,6 @@
 # PLAN-055: Google Books quota resilience — the shared breaker + retryable book Fixes
 
-- **Status:** BUILT (see the bottom of this file). Docs: ADR-067 (Accepted) / DESIGN-039 /
+- **Status:** Completed (v0.68.0 live; retry pass rides goodreads-sync hourly; the two owner Fix Failed rows auto-retry after the 07:00 UTC GB reset). Was: BUILT (see the bottom of this file). Docs: ADR-067 (Accepted) / DESIGN-039 /
   PRD R-218..R-220 / DDD T-191..T-193.
 - **Depends on:** PLAN-041 (books Fix — the lifecycle this extends), PLAN-044 (GB client +
   goodreads-sync — the host run), PLAN-050 (format pairing — whose documented residual this
