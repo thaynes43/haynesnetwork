@@ -4,6 +4,53 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ NEXT SESSION — start here (written 2026-07-16 LATE evening — the Libretto + scoreboard evening, owner present)
+
+**Site live at https://haynesnetwork.com — v0.66.0 running; v0.67.0/v0.68.0 queued behind tonight's
+GitHub API partial degradation (recovered; the wrap commit you are reading retriggers
+release-please).** Evening shipped/staged, owner present throughout:
+
+- **PLAN-057 scoreboard → completed (v0.66.0 LIVE):** estate play badges on the dashboard
+  (all THREE Tautullis, 10-min memo, SSR-only; live-proven totals movie 3,480 · show 25,270 ·
+  artist 2,316 · 18,922 hours). Label fix (Movies watched · TV episodes watched · Music plays)
+  merged, rides v0.67.0.
+- **PLAN-051 books collections mirror → merged #332 (v0.67.0 pending):** ADR-066, migration
+  0056, Kavita collections + reading lists (ORDERED) + ABS collections on the three book walls;
+  scoped-review MEDIUM (pagination-header fallback) fixed; deploy adds `sync-books-collections`
+  CronJob :27. books.ts shares the latent header-fallback gap — follow-up in the plan file.
+- **PLAN-055 GB quota breaker → merged #333 (release pending):** ADR-067, migration 0057,
+  `gb_quota_state` singleton + guardedGbResolve seam; fixes QUEUE on dead quota + hourly retry
+  pass (10/run) rides goodreads-sync; enrichment one-line skip; pairing mint cap preserved.
+  **THE FLIP (books fix_book + integrations) is gated on: v0.68.0 deployed → owner one green
+  Fix → flip both.** Root cause of the owner's two Fix Failed: GB DAILY quota (1,000/day
+  default) exhausted; owner may raise it in Cloud Console (Books API → Quotas).
+- **PLAN-056 wanted sort → merged #334 (release pending):** the pinning was DESIGN-029
+  amendment-1's deliberate head-of-stream concat; now a server-side UNION with honest per-sort
+  keys + All · Wanted only · Hide wanted `.seg` (`?wanted=`); DESIGN-029 amendment 3.
+- **LIBRETTO M2 → merged (repo #2):** real Kavita/ABS targets (marker-in-description ownership
+  VERIFIED writable everywhere; Kavita ISBN per-chapter with the OPF-scheme caveat),
+  hardcover_series builder, 89 tests. **Deploy staged:** publish workflow merged (first run
+  failed in the GitHub window — renudged), haynes-ops PR #2076 OPEN + gated on
+  ghcr.io/thaynes43/libretto:latest existing. Owner filled 1P: HARDCOVER_TOKEN, NYT_API_KEY,
+  LIBRETTO_API_KEY (libretto item), KAVITA_API_KEY (media-stack; a DEDICATED 'libretto' Kavita
+  auth key, not the OPDS one), ABS token reused from the audiobookshelf item. Go-live: image →
+  merge #2076 → check ESO sync → pod /health → first recipe (Hardcover series → ordered Kavita
+  reading list). M2 flags: Kavita reading-list reorder base needs one live pass; sync account
+  needs Promote for household visibility.
+- **Owner items DONE tonight:** trash window → 7 days (audited setAppSetting job);
+  Haynestower play totals on the About page (NAS Tautulli via the existing estate key);
+  collection-visibility note ruled fine-as-is; PLAN-053 buckets ruled (six, crew→Director,
+  show-all).
+- **GITHUB INCIDENT DOCTRINE (~21:50–00:00 UTC):** a PARTIAL API degradation — one endpoint
+  family (repos/runs-list/jobs/check-runs) returned HTML 5xx while PR/merge/GraphQL/workflows
+  endpoints worked; status board stayed green. Fingerprint: release-please runs fail in
+  10-20s; PR checks fine; images never appear. The bot CANNOT `gh run rerun` NOR
+  `workflow_dispatch` (Resource not accessible by integration) — the recovery lever is a
+  NUDGE COMMIT to main (docs PR), which retriggers release-please idempotently (it re-creates
+  a merged-but-untagged release). Wrap commits double as nudges.
+
+### Prior top block (Thursday evening)
+
 ## ▶ NEXT SESSION — start here (written 2026-07-16 evening — the collections + pairing day, owner present)
 
 **Site live at https://haynesnetwork.com — latest release v0.64.0, live-verified.** Thursday ran the
