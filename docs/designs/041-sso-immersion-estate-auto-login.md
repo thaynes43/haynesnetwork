@@ -265,14 +265,40 @@ Cross-cutting risks:
 | ID | Question | Resolution |
 |----|----------|------------|
 | Q-01 | **Seerr:** wait for upstream OIDC to reach stable (O1, default) or run the experimental `preview-new-oidc` image now (O2 — backup + rollback plan, JSON config, no role mapping, known preview login regressions)? | (open — owner ruling) |
-| Q-02 | **Tautulli:** is the all-admin shared-identity model behind the Authentik front door acceptable (per-user Plex guest views retired)? Which Authentik groups/tiers may reach Tautulli at all? | (open — owner ruling) |
+| Q-02 | **Tautulli:** is the all-admin shared-identity model behind the Authentik front door acceptable (per-user Plex guest views retired)? Which Authentik groups/tiers may reach Tautulli at all? | **RESOLVED (owner, 2026-07-17): proxy accepted; login allowed to admins + the Family tier only** ("it doesn't get much use anyway" — the pilot for role-governed app login, see the amendment below). |
 | Q-03 | **v1 scope:** catalog cards only, or also estate apps outside the catalog (Grafana, Home Assistant, homepage, headlamp)? | (open — owner ruling; this design assumes catalog-only) |
 | Q-04 | **Immich:** is OAuth already configured live (runtime state, not in git)? And is Auto Launch wanted given the card is currently admin-grantable/hidden? | (open — verify + owner ruling) |
 | Q-05 | **OWUI:** accept the catalog deep-link to `/oauth/oidc/login` (zero-click now, revert-on-upstream), or keep the one-button page and wait upstream? | (open — owner ruling; D-05 recommends the deep-link) |
 | Q-06 | **Kavita role sync:** the tier table — which Authentik groups map to which Kavita roles, libraries (`library-<Name>`), and age restrictions? Flip only after the Phase-1 auto-login soak? | (open — owner supplies the mapping) |
 | Q-07 | **Plex cards:** confirm accepted-as-is (plex.tv identity IS the SSO identity; no seam exists) | (open — expected yes) |
 | Q-08 | **Tautulli scope:** family-facing `tautulli.haynesnetwork.com` only, or also the LAN-internal k8plex/plexops instances? | (open — this design assumes family-facing only) |
-| Q-09 | **Authentik Plex source — allowed servers (owner-raised 2026-07-17):** the source was set up allowing anyone with access to HaynesTower to authenticate; new members will be shared on HOps going forward, so an HOps-only member CANNOT log in until HOps is in the source's allowed-servers list. Which servers define the SSO trust boundary? | (open — recommendation: add HOps `80b33acb1d207508990637ec151fe9abad8d3d7a` alongside HaynesTower `a5ec8cb29c425667637eabdb6a0615d6ccf68cc3`; add K8plex `c1b23d688afea4a39ec2c214776832c16be6504d` only if anyone is shared on K8plex who is NOT on the other two — every listed server widens who may log in to the whole estate. Edit is owner-side UI: Directory → Federation and Social login → the Plex source → Allowed servers; the app's `hnet-portal` token deliberately cannot read/write sources, verified 403 live. Machine ids are the repo-pinned `PLEX_MACHINE_IDENTIFIERS`, live-verified 2026-07-06.) |
+| Q-09 | **Authentik Plex source — allowed servers (owner-raised 2026-07-17):** the source was set up allowing anyone with access to HaynesTower to authenticate; new members will be shared on HOps going forward, so an HOps-only member CANNOT log in until HOps is in the source's allowed-servers list. Which servers define the SSO trust boundary? | **RESOLVED (owner, 2026-07-17): ALL THREE servers allowed** — owner applied the edit in the Authentik UI himself. Reasoning (near-verbatim): My Plex self-service lets members add/remove themselves from libraries, and a member who removes all but one library must not lose SSO — so the trust boundary is any-of-the-three, deliberately. Machine ids per the repo-pinned `PLEX_MACHINE_IDENTIFIERS`. |
+
+## Amendment — 2026-07-17: role-governed app login (owner direction)
+
+The owner extended this design's access story (near-verbatim): "take it one level up and use
+the apps assigned to roles to govern which apps not only show up for users but which Authentik
+will let them log into. We would have to make all Roles synced tier but I think that's
+something I want anyway."
+
+**The mechanism:** the app's role→app-catalog grants (the `/admin/roles` Apps chips) become the
+SINGLE source of truth for per-app LOGIN authorization, enforced Authentik-side:
+
+1. **Every role becomes a synced tier** (PLAN-026 machinery — role ⇒ Authentik group of the
+   same lowercased name; Friends and Family already are; Default and future roles follow).
+2. **Each Authentik application gets group-bound access policies** matching exactly the roles
+   whose grant list carries that app. A user whose role loses an app chip stops being able to
+   LOG IN to it, not merely stops seeing the card.
+3. **Tautulli is the pilot** (Q-02 ruling): proxy provider + application with bindings for the
+   admins group + `family` only.
+4. **Follow-ups (not the pilot):** flip Default (and any future roles) to synced tier; then
+   design the grant→policy SYNC — the app already writes group membership via
+   `@hnet/authentik/write` (ADR-045); pushing application policy bindings from the catalog
+   grants is a new confined write surface that needs its own ADR (the ADR-045 owned-groups
+   guardrail idiom extends: only bindings for OWNED apps/groups, never flows/stages).
+
+This supersedes nothing above; it upgrades the D-07 Tautulli front door from a one-off into
+the first instance of the general pattern.
 
 ## Sources (external capabilities, verified 2026-07-17)
 
