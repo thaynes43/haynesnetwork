@@ -121,6 +121,13 @@ prose rule, tokens-only). The parity map (movie section → book equivalent → 
   membership the walls read), each chip a `Link` into the wall's collection drill
   (`/library?tab=<wall>&view=grouped&by=collection&group=<books_collections.id>`). The whole section renders only
   with content; each row collapses when empty (the movie-page idiom).
+  - **Amendment 2026-07-17 (owner live-verify — the summary CLAMP):** Kavita/ABS `summary` values
+    frequently carry the whole jacket copy (the blurb *plus* "Praise for…" review pull-quotes),
+    which rendered as one untamed block that dwarfed the page and buried the fact line / genres /
+    collections beneath it. The prose now clamps to six lines with an in-place **Show more / Show
+    less** toggle (`AboutSummary`), shown only when the text overflows the clamp. The toggle is a
+    deliberate in-place expansion — the ADR-015 exception — revealing this block only, never
+    reflowing a neighbour.
 - **Details** (movie: quality/root/size/files/tags/last-synced) → library, format, then kind-aware metrics —
   **duration + narrator** for audiobooks, **pages** for books/comics — plus **files** (`file_count`) and **size on
   disk** (`size_bytes`) when known, **ISBN** when present, **added** (`source_added_at`), and **last synced**. Size/
