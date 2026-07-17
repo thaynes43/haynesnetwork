@@ -72,6 +72,7 @@ import {
 } from '@/lib/library-views';
 import {
   COLLECTION_TYPE_OPTIONS,
+  collectionTypeOptionsForWall,
   WALL_VIEWS,
   WATCH_STATE_OPTIONS,
   decadeLabel,
@@ -784,12 +785,15 @@ function MediaBrowser({
           {entry.facets.map((facet) => {
             if (facet.key === 'collectionType') {
               // DESIGN-035 D-11 / R-214 (PLAN-053) — the Collection Type chip row: single-select,
-              // All default, always visible (owner ruling: the chip FILTERS, never hides — a
-              // 0-count chip still renders). ?ctype= is a D-19 replace refinement; the SERVER
-              // filters the cards and the counts are the gated accessible-collection typeCounts
-              // (rendered from the same query that paints the cards — placeholder-kept, so a chip
-              // toggle recolors without the numbers churning; ADR-015: recolor, never reflow).
-              const typeCounts = groupsQuery.data?.typeCounts;
+              // All default, always visible (owner ruling: the chip FILTERS, never hides). ?ctype=
+              // is a D-19 replace refinement; the SERVER filters the cards.
+              // Owner amendment (2026-07-17): per-chip counts are GONE (a global total is
+              // backlogged, not per-category — `.agents/plans/TODO.md`); the bucket set is per-wall
+              // (Trilogies is movies-only — collectionTypeOptionsForWall hides it on TV); and the
+              // labels shortened ('Franchise') so the row fits a 320px phone. The `.library-chipbar`
+              // stays a fixed-height row that pans horizontally when crowded (ADR-015: never reflows
+              // the grid).
+              const typeOptions = collectionTypeOptionsForWall(wall);
               return (
                 <div key={facet.key} className="seg" role="group" aria-label="Collection type">
                   <button
@@ -800,7 +804,7 @@ function MediaBrowser({
                   >
                     All
                   </button>
-                  {COLLECTION_TYPE_OPTIONS.map((o) => (
+                  {typeOptions.map((o) => (
                     <button
                       key={o.value}
                       type="button"
@@ -809,7 +813,6 @@ function MediaBrowser({
                       onClick={() => patchParams({ [facet.param]: ctype === o.value ? null : o.value })}
                     >
                       {o.label}
-                      {typeCounts !== undefined ? ` (${typeCounts[o.value]})` : ''}
                     </button>
                   ))}
                 </div>
