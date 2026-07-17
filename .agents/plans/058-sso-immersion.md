@@ -1,7 +1,10 @@
 # PLAN-058: SSO immersion — one login, every site, no per-app "Log in with Plex"
 
 - **Status:** Planned — inventory + per-app remediation designed (DESIGN-041); **awaiting owner
-  rulings on DESIGN-041 Q-01..Q-08 before execution**. No code/estate changes made yet.
+  rulings on DESIGN-041 Q-01..Q-09 before execution**. No code/estate changes made yet. Q-09
+  (added 2026-07-17): the Authentik Plex source allowed-servers list must gain HOps BEFORE any
+  HOps-only member is invited, or their very first login fails — this is the front door for
+  everything else in this plan.
 - **Intake (owner vision, 2026-07-16 late, near-verbatim):** "Auto login is very important to me,
   so it feels like SSO when you log into haynesnetwork.com and then you can go from site to site
   with your plex account. We have a pretty big immersion break with sites that provide their own
