@@ -368,6 +368,7 @@ describe('fetchBooksCollectionsSnapshot + syncBooksCollections (ADR-066)', () =>
             title: 'HP Reading Order',
             itemCount: 2,
             ordered: true,
+            createdBy: 'kavita',
             members: [{ externalRef: '501', position: 0 }],
             fullyRead: true,
           },

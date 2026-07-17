@@ -953,6 +953,7 @@ function MediaBrowser({
                 coverUrls={g.coverUrls}
                 kind={arrKind}
                 count={g.count}
+                provenance={g.provenance}
               />
             ))}
           </PosterGrid>

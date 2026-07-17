@@ -362,7 +362,10 @@ describe('collection reads (PLAN-051)', () => {
     ]);
     const client = new KavitaClient({ ...KAVITA_OPTS, fetchImpl });
     const collections = await client.listCollections();
-    expect(collections).toEqual([{ id: 4, title: 'Harry Potter Collection', promoted: false, itemCount: 7 }]);
+    // `summary` is KEPT (the Libretto provenance marker lives there); coverImage/ageRating/etc. drop.
+    expect(collections).toEqual([
+      { id: 4, title: 'Harry Potter Collection', summary: null, promoted: false, itemCount: 7 },
+    ]);
     const call = calls.find((c) => c.url.pathname === '/api/Collection');
     expect(call?.headers.get('authorization')).toBe('Bearer jwt');
   });
@@ -471,6 +474,8 @@ describe('collection reads (PLAN-051)', () => {
         id: 'col-abs-1',
         libraryId: 'lib-1',
         name: 'Discworld in Order',
+        // `description` is KEPT (the Libretto provenance marker lives there).
+        description: null,
         // The array order is the curated order — position derives from the index.
         books: [{ id: 'item-2' }, { id: 'item-1' }],
       },

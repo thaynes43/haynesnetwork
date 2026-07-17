@@ -51,6 +51,18 @@ export const booksCollections = pgTable(
      * wall's default `position` sort — an unordered drill never offers it (the D-06 contract).
      */
     ordered: boolean('ordered').notNull().default(false),
+    /**
+     * PROVENANCE — the software that CREATED this collection (owner directive 2026-07-16 — "tagging
+     * collections for what created them"). Libretto (the "Kometa for books" collection manager)
+     * plants a marker `[libretto:<recipeId>]` in the description it writes (Kavita `summary` / ABS
+     * `description`): a marked collection derives 'libretto', an unmarked one the SOURCE app that
+     * hand-made it ('kavita' / 'audiobookshelf'). Recomputed from the source description at every sync
+     * upsert by the versioned @hnet/domain `deriveBooksCollectionProvenance` — rebuildable like the
+     * row it sits on. OPEN text (no CHECK), like plex_collections.created_by; never null here (the
+     * description rides the same read, so provenance is always derivable — no marker just means
+     * hand-made).
+     */
+    createdBy: text('created_by'),
     firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

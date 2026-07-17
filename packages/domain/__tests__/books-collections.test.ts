@@ -46,6 +46,7 @@ async function collectionRows(db: Database) {
       kind: booksCollections.kind,
       title: booksCollections.title,
       ordered: booksCollections.ordered,
+      createdBy: booksCollections.createdBy,
     })
     .from(booksCollections)
     .orderBy(asc(booksCollections.source), asc(booksCollections.kind), asc(booksCollections.externalId));
@@ -99,6 +100,7 @@ describe('syncBooksCollections (ADR-066 / DESIGN-038 D-04)', () => {
           title: 'HP Reading Order',
           itemCount: 3,
           ordered: true,
+          createdBy: 'libretto', // marker present in the source summary
           members: [
             { externalRef: '501', position: 0 },
             { externalRef: '502', position: 1 },
@@ -114,6 +116,7 @@ describe('syncBooksCollections (ADR-066 / DESIGN-038 D-04)', () => {
           title: 'Discworld in Order',
           itemCount: 1,
           ordered: true,
+          createdBy: 'audiobookshelf',
           members: [{ externalRef: 'abs-1', position: 0 }],
           fullyRead: true,
         },
@@ -146,6 +149,7 @@ describe('syncBooksCollections (ADR-066 / DESIGN-038 D-04)', () => {
           title: 'HP Collection',
           itemCount: 2,
           ordered: false,
+          createdBy: 'kavita', // hand-made — no marker
           members: [{ externalRef: '501', position: 0 }],
           fullyRead: true,
         },
@@ -154,9 +158,10 @@ describe('syncBooksCollections (ADR-066 / DESIGN-038 D-04)', () => {
     });
     const rows = await collectionRows(t.db);
     expect(rows).toEqual([
-      { source: 'audiobookshelf', externalId: 'col-abs-1', kind: 'collection', title: 'Discworld in Order', ordered: true },
-      { source: 'kavita', externalId: '11', kind: 'collection', title: 'HP Collection', ordered: false },
-      { source: 'kavita', externalId: '11', kind: 'reading_list', title: 'HP Reading Order', ordered: true },
+      { source: 'audiobookshelf', externalId: 'col-abs-1', kind: 'collection', title: 'Discworld in Order', ordered: true, createdBy: 'audiobookshelf' },
+      { source: 'kavita', externalId: '11', kind: 'collection', title: 'HP Collection', ordered: false, createdBy: 'kavita' },
+      // Provenance persisted through the upsert — the marker-derived 'libretto' for the reading list.
+      { source: 'kavita', externalId: '11', kind: 'reading_list', title: 'HP Reading Order', ordered: true, createdBy: 'libretto' },
     ]);
   });
 
@@ -173,6 +178,7 @@ describe('syncBooksCollections (ADR-066 / DESIGN-038 D-04)', () => {
           title: 'HP Reading Order',
           itemCount: 3,
           ordered: true,
+          createdBy: 'libretto',
           members: [{ externalRef: '501', position: 0 }],
           fullyRead: false,
         },
@@ -197,6 +203,7 @@ describe('syncBooksCollections (ADR-066 / DESIGN-038 D-04)', () => {
           title: 'HP Reading Order (renamed)',
           itemCount: 2,
           ordered: true,
+          createdBy: 'libretto',
           members: [
             { externalRef: '502', position: 0 },
             { externalRef: '501', position: 1 }, // reordered — positions advance on upsert
@@ -243,6 +250,7 @@ describe('syncBooksCollections (ADR-066 / DESIGN-038 D-04)', () => {
           title: 'HP Reading Order (renamed)',
           itemCount: 2,
           ordered: true,
+          createdBy: 'libretto',
           members: [
             { externalRef: '502', position: 0 },
             { externalRef: '501', position: 1 },

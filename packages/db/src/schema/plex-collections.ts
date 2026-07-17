@@ -39,6 +39,17 @@ export const plexCollections = pgTable(
      * state. Drives the grouped walls' `?ctype=` Type chip row + the gated typeCounts.
      */
     collectionType: text('collection_type', { enum: COLLECTION_TYPES }).notNull().default('other'),
+    /**
+     * PROVENANCE — the software that CREATED this collection (owner directive 2026-07-16 — "tagging
+     * collections for what created them"). Kometa LABELS its managed Plex collections (verified live
+     * on the HOps server): a `Kometa`-labelled collection derives 'kometa', an unlabelled one 'plex'
+     * (hand-made). Recomputed from the collection's labels at every sync upsert by the versioned
+     * @hnet/domain `derivePlexCollectionProvenance` — rebuildable like the row it sits on, never
+     * migrated state. NULLABLE + OPEN (no CHECK): the vocabulary belongs to external software the app
+     * does not own, and a null means the label read did not run this sync (the writer preserves the
+     * prior value rather than misfiling — a transient read failure never re-tags a collection).
+     */
+    createdBy: text('created_by'),
     firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

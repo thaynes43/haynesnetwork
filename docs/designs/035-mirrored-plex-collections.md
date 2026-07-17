@@ -243,6 +243,39 @@ the chip filters — never hides.
   the same query that paints the cards (placeholder-kept across refetches), fixed-height chip bar
   (the existing `.library-chipbar`/`.seg` skins — zero new CSS, tokens only).
 
+### D-12 — Collection provenance (`created_by`, migration 0058 — owner directive 2026-07-16)
+
+Owner directive (2026-07-16, near-verbatim): "We should also be tagging collections for what
+created them, like 'IMDB Builder' would be from Kometa." Every mirrored collection carries a
+PROVENANCE — the software that created it — stored on the mirror at sync time and shown as a small
+muted badge on the group-card face. The mirror stays a MIRROR (owner R1 / hard rule 4): provenance
+is READ from what the source exposes, never invented.
+
+- **Source signal (verified live 2026-07-16, HOps server via a frontend-ns probe Job)** — Kometa
+  LABELS every collection it manages with a `Kometa` Plex label: 123 of 124 sampled collections
+  carried it; the one that did not is a hand-made collection. The labels ride the per-collection
+  metadata read only (`GET /library/metadata/{ratingKey}?includeLabels=1`) — the `/collections`
+  LISTING never carries them (probed: `includeLabels` / `includeAdvanced` on the listing return no
+  `Label`), so the fetcher does one extra metadata read per collection (`readCollectionLabels`).
+  Secondary labels the estate also carries ("Universe Collections", "TMDb Collections", awards
+  groupings) are CATEGORY labels, not builder identity, so `kometa` is the honest software tag — we
+  do NOT invent a per-builder tag ("IMDb Builder") the label does not encode (honest coarse beats
+  invented fine).
+- **Derivation** — `@hnet/domain` `collection-provenance.ts` `derivePlexCollectionProvenance(labels)`
+  → `'kometa'` when the `Kometa` label is present (case-insensitive), `'plex'` (hand-made) when it
+  is absent, and `null` when the label read did not run this sync.
+- **Column** — `plex_collections.created_by text` (migration 0058), NULLABLE and OPEN (no CHECK):
+  the vocabulary belongs to external software the app does not own, so an unknown token is honest,
+  not rejected. It is a rebuildable derived-cache ANNOTATION like `collection_type` — recomputed at
+  every upsert — with ONE difference: a null (the label read failed this run) PRESERVES the prior
+  value via `COALESCE(excluded.created_by, plex_collections.created_by)`, so a transient label-read
+  failure never re-tags a Kometa collection as hand-made.
+- **Badge** — `ledger.collectionGroups` returns `provenance` (the display name resolved server-side
+  via `provenanceDisplayName`: `kometa → "Kometa"`, `plex → "Plex"`, unknown → title-cased); the
+  `GroupCard` renders it as one muted badge in the caption's reserved badge row. ADR-015: every
+  card on the Collections wall carries a provenance badge, so the row is consistent and a badge
+  recolors, never reflows. Tokens only (`.badge--muted`).
+
 ## Alternatives considered
 
 - **App-native collections / authoring UI** — rejected permanently by the owner doctrine (ADR-064

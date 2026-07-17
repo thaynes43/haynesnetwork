@@ -192,6 +192,45 @@ describe('PlexReadClient — getMetadataItem / listMetadataChildren (D-09)', () 
     expect(meta!.librarySectionId).toBe('4'); // number in the wire JSON → string
   });
 
+  it('readCollectionLabels asks for includeLabels and returns the Label tags (Kometa provenance)', async () => {
+    const stub = plexStub([
+      {
+        path: /\/library\/metadata\/77001$/,
+        body: {
+          MediaContainer: {
+            Metadata: [
+              {
+                ratingKey: '77001',
+                type: 'collection',
+                title: 'IMDb Top 250',
+                Label: [
+                  { id: 385854, filter: 'label=385854', tag: 'Kometa' },
+                  { id: 4, filter: 'label=4', tag: 'Universe Collections' },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    ]);
+    const labels = await client(stub).readCollectionLabels('77001');
+    expect(labels).toEqual(['Kometa', 'Universe Collections']);
+    expect(stub.calls[0]!.url.searchParams.get('includeLabels')).toBe('1');
+    expect(stub.calls[0]!.headers['X-Plex-Token']).toBe('owner-secret-token');
+  });
+
+  it('readCollectionLabels returns [] when the collection has no labels', async () => {
+    const stub = plexStub([
+      {
+        path: /\/library\/metadata\/77002$/,
+        body: {
+          MediaContainer: { Metadata: [{ ratingKey: '77002', type: 'collection', title: 'Hand Made' }] },
+        },
+      },
+    ]);
+    expect(await client(stub).readCollectionLabels('77002')).toEqual([]);
+  });
+
   it('listMetadataChildren parses episodes (index/duration/air date), the container section id, and the page total', async () => {
     const stub = plexStub([
       { path: /\/library\/metadata\/448161\/children$/, body: METADATA_CHILDREN_JSON },

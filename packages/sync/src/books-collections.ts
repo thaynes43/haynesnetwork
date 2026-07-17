@@ -8,6 +8,7 @@
 // ALWAYS the collections source of truth (owner doctrine R1). Families whose LISTING errors or
 // truncates are NOT scoped, so the writer can never reconcile-drop what this run couldn't see (the
 // plex-collections discipline at (source, kind) family grain).
+import { deriveBooksCollectionProvenance } from '@hnet/domain';
 import type { BooksCollectionFamily, BooksCollectionSyncInput } from '@hnet/domain';
 import type { BooksSyncBundle } from './books';
 import { noopLogger, type SyncLogger } from './logger';
@@ -139,6 +140,8 @@ export async function fetchBooksCollectionsSnapshot(input: {
         title: collection.title,
         itemCount: collection.itemCount ?? members.length,
         ordered: false, // the Kavita API exposes no collection member order (D-09)
+        // Provenance — 'libretto' when the summary carries Libretto's marker, else 'kavita'.
+        createdBy: deriveBooksCollectionProvenance('kavita', collection.summary),
         members,
         fullyRead,
       });
@@ -153,7 +156,12 @@ export async function fetchBooksCollectionsSnapshot(input: {
 
   // --- Kavita reading lists (kavita/reading_list — ORDERED, explicit positions) ---
   try {
-    const lists: Array<{ id: number; title: string; itemCount: number | null | undefined }> = [];
+    const lists: Array<{
+      id: number;
+      title: string;
+      itemCount: number | null | undefined;
+      summary: string | null | undefined;
+    }> = [];
     let page = 1;
     let listingTruncated = false;
     for (;;) {
@@ -161,7 +169,8 @@ export async function fetchBooksCollectionsSnapshot(input: {
         page,
         KAVITA_READING_LIST_PAGE_SIZE,
       );
-      for (const l of items) lists.push({ id: l.id, title: l.title, itemCount: l.itemCount });
+      for (const l of items)
+        lists.push({ id: l.id, title: l.title, itemCount: l.itemCount, summary: l.summary });
       if (items.length === 0) break; // an empty page is an honest end-of-list
       if (hasAuthoritativeTotal) {
         if (page * KAVITA_READING_LIST_PAGE_SIZE >= total) break; // complete per the header
@@ -204,6 +213,8 @@ export async function fetchBooksCollectionsSnapshot(input: {
         title: list.title,
         itemCount: list.itemCount ?? members.length,
         ordered: true, // explicit positions (update-position API) — the reading-order payoff
+        // Provenance — 'libretto' when the summary carries Libretto's marker, else 'kavita'.
+        createdBy: deriveBooksCollectionProvenance('kavita', list.summary),
         members,
         fullyRead,
       });
@@ -241,6 +252,8 @@ export async function fetchBooksCollectionsSnapshot(input: {
         title: collection.name,
         itemCount: books.length,
         ordered: true, // verified: the response array carries the curated order
+        // Provenance — 'libretto' when the description carries Libretto's marker, else 'audiobookshelf'.
+        createdBy: deriveBooksCollectionProvenance('audiobookshelf', collection.description),
         members,
         fullyRead: true, // the single read returns the whole collection
       });

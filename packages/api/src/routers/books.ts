@@ -28,6 +28,7 @@ import {
   getWantedBookRequests,
   isRequestSearchable,
   missingFormatFor,
+  provenanceDisplayName,
   runManualBookSearch,
   type WantedBookRequestView,
 } from '@hnet/domain';
@@ -450,6 +451,12 @@ export interface BooksCollectionGroup {
   imageUrl: null;
   /** Whether the SOURCE carries an explicit member order — drives the drill's position sort. */
   ordered: boolean;
+  /**
+   * PROVENANCE badge (owner directive 2026-07-16) — the display name of the software that created
+   * the collection ("Libretto" / "Kavita" / "Audiobookshelf"), or null when unknown (no badge).
+   * Resolved server-side from books_collections.created_by via provenanceDisplayName.
+   */
+  provenance: string | null;
 }
 
 export const booksRouter = router({
@@ -923,6 +930,7 @@ export const booksRouter = router({
           id: booksCollections.id,
           title: booksCollections.title,
           ordered: booksCollections.ordered,
+          createdBy: booksCollections.createdBy,
           memberKind: booksItems.mediaKind,
           source: booksItems.source,
           externalId: booksItems.externalId,
@@ -944,6 +952,7 @@ export const booksRouter = router({
       interface Agg {
         label: string;
         ordered: boolean;
+        createdBy: string | null;
         counts: Record<BooksMediaKind, number>;
         coverUrls: Record<BooksMediaKind, string[]>;
       }
@@ -955,6 +964,7 @@ export const booksRouter = router({
             .set(row.id, {
               label: row.title,
               ordered: row.ordered,
+              createdBy: row.createdBy,
               counts: { book: 0, comic: 0, audiobook: 0 },
               coverUrls: { book: [], comic: [], audiobook: [] },
             })
@@ -984,6 +994,7 @@ export const booksRouter = router({
           coverUrls: agg.coverUrls[input.mediaKind],
           imageUrl: null,
           ordered: agg.ordered,
+          provenance: provenanceDisplayName(agg.createdBy),
         });
       }
       groups.sort((a, b) => a.label.localeCompare(b.label) || a.key.localeCompare(b.key));

@@ -1555,4 +1555,57 @@ describe('migrations against embedded Postgres 16', () => {
       await client.query({ text: `DELETE FROM users WHERE id = $1`, values: [userId] });
     });
   });
+
+  // Collection PROVENANCE (owner directive 2026-07-16 — migration 0058, journal idx 57): the
+  // additive, NULLABLE, OPEN (no CHECK) created_by column on both collection-mirror tables.
+  describe('0058 collection provenance (created_by on plex_collections + books_collections)', () => {
+    it('adds a nullable, open created_by column to both mirror tables (defaults NULL, any token)', async () => {
+      for (const table of ['plex_collections', 'books_collections']) {
+        const col = await client.query({
+          text: `SELECT data_type, is_nullable FROM information_schema.columns
+                 WHERE table_name = $1 AND column_name = 'created_by'`,
+          values: [table],
+        });
+        expect(col.rows[0]).toMatchObject({ data_type: 'text', is_nullable: 'YES' });
+      }
+      const serverId = (await client.query(`SELECT id FROM plex_servers WHERE slug = 'haynesops'`))
+        .rows[0].id;
+      const libId = (
+        await client.query({
+          text: `INSERT INTO plex_libraries (server_id, section_key, name, media_type)
+                 VALUES ($1, '93', 'HOps Movies (0058)', 'movie') RETURNING id`,
+          values: [serverId],
+        })
+      ).rows[0].id;
+      // A pre-existing-style row lands created_by NULL (no default); a synced row carries any token.
+      const defaulted = await client.query({
+        text: `INSERT INTO plex_collections (plex_library_id, rating_key, title)
+               VALUES ($1, '79001', 'Legacy Row') RETURNING created_by`,
+        values: [libId],
+      });
+      expect(defaulted.rows[0].created_by).toBeNull();
+      const tagged = await client.query({
+        text: `INSERT INTO plex_collections (plex_library_id, rating_key, title, created_by)
+               VALUES ($1, '79002', 'Kometa Row', 'kometa') RETURNING created_by`,
+        values: [libId],
+      });
+      expect(tagged.rows[0].created_by).toBe('kometa');
+      // OPEN — an unknown token is accepted (no CHECK; the vocabulary is external software's).
+      await client.query({
+        text: `INSERT INTO plex_collections (plex_library_id, rating_key, title, created_by)
+               VALUES ($1, '79003', 'Future Builder', 'some_new_builder')`,
+        values: [libId],
+      });
+      await client.query({ text: `DELETE FROM plex_libraries WHERE id = $1`, values: [libId] });
+
+      const colId = (
+        await client.query(
+          `INSERT INTO books_collections (source, external_id, kind, title, created_by)
+           VALUES ('audiobookshelf', 'prov-1', 'collection', 'Marked Collection', 'libretto') RETURNING created_by`,
+        )
+      ).rows[0].created_by;
+      expect(colId).toBe('libretto');
+      await client.query(`DELETE FROM books_collections WHERE source = 'audiobookshelf' AND external_id = 'prov-1'`);
+    });
+  });
 });

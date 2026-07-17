@@ -258,6 +258,51 @@ export function CardGallery() {
         </PosterGrid>
       </Section>
 
+      <Section title="GroupCard — Collections with a PROVENANCE badge (what created them)">
+        <PosterGrid testId="gallery-groups-provenance">
+          <GroupCard
+            href="#"
+            art="covers"
+            label="IMDB Top 250"
+            imageUrl={null}
+            coverUrls={[POSTER_A, POSTER_B]}
+            kind="radarr"
+            count={38}
+            provenance="Kometa"
+          />
+          <GroupCard
+            href="#"
+            art="covers"
+            label="Hand-Made Picks"
+            imageUrl={null}
+            coverUrls={[POSTER_B]}
+            kind="radarr"
+            count={5}
+            provenance="Plex"
+          />
+          <GroupCard
+            href="#"
+            art="covers"
+            label="The Expanse"
+            imageUrl={null}
+            coverUrls={[POSTER_A]}
+            kind="audiobook"
+            count={9}
+            provenance="Libretto"
+          />
+          <GroupCard
+            href="#"
+            art="covers"
+            label="My Shelf"
+            imageUrl={null}
+            coverUrls={[]}
+            kind="book"
+            count={3}
+            provenance="Kavita"
+          />
+        </PosterGrid>
+      </Section>
+
       <Section title="RequestCard — Goodreads items (phase badges; pre-mint = non-interactive)">
         <PosterGrid testId="gallery-requests">
           <RequestCard

@@ -15,6 +15,7 @@ export function GroupCard({
   coverUrls,
   kind,
   count,
+  provenance,
 }: {
   href: string;
   art: WallGroupingArt;
@@ -26,6 +27,14 @@ export function GroupCard({
   /** KindIcon kind for the empty-group fallback tile. */
   kind: string;
   count: number;
+  /**
+   * Collection PROVENANCE (owner directive 2026-07-16) — the display name of the software that
+   * created a mirrored collection ("Kometa" / "Plex" / "Libretto" / "Kavita" / "Audiobookshelf").
+   * Renders one muted badge in the caption's reserved badge row (ADR-015: a badge recolors, never
+   * reflows — every card on a Collections wall carries one, so the row is consistent). Omit/null on
+   * the author/genre group walls, which carry no provenance.
+   */
+  provenance?: string | null;
 }) {
   return (
     <BaseCard
@@ -33,6 +42,7 @@ export function GroupCard({
       art={{ type: 'group', art, label, imageUrl, coverUrls, kind }}
       title={label}
       subtitle={`${count} ${count === 1 ? 'item' : 'items'}`}
+      badges={provenance ? [{ label: provenance, tone: 'muted', title: `Created by ${provenance}` }] : undefined}
       flavor="group"
     />
   );

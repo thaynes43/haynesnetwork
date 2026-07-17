@@ -256,6 +256,24 @@ export class PlexReadClient {
     };
   }
 
+  /**
+   * Collection PROVENANCE (owner directive 2026-07-16) — read a collection's Plex LABELS via
+   * `GET /library/metadata/{ratingKey}?includeLabels=1` and return their `tag` strings. Kometa
+   * labels the collections it manages (`Kometa`), so the collections-sync derives created_by from
+   * this. The listing endpoint does NOT carry labels (verified live) — this per-collection read is
+   * the only source. Read-only; token stays in the header. A missing item returns [].
+   */
+  async readCollectionLabels(ratingKey: string): Promise<string[]> {
+    const body = await this.http.requestJson(
+      'GET',
+      `${this.baseUrl}/library/metadata/${encodeURIComponent(ratingKey)}`,
+      metadataContainerSchema,
+      { query: { includeLabels: 1 } },
+    );
+    const item = body.MediaContainer.Metadata[0];
+    return item ? item.Label.map((l) => l.tag) : [];
+  }
+
   // ---- plex.tv account read (owner identity) ----
 
   /**

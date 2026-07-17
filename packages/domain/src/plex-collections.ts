@@ -21,6 +21,12 @@ export interface PlexCollectionSyncInput {
   title: string;
   /** The RAW Plex member count (diagnostics only — never the shown count, ADR-064 C-03). */
   childCount: number;
+  /**
+   * PROVENANCE (owner directive 2026-07-16) — 'kometa' (Kometa's label present) / 'plex' (hand-made)
+   * / null (the label read did not run this sync — the upsert PRESERVES the prior created_by via
+   * COALESCE, so a transient label-read failure never re-tags a collection).
+   */
+  createdBy: string | null;
   /** RAW membership in source-read order (owner R3 — stored regardless of ledger match). */
   members: Array<{ ratingKey: string; sortOrder: number }>;
   /**
@@ -84,6 +90,8 @@ export async function syncPlexCollections(
           childCount: collection.childCount,
           // D-10 (PLAN-053) — the Collection Type annotation, from the title, every sync.
           collectionType: classifyCollectionType(collection.title),
+          // Provenance — the software that created it (from the collection's labels, this sync).
+          createdBy: collection.createdBy,
           firstSeenAt: runStart,
           lastSeenAt: runStart,
           updatedAt: runStart,
@@ -95,6 +103,9 @@ export async function syncPlexCollections(
             childCount: sql`excluded.child_count`,
             // A retitle reclassifies in the same statement (excluded carries the fresh value).
             collectionType: sql`excluded.collection_type`,
+            // Provenance refreshes when this sync READ the labels (non-null); a null (unread this
+            // run) PRESERVES the prior value — a transient label-read failure never re-tags a row.
+            createdBy: sql`COALESCE(excluded.created_by, ${plexCollections.createdBy})`,
             lastSeenAt: sql`excluded.last_seen_at`,
             updatedAt: sql`excluded.updated_at`,
             // firstSeenAt / createdAt keep their original values (not in the set).

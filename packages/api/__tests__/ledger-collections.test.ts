@@ -111,6 +111,7 @@ beforeAll(async () => {
         ratingKey: '77001',
         title: 'The Fixture Franchise',
         childCount: 3,
+        createdBy: 'kometa',
         members: [
           { ratingKey: '9001', sortOrder: 0 },
           { ratingKey: '9002', sortOrder: 1 },
@@ -123,6 +124,7 @@ beforeAll(async () => {
         ratingKey: '77002',
         title: 'Hops Charts',
         childCount: 2,
+        createdBy: 'kometa',
         members: [
           { ratingKey: '9002', sortOrder: 0 },
           { ratingKey: '9003', sortOrder: 1 },
@@ -134,6 +136,7 @@ beforeAll(async () => {
         ratingKey: '77003',
         title: 'IMDb Top 250',
         childCount: 1,
+        createdBy: 'kometa',
         members: [{ ratingKey: '9002', sortOrder: 0 }],
         fullyRead: true,
       },
@@ -142,6 +145,7 @@ beforeAll(async () => {
         ratingKey: '77004',
         title: 'Star Wars',
         childCount: 1,
+        createdBy: 'plex',
         members: [{ ratingKey: '9001', sortOrder: 0 }],
         fullyRead: true,
       },
@@ -150,6 +154,7 @@ beforeAll(async () => {
         ratingKey: '77005',
         title: 'The Fixture Trilogy',
         childCount: 1,
+        createdBy: null,
         members: [{ ratingKey: '9003', sortOrder: 0 }],
         fullyRead: true,
       },
@@ -190,6 +195,15 @@ describe('ledger.collectionGroups (ADR-064 / DESIGN-035 D-03)', () => {
     const franchise = groups.find((g) => g.key === '77001')!;
     expect(franchise.coverUrls).toEqual([`/api/posters/${movieBoth}`]);
     expect(franchise.imageUrl).toBeNull();
+    // PROVENANCE badge — created_by resolved to its display name: 'kometa' → 'Kometa', 'plex' →
+    // 'Plex', and a null created_by (The Fixture Trilogy) yields null (no badge).
+    expect(groups.map((g) => [g.key, g.provenance])).toEqual([
+      ['77002', 'Kometa'],
+      ['77003', 'Kometa'],
+      ['77004', 'Plex'],
+      ['77001', 'Kometa'],
+      ['77005', null],
+    ]);
   });
 
   it('THE INVARIANT — a withheld member is excluded from the count; an all-withheld collection is absent', async () => {

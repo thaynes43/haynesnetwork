@@ -750,6 +750,10 @@ export function BooksBrowser({
                 coverUrls={g.coverUrls}
                 kind={mediaKind}
                 count={g.count}
+                // Provenance badge only on the Collections dimension (author/genre groups carry none).
+                provenance={
+                  collectionCards ? (g as { provenance?: string | null }).provenance : undefined
+                }
               />
             ))}
           </PosterGrid>
