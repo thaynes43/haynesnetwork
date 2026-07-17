@@ -11,6 +11,16 @@ schema fix). The comic Fix route is LIVE-PROVEN. One PR rides GitHub-side auto-m
 bounce; the FLIP completes tomorrow morning. Read the OWNER PROCESS RULING below — it changes how
 UX work is verified.
 
+**FINAL BOARD (post-wrap, ~18:00 UTC — supersedes FIRST MOVES item 1):** ALL PRs are WRAPPED —
+**v0.72.0 live-verified** (books detail parity + the Home rule touch-up; health 200 in-cluster;
+the books-sync enrichment pass fired post-deploy). ZERO open PRs on haynesnetwork and haynes-ops.
+The #355 CI red was REAL: the parity screenshot seed wrote the guarded `book_requests` table
+directly and the no-direct-state-writes invariant refused it — the seed was slimmed, never the
+guard. #328 (stale PLAN-056 intake docs) closed as obsolete. FIRST MOVES reduce to: the 07:00 UTC
+FLIP chain, the owner rulings, and the resolution gap. NOT yet live-verified per the ruling: the
+Home rule position + the parity pages VISUALS (deployed + test-verified only) — verify on the
+next authenticated look before calling them done to the owner.
+
 **▶ FIRST MOVES:**
 1. **PR #355 (books detail parity) AND PR #361 (Home rule touch-up: the perforated rule moves
    between the glance badges and the About tile — owner spec, D-23 amended, NOT yet live-verified
