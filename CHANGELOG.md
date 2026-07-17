@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.68.0](https://github.com/thaynes43/haynesnetwork/compare/v0.67.0...v0.68.0) (2026-07-17)
+
+
+### Features
+
+* Google Books quota resilience — shared circuit breaker + retryable book fixes (PLAN-055) ([#333](https://github.com/thaynes43/haynesnetwork/issues/333)) ([be6c2c6](https://github.com/thaynes43/haynesnetwork/commit/be6c2c655476998476dee4d3c1c99138df8bf984))
+
+
+### Bug Fixes
+
+* Wanted rows join the books walls' real sort + All/Only/Hide selector (PLAN-056) ([#334](https://github.com/thaynes43/haynesnetwork/issues/334)) ([9300fe5](https://github.com/thaynes43/haynesnetwork/commit/9300fe551670425946998c85dfead972b1e64a92))
+
+
+### Documentation
+
+* Thursday late-evening wrap — 051/055/056/057 shipped or merged, Libretto M2 + deploy staged, GitHub-partial doctrine (nudge-commit recovery) ([#335](https://github.com/thaynes43/haynesnetwork/issues/335)) ([a8623c0](https://github.com/thaynes43/haynesnetwork/commit/a8623c0d47b0e09c89f25881a60d44fe8eb10888))
+
 ## [0.67.0](https://github.com/thaynes43/haynesnetwork/compare/v0.66.0...v0.67.0) (2026-07-16)
 
 
