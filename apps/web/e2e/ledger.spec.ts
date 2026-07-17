@@ -48,12 +48,12 @@ test.describe('ledger section (DESIGN-009)', () => {
   }) => {
     await signIn(page, 'admin');
 
-    // DESIGN-004 D-22 — the top row is the UNIVERSAL section nav, slimmed to FOUR: Home · Library ·
+    // DESIGN-004 D-22 — the top row is the UNIVERSAL section nav, slimmed to FOUR: Portal · Library ·
     // Tickets · Trash (Tickets = the `bulletin` section under its ratified name; the admin's
     // implicit trash=edit shows Trash, Bulletin defaults read_only for everyone). Ledger + My Plex
     // + Metrics + Integrations all live in the user menu now.
     const navTexts = await page.locator('.topbar__nav a').allInnerTexts();
-    expect(navTexts).toEqual(['Home', 'Library', 'Tickets', 'Trash']);
+    expect(navTexts).toEqual(['Portal', 'Library', 'Tickets', 'Trash']);
     await openUserMenu(page);
     await expect(page.getByRole('menuitem', { name: 'My Plex' })).toBeVisible();
     await page.getByRole('menuitem', { name: 'Ledger' }).click();
@@ -432,11 +432,11 @@ test.describe('ledger section (DESIGN-009)', () => {
     await assignMemberRole(page, 'Default (default)');
 
     // DESIGN-004 D-22 — the shipped Default role (no ledger row) resolves DISABLED: no top-row
-    // entry (the universal row is Home · Library · Tickets for this role — no Trash), no user-menu
+    // entry (the universal row is Portal · Library · Tickets for this role — no Trash), no user-menu
     // Ledger item (My Plex stays — it's personal), and the route dead-ends.
     await memberPage.goto('/');
     expect(await memberPage.locator('.topbar__nav a').allInnerTexts()).toEqual([
-      'Home',
+      'Portal',
       'Library',
       'Tickets',
     ]);
@@ -452,7 +452,7 @@ test.describe('ledger section (DESIGN-009)', () => {
     await assignMemberRole(page, 'Ledger Disabled');
     await memberPage.goto('/');
     expect(await memberPage.locator('.topbar__nav a').allInnerTexts()).toEqual([
-      'Home',
+      'Portal',
       'Library',
       'Tickets',
     ]);

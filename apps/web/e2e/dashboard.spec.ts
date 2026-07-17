@@ -1,6 +1,7 @@
-// AC-04 — a fresh member's dashboard shows exactly the Default role's seeded apps
-// (Seerr, Plex, K8Plex, PlexOps — ADR-012 migration 0007), every href a valid
-// https URL (the seed data all lives on haynesnetwork.com).
+// AC-04 (amended by DESIGN-004 D-23) — the launcher grid lives on /portal now: a fresh
+// member's Portal shows exactly the Default role's seeded apps MINUS the three direct Plex
+// server cards (Plex, K8Plex, PlexOps — the D-23 display exclusion; catalog rows untouched),
+// every href a valid https URL, with the inverted Plex web-player link above the rule.
 // AC-05 — admin assigns the member a role that grants an app and the member's next
 // refresh shows the tile; reassigning to Default removes it. Two live browser contexts.
 import { test, expect, type Page } from '@playwright/test';
@@ -12,25 +13,28 @@ function tiles(page: Page) {
   return page.locator('.tile-grid .tile');
 }
 
-test('AC-04 — fresh member sees exactly the seeded default tiles with valid https URLs', async ({
+test('AC-04 — fresh member Portal: seeded defaults minus the server cards, plus the player link', async ({
   page,
 }) => {
   // The fresh-member persona is never granted anything by any spec.
   await signIn(page, 'fresh-member');
+  await page.goto('/portal');
 
-  // Exactly the Default role's seeded apps, in sort_order (ADR-012: default-visible + PlexOps).
-  await expect(tiles(page).locator('.tile__name')).toHaveText([/Seerr/, /Plex/, /K8Plex/, /PlexOps/]);
+  // The Default role seeds Seerr + Plex + K8Plex + PlexOps (ADR-012 migration 0007); the
+  // Portal renders that set minus the three direct-server cards (D-23) — Seerr remains.
+  await expect(tiles(page).locator('.tile__name')).toHaveText([/Seerr/]);
 
   const hrefs = await tiles(page).evaluateAll((els) => els.map((el) => el.getAttribute('href')));
-  expect(hrefs).toEqual([
-    'https://overseerr.haynesnetwork.com',
-    'https://plex.haynesnetwork.com',
-    'https://k8plex.haynesnetwork.com',
-    'https://plexops.haynesnetwork.com',
-  ]);
+  expect(hrefs).toEqual(['https://overseerr.haynesnetwork.com']);
   for (const href of hrefs) {
     expect(href).toMatch(HNET_URL);
   }
+
+  // The one Plex entry point: the inverted web-player link at the top (D-23).
+  const player = page.getByTestId('portal-plex-link');
+  await expect(player).toHaveAttribute('href', 'https://app.plex.tv');
+  await expect(player).toHaveAttribute('target', '_blank');
+  await expect(player).toHaveAttribute('rel', 'noopener noreferrer');
 
   // Tiles open in a new tab without leaking an opener.
   await expect(tiles(page).first()).toHaveAttribute('target', '_blank');
@@ -45,6 +49,8 @@ test('AC-05 — assigning a role that grants an app shows it on the member refre
   const memberContext = await browser.newContext();
   const memberPage = await memberContext.newPage();
   await signIn(memberPage, 'member');
+  await memberPage.goto('/portal');
+  await expect(memberPage.getByTestId('portal-plex-link')).toBeVisible();
   await expect(tiles(memberPage).filter({ hasText: 'Immich' })).toHaveCount(0);
 
   await signIn(page, 'admin');
@@ -86,7 +92,7 @@ test('AC-05 — assigning a role that grants an app shows it on the member refre
   await expect(grantsPanel).toContainText('Seerr');
   await expect(grantsPanel).not.toContainText('Immich');
   await memberPage.reload();
-  await expect(memberPage.locator('.greeting')).toBeVisible();
+  await expect(memberPage.getByTestId('portal-plex-link')).toBeVisible();
   await expect(tiles(memberPage).filter({ hasText: 'Immich' })).toHaveCount(0);
 
   // Cleanup: delete the role (two-step arm-to-confirm).

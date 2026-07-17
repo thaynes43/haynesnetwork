@@ -28,7 +28,7 @@ export default async function MetricsPage() {
         </p>
         <p>
           <Link className="btn" href="/">
-            Back to the dashboard
+            Back to Home
           </Link>
         </p>
       </section>

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.71.0](https://github.com/thaynes43/haynesnetwork/compare/v0.70.1...v0.71.0) (2026-07-17)
+
+
+### Features
+
+* HOME/PORTAL split — logo links to a calm Home, the launcher grid moves to /portal (DESIGN-004 D-23) ([#356](https://github.com/thaynes43/haynesnetwork/issues/356)) ([f47fc65](https://github.com/thaynes43/haynesnetwork/commit/f47fc65ba27a5444ccfc62ac81e9dd1aa851c18a))
+
+
+### Bug Fixes
+
+* kapowarr auto_search response schema rejected the real success payload ([#358](https://github.com/thaynes43/haynesnetwork/issues/358)) ([e9346d0](https://github.com/thaynes43/haynesnetwork/commit/e9346d01ddba4f67d7bf764e11255414b9f8ef7f))
+
 ## [0.70.1](https://github.com/thaynes43/haynesnetwork/compare/v0.70.0...v0.70.1) (2026-07-17)
 
 

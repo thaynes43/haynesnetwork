@@ -30,7 +30,7 @@ export default async function TrashPage() {
         </p>
         <p>
           <Link className="btn" href="/">
-            Back to the dashboard
+            Back to Home
           </Link>
         </p>
       </section>

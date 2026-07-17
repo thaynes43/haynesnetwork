@@ -1,7 +1,8 @@
 // AC-10 / R-60 — the responsive matrix (demo-console donor pattern): at every
-// PRD-listed viewport, /login, the dashboard and /admin (admin persona) show no
-// page-level scrollbar in either axis, push nothing off-screen, keep the key
-// controls visible, and let <main> own the overflow (DESIGN-004 D-05).
+// PRD-listed viewport, /login, Home (`/`), /portal (the launcher — DESIGN-004
+// D-23) and /admin (admin persona) show no page-level scrollbar in either axis,
+// push nothing off-screen, keep the key controls visible, and let <main> own
+// the overflow (DESIGN-004 D-05).
 import { join } from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
 import { signIn, expectViewportFit, SIGN_IN_BUTTON } from './support/helpers';
@@ -70,7 +71,7 @@ test.describe('dashboard + admin (admin persona)', () => {
   test.use({ storageState: ADMIN_STATE });
 
   for (const { w, h } of SIZES) {
-    test(`/ @ ${w}x${h} — fits, chrome + tiles reachable`, async ({ page }) => {
+    test(`/ @ ${w}x${h} — fits, chrome + the About tile reachable`, async ({ page }) => {
       await page.setViewportSize({ width: w, height: h });
       await page.goto('/');
       await expect(page.locator('.greeting')).toBeVisible();
@@ -78,7 +79,22 @@ test.describe('dashboard + admin (admin persona)', () => {
       // but the triggers themselves must remain usable).
       await expect(page.getByRole('button', { name: /theme/i })).toBeInViewport();
       await expect(page.locator('.usermenu__trigger')).toBeInViewport();
-      // At least the first default tile is visible and targetable.
+      // Home is calm (DESIGN-004 D-23): the inverted About tile is the one destination card.
+      const aboutTile = page.locator('.tile--about');
+      await expect(aboutTile).toBeVisible();
+      await expect(aboutTile).toBeInViewport();
+      await expectViewportFit(page);
+      await expectMainOwnsOverflow(page);
+    });
+
+    test(`/portal @ ${w}x${h} — fits, player link + tiles reachable`, async ({ page }) => {
+      await page.setViewportSize({ width: w, height: h });
+      await page.goto('/portal');
+      // The inverted Plex web-player link tops the launcher (DESIGN-004 D-23).
+      const player = page.getByTestId('portal-plex-link');
+      await expect(player).toBeVisible();
+      await expect(player).toBeInViewport();
+      // At least the first catalog tile is visible and targetable.
       const firstTile = page.locator('.tile-grid .tile').first();
       await expect(firstTile).toBeVisible();
       await expect(firstTile).toBeInViewport();
