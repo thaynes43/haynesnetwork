@@ -12,17 +12,22 @@
 // popover — opening it never reflows the page (ADR-015-sanctioned).
 //
 // NAV RESTRUCTURE (2026-07-14, owner-ratified from an approved mockup — DESIGN-004 D-22): the top
-// row slims to FOUR entries — Home · Library · Tickets · Trash — the same candidate set for every
-// role (a Disabled section still hides its entry; every route stays server-gated). "Tickets" is the
-// `bulletin` section under its ratified name (HELPDESK_NAME — a LABEL change only; the route stays
-// `/bulletin`, the section id / grants stay `bulletin`). Metrics and Integrations LEFT the top row
-// and MOVED INTO the user menu (above the tooling separator), each gated exactly like its former
-// tab. Four labels fit 320px without the rail scrolling; the v0.46.3 scroll-rail stays as a
-// safety net. User-menu destinations, top → bottom: My Plex (everyone — the user's own Plex
-// account), Integrations + Metrics (each when its section ≠ Disabled), then the tooling group —
-// Ledger (when ≠ Disabled — the shipped default is Disabled for members), Trash settings
-// (/settings/trash, only at Trash Edit level), Admin settings (admin) — then Sign out. Navigating
-// from a menu item is a `<Link>` push (D-19).
+// row slims to FOUR entries — the same candidate set for every role (a Disabled section still
+// hides its entry; every route stays server-gated). "Tickets" is the `bulletin` section under its
+// ratified name (HELPDESK_NAME — a LABEL change only; the route stays `/bulletin`, the section
+// id / grants stay `bulletin`). Metrics and Integrations LEFT the top row and MOVED INTO the user
+// menu (above the tooling separator), each gated exactly like its former tab. Four labels fit
+// 320px without the rail scrolling; the v0.46.3 scroll-rail stays as a safety net. User-menu
+// destinations, top → bottom: My Plex (everyone — the user's own Plex account), Integrations +
+// Metrics (each when its section ≠ Disabled), then the tooling group — Ledger (when ≠ Disabled —
+// the shipped default is Disabled for members), Trash settings (/settings/trash, only at Trash
+// Edit level), Admin settings (admin) — then Sign out. Navigating from a menu item is a `<Link>`
+// push (D-19).
+//
+// HOME/PORTAL SPLIT (2026-07-17, owner-directed — DESIGN-004 D-23): the brand block is now a LINK
+// to `/` (the calm Home screen — the owner kept clicking the logo, so it navigates), and the
+// row's first entry is PORTAL (`/portal` — the launcher that took the catalog grid). The row
+// reads Portal · Library · Tickets · Trash; still four entries, still fits 320px.
 
 import Link from 'next/link';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
@@ -31,6 +36,7 @@ import { BrandMark } from '@/components/brand-mark';
 import { EmailUpdatesToggle } from '@/components/email-updates-toggle';
 import { initialFor } from '@/lib/initials';
 import { HELPDESK_NAME } from '@/lib/bulletin';
+import { PORTAL_NAME } from '@/lib/portal';
 
 /** ADR-021 — the session-carried section levels (SessionRole.sectionPermissions) the nav
  *  gates on. Typed structurally so this client component needs no server-package import. */
@@ -293,20 +299,23 @@ export function TopBar({ user }: { user: TopBarUser }) {
   // moved into the user menu (see UserMenu). The row is exactly four candidates now.
   return (
     <header className="topbar">
-      <div className="brand">
+      {/* DESIGN-004 D-23 — the brand block is a LINK to `/` (Home): the owner kept clicking the
+          logo, so it navigates. Same anatomy, same look — the link chrome is neutralized in CSS
+          and only the global focus ring marks interactivity. */}
+      <Link href="/" className="brand">
         {/* DESIGN-006 D-01: the hub-and-spoke brand mark (Q-01 resolved); the
             wordmark text comes from the --brand-name token via CSS content, so a
             rebrand stays a tokens.css-only edit (R-61). */}
         <BrandMark className="brand__mark" />
         <span className="brand__name" aria-hidden="true" />
-        <span className="sr-only">haynesnetwork</span>
-      </div>
-      {/* DESIGN-004 D-22 — the UNIVERSAL primary nav, slimmed to FOUR: Home · Library · Tickets ·
-          Trash, the same candidate set for every role (a Disabled section still hides its entry).
-          Metrics + Integrations moved to the user menu; four labels fit 320px without the rail
-          scrolling. Shown at all widths. */}
+        <span className="sr-only">haynesnetwork home</span>
+      </Link>
+      {/* DESIGN-004 D-22/D-23 — the UNIVERSAL primary nav, FOUR entries: Portal · Library ·
+          Tickets · Trash, the same candidate set for every role (a Disabled section still hides
+          its entry). Metrics + Integrations live in the user menu; four labels fit 320px without
+          the rail scrolling. Shown at all widths. */}
       <nav className="topbar__nav" aria-label="Primary">
-        <Link href="/">Home</Link>
+        <Link href="/portal">{PORTAL_NAME}</Link>
         <Link href="/library">Library</Link>
         {/* PLAN-009 (DESIGN-012 D-08): the `bulletin` section under its ratified name (HELPDESK_NAME
             = "Tickets"); the route/section id stay `bulletin`. Level-gated (see showBulletin). */}

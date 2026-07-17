@@ -26,7 +26,7 @@ export default async function IntegrationsPage() {
         </p>
         <p>
           <Link className="btn" href="/">
-            Back to the dashboard
+            Back to Home
           </Link>
         </p>
       </section>

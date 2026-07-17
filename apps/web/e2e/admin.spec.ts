@@ -148,10 +148,12 @@ test.describe('roles (admin)', () => {
     page,
     browser,
   }) => {
-    // Member context first — we watch the dashboard change live from here.
+    // Member context first — we watch the launcher grid change live from here (the grid lives
+    // on /portal since the D-23 home/portal split).
     const memberContext = await browser.newContext();
     const memberPage = await memberContext.newPage();
     await signIn(memberPage, 'member');
+    await memberPage.goto('/portal');
     const memberTiles = memberPage.locator('.tile-grid .tile');
     await expect(memberTiles.filter({ hasText: 'Tautulli' })).toHaveCount(0);
 
@@ -198,7 +200,7 @@ test.describe('roles (admin)', () => {
     await expect(grantsPanel).toContainText('Seerr');
     await expect(grantsPanel).not.toContainText('Tautulli');
     await memberPage.reload();
-    await expect(memberPage.locator('.greeting')).toBeVisible();
+    await expect(memberPage.getByTestId('portal-plex-link')).toBeVisible();
     await expect(memberTiles.filter({ hasText: 'Tautulli' })).toHaveCount(0);
 
     // …then delete the role itself (two-step arm-to-confirm).

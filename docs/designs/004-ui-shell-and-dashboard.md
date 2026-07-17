@@ -1,7 +1,7 @@
 # DESIGN-004: UI shell and dashboard (Phase 1)
 
 - **Status:** Accepted — presentation details partially superseded by DESIGN-006 (visual identity: brand mark, typeface, radii, tile geometry); the mechanism and structure here remain normative
-- **Last updated:** 2026-07-14
+- **Last updated:** 2026-07-17
 - **Satisfies:** PRD-001 R-10, R-12, R-14 (rendering side), R-60, R-61, R-66, AC-01, AC-04, AC-10; governed by ADR-005 (CSS-token theming via `data-theme`) and **ADR-012 (unified Role model)** — API consumed per DESIGN-003 / ADR-004 (API layer: tRPC v11).
 
 > **Amended by ADR-012 (2026-07-05):** the admin permissions UI is now role-based.
@@ -74,6 +74,16 @@
 > its page keeps the `[Tickets] [Feed]` inner tabs. Relocated routes leave no stale top-nav tab
 > highlighted. New section **D-22** is normative; **D-16** carries the amendment. No route/grant/
 > migration change; ADR-015 untouched.
+>
+> **Amended 2026-07-17 (owner-directed) — the HOME/PORTAL SPLIT:** the topbar logo/wordmark becomes
+> a **link to `/`**, which is now a calm **Home** landing screen (MOTD · greeting · play scoreboard ·
+> About tile — **no app cards**), and the app-launcher catalog grid moves to a new **`/portal`**
+> screen that takes Home's top-nav slot — the row reads **Portal · Library · Tickets · Trash**
+> (`PORTAL_NAME`, the `HELPDESK_NAME` idiom). Portal tops the grid with a full-width **inverted
+> link to the Plex web player** (app.plex.tv) and stops rendering the three seeded direct Plex
+> server cards (a display exclusion — the catalog rows stay, R-11). Post-login landing stays `/`.
+> New section **D-23** is normative (PRD R-228..R-230); **D-07**, **D-15**, and **D-22** carry
+> pointers. No route-gating/grant/migration change; ADR-015 untouched.
 
 - **Donors:** `../demo-console/apps/shell/src/shell/theme/` (tokens.css, tokenContract.ts, ThemeProvider.tsx, app.css), `../demo-console/packages/shared/layout/`, `../demo-console/apps/shell/src/shell/chrome/` (TopBar, SettingsDrawer), `../demo-console/scripts/lint-css-hex.mjs`.
 
@@ -323,6 +333,12 @@ Proven by the Playwright resize matrix (AC-10): 375×667, 390×844, 412×915, 76
 panes scroll internally.
 
 ### D-07 — Dashboard `/` (R-10, R-12, AC-04, AC-05)
+
+> **Amended 2026-07-17 (D-23 — the home/portal split):** `/` no longer renders the app-launcher
+> grid — it is the calm **Home** screen (MOTD · greeting · scoreboard · About tile). The grid
+> below, its tile contract, and the empty state now render on **`/portal`** verbatim (minus the
+> three direct Plex server cards, plus the inverted web-player link — see D-23). The tile
+> mechanics in this section remain normative for the Portal grid.
 
 Data: `catalog.myApps` (DESIGN-003 D-06) — never `profile.me` — prefetched server-side
 via the tRPC server caller, hydrated into React Query. Default React Query
@@ -629,6 +645,10 @@ silently outranked `.confirm-btn` (0,1,0), so arming reflowed the row. Corrected
 > and `/admin/motd` renders its live preview through the real `<MotdSurface>` with a markdown
 > affordance + Insert-link helper. The data model, activation predicate, dismiss-version contract,
 > ARIA roles, and audit path below are unchanged.
+>
+> **Amended 2026-07-17 (see D-23):** the banner's mount is the **Home** screen (`/` — still
+> `page.tsx`, still above `<Greeting>`); the neighbor below is now the About tile rather than the
+> relocated tile grid. Everything else here stands.
 
 An optional admin-set banner broadcasts a notice to every signed-in user, mounted at the **top of the
 dashboard `page.tsx`, above `<Greeting>`** (the D-07 neighbor). It is **present-when-set** and
@@ -953,6 +973,12 @@ caption heights, corner pucks that recolor in place.
 
 ### D-22 — Amendment 2026-07-14 (owner-ratified from an approved mockup) — the nav restructure
 
+> **Amended 2026-07-17 (D-23 — the home/portal split):** the row's FIRST slot is now **Portal**
+> (`/portal`, label `PORTAL_NAME`) — the row reads **Portal · Library · Tickets · Trash**. Still
+> four entries, still fits 320px (re-proven by the D-23 captures + `nav-restructure.spec.ts`).
+> Everything else here — the user-menu contract, the Tickets ratification, active-state rules —
+> stands unchanged; `/` remains reachable via the (new) logo link, not a tab.
+
 The owner reviewed nav-IA mockups and ratified this exact one (it is the contract):
 
 ```
@@ -999,6 +1025,75 @@ Enforced by `apps/web/e2e/nav-restructure.spec.ts` (four-tab bar at 320/390/desk
 at 320; menu entries + role gating; the Tickets label + inner tabs; menu-item push/Back; no stale
 active tab) with `nav-overlap.spec.ts` updated to the four-tab reality.
 
+### D-23 — Amendment 2026-07-17 (owner-directed) — the HOME/PORTAL split
+
+Owner spec (2026-07-17, near-verbatim): "I keep clicking on the haynesnetwork name/logo — use that
+to link to a simple home page, and move the Single Sign On links (that will actually be Single Sign
+On) to a page called Portal; this page takes the place of Home in the top bar. The new
+haynesnetwork logo-button homepage will have MOTD, greeting, watched counts, and about
+haynesnetwork. The links on Portal remain mostly the same except at the top we have an inverted
+color link to Plex's web player. There is no value in linking to the direct servers because we
+cannot do an Authentik SSO flow for Plex." (Confirmed: Plex auth is plex.tv-only — no Authentik
+hook exists, DESIGN-041 classifies the Plex cards N/A-by-design — and app.plex.tv's own server
+picker reaches all three servers, so the one web-player link loses nothing.)
+
+**HOME — `/`, the calm landing screen the logo links to.** The brand block in the topbar becomes a
+`<Link href="/">` (same anatomy/look — link chrome neutralized, the global `:focus-visible` ring is
+the keyboard affordance; hover changes nothing). The page renders exactly four things, in order:
+
+1. the **MOTD banner** (D-15/D-17 — kept on the landing screen so every login sees the estate-wide
+   broadcast; this is also where the owner's current "site is very new" welcome note lives, so the
+   welcome callout stays on Home BY CONSTRUCTION — Portal carries no banner);
+2. the **greeting** (D-07 idiom, unchanged);
+3. the **estate play scoreboard** (ADR-068 / DESIGN-040 — already SSR-baked);
+4. the **About tile** above its perforated rule (ADR-063 / DESIGN-034 — the inverted entry card).
+
+No app cards, no grid — the calm screen. **Post-login landing stays `/`**, so old dashboard deep
+links keep working (it IS `/`); the signIn-lands-on-greeting contract is unchanged.
+
+**PORTAL — `/portal`, the launcher, first slot in the top nav.** The row reads
+**Portal · Library · Tickets · Trash** (D-22 amended; four labels still fit 320px). The label rides
+the **`PORTAL_NAME`** constant (`apps/web/lib/portal.ts`) — the D-22 `HELPDESK_NAME` idiom, one
+constant so nav/copy can never drift. The page renders:
+
+1. an `h1` "Portal";
+2. the full-width **inverted link to the Plex WEB PLAYER** (`https://app.plex.tv`, constant
+   `PLEX_WEB_PLAYER_URL`): the About tile's inverted idiom — the styles are generalized as
+   **`.tile--inverted`** (About keeps marker class `.tile--about`, the player link wears
+   `.tile--plex`; markers carry no styles) — copy "Watch on Plex" + "Opens the Plex web player
+   with every server you have access to." (owner tone: plain, friendly, no em-dashes), new-tab +
+   `noopener noreferrer` like every SSO tile, `data-testid="portal-plex-link"`;
+3. the perforated rule (the D-02/DESIGN-034 separator idiom);
+4. the **catalog tile grid exactly as D-07 specifies** (whole-anchor tiles, hrefs straight from
+   `catalog.myApps`, empty state included) — MINUS the three direct Plex server cards (below).
+
+**The server-card exclusion is a DISPLAY concern, not a data change.** The catalog is admin-curated
+runtime data (R-11) — no code deletes rows. `portalApps()` (`apps/web/lib/portal.ts`) filters the
+render on **`PORTAL_HIDDEN_SLUGS` = `{plex, k8plex, plexops}`** — the seeded slugs (migration
+0002), the only stable key the model offers (names/URLs are admin-editable; all three share icon
+`plex`, so the icon key would over-match). Consequences, deliberate: `/admin/catalog` still lists
+and manages all three rows; an admin can add any OTHER card freely (exact-slug match, never fuzzy);
+re-creating a card under one of the three seeded slugs stays hidden (documented, acceptable —
+delete the rows in `/admin/catalog` to make the set a no-op, which the owner can do at leisure,
+Q-04). The Library detail pages' per-server "Watch on Plex" deep links (ADR-047) are UNTOUCHED.
+
+**History (D-19).** Portal is a first-class screen: the nav tab and the logo are both `<Link>`
+pushes, so Back/Forward walk Home ↔ Portal like screens. No replace semantics anywhere in the
+split; D-19 is inherited, not amended.
+
+**Non-changes.** No route gating changed (`/portal` sits in the authed `(app)` group like the old
+dashboard — no section permission; every role sees its own grid). No grant/section/migration/API
+change — `catalog.myApps` is untouched. ADR-015 holds everywhere (the logo link and player link
+recolor only). No new ADR: like D-22, this is a labelling + placement amendment over the existing
+nav/card/catalog decisions (ADR-032/058/063 stand).
+
+Enforced by: `nav-restructure.spec.ts` (Portal-first four-tab bar at 320/390/desktop; logo → Home;
+Home has no grid; the Portal shape — player link/rule/grid order, server cards absent while
+`/admin/catalog` keeps the rows), `history-navigation.spec.ts` (Home↔Portal Back/Forward),
+`dashboard.spec.ts` (AC-04/AC-05 retargeted to `/portal`), `resize-matrix.spec.ts` (`/` +
+`/portal` at all eight viewports), `about.spec.ts` + `motd.spec.ts` (Home neighbors), and the
+`portal.test.ts` unit spec (the exclusion set).
+
 ## Open questions
 
 | ID   | Question                                                                                                                                                                                           | Resolution                                                                                                                                                               |
@@ -1006,3 +1101,4 @@ active tab) with `nav-overlap.spec.ts` updated to the four-tab reality.
 | Q-01 | Brand mark: the donor's placeholder four-square SVG ships initially — does the owner want a real haynesnetwork logo (SVG) for topbar + `/login`?                                                   | Resolved 2026-07-03: hub-and-spoke mark, DESIGN-006 D-01                                                                                                                 |
 | Q-02 | Topbar avatar: initial-letter circle only, or render `users.image` (Better Auth stores the OIDC `picture` claim there — DESIGN-001 D-02) when present?                                             | Resolved: initial-letter circle only — `initialFor(displayName)` in `apps/web/lib/initials.ts` (first letter uppercased, `?` fallback). `users.image` is never rendered. |
 | Q-03 | Final brand palette: initial tokens keep demo-console's green `#78be20` accent verbatim (D-01). What accent/surfaces does the owner want for the haynesnetwork rebrand (a `tokens.css`-only edit)? | Resolved 2026-07-03: palette values stay (owner: "colors are good"); identity comes from mark/type/shape — DESIGN-006                                                    |
+| Q-04 | (D-23) The three direct Plex server catalog rows (`plex`/`k8plex`/`plexops`) are display-excluded from Portal but still live in `/admin/catalog`. Owner: delete the rows (making `PORTAL_HIDDEN_SLUGS` a no-op), or keep them as dormant admin records? Either is safe — no code change needed. | **Open — owner, at leisure.**                                                                                                                                            |

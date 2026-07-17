@@ -5,7 +5,8 @@
 // longer fit and — with `min-width: 0` + default `overflow: visible` — overflowed VISIBLY rightward
 // under the theme toggle (owner-reported on a 360px-class phone). The fix made the rail a
 // self-contained horizontal scroll pane. The 2026-07-14 restructure then slimmed the row back to
-// FOUR (Home · Library · Tickets · Trash — Metrics + Integrations moved into the user menu), so four
+// FOUR (Metrics + Integrations moved into the user menu; the D-23 home/portal split later renamed
+// the first slot — Portal · Library · Tickets · Trash), so four
 // labels now FIT even at 320px WITHOUT the rail needing to scroll. This spec pins both: nothing
 // overflows the viewport, AND four tabs fit their rail at narrow widths (no scroll needed). The
 // scroll pane stays as a safety net for any future fifth entry.
@@ -21,7 +22,7 @@ const NARROW_SIZES = [
 
 // The four universal section links an admin session surfaces (admin implies trash=edit → Trash
 // shows; Bulletin/"Tickets" defaults read_only for everyone). Order = the approved mockup.
-const NAV_LINKS = ['Home', 'Library', 'Tickets', 'Trash'] as const;
+const NAV_LINKS = ['Portal', 'Library', 'Tickets', 'Trash'] as const;
 
 /** The rail's computed horizontal overflow — the safety-net mechanism that would confine surplus
  *  links to their own scroll pane rather than letting them spill over the topbar actions. */

@@ -1,16 +1,20 @@
-// DESIGN-004 D-22 (owner-ratified from an approved mockup, 2026-07-14) — the NAV RESTRUCTURE.
+// DESIGN-004 D-22 (owner-ratified from an approved mockup, 2026-07-14) — the NAV RESTRUCTURE —
+// amended by D-23 (owner-directed 2026-07-17) — the HOME/PORTAL split.
 //
 // The contract this pins:
-//   TOP BAR:  Home | Library | Tickets | Trash        [theme] (avatar)
+//   TOP BAR:  [logo → /] Portal | Library | Tickets | Trash        [theme] (avatar)
 //   USER MENU: My Plex / Integrations / Metrics / ──── / Sign out   (each section role-gated)
 //   Tickets page keeps its inner tabs: [Tickets] [Feed]
+//   /        = HOME (calm landing: MOTD + greeting + scoreboard + About tile; NO app cards)
+//   /portal  = the launcher (inverted Plex web-player link + the role-gated catalog grid,
+//              minus the three seeded direct Plex server cards)
 //
-// Covered: the four-tab bar at 320 / 390 / desktop (order + no rail scroll at 320); Metrics +
-// Integrations as user-menu entries, gated exactly like their former tabs (admin sees them, a
-// member without the section does not); the "Tickets" label + the page's inner tabs; menu-item
-// navigation is a history PUSH (Back returns); and active-state correctness (visiting a menu route
-// leaves NO stale top-nav tab highlighted, while the Tickets page keeps exactly one active inner
-// tab). All against the hermetic stack via the real stub-OIDC round trip.
+// Covered: the four-tab bar at 320 / 390 / desktop (order + no rail scroll at 320); the logo as
+// a link to Home; the Portal screen (inverted player link + cards render, no server cards, Home
+// carries no grid); Metrics + Integrations as user-menu entries, gated exactly like their former
+// tabs; the "Tickets" label + the page's inner tabs; menu-item navigation is a history PUSH
+// (Back returns); and active-state correctness. All against the hermetic stack via the real
+// stub-OIDC round trip.
 import { test, expect, type Page } from '@playwright/test';
 import { signIn, openUserMenu } from './support/helpers';
 
@@ -29,14 +33,14 @@ async function navScrollOverflow(page: Page): Promise<number> {
   });
 }
 
-test.describe('nav restructure — the four-tab universal bar (DESIGN-004 D-22)', () => {
+test.describe('nav restructure — the four-tab universal bar (DESIGN-004 D-22/D-23)', () => {
   for (const vp of VIEWPORTS) {
-    test(`bar reads Home · Library · Tickets · Trash @ ${vp.name}`, async ({ page }) => {
+    test(`bar reads Portal · Library · Tickets · Trash @ ${vp.name}`, async ({ page }) => {
       await page.setViewportSize({ width: vp.w, height: vp.h });
       await signIn(page, 'admin'); // admin surfaces all four candidates (trash=edit implied)
 
       // Exactly four links, in the approved order, and NOT the relocated pair.
-      await expect(page.locator('.topbar__nav a')).toHaveText(['Home', 'Library', 'Tickets', 'Trash']);
+      await expect(page.locator('.topbar__nav a')).toHaveText(['Portal', 'Library', 'Tickets', 'Trash']);
       await expect(
         page.locator('.topbar__nav').getByRole('link', { name: 'Metrics' }),
       ).toHaveCount(0);
@@ -51,6 +55,74 @@ test.describe('nav restructure — the four-tab universal bar (DESIGN-004 D-22)'
       }
     });
   }
+});
+
+test.describe('home/portal split — logo → Home, Portal = the launcher (DESIGN-004 D-23)', () => {
+  test('the topbar logo links to Home; Home is calm (About tile, no app cards)', async ({
+    page,
+  }) => {
+    await signIn(page, 'admin'); // lands on '/'
+    await page.locator('.topbar__nav').getByRole('link', { name: 'Portal' }).click();
+    await page.waitForURL('**/portal');
+
+    // The brand block is the way back: one link wrapping the mark + wordmark.
+    const brand = page.locator('a.brand');
+    await expect(brand).toHaveAttribute('href', '/');
+    await brand.click();
+    await page.waitForURL((url) => url.pathname === '/');
+
+    // Home = greeting + About tile above the perforated rule; NO catalog grid, no tiles
+    // besides the inverted About card.
+    await expect(page.locator('.greeting')).toBeVisible();
+    await expect(page.locator('.tile--about')).toBeVisible();
+    await expect(page.locator('.tile-rule')).toBeVisible();
+    await expect(page.locator('.tile-grid')).toHaveCount(0);
+    await expect(page.getByTestId('portal-plex-link')).toHaveCount(0);
+  });
+
+  test('Portal renders the inverted Plex web-player link above the rule, then the catalog cards', async ({
+    page,
+  }) => {
+    await signIn(page, 'admin');
+    await page.goto('/portal');
+    await expect(page.getByRole('heading', { name: 'Portal', level: 1 })).toBeVisible();
+
+    // The web-player entry: inverted-tile idiom, full-width, new tab, app.plex.tv.
+    const player = page.getByTestId('portal-plex-link');
+    await expect(player).toBeVisible();
+    await expect(player).toHaveClass(/tile--inverted/);
+    await expect(player).toHaveAttribute('href', 'https://app.plex.tv');
+    await expect(player).toHaveAttribute('target', '_blank');
+    await expect(player).toHaveAttribute('rel', 'noopener noreferrer');
+    await expect(player.locator('.tile__name')).toContainText('Watch on Plex');
+
+    // DOM order: inverted link → perforated rule → grid (the launcher shape).
+    const order = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('.tile--plex, .tile-rule, .tile-grid')).map((el) =>
+        el.classList.contains('tile--plex')
+          ? 'player'
+          : el.classList.contains('tile-rule')
+            ? 'rule'
+            : 'grid',
+      ),
+    );
+    expect(order).toEqual(['player', 'rule', 'grid']);
+
+    // Admin sees every catalog app EXCEPT the three direct Plex server cards (a display
+    // exclusion keyed on the seeded slugs — the catalog rows themselves stay).
+    const names = page.locator('.tile-grid .tile .tile__name');
+    await expect(names.filter({ hasText: 'Seerr' })).toHaveCount(1);
+    await expect(names.filter({ hasText: /^K8Plex/ })).toHaveCount(0);
+    await expect(names.filter({ hasText: /^PlexOps/ })).toHaveCount(0);
+    await expect(names.filter({ hasText: /^Plex\b/ })).toHaveCount(0);
+    // The rows are NOT deleted: /admin/catalog still lists all three (R-11).
+    await page.goto('/admin/catalog');
+    for (const name of ['Plex', 'K8Plex', 'PlexOps'] as const) {
+      await expect(
+        page.locator('.admin-table tbody tr').filter({ hasText: name }).first(),
+      ).toBeVisible();
+    }
+  });
 });
 
 test.describe('nav restructure — user menu entries + role gating (DESIGN-004 D-22)', () => {
@@ -132,6 +204,6 @@ test.describe('nav restructure — menu-item push + active-state correctness (DE
     await expect(page.locator('.topbar__nav a[aria-current]')).toHaveCount(0);
     await expect(page.locator('.topbar__nav a.is-active')).toHaveCount(0);
     // The bar is still exactly the four universal tabs.
-    await expect(page.locator('.topbar__nav a')).toHaveText(['Home', 'Library', 'Tickets', 'Trash']);
+    await expect(page.locator('.topbar__nav a')).toHaveText(['Portal', 'Library', 'Tickets', 'Trash']);
   });
 });
