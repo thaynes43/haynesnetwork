@@ -12,8 +12,10 @@ bounce; the FLIP completes tomorrow morning. Read the OWNER PROCESS RULING below
 UX work is verified.
 
 **▶ FIRST MOVES:**
-1. **PR #355 (books detail parity)** — rebased clean + auto-merge armed (GitHub-side, survives the
-   bounce). Likely MERGED by the time you read this → release-please opens/updates the release PR →
+1. **PR #355 (books detail parity) AND PR #361 (Home rule touch-up: the perforated rule moves
+   between the glance badges and the About tile — owner spec, D-23 amended, NOT yet live-verified
+   per the new ruling)** — both auto-merge armed (GitHub-side, survive the bounce). Likely MERGED
+   by the time you read this → release-please opens/updates the release PR →
    drive it (dance: close/reopen + re-arm; BEHIND: update-branch; artifact-pair gate) → haynes-ops
    image bump → flux reconcile hr `haynesnetwork -n frontend` → in-cluster health probe
    (`haynesnetwork.frontend.svc:3000/api/health` via a frontend-ns job; the dev pod cannot curl the
