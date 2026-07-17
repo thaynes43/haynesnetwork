@@ -55,10 +55,13 @@ export class KapowarrWriteClient {
   /**
    * `POST /api/system/tasks` `{ cmd: 'auto_search', volume_id }` — queue Kapowarr's auto-search-and-grab task
    * for the volume (the *arr Force-Search idiom: search its GetComics DDL sources and grab the best result).
-   * This is the write the Library "Force Search" button (PLAN-045) fires for a comic. Responds `result: null`.
+   * This is the write the Library "Force Search" button (PLAN-045) fires for a comic. Kapowarr answers
+   * 201 `{ error: null, result: { id: <task id> } }` (live-verified v1.3.1, 2026-07-17 — the first
+   * real fire; the old `z.null()` schema was written blind and rejected the SUCCESS response). The
+   * payload is not consumed, so tolerate any result the error-checked envelope carries.
    */
   async searchVolume(id: number): Promise<void> {
-    await this.http.json('POST', '/system/tasks', z.null(), {}, { cmd: 'auto_search', volume_id: id });
+    await this.http.json('POST', '/system/tasks', z.unknown(), {}, { cmd: 'auto_search', volume_id: id });
   }
 }
 

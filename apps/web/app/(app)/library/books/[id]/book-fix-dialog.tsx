@@ -53,7 +53,7 @@ export function BookFixControl({ booksItemId, title }: { booksItemId: string; ti
               ? 'Fix failed'
               : queued
                 ? 'Fix queued. It will run by itself.'
-                : 'Fix requested — searching for a replacement'
+                : 'Fix requested. Searching for a replacement'
           }
           tone={failed ? 'danger' : 'info'}
           title={
@@ -107,7 +107,7 @@ export function BookFixControl({ booksItemId, title }: { booksItemId: string; ti
         >
           <p className="muted">
             We’ll search for a better copy and re-acquire it. The current file stays on your shelf
-            until it’s quarantined — ask an admin if it needs removing.
+            until it’s quarantined. Ask an admin if it needs removing.
           </p>
           <fieldset className="field">
             <legend>What’s wrong with it?</legend>
