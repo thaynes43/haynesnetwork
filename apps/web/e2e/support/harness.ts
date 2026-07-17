@@ -72,7 +72,7 @@ export interface RunningStack {
   sabnzbd: StubSabnzbdServer;
   /** Stub Kapowarr (REST + call recorder) — comic routing e2e layer (ADR-056 / PLAN-046). */
   kapowarr: StubKapowarrServer;
-  /** Stub Libretto (REST + call recorder) — collection manager e2e layer (ADR-069 / DESIGN-042). */
+  /** Stub Libretto (REST + call recorder) — collection manager e2e layer (ADR-070 / DESIGN-043). */
   libretto: StubLibrettoServer;
   smtp: StubSmtpServer;
   devServer: ChildProcess;

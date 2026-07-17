@@ -1,9 +1,9 @@
-// ADR-069 / DESIGN-042 (PLAN-052) — the READ surface for Libretto (@hnet/libretto/read). Lists recipes
+// ADR-070 / DESIGN-043 (PLAN-052) — the READ surface for Libretto (@hnet/libretto/read). Lists recipes
 // (+ the invalid-file issues[]), produced collections, and run state, and RESOLVES a draft ref through
-// POST /api/validate for the composer's preview (ADR-069 C-07). Import-unrestricted (reads are safe
+// POST /api/validate for the composer's preview (ADR-070 C-07). Import-unrestricted (reads are safe
 // everywhere); the mutating surface lives in ./write and is import-confined to packages/domain (the
 // @hnet/lazylibrarian precedent). Every method surfaces LibrettoUnreachableError untouched so the manager
-// can degrade to its honest `unreachable` state (ADR-069 C-09).
+// can degrade to its honest `unreachable` state (ADR-070 C-09).
 import { LibrettoHttp, type LibrettoHttpOptions } from './http';
 import {
   librettoCollectionsResponseSchema,
@@ -64,7 +64,7 @@ export class LibrettoReadClient {
 
   /**
    * `POST /api/validate` — validate a draft recipe (schema + ref resolution + target reachability),
-   * mutating NOTHING. The composer's ref PREVIEW (ADR-069 C-07): a resolved name + work count when
+   * mutating NOTHING. The composer's ref PREVIEW (ADR-070 C-07): a resolved name + work count when
    * Libretto can resolve the builder ref, plus any blocking issues. A 0-work container-series slug comes
    * back resolved with workCount 0 (the honest silent-failure guard) — the UI surfaces it, never fabricates.
    */

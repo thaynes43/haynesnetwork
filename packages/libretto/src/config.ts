@@ -1,4 +1,4 @@
-// ADR-069 / DESIGN-042 (PLAN-052) — env contract for Libretto. The URL is non-secret config with an
+// ADR-070 / DESIGN-043 (PLAN-052) — env contract for Libretto. The URL is non-secret config with an
 // in-cluster service-DNS default (Libretto runs in ns `media`, port 8080 — the proven live surface). The
 // API key is a SECRET (ExternalSecret in-cluster from the 1Password `libretto` item, .env.local in dev —
 // hard rule 7) and is REQUIRED: there is no default and the value never appears in errors. The app talks

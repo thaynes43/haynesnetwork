@@ -173,7 +173,7 @@ export function bookActionProcedure(action: BookAction) {
 }
 
 /**
- * ADR-069 / DESIGN-042 D-01/D-06 (PLAN-052 — collection manager) — the caller's effective collection
+ * ADR-070 / DESIGN-043 D-01/D-06 (PLAN-052 — collection manager) — the caller's effective collection
  * actions. Admin ⇒ every action (no query); otherwise a per-call read of `role_collection_action_grants`
  * (a management path — cheap + rare). Used by `collectionActionProcedure` (the server gate) + the router's
  * per-viewer `canAcquire` flag (which gates the acquisition toggle in the composer).
@@ -186,7 +186,7 @@ export async function resolveCollectionActions(
 }
 
 /**
- * ADR-069 / DESIGN-042 D-06 (PLAN-052) — the collection action rung: the `integrations` section at
+ * ADR-070 / DESIGN-043 D-06 (PLAN-052) — the collection action rung: the `integrations` section at
  * read_only or better (visibility floor — the manager lives under the Integrations hub) AND (admin OR the
  * caller's role holds the `role_collection_action_grants` row for `action`). Ships UNGRANTED ⇒ Admin-only;
  * the owner opens `suggest` / `manage` / `acquire` per role via `setRoleCollectionActions` — a data change,
@@ -203,7 +203,7 @@ export function collectionActionProcedure(action: CollectionAction) {
 }
 
 /**
- * ADR-069 / DESIGN-042 D-05 (PLAN-052) — the member-contribution rung: authed AND (admin OR the caller's
+ * ADR-070 / DESIGN-043 D-05 (PLAN-052) — the member-contribution rung: authed AND (admin OR the caller's
  * role holds the `suggest` grant). Deliberately NO section floor — the "Suggest a collection" affordance
  * lives on the BOOKS walls (books-section gated for visibility), so a member who can see the walls may
  * propose without the `integrations` section being open to them. It only PROPOSES (a pending row) — the

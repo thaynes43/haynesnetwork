@@ -158,7 +158,7 @@ export * from './kapowarr-clients';
 // fine-grained Activity action grant seam (setRoleActivityActions, the ADR-023 machinery).
 export * from './activity';
 export * from './activity-permissions';
-// ADR-069 / DESIGN-042 (PLAN-052 — collection manager) — the confined @hnet/libretto client bundle
+// ADR-070 / DESIGN-043 (PLAN-052 — collection manager) — the confined @hnet/libretto client bundle
 // (@hnet/libretto/write stays in this package — the arr-write-import-guard, extended), the
 // collections-manager orchestrator the tRPC layer fronts (overview / preview / save / apply / delete —
 // with the `acquire` content-pull gate), the fine-grained collection action grants

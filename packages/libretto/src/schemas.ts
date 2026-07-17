@@ -1,4 +1,4 @@
-// ADR-069 / DESIGN-042 (PLAN-052) — the ACL zod schemas for Libretto's JSON responses (the
+// ADR-070 / DESIGN-043 (PLAN-052) — the ACL zod schemas for Libretto's JSON responses (the
 // provider-parity contract nouns, DESIGN-037 D-02/D-10). Kept TOLERANT (passthrough + nullish) because
 // several field shapes are UNVERIFIED in DESIGN-037 (ABS batch body, Kavita identifier exposure) and
 // Libretto is a young app whose wire may add fields — the ACL parses defensively; the domain decides.
@@ -111,7 +111,7 @@ export const librettoCollectionsResponseSchema = z
 
 /**
  * `POST /api/validate` → the preview/validate result: `issues[]` plus an OPTIONAL resolution the composer
- * shows before save (resolved name + work count). DESIGN-037 has no dedicated resolve endpoint (ADR-069
+ * shows before save (resolved name + work count). DESIGN-037 has no dedicated resolve endpoint (ADR-070
  * C-07) — validate is the honest preview; when Libretto resolves the ref it echoes `resolved`, otherwise
  * the UI says so. Tolerant: a bare `{ issues }` (no resolution) is valid.
  */

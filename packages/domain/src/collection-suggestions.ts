@@ -1,4 +1,4 @@
-// ADR-069 / DESIGN-042 D-05 (PLAN-052 — the member contribution flow) — the propose→approve lifecycle
+// ADR-070 / DESIGN-043 D-05 (PLAN-052 — the member contribution flow) — the propose→approve lifecycle
 // single-writers. A `suggest`-granted member files a PENDING suggestion (applies nothing); a `manage`
 // admin approves (materialize the recipe via the confined @hnet/libretto writer — acquisition OFF unless
 // the approver holds `acquire` and opts in) or declines with a reason. Every step co-writes a
@@ -122,7 +122,7 @@ export interface ApproveCollectionSuggestionInput {
   reviewerId: string;
   /** The reviewer holds the `acquire` grant (gates enabling acquisition on the materialized recipe). */
   canAcquire: boolean;
-  /** Opt the created recipe into acquisition — refused unless `canAcquire` (ADR-069 C-04). Default false. */
+  /** Opt the created recipe into acquisition — refused unless `canAcquire` (ADR-070 C-04). Default false. */
   enableAcquisition?: boolean;
   /** Override the derived recipe id (else slugified from the name). */
   recipeId?: string;

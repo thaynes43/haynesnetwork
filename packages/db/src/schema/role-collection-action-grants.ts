@@ -6,7 +6,7 @@ import { COLLECTION_ACTIONS, type CollectionAction } from './enums';
 const COLLECTION_ACTIONS_SQL_LIST = COLLECTION_ACTIONS.map((a) => `'${a}'`).join(',');
 
 /**
- * ADR-069 / DESIGN-042 D-01 (PLAN-052 — collection manager) — a role's FINE-GRAINED collection-manager
+ * ADR-070 / DESIGN-043 D-01 (PLAN-052 — collection manager) — a role's FINE-GRAINED collection-manager
  * action grants, the exact `role_books_action_grants` / `role_activity_action_grants` idiom
  * (ADR-023/059/062): a ROW MEANS THE ACTION IS GRANTED (presence is the grant; no `enabled` boolean —
  * absence is deny); an `is_admin` role stores NO rows and implies EVERY action. Ships with NO rows ⇒

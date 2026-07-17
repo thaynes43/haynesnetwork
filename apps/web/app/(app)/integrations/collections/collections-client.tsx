@@ -1,6 +1,6 @@
 'use client';
 
-// ADR-069 / DESIGN-042 (PLAN-052 — collection manager) — the manager sub-section. Reads Libretto LIVE via
+// ADR-070 / DESIGN-043 (PLAN-052 — collection manager) — the manager sub-section. Reads Libretto LIVE via
 // the confined tRPC surface (collections.overview) and degrades honestly when Libretto is unreachable
 // (D-01/C-09). Recipe rows carry the builder badge, target, produced-count, the acquisition ON/OFF puck
 // (recolor-not-reflow, ADR-015), and the run verdict; the composer is a Modal with a ref PREVIEW (validate)
@@ -497,7 +497,7 @@ function ComposerModal({
           </label>
         </div>
 
-        {/* The acquisition knob — only for acquire-granted roles (ADR-069 C-04). */}
+        {/* The acquisition knob — only for acquire-granted roles (ADR-070 C-04). */}
         <label className={`composer-inline composer-acq ${canAcquire ? '' : 'composer-acq--locked'}`}>
           <input
             type="checkbox"

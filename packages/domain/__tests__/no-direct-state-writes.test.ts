@@ -142,7 +142,7 @@ const ALLOWED_FILES = new Set<string>([
 // outbox row either (quota exhaustion is routine daily weather, ADR-067 C-09; the trail is the row +
 // the one-line logs + the queued-fix actions_taken steps — a documented no-ledger-row exemption).
 // Upserted + cleared; guarded in ALL SIX families (SQL INSERT/UPDATE/DELETE + Drizzle forms).
-// ADR-069 / DESIGN-042 (PLAN-052 — collection manager) adds two guarded single-writer tables:
+// ADR-070 / DESIGN-043 (PLAN-052 — collection manager) adds two guarded single-writer tables:
 // role_collection_action_grants (a role's fine-grained collection action grants — setRoleCollectionActions
 // in collection-permissions.ts is the sole writer; it replace-sets the rows + co-writes a permission_audit
 // 'update_collection_actions' row in the SAME tx, exactly like setRoleBookActions — delete-all + insert,

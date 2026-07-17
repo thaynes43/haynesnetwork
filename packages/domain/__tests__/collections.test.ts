@@ -1,4 +1,4 @@
-// ADR-069 / DESIGN-042 (PLAN-052 — collection manager). Proves: the grants matrix
+// ADR-070 / DESIGN-043 (PLAN-052 — collection manager). Proves: the grants matrix
 // (collectionActionsForRole — admin implies all, no-row deny, exactly-granted) + the setter's same-tx
 // audit (update_collection_actions) + admin immutability; the suggestion lifecycle (create → approve
 // materializes a recipe via the confined writer / decline with reason; audited same-tx + reviewer stamps);
@@ -62,7 +62,7 @@ function stubLibretto() {
   return { recipes, bundle };
 }
 
-describe('collection action grants (ADR-069 C-03)', () => {
+describe('collection action grants (ADR-070 C-03)', () => {
   it('admin implies every action with no rows', async () => {
     const roleId = await adminRoleId();
     expect(await collectionActionsForRole({ db: t.db, roleId, isAdmin: true })).toEqual([
@@ -80,7 +80,7 @@ describe('collection action grants (ADR-069 C-03)', () => {
     await setRoleCollectionActions({ db: t.db, roleId, actions: ['suggest', 'manage'], actorId: actor.id });
     const got = await collectionActionsForRole({ db: t.db, roleId });
     expect(new Set(got)).toEqual(new Set(['suggest', 'manage']));
-    // acquire is NOT implied by manage (ADR-069 C-04).
+    // acquire is NOT implied by manage (ADR-070 C-04).
     expect(got.includes('acquire')).toBe(false);
 
     const audit = await t.db
@@ -108,7 +108,7 @@ describe('collection action grants (ADR-069 C-03)', () => {
   });
 });
 
-describe('the member suggestion lifecycle (ADR-069 C-05)', () => {
+describe('the member suggestion lifecycle (ADR-070 C-05)', () => {
   it('create lands PENDING and audits create_collection_suggestion same-tx', async () => {
     const member = await createUser(t.db);
     const row = await createCollectionSuggestion({

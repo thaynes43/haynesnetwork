@@ -1,4 +1,4 @@
-// ADR-069 / DESIGN-042 (PLAN-052 — collection manager) — the collections router. The manager mutations are
+// ADR-070 / DESIGN-043 (PLAN-052 — collection manager) — the collections router. The manager mutations are
 // gated by `collectionActionProcedure('manage')` (the integrations-floored capability); the acquisition
 // knob is re-checked server-side (`canAcquire`); the member contribution rides `collectionSuggestProcedure`
 // (suggest grant, no section floor — the affordance is on the books walls). ALL Libretto calls go through
@@ -148,7 +148,7 @@ export const collectionsRouter = router({
     });
   }),
 
-  /** Preview/validate a draft ref before save (resolved name + work count + issues; ADR-069 C-07). */
+  /** Preview/validate a draft ref before save (resolved name + work count + issues; ADR-070 C-07). */
   validate: collectionActionProcedure('manage')
     .input(recipeDraftInput)
     .mutation(async ({ ctx, input }) => {

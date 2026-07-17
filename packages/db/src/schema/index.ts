@@ -127,7 +127,7 @@ export * from './activity-import-failures';
 // guarded single-writer tables (createBookFixRequest / setRoleBookActions).
 export * from './book-fix-requests';
 export * from './role-books-action-grants';
-// ADR-069 / DESIGN-042 (PLAN-052 — collection manager) — the fine-grained collection action grants
+// ADR-070 / DESIGN-043 (PLAN-052 — collection manager) — the fine-grained collection action grants
 // (suggest/manage/acquire — Admin-only until the owner opens them per role) and the member
 // suggestion aggregate (the propose→approve contribution flow). Both guarded single-writer tables
 // (setRoleCollectionActions / createCollectionSuggestion + approve/decline); Libretto's recipes and

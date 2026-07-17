@@ -1,7 +1,7 @@
-// @hnet/libretto/write — the WRITE surface (ADR-069 C-01, read/write split). The ONLY sanctioned Libretto
-// mutations: upsert a recipe (validate-first is the CALLER's job — DESIGN-042 D-03; PUT is idempotent,
+// @hnet/libretto/write — the WRITE surface (ADR-070 C-01, read/write split). The ONLY sanctioned Libretto
+// mutations: upsert a recipe (validate-first is the CALLER's job — DESIGN-043 D-03; PUT is idempotent,
 // strictObject → a 400 with per-path issues surfaced as LibrettoHttpError.issues), delete a recipe (does
-// NOT cascade — orphans the target collection unless ?deleteCollection=true; ADR-069 C-08), and apply a
+// NOT cascade — orphans the target collection unless ?deleteCollection=true; ADR-070 C-08), and apply a
 // scope (async → 202 { runId }). This entrypoint may be imported ONLY by the packages/domain collections
 // orchestrator and by packages/libretto itself — enforced by the arr-write-import-guard test (extended for
 // @hnet/libretto/write). These are the CONTENT-PULLING writes: NEVER reached from the browser — every call
@@ -40,7 +40,7 @@ export class LibrettoWriteClient {
   /**
    * `DELETE /api/recipes/:id[?deleteCollection=true]` — remove the recipe YAML. By DEFAULT the produced
    * collection SURVIVES in the target orphaned (marker present, no recipe) — the UI warns about this
-   * (ADR-069 C-08). `deleteCollection: true` also deletes the target collection.
+   * (ADR-070 C-08). `deleteCollection: true` also deletes the target collection.
    */
   async deleteRecipe(id: string, opts?: { deleteCollection?: boolean }): Promise<void> {
     const q = opts?.deleteCollection ? '?deleteCollection=true' : '';

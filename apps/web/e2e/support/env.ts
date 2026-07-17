@@ -118,7 +118,7 @@ export interface RuntimeEnv {
   STUB_KAPOWARR_URL: string;
   KAPOWARR_URL: string;
   KAPOWARR_API_KEY: string;
-  /** ADR-069 / DESIGN-042 (PLAN-052) — stub Libretto origin (the collection manager's confined client). */
+  /** ADR-070 / DESIGN-043 (PLAN-052) — stub Libretto origin (the collection manager's confined client). */
   STUB_LIBRETTO_URL: string;
   LIBRETTO_URL: string;
   LIBRETTO_API_KEY: string;

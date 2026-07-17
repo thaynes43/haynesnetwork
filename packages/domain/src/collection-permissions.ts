@@ -1,4 +1,4 @@
-// ADR-069 / DESIGN-042 D-01 (PLAN-052 — collection manager) — the fine-grained collection action grants,
+// ADR-070 / DESIGN-043 D-01 (PLAN-052 — collection manager) — the fine-grained collection action grants,
 // the exact setRoleBookActions / setRoleActivityActions idiom (ADR-023/059/062): a ROW is the grant;
 // `setRoleCollectionActions` is the SOLE writer and co-writes an `update_collection_actions`
 // permission_audit row in the SAME transaction (hard rule 6). `acquire` (the content-pull knob) is a

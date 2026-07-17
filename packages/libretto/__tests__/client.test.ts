@@ -1,4 +1,4 @@
-// ADR-069 / DESIGN-042 (PLAN-052) — the confined Libretto client against an injected fetch (ADR-010: no
+// ADR-070 / DESIGN-043 (PLAN-052) — the confined Libretto client against an injected fetch (ADR-010: no
 // live-API tests). Proves: Bearer auth + the key never leaking into errors; the read shapes (recipes +
 // issues split, collections, run counts, validate preview); the write shapes (idempotent PUT, delete
 // with ?deleteCollection, apply → runId); and the honest error taxonomy (5xx/network/timeout →

@@ -1,4 +1,4 @@
-// ADR-069 / DESIGN-042 (PLAN-052) — the hermetic Libretto stub: the JSON REST surface the confined
+// ADR-070 / DESIGN-043 (PLAN-052) — the hermetic Libretto stub: the JSON REST surface the confined
 // @hnet/libretto client drives (GET /api/recipes, GET /api/collections, GET /api/runs/:id, POST
 // /api/validate, PUT/DELETE /api/recipes/:id, POST /api/apply), plus a call RECORDER (/_stub/calls +
 // /_stub/reset, the stub-arr idiom). Canned so the manager screenshots show a real recipe list, a produced

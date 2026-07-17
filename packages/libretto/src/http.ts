@@ -1,8 +1,8 @@
-// ADR-069 / DESIGN-042 (PLAN-052) — the shared fetch primitive for the Libretto client. Libretto is a
+// ADR-070 / DESIGN-043 (PLAN-052) — the shared fetch primitive for the Libretto client. Libretto is a
 // JSON REST API under `{baseUrl}/api/*` with Bearer auth (DESIGN-037 D-10/D-12). This wrapper sets the
 // Authorization header (NEVER logged/echoed), enforces a per-attempt AbortController timeout, and RETRIES
 // with BACKOFF on 5xx / network / timeout (transient), mapping those to LibrettoUnreachableError so the
-// manager can degrade honestly (ADR-069 C-09); a 4xx is a real client error (LibrettoHttpError) surfaced
+// manager can degrade honestly (ADR-070 C-09); a 4xx is a real client error (LibrettoHttpError) surfaced
 // as-is (a 400 carries per-path validation issues). `fetchImpl` is injectable so the unit tests + the
 // hermetic e2e stub run offline (ADR-010 — no live-API tests in CI).
 import type { z } from 'zod';

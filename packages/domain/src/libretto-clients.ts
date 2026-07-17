@@ -1,4 +1,4 @@
-// ADR-069 / DESIGN-042 (PLAN-052) — the Libretto client bundle the collections-manager orchestrator runs
+// ADR-070 / DESIGN-043 (PLAN-052) — the Libretto client bundle the collections-manager orchestrator runs
 // against. `@hnet/libretto/write` is import-guarded to packages/domain (the ADR-011/ADR-017 discipline: no
 // other code path may push a content-pulling write — see the arr-write-import-guard test, extended for
 // @hnet/libretto/write); packages/api receives this bundle as an OPAQUE type and injects fetch-stubbed

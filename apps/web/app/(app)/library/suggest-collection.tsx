@@ -1,6 +1,6 @@
 'use client';
 
-// ADR-069 / DESIGN-042 D-05 (PLAN-052 — the member contribution flow) — the "Suggest a collection"
+// ADR-070 / DESIGN-043 D-05 (PLAN-052 — the member contribution flow) — the "Suggest a collection"
 // affordance on the Books/Audiobooks collections walls. Non-invasive: a small trailing card AFTER the
 // collections grid (no reflow of existing cards — ADR-015). Shown ONLY to members with the `suggest` grant
 // (mySuggestions FORBIDs everyone else — a FORBIDDEN quietly hides the whole affordance). Opening it is a

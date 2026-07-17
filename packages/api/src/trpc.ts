@@ -91,7 +91,7 @@ import { TautulliClient } from '@hnet/arr/read';
 // mutation uses to resolve a vanity URL → user id, probe the public shelf is reachable (no secret), and run
 // the first shelf sync inline so the coverage card isn't a "0 of 0" dead-end. Read-only.
 import { GoodreadsRssClient, GoogleBooksClient, goodreadsConfigFromEnv } from '@hnet/goodreads';
-// ADR-069 / DESIGN-042 (PLAN-052 — collection manager) — the confined Libretto client's error taxonomy,
+// ADR-070 / DESIGN-043 (PLAN-052 — collection manager) — the confined Libretto client's error taxonomy,
 // mapped honestly: an unreachable host (network/timeout/5xx) → BAD_GATEWAY (the manager degrades), a 4xx
 // (a bad recipe save — 400 with per-path issues) → BAD_REQUEST carrying the issues.
 import { LibrettoHttpError, LibrettoUnreachableError } from '@hnet/libretto';
@@ -167,7 +167,7 @@ export interface TRPCContext {
    */
   activity?: BooksActivityBundle;
   /**
-   * ADR-069 / DESIGN-042 (PLAN-052 — collection manager) — the confined Libretto bundle the
+   * ADR-070 / DESIGN-043 (PLAN-052 — collection manager) — the confined Libretto bundle the
    * `collections.*` manager procedures read/write through (list recipes/collections/runs, validate,
    * upsert/delete/apply — the content-pulling writes). Env-built singleton in production
    * (LIBRETTO_API_KEY); stubbed bundle in tests. NEVER constructed in the browser.
@@ -277,7 +277,7 @@ export function resolveKapowarrBundle(ctx: TRPCContext): KapowarrClientBundle {
 
 let envLibrettoBundle: LibrettoClientBundle | undefined;
 
-/** The Libretto bundle for this request: injected (tests) or the env-built singleton (ADR-069). */
+/** The Libretto bundle for this request: injected (tests) or the env-built singleton (ADR-070). */
 export function resolveLibrettoBundle(ctx: TRPCContext): LibrettoClientBundle {
   if (ctx.libretto) return ctx.libretto;
   envLibrettoBundle ??= librettoBundleFromEnv();
@@ -545,7 +545,7 @@ export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
       throw new TRPCError({ code: 'UNPROCESSABLE_CONTENT', message: err.message, cause: err });
     }
     if (err instanceof CollectionAcquireForbiddenError) {
-      // ADR-069 C-04 — a manage-only caller tried to enable the content-pull knob.
+      // ADR-070 C-04 — a manage-only caller tried to enable the content-pull knob.
       throw new TRPCError({ code: 'FORBIDDEN', message: err.message, cause: err });
     }
     if (err instanceof CollectionSuggestionNotOpenError) {

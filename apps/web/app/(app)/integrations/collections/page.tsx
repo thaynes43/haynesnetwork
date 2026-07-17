@@ -1,4 +1,4 @@
-// ADR-069 / DESIGN-042 D-01 (PLAN-052 — collection manager) — the Collections SUB-SECTION route gate
+// ADR-070 / DESIGN-043 D-01 (PLAN-052 — collection manager) — the Collections SUB-SECTION route gate
 // (server-side, mirroring /integrations/goodreads): the (app) layout already bounced anonymous visitors;
 // the caller's Integrations section LEVEL (session-carried, ADR-021) decides whether the manager renders.
 // The finer manage/acquire capability is enforced by the collections.* tRPC surface (the overview query

@@ -1,4 +1,4 @@
--- ADR-069 / DESIGN-042 (PLAN-052 — collection manager + member contributions). ADDITIVE only.
+-- ADR-070 / DESIGN-043 (PLAN-052 — collection manager + member contributions). ADDITIVE only.
 --   • role_collection_action_grants — a role's fine-grained collection-manager action grants (the
 --     role_books_action_grants idiom, ADR-062): a ROW is the grant (presence, no boolean); an
 --     is_admin role stores NO rows and implies EVERY action; ships with NO rows ⇒ Admin-only until

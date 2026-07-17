@@ -1,4 +1,4 @@
-// ADR-069 / DESIGN-042 (PLAN-052 — collection manager) — the collections router gates, INCLUDING the
+// ADR-070 / DESIGN-043 (PLAN-052 — collection manager) — the collections router gates, INCLUDING the
 // FORBIDDEN paths the plan calls out: an ungranted member is FORBIDDEN everywhere; a `suggest`-only member
 // can propose (from the walls, no section floor) but NOT reach the manager; a `manage` member cannot enable
 // the acquisition knob (needs `acquire`, re-checked server-side); an `acquire`-holding member can. Admin
@@ -42,7 +42,7 @@ async function grantDefault(actions: CollectionAction[]): Promise<void> {
   await setRoleCollectionActions({ db: t.db, roleId: SEEDED_ROLE_IDS.default, actions, actorId: admin.id });
 }
 
-describe('collections router — the manage/acquire/suggest gates (ADR-069 C-03/C-04)', () => {
+describe('collections router — the manage/acquire/suggest gates (ADR-070 C-03/C-04)', () => {
   it('an ungranted member is FORBIDDEN from the manager overview', async () => {
     const member = await createUser(t.db);
     const ctx = { ...makeCtx(t.db, sessionUser(member, { integrations: 'read_only' })), ...stubLibretto().ctx };
@@ -118,7 +118,7 @@ describe('collections router — the manage/acquire/suggest gates (ADR-069 C-03/
   });
 });
 
-describe('collections router — the member contribution (ADR-069 C-05)', () => {
+describe('collections router — the member contribution (ADR-070 C-05)', () => {
   it('a member WITHOUT suggest is FORBIDDEN from suggest', async () => {
     const member = await createUser(t.db);
     const ctx = makeCtx(t.db, sessionUser(member));

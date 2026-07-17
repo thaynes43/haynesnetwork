@@ -6819,7 +6819,7 @@ body:has(.gallery) {
   padding: 8px 12px;
 }
 
-/* ADR-069 / DESIGN-042 (PLAN-052) — the collection manager + the member suggest affordance. Tokens
+/* ADR-070 / DESIGN-043 (PLAN-052) — the collection manager + the member suggest affordance. Tokens
    only (hard rule 2); reserved slots + recolor-not-reflow (ADR-015). */
 .collections-page {
   display: flex;

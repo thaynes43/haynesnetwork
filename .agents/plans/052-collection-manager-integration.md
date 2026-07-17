@@ -1,6 +1,6 @@
 # PLAN-052: Collection-manager integration — Kometa knobs + provider-agnostic UI
 
-- **Libretto leg: EXECUTED (2026-07-17).** ADR-069 + DESIGN-042 land the collection manager +
+- **Libretto leg: EXECUTED (2026-07-17).** ADR-070 + DESIGN-043 land the collection manager +
   member contribution surface bound to the PROVEN live Libretto API (the confined `@hnet/libretto`
   client, read/write split; `role_collection_action_grants` with suggest/manage/acquire, Admin-only;
   `collection_suggestions` propose→approve flow; the manager sub-section under /integrations +

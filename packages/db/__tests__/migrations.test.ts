@@ -1609,7 +1609,7 @@ describe('migrations against embedded Postgres 16', () => {
     });
   });
 
-  describe('0059 collection manager (ADR-069 — grants + suggestions + audit CHECK)', () => {
+  describe('0059 collection manager (ADR-070 — grants + suggestions + audit CHECK)', () => {
     it('grants enforce the action enum, suggestions enforce their CHECKs, and the new audit actions admit', async () => {
       const roleId = (await client.query(`SELECT id FROM roles WHERE name = 'Default'`)).rows[0].id;
       // Grants: the three actions insert; an unknown action rejects (CHECK 23514).

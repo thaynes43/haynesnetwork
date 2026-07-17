@@ -1,8 +1,8 @@
-// ADR-069 / DESIGN-042 (PLAN-052) — typed error taxonomy for the Libretto client. Messages never
+// ADR-070 / DESIGN-043 (PLAN-052) — typed error taxonomy for the Libretto client. Messages never
 // contain the API key: the key travels only as the `Authorization: Bearer` header the http layer sets,
 // and is never interpolated into an error string (mirrors the @hnet/lazylibrarian / @hnet/plex / @hnet/arr
 // discipline). A UI that catches LibrettoUnreachableError renders the honest "Libretto is unreachable"
-// state (ADR-069 C-09) — a network/timeout/5xx is unreachable, a 4xx is a real client error surfaced as-is.
+// state (ADR-070 C-09) — a network/timeout/5xx is unreachable, a 4xx is a real client error surfaced as-is.
 
 /** Base class — lets callers `catch (e) { if (e instanceof LibrettoError) … }`. */
 export class LibrettoError extends Error {
@@ -22,7 +22,7 @@ export class LibrettoConfigError extends LibrettoError {
 
 /**
  * The Libretto host could not be reached (network refused/DNS/reset, a timeout, or a 5xx after retries).
- * The manager degrades to its honest `unreachable` state on this (ADR-069 C-09) — it never crashes.
+ * The manager degrades to its honest `unreachable` state on this (ADR-070 C-09) — it never crashes.
  */
 export class LibrettoUnreachableError extends LibrettoError {
   readonly code = 'LIBRETTO_UNREACHABLE' as const;

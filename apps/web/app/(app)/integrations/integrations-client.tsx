@@ -79,7 +79,7 @@ function GoodreadsCard() {
   );
 }
 
-// ADR-069 / DESIGN-042 (PLAN-052) — the Collections manager card. Reads the manager overview when the
+// ADR-070 / DESIGN-043 (PLAN-052) — the Collections manager card. Reads the manager overview when the
 // caller can manage (FORBIDDEN for non-managers is swallowed — the card still links, the sub-section shows
 // the honest not-available state on click). Health pulse + recipe count when reachable.
 function CollectionsCard() {

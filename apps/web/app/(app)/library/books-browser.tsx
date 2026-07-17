@@ -836,7 +836,7 @@ export function BooksBrowser({
         </>
       )}
 
-      {/* ADR-069 / DESIGN-042 D-05 — the member "Suggest a collection" affordance sits AFTER the
+      {/* ADR-070 / DESIGN-043 D-05 — the member "Suggest a collection" affordance sits AFTER the
           collections grid (only on the Collections dimension, not inside a drill), so it never reflows an
           existing card (ADR-015). It hides itself for members without the `suggest` grant and for comics. */}
       {collectionCards && !drilled && !pending && !groupsError ? (

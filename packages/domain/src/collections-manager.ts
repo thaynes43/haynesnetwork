@@ -1,9 +1,9 @@
-// ADR-069 / DESIGN-042 (PLAN-052 — collection manager) — the orchestrator that fronts the confined
+// ADR-070 / DESIGN-043 (PLAN-052 — collection manager) — the orchestrator that fronts the confined
 // @hnet/libretto client for the tRPC layer. The write surface (upsertRecipe / deleteRecipe / applyScope)
 // is import-confined to packages/domain, so packages/api reaches Libretto ONLY through these functions —
 // the ADR-055 discipline. The manager reads Libretto LIVE (no local mirror; Libretto is stateless) and
 // degrades HONESTLY: a LibrettoUnreachableError from the overview read yields `reachable: false`, never a
-// crash (ADR-069 C-09). The `acquire` gate (the content-pull knob) is enforced HERE and re-checked at the
+// crash (ADR-070 C-09). The `acquire` gate (the content-pull knob) is enforced HERE and re-checked at the
 // API — a caller without `acquire` who sets acquisitionEnabled true is refused.
 import { LibrettoUnreachableError } from '@hnet/libretto';
 import type {
@@ -71,7 +71,7 @@ export async function getCollectionsOverview(input: {
 }
 
 /**
- * Resolve a draft ref through `POST /api/validate` — the composer's ref PREVIEW (ADR-069 C-07). Surfaces
+ * Resolve a draft ref through `POST /api/validate` — the composer's ref PREVIEW (ADR-070 C-07). Surfaces
  * the resolved name + work count + any issues honestly; a 0-work container-series slug comes back resolved
  * with workCount 0 (the silent-failure guard). No fabrication.
  */
@@ -86,7 +86,7 @@ export async function previewRecipeRef(input: {
  * Save (create/edit) a recipe through the confined writer. The `acquire` gate: enabling
  * `variables.acquisitionEnabled` requires `canAcquire` — a `manage`-only caller who sets it is refused
  * here (CollectionAcquireForbiddenError), independent of the API re-check. Validate-before-save is the
- * caller's step (DESIGN-042 D-03); Libretto also validates on PUT (strictObject → 400 surfaced as issues).
+ * caller's step (DESIGN-043 D-03); Libretto also validates on PUT (strictObject → 400 surfaced as issues).
  */
 export async function saveRecipe(input: {
   libretto: LibrettoClientBundle;
@@ -109,7 +109,7 @@ export async function applyCollectionScope(input: {
 
 /**
  * Delete a recipe. By default the produced collection SURVIVES orphaned (marker present, no recipe) — the
- * UI warns about this (ADR-069 C-08). `deleteCollection: true` also deletes the target collection.
+ * UI warns about this (ADR-070 C-08). `deleteCollection: true` also deletes the target collection.
  */
 export async function deleteCollectionRecipe(input: {
   libretto: LibrettoClientBundle;

@@ -1,4 +1,4 @@
-// ADR-069 / DESIGN-042 (PLAN-052 — collection manager) — the screenshot harness for owner sign-off of the
+// ADR-070 / DESIGN-043 (PLAN-052 — collection manager) — the screenshot harness for owner sign-off of the
 // collection manager + the member "Suggest a collection" affordance. Boots its OWN stack (incl. the stub
 // Libretto) and captures, as admin (admin implies every collection action): the manager
 // (/integrations/collections — recipe list with the acquisition puck + the needs-attention band), the

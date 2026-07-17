@@ -15,14 +15,14 @@ const PROVIDER_SQL_LIST = COLLECTION_PROVIDERS.map((a) => `'${a}'`).join(',');
 const STATUS_SQL_LIST = COLLECTION_SUGGESTION_STATUSES.map((a) => `'${a}'`).join(',');
 
 /**
- * ADR-069 / DESIGN-042 D-05 (PLAN-052 — the member contribution flow) — a member's PROPOSED collection.
+ * ADR-070 / DESIGN-043 D-05 (PLAN-052 — the member contribution flow) — a member's PROPOSED collection.
  * A `suggest`-granted member files one of these from the walls; it lands `pending` and applies NOTHING.
  * A `manage` admin approves (materialize the recipe via the confined @hnet/libretto writer — acquisition
  * OFF unless the approver holds `acquire` and opts in; `created_recipe_id` stamped) or declines with a
  * reason. Guarded single-writer table: createCollectionSuggestion co-writes a
  * `create_collection_suggestion` permission_audit row same-tx; approve/decline co-write a
  * `review_collection_suggestion` row same-tx (hard rule 6). Provider-shaped (`provider`, 'libretto' now)
- * so the Kometa leg needs no schema change (ADR-069 C-06). This is the ONLY durable local collection
+ * so the Kometa leg needs no schema change (ADR-070 C-06). This is the ONLY durable local collection
  * intent — an approved suggestion's recipe lives in Libretto; a declined one is a closed audit trail.
  */
 export const collectionSuggestions = pgTable(
