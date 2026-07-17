@@ -1677,4 +1677,55 @@ describe('migrations against embedded Postgres 16', () => {
       await client.query({ text: `DELETE FROM users WHERE id = $1`, values: [userId] });
     });
   });
+
+  // DESIGN-024 D-01 amendment (migration 0060) — the books detail-page enrichment: five ADDITIVE,
+  // nullable columns on books_items. No CHECK (external vocabulary); every column degrades to null.
+  describe('0060 books detail enrichment (summary/publisher/isbn/file_count/metadata_synced_at)', () => {
+    it('adds the five nullable columns; a row inserts with all null and accepts populated values', async () => {
+      const cols = await client.query(
+        `SELECT column_name, data_type, is_nullable FROM information_schema.columns
+           WHERE table_name = 'books_items'
+             AND column_name IN ('summary','publisher','isbn','file_count','metadata_synced_at')
+           ORDER BY column_name`,
+      );
+      expect(cols.rows.map((r) => r.column_name as string)).toEqual([
+        'file_count',
+        'isbn',
+        'metadata_synced_at',
+        'publisher',
+        'summary',
+      ]);
+      expect(cols.rows.every((r) => r.is_nullable === 'YES')).toBe(true);
+      const fileCount = cols.rows.find((r) => r.column_name === 'file_count');
+      expect(fileCount?.data_type).toBe('integer');
+
+      // A legacy-style row lands all-null (no defaults); an enriched row carries values.
+      const legacy = await client.query(
+        `INSERT INTO books_items (source, media_kind, external_id, library_id, library_name, title, sort_title, deep_link_url)
+           VALUES ('kavita', 'book', 'enrich-legacy', '1', 'Books', 'Legacy', 'legacy', 'https://k/library/1/series/9')
+           RETURNING summary, publisher, isbn, file_count, metadata_synced_at`,
+      );
+      expect(legacy.rows[0]).toMatchObject({
+        summary: null,
+        publisher: null,
+        isbn: null,
+        file_count: null,
+        metadata_synced_at: null,
+      });
+      const enriched = await client.query(
+        `INSERT INTO books_items (source, media_kind, external_id, library_id, library_name, title, sort_title, deep_link_url,
+             summary, publisher, isbn, file_count, metadata_synced_at)
+           VALUES ('audiobookshelf', 'audiobook', 'enrich-abs', 'l', 'Audio Books', 'Enriched', 'enriched', 'https://abs/item/x',
+             'A blurb.', 'Penguin Audio', '9780140620481', 9, now())
+           RETURNING summary, publisher, isbn, file_count`,
+      );
+      expect(enriched.rows[0]).toMatchObject({
+        summary: 'A blurb.',
+        publisher: 'Penguin Audio',
+        isbn: '9780140620481',
+        file_count: 9,
+      });
+      await client.query(`DELETE FROM books_items WHERE external_id IN ('enrich-legacy','enrich-abs')`);
+    });
+  });
 });

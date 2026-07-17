@@ -17,8 +17,53 @@ import { PhaseChip } from '@hnet/ui';
 import { trpc } from '@/lib/trpc-client';
 import { BackLink } from '@/components/back-link';
 import { MediaPoster } from '@/components/cards';
-import { formatWhen } from '@/lib/media';
+import { formatBytes, formatWhen } from '@/lib/media';
 import { BookFixControl } from './book-fix-dialog';
+
+/** Kind-aware display label for the hero badge (owner tone: plain, friendly). */
+const KIND_LABEL: Record<string, string> = { book: 'Book', comic: 'Comic', audiobook: 'Audiobook' };
+
+/** The wall tab a collection chip drills into, by media kind. */
+const WALL_FOR_KIND: Record<string, 'books' | 'audiobooks' | 'comics'> = {
+  book: 'books',
+  comic: 'comics',
+  audiobook: 'audiobooks',
+};
+
+// DESIGN-033 / DESIGN-025 D-08 — the book-Fix trail labels (owner tone: no em-dashes, no jargon).
+const FIX_STATUS_LABEL: Record<string, string> = {
+  pending: 'Requested',
+  queued: 'Queued',
+  search_triggered: 'Searching for a replacement',
+  failed: 'Failed',
+  completed: 'Replaced',
+};
+const FIX_REASON_LABEL: Record<string, string> = {
+  wrong_language: 'Wrong language',
+  corrupt_file: "Won't open",
+  wrong_edition: 'Wrong edition',
+  bad_quality: 'Bad quality',
+  other: 'Something else',
+};
+const REQUEST_STATUS_LABEL: Record<string, string> = {
+  requested: 'Requested',
+  wanted: 'Wanted',
+  grabbed: 'Grabbed',
+  landed: 'Landed',
+  missing: 'Missing',
+};
+const REQUEST_ORIGIN_LABEL: Record<string, string> = {
+  goodreads: 'From a reading list',
+  pairing: 'Format pairing',
+};
+
+/** Badge tone for a fix/request status (reuses the ledger badge palette; no new hex). */
+function statusTone(status: string): 'ok' | 'info' | 'warn' | 'danger' | 'muted' {
+  if (status === 'completed' || status === 'landed') return 'ok';
+  if (status === 'failed' || status === 'missing') return 'danger';
+  if (status === 'search_triggered' || status === 'grabbed' || status === 'wanted') return 'info';
+  return 'muted';
+}
 
 /** "3h 12m" / "48m" from whole seconds; null when absent. */
 function formatDuration(seconds: number | null): string | null {
@@ -99,7 +144,15 @@ export function BooksDetail({ id, from }: { id: string; from: string | null }) {
       </>
     );
   }
-  const { item, play, canFix, pairing } = detail.data!;
+  const { item, play, canFix, pairing, collections, fixes, requests } = detail.data!;
+  const kindLabel = KIND_LABEL[item.mediaKind] ?? null;
+  const wall = WALL_FOR_KIND[item.mediaKind] ?? 'books';
+  const isAudio = item.mediaKind === 'audiobook';
+  // The About "released / publisher / language" fact line — a peer of the movie About's ADDED row.
+  const hasAboutFacts =
+    item.year !== null || item.publisher !== null || item.language !== null;
+  const hasAbout =
+    item.summary !== null || item.genres.length > 0 || collections.length > 0 || hasAboutFacts;
   const missingLabel =
     pairing?.missingFormat != null ? MISSING_FORMAT_LABEL[pairing.missingFormat] : null;
   const wantedHref =
@@ -129,6 +182,10 @@ export function BooksDetail({ id, from }: { id: string; from: string | null }) {
             {item.year !== null ? <span className="muted"> ({item.year})</span> : null}
           </h1>
           <div className="media-card__badges">
+            {kindLabel !== null ? <span className="badge badge--muted">{kindLabel}</span> : null}
+            {item.formatLabel !== null && item.formatLabel !== kindLabel ? (
+              <span className="badge badge--muted">{item.formatLabel}</span>
+            ) : null}
             {item.author !== null ? <span className="badge badge--muted">{item.author}</span> : null}
             {item.seriesName !== null ? <span className="badge">{item.seriesName}</span> : null}
           </div>
@@ -180,19 +237,63 @@ export function BooksDetail({ id, from }: { id: string; from: string | null }) {
         </div>
       </section>
 
-      {item.genres.length > 0 ? (
-        <section className="card admin-section">
+      {/* About — the movie-About peer: summary prose, the released/publisher/language fact line, and
+          the GENRES + COLLECTIONS chip rows. Renders only with real content; each row collapses when
+          empty (the movie-page idiom). Static layout, no reflow on interaction (ADR-015). */}
+      {hasAbout ? (
+        <section className="card admin-section" data-testid="books-about">
           <h2>About</h2>
-          <div className="meta-chips">
-            <span className="meta-chips__label">Genres</span>
-            <span className="chips">
-              {item.genres.map((g) => (
-                <span key={g} className="chip">
-                  {g}
-                </span>
-              ))}
-            </span>
-          </div>
+          {item.summary !== null ? <p className="about-summary">{item.summary}</p> : null}
+          {hasAboutFacts ? (
+            <dl className="about-facts">
+              {item.year !== null ? (
+                <div>
+                  <dt>Released</dt>
+                  <dd>{item.year}</dd>
+                </div>
+              ) : null}
+              {item.publisher !== null ? (
+                <div>
+                  <dt>Publisher</dt>
+                  <dd>{item.publisher}</dd>
+                </div>
+              ) : null}
+              {item.language !== null ? (
+                <div>
+                  <dt>Language</dt>
+                  <dd>{item.language}</dd>
+                </div>
+              ) : null}
+            </dl>
+          ) : null}
+          {item.genres.length > 0 ? (
+            <div className="meta-chips">
+              <span className="meta-chips__label">Genres</span>
+              <span className="chips">
+                {item.genres.map((g) => (
+                  <span key={g} className="chip">
+                    {g}
+                  </span>
+                ))}
+              </span>
+            </div>
+          ) : null}
+          {collections.length > 0 ? (
+            <div className="meta-chips" data-testid="books-collections">
+              <span className="meta-chips__label">Collections</span>
+              <span className="chips">
+                {collections.map((c) => (
+                  <Link
+                    key={c.id}
+                    className="chip"
+                    href={`/library?tab=${wall}&view=grouped&by=collection&group=${encodeURIComponent(c.id)}`}
+                  >
+                    {c.title}
+                  </Link>
+                ))}
+              </span>
+            </div>
+          ) : null}
         </section>
       ) : null}
 
@@ -203,7 +304,13 @@ export function BooksDetail({ id, from }: { id: string; from: string | null }) {
             <dt>Library</dt>
             <dd>{item.libraryName}</dd>
           </div>
-          {item.narrator !== null ? (
+          {item.formatLabel !== null ? (
+            <div>
+              <dt>Format</dt>
+              <dd>{item.formatLabel}</dd>
+            </div>
+          ) : null}
+          {isAudio && item.narrator !== null ? (
             <div>
               <dt>Narrator</dt>
               <dd>{item.narrator}</dd>
@@ -215,16 +322,40 @@ export function BooksDetail({ id, from }: { id: string; from: string | null }) {
               <dd>{item.seriesName}</dd>
             </div>
           ) : null}
-          {duration !== null ? (
+          {isAudio && duration !== null ? (
             <div>
               <dt>Length</dt>
               <dd>{duration}</dd>
             </div>
           ) : null}
-          {item.pageCount !== null ? (
+          {!isAudio && item.pageCount !== null ? (
             <div>
               <dt>Pages</dt>
               <dd>{item.pageCount}</dd>
+            </div>
+          ) : null}
+          {item.fileCount !== null ? (
+            <div>
+              <dt>{isAudio ? 'Audio files' : 'Files'}</dt>
+              <dd>{item.fileCount}</dd>
+            </div>
+          ) : null}
+          {item.sizeBytes !== null && item.sizeBytes > 0 ? (
+            <div>
+              <dt>Size on disk</dt>
+              <dd>{formatBytes(item.sizeBytes)}</dd>
+            </div>
+          ) : null}
+          {item.isbn !== null ? (
+            <div>
+              <dt>ISBN</dt>
+              <dd className="url-cell">{item.isbn}</dd>
+            </div>
+          ) : null}
+          {item.addedAt !== null ? (
+            <div>
+              <dt>Added</dt>
+              <dd>{formatWhen(item.addedAt)}</dd>
             </div>
           ) : null}
           <div>
@@ -233,6 +364,57 @@ export function BooksDetail({ id, from }: { id: string; from: string | null }) {
           </div>
         </dl>
       </section>
+
+      {/* Fixes on this item — the audited book-Fix trail (DESIGN-033), the movie "Fixes on this item"
+          peer. Renders only when a fix was requested; newest first. */}
+      {fixes.length > 0 ? (
+        <section className="card admin-section" data-testid="books-fix-history">
+          <h2>Fixes on this item</h2>
+          <ul className="fix-list">
+            {fixes.map((fix) => (
+              <li key={fix.id} className="fix-list__row">
+                <span className={`badge badge--${statusTone(fix.status)}`}>
+                  {FIX_STATUS_LABEL[fix.status] ?? fix.status}
+                </span>
+                <span className="fix-list__what">
+                  {FIX_REASON_LABEL[fix.reason] ?? fix.reason}
+                  {fix.reasonText ? `: ${fix.reasonText}` : ''}
+                </span>
+                <span className="muted fix-list__when">
+                  {fix.requesterDisplayName ?? 'someone'} · {formatWhen(fix.createdAt)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {/* History — the linked request lifecycle (how the title was wanted / landed), the movie-History
+          idiom. Renders only when a request touched this item; newest first. */}
+      {requests.length > 0 ? (
+        <section className="card admin-section" data-testid="books-request-history">
+          <h2>History</h2>
+          <ol className="timeline">
+            {requests.map((req) => {
+              const line =
+                req.comicStatus !== null
+                  ? `Comic: ${REQUEST_STATUS_LABEL[req.comicStatus] ?? req.comicStatus}`
+                  : `Ebook: ${REQUEST_STATUS_LABEL[req.ebookStatus] ?? req.ebookStatus} · Audio: ${
+                      REQUEST_STATUS_LABEL[req.audioStatus] ?? req.audioStatus
+                    }`;
+              return (
+                <li key={req.id}>
+                  <span className="timeline__type">
+                    {REQUEST_ORIGIN_LABEL[req.origin] ?? req.origin}
+                  </span>
+                  <span className="timeline__detail">{line}</span>
+                  <span className="muted timeline__when">{formatWhen(req.createdAt)}</span>
+                </li>
+              );
+            })}
+          </ol>
+        </section>
+      ) : null}
     </>
   );
 }

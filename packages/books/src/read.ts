@@ -15,6 +15,7 @@ import {
   kavitaReadingListItemListSchema,
   kavitaReadingListListSchema,
   kavitaSeriesListSchema,
+  kavitaSeriesMetadataSchema,
   type AbsAuthor,
   type AbsCollection,
   type AbsItem,
@@ -25,6 +26,7 @@ import {
   type KavitaReadingList,
   type KavitaReadingListItem,
   type KavitaSeries,
+  type KavitaSeriesMetadata,
 } from './schemas';
 import { z } from 'zod';
 import { BooksAuthError, BooksHttpError } from './errors';
@@ -237,6 +239,18 @@ export class KavitaClient {
       total: headerTotal ?? items.length,
       hasAuthoritativeTotal: headerTotal !== null,
     };
+  }
+
+  /**
+   * DESIGN-024 D-01 amendment (detail-page parity) — one series' rich metadata
+   * (`GET /api/Series/metadata?seriesId=` — SeriesMetadataDto: summary/genres/publishers/language/
+   * releaseYear, verified live 2026-07-17). The series LIST carries none of this, so the books-sync
+   * calls this per CHANGED series (the change-gate). Read-only, like every @hnet/books surface.
+   */
+  async getSeriesMetadata(seriesId: string): Promise<KavitaSeriesMetadata> {
+    const path = `/api/Series/metadata?seriesId=${encodeURIComponent(seriesId)}`;
+    const response = await this.authed('GET', path);
+    return parseJson(response, kavitaSeriesMetadataSchema, 'GET', path);
   }
 
   /**

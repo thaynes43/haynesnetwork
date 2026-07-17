@@ -2406,6 +2406,16 @@ input[aria-invalid='true'] {
   font-size: 13px;
   overflow-wrap: anywhere;
 }
+/* DESIGN-025 D-08 (books detail-page parity) — the About summary prose. Preserves the paragraph
+   breaks the sync's HTML-strip leaves (\n\n); bounded measure for readability. Tokens only. */
+.about-summary {
+  margin: 0 0 var(--space);
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--color-text);
+  max-width: 68ch;
+  white-space: pre-line;
+}
 .meta-chips {
   display: flex;
   flex-wrap: wrap;

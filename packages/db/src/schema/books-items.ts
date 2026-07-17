@@ -84,6 +84,26 @@ export const booksItems = pgTable(
     durationSeconds: integer('duration_seconds'),
     /** ABS on-disk size in bytes. Nullable (Kavita's series list carries none). */
     sizeBytes: bigint('size_bytes', { mode: 'number' }),
+    /**
+     * DESIGN-024 D-01 amendment (detail-page parity, 2026-07-17) — the About/Details enrichment.
+     * summary: the About blurb (Kavita `/api/Series/metadata` summary HTML-stripped; ABS description).
+     * publisher: Kavita `publishers[0].name` / ABS `media.metadata.publisher`. isbn: ABS
+     * `media.metadata.isbn` (Kavita ISBNs live in the heavier series-detail call we skip → null — the
+     * M2 caveat; populated-value-gated in the UI). file_count: ABS `media.numAudioFiles` (Kavita null).
+     * All nullable — an un-enriched row or a source with no value degrades to null (section collapses).
+     */
+    summary: text('summary'),
+    publisher: text('publisher'),
+    isbn: text('isbn'),
+    fileCount: integer('file_count'),
+    /**
+     * Enrichment bookkeeping (the books-sync change-gate): the instant the per-series Kavita metadata
+     * call last ran for this row. Null ⇒ never enriched (a new / pre-feature row) ⇒ the next sync
+     * enriches it; thereafter a Kavita series is re-enriched ONLY when its `source_updated_at` changes,
+     * so the hourly sync issues no per-series call for the ~1,400 unchanged series. ABS rows set it
+     * every run (their enrichment rides the existing list read — free).
+     */
+    metadataSyncedAt: timestamp('metadata_synced_at', { withTimezone: true }),
     /** Source-specific extras (Kavita format int; ABS numTracks/numChapters/language) — honest catch-all. */
     attrs: jsonb('attrs').$type<Record<string, unknown>>().notNull().default({}),
     /** When the server first had this item (Kavita `created` / ABS `addedAt`). Nullable. */

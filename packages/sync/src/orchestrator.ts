@@ -7,12 +7,14 @@
 import {
   ARR_KINDS,
   SYNC_SOURCES,
+  booksItems,
   db as defaultDb,
   type ArrKind,
   type DbClient,
   type SyncRunKind,
   type SyncSource,
 } from '@hnet/db';
+import { and, eq, isNull } from 'drizzle-orm';
 import {
   MassTombstoneAbortedError,
   backfillEventAttribution,
@@ -75,7 +77,11 @@ import {
 import { fetchOwuiUsage, type OpenWebUiClient } from './openwebui';
 // ADR-046 / DESIGN-024 (PLAN-023) — the read-only Kavita + Audiobookshelf snapshot fetcher the
 // `books-sync` mode hands to the @hnet/domain syncBooks single-writer (books_items mirror upsert).
-import { fetchBooksSnapshot, type BooksSyncBundle } from './books';
+import {
+  fetchBooksSnapshot,
+  type BooksSyncBundle,
+  type ExistingKavitaEnrichment,
+} from './books';
 // ADR-055 / DESIGN-028 (PLAN-044) — the `goodreads-sync` mode's read side: pages each linked user's PUBLIC
 // shelf RSS + GB enrichment and hands the enriched snapshot to the domain syncGoodreadsIntegration
 // orchestrator (which does the DB writes + the confined LazyLibrarian pushes — the bundle arrives here as
@@ -359,6 +365,46 @@ async function runSource(
     pageSize: options.historyPageSize,
     maxPages: options.maxHistoryPages,
   });
+}
+
+/**
+ * DESIGN-024 D-01 amendment (detail-page parity) — the books-sync change-gate input: the existing
+ * enrichment of every LIVE Kavita mirror row, keyed by series id (books_items.external_id). Lets
+ * fetchBooksSnapshot skip the per-series `/api/Series/metadata` call for series whose source
+ * updated-stamp is unchanged (carrying the last enrichment forward). One bounded SELECT.
+ */
+async function loadExistingKavitaEnrichment(
+  db: DbClient,
+): Promise<Map<string, ExistingKavitaEnrichment>> {
+  const rows = await db
+    .select({
+      externalId: booksItems.externalId,
+      sourceUpdatedAt: booksItems.sourceUpdatedAt,
+      metadataSyncedAt: booksItems.metadataSyncedAt,
+      summary: booksItems.summary,
+      genres: booksItems.genres,
+      publisher: booksItems.publisher,
+      year: booksItems.year,
+      attrs: booksItems.attrs,
+    })
+    .from(booksItems)
+    .where(and(eq(booksItems.source, 'kavita'), isNull(booksItems.deletedAt)));
+  const map = new Map<string, ExistingKavitaEnrichment>();
+  for (const r of rows) {
+    const language = ((r.attrs as Record<string, unknown> | null)?.language as string | null) ?? null;
+    map.set(r.externalId, {
+      sourceUpdatedAt: r.sourceUpdatedAt,
+      metadataSyncedAt: r.metadataSyncedAt,
+      data: {
+        summary: r.summary,
+        genres: r.genres ?? [],
+        publisher: r.publisher,
+        language,
+        year: r.year,
+      },
+    });
+  }
+  return map;
 }
 
 /**
@@ -846,7 +892,14 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       | null = null;
     let booksSyncError: string | undefined;
     try {
-      const snapshot = await fetchBooksSnapshot(options.books, logger);
+      // DESIGN-024 D-01 amendment (detail-page parity) — read the existing Kavita enrichment once so
+      // the snapshot fetch change-gates the per-series metadata call (only new/changed series are
+      // re-fetched; the rest carry their last enrichment forward). ABS enrichment is inline (no read).
+      const existingKavita = await loadExistingKavitaEnrichment(db);
+      const snapshot = await fetchBooksSnapshot(options.books, logger, {
+        existingKavita,
+        now: options.now,
+      });
       const report = await syncBooks({
         db,
         rows: snapshot.rows,

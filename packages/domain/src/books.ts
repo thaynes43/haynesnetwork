@@ -33,6 +33,15 @@ export interface BooksItemInput {
   attrs: Record<string, unknown>;
   sourceAddedAt: Date | null;
   sourceUpdatedAt: Date | null;
+  // DESIGN-024 D-01 amendment (detail-page parity) — the About/Details enrichment. All nullable; a
+  // skipped/un-enriched Kavita series carries these forward from the mirror (the change-gate), so the
+  // upsert stays a clean full-replace (the row always equals the snapshot).
+  summary?: string | null;
+  publisher?: string | null;
+  isbn?: string | null;
+  fileCount?: number | null;
+  /** When the per-series Kavita metadata enrichment last ran (the change-gate bookkeeping). */
+  metadataSyncedAt?: Date | null;
 }
 
 export interface SyncBooksInput {
@@ -90,6 +99,11 @@ export async function syncBooks(input: SyncBooksInput): Promise<SyncBooksReport>
     attrs: r.attrs,
     sourceAddedAt: r.sourceAddedAt,
     sourceUpdatedAt: r.sourceUpdatedAt,
+    summary: r.summary ?? null,
+    publisher: r.publisher ?? null,
+    isbn: r.isbn ?? null,
+    fileCount: r.fileCount ?? null,
+    metadataSyncedAt: r.metadataSyncedAt ?? null,
     firstSeenAt: runStart,
     lastSeenAt: runStart,
     deletedAt: null,
@@ -127,6 +141,11 @@ export async function syncBooks(input: SyncBooksInput): Promise<SyncBooksReport>
             attrs: sql`excluded.attrs`,
             sourceAddedAt: sql`excluded.source_added_at`,
             sourceUpdatedAt: sql`excluded.source_updated_at`,
+            summary: sql`excluded.summary`,
+            publisher: sql`excluded.publisher`,
+            isbn: sql`excluded.isbn`,
+            fileCount: sql`excluded.file_count`,
+            metadataSyncedAt: sql`excluded.metadata_synced_at`,
             lastSeenAt: sql`excluded.last_seen_at`,
             deletedAt: sql`NULL`, // un-tombstone a re-appeared item
             updatedAt: sql`excluded.updated_at`,

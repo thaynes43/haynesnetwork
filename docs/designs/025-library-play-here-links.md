@@ -1,8 +1,8 @@
 # DESIGN-025: Library "Watch/Listen/Read here" — the *arr→Plex match, the access gate, and the availability resolver
 
 - **Status:** Accepted
-- **Last updated:** 2026-07-11
-- **Satisfies:** PRD-001 R-157; glossary T-139..T-141; governed by [ADR-047](../adrs/047-library-play-here-access-aware-deep-links.md)
+- **Last updated:** 2026-07-17 (D-08 added — books/audiobooks/comics detail-page parity, R-221)
+- **Satisfies:** PRD-001 R-157, **R-221** (D-08 — books detail-page parity); glossary T-139..T-141; governed by [ADR-047](../adrs/047-library-play-here-access-aware-deep-links.md)
   (reusing [ADR-024](../adrs/024-role-scoped-all-libraries.md)/[ADR-017](../adrs/017-plex-library-sharing.md) access,
   [ADR-018](../adrs/018-library-metadata-and-posters.md)/[DESIGN-008](008-library-metadata-posters-filters.md) Library
   read model, [ADR-038](../adrs/038-ytdlsub-library-direct-plex-read.md) ytdl-sub reads, [ADR-046](../adrs/046-books-library-ledger-source.md)
@@ -103,6 +103,38 @@ Plex-native and normally always carry a deep link, so they show nothing here; IF
 no-play item it renders the SAME disabled pill WITHOUT the caption. The pill + caption ride a flex column with
 `.detail-head__play`'s top margin, and the on-disk vs missing state is fixed per item load (never a live toggle), so
 the swap never re-orients neighbours (ADR-015).
+
+### D-08 — books/audiobooks/comics detail-page PARITY (owner directive 2026-07-17; ADR-015, tokens-only; R-221)
+
+The books drill-in (`/library/books/[id]`, `BooksDetail`) originally showed only the hero + a thin Details block.
+It now mirrors the movie-detail anatomy (`/library/[id]`, `ItemDetail`) as far as the sources honestly allow — the
+owner's "get these closer to matching" ask — reusing the movie page's exact classes (`.card.detail-head`,
+`.about-facts`, `.meta-chips`/`.chips`/`.chip`, `.meta-grid`, `.fix-list`, `.timeline`; one new `.about-summary`
+prose rule, tokens-only). The parity map (movie section → book equivalent → data source):
+
+- **Hero** — unchanged play/pairing/Fix (ADR-065/ADR-062 kept, never regressed); adds a kind badge (Book /
+  Audiobook / Comic) and a format badge (EPUB/CBZ-CBR/PDF for Kavita, Audiobook for ABS) beside the author/series
+  badges, the movie hero's "kind + On-disk badges" peer.
+- **About** (movie: ratings/added/genres/collections) → **summary prose** (`books_items.summary`), a **released /
+  publisher / language** fact line (`year` / `publisher` / `attrs.language`), a **GENRES** chip row (`genres`), and
+  a **COLLECTIONS** chip row — the mirrored `books_collections` this title is a live member of (the ADR-066
+  membership the walls read), each chip a `Link` into the wall's collection drill
+  (`/library?tab=<wall>&view=grouped&by=collection&group=<books_collections.id>`). The whole section renders only
+  with content; each row collapses when empty (the movie-page idiom).
+- **Details** (movie: quality/root/size/files/tags/last-synced) → library, format, then kind-aware metrics —
+  **duration + narrator** for audiobooks, **pages** for books/comics — plus **files** (`file_count`) and **size on
+  disk** (`size_bytes`) when known, **ISBN** when present, **added** (`source_added_at`), and **last synced**. Size/
+  files/ISBN are ABS-populated; Kavita keeps them null (the honest gap — series-detail skipped), so those rows show
+  for audiobooks only, collapsing cleanly for Kavita.
+- **History** (movie: fix-list + ledger timeline) → this app's OWN records: a **"Fixes on this item"** section over
+  the audited `book_fix_requests` trail (DESIGN-033 — reason + status + who + when, the `.fix-list` idiom) and a
+  **"History"** section over the linked `book_requests` lifecycle (origin + per-format status, the `.timeline`
+  idiom), both newest-first. Real owner-visible value (fixes ran the day this shipped). Empty ⇒ collapsed.
+
+The API is `books.detail` extended in place (same `booksProcedure` gate — a Disabled caller is still FORBIDDEN):
+the enriched `item`, `collections[]`, `fixes[]`, `requests[]`. All static per load — no interaction re-orients a
+neighbour (ADR-015). The enrichment DATA layer (the five `books_items` columns + the sync's change-gated Kavita
+metadata call) is DESIGN-024 D-01/D-03 (migration 0060).
 
 ## Alternatives considered
 

@@ -87,6 +87,12 @@ quarantined — how"). After submit the modal's done-block is the live feedback:
 by `bookFix.progress` (searching → fired/downloading/importing → completed | nothing/failed),
 reserved-width slot, recolor-never-reflow (ADR-015), tokens only.
 
+**Amendment 2026-07-17 (DESIGN-025 D-08 — detail-page parity):** the same page now also RENDERS this
+item's audited fix TRAIL as a "Fixes on this item" History section (the movie-detail `.fix-list` idiom):
+each `book_fix_requests` row shows its reason + status + requester + when, newest first, via the extended
+`books.detail` (`fixes[]`). Read-only display of the existing audit aggregate — no new write path; the
+section collapses when the item has no fixes. So the fixes tested here are visible in-context on the item.
+
 ### D-08 — Activity integration
 
 A fired Fix's re-grab IS an in-flight book — the existing LL+SAB/Kapowarr adapters surface it;
