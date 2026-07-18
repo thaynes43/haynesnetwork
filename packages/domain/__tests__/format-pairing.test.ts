@@ -425,6 +425,43 @@ describe('mintPairingWants (the paced estate-wide backfill)', () => {
     expect(after!.audioStatus).toBe('wanted');
   });
 
+  it('SKIPS addBook when LazyLibrarian already holds the volume — queueBook+searchBook only, no GB re-resolve (DESIGN-039 D-18)', async () => {
+    // First push: LL does NOT yet hold the volume, so addBook seats it (the pre-D-18 behaviour, and
+    // the safe default when `llHasSeededBook` is absent).
+    await seedItem({ title: 'Neuromancer', author: 'William Gibson', mediaKind: 'book' });
+    const first = stubLl();
+    await mintPairingWants({ db: t.db, ll: first.bundle, gb: stubGb(() => 'gb-neuro').gb, pacer: async () => {} });
+    expect(first.calls.filter((c) => c.cmd === 'addBook')).toHaveLength(1);
+
+    // Model a re-push: force the want's missing (audiobook) leg back to `requested` so it re-enters
+    // the retry queue with its llBookId already resolved (the exact shape of the ~23 titles LL was
+    // re-adding every run).
+    await t.db
+      .update(bookRequests)
+      .set({ audioStatus: 'requested' })
+      .where(eq(bookRequests.origin, 'pairing'));
+
+    // Re-push, now telling mint that LL ALREADY seats 'gb-neuro'. addBook must be SKIPPED; the
+    // acquisition retry (queueBook + searchBook — neither hits Google Books) still fires. The GB stub
+    // throws to prove no fresh resolve happens on our side either (the id is reused).
+    const second = stubLl();
+    const gbBoom = stubGb(() => {
+      throw new Error('GB must not be called on an already-resolved re-push');
+    });
+    const report = await mintPairingWants({
+      db: t.db,
+      ll: second.bundle,
+      gb: gbBoom.gb,
+      pacer: async () => {},
+      llHasSeededBook: (id) => id === 'gb-neuro',
+    });
+    expect(report.pushed).toBe(1);
+    expect(gbBoom.calls).toHaveLength(0);
+    expect(second.calls.filter((c) => c.cmd === 'addBook')).toHaveLength(0);
+    expect(second.calls.filter((c) => c.cmd === 'queueBook').map((c) => c.format)).toEqual(['audiobook']);
+    expect(second.calls.filter((c) => c.cmd === 'searchBook').map((c) => c.format)).toEqual(['audiobook']);
+  });
+
   it('a comic never becomes a candidate (out of scope by owner ruling R1a)', async () => {
     await seedItem({ title: 'Saga', author: 'Brian K. Vaughan', mediaKind: 'comic' });
     const ll = stubLl();
