@@ -19,7 +19,11 @@ import { trpc, type RouterOutputs } from '@/lib/trpc-client';
 import { PhaseChip, type PhaseTone } from '@hnet/ui';
 import { BackLink } from '@/components/back-link';
 import { MediaPoster } from '@/components/cards';
-import { ActivityStageChip, useActivityItemStatus, type ActivityLiveStatus } from '@/components/activity-live';
+import {
+  ActivityStageChip,
+  useActivityItemStatus,
+  type ActivityLiveStatus,
+} from '@/components/activity-live';
 import { effectiveFormatStatus, formatActivityId, formatLiveWins } from '@/lib/format-live-status';
 import { formatWhen } from '@/lib/media';
 import { shelfLabel } from '@/lib/goodreads-shelf-wall';
@@ -128,8 +132,20 @@ function FormatSearchSlot({
   const searchPairing = trpc.books.searchPairingWant.useMutation(handlers);
   const search = origin === 'pairing' ? searchPairing : searchGoodreads;
 
-  const chip = (phase: string, label: string, tone: PhaseTone, opts?: { pulse?: boolean; title?: string }) => (
-    <PhaseChip phase={phase} label={label} tone={tone} pulse={opts?.pulse} meter={opts?.pulse} title={opts?.title} />
+  const chip = (
+    phase: string,
+    label: string,
+    tone: PhaseTone,
+    opts?: { pulse?: boolean; title?: string },
+  ) => (
+    <PhaseChip
+      phase={phase}
+      label={label}
+      tone={tone}
+      pulse={opts?.pulse}
+      meter={opts?.pulse}
+      title={opts?.title}
+    />
   );
 
   let content;
@@ -205,7 +221,12 @@ function FormatDetailRow({
     onFired();
   };
   return (
-    <li className="child-row" data-testid="format-row" data-format={row.format} data-live={showLive ? '' : undefined}>
+    <li
+      className="child-row"
+      data-testid="format-row"
+      data-format={row.format}
+      data-live={showLive ? '' : undefined}
+    >
       <span className="child-row__label">{FORMAT_LABEL[row.format]}</span>
       {showLive ? null : (
         <span className={`badge badge--${statusTone(row.status)}`} data-testid="format-status">
@@ -215,7 +236,12 @@ function FormatDetailRow({
       <span className="child-row__actions">
         {showLive ? <ActivityStageChip status={live} /> : null}
         {row.searchable ? (
-          <FormatSearchSlot requestId={requestId} format={row.format} origin={origin} onFired={handleFired} />
+          <FormatSearchSlot
+            requestId={requestId}
+            format={row.format}
+            origin={origin}
+            onFired={handleFired}
+          />
         ) : null}
       </span>
     </li>
@@ -237,7 +263,10 @@ export function WantedDetail({ requestId, from }: { requestId: string; from: str
   // each poll is disabled when its id is null (not routed yet). When live wins it OVERRIDES the reconciled
   // snapshot everywhere on this page.
   const data = detail.data;
-  const refs = { llBookId: data?.llBookId ?? null, kapowarrVolumeId: data?.kapowarrVolumeId ?? null };
+  const refs = {
+    llBookId: data?.llBookId ?? null,
+    kapowarrVolumeId: data?.kapowarrVolumeId ?? null,
+  };
   const comicId = formatActivityId('comic', refs);
   const ebookId = formatActivityId('ebook', refs);
   const audioId = formatActivityId('audiobook', refs);
@@ -330,14 +359,14 @@ export function WantedDetail({ requestId, from }: { requestId: string; from: str
         </ul>
         {d.parked ? (
           <p className="muted">
-            Waiting on a ComicVine match — this comic can’t be routed to Kapowarr yet, so there’s nothing to
-            search. The hourly sync retries automatically.
+            Waiting on a ComicVine match — this comic can’t be routed to Kapowarr yet, so there’s
+            nothing to search. The hourly sync retries automatically.
           </p>
         ) : !d.canSearch ? (
           <p className="muted">
             {d.origin === 'pairing'
               ? 'Force Search on a pairing want comes with books access. The library keeps looking on the scheduled sync in the meantime.'
-              : 'Force Search is available to the person who shelved this want. The library keeps looking on the hourly sync in the meantime.'}
+              : 'Force Search is available to the person who shelved this want (or an admin). The library keeps looking on the hourly sync in the meantime.'}
           </p>
         ) : null}
       </section>

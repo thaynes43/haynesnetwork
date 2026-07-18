@@ -51,7 +51,10 @@ const PROVIDER = 'goodreads' as const;
  * here to avoid pulling the heavy @hnet/sync barrel into the web request path). External LL calls stay out of
  * any DB transaction — the orchestrator's fix-flow discipline.
  */
-async function runFirstGoodreadsSync(ctx: TRPCContext, integration: UserIntegrationRow): Promise<void> {
+async function runFirstGoodreadsSync(
+  ctx: TRPCContext,
+  integration: UserIntegrationRow,
+): Promise<void> {
   const rss = resolveGoodreadsRssClient(ctx);
   const googleBooks = resolveGoogleBooksClient(ctx);
   // LazyLibrarian is optional — absent config ⇒ a mirror+mint run (no push), same as the CronJob's degraded mode.
@@ -261,9 +264,11 @@ export const integrationsRouter = router({
           });
           // Record the failure so the card leaves the "first sync in progress" state (which polls) instead
           // of spinning forever — the CronJob retries. Guarded not to resurrect an already-unlinked row.
-          void markIntegrationSynced({ db: ctx.db, integrationId: integration.id, error: message }).catch(
-            () => {},
-          );
+          void markIntegrationSynced({
+            db: ctx.db,
+            integrationId: integration.id,
+            error: message,
+          }).catch(() => {});
         });
         return { integration: toIntegrationWire(integration) };
       });
@@ -363,16 +368,24 @@ export const integrationsRouter = router({
       // for every goodreads want below.
       if (request.integrationId === null) throw new TRPCError({ code: 'FORBIDDEN' });
       const integration = await getIntegrationById({ db: ctx.db, id: request.integrationId });
-      if (!integration || integration.userId !== ctx.user.id) {
+      // Owner directive 2026-07-18 — an ADMIN may force-search ANY user's want (the owner couldn't
+      // fire another household member's shelf). The owner still fires their own; a non-owner non-admin
+      // is FORBIDDEN. The audit records actor=the acting user, subject=the request OWNER (below), so an
+      // admin-on-behalf search is attributed honestly.
+      if (!integration || (integration.userId !== ctx.user.id && !ctx.user.role.isAdmin)) {
         throw new TRPCError({ code: 'FORBIDDEN' });
       }
+      // subject = the want's OWNER (integration.userId); actor = the acting user (owner or admin). For
+      // the owner acting on self these coincide; for an admin-on-behalf they split (actor=admin,
+      // subject=requester) — exactly the audit shape recordManualSearch writes.
+      const subjectUserId = integration.userId;
       return mapDomainErrors(async () => {
         if (request.comicStatus != null) {
           // A comic → Kapowarr's own sources (the auto_search task). The per-format `format` is N/A here.
           const result = await runComicVolumeSearch({
             db: ctx.db,
             requestId: input.requestId,
-            userId: ctx.user.id,
+            userId: subjectUserId,
             actorId: ctx.user.id,
             kapowarr: resolveKapowarrBundle(ctx),
           });
@@ -381,7 +394,7 @@ export const integrationsRouter = router({
         const result = await runManualBookSearch({
           db: ctx.db,
           requestId: input.requestId,
-          userId: ctx.user.id,
+          userId: subjectUserId,
           actorId: ctx.user.id,
           ll: resolveLazyLibrarianBundle(ctx),
           ...(input.format ? { format: input.format } : {}),
