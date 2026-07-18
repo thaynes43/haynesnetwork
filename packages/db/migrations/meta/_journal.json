@@ -1,475 +1,475 @@
 {
-  "version": "7",
-  "dialect": "postgresql",
-  "entries": [
-    {
-      "idx": 0,
-      "version": "7",
-      "when": 1782950400000,
-      "tag": "0001_init",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1782950401000,
-      "tag": "0002_seed_app_catalog",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1782950402000,
-      "tag": "0003_media_ledger",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1782950403000,
-      "tag": "0004_search_requested_event",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1782950404000,
-      "tag": "0005_unaccent_search",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1782950405000,
-      "tag": "0006_fix_target_scope",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1782950406000,
-      "tag": "0007_unified_roles",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1782950407000,
-      "tag": "0008_relax_catalog_url",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1782950408000,
-      "tag": "0009_bazarr_subtitle_fix_path",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "7",
-      "when": 1782950409000,
-      "tag": "0010_plex_libraries",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "7",
-      "when": 1782950410000,
-      "tag": "0011_haynestower_base_url",
-      "breakpoints": true
-    },
-    {
-      "idx": 11,
-      "version": "7",
-      "when": 1782950411000,
-      "tag": "0012_media_metadata",
-      "breakpoints": true
-    },
-    {
-      "idx": 12,
-      "version": "7",
-      "when": 1782950412000,
-      "tag": "0013_role_section_permissions",
-      "breakpoints": true
-    },
-    {
-      "idx": 13,
-      "version": "7",
-      "when": 1782950413000,
-      "tag": "0014_arr_add_reason",
-      "breakpoints": true
-    },
-    {
-      "idx": 14,
-      "version": "7",
-      "when": 1782950415000,
-      "tag": "0015_role_plex_server_all_grants",
-      "breakpoints": true
-    },
-    {
-      "idx": 15,
-      "version": "7",
-      "when": 1782950416000,
-      "tag": "0016_trash_maintainerr",
-      "breakpoints": true
-    },
-    {
-      "idx": 16,
-      "version": "7",
-      "when": 1782950417000,
-      "tag": "0017_trash_curation_pipeline",
-      "breakpoints": true
-    },
-    {
-      "idx": 17,
-      "version": "7",
-      "when": 1782950418000,
-      "tag": "0018_bulletin_communication",
-      "breakpoints": true
-    },
-    {
-      "idx": 18,
-      "version": "7",
-      "when": 1782950419000,
-      "tag": "0019_motd_app_setting",
-      "breakpoints": true
-    },
-    {
-      "idx": 19,
-      "version": "7",
-      "when": 1782950420000,
-      "tag": "0020_trash_deletion_activity",
-      "breakpoints": true
-    },
-    {
-      "idx": 20,
-      "version": "7",
-      "when": 1782950421000,
-      "tag": "0021_space_targets",
-      "breakpoints": true
-    },
-    {
-      "idx": 21,
-      "version": "7",
-      "when": 1782950422000,
-      "tag": "0022_space_policy",
-      "breakpoints": true
-    },
-    {
-      "idx": 22,
-      "version": "7",
-      "when": 1782950423000,
-      "tag": "0023_user_plex_identity",
-      "breakpoints": true
-    },
-    {
-      "idx": 23,
-      "version": "7",
-      "when": 1782950424000,
-      "tag": "0024_pushover_notify_outbox",
-      "breakpoints": true
-    },
-    {
-      "idx": 24,
-      "version": "7",
-      "when": 1782950425000,
-      "tag": "0025_fix_terminal_statuses",
-      "breakpoints": true
-    },
-    {
-      "idx": 25,
-      "version": "7",
-      "when": 1782950426000,
-      "tag": "0026_trash_requested_autosave",
-      "breakpoints": true
-    },
-    {
-      "idx": 26,
-      "version": "7",
-      "when": 1782950427000,
-      "tag": "0027_trash_candidates",
-      "breakpoints": true
-    },
-    {
-      "idx": 27,
-      "version": "7",
-      "when": 1782950428000,
-      "tag": "0028_media_metadata_last_watched",
-      "breakpoints": true
-    },
-    {
-      "idx": 28,
-      "version": "7",
-      "when": 1782950429000,
-      "tag": "0029_pool_refresh_after_save",
-      "breakpoints": true
-    },
-    {
-      "idx": 29,
-      "version": "7",
-      "when": 1782950430000,
-      "tag": "0030_final_warning_outbox",
-      "breakpoints": true
-    },
-    {
-      "idx": 30,
-      "version": "7",
-      "when": 1782950431000,
-      "tag": "0031_metrics_foundation",
-      "breakpoints": true
-    },
-    {
-      "idx": 31,
-      "version": "7",
-      "when": 1782950432000,
-      "tag": "0032_ytdlsub_section",
-      "breakpoints": true
-    },
-    {
-      "idx": 32,
-      "version": "7",
-      "when": 1782950433000,
-      "tag": "0033_smart_alert_state",
-      "breakpoints": true
-    },
-    {
-      "idx": 33,
-      "version": "7",
-      "when": 1782950434000,
-      "tag": "0034_peloton_poster_guard",
-      "breakpoints": true
-    },
-    {
-      "idx": 34,
-      "version": "7",
-      "when": 1782950435000,
-      "tag": "0035_ai_usage_chats",
-      "breakpoints": true
-    },
-    {
-      "idx": 35,
-      "version": "7",
-      "when": 1782950436000,
-      "tag": "0036_authentik_role_portal",
-      "breakpoints": true
-    },
-    {
-      "idx": 36,
-      "version": "7",
-      "when": 1782950437000,
-      "tag": "0037_books_library_ledger",
-      "breakpoints": true
-    },
-    {
-      "idx": 37,
-      "version": "7",
-      "when": 1782950438000,
-      "tag": "0038_plex_item_match",
-      "breakpoints": true
-    },
-    {
-      "idx": 38,
-      "version": "7",
-      "when": 1782950439000,
-      "tag": "0039_bulletin_view_grants",
-      "breakpoints": true
-    },
-    {
-      "idx": 39,
-      "version": "7",
-      "when": 1783793476614,
-      "tag": "0040_helpdesk_tickets",
-      "breakpoints": true
-    },
-    {
-      "idx": 40,
-      "version": "7",
-      "when": 1783900000000,
-      "tag": "0041_mam_governor_state",
-      "breakpoints": true
-    },
-    {
-      "idx": 41,
-      "version": "7",
-      "when": 1783900100000,
-      "tag": "0042_library_released_at",
-      "breakpoints": true
-    },
-    {
-      "idx": 42,
-      "version": "7",
-      "when": 1783900200000,
-      "tag": "0043_library_preferences",
-      "breakpoints": true
-    },
-    {
-      "idx": 43,
-      "version": "7",
-      "when": 1783900300000,
-      "tag": "0044_per_user_watch_read_state",
-      "breakpoints": true
-    },
-    {
-      "idx": 44,
-      "version": "7",
-      "when": 1783900400000,
-      "tag": "0045_goodreads_integrations",
-      "breakpoints": true
-    },
-    {
-      "idx": 45,
-      "version": "7",
-      "when": 1783900500000,
-      "tag": "0046_kapowarr_comic_requests",
-      "breakpoints": true
-    },
-    {
-      "idx": 46,
-      "version": "7",
-      "when": 1783900600000,
-      "tag": "0047_goodreads_all_shelves",
-      "breakpoints": true
-    },
-    {
-      "idx": 47,
-      "version": "7",
-      "when": 1783900700000,
-      "tag": "0048_activity_in_flight",
-      "breakpoints": true
-    },
-    {
-      "idx": 48,
-      "version": "7",
-      "when": 1783900800000,
-      "tag": "0049_ticket_email_notifications",
-      "breakpoints": true
-    },
-    {
-      "idx": 49,
-      "version": "7",
-      "when": 1783900900000,
-      "tag": "0050_failure_digest",
-      "breakpoints": true
-    },
-    {
-      "idx": 50,
-      "version": "7",
-      "when": 1783901000000,
-      "tag": "0051_ticket_media_locator",
-      "breakpoints": true
-    },
-    {
-      "idx": 51,
-      "version": "7",
-      "when": 1783901100000,
-      "tag": "0052_books_fix",
-      "breakpoints": true
-    },
-    {
-      "idx": 52,
-      "version": "7",
-      "when": 1783901200000,
-      "tag": "0053_plex_collections",
-      "breakpoints": true
-    },
-    {
-      "idx": 53,
-      "version": "7",
-      "when": 1783901300000,
-      "tag": "0054_format_pairing",
-      "breakpoints": true
-    },
-    {
-      "idx": 54,
-      "version": "7",
-      "when": 1783901400000,
-      "tag": "0055_collection_type",
-      "breakpoints": true
-    },
-    {
-      "idx": 55,
-      "version": "7",
-      "when": 1783901500000,
-      "tag": "0056_books_collections",
-      "breakpoints": true
-    },
-    {
-      "idx": 56,
-      "version": "7",
-      "when": 1783901500000,
-      "tag": "0057_gb_quota_state",
-      "breakpoints": true
-    },
-    {
-      "idx": 57,
-      "version": "7",
-      "when": 1783901600000,
-      "tag": "0058_collection_provenance",
-      "breakpoints": true
-    },
-    {
-      "idx": 58,
-      "version": "7",
-      "when": 1783901700000,
-      "tag": "0059_collection_manager",
-      "breakpoints": true
-    },
-    {
-      "idx": 59,
-      "version": "7",
-      "when": 1783901800000,
-      "tag": "0060_books_detail_enrichment",
-      "breakpoints": true
-    },
-    {
-      "idx": 60,
-      "version": "7",
-      "when": 1783901900000,
-      "tag": "0061_delete_dormant_plex_catalog_rows",
-      "breakpoints": true
-    },
-    {
-      "idx": 61,
-      "version": "7",
-      "when": 1783902000000,
-      "tag": "0062_collection_category",
-      "breakpoints": true
-    },
-    {
-      "idx": 62,
-      "version": "7",
-      "when": 1783902100000,
-      "tag": "0063_clear_legacy_collection_categories",
-      "breakpoints": true
-    },
-    {
-      "idx": 63,
-      "version": "7",
-      "when": 1783902200000,
-      "tag": "0064_books_collection_category",
-      "breakpoints": true
-    },
-    {
-      "idx": 64,
-      "version": "7",
-      "when": 1783902300000,
-      "tag": "0065_collection_wanted_membership",
-      "breakpoints": true
-    },
-    {
-      "idx": 65,
-      "version": "7",
-      "when": 1783902400000,
-      "tag": "0066_books_force_search_grant",
-      "breakpoints": true
-    },
-    {
-      "idx": 66,
-      "version": "7",
-      "when": 1783902400000,
-      "tag": "0067_collection_size_cap",
-      "breakpoints": true
-    }
-  ]
+	"version": "7",
+	"dialect": "postgresql",
+	"entries": [
+		{
+			"idx": 0,
+			"version": "7",
+			"when": 1782950400000,
+			"tag": "0001_init",
+			"breakpoints": true
+		},
+		{
+			"idx": 1,
+			"version": "7",
+			"when": 1782950401000,
+			"tag": "0002_seed_app_catalog",
+			"breakpoints": true
+		},
+		{
+			"idx": 2,
+			"version": "7",
+			"when": 1782950402000,
+			"tag": "0003_media_ledger",
+			"breakpoints": true
+		},
+		{
+			"idx": 3,
+			"version": "7",
+			"when": 1782950403000,
+			"tag": "0004_search_requested_event",
+			"breakpoints": true
+		},
+		{
+			"idx": 4,
+			"version": "7",
+			"when": 1782950404000,
+			"tag": "0005_unaccent_search",
+			"breakpoints": true
+		},
+		{
+			"idx": 5,
+			"version": "7",
+			"when": 1782950405000,
+			"tag": "0006_fix_target_scope",
+			"breakpoints": true
+		},
+		{
+			"idx": 6,
+			"version": "7",
+			"when": 1782950406000,
+			"tag": "0007_unified_roles",
+			"breakpoints": true
+		},
+		{
+			"idx": 7,
+			"version": "7",
+			"when": 1782950407000,
+			"tag": "0008_relax_catalog_url",
+			"breakpoints": true
+		},
+		{
+			"idx": 8,
+			"version": "7",
+			"when": 1782950408000,
+			"tag": "0009_bazarr_subtitle_fix_path",
+			"breakpoints": true
+		},
+		{
+			"idx": 9,
+			"version": "7",
+			"when": 1782950409000,
+			"tag": "0010_plex_libraries",
+			"breakpoints": true
+		},
+		{
+			"idx": 10,
+			"version": "7",
+			"when": 1782950410000,
+			"tag": "0011_haynestower_base_url",
+			"breakpoints": true
+		},
+		{
+			"idx": 11,
+			"version": "7",
+			"when": 1782950411000,
+			"tag": "0012_media_metadata",
+			"breakpoints": true
+		},
+		{
+			"idx": 12,
+			"version": "7",
+			"when": 1782950412000,
+			"tag": "0013_role_section_permissions",
+			"breakpoints": true
+		},
+		{
+			"idx": 13,
+			"version": "7",
+			"when": 1782950413000,
+			"tag": "0014_arr_add_reason",
+			"breakpoints": true
+		},
+		{
+			"idx": 14,
+			"version": "7",
+			"when": 1782950415000,
+			"tag": "0015_role_plex_server_all_grants",
+			"breakpoints": true
+		},
+		{
+			"idx": 15,
+			"version": "7",
+			"when": 1782950416000,
+			"tag": "0016_trash_maintainerr",
+			"breakpoints": true
+		},
+		{
+			"idx": 16,
+			"version": "7",
+			"when": 1782950417000,
+			"tag": "0017_trash_curation_pipeline",
+			"breakpoints": true
+		},
+		{
+			"idx": 17,
+			"version": "7",
+			"when": 1782950418000,
+			"tag": "0018_bulletin_communication",
+			"breakpoints": true
+		},
+		{
+			"idx": 18,
+			"version": "7",
+			"when": 1782950419000,
+			"tag": "0019_motd_app_setting",
+			"breakpoints": true
+		},
+		{
+			"idx": 19,
+			"version": "7",
+			"when": 1782950420000,
+			"tag": "0020_trash_deletion_activity",
+			"breakpoints": true
+		},
+		{
+			"idx": 20,
+			"version": "7",
+			"when": 1782950421000,
+			"tag": "0021_space_targets",
+			"breakpoints": true
+		},
+		{
+			"idx": 21,
+			"version": "7",
+			"when": 1782950422000,
+			"tag": "0022_space_policy",
+			"breakpoints": true
+		},
+		{
+			"idx": 22,
+			"version": "7",
+			"when": 1782950423000,
+			"tag": "0023_user_plex_identity",
+			"breakpoints": true
+		},
+		{
+			"idx": 23,
+			"version": "7",
+			"when": 1782950424000,
+			"tag": "0024_pushover_notify_outbox",
+			"breakpoints": true
+		},
+		{
+			"idx": 24,
+			"version": "7",
+			"when": 1782950425000,
+			"tag": "0025_fix_terminal_statuses",
+			"breakpoints": true
+		},
+		{
+			"idx": 25,
+			"version": "7",
+			"when": 1782950426000,
+			"tag": "0026_trash_requested_autosave",
+			"breakpoints": true
+		},
+		{
+			"idx": 26,
+			"version": "7",
+			"when": 1782950427000,
+			"tag": "0027_trash_candidates",
+			"breakpoints": true
+		},
+		{
+			"idx": 27,
+			"version": "7",
+			"when": 1782950428000,
+			"tag": "0028_media_metadata_last_watched",
+			"breakpoints": true
+		},
+		{
+			"idx": 28,
+			"version": "7",
+			"when": 1782950429000,
+			"tag": "0029_pool_refresh_after_save",
+			"breakpoints": true
+		},
+		{
+			"idx": 29,
+			"version": "7",
+			"when": 1782950430000,
+			"tag": "0030_final_warning_outbox",
+			"breakpoints": true
+		},
+		{
+			"idx": 30,
+			"version": "7",
+			"when": 1782950431000,
+			"tag": "0031_metrics_foundation",
+			"breakpoints": true
+		},
+		{
+			"idx": 31,
+			"version": "7",
+			"when": 1782950432000,
+			"tag": "0032_ytdlsub_section",
+			"breakpoints": true
+		},
+		{
+			"idx": 32,
+			"version": "7",
+			"when": 1782950433000,
+			"tag": "0033_smart_alert_state",
+			"breakpoints": true
+		},
+		{
+			"idx": 33,
+			"version": "7",
+			"when": 1782950434000,
+			"tag": "0034_peloton_poster_guard",
+			"breakpoints": true
+		},
+		{
+			"idx": 34,
+			"version": "7",
+			"when": 1782950435000,
+			"tag": "0035_ai_usage_chats",
+			"breakpoints": true
+		},
+		{
+			"idx": 35,
+			"version": "7",
+			"when": 1782950436000,
+			"tag": "0036_authentik_role_portal",
+			"breakpoints": true
+		},
+		{
+			"idx": 36,
+			"version": "7",
+			"when": 1782950437000,
+			"tag": "0037_books_library_ledger",
+			"breakpoints": true
+		},
+		{
+			"idx": 37,
+			"version": "7",
+			"when": 1782950438000,
+			"tag": "0038_plex_item_match",
+			"breakpoints": true
+		},
+		{
+			"idx": 38,
+			"version": "7",
+			"when": 1782950439000,
+			"tag": "0039_bulletin_view_grants",
+			"breakpoints": true
+		},
+		{
+			"idx": 39,
+			"version": "7",
+			"when": 1783793476614,
+			"tag": "0040_helpdesk_tickets",
+			"breakpoints": true
+		},
+		{
+			"idx": 40,
+			"version": "7",
+			"when": 1783900000000,
+			"tag": "0041_mam_governor_state",
+			"breakpoints": true
+		},
+		{
+			"idx": 41,
+			"version": "7",
+			"when": 1783900100000,
+			"tag": "0042_library_released_at",
+			"breakpoints": true
+		},
+		{
+			"idx": 42,
+			"version": "7",
+			"when": 1783900200000,
+			"tag": "0043_library_preferences",
+			"breakpoints": true
+		},
+		{
+			"idx": 43,
+			"version": "7",
+			"when": 1783900300000,
+			"tag": "0044_per_user_watch_read_state",
+			"breakpoints": true
+		},
+		{
+			"idx": 44,
+			"version": "7",
+			"when": 1783900400000,
+			"tag": "0045_goodreads_integrations",
+			"breakpoints": true
+		},
+		{
+			"idx": 45,
+			"version": "7",
+			"when": 1783900500000,
+			"tag": "0046_kapowarr_comic_requests",
+			"breakpoints": true
+		},
+		{
+			"idx": 46,
+			"version": "7",
+			"when": 1783900600000,
+			"tag": "0047_goodreads_all_shelves",
+			"breakpoints": true
+		},
+		{
+			"idx": 47,
+			"version": "7",
+			"when": 1783900700000,
+			"tag": "0048_activity_in_flight",
+			"breakpoints": true
+		},
+		{
+			"idx": 48,
+			"version": "7",
+			"when": 1783900800000,
+			"tag": "0049_ticket_email_notifications",
+			"breakpoints": true
+		},
+		{
+			"idx": 49,
+			"version": "7",
+			"when": 1783900900000,
+			"tag": "0050_failure_digest",
+			"breakpoints": true
+		},
+		{
+			"idx": 50,
+			"version": "7",
+			"when": 1783901000000,
+			"tag": "0051_ticket_media_locator",
+			"breakpoints": true
+		},
+		{
+			"idx": 51,
+			"version": "7",
+			"when": 1783901100000,
+			"tag": "0052_books_fix",
+			"breakpoints": true
+		},
+		{
+			"idx": 52,
+			"version": "7",
+			"when": 1783901200000,
+			"tag": "0053_plex_collections",
+			"breakpoints": true
+		},
+		{
+			"idx": 53,
+			"version": "7",
+			"when": 1783901300000,
+			"tag": "0054_format_pairing",
+			"breakpoints": true
+		},
+		{
+			"idx": 54,
+			"version": "7",
+			"when": 1783901400000,
+			"tag": "0055_collection_type",
+			"breakpoints": true
+		},
+		{
+			"idx": 55,
+			"version": "7",
+			"when": 1783901500000,
+			"tag": "0056_books_collections",
+			"breakpoints": true
+		},
+		{
+			"idx": 56,
+			"version": "7",
+			"when": 1783901500000,
+			"tag": "0057_gb_quota_state",
+			"breakpoints": true
+		},
+		{
+			"idx": 57,
+			"version": "7",
+			"when": 1783901600000,
+			"tag": "0058_collection_provenance",
+			"breakpoints": true
+		},
+		{
+			"idx": 58,
+			"version": "7",
+			"when": 1783901700000,
+			"tag": "0059_collection_manager",
+			"breakpoints": true
+		},
+		{
+			"idx": 59,
+			"version": "7",
+			"when": 1783901800000,
+			"tag": "0060_books_detail_enrichment",
+			"breakpoints": true
+		},
+		{
+			"idx": 60,
+			"version": "7",
+			"when": 1783901900000,
+			"tag": "0061_delete_dormant_plex_catalog_rows",
+			"breakpoints": true
+		},
+		{
+			"idx": 61,
+			"version": "7",
+			"when": 1783902000000,
+			"tag": "0062_collection_category",
+			"breakpoints": true
+		},
+		{
+			"idx": 62,
+			"version": "7",
+			"when": 1783902100000,
+			"tag": "0063_clear_legacy_collection_categories",
+			"breakpoints": true
+		},
+		{
+			"idx": 63,
+			"version": "7",
+			"when": 1783902200000,
+			"tag": "0064_books_collection_category",
+			"breakpoints": true
+		},
+		{
+			"idx": 64,
+			"version": "7",
+			"when": 1783902300000,
+			"tag": "0065_collection_wanted_membership",
+			"breakpoints": true
+		},
+		{
+			"idx": 65,
+			"version": "7",
+			"when": 1783902400000,
+			"tag": "0066_books_force_search_grant",
+			"breakpoints": true
+		},
+		{
+			"idx": 66,
+			"version": "7",
+			"when": 1783902400000,
+			"tag": "0067_collection_size_cap",
+			"breakpoints": true
+		}
+	]
 }

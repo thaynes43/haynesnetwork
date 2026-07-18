@@ -14,15 +14,19 @@ import {
 import {
   applyCollectionScope,
   approveCollectionSuggestion,
+  assertWithinCollectionSizeCap,
+  createCollectionOverrideTicket,
   createCollectionSuggestion,
   declineCollectionSuggestion,
   deleteCollectionRecipe,
+  getAppSetting,
   getCollectionRun,
   getCollectionsOverview,
   listCollectionSuggestions,
   previewRecipeRef,
   saveRecipe,
 } from '@hnet/domain';
+import type { TRPCContext } from '../trpc';
 import type {
   LibrettoCollection,
   LibrettoIssue,
@@ -64,6 +68,24 @@ function toLibrettoDraft(input: RecipeDraftInput) {
     },
     enabled: true,
   };
+}
+
+/**
+ * DESIGN-035 D-17 — refuse an over-cap CREATE for a non-admin. Previews the draft's builder to learn the
+ * resolved membership size, reads the live `collection_size_cap`, and throws `CollectionSizeCapError`
+ * (carrying `{ size, cap }`) when a non-admin would breach it. A no-op for admins (they bypass the cap
+ * outright). Runs BEFORE the confined Libretto write, so an over-cap recipe never lands.
+ */
+async function assertDraftWithinCap(
+  ctx: TRPCContext,
+  isAdmin: boolean,
+  draft: ReturnType<typeof toLibrettoDraft>,
+): Promise<void> {
+  if (isAdmin) return;
+  const preview = await previewRecipeRef({ libretto: resolveLibrettoBundle(ctx), draft });
+  const size = preview.resolved?.workCount ?? 0;
+  const cap = await getAppSetting(ctx.db, 'collection_size_cap');
+  assertWithinCollectionSizeCap({ size, cap, isAdmin: false });
 }
 
 // Explicit wire shapes (the fixWire idiom) — the Libretto ACL uses zod passthrough, whose loose types do
@@ -137,12 +159,17 @@ export const collectionsRouter = router({
       const overview = await getCollectionsOverview({ libretto: resolveLibrettoBundle(ctx) });
       const actions = await resolveCollectionActions(ctx.db, ctx.user.role);
       const pending = await listCollectionSuggestions({ db: ctx.db, status: 'pending' });
+      // DESIGN-035 D-17 — the composer needs the live size cap + whether the caller bypasses it (admin)
+      // so it can pre-empt an over-cap save with the override Modal.
+      const sizeCap = await getAppSetting(ctx.db, 'collection_size_cap');
       return {
         reachable: overview.reachable,
         recipes: overview.recipes.map(recipeWire),
         issues: overview.issues.map(issueWire),
         collections: overview.collections.map(collectionWire),
         canAcquire: actions.includes('acquire'),
+        sizeCap,
+        capBypass: ctx.user.role.isAdmin,
         pendingSuggestions: pending.map(suggestionWire),
       };
     });
@@ -162,10 +189,14 @@ export const collectionsRouter = router({
     .input(recipeDraftInput)
     .mutation(async ({ ctx, input }) => {
       return mapDomainErrors(async () => {
+        const draft = toLibrettoDraft(input);
+        // DESIGN-035 D-17 — a non-admin cannot create/edit an over-cap collection (opens the over-cap
+        // Modal client-side, which files the admin-override ticket). Admins bypass.
+        await assertDraftWithinCap(ctx, ctx.user.role.isAdmin, draft);
         const actions = await resolveCollectionActions(ctx.db, ctx.user.role);
         await saveRecipe({
           libretto: resolveLibrettoBundle(ctx),
-          draft: toLibrettoDraft(input),
+          draft,
           canAcquire: actions.includes('acquire'),
         });
         return { ok: true as const, id: input.id };
@@ -179,6 +210,34 @@ export const collectionsRouter = router({
       return mapDomainErrors(async () => {
         const runId = await applyCollectionScope({ libretto: resolveLibrettoBundle(ctx), scope: input.scope });
         return { runId };
+      });
+    }),
+
+  /**
+   * DESIGN-035 D-17 — the over-cap admin-override request. A non-admin whose create hit the size cap
+   * files a `collection_override` ticket (reusing the ADR-050 helpdesk board + its atomic outbox ping +
+   * admin email) so an admin can approve a larger bound. The server reads the live cap (never trusting a
+   * client-sent cap) and stamps the requesting user as the author.
+   */
+  requestOverride: collectionActionProcedure('manage')
+    .input(
+      z.object({
+        collectionName: z.string().trim().min(1).max(200),
+        size: z.number().int().nonnegative().max(100000),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      return mapDomainErrors(async () => {
+        const cap = await getAppSetting(ctx.db, 'collection_size_cap');
+        const ticket = await createCollectionOverrideTicket({
+          db: ctx.db,
+          authorId: ctx.user.id,
+          provider: 'libretto',
+          collectionName: input.collectionName,
+          size: input.size,
+          cap,
+        });
+        return { ticketId: ticket.id };
       });
     }),
 

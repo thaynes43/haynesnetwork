@@ -13,7 +13,7 @@ import {
   TICKET_CATEGORY_LABELS,
   TICKET_STATUS_LABELS,
   ticketStatusTone,
-  type TicketCategoryName,
+  type TicketCategoryDisplay,
   type TicketStatusName,
 } from '@/lib/bulletin';
 import { ReplyGlyph, TicketCategoryIcon, TicketStatusGlyph } from '../ticket-glyphs';
@@ -22,7 +22,7 @@ import { MediaPoster } from './media-poster';
 /** The intake-category tile a NON-MEDIA ticket gets where a poster would be (shared with the
  *  ticket detail head): the category icon large over the same tinted 2:3 box the Library fallback
  *  uses, plus a small label. */
-export function TicketCategoryTile({ category }: { category: TicketCategoryName }) {
+export function TicketCategoryTile({ category }: { category: TicketCategoryDisplay }) {
   return (
     <span className="poster-box twall-cattile" data-category={category}>
       <TicketCategoryIcon category={category} className="twall-cattile__icon" />
@@ -44,7 +44,7 @@ export function TicketCard({
   href: string;
   title: string;
   status: TicketStatusName;
-  category: TicketCategoryName;
+  category: TicketCategoryDisplay;
   /** The linked title (poster + caption sub-line) — null renders the category tile instead.
    *  `title` may be null (a ledger row can vanish); the sub-line then falls back to the category. */
   media: { posterUrl: string | null; kind: string; title: string | null; year: number | null } | null;

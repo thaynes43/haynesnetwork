@@ -693,7 +693,7 @@ export const APP_SETTING_KEYS = [
   // create/add in one collection (int; DEFAULT 25). Acquisition is now ON, so an unbounded collection
   // could dump hundreds of monitored+searched items; this is the fence. LISTS are the admin-only
   // exception (an admin bypasses the cap outright). Admin-mutated + audited through the same
-  // setAppSetting single-writer (never a non-admin write). migration 0066 relaxes the CHECK.
+  // setAppSetting single-writer (never a non-admin write). migration 0067 relaxes the CHECK.
   'collection_size_cap',
 ] as const;
 export type AppSettingKey = (typeof APP_SETTING_KEYS)[number];

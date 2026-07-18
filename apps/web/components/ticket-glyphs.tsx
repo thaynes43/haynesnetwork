@@ -9,13 +9,13 @@
 //     `bwall-overlay` idiom): open = the issue dot, in_progress = a half-filled ring, complete = a
 //     check, rejected = a slashed ring. Color comes from the puck's per-state CSS, not here.
 
-import type { TicketCategoryName, TicketStatusName } from '@/lib/bulletin';
+import type { TicketCategoryDisplay, TicketStatusName } from '@/lib/bulletin';
 
 export function TicketCategoryIcon({
   category,
   className,
 }: {
-  category: TicketCategoryName;
+  category: TicketCategoryDisplay;
   className?: string;
 }) {
   const common = {
@@ -80,6 +80,15 @@ export function TicketCategoryIcon({
           <circle cx="8.5" cy="12" r="0.5" fill="currentColor" />
           <circle cx="12.5" cy="12" r="0.5" fill="currentColor" />
           <circle cx="16.5" cy="12" r="0.5" fill="currentColor" />
+        </svg>
+      );
+    case 'collection_override':
+      // DESIGN-035 D-17 — a stack of layers (a collection) — "a collection needs an admin override".
+      return (
+        <svg {...common}>
+          <path d="M12 3 3 7.5l9 4.5 9-4.5z" />
+          <path d="M3 12l9 4.5 9-4.5" />
+          <path d="M3 16.5 12 21l9-4.5" />
         </svg>
       );
   }

@@ -236,6 +236,57 @@ export async function createTicket(input: CreateTicketInput): Promise<TicketRow>
   });
 }
 
+/** DESIGN-035 D-17 — the structured facts an over-cap collection override request carries. */
+export interface CollectionOverrideTicketInput {
+  db?: DbClient;
+  /** The requesting (non-admin) user — the ticket author. */
+  authorId: string;
+  /** The collection provider the request is about. */
+  provider: 'kometa' | 'libretto';
+  /** The collection / recipe display name. */
+  collectionName: string;
+  /** The resolved membership size that breached the cap. */
+  size: number;
+  /** The live cap the size breached. */
+  cap: number;
+  now?: Date;
+  /** R-195 — the admin recipient override (tests). */
+  adminEmail?: string;
+}
+
+/**
+ * DESIGN-035 D-17 — file an admin-override request for an over-cap collection. A thin wrapper over
+ * `createTicket` (category `collection_override`, already in TICKET_CATEGORIES) so the request rides the
+ * SAME ADR-050 helpdesk board + its atomic `ticket_created` outbox ping + admin email — no new approval
+ * subsystem. The body carries the structured facts (requester is the author; provider; collection; the
+ * resolved size vs the current cap; the requested action) so an admin completing the ticket can perform
+ * the override (raise the cap via `setAppSetting`, or a one-off). Living in this module keeps every
+ * `tickets` write behind the single-writer guard (no-direct-state-writes).
+ */
+export async function createCollectionOverrideTicket(
+  input: CollectionOverrideTicketInput,
+): Promise<TicketRow> {
+  const body = [
+    `A collection exceeds the non-admin size cap and needs an admin override.`,
+    ``,
+    `- Requested by: the ticket author`,
+    `- Provider: ${input.provider}`,
+    `- Collection: ${input.collectionName}`,
+    `- Resolved membership: ${input.size} items`,
+    `- Current cap: ${input.cap} items`,
+    `- Requested action: approve a larger bound for this collection (raise the cap, or grant a one-off).`,
+  ].join('\n');
+  return createTicket({
+    db: input.db,
+    authorId: input.authorId,
+    title: `Collection override request: ${input.collectionName}`,
+    body,
+    category: 'collection_override',
+    now: input.now,
+    adminEmail: input.adminEmail,
+  });
+}
+
 export interface TransitionTicketInput {
   db?: DbClient;
   ticketId: string;
