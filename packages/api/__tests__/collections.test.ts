@@ -6,13 +6,13 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
 import {
-  booksCollections,
   notificationOutbox,
   SEEDED_ROLE_IDS,
   ticketEvents,
   tickets,
   type CollectionOverridePayload,
 } from '@hnet/db';
+import { syncBooksCollections } from '@hnet/domain';
 import {
   compileManagedFile,
   setRoleCollectionActions,
@@ -134,12 +134,27 @@ describe('collections overview — everyone reads, no grant, no section floor (A
       builder: { type: 'hardcover_series', ref: 'dune' },
       enabled: true,
     });
-    await t.db.insert(booksCollections).values({
-      source: 'audiobookshelf',
-      externalId: 'abs-dune-1',
-      kind: 'collection',
-      title: 'Dune',
-      librettoRecipeId: 'dune-audiobooks',
+    // Seed through the SANCTIONED domain writer (never a direct insert — the
+    // no-direct-state-writes guard forbids it, the books-collections.test.ts idiom).
+    await syncBooksCollections({
+      db: t.db,
+      collections: [
+        {
+          source: 'audiobookshelf',
+          externalId: 'abs-dune-1',
+          kind: 'collection',
+          libraryId: 'lib1',
+          title: 'Dune',
+          itemCount: 6,
+          ordered: true,
+          createdBy: 'libretto',
+          librettoRecipeId: 'dune-audiobooks',
+          category: null,
+          members: [],
+          fullyRead: true,
+        },
+      ],
+      scopedFamilies: [{ source: 'audiobookshelf', kind: 'collection' }],
     });
     const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stub.ctx };
     const audiobooks = await caller(ctx).collections.overview({ mediaType: 'audiobooks' });
