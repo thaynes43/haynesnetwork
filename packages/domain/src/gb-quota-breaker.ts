@@ -27,22 +27,40 @@ const GB_SINGLETON_ID = 'gb';
 export type GbQuotaTripKind = 'daily' | 'minute';
 
 /**
+ * The DAILY-quota body signature. Google's per-DAY exhaustion returns HTTP 429 whose body message
+ * reads `… limit 'Queries per day' …` (legacy shape: reason `dailyLimitExceeded` / "Daily Limit
+ * Exceeded"); a per-MINUTE burst reads `… limit 'Queries per minute per user' …`. The window name
+ * in that message string is the ONLY reliable daily signal — see `classifyGb429`.
+ */
+const GB_DAILY_BODY = /per day|daily limit|dailyLimitExceeded/i;
+
+/**
  * Classify an error as a GB quota 429 (ADR-067 C-02) — STRUCTURAL so this package needs no
- * `@hnet/goodreads` import: any object carrying `status === 429` whose message/bodySnippet says
- * "per day"/"daily" is the DAILY quota ("Queries per day" in Google's body); any other 429 is
- * treated as PER-MINUTE (the conservative 2-minute trip). Everything else returns null — not the
- * breaker's business (non-429 errors rethrow untouched at the seam).
+ * `@hnet/goodreads` import: any object carrying `status === 429` whose RESPONSE BODY names the
+ * per-day window is the DAILY quota (until the next 07:00 UTC); any other 429 (per-minute, or an
+ * unparsable / body-less one) is the conservative PER-MINUTE trip (a short cool-off — fail toward
+ * retrying within the same day). Everything else returns null — not the breaker's business
+ * (non-429 errors rethrow untouched at the seam).
+ *
+ * TWO hard-won constraints, both from a live 2026-07-18 capture of a genuine per-day 429:
+ *  - We classify on the message STRING, not `errors[].reason`. A real per-day exhaustion still
+ *    carries `errors[].reason: "rateLimitExceeded"` (and `details[].reason: "RATE_LIMIT_EXCEEDED"`)
+ *    — indistinguishable from a per-minute burst by reason code. Only the message names the window
+ *    (`Quota exceeded … limit 'Queries per day' …`). Keying off the reason code would misclassify
+ *    every daily exhaustion as a burst and hammer an empty quota all day.
+ *  - We read ONLY `bodySnippet` (the captured response text), never the error's own `.message`.
+ *    `GoodreadsHttpError.message` embeds the (key-redacted but title-bearing) request URL, so a book
+ *    titled "…Daily…" / "…Per Day…" hitting a mere per-minute burst would false-trip the 24h daily
+ *    breaker — the class of self-inflicted 24h starvation this classification is here to prevent.
  */
 export function classifyGb429(error: unknown): GbQuotaTripKind | null {
   if (error === null || typeof error !== 'object') return null;
   if ((error as { status?: unknown }).status !== 429) return null;
-  const text = [
-    (error as { message?: unknown }).message,
-    (error as { bodySnippet?: unknown }).bodySnippet,
-  ]
-    .filter((p): p is string => typeof p === 'string')
-    .join(' ');
-  return /per day|daily/i.test(text) ? 'daily' : 'minute';
+  const body = (error as { bodySnippet?: unknown }).bodySnippet;
+  // No captured body ⇒ we cannot prove "per day"; fail toward the SHORT cool-off. A genuine daily
+  // re-trips on the next half-open probe; a mis-armed 24h daily starves resolution for a whole day.
+  if (typeof body !== 'string') return 'minute';
+  return GB_DAILY_BODY.test(body) ? 'daily' : 'minute';
 }
 
 /** The next daily-quota reset (GB_DAILY_RESET_UTC_HOUR:00 UTC) STRICTLY after `now`. */
