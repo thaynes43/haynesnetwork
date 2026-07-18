@@ -21,7 +21,13 @@ import {
   listMediaChildren,
   provenanceDisplayName,
 } from '@hnet/domain';
-import { authedProcedure, mapDomainErrors, resolveArrBundle, resolvePlexBundle, router } from '../trpc';
+import {
+  authedProcedure,
+  mapDomainErrors,
+  resolveArrBundle,
+  resolvePlexBundle,
+  router,
+} from '../trpc';
 // ADR-047 / DESIGN-025 (PLAN-028) — THE INVARIANT: every media_items read here is gated to the caller's
 // accessible Plex libraries SERVER-SIDE (never UI filtering). The gate + predicates live in library-access.
 import {
@@ -96,7 +102,11 @@ export interface LedgerPlexEpisodeArtResult {
 export interface LedgerCollectionGroup {
   key: string;
   label: string;
+  /** Accessible member count = held (on-disk) + wanted (monitored, not-on-disk — DESIGN-035 D-16). */
   count: number;
+  /** DESIGN-035 D-16 — of `count`, how many are WANTED (the *arr-native monitored-not-on-disk tiles).
+   *  0 for held-only walls (TV, books this pass). The wall badges "N wanted" from this. */
+  wantedCount: number;
   coverUrls: string[];
   imageUrl: null;
   /** DESIGN-035 D-10'/D-11 — the collection's OPEN, free-form owner category (T-186), or null when
@@ -150,7 +160,14 @@ export const ledgerRouter = router({
       if (input.cursor !== undefined) {
         const { sortValue, id } = decodeKeysetCursor(input.cursor);
         where.push(
-          keysetAfter({ expr: spec.col, idCol, kind: spec.kind, dir: input.sort.dir, value: sortValue, id }),
+          keysetAfter({
+            expr: spec.col,
+            idCol,
+            kind: spec.kind,
+            dir: input.sort.dir,
+            value: sortValue,
+            id,
+          }),
         );
       }
 
@@ -310,37 +327,48 @@ export const ledgerRouter = router({
         // shape. `cmx` is this query's own match alias; the gate's subqueries use their own `m2`.
         // The `category` narrowing deliberately happens AFTER aggregation (in-process): categoryCounts
         // must cover ALL accessible collections so the chip numbers hold steady while filtering.
-        const result = await ctx.db.execute<{
+        // DESIGN-035 D-16 — the accessible membership is the UNION of HELD (Plex-child rows →
+        // media_plex_matches) and WANTED (*arr-native held=false rows → media_items directly). The
+        // same gate (`accessCond`, mi alias) covers both: a wanted radarr title has no Plex match, so
+        // it rides the gate's `unmatchedAllowed` (visible-kind) branch. `held DESC` orders held tiles
+        // first so the cover fan prefers on-disk art. THE INVARIANT is softened: a 0-held/N-wanted
+        // collection now has rows → renders (D-03 amendment); a 0-of-both collection still never
+        // enters the map.
+        type Row = {
           key: string;
           label: string;
           category: string | null;
           provenance: string | null;
           media_item_id: string;
           poster_source: string | null;
-        }>(
-          sql`SELECT pc.rating_key AS key, pc.title AS label, pc.category AS category,
-                     pc.created_by AS provenance,
-                     mi.id AS media_item_id, mm.poster_source AS poster_source
-                FROM plex_collections pc
-                JOIN plex_collection_members pcm ON pcm.collection_id = pc.id
-                JOIN media_plex_matches cmx
-                  ON cmx.plex_library_id = pc.plex_library_id
-                 AND cmx.rating_key = pcm.rating_key
-                JOIN media_items mi ON mi.id = cmx.media_item_id
-                LEFT JOIN media_metadata mm ON mm.media_item_id = mi.id
-               WHERE ${sql.join(conds, sql` AND `)}
-               ORDER BY pc.title ASC, pc.rating_key ASC, pcm.sort_order ASC`,
+          held: boolean;
+        };
+        const result = await ctx.db.execute<Row>(
+          sql`SELECT key, label, category, provenance, media_item_id, poster_source, held FROM (
+                SELECT pc.rating_key AS key, pc.title AS label, pc.category AS category,
+                       pc.created_by AS provenance, mi.id AS media_item_id,
+                       mm.poster_source AS poster_source, TRUE AS held, pcm.sort_order AS sort_order
+                  FROM plex_collections pc
+                  JOIN plex_collection_members pcm ON pcm.collection_id = pc.id AND pcm.held = TRUE
+                  JOIN media_plex_matches cmx
+                    ON cmx.plex_library_id = pc.plex_library_id
+                   AND cmx.rating_key = pcm.rating_key
+                  JOIN media_items mi ON mi.id = cmx.media_item_id
+                  LEFT JOIN media_metadata mm ON mm.media_item_id = mi.id
+                 WHERE ${sql.join(conds, sql` AND `)}
+                UNION ALL
+                SELECT pc.rating_key AS key, pc.title AS label, pc.category AS category,
+                       pc.created_by AS provenance, mi.id AS media_item_id,
+                       mm.poster_source AS poster_source, FALSE AS held, pcm.sort_order AS sort_order
+                  FROM plex_collections pc
+                  JOIN plex_collection_members pcm ON pcm.collection_id = pc.id AND pcm.held = FALSE
+                  JOIN media_items mi ON mi.id = pcm.media_item_id
+                  LEFT JOIN media_metadata mm ON mm.media_item_id = mi.id
+                 WHERE ${sql.join(conds, sql` AND `)}
+              ) u
+              ORDER BY label ASC, key ASC, held DESC, sort_order ASC`,
         );
-        const rows =
-          result.rows ??
-          (result as unknown as {
-            key: string;
-            label: string;
-            category: string | null;
-            provenance: string | null;
-            media_item_id: string;
-            poster_source: string | null;
-          }[]);
+        const rows = result.rows ?? (result as unknown as Row[]);
         const groups = new Map<
           string,
           {
@@ -348,6 +376,7 @@ export const ledgerRouter = router({
             category: string | null;
             provenance: string | null;
             memberIds: Set<string>;
+            wantedIds: Set<string>;
             coverUrls: string[];
           }
         >();
@@ -360,11 +389,13 @@ export const ledgerRouter = router({
                 category: row.category,
                 provenance: row.provenance,
                 memberIds: new Set(),
+                wantedIds: new Set(),
                 coverUrls: [],
               })
               .get(row.key)!;
-          if (group.memberIds.has(row.media_item_id)) continue;
+          if (group.memberIds.has(row.media_item_id)) continue; // held wins (ordered first)
           group.memberIds.add(row.media_item_id);
+          if (!row.held) group.wantedIds.add(row.media_item_id);
           if (group.coverUrls.length < COLLECTION_COVER_SAMPLE) {
             const cover = posterUrlFor(row.media_item_id, row.poster_source);
             if (cover !== null) group.coverUrls.push(cover);
@@ -387,6 +418,7 @@ export const ledgerRouter = router({
               key,
               label: g.label,
               count: g.memberIds.size,
+              wantedCount: g.wantedIds.size,
               coverUrls: g.coverUrls,
               imageUrl: null,
               category: g.category,
@@ -532,7 +564,10 @@ export const ledgerRouter = router({
       // ADR-047 THE INVARIANT — the history of a hidden item must not leak by direct id.
       const gate = await resolveLibraryAccessGate(ctx.user.id, ctx.db);
       if (!(await itemAccessById(ctx.db, gate, input.mediaItemId))) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: `Media item ${input.mediaItemId} not found` });
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: `Media item ${input.mediaItemId} not found`,
+        });
       }
       const where: SQL[] = [eq(ledgerEvents.mediaItemId, input.mediaItemId)];
       if (input.cursor !== undefined) {
@@ -584,7 +619,10 @@ export const ledgerRouter = router({
       // ADR-047 THE INVARIANT — the live season/album proxy must not run for a hidden item.
       const gate = await resolveLibraryAccessGate(ctx.user.id, ctx.db);
       if (!(await itemAccessById(ctx.db, gate, input.mediaItemId))) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: `Media item ${input.mediaItemId} not found` });
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: `Media item ${input.mediaItemId} not found`,
+        });
       }
       return mapDomainErrors(async () => {
         const children = await listMediaChildren({
@@ -592,15 +630,17 @@ export const ledgerRouter = router({
           arr: resolveArrBundle(ctx),
           mediaItemId: input.mediaItemId,
         });
-        return children.map(({ arrChildId, label, hasFile, monitored, seasonNumber, episodeNumber }) => ({
-          arrChildId,
-          label,
-          hasFile,
-          monitored,
-          seasonNumber,
-          // PLAN-030 — the merge key for the Plex episode thumb (ledger.plexEpisodeArt), sonarr only.
-          episodeNumber,
-        }));
+        return children.map(
+          ({ arrChildId, label, hasFile, monitored, seasonNumber, episodeNumber }) => ({
+            arrChildId,
+            label,
+            hasFile,
+            monitored,
+            seasonNumber,
+            // PLAN-030 — the merge key for the Plex episode thumb (ledger.plexEpisodeArt), sonarr only.
+            episodeNumber,
+          }),
+        );
       });
     }),
 
@@ -613,7 +653,10 @@ export const ledgerRouter = router({
     .query(async ({ ctx, input }) => {
       const gate = await resolveLibraryAccessGate(ctx.user.id, ctx.db);
       if (!(await itemAccessById(ctx.db, gate, input.mediaItemId))) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: `Media item ${input.mediaItemId} not found` });
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: `Media item ${input.mediaItemId} not found`,
+        });
       }
       return mapDomainErrors(() =>
         listAlbumTracks({
@@ -638,7 +681,10 @@ export const ledgerRouter = router({
     .query(async ({ ctx, input }): Promise<LedgerPlexSeasonsResult> => {
       const gate = await resolveLibraryAccessGate(ctx.user.id, ctx.db);
       if (!(await itemAccessById(ctx.db, gate, input.mediaItemId))) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: `Media item ${input.mediaItemId} not found` });
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: `Media item ${input.mediaItemId} not found`,
+        });
       }
       const match = await resolveArtMatchForItem(ctx.db, gate, input.mediaItemId);
       if (match === null) return { available: false, seasons: [] };
@@ -673,7 +719,10 @@ export const ledgerRouter = router({
     .query(async ({ ctx, input }): Promise<LedgerPlexEpisodeArtResult> => {
       const gate = await resolveLibraryAccessGate(ctx.user.id, ctx.db);
       if (!(await itemAccessById(ctx.db, gate, input.mediaItemId))) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: `Media item ${input.mediaItemId} not found` });
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: `Media item ${input.mediaItemId} not found`,
+        });
       }
       const match = await resolveArtMatchForItem(ctx.db, gate, input.mediaItemId);
       if (match === null) return { available: false, episodes: [] };

@@ -34,10 +34,12 @@ import {
   type SonarrSeries,
 } from './schemas/sonarr';
 import {
+  radarrCollectionSchema,
   radarrHistoryRecordSchema,
   radarrLookupSchema,
   radarrMovieSchema,
   radarrQueueRecordSchema,
+  type RadarrCollection,
   type RadarrHistoryRecord,
   type RadarrLookup,
   type RadarrMovie,
@@ -109,8 +111,7 @@ export interface WantedMissingParams {
  */
 const QUEUE_PAGE_SIZE = 200;
 
-const toIso = (value: string | Date) =>
-  value instanceof Date ? value.toISOString() : value;
+const toIso = (value: string | Date) => (value instanceof Date ? value.toISOString() : value);
 
 /** Read endpoints shared verbatim by Sonarr/Radarr/Lidarr (D-03). */
 abstract class ArrReadClientBase {
@@ -259,6 +260,16 @@ export class RadarrClient extends ArrReadClientBase {
 
   listMovies(): Promise<RadarrMovie[]> {
     return this.http.requestJson('GET', 'movie', z.array(radarrMovieSchema));
+  }
+
+  /**
+   * DESIGN-035 D-16 — `GET /api/v3/collection` → every TMDb Collection Radarr tracks, with its full
+   * member set (`movies[]`). The collections-sync title-matches each to a mirrored plex_collections
+   * row and splits its members into held/wanted against the app's media_items ledger (the
+   * *arr-native full-membership source for the movie Wanted tiles).
+   */
+  listCollections(): Promise<RadarrCollection[]> {
+    return this.http.requestJson('GET', 'collection', z.array(radarrCollectionSchema));
   }
 
   getMovieById(id: number): Promise<RadarrMovie> {
