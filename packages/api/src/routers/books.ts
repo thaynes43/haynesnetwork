@@ -37,7 +37,11 @@ import {
   type WantedBookRequestView,
 } from '@hnet/domain';
 import { authedProcedure, mapDomainErrors, resolveLazyLibrarianBundle, router } from '../trpc';
-import { booksOrIntegrationsProcedure, booksProcedure, effectiveSectionLevel } from '../middleware/role';
+import {
+  booksOrIntegrationsProcedure,
+  booksProcedure,
+  effectiveSectionLevel,
+} from '../middleware/role';
 import { booksCoverUrlFor } from '../books-query';
 import {
   BOOK_LENGTH_BOUNDS,
@@ -222,7 +226,11 @@ function orderForSort(sort: BooksSort, dir?: 'asc' | 'desc', collection?: string
   const d = sql.raw((dir ?? BOOKS_SORT_NATURAL_DIR[sort]).toUpperCase());
   switch (sort) {
     case 'author':
-      return [sql`${booksItems.author} ${d} NULLS LAST`, asc(booksItems.sortTitle), asc(booksItems.id)];
+      return [
+        sql`${booksItems.author} ${d} NULLS LAST`,
+        asc(booksItems.sortTitle),
+        asc(booksItems.id),
+      ];
     case 'added':
       // PLAN-056 — sort_title tiebreak (was id-only): a bulk sync stamps many rows with one
       // transaction instant, so same-instant ties are REAL — break them alphabetically, exactly
@@ -233,7 +241,11 @@ function orderForSort(sort: BooksSort, dir?: 'asc' | 'desc', collection?: string
         asc(booksItems.id),
       ];
     case 'year':
-      return [sql`${booksItems.year} ${d} NULLS LAST`, asc(booksItems.sortTitle), asc(booksItems.id)];
+      return [
+        sql`${booksItems.year} ${d} NULLS LAST`,
+        asc(booksItems.sortTitle),
+        asc(booksItems.id),
+      ];
     case 'released':
       // ADR-051 C-05 / DESIGN-026 D-05 — Date Released (ABS publishedDate). Kavita rows (null) sort last.
       return [
@@ -278,27 +290,44 @@ function orderForSort(sort: BooksSort, dir?: 'asc' | 'desc', collection?: string
 function facetConditions(input: BooksSearchInput) {
   const conditions = [];
   if (input.authors && input.authors.length > 0) {
-    conditions.push(sql`${booksItems.author} IN (${sql.join(input.authors.map((a) => sql`${a}`), sql`, `)})`);
+    conditions.push(
+      sql`${booksItems.author} IN (${sql.join(
+        input.authors.map((a) => sql`${a}`),
+        sql`, `,
+      )})`,
+    );
   }
   if (input.narrators && input.narrators.length > 0) {
     conditions.push(
-      sql`${booksItems.narrator} IN (${sql.join(input.narrators.map((n) => sql`${n}`), sql`, `)})`,
+      sql`${booksItems.narrator} IN (${sql.join(
+        input.narrators.map((n) => sql`${n}`),
+        sql`, `,
+      )})`,
     );
   }
   if (input.series && input.series.length > 0) {
     conditions.push(
-      sql`${booksItems.seriesName} IN (${sql.join(input.series.map((s) => sql`${s}`), sql`, `)})`,
+      sql`${booksItems.seriesName} IN (${sql.join(
+        input.series.map((s) => sql`${s}`),
+        sql`, `,
+      )})`,
     );
   }
   if (input.languages && input.languages.length > 0) {
     conditions.push(
-      sql`${booksItems.attrs} ->> 'language' IN (${sql.join(input.languages.map((l) => sql`${l}`), sql`, `)})`,
+      sql`${booksItems.attrs} ->> 'language' IN (${sql.join(
+        input.languages.map((l) => sql`${l}`),
+        sql`, `,
+      )})`,
     );
   }
   if (input.formats && input.formats.length > 0) {
     const codes = KAVITA_FORMATS.filter((f) => input.formats!.includes(f.key)).map((f) => f.code);
     conditions.push(
-      sql`(${booksItems.attrs} ->> 'format')::int IN (${sql.join(codes.map((c) => sql`${c}`), sql`, `)})`,
+      sql`(${booksItems.attrs} ->> 'format')::int IN (${sql.join(
+        codes.map((c) => sql`${c}`),
+        sql`, `,
+      )})`,
     );
   }
   if (input.lengths && input.lengths.length > 0) {
@@ -307,7 +336,8 @@ function facetConditions(input: BooksSearchInput) {
     const bounds = BOOK_LENGTH_BOUNDS[input.mediaKind === 'audiobook' ? 'duration' : 'pages'];
     const ranges = input.lengths.map((bucket: BookLengthBucket) => {
       const b = bounds[bucket];
-      if (b.min !== undefined && b.max !== undefined) return sql`(${col} >= ${b.min} AND ${col} < ${b.max})`;
+      if (b.min !== undefined && b.max !== undefined)
+        return sql`(${col} >= ${b.min} AND ${col} < ${b.max})`;
       if (b.min !== undefined) return sql`${col} >= ${b.min}`;
       return sql`${col} < ${b.max!}`;
     });
@@ -385,9 +415,9 @@ function toWantedWireItem(
  */
 export type BooksSearchEntry =
   | ({ kind: 'item' } & BooksListItem & {
-      /** ADR-065 — feeds the wall's coverage badge (null for a comic — no pairing). */
-      formatCoverage: BooksFormatCoverage | null;
-    })
+        /** ADR-065 — feeds the wall's coverage badge (null for a comic — no pairing). */
+        formatCoverage: BooksFormatCoverage | null;
+      })
   | ({ kind: 'wanted' } & BooksWantedItem);
 
 export interface BooksSearchResult {
@@ -434,8 +464,16 @@ const COMPOSED_SORT_KEYS: Record<
     titleTiebreak: true,
   },
   year: { itemExpr: () => sql`${booksItems.year}`, cast: 'integer', titleTiebreak: true },
-  released: { itemExpr: () => sql`${booksItems.releasedAt}`, cast: 'timestamptz', titleTiebreak: true },
-  duration: { itemExpr: () => sql`${booksItems.durationSeconds}`, cast: 'integer', titleTiebreak: true },
+  released: {
+    itemExpr: () => sql`${booksItems.releasedAt}`,
+    cast: 'timestamptz',
+    titleTiebreak: true,
+  },
+  duration: {
+    itemExpr: () => sql`${booksItems.durationSeconds}`,
+    cast: 'integer',
+    titleTiebreak: true,
+  },
   pages: { itemExpr: () => sql`${booksItems.pageCount}`, cast: 'integer', titleTiebreak: true },
 };
 
@@ -524,7 +562,15 @@ export interface BooksCollectionGroup {
    * Resolved server-side from books_collections.created_by via provenanceDisplayName.
    */
   provenance: string | null;
+  /** DESIGN-038 D-12 — the collection's OPEN, free-form owner category (T-186 model), or null when
+   *  it carries none (no chip; shows only under "All"). Drives the dynamic category chip row. */
+  category: string | null;
 }
+
+/** DESIGN-038 D-12 — the books category chip row's counts, keyed by the DISTINCT categories actually
+ *  present among a wall's cards (only non-null categories appear; the client orders them
+ *  hint-list-then-alphabetical). Mirrors `ledger.LedgerCollectionCategoryCounts`. */
+export type BooksCollectionCategoryCounts = Record<string, number>;
 
 export const booksRouter = router({
   /** The caller's own books-section visibility (any authed user) — for the client tab gate. */
@@ -546,7 +592,10 @@ export const booksRouter = router({
   wanted: booksProcedure
     .input(z.object({ mediaKind: z.enum(BOOKS_MEDIA_KINDS) }))
     .query(async ({ ctx, input }) => {
-      const views = await getWantedBookRequests({ db: ctx.db, format: WALL_FORMAT[input.mediaKind] });
+      const views = await getWantedBookRequests({
+        db: ctx.db,
+        format: WALL_FORMAT[input.mediaKind],
+      });
       const viewer = {
         id: ctx.user.id,
         hasIntegrations: effectiveSectionLevel(ctx.user.role, 'integrations') !== 'disabled',
@@ -567,9 +616,11 @@ export const booksRouter = router({
     .input(z.object({ requestId: z.uuid() }))
     .query(async ({ ctx, input }) => {
       const view = await getBookRequestDetail({ db: ctx.db, requestId: input.requestId });
-      if (!view) throw new TRPCError({ code: 'NOT_FOUND', message: `Request ${input.requestId} not found` });
+      if (!view)
+        throw new TRPCError({ code: 'NOT_FOUND', message: `Request ${input.requestId} not found` });
       const owns = view.integrationUserId !== null && view.integrationUserId === ctx.user.id;
-      const viewerHasIntegrations = effectiveSectionLevel(ctx.user.role, 'integrations') !== 'disabled';
+      const viewerHasIntegrations =
+        effectiveSectionLevel(ctx.user.role, 'integrations') !== 'disabled';
       // ADR-065 C-05 — a pairing want has no owner: its per-format search is BOOKS-gated (the estate's
       // want belongs to everyone the books walls belong to); goodreads wants keep owner + integrations.
       const canSearch =
@@ -581,27 +632,30 @@ export const booksRouter = router({
       // Per-format status ROWS (the *arr per-grain idiom): a comic is the single Kapowarr leg; a
       // book/audiobook want carries BOTH LazyLibrarian legs. `searchable` = the viewer may fire it AND
       // that format is still acquirable (whole-request searchable AND this format hasn't landed).
-      const formats: Array<{ format: 'ebook' | 'audiobook' | 'comic'; status: BookRequestStatus; searchable: boolean }> =
-        view.isComic
-          ? [
-              {
-                format: 'comic',
-                status: view.comicStatus ?? 'requested',
-                searchable: canSearch && requestSearchable,
-              },
-            ]
-          : [
-              {
-                format: 'ebook',
-                status: view.ebookStatus,
-                searchable: canSearch && requestSearchable && view.ebookStatus !== 'landed',
-              },
-              {
-                format: 'audiobook',
-                status: view.audioStatus,
-                searchable: canSearch && requestSearchable && view.audioStatus !== 'landed',
-              },
-            ];
+      const formats: Array<{
+        format: 'ebook' | 'audiobook' | 'comic';
+        status: BookRequestStatus;
+        searchable: boolean;
+      }> = view.isComic
+        ? [
+            {
+              format: 'comic',
+              status: view.comicStatus ?? 'requested',
+              searchable: canSearch && requestSearchable,
+            },
+          ]
+        : [
+            {
+              format: 'ebook',
+              status: view.ebookStatus,
+              searchable: canSearch && requestSearchable && view.ebookStatus !== 'landed',
+            },
+            {
+              format: 'audiobook',
+              status: view.audioStatus,
+              searchable: canSearch && requestSearchable && view.audioStatus !== 'landed',
+            },
+          ];
 
       return {
         requestId: view.requestId,
@@ -682,7 +736,8 @@ export const booksRouter = router({
         const page = sorted.slice(input.cursor, input.cursor + input.limit);
         return {
           items: page.map((v) => ({ kind: 'wanted' as const, ...toWantedWireItem(v, viewer) })),
-          nextCursor: input.cursor + input.limit < sorted.length ? input.cursor + input.limit : null,
+          nextCursor:
+            input.cursor + input.limit < sorted.length ? input.cursor + input.limit : null,
         };
       }
 
@@ -697,7 +752,10 @@ export const booksRouter = router({
         // binds the JS array as a non-array parameter → 22P02 the first time the genre chips got
         // UI). Use the ledger engine's jsonb `?|` overlap idiom (same-field OR) instead.
         conditions.push(
-          sql`${booksItems.genres} ?| ARRAY[${sql.join(input.genres.map((g) => sql`${g}`), sql`, `)}]::text[]`,
+          sql`${booksItems.genres} ?| ARRAY[${sql.join(
+            input.genres.map((g) => sql`${g}`),
+            sql`, `,
+          )}]::text[]`,
         );
       }
       // DESIGN-026 D-08/D-09 (PLAN-029) — author/narrator/series/language/format/length facets + the
@@ -793,13 +851,11 @@ export const booksRouter = router({
 
       const coverageFor = await coverageLookup(ctx.db, input.mediaKind, rows);
       return {
-        items: rows.map(
-          (row): BooksSearchEntry => ({
-            kind: 'item',
-            ...toBooksListItem(row),
-            formatCoverage: coverageFor(row),
-          }),
-        ),
+        items: rows.map((row): BooksSearchEntry => ({
+          kind: 'item',
+          ...toBooksListItem(row),
+          formatCoverage: coverageFor(row),
+        })),
         nextCursor: rows.length === input.limit ? input.cursor + input.limit : null,
       };
     }),
@@ -884,7 +940,8 @@ export const booksRouter = router({
           lastSyncedAt: row.lastSeenAt.toISOString(),
           summary: row.summary,
           publisher: row.publisher,
-          language: ((row.attrs as Record<string, unknown> | null)?.language as string | null) ?? null,
+          language:
+            ((row.attrs as Record<string, unknown> | null)?.language as string | null) ?? null,
           isbn: row.isbn,
           fileCount: row.fileCount,
           formatLabel: bookFormatLabel(row),
@@ -954,58 +1011,58 @@ export const booksRouter = router({
    * construction (ADR-051 C-06): an empty medium simply returns [] and the client renders no chip —
    * e.g. Kavita book/comic genres/narrators, ABS formats.
    */
-  filterFacets: booksProcedure
-    .input(z.object({ mediaKind: z.enum(BOOKS_MEDIA_KINDS) }))
-    .query(
-      async ({
-        ctx,
-        input,
-      }): Promise<{
-        genres: string[];
-        authors: string[];
-        narrators: string[];
-        series: string[];
-        languages: string[];
-        formats: Array<{ key: string; label: string }>;
-      }> => {
-        const live = sql`${booksItems.mediaKind} = ${input.mediaKind} AND ${booksItems.deletedAt} IS NULL`;
-        const genreRows = await ctx.db
-          .select({ genre: sql<string>`genre` })
-          .from(
-            sql`(SELECT DISTINCT jsonb_array_elements_text(${booksItems.genres}) AS genre
+  filterFacets: booksProcedure.input(z.object({ mediaKind: z.enum(BOOKS_MEDIA_KINDS) })).query(
+    async ({
+      ctx,
+      input,
+    }): Promise<{
+      genres: string[];
+      authors: string[];
+      narrators: string[];
+      series: string[];
+      languages: string[];
+      formats: Array<{ key: string; label: string }>;
+    }> => {
+      const live = sql`${booksItems.mediaKind} = ${input.mediaKind} AND ${booksItems.deletedAt} IS NULL`;
+      const genreRows = await ctx.db
+        .select({ genre: sql<string>`genre` })
+        .from(
+          sql`(SELECT DISTINCT jsonb_array_elements_text(${booksItems.genres}) AS genre
                FROM ${booksItems}
                WHERE ${live}) AS books_genres`,
-          )
-          .orderBy(sql`genre`);
-        const distinctCol = async (col: SQL): Promise<string[]> => {
-          const rows = await ctx.db.execute<{ value: string }>(
-            sql`SELECT DISTINCT ${col} AS value FROM ${booksItems}
+        )
+        .orderBy(sql`genre`);
+      const distinctCol = async (col: SQL): Promise<string[]> => {
+        const rows = await ctx.db.execute<{ value: string }>(
+          sql`SELECT DISTINCT ${col} AS value FROM ${booksItems}
                  WHERE ${live} AND ${col} IS NOT NULL AND ${col} <> ''
                  ORDER BY value ASC`,
-          );
-          return (rows.rows ?? (rows as unknown as { value: string }[])).map((r) => r.value);
-        };
-        const formatCodes = await ctx.db.execute<{ value: number }>(
-          sql`SELECT DISTINCT (${booksItems.attrs} ->> 'format')::int AS value FROM ${booksItems}
+        );
+        return (rows.rows ?? (rows as unknown as { value: string }[])).map((r) => r.value);
+      };
+      const formatCodes = await ctx.db.execute<{ value: number }>(
+        sql`SELECT DISTINCT (${booksItems.attrs} ->> 'format')::int AS value FROM ${booksItems}
                WHERE ${live} AND ${booksItems.attrs} ? 'format'`,
-        );
-        const codes = new Set(
-          (formatCodes.rows ?? (formatCodes as unknown as { value: number }[])).map((r) => Number(r.value)),
-        );
-        return {
-          genres: genreRows.map((r) => r.genre).filter((g): g is string => typeof g === 'string'),
-          authors: await distinctCol(sql`${booksItems.author}`),
-          narrators: await distinctCol(sql`${booksItems.narrator}`),
-          series: await distinctCol(sql`${booksItems.seriesName}`),
-          languages: await distinctCol(sql`${booksItems.attrs} ->> 'language'`),
-          // KAVITA_FORMATS order (not code order) so the chip lists epub/archive first.
-          formats: KAVITA_FORMATS.filter((f) => codes.has(f.code)).map((f) => ({
-            key: f.key,
-            label: f.label,
-          })),
-        };
-      },
-    ),
+      );
+      const codes = new Set(
+        (formatCodes.rows ?? (formatCodes as unknown as { value: number }[])).map((r) =>
+          Number(r.value),
+        ),
+      );
+      return {
+        genres: genreRows.map((r) => r.genre).filter((g): g is string => typeof g === 'string'),
+        authors: await distinctCol(sql`${booksItems.author}`),
+        narrators: await distinctCol(sql`${booksItems.narrator}`),
+        series: await distinctCol(sql`${booksItems.seriesName}`),
+        languages: await distinctCol(sql`${booksItems.attrs} ->> 'language'`),
+        // KAVITA_FORMATS order (not code order) so the chip lists epub/archive first.
+        formats: KAVITA_FORMATS.filter((f) => codes.has(f.code)).map((f) => ({
+          key: f.key,
+          label: f.label,
+        })),
+      };
+    },
+  ),
 
   /**
    * DESIGN-026 D-04 (PLAN-029 step 3, art amended by the group-card-art pass) — the grouped view's
@@ -1063,15 +1120,21 @@ export const booksRouter = router({
    * in-process aggregation (the books.groups shape); cards come back label-A–Z and the client
    * re-sorts by the grouped level's registry keys (label | count).
    */
-  collectionGroups: booksProcedure
-    .input(z.object({ mediaKind: z.enum(BOOKS_MEDIA_KINDS) }))
-    .query(async ({ ctx, input }): Promise<{ groups: BooksCollectionGroup[] }> => {
+  collectionGroups: booksProcedure.input(z.object({ mediaKind: z.enum(BOOKS_MEDIA_KINDS) })).query(
+    async ({
+      ctx,
+      input,
+    }): Promise<{
+      groups: BooksCollectionGroup[];
+      categoryCounts: BooksCollectionCategoryCounts;
+    }> => {
       const rows = await ctx.db
         .select({
           id: booksCollections.id,
           title: booksCollections.title,
           ordered: booksCollections.ordered,
           createdBy: booksCollections.createdBy,
+          category: booksCollections.category,
           memberKind: booksItems.mediaKind,
           source: booksItems.source,
           externalId: booksItems.externalId,
@@ -1094,6 +1157,7 @@ export const booksRouter = router({
         label: string;
         ordered: boolean;
         createdBy: string | null;
+        category: string | null;
         counts: Record<BooksMediaKind, number>;
         coverUrls: Record<BooksMediaKind, string[]>;
       }
@@ -1106,6 +1170,7 @@ export const booksRouter = router({
               label: row.title,
               ordered: row.ordered,
               createdBy: row.createdBy,
+              category: row.category,
               counts: { book: 0, comic: 0, audiobook: 0 },
               coverUrls: { book: [], comic: [], audiobook: [] },
             })
@@ -1136,9 +1201,22 @@ export const booksRouter = router({
           imageUrl: null,
           ordered: agg.ordered,
           provenance: provenanceDisplayName(agg.createdBy),
+          category: agg.category,
         });
       }
       groups.sort((a, b) => a.label.localeCompare(b.label) || a.key.localeCompare(b.key));
-      return { groups };
-    }),
+      // DESIGN-038 D-12 — the chip row's counts over THIS wall's cards, per DISTINCT present category
+      // (only non-null appears; an uncategorized collection contributes no chip). The counts cover
+      // only cards this gated wall shows, so no chip can leak a hidden card. This read is
+      // multi-purpose (cards + drill header + the selector's populated gate), so it stays UNFILTERED
+      // and stable — the `?ctype=` card filter is applied CLIENT-SIDE (the books-browser) off these
+      // counts, unlike the single-purpose movies `ledger.collectionGroups` which filters server-side.
+      const categoryCounts: BooksCollectionCategoryCounts = {};
+      for (const g of groups) {
+        if (g.category === null) continue;
+        categoryCounts[g.category] = (categoryCounts[g.category] ?? 0) + 1;
+      }
+      return { groups, categoryCounts };
+    },
+  ),
 });

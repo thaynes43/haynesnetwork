@@ -1,0 +1,16 @@
+-- DESIGN-038 D-12 (2026-07-17) — the books collection CATEGORY, completing the label-driven
+-- dynamic-chip story across all three walls (movies/TV shipped it in migration 0062).
+--
+-- ADDITIVE only. `books_collections.category` is the OPEN, free-form owner category of a mirrored
+-- book collection (Series / List / Event / anything an agent coins), NULLABLE and with NO CHECK —
+-- the same open-vocabulary class as `books_collections.created_by` and `plex_collections.category`.
+--
+-- Because books carry no Plex labels, the category is AGENT-SET directly on the mirror row (the
+-- ratified L2 placement — Libretto is not in the cluster GitOps tree, and the Kavita-native comic
+-- Event lists have no recipe to carry a marker). The sync PRESERVES it via
+-- `COALESCE(excluded.category, books_collections.category)` so a re-sync never wipes an agent-set
+-- value; a forward-compatible Libretto `cat=` marker (parsed by @hnet/domain
+-- deriveBooksCollectionCategory) will WIN when the source begins emitting it. Every pre-existing
+-- row starts NULL (no chip, shows under "All") until an agent labels it — no backfill.
+-- A down-migration drops the column.
+ALTER TABLE "books_collections" ADD COLUMN "category" text;

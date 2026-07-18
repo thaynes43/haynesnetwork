@@ -81,7 +81,8 @@ function bundle(kavita: KavitaClient, audiobookshelf: AudiobookshelfClient): Boo
 }
 
 function bookRow(
-  o: Partial<BooksItemInput> & Pick<BooksItemInput, 'source' | 'mediaKind' | 'externalId' | 'title'>,
+  o: Partial<BooksItemInput> &
+    Pick<BooksItemInput, 'source' | 'mediaKind' | 'externalId' | 'title'>,
 ): BooksItemInput {
   return {
     libraryId: '1',
@@ -116,7 +117,11 @@ async function collectionKeys(db: Database): Promise<string[]> {
       externalId: booksCollections.externalId,
     })
     .from(booksCollections)
-    .orderBy(asc(booksCollections.source), asc(booksCollections.kind), asc(booksCollections.externalId));
+    .orderBy(
+      asc(booksCollections.source),
+      asc(booksCollections.kind),
+      asc(booksCollections.externalId),
+    );
   return rows.map((r) => `${r.source}/${r.kind}/${r.externalId}`);
 }
 
@@ -146,8 +151,18 @@ beforeAll(async () => {
     rows: [
       bookRow({ source: 'kavita', mediaKind: 'book', externalId: '501', title: 'HP Book 1' }),
       bookRow({ source: 'kavita', mediaKind: 'book', externalId: '502', title: 'HP Book 2' }),
-      bookRow({ source: 'audiobookshelf', mediaKind: 'audiobook', externalId: 'a1', title: 'Listen One' }),
-      bookRow({ source: 'audiobookshelf', mediaKind: 'audiobook', externalId: 'a2', title: 'Listen Two' }),
+      bookRow({
+        source: 'audiobookshelf',
+        mediaKind: 'audiobook',
+        externalId: 'a1',
+        title: 'Listen One',
+      }),
+      bookRow({
+        source: 'audiobookshelf',
+        mediaKind: 'audiobook',
+        externalId: 'a2',
+        title: 'Listen Two',
+      }),
     ],
   });
 });
@@ -192,7 +207,9 @@ describe('fetchBooksCollectionsSnapshot + syncBooksCollections (ADR-066)', () =>
       { source: 'kavita', kind: 'reading_list' },
       { source: 'audiobookshelf', kind: 'collection' },
     ]);
-    const kavitaCol = snap.collections.find((c) => c.kind === 'collection' && c.source === 'kavita')!;
+    const kavitaCol = snap.collections.find(
+      (c) => c.kind === 'collection' && c.source === 'kavita',
+    )!;
     expect(kavitaCol.ordered).toBe(false); // Kavita collections carry no member order (D-09)
     const readingList = snap.collections.find((c) => c.kind === 'reading_list')!;
     expect(readingList.ordered).toBe(true);
@@ -221,8 +238,40 @@ describe('fetchBooksCollectionsSnapshot + syncBooksCollections (ADR-066)', () =>
       'kavita/reading_list/11',
     ]);
     expect(
-      (await memberRows(t.db, 'col-abs-1', 'collection')).map((m) => `${m.externalRef}@${m.position}`),
+      (await memberRows(t.db, 'col-abs-1', 'collection')).map(
+        (m) => `${m.externalRef}@${m.position}`,
+      ),
     ).toEqual(['a2@0', 'a1@1']);
+  });
+
+  it('CATEGORY (D-12) — derives the forward-compatible Libretto cat= marker off the same description read', async () => {
+    // Today no source emits cat=, so every fetched category is null (the L2 agent-set value stands);
+    // this proves the wiring: WHEN a source description carries the marker, the fetcher reads it with
+    // zero extra I/O (off the summary/description it already reads for provenance).
+    const markedKavita = fakeKavita({
+      listReadingListsPage: async () => ({
+        items: [
+          {
+            id: 11,
+            title: 'HP Reading Order',
+            promoted: false,
+            itemCount: 3,
+            summary: 'Managed by Libretto [libretto:hp-series|cat=Series]',
+          },
+        ],
+        total: 1,
+        hasAuthoritativeTotal: true,
+      }),
+    } as Partial<KavitaClient>);
+    const snap = await fetchBooksCollectionsSnapshot({ books: bundle(markedKavita, fakeAbs()) });
+    const readingList = snap.collections.find((c) => c.kind === 'reading_list')!;
+    expect(readingList.category).toBe('Series');
+    expect(readingList.createdBy).toBe('libretto'); // provenance still derives off the same marker
+    // The un-marked families derive null — the fetcher never invents a category.
+    expect(snap.collections.find((c) => c.source === 'audiobookshelf')!.category).toBeNull();
+    expect(
+      snap.collections.find((c) => c.kind === 'collection' && c.source === 'kavita')!.category,
+    ).toBeNull();
   });
 
   it('a Kavita outage unscopes ONLY the Kavita families — ABS still mirrors, nothing of Kavita reconciles', async () => {
@@ -257,8 +306,12 @@ describe('fetchBooksCollectionsSnapshot + syncBooksCollections (ADR-066)', () =>
         throw new Error('series read failed');
       },
     } as Partial<KavitaClient>);
-    const snap = await fetchBooksCollectionsSnapshot({ books: bundle(memberFailKavita, fakeAbs()) });
-    const kavitaCol = snap.collections.find((c) => c.kind === 'collection' && c.source === 'kavita')!;
+    const snap = await fetchBooksCollectionsSnapshot({
+      books: bundle(memberFailKavita, fakeAbs()),
+    });
+    const kavitaCol = snap.collections.find(
+      (c) => c.kind === 'collection' && c.source === 'kavita',
+    )!;
     expect(kavitaCol.fullyRead).toBe(false);
     expect(kavitaCol.members).toEqual([]);
     expect(snap.stats.truncatedCollections).toBe(1);
@@ -309,8 +362,12 @@ describe('fetchBooksCollectionsSnapshot + syncBooksCollections (ADR-066)', () =>
           hasAuthoritativeTotal: false,
         }),
       } as Partial<KavitaClient>);
-      const snap = await fetchBooksCollectionsSnapshot({ books: bundle(fullPageKavita, fakeAbs()) });
-      const kavitaCol = snap.collections.find((c) => c.kind === 'collection' && c.source === 'kavita')!;
+      const snap = await fetchBooksCollectionsSnapshot({
+        books: bundle(fullPageKavita, fakeAbs()),
+      });
+      const kavitaCol = snap.collections.find(
+        (c) => c.kind === 'collection' && c.source === 'kavita',
+      )!;
       expect(kavitaCol.fullyRead).toBe(false); // cannot prove completion — truncated
       expect(kavitaCol.members).toHaveLength(KAVITA_COLLECTION_PAGE_SIZE);
       expect(snap.stats.truncatedCollections).toBe(1);
@@ -338,8 +395,12 @@ describe('fetchBooksCollectionsSnapshot + syncBooksCollections (ADR-066)', () =>
           hasAuthoritativeTotal: false,
         }),
       } as Partial<KavitaClient>);
-      const snap = await fetchBooksCollectionsSnapshot({ books: bundle(shortPageKavita, fakeAbs()) });
-      const kavitaCol = snap.collections.find((c) => c.kind === 'collection' && c.source === 'kavita')!;
+      const snap = await fetchBooksCollectionsSnapshot({
+        books: bundle(shortPageKavita, fakeAbs()),
+      });
+      const kavitaCol = snap.collections.find(
+        (c) => c.kind === 'collection' && c.source === 'kavita',
+      )!;
       expect(kavitaCol.fullyRead).toBe(true);
       expect(snap.stats.truncatedCollections).toBe(0);
       // A fully-read write reconciles the truncation-test tail back out (the rebuildable cache).
@@ -369,6 +430,7 @@ describe('fetchBooksCollectionsSnapshot + syncBooksCollections (ADR-066)', () =>
             itemCount: 2,
             ordered: true,
             createdBy: 'kavita',
+            category: null,
             members: [{ externalRef: '501', position: 0 }],
             fullyRead: true,
           },
@@ -389,7 +451,9 @@ describe('fetchBooksCollectionsSnapshot + syncBooksCollections (ADR-066)', () =>
         }),
         listReadingListItems: async () => [],
       } as Partial<KavitaClient>);
-      const snap = await fetchBooksCollectionsSnapshot({ books: bundle(fullListingKavita, fakeAbs()) });
+      const snap = await fetchBooksCollectionsSnapshot({
+        books: bundle(fullListingKavita, fakeAbs()),
+      });
       expect(snap.scopedFamilies).not.toContainEqual({ source: 'kavita', kind: 'reading_list' });
       expect(snap.stats.unscopedFamilies).toBe(1);
       const report = await syncBooksCollections({

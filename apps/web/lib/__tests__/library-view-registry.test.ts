@@ -72,7 +72,7 @@ describe('registry shape invariants', () => {
     }
   });
 
-  it('the Movies/TV Collections grouped levels sort the CARDS (label/count) and declare ONLY the category facet (PLAN-037 + D-11\')', () => {
+  it("the Movies/TV Collections grouped levels sort the CARDS (label/count) and declare ONLY the category facet (PLAN-037 + D-11')", () => {
     for (const level of ['movies:grouped-collection', 'tv:grouped-collection'] as const) {
       expect(sortKeys(level)).toEqual(['label', 'count']);
       // DESIGN-035 D-11' / R-214 — exactly ONE facet: the category chip row. Item facets
@@ -121,16 +121,19 @@ describe('registry shape invariants', () => {
     expect(WALL_VIEW_DEFAULTS.tv.view).toBe('hierarchy');
   });
 
-  it('the books Collections levels: card sorts + NO facets (grouped) and the position-first drill contract (PLAN-051)', () => {
+  it('the books Collections levels: card sorts + the shared category facet (grouped) and the position-first drill contract (PLAN-051)', () => {
     for (const level of [
       'books:grouped-collection',
       'audiobooks:grouped-collection',
       'comics:grouped-collection',
     ] as const) {
-      // Card levels sort the CARDS only — and unlike Movies/TV there is NO Type facet (the
-      // PLAN-053 classifier is movie-estate-specific; an honest gap, DESIGN-038 D-05).
+      // Card levels sort the CARDS only. DESIGN-038 D-12 (2026-07-17) — the grouped level now carries
+      // the SAME dynamic category chip the Movies/TV Collections walls do (the old "no facets" honest
+      // gap was closed when the label-driven category program extended to books).
       expect(sortKeys(level)).toEqual(['label', 'count']);
-      expect(facetKeys(level)).toEqual([]);
+      expect(facetKeys(level)).toEqual(['category']);
+      const categoryFacet = registryFor(level).facets[0]!;
+      expect(categoryFacet).toMatchObject({ key: 'category', kind: 'select', param: 'ctype' });
       expect(registryFor(level).azSorts).toEqual([]);
     }
     for (const level of [
@@ -149,9 +152,15 @@ describe('registry shape invariants', () => {
     }
     // The drilled levels offer the WALL's own item sorts alongside position (the 037 rule —
     // a drilled grid keeps the wall's dimensions).
-    expect(sortKeys('books:collection-items')).toEqual(expect.arrayContaining(['title', 'author', 'added', 'pages']));
-    expect(sortKeys('audiobooks:collection-items')).toEqual(expect.arrayContaining(['title', 'author', 'year', 'duration', 'added']));
-    expect(sortKeys('comics:collection-items')).toEqual(expect.arrayContaining(['title', 'added', 'pages']));
+    expect(sortKeys('books:collection-items')).toEqual(
+      expect.arrayContaining(['title', 'author', 'added', 'pages']),
+    );
+    expect(sortKeys('audiobooks:collection-items')).toEqual(
+      expect.arrayContaining(['title', 'author', 'year', 'duration', 'added']),
+    );
+    expect(sortKeys('comics:collection-items')).toEqual(
+      expect.arrayContaining(['title', 'added', 'pages']),
+    );
     // …but never a dimension the wall itself cannot answer (the R5 asymmetry holds in the drill).
     expect(sortKeys('books:collection-items')).not.toContain('duration');
     expect(sortKeys('comics:collection-items')).not.toContain('author');

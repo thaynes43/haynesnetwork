@@ -8,7 +8,7 @@
 // ALWAYS the collections source of truth (owner doctrine R1). Families whose LISTING errors or
 // truncates are NOT scoped, so the writer can never reconcile-drop what this run couldn't see (the
 // plex-collections discipline at (source, kind) family grain).
-import { deriveBooksCollectionProvenance } from '@hnet/domain';
+import { deriveBooksCollectionProvenance, deriveBooksCollectionCategory } from '@hnet/domain';
 import type { BooksCollectionFamily, BooksCollectionSyncInput } from '@hnet/domain';
 import type { BooksSyncBundle } from './books';
 import { noopLogger, type SyncLogger } from './logger';
@@ -127,10 +127,13 @@ export async function fetchBooksCollectionsSnapshot(input: {
         // Member read failed — keep the collection row (title/count advance), never reconcile
         // members from a read we don't have.
         stats.truncatedCollections += 1;
-        logger.error('books-collections-sync: kavita collection member read failed (kept, un-reconciled)', {
-          collection: collection.id,
-          error: errorText(error),
-        });
+        logger.error(
+          'books-collections-sync: kavita collection member read failed (kept, un-reconciled)',
+          {
+            collection: collection.id,
+            error: errorText(error),
+          },
+        );
       }
       collections.push({
         source: 'kavita',
@@ -142,6 +145,9 @@ export async function fetchBooksCollectionsSnapshot(input: {
         ordered: false, // the Kavita API exposes no collection member order (D-09)
         // Provenance — 'libretto' when the summary carries Libretto's marker, else 'kavita'.
         createdBy: deriveBooksCollectionProvenance('kavita', collection.summary),
+        // Category (D-12) — the forward-compatible Libretto `cat=` derive (null today); the writer
+        // COALESCE-preserves the agent-set value when this is null.
+        category: deriveBooksCollectionCategory(collection.summary),
         members,
         fullyRead,
       });
@@ -200,10 +206,13 @@ export async function fetchBooksCollectionsSnapshot(input: {
         stats.membersFetched += members.length;
       } catch (error) {
         stats.truncatedCollections += 1;
-        logger.error('books-collections-sync: reading list item read failed (kept, un-reconciled)', {
-          readingList: list.id,
-          error: errorText(error),
-        });
+        logger.error(
+          'books-collections-sync: reading list item read failed (kept, un-reconciled)',
+          {
+            readingList: list.id,
+            error: errorText(error),
+          },
+        );
       }
       collections.push({
         source: 'kavita',
@@ -215,6 +224,8 @@ export async function fetchBooksCollectionsSnapshot(input: {
         ordered: true, // explicit positions (update-position API) — the reading-order payoff
         // Provenance — 'libretto' when the summary carries Libretto's marker, else 'kavita'.
         createdBy: deriveBooksCollectionProvenance('kavita', list.summary),
+        // Category (D-12) — forward-compatible Libretto `cat=` derive (null today); COALESCE-preserved.
+        category: deriveBooksCollectionCategory(list.summary),
         members,
         fullyRead,
       });
@@ -254,6 +265,8 @@ export async function fetchBooksCollectionsSnapshot(input: {
         ordered: true, // verified: the response array carries the curated order
         // Provenance — 'libretto' when the description carries Libretto's marker, else 'audiobookshelf'.
         createdBy: deriveBooksCollectionProvenance('audiobookshelf', collection.description),
+        // Category (D-12) — forward-compatible Libretto `cat=` derive (null today); COALESCE-preserved.
+        category: deriveBooksCollectionCategory(collection.description),
         members,
         fullyRead: true, // the single read returns the whole collection
       });

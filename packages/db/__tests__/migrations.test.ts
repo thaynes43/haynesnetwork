@@ -1424,7 +1424,13 @@ describe('migrations against embedded Postgres 16', () => {
       });
       expect(defaulted.rows[0].category).toBeNull();
       // The vocabulary is OPEN — any free-form category the owner coins is accepted (no CHECK).
-      for (const [i, category] of ['Universe', 'Sequels', 'Studio', 'Audio', 'A Coined One'].entries()) {
+      for (const [i, category] of [
+        'Universe',
+        'Sequels',
+        'Studio',
+        'Audio',
+        'A Coined One',
+      ].entries()) {
         await client.query({
           text: `INSERT INTO plex_collections (plex_library_id, rating_key, title, category)
                  VALUES ($1, $2, 'Category Fixture', $3)`,
@@ -1630,6 +1636,37 @@ describe('migrations against embedded Postgres 16', () => {
       await client.query(
         `DELETE FROM books_collections WHERE source = 'audiobookshelf' AND external_id = 'prov-1'`,
       );
+    });
+  });
+
+  // DESIGN-038 D-12 (migration 0064) — the books collection CATEGORY: an OPEN, free-form owner
+  // category (nullable, no CHECK), completing the label-driven dynamic-chip story across all three
+  // walls. Additive; every pre-existing row starts NULL until an agent labels it.
+  describe('0064 books collection category (DESIGN-038 D-12 — open free-form category, no enum)', () => {
+    it('adds a nullable, no-CHECK `category` column: null by default, any free-form value accepted', async () => {
+      // A row inserted without the column lands NULL (no category yet — shows under "All", no chip).
+      const defaulted = await client.query(
+        `INSERT INTO books_collections (source, external_id, kind, title)
+         VALUES ('kavita', 'cat-0064', 'reading_list', 'Category Fixture') RETURNING category`,
+      );
+      expect(defaulted.rows[0].category).toBeNull();
+      // Verify the column metadata: nullable, no default.
+      const cols = await client.query(
+        `SELECT is_nullable, column_default FROM information_schema.columns
+         WHERE table_name = 'books_collections' AND column_name = 'category'`,
+      );
+      expect(cols.rowCount).toBe(1);
+      expect(cols.rows[0].is_nullable).toBe('YES');
+      expect(cols.rows[0].column_default).toBeNull();
+      // The vocabulary is OPEN — any agent-coined category is accepted (no CHECK).
+      for (const [i, category] of ['Series', 'List', 'Event', 'A Coined One'].entries()) {
+        await client.query({
+          text: `INSERT INTO books_collections (source, external_id, kind, title, category)
+                 VALUES ('kavita', $1, 'reading_list', 'Category Fixture', $2)`,
+          values: [`cat-0064-${i}`, category],
+        });
+      }
+      await client.query(`DELETE FROM books_collections WHERE external_id LIKE 'cat-0064%'`);
     });
   });
 
