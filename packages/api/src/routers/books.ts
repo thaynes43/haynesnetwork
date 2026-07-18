@@ -385,9 +385,15 @@ export interface BooksWantedItem {
 /** Map a wanted view to its wire item for one viewer (shared by `books.wanted` + `books.search`). */
 function toWantedWireItem(
   v: WantedBookRequestView,
-  viewer: { id: string; hasIntegrations: boolean },
+  viewer: { id: string; hasIntegrations: boolean; isAdmin: boolean },
 ): BooksWantedItem {
+  // An ADMIN may force-search ANY user's want (owner directive 2026-07-18 — the owner couldn't
+  // force-search another household member's shelf). owns = the viewer shelved it; admins bypass that
+  // ownership on the force-search button only (canOpenRequest stays owner-scoped — the Goodreads
+  // deep link is into the OWNER's sub-section). The mutation already admits admins-on-behalf and
+  // audits actor=admin/subject=requester, so this is a UI-gating fix, not a new capability.
   const owns = v.integrationUserId !== null && v.integrationUserId === viewer.id;
+  const canActOnWant = owns || viewer.isAdmin;
   const isPairing = v.origin === 'pairing';
   return {
     requestId: v.requestId,
@@ -404,7 +410,7 @@ function toWantedWireItem(
     requestedBy: v.requestedBy,
     canSearch: isPairing
       ? isRequestSearchable(v)
-      : owns && viewer.hasIntegrations && isRequestSearchable(v),
+      : canActOnWant && viewer.hasIntegrations && isRequestSearchable(v),
     canOpenRequest: !isPairing && owns && viewer.hasIntegrations,
   };
 }
@@ -599,6 +605,7 @@ export const booksRouter = router({
       const viewer = {
         id: ctx.user.id,
         hasIntegrations: effectiveSectionLevel(ctx.user.role, 'integrations') !== 'disabled',
+        isAdmin: ctx.user.role.isAdmin, // admins may force-search ANY user's want (2026-07-18)
       };
       return { items: views.map((v) => toWantedWireItem(v, viewer)) };
     }),
@@ -623,10 +630,12 @@ export const booksRouter = router({
         effectiveSectionLevel(ctx.user.role, 'integrations') !== 'disabled';
       // ADR-065 C-05 — a pairing want has no owner: its per-format search is BOOKS-gated (the estate's
       // want belongs to everyone the books walls belong to); goodreads wants keep owner + integrations.
+      // Owner directive 2026-07-18 — an ADMIN may force-search ANY user's want (bypasses `owns`); the
+      // mutation already admits admins-on-behalf and audits actor=admin/subject=requester.
       const canSearch =
         view.origin === 'pairing'
           ? effectiveSectionLevel(ctx.user.role, 'books') !== 'disabled'
-          : owns && viewerHasIntegrations;
+          : (owns || ctx.user.role.isAdmin) && viewerHasIntegrations;
       const requestSearchable = isRequestSearchable(view);
 
       // Per-format status ROWS (the *arr per-grain idiom): a comic is the single Kapowarr leg; a
@@ -708,6 +717,7 @@ export const booksRouter = router({
       const viewer = {
         id: ctx.user.id,
         hasIntegrations: effectiveSectionLevel(ctx.user.role, 'integrations') !== 'disabled',
+        isAdmin: ctx.user.role.isAdmin, // admins may force-search ANY user's want (2026-07-18)
       };
       // Refinements a synthetic want cannot answer (the D-09 rule, now server-authoritative).
       const narrowed =

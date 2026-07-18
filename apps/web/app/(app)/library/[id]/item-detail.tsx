@@ -17,7 +17,15 @@
 // percent ticks never reflow the row.
 import { useMemo, useState, type ReactNode } from 'react';
 import { trpc } from '@/lib/trpc-client';
-import { PhaseChip } from '@hnet/ui';
+import {
+  PhaseChip,
+  MediaHero,
+  MediaActionBar,
+  MediaAction,
+  ConsumeLink,
+  ReservedActionSlot,
+  type MediaHeroBadge,
+} from '@hnet/ui';
 import { BackLink } from '@/components/back-link';
 import {
   ARR_KIND_LABELS,
@@ -135,30 +143,35 @@ function ActionSlot({
   });
   const phase = live.progress?.phase ?? null;
 
-  let content: ReactNode;
+  // The RESTING content (the button pair) and, when an action is in flight, the LIVE node shown in
+  // its place. The reflow-safe container is the shared <ReservedActionSlot> (ADR-071 / DESIGN-004
+  // D-24) — this surface owns only the per-grain polling/terminal logic (which needs trpc), the
+  // audit's "the state machine stays in the app" split.
+  const resting = (
+    <>
+      {fixButton}
+      {searchButton}
+    </>
+  );
+  let liveNode: ReactNode = null;
   if (source !== null) {
     if (liveSearch === null && (phase === 'completed' || phase === 'failed')) {
-      // The fix reached a real terminal — the buttons re-arm.
-      content = (
-        <>
-          {fixButton}
-          {searchButton}
-        </>
-      );
+      // The fix reached a real terminal — the buttons re-arm (live === null ⇒ resting shows).
+      liveNode = null;
     } else if (liveSearch === null && (phase === 'nothing_found' || phase === 'stalled')) {
       // Never-stuck terminals on an OPEN fix row: a fresh Fix would 409 against the
       // one-open-fix rule, so the retry affordance is the (lock-free) Force Search.
-      content = (
+      liveNode = (
         <>
           <ActionLiveChip {...live} />
           {searchButton}
         </>
       );
     } else {
-      content = <ActionLiveChip {...live} />;
+      liveNode = <ActionLiveChip {...live} />;
     }
   } else if (fix !== null) {
-    content = (
+    liveNode = (
       <PhaseChip
         phase="in_progress"
         label="Fix in progress"
@@ -167,16 +180,13 @@ function ActionSlot({
         title="Someone already has a fix running for this"
       />
     );
-  } else {
-    content = (
-      <>
-        {fixButton}
-        {searchButton}
-      </>
-    );
   }
 
-  return <span className={['action-slot', className].filter(Boolean).join(' ')}>{content}</span>;
+  return (
+    <ReservedActionSlot className={className} live={liveNode}>
+      {resting}
+    </ReservedActionSlot>
+  );
 }
 
 /**
@@ -423,152 +433,117 @@ export function ItemDetail({
           scope,
           childId: child.arrChildId,
           fixButton: child.hasFile ? (
-            <button
-              type="button"
-              className="btn sm"
-              onClick={() =>
+            <MediaAction
+              action="fix"
+              size="sm"
+              onFire={() =>
                 setAction({
                   mode: 'fix',
                   target: { scope, childId: child.arrChildId, label: child.label },
                 })
               }
-            >
-              Fix
-            </button>
+            />
           ) : null,
           searchButton: (
-            <button
-              type="button"
-              className="btn sm"
-              onClick={() =>
+            <MediaAction
+              action="forceSearch"
+              size="sm"
+              onFire={() =>
                 setAction({
                   mode: 'search',
                   target: { scope, childId: child.arrChildId, label: child.label },
                 })
               }
-            >
-              Force Search
-            </button>
+            />
           ),
         })}
       </span>
     </li>
   );
 
+  // DESIGN-004 D-24 (ADR-071) — the hero is now the shared <MediaHero>: the poster, title/year,
+  // typed badges, the consume/missing row and the radarr action bar are slots. It emits the exact
+  // `.detail-head*` anatomy the page hand-rolled before (pixel-neutral), sourced from one component
+  // so every detail surface agrees by construction.
+  const heroBadges: MediaHeroBadge[] = [
+    { label: ARR_KIND_LABELS[item.arrKind as ArrKindName], tone: 'muted' },
+    { label: disk.label, tone: disk.tone },
+    ...(!item.monitored ? [{ label: 'Not monitored', tone: 'muted' as const }] : []),
+    ...(item.tombstonedAt !== null
+      ? [{ label: 'Removed from the manager', tone: 'danger' as const }]
+      : []),
+    // DESIGN-010 D-09 — the Maintainerr-managed protective tag (display-only).
+    ...(item.arrTags.includes(PROTECTED_TAG)
+      ? [{ label: 'Protected from deletion', tone: 'shield' as const, testId: 'badge-protected' }]
+      : []),
+  ];
+  const heroMeta =
+    item.metadata.runtimeMinutes !== null || item.metadata.resolution !== null
+      ? [
+          formatRuntime(item.metadata.runtimeMinutes),
+          item.metadata.resolution !== null
+            ? (RESOLUTION_LABELS[item.metadata.resolution] ?? item.metadata.resolution)
+            : null,
+        ]
+          .filter((part) => part !== null)
+          .join(' · ')
+      : undefined;
+  // ADR-047 / DESIGN-025 — the "Watch on Plex — <library>" PRIMARY deep link(s) (present + matched
+  // items only), now the shared <ConsumeLink> so the ↗ / target / rel are identical everywhere.
+  const heroConsume =
+    item.play.length > 0
+      ? item.play.map((target) => (
+          <ConsumeLink key={target.url} label={target.label} url={target.url} />
+        ))
+      : undefined;
+  // The MISSING counterpart of the play row (DESIGN-025 D-07): a disabled, muted "Not on Disk" pill
+  // in the body, with the Force-Search caption. Tombstoned items carry their own badge instead.
+  const heroSecondary =
+    item.play.length === 0 && !tombstoned && item.onDiskFileCount <= 0 ? (
+      <NotOnDiskButton hint="Force Search can add this title to your library if a release is found." />
+    ) : undefined;
+
   return (
     <>
       <BackLink from={from} />
 
-      <section className="card detail-head">
-        {/* DESIGN-008 D-11 — the fixed 2:3 poster box replaces the kind icon; the KindIcon
-            fallback lives inside MediaPoster (null poster / load error), so tombstoned or
-            unharvested items still read correctly. */}
-        <span className="detail-head__poster">
-          <MediaPoster posterUrl={item.posterUrl} kind={item.arrKind} alt="" />
-        </span>
-        <div className="detail-head__body">
-          <h1 className="detail-head__title">
-            {item.title}
-            {item.year !== null ? <span className="muted"> ({item.year})</span> : null}
-          </h1>
-          <div className="media-card__badges">
-            <span className="badge badge--muted">
-              {ARR_KIND_LABELS[item.arrKind as ArrKindName]}
-            </span>
-            <span className={`badge badge--${disk.tone}`}>{disk.label}</span>
-            {!item.monitored ? <span className="badge badge--muted">Not monitored</span> : null}
-            {item.tombstonedAt !== null ? (
-              <span className="badge badge--danger">Removed from the manager</span>
-            ) : null}
-            {/* DESIGN-010 D-09 — the Maintainerr-managed protective tag read off arrTags (the
-                first-class "protected" signal, addendum b). Display-only: un-saving needs the
-                item's Maintainerr id, which only pending rows carry. */}
-            {item.arrTags.includes(PROTECTED_TAG) ? (
-              <span className="badge badge--shield" data-testid="badge-protected">
-                Protected from deletion
-              </span>
-            ) : null}
-          </div>
-          {item.metadata.runtimeMinutes !== null || item.metadata.resolution !== null ? (
-            <p className="detail-head__meta muted">
-              {[
-                formatRuntime(item.metadata.runtimeMinutes),
-                item.metadata.resolution !== null
-                  ? (RESOLUTION_LABELS[item.metadata.resolution] ?? item.metadata.resolution)
-                  : null,
-              ]
-                .filter((part) => part !== null)
-                .join(' · ')}
-            </p>
-          ) : null}
-          {/* ADR-047 / DESIGN-025 (PLAN-028) — the app-specific "Watch on Plex — <library>" PRIMARY deep
-              link(s). Server attaches one per Plex library the caller can access, ONLY for a PRESENT,
-              GUID-matched item (a missing/unmatched/inaccessible item gets none). Opens app.plex.tv (hands
-              off to the native app where installed); the ↗ marks the external jump. Static affordance — its
-              presence is fixed per item, so it never re-orients on interaction (ADR-015). */}
-          {item.play.length > 0 ? (
-            <p className="detail-head__play">
-              {item.play.map((target) => (
-                <a
-                  key={target.url}
-                  className="btn primary"
-                  href={target.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {target.label}
-                  <span className="btn__ext" aria-hidden="true">
-                    {' '}
-                    ↗
-                  </span>
-                </a>
-              ))}
-            </p>
-          ) : !tombstoned && item.onDiskFileCount <= 0 ? (
-            // The MISSING counterpart of the play row (DESIGN-025 D-07, owner UX polish 2026-07-11):
-            // an item with nothing on disk (the same `onDiskFileCount <= 0` the "Not on disk"/"Wanted"
-            // badge reads — for a sonarr show, a WHOLE-show miss; a partial show keeps its per-season
-            // grain below) gets a disabled, muted "Not on Disk" pill in the SAME slot as Watch on Plex,
-            // with a caption tying it to the page's Force Search. Reserved by the flex column so the
-            // on-disk↔missing swap never reflows (ADR-015). Tombstoned items are excluded — they carry
-            // their own "Removed from the manager" badge and their Force Search is disabled.
-            <NotOnDiskButton hint="Force Search can add this title to your library if a release is found." />
-          ) : null}
-        </div>
-        {/* Radarr acts at the movie level (the movie IS the unit — ADR-007). Sonarr/Lidarr
-            act per episode/album below, so the show-level nuke is gone (owner feedback).
-            Owner availability rule (2026-07-04): ON DISK → BOTH Fix and Force Search;
-            MISSING → Force Search only. */}
-        {item.arrKind === 'radarr' ? (
-          <div className="detail-head__actions">
-            {actionSlot({
-              scope: 'item',
-              className: 'action-slot--head',
-              fixButton:
-                item.onDiskFileCount > 0 ? (
-                  <button
-                    type="button"
-                    className="btn primary"
+      <MediaHero
+        poster={<MediaPoster posterUrl={item.posterUrl} kind={item.arrKind} alt="" />}
+        title={item.title}
+        year={item.year}
+        badges={heroBadges}
+        meta={heroMeta}
+        consume={heroConsume}
+        secondary={heroSecondary}
+        actions={
+          /* Radarr acts at the movie level (the movie IS the unit — ADR-007). Owner rule
+             (2026-07-04): ON DISK → Fix + Force Search; MISSING → Force Search only. Force Search is
+             always the outline pill now (ADR-071 — no more primary-when-missing). */
+          item.arrKind === 'radarr' ? (
+            <MediaActionBar placement="head">
+              {actionSlot({
+                scope: 'item',
+                className: 'action-slot--head',
+                fixButton:
+                  item.onDiskFileCount > 0 ? (
+                    <MediaAction
+                      action="fix"
+                      onFire={() => setAction({ mode: 'fix', target: null })}
+                      disabled={item.tombstonedAt !== null}
+                    />
+                  ) : null,
+                searchButton: (
+                  <MediaAction
+                    action="forceSearch"
+                    onFire={() => setAction({ mode: 'search', target: null })}
                     disabled={item.tombstonedAt !== null}
-                    onClick={() => setAction({ mode: 'fix', target: null })}
-                  >
-                    Fix
-                  </button>
-                ) : null,
-              searchButton: (
-                <button
-                  type="button"
-                  className={item.onDiskFileCount > 0 ? 'btn' : 'btn primary'}
-                  disabled={item.tombstonedAt !== null}
-                  onClick={() => setAction({ mode: 'search', target: null })}
-                >
-                  Force Search
-                </button>
-              ),
-            })}
-          </div>
-        ) : null}
-      </section>
+                  />
+                ),
+              })}
+            </MediaActionBar>
+          ) : undefined
+        }
+      />
 
       {/* DESIGN-010 D-09 / Q-02 (protect-in-context) — the deletion-guard panel: renders ONLY
           when this Movie/TV item is actually in Maintainerr's pending set (the pending row is
@@ -711,15 +686,14 @@ export function ItemDetail({
                   className: 'action-slot--roll',
                   fixButton: null,
                   searchButton: (
-                    <button
-                      type="button"
-                      className="btn sm"
-                      onClick={() =>
+                    <MediaAction
+                      action="forceSearch"
+                      size="sm"
+                      scopeLabel="Whole show"
+                      onFire={() =>
                         setAction({ mode: 'search', target: { scope: 'show', label: item.title } })
                       }
-                    >
-                      Force Search show
-                    </button>
+                    />
                   ),
                 })
               : null}
@@ -760,11 +734,13 @@ export function ItemDetail({
                         seasonNumber: s.seasonNumber,
                         fixButton:
                           s.onDiskCount > 0 ? (
-                            <button
-                              type="button"
-                              className="btn sm"
-                              onClick={(e) => {
-                                e.preventDefault();
+                            <MediaAction
+                              action="fix"
+                              size="sm"
+                              // Inside the season <summary>: preventDefault stops the click from
+                              // toggling the <details> open/closed.
+                              onFire={(e) => {
+                                e?.preventDefault();
                                 setAction({
                                   mode: 'fix',
                                   target: {
@@ -774,16 +750,14 @@ export function ItemDetail({
                                   },
                                 });
                               }}
-                            >
-                              Fix season
-                            </button>
+                            />
                           ) : null,
                         searchButton: (
-                          <button
-                            type="button"
-                            className="btn sm"
-                            onClick={(e) => {
-                              e.preventDefault();
+                          <MediaAction
+                            action="forceSearch"
+                            size="sm"
+                            onFire={(e) => {
+                              e?.preventDefault();
                               setAction({
                                 mode: 'search',
                                 target: {
@@ -793,9 +767,7 @@ export function ItemDetail({
                                 },
                               });
                             }}
-                          >
-                            Force Search
-                          </button>
+                          />
                         ),
                       })}
                     </span>
@@ -830,18 +802,17 @@ export function ItemDetail({
                   className: 'action-slot--roll',
                   fixButton: null,
                   searchButton: (
-                    <button
-                      type="button"
-                      className="btn sm"
-                      onClick={() =>
+                    <MediaAction
+                      action="forceSearch"
+                      size="sm"
+                      scopeLabel="All albums"
+                      onFire={() =>
                         setAction({
                           mode: 'search',
                           target: { scope: 'artist', label: item.title },
                         })
                       }
-                    >
-                      Force Search artist
-                    </button>
+                    />
                   ),
                 })
               : null}

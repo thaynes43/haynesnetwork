@@ -26,6 +26,7 @@ import {
 
 let t: TestDb;
 let ownerCaller: Caller; // admin — owns the linked integration (books + integrations implied)
+let otherAdminCaller: Caller; // a DIFFERENT admin — does NOT own the want (the owner-viewing-Mia case)
 let readerCaller: Caller; // member with books read_only, NO integrations section
 let disabledCaller: Caller; // default member — books disabled
 let ownerName: string;
@@ -36,7 +37,11 @@ beforeAll(async () => {
   ownerName = owner.displayName;
   const reader = await createUser(t.db, { displayName: 'Reader Rae' });
   const disabled = await createUser(t.db, { displayName: 'Member Mia' });
+  // A second admin who does NOT own the linked integration — proves the owner directive 2026-07-18:
+  // an admin may force-search ANY user's want (bypasses `owns`), the button appears + the mutation fires.
+  const otherAdmin = await createUser(t.db, { admin: true, displayName: 'Admin Ada' });
   ownerCaller = caller(makeCtx(t.db, sessionUser(owner)));
+  otherAdminCaller = caller(makeCtx(t.db, sessionUser(otherAdmin)));
   readerCaller = caller(makeCtx(t.db, sessionUser(reader, { books: 'read_only' })));
   disabledCaller = caller(makeCtx(t.db, sessionUser(disabled)));
 
@@ -82,9 +87,39 @@ beforeAll(async () => {
     actorId: owner.id,
   });
   const items: EnrichedShelfItem[] = [
-    { shelf: 'to-read', externalBookId: 'gr-hyp', title: 'Hyperion', author: 'Dan Simmons', isbn: null, gbVolumeId: 'gb-hyp', coverUrl: null, shelvedAt: new Date('2026-07-10T00:00:00Z'), isComic: false },
-    { shelf: 'read', externalBookId: 'gr-phm', title: 'Project Hail Mary', author: 'Andy Weir', isbn: null, gbVolumeId: 'gb-phm', coverUrl: null, shelvedAt: new Date('2026-07-09T00:00:00Z'), isComic: false },
-    { shelf: 'read', externalBookId: 'gr-sp', title: 'Scott Pilgrim, Vol. 1', author: 'Bryan Lee O’Malley', isbn: null, gbVolumeId: null, coverUrl: null, shelvedAt: new Date('2026-07-08T00:00:00Z'), isComic: true },
+    {
+      shelf: 'to-read',
+      externalBookId: 'gr-hyp',
+      title: 'Hyperion',
+      author: 'Dan Simmons',
+      isbn: null,
+      gbVolumeId: 'gb-hyp',
+      coverUrl: null,
+      shelvedAt: new Date('2026-07-10T00:00:00Z'),
+      isComic: false,
+    },
+    {
+      shelf: 'read',
+      externalBookId: 'gr-phm',
+      title: 'Project Hail Mary',
+      author: 'Andy Weir',
+      isbn: null,
+      gbVolumeId: 'gb-phm',
+      coverUrl: null,
+      shelvedAt: new Date('2026-07-09T00:00:00Z'),
+      isComic: false,
+    },
+    {
+      shelf: 'read',
+      externalBookId: 'gr-sp',
+      title: 'Scott Pilgrim, Vol. 1',
+      author: 'Bryan Lee O’Malley',
+      isbn: null,
+      gbVolumeId: null,
+      coverUrl: null,
+      shelvedAt: new Date('2026-07-08T00:00:00Z'),
+      isComic: true,
+    },
   ];
   // No LL / no Kapowarr bundle: mint-only (statuses 'requested' with the GB id; the comic parks).
   await syncGoodreadsIntegration({
@@ -116,7 +151,9 @@ describe('books.wanted — the section gate (the ADR-047 posture)', () => {
   });
 
   it('a WITHHELD books section withholds its wanted tiles too (FORBIDDEN, server-refused)', async () => {
-    expect(await codeOf(() => disabledCaller.books.wanted({ mediaKind: 'book' }))).toBe('FORBIDDEN');
+    expect(await codeOf(() => disabledCaller.books.wanted({ mediaKind: 'book' }))).toBe(
+      'FORBIDDEN',
+    );
   });
 });
 
@@ -152,6 +189,13 @@ describe('books.wanted — the household composition', () => {
     expect(res.items[0]!.canOpenRequest).toBe(true);
   });
 
+  it('an ADMIN who does NOT own the want STILL gets the force-search button (owner directive 2026-07-18)', async () => {
+    const res = await otherAdminCaller.books.wanted({ mediaKind: 'book' });
+    expect(res.items[0]!.canSearch).toBe(true); // admin bypasses ownership on the force-search button
+    // …but the Goodreads deep link stays owner-scoped (it targets the OWNER's sub-section).
+    expect(res.items[0]!.canOpenRequest).toBe(false);
+  });
+
   it('the Audiobooks wall mirrors the audio leg of the same unmet want', async () => {
     const res = await ownerCaller.books.wanted({ mediaKind: 'audiobook' });
     expect(res.items.map((i) => i.title)).toEqual(['Hyperion']);
@@ -180,7 +224,9 @@ describe('books.wantedDetail — the Movies/TV parity detail page surface', () =
 
   it('a caller with NEITHER books NOR integrations is FORBIDDEN (server-refused)', async () => {
     const id = await hyperionRequestId();
-    expect(await codeOf(() => disabledCaller.books.wantedDetail({ requestId: id }))).toBe('FORBIDDEN');
+    expect(await codeOf(() => disabledCaller.books.wantedDetail({ requestId: id }))).toBe(
+      'FORBIDDEN',
+    );
   });
 
   it('NOT_FOUND for an unknown request id', async () => {
@@ -212,12 +258,22 @@ describe('books.wantedDetail — the Movies/TV parity detail page surface', () =
     expect(detail.formats.some((f) => f.searchable)).toBe(false);
   });
 
+  it('an ADMIN who does NOT own the want gets canSearch + searchable per-format on the DETAIL (2026-07-18)', async () => {
+    const detail = await otherAdminCaller.books.wantedDetail({
+      requestId: await hyperionRequestId(),
+    });
+    expect(detail.canSearch).toBe(true); // admin override — the button appears on another user's want
+    expect(detail.formats.every((f) => f.searchable)).toBe(true);
+  });
+
   it('and the search ACTION itself FORBIDs a books-only member (integrations + ownership gate)', async () => {
     const id = await hyperionRequestId();
-    expect(await codeOf(() => readerCaller.integrations.search({ requestId: id }))).toBe('FORBIDDEN');
-    expect(await codeOf(() => readerCaller.integrations.search({ requestId: id, format: 'ebook' }))).toBe(
+    expect(await codeOf(() => readerCaller.integrations.search({ requestId: id }))).toBe(
       'FORBIDDEN',
     );
+    expect(
+      await codeOf(() => readerCaller.integrations.search({ requestId: id, format: 'ebook' })),
+    ).toBe('FORBIDDEN');
   });
 
   it('a PARKED comic renders its single Kapowarr leg, not force-searchable (no volume yet)', async () => {

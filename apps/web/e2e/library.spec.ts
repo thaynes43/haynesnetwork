@@ -84,7 +84,7 @@ test.describe('media ledger + fix flow', () => {
     // a whole-show Force Search sits above them (roll-up). Expand Season 1 to reach it.
     const season1 = page.locator('.season').filter({ hasText: 'Season 1' });
     await expect(season1).toContainText('9/10 on disk');
-    await expect(page.getByRole('button', { name: 'Force Search show' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Force Search · Whole show' })).toBeVisible();
     await expandSeason(page, 'Season 1');
 
     // The episode list shows per-episode on-disk state (D-06). Owner availability rule

@@ -9,7 +9,8 @@
 import type { PlexReadClient } from '@hnet/plex/read';
 import { derivePlexCollectionProvenance, deriveCollectionCategory } from '@hnet/domain';
 import type { PlexClientBundle, PlexCollectionSyncInput } from '@hnet/domain';
-import type { DbClient, PlexServerSlug } from '@hnet/db';
+import { mediaItems, type DbClient, type PlexServerSlug } from '@hnet/db';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { selectPlexLibraryRefs } from './db-reads';
 import { noopLogger, type SyncLogger } from './logger';
 
@@ -18,6 +19,26 @@ const COLLECTIONS_SERVER_SLUG: PlexServerSlug = 'haynesops';
 
 /** The section types that carry the Movies/TV collections (owner R2 surface — never photos/music). */
 const COLLECTION_SECTION_TYPES = new Set(['movie', 'show']);
+
+/**
+ * DESIGN-035 D-16 — the minimal Radarr read the collections-sync needs for the movie Wanted tiles:
+ * every TMDb Collection Radarr tracks, with its member `tmdbId`s. Kept as a tiny structural type so
+ * the fetcher stays decoupled from the full @hnet/arr client (tests inject a stub).
+ */
+export interface RadarrCollectionsReader {
+  listCollections(): Promise<Array<{ title: string; movies?: Array<{ tmdbId: number }> | null }>>;
+}
+
+/** Normalize a collection title for the Radarr↔Plex title-match join (D-16): trim, collapse
+ *  whitespace, drop a trailing " Collection" suffix, casefold. Documented-fragile (the id-join is the
+ *  hardening follow-up). */
+export function normalizeCollectionTitle(title: string): string {
+  return title
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/\s+collection$/i, '')
+    .toLowerCase();
+}
 
 /** The children read's container bound (the @hnet/plex client clamps to ≤1000; unpaged — D-08). */
 const MEMBERS_LIMIT = 1000;
@@ -36,6 +57,12 @@ export interface PlexCollectionsStats {
   truncatedSections: number;
   /** Plex sections present on the server but absent from the plex_libraries registry (skipped). */
   unmappedSections: number;
+  /** DESIGN-035 D-16 — Radarr TMDb collections read (0 when no Radarr client / the read failed). */
+  radarrCollectionsRead: number;
+  /** DESIGN-035 D-16 — movie collections that matched a Radarr collection by title this run. */
+  wantedMatchedCollections: number;
+  /** DESIGN-035 D-16 — resolved WANTED members (monitored, not-on-disk) across matched collections. */
+  wantedMembersResolved: number;
 }
 
 export interface PlexCollectionsSnapshot {
@@ -54,6 +81,9 @@ export interface PlexCollectionsSnapshot {
 export async function fetchPlexCollectionsSnapshot(input: {
   db: DbClient;
   plex: Pick<PlexClientBundle, 'read'>;
+  /** DESIGN-035 D-16 — the optional Radarr read for movie Wanted-tile membership. Absent ⇒ held-only
+   *  (no wanted rows written or reconciled). */
+  radarr?: RadarrCollectionsReader;
   logger?: SyncLogger;
 }): Promise<PlexCollectionsSnapshot> {
   const logger = input.logger ?? noopLogger;
@@ -72,6 +102,8 @@ export async function fetchPlexCollectionsSnapshot(input: {
 
   const collections: PlexCollectionSyncInput[] = [];
   const scopedLibraryIds = new Set<string>();
+  // DESIGN-035 D-16 — plex_libraries.id of the MOVIE sections (only these get Radarr wanted members).
+  const movieLibraryIds = new Set<string>();
   const stats: PlexCollectionsStats = {
     sectionsRead: 0,
     collectionsFetched: 0,
@@ -79,6 +111,9 @@ export async function fetchPlexCollectionsSnapshot(input: {
     truncatedCollections: 0,
     truncatedSections: 0,
     unmappedSections: 0,
+    radarrCollectionsRead: 0,
+    wantedMatchedCollections: 0,
+    wantedMembersResolved: 0,
   };
 
   let sections;
@@ -104,6 +139,7 @@ export async function fetchPlexCollectionsSnapshot(input: {
       });
       continue; // no plex_libraries row — cannot FK a collection; run a registry refresh first
     }
+    if (section.type === 'movie') movieLibraryIds.add(lib.libraryId); // D-16 — Radarr wanted scope
     try {
       const { collections: sectionCollections, truncated: listingTruncated } =
         await read.listCollections(section.key);
@@ -185,6 +221,85 @@ export async function fetchPlexCollectionsSnapshot(input: {
         error: error instanceof Error ? error.message : String(error),
       });
       // listing failed — do NOT scope this library (avoid dropping collections we didn't see)
+    }
+  }
+
+  // DESIGN-035 D-16 — resolve the movie Wanted-tile membership from the *arr-native (Radarr) TMDb
+  // collections. Absent Radarr client ⇒ held-only (no wanted rows written or reconciled). A Radarr
+  // read FAILURE also leaves every movie collection unresolved (wantedResolved stays false), so the
+  // writer preserves existing wanted rows — a transient outage never wipes the Wanted tiles.
+  const movieCollections = collections.filter((c) => movieLibraryIds.has(c.plexLibraryId));
+  if (input.radarr !== undefined && movieCollections.length > 0) {
+    let radarrCollections: Array<{
+      title: string;
+      movies?: Array<{ tmdbId: number }> | null;
+    }> | null = null;
+    try {
+      radarrCollections = await input.radarr.listCollections();
+      stats.radarrCollectionsRead = radarrCollections.length;
+    } catch (error) {
+      logger.error(
+        'collections-sync: Radarr collection read failed (movie wanted membership skipped)',
+        {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
+    }
+    if (radarrCollections !== null) {
+      // normalized Radarr collection title → its member tmdbIds.
+      const byTitle = new Map<string, number[]>();
+      for (const rc of radarrCollections) {
+        const key = normalizeCollectionTitle(rc.title);
+        const ids = (rc.movies ?? []).map((m) => m.tmdbId);
+        const existing = byTitle.get(key);
+        if (existing) existing.push(...ids);
+        else byTitle.set(key, ids);
+      }
+      // Every tmdbId that any matched movie collection wants (bounded one-shot resolve).
+      const wantedTmdbSet = new Set<number>();
+      for (const c of movieCollections) {
+        const ids = byTitle.get(normalizeCollectionTitle(c.title));
+        if (ids) for (const id of ids) wantedTmdbSet.add(id);
+      }
+      // Resolve tmdbId → media_items.id for the WANTED slice only (monitored, live, nothing on disk —
+      // the wanted_items view predicate). Held titles are the Plex-child rows, never re-emitted here.
+      const tmdbToMediaItem = new Map<number, string>();
+      const allTmdb = [...wantedTmdbSet];
+      const RESOLVE_CHUNK = 500;
+      for (let i = 0; i < allTmdb.length; i += RESOLVE_CHUNK) {
+        const chunk = allTmdb.slice(i, i + RESOLVE_CHUNK);
+        const rows = await input.db
+          .select({ id: mediaItems.id, tmdbId: mediaItems.tmdbId })
+          .from(mediaItems)
+          .where(
+            and(
+              eq(mediaItems.arrKind, 'radarr'),
+              inArray(mediaItems.tmdbId, chunk),
+              eq(mediaItems.monitored, true),
+              isNull(mediaItems.deletedFromArrAt),
+              eq(mediaItems.onDiskFileCount, 0),
+            ),
+          );
+        for (const r of rows) if (r.tmdbId !== null) tmdbToMediaItem.set(r.tmdbId, r.id);
+      }
+      // Attach wanted members to each movie collection. A successful Radarr read means EVERY movie
+      // collection is resolved (matched → its wanted set; unmatched → empty set, clearing stale rows).
+      for (const c of movieCollections) {
+        c.wantedResolved = true;
+        const ids = byTitle.get(normalizeCollectionTitle(c.title));
+        if (ids === undefined) {
+          c.wantedMemberIds = [];
+          continue;
+        }
+        stats.wantedMatchedCollections += 1;
+        const memberIds = new Set<string>();
+        for (const tmdb of ids) {
+          const mid = tmdbToMediaItem.get(tmdb);
+          if (mid !== undefined) memberIds.add(mid);
+        }
+        c.wantedMemberIds = [...memberIds];
+        stats.wantedMembersResolved += memberIds.size;
+      }
     }
   }
 

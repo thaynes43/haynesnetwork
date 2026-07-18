@@ -435,7 +435,7 @@ button.motd__dismiss:hover {
 }
 /* Phones once hid the top nav entirely (the user menu carried Library). The menu
    no longer does, so the section row must stay reachable here — keep it visible and
-   ease the spacing gently; the type stays 13px. With four links (DESIGN-004 D-22) the
+   ease the spacing gently; the type stays 13px. With four links (DESIGN-004 D-24) the
    rail fits at ≥320px; the scroll safety net stays for a future fifth entry. */
 @media (max-width: 599px) {
   .topbar__nav {
@@ -469,7 +469,7 @@ button.motd__dismiss:hover {
     gap: 2px;
   }
 }
-/* DESIGN-004 D-22 — the TRUE narrow band (≤380px, the 320/360 iPhone-SE / budget-Android class).
+/* DESIGN-004 D-24 — the TRUE narrow band (≤380px, the 320/360 iPhone-SE / budget-Android class).
    The four-tab bar (Portal · Library · Tickets · Trash) needs a touch more room here than the ≤479
    chrome-tightening gives: at 320px the row's intrinsic width otherwise exceeds the space between
    the 28px brand mark and the ~96px right actions, which would either overlap the mark (the v0.46.3
@@ -2345,6 +2345,16 @@ input[aria-invalid='true'] {
   display: flex;
   gap: 8px;
   flex-wrap: wrap; /* Fix + Force Search wrap under the title on phones */
+}
+
+/* ADR-071 / DESIGN-004 D-24 — the shared <MediaActionBar placement="row"> cluster (the inline
+   child/season action row). Structure only (spacing/wrap); tone comes from the pills' own
+   `.btn`/`.btn.primary` tokens. `head` placement reuses `.detail-head__actions` above. */
+.media-action-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 /* DESIGN-008 D-11 — detail-head poster + the About (harvested metadata) section. The layout

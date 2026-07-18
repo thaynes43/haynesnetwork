@@ -1,5 +1,17 @@
-import { pgTable, uuid, text, integer, timestamp, unique, index } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  uuid,
+  text,
+  integer,
+  boolean,
+  timestamp,
+  unique,
+  uniqueIndex,
+  index,
+} from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import { plexLibraries } from './plex-libraries';
+import { mediaItems } from './media-items';
 
 /**
  * ADR-064 / DESIGN-035 D-01 (PLAN-037 — mirrored Plex collections). External software (Plex/Kometa)
@@ -85,8 +97,26 @@ export const plexCollectionMembers = pgTable(
     collectionId: uuid('collection_id')
       .notNull()
       .references(() => plexCollections.id, { onDelete: 'cascade' }),
-    /** The member TITLE's ratingKey (the media_plex_matches join key within the owning library). */
-    ratingKey: text('rating_key').notNull(),
+    /**
+     * The member TITLE's ratingKey (the media_plex_matches join key within the owning library) — set
+     * on a HELD (Plex-child) member. NULLABLE since DESIGN-035 D-16 (migration 0065): a WANTED member
+     * (an *arr-native title not in Plex) has no ratingKey and keys off `media_item_id` instead.
+     */
+    ratingKey: text('rating_key'),
+    /**
+     * DESIGN-035 D-16 (migration 0065) — the resolved ledger item for a WANTED member (an *arr-native
+     * collection title that is monitored but not on disk). Held Plex-child rows leave this null and
+     * resolve their ledger item at read time via media_plex_matches; a wanted row carries it directly
+     * (rating_key null, held false). ON DELETE SET NULL — a title leaving the ledger nulls the link.
+     */
+    mediaItemId: uuid('media_item_id').references(() => mediaItems.id, { onDelete: 'set null' }),
+    /**
+     * DESIGN-035 D-16 — true = a HELD member (on disk, in the Plex collection); false = a WANTED
+     * member (monitored, not on disk — the wanted_items slice of the *arr-native membership). The two
+     * populations are disjoint (held from Plex children, wanted from the *arr membership's on_disk=0
+     * slice), so the read-model union never double-counts. Defaults true (every legacy row is held).
+     */
+    held: boolean('held').notNull().default(true),
     /** Position in the source /children read (0-based). Stored, unconsumed in v1 (D-07). */
     sortOrder: integer('sort_order').notNull().default(0),
     firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
@@ -95,10 +125,19 @@ export const plexCollectionMembers = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    // Identity — the sync upserts on this key.
+    // Identity of a HELD (Plex-child) member — the sync upserts on this key. rating_key is nullable
+    // now (wanted rows carry null here), and Postgres treats nulls as distinct, so wanted rows never
+    // collide on this unique; they are keyed by the partial unique below instead.
     unique('plex_collection_members_collection_rating_key_unique').on(t.collectionId, t.ratingKey),
+    // DESIGN-035 D-16 — identity of a WANTED member (media_item_id set, rating_key null). Partial so
+    // it only constrains the *arr-native rows.
+    uniqueIndex('plex_collection_members_collection_media_item_unique')
+      .on(t.collectionId, t.mediaItemId)
+      .where(sql`${t.mediaItemId} IS NOT NULL`),
     // The drill-in predicate + group counts join members by (collection, member) and by rating_key.
     index('plex_collection_members_rating_key_idx').on(t.ratingKey),
+    // The wanted-tile union joins by the resolved ledger item.
+    index('plex_collection_members_media_item_idx').on(t.mediaItemId),
   ],
 );
 
