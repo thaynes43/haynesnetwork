@@ -182,6 +182,72 @@ export const librettoValidateResponseSchema = z
   .passthrough();
 export type LibrettoValidateResponse = z.infer<typeof librettoValidateResponseSchema>;
 
+/**
+ * One typeahead search hit (`GET /api/search`) — the ref a user can paste straight into a builder,
+ * a human name, and (when the source exposes them) an approximate member count + primary author. The
+ * builder page's ref field renders these so a user finds a series/list by NAME, never a slug.
+ */
+export const librettoSearchResultSchema = z
+  .object({
+    /** The value to place in `builder.ref` (a Hardcover series id, an NYT list_name_encoded). */
+    ref: z.string(),
+    name: z.string().nullish(),
+    /** Approximate member count when the source exposes one (Hardcover primary_books_count). */
+    workCount: z.number().nullish(),
+    author: z.string().nullish(),
+  })
+  .passthrough();
+export type LibrettoSearchResult = z.infer<typeof librettoSearchResultSchema>;
+
+/** `GET /api/search?type=&q=&limit=` → bounded typeahead hits + an honest `truncated` flag. */
+export const librettoSearchResponseSchema = z
+  .object({
+    type: z.string().nullish(),
+    query: z.string().nullish(),
+    results: z.array(librettoSearchResultSchema).nullish(),
+    /** True when the source had more matches than were returned (cap hit). */
+    truncated: z.boolean().nullish(),
+  })
+  .passthrough();
+export type LibrettoSearchResponse = z.infer<typeof librettoSearchResponseSchema>;
+
+/**
+ * One resolved member of a DRAFT builder (`POST /api/preview`) — the full membership a run WOULD
+ * produce (not just the missing ones), so the app can split held vs missing against its own mirrors
+ * before save. `author` is the primary author; `position` is the series position / list rank when the
+ * source is ordered. Tolerant (Libretto is young): the domain decides what it consumes.
+ */
+export const librettoPreviewMemberSchema = z
+  .object({
+    /** The builder's human handle ("Wind and Truth (#5 in The Stormlight Archive)"). */
+    label: z.string().nullish(),
+    title: z.string().nullish(),
+    author: z.string().nullish(),
+    /** Primary ISBN-13, when known (Kavita epubs are null by design). */
+    isbn: z.string().nullish(),
+    /** Series position / list rank, when the source is ordered. */
+    position: z.number().nullish(),
+    /** All normalized identifier refs ("isbn:<13>", "asin:<10>", opaque) — the app's held-match keys. */
+    identifiers: z.array(z.string()).nullish(),
+  })
+  .passthrough();
+export type LibrettoPreviewMember = z.infer<typeof librettoPreviewMemberSchema>;
+
+/**
+ * `POST /api/preview` → the resolved member list for a draft builder + a `total` and an honest
+ * `truncated` flag (Libretto caps the list at 100; the app applies the per-user size cap on top). A
+ * 0-member container slug comes back `total: 0` honestly — the UI surfaces it, never fabricates.
+ */
+export const librettoPreviewResponseSchema = z
+  .object({
+    builder: librettoBuilderSchema.nullish(),
+    total: z.number().nullish(),
+    truncated: z.boolean().nullish(),
+    members: z.array(librettoPreviewMemberSchema).nullish(),
+  })
+  .passthrough();
+export type LibrettoPreviewResponse = z.infer<typeof librettoPreviewResponseSchema>;
+
 /** `GET /api/health` — liveness (D-14). Tolerant: any 2xx body means reachable. */
 export const librettoHealthResponseSchema = z
   .object({ status: z.string().nullish() })
