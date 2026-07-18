@@ -1,8 +1,11 @@
 # DESIGN-042: Kometa collections — manage & contribute (the provider contract instantiated for movies/TV)
 
 - **Status:** Accepted <!-- revised 2026-07-18 to the direct-add + auto-merge model (ADR-072); was Draft under ADR-069 -->
-- **Last updated:** 2026-07-18 (REVISED to direct-add + auto-merge — ADR-072 supersedes ADR-069: the
-  propose→approve suggestion pipeline is removed; a within-cap grouping-only add AUTO-COMMITS +
+- **Last updated:** 2026-07-18 evening (REVISED again — the estate's HAND-AUTHORED Kometa collections are
+  now EDITABLE in place, superseding the #414 read-only stance. Owner ruling: *"the point of the
+  collections config UI was to edit Kometa configs by add / update / editing collections."* See the D-01 /
+  D-02 / D-04 revision notes below. Earlier: 2026-07-18 direct-add + auto-merge — ADR-072 supersedes
+  ADR-069: the propose→approve suggestion pipeline is removed; a within-cap grouping-only add AUTO-COMMITS +
   AUTO-MERGES the haynes-ops config PR. Prior: 2026-07-17 owner directive.)
 - **Satisfies:** PLAN-052 (collection-manager integration — the provider-agnostic surface, R1 KISS /
   R2 integration-parity); owner rulings 2026-07-18 (direct-add; Kometa auto-merge for within-cap
@@ -91,10 +94,20 @@ collections`). This is what each noun MEANS Kometa-side:
     carrying `provenance: kometa` (T-194). This is the "what Kometa actually built" truth and needs no
     new read.
   - **The config's collection definitions** — the app-owned managed file is git (D-02), so the app
-    reads back exactly what it wrote (its own recipes). It does NOT parse the owner's hand-written
-    sibling files; those are context it never edits (the DESIGN-035 mirror already shows what they
-    produced). Reading the app's own managed file back is the recipe-list source of truth, the Libretto
-    `GET /api/recipes` analog.
+    reads back exactly what it wrote (its own recipes). Reading the app's own managed file back is the
+    recipe-list source of truth, the Libretto `GET /api/recipes` analog.
+
+> **REVISED 2026-07-18 evening (owner ruling — edit the estate's collections, not read-only).** The
+> bullet above originally said the app does NOT parse the owner's hand-written sibling files. That is
+> SUPERSEDED. The owner ruled: *"the point of the collections config UI was to edit Kometa configs by
+> add / update / editing collections."* The app now READS EVERY hand-authored config file
+> (`movies-*.yml` / `shows-*.yml`) and parses their collections into the Movies/TV list, and EDITS a
+> hand collection in place by a **surgical text-level splice** of only that collection's builder ref (or
+> its `<arr>_add_missing`/`_search` keys), preserving every untouched byte of the file (round-trip
+> fidelity is the hard requirement — a YAML load→dump cannot preserve the estate's comments / anchors /
+> flow-map layout, so the splice never re-serializes the file). Editing a hand file opens a haynes-ops PR
+> against THAT file; it is ALWAYS human-merged (see D-10). Adds still flow to the app-owned managed
+> include exactly as before. The editability boundary is D-04.
 - **Write** = compile the enabled recipes into the ONE managed include file and open a haynes-ops PR
   (D-02). A write is a config change, applied by Flux, realized by the next Kometa run — never a live
   Plex mutation.
@@ -133,19 +146,33 @@ run, so an app write there races the process and needs a re-seed to land. Git is
 lives AND the estate's doctrine (research §4; PLAN-052 write-path verdict). See ADR-069 for the full
 options table.
 
-#### D-02 amend (2026-07-18) — the mirror's config collections list as READ-ONLY rows
+#### D-02 amend (2026-07-18) — the mirror's config collections list ~~as READ-ONLY rows~~ (SUPERSEDED)
 
-The managed include holds ONLY the recipes the app authored (approximately zero today), but the estate's
-own Kometa config has produced ~465 collections the mirror already carries (movies 441, TV 24 — confirmed
-on prod by `plex_collections.created_by='kometa'`, `pl.media_type` in `movie`/`show`). The Movies/TV
-overview therefore returns, beside the managed `recipes[]`, a `readOnly[]` array: every mirror collection
-(`readProducedCollections`, `created_by='kometa'`) whose normalized title does NOT join a managed recipe,
-as `{ name, itemCount, managedBy: 'kometa_config' }`. The manager renders these under a "From the estate's
-config" heading with a single muted chip ("managed in the estate's Kometa config") and no controls — the
-app does not own these recipes, so it lists them honestly rather than showing an empty tab. A recipe the
-app DOES manage joins its mirror collection by title (the existing reconcile) and is never duplicated into
-the read-only group. The `created_by='kometa'` constant matches prod reality (the tiny `plex` hand-made
-minority — 4 movie, 1 show — is deliberately out of scope for the Kometa-config group).
+> **SUPERSEDED 2026-07-18 evening (owner ruling).** The read-only treatment #414 shipped is replaced by
+> edit-in-place. Read the section below for the reconcile shape (still accurate), but the estate's
+> hand-file collections are now EDITABLE (D-01 revision / D-02 revision / D-04). The owner also critiqued
+> the chip copy ("managed in the estate's Kometa config") as far too verbose; the Movies/TV rows now carry
+> a short SOURCE badge — **"Added here"** (app-managed include) vs **"Kometa config"** (a hand file or a
+> Defaults-produced mirror row) — and the books read-only chip is shortened to **"made in Kavita"** /
+> "made in Audiobookshelf". The two-group split is dropped for Kometa: one source-badged list.
+
+The managed include holds ONLY the recipes the app authored, but the estate's own Kometa config has
+produced ~465 collections the mirror already carries (movies 441, TV 24 — confirmed on prod by
+`plex_collections.created_by='kometa'`, `pl.media_type` in `movie`/`show`). The Movies/TV overview
+therefore returns, beside the managed `recipes[]`, a `handCollections[]` array reconciled as follows:
+
+- Every collection parsed from a hand-authored config file (`movies-*.yml` / `shows-*.yml`) →
+  `{ name, file, source: 'hand', builderType, builderRef, editable, editableReason, findMissing, itemCount }`.
+  `itemCount` joins the mirror by normalized title; `editable` is the D-04 boundary.
+- Every mirror `created_by='kometa'` collection NOT joined by a managed recipe OR a hand file (the Kometa
+  **Defaults** output — universe/seasonal/franchise/awards, authored in `config.yml`, no file to splice) →
+  `{ name, source: 'default', editable: false, itemCount }`. Listed honestly, never editable.
+
+Of the estate's **153 hand-authored collections** (parsed from the seven live config files), **43 are
+editable** under the current D-04 allowlist (movies 26, TV 17); the other 110 are query/search/regex
+engines, multi-builder blocks, or refs the app does not model (Edit disabled with the honest reason). The
+remaining ~312 mirror collections are Defaults-produced and non-editable by construction. A recipe the app
+DOES manage joins its mirror collection by title and is never duplicated into `handCollections`.
 
 ### D-03 — The managed include safety contract
 
@@ -199,6 +226,18 @@ validated ref** (a URL or an id/id-list). Each is a "hook in your own thing" lev
 (`tmdb_discover`, `imdb_chart`, `imdb_search`, `plex_all`) are query/search/regex OBJECTS, not refs —
 they are the estate's tuned acquisition engines and stay authored by the owner in the hand-written
 files (or a later advanced surface). Defaults toggling is its own PVC story.
+
+> **D-04 note (2026-07-18 evening) — the editability boundary for HAND-FILE collections.** When the app
+> parses a hand-authored config collection (D-02 revision), it is **editable in place** ONLY when the block
+> reduces to EXACTLY ONE builder in the six-type allowlist above with a ref `validateKometaRef`
+> canonicalizes. A block with multiple builders (e.g. Addams Family's `collection` + `imdb_list`, Walking
+> Dead's `tvdb_list_details` + `tvdb_show`), a query/search/regex engine (`tmdb_discover` charts + people,
+> `imdb_search` studios, `plex_all` audio), a template-variable indirection the app does not model
+> (`{name: Director, tmdb: 525}`), or a ref that fails validation renders its Edit **disabled** with a
+> short honest tooltip ("Too custom to edit here. Edit the config directly."). The app NEVER does a lossy
+> rewrite of config it does not fully model — an unrecognized block is listed, never silently rewritten.
+> The builder type and name are the collection's identity (locked in the edit composer); only the ref (and
+> the find-missing knob) is editable. The splice is text-level and byte-faithful (D-02 revision).
 
 **Ref validation (no raw YAML — ADR-069).** The app never accepts a YAML fragment. It accepts a typed
 ref, validates it structurally (URL matches the builder's host/path grammar; ids are integers), and —
@@ -321,6 +360,12 @@ human-merged:
 - the PR touches ONLY the app-owned managed include (`hnet-managed-*.yml`, D-02) — a diff outside the
   managed file aborts the auto-merge (a safety assertion; the app never regenerates a sibling), AND
 - the **`--validate-file` CI gate is green** against the pinned image (D-09).
+
+> **D-10 note (2026-07-18 evening) — hand-file edits are ALWAYS human-merged.** An edit / find-missing /
+> delete of a hand-authored collection touches a SIBLING config file, not the app-owned managed include,
+> so the managed-file-only condition already forbids auto-merge — the write path never even attempts it.
+> Every hand-file PR is left for a human. This keeps the estate's own config changes behind a person while
+> preserving the auto-merge convenience for the app's own within-cap managed adds.
 
 Mechanics: the write client opens the PR bot-authored (dev-bot app token, CLAUDE.md), waits for the
 required check, and merges via the GitHub API (squash) — the same dance the release-train uses

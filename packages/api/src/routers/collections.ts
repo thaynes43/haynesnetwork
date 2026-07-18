@@ -25,7 +25,9 @@ import {
   createCollectionOverrideTicket,
   declineCollectionOverride,
   deleteCollectionRecipe,
+  deleteKometaHandCollection,
   deleteKometaRecipe,
+  editKometaHandCollection,
   getAppSetting,
   getCollectionRun,
   getCollectionsOverview,
@@ -37,8 +39,10 @@ import {
   setAppSetting,
   setCollectionFindMissing,
   setKometaFindMissing,
+  setKometaHandFindMissing,
   upsertCollection,
   upsertKometaCollection,
+  type KometaHandCollectionView,
   type KometaMediaType,
   type KometaRecipe,
   type KometaRecipeView,
@@ -176,6 +180,26 @@ function kometaRecipeWire(r: KometaRecipeView) {
     state: r.state,
   };
 }
+/**
+ * The Kometa HAND-collection wire (owner ruling 2026-07-18) — one of the estate's config-file collections
+ * or a Defaults-produced mirror row. Carries its editability (a single allowlisted builder + valid ref),
+ * its config `file` (the splice target; null for a Defaults-produced row), its builder + ref (for the
+ * pre-loaded edit composer), its find-missing state, and its mirror item count.
+ */
+function handCollectionWire(h: KometaHandCollectionView) {
+  return {
+    name: h.name,
+    file: h.file,
+    source: h.source,
+    builderType: h.builderType as string | null,
+    builderRef: h.builderRef,
+    findMissing: h.findMissing,
+    editable: h.editable,
+    editableReason: h.editableReason,
+    itemCount: h.itemCount,
+    mediaType: h.mediaType as CollectionMediaType,
+  };
+}
 function issueWire(i: LibrettoIssue) {
   return { recipeId: i.recipeId ?? null, message: i.message ?? 'invalid recipe' };
 }
@@ -268,27 +292,17 @@ export const collectionsRouter = router({
           canFindMissing: actions.includes('find_missing'),
         };
         if (isKometaMedia(input.mediaType)) {
-          // Movies/TV — the Kometa auto-merge write path (PR4b). Reads the app-owned managed include
-          // back + the DESIGN-035 mirror + the open app PRs; degrades honestly (reachable=false) on a
-          // haynes-ops/GitHub outage. Produced collections join to recipes by normalized title (Kometa
-          // collections carry no recipe id the mirror reads — Q-05 reconcile-by-title).
+          // Movies/TV — the Kometa write path (owner ruling 2026-07-18: EDIT the estate's collections, not
+          // read-only). Reads the app-owned managed include + EVERY hand-authored config file + the
+          // DESIGN-035 mirror + the open app PRs; degrades honestly (reachable=false) on a haynes-ops/GitHub
+          // outage. The list is ONE population: app-managed recipes ("Added here") + the estate's hand-file
+          // collections and Defaults-produced mirror rows ("Kometa config"), each source-badged.
           const overview = await getKometaCollectionsOverview({
             db: ctx.db,
             haynesops: resolveHaynesopsBundle(ctx),
             mediaType: input.mediaType,
           });
           const recipeByTitle = new Map(overview.recipes.map((r) => [normalizeTitle(r.name), r.id]));
-          // The mirror collections that do NOT join to an app-managed recipe (by normalized title) are the
-          // estate's own Kometa-config collections — read-only rows so the tab reflects the ~465 the mirror
-          // carries, not an empty state (owner-reported gap 2026-07-18).
-          const readOnly: ReadOnlyCollectionWire[] = overview.collections
-            .filter((c) => !recipeByTitle.has(normalizeTitle(c.title)))
-            .map((c) => ({
-              name: c.title,
-              itemCount: c.childCount,
-              managedBy: 'kometa_config' as const,
-              source: null,
-            }));
           return {
             ...base,
             provider: 'kometa' as const,
@@ -301,7 +315,8 @@ export const collectionsRouter = router({
               name: c.title,
               itemCount: c.childCount,
             })),
-            readOnly,
+            readOnly: [] as ReadOnlyCollectionWire[],
+            handCollections: overview.handCollections.map(handCollectionWire),
             pendingPrs: overview.pendingPrs,
           };
         }
@@ -354,6 +369,7 @@ export const collectionsRouter = router({
           issues: overview.issues.map(issueWire),
           collections: overview.collections.map(collectionWire),
           readOnly,
+          handCollections: [] as ReturnType<typeof handCollectionWire>[],
           pendingPrs: [] as { number: number; title: string; url: string }[],
         };
       });
@@ -421,6 +437,47 @@ export const collectionsRouter = router({
   }),
 
   /**
+   * EDIT a hand-authored Kometa collection (owner ruling 2026-07-18 — edit the estate's config, not
+   * read-only). Everyone, capped: the confined writer SURGICALLY splices ONLY this collection's builder ref
+   * in its own config file and opens a HUMAN-merged haynes-ops PR (hand-file PRs never auto-merge — D-10),
+   * preserving every untouched byte. An over-cap non-admin gets `COLLECTION_SIZE_CAP_EXCEEDED` (the client
+   * opens the request-larger flow); a ref whose size cannot be resolved without egress is treated as
+   * over-cap for a non-admin (safe default). A too-custom collection / malformed ref rejects — never a lossy
+   * rewrite. Movies/TV only (Kometa); Libretto collections edit through `upsert`.
+   */
+  editHandCollection: authedProcedure
+    .input(
+      z.object({
+        mediaType: z.enum(['movies', 'tv']),
+        file: z.string().trim().min(1).max(200),
+        name: z.string().trim().min(1).max(200),
+        builderType: z.enum(KOMETA_BUILDER_TYPES),
+        builderRef: z.string().trim().min(1).max(400),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      return mapDomainErrors(async () => {
+        const cap = await getAppSetting(ctx.db, 'collection_size_cap');
+        const preview = previewKometaRef(input.builderType, input.builderRef);
+        const size = ctx.user.role.isAdmin ? 0 : preview.resolvedCount;
+        const res = await editKometaHandCollection({
+          db: ctx.db,
+          haynesops: resolveHaynesopsBundle(ctx),
+          actorId: ctx.user.id,
+          file: input.file,
+          name: input.name,
+          mediaType: input.mediaType,
+          builderType: input.builderType,
+          builderRef: input.builderRef,
+          size,
+          cap,
+          isAdmin: ctx.user.role.isAdmin,
+        });
+        return { ok: true as const, id: input.name, provider: 'kometa' as const, ...res };
+      });
+    }),
+
+  /**
    * DESIGN-043 D-14 / DESIGN-042 D-06 (PLAN-052 PR4c) — flip the per-collection FIND-MISSING knob (the
    * acquisition lever). GRANT-GATED: `collectionActionProcedure('find_missing')` (admin implies it) — a
    * non-granted caller gets FORBIDDEN server-side even with a forged flag (never a client hide). Libretto
@@ -432,14 +489,29 @@ export const collectionsRouter = router({
   setFindMissing: collectionActionProcedure('find_missing')
     .input(
       z.object({
-        id: z.string().trim().min(1).max(80),
+        id: z.string().trim().min(1).max(200),
         mediaType: z.enum(COLLECTION_MEDIA_TYPES),
         on: z.boolean(),
+        // A hand-authored Kometa collection carries its config file basename; find-missing then splices
+        // that file (human-merged) instead of the app-owned managed include.
+        handFile: z.string().trim().min(1).max(200).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       return mapDomainErrors(async () => {
         if (isKometaMedia(input.mediaType)) {
+          if (input.handFile) {
+            const res = await setKometaHandFindMissing({
+              db: ctx.db,
+              haynesops: resolveHaynesopsBundle(ctx),
+              actorId: ctx.user.id,
+              file: input.handFile,
+              name: input.id,
+              mediaType: input.mediaType,
+              on: input.on,
+            });
+            return { ok: true as const, provider: 'kometa' as const, findMissing: input.on, ...res };
+          }
           const res = await setKometaFindMissing({
             db: ctx.db,
             haynesops: resolveHaynesopsBundle(ctx),
@@ -488,14 +560,29 @@ export const collectionsRouter = router({
   remove: adminProcedure
     .input(
       z.object({
-        id: z.string().trim().min(1).max(80),
+        id: z.string().trim().min(1).max(200),
         mediaType: z.enum(COLLECTION_MEDIA_TYPES),
         deleteCollection: z.boolean().optional(),
+        // A hand-authored Kometa collection carries its config file basename; delete then surgically
+        // removes its block from that file (human-merged) instead of the app-owned managed include.
+        handFile: z.string().trim().min(1).max(200).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       return mapDomainErrors(async () => {
         if (isKometaMedia(input.mediaType)) {
+          if (input.handFile) {
+            const res = await deleteKometaHandCollection({
+              db: ctx.db,
+              haynesops: resolveHaynesopsBundle(ctx),
+              actorId: ctx.user.id,
+              file: input.handFile,
+              name: input.id,
+              mediaType: input.mediaType,
+              deleteCollection: input.deleteCollection ?? false,
+            });
+            return { ok: true as const, provider: 'kometa' as const, ...res };
+          }
           const res = await deleteKometaRecipe({
             db: ctx.db,
             haynesops: resolveHaynesopsBundle(ctx),

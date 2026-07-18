@@ -67,6 +67,10 @@ function stubHaynesops(opts?: {
         throwIfDown();
         return opts?.openPrs ?? [];
       },
+      listDirectory: async () => {
+        throwIfDown();
+        return [];
+      },
       getChecksConclusion: async () => opts?.checks ?? 'success',
     },
     write: {

@@ -60,6 +60,23 @@ export class HaynesopsReadClient {
   }
 
   /**
+   * `GET /repos/{repo}/contents/{dir}?ref=` on a DIRECTORY → the file basenames it holds (type `file`
+   * only). Used to enumerate the estate's hand-authored Kometa config files (movies-*.yml / shows-*.yml)
+   * so the overview can read + surgically edit them (owner ruling 2026-07-18). Returns [] when the dir is
+   * absent (never throws on a missing path — the honest degrade).
+   */
+  async listDirectory(dir: string, ref?: string): Promise<string[]> {
+    const q = ref ? `?ref=${encodeURIComponent(ref)}` : '';
+    const raw = (await this.http.requestJson({
+      method: 'GET',
+      path: `/repos/${this.repo}/contents/${dir}${q}`,
+      allow404: true,
+    })) as Array<{ name?: string; type?: string }> | null;
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((e) => e.type === 'file' && typeof e.name === 'string').map((e) => e.name!);
+  }
+
+  /**
    * The app's OWN open PRs (head branch under the `hnet-collections/` namespace) — the "awaiting merge"
    * rows. GitHub filters `pulls` by `head=owner:branch`; there is no prefix filter, so this lists open PRs
    * and keeps the ones whose head branch is in the app namespace.
