@@ -84,3 +84,37 @@ surname-token author guard rejects a resolved volume whose authors are disjoint 
 (3) `gbQueryTitle` strips leading series-index prefixes ("02 - Grave Surprise"); (4) the
 pre-colon fallback (item 1 above). Cleanup: the wrong LL want was left `Skipped` (inert; LL has
 no removeBook), the fix row annotated + failed so the owner can re-fire post-deploy.
+
+### Addendum 2 — 2026-07-17 ~20:50 UTC: the pairing-resolve fix SHIPPED (the measured gap)
+
+A read-only live audit relocated the *measurable* resolution gap. It is NOT the Libretto M3 path
+addendum item 2 spotlighted — it is the in-repo **format-pairing (`origin='pairing'`)** path:
+
+- Goodreads wants (which pass the item ISBN to the resolver): **98/99 resolved (99%)**.
+- Pairing wants (which passed **title+author only**): **70/280 resolved (25%)** — 210 stuck.
+
+Root cause (proven): `GoogleBooksClient.resolveVolume` tries the reliable `isbn:` leg *first*, then a
+fuzzy `intitle:+inauthor:` leg. The pairing resolver seam (`PairingGbResolver`) had **no `isbn`
+field** and `mintPairingWants` never selected `books_items.isbn` — so pairing was decided entirely by
+the fuzzy leg against Kavita/ABS **file-derived titles** ("Expanse 05 - Nemesis Games", "Wheel of
+Time [09]: Winter's Heart"). The v0.70.1 fix-path hardening was already SHARED by the pairing path
+(both call `guardedGbResolve`), so "port the hardening" was a no-op — the actual defect was the
+dropped ISBN.
+
+Shipped (this change):
+1. **ISBN passthrough** — `mintPairingWants` now selects `books_items.isbn`, `PairableItem` +
+   `PairingGbResolver` carry `isbn?`, and the guarded resolve passes it. 27 stuck wants have a
+   valid anchor ISBN that now feeds the reliable leg; every future ABS-audiobook-anchored want
+   resolves by ISBN. Additive — an ISBN hit only adds resolves, never removes one; also cuts GB
+   quota burn (one `isbn:` call vs 2-3 on the fuzzy miss path).
+2. **`gbQueryTitle` library-title normalization** (shared, so it also lifts Goodreads + book-fix):
+   strips leading series/volume prefixes (`[09]:`, `#05 -`, `Series NN -`) and trailing `[...]`
+   annotations, guarded by the existing title-coverage + surname-author guards (an over-strip fails
+   to a null, never a wrong-work push). Bare-number titles ("Beacon 23: …", "Fahrenheit 451") are
+   deliberately preserved.
+
+The 183 no-ISBN stuck wants (134 Kavita-ebook-anchored with null ISBN + 49 audio) rely on the
+normalization lever; the follow-on **Kavita-ISBN backfill in books-sync** is the larger second
+population (separate ticket). Live before/after resolved-count is bounded by the GB daily quota,
+currently exhausted until **2026-07-18 07:00 UTC** (the reset is 07:00 **UTC**, not ET) — so the
+first post-deploy `sync-format-pairing` run after that window is the live-proof point.

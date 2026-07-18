@@ -56,6 +56,13 @@ export interface PairableItem {
   sortTitle: string;
   author: string | null;
   mediaKind: BooksMediaKind;
+  /**
+   * The library edition ISBN (ABS `media.metadata.isbn`; Kavita ebooks are null by design). Fed to
+   * the GB resolve so the reliable `isbn:` leg fires before the fuzzy file-title leg (PLAN-059 —
+   * the pairing-resolve gap: dropping this is why pairing resolved ~4x worse than the Goodreads
+   * path, which passes it). Optional — the matcher does not use it; only the mint's GB resolve does.
+   */
+  isbn?: string | null;
 }
 
 export interface FormatPairMatch {
@@ -281,9 +288,14 @@ export function missingFormatFor(kind: BooksMediaKind): 'ebook' | 'audiobook' {
   return kind === 'book' ? 'audiobook' : 'ebook';
 }
 
-/** The GB resolver seam (the book-fix precedent — injected so tests stay offline, ADR-010). */
+/** The GB resolver seam (the book-fix precedent — injected so tests stay offline, ADR-010). Accepts
+ * the anchor ISBN so the resolver's reliable `isbn:` leg fires first (PLAN-059 pairing-resolve fix). */
 export interface PairingGbResolver {
-  resolveVolume(input: { title: string; author?: string | null }): Promise<{ volumeId: string } | null>;
+  resolveVolume(input: {
+    isbn?: string | null;
+    title: string;
+    author?: string | null;
+  }): Promise<{ volumeId: string } | null>;
 }
 
 export interface MintPairingWantsInput {
@@ -460,6 +472,7 @@ export async function mintPairingWants(
       sortTitle: booksItems.sortTitle,
       author: booksItems.author,
       mediaKind: booksItems.mediaKind,
+      isbn: booksItems.isbn,
       firstSeenAt: booksItems.firstSeenAt,
     })
     .from(booksItems)
@@ -548,7 +561,9 @@ export async function mintPairingWants(
         const guarded = await guardedGbResolve({
           db: input.db,
           gb: input.gb!,
-          query: { title: item.title, author: item.author },
+          // Pass the anchor ISBN (PLAN-059): the resolver tries `isbn:` first — the exact leg that
+          // makes the Goodreads path resolve ~99% — before falling back to the fuzzy file-title.
+          query: { isbn: item.isbn ?? null, title: item.title, author: item.author },
         });
         if (guarded.outcome === 'quota_blocked' || guarded.outcome === 'quota_tripped') {
           quotaOpen = true;
