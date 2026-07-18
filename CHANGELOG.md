@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.75.0](https://github.com/thaynes43/haynesnetwork/compare/v0.74.0...v0.75.0) (2026-07-18)
+
+
+### Features
+
+* movies collection Wanted-tiles — full held+wanted membership (DESIGN-035 D-16) ([#374](https://github.com/thaynes43/haynesnetwork/issues/374)) ([89e0544](https://github.com/thaynes43/haynesnetwork/commit/89e054471dd8346f6dc8f7a37875f4472dae76d2))
+
+
+### Bug Fixes
+
+* admins can force-search ANY user's book want (DESIGN-029 D-08 amendment) ([#375](https://github.com/thaynes43/haynesnetwork/issues/375)) ([01f530a](https://github.com/thaynes43/haynesnetwork/commit/01f530a397bb34004f534aed8f2c806fd8aaa26f))
+
 ## [0.74.0](https://github.com/thaynes43/haynesnetwork/compare/v0.73.1...v0.74.0) (2026-07-18)
 
 
