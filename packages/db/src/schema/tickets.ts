@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, timestamp, check, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, integer, timestamp, jsonb, check, index } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { users } from './users';
 import { mediaItems } from './media-items';
@@ -6,10 +6,36 @@ import {
   TICKET_CATEGORIES,
   TICKET_STATUSES,
   TICKET_TARGET_KINDS,
+  type CollectionBuilderType,
+  type CollectionMediaType,
+  type CollectionProvider,
+  type CollectionSyncMode,
   type TicketCategory,
   type TicketStatus,
   type TicketTargetKind,
 } from './enums';
+
+/**
+ * ADR-072 / DESIGN-043 D-11 (PLAN-052 PR4a) — the FULL requested collection definition an over-cap
+ * `collection_override` ticket carries as its `collection_override_payload` jsonb (Q-02 resolved: a
+ * nullable column on the tickets aggregate, not a side table). An admin's one-click Approve materializes
+ * the collection UNBOUNDED straight from this payload through the SAME confined provider writer as a direct
+ * add (cap-bypassed). Only over-cap tickets carry it; every other ticket leaves the column null.
+ */
+export interface CollectionOverridePayload {
+  provider: CollectionProvider;
+  mediaType: CollectionMediaType;
+  /** The provider recipe id (Libretto: global-unique filename+marker key). */
+  recipeId: string;
+  name: string;
+  builderType: CollectionBuilderType;
+  builderRef: string;
+  targetLibrary?: string | null;
+  ordered?: boolean;
+  syncMode?: CollectionSyncMode;
+  /** The resolved membership size that breached the cap (the requested bound). */
+  size: number;
+}
 
 const TICKET_STATUSES_SQL_LIST = TICKET_STATUSES.map((s) => `'${s}'`).join(',');
 const TICKET_CATEGORIES_SQL_LIST = TICKET_CATEGORIES.map((c) => `'${c}'`).join(',');
@@ -53,6 +79,12 @@ export const tickets = pgTable(
     targetEpisode: integer('target_episode'),
     targetLabel: text('target_label'),
     status: text('status').$type<TicketStatus>().notNull().default('open'),
+    /**
+     * ADR-072 / DESIGN-043 D-11 — the over-cap collection request's FULL definition (null for every other
+     * category). An admin Approve materializes the collection unbounded straight from this payload. Written
+     * only by the createCollectionOverrideTicket single-writer; read by approveCollectionOverride.
+     */
+    collectionOverridePayload: jsonb('collection_override_payload').$type<CollectionOverridePayload>(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     /**
      * The wall's sort key — bumped (same tx) by every reply and transition, so the board surfaces

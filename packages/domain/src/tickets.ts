@@ -5,6 +5,7 @@ import {
   ticketEvents,
   ticketReplies,
   users,
+  type CollectionOverridePayload,
   type DbClient,
   type TicketEventRow,
   type TicketReplyRow,
@@ -13,11 +14,14 @@ import {
   type TicketStatus,
   type TicketTargetKind,
 } from '@hnet/db';
-import { eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { InvalidTicketTargetError, InvalidTicketTransitionError, NotFoundError } from './errors';
 import { inTransaction, resolveDb } from './db-client';
 import { enqueueOutbox } from './notify-outbox';
 import { computeEarliestSend, getNotifyWindow } from './notify-window';
+import { materializeCollection } from './collections-manager';
+import type { LibrettoClientBundle } from './libretto-clients';
+import type { LibrettoRecipeDraft } from '@hnet/libretto';
 
 /**
  * ADR-050 / DESIGN-012 D-10..D-13 (PLAN-034 Helpdesk) — the ticket single-writers. A Ticket is a
@@ -123,6 +127,11 @@ export interface CreateTicketInput {
   now?: Date;
   /** R-195 — the admin recipient override (tests); defaults to `ticketAdminEmail()`. */
   adminEmail?: string;
+  /**
+   * ADR-072 / DESIGN-043 D-11 — the over-cap collection request's full definition (only for a
+   * `collection_override` ticket; null otherwise). Stored on the ticket so Approve can materialize it.
+   */
+  collectionOverridePayload?: CollectionOverridePayload | null;
 }
 
 /**
@@ -172,6 +181,7 @@ export async function createTicket(input: CreateTicketInput): Promise<TicketRow>
         targetEpisode: input.target?.episode ?? null,
         targetLabel: input.target?.label ?? null,
         status: 'open',
+        collectionOverridePayload: input.collectionOverridePayload ?? null,
         createdAt: now,
         lastActivityAt: now,
       })
@@ -236,52 +246,55 @@ export async function createTicket(input: CreateTicketInput): Promise<TicketRow>
   });
 }
 
-/** DESIGN-035 D-17 — the structured facts an over-cap collection override request carries. */
+/** ADR-072 / DESIGN-043 D-11 — the structured facts an over-cap collection override request carries. */
 export interface CollectionOverrideTicketInput {
   db?: DbClient;
-  /** The requesting (non-admin) user — the ticket author. */
+  /** The requesting user — the ticket author. */
   authorId: string;
-  /** The collection provider the request is about. */
-  provider: 'kometa' | 'libretto';
-  /** The collection / recipe display name. */
-  collectionName: string;
-  /** The resolved membership size that breached the cap. */
-  size: number;
   /** The live cap the size breached. */
   cap: number;
+  /**
+   * The FULL requested collection definition (builder + ref + target + variables + size + provider +
+   * media type). Stored on the ticket (`collection_override_payload`) so an admin Approve materializes it.
+   */
+  payload: CollectionOverridePayload;
   now?: Date;
   /** R-195 — the admin recipient override (tests). */
   adminEmail?: string;
 }
 
 /**
- * DESIGN-035 D-17 — file an admin-override request for an over-cap collection. A thin wrapper over
- * `createTicket` (category `collection_override`, already in TICKET_CATEGORIES) so the request rides the
- * SAME ADR-050 helpdesk board + its atomic `ticket_created` outbox ping + admin email — no new approval
- * subsystem. The body carries the structured facts (requester is the author; provider; collection; the
- * resolved size vs the current cap; the requested action) so an admin completing the ticket can perform
- * the override (raise the cap via `setAppSetting`, or a one-off). Living in this module keeps every
- * `tickets` write behind the single-writer guard (no-direct-state-writes).
+ * ADR-072 / DESIGN-043 D-11 — file an over-cap `collection_override` request that CARRIES the full requested
+ * collection definition. A thin wrapper over `createTicket` (category `collection_override`) so the request
+ * rides the SAME ADR-050 helpdesk board + its atomic `ticket_created` outbox ping + admin email — no second
+ * queue (Q-05: it is an ordinary ticket, visible in both the Helpdesk and the /collections Tickets lens).
+ * The definition rides `collection_override_payload` (not just the prose body) so an admin's one-click
+ * Approve can materialize it unbounded (approveCollectionOverride). The ticket + its creation event + the
+ * outbox rows commit in ONE tx (the createTicket single-writer; hard rule 6).
  */
 export async function createCollectionOverrideTicket(
   input: CollectionOverrideTicketInput,
 ): Promise<TicketRow> {
+  const p = input.payload;
   const body = [
-    `A collection exceeds the non-admin size cap and needs an admin override.`,
+    `A collection exceeds the size cap and needs an admin to approve a larger bound.`,
     ``,
-    `- Requested by: the ticket author`,
-    `- Provider: ${input.provider}`,
-    `- Collection: ${input.collectionName}`,
-    `- Resolved membership: ${input.size} items`,
+    `- Collection: ${p.name}`,
+    `- Media: ${p.mediaType}`,
+    `- Provider: ${p.provider}`,
+    `- Builder: ${p.builderType} (${p.builderRef})`,
+    `- Requested membership: ${p.size} items`,
     `- Current cap: ${input.cap} items`,
-    `- Requested action: approve a larger bound for this collection (raise the cap, or grant a one-off).`,
+    ``,
+    `Approve to create this collection at its full size, or decline with a reason.`,
   ].join('\n');
   return createTicket({
     db: input.db,
     authorId: input.authorId,
-    title: `Collection override request: ${input.collectionName}`,
+    title: `Collection request: ${p.name}`,
     body,
     category: 'collection_override',
+    collectionOverridePayload: p,
     now: input.now,
     adminEmail: input.adminEmail,
   });
@@ -375,6 +388,135 @@ export async function transitionTicket(
     }
     return { ticket, event };
   });
+}
+
+/** An over-cap ticket action hit a ticket that is not an open/in_progress `collection_override`. */
+export class CollectionOverrideNotActionableError extends Error {
+  readonly code = 'COLLECTION_OVERRIDE_NOT_ACTIONABLE' as const;
+  constructor(message: string) {
+    super(message);
+  }
+}
+
+/** Reconstruct the confined-writer draft from a stored over-cap payload (acquisition forced OFF — D-11). */
+function draftFromOverridePayload(payload: CollectionOverridePayload): LibrettoRecipeDraft {
+  return {
+    id: payload.recipeId,
+    ...(payload.name ? { name: payload.name } : {}),
+    builder: { type: payload.builderType, ref: payload.builderRef },
+    ...(payload.targetLibrary ? { targetLibrary: payload.targetLibrary } : {}),
+    variables: {
+      ...(payload.syncMode ? { syncMode: payload.syncMode } : {}),
+      ...(payload.ordered !== undefined ? { ordered: payload.ordered } : {}),
+      acquisitionEnabled: false,
+    },
+    enabled: true,
+  };
+}
+
+/** Read a ticket by id (null when absent) — the over-cap approve/decline reads its payload + status. */
+async function getTicketById(db?: DbClient, ticketId?: string): Promise<TicketRow | null> {
+  const [row] = await resolveDb(db)
+    .select()
+    .from(tickets)
+    .where(eq(tickets.id, ticketId!))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * ADR-072 / DESIGN-043 D-11 — an admin's one-click APPROVE of an over-cap `collection_override` ticket:
+ * materialize the collection UNBOUNDED (the confined writer, cap-bypassed) straight from the ticket's
+ * stored payload, THEN transition the ticket to `complete` with a household-visible note. The external
+ * materialization lands BEFORE the same-tx transition (the crash-safe idempotent-PUT idiom: a crash between
+ * them re-PUTs the recipe cleanly on retry, and the ticket is still open to retry). The transition +
+ * ticket_events history row commit in ONE tx (transitionTicket — hard rule 6). Only a Libretto (books /
+ * audiobooks) payload materializes directly in PR4a; a Kometa payload is the PR4b human-merged path.
+ */
+export async function approveCollectionOverride(input: {
+  db?: DbClient;
+  libretto: LibrettoClientBundle;
+  ticketId: string;
+  actorId: string;
+  now?: Date;
+}): Promise<TransitionTicketResult> {
+  const ticket = await getTicketById(input.db, input.ticketId);
+  if (!ticket) throw new NotFoundError(`Ticket ${input.ticketId} not found`);
+  const payload = ticket.collectionOverridePayload;
+  if (ticket.category !== 'collection_override' || !payload) {
+    throw new CollectionOverrideNotActionableError('This ticket does not carry a collection request.');
+  }
+  if (ticket.status === 'complete' || ticket.status === 'rejected') {
+    throw new CollectionOverrideNotActionableError('This request has already been decided.');
+  }
+  // Materialize (external, unbounded) BEFORE the same-tx completion. Kometa (movies/TV) is PR4b's
+  // human-merged path — PR4a only files Libretto payloads, so nothing else can reach here.
+  await materializeCollection({ libretto: input.libretto, draft: draftFromOverridePayload(payload) });
+  return transitionTicket({
+    db: input.db,
+    ticketId: input.ticketId,
+    actorId: input.actorId,
+    toStatus: 'complete',
+    note: `Collection approved and created at ${payload.size} items.`,
+    now: input.now,
+  });
+}
+
+/**
+ * ADR-072 / DESIGN-043 D-11 — DECLINE an over-cap `collection_override` ticket with a reason. Materializes
+ * nothing; transitions the ticket to `rejected` carrying the household-visible reason (transitionTicket —
+ * ticket_events + the author's opted-in email, one tx).
+ */
+export async function declineCollectionOverride(input: {
+  db?: DbClient;
+  ticketId: string;
+  actorId: string;
+  reason: string;
+  now?: Date;
+}): Promise<TransitionTicketResult> {
+  const ticket = await getTicketById(input.db, input.ticketId);
+  if (!ticket) throw new NotFoundError(`Ticket ${input.ticketId} not found`);
+  if (ticket.category !== 'collection_override' || !ticket.collectionOverridePayload) {
+    throw new CollectionOverrideNotActionableError('This ticket does not carry a collection request.');
+  }
+  if (ticket.status === 'complete' || ticket.status === 'rejected') {
+    throw new CollectionOverrideNotActionableError('This request has already been decided.');
+  }
+  return transitionTicket({
+    db: input.db,
+    ticketId: input.ticketId,
+    actorId: input.actorId,
+    toStatus: 'rejected',
+    note: input.reason,
+    now: input.now,
+  });
+}
+
+/**
+ * ADR-072 / DESIGN-043 D-11 — the caller's OWN over-cap requests (the /collections Tickets sub-section,
+ * requester lens) or, for an admin, all open ones (the approve lens). Category-filtered to
+ * `collection_override`; newest-activity-first. Payload rides along so the admin approve view can show what
+ * would be created.
+ */
+export async function listCollectionOverrideTickets(input: {
+  db?: DbClient;
+  /** Filter to this author (the requester lens); omit for the admin's all-requests lens. */
+  authorId?: string;
+  limit?: number;
+}): Promise<Array<TicketRow & { authorName: string | null }>> {
+  const db = resolveDb(input.db);
+  const conds = [eq(tickets.category, 'collection_override' as TicketCategory)];
+  if (input.authorId !== undefined) conds.push(eq(tickets.authorUserId, input.authorId));
+  // The requester's display name rides along (the admin approve lens shows who asked — the
+  // communication.ts authorName idiom); a vanished user degrades to null, never an error.
+  const rows = await db
+    .select({ ticket: tickets, authorName: users.displayName })
+    .from(tickets)
+    .leftJoin(users, eq(users.id, tickets.authorUserId))
+    .where(conds.length === 1 ? conds[0] : and(...conds))
+    .orderBy(desc(tickets.lastActivityAt))
+    .limit(input.limit ?? 100);
+  return rows.map((r) => ({ ...r.ticket, authorName: r.authorName ?? null }));
 }
 
 export interface AddTicketReplyInput {

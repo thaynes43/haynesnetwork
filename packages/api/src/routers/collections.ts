@@ -1,30 +1,33 @@
-// ADR-070 / DESIGN-043 (PLAN-052 — collection manager) — the collections router. The manager mutations are
-// gated by `collectionActionProcedure('manage')` (the integrations-floored capability); the acquisition
-// knob is re-checked server-side (`canAcquire`); the member contribution rides `collectionSuggestProcedure`
-// (suggest grant, no section floor — the affordance is on the books walls). ALL Libretto calls go through
-// the confined @hnet/libretto client via the @hnet/domain orchestrators — NEVER a browser call. A Libretto
-// outage degrades honestly (overview.reachable=false); a bad recipe save surfaces Libretto's per-path issues.
+// ADR-072 / DESIGN-043 (PLAN-052 PR4a — direct-add) — the collections router for the first-class
+// /collections page. Everyone adds/edits within the size cap (no grant on the safe path — `authedProcedure`);
+// admins bypass the cap and are the only deleters + ticket approvers (`adminProcedure`). Over-cap escalates
+// to a `collection_override` ticket carrying the FULL requested definition (D-11), which an admin Approve
+// materializes automatically. Books/Audiobooks bind Libretto (this PR); Movies/TV bind Kometa (the
+// auto-merge write path — PR4b), reported as "not available yet" here so the shell + IA ship whole. ALL
+// Libretto calls go through the confined @hnet/libretto client via the @hnet/domain orchestrators — NEVER a
+// browser call. A Libretto outage degrades honestly (overview.reachable=false).
 import { z } from 'zod';
 import {
   COLLECTION_BUILDER_TYPES,
-  COLLECTION_SUGGESTION_STATUSES,
+  COLLECTION_MEDIA_TYPES,
   COLLECTION_SYNC_MODES,
-  type CollectionSuggestionRow,
+  type CollectionMediaType,
+  type CollectionOverridePayload,
+  type TicketRow,
 } from '@hnet/db';
 import {
   applyCollectionScope,
-  approveCollectionSuggestion,
-  assertWithinCollectionSizeCap,
+  approveCollectionOverride,
   createCollectionOverrideTicket,
-  createCollectionSuggestion,
-  declineCollectionSuggestion,
+  declineCollectionOverride,
   deleteCollectionRecipe,
   getAppSetting,
   getCollectionRun,
   getCollectionsOverview,
-  listCollectionSuggestions,
+  listCollectionOverrideTickets,
   previewRecipeRef,
-  saveRecipe,
+  setAppSetting,
+  upsertCollection,
 } from '@hnet/domain';
 import type { TRPCContext } from '../trpc';
 import type {
@@ -34,12 +37,11 @@ import type {
   LibrettoRun,
   LibrettoValidateResponse,
 } from '@hnet/libretto';
-import { mapDomainErrors, resolveLibrettoBundle, router } from '../trpc';
-import {
-  collectionActionProcedure,
-  collectionSuggestProcedure,
-  resolveCollectionActions,
-} from '../middleware/role';
+import { mapDomainErrors, resolveLibrettoBundle, router, authedProcedure } from '../trpc';
+import { adminProcedure, resolveCollectionActions } from '../middleware/role';
+
+/** The media types this PR serves through Libretto (direct API). Movies/TV are the Kometa leg (PR4b). */
+const LIBRETTO_MEDIA_TYPES = new Set<CollectionMediaType>(['books', 'audiobooks']);
 
 // The recipe draft the composer sends (validated tighter than the read ACL — it is OUR input).
 const recipeDraftInput = z.object({
@@ -50,11 +52,10 @@ const recipeDraftInput = z.object({
   targetLibrary: z.string().trim().min(1).max(200).optional(),
   ordered: z.boolean().optional(),
   syncMode: z.enum(COLLECTION_SYNC_MODES).optional(),
-  acquisitionEnabled: z.boolean().optional(),
 });
 type RecipeDraftInput = z.infer<typeof recipeDraftInput>;
 
-/** Map the router's flat draft input onto the @hnet/libretto RecipeDraft shape. */
+/** Map the router's flat draft input onto the @hnet/libretto RecipeDraft shape (acquisition OFF — D-03). */
 function toLibrettoDraft(input: RecipeDraftInput) {
   return {
     id: input.id,
@@ -64,33 +65,26 @@ function toLibrettoDraft(input: RecipeDraftInput) {
     variables: {
       ...(input.syncMode ? { syncMode: input.syncMode } : {}),
       ...(input.ordered !== undefined ? { ordered: input.ordered } : {}),
-      acquisitionEnabled: input.acquisitionEnabled ?? false,
+      acquisitionEnabled: false,
     },
     enabled: true,
   };
 }
 
 /**
- * DESIGN-035 D-17 — refuse an over-cap CREATE for a non-admin. Previews the draft's builder to learn the
- * resolved membership size, reads the live `collection_size_cap`, and throws `CollectionSizeCapError`
- * (carrying `{ size, cap }`) when a non-admin would breach it. A no-op for admins (they bypass the cap
- * outright). Runs BEFORE the confined Libretto write, so an over-cap recipe never lands.
+ * DESIGN-043 D-09 — derive a produced collection's media sub-section from its Libretto `targetKind`
+ * (audiobookshelf/ABS → audiobooks; everything else → books). A recipe with no produced collection yet is a
+ * Book by default (Kavita is the larger library). Honest best-effort — never fabricates a media type.
  */
-async function assertDraftWithinCap(
-  ctx: TRPCContext,
-  isAdmin: boolean,
-  draft: ReturnType<typeof toLibrettoDraft>,
-): Promise<void> {
-  if (isAdmin) return;
-  const preview = await previewRecipeRef({ libretto: resolveLibrettoBundle(ctx), draft });
-  const size = preview.resolved?.workCount ?? 0;
-  const cap = await getAppSetting(ctx.db, 'collection_size_cap');
-  assertWithinCollectionSizeCap({ size, cap, isAdmin: false });
+function deriveMediaType(targetKind: string | null | undefined): CollectionMediaType {
+  const k = (targetKind ?? '').toLowerCase();
+  if (k.includes('abs') || k.includes('audio')) return 'audiobooks';
+  return 'books';
 }
 
 // Explicit wire shapes (the fixWire idiom) — the Libretto ACL uses zod passthrough, whose loose types do
 // not survive tRPC inference cleanly; the manager gets a stable, typed contract instead.
-function recipeWire(r: LibrettoRecipe) {
+function recipeWire(r: LibrettoRecipe, mediaType: CollectionMediaType) {
   return {
     id: r.id,
     name: r.name ?? null,
@@ -98,8 +92,9 @@ function recipeWire(r: LibrettoRecipe) {
     builderRef: r.builder?.ref ?? null,
     ordered: r.variables?.ordered ?? null,
     syncMode: r.variables?.syncMode ?? null,
-    acquisitionEnabled: r.variables?.acquisitionEnabled ?? false,
+    findMissing: r.variables?.acquisitionEnabled ?? false,
     enabled: r.enabled ?? true,
+    mediaType,
   };
 }
 function issueWire(i: LibrettoIssue) {
@@ -126,85 +121,124 @@ function runWire(run: LibrettoRun) {
 }
 function validateWire(res: LibrettoValidateResponse) {
   return {
-    resolved: res.resolved ? { name: res.resolved.name ?? null, workCount: res.resolved.workCount ?? null } : null,
+    resolved: res.resolved
+      ? { name: res.resolved.name ?? null, workCount: res.resolved.workCount ?? null }
+      : null,
     issues: (res.issues ?? []).map((i) => i.message ?? 'issue'),
   };
 }
-
-function suggestionWire(row: CollectionSuggestionRow) {
+function ticketWire(row: TicketRow & { authorName?: string | null }) {
+  const p = row.collectionOverridePayload;
   return {
     id: row.id,
-    provider: row.provider,
-    name: row.name,
-    builderType: row.builderType,
-    builderRef: row.builderRef,
-    targetLibrary: row.targetLibrary,
-    note: row.note,
     status: row.status,
-    decisionNote: row.decisionNote,
-    createdRecipeId: row.createdRecipeId,
+    title: row.title,
+    authorUserId: row.authorUserId,
+    requestedBy: row.authorName ?? null,
+    collectionName: p?.name ?? row.title,
+    mediaType: p?.mediaType ?? null,
+    provider: p?.provider ?? null,
+    size: p?.size ?? null,
     createdAt: row.createdAt.toISOString(),
-    reviewedAt: row.reviewedAt?.toISOString() ?? null,
+    lastActivityAt: row.lastActivityAt.toISOString(),
   };
+}
+
+/** Resolve a draft's live membership size (the ref preview's workCount; 0 when unresolved). */
+async function resolveDraftSize(
+  ctx: TRPCContext,
+  draft: ReturnType<typeof toLibrettoDraft>,
+): Promise<number> {
+  const preview = await previewRecipeRef({ libretto: resolveLibrettoBundle(ctx), draft });
+  return preview.resolved?.workCount ?? 0;
 }
 
 export const collectionsRouter = router({
   /**
-   * The manager monitor: recipes (+ invalid-file issues) and produced collections, read LIVE from Libretto
-   * (reachable=false on an outage — the honest degrade). Carries the caller's `canAcquire` flag so the
-   * composer can enable/disable the acquisition toggle, plus the pending suggestion queue.
+   * The per-media-type monitor (D-02/D-09): recipes (+ invalid-file issues) and produced collections for a
+   * media sub-section, read LIVE from Libretto (reachable=false on an outage — the honest degrade). Movies /
+   * TV report `available:false` (the Kometa leg is PR4b). Everyone may read (no grant); carries the live
+   * size cap + whether the caller bypasses it (admin) + whether the caller can flip find-missing.
    */
-  overview: collectionActionProcedure('manage').query(async ({ ctx }) => {
-    return mapDomainErrors(async () => {
-      const overview = await getCollectionsOverview({ libretto: resolveLibrettoBundle(ctx) });
-      const actions = await resolveCollectionActions(ctx.db, ctx.user.role);
-      const pending = await listCollectionSuggestions({ db: ctx.db, status: 'pending' });
-      // DESIGN-035 D-17 — the composer needs the live size cap + whether the caller bypasses it (admin)
-      // so it can pre-empt an over-cap save with the override Modal.
-      const sizeCap = await getAppSetting(ctx.db, 'collection_size_cap');
-      return {
-        reachable: overview.reachable,
-        recipes: overview.recipes.map(recipeWire),
-        issues: overview.issues.map(issueWire),
-        collections: overview.collections.map(collectionWire),
-        canAcquire: actions.includes('acquire'),
-        sizeCap,
-        capBypass: ctx.user.role.isAdmin,
-        pendingSuggestions: pending.map(suggestionWire),
-      };
-    });
-  }),
-
-  /** Preview/validate a draft ref before save (resolved name + work count + issues; ADR-070 C-07). */
-  validate: collectionActionProcedure('manage')
-    .input(recipeDraftInput)
-    .mutation(async ({ ctx, input }) => {
-      return mapDomainErrors(async () =>
-        validateWire(await previewRecipeRef({ libretto: resolveLibrettoBundle(ctx), draft: toLibrettoDraft(input) })),
-      );
-    }),
-
-  /** Create/edit a recipe (idempotent PUT). Enabling acquisition needs the `acquire` grant (re-checked). */
-  save: collectionActionProcedure('manage')
-    .input(recipeDraftInput)
-    .mutation(async ({ ctx, input }) => {
+  overview: authedProcedure
+    .input(z.object({ mediaType: z.enum(COLLECTION_MEDIA_TYPES) }))
+    .query(async ({ ctx, input }) => {
       return mapDomainErrors(async () => {
-        const draft = toLibrettoDraft(input);
-        // DESIGN-035 D-17 — a non-admin cannot create/edit an over-cap collection (opens the over-cap
-        // Modal client-side, which files the admin-override ticket). Admins bypass.
-        await assertDraftWithinCap(ctx, ctx.user.role.isAdmin, draft);
+        const sizeCap = await getAppSetting(ctx.db, 'collection_size_cap');
         const actions = await resolveCollectionActions(ctx.db, ctx.user.role);
-        await saveRecipe({
-          libretto: resolveLibrettoBundle(ctx),
-          draft,
-          canAcquire: actions.includes('acquire'),
-        });
-        return { ok: true as const, id: input.id };
+        const base = {
+          mediaType: input.mediaType,
+          sizeCap,
+          capBypass: ctx.user.role.isAdmin,
+          isAdmin: ctx.user.role.isAdmin,
+          canFindMissing: actions.includes('find_missing'),
+        };
+        if (!LIBRETTO_MEDIA_TYPES.has(input.mediaType)) {
+          // Movies/TV — the Kometa auto-merge write path lands in PR4b. Honest "not available yet".
+          return {
+            ...base,
+            provider: 'kometa' as const,
+            available: false,
+            reachable: true,
+            recipes: [],
+            issues: [],
+            collections: [],
+          };
+        }
+        const overview = await getCollectionsOverview({ libretto: resolveLibrettoBundle(ctx) });
+        const collectionByRecipe = new Map(
+          overview.collections.filter((c) => c.recipeId).map((c) => [c.recipeId as string, c]),
+        );
+        const recipes = overview.recipes
+          .map((r) => {
+            const produced = collectionByRecipe.get(r.id);
+            return recipeWire(r, deriveMediaType(produced?.targetKind));
+          })
+          .filter((r) => r.mediaType === input.mediaType);
+        return {
+          ...base,
+          provider: 'libretto' as const,
+          available: true,
+          reachable: overview.reachable,
+          recipes,
+          issues: overview.issues.map(issueWire),
+          collections: overview.collections.map(collectionWire),
+        };
       });
     }),
 
+  /** Preview/validate a draft ref before save (resolved name + work count + issues; the surviving C-07). */
+  validate: authedProcedure.input(recipeDraftInput).mutation(async ({ ctx, input }) => {
+    return mapDomainErrors(async () =>
+      validateWire(await previewRecipeRef({ libretto: resolveLibrettoBundle(ctx), draft: toLibrettoDraft(input) })),
+    );
+  }),
+
+  /**
+   * DIRECT add/edit (D-03) — everyone, capped. Resolves the live membership size, reads the cap, and the
+   * domain writer asserts it (admins bypass) BEFORE the confined Libretto write + same-tx audit. An over-cap
+   * non-admin gets `COLLECTION_SIZE_CAP_EXCEEDED` (the client opens the request-larger flow → requestOverride).
+   */
+  upsert: authedProcedure.input(recipeDraftInput).mutation(async ({ ctx, input }) => {
+    return mapDomainErrors(async () => {
+      const draft = toLibrettoDraft(input);
+      const size = ctx.user.role.isAdmin ? 0 : await resolveDraftSize(ctx, draft);
+      const cap = await getAppSetting(ctx.db, 'collection_size_cap');
+      await upsertCollection({
+        db: ctx.db,
+        libretto: resolveLibrettoBundle(ctx),
+        actorId: ctx.user.id,
+        draft,
+        size,
+        cap,
+        isAdmin: ctx.user.role.isAdmin,
+      });
+      return { ok: true as const, id: input.id };
+    });
+  }),
+
   /** Apply a scope (a recipe id or 'all') → the async run id to poll. */
-  applyRecipe: collectionActionProcedure('manage')
+  applyRecipe: authedProcedure
     .input(z.object({ scope: z.string().trim().min(1).max(80) }))
     .mutation(async ({ ctx, input }) => {
       return mapDomainErrors(async () => {
@@ -213,36 +247,8 @@ export const collectionsRouter = router({
       });
     }),
 
-  /**
-   * DESIGN-035 D-17 — the over-cap admin-override request. A non-admin whose create hit the size cap
-   * files a `collection_override` ticket (reusing the ADR-050 helpdesk board + its atomic outbox ping +
-   * admin email) so an admin can approve a larger bound. The server reads the live cap (never trusting a
-   * client-sent cap) and stamps the requesting user as the author.
-   */
-  requestOverride: collectionActionProcedure('manage')
-    .input(
-      z.object({
-        collectionName: z.string().trim().min(1).max(200),
-        size: z.number().int().nonnegative().max(100000),
-      }),
-    )
-    .mutation(async ({ ctx, input }) => {
-      return mapDomainErrors(async () => {
-        const cap = await getAppSetting(ctx.db, 'collection_size_cap');
-        const ticket = await createCollectionOverrideTicket({
-          db: ctx.db,
-          authorId: ctx.user.id,
-          provider: 'libretto',
-          collectionName: input.collectionName,
-          size: input.size,
-          cap,
-        });
-        return { ticketId: ticket.id };
-      });
-    }),
-
   /** Poll one run's state + counts (Libretto keeps only the last 50 — surfaced honestly). */
-  run: collectionActionProcedure('manage')
+  run: authedProcedure
     .input(z.object({ runId: z.string().trim().min(1).max(120) }))
     .query(async ({ ctx, input }) => {
       return mapDomainErrors(async () =>
@@ -250,13 +256,15 @@ export const collectionsRouter = router({
       );
     }),
 
-  /** Delete a recipe. Does NOT cascade by default (orphans the target collection); opt into deleteCollection. */
-  remove: collectionActionProcedure('manage')
+  /** Delete a recipe (ADMIN only). Does NOT cascade by default (orphans the target); opt into deleteCollection. */
+  remove: adminProcedure
     .input(z.object({ id: z.string().trim().min(1).max(80), deleteCollection: z.boolean().optional() }))
     .mutation(async ({ ctx, input }) => {
       return mapDomainErrors(async () => {
         await deleteCollectionRecipe({
+          db: ctx.db,
           libretto: resolveLibrettoBundle(ctx),
+          actorId: ctx.user.id,
           id: input.id,
           deleteCollection: input.deleteCollection ?? false,
         });
@@ -264,95 +272,99 @@ export const collectionsRouter = router({
       });
     }),
 
-  /** The manager's suggestion review queue (default pending). */
-  suggestions: collectionActionProcedure('manage')
-    .input(z.object({ status: z.enum(COLLECTION_SUGGESTION_STATUSES).optional() }).optional())
-    .query(async ({ ctx, input }) => {
-      const rows = await listCollectionSuggestions({
-        db: ctx.db,
-        ...(input?.status ? { status: input.status } : { status: 'pending' as const }),
-      });
-      return { suggestions: rows.map(suggestionWire) };
-    }),
-
-  /** Approve or decline a member suggestion. Approve materializes the recipe via the confined writer. */
-  reviewSuggestion: collectionActionProcedure('manage')
-    .input(
-      z.discriminatedUnion('decision', [
-        z.object({
-          decision: z.literal('approve'),
-          suggestionId: z.uuid(),
-          recipeId: z.string().trim().min(1).max(80).optional(),
-          targetLibrary: z.string().trim().min(1).max(200).optional(),
-          ordered: z.boolean().optional(),
-          syncMode: z.enum(COLLECTION_SYNC_MODES).optional(),
-          enableAcquisition: z.boolean().optional(),
-        }),
-        z.object({
-          decision: z.literal('decline'),
-          suggestionId: z.uuid(),
-          reason: z.string().trim().min(1).max(1000),
-        }),
-      ]),
-    )
+  /**
+   * Over-cap escalation (D-11): file a `collection_override` ticket CARRYING the full requested definition.
+   * The server resolves the authoritative size (never trusting the client) and stamps the caller as author.
+   * An admin's Approve materializes it unbounded.
+   */
+  requestOverride: authedProcedure
+    .input(recipeDraftInput.extend({ mediaType: z.enum(COLLECTION_MEDIA_TYPES) }))
     .mutation(async ({ ctx, input }) => {
       return mapDomainErrors(async () => {
-        if (input.decision === 'decline') {
-          const row = await declineCollectionSuggestion({
-            db: ctx.db,
-            suggestionId: input.suggestionId,
-            reviewerId: ctx.user.id,
-            reason: input.reason,
-          });
-          return suggestionWire(row);
-        }
-        const actions = await resolveCollectionActions(ctx.db, ctx.user.role);
-        const row = await approveCollectionSuggestion({
+        const { mediaType, ...draftInput } = input;
+        const draft = toLibrettoDraft(draftInput);
+        const size = await resolveDraftSize(ctx, draft);
+        const cap = await getAppSetting(ctx.db, 'collection_size_cap');
+        const payload: CollectionOverridePayload = {
+          provider: LIBRETTO_MEDIA_TYPES.has(mediaType) ? 'libretto' : 'kometa',
+          mediaType,
+          recipeId: draftInput.id,
+          name: draftInput.name ?? draftInput.id,
+          builderType: draftInput.builderType,
+          builderRef: draftInput.builderRef,
+          targetLibrary: draftInput.targetLibrary ?? null,
+          ordered: draftInput.ordered,
+          syncMode: draftInput.syncMode,
+          size,
+        };
+        const ticket = await createCollectionOverrideTicket({
+          db: ctx.db,
+          authorId: ctx.user.id,
+          cap,
+          payload,
+        });
+        return { ticketId: ticket.id };
+      });
+    }),
+
+  /** The caller's OWN over-cap requests (the Tickets sub-section, requester lens). */
+  myTickets: authedProcedure.query(async ({ ctx }) => {
+    const rows = await listCollectionOverrideTickets({ db: ctx.db, authorId: ctx.user.id, limit: 50 });
+    return { tickets: rows.map(ticketWire) };
+  }),
+
+  /** ALL over-cap requests (ADMIN — the Tickets sub-section approve lens; newest-activity-first). */
+  allTickets: adminProcedure.query(async ({ ctx }) => {
+    const rows = await listCollectionOverrideTickets({ db: ctx.db, limit: 100 });
+    return { tickets: rows.map(ticketWire) };
+  }),
+
+  /** Approve an over-cap request (ADMIN, one click) → materialize the collection unbounded + complete it. */
+  approveOverride: adminProcedure
+    .input(z.object({ ticketId: z.uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      return mapDomainErrors(async () => {
+        const res = await approveCollectionOverride({
           db: ctx.db,
           libretto: resolveLibrettoBundle(ctx),
-          suggestionId: input.suggestionId,
-          reviewerId: ctx.user.id,
-          canAcquire: actions.includes('acquire'),
-          enableAcquisition: input.enableAcquisition ?? false,
-          ...(input.recipeId ? { recipeId: input.recipeId } : {}),
-          ...(input.targetLibrary ? { targetLibrary: input.targetLibrary } : {}),
-          ...(input.ordered !== undefined ? { ordered: input.ordered } : {}),
-          ...(input.syncMode ? { syncMode: input.syncMode } : {}),
+          ticketId: input.ticketId,
+          actorId: ctx.user.id,
         });
-        return suggestionWire(row);
+        return { ticketId: res.ticket.id, status: res.ticket.status };
       });
     }),
 
-  /**
-   * The member contribution: propose a collection (a PENDING row; applies nothing). Gated by the `suggest`
-   * grant only (no section floor — the affordance is on the books walls).
-   */
-  suggest: collectionSuggestProcedure
-    .input(
-      z.object({
-        name: z.string().trim().min(1).max(200),
-        builderType: z.enum(COLLECTION_BUILDER_TYPES),
-        builderRef: z.string().trim().min(1).max(400),
-        targetLibrary: z.string().trim().min(1).max(200).optional(),
-        note: z.string().trim().min(1).max(1000).optional(),
-      }),
-    )
+  /** Decline an over-cap request (ADMIN) with a reason. Materializes nothing. */
+  declineOverride: adminProcedure
+    .input(z.object({ ticketId: z.uuid(), reason: z.string().trim().min(1).max(1000) }))
     .mutation(async ({ ctx, input }) => {
-      const row = await createCollectionSuggestion({
-        db: ctx.db,
-        suggesterId: ctx.user.id,
-        name: input.name,
-        builderType: input.builderType,
-        builderRef: input.builderRef,
-        targetLibrary: input.targetLibrary ?? null,
-        note: input.note ?? null,
+      return mapDomainErrors(async () => {
+        const res = await declineCollectionOverride({
+          db: ctx.db,
+          ticketId: input.ticketId,
+          actorId: ctx.user.id,
+          reason: input.reason,
+        });
+        return { ticketId: res.ticket.id, status: res.ticket.status };
       });
-      return suggestionWire(row);
     }),
 
-  /** The suggester's own suggestions (newest-first) — the wall affordance's state read. */
-  mySuggestions: collectionSuggestProcedure.query(async ({ ctx }) => {
-    const rows = await listCollectionSuggestions({ db: ctx.db, suggesterId: ctx.user.id, limit: 25 });
-    return { suggestions: rows.map(suggestionWire) };
+  /** Admin Settings (D-10): the current configurable size cap. */
+  settings: adminProcedure.query(async ({ ctx }) => {
+    const sizeCap = await getAppSetting(ctx.db, 'collection_size_cap');
+    return { sizeCap };
   }),
+
+  /** Admin Settings (D-10): set the configurable size cap (audited setAppSetting). */
+  setSizeCap: adminProcedure
+    .input(z.object({ value: z.number().int().min(1).max(100000) }))
+    .mutation(async ({ ctx, input }) => {
+      const res = await setAppSetting({
+        db: ctx.db,
+        key: 'collection_size_cap',
+        value: input.value,
+        actorId: ctx.user.id,
+      });
+      return { sizeCap: res.after };
+    }),
 });

@@ -394,8 +394,8 @@ button.motd__dismiss:hover {
      row width ever exceed the space between the brand mark and the right-pinned actions, the rail
      scrolls WITHIN ITS OWN BOUNDS rather than overflowing VISIBLY rightward under the theme toggle
      (the narrow-phone overlap bug, owner-reported on a 360px-class device). overflow-x: auto shows
-     a track only when the links can't fit — with four links they always do at ≥320px, so this
-     never engages today, but it stays as insurance for a future fifth entry. Page-level scroll
+     a track only when the links can't fit — with FIVE entries (Collections joined, ADR-072) the
+     rail DOES scroll on phone widths; the scroll-driven edge fade below marks it. Page-level scroll
      stays impossible (html/body overflow:hidden, D-05); confining the overflow here means the
      actions can't be overrun. The little vertical padding keeps the 56px bar taller than the rail
      so link focus rings aren't clipped. A self-contained scroll pane — swiping it never
@@ -410,6 +410,54 @@ button.motd__dismiss:hover {
 }
 .topbar__nav::-webkit-scrollbar {
   display: none;
+}
+/* SCROLL AFFORDANCE (Fable UX pass 2026-07-18): with five entries the rail scrolls on phones, and a
+   hidden scrollbar left a mid-glyph clip ("Ticket|") that read as BROKEN, not scrollable. A
+   scroll-driven edge fade marks the truncation as intentional: the un-scrolled edge fades over its
+   last 22px; reaching that end sharpens it and fades the other. The mask's black/transparent are
+   ALPHA stops, not drawn color (hard rule 2 untouched). Progressive: browsers without scroll-driven
+   animations keep today's exact behavior (the @supports gate); when the links fit, the timeline is
+   inactive and both fades stay 0 — no resting visual change. Masking only, never layout (ADR-015). */
+@property --nav-fade-l {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --nav-fade-r {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@supports (animation-timeline: scroll(self x)) {
+  .topbar__nav {
+    mask-image: linear-gradient(
+      to right,
+      transparent 0,
+      black var(--nav-fade-l),
+      black calc(100% - var(--nav-fade-r)),
+      transparent 100%
+    );
+    animation: topbar-nav-edge-fades linear both;
+    animation-timeline: scroll(self x);
+  }
+  @keyframes topbar-nav-edge-fades {
+    0% {
+      --nav-fade-l: 0px;
+      --nav-fade-r: 22px;
+    }
+    15% {
+      --nav-fade-l: 22px;
+      --nav-fade-r: 22px;
+    }
+    85% {
+      --nav-fade-l: 22px;
+      --nav-fade-r: 22px;
+    }
+    100% {
+      --nav-fade-l: 22px;
+      --nav-fade-r: 0px;
+    }
+  }
 }
 .topbar__nav a {
   color: var(--color-text-muted);
@@ -6942,16 +6990,23 @@ body:has(.gallery) {
   flex-direction: column;
   gap: 10px;
 }
+/* Every row shares ONE anatomy (Fable UX pass 2026-07-18): title+meta left, actions right — a grid,
+   so a long meta can never push one row's actions onto a different line than its neighbors'
+   (the wrap-inconsistency the flex layout allowed). Below 700px every row stacks the same way. */
 .collection-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  flex-wrap: wrap;
+  gap: 6px 14px;
   padding: 12px 14px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
   background: var(--color-surface);
+}
+@media (max-width: 699px) {
+  .collection-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .collection-row__main {
   display: flex;
@@ -6975,8 +7030,7 @@ body:has(.gallery) {
   gap: 8px;
   flex-wrap: wrap;
 }
-.collection-row__apply,
-.collection-row__delete {
+.collection-row__apply {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -6984,19 +7038,13 @@ body:has(.gallery) {
 .collection-row__runcounts {
   font-size: 0.8rem;
 }
-.collection-row__alsodelete {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 0.78rem;
-  color: var(--color-text-muted);
-}
-/* The acquisition puck reserves a fixed width so ON/OFF recolors without shifting the row (ADR-015). */
+/* The find-missing puck reserves the width of its widest label ("Find missing off") so ON/OFF
+   recolors without shifting the row (ADR-015). */
 .acq-puck {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 92px;
+  min-width: 118px;
   padding: 3px 8px;
   border-radius: 999px;
   font-size: 0.74rem;
@@ -7096,4 +7144,54 @@ body:has(.gallery) {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/* ADR-072 / DESIGN-043 (PLAN-052 PR4a) — the first-class /collections page: the size-vs-cap read on
+   a row, the over-cap ticket Modal, and the Tickets + Settings sub-sections. Tokens only (hard rule 2);
+   the sub-nav reuses .library-tabs (the bulletin idiom) so no new tab CSS is needed. */
+.collection-row__cap {
+  color: var(--color-text-muted);
+  opacity: 0.75;
+}
+.over-cap {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.over-cap p {
+  margin: 0;
+}
+.collections-tickets,
+.collections-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.collections-tickets__intro {
+  max-width: 60ch;
+  font-size: 0.9rem;
+  margin: 0;
+}
+.collections-ticketgroup {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.collections-settingcard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 60ch;
+}
+.collections-settingcard .muted {
+  font-size: 0.9rem;
+}
+.collections-caplimit {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.collections-capinput {
+  width: 8em;
 }

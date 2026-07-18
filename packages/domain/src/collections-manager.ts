@@ -1,10 +1,17 @@
-// ADR-070 / DESIGN-043 (PLAN-052 — collection manager) — the orchestrator that fronts the confined
-// @hnet/libretto client for the tRPC layer. The write surface (upsertRecipe / deleteRecipe / applyScope)
-// is import-confined to packages/domain, so packages/api reaches Libretto ONLY through these functions —
-// the ADR-055 discipline. The manager reads Libretto LIVE (no local mirror; Libretto is stateless) and
-// degrades HONESTLY: a LibrettoUnreachableError from the overview read yields `reachable: false`, never a
-// crash (ADR-070 C-09). The `acquire` gate (the content-pull knob) is enforced HERE and re-checked at the
-// API — a caller without `acquire` who sets acquisitionEnabled true is refused.
+// ADR-072 / DESIGN-043 D-03/D-06/D-10/D-11 (PLAN-052 PR4a — direct-add) — the orchestrator that fronts the
+// confined @hnet/libretto client for the tRPC layer. The write surface (upsertRecipe / deleteRecipe /
+// applyScope) is import-confined to packages/domain, so packages/api reaches Libretto ONLY through these
+// functions (the ADR-055 discipline). The manager reads Libretto LIVE (no local mirror; Libretto is
+// stateless) and degrades HONESTLY: a LibrettoUnreachableError from the overview read yields
+// `reachable: false`, never a crash (the surviving ADR-070 C-09).
+//
+// Direct-add model (ADR-072): everyone adds/edits within the size cap; there is NO grant on the safe path.
+// `upsertCollection` asserts the cap (admins bypass) BEFORE the confined write, then co-writes an
+// `upsert_collection` audit row in the SAME tx as the write's stamp (the crash-safe idempotent-PUT idiom:
+// the external write lands first, then the same-tx audit — a crash between them re-PUTs cleanly). Delete is
+// admin-only. Over-cap escalates to a `collection_override` ticket (tickets.ts) that materializes on
+// approve. `find_missing` (the acquisition knob) is a per-collection grant, wired in PR4c — direct adds in
+// PR4a always write acquisition OFF.
 import { LibrettoUnreachableError } from '@hnet/libretto';
 import type {
   LibrettoCollection,
@@ -14,15 +21,10 @@ import type {
   LibrettoRun,
   LibrettoValidateResponse,
 } from '@hnet/libretto';
+import { permissionAudit, type DbClient } from '@hnet/db';
+import { inTransaction } from './db-client';
+import { assertWithinCollectionSizeCap } from './collection-size-cap';
 import type { LibrettoClientBundle } from './libretto-clients';
-
-/** A caller lacking the `acquire` grant tried to enable a recipe's acquisition (the content-pull knob). */
-export class CollectionAcquireForbiddenError extends Error {
-  readonly code = 'COLLECTION_ACQUIRE_FORBIDDEN' as const;
-  constructor() {
-    super('Enabling acquisition needs the acquire grant');
-  }
-}
 
 export interface CollectionsOverview {
   /** False when Libretto could not be reached — the manager renders the honest unreachable state. */
@@ -71,9 +73,9 @@ export async function getCollectionsOverview(input: {
 }
 
 /**
- * Resolve a draft ref through `POST /api/validate` — the composer's ref PREVIEW (ADR-070 C-07). Surfaces
- * the resolved name + work count + any issues honestly; a 0-work container-series slug comes back resolved
- * with workCount 0 (the silent-failure guard). No fabrication.
+ * Resolve a draft ref through `POST /api/validate` — the composer's ref PREVIEW (the surviving ADR-070
+ * C-07). Surfaces the resolved name + work count + any issues honestly; a 0-work container-series slug
+ * comes back resolved with workCount 0 (the silent-failure guard). No fabrication.
  */
 export async function previewRecipeRef(input: {
   libretto: LibrettoClientBundle;
@@ -82,24 +84,61 @@ export async function previewRecipeRef(input: {
   return input.libretto.read.validateRecipe(input.draft);
 }
 
-/**
- * Save (create/edit) a recipe through the confined writer. The `acquire` gate: enabling
- * `variables.acquisitionEnabled` requires `canAcquire` — a `manage`-only caller who sets it is refused
- * here (CollectionAcquireForbiddenError), independent of the API re-check. Validate-before-save is the
- * caller's step (DESIGN-043 D-03); Libretto also validates on PUT (strictObject → 400 surfaced as issues).
- */
-export async function saveRecipe(input: {
-  libretto: LibrettoClientBundle;
-  draft: LibrettoRecipeDraft;
-  canAcquire: boolean;
-}): Promise<void> {
-  if (input.draft.variables?.acquisitionEnabled === true && !input.canAcquire) {
-    throw new CollectionAcquireForbiddenError();
-  }
-  await input.libretto.write.upsertRecipe(input.draft);
+/** The audit facts an upsert/materialize records (kept small — the recipe lives in Libretto, not here). */
+function upsertAuditDetail(draft: LibrettoRecipeDraft, extra?: Record<string, unknown>) {
+  return {
+    recipe_id: draft.id,
+    provider: 'libretto' as const,
+    name: draft.name ?? draft.id,
+    builder_type: draft.builder?.type ?? null,
+    builder_ref: draft.builder?.ref ?? null,
+    ...(extra ?? {}),
+  };
 }
 
-/** Apply a scope (`'all'` or a recipe id) → the async run id (poll getCollectionRun). */
+/**
+ * DESIGN-043 D-03/D-10 — the DIRECT add/edit writer. Asserts the size cap (admins bypass — the pure
+ * `assertWithinCollectionSizeCap`, throwing `CollectionSizeCapError` the client renders the over-cap Modal
+ * from) BEFORE the confined write, then upserts the recipe through the confined @hnet/libretto writer, then
+ * co-writes an `upsert_collection` permission_audit row in ONE tx (the external write lands first — a crash
+ * between the write and the audit re-PUTs the idempotent recipe cleanly). Direct adds always write
+ * acquisition OFF (find_missing is the PR4c per-collection grant); the draft's acquisition flag is ignored
+ * here. No grant on this path (ADR-072 — everyone adds within the cap).
+ */
+export async function upsertCollection(input: {
+  db?: DbClient;
+  libretto: LibrettoClientBundle;
+  actorId: string;
+  draft: LibrettoRecipeDraft;
+  /** The resolved membership size (from the ref preview) the cap is checked against. */
+  size: number;
+  /** The live `collection_size_cap`. */
+  cap: number;
+  /** The caller's admin flag — admins bypass the cap outright. */
+  isAdmin: boolean;
+}): Promise<{ id: string }> {
+  assertWithinCollectionSizeCap({ size: input.size, cap: input.cap, isAdmin: input.isAdmin });
+  // Force acquisition OFF on the direct path (find_missing is the PR4c grant-gated per-collection knob).
+  const draft: LibrettoRecipeDraft = {
+    ...input.draft,
+    variables: { ...(input.draft.variables ?? {}), acquisitionEnabled: false },
+  };
+  // External write BEFORE the same-tx audit stamp (crash-safe: the PUT is idempotent).
+  await input.libretto.write.upsertRecipe(draft);
+  await inTransaction(input.db, async (tx) => {
+    await tx.insert(permissionAudit).values({
+      actorId: input.actorId,
+      action: 'upsert_collection',
+      detail: upsertAuditDetail(draft, { size: input.size }),
+    });
+  });
+  return { id: draft.id };
+}
+
+/**
+ * Apply a scope (`'all'` or a recipe id) → the async run id (poll getCollectionRun). Grouping-only — no
+ * acquisition side effect (the find_missing knob is separate; PR4c).
+ */
 export async function applyCollectionScope(input: {
   libretto: LibrettoClientBundle;
   scope: string;
@@ -108,15 +147,46 @@ export async function applyCollectionScope(input: {
 }
 
 /**
- * Delete a recipe. By default the produced collection SURVIVES orphaned (marker present, no recipe) — the
- * UI warns about this (ADR-070 C-08). `deleteCollection: true` also deletes the target collection.
+ * DESIGN-043 D-03 — DELETE a recipe (ADMIN only; the API gates the caller). By default the produced
+ * collection SURVIVES orphaned (marker present, no recipe) — the UI warns about this (the surviving ADR-070
+ * C-08). `deleteCollection: true` also deletes the target collection. Confined write first, then a same-tx
+ * `delete_collection` audit row.
  */
 export async function deleteCollectionRecipe(input: {
+  db?: DbClient;
   libretto: LibrettoClientBundle;
+  actorId: string;
   id: string;
   deleteCollection?: boolean;
 }): Promise<void> {
-  await input.libretto.write.deleteRecipe(input.id, { deleteCollection: input.deleteCollection ?? false });
+  await input.libretto.write.deleteRecipe(input.id, {
+    deleteCollection: input.deleteCollection ?? false,
+  });
+  await inTransaction(input.db, async (tx) => {
+    await tx.insert(permissionAudit).values({
+      actorId: input.actorId,
+      action: 'delete_collection',
+      detail: { recipe_id: input.id, provider: 'libretto', also_delete_collection: input.deleteCollection ?? false },
+    });
+  });
+}
+
+/**
+ * DESIGN-043 D-11 — materialize a recipe UNBOUNDED (cap-bypassed) from an approved over-cap ticket's
+ * payload. The SAME confined writer as a direct add, without the cap assert. Acquisition stays OFF (a
+ * find_missing enable is a distinct, human-merged action — PR4c). No audit here: the caller
+ * (approveCollectionOverride) records the materialization via the ticket transition's ticket_events row in
+ * the same tx as the completion, and this idempotent external PUT lands BEFORE it (crash-safe).
+ */
+export async function materializeCollection(input: {
+  libretto: LibrettoClientBundle;
+  draft: LibrettoRecipeDraft;
+}): Promise<void> {
+  const draft: LibrettoRecipeDraft = {
+    ...input.draft,
+    variables: { ...(input.draft.variables ?? {}), acquisitionEnabled: false },
+  };
+  await input.libretto.write.upsertRecipe(draft);
 }
 
 /** Poll one run's state + counts (the last-50 caveat is surfaced honestly in the UI — DESIGN-037 D-03). */

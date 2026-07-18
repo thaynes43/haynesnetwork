@@ -1,18 +1,12 @@
-// ADR-070 / DESIGN-043 (PLAN-052 — collection manager) — the collections router gates, INCLUDING the
-// FORBIDDEN paths the plan calls out: an ungranted member is FORBIDDEN everywhere; a `suggest`-only member
-// can propose (from the walls, no section floor) but NOT reach the manager; a `manage` member cannot enable
-// the acquisition knob (needs `acquire`, re-checked server-side); an `acquire`-holding member can. Admin
-// bypasses. The confined Libretto client is stubbed in ctx (ADR-010 — no live-API tests).
+// ADR-072 / DESIGN-043 (PLAN-052 PR4a — direct-add) — the collections router gates, INCLUDING the FORBIDDEN
+// paths the plan calls out: everyone reads + adds/edits within the cap (no grant, no section floor); an
+// over-cap non-admin routes to the ticket (never a silent truncation); a non-admin CANNOT delete, approve,
+// decline, read all tickets, or touch settings (FORBIDDEN); an admin bypasses the cap and does all of it.
+// The confined Libretto client is stubbed in ctx (ADR-010 — no live-API tests).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
-import {
-  SEEDED_ROLE_IDS,
-  notificationOutbox,
-  ticketEvents,
-  tickets,
-  type CollectionAction,
-} from '@hnet/db';
-import { setRoleCollectionActions, type LibrettoClientBundle } from '@hnet/domain';
+import { notificationOutbox, ticketEvents, tickets, type CollectionOverridePayload } from '@hnet/db';
+import type { LibrettoClientBundle } from '@hnet/domain';
 import { bootMigratedDb, caller, createUser, makeCtx, sessionUser, wireShape, type TestDb } from './helpers';
 import type { TRPCContext } from '../src/trpc';
 
@@ -26,10 +20,11 @@ afterAll(async () => {
 
 /**
  * A recording Libretto stub bundle injected into ctx. `workCount` is what `validateRecipe` resolves the
- * draft to — the preview the size-cap guard reads (DESIGN-035 D-17). Defaults to 3 (well within the cap).
+ * draft to — the preview the size-cap guard reads (D-03/D-10). Defaults to 3 (well within the cap).
  */
-function stubLibretto(workCount = 3): { ctx: Partial<TRPCContext>; recipes: Array<Record<string, unknown>> } {
+function stubLibretto(workCount = 3): { ctx: Partial<TRPCContext>; recipes: Array<Record<string, unknown>>; deleted: string[] } {
   const recipes: Array<Record<string, unknown>> = [];
+  const deleted: string[] = [];
   const libretto = {
     read: {
       listRecipes: async () => ({ recipes, issues: [] }),
@@ -39,275 +34,227 @@ function stubLibretto(workCount = 3): { ctx: Partial<TRPCContext>; recipes: Arra
     },
     write: {
       upsertRecipe: async (d: Record<string, unknown>) => void recipes.push(d),
-      deleteRecipe: async () => {},
+      deleteRecipe: async (id: string) => void deleted.push(id),
       applyScope: async () => 'run-9',
     },
   } as unknown as LibrettoClientBundle;
-  return { ctx: { libretto }, recipes };
+  return { ctx: { libretto }, recipes, deleted };
 }
 
-/** Grant the seeded Default role a set of collection actions (via the audited single-writer). */
-async function grantDefault(actions: CollectionAction[]): Promise<void> {
-  const admin = await createUser(t.db, { admin: true });
-  await setRoleCollectionActions({ db: t.db, roleId: SEEDED_ROLE_IDS.default, actions, actorId: admin.id });
-}
+const draftInput = (over?: Record<string, unknown>) => ({
+  id: 'dune',
+  builderType: 'static_ids' as const,
+  builderRef: 'x',
+  ...over,
+});
 
-describe('collections router — the manage/acquire/suggest gates (ADR-070 C-03/C-04)', () => {
-  it('an ungranted member is FORBIDDEN from the manager overview', async () => {
+describe('collections overview — everyone reads, no grant, no section floor (ADR-072)', () => {
+  it('a plain member (no integrations section) reads the Books overview', async () => {
     const member = await createUser(t.db);
-    const ctx = { ...makeCtx(t.db, sessionUser(member, { integrations: 'read_only' })), ...stubLibretto().ctx };
-    await expect(caller(ctx).collections.overview()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stubLibretto().ctx };
+    const res = await caller(ctx).collections.overview({ mediaType: 'books' });
+    expect(res.available).toBe(true);
+    expect(res.reachable).toBe(true);
+    expect(res.provider).toBe('libretto');
+    expect(res.canFindMissing).toBe(false); // ungranted
+    expect(res.capBypass).toBe(false);
   });
 
-  it('an ADMIN sees the overview (reachable) with canAcquire', async () => {
+  it('Movies/TV report available:false (the Kometa leg is PR4b)', async () => {
+    const member = await createUser(t.db);
+    const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stubLibretto().ctx };
+    const res = await caller(ctx).collections.overview({ mediaType: 'movies' });
+    expect(res.available).toBe(false);
+    expect(res.provider).toBe('kometa');
+    expect(res.recipes).toEqual([]);
+  });
+
+  it('an ADMIN reads with capBypass + canFindMissing', async () => {
     const admin = await createUser(t.db, { admin: true });
     const ctx = { ...makeCtx(t.db, sessionUser(admin)), ...stubLibretto().ctx };
-    const res = await caller(ctx).collections.overview();
-    expect(res.reachable).toBe(true);
-    expect(res.canAcquire).toBe(true);
-  });
-
-  it('a manage member reaches the overview but WITHOUT acquire', async () => {
-    await grantDefault(['manage']);
-    try {
-      const member = await createUser(t.db);
-      const ctx = { ...makeCtx(t.db, sessionUser(member, { integrations: 'read_only' })), ...stubLibretto().ctx };
-      const res = await caller(ctx).collections.overview();
-      expect(res.reachable).toBe(true);
-      expect(res.canAcquire).toBe(false);
-    } finally {
-      await grantDefault([]);
-    }
-  });
-
-  it('a manage member CANNOT enable acquisition on save (FORBIDDEN)', async () => {
-    await grantDefault(['manage']);
-    const stub = stubLibretto();
-    try {
-      const member = await createUser(t.db);
-      const ctx = { ...makeCtx(t.db, sessionUser(member, { integrations: 'read_only' })), ...stub.ctx };
-      await expect(
-        caller(ctx).collections.save({
-          id: 'dune',
-          builderType: 'static_ids',
-          builderRef: 'x',
-          acquisitionEnabled: true,
-        }),
-      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
-      expect(stub.recipes).toHaveLength(0);
-    } finally {
-      await grantDefault([]);
-    }
-  });
-
-  it('a manage member CAN save without acquisition', async () => {
-    await grantDefault(['manage']);
-    const stub = stubLibretto();
-    try {
-      const member = await createUser(t.db);
-      const ctx = { ...makeCtx(t.db, sessionUser(member, { integrations: 'read_only' })), ...stub.ctx };
-      const res = await caller(ctx).collections.save({ id: 'dune', builderType: 'static_ids', builderRef: 'x' });
-      expect(res.ok).toBe(true);
-      expect(stub.recipes).toHaveLength(1);
-    } finally {
-      await grantDefault([]);
-    }
-  });
-
-  it('an acquire member CAN enable acquisition', async () => {
-    await grantDefault(['manage', 'acquire']);
-    const stub = stubLibretto();
-    try {
-      const member = await createUser(t.db);
-      const ctx = { ...makeCtx(t.db, sessionUser(member, { integrations: 'read_only' })), ...stub.ctx };
-      await caller(ctx).collections.save({ id: 'd', builderType: 'static_ids', builderRef: 'x', acquisitionEnabled: true });
-      expect((stub.recipes[0]!.variables as { acquisitionEnabled: boolean }).acquisitionEnabled).toBe(true);
-    } finally {
-      await grantDefault([]);
-    }
+    const res = await caller(ctx).collections.overview({ mediaType: 'books' });
+    expect(res.capBypass).toBe(true);
+    expect(res.canFindMissing).toBe(true);
   });
 });
 
-describe('collections router — the member contribution (ADR-070 C-05)', () => {
-  it('a member WITHOUT suggest is FORBIDDEN from suggest', async () => {
+describe('direct upsert — capped, everyone, admin bypass (D-03/D-10)', () => {
+  it('a plain member within the cap adds directly (recipe lands, acquisition OFF)', async () => {
     const member = await createUser(t.db);
-    const ctx = makeCtx(t.db, sessionUser(member));
-    await expect(
-      caller(ctx).collections.suggest({ name: 'A', builderType: 'static_ids', builderRef: 'a' }),
-    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    const stub = stubLibretto(10);
+    const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stub.ctx };
+    const res = await caller(ctx).collections.upsert(draftInput({ id: 'within' }));
+    expect(res.ok).toBe(true);
+    expect(stub.recipes).toHaveLength(1);
+    expect((stub.recipes[0]!.variables as { acquisitionEnabled: boolean }).acquisitionEnabled).toBe(false);
   });
 
-  it('a suggest member can propose (NO integrations section needed — the wall affordance)', async () => {
-    await grantDefault(['suggest']);
-    try {
-      const member = await createUser(t.db);
-      // integrations stays DISABLED (default) — proves suggest has no section floor.
-      const ctx = makeCtx(t.db, sessionUser(member));
-      const res = await caller(ctx).collections.suggest({
-        name: 'The Stormlight Archive',
-        builderType: 'hardcover_series',
-        builderRef: 'stormlight',
-      });
-      expect(res.status).toBe('pending');
-      const mine = await caller(ctx).collections.mySuggestions();
-      expect(mine.suggestions).toHaveLength(1);
-    } finally {
-      await grantDefault([]);
-    }
+  it('a non-admin OVER the cap is UNPROCESSABLE_CONTENT (appCode COLLECTION_SIZE_CAP_EXCEEDED); NO recipe lands', async () => {
+    const member = await createUser(t.db);
+    const stub = stubLibretto(30); // 30 > the default cap of 25
+    const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stub.ctx };
+    const err = await caller(ctx)
+      .collections.upsert(draftInput({ id: 'imdb-top-200' }))
+      .then(
+        () => {
+          throw new Error('expected the over-cap upsert to reject');
+        },
+        (e: unknown) => e,
+      );
+    expect(err).toMatchObject({ code: 'UNPROCESSABLE_CONTENT' });
+    expect(wireShape(err, 'collections.upsert').data).toMatchObject({
+      code: 'UNPROCESSABLE_CONTENT',
+      appCode: 'COLLECTION_SIZE_CAP_EXCEEDED',
+    });
+    expect(stub.recipes).toHaveLength(0);
   });
 
-  it('a suggest-only member CANNOT reach the manager overview', async () => {
-    await grantDefault(['suggest']);
-    try {
-      const member = await createUser(t.db);
-      const ctx = { ...makeCtx(t.db, sessionUser(member, { integrations: 'read_only' })), ...stubLibretto().ctx };
-      await expect(caller(ctx).collections.overview()).rejects.toMatchObject({ code: 'FORBIDDEN' });
-    } finally {
-      await grantDefault([]);
-    }
-  });
-
-  it('a manage admin approves a suggestion → recipe materialized', async () => {
-    const admin = await createUser(t.db, { admin: true });
-    const stub = stubLibretto();
-    const suggester = await createUser(t.db);
-    // The suggester files it (grant suggest to Default so the suggester can call).
-    await grantDefault(['suggest']);
-    let suggestionId: string;
-    try {
-      const sCtx = makeCtx(t.db, sessionUser(suggester));
-      const s = await caller(sCtx).collections.suggest({ name: 'Dune', builderType: 'static_ids', builderRef: 'x' });
-      suggestionId = s.id;
-    } finally {
-      await grantDefault([]);
-    }
-    const aCtx = { ...makeCtx(t.db, sessionUser(admin)), ...stub.ctx };
-    const res = await caller(aCtx).collections.reviewSuggestion({ decision: 'approve', suggestionId });
-    expect(res.status).toBe('approved');
+  it('a non-admin AT the cap (inclusive) adds fine', async () => {
+    const member = await createUser(t.db);
+    const stub = stubLibretto(25);
+    const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stub.ctx };
+    const res = await caller(ctx).collections.upsert(draftInput({ id: 'at-cap' }));
+    expect(res.ok).toBe(true);
     expect(stub.recipes).toHaveLength(1);
   });
-});
 
-// DESIGN-035 D-17 — the non-admin collection SIZE CAP fence on save: the composer previews the draft's
-// resolved membership (stub-Libretto validateRecipe → workCount), reads the live `collection_size_cap`
-// (default 25), and refuses an over-cap CREATE for a non-admin BEFORE the confined Libretto write ever
-// lands. Admins bypass the cap outright.
-describe('collections router — the non-admin size cap on save (DESIGN-035 D-17)', () => {
-  it('a non-admin manage member over the cap is UNPROCESSABLE_CONTENT (appCode COLLECTION_SIZE_CAP_EXCEEDED); NO recipe lands', async () => {
-    await grantDefault(['manage']);
-    const stub = stubLibretto(30); // resolved membership 30 > the default cap of 25
-    try {
-      const member = await createUser(t.db);
-      const ctx = { ...makeCtx(t.db, sessionUser(member, { integrations: 'read_only' })), ...stub.ctx };
-      const err = await caller(ctx)
-        .collections.save({ id: 'imdb-top-200', builderType: 'static_ids', builderRef: 'x' })
-        .then(
-          () => {
-            throw new Error('expected the over-cap save to reject');
-          },
-          (e: unknown) => e,
-        );
-      expect(err).toMatchObject({ code: 'UNPROCESSABLE_CONTENT' });
-      // The wire shape carries the machine-readable appCode the composer switches on (opens the Modal).
-      expect(wireShape(err, 'collections.save').data).toMatchObject({
-        code: 'UNPROCESSABLE_CONTENT',
-        appCode: 'COLLECTION_SIZE_CAP_EXCEEDED',
-      });
-      // The guard fires BEFORE the confined write — nothing partial reached Libretto.
-      expect(stub.recipes).toHaveLength(0);
-    } finally {
-      await grantDefault([]);
-    }
-  });
-
-  it('a non-admin AT the cap (inclusive) saves fine', async () => {
-    await grantDefault(['manage']);
-    const stub = stubLibretto(25); // exactly the cap — allowed
-    try {
-      const member = await createUser(t.db);
-      const ctx = { ...makeCtx(t.db, sessionUser(member, { integrations: 'read_only' })), ...stub.ctx };
-      const res = await caller(ctx).collections.save({ id: 'at-cap', builderType: 'static_ids', builderRef: 'x' });
-      expect(res.ok).toBe(true);
-      expect(stub.recipes).toHaveLength(1);
-    } finally {
-      await grantDefault([]);
-    }
-  });
-
-  it('an ADMIN bypasses the cap — an over-cap draft saves (the LISTS exception)', async () => {
+  it('an ADMIN bypasses the cap — an over-cap draft adds (the LISTS exception)', async () => {
     const admin = await createUser(t.db, { admin: true });
-    const stub = stubLibretto(500); // far over the cap — an admin-curated IMDb top-500
+    const stub = stubLibretto(500);
     const ctx = { ...makeCtx(t.db, sessionUser(admin)), ...stub.ctx };
-    const res = await caller(ctx).collections.save({ id: 'imdb-top-500', builderType: 'static_ids', builderRef: 'x' });
+    const res = await caller(ctx).collections.upsert(draftInput({ id: 'imdb-top-500' }));
     expect(res.ok).toBe(true);
     expect(stub.recipes).toHaveLength(1);
   });
 });
 
-// DESIGN-035 D-17 — the over-cap admin-override request: a non-admin whose create hit the cap files a
-// `collection_override` ticket (reusing the ADR-050 helpdesk board + its atomic `ticket_created` outbox
-// ping + admin email). The permission matrix mirrors save (integrations-floored `manage`); admin bypasses.
-describe('collections router — requestOverride (DESIGN-035 D-17)', () => {
-  it('an ungranted member is FORBIDDEN from requestOverride', async () => {
+describe('delete — ADMIN only (D-03)', () => {
+  it('a non-admin CANNOT delete (FORBIDDEN)', async () => {
     const member = await createUser(t.db);
-    const ctx = makeCtx(t.db, sessionUser(member, { integrations: 'read_only' }));
-    await expect(
-      caller(ctx).collections.requestOverride({ collectionName: 'IMDb Top 200', size: 200 }),
-    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
-    // A member without even the integrations floor is FORBIDDEN too (the section gate fires first).
-    const noSection = makeCtx(t.db, sessionUser(member));
-    await expect(
-      caller(noSection).collections.requestOverride({ collectionName: 'IMDb Top 200', size: 200 }),
-    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    const stub = stubLibretto();
+    const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stub.ctx };
+    await expect(caller(ctx).collections.remove({ id: 'dune' })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(stub.deleted).toHaveLength(0);
   });
 
-  it('a manage member files the collection_override ticket — creation event + outbox rows in the SAME tx', async () => {
-    await grantDefault(['manage']);
-    try {
-      const member = await createUser(t.db, { displayName: 'Over Requester' });
-      const ctx = makeCtx(t.db, sessionUser(member, { integrations: 'read_only' }));
-      const { ticketId } = await caller(ctx).collections.requestOverride({
-        collectionName: 'IMDb Top 200',
-        size: 200,
-      });
-      expect(ticketId).toBeTruthy();
-
-      // The ticket: category collection_override, the requester is the author, the live cap (25) rides the body.
-      const [ticket] = await t.db.select().from(tickets).where(sql`${tickets.id} = ${ticketId}`);
-      expect(ticket!.category).toBe('collection_override');
-      expect(ticket!.authorUserId).toBe(member.id);
-      expect(ticket!.title).toBe('Collection override request: IMDb Top 200');
-      expect(ticket!.body).toContain('200 items');
-      expect(ticket!.body).toContain('25 items'); // the live cap the server read (never a client-sent cap)
-
-      // The "Filed" creation event landed in the same tx (single-writer audit trail).
-      const events = await t.db
-        .select()
-        .from(ticketEvents)
-        .where(sql`${ticketEvents.ticketId} = ${ticketId}`);
-      expect(events).toHaveLength(1);
-      expect([events[0]!.fromStatus, events[0]!.toStatus]).toEqual([null, 'open']);
-      expect(events[0]!.actorUserId).toBe(member.id);
-
-      // And the ticket_created outbox pings (pushover + admin email) committed with it.
-      const outbox = (
-        await t.db.select().from(notificationOutbox).where(sql`${notificationOutbox.eventType} = 'ticket_created'`)
-      ).filter((o) => (o.payload as { ticketId?: string }).ticketId === ticketId);
-      expect(outbox.map((o) => o.channel).sort()).toEqual(['email', 'pushover']);
-    } finally {
-      await grantDefault([]);
-    }
-  });
-
-  it('an ADMIN can also file an override request', async () => {
+  it('an admin deletes the recipe', async () => {
     const admin = await createUser(t.db, { admin: true });
-    const ctx = makeCtx(t.db, sessionUser(admin));
+    const stub = stubLibretto();
+    const ctx = { ...makeCtx(t.db, sessionUser(admin)), ...stub.ctx };
+    const res = await caller(ctx).collections.remove({ id: 'dune', deleteCollection: true });
+    expect(res.ok).toBe(true);
+    expect(stub.deleted).toEqual(['dune']);
+  });
+});
+
+describe('over-cap ticket — file / approve / decline (D-11)', () => {
+  it('any member files a collection_override ticket carrying the full payload + creation event same-tx', async () => {
+    const member = await createUser(t.db, { displayName: 'Over Requester' });
+    const stub = stubLibretto(200);
+    const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stub.ctx };
     const { ticketId } = await caller(ctx).collections.requestOverride({
-      collectionName: 'Admin List',
-      size: 999,
+      id: 'imdb-top-200',
+      name: 'IMDb Top 200',
+      builderType: 'nyt_list',
+      builderRef: 'top-200',
+      mediaType: 'books',
     });
+    expect(ticketId).toBeTruthy();
+
     const [ticket] = await t.db.select().from(tickets).where(sql`${tickets.id} = ${ticketId}`);
     expect(ticket!.category).toBe('collection_override');
-    expect(ticket!.authorUserId).toBe(admin.id);
+    expect(ticket!.authorUserId).toBe(member.id);
+    // The full requested definition rides the payload column (so Approve can materialize it).
+    const payload = ticket!.collectionOverridePayload as CollectionOverridePayload;
+    expect(payload.recipeId).toBe('imdb-top-200');
+    expect(payload.size).toBe(200); // the SERVER-resolved size (never a client-sent number)
+    expect(payload.mediaType).toBe('books');
+
+    const events = await t.db.select().from(ticketEvents).where(sql`${ticketEvents.ticketId} = ${ticketId}`);
+    expect(events).toHaveLength(1);
+    const outbox = (
+      await t.db.select().from(notificationOutbox).where(sql`${notificationOutbox.eventType} = 'ticket_created'`)
+    ).filter((o) => (o.payload as { ticketId?: string }).ticketId === ticketId);
+    expect(outbox.map((o) => o.channel).sort()).toEqual(['email', 'pushover']);
+  });
+
+  it('a non-admin CANNOT approve / decline / read all tickets (FORBIDDEN)', async () => {
+    const member = await createUser(t.db);
+    const stub = stubLibretto();
+    const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stub.ctx };
+    const uuid = '00000000-0000-0000-0000-000000000000';
+    await expect(caller(ctx).collections.approveOverride({ ticketId: uuid })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(
+      caller(ctx).collections.declineOverride({ ticketId: uuid, reason: 'no' }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(caller(ctx).collections.allTickets()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it('an admin approves → materializes the collection unbounded + completes the ticket', async () => {
+    const member = await createUser(t.db);
+    const admin = await createUser(t.db, { admin: true });
+    const stub = stubLibretto(200);
+    const memberCtx = { ...makeCtx(t.db, sessionUser(member)), ...stub.ctx };
+    const { ticketId } = await caller(memberCtx).collections.requestOverride({
+      id: 'big-list',
+      name: 'Big List',
+      builderType: 'nyt_list',
+      builderRef: 'top-200',
+      mediaType: 'books',
+    });
+    stub.recipes.length = 0; // ignore any preview side effects; assert on the materialize write only
+
+    const adminCtx = { ...makeCtx(t.db, sessionUser(admin)), ...stub.ctx };
+    const res = await caller(adminCtx).collections.approveOverride({ ticketId });
+    expect(res.status).toBe('complete');
+    expect(stub.recipes).toHaveLength(1);
+    expect(stub.recipes[0]!.id).toBe('big-list');
+
+    // The requester sees their own ticket as complete; the admin sees it in the all-tickets lens.
+    const mine = await caller(memberCtx).collections.myTickets();
+    expect(mine.tickets.find((x) => x.id === ticketId)?.status).toBe('complete');
+    const all = await caller(adminCtx).collections.allTickets();
+    expect(all.tickets.some((x) => x.id === ticketId)).toBe(true);
+  });
+
+  it('an admin declines → materializes nothing, ticket rejected', async () => {
+    const member = await createUser(t.db);
+    const admin = await createUser(t.db, { admin: true });
+    const stub = stubLibretto(200);
+    const memberCtx = { ...makeCtx(t.db, sessionUser(member)), ...stub.ctx };
+    const { ticketId } = await caller(memberCtx).collections.requestOverride({
+      id: 'nope-list',
+      name: 'Nope',
+      builderType: 'nyt_list',
+      builderRef: 'top-200',
+      mediaType: 'books',
+    });
+    stub.recipes.length = 0;
+    const adminCtx = { ...makeCtx(t.db, sessionUser(admin)), ...stub.ctx };
+    const res = await caller(adminCtx).collections.declineOverride({ ticketId, reason: 'too large for now' });
+    expect(res.status).toBe('rejected');
+    expect(stub.recipes).toHaveLength(0);
+  });
+});
+
+describe('settings — ADMIN only (D-10)', () => {
+  it('a non-admin CANNOT read or set the cap (FORBIDDEN)', async () => {
+    const member = await createUser(t.db);
+    const ctx = makeCtx(t.db, sessionUser(member));
+    await expect(caller(ctx).collections.settings()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(caller(ctx).collections.setSizeCap({ value: 50 })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it('an admin reads then sets the cap (audited setAppSetting)', async () => {
+    const admin = await createUser(t.db, { admin: true });
+    const ctx = makeCtx(t.db, sessionUser(admin));
+    const before = await caller(ctx).collections.settings();
+    expect(before.sizeCap).toBeGreaterThan(0);
+    const res = await caller(ctx).collections.setSizeCap({ value: 42 });
+    expect(res.sizeCap).toBe(42);
+    const after = await caller(ctx).collections.settings();
+    expect(after.sizeCap).toBe(42);
+    // restore the default so other suites see the seeded cap
+    await caller(ctx).collections.setSizeCap({ value: 25 });
   });
 });
