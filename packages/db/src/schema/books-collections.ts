@@ -1,4 +1,14 @@
-import { pgTable, uuid, text, integer, boolean, timestamp, unique, index, check } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  uuid,
+  text,
+  integer,
+  boolean,
+  timestamp,
+  unique,
+  index,
+  check,
+} from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { booksItems } from './books-items';
 import {
@@ -63,6 +73,18 @@ export const booksCollections = pgTable(
      * hand-made).
      */
     createdBy: text('created_by'),
+    /**
+     * DESIGN-038 D-12 (migration 0064) — the OPEN, free-form owner CATEGORY of this collection
+     * (Series / List / Event / anything an agent coins), completing the label-driven dynamic-chip
+     * story across all three walls (movies/TV: `plex_collections.category`, migration 0062). NULLABLE
+     * and OPEN (no CHECK): a new value is a new chip with zero migration; null = no category (no chip,
+     * shows under "All"). Books carry no Plex labels, so this is AGENT-SET directly on the mirror row
+     * (the ratified L2 placement — Libretto is not in the cluster tree, and Kavita-native comic Event
+     * lists have no recipe to carry a marker). The `syncBooksCollections` upsert PRESERVES it via
+     * COALESCE, so a re-sync never wipes an agent-set value; a forward-compatible Libretto `cat=`
+     * marker (parsed by @hnet/domain `deriveBooksCollectionCategory`) WINS when the source emits one.
+     */
+    category: text('category'),
     firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -71,7 +93,10 @@ export const booksCollections = pgTable(
   (t) => [
     // Identity — the sync upserts on this key; ?group=<id> drills by the row uuid (stable app-side).
     unique('books_collections_source_external_kind_unique').on(t.source, t.externalId, t.kind),
-    check('books_collections_source_enum', sql`${t.source} = ANY (ARRAY[${sql.raw(BOOKS_SOURCES_SQL)}])`),
+    check(
+      'books_collections_source_enum',
+      sql`${t.source} = ANY (ARRAY[${sql.raw(BOOKS_SOURCES_SQL)}])`,
+    ),
     check(
       'books_collections_kind_enum',
       sql`${t.kind} = ANY (ARRAY[${sql.raw(BOOKS_COLLECTION_KINDS_SQL)}])`,
@@ -115,7 +140,10 @@ export const booksCollectionMembers = pgTable(
   },
   (t) => [
     // Identity — the sync upserts on this key.
-    unique('books_collection_members_collection_external_ref_unique').on(t.collectionId, t.externalRef),
+    unique('books_collection_members_collection_external_ref_unique').on(
+      t.collectionId,
+      t.externalRef,
+    ),
     // The drill-in predicate + group counts join members by their resolved books item.
     index('books_collection_members_books_item_idx').on(t.booksItemId),
   ],

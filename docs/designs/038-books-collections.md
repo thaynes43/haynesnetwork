@@ -1,7 +1,8 @@
 # DESIGN-038: Books collections mirror — the Books/Audiobooks/Comics Collections group view
 
 - **Status:** Accepted
-- **Last updated:** 2026-07-16
+- **Last updated:** 2026-07-17 (D-12 added — the books collection CATEGORY chip, completing the
+  dynamic-category story across all three walls; see the dated amendment below)
 - **Satisfies:** PRD-001 **R-215..R-217**; governed by **ADR-066** (books collections mirror — the
   ADR-064 mirror-only doctrine applied to Kavita/ABS) on top of **ADR-046** (`books_items` mirror +
   the `books` section gate), **ADR-051/052** (view engine + per-user preferences), **DESIGN-035**
@@ -126,7 +127,7 @@ SAME server-authoritative `books` section gate as the wall — ADR-066 C-07). In
 (the GroupCard contract + the `ordered` flag the drill consumes, D-06).
 
 - **Query** — `books_collections` JOIN `books_collection_members` (resolved: `books_item_id NOT
-  NULL`) JOIN `books_items` (live: `deleted_at IS NULL`), ordered by `(title, id, position)`.
+NULL`) JOIN `books_items` (live: `deleted_at IS NULL`), ordered by `(title, id, position)`.
 - **The wall-mapping rule (R-217):** a collection surfaces on exactly ONE wall — the media kind
   holding the **majority of its resolved live members**; ties break in `BOOKS_MEDIA_KINDS` order
   (`book` → `comic` → `audiobook`). In practice: ABS collections are all-audiobook (Audiobooks
@@ -138,8 +139,11 @@ SAME server-authoritative `books` section gate as the wall — ADR-066 C-07). In
   with no cover contributes none; `imageUrl` stays null — the cover fan is the art). A collection
   with ZERO resolved live members of any kind is absent everywhere (nothing to show); cards come
   back label-A–Z and the client re-sorts by the grouped level's registry keys (label | count).
-- No `ctype` analog: the PLAN-053 Collection Type classifier is movie-estate-specific; the books
-  grouped levels declare NO facets (honest — revisit if the owner wants buckets here).
+- No `ctype` analog **(SUPERSEDED 2026-07-17 by D-12)**: the original view shipped with no facet on
+  the books grouped levels because the PLAN-053 Collection _Type_ classifier was movie-title-specific.
+  The label-driven CATEGORY program (DESIGN-035 D-10'/D-11') retired that classifier for an OPEN,
+  free-form category, and the owner extended it to books — so the grouped levels now carry the SAME
+  dynamic category chip the movies/TV Collections walls do. See D-12.
 
 ### D-06 — Drill-in: `?group=<id>` is a `books.search` predicate + the ordered sort contract
 
@@ -178,7 +182,7 @@ facets, search, pager, and the section gate unchanged.
 - **`WALL_VIEWS`** — `books`, `audiobooks`, and `comics` each gain a `collection` grouping as a
   SIBLING dimension (existing author/genre/series groupings untouched; `WALL_VIEW_DEFAULTS` /
   `LIBRARY_WALL_DEFAULTS` unchanged): `{ dimension: 'collection', selectorLabel: 'Collections',
-  allLabel: 'All collections', art: 'covers', level: '<wall>:grouped-collection' }`.
+allLabel: 'All collections', art: 'covers', level: '<wall>:grouped-collection' }`.
 - **Six new `ViewLevelKey`s:**
   - `books:grouped-collection` / `audiobooks:grouped-collection` / `comics:grouped-collection` —
     grouped CARD levels sorting by `label` ("Collection A–Z", asc-first) | `count` ("Most items",
@@ -218,7 +222,7 @@ facets, search, pager, and the section gate unchanged.
   order and positions re-densify 0..n (ADR-066 C-05). This is the real curated reading order at the
   only grain the walls can render.
 - **ABS collection** (`ordered: true`) — the `books` array index, which IS `collectionBook.order
-  ASC` (verified in source — not response luck).
+ASC` (verified in source — not response luck).
 - **Kavita collection** (`ordered: false`) — the paged all-v2 response index: stored honestly
   (cheap, rebuilt every sync), consumed by NO read (D-06 drops the position sort for unordered
   collections). If Kavita ever exposes collection ordering, this flips to `ordered: true` with zero
@@ -258,13 +262,66 @@ mirror stays a MIRROR (owner R1): provenance is READ from what the source expose
   the source description at every upsert (`excluded.created_by`).
 - **Badge** — `books.collectionGroups` returns `provenance` (resolved server-side via
   `provenanceDisplayName`: `libretto → "Libretto"`, `kavita → "Kavita"`, `audiobookshelf →
-  "Audiobookshelf"`); the `GroupCard` renders it as one muted badge in the reserved badge row
+"Audiobookshelf"`); the `GroupCard` renders it as one muted badge in the reserved badge row
   (ADR-015, tokens-only) — only on the Collections dimension (author/genre group cards carry none).
 - **Software-level, not builder-level (v1)** — the marker carries the recipeId but NOT the
   `builder.type`, so `'libretto'` is the honest software tag. The finer builder identity the owner
   named ("NY Times", "Hardcover Series") needs the Libretto `/api/recipes` recipeId→builder.type
   join — a NEW sync dependency, deferred (Q-04). The display mapping for it (`BUILDER_DISPLAY`) is
   pre-wired data-driven so the join lands in one place; unknown builder tokens title-case honestly.
+
+### D-12 — Books collection CATEGORY (migration 0064 — the dynamic chip, agent-set, mirror-preserved) — added 2026-07-17
+
+The label-driven collection-category program (DESIGN-035 D-10'/D-11', PRD R-214, glossary T-186)
+made the movies/TV Collections walls' Type chip an OPEN, free-form CATEGORY derived from the owner's
+labels and rendered as a DYNAMIC chip row (one chip per distinct category present, ordered
+hint-list-then-alphabetical, no "Other"). The owner ratified extending the same model to books so the
+dynamic-chip story is identical across all three walls (Movies / TV / Books+Audiobooks+Comics). This
+amendment adds that category to the books mirror.
+
+The mechanism differs from movies because books carry no Plex labels. Two placements were weighed in
+the ratified spike (`.agents/context/2026-07-17-label-driven-collections-spike.md` §4): **L1** (Libretto
+writes a free-form `cat=` token into its `[libretto:<recipeId>]` description marker, the app parses it
+at sync — mirror-pure but needs a Libretto change) vs **L2** (an app-owned `category` column set
+directly). Because Libretto is not in the cluster GitOps tree today (feature branches only) and the
+Kavita-native comic Event lists have NO Libretto recipe to carry a marker, the ratified call is **L2 —
+`category` is agent-set directly on `books_collections`** — with the L1 path kept forward-compatible.
+
+- **Column** — `books_collections.category text` (migration 0064), NULLABLE and OPEN (no CHECK), the
+  `books_collections.created_by` / `plex_collections.category` class. null = the collection carries no
+  category (no chip; it shows only under "All"). Categories are whatever an agent sets — a new value
+  becomes a new chip on the next read with zero migration.
+- **Set path (L2, ratified)** — the category is app/agent-owned state, set directly on the mirror row
+  (the owner's "agent-set on ... books_collections"). The labeling agent assigns each collection a
+  free-form category (Series / List / Event / a new one it coins), exactly the pass that labeled the
+  Kometa collections for movies. The value is not derived from the source, so the sync must not wipe it
+  (below).
+- **Derive path (L1, forward-compatible, currently a no-op)** — `@hnet/domain`
+  `deriveBooksCollectionCategory(description)` parses an optional `cat=<Category>` token the Libretto
+  marker MAY carry (`[libretto:<recipeId>|cat=Series]`). Live descriptions carry no `cat=` yet, so it
+  returns null for every row today; it is wired so that WHEN Libretto starts emitting `cat=`, the
+  source value flows in automatically with no further app change.
+- **Sync preservation (the reconciliation of L1 + L2)** — `syncBooksCollections` writes
+  `category = COALESCE(excluded.category, books_collections.category)` on conflict, where
+  `excluded.category` is the L1 derive (null today). So a source-carried `cat=` marker WINS when
+  present (mirror doctrine — the source is authoritative), and otherwise the prior value is
+  PRESERVED — an agent-set L2 category survives every re-sync. On INSERT a fresh collection takes the
+  derived value (null today). A reconcile-DELETE of a vanished collection drops its category with the
+  row, which is correct (the collection is gone). No audit rows (derived-cache class — ADR-066 C-02);
+  the write stays confined to the `syncBooksCollections` single writer (guard-listed), so the guard is
+  untouched and the L2 agent-set is an operational data pass, not a second code writer.
+- **Read model** — `books.collectionGroups` returns `category` per card and a
+  `categoryCounts: Record<string, number>` of the DISTINCT categories present among the wall's cards
+  (only non-null categories appear). It also accepts an optional `category` input that filters the
+  CARDS after aggregation (so `categoryCounts` holds steady while a chip is toggled — the
+  `ledger.collectionGroups` idiom verbatim). The counts are computed only over the wall's own gated,
+  resolved live members, so no count can leak a card the caller can't see (D-10 gate unchanged).
+- **Chips** — the three `*:grouped-collection` registry levels gain the SHARED category facet
+  (`key: 'category'`, `?ctype=` replace refinement). The books wall renders one chip per present
+  category ordered by `orderCollectionCategories` (the movies hint-list-then-alphabetical helper) with
+  an All default; the chip row is data-gated on the books walls' "no dead chip" ethos (ADR-051 C-06 —
+  it renders only when at least one category is present), which is the books-idiom twist on the
+  always-visible movies row. Both books and movies share the identical dynamic-chip renderer contract.
 
 ## Alternatives considered
 
@@ -320,9 +377,9 @@ mirror stays a MIRROR (owner R1): provenance is READ from what the source expose
 
 ## Open questions
 
-| ID | Question | Resolution |
-|----|----------|------------|
-| Q-01 | e2e smoke spec for the books Collections view? | SUBSTRATE SHIPPED, SPEC DEFERRED — the stub collection fixtures + the harness `books-collections-sync` seed landed with the build (dev:local + every e2e run render the views), so the journey spec is now a cheap follow-up; the flows were hand-driven against dev:local during the build. |
-| Q-02 | Merge cross-source collections (the same series in Kavita + ABS) into one card via PLAN-050 pairing data? | DEFERRED (owner lean: two honest source-scoped collections v1; merge later after the owner sees the mirror live). |
-| Q-03 | Kavita response shapes verified from the tagged 0.9.0.2 SOURCE + live route probes, not an authed live call (no creds in the build env). | Accepted risk, mitigated: strip-mode zod + the fixture battery; the deployed image is pinned to the exact verified tag. First staging `books-collections-sync` run validates live; any drift is a client-schema patch, not a schema migration. |
-| Q-04 | Builder-LEVEL books provenance (the owner's "NY Times" / "Hardcover Series", not just "Libretto")? | DEFERRED (D-11). The marker carries only the recipeId; resolving `builder.type` needs a Libretto `/api/recipes` join — a NEW sync dependency (LIBRETTO_API_KEY, a client, Libretto-up coupling) the directive preferred to avoid. v1 ships the honest software tag "Libretto"; the `BUILDER_DISPLAY` map is pre-wired for the join. Owner ruling needed on adding the dependency. |
+| ID   | Question                                                                                                                                 | Resolution                                                                                                                                                                                                                                                                                                                                                                        |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Q-01 | e2e smoke spec for the books Collections view?                                                                                           | SUBSTRATE SHIPPED, SPEC DEFERRED — the stub collection fixtures + the harness `books-collections-sync` seed landed with the build (dev:local + every e2e run render the views), so the journey spec is now a cheap follow-up; the flows were hand-driven against dev:local during the build.                                                                                      |
+| Q-02 | Merge cross-source collections (the same series in Kavita + ABS) into one card via PLAN-050 pairing data?                                | DEFERRED (owner lean: two honest source-scoped collections v1; merge later after the owner sees the mirror live).                                                                                                                                                                                                                                                                 |
+| Q-03 | Kavita response shapes verified from the tagged 0.9.0.2 SOURCE + live route probes, not an authed live call (no creds in the build env). | Accepted risk, mitigated: strip-mode zod + the fixture battery; the deployed image is pinned to the exact verified tag. First staging `books-collections-sync` run validates live; any drift is a client-schema patch, not a schema migration.                                                                                                                                    |
+| Q-04 | Builder-LEVEL books provenance (the owner's "NY Times" / "Hardcover Series", not just "Libretto")?                                       | DEFERRED (D-11). The marker carries only the recipeId; resolving `builder.type` needs a Libretto `/api/recipes` join — a NEW sync dependency (LIBRETTO_API_KEY, a client, Libretto-up coupling) the directive preferred to avoid. v1 ships the honest software tag "Libretto"; the `BUILDER_DISPLAY` map is pre-wired for the join. Owner ruling needed on adding the dependency. |

@@ -30,7 +30,8 @@ let readingListId: string; // kavita/reading_list '11' (ordered — books majori
 let kavitaCollectionId: string; // kavita/collection '4' (unordered — comics majority)
 
 function bookRow(
-  o: Partial<BooksItemInput> & Pick<BooksItemInput, 'source' | 'mediaKind' | 'externalId' | 'title'>,
+  o: Partial<BooksItemInput> &
+    Pick<BooksItemInput, 'source' | 'mediaKind' | 'externalId' | 'title'>,
 ): BooksItemInput {
   return {
     libraryId: '1',
@@ -71,11 +72,27 @@ beforeAll(async () => {
     rows: [
       bookRow({ source: 'kavita', mediaKind: 'book', externalId: '501', title: 'HP Book 1' }),
       bookRow({ source: 'kavita', mediaKind: 'book', externalId: '502', title: 'HP Book 2' }),
-      bookRow({ source: 'kavita', mediaKind: 'book', externalId: '503', title: 'HP Book 3', coverRef: null }),
+      bookRow({
+        source: 'kavita',
+        mediaKind: 'book',
+        externalId: '503',
+        title: 'HP Book 3',
+        coverRef: null,
+      }),
       bookRow({ source: 'kavita', mediaKind: 'comic', externalId: '601', title: 'Comic One' }),
       bookRow({ source: 'kavita', mediaKind: 'comic', externalId: '602', title: 'Comic Two' }),
-      bookRow({ source: 'audiobookshelf', mediaKind: 'audiobook', externalId: 'a1', title: 'Listen One' }),
-      bookRow({ source: 'audiobookshelf', mediaKind: 'audiobook', externalId: 'a2', title: 'Listen Two' }),
+      bookRow({
+        source: 'audiobookshelf',
+        mediaKind: 'audiobook',
+        externalId: 'a1',
+        title: 'Listen One',
+      }),
+      bookRow({
+        source: 'audiobookshelf',
+        mediaKind: 'audiobook',
+        externalId: 'a2',
+        title: 'Listen Two',
+      }),
     ],
   });
 
@@ -93,6 +110,7 @@ beforeAll(async () => {
         itemCount: 99, // deliberately wrong raw count — must NEVER be the wire count
         ordered: true,
         createdBy: 'libretto',
+        category: 'Series', // D-12 — the owner category chip (agent-set / marker-derived)
         members: [
           { externalRef: '503', position: 0 },
           { externalRef: '502', position: 1 },
@@ -112,6 +130,7 @@ beforeAll(async () => {
         itemCount: 2,
         ordered: false,
         createdBy: 'kavita',
+        category: 'Event', // D-12 — a comic crossover Event chip
         members: [
           { externalRef: '601', position: 0 },
           { externalRef: '602', position: 1 },
@@ -128,6 +147,7 @@ beforeAll(async () => {
         itemCount: 2,
         ordered: true,
         createdBy: 'audiobookshelf',
+        category: 'Series', // D-12 — a book series chip on the Audiobooks wall
         members: [
           { externalRef: 'a2', position: 0 },
           { externalRef: 'a1', position: 1 },
@@ -144,6 +164,7 @@ beforeAll(async () => {
         itemCount: 3,
         ordered: false,
         createdBy: 'kavita',
+        category: 'List', // present in data but the card is absent (0 resolved members) — no chip
         members: [{ externalRef: '888', position: 0 }],
         fullyRead: true,
       },
@@ -173,7 +194,9 @@ afterAll(async () => {
 
 describe('books.collectionGroups gate (DESIGN-038 D-10 — the books section is THE gate)', () => {
   it('REFUSES a Disabled (default non-admin) caller with FORBIDDEN', async () => {
-    await expect(disabledCaller.books.collectionGroups({ mediaKind: 'book' })).rejects.toMatchObject({
+    await expect(
+      disabledCaller.books.collectionGroups({ mediaKind: 'book' }),
+    ).rejects.toMatchObject({
       code: 'FORBIDDEN',
     });
   });
@@ -207,7 +230,9 @@ describe('books.collectionGroups (DESIGN-038 D-05 — wall mapping + honest coun
     const { groups: comics } = await adminCaller.books.collectionGroups({ mediaKind: 'comic' });
     expect(comics.map((g) => g.label)).toEqual(['Capes']); // the mixed list is NOT here
     expect(comics[0]).toMatchObject({ count: 2, ordered: false, provenance: 'Kavita' });
-    const { groups: audiobooks } = await adminCaller.books.collectionGroups({ mediaKind: 'audiobook' });
+    const { groups: audiobooks } = await adminCaller.books.collectionGroups({
+      mediaKind: 'audiobook',
+    });
     expect(audiobooks.map((g) => g.label)).toEqual(['Discworld in Order']);
     expect(audiobooks[0]).toMatchObject({ count: 2, ordered: true, provenance: 'Audiobookshelf' });
   });
@@ -217,6 +242,23 @@ describe('books.collectionGroups (DESIGN-038 D-05 — wall mapping + honest coun
       const { groups } = await adminCaller.books.collectionGroups({ mediaKind });
       expect(groups.map((g) => g.label)).not.toContain('Ghost Shelf');
     }
+  });
+
+  it('CATEGORY (D-12) — cards carry the category and categoryCounts covers only present cards per wall', async () => {
+    const books = await adminCaller.books.collectionGroups({ mediaKind: 'book' });
+    // The one book-wall card (HP Reading Order) carries its category; the chip counts reflect it.
+    expect(books.groups[0]!.category).toBe('Series');
+    expect(books.categoryCounts).toEqual({ Series: 1 });
+    // The Ghost Shelf carries a 'List' category in data but shows NO card (0 resolved members), so it
+    // must NOT leak into the chip counts — a chip can never advertise a card the wall can't show.
+    expect(books.categoryCounts.List).toBeUndefined();
+
+    const comics = await adminCaller.books.collectionGroups({ mediaKind: 'comic' });
+    expect(comics.groups[0]!.category).toBe('Event');
+    expect(comics.categoryCounts).toEqual({ Event: 1 });
+
+    const audiobooks = await adminCaller.books.collectionGroups({ mediaKind: 'audiobook' });
+    expect(audiobooks.categoryCounts).toEqual({ Series: 1 });
   });
 });
 
