@@ -381,6 +381,30 @@ describe('mintPairingWants (the paced estate-wide backfill)', () => {
     expect(gb.calls).toHaveLength(0);
   });
 
+  it('REUSES a prior PAIRING want llBookId (same normalized title/author) before Google Books — the quota-day GB-avoidance', async () => {
+    // Run 1: a book "Dune" resolves its GB volume id and mints a pairing want.
+    await seedItem({ title: 'Dune', author: 'Frank Herbert', mediaKind: 'book' });
+    const ll = stubLl();
+    const gb1 = stubGb(() => 'gb-dune');
+    await mintPairingWants({ db: t.db, ll: ll.bundle, gb: gb1.gb, pacer: async () => {} });
+
+    // Run 2: an audiobook of the SAME work whose subtitle keeps the pairing key distinct (so it does
+    // NOT auto-pair and stays an unpaired candidate), but whose goodreads-style normalized title +
+    // author still match the resolved book want. It must reuse 'gb-dune' — NO fresh GB call, even
+    // with the breaker otherwise starved. This is what keeps the pairing backlog draining on a
+    // quota-exhausted day; before the reuse index drew from pairing wants it would have needed GB.
+    await seedItem({ title: 'Dune: Special Edition', author: 'Frank Herbert', mediaKind: 'audiobook' });
+    const gb2 = stubGb(() => {
+      throw new Error('GB must not be called when a prior pairing want already resolved this work');
+    });
+    const report = await mintPairingWants({ db: t.db, ll: ll.bundle, gb: gb2.gb, pacer: async () => {} });
+    expect(gb2.calls).toHaveLength(0);
+    const wants = await t.db.select().from(bookRequests).where(eq(bookRequests.origin, 'pairing'));
+    expect(wants).toHaveLength(2);
+    expect(wants.every((w) => w.llBookId === 'gb-dune')).toBe(true);
+    expect(report.pushed).toBe(1);
+  });
+
   it('an unresolvable identity mints an honest UNMINTABLE want (no push, nothing fabricated) that a later run resolves', async () => {
     await seedItem({ title: 'Obscure Title', author: 'Unknown Author', mediaKind: 'book' });
     const ll = stubLl();
