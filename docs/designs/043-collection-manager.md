@@ -28,8 +28,8 @@ pulse (reachable / unreachable) + recipe/collection counts when reachable. The s
 by the `integrations` section (visibility floor) AND the collection action grants (capability):
 
 - A caller with none of `manage`/`acquire` who reaches the URL sees a read-only monitor (recipe list
-  + run counts) — honest, no controls. (V1: the card is shown only to `manage`/`acquire`/admin; a
-  pure-`suggest` member never sees the hub card, they contribute from the walls — D-05.)
+  - run counts) — honest, no controls. (V1: the card is shown only to `manage`/`acquire`/admin; a
+    pure-`suggest` member never sees the hub card, they contribute from the walls — D-05.)
 - `manage` (or admin) sees the full manager: create/edit/apply/delete + the suggestion review queue.
 - `acquire` additionally unlocks the acquisition toggle in the composer + apply confirms.
 
@@ -57,7 +57,7 @@ A `Modal` (DESIGN-004 D-13 — an explanatory/multi-field confirm, never `window
 - **ref PREVIEW** (the biggest UX win, ADR-069 C-07): a "Preview" action POSTs the draft to
   `POST /api/validate` and shows the resolved series/list name + the resolved work count + any
   issues BEFORE save. A slug that resolves to a 0-work container series shows `resolved: 0 works —
-  check the ref` honestly (the silent-failure guard from the plan notes). No fabrication.
+check the ref` honestly (the silent-failure guard from the plan notes). No fabrication.
 - **VALIDATE-before-save:** save is refused if validate returns blocking issues; the per-path issue
   strings render inline.
 - Save = `PUT /api/recipes/:id` (id global-unique — the composer enforces uniqueness, the
@@ -112,6 +112,33 @@ hand-rolled wall cards). New color goes through `--color-*` tokens in `tokens.cs
 gallery entries capture the recipe row (with the acquisition puck) + the suggest card + the
 suggestion-state states, dark/light × desktop/390 (the standing screenshot-review rule).
 
+### D-08 — Member-level missing + the resolve broker (Libretto M3, 2026-07-17)
+
+Two Libretto capabilities extend the read surface (Libretto PR
+[thaynes43/libretto#9](https://github.com/thaynes43/libretto/pull/9); DESIGN-037 is Libretto's design
+of record). Libretto stays **headless** — these are DATA surfaces the app consumes; the books
+Wanted-tiles UI and the `book_requests` origin-minting are the collections leg, not this client.
+
+- **`GET /api/collections/:recipeId/missing`** → `read.listMissingMembers(recipeId)`. Libretto knows a
+  recipe's FULL resolved membership and which are held vs missing; this returns the missing member
+  **identities** — `{ label, title, authors, isbn, identifiers }[]` plus `total` / `heldCount` /
+  `missingCount` — enough to mint one `book_requests` row per missing book (the Stormlight "3 held +
+  15 wanted" view). Previously only a missing COUNT was exposed (`librettoCountsSchema.missing`). The
+  matcher is shared with Libretto's reconcile, so a book counted `missing` here is exactly one the run
+  would report. Client shape: `LibrettoMissingResponse` / `LibrettoMissingMember` (tolerant/passthrough).
+- **`POST /api/resolve`** → `read.resolve({ isbn?, title?, author?, identifiers? })`. The ISBN-first
+  resolve broker (the M3 resolution fix, PLAN-059 direction-a) owned Libretto-side: it resolves an
+  ISBN|title+author to a Google-Books volume id (the LazyLibrarian addBook key) — `isbn:` leg first,
+  then a guarded `intitle:+inauthor:` fallback (title-coverage + surname guards). Returns
+  `LibrettoResolved | null` (null = honest no-match; a 503 `LibrettoHttpError` means the broker is
+  unconfigured Libretto-side). Libretto uses this internally to drive `addBook(<volumeId>)` for M3
+  acquisition instead of LazyLibrarian's throttled keyless `addBookByISBN` (the ~0-resolution gap).
+
+Auth: the app authenticates to Libretto with `Authorization: Bearer <LIBRETTO_API_KEY>` (http.ts). The
+key is provisioned into `haynesnetwork-secret` from the SAME 1Password `libretto` item property Libretto
+itself reads, so the two values match by construction (the prior 401 was a missing app-side key, not a
+scheme mismatch — the ExternalSecret comment mentioning `X-Api-Key` is stale; Bearer is the mechanism).
+
 ## Test strategy
 
 - **Domain:** the grants matrix (`collectionActionsForRole`, admin implies all, no-row deny), the
@@ -129,8 +156,8 @@ suggestion-state states, dark/light × desktop/390 (the standing screenshot-revi
 
 ## Open questions
 
-| ID | Question | For |
-|----|----------|-----|
-| Q-01 | Which roles get `suggest` first, and does `manage` imply `suggest`? V1 ships all three Admin-only; the owner opens `suggest` to members after review. | owner |
-| Q-02 | Target-library selection UX: V1 lists Libretto's configured targets from the recipe/collection reads; a richer `GET /targets` picker is a follow-on if Libretto exposes it. | owner |
+| ID   | Question                                                                                                                                                                         | For   |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
+| Q-01 | Which roles get `suggest` first, and does `manage` imply `suggest`? V1 ships all three Admin-only; the owner opens `suggest` to members after review.                            | owner |
+| Q-02 | Target-library selection UX: V1 lists Libretto's configured targets from the recipe/collection reads; a richer `GET /targets` picker is a follow-on if Libretto exposes it.      | owner |
 | Q-03 | Should an approved suggestion auto-apply once, or only create the recipe (owner applies)? V1 creates the recipe only (acquisition off) — apply stays an explicit manager action. | owner |

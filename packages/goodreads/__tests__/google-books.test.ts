@@ -91,6 +91,26 @@ describe('gbQueryTitle series-index prefix + gbAuthorsMatch (the 2026-07-17 fix-
     expect(gbQueryTitle('11/22/63')).toBe('11/22/63');
   });
 
+  // PLAN-059 — the pairing-resolve gap: Kavita/ABS file-derived library titles carry series/volume
+  // prefixes and bracket annotations GB never indexes under; these are the real stuck-want titles.
+  it('strips library series/volume prefixes and bracket annotations (the pairing file-titles)', () => {
+    // A bracket/hash index prefix ([09]:, #05 -) — the work title trails it.
+    expect(gbQueryTitle("Wheel of Time [09]: Winter's Heart")).toBe("Winter's Heart");
+    expect(gbQueryTitle("Lily Bard #05 - Shakespeare's Counselor")).toBe("Shakespeare's Counselor");
+    // A series word + a bare 1-3 digit index + a dash.
+    expect(gbQueryTitle('Expanse 05 - Nemesis Games')).toBe('Nemesis Games');
+    expect(gbQueryTitle('Broken Wings 2 - Midnight Flight')).toBe('Midnight Flight');
+    // A trailing bracket annotation.
+    expect(gbQueryTitle('The Summer I Turned Pretty [Summer, Book 1]')).toBe('The Summer I Turned Pretty');
+  });
+
+  it('leaves integral-number titles and colon subtitles intact (no over-strip)', () => {
+    // A BARE number + colon is NOT a series prefix (only bracket/hash may use ':') — "Beacon 23" survives.
+    expect(gbQueryTitle('Beacon 23: Part One: Little Noises')).toBe('Beacon 23: Part One: Little Noises');
+    expect(gbQueryTitle('Fahrenheit 451')).toBe('Fahrenheit 451');
+    expect(gbQueryTitle('Project Hail Mary')).toBe('Project Hail Mary');
+  });
+
   it('author guard: shared surname accepts, disjoint authors reject, noise never rejects', () => {
     expect(gbAuthorsMatch('Dean Koontz', ['Simon Beckett'])).toBe(false);
     expect(gbAuthorsMatch('Charlaine Harris', ['Charlaine Harris'])).toBe(true);

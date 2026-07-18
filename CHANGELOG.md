@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.76.0](https://github.com/thaynes43/haynesnetwork/compare/v0.75.0...v0.76.0) (2026-07-18)
+
+
+### Features
+
+* **libretto:** consume member-missing endpoint + resolve broker; suite-repo rule ([#376](https://github.com/thaynes43/haynesnetwork/issues/376)) ([292330c](https://github.com/thaynes43/haynesnetwork/commit/292330c8b004793c282e57385c00118ed886c05e))
+* MEDIA_ACTIONS registry + shared media-action component set (ADR-071 / DESIGN-004 D-24) ([#378](https://github.com/thaynes43/haynesnetwork/issues/378)) ([3514961](https://github.com/thaynes43/haynesnetwork/commit/3514961cd76e4f6c17ab45bccec3be7cfa1cc4f2))
+
+
+### Bug Fixes
+
+* pass anchor ISBN to the pairing GB resolve + normalize library file-titles (PLAN-059) ([#373](https://github.com/thaynes43/haynesnetwork/issues/373)) ([3213658](https://github.com/thaynes43/haynesnetwork/commit/321365895b4b5e31a20a6fd810f95741d03683a0))
+
+
+### Refactors
+
+* item-detail onto the shared media-action components (ADR-071, PR-2) ([#381](https://github.com/thaynes43/haynesnetwork/issues/381)) ([64018ce](https://github.com/thaynes43/haynesnetwork/commit/64018cea41e42772e900e3699b590688f2e6ca39))
+* ytdl-sub detail hero onto &lt;MediaHero&gt; / &lt;ConsumeLink&gt; (ADR-071, PR-5) ([#382](https://github.com/thaynes43/haynesnetwork/issues/382)) ([9adb7e0](https://github.com/thaynes43/haynesnetwork/commit/9adb7e0a9f8845672c236b49549b86f3551b9d24))
+
 ## [0.75.0](https://github.com/thaynes43/haynesnetwork/compare/v0.74.0...v0.75.0) (2026-07-18)
 
 
