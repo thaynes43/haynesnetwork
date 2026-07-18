@@ -1,0 +1,123 @@
+# Franchise / universe collections — the survivors of the "Defaults own
+# franchises" cleanup (2026-07-06). Originally ~145 hand-curated TMDb Collection
+# ID lists (built with tmdb_collection_details) ported from the LIVE 2023 config
+# (Movies.yml). The bulk that merely duplicated a Kometa franchise Default (same
+# TMDb collection, Default supplies canonical name/summary/poster) were removed,
+# as were the 8 tmdb_movie augments (Ghostbusters, Godzilla, Hannibal, Lego
+# Movie, Nightmare on Elm St, Oceans, Resident Evil, The Muppets — dropped
+# 2026-07-06, user chose fully-defaults-own over realizing the extra films).
+# What REMAINS here adds value the Default can't reproduce:
+#   * pure manual lists (tmdb_movie / imdb_list only) — Unbreakable, Monsterverse,
+#     The Addams Family;
+#   * franchises the Default doesn't currently own (its collection isn't built in
+#     this library) — the remaining single-collection entries, kept as the safe
+#     direction. These are COMPLEMENTS to the `universe` Default (kept in config.yml).
+#
+# ACQUISITION ON: these franchises ADD missing entries to Radarr and SEARCH
+# (add_missing/search are true globally in config.yml). radarr_tag applies the
+# umbrella "Kometa-Added" + the "MovieCollection" category tag (the old
+# HaynesTower Movies-template tag, PMM-Added -> Kometa-Added) to every ADDED
+# item so Kometa's franchise acquisitions are traceable.
+templates:
+  Movies:
+    sort_title: "!E <<collection_name>>"
+    optional:
+      - collection
+      - tmdb_movie
+      - tmdb_list
+      - imdb_list
+    tmdb_collection_details: <<collection>>
+    tmdb_movie: <<tmdb_movie>>
+    tmdb_list: <<tmdb_list>>
+    imdb_list: <<imdb_list>>
+    collection_order: release
+    radarr_tag: "Kometa-Added,MovieCollection"
+    # theatrical-window guard (owner ruling 2026-07-10): TMDb Collections can list
+    # announced / in-production / still-theatrical entries — never search one until
+    # its home (physical/digital) release per TMDB. Explicit mirror of the global
+    # radarr.availability: released.
+    radarr_availability: released
+
+collections:
+  The Addams Family:
+    template: {name: Movies, collection: "750822,11716", imdb_list: https://www.imdb.com/list/ls000099714/}
+    sort_title: "!E Addams Family"
+  The Brave Little Toaster:
+    template: {name: Movies, collection: 141282}
+    sort_title: "!E Brave Little Toaster"
+  Captain Underpants:
+    template: {name: Movies, collection: 732397}
+  Daddy Day Care:
+    template: {name: Movies, collection: 228887}
+  DC Super Hero Girls:
+    template: {name: Movies, collection: 477208}
+  Fantastic Four:
+    template: {name: Movies, collection: 9744}
+  Flowers in the Attic:
+    template: {name: Movies, collection: 293981}
+  The Girl - Millennium Collection:
+    template: {name: Movies, collection: 575987}
+  Goosebumps:
+    template: {name: Movies, collection: 508783}
+  The Grudge:
+    template: {name: Movies, collection: 1974}
+    sort_title: "!E Grudge"
+  LEGO DC Comics Super Heroes:
+    template: {name: Movies, collection: 386162}
+  Mean Girls:
+    template: {name: Movies, collection: 99606}
+  Monsterverse:
+    imdb_list: https://www.imdb.com/list/ls060980695/
+    summary: "A collection of all the MonsterVerse movies."
+    # TODO(poster): old config used a local file_poster
+    # (config/collection_posters/MonsterVerseCollection.png) that isn't available
+    # in this deployment. No url_poster set — the collection falls back to a Plex
+    # mosaic. Provide a ThePosterDB/haynesnetwork URL to restore a custom poster.
+  My Big Fat Greek Wedding:
+    template: {name: Movies, collection: 389767}
+  # Pacific Rim REMOVED 2026-07-07 (QA sweep): the franchise Default owns it —
+  # live Plex collection matches the Default's canonical name with both films.
+  Peter Rabbit:
+    template: {name: Movies, collection: 595693}
+  The Princess Diaries:
+    template: {name: Movies, collection: 107674}
+    sort_title: "!E Princess Diaries"
+  Ring:
+    template: {name: Movies, collection: 93369}
+    sort_title: "!E Ring Z"
+  The Scorpion King:
+    template: {name: Movies, collection: 116669}
+    sort_title: "!E Scorpion King"
+  Sharknado:
+    template: {name: Movies, collection: 286023}
+  The Smurfs:
+    template: {name: Movies, collection: 134897}
+    sort_title: "!E Smurfs"
+  Space Jam:
+    template: {name: Movies, collection: 722961}
+  Spy Kids:
+    template: {name: Movies, collection: 86486}
+  Taxi:
+    template: {name: Movies, collection: 211721}
+  # Top Gun / Toy Story / Transformers / The Transporter / Tremors REMOVED
+  # 2026-07-06: redundant with the franchise Default (same TMDb collections,
+  # Default supplies summaries/posters). "Defaults own franchises" — see below.
+  Unbreakable:
+    template: {name: Movies, tmdb_movie: "9741,381288,450465"}
+    # TODO(poster): old config used a local file_poster
+    # (config/collection_posters/UnbreakableCollection.png) that isn't available
+    # in this deployment. No url_poster set — the collection falls back to a Plex
+    # mosaic. Provide a ThePosterDB/haynesnetwork URL to restore a custom poster.
+  # V.C. Andrews — needs trakt (trakt_list); restore by adding trakt to config.yml.
+  # V.C. Andrews:
+  #   trakt_list: "https://trakt.tv/users/manofoz/lists/v-c-andrews-collection"
+  #   summary: "The complete collection of V.C. Andrews movies."
+  #   url_poster: https://haynesnetwork.com/wp-content/uploads/2023/09/vcandrewsanthology.png
+  #   sort_title: "!E V.C. Andrews"
+  # Venom / Wizarding World / Wrreck-It Ralf (typo) / X-Men / Zombieland REMOVED
+  # 2026-07-06 "Defaults own franchises": Venom/Zombieland duplicated the Default
+  # exactly; the X-Men and Wizarding-World merges are superseded by the Default's
+  # cleaner split (X-Men + Deadpool; Harry Potter + Fantastic Beasts); Wrreck-It
+  # Ralf was a misspelling of the Default's "Wreck-It Ralph". The two live
+  # curated-only Plex collections (Wrreck-It Ralf, Wizarding World) are deleted
+  # out-of-band via the Plex API.

@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { and, eq, sql } from 'drizzle-orm';
 import {
   notificationOutbox,
+  permissionAudit,
   plexLibraries,
   SEEDED_PLEX_SERVER_IDS,
   SEEDED_ROLE_IDS,
@@ -67,7 +68,13 @@ const draftInput = (over?: Record<string, unknown>) => ({
  * managed include the read returns; `checks` is the CI conclusion `waitForChecks` yields (default success
  * ⇒ auto-merge for the safe case). Records opened + merged PRs so the auto-merge matrix is assertable.
  */
-function stubHaynesops(opts?: { file?: string | null; checks?: 'success' | 'failure' | 'pending' | 'none'; prFiles?: string[] }): {
+function stubHaynesops(opts?: {
+  file?: string | null;
+  checks?: 'success' | 'failure' | 'pending' | 'none';
+  prFiles?: string[];
+  /** Hand-authored config files by basename → text (owner ruling 2026-07-18 — edit the estate's config). */
+  handFiles?: Record<string, string>;
+}): {
   ctx: Partial<TRPCContext>;
   opened: Array<Record<string, unknown>>;
   merged: number[];
@@ -76,16 +83,24 @@ function stubHaynesops(opts?: { file?: string | null; checks?: 'success' | 'fail
   const merged: number[] = [];
   let n = 100;
   const configDir = 'kubernetes/main/apps/media/kometa/app/config';
+  const hand = opts?.handFiles ?? {};
+  const getFile = async (path: string) => {
+    for (const [name, text] of Object.entries(hand)) {
+      if (path === `${configDir}/${name}`) return { text, sha: `sha-${name}` };
+    }
+    return opts?.file != null ? { text: opts.file, sha: 'sha1' } : null;
+  };
   const haynesops = {
     configDir,
     baseBranch: 'main',
     read: {
-      getFile: async () => (opts?.file != null ? { text: opts.file, sha: 'sha1' } : null),
+      getFile,
       listOpenManagedPrs: async () => [],
+      listDirectory: async () => Object.keys(hand),
       getChecksConclusion: async () => opts?.checks ?? 'success',
     },
     write: {
-      getFile: async () => (opts?.file != null ? { text: opts.file, sha: 'sha1' } : null),
+      getFile,
       openManagedFilePr: async (input: Record<string, unknown>) => {
         n += 1;
         opened.push(input);
@@ -568,10 +583,16 @@ describe('overview — two-population list: read-only estate/hand-made rows (D-0
     const res = await caller(ctx).collections.overview({ mediaType: 'movies' });
     // The managed recipe stays a full-control row (unchanged).
     expect(res.recipes.map((r) => r.id)).toContain('marvel');
-    // The no-recipe config collection is read-only; the recipe-joined one is NOT duplicated there.
-    expect(res.readOnly.map((r) => r.name)).toContain('Estate Only');
-    expect(res.readOnly.map((r) => r.name)).not.toContain('Marvel');
-    expect(res.readOnly.every((r) => r.managedBy === 'kometa_config')).toBe(true);
+    // Owner ruling 2026-07-18: Kometa mirror rows with no recipe and no hand file are Defaults-produced
+    // handCollections (source 'default', never editable); the recipe-joined one is NOT duplicated there.
+    const estate = res.handCollections.find((h) => h.name === 'Estate Only');
+    expect(estate).toBeDefined();
+    expect(estate!.source).toBe('default');
+    expect(estate!.editable).toBe(false);
+    expect(estate!.itemCount).toBe(12);
+    expect(res.handCollections.map((h) => h.name)).not.toContain('Marvel');
+    // The Kometa tab no longer uses the books read-only group.
+    expect(res.readOnly).toHaveLength(0);
   });
 
   it('Libretto: a hand-made (recipe-less) mirror collection is a read-only hand_made row on the matching tab only', async () => {
@@ -636,5 +657,212 @@ describe('overview — two-population list: read-only estate/hand-made rows (D-0
     const audiobooks = await caller(ctx).collections.overview({ mediaType: 'audiobooks' });
     expect(audiobooks.readOnly.map((r) => r.name)).toContain('ABS Hand Picks');
     expect(audiobooks.readOnly.map((r) => r.name)).not.toContain('Kavita Hand Picks');
+  });
+});
+
+// OWNER RULING 2026-07-18 (evening) — the Movies/TV tabs EDIT the estate's hand-authored Kometa collections
+// (not read-only). Proves: the overview parses hand files into one source-badged list with editability +
+// mirror item counts; an edit opens a HUMAN-merged config-file PR (never auto-merged) preserving the file;
+// a too-custom collection rejects; delete is admin-only + human-merged; find-missing splices the hand file.
+const HAND_MOVIES_FILE = 'movies-franchises.yml';
+const HAND_MOVIES_TEXT = [
+  '# estate movie franchises (hand-authored)',
+  'templates:',
+  '  Movies:',
+  '    tmdb_collection_details: <<collection>>',
+  '    imdb_list: <<imdb_list>>',
+  '',
+  'collections:',
+  '  Goosebumps:',
+  '    template: {name: Movies, collection: 508783}',
+  '    sort_title: "!E Goosebumps"',
+  '  A24:',
+  '    imdb_search:',
+  '      type: movie',
+  '      company: co0390816',
+  '',
+].join('\n');
+
+describe('hand-authored Kometa collections — edit-in-place (owner ruling 2026-07-18)', () => {
+  async function movieLib(): Promise<string> {
+    await upsertPlexLibraries({
+      db: t.db,
+      slug: 'haynesops',
+      libraries: [{ sectionKey: '1', name: 'HOps Movies', mediaType: 'movie' }],
+    });
+    const [row] = await t.db
+      .select({ id: plexLibraries.id })
+      .from(plexLibraries)
+      .where(
+        and(
+          eq(plexLibraries.serverId, SEEDED_PLEX_SERVER_IDS.haynesops),
+          eq(plexLibraries.sectionKey, '1'),
+        ),
+      );
+    if (!row) throw new Error('movie library not seeded');
+    return row.id;
+  }
+
+  it('the overview parses hand files into ONE source-badged list with editability + mirror counts', async () => {
+    const member = await createUser(t.db);
+    const lib = await movieLib();
+    await syncPlexCollections({
+      db: t.db,
+      collections: [
+        {
+          plexLibraryId: lib,
+          ratingKey: 'k-goose',
+          title: 'Goosebumps',
+          childCount: 5,
+          createdBy: 'kometa',
+          category: null,
+          members: [],
+          fullyRead: true,
+        },
+        {
+          plexLibraryId: lib,
+          ratingKey: 'k-default',
+          title: 'Universe Only',
+          childCount: 9,
+          createdBy: 'kometa',
+          category: null,
+          members: [],
+          fullyRead: true,
+        },
+      ],
+      scopedLibraryIds: [lib],
+    });
+    const ctx = {
+      ...makeCtx(t.db, sessionUser(member)),
+      ...stubLibretto().ctx,
+      ...stubHaynesops({ file: null, handFiles: { [HAND_MOVIES_FILE]: HAND_MOVIES_TEXT } }).ctx,
+    };
+    const res = await caller(ctx).collections.overview({ mediaType: 'movies' });
+    const goose = res.handCollections.find((h) => h.name === 'Goosebumps')!;
+    expect(goose.source).toBe('hand');
+    expect(goose.editable).toBe(true);
+    expect(goose.builderType).toBe('tmdb_collection_details');
+    expect(goose.builderRef).toBe('508783');
+    expect(goose.file).toBe(HAND_MOVIES_FILE);
+    expect(goose.itemCount).toBe(5); // joined from the mirror by title
+    const a24 = res.handCollections.find((h) => h.name === 'A24')!;
+    expect(a24.editable).toBe(false); // imdb_search — too custom
+    expect(a24.editableReason).toBeTruthy();
+    // A Defaults-produced mirror row (no hand file) is listed but never editable.
+    const universe = res.handCollections.find((h) => h.name === 'Universe Only')!;
+    expect(universe.source).toBe('default');
+    expect(universe.editable).toBe(false);
+    // The Kometa tab does not use the books read-only group.
+    expect(res.readOnly).toHaveLength(0);
+  });
+
+  it('editHandCollection opens a HUMAN-merged PR on the hand file with the new ref (never auto-merged)', async () => {
+    // Admin (the owner path) bypasses the cap; a collection-id ref is unprovable without egress, so a
+    // non-admin edit would route to the over-cap ticket (asserted separately below).
+    const admin = await createUser(t.db, { admin: true });
+    const hs = stubHaynesops({ file: null, handFiles: { [HAND_MOVIES_FILE]: HAND_MOVIES_TEXT }, checks: 'success' });
+    const ctx = { ...makeCtx(t.db, sessionUser(admin)), ...stubLibretto().ctx, ...hs.ctx };
+    const res = await caller(ctx).collections.editHandCollection({
+      mediaType: 'movies',
+      file: HAND_MOVIES_FILE,
+      name: 'Goosebumps',
+      builderType: 'tmdb_collection_details',
+      builderRef: '999999',
+    });
+    expect(res).toMatchObject({ ok: true, provider: 'kometa', merged: false });
+    expect(hs.opened).toHaveLength(1);
+    expect(hs.merged).toHaveLength(0); // hand-file PRs are ALWAYS human-merged
+    expect(hs.opened[0]!.path).toBe(`kubernetes/main/apps/media/kometa/app/config/${HAND_MOVIES_FILE}`);
+    const content = hs.opened[0]!.content as string;
+    expect(content).toContain('    template: {name: Movies, collection: 999999}');
+    // Fidelity: the untouched A24 block + the template header survive byte-for-byte.
+    expect(content).toContain('  A24:');
+    expect(content).toContain('      company: co0390816');
+    expect(content).toContain('    tmdb_collection_details: <<collection>>');
+    // Audited same-tx.
+    const audit = await t.db.select().from(permissionAudit).where(eq(permissionAudit.actorId, admin.id));
+    expect(audit).toHaveLength(1);
+    expect(audit[0]!.action).toBe('upsert_collection');
+    expect((audit[0]!.detail as { hand_edit?: boolean }).hand_edit).toBe(true);
+  });
+
+  it('a non-admin editing a hand collection with an unprovable-size ref hits the cap (ticket path)', async () => {
+    const member = await createUser(t.db);
+    const hs = stubHaynesops({ file: null, handFiles: { [HAND_MOVIES_FILE]: HAND_MOVIES_TEXT } });
+    const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stubLibretto().ctx, ...hs.ctx };
+    const err = await caller(ctx)
+      .collections.editHandCollection({
+        mediaType: 'movies',
+        file: HAND_MOVIES_FILE,
+        name: 'Goosebumps',
+        builderType: 'tmdb_collection_details',
+        builderRef: '999999',
+      })
+      .then(
+        () => {
+          throw new Error('expected the over-cap hand edit to reject');
+        },
+        (e: unknown) => e,
+      );
+    expect(wireShape(err, 'collections.editHandCollection').data).toMatchObject({
+      appCode: 'COLLECTION_SIZE_CAP_EXCEEDED',
+    });
+    expect(hs.opened).toHaveLength(0);
+  });
+
+  it('editHandCollection rejects a too-custom collection (never a lossy rewrite)', async () => {
+    const member = await createUser(t.db);
+    const hs = stubHaynesops({ file: null, handFiles: { [HAND_MOVIES_FILE]: HAND_MOVIES_TEXT } });
+    const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stubLibretto().ctx, ...hs.ctx };
+    await expect(
+      caller(ctx).collections.editHandCollection({
+        mediaType: 'movies',
+        file: HAND_MOVIES_FILE,
+        name: 'A24',
+        builderType: 'imdb_list',
+        builderRef: 'https://www.imdb.com/list/ls000000001/',
+      }),
+    ).rejects.toBeTruthy();
+    expect(hs.opened).toHaveLength(0);
+  });
+
+  it('delete of a hand collection is admin-only + a HUMAN-merged PR removing its block', async () => {
+    const member = await createUser(t.db);
+    const admin = await createUser(t.db, { admin: true });
+    const hsMember = stubHaynesops({ file: null, handFiles: { [HAND_MOVIES_FILE]: HAND_MOVIES_TEXT } });
+    const memberCtx = { ...makeCtx(t.db, sessionUser(member)), ...stubLibretto().ctx, ...hsMember.ctx };
+    await expect(
+      caller(memberCtx).collections.remove({ id: 'Goosebumps', mediaType: 'movies', handFile: HAND_MOVIES_FILE }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+
+    const hs = stubHaynesops({ file: null, handFiles: { [HAND_MOVIES_FILE]: HAND_MOVIES_TEXT } });
+    const adminCtx = { ...makeCtx(t.db, sessionUser(admin)), ...stubLibretto().ctx, ...hs.ctx };
+    const res = await caller(adminCtx).collections.remove({
+      id: 'Goosebumps',
+      mediaType: 'movies',
+      handFile: HAND_MOVIES_FILE,
+    });
+    expect(res).toMatchObject({ ok: true, provider: 'kometa', merged: false });
+    expect(hs.merged).toHaveLength(0);
+    const content = hs.opened[0]!.content as string;
+    expect(content).not.toContain('  Goosebumps:');
+    expect(content).toContain('  A24:'); // the neighbor survives
+  });
+
+  it('find-missing on a hand collection splices that file via a HUMAN-merged PR (admin)', async () => {
+    const admin = await createUser(t.db, { admin: true });
+    const hs = stubHaynesops({ file: null, handFiles: { [HAND_MOVIES_FILE]: HAND_MOVIES_TEXT }, checks: 'success' });
+    const ctx = { ...makeCtx(t.db, sessionUser(admin)), ...stubLibretto().ctx, ...hs.ctx };
+    const res = await caller(ctx).collections.setFindMissing({
+      id: 'Goosebumps',
+      mediaType: 'movies',
+      on: true,
+      handFile: HAND_MOVIES_FILE,
+    });
+    expect(res).toMatchObject({ ok: true, provider: 'kometa', findMissing: true, merged: false });
+    expect(hs.merged).toHaveLength(0);
+    const content = hs.opened[0]!.content as string;
+    expect(content).toContain('    radarr_add_missing: true');
+    expect(content).toContain('    radarr_search: true');
   });
 });

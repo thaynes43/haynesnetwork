@@ -20,6 +20,7 @@ import {
   COLLECTIONS_NAME,
   COLLECTION_BUILDER_LABELS,
   COLLECTION_MEDIA_TYPE_LABELS,
+  KOMETA_BUILDER_TYPE_NAMES,
   builderOptionsFor,
   defaultBuilderFor,
   isKometaMedia,
@@ -75,6 +76,10 @@ interface RecipeDraft {
   targetLibrary: string;
   ordered: boolean;
   syncMode: CollectionSyncModeName;
+  // Set when editing a hand-authored Kometa collection (owner ruling 2026-07-18): the config file basename
+  // to splice. null = a managed recipe / a new collection. Its presence locks name+builder and routes Save
+  // to editHandCollection (a surgical, human-merged config PR) instead of the managed-include upsert.
+  sourceFile: string | null;
 }
 
 /** "The Stormlight Archive" → "the-stormlight-archive" (the composer's derived-id convenience). */
@@ -95,12 +100,14 @@ const EMPTY_DRAFT: RecipeDraft = {
   targetLibrary: '',
   ordered: true,
   syncMode: 'sync',
+  sourceFile: null,
 };
 
-// ── Read-only collections (DESIGN-042 D-02 / DESIGN-043 D-02 amend) ──────────────────────────
-// A read-only row is a mirror collection with no app-managed recipe: an estate Kometa-config
-// collection (movies/TV) or a hand-made Kavita/Audiobookshelf collection (books/audiobooks). The
-// app lists them so the tab reflects the estate, but offers no controls (nothing to manage).
+// ── Read-only (books) + hand-file (Kometa) collections ───────────────────────────────────────
+// Books/Audiobooks: a read-only row is a hand-made Kavita/Audiobookshelf collection with no Libretto
+// recipe — listed so the tab is complete, with a short "made in ..." chip (owner verbosity critique).
+// Movies/TV: the estate's Kometa collections are now EDITABLE in place (owner ruling 2026-07-18) — see
+// HandCollection below; there is no read-only Kometa group.
 
 interface ReadOnlyCollection {
   name: string;
@@ -109,16 +116,31 @@ interface ReadOnlyCollection {
   source: 'kavita' | 'audiobookshelf' | null;
 }
 
-/** The muted state chip for a read-only row (owner tone — no em-dashes, no names). */
+/** The muted state chip for a book read-only row — short (owner tone, no em-dashes, no names). */
 function readOnlyChipLabel(row: ReadOnlyCollection): string {
-  if (row.managedBy === 'kometa_config') return 'managed in the estate’s Kometa config';
   if (row.source === 'audiobookshelf') return 'made in Audiobookshelf';
   return 'made in Kavita';
 }
 
-/** The heading over the read-only group per provider. */
-function readOnlyGroupTitle(mediaType: CollectionMediaTypeName): string {
-  return isKometaMedia(mediaType) ? "From the estate's config" : 'Made in your library apps';
+// A Kometa hand-authored config collection (owner ruling 2026-07-18) or a Defaults-produced mirror row.
+// `source: 'hand'` lives in a config file the app can edit; `source: 'default'` has no file (never
+// editable). One list, source-badged; editable rows get an active Edit, the rest a disabled Edit + tooltip.
+interface HandCollection {
+  name: string;
+  file: string | null;
+  source: 'hand' | 'default';
+  builderType: string | null;
+  builderRef: string | null;
+  findMissing: boolean;
+  editable: boolean;
+  editableReason: string | null;
+  itemCount: number | null;
+  mediaType: CollectionMediaTypeName;
+}
+
+/** The short SOURCE badge for a Kometa row — the owner's verbosity critique (was a long sentence). */
+function kometaSourceLabel(source: 'managed' | 'hand' | 'default'): string {
+  return source === 'managed' ? 'Added here' : 'Kometa config';
 }
 
 // ── The shell ──────────────────────────────────────────────────────────────────────────────
@@ -279,6 +301,24 @@ function MediaSection({
       targetLibrary: '',
       ordered: recipe.ordered ?? true,
       syncMode: (recipe.syncMode as CollectionSyncModeName | null) ?? 'sync',
+      sourceFile: null,
+    });
+    setEditing(true);
+    setComposerOpen(true);
+  };
+  // Open the composer pre-loaded to edit a hand-authored Kometa collection (owner ruling 2026-07-18). Name
+  // + builder are locked (the Plex title + the detected builder are the collection's identity); only the
+  // reference is editable — Save surgically splices that ref in the config file (a human-merged PR).
+  const openEditHand = (hand: HandCollection) => {
+    setDraft({
+      id: hand.name,
+      name: hand.name,
+      builderType: (hand.builderType as CollectionBuilderTypeName | null) ?? defaultBuilderFor(mediaType),
+      builderRef: hand.builderRef ?? '',
+      targetLibrary: '',
+      ordered: true,
+      syncMode: 'sync',
+      sourceFile: hand.file,
     });
     setEditing(true);
     setComposerOpen(true);
@@ -358,14 +398,22 @@ function MediaSection({
     data.collections.filter((c) => c.recipeId).map((c) => [c.recipeId as string, c]),
   );
 
-  // Both populations the tab lists: the recipes the app manages here, and the read-only mirror rows the
-  // estate's config / a book app made. One search box filters both by title substring.
+  // Movies/TV render ONE list (app-managed recipes + the estate's hand-file/Defaults collections, each
+  // source-badged — owner ruling 2026-07-18). Books keep two groups (managed + read-only). One search box
+  // filters everything by title substring.
+  const isKometa = isKometaMedia(mediaType);
   const readOnly: ReadOnlyCollection[] = data.readOnly ?? [];
+  const handCollections: HandCollection[] = (data.handCollections ?? []) as HandCollection[];
   const q = search.trim().toLowerCase();
   const matches = (name: string) => q === '' || name.toLowerCase().includes(q);
   const filteredRecipes = data.recipes.filter((r) => matches(r.name ?? r.id));
   const filteredReadOnly = readOnly.filter((r) => matches(r.name));
-  const totalCount = data.recipes.length + readOnly.length;
+  const filteredHand = handCollections.filter((h) => matches(h.name));
+  const secondaryCount = isKometa ? handCollections.length : readOnly.length;
+  const totalCount = data.recipes.length + secondaryCount;
+  const noMatches = isKometa
+    ? filteredRecipes.length === 0 && filteredHand.length === 0
+    : filteredRecipes.length === 0 && filteredReadOnly.length === 0;
 
   return (
     <>
@@ -433,113 +481,103 @@ function MediaSection({
             />
           </div>
 
-          {filteredRecipes.length === 0 && filteredReadOnly.length === 0 ? (
+          {noMatches ? (
             <p className="muted" data-testid="collections-no-matches">
               Nothing matches that search.
             </p>
           ) : null}
 
-          {filteredRecipes.length > 0 ? (
-            <section className="collections-group" data-testid="collections-managed-group">
-              <h2 className="collections-attention__title">Managed here</h2>
-              <ul className="collections-list" data-testid="collections-list">
-                {filteredRecipes.map((recipe) => {
-                  const produced = collectionByRecipe.get(recipe.id);
-                  const findMissing = recipe.findMissing ?? false;
-                  return (
-                    <li key={recipe.id} className="collection-row" data-testid="collection-row">
-                      <div className="collection-row__main">
-                        <span className="collection-row__title">{recipe.name ?? recipe.id}</span>
-                        <span className="collection-row__meta">
-                          <span className="badge badge--info">
-                            {COLLECTION_BUILDER_LABELS[recipe.builderType as CollectionBuilderTypeName] ??
-                              recipe.builderType ??
-                              'recipe'}
-                          </span>
-                          {recipe.builderRef ? <span className="muted">{recipe.builderRef}</span> : null}
-                          {produced ? (
-                            <span className="muted" data-testid="collection-size">
-                              {produced.itemCount ?? 0} in collection
-                              <span className="collection-row__cap"> / {data.sizeCap} limit</span>
-                            </span>
-                          ) : recipe.state === 'pending_run' ? (
-                            <span className="muted" data-testid="collection-pending">
-                              pending next collection run
-                            </span>
-                          ) : (
-                            <span className="muted">not built yet</span>
-                          )}
-                        </span>
-                      </div>
-                      <div className="collection-row__actions">
-                        {/* The find-missing puck reserves its slot; ON/OFF recolors, never reflows (ADR-015). A
-                            granted caller (or admin) sees it as a TOGGLE (Modal confirm on enable); everyone else
-                            sees the honest read-only state. */}
-                        <FindMissingPuck
-                          recipeId={recipe.id}
-                          mediaType={mediaType}
-                          findMissing={findMissing}
-                          canToggle={data.canFindMissing}
-                          onDone={invalidate}
-                        />
-                        {/* Kometa has no per-recipe apply API — a collection is produced on the estate's
-                            scheduled run (the pending state conveys it). Libretto applies on demand. */}
-                        {isKometaMedia(mediaType) ? null : (
-                          <ApplyButton recipeId={recipe.id} onDone={invalidate} />
-                        )}
-                        <button type="button" className="btn sm" onClick={() => openEdit(recipe)}>
-                          Edit
-                        </button>
-                        {isAdmin ? (
-                          <DeleteControl
-                            recipeId={recipe.id}
-                            recipeName={recipe.name ?? recipe.id}
-                            mediaType={mediaType}
-                            onDone={invalidate}
-                          />
-                        ) : null}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          ) : null}
+          {isKometa ? (
+            /* Movies/TV — ONE list: app-managed recipes + the estate's hand-file/Defaults collections,
+               each with a short SOURCE badge ("Added here" / "Kometa config" — owner ruling 2026-07-18). */
+            filteredRecipes.length > 0 || filteredHand.length > 0 ? (
+              <section className="collections-group" data-testid="collections-managed-group">
+                <ul className="collections-list" data-testid="collections-list">
+                  {filteredRecipes.map((recipe) => (
+                    <ManagedRecipeRow
+                      key={`m-${recipe.id}`}
+                      recipe={recipe}
+                      produced={collectionByRecipe.get(recipe.id)}
+                      sizeCap={data.sizeCap}
+                      canFindMissing={data.canFindMissing}
+                      isAdmin={isAdmin}
+                      mediaType={mediaType}
+                      showSource
+                      onEdit={() => openEdit(recipe)}
+                      onDone={invalidate}
+                    />
+                  ))}
+                  {filteredHand.map((hand, i) => (
+                    <HandCollectionRow
+                      key={`h-${i}-${hand.name}`}
+                      hand={hand}
+                      canFindMissing={data.canFindMissing}
+                      isAdmin={isAdmin}
+                      onEdit={() => openEditHand(hand)}
+                      onDone={invalidate}
+                    />
+                  ))}
+                </ul>
+              </section>
+            ) : null
+          ) : (
+            <>
+              {filteredRecipes.length > 0 ? (
+                <section className="collections-group" data-testid="collections-managed-group">
+                  <h2 className="collections-attention__title">Managed here</h2>
+                  <ul className="collections-list" data-testid="collections-list">
+                    {filteredRecipes.map((recipe) => (
+                      <ManagedRecipeRow
+                        key={recipe.id}
+                        recipe={recipe}
+                        produced={collectionByRecipe.get(recipe.id)}
+                        sizeCap={data.sizeCap}
+                        canFindMissing={data.canFindMissing}
+                        isAdmin={isAdmin}
+                        mediaType={mediaType}
+                        showSource={false}
+                        onEdit={() => openEdit(recipe)}
+                        onDone={invalidate}
+                      />
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
 
-          {filteredReadOnly.length > 0 ? (
-            <section className="collections-group" data-testid="collections-readonly-group">
-              <h2 className="collections-attention__title">{readOnlyGroupTitle(mediaType)}</h2>
-              <p className="muted collections-group__note">
-                These were made outside the app, so they show here to keep the list complete. There is
-                nothing to change on them here.
-              </p>
-              <ul className="collections-list" data-testid="collections-readonly-list">
-                {filteredReadOnly.map((row, i) => (
-                  <li
-                    key={`readonly-${i}-${row.name}`}
-                    className="collection-row"
-                    data-testid="collection-row-readonly"
-                  >
-                    <div className="collection-row__main">
-                      <span className="collection-row__title">{row.name}</span>
-                      <span className="collection-row__meta">
-                        <span className="muted" data-testid="collection-size">
-                          {row.itemCount ?? 0} in collection
-                        </span>
-                      </span>
-                    </div>
-                    {/* The row anatomy stays the shared grid: a single muted state chip on the right, its
-                        slot reserved by the shared actions column — no controls, no reflow (ADR-015). */}
-                    <div className="collection-row__actions">
-                      <span className="badge badge--muted" data-testid="collection-readonly-chip">
-                        {readOnlyChipLabel(row)}
-                      </span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
+              {filteredReadOnly.length > 0 ? (
+                <section className="collections-group" data-testid="collections-readonly-group">
+                  <h2 className="collections-attention__title">Made in your library apps</h2>
+                  <p className="muted collections-group__note">
+                    These were made outside the app, so they show here to keep the list complete. There is
+                    nothing to change on them here.
+                  </p>
+                  <ul className="collections-list" data-testid="collections-readonly-list">
+                    {filteredReadOnly.map((row, i) => (
+                      <li
+                        key={`readonly-${i}-${row.name}`}
+                        className="collection-row"
+                        data-testid="collection-row-readonly"
+                      >
+                        <div className="collection-row__main">
+                          <span className="collection-row__title">{row.name}</span>
+                          <span className="collection-row__meta">
+                            <span className="muted" data-testid="collection-size">
+                              {row.itemCount ?? 0} in collection
+                            </span>
+                          </span>
+                        </div>
+                        <div className="collection-row__actions">
+                          <span className="badge badge--muted" data-testid="collection-readonly-chip">
+                            {readOnlyChipLabel(row)}
+                          </span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+            </>
+          )}
         </>
       )}
 
@@ -562,6 +600,175 @@ function MediaSection({
 }
 
 /**
+ * One app-managed recipe row (books "Managed here" group + the Movies/TV unified list). On Kometa it shows
+ * the short "Added here" source badge; Libretto keeps the on-demand Apply. The row anatomy is the shared
+ * grid so armed/pending states only recolor, never reflow (ADR-015).
+ */
+function ManagedRecipeRow({
+  recipe,
+  produced,
+  sizeCap,
+  canFindMissing,
+  isAdmin,
+  mediaType,
+  showSource,
+  onEdit,
+  onDone,
+}: {
+  recipe: {
+    id: string;
+    name?: string | null;
+    builderType?: string | null;
+    builderRef?: string | null;
+    findMissing?: boolean | null;
+    state?: 'live' | 'pending_run' | null;
+  };
+  produced: { itemCount: number | null } | undefined;
+  sizeCap: number;
+  canFindMissing: boolean;
+  isAdmin: boolean;
+  mediaType: CollectionMediaTypeName;
+  showSource: boolean;
+  onEdit: () => void;
+  onDone: () => void;
+}) {
+  const findMissing = recipe.findMissing ?? false;
+  return (
+    <li className="collection-row" data-testid="collection-row">
+      <div className="collection-row__main">
+        <span className="collection-row__title">{recipe.name ?? recipe.id}</span>
+        <span className="collection-row__meta">
+          {showSource ? (
+            <span className="badge badge--ok" data-testid="collection-source-badge">
+              {kometaSourceLabel('managed')}
+            </span>
+          ) : null}
+          <span className="badge badge--info">
+            {COLLECTION_BUILDER_LABELS[recipe.builderType as CollectionBuilderTypeName] ??
+              recipe.builderType ??
+              'recipe'}
+          </span>
+          {recipe.builderRef ? <span className="muted">{recipe.builderRef}</span> : null}
+          {produced ? (
+            <span className="muted" data-testid="collection-size">
+              {produced.itemCount ?? 0} in collection
+              <span className="collection-row__cap"> / {sizeCap} limit</span>
+            </span>
+          ) : recipe.state === 'pending_run' ? (
+            <span className="muted" data-testid="collection-pending">
+              pending next collection run
+            </span>
+          ) : (
+            <span className="muted">not built yet</span>
+          )}
+        </span>
+      </div>
+      <div className="collection-row__actions">
+        <FindMissingPuck
+          recipeId={recipe.id}
+          mediaType={mediaType}
+          findMissing={findMissing}
+          canToggle={canFindMissing}
+          onDone={onDone}
+        />
+        {isKometaMedia(mediaType) ? null : <ApplyButton recipeId={recipe.id} onDone={onDone} />}
+        <button type="button" className="btn sm" onClick={onEdit}>
+          Edit
+        </button>
+        {isAdmin ? (
+          <DeleteControl
+            recipeId={recipe.id}
+            recipeName={recipe.name ?? recipe.id}
+            mediaType={mediaType}
+            onDone={onDone}
+          />
+        ) : null}
+      </div>
+    </li>
+  );
+}
+
+/**
+ * One of the estate's hand-authored Kometa collections (owner ruling 2026-07-18) or a Defaults-produced
+ * mirror row. Carries the short "Kometa config" source badge. Editable rows (a single allowlisted builder
+ * with a valid ref) get an active Edit that surgically splices that collection's ref in its config file
+ * (human-merged PR); non-editable rows show a DISABLED Edit with the honest reason as its tooltip — the app
+ * never does a lossy rewrite of config it cannot fully model. Find-missing + delete act on the config file.
+ */
+function HandCollectionRow({
+  hand,
+  canFindMissing,
+  isAdmin,
+  onEdit,
+  onDone,
+}: {
+  hand: HandCollection;
+  canFindMissing: boolean;
+  isAdmin: boolean;
+  onEdit: () => void;
+  onDone: () => void;
+}) {
+  const builderLabel = hand.builderType
+    ? (COLLECTION_BUILDER_LABELS[hand.builderType as CollectionBuilderTypeName] ?? hand.builderType)
+    : null;
+  return (
+    <li className="collection-row" data-testid="collection-row-hand">
+      <div className="collection-row__main">
+        <span className="collection-row__title">{hand.name}</span>
+        <span className="collection-row__meta">
+          <span className="badge badge--muted" data-testid="collection-source-badge">
+            {kometaSourceLabel(hand.source)}
+          </span>
+          {builderLabel ? <span className="badge badge--info">{builderLabel}</span> : null}
+          {hand.builderRef ? <span className="muted">{hand.builderRef}</span> : null}
+          <span className="muted" data-testid="collection-size">
+            {hand.itemCount ?? 0} in collection
+          </span>
+        </span>
+      </div>
+      <div className="collection-row__actions">
+        {/* Find-missing applies to any hand-file collection (a surgical, human-merged splice of the
+            add_missing keys); a Defaults-produced row has no file, so no toggle. */}
+        {hand.source === 'hand' && hand.file ? (
+          <FindMissingPuck
+            recipeId={hand.name}
+            mediaType={hand.mediaType}
+            findMissing={hand.findMissing}
+            canToggle={canFindMissing}
+            handFile={hand.file}
+            onDone={onDone}
+          />
+        ) : null}
+        {hand.editable ? (
+          <button type="button" className="btn sm" data-testid="collection-edit-hand" onClick={onEdit}>
+            Edit
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="btn sm"
+            data-testid="collection-edit-disabled"
+            disabled
+            title={hand.editableReason ?? undefined}
+          >
+            Edit
+          </button>
+        )}
+        {isAdmin && hand.source === 'hand' && hand.file ? (
+          <DeleteControl
+            recipeId={hand.name}
+            recipeName={hand.name}
+            mediaType={hand.mediaType}
+            handFile={hand.file}
+            onDone={onDone}
+          />
+        ) : null}
+      </div>
+    </li>
+  );
+}
+
+/**
  * DESIGN-043 D-14 (PLAN-052 PR4c) — the per-collection FIND-MISSING knob. Render-only for a caller without
  * the grant (the honest state); a granted caller (or admin — the server folds admin into canFindMissing)
  * gets a TOGGLE. Enabling opens an explanatory Modal confirm (the acquisition lever — owner tone, no
@@ -575,12 +782,15 @@ function FindMissingPuck({
   mediaType,
   findMissing,
   canToggle,
+  handFile,
   onDone,
 }: {
   recipeId: string;
   mediaType: CollectionMediaTypeName;
   findMissing: boolean;
   canToggle: boolean;
+  /** Set for a hand-authored Kometa collection: the config file the splice targets (human-merged). */
+  handFile?: string | null;
   onDone: () => void;
 }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -614,7 +824,8 @@ function FindMissingPuck({
     );
   }
 
-  const disable = () => mutation.mutate({ id: recipeId, mediaType, on: false });
+  const handArg = handFile ? { handFile } : {};
+  const disable = () => mutation.mutate({ id: recipeId, mediaType, on: false, ...handArg });
 
   return (
     <>
@@ -662,7 +873,7 @@ function FindMissingPuck({
               className="btn primary"
               data-testid="find-missing-confirm"
               disabled={mutation.isPending}
-              onClick={() => mutation.mutate({ id: recipeId, mediaType, on: true })}
+              onClick={() => mutation.mutate({ id: recipeId, mediaType, on: true, ...handArg })}
             >
               {mutation.isPending ? 'Turning on…' : 'Turn on find missing'}
             </button>
@@ -728,11 +939,14 @@ function DeleteControl({
   recipeId,
   recipeName,
   mediaType,
+  handFile,
   onDone,
 }: {
   recipeId: string;
   recipeName: string;
   mediaType: CollectionMediaTypeName;
+  /** Set for a hand-authored Kometa collection: delete surgically removes its block from this config file. */
+  handFile?: string | null;
   onDone: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -780,7 +994,14 @@ function DeleteControl({
               className="btn danger"
               disabled={remove.isPending}
               data-testid="collection-delete-confirm"
-              onClick={() => remove.mutate({ id: recipeId, mediaType, deleteCollection: also })}
+              onClick={() =>
+                remove.mutate({
+                  id: recipeId,
+                  mediaType,
+                  deleteCollection: also,
+                  ...(handFile ? { handFile } : {}),
+                })
+              }
             >
               {remove.isPending ? 'Deleting…' : also ? 'Delete both' : 'Delete the recipe'}
             </button>
@@ -838,6 +1059,10 @@ function ComposerModal({
   const [overCapSize, setOverCapSize] = useState<number | null>(null);
   const [overCapOpen, setOverCapOpen] = useState(false);
 
+  // Editing one of the estate's hand-authored Kometa collections (owner ruling 2026-07-18): the config
+  // file to splice. Name + builder are the collection's identity (locked); only the reference is editable.
+  const isHandEdit = editing && draft.sourceFile != null;
+
   const payload = {
     id: draft.id.trim(),
     ...(draft.name.trim() ? { name: draft.name.trim() } : {}),
@@ -851,6 +1076,15 @@ function ComposerModal({
   const canSubmit = payload.id.length > 0 && payload.builderRef.length > 0;
   const collectionLabel = payload.name ?? payload.id;
 
+  const onCapOrError = (e: unknown) => {
+    if (appCodeOf(e) === 'COLLECTION_SIZE_CAP_EXCEEDED') {
+      setOverCapSize(preview?.workCount ?? null);
+      setOverCapOpen(true);
+      return;
+    }
+    setError(describeMutationError(e));
+  };
+
   const validate = trpc.collections.validate.useMutation({
     onError: (e) => setError(describeMutationError(e)),
     onSuccess: (res) => {
@@ -858,20 +1092,15 @@ function ComposerModal({
       setPreview({ name: res.resolved?.name ?? null, workCount: res.resolved?.workCount ?? null, issues: res.issues });
     },
   });
-  const upsert = trpc.collections.upsert.useMutation({
-    onError: (e) => {
-      if (appCodeOf(e) === 'COLLECTION_SIZE_CAP_EXCEEDED') {
-        setOverCapSize(preview?.workCount ?? null);
-        setOverCapOpen(true);
-        return;
-      }
-      setError(describeMutationError(e));
-    },
+  const upsert = trpc.collections.upsert.useMutation({ onError: onCapOrError, onSuccess: onSaved });
+  const editHand = trpc.collections.editHandCollection.useMutation({
+    onError: onCapOrError,
     onSuccess: onSaved,
   });
   const requestOverride = trpc.collections.requestOverride.useMutation({
     onError: (e) => setError(describeMutationError(e)),
   });
+  const saving = upsert.isPending || editHand.isPending;
 
   function submitSave() {
     if (!canSubmit) return;
@@ -880,6 +1109,17 @@ function ComposerModal({
     if (!capBypass && preview?.workCount != null && preview.workCount > sizeCap) {
       setOverCapSize(preview.workCount);
       setOverCapOpen(true);
+      return;
+    }
+    if (isHandEdit && draft.sourceFile) {
+      // Surgical, human-merged config-file edit of just this collection's ref.
+      editHand.mutate({
+        mediaType: mediaType as 'movies' | 'tv',
+        file: draft.sourceFile,
+        name: payload.id,
+        builderType: draft.builderType as (typeof KOMETA_BUILDER_TYPE_NAMES)[number],
+        builderRef: payload.builderRef,
+      });
       return;
     }
     upsert.mutate(payload);
@@ -913,11 +1153,19 @@ function ComposerModal({
           submitSave();
         }}
       >
+        {isHandEdit ? (
+          <p className="muted" data-testid="composer-hand-note">
+            This collection lives in the estate&rsquo;s Kometa config. You can change its reference here;
+            the name and builder stay as they are. Saving opens a config change an admin merges before the
+            next collection run.
+          </p>
+        ) : null}
         <label className="composer-field">
           <span>Name</span>
           <input
             className="library-search"
             value={draft.name}
+            disabled={isHandEdit}
             placeholder="The Stormlight Archive"
             onChange={(e) => {
               const name = e.target.value;
@@ -927,24 +1175,27 @@ function ComposerModal({
             }}
           />
         </label>
-        <label className="composer-field">
-          <span>Collection ID</span>
-          <input
-            className="library-search"
-            value={draft.id}
-            disabled={editing}
-            placeholder="stormlight-archive"
-            onChange={(e) => {
-              setIdEdited(true);
-              setDraft({ ...draft, id: e.target.value });
-            }}
-          />
-        </label>
+        {isHandEdit ? null : (
+          <label className="composer-field">
+            <span>Collection ID</span>
+            <input
+              className="library-search"
+              value={draft.id}
+              disabled={editing}
+              placeholder="stormlight-archive"
+              onChange={(e) => {
+                setIdEdited(true);
+                setDraft({ ...draft, id: e.target.value });
+              }}
+            />
+          </label>
+        )}
         <label className="composer-field">
           <span>Builder</span>
           <select
             className="library-search"
             value={draft.builderType}
+            disabled={isHandEdit}
             onChange={(e) =>
               setDraft({ ...draft, builderType: e.target.value as CollectionBuilderTypeName })
             }
@@ -965,36 +1216,42 @@ function ComposerModal({
             onChange={(e) => setDraft({ ...draft, builderRef: e.target.value })}
           />
         </label>
-        <label className="composer-field">
-          <span>Target library</span>
-          <input
-            className="library-search"
-            value={draft.targetLibrary}
-            placeholder="optional"
-            onChange={(e) => setDraft({ ...draft, targetLibrary: e.target.value })}
-          />
-        </label>
-        <div className="composer-row">
-          <label className="composer-inline">
-            <input
-              type="checkbox"
-              checked={draft.ordered}
-              onChange={(e) => setDraft({ ...draft, ordered: e.target.checked })}
-            />
-            Keep reading order
-          </label>
-          <label className="composer-inline">
-            Sync
-            <select
-              className="library-search composer-sync"
-              value={draft.syncMode}
-              onChange={(e) => setDraft({ ...draft, syncMode: e.target.value as CollectionSyncModeName })}
-            >
-              <option value="sync">replace to match</option>
-              <option value="append">add only</option>
-            </select>
-          </label>
-        </div>
+        {isHandEdit ? null : (
+          <>
+            <label className="composer-field">
+              <span>Target library</span>
+              <input
+                className="library-search"
+                value={draft.targetLibrary}
+                placeholder="optional"
+                onChange={(e) => setDraft({ ...draft, targetLibrary: e.target.value })}
+              />
+            </label>
+            <div className="composer-row">
+              <label className="composer-inline">
+                <input
+                  type="checkbox"
+                  checked={draft.ordered}
+                  onChange={(e) => setDraft({ ...draft, ordered: e.target.checked })}
+                />
+                Keep reading order
+              </label>
+              <label className="composer-inline">
+                Sync
+                <select
+                  className="library-search composer-sync"
+                  value={draft.syncMode}
+                  onChange={(e) =>
+                    setDraft({ ...draft, syncMode: e.target.value as CollectionSyncModeName })
+                  }
+                >
+                  <option value="sync">replace to match</option>
+                  <option value="append">add only</option>
+                </select>
+              </label>
+            </div>
+          </>
+        )}
 
         {preview ? (
           <div className="composer-preview" data-testid="composer-preview">
@@ -1027,8 +1284,8 @@ function ComposerModal({
           >
             {validate.isPending ? 'Checking…' : 'Preview'}
           </button>
-          <button type="submit" className="btn sm primary" disabled={!canSubmit || upsert.isPending}>
-            {upsert.isPending ? 'Saving…' : 'Save'}
+          <button type="submit" className="btn sm primary" disabled={!canSubmit || saving}>
+            {saving ? 'Saving…' : 'Save'}
           </button>
         </div>
       </form>

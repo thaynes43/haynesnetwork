@@ -30,9 +30,18 @@ import {
   type KometaMediaType,
   type KometaRecipe,
 } from './kometa-compiler';
+import {
+  isHandConfigFile,
+  parseHandConfigFile,
+  spliceHandCollectionFindMissing,
+  spliceHandCollectionRef,
+  spliceHandCollectionRemoval,
+  type KometaHandCollection,
+} from './kometa-hand-config';
 import type { HaynesopsClientBundle } from './haynesops-clients';
 
 export type { KometaMediaType, KometaRecipe } from './kometa-compiler';
+export type { KometaHandCollection } from './kometa-hand-config';
 
 /** movies → the Plex `movie` section; tv → the `show` section (the mirror read scope). */
 const MEDIA_SECTION: Record<KometaMediaType, PlexMediaType> = { movies: 'movie', tv: 'show' };
@@ -60,6 +69,23 @@ export interface KometaPendingPr {
   url: string;
 }
 
+/**
+ * One of the estate's HAND-AUTHORED Kometa collections (owner ruling 2026-07-18) as the overview sees it:
+ * the parse result (name, builder, editability) plus the mirror-joined item count and its source. `hand`
+ * = it lives in a config file the app can surgically edit; `default` = a mirror collection produced by a
+ * Kometa Default (config.yml) with no hand file to edit (listed honestly, never editable).
+ */
+export interface KometaHandCollectionView extends Omit<KometaHandCollection, 'file'> {
+  /** The config file basename (the splice PR path); null for a Defaults-produced mirror-only collection. */
+  file: string | null;
+  /** Item count from the mirror join by normalized title (null when the mirror has not built it). */
+  itemCount: number | null;
+  source: 'hand' | 'default';
+}
+
+/** The owner-tone reason a Defaults-produced collection (no hand file) cannot be edited here. */
+const DEFAULTS_UNEDITABLE_REASON = 'Built by the estate’s Kometa defaults.';
+
 export interface KometaCollectionsOverview {
   /** False when haynes-ops (GitHub) could not be reached — the surface renders the honest degrade. */
   reachable: boolean;
@@ -68,6 +94,8 @@ export interface KometaCollectionsOverview {
   recipes: KometaRecipeView[];
   /** The produced collections the mirror already carries (provenance kometa). */
   collections: KometaProducedCollection[];
+  /** The estate's hand-authored config collections + the Defaults-produced mirror rows (one Kometa list). */
+  handCollections: KometaHandCollectionView[];
   /** Open app-authored PRs a human still has to merge (awaiting-merge rows). */
   pendingPrs: KometaPendingPr[];
 }
@@ -77,6 +105,7 @@ const EMPTY_UNREACHABLE = (mediaType: KometaMediaType): KometaCollectionsOvervie
   mediaType,
   recipes: [],
   collections: [],
+  handCollections: [],
   pendingPrs: [],
 });
 
@@ -109,10 +138,33 @@ async function readProducedCollections(
 }
 
 /**
- * DESIGN-042 D-02/D-07 — the per-media-type monitor: the merged managed recipes (read back from the
- * app-owned include), each reconciled to `live`/`pending_run` against the mirror, plus the produced
- * collections and the open app-authored PRs still awaiting a human merge. A HaynesopsUnreachableError
- * degrades to `reachable: false` (empty) — the Movies/TV surface stays up; any other error rethrows.
+ * Read + parse the estate's HAND-AUTHORED Kometa config files for a media type (owner ruling 2026-07-18).
+ * Lists the config directory, keeps the movies-*.yml / shows-*.yml siblings (never the app include), reads
+ * each, and parses its collections (name, builder, editability). Pure text parsing — no builder is ever
+ * inferred beyond the D-04 allowlist.
+ */
+async function readHandCollections(
+  haynesops: HaynesopsClientBundle,
+  mediaType: KometaMediaType,
+): Promise<KometaHandCollection[]> {
+  const names = await haynesops.read.listDirectory(haynesops.configDir, haynesops.baseBranch);
+  const handFiles = names.filter((n) => isHandConfigFile(n, mediaType)).sort();
+  const out: KometaHandCollection[] = [];
+  for (const f of handFiles) {
+    const file = await haynesops.read.getFile(`${haynesops.configDir}/${f}`, haynesops.baseBranch);
+    out.push(...parseHandConfigFile(file?.text, f, mediaType));
+  }
+  return out;
+}
+
+/**
+ * DESIGN-042 D-02/D-07 (owner ruling 2026-07-18 — EDIT the estate's Kometa collections, not read-only) —
+ * the per-media-type monitor: the app-owned managed recipes (reconciled to `live`/`pending_run` against
+ * the mirror) PLUS the estate's hand-authored config collections (parsed from every movies-*.yml /
+ * shows-*.yml, editable where the D-04 allowlist recognizes a single validated ref), each joined to its
+ * mirror item count by normalized title. A Kometa-Defaults-produced mirror collection with no hand file is
+ * still listed (source `default`, never editable). One list, source-badged. A HaynesopsUnreachableError
+ * degrades to `reachable: false` (empty) — the surface stays up; any other error rethrows.
  */
 export async function getKometaCollectionsOverview(input: {
   db?: DbClient;
@@ -126,22 +178,57 @@ export async function getKometaCollectionsOverview(input: {
     );
     const recipes = parseManagedFile(file?.text).filter((r) => r.mediaType === input.mediaType);
     const produced = await readProducedCollections(input.db, input.mediaType);
-    const producedTitles = new Set(produced.map((c) => normalizeTitle(c.title)));
+    const producedByTitle = new Map(produced.map((c) => [normalizeTitle(c.title), c]));
+    const recipeTitles = new Set(recipes.map((r) => normalizeTitle(r.name)));
+    const hand = await readHandCollections(input.haynesops, input.mediaType);
+    const handTitles = new Set(hand.map((h) => normalizeTitle(h.name)));
     const openPrs = await input.haynesops.read.listOpenManagedPrs();
+
+    const handViews: KometaHandCollectionView[] = hand.map((h) => ({
+      ...h,
+      itemCount: producedByTitle.get(normalizeTitle(h.name))?.childCount ?? null,
+      source: 'hand',
+    }));
+    // Mirror collections not authored by an app recipe OR a hand file are Kometa-Defaults output — listed
+    // honestly (the tab reflects the whole estate) but never editable (there is no file to splice).
+    const defaultViews: KometaHandCollectionView[] = produced
+      .filter(
+        (c) =>
+          !recipeTitles.has(normalizeTitle(c.title)) && !handTitles.has(normalizeTitle(c.title)),
+      )
+      .map((c) => ({
+        name: c.title,
+        file: null,
+        mediaType: input.mediaType,
+        builderType: null,
+        builderRef: null,
+        findMissing: false,
+        editable: false,
+        editableReason: DEFAULTS_UNEDITABLE_REASON,
+        itemCount: c.childCount,
+        source: 'default' as const,
+      }));
+
     return {
       reachable: true,
       mediaType: input.mediaType,
       recipes: recipes.map((r) => ({
         ...r,
-        state: producedTitles.has(normalizeTitle(r.name)) ? 'live' : 'pending_run',
+        state: producedTitles(producedByTitle).has(normalizeTitle(r.name)) ? 'live' : 'pending_run',
       })),
       collections: produced,
+      handCollections: [...handViews, ...defaultViews],
       pendingPrs: openPrs.map((p) => ({ number: p.number, title: p.title, url: p.url })),
     };
   } catch (error) {
     if (error instanceof HaynesopsUnreachableError) return EMPTY_UNREACHABLE(input.mediaType);
     throw error;
   }
+}
+
+/** Small helper so the recipe live/pending reconcile reuses the produced-by-title map. */
+function producedTitles(map: Map<string, KometaProducedCollection>): Set<string> {
+  return new Set(map.keys());
 }
 
 // ── The auto-merge policy (D-10, pure) ─────────────────────────────────────────────────────────────────
@@ -492,6 +579,208 @@ export async function setKometaFindMissing(input: {
       auditAction: 'upsert_collection',
     },
   );
+}
+
+// ── The HAND-FILE write flow (owner ruling 2026-07-18 — edit the estate's Kometa collections) ────────────
+//
+// A hand-file edit touches a SIBLING config file (movies-*.yml / shows-*.yml), not the app-owned managed
+// include, so it can NEVER auto-merge (the D-10 managed-file-only condition already forbids it; this path
+// simply never attempts it). Every hand-file PR is HUMAN-merged. The surgical splice (kometa-hand-config.ts)
+// preserves every untouched byte of the file — the round-trip fidelity requirement.
+
+/** The repo-relative path of a hand-authored config file (basename joined to the config dir). */
+function handPath(haynesops: HaynesopsClientBundle, file: string): string {
+  return `${haynesops.configDir}/${file}`;
+}
+
+/** Read a hand file's current text off the base branch, or throw NotFound (never a fabricated splice). */
+async function readHandFileText(
+  haynesops: HaynesopsClientBundle,
+  file: string,
+): Promise<string> {
+  const repoFile = await haynesops.read.getFile(handPath(haynesops, file), haynesops.baseBranch);
+  if (!repoFile) throw new NotFoundError(`Kometa config file "${file}" not found in haynes-ops`);
+  return repoFile.text;
+}
+
+/**
+ * Open a HUMAN-merged haynes-ops PR against a hand config file and audit it in the SAME tx (hard rule 6).
+ * The PR opens BEFORE the audit (crash-safe: a crash leaves a visible open PR). Never auto-merges.
+ */
+async function openHandFilePrAndAudit(input: {
+  db?: DbClient;
+  haynesops: HaynesopsClientBundle;
+  actorId: string;
+  file: string;
+  content: string;
+  mediaType: KometaMediaType;
+  name: string;
+  title: string;
+  body: string;
+  auditDetail: Record<string, unknown>;
+  branchSuffix?: string;
+}): Promise<KometaWriteResult> {
+  const suffix = input.branchSuffix ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  const pr = await input.haynesops.write.openManagedFilePr({
+    path: handPath(input.haynesops, input.file),
+    content: input.content,
+    branchSlug: branchSlug(input.mediaType, input.name, `hand-${suffix}`),
+    title: input.title,
+    body: input.body,
+  });
+  await inTransaction(input.db, async (tx) => {
+    await tx.insert(permissionAudit).values({
+      actorId: input.actorId,
+      action: 'upsert_collection',
+      detail: {
+        provider: 'kometa' as const,
+        media_type: input.mediaType,
+        hand_file: input.file,
+        name: input.name,
+        pr_number: pr.number,
+        pr_url: pr.url,
+        merged: false,
+        ...input.auditDetail,
+      },
+    });
+  });
+  return { prNumber: pr.number, prUrl: pr.url, merged: false, autoMergeBlockedReason: 'awaiting merge (config file)' };
+}
+
+/**
+ * DESIGN-042 D-01/D-04 (owner ruling 2026-07-18) — SURGICALLY edit a hand-authored Kometa collection's
+ * builder ref and open a HUMAN-merged haynes-ops PR against its own config file (every untouched byte
+ * preserved). The cap applies to non-admin edits (an unprovable-size ref is treated as over-cap → the
+ * client routes to the ticket path). NotFound for an unknown collection/file; KometaRecipeError for a
+ * too-custom collection or a malformed ref (never a lossy rewrite). Audited same-tx.
+ */
+export async function editKometaHandCollection(input: {
+  db?: DbClient;
+  haynesops: HaynesopsClientBundle;
+  actorId: string;
+  file: string;
+  name: string;
+  mediaType: KometaMediaType;
+  builderType: KometaRecipe['builderType'];
+  builderRef: string;
+  /** Resolved membership size (id-list length) or null when unresolvable without egress. */
+  size: number | null;
+  cap: number;
+  isAdmin: boolean;
+  branchSuffix?: string;
+}): Promise<KometaWriteResult> {
+  const { normalizedRef } = validateKometaRef(input.builderType, input.builderRef);
+  const effectiveSize = input.size ?? (input.isAdmin ? 0 : input.cap + 1);
+  assertWithinCollectionSizeCap({ size: effectiveSize, cap: input.cap, isAdmin: input.isAdmin });
+  const text = await readHandFileText(input.haynesops, input.file);
+  const content = spliceHandCollectionRef({
+    fileText: text,
+    name: input.name,
+    mediaType: input.mediaType,
+    builderRef: input.builderRef,
+  });
+  return openHandFilePrAndAudit({
+    db: input.db,
+    haynesops: input.haynesops,
+    actorId: input.actorId,
+    file: input.file,
+    content,
+    mediaType: input.mediaType,
+    name: input.name,
+    title: `collections(kometa): edit ${input.name}`,
+    body: [
+      `Edit the estate's Kometa collection **${input.name}** in \`${input.file}\` (owner ruling 2026-07-18).`,
+      ``,
+      `- Builder: ${input.builderType} (${normalizedRef})`,
+      ``,
+      `Surgical edit — only this collection's builder ref changed; every other byte of the file is preserved.`,
+      `Hand-file PRs are HUMAN-merged (never auto-merged — DESIGN-042 D-10).`,
+    ].join('\n'),
+    auditDetail: { builder_type: input.builderType, builder_ref: normalizedRef, hand_edit: true },
+    ...(input.branchSuffix ? { branchSuffix: input.branchSuffix } : {}),
+  });
+}
+
+/**
+ * DESIGN-042 D-06 (owner ruling 2026-07-18) — flip the find-missing (acquisition) knob on a hand-authored
+ * Kometa collection by SURGICALLY splicing its `<arr>_add_missing`/`_search` keys, then open a HUMAN-merged
+ * PR. Grant-gated at the API. Same fidelity + human-merge bar as an edit.
+ */
+export async function setKometaHandFindMissing(input: {
+  db?: DbClient;
+  haynesops: HaynesopsClientBundle;
+  actorId: string;
+  file: string;
+  name: string;
+  mediaType: KometaMediaType;
+  on: boolean;
+  branchSuffix?: string;
+}): Promise<KometaWriteResult> {
+  const text = await readHandFileText(input.haynesops, input.file);
+  const content = spliceHandCollectionFindMissing({
+    fileText: text,
+    name: input.name,
+    mediaType: input.mediaType,
+    on: input.on,
+  });
+  return openHandFilePrAndAudit({
+    db: input.db,
+    haynesops: input.haynesops,
+    actorId: input.actorId,
+    file: input.file,
+    content,
+    mediaType: input.mediaType,
+    name: input.name,
+    title: `collections(kometa): ${input.on ? 'enable' : 'disable'} find-missing on ${input.name}`,
+    body: [
+      `${input.on ? 'Enable' : 'Disable'} find-missing on the estate's Kometa collection **${input.name}** in \`${input.file}\`.`,
+      ``,
+      `Surgical edit — only the ${input.mediaType === 'movies' ? 'radarr' : 'sonarr'}_add_missing/_search keys changed.`,
+      `${input.on ? 'Enabling find-missing is the acquisition lever, so this PR is HUMAN-merged (DESIGN-042 D-10).' : 'Hand-file PRs are HUMAN-merged.'}`,
+    ].join('\n'),
+    auditDetail: { find_missing: input.on, hand_edit: true },
+    ...(input.branchSuffix ? { branchSuffix: input.branchSuffix } : {}),
+  });
+}
+
+/**
+ * DESIGN-042 D-03 (owner ruling 2026-07-18) — DELETE a hand-authored Kometa collection (ADMIN only; the API
+ * gates the caller) by SURGICALLY removing exactly its block from the config file, then open a HUMAN-merged
+ * PR. Orphans the produced Plex collection (the existing semantics). NotFound for an unknown collection.
+ */
+export async function deleteKometaHandCollection(input: {
+  db?: DbClient;
+  haynesops: HaynesopsClientBundle;
+  actorId: string;
+  file: string;
+  name: string;
+  mediaType: KometaMediaType;
+  deleteCollection?: boolean;
+  branchSuffix?: string;
+}): Promise<KometaWriteResult> {
+  const text = await readHandFileText(input.haynesops, input.file);
+  const content = spliceHandCollectionRemoval({ fileText: text, name: input.name });
+  return openHandFilePrAndAudit({
+    db: input.db,
+    haynesops: input.haynesops,
+    actorId: input.actorId,
+    file: input.file,
+    content,
+    mediaType: input.mediaType,
+    name: input.name,
+    title: `collections(kometa): remove ${input.name}`,
+    body: [
+      `Remove the estate's Kometa collection **${input.name}** from \`${input.file}\`.`,
+      ``,
+      `The produced Plex collection is orphaned (it survives; the config stops managing it).`,
+      input.deleteCollection ? `Requester asked to also delete the collection (orphan-only in v1).` : ``,
+      `Hand-file PRs are HUMAN-merged.`,
+    ]
+      .filter(Boolean)
+      .join('\n'),
+    auditDetail: { hand_delete: true, delete_collection: input.deleteCollection ?? false },
+    ...(input.branchSuffix ? { branchSuffix: input.branchSuffix } : {}),
+  });
 }
 
 /** The bot PR body — the audit-trail prose (the collection + its builder + the auto-merge intent). */
