@@ -112,11 +112,12 @@ const BOOKS_TABS = [
 ] as const satisfies ReadonlyArray<{ key: string; label: string; arrKind?: ArrKindName }>;
 
 /** Each Books sub-tab's books_items media_kind. */
-const BOOKS_TAB_KINDS: Record<(typeof BOOKS_TABS)[number]['key'], 'book' | 'audiobook' | 'comic'> = {
-  books: 'book',
-  audiobooks: 'audiobook',
-  comics: 'comic',
-};
+const BOOKS_TAB_KINDS: Record<(typeof BOOKS_TABS)[number]['key'], 'book' | 'audiobook' | 'comic'> =
+  {
+    books: 'book',
+    audiobooks: 'audiobook',
+    comics: 'comic',
+  };
 
 // ADR-059 / DESIGN-030 (PLAN-048) — the cross-library Activity sub-tab (the Trash→Activity idiom). Like My
 // Fixes it is ALWAYS-ON (no section id gates the Library shell); the `activity.list` resolver does the
@@ -220,7 +221,9 @@ function LibraryContent({
   // deep-links a gated tab falls back to the first visible tab.
   const tabs = [
     ...MEDIA_TABS.filter((t) => mediaVisible[t.key as keyof MediaVisible]),
-    ...(ytdlsubVisible ? YTDLSUB_TABS.filter((t) => ytdlsubLibraries[t.key as keyof YtdlsubLibsVisible]) : []),
+    ...(ytdlsubVisible
+      ? YTDLSUB_TABS.filter((t) => ytdlsubLibraries[t.key as keyof YtdlsubLibsVisible])
+      : []),
     ...(booksVisible ? BOOKS_TABS : []),
     ACTIVITY_TAB,
     MY_FIXES_TAB,
@@ -233,7 +236,9 @@ function LibraryContent({
 
   // ADR-052 / DESIGN-026 D-06 (PLAN-029) — hydrate ALL wall preferences once (the browsers resolve
   // their effective view/sort from these + the URL) and the per-user facet gates (ADR-051 C-06).
-  const prefs = trpc.library.preferences.getAll.useQuery(undefined, { refetchOnWindowFocus: false });
+  const prefs = trpc.library.preferences.getAll.useQuery(undefined, {
+    refetchOnWindowFocus: false,
+  });
   const gatesQuery = trpc.library.facetGates.useQuery(undefined, { refetchOnWindowFocus: false });
   const gates: FacetGates = gatesQuery.data ?? { watch: false, bookProgress: false };
 
@@ -383,7 +388,9 @@ function MediaBrowser({
   // DESIGN-026 D-02/D-03 — the ACTIVE LEVEL's capability declaration (the grouped level sorts the
   // aggregate CARDS — label/count; the item grid keeps the wall's answerable sorts + facets).
   const levelKey: ViewLevelKey =
-    groupedCards && grouping?.level !== undefined ? grouping.level : (`${wall}:wall` as ViewLevelKey);
+    groupedCards && grouping?.level !== undefined
+      ? grouping.level
+      : (`${wall}:wall` as ViewLevelKey);
   const entry: ViewRegistryEntry = registryFor(levelKey);
   // Plain computations below (sortKeys/enumFacets/filters) — the React Compiler memoizes them;
   // manual useMemo over registry-derived values trips react-hooks/preserve-manual-memoization now
@@ -431,7 +438,8 @@ function MediaBrowser({
     stored != null && sortKeys.includes(stored.sortField)
       ? { field: stored.sortField, dir: stored.sortDir }
       : null;
-  const sort = urlSort ?? storedSort ?? { field: entry.defaultSort.field, dir: entry.defaultSort.dir };
+  const sort = urlSort ??
+    storedSort ?? { field: entry.defaultSort.field, dir: entry.defaultSort.dir };
   const sortToken = `${sort.field}:${sort.dir}`;
 
   // R6 "remember last-used sort" — persisted ONLY on explicit selection (cycleSort below); a
@@ -465,8 +473,7 @@ function MediaBrowser({
     if (searchParams.get('view') === null && resolved.view === 'grouped') {
       patchParams({
         view: 'grouped',
-        by:
-          grouping !== undefined && grouping !== defaultGrouping ? grouping.dimension : null,
+        by: grouping !== undefined && grouping !== defaultGrouping ? grouping.dimension : null,
       });
     }
     // patchParams reads the live location; the deps that matter are the resolution inputs.
@@ -611,7 +618,9 @@ function MediaBrowser({
       ...(ratingMax !== undefined ? { ratingMax } : {}),
       // PLAN-029 — the Decade / Release-Date-range / watch-state facets + the A–Z jump letter.
       ...(decadesInput.length > 0 ? { decades: decadesInput } : {}),
-      ...(releasedFromDay !== undefined ? { releasedFrom: `${releasedFromDay}T00:00:00.000Z` } : {}),
+      ...(releasedFromDay !== undefined
+        ? { releasedFrom: `${releasedFromDay}T00:00:00.000Z` }
+        : {}),
       ...(releasedToDay !== undefined ? { releasedTo: `${releasedToDay}T23:59:59.999Z` } : {}),
       ...(watchState !== undefined ? { watchState } : {}),
       ...(azActive && letter !== null ? { letter } : {}),
@@ -645,7 +654,9 @@ function MediaBrowser({
   const groupDir = sort.dir === 'desc' ? -1 : 1;
   const groups =
     sort.field === 'count'
-      ? [...groupsFound].sort((a, b) => (a.count - b.count) * groupDir || a.label.localeCompare(b.label))
+      ? [...groupsFound].sort(
+          (a, b) => (a.count - b.count) * groupDir || a.label.localeCompare(b.label),
+        )
       : [...groupsFound].sort((a, b) => a.label.localeCompare(b.label) * groupDir);
   const groupsRefreshing = groupsQuery.isPlaceholderData && groupsQuery.isFetching;
   // The drill header names the collection (the ?group= key is a ratingKey, not a title).
@@ -780,116 +791,119 @@ function MediaBrowser({
             The grouped-collection levels declare exactly ONE facet — the PLAN-053 Type chip row
             (DESIGN-035 D-11); item facets stay absent from grouped levels (registry-enforced). */}
         {entry.facets.length > 0 ? (
-        <div className="library-chipbar" role="group" aria-label="Filters">
-          {entry.facets.map((facet) => {
-            if (facet.key === 'category') {
-              // DESIGN-035 D-11' / R-214 — the category chip row: single-select, All default, always
-              // visible (owner ruling: the chip FILTERS, never hides). ?ctype= is a D-19 replace
-              // refinement; the SERVER filters the cards. The chip vocabulary is DYNAMIC — one chip
-              // per DISTINCT category actually present (categoryCounts keys), ordered
-              // hint-list-then-alphabetical (orderCollectionCategories); a new owner label becomes a
-              // new chip with zero code change, and there is no "Other" bucket. Both walls render it
-              // identically. The `.library-chipbar` stays a fixed-height row that pans horizontally
-              // when crowded (ADR-015: never reflows the grid).
-              const categoryOptions = orderCollectionCategories(
-                Object.keys(groupsQuery.data?.categoryCounts ?? {}),
-              );
-              return (
-                <div key={facet.key} className="seg" role="group" aria-label="Collection type">
-                  <button
-                    type="button"
-                    className={ctype === undefined ? 'is-active' : undefined}
-                    aria-pressed={ctype === undefined}
-                    onClick={() => patchParams({ [facet.param]: null })}
-                  >
-                    All
-                  </button>
-                  {categoryOptions.map((c) => (
+          <div className="library-chipbar" role="group" aria-label="Filters">
+            {entry.facets.map((facet) => {
+              if (facet.key === 'category') {
+                // DESIGN-035 D-11' / R-214 — the category chip row: single-select, All default, always
+                // visible (owner ruling: the chip FILTERS, never hides). ?ctype= is a D-19 replace
+                // refinement; the SERVER filters the cards. The chip vocabulary is DYNAMIC — one chip
+                // per DISTINCT category actually present (categoryCounts keys), ordered
+                // hint-list-then-alphabetical (orderCollectionCategories); a new owner label becomes a
+                // new chip with zero code change, and there is no "Other" bucket. Both walls render it
+                // identically. The `.library-chipbar` stays a fixed-height row that pans horizontally
+                // when crowded (ADR-015: never reflows the grid).
+                const categoryOptions = orderCollectionCategories(
+                  Object.keys(groupsQuery.data?.categoryCounts ?? {}),
+                );
+                return (
+                  <div key={facet.key} className="seg" role="group" aria-label="Collection type">
                     <button
-                      key={c}
                       type="button"
-                      className={ctype === c ? 'is-active' : undefined}
-                      aria-pressed={ctype === c}
-                      onClick={() => patchParams({ [facet.param]: ctype === c ? null : c })}
+                      className={ctype === undefined ? 'is-active' : undefined}
+                      aria-pressed={ctype === undefined}
+                      onClick={() => patchParams({ [facet.param]: null })}
                     >
-                      {c}
+                      All
                     </button>
-                  ))}
-                </div>
-              );
-            }
-            if (facet.kind === 'enum') {
-              const field = facet.key as LibraryField;
-              return (
-                <FilterChip
-                  key={facet.key}
-                  fieldLabel={facet.label}
-                  values={filterValues(filters, field)}
-                  kind="enum"
-                  enumValues={facetValues(field)}
-                  enumLabel={
-                    facet.key === 'resolutions'
-                      ? (v) => RESOLUTION_LABELS[v] ?? v
-                      : facet.key === 'decade'
-                        ? decadeLabel
-                        : undefined
-                  }
-                  labels={CHIP_LABELS}
-                  onAdd={(v) =>
-                    setFieldValues(field, filterValues(addFilterValue(filters, field, v), field))
-                  }
-                  onRemove={(v) =>
-                    setFieldValues(field, filterValues(removeFilterValue(filters, field, v), field))
-                  }
-                  onClear={() => setFieldValues(field, [])}
-                />
-              );
-            }
-            if (facet.kind === 'range-date') {
-              return (
-                <DateRangeChip
-                  key={facet.key}
-                  label={facet.label}
-                  from={releasedFromDay}
-                  to={releasedToDay}
-                  onChange={(from, to) => patchParams({ rfrom: from ?? null, rto: to ?? null })}
-                />
-              );
-            }
-            if (facet.kind === 'range-rating') {
-              // The bounded rating chip — D-09's ratingMin/Max COALESCE(imdb_rating, tmdb_rating), so
-              // the Sonarr community rating (in the tmdb slots, ADR-018 C-07) filters too.
-              return (
-                <RatingChip
-                  key={facet.key}
-                  min={ratingMin}
-                  max={ratingMax}
-                  onChange={(min, max) =>
-                    patchParams({
-                      rmin: min === undefined ? null : String(min),
-                      rmax: max === undefined ? null : String(max),
-                    })
-                  }
-                />
-              );
-            }
-            if (facet.kind === 'select' && facet.gate === 'watch') {
-              // ADR-053 / DESIGN-026 D-07 — the per-user watch-state facet, offered ONLY when the
-              // viewer has any attributed watch rows (populated-value gate — never a dead chip).
-              if (!gates.watch) return null;
-              return (
-                <SelectChip
-                  key={facet.key}
-                  label={facet.label}
-                  value={watchState}
-                  options={WATCH_STATE_OPTIONS}
-                  onChange={(v) => patchParams({ watch: v ?? null })}
-                />
-              );
-            }
-            return null;
-          })}
-        </div>
+                    {categoryOptions.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        className={ctype === c ? 'is-active' : undefined}
+                        aria-pressed={ctype === c}
+                        onClick={() => patchParams({ [facet.param]: ctype === c ? null : c })}
+                      >
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+                );
+              }
+              if (facet.kind === 'enum') {
+                const field = facet.key as LibraryField;
+                return (
+                  <FilterChip
+                    key={facet.key}
+                    fieldLabel={facet.label}
+                    values={filterValues(filters, field)}
+                    kind="enum"
+                    enumValues={facetValues(field)}
+                    enumLabel={
+                      facet.key === 'resolutions'
+                        ? (v) => RESOLUTION_LABELS[v] ?? v
+                        : facet.key === 'decade'
+                          ? decadeLabel
+                          : undefined
+                    }
+                    labels={CHIP_LABELS}
+                    onAdd={(v) =>
+                      setFieldValues(field, filterValues(addFilterValue(filters, field, v), field))
+                    }
+                    onRemove={(v) =>
+                      setFieldValues(
+                        field,
+                        filterValues(removeFilterValue(filters, field, v), field),
+                      )
+                    }
+                    onClear={() => setFieldValues(field, [])}
+                  />
+                );
+              }
+              if (facet.kind === 'range-date') {
+                return (
+                  <DateRangeChip
+                    key={facet.key}
+                    label={facet.label}
+                    from={releasedFromDay}
+                    to={releasedToDay}
+                    onChange={(from, to) => patchParams({ rfrom: from ?? null, rto: to ?? null })}
+                  />
+                );
+              }
+              if (facet.kind === 'range-rating') {
+                // The bounded rating chip — D-09's ratingMin/Max COALESCE(imdb_rating, tmdb_rating), so
+                // the Sonarr community rating (in the tmdb slots, ADR-018 C-07) filters too.
+                return (
+                  <RatingChip
+                    key={facet.key}
+                    min={ratingMin}
+                    max={ratingMax}
+                    onChange={(min, max) =>
+                      patchParams({
+                        rmin: min === undefined ? null : String(min),
+                        rmax: max === undefined ? null : String(max),
+                      })
+                    }
+                  />
+                );
+              }
+              if (facet.kind === 'select' && facet.gate === 'watch') {
+                // ADR-053 / DESIGN-026 D-07 — the per-user watch-state facet, offered ONLY when the
+                // viewer has any attributed watch rows (populated-value gate — never a dead chip).
+                if (!gates.watch) return null;
+                return (
+                  <SelectChip
+                    key={facet.key}
+                    label={facet.label}
+                    value={watchState}
+                    options={WATCH_STATE_OPTIONS}
+                    onChange={(v) => patchParams({ watch: v ?? null })}
+                  />
+                );
+              }
+              return null;
+            })}
+          </div>
         ) : null}
 
         {/* Sort bar (D-10 nextSort/arrowFor over the REGISTRY's keys — DESIGN-026 D-02: this wall
@@ -919,7 +933,9 @@ function MediaBrowser({
         </div>
       </div>
 
-      {jumpVisible ? <LetterJumpBar active={letter} onJump={(l) => patchParams({ at: l })} /> : null}
+      {jumpVisible ? (
+        <LetterJumpBar active={letter} onJump={(l) => patchParams({ at: l })} />
+      ) : null}
 
       {!prefsReady || (groupedCards ? groupsQuery.isPending : search.isPending) ? (
         // Initial load: skeleton poster boxes hold the exact grid geometry (ADR-015 — no
@@ -956,6 +972,7 @@ function MediaBrowser({
                 coverUrls={g.coverUrls}
                 kind={arrKind}
                 count={g.count}
+                wantedCount={g.wantedCount}
                 provenance={g.provenance}
               />
             ))}

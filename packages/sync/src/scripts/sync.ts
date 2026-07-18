@@ -370,9 +370,12 @@ async function main(): Promise<number> {
       );
     } catch (error) {
       arrActivityAdapter = undefined;
-      logger.warn('activity-scan: *arr source unavailable (Sonarr/Radarr/Lidarr env) — books/comics still scan', {
-        error: error instanceof Error ? error.message : String(error),
-      });
+      logger.warn(
+        'activity-scan: *arr source unavailable (Sonarr/Radarr/Lidarr env) — books/comics still scan',
+        {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
     }
   }
   // ADR-059 / DESIGN-030 D-08 — the KAPOWARR (comics) activity adapter (queue + tasks + history read) the
@@ -383,7 +386,9 @@ async function main(): Promise<number> {
   if (args.mode === 'activity-scan') {
     try {
       const bundle = kapowarrBundleFromEnv();
-      kapowarrActivityAdapter = buildKapowarrActivityAdapter(bundle.read, { baseUrl: resolveKapowarrBaseUrl() });
+      kapowarrActivityAdapter = buildKapowarrActivityAdapter(bundle.read, {
+        baseUrl: resolveKapowarrBaseUrl(),
+      });
     } catch {
       kapowarrActivityAdapter = undefined;
       logger.info('activity-scan: no KAPOWARR_API_KEY — comics not scanned');
@@ -397,6 +402,18 @@ async function main(): Promise<number> {
   const plex =
     args.mode === 'poster-guard' || args.mode === 'plex-match' || args.mode === 'collections-sync'
       ? plexClientBundleFromEnv()
+      : undefined;
+  // DESIGN-035 D-16 — the OPTIONAL Radarr read the `collections-sync` mode uses for the movie
+  // Wanted-tile membership. Skip-if-absent: no RADARR_API_KEY ⇒ held-only (the mirror still runs).
+  const collectionsRadarr =
+    args.mode === 'collections-sync'
+      ? (() => {
+          try {
+            return buildSyncClients(['radarr']).radarr;
+          } catch {
+            return undefined;
+          }
+        })()
       : undefined;
   // ADR-044 / DESIGN-022 — the read-only Open WebUI admin-API client the `ai-usage-sync` mode polls
   // (OPENWEBUI_URL defaults to the in-cluster service DNS; throws OpenWebUiConfigError if
@@ -454,9 +471,7 @@ async function main(): Promise<number> {
       lazyLibrarian = lazyLibrarianBundleFromEnv();
     } catch {
       lazyLibrarian = undefined;
-      logger.info(
-        `${args.mode}: no LAZYLIBRARIAN_API_KEY — running in mint-only (no push) mode`,
-      );
+      logger.info(`${args.mode}: no LAZYLIBRARIAN_API_KEY — running in mint-only (no push) mode`);
     }
   }
   // ADR-065 / DESIGN-036 — the GB resolver the `format-pairing` mode falls back to (reuse-first) for a
@@ -513,6 +528,7 @@ async function main(): Promise<number> {
     ...(arrActivityAdapter ? { arrActivityAdapter } : {}),
     ...(kapowarrActivityAdapter ? { kapowarrActivityAdapter } : {}),
     ...(plex ? { plex } : {}),
+    ...(collectionsRadarr ? { collectionsRadarr } : {}),
     ...(openWebUi ? { openWebUi } : {}),
     ...(authentik ? { authentik } : {}),
     ...(books ? { books } : {}),

@@ -68,6 +68,30 @@ export const radarrMovieSchema = z.object({
 });
 export type RadarrMovie = z.infer<typeof radarrMovieSchema>;
 
+// DESIGN-035 D-16 (Wanted-tile membership) — Radarr natively models TMDb Collections. `GET
+// /api/v3/collection` returns each collection with its FULL TMDb member set (`movies[]`), held or
+// not. We consume only the collection `title` (the title-match join to the mirrored plex_collections
+// row) and each member's `tmdbId` (matched against the app's own media_items ledger to split
+// held/wanted). Strip-mode tolerant — Radarr carries many more fields we ignore.
+export const radarrCollectionMovieSchema = z
+  .object({
+    tmdbId: z.number().int(),
+    title: z.string().nullish(),
+  })
+  .passthrough();
+export type RadarrCollectionMovie = z.infer<typeof radarrCollectionMovieSchema>;
+
+export const radarrCollectionSchema = z
+  .object({
+    id: z.number().int().nullish(),
+    title: z.string(),
+    /** The TMDb collection id (the future exact-join key — the M-c hardening follow-up, D-16). */
+    tmdbId: z.number().int().nullish(),
+    movies: z.array(radarrCollectionMovieSchema).nullish(),
+  })
+  .passthrough();
+export type RadarrCollection = z.infer<typeof radarrCollectionSchema>;
+
 /**
  * `GET /movie/lookup?term=tmdb:{id}` element (DESIGN-008 D-05) — the tombstoned/never-listed
  * metadata path. Returns FULL metadata + `remotePoster` WITHOUT adding the movie. A metadata
