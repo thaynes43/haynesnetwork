@@ -182,3 +182,6 @@ export * from './collection-size-cap';
 export * from './kometa-compiler';
 export * from './haynesops-clients';
 export * from './kometa-collections';
+// DESIGN-044 (collection builder page) — the search-first ref lookup + the live member preview split
+// held/missing against the app's own mirrors (books_items / media_items). Read-only, confined-client only.
+export * from './collection-builder';

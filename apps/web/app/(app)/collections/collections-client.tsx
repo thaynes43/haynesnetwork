@@ -9,24 +9,20 @@
 // the auto-merge write path lands in PR4b, so an honest placeholder holds the seam). Everyone adds/edits
 // within the size cap; over-cap files a collection_override ticket (D-11); admins delete + approve tickets
 // + edit the cap. Owner tone: no em-dashes, plain friendly labels; all color via tokens (hard rule 2).
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { Suspense, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { ConfirmButton, MediaAction, PhaseChip, ReservedActionSlot } from '@hnet/ui';
 import { Modal } from '@/components/modal';
 import { trpc } from '@/lib/trpc-client';
-import { appCodeOf, describeMutationError } from '@/lib/app-error';
+import { describeMutationError } from '@/lib/app-error';
 import {
   COLLECTIONS_NAME,
   COLLECTION_BUILDER_LABELS,
   COLLECTION_MEDIA_TYPE_LABELS,
-  KOMETA_BUILDER_TYPE_NAMES,
-  builderOptionsFor,
-  defaultBuilderFor,
   isKometaMedia,
   type CollectionBuilderTypeName,
   type CollectionMediaTypeName,
-  type CollectionSyncModeName,
 } from '@/lib/collections';
 import {
   TICKET_STATUS_LABELS,
@@ -66,42 +62,10 @@ const badgeToneClass: Record<'warn' | 'info' | 'ok' | 'muted', string> = {
   muted: 'badge--muted',
 };
 
-// ── The composer draft ─────────────────────────────────────────────────────────────────────
-
-interface RecipeDraft {
-  id: string;
-  name: string;
-  builderType: CollectionBuilderTypeName;
-  builderRef: string;
-  targetLibrary: string;
-  ordered: boolean;
-  syncMode: CollectionSyncModeName;
-  // Set when editing a hand-authored Kometa collection (owner ruling 2026-07-18): the config file basename
-  // to splice. null = a managed recipe / a new collection. Its presence locks name+builder and routes Save
-  // to editHandCollection (a surgical, human-merged config PR) instead of the managed-include upsert.
-  sourceFile: string | null;
-}
-
-/** "The Stormlight Archive" → "the-stormlight-archive" (the composer's derived-id convenience). */
-function slugifyCollectionId(name: string): string {
-  return name
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-}
-
-const EMPTY_DRAFT: RecipeDraft = {
-  id: '',
-  name: '',
-  builderType: 'hardcover_series',
-  builderRef: '',
-  targetLibrary: '',
-  ordered: true,
-  syncMode: 'sync',
-  sourceFile: null,
-};
+// DESIGN-044 — the add/edit composer is no longer a Modal on this page. "New collection" and every Edit
+// PUSH the full-page builder at `/collections/new?tab=..` / `/collections/<id>/edit?tab=..` (the owner-ruled
+// replacement for the tiny popup). Back returns to this list (D-01/D-19). The RecipeDraft/composer machinery
+// that used to live here moved to builder-client.tsx.
 
 // ── Read-only (books) + hand-file (Kometa) collections ───────────────────────────────────────
 // Books/Audiobooks: a read-only row is a hand-made Kavita/Audiobookshelf collection with no Libretto
@@ -263,12 +227,10 @@ function MediaSection({
   /** Clears the `edit`/`new` param from the URL once consumed (a replace). */
   onDeepLinkConsumed?: () => void;
 }) {
+  const router = useRouter();
   const utils = trpc.useUtils();
   const overviewQ = trpc.collections.overview.useQuery({ mediaType }, { retry: false });
 
-  const [composerOpen, setComposerOpen] = useState(false);
-  const [draft, setDraft] = useState<RecipeDraft>(EMPTY_DRAFT);
-  const [editing, setEditing] = useState(false);
   // One search box filters BOTH groups by title substring (client-side — 400+ config rows must stay
   // usable). Filtering re-renders list CONTENT (a deliberate content change, ADR-015); the box itself
   // holds its place and never reflows.
@@ -277,75 +239,35 @@ function MediaSection({
   const invalidate = () => void utils.collections.overview.invalidate({ mediaType });
   const label = COLLECTION_MEDIA_TYPE_LABELS[mediaType];
 
-  // ── The composer openers (defined ahead of the early returns so the deep-link effect can call
-  //    them — an edit opener never depends on the narrowed `data`) ──
-  const openCreate = () => {
-    setDraft({ ...EMPTY_DRAFT, builderType: defaultBuilderFor(mediaType) });
-    setEditing(false);
-    setComposerOpen(true);
-  };
-  const openEdit = (recipe: {
-    id: string;
-    name?: string | null;
-    builderType?: string | null;
-    builderRef?: string | null;
-    ordered?: boolean | null;
-    syncMode?: string | null;
-  }) => {
-    setDraft({
-      id: recipe.id,
-      name: recipe.name ?? '',
-      builderType:
-        (recipe.builderType as CollectionBuilderTypeName | null) ?? defaultBuilderFor(mediaType),
-      builderRef: recipe.builderRef ?? '',
-      targetLibrary: '',
-      ordered: recipe.ordered ?? true,
-      syncMode: (recipe.syncMode as CollectionSyncModeName | null) ?? 'sync',
-      sourceFile: null,
-    });
-    setEditing(true);
-    setComposerOpen(true);
-  };
-  // Open the composer pre-loaded to edit a hand-authored Kometa collection (owner ruling 2026-07-18). Name
-  // + builder are locked (the Plex title + the detected builder are the collection's identity); only the
-  // reference is editable — Save surgically splices that ref in the config file (a human-merged PR).
+  // ── The builder-page openers (DESIGN-044 D-01) — add/edit is now a full PAGE, not a Modal. Each opener
+  //    PUSHES the builder route (Back returns to this list, D-19); the tab seeds the provider binding, and a
+  //    hand-authored Kometa collection carries its config file so the page routes Save to editHandCollection.
+  const openCreate = () => router.push(`/collections/new?tab=${mediaType}`);
+  const openEdit = (recipe: { id: string }) =>
+    router.push(`/collections/${encodeURIComponent(recipe.id)}/edit?tab=${mediaType}`);
   const openEditHand = (hand: HandCollection) => {
-    setDraft({
-      id: hand.name,
-      name: hand.name,
-      builderType: (hand.builderType as CollectionBuilderTypeName | null) ?? defaultBuilderFor(mediaType),
-      builderRef: hand.builderRef ?? '',
-      targetLibrary: '',
-      ordered: true,
-      syncMode: 'sync',
-      sourceFile: hand.file,
-    });
-    setEditing(true);
-    setComposerOpen(true);
+    const params = new URLSearchParams({ tab: mediaType });
+    if (hand.file) params.set('hand', hand.file);
+    router.push(`/collections/${encodeURIComponent(hand.name)}/edit?${params.toString()}`);
   };
 
-  // DESIGN-043 D-01/D-09 amend (2026-07-18) — consume a wall-drill deep link exactly once, as soon as
-  // the overview has loaded. `edit` pre-loads the matching recipe into the composer (unknown id → just
-  // the tab, no error); `new` opens the create composer. The composer-open is done via the
-  // ADJUST-STATE-DURING-RENDER idiom (the ComposerModal precedent — React re-renders before painting,
-  // and the codebase forbids setState inside an effect); a follow-up effect then clears the URL param
-  // (a router.replace — a navigation, not a setState — so refresh/Back land on the plain sub-section).
+  // DESIGN-044 D-01 (was DESIGN-043 D-09 modal) — a wall-drill deep link (`?edit=<recipeId>` / `?new=1`) now
+  // RESOLVES to a PUSH of the builder page. Consume it exactly once as soon as the overview loads (so an
+  // `edit` link can carry the media tab the page needs); an unknown recipe id just clears the param and stays
+  // on the list (no error, D-01). The push replaces this sub-section in history so Back lands on the list.
   const [deepLinkConsumed, setDeepLinkConsumed] = useState(false);
   const wantsDeepLink = deepLinkEditRecipeId !== null || deepLinkNew;
   if (!deepLinkConsumed && wantsDeepLink && overviewQ.data) {
     setDeepLinkConsumed(true);
     if (deepLinkEditRecipeId !== null) {
       const recipe = overviewQ.data.recipes.find((r) => r.id === deepLinkEditRecipeId);
+      onDeepLinkConsumed?.();
       if (recipe) openEdit(recipe);
     } else if (deepLinkNew) {
+      onDeepLinkConsumed?.();
       openCreate();
     }
   }
-  useEffect(() => {
-    if (deepLinkConsumed) onDeepLinkConsumed?.();
-    // Fires once, right after the deep link is consumed; onDeepLinkConsumed is a stable router.replace.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deepLinkConsumed]);
 
   if (overviewQ.isPending) {
     return (
@@ -582,21 +504,6 @@ function MediaSection({
           )}
         </>
       )}
-
-      <ComposerModal
-        open={composerOpen}
-        mediaType={mediaType}
-        draft={draft}
-        setDraft={setDraft}
-        editing={editing}
-        sizeCap={data.sizeCap}
-        capBypass={data.capBypass}
-        onClose={() => setComposerOpen(false)}
-        onSaved={() => {
-          setComposerOpen(false);
-          invalidate();
-        }}
-      />
     </>
   );
 }
@@ -1128,352 +1035,6 @@ function DeleteControl({
         </div>
       </Modal>
     </>
-  );
-}
-
-// ── The composer (Modal — D-03) ──────────────────────────────────────────────────────────────
-
-function ComposerModal({
-  open,
-  mediaType,
-  draft,
-  setDraft,
-  editing,
-  sizeCap,
-  capBypass,
-  onClose,
-  onSaved,
-}: {
-  open: boolean;
-  mediaType: CollectionMediaTypeName;
-  draft: RecipeDraft;
-  setDraft: (d: RecipeDraft) => void;
-  editing: boolean;
-  sizeCap: number;
-  capBypass: boolean;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [error, setError] = useState<string | null>(null);
-  // Creating: the id auto-derives from the name until the caller edits the id themselves (members
-  // shouldn't have to invent a slug — Fable UX pass 2026-07-18). Editing never rewrites the id.
-  const [idEdited, setIdEdited] = useState(false);
-  // Each open starts fresh: an edit never auto-rewrites its id; a new draft derives until touched.
-  // The adjust-state-during-render idiom (not an effect) — React re-renders before painting.
-  const [prevOpen, setPrevOpen] = useState(open);
-  if (prevOpen !== open) {
-    setPrevOpen(open);
-    if (open) setIdEdited(editing);
-  }
-  const [preview, setPreview] = useState<{
-    name?: string | null;
-    workCount?: number | null;
-    issues: string[];
-  } | null>(null);
-  // The over-cap Modal state (size = the resolved membership that breached the cap; the server resolves
-  // the authoritative size itself on requestOverride — this drives only the copy).
-  const [overCapSize, setOverCapSize] = useState<number | null>(null);
-  const [overCapOpen, setOverCapOpen] = useState(false);
-
-  // Editing one of the estate's hand-authored Kometa collections (owner ruling 2026-07-18): the config
-  // file to splice. Name + builder are the collection's identity (locked); only the reference is editable.
-  const isHandEdit = editing && draft.sourceFile != null;
-
-  const payload = {
-    id: draft.id.trim(),
-    ...(draft.name.trim() ? { name: draft.name.trim() } : {}),
-    builderType: draft.builderType,
-    builderRef: draft.builderRef.trim(),
-    ...(draft.targetLibrary.trim() ? { targetLibrary: draft.targetLibrary.trim() } : {}),
-    ordered: draft.ordered,
-    syncMode: draft.syncMode,
-    mediaType,
-  };
-  const canSubmit = payload.id.length > 0 && payload.builderRef.length > 0;
-  const collectionLabel = payload.name ?? payload.id;
-
-  const onCapOrError = (e: unknown) => {
-    if (appCodeOf(e) === 'COLLECTION_SIZE_CAP_EXCEEDED') {
-      setOverCapSize(preview?.workCount ?? null);
-      setOverCapOpen(true);
-      return;
-    }
-    setError(describeMutationError(e));
-  };
-
-  const validate = trpc.collections.validate.useMutation({
-    onError: (e) => setError(describeMutationError(e)),
-    onSuccess: (res) => {
-      setError(null);
-      setPreview({ name: res.resolved?.name ?? null, workCount: res.resolved?.workCount ?? null, issues: res.issues });
-    },
-  });
-  const upsert = trpc.collections.upsert.useMutation({ onError: onCapOrError, onSuccess: onSaved });
-  const editHand = trpc.collections.editHandCollection.useMutation({
-    onError: onCapOrError,
-    onSuccess: onSaved,
-  });
-  const requestOverride = trpc.collections.requestOverride.useMutation({
-    onError: (e) => setError(describeMutationError(e)),
-  });
-  const saving = upsert.isPending || editHand.isPending;
-
-  function submitSave() {
-    if (!canSubmit) return;
-    // Pre-empt the round trip when a non-admin has already previewed a too-large membership (the server
-    // enforces regardless; this just opens the ticket Modal straight away).
-    if (!capBypass && preview?.workCount != null && preview.workCount > sizeCap) {
-      setOverCapSize(preview.workCount);
-      setOverCapOpen(true);
-      return;
-    }
-    if (isHandEdit && draft.sourceFile) {
-      // Surgical, human-merged config-file edit of just this collection's ref.
-      editHand.mutate({
-        mediaType: mediaType as 'movies' | 'tv',
-        file: draft.sourceFile,
-        name: payload.id,
-        builderType: draft.builderType as (typeof KOMETA_BUILDER_TYPE_NAMES)[number],
-        builderRef: payload.builderRef,
-      });
-      return;
-    }
-    upsert.mutate(payload);
-  }
-
-  return (
-    <Modal
-      open={open}
-      title={editing ? 'Edit collection' : 'New collection'}
-      onClose={onClose}
-      banner={error ? <p className="alert" role="alert">{error}</p> : null}
-    >
-      <OverCapModal
-        open={overCapOpen}
-        size={overCapSize}
-        cap={sizeCap}
-        collectionName={collectionLabel}
-        filing={requestOverride.isPending}
-        filed={requestOverride.isSuccess}
-        onRequest={() => requestOverride.mutate({ ...payload, mediaType })}
-        onClose={() => {
-          setOverCapOpen(false);
-          setOverCapSize(null);
-          requestOverride.reset();
-        }}
-      />
-      <form
-        className="composer-form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          submitSave();
-        }}
-      >
-        {isHandEdit ? (
-          <p className="muted" data-testid="composer-hand-note">
-            This collection lives in the estate&rsquo;s Kometa config. You can change its reference here;
-            the name and builder stay as they are. Saving opens a config change an admin merges before the
-            next collection run.
-          </p>
-        ) : null}
-        <label className="composer-field">
-          <span>Name</span>
-          <input
-            className="library-search"
-            value={draft.name}
-            disabled={isHandEdit}
-            placeholder="The Stormlight Archive"
-            onChange={(e) => {
-              const name = e.target.value;
-              // While creating, keep the id in step with the name until the caller takes the id over.
-              if (!editing && !idEdited) setDraft({ ...draft, name, id: slugifyCollectionId(name) });
-              else setDraft({ ...draft, name });
-            }}
-          />
-        </label>
-        {isHandEdit ? null : (
-          <label className="composer-field">
-            <span>Collection ID</span>
-            <input
-              className="library-search"
-              value={draft.id}
-              disabled={editing}
-              placeholder="stormlight-archive"
-              onChange={(e) => {
-                setIdEdited(true);
-                setDraft({ ...draft, id: e.target.value });
-              }}
-            />
-          </label>
-        )}
-        <label className="composer-field">
-          <span>Builder</span>
-          <select
-            className="library-search"
-            value={draft.builderType}
-            disabled={isHandEdit}
-            onChange={(e) =>
-              setDraft({ ...draft, builderType: e.target.value as CollectionBuilderTypeName })
-            }
-          >
-            {builderOptionsFor(mediaType).map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="composer-field">
-          <span>Reference</span>
-          <input
-            className="library-search"
-            value={draft.builderRef}
-            placeholder="the-stormlight-archive"
-            onChange={(e) => setDraft({ ...draft, builderRef: e.target.value })}
-          />
-        </label>
-        {isHandEdit ? null : (
-          <>
-            <label className="composer-field">
-              <span>Target library</span>
-              <input
-                className="library-search"
-                value={draft.targetLibrary}
-                placeholder="optional"
-                onChange={(e) => setDraft({ ...draft, targetLibrary: e.target.value })}
-              />
-            </label>
-            <div className="composer-row">
-              <label className="composer-inline">
-                <input
-                  type="checkbox"
-                  checked={draft.ordered}
-                  onChange={(e) => setDraft({ ...draft, ordered: e.target.checked })}
-                />
-                Keep reading order
-              </label>
-              <label className="composer-inline">
-                Sync
-                <select
-                  className="library-search composer-sync"
-                  value={draft.syncMode}
-                  onChange={(e) =>
-                    setDraft({ ...draft, syncMode: e.target.value as CollectionSyncModeName })
-                  }
-                >
-                  <option value="sync">replace to match</option>
-                  <option value="append">add only</option>
-                </select>
-              </label>
-            </div>
-          </>
-        )}
-
-        {preview ? (
-          <div className="composer-preview" data-testid="composer-preview">
-            {preview.name ? (
-              <p>
-                Resolved to <strong>{preview.name}</strong>
-                {preview.workCount != null ? `, ${preview.workCount} works` : ''}
-                {preview.workCount === 0 ? ' (this reference has no works, check it)' : ''}
-              </p>
-            ) : (
-              <p className="muted">Could not resolve this reference. Check it before saving.</p>
-            )}
-            {preview.issues.length > 0 ? (
-              <ul className="composer-preview__issues">
-                {preview.issues.map((m, i) => (
-                  <li key={i}>{m}</li>
-                ))}
-              </ul>
-            ) : null}
-          </div>
-        ) : null}
-
-        <div className="composer-actions">
-          <button
-            type="button"
-            className="btn sm"
-            disabled={!canSubmit || validate.isPending}
-            data-testid="composer-preview-btn"
-            onClick={() => validate.mutate(payload)}
-          >
-            {validate.isPending ? 'Checking…' : 'Preview'}
-          </button>
-          <button type="submit" className="btn sm primary" disabled={!canSubmit || saving}>
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
-/**
- * The over-cap Modal (D-11): a non-admin whose collection exceeds the size cap sees this explanatory,
- * multi-field confirm (hard rule 8 ⇒ a Modal, never window.confirm/ConfirmButton). The primary action
- * files a collection_override ticket CARRYING the full draft + mediaType so an admin can approve the
- * full size; once filed it acknowledges lightly. Overlay — no neighbor reflow (ADR-015).
- */
-function OverCapModal({
-  open,
-  size,
-  cap,
-  collectionName,
-  filing,
-  filed,
-  onRequest,
-  onClose,
-}: {
-  open: boolean;
-  size: number | null;
-  cap: number;
-  collectionName: string;
-  filing: boolean;
-  filed: boolean;
-  onRequest: () => void;
-  onClose: () => void;
-}) {
-  return (
-    <Modal open={open} title="Collection is over the limit" onClose={onClose}>
-      <div className="over-cap" data-testid="collection-over-cap">
-        {filed ? (
-          <>
-            <p>
-              Request sent. Track it under Tickets, where an admin can approve the full size for{' '}
-              <strong>{collectionName}</strong>.
-            </p>
-            <div className="form-actions">
-              <button type="button" className="btn primary" onClick={onClose}>
-                Done
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <p>
-              This collection is larger than the limit of {cap}
-              {size != null ? ` (it resolves to ${size})` : ''}. Request it and an admin can approve the
-              full size.
-            </p>
-            <div className="form-actions">
-              <button
-                type="button"
-                className="btn primary"
-                disabled={filing}
-                onClick={onRequest}
-                data-testid="collection-over-cap-request"
-              >
-                {filing ? 'Sending…' : 'Request it'}
-              </button>
-              <button type="button" className="btn" disabled={filing} onClick={onClose}>
-                Cancel
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    </Modal>
   );
 }
 

@@ -36,6 +36,39 @@ describe('*arr /lookup (DESIGN-008 D-05 — tombstoned metadata, no add)', () =>
     expect(m).not.toHaveProperty('extraUnknownField'); // BC-03 ACL
   });
 
+  it('Radarr lookupMovie surfaces the TMDb franchise `collection` (DESIGN-044 D-04 / Q-04)', async () => {
+    // Radarr's serialized franchise-name key drifts by version — the ACL tolerates both `name` and `title`.
+    const stub = stubFetch([
+      {
+        path: '/api/v3/movie/lookup',
+        body: [
+          {
+            title: 'The Fellowship of the Ring',
+            year: 2001,
+            tmdbId: 120,
+            collection: { name: 'The Lord of the Rings Collection', tmdbId: 119, extra: 'stripped-inside' },
+          },
+          {
+            title: 'The Two Towers',
+            year: 2002,
+            tmdbId: 121,
+            collection: { title: 'The Lord of the Rings Collection', tmdbId: 119 },
+          },
+          { title: 'A Standalone', year: 2010, tmdbId: 900 }, // no franchise → no collection field
+        ],
+      },
+    ]);
+    const client = new RadarrClient({ baseUrl: 'http://radarr.test:7878', fetchImpl: stub.fetchImpl, ...TEST_OPTS });
+    const [a, b, c] = await client.lookupMovie('lord of the rings');
+    expect(a!.collection?.name).toBe('The Lord of the Rings Collection');
+    expect(a!.collection?.tmdbId).toBe(119);
+    // The `title` serialization parses onto the same tolerant shape (name absent, title present).
+    expect(b!.collection?.title).toBe('The Lord of the Rings Collection');
+    expect(b!.collection?.tmdbId).toBe(119);
+    // A movie in no franchise carries no collection (the disabled "not part of a franchise" case).
+    expect(c!.collection ?? null).toBeNull();
+  });
+
   it('Sonarr lookupSeries uses tvdb: term; Lidarr lookupArtist uses lidarr: term', async () => {
     const s = stubFetch([{ path: '/api/v3/series/lookup', body: [{ title: 'X', tvdbId: 9, genres: [] }] }]);
     const sonarr = new SonarrClient({ baseUrl: 'http://s.test:8989', fetchImpl: s.fetchImpl, ...TEST_OPTS });

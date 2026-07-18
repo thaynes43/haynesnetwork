@@ -23,6 +23,7 @@ import {
   type LibrettoClientBundle,
 } from '@hnet/domain';
 import { bootMigratedDb, caller, createUser, makeCtx, sessionUser, wireShape, type TestDb } from './helpers';
+import { stubArrBundle } from './arr-stubs';
 import type { TRPCContext } from '../src/trpc';
 
 let t: TestDb;
@@ -1023,5 +1024,106 @@ describe('forceSearchCollection — the on-demand collection Force Search (ADR-0
     });
     expect(adminView.canForceSearch).toBe(true);
     await setDefaultForceSearch(false);
+  });
+});
+
+// ── DESIGN-044 — the builder page's search + preview procedures (D-04/D-05) ─────────────────────
+describe('collections.search + collections.preview (DESIGN-044 builder page)', () => {
+  /** A Libretto stub that also answers the builder-page search + preview reads. */
+  function stubBuilderLibretto(opts: {
+    search?: unknown;
+    preview?: unknown;
+    searchThrows?: unknown;
+  }): Partial<TRPCContext> {
+    const libretto = {
+      read: {
+        listRecipes: async () => ({ recipes: [], issues: [] }),
+        listCollections: async () => [],
+        search: async () => {
+          if (opts.searchThrows) throw opts.searchThrows;
+          return opts.search ?? { results: [], truncated: false };
+        },
+        preview: async () => opts.preview ?? { total: 0, truncated: false, members: [] },
+      },
+      write: {},
+    } as unknown as TRPCContext['libretto'];
+    return { libretto };
+  }
+
+  it('proxies a books ref search through Libretto (everyone, no grant)', async () => {
+    const member = await createUser(t.db);
+    const ctx = {
+      ...makeCtx(t.db, sessionUser(member), stubArrBundle([]).bundle),
+      ...stubBuilderLibretto({
+        search: { results: [{ ref: '42', name: 'The Stormlight Archive', author: 'Sanderson', workCount: 5 }], truncated: false },
+      }),
+    };
+    const res = await caller(ctx).collections.search({ mediaType: 'books', builderType: 'hardcover_series', q: 'storm' });
+    expect(res.reachable).toBe(true);
+    expect(res.results[0]).toMatchObject({ ref: '42', name: 'The Stormlight Archive' });
+  });
+
+  it('reads a movie franchise through the confined @hnet/arr lookup', async () => {
+    const member = await createUser(t.db);
+    const arr = stubArrBundle([
+      {
+        path: '/api/v3/movie/lookup',
+        body: [
+          { title: 'The Fellowship of the Ring', year: 2001, tmdbId: 120, collection: { name: 'The Lord of the Rings Collection', tmdbId: 119 } },
+          { title: 'A Standalone', year: 2010, tmdbId: 900 },
+        ],
+      },
+    ]);
+    const ctx = { ...makeCtx(t.db, sessionUser(member), arr.bundle), ...stubBuilderLibretto({}) };
+    const res = await caller(ctx).collections.search({ mediaType: 'movies', builderType: 'tmdb_collection_details', q: 'lord' });
+    const enabled = res.results.filter((r) => !r.disabled);
+    expect(enabled[0]).toMatchObject({ ref: '119', name: 'The Lord of the Rings Collection' });
+  });
+
+  it('degrades search to unreachable on a provider outage (falls back to manual entry)', async () => {
+    const member = await createUser(t.db);
+    const { LibrettoUnreachableError } = await import('@hnet/libretto');
+    const ctx = {
+      ...makeCtx(t.db, sessionUser(member), stubArrBundle([]).bundle),
+      ...stubBuilderLibretto({ searchThrows: new LibrettoUnreachableError('GET', '/api/search') }),
+    };
+    const res = await caller(ctx).collections.search({ mediaType: 'books', builderType: 'nyt_list', q: 'fiction' });
+    expect(res.reachable).toBe(false);
+    expect(res.results).toEqual([]);
+  });
+
+  it('previews books members split held/missing (empty mirror ⇒ all missing, honest)', async () => {
+    const member = await createUser(t.db);
+    const ctx = {
+      ...makeCtx(t.db, sessionUser(member), stubArrBundle([]).bundle),
+      ...stubBuilderLibretto({
+        preview: { total: 2, truncated: false, members: [{ title: 'A', author: 'X', isbn: null }, { title: 'B', author: 'Y', isbn: null }] },
+      }),
+    };
+    const res = await caller(ctx).collections.preview({ mediaType: 'books', builderType: 'hardcover_series', ref: '42' });
+    expect(res.available).toBe(true);
+    expect(res.total).toBe(2);
+    expect(res.missingCount).toBe(2);
+    expect(res.heldCount).toBe(0);
+  });
+
+  it('renders the honest preview-unavailable state for a URL-ref builder (Q-01)', async () => {
+    const member = await createUser(t.db);
+    const ctx = { ...makeCtx(t.db, sessionUser(member), stubArrBundle([]).bundle), ...stubBuilderLibretto({}) };
+    const res = await caller(ctx).collections.preview({
+      mediaType: 'movies',
+      builderType: 'imdb_list',
+      ref: 'https://www.imdb.com/list/ls012345678/',
+    });
+    expect(res.available).toBe(false);
+    expect(res.unavailableReason).toContain('list link');
+  });
+
+  it('forbids an anonymous caller from the builder reads (authed only)', async () => {
+    const ctx = { ...makeCtx(t.db, null), ...stubBuilderLibretto({}) };
+    await expect(caller(ctx).collections.search({ mediaType: 'books', builderType: 'hardcover_series', q: 'x' })).rejects.toThrow();
+    await expect(
+      caller(ctx).collections.preview({ mediaType: 'books', builderType: 'hardcover_series', ref: '42' }),
+    ).rejects.toThrow();
   });
 });

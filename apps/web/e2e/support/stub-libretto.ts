@@ -107,6 +107,56 @@ export async function startStubLibretto(): Promise<StubLibrettoServer> {
             : { name: 'The Stormlight Archive', workCount: 5 },
         });
       }
+      // DESIGN-044 D-04 — the builder page's typeahead ref search. Canned series hits filtered by substring
+      // so the gallery shows a populated result list; static_ids returns nothing (free-form).
+      if (path === '/api/search' && method === 'GET') {
+        const q = (url.searchParams.get('q') ?? '').toLowerCase();
+        const type = url.searchParams.get('type') ?? '';
+        const all =
+          type === 'nyt_list'
+            ? [
+                { ref: 'hardcover-fiction', name: 'Hardcover Fiction' },
+                { ref: 'hardcover-nonfiction', name: 'Hardcover Nonfiction' },
+                { ref: 'young-adult-hardcover', name: 'Young Adult Hardcover' },
+              ]
+            : type === 'static_ids'
+              ? []
+              : [
+                  { ref: 'stormlight-archive', name: 'The Stormlight Archive', author: 'Brandon Sanderson', workCount: 5 },
+                  { ref: 'mistborn-era-one', name: 'Mistborn: Era One', author: 'Brandon Sanderson', workCount: 3 },
+                  { ref: 'the-reckoners', name: 'The Reckoners', author: 'Brandon Sanderson', workCount: 4 },
+                ];
+        const results = q ? all.filter((r) => r.name.toLowerCase().includes(q)) : all;
+        return json(200, { type, query: q, results, truncated: false });
+      }
+      // DESIGN-044 D-05 — the member preview a draft builder resolves to. A ref carrying "over" resolves to
+      // 40 members (the over-cap meter state); every other ref resolves to 5, three of which carry ISBNs the
+      // seeded library holds (held) and two that it does not (missing) — a populated split for the gallery.
+      if (path === '/api/preview' && method === 'POST') {
+        const req = body as { builder?: { ref?: unknown } } | undefined;
+        const ref = String(req?.builder?.ref ?? '');
+        if (/over/i.test(ref)) {
+          const members = Array.from({ length: 40 }, (_, i) => ({
+            title: `Cosmere Book ${i + 1}`,
+            author: 'Brandon Sanderson',
+            isbn: null,
+            position: i + 1,
+          }));
+          return json(200, { builder: req?.builder, total: 40, truncated: false, members });
+        }
+        return json(200, {
+          builder: req?.builder,
+          total: 5,
+          truncated: false,
+          members: [
+            { title: 'The Way of Kings', author: 'Brandon Sanderson', isbn: '9780765326355', position: 1 },
+            { title: 'Words of Radiance', author: 'Brandon Sanderson', isbn: '9780765326362', position: 2 },
+            { title: 'Oathbringer', author: 'Brandon Sanderson', isbn: '9780765326379', position: 3 },
+            { title: 'Rhythm of War', author: 'Brandon Sanderson', isbn: '9780765326386', position: 4 },
+            { title: 'Wind and Truth', author: 'Brandon Sanderson', isbn: '9781250319180', position: 5 },
+          ],
+        });
+      }
       if (path.startsWith('/api/recipes/') && method === 'PUT') return json(200, body);
       if (path.startsWith('/api/recipes/') && method === 'DELETE') return json(200, { ok: true });
       if (path === '/api/apply' && method === 'POST') return json(202, { runId: 'run-stub-1' });
