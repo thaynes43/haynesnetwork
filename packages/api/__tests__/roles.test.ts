@@ -121,3 +121,26 @@ describe('roles.create / update / delete', () => {
     expect((await adminCaller.roles.list()).find((r) => r.id === roleId)).toBeUndefined();
   });
 });
+
+// ADR-062 / ADR-071 — the books media-action grant controls (THE FLIP): granting fix_book /
+// force_search_book opens Fix / Force Search on the books detail page for a role.
+describe('roles.setBooksActions (the books Fix / Force Search FLIP control)', () => {
+  it('replace-sets the grants, surfaces them in list, and admin implies both', async () => {
+    await adminCaller.roles.setBooksActions({
+      roleId: SEEDED_ROLE_IDS.default,
+      actions: ['fix_book', 'force_search_book'],
+    });
+    const byName = new Map((await adminCaller.roles.list()).map((r) => [r.name, r]));
+    expect([...byName.get('Default')!.booksActions].sort()).toEqual(
+      ['fix_book', 'force_search_book'].sort(),
+    );
+    // Admin is implicit-all (stores no rows) — list still resolves every action for it.
+    expect([...byName.get('Admin')!.booksActions].sort()).toEqual(
+      ['fix_book', 'force_search_book'].sort(),
+    );
+    // Replace-set to empty clears the grants (back to Admin-only).
+    await adminCaller.roles.setBooksActions({ roleId: SEEDED_ROLE_IDS.default, actions: [] });
+    const after = (await adminCaller.roles.list()).find((r) => r.name === 'Default')!;
+    expect(after.booksActions).toEqual([]);
+  });
+});

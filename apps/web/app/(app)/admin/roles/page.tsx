@@ -20,6 +20,7 @@ import {
   type BulletinViewName,
   type MessageActionName,
 } from '@/lib/bulletin';
+import { BOOK_ACTION_LABELS, BOOK_ACTION_NAMES, type BookActionName } from '@/lib/books-actions';
 import {
   isSectionEnabled,
   sectionLevelOptions,
@@ -42,6 +43,8 @@ interface RoleForm {
   trashActions: TrashActionName[];
   // ADR-026 C-04 — the fine-grained Bulletin message action grants (post / moderate).
   messageActions: MessageActionName[];
+  // ADR-062 / ADR-071 — the fine-grained books media-action grants (Fix / Force Search). THE FLIP.
+  booksActions: BookActionName[];
   // ADR-045 (PLAN-026) — create as a SYNCED TIER: the role projects to an Authentik group (auto-created
   // in Authentik + Open WebUI on create). Only meaningful on the Add-role form (the per-row toggle flips
   // an existing role via setSyncedTier).
@@ -57,6 +60,7 @@ const EMPTY_FORM: RoleForm = {
   allServerIds: [],
   trashActions: [],
   messageActions: [],
+  booksActions: [],
   syncedTier: false,
 };
 
@@ -137,6 +141,12 @@ export default function AdminRolesPage() {
     onError: (err: unknown) => setError(describeMutationError(err)),
     onSettled: invalidate,
   });
+  // ADR-062 / ADR-071 — a role's fine-grained books media-action grants (Fix / Force Search;
+  // replace-set; audited 'update_book_actions' in-tx). THE FLIP control — same ride as setTrash.
+  const setBooks = trpc.roles.setBooksActions.useMutation({
+    onError: (err: unknown) => setError(describeMutationError(err)),
+    onSettled: invalidate,
+  });
   // ADR-049 C-02 / DESIGN-012 amend (PLAN-027) — a role's Bulletin SUB-VIEW visibility grants
   // (feed/messages; audited 'update_bulletin_views' in-tx). Apply-on-change from the inline
   // checkboxes, like setSection/setMetricsLevel; errors surface on the top-level banner.
@@ -169,6 +179,7 @@ export default function AdminRolesPage() {
     setSection.isPending ||
     setTrash.isPending ||
     setMessages.isPending ||
+    setBooks.isPending ||
     setBulletinViews.isPending ||
     setMetricsLevel.isPending ||
     setSyncedTier.isPending;
@@ -211,6 +222,9 @@ export default function AdminRolesPage() {
       // Bulletin message action grants — same convention.
       if (addForm.messageActions.length > 0)
         await setMessages.mutateAsync({ roleId, actions: addForm.messageActions });
+      // Books media-action grants (Fix / Force Search) — same convention.
+      if (addForm.booksActions.length > 0)
+        await setBooks.mutateAsync({ roleId, actions: addForm.booksActions });
     } catch {
       /* onError handlers set the banners */
     }
@@ -228,6 +242,7 @@ export default function AdminRolesPage() {
       allServerIds: [...(allGrantsByRole[role.id] ?? [])],
       trashActions: [...role.trashActions] as TrashActionName[],
       messageActions: [...role.messageActions] as MessageActionName[],
+      booksActions: [...role.booksActions] as BookActionName[],
       // Carried for form-type completeness; the synced-tier flag is edited via the per-row toggle
       // (setSyncedTier), NOT the inline editor (which never sends it — RolePatchInput has no syncedTier).
       syncedTier: role.syncedTier,
@@ -264,6 +279,11 @@ export default function AdminRolesPage() {
       const afterMsg = [...editForm.messageActions].sort().join(',');
       if (beforeMsg !== afterMsg)
         await setMessages.mutateAsync({ roleId: role.id, actions: editForm.messageActions });
+      // Replace-set books media-action grants (Fix / Force Search) — same audit-noise rule. THE FLIP.
+      const beforeBooks = [...role.booksActions].sort().join(',');
+      const afterBooks = [...editForm.booksActions].sort().join(',');
+      if (beforeBooks !== afterBooks)
+        await setBooks.mutateAsync({ roleId: role.id, actions: editForm.booksActions });
     } catch {
       /* onError handlers set the banners */
     }
@@ -506,6 +526,41 @@ export default function AdminRolesPage() {
     </fieldset>
   );
 
+  // ADR-062 / ADR-071 — the per-action books media-action grant grid (THE FLIP). Reading the books
+  // walls rides the coarse `books` section level in the table column; Fix and Force Search are
+  // opt-in per role here. Admin implies both.
+  const booksChecklist = (form: RoleForm, apply: (next: (f: RoleForm) => RoleForm) => void) => (
+    <fieldset className="field" data-testid="books-actions-grid">
+      <legend>Books actions this role may use</legend>
+      <p className="field-hint">
+        Actions apply only while the role’s Books access is Read-only or Edit. Browsing the books,
+        audiobooks and comics walls rides the access level alone; Fix and Force Search are opt-in.
+      </p>
+      <ul className="check-list">
+        {BOOK_ACTION_NAMES.map((action) => (
+          <li key={action}>
+            <label className="check-row">
+              <input
+                type="checkbox"
+                data-testid={`books-action-${action}`}
+                checked={form.booksActions.includes(action)}
+                onChange={(e) =>
+                  apply((f) => ({
+                    ...f,
+                    booksActions: e.target.checked
+                      ? [...f.booksActions, action]
+                      : f.booksActions.filter((a) => a !== action),
+                  }))
+                }
+              />
+              <span>{BOOK_ACTION_LABELS[action]}</span>
+            </label>
+          </li>
+        ))}
+      </ul>
+    </fieldset>
+  );
+
   // ADR-017 / DESIGN-007 D-06 — the Plex library grant matrix, grouped per server. Unlike the
   // app matrix there is no cross-server master toggle (grants_all does not imply libraries —
   // D-08), but each server group carries a PER-SERVER "All libraries" checkbox (ADR-024 /
@@ -673,6 +728,7 @@ export default function AdminRolesPage() {
                       {libraryChecklist(editForm, setEditForm)}
                       {trashChecklist(editForm, setEditForm)}
                       {bulletinChecklist(editForm, setEditForm)}
+                      {booksChecklist(editForm, setEditForm)}
                       {editError ? (
                         <p className="alert" role="alert">
                           {editError}
@@ -1002,6 +1058,7 @@ export default function AdminRolesPage() {
           {libraryChecklist(addForm, setAddForm)}
           {trashChecklist(addForm, setAddForm)}
           {bulletinChecklist(addForm, setAddForm)}
+          {booksChecklist(addForm, setAddForm)}
           <div className="form-actions">
             <button
               type="submit"

@@ -13,12 +13,19 @@
 // idiom: button swaps to a PhaseChip IN PLACE, recolor never reflow) when actionable.
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { PhaseChip } from '@hnet/ui';
+import {
+  PhaseChip,
+  MediaHero,
+  MediaActionBar,
+  ConsumeLink,
+  type MediaHeroBadge,
+} from '@hnet/ui';
 import { trpc } from '@/lib/trpc-client';
 import { BackLink } from '@/components/back-link';
 import { MediaPoster } from '@/components/cards';
 import { formatBytes, formatWhen } from '@/lib/media';
 import { BookFixControl } from './book-fix-dialog';
+import { BookForceSearchControl } from './book-force-search-control';
 
 /** Kind-aware display label for the hero badge (owner tone: plain, friendly). */
 const KIND_LABEL: Record<string, string> = { book: 'Book', comic: 'Comic', audiobook: 'Audiobook' };
@@ -186,7 +193,7 @@ export function BooksDetail({ id, from }: { id: string; from: string | null }) {
       </>
     );
   }
-  const { item, play, canFix, pairing, collections, fixes, requests } = detail.data!;
+  const { item, play, canFix, canForceSearch, pairing, collections, fixes, requests } = detail.data!;
   const kindLabel = KIND_LABEL[item.mediaKind] ?? null;
   const wall = WALL_FOR_KIND[item.mediaKind] ?? 'books';
   const isAudio = item.mediaKind === 'audiobook';
@@ -204,60 +211,66 @@ export function BooksDetail({ id, from }: { id: string; from: string | null }) {
         }`
       : null;
   const duration = formatDuration(item.durationSeconds);
-  const badges = [
+  const metaBits = [
     item.pageCount ? `${item.pageCount} pages` : null,
     duration,
     item.narrator ? `Narrated by ${item.narrator}` : null,
   ].filter((b): b is string => b !== null);
 
+  // DESIGN-004 D-24 / ADR-071 — the shared <MediaHero>: poster, title/year, typed badges, the
+  // meta line, the consume row and the Fix + Force Search action bar are slots. A books detail is
+  // always an ON-DISK title, so on-disk ⇒ Fix + Force Search (each server grant-gated).
+  const heroBadges: MediaHeroBadge[] = [
+    ...(kindLabel !== null ? [{ label: kindLabel, tone: 'muted' as const }] : []),
+    ...(item.formatLabel !== null && item.formatLabel !== kindLabel
+      ? [{ label: item.formatLabel, tone: 'muted' as const }]
+      : []),
+    ...(item.author !== null ? [{ label: item.author, tone: 'muted' as const }] : []),
+    ...(item.seriesName !== null ? [{ label: item.seriesName }] : []),
+  ];
+
   return (
     <>
       <BackLink from={from} />
 
-      <section className="card detail-head" data-testid="books-detail-head">
-        <span className="detail-head__poster">
-          <MediaPoster posterUrl={item.posterUrl} kind={item.mediaKind} alt="" />
-        </span>
-        <div className="detail-head__body">
-          <h1 className="detail-head__title">
-            {item.title}
-            {item.year !== null ? <span className="muted"> ({item.year})</span> : null}
-          </h1>
-          <div className="media-card__badges">
-            {kindLabel !== null ? <span className="badge badge--muted">{kindLabel}</span> : null}
-            {item.formatLabel !== null && item.formatLabel !== kindLabel ? (
-              <span className="badge badge--muted">{item.formatLabel}</span>
-            ) : null}
-            {item.author !== null ? <span className="badge badge--muted">{item.author}</span> : null}
-            {item.seriesName !== null ? <span className="badge">{item.seriesName}</span> : null}
-          </div>
-          {badges.length > 0 ? <p className="detail-head__meta muted">{badges.join(' · ')}</p> : null}
-          {/* The PRIMARY deep link — opens the item in Kavita/ABS (new tab); ↗ marks the external jump.
-              ADR-065 — a PAIRED title renders the counterpart format's button right beside it. */}
-          <p className="detail-head__play">
-            <a className="btn primary" href={play.url} target="_blank" rel="noopener noreferrer">
-              {play.label}
-              <span className="btn__ext" aria-hidden="true"> ↗</span>
-            </a>
+      <MediaHero
+        testId="books-detail-head"
+        poster={<MediaPoster posterUrl={item.posterUrl} kind={item.mediaKind} alt="" />}
+        title={item.title}
+        year={item.year}
+        badges={heroBadges}
+        meta={metaBits.length > 0 ? metaBits.join(' · ') : undefined}
+        // ADR-047 / ADR-065 — the PRIMARY Kavita/ABS deep link + (paired) the counterpart format's
+        // outline consume, both the shared <ConsumeLink> (identical ↗ / target / rel).
+        consume={
+          <>
+            <ConsumeLink label={play.label} url={play.url} />
             {pairing?.pairedPlay ? (
-              <a
-                className="btn"
-                href={pairing.pairedPlay.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                data-testid="paired-play"
-              >
-                {pairing.pairedPlay.label}
-                <span className="btn__ext" aria-hidden="true"> ↗</span>
-              </a>
+              <ConsumeLink
+                label={pairing.pairedPlay.label}
+                url={pairing.pairedPlay.url}
+                variant="outline"
+                testId="paired-play"
+              />
             ) : null}
-            {/* ADR-062 (PLAN-041) — the Fix control (server-gated by canFix). */}
-            {canFix ? <BookFixControl booksItemId={item.id} title={item.title} /> : null}
-          </p>
-          {/* ADR-065 / DESIGN-036 D-09 — the MISSING format's honest affordance (unpaired titles only):
-              a link to the pairing want's status page when minted, the audited Search button when
-              actionable, or the plain note while the paced backfill has not reached this title yet. */}
-          {pairing !== null && pairing.pairedPlay === null && missingLabel !== null ? (
+          </>
+        }
+        // ADR-071 — Fix (green) + Force Search (outline) beside the consume row, each server
+        // grant-gated (canFix / canForceSearch). This is the headline unification: books now match
+        // the movie Fix + Force Search treatment by construction.
+        actions={
+          canFix || canForceSearch ? (
+            <MediaActionBar placement="head">
+              {canFix ? <BookFixControl booksItemId={item.id} title={item.title} /> : null}
+              {canForceSearch ? <BookForceSearchControl booksItemId={item.id} /> : null}
+            </MediaActionBar>
+          ) : undefined
+        }
+        // ADR-065 / DESIGN-036 D-09 — the MISSING format's honest affordance (unpaired titles only):
+        // a link to the pairing want's status page when minted, the audited Search button when
+        // actionable, or the plain note while the paced backfill has not reached this title yet.
+        secondary={
+          pairing !== null && pairing.pairedPlay === null && missingLabel !== null ? (
             <p className="detail-head__play" data-testid="pairing-missing">
               {pairing.want !== null && wantedHref !== null ? (
                 <>
@@ -275,9 +288,9 @@ export function BooksDetail({ id, from }: { id: string; from: string | null }) {
                 </span>
               )}
             </p>
-          ) : null}
-        </div>
-      </section>
+          ) : undefined
+        }
+      />
 
       {/* About — the movie-About peer: summary prose, the released/publisher/language fact line, and
           the GENRES + COLLECTIONS chip rows. Renders only with real content; each row collapses when

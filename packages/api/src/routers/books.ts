@@ -33,10 +33,17 @@ import {
   isRequestSearchable,
   missingFormatFor,
   provenanceDisplayName,
+  runBookItemForceSearch,
   runManualBookSearch,
   type WantedBookRequestView,
 } from '@hnet/domain';
-import { authedProcedure, mapDomainErrors, resolveLazyLibrarianBundle, router } from '../trpc';
+import {
+  authedProcedure,
+  mapDomainErrors,
+  resolveKapowarrBundle,
+  resolveLazyLibrarianBundle,
+  router,
+} from '../trpc';
 import {
   booksOrIntegrationsProcedure,
   booksProcedure,
@@ -128,6 +135,9 @@ export interface BookRequestHistoryEntry {
 export interface BooksDetailResult {
   /** ADR-062 — the caller may fire a books Fix (admin or fix_book grant). */
   canFix: boolean;
+  /** ADR-071 — the caller may fire a books Force Search (admin or force_search_book grant). On-disk
+   *  books are the only detail surface, so on-disk ⇒ Fix + Force Search when granted. */
+  canForceSearch: boolean;
   item: BooksDetailItem;
   /** The app-specific deep link (books are always PRESENT — synced from the serving app). */
   play: { app: 'kavita' | 'audiobookshelf'; label: string; url: string };
@@ -886,11 +896,15 @@ export const booksRouter = router({
       if (!row) {
         throw new TRPCError({ code: 'NOT_FOUND', message: `Book ${input.id} not found` });
       }
-      // ADR-062 (PLAN-041) — may THIS caller fire a Fix? Server-computed so the button is never a
-      // client-side guess (Admin-only until the owner's Q-01 all-roles flip).
-      const canFix =
-        ctx.user.role.isAdmin ||
-        (await bookActionsForRole({ db: ctx.db, roleId: ctx.user.role.id })).includes('fix_book');
+      // ADR-062 / ADR-071 — may THIS caller fire a Fix / Force Search? Server-computed off the ONE
+      // role-grant helper (never a client guess): admin implies both; otherwise the fine-grained
+      // `fix_book` / `force_search_book` grants (the owner opens each per role via /admin → roles —
+      // THE FLIP). One grant read, both flags derived.
+      const grantedActions = ctx.user.role.isAdmin
+        ? null
+        : new Set(await bookActionsForRole({ db: ctx.db, roleId: ctx.user.role.id }));
+      const canFix = ctx.user.role.isAdmin || grantedActions!.has('fix_book');
+      const canForceSearch = ctx.user.role.isAdmin || grantedActions!.has('force_search_book');
       // ADR-065 / DESIGN-036 D-09 — the pairing state: paired ⇒ the counterpart's own deep link (the
       // second consume button); unpaired ⇒ the missing format + its pairing want. Comics carry none.
       const pairing = await resolvePairingState(ctx.db, row);
@@ -944,6 +958,7 @@ export const booksRouter = router({
 
       return {
         canFix,
+        canForceSearch,
         item: {
           ...toBooksListItem(row),
           libraryName: row.libraryName,
@@ -1013,6 +1028,40 @@ export const booksRouter = router({
         });
         return { target: 'lazylibrarian' as const, ...result };
       });
+    }),
+
+  /**
+   * ADR-071 (media-action UX) — the books FORCE SEARCH: a one-click quick re-search of an on-disk
+   * title (re-grab a fresh/better copy), the books leg of the unified Fix + Force Search vocabulary.
+   * DISTINCT from Fix (the reasoned, durable book_fix_request repair): it leaves NO durable row and
+   * takes no reason. Grant-gated server-side — admin OR the role's `force_search_book` grant (the
+   * ratified rule that SUPERSEDES the #375 owns||isAdmin stopgap for the books force-search surface;
+   * on-disk books are the only detail surface, so on-disk ⇒ Fix + Force Search when granted). Reuses
+   * the confined LL / Kapowarr acquisition writes; an outage ⇒ BAD_GATEWAY after the audit.
+   */
+  forceSearch: booksProcedure
+    .input(z.object({ booksItemId: z.uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const allowed =
+        ctx.user.role.isAdmin ||
+        (await bookActionsForRole({ db: ctx.db, roleId: ctx.user.role.id })).includes(
+          'force_search_book',
+        );
+      if (!allowed) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'You do not have permission to Force Search books.',
+        });
+      }
+      return mapDomainErrors(() =>
+        runBookItemForceSearch({
+          db: ctx.db,
+          booksItemId: input.booksItemId,
+          requesterId: ctx.user.id,
+          ll: resolveLazyLibrarianBundle(ctx),
+          kapowarr: resolveKapowarrBundle(ctx),
+        }),
+      );
     }),
 
   /**

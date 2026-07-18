@@ -5,17 +5,20 @@ import { z } from 'zod';
 import { asc, count } from 'drizzle-orm';
 import {
   roleAppGrants,
+  roleBooksActionGrants,
   roleBulletinViewGrants,
   roleMessageActionGrants,
   roleSectionPermissions,
   roleTrashActionGrants,
   roles,
   users,
+  BOOK_ACTIONS,
   MESSAGE_ACTIONS,
   METRICS_LEVELS,
   SECTION_IDS,
   SECTION_DEFAULT_LEVELS,
   TRASH_ACTIONS,
+  type BookAction,
   type BulletinView,
   type MessageAction,
   type SectionId,
@@ -28,6 +31,7 @@ import {
   deleteRole,
   provisionSyncedTier,
   resolveBulletinViews,
+  setRoleBookActions,
   setRoleBulletinViews,
   setRoleMessageActions,
   setRoleMetricsLevel,
@@ -38,6 +42,7 @@ import {
 import { mapDomainErrors, resolveAuthentikPortalBundle, router } from '../trpc';
 import { adminProcedure } from '../middleware/role';
 import {
+  BooksActionsInput,
   BulletinViewsInput,
   MessageActionsInput,
   RoleInput,
@@ -100,6 +105,13 @@ export const rolesRouter = router({
         view: roleBulletinViewGrants.view,
       })
       .from(roleBulletinViewGrants);
+    // ADR-062 / ADR-071 — each role's fine-grained books media-action grant rows (a row = granted).
+    const booksActionRows = await ctx.db
+      .select({
+        roleId: roleBooksActionGrants.roleId,
+        action: roleBooksActionGrants.action,
+      })
+      .from(roleBooksActionGrants);
 
     const appIdsByRole = new Map<string, string[]>();
     for (const row of grantRows) {
@@ -132,6 +144,12 @@ export const rolesRouter = router({
       list.push(row.view);
       bulletinViewsByRole.set(row.roleId, list);
     }
+    const booksActionsByRole = new Map<string, Set<BookAction>>();
+    for (const row of booksActionRows) {
+      const s = booksActionsByRole.get(row.roleId) ?? new Set<BookAction>();
+      s.add(row.action);
+      booksActionsByRole.set(row.roleId, s);
+    }
 
     // The Admin role has no explicit grants — it's an implicit all-apps / all-sections superuser.
     return roleRows.map((row) => {
@@ -158,6 +176,11 @@ export const rolesRouter = router({
         row.isAdmin,
         bulletinViewsByRole.get(row.id) ?? [],
       );
+      // ADR-062 / ADR-071 — admin ⇒ every books action; otherwise the granted rows in canonical order.
+      const booksGrantedSet = booksActionsByRole.get(row.id);
+      const booksActions: BookAction[] = row.isAdmin
+        ? [...BOOK_ACTIONS]
+        : BOOK_ACTIONS.filter((a) => booksGrantedSet?.has(a));
       return {
         ...row,
         // ADR-037 C-01 — admin implies 'full' (like admin implies section 'edit'); else the column.
@@ -168,6 +191,7 @@ export const rolesRouter = router({
         trashActions,
         messageActions,
         bulletinViews,
+        booksActions,
       };
     });
   }),
@@ -251,6 +275,25 @@ export const rolesRouter = router({
   setMessageActions: adminProcedure.input(MessageActionsInput).mutation(async ({ ctx, input }) => {
     return mapDomainErrors(() =>
       setRoleMessageActions({
+        db: ctx.db,
+        roleId: input.roleId,
+        actions: input.actions,
+        actorId: ctx.user.id,
+      }),
+    );
+  }),
+
+  /**
+   * ADR-062 / ADR-071 — replace a role's fine-grained books media-action grants (Fix / Force
+   * Search). Delegates to the @hnet/domain single-writer (audits 'update_book_actions' in-tx, hard
+   * rule 6); the Admin role is immutable (implies all) → ROLE_IMMUTABLE. Layered on top of the
+   * coarse `books` section level — a Disabled-books role's actions are moot until it's ≥ Read-Only.
+   * THIS is the owner's FLIP control: granting `fix_book` / `force_search_book` opens those actions
+   * to the chosen roles on the books detail page.
+   */
+  setBooksActions: adminProcedure.input(BooksActionsInput).mutation(async ({ ctx, input }) => {
+    return mapDomainErrors(() =>
+      setRoleBookActions({
         db: ctx.db,
         roleId: input.roleId,
         actions: input.actions,

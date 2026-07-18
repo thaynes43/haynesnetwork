@@ -775,8 +775,11 @@ export type BookStaleFileAction = (typeof BOOK_STALE_FILE_ACTIONS)[number];
 
 // The fine-grained books actions a role may be granted (the ADR-023/059 idiom; a ROW is the grant;
 // Admin implies all). Ships UNGRANTED (Admin-only) for the owner's test window — then the Q-01
-// ruling FLIPS it to all roles (tracked post-validation step; do not forget).
-export const BOOK_ACTIONS = ['fix_book'] as const;
+// ruling FLIPS it to the roles the owner chooses (via /admin → roles). ADR-071 (media-action UX):
+// `force_search_book` joins `fix_book` as the SECOND books media-action grant — the books leg of
+// the unified Fix + Force Search vocabulary (on-disk ⇒ both). Fix is the reasoned, durable repair
+// (book_fix_requests); Force Search is the one-click quick re-search that leaves NO durable row.
+export const BOOK_ACTIONS = ['fix_book', 'force_search_book'] as const;
 export type BookAction = (typeof BOOK_ACTIONS)[number];
 
 // ---------------------------------------------------------------------------

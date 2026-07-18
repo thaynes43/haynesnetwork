@@ -7,7 +7,7 @@
 // button's reserved slot swaps for a fired PhaseChip (searching → fired / failed), no reflow
 // (ADR-015). Books have no *arr live meter — "fired" is the honest downstream signal (D-08).
 import { useState } from 'react';
-import { PhaseChip } from '@hnet/ui';
+import { PhaseChip, MediaAction, ReservedActionSlot } from '@hnet/ui';
 import { Modal } from '@/components/modal';
 import { trpc } from '@/lib/trpc-client';
 import { describeMutationError } from '@/lib/app-error';
@@ -38,47 +38,47 @@ export function BookFixControl({ booksItemId, title }: { booksItemId: string; ti
 
   const fired = create.isSuccess ? create.data : null;
 
-  // Once fired, the button slot shows the honest downstream chip (searching/fired/queued/failed).
-  // ADR-067 (PLAN-055): 'queued' is quota weather, not a failure — the fix is saved and the
-  // goodreads-sync retry pass fires it automatically. Copy per owner tone: no em-dashes, no jargon.
-  if (fired !== null) {
-    const failed = fired.status === 'failed';
-    const queued = fired.status === 'queued';
-    return (
-      <span className="action-slot" data-testid="book-fix-status">
-        <PhaseChip
-          phase={failed ? 'failed' : queued ? 'queued' : 'fired'}
-          label={
-            failed
-              ? 'Fix failed'
-              : queued
-                ? 'Fix queued. It will run by itself.'
-                : 'Fix requested. Searching for a replacement'
-          }
-          tone={failed ? 'danger' : 'info'}
-          title={
-            failed
-              ? 'The re-grab could not start — try again later'
-              : queued
-                ? 'The book lookup is at its daily limit. Your fix is saved and runs automatically when the limit resets. Nothing else to do.'
-                : 'A replacement is being searched; the current file stays until you quarantine it'
-          }
-        />
-      </span>
-    );
-  }
+  // ADR-071 — Fix is the shared green primary <MediaAction> everywhere (was the neutral "Fix this"
+  // outline button). Once fired, the reserved slot swaps the button for the honest downstream chip
+  // (searching/fired/queued/failed) IN PLACE (ADR-015). ADR-067 (PLAN-055): 'queued' is quota
+  // weather, not a failure — the fix is saved and the goodreads-sync retry pass fires it
+  // automatically. Copy per owner tone: no em-dashes, no jargon.
+  const firedChip =
+    fired !== null
+      ? (() => {
+          const failed = fired.status === 'failed';
+          const queued = fired.status === 'queued';
+          return (
+            <PhaseChip
+              phase={failed ? 'failed' : queued ? 'queued' : 'fired'}
+              label={
+                failed
+                  ? 'Fix failed'
+                  : queued
+                    ? 'Fix queued. It will run by itself.'
+                    : 'Fix requested. Searching for a replacement'
+              }
+              tone={failed ? 'danger' : 'info'}
+              title={
+                failed
+                  ? 'The re-grab could not start — try again later'
+                  : queued
+                    ? 'The book lookup is at its daily limit. Your fix is saved and runs automatically when the limit resets. Nothing else to do.'
+                    : 'A replacement is being searched; the current file stays until you quarantine it'
+              }
+            />
+          );
+        })()
+      : null;
 
   return (
-    <span className="action-slot">
-      <button
-        type="button"
-        className="btn"
-        data-testid="book-fix-btn"
+    <ReservedActionSlot reserve="roll" live={firedChip} testId="book-fix-status">
+      <MediaAction
+        action="fix"
+        testId="book-fix-btn"
         disabled={create.isPending}
-        onClick={() => setOpen(true)}
-      >
-        Fix this
-      </button>
+        onFire={() => setOpen(true)}
+      />
       <Modal
         open={open}
         title={`Fix “${title}”`}
@@ -153,6 +153,6 @@ export function BookFixControl({ booksItemId, title }: { booksItemId: string; ti
           </div>
         </form>
       </Modal>
-    </span>
+    </ReservedActionSlot>
   );
 }

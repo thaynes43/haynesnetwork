@@ -3,6 +3,7 @@
 import { z } from 'zod';
 import { ICON_KEYS } from '@hnet/ui/icons';
 import {
+  BOOK_ACTIONS,
   BULLETIN_VIEWS,
   MESSAGE_ACTIONS,
   SECTION_IDS,
@@ -121,6 +122,13 @@ export const TrashActionsInput = z.object({
 export const MessageActionsInput = z.object({
   roleId: z.uuid(),
   actions: z.array(z.enum(MESSAGE_ACTIONS)).default([]),
+});
+
+/** ADR-062 / ADR-071 — roles.setBooksActions: replace-whole-set of a role's fine-grained books
+ *  media-action grants (fix_book / force_search_book). An EMPTY array clears them (Admin-only). */
+export const BooksActionsInput = z.object({
+  roleId: z.uuid(),
+  actions: z.array(z.enum(BOOK_ACTIONS)).default([]),
 });
 
 /**
