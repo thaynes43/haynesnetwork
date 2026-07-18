@@ -197,7 +197,14 @@ media-action vocabulary entirely. Retired and replaced:
   CI. The dead `collections.applyRecipe` procedure was removed (the new mutation composes applyScope
   server-side through the domain).
 
-### D-03 — Direct add / edit (the composer) (REVISED 2026-07-18)
+### D-03 — Direct add / edit (the composer) (SUPERSEDED by DESIGN-044, 2026-07-18)
+
+> **SUPERSEDED by DESIGN-044.** The add/edit `Modal` composer described below is REMOVED. Adding and editing
+> a collection is now a FULL PAGE (`/collections/new` / `/collections/<id>/edit`) with plain-language builder
+> cards, a search-first ref field, and a live member preview — see DESIGN-044. Every SAVE flow, gate, cap,
+> over-cap ticket, and audit rule in this section is UNCHANGED (DESIGN-044 changes only the surface a user
+> builds on); the paragraphs below are retained for the save-flow record, but the "uses a `Modal`" surface
+> claim no longer holds.
 
 > **REVISED (ADR-072).** The composer now WRITES the collection directly (within the cap) instead of
 > filing a suggestion. There is no approval step for a within-cap add.

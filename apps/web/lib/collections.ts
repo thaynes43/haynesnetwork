@@ -110,3 +110,180 @@ export function defaultBuilderFor(mediaType: CollectionMediaTypeName): Collectio
 
 /** The recipe sync modes (mirrors @hnet/db COLLECTION_SYNC_MODES). */
 export type CollectionSyncModeName = 'append' | 'sync';
+
+// ── DESIGN-044 — the collection BUILDER PAGE ──────────────────────────────────────────────────
+// The full-page, search-first builder that replaces the DESIGN-043 D-03 Modal composer (superseded).
+// The copy below is DESIGN-044 D-03, used VERBATIM by the page AND the gallery capture (one source of
+// truth so they can never drift). Owner tone: no em-dashes, no jargon, no names. A lint test asserts the
+// no-em-dash rule against these strings.
+
+/** How a builder's ref field behaves (DESIGN-044 D-04). */
+export type BuilderRefShape =
+  | 'search' // Shape A — typeahead search for ONE ref (series/list/franchise)
+  | 'url' // Shape B — a validated list URL (no name search, honest "preview unavailable")
+  | 'multi'; // Shape C — a search box that ADDS each pick to an ordered id list
+
+/** One builder-type card: the plain-language explanation a user picks from (DESIGN-044 D-03, verbatim). */
+export interface BuilderCard {
+  builder: CollectionBuilderTypeName;
+  /** Short human title (the card heading). */
+  title: string;
+  /** The one-line explanation, VERBATIM from DESIGN-044 D-03 (no em-dashes). */
+  explanation: string;
+  /** The tiny "what you'll enter" hint. */
+  hint: string;
+  /** How the ref field behaves for this builder. */
+  shape: BuilderRefShape;
+  /** For a search/multi builder, the search backend (books ⇒ Libretto type; movies/TV ⇒ arr kind). */
+  searchType?: string;
+}
+
+/** Books and Audiobooks builder cards (Libretto), easiest-first (DESIGN-044 D-03). */
+export const BOOKS_BUILDER_CARDS: readonly BuilderCard[] = [
+  {
+    builder: 'hardcover_series',
+    title: 'A book series',
+    explanation:
+      'Every book in a series, in reading order. Type the series name and pick it, and the whole series comes along, even the ones the library does not have yet.',
+    hint: 'Search a series by name',
+    shape: 'search',
+    searchType: 'hardcover_series',
+  },
+  {
+    builder: 'nyt_list',
+    title: 'A New York Times list',
+    explanation:
+      'A New York Times bestseller list, kept in list order. Great for a shelf that follows what is popular right now.',
+    hint: 'Pick a list by name',
+    shape: 'search',
+    searchType: 'nyt_list',
+  },
+  {
+    builder: 'static_ids',
+    title: 'A hand-picked set',
+    explanation:
+      'A set you choose book by book. Search for each title and add it, and they stay in the order you add them.',
+    hint: 'Search and add each book',
+    shape: 'multi',
+    searchType: 'hardcover_series',
+  },
+];
+
+/** Movies builder cards (Kometa), easiest-first (DESIGN-044 D-03). */
+export const MOVIES_BUILDER_CARDS: readonly BuilderCard[] = [
+  {
+    builder: 'tmdb_collection_details',
+    title: 'A movie franchise',
+    explanation:
+      'A movie franchise or series, all of its films together. Type a movie from it and pick the franchise, and every film in that franchise comes along.',
+    hint: 'Search a movie, pick its franchise',
+    shape: 'search',
+    searchType: 'tmdb_collection_details',
+  },
+  {
+    builder: 'imdb_list',
+    title: 'An IMDb list',
+    explanation:
+      "Any public IMDb list, kept in the list's order. Paste the list's web address and the app pulls in everything on it.",
+    hint: 'Paste an IMDb list link',
+    shape: 'url',
+  },
+  {
+    builder: 'tmdb_movie',
+    title: 'A hand-picked set of movies',
+    explanation:
+      'A set you choose film by film. Search for each movie and add it, and they stay in the order you add them.',
+    hint: 'Search and add each movie',
+    shape: 'multi',
+    searchType: 'tmdb_movie',
+  },
+];
+
+/** TV builder cards (Kometa), easiest-first (DESIGN-044 D-03). */
+export const TV_BUILDER_CARDS: readonly BuilderCard[] = [
+  {
+    builder: 'tvdb_list_details',
+    title: 'A TVDb list',
+    explanation:
+      "Any public TheTVDB list, kept in the list's order. Paste the list's web address and the app pulls in every show on it.",
+    hint: 'Paste a TVDb list link',
+    shape: 'url',
+  },
+  {
+    builder: 'tmdb_show',
+    title: 'A hand-picked set of shows',
+    explanation:
+      'A set you choose show by show. Search for each show and add it, and they stay in the order you add them.',
+    hint: 'Search and add each show',
+    shape: 'multi',
+    searchType: 'tmdb_show',
+  },
+  {
+    builder: 'tvdb_show',
+    title: 'A hand-picked set of shows (TVDb)',
+    explanation:
+      'A set you choose show by show, matched on TheTVDB. Search for each show and add it, and they stay in the order you add them.',
+    hint: 'Search and add each show',
+    shape: 'multi',
+    searchType: 'tvdb_show',
+  },
+];
+
+/** The builder cards a media tab shows (DESIGN-044 D-03). An empty set renders the honest no-types state. */
+export function builderCardsFor(mediaType: CollectionMediaTypeName): readonly BuilderCard[] {
+  switch (mediaType) {
+    case 'books':
+    case 'audiobooks':
+      return BOOKS_BUILDER_CARDS;
+    case 'movies':
+      return MOVIES_BUILDER_CARDS;
+    case 'tv':
+      return TV_BUILDER_CARDS;
+  }
+}
+
+/** Look up one card by builder within a media tab (the ref field + preview read its shape). */
+export function builderCard(
+  mediaType: CollectionMediaTypeName,
+  builder: CollectionBuilderTypeName,
+): BuilderCard | undefined {
+  return builderCardsFor(mediaType).find((c) => c.builder === builder);
+}
+
+/** Every DESIGN-044 D-03 explanation string (the em-dash lint test iterates these). */
+export const ALL_BUILDER_CARD_COPY: readonly string[] = [
+  ...BOOKS_BUILDER_CARDS,
+  ...MOVIES_BUILDER_CARDS,
+  ...TV_BUILDER_CARDS,
+].flatMap((c) => [c.title, c.explanation, c.hint]);
+
+/** DESIGN-044 D-04 URL validation — the IMDb / TVDb list URL patterns (the honest inline check). */
+export const LIST_URL_PATTERNS: Partial<Record<CollectionBuilderTypeName, RegExp>> = {
+  imdb_list: /imdb\.com\/list\/ls\d+/i,
+  tvdb_list_details: /thetvdb\.com\/lists\//i,
+};
+
+/** True when a URL-shape builder's ref looks like a valid list URL (DESIGN-044 D-04). */
+export function isValidListUrl(builder: CollectionBuilderTypeName, ref: string): boolean {
+  const pattern = LIST_URL_PATTERNS[builder];
+  if (!pattern) return true;
+  return pattern.test(ref.trim());
+}
+
+/** The cap-meter read (DESIGN-044 D-05): "18 of 25", plus whether the resolved set is at/over the cap. */
+export interface CapMeter {
+  resolved: number;
+  cap: number;
+  /** "18 of 25". */
+  label: string;
+  /** At or over the cap (the deepened, over-cap state) — false for a cap-exempt admin. */
+  over: boolean;
+  /** 0..1 fill fraction, clamped. */
+  fraction: number;
+}
+
+export function capMeter(resolved: number, cap: number, capBypass: boolean): CapMeter {
+  const over = !capBypass && resolved > cap;
+  const fraction = cap > 0 ? Math.min(1, resolved / cap) : 0;
+  return { resolved, cap, label: `${resolved} of ${cap}`, over, fraction };
+}

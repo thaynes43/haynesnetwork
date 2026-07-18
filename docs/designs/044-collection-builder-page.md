@@ -1,7 +1,18 @@
 # DESIGN-044: The collection builder page — a full-page, search-first builder with a live member preview
 
-- **Status:** Draft
+- **Status:** Accepted (Shipped) <!-- leg 2: the builder page + collections.search/preview + arr collection field, PR feat/collection-builder-page -->
 - **Last updated:** 2026-07-18
+- **As-built (leg 2):** The page ships at `/collections/new?tab=<mediaType>` (create) and
+  `/collections/<id>/edit?tab=<mediaType>` (edit; `&hand=<file>` for a hand-authored Kometa collection),
+  in `apps/web/app/(app)/collections/builder-client.tsx`. The DESIGN-043 D-03 Modal composer is REMOVED from
+  `collections-client.tsx`; "New collection" and every Edit PUSH the page, and the wall-drill `?edit=`/`?new=1`
+  deep links resolve to a push (D-01). Search + preview are the new `collections.search` / `collections.preview`
+  tRPC procedures over the confined `@hnet/domain` `searchCollectionRefs` / `previewCollectionMembers` (books ⇒
+  the `@hnet/libretto` client; movies/TV ⇒ the `@hnet/arr` lookup, with `radarrLookupSchema` extended to
+  surface the franchise `collection { name, tmdbId }` per Q-04). The held/missing split is computed app-side
+  against `books_items` (ISBN + the DESIGN-037 title fallback) and `media_items` (tmdb/tvdb id) per D-10. The
+  builder-card copy (D-03) lives verbatim in `apps/web/lib/collections.ts` (one source of truth for the page +
+  the gallery), lint-tested for the no-em-dash tone rule.
 - **Satisfies:** the amended PRD R-225..R-228 (collection add/edit UX); realizes the 2026-07-18 owner
   ruling that the `/collections` composer must become a FULL BUILDER PAGE — plain-language builder
   explanations, provider SEARCH (find the series/list/franchise by typing, no slug pasting), and a LIVE
@@ -367,5 +378,5 @@ preview tRPC procedure joins the provider members to the mirror), never in the b
 | Q-02 | **`tmdb_collection_details` reach.** The franchise ref is best found by searching a MOVIE (Radarr `movie/lookup`) and reading its `collection` field. A pasted collection id has no name/preview without a TMDb call. Is movie-search-to-franchise the only v1 entry, with a raw-id fallback that shows "preview unavailable"? | OPEN. Design leans yes (movie-search primary, raw-id fallback honest). Owner/coordinator confirm. |
 | Q-03 | **Books held-match honesty.** Kavita `books_items` rows frequently carry a null ISBN, so the held/missing split leans on the D-04 title+author fallback for a large fraction of the books library. Is the title-fallback confidence enough to label a tile "In your library", or should such matches read as a distinct "probably in your library" state? | OPEN. Design leans: hold + the quiet "matched by title" sub-note (the DESIGN-037 honesty idiom). Owner confirm. |
 | Q-04 | **`@hnet/arr` `collection` field.** `radarrLookupSchema` does not currently surface the `movie/lookup` `collection { name, tmdbId }` field the franchise search needs. The page agent extends the ACL — is `collection { name, tmdbId }` the exact subset, or does the franchise card want the poster too? | OPEN — build detail. Design specifies name + tmdbId (enough to set the ref + label); poster is a nice-to-have. |
-| Q-05 | **Create route shape.** `/collections/new?tab=<mediaType>` + `/collections/<id>/edit` (chosen) vs a single `/collections/compose?...` param route. The dedicated `new`/`edit` paths read cleaner and deep-link better; a single route is one less file. | OPEN. Design leans the dedicated paths. Owner/coordinator confirm at build. |
-| Q-06 | **Search debounce + result cap on the client.** 250ms debounce and show the provider's server-capped results (8 default). Is that the right feel for a phone, or does the owner want a shorter debounce / a "show more" affordance? | OPEN — UX tuning, owner ruling after the first gallery pass. |
+| Q-05 | **Create route shape.** `/collections/new?tab=<mediaType>` + `/collections/<id>/edit` (chosen) vs a single `/collections/compose?...` param route. The dedicated `new`/`edit` paths read cleaner and deep-link better; a single route is one less file. | RESOLVED (leg 2) — the dedicated paths shipped: `/collections/new?tab=<mediaType>` (create) and `/collections/<id>/edit?tab=<mediaType>` (edit; edit carries the tab so the page loads the recipe from the right media overview, and `&hand=<file>` routes a hand-authored Kometa collection to `editHandCollection`). |
+| Q-06 | **Search debounce + result cap on the client.** 250ms debounce and show the provider's server-capped results (8 default). Is that the right feel for a phone, or does the owner want a shorter debounce / a "show more" affordance? | RESOLVED (leg 2) — shipped at 250ms debounce with the provider's server-capped default (Libretto 8; the *arr lookups are clamped to the same request `limit`, max 25). A "show more" affordance is deferred; re-tune after the first gallery pass if the owner wants a different feel. |

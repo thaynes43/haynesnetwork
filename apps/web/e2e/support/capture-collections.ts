@@ -1,9 +1,11 @@
-// ADR-072 / DESIGN-043 D-07 (PLAN-052 PR4a) — the screenshot harness for owner sign-off of the
-// first-class /collections page. Boots its OWN stack (incl. the stub Libretto) and captures the
-// standing matrix (desktop 1280x900 + 390px, dark + light):
+// ADR-072 / DESIGN-043 D-07 + DESIGN-044 — the screenshot harness for owner sign-off of the first-class
+// /collections page AND the full-page collection BUILDER (DESIGN-044, the owner-ruled replacement for the
+// tiny popup composer). Boots its OWN stack (incl. the stub Libretto answering /api/search + /api/preview)
+// and captures the standing matrix (desktop 1280x900 + 390px, dark + light):
 //   • the Books sub-section collection list (as admin — the delete lens),
-//   • the composer Modal,
-//   • the over-cap Modal (as a NON-admin member — admins bypass the cap, so only a member sees it),
+//   • the BUILDER page: the empty type-card step, a populated ref search, a resolved preview with the
+//     in-library/missing split + cap meter, the over-cap meter + ticket path, and the locked-builder edit,
+//   • the over-cap "request it" Modal (as a NON-admin member — admins bypass the cap),
 //   • the Tickets sub-section admin approve lens (seeded once from a member over-cap request),
 //   • the admin Settings sub-section (the size cap + the find-missing grant seam).
 //
@@ -11,7 +13,7 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium, type Browser, type Page } from '@playwright/test';
-import { syncBooksCollections } from '@hnet/domain';
+import { syncBooks, syncBooksCollections, type BooksItemInput } from '@hnet/domain';
 import { startStack } from './harness';
 import type { PersonaName } from './stub-oidc';
 
@@ -62,17 +64,29 @@ async function shoot(page: Page, name: string, fullPage = false): Promise<void> 
   console.log(`[capture] ${name}`);
 }
 
-/** Drive the composer to the over-cap Modal (an "over" ref resolves to 40 works, above the cap of 25). */
-async function openOverCapModal(page: Page): Promise<void> {
-  await page.goto('/collections?tab=books');
-  await page.getByTestId('collections-new').click();
-  await page.getByRole('dialog').waitFor();
-  await page.getByRole('textbox', { name: 'Collection id' }).fill('over-cap-epic');
-  await page.getByRole('textbox', { name: 'Reference' }).fill('the-cosmere-everything');
-  await page.getByTestId('composer-preview-btn').click();
-  await page.getByTestId('composer-preview').waitFor();
-  await page.getByRole('button', { name: 'Save' }).click();
-  await page.getByTestId('collection-over-cap').waitFor();
+/**
+ * DESIGN-044 — drive the builder PAGE to the over-cap "request it" Modal. Pick the series card, enter a ref
+ * carrying "over" (the stub resolves it to 40 members, above the cap of 25 — the preview meter deepens), name
+ * it, and Save → the over-cap ticket Modal (a non-admin; admins bypass the cap).
+ */
+async function openBuilderOverCap(page: Page): Promise<void> {
+  await page.goto('/collections/new?tab=books');
+  await page.getByTestId('builder-card-hardcover_series').click();
+  await page.getByTestId('builder-manual-toggle').click();
+  await page.getByTestId('builder-ref-manual').fill('the-cosmere-over-everything');
+  await page.getByTestId('builder-name').fill('The Cosmere (everything)');
+  await page.getByTestId('builder-cap-meter').waitFor();
+  await page.getByTestId('builder-save').click();
+  await page.getByTestId('builder-over-cap').waitFor();
+}
+
+/** DESIGN-044 — drive the builder PAGE to a resolved preview (series search → pick → the held/missing split). */
+async function openBuilderPreview(page: Page): Promise<void> {
+  await page.goto('/collections/new?tab=books');
+  await page.getByTestId('builder-card-hardcover_series').click();
+  await page.getByTestId('builder-search-input').fill('storm');
+  await page.getByTestId('builder-result').first().click();
+  await page.getByTestId('builder-preview').waitFor();
 }
 
 async function main(): Promise<void> {
@@ -120,14 +134,49 @@ async function main(): Promise<void> {
       scopedFamilies: [{ source: 'kavita', kind: 'collection' }],
     });
 
+    // DESIGN-044 D-05/D-10 — seed two Kavita library rows whose ISBNs match the first two members the stub
+    // preview resolves, so the builder-preview gallery shows a POPULATED "In your library" split beside the
+    // Missing group (not an all-missing set). `syncedSources: []` upserts additively (never tombstones the
+    // stub-books library the harness already synced). Written through the sanctioned domain writer.
+    const kavitaBook = (over: Partial<BooksItemInput> & Pick<BooksItemInput, 'externalId' | 'title' | 'isbn'>): BooksItemInput => ({
+      source: 'kavita',
+      mediaKind: 'book',
+      libraryId: 'lib1',
+      libraryName: 'Books',
+      sortTitle: over.title.toLowerCase(),
+      author: 'Brandon Sanderson',
+      narrator: null,
+      seriesName: 'The Stormlight Archive',
+      year: 2014,
+      releasedAt: null,
+      genres: [],
+      coverRef: null,
+      deepLinkUrl: `https://example.test/${over.externalId}`,
+      pageCount: null,
+      wordCount: null,
+      durationSeconds: null,
+      sizeBytes: null,
+      attrs: {},
+      sourceAddedAt: null,
+      sourceUpdatedAt: null,
+      ...over,
+    });
+    await syncBooks({
+      syncedSources: [],
+      rows: [
+        kavitaBook({ externalId: 'sl-way-of-kings', title: 'The Way of Kings', isbn: '9780765326355' }),
+        kavitaBook({ externalId: 'sl-words-of-radiance', title: 'Words of Radiance', isbn: '9780765326362' }),
+      ],
+    });
+
     const browser = await chromium.launch();
 
     // Seed ONE over-cap ticket as a member so the admin Tickets approve lens has content. The stack's
     // DB persists across the screenshot matrix below.
     await setPersona(stack.oidc.baseUrl, 'member');
     const seed = await signIn(browser, stack.appUrl, { width: 1280, height: 900 });
-    await openOverCapModal(seed);
-    await seed.getByTestId('collection-over-cap-request').click();
+    await openBuilderOverCap(seed);
+    await seed.getByTestId('builder-over-cap-request').click();
     await seed.getByText('Request sent').waitFor();
     await seed.context().close();
 
@@ -177,12 +226,31 @@ async function main(): Promise<void> {
         await admin.goto('/collections?tab=books');
         await admin.getByTestId('collections-list').waitFor();
 
-        // The composer Modal.
-        await admin.getByTestId('collections-new').click();
-        await admin.getByRole('dialog').waitFor();
+        // ── DESIGN-044 — the full-page builder states ──
+        // 1) The empty type-card step (the plain-language D-03 cards).
+        await admin.goto('/collections/new?tab=books');
+        await admin.getByTestId('builder-typecards').waitFor();
         await hidePortal(admin);
-        await shoot(admin, `composer-${suffix}`);
-        await admin.keyboard.press('Escape');
+        await shoot(admin, `builder-empty-${suffix}`, true);
+
+        // 2) A populated ref search (series typeahead results).
+        await admin.getByTestId('builder-card-hardcover_series').click();
+        await admin.getByTestId('builder-search-input').fill('stor');
+        await admin.getByTestId('builder-search-results').waitFor();
+        await hidePortal(admin);
+        await shoot(admin, `builder-searched-${suffix}`, true);
+
+        // 3) A resolved preview — the in-library / missing split + the cap meter.
+        await openBuilderPreview(admin);
+        await admin.getByTestId('builder-missing').waitFor();
+        await hidePortal(admin);
+        await shoot(admin, `builder-previewed-${suffix}`, true);
+
+        // 4) The locked-builder edit state (name + type locked; only the ref + options change).
+        await admin.goto('/collections/stormlight-archive/edit?tab=books');
+        await admin.getByTestId('builder-locked-note').waitFor();
+        await hidePortal(admin);
+        await shoot(admin, `builder-edit-${suffix}`, true);
 
         // The Tickets sub-section (admin approve lens).
         await admin.goto('/collections?tab=tickets');
@@ -198,16 +266,28 @@ async function main(): Promise<void> {
       }
       await admin.context().close();
 
-      // ── Member lens: the over-cap Modal (admins bypass the cap, so only a member sees it) ──
+      // ── Member lens: the over-cap meter + "request it" Modal (admins bypass the cap, so only a member
+      //    sees it) ──
       await setPersona(stack.oidc.baseUrl, 'member');
       const member = await signIn(browser, stack.appUrl, viewport);
       for (const theme of themes) {
         const suffix = `${label}-${theme === 'hnet-dark' ? 'dark' : 'light'}`;
         await setTheme(member, theme);
-        await openOverCapModal(member);
+        // The over-cap preview meter (deepened) before saving.
+        await openBuilderPreview(member); // a within-cap preview first, to warm the page
+        await member.goto('/collections/new?tab=books');
+        await member.getByTestId('builder-card-hardcover_series').click();
+        await member.getByTestId('builder-manual-toggle').click();
+        await member.getByTestId('builder-ref-manual').fill('the-cosmere-over-everything');
+        await member.getByTestId('builder-name').fill('The Cosmere (everything)');
+        await member.getByTestId('builder-cap-meter').waitFor();
+        await hidePortal(member);
+        await shoot(member, `builder-overcap-meter-${suffix}`, true);
+        // The over-cap "request it" Modal.
+        await member.getByTestId('builder-save').click();
+        await member.getByTestId('builder-over-cap').waitFor();
         await hidePortal(member);
         await shoot(member, `over-cap-${suffix}`);
-        await member.keyboard.press('Escape');
         await member.keyboard.press('Escape');
       }
       await member.context().close();

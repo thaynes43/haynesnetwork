@@ -37,8 +37,10 @@ import {
   getKometaCollectionsOverview,
   KometaRecipeError,
   listCollectionOverrideTickets,
+  previewCollectionMembers,
   previewKometaRef,
   previewRecipeRef,
+  searchCollectionRefs,
   setAppSetting,
   setCollectionFindMissing,
   setKometaFindMissing,
@@ -60,6 +62,7 @@ import type {
 } from '@hnet/libretto';
 import {
   mapDomainErrors,
+  resolveArrBundle,
   resolveHaynesopsBundle,
   resolveLazyLibrarianBundle,
   resolveLibrettoBundle,
@@ -437,6 +440,62 @@ export const collectionsRouter = router({
       );
     });
   }),
+
+  /**
+   * DESIGN-044 D-04 — the search-first ref typeahead. Books/Audiobooks proxy the confined @hnet/libretto
+   * search; Movies/TV ride the confined @hnet/arr movie/series lookup (the ADR-055 confinement — never a
+   * browser call to a provider). Everyone may search (the safe read path, no grant); a search outage
+   * degrades to `reachable:false` so the field falls back to manual entry (D-04). The caller owns debounce.
+   */
+  search: authedProcedure
+    .input(
+      z.object({
+        mediaType: z.enum(COLLECTION_MEDIA_TYPES),
+        builderType: z.enum(COLLECTION_BUILDER_TYPES),
+        q: z.string().trim().max(200),
+        limit: z.number().int().min(1).max(25).optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      return mapDomainErrors(async () =>
+        searchCollectionRefs({
+          libretto: resolveLibrettoBundle(ctx),
+          arr: resolveArrBundle(ctx),
+          builderType: input.builderType,
+          q: input.q,
+          ...(input.limit !== undefined ? { limit: input.limit } : {}),
+        }),
+      );
+    }),
+
+  /**
+   * DESIGN-044 D-05/D-10 — the live member preview. Resolves a DRAFT builder's members and splits them
+   * "In your library" vs "Missing" against the app's OWN mirrors (books_items / media_items), never asking a
+   * provider. Books resolve through Libretto preview (ISBN match + the DESIGN-037 title fallback); Movies/TV
+   * resolve id-lists + franchises through @hnet/arr; a URL-ref builder (or an outage) returns the honest
+   * "preview unavailable" state. Read-only, mutates nothing, safe on every debounced ref change; NEVER a save
+   * gate (the save re-resolves server-side under the real cap).
+   */
+  preview: authedProcedure
+    .input(
+      z.object({
+        mediaType: z.enum(COLLECTION_MEDIA_TYPES),
+        builderType: z.enum(COLLECTION_BUILDER_TYPES),
+        ref: z.union([z.string().trim().max(400), z.array(z.string().trim().min(1).max(80)).max(200)]),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      return mapDomainErrors(async () =>
+        previewCollectionMembers({
+          db: ctx.db,
+          libretto: resolveLibrettoBundle(ctx),
+          arr: resolveArrBundle(ctx),
+          mediaType: input.mediaType,
+          builderType: input.builderType,
+          ref: input.ref,
+        }),
+      );
+    }),
 
   /**
    * DIRECT add/edit (D-03/D-07) — everyone, capped. Resolves the live membership size, reads the cap, and

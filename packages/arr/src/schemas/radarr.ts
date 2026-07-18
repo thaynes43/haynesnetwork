@@ -93,9 +93,29 @@ export const radarrCollectionSchema = z
 export type RadarrCollection = z.infer<typeof radarrCollectionSchema>;
 
 /**
+ * DESIGN-044 D-04 / Q-04 — the TMDb franchise a looked-up movie belongs to, surfaced by
+ * `GET /movie/lookup` on Radarr's MovieResource `collection` field. The collection-builder page's
+ * "movie franchise" ref search reads this: the user searches a MOVIE by name, and the app takes its
+ * `collection` (name + TMDb collection id) as the `tmdb_collection_details` ref. Radarr's serialized
+ * key for the franchise NAME has drifted across versions (`title` on 6.x, `name` on older builds), so
+ * the ACL tolerates BOTH and the domain derives one honest name (never a fabricated label). A movie
+ * with no franchise omits `collection` entirely (the page shows it disabled with the honest note).
+ */
+export const radarrLookupCollectionSchema = z
+  .object({
+    name: z.string().nullish(),
+    title: z.string().nullish(),
+    /** The TMDb collection id — the exact `tmdb_collection_details` ref (the franchise builder value). */
+    tmdbId: z.number().int().nullish(),
+  })
+  .passthrough();
+export type RadarrLookupCollection = z.infer<typeof radarrLookupCollectionSchema>;
+
+/**
  * `GET /movie/lookup?term=tmdb:{id}` element (DESIGN-008 D-05) — the tombstoned/never-listed
  * metadata path. Returns FULL metadata + `remotePoster` WITHOUT adding the movie. A metadata
- * subset only (lookup omits path/rootFolder/statistics).
+ * subset only (lookup omits path/rootFolder/statistics). DESIGN-044 D-04 adds the optional
+ * `collection` (the movie's TMDb franchise) for the franchise ref search.
  */
 export const radarrLookupSchema = z.object({
   title: z.string(),
@@ -107,6 +127,9 @@ export const radarrLookupSchema = z.object({
   ratings: radarrRatingsSchema.optional(),
   images: z.array(arrImageSchema).optional(),
   remotePoster: z.string().optional(),
+  // The movie's TMDb franchise, when it belongs to one (the DESIGN-044 franchise ref). Nullish-tolerant:
+  // most movies carry no collection, and the name key varies by Radarr version (see the schema above).
+  collection: radarrLookupCollectionSchema.nullish(),
 });
 export type RadarrLookup = z.infer<typeof radarrLookupSchema>;
 
