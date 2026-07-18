@@ -84,6 +84,12 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
   hardening. Conventional commits (`feat:`/`fix:`/`feat!:`) drive release-please versioning.
 - Images build to `ghcr.io/thaynes43/haynesnetwork` on `v*` tags; deployment manifests live
   in `haynes-ops` under `kubernetes/main/apps/frontend/haynesnetwork/`.
+- **Backlog/saga state must reach `main` — never left untracked** (owner rule, 2026-07-18).
+  Any add or update to agent working state (`.agents/HANDOFF.md`, `.agents/context/`,
+  `.agents/plans/`) or docs backlog gets committed and merged to `main` in the same session
+  that produced it — a small `docs:`/`chore:` PR is fine, batching several notes is fine,
+  leaving them untracked in a worktree is not. Pod worktrees are disposable (`agent-run`
+  cleanup deletes them); untracked notes there are lost work.
 
 ## Commands
 
