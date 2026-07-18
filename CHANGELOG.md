@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.77.0](https://github.com/thaynes43/haynesnetwork/compare/v0.76.0...v0.77.0) (2026-07-18)
+
+
+### Features
+
+* books gain Force Search + unified grant gating; refactor onto shared media-action components (ADR-071, PR-3) ([#383](https://github.com/thaynes43/haynesnetwork/issues/383)) ([089b399](https://github.com/thaynes43/haynesnetwork/commit/089b39906546df35505268f125fcc3831046dd32))
+
 ## [0.76.0](https://github.com/thaynes43/haynesnetwork/compare/v0.75.0...v0.76.0) (2026-07-18)
 
 
