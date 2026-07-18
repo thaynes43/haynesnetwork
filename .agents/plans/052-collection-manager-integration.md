@@ -3,7 +3,7 @@
 ## ▶ DIRECT-ADD REWORK — EXECUTABLE BUILD PLAN (PR4a/b/c, 2026-07-18)
 
 **Owner rulings 2026-07-18 KILLED suggest→approve** (`.agents/context/2026-07-18-collections-direct-add-rulings.md`).
-Governing docs revised: **ADR-071** (supersedes ADR-069 + ADR-070), **DESIGN-043** (collection
+Governing docs revised: **ADR-072** (supersedes ADR-069 + ADR-070), **DESIGN-043** (collection
 manager → direct-add + first-class `/collections` page), **DESIGN-042** (Kometa → auto-merge).
 Backbone is **PR3** (`collection_size_cap` app_setting, migration 0067; `assertWithinCollectionSizeCap`;
 `collections.requestOverride` → ADR-050 `collection_override` ticket — on branch
@@ -13,7 +13,7 @@ file-level scope below.
 
 ### PR4a — teardown + first-class page shell + Libretto direct add/edit + Tickets (migration 0069)
 
-*Realizes ADR-071 + DESIGN-043 D-01/D-03/D-06/D-09/D-10/D-11/D-15. The keystone PR — everything else
+*Realizes ADR-072 + DESIGN-043 D-01/D-03/D-06/D-09/D-10/D-11/D-15. The keystone PR — everything else
 depends on the shell + teardown.*
 
 - **Teardown (DESIGN-043 D-15):**
@@ -51,7 +51,7 @@ depends on the shell + teardown.*
 
 ### PR4b — Kometa auto-merge write path for Movies/TV (no migration)
 
-*Realizes ADR-071 + DESIGN-042 D-02/D-07/D-09/D-10. Depends on PR4a's shell + domain writer seam.*
+*Realizes ADR-072 + DESIGN-042 D-02/D-07/D-09/D-10. Depends on PR4a's shell + domain writer seam.*
 
 - **The Kometa write adapter (confined, `@hnet/domain`-only):**
   - the recipe → managed-include compiler (DESIGN-042 D-05, pure function: allowlisted builder +
@@ -74,7 +74,7 @@ depends on the shell + teardown.*
 
 ### PR4c — find-missing grant + cron force-search wiring (uses 0069's `find_missing`)
 
-*Realizes ADR-071 + DESIGN-043 D-14 + DESIGN-042 D-06/D-14. The acquisition lever — lands last.*
+*Realizes ADR-072 + DESIGN-043 D-14 + DESIGN-042 D-06/D-14. The acquisition lever — lands last.*
 
 - **The grant (the DESIGN-033 FLIP idiom):** `setRoleCollectionActions` single-writer (survives from
   ADR-070, audit same-tx); `collectionActionsForRole` / `collectionActionProcedure('find_missing')`;
@@ -90,7 +90,7 @@ depends on the shell + teardown.*
 
 ### Open Q-NNs carried to build
 
-ADR-071 / DESIGN-043 Q-01 (cap unit: resolved vs static count) · Q-02 (ticket payload jsonb column vs
+ADR-072 / DESIGN-043 Q-01 (cap unit: resolved vs static count) · Q-02 (ticket payload jsonb column vs
 side table) · Q-03 (Kometa auto-merge canary flag) · Q-04 (find_missing role rollout) · Q-05
 (collection_override ticket in the Helpdesk too?); DESIGN-042 Q-05 (namespacing/live-reconcile marker) ·
 Q-06 (ref-preview egress + `--validate-file` connectivity, canary first).

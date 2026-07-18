@@ -501,7 +501,7 @@ T-129..T-135.)
 <!-- R-222..R-224 are held by parallel in-flight tracks; this section takes R-225..R-227 (IDs are
      stable — the gap is deliberate, never renumbered; the coordinator reconciles at merge). -->
 
-> **AMENDED 2026-07-18 by ADR-071 (direct-add — supersedes ADR-070).** R-225..R-227 below describe
+> **AMENDED 2026-07-18 by ADR-072 (direct-add — supersedes ADR-070).** R-225..R-227 below describe
 > the retired propose→approve model. Under the direct-add rulings: (a) the manager is a **first-class
 > `/collections` page** (not an Integrations hub sub-section) with Movies/TV/Books/Audiobooks +
 > Tickets + Settings sub-sections; (b) **any user adds/edits directly**, capped at `collection_size_cap`
@@ -509,7 +509,7 @@ T-129..T-135.)
 > `collection_override` ticket** (ADR-050) carrying the full definition, admin approve = materialize;
 > (d) the content-pull knob is **Find Missing**, a single per-collection `find_missing` grant (not the
 > `acquire` triad); (e) Kometa within-cap grouping-only adds **auto-merge** the haynes-ops PR. See
-> ADR-071 / DESIGN-043 / DESIGN-042. Read R-225..R-227 through this amendment.
+> ADR-072 / DESIGN-043 / DESIGN-042. Read R-225..R-227 through this amendment.
 
 | ID | Requirement | Priority |
 | --- | --- | --- |

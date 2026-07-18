@@ -1,10 +1,10 @@
 # DESIGN-043: The collection manager — a first-class `/collections` page, direct-add across all media types
 
-- **Status:** Accepted <!-- revised 2026-07-18 to the direct-add model (ADR-071); was Accepted on the propose→approve model (ADR-070) -->
-- **Last updated:** 2026-07-18 (REVISED to direct-add + the first-class `/collections` page — ADR-071
+- **Status:** Accepted <!-- revised 2026-07-18 to the direct-add model (ADR-072); was Accepted on the propose→approve model (ADR-070) -->
+- **Last updated:** 2026-07-18 (REVISED to direct-add + the first-class `/collections` page — ADR-072
   supersedes ADR-070; the propose→approve flow and the Integrations-hub placement are removed. Was
   DESIGN-042 in the H1 by a two-track numbering collision — corrected to DESIGN-043 in this pass.)
-- **Realizes:** **ADR-071** (direct-add + capped self-serve add/edit + over-cap cap-ticket-materialize
+- **Realizes:** **ADR-072** (direct-add + capped self-serve add/edit + over-cap cap-ticket-materialize
   + find-missing grant + Kometa auto-merge). Satisfies the amended PRD R-225..R-227 (revised for
   direct-add) + R-228-class first-class-page placement.
 - **Companions:** DESIGN-042 (the Kometa provider — the auto-merge write path this page drives for
@@ -22,7 +22,7 @@ Books, Audiobooks — where any user **adds, edits, and (admins) removes** colle
 at a configurable size, with an easy over-cap escalation and a role-gated find-missing acquisition
 knob. This SUPERSEDES the ADR-070 propose→approve manager: there is no suggestion, no admin review
 queue, no in-wall "Suggest a collection" affordance — the owner ruled "it's not suggesting, it's
-adding, removing and editing collections" (ADR-071).
+adding, removing and editing collections" (ADR-072).
 
 The manager still reads each provider's collections LIVE and writes a RECIPE (never a collection
 directly — mirror-only, ADR-064). The write is provider-shaped: **Libretto** (books/audiobooks) is a
@@ -33,7 +33,7 @@ mirror.
 
 Three constraints shape every decision:
 
-1. **Direct-add, capped (ADR-071).** The cap is the only friction on the safe path. Everyone
+1. **Direct-add, capped (ADR-072).** The cap is the only friction on the safe path. Everyone
    adds/edits ≤ cap; admins are unbounded and are the only deleters; over-cap files a ticket.
 2. **Mirror-only survives (ADR-064).** The app writes a Libretto/Kometa recipe; the provider builds
    the collection; DESIGN-035/038 stay the only read paths.
@@ -44,7 +44,7 @@ Three constraints shape every decision:
 
 ### D-01 — Placement: a first-class top-level `/collections` page (REVISED 2026-07-18)
 
-> **REVISED (ADR-071).** The ADR-070 decision — a Collections sub-section of the Integrations hub at
+> **REVISED (ADR-072).** The ADR-070 decision — a Collections sub-section of the Integrations hub at
 > `/integrations/collections` — is RETIRED. The manager is now a first-class citizen.
 
 A top-level **Collections** nav entry pushes to `/collections` (its own screen, the DESIGN-004 nav
@@ -52,7 +52,7 @@ idiom; label constant `COLLECTIONS_NAME`). The old `/integrations/collections` r
 move, not a duplicate — the Integrations hub Collections card is removed, D-15); `/integrations/collections`
 redirects to `/collections` so any deep link survives. The page is gated by the collections section
 (visibility floor); every authenticated user with the section sees it and can add/edit within the cap
-(no capability grant for the safe path — ADR-071). Admin-only controls (delete, unbounded, Settings,
+(no capability grant for the safe path — ADR-072). Admin-only controls (delete, unbounded, Settings,
 ticket approve) are role-gated within the page.
 
 ### D-09 — Information architecture: sub-navigation (NEW 2026-07-18)
@@ -92,7 +92,7 @@ attention" band, never silently dropped.
 
 ### D-03 — Direct add / edit (the composer) (REVISED 2026-07-18)
 
-> **REVISED (ADR-071).** The composer now WRITES the collection directly (within the cap) instead of
+> **REVISED (ADR-072).** The composer now WRITES the collection directly (within the cap) instead of
 > filing a suggestion. There is no approval step for a within-cap add.
 
 Add/edit uses a `Modal` (DESIGN-004 D-13 — an explanatory/multi-field confirm, never `window.confirm`):
@@ -117,7 +117,7 @@ Add/edit uses a `Modal` (DESIGN-004 D-13 — an explanatory/multi-field confirm,
 - `id` global uniqueness enforced (the Libretto "recipe id is global" lesson; Kometa per-target
   variants need distinct ids). Every write is audited (hard rule 6).
 
-**Delete** is admin-only (ADR-071), a `ConfirmButton` (ADR-014; reserves the armed-label width — no
+**Delete** is admin-only (ADR-072), a `ConfirmButton` (ADR-014; reserves the armed-label width — no
 row shift) with the explicit orphaned-collection warning (the surviving ADR-070 C-08 / ADR-069 C-08):
 the default removes the recipe; an "also delete the produced collection" opt-in cascades where the
 provider supports it. A non-admin never sees the delete control (server-enforced).
@@ -127,7 +127,7 @@ provider supports it. A non-admin never sees the delete control (server-enforced
 The cap is `collection_size_cap` — an app_setting (migration 0067, PR3; configurable; default 25),
 read by the domain `assertWithinCollectionSizeCap` on every add/edit. Admin Settings (D-09) surfaces
 and edits the value (an audited `setAppSetting`, the existing idiom). An `is_admin` role bypasses the
-cap entirely (ADR-071). The cap is a COUNT of collection members (the resolved member set for a
+cap entirely (ADR-072). The cap is a COUNT of collection members (the resolved member set for a
 static builder; the resolved ref count for a list builder — surfaced by the ref preview D-03).
 
 ### D-11 — Over-cap: the `collection_override` ticket that materializes on approve (NEW 2026-07-18)
@@ -142,7 +142,7 @@ An add/edit that would exceed the cap escalates to a **ticket**, not an admin qu
 2. **Track (requester).** The `/collections` Tickets sub-section (D-09) shows the requester their own
    `collection_override` ticket state (open / in_progress / complete / rejected) — the ADR-050
    household-visible ticket read, filtered to the caller's own for this category. No outbox/notify
-   machinery (rare path, ADR-071 ruling 5 — the requester checks their ticket).
+   machinery (rare path, ADR-072 ruling 5 — the requester checks their ticket).
 3. **Approve → materialize (admin, one click).** An admin's Approve transitions the ticket to
    `complete` AND materializes the collection unbounded — the SAME confined provider writer as a
    direct add (D-03), cap-bypassed, driven from the ticket payload. Materialization + the
@@ -170,7 +170,7 @@ ADR-055 discipline — arr-write-import-guard extended). NEVER a browser call. A
 degrades to an `unreachable` health state (D-02) — no crash; the mirror walls are unaffected.
 
 - **Add/edit** (within cap): `collections.upsert` → domain `assertWithinCollectionSizeCap` →
-  provider writer. No grant on the safe path (ADR-071).
+  provider writer. No grant on the safe path (ADR-072).
 - **Delete** (admin): `collections.delete` → admin check → provider writer.
 - **Over-cap:** `collections.requestOverride` → ADR-050 ticket (D-11).
 - **Approve ticket** (admin): `collections.approveOverride` → materialize + transition (D-11).
@@ -281,7 +281,7 @@ The full teardown the build agents execute (PLAN-052 PR4a). "Move, don't duplica
 |----|----------|------------|
 | Q-01 | **Cap unit** — is the cap a count of RESOLVED members (list builders resolve a live count) or of the STATIC id set the user typed? A list ref can drift over/under the cap between runs. | OPEN. Design leans: the cap is checked at write against the ref-preview resolved count (D-03/D-10); a list that later drifts over the cap is not retroactively ticketed (the mirror shows honest size). Owner confirm. |
 | Q-02 | **Over-cap ticket payload storage** — a nullable `collection_override_payload` jsonb column on `tickets` (chosen, D-11) vs a side `collection_override_requests` table keyed to the ticket. The column keeps it in the ADR-050 aggregate; a side table is cleaner if the payload grows a lifecycle of its own. | OPEN. Design leans the jsonb column (simplest, one aggregate). Owner/coordinator confirm at build. |
-| Q-03 | **Kometa auto-merge trust** — the app auto-merges within-cap grouping-only config PRs after `--validate-file` green (DESIGN-042 D-10). Is the CI gate + the machine-owned file enough, or does the owner want a canary window (auto-merge behind a flag) first? | OPEN — owner ruling. ADR-071 rules auto-merge for the safe case; a first-N-runs canary flag is a safe rollout option. |
+| Q-03 | **Kometa auto-merge trust** — the app auto-merges within-cap grouping-only config PRs after `--validate-file` green (DESIGN-042 D-10). Is the CI gate + the machine-owned file enough, or does the owner want a canary window (auto-merge behind a flag) first? | OPEN — owner ruling. ADR-072 rules auto-merge for the safe case; a first-N-runs canary flag is a safe rollout option. |
 | Q-04 | **Find-missing grant rollout** — which roles get `find_missing`, and when? | OPEN — owner ruling. Ships Admin-only (empty grants, the DESIGN-033 default); the owner opens per role at `/admin` roles. |
 | Q-05 | **Tickets sub-section vs the Helpdesk** — a `collection_override` ticket is an ADR-050 ticket. Does it ALSO appear in the main Helpdesk `/bulletin` tab, or only under `/collections` → Tickets? | OPEN. Design leans: it is one ticket, visible in both — the `/collections` Tickets view is a category-filtered lens on the same aggregate. Owner confirm. |
 </content>

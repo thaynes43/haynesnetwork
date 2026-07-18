@@ -14,9 +14,9 @@ blocks below reference the collections MANAGER / suggest flow / `/integrations/c
 suggest-manage-acquire, they are SUPERSEDED by the direct-add model.
 
 **Docs landed (this branch, docs-only PR to main):**
-- **ADR-071** (`docs/adrs/071-collections-direct-add.md`) — direct-add + cap-ticket-materialize +
+- **ADR-072** (`docs/adrs/072-collections-direct-add.md`) — direct-add + cap-ticket-materialize +
   find-missing grant + Kometa auto-merge. **Supersedes ADR-069 (Kometa, Proposed) AND ADR-070
-  (Libretto/manager, Accepted)** — both status lines flipped to "Superseded by ADR-071".
+  (Libretto/manager, Accepted)** — both status lines flipped to "Superseded by ADR-072".
 - **DESIGN-043** revised → direct-add + first-class `/collections` page (H1 renumbered from the
   mislabeled DESIGN-042). **DESIGN-042** revised → Kometa auto-merge (D-10). Glossary T-208..T-212
   added, T-199/T-200/T-202 marked Superseded. PRD R-225..R-227 amended.
