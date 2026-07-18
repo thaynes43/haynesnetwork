@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.74.0](https://github.com/thaynes43/haynesnetwork/compare/v0.73.1...v0.74.0) (2026-07-18)
+
+
+### Features
+
+* books collection category — dynamic chips across all three walls (DESIGN-038 D-12) ([#372](https://github.com/thaynes43/haynesnetwork/issues/372)) ([6c18b2a](https://github.com/thaynes43/haynesnetwork/commit/6c18b2a3f6eb955600814199f9b064f1c7be1143))
+
+
+### Documentation
+
+* **ops:** OPS-013 tier table — Elite VIP unsatisfied cap = 200 ([#370](https://github.com/thaynes43/haynesnetwork/issues/370)) ([c47d505](https://github.com/thaynes43/haynesnetwork/commit/c47d50578f8c1b877c820836731f1b090d04fe5b))
+
 ## [0.73.1](https://github.com/thaynes43/haynesnetwork/compare/v0.73.0...v0.73.1) (2026-07-17)
 
 
