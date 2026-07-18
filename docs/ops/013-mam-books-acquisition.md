@@ -184,8 +184,10 @@ alone:
   disabled for the qbittorrent package (haynes-ops `fa350fa7`) so version bumps are deliberate.
   (Verifying 5.2.1 on MAM's Approved Clients page is owner-side.)
 - **Separate `mam_id` per consumer** (Session A vs B) — never share.
-- **Unsatisfied-torrent cap = 20 (New Member).** Keep concurrent not-yet-72h grabs well under 20
-  until rank rises; batches start small (owner-driven; see also PLAN-039 governor).
+- **Unsatisfied-torrent cap = 200 (Elite VIP as of 2026-07-17; was 20 at New-Member join).** Keep
+  concurrent not-yet-72h grabs under the rank cap; the PLAN-039 governor enforces it (pause-threshold
+  185 = limit 200 − buffer 15). Cap rises with rank (New Member 20 → User 50 → PU 100 → VIP 150 →
+  Elite VIP 200); bump `MAM_UNSATISFIED_LIMIT` on each promotion.
 - **No buying/selling invites; regular site login** (owner-side).
 
 ---
@@ -264,7 +266,10 @@ If MAM starts rejecting announces (torrent tracker status flips to *not working*
 
 The **`mam-governor`** sync mode (a ~15-min CronJob in the `frontend` namespace, alongside the other
 `haynesnetwork-sync-*` jobs) keeps automated MAM grabs under the account's **unsatisfied-torrent cap**
-(New Member 20 → User 50 → PU 100 → VIP 150; exceeding it blocks downloads up to 24h — §6). It is the
+(New Member 20 → User 50 → PU 100 → VIP 150 → **Elite VIP 200**; exceeding it blocks downloads up to 24h
+— §6). **Current: the account is Elite VIP (confirmed 2026-07-17, MAM Client Summary "… Unsatisfied
+(limit 200)"), and the governor is set to `MAM_UNSATISFIED_LIMIT=200` / `MAM_UNSATISFIED_BUFFER=15`
+→ pause-threshold 185** (haynes-ops helmrelease). It is the
 automated enforcement of the last two rows of the §6 never-do list. **It adds ZERO MAM API surface** —
 counting is local to qBittorrent and gating is local to Prowlarr; the governor never calls MAM.
 
@@ -294,8 +299,10 @@ counting is local to qBittorrent and gating is local to Prowlarr; the governor n
 
 ### 10.2 Config & credentials
 
-- **Tuning:** `MAM_UNSATISFIED_LIMIT` (default 20 — the owner **bumps this at each MAM rank promotion**:
-  User 50 → PU 100 → VIP 150), `MAM_UNSATISFIED_BUFFER` (default 5), `MAM_ZERO_HEADROOM_ALERT_HOURS`
+- **Tuning:** `MAM_UNSATISFIED_LIMIT` (code default 20 — the owner **bumps this at each MAM rank promotion**:
+  User 50 → PU 100 → VIP 150 → Elite VIP 200; **set to 200 in the haynes-ops helmrelease as of 2026-07-17**,
+  the Elite VIP cap), `MAM_UNSATISFIED_BUFFER` (code default 5; **set to 15** → pause-threshold 185),
+  `MAM_ZERO_HEADROOM_ALERT_HOURS`
   (default 48). All resolve through one seam (`resolveGovernorConfig`); **PLAN-040** moves them to an audited
   DB-backed admin setting with governor-state visibility.
 - **Credential:** `PROWLARR_API_KEY` — from the shared `media-stack` 1Password item, already `extract`ed
