@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.80.0](https://github.com/thaynes43/haynesnetwork/compare/v0.79.0...v0.80.0) (2026-07-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* Kometa (Movies/TV) collections write path + auto-merge (ADR-072 PR4b) ([#397](https://github.com/thaynes43/haynesnetwork/issues/397))
+
+### Features
+
+* action-anatomy drift guard — lock the unified media-action doctrine (ADR-071 PR-6) ([#403](https://github.com/thaynes43/haynesnetwork/issues/403)) ([4afdf43](https://github.com/thaynes43/haynesnetwork/commit/4afdf43e5253f6ce346c72709dea2e506f7ee553))
+* find-missing grant grid + per-collection knob + cron force-search (ADR-072 PR4c) ([#401](https://github.com/thaynes43/haynesnetwork/issues/401)) ([739ba19](https://github.com/thaynes43/haynesnetwork/commit/739ba196d4f2a4f11622c023604b1620cc173306))
+* Kometa (Movies/TV) collections write path + auto-merge (ADR-072 PR4b) ([#397](https://github.com/thaynes43/haynesnetwork/issues/397)) ([259e3f1](https://github.com/thaynes43/haynesnetwork/commit/259e3f104423d7c87702e3d540c64096b1526070))
+
+
+### Bug Fixes
+
+* **gb-quota:** classify 429s from response body only, never the URL-bearing error message ([#402](https://github.com/thaynes43/haynesnetwork/issues/402)) ([654fd32](https://github.com/thaynes43/haynesnetwork/commit/654fd3249fc4e93b1c969d500ef2140f9d18327d))
+
+
+### Refactors
+
+* wanted-detail + activity-failure onto shared media-action components (ADR-071, PR-4) ([#400](https://github.com/thaynes43/haynesnetwork/issues/400)) ([f5d3177](https://github.com/thaynes43/haynesnetwork/commit/f5d3177fa66a0baa5884d60a56c563bf4d29c5af))
+
+
+### Documentation
+
+* DESIGN-043 D-14 realized note, PLAN-052 PR4c completion, PR4c handoff note. ([739ba19](https://github.com/thaynes43/haynesnetwork/commit/739ba196d4f2a4f11622c023604b1620cc173306))
+* **ops:** OPS-004 live object names + .sig Accept-header gotcha (v0.79.0 driver findings) ([#399](https://github.com/thaynes43/haynesnetwork/issues/399)) ([81d339f](https://github.com/thaynes43/haynesnetwork/commit/81d339f4223b46acd232aa6237bec13684903a7d))
+
 ## [0.79.0](https://github.com/thaynes43/haynesnetwork/compare/v0.78.1...v0.79.0) (2026-07-18)
 
 
