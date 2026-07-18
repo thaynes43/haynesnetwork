@@ -36,6 +36,12 @@ export type {
 export { PhaseChip, ProgressMeter } from './controls/PhaseChip';
 export type { PhaseChipProps, ProgressMeterProps, PhaseTone } from './controls/PhaseChip';
 
+// ADR-071 / DESIGN-004 D-24 — the media-action system: the MEDIA_ACTIONS registry (the ONE
+// canonical label+look per verb) and the components that render it reflow-safely (MediaAction,
+// MediaActionBar, ConsumeLink, ReservedActionSlot, MediaHero). Every per-item Fix / Force Search /
+// consume in the app renders through these — the `action-anatomy` guard forbids hand-rolling them.
+export * from './actions';
+
 export { useReorderDnD } from './controls/useReorderDnD';
 export type {
   UseReorderDnDOptions,
