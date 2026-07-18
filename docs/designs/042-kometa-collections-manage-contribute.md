@@ -133,6 +133,20 @@ run, so an app write there races the process and needs a re-seed to land. Git is
 lives AND the estate's doctrine (research §4; PLAN-052 write-path verdict). See ADR-069 for the full
 options table.
 
+#### D-02 amend (2026-07-18) — the mirror's config collections list as READ-ONLY rows
+
+The managed include holds ONLY the recipes the app authored (approximately zero today), but the estate's
+own Kometa config has produced ~465 collections the mirror already carries (movies 441, TV 24 — confirmed
+on prod by `plex_collections.created_by='kometa'`, `pl.media_type` in `movie`/`show`). The Movies/TV
+overview therefore returns, beside the managed `recipes[]`, a `readOnly[]` array: every mirror collection
+(`readProducedCollections`, `created_by='kometa'`) whose normalized title does NOT join a managed recipe,
+as `{ name, itemCount, managedBy: 'kometa_config' }`. The manager renders these under a "From the estate's
+config" heading with a single muted chip ("managed in the estate's Kometa config") and no controls — the
+app does not own these recipes, so it lists them honestly rather than showing an empty tab. A recipe the
+app DOES manage joins its mirror collection by title (the existing reconcile) and is never duplicated into
+the read-only group. The `created_by='kometa'` constant matches prod reality (the tiny `plex` hand-made
+minority — 4 movie, 1 show — is deliberately out of scope for the Kometa-config group).
+
 ### D-03 — The managed include safety contract
 
 The research §1 "single managed file is fully supported" contract, applied verbatim so the app file can

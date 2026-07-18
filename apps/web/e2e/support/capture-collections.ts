@@ -11,6 +11,7 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium, type Browser, type Page } from '@playwright/test';
+import { syncBooksCollections } from '@hnet/domain';
 import { startStack } from './harness';
 import type { PersonaName } from './stub-oidc';
 
@@ -78,6 +79,31 @@ async function main(): Promise<void> {
   const cwd = process.cwd();
   const stack = await startStack({ port: PORT, prewarm: false, cwd });
   try {
+    // Seed one HAND-MADE Kavita collection (no Libretto recipe) so the Books tab shows the read-only
+    // "Made in your library apps" group beside the managed recipes (DESIGN-043 D-02 amend). Written
+    // through the sanctioned domain single-writer (never a direct insert — the no-direct-state-writes
+    // guard), against the stack's embedded Postgres.
+    process.env.DATABASE_URL = stack.pg.connectionString;
+    await syncBooksCollections({
+      collections: [
+        {
+          source: 'kavita',
+          externalId: 'capture-handmade-1',
+          kind: 'collection',
+          libraryId: null,
+          title: 'Owner’s Kavita Picks',
+          itemCount: 12,
+          ordered: false,
+          createdBy: 'kavita',
+          librettoRecipeId: null,
+          category: null,
+          members: [],
+          fullyRead: true,
+        },
+      ],
+      scopedFamilies: [{ source: 'kavita', kind: 'collection' }],
+    });
+
     const browser = await chromium.launch();
 
     // Seed ONE over-cap ticket as a member so the admin Tickets approve lens has content. The stack's
@@ -103,9 +129,10 @@ async function main(): Promise<void> {
         const suffix = `${label}-${theme === 'hnet-dark' ? 'dark' : 'light'}`;
         await setTheme(admin, theme);
 
-        // The Books collection list.
+        // The Books collection list — both the managed group and the hand-made read-only group.
         await admin.goto('/collections?tab=books');
         await admin.getByTestId('collections-list').waitFor();
+        await admin.getByTestId('collections-readonly-list').waitFor();
         await hidePortal(admin);
         await shoot(admin, `collections-books-${suffix}`, true);
 

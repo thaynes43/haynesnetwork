@@ -7,7 +7,7 @@
 // Libretto calls go through the confined @hnet/libretto client via the @hnet/domain orchestrators — NEVER a
 // browser call. A Libretto outage degrades honestly (overview.reachable=false).
 import { z } from 'zod';
-import { isNotNull } from 'drizzle-orm';
+import { isNotNull, isNull } from 'drizzle-orm';
 import {
   booksCollections,
   COLLECTION_BUILDER_TYPES,
@@ -186,6 +186,21 @@ function collectionWire(c: LibrettoCollection) {
     itemCount: c.itemCount ?? null,
   };
 }
+
+/**
+ * DESIGN-042 D-02 / DESIGN-043 D-02 amend (2026-07-18, owner-reported gap) — a READ-ONLY collection row: a
+ * mirror collection that carries NO app-managed recipe, so the tab lists it honestly instead of claiming
+ * "none yet". Kometa: a `created_by='kometa'` Plex collection the estate's own Kometa config built
+ * (`managedBy: 'kometa_config'`). Libretto: a hand-made Kavita/ABS collection with `libretto_recipe_id IS
+ * NULL` (`managedBy: 'hand_made'`; `source` picks the "made in ..." chip). No controls — the app does not
+ * manage these; it only surfaces them.
+ */
+type ReadOnlyCollectionWire = {
+  name: string;
+  itemCount: number | null;
+  managedBy: 'kometa_config' | 'hand_made';
+  source: 'kavita' | 'audiobookshelf' | null;
+};
 function runWire(run: LibrettoRun) {
   return {
     id: run.id,
@@ -263,6 +278,17 @@ export const collectionsRouter = router({
             mediaType: input.mediaType,
           });
           const recipeByTitle = new Map(overview.recipes.map((r) => [normalizeTitle(r.name), r.id]));
+          // The mirror collections that do NOT join to an app-managed recipe (by normalized title) are the
+          // estate's own Kometa-config collections — read-only rows so the tab reflects the ~465 the mirror
+          // carries, not an empty state (owner-reported gap 2026-07-18).
+          const readOnly: ReadOnlyCollectionWire[] = overview.collections
+            .filter((c) => !recipeByTitle.has(normalizeTitle(c.title)))
+            .map((c) => ({
+              name: c.title,
+              itemCount: c.childCount,
+              managedBy: 'kometa_config' as const,
+              source: null,
+            }));
           return {
             ...base,
             provider: 'kometa' as const,
@@ -275,6 +301,7 @@ export const collectionsRouter = router({
               name: c.title,
               itemCount: c.childCount,
             })),
+            readOnly,
             pendingPrs: overview.pendingPrs,
           };
         }
@@ -299,6 +326,25 @@ export const collectionsRouter = router({
             return recipeWire(r, deriveMediaType(sourceByRecipe.get(r.id), produced?.targetKind));
           })
           .filter((r) => r.mediaType === input.mediaType);
+        // The hand-made (no-recipe) mirror collections for THIS media type — read-only rows the app lists
+        // but does not manage (books ⇐ kavita, audiobooks ⇐ audiobookshelf; the D-13 source→media map). A
+        // `libretto_recipe_id IS NULL` row has no Libretto recipe, so it made in Kavita/ABS by hand.
+        const handMadeRows = await ctx.db
+          .select({
+            title: booksCollections.title,
+            itemCount: booksCollections.itemCount,
+            source: booksCollections.source,
+          })
+          .from(booksCollections)
+          .where(isNull(booksCollections.librettoRecipeId));
+        const readOnly: ReadOnlyCollectionWire[] = handMadeRows
+          .filter((r) => deriveMediaType(r.source as string, undefined) === input.mediaType)
+          .map((r) => ({
+            name: r.title,
+            itemCount: r.itemCount,
+            managedBy: 'hand_made' as const,
+            source: r.source as 'kavita' | 'audiobookshelf',
+          }));
         return {
           ...base,
           provider: 'libretto' as const,
@@ -307,6 +353,7 @@ export const collectionsRouter = router({
           recipes,
           issues: overview.issues.map(issueWire),
           collections: overview.collections.map(collectionWire),
+          readOnly,
           pendingPrs: [] as { number: number; title: string; url: string }[],
         };
       });
