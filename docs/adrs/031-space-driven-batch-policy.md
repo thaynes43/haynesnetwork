@@ -1,6 +1,9 @@
 # ADR-031: Space-driven batch policy (PROPOSE-only) + skip-gate graduation criteria
 
-- **Status:** Accepted
+- **Status:** Accepted — C-02 (admin gate) and C-03 (cooldown) superseded by
+  [ADR-073](073-autonomous-trash-cycle.md) (2026-07-18 owner ruling: the space policy now promotes its
+  own batches to Leaving Soon with no cooldown and no admin-review gate). C-01/C-04/C-06 stand; C-05
+  graduation criteria are now advisory.
 - **Date:** 2026-07-07
 - **Deciders:** Tom Haynes (owner) · authored AND ratified by Fable 5 (PLAN-014 build run, the owner's
   2026-07-07 rulings — conservative-first)

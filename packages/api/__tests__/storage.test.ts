@@ -60,7 +60,6 @@ describe('storage admin gate — every procedure is adminProcedure (v1)', () => 
       memberCaller.storage.policy.set({
         enabled: false,
         mode: 'over-target',
-        cooldownDays: 7,
         minCandidates: 1,
         perArray: {},
         perKind: {

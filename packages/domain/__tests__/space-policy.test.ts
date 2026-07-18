@@ -1,13 +1,15 @@
-// ADR-031 / DESIGN-014 (PLAN-014) — the SPACE-DRIVEN POLICY orchestrator (embedded PG16 + fetch-
-// stubbed *arr /diskspace + fetch-stubbed Maintainerr). Proves the propose-only evaluation MATRIX
-// (over/under target · disabled · per-array off · open-batch skip · cooldown · min-candidates · empty),
-// the trash_space_policy ledger event + space_policy notification writes, the skip-gate pass-through
-// (not special-cased), the settings audit, and the ledger-derived status read.
+// ADR-031 / DESIGN-014 (PLAN-014); ADR-073 (2026-07-18) — the SPACE-DRIVEN POLICY orchestrator (embedded
+// PG16 + fetch-stubbed *arr /diskspace + fetch-stubbed Maintainerr). Proves the AUTONOMOUS evaluation
+// MATRIX (over/under target · disabled · per-array off · open-batch skip · min-candidates · empty), the
+// auto-promote to leaving_soon (no admin-review gate, no cooldown), the SELF-HEAL of a stuck batch
+// (the prod stall), the trash_space_policy ledger event + space_policy notification writes, the settings
+// audit, and the ledger-derived status read.
 import { afterEach, beforeAll, beforeEach, afterAll, describe, expect, it } from 'vitest';
 import { eq, inArray } from 'drizzle-orm';
 import { ledgerEvents, notifications, permissionAudit, trashBatchItems, trashBatches } from '@hnet/db/schema';
 import {
   buildArrClientBundle,
+  createBatchFromPending,
   defaultPerKind,
   evaluateSpacePolicy,
   getSpacePolicy,
@@ -58,7 +60,6 @@ const underBundle = () => makeArrBundle({ radarr: TOWER_UNDER, sonarr: TOWER_UND
 const ENABLED: SpacePolicy = {
   enabled: true,
   mode: 'over-target',
-  cooldownDays: 7,
   minCandidates: 1,
   perArray: { haynestower: { enabled: true } },
   perKind: defaultPerKind(),
@@ -98,7 +99,7 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
 
   const setPolicy = (p: SpacePolicy) => setAppSetting({ db: t.db, key: 'space_policy', value: p, actorId });
 
-  it('over target + enabled + candidates → PROPOSES a movie batch (admin_review) + event + notification', async () => {
+  it('over target + enabled + candidates → PROPOSES AND PROMOTES a movie batch (leaving_soon) + event + notification', async () => {
     await setPolicy(ENABLED);
     const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
     const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: overBundle(), actorId });
@@ -113,16 +114,19 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
     const movie = tower.proposals.find((p) => p.mediaKind === 'movie')!;
     expect(movie.outcome).toBe('proposed');
     expect(movie.batchId).not.toBeNull();
-    expect(movie.gateSkipped).toBe(false);
+    // ADR-073 — the autonomous engine promotes its own batch straight to Leaving Soon (gate_skipped).
+    expect(movie.gateSkipped).toBe(true);
     expect(movie.candidateCount).toBe(3);
     // No TV rule collection ⇒ the TV kind proposes nothing (empty), NOT an error.
     expect(tower.proposals.find((p) => p.mediaKind === 'tv')!.outcome).toBe('skipped_empty');
     // CephFS (music) has no target and no batchable kinds — no proposals.
     expect(report.arrays.find((a) => a.key === 'cephfs')!.proposals).toEqual([]);
 
-    // The batch landed in admin_review (the human gate) — never leaving_soon.
+    // The batch went STRAIGHT to leaving_soon with the save window open (no admin-review gate, ADR-073).
     const [batch] = await t.db.select().from(trashBatches).where(eq(trashBatches.id, movie.batchId!));
-    expect(batch!.state).toBe('admin_review');
+    expect(batch!.state).toBe('leaving_soon');
+    expect(batch!.gateSkipped).toBe(true);
+    expect(batch!.expiresAt).not.toBeNull();
     expect(batch!.mediaKind).toBe('movie');
 
     // The WHY: a trash_space_policy ledger event carrying the array/usedPct/target/candidates.
@@ -211,7 +215,7 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
     expect(new Set(kinds.map((r) => r.k))).toEqual(new Set(['movie', 'tv']));
   });
 
-  it('UNDER target → no proposals (arrays reported, overTarget false)', async () => {
+  it('UNDER target (over-target mode) → nothing proposed (skipped_under_target), no batch created', async () => {
     await setPolicy(ENABLED);
     const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
     const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: underBundle(), actorId });
@@ -219,7 +223,9 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
     const tower = report.arrays.find((a) => a.key === 'haynestower')!;
     expect(tower.overTarget).toBe(false);
     expect(tower.usedPct).toBe(70);
-    expect(tower.proposals).toEqual([]);
+    // Opted in but under target ⇒ each kind reports skipped_under_target (no NEW batch), never []).
+    expect(tower.proposals.find((p) => p.mediaKind === 'movie')!.outcome).toBe('skipped_under_target');
+    expect(tower.proposals.find((p) => p.mediaKind === 'tv')!.outcome).toBe('skipped_under_target');
     expect(await t.db.select().from(trashBatches)).toHaveLength(0);
   });
 
@@ -256,71 +262,61 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
     expect(await t.db.select().from(trashBatches)).toHaveLength(1); // no second batch created
   });
 
-  it('cooldown → a closed prior proposal within N days blocks a re-propose', async () => {
+  it('SELF-HEAL (ADR-073) → a system batch stuck in admin_review is promoted to leaving_soon on the next run', async () => {
+    // Reproduces the prod stall (2026-07-18): a policy-created batch left sitting in admin_review because
+    // the old flow required a human green-light. The autonomous engine must converge it on the next tick.
     await setPolicy(ENABLED);
-    // A proposal 2 days ago whose batch has since been cancelled (closed, but within the 7d cooldown).
-    const [b] = await t.db
-      .insert(trashBatches)
-      .values({ mediaKind: 'movie', state: 'cancelled', createdBy: actorId })
-      .returning();
-    await t.db.insert(ledgerEvents).values({
-      mediaItemId: null,
-      eventType: 'trash_space_policy',
-      source: 'maintainerr',
-      occurredAt: new Date(Date.now() - 2 * 86_400_000),
-      payload: { batchId: b!.id, mediaKind: 'movie', array: 'haynestower', usedPct: 90, target: 80 },
-    });
     const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
-    const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: overBundle(), actorId });
-    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
-    expect(movie.outcome).toBe('skipped_cooldown');
-    expect(movie.cooldownUntil).not.toBeNull();
-    // No NEW movie batch (only the seeded cancelled one remains).
-    const open = await t.db.select().from(trashBatches).where(inArray(trashBatches.state, ['draft', 'admin_review', 'leaving_soon']));
-    expect(open).toHaveLength(0);
-  });
-
-  it('per-array override of the WRONG TYPE (string cooldownDays) fails SAFE to the default (cooldown still enforced)', async () => {
-    // A hand-edited jsonb row where the per-array cooldownDays is a string, not a number. Without the
-    // typeof guard in effectiveArrayPolicy the `??` pass-through would feed the string into the cooldown
-    // math → new Date(lastAt + NaN) → `now < NaN` is always false → the cooldown SILENTLY DISABLES and
-    // the policy re-proposes. The guard must instead fall back to the policy default (7d) → still blocked.
-    await setAppSetting({
+    // A SYSTEM batch (createdBy null via actorId:null) proposed by the OLD flow → admin_review, stuck.
+    const stuck = await createBatchFromPending({
       db: t.db,
-      key: 'space_policy',
-      value: {
-        enabled: true,
-        cooldownDays: 7,
-        minCandidates: 1,
-        perArray: { haynestower: { enabled: true, cooldownDays: 'soon' } },
-      } as unknown as SpacePolicy,
-      actorId,
+      maintainerr: bundle,
+      mediaKind: 'movie',
+      actorId: null,
     });
-    // A prior proposal 2 days ago (well within the 7d default) whose batch has since closed.
-    const [b] = await t.db
-      .insert(trashBatches)
-      .values({ mediaKind: 'movie', state: 'cancelled', createdBy: actorId })
-      .returning();
-    await t.db.insert(ledgerEvents).values({
-      mediaItemId: null,
-      eventType: 'trash_space_policy',
-      source: 'maintainerr',
-      occurredAt: new Date(Date.now() - 2 * 86_400_000),
-      payload: { batchId: b!.id, mediaKind: 'movie', array: 'haynestower', usedPct: 90, target: 80 },
-    });
-    const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
+    expect(stuck.state).toBe('admin_review');
+    expect(stuck.gateSkipped).toBe(false);
+
+    // Next run: no cooldown, no admin gate — the stuck batch self-heals to leaving_soon.
     const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: overBundle(), actorId });
     const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
-    // The default 7d was applied (a real date, not NaN) → still in cooldown → NO new batch proposed.
-    expect(movie.outcome).toBe('skipped_cooldown');
-    expect(movie.cooldownUntil).not.toBeNull();
-    expect(Number.isNaN(Date.parse(movie.cooldownUntil!))).toBe(false);
-    expect(report.proposedCount).toBe(0);
+    expect(movie.outcome).toBe('promoted');
+    expect(movie.batchId).toBe(stuck.batchId);
+    expect(report.proposedCount).toBe(1);
+
+    const [batch] = await t.db.select().from(trashBatches).where(eq(trashBatches.id, stuck.batchId));
+    expect(batch!.state).toBe('leaving_soon');
+    expect(batch!.gateSkipped).toBe(true);
+    expect(batch!.expiresAt).not.toBeNull();
+    // Idempotence: no duplicate batch was created — the one stuck batch is now the one open batch.
     const open = await t.db
       .select()
       .from(trashBatches)
       .where(inArray(trashBatches.state, ['draft', 'admin_review', 'leaving_soon']));
-    expect(open).toHaveLength(0);
+    expect(open).toHaveLength(1);
+  });
+
+  it('SELF-HEAL does NOT touch a MANUAL admin_review batch (createdBy set) — left for the admin', async () => {
+    await setPolicy(ENABLED);
+    // A human-created admin_review batch (createdBy = a real user) is the admin's to curate.
+    await t.db.insert(trashBatches).values({ mediaKind: 'movie', state: 'admin_review', createdBy: actorId });
+    const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
+    const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: overBundle(), actorId });
+    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    expect(movie.outcome).toBe('skipped_open_batch');
+    const [batch] = await t.db.select().from(trashBatches).where(eq(trashBatches.mediaKind, 'movie'));
+    expect(batch!.state).toBe('admin_review'); // untouched
+  });
+
+  it('a healthy open leaving_soon batch is left alone (skipped_open_batch, no duplicate)', async () => {
+    await setPolicy(ENABLED);
+    await t.db.insert(trashBatches).values({ mediaKind: 'movie', state: 'leaving_soon', createdBy: null });
+    const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
+    const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: overBundle(), actorId });
+    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    expect(movie.outcome).toBe('skipped_open_batch');
+    expect(report.proposedCount).toBe(0);
+    expect(await t.db.select().from(trashBatches)).toHaveLength(1);
   });
 
   it('min-candidates → too few pending is skipped', async () => {
@@ -369,26 +365,6 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
     expect(report.arrays.find((a) => a.key === 'haynestower')!.proposals).toEqual([]);
   });
 
-  it('continuous mode honors the cooldown (skips a kind within N days of its last proposal)', async () => {
-    await setPolicy(CONTINUOUS);
-    const [b] = await t.db
-      .insert(trashBatches)
-      .values({ mediaKind: 'movie', state: 'cancelled', createdBy: actorId })
-      .returning();
-    await t.db.insert(ledgerEvents).values({
-      mediaItemId: null,
-      eventType: 'trash_space_policy',
-      source: 'maintainerr',
-      occurredAt: new Date(Date.now() - 2 * 86_400_000), // 2d ago, inside the 7d cooldown
-      payload: { batchId: b!.id, mediaKind: 'movie' },
-    });
-    const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
-    const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: underBundle(), actorId });
-    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
-    expect(movie.outcome).toBe('skipped_cooldown');
-    expect(report.proposedCount).toBe(0);
-  });
-
   it('continuous mode skips when a batch is already open (idempotence)', async () => {
     await setPolicy(CONTINUOUS);
     await t.db.insert(trashBatches).values({ mediaKind: 'movie', state: 'admin_review', createdBy: actorId });
@@ -429,11 +405,13 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
     await setAppSetting({
       db: t.db,
       key: 'space_policy',
-      value: { enabled: true, cooldownDays: 3, minCandidates: 2, perArray: {} } as unknown as SpacePolicy,
+      value: { enabled: true, minCandidates: 2, perArray: {} } as unknown as SpacePolicy,
       actorId,
     });
     const p = await getSpacePolicy(t.db);
-    expect(p).toMatchObject({ enabled: true, mode: 'over-target', cooldownDays: 3, minCandidates: 2 });
+    expect(p).toMatchObject({ enabled: true, mode: 'over-target', minCandidates: 2 });
+    // A retired `cooldownDays` key on an old stored row is simply ignored (ADR-073).
+    expect('cooldownDays' in p).toBe(false);
     expect(p.perKind.movie.targetBytes.enabled).toBe(false);
     expect(p.perKind.tv.maxItems.enabled).toBe(false);
   });
@@ -470,7 +448,7 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
     expect(p2.perKind.movie.targetBytes.enabled).toBe(false); // legacy IGNORED once perKind is present
   });
 
-  it('getSpacePolicyStatus reflects a fresh proposal (last proposal + cooldown next-eligible)', async () => {
+  it('getSpacePolicyStatus reflects a fresh proposal (last proposal + open-batch slot)', async () => {
     await setPolicy(ENABLED);
     const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
     await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: overBundle(), actorId });
@@ -479,9 +457,7 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
     expect(status.lastProposalAt).not.toBeNull();
     const movieKind = status.kinds.find((k) => k.mediaKind === 'movie')!;
     expect(movieKind.lastProposal).not.toBeNull();
-    // A movie batch is now open (admin_review) — the status reflects the slot being held.
+    // A movie batch is now open (leaving_soon, auto-promoted) — the status reflects the slot being held.
     expect(movieKind.hasOpenBatch).toBe(true);
-    expect(movieKind.cooldownDays).toBe(7);
-    expect(movieKind.nextEligibleAt).not.toBeNull(); // within the 7d cooldown
   });
 });

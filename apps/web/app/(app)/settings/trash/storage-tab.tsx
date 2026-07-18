@@ -28,9 +28,7 @@ import {
   POLICY_ARRAY_KEY,
   POLICY_ARRAY_LABEL,
   arrayEnabled,
-  effectiveCooldownDays,
   graduationVerdict,
-  nextEligibleLabel,
   overTargetLabel,
   saveRateLabel,
   withArrayConfig,
@@ -299,13 +297,11 @@ function SpacePolicyCard() {
   const policy = trpc.storage.policy.get.useQuery();
   const status = trpc.storage.policy.status.useQuery();
   const utilization = trpc.storage.utilization.useQuery();
-  const [cooldownDraft, setCooldownDraft] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const save = trpc.storage.policy.set.useMutation({
     onSuccess: () => {
       setError(null);
-      setCooldownDraft(null);
       void utils.storage.policy.get.invalidate();
       void utils.storage.policy.status.invalidate();
     },
@@ -315,11 +311,6 @@ function SpacePolicyCard() {
   const p = policy.data;
   const enabled = p?.enabled === true;
   const arrOn = p ? arrayEnabled(p, POLICY_ARRAY_KEY) : false;
-  const cooldown = p ? effectiveCooldownDays(p, POLICY_ARRAY_KEY) : 7;
-  const cooldownValue = cooldownDraft ?? String(cooldown);
-  const parsedCooldown = Number(cooldownValue);
-  const cooldownValid =
-    Number.isInteger(parsedCooldown) && parsedCooldown >= 0 && parsedCooldown <= 365;
 
   const tower = utilization.data?.find((a) => a.key === POLICY_ARRAY_KEY) ?? null;
   const towerKinds = status.data?.kinds ?? [];
@@ -342,8 +333,9 @@ function SpacePolicyCard() {
     >
       <h2>Space policy</h2>
       <p className="muted">
-        When an array is over its space target, the policy PROPOSES a Leaving-Soon batch for admin
-        review — it never deletes on its own. The admin gate stays the human check.
+        When an array is over its space target, the policy posts a Leaving-Soon batch on its own — with
+        the save window open — so the cycle runs unattended. It never deletes on its own: only the
+        windowed sweep reclaims once the save window closes.
       </p>
       {error !== null ? (
         <p className="alert" role="alert">
@@ -424,31 +416,6 @@ function SpacePolicyCard() {
               Opt in
             </button>
           )}
-          <label className="space-policy__field">
-            <span className="muted">Cooldown</span>
-            <input
-              type="number"
-              min={0}
-              max={365}
-              value={cooldownValue}
-              data-testid="policy-cooldown"
-              aria-label={`${POLICY_ARRAY_LABEL} proposal cooldown in days`}
-              onChange={(e) => setCooldownDraft(e.target.value)}
-            />
-            <span className="muted">days</span>
-            <button
-              type="button"
-              className="btn sm"
-              data-testid="policy-cooldown-save"
-              disabled={save.isPending || !p || !cooldownValid || cooldownDraft === null}
-              onClick={() =>
-                p &&
-                save.mutate(withArrayConfig(p, POLICY_ARRAY_KEY, { cooldownDays: parsedCooldown }))
-              }
-            >
-              Save
-            </button>
-          </label>
         </div>
       </div>
 
@@ -469,8 +436,8 @@ function SpacePolicyCard() {
                   {k.hasOpenBatch
                     ? 'an open batch is holding the slot'
                     : k.lastProposal
-                      ? `last ${formatWhen(k.lastProposal.proposedAt)} · ${nextEligibleLabel(k.nextEligibleAt)}`
-                      : 'no proposal yet · eligible now'}
+                      ? `last ${formatWhen(k.lastProposal.proposedAt)}`
+                      : 'no proposal yet'}
                 </li>
               ))}
             </ul>

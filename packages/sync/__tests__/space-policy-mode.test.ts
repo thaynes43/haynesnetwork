@@ -59,7 +59,6 @@ describe('runSync — space-policy mode (ADR-031)', () => {
       value: {
         enabled: true,
         mode: 'over-target',
-        cooldownDays: 7,
         minCandidates: 1,
         perArray: { haynestower: { enabled: true } },
         perKind: defaultPerKind(),

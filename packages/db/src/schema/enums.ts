@@ -648,13 +648,15 @@ export const APP_SETTING_KEYS = [
   // Q-03 split: 013 stores + displays, 014 enforces). Reuses the generic audited store; the
   // app_settings.key CHECK is relaxed to admit this value in migration 0021.
   'space_targets',
-  // ADR-031 / DESIGN-014 (PLAN-014 space-driven policy) — the space-policy CONFIG (jsonb object:
-  // { enabled, mode, cooldownDays, minCandidates, perArray: { <arrayKey>: { enabled, cooldownDays?,
-  // minCandidates? } }, perKind: { movie|tv: { maxItems:{enabled,value}, targetBytes:{enabled,value} } } }).
+  // ADR-031 / DESIGN-014 (PLAN-014 space-driven policy); ADR-073 (2026-07-18) — the space-policy CONFIG
+  // (jsonb object: { enabled, mode, minCandidates, perArray: { <arrayKey>: { enabled, minCandidates? } },
+  // perKind: { movie|tv: { maxItems:{enabled,value}, targetBytes:{enabled,value} } } }).
   // DEFAULT OFF (enabled:false), mode 'over-target', no per-kind caps. When on, the space-policy sync mode
-  // proposes (never deletes) a draft batch: over-target mode fires only over the space_targets ceiling;
-  // continuous mode fires on candidates+cooldown alone (DESIGN-014 amendment 2026-07-09, build A).
-  // getSpacePolicy migrates the retired flat `targetBytesPerBatch` key into per-kind targetBytes caps.
+  // proposes AND PROMOTES a batch straight to leaving_soon (ADR-073 — autonomous, no cooldown, no admin
+  // gate; still never deletes, only the sweep reclaims): over-target mode fires only over the
+  // space_targets ceiling; continuous mode fires on candidates alone (DESIGN-014 amendment 2026-07-09).
+  // A retired `cooldownDays` key on old stored rows is ignored (ADR-073). getSpacePolicy migrates the
+  // retired flat `targetBytesPerBatch` key into per-kind targetBytes caps.
   // Admin-gated + audited through the same setAppSetting single-writer; migration 0022 relaxed the CHECK.
   'space_policy',
   // ADR-034 / DESIGN-015 (PLAN-016 Pushover batch notifications) — the DELIVERY WINDOW (jsonb object:

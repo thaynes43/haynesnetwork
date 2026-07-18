@@ -1,20 +1,25 @@
 # DESIGN-014: Space-driven batch policy (propose-only) + rules-tuning report
 
-- **Status:** Accepted
-- **Last updated:** 2026-07-07
-- **Author:** Fable 5 (autonomous run, PLAN-014)
-- **Implements:** [ADR-031](../adrs/031-space-driven-batch-policy.md). Consumes ADR-030 / DESIGN-013
+- **Status:** Accepted — **amended 2026-07-18 by [ADR-073](../adrs/073-autonomous-trash-cycle.md)**: the
+  space policy now PROPOSES **AND PROMOTES** its batches straight to Leaving Soon (autonomous cycle, no
+  admin-review gate, no cooldown). The cooldown knob (`cooldownDays`) is retired everywhere. See the
+  **D-14** amendment below; the original D-01..D-09 text describes the pre-073 propose-only behavior.
+- **Last updated:** 2026-07-18
+- **Author:** Fable 5 (autonomous run, PLAN-014); D-14 amendment by an Opus autonomous run
+- **Implements:** [ADR-031](../adrs/031-space-driven-batch-policy.md),
+  [ADR-073](../adrs/073-autonomous-trash-cycle.md). Consumes ADR-030 / DESIGN-013
   (`getUtilization`, `space_targets`, `STORAGE_ARRAYS`) and ADR-025 / DESIGN-011 (`createBatchFromPending`,
-  the audited skip-gate, `trash_batch_items`/`trash_batch_saves`, the sync-mode orchestrator pattern).
+  `promoteToLeavingSoon`, `trash_batch_items`/`trash_batch_saves`, the sync-mode orchestrator pattern).
   Governs PRD **R-112..R-114**; glossary **T-98..T-99**. Migration **0022**.
 
 ## Overview
 
 Two additive, read-mostly surfaces closing the PLAN-013 loop:
 
-1. **A propose-only space policy** — a scheduled, opt-in, DEFAULT-OFF `space-policy` sync mode that reads
-   utilization and, for an over-target array, PROPOSES a draft batch (`createBatchFromPending`) an admin
-   still reviews. It never greenlights, never sweeps (ADR-031 C-01/C-02).
+1. **A space policy** — a scheduled, opt-in, DEFAULT-OFF `space-policy` sync mode that reads utilization
+   and, for an over-target array, PROPOSES a batch (`createBatchFromPending`). Since **ADR-073** it also
+   **promotes** that batch straight to Leaving Soon (the save window opens immediately, no admin-review
+   gate, no cooldown — D-14). It still never sweeps: only the windowed sweep reclaims (ADR-031 C-01).
 2. **A rules-tuning report** (`trash.tuning`) — per-resolution / per-rating-band / per-collection
    rescue-vs-delete stats + skip-gate graduation readiness. Read-only; the owner tunes Maintainerr rules
    by hand (ADR-031 C-06).
@@ -288,3 +293,40 @@ kind)` resolves it fail-safe to the owner default `worst-rated` when unset/garba
 now reads that resolver instead of the hard-coded `'worst-rated'` — **behaviour-preserving** (an unset
 strategy still yields `worst-rated`), but the policy pick and the wall order now share one configurable
 source. `getSpacePolicy`/`resolvePerKind` preserve a valid stored per-kind strategy (jsonb; no migration).
+
+## D-14 — Amendment 2026-07-18 (ADR-073) — the AUTONOMOUS cycle: promote-on-propose, no cooldown, self-heal
+
+Owner ruling (2026-07-18): the Trash cycle must run **unattended for eternity** — reclaim → the next
+batch promotes immediately (no cooldown, no admin-review gate before it goes up) → 7-day save window →
+reclaim → …. The prod symptom (2026-07-18): a swept batch left the next policy batch stuck in
+`admin_review` forever (nobody green-lit it), so the save window never opened. This amendment supersedes
+the propose-only parts of D-01..D-03 and D-07/D-09c.
+
+- **Promote-on-propose (supersedes D-02 step 4).** `createBatchFromPending` gains an `autoPromote` flag;
+  the `space-policy` mode always passes it. A proposed batch is driven straight `draft → leaving_soon`
+  (`promoteToLeavingSoon`, the same path the skip-gate used) with `gate_skipped=true` + system
+  attribution (`created_by`/`greenlit_by` null), REGARDLESS of the global `trash_skip_admin_gate`. Still
+  never sweeps; only the windowed sweep deletes. The `batch_created` + `batch_leaving_soon`(+reminder /
+  final-warning) outbox pushes both fire same-tx as before.
+- **No cooldown (supersedes D-01 `cooldownDays`, D-02 step "cooldown?", D-03 `nextEligibleAt`).**
+  `cooldownDays` is removed from `SpacePolicyArrayConfig`, `SpacePolicy`, the defaults, `effectiveArrayPolicy`,
+  the API `SpacePolicyInput`, both admin cards, `lib/space-policy` (`effectiveCooldownDays`/`nextEligibleLabel`),
+  and `SpacePolicyKindStatus` (`cooldownDays`/`nextEligibleAt`). Pacing is one-open-per-kind + the save
+  window alone. A stale `cooldownDays` key on an old stored jsonb row is ignored on read — **no migration**.
+- **Self-heal (new — idempotent convergence).** Each run, for each opted-in array's kinds, a SYSTEM batch
+  (`created_by IS NULL`) a prior run left stuck in `draft`/`admin_review` is promoted to `leaving_soon`
+  (`promoteOpenPolicyBatch`) — independent of the over/under-target gate, so a mid-cycle death (or a batch
+  from before this change) always converges on the next tick. A healthy `leaving_soon` batch is left alone
+  (its window is running); a MANUAL batch (`created_by` set) is never auto-promoted. New outcomes:
+  `promoted` (self-healed) and `skipped_under_target` (over-target mode, under target); `skipped_cooldown`
+  and the `cooldownUntil` field are gone.
+- **UI (supersedes D-07/D-09c).** The "Cooldown" editor is removed from BOTH the General "Batch policy"
+  card and the Storage "Space policy" card; the copy no longer says "for admin review — the admin gate
+  stays the human check" (it now posts to Leaving Soon on its own). The continuous-mode label drops
+  "+ cooldown". `minCandidates` + `mode` + per-kind caps remain.
+- **Graduation (D-05 / ADR-031 C-05) is now advisory.** The autonomous engine no longer depends on
+  `trash_skip_admin_gate`; the readiness block is informational for MANUAL green-lighting only.
+
+Tests: `packages/domain/__tests__/space-policy.test.ts` proves auto-promote to `leaving_soon`, the
+**self-heal of a stuck `admin_review` system batch** (the reproduced prod stall → `promoted`), that a
+MANUAL admin_review batch is left untouched, and that a healthy `leaving_soon` batch is not duplicated.

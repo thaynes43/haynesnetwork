@@ -4,7 +4,7 @@
 // to the GENERAL tab (owner-directed 2026-07-09: batch composition is PIPELINE behavior, not storage —
 // it belongs with the other pipeline knobs). The storage.policy.* router/procedures are UNCHANGED — only
 // the UI moved. It keeps its OWN single green Save (data-testid="settings-save"): a self-contained
-// section that commits mode / min candidates / cooldown / per-kind caps together (#134 pattern), a
+// section that commits mode / min candidates / per-kind caps together (#134 pattern), a
 // sibling of — not folded into — the General tab's consolidated Admin-gate/save-window/Notifications
 // form (which has its own separate single Save). Two save units, two cards.
 import { useState } from 'react';
@@ -16,13 +16,13 @@ import { BYTES_PER_GB } from '@/lib/trash-batches';
 const POLICY_MODES = ['over-target', 'continuous'] as const;
 const MODE_LABELS: Record<SpacePolicyMode, string> = {
   'over-target': 'Only over the disk target',
-  continuous: 'Continuous (candidates + cooldown)',
+  continuous: 'Continuous (whenever there are candidates)',
 };
 const MODE_HELP: Record<SpacePolicyMode, string> = {
   'over-target':
     'Propose a batch only when a media array is over its space target (set on the Storage tab). Under target, nothing is proposed.',
   continuous:
-    'Propose whenever there are at least the minimum candidates and the cooldown has elapsed — the disk target is NOT required. Utilization is still read for reporting.',
+    'Propose whenever there are at least the minimum candidates and no batch is open — the disk target is NOT required. Utilization is still read for reporting.',
 };
 
 interface KindCapsDraft {
@@ -32,7 +32,6 @@ interface KindCapsDraft {
 interface PolicyDraft {
   mode: SpacePolicyMode;
   minCandidates: string;
-  cooldownDays: string;
   perKind: Record<'movie' | 'tv', KindCapsDraft>;
 }
 
@@ -49,7 +48,6 @@ function toDraft(policy: SpacePolicy): PolicyDraft {
   return {
     mode: policy.mode,
     minCandidates: String(policy.minCandidates),
-    cooldownDays: String(policy.cooldownDays),
     perKind: { movie: kindToDraft(policy.perKind.movie), tv: kindToDraft(policy.perKind.tv) },
   };
 }
@@ -59,8 +57,6 @@ const intOrNaN = (s: string): number => (/^-?\d+$/.test(s.trim()) ? Number(s) : 
 function draftValid(d: PolicyDraft): boolean {
   const min = intOrNaN(d.minCandidates);
   if (!(min >= 0 && min <= 100000)) return false;
-  const cd = intOrNaN(d.cooldownDays);
-  if (!(cd >= 0 && cd <= 365)) return false;
   for (const kind of ['movie', 'tv'] as const) {
     const k = d.perKind[kind];
     if (k.maxItems.enabled) {
@@ -97,7 +93,6 @@ function draftToPolicy(d: PolicyDraft, base: SpacePolicy): SpacePolicy {
     ...base,
     mode: d.mode,
     minCandidates: intOrNaN(d.minCandidates),
-    cooldownDays: intOrNaN(d.cooldownDays),
     perKind: {
       movie: kindFromDraft(d.perKind.movie, base.perKind.movie),
       tv: kindFromDraft(d.perKind.tv, base.perKind.tv),
@@ -225,8 +220,9 @@ export function BatchPolicyCard() {
 
       <div className="batch-policy" data-testid="batch-policy">
         <p className="muted">
-          How the automatic space policy proposes batches (it only ever proposes — the admin gate
-          stays the human check). These caps also pre-fill the manual “Start a batch” picker.
+          How the automatic space policy proposes batches. When it proposes, it posts the batch straight
+          to Leaving Soon with the save window — the cycle runs unattended; only the windowed sweep
+          deletes. These caps also pre-fill the manual “Start a batch” picker.
         </p>
 
         <div className="batch-settings__row">
@@ -274,29 +270,6 @@ export function BatchPolicyCard() {
               onChange={(e) => patch({ minCandidates: e.target.value })}
             />
             <span className="muted">items</span>
-          </span>
-        </div>
-
-        <div className="batch-settings__row">
-          <div className="batch-settings__copy">
-            <strong>Cooldown</strong>
-            <p className="muted">
-              Don’t re-propose a kind within this many days of its last policy batch.
-            </p>
-          </div>
-          <span className="batch-settings__field">
-            <input
-              type="number"
-              className="batch-window-input"
-              min={0}
-              max={365}
-              value={form?.cooldownDays ?? ''}
-              disabled={!loaded}
-              data-testid="policy-cooldowndays"
-              aria-label="Proposal cooldown in days"
-              onChange={(e) => patch({ cooldownDays: e.target.value })}
-            />
-            <span className="muted">days</span>
           </span>
         </div>
 

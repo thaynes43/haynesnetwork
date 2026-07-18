@@ -64,8 +64,6 @@ export interface SpacePolicyArrayConfig {
   /** This array participates in the policy (default false — an array is opt-in even when the policy
    *  is globally enabled, so turning the policy on can't surprise-propose on an array you forgot). */
   enabled: boolean;
-  /** Override the top-level cooldown for this array (days). */
-  cooldownDays?: number;
   /** Override the top-level minimum candidate count for this array. */
   minCandidates?: number;
 }
@@ -104,19 +102,20 @@ export interface SpacePolicyKindCaps {
 export type SpacePolicyPerKind = Record<TrashMediaKind, SpacePolicyKindCaps>;
 
 /**
- * ADR-031 / DESIGN-014 (PLAN-014) — the space-driven-policy CONFIG. **Propose-only, DEFAULT OFF.**
- * When `enabled`, the hourly-ish `space-policy` sync mode proposes a draft batch (createBatchFromPending
- * — the normal admin_review path) per backing kind. It NEVER greenlights and NEVER deletes: the admin
- * gate stays the human check. `cooldownDays` blocks re-proposing for a kind within N days of its last
- * policy-created batch (anti-spam while a batch is mid-window); `minCandidates` skips a proposal when
- * too few items are pending to be worth a batch. Both have top-level defaults and optional per-array
- * overrides.
+ * ADR-031 / DESIGN-014 (PLAN-014); ADR-073 (2026-07-18) — the space-driven-policy CONFIG. **Autonomous,
+ * DEFAULT OFF.** When `enabled`, the hourly `space-policy` sync mode proposes AND promotes a batch (via
+ * createBatchFromPending with `autoPromote`) per backing kind, straight to Leaving Soon with the save
+ * window — the unattended machine completes the cycle itself (ADR-073 supersedes ADR-031's "never
+ * greenlights" + per-kind cooldown, per the 2026-07-18 owner ruling: reclaim → promote immediately, no
+ * artificial delay). It still never deletes on its own — only the windowed sweep reclaims. `minCandidates`
+ * skips a proposal when too few items are pending to be worth a batch (top-level default + optional
+ * per-array override). There is NO cooldown: one-open-per-kind plus the save window are the only pacing.
  *
  * DESIGN-014 amendment (2026-07-09, build A):
  * - `mode` — 'over-target' (default; propose only for a per-array-enabled array whose usedPct is over
  *   its `space_targets` ceiling) or 'continuous' (propose for a per-array-enabled kind whenever there
- *   are ≥ minCandidates candidates and the cooldown has elapsed with no open batch — the disk target is
- *   NOT required; utilization is still read for reporting).
+ *   are ≥ minCandidates candidates with no open batch — the disk target is NOT required; utilization is
+ *   still read for reporting).
  * - `perKind` — per-kind composition caps (maxItems / targetBytes, each enable-checkboxed and
  *   combinable). Applied in BOTH modes to the policy-proposed batch (worst-rated-first) and pre-fill the
  *   manual "Start a batch" picker.
@@ -125,8 +124,6 @@ export interface SpacePolicy {
   enabled: boolean;
   /** How proposals are triggered (default 'over-target'). */
   mode: SpacePolicyMode;
-  /** Don't re-propose a kind within this many days of its last policy-created batch (default 7). */
-  cooldownDays: number;
   /** Don't propose unless at least this many actionable items are pending (default 1). */
   minCandidates: number;
   /** Per-physical-array (STORAGE_ARRAYS key) opt-in + overrides. Absent/`enabled:false` ⇒ that array
@@ -320,7 +317,6 @@ export const APP_SETTING_DEFAULTS: AppSettingValueMap = {
   space_policy: {
     enabled: false,
     mode: 'over-target',
-    cooldownDays: 7,
     minCandidates: 1,
     perArray: {},
     perKind: defaultPerKind(),
@@ -350,21 +346,18 @@ export const APP_SETTING_DEFAULTS: AppSettingValueMap = {
 };
 
 /**
- * Resolve the effective cooldown/minCandidates for one array (its override, else the policy default).
- * The per-array overrides are typeof-guarded exactly like the top-level fields (getSpacePolicy) so a
- * hand-edited wrong-type jsonb value (e.g. a string `cooldownDays`) fails SAFE to the policy default —
- * never passing through to yield `now < NaN` (a NaN comparison is always false, which would silently
- * DISABLE the cooldown). `enabled` is already strict (`=== true`), so a non-boolean reads as opted-out.
+ * Resolve the effective minCandidates for one array (its override, else the policy default). The
+ * per-array override is typeof-guarded (getSpacePolicy discipline) so a hand-edited wrong-type jsonb
+ * value fails SAFE to the policy default. `enabled` is already strict (`=== true`), so a non-boolean
+ * reads as opted-out.
  */
 export function effectiveArrayPolicy(
   policy: SpacePolicy,
   arrayKey: string,
-): { enabled: boolean; cooldownDays: number; minCandidates: number } {
+): { enabled: boolean; minCandidates: number } {
   const perArray = policy.perArray?.[arrayKey];
   return {
     enabled: perArray?.enabled === true,
-    cooldownDays:
-      typeof perArray?.cooldownDays === 'number' ? perArray.cooldownDays : policy.cooldownDays,
     minCandidates:
       typeof perArray?.minCandidates === 'number' ? perArray.minCandidates : policy.minCandidates,
   };

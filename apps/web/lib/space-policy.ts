@@ -36,11 +36,6 @@ export function withEnabled(policy: SpacePolicy, enabled: boolean): SpacePolicy 
   return { ...policy, enabled };
 }
 
-/** The effective cooldown for an array (its override, else the policy default). */
-export function effectiveCooldownDays(policy: SpacePolicy, key: string): number {
-  return policy.perArray[key]?.cooldownDays ?? policy.cooldownDays;
-}
-
 /** Whether the array is opted in (its per-array enabled flag). */
 export function arrayEnabled(policy: SpacePolicy, key: string): boolean {
   return policy.perArray[key]?.enabled === true;
@@ -52,15 +47,6 @@ export function overTargetLabel(usedPct: number | null, target: number | null): 
   if (target === null) return `${usedPct}% used · no target set`;
   const verdict = usedPct > target ? 'over target' : 'under target';
   return `${usedPct}% used vs ${target}% target — ${verdict}`;
-}
-
-/** A relative "next eligible" label for a kind's cooldown. */
-export function nextEligibleLabel(nextEligibleAt: string | null, now: Date = new Date()): string {
-  if (nextEligibleAt === null) return 'eligible now';
-  const ms = Date.parse(nextEligibleAt) - now.getTime();
-  if (ms <= 0) return 'eligible now';
-  const days = Math.ceil(ms / 86_400_000);
-  return days <= 1 ? 'eligible in under a day' : `eligible in ${days} days`;
 }
 
 /** "18.2%" / "—" (null) — the rescue rate, one place. */
