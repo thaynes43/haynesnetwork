@@ -313,6 +313,17 @@ export interface MintPairingWantsInput {
   };
   /** Politeness pacer between attempts (the goodreads-sync 250ms default). */
   pacer?: (index: number) => Promise<void>;
+  /**
+   * DESIGN-039 D-18 — predicate: does LazyLibrarian ALREADY hold this llBookId (= GB volume id under
+   * `book_api=GoogleBooks`)? Derived from one getAllBookStatuses read per run. When it returns true,
+   * the push SKIPS `addBook` — LL already holds the volume, so re-adding only makes LL re-resolve it
+   * (and its author/series/pubdate) from Google Books for nothing — and issues ONLY queueBook +
+   * searchBook (neither touches GB). Absent ⇒ addBook always fires (the safe default: never skip a
+   * seat we cannot confirm). This is the lever that ends the all-day re-add amplification (the same
+   * ~23 already-seated wants were re-added every :32 run, each addBook fanning out to several GB
+   * calls) — see DESIGN-039 D-18.
+   */
+  llHasSeededBook?: (llBookId: string) => boolean;
 }
 
 export interface MintPairingWantsReport {
@@ -599,7 +610,10 @@ export async function mintPairingWants(
     }
     if (!input.ll || statusOfFormat(row, missing) !== 'requested') continue;
     try {
-      await input.ll.write.addBook(llBookId);
+      // DESIGN-039 D-18 — addBook ONLY seats a volume LL does not already hold. When LL already has
+      // it (the common case for a re-pushed want), skip addBook so LL makes ZERO Google Books calls
+      // this push; queueBook + searchBook (neither hits GB) still drive the acquisition retry.
+      if (!input.llHasSeededBook?.(llBookId)) await input.ll.write.addBook(llBookId);
       await input.ll.write.queueBook(llBookId, missing);
       await input.ll.write.searchBook(llBookId, missing);
       await markPairingWantPushed({
@@ -649,60 +663,74 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
   const log = input.logger ?? {};
 
   const pairs = await syncFormatPairs({ db: input.db, now });
-  const mint = await mintPairingWants({ ...input, now });
+
+  // DESIGN-039 D-18 — read LL's seated-book set ONCE per run (a single getAllBookStatuses — an LL DB
+  // read, never a Google Books call) and use it for BOTH: (a) the mint push's addBook gate below
+  // (skip re-adding a volume LL already holds — the fix for the all-day re-add GB amplification) and
+  // (b) the status reconcile. One read, two consumers. On an LL read failure the map stays null, so
+  // the addBook gate degrades to today's always-addBook behaviour and reconcile is skipped — the
+  // exact pre-D-18 semantics. A volume mint FIRST-seats this run is (correctly) absent from this
+  // pre-mint snapshot: it gets addBook'd now and reconciles on the next run (a benign one-run delay,
+  // since a just-pushed want has no status to reconcile yet).
+  let seated: Map<string, { ebookStatus: string | null; audioStatus: string | null }> | null = null;
+  if (input.ll) {
+    try {
+      seated = await input.ll.read.getAllBookStatuses();
+    } catch (error) {
+      log.error?.('format-pairing: LL getAllBooks failed — addBook gate + reconcile skipped this run', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  const seatedMap = seated;
+
+  const mint = await mintPairingWants({
+    ...input,
+    now,
+    llHasSeededBook: seatedMap ? (id) => seatedMap.get(id) != null : undefined,
+  });
 
   let reconciled = 0;
   let requeued = 0;
-  if (input.ll) {
+  if (input.ll && seatedMap) {
     const open = (await db.select().from(bookRequests).where(eq(bookRequests.origin, 'pairing'))).filter(
       (w) =>
         w.llBookId !== null &&
         w.pairingBooksItemId !== null &&
         (w.ebookStatus !== 'landed' || w.audioStatus !== 'landed'),
     );
-    if (open.length > 0) {
-      let statuses: Map<string, { ebookStatus: string | null; audioStatus: string | null }>;
+    for (const want of open) {
+      const status = seatedMap.get(want.llBookId!);
+      if (!status) continue;
+      const missing = want.ebookStatus === 'landed' ? ('audiobook' as const) : ('ebook' as const);
       try {
-        statuses = await input.ll.read.getAllBookStatuses();
-      } catch (error) {
-        statuses = new Map();
-        log.error?.('format-pairing: LL getAllBooks failed — reconcile skipped this run', {
-          error: error instanceof Error ? error.message : String(error),
+        await applyRequestReconcile({
+          db: input.db,
+          requestId: want.id,
+          ebookStatus: mapLlStatus(status.ebookStatus),
+          audioStatus: mapLlStatus(status.audioStatus),
+          now,
         });
-      }
-      for (const want of open) {
-        const status = statuses.get(want.llBookId!);
-        if (!status) continue;
-        const missing = want.ebookStatus === 'landed' ? ('audiobook' as const) : ('ebook' as const);
-        try {
-          await applyRequestReconcile({
+        reconciled += 1;
+        // The Skipped sweep, missing format only (the held format never re-queues — it is ours).
+        const raw = missing === 'ebook' ? status.ebookStatus : status.audioStatus;
+        if (raw?.trim().toLowerCase() === 'skipped') {
+          await pace(requeued + 1);
+          await input.ll.write.queueBook(want.llBookId!, missing);
+          await input.ll.write.searchBook(want.llBookId!, missing);
+          await markRequestFormatsRequeued({
             db: input.db,
             requestId: want.id,
-            ebookStatus: mapLlStatus(status.ebookStatus),
-            audioStatus: mapLlStatus(status.audioStatus),
+            formats: [missing],
             now,
           });
-          reconciled += 1;
-          // The Skipped sweep, missing format only (the held format never re-queues — it is ours).
-          const raw = missing === 'ebook' ? status.ebookStatus : status.audioStatus;
-          if (raw?.trim().toLowerCase() === 'skipped') {
-            await pace(requeued + 1);
-            await input.ll.write.queueBook(want.llBookId!, missing);
-            await input.ll.write.searchBook(want.llBookId!, missing);
-            await markRequestFormatsRequeued({
-              db: input.db,
-              requestId: want.id,
-              formats: [missing],
-              now,
-            });
-            requeued += 1;
-          }
-        } catch (error) {
-          log.error?.('format-pairing: LL reconcile failed', {
-            requestId: want.id,
-            error: error instanceof Error ? error.message : String(error),
-          });
+          requeued += 1;
         }
+      } catch (error) {
+        log.error?.('format-pairing: LL reconcile failed', {
+          requestId: want.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     }
   }
