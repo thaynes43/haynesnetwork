@@ -7060,6 +7060,28 @@ body:has(.gallery) {
   color: var(--color-text-muted);
   background: color-mix(in srgb, var(--color-text-muted) 8%, transparent);
 }
+/* PR4c — the granted-caller TOGGLE variant of the puck (a <button>). Same reserved width + recolor rules
+   as the read-only span (ADR-015 — enable/disable/pending only recolor, never reflow the row). */
+button.acq-puck {
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+button.acq-puck:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--color-warning) 45%, var(--color-border));
+}
+button.acq-puck:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+.find-missing-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
 .suggestion-row {
   display: flex;
   align-items: flex-start;

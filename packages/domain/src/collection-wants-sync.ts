@@ -18,8 +18,15 @@ import { LibrettoUnreachableError } from '@hnet/libretto';
 import { resolveDb } from './db-client';
 import { normTitle, syncCollectionWants, type CollectionWantMember } from './book-requests';
 
-/** The Libretto read surface this pass needs (stubbed in tests — a structural subset of LibrettoReadClient). */
-export type CollectionWantsLibretto = Pick<LibrettoReadClient, 'listMissingMembers' | 'resolve'>;
+/**
+ * The Libretto read surface this pass needs (stubbed in tests — a structural subset of LibrettoReadClient).
+ * `listRecipes` is carried so the SAME injected client also drives the PR4c cron force-search leg
+ * (forceSearchFindMissingCollections reads acquisitionEnabled off the recipe list).
+ */
+export type CollectionWantsLibretto = Pick<
+  LibrettoReadClient,
+  'listMissingMembers' | 'resolve' | 'listRecipes'
+>;
 
 export interface RunCollectionWantsSyncInput {
   db?: DbClient;

@@ -486,8 +486,15 @@ async function main(): Promise<number> {
   // write surface stays domain-only — the arr-write import guard). OPTIONAL for goodreads-sync: absent
   // LAZYLIBRARIAN_API_KEY ⇒ a degraded run that mirrors + mints requests but pushes nothing (logged).
   // ADR-065 — the `format-pairing` mode rides the SAME confined bundle for its missing-format pushes.
+  // ADR-072 / DESIGN-043 D-14 (PLAN-052 PR4c) — `books-collections-sync` ALSO builds the confined bundle so
+  // the cron FORCE-SEARCH leg can drive LazyLibrarian over find-missing collections' wants. Absent the key
+  // ⇒ the flag is set but the app pulls nothing (Libretto's own apply/cron still acquires) — a degraded run.
   let lazyLibrarian: LazyLibrarianClientBundle | undefined;
-  if (args.mode === 'goodreads-sync' || args.mode === 'format-pairing') {
+  if (
+    args.mode === 'goodreads-sync' ||
+    args.mode === 'format-pairing' ||
+    args.mode === 'books-collections-sync'
+  ) {
     try {
       lazyLibrarian = lazyLibrarianBundleFromEnv();
     } catch {

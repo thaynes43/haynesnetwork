@@ -5,8 +5,18 @@
 // The confined Libretto client is stubbed in ctx (ADR-010 — no live-API tests).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
-import { notificationOutbox, ticketEvents, tickets, type CollectionOverridePayload } from '@hnet/db';
-import type { LibrettoClientBundle } from '@hnet/domain';
+import {
+  notificationOutbox,
+  SEEDED_ROLE_IDS,
+  ticketEvents,
+  tickets,
+  type CollectionOverridePayload,
+} from '@hnet/db';
+import {
+  compileManagedFile,
+  setRoleCollectionActions,
+  type LibrettoClientBundle,
+} from '@hnet/domain';
 import { bootMigratedDb, caller, createUser, makeCtx, sessionUser, wireShape, type TestDb } from './helpers';
 import type { TRPCContext } from '../src/trpc';
 
@@ -371,5 +381,70 @@ describe('Kometa (Movies/TV) write path — router wiring (ADR-072 / DESIGN-042 
     expect(res.ok).toBe(true);
     expect((res as { provider: string }).provider).toBe('kometa');
     expect(hs.opened).toHaveLength(1);
+  });
+});
+
+// ADR-072 / DESIGN-043 D-14 / DESIGN-042 D-06 (PLAN-052 PR4c) — the per-collection find-missing knob is
+// GRANT-GATED (collectionActionProcedure('find_missing') — admin implies it). Proves the FORBIDDEN path a
+// forged flag hits, the granted Libretto direct-write path, and the admin Kometa human-merged-PR path.
+describe('setFindMissing — grant-gated acquisition knob (D-14)', () => {
+  /** Grant find_missing to the Default role (the FLIP, via the domain single-writer) so a member passes. */
+  async function setDefaultFindMissing(on: boolean) {
+    const actor = await createUser(t.db, { admin: true });
+    await setRoleCollectionActions({
+      db: t.db,
+      roleId: SEEDED_ROLE_IDS.default,
+      actions: on ? ['find_missing'] : [],
+      actorId: actor.id,
+    });
+  }
+
+  it('a non-admin WITHOUT the grant is FORBIDDEN (a forged flag never enables acquisition)', async () => {
+    await setDefaultFindMissing(false);
+    const member = await createUser(t.db);
+    const stub = stubLibretto();
+    const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stub.ctx };
+    await expect(
+      caller(ctx).collections.setFindMissing({ id: 'dune', mediaType: 'books', on: true }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(stub.recipes).toHaveLength(0);
+  });
+
+  it('a GRANTED non-admin turns find missing ON for a Libretto collection (direct re-PUT)', async () => {
+    await setDefaultFindMissing(true);
+    const member = await createUser(t.db);
+    const stub = stubLibretto();
+    const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stub.ctx };
+    // Seed the recipe so the re-PUT can find it (listRecipes returns the stub's recorded recipes).
+    await caller(ctx).collections.upsert(draftInput({ id: 'dune' }));
+    const res = await caller(ctx).collections.setFindMissing({ id: 'dune', mediaType: 'books', on: true });
+    expect(res).toMatchObject({ ok: true, provider: 'libretto', findMissing: true });
+    const last = stub.recipes[stub.recipes.length - 1]!;
+    expect((last.variables as { acquisitionEnabled: boolean }).acquisitionEnabled).toBe(true);
+    await setDefaultFindMissing(false);
+  });
+
+  it('an ADMIN enables find missing on a Kometa collection via a HUMAN-merged PR (never auto-merged)', async () => {
+    const admin = await createUser(t.db, { admin: true });
+    const managed = compileManagedFile({
+      mediaType: 'movies',
+      recipes: [
+        {
+          id: 'marvel',
+          name: 'Marvel',
+          mediaType: 'movies',
+          builderType: 'tmdb_movie',
+          builderRef: '1, 2, 3',
+          findMissing: false,
+        },
+      ],
+    });
+    const hs = stubHaynesops({ file: managed, checks: 'success' });
+    const ctx = { ...makeCtx(t.db, sessionUser(admin)), ...stubLibretto().ctx, ...hs.ctx };
+    const res = await caller(ctx).collections.setFindMissing({ id: 'marvel', mediaType: 'movies', on: true });
+    expect(res).toMatchObject({ ok: true, provider: 'kometa', findMissing: true, merged: false });
+    expect(hs.opened).toHaveLength(1);
+    expect(hs.merged).toHaveLength(0); // acquisition lever is human-merged (D-10)
+    expect((hs.opened[0]!.content as string)).toContain('radarr_add_missing: true');
   });
 });

@@ -349,19 +349,16 @@ function MediaSection({
                   </span>
                 </div>
                 <div className="collection-row__actions">
-                  {/* The find-missing puck reserves its slot; ON/OFF recolors, never reflows (ADR-015).
-                      Read-only in this step — the toggle wiring is a later step. */}
-                  <span
-                    className={`acq-puck ${findMissing ? 'acq-puck--on' : 'acq-puck--off'}`}
-                    data-testid="find-missing-puck"
-                    title={
-                      findMissing
-                        ? "Find missing on: pulls the collection's missing titles on each run"
-                        : 'Find missing off'
-                    }
-                  >
-                    {findMissing ? 'Find missing on' : 'Find missing off'}
-                  </span>
+                  {/* The find-missing puck reserves its slot; ON/OFF recolors, never reflows (ADR-015). A
+                      granted caller (or admin) sees it as a TOGGLE (Modal confirm on enable); everyone else
+                      sees the honest read-only state. */}
+                  <FindMissingPuck
+                    recipeId={recipe.id}
+                    mediaType={mediaType}
+                    findMissing={findMissing}
+                    canToggle={data.canFindMissing}
+                    onDone={invalidate}
+                  />
                   {/* Kometa has no per-recipe apply API — a collection is produced on the estate's
                       scheduled run (the pending state conveys it). Libretto applies on demand. */}
                   {isKometaMedia(mediaType) ? null : (
@@ -399,6 +396,126 @@ function MediaSection({
           invalidate();
         }}
       />
+    </>
+  );
+}
+
+/**
+ * DESIGN-043 D-14 (PLAN-052 PR4c) — the per-collection FIND-MISSING knob. Render-only for a caller without
+ * the grant (the honest state); a granted caller (or admin — the server folds admin into canFindMissing)
+ * gets a TOGGLE. Enabling opens an explanatory Modal confirm (the acquisition lever — owner tone, no
+ * em-dashes); disabling is a direct click (turning acquisition off is never the blast radius). The puck
+ * reserves the width of its widest label, so ON/OFF/pending only recolor, never reflow (ADR-015). For a
+ * Kometa collection, enabling opens a human-merged config PR, so the row's overview refetch then shows the
+ * honest "Awaiting merge" band while the puck reflects the requested state.
+ */
+function FindMissingPuck({
+  recipeId,
+  mediaType,
+  findMissing,
+  canToggle,
+  onDone,
+}: {
+  recipeId: string;
+  mediaType: CollectionMediaTypeName;
+  findMissing: boolean;
+  canToggle: boolean;
+  onDone: () => void;
+}) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const mutation = trpc.collections.setFindMissing.useMutation({
+    onError: (err: unknown) => setError(describeMutationError(err)),
+    onSuccess: () => {
+      setError(null);
+      setConfirmOpen(false);
+      onDone();
+    },
+  });
+
+  const label = findMissing ? 'Find missing on' : 'Find missing off';
+  const puckClass = `acq-puck ${findMissing ? 'acq-puck--on' : 'acq-puck--off'}`;
+
+  // No grant: the honest read-only puck (server re-checks regardless of what the client renders).
+  if (!canToggle) {
+    return (
+      <span
+        className={puckClass}
+        data-testid="find-missing-puck"
+        title={
+          findMissing
+            ? "Find missing on: the estate pulls this collection's missing titles on its next runs"
+            : 'Find missing off. Ask an admin for the find-missing grant to turn it on.'
+        }
+      >
+        {label}
+      </span>
+    );
+  }
+
+  const disable = () => mutation.mutate({ id: recipeId, mediaType, on: false });
+
+  return (
+    <>
+      <button
+        type="button"
+        className={puckClass}
+        data-testid="find-missing-puck"
+        aria-pressed={findMissing}
+        disabled={mutation.isPending}
+        title={
+          findMissing
+            ? 'Find missing is on. Click to turn it off.'
+            : "Turn on find missing: the estate pulls this collection's missing titles on its next runs."
+        }
+        onClick={() => (findMissing ? disable() : setConfirmOpen(true))}
+      >
+        {mutation.isPending ? 'Saving…' : label}
+      </button>
+      <Modal
+        open={confirmOpen}
+        title="Turn on find missing"
+        onClose={() => setConfirmOpen(false)}
+        banner={
+          error ? (
+            <p className="alert" role="alert">
+              {error}
+            </p>
+          ) : null
+        }
+      >
+        <div className="find-missing-confirm">
+          <p>
+            With find missing on, the estate pulls this collection&rsquo;s missing titles on its next
+            runs and keeps looking for them.
+          </p>
+          {isKometaMedia(mediaType) ? (
+            <p className="muted">
+              For this collection an admin merges the estate config first, so it starts on the next run
+              after that. The row shows the pending state until then.
+            </p>
+          ) : null}
+          <div className="form-actions">
+            <button
+              type="button"
+              className="btn primary"
+              data-testid="find-missing-confirm"
+              disabled={mutation.isPending}
+              onClick={() => mutation.mutate({ id: recipeId, mediaType, on: true })}
+            >
+              {mutation.isPending ? 'Turning on…' : 'Turn on find missing'}
+            </button>
+            <button
+              type="button"
+              className="btn"
+              disabled={mutation.isPending}
+              onClick={() => setConfirmOpen(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </Modal>
     </>
   );
 }

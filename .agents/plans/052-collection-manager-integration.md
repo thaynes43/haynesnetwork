@@ -72,9 +72,37 @@ depends on the shell + teardown.*
 - **Tests:** the compiler (pure); the auto-merge gate (each of the four conditions blocks auto-merge in
   isolation → human path); a red `--validate-file` never auto-merges; the mirror reconcile to `live`.
 
-### PR4c — find-missing grant + cron force-search wiring (uses 0069's `find_missing`)
+### PR4c — find-missing grant + cron force-search wiring (uses 0069's `find_missing`) — ✅ SHIPPED (2026-07-18)
 
 *Realizes ADR-072 + DESIGN-043 D-14 + DESIGN-042 D-06/D-14. The acquisition lever — lands last.*
+
+**As-built (branch `feat/find-missing-grants`; NO migration — the `find_missing` grant + the reused
+`upsert_collection`/`request_book_search` audit actions already exist from PR4a):**
+- **Grid:** `roles.setCollectionsActions` (+ `collectionsActions` on `roles.list`; admin implies) → the
+  existing `setRoleCollectionActions` single-writer (`update_collection_actions` audit same-tx). A
+  "Collections actions" FLIP grid at `/admin` roles (add + edit forms), Admin-only default. Forbidden path
+  tested (non-admin caller → FORBIDDEN).
+- **Knob:** `collections.setFindMissing({id, mediaType, on})` behind `collectionActionProcedure('find_missing')`.
+  Libretto (`setCollectionFindMissing`) re-PUTs the recipe with `variables.acquisitionEnabled` flipped (direct,
+  instant); Kometa (`setKometaFindMissing`) finds the recipe in the managed include, flips `findMissing`,
+  recompiles, and opens a HUMAN-merged PR (`evaluateKometaAutoMerge` withholds auto-merge for findMissing ON).
+  Both audit `upsert_collection` with a `find_missing` detail. The `/collections` puck became the granted
+  user's toggle — Modal confirm on ENABLE (owner tone, no em-dashes), direct click to disable;
+  recolor-never-reflow (the puck reserves the widest label). No-grant forged flag ⇒ FORBIDDEN (tested).
+- **Cron:** `forceSearchFindMissingCollections` (new `collection-force-search.ts`) runs in the
+  `books-collections-sync` mode AFTER the wants pass: reads the Libretto recipe list for acquisitionEnabled
+  ON, and for those collections drives the confined LazyLibrarian chain (addBook→queueBook→searchBook) over
+  the origin='collection' wants (from #394, resolved llBookId). Single-writer + `request_book_search` audit;
+  cooldown-idempotent (12h, env-tunable) + per-run cap (25, env-tunable); a Libretto/LL outage skips the pass.
+  `sync.ts` now builds the LazyLibrarian bundle for `books-collections-sync` too. **Movies/TV: nothing extra
+  — Kometa's own `_add_missing`/`_search` flags acquire on its scheduled runs (verified + documented).**
+- **Tests:** grant matrix incl. forbidden (api roles + collections); setFindMissing Libretto/Kometa/no-grant
+  (domain + api); the cron force-search pass (acquisition-ON-only, idempotent cooldown, unresolved skip,
+  unreachable degrade — `collection-force-search.test.ts`). Full typecheck/lint/lint:css/test/build green.
+- **Left for the drift-guard leg:** the find-missing puck-toggle is a collection-local control (the acq-puck
+  idiom), NOT a `<MediaAction>` — the unified media-action drift guard is a later leg and should decide
+  whether the puck registers there. Advisory e2e/gallery screenshot capture for the toggle state was not
+  extended (a parallel agent owns the wanted-detail/activity surfaces; boundary respected).
 
 - **The grant (the DESIGN-033 FLIP idiom):** `setRoleCollectionActions` single-writer (survives from
   ADR-070, audit same-tx); `collectionActionsForRole` / `collectionActionProcedure('find_missing')`;

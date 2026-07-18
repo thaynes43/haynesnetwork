@@ -38,10 +38,12 @@ import {
   syncBooks,
   syncBooksCollections,
   runCollectionWantsSync,
+  forceSearchFindMissingCollections,
   syncPlexMatches,
   syncPlexCollections,
   type CollectionWantsLibretto,
   type CollectionWantsSyncReport,
+  type ForceSearchCollectionsReport,
   type DrainPoolRefreshResult,
   type FormatPairingReport,
   type KapowarrClientBundle,
@@ -310,6 +312,10 @@ export interface SyncReport {
   /** DESIGN-038 D-13 — the `books-collections-sync` collection Wanted-tiles pass (null when no Libretto
    *  client was supplied, or another mode). A degraded/unreachable pass returns a report, not an error. */
   collectionWantsSync?: CollectionWantsSyncReport | null;
+  /** ADR-072 / DESIGN-043 D-14 (PLAN-052 PR4c) — the `books-collections-sync` cron FORCE-SEARCH pass over
+   *  find-missing (acquisition ON) collections' wants (null when no Libretto/LazyLibrarian client, or
+   *  another mode). A degraded/unreachable pass returns a report, not an error. */
+  collectionForceSearch?: ForceSearchCollectionsReport | null;
   /** ADR-065 — the `format-pairing` result (null for every other mode / when it errored). */
   formatPairing?: FormatPairingReport | null;
   /** The format-pairing run's error — sets totalFailure for the CLI exit. */
@@ -1185,6 +1191,7 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       (SyncBooksCollectionsReport & { stats: BooksCollectionsStats }) | null = null;
     let booksCollectionsSyncError: string | undefined;
     let collectionWantsSync: CollectionWantsSyncReport | null = null;
+    let collectionForceSearch: ForceSearchCollectionsReport | null = null;
     try {
       const snapshot = await fetchBooksCollectionsSnapshot({ books: options.books, logger });
       const report = await syncBooksCollections({
@@ -1221,6 +1228,26 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
             error: error instanceof Error ? error.message : String(error),
           });
         }
+        // ADR-072 / DESIGN-043 D-14 (PLAN-052 PR4c) — the cron FORCE-SEARCH leg: for every find-missing
+        // (acquisition ON) collection, drive LazyLibrarian over its freshly-minted origin='collection'
+        // wants (the app-side acquisition). Runs AFTER the wants pass (llBookIds fresh) and ONLY when a
+        // confined LazyLibrarian bundle was supplied — absent it, the flag is set but the app pulls nothing
+        // (Libretto's own apply/cron still acquires). Best-effort: a failure never fails the mirror run.
+        if (options.lazyLibrarian) {
+          try {
+            collectionForceSearch = await forceSearchFindMissingCollections({
+              db,
+              libretto: options.librettoRead,
+              ll: options.lazyLibrarian,
+              logger,
+              ...(options.now ? { now: options.now } : {}),
+            });
+          } catch (error) {
+            logger.error('collection-force-search pass failed', {
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
       }
       // A run that could scope NOTHING read nothing usable; a partially-scoped run is a degraded
       // success (upserts landed, the unread families' reconcile skipped — the stats carry it).
@@ -1241,6 +1268,7 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       fixesCompleted: null,
       booksCollectionsSync,
       collectionWantsSync,
+      collectionForceSearch,
       ...(booksCollectionsSyncError !== undefined ? { booksCollectionsSyncError } : {}),
       totalFailure: booksCollectionsSyncError !== undefined,
     };

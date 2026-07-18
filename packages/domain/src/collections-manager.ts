@@ -24,6 +24,7 @@ import type {
 import { permissionAudit, type DbClient } from '@hnet/db';
 import { inTransaction } from './db-client';
 import { assertWithinCollectionSizeCap } from './collection-size-cap';
+import { NotFoundError } from './errors';
 import type { LibrettoClientBundle } from './libretto-clients';
 
 export interface CollectionsOverview {
@@ -187,6 +188,69 @@ export async function materializeCollection(input: {
     variables: { ...(input.draft.variables ?? {}), acquisitionEnabled: false },
   };
   await input.libretto.write.upsertRecipe(draft);
+}
+
+/** Convert a read recipe back into a full PUT draft (preserve builder/name/variables/target/enabled). */
+function recipeToDraft(recipe: LibrettoRecipe): LibrettoRecipeDraft {
+  if (!recipe.builder?.type || !recipe.builder?.ref) {
+    // A recipe with no usable builder cannot be re-PUT (the write ACL requires builder.type + ref).
+    throw new NotFoundError(`Collection "${recipe.id}" has no builder to update`);
+  }
+  return {
+    id: recipe.id,
+    ...(recipe.name ? { name: recipe.name } : {}),
+    builder: { type: recipe.builder.type, ref: recipe.builder.ref },
+    ...(recipe.targetLibrary !== undefined && recipe.targetLibrary !== null
+      ? { targetLibrary: recipe.targetLibrary }
+      : {}),
+    variables: {
+      // The read ACL types syncMode as a loose string; the write draft is the closed append|sync set.
+      ...(recipe.variables?.syncMode === 'append' || recipe.variables?.syncMode === 'sync'
+        ? { syncMode: recipe.variables.syncMode }
+        : {}),
+      ...(recipe.variables?.ordered !== undefined && recipe.variables?.ordered !== null
+        ? { ordered: recipe.variables.ordered }
+        : {}),
+      ...(recipe.variables?.tag ? { tag: recipe.variables.tag } : {}),
+      ...(recipe.variables?.schedule ? { schedule: recipe.variables.schedule } : {}),
+    },
+    ...(recipe.enabled !== undefined && recipe.enabled !== null ? { enabled: recipe.enabled } : {}),
+  };
+}
+
+/**
+ * DESIGN-043 D-14 (PLAN-052 PR4c) — the per-collection FIND-MISSING knob for Libretto (books/audiobooks).
+ * Flips the recipe's `variables.acquisitionEnabled` so Libretto force-searches the collection's missing
+ * members on its apply/cron runs (the app's own cron force-search leg also drives LazyLibrarian directly —
+ * collection-force-search.ts). Grant-gated at the API (`collectionActionProcedure('find_missing')`); this
+ * writer trusts the gate. Reads the CURRENT recipe (a full PUT preserves builder/variables), re-PUTs it with
+ * acquisition flipped through the confined @hnet/libretto writer, then co-writes an `upsert_collection` audit
+ * (with `find_missing` in the detail) in the SAME tx as the write's stamp (the crash-safe idempotent-PUT
+ * idiom — the external write lands first). Idempotent: re-enabling an already-on recipe re-PUTs cleanly.
+ */
+export async function setCollectionFindMissing(input: {
+  db?: DbClient;
+  libretto: LibrettoClientBundle;
+  actorId: string;
+  id: string;
+  on: boolean;
+}): Promise<{ id: string; findMissing: boolean }> {
+  const { recipes } = await input.libretto.read.listRecipes();
+  const existing = recipes.find((r) => r.id === input.id);
+  if (!existing) throw new NotFoundError(`Collection "${input.id}" not found`);
+  const draft: LibrettoRecipeDraft = {
+    ...recipeToDraft(existing),
+    variables: { ...(recipeToDraft(existing).variables ?? {}), acquisitionEnabled: input.on },
+  };
+  await input.libretto.write.upsertRecipe(draft);
+  await inTransaction(input.db, async (tx) => {
+    await tx.insert(permissionAudit).values({
+      actorId: input.actorId,
+      action: 'upsert_collection',
+      detail: upsertAuditDetail(draft, { find_missing: input.on }),
+    });
+  });
+  return { id: draft.id, findMissing: input.on };
 }
 
 /** Poll one run's state + counts (the last-50 caveat is surfaced honestly in the UI — DESIGN-037 D-03). */
