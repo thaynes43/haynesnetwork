@@ -6,6 +6,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
 import {
+  booksCollections,
   notificationOutbox,
   SEEDED_ROLE_IDS,
   ticketEvents,
@@ -120,6 +121,31 @@ describe('collections overview — everyone reads, no grant, no section floor (A
     expect(res.provider).toBe('kometa');
     expect(res.recipes).toEqual([]);
     expect(res.pendingPrs).toEqual([]);
+  });
+
+  it('mirror source is the media-type authority — an ABS-produced recipe lands on Audiobooks, not Books (D-09; the live dune-audiobooks miss)', async () => {
+    const member = await createUser(t.db);
+    const stub = stubLibretto();
+    // A recipe whose produced collection Libretto's own read does NOT surface (listCollections
+    // empty) — the targetKind heuristic alone would default it to Books. The mirror knows better.
+    stub.recipes.push({
+      id: 'dune-audiobooks',
+      name: 'Dune',
+      builder: { type: 'hardcover_series', ref: 'dune' },
+      enabled: true,
+    });
+    await t.db.insert(booksCollections).values({
+      source: 'audiobookshelf',
+      externalId: 'abs-dune-1',
+      kind: 'collection',
+      title: 'Dune',
+      librettoRecipeId: 'dune-audiobooks',
+    });
+    const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stub.ctx };
+    const audiobooks = await caller(ctx).collections.overview({ mediaType: 'audiobooks' });
+    expect(audiobooks.recipes.map((r) => r.id)).toContain('dune-audiobooks');
+    const books = await caller(ctx).collections.overview({ mediaType: 'books' });
+    expect(books.recipes.map((r) => r.id)).not.toContain('dune-audiobooks');
   });
 
   it('an ADMIN reads with capBypass + canFindMissing', async () => {

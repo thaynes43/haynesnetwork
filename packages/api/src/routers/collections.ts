@@ -7,7 +7,9 @@
 // Libretto calls go through the confined @hnet/libretto client via the @hnet/domain orchestrators — NEVER a
 // browser call. A Libretto outage degrades honestly (overview.reachable=false).
 import { z } from 'zod';
+import { isNotNull } from 'drizzle-orm';
 import {
+  booksCollections,
   COLLECTION_BUILDER_TYPES,
   COLLECTION_MEDIA_TYPES,
   COLLECTION_SYNC_MODES,
@@ -122,11 +124,20 @@ function toLibrettoDraft(input: RecipeDraftInput) {
 }
 
 /**
- * DESIGN-043 D-09 — derive a produced collection's media sub-section from its Libretto `targetKind`
- * (audiobookshelf/ABS → audiobooks; everything else → books). A recipe with no produced collection yet is a
- * Book by default (Kavita is the larger library). Honest best-effort — never fabricates a media type.
+ * DESIGN-043 D-09 — a produced collection's media sub-section. The MIRROR is the authority: the
+ * books-collections sync records which SERVER produced each Libretto recipe's collection
+ * (`books_collections.source` + `libretto_recipe_id`, the D-13 exact join), so `audiobookshelf` ⇒
+ * Audiobooks and `kavita` ⇒ Books with no guessing. The `targetKind` string heuristic remains only
+ * as the fallback for a recipe the mirror has not seen yet (owner-reported live miss 2026-07-18:
+ * `dune-audiobooks` landed on the Books tab — the heuristic alone is not enough). A recipe with no
+ * produced collection anywhere defaults to Books (Kavita is the larger library).
  */
-function deriveMediaType(targetKind: string | null | undefined): CollectionMediaType {
+function deriveMediaType(
+  mirrorSource: string | undefined,
+  targetKind: string | null | undefined,
+): CollectionMediaType {
+  if (mirrorSource === 'audiobookshelf') return 'audiobooks';
+  if (mirrorSource === 'kavita') return 'books';
   const k = (targetKind ?? '').toLowerCase();
   if (k.includes('abs') || k.includes('audio')) return 'audiobooks';
   return 'books';
@@ -271,10 +282,21 @@ export const collectionsRouter = router({
         const collectionByRecipe = new Map(
           overview.collections.filter((c) => c.recipeId).map((c) => [c.recipeId as string, c]),
         );
+        // The mirror's recipe → source map (the D-13 exact join) — the media-type authority.
+        const mirrorRows = await ctx.db
+          .select({
+            recipeId: booksCollections.librettoRecipeId,
+            source: booksCollections.source,
+          })
+          .from(booksCollections)
+          .where(isNotNull(booksCollections.librettoRecipeId));
+        const sourceByRecipe = new Map(
+          mirrorRows.map((m) => [m.recipeId as string, m.source as string]),
+        );
         const recipes = overview.recipes
           .map((r) => {
             const produced = collectionByRecipe.get(r.id);
-            return recipeWire(r, deriveMediaType(produced?.targetKind));
+            return recipeWire(r, deriveMediaType(sourceByRecipe.get(r.id), produced?.targetKind));
           })
           .filter((r) => r.mediaType === input.mediaType);
         return {
