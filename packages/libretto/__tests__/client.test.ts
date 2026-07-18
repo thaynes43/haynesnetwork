@@ -39,7 +39,10 @@ describe('LibrettoReadClient', () => {
         issues: [{ recipeId: 'broken', message: 'bad yaml' }],
       });
     });
-    const client = new LibrettoReadClient({ ...OPTS, fetchImpl: fetchImpl as unknown as typeof fetch });
+    const client = new LibrettoReadClient({
+      ...OPTS,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
     const res = await client.listRecipes();
     expect(res.recipes).toHaveLength(1);
     expect(res.recipes[0]!.id).toBe('dune');
@@ -48,9 +51,16 @@ describe('LibrettoReadClient', () => {
 
   it('reads a run with counts', async () => {
     const fetchImpl = vi.fn(async () =>
-      jsonResponse(200, { id: 'run-1', status: 'warn', counts: { matched: 3, missing: 2, matchedByTitle: 1 } }),
+      jsonResponse(200, {
+        id: 'run-1',
+        status: 'warn',
+        counts: { matched: 3, missing: 2, matchedByTitle: 1 },
+      }),
     );
-    const client = new LibrettoReadClient({ ...OPTS, fetchImpl: fetchImpl as unknown as typeof fetch });
+    const client = new LibrettoReadClient({
+      ...OPTS,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
     const run = await client.getRun('run-1');
     expect(run.status).toBe('warn');
     expect(run.counts?.matched).toBe(3);
@@ -58,10 +68,20 @@ describe('LibrettoReadClient', () => {
 
   it('validate returns the preview resolution', async () => {
     const fetchImpl = vi.fn(async () =>
-      jsonResponse(200, { ok: true, issues: [], resolved: { name: 'The Stormlight Archive', workCount: 5 } }),
+      jsonResponse(200, {
+        ok: true,
+        issues: [],
+        resolved: { name: 'The Stormlight Archive', workCount: 5 },
+      }),
     );
-    const client = new LibrettoReadClient({ ...OPTS, fetchImpl: fetchImpl as unknown as typeof fetch });
-    const res = await client.validateRecipe({ id: 'x', builder: { type: 'hardcover_series', ref: 'stormlight' } });
+    const client = new LibrettoReadClient({
+      ...OPTS,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    const res = await client.validateRecipe({
+      id: 'x',
+      builder: { type: 'hardcover_series', ref: 'stormlight' },
+    });
     expect(res.resolved?.workCount).toBe(5);
   });
 
@@ -69,7 +89,10 @@ describe('LibrettoReadClient', () => {
     const fetchImpl = vi.fn(async () => {
       throw new Error('ECONNREFUSED');
     });
-    const client = new LibrettoReadClient({ ...OPTS, fetchImpl: fetchImpl as unknown as typeof fetch });
+    const client = new LibrettoReadClient({
+      ...OPTS,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
     await expect(client.listRecipes()).rejects.toBeInstanceOf(LibrettoUnreachableError);
     try {
       await client.listRecipes();
@@ -80,8 +103,75 @@ describe('LibrettoReadClient', () => {
 
   it('maps a 500 to LibrettoUnreachableError (honest degrade)', async () => {
     const fetchImpl = vi.fn(async () => jsonResponse(500, { error: 'boom' }));
-    const client = new LibrettoReadClient({ ...OPTS, fetchImpl: fetchImpl as unknown as typeof fetch });
+    const client = new LibrettoReadClient({
+      ...OPTS,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
     await expect(client.listRecipes()).rejects.toBeInstanceOf(LibrettoUnreachableError);
+  });
+
+  it('lists missing member identities for a recipe (Wanted-tiles data)', async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      expect(url).toBe('http://libretto.test/api/collections/stormlight/missing');
+      return jsonResponse(200, {
+        recipeId: 'stormlight',
+        name: 'The Stormlight Archive',
+        total: 5,
+        heldCount: 3,
+        missingCount: 2,
+        missing: [
+          {
+            label: 'Wind and Truth (#5 in The Stormlight Archive)',
+            title: 'Wind and Truth',
+            authors: ['Brandon Sanderson'],
+            isbn: '9781250319890',
+            identifiers: ['isbn:9781250319890'],
+          },
+          {
+            label: 'Edgedancer',
+            title: 'Edgedancer',
+            authors: ['Brandon Sanderson'],
+            isbn: null,
+            identifiers: [],
+          },
+        ],
+      });
+    });
+    const client = new LibrettoReadClient({
+      ...OPTS,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    const res = await client.listMissingMembers('stormlight');
+    expect(res.heldCount).toBe(3);
+    expect(res.missingCount).toBe(2);
+    expect(res.missing).toHaveLength(2);
+    expect(res.missing?.[0]?.isbn).toBe('9781250319890');
+  });
+
+  it('resolves an ISBN to a Google-Books volume id via the broker', async () => {
+    const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(url).toBe('http://libretto.test/api/resolve');
+      expect(init?.method).toBe('POST');
+      return jsonResponse(200, {
+        resolved: { volumeId: 'VOL_WT', isbn13: '9781250319890', via: 'isbn' },
+      });
+    });
+    const client = new LibrettoReadClient({
+      ...OPTS,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    const resolved = await client.resolve({ isbn: '9781250319890', title: 'Wind and Truth' });
+    expect(resolved?.volumeId).toBe('VOL_WT');
+    expect(resolved?.via).toBe('isbn');
+  });
+
+  it('returns null on an honest no-match from the broker', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse(200, { resolved: null }));
+    const client = new LibrettoReadClient({
+      ...OPTS,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    expect(await client.resolve({ title: 'Nonexistent Work' })).toBeNull();
   });
 });
 
@@ -89,11 +179,22 @@ describe('LibrettoWriteClient', () => {
   it('upserts a recipe via idempotent PUT', async () => {
     const seen: Array<{ method?: string; url: string; body: unknown }> = [];
     const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
-      seen.push({ method: init?.method, url, body: init?.body ? JSON.parse(init.body as string) : undefined });
+      seen.push({
+        method: init?.method,
+        url,
+        body: init?.body ? JSON.parse(init.body as string) : undefined,
+      });
       return jsonResponse(200, { id: 'dune' });
     });
-    const client = new LibrettoWriteClient({ ...OPTS, fetchImpl: fetchImpl as unknown as typeof fetch });
-    await client.upsertRecipe({ id: 'dune', builder: { type: 'static_ids', ref: 'x' }, variables: { acquisitionEnabled: false } });
+    const client = new LibrettoWriteClient({
+      ...OPTS,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    await client.upsertRecipe({
+      id: 'dune',
+      builder: { type: 'static_ids', ref: 'x' },
+      variables: { acquisitionEnabled: false },
+    });
     expect(seen[0]!.method).toBe('PUT');
     expect(seen[0]!.url).toContain('/api/recipes/dune');
   });
@@ -102,7 +203,10 @@ describe('LibrettoWriteClient', () => {
     const fetchImpl = vi.fn(async () =>
       jsonResponse(400, { issues: [{ path: ['builder', 'ref'], message: 'unknown series' }] }),
     );
-    const client = new LibrettoWriteClient({ ...OPTS, fetchImpl: fetchImpl as unknown as typeof fetch });
+    const client = new LibrettoWriteClient({
+      ...OPTS,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
     try {
       await client.upsertRecipe({ id: 'x', builder: { type: 'hardcover_series', ref: 'bad' } });
       throw new Error('should have thrown');
@@ -118,14 +222,20 @@ describe('LibrettoWriteClient', () => {
       urls.push(url);
       return new Response(null, { status: 204 });
     });
-    const client = new LibrettoWriteClient({ ...OPTS, fetchImpl: fetchImpl as unknown as typeof fetch });
+    const client = new LibrettoWriteClient({
+      ...OPTS,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
     await client.deleteRecipe('dune', { deleteCollection: true });
     expect(urls[0]).toContain('deleteCollection=true');
   });
 
   it('apply returns the async runId', async () => {
     const fetchImpl = vi.fn(async () => jsonResponse(202, { runId: 'run-42' }));
-    const client = new LibrettoWriteClient({ ...OPTS, fetchImpl: fetchImpl as unknown as typeof fetch });
+    const client = new LibrettoWriteClient({
+      ...OPTS,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
     expect(await client.applyScope('dune')).toBe('run-42');
   });
 });

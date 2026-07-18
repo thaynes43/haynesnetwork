@@ -89,9 +89,7 @@ export const librettoRunSchema = z
 export type LibrettoRun = z.infer<typeof librettoRunSchema>;
 
 /** `POST /api/apply {scope}` → 202 `{ runId }`. */
-export const librettoApplyResponseSchema = z
-  .object({ runId: z.string() })
-  .passthrough();
+export const librettoApplyResponseSchema = z.object({ runId: z.string() }).passthrough();
 
 /** A produced collection (`GET /api/collections`). Read-back from the targets, tolerant. */
 export const librettoCollectionSchema = z
@@ -108,6 +106,60 @@ export type LibrettoCollection = z.infer<typeof librettoCollectionSchema>;
 export const librettoCollectionsResponseSchema = z
   .object({ collections: z.array(librettoCollectionSchema).nullish() })
   .passthrough();
+
+/**
+ * One MISSING member's identity (`GET /api/collections/:recipeId/missing`) — a book a recipe wants but the
+ * target library does not hold. Carries enough identity (title/author/ISBN/identifier refs) to mint one
+ * `book_requests` row per missing book. Tolerant (Libretto is young): the domain decides what it needs.
+ */
+export const librettoMissingMemberSchema = z
+  .object({
+    /** The builder's human handle ("Wind and Truth (#5 in The Stormlight Archive)"). */
+    label: z.string().nullish(),
+    title: z.string().nullish(),
+    authors: z.array(z.string()).nullish(),
+    /** Primary ISBN-13, when known (Kavita epubs are null by design). */
+    isbn: z.string().nullish(),
+    /** All normalized identifier refs ("isbn:<13>", "asin:<10>", opaque) — the acquisition "ll ref" set. */
+    identifiers: z.array(z.string()).nullish(),
+  })
+  .passthrough();
+export type LibrettoMissingMember = z.infer<typeof librettoMissingMemberSchema>;
+
+/** `GET /api/collections/:recipeId/missing` → the recipe's missing member identities + held/missing counts. */
+export const librettoMissingResponseSchema = z
+  .object({
+    recipeId: z.string().nullish(),
+    server: z.string().nullish(),
+    libraryId: z.string().nullish(),
+    name: z.string().nullish(),
+    total: z.number().nullish(),
+    heldCount: z.number().nullish(),
+    missingCount: z.number().nullish(),
+    missing: z.array(librettoMissingMemberSchema).nullish(),
+  })
+  .passthrough();
+export type LibrettoMissingResponse = z.infer<typeof librettoMissingResponseSchema>;
+
+/**
+ * `POST /api/resolve` → the ISBN-first resolve broker result (the M3 direction-a service). Resolves an
+ * ISBN|title+author to a Google-Books volume id (the LazyLibrarian addBook key). `resolved: null` is an
+ * HONEST no-match (a 200, not an error); the domain treats it as "un-resolvable this run".
+ */
+export const librettoResolveResponseSchema = z
+  .object({
+    resolved: z
+      .object({
+        volumeId: z.string(),
+        isbn13: z.string().nullish(),
+        via: z.string().nullish(),
+      })
+      .passthrough()
+      .nullable(),
+  })
+  .passthrough();
+export type LibrettoResolveResponse = z.infer<typeof librettoResolveResponseSchema>;
+export type LibrettoResolved = NonNullable<LibrettoResolveResponse['resolved']>;
 
 /**
  * `POST /api/validate` → the preview/validate result: `issues[]` plus an OPTIONAL resolution the composer

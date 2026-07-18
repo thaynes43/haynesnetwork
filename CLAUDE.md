@@ -47,7 +47,7 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    the old `*.haynesnetwork.com`-only restriction was retired by ADR-013. (Server-side code
    may talk to in-cluster services via `*.svc.cluster.local` — that's fine and unrelated to
    user-facing catalog links.)
-4. **The *arrs are the source of truth** for media lists. This app's ledger is a synced copy
+4. *_The *arrs are the source of truth*_ for media lists. This app's ledger is a synced copy
    plus attribution/audit — sync flows in from the *arrs; the only write-back is the explicit
    failsafe restore and fix actions.
 5. **Auth is Authentik OIDC only.** No email/password, no invite tokens. Admin role is
@@ -65,6 +65,16 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    exceptions are deliberate in-place expansions (e.g. the catalog inline editor) and
    drag-and-drop reordering. The two-step confirm reserves width for the widest (armed) label so
    the label swap can't shift the row; armed state deepens color, never layout.
+10. **Libretto (`thaynes43/libretto`, ns `media/libretto`) is a full-autonomy suite repo** —
+    build/PR/merge/deploy it directly, the same standing as haynesnetwork (owner ruling 2026-07-17;
+    it is no longer plan-only). It is **headless by design**: a Kometa-modeled recipe→collection
+    service with a REST API and NO UI of its own — **haynesnetwork houses 100% of the collection UX**
+    (catalog, manager, books Wanted-tiles). Never add UI to Libretto. It stays generic/reusable
+    (Kometa-for-books), so app-specific concerns live app-side: haynesnetwork talks to it only through
+    `@hnet/libretto` (read + the domain-confined write). Libretto is docs-first via its own README +
+    PR description; the normative design of record is `docs/designs/037-libretto-architecture.md`
+    (this repo). Libretto's own deploy (helmrelease image tag in `haynes-ops`
+    `kubernetes/main/apps/media/libretto/`) is driven independently of the haynesnetwork release train.
 
 ## Workflow
 
