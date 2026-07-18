@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.81.0](https://github.com/thaynes43/haynesnetwork/compare/v0.80.0...v0.81.0) (2026-07-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* space policy promotes its own batches — autonomous Trash cycle, no cooldown (ADR-073) ([#408](https://github.com/thaynes43/haynesnetwork/issues/408))
+
+### Bug Fixes
+
+* **collections:** full-width page + mirror-authoritative media-type split (owner live findings) ([#407](https://github.com/thaynes43/haynesnetwork/issues/407)) ([6f38261](https://github.com/thaynes43/haynesnetwork/commit/6f38261c17e4767dfdb4f81002bad45356216031))
+* **pairing:** reuse prior pairing-want llBookId to survive GB quota drain; document the real drain (LazyLibrarian) ([#406](https://github.com/thaynes43/haynesnetwork/issues/406)) ([72e2b99](https://github.com/thaynes43/haynesnetwork/commit/72e2b99f5af19ec601bd29de782d01e1fdd19902))
+* space policy promotes its own batches — autonomous Trash cycle, no cooldown (ADR-073) ([#408](https://github.com/thaynes43/haynesnetwork/issues/408)) ([d008de4](https://github.com/thaynes43/haynesnetwork/commit/d008de4e800a3b923aba55ca57bbc3931efd5e98))
+
+
+### Documentation
+
+* **agents:** overnight wrap — Collections saga complete, v0.77.0 → v0.80.0 ([#404](https://github.com/thaynes43/haynesnetwork/issues/404)) ([350991c](https://github.com/thaynes43/haynesnetwork/commit/350991c87473cd1b54abdee7cde8493f8a8c1e1d))
+
 ## [0.80.0](https://github.com/thaynes43/haynesnetwork/compare/v0.79.0...v0.80.0) (2026-07-18)
 
 
