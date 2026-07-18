@@ -90,6 +90,18 @@ describe('action-anatomy ESLint guard — violations (ADR-071 / DESIGN-004 D-24)
     }
   });
 
+  it('FAILS a raw "Run now" / "Run it?" collection button (owner ruling 2026-07-18 — the retired label)', () => {
+    // The /collections rows carried a hand-labeled "Run now" (armed "Run it?") ConfirmButton; it is retired
+    // for <MediaAction action="forceSearch">. A raw btn button wearing either label must now fail lint (R2).
+    for (const label of ['Run now', 'Run it?']) {
+      const hits = guardHits(`export const X = () => <button className="btn sm">${label}</button>;`);
+      expect(hits.length, label).toBeGreaterThan(0);
+      expect(hits[0]!.message, label).toBe(ACTION_ANATOMY_MESSAGES.R2);
+    }
+    // The sanctioned replacement — the registry Force Search — passes.
+    expect(guardHits(`export const X = () => <MediaAction action="forceSearch" size="sm" />;`)).toEqual([]);
+  });
+
   it('FAILS an unknown key passed to <MediaAction action="…">', () => {
     for (const code of [
       `export const X = () => <MediaAction action="fixx" />;`,
