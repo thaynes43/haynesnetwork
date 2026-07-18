@@ -56,8 +56,8 @@ by `fetchShelfTolerant` (`@hnet/sync goodreads.ts`) and the fresh-link fast path
   per-format statuses, `phase`, `searchable`, `requestId`.
 - `books.wanted({mediaKind})` — **`booksProcedure`-gated** (the wall's own section — Q-01, household):
   the composed Wanted tiles with per-viewer `canSearch`/`canOpenRequest` computed SERVER-side (ownership
-  + the `integrations` section — mirroring what `integrations.search` enforces). `integrations.search`
-  itself is UNCHANGED (ADR-056 C-04): ownership re-checked, dispatch by format, audited.
+  - the `integrations` section — mirroring what `integrations.search` enforces). `integrations.search`
+    itself is UNCHANGED (ADR-056 C-04): ownership re-checked, dispatch by format, audited.
 - `status`/`link`/`unlink`/`shelf`/`requests` stand as shipped (the fresh-link fast path gains the A3
   tolerance).
 
@@ -109,6 +109,18 @@ reflow.
 
 ### D-08 — Force-search (full TV/Movies parity)
 
+**Amendment 2026-07-18 (admin force-search override):** `canSearch` (the force-search affordance) was
+OWNER-scoped for a goodreads want — only the household member who shelved it saw the button, so an
+ADMIN (e.g. the owner) viewing another member's want got the read-only "available to the person who
+shelved this want" message and no button. Per owner directive, **an admin may force-search ANY user's
+want.** `canSearch` for a non-pairing want is now `(owns || viewer.isAdmin) && hasIntegrations &&
+isRequestSearchable` on both `books.wanted` (`toWantedWireItem`) and `books.wantedDetail`; the
+`integrations.search` MUTATION admits an admin past its ownership gate and records the audit as
+actor=the acting admin / subject=the request OWNER (`recordManualSearch` — a UI-gating change over an
+already-admin-capable domain path, not a new capability). `canOpenRequest` stays owner-scoped (the
+Goodreads deep link targets the owner's own sub-section). The pairing-want path is unchanged (it is
+books-gated, never owner-scoped).
+
 `RequestSearchButton` (shared by the items wall + the Library Wanted tiles): a plain `.btn.sm`
 "Search again" (non-destructive — NEVER ConfirmButton) → `integrations.search({requestId})` → the
 PLAN-015-style feedback in the RESERVED `.request-action` slot: pending "Searching…" → a pulsing
@@ -158,11 +170,11 @@ have no per-grab progress feed, a documented residual).
 
 ## Open questions
 
-| ID | Question | Resolution |
-|----|----------|------------|
-| Q-01 | Wanted-tile visibility while the integrations rollout is admin-only? | RULED: books-section gating (household), tiles clearly badged; flip is one gate if re-ruled. |
+| ID   | Question                                                                               | Resolution                                                                                                 |
+| ---- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Q-01 | Wanted-tile visibility while the integrations rollout is admin-only?                   | RULED: books-section gating (household), tiles clearly badged; flip is one gate if re-ruled.               |
 | Q-02 | Live per-grab feedback for a fired book search (the ledger's `searchProgress` analog)? | Deferred — LL/Kapowarr expose no per-grab progress feed; the fired-chip + next-reconcile is the honest v1. |
-| Q-03 | External-art proxy for unmatched wanted tiles (Goodreads CDN covers)? | Deferred polish (DESIGN-028's original call stands — designed tiles, never hotlinked art). |
+| Q-03 | External-art proxy for unmatched wanted tiles (Goodreads CDN covers)?                  | Deferred polish (DESIGN-028's original call stands — designed tiles, never hotlinked art).                 |
 
 ## Amendment — 2026-07-14 (owner-corrected card anatomy)
 
@@ -173,7 +185,7 @@ BESPOKE grammar — a warning-tinted "Wanted · N" STRIP above the book walls, t
 owner rejected it: the book/audiobook/comic walls no longer looked like the rest of the Library — a
 Library item must be **one cohesive poster block**, exactly like a Movies/TV card. This amendment
 CORRECTS the presentation (the data model, gating, sync, and force-search dispatch of ADR-055/056/057
-are unchanged); it supersedes the *visual* specifics of D-07, D-08, and D-09.
+are unchanged); it supersedes the _visual_ specifics of D-07, D-08, and D-09.
 
 - **One shared caption, by construction.** The Movies caption markup is extracted into
   `components/poster-card-body.tsx` (`PosterCardBody`: title (year) · optional author subtitle · a
@@ -203,12 +215,12 @@ are unchanged); it supersedes the *visual* specifics of D-07, D-08, and D-09.
 
 ## Amendment 2 — 2026-07-14 (the Wanted DETAIL page — completing the owner parity ruling)
 
-Amendment-1 (v0.50.1, PR #261) unified the *card anatomy* across the walls, but delivered the owner's
+Amendment-1 (v0.50.1, PR #261) unified the _card anatomy_ across the walls, but delivered the owner's
 Wanted-parity ruling only **partially**: the poster looked like a Movies/TV card, yet clicking it did NOT
 open a detail page, and force-search was a card-face **corner puck** rather than the Movies/TV
 poster→detail→Force-Search flow. The owner called this out ("I can't click on them to open the details page
 like you can on the Library tab… I also thought we were adding Force Search / Fix identical UX as the
-TV/Movies have"). This amendment builds the missing half — the DETAIL PAGE — and supersedes the *corner-puck*
+TV/Movies have"). This amendment builds the missing half — the DETAIL PAGE — and supersedes the _corner-puck_
 mechanism of amendment-1's D-07/D-08 (the data model, gating, sync, and dispatch of ADR-055/056/057 are
 unchanged). PLAN-047.
 
@@ -230,7 +242,7 @@ unchanged). PLAN-047.
   (`searching → fired / nothing / failed`) in place — ADR-015, no reflow.
 - **Force-Search dispatch is the existing surface.** The button calls `integrations.search`, extended with
   an optional `format` (`ebook`/`audiobook`) so a book leg fires ONE `LazyLibrarian.searchBook(bookId,
-  format)`; omitted ⇒ the whole request (the retired puck's behaviour, kept backward-compatible). A comic
+format)`; omitted ⇒ the whole request (the retired puck's behaviour, kept backward-compatible). A comic
   leg omits `format` — Kapowarr's `auto_search` covers the whole volume. Audited as before
   (`request_book_search`). Books expose no per-grab progress feed (Q-02 residual restated): the fired chip
   is the immediate confirmation and the per-format status badge is the downstream signal on the next
@@ -260,8 +272,8 @@ I'd also like to work in 'Hide Wanted' somehow to the selector." **Triage findin
 DELIBERATE composition order, not a null-sort-key artifact — amendment-1 ruled "Wanted items merge
 INLINE at the head of the flat book wall's item stream", and the client implemented that literally
 (concatenate `books.wanted` ahead of the `books.search` page); the overlay never participated in the
-active sort at all. This amendment supersedes amendment-1's *head-of-the-stream placement* and its
-*two-state `?wanted=1` toggle* (the card anatomy, gating, data model, and detail-page flow all
+active sort at all. This amendment supersedes amendment-1's _head-of-the-stream placement_ and its
+_two-state `?wanted=1` toggle_ (the card anatomy, gating, data model, and detail-page flow all
 stand). PLAN-056.
 
 - **Server-composed stream.** `books.search` gains a three-state `wanted` input
@@ -273,12 +285,12 @@ stand). PLAN-056.
   as before; the always-on `books.wanted` read remains only as the selector's populated-value gate
   and the wall-stage poll's enable signal.
 - **The wanted sort-key mapping** (`wantedPrimarySortValue` — a want answers what it honestly can):
-  *Title* → the request's title snapshot, normalized like an item's `sort_title` (trim+lowercase);
-  *Author* → the author snapshot (null ⇒ NULLS LAST, like any author-less item); *Added* → the
+  _Title_ → the request's title snapshot, normalized like an item's `sort_title` (trim+lowercase);
+  _Author_ → the author snapshot (null ⇒ NULLS LAST, like any author-less item); _Added_ → the
   request's `created_at` (when the app minted the want — the honest peer of an item's
   `COALESCE(source_added_at, first_seen_at)`; newly exposed on `WantedBookRequestView`);
-  *Year / Released / Length / Pages* → null (no edition metadata — the want sorts with the
-  null-valued items, NULLS LAST in either direction); *List order* → never composed (a want is not
+  _Year / Released / Length / Pages_ → null (no edition metadata — the want sorts with the
+  null-valued items, NULLS LAST in either direction); _List order_ → never composed (a want is not
   a collection member). Tiebreaks mirror the item ORDER BY (`sort_title` asc, id asc); the `added`
   sort gains the `sort_title` tiebreak on BOTH paths (same-instant batches are real — one sync
   transaction stamps many rows).
