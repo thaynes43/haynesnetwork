@@ -80,6 +80,51 @@ function formatForSource(source: string): 'ebook' | 'audiobook' {
 }
 
 /**
+ * Map a recipe's raw MISSING members to keyed, resolve-enriched want members — the shared body of the cron
+ * wants pass AND the on-demand collection Force Search (collection-force-search.ts). Each member is keyed by
+ * its stable ref (unkeyable/nameless members are skipped) and OPPORTUNISTICALLY resolved to a Google-Books
+ * volume id (the LL bookid) so the want becomes force-searchable; a null resolve keeps the tile visible, just
+ * not searchable (an honest gap). External resolve I/O only — no DB writes (the caller's single-writer commits).
+ */
+export async function resolveMissingMembers(
+  libretto: Pick<CollectionWantsLibretto, 'resolve'>,
+  missing: ReadonlyArray<{
+    isbn?: string | null;
+    identifiers?: string[] | null;
+    title?: string | null;
+    label?: string | null;
+    authors?: string[] | null;
+  }>,
+): Promise<{ members: CollectionWantMember[]; resolved: number }> {
+  const members: CollectionWantMember[] = [];
+  let resolved = 0;
+  for (const raw of missing) {
+    const ref = collectionMemberRef(raw);
+    if (!ref) continue; // unkeyable — cannot mint an idempotent want
+    const title = raw.title?.trim() || raw.label?.trim() || '';
+    if (!title) continue; // no display title — skip (a want with no name is not renderable)
+    const author = raw.authors?.[0]?.trim() || null;
+
+    // Opportunistic force-search resolution (best-effort — a null keeps the tile visible, not searchable).
+    let llBookId: string | null = null;
+    try {
+      const hit = await libretto.resolve({
+        ...(raw.isbn ? { isbn: raw.isbn } : {}),
+        title,
+        ...(author ? { author } : {}),
+      });
+      llBookId = hit?.volumeId ?? null;
+      if (llBookId) resolved += 1;
+    } catch {
+      llBookId = null; // resolve broker unavailable/no-match — the tile still renders
+    }
+
+    members.push({ memberRef: ref, title, author, llBookId });
+  }
+  return { members, resolved };
+}
+
+/**
  * Drive the collection Wanted-tiles mint/reconcile across every Libretto-managed mirror collection. See the
  * file header for the degradation contract. Never throws for a single collection's Libretto error (logged +
  * skipped); only a DB failure propagates.
@@ -137,30 +182,8 @@ export async function runCollectionWantsSync(
       continue;
     }
 
-    const members: CollectionWantMember[] = [];
-    for (const raw of missing.missing ?? []) {
-      const ref = collectionMemberRef(raw);
-      if (!ref) continue; // unkeyable — cannot mint an idempotent want
-      const title = raw.title?.trim() || raw.label?.trim() || '';
-      if (!title) continue; // no display title — skip (a want with no name is not renderable)
-      const author = raw.authors?.[0]?.trim() || null;
-
-      // Opportunistic force-search resolution (best-effort — a null keeps the tile visible, not searchable).
-      let llBookId: string | null = null;
-      try {
-        const resolved = await input.libretto.resolve({
-          ...(raw.isbn ? { isbn: raw.isbn } : {}),
-          title,
-          ...(author ? { author } : {}),
-        });
-        llBookId = resolved?.volumeId ?? null;
-        if (llBookId) report.resolved += 1;
-      } catch {
-        llBookId = null; // resolve broker unavailable/no-match — the tile still renders
-      }
-
-      members.push({ memberRef: ref, title, author, llBookId });
-    }
+    const { members, resolved } = await resolveMissingMembers(input.libretto, missing.missing ?? []);
+    report.resolved += resolved;
 
     const result = await syncCollectionWants({
       db: input.db,

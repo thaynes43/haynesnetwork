@@ -53,6 +53,12 @@ export const RETIRED_ACTION_LABELS = [
   'Force Search show',
   'Force Search artist',
   'Retry Import', // the mis-cased twin of the canonical "Retry import"
+  // Owner ruling 2026-07-18 — the /collections Books/Audiobooks rows carried a hand-labeled "Run now"
+  // (+ its "Run it?" armed twin) ConfirmButton that matched none of the estate's media-action nomenclature.
+  // It is retired for the registry-standard Force Search (<MediaAction action="forceSearch">); banning both
+  // strings keeps the off-vocabulary label from creeping back onto a row.
+  'Run now',
+  'Run it?',
 ];
 
 // Every MEDIA_ACTIONS registry key — the valid `<MediaAction action="…">` values. Locked to

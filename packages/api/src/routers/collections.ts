@@ -7,8 +7,10 @@
 // Libretto calls go through the confined @hnet/libretto client via the @hnet/domain orchestrators — NEVER a
 // browser call. A Libretto outage degrades honestly (overview.reachable=false).
 import { z } from 'zod';
-import { isNotNull, isNull } from 'drizzle-orm';
+import { TRPCError } from '@trpc/server';
+import { and, count, eq, isNotNull, isNull } from 'drizzle-orm';
 import {
+  bookRequests,
   booksCollections,
   COLLECTION_BUILDER_TYPES,
   COLLECTION_MEDIA_TYPES,
@@ -20,14 +22,15 @@ import {
   type TicketRow,
 } from '@hnet/db';
 import {
-  applyCollectionScope,
   approveCollectionOverride,
+  bookActionsForRole,
   createCollectionOverrideTicket,
   declineCollectionOverride,
   deleteCollectionRecipe,
   deleteKometaHandCollection,
   deleteKometaRecipe,
   editKometaHandCollection,
+  forceSearchCollectionNow,
   getAppSetting,
   getCollectionRun,
   getCollectionsOverview,
@@ -58,6 +61,7 @@ import type {
 import {
   mapDomainErrors,
   resolveHaynesopsBundle,
+  resolveLazyLibrarianBundle,
   resolveLibrettoBundle,
   router,
   authedProcedure,
@@ -149,7 +153,7 @@ function deriveMediaType(
 
 // Explicit wire shapes (the fixWire idiom) — the Libretto ACL uses zod passthrough, whose loose types do
 // not survive tRPC inference cleanly; the manager gets a stable, typed contract instead.
-function recipeWire(r: LibrettoRecipe, mediaType: CollectionMediaType) {
+function recipeWire(r: LibrettoRecipe, mediaType: CollectionMediaType, missingCount: number | null) {
   return {
     id: r.id,
     name: r.name ?? null,
@@ -160,6 +164,9 @@ function recipeWire(r: LibrettoRecipe, mediaType: CollectionMediaType) {
     findMissing: r.variables?.acquisitionEnabled ?? false,
     enabled: r.enabled ?? true,
     mediaType,
+    // The on-demand Force Search modal shows this: the collection's current missing-member (Wanted) count.
+    // Null for a collection with no mirror row yet (nothing to count).
+    missingCount,
     // Libretto writes are instant — a recipe has no async config→run→mirror gap, so no pending state.
     state: null as 'live' | 'pending_run' | null,
   };
@@ -177,6 +184,8 @@ function kometaRecipeWire(r: KometaRecipeView) {
     findMissing: r.findMissing,
     enabled: true,
     mediaType: r.mediaType as CollectionMediaType,
+    // Movies/TV have no app-side on-demand Force Search (Kometa's cron acquires) — so no missing count row.
+    missingCount: null as number | null,
     state: r.state,
   };
 }
@@ -284,12 +293,21 @@ export const collectionsRouter = router({
       return mapDomainErrors(async () => {
         const sizeCap = await getAppSetting(ctx.db, 'collection_size_cap');
         const actions = await resolveCollectionActions(ctx.db, ctx.user.role);
+        // The books Force Search grant (force_search_book) gates the on-demand collection Force Search — the
+        // SAME gate as the books detail. Ungranted ⇒ the client never renders the button; the mutation is
+        // FORBIDDEN server-side regardless. Admin implies it (no query).
+        const canForceSearch =
+          ctx.user.role.isAdmin ||
+          (await bookActionsForRole({ db: ctx.db, roleId: ctx.user.role.id })).includes(
+            'force_search_book',
+          );
         const base = {
           mediaType: input.mediaType,
           sizeCap,
           capBypass: ctx.user.role.isAdmin,
           isAdmin: ctx.user.role.isAdmin,
           canFindMissing: actions.includes('find_missing'),
+          canForceSearch,
         };
         if (isKometaMedia(input.mediaType)) {
           // Movies/TV — the Kometa write path (owner ruling 2026-07-18: EDIT the estate's collections, not
@@ -324,9 +342,11 @@ export const collectionsRouter = router({
         const collectionByRecipe = new Map(
           overview.collections.filter((c) => c.recipeId).map((c) => [c.recipeId as string, c]),
         );
-        // The mirror's recipe → source map (the D-13 exact join) — the media-type authority.
+        // The mirror's recipe → source + local-id map (the D-13 exact join) — the media-type authority and
+        // the key to a recipe's current missing-member (Wanted) count.
         const mirrorRows = await ctx.db
           .select({
+            id: booksCollections.id,
             recipeId: booksCollections.librettoRecipeId,
             source: booksCollections.source,
           })
@@ -335,10 +355,34 @@ export const collectionsRouter = router({
         const sourceByRecipe = new Map(
           mirrorRows.map((m) => [m.recipeId as string, m.source as string]),
         );
+        const collectionIdByRecipe = new Map(
+          mirrorRows.map((m) => [m.recipeId as string, m.id]),
+        );
+        // The per-collection MISSING (origin='collection', still-unheld) want counts — the number the
+        // on-demand Force Search modal shows. One grouped read, mapped back to each recipe via its mirror id.
+        const wantCountRows = await ctx.db
+          .select({ collectionId: bookRequests.collectionId, n: count() })
+          .from(bookRequests)
+          .where(
+            and(eq(bookRequests.origin, 'collection'), isNull(bookRequests.matchedBooksItemId)),
+          )
+          .groupBy(bookRequests.collectionId);
+        const missingByCollection = new Map(
+          wantCountRows.map((r) => [r.collectionId as string, Number(r.n)]),
+        );
+        const missingForRecipe = (recipeId: string): number | null => {
+          const cid = collectionIdByRecipe.get(recipeId);
+          if (!cid) return null;
+          return missingByCollection.get(cid) ?? 0;
+        };
         const recipes = overview.recipes
           .map((r) => {
             const produced = collectionByRecipe.get(r.id);
-            return recipeWire(r, deriveMediaType(sourceByRecipe.get(r.id), produced?.targetKind));
+            return recipeWire(
+              r,
+              deriveMediaType(sourceByRecipe.get(r.id), produced?.targetKind),
+              missingForRecipe(r.id),
+            );
           })
           .filter((r) => r.mediaType === input.mediaType);
         // The hand-made (no-recipe) mirror collections for THIS media type — read-only rows the app lists
@@ -533,13 +577,40 @@ export const collectionsRouter = router({
       });
     }),
 
-  /** Apply a scope (a recipe id or 'all') → the async run id to poll. */
-  applyRecipe: authedProcedure
-    .input(z.object({ scope: z.string().trim().min(1).max(80) }))
+  /**
+   * ADR-071 / DESIGN-043 D-02/D-07 amend (owner ruling 2026-07-18) — the ON-DEMAND collection FORCE SEARCH
+   * that replaces the retired "Run now" on the Books/Audiobooks rows. One honest whole action composed in
+   * order: (a) re-apply the recipe (fresh membership), (b) refresh the collection's missing-member wants (the
+   * #394 mint), (c) force-search those resolved missing members NOW through the confined LazyLibrarian chain —
+   * the SAME PR4c leg, run on demand (the 12h cooldown is bypassed; the per-call cap still bounds the fan-out).
+   * GRANT-GATED by the books Force Search grant (`force_search_book`, the same gate as the books detail — admin
+   * implies it); a forged call is FORBIDDEN server-side. Books/Audiobooks only — Movies/TV never expose this
+   * (Kometa's own cron does acquisition). Single-writer + audit inside the domain. Returns the apply run id (to
+   * poll counts) plus the mint/search tallies; `unreachable` when Libretto was down (nothing searched).
+   */
+  forceSearchCollection: authedProcedure
+    .input(z.object({ recipeId: z.string().trim().min(1).max(80) }))
     .mutation(async ({ ctx, input }) => {
+      const allowed =
+        ctx.user.role.isAdmin ||
+        (await bookActionsForRole({ db: ctx.db, roleId: ctx.user.role.id })).includes(
+          'force_search_book',
+        );
+      if (!allowed) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'You do not have permission to Force Search collections.',
+        });
+      }
       return mapDomainErrors(async () => {
-        const runId = await applyCollectionScope({ libretto: resolveLibrettoBundle(ctx), scope: input.scope });
-        return { runId };
+        const report = await forceSearchCollectionNow({
+          db: ctx.db,
+          libretto: resolveLibrettoBundle(ctx),
+          ll: resolveLazyLibrarianBundle(ctx),
+          recipeId: input.recipeId,
+          actorId: ctx.user.id,
+        });
+        return { ok: true as const, ...report };
       });
     }),
 

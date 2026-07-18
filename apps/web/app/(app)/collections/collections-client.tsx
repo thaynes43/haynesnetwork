@@ -12,7 +12,7 @@
 import { Suspense, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { ConfirmButton } from '@hnet/ui';
+import { ConfirmButton, MediaAction, PhaseChip, ReservedActionSlot } from '@hnet/ui';
 import { Modal } from '@/components/modal';
 import { trpc } from '@/lib/trpc-client';
 import { appCodeOf, describeMutationError } from '@/lib/app-error';
@@ -500,6 +500,7 @@ function MediaSection({
                       produced={collectionByRecipe.get(recipe.id)}
                       sizeCap={data.sizeCap}
                       canFindMissing={data.canFindMissing}
+                      canForceSearch={data.canForceSearch}
                       isAdmin={isAdmin}
                       mediaType={mediaType}
                       showSource
@@ -533,6 +534,7 @@ function MediaSection({
                         produced={collectionByRecipe.get(recipe.id)}
                         sizeCap={data.sizeCap}
                         canFindMissing={data.canFindMissing}
+                        canForceSearch={data.canForceSearch}
                         isAdmin={isAdmin}
                         mediaType={mediaType}
                         showSource={false}
@@ -609,6 +611,7 @@ function ManagedRecipeRow({
   produced,
   sizeCap,
   canFindMissing,
+  canForceSearch,
   isAdmin,
   mediaType,
   showSource,
@@ -621,11 +624,14 @@ function ManagedRecipeRow({
     builderType?: string | null;
     builderRef?: string | null;
     findMissing?: boolean | null;
+    missingCount?: number | null;
     state?: 'live' | 'pending_run' | null;
   };
   produced: { itemCount: number | null } | undefined;
   sizeCap: number;
   canFindMissing: boolean;
+  /** ADR-071 — the caller may fire the on-demand collection Force Search (books force_search_book grant). */
+  canForceSearch: boolean;
   isAdmin: boolean;
   mediaType: CollectionMediaTypeName;
   showSource: boolean;
@@ -671,7 +677,13 @@ function ManagedRecipeRow({
           canToggle={canFindMissing}
           onDone={onDone}
         />
-        {isKometaMedia(mediaType) ? null : <ApplyButton recipeId={recipe.id} onDone={onDone} />}
+        {isKometaMedia(mediaType) || !canForceSearch ? null : (
+          <CollectionForceSearchButton
+            recipeId={recipe.id}
+            missingCount={recipe.missingCount ?? null}
+            onDone={onDone}
+          />
+        )}
         <button type="button" className="btn sm" onClick={onEdit}>
           Edit
         </button>
@@ -892,11 +904,36 @@ function FindMissingPuck({
   );
 }
 
-function ApplyButton({ recipeId, onDone }: { recipeId: string; onDone: () => void }) {
+/**
+ * ADR-071 / DESIGN-043 D-02/D-07 amend (owner ruling 2026-07-18) — the on-demand collection FORCE SEARCH that
+ * replaces the retired "Run now" on the Books/Audiobooks rows. Renders the estate-standard outline
+ * <MediaAction action="forceSearch"> (the action-anatomy drift guard demands it); a collection-level search is
+ * a bulk explanatory confirm, so firing opens the shared Modal (hard rule 8) that states the missing count and
+ * what the whole action does. After firing, the reserved slot swaps the button for the honest in-place
+ * progressing chip (recolor, no reflow — ADR-015); the run-counts polling keeps informing the row's counts.
+ * Only mounted when the caller holds the books Force Search grant (server FORBIDDEN regardless).
+ */
+function CollectionForceSearchButton({
+  recipeId,
+  missingCount,
+  onDone,
+}: {
+  recipeId: string;
+  missingCount: number | null;
+  onDone: () => void;
+}) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [runId, setRunId] = useState<string | null>(null);
-  const apply = trpc.collections.applyRecipe.useMutation({
+  const [state, setState] = useState<'idle' | 'fired' | 'unreachable'>('idle');
+  const search = trpc.collections.forceSearchCollection.useMutation({
     onSuccess: (res) => {
-      setRunId(res.runId);
+      setConfirmOpen(false);
+      if (res.unreachable) {
+        setState('unreachable');
+      } else {
+        setState('fired');
+        if (res.runId) setRunId(res.runId);
+      }
       onDone();
     },
   });
@@ -908,22 +945,101 @@ function ApplyButton({ recipeId, onDone }: { recipeId: string; onDone: () => voi
     },
   );
   const counts = runQ.data?.counts;
+
+  let live = null;
+  if (search.isPending) {
+    live = <PhaseChip phase="searching" label="Searching…" tone="neutral" pulse meter />;
+  } else if (state === 'fired') {
+    live = (
+      <PhaseChip
+        phase="fired"
+        label="Search started"
+        tone="info"
+        pulse
+        meter
+        title="The recipe was re-applied and the missing books are being searched for now."
+      />
+    );
+  } else if (state === 'unreachable') {
+    live = (
+      <PhaseChip
+        phase="noop"
+        label="Service unreachable"
+        tone="warning"
+        title="The collections service was unreachable, so nothing was searched. Try again in a bit."
+      />
+    );
+  } else if (search.error) {
+    live = (
+      <PhaseChip
+        phase="failed"
+        label="Search failed"
+        tone="danger"
+        title={describeMutationError(search.error)}
+      />
+    );
+  }
+
+  const hasCount = missingCount != null && missingCount > 0;
   return (
     <span className="collection-row__apply">
-      <ConfirmButton
-        className="btn sm"
-        label="Run now"
-        confirmLabel="Run it?"
-        restingAriaLabel="Run this collection now — click twice to confirm"
-        confirmAriaLabel="Confirm running this collection now"
-        onConfirm={() => apply.mutate({ scope: recipeId })}
-      />
+      <ReservedActionSlot reserve="roll" live={live} testId="collection-force-search">
+        <MediaAction
+          action="forceSearch"
+          size="sm"
+          testId="collection-force-search-btn"
+          onFire={() => setConfirmOpen(true)}
+        />
+      </ReservedActionSlot>
       {counts ? (
         <span className="muted collection-row__runcounts" data-testid="collection-runcounts">
           {counts.matched ?? 0} matched · {counts.missing ?? 0} missing
           {counts.acquired ? ` · ${counts.acquired} pulled` : ''}
         </span>
       ) : null}
+      <Modal
+        open={confirmOpen}
+        title="Force Search this collection"
+        onClose={() => setConfirmOpen(false)}
+        banner={
+          search.error ? (
+            <p className="alert" role="alert">
+              {describeMutationError(search.error)}
+            </p>
+          ) : null
+        }
+      >
+        <div className="find-missing-confirm" data-testid="collection-force-search-modal">
+          <p>
+            {hasCount
+              ? `Search for the ${missingCount} missing book${missingCount === 1 ? '' : 's'} in this collection now.`
+              : 'Search for the missing books in this collection now.'}
+          </p>
+          <p className="muted">
+            This re-applies the recipe, refreshes the missing list, and searches for the missing titles
+            right away. Titles already on the shelf are left alone.
+          </p>
+          <div className="form-actions">
+            <button
+              type="button"
+              className="btn primary"
+              data-testid="collection-force-search-confirm"
+              disabled={search.isPending}
+              onClick={() => search.mutate({ recipeId })}
+            >
+              {search.isPending ? 'Searching…' : 'Search now'}
+            </button>
+            <button
+              type="button"
+              className="btn"
+              disabled={search.isPending}
+              onClick={() => setConfirmOpen(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </Modal>
     </span>
   );
 }
