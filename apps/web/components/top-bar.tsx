@@ -28,6 +28,17 @@
 // to `/` (the calm Home screen — the owner kept clicking the logo, so it navigates), and the
 // row's first entry is PORTAL (`/portal` — the launcher that took the catalog grid). The row
 // reads Portal · Library · Tickets · Trash; still four entries, still fits 320px.
+//
+// COLLECTIONS RELOCATION (2026-07-18, owner-ruled, coordinator-endorsed — DESIGN-043 D-01/D-09 amend):
+// v0.81.x briefly added a fifth top-row entry, Collections (ADR-072 PR4a) — a label too many for the
+// 320px no-scroll goal the D-22 restructure ratified (the scroll-fade papered over it). The entry
+// RETURNS to the user menu as "Collection settings" (a D-19 Link push to `/collections`, universal —
+// everyone adds/edits within the size cap), placed in the tooling group directly above Trash settings
+// (the settings cluster together). The row is back to the ratified FOUR — Portal · Library · Tickets ·
+// Trash — fitting 320px without the rail scrolling. The `/collections` PAGE stays first-class (ADR-072
+// is about the SURFACE, not the nav chrome — no supersede); the Library walls gain a contextual
+// "Edit collection" nav-out from a collection drill. The Library walls also reach the manager via that
+// drill nav-out, so no top-row entry is needed to find it.
 
 import Link from 'next/link';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
@@ -36,7 +47,6 @@ import { BrandMark } from '@/components/brand-mark';
 import { EmailUpdatesToggle } from '@/components/email-updates-toggle';
 import { initialFor } from '@/lib/initials';
 import { HELPDESK_NAME } from '@/lib/bulletin';
-import { COLLECTIONS_NAME } from '@/lib/collections';
 import { PORTAL_NAME } from '@/lib/portal';
 
 /** ADR-021 — the session-carried section levels (SessionRole.sectionPermissions) the nav
@@ -238,10 +248,10 @@ function UserMenu({ user }: { user: TopBarUser }) {
               Metrics
             </Link>
           ) : null}
-          {/* Tooling — role-gated destinations (subtle separator, D-16). */}
-          {showLedger || showTrashSettings || user.role.isAdmin ? (
-            <div className="usermenu__sep" role="separator" aria-hidden="true" />
-          ) : null}
+          {/* Tooling — role-gated destinations plus the UNIVERSAL "Collection settings" (subtle
+              separator, D-16). The separator now always renders: "Collection settings" is shown for
+              everyone, so the tooling group is never empty. */}
+          <div className="usermenu__sep" role="separator" aria-hidden="true" />
           {showLedger ? (
             <Link
               href="/ledger"
@@ -252,6 +262,19 @@ function UserMenu({ user }: { user: TopBarUser }) {
               Ledger
             </Link>
           ) : null}
+          {/* COLLECTIONS RELOCATION (2026-07-18, owner-ruled — DESIGN-043 D-01/D-09 amend): the
+              Collections top-row entry moved here as "Collection settings" (a D-19 Link push that
+              closes the menu). UNIVERSAL — everyone adds/edits within the size cap; the /collections
+              route is server-gated only against anonymous visitors. Sits with the settings cluster,
+              directly above Trash settings. */}
+          <Link
+            href="/collections"
+            role="menuitem"
+            className="usermenu__item"
+            onClick={() => setOpen(false)}
+          >
+            Collection settings
+          </Link>
           {showTrashSettings ? (
             <Link
               href="/settings/trash"
@@ -311,18 +334,14 @@ export function TopBar({ user }: { user: TopBarUser }) {
         <span className="brand__name" aria-hidden="true" />
         <span className="sr-only">haynesnetwork home</span>
       </Link>
-      {/* DESIGN-004 D-22/D-23 + ADR-072 — the UNIVERSAL primary nav, FIVE entries: Portal ·
-          Library · Collections · Tickets · Trash, the same candidate set for every role (a
-          Disabled section still hides its entry). Metrics + Integrations live in the user menu.
-          Five labels engage the rail's scroll on phone widths — the scroll-driven edge fade in
-          app.css marks the truncation as scrollable. Shown at all widths. */}
+      {/* DESIGN-004 D-22/D-23 — the UNIVERSAL primary nav, FOUR entries: Portal · Library · Tickets ·
+          Trash, the same candidate set for every role (a Disabled section still hides its entry).
+          Metrics + Integrations + "Collection settings" all live in the user menu. Four labels fit
+          320px without the rail scrolling; the app.css scroll-fade stays as an inert safety net.
+          Shown at all widths. */}
       <nav className="topbar__nav" aria-label="Primary">
         <Link href="/portal">{PORTAL_NAME}</Link>
         <Link href="/library">Library</Link>
-        {/* ADR-072 / DESIGN-043 D-01 (PLAN-052 PR4a): Collections is a first-class UNIVERSAL entry
-            (everyone sees it, like Library — no section gate; the /collections route is server-gated
-            only against anonymous visitors). A push to its own screen (D-19). */}
-        <Link href="/collections">{COLLECTIONS_NAME}</Link>
         {/* PLAN-009 (DESIGN-012 D-08): the `bulletin` section under its ratified name (HELPDESK_NAME
             = "Tickets"); the route/section id stay `bulletin`. Level-gated (see showBulletin). */}
         {showBulletin ? <Link href="/bulletin">{HELPDESK_NAME}</Link> : null}

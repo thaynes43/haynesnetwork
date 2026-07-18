@@ -9,7 +9,7 @@
 // the auto-merge write path lands in PR4b, so an honest placeholder holds the seam). Everyone adds/edits
 // within the size cap; over-cap files a collection_override ticket (D-11); admins delete + approve tickets
 // + edit the cap. Owner tone: no em-dashes, plain friendly labels; all color via tokens (hard rule 2).
-import { Suspense, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { ConfirmButton } from '@hnet/ui';
@@ -107,6 +107,21 @@ function CollectionsContent({ isAdmin }: { isAdmin: boolean }) {
   const active = resolveTab(searchParams.get('tab'), available);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
+  // DESIGN-043 D-01/D-09 amend (2026-07-18, owner-ruled) — the Library wall drill nav-out deep-links
+  // here as `?tab=<mediaType>&edit=<recipeId>` (or `&new=1`). The matching MediaSection opens the
+  // composer pre-loaded with that recipe (the existing openEdit path) and then CLEARS the param from
+  // the URL (a REPLACE, so refresh/Back behave). An unknown recipeId just shows the tab, no error.
+  const editRecipeId = searchParams.get('edit');
+  const wantsNew = searchParams.get('new') === '1';
+
+  const clearDeepLink = () => {
+    // Drop `edit`/`new` but keep the resolved tab — a replace (not a push) so Back/refresh land on the
+    // plain sub-section, never re-triggering the composer.
+    const params = new URLSearchParams();
+    params.set('tab', active);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  };
+
   const selectTab = (key: TabKey) => {
     // A sub-section switch PUSHES a history entry (DESIGN-004 D-19) so Back returns to the prior
     // sub-section; scroll:false keeps the position (the sub-nav stays put — no reflow, ADR-015).
@@ -162,7 +177,14 @@ function CollectionsContent({ isAdmin }: { isAdmin: boolean }) {
         ) : active === 'settings' ? (
           <SettingsSection />
         ) : (
-          <MediaSection key={active} mediaType={active} isAdmin={isAdmin} />
+          <MediaSection
+            key={active}
+            mediaType={active}
+            isAdmin={isAdmin}
+            deepLinkEditRecipeId={editRecipeId}
+            deepLinkNew={wantsNew}
+            onDeepLinkConsumed={clearDeepLink}
+          />
         )}
       </div>
     </div>
@@ -182,9 +204,18 @@ export function CollectionsClient({ isAdmin }: { isAdmin: boolean }) {
 function MediaSection({
   mediaType,
   isAdmin,
+  deepLinkEditRecipeId = null,
+  deepLinkNew = false,
+  onDeepLinkConsumed,
 }: {
   mediaType: CollectionMediaTypeName;
   isAdmin: boolean;
+  /** DESIGN-043 D-01/D-09 amend — a wall-drill deep link's `?edit=<recipeId>` (null = none). */
+  deepLinkEditRecipeId?: string | null;
+  /** `?new=1` — open the create composer. */
+  deepLinkNew?: boolean;
+  /** Clears the `edit`/`new` param from the URL once consumed (a replace). */
+  onDeepLinkConsumed?: () => void;
 }) {
   const utils = trpc.useUtils();
   const overviewQ = trpc.collections.overview.useQuery({ mediaType }, { retry: false });
@@ -195,6 +226,58 @@ function MediaSection({
 
   const invalidate = () => void utils.collections.overview.invalidate({ mediaType });
   const label = COLLECTION_MEDIA_TYPE_LABELS[mediaType];
+
+  // ── The composer openers (defined ahead of the early returns so the deep-link effect can call
+  //    them — an edit opener never depends on the narrowed `data`) ──
+  const openCreate = () => {
+    setDraft({ ...EMPTY_DRAFT, builderType: defaultBuilderFor(mediaType) });
+    setEditing(false);
+    setComposerOpen(true);
+  };
+  const openEdit = (recipe: {
+    id: string;
+    name?: string | null;
+    builderType?: string | null;
+    builderRef?: string | null;
+    ordered?: boolean | null;
+    syncMode?: string | null;
+  }) => {
+    setDraft({
+      id: recipe.id,
+      name: recipe.name ?? '',
+      builderType:
+        (recipe.builderType as CollectionBuilderTypeName | null) ?? defaultBuilderFor(mediaType),
+      builderRef: recipe.builderRef ?? '',
+      targetLibrary: '',
+      ordered: recipe.ordered ?? true,
+      syncMode: (recipe.syncMode as CollectionSyncModeName | null) ?? 'sync',
+    });
+    setEditing(true);
+    setComposerOpen(true);
+  };
+
+  // DESIGN-043 D-01/D-09 amend (2026-07-18) — consume a wall-drill deep link exactly once, as soon as
+  // the overview has loaded. `edit` pre-loads the matching recipe into the composer (unknown id → just
+  // the tab, no error); `new` opens the create composer. The composer-open is done via the
+  // ADJUST-STATE-DURING-RENDER idiom (the ComposerModal precedent — React re-renders before painting,
+  // and the codebase forbids setState inside an effect); a follow-up effect then clears the URL param
+  // (a router.replace — a navigation, not a setState — so refresh/Back land on the plain sub-section).
+  const [deepLinkConsumed, setDeepLinkConsumed] = useState(false);
+  const wantsDeepLink = deepLinkEditRecipeId !== null || deepLinkNew;
+  if (!deepLinkConsumed && wantsDeepLink && overviewQ.data) {
+    setDeepLinkConsumed(true);
+    if (deepLinkEditRecipeId !== null) {
+      const recipe = overviewQ.data.recipes.find((r) => r.id === deepLinkEditRecipeId);
+      if (recipe) openEdit(recipe);
+    } else if (deepLinkNew) {
+      openCreate();
+    }
+  }
+  useEffect(() => {
+    if (deepLinkConsumed) onDeepLinkConsumed?.();
+    // Fires once, right after the deep link is consumed; onDeepLinkConsumed is a stable router.replace.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkConsumed]);
 
   if (overviewQ.isPending) {
     return (
@@ -246,25 +329,6 @@ function MediaSection({
   const collectionByRecipe = new Map(
     data.collections.filter((c) => c.recipeId).map((c) => [c.recipeId as string, c]),
   );
-
-  const openCreate = () => {
-    setDraft({ ...EMPTY_DRAFT, builderType: defaultBuilderFor(mediaType) });
-    setEditing(false);
-    setComposerOpen(true);
-  };
-  const openEdit = (recipe: (typeof data.recipes)[number]) => {
-    setDraft({
-      id: recipe.id,
-      name: recipe.name ?? '',
-      builderType: (recipe.builderType as CollectionBuilderTypeName | null) ?? defaultBuilderFor(mediaType),
-      builderRef: recipe.builderRef ?? '',
-      targetLibrary: '',
-      ordered: recipe.ordered ?? true,
-      syncMode: (recipe.syncMode as CollectionSyncModeName | null) ?? 'sync',
-    });
-    setEditing(true);
-    setComposerOpen(true);
-  };
 
   return (
     <>

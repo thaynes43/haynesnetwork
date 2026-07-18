@@ -46,9 +46,30 @@ Three constraints shape every decision:
 
 > **REVISED (ADR-072).** The ADR-070 decision — a Collections sub-section of the Integrations hub at
 > `/integrations/collections` — is RETIRED. The manager is now a first-class citizen.
+>
+> **AMENDED (2026-07-18 evening, owner ruling, coordinator-endorsed).** The `/collections` PAGE stays
+> first-class — this amendment changes only the NAV CHROME that reaches it, not the surface, so ADR-072
+> is NOT superseded (that ADR decides the surface, `/collections`, and its permission model; it says
+> nothing about which chrome links to it). The top-row **Collections** entry the PR4a build added is
+> REMOVED: at five entries the row broke the DESIGN-004 D-22 ratified goal of FOUR labels fitting 320px
+> with no rail scroll (an edge-fade papered over it). Two changes replace it:
+>
+> 1. **User-menu entry.** The manager is reached from the user menu as **"Collection settings"** (a
+>    D-19 `Link` push to `/collections` that closes the menu), placed in the tooling group directly
+>    above "Trash settings" (the settings cluster together). It is UNIVERSAL — shown for everyone, since
+>    the page is universal (everyone adds/edits within the cap); the `/collections` route stays gated
+>    only against anonymous visitors. The label constant `COLLECTIONS_NAME` ("Collections") still names
+>    the page heading + back-link copy; the menu item reads "Collection settings" verbatim.
+> 2. **Contextual wall nav-out.** The Library walls gain an **"Edit collection"** link on a collection
+>    DRILL header (D-09' below), so a user editing a collection reaches the manager from the collection
+>    they are looking at — the contextual path that replaces the standing top-row entry.
+>
+> The row returns to the ratified FOUR (Portal · Library · Tickets · Trash — DESIGN-004 D-22/D-24). The
+> app.css scroll-fade + relaxed spacing stay as an inert safety net (they never engage at four entries).
 
-A top-level **Collections** nav entry pushes to `/collections` (its own screen, the DESIGN-004 nav
-idiom; label constant `COLLECTIONS_NAME`). The old `/integrations/collections` route MOVES here (a
+A top-level **Collections** page lives at `/collections` (its own screen, the DESIGN-004 nav idiom;
+label constant `COLLECTIONS_NAME`), reached from the user-menu "Collection settings" entry (amended
+above) and the wall drill nav-out (D-09'). The old `/integrations/collections` route MOVES here (a
 move, not a duplicate — the Integrations hub Collections card is removed, D-15); `/integrations/collections`
 redirects to `/collections` so any deep link survives. The page is gated by the collections section
 (visibility floor); every authenticated user with the section sees it and can add/edit within the cap
@@ -70,6 +91,29 @@ ticket approve) are role-gated within the page.
 The sub-nav is a D-19 PUSH between sub-sections; within a sub-section, chips/toggles recolor but never
 reflow (ADR-015). Empty sub-sections collapse honestly (a provider with no collections shows an empty
 state, never a fabricated row).
+
+### D-09' — The Library wall drill nav-out + deep-link edit (NEW 2026-07-18, owner-ruled)
+
+The Library walls reach the manager contextually. On a collection DRILL header (the view once a user
+has drilled into ONE collection — Books/Audiobooks in `books-browser.tsx`, Movies/TV on the Plex walls
+in `library-client.tsx`), a quiet **"Edit collection"** link (the drill header's `.btn.sm` idiom,
+tokens-only) deep-links to `/collections?tab=<mediaType>&edit=<recipeId>`. It renders ONLY on the drill
+header, never on grid cards (per-card actions are noise + touch misfires — coordinator UX ruling), and
+only when the collection has a KNOWN MANAGER IDENTITY:
+
+- **Books / Audiobooks** — the mirror row's `librettoRecipeId` (the D-13 exact join, now surfaced on
+  `books.collectionGroups`). A hand-made collection with no recipe (`librettoRecipeId === null`) renders
+  NO link — there is nothing to edit in the manager. Only the Books/Audiobooks walls map to a media tab;
+  the Comics wall has no Collections media type, so it never shows the link.
+- **Movies / TV** — the drill keys by a Plex `ratingKey`, and the Kometa join is by TITLE (no clean
+  recipe id client-side), so the link lands on the right media tab (`/collections?tab=movies|tv`) WITHOUT
+  an `edit` param. Landing on the correct tab is still correct; an id is never fabricated.
+
+The link is static per screen (the drill is reached by a PUSH), so it never reflows the header on
+interaction (ADR-015). On the `/collections` side, the composer opens pre-loaded with the deep-linked
+recipe (the existing `openEdit` path) and the page then CLEARS the `edit`/`new` param from the URL (a
+`router.replace`, not a push, so refresh + Back land on the plain sub-section). An unknown `recipeId`
+just shows the tab, no error modal. An optional `?new=1` opens the create composer.
 
 ### D-02 — The per-media-type collection list (monitor)
 

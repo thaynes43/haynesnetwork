@@ -86,7 +86,10 @@ const ABS_COLLECTIONS = [
     id: 'ab5c0001',
     libraryId: 'abs-lib',
     name: 'Dickens in Order',
-    description: null,
+    // DESIGN-043 D-09' — a Libretto-managed collection (the marker rides the description, mirror-pure).
+    // The recipeId surfaces on books.collectionGroups so the Audiobooks collection drill renders the
+    // "Edit collection" nav-out to /collections?tab=audiobooks&edit=dickens-in-order.
+    description: '[libretto:dickens-in-order]',
     // collectionBook.order ASC — Oliver Twist deliberately BEFORE A Christmas Carol so the
     // drilled "List order" differs from every alphabetical/date sort.
     books: [ABS_ITEMS[2], ABS_ITEMS[0]],

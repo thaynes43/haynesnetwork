@@ -179,6 +179,12 @@ export function BooksBrowser({
   const drilledMeta = drilledCollection
     ? collectionsQ.data?.groups.find((g) => g.key === group)
     : undefined;
+  // DESIGN-043 D-01/D-09 amend (2026-07-18, owner-ruled) — the "Edit collection" nav-out target. The
+  // manager identity is the mirror row's librettoRecipeId (null → a hand-made collection with no recipe
+  // to edit → no link). Only the Books/Audiobooks walls map to a Collections media tab; Comics has none.
+  const collectionsTab: 'books' | 'audiobooks' | null =
+    booksWall === 'books' ? 'books' : booksWall === 'audiobooks' ? 'audiobooks' : null;
+  const drillEditRecipeId = drilledCollection ? (drilledMeta?.librettoRecipeId ?? null) : null;
   // A drilled ?group= that is not one of this wall's collections (mangled/shared-stale link).
   const drilledMissing =
     drilledCollection && collectionsQ.data !== undefined && drilledMeta === undefined;
@@ -586,6 +592,19 @@ export function BooksBrowser({
           <span className="library-drill__label">
             {drilledCollection ? (drilledMeta?.label ?? '') : group}
           </span>
+          {/* DESIGN-043 D-01/D-09 amend — the quiet nav-out to the collection manager, ONLY on a
+              collection drill whose mirror row carries a Libretto recipe id (a hand-made collection
+              has none → no link). Deep-links to the matching media tab with the recipe pre-loaded for
+              edit. Static per screen — no reflow (ADR-015); tokens-only `.btn.sm`. */}
+          {collectionsTab !== null && drillEditRecipeId !== null ? (
+            <Link
+              className="btn sm library-drill__edit"
+              href={`/collections?tab=${collectionsTab}&edit=${encodeURIComponent(drillEditRecipeId)}`}
+              data-testid="library-drill-edit"
+            >
+              Edit collection
+            </Link>
+          ) : null}
         </div>
       ) : null}
 

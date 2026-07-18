@@ -585,6 +585,12 @@ export interface BooksCollectionGroup {
   /** DESIGN-038 D-12 — the collection's OPEN, free-form owner category (T-186 model), or null when
    *  it carries none (no chip; shows only under "All"). Drives the dynamic category chip row. */
   category: string | null;
+  /**
+   * DESIGN-043 D-01/D-09 amend (2026-07-18) — the Libretto recipe id that MANAGES this collection, or
+   * null for a hand-made collection with no recipe. The Library wall drill header uses it to deep-link
+   * to `/collections?tab=<mediaType>&edit=<recipeId>` (no link when null — nothing to edit there).
+   */
+  librettoRecipeId: string | null;
 }
 
 /** DESIGN-038 D-12 — the books category chip row's counts, keyed by the DISTINCT categories actually
@@ -1224,6 +1230,7 @@ export const booksRouter = router({
           ordered: booksCollections.ordered,
           createdBy: booksCollections.createdBy,
           category: booksCollections.category,
+          librettoRecipeId: booksCollections.librettoRecipeId,
           memberKind: booksItems.mediaKind,
           source: booksItems.source,
           externalId: booksItems.externalId,
@@ -1247,6 +1254,7 @@ export const booksRouter = router({
         ordered: boolean;
         createdBy: string | null;
         category: string | null;
+        librettoRecipeId: string | null;
         counts: Record<BooksMediaKind, number>;
         coverUrls: Record<BooksMediaKind, string[]>;
       }
@@ -1260,6 +1268,7 @@ export const booksRouter = router({
               ordered: row.ordered,
               createdBy: row.createdBy,
               category: row.category,
+              librettoRecipeId: row.librettoRecipeId,
               counts: { book: 0, comic: 0, audiobook: 0 },
               coverUrls: { book: [], comic: [], audiobook: [] },
             })
@@ -1291,6 +1300,7 @@ export const booksRouter = router({
           ordered: agg.ordered,
           provenance: provenanceDisplayName(agg.createdBy),
           category: agg.category,
+          librettoRecipeId: agg.librettoRecipeId,
         });
       }
       groups.sort((a, b) => a.label.localeCompare(b.label) || a.key.localeCompare(b.key));
