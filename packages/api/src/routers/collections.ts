@@ -33,6 +33,8 @@ import {
   previewKometaRef,
   previewRecipeRef,
   setAppSetting,
+  setCollectionFindMissing,
+  setKometaFindMissing,
   upsertCollection,
   upsertKometaCollection,
   type KometaMediaType,
@@ -54,7 +56,7 @@ import {
   router,
   authedProcedure,
 } from '../trpc';
-import { adminProcedure, resolveCollectionActions } from '../middleware/role';
+import { adminProcedure, collectionActionProcedure, resolveCollectionActions } from '../middleware/role';
 
 /** The media types this PR serves through Libretto (direct API). Movies/TV are the Kometa leg (PR4b). */
 const LIBRETTO_MEDIA_TYPES = new Set<CollectionMediaType>(['books', 'audiobooks']);
@@ -348,6 +350,47 @@ export const collectionsRouter = router({
       return { ok: true as const, id: input.id, provider: 'libretto' as const };
     });
   }),
+
+  /**
+   * DESIGN-043 D-14 / DESIGN-042 D-06 (PLAN-052 PR4c) — flip the per-collection FIND-MISSING knob (the
+   * acquisition lever). GRANT-GATED: `collectionActionProcedure('find_missing')` (admin implies it) — a
+   * non-granted caller gets FORBIDDEN server-side even with a forged flag (never a client hide). Libretto
+   * (books/audiobooks) sets `variables.acquisitionEnabled` via a direct API write (instant); Kometa
+   * (movies/TV) recompiles the managed include and opens a HUMAN-merged haynes-ops PR (enabling acquisition
+   * is one of the two non-auto-merge cases — D-10). Every write is audited same-tx (upsert_collection +
+   * find_missing detail). When it opens a Kometa PR, the row shows the honest pending/awaiting-merge state.
+   */
+  setFindMissing: collectionActionProcedure('find_missing')
+    .input(
+      z.object({
+        id: z.string().trim().min(1).max(80),
+        mediaType: z.enum(COLLECTION_MEDIA_TYPES),
+        on: z.boolean(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      return mapDomainErrors(async () => {
+        if (isKometaMedia(input.mediaType)) {
+          const res = await setKometaFindMissing({
+            db: ctx.db,
+            haynesops: resolveHaynesopsBundle(ctx),
+            actorId: ctx.user.id,
+            id: input.id,
+            mediaType: input.mediaType,
+            on: input.on,
+          });
+          return { ok: true as const, provider: 'kometa' as const, findMissing: input.on, ...res };
+        }
+        const res = await setCollectionFindMissing({
+          db: ctx.db,
+          libretto: resolveLibrettoBundle(ctx),
+          actorId: ctx.user.id,
+          id: input.id,
+          on: input.on,
+        });
+        return { ok: true as const, provider: 'libretto' as const, findMissing: res.findMissing };
+      });
+    }),
 
   /** Apply a scope (a recipe id or 'all') → the async run id to poll. */
   applyRecipe: authedProcedure

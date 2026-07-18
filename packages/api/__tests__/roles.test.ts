@@ -144,3 +144,37 @@ describe('roles.setBooksActions (the books Fix / Force Search FLIP control)', ()
     expect(after.booksActions).toEqual([]);
   });
 });
+
+// ADR-072 / DESIGN-043 D-14 (PLAN-052 PR4c) — the collection action grant control (THE FLIP): granting
+// find_missing lets a role turn on the per-collection acquisition knob on the /collections page.
+describe('roles.setCollectionsActions (the find-missing FLIP control)', () => {
+  it('replace-sets find_missing, surfaces it in list, admin implies it, and empty clears it', async () => {
+    // Ships Admin-only — Default starts with no collection actions.
+    const before = (await adminCaller.roles.list()).find((r) => r.name === 'Default')!;
+    expect(before.collectionsActions).toEqual([]);
+
+    await adminCaller.roles.setCollectionsActions({
+      roleId: SEEDED_ROLE_IDS.default,
+      actions: ['find_missing'],
+    });
+    const byName = new Map((await adminCaller.roles.list()).map((r) => [r.name, r]));
+    expect(byName.get('Default')!.collectionsActions).toEqual(['find_missing']);
+    // Admin is implicit-all (stores no rows) — list still resolves the action for it.
+    expect(byName.get('Admin')!.collectionsActions).toEqual(['find_missing']);
+
+    await adminCaller.roles.setCollectionsActions({ roleId: SEEDED_ROLE_IDS.default, actions: [] });
+    const after = (await adminCaller.roles.list()).find((r) => r.name === 'Default')!;
+    expect(after.collectionsActions).toEqual([]);
+  });
+
+  it('is admin-only — a non-admin caller is FORBIDDEN', async () => {
+    const member = await createUser(testDb.db);
+    const memberCaller = caller(makeCtx(testDb.db, sessionUser(member)));
+    await expect(
+      memberCaller.roles.setCollectionsActions({
+        roleId: SEEDED_ROLE_IDS.default,
+        actions: ['find_missing'],
+      }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+});

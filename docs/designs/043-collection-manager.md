@@ -180,6 +180,20 @@ degrades to an `unreachable` health state (D-02) — no crash; the mirror walls 
 
 ### D-14 — Find missing: a per-collection knob behind a role grant (NEW 2026-07-18)
 
+> **REALIZED (PLAN-052 PR4c, 2026-07-18).** Shipped: the `/admin` "Collections actions" FLIP grid
+> (`roles.setCollectionsActions` → `setRoleCollectionActions`, audited same-tx, Admin-only default,
+> forbidden-path tested); the per-collection knob `collections.setFindMissing`
+> (`collectionActionProcedure('find_missing')` — Libretto sets `variables.acquisitionEnabled` via a direct
+> re-PUT, Kometa recompiles + opens a HUMAN-merged PR, both audited `upsert_collection` with a `find_missing`
+> detail); the `/collections` puck is a granted user's toggle (Modal confirm on ENABLE, direct click to
+> disable; recolor-never-reflow — the puck reserves the widest label's width); and the CRON FORCE-SEARCH leg
+> (`forceSearchFindMissingCollections`, in the `books-collections-sync` mode after the wants pass) that drives
+> LazyLibrarian over a find-missing collection's origin='collection' wants — single-writer + audit,
+> cooldown-idempotent, degrades on a Libretto/LazyLibrarian outage. **Movies/TV need nothing extra: Kometa's
+> own `radarr_add_missing`/`sonarr_add_missing` + `_search` flags do the acquisition on its scheduled runs
+> (the app only compiles the flag on).** No migration (the `find_missing` grant + the reused
+> `upsert_collection`/`request_book_search` audit actions already exist from PR4a).
+
 The content-pull knob, re-gated from the retired `acquire` grant (ADR-070) to a per-collection choice:
 
 - **The knob.** A collection may opt into "find missing" — Kometa sets

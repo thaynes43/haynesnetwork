@@ -7,12 +7,14 @@ import {
   roleAppGrants,
   roleBooksActionGrants,
   roleBulletinViewGrants,
+  roleCollectionActionGrants,
   roleMessageActionGrants,
   roleSectionPermissions,
   roleTrashActionGrants,
   roles,
   users,
   BOOK_ACTIONS,
+  COLLECTION_ACTIONS,
   MESSAGE_ACTIONS,
   METRICS_LEVELS,
   SECTION_IDS,
@@ -20,6 +22,7 @@ import {
   TRASH_ACTIONS,
   type BookAction,
   type BulletinView,
+  type CollectionAction,
   type MessageAction,
   type SectionId,
   type SectionPermissionLevel,
@@ -33,6 +36,7 @@ import {
   resolveBulletinViews,
   setRoleBookActions,
   setRoleBulletinViews,
+  setRoleCollectionActions,
   setRoleMessageActions,
   setRoleMetricsLevel,
   setRoleTrashActions,
@@ -44,6 +48,7 @@ import { adminProcedure } from '../middleware/role';
 import {
   BooksActionsInput,
   BulletinViewsInput,
+  CollectionsActionsInput,
   MessageActionsInput,
   RoleInput,
   RolePatchInput,
@@ -112,6 +117,14 @@ export const rolesRouter = router({
         action: roleBooksActionGrants.action,
       })
       .from(roleBooksActionGrants);
+    // ADR-072 / DESIGN-043 D-14 (PLAN-052 PR4c) — each role's fine-grained collection action grant rows
+    // (a row = granted; today the single `find_missing` acquisition knob).
+    const collectionActionRows = await ctx.db
+      .select({
+        roleId: roleCollectionActionGrants.roleId,
+        action: roleCollectionActionGrants.action,
+      })
+      .from(roleCollectionActionGrants);
 
     const appIdsByRole = new Map<string, string[]>();
     for (const row of grantRows) {
@@ -150,6 +163,12 @@ export const rolesRouter = router({
       s.add(row.action);
       booksActionsByRole.set(row.roleId, s);
     }
+    const collectionActionsByRole = new Map<string, Set<CollectionAction>>();
+    for (const row of collectionActionRows) {
+      const s = collectionActionsByRole.get(row.roleId) ?? new Set<CollectionAction>();
+      s.add(row.action);
+      collectionActionsByRole.set(row.roleId, s);
+    }
 
     // The Admin role has no explicit grants — it's an implicit all-apps / all-sections superuser.
     return roleRows.map((row) => {
@@ -181,6 +200,11 @@ export const rolesRouter = router({
       const booksActions: BookAction[] = row.isAdmin
         ? [...BOOK_ACTIONS]
         : BOOK_ACTIONS.filter((a) => booksGrantedSet?.has(a));
+      // ADR-072 / DESIGN-043 D-14 — admin ⇒ every collection action; otherwise the granted rows in order.
+      const collectionGrantedSet = collectionActionsByRole.get(row.id);
+      const collectionsActions: CollectionAction[] = row.isAdmin
+        ? [...COLLECTION_ACTIONS]
+        : COLLECTION_ACTIONS.filter((a) => collectionGrantedSet?.has(a));
       return {
         ...row,
         // ADR-037 C-01 — admin implies 'full' (like admin implies section 'edit'); else the column.
@@ -192,6 +216,7 @@ export const rolesRouter = router({
         messageActions,
         bulletinViews,
         booksActions,
+        collectionsActions,
       };
     });
   }),
@@ -301,6 +326,26 @@ export const rolesRouter = router({
       }),
     );
   }),
+
+  /**
+   * ADR-072 / DESIGN-043 D-14 (PLAN-052 PR4c) — replace a role's fine-grained collection action grants
+   * (find_missing — the per-collection acquisition knob). Delegates to the @hnet/domain single-writer
+   * (audits 'update_collection_actions' in-tx, hard rule 6); the Admin role is immutable (implies all) →
+   * ROLE_IMMUTABLE. THIS is the owner's FLIP control: granting `find_missing` lets the role turn on
+   * "find missing" per collection on the /collections page. Ships Admin-only (empty grant table).
+   */
+  setCollectionsActions: adminProcedure
+    .input(CollectionsActionsInput)
+    .mutation(async ({ ctx, input }) => {
+      return mapDomainErrors(() =>
+        setRoleCollectionActions({
+          db: ctx.db,
+          roleId: input.roleId,
+          actions: input.actions,
+          actorId: ctx.user.id,
+        }),
+      );
+    }),
 
   /**
    * ADR-049 C-02 (PLAN-027) — replace a role's Bulletin SUB-VIEW visibility grants (feed / messages).
