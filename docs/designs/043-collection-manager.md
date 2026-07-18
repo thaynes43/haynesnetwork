@@ -142,8 +142,8 @@ the same blind spot on Books/Audiobooks (7 hand-made Kavita collections, none su
 list rendered ONLY app-managed recipes (`data.recipes`, of which there are approximately zero) and
 ignored the mirror rows the server already returns. The fix: **every media tab lists BOTH populations.**
 
-- **Managed here** — the app-authored recipes, with the full controls (Find missing, Run, Edit,
-  Delete/puck) exactly as before.
+- **Managed here** — the app-authored recipes, with the full controls (Find missing, Force Search
+  on Books/Audiobooks — see the D-02 Force Search amend below, Edit, Delete/puck).
 - **From the estate's config** (Movies/TV) / **Made in your library apps** (Books/Audiobooks) — the
   mirror collections with NO managed recipe, as **READ-ONLY** rows: title + item count on the left, a
   single muted state chip on the right ("managed in the estate's Kometa config" / "made in Kavita" /
@@ -162,6 +162,40 @@ config population runs to hundreds of rows, so the tab must stay usable). Filter
 CONTENT — a deliberate content change, allowed under ADR-015; the search box itself holds its place and
 never reflows. The honest empty state ("No ... collections yet") shows ONLY when both populations are
 truly empty; a search that matches nothing shows a quiet "Nothing matches that search" note instead.
+
+#### D-02 amend (2026-07-18, owner ruling) — the row action is FORCE SEARCH; "Run now" is retired
+
+From a live phone review of the Books "Managed here" rows: *"We have standard nomenclature and this
+doesn't match any of it. What is 'Run now'? Where is 'Force Search' for missing items?"* The rows
+carried a hand-labeled "Run now" `ConfirmButton` (raw Libretto applyScope plumbing) — off the ADR-071
+media-action vocabulary entirely. Retired and replaced:
+
+- **Books/Audiobooks rows render the estate-standard Force Search** — `<MediaAction
+  action="forceSearch">` off the `MEDIA_ACTIONS` registry (ADR-071; the action-anatomy drift guard
+  enforces the anatomy). Semantics are the honest WHOLE action, composed server-side in order by the
+  `collections.forceSearchCollection` mutation: (a) re-apply the recipe (the old applyScope — fresh
+  membership), (b) refresh the collection's missing-member wants (the D-08/DESIGN-038 D-13 mint),
+  (c) force-search the resolved missing members NOW through the confined LazyLibrarian chain — the
+  same PR4c leg run on demand: the cron's 12h cooldown is bypassed (the caller asked for it now) but
+  the per-call cap still bounds the fan-out. Single-writer + audit: each search stamps
+  `last_searched_at` + a `request_book_search` row (`via: 'collection_force_search'`, tagged with the
+  collection) in one transaction (hard rule 6).
+- **Gate:** the books Force Search grant (`force_search_book`) — the SAME gate as the books detail
+  page's Force Search. Ungranted callers do not see the button; a forged call is FORBIDDEN
+  server-side. The overview carries `canForceSearch` plus each recipe's `missingCount` (the open
+  origin='collection' wants) for the confirm copy.
+- **Confirm idiom:** a collection-level force search is a bulk explanatory confirm ⇒ the shared
+  `Modal` (hard rule 8, the shipped ForceSearchDialog pattern) — "Search for the N missing books in
+  this collection now" plus what the whole action does. After firing, the reserved slot swaps the
+  button for the in-place progressing chip (recolor, no reflow — ADR-015); the existing run-counts
+  polling keeps informing the row's counts.
+- **Kometa (Movies/TV) rows never had Run now and do NOT gain Force Search** — Kometa's own scheduled
+  runs do the acquisition (`radarr/sonarr_add_missing` + `_search`, DESIGN-042 D-06); there is no
+  app-side on-demand path. Nothing changes on those rows.
+- **The label is locked out:** "Run now" (+ its armed "Run it?") joined the drift guard's retired
+  labels (R2, `apps/web/lint/action-anatomy-guard.mjs`), so a raw button wearing either string fails
+  CI. The dead `collections.applyRecipe` procedure was removed (the new mutation composes applyScope
+  server-side through the domain).
 
 ### D-03 — Direct add / edit (the composer) (REVISED 2026-07-18)
 
@@ -292,8 +326,10 @@ The content-pull knob, re-gated from the retired `acquire` grant (ADR-070) to a 
 
 The manager reuses existing card/badge tokens and the `hub-card` / `badge` families (ADR-058 — no
 hand-rolled wall cards). New color goes through `--color-*` tokens in `tokens.css` only (hard rule 2).
-The composer is the standard `Modal`; apply is a `ConfirmButton` (reserved armed-label width);
-delete opens an explanatory `Modal` carrying the also-delete opt-in (hard rule 8 — a destructive
+The composer is the standard `Modal`; the row's on-demand acquisition action is the registry-standard
+Force Search (`<MediaAction action="forceSearch">` opening the shared explanatory `Modal` — the D-02
+Force Search amend, owner ruling 2026-07-18; the retired "Run now" `ConfirmButton` is banned by the
+action-anatomy guard); delete opens an explanatory `Modal` carrying the also-delete opt-in (hard rule 8 — a destructive
 confirm with an option is a multi-field confirm, so no inline checkbox rides the row; Fable UX
 pass 2026-07-18). New gallery entries capture the collection row (with the find-missing state), the composer,
 the cap/over-cap Modal, the Tickets sub-section (requester view + admin approve), and the Settings

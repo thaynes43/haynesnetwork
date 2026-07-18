@@ -18,6 +18,7 @@ import {
 import { syncBooksCollections, syncPlexCollections, upsertPlexLibraries } from '@hnet/domain';
 import {
   compileManagedFile,
+  setRoleBookActions,
   setRoleCollectionActions,
   type LibrettoClientBundle,
 } from '@hnet/domain';
@@ -864,5 +865,163 @@ describe('hand-authored Kometa collections — edit-in-place (owner ruling 2026-
     const content = hs.opened[0]!.content as string;
     expect(content).toContain('    radarr_add_missing: true');
     expect(content).toContain('    radarr_search: true');
+  });
+});
+
+// ADR-071 / DESIGN-043 D-02/D-07 amend (owner ruling 2026-07-18) — the on-demand collection FORCE SEARCH
+// that replaced the retired "Run now". Proves the grant matrix (ungranted FORBIDDEN — the books
+// force_search_book gate, the same as the books detail; granted member passes; admin implies), the
+// server-side compose ORDER (apply → refresh missing → LL search), the caller-tagged audit row, and the
+// overview's canForceSearch flag + per-recipe missingCount the modal copy reads.
+describe('forceSearchCollection — the on-demand collection Force Search (ADR-071)', () => {
+  /** Flip the Default role's books force_search_book grant (the same grid the owner granted to all roles). */
+  async function setDefaultForceSearch(on: boolean) {
+    const actor = await createUser(t.db, { admin: true });
+    await setRoleBookActions({
+      db: t.db,
+      roleId: SEEDED_ROLE_IDS.default,
+      actions: on ? ['force_search_book'] : [],
+      actorId: actor.id,
+    });
+  }
+
+  /** Seed a Libretto-bound mirror collection (the sanctioned domain writer — never a direct insert). */
+  async function seedMirror(recipeId: string) {
+    await syncBooksCollections({
+      db: t.db,
+      collections: [
+        {
+          source: 'kavita',
+          externalId: `fs-${recipeId}`,
+          kind: 'collection',
+          libraryId: null,
+          title: `FS ${recipeId}`,
+          itemCount: 0,
+          ordered: false,
+          createdBy: 'libretto',
+          librettoRecipeId: recipeId,
+          category: null,
+          members: [],
+          fullyRead: true,
+        },
+      ],
+      scopedFamilies: [],
+    });
+  }
+
+  /**
+   * The on-demand stub pair: ONE shared `events` log records the Libretto apply, the missing read, and each
+   * confined LL step in call order — the compose-order proof. `resolveByTitle` maps a missing title → volume id.
+   */
+  function stubOnDemand(opts: {
+    missing?: Array<{ isbn?: string; title?: string }>;
+    resolveByTitle?: Record<string, string>;
+  }) {
+    const events: string[] = [];
+    const libretto = {
+      read: {
+        listRecipes: async () => ({ recipes: [], issues: [] }),
+        listCollections: async () => [],
+        listMissingMembers: async () => {
+          events.push('missing');
+          return { missing: opts.missing ?? [] };
+        },
+        resolve: async (req: { title?: string }) => {
+          const vol = opts.resolveByTitle?.[req.title ?? ''];
+          return vol ? { volumeId: vol } : null;
+        },
+      },
+      write: {
+        applyScope: async (scope: string) => {
+          events.push(`apply:${scope}`);
+          return 'run-od-1';
+        },
+      },
+    } as unknown as LibrettoClientBundle;
+    const lazylibrarian = {
+      write: {
+        addBook: async (id: string) => void events.push(`addBook:${id}`),
+        queueBook: async (id: string, format: string) => void events.push(`queueBook:${id}:${format}`),
+        searchBook: async (id: string, format: string) => void events.push(`searchBook:${id}:${format}`),
+      },
+    } as unknown as NonNullable<TRPCContext['lazylibrarian']>;
+    return { events, ctx: { libretto, lazylibrarian } };
+  }
+
+  it('is FORBIDDEN without the force_search_book grant (a forged call never searches)', async () => {
+    await setDefaultForceSearch(false);
+    await seedMirror('fs-forbidden');
+    const member = await createUser(t.db);
+    const stub = stubOnDemand({ missing: [{ isbn: '1', title: 'One' }], resolveByTitle: { One: 'gb1' } });
+    const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stub.ctx };
+    await expect(
+      caller(ctx).collections.forceSearchCollection({ recipeId: 'fs-forbidden' }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(stub.events).toHaveLength(0); // nothing applied, read, or searched
+  });
+
+  it('a GRANTED member composes apply → refresh missing → LL search, audited as the caller', async () => {
+    await setDefaultForceSearch(true);
+    await seedMirror('fs-granted');
+    const member = await createUser(t.db);
+    const stub = stubOnDemand({ missing: [{ isbn: '1', title: 'One' }], resolveByTitle: { One: 'gb1' } });
+    const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stub.ctx };
+    const res = await caller(ctx).collections.forceSearchCollection({ recipeId: 'fs-granted' });
+    expect(res).toMatchObject({ ok: true, runId: 'run-od-1', minted: 1, searched: 1, failed: 0, unreachable: false });
+    // The compose ORDER: the recipe re-applies FIRST, the missing set refreshes SECOND, the confined LL
+    // chain (addBook → queueBook → searchBook) fires LAST.
+    expect(stub.events).toEqual([
+      'apply:fs-granted',
+      'missing',
+      'addBook:gb1',
+      'queueBook:gb1:ebook',
+      'searchBook:gb1:ebook',
+    ]);
+    // The audit row carries the caller + the on-demand via tag.
+    const audits = (
+      await t.db.select().from(permissionAudit).where(eq(permissionAudit.action, 'request_book_search'))
+    ).filter((a) => (a.detail as { via?: string }).via === 'collection_force_search');
+    expect(audits).toHaveLength(1);
+    expect(audits[0]!.actorId).toBe(member.id);
+    await setDefaultForceSearch(false);
+  });
+
+  it('an ADMIN implies the grant (no role row needed)', async () => {
+    await seedMirror('fs-admin');
+    const admin = await createUser(t.db, { admin: true });
+    const stub = stubOnDemand({ missing: [], resolveByTitle: {} });
+    const ctx = { ...makeCtx(t.db, sessionUser(admin)), ...stub.ctx };
+    const res = await caller(ctx).collections.forceSearchCollection({ recipeId: 'fs-admin' });
+    expect(res).toMatchObject({ ok: true, searched: 0 }); // nothing missing — honest zero, not an error
+    expect(stub.events[0]).toBe('apply:fs-admin');
+  });
+
+  it('overview carries canForceSearch (grant-driven) and each recipe missingCount for the modal copy', async () => {
+    await setDefaultForceSearch(false);
+    await seedMirror('fs-count');
+    const member = await createUser(t.db);
+    const stubbed = stubLibretto();
+    stubbed.recipes.push({
+      id: 'fs-count',
+      name: 'FS Count',
+      builder: { type: 'hardcover_series', ref: 'fs' },
+      enabled: true,
+    });
+    const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stubbed.ctx };
+    const ungranted = await caller(ctx).collections.overview({ mediaType: 'books' });
+    expect(ungranted.canForceSearch).toBe(false);
+
+    await setDefaultForceSearch(true);
+    const granted = await caller(ctx).collections.overview({ mediaType: 'books' });
+    expect(granted.canForceSearch).toBe(true);
+    const row = granted.recipes.find((r) => r.id === 'fs-count');
+    expect(row?.missingCount).toBe(0); // a mirror-bound recipe with no open wants counts an honest 0
+
+    const admin = await createUser(t.db, { admin: true });
+    const adminView = await caller({ ...makeCtx(t.db, sessionUser(admin)), ...stubbed.ctx }).collections.overview({
+      mediaType: 'books',
+    });
+    expect(adminView.canForceSearch).toBe(true);
+    await setDefaultForceSearch(false);
   });
 });
