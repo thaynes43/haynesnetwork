@@ -935,17 +935,17 @@ incident — card anatomy lived in per-surface JSX an agent could re-invent.
 
 **The family** (`apps/web/components/cards/`, consumed ONLY via the `@/components/cards` barrel):
 
-| Component | Serves | Anatomy notes |
-| --- | --- | --- |
-| `BaseCard` | the canonical poster idiom | typed `art` union (2:3 poster / group-art ladder) + title (year) · ≤1 subtitle · ONE badge row (≤ `MAX_CARD_BADGES` = 3) · typed flavor/focus/data knobs; **no children prop** |
-| `MediaCard` | Movies · TV · Music · Peloton · YouTube | ★ rating / on-disk / tombstone badges; count pill on ytdl-sub walls |
-| `BookCard` | Books · Audiobooks · Comics + composed Wanted | author subtitle; pages/duration badge on disk, Wanted/Missing badge on a want (null poster ⇒ KindIcon tile — never fake art) |
-| `GroupCard` | author/genre aggregate walls | group-art ladder (portrait → cover fan → designed glyph) + label + member count |
-| `RequestCard` | Goodreads items | shelf + dominant-status badges (max two); pre-mint want = same anatomy, non-interactive |
-| `TicketCard` (+`TicketCategoryTile`) | Helpdesk twall | state puck top-right (recolor-only), poster or category tile art, caption/sub + ONE meta row (status badge · replies · when) |
-| `TrashCard` | Trash pending + batch walls | state/action toggle puck top-right, `/library` nav puck top-left, caption + ONE meta row (size·★ text + person/eye chips) |
-| `PosterGrid` / `TicketWall` / `TrashWall` (+ skeletons) | the wall containers | grid geometry + dim-in-place refresh + skeleton idioms owned by the package |
-| `MediaPoster`, `PosterBox` | detail-head hero art / loading box | the only art primitives exported — never a card face |
+| Component                                               | Serves                                        | Anatomy notes                                                                                                                                                                  |
+| ------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `BaseCard`                                              | the canonical poster idiom                    | typed `art` union (2:3 poster / group-art ladder) + title (year) · ≤1 subtitle · ONE badge row (≤ `MAX_CARD_BADGES` = 3) · typed flavor/focus/data knobs; **no children prop** |
+| `MediaCard`                                             | Movies · TV · Music · Peloton · YouTube       | ★ rating / on-disk / tombstone badges; count pill on ytdl-sub walls                                                                                                            |
+| `BookCard`                                              | Books · Audiobooks · Comics + composed Wanted | author subtitle; pages/duration badge on disk, Wanted/Missing badge on a want (null poster ⇒ KindIcon tile — never fake art)                                                   |
+| `GroupCard`                                             | author/genre aggregate walls                  | group-art ladder (portrait → cover fan → designed glyph) + label + member count                                                                                                |
+| `RequestCard`                                           | Goodreads items                               | shelf + dominant-status badges (max two); pre-mint want = same anatomy, non-interactive                                                                                        |
+| `TicketCard` (+`TicketCategoryTile`)                    | Helpdesk twall                                | state puck top-right (recolor-only), poster or category tile art, caption/sub + ONE meta row (status badge · replies · when)                                                   |
+| `TrashCard`                                             | Trash pending + batch walls                   | state/action toggle puck top-right, `/library` nav puck top-left, caption + ONE meta row (size·★ text + person/eye chips)                                                      |
+| `PosterGrid` / `TicketWall` / `TrashWall` (+ skeletons) | the wall containers                           | grid geometry + dim-in-place refresh + skeleton idioms owned by the package                                                                                                    |
+| `MediaPoster`, `PosterBox`                              | detail-head hero art / loading box            | the only art primitives exported — never a card face                                                                                                                           |
 
 **The guards (normative):**
 
@@ -1108,7 +1108,7 @@ Home has no grid; the Portal shape — player link/rule/grid order, server cards
 Owner ratification (media-action UX audit, `.agents/context/2026-07-17-media-action-ux-audit.md`):
 "exactly the same action/UX language for a given media action regardless of media type and view —
 impossible to mess up, enforced by shared components, not convention." The D-21 card system fixed
-the card *faces*; this fixes the detail-page *action controls*, which every surface hand-rolled
+the card _faces_; this fixes the detail-page _action controls_, which every surface hand-rolled
 (24 discrepancies, 6 High — the headline: a movie's green primary **Fix** + outline **Force
 Search** vs a book's outline **Fix this** with no Force Search).
 
@@ -1121,14 +1121,14 @@ only — now universal, so **books gain an on-disk Force Search**. Scope is a co
 
 **The registry + family** (`packages/ui/src/actions/`, re-exported from the `@hnet/ui` barrel):
 
-| Component / module | Role |
-| --- | --- |
-| `action-registry.ts` (`MEDIA_ACTIONS`) | the ONE `label` + `variant` + `destructive` per action TYPE (`fix`/`forceSearch`/`consume`/`retryImport`/`notOnDisk`) — the action analog of `LIBRARY_VIEW_REGISTRY`; no call site types a label or `btn` class |
-| `MediaAction` | renders an action off the registry by TYPE (the key, never a label); destructive ⇒ `ConfirmButton` (hard rule 8), else a plain button opening its own Modal/dialog; `scopeLabel` appends the grain qualifier; `size` is layout-only |
-| `MediaActionBar` | the ordered cluster (Fix then Force Search); OWNS `.detail-head__actions` (head) / `.media-action-bar` (row) |
-| `ConsumeLink` | the ONE primary external ↗ pill — guarantees identical ↗ / `target=_blank` / `rel=noopener noreferrer`; `variant=outline` for a paired-second consume |
-| `ReservedActionSlot` | the ONE reflow-safe button↔live-chip slot (ADR-015 / hard rule 9); OWNS `.action-slot*`; replaces the 5 hand-rolled copies. The trpc polling that decides WHEN to show the live chip stays in the app and is passed as `live` |
-| `MediaHero` | the `.detail-head` scaffold (poster slot + title/year + typed badges + meta + consume + actions); OWNS `.detail-head__play` |
+| Component / module                     | Role                                                                                                                                                                                                                                |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `action-registry.ts` (`MEDIA_ACTIONS`) | the ONE `label` + `variant` + `destructive` per action TYPE (`fix`/`forceSearch`/`consume`/`retryImport`/`notOnDisk`) — the action analog of `LIBRARY_VIEW_REGISTRY`; no call site types a label or `btn` class                     |
+| `MediaAction`                          | renders an action off the registry by TYPE (the key, never a label); destructive ⇒ `ConfirmButton` (hard rule 8), else a plain button opening its own Modal/dialog; `scopeLabel` appends the grain qualifier; `size` is layout-only |
+| `MediaActionBar`                       | the ordered cluster (Fix then Force Search); OWNS `.detail-head__actions` (head) / `.media-action-bar` (row)                                                                                                                        |
+| `ConsumeLink`                          | the ONE primary external ↗ pill — guarantees identical ↗ / `target=_blank` / `rel=noopener noreferrer`; `variant=outline` for a paired-second consume                                                                               |
+| `ReservedActionSlot`                   | the ONE reflow-safe button↔live-chip slot (ADR-015 / hard rule 9); OWNS `.action-slot*`; replaces the 5 hand-rolled copies. The trpc polling that decides WHEN to show the live chip stays in the app and is passed as `live`       |
+| `MediaHero`                            | the `.detail-head` scaffold (poster slot + title/year + typed badges + meta + consume + actions); OWNS `.detail-head__play`                                                                                                         |
 
 Structure only — every color is an app.css token (hard rule 2), the `PhaseChip`/`ConfirmButton`
 precedent.
@@ -1139,16 +1139,46 @@ any authed; books: Admin-only). On-disk state is an input, not a parallel rule; 
 audit row in the same transaction (hard rule 6). The `/admin` grant controls + the server helper
 land in the follow-on PRs (after the sibling admin-force-search stopgap merges).
 
-**The guards (normative — the D-21 pattern, for actions):**
+**The guards (normative — the D-21 pattern, for actions). LANDED PR-6 (#PR6):**
 
-1. `apps/web/lint/action-anatomy-guard.mjs` → `no-restricted-syntax` + `no-restricted-imports`
-   in `apps/web/eslint.config.mjs`: outside `@hnet/ui`, a raw action label (`Fix` / `Force
-   Search` / `Force re-search` / `Retry import` / `Fix this`) in a `btn`-classed button context is
-   an error, and the `detail-head__play` / `detail-head__actions` class tokens may not be
-   hand-rolled; the action package is barrel-only. Runs in `lint-and-typecheck`.
-2. `apps/web/lib/__tests__/action-system-guard.test.ts` — the executable proof (violating fixture
-   fails, `<MediaAction action="fix">` passes, a repo walk shows zero live violations, and a
-   registry-parity assertion locks one label/variant per verb) in the `test` job.
+1. `apps/web/lint/action-anatomy-guard.mjs` → `no-restricted-syntax` entries spread into the shared
+   card/action override in `apps/web/eslint.config.mjs` (one rule id per matching file, so both
+   guards' selectors live in the same array). Outside the sealed `@hnet/ui` family, in any
+   `app/components/lib` file, it errors on:
+   - **R1** a raw `<button>`/`<a class="btn">` whose visible text OR `aria-label` is a canonical
+     registry action label (`Fix` / `Force Search` / `Retry import`) — a hand-rolled media action;
+   - **R2** the same in a _retired_ label variant (`Fix this` / `Fix season` / `Force re-search` /
+     `Force Search show|artist` / `Retry Import`) ADR-071 normalized away;
+   - **R3** an unknown key on `<MediaAction action="…">` (validated against `MEDIA_ACTION_TYPES`);
+   - **R4** a hand-rolled `.btn__ext` consume ↗ (owned solely by `<ConsumeLink>`).
+
+   The label + key lists are a **MIRROR of `MEDIA_ACTIONS`**, locked by the parity test below (they
+   are not a hand-maintained parallel — a divergence fails CI). Runs in `lint-and-typecheck` via
+   `pnpm lint`.
+
+   _As-built refinements (deliberate, so the guard is clean on main and false-positive-free):_
+   - It does **not** ban the `.detail-head__play` / `.detail-head__actions` / `.action-slot` class
+     tokens. Those are shared `.detail-head` CSS _scaffold_, legitimately reused by non-media detail
+     surfaces — the **bulletin ticket detail** (a support ticket is not media) and the **ADR-065
+     books pairing-backfill affordance** ("the other format isn't in the library yet"), a
+     collection/backfill _config_ control, not a per-item media action (the same class of non-goal
+     as the collections find-missing puck). Cohesion is instead enforced where drift is
+     user-visible: the label vocabulary (R1/R2), the registry key (R3), and the ConsumeLink ↗
+     anatomy (R4). Anchoring on interactive `btn`-classed `<button>`/`<a>` keeps the words in prose
+     (`<strong>Fix</strong>`), headings ("Fixes on this item"), and caption spans out of scope.
+   - No `no-restricted-imports` rule: `@hnet/ui`'s package `exports` map exposes only the barrel, so
+     deep imports of `packages/ui/src/actions/*` do not resolve — the internals are sealed by the
+     module boundary (stronger than a lint rule).
+   - **EXPLICIT NON-GOAL (coordinator UX ruling, recorded in the guard header):** the collections
+     find-missing puck-toggle is a collection-scoped acquisition CONFIG control (the acq-puck
+     idiom), NOT a media action; it does not register in `MEDIA_ACTIONS` and the guard never flags
+     it.
+
+2. `apps/web/lib/__tests__/action-system-guard.test.ts` — the executable proof (violating fixtures
+   for all four rules fail with the actionable message, the sanctioned `<MediaAction action="fix">`
+   / `<ConsumeLink>` and legitimate non-action forms pass, a repo walk shows zero live violations,
+   and a registry-parity assertion locks the guard's label/key mirror to `MEDIA_ACTIONS`) in the
+   `test` job.
 
 **Migration sequence** (each PR independently green; the guard lands LAST so the tree is already
 clean): PR-1 adds the `@hnet/ui` family (pure add) → item-detail refactor (the reference) → books
@@ -1165,13 +1195,21 @@ machine stays in each surface (passed to the slot as `live`), the audit's "state
 the app" split. Presentation + gating (`searchable` / `canRetryImport` / `canForceSearch`) are
 unchanged. The collection-origin (ownerless) wants from #394 still route through the same
 `FormatSearchSlot` (the `origin: 'collection'` → `books.searchPairingWant` branch is untouched).
-These two surfaces would now pass the PR-6 `action-anatomy` guard. Remaining: PR-6 (the guard).
+These two surfaces would now pass the PR-6 `action-anatomy` guard.
+
+**PR-6 (the lock) — done (#PR6):** `apps/web/lint/action-anatomy-guard.mjs` +
+`apps/web/lib/__tests__/action-system-guard.test.ts` landed and wired into `apps/web/eslint.config.mjs`
+(runs under `pnpm lint` in `lint-and-typecheck`) and the `test` job. The guard passes clean on the
+current tree (every surface is on-pattern) and fails on a regression (a hand-rolled action button, a
+retired label, an unknown registry key, or a bespoke `.btn__ext` consume link). The migration lane
+is complete: media-action drift is now structural-impossible, not convention. See the four-rule
+detail + as-built refinements above.
 
 ## Open questions
 
-| ID   | Question                                                                                                                                                                                           | Resolution                                                                                                                                                               |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Q-01 | Brand mark: the donor's placeholder four-square SVG ships initially — does the owner want a real haynesnetwork logo (SVG) for topbar + `/login`?                                                   | Resolved 2026-07-03: hub-and-spoke mark, DESIGN-006 D-01                                                                                                                 |
-| Q-02 | Topbar avatar: initial-letter circle only, or render `users.image` (Better Auth stores the OIDC `picture` claim there — DESIGN-001 D-02) when present?                                             | Resolved: initial-letter circle only — `initialFor(displayName)` in `apps/web/lib/initials.ts` (first letter uppercased, `?` fallback). `users.image` is never rendered. |
-| Q-03 | Final brand palette: initial tokens keep demo-console's green `#78be20` accent verbatim (D-01). What accent/surfaces does the owner want for the haynesnetwork rebrand (a `tokens.css`-only edit)? | Resolved 2026-07-03: palette values stay (owner: "colors are good"); identity comes from mark/type/shape — DESIGN-006                                                    |
+| ID   | Question                                                                                                                                                                                                                                                                                        | Resolution                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Q-01 | Brand mark: the donor's placeholder four-square SVG ships initially — does the owner want a real haynesnetwork logo (SVG) for topbar + `/login`?                                                                                                                                                | Resolved 2026-07-03: hub-and-spoke mark, DESIGN-006 D-01                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Q-02 | Topbar avatar: initial-letter circle only, or render `users.image` (Better Auth stores the OIDC `picture` claim there — DESIGN-001 D-02) when present?                                                                                                                                          | Resolved: initial-letter circle only — `initialFor(displayName)` in `apps/web/lib/initials.ts` (first letter uppercased, `?` fallback). `users.image` is never rendered.                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Q-03 | Final brand palette: initial tokens keep demo-console's green `#78be20` accent verbatim (D-01). What accent/surfaces does the owner want for the haynesnetwork rebrand (a `tokens.css`-only edit)?                                                                                              | Resolved 2026-07-03: palette values stay (owner: "colors are good"); identity comes from mark/type/shape — DESIGN-006                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | Q-04 | (D-23) The three direct Plex server catalog rows (`plex`/`k8plex`/`plexops`) are display-excluded from Portal but still live in `/admin/catalog`. Owner: delete the rows (making `PORTAL_HIDDEN_SLUGS` a no-op), or keep them as dormant admin records? Either is safe — no code change needed. | **Resolved 2026-07-17 (owner ruling): DELETE.** Migration `0061_delete_dormant_plex_catalog_rows` deletes the three rows durably (fresh-deploy-safe; shipped migrations are never edited, so 0002 stays as history and 0061 un-does its three Plex rows). Their `role_app_grants` cascade away (Default → `{seerr}`; Family → `{seerr, immich, open-webui, paperless}`); `permission_audit.app_id` is SET NULL. `PORTAL_HIDDEN_SLUGS` is now a defensive no-op — kept as cheap insurance (a re-created `plex`/`k8plex`/`plexops` card stays hidden), not removed. Verified at the DB layer before/after (10 → 7 rows, three Plex slugs gone). |
