@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.83.0](https://github.com/thaynes43/haynesnetwork/compare/v0.82.0...v0.83.0) (2026-07-18)
+
+
+### Features
+
+* **libretto:** client for the builder-page search + draft preview endpoints ([#417](https://github.com/thaynes43/haynesnetwork/issues/417)) ([d94bbf2](https://github.com/thaynes43/haynesnetwork/commit/d94bbf22148601a1eb48f49c6c06c0bcaa7fb4b4))
+
+
+### Bug Fixes
+
+* collections row action is the registry Force Search, Run now retired (owner ruling) ([#418](https://github.com/thaynes43/haynesnetwork/issues/418)) ([fa8fa81](https://github.com/thaynes43/haynesnetwork/commit/fa8fa8144fe964b93573a331ffeed67882d58fd2))
+
+
+### Documentation
+
+* **design:** DESIGN-044 the collection builder page (search-first, live preview) ([#419](https://github.com/thaynes43/haynesnetwork/issues/419)) ([4667568](https://github.com/thaynes43/haynesnetwork/commit/4667568ecdce10dd74929ee373b6f54d8f96c53f))
+
 ## [0.82.0](https://github.com/thaynes43/haynesnetwork/compare/v0.81.2...v0.82.0) (2026-07-18)
 
 
