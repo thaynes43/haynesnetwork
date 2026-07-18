@@ -37,6 +37,8 @@ const APP_CODE_COPY: Record<string, string> = {
   // the over-cap Modal (which files the admin-override ticket), so this copy is only a fallback.
   COLLECTION_SIZE_CAP_EXCEEDED:
     'This collection is too large for your role — ask an admin to approve a larger bound.',
+  // DESIGN-042 D-04 — a Movies/TV (Kometa) collection reference that failed shape validation.
+  KOMETA_RECIPE_INVALID: 'Check the collection reference — it isn’t a valid list URL or id.',
 };
 
 /** The machine-readable appCode riding on a TRPCClientError, if any. */

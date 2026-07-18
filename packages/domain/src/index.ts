@@ -172,3 +172,10 @@ export * from './libretto-clients';
 export * from './collections-manager';
 export * from './collection-permissions';
 export * from './collection-size-cap';
+// ADR-072 / DESIGN-042 (PLAN-052 PR4b — Kometa auto-merge write path for Movies/TV) — the pure recipe →
+// managed-include compiler, the confined @hnet/haynesops git-write bundle (@hnet/haynesops/write stays in
+// this package — the arr-write-import-guard, extended), and the Kometa collections orchestrator (overview /
+// direct-add + auto-merge / materialize / delete — mirror-only, audited same-tx).
+export * from './kometa-compiler';
+export * from './haynesops-clients';
+export * from './kometa-collections';

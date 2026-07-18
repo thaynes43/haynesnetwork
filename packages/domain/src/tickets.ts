@@ -20,7 +20,10 @@ import { inTransaction, resolveDb } from './db-client';
 import { enqueueOutbox } from './notify-outbox';
 import { computeEarliestSend, getNotifyWindow } from './notify-window';
 import { materializeCollection } from './collections-manager';
+import { materializeKometaCollection, type KometaMediaType } from './kometa-collections';
+import type { KometaBuilderType } from '@hnet/db';
 import type { LibrettoClientBundle } from './libretto-clients';
+import type { HaynesopsClientBundle } from './haynesops-clients';
 import type { LibrettoRecipeDraft } from '@hnet/libretto';
 
 /**
@@ -424,21 +427,43 @@ async function getTicketById(db?: DbClient, ticketId?: string): Promise<TicketRo
   return row ?? null;
 }
 
+/** Reconstruct the confined Kometa writer's recipe from a stored over-cap payload (acquisition OFF — D-11). */
+function kometaRecipeFromOverridePayload(payload: CollectionOverridePayload) {
+  return {
+    id: payload.recipeId,
+    name: payload.name,
+    mediaType: (payload.mediaType === 'tv' ? 'tv' : 'movies') as KometaMediaType,
+    builderType: payload.builderType as KometaBuilderType,
+    builderRef: payload.builderRef,
+    ...(payload.syncMode ? { syncMode: payload.syncMode } : {}),
+    ...(payload.ordered !== undefined ? { ordered: payload.ordered } : {}),
+    findMissing: false,
+  };
+}
+
 /**
  * ADR-072 / DESIGN-043 D-11 — an admin's one-click APPROVE of an over-cap `collection_override` ticket:
  * materialize the collection UNBOUNDED (the confined writer, cap-bypassed) straight from the ticket's
  * stored payload, THEN transition the ticket to `complete` with a household-visible note. The external
  * materialization lands BEFORE the same-tx transition (the crash-safe idempotent-PUT idiom: a crash between
  * them re-PUTs the recipe cleanly on retry, and the ticket is still open to retry). The transition +
- * ticket_events history row commit in ONE tx (transitionTicket — hard rule 6). Only a Libretto (books /
- * audiobooks) payload materializes directly in PR4a; a Kometa payload is the PR4b human-merged path.
+ * ticket_events history row commit in ONE tx (transitionTicket — hard rule 6).
+ *
+ * Two provider paths (ADR-072): a Libretto (books/audiobooks) payload materializes DIRECTLY (instant API
+ * write); a Kometa (movies/TV) payload opens a HUMAN-merged haynes-ops PR (DESIGN-042 D-07 case 3 / D-10 —
+ * over-cap is never auto-merged) — the ticket completes and the completion note carries the PR URL a human
+ * merges. The Kometa path requires the `haynesops` bundle; approving a Kometa payload without it errors
+ * (never silently drops the write).
  */
 export async function approveCollectionOverride(input: {
   db?: DbClient;
   libretto: LibrettoClientBundle;
+  haynesops?: HaynesopsClientBundle;
   ticketId: string;
   actorId: string;
   now?: Date;
+  /** Injectable unique branch suffix for the Kometa PR (tests pass a fixed value). */
+  branchSuffix?: string;
 }): Promise<TransitionTicketResult> {
   const ticket = await getTicketById(input.db, input.ticketId);
   if (!ticket) throw new NotFoundError(`Ticket ${input.ticketId} not found`);
@@ -449,15 +474,32 @@ export async function approveCollectionOverride(input: {
   if (ticket.status === 'complete' || ticket.status === 'rejected') {
     throw new CollectionOverrideNotActionableError('This request has already been decided.');
   }
-  // Materialize (external, unbounded) BEFORE the same-tx completion. Kometa (movies/TV) is PR4b's
-  // human-merged path — PR4a only files Libretto payloads, so nothing else can reach here.
-  await materializeCollection({ libretto: input.libretto, draft: draftFromOverridePayload(payload) });
+  // Materialize (external, unbounded) BEFORE the same-tx completion.
+  let note: string;
+  if (payload.provider === 'kometa') {
+    if (!input.haynesops) {
+      throw new CollectionOverrideNotActionableError(
+        'The Movies/TV write path is unavailable — cannot approve this request right now.',
+      );
+    }
+    const res = await materializeKometaCollection({
+      db: input.db,
+      haynesops: input.haynesops,
+      actorId: input.actorId,
+      recipe: kometaRecipeFromOverridePayload(payload),
+      ...(input.branchSuffix ? { branchSuffix: input.branchSuffix } : {}),
+    });
+    note = `Collection approved at ${payload.size} items. A config change is pending merge: ${res.prUrl}`;
+  } else {
+    await materializeCollection({ libretto: input.libretto, draft: draftFromOverridePayload(payload) });
+    note = `Collection approved and created at ${payload.size} items.`;
+  }
   return transitionTicket({
     db: input.db,
     ticketId: input.ticketId,
     actorId: input.actorId,
     toStatus: 'complete',
-    note: `Collection approved and created at ${payload.size} items.`,
+    note,
     now: input.now,
   });
 }

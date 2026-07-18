@@ -33,6 +33,9 @@ import {
   type LazyLibrarianClientBundle,
   librettoBundleFromEnv,
   type LibrettoClientBundle,
+  haynesopsBundleFromEnv,
+  type HaynesopsClientBundle,
+  KometaRecipeError,
   CollectionOverrideNotActionableError,
   CollectionSizeCapError,
   LedgerItemTombstonedError,
@@ -174,6 +177,13 @@ export interface TRPCContext {
    */
   libretto?: LibrettoClientBundle;
   /**
+   * ADR-072 / DESIGN-042 (PLAN-052 PR4b — Kometa auto-merge) — the confined haynes-ops git-write bundle
+   * the Movies/TV `collections.*` procedures write through (compile the managed include → open a
+   * bot-authored PR → auto-merge the safe case). Env-built singleton in production (HAYNESOPS_WRITE_TOKEN,
+   * NOT yet provisioned — docs/ops/014); stubbed bundle in tests. NEVER constructed in the browser.
+   */
+  haynesops?: HaynesopsClientBundle;
+  /**
    * ADR-068 / DESIGN-040 (PLAN-057) — the estate play scoreboard source `metrics.playScoreboard`
    * reads (the ~10-min TTL memo over the three Tautullis). Env-built singleton in production
    * (resolveTautulliInstances — absent env ⇒ zero readers ⇒ `unavailable`, never an error);
@@ -284,6 +294,15 @@ export function resolveLibrettoBundle(ctx: TRPCContext): LibrettoClientBundle {
   return envLibrettoBundle;
 }
 
+let envHaynesopsBundle: HaynesopsClientBundle | undefined;
+
+/** The haynes-ops git-write bundle for this request: injected (tests) or the env-built singleton (ADR-072). */
+export function resolveHaynesopsBundle(ctx: TRPCContext): HaynesopsClientBundle {
+  if (ctx.haynesops) return ctx.haynesops;
+  envHaynesopsBundle ??= haynesopsBundleFromEnv();
+  return envHaynesopsBundle;
+}
+
 let envGoodreadsClient: GoodreadsRssClient | undefined;
 
 /** The Goodreads RSS client for this request: injected (tests) or the env-built singleton (ADR-055). */
@@ -392,6 +411,7 @@ const APP_CODED_ERRORS = [
   PlexServerUnavailableError,
   SearchCapExceededError,
   CollectionSizeCapError,
+  KometaRecipeError,
   MaintainerrUnsafeError,
   MaintainerrUpstreamError,
   TrashMusicUnsupportedError,
@@ -518,6 +538,11 @@ export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
     if (err instanceof CollectionSizeCapError) {
       // DESIGN-035 D-17 — a non-admin create/add breached collection_size_cap. The client reads the
       // appCode (COLLECTION_SIZE_CAP_EXCEEDED) to open the over-cap Modal + file the override ticket.
+      throw new TRPCError({ code: 'UNPROCESSABLE_CONTENT', message: err.message, cause: err });
+    }
+    if (err instanceof KometaRecipeError) {
+      // DESIGN-042 D-04 — a disallowed Kometa builder or a malformed/unvalidated ref. The composer
+      // surfaces the message (KOMETA_RECIPE_INVALID appCode) so the user fixes the ref before save.
       throw new TRPCError({ code: 'UNPROCESSABLE_CONTENT', message: err.message, cause: err });
     }
     if (err instanceof LibraryNotAllowedError) {

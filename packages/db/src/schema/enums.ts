@@ -826,12 +826,39 @@ export type CollectionProvider = (typeof COLLECTION_PROVIDERS)[number];
 export const COLLECTION_MEDIA_TYPES = ['movies', 'tv', 'books', 'audiobooks'] as const;
 export type CollectionMediaType = (typeof COLLECTION_MEDIA_TYPES)[number];
 
-// The Libretto v1 builder set (DESIGN-037 D-05) — what SOURCE a recipe's collection is built from.
-export const COLLECTION_BUILDER_TYPES = [
+// The Libretto v1 builder set (DESIGN-037 D-05) — what SOURCE a books/audiobooks recipe is built from.
+export const LIBRETTO_BUILDER_TYPES = [
   'static_ids',
   'hardcover_series',
   'nyt_list',
   'wikidata_award',
+] as const;
+export type LibrettoBuilderType = (typeof LIBRETTO_BUILDER_TYPES)[number];
+
+// ADR-072 / DESIGN-042 D-04 (PLAN-052 PR4b) — the Kometa (Movies/TV) member-suggestible builder
+// allowlist, EXACTLY the six single-validated-ref types the live haynes-ops config uses today
+// (imdb_list / tmdb_collection_details / tvdb_list_details reduce to a URL or id; tmdb_movie /
+// tmdb_show / tvdb_show to an id-list). The four owner-only query/search/regex engines
+// (tmdb_discover / imdb_chart / imdb_search / plex_all) are DELIBERATELY absent — they are not
+// single refs and stay hand-authored in haynes-ops. A builder Kometa supports but the owner does
+// not use is never offered (R1 KISS). Never a raw-YAML passthrough (ADR-069).
+export const KOMETA_BUILDER_TYPES = [
+  'imdb_list',
+  'tmdb_collection_details',
+  'tvdb_list_details',
+  'tmdb_movie',
+  'tmdb_show',
+  'tvdb_show',
+] as const;
+export type KometaBuilderType = (typeof KOMETA_BUILDER_TYPES)[number];
+
+// The full collection builder vocabulary across BOTH providers — the shape the shared composer input
+// + the over-cap ticket payload accept (validated per-provider in @hnet/domain: a Kometa builder on a
+// books draft, or a Libretto builder on a movies draft, is rejected by the provider orchestrator).
+// jsonb payload only — no DB CHECK constrains it, so widening the set needs no migration.
+export const COLLECTION_BUILDER_TYPES = [
+  ...LIBRETTO_BUILDER_TYPES,
+  ...KOMETA_BUILDER_TYPES,
 ] as const;
 export type CollectionBuilderType = (typeof COLLECTION_BUILDER_TYPES)[number];
 
