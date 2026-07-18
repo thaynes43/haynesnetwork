@@ -513,11 +513,17 @@ export async function mintPairingWants(
     });
   const candidates = [...fresh, ...retry];
 
-  // 4. The llBookId reuse index over goodreads requests (same normalized title + author agreement).
+  // 4. The llBookId reuse index over ALREADY-RESOLVED requests (same normalized title + author
+  //    agreement). Draws from BOTH goodreads shelf requests AND prior pairing wants: a GB volume id
+  //    is the same identity key on either origin, so a pairing candidate whose same-work sibling
+  //    (e.g. its format twin, or a shelf request) already resolved reuses that id and needs ZERO GB
+  //    calls — the GB-avoidance that lets the pairing backlog keep draining on a quota-exhausted day
+  //    (the 2026-07-18 shared-key starvation: LazyLibrarian drains the per-project GB quota, so every
+  //    pairing want that can resolve WITHOUT a fresh GB hop is one more that mints regardless).
   const reuseRows = await db
     .select({ title: bookRequests.title, author: bookRequests.author, llBookId: bookRequests.llBookId })
     .from(bookRequests)
-    .where(and(eq(bookRequests.origin, 'goodreads'), isNotNull(bookRequests.llBookId)));
+    .where(and(inArray(bookRequests.origin, ['goodreads', 'pairing']), isNotNull(bookRequests.llBookId)));
   const reuseByTitle = new Map<string, Array<{ author: string; llBookId: string }>>();
   for (const r of reuseRows) {
     if (!r.llBookId) continue;

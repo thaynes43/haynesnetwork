@@ -6949,11 +6949,13 @@ body:has(.gallery) {
 
 /* ADR-070 / DESIGN-043 (PLAN-052) — the collection manager + the member suggest affordance. Tokens
    only (hard rule 2); reserved slots + recolor-not-reflow (ADR-015). */
+/* Full-width like every first-class page (Library/Tickets/Trash) — the owner flagged the 860px pin
+   as off-house (2026-07-18): the tab rail's divider runs the whole page and rows breathe. Only the
+   intro paragraph keeps a reading measure (below). */
 .collections-page {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  max-width: 860px;
 }
 .collections-toolbar {
   display: flex;
