@@ -42,6 +42,21 @@ export interface PlexCollectionSyncInput {
    * bound, DESIGN-035 D-08) never tombstones members it didn't see.
    */
   fullyRead: boolean;
+  /**
+   * DESIGN-035 D-16 — the resolved ledger ids of this collection's WANTED members (monitored,
+   * not-on-disk *arr-native titles) — the movie Wanted tiles. Empty when the collection has no
+   * resolved wanted members (or the *arr membership was not resolved this run). Each becomes a
+   * `held=false` member row keyed by `(collection_id, media_item_id)`, disjoint from the Plex-child
+   * held rows above.
+   */
+  wantedMemberIds?: string[];
+  /**
+   * DESIGN-035 D-16 — true when this collection's *arr-native membership was RESOLVED this run (a
+   * Radarr collection matched and its members were read). ONLY then are its wanted rows in the
+   * stale-delete reconcile scope — a collection with no *arr match (or a Radarr read failure) keeps
+   * its existing wanted rows untouched (the fully-read discipline applied to the wanted population).
+   */
+  wantedResolved?: boolean;
 }
 
 export interface SyncPlexCollectionsInput {
@@ -62,8 +77,12 @@ export interface SyncPlexCollectionsReport {
   membersUpserted: number;
   /** Stale collections removed (present before in a scoped library, absent from this run). */
   collectionsRemoved: number;
-  /** Stale members removed from fully-read collections. */
+  /** Stale HELD members removed from fully-read collections. */
   membersRemoved: number;
+  /** DESIGN-035 D-16 — WANTED member rows upserted (held=false, *arr-native). */
+  wantedMembersUpserted: number;
+  /** DESIGN-035 D-16 — stale WANTED members removed from collections whose *arr membership was resolved. */
+  wantedMembersRemoved: number;
 }
 
 const CHUNK = 500;
@@ -83,9 +102,14 @@ export async function syncPlexCollections(
   let membersUpserted = 0;
   let collectionsRemoved = 0;
   let membersRemoved = 0;
+  let wantedMembersUpserted = 0;
+  let wantedMembersRemoved = 0;
 
   await inTransaction(input.db, async (tx) => {
     const fullyReadCollectionIds: string[] = [];
+    // DESIGN-035 D-16 — collections whose *arr-native (wanted) membership was resolved this run;
+    // ONLY their wanted rows are in the stale-delete scope (the fully-read discipline for wanted).
+    const wantedResolvedCollectionIds: string[] = [];
 
     for (const collection of input.collections) {
       const [row] = await tx
@@ -125,9 +149,11 @@ export async function syncPlexCollections(
       collectionsUpserted += 1;
       if (collection.fullyRead) fullyReadCollectionIds.push(row.id);
 
+      // HELD members — the Plex-child rows (rating_key set, held=true), the existing population.
       const memberValues = collection.members.map((m) => ({
         collectionId: row.id,
         ratingKey: m.ratingKey,
+        held: true,
         sortOrder: m.sortOrder,
         firstSeenAt: runStart,
         lastSeenAt: runStart,
@@ -148,20 +174,72 @@ export async function syncPlexCollections(
           });
         membersUpserted += chunk.length;
       }
+
+      // WANTED members (DESIGN-035 D-16) — the *arr-native monitored-not-on-disk titles (held=false,
+      // rating_key null), keyed by (collection_id, media_item_id) via the partial unique. Disjoint
+      // from the held rows above, so the read-model union never double-counts.
+      const wantedIds = collection.wantedMemberIds ?? [];
+      if (collection.wantedResolved === true) wantedResolvedCollectionIds.push(row.id);
+      if (wantedIds.length > 0) {
+        const wantedValues = wantedIds.map((mediaItemId) => ({
+          collectionId: row.id,
+          ratingKey: null,
+          mediaItemId,
+          held: false,
+          sortOrder: 0,
+          firstSeenAt: runStart,
+          lastSeenAt: runStart,
+          updatedAt: runStart,
+        }));
+        for (let i = 0; i < wantedValues.length; i += CHUNK) {
+          const chunk = wantedValues.slice(i, i + CHUNK);
+          await tx
+            .insert(plexCollectionMembers)
+            .values(chunk)
+            .onConflictDoUpdate({
+              target: [plexCollectionMembers.collectionId, plexCollectionMembers.mediaItemId],
+              targetWhere: sql`${plexCollectionMembers.mediaItemId} IS NOT NULL`,
+              set: {
+                held: sql`excluded.held`,
+                lastSeenAt: sql`excluded.last_seen_at`,
+                updatedAt: sql`excluded.updated_at`,
+              },
+            });
+          wantedMembersUpserted += chunk.length;
+        }
+      }
     }
 
-    // Member reconcile — fully-read collections only (D-08: a truncated read never tombstones).
+    // HELD member reconcile — fully-read collections only (D-08: a truncated read never tombstones).
+    // Scoped to held=true so it never touches the *arr-native wanted rows (their own reconcile below).
     if (fullyReadCollectionIds.length > 0) {
       const removed = await tx
         .delete(plexCollectionMembers)
         .where(
           and(
             inArray(plexCollectionMembers.collectionId, fullyReadCollectionIds),
+            eq(plexCollectionMembers.held, true),
             lt(plexCollectionMembers.lastSeenAt, runStart),
           ),
         )
         .returning({ id: plexCollectionMembers.id });
       membersRemoved = removed.length;
+    }
+
+    // WANTED member reconcile (D-16) — collections whose *arr membership was RESOLVED this run only;
+    // a collection with no *arr match (or a Radarr read failure) keeps its wanted rows untouched.
+    if (wantedResolvedCollectionIds.length > 0) {
+      const removed = await tx
+        .delete(plexCollectionMembers)
+        .where(
+          and(
+            inArray(plexCollectionMembers.collectionId, wantedResolvedCollectionIds),
+            eq(plexCollectionMembers.held, false),
+            lt(plexCollectionMembers.lastSeenAt, runStart),
+          ),
+        )
+        .returning({ id: plexCollectionMembers.id });
+      wantedMembersRemoved = removed.length;
     }
 
     // Collection reconcile — fully-read sections only (the plex-match scoping rule); members CASCADE.
@@ -179,5 +257,12 @@ export async function syncPlexCollections(
     }
   });
 
-  return { collectionsUpserted, membersUpserted, collectionsRemoved, membersRemoved };
+  return {
+    collectionsUpserted,
+    membersUpserted,
+    collectionsRemoved,
+    membersRemoved,
+    wantedMembersUpserted,
+    wantedMembersRemoved,
+  };
 }

@@ -51,7 +51,13 @@ import {
 } from '@hnet/ui';
 import type { BooksSort, BooksWantedState, BookReadState } from '@hnet/api';
 import { trpc } from '@/lib/trpc-client';
-import { BookCard, GroupCard, PosterGrid, PosterGridSkeleton, type InFlightBadge } from '@/components/cards';
+import {
+  BookCard,
+  GroupCard,
+  PosterGrid,
+  PosterGridSkeleton,
+  type InFlightBadge,
+} from '@/components/cards';
 import { CHIP_LABELS, SelectChip } from '@/components/filter-chips';
 import { LetterJumpBar } from '@/components/letter-jump-bar';
 import {
@@ -68,6 +74,7 @@ import {
   LENGTH_BUCKET_OPTIONS,
   READ_STATE_OPTIONS,
   WALL_VIEWS,
+  orderCollectionCategories,
   registryFor,
   type ViewLevelKey,
   type ViewRegistryEntry,
@@ -82,7 +89,8 @@ type BooksWall = Extract<LibraryWallId, 'books' | 'audiobooks' | 'comics'>;
 
 /** The books walls' enum/suggest facet fields (FilterMap keys — each maps to a URL param + the
  *  same-named books.search input; see the registry declarations). */
-type BooksField = 'genres' | 'authors' | 'narrators' | 'series' | 'languages' | 'formats' | 'lengths';
+type BooksField =
+  'genres' | 'authors' | 'narrators' | 'series' | 'languages' | 'formats' | 'lengths';
 
 function formatDuration(seconds: number | null): string | null {
   if (seconds == null || seconds <= 0) return null;
@@ -143,7 +151,10 @@ export function BooksBrowser({
   // A grouping WITH a bound registry level renders aggregate cards; one without (Comics' Series —
   // the wall IS that grouping, a Kavita row IS a series) renders the item grid (DESIGN-038 D-07).
   const groupedCards =
-    !drilled && resolved.view === 'grouped' && grouping !== undefined && grouping.level !== undefined;
+    !drilled &&
+    resolved.view === 'grouped' &&
+    grouping !== undefined &&
+    grouping.level !== undefined;
   // The dimension a DRILLED grid filters on (the drill link carries ?by= for non-default dims).
   const drillGrouping: WallGrouping | undefined =
     groupings.find((g) => g.dimension === (urlBy ?? defaultGrouping?.dimension)) ?? defaultGrouping;
@@ -195,10 +206,11 @@ export function BooksBrowser({
     stored != null && sortKeys.includes(stored.sortField)
       ? { field: stored.sortField, dir: stored.sortDir }
       : null;
-  const sort =
-    urlSort ??
-    (drilledCollection ? null : storedSort) ??
-    { field: levelDefaultSort.field, dir: levelDefaultSort.dir };
+  const sort = urlSort ??
+    (drilledCollection ? null : storedSort) ?? {
+      field: levelDefaultSort.field,
+      dir: levelDefaultSort.dir,
+    };
   const sortToken = `${sort.field}:${sort.dir}`;
 
   const readRaw = searchParams.get('read');
@@ -213,6 +225,13 @@ export function BooksBrowser({
     wantedRaw === 'only' || wantedRaw === '1' ? 'only' : wantedRaw === 'hide' ? 'hide' : 'all';
   const letterRaw = searchParams.get('at');
   const letter = letterRaw !== null && /^[a-z]$/.test(letterRaw) ? letterRaw : null;
+  // DESIGN-038 D-12 — the category chip (?ctype=, replace refinement — D-19). Collection-cards concern
+  // only (the drill URL never carries it). The vocabulary is OPEN (dynamic), so ctype is any non-empty
+  // string; an unknown value simply matches no cards (the viewer clicks All to clear). The chip set
+  // itself comes from the present categories (categoryCounts) below. Filtered CLIENT-SIDE off the
+  // multi-purpose collectionsQ so the selector gate + drill header stay stable (D-12 read model).
+  const ctypeRaw = searchParams.get('ctype');
+  const ctype = ctypeRaw !== null && ctypeRaw.trim() !== '' ? ctypeRaw : undefined;
 
   // The drilled dimension's own facet chip hides — the drill IS that filter (author OR genre).
   // A collection drill hides none: `collection` is not an item facet (its level omits `wanted`).
@@ -253,9 +272,10 @@ export function BooksBrowser({
     if (searchParams.get('view') === null) {
       patchParams({
         view: resolved.view === 'flat' ? 'flat' : 'grouped',
-        by: resolved.view !== 'flat' && grouping !== undefined && grouping !== defaultGrouping
-          ? grouping.dimension
-          : null,
+        by:
+          resolved.view !== 'flat' && grouping !== undefined && grouping !== defaultGrouping
+            ? grouping.dimension
+            : null,
       });
     }
     // patchParams reads the live location; the deps that matter are the resolution inputs.
@@ -340,7 +360,11 @@ export function BooksBrowser({
         wall: booksWall,
         // A wall without a flat shape (Comics) persists its default grouped shape/dimension.
         view: groupedCards ? 'grouped' : offersFlat ? 'flat' : WALL_VIEW_DEFAULTS[booksWall].view,
-        groupBy: groupedCards ? (grouping?.dimension ?? null) : offersFlat ? null : WALL_VIEW_DEFAULTS[booksWall].groupBy,
+        groupBy: groupedCards
+          ? (grouping?.dimension ?? null)
+          : offersFlat
+            ? null
+            : WALL_VIEW_DEFAULTS[booksWall].groupBy,
         sortField: field,
         sortDir: dir,
       });
@@ -399,7 +423,9 @@ export function BooksBrowser({
   );
 
   const azActive =
-    !groupedCards && (entry.azSorts as readonly string[]).includes(sort.field) && sort.dir === 'asc';
+    !groupedCards &&
+    (entry.azSorts as readonly string[]).includes(sort.field) &&
+    sort.dir === 'asc';
   const bucketKind = mediaKind === 'audiobook' ? 'duration' : 'pages';
   const search = trpc.books.search.useInfiniteQuery(
     {
@@ -425,7 +451,9 @@ export function BooksBrowser({
       ...(filters.narrators ? { narrators: filters.narrators } : {}),
       ...(filters.series ? { series: filters.series } : {}),
       ...(filters.languages ? { languages: filters.languages } : {}),
-      ...(filters.formats ? { formats: filters.formats as ('epub' | 'archive' | 'pdf' | 'image' | 'unknown')[] } : {}),
+      ...(filters.formats
+        ? { formats: filters.formats as ('epub' | 'archive' | 'pdf' | 'image' | 'unknown')[] }
+        : {}),
       ...(filters.lengths ? { lengths: filters.lengths as ('short' | 'medium' | 'long')[] } : {}),
       ...(readState !== undefined ? { readState } : {}),
       ...(azActive && letter !== null ? { letter } : {}),
@@ -452,14 +480,19 @@ export function BooksBrowser({
   // count). Plain computation — the React Compiler memoizes it (a manual useMemo on `sort.*` deps
   // trips react-hooks/preserve-manual-memoization); the group lists are small (bounded walls).
   const groupList = collectionCards
-    ? (collectionsQ.data?.groups ?? [])
+    ? // D-12 — the `?ctype=` category chip filters the collection CARDS client-side (off the
+      // multi-purpose collectionsQ; categoryCounts holds the chip set steady while toggling).
+      (collectionsQ.data?.groups ?? []).filter((g) => ctype === undefined || g.category === ctype)
     : (groupsQuery.data?.groups ?? []);
   const groupQ = qParam.trim().toLowerCase();
-  const groupsFound = groupQ === '' ? groupList : groupList.filter((g) => g.label.toLowerCase().includes(groupQ));
+  const groupsFound =
+    groupQ === '' ? groupList : groupList.filter((g) => g.label.toLowerCase().includes(groupQ));
   const groupDir = sort.dir === 'desc' ? -1 : 1;
   const groups =
     sort.field === 'count'
-      ? [...groupsFound].sort((a, b) => (a.count - b.count) * groupDir || a.label.localeCompare(b.label))
+      ? [...groupsFound].sort(
+          (a, b) => (a.count - b.count) * groupDir || a.label.localeCompare(b.label),
+        )
       : [...groupsFound].sort((a, b) => a.label.localeCompare(b.label) * groupDir);
   const groupsRefreshing = collectionCards
     ? collectionsQ.isPlaceholderData && collectionsQ.isFetching
@@ -529,8 +562,7 @@ export function BooksBrowser({
     ? !groupsPending && groups.length === 0
     : (!search.isPending && items.length === 0 && !search.error) || drilledMissing;
   const pending =
-    !prefsReady ||
-    (groupedCards ? groupsPending : drilledMissing ? false : search.isPending);
+    !prefsReady || (groupedCards ? groupsPending : drilledMissing ? false : search.isPending);
 
   return (
     <>
@@ -541,7 +573,9 @@ export function BooksBrowser({
           <Link
             className="btn sm library-drill__back"
             href={`${pathname}?tab=${booksWall}&view=grouped${
-              drillGrouping !== defaultGrouping ? `&by=${encodeURIComponent(drillGrouping.dimension)}` : ''
+              drillGrouping !== defaultGrouping
+                ? `&by=${encodeURIComponent(drillGrouping.dimension)}`
+                : ''
             }`}
             scroll={false}
           >
@@ -592,7 +626,11 @@ export function BooksBrowser({
           <input
             type="search"
             className="library-search"
-            placeholder={groupedCards ? `Search ${grouping?.selectorLabel.toLowerCase() ?? 'groups'}…` : `Search ${label.toLowerCase()}…`}
+            placeholder={
+              groupedCards
+                ? `Search ${grouping?.selectorLabel.toLowerCase() ?? 'groups'}…`
+                : `Search ${label.toLowerCase()}…`
+            }
             aria-label={`Search ${label}`}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -606,6 +644,42 @@ export function BooksBrowser({
         {facetsForLevel.length > 0 ? (
           <div className="library-chipbar" role="group" aria-label="Filters">
             {facetsForLevel.map((facet) => {
+              if (facet.key === 'category') {
+                // DESIGN-038 D-12 — the DYNAMIC category chip row, identical to the movies/TV
+                // Collections walls: one chip per DISTINCT category actually present
+                // (collectionsQ.categoryCounts keys), ordered hint-list-then-alphabetical
+                // (orderCollectionCategories); `?ctype=` is a D-19 replace refinement filtering the
+                // cards client-side. Data-gated on the books "no dead chip" ethos (ADR-051 C-06): the
+                // row shows only when at least one category is present. Fixed-height pan row that never
+                // reflows the grid (ADR-015). A new agent-set category becomes a chip with zero code.
+                const categoryOptions = orderCollectionCategories(
+                  Object.keys(collectionsQ.data?.categoryCounts ?? {}),
+                );
+                if (categoryOptions.length === 0) return null;
+                return (
+                  <div key={facet.key} className="seg" role="group" aria-label="Collection type">
+                    <button
+                      type="button"
+                      className={ctype === undefined ? 'is-active' : undefined}
+                      aria-pressed={ctype === undefined}
+                      onClick={() => patchParams({ [facet.param]: null })}
+                    >
+                      All
+                    </button>
+                    {categoryOptions.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        className={ctype === c ? 'is-active' : undefined}
+                        aria-pressed={ctype === c}
+                        onClick={() => patchParams({ [facet.param]: ctype === c ? null : c })}
+                      >
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+                );
+              }
               if (facet.key === 'wanted') {
                 // PLAN-056 / DESIGN-029 amendment 3 — the THREE-state composed-Wanted selector
                 // (All · Wanted only · Hide wanted) on the wall's existing `.seg` idiom: fixed
@@ -654,7 +728,8 @@ export function BooksBrowser({
                   />
                 );
               }
-              if (facet.kind !== 'enum' && facet.kind !== 'suggest' && facet.kind !== 'buckets') return null;
+              if (facet.kind !== 'enum' && facet.kind !== 'suggest' && facet.kind !== 'buckets')
+                return null;
               const field = facet.key as BooksField;
               const values = facetValuesFor(field);
               if (facet.dataGated && values.length === 0) return null;
@@ -667,7 +742,11 @@ export function BooksBrowser({
                   enumValues={facet.kind === 'suggest' ? undefined : values}
                   suggestions={facet.kind === 'suggest' ? [...values] : undefined}
                   enumLabel={
-                    facet.key === 'formats' ? formatLabel : facet.key === 'lengths' ? bucketLabel : undefined
+                    facet.key === 'formats'
+                      ? formatLabel
+                      : facet.key === 'lengths'
+                        ? bucketLabel
+                        : undefined
                   }
                   displayValues={
                     facet.key === 'formats'
@@ -677,7 +756,9 @@ export function BooksBrowser({
                         : undefined
                   }
                   labels={CHIP_LABELS}
-                  onAdd={(v) => setFieldValues(field, filterValues(addFilterValue(filters, field, v), field))}
+                  onAdd={(v) =>
+                    setFieldValues(field, filterValues(addFilterValue(filters, field, v), field))
+                  }
                   onRemove={(v) =>
                     setFieldValues(field, filterValues(removeFilterValue(filters, field, v), field))
                   }
@@ -713,7 +794,9 @@ export function BooksBrowser({
         </div>
       </div>
 
-      {jumpVisible ? <LetterJumpBar active={letter} onJump={(l) => patchParams({ at: l })} /> : null}
+      {jumpVisible ? (
+        <LetterJumpBar active={letter} onJump={(l) => patchParams({ at: l })} />
+      ) : null}
 
       {pending ? (
         SKELETON

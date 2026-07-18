@@ -1424,7 +1424,13 @@ describe('migrations against embedded Postgres 16', () => {
       });
       expect(defaulted.rows[0].category).toBeNull();
       // The vocabulary is OPEN — any free-form category the owner coins is accepted (no CHECK).
-      for (const [i, category] of ['Universe', 'Sequels', 'Studio', 'Audio', 'A Coined One'].entries()) {
+      for (const [i, category] of [
+        'Universe',
+        'Sequels',
+        'Studio',
+        'Audio',
+        'A Coined One',
+      ].entries()) {
         await client.query({
           text: `INSERT INTO plex_collections (plex_library_id, rating_key, title, category)
                  VALUES ($1, $2, 'Category Fixture', $3)`,
@@ -1630,6 +1636,116 @@ describe('migrations against embedded Postgres 16', () => {
       await client.query(
         `DELETE FROM books_collections WHERE source = 'audiobookshelf' AND external_id = 'prov-1'`,
       );
+    });
+  });
+
+  // DESIGN-038 D-12 (migration 0064) — the books collection CATEGORY: an OPEN, free-form owner
+  // category (nullable, no CHECK), completing the label-driven dynamic-chip story across all three
+  // walls. Additive; every pre-existing row starts NULL until an agent labels it.
+  describe('0064 books collection category (DESIGN-038 D-12 — open free-form category, no enum)', () => {
+    it('adds a nullable, no-CHECK `category` column: null by default, any free-form value accepted', async () => {
+      // A row inserted without the column lands NULL (no category yet — shows under "All", no chip).
+      const defaulted = await client.query(
+        `INSERT INTO books_collections (source, external_id, kind, title)
+         VALUES ('kavita', 'cat-0064', 'reading_list', 'Category Fixture') RETURNING category`,
+      );
+      expect(defaulted.rows[0].category).toBeNull();
+      // Verify the column metadata: nullable, no default.
+      const cols = await client.query(
+        `SELECT is_nullable, column_default FROM information_schema.columns
+         WHERE table_name = 'books_collections' AND column_name = 'category'`,
+      );
+      expect(cols.rowCount).toBe(1);
+      expect(cols.rows[0].is_nullable).toBe('YES');
+      expect(cols.rows[0].column_default).toBeNull();
+      // The vocabulary is OPEN — any agent-coined category is accepted (no CHECK).
+      for (const [i, category] of ['Series', 'List', 'Event', 'A Coined One'].entries()) {
+        await client.query({
+          text: `INSERT INTO books_collections (source, external_id, kind, title, category)
+                 VALUES ('kavita', $1, 'reading_list', 'Category Fixture', $2)`,
+          values: [`cat-0064-${i}`, category],
+        });
+      }
+      await client.query(`DELETE FROM books_collections WHERE external_id LIKE 'cat-0064%'`);
+    });
+  });
+
+  // DESIGN-035 D-16 (migration 0065) — Wanted-tile membership: plex_collection_members grows a
+  // nullable media_item_id + a held flag, rating_key becomes nullable, and a PARTIAL unique keys the
+  // wanted rows. Held (rating_key) and wanted (media_item_id) rows coexist in one table.
+  describe('0065 collection wanted membership (DESIGN-035 D-16 — held + wanted member rows)', () => {
+    it('adds media_item_id + held, makes rating_key nullable, and keys held vs wanted separately', async () => {
+      // A movies library + collection + two media_items (one held on disk, one wanted).
+      const libId = (
+        await client.query(
+          `INSERT INTO plex_libraries (server_id, section_key, name, media_type)
+             SELECT id, '1', 'Movies 0065', 'movie' FROM plex_servers LIMIT 1 RETURNING id`,
+        )
+      ).rows[0].id;
+      const colId = (
+        await client.query({
+          text: `INSERT INTO plex_collections (plex_library_id, rating_key, title)
+                 VALUES ($1, 'wm-0065', 'Wanted Fixture') RETURNING id`,
+          values: [libId],
+        })
+      ).rows[0].id;
+      const mkItem = async (tmdb: number, onDisk: number) =>
+        (
+          await client.query({
+            text: `INSERT INTO media_items (arr_kind, arr_item_id, title, sort_title, monitored,
+                     quality_profile_id, quality_profile_name, root_folder, tmdb_id, on_disk_file_count)
+                   VALUES ('radarr', $1, 't', 't', true, 1, 'HD', '/m', $2, $3) RETURNING id`,
+            values: [tmdb, tmdb, onDisk],
+          })
+        ).rows[0].id;
+      const wantedItem = await mkItem(70650, 0);
+
+      // Column metadata: media_item_id nullable, held NOT NULL default true, rating_key now nullable.
+      const cols = await client.query(
+        `SELECT column_name, is_nullable, column_default FROM information_schema.columns
+           WHERE table_name = 'plex_collection_members'
+             AND column_name IN ('rating_key','media_item_id','held')`,
+      );
+      const byName = new Map(
+        (
+          cols.rows as Array<{
+            column_name: string;
+            is_nullable: string;
+            column_default: string | null;
+          }>
+        ).map((r) => [r.column_name, r]),
+      );
+      expect(byName.get('rating_key')?.is_nullable).toBe('YES');
+      expect(byName.get('media_item_id')?.is_nullable).toBe('YES');
+      expect(byName.get('held')?.is_nullable).toBe('NO');
+      expect(byName.get('held')?.column_default).toMatch(/true/);
+
+      // A HELD row (rating_key set, held default true) and a WANTED row (media_item_id set, rating_key
+      // null, held false) coexist.
+      await client.query({
+        text: `INSERT INTO plex_collection_members (collection_id, rating_key) VALUES ($1, '9001')`,
+        values: [colId],
+      });
+      await client.query({
+        text: `INSERT INTO plex_collection_members (collection_id, media_item_id, held) VALUES ($1, $2, false)`,
+        values: [colId, wantedItem],
+      });
+      // The PARTIAL unique bites a duplicate wanted member…
+      await expect(
+        client.query({
+          text: `INSERT INTO plex_collection_members (collection_id, media_item_id, held) VALUES ($1, $2, false)`,
+          values: [colId, wantedItem],
+        }),
+      ).rejects.toMatchObject({ code: '23505' });
+      // …and ON DELETE SET NULL nulls the link when the item leaves the ledger (the row survives).
+      await client.query({ text: `DELETE FROM media_items WHERE id = $1`, values: [wantedItem] });
+      const survived = await client.query({
+        text: `SELECT media_item_id FROM plex_collection_members WHERE collection_id = $1 AND held = false`,
+        values: [colId],
+      });
+      expect(survived.rows[0].media_item_id).toBeNull();
+
+      await client.query({ text: `DELETE FROM plex_libraries WHERE id = $1`, values: [libId] });
     });
   });
 

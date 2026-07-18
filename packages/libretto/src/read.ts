@@ -8,17 +8,29 @@ import { LibrettoHttp, type LibrettoHttpOptions } from './http';
 import {
   librettoCollectionsResponseSchema,
   librettoHealthResponseSchema,
+  librettoMissingResponseSchema,
   librettoRecipeDraftSchema,
   librettoRecipesResponseSchema,
+  librettoResolveResponseSchema,
   librettoRunSchema,
   librettoValidateResponseSchema,
   type LibrettoCollection,
   type LibrettoIssue,
+  type LibrettoMissingResponse,
   type LibrettoRecipe,
   type LibrettoRecipeDraft,
+  type LibrettoResolved,
   type LibrettoRun,
   type LibrettoValidateResponse,
 } from './schemas';
+
+/** The shape the resolve broker accepts (`POST /api/resolve`). At least one of isbn/title/identifiers. */
+export interface LibrettoResolveRequest {
+  isbn?: string;
+  title?: string;
+  author?: string;
+  identifiers?: string[];
+}
 
 /** Options shared by the read + write clients (mirrors LazyLibrarianClientOptions). */
 export type LibrettoClientOptions = LibrettoHttpOptions;
@@ -54,6 +66,34 @@ export class LibrettoReadClient {
     return raw.collections ?? [];
   }
 
+  /**
+   * `GET /api/collections/:recipeId/missing` — the recipe's wanted-but-unheld member IDENTITIES
+   * (title/author/ISBN/identifier refs) plus held/missing counts. This is the member-level data the
+   * books Wanted-tiles need: enough per missing book to mint one `book_requests` row (the collections
+   * agent owns the wanted-tile UI + the origin-minting; this method only surfaces the data). A recipe
+   * with no missing members returns `missing: []`. `recipeId` is path-encoded.
+   */
+  async listMissingMembers(recipeId: string): Promise<LibrettoMissingResponse> {
+    return this.http.requestParsed(
+      { method: 'GET', path: `/api/collections/${encodeURIComponent(recipeId)}/missing` },
+      librettoMissingResponseSchema,
+    );
+  }
+
+  /**
+   * `POST /api/resolve` — the ISBN-first resolve broker (M3 direction-a): resolve an ISBN|title+author to
+   * a Google-Books volume id (the LazyLibrarian addBook key), ISBN-first with a guarded title fallback.
+   * Mutates nothing. Returns the resolved volume (or `null` on an honest no-match). A `LibrettoHttpError`
+   * with status 503 means the broker is not configured Libretto-side (GOOGLE_BOOKS_API_KEY unset).
+   */
+  async resolve(request: LibrettoResolveRequest): Promise<LibrettoResolved | null> {
+    const raw = await this.http.requestParsed(
+      { method: 'POST', path: '/api/resolve', body: request },
+      librettoResolveResponseSchema,
+    );
+    return raw.resolved;
+  }
+
   /** `GET /api/runs/:id` — one run's state + counts (Libretto keeps only the last 50 — DESIGN-037 D-03). */
   async getRun(runId: string): Promise<LibrettoRun> {
     return this.http.requestParsed(
@@ -78,7 +118,10 @@ export class LibrettoReadClient {
 
   /** `GET /api/health` — liveness probe. Returns true on any 2xx; a LibrettoUnreachableError means down. */
   async health(): Promise<boolean> {
-    await this.http.requestParsed({ method: 'GET', path: '/api/health' }, librettoHealthResponseSchema);
+    await this.http.requestParsed(
+      { method: 'GET', path: '/api/health' },
+      librettoHealthResponseSchema,
+    );
     return true;
   }
 }

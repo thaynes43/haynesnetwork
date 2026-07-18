@@ -15,6 +15,7 @@ export function GroupCard({
   coverUrls,
   kind,
   count,
+  wantedCount,
   provenance,
 }: {
   href: string;
@@ -27,6 +28,12 @@ export function GroupCard({
   /** KindIcon kind for the empty-group fallback tile. */
   kind: string;
   count: number;
+  /**
+   * DESIGN-035 D-16 — of `count`, how many members are WANTED (monitored, not-on-disk *arr-native
+   * titles). When > 0 the card wears a warn-toned "N wanted" badge so a franchise's acquisition gap
+   * reads at a glance. Omit/0 on held-only walls (author/genre groups, TV, books this pass).
+   */
+  wantedCount?: number;
   /**
    * Collection PROVENANCE (owner directive 2026-07-16) — the display name of the software that
    * created a mirrored collection ("Kometa" / "Plex" / "Libretto" / "Kavita" / "Audiobookshelf").
@@ -42,7 +49,18 @@ export function GroupCard({
       art={{ type: 'group', art, label, imageUrl, coverUrls, kind }}
       title={label}
       subtitle={`${count} ${count === 1 ? 'item' : 'items'}`}
-      badges={provenance ? [{ label: provenance, tone: 'muted', title: `Created by ${provenance}` }] : undefined}
+      badges={[
+        provenance
+          ? { label: provenance, tone: 'muted' as const, title: `Created by ${provenance}` }
+          : null,
+        wantedCount && wantedCount > 0
+          ? {
+              label: `${wantedCount} wanted`,
+              tone: 'warn' as const,
+              title: `${wantedCount} monitored, not on disk`,
+            }
+          : null,
+      ]}
       flavor="group"
     />
   );

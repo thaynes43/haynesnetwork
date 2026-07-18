@@ -77,16 +77,16 @@ import {
 import { fetchOwuiUsage, type OpenWebUiClient } from './openwebui';
 // ADR-046 / DESIGN-024 (PLAN-023) — the read-only Kavita + Audiobookshelf snapshot fetcher the
 // `books-sync` mode hands to the @hnet/domain syncBooks single-writer (books_items mirror upsert).
-import {
-  fetchBooksSnapshot,
-  type BooksSyncBundle,
-  type ExistingKavitaEnrichment,
-} from './books';
+import { fetchBooksSnapshot, type BooksSyncBundle, type ExistingKavitaEnrichment } from './books';
 // ADR-055 / DESIGN-028 (PLAN-044) — the `goodreads-sync` mode's read side: pages each linked user's PUBLIC
 // shelf RSS + GB enrichment and hands the enriched snapshot to the domain syncGoodreadsIntegration
 // orchestrator (which does the DB writes + the confined LazyLibrarian pushes — the bundle arrives here as
 // an opaque type, never constructed in sync — the poster-guard precedent).
-import { runGoodreadsSync, type GoodreadsSourceBundle, type GoodreadsSyncReport } from './goodreads';
+import {
+  runGoodreadsSync,
+  type GoodreadsSourceBundle,
+  type GoodreadsSyncReport,
+} from './goodreads';
 // ADR-053 / DESIGN-026 D-07 (PLAN-029) — the ABS per-user listening-progress read, folded into books-sync
 // as an isolated post-step (per-user Audiobooks read-state; Kavita DEFERRED).
 import { syncAbsUserProgress, type SyncAbsUserProgressReport } from './abs-progress';
@@ -95,7 +95,11 @@ import { syncAbsUserProgress, type SyncAbsUserProgressReport } from './abs-progr
 import { fetchPlexMatchSnapshot, type PlexMatchStats } from './plex-match';
 // ADR-064 / DESIGN-035 (PLAN-037) — the read-only HOps collections fetcher the `collections-sync`
 // mode hands to the @hnet/domain syncPlexCollections single-writer (mirror upsert + scoped reconcile).
-import { fetchPlexCollectionsSnapshot, type PlexCollectionsStats } from './plex-collections';
+import {
+  fetchPlexCollectionsSnapshot,
+  type PlexCollectionsStats,
+  type RadarrCollectionsReader,
+} from './plex-collections';
 // ADR-066 / DESIGN-038 (PLAN-051) — the read-only Kavita/ABS collections fetcher the
 // `books-collections-sync` mode hands to the @hnet/domain syncBooksCollections single-writer
 // (mirror upsert + (source, kind)-family-scoped reconcile). Rides the SAME BooksSyncBundle.
@@ -174,6 +178,9 @@ export interface RunSyncOptions {
   /** ADR-043 / DESIGN-021 — the Plex client bundle (read + confined write) the `poster-guard` mode uses to
    *  read the k8plex Peloton library and re-apply drifted override posters. Required only for that mode. */
   plex?: PlexClientBundle;
+  /** DESIGN-035 D-16 — the OPTIONAL Radarr read the `collections-sync` mode uses for the movie
+   *  Wanted-tile membership (its TMDb collections → held/wanted split). Absent ⇒ held-only. */
+  collectionsRadarr?: RadarrCollectionsReader;
   /** ADR-044 / DESIGN-022 — the read-only Open WebUI admin-API client the `ai-usage-sync` mode polls for
    *  chats + users. Required only for that mode; tests inject a fetch-stubbed client. */
   openWebUi?: OpenWebUiClient;
@@ -391,7 +398,8 @@ async function loadExistingKavitaEnrichment(
     .where(and(eq(booksItems.source, 'kavita'), isNull(booksItems.deletedAt)));
   const map = new Map<string, ExistingKavitaEnrichment>();
   for (const r of rows) {
-    const language = ((r.attrs as Record<string, unknown> | null)?.language as string | null) ?? null;
+    const language =
+      ((r.attrs as Record<string, unknown> | null)?.language as string | null) ?? null;
     map.set(r.externalId, {
       sourceUpdatedAt: r.sourceUpdatedAt,
       metadataSyncedAt: r.metadataSyncedAt,
@@ -679,7 +687,11 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
   // hiccup — evaluateActivityFailures only closes failures for the sources actually scanned).
   if (options.mode === 'activity-scan') {
     const startedAt = new Date();
-    if (!options.activityBundle && !options.arrActivityAdapter && !options.kapowarrActivityAdapter) {
+    if (
+      !options.activityBundle &&
+      !options.arrActivityAdapter &&
+      !options.kapowarrActivityAdapter
+    ) {
       throw new Error(
         'activity-scan requires at least one source (activityBundle and/or arrActivityAdapter and/or kapowarrActivityAdapter)',
       );
@@ -1095,10 +1107,16 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
   if (options.mode === 'collections-sync') {
     const startedAt = new Date();
     if (!options.plex) throw new Error('collections-sync requires a Plex client bundle (plex)');
-    let collectionsSync: (SyncPlexCollectionsReport & { stats: PlexCollectionsStats }) | null = null;
+    let collectionsSync: (SyncPlexCollectionsReport & { stats: PlexCollectionsStats }) | null =
+      null;
     let collectionsSyncError: string | undefined;
     try {
-      const snapshot = await fetchPlexCollectionsSnapshot({ db, plex: options.plex, logger });
+      const snapshot = await fetchPlexCollectionsSnapshot({
+        db,
+        plex: options.plex,
+        ...(options.collectionsRadarr ? { radarr: options.collectionsRadarr } : {}),
+        logger,
+      });
       const report = await syncPlexCollections({
         db,
         collections: snapshot.collections,
@@ -1154,8 +1172,7 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       throw new Error('books-collections-sync requires Kavita + Audiobookshelf clients (books)');
     }
     let booksCollectionsSync:
-      | (SyncBooksCollectionsReport & { stats: BooksCollectionsStats })
-      | null = null;
+      (SyncBooksCollectionsReport & { stats: BooksCollectionsStats }) | null = null;
     let booksCollectionsSyncError: string | undefined;
     try {
       const snapshot = await fetchBooksCollectionsSnapshot({ books: options.books, logger });

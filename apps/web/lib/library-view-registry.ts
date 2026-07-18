@@ -59,7 +59,8 @@ export type RegistrySort = RegistrySortOf<string>;
 
 /** How a facet renders: enum checklist chip · narrowing-typeahead chip · single-select chip ·
  *  date-range chip · the bounded rating chip · length-bucket checklist chip. */
-export type RegistryFacetKind = 'enum' | 'suggest' | 'select' | 'range-date' | 'range-rating' | 'buckets';
+export type RegistryFacetKind =
+  'enum' | 'suggest' | 'select' | 'range-date' | 'range-rating' | 'buckets';
 
 export interface RegistryFacet {
   /** Stable facet id (drives which chip implementation renders + the search-input field). */
@@ -96,11 +97,18 @@ const booksLevel = (e: ViewRegistryEntryOf<BooksSort>) => e;
 const groupLevel = (e: ViewRegistryEntryOf<'author' | 'label' | 'count'>) => e;
 /** Plex-live keys map onto the parsed section/children fields (addedAt / title / originallyAvailableAt /
  *  index / duration — ADR-051: available "for free", no wider Plex read). */
-const plexLevel = (e: ViewRegistryEntryOf<'added_at' | 'title' | 'air_date' | 'index' | 'duration'>) => e;
+const plexLevel = (
+  e: ViewRegistryEntryOf<'added_at' | 'title' | 'air_date' | 'index' | 'duration'>,
+) => e;
 
 // The shared ledger facet rows (single definitions so param names never fork across walls).
 const GENRE_FACET: RegistryFacet = { key: 'genres', label: 'Genre', kind: 'enum', param: 'genre' };
-const DECADE_FACET: RegistryFacet = { key: 'decade', label: 'Decade', kind: 'enum', param: 'decade' };
+const DECADE_FACET: RegistryFacet = {
+  key: 'decade',
+  label: 'Decade',
+  kind: 'enum',
+  param: 'decade',
+};
 const RATING_FACET: RegistryFacet = {
   key: 'rating',
   label: 'Rating',
@@ -222,7 +230,14 @@ export const LIBRARY_VIEW_REGISTRY: Record<ViewLevelKey, ViewRegistryEntry> = {
       { key: 'last_viewed', label: 'Watched', firstDir: 'desc' },
     ],
     defaultSort: { field: 'added_at', dir: 'desc' },
-    facets: [GENRE_FACET, DECADE_FACET, releasedFacet('First aired'), RATING_FACET, COLLECTION_FACET, WATCH_FACET],
+    facets: [
+      GENRE_FACET,
+      DECADE_FACET,
+      releasedFacet('First aired'),
+      RATING_FACET,
+      COLLECTION_FACET,
+      WATCH_FACET,
+    ],
     azSorts: ['title'],
   }),
   // ADR-064 / DESIGN-035 D-05 (PLAN-037) — the TV Collections grouped level (same shape as the
@@ -355,8 +370,11 @@ export const LIBRARY_VIEW_REGISTRY: Record<ViewLevelKey, ViewRegistryEntry> = {
     azSorts: [],
   }),
   // ADR-066 / DESIGN-038 D-07 (PLAN-051) — the books Collections grouped level: sorts the aggregate
-  // CARDS (label/count) like every grouped level. NO facets (the PLAN-053 Type classifier is
-  // movie-estate-specific — an honest gap, not an omission); no A–Z rail.
+  // CARDS (label/count) like every grouped level; no A–Z rail. DESIGN-038 D-12 (2026-07-17) — the
+  // grouped level now carries the SHARED dynamic category chip (the movies/TV Collections row), which
+  // superseded the old "no facets" honest gap: the label-driven category is OPEN + agent-set on the
+  // books mirror, rendered from books.collectionGroups categoryCounts (data-gated on the books walls'
+  // no-dead-chip ethos — the row shows only when a category is present).
   'books:grouped-collection': groupLevel({
     engine: 'books',
     sorts: [
@@ -364,7 +382,7 @@ export const LIBRARY_VIEW_REGISTRY: Record<ViewLevelKey, ViewRegistryEntry> = {
       { key: 'count', label: 'Most items', firstDir: 'desc' },
     ],
     defaultSort: { field: 'label', dir: 'asc' },
-    facets: [],
+    facets: [COLLECTION_TYPE_FACET],
     azSorts: [],
   }),
   // DESIGN-038 D-06/D-07 — the DRILLED collection grid: the wall's own sorts + 'position' ("List
@@ -446,7 +464,7 @@ export const LIBRARY_VIEW_REGISTRY: Record<ViewLevelKey, ViewRegistryEntry> = {
       { key: 'count', label: 'Most items', firstDir: 'desc' },
     ],
     defaultSort: { field: 'label', dir: 'asc' },
-    facets: [],
+    facets: [COLLECTION_TYPE_FACET], // D-12 — the shared dynamic category chip (see books level).
     azSorts: [],
   }),
   'audiobooks:collection-items': booksLevel({
@@ -498,7 +516,7 @@ export const LIBRARY_VIEW_REGISTRY: Record<ViewLevelKey, ViewRegistryEntry> = {
       { key: 'count', label: 'Most items', firstDir: 'desc' },
     ],
     defaultSort: { field: 'label', dir: 'asc' },
-    facets: [],
+    facets: [COLLECTION_TYPE_FACET], // D-12 — the shared dynamic category chip (see books level).
     azSorts: [],
   }),
   'comics:collection-items': booksLevel({
@@ -607,17 +625,47 @@ export const WALL_VIEWS: Record<LibraryWallId, WallViewsSpec> = {
   books: {
     offers: ['grouped', 'flat'],
     groupings: [
-      { dimension: 'author', selectorLabel: 'Authors', allLabel: 'All authors', art: 'covers', level: 'books:grouped' },
-      { dimension: 'collection', selectorLabel: 'Collections', allLabel: 'All collections', art: 'covers', level: 'books:grouped-collection' },
+      {
+        dimension: 'author',
+        selectorLabel: 'Authors',
+        allLabel: 'All authors',
+        art: 'covers',
+        level: 'books:grouped',
+      },
+      {
+        dimension: 'collection',
+        selectorLabel: 'Collections',
+        allLabel: 'All collections',
+        art: 'covers',
+        level: 'books:grouped-collection',
+      },
     ],
     flatLabel: 'All books',
   },
   audiobooks: {
     offers: ['grouped', 'flat'],
     groupings: [
-      { dimension: 'author', selectorLabel: 'Authors', allLabel: 'All authors', art: 'covers', level: 'audiobooks:grouped' },
-      { dimension: 'genre', selectorLabel: 'Genres', allLabel: 'All genres', art: 'glyph', level: 'audiobooks:grouped-genre' },
-      { dimension: 'collection', selectorLabel: 'Collections', allLabel: 'All collections', art: 'covers', level: 'audiobooks:grouped-collection' },
+      {
+        dimension: 'author',
+        selectorLabel: 'Authors',
+        allLabel: 'All authors',
+        art: 'covers',
+        level: 'audiobooks:grouped',
+      },
+      {
+        dimension: 'genre',
+        selectorLabel: 'Genres',
+        allLabel: 'All genres',
+        art: 'glyph',
+        level: 'audiobooks:grouped-genre',
+      },
+      {
+        dimension: 'collection',
+        selectorLabel: 'Collections',
+        allLabel: 'All collections',
+        art: 'covers',
+        level: 'audiobooks:grouped-collection',
+      },
     ],
     flatLabel: 'All audiobooks',
   },
@@ -629,7 +677,13 @@ export const WALL_VIEWS: Record<LibraryWallId, WallViewsSpec> = {
     offers: ['grouped'],
     groupings: [
       { dimension: 'series', selectorLabel: 'Series', allLabel: '', art: 'covers' },
-      { dimension: 'collection', selectorLabel: 'Collections', allLabel: 'All collections', art: 'covers', level: 'comics:grouped-collection' },
+      {
+        dimension: 'collection',
+        selectorLabel: 'Collections',
+        allLabel: 'All collections',
+        art: 'covers',
+        level: 'comics:grouped-collection',
+      },
     ],
   },
 };

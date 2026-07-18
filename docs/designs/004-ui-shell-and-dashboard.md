@@ -1103,6 +1103,57 @@ Home has no grid; the Portal shape — player link/rule/grid order, server cards
 `/portal` at all eight viewports), `about.spec.ts` + `motd.spec.ts` (Home neighbors), and the
 `portal.test.ts` unit spec (the exclusion set).
 
+### D-24 — Amendment 2026-07-17 (ADR-071) — the unified media-action system + code-enforced cohesion
+
+Owner ratification (media-action UX audit, `.agents/context/2026-07-17-media-action-ux-audit.md`):
+"exactly the same action/UX language for a given media action regardless of media type and view —
+impossible to mess up, enforced by shared components, not convention." The D-21 card system fixed
+the card *faces*; this fixes the detail-page *action controls*, which every surface hand-rolled
+(24 discrepancies, 6 High — the headline: a movie's green primary **Fix** + outline **Force
+Search** vs a book's outline **Fix this** with no Force Search).
+
+**Canonical vocabulary (owner-ratified):** ONE `Fix` (green **primary**) everywhere; ONE `Force
+Search` (**outline**) everywhere — including a missing item's sole action (the movie head's
+"primary-if-missing" special case retired). On-disk ⇒ Fix + Force Search; missing ⇒ Force Search
+only — now universal, so **books gain an on-disk Force Search**. Scope is a component qualifier
+("Force Search · Season 2"), never a forked label ("Force Search show" / "Fix season" / "Fix this"
+/ "Force re-search" retired). The consume link stays per-app in LABEL only, through one component.
+
+**The registry + family** (`packages/ui/src/actions/`, re-exported from the `@hnet/ui` barrel):
+
+| Component / module | Role |
+| --- | --- |
+| `action-registry.ts` (`MEDIA_ACTIONS`) | the ONE `label` + `variant` + `destructive` per action TYPE (`fix`/`forceSearch`/`consume`/`retryImport`/`notOnDisk`) — the action analog of `LIBRARY_VIEW_REGISTRY`; no call site types a label or `btn` class |
+| `MediaAction` | renders an action off the registry by TYPE (the key, never a label); destructive ⇒ `ConfirmButton` (hard rule 8), else a plain button opening its own Modal/dialog; `scopeLabel` appends the grain qualifier; `size` is layout-only |
+| `MediaActionBar` | the ordered cluster (Fix then Force Search); OWNS `.detail-head__actions` (head) / `.media-action-bar` (row) |
+| `ConsumeLink` | the ONE primary external ↗ pill — guarantees identical ↗ / `target=_blank` / `rel=noopener noreferrer`; `variant=outline` for a paired-second consume |
+| `ReservedActionSlot` | the ONE reflow-safe button↔live-chip slot (ADR-015 / hard rule 9); OWNS `.action-slot*`; replaces the 5 hand-rolled copies. The trpc polling that decides WHEN to show the live chip stays in the app and is passed as `live` |
+| `MediaHero` | the `.detail-head` scaffold (poster slot + title/year + typed badges + meta + consume + actions); OWNS `.detail-head__play` |
+
+Structure only — every color is an app.css token (hard rule 2), the `PhaseChip`/`ConfirmButton`
+precedent.
+
+**Gating (ADR-071):** `canFix` / `canForceSearch` unify onto ONE server-side per-role grant helper
+(the collections `role_*_action_grants` model) for ALL media types, replacing the split (movies:
+any authed; books: Admin-only). On-disk state is an input, not a parallel rule; mutations keep the
+audit row in the same transaction (hard rule 6). The `/admin` grant controls + the server helper
+land in the follow-on PRs (after the sibling admin-force-search stopgap merges).
+
+**The guards (normative — the D-21 pattern, for actions):**
+
+1. `apps/web/lint/action-anatomy-guard.mjs` → `no-restricted-syntax` + `no-restricted-imports`
+   in `apps/web/eslint.config.mjs`: outside `@hnet/ui`, a raw action label (`Fix` / `Force
+   Search` / `Force re-search` / `Retry import` / `Fix this`) in a `btn`-classed button context is
+   an error, and the `detail-head__play` / `detail-head__actions` class tokens may not be
+   hand-rolled; the action package is barrel-only. Runs in `lint-and-typecheck`.
+2. `apps/web/lib/__tests__/action-system-guard.test.ts` — the executable proof (violating fixture
+   fails, `<MediaAction action="fix">` passes, a repo walk shows zero live violations, and a
+   registry-parity assertion locks one label/variant per verb) in the `test` job.
+
+**Migration sequence** (each PR independently green; the guard lands LAST so the tree is already
+clean): PR-1 adds the `@hnet/ui` family (pure add) → item-detail refactor (the reference) → books
+detail (gains Force Search) → wanted + activity-failure → ytdl-sub → the guard.
+
 ## Open questions
 
 | ID   | Question                                                                                                                                                                                           | Resolution                                                                                                                                                               |

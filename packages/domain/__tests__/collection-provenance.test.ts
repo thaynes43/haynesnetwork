@@ -3,6 +3,7 @@
 // derivers at every upsert; the API layer resolves the display name for the wall badges.
 import { describe, expect, it } from 'vitest';
 import {
+  deriveBooksCollectionCategory,
   deriveBooksCollectionProvenance,
   derivePlexCollectionProvenance,
   librettoRecipeIdFromDescription,
@@ -44,6 +45,27 @@ describe('deriveBooksCollectionProvenance (Books — Libretto marker)', () => {
   it('recovers the recipeId from the marker (for a future builder-level join)', () => {
     expect(librettoRecipeIdFromDescription('x [libretto:nyt-fiction] y')).toBe('nyt-fiction');
     expect(librettoRecipeIdFromDescription('no marker here')).toBeUndefined();
+    // The optional forward-compatible `cat=` suffix must NOT break recipeId recovery (D-12).
+    expect(librettoRecipeIdFromDescription('[libretto:dune-series|cat=Series]')).toBe(
+      'dune-series',
+    );
+  });
+});
+
+describe('deriveBooksCollectionCategory (Books — the forward-compatible Libretto cat= marker, D-12)', () => {
+  it('returns the category when the marker carries a cat= token (display case + trimmed)', () => {
+    expect(deriveBooksCollectionCategory('[libretto:dune-series|cat=Series]')).toBe('Series');
+    expect(deriveBooksCollectionCategory('prefix [libretto:nyt|cat=List] suffix')).toBe('List');
+    expect(deriveBooksCollectionCategory('[libretto:x|cat=Award Winners]')).toBe('Award Winners');
+  });
+
+  it('returns null when there is no marker, no cat= token, or no description (the state today)', () => {
+    // Today's markers carry no cat= — every live row derives null, so the L2 agent-set value stands.
+    expect(deriveBooksCollectionCategory('[libretto:dune-series]')).toBeNull();
+    expect(deriveBooksCollectionCategory('a normal reading list')).toBeNull();
+    expect(deriveBooksCollectionCategory(null)).toBeNull();
+    expect(deriveBooksCollectionCategory(undefined)).toBeNull();
+    expect(deriveBooksCollectionCategory('[libretto:x|cat=   ]')).toBeNull();
   });
 });
 

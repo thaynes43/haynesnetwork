@@ -32,8 +32,12 @@ export const COLLECTION_PROVENANCE_VERSION = 1;
 /** The Plex collection LABEL Kometa stamps on everything it manages (verified live, HOps server). */
 export const KOMETA_LABEL = 'Kometa';
 
-/** The Libretto provenance marker embedded in a produced collection's description (recipeId inside). */
-const LIBRETTO_MARKER_RE = /\[libretto:([a-z0-9][a-z0-9_-]*)\]/i;
+// The Libretto provenance marker embedded in a produced collection's description. Group 1 is the
+// recipeId (provenance). Group 2 is an OPTIONAL free-form `cat=<Category>` token (DESIGN-038 D-12) a
+// FUTURE Libretto may emit to carry the owner category through the description — mirror-pure, the
+// books analog of a Kometa label. The suffix is optional so today's markers (`[libretto:<id>]`) match
+// unchanged; when it is present the app reads the category off the same description read (no new I/O).
+const LIBRETTO_MARKER_RE = /\[libretto:([a-z0-9][a-z0-9_-]*)(?:\|cat=([^\]]+))?\]/i;
 
 /** The recipeId Libretto embedded, or undefined when the description carries no marker. */
 export function librettoRecipeIdFromDescription(
@@ -41,6 +45,25 @@ export function librettoRecipeIdFromDescription(
 ): string | undefined {
   if (!description) return undefined;
   return LIBRETTO_MARKER_RE.exec(description)?.[1];
+}
+
+/**
+ * DESIGN-038 D-12 — the OPEN, free-form CATEGORY a Libretto marker MAY carry in its `cat=` token
+ * (`[libretto:<recipeId>|cat=Series]`), or null when the description carries no marker or no `cat=`.
+ * This is the FORWARD-COMPATIBLE L1 derive: live descriptions carry no `cat=` yet, so it returns null
+ * for every row today. When it returns non-null the sync writer lets it WIN over any prior value (the
+ * source is authoritative — mirror doctrine); when it returns null the writer PRESERVES the prior
+ * value, so the ratified L2 agent-set category on `books_collections` survives every re-sync. Pure,
+ * no I/O. The returned string keeps its display case, trimmed of surrounding whitespace.
+ */
+export function deriveBooksCollectionCategory(
+  description: string | null | undefined,
+): string | null {
+  if (!description) return null;
+  const raw = LIBRETTO_MARKER_RE.exec(description)?.[2];
+  if (raw === undefined) return null;
+  const trimmed = raw.trim().replace(/\s+/g, ' ');
+  return trimmed === '' ? null : trimmed;
 }
 
 /**
