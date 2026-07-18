@@ -1093,11 +1093,16 @@ export const BOOK_REQUEST_FORMATS = ['ebook', 'audiobook', 'comic'] as const;
 export type BookRequestFormat = (typeof BOOK_REQUEST_FORMATS)[number];
 
 // ADR-065 / DESIGN-036 (PLAN-050) — WHO minted a book_requests row:
-//   goodreads — a user's shelf want (the ADR-055 path; shelf_item_id/integration_id NOT NULL).
-//   pairing   — the ESTATE's system want for an unpaired library title's missing format (no user, no
-//               shelf; pairing_books_item_id names the anchor library item). The origin↔keys coherence
-//               is CHECK-enforced (migration 0054).
-export const BOOK_REQUEST_ORIGINS = ['goodreads', 'pairing'] as const;
+//   goodreads  — a user's shelf want (the ADR-055 path; shelf_item_id/integration_id NOT NULL).
+//   pairing    — the ESTATE's system want for an unpaired library title's missing format (no user, no
+//                shelf; pairing_books_item_id names the anchor library item).
+//   collection — DESIGN-038 D-13 (migration 0068): the estate's want for a books/audiobooks COLLECTION's
+//                MISSING member (a Libretto recipe reports it missing from the target library — the
+//                collection Wanted tiles). No user, no shelf; collection_id + collection_member_ref name
+//                it. Rebuilt from Libretto's current missing set each sync (a member that became held
+//                drops out and its want reconciles away).
+//   The origin↔keys coherence is CHECK-enforced (migration 0054; extended for 'collection' in 0068).
+export const BOOK_REQUEST_ORIGINS = ['goodreads', 'pairing', 'collection'] as const;
 export type BookRequestOrigin = (typeof BOOK_REQUEST_ORIGINS)[number];
 
 // ADR-065 C-02 — HOW a books_format_pairs row was matched. v1 has exactly the conservative

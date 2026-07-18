@@ -1,8 +1,12 @@
 # DESIGN-038: Books collections mirror — the Books/Audiobooks/Comics Collections group view
 
 - **Status:** Accepted
-- **Last updated:** 2026-07-17 (D-12 added — the books collection CATEGORY chip, completing the
-  dynamic-category story across all three walls; see the dated amendment below)
+- **Last updated:** 2026-07-18 (D-13 added — the books/audiobooks collection **Wanted tiles**: a
+  collection that is not full renders its MISSING members as Wanted tiles beside the held ones,
+  minted as `book_requests` origin `'collection'` from Libretto's member-level missing endpoint;
+  SUPERSEDES the D-07 held-only stance + the DESIGN-035 D-16 books-leg deferral. Migration 0068. See
+  the dated amendment below. Prior: D-12 — the books collection CATEGORY chip, completing the
+  dynamic-category story across all three walls)
 - **Satisfies:** PRD-001 **R-215..R-217**; governed by **ADR-066** (books collections mirror — the
   ADR-064 mirror-only doctrine applied to Kavita/ABS) on top of **ADR-046** (`books_items` mirror +
   the `books` section gate), **ADR-051/052** (view engine + per-user preferences), **DESIGN-035**
@@ -322,6 +326,64 @@ Kavita-native comic Event lists have NO Libretto recipe to carry a marker, the r
   an All default; the chip row is data-gated on the books walls' "no dead chip" ethos (ADR-051 C-06 —
   it renders only when at least one category is present), which is the books-idiom twist on the
   always-visible movies row. Both books and movies share the identical dynamic-chip renderer contract.
+
+### D-13 — Collection WANTED tiles (migration 0068 — added 2026-07-18)
+
+The owner flagged this "super important": a books OR audiobooks collection that is NOT full MUST render
+its MISSING members as **Wanted tiles** beside the held ones — his Stormlight "3 held + 15 wanted" view
+(held tiles + missing tiles side by side, so the household can SEE and FILL what's missing). Movies
+shipped this in DESIGN-035 D-16 (v0.75.0); the books/audiobooks leg was deferred there ONLY until
+Libretto exposed the missing member IDENTITIES — which is now LIVE
+(`@hnet/libretto` `read.listMissingMembers(recipeId)`). This amendment **supersedes the D-07 held-only
+stance** for the collection-items drill. The wanted-row model is medium-neutral, but books have no *arr
+ledger for the not-held members, so the source is different: a collection's missing members are minted as
+`book_requests` with a NEW origin **`'collection'`** (the DESIGN-035 D-16 named slot) — the DESIGN-029
+composed-Wanted idiom, now collection-scoped.
+
+- **Data (migration 0068)** — `books_collections` gains `libretto_recipe_id` (the recipeId parsed from
+  the `[libretto:<id>]` marker the provenance derive already reads — D-11 — captured on the mirror for an
+  EXACT id-join, the movies-leg "capture the id" hardening lever applied here). `book_requests` grows the
+  COLLECTION-WANT seat, disjoint from goodreads/pairing: `collection_id` (FK → `books_collections` ON
+  DELETE CASCADE — a vanished mirror collection cascade-drops its wants) + `collection_member_ref` (the
+  stable per-member idempotency key: ISBN-13 → identifier → normalized title); the origin CHECK admits
+  `'collection'`, the origin↔keys coherence CHECK gains the collection branch, and a PARTIAL unique
+  `(collection_id, collection_member_ref) WHERE origin='collection'` keys them (goodreads/pairing rows,
+  `collection_id` NULL, never collide).
+- **Mint / reconcile (`@hnet/domain` `syncCollectionWants`, book_requests' own single-writer)** — one
+  transaction, the `syncPlexCollections` wanted-row analog: upsert one origin='collection' want per CURRENT
+  missing member and reconcile-DELETE the wants no longer missing (a member that became held drops out of
+  Libretto's missing list ⇒ its want resolves — the "becomes held resolves its want" lifecycle). Idempotent
+  (the partial unique). The ACTIVE format runs the lifecycle; the inactive sits `landed` (the ADR-065
+  pairing "held format sits landed" idiom, so `searchableFormats` only searches the collection's own
+  format). The format is source-derived: kavita ⇒ ebook, audiobookshelf ⇒ audiobook (comics stay held-only
+  — Kapowarr's domain, out of this leg). Rebuildable derived cache — NO audit row (the ADR-066 C-02 class);
+  `book_requests` joins the DELETE guard families for the reconcile, scoped to origin='collection'.
+- **The Libretto pass (`@hnet/domain` `runCollectionWantsSync`, the `books-collections-sync` mode step)** —
+  runs AFTER the mirror upsert (recipe ids fresh), ONLY when a Libretto READ client is supplied (the CLI
+  builds it best-effort — absent `LIBRETTO_API_KEY` ⇒ held-only, the mirror still runs). For each
+  Libretto-managed collection: `listMissingMembers(recipeId)`, opportunistically `resolve` each member's
+  ISBN|title → a GB volume id (the LL bookid — makes the want FORCE-SEARCHABLE; a null keeps the tile
+  visible, just not yet searchable — an honest gap), then `syncCollectionWants`. DEGRADING: Libretto
+  unreachable ⇒ the whole pass is skipped (never reconcile wants it couldn't re-see); one collection's read
+  error ⇒ that collection skipped (its wants untouched — the fully-resolved discipline). External I/O stays
+  OUT of the write transaction (the goodreads-sync idiom).
+- **Read + drill render** — `books.search` composes the COLLECTION's own wanted members
+  (`getCollectionWantedBookRequests`, collection-scoped — NOT the household overlay) into the drill through
+  the SAME union machinery as the top-level wall: held tiles + Wanted tiles interleaved by the active sort;
+  under the `position` (List order) sort the held members sort by reading order and the wants (no position)
+  sort LAST. The `books:collection-items` + `audiobooks:collection-items` registry levels gain the shared
+  `wanted` facet (All · Wanted only · Hide wanted, dataGated — no dead chip on a FULL collection); the drill
+  defaults to composing wants (the owner's "always show what's missing"). A collection want is an OWNERLESS
+  system want (the pairing class): its force-search rides the books gate (`books.searchPairingWant` now
+  admits `'collection'`), and the wanted TILE reuses the shipped `WantedCard` → the wanted-detail page (no
+  hand-rolled action — the books wanted surfaces unify onto shared `@hnet/ui` components in a later pass,
+  the unification lane; this leg does not fork the tile).
+- **Comics — held-only (unchanged).** A comic want is Kapowarr's domain (never Libretto's), and comic
+  collections rarely carry a Libretto recipe; the wanted-row model slots comics in later without schema
+  change (`comics:collection-items` keeps no `wanted` facet).
+- **Household overlay isolation** — `getWantedBookRequests` (the top-level wall's overlay) is unchanged:
+  its WHERE admits only goodreads (linked shelf) + pairing origins, so collection wants NEVER leak onto the
+  top-level Books/Audiobooks walls — they surface ONLY on their collection's drill.
 
 ## Alternatives considered
 

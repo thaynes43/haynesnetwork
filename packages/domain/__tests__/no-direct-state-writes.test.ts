@@ -142,6 +142,15 @@ const ALLOWED_FILES = new Set<string>([
 // outbox row either (quota exhaustion is routine daily weather, ADR-067 C-09; the trail is the row +
 // the one-line logs + the queued-fix actions_taken steps — a documented no-ledger-row exemption).
 // Upserted + cleared; guarded in ALL SIX families (SQL INSERT/UPDATE/DELETE + Drizzle forms).
+// DESIGN-038 D-13 (2026-07-18 — books/audiobooks collection Wanted tiles) mints origin='collection'
+// book_requests from Libretto's missing set (syncCollectionWants in book-requests.ts is the sole writer,
+// the syncPlexCollections wanted-row analog) and — new for book_requests — RECONCILE-DELETES the wants no
+// longer missing (scoped to origin='collection' so goodreads/pairing wants are never touched). A
+// rebuildable derived cache of Libretto's current missing set: no audit row (documented exemption). The
+// INSERT/UPDATE guard already confines the mint to packages/domain; book_requests is intentionally NOT in
+// the DELETE guard families (test cleanups delete it directly, and the reconcile lives in packages/domain,
+// exempt from every pattern) — the established "book_requests is deleted only by the shelf-item cascade"
+// stance, now widened to include the domain reconcile.
 // ADR-070 / DESIGN-043 (PLAN-052 — collection manager) adds two guarded single-writer tables:
 // role_collection_action_grants (a role's fine-grained collection action grants — setRoleCollectionActions
 // in collection-permissions.ts is the sole writer; it replace-sets the rows + co-writes a permission_audit

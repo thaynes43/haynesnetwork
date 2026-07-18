@@ -37,8 +37,11 @@ import {
   syncAuthentikUsers,
   syncBooks,
   syncBooksCollections,
+  runCollectionWantsSync,
   syncPlexMatches,
   syncPlexCollections,
+  type CollectionWantsLibretto,
+  type CollectionWantsSyncReport,
   type DrainPoolRefreshResult,
   type FormatPairingReport,
   type KapowarrClientBundle,
@@ -190,6 +193,10 @@ export interface RunSyncOptions {
   /** ADR-046 / DESIGN-024 — the read-only Kavita + Audiobookshelf clients + public deep-link bases the
    *  `books-sync` mode pages. Required only for that mode; tests inject fetch-stubbed clients. */
   books?: BooksSyncBundle;
+  /** DESIGN-038 D-13 — the OPTIONAL Libretto READ client the `books-collections-sync` mode uses for the
+   *  books/audiobooks collection Wanted-tile membership (its recipes' missing members → origin='collection'
+   *  book_requests). Absent ⇒ held-only (no wanted tiles); unreachable ⇒ the pass degrades + skips. */
+  librettoRead?: CollectionWantsLibretto;
   /** ADR-055 / DESIGN-028 — the read-only Goodreads RSS + Google Books clients the `goodreads-sync` mode
    *  pages. Required only for that mode; tests inject fetch-stubbed clients. */
   goodreads?: GoodreadsSourceBundle;
@@ -300,6 +307,9 @@ export interface SyncReport {
   booksCollectionsSync?: (SyncBooksCollectionsReport & { stats: BooksCollectionsStats }) | null;
   /** The books-collections-sync run's error — sets totalFailure for the CLI exit. */
   booksCollectionsSyncError?: string;
+  /** DESIGN-038 D-13 — the `books-collections-sync` collection Wanted-tiles pass (null when no Libretto
+   *  client was supplied, or another mode). A degraded/unreachable pass returns a report, not an error. */
+  collectionWantsSync?: CollectionWantsSyncReport | null;
   /** ADR-065 — the `format-pairing` result (null for every other mode / when it errored). */
   formatPairing?: FormatPairingReport | null;
   /** The format-pairing run's error — sets totalFailure for the CLI exit. */
@@ -1174,6 +1184,7 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
     let booksCollectionsSync:
       (SyncBooksCollectionsReport & { stats: BooksCollectionsStats }) | null = null;
     let booksCollectionsSyncError: string | undefined;
+    let collectionWantsSync: CollectionWantsSyncReport | null = null;
     try {
       const snapshot = await fetchBooksCollectionsSnapshot({ books: options.books, logger });
       const report = await syncBooksCollections({
@@ -1193,6 +1204,24 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
         truncatedCollections: snapshot.stats.truncatedCollections,
         unscopedFamilies: snapshot.stats.unscopedFamilies,
       });
+      // DESIGN-038 D-13 — the collection Wanted-tiles pass runs AFTER the mirror upsert (recipe ids fresh),
+      // ONLY when a Libretto read client was supplied. Best-effort: a Libretto outage degrades to held-only
+      // (report.unreachable) — it never fails the mirror run.
+      if (options.librettoRead) {
+        try {
+          collectionWantsSync = await runCollectionWantsSync({
+            db,
+            libretto: options.librettoRead,
+            logger,
+            ...(options.now ? { now: options.now } : {}),
+          });
+        } catch (error) {
+          // A DB failure in the wanted pass is logged but does not fail the (already-committed) mirror run.
+          logger.error('collection-wants pass failed', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
       // A run that could scope NOTHING read nothing usable; a partially-scoped run is a degraded
       // success (upserts landed, the unread families' reconcile skipped — the stats carry it).
       if (snapshot.scopedFamilies.length === 0) {
@@ -1211,6 +1240,7 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       backfill: null,
       fixesCompleted: null,
       booksCollectionsSync,
+      collectionWantsSync,
       ...(booksCollectionsSyncError !== undefined ? { booksCollectionsSyncError } : {}),
       totalFailure: booksCollectionsSyncError !== undefined,
     };

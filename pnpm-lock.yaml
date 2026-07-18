@@ -408,6 +408,9 @@ importers:
       '@hnet/goodreads':
         specifier: workspace:*
         version: link:../goodreads
+      '@hnet/libretto':
+        specifier: workspace:*
+        version: link:../libretto
       '@hnet/metrics':
         specifier: workspace:*
         version: link:../metrics

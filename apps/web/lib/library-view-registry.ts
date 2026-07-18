@@ -389,7 +389,9 @@ export const LIBRARY_VIEW_REGISTRY: Record<ViewLevelKey, ViewRegistryEntry> = {
   // order" — the reading-order payoff, asc-first, the level DEFAULT). The client narrows honestly:
   // an UNORDERED collection's drill drops the position sort and falls back to the wall default
   // (the `ordered` flag is the data-honesty gate — the dataGated idiom applied to a sort). Facets =
-  // the wall's minus `wanted` (a want is not a collection member).
+  // the wall's, INCLUDING `wanted` (DESIGN-038 D-13, SUPERSEDES D-07 held-only): a collection that is
+  // not full renders its MISSING members as Wanted tiles beside the held ones — the wanted facet toggles
+  // All / Wanted only / Hide wanted, dataGated so it only shows when the drill has wanted tiles.
   'books:collection-items': booksLevel({
     engine: 'books',
     sorts: [
@@ -404,6 +406,7 @@ export const LIBRARY_VIEW_REGISTRY: Record<ViewLevelKey, ViewRegistryEntry> = {
       { key: 'authors', label: 'Author', kind: 'suggest', param: 'author', dataGated: true },
       { key: 'formats', label: 'Format', kind: 'enum', param: 'fmt', dataGated: true },
       { key: 'lengths', label: 'Pages', kind: 'buckets', param: 'len' },
+      WANTED_FACET,
     ],
     azSorts: ['title', 'author'],
   }),
@@ -486,6 +489,9 @@ export const LIBRARY_VIEW_REGISTRY: Record<ViewLevelKey, ViewRegistryEntry> = {
       { key: 'languages', label: 'Language', kind: 'enum', param: 'lang', dataGated: true },
       { key: 'lengths', label: 'Length', kind: 'buckets', param: 'len' },
       READ_FACET,
+      // DESIGN-038 D-13 — an audiobook collection that is not full renders its MISSING members as Wanted
+      // tiles (its Libretto recipe's missing set → origin='collection' wants). dataGated (no dead chip).
+      WANTED_FACET,
     ],
     azSorts: ['title', 'author'],
   }),

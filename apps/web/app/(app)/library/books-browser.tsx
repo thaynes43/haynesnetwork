@@ -457,9 +457,10 @@ export function BooksBrowser({
       ...(readState !== undefined ? { readState } : {}),
       ...(azActive && letter !== null ? { letter } : {}),
       // PLAN-056 — the three-state Wanted filter, applied SERVER-side ('all' composes wants into
-      // the sorted stream; 'hide' excludes them there — never a client hide). A drilled group
-      // forces 'hide': a want is not a group/collection member (the D-09 honesty rule).
-      wanted: drilled ? ('hide' as const) : wantedState,
+      // the sorted stream; 'hide' excludes them there — never a client hide). An author/genre drill
+      // forces 'hide' (a want is not that group's member — the D-09 honesty rule); a COLLECTION drill
+      // (DESIGN-038 D-13) composes the collection's OWN missing members as Wanted tiles beside the held.
+      wanted: drilled && !drilledCollection ? ('hide' as const) : wantedState,
     },
     {
       // A collection drill waits for its meta (label + ordered — the sort default depends on it)
@@ -683,10 +684,16 @@ export function BooksBrowser({
                 // PLAN-056 / DESIGN-029 amendment 3 — the THREE-state composed-Wanted selector
                 // (All · Wanted only · Hide wanted) on the wall's existing `.seg` idiom: fixed
                 // per-segment labels, recolor-not-reflow (ADR-015); `?wanted=` is a replace-in-place
-                // refinement (D-19). Value-gated on the overlay itself (ADR-051 C-06 — no dead
-                // control) and absent inside a drill (a want is not a group member; the server
-                // excludes it there regardless).
-                if (drilled || wantedAll.length === 0) return null;
+                // refinement (D-19). Value-gated on the overlay itself (ADR-051 C-06 — no dead control).
+                // DESIGN-038 D-13 — a COLLECTION drill DOES offer it (held + wanted side by side); an
+                // author/genre drill never does (a want is not that group's member). The drill's gate is
+                // its OWN wanted tiles (not the household overlay), so a full collection shows no chip.
+                if (drilled) {
+                  const drillHasWanted = items.some((e) => e.kind === 'wanted');
+                  if (!drilledCollection || (!drillHasWanted && wantedState === 'all')) return null;
+                } else if (wantedAll.length === 0) {
+                  return null;
+                }
                 const wantedSegments = [
                   { value: 'all', label: 'All', testId: 'books-wanted-all' },
                   { value: 'only', label: 'Wanted only', testId: 'books-wanted-only' },
