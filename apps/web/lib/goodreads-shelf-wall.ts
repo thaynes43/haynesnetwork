@@ -16,6 +16,8 @@ export const SHELF_LABELS: Record<string, string> = {
   'did-not-finish': 'Did not finish',
   // ADR-065 (PLAN-050) — the SYSTEM want's source slug: no shelf, the estate's format pairing.
   pairing: 'Format pairing',
+  // DESIGN-038 D-13 — a collection's missing member (origin='collection'): no shelf, the collection.
+  collection: 'Collection',
 };
 
 export function shelfLabel(shelf: string): string {

@@ -102,11 +102,13 @@ function FormatSearchSlot({
 }: {
   requestId: string;
   format: FormatRow['format'];
-  /** ADR-065 — picks the endpoint: a goodreads want fires the owner-gated `integrations.search`;
-   *  a pairing (system) want fires the books-gated `books.searchPairingWant`. */
-  origin: 'goodreads' | 'pairing';
+  /** ADR-065 / DESIGN-038 D-13 — picks the endpoint: a goodreads want fires the owner-gated
+   *  `integrations.search`; a SYSTEM want (pairing OR collection) fires the books-gated
+   *  `books.searchPairingWant`. */
+  origin: 'goodreads' | 'pairing' | 'collection';
   onFired: () => void;
 }) {
+  const isSystemWant = origin === 'pairing' || origin === 'collection';
   const [fired, setFired] = useState<Fired | null>(null);
   const handlers = {
     onSuccess: (result: {
@@ -130,7 +132,7 @@ function FormatSearchSlot({
   };
   const searchGoodreads = trpc.integrations.search.useMutation(handlers);
   const searchPairing = trpc.books.searchPairingWant.useMutation(handlers);
-  const search = origin === 'pairing' ? searchPairing : searchGoodreads;
+  const search = isSystemWant ? searchPairing : searchGoodreads;
 
   const chip = (
     phase: string,
@@ -168,7 +170,7 @@ function FormatSearchSlot({
         className="btn sm"
         data-testid="format-search-btn"
         onClick={() =>
-          origin === 'pairing'
+          isSystemWant
             ? searchPairing.mutate({ requestId })
             : searchGoodreads.mutate(format === 'comic' ? { requestId } : { requestId, format })
         }
@@ -206,7 +208,7 @@ function FormatDetailRow({
 }: {
   requestId: string;
   row: FormatRow;
-  origin: 'goodreads' | 'pairing';
+  origin: 'goodreads' | 'pairing' | 'collection';
   activityId: string | null;
   /** This format's live status (polled by the parent, so the hero + row read ONE source of truth). */
   live: ActivityLiveStatus;
@@ -364,8 +366,8 @@ export function WantedDetail({ requestId, from }: { requestId: string; from: str
           </p>
         ) : !d.canSearch ? (
           <p className="muted">
-            {d.origin === 'pairing'
-              ? 'Force Search on a pairing want comes with books access. The library keeps looking on the scheduled sync in the meantime.'
+            {d.origin === 'pairing' || d.origin === 'collection'
+              ? 'Force Search on this want comes with books access. The library keeps looking on the scheduled sync in the meantime.'
               : 'Force Search is available to the person who shelved this want (or an admin). The library keeps looking on the hourly sync in the meantime.'}
           </p>
         ) : null}

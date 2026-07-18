@@ -145,6 +145,9 @@ export * from './user-integrations';
 export * from './integration-shelf-items';
 export * from './book-requests';
 export * from './goodreads-sync';
+// DESIGN-038 D-13 — the collection Wanted-tiles pass: Libretto-managed collections' missing members
+// minted as origin='collection' book_requests (the books-collections-sync mode's Wanted-tile step).
+export * from './collection-wants-sync';
 // ADR-065 / DESIGN-036 (PLAN-050 — book ⇄ audiobook pairing) — the conservative matcher, the
 // books_format_pairs single-writer, and the PACED estate-wide system-want mint + run orchestrator
 // (the format-pairing sync mode's body).

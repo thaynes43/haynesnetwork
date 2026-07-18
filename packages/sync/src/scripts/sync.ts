@@ -36,6 +36,8 @@ import { prometheusClientFromEnv } from '@hnet/metrics';
 import { assertAuthentikEnv, authentikReadClient } from '@hnet/authentik';
 import { assertBooksEnv } from '@hnet/books';
 import { booksReadClients } from '@hnet/books/read';
+import { assertLibrettoEnv, LibrettoConfigError } from '@hnet/libretto';
+import { LibrettoReadClient } from '@hnet/libretto/read';
 import { GoodreadsRssClient, GoogleBooksClient, goodreadsConfigFromEnv } from '@hnet/goodreads';
 import type { GoodreadsSourceBundle } from '../goodreads';
 import {
@@ -446,6 +448,25 @@ async function main(): Promise<number> {
           };
         })()
       : undefined;
+  // DESIGN-038 D-13 — the OPTIONAL Libretto READ client the `books-collections-sync` mode uses for the
+  // collection Wanted-tile membership (recipes' missing members → origin='collection' book_requests).
+  // Skip-if-absent: no LIBRETTO_API_KEY ⇒ held-only (the mirror still runs). Read-only — never a Libretto
+  // write (the /write surface stays domain-confined; the CLI imports only /read).
+  const librettoRead =
+    args.mode === 'books-collections-sync'
+      ? (() => {
+          try {
+            const cfg = assertLibrettoEnv();
+            return new LibrettoReadClient({ baseUrl: cfg.baseUrl, apiKey: cfg.apiKey });
+          } catch (error) {
+            if (error instanceof LibrettoConfigError) {
+              logger.info('books-collections-sync: no LIBRETTO_API_KEY — collection wanted tiles skipped');
+              return undefined;
+            }
+            throw error;
+          }
+        })()
+      : undefined;
   // ADR-055 / DESIGN-028 — the read-only Goodreads RSS + Google Books clients (GOODREADS_BASE_URL /
   // GOOGLE_BOOKS_URL default to the public hosts; GOOGLE_BOOKS_API_KEY optional). Pull-only.
   const goodreads: GoodreadsSourceBundle | undefined =
@@ -532,6 +553,7 @@ async function main(): Promise<number> {
     ...(openWebUi ? { openWebUi } : {}),
     ...(authentik ? { authentik } : {}),
     ...(books ? { books } : {}),
+    ...(librettoRead ? { librettoRead } : {}),
     ...(goodreads ? { goodreads } : {}),
     ...(lazyLibrarian ? { lazyLibrarian } : {}),
     ...(kapowarr ? { kapowarr } : {}),

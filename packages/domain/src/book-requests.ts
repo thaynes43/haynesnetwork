@@ -8,6 +8,7 @@
 import {
   GOODREADS_SHELVES,
   bookRequests,
+  booksCollections,
   booksItems,
   integrationShelfItems,
   permissionAudit,
@@ -20,7 +21,7 @@ import {
   type BooksMediaKind,
   type DbClient,
 } from '@hnet/db';
-import { and, eq, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, isNull, lt, or, sql } from 'drizzle-orm';
 import type { KapowarrSearchCandidate, KapowarrVolume } from '@hnet/kapowarr/read';
 import { NotFoundError } from './errors';
 import { inTransaction, resolveDb } from './db-client';
@@ -775,16 +776,25 @@ export async function getBookRequestDetail(input: {
       matchedSource: booksItems.source,
       matchedExternalId: booksItems.externalId,
       matchedCoverRef: booksItems.coverRef,
+      // DESIGN-038 D-13 — the collection this want belongs to (origin='collection'), for its attribution.
+      collectionTitle: booksCollections.title,
     })
     .from(bookRequests)
     .leftJoin(integrationShelfItems, eq(bookRequests.shelfItemId, integrationShelfItems.id))
     .leftJoin(userIntegrations, eq(bookRequests.integrationId, userIntegrations.id))
     .leftJoin(users, eq(userIntegrations.userId, users.id))
     .leftJoin(booksItems, eq(booksItems.id, bookRequests.matchedBooksItemId))
+    .leftJoin(booksCollections, eq(booksCollections.id, bookRequests.collectionId))
     .where(
       and(
         eq(bookRequests.id, input.requestId),
-        or(eq(bookRequests.origin, 'pairing'), isNull(integrationShelfItems.deletedAt)),
+        // A system want (pairing / collection) has no shelf item; a goodreads want still requires its
+        // LIVE shelf item (a tombstoned goodreads want stays NOT_FOUND).
+        or(
+          eq(bookRequests.origin, 'pairing'),
+          eq(bookRequests.origin, 'collection'),
+          isNull(integrationShelfItems.deletedAt),
+        ),
       ),
     );
   if (!row) return null;
@@ -810,7 +820,15 @@ export async function getBookRequestDetail(input: {
       if (name !== null && !requestedBy.includes(name)) requestedBy.push(name);
     }
   }
-  if (requestedBy.length === 0) requestedBy.push(PAIRING_REQUESTER_LABEL);
+  // Attribution fallback (no household roll-up): a collection want names its COLLECTION; a pairing want
+  // wears the system label (ADR-065 C-04 / DESIGN-038 D-13).
+  if (requestedBy.length === 0) {
+    requestedBy.push(
+      row.origin === 'collection'
+        ? (row.collectionTitle ?? COLLECTION_REQUESTER_LABEL)
+        : PAIRING_REQUESTER_LABEL,
+    );
+  }
 
   return {
     requestId: row.requestId,
@@ -819,7 +837,7 @@ export async function getBookRequestDetail(input: {
     requestedBy,
     title: row.title,
     author: row.author,
-    shelf: row.shelf ?? PAIRING_SHELF,
+    shelf: row.shelf ?? (row.origin === 'collection' ? COLLECTION_SHELF : PAIRING_SHELF),
     shelvedAt: row.shelvedAt,
     externalBookId: row.externalBookId,
     matchedBooksItemId: row.matchedBooksItemId,
@@ -1287,4 +1305,207 @@ export async function getWantedBookRequests(input: {
   const views = [...byBook.values()].map((v) => v.view);
   views.sort((a, b) => (b.shelvedAt?.getTime() ?? 0) - (a.shelvedAt?.getTime() ?? 0));
   return views;
+}
+
+// ---------------------------------------------------------------------------
+// DESIGN-038 D-13 (2026-07-18) — COLLECTION wants: a books/audiobooks collection's MISSING members as
+// book_requests (origin='collection'), minted from Libretto's member-level missing endpoint and rendered
+// as Wanted tiles on the collection drill (held tiles + wanted tiles side by side — the owner's Stormlight
+// "3 held + 15 wanted" view). A REBUILDABLE derived cache of Libretto's current missing set (the movies
+// plex_collection_members wanted-row class): the wanted pass upserts the present-missing members and
+// reconcile-DELETES the ones no longer missing (a member that became held drops out and its want resolves).
+// Ownerless system wants (the ADR-065 pairing class) — no user, no shelf; attributed to the collection.
+// Single-writer here (book_requests' own writer module), guard-listed. No audit rows (synced derived cache).
+// ---------------------------------------------------------------------------
+
+/** The shelf slug a collection want wears on the wanted surfaces (attributed to its collection). */
+export const COLLECTION_SHELF = 'collection';
+
+/** The requester label a collection want falls back to when its collection title is unavailable. */
+export const COLLECTION_REQUESTER_LABEL = 'Collection';
+
+/** One MISSING member the collection-wants pass mints/reconciles (from Libretto's missing endpoint). */
+export interface CollectionWantMember {
+  /** The STABLE per-member key within the collection (ISBN-13 → identifier → normalized title). */
+  memberRef: string;
+  title: string;
+  author: string | null;
+  /**
+   * The resolved Google-Books volume id (the LL bookid) when Libretto's resolve broker matched one —
+   * the want is then FORCE-SEARCHABLE (isRequestSearchable). null = unresolved this run: the want still
+   * renders as a Wanted tile (visibility is the point), just not yet force-searchable (an honest gap).
+   */
+  llBookId: string | null;
+}
+
+export interface SyncCollectionWantsInput {
+  db?: DbClient;
+  collectionId: string;
+  /** The collection's wall format (source-derived: kavita ⇒ 'ebook', audiobookshelf ⇒ 'audiobook'). */
+  format: 'ebook' | 'audiobook';
+  /** The recipe's CURRENT missing members (Libretto's `listMissingMembers`). Empty ⇒ nothing missing. */
+  members: CollectionWantMember[];
+  now?: Date;
+}
+
+export interface SyncCollectionWantsResult {
+  minted: number;
+  updated: number;
+  /** Wants reconcile-DELETED (a member no longer missing — became held / left the recipe). */
+  removed: number;
+}
+
+/**
+ * Upsert one `book_requests` (origin='collection') per current MISSING member of a collection and
+ * reconcile away the wants no longer missing — in ONE transaction (the derived-cache single-writer
+ * discipline, the syncPlexCollections wanted-row analog). Idempotent: the upsert keys on
+ * (collection_id, collection_member_ref) so a re-run never dupes; the reconcile drops any origin='collection'
+ * want for this collection NOT stamped `last_reconciled_at = runStart` this run (a member that became held
+ * drops out of Libretto's missing list ⇒ its want resolves). The ACTIVE format runs the lifecycle; the
+ * inactive format sits `landed` (the ADR-065 pairing "held format sits landed" idiom — so `searchableFormats`
+ * only searches the collection's own format). Called ONLY for a collection whose Libretto read SUCCEEDED
+ * (the fully-resolved discipline — a Libretto outage never reconciles wants it couldn't re-see).
+ */
+export async function syncCollectionWants(
+  input: SyncCollectionWantsInput,
+): Promise<SyncCollectionWantsResult> {
+  const runStart = input.now ?? new Date();
+  let minted = 0;
+  let updated = 0;
+  let removed = 0;
+
+  await inTransaction(input.db, async (tx) => {
+    for (const m of input.members) {
+      const [existing] = await tx
+        .select()
+        .from(bookRequests)
+        .where(
+          and(
+            eq(bookRequests.collectionId, input.collectionId),
+            eq(bookRequests.origin, 'collection'),
+            eq(bookRequests.collectionMemberRef, m.memberRef),
+          ),
+        )
+        .for('update');
+
+      // The active format runs the lifecycle (never regressing a positive); the inactive sits 'landed'
+      // (pairing idiom — keeps searchableFormats to the one real format). A fresh want starts 'requested'.
+      const priorActive =
+        input.format === 'audiobook' ? existing?.audioStatus : existing?.ebookStatus;
+      const activeStatus: BookRequestStatus = priorActive ?? 'requested';
+      const ebookStatus: BookRequestStatus = input.format === 'ebook' ? activeStatus : 'landed';
+      const audioStatus: BookRequestStatus = input.format === 'audiobook' ? activeStatus : 'landed';
+      // Preserve a previously-resolved LL id; otherwise take this run's resolution (may still be null).
+      const llBookId = existing?.llBookId ?? m.llBookId ?? null;
+
+      if (existing) {
+        await tx
+          .update(bookRequests)
+          .set({
+            title: m.title,
+            author: m.author,
+            ebookStatus,
+            audioStatus,
+            llBookId,
+            lastReconciledAt: runStart,
+            updatedAt: runStart,
+          })
+          .where(eq(bookRequests.id, existing.id));
+        updated += 1;
+      } else {
+        await tx.insert(bookRequests).values({
+          origin: 'collection',
+          collectionId: input.collectionId,
+          collectionMemberRef: m.memberRef,
+          title: m.title,
+          author: m.author,
+          ebookStatus,
+          audioStatus,
+          comicStatus: null,
+          llBookId,
+          lastReconciledAt: runStart,
+        });
+        minted += 1;
+      }
+    }
+
+    // Reconcile — drop this collection's wants NOT re-seen this run (member no longer missing). Scoped to
+    // origin='collection' + this collection, so goodreads/pairing wants are never touched.
+    const deleted = await tx
+      .delete(bookRequests)
+      .where(
+        and(
+          eq(bookRequests.collectionId, input.collectionId),
+          eq(bookRequests.origin, 'collection'),
+          or(
+            isNull(bookRequests.lastReconciledAt),
+            lt(bookRequests.lastReconciledAt, runStart),
+          ),
+        ),
+      )
+      .returning({ id: bookRequests.id });
+    removed = deleted.length;
+  });
+
+  return { minted, updated, removed };
+}
+
+/**
+ * DESIGN-038 D-13 — the collection drill's COLLECTION-SCOPED Wanted overlay: one collection's live
+ * origin='collection' wants (active format not landed, not matched into the library), as `WantedBookRequestView`s
+ * so the drill composes them through the SAME machinery as the household overlay (`toWantedWireItem`). The
+ * wall format (ebook/audiobook) is derived from the collection's source; the want's `status` is that format's
+ * status. A collection want is an ownerless system want (the pairing class) attributed to its collection.
+ */
+export async function getCollectionWantedBookRequests(input: {
+  db?: DbClient;
+  collectionId: string;
+}): Promise<WantedBookRequestView[]> {
+  const rows = await resolveDb(input.db)
+    .select({
+      requestId: bookRequests.id,
+      title: bookRequests.title,
+      author: bookRequests.author,
+      ebookStatus: bookRequests.ebookStatus,
+      audioStatus: bookRequests.audioStatus,
+      llBookId: bookRequests.llBookId,
+      createdAt: bookRequests.createdAt,
+      source: booksCollections.source,
+      collectionTitle: booksCollections.title,
+    })
+    .from(bookRequests)
+    .innerJoin(booksCollections, eq(booksCollections.id, bookRequests.collectionId))
+    .where(
+      and(
+        eq(bookRequests.collectionId, input.collectionId),
+        eq(bookRequests.origin, 'collection'),
+        isNull(bookRequests.matchedBooksItemId),
+        // The collection's OWN format must not have landed (a landed want is held now — reconciled next run).
+        sql`CASE WHEN ${booksCollections.source} = 'audiobookshelf' THEN ${bookRequests.audioStatus} ELSE ${bookRequests.ebookStatus} END <> 'landed'`,
+      ),
+    );
+
+  return rows.map((r): WantedBookRequestView => {
+    const isAudio = r.source === 'audiobookshelf';
+    return {
+      requestId: r.requestId,
+      origin: 'collection',
+      integrationUserId: null,
+      requestedBy: [r.collectionTitle],
+      title: r.title,
+      author: r.author,
+      shelf: COLLECTION_SHELF,
+      shelvedAt: null,
+      createdAt: r.createdAt,
+      status: isAudio ? r.audioStatus : r.ebookStatus,
+      isComic: false,
+      unroutableReason: null,
+      ebookStatus: r.ebookStatus,
+      audioStatus: r.audioStatus,
+      comicStatus: null,
+      llBookId: r.llBookId,
+      kapowarrVolumeId: null,
+      externalBookId: null,
+    };
+  });
 }

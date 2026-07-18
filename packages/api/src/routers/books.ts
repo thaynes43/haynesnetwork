@@ -29,6 +29,7 @@ import {
   bookActionsForRole,
   getBookRequestById,
   getBookRequestDetail,
+  getCollectionWantedBookRequests,
   getWantedBookRequests,
   isRequestSearchable,
   missingFormatFor,
@@ -404,7 +405,10 @@ function toWantedWireItem(
   // audits actor=admin/subject=requester, so this is a UI-gating fix, not a new capability.
   const owns = v.integrationUserId !== null && v.integrationUserId === viewer.id;
   const canActOnWant = owns || viewer.isAdmin;
-  const isPairing = v.origin === 'pairing';
+  // ADR-065 C-05 / DESIGN-038 D-13 — a SYSTEM want (pairing OR collection) has no owner: its force-search
+  // rides the books gate the calling resolver already passed (no ownership / integrations-section check);
+  // the Goodreads deep link stays goodreads-only (no owner ⇒ no sub-section to open).
+  const isSystemWant = v.origin === 'pairing' || v.origin === 'collection';
   return {
     requestId: v.requestId,
     origin: v.origin,
@@ -418,10 +422,10 @@ function toWantedWireItem(
     kapowarrVolumeId: v.kapowarrVolumeId,
     parked: v.isComic && v.unroutableReason === 'comic',
     requestedBy: v.requestedBy,
-    canSearch: isPairing
+    canSearch: isSystemWant
       ? isRequestSearchable(v)
       : canActOnWant && viewer.hasIntegrations && isRequestSearchable(v),
-    canOpenRequest: !isPairing && owns && viewer.hasIntegrations,
+    canOpenRequest: !isSystemWant && owns && viewer.hasIntegrations,
   };
 }
 
@@ -638,12 +642,12 @@ export const booksRouter = router({
       const owns = view.integrationUserId !== null && view.integrationUserId === ctx.user.id;
       const viewerHasIntegrations =
         effectiveSectionLevel(ctx.user.role, 'integrations') !== 'disabled';
-      // ADR-065 C-05 — a pairing want has no owner: its per-format search is BOOKS-gated (the estate's
-      // want belongs to everyone the books walls belong to); goodreads wants keep owner + integrations.
-      // Owner directive 2026-07-18 — an ADMIN may force-search ANY user's want (bypasses `owns`); the
-      // mutation already admits admins-on-behalf and audits actor=admin/subject=requester.
+      // ADR-065 C-05 / DESIGN-038 D-13 — a SYSTEM want (pairing OR collection) has no owner: its per-format
+      // search is BOOKS-gated (the estate's want belongs to everyone the books walls belong to); goodreads
+      // wants keep owner + integrations. Owner directive 2026-07-18 — an ADMIN may force-search ANY user's
+      // want (bypasses `owns`); the mutation already admits admins-on-behalf and audits actor/subject.
       const canSearch =
-        view.origin === 'pairing'
+        view.origin === 'pairing' || view.origin === 'collection'
           ? effectiveSectionLevel(ctx.user.role, 'books') !== 'disabled'
           : (owns || ctx.user.role.isAdmin) && viewerHasIntegrations;
       const requestSearchable = isRequestSearchable(view);
@@ -729,7 +733,12 @@ export const booksRouter = router({
         hasIntegrations: effectiveSectionLevel(ctx.user.role, 'integrations') !== 'disabled',
         isAdmin: ctx.user.role.isAdmin, // admins may force-search ANY user's want (2026-07-18)
       };
-      // Refinements a synthetic want cannot answer (the D-09 rule, now server-authoritative).
+      // DESIGN-038 D-13 — a COLLECTION drill composes the COLLECTION's OWN wanted members (its missing
+      // members, origin='collection'), not the household overlay: held tiles + Wanted tiles side by side.
+      const isCollectionDrill = input.collection !== undefined;
+      // Refinements a synthetic want cannot answer (the D-09 rule, now server-authoritative). NOTE: the
+      // collection drill itself is NOT a narrowing here (D-13 — the wants ARE the collection's missing
+      // members); any OTHER facet inside the drill still excludes wants (a want can't answer a genre chip).
       const narrowed =
         (input.genres?.length ?? 0) > 0 ||
         (input.authors?.length ?? 0) > 0 ||
@@ -739,20 +748,24 @@ export const booksRouter = router({
         (input.formats?.length ?? 0) > 0 ||
         (input.lengths?.length ?? 0) > 0 ||
         input.readState !== undefined ||
-        input.letter !== undefined ||
-        input.collection !== undefined;
+        input.letter !== undefined;
+      // Position sort composes ONLY on a collection drill (a want has no member position — it sorts last).
       const composeWanted =
-        input.sort !== 'position' &&
+        (input.sort !== 'position' || isCollectionDrill) &&
         (input.wanted === 'only' || (input.wanted === 'all' && !narrowed));
       const wantedViews = composeWanted
         ? filterWantedByQuery(
-            await getWantedBookRequests({ db: ctx.db, format: WALL_FORMAT[input.mediaKind] }),
+            isCollectionDrill
+              ? await getCollectionWantedBookRequests({ db: ctx.db, collectionId: input.collection! })
+              : await getWantedBookRequests({ db: ctx.db, format: WALL_FORMAT[input.mediaKind] }),
             input.query,
           )
         : [];
 
       if (input.wanted === 'only') {
-        const sorted = sortWantedViews(wantedViews, input.sort, input.dir);
+        // A want has no member position; a position-sorted "only" list falls back to title order.
+        const onlySort = input.sort === 'position' ? 'title' : input.sort;
+        const sorted = sortWantedViews(wantedViews, onlySort, input.dir);
         const page = sorted.slice(input.cursor, input.cursor + input.limit);
         return {
           items: page.map((v) => ({ kind: 'wanted' as const, ...toWantedWireItem(v, viewer) })),
@@ -814,13 +827,28 @@ export const booksRouter = router({
       // the item query and the (bounded) wanted list as a VALUES bind, each side carrying the SAME
       // per-sort key columns, ordered + paged by Postgres — so a wanted card lands exactly where
       // the active sort says (the offset cursor counts composed entries).
-      if (input.wanted === 'all' && wantedViews.length > 0 && input.sort !== 'position') {
-        const key = COMPOSED_SORT_KEYS[input.sort];
+      if (input.wanted === 'all' && wantedViews.length > 0) {
+        // DESIGN-038 D-13 — on a collection drill the 'position' sort composes too: held members carry
+        // their member position, wanted members have NONE (NULL ⇒ NULLS LAST ⇒ after the held reading
+        // order). Off-drill, position never composes (guarded above); every other sort uses its item-side
+        // key expression with the want's own primary value.
+        const isPositionDrill = input.sort === 'position';
+        const key =
+          input.sort === 'position'
+            ? {
+                itemExpr: () =>
+                  sql`(SELECT bcm.position FROM ${booksCollectionMembers} bcm
+                       WHERE bcm.collection_id = ${input.collection ?? null}
+                         AND bcm.books_item_id = ${booksItems.id})`,
+                cast: 'integer' as const,
+                titleTiebreak: true,
+              }
+            : COMPOSED_SORT_KEYS[input.sort];
         const castRaw = sql.raw(key.cast);
         const values = sql.join(
           wantedViews.map(
             (v) =>
-              sql`(${v.requestId}::uuid, ${wantedPrimarySortValue(v, input.sort)}::${castRaw}, ${wantedSortTitle(v.title)}::text)`,
+              sql`(${v.requestId}::uuid, ${isPositionDrill ? sql`NULL` : sql`${wantedPrimarySortValue(v, input.sort)}`}::${castRaw}, ${wantedSortTitle(v.title)}::text)`,
           ),
           sql`, `,
         );
@@ -1014,8 +1042,10 @@ export const booksRouter = router({
     .mutation(async ({ ctx, input }) => {
       const request = await getBookRequestById({ db: ctx.db, id: input.requestId });
       if (!request) throw new TRPCError({ code: 'NOT_FOUND' });
-      if (request.origin !== 'pairing') {
-        // Not this surface's want — goodreads requests keep the owner-gated integrations.search.
+      // ADR-065 C-05 / DESIGN-038 D-13 — the books-gated force-search surface for OWNERLESS system wants:
+      // pairing (estate format wants) AND collection (a collection's missing members). A goodreads want is
+      // FORBIDDEN here — it keeps `integrations.search` and its ownership semantics untouched.
+      if (request.origin !== 'pairing' && request.origin !== 'collection') {
         throw new TRPCError({ code: 'FORBIDDEN' });
       }
       return mapDomainErrors(async () => {

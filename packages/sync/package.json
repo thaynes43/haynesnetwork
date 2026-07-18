@@ -21,6 +21,7 @@
     "@hnet/db": "workspace:*",
     "@hnet/domain": "workspace:*",
     "@hnet/goodreads": "workspace:*",
+    "@hnet/libretto": "workspace:*",
     "@hnet/metrics": "workspace:*",
     "@hnet/plex": "workspace:*",
     "drizzle-orm": "^0.36.4"

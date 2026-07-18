@@ -477,6 +477,13 @@
 			"when": 1783902600000,
 			"tag": "0069_collections_direct_add",
 			"breakpoints": true
+		},
+		{
+			"idx": 68,
+			"version": "7",
+			"when": 1783902700000,
+			"tag": "0068_collection_wanted_book_requests",
+			"breakpoints": true
 		}
 	]
 }

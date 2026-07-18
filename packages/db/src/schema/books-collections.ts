@@ -74,6 +74,16 @@ export const booksCollections = pgTable(
      */
     createdBy: text('created_by'),
     /**
+     * DESIGN-038 D-13 (migration 0068) — the Libretto recipeId this collection was produced by, parsed
+     * from the `[libretto:<recipeId>]` description marker the provenance derive already reads (D-11). The
+     * collection Wanted-tiles pass calls Libretto `read.listMissingMembers(recipeId)` with this EXACT id
+     * (the movies-leg "capture the collection id for an exact join" hardening lever, applied here). NULLABLE
+     * + OPEN: null for a hand-made (non-Libretto) collection — no recipe, so no wanted members. Recomputed
+     * from the source description every sync upsert (rebuildable like created_by; a null derive PRESERVES
+     * nothing to preserve — an absent marker means null, and a re-added marker refreshes it).
+     */
+    librettoRecipeId: text('libretto_recipe_id'),
+    /**
      * DESIGN-038 D-12 (migration 0064) — the OPEN, free-form owner CATEGORY of this collection
      * (Series / List / Event / anything an agent coins), completing the label-driven dynamic-chip
      * story across all three walls (movies/TV: `plex_collections.category`, migration 0062). NULLABLE

@@ -149,6 +149,15 @@ const ALLOWED_FILES = new Set<string>([
 // (+ Drizzle .insert/.delete) are guarded). The retired collection_suggestions table was DROPPED (migration
 // 0069) and is no longer guarded. The over-cap definition rides tickets.collection_override_payload — the
 // already-guarded `tickets` single-writer (createCollectionOverrideTicket) owns that write.
+// DESIGN-038 D-13 (2026-07-18 — books/audiobooks collection Wanted tiles) mints origin='collection'
+// book_requests from Libretto's missing set (syncCollectionWants in book-requests.ts is the sole writer,
+// the syncPlexCollections wanted-row analog) and — new for book_requests — RECONCILE-DELETES the wants no
+// longer missing (scoped to origin='collection' so goodreads/pairing wants are never touched). A
+// rebuildable derived cache of Libretto's current missing set: no audit row (documented exemption). The
+// INSERT/UPDATE guard already confines the mint to packages/domain; book_requests is intentionally NOT in
+// the DELETE guard families (test cleanups delete it directly, and the reconcile lives in packages/domain,
+// exempt from every pattern) — the established "book_requests is deleted only by the shelf-item cascade"
+// stance, now widened to include the domain reconcile.
 const FORBIDDEN_PATTERNS: Array<{ name: string; regex: RegExp }> = [
   {
     name: 'UPDATE users SET role_id (SQL)',

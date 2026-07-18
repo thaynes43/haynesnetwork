@@ -1389,6 +1389,69 @@ describe('migrations against embedded Postgres 16', () => {
     });
   });
 
+  // DESIGN-038 D-13 (migration 0068) — the COLLECTION-WANT seat: book_requests.origin admits 'collection',
+  // collection_id + collection_member_ref carry the identity (coherence CHECK), the partial unique keys it,
+  // and books_collections gains libretto_recipe_id.
+  describe('0068 collection wanted book_requests (DESIGN-038 D-13)', () => {
+    async function seedCollection(externalId: string): Promise<string> {
+      const row = await client.query({
+        text: `INSERT INTO books_collections (source, external_id, kind, title, libretto_recipe_id)
+               VALUES ('kavita', $1, 'collection', 'Wanted Coll', 'recipe-x') RETURNING id`,
+        values: [externalId],
+      });
+      return row.rows[0].id as string;
+    }
+
+    it('admits an origin=collection want, enforces coherence + the (collection, member) unique + cascade', async () => {
+      const collId = await seedCollection('cw-1');
+      // A collection want: no integration / shelf / anchor — collection_id + member_ref are the identity.
+      await client.query({
+        text: `INSERT INTO book_requests (origin, collection_id, collection_member_ref, title, ebook_status, audio_status)
+               VALUES ('collection', $1, 'isbn:1', 'Missing One', 'requested', 'landed')`,
+        values: [collId],
+      });
+      // ONE want per (collection, member) — the partial unique rejects a duplicate ref.
+      await expect(
+        client.query({
+          text: `INSERT INTO book_requests (origin, collection_id, collection_member_ref, title) VALUES ('collection', $1, 'isbn:1', 'Dup')`,
+          values: [collId],
+        }),
+      ).rejects.toMatchObject({ code: '23505' });
+      // A DIFFERENT member ref in the same collection is fine.
+      await client.query({
+        text: `INSERT INTO book_requests (origin, collection_id, collection_member_ref, title) VALUES ('collection', $1, 'isbn:2', 'Missing Two')`,
+        values: [collId],
+      });
+      // Coherence: a collection want without collection_id + member_ref is not representable.
+      await expect(
+        client.query(`INSERT INTO book_requests (origin, title) VALUES ('collection', 'No Keys')`),
+      ).rejects.toMatchObject({ code: '23514' });
+      // The collection cascade cleans the wants up.
+      await client.query({ text: `DELETE FROM books_collections WHERE id = $1`, values: [collId] });
+      const left = await client.query({
+        text: `SELECT count(*)::int AS n FROM book_requests WHERE collection_id = $1`,
+        values: [collId],
+      });
+      expect(left.rows[0].n).toBe(0);
+    });
+
+    it('the (collection, member) unique is PER-collection — the same ref in two collections is fine', async () => {
+      const a = await seedCollection('cw-a');
+      const b = await seedCollection('cw-b');
+      for (const id of [a, b]) {
+        await client.query({
+          text: `INSERT INTO book_requests (origin, collection_id, collection_member_ref, title) VALUES ('collection', $1, 'isbn:same', 'Shared Member')`,
+          values: [id],
+        });
+      }
+      const n = await client.query(
+        `SELECT count(*)::int AS n FROM book_requests WHERE collection_member_ref = 'isbn:same'`,
+      );
+      expect(n.rows[0].n).toBe(2);
+      await client.query(`DELETE FROM books_collections WHERE external_id IN ('cw-a','cw-b')`);
+    });
+  });
+
   // DESIGN-035 D-10' / R-214 (migration 0055 then 0062): the Collection Type annotation started as a
   // NOT-NULL DEFAULT-'other' six-bucket CHECK enum column `collection_type` (0055). Migration 0062
   // retired the closed enum for the OPEN, label-driven `category` (nullable free text, no CHECK). The

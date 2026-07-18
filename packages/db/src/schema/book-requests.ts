@@ -12,6 +12,7 @@ import { sql } from 'drizzle-orm';
 import { userIntegrations } from './user-integrations';
 import { integrationShelfItems } from './integration-shelf-items';
 import { booksItems } from './books-items';
+import { booksCollections } from './books-collections';
 import { BOOK_REQUEST_ORIGINS, BOOK_REQUEST_STATUSES } from './enums';
 import type { BookRequestOrigin, BookRequestStatus } from './enums';
 
@@ -62,6 +63,22 @@ export const bookRequests = pgTable(
     pairingBooksItemId: uuid('pairing_books_item_id').references(() => booksItems.id, {
       onDelete: 'cascade',
     }),
+    /**
+     * DESIGN-038 D-13 (migration 0068) — the COLLECTION this want belongs to (origin='collection'). A
+     * books/audiobooks collection's MISSING member, minted from Libretto's `listMissingMembers(recipeId)`.
+     * NULL ⇔ origin!='collection'. ON DELETE CASCADE: a vanished mirror collection cascade-drops its wants
+     * (no orphans). Rebuildable derived cache of Libretto's current missing set (the plex_collection_members
+     * wanted-row class) — the wanted pass reconcile-DELETES a want whose member is no longer missing.
+     */
+    collectionId: uuid('collection_id').references(() => booksCollections.id, {
+      onDelete: 'cascade',
+    }),
+    /**
+     * DESIGN-038 D-13 — the STABLE per-member key within the collection (ISBN-13 → identifier → normalized
+     * title), the idempotency key: the mint upserts on (collection_id, collection_member_ref) so a re-run
+     * never dupes a want. NULL ⇔ origin!='collection'.
+     */
+    collectionMemberRef: text('collection_member_ref'),
     /** The library mirror match, when present (ISBN → title/author). Null = not (yet) in the library. */
     matchedBooksItemId: uuid('matched_books_item_id').references(() => booksItems.id, {
       onDelete: 'set null',
@@ -120,11 +137,12 @@ export const bookRequests = pgTable(
       'book_requests_origin_enum',
       sql`${t.origin} = ANY (ARRAY[${sql.raw(REQUEST_ORIGIN_SQL_LIST)}])`,
     ),
-    // ADR-065 C-03 — origin↔keys coherence: a goodreads want carries its shelf+integration keys; a
-    // pairing want carries its library anchor. No half-keyed row is representable.
+    // ADR-065 C-03 / DESIGN-038 D-13 — origin↔keys coherence: a goodreads want carries its
+    // shelf+integration keys; a pairing want carries its library anchor; a collection want carries its
+    // collection + member ref. No half-keyed row is representable.
     check(
       'book_requests_origin_keys',
-      sql`(${t.origin} = 'goodreads' AND ${t.shelfItemId} IS NOT NULL AND ${t.integrationId} IS NOT NULL) OR (${t.origin} = 'pairing' AND ${t.pairingBooksItemId} IS NOT NULL)`,
+      sql`(${t.origin} = 'goodreads' AND ${t.shelfItemId} IS NOT NULL AND ${t.integrationId} IS NOT NULL) OR (${t.origin} = 'pairing' AND ${t.pairingBooksItemId} IS NOT NULL) OR (${t.origin} = 'collection' AND ${t.collectionId} IS NOT NULL AND ${t.collectionMemberRef} IS NOT NULL)`,
     ),
     // One request per shelf item (the mint is upsert-on-conflict on this key; NULLs — the pairing
     // wants — are exempt by Postgres unique semantics).
@@ -135,8 +153,15 @@ export const bookRequests = pgTable(
     uniqueIndex('book_requests_pairing_item_unique')
       .on(t.pairingBooksItemId)
       .where(sql`${t.pairingBooksItemId} IS NOT NULL`),
+    // DESIGN-038 D-13 — ONE collection want per (collection, member) — the idempotency key the wanted
+    // pass upserts on; goodreads/pairing rows (collection_id NULL) never collide (Postgres unique NULLs).
+    uniqueIndex('book_requests_collection_member_unique')
+      .on(t.collectionId, t.collectionMemberRef)
+      .where(sql`${t.origin} = 'collection'`),
     // The requests/Missing wall reads one integration's requests.
     index('book_requests_integration_idx').on(t.integrationId),
+    // DESIGN-038 D-13 — the collection drill's collection-scoped wanted read.
+    index('book_requests_collection_idx').on(t.collectionId),
   ],
 );
 

@@ -3,11 +3,22 @@
 // (refreshed every run), and reconcile scoped to fully-read collections / (source, kind) families —
 // a partial read never tombstones. Embedded PG16; books_items seeded through the sanctioned
 // syncBooks writer (never a direct insert).
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { and, asc, eq } from 'drizzle-orm';
-import { booksCollections, booksCollectionMembers } from '@hnet/db';
-import type { Database } from '@hnet/db';
-import { syncBooks, syncBooksCollections, type BooksItemInput } from '../src';
+import { bookRequests, booksCollections, booksCollectionMembers } from '@hnet/db';
+import type { BooksSource, Database } from '@hnet/db';
+import { LibrettoUnreachableError } from '@hnet/libretto';
+import {
+  collectionMemberRef,
+  getCollectionWantedBookRequests,
+  getWantedBookRequests,
+  runCollectionWantsSync,
+  syncBooks,
+  syncBooksCollections,
+  syncCollectionWants,
+  type BooksItemInput,
+  type CollectionWantsLibretto,
+} from '../src';
 import { bootMigratedDb, type TestDb } from './helpers';
 
 let t: TestDb;
@@ -363,5 +374,230 @@ describe('syncBooksCollections (ADR-066 / DESIGN-038 D-04)', () => {
     // 4. A re-sync whose source DOES carry a `cat=` marker WINS (mirror doctrine — source authoritative).
     await upsert('List');
     expect(await readCategory('cat-1', 'reading_list')).toBe('List');
+  });
+});
+
+// DESIGN-038 D-13 — the COLLECTION Wanted-tiles pass: a books/audiobooks collection's MISSING members
+// minted as book_requests (origin='collection'), rebuilt from Libretto's current missing set. Shares this
+// file's booted DB (one embedded PG per file — no new instance). The describe-scoped beforeEach wipes
+// book_requests + books_collections, which is safe: the mirror describe above has already run.
+describe('collection wants (DESIGN-038 D-13 — Wanted tiles from Libretto missing set)', () => {
+  beforeEach(async () => {
+    await t.db.delete(bookRequests);
+    await t.db.delete(booksCollections);
+  });
+
+  async function seedCollection(opts: {
+    source: BooksSource;
+    externalId: string;
+    recipeId: string;
+  }): Promise<string> {
+    await syncBooksCollections({
+      db: t.db,
+      collections: [
+        {
+          source: opts.source,
+          externalId: opts.externalId,
+          kind: 'collection',
+          libraryId: null,
+          title: `Collection ${opts.externalId}`,
+          itemCount: 0,
+          ordered: false,
+          createdBy: 'libretto',
+          librettoRecipeId: opts.recipeId,
+          category: null,
+          members: [],
+          fullyRead: true,
+        },
+      ],
+      // No scoped family ⇒ no reconcile: seeding a 2nd collection must not tombstone the 1st.
+      scopedFamilies: [],
+    });
+    const [row] = await t.db
+      .select({ id: booksCollections.id })
+      .from(booksCollections)
+      .where(
+        and(
+          eq(booksCollections.externalId, opts.externalId),
+          eq(booksCollections.kind, 'collection'),
+        ),
+      );
+    if (!row) throw new Error('collection seed returned no row');
+    return row.id;
+  }
+
+  async function wantRows(collectionId: string) {
+    return t.db
+      .select({
+        memberRef: bookRequests.collectionMemberRef,
+        title: bookRequests.title,
+        ebookStatus: bookRequests.ebookStatus,
+        audioStatus: bookRequests.audioStatus,
+        llBookId: bookRequests.llBookId,
+        origin: bookRequests.origin,
+      })
+      .from(bookRequests)
+      .where(eq(bookRequests.collectionId, collectionId));
+  }
+
+  it('collectionMemberRef prefers ISBN, then an identifier, then the normalized title', () => {
+    expect(collectionMemberRef({ isbn: '9781234567890', title: 'X' })).toBe('isbn:9781234567890');
+    expect(collectionMemberRef({ identifiers: ['asin:B01'], title: 'X' })).toBe('asin:B01');
+    expect(collectionMemberRef({ title: 'The Way of Kings' })).toBe('title:way of kings');
+    expect(collectionMemberRef({ title: '   ' })).toBeNull();
+  });
+
+  it('mints one origin=collection want per missing member (ebook active, audio landed)', async () => {
+    const id = await seedCollection({ source: 'kavita', externalId: 'k1', recipeId: 'r1' });
+    const res = await syncCollectionWants({
+      db: t.db,
+      collectionId: id,
+      format: 'ebook',
+      members: [
+        { memberRef: 'isbn:1', title: 'Book One', author: 'A', llBookId: 'gb1' },
+        { memberRef: 'isbn:2', title: 'Book Two', author: null, llBookId: null },
+      ],
+    });
+    expect(res.minted).toBe(2);
+    expect(res.removed).toBe(0);
+    const rows = await wantRows(id);
+    expect(rows).toHaveLength(2);
+    for (const r of rows) {
+      expect(r.origin).toBe('collection');
+      expect(r.ebookStatus).not.toBe('landed');
+      expect(r.audioStatus).toBe('landed');
+    }
+    expect(rows.find((r) => r.memberRef === 'isbn:1')?.llBookId).toBe('gb1');
+  });
+
+  it('is IDEMPOTENT — a re-run of the same missing set dupes nothing', async () => {
+    const id = await seedCollection({ source: 'kavita', externalId: 'k1', recipeId: 'r1' });
+    const members = [{ memberRef: 'isbn:1', title: 'Book One', author: 'A', llBookId: 'gb1' }];
+    await syncCollectionWants({ db: t.db, collectionId: id, format: 'ebook', members });
+    const second = await syncCollectionWants({ db: t.db, collectionId: id, format: 'ebook', members });
+    expect(second.minted).toBe(0);
+    expect(second.updated).toBe(1);
+    expect(await wantRows(id)).toHaveLength(1);
+  });
+
+  it('RECONCILES — a member no longer missing (became held) resolves its want', async () => {
+    const id = await seedCollection({ source: 'kavita', externalId: 'k1', recipeId: 'r1' });
+    await syncCollectionWants({
+      db: t.db,
+      collectionId: id,
+      format: 'ebook',
+      members: [
+        { memberRef: 'isbn:1', title: 'One', author: null, llBookId: null },
+        { memberRef: 'isbn:2', title: 'Two', author: null, llBookId: null },
+      ],
+    });
+    const res = await syncCollectionWants({
+      db: t.db,
+      collectionId: id,
+      format: 'ebook',
+      members: [{ memberRef: 'isbn:1', title: 'One', author: null, llBookId: null }],
+    });
+    expect(res.removed).toBe(1);
+    expect((await wantRows(id)).map((r) => r.memberRef)).toEqual(['isbn:1']);
+  });
+
+  it('an AUDIOBOOK collection runs the audio format (ebook landed)', async () => {
+    const id = await seedCollection({ source: 'audiobookshelf', externalId: 'a1', recipeId: 'ar1' });
+    await syncCollectionWants({
+      db: t.db,
+      collectionId: id,
+      format: 'audiobook',
+      members: [{ memberRef: 'isbn:1', title: 'Listen', author: null, llBookId: null }],
+    });
+    const [row] = await wantRows(id);
+    expect(row?.audioStatus).not.toBe('landed');
+    expect(row?.ebookStatus).toBe('landed');
+  });
+
+  it('empty missing set removes all of a collection’s wants (a full collection)', async () => {
+    const id = await seedCollection({ source: 'kavita', externalId: 'k1', recipeId: 'r1' });
+    await syncCollectionWants({
+      db: t.db,
+      collectionId: id,
+      format: 'ebook',
+      members: [{ memberRef: 'isbn:1', title: 'One', author: null, llBookId: null }],
+    });
+    const res = await syncCollectionWants({ db: t.db, collectionId: id, format: 'ebook', members: [] });
+    expect(res.removed).toBe(1);
+    expect(await wantRows(id)).toHaveLength(0);
+  });
+
+  it('getCollectionWantedBookRequests returns the collection’s live wants; the household overlay never sees them', async () => {
+    const id = await seedCollection({ source: 'kavita', externalId: 'k1', recipeId: 'r1' });
+    await syncCollectionWants({
+      db: t.db,
+      collectionId: id,
+      format: 'ebook',
+      members: [{ memberRef: 'isbn:1', title: 'One', author: 'Sanderson', llBookId: 'gb1' }],
+    });
+    const views = await getCollectionWantedBookRequests({ db: t.db, collectionId: id });
+    expect(views).toHaveLength(1);
+    expect(views[0]?.origin).toBe('collection');
+    expect(views[0]?.integrationUserId).toBeNull();
+    expect(views[0]?.llBookId).toBe('gb1');
+    // Isolation: a collection want NEVER appears in the top-level wall's household overlay.
+    expect(await getWantedBookRequests({ db: t.db, format: 'ebook' })).toHaveLength(0);
+  });
+
+  describe('runCollectionWantsSync — the Libretto pass', () => {
+    function stubLibretto(over: Partial<CollectionWantsLibretto> = {}): CollectionWantsLibretto {
+      return {
+        listMissingMembers: async () => ({
+          missing: [{ title: 'Missing One', authors: ['Author'], isbn: '9781', identifiers: [] }],
+        }),
+        resolve: async () => ({ volumeId: 'gbResolved' }),
+        ...over,
+      } as CollectionWantsLibretto;
+    }
+
+    it('mints wants from listMissingMembers and resolves the LL id', async () => {
+      const id = await seedCollection({ source: 'kavita', externalId: 'k1', recipeId: 'r1' });
+      const report = await runCollectionWantsSync({ db: t.db, libretto: stubLibretto() });
+      expect(report.collectionsProcessed).toBe(1);
+      expect(report.minted).toBe(1);
+      expect(report.resolved).toBe(1);
+      const rows = await wantRows(id);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.llBookId).toBe('gbResolved');
+    });
+
+    it('skips ONLY the failing collection on a per-collection read error', async () => {
+      const good = await seedCollection({ source: 'kavita', externalId: 'k1', recipeId: 'good' });
+      await seedCollection({ source: 'kavita', externalId: 'k2', recipeId: 'bad' });
+      const libretto = stubLibretto({
+        listMissingMembers: async (recipeId: string) => {
+          if (recipeId === 'bad') throw new Error('boom');
+          return { missing: [{ title: 'Only', identifiers: ['isbn:1'] }] };
+        },
+      });
+      const report = await runCollectionWantsSync({ db: t.db, libretto });
+      expect(report.collectionsSkipped).toBe(1);
+      expect(report.collectionsProcessed).toBe(1);
+      expect(await wantRows(good)).toHaveLength(1);
+    });
+
+    it('DEGRADES on Libretto unreachable — no mint, no reconcile', async () => {
+      const id = await seedCollection({ source: 'kavita', externalId: 'k1', recipeId: 'r1' });
+      await syncCollectionWants({
+        db: t.db,
+        collectionId: id,
+        format: 'ebook',
+        members: [{ memberRef: 'isbn:pre', title: 'Prior', author: null, llBookId: null }],
+      });
+      const libretto = stubLibretto({
+        listMissingMembers: async () => {
+          throw new LibrettoUnreachableError('GET', '/api/collections/r1/missing');
+        },
+      });
+      const report = await runCollectionWantsSync({ db: t.db, libretto });
+      expect(report.unreachable).toBe(true);
+      expect(report.minted).toBe(0);
+      expect(await wantRows(id)).toHaveLength(1); // the prior want SURVIVES (never reconciled)
+    });
   });
 });

@@ -11,7 +11,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { booksCollections } from '@hnet/db';
-import { syncBooks, syncBooksCollections, type BooksItemInput } from '@hnet/domain';
+import {
+  syncBooks,
+  syncBooksCollections,
+  syncCollectionWants,
+  type BooksItemInput,
+} from '@hnet/domain';
 import {
   bootMigratedDb,
   caller,
@@ -308,5 +313,61 @@ describe('the collection drill (DESIGN-038 D-06 — one EXISTS predicate + the p
     await expect(
       disabledCaller.books.search({ mediaKind: 'comic', collection: kavitaCollectionId }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+});
+
+describe('the collection drill Wanted tiles (DESIGN-038 D-13 — held + wanted side by side)', () => {
+  beforeAll(async () => {
+    // Two MISSING members on the HP reading-order collection (a books/ebook collection).
+    await syncCollectionWants({
+      db: t.db,
+      collectionId: readingListId,
+      format: 'ebook',
+      members: [
+        { memberRef: 'isbn:hp4', title: 'HP Missing 4', author: 'JKR', llBookId: 'gb4' },
+        { memberRef: 'isbn:hp5', title: 'HP Missing 5', author: 'JKR', llBookId: null },
+      ],
+    });
+  });
+
+  it('composes held tiles + Wanted tiles in the drill (position sort ⇒ wants LAST)', async () => {
+    const result = await readerCaller.books.search({
+      mediaKind: 'book',
+      collection: readingListId,
+      sort: 'position',
+    });
+    const kinds = result.items.map((i) => i.kind);
+    const titles = result.items.map((i) => i.title);
+    // 3 held members in reading order, then the 2 wanted (no position ⇒ NULLS LAST).
+    expect(titles.slice(0, 3)).toEqual(['HP Book 3', 'HP Book 2', 'HP Book 1']);
+    expect(kinds.slice(0, 3)).toEqual(['item', 'item', 'item']);
+    const wanted = result.items.filter((i) => i.kind === 'wanted');
+    expect(wanted.map((w) => w.title).sort()).toEqual(['HP Missing 4', 'HP Missing 5']);
+    // A collection want is an ownerless system want — force-searchable when its LL id resolved.
+    const w4 = wanted.find((w) => w.title === 'HP Missing 4');
+    expect(w4 && 'canSearch' in w4 ? w4.canSearch : false).toBe(true); // gb4 resolved
+  });
+
+  it('wanted=only returns just the collection wants; wanted=hide returns just held', async () => {
+    const only = await readerCaller.books.search({
+      mediaKind: 'book',
+      collection: readingListId,
+      wanted: 'only',
+    });
+    expect(only.items.every((i) => i.kind === 'wanted')).toBe(true);
+    expect(only.items).toHaveLength(2);
+
+    const hide = await readerCaller.books.search({
+      mediaKind: 'book',
+      collection: readingListId,
+      wanted: 'hide',
+    });
+    expect(hide.items.every((i) => i.kind === 'item')).toBe(true);
+    expect(hide.items.map((i) => i.title)).toEqual(['HP Book 1', 'HP Book 2', 'HP Book 3']);
+  });
+
+  it('collection wants NEVER leak onto the top-level Books wall overlay', async () => {
+    const wall = await readerCaller.books.search({ mediaKind: 'book', wanted: 'all' });
+    expect(wall.items.some((i) => i.kind === 'wanted')).toBe(false);
   });
 });
