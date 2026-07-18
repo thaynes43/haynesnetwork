@@ -127,13 +127,14 @@ function validateWire(res: LibrettoValidateResponse) {
     issues: (res.issues ?? []).map((i) => i.message ?? 'issue'),
   };
 }
-function ticketWire(row: TicketRow) {
+function ticketWire(row: TicketRow & { authorName?: string | null }) {
   const p = row.collectionOverridePayload;
   return {
     id: row.id,
     status: row.status,
     title: row.title,
     authorUserId: row.authorUserId,
+    requestedBy: row.authorName ?? null,
     collectionName: p?.name ?? row.title,
     mediaType: p?.mediaType ?? null,
     provider: p?.provider ?? null,

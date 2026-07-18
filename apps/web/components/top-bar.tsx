@@ -311,10 +311,11 @@ export function TopBar({ user }: { user: TopBarUser }) {
         <span className="brand__name" aria-hidden="true" />
         <span className="sr-only">haynesnetwork home</span>
       </Link>
-      {/* DESIGN-004 D-22/D-23 — the UNIVERSAL primary nav, FOUR entries: Portal · Library ·
-          Tickets · Trash, the same candidate set for every role (a Disabled section still hides
-          its entry). Metrics + Integrations live in the user menu; four labels fit 320px without
-          the rail scrolling. Shown at all widths. */}
+      {/* DESIGN-004 D-22/D-23 + ADR-072 — the UNIVERSAL primary nav, FIVE entries: Portal ·
+          Library · Collections · Tickets · Trash, the same candidate set for every role (a
+          Disabled section still hides its entry). Metrics + Integrations live in the user menu.
+          Five labels engage the rail's scroll on phone widths — the scroll-driven edge fade in
+          app.css marks the truncation as scrollable. Shown at all widths. */}
       <nav className="topbar__nav" aria-label="Primary">
         <Link href="/portal">{PORTAL_NAME}</Link>
         <Link href="/library">Library</Link>
