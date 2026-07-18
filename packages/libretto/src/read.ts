@@ -9,18 +9,22 @@ import {
   librettoCollectionsResponseSchema,
   librettoHealthResponseSchema,
   librettoMissingResponseSchema,
+  librettoPreviewResponseSchema,
   librettoRecipeDraftSchema,
   librettoRecipesResponseSchema,
   librettoResolveResponseSchema,
   librettoRunSchema,
+  librettoSearchResponseSchema,
   librettoValidateResponseSchema,
   type LibrettoCollection,
   type LibrettoIssue,
   type LibrettoMissingResponse,
+  type LibrettoPreviewResponse,
   type LibrettoRecipe,
   type LibrettoRecipeDraft,
   type LibrettoResolved,
   type LibrettoRun,
+  type LibrettoSearchResponse,
   type LibrettoValidateResponse,
 } from './schemas';
 
@@ -30,6 +34,23 @@ export interface LibrettoResolveRequest {
   title?: string;
   author?: string;
   identifiers?: string[];
+}
+
+/** Typeahead search parameters (`GET /api/search`). `q` is the free text; `limit` caps the hits. */
+export interface LibrettoSearchRequest {
+  /** The builder type whose ref is being searched (e.g. `hardcover_series`, `nyt_list`). */
+  type: string;
+  q: string;
+  limit?: number;
+}
+
+/**
+ * A DRAFT builder to preview (`POST /api/preview`). `ref` is a string for hardcover_series/nyt_list and
+ * a string array for static_ids — passed through to Libretto, which validates and 400s a bad shape.
+ */
+export interface LibrettoPreviewRequest {
+  builder: { type: string; ref: string | number | string[] };
+  limit?: number;
 }
 
 /** Options shared by the read + write clients (mirrors LazyLibrarianClientOptions). */
@@ -92,6 +113,37 @@ export class LibrettoReadClient {
       librettoResolveResponseSchema,
     );
     return raw.resolved;
+  }
+
+  /**
+   * `GET /api/search?type=&q=&limit=` — typeahead for a builder's ref: find a series/list by NAME so a
+   * user never pastes a slug. `hardcover_series` proxies Hardcover's series search; `nyt_list` filters the
+   * built-in list names; `static_ids` returns none (free-form). Result counts are capped Libretto-side
+   * (the caller owns debounce). An unknown type is a `LibrettoHttpError` 400; an unconfigured source (503)
+   * is transient in the shared http wrapper and surfaces as `LibrettoUnreachableError` — the field shows
+   * an honest "search unavailable" note either way.
+   */
+  async search(request: LibrettoSearchRequest): Promise<LibrettoSearchResponse> {
+    const params = new URLSearchParams({ type: request.type, q: request.q });
+    if (request.limit !== undefined) params.set('limit', String(request.limit));
+    return this.http.requestParsed(
+      { method: 'GET', path: `/api/search?${params.toString()}` },
+      librettoSearchResponseSchema,
+    );
+  }
+
+  /**
+   * `POST /api/preview` — the MEMBER-LEVEL identities a draft builder would resolve to (the full
+   * membership a run would produce, NOT just the missing ones), so the app can split held vs missing
+   * against its own mirrors (books_items) BEFORE save + drive the cap meter. Mutates nothing. Bounded at
+   * 100 members with an honest `truncated` flag; a 0-member container slug returns `total: 0`. A
+   * `LibrettoHttpError` 502 means the builder source is unavailable (e.g. HARDCOVER_TOKEN unset).
+   */
+  async preview(request: LibrettoPreviewRequest): Promise<LibrettoPreviewResponse> {
+    return this.http.requestParsed(
+      { method: 'POST', path: '/api/preview', body: request },
+      librettoPreviewResponseSchema,
+    );
   }
 
   /** `GET /api/runs/:id` — one run's state + counts (Libretto keeps only the last 50 — DESIGN-037 D-03). */
