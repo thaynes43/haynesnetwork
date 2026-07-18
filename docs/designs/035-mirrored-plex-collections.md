@@ -1,7 +1,10 @@
 # DESIGN-035: Mirrored Plex collections — the Movies/TV Collections group view
 
 - **Status:** Accepted
-- **Last updated:** 2026-07-17 (amended: **D-10'/D-11'** SUPERSEDE D-10/D-11 — the collection
+- **Last updated:** 2026-07-18 (added **D-17** — the non-admin collection size cap
+  (`collection_size_cap`, default 25) + the over-cap admin-override `Modal`/ticket, migration 0067)
+- **Prior update:** 2026-07-18 (added **D-16** — full held+wanted collection membership, migration 0065)
+- **Prior update:** 2026-07-17 (amended: **D-10'/D-11'** SUPERSEDE D-10/D-11 — the collection
   category is now LABEL-DRIVEN and OPEN, not a title-guessed closed enum; see the dated amendment
   below. No new ADR — still an annotation + facet on ADR-064's read-model)
 - **Prior update:** 2026-07-16 (PLAN-053: **D-10/D-11** — the title-based Collection Type annotation
@@ -412,6 +415,53 @@ media source of truth, hard rule 4), reusing the existing `wanted_items` view. T
   only a missing COUNT today); that is a cross-repo Libretto extension put to the owner separately. The
   wanted-row model above is medium-neutral, so the books leg (mint `book_requests` origin `'collection'`
   → the shipped DESIGN-029 Wanted tiles) slots in later without reworking this schema.
+
+### D-17 — The non-admin collection SIZE CAP + the over-cap admin-override ticket (migration 0067 — added 2026-07-18)
+
+Acquisition is now ON for collections (D-16 Wanted-tiles are monitored+searched *arr members), so an
+unbounded collection a member creates could dump hundreds of monitored+searched items into
+Radarr/LazyLibrarian. The fence (owner-specified in the label-driven collections spike §9):
+
+- **The cap** — a new `app_settings` key **`collection_size_cap`** (int, default **25** —
+  `COLLECTION_SIZE_CAP_DEFAULT`) is the MAX resolved membership a **NON-ADMIN** role may create/add in
+  one collection. It is admin-mutated ONLY through the audited `setAppSetting` single-writer
+  (`update_app_setting` permission_audit) — a non-admin can never change it (the `space_targets` /
+  `notify_window` precedent). LISTS (e.g. an IMDb top-200) are the sanctioned larger exception and are
+  admin territory; an admin (`role.isAdmin` ⇒ all `COLLECTION_ACTIONS`) **bypasses the cap outright**.
+- **The guard (pure domain)** — `packages/domain` exposes a pure `exceedsCollectionSizeCap({ size, cap,
+  isAdmin })` predicate (admin ⇒ never exceeds; else `size > cap`) plus `assertWithinCollectionSizeCap`
+  which throws a typed `CollectionSizeCapError` carrying `{ size, cap }` when a non-admin would breach
+  it. The check runs where a non-admin COMPOSES new membership and the resolved member count is known —
+  at recipe **create (`collections.save`)**, previewing the draft's builder for its `resolved.workCount`.
+  An already-created recipe is bounded by its create-time cap; `applyRecipe` operates on it unchanged
+  (and acquisition — the actual content-pull — needs the DISTINCT `acquire` grant, Admin-only in v1, so
+  a non-admin cannot flood the *arrs by applying). When the `kometa` provider adapter lands
+  (PR4/DESIGN-042), the same check guards the movies/TV create/add path. The per-run
+  `ACQUISITION_CAP_PER_RUN` (25) remains the pacing fence on top.
+- **API enforcement** — `collections.save` (`collectionActionProcedure('manage')`) previews the draft,
+  reads `getAppSetting(db, 'collection_size_cap')` and the caller's admin flag, then calls
+  `assertWithinCollectionSizeCap` BEFORE the confined Libretto write. A breach surfaces as a typed
+  tRPC error (`code: 'UNPROCESSABLE_CONTENT'`, `appCode: 'COLLECTION_SIZE_CAP_EXCEEDED'`, cause carrying
+  `{ size, cap }`) the client renders in the over-cap Modal — never a silent truncation.
+- **The over-cap Modal + auto-ticket (hard rule 8)** — an over-cap create/add is an explanatory,
+  multi-field confirm, so the UI opens a `@hnet/ui` **`Modal`** (NOT `window.confirm` / `ConfirmButton`
+  — hard rule 8, the failsafe-restore / Fix case). It explains "This collection is too large ({size}
+  items; the limit is {cap})." and offers a primary **"Request admin override"** button that mints a
+  ticket via the new domain single-writer **`createCollectionOverrideTicket`** (a thin wrapper over the
+  ADR-050 `createTicket`, so it reuses the helpdesk board + the `ticket_created` outbox ping + admin
+  email, all atomic). Ticket shape: `category: 'collection_override'` (already in `TICKET_CATEGORIES`),
+  `authorId` = the requesting user, `title` = "Collection override request: {name}", `body` = the
+  structured facts (requester, provider `kometa`/`libretto`, collection/recipe name, resolved size,
+  current cap, requested action). The ticket rides the existing `open → in_progress → complete|rejected`
+  machine; an admin completing it performs the override (raise the cap via `setAppSetting`, or a
+  one-off). No new approval subsystem — it is a ticket.
+- **Movies Wanted-tile force-search seam (D-16 follow-through)** — the movies collection drill's Wanted
+  tiles render their per-item Radarr force-search through the shared `@hnet/ui` `MediaAction`
+  (`<MediaAction action="forceSearch" onFire={…} />`) — NEVER a hand-rolled button (a lint guard for
+  this is planned). The action's gating/presentation is the unification agent's lane; this leg only
+  wires the seam onto the wanted tile with the collection's force-search dispatch.
+- **Reflow-free (ADR-015):** the Modal is an overlay (no neighbor reflow); the Wanted tile's
+  force-search uses the shared `ReservedActionSlot` so the armed/firing state recolors, never reflows.
 
 ## Alternatives considered
 

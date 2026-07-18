@@ -4416,6 +4416,28 @@ button.bwall-tap:focus-visible {
   color: var(--color-text-muted);
   border-color: var(--color-border);
 }
+/* DESIGN-035 D-16/D-17 — a collection-drill Wanted tile: the shared <MediaAction forceSearch> rides
+   the poster's bottom edge as an overlay sibling of the card link (never nested in the <a>), so the
+   tile keeps its uniform grid size. The button recolors on hover/arm; layout is fixed (ADR-015). */
+.coll-wanted {
+  position: relative;
+  display: block;
+}
+.coll-wanted__fs {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 34px; /* clears the caption/badge row beneath the poster */
+  display: flex;
+  justify-content: center;
+  z-index: 2;
+  pointer-events: none; /* the button re-enables it; the rest of the overlay never blocks the card link */
+}
+.coll-wanted__fs .btn {
+  pointer-events: auto;
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--color-text) 22%, transparent);
+}
+
 /* Poster treatment per state — filters/outlines only (no geometry): a saved/protected poster
    gets an accent ring; swept/skipped posters recede. */
 .bwall-tile[data-glyph='shield'] .poster-box,
@@ -7074,63 +7096,4 @@ body:has(.gallery) {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-}
-
-/* The member "Suggest a collection" affordance — a small trailing card after the collections grid. */
-.suggest-affordance {
-  margin-top: 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  max-width: 520px;
-}
-.suggest-affordance__card {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  text-align: left;
-  font: inherit;
-  cursor: pointer;
-  padding: 14px 16px;
-  border: 1px dashed color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--color-accent) 4%, var(--color-surface));
-  color: var(--color-text);
-  transition:
-    border-color 0.15s ease,
-    background 0.15s ease;
-}
-.suggest-affordance__card:hover {
-  border-color: var(--color-accent);
-  background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface));
-}
-.suggest-affordance__plus {
-  font-size: 1.3rem;
-  font-weight: 700;
-  color: var(--color-accent);
-  line-height: 1;
-}
-.suggest-affordance__label {
-  font-weight: 600;
-}
-.suggest-affordance__hint {
-  font-size: 0.82rem;
-}
-.suggest-affordance__mine {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.suggest-affordance__mine-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  font-size: 0.82rem;
-}
-.suggest-affordance__reason {
-  font-style: italic;
 }
