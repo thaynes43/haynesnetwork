@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.81.1](https://github.com/thaynes43/haynesnetwork/compare/v0.81.0...v0.81.1) (2026-07-18)
+
+
+### Bug Fixes
+
+* **pairing:** skip redundant LazyLibrarian addBook when the volume is already seated (GB call-budget) ([#409](https://github.com/thaynes43/haynesnetwork/issues/409)) ([d0c3224](https://github.com/thaynes43/haynesnetwork/commit/d0c3224c26fe89ba31d6cac6d321155b55c2fe27))
+
+
+### Documentation
+
+* **agents:** verified UTC timeline for the trash-cycle stall — correct the recovery claim ([#410](https://github.com/thaynes43/haynesnetwork/issues/410)) ([c7b367f](https://github.com/thaynes43/haynesnetwork/commit/c7b367f64c9f0815684a4a9b32a3f563587db9ab))
+
 ## [0.81.0](https://github.com/thaynes43/haynesnetwork/compare/v0.80.0...v0.81.0) (2026-07-18)
 
 
