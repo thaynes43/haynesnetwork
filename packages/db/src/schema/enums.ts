@@ -49,13 +49,19 @@ export const PERMISSION_AUDIT_ACTIONS = [
   'update_activity_actions',
   // ADR-070 / DESIGN-043 (PLAN-052 — collection manager). `update_collection_actions` records a role's
   // fine-grained collection action grants being replaced (the update_book_actions analog; written by
-  // setRoleCollectionActions). `create_collection_suggestion` records a member proposing a collection
-  // (actorId = the suggesting user; roleId null — not a role mutation; subjectUserId = the same user).
-  // `review_collection_suggestion` records a manage admin approving/declining a suggestion (actorId = the
-  // reviewing admin). The suggestion lifecycle rows commit in the SAME tx as the mutation they record.
+  // setRoleCollectionActions). `create_collection_suggestion` / `review_collection_suggestion` are the
+  // RETIRED suggest→approve audit actions (ADR-072 killed the flow, migration 0069) — kept in the enum so
+  // the CHECK never rejects the append-only history rows those events already wrote; no new code emits them.
   'update_collection_actions',
   'create_collection_suggestion',
   'review_collection_suggestion',
+  // ADR-072 / DESIGN-043 D-03/D-11 (PLAN-052 PR4a — direct-add) — the direct collection writes.
+  // `upsert_collection` records a user adding/editing a collection directly (actorId = the acting user;
+  // roleId null — not a role mutation; subjectUserId = the same user). `delete_collection` records an admin
+  // deleting a collection recipe. Both co-write in the SAME tx as the confined provider write's stamp
+  // (the crash-safe idempotent-PUT idiom — the external write lands first, then the same-tx audit).
+  'upsert_collection',
+  'delete_collection',
 ] as const;
 export type PermissionAuditAction = (typeof PERMISSION_AUDIT_ACTIONS)[number];
 
@@ -796,19 +802,29 @@ export type BookAction = (typeof BOOK_ACTIONS)[number];
 // (role_collection_action_grants) + the pending member suggestions (collection_suggestions).
 // ---------------------------------------------------------------------------
 
-// The fine-grained collection-manager actions a role may be granted (the ADR-023/059/062 idiom; a
-// ROW is the grant; Admin implies all). Ships UNGRANTED (Admin-only) — the owner opens each per role
-// after review (the books-Fix precedent). `suggest` = propose a collection (the member contribution);
-// `manage` = create/edit/delete recipes + apply runs; `acquire` = flip acquisitionEnabled — THE
-// content-pulling knob, a DISTINCT grant a `manage` role does not automatically hold (ADR-070 C-04).
-export const COLLECTION_ACTIONS = ['suggest', 'manage', 'acquire'] as const;
+// ADR-072 / DESIGN-043 D-14 (PLAN-052 PR4a) — the collection-manager action set, REBUILT from the retired
+// `suggest`/`manage`/`acquire` triad to a SINGLE `find_missing` action (migration 0069 rebuilds this CHECK
+// and clears the old grant rows). Direct add/edit within the size cap needs NO grant (everyone may add —
+// ADR-072); admin implies unbounded + delete + ticket approve. `find_missing` is the per-collection
+// acquisition knob's gate — the content-pulling lever a granted role may flip per collection (default users
+// never can). Ships UNGRANTED (Admin-only) until the owner opens it per role at /admin (the books-Fix FLIP
+// precedent — DESIGN-033). The grant grid + cron force-search wiring land in PR4c; the action exists now so
+// migration 0069 is the only schema move.
+export const COLLECTION_ACTIONS = ['find_missing'] as const;
 export type CollectionAction = (typeof COLLECTION_ACTIONS)[number];
 
-// The collection-manager PROVIDER discriminator (R2 — integration parity). 'libretto' is the books
-// provider bound now; 'kometa' (the movies/TV leg, designed in parallel — DESIGN-037 Appendix A)
-// joins the enum + a second adapter behind the SAME router, no schema change (ADR-070 C-06).
-export const COLLECTION_PROVIDERS = ['libretto'] as const;
+// The collection-manager PROVIDER discriminator (R2 — integration parity). 'libretto' is the books /
+// audiobooks provider bound now (direct API — PR4a); 'kometa' is the movies/TV leg (the auto-merged
+// haynes-ops write path — PR4b) behind the SAME provider-agnostic router. Both are valid over-cap ticket
+// payload providers (DESIGN-043 D-11).
+export const COLLECTION_PROVIDERS = ['libretto', 'kometa'] as const;
 export type CollectionProvider = (typeof COLLECTION_PROVIDERS)[number];
+
+// ADR-072 / DESIGN-043 D-09 (PLAN-052 PR4a) — the first-class /collections page's per-media-type
+// sub-sections. Movies/TV bind the Kometa provider (PR4b); Books/Audiobooks bind Libretto (PR4a). Carried
+// on the over-cap ticket payload so a materialized collection re-binds to the right provider + sub-section.
+export const COLLECTION_MEDIA_TYPES = ['movies', 'tv', 'books', 'audiobooks'] as const;
+export type CollectionMediaType = (typeof COLLECTION_MEDIA_TYPES)[number];
 
 // The Libretto v1 builder set (DESIGN-037 D-05) — what SOURCE a recipe's collection is built from.
 export const COLLECTION_BUILDER_TYPES = [
@@ -824,10 +840,8 @@ export type CollectionBuilderType = (typeof COLLECTION_BUILDER_TYPES)[number];
 export const COLLECTION_SYNC_MODES = ['append', 'sync'] as const;
 export type CollectionSyncMode = (typeof COLLECTION_SYNC_MODES)[number];
 
-// A member suggestion's lifecycle (ADR-070 C-05): `pending` (filed; applies nothing) → `approved`
-// (a manage admin materialized the recipe via the confined writer) | `declined` (with a reason).
-export const COLLECTION_SUGGESTION_STATUSES = ['pending', 'approved', 'declined'] as const;
-export type CollectionSuggestionStatus = (typeof COLLECTION_SUGGESTION_STATUSES)[number];
+// (ADR-072 killed the suggest→approve flow; COLLECTION_SUGGESTION_STATUSES + the collection_suggestions
+// table are gone — migration 0069. The over-cap `collection_override` ticket, below, is the only escalation.)
 
 export const TICKET_CATEGORIES = [
   'playback',

@@ -1751,84 +1751,57 @@ describe('migrations against embedded Postgres 16', () => {
     });
   });
 
-  describe('0059 collection manager (ADR-070 — grants + suggestions + audit CHECK)', () => {
-    it('grants enforce the action enum, suggestions enforce their CHECKs, and the new audit actions admit', async () => {
+  describe('0069 collections direct-add (ADR-072 — teardown + find_missing + ticket payload)', () => {
+    it('rebuilds the grant CHECK to find_missing, drops collection_suggestions, adds the ticket payload + audit actions', async () => {
       const roleId = (await client.query(`SELECT id FROM roles WHERE name = 'Default'`)).rows[0].id;
-      // Grants: the three actions insert; an unknown action rejects (CHECK 23514).
-      for (const action of ['suggest', 'manage', 'acquire']) {
-        await client.query({
-          text: `INSERT INTO role_collection_action_grants (role_id, action) VALUES ($1, $2)`,
-          values: [roleId, action],
-        });
+      // Grants: the rebuilt action set is a single `find_missing`; the retired triad now REJECTS (CHECK 23514).
+      await client.query({
+        text: `INSERT INTO role_collection_action_grants (role_id, action) VALUES ($1, 'find_missing')`,
+        values: [roleId],
+      });
+      for (const gone of ['suggest', 'manage', 'acquire', 'delete_everything']) {
+        await expect(
+          client.query({
+            text: `INSERT INTO role_collection_action_grants (role_id, action) VALUES ($1, $2)`,
+            values: [roleId, gone],
+          }),
+        ).rejects.toMatchObject({ code: '23514' });
       }
-      await expect(
-        client.query({
-          text: `INSERT INTO role_collection_action_grants (role_id, action) VALUES ($1, 'delete_everything')`,
-          values: [roleId],
-        }),
-      ).rejects.toMatchObject({ code: '23514' });
-      // Composite PK dedupes.
-      await expect(
-        client.query({
-          text: `INSERT INTO role_collection_action_grants (role_id, action) VALUES ($1, 'manage')`,
-          values: [roleId],
-        }),
-      ).rejects.toMatchObject({ code: '23505' });
 
-      // Suggestions: a valid pending row inserts; bad provider/builder/status reject.
+      // The retired collection_suggestions table is DROPPED (migration 0069).
+      const suggestionsTable = await client.query(
+        `SELECT to_regclass('public.collection_suggestions') AS reg`,
+      );
+      expect(suggestionsTable.rows[0].reg).toBeNull();
+
+      // tickets carries the nullable collection_override_payload jsonb — a full definition round-trips.
       const userId = (
         await client.query(
           `INSERT INTO users (email, display_name) VALUES ('collmgr-mig@example.com', 'Coll Mig') RETURNING id`,
         )
       ).rows[0].id;
-      const sid = (
+      const payload = { provider: 'libretto', mediaType: 'books', recipeId: 'x', name: 'X', builderType: 'nyt_list', builderRef: 'top', size: 200 };
+      const tid = (
         await client.query({
-          text: `INSERT INTO collection_suggestions (suggester_id, name, builder_type, builder_ref)
-                 VALUES ($1, 'The Stormlight Archive', 'hardcover_series', 'stormlight') RETURNING id, provider, status`,
-          values: [userId],
+          text: `INSERT INTO tickets (author_user_id, title, body, category, collection_override_payload)
+                 VALUES ($1, 'Collection request: X', 'body', 'collection_override', $2) RETURNING id, collection_override_payload`,
+          values: [userId, JSON.stringify(payload)],
         })
       ).rows[0];
-      expect(sid.provider).toBe('libretto'); // column default
-      expect(sid.status).toBe('pending'); // column default
-      await expect(
-        client.query({
-          text: `INSERT INTO collection_suggestions (suggester_id, name, builder_type, builder_ref)
-                 VALUES ($1, 'Bad', 'not_a_builder', 'x')`,
-          values: [userId],
-        }),
-      ).rejects.toMatchObject({ code: '23514' });
-      await expect(
-        client.query({
-          text: `INSERT INTO collection_suggestions (suggester_id, name, builder_type, builder_ref, status)
-                 VALUES ($1, 'Bad2', 'static_ids', 'x', 'maybe')`,
-          values: [userId],
-        }),
-      ).rejects.toMatchObject({ code: '23514' });
+      expect(tid.collection_override_payload.recipeId).toBe('x');
+      expect(tid.collection_override_payload.size).toBe(200);
 
-      // The three new permission_audit actions admit.
-      for (const action of [
-        'update_collection_actions',
-        'create_collection_suggestion',
-        'review_collection_suggestion',
-      ]) {
-        await client.query({
-          text: `INSERT INTO permission_audit (action) VALUES ($1)`,
-          values: [action],
-        });
+      // The direct-add permission_audit actions admit (alongside the retained historical suggestion ones).
+      for (const action of ['update_collection_actions', 'upsert_collection', 'delete_collection']) {
+        await client.query({ text: `INSERT INTO permission_audit (action) VALUES ($1)`, values: [action] });
       }
 
       // cleanup.
-      await client.query({
-        text: `DELETE FROM role_collection_action_grants WHERE role_id = $1`,
-        values: [roleId],
-      });
+      await client.query({ text: `DELETE FROM role_collection_action_grants WHERE role_id = $1`, values: [roleId] });
       await client.query(
-        `DELETE FROM permission_audit WHERE action IN ('update_collection_actions','create_collection_suggestion','review_collection_suggestion')`,
+        `DELETE FROM permission_audit WHERE action IN ('update_collection_actions','upsert_collection','delete_collection')`,
       );
-      await client.query({
-        text: `DELETE FROM collection_suggestions WHERE suggester_id = $1`,
-        values: [userId],
-      });
+      await client.query({ text: `DELETE FROM tickets WHERE id = $1`, values: [tid.id] });
       await client.query({ text: `DELETE FROM users WHERE id = $1`, values: [userId] });
     });
   });

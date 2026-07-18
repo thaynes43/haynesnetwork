@@ -36,6 +36,7 @@ import { BrandMark } from '@/components/brand-mark';
 import { EmailUpdatesToggle } from '@/components/email-updates-toggle';
 import { initialFor } from '@/lib/initials';
 import { HELPDESK_NAME } from '@/lib/bulletin';
+import { COLLECTIONS_NAME } from '@/lib/collections';
 import { PORTAL_NAME } from '@/lib/portal';
 
 /** ADR-021 — the session-carried section levels (SessionRole.sectionPermissions) the nav
@@ -317,6 +318,10 @@ export function TopBar({ user }: { user: TopBarUser }) {
       <nav className="topbar__nav" aria-label="Primary">
         <Link href="/portal">{PORTAL_NAME}</Link>
         <Link href="/library">Library</Link>
+        {/* ADR-072 / DESIGN-043 D-01 (PLAN-052 PR4a): Collections is a first-class UNIVERSAL entry
+            (everyone sees it, like Library — no section gate; the /collections route is server-gated
+            only against anonymous visitors). A push to its own screen (D-19). */}
+        <Link href="/collections">{COLLECTIONS_NAME}</Link>
         {/* PLAN-009 (DESIGN-012 D-08): the `bulletin` section under its ratified name (HELPDESK_NAME
             = "Tickets"); the route/section id stay `bulletin`. Level-gated (see showBulletin). */}
         {showBulletin ? <Link href="/bulletin">{HELPDESK_NAME}</Link> : null}

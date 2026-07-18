@@ -470,6 +470,13 @@
 			"when": 1783902500000,
 			"tag": "0067_collection_size_cap",
 			"breakpoints": true
+		},
+		{
+			"idx": 67,
+			"version": "7",
+			"when": 1783902600000,
+			"tag": "0069_collections_direct_add",
+			"breakpoints": true
 		}
 	]
 }

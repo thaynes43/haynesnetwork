@@ -1,8 +1,10 @@
-// ADR-070 / DESIGN-043 D-01 (PLAN-052 — collection manager) — the fine-grained collection action grants,
+// ADR-072 / DESIGN-043 D-14 (PLAN-052 PR4a — direct-add) — the fine-grained collection action grants,
 // the exact setRoleBookActions / setRoleActivityActions idiom (ADR-023/059/062): a ROW is the grant;
 // `setRoleCollectionActions` is the SOLE writer and co-writes an `update_collection_actions`
-// permission_audit row in the SAME transaction (hard rule 6). `acquire` (the content-pull knob) is a
-// DISTINCT grant a `manage` role does not automatically hold and is re-checked server-side at the call.
+// permission_audit row in the SAME transaction (hard rule 6). The action set was REBUILT (migration 0069)
+// from the retired suggest/manage/acquire triad to a single `find_missing` (the per-collection acquisition
+// knob's gate — the content-pull lever a granted role flips per collection; re-checked server-side). Direct
+// add/edit within the cap needs NO grant (ADR-072). The FLIP grid + cron wiring land in PR4c.
 import {
   permissionAudit,
   roleCollectionActionGrants,

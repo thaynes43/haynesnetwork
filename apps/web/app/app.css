@@ -7097,3 +7097,53 @@ body:has(.gallery) {
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* ADR-072 / DESIGN-043 (PLAN-052 PR4a) — the first-class /collections page: the size-vs-cap read on
+   a row, the over-cap ticket Modal, and the Tickets + Settings sub-sections. Tokens only (hard rule 2);
+   the sub-nav reuses .library-tabs (the bulletin idiom) so no new tab CSS is needed. */
+.collection-row__cap {
+  color: var(--color-text-muted);
+  opacity: 0.75;
+}
+.over-cap {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.over-cap p {
+  margin: 0;
+}
+.collections-tickets,
+.collections-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.collections-tickets__intro {
+  max-width: 60ch;
+  font-size: 0.9rem;
+  margin: 0;
+}
+.collections-ticketgroup {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.collections-settingcard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 60ch;
+}
+.collections-settingcard .muted {
+  font-size: 0.9rem;
+}
+.collections-caplimit {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.collections-capinput {
+  width: 8em;
+}

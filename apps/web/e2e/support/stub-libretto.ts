@@ -92,7 +92,20 @@ export async function startStubLibretto(): Promise<StubLibrettoServer> {
         return json(200, { id: path.split('/').pop(), status: 'warn', counts: { matched: 4, missing: 2, matchedByTitle: 1 } });
       }
       if (path === '/api/validate' && method === 'POST') {
-        return json(200, { ok: true, issues: [], resolved: { name: 'The Stormlight Archive', workCount: 5 } });
+        // A ref/id carrying "over" resolves to a membership above the default size cap (25, migration
+        // 0067) so the direct-add over-cap → collection_override ticket path (D-11) is exercisable
+        // hermetically; every other ref stays comfortably within the cap.
+        const draft = body as { id?: string; builder?: { ref?: string } } | undefined;
+        const ref = draft?.builder?.ref ?? '';
+        const id = draft?.id ?? '';
+        const overCap = /over/i.test(ref) || /over/i.test(id);
+        return json(200, {
+          ok: true,
+          issues: [],
+          resolved: overCap
+            ? { name: 'The Cosmere (everything)', workCount: 40 }
+            : { name: 'The Stormlight Archive', workCount: 5 },
+        });
       }
       if (path.startsWith('/api/recipes/') && method === 'PUT') return json(200, body);
       if (path.startsWith('/api/recipes/') && method === 'DELETE') return json(200, { ok: true });

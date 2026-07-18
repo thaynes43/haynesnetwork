@@ -159,14 +159,13 @@ export * from './kapowarr-clients';
 // fine-grained Activity action grant seam (setRoleActivityActions, the ADR-023 machinery).
 export * from './activity';
 export * from './activity-permissions';
-// ADR-070 / DESIGN-043 (PLAN-052 — collection manager) — the confined @hnet/libretto client bundle
+// ADR-072 / DESIGN-043 (PLAN-052 PR4a — direct-add) — the confined @hnet/libretto client bundle
 // (@hnet/libretto/write stays in this package — the arr-write-import-guard, extended), the
-// collections-manager orchestrator the tRPC layer fronts (overview / preview / save / apply / delete —
-// with the `acquire` content-pull gate), the fine-grained collection action grants
-// (setRoleCollectionActions, the ADR-023/062 machinery), and the member suggestion lifecycle
-// (create → approve materializes the recipe via the confined writer / decline; audited same-tx).
+// collections-manager orchestrator the tRPC layer fronts (overview / preview / upsert / apply / delete /
+// materialize — direct-add, cap-gated, audited same-tx), the fine-grained collection action grants
+// (setRoleCollectionActions — rebuilt to `find_missing`), and the over-cap ticket lifecycle
+// (createCollectionOverrideTicket → approve materializes / decline; in tickets.ts, audited same-tx).
 export * from './libretto-clients';
 export * from './collections-manager';
 export * from './collection-permissions';
 export * from './collection-size-cap';
-export * from './collection-suggestions';

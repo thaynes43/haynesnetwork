@@ -127,10 +127,9 @@ export * from './activity-import-failures';
 // guarded single-writer tables (createBookFixRequest / setRoleBookActions).
 export * from './book-fix-requests';
 export * from './role-books-action-grants';
-// ADR-070 / DESIGN-043 (PLAN-052 — collection manager) — the fine-grained collection action grants
-// (suggest/manage/acquire — Admin-only until the owner opens them per role) and the member
-// suggestion aggregate (the propose→approve contribution flow). Both guarded single-writer tables
-// (setRoleCollectionActions / createCollectionSuggestion + approve/decline); Libretto's recipes and
-// produced collections are NOT mirrored (Libretto is stateless — its API is the read model).
+// ADR-072 / DESIGN-043 D-14 (PLAN-052 PR4a — direct-add) — the fine-grained collection action grants,
+// rebuilt to a single `find_missing` action (the per-collection acquisition-knob gate; Admin-only until
+// the owner opens it per role). The retired collection_suggestions aggregate is dropped (migration 0069);
+// direct add/edit needs no grant, the over-cap `collection_override` ticket carries the definition payload
+// (see tickets). Libretto's recipes + produced collections are NOT mirrored (its API is the read model).
 export * from './role-collection-action-grants';
-export * from './collection-suggestions';
