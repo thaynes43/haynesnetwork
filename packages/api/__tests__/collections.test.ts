@@ -45,8 +45,46 @@ const draftInput = (over?: Record<string, unknown>) => ({
   id: 'dune',
   builderType: 'static_ids' as const,
   builderRef: 'x',
+  mediaType: 'books' as const,
   ...over,
 });
+
+/**
+ * A recording haynes-ops git-write stub bundle injected into ctx (ADR-072 / DESIGN-042 PR4b). `file` is the
+ * managed include the read returns; `checks` is the CI conclusion `waitForChecks` yields (default success
+ * ⇒ auto-merge for the safe case). Records opened + merged PRs so the auto-merge matrix is assertable.
+ */
+function stubHaynesops(opts?: { file?: string | null; checks?: 'success' | 'failure' | 'pending' | 'none'; prFiles?: string[] }): {
+  ctx: Partial<TRPCContext>;
+  opened: Array<Record<string, unknown>>;
+  merged: number[];
+} {
+  const opened: Array<Record<string, unknown>> = [];
+  const merged: number[] = [];
+  let n = 100;
+  const configDir = 'kubernetes/main/apps/media/kometa/app/config';
+  const haynesops = {
+    configDir,
+    baseBranch: 'main',
+    read: {
+      getFile: async () => (opts?.file != null ? { text: opts.file, sha: 'sha1' } : null),
+      listOpenManagedPrs: async () => [],
+      getChecksConclusion: async () => opts?.checks ?? 'success',
+    },
+    write: {
+      getFile: async () => (opts?.file != null ? { text: opts.file, sha: 'sha1' } : null),
+      openManagedFilePr: async (input: Record<string, unknown>) => {
+        n += 1;
+        opened.push(input);
+        return { number: n, url: `https://github.com/x/y/pull/${n}`, headBranch: `b${n}`, headSha: `head${n}` };
+      },
+      getPrFilePaths: async () => opts?.prFiles ?? [`${configDir}/hnet-managed-movies.yml`],
+      waitForChecks: async () => opts?.checks ?? 'success',
+      squashMergePr: async (num: number) => void merged.push(num),
+    },
+  } as unknown as TRPCContext['haynesops'];
+  return { ctx: { haynesops }, opened, merged };
+}
 
 describe('collections overview — everyone reads, no grant, no section floor (ADR-072)', () => {
   it('a plain member (no integrations section) reads the Books overview', async () => {
@@ -60,13 +98,18 @@ describe('collections overview — everyone reads, no grant, no section floor (A
     expect(res.capBypass).toBe(false);
   });
 
-  it('Movies/TV report available:false (the Kometa leg is PR4b)', async () => {
+  it('Movies/TV bind Kometa and read the managed include (available:true, provider kometa)', async () => {
     const member = await createUser(t.db);
-    const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stubLibretto().ctx };
+    const ctx = {
+      ...makeCtx(t.db, sessionUser(member)),
+      ...stubLibretto().ctx,
+      ...stubHaynesops({ file: null }).ctx,
+    };
     const res = await caller(ctx).collections.overview({ mediaType: 'movies' });
-    expect(res.available).toBe(false);
+    expect(res.available).toBe(true);
     expect(res.provider).toBe('kometa');
     expect(res.recipes).toEqual([]);
+    expect(res.pendingPrs).toEqual([]);
   });
 
   it('an ADMIN reads with capBypass + canFindMissing', async () => {
@@ -133,7 +176,9 @@ describe('delete — ADMIN only (D-03)', () => {
     const member = await createUser(t.db);
     const stub = stubLibretto();
     const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stub.ctx };
-    await expect(caller(ctx).collections.remove({ id: 'dune' })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(caller(ctx).collections.remove({ id: 'dune', mediaType: 'books' })).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
     expect(stub.deleted).toHaveLength(0);
   });
 
@@ -141,7 +186,7 @@ describe('delete — ADMIN only (D-03)', () => {
     const admin = await createUser(t.db, { admin: true });
     const stub = stubLibretto();
     const ctx = { ...makeCtx(t.db, sessionUser(admin)), ...stub.ctx };
-    const res = await caller(ctx).collections.remove({ id: 'dune', deleteCollection: true });
+    const res = await caller(ctx).collections.remove({ id: 'dune', mediaType: 'books', deleteCollection: true });
     expect(res.ok).toBe(true);
     expect(stub.deleted).toEqual(['dune']);
   });
@@ -256,5 +301,75 @@ describe('settings — ADMIN only (D-10)', () => {
     expect(after.sizeCap).toBe(42);
     // restore the default so other suites see the seeded cap
     await caller(ctx).collections.setSizeCap({ value: 25 });
+  });
+});
+
+describe('Kometa (Movies/TV) write path — router wiring (ADR-072 / DESIGN-042 PR4b)', () => {
+  it('a member adds a within-cap Movies collection through the compiler + auto-merge', async () => {
+    const member = await createUser(t.db);
+    const hs = stubHaynesops({ file: null, checks: 'success' });
+    const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stubLibretto().ctx, ...hs.ctx };
+    const res = await caller(ctx).collections.upsert(
+      draftInput({ id: 'unbreakable', name: 'Unbreakable', builderType: 'tmdb_movie', builderRef: '9741, 358', mediaType: 'movies' }),
+    );
+    expect(res.ok).toBe(true);
+    expect((res as { provider: string }).provider).toBe('kometa');
+    expect((res as { merged: boolean }).merged).toBe(true);
+    expect(hs.merged).toHaveLength(1);
+    // The compiled managed include carries the acquisition-off recipe + the namespace marker.
+    expect((hs.opened[0]!.content as string)).toContain('radarr_add_missing: false');
+    expect((hs.opened[0]!.content as string)).toContain('label: "HNet Managed"');
+  });
+
+  it('a Libretto builder on a Movies draft is rejected (KOMETA_RECIPE_INVALID)', async () => {
+    const member = await createUser(t.db);
+    const hs = stubHaynesops({ file: null });
+    const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stubLibretto().ctx, ...hs.ctx };
+    const err = await caller(ctx)
+      .collections.upsert(draftInput({ id: 'x', builderType: 'hardcover_series', builderRef: 'y', mediaType: 'movies' }))
+      .then(() => { throw new Error('expected reject'); }, (e: unknown) => e);
+    expect(wireShape(err, 'collections.upsert').data).toMatchObject({ appCode: 'KOMETA_RECIPE_INVALID' });
+    expect(hs.opened).toHaveLength(0);
+  });
+
+  it('a non-admin Movies add whose size is unresolvable (a URL builder) routes to the over-cap ticket', async () => {
+    const member = await createUser(t.db);
+    const hs = stubHaynesops({ file: null });
+    const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stubLibretto().ctx, ...hs.ctx };
+    const err = await caller(ctx)
+      .collections.upsert(
+        draftInput({ id: 'christmas', builderType: 'imdb_list', builderRef: 'https://www.imdb.com/list/ls012345678/', mediaType: 'movies' }),
+      )
+      .then(() => { throw new Error('expected reject'); }, (e: unknown) => e);
+    expect(wireShape(err, 'collections.upsert').data).toMatchObject({ appCode: 'COLLECTION_SIZE_CAP_EXCEEDED' });
+    expect(hs.opened).toHaveLength(0);
+  });
+
+  it('an admin approves a Kometa over-cap ticket → opens a HUMAN-merged PR (never auto-merged) + completes', async () => {
+    const member = await createUser(t.db);
+    const admin = await createUser(t.db, { admin: true });
+    const hs = stubHaynesops({ file: null, checks: 'success' });
+    const memberCtx = { ...makeCtx(t.db, sessionUser(member)), ...stubLibretto().ctx, ...hs.ctx };
+    const { ticketId } = await caller(memberCtx).collections.requestOverride(
+      draftInput({ id: 'big-imdb', name: 'Big IMDb', builderType: 'imdb_list', builderRef: 'https://www.imdb.com/list/ls012345678/', mediaType: 'movies' }),
+    );
+    const [ticket] = await t.db.select().from(tickets).where(sql`${tickets.id} = ${ticketId}`);
+    expect((ticket!.collectionOverridePayload as CollectionOverridePayload).provider).toBe('kometa');
+
+    const adminCtx = { ...makeCtx(t.db, sessionUser(admin)), ...stubLibretto().ctx, ...hs.ctx };
+    const res = await caller(adminCtx).collections.approveOverride({ ticketId });
+    expect(res.status).toBe('complete');
+    expect(hs.opened).toHaveLength(1); // a config PR opened
+    expect(hs.merged).toHaveLength(0); // but NOT auto-merged (over-cap is human-merged — D-10)
+  });
+
+  it('an admin removes a Movies recipe through a managed-include PR', async () => {
+    const admin = await createUser(t.db, { admin: true });
+    const hs = stubHaynesops({ file: null, checks: 'success' });
+    const ctx = { ...makeCtx(t.db, sessionUser(admin)), ...stubLibretto().ctx, ...hs.ctx };
+    const res = await caller(ctx).collections.remove({ id: 'christmas', mediaType: 'movies' });
+    expect(res.ok).toBe(true);
+    expect((res as { provider: string }).provider).toBe('kometa');
+    expect(hs.opened).toHaveLength(1);
   });
 });

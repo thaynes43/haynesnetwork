@@ -22,10 +22,10 @@
 //      failed label read) also returns `null`, so the writer's COALESCE preserves the prior value
 //      (symmetric with `derivePlexCollectionProvenance`).
 
-import { KOMETA_LABEL } from './collection-provenance';
+import { HNET_MANAGED_LABEL, KOMETA_LABEL } from './collection-provenance';
 
 /** Bump when the rules below change — the next collections-sync re-annotates the estate. */
-export const COLLECTION_CLASSIFIER_VERSION = 2;
+export const COLLECTION_CLASSIFIER_VERSION = 3;
 
 /**
  * Kometa's own SECTION labels → our category. These are applied automatically by the franchise /
@@ -47,6 +47,8 @@ const SECTION_LABEL_CATEGORY: ReadonlyMap<string, string> = new Map([
  */
 const RESERVED_LABELS: ReadonlySet<string> = new Set([
   KOMETA_LABEL.toLowerCase(),
+  // ADR-072 / DESIGN-042 Q-05 — the app-authored Kometa namespace marker is NEVER a category chip.
+  HNET_MANAGED_LABEL.toLowerCase(),
   ...SECTION_LABEL_CATEGORY.keys(),
 ]);
 

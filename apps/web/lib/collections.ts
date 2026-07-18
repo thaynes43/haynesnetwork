@@ -22,12 +22,31 @@ export const COLLECTION_MEDIA_TYPE_LABELS: Record<CollectionMediaTypeName, strin
   audiobooks: 'Audiobooks',
 };
 
-/** The Libretto builder types (mirrors @hnet/db COLLECTION_BUILDER_TYPES). */
-export const COLLECTION_BUILDER_TYPE_NAMES = [
+/** The Libretto (Books/Audiobooks) builder types (mirrors @hnet/db LIBRETTO_BUILDER_TYPES). */
+export const LIBRETTO_BUILDER_TYPE_NAMES = [
   'static_ids',
   'hardcover_series',
   'nyt_list',
   'wikidata_award',
+] as const;
+
+/**
+ * The Kometa (Movies/TV) member-suggestible builder types (mirrors @hnet/db KOMETA_BUILDER_TYPES —
+ * ADR-072 / DESIGN-042 D-04, PLAN-052 PR4b). Exactly the six single-validated-ref builders.
+ */
+export const KOMETA_BUILDER_TYPE_NAMES = [
+  'imdb_list',
+  'tmdb_collection_details',
+  'tvdb_list_details',
+  'tmdb_movie',
+  'tmdb_show',
+  'tvdb_show',
+] as const;
+
+/** The full builder vocabulary the composer picker + row badge span (both providers). */
+export const COLLECTION_BUILDER_TYPE_NAMES = [
+  ...LIBRETTO_BUILDER_TYPE_NAMES,
+  ...KOMETA_BUILDER_TYPE_NAMES,
 ] as const;
 export type CollectionBuilderTypeName = (typeof COLLECTION_BUILDER_TYPE_NAMES)[number];
 
@@ -37,10 +56,16 @@ export const COLLECTION_BUILDER_LABELS: Record<CollectionBuilderTypeName, string
   hardcover_series: 'Hardcover series',
   nyt_list: 'NYT list',
   wikidata_award: 'Award',
+  imdb_list: 'IMDb list',
+  tmdb_collection_details: 'TMDb collection',
+  tvdb_list_details: 'TVDb list',
+  tmdb_movie: 'TMDb movie ids',
+  tmdb_show: 'TMDb show ids',
+  tvdb_show: 'TVDb show ids',
 };
 
-/** The composer's builder picker options (order chosen for the common case first). */
-export const COLLECTION_BUILDER_OPTIONS: ReadonlyArray<{
+/** The Libretto composer builder options (order chosen for the common case first). */
+export const LIBRETTO_BUILDER_OPTIONS: ReadonlyArray<{
   value: CollectionBuilderTypeName;
   label: string;
 }> = [
@@ -49,6 +74,39 @@ export const COLLECTION_BUILDER_OPTIONS: ReadonlyArray<{
   { value: 'wikidata_award', label: 'Award (Wikidata)' },
   { value: 'static_ids', label: 'ID list' },
 ];
+
+/** The Kometa (Movies/TV) composer builder options. */
+export const KOMETA_BUILDER_OPTIONS: ReadonlyArray<{
+  value: CollectionBuilderTypeName;
+  label: string;
+}> = [
+  { value: 'imdb_list', label: 'IMDb list (URL)' },
+  { value: 'tmdb_collection_details', label: 'TMDb collection (id)' },
+  { value: 'tvdb_list_details', label: 'TVDb list (URL)' },
+  { value: 'tmdb_movie', label: 'TMDb movie ids' },
+  { value: 'tmdb_show', label: 'TMDb show ids' },
+  { value: 'tvdb_show', label: 'TVDb show ids' },
+];
+
+/** Kept for back-compat (the Libretto default set). */
+export const COLLECTION_BUILDER_OPTIONS = LIBRETTO_BUILDER_OPTIONS;
+
+/** Movies/TV bind Kometa; Books/Audiobooks bind Libretto. */
+export function isKometaMedia(mediaType: CollectionMediaTypeName): boolean {
+  return mediaType === 'movies' || mediaType === 'tv';
+}
+
+/** The builder options a media sub-section's composer offers. */
+export function builderOptionsFor(
+  mediaType: CollectionMediaTypeName,
+): ReadonlyArray<{ value: CollectionBuilderTypeName; label: string }> {
+  return isKometaMedia(mediaType) ? KOMETA_BUILDER_OPTIONS : LIBRETTO_BUILDER_OPTIONS;
+}
+
+/** The default builder a fresh composer starts on for a media sub-section. */
+export function defaultBuilderFor(mediaType: CollectionMediaTypeName): CollectionBuilderTypeName {
+  return isKometaMedia(mediaType) ? 'imdb_list' : 'hardcover_series';
+}
 
 /** The recipe sync modes (mirrors @hnet/db COLLECTION_SYNC_MODES). */
 export type CollectionSyncModeName = 'append' | 'sync';

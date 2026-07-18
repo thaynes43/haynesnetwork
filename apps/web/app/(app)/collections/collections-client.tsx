@@ -19,8 +19,10 @@ import { appCodeOf, describeMutationError } from '@/lib/app-error';
 import {
   COLLECTIONS_NAME,
   COLLECTION_BUILDER_LABELS,
-  COLLECTION_BUILDER_OPTIONS,
   COLLECTION_MEDIA_TYPE_LABELS,
+  builderOptionsFor,
+  defaultBuilderFor,
+  isKometaMedia,
   type CollectionBuilderTypeName,
   type CollectionMediaTypeName,
   type CollectionSyncModeName,
@@ -246,7 +248,7 @@ function MediaSection({
   );
 
   const openCreate = () => {
-    setDraft(EMPTY_DRAFT);
+    setDraft({ ...EMPTY_DRAFT, builderType: defaultBuilderFor(mediaType) });
     setEditing(false);
     setComposerOpen(true);
   };
@@ -254,7 +256,7 @@ function MediaSection({
     setDraft({
       id: recipe.id,
       name: recipe.name ?? '',
-      builderType: (recipe.builderType as CollectionBuilderTypeName | null) ?? 'hardcover_series',
+      builderType: (recipe.builderType as CollectionBuilderTypeName | null) ?? defaultBuilderFor(mediaType),
       builderRef: recipe.builderRef ?? '',
       targetLibrary: '',
       ordered: recipe.ordered ?? true,
@@ -292,6 +294,26 @@ function MediaSection({
         </section>
       ) : null}
 
+      {data.pendingPrs.length > 0 ? (
+        <section className="card collections-attention" data-testid="collections-pending-prs">
+          <h2 className="collections-attention__title">Awaiting merge</h2>
+          <p className="muted">
+            These changes need an admin to merge the estate config before the next collection run picks
+            them up.
+          </p>
+          <ul className="collections-attention__list">
+            {data.pendingPrs.map((pr) => (
+              <li key={pr.number}>
+                <span className="badge badge--info">pending merge</span>{' '}
+                <a href={pr.url} target="_blank" rel="noreferrer">
+                  {pr.title}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       {data.recipes.length === 0 ? (
         <section className="card empty-state" data-testid="collections-empty">
           <p className="muted">No {label.toLowerCase()} collections yet. Add one to start building.</p>
@@ -317,6 +339,10 @@ function MediaSection({
                         {produced.itemCount ?? 0} in collection
                         <span className="collection-row__cap"> / {data.sizeCap} limit</span>
                       </span>
+                    ) : recipe.state === 'pending_run' ? (
+                      <span className="muted" data-testid="collection-pending">
+                        pending next collection run
+                      </span>
                     ) : (
                       <span className="muted">not built yet</span>
                     )}
@@ -336,7 +362,11 @@ function MediaSection({
                   >
                     {findMissing ? 'Find missing on' : 'Find missing off'}
                   </span>
-                  <ApplyButton recipeId={recipe.id} onDone={invalidate} />
+                  {/* Kometa has no per-recipe apply API — a collection is produced on the estate's
+                      scheduled run (the pending state conveys it). Libretto applies on demand. */}
+                  {isKometaMedia(mediaType) ? null : (
+                    <ApplyButton recipeId={recipe.id} onDone={invalidate} />
+                  )}
                   <button type="button" className="btn sm" onClick={() => openEdit(recipe)}>
                     Edit
                   </button>
@@ -344,6 +374,7 @@ function MediaSection({
                     <DeleteControl
                       recipeId={recipe.id}
                       recipeName={recipe.name ?? recipe.id}
+                      mediaType={mediaType}
                       onDone={invalidate}
                     />
                   ) : null}
@@ -412,15 +443,18 @@ function ApplyButton({ recipeId, onDone }: { recipeId: string; onDone: () => voi
  * Delete (admin) — a QUIET row button opening an explanatory Modal (hard rule 8: a destructive
  * confirm with an option is a multi-field confirm ⇒ Modal, not an inline checkbox+ConfirmButton;
  * Fable UX pass 2026-07-18). The default keeps the built collection (it survives orphaned in the
- * library); the opt-in cascades the delete where the provider supports it.
+ * library); the opt-in cascades the delete where the provider supports it. `mediaType` routes the
+ * write to the right provider (Movies/TV → Kometa managed-include PR; Books/Audiobooks → Libretto).
  */
 function DeleteControl({
   recipeId,
   recipeName,
+  mediaType,
   onDone,
 }: {
   recipeId: string;
   recipeName: string;
+  mediaType: CollectionMediaTypeName;
   onDone: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -468,7 +502,7 @@ function DeleteControl({
               className="btn danger"
               disabled={remove.isPending}
               data-testid="collection-delete-confirm"
-              onClick={() => remove.mutate({ id: recipeId, deleteCollection: also })}
+              onClick={() => remove.mutate({ id: recipeId, mediaType, deleteCollection: also })}
             >
               {remove.isPending ? 'Deleting…' : also ? 'Delete both' : 'Delete the recipe'}
             </button>
@@ -534,6 +568,7 @@ function ComposerModal({
     ...(draft.targetLibrary.trim() ? { targetLibrary: draft.targetLibrary.trim() } : {}),
     ordered: draft.ordered,
     syncMode: draft.syncMode,
+    mediaType,
   };
   const canSubmit = payload.id.length > 0 && payload.builderRef.length > 0;
   const collectionLabel = payload.name ?? payload.id;
@@ -636,7 +671,7 @@ function ComposerModal({
               setDraft({ ...draft, builderType: e.target.value as CollectionBuilderTypeName })
             }
           >
-            {COLLECTION_BUILDER_OPTIONS.map((o) => (
+            {builderOptionsFor(mediaType).map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>

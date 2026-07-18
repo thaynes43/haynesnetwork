@@ -32,6 +32,14 @@ export const COLLECTION_PROVENANCE_VERSION = 1;
 /** The Plex collection LABEL Kometa stamps on everything it manages (verified live, HOps server). */
 export const KOMETA_LABEL = 'Kometa';
 
+// ADR-072 / DESIGN-042 Q-05 (PLAN-052 PR4b) — the app-authored namespace MARKER label the Kometa
+// managed-include compiler stamps on every collection it writes (`label: HNet Managed`). It (a) marks
+// the app's own collections so a produced one can never be confused with a hand-authored sibling, and
+// (b) is RESERVED in deriveCollectionCategory so it never leaks into the category-chip vocabulary. It
+// is provenance-adjacent to `Kometa` (a managed collection carries BOTH labels) — the mirror still
+// derives `created_by: kometa` from the Kometa label; this marker is the finer app-authored signal.
+export const HNET_MANAGED_LABEL = 'HNet Managed';
+
 // The Libretto provenance marker embedded in a produced collection's description. Group 1 is the
 // recipeId (provenance). Group 2 is an OPTIONAL free-form `cat=<Category>` token (DESIGN-038 D-12) a
 // FUTURE Libretto may emit to carry the owner category through the description — mirror-pure, the

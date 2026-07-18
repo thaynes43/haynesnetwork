@@ -37,9 +37,15 @@ const ALLOWED_DIR_PREFIXES = [
   // suggestion-approve orchestrators) + its own package may import it. Recipe apply + acquisition
   // drive content into the estate — the same confinement class as the *arr/LL/Kapowarr writes.
   `packages${sep}libretto${sep}`,
+  // ADR-072 (PLAN-052 PR4b) — @hnet/haynesops/write is the confined haynes-ops GitOps write surface
+  // (open + squash-merge the app-owned Kometa managed-include PR); only packages/domain (the Kometa
+  // collections orchestrator) + its own package may import it. A config PR that Flux applies drives
+  // content into the estate — the same confinement class as the *arr/Libretto content-pulling writes.
+  `packages${sep}haynesops${sep}`,
 ];
 
-const IMPORT_PATTERN = /@hnet\/(arr|plex|authentik|openwebui|downloads|lazylibrarian|kapowarr|libretto)\/write/;
+const IMPORT_PATTERN =
+  /@hnet\/(arr|plex|authentik|openwebui|downloads|lazylibrarian|kapowarr|libretto|haynesops)\/write/;
 
 const IGNORE_DIRS = new Set([
   'node_modules',

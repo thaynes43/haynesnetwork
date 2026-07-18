@@ -11,8 +11,10 @@ import {
   COLLECTION_BUILDER_TYPES,
   COLLECTION_MEDIA_TYPES,
   COLLECTION_SYNC_MODES,
+  KOMETA_BUILDER_TYPES,
   type CollectionMediaType,
   type CollectionOverridePayload,
+  type KometaBuilderType,
   type TicketRow,
 } from '@hnet/db';
 import {
@@ -21,13 +23,21 @@ import {
   createCollectionOverrideTicket,
   declineCollectionOverride,
   deleteCollectionRecipe,
+  deleteKometaRecipe,
   getAppSetting,
   getCollectionRun,
   getCollectionsOverview,
+  getKometaCollectionsOverview,
+  KometaRecipeError,
   listCollectionOverrideTickets,
+  previewKometaRef,
   previewRecipeRef,
   setAppSetting,
   upsertCollection,
+  upsertKometaCollection,
+  type KometaMediaType,
+  type KometaRecipe,
+  type KometaRecipeView,
 } from '@hnet/domain';
 import type { TRPCContext } from '../trpc';
 import type {
@@ -37,11 +47,46 @@ import type {
   LibrettoRun,
   LibrettoValidateResponse,
 } from '@hnet/libretto';
-import { mapDomainErrors, resolveLibrettoBundle, router, authedProcedure } from '../trpc';
+import {
+  mapDomainErrors,
+  resolveHaynesopsBundle,
+  resolveLibrettoBundle,
+  router,
+  authedProcedure,
+} from '../trpc';
 import { adminProcedure, resolveCollectionActions } from '../middleware/role';
 
 /** The media types this PR serves through Libretto (direct API). Movies/TV are the Kometa leg (PR4b). */
 const LIBRETTO_MEDIA_TYPES = new Set<CollectionMediaType>(['books', 'audiobooks']);
+const KOMETA_BUILDER_SET = new Set<string>(KOMETA_BUILDER_TYPES);
+
+/** Movies/TV bind Kometa; Books/Audiobooks bind Libretto. */
+function isKometaMedia(mediaType: CollectionMediaType): mediaType is 'movies' | 'tv' {
+  return mediaType === 'movies' || mediaType === 'tv';
+}
+
+/** Normalize a collection title for the produced-collection ↔ recipe join (trim + collapse ws + casefold). */
+function normalizeTitle(title: string): string {
+  return title.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+/** Map the flat composer input onto the confined Kometa recipe shape (acquisition OFF — D-07). */
+function toKometaRecipe(input: RecipeDraftInput, mediaType: 'movies' | 'tv'): KometaRecipe {
+  if (!KOMETA_BUILDER_SET.has(input.builderType)) {
+    // A Libretto builder on a Movies/TV draft — reject before the confined write (D-04).
+    throw new KometaRecipeError(`"${input.builderType}" is not a Movies/TV collection builder.`);
+  }
+  return {
+    id: input.id,
+    name: input.name ?? input.id,
+    mediaType: mediaType as KometaMediaType,
+    builderType: input.builderType as KometaBuilderType,
+    builderRef: input.builderRef,
+    ...(input.syncMode ? { syncMode: input.syncMode } : {}),
+    ...(input.ordered !== undefined ? { ordered: input.ordered } : {}),
+    findMissing: false,
+  };
+}
 
 // The recipe draft the composer sends (validated tighter than the read ACL — it is OUR input).
 const recipeDraftInput = z.object({
@@ -54,6 +99,9 @@ const recipeDraftInput = z.object({
   syncMode: z.enum(COLLECTION_SYNC_MODES).optional(),
 });
 type RecipeDraftInput = z.infer<typeof recipeDraftInput>;
+
+/** The draft plus its media sub-section — the composer always knows which tab it is on (routes the provider). */
+const recipeDraftWithMedia = recipeDraftInput.extend({ mediaType: z.enum(COLLECTION_MEDIA_TYPES) });
 
 /** Map the router's flat draft input onto the @hnet/libretto RecipeDraft shape (acquisition OFF — D-03). */
 function toLibrettoDraft(input: RecipeDraftInput) {
@@ -95,6 +143,24 @@ function recipeWire(r: LibrettoRecipe, mediaType: CollectionMediaType) {
     findMissing: r.variables?.acquisitionEnabled ?? false,
     enabled: r.enabled ?? true,
     mediaType,
+    // Libretto writes are instant — a recipe has no async config→run→mirror gap, so no pending state.
+    state: null as 'live' | 'pending_run' | null,
+  };
+}
+
+/** The Kometa recipe wire — same shape as the Libretto one plus the honest async `state` (D-07). */
+function kometaRecipeWire(r: KometaRecipeView) {
+  return {
+    id: r.id,
+    name: r.name,
+    builderType: r.builderType as string,
+    builderRef: r.builderRef,
+    ordered: r.ordered ?? null,
+    syncMode: r.syncMode ?? null,
+    findMissing: r.findMissing,
+    enabled: true,
+    mediaType: r.mediaType as CollectionMediaType,
+    state: r.state,
   };
 }
 function issueWire(i: LibrettoIssue) {
@@ -173,16 +239,30 @@ export const collectionsRouter = router({
           isAdmin: ctx.user.role.isAdmin,
           canFindMissing: actions.includes('find_missing'),
         };
-        if (!LIBRETTO_MEDIA_TYPES.has(input.mediaType)) {
-          // Movies/TV — the Kometa auto-merge write path lands in PR4b. Honest "not available yet".
+        if (isKometaMedia(input.mediaType)) {
+          // Movies/TV — the Kometa auto-merge write path (PR4b). Reads the app-owned managed include
+          // back + the DESIGN-035 mirror + the open app PRs; degrades honestly (reachable=false) on a
+          // haynes-ops/GitHub outage. Produced collections join to recipes by normalized title (Kometa
+          // collections carry no recipe id the mirror reads — Q-05 reconcile-by-title).
+          const overview = await getKometaCollectionsOverview({
+            db: ctx.db,
+            haynesops: resolveHaynesopsBundle(ctx),
+            mediaType: input.mediaType,
+          });
+          const recipeByTitle = new Map(overview.recipes.map((r) => [normalizeTitle(r.name), r.id]));
           return {
             ...base,
             provider: 'kometa' as const,
-            available: false,
-            reachable: true,
-            recipes: [],
-            issues: [],
-            collections: [],
+            available: true,
+            reachable: overview.reachable,
+            recipes: overview.recipes.map(kometaRecipeWire),
+            issues: [] as ReturnType<typeof issueWire>[],
+            collections: overview.collections.map((c) => ({
+              recipeId: recipeByTitle.get(normalizeTitle(c.title)) ?? null,
+              name: c.title,
+              itemCount: c.childCount,
+            })),
+            pendingPrs: overview.pendingPrs,
           };
         }
         const overview = await getCollectionsOverview({ libretto: resolveLibrettoBundle(ctx) });
@@ -203,27 +283,59 @@ export const collectionsRouter = router({
           recipes,
           issues: overview.issues.map(issueWire),
           collections: overview.collections.map(collectionWire),
+          pendingPrs: [] as { number: number; title: string; url: string }[],
         };
       });
     }),
 
-  /** Preview/validate a draft ref before save (resolved name + work count + issues; the surviving C-07). */
-  validate: authedProcedure.input(recipeDraftInput).mutation(async ({ ctx, input }) => {
-    return mapDomainErrors(async () =>
-      validateWire(await previewRecipeRef({ libretto: resolveLibrettoBundle(ctx), draft: toLibrettoDraft(input) })),
-    );
+  /**
+   * Preview/validate a draft ref before save. Libretto resolves name + work count LIVE (the surviving
+   * C-07); Kometa validates the ref SHAPE and previews the count only when it is knowable without egress
+   * (an id-list length) — a URL/collection-id renders the honest "preview unavailable" note, never a proxy
+   * workaround (DESIGN-042 Q-06, canary-first).
+   */
+  validate: authedProcedure.input(recipeDraftWithMedia).mutation(async ({ ctx, input }) => {
+    return mapDomainErrors(async () => {
+      if (isKometaMedia(input.mediaType)) {
+        const recipe = toKometaRecipe(input, input.mediaType);
+        const p = previewKometaRef(recipe.builderType, recipe.builderRef);
+        return { resolved: { name: p.note, workCount: p.resolvedCount }, issues: [] as string[] };
+      }
+      return validateWire(
+        await previewRecipeRef({ libretto: resolveLibrettoBundle(ctx), draft: toLibrettoDraft(input) }),
+      );
+    });
   }),
 
   /**
-   * DIRECT add/edit (D-03) — everyone, capped. Resolves the live membership size, reads the cap, and the
-   * domain writer asserts it (admins bypass) BEFORE the confined Libretto write + same-tx audit. An over-cap
-   * non-admin gets `COLLECTION_SIZE_CAP_EXCEEDED` (the client opens the request-larger flow → requestOverride).
+   * DIRECT add/edit (D-03/D-07) — everyone, capped. Resolves the live membership size, reads the cap, and
+   * the confined provider writer asserts it (admins bypass) BEFORE the write + same-tx audit. Libretto
+   * writes instantly; Kometa compiles the managed include, opens a bot haynes-ops PR, and AUTO-MERGES the
+   * safe case (within-cap, grouping-only, managed-file-only, CI green — D-10). An over-cap non-admin gets
+   * `COLLECTION_SIZE_CAP_EXCEEDED` (the client opens the request-larger flow → requestOverride); a Kometa
+   * ref whose size cannot be resolved without egress is treated as over-cap for a non-admin (safe default).
    */
-  upsert: authedProcedure.input(recipeDraftInput).mutation(async ({ ctx, input }) => {
+  upsert: authedProcedure.input(recipeDraftWithMedia).mutation(async ({ ctx, input }) => {
     return mapDomainErrors(async () => {
+      const cap = await getAppSetting(ctx.db, 'collection_size_cap');
+      if (isKometaMedia(input.mediaType)) {
+        const recipe = toKometaRecipe(input, input.mediaType);
+        // previewKometaRef validates the ref shape + yields the egress-free count (null when unknowable).
+        const preview = previewKometaRef(recipe.builderType, recipe.builderRef);
+        const size = ctx.user.role.isAdmin ? 0 : preview.resolvedCount;
+        const res = await upsertKometaCollection({
+          db: ctx.db,
+          haynesops: resolveHaynesopsBundle(ctx),
+          actorId: ctx.user.id,
+          recipe,
+          size,
+          cap,
+          isAdmin: ctx.user.role.isAdmin,
+        });
+        return { ok: true as const, id: input.id, provider: 'kometa' as const, ...res };
+      }
       const draft = toLibrettoDraft(input);
       const size = ctx.user.role.isAdmin ? 0 : await resolveDraftSize(ctx, draft);
-      const cap = await getAppSetting(ctx.db, 'collection_size_cap');
       await upsertCollection({
         db: ctx.db,
         libretto: resolveLibrettoBundle(ctx),
@@ -233,7 +345,7 @@ export const collectionsRouter = router({
         cap,
         isAdmin: ctx.user.role.isAdmin,
       });
-      return { ok: true as const, id: input.id };
+      return { ok: true as const, id: input.id, provider: 'libretto' as const };
     });
   }),
 
@@ -256,11 +368,32 @@ export const collectionsRouter = router({
       );
     }),
 
-  /** Delete a recipe (ADMIN only). Does NOT cascade by default (orphans the target); opt into deleteCollection. */
+  /**
+   * Delete a recipe (ADMIN only). Does NOT cascade by default (orphans the target); opt into
+   * deleteCollection. Libretto deletes instantly; Kometa removes the recipe from the managed include via a
+   * PR (managed-file-only + CI-green ⇒ auto-merged — D-10); the produced collection is orphaned either way.
+   */
   remove: adminProcedure
-    .input(z.object({ id: z.string().trim().min(1).max(80), deleteCollection: z.boolean().optional() }))
+    .input(
+      z.object({
+        id: z.string().trim().min(1).max(80),
+        mediaType: z.enum(COLLECTION_MEDIA_TYPES),
+        deleteCollection: z.boolean().optional(),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
       return mapDomainErrors(async () => {
+        if (isKometaMedia(input.mediaType)) {
+          const res = await deleteKometaRecipe({
+            db: ctx.db,
+            haynesops: resolveHaynesopsBundle(ctx),
+            actorId: ctx.user.id,
+            id: input.id,
+            mediaType: input.mediaType,
+            deleteCollection: input.deleteCollection ?? false,
+          });
+          return { ok: true as const, provider: 'kometa' as const, ...res };
+        }
         await deleteCollectionRecipe({
           db: ctx.db,
           libretto: resolveLibrettoBundle(ctx),
@@ -268,7 +401,7 @@ export const collectionsRouter = router({
           id: input.id,
           deleteCollection: input.deleteCollection ?? false,
         });
-        return { ok: true as const };
+        return { ok: true as const, provider: 'libretto' as const };
       });
     }),
 
@@ -278,13 +411,20 @@ export const collectionsRouter = router({
    * An admin's Approve materializes it unbounded.
    */
   requestOverride: authedProcedure
-    .input(recipeDraftInput.extend({ mediaType: z.enum(COLLECTION_MEDIA_TYPES) }))
+    .input(recipeDraftWithMedia)
     .mutation(async ({ ctx, input }) => {
       return mapDomainErrors(async () => {
         const { mediaType, ...draftInput } = input;
-        const draft = toLibrettoDraft(draftInput);
-        const size = await resolveDraftSize(ctx, draft);
         const cap = await getAppSetting(ctx.db, 'collection_size_cap');
+        // Resolve the authoritative size per provider (never trusting the client). A Kometa ref whose size
+        // is not resolvable without egress records cap+1 (an honest "could not confirm within the limit").
+        let size: number;
+        if (isKometaMedia(mediaType)) {
+          const recipe = toKometaRecipe(draftInput, mediaType);
+          size = previewKometaRef(recipe.builderType, recipe.builderRef).resolvedCount ?? cap + 1;
+        } else {
+          size = await resolveDraftSize(ctx, toLibrettoDraft(draftInput));
+        }
         const payload: CollectionOverridePayload = {
           provider: LIBRETTO_MEDIA_TYPES.has(mediaType) ? 'libretto' : 'kometa',
           mediaType,
@@ -324,9 +464,19 @@ export const collectionsRouter = router({
     .input(z.object({ ticketId: z.uuid() }))
     .mutation(async ({ ctx, input }) => {
       return mapDomainErrors(async () => {
+        // Resolve the haynes-ops bundle LAZILY: a Libretto (books/audiobooks) approval never needs it, so a
+        // not-yet-provisioned HAYNESOPS_WRITE_TOKEN must not block those. A Kometa payload with no bundle
+        // surfaces the honest "write path unavailable" from the domain (never a silent drop).
+        let haynesops: ReturnType<typeof resolveHaynesopsBundle> | undefined;
+        try {
+          haynesops = resolveHaynesopsBundle(ctx);
+        } catch {
+          haynesops = undefined;
+        }
         const res = await approveCollectionOverride({
           db: ctx.db,
           libretto: resolveLibrettoBundle(ctx),
+          ...(haynesops ? { haynesops } : {}),
           ticketId: input.ticketId,
           actorId: ctx.user.id,
         });

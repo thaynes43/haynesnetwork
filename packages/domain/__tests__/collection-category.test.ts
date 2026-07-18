@@ -6,7 +6,7 @@ import { deriveCollectionCategory, COLLECTION_CLASSIFIER_VERSION } from '../src/
 
 describe("deriveCollectionCategory (DESIGN-035 D-10' — label-driven, open categories)", () => {
   it('is versioned (a rules change must bump the version — the estate re-annotates on next sync)', () => {
-    expect(COLLECTION_CLASSIFIER_VERSION).toBe(2);
+    expect(COLLECTION_CLASSIFIER_VERSION).toBe(3);
   });
 
   it('returns the OWNER inline label verbatim (display case preserved), ignoring the Kometa label', () => {
