@@ -1,13 +1,17 @@
 # DESIGN-042: Kometa collections — manage & contribute (the provider contract instantiated for movies/TV)
 
-- **Status:** Draft
-- **Last updated:** 2026-07-17 (owner directive, tonight)
+- **Status:** Accepted <!-- revised 2026-07-18 to the direct-add + auto-merge model (ADR-071); was Draft under ADR-069 -->
+- **Last updated:** 2026-07-18 (REVISED to direct-add + auto-merge — ADR-071 supersedes ADR-069: the
+  propose→approve suggestion pipeline is removed; a within-cap grouping-only add AUTO-COMMITS +
+  AUTO-MERGES the haynes-ops config PR. Prior: 2026-07-17 owner directive.)
 - **Satisfies:** PLAN-052 (collection-manager integration — the provider-agnostic surface, R1 KISS /
-  R2 integration-parity); owner directive 2026-07-16: "apply the same concept to Kometa though it's
-  more complex — keep it distilled to the types of collections / builders I am using now but let
-  users hook in their own thing … edits pose some risk of pulling a ton of content so we should gate
-  them depending on peoples role."
-- **Governed by:** **ADR-069** (this design's decision — the Kometa contribution contract) on top of
+  R2 integration-parity); owner rulings 2026-07-18 (direct-add; Kometa auto-merge for within-cap
+  adds; find-missing is a per-collection role grant); owner directive 2026-07-16: "apply the same
+  concept to Kometa though it's more complex — keep it distilled to the types of collections /
+  builders I am using now but let users hook in their own thing."
+- **Governed by:** **ADR-071** (direct-add + cap-ticket-materialize + find-missing grant + Kometa
+  auto-merge — supersedes ADR-069, whose git-PR managed-include / allowlisted-builder / validated-ref
+  spine this design KEEPS, re-pointed at direct-add + auto-merge) on top of
   **ADR-064** (mirror-only doctrine: external software owns collections; the app authors a Kometa
   RECIPE, never a Plex collection directly), **ADR-062 / DESIGN-033** (the books-Fix suggest → audited
   row → role-gated action precedent this ports), **ADR-023 / ADR-059** (the `role_*_action_grants`
@@ -21,13 +25,25 @@
 
 ## Overview
 
+> **REVISED 2026-07-18 (ADR-071 — direct-add + auto-merge).** The propose→approve suggestion pipeline
+> below is RETIRED. Any user now ADDS/EDITS a Kometa collection DIRECTLY, capped at
+> `collection_size_cap` (PR3, default 25). A within-cap, grouping-only (find-missing OFF) add
+> **auto-commits AND auto-merges** the haynes-ops config PR (bot-authored, app-owned managed file,
+> `--validate-file` gated — D-10). Over-cap adds file a `collection_override` ticket (DESIGN-043 D-11)
+> and enabling find-missing (the acquisition lever, the former `acquire`) are the ONLY two cases whose
+> config PR is still **human-merged**. Read this design with D-02, D-07, and D-10 as revised; the
+> allowlist (D-04), the composer (D-05), the safety contract (D-03), and validation (D-09) are
+> unchanged. Where the text below says "suggest" / "approve" / "the acquire grant", read
+> "add/edit directly" / "materialize" / "the find-missing grant" per ADR-071.
+
 The estate already **mirrors** the 461 Plex collections (457 Kometa-managed) into the Movies/TV walls
-(DESIGN-035, read-only). This design adds the WRITE half for the Kometa provider: a **member can
-suggest a new collection, a manage-granted user can approve it, the approval becomes a haynes-ops
-git PR, Flux applies it, the next Kometa run produces the collection, and the existing
-`collections-sync` mirrors it back** with `provenance: kometa`. It is the DESIGN-035 mirror's
-contribution loop, and it is the SAME provider contract Libretto already proves live on the books
-side (PLAN-052 R2) — one manager UI, two providers.
+(DESIGN-035, read-only). This design adds the WRITE half for the Kometa provider: **any user adds a
+collection directly (within the cap), the app regenerates the app-owned managed include and opens a
+haynes-ops git PR, the app auto-merges it (safe case), Flux applies it, the next Kometa run produces
+the collection, and the existing `collections-sync` mirrors it back** with `provenance: kometa`. It is
+the DESIGN-035 mirror's write loop, and it is the SAME provider contract Libretto proves live on the
+books side (PLAN-052 R2) — one manager UI on the first-class `/collections` page (DESIGN-043), two
+write adapters (Libretto direct, Kometa auto-merged git-PR).
 
 Three constraints shape every decision:
 
@@ -191,7 +207,19 @@ the `acquire` grant (D-06). `variables` is a closed set — `syncMode`, `collect
 `schedule` (validated against the Kometa grammar; display-note only — the CronJob owns cadence, PLAN-052
 §6.3), `acquisitionEnabled` — never free YAML.
 
-### D-06 — Role gating: `role_collection_action_grants` (suggest / manage / acquire)
+### D-06 — Role gating: `role_collection_action_grants` — a single `find_missing` action (REVISED 2026-07-18)
+
+> **REVISED (ADR-071).** The three-action triad below (`suggest` / `manage` / `acquire`) is retired.
+> The grant table survives with a SINGLE action, **`find_missing`** (migration 0069 rebuilds the
+> `COLLECTION_ACTIONS` CHECK, clears the old rows). Direct add/edit within the cap needs NO grant
+> (everyone); DELETE + unbounded is admin-only; the acquisition lever (`radarr_add_missing`/
+> `sonarr_add_missing`) is the `find_missing`-gated per-collection knob (DESIGN-043 D-14), enabling
+> which opens a HUMAN-merged PR (D-10). Read the `acquire` discussion below as the `find_missing`
+> rationale — the "movies pull gigabytes / the 2023-flood scar" argument is exactly why find-missing
+> is gated and never auto-merged. Ships Admin-only, opened per role at the self-serve `/admin` grid
+> (the DESIGN-033 FLIP idiom).
+
+The retired triad, for historical context (superseded by the single `find_missing` action above):
 
 Aligned with the books leg's action-grant model being built in parallel tonight (the
 `role_books_action_grants` / `setRoleBookActions` / `bookActionProcedure` shape, DESIGN-033 D-03; the
@@ -226,36 +254,56 @@ The API gate is `collectionActionProcedure('suggest'|'manage'|'acquire')` compos
 surface, the `bookActionProcedure` idiom. Every grant mutation writes a `permission_audit` row in the
 same transaction (hard rule 6). Every suggestion state transition writes an audit row (D-07).
 
-### D-07 — The contribution flow (mirror of the books suggest → approve pipeline)
+### D-07 — The write flow (REVISED 2026-07-18 — direct-add + auto-merge, no suggestion)
 
-The DESIGN-033 lifecycle, collection-shaped:
+> **REVISED (ADR-071).** The suggest→approve pipeline is retired. There is no `collection_suggestions`
+> row and no manager review queue for a within-cap add. The direct-add flow, Kometa-shaped:
 
-1. **Suggest** (`suggest` grant) — a member fills the composer (builder + validated + previewed ref +
-   grouping-only by default). A `collection_suggestions` row is written with `status: pending` in ONE
-   transaction with its audit row (hard rule 6), BEFORE anything external. Carries the requester
-   snapshot, the recipe payload (builder/ref/variables), and the target library.
-2. **Review** (`manage` grant) — a manager sees the pending suggestion with its ref preview (resolved
-   name + item count + the `minimum_items` warning if ≤1). Reject → `status: rejected` + audit (the
-   requester is notified — Q-03 on channel). Approve → step 3. If the suggestion requests acquisition,
-   approval requires `acquire` (D-06); a `manage`-only approver can approve it as grouping-only.
-3. **Write** (approval side effect) — the domain single-writer recompiles the managed include from all
-   enabled recipes and opens a **haynes-ops PR** (D-02) via the dev-bot app token; the suggestion moves
-   to `status: approved_pending_apply` with the PR URL recorded. The PR runs `--validate-file` (D-09);
-   a red validation blocks merge and flips the suggestion to `apply_failed` with the validator output
-   (honest failure, the DESIGN-033 `failed` idiom). **This design does not auto-merge the haynes-ops
-   PR** — Q-01 asks whether merge is human (a real person merges the config PR — the safest, and the
-   estate's GitOps norm) or app-armed.
-4. **Kometa run** — on the next `collections` CronJob (or a bounded run-now Job, D-08) Kometa produces
+1. **Add/edit (any user, within the cap).** The user fills the composer (builder + validated +
+   previewed ref); `assertWithinCollectionSizeCap` (PR3) gates on save. The domain single-writer
+   recompiles the managed include (D-02) from all enabled recipes and opens a **bot-authored
+   haynes-ops PR** via the dev-bot app token, writing an audit row in the SAME transaction as the
+   local write intent (hard rule 6). No suggestion row — the recipe IS the write.
+2. **Auto-merge (safe case).** For a within-cap, grouping-only (find-missing OFF) add, the app
+   **auto-merges** the PR once the `--validate-file` CI gate is green (D-09/D-10) — no human. A red
+   validation blocks the merge and surfaces the validator output honestly on the collection row
+   (`apply_failed`, the DESIGN-033 `failed` idiom); the app never force-merges a red gate.
+3. **Human-merge (the two gated cases).** An **over-cap** materialization (an admin-approved
+   `collection_override` ticket, DESIGN-043 D-11) and any **find-missing enable** (the acquisition
+   lever, D-06/D-14) open a PR that a HUMAN merges — the storage blast radius stays behind a person.
+   The collection row shows "Pending merge" with the PR URL until merged.
+4. **Kometa run.** On the next `collections` CronJob (or a bounded run-now Job, D-08) Kometa produces
    the Plex collection from the merged managed file.
-5. **Mirror picks it up** — the next `collections-sync` (DESIGN-035 T-181) mirrors the new collection
-   with `provenance: kometa` (T-194 — it carries the `Kometa` Plex label like every Kometa collection).
-   The suggestion reconciles to `status: live` when its produced collection appears in the mirror
-   (matched by the namespaced title / a recorded marker — Q-05). The member sees their collection on
-   the Movies/TV Collections wall, provenance-badged, exactly like every other mirrored collection.
+5. **Mirror picks it up.** The next `collections-sync` (DESIGN-035 T-181) mirrors the new collection
+   with `provenance: kometa` (T-194 — the `Kometa` Plex label). The collection row reconciles to
+   `live` when its produced collection appears in the mirror (matched by the namespaced title / a
+   recorded marker — Q-05). The user sees it on the Movies/TV Collections wall, provenance-badged,
+   exactly like every other mirrored collection.
 
-The suggestion row is the durable audit spine across the async gap (the DESIGN-033 `book_fix_requests`
-precedent — a row that outlives the external round-trip and records every step in an `actions_taken`
-trail: pending → PR opened (url) → validated → merged → run → mirrored).
+The collection row's state (drafting → PR opened (url) → validated → merged (auto|human) → run →
+mirrored) is the durable audit spine across the async gap — the same trail the retired suggestion row
+carried, now hung off the recipe/write audit rather than a suggestion aggregate.
+
+### D-10 — Auto-merge policy (NEW 2026-07-18 — the ADR-071 ruling)
+
+The app AUTO-MERGES a haynes-ops config PR only when ALL of these hold; otherwise the PR is
+human-merged:
+
+- the write is **within the cap** (`assertWithinCollectionSizeCap` passed, not an over-cap ticket
+  materialization), AND
+- the collection is **grouping-only** (find-missing OFF — no `radarr_add_missing`/`sonarr_add_missing`;
+  the acquisition lever is never auto-merged), AND
+- the PR touches ONLY the app-owned managed include (`hnet-managed-*.yml`, D-02) — a diff outside the
+  managed file aborts the auto-merge (a safety assertion; the app never regenerates a sibling), AND
+- the **`--validate-file` CI gate is green** against the pinned image (D-09).
+
+Mechanics: the write client opens the PR bot-authored (dev-bot app token, CLAUDE.md), waits for the
+required check, and merges via the GitHub API (squash) — the same dance the release-train uses
+(App-token events trigger CI; a GITHUB_TOKEN push does not — arm auto-merge or poll + merge). The
+merged PR is the audit trail; a bad recipe is a `git revert`. This is the sole new automation ADR-071
+introduces over the estate's human-merge GitOps norm, and it is bounded by the four conditions above
+(ADR-071 C-06). A canary window (auto-merge behind a flag for the first runs) is a safe-rollout option
+(DESIGN-043 Q-03).
 
 ### D-08 — The monitor story (what Kometa honestly exposes)
 
@@ -301,25 +349,27 @@ A malformed managed file can fail the entire Kometa run (all collections), so va
     overlay/operation passes.
   - Orphan cleanup on delete is `manage`-gated and canary-verified (D-03), never automatic.
 
-## Sequencing + risk (phases)
+## Sequencing + risk (phases) — REVISED 2026-07-18 (maps to PLAN-052 PR4b/PR4c)
+
+> **REVISED (ADR-071).** The old Phase 1 (inert suggestions) is deleted with the suggestion model.
+> The Kometa write path builds as:
 
 1. **Phase 0 — read-only monitor.** Surface Kometa's honest run-state (Job status + meta.log link,
-   D-08) on the Movies/TV Collections surface, beside the existing mirror. No write path, no grants.
-   Proves the provider "run" noun with zero blast radius.
-2. **Phase 1 — suggestions (inert).** The composer + `collection_suggestions` table + `suggest` grant.
-   Members propose grouping-only recipes; managers see them; NOTHING writes config yet (approval is a
-   no-op stub or opens a PR a human must merge). Proves the flow end to end with the acquisition lever
-   still dark.
-3. **Phase 2 — gated apply (grouping-only).** Approval opens the haynes-ops PR (D-07) for grouping-only
-   recipes; `--validate-file` CI gate; the mirror reconciles the produced collection to `live`. Still
-   no acquisition — the storage blast radius stays off.
-4. **Phase 3 — gated acquire.** The `acquire` grant + `acquisitionEnabled` toggle, owner-held. This is
-   the "ton of content" surface and lands last, behind the hardest gate, after Phases 1–2 have proven
-   the pipeline safe.
+   D-08) on the Movies/TV `/collections` sub-sections, beside the existing mirror. No write path.
+2. **Phase 1 (PR4b) — direct-add + auto-merge (grouping-only).** The composer writes directly; a
+   within-cap grouping-only add regenerates the managed include, opens a bot PR, and **auto-merges**
+   after `--validate-file` green (D-07/D-10); the mirror reconciles the produced collection to `live`.
+   Over-cap routes to a `collection_override` ticket (DESIGN-043 D-11) whose materialization is
+   human-merged. Acquisition stays OFF — the storage blast radius is dark.
+3. **Phase 2 (PR4c) — find-missing (gated + human-merged).** The `find_missing` grant + the
+   per-collection knob (`radarr_add_missing`/`sonarr_add_missing`), enabled only by a granted role via
+   the self-serve `/admin` grid (D-06/D-14). Enabling it opens a HUMAN-merged PR. This is the "ton of
+   content" surface and lands last, behind the grant, after Phase 1 has proven the pipeline safe.
 
 Risk register: the async latency (D-02) is a UX-honesty risk, not a safety one — say it plainly. The
 orphan-on-remove and `--validate-file` connectivity items are UNVERIFIED (research §"Open") — canary
-before relying. Auto-merge of config PRs (Q-01) is the sharpest open decision: human-merge is safest.
+before relying. The **auto-merge** (D-10) is the sharpest new automation — bounded to within-cap,
+grouping-only, managed-file-only, CI-green (ADR-071 C-06); a canary flag is the safe rollout.
 
 ## Alternatives considered
 
@@ -359,7 +409,7 @@ before relying. Auto-merge of config PRs (Q-01) is the sharpest open decision: h
 
 | ID | Question | Resolution |
 |----|----------|------------|
-| Q-01 | **Write-path merge ruling:** does an approved suggestion's haynes-ops PR merge by a HUMAN (safest, GitOps norm) or app-armed auto-merge after `--validate-file` green? | OPEN — owner ruling. Design leans human-merge for v1 (config PRs are owner territory); auto-merge is a Phase-2+ convenience if the validator is trusted. |
+| Q-01 | **Write-path merge ruling:** does a config PR merge by a HUMAN or app-armed auto-merge after `--validate-file` green? | **RESOLVED 2026-07-18 (ADR-071, owner ruling): AUTO-MERGE the safe case** — within-cap, grouping-only (find-missing OFF), managed-file-only, `--validate-file` green (D-10). Over-cap materializations and find-missing enables stay HUMAN-merged. |
 | Q-02 | **Which builder types are member-suggestible v1?** Proposed: the six single-ref types (`imdb_list`, `tmdb_collection_details`, `tvdb_list_details`, `tmdb_movie`, `tmdb_show`, `tvdb_show`); owner-only for `tmdb_discover`/`imdb_chart`/`imdb_search`/`plex_all`. | OPEN — owner ruling. The list is derived from the live config (D-04); owner confirms the cut. |
 | Q-03 | **Approval SLA / notification:** how is a member told their suggestion was approved/rejected/went live? A Ticket? The `notification_outbox` email channel (T-173)? In-app only? | OPEN — owner ruling. The outbox email channel + notification-preference machinery already exists (T-173/T-174) and is the cheap reuse. |
 | Q-04 | **Grant rollout:** which roles get `suggest` / `manage` / `acquire`, and when? | OPEN — owner ruling. Ships Admin-only (empty grants, DESIGN-033 default). Natural path: `suggest` to members early, `manage` to trusted roles, `acquire` owner-held long-term (the storage blast radius). |

@@ -4,6 +4,40 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ COLLECTIONS DIRECT-ADD REWORK (written 2026-07-18 — owner rulings KILLED suggest→approve; docs landed, build queued)
+
+**The shipped collections manager (`/integrations/collections` + the in-wall "Suggest a collection"
+affordance + `suggest`/`manage`/`acquire` grants) is being TORN OUT.** The owner saw the suggest
+affordance live and rejected the model: "it's not suggesting, it's adding, removing and editing
+collections" (rulings: `.agents/context/2026-07-18-collections-direct-add-rulings.md`). Wherever the
+blocks below reference the collections MANAGER / suggest flow / `/integrations/collections` /
+suggest-manage-acquire, they are SUPERSEDED by the direct-add model.
+
+**Docs landed (this branch, docs-only PR to main):**
+- **ADR-071** (`docs/adrs/071-collections-direct-add.md`) — direct-add + cap-ticket-materialize +
+  find-missing grant + Kometa auto-merge. **Supersedes ADR-069 (Kometa, Proposed) AND ADR-070
+  (Libretto/manager, Accepted)** — both status lines flipped to "Superseded by ADR-071".
+- **DESIGN-043** revised → direct-add + first-class `/collections` page (H1 renumbered from the
+  mislabeled DESIGN-042). **DESIGN-042** revised → Kometa auto-merge (D-10). Glossary T-208..T-212
+  added, T-199/T-200/T-202 marked Superseded. PRD R-225..R-227 amended.
+- **PLAN-052** now carries the executable **PR4a/b/c** build plan with file-level scope.
+
+**The new model (binding):** everyone adds/edits collections directly, capped at `collection_size_cap`
+(PR3, default 25, configurable); admins = unbounded + delete; over-cap → a `collection_override`
+ticket (ADR-050) carrying the full definition, admin one-click approve = materialize; find-missing is
+a single per-collection `find_missing` role grant (the Books-actions FLIP grid) — default users can't
+enable acquisition; Kometa within-cap grouping-only adds AUTO-MERGE the haynes-ops config PR (over-cap
++ find-missing stay human-merged); Books/audiobooks write direct via the Libretto API. First-class
+`/collections` nav: Movies/TV/Books/Audiobooks + Tickets + Settings.
+
+**Build sequencing (PLAN-052):** PR4a = teardown (`DROP collection_suggestions`, migration 0069) +
+first-class page shell + Libretto direct add/edit + Tickets approve-materialize · PR4b = Kometa
+auto-merge write path · PR4c = find-missing grant + cron force-search. Migration ledger: 0067 = PR3
+(claimed), 0068 = reserved (books wanted-tiles), 0069+ = PR4. PR3 (`feat/collection-size-cap`,
+migration 0067) is the backbone and ships as-is.
+
+---
+
 ## ▶ NEXT SESSION — start here (written 2026-07-17 ~16:45 UTC — pre-pod-bounce handoff; owner present and bouncing the dev-env pod)
 
 **Site live at https://haynesnetwork.com — v0.71.0 live-verified** (Home/Portal split + the kapowarr

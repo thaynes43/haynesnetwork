@@ -1,6 +1,6 @@
 # ADR-069: Kometa collection contribution — git-PR managed include, allowlisted builders with validated refs, acquisition-gated roles
 
-- **Status:** Proposed <!-- owner directive received 2026-07-16; core write-path + no-raw-YAML + role-gate decided, several refinements await owner rulings (DESIGN-042 Q-01..Q-07) -->
+- **Status:** Superseded by ADR-071 <!-- was Proposed; the propose→approve suggestion pipeline is retired by the 2026-07-18 direct-add rulings (ADR-071). The write-path spine (git-PR managed include, allowlisted builders, validated refs, mirror-only) survives there, re-pointed at direct-add + auto-merge. -->
 - **Date:** 2026-07-17
 - **Deciders:** Tom Haynes (owner directive 2026-07-16: "apply the same concept to Kometa … keep it
   distilled to the types of collections / builders I am using now but let users hook in their own thing
