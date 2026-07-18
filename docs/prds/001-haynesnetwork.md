@@ -501,6 +501,16 @@ T-129..T-135.)
 <!-- R-222..R-224 are held by parallel in-flight tracks; this section takes R-225..R-227 (IDs are
      stable — the gap is deliberate, never renumbered; the coordinator reconciles at merge). -->
 
+> **AMENDED 2026-07-18 by ADR-071 (direct-add — supersedes ADR-070).** R-225..R-227 below describe
+> the retired propose→approve model. Under the direct-add rulings: (a) the manager is a **first-class
+> `/collections` page** (not an Integrations hub sub-section) with Movies/TV/Books/Audiobooks +
+> Tickets + Settings sub-sections; (b) **any user adds/edits directly**, capped at `collection_size_cap`
+> (default 25) — no `suggest`; admins are unbounded + the only deleters; (c) **over-cap files a
+> `collection_override` ticket** (ADR-050) carrying the full definition, admin approve = materialize;
+> (d) the content-pull knob is **Find Missing**, a single per-collection `find_missing` grant (not the
+> `acquire` triad); (e) Kometa within-cap grouping-only adds **auto-merge** the haynes-ops PR. See
+> ADR-071 / DESIGN-043 / DESIGN-042. Read R-225..R-227 through this amendment.
+
 | ID | Requirement | Priority |
 | --- | --- | --- |
 | R-225 | **Manage + monitor the estate's book collections through a confined Libretto surface (ADR-070 C-01/C-02/C-09).** A Collections sub-section of the Integrations hub (`/integrations/collections`) reads Libretto LIVE (no local mirror — Libretto is stateless, its API is the read model; ADR-064 doctrine holds) and shows the recipes it runs: builder badge, target library, matched/missing from the last run (with `matchedByTitle` as an honest sub-note, never a defect flag), the acquisition ON/OFF state, and a run verdict chip (`warn` is the NORMAL partial-library state — informational). Invalid recipe FILES (Libretto's `issues[]`) surface in a "needs attention" band. Create/edit uses a Modal (builder type picker + ref + target + `ordered` + `syncMode`) with a ref PREVIEW via `POST /api/validate` before save (resolved name + work count; a 0-work container slug shows honestly) and VALIDATE-before-save. Apply-now is a ConfirmButton (`POST /api/apply` → 202 `{runId}`, then poll `GET /api/runs/:id`). Delete is a ConfirmButton with an explicit orphaned-collection warning (delete does NOT cascade; `?deleteCollection=true` opt-in). ALL Libretto calls go through the confined `@hnet/libretto` client via tRPC — NEVER a browser call; a Libretto outage degrades to an honest `unreachable` state, no crash. | Must |

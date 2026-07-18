@@ -1,5 +1,105 @@
 # PLAN-052: Collection-manager integration — Kometa knobs + provider-agnostic UI
 
+## ▶ DIRECT-ADD REWORK — EXECUTABLE BUILD PLAN (PR4a/b/c, 2026-07-18)
+
+**Owner rulings 2026-07-18 KILLED suggest→approve** (`.agents/context/2026-07-18-collections-direct-add-rulings.md`).
+Governing docs revised: **ADR-071** (supersedes ADR-069 + ADR-070), **DESIGN-043** (collection
+manager → direct-add + first-class `/collections` page), **DESIGN-042** (Kometa → auto-merge).
+Backbone is **PR3** (`collection_size_cap` app_setting, migration 0067; `assertWithinCollectionSizeCap`;
+`collections.requestOverride` → ADR-050 `collection_override` ticket — on branch
+`feat/collection-size-cap`, about to merge; ships as-is). **Migration ledger: 0067 = PR3 (claimed) ·
+0068 = reserved (books wanted-tiles) · 0069+ = PR4.** Dispatch build agents straight off the
+file-level scope below.
+
+### PR4a — teardown + first-class page shell + Libretto direct add/edit + Tickets (migration 0069)
+
+*Realizes ADR-071 + DESIGN-043 D-01/D-03/D-06/D-09/D-10/D-11/D-15. The keystone PR — everything else
+depends on the shell + teardown.*
+
+- **Teardown (DESIGN-043 D-15):**
+  - `packages/db/migrations/0069_collections_direct_add.sql` — `DROP TABLE collection_suggestions`;
+    drop `COLLECTION_SUGGESTION_STATUSES`; rebuild `COLLECTION_ACTIONS` CHECK from
+    `suggest`/`manage`/`acquire` to a single `find_missing` (clearing old grant rows); add
+    `tickets.collection_override_payload jsonb` (nullable); extend `TICKET_CATEGORIES` for
+    `collection_override` if PR3 hasn't. Journal + snapshot.
+  - `packages/domain/src/collection-suggestions.*` + tests — REMOVE (`createCollectionSuggestion` /
+    `approveCollectionSuggestion` / `declineCollectionSuggestion` / `listCollectionSuggestions`).
+  - `packages/api` collections router — remove `createSuggestion`/`approve`/`decline`/`listSuggestions`.
+  - `apps/web/app/(app)/library/suggest-collection.tsx` + its mount in `books-browser.tsx` — REMOVE
+    (UI removal lands tonight via another agent; PR4a folds the domain/API/DB teardown behind it).
+  - `packages/db/src/enums.ts` — drop suggestion enums; `COLLECTION_ACTIONS = ['find_missing']`.
+  - Guard tests: `no-direct-state-writes` (drop the `collection_suggestions` entry, add the tickets
+    payload write-confinement); `arr-write-import-guard` unchanged (still confines the write clients).
+- **First-class page shell (DESIGN-043 D-01/D-09):**
+  - `apps/web/app/(app)/collections/` — new route + layout with sub-nav (Movies / TV / Books /
+    Audiobooks / Tickets / Settings); `COLLECTIONS_NAME` constant + top-nav entry.
+  - MOVE `apps/web/app/(app)/integrations/collections/*` → `apps/web/app/(app)/collections/*`; remove
+    the Integrations hub Collections card; add `/integrations/collections` → `/collections` redirect.
+- **Libretto direct add/edit + delete + over-cap (DESIGN-043 D-03/D-06/D-10/D-11):**
+  - `packages/domain` — `assertWithinCollectionSizeCap` (reads `collection_size_cap`; admin bypass);
+    direct `upsertCollection` writer (audit same-tx, then confined `@hnet/libretto/write` upsert);
+    admin `deleteCollection`; `requestCollectionOverride` (opens the `collection_override` ticket with
+    the payload, one tx); `approveCollectionOverride` (materialize unbounded + transition ticket +
+    audit, one tx — the ADR-050 ticket writer + the confined upsert).
+  - `packages/api` collections router — `upsert` (no grant, cap-gated), `delete` (admin),
+    `requestOverride`, `approveOverride` (admin), `overview` (per-provider list).
+  - `apps/web` — the per-media-type collection list (D-02) + composer Modal (D-03, ref-preview) for
+    Books/Audiobooks; the Tickets sub-section (requester own-state + admin approve→materialize, D-11).
+- **Tests:** cap boundary + admin bypass; upsert atomicity; over-cap→ticket; approve→materialize in one
+  tx; teardown guard (table gone, routers gone); API forbidden matrix (non-admin can upsert≤cap, cannot
+  delete/approve).
+
+### PR4b — Kometa auto-merge write path for Movies/TV (no migration)
+
+*Realizes ADR-071 + DESIGN-042 D-02/D-07/D-09/D-10. Depends on PR4a's shell + domain writer seam.*
+
+- **The Kometa write adapter (confined, `@hnet/domain`-only):**
+  - the recipe → managed-include compiler (DESIGN-042 D-05, pure function: allowlisted builder +
+    validated ref → the `collections:` YAML entry; `acquisitionEnabled:false` ⇒ `radarr_add_missing:false`).
+  - a confined haynes-ops git-write client (`@hnet/haynesops/write` or equivalent, import-confined to
+    `packages/domain`, arr-write-import-guard extended) — regenerate `hnet-managed-movies.yml` /
+    `-tv.yml`, open a bot-authored PR (dev-bot app token), wait for `--validate-file`, **auto-merge**
+    when D-10's four conditions hold (within-cap, grouping-only, managed-file-only diff, CI green);
+    otherwise leave for human merge (over-cap materialize + find-missing enable).
+  - the collection row state machine (drafting → PR opened → merged (auto|human) → run → mirrored),
+    reconciled by `collections-sync` (`provenance: kometa`, T-194) — the surviving DESIGN-042 D-07.
+- **Provider wiring:** the collections router `provider` discriminator routes Movies/TV to the Kometa
+  adapter, Books/Audiobooks to Libretto; the composer/overview UI is provider-agnostic (D-01).
+- **Monitor (DESIGN-042 D-08):** Job status (`MediaAutomationJobFailed`) + `meta.log` link; the bounded
+  run-now Job scoped to the managed file (dev-env SA job-create).
+- **Egress:** ref-preview resolve (TMDb in-hand; IMDb/TVDb list resolution — DESIGN-042 Q-06, may need a
+  CiliumNetworkPolicy allowlist entry via a haynes-ops PR).
+- **Tests:** the compiler (pure); the auto-merge gate (each of the four conditions blocks auto-merge in
+  isolation → human path); a red `--validate-file` never auto-merges; the mirror reconcile to `live`.
+
+### PR4c — find-missing grant + cron force-search wiring (uses 0069's `find_missing`)
+
+*Realizes ADR-071 + DESIGN-043 D-14 + DESIGN-042 D-06/D-14. The acquisition lever — lands last.*
+
+- **The grant (the DESIGN-033 FLIP idiom):** `setRoleCollectionActions` single-writer (survives from
+  ADR-070, audit same-tx); `collectionActionsForRole` / `collectionActionProcedure('find_missing')`;
+  `roles.setCollectionsActions` + a "Collections actions" grid at `/admin` roles (the `roles.setBooksActions`
+  precedent). Ships Admin-only (empty grants).
+- **The per-collection knob (DESIGN-043 D-14):** `collections.setFindMissing` (find_missing-gated) →
+  Kometa sets `radarr_add_missing`/`sonarr_add_missing` (a HUMAN-merged managed-include PR, D-10);
+  Libretto sets `variables.acquisitionEnabled` (direct API). Explanatory Modal confirm; server re-check.
+- **Cron force-search:** Kometa's `collections` CronJob + Libretto's apply/cron force-search the missing
+  members of find-missing collections (the provider does the acquisition — the app only sets the flag).
+- **Tests:** grant matrix (no grant ⇒ FORBIDDEN, admin implies, audit same-tx); the knob opens a
+  human-merge PR for Kometa; a non-granted forged flag ⇒ FORBIDDEN.
+
+### Open Q-NNs carried to build
+
+ADR-071 / DESIGN-043 Q-01 (cap unit: resolved vs static count) · Q-02 (ticket payload jsonb column vs
+side table) · Q-03 (Kometa auto-merge canary flag) · Q-04 (find_missing role rollout) · Q-05
+(collection_override ticket in the Helpdesk too?); DESIGN-042 Q-05 (namespacing/live-reconcile marker) ·
+Q-06 (ref-preview egress + `--validate-file` connectivity, canary first).
+
+---
+
+*Historical context below (the executed Libretto leg + the Kometa research — superseded by the
+direct-add rework above where they describe suggest→approve).*
+
 - **Libretto leg: EXECUTED (2026-07-17).** ADR-070 + DESIGN-043 land the collection manager +
   member contribution surface bound to the PROVEN live Libretto API (the confined `@hnet/libretto`
   client, read/write split; `role_collection_action_grants` with suggest/manage/acquire, Admin-only;
