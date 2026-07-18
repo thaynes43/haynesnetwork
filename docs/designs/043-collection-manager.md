@@ -134,6 +134,35 @@ Libretto is read LIVE (stateless — its API is the read model; a Libretto outag
 include back (DESIGN-042 D-01) plus the DESIGN-035 mirror; invalid recipe FILES surface in a "needs
 attention" band, never silently dropped.
 
+#### D-02 amend (2026-07-18, owner-reported gap) — TWO populations per tab + one search
+
+The owner reported the Movies/TV tabs reading "No movies collections yet" while the estate mirror
+carries ~465 Kometa-produced collections (movies 441, TV 24 — confirmed on prod by `created_by`), and
+the same blind spot on Books/Audiobooks (7 hand-made Kavita collections, none surfaced). Root cause: the
+list rendered ONLY app-managed recipes (`data.recipes`, of which there are approximately zero) and
+ignored the mirror rows the server already returns. The fix: **every media tab lists BOTH populations.**
+
+- **Managed here** — the app-authored recipes, with the full controls (Find missing, Run, Edit,
+  Delete/puck) exactly as before.
+- **From the estate's config** (Movies/TV) / **Made in your library apps** (Books/Audiobooks) — the
+  mirror collections with NO managed recipe, as **READ-ONLY** rows: title + item count on the left, a
+  single muted state chip on the right ("managed in the estate's Kometa config" / "made in Kavita" /
+  "made in Audiobookshelf"). No controls — the app does not manage these; it lists them so the tab is
+  honest, not empty. The row anatomy stays the shared grid; the chip's slot is reserved by the shared
+  actions column, so nothing reflows (ADR-015).
+
+The overview payload gains a `readOnly[]` array beside `recipes[]`. Kometa: the mirror collections
+(`created_by='kometa'`, the DESIGN-035 read) whose normalized title does NOT join a managed recipe.
+Libretto: the `books_collections` rows with `libretto_recipe_id IS NULL` for the tab's media type
+(audiobookshelf ⇒ audiobooks, kavita ⇒ books — the D-13 source→media map). A recipe-JOINED mirror row is
+never duplicated into the read-only group.
+
+One `library-search` input sits above both groups and filters both by title substring, client-side (the
+config population runs to hundreds of rows, so the tab must stay usable). Filtering re-renders list
+CONTENT — a deliberate content change, allowed under ADR-015; the search box itself holds its place and
+never reflows. The honest empty state ("No ... collections yet") shows ONLY when both populations are
+truly empty; a search that matches nothing shows a quiet "Nothing matches that search" note instead.
+
 ### D-03 — Direct add / edit (the composer) (REVISED 2026-07-18)
 
 > **REVISED (ADR-072).** The composer now WRITES the collection directly (within the cap) instead of

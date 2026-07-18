@@ -97,6 +97,30 @@ const EMPTY_DRAFT: RecipeDraft = {
   syncMode: 'sync',
 };
 
+// ── Read-only collections (DESIGN-042 D-02 / DESIGN-043 D-02 amend) ──────────────────────────
+// A read-only row is a mirror collection with no app-managed recipe: an estate Kometa-config
+// collection (movies/TV) or a hand-made Kavita/Audiobookshelf collection (books/audiobooks). The
+// app lists them so the tab reflects the estate, but offers no controls (nothing to manage).
+
+interface ReadOnlyCollection {
+  name: string;
+  itemCount: number | null;
+  managedBy: 'kometa_config' | 'hand_made';
+  source: 'kavita' | 'audiobookshelf' | null;
+}
+
+/** The muted state chip for a read-only row (owner tone — no em-dashes, no names). */
+function readOnlyChipLabel(row: ReadOnlyCollection): string {
+  if (row.managedBy === 'kometa_config') return 'managed in the estate’s Kometa config';
+  if (row.source === 'audiobookshelf') return 'made in Audiobookshelf';
+  return 'made in Kavita';
+}
+
+/** The heading over the read-only group per provider. */
+function readOnlyGroupTitle(mediaType: CollectionMediaTypeName): string {
+  return isKometaMedia(mediaType) ? "From the estate's config" : 'Made in your library apps';
+}
+
 // ── The shell ──────────────────────────────────────────────────────────────────────────────
 
 function CollectionsContent({ isAdmin }: { isAdmin: boolean }) {
@@ -223,6 +247,10 @@ function MediaSection({
   const [composerOpen, setComposerOpen] = useState(false);
   const [draft, setDraft] = useState<RecipeDraft>(EMPTY_DRAFT);
   const [editing, setEditing] = useState(false);
+  // One search box filters BOTH groups by title substring (client-side — 400+ config rows must stay
+  // usable). Filtering re-renders list CONTENT (a deliberate content change, ADR-015); the box itself
+  // holds its place and never reflows.
+  const [search, setSearch] = useState('');
 
   const invalidate = () => void utils.collections.overview.invalidate({ mediaType });
   const label = COLLECTION_MEDIA_TYPE_LABELS[mediaType];
@@ -330,6 +358,15 @@ function MediaSection({
     data.collections.filter((c) => c.recipeId).map((c) => [c.recipeId as string, c]),
   );
 
+  // Both populations the tab lists: the recipes the app manages here, and the read-only mirror rows the
+  // estate's config / a book app made. One search box filters both by title substring.
+  const readOnly: ReadOnlyCollection[] = data.readOnly ?? [];
+  const q = search.trim().toLowerCase();
+  const matches = (name: string) => q === '' || name.toLowerCase().includes(q);
+  const filteredRecipes = data.recipes.filter((r) => matches(r.name ?? r.id));
+  const filteredReadOnly = readOnly.filter((r) => matches(r.name));
+  const totalCount = data.recipes.length + readOnly.length;
+
   return (
     <>
       <div className="collections-toolbar">
@@ -378,72 +415,132 @@ function MediaSection({
         </section>
       ) : null}
 
-      {data.recipes.length === 0 ? (
+      {totalCount === 0 ? (
         <section className="card empty-state" data-testid="collections-empty">
           <p className="muted">No {label.toLowerCase()} collections yet. Add one to start building.</p>
         </section>
       ) : (
-        <ul className="collections-list" data-testid="collections-list">
-          {data.recipes.map((recipe) => {
-            const produced = collectionByRecipe.get(recipe.id);
-            const findMissing = recipe.findMissing ?? false;
-            return (
-              <li key={recipe.id} className="collection-row" data-testid="collection-row">
-                <div className="collection-row__main">
-                  <span className="collection-row__title">{recipe.name ?? recipe.id}</span>
-                  <span className="collection-row__meta">
-                    <span className="badge badge--info">
-                      {COLLECTION_BUILDER_LABELS[recipe.builderType as CollectionBuilderTypeName] ??
-                        recipe.builderType ??
-                        'recipe'}
-                    </span>
-                    {recipe.builderRef ? <span className="muted">{recipe.builderRef}</span> : null}
-                    {produced ? (
-                      <span className="muted" data-testid="collection-size">
-                        {produced.itemCount ?? 0} in collection
-                        <span className="collection-row__cap"> / {data.sizeCap} limit</span>
+        <>
+          <div className="collections-search">
+            <input
+              type="search"
+              className="library-search"
+              data-testid="collections-search"
+              placeholder={`Search ${label.toLowerCase()} collections`}
+              aria-label={`Search ${label.toLowerCase()} collections`}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+
+          {filteredRecipes.length === 0 && filteredReadOnly.length === 0 ? (
+            <p className="muted" data-testid="collections-no-matches">
+              Nothing matches that search.
+            </p>
+          ) : null}
+
+          {filteredRecipes.length > 0 ? (
+            <section className="collections-group" data-testid="collections-managed-group">
+              <h2 className="collections-attention__title">Managed here</h2>
+              <ul className="collections-list" data-testid="collections-list">
+                {filteredRecipes.map((recipe) => {
+                  const produced = collectionByRecipe.get(recipe.id);
+                  const findMissing = recipe.findMissing ?? false;
+                  return (
+                    <li key={recipe.id} className="collection-row" data-testid="collection-row">
+                      <div className="collection-row__main">
+                        <span className="collection-row__title">{recipe.name ?? recipe.id}</span>
+                        <span className="collection-row__meta">
+                          <span className="badge badge--info">
+                            {COLLECTION_BUILDER_LABELS[recipe.builderType as CollectionBuilderTypeName] ??
+                              recipe.builderType ??
+                              'recipe'}
+                          </span>
+                          {recipe.builderRef ? <span className="muted">{recipe.builderRef}</span> : null}
+                          {produced ? (
+                            <span className="muted" data-testid="collection-size">
+                              {produced.itemCount ?? 0} in collection
+                              <span className="collection-row__cap"> / {data.sizeCap} limit</span>
+                            </span>
+                          ) : recipe.state === 'pending_run' ? (
+                            <span className="muted" data-testid="collection-pending">
+                              pending next collection run
+                            </span>
+                          ) : (
+                            <span className="muted">not built yet</span>
+                          )}
+                        </span>
+                      </div>
+                      <div className="collection-row__actions">
+                        {/* The find-missing puck reserves its slot; ON/OFF recolors, never reflows (ADR-015). A
+                            granted caller (or admin) sees it as a TOGGLE (Modal confirm on enable); everyone else
+                            sees the honest read-only state. */}
+                        <FindMissingPuck
+                          recipeId={recipe.id}
+                          mediaType={mediaType}
+                          findMissing={findMissing}
+                          canToggle={data.canFindMissing}
+                          onDone={invalidate}
+                        />
+                        {/* Kometa has no per-recipe apply API — a collection is produced on the estate's
+                            scheduled run (the pending state conveys it). Libretto applies on demand. */}
+                        {isKometaMedia(mediaType) ? null : (
+                          <ApplyButton recipeId={recipe.id} onDone={invalidate} />
+                        )}
+                        <button type="button" className="btn sm" onClick={() => openEdit(recipe)}>
+                          Edit
+                        </button>
+                        {isAdmin ? (
+                          <DeleteControl
+                            recipeId={recipe.id}
+                            recipeName={recipe.name ?? recipe.id}
+                            mediaType={mediaType}
+                            onDone={invalidate}
+                          />
+                        ) : null}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ) : null}
+
+          {filteredReadOnly.length > 0 ? (
+            <section className="collections-group" data-testid="collections-readonly-group">
+              <h2 className="collections-attention__title">{readOnlyGroupTitle(mediaType)}</h2>
+              <p className="muted collections-group__note">
+                These were made outside the app, so they show here to keep the list complete. There is
+                nothing to change on them here.
+              </p>
+              <ul className="collections-list" data-testid="collections-readonly-list">
+                {filteredReadOnly.map((row, i) => (
+                  <li
+                    key={`readonly-${i}-${row.name}`}
+                    className="collection-row"
+                    data-testid="collection-row-readonly"
+                  >
+                    <div className="collection-row__main">
+                      <span className="collection-row__title">{row.name}</span>
+                      <span className="collection-row__meta">
+                        <span className="muted" data-testid="collection-size">
+                          {row.itemCount ?? 0} in collection
+                        </span>
                       </span>
-                    ) : recipe.state === 'pending_run' ? (
-                      <span className="muted" data-testid="collection-pending">
-                        pending next collection run
+                    </div>
+                    {/* The row anatomy stays the shared grid: a single muted state chip on the right, its
+                        slot reserved by the shared actions column — no controls, no reflow (ADR-015). */}
+                    <div className="collection-row__actions">
+                      <span className="badge badge--muted" data-testid="collection-readonly-chip">
+                        {readOnlyChipLabel(row)}
                       </span>
-                    ) : (
-                      <span className="muted">not built yet</span>
-                    )}
-                  </span>
-                </div>
-                <div className="collection-row__actions">
-                  {/* The find-missing puck reserves its slot; ON/OFF recolors, never reflows (ADR-015). A
-                      granted caller (or admin) sees it as a TOGGLE (Modal confirm on enable); everyone else
-                      sees the honest read-only state. */}
-                  <FindMissingPuck
-                    recipeId={recipe.id}
-                    mediaType={mediaType}
-                    findMissing={findMissing}
-                    canToggle={data.canFindMissing}
-                    onDone={invalidate}
-                  />
-                  {/* Kometa has no per-recipe apply API — a collection is produced on the estate's
-                      scheduled run (the pending state conveys it). Libretto applies on demand. */}
-                  {isKometaMedia(mediaType) ? null : (
-                    <ApplyButton recipeId={recipe.id} onDone={invalidate} />
-                  )}
-                  <button type="button" className="btn sm" onClick={() => openEdit(recipe)}>
-                    Edit
-                  </button>
-                  {isAdmin ? (
-                    <DeleteControl
-                      recipeId={recipe.id}
-                      recipeName={recipe.name ?? recipe.id}
-                      mediaType={mediaType}
-                      onDone={invalidate}
-                    />
-                  ) : null}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+        </>
       )}
 
       <ComposerModal

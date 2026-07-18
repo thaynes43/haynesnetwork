@@ -4,15 +4,17 @@
 // decline, read all tickets, or touch settings (FORBIDDEN); an admin bypasses the cap and does all of it.
 // The confined Libretto client is stubbed in ctx (ADR-010 — no live-API tests).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import {
   notificationOutbox,
+  plexLibraries,
+  SEEDED_PLEX_SERVER_IDS,
   SEEDED_ROLE_IDS,
   ticketEvents,
   tickets,
   type CollectionOverridePayload,
 } from '@hnet/db';
-import { syncBooksCollections } from '@hnet/domain';
+import { syncBooksCollections, syncPlexCollections, upsertPlexLibraries } from '@hnet/domain';
 import {
   compileManagedFile,
   setRoleCollectionActions,
@@ -487,5 +489,152 @@ describe('setFindMissing — grant-gated acquisition knob (D-14)', () => {
     expect(hs.opened).toHaveLength(1);
     expect(hs.merged).toHaveLength(0); // acquisition lever is human-merged (D-10)
     expect((hs.opened[0]!.content as string)).toContain('radarr_add_missing: true');
+  });
+});
+
+// DESIGN-042 D-02 / DESIGN-043 D-02 amend (2026-07-18, owner-reported gap) — every tab lists BOTH
+// populations: app-managed recipes AND the mirror collections with no managed recipe, the latter as
+// READ-ONLY rows. Proves the read-only rows are present, the recipe rows are unchanged, a no-recipe
+// mirror row appears, and a recipe-JOINED mirror row is NOT duplicated into the read-only group.
+describe('overview — two-population list: read-only estate/hand-made rows (D-02 amend)', () => {
+  async function movieLibId(): Promise<string> {
+    await upsertPlexLibraries({
+      db: t.db,
+      slug: 'haynesops',
+      libraries: [{ sectionKey: '1', name: 'HOps Movies', mediaType: 'movie' }],
+    });
+    const [row] = await t.db
+      .select({ id: plexLibraries.id })
+      .from(plexLibraries)
+      .where(
+        and(
+          eq(plexLibraries.serverId, SEEDED_PLEX_SERVER_IDS.haynesops),
+          eq(plexLibraries.sectionKey, '1'),
+        ),
+      );
+    if (!row) throw new Error('movie library not seeded');
+    return row.id;
+  }
+
+  it('Kometa: a no-recipe config collection is a read-only kometa_config row; a recipe-joined mirror row does NOT duplicate', async () => {
+    const member = await createUser(t.db);
+    const movieLib = await movieLibId();
+    // Two mirrored Kometa collections: "Marvel" matches a managed recipe (joins → not read-only);
+    // "Estate Only" has no managed recipe (→ read-only). Seeded through the sanctioned domain writer.
+    await syncPlexCollections({
+      db: t.db,
+      collections: [
+        {
+          plexLibraryId: movieLib,
+          ratingKey: 'k-marvel',
+          title: 'Marvel',
+          childCount: 30,
+          createdBy: 'kometa',
+          category: null,
+          members: [],
+          fullyRead: true,
+        },
+        {
+          plexLibraryId: movieLib,
+          ratingKey: 'k-estate',
+          title: 'Estate Only',
+          childCount: 12,
+          createdBy: 'kometa',
+          category: null,
+          members: [],
+          fullyRead: true,
+        },
+      ],
+      scopedLibraryIds: [movieLib],
+    });
+    const managed = compileManagedFile({
+      mediaType: 'movies',
+      recipes: [
+        {
+          id: 'marvel',
+          name: 'Marvel',
+          mediaType: 'movies',
+          builderType: 'tmdb_movie',
+          builderRef: '1, 2, 3',
+          findMissing: false,
+        },
+      ],
+    });
+    const ctx = {
+      ...makeCtx(t.db, sessionUser(member)),
+      ...stubLibretto().ctx,
+      ...stubHaynesops({ file: managed }).ctx,
+    };
+    const res = await caller(ctx).collections.overview({ mediaType: 'movies' });
+    // The managed recipe stays a full-control row (unchanged).
+    expect(res.recipes.map((r) => r.id)).toContain('marvel');
+    // The no-recipe config collection is read-only; the recipe-joined one is NOT duplicated there.
+    expect(res.readOnly.map((r) => r.name)).toContain('Estate Only');
+    expect(res.readOnly.map((r) => r.name)).not.toContain('Marvel');
+    expect(res.readOnly.every((r) => r.managedBy === 'kometa_config')).toBe(true);
+  });
+
+  it('Libretto: a hand-made (recipe-less) mirror collection is a read-only hand_made row on the matching tab only', async () => {
+    const member = await createUser(t.db);
+    const stub = stubLibretto();
+    // A managed Libretto recipe so the managed group is non-empty and provably unchanged.
+    stub.recipes.push({
+      id: 'stormlight',
+      name: 'Stormlight',
+      builder: { type: 'hardcover_series', ref: 'stormlight' },
+      enabled: true,
+    });
+    // Two hand-made (librettoRecipeId null) mirror rows: a Kavita one (→ Books) and an ABS one
+    // (→ Audiobooks). Seeded through the sanctioned domain writer (never a direct insert).
+    await syncBooksCollections({
+      db: t.db,
+      collections: [
+        {
+          source: 'kavita',
+          externalId: 'handmade-kavita',
+          kind: 'collection',
+          libraryId: null,
+          title: 'Kavita Hand Picks',
+          itemCount: 9,
+          ordered: false,
+          createdBy: 'kavita',
+          librettoRecipeId: null,
+          category: null,
+          members: [],
+          fullyRead: true,
+        },
+        {
+          source: 'audiobookshelf',
+          externalId: 'handmade-abs',
+          kind: 'collection',
+          libraryId: 'lib1',
+          title: 'ABS Hand Picks',
+          itemCount: 4,
+          ordered: true,
+          createdBy: 'audiobookshelf',
+          librettoRecipeId: null,
+          category: null,
+          members: [],
+          fullyRead: true,
+        },
+      ],
+      scopedFamilies: [{ source: 'kavita', kind: 'collection' }],
+    });
+    const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stub.ctx };
+
+    const books = await caller(ctx).collections.overview({ mediaType: 'books' });
+    expect(books.readOnly.map((r) => r.name)).toContain('Kavita Hand Picks');
+    expect(books.readOnly.map((r) => r.name)).not.toContain('ABS Hand Picks');
+    expect(books.readOnly.find((r) => r.name === 'Kavita Hand Picks')).toMatchObject({
+      managedBy: 'hand_made',
+      source: 'kavita',
+    });
+    // The managed recipe is unchanged — a full-control row, never a read-only one.
+    expect(books.recipes.map((r) => r.id)).toContain('stormlight');
+    expect(books.readOnly.map((r) => r.name)).not.toContain('Stormlight');
+
+    const audiobooks = await caller(ctx).collections.overview({ mediaType: 'audiobooks' });
+    expect(audiobooks.readOnly.map((r) => r.name)).toContain('ABS Hand Picks');
+    expect(audiobooks.readOnly.map((r) => r.name)).not.toContain('Kavita Hand Picks');
   });
 });

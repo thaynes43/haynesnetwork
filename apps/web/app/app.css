@@ -7208,6 +7208,26 @@ button.acq-puck:disabled {
   flex-direction: column;
   gap: 10px;
 }
+/* DESIGN-043 D-02 amend — the two-population list: a search box above both groups, and a heading +
+   note per group ("Managed here" and the read-only estate/hand-made group). */
+.collections-search {
+  margin: 12px 0;
+}
+.collections-search .library-search {
+  width: 100%;
+  max-width: 32ch;
+}
+.collections-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+.collections-group__note {
+  max-width: 60ch;
+  font-size: 0.9rem;
+  margin: 0;
+}
 .collections-settingcard {
   display: flex;
   flex-direction: column;
