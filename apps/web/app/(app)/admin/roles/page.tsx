@@ -22,6 +22,11 @@ import {
 } from '@/lib/bulletin';
 import { BOOK_ACTION_LABELS, BOOK_ACTION_NAMES, type BookActionName } from '@/lib/books-actions';
 import {
+  COLLECTION_ACTION_LABELS,
+  COLLECTION_ACTION_NAMES,
+  type CollectionActionName,
+} from '@/lib/collections-actions';
+import {
   isSectionEnabled,
   sectionLevelOptions,
   selectValueFor,
@@ -45,6 +50,8 @@ interface RoleForm {
   messageActions: MessageActionName[];
   // ADR-062 / ADR-071 — the fine-grained books media-action grants (Fix / Force Search). THE FLIP.
   booksActions: BookActionName[];
+  // ADR-072 / DESIGN-043 D-14 — the fine-grained collection action grants (Find missing). THE FLIP.
+  collectionsActions: CollectionActionName[];
   // ADR-045 (PLAN-026) — create as a SYNCED TIER: the role projects to an Authentik group (auto-created
   // in Authentik + Open WebUI on create). Only meaningful on the Add-role form (the per-row toggle flips
   // an existing role via setSyncedTier).
@@ -61,6 +68,7 @@ const EMPTY_FORM: RoleForm = {
   trashActions: [],
   messageActions: [],
   booksActions: [],
+  collectionsActions: [],
   syncedTier: false,
 };
 
@@ -147,6 +155,12 @@ export default function AdminRolesPage() {
     onError: (err: unknown) => setError(describeMutationError(err)),
     onSettled: invalidate,
   });
+  // ADR-072 / DESIGN-043 D-14 — a role's fine-grained collection action grants (Find missing;
+  // replace-set; audited 'update_collection_actions' in-tx). THE FLIP control — same ride as setBooks.
+  const setCollections = trpc.roles.setCollectionsActions.useMutation({
+    onError: (err: unknown) => setError(describeMutationError(err)),
+    onSettled: invalidate,
+  });
   // ADR-049 C-02 / DESIGN-012 amend (PLAN-027) — a role's Bulletin SUB-VIEW visibility grants
   // (feed/messages; audited 'update_bulletin_views' in-tx). Apply-on-change from the inline
   // checkboxes, like setSection/setMetricsLevel; errors surface on the top-level banner.
@@ -180,6 +194,7 @@ export default function AdminRolesPage() {
     setTrash.isPending ||
     setMessages.isPending ||
     setBooks.isPending ||
+    setCollections.isPending ||
     setBulletinViews.isPending ||
     setMetricsLevel.isPending ||
     setSyncedTier.isPending;
@@ -225,6 +240,9 @@ export default function AdminRolesPage() {
       // Books media-action grants (Fix / Force Search) — same convention.
       if (addForm.booksActions.length > 0)
         await setBooks.mutateAsync({ roleId, actions: addForm.booksActions });
+      // Collection action grants (Find missing) — same convention.
+      if (addForm.collectionsActions.length > 0)
+        await setCollections.mutateAsync({ roleId, actions: addForm.collectionsActions });
     } catch {
       /* onError handlers set the banners */
     }
@@ -243,6 +261,7 @@ export default function AdminRolesPage() {
       trashActions: [...role.trashActions] as TrashActionName[],
       messageActions: [...role.messageActions] as MessageActionName[],
       booksActions: [...role.booksActions] as BookActionName[],
+      collectionsActions: [...role.collectionsActions] as CollectionActionName[],
       // Carried for form-type completeness; the synced-tier flag is edited via the per-row toggle
       // (setSyncedTier), NOT the inline editor (which never sends it — RolePatchInput has no syncedTier).
       syncedTier: role.syncedTier,
@@ -284,6 +303,11 @@ export default function AdminRolesPage() {
       const afterBooks = [...editForm.booksActions].sort().join(',');
       if (beforeBooks !== afterBooks)
         await setBooks.mutateAsync({ roleId: role.id, actions: editForm.booksActions });
+      // Replace-set collection action grants (Find missing) — same audit-noise rule. THE FLIP.
+      const beforeCollections = [...role.collectionsActions].sort().join(',');
+      const afterCollections = [...editForm.collectionsActions].sort().join(',');
+      if (beforeCollections !== afterCollections)
+        await setCollections.mutateAsync({ roleId: role.id, actions: editForm.collectionsActions });
     } catch {
       /* onError handlers set the banners */
     }
@@ -561,6 +585,46 @@ export default function AdminRolesPage() {
     </fieldset>
   );
 
+  // ADR-072 / DESIGN-043 D-14 (PLAN-052 PR4c) — the per-action collection grant grid (THE FLIP). Everyone
+  // adds/edits collections within the size cap already (no grant); this grid opens only the acquisition
+  // lever — "find missing" — which a granted role may turn on per collection on the /collections page.
+  // Admin implies it. Ships Admin-only (empty grant table).
+  const collectionsChecklist = (
+    form: RoleForm,
+    apply: (next: (f: RoleForm) => RoleForm) => void,
+  ) => (
+    <fieldset className="field" data-testid="collections-actions-grid">
+      <legend>Collection actions this role may use</legend>
+      <p className="field-hint">
+        Everyone can add and edit collections up to the size limit already. Find missing is the only
+        opt-in: a granted role can turn it on per collection, which makes the estate pull that
+        collection’s missing titles on the next runs.
+      </p>
+      <ul className="check-list">
+        {COLLECTION_ACTION_NAMES.map((action) => (
+          <li key={action}>
+            <label className="check-row">
+              <input
+                type="checkbox"
+                data-testid={`collections-action-${action}`}
+                checked={form.collectionsActions.includes(action)}
+                onChange={(e) =>
+                  apply((f) => ({
+                    ...f,
+                    collectionsActions: e.target.checked
+                      ? [...f.collectionsActions, action]
+                      : f.collectionsActions.filter((a) => a !== action),
+                  }))
+                }
+              />
+              <span>{COLLECTION_ACTION_LABELS[action]}</span>
+            </label>
+          </li>
+        ))}
+      </ul>
+    </fieldset>
+  );
+
   // ADR-017 / DESIGN-007 D-06 — the Plex library grant matrix, grouped per server. Unlike the
   // app matrix there is no cross-server master toggle (grants_all does not imply libraries —
   // D-08), but each server group carries a PER-SERVER "All libraries" checkbox (ADR-024 /
@@ -729,6 +793,7 @@ export default function AdminRolesPage() {
                       {trashChecklist(editForm, setEditForm)}
                       {bulletinChecklist(editForm, setEditForm)}
                       {booksChecklist(editForm, setEditForm)}
+                      {collectionsChecklist(editForm, setEditForm)}
                       {editError ? (
                         <p className="alert" role="alert">
                           {editError}
@@ -1059,6 +1124,7 @@ export default function AdminRolesPage() {
           {trashChecklist(addForm, setAddForm)}
           {bulletinChecklist(addForm, setAddForm)}
           {booksChecklist(addForm, setAddForm)}
+          {collectionsChecklist(addForm, setAddForm)}
           <div className="form-actions">
             <button
               type="submit"

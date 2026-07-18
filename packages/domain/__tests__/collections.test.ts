@@ -11,6 +11,7 @@ import { eq } from 'drizzle-orm';
 import {
   CollectionOverrideNotActionableError,
   CollectionSizeCapError,
+  NotFoundError,
   approveCollectionOverride,
   collectionActionsForRole,
   createCollectionOverrideTicket,
@@ -18,6 +19,7 @@ import {
   deleteCollectionRecipe,
   getCollectionsOverview,
   listCollectionOverrideTickets,
+  setCollectionFindMissing,
   setRoleCollectionActions,
   upsertCollection,
 } from '../src/index';
@@ -170,6 +172,35 @@ describe('direct upsert — capped, audited (D-03/D-10)', () => {
     const audit = await t.db.select().from(permissionAudit).where(eq(permissionAudit.action, 'delete_collection'));
     expect(audit).toHaveLength(1);
     expect((audit[0]!.detail as { also_delete_collection: boolean }).also_delete_collection).toBe(true);
+  });
+});
+
+describe('setCollectionFindMissing — Libretto acquisition knob (PR4c / D-14)', () => {
+  it('flips acquisitionEnabled ON via a full re-PUT + a same-tx upsert_collection(find_missing) audit', async () => {
+    const user = await createUser(t.db);
+    const { recipes, bundle } = stubLibretto();
+    // Seed the recipe (acquisition OFF) so listRecipes can find it for the re-PUT.
+    await upsertCollection({ db: t.db, libretto: bundle, actorId: user.id, draft: draft(), size: 5, cap: 25, isAdmin: false });
+    await t.db.delete(permissionAudit); // isolate the find-missing audit
+
+    const res = await setCollectionFindMissing({ db: t.db, libretto: bundle, actorId: user.id, id: 'stormlight', on: true });
+    expect(res.findMissing).toBe(true);
+    const last = recipes[recipes.length - 1]!;
+    expect((last.variables as { acquisitionEnabled: boolean }).acquisitionEnabled).toBe(true);
+    // The re-PUT preserved the builder (a full PUT, not a partial patch).
+    expect((last.builder as { type: string }).type).toBe('hardcover_series');
+    const audit = await t.db.select().from(permissionAudit).where(eq(permissionAudit.action, 'upsert_collection'));
+    expect(audit).toHaveLength(1);
+    expect((audit[0]!.detail as { find_missing?: boolean }).find_missing).toBe(true);
+  });
+
+  it('a recipe that does not exist is a NotFound (writes nothing)', async () => {
+    const user = await createUser(t.db);
+    const { recipes, bundle } = stubLibretto();
+    await expect(
+      setCollectionFindMissing({ db: t.db, libretto: bundle, actorId: user.id, id: 'ghost', on: true }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    expect(recipes).toHaveLength(0);
   });
 });
 

@@ -20,6 +20,7 @@ import {
 } from '@hnet/db';
 import { HaynesopsUnreachableError } from '@hnet/haynesops';
 import { inTransaction, resolveDb } from './db-client';
+import { NotFoundError } from './errors';
 import { assertWithinCollectionSizeCap } from './collection-size-cap';
 import {
   compileManagedFile,
@@ -195,6 +196,8 @@ const upsertAuditDetail = (recipe: KometaRecipe, extra?: Record<string, unknown>
   name: recipe.name,
   builder_type: recipe.builderType,
   builder_ref: recipe.builderRef,
+  // The acquisition state on the recipe this write commits (the find-missing knob — PR4c).
+  find_missing: recipe.findMissing,
   ...(extra ?? {}),
 });
 
@@ -440,6 +443,55 @@ export async function deleteKometaRecipe(input: {
       auditAction: 'upsert_collection',
     },
   ).then((res) => ({ ...res }));
+}
+
+/**
+ * DESIGN-042 D-06/D-14 (PLAN-052 PR4c) — the per-collection FIND-MISSING knob for Kometa (movies/TV). Reads
+ * the managed include back, finds the recipe by id, flips its `findMissing` (the compiler then emits
+ * `radarr_add_missing`/`sonarr_add_missing` + `_search` — PR4b), recompiles, and opens a bot haynes-ops PR.
+ * ENABLING find-missing is the acquisition lever — one of the two NON-auto-merge cases (D-10): its PR is
+ * ALWAYS human-merged (evaluateKometaAutoMerge withholds auto-merge for `findMissing: true`). DISABLING it
+ * returns the recipe to grouping-only, which may auto-merge (managed-file-only, CI green). Grant-gated at the
+ * API; this writer trusts the gate. A recipe not present in the managed include is a NotFound (never a
+ * fabricated write). Audits `upsert_collection` (with `find_missing` in the detail) in the shared write flow.
+ */
+export async function setKometaFindMissing(input: {
+  db?: DbClient;
+  haynesops: HaynesopsClientBundle;
+  actorId: string;
+  id: string;
+  mediaType: KometaMediaType;
+  on: boolean;
+  branchSuffix?: string;
+  checkPoll?: KometaWriteContext['checkPoll'];
+}): Promise<KometaWriteResult> {
+  const path = managedPath(input.haynesops, input.mediaType);
+  const file = await input.haynesops.read.getFile(path, input.haynesops.baseBranch);
+  const existing = parseManagedFile(file?.text);
+  const current = existing.find((r) => r.id === input.id && r.mediaType === input.mediaType);
+  if (!current) {
+    throw new NotFoundError(`Kometa collection "${input.id}" not found in the managed ${input.mediaType} include`);
+  }
+  const recipe: KometaRecipe = { ...current, findMissing: input.on };
+  const content = recompileWith(existing, recipe, input.mediaType);
+  return openAndMaybeAutoMerge(
+    {
+      db: input.db,
+      haynesops: input.haynesops,
+      actorId: input.actorId,
+      recipe,
+      mediaType: input.mediaType,
+      ...(input.branchSuffix ? { branchSuffix: input.branchSuffix } : {}),
+      ...(input.checkPoll ? { checkPoll: input.checkPoll } : {}),
+    },
+    content,
+    {
+      isMaterialization: false,
+      title: `collections(kometa): ${input.on ? 'enable' : 'disable'} find-missing on ${recipe.name}`,
+      body: kometaPrBody(recipe, { materialization: false }),
+      auditAction: 'upsert_collection',
+    },
+  );
 }
 
 /** The bot PR body — the audit-trail prose (the collection + its builder + the auto-merge intent). */

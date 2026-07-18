@@ -19,6 +19,8 @@ import {
   evaluateKometaAutoMerge,
   getKometaCollectionsOverview,
   materializeKometaCollection,
+  NotFoundError,
+  setKometaFindMissing,
   upsertKometaCollection,
   type KometaRecipe,
 } from '../src/index';
@@ -238,6 +240,68 @@ describe('deleteKometaRecipe — removes the recipe from the managed include (D-
     expect(res.merged).toBe(true);
     expect(hs.opened[0]!.content).not.toContain('Christmas HNet');
     expect(hs.opened[0]!.content).toContain('Keep');
+  });
+});
+
+describe('setKometaFindMissing — the per-collection acquisition lever (PR4c / D-06/D-14)', () => {
+  it('enabling flips findMissing on, emits radarr_add_missing: true, and NEVER auto-merges (human)', async () => {
+    const user = await createUser(t.db);
+    const start = compileManagedFile({ mediaType: 'movies', recipes: [recipe()] });
+    const hs = stubHaynesops({ file: start, checks: 'success' });
+    const res = await setKometaFindMissing({
+      db: t.db,
+      haynesops: hs.bundle,
+      actorId: user.id,
+      id: 'christmas',
+      mediaType: 'movies',
+      on: true,
+      branchSuffix: 'x',
+    });
+    expect(res.merged).toBe(false); // acquisition lever is always human-merged (D-10)
+    expect(hs.merged).toEqual([]);
+    expect(res.autoMergeBlockedReason).toMatch(/find-missing/i);
+    expect(hs.opened[0]!.content).toContain('radarr_add_missing: true');
+    expect(hs.opened[0]!.content).toContain('radarr_search: true');
+    const audit = await t.db
+      .select()
+      .from(permissionAudit)
+      .where(eq(permissionAudit.actorId, user.id));
+    expect(audit).toHaveLength(1);
+    expect(audit[0]!.action).toBe('upsert_collection');
+    expect((audit[0]!.detail as { find_missing?: boolean }).find_missing).toBe(true);
+  });
+
+  it('disabling returns the recipe to grouping-only, which may auto-merge', async () => {
+    const user = await createUser(t.db);
+    const start = compileManagedFile({ mediaType: 'movies', recipes: [recipe({ findMissing: true })] });
+    const hs = stubHaynesops({ file: start, checks: 'success' });
+    const res = await setKometaFindMissing({
+      db: t.db,
+      haynesops: hs.bundle,
+      actorId: user.id,
+      id: 'christmas',
+      mediaType: 'movies',
+      on: false,
+      branchSuffix: 'x',
+    });
+    expect(res.merged).toBe(true);
+    expect(hs.opened[0]!.content).toContain('radarr_add_missing: false');
+  });
+
+  it('a recipe not present in the managed include is a NotFound (never a fabricated write)', async () => {
+    const user = await createUser(t.db);
+    const hs = stubHaynesops({ file: null, checks: 'success' });
+    await expect(
+      setKometaFindMissing({
+        db: t.db,
+        haynesops: hs.bundle,
+        actorId: user.id,
+        id: 'ghost',
+        mediaType: 'movies',
+        on: true,
+      }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    expect(hs.opened).toHaveLength(0);
   });
 });
 

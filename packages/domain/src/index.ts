@@ -148,6 +148,9 @@ export * from './goodreads-sync';
 // DESIGN-038 D-13 — the collection Wanted-tiles pass: Libretto-managed collections' missing members
 // minted as origin='collection' book_requests (the books-collections-sync mode's Wanted-tile step).
 export * from './collection-wants-sync';
+// ADR-072 / DESIGN-043 D-14 (PLAN-052 PR4c) — the cron FORCE-SEARCH leg for the find-missing knob: the
+// app-side acquisition that drives LazyLibrarian over a find-missing collection's origin='collection' wants.
+export * from './collection-force-search';
 // ADR-065 / DESIGN-036 (PLAN-050 — book ⇄ audiobook pairing) — the conservative matcher, the
 // books_format_pairs single-writer, and the PACED estate-wide system-want mint + run orchestrator
 // (the format-pairing sync mode's body).

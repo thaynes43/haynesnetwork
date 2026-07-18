@@ -5,6 +5,7 @@ import { ICON_KEYS } from '@hnet/ui/icons';
 import {
   BOOK_ACTIONS,
   BULLETIN_VIEWS,
+  COLLECTION_ACTIONS,
   MESSAGE_ACTIONS,
   SECTION_IDS,
   SECTION_PERMISSION_LEVELS,
@@ -129,6 +130,14 @@ export const MessageActionsInput = z.object({
 export const BooksActionsInput = z.object({
   roleId: z.uuid(),
   actions: z.array(z.enum(BOOK_ACTIONS)).default([]),
+});
+
+/** ADR-072 / DESIGN-043 D-14 (PLAN-052 PR4c) — roles.setCollectionsActions: replace-whole-set of a role's
+ *  fine-grained collection action grants (find_missing — the per-collection acquisition knob). An EMPTY
+ *  array clears them (the ships-Admin-only default; the owner opens it per role — the FLIP). */
+export const CollectionsActionsInput = z.object({
+  roleId: z.uuid(),
+  actions: z.array(z.enum(COLLECTION_ACTIONS)).default([]),
 });
 
 /**
