@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.78.1](https://github.com/thaynes43/haynesnetwork/compare/v0.78.0...v0.78.1) (2026-07-18)
+
+
+### Bug Fixes
+
+* **db:** bump 0067 journal timestamp so it applies incrementally ([#391](https://github.com/thaynes43/haynesnetwork/issues/391)) ([06b47ce](https://github.com/thaynes43/haynesnetwork/commit/06b47ce73e6b28f9e1a40476449fce74139489d4))
+* remove the in-wall suggest-a-collection affordance (owner ruling) ([#388](https://github.com/thaynes43/haynesnetwork/issues/388)) ([6fb15ac](https://github.com/thaynes43/haynesnetwork/commit/6fb15ac8a74195a7dfb01d50a344ac8011c0b553))
+
+
+### Documentation
+
+* **agents:** rule — backlog/saga state must reach main; commit the 07-17/07-18 context notes ([#387](https://github.com/thaynes43/haynesnetwork/issues/387)) ([dd12225](https://github.com/thaynes43/haynesnetwork/commit/dd12225a974f4945688d90d0af1cbff236f0de68))
+* **collections:** direct-add supersedes suggest→approve (ADR-071) ([#389](https://github.com/thaynes43/haynesnetwork/issues/389)) ([7527939](https://github.com/thaynes43/haynesnetwork/commit/75279390e6ad64d25e07caa0826496cbfdd66df9))
+* **collections:** renumber direct-add ADR 071 → 072 (collision fix) ([#392](https://github.com/thaynes43/haynesnetwork/issues/392)) ([e60c474](https://github.com/thaynes43/haynesnetwork/commit/e60c47499c429bc501879a2e4df315427bcac89d))
+
 ## [0.78.0](https://github.com/thaynes43/haynesnetwork/compare/v0.77.0...v0.78.0) (2026-07-18)
 
 
