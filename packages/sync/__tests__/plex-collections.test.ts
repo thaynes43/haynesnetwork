@@ -14,6 +14,7 @@ import {
 import type { Database, PlexServerSlug } from '@hnet/db';
 import {
   syncPlexCollections,
+  upsertMediaItemsBatch,
   upsertPlexLibraries,
   type PlexClientBundle,
   type PlexCollectionSyncInput,
@@ -392,21 +393,37 @@ async function seedRadarrItem(
   db: Database,
   o: { arrItemId: number; tmdbId: number; onDisk: number; title: string },
 ) {
+  // Through the domain single writer (direct inserts into media_items are forbidden by the guard).
+  await upsertMediaItemsBatch({
+    db,
+    arrKind: 'radarr',
+    items: [
+      {
+        title: o.title,
+        arrItemId: o.arrItemId,
+        tvdbId: null,
+        tmdbId: o.tmdbId,
+        musicbrainzArtistId: null,
+        sortTitle: o.title.toLowerCase(),
+        year: 2020,
+        monitored: true,
+        qualityProfileId: 1,
+        qualityProfileName: 'Any',
+        metadataProfileId: null,
+        metadataProfileName: null,
+        rootFolder: '/movies',
+        arrTags: [],
+        onDiskFileCount: o.onDisk,
+        expectedFileCount: 1,
+        sizeOnDisk: 1000,
+        arrAttrs: {},
+      },
+    ],
+  });
   const [row] = await db
-    .insert(mediaItems)
-    .values({
-      arrKind: 'radarr',
-      arrItemId: o.arrItemId,
-      title: o.title,
-      sortTitle: o.title.toLowerCase(),
-      monitored: true,
-      qualityProfileId: 1,
-      qualityProfileName: 'HD',
-      rootFolder: '/movies',
-      tmdbId: o.tmdbId,
-      onDiskFileCount: o.onDisk,
-    })
-    .returning({ id: mediaItems.id });
+    .select({ id: mediaItems.id })
+    .from(mediaItems)
+    .where(and(eq(mediaItems.arrKind, 'radarr'), eq(mediaItems.arrItemId, o.arrItemId)));
   return row!.id;
 }
 

@@ -1706,7 +1706,15 @@ describe('migrations against embedded Postgres 16', () => {
            WHERE table_name = 'plex_collection_members'
              AND column_name IN ('rating_key','media_item_id','held')`,
       );
-      const byName = new Map(cols.rows.map((r: { column_name: string }) => [r.column_name, r]));
+      const byName = new Map(
+        (
+          cols.rows as Array<{
+            column_name: string;
+            is_nullable: string;
+            column_default: string | null;
+          }>
+        ).map((r) => [r.column_name, r]),
+      );
       expect(byName.get('rating_key')?.is_nullable).toBe('YES');
       expect(byName.get('media_item_id')?.is_nullable).toBe('YES');
       expect(byName.get('held')?.is_nullable).toBe('NO');
