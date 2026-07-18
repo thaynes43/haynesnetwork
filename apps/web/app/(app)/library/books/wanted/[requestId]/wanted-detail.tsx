@@ -1,11 +1,13 @@
 'use client';
 
 // ADR-057 amendment (PLAN-047 — DESIGN-029 amendment-2, owner Wanted-parity ruling) — the WANT detail view,
-// the books analog of the /library/[id] Movies/TV detail. It mirrors that page's visual language BY REUSE:
-// BackLink + `.card.detail-head` with a 2:3 MediaPoster, title/author, a badges row, and the ADR-015
-// reserved-slot action idiom (`.action-slot`) — but the "grains" are FORMATS (Ebook/Audiobook, or the single
-// Comic leg), each carrying its own downstream status (wanted/grabbed/landed/missing/parked) and its own
-// Force-Search button. The button calls the same dispatching `integrations.search` surface (ebook/audio →
+// the books analog of the /library/[id] Movies/TV detail. It mirrors that page's visual language BY REUSE of
+// the shared @hnet/ui media-action system (ADR-071 / DESIGN-004 D-24): BackLink + <MediaHero> (the ONE
+// `.detail-head` scaffold) with a 2:3 MediaPoster, title/author, a badges row, and — per FORMAT (Ebook/
+// Audiobook, or the single Comic leg) — a Force-Search rendered through <MediaAction action="forceSearch">
+// off the MEDIA_ACTIONS registry, inside the reflow-safe <ReservedActionSlot> (the ADR-015 button ↔ live-chip
+// idiom). Each format carries its own downstream status (wanted/grabbed/landed/missing/parked). The button
+// calls the same dispatching `integrations.search` surface (ebook/audio →
 // LazyLibrarian, comic → Kapowarr — audited `request_book_search`), with PLAN-015-style feedback IN PLACE:
 // the reserved slot swaps the button for a live PhaseChip (searching → fired / nothing / failed), no reflow.
 // Books have no per-grab progress feed (DESIGN-029 Q-02 residual), so "fired → the next-reconcile status" is
@@ -14,9 +16,16 @@
 // Attribution (source shelf + requesters) lives HERE — it was pulled off the card faces (amendment-1). The
 // per-format Force-Search renders only when the server says `searchable` (OWN the request + the integrations
 // section); a books-only household viewer sees the status rows read-only.
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { trpc, type RouterOutputs } from '@/lib/trpc-client';
-import { PhaseChip, type PhaseTone } from '@hnet/ui';
+import {
+  PhaseChip,
+  MediaHero,
+  MediaAction,
+  ReservedActionSlot,
+  type PhaseTone,
+  type MediaHeroBadge,
+} from '@hnet/ui';
 import { BackLink } from '@/components/back-link';
 import { MediaPoster } from '@/components/cards';
 import {
@@ -150,40 +159,38 @@ function FormatSearchSlot({
     />
   );
 
-  let content;
+  // ADR-071 / DESIGN-004 D-24 — the in-flight live node shown IN PLACE of the resting Force-Search
+  // button. The button is the shared <MediaAction action="forceSearch"> (the ONE registry look/label);
+  // the reflow-safe swap is the shared <ReservedActionSlot>. Only the mutation/state machine (which
+  // needs trpc) stays here — the audit's "the state machine stays in the app" split.
+  let live: ReactNode = null;
   if (search.isPending) {
-    content = chip('searching', 'Searching…', 'neutral', { pulse: true });
+    live = chip('searching', 'Searching…', 'neutral', { pulse: true });
   } else if (fired?.kind === 'fired') {
-    content = chip('fired', 'Search fired', 'info', { pulse: true, title: firedTitle(fired) });
+    live = chip('fired', 'Search fired', 'info', { pulse: true, title: firedTitle(fired) });
   } else if (fired?.kind === 'noop') {
-    content = chip('noop', 'Nothing to search', 'warning', {
+    live = chip('noop', 'Nothing to search', 'warning', {
       title: (fired.reason ? NOOP_COPY[fired.reason] : undefined) ?? 'Nothing to search.',
     });
   } else if (fired?.kind === 'failed') {
-    content = chip('failed', 'Search failed', 'danger', { title: fired.message });
-  } else {
-    // The comic leg searches the whole Kapowarr volume (no per-format param); a book leg targets its
-    // format; a pairing want has exactly one open leg so its endpoint needs no format param.
-    content = (
-      <button
-        type="button"
-        className="btn sm"
-        data-testid="format-search-btn"
-        onClick={() =>
+    live = chip('failed', 'Search failed', 'danger', { title: fired.message });
+  }
+
+  return (
+    <ReservedActionSlot reserve="roll" testId="format-search" live={live}>
+      {/* The comic leg searches the whole Kapowarr volume (no per-format param); a book leg targets
+          its format; a pairing want has exactly one open leg so its endpoint needs no format param. */}
+      <MediaAction
+        action="forceSearch"
+        size="sm"
+        testId="format-search-btn"
+        onFire={() =>
           isSystemWant
             ? searchPairing.mutate({ requestId })
             : searchGoodreads.mutate(format === 'comic' ? { requestId } : { requestId, format })
         }
-      >
-        Force Search
-      </button>
-    );
-  }
-
-  return (
-    <span className="action-slot action-slot--roll" data-testid="format-search">
-      {content}
-    </span>
+      />
+    </ReservedActionSlot>
   );
 }
 
@@ -305,30 +312,35 @@ export function WantedDetail({ requestId, from }: { requestId: string; from: str
   );
   const refresh = () => void utils.books.wantedDetail.invalidate({ requestId });
 
+  // DESIGN-004 D-24 (ADR-071) — the hero is now the shared <MediaHero>: poster, title, typed badges,
+  // the muted author meta line and the requesters attribution (the `secondary` slot) are its inputs.
+  // It emits the exact `.detail-head*` anatomy the page hand-rolled before (pixel-neutral). A want has
+  // no consume link and no head action bar — its Force-Search lives per-format in the Formats section.
+  const heroBadges: MediaHeroBadge[] = [
+    { label: shelfLabel(d.shelf), tone: 'muted' },
+    { label: hero.label, tone: hero.tone },
+    ...(d.isComic ? [{ label: 'Comic', tone: 'muted' as const }] : []),
+    ...(d.matchedBooksItemId !== null
+      ? [{ label: 'In your library', tone: 'ok' as const }]
+      : []),
+  ];
+
   return (
     <>
       <BackLink from={from} />
 
-      <section className="card detail-head" data-testid="wanted-detail-head">
-        {/* A want is unmatched by definition ⇒ the designed KindIcon glyph tile; the cover-proxy art
-            shows only if the want is already matched into the library (ADR-015 reserved box). */}
-        <span className="detail-head__poster">
-          <MediaPoster posterUrl={d.posterUrl} kind={d.mediaKind} alt="" />
-        </span>
-        <div className="detail-head__body">
-          <h1 className="detail-head__title">{d.title}</h1>
-          <div className="media-card__badges">
-            <span className="badge badge--muted">{shelfLabel(d.shelf)}</span>
-            <span className={`badge badge--${hero.tone}`}>{hero.label}</span>
-            {d.isComic ? <span className="badge badge--muted">Comic</span> : null}
-            {d.matchedBooksItemId !== null ? (
-              <span className="badge badge--ok">In your library</span>
-            ) : null}
-          </div>
-          {d.author !== null ? <p className="detail-head__meta muted">{d.author}</p> : null}
-          {/* Attribution lives HERE now (off the card face) — the household requesters, the Movies "Requested
-              by" chip idiom. */}
-          {d.requestedBy.length > 0 ? (
+      {/* A want is unmatched by definition ⇒ the designed KindIcon glyph tile; the cover-proxy art
+          shows only if the want is already matched into the library (ADR-015 reserved box). */}
+      <MediaHero
+        testId="wanted-detail-head"
+        poster={<MediaPoster posterUrl={d.posterUrl} kind={d.mediaKind} alt="" />}
+        title={d.title}
+        badges={heroBadges}
+        meta={d.author}
+        secondary={
+          /* Attribution lives HERE now (off the card face) — the household requesters, the Movies
+             "Requested by" chip idiom. */
+          d.requestedBy.length > 0 ? (
             <div className="meta-chips">
               <span className="meta-chips__label">Requested by</span>
               <span className="chips">
@@ -339,9 +351,9 @@ export function WantedDetail({ requestId, from }: { requestId: string; from: str
                 ))}
               </span>
             </div>
-          ) : null}
-        </div>
-      </section>
+          ) : undefined
+        }
+      />
 
       {/* The per-format status rows + Force-Search (the *arr per-grain idiom in book words). */}
       <section className="card admin-section">
