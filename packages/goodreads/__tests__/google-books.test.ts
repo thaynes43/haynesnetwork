@@ -7,6 +7,7 @@ import {
   gbResolveTitleMatches,
   isComicCategory,
   isComicText,
+  nextBackoffMs,
 } from '../src/index';
 
 function volResponse(items: unknown[]): Response {
@@ -278,6 +279,43 @@ describe('GoogleBooksClient.resolveVolume', () => {
     const res = await gb.resolveVolume({ isbn: '123', title: 'Z' });
     expect(res?.volumeId).toBe('gb-ok');
     expect(calls).toBe(2);
+  });
+
+  // A per-minute burst 429 whose retries are exhausted throws a GoodreadsHttpError carrying the
+  // BODY snippet (per-minute wording), so the domain breaker classifies it 'minute' — even when the
+  // queried book title contains "daily". Guards against the URL-in-message false-daily 24h arm.
+  it('a per-minute 429 on a "daily"-titled book throws a body snippet that is NOT a daily signal', async () => {
+    const fetchImpl = vi.fn(
+      async () => new Response(`limit 'Queries per minute per user' exceeded`, { status: 429 }),
+    ) as unknown as typeof fetch;
+    const gb = new GoogleBooksClient({
+      baseUrl: 'http://stub/books/v1',
+      apiKey: 'k',
+      fetchImpl,
+      retries: 1,
+      backoffMs: 1,
+      sleepImpl: async () => {},
+    });
+    await expect(gb.resolveVolume({ title: 'The Daily Stoic', author: 'Ryan Holiday' })).rejects.toMatchObject(
+      { status: 429, bodySnippet: expect.not.stringMatching(/per day|daily limit/i) as unknown },
+    );
+  });
+
+  describe('nextBackoffMs (jitter + Retry-After)', () => {
+    it('honors a numeric Retry-After (seconds → ms), capped at 5s', () => {
+      expect(nextBackoffMs(500, 1, '2')).toBe(2_000);
+      expect(nextBackoffMs(500, 1, '3600')).toBe(5_000); // capped, can't wedge a run
+    });
+    it('ignores a missing/garbage Retry-After and jitters the linear backoff within ±25%', () => {
+      for (const header of [null, undefined, '', 'soon']) {
+        for (let attempt = 1; attempt <= 3; attempt += 1) {
+          const base = 500 * attempt;
+          const ms = nextBackoffMs(500, attempt, header);
+          expect(ms).toBeGreaterThanOrEqual(Math.round(base * 0.75));
+          expect(ms).toBeLessThanOrEqual(Math.round(base * 1.25));
+        }
+      }
+    });
   });
 
   // Regression — PLAN-044 v0.49.0 live acceptance leaked BOTH of the owner's comics into LazyLibrarian.

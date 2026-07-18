@@ -4,4 +4,4 @@ export * from './errors';
 export * from './config';
 export * from './rss';
 export * from './google-books';
-export { redactKey, type GetOptions } from './http';
+export { redactKey, nextBackoffMs, type GetOptions } from './http';
