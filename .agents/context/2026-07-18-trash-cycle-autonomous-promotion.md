@@ -69,3 +69,44 @@ green.
 the stuck `caa73511` (system-created, `admin_review`, over target) → `leaving_soon` with a fresh 7-day
 window, and the cycle runs unattended thereafter. Release train is not this branch's job — a driver picks
 up the squash-merge.
+
+## ADDENDUM (2026-07-18, post-merge) — verified UTC timeline; recovery claim corrected
+
+The owner corrected the report: he lived "reclaimed last night → nothing for many hours → notified only
+after complaining (~16:30Z)". Ground-truth re-pull (psql with explicit `AT TIME ZONE 'UTC'` casts +
+Loki cron logs; the earlier probe pod displayed **ET** via k8tz, timestamps above are ET-unlabeled):
+
+**Verified timeline (UTC | ET):**
+
+| UTC | ET | Event |
+|---|---|---|
+| 07-11 15:22:12Z | 07-11 11:22 | Owner greenlit 455442a0 (7-day window → expires 07-18 15:22Z) |
+| 07-17 04:00:04Z | 07-17 00:00 | `batch_leaving_soon_reminder` push SENT ("leaves tomorrow") — **the "last night" push the owner received** |
+| 07-18 13:26:03Z | 07-18 09:26 | `batch_final_warning` push sent (2h before close) |
+| 07-18 15:22:12Z | 07-18 11:22 | Save window closed |
+| 07-18 15:45:12–36Z | 11:45 | Sweep reclaimed: 25 deletions, batch → deleted 15:45:36Z |
+| 07-18 15:52:03Z | 11:52 | `batch_swept` push sent |
+| 07-18 16:17:02Z | 12:17 | Next policy tick proposed caa73511 → admin_review (**32 min after reclaim**, the very next scheduled run) |
+| 07-18 16:26:03Z | 12:26 | `batch_created` push sent (outbox drainer cadence, not complaint-triggered) |
+| 07-18 16:39:36Z | 12:39 | **Owner greenlit caa73511 HIMSELF** (transition actor Tom Haynes, 7 days → expires 07-25 16:39:36Z) |
+
+**Tick-by-tick (Loki, `space policy evaluated` lines):** every hourly tick 07-17 18:17Z → 07-18 15:17Z:
+movie `skipped_open_batch` (455442a0 leaving_soon held the slot — the save window itself), tv
+`skipped_min_candidates` (8 < 10). 16:17Z: movie `proposed`. **`skipped_cooldown` never appears** — the
+cooldown never fired. Sweep logs: every :45Z tick `batchesSwept:0` until the 15:45Z sweep. Candidates
+pool healthy throughout (614 movie actionable; usedPct 79.4–79.5 vs 75 all night — no stale reading, no
+starvation, no slot residue after deletion).
+
+**Corrected conclusions:**
+- The reclaim was 07-18 11:45 ET (late morning), not last night. What the owner received last night was
+  the midnight (00:00 ET) "leaves tomorrow" reminder — the "hours of nothing" that followed were the tail
+  of the still-open 7-day save window he set on 07-11, i.e. the wanted delay, not a stall.
+- Reclaim → proposal was 32 minutes (next hourly tick) — compliant with the ruling as-is.
+- The ONLY ruling-violating gate was proposal → window-open requiring a human green-light
+  (admin_review), which is exactly what ADR-073 / PR #408 removed. No second gate exists; no further fix
+  was needed.
+- **The recovery claim above is superseded:** caa73511 did NOT need the self-heal — the owner promoted it
+  himself at 16:39:36Z (leaving_soon, expires 07-25 16:39:36Z, `created_by` NULL/system,
+  `greenlit_by` = owner). Post-deploy (v0.81.0 carries the fix), the self-heal finds a healthy
+  leaving_soon batch and correctly leaves it alone; the first fully autonomous propose-and-promote will
+  be the cycle after the 07-25 sweep. Prod needs nothing.
