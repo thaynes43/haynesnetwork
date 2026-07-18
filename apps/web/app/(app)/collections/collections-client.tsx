@@ -75,6 +75,16 @@ interface RecipeDraft {
   syncMode: CollectionSyncModeName;
 }
 
+/** "The Stormlight Archive" → "the-stormlight-archive" (the composer's derived-id convenience). */
+function slugifyCollectionId(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 const EMPTY_DRAFT: RecipeDraft = {
   id: '',
   name: '',
@@ -324,13 +334,19 @@ function MediaSection({
                         : 'Find missing off'
                     }
                   >
-                    {findMissing ? 'Finds missing' : 'No find'}
+                    {findMissing ? 'Find missing on' : 'Find missing off'}
                   </span>
                   <ApplyButton recipeId={recipe.id} onDone={invalidate} />
                   <button type="button" className="btn sm" onClick={() => openEdit(recipe)}>
                     Edit
                   </button>
-                  {isAdmin ? <DeleteControl recipeId={recipe.id} onDone={invalidate} /> : null}
+                  {isAdmin ? (
+                    <DeleteControl
+                      recipeId={recipe.id}
+                      recipeName={recipe.name ?? recipe.id}
+                      onDone={invalidate}
+                    />
+                  ) : null}
                 </div>
               </li>
             );
@@ -392,23 +408,77 @@ function ApplyButton({ recipeId, onDone }: { recipeId: string; onDone: () => voi
   );
 }
 
-function DeleteControl({ recipeId, onDone }: { recipeId: string; onDone: () => void }) {
+/**
+ * Delete (admin) — a QUIET row button opening an explanatory Modal (hard rule 8: a destructive
+ * confirm with an option is a multi-field confirm ⇒ Modal, not an inline checkbox+ConfirmButton;
+ * Fable UX pass 2026-07-18). The default keeps the built collection (it survives orphaned in the
+ * library); the opt-in cascades the delete where the provider supports it.
+ */
+function DeleteControl({
+  recipeId,
+  recipeName,
+  onDone,
+}: {
+  recipeId: string;
+  recipeName: string;
+  onDone: () => void;
+}) {
+  const [open, setOpen] = useState(false);
   const [also, setAlso] = useState(false);
-  const remove = trpc.collections.remove.useMutation({ onSuccess: onDone });
+  const remove = trpc.collections.remove.useMutation({
+    onSuccess: () => {
+      setOpen(false);
+      setAlso(false);
+      onDone();
+    },
+  });
   return (
-    <span className="collection-row__delete">
-      <label className="collection-row__alsodelete" title="Also delete the built collection in the library">
-        <input type="checkbox" checked={also} onChange={(e) => setAlso(e.target.checked)} /> also delete
-      </label>
-      <ConfirmButton
+    <>
+      <button
+        type="button"
         className="btn sm danger"
-        label="Delete"
-        confirmLabel={also ? 'Delete both?' : 'Delete recipe?'}
-        restingAriaLabel="Delete this collection recipe — click twice to confirm"
-        confirmAriaLabel="Confirm deleting this collection recipe"
-        onConfirm={() => remove.mutate({ id: recipeId, deleteCollection: also })}
-      />
-    </span>
+        data-testid="collection-delete-open"
+        onClick={() => setOpen(true)}
+      >
+        Delete
+      </button>
+      <Modal open={open} title="Delete this collection?" onClose={() => setOpen(false)}>
+        <div className="over-cap" data-testid="collection-delete-modal">
+          <p>
+            This removes the recipe that builds <strong>{recipeName}</strong>. The built collection
+            stays in the library until you also remove it below.
+          </p>
+          {remove.error ? (
+            <p className="alert" role="alert">
+              {describeMutationError(remove.error)}
+            </p>
+          ) : null}
+          <label className="composer-inline">
+            <input
+              type="checkbox"
+              checked={also}
+              onChange={(e) => setAlso(e.target.checked)}
+              data-testid="collection-delete-also"
+            />
+            Also delete the built collection from the library
+          </label>
+          <div className="form-actions">
+            <button
+              type="button"
+              className="btn danger"
+              disabled={remove.isPending}
+              data-testid="collection-delete-confirm"
+              onClick={() => remove.mutate({ id: recipeId, deleteCollection: also })}
+            >
+              {remove.isPending ? 'Deleting…' : also ? 'Delete both' : 'Delete the recipe'}
+            </button>
+            <button type="button" className="btn" disabled={remove.isPending} onClick={() => setOpen(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </>
   );
 }
 
@@ -436,6 +506,16 @@ function ComposerModal({
   onSaved: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
+  // Creating: the id auto-derives from the name until the caller edits the id themselves (members
+  // shouldn't have to invent a slug — Fable UX pass 2026-07-18). Editing never rewrites the id.
+  const [idEdited, setIdEdited] = useState(false);
+  // Each open starts fresh: an edit never auto-rewrites its id; a new draft derives until touched.
+  // The adjust-state-during-render idiom (not an effect) — React re-renders before painting.
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (prevOpen !== open) {
+    setPrevOpen(open);
+    if (open) setIdEdited(editing);
+  }
   const [preview, setPreview] = useState<{
     name?: string | null;
     workCount?: number | null;
@@ -521,22 +601,30 @@ function ComposerModal({
         }}
       >
         <label className="composer-field">
-          <span>Collection id</span>
-          <input
-            className="library-search"
-            value={draft.id}
-            disabled={editing}
-            placeholder="stormlight-archive"
-            onChange={(e) => setDraft({ ...draft, id: e.target.value })}
-          />
-        </label>
-        <label className="composer-field">
           <span>Name</span>
           <input
             className="library-search"
             value={draft.name}
             placeholder="The Stormlight Archive"
-            onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+            onChange={(e) => {
+              const name = e.target.value;
+              // While creating, keep the id in step with the name until the caller takes the id over.
+              if (!editing && !idEdited) setDraft({ ...draft, name, id: slugifyCollectionId(name) });
+              else setDraft({ ...draft, name });
+            }}
+          />
+        </label>
+        <label className="composer-field">
+          <span>Collection ID</span>
+          <input
+            className="library-search"
+            value={draft.id}
+            disabled={editing}
+            placeholder="stormlight-archive"
+            onChange={(e) => {
+              setIdEdited(true);
+              setDraft({ ...draft, id: e.target.value });
+            }}
           />
         </label>
         <label className="composer-field">
@@ -569,7 +657,7 @@ function ComposerModal({
           <input
             className="library-search"
             value={draft.targetLibrary}
-            placeholder="optional (a library target)"
+            placeholder="optional"
             onChange={(e) => setDraft({ ...draft, targetLibrary: e.target.value })}
           />
         </label>
@@ -716,13 +804,17 @@ function TicketStatusChip({ status }: { status: string }) {
 
 function TicketMeta({
   ticket,
+  showRequester = false,
 }: {
   ticket: {
     collectionName: string;
     mediaType: string | null;
     size: number | null;
     status: string;
+    requestedBy?: string | null;
   };
+  /** The admin approve lens shows who asked; the requester's own list doesn't repeat their name. */
+  showRequester?: boolean;
 }) {
   return (
     <span className="collection-row__meta">
@@ -734,6 +826,11 @@ function TicketMeta({
         </span>
       ) : null}
       {ticket.size != null ? <span className="muted">{ticket.size} items</span> : null}
+      {showRequester && ticket.requestedBy ? (
+        <span className="muted" data-testid="ticket-requester">
+          asked by {ticket.requestedBy}
+        </span>
+      ) : null}
     </span>
   );
 }
@@ -819,6 +916,7 @@ function AdminTicketRow({
     collectionName: string;
     mediaType: string | null;
     size: number | null;
+    requestedBy?: string | null;
   };
   onDone: () => void;
 }) {
@@ -838,7 +936,7 @@ function AdminTicketRow({
     <li className="collection-row" data-testid="admin-ticket-row">
       <div className="collection-row__main">
         <span className="collection-row__title">{ticket.collectionName}</span>
-        <TicketMeta ticket={ticket} />
+        <TicketMeta ticket={ticket} showRequester />
       </div>
       {actionable ? (
         declining ? (

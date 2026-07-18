@@ -503,16 +503,20 @@ export async function listCollectionOverrideTickets(input: {
   /** Filter to this author (the requester lens); omit for the admin's all-requests lens. */
   authorId?: string;
   limit?: number;
-}): Promise<TicketRow[]> {
+}): Promise<Array<TicketRow & { authorName: string | null }>> {
   const db = resolveDb(input.db);
   const conds = [eq(tickets.category, 'collection_override' as TicketCategory)];
   if (input.authorId !== undefined) conds.push(eq(tickets.authorUserId, input.authorId));
-  return db
-    .select()
+  // The requester's display name rides along (the admin approve lens shows who asked — the
+  // communication.ts authorName idiom); a vanished user degrades to null, never an error.
+  const rows = await db
+    .select({ ticket: tickets, authorName: users.displayName })
     .from(tickets)
+    .leftJoin(users, eq(users.id, tickets.authorUserId))
     .where(conds.length === 1 ? conds[0] : and(...conds))
     .orderBy(desc(tickets.lastActivityAt))
     .limit(input.limit ?? 100);
+  return rows.map((r) => ({ ...r.ticket, authorName: r.authorName ?? null }));
 }
 
 export interface AddTicketReplyInput {

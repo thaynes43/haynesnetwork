@@ -205,8 +205,10 @@ The content-pull knob, re-gated from the retired `acquire` grant (ADR-070) to a 
 
 The manager reuses existing card/badge tokens and the `hub-card` / `badge` families (ADR-058 — no
 hand-rolled wall cards). New color goes through `--color-*` tokens in `tokens.css` only (hard rule 2).
-The composer is the standard `Modal`; delete + apply are `ConfirmButton`s (reserved armed-label
-width). New gallery entries capture the collection row (with the find-missing state), the composer,
+The composer is the standard `Modal`; apply is a `ConfirmButton` (reserved armed-label width);
+delete opens an explanatory `Modal` carrying the also-delete opt-in (hard rule 8 — a destructive
+confirm with an option is a multi-field confirm, so no inline checkbox rides the row; Fable UX
+pass 2026-07-18). New gallery entries capture the collection row (with the find-missing state), the composer,
 the cap/over-cap Modal, the Tickets sub-section (requester view + admin approve), and the Settings
 grid — dark/light × desktop/390 (the standing screenshot-review rule).
 
