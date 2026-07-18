@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.78.0](https://github.com/thaynes43/haynesnetwork/compare/v0.77.0...v0.78.0) (2026-07-18)
+
+
+### Features
+
+* **collections:** size cap + admin override tickets + movies wanted force-search seam ([#385](https://github.com/thaynes43/haynesnetwork/issues/385)) ([7261327](https://github.com/thaynes43/haynesnetwork/commit/72613279da980643e3ba1dc34cee43d9c6435d30))
+
 ## [0.77.0](https://github.com/thaynes43/haynesnetwork/compare/v0.76.0...v0.77.0) (2026-07-18)
 
 
