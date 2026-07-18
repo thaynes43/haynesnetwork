@@ -9,7 +9,17 @@
 // title, and a muted "date · duration" line. <details> expansion is the sanctioned ADR-015 in-place
 // exception (the same one the sonarr seasons use).
 import { useState } from 'react';
-import { arrowFor, cmpNum, cmpStr, nextSort, sortRowsClientSide, type FieldSpec } from '@hnet/ui';
+import {
+  arrowFor,
+  cmpNum,
+  cmpStr,
+  nextSort,
+  sortRowsClientSide,
+  MediaHero,
+  ConsumeLink,
+  type FieldSpec,
+  type MediaHeroBadge,
+} from '@hnet/ui';
 import { trpc } from '@/lib/trpc-client';
 import { BackLink } from '@/components/back-link';
 import { MediaPoster } from '@/components/cards';
@@ -184,48 +194,37 @@ export function YtdlsubItemDetail({
   }
   const { show, seasons } = data;
   const counts = formatSeasonEpisodeCounts(show.seasonCount, show.episodeCount);
+  // DESIGN-004 D-24 (ADR-071) — the shared <MediaHero>: poster, title/year, typed badges, the
+  // summary meta and the consume/missing row are slots (no hand-rolled `.detail-head*`). ytdl-sub
+  // has no Fix/Force-Search, so there is no action bar.
+  const heroBadges: MediaHeroBadge[] = [
+    { label, tone: 'muted' },
+    ...(counts !== null ? [{ label: counts }] : []),
+  ];
 
   return (
     <>
       <BackLink from={library} />
 
-      <section className="card detail-head" data-testid="ytdlsub-detail-head">
-        <span className="detail-head__poster">
-          <MediaPoster posterUrl={show.posterUrl} kind="show" alt="" />
-        </span>
-        <div className="detail-head__body">
-          <h1 className="detail-head__title">
-            {show.title}
-            {show.year !== null ? <span className="muted"> ({show.year})</span> : null}
-          </h1>
-          <div className="media-card__badges">
-            <span className="badge badge--muted">{label}</span>
-            {counts !== null ? <span className="badge">{counts}</span> : null}
-          </div>
-          {show.summary !== null ? <p className="detail-head__meta muted">{show.summary}</p> : null}
-          {/* ADR-047 / DESIGN-025 (PLAN-028) — "Watch on Plex" deep link. ytdl-sub content is Plex-native
-              (never "missing"), so an accessible show normally carries a playUrl. Static affordance
-              (ADR-015 reflow-free); opens app.plex.tv, hands off to the native app where installed. */}
-          {show.playUrl !== null ? (
-            <p className="detail-head__play">
-              <a
-                className="btn primary"
-                href={show.playUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Watch on Plex
-                <span className="btn__ext" aria-hidden="true"> ↗</span>
-              </a>
-            </p>
-          ) : (
-            // Consistency (DESIGN-025 D-07): should an accessible show ever lack a playUrl, the SAME
-            // disabled "Not on Disk" pill fills the slot — WITHOUT a Force-Search caption (ytdl-sub has
-            // no Force Search). The shared component keeps the control identical to the *arr pages.
-            <NotOnDiskButton />
-          )}
-        </div>
-      </section>
+      <MediaHero
+        testId="ytdlsub-detail-head"
+        poster={<MediaPoster posterUrl={show.posterUrl} kind="show" alt="" />}
+        title={show.title}
+        year={show.year}
+        badges={heroBadges}
+        meta={show.summary !== null ? show.summary : undefined}
+        // ADR-047 / DESIGN-025 — "Watch on Plex" deep link. ytdl-sub content is Plex-native (never
+        // "missing"), so an accessible show normally carries a playUrl; the shared <ConsumeLink>
+        // keeps the ↗ / target / rel identical to the *arr pages.
+        consume={
+          show.playUrl !== null ? (
+            <ConsumeLink label="Watch on Plex" url={show.playUrl} />
+          ) : undefined
+        }
+        // Consistency (DESIGN-025 D-07): a rare accessible show with no playUrl gets the SAME
+        // disabled "Not on Disk" pill — WITHOUT a Force-Search caption (ytdl-sub has no Force Search).
+        secondary={show.playUrl === null ? <NotOnDiskButton /> : undefined}
+      />
 
       <section className="card admin-section">
         <h2>Seasons</h2>
