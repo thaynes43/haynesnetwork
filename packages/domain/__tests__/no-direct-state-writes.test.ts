@@ -142,14 +142,13 @@ const ALLOWED_FILES = new Set<string>([
 // outbox row either (quota exhaustion is routine daily weather, ADR-067 C-09; the trail is the row +
 // the one-line logs + the queued-fix actions_taken steps — a documented no-ledger-row exemption).
 // Upserted + cleared; guarded in ALL SIX families (SQL INSERT/UPDATE/DELETE + Drizzle forms).
-// ADR-070 / DESIGN-043 (PLAN-052 — collection manager) adds two guarded single-writer tables:
-// role_collection_action_grants (a role's fine-grained collection action grants — setRoleCollectionActions
-// in collection-permissions.ts is the sole writer; it replace-sets the rows + co-writes a permission_audit
-// 'update_collection_actions' row in the SAME tx, exactly like setRoleBookActions — delete-all + insert,
-// never UPDATE, so INSERT/DELETE (+ Drizzle .insert/.delete) are guarded) and collection_suggestions (the
-// member propose→approve aggregate — createCollectionSuggestion inserts + audits, approve/decline update +
-// audit, all in packages/domain, same-tx; guarded INSERT/UPDATE — never hard-deleted, the user cascade FK
-// cleans up).
+// ADR-072 / DESIGN-043 (PLAN-052 PR4a — direct-add) guards role_collection_action_grants (a role's
+// fine-grained collection action grants — setRoleCollectionActions in collection-permissions.ts is the
+// sole writer; it replace-sets the rows + co-writes a permission_audit 'update_collection_actions' row in
+// the SAME tx, exactly like setRoleBookActions — delete-all + insert, never UPDATE, so INSERT/DELETE
+// (+ Drizzle .insert/.delete) are guarded). The retired collection_suggestions table was DROPPED (migration
+// 0069) and is no longer guarded. The over-cap definition rides tickets.collection_override_payload — the
+// already-guarded `tickets` single-writer (createCollectionOverrideTicket) owns that write.
 const FORBIDDEN_PATTERNS: Array<{ name: string; regex: RegExp }> = [
   {
     name: 'UPDATE users SET role_id (SQL)',
@@ -158,12 +157,12 @@ const FORBIDDEN_PATTERNS: Array<{ name: string; regex: RegExp }> = [
   {
     name: 'INSERT INTO guarded/audit table (SQL)',
     regex:
-      /INSERT\s+INTO\s+(user_role_transitions|permission_audit|roles|role_app_grants|role_section_permissions|role_trash_action_grants|role_message_action_grants|role_bulletin_view_grants|notifications|notification_outbox|smart_drive_state|mam_gate_state|library_preferences|notification_preferences|book_fix_requests|role_books_action_grants|user_account_map|user_media_watch|user_book_progress|poster_guard_applications|ai_usage_chats|authentik_users|pending_role_assignments|authentik_group_audit|books_items|media_plex_matches|plex_collections|plex_collection_members|books_collections|books_collection_members|gb_quota_state|books_format_pairs|tickets|ticket_events|ticket_replies|app_settings|trash_batches|trash_batch_items|trash_batch_saves|trash_candidates|trash_candidates_state|app_catalog|media_items|media_metadata|ledger_events|fix_requests|restore_runs|sync_runs|sync_state|plex_servers|plex_libraries|role_library_grants|role_plex_server_all_grants|plex_share_audit|user_integrations|integration_shelf_items|book_requests|role_collection_action_grants|collection_suggestions)\b/i,
+      /INSERT\s+INTO\s+(user_role_transitions|permission_audit|roles|role_app_grants|role_section_permissions|role_trash_action_grants|role_message_action_grants|role_bulletin_view_grants|notifications|notification_outbox|smart_drive_state|mam_gate_state|library_preferences|notification_preferences|book_fix_requests|role_books_action_grants|user_account_map|user_media_watch|user_book_progress|poster_guard_applications|ai_usage_chats|authentik_users|pending_role_assignments|authentik_group_audit|books_items|media_plex_matches|plex_collections|plex_collection_members|books_collections|books_collection_members|gb_quota_state|books_format_pairs|tickets|ticket_events|ticket_replies|app_settings|trash_batches|trash_batch_items|trash_batch_saves|trash_candidates|trash_candidates_state|app_catalog|media_items|media_metadata|ledger_events|fix_requests|restore_runs|sync_runs|sync_state|plex_servers|plex_libraries|role_library_grants|role_plex_server_all_grants|plex_share_audit|user_integrations|integration_shelf_items|book_requests|role_collection_action_grants)\b/i,
   },
   {
     name: 'UPDATE guarded table (SQL)',
     regex:
-      /UPDATE\s+(roles|role_section_permissions|role_trash_action_grants|role_message_action_grants|notifications|notification_outbox|smart_drive_state|mam_gate_state|library_preferences|user_account_map|user_media_watch|user_book_progress|ai_usage_chats|authentik_users|pending_role_assignments|books_items|media_plex_matches|plex_collections|plex_collection_members|books_collections|books_collection_members|gb_quota_state|books_format_pairs|tickets|ticket_events|ticket_replies|app_settings|trash_batches|trash_batch_items|trash_batch_saves|trash_candidates|trash_candidates_state|app_catalog|media_items|media_metadata|ledger_events|fix_requests|restore_runs|sync_runs|sync_state|plex_servers|plex_libraries|role_library_grants|role_plex_server_all_grants|user_integrations|integration_shelf_items|book_requests|collection_suggestions)\s+SET\b/i,
+      /UPDATE\s+(roles|role_section_permissions|role_trash_action_grants|role_message_action_grants|notifications|notification_outbox|smart_drive_state|mam_gate_state|library_preferences|user_account_map|user_media_watch|user_book_progress|ai_usage_chats|authentik_users|pending_role_assignments|books_items|media_plex_matches|plex_collections|plex_collection_members|books_collections|books_collection_members|gb_quota_state|books_format_pairs|tickets|ticket_events|ticket_replies|app_settings|trash_batches|trash_batch_items|trash_batch_saves|trash_candidates|trash_candidates_state|app_catalog|media_items|media_metadata|ledger_events|fix_requests|restore_runs|sync_runs|sync_state|plex_servers|plex_libraries|role_library_grants|role_plex_server_all_grants|user_integrations|integration_shelf_items|book_requests)\s+SET\b/i,
   },
   {
     name: 'DELETE FROM guarded table (SQL)',
@@ -173,12 +172,12 @@ const FORBIDDEN_PATTERNS: Array<{ name: string; regex: RegExp }> = [
   {
     name: '.insert() into guarded/audit table (Drizzle)',
     regex:
-      /\.insert\(\s*(?:[A-Za-z_$][\w$]*\.)?(userRoleTransitions|permissionAudit|roleAppGrants|roleSectionPermissions|roleTrashActionGrants|roleMessageActionGrants|roleBulletinViewGrants|notifications|notificationOutbox|smartDriveState|mamGateState|libraryPreferences|userAccountMap|userMediaWatch|userBookProgress|posterGuardApplications|aiUsageChats|authentikUsers|pendingRoleAssignments|authentikGroupAudit|booksItems|mediaPlexMatches|plexCollections|plexCollectionMembers|booksCollections|booksCollectionMembers|gbQuotaState|booksFormatPairs|tickets|ticketEvents|ticketReplies|appSettings|trashBatches|trashBatchItems|trashBatchSaves|trashCandidates|trashCandidatesState|roles|appCatalog|mediaItems|mediaMetadata|ledgerEvents|fixRequests|restoreRuns|syncRuns|syncState|plexServers|plexLibraries|roleLibraryGrants|rolePlexServerAllGrants|plexShareAudit|userIntegrations|integrationShelfItems|bookRequests|roleCollectionActionGrants|collectionSuggestions)\s*\)/,
+      /\.insert\(\s*(?:[A-Za-z_$][\w$]*\.)?(userRoleTransitions|permissionAudit|roleAppGrants|roleSectionPermissions|roleTrashActionGrants|roleMessageActionGrants|roleBulletinViewGrants|notifications|notificationOutbox|smartDriveState|mamGateState|libraryPreferences|userAccountMap|userMediaWatch|userBookProgress|posterGuardApplications|aiUsageChats|authentikUsers|pendingRoleAssignments|authentikGroupAudit|booksItems|mediaPlexMatches|plexCollections|plexCollectionMembers|booksCollections|booksCollectionMembers|gbQuotaState|booksFormatPairs|tickets|ticketEvents|ticketReplies|appSettings|trashBatches|trashBatchItems|trashBatchSaves|trashCandidates|trashCandidatesState|roles|appCatalog|mediaItems|mediaMetadata|ledgerEvents|fixRequests|restoreRuns|syncRuns|syncState|plexServers|plexLibraries|roleLibraryGrants|rolePlexServerAllGrants|plexShareAudit|userIntegrations|integrationShelfItems|bookRequests|roleCollectionActionGrants)\s*\)/,
   },
   {
     name: '.update() on guarded table (Drizzle)',
     regex:
-      /\.update\(\s*(?:[A-Za-z_$][\w$]*\.)?(users|roles|roleSectionPermissions|roleTrashActionGrants|roleMessageActionGrants|notifications|notificationOutbox|smartDriveState|mamGateState|libraryPreferences|userAccountMap|userMediaWatch|userBookProgress|aiUsageChats|authentikUsers|pendingRoleAssignments|booksItems|mediaPlexMatches|plexCollections|plexCollectionMembers|booksCollections|booksCollectionMembers|gbQuotaState|booksFormatPairs|tickets|ticketEvents|ticketReplies|appSettings|trashBatches|trashBatchItems|trashBatchSaves|trashCandidates|trashCandidatesState|appCatalog|mediaItems|mediaMetadata|ledgerEvents|fixRequests|restoreRuns|syncRuns|syncState|plexServers|plexLibraries|roleLibraryGrants|rolePlexServerAllGrants|userIntegrations|integrationShelfItems|bookRequests|collectionSuggestions)\s*\)/,
+      /\.update\(\s*(?:[A-Za-z_$][\w$]*\.)?(users|roles|roleSectionPermissions|roleTrashActionGrants|roleMessageActionGrants|notifications|notificationOutbox|smartDriveState|mamGateState|libraryPreferences|userAccountMap|userMediaWatch|userBookProgress|aiUsageChats|authentikUsers|pendingRoleAssignments|booksItems|mediaPlexMatches|plexCollections|plexCollectionMembers|booksCollections|booksCollectionMembers|gbQuotaState|booksFormatPairs|tickets|ticketEvents|ticketReplies|appSettings|trashBatches|trashBatchItems|trashBatchSaves|trashCandidates|trashCandidatesState|appCatalog|mediaItems|mediaMetadata|ledgerEvents|fixRequests|restoreRuns|syncRuns|syncState|plexServers|plexLibraries|roleLibraryGrants|rolePlexServerAllGrants|userIntegrations|integrationShelfItems|bookRequests)\s*\)/,
   },
   {
     name: '.delete() on guarded table (Drizzle)',

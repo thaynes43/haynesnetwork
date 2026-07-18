@@ -1,8 +1,11 @@
-// ADR-070 / DESIGN-043 (PLAN-052 — collection manager) — the screenshot harness for owner sign-off of the
-// collection manager. Boots its OWN stack (incl. the stub Libretto) and captures, as admin (admin implies
-// every collection action): the manager (/integrations/collections — recipe list with the acquisition puck
-// + the needs-attention band) and the composer Modal. Desktop + 390px, dark + light — the standing owner
-// screenshot-review rule.
+// ADR-072 / DESIGN-043 D-07 (PLAN-052 PR4a) — the screenshot harness for owner sign-off of the
+// first-class /collections page. Boots its OWN stack (incl. the stub Libretto) and captures the
+// standing matrix (desktop 1280x900 + 390px, dark + light):
+//   • the Books sub-section collection list (as admin — the delete lens),
+//   • the composer Modal,
+//   • the over-cap Modal (as a NON-admin member — admins bypass the cap, so only a member sees it),
+//   • the Tickets sub-section admin approve lens (seeded once from a member over-cap request),
+//   • the admin Settings sub-section (the size cap + the find-missing grant seam).
 //
 //   pnpm --filter web exec tsx e2e/support/capture-collections.ts <output-dir>
 import { mkdirSync } from 'node:fs';
@@ -58,38 +61,88 @@ async function shoot(page: Page, name: string, fullPage = false): Promise<void> 
   console.log(`[capture] ${name}`);
 }
 
+/** Drive the composer to the over-cap Modal (an "over" ref resolves to 40 works, above the cap of 25). */
+async function openOverCapModal(page: Page): Promise<void> {
+  await page.goto('/collections?tab=books');
+  await page.getByTestId('collections-new').click();
+  await page.getByRole('dialog').waitFor();
+  await page.getByRole('textbox', { name: 'Collection id' }).fill('over-cap-epic');
+  await page.getByRole('textbox', { name: 'Reference' }).fill('the-cosmere-everything');
+  await page.getByTestId('composer-preview-btn').click();
+  await page.getByTestId('composer-preview').waitFor();
+  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByTestId('collection-over-cap').waitFor();
+}
+
 async function main(): Promise<void> {
   const cwd = process.cwd();
   const stack = await startStack({ port: PORT, prewarm: false, cwd });
   try {
     const browser = await chromium.launch();
-    await setPersona(stack.oidc.baseUrl, 'admin');
+
+    // Seed ONE over-cap ticket as a member so the admin Tickets approve lens has content. The stack's
+    // DB persists across the screenshot matrix below.
+    await setPersona(stack.oidc.baseUrl, 'member');
+    const seed = await signIn(browser, stack.appUrl, { width: 1280, height: 900 });
+    await openOverCapModal(seed);
+    await seed.getByTestId('collection-over-cap-request').click();
+    await seed.getByText('Request sent').waitFor();
+    await seed.context().close();
 
     const viewports = [
       ['desktop', { width: 1280, height: 900 }],
       ['390', { width: 390, height: 844 }],
     ] as const;
+    const themes = ['hnet-dark', 'hnet-light'] as const;
 
     for (const [label, viewport] of viewports) {
-      const page = await signIn(browser, stack.appUrl, viewport);
-      for (const theme of ['hnet-dark', 'hnet-light'] as const) {
+      // ── Admin lens: the collection list, composer, Tickets approve, Settings ──
+      await setPersona(stack.oidc.baseUrl, 'admin');
+      const admin = await signIn(browser, stack.appUrl, viewport);
+      for (const theme of themes) {
         const suffix = `${label}-${theme === 'hnet-dark' ? 'dark' : 'light'}`;
-        await setTheme(page, theme);
+        await setTheme(admin, theme);
 
-        // The manager.
-        await page.goto('/integrations/collections');
-        await page.getByTestId('collections-list').waitFor();
-        await hidePortal(page);
-        await shoot(page, `manager-${suffix}`, true);
+        // The Books collection list.
+        await admin.goto('/collections?tab=books');
+        await admin.getByTestId('collections-list').waitFor();
+        await hidePortal(admin);
+        await shoot(admin, `collections-books-${suffix}`, true);
 
         // The composer Modal.
-        await page.getByTestId('collections-new').click();
-        await page.getByRole('dialog').waitFor();
-        await hidePortal(page);
-        await shoot(page, `composer-${suffix}`);
-        await page.keyboard.press('Escape');
+        await admin.getByTestId('collections-new').click();
+        await admin.getByRole('dialog').waitFor();
+        await hidePortal(admin);
+        await shoot(admin, `composer-${suffix}`);
+        await admin.keyboard.press('Escape');
+
+        // The Tickets sub-section (admin approve lens).
+        await admin.goto('/collections?tab=tickets');
+        await admin.getByTestId('all-tickets-list').waitFor();
+        await hidePortal(admin);
+        await shoot(admin, `tickets-${suffix}`, true);
+
+        // The Settings sub-section (size cap + find-missing seam).
+        await admin.goto('/collections?tab=settings');
+        await admin.getByTestId('collections-cap-input').waitFor();
+        await hidePortal(admin);
+        await shoot(admin, `settings-${suffix}`, true);
       }
-      await page.context().close();
+      await admin.context().close();
+
+      // ── Member lens: the over-cap Modal (admins bypass the cap, so only a member sees it) ──
+      await setPersona(stack.oidc.baseUrl, 'member');
+      const member = await signIn(browser, stack.appUrl, viewport);
+      for (const theme of themes) {
+        const suffix = `${label}-${theme === 'hnet-dark' ? 'dark' : 'light'}`;
+        await setTheme(member, theme);
+        await openOverCapModal(member);
+        await hidePortal(member);
+        await shoot(member, `over-cap-${suffix}`);
+        await member.keyboard.press('Escape');
+        await member.keyboard.press('Escape');
+      }
+      await member.context().close();
     }
 
     await browser.close();

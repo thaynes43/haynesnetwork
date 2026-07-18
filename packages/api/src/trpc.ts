@@ -33,9 +33,8 @@ import {
   type LazyLibrarianClientBundle,
   librettoBundleFromEnv,
   type LibrettoClientBundle,
-  CollectionAcquireForbiddenError,
+  CollectionOverrideNotActionableError,
   CollectionSizeCapError,
-  CollectionSuggestionNotOpenError,
   LedgerItemTombstonedError,
   LibraryNotAllowedError,
   maintainerrClientBundleFromEnv,
@@ -551,11 +550,8 @@ export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
     if (err instanceof TrashBatchEmptyError) {
       throw new TRPCError({ code: 'UNPROCESSABLE_CONTENT', message: err.message, cause: err });
     }
-    if (err instanceof CollectionAcquireForbiddenError) {
-      // ADR-070 C-04 — a manage-only caller tried to enable the content-pull knob.
-      throw new TRPCError({ code: 'FORBIDDEN', message: err.message, cause: err });
-    }
-    if (err instanceof CollectionSuggestionNotOpenError) {
+    if (err instanceof CollectionOverrideNotActionableError) {
+      // ADR-072 D-11 — an approve/decline hit a ticket that is not an open collection request.
       throw new TRPCError({ code: 'CONFLICT', message: err.message, cause: err });
     }
     if (err instanceof LibrettoUnreachableError) {

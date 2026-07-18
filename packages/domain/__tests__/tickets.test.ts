@@ -296,29 +296,41 @@ describe('the ticket_created outbox — SAME-TX with the ticket insert (ADR-034 
   });
 });
 
-// DESIGN-035 D-17 — the over-cap admin-override request is a thin single-writer wrapper over createTicket:
-// it files a `collection_override` ticket carrying the structured facts, and — because it goes through the
-// SAME createTicket writer — inherits the atomic creation event + `ticket_created` outbox ping (same tx,
-// rolls back together). No new approval subsystem.
-describe('createCollectionOverrideTicket (DESIGN-035 D-17)', () => {
-  it('files a collection_override ticket authored by the requester, with the facts in the body', async () => {
+// ADR-072 / DESIGN-043 D-11 — the over-cap request is a thin single-writer wrapper over createTicket: it
+// files a `collection_override` ticket CARRYING the full requested definition (payload) + the facts in the
+// body, and — because it goes through the SAME createTicket writer — inherits the atomic creation event +
+// `ticket_created` outbox ping (same tx, rolls back together). Approve materializes it.
+const overridePayload = (over?: Partial<import('@hnet/db').CollectionOverridePayload>) => ({
+  provider: 'libretto' as const,
+  mediaType: 'books' as const,
+  recipeId: 'imdb-top-200',
+  name: 'IMDb Top 200',
+  builderType: 'nyt_list' as const,
+  builderRef: 'top-200',
+  size: 200,
+  ...over,
+});
+
+describe('createCollectionOverrideTicket (ADR-072 / DESIGN-043 D-11)', () => {
+  it('files a collection_override ticket authored by the requester, carrying the payload + facts', async () => {
     const row = await createCollectionOverrideTicket({
       db: t.db,
       authorId: author.id,
-      provider: 'libretto',
-      collectionName: 'IMDb Top 200',
-      size: 200,
       cap: 25,
+      payload: overridePayload(),
       adminEmail: 'admin@example.com',
     });
     expect(row.category).toBe('collection_override');
     expect(row.authorUserId).toBe(author.id);
     expect(row.status).toBe('open');
-    expect(row.title).toBe('Collection override request: IMDb Top 200');
+    expect(row.title).toBe('Collection request: IMDb Top 200');
     expect(row.body).toContain('Provider: libretto');
     expect(row.body).toContain('Collection: IMDb Top 200');
     expect(row.body).toContain('200 items');
     expect(row.body).toContain('25 items');
+    // The full definition rides the payload column (so Approve can materialize it).
+    expect(row.collectionOverridePayload?.recipeId).toBe('imdb-top-200');
+    expect(row.collectionOverridePayload?.size).toBe(200);
 
     // The "Filed" creation event landed in the same tx — the single-writer audit trail.
     const events = await t.db
@@ -336,7 +348,7 @@ describe('createCollectionOverrideTicket (DESIGN-035 D-17)', () => {
     expect(outbox).toHaveLength(2);
     const mail = outbox.find((o) => o.channel === 'email')!;
     expect((mail.payload as { to?: string }).to).toBe('admin@example.com');
-    expect(mail.payload).toMatchObject({ title: 'Collection override request: IMDb Top 200', category: 'collection_override' });
+    expect(mail.payload).toMatchObject({ title: 'Collection request: IMDb Top 200', category: 'collection_override' });
     expect(outbox.every((o) => o.sentAt === null)).toBe(true);
   });
 
@@ -350,10 +362,8 @@ describe('createCollectionOverrideTicket (DESIGN-035 D-17)', () => {
         createCollectionOverrideTicket({
           db: t.db,
           authorId: author.id,
-          provider: 'kometa',
-          collectionName: 'phantom override',
-          size: 99,
           cap: 25,
+          payload: overridePayload({ recipeId: 'phantom-override', name: 'phantom override', size: 99 }),
         }),
       ).rejects.toThrow();
     } finally {
@@ -363,7 +373,7 @@ describe('createCollectionOverrideTicket (DESIGN-035 D-17)', () => {
     const phantoms = await t.db
       .select()
       .from(tickets)
-      .where(sql`${tickets.title} = 'Collection override request: phantom override'`);
+      .where(sql`${tickets.title} = 'Collection request: phantom override'`);
     expect(phantoms).toHaveLength(0);
   });
 });

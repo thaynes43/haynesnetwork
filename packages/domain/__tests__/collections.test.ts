@@ -1,25 +1,27 @@
-// ADR-070 / DESIGN-043 (PLAN-052 — collection manager). Proves: the grants matrix
+// ADR-072 / DESIGN-043 (PLAN-052 PR4a — direct-add). Proves: the find_missing grant matrix
 // (collectionActionsForRole — admin implies all, no-row deny, exactly-granted) + the setter's same-tx
-// audit (update_collection_actions) + admin immutability; the suggestion lifecycle (create → approve
-// materializes a recipe via the confined writer / decline with reason; audited same-tx + reviewer stamps);
-// the acquire gate (a non-acquire approver cannot enable acquisition — CollectionAcquireForbiddenError);
-// and the overview honest degrade (Libretto unreachable ⇒ reachable:false). Embedded PG16.
+// audit (update_collection_actions) + admin immutability; the DIRECT upsert writer (cap assert + confined
+// write + same-tx upsert_collection audit; admin bypass; over-cap refusal writes nothing); the over-cap
+// ticket → approve materializes (unbounded) + completes in one flow, decline materializes nothing; and the
+// overview honest degrade (Libretto unreachable ⇒ reachable:false). Embedded PG16.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { collectionSuggestions, permissionAudit, roleCollectionActionGrants, roles } from '@hnet/db';
+import { permissionAudit, roleCollectionActionGrants, roles, tickets } from '@hnet/db';
 import { LibrettoUnreachableError } from '@hnet/libretto';
 import { eq } from 'drizzle-orm';
 import {
-  CollectionAcquireForbiddenError,
-  CollectionSuggestionNotOpenError,
-  approveCollectionSuggestion,
+  CollectionOverrideNotActionableError,
+  CollectionSizeCapError,
+  approveCollectionOverride,
   collectionActionsForRole,
-  createCollectionSuggestion,
-  declineCollectionSuggestion,
+  createCollectionOverrideTicket,
+  declineCollectionOverride,
+  deleteCollectionRecipe,
   getCollectionsOverview,
-  listCollectionSuggestions,
-  saveRecipe,
+  listCollectionOverrideTickets,
   setRoleCollectionActions,
+  upsertCollection,
 } from '../src/index';
+import type { CollectionOverridePayload } from '@hnet/db';
 import { bootMigratedDb, createUser, type TestDb } from './helpers';
 
 let t: TestDb;
@@ -30,7 +32,7 @@ afterAll(async () => {
   await t?.stop();
 });
 beforeEach(async () => {
-  await t.db.delete(collectionSuggestions);
+  await t.db.delete(tickets);
   await t.db.delete(roleCollectionActionGrants);
   await t.db.delete(permissionAudit);
 });
@@ -47,9 +49,10 @@ async function makeRole(): Promise<string> {
   return role!.id;
 }
 
-/** A recording stub for the confined Libretto write surface (upsertRecipe). */
+/** A recording stub for the confined Libretto surface (upsert/delete/validate/read). */
 function stubLibretto() {
   const recipes: Array<Record<string, unknown>> = [];
+  const deleted: string[] = [];
   const bundle = {
     read: {
       listRecipes: async () => ({ recipes, issues: [] }),
@@ -57,216 +60,170 @@ function stubLibretto() {
     },
     write: {
       upsertRecipe: async (draft: Record<string, unknown>) => void recipes.push(draft),
+      deleteRecipe: async (id: string) => void deleted.push(id),
     },
-  } as unknown as Parameters<typeof approveCollectionSuggestion>[0]['libretto'];
-  return { recipes, bundle };
+  } as unknown as Parameters<typeof upsertCollection>[0]['libretto'];
+  return { recipes, deleted, bundle };
 }
 
-describe('collection action grants (ADR-070 C-03)', () => {
-  it('admin implies every action with no rows', async () => {
+const draft = (over?: Record<string, unknown>) => ({
+  id: 'stormlight',
+  name: 'The Stormlight Archive',
+  builder: { type: 'hardcover_series', ref: 'the-stormlight-archive' },
+  variables: { syncMode: 'sync' as const, ordered: true },
+  enabled: true,
+  ...over,
+});
+
+const payload = (over?: Partial<CollectionOverridePayload>): CollectionOverridePayload => ({
+  provider: 'libretto',
+  mediaType: 'books',
+  recipeId: 'imdb-top-200',
+  name: 'Big List',
+  builderType: 'nyt_list',
+  builderRef: 'top-200',
+  size: 200,
+  ...over,
+});
+
+describe('collection action grants — rebuilt to find_missing (ADR-072 / DESIGN-043 D-14)', () => {
+  it('admin implies the whole (single) action set with no rows', async () => {
     const roleId = await adminRoleId();
-    expect(await collectionActionsForRole({ db: t.db, roleId, isAdmin: true })).toEqual([
-      'suggest',
-      'manage',
-      'acquire',
-    ]);
+    expect(await collectionActionsForRole({ db: t.db, roleId, isAdmin: true })).toEqual(['find_missing']);
   });
 
-  it('a non-admin role has NOTHING until granted, then exactly its grants (audited same-tx)', async () => {
+  it('a non-admin role has NOTHING until granted find_missing, then exactly it (audited same-tx)', async () => {
     const roleId = await makeRole();
     const actor = await createUser(t.db);
     expect(await collectionActionsForRole({ db: t.db, roleId })).toEqual([]);
 
-    await setRoleCollectionActions({ db: t.db, roleId, actions: ['suggest', 'manage'], actorId: actor.id });
-    const got = await collectionActionsForRole({ db: t.db, roleId });
-    expect(new Set(got)).toEqual(new Set(['suggest', 'manage']));
-    // acquire is NOT implied by manage (ADR-070 C-04).
-    expect(got.includes('acquire')).toBe(false);
+    await setRoleCollectionActions({ db: t.db, roleId, actions: ['find_missing'], actorId: actor.id });
+    expect(await collectionActionsForRole({ db: t.db, roleId })).toEqual(['find_missing']);
 
     const audit = await t.db
       .select()
       .from(permissionAudit)
       .where(eq(permissionAudit.action, 'update_collection_actions'));
     expect(audit).toHaveLength(1);
-    expect((audit[0]!.detail as { actions: string[] }).actions.sort()).toEqual(['manage', 'suggest']);
+    expect((audit[0]!.detail as { actions: string[] }).actions).toEqual(['find_missing']);
   });
 
   it('replace-set clears prior grants', async () => {
     const roleId = await makeRole();
     const actor = await createUser(t.db);
-    await setRoleCollectionActions({ db: t.db, roleId, actions: ['suggest', 'manage', 'acquire'], actorId: actor.id });
-    await setRoleCollectionActions({ db: t.db, roleId, actions: ['suggest'], actorId: actor.id });
-    expect(await collectionActionsForRole({ db: t.db, roleId })).toEqual(['suggest']);
+    await setRoleCollectionActions({ db: t.db, roleId, actions: ['find_missing'], actorId: actor.id });
+    await setRoleCollectionActions({ db: t.db, roleId, actions: [], actorId: actor.id });
+    expect(await collectionActionsForRole({ db: t.db, roleId })).toEqual([]);
   });
 
   it('refuses to mutate the Admin role', async () => {
     const roleId = await adminRoleId();
     const actor = await createUser(t.db);
     await expect(
-      setRoleCollectionActions({ db: t.db, roleId, actions: ['suggest'], actorId: actor.id }),
+      setRoleCollectionActions({ db: t.db, roleId, actions: ['find_missing'], actorId: actor.id }),
     ).rejects.toThrow(/ROLE_IMMUTABLE/);
   });
 });
 
-describe('the member suggestion lifecycle (ADR-070 C-05)', () => {
-  it('create lands PENDING and audits create_collection_suggestion same-tx', async () => {
-    const member = await createUser(t.db);
-    const row = await createCollectionSuggestion({
-      db: t.db,
-      suggesterId: member.id,
-      name: 'The Stormlight Archive',
-      builderType: 'hardcover_series',
-      builderRef: 'the-stormlight-archive',
-      note: 'the series I started',
-    });
-    expect(row.status).toBe('pending');
-    expect(row.provider).toBe('libretto');
-    const audit = await t.db
-      .select()
-      .from(permissionAudit)
-      .where(eq(permissionAudit.action, 'create_collection_suggestion'));
-    expect(audit).toHaveLength(1);
-  });
-
-  it('approve materializes the recipe via the confined writer (acquisition OFF by default) + audits', async () => {
-    const member = await createUser(t.db);
-    const admin = await createUser(t.db);
+describe('direct upsert — capped, audited (D-03/D-10)', () => {
+  it('a within-cap add writes the recipe (acquisition OFF) + a same-tx upsert_collection audit', async () => {
+    const user = await createUser(t.db);
     const { recipes, bundle } = stubLibretto();
-    const s = await createCollectionSuggestion({
-      db: t.db,
-      suggesterId: member.id,
-      name: 'Dune',
-      builderType: 'static_ids',
-      builderRef: 'dune-omnibus',
-    });
-    const approved = await approveCollectionSuggestion({
+    await upsertCollection({
       db: t.db,
       libretto: bundle,
-      suggestionId: s.id,
-      reviewerId: admin.id,
-      canAcquire: true, // reviewer HOLDS acquire but did not opt in — must stay OFF
+      actorId: user.id,
+      draft: draft(),
+      size: 10,
+      cap: 25,
+      isAdmin: false,
     });
-    expect(approved.status).toBe('approved');
-    expect(approved.createdRecipeId).toBeTruthy();
-    expect(approved.reviewedById).toBe(admin.id);
     expect(recipes).toHaveLength(1);
     expect((recipes[0]!.variables as { acquisitionEnabled: boolean }).acquisitionEnabled).toBe(false);
-    const audit = await t.db
-      .select()
-      .from(permissionAudit)
-      .where(eq(permissionAudit.action, 'review_collection_suggestion'));
+    const audit = await t.db.select().from(permissionAudit).where(eq(permissionAudit.action, 'upsert_collection'));
     expect(audit).toHaveLength(1);
-    expect((audit[0]!.detail as { decision: string }).decision).toBe('approved');
+    expect((audit[0]!.detail as { recipe_id: string }).recipe_id).toBe('stormlight');
   });
 
-  it('approve with enableAcquisition needs the acquire grant (FORBIDDEN otherwise)', async () => {
-    const member = await createUser(t.db);
-    const admin = await createUser(t.db);
+  it('an over-cap non-admin add is REFUSED (CollectionSizeCapError) and writes nothing', async () => {
+    const user = await createUser(t.db);
     const { recipes, bundle } = stubLibretto();
-    const s = await createCollectionSuggestion({
-      db: t.db,
-      suggesterId: member.id,
-      name: 'Wheel of Time',
-      builderType: 'hardcover_series',
-      builderRef: 'the-wheel-of-time',
-    });
     await expect(
-      approveCollectionSuggestion({
-        db: t.db,
-        libretto: bundle,
-        suggestionId: s.id,
-        reviewerId: admin.id,
-        canAcquire: false,
-        enableAcquisition: true,
-      }),
-    ).rejects.toBeInstanceOf(CollectionAcquireForbiddenError);
-    // Nothing was written to Libretto, and the suggestion stays pending.
+      upsertCollection({ db: t.db, libretto: bundle, actorId: user.id, draft: draft(), size: 40, cap: 25, isAdmin: false }),
+    ).rejects.toBeInstanceOf(CollectionSizeCapError);
     expect(recipes).toHaveLength(0);
-    const [still] = await t.db.select().from(collectionSuggestions).where(eq(collectionSuggestions.id, s.id));
-    expect(still!.status).toBe('pending');
+    expect(await t.db.select().from(permissionAudit).where(eq(permissionAudit.action, 'upsert_collection'))).toHaveLength(0);
   });
 
-  it('an acquire-holding reviewer CAN enable acquisition', async () => {
-    const member = await createUser(t.db);
+  it('an admin bypasses the cap outright (a 500-item add lands)', async () => {
     const admin = await createUser(t.db);
     const { recipes, bundle } = stubLibretto();
-    const s = await createCollectionSuggestion({
-      db: t.db,
-      suggesterId: member.id,
-      name: 'Mistborn',
-      builderType: 'hardcover_series',
-      builderRef: 'the-mistborn-saga',
-    });
-    await approveCollectionSuggestion({
-      db: t.db,
-      libretto: bundle,
-      suggestionId: s.id,
-      reviewerId: admin.id,
-      canAcquire: true,
-      enableAcquisition: true,
-    });
-    expect((recipes[0]!.variables as { acquisitionEnabled: boolean }).acquisitionEnabled).toBe(true);
+    await upsertCollection({ db: t.db, libretto: bundle, actorId: admin.id, draft: draft(), size: 500, cap: 25, isAdmin: true });
+    expect(recipes).toHaveLength(1);
   });
 
-  it('decline stamps declined + reason + reviewer, audited', async () => {
-    const member = await createUser(t.db);
+  it('delete writes the confined delete + a same-tx delete_collection audit', async () => {
     const admin = await createUser(t.db);
-    const s = await createCollectionSuggestion({
-      db: t.db,
-      suggesterId: member.id,
-      name: 'Something Off',
-      builderType: 'nyt_list',
-      builderRef: 'not-a-real-list',
-    });
-    const declined = await declineCollectionSuggestion({
-      db: t.db,
-      suggestionId: s.id,
-      reviewerId: admin.id,
-      reason: 'that list is not carried',
-    });
-    expect(declined.status).toBe('declined');
-    expect(declined.decisionNote).toBe('that list is not carried');
-    expect(declined.reviewedById).toBe(admin.id);
-  });
-
-  it('a second review of a non-pending suggestion is refused (race guard)', async () => {
-    const member = await createUser(t.db);
-    const admin = await createUser(t.db);
-    const s = await createCollectionSuggestion({
-      db: t.db,
-      suggesterId: member.id,
-      name: 'Dune Two',
-      builderType: 'static_ids',
-      builderRef: 'x',
-    });
-    await declineCollectionSuggestion({ db: t.db, suggestionId: s.id, reviewerId: admin.id, reason: 'no' });
-    await expect(
-      declineCollectionSuggestion({ db: t.db, suggestionId: s.id, reviewerId: admin.id, reason: 'again' }),
-    ).rejects.toBeInstanceOf(CollectionSuggestionNotOpenError);
-  });
-
-  it('lists a member’s own suggestions and the pending queue', async () => {
-    const member = await createUser(t.db);
-    await createCollectionSuggestion({ db: t.db, suggesterId: member.id, name: 'A', builderType: 'static_ids', builderRef: 'a' });
-    await createCollectionSuggestion({ db: t.db, suggesterId: member.id, name: 'B', builderType: 'static_ids', builderRef: 'b' });
-    expect(await listCollectionSuggestions({ db: t.db, suggesterId: member.id })).toHaveLength(2);
-    expect(await listCollectionSuggestions({ db: t.db, status: 'pending' })).toHaveLength(2);
+    const { deleted, bundle } = stubLibretto();
+    await deleteCollectionRecipe({ db: t.db, libretto: bundle, actorId: admin.id, id: 'stormlight', deleteCollection: true });
+    expect(deleted).toEqual(['stormlight']);
+    const audit = await t.db.select().from(permissionAudit).where(eq(permissionAudit.action, 'delete_collection'));
+    expect(audit).toHaveLength(1);
+    expect((audit[0]!.detail as { also_delete_collection: boolean }).also_delete_collection).toBe(true);
   });
 });
 
-describe('saveRecipe acquire gate + overview honest degrade', () => {
-  it('saveRecipe refuses acquisitionEnabled without canAcquire', async () => {
+describe('over-cap ticket → approve materializes / decline does not (D-11)', () => {
+  it('approve materializes the collection unbounded (confined write) + completes the ticket in one flow', async () => {
+    const user = await createUser(t.db);
+    const admin = await createUser(t.db);
     const { recipes, bundle } = stubLibretto();
-    await expect(
-      saveRecipe({
-        libretto: bundle,
-        draft: { id: 'x', builder: { type: 'static_ids', ref: 'y' }, variables: { acquisitionEnabled: true } },
-        canAcquire: false,
-      }),
-    ).rejects.toBeInstanceOf(CollectionAcquireForbiddenError);
+    const ticket = await createCollectionOverrideTicket({ db: t.db, authorId: user.id, cap: 25, payload: payload({ size: 200 }) });
+
+    const res = await approveCollectionOverride({ db: t.db, libretto: bundle, ticketId: ticket.id, actorId: admin.id });
+    expect(res.ticket.status).toBe('complete');
+    // The full-size recipe was materialized (acquisition OFF), driven from the payload.
+    expect(recipes).toHaveLength(1);
+    expect(recipes[0]!.id).toBe('imdb-top-200');
+    expect((recipes[0]!.variables as { acquisitionEnabled: boolean }).acquisitionEnabled).toBe(false);
+    // The ticket transition history row landed (the transition audit).
+    const [reloaded] = await t.db.select().from(tickets).where(eq(tickets.id, ticket.id));
+    expect(reloaded!.status).toBe('complete');
+  });
+
+  it('decline materializes nothing and rejects the ticket with the reason', async () => {
+    const user = await createUser(t.db);
+    const admin = await createUser(t.db);
+    const { recipes, bundle } = stubLibretto();
+    void bundle;
+    const ticket = await createCollectionOverrideTicket({ db: t.db, authorId: user.id, cap: 25, payload: payload() });
+    const res = await declineCollectionOverride({ db: t.db, ticketId: ticket.id, actorId: admin.id, reason: 'too large for now' });
+    expect(res.ticket.status).toBe('rejected');
     expect(recipes).toHaveLength(0);
   });
 
+  it('approving an already-decided request is refused (CollectionOverrideNotActionableError)', async () => {
+    const user = await createUser(t.db);
+    const admin = await createUser(t.db);
+    const { bundle } = stubLibretto();
+    const ticket = await createCollectionOverrideTicket({ db: t.db, authorId: user.id, cap: 25, payload: payload() });
+    await declineCollectionOverride({ db: t.db, ticketId: ticket.id, actorId: admin.id, reason: 'no' });
+    await expect(
+      approveCollectionOverride({ db: t.db, libretto: bundle, ticketId: ticket.id, actorId: admin.id }),
+    ).rejects.toBeInstanceOf(CollectionOverrideNotActionableError);
+  });
+
+  it('lists the requester own tickets and (unfiltered) all of them', async () => {
+    const a = await createUser(t.db);
+    const b = await createUser(t.db);
+    await createCollectionOverrideTicket({ db: t.db, authorId: a.id, cap: 25, payload: payload({ recipeId: 'x', name: 'X' }) });
+    await createCollectionOverrideTicket({ db: t.db, authorId: b.id, cap: 25, payload: payload({ recipeId: 'y', name: 'Y' }) });
+    expect(await listCollectionOverrideTickets({ db: t.db, authorId: a.id })).toHaveLength(1);
+    expect(await listCollectionOverrideTickets({ db: t.db })).toHaveLength(2);
+  });
+});
+
+describe('overview honest degrade', () => {
   it('getCollectionsOverview degrades to reachable:false when Libretto is unreachable', async () => {
     const bundle = {
       read: {

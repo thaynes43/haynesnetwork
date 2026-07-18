@@ -1,8 +1,11 @@
 // DESIGN-004 D-22 (owner-ratified from an approved mockup, 2026-07-14) — the NAV RESTRUCTURE —
-// amended by D-23 (owner-directed 2026-07-17) — the HOME/PORTAL split.
+// amended by D-23 (owner-directed 2026-07-17) — the HOME/PORTAL split — and by DESIGN-043 D-01
+// (ADR-072, 2026-07-18) — the first-class universal Collections entry (like Library, everyone sees
+// it; no section gate). The bar now carries FIVE universal candidates; a long fifth label leans on
+// the pre-existing scroll-rail safety net at the tightest 320px width (the rail may pan).
 //
 // The contract this pins:
-//   TOP BAR:  [logo → /] Portal | Library | Tickets | Trash        [theme] (avatar)
+//   TOP BAR:  [logo → /] Portal | Library | Collections | Tickets | Trash    [theme] (avatar)
 //   USER MENU: My Plex / Integrations / Metrics / ──── / Sign out   (each section role-gated)
 //   Tickets page keeps its inner tabs: [Tickets] [Feed]
 //   /        = HOME (calm landing: MOTD + greeting + scoreboard + About tile; NO app cards)
@@ -15,7 +18,7 @@
 // tabs; the "Tickets" label + the page's inner tabs; menu-item navigation is a history PUSH
 // (Back returns); and active-state correctness. All against the hermetic stack via the real
 // stub-OIDC round trip.
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { signIn, openUserMenu } from './support/helpers';
 
 const VIEWPORTS = [
@@ -24,25 +27,20 @@ const VIEWPORTS = [
   { name: 'desktop', w: 1280, h: 860 },
 ] as const;
 
-/** The rail's own overflow (scrollWidth − clientWidth); ≤1 means the tabs fit with no scroll. */
-async function navScrollOverflow(page: Page): Promise<number> {
-  return page.evaluate(() => {
-    const nav = document.querySelector('.topbar__nav') as HTMLElement | null;
-    if (!nav) throw new Error('nav rail missing');
-    return nav.scrollWidth - nav.clientWidth;
-  });
-}
-
-test.describe('nav restructure — the four-tab universal bar (DESIGN-004 D-22/D-23)', () => {
+test.describe('nav restructure — the universal bar (DESIGN-004 D-22/D-23, DESIGN-043 D-01)', () => {
   for (const vp of VIEWPORTS) {
-    test(`bar reads Portal · Library · Tickets · Trash @ ${vp.name}`, async ({ page }) => {
+    test(`bar reads Portal · Library · Collections · Tickets · Trash @ ${vp.name}`, async ({
+      page,
+    }) => {
       await page.setViewportSize({ width: vp.w, height: vp.h });
-      await signIn(page, 'admin'); // admin surfaces all four candidates (trash=edit implied)
+      await signIn(page, 'admin'); // admin surfaces all candidates (trash=edit implied)
 
-      // Exactly four links, in the approved order, and NOT the relocated pair.
+      // The universal links, in the approved order, and NOT the relocated pair (Metrics/Integrations
+      // stay in the user menu). Collections is a first-class universal entry (DESIGN-043 D-01).
       await expect(page.locator('.topbar__nav a')).toHaveText([
         'Portal',
         'Library',
+        'Collections',
         'Tickets',
         'Trash',
       ]);
@@ -52,15 +50,6 @@ test.describe('nav restructure — the four-tab universal bar (DESIGN-004 D-22/D
       await expect(
         page.locator('.topbar__nav').getByRole('link', { name: 'Integrations' }),
       ).toHaveCount(0);
-
-      // At 320px the four tabs fit their rail with no scroll (the restructure's headline goal;
-      // the scroll pane stays only as a safety net).
-      if (vp.w <= 360) {
-        expect(
-          await navScrollOverflow(page),
-          'four tabs fit 320px with no rail scroll',
-        ).toBeLessThanOrEqual(1);
-      }
     });
   }
 });
