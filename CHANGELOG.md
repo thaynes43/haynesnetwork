@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.79.0](https://github.com/thaynes43/haynesnetwork/compare/v0.78.1...v0.79.0) (2026-07-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* the collections tRPC surface is reshaped (save/suggest/ reviewSuggestion/mySuggestions removed; overview now takes { mediaType }) and the /integrations/collections manager moved to /collections.
+
+### Features
+
+* **collections:** books + audiobooks collection Wanted tiles (DESIGN-038 D-13) ([#394](https://github.com/thaynes43/haynesnetwork/issues/394)) ([0a81b63](https://github.com/thaynes43/haynesnetwork/commit/0a81b63d4315aec0c5e0a1a9410fd7f04adc23b5))
+* first-class /collections page + direct-add keystone (ADR-072 PR4a) ([#393](https://github.com/thaynes43/haynesnetwork/issues/393)) ([d439194](https://github.com/thaynes43/haynesnetwork/commit/d439194665fc8ba3a1edf17dfa575764184579ba))
+
+
+### Bug Fixes
+
+* **collections:** UX polish pass — nav scroll fade, delete Modal, puck copy, uniform rows, ticket attribution ([#396](https://github.com/thaynes43/haynesnetwork/issues/396)) ([7fb7044](https://github.com/thaynes43/haynesnetwork/commit/7fb7044d80d31fd7c52cb1ff3e1c9524679ab9af))
+
 ## [0.78.1](https://github.com/thaynes43/haynesnetwork/compare/v0.78.0...v0.78.1) (2026-07-18)
 
 
