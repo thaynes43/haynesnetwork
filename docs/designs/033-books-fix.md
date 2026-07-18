@@ -104,6 +104,33 @@ strands land in `activity_import_failures` as usual. Join key `books:ll:<bookId>
 v1 records `stale_file_action` + surfaces the OPS-013 quarantine guidance. Mode-2 automation
 (cephfs-mounted "book-janitor" move + rescan) is OUT — its own ADR, consuming the D-01 seam.
 
+### D-10 — Amendment 2026-07-18 (ADR-071) — Force Search joins Fix; the unified media-action grant
+
+The media-action UX unification (ADR-071 / DESIGN-004 D-24) closes the owner-cited asymmetry: a
+books detail page (always an ON-DISK title) now shows **Fix + Force Search**, the movie treatment,
+through the shared `@hnet/ui` components (`MediaHero` / `MediaAction` / `ConsumeLink` /
+`ReservedActionSlot`). Fix is the **green primary** `<MediaAction action="fix">` (was the neutral
+"Fix this" outline); Force Search is the **outline** `<MediaAction action="forceSearch">`.
+
+- **Force Search semantics (owner-ratified).** A ONE-CLICK quick re-search that re-runs the
+  acquisition search for the current title and grabs the best result (a fresh/better copy) — NO
+  reason prompt. DISTINCT from Fix (the reasoned, durable `book_fix_requests` repair): it writes
+  **NO durable row** (the movies "no durable row" idiom), only a `request_book_search` audit,
+  committed before the external call. Domain `runBookItemForceSearch` (`@hnet/domain`) resolves the
+  acquisition identity from the linked `book_requests` seed and re-grabs regardless of landed state
+  (LL `addBook→queueBook→searchBook` / Kapowarr `setMonitored→searchVolume`); a title with no
+  identity fires nothing (honest `no_ll_id`/`no_kapowarr_id`). API: `books.forceSearch`.
+
+- **Gating — the unified role grant (THE FLIP).** `BOOK_ACTIONS` grows `force_search_book` beside
+  `fix_book` (migration 0066 rebuilds the CHECK). The books detail computes **both** `canFix` and
+  `canForceSearch` off the ONE `bookActionsForRole` helper (admin implies both; else the fine-grained
+  grants), superseding the D-03 Admin-only Fix gate AND the #375 `owns||isAdmin` force-search stopgap
+  for this surface. The owner opens each per role at **/admin → roles** (the new "Books actions"
+  grant grid — `roles.setBooksActions`, delegating to the existing `setRoleBookActions` single-writer
+  with its `update_book_actions` audit-in-tx). No new audit action — Force Search reuses
+  `request_book_search`. Movies keep their existing gating this pass (a documented fast-follow folds
+  them onto the same grant with a no-regression seed).
+
 ## Alternatives considered
 
 Reusing `fix_requests` (rejected — *arr-shaped, ADR-062 C-04); app-driven file quarantine in v1

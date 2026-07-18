@@ -361,4 +361,26 @@ describe('books.detail — enrichment + collections + history (DESIGN-025 D-08)'
     const id = await idFor('book', 'Alpha');
     await expect(disabledCaller.books.detail({ id })).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
+
+  // ADR-071 — the unified grant gating (canFix / canForceSearch) on the books detail + the
+  // grant-gated forceSearch mutation. Admin implies both; a granted role gets them; a books-reader
+  // without the grant gets neither and is refused the mutation (the ratified rule superseding the
+  // #375 owns||isAdmin stopgap for the books force-search surface).
+  it('admin sees canFix + canForceSearch; a books-reader without the grant sees neither', async () => {
+    const id = await idFor('book', 'Alpha');
+    const admin = await adminCaller.books.detail({ id });
+    expect(admin.canFix).toBe(true);
+    expect(admin.canForceSearch).toBe(true);
+
+    const reader = await readerCaller.books.detail({ id });
+    expect(reader.canFix).toBe(false);
+    expect(reader.canForceSearch).toBe(false);
+  });
+
+  it('forceSearch is FORBIDDEN without the force_search_book grant', async () => {
+    const id = await idFor('book', 'Alpha');
+    await expect(readerCaller.books.forceSearch({ booksItemId: id })).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
+  });
 });

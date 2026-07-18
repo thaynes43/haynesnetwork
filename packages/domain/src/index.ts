@@ -69,6 +69,7 @@ export * from './media-metadata';
 export * from './library-preferences';
 export * from './notification-preferences';
 export * from './book-fix';
+export * from './book-force-search';
 // ADR-067 / DESIGN-039 (PLAN-055) — the shared Google Books quota circuit breaker (single-row
 // gb_quota_state single-writers + the guardedGbResolve seam every GB call site consults).
 export * from './gb-quota-breaker';
