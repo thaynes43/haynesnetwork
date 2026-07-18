@@ -147,9 +147,14 @@ describe('registry shape invariants', () => {
       expect(sortKeys(level)[0]).toBe('position');
       expect(registryFor(level).defaultSort).toEqual({ field: 'position', dir: 'asc' });
       expect(registryFor(level).sorts[0]?.firstDir).toBe('asc');
-      // …and the wall's `wanted` facet is deliberately absent (a want is not a collection member).
-      expect(facetKeys(level)).not.toContain('wanted');
     }
+    // DESIGN-038 D-13 (SUPERSEDES D-07) — the books/audiobooks collection drill DOES carry the `wanted`
+    // facet now: a collection that is not full renders its MISSING members as Wanted tiles (minted from
+    // Libretto's missing set as origin='collection' book_requests). Comics stay held-only (Kapowarr's
+    // domain — no Libretto recipe), so their collection drill keeps no wanted facet.
+    expect(facetKeys('books:collection-items')).toContain('wanted');
+    expect(facetKeys('audiobooks:collection-items')).toContain('wanted');
+    expect(facetKeys('comics:collection-items')).not.toContain('wanted');
     // The drilled levels offer the WALL's own item sorts alongside position (the 037 rule —
     // a drilled grid keeps the wall's dimensions).
     expect(sortKeys('books:collection-items')).toEqual(
