@@ -64,7 +64,10 @@ export function collectionMemberRef(member: {
   return t ? `title:${t}` : null;
 }
 
-/** kavita ⇒ 'ebook', audiobookshelf ⇒ 'audiobook' (the collection's wall format). */
+/**
+ * The collection's wall format from its source: kavita ⇒ 'ebook', audiobookshelf ⇒ 'audiobook'. Comics
+ * (Kapowarr's domain) are out of this leg — a comic-majority Kavita collection is a documented v1 edge.
+ */
 function formatForSource(source: string): 'ebook' | 'audiobook' {
   return source === 'audiobookshelf' ? 'audiobook' : 'ebook';
 }
