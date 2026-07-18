@@ -3,12 +3,22 @@
 // ADR-059 / DESIGN-030 (PLAN-048 — Activity / In-Flight) — the import-failure detail view (the books analog
 // of the /library/[id] Movies/TV detail + the #264 wanted-detail idiom): BackLink + `.card.detail-head`
 // with a 2:3 MediaPoster, title, the stage + failure-class badges, the human failure reason, and — for an
-// Admin (or a role granted the action) — the ROLE-CONTROLLED actions (Retry import / Force re-search) in
-// the ADR-015 reserved-slot idiom (button ↔ live PhaseChip, no reflow — PLAN-015 feedback). Others see the
-// same facts read-only. The downstream operator deep link is Admin-only (the LAN-only operator UIs).
-import { useState } from 'react';
+// Admin (or a role granted the action) — the ROLE-CONTROLLED actions (Retry import / Force Search) rendered
+// through the shared @hnet/ui media-action system (ADR-071 / DESIGN-004 D-24: <MediaHero> + <MediaAction> off
+// the MEDIA_ACTIONS registry + the reflow-safe <ReservedActionSlot>, the ADR-015 button ↔ live-PhaseChip
+// idiom). Others see the same facts read-only. The downstream operator deep link is Admin-only (the LAN-only
+// operator UIs).
+import { useState, type ReactNode } from 'react';
 import { trpc, type RouterOutputs } from '@/lib/trpc-client';
-import { PhaseChip, type PhaseTone } from '@hnet/ui';
+import {
+  PhaseChip,
+  MediaHero,
+  MediaAction,
+  ReservedActionSlot,
+  type PhaseTone,
+  type MediaActionType,
+  type MediaHeroBadge,
+} from '@hnet/ui';
 import { BackLink } from '@/components/back-link';
 import { MediaPoster } from '@/components/cards';
 import { ActivityStageChip, useActivityItemStatus } from '@/components/activity-live';
@@ -50,12 +60,16 @@ const SOURCE_APP_LABEL: Record<string, string> = {
 type Fired = { kind: 'fired' } | { kind: 'failed'; message: string };
 
 function ActionSlot({
+  action,
   label,
   testId,
   onFire,
   isPending,
   fired,
 }: {
+  /** The canonical action TYPE (registry key) — the button renders through <MediaAction>. */
+  action: MediaActionType;
+  /** The canonical label, for the "fired" chip title only (the button self-labels off the registry). */
   label: string;
   testId: string;
   onFire: () => void;
@@ -65,24 +79,21 @@ function ActionSlot({
   const chip = (phase: string, text: string, tone: PhaseTone, opts?: { pulse?: boolean; title?: string }) => (
     <PhaseChip phase={phase} label={text} tone={tone} pulse={opts?.pulse} meter={opts?.pulse} title={opts?.title} />
   );
-  let content;
+  // ADR-071 / DESIGN-004 D-24 — the live node shown IN PLACE of the resting button; the button is the
+  // shared <MediaAction> (the ONE registry look/label), the reflow-safe swap the shared
+  // <ReservedActionSlot>. Only the mutation state (which needs trpc) stays in the app.
+  let live: ReactNode = null;
   if (isPending) {
-    content = chip('working', 'Working…', 'neutral', { pulse: true });
+    live = chip('working', 'Working…', 'neutral', { pulse: true });
   } else if (fired?.kind === 'fired') {
-    content = chip('fired', 'Requested', 'info', { pulse: true, title: `${label} requested` });
+    live = chip('fired', 'Requested', 'info', { pulse: true, title: `${label} requested` });
   } else if (fired?.kind === 'failed') {
-    content = chip('failed', 'Failed', 'danger', { title: fired.message });
-  } else {
-    content = (
-      <button type="button" className="btn sm" data-testid={testId} onClick={onFire}>
-        {label}
-      </button>
-    );
+    live = chip('failed', 'Failed', 'danger', { title: fired.message });
   }
   return (
-    <span className="action-slot action-slot--roll" data-testid={`${testId}-slot`}>
-      {content}
-    </span>
+    <ReservedActionSlot reserve="roll" testId={`${testId}-slot`} live={live}>
+      <MediaAction action={action} size="sm" testId={testId} onFire={onFire} />
+    </ReservedActionSlot>
   );
 }
 
@@ -136,36 +147,39 @@ export function ActivityFailureDetail({ failureId, from }: { failureId: string; 
   const isFailed = d.resolvedAt === null;
   const canAct = d.canRetryImport || d.canForceSearch;
 
+  // DESIGN-004 D-24 (ADR-071) — the hero is now the shared <MediaHero>: poster, title/year, typed
+  // badges, and — as the `secondary` body slot — the human failure reason (the non-muted
+  // `.detail-head__meta` line) plus the muted plain-language explainer. Pixel-neutral vs the
+  // hand-rolled scaffold; the failure reason keeps its `data-testid` for the e2e assertion.
+  const heroBadges: MediaHeroBadge[] = [
+    { label: isFailed ? 'Stuck' : 'Resolved', tone: isFailed ? 'danger' : 'ok' },
+    { label: FAILURE_LABEL[d.failureKind] ?? 'Failed', tone: 'danger' },
+    ...(d.sourceApp
+      ? [{ label: SOURCE_APP_LABEL[d.sourceApp] ?? d.sourceApp, tone: 'muted' as const }]
+      : []),
+  ];
+
   return (
     <>
       <BackLink from={from} />
 
-      <section className="card detail-head" data-testid="activity-failure-head">
-        <span className="detail-head__poster">
-          <MediaPoster posterUrl={null} kind={d.kind} alt="" />
-        </span>
-        <div className="detail-head__body">
-          <h1 className="detail-head__title">
-            {d.title}
-            {d.year != null ? <span className="muted"> ({d.year})</span> : null}
-          </h1>
-          <div className="media-card__badges">
-            <span className={`badge badge--${isFailed ? 'danger' : 'ok'}`}>
-              {isFailed ? 'Stuck' : 'Resolved'}
-            </span>
-            <span className="badge badge--danger">{FAILURE_LABEL[d.failureKind] ?? 'Failed'}</span>
-            {d.sourceApp ? (
-              <span className="badge badge--muted">{SOURCE_APP_LABEL[d.sourceApp] ?? d.sourceApp}</span>
+      <MediaHero
+        testId="activity-failure-head"
+        poster={<MediaPoster posterUrl={null} kind={d.kind} alt="" />}
+        title={d.title}
+        year={d.year}
+        badges={heroBadges}
+        secondary={
+          <>
+            {d.failureReason ? (
+              <p className="detail-head__meta" data-testid="activity-failure-reason">
+                {d.failureReason}
+              </p>
             ) : null}
-          </div>
-          {d.failureReason ? (
-            <p className="detail-head__meta" data-testid="activity-failure-reason">
-              {d.failureReason}
-            </p>
-          ) : null}
-          <p className="muted">{FAILURE_EXPLAIN[d.failureKind] ?? ''}</p>
-        </div>
-      </section>
+            <p className="muted">{FAILURE_EXPLAIN[d.failureKind] ?? ''}</p>
+          </>
+        }
+      />
 
       <section className="card admin-section">
         <h2>Fix it</h2>
@@ -176,6 +190,7 @@ export function ActivityFailureDetail({ failureId, from }: { failureId: string; 
                 <span className="child-row__label">Retry import</span>
                 <span className="child-row__actions">
                   <ActionSlot
+                    action="retryImport"
                     label="Retry import"
                     testId="activity-retry"
                     isPending={retry.isPending}
@@ -186,11 +201,14 @@ export function ActivityFailureDetail({ failureId, from }: { failureId: string; 
               </li>
             ) : null}
             {d.canForceSearch ? (
+              /* ADR-071 — the retired "Force re-search" phrasing is normalized to the ONE canonical
+                 "Force Search" (row label + button both), off the shared registry. */
               <li className="child-row" data-testid="activity-search-row">
-                <span className="child-row__label">Force re-search</span>
+                <span className="child-row__label">Force Search</span>
                 <span className="child-row__actions">
                   <ActionSlot
-                    label="Force re-search"
+                    action="forceSearch"
+                    label="Force Search"
                     testId="activity-search"
                     isPending={search.isPending}
                     fired={searchFired}
@@ -242,7 +260,7 @@ export function ActivityFailureDetail({ failureId, from }: { failureId: string; 
             <div>
               <dt>Last action</dt>
               <dd>
-                {d.lastAction === 'retry_import' ? 'Retry import' : 'Force re-search'} ·{' '}
+                {d.lastAction === 'retry_import' ? 'Retry import' : 'Force Search'} ·{' '}
                 {formatWhen(d.lastActionAt)}
               </dd>
             </div>
