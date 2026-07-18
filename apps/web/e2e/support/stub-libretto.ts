@@ -110,6 +110,27 @@ export async function startStubLibretto(): Promise<StubLibrettoServer> {
       if (path.startsWith('/api/recipes/') && method === 'PUT') return json(200, body);
       if (path.startsWith('/api/recipes/') && method === 'DELETE') return json(200, { ok: true });
       if (path === '/api/apply' && method === 'POST') return json(202, { runId: 'run-stub-1' });
+      // Member-level MISSING (DESIGN-043 D-08) — drives the on-demand collection Force Search (ADR-071):
+      // two missing members, both resolvable, so the fire path mints + searches hermetically.
+      if (/^\/api\/collections\/[^/]+\/missing$/.test(path) && method === 'GET') {
+        const recipeId = decodeURIComponent(path.split('/')[3] ?? '');
+        return json(200, {
+          recipeId,
+          total: 6,
+          heldCount: 4,
+          missingCount: 2,
+          missing: [
+            { title: 'Wind and Truth', authors: ['Brandon Sanderson'], isbn: '9780765326386' },
+            { title: 'Edgedancer', authors: ['Brandon Sanderson'], isbn: '9781250166548' },
+          ],
+        });
+      }
+      // The ISBN-first resolve broker — every member resolves (volumeId keyed off the ISBN/title).
+      if (path === '/api/resolve' && method === 'POST') {
+        const req = body as { isbn?: string; title?: string } | undefined;
+        const key = req?.isbn ?? req?.title ?? 'unknown';
+        return json(200, { resolved: { volumeId: `stub-vol-${key.replace(/[^a-z0-9]/gi, '').slice(0, 12)}` } });
+      }
 
       json(404, { message: `stub-libretto: no handler for ${method} ${path}` });
     });

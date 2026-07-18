@@ -100,6 +100,22 @@ async function main(): Promise<void> {
           members: [],
           fullyRead: true,
         },
+        // A Libretto-produced mirror row bound to the stub's stormlight-archive recipe — the binding the
+        // on-demand collection Force Search (ADR-071, owner ruling 2026-07-18) resolves the wants against.
+        {
+          source: 'kavita',
+          externalId: 'capture-stormlight-1',
+          kind: 'collection',
+          libraryId: null,
+          title: 'The Stormlight Archive',
+          itemCount: 4,
+          ordered: true,
+          createdBy: 'libretto',
+          librettoRecipeId: 'stormlight-archive',
+          category: null,
+          members: [],
+          fullyRead: true,
+        },
       ],
       scopedFamilies: [{ source: 'kavita', kind: 'collection' }],
     });
@@ -114,6 +130,18 @@ async function main(): Promise<void> {
     await seed.getByTestId('collection-over-cap-request').click();
     await seed.getByText('Request sent').waitFor();
     await seed.context().close();
+
+    // Prime the on-demand Force Search once (admin) so the matrix's confirm copy shows the LIVE missing
+    // count: the fire re-applies the recipe, mints the stub's two missing wants, and the stub
+    // LazyLibrarian absorbs the searches (ADR-071 — the whole action, hermetic).
+    await setPersona(stack.oidc.baseUrl, 'admin');
+    const prime = await signIn(browser, stack.appUrl, { width: 1280, height: 900 });
+    await prime.goto('/collections?tab=books');
+    await prime.getByTestId('collection-force-search-btn').first().click();
+    await prime.getByTestId('collection-force-search-modal').waitFor();
+    await prime.getByTestId('collection-force-search-confirm').click();
+    await prime.getByText('Search started').waitFor();
+    await prime.context().close();
 
     const viewports = [
       ['desktop', { width: 1280, height: 900 }],
@@ -135,6 +163,19 @@ async function main(): Promise<void> {
         await admin.getByTestId('collections-readonly-list').waitFor();
         await hidePortal(admin);
         await shoot(admin, `collections-books-${suffix}`, true);
+
+        // The on-demand Force Search confirm Modal (the registry action that replaced "Run now" —
+        // ADR-071, owner ruling 2026-07-18) with the live missing count, then the fired in-place state.
+        await admin.getByTestId('collection-force-search-btn').first().click();
+        await admin.getByTestId('collection-force-search-modal').waitFor();
+        await hidePortal(admin);
+        await shoot(admin, `force-search-modal-${suffix}`);
+        await admin.getByTestId('collection-force-search-confirm').click();
+        await admin.getByText('Search started').waitFor();
+        await hidePortal(admin);
+        await shoot(admin, `force-search-fired-${suffix}`, true);
+        await admin.goto('/collections?tab=books');
+        await admin.getByTestId('collections-list').waitFor();
 
         // The composer Modal.
         await admin.getByTestId('collections-new').click();
