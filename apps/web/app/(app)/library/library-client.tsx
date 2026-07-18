@@ -667,6 +667,11 @@ function MediaBrowser({
   const groupsRefreshing = groupsQuery.isPlaceholderData && groupsQuery.isFetching;
   // The drill header names the collection (the ?group= key is a ratingKey, not a title).
   const drilledLabel = drilled ? (groupList.find((g) => g.key === group)?.label ?? '') : '';
+  // DESIGN-043 D-01/D-09 amend (2026-07-18, owner-ruled) — the "Edit collection" nav-out target for
+  // the Movies/TV walls. The Kometa join is by TITLE (no clean recipe id client-side), so the link
+  // lands on the right media tab WITHOUT an `edit` param — never a fabricated id. Music has no tab.
+  const collectionsTab: 'movies' | 'tv' | null =
+    wall === 'movies' ? 'movies' : wall === 'tv' ? 'tv' : null;
 
   // DESIGN-026 D-09 — the A–Z jump rail (a fixed overlay — never reflows the grid; visibility per
   // the showJumpBar rule: A–Z sort + big wall, or a jump already armed). Never over group cards.
@@ -715,6 +720,19 @@ function MediaBrowser({
             ‹ {grouping.allLabel}
           </Link>
           <span className="library-drill__label">{drilledLabel}</span>
+          {/* DESIGN-043 D-01/D-09 amend — the quiet nav-out to the collection manager. Movies/TV drills
+              key by a Plex ratingKey (the Kometa join is by title), so this lands on the right media
+              tab WITHOUT an edit param — landing on the correct tab is still correct, never a
+              fabricated id. Static per screen — no reflow (ADR-015); tokens-only `.btn.sm`. */}
+          {collectionsTab !== null ? (
+            <Link
+              className="btn sm library-drill__edit"
+              href={`/collections?tab=${collectionsTab}`}
+              data-testid="library-drill-edit"
+            >
+              Edit collection
+            </Link>
+          ) : null}
         </div>
       ) : null}
 

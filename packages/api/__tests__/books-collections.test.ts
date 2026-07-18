@@ -115,6 +115,7 @@ beforeAll(async () => {
         itemCount: 99, // deliberately wrong raw count — must NEVER be the wire count
         ordered: true,
         createdBy: 'libretto',
+        librettoRecipeId: 'hp-reading-order', // D-13 / DESIGN-043 amend — the managing recipe id
         category: 'Series', // D-12 — the owner category chip (agent-set / marker-derived)
         members: [
           { externalRef: '503', position: 0 },
@@ -222,6 +223,9 @@ describe('books.collectionGroups (DESIGN-038 D-05 — wall mapping + honest coun
     expect(card.count).toBe(3); // 3 books — not the comic, not the raw 99, not the ghost ref
     expect(card.ordered).toBe(true);
     expect(card.imageUrl).toBeNull();
+    // DESIGN-043 D-01/D-09 amend — the managing recipe id surfaces for the wall drill's "Edit
+    // collection" nav-out (null for a hand-made collection; see the Capes/Discworld cards below).
+    expect(card.librettoRecipeId).toBe('hp-reading-order');
     // PROVENANCE badge — the marker-derived 'libretto' resolves to its display name.
     expect(card.provenance).toBe('Libretto');
     // Covers in member-position order, cover-less members contribute none (503 has no coverRef).
@@ -234,7 +238,13 @@ describe('books.collectionGroups (DESIGN-038 D-05 — wall mapping + honest coun
   it('the minority wall never cards the mixed collection; pure collections land on their wall', async () => {
     const { groups: comics } = await adminCaller.books.collectionGroups({ mediaKind: 'comic' });
     expect(comics.map((g) => g.label)).toEqual(['Capes']); // the mixed list is NOT here
-    expect(comics[0]).toMatchObject({ count: 2, ordered: false, provenance: 'Kavita' });
+    // A hand-made Kavita collection carries no Libretto recipe → no "Edit collection" nav-out.
+    expect(comics[0]).toMatchObject({
+      count: 2,
+      ordered: false,
+      provenance: 'Kavita',
+      librettoRecipeId: null,
+    });
     const { groups: audiobooks } = await adminCaller.books.collectionGroups({
       mediaKind: 'audiobook',
     });

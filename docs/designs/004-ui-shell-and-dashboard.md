@@ -978,6 +978,17 @@ caption heights, corner pucks that recolor in place.
 > four entries, still fits 320px (re-proven by the D-23 captures + `nav-restructure.spec.ts`).
 > Everything else here — the user-menu contract, the Tickets ratification, active-state rules —
 > stands unchanged; `/` remains reachable via the (new) logo link, not a tab.
+>
+> **Amended 2026-07-18 (collections relocation — owner-ruled, coordinator-endorsed; DESIGN-043
+> D-01/D-09' amend):** ADR-072 PR4a briefly added a fifth top-row entry, **Collections**, which broke
+> this section's four-labels-fit-320px-no-scroll goal (an edge-fade masked the overflow). The entry is
+> RELOCATED to the user menu as **"Collection settings"** (a D-19 `Link` push to `/collections`,
+> UNIVERSAL — everyone sees it), placed in the tooling group directly ABOVE "Trash settings" (the
+> settings cluster together). The Library walls also gain a contextual "Edit collection" nav-out from a
+> collection drill (DESIGN-043 D-09'). The row RETURNS to the ratified FOUR — **Portal · Library ·
+> Tickets · Trash** — fitting 320px with no rail scroll again; the scroll-fade + relaxed spacing stay
+> as an inert safety net. This is a placement/label change only — no route/section/grant change, no ADR
+> supersede (ADR-072 decides the `/collections` SURFACE, which stays first-class; not the nav chrome).
 
 The owner reviewed nav-IA mockups and ratified this exact one (it is the contract):
 
@@ -1007,8 +1018,10 @@ id, grant row, or stored value changes — it is a labelling + placement change,
   between), each gated **exactly like its former tab** (no-row default `disabled`, so a role without
   the `metrics` / `integrations` section sees no entry). A user gated to just those two therefore sees
   the mockup verbatim — `My Plex · Integrations · Metrics · ─── · Sign out`. The tooling group
-  (Ledger / Trash settings / Admin settings, unchanged from D-16) and Sign out follow below the
-  separator. Every item shares the `usermenu__item` styling; navigating is a `<Link>` **push** (D-19).
+  (Ledger / **Collection settings** / Trash settings / Admin settings — "Collection settings" added
+  2026-07-18, the only UNIVERSAL tooling item, so its separator now always renders; the rest unchanged
+  from D-16) and Sign out follow below the separator. Every item shares the `usermenu__item` styling;
+  navigating is a `<Link>` **push** (D-19).
 - **Active-state:** the universal bar carries **no** active-highlight mechanism (it never has), so a
   route that is no longer a tab — `/metrics`, `/integrations` — leaves **no** stale tab highlighted;
   that is the sane, tested treatment. Screen-level tab activeness stays where it belongs: exactly one

@@ -1,16 +1,17 @@
 // Regression guard for the narrow-phone nav row (fix/nav-overlap-narrow-phones, then the
-// DESIGN-004 D-22 nav restructure, then DESIGN-043 D-01).
+// DESIGN-004 D-22 nav restructure, then the DESIGN-043 amend collections relocation).
 //
 // History: ADR-037 briefly pushed the top row to FIVE links (…· Metrics), which below ~375px no
 // longer fit and — with `min-width: 0` + default `overflow: visible` — overflowed VISIBLY rightward
 // under the theme toggle (owner-reported on a 360px-class phone). The fix made the rail a
-// self-contained horizontal scroll pane. The 2026-07-14 restructure slimmed the row back to FOUR
-// (Metrics + Integrations moved into the user menu; the D-23 home/portal split renamed the first
-// slot — Portal · Library · Tickets · Trash). DESIGN-043 D-01 (ADR-072) then added the first-class
-// universal Collections entry — the "future fifth entry" the scroll-rail safety net was built for.
-// This spec now pins the invariant that actually matters at narrow widths: nothing overflows the
-// VIEWPORT (the rail clips its own surplus into a horizontal scroll pane), the right-pinned chrome
-// stays usable, and every universal link is present.
+// self-contained horizontal scroll pane. The 2026-07-14 restructure then slimmed the row back to
+// FOUR (Metrics + Integrations moved into the user menu; the D-23 home/portal split later renamed
+// the first slot — Portal · Library · Tickets · Trash). ADR-072 PR4a briefly re-inflated the row to
+// FIVE (a first-class Collections entry) — too many for the 320px no-scroll goal — and the owner
+// ruling of 2026-07-18 (DESIGN-043 D-01/D-09 amend) RELOCATED it to the user menu as "Collection
+// settings", returning the row to FOUR. This spec pins both invariants that matter at narrow widths:
+// nothing overflows the viewport, AND four tabs fit their rail at 320/360px (no scroll needed). The
+// scroll pane stays as a safety net for any future fifth entry.
 import { test, expect, type Page } from '@playwright/test';
 import { signIn, expectViewportFit } from './support/helpers';
 
@@ -21,13 +22,12 @@ const NARROW_SIZES = [
   { w: 360, h: 640 },
 ] as const;
 
-// The five universal section links an admin session surfaces (admin implies trash=edit → Trash
-// shows; Bulletin/"Tickets" defaults read_only for everyone; Collections is universal). Order = the
-// approved mockup + the DESIGN-043 D-01 Collections slot after Library.
-const NAV_LINKS = ['Portal', 'Library', 'Collections', 'Tickets', 'Trash'] as const;
+// The four universal section links an admin session surfaces (admin implies trash=edit → Trash
+// shows; Bulletin/"Tickets" defaults read_only for everyone). Order = the approved mockup.
+const NAV_LINKS = ['Portal', 'Library', 'Tickets', 'Trash'] as const;
 
-/** The rail's computed horizontal overflow — the safety-net mechanism that confines surplus links to
- *  their own scroll pane rather than letting them spill over the topbar actions. */
+/** The rail's computed horizontal overflow — the safety-net mechanism that would confine surplus
+ *  links to their own scroll pane rather than letting them spill over the topbar actions. */
 async function navOverflowX(page: Page): Promise<string> {
   return page.evaluate(() => {
     const nav = document.querySelector('.topbar__nav') as HTMLElement | null;
@@ -36,14 +36,24 @@ async function navOverflowX(page: Page): Promise<string> {
   });
 }
 
-test.describe('topbar nav — universal links fit narrow phones with no viewport overflow', () => {
+/** The rail's own overflow amount: scrollWidth − clientWidth. 0 (≤1 for rounding) means the links
+ *  fit without the rail scrolling. */
+async function navScrollOverflow(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const nav = document.querySelector('.topbar__nav') as HTMLElement | null;
+    if (!nav) throw new Error('nav rail missing from the topbar');
+    return nav.scrollWidth - nav.clientWidth;
+  });
+}
+
+test.describe('topbar nav — four tabs fit narrow phones with no overlap', () => {
   for (const { w, h } of NARROW_SIZES) {
-    test(`links present, nothing overflows the viewport @ ${w}x${h}`, async ({ page }) => {
+    test(`four tabs fit without overlap or rail scroll @ ${w}x${h}`, async ({ page }) => {
       await page.setViewportSize({ width: w, height: h });
-      // Real AC-01 round trip as admin — all universal links present.
+      // Real AC-01 round trip as admin — all four universal links visible.
       await signIn(page, 'admin');
 
-      // All universal section links render (and no more — Metrics/Integrations are menu items now).
+      // All four section links render (and no more — Metrics/Integrations/Collections are menu items now).
       for (const name of NAV_LINKS) {
         await expect(page.locator('.topbar__nav').getByRole('link', { name })).toHaveCount(1);
       }
@@ -54,20 +64,33 @@ test.describe('topbar nav — universal links fit narrow phones with no viewport
       await expect(
         page.locator('.topbar__nav').getByRole('link', { name: 'Integrations' }),
       ).toHaveCount(0);
+      await expect(
+        page.locator('.topbar__nav').getByRole('link', { name: 'Collections' }),
+      ).toHaveCount(0);
 
       // The right-pinned chrome stays on-screen and usable.
       await expect(page.getByRole('button', { name: /theme/i })).toBeInViewport();
       await expect(page.locator('.usermenu__trigger')).toBeInViewport();
 
-      // PRIMARY GUARD (AC-10): nothing pokes past the viewport — the rail clips its own surplus.
+      // PRIMARY GUARD (AC-10): nothing pokes past the viewport.
       await expectViewportFit(page);
 
-      // The rail keeps its self-contained horizontal scroll pane (overflow-x auto/scroll). With the
-      // fifth universal entry (Collections) this is the sanctioned way a long label set stays inside
-      // the viewport at 320/360px — the safety net the header describes.
+      // The rail keeps its self-contained scroll pane as a safety net (overflow-x auto/scroll)…
       expect(['auto', 'scroll'], 'nav rail is horizontally scrollable (safety net)').toContain(
         await navOverflowX(page),
       );
+
+      // …but with only four links it never needs to engage: the rail contents fit at 320/360px, so
+      // the four tabs are all visible at once with no swipe required (the restructure's goal).
+      expect(
+        await navScrollOverflow(page),
+        'four tabs fit the rail without scrolling',
+      ).toBeLessThanOrEqual(1);
+
+      // Every tab is fully on-screen (belt-and-suspenders on the fit assertion above).
+      for (const name of NAV_LINKS) {
+        await expect(page.locator('.topbar__nav').getByRole('link', { name })).toBeInViewport();
+      }
     });
   }
 });

@@ -1,12 +1,15 @@
 // DESIGN-004 D-22 (owner-ratified from an approved mockup, 2026-07-14) — the NAV RESTRUCTURE —
-// amended by D-23 (owner-directed 2026-07-17) — the HOME/PORTAL split — and by DESIGN-043 D-01
-// (ADR-072, 2026-07-18) — the first-class universal Collections entry (like Library, everyone sees
-// it; no section gate). The bar now carries FIVE universal candidates; a long fifth label leans on
-// the pre-existing scroll-rail safety net at the tightest 320px width (the rail may pan).
+// amended by D-23 (owner-directed 2026-07-17) — the HOME/PORTAL split — and by the COLLECTIONS
+// RELOCATION (owner-ruled 2026-07-18, coordinator-endorsed; DESIGN-043 D-01/D-09 amend). The brief
+// v0.81.x fifth entry (Collections, ADR-072 PR4a) is RETIRED from the top row: it now lives in the
+// user menu as "Collection settings" (universal — everyone adds/edits within the size cap). The row
+// is back to the ratified FOUR and fits 320px WITHOUT the rail scrolling; the scroll pane stays only
+// as an inert safety net.
 //
 // The contract this pins:
-//   TOP BAR:  [logo → /] Portal | Library | Collections | Tickets | Trash    [theme] (avatar)
-//   USER MENU: My Plex / Integrations / Metrics / ──── / Sign out   (each section role-gated)
+//   TOP BAR:  [logo → /] Portal | Library | Tickets | Trash        [theme] (avatar)
+//   USER MENU: My Plex / Integrations / Metrics / ──── / [Ledger] / Collection settings /
+//              [Trash settings] / [Admin settings] / Sign out   (bracketed = role-gated)
 //   Tickets page keeps its inner tabs: [Tickets] [Feed]
 //   /        = HOME (calm landing: MOTD + greeting + scoreboard + About tile; NO app cards)
 //   /portal  = the launcher (inverted Plex web-player link + the role-gated catalog grid,
@@ -15,10 +18,10 @@
 // Covered: the four-tab bar at 320 / 390 / desktop (order + no rail scroll at 320); the logo as
 // a link to Home; the Portal screen (inverted player link + cards render, no server cards, Home
 // carries no grid); Metrics + Integrations as user-menu entries, gated exactly like their former
-// tabs; the "Tickets" label + the page's inner tabs; menu-item navigation is a history PUSH
-// (Back returns); and active-state correctness. All against the hermetic stack via the real
-// stub-OIDC round trip.
-import { test, expect } from '@playwright/test';
+// tabs; the universal "Collection settings" menu item → /collections; the "Tickets" label + the
+// page's inner tabs; menu-item navigation is a history PUSH (Back returns); and active-state
+// correctness. All against the hermetic stack via the real stub-OIDC round trip.
+import { test, expect, type Page } from '@playwright/test';
 import { signIn, openUserMenu } from './support/helpers';
 
 const VIEWPORTS = [
@@ -27,20 +30,26 @@ const VIEWPORTS = [
   { name: 'desktop', w: 1280, h: 860 },
 ] as const;
 
-test.describe('nav restructure — the universal bar (DESIGN-004 D-22/D-23, DESIGN-043 D-01)', () => {
-  for (const vp of VIEWPORTS) {
-    test(`bar reads Portal · Library · Collections · Tickets · Trash @ ${vp.name}`, async ({
-      page,
-    }) => {
-      await page.setViewportSize({ width: vp.w, height: vp.h });
-      await signIn(page, 'admin'); // admin surfaces all candidates (trash=edit implied)
+/** The rail's own overflow (scrollWidth − clientWidth); ≤1 means the tabs fit with no scroll. */
+async function navScrollOverflow(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const nav = document.querySelector('.topbar__nav') as HTMLElement | null;
+    if (!nav) throw new Error('nav rail missing');
+    return nav.scrollWidth - nav.clientWidth;
+  });
+}
 
-      // The universal links, in the approved order, and NOT the relocated pair (Metrics/Integrations
-      // stay in the user menu). Collections is a first-class universal entry (DESIGN-043 D-01).
+test.describe('nav restructure — the four-tab universal bar (DESIGN-004 D-22/D-23, DESIGN-043 amend)', () => {
+  for (const vp of VIEWPORTS) {
+    test(`bar reads Portal · Library · Tickets · Trash @ ${vp.name}`, async ({ page }) => {
+      await page.setViewportSize({ width: vp.w, height: vp.h });
+      await signIn(page, 'admin'); // admin surfaces all four candidates (trash=edit implied)
+
+      // Exactly four links, in the approved order, and NOT the relocated set (Metrics/Integrations
+      // and now "Collection settings" all live in the user menu).
       await expect(page.locator('.topbar__nav a')).toHaveText([
         'Portal',
         'Library',
-        'Collections',
         'Tickets',
         'Trash',
       ]);
@@ -50,6 +59,19 @@ test.describe('nav restructure — the universal bar (DESIGN-004 D-22/D-23, DESI
       await expect(
         page.locator('.topbar__nav').getByRole('link', { name: 'Integrations' }),
       ).toHaveCount(0);
+      // Collections is no longer a top-row entry (relocated to the user menu, 2026-07-18).
+      await expect(
+        page.locator('.topbar__nav').getByRole('link', { name: 'Collections' }),
+      ).toHaveCount(0);
+
+      // At 320px the four tabs fit their rail with no scroll (the restructure's headline goal;
+      // the scroll pane stays only as a safety net).
+      if (vp.w <= 360) {
+        expect(
+          await navScrollOverflow(page),
+          'four tabs fit 320px with no rail scroll',
+        ).toBeLessThanOrEqual(1);
+      }
     });
   }
 });
@@ -155,6 +177,29 @@ test.describe('nav restructure — user menu entries + role gating (DESIGN-004 D
     await expect(menu.getByRole('menuitem', { name: 'Metrics' })).toHaveCount(0);
     await expect(menu.getByRole('menuitem', { name: 'Integrations' })).toHaveCount(0);
     await expect(menu.getByRole('menuitem', { name: 'Sign out' })).toBeVisible();
+  });
+});
+
+test.describe('collections relocation — "Collection settings" is a universal menu item (DESIGN-043 amend)', () => {
+  test('every user (even a fresh member) sees "Collection settings" → /collections, a history PUSH', async ({
+    page,
+  }) => {
+    await signIn(page, 'fresh-member'); // lands on '/'; the relocated entry is UNIVERSAL
+    await openUserMenu(page);
+    const menu = page.getByRole('menu', { name: 'Account' });
+
+    const item = menu.getByRole('menuitem', { name: 'Collection settings' });
+    await expect(item, 'Collection settings present for everyone').toBeVisible();
+    await expect(item, 'matches the shared menu-item styling').toHaveClass(/usermenu__item/);
+    // It sits with the settings cluster, above Sign out.
+    await item.click();
+    await page.waitForURL('**/collections');
+    await expect(page.getByRole('heading', { name: 'Collections', level: 1 })).toBeVisible();
+
+    // D-19 push: Back returns to the dashboard ROOT we came from.
+    await page.goBack();
+    await page.waitForURL((url) => url.pathname === '/');
+    await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible();
   });
 });
 

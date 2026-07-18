@@ -2108,6 +2108,13 @@ input[aria-invalid='true'] {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* DESIGN-043 D-01/D-09 amend (2026-07-18) — the quiet "Edit collection" nav-out on a collection
+   drill header. Pinned to the trailing edge; it is static per screen (reached by a PUSH), so it
+   never reflows on interaction (ADR-015). Styling is the shared `.btn.sm` idiom (tokens-only). */
+.library-drill__edit {
+  flex: none;
+  margin-left: auto;
+}
 
 /* ---------- PLAN-029 (DESIGN-026 D-09) — the A–Z letter jump rail ---------- */
 /* A fixed OVERLAY on the right viewport edge (the D-11 placement call): appearing/disappearing
