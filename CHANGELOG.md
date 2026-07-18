@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.82.0](https://github.com/thaynes43/haynesnetwork/compare/v0.81.2...v0.82.0) (2026-07-18)
+
+
+### Features
+
+* edit the estate's Kometa collections in place (owner ruling 2026-07-18) ([#415](https://github.com/thaynes43/haynesnetwork/issues/415)) ([6176fcd](https://github.com/thaynes43/haynesnetwork/commit/6176fcd01761c183465f54e488853a98c2335d8a))
+
 ## [0.81.2](https://github.com/thaynes43/haynesnetwork/compare/v0.81.1...v0.81.2) (2026-07-18)
 
 
