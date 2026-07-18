@@ -284,3 +284,79 @@ open, so reaching a new host (e.g. `openlibrary.org`) from the app needs **no** 
 default-deny allowlist applies only to the `dev-env` pod and `upgrade-agent`. (Confirmed: the
 dev-env pod cannot reach `openlibrary.org` — it is not on that pod's allowlist — which is why any
 empirical OL probing must happen from the app, not the ops pod.)
+
+## Amendment — 2026-07-18b: WE are the heavy consumer — the pairing re-push amplifies through LazyLibrarian, and the LL-config levers are already safe
+
+Owner correction to the D-14..D-17 finding: the Google Books (GB) key is **brand new**, there is
+**no** second GCP project available, and the estate itself — the app's own pushes amplified through
+LazyLibrarian (LL) — is the heavy consumer, not a mystery outsider. A 24h read-only cluster
+investigation (`.agents/context/2026-07-18-gb-call-budget.md`) quantified it and located the lever.
+
+### D-18 — The pairing re-push is the amplifier; addBook is only needed once per volume
+
+**Evidence (LL pod `gb.py:828 (API-GBRESULTS)` over 24h):** 213 GB-resolve events, **100% at `:32`**
+— exclusively the format-pairing CronJob (goodreads `:22` and collections `:27` produce **zero**).
+Only **23 distinct titles** account for all 213 events; the top titles re-resolve **12–24×/day**.
+The amplification is therefore **temporal repetition** (~9× per title/day), NOT a whole-author
+import — confirmed against live LL config (below). Each `addBook` also fans out inside LL to
+author/series/pubdate GB lookups, so the logged `API-GBRESULTS` line is a **floor**, not the whole
+cost — which is how a mere 23 titles can help exhaust the shared per-day quota shortly after reset.
+
+**Root cause in our code:** `mintPairingWants` issued `addBook` on **every** push of a re-pushable
+want, and `addBook` makes LL re-resolve the volume (plus its author/series/pubdate) from GB **every
+time**, bypassing LL's own 30-day cache and — critically — bypassing OUR `guardedGbResolve` breaker
+entirely (LL, not us, makes the call). A run sampled with the breaker OPEN still emitted `pushed:5`
+→ 5 `addBook` → 5 LL-side GB re-resolves the breaker could not stop.
+
+**The fix (this change):** `addBook` **only seats a volume LL does not already hold.** `runFormatPairing`
+now reads LL's seated-book set once per run (a single `getAllBookStatuses` — an LL DB read, never a
+GB call) and passes a `llHasSeededBook` predicate into `mintPairingWants`; a push whose `llBookId`
+is already seated skips `addBook` and issues only `queueBook + searchBook` (neither touches GB), so
+LL makes **zero** GB calls on a re-push. First-seat pushes (a volume genuinely new to LL) still
+`addBook` normally. The same `getAllBookStatuses` read now feeds BOTH the gate and the existing
+status reconcile (one read, two consumers — a freshly first-seated volume simply reconciles on the
+next run, a benign one-run delay). On an LL read failure the predicate is absent → the gate degrades
+to the exact pre-D-18 always-`addBook` behaviour (never skip a seat we cannot confirm). This caps the
+pairing cron's LL-driven GB re-resolves at genuinely NEW volumes — the ~23-title/day re-add
+amplification goes to ~0. No schema change, no new env knob, no audit surface (the push is not a
+role/permission mutation); `PAIRING_MINT_CAP_PER_RUN` (25, env-tunable) remains the per-run attempt
+governor. +1 focused domain test (`SKIPS addBook when LazyLibrarian already holds the volume`).
+
+### D-19 — LazyLibrarian config levers (live values, 2026-07-18) — the hidden-multiplier suspects are already safe
+
+Read live from LL (`cmd=readCFG` / `showStats` / `showJobs`, build `40a389ea`):
+
+| Lever (LL config) | Live value | Recommended | GB-call impact | Ready-to-apply? |
+|---|---|---|---|---|
+| `[General] BOOK_API` | `GoogleBooks` | keep (see D-15 coupling) | switching to OpenLibrary breaks the GB-volume-id `addBook` contract our confined client depends on — a coordinated ADR change, not a config flip | **No** — blocked by id coupling |
+| `NEWAUTHOR_BOOKS` (import other books by new authors) | **empty / OFF** | OFF | already OFF — no whole-author catalog import per `addBook` | already safe |
+| `NEWAUTHOR_STATUS` | `Skipped` | Skipped/Paused | new authors never become Active → never periodically re-scanned | already safe |
+| `NEWBOOK_STATUS` / `NEWAUDIO_STATUS` | `Skipped` / `Skipped` | Skipped | sibling books we didn't ask for are never tracked/refreshed | already safe |
+| Author roster (`showStats.author_stats`) | **160 Authors, 0 Active, 160 Paused** | keep all Paused | the "ever-growing Active roster re-scanned daily" drain does **not** exist here — 0 Active, and `showJobs` reports "no authors needing update" (author update cadence ~15 days, idle) | already safe |
+| `CACHE_AGE` | `30` (days) | keep | GB/GR response cache TTL | already safe |
+| Cache persistence | **PVC-backed** (`/config`, claim `lazylibrarian`); survives restarts; `showStats.cache` hit 2120 / miss 3725 | keep | cache is NOT wiped on restart — not a hidden multiplier | already safe |
+
+**Conclusion:** the coordinator's suspected hidden multipliers (perpetual Active-author re-scan; a
+non-persistent cache) are **both absent** on this instance — the roster is fully Paused and the cache
+is persistent. With `NEWAUTHOR_BOOKS` off and new books/authors landing `Skipped`, there is **no
+safe LL-config lever left that materially cuts GB volume** except the source switch (D-15, blocked).
+The remaining leverage is entirely app-side — D-18 — plus the owner-only options in D-16 (give LL a
+key from a separate GCP project; or the coordinated `book_api=OpenLibrary` program). This is why the
+"we are missing something" reduces to: our own re-push was the multiplier, and it lives in our code.
+
+### D-20 — Daily GB budget (24h evidence + steady state)
+
+| Consumer | Measured 24h GB events | Note |
+|---|---|---|
+| LL, driven by pairing `:32` push (`API-GBRESULTS`) | **213** (floor; ×~3–5 internal fan-out per addBook) | 23 distinct titles, ~9× repetition — the amplifier D-18 removes |
+| LL, driven by goodreads `:22` / collections `:27` | **0** | goodreads-sync pushes only unpushed wants (no re-add loop) |
+| haynesnetwork pairing resolve (`guardedGbResolve`) | ≤25/run, breaker-guarded; ~0 on a quota-exhausted day (skippedQuota 1467 in the sampled run) | our own key use, already capped |
+| haynesnetwork goodreads enrichment / book-fix | low, breaker-guarded, on-demand | quota-aware |
+
+**Drain-phase vs steady state:** the 210-want pairing backlog + 154 collection + Mia's 41 drain at
+`PAIRING_MINT_CAP_PER_RUN` (25 attempts/run) reuse-first, so most drain-phase pushes need no fresh
+GB on our side. After D-18, LL's re-resolve load falls from ~213/day (re-adds) to roughly the count
+of **genuinely new volumes seated that day** (bounded by the cap and by real new library items) —
+comfortably inside ~1000/day with wide margin, unattended, and it does not grow with the backlog
+(re-pushes are now free of GB). The owner-only D-16 key-separation remains the belt-and-suspenders
+move if a future spike ever approaches the cap.
