@@ -1154,6 +1154,19 @@ land in the follow-on PRs (after the sibling admin-force-search stopgap merges).
 clean): PR-1 adds the `@hnet/ui` family (pure add) → item-detail refactor (the reference) → books
 detail (gains Force Search) → wanted + activity-failure → ytdl-sub → the guard.
 
+**Migration progress:** PR-1 (family, #378) · item-detail (#381) · ytdl-sub (#382) · books detail
+(#383) — done. **wanted-detail + activity-failure — done (this PR):** both heroes render through
+`<MediaHero>`; the wanted per-format Force-Search (`FormatSearchSlot`) and the activity
+Retry-import / Force-Search (`ActionSlot`) now emit `<MediaAction action="forceSearch|retryImport">`
+off `MEDIA_ACTIONS` inside a shared `<ReservedActionSlot reserve="roll">` — the hand-rolled `<button
+className="btn sm">` labels and the two local `action-slot` spans are gone, and activity's retired
+`Force re-search` phrasing is normalized to the canonical `Force Search`. The trpc mutation/state
+machine stays in each surface (passed to the slot as `live`), the audit's "state machine stays in
+the app" split. Presentation + gating (`searchable` / `canRetryImport` / `canForceSearch`) are
+unchanged. The collection-origin (ownerless) wants from #394 still route through the same
+`FormatSearchSlot` (the `origin: 'collection'` → `books.searchPairingWant` branch is untouched).
+These two surfaces would now pass the PR-6 `action-anatomy` guard. Remaining: PR-6 (the guard).
+
 ## Open questions
 
 | ID   | Question                                                                                                                                                                                           | Resolution                                                                                                                                                               |
