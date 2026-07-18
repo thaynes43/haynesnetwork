@@ -1,4 +1,4 @@
-# ADR-071: Collections are direct-add — capped self-serve add/edit, over-cap cap-ticket-materialize, a find-missing grant, and Kometa auto-merge (supersedes ADR-069 + ADR-070)
+# ADR-072: Collections are direct-add — capped self-serve add/edit, over-cap cap-ticket-materialize, a find-missing grant, and Kometa auto-merge (supersedes ADR-069 + ADR-070)
 
 - **Status:** Accepted <!-- owner rulings 2026-07-18 are binding; docs-first, build follows -->
 - **Date:** 2026-07-18

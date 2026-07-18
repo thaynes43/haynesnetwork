@@ -1,7 +1,7 @@
 # DESIGN-042: Kometa collections — manage & contribute (the provider contract instantiated for movies/TV)
 
-- **Status:** Accepted <!-- revised 2026-07-18 to the direct-add + auto-merge model (ADR-071); was Draft under ADR-069 -->
-- **Last updated:** 2026-07-18 (REVISED to direct-add + auto-merge — ADR-071 supersedes ADR-069: the
+- **Status:** Accepted <!-- revised 2026-07-18 to the direct-add + auto-merge model (ADR-072); was Draft under ADR-069 -->
+- **Last updated:** 2026-07-18 (REVISED to direct-add + auto-merge — ADR-072 supersedes ADR-069: the
   propose→approve suggestion pipeline is removed; a within-cap grouping-only add AUTO-COMMITS +
   AUTO-MERGES the haynes-ops config PR. Prior: 2026-07-17 owner directive.)
 - **Satisfies:** PLAN-052 (collection-manager integration — the provider-agnostic surface, R1 KISS /
@@ -9,7 +9,7 @@
   adds; find-missing is a per-collection role grant); owner directive 2026-07-16: "apply the same
   concept to Kometa though it's more complex — keep it distilled to the types of collections /
   builders I am using now but let users hook in their own thing."
-- **Governed by:** **ADR-071** (direct-add + cap-ticket-materialize + find-missing grant + Kometa
+- **Governed by:** **ADR-072** (direct-add + cap-ticket-materialize + find-missing grant + Kometa
   auto-merge — supersedes ADR-069, whose git-PR managed-include / allowlisted-builder / validated-ref
   spine this design KEEPS, re-pointed at direct-add + auto-merge) on top of
   **ADR-064** (mirror-only doctrine: external software owns collections; the app authors a Kometa
@@ -25,7 +25,7 @@
 
 ## Overview
 
-> **REVISED 2026-07-18 (ADR-071 — direct-add + auto-merge).** The propose→approve suggestion pipeline
+> **REVISED 2026-07-18 (ADR-072 — direct-add + auto-merge).** The propose→approve suggestion pipeline
 > below is RETIRED. Any user now ADDS/EDITS a Kometa collection DIRECTLY, capped at
 > `collection_size_cap` (PR3, default 25). A within-cap, grouping-only (find-missing OFF) add
 > **auto-commits AND auto-merges** the haynes-ops config PR (bot-authored, app-owned managed file,
@@ -34,7 +34,7 @@
 > config PR is still **human-merged**. Read this design with D-02, D-07, and D-10 as revised; the
 > allowlist (D-04), the composer (D-05), the safety contract (D-03), and validation (D-09) are
 > unchanged. Where the text below says "suggest" / "approve" / "the acquire grant", read
-> "add/edit directly" / "materialize" / "the find-missing grant" per ADR-071.
+> "add/edit directly" / "materialize" / "the find-missing grant" per ADR-072.
 
 The estate already **mirrors** the 461 Plex collections (457 Kometa-managed) into the Movies/TV walls
 (DESIGN-035, read-only). This design adds the WRITE half for the Kometa provider: **any user adds a
@@ -209,7 +209,7 @@ the `acquire` grant (D-06). `variables` is a closed set — `syncMode`, `collect
 
 ### D-06 — Role gating: `role_collection_action_grants` — a single `find_missing` action (REVISED 2026-07-18)
 
-> **REVISED (ADR-071).** The three-action triad below (`suggest` / `manage` / `acquire`) is retired.
+> **REVISED (ADR-072).** The three-action triad below (`suggest` / `manage` / `acquire`) is retired.
 > The grant table survives with a SINGLE action, **`find_missing`** (migration 0069 rebuilds the
 > `COLLECTION_ACTIONS` CHECK, clears the old rows). Direct add/edit within the cap needs NO grant
 > (everyone); DELETE + unbounded is admin-only; the acquisition lever (`radarr_add_missing`/
@@ -256,7 +256,7 @@ same transaction (hard rule 6). Every suggestion state transition writes an audi
 
 ### D-07 — The write flow (REVISED 2026-07-18 — direct-add + auto-merge, no suggestion)
 
-> **REVISED (ADR-071).** The suggest→approve pipeline is retired. There is no `collection_suggestions`
+> **REVISED (ADR-072).** The suggest→approve pipeline is retired. There is no `collection_suggestions`
 > row and no manager review queue for a within-cap add. The direct-add flow, Kometa-shaped:
 
 1. **Add/edit (any user, within the cap).** The user fills the composer (builder + validated +
@@ -284,7 +284,7 @@ The collection row's state (drafting → PR opened (url) → validated → merge
 mirrored) is the durable audit spine across the async gap — the same trail the retired suggestion row
 carried, now hung off the recipe/write audit rather than a suggestion aggregate.
 
-### D-10 — Auto-merge policy (NEW 2026-07-18 — the ADR-071 ruling)
+### D-10 — Auto-merge policy (NEW 2026-07-18 — the ADR-072 ruling)
 
 The app AUTO-MERGES a haynes-ops config PR only when ALL of these hold; otherwise the PR is
 human-merged:
@@ -300,9 +300,9 @@ human-merged:
 Mechanics: the write client opens the PR bot-authored (dev-bot app token, CLAUDE.md), waits for the
 required check, and merges via the GitHub API (squash) — the same dance the release-train uses
 (App-token events trigger CI; a GITHUB_TOKEN push does not — arm auto-merge or poll + merge). The
-merged PR is the audit trail; a bad recipe is a `git revert`. This is the sole new automation ADR-071
+merged PR is the audit trail; a bad recipe is a `git revert`. This is the sole new automation ADR-072
 introduces over the estate's human-merge GitOps norm, and it is bounded by the four conditions above
-(ADR-071 C-06). A canary window (auto-merge behind a flag for the first runs) is a safe-rollout option
+(ADR-072 C-06). A canary window (auto-merge behind a flag for the first runs) is a safe-rollout option
 (DESIGN-043 Q-03).
 
 ### D-08 — The monitor story (what Kometa honestly exposes)
@@ -351,7 +351,7 @@ A malformed managed file can fail the entire Kometa run (all collections), so va
 
 ## Sequencing + risk (phases) — REVISED 2026-07-18 (maps to PLAN-052 PR4b/PR4c)
 
-> **REVISED (ADR-071).** The old Phase 1 (inert suggestions) is deleted with the suggestion model.
+> **REVISED (ADR-072).** The old Phase 1 (inert suggestions) is deleted with the suggestion model.
 > The Kometa write path builds as:
 
 1. **Phase 0 — read-only monitor.** Surface Kometa's honest run-state (Job status + meta.log link,
@@ -369,7 +369,7 @@ A malformed managed file can fail the entire Kometa run (all collections), so va
 Risk register: the async latency (D-02) is a UX-honesty risk, not a safety one — say it plainly. The
 orphan-on-remove and `--validate-file` connectivity items are UNVERIFIED (research §"Open") — canary
 before relying. The **auto-merge** (D-10) is the sharpest new automation — bounded to within-cap,
-grouping-only, managed-file-only, CI-green (ADR-071 C-06); a canary flag is the safe rollout.
+grouping-only, managed-file-only, CI-green (ADR-072 C-06); a canary flag is the safe rollout.
 
 ## Alternatives considered
 
@@ -409,7 +409,7 @@ grouping-only, managed-file-only, CI-green (ADR-071 C-06); a canary flag is the 
 
 | ID | Question | Resolution |
 |----|----------|------------|
-| Q-01 | **Write-path merge ruling:** does a config PR merge by a HUMAN or app-armed auto-merge after `--validate-file` green? | **RESOLVED 2026-07-18 (ADR-071, owner ruling): AUTO-MERGE the safe case** — within-cap, grouping-only (find-missing OFF), managed-file-only, `--validate-file` green (D-10). Over-cap materializations and find-missing enables stay HUMAN-merged. |
+| Q-01 | **Write-path merge ruling:** does a config PR merge by a HUMAN or app-armed auto-merge after `--validate-file` green? | **RESOLVED 2026-07-18 (ADR-072, owner ruling): AUTO-MERGE the safe case** — within-cap, grouping-only (find-missing OFF), managed-file-only, `--validate-file` green (D-10). Over-cap materializations and find-missing enables stay HUMAN-merged. |
 | Q-02 | **Which builder types are member-suggestible v1?** Proposed: the six single-ref types (`imdb_list`, `tmdb_collection_details`, `tvdb_list_details`, `tmdb_movie`, `tmdb_show`, `tvdb_show`); owner-only for `tmdb_discover`/`imdb_chart`/`imdb_search`/`plex_all`. | OPEN — owner ruling. The list is derived from the live config (D-04); owner confirms the cut. |
 | Q-03 | **Approval SLA / notification:** how is a member told their suggestion was approved/rejected/went live? A Ticket? The `notification_outbox` email channel (T-173)? In-app only? | OPEN — owner ruling. The outbox email channel + notification-preference machinery already exists (T-173/T-174) and is the cheap reuse. |
 | Q-04 | **Grant rollout:** which roles get `suggest` / `manage` / `acquire`, and when? | OPEN — owner ruling. Ships Admin-only (empty grants, DESIGN-033 default). Natural path: `suggest` to members early, `manage` to trusted roles, `acquire` owner-held long-term (the storage blast radius). |

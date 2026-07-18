@@ -1,6 +1,6 @@
 # ADR-069: Collection-manager integration — a confined `@hnet/libretto` write surface, role-governed collection actions, and member contributions
 
-- **Status:** Superseded by ADR-071 (was Accepted — owner directive 2026-07-16 eve, PLAN-052 Libretto leg. The `suggest`/`manage`/`acquire` grant triad, the `collection_suggestions` propose→approve flow, and the Integrations-hub placement are retired by the 2026-07-18 direct-add rulings (ADR-071). The confined `@hnet/libretto` client, the live API contract, and the provider-shaped model survive there. NOTE: this file's H1 is mislabeled "ADR-069" — a known two-track numbering collision, left as-is per ADR immutability.)
+- **Status:** Superseded by ADR-072 (was Accepted — owner directive 2026-07-16 eve, PLAN-052 Libretto leg. The `suggest`/`manage`/`acquire` grant triad, the `collection_suggestions` propose→approve flow, and the Integrations-hub placement are retired by the 2026-07-18 direct-add rulings (ADR-072). The confined `@hnet/libretto` client, the live API contract, and the provider-shaped model survive there. NOTE: this file's H1 is mislabeled "ADR-069" — a known two-track numbering collision, left as-is per ADR immutability.)
 - **Date:** 2026-07-17
 - **Deciders:** Tom Haynes (owner directive 2026-07-16: "add a way to haynesnetwork.com to
   manage and monitor its collections... it would be great for users to be able to contribute to
