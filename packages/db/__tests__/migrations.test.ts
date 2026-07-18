@@ -1,7 +1,9 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { Client } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startPostgres, withMigratedDb, type StartedPostgres } from '@hnet/test-utils';
-import { runMigrations } from '../src/migrate';
+import { DEFAULT_MIGRATIONS_FOLDER, runMigrations } from '../src/migrate';
 
 // NOTE: this file exercises schema-level invariants (CHECK constraints, seed
 // semantics) with direct SQL on purpose — it is on the ALLOWED_FILES list of the
@@ -1882,5 +1884,43 @@ describe('migrations against embedded Postgres 16', () => {
         `DELETE FROM books_items WHERE external_id IN ('enrich-legacy','enrich-abs')`,
       );
     });
+  });
+});
+
+// REGRESSION GUARD (2026-07-18) — the drizzle node-postgres migrator applies a journaled migration
+// ONLY when its `when` (folderMillis) is STRICTLY GREATER than the created_at of the last row in
+// drizzle.__drizzle_migrations (pg-core dialect.js: `Number(lastDbMigration.created_at) < migration.folderMillis`).
+// So a migration whose `_journal.json` `when` is <= its predecessor's is SILENTLY SKIPPED on any
+// incremental (already-migrated) database — even though a fresh DB applies every journaled entry in
+// order and looks fine. That trap shipped once (0067_collection_size_cap reused 0066's timestamp, so
+// prod stayed at 0066 while every test on a fresh DB passed). These pure checks would have caught it.
+describe('migration journal integrity (_journal.json — the incremental-apply invariant)', () => {
+  interface JournalEntry { idx: number; when: number; tag: string }
+  const journal = JSON.parse(
+    readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, 'meta', '_journal.json'), 'utf8'),
+  ) as { entries: JournalEntry[] };
+
+  // One historical collision predates this guard and is BENIGN: 0056 + 0057 shipped in the SAME
+  // release, so the migrator (which compares every migration in a run against the single pre-loop
+  // lastDbMigration, not updated per-iteration) applied both. It is already applied on every DB and
+  // shipped migrations are immutable (CLAUDE.md), so it is grandfathered — NOT a licence for new ones.
+  const GRANDFATHERED_EQUAL = new Set(['0057_gb_quota_state']);
+
+  it('every entry `when` is STRICTLY greater than the previous (else the migrator skips it incrementally)', () => {
+    const byIdx = [...journal.entries].sort((a, b) => a.idx - b.idx);
+    const offenders: string[] = [];
+    for (let i = 1; i < byIdx.length; i++) {
+      const prev = byIdx[i - 1]!;
+      const cur = byIdx[i]!;
+      if (cur.when <= prev.when && !GRANDFATHERED_EQUAL.has(cur.tag)) {
+        offenders.push(`${cur.tag} (when=${cur.when}) must be > ${prev.tag} (when=${prev.when})`);
+      }
+    }
+    expect(offenders, offenders.join('; ')).toEqual([]);
+  });
+
+  it('idx values are contiguous from 0 (no gap/duplicate that would desync journal order)', () => {
+    const idxs = journal.entries.map((e) => e.idx).sort((a, b) => a - b);
+    expect(idxs).toEqual(idxs.map((_, i) => i));
   });
 });
