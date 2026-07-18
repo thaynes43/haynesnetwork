@@ -12,6 +12,7 @@ import {
   tickets,
   type CollectionOverridePayload,
 } from '@hnet/db';
+import { syncBooksCollections } from '@hnet/domain';
 import {
   compileManagedFile,
   setRoleCollectionActions,
@@ -120,6 +121,46 @@ describe('collections overview — everyone reads, no grant, no section floor (A
     expect(res.provider).toBe('kometa');
     expect(res.recipes).toEqual([]);
     expect(res.pendingPrs).toEqual([]);
+  });
+
+  it('mirror source is the media-type authority — an ABS-produced recipe lands on Audiobooks, not Books (D-09; the live dune-audiobooks miss)', async () => {
+    const member = await createUser(t.db);
+    const stub = stubLibretto();
+    // A recipe whose produced collection Libretto's own read does NOT surface (listCollections
+    // empty) — the targetKind heuristic alone would default it to Books. The mirror knows better.
+    stub.recipes.push({
+      id: 'dune-audiobooks',
+      name: 'Dune',
+      builder: { type: 'hardcover_series', ref: 'dune' },
+      enabled: true,
+    });
+    // Seed through the SANCTIONED domain writer (never a direct insert — the
+    // no-direct-state-writes guard forbids it, the books-collections.test.ts idiom).
+    await syncBooksCollections({
+      db: t.db,
+      collections: [
+        {
+          source: 'audiobookshelf',
+          externalId: 'abs-dune-1',
+          kind: 'collection',
+          libraryId: 'lib1',
+          title: 'Dune',
+          itemCount: 6,
+          ordered: true,
+          createdBy: 'libretto',
+          librettoRecipeId: 'dune-audiobooks',
+          category: null,
+          members: [],
+          fullyRead: true,
+        },
+      ],
+      scopedFamilies: [{ source: 'audiobookshelf', kind: 'collection' }],
+    });
+    const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stub.ctx };
+    const audiobooks = await caller(ctx).collections.overview({ mediaType: 'audiobooks' });
+    expect(audiobooks.recipes.map((r) => r.id)).toContain('dune-audiobooks');
+    const books = await caller(ctx).collections.overview({ mediaType: 'books' });
+    expect(books.recipes.map((r) => r.id)).not.toContain('dune-audiobooks');
   });
 
   it('an ADMIN reads with capBypass + canFindMissing', async () => {
