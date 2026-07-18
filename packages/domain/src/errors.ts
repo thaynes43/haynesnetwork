@@ -369,6 +369,25 @@ export class KapowarrUpstreamError extends Error {
   }
 }
 
+/**
+ * DESIGN-035 D-17 — a NON-ADMIN tried to create/add a collection whose resolved membership exceeds
+ * `collection_size_cap` (default 25). Acquisition is ON for collections, so an unbounded collection
+ * would flood the *arrs; the guard throws this BEFORE any confined provider write, carrying the
+ * offending size + the live cap so the client can render the over-cap Modal (which files the
+ * admin-override ticket). Admins bypass the cap outright and never see this. Surfaced as
+ * UNPROCESSABLE_CONTENT (the SearchCapExceededError sibling — a well-formed request the estate
+ * refuses on policy grounds).
+ */
+export class CollectionSizeCapError extends Error {
+  readonly code = 'COLLECTION_SIZE_CAP_EXCEEDED' as const;
+  constructor(
+    message: string,
+    readonly detail: { size: number; cap: number },
+  ) {
+    super(message);
+  }
+}
+
 function pgErrorCode(err: unknown): string | undefined {
   if (typeof err !== 'object' || err === null) return undefined;
   const code = (err as { code?: unknown }).code;

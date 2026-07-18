@@ -168,4 +168,5 @@ export * from './activity-permissions';
 export * from './libretto-clients';
 export * from './collections-manager';
 export * from './collection-permissions';
+export * from './collection-size-cap';
 export * from './collection-suggestions';

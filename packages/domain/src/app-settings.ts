@@ -296,7 +296,15 @@ export interface AppSettingValueMap {
   // treats them like motd/space_targets.
   authentik_owned_groups: string[];
   authentik_group_map: Record<string, string>;
+  // DESIGN-035 D-17 — the max resolved collection membership a NON-ADMIN may create/add (int; default
+  // COLLECTION_SIZE_CAP_DEFAULT). A number, like trash_default_window_days — the getAppSetting
+  // typeof-guard falls back to the default if a hand-edited jsonb row is the wrong type.
+  collection_size_cap: number;
 }
+
+/** DESIGN-035 D-17 — the owner-fixed default non-admin collection size cap (LISTS are the admin-only
+ *  exception; an admin bypasses the cap outright). */
+export const COLLECTION_SIZE_CAP_DEFAULT = 25;
 
 /** The documented default returned when a key has no row (never null — every key has a default). */
 export const APP_SETTING_DEFAULTS: AppSettingValueMap = {
@@ -337,6 +345,8 @@ export const APP_SETTING_DEFAULTS: AppSettingValueMap = {
   // Family role resolves to 'family' by the name.toLowerCase() convention with no explicit entry.
   authentik_owned_groups: ['family'],
   authentik_group_map: {},
+  // DESIGN-035 D-17 — the non-admin collection size cap ships at 25 (the owner-fixed default).
+  collection_size_cap: COLLECTION_SIZE_CAP_DEFAULT,
 };
 
 /**

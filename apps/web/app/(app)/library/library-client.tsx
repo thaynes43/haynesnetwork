@@ -40,7 +40,7 @@
 // (dimmed) and the initial load shows skeleton poster boxes — never a spinner that collapses.
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { Fragment, Suspense, useEffect, useRef, useState } from 'react';
 import {
   FilterChip,
   addFilterValue,
@@ -80,7 +80,9 @@ import {
   type ViewRegistryEntry,
   type WallGrouping,
 } from '@/lib/library-view-registry';
+import { MediaAction } from '@hnet/ui';
 import { GroupCard, MediaCard, PosterGrid, PosterGridSkeleton } from '@/components/cards';
+import { ForceSearchDialog } from './[id]/force-search-dialog';
 import { MyFixesPanel } from '@/components/my-fixes-panel';
 import { ActivityPanel } from './activity-panel';
 import { CHIP_LABELS, DateRangeChip, RatingChip, SelectChip } from '@/components/filter-chips';
@@ -517,6 +519,10 @@ function MediaBrowser({
   // via the key) debounced 250ms into the URL; the QUERY reads ?q, so URL and results always
   // agree and a shared link restores the text.
   const [query, setQuery] = useState(qParam);
+  // DESIGN-035 D-16/D-17 — the collection-drill Wanted-tile force-search target (null = closed). The
+  // Wanted tiles carry the shared @hnet/ui <MediaAction action="forceSearch"> which opens the shipped
+  // ForceSearchDialog for that member (the existing per-item Radarr search — reused, not re-rolled).
+  const [fsItem, setFsItem] = useState<{ id: string; arrKind: string; title: string } | null>(null);
   useEffect(() => {
     const t = setTimeout(() => {
       const current = new URLSearchParams(window.location.search).get('q') ?? '';
@@ -996,12 +1002,11 @@ function MediaBrowser({
             const tmdbRating = ratingOrNull(item.metadata.tmdbRating);
             const rating = formatRating(imdbRating ?? tmdbRating);
             const ratingSource = imdbRating !== null ? 'IMDb' : 'TMDb';
-            return (
-              // Slim badge row (owner densify 2026-07-06): the kind badge is dropped — the active
-              // tab already names the kind — leaving the rating star + on-disk state (Wanted /
-              // On disk — the badge the Books/Goodreads walls clone) and the tombstone flag.
+            // Slim badge row (owner densify 2026-07-06): the kind badge is dropped — the active
+            // tab already names the kind — leaving the rating star + on-disk state (Wanted /
+            // On disk — the badge the Books/Goodreads walls clone) and the tombstone flag.
+            const card = (
               <MediaCard
-                key={item.id}
                 href={`/library/${item.id}`}
                 posterUrl={item.posterUrl}
                 kind={item.arrKind}
@@ -1015,6 +1020,29 @@ function MediaBrowser({
                   item.tombstoned ? { label: 'Removed', tone: 'danger' } : null,
                 ]}
               />
+            );
+            // DESIGN-035 D-16/D-17 — a Wanted member of a DRILLED movies (radarr) collection gets the
+            // shared force-search action overlaid on its tile (the shipped per-item Radarr search). The
+            // action is a corner overlay (a sibling of the card link, never nested in the <a>) so the tile
+            // keeps its uniform size — recolors on arm, never reflows (ADR-015).
+            const wantedFsSeam =
+              drilled && item.arrKind === 'radarr' && disk.label === 'Wanted' && !item.tombstoned;
+            if (!wantedFsSeam) return <Fragment key={item.id}>{card}</Fragment>;
+            return (
+              <div key={item.id} className="coll-wanted">
+                {card}
+                <span className="coll-wanted__fs">
+                  <MediaAction
+                    action="forceSearch"
+                    size="sm"
+                    onFire={() =>
+                      setFsItem({ id: item.id, arrKind: item.arrKind, title: item.title })
+                    }
+                    testId="collection-wanted-forcesearch"
+                    ariaLabel={`Force search ${item.title}`}
+                  />
+                </span>
+              </div>
             );
           })}
         </PosterGrid>
@@ -1032,6 +1060,18 @@ function MediaBrowser({
           </button>
         </div>
       ) : null}
+
+      {/* DESIGN-035 D-16/D-17 — the shipped Force Search dialog, reused for a collection-drill Wanted
+          member (the shared per-item Radarr search; opened by the tile's <MediaAction forceSearch>). */}
+      <ForceSearchDialog
+        open={fsItem !== null}
+        item={fsItem ?? { id: '', arrKind: 'radarr', title: '' }}
+        onClose={() => setFsItem(null)}
+        onSubmitted={() => {
+          // The search runs async; refresh the drill so the member's on-disk state updates when it lands.
+          void search.refetch();
+        }}
+      />
     </>
   );
 }

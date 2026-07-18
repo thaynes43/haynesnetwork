@@ -33,6 +33,10 @@ const APP_CODE_COPY: Record<string, string> = {
     'Maintainerr isn’t in a safe state — nothing was deleted. Check the Trash safety banner.',
   MAINTAINERR_UNAVAILABLE: 'Maintainerr didn’t respond. Nothing changed — try again in a bit.',
   TRASH_MUSIC_UNSUPPORTED: 'Music can’t be deleted or restored through Trash.',
+  // DESIGN-035 D-17 — the non-admin collection size cap. The composer catches this appCode and opens
+  // the over-cap Modal (which files the admin-override ticket), so this copy is only a fallback.
+  COLLECTION_SIZE_CAP_EXCEEDED:
+    'This collection is too large for your role — ask an admin to approve a larger bound.',
 };
 
 /** The machine-readable appCode riding on a TRPCClientError, if any. */

@@ -4416,6 +4416,28 @@ button.bwall-tap:focus-visible {
   color: var(--color-text-muted);
   border-color: var(--color-border);
 }
+/* DESIGN-035 D-16/D-17 — a collection-drill Wanted tile: the shared <MediaAction forceSearch> rides
+   the poster's bottom edge as an overlay sibling of the card link (never nested in the <a>), so the
+   tile keeps its uniform grid size. The button recolors on hover/arm; layout is fixed (ADR-015). */
+.coll-wanted {
+  position: relative;
+  display: block;
+}
+.coll-wanted__fs {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 34px; /* clears the caption/badge row beneath the poster */
+  display: flex;
+  justify-content: center;
+  z-index: 2;
+  pointer-events: none; /* the button re-enables it; the rest of the overlay never blocks the card link */
+}
+.coll-wanted__fs .btn {
+  pointer-events: auto;
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--color-text) 22%, transparent);
+}
+
 /* Poster treatment per state — filters/outlines only (no geometry): a saved/protected poster
    gets an accent ring; swept/skipped posters recede. */
 .bwall-tile[data-glyph='shield'] .poster-box,

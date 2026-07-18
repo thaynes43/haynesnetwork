@@ -34,6 +34,7 @@ import {
   librettoBundleFromEnv,
   type LibrettoClientBundle,
   CollectionAcquireForbiddenError,
+  CollectionSizeCapError,
   CollectionSuggestionNotOpenError,
   LedgerItemTombstonedError,
   LibraryNotAllowedError,
@@ -391,6 +392,7 @@ const APP_CODED_ERRORS = [
   PlexAllStateError,
   PlexServerUnavailableError,
   SearchCapExceededError,
+  CollectionSizeCapError,
   MaintainerrUnsafeError,
   MaintainerrUpstreamError,
   TrashMusicUnsupportedError,
@@ -512,6 +514,11 @@ export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
       throw new TRPCError({ code: 'UNPROCESSABLE_CONTENT', message: err.message, cause: err });
     }
     if (err instanceof SearchCapExceededError) {
+      throw new TRPCError({ code: 'UNPROCESSABLE_CONTENT', message: err.message, cause: err });
+    }
+    if (err instanceof CollectionSizeCapError) {
+      // DESIGN-035 D-17 — a non-admin create/add breached collection_size_cap. The client reads the
+      // appCode (COLLECTION_SIZE_CAP_EXCEEDED) to open the over-cap Modal + file the override ticket.
       throw new TRPCError({ code: 'UNPROCESSABLE_CONTENT', message: err.message, cause: err });
     }
     if (err instanceof LibraryNotAllowedError) {
