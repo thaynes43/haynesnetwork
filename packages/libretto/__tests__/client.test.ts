@@ -173,6 +173,98 @@ describe('LibrettoReadClient', () => {
     });
     expect(await client.resolve({ title: 'Nonexistent Work' })).toBeNull();
   });
+
+  it('searches a builder ref by name (typeahead)', async () => {
+    const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(url).toBe('http://libretto.test/api/search?type=hardcover_series&q=storm&limit=5');
+      expect(init?.method).toBe('GET');
+      return jsonResponse(200, {
+        type: 'hardcover_series',
+        query: 'storm',
+        results: [
+          {
+            ref: '997',
+            name: 'The Stormlight Archive',
+            workCount: 10,
+            author: 'Brandon Sanderson',
+          },
+        ],
+        truncated: true,
+      });
+    });
+    const client = new LibrettoReadClient({
+      ...OPTS,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    const res = await client.search({ type: 'hardcover_series', q: 'storm', limit: 5 });
+    expect(res.results?.[0]?.ref).toBe('997');
+    expect(res.results?.[0]?.workCount).toBe(10);
+    expect(res.truncated).toBe(true);
+  });
+
+  it('previews a draft builder to its resolved member identities', async () => {
+    const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(url).toBe('http://libretto.test/api/preview');
+      expect(init?.method).toBe('POST');
+      expect(JSON.parse(String(init?.body))).toEqual({
+        builder: { type: 'hardcover_series', ref: '997' },
+        limit: 100,
+      });
+      return jsonResponse(200, {
+        builder: { type: 'hardcover_series', ref: '997' },
+        total: 3,
+        truncated: false,
+        members: [
+          {
+            label: 'The Way of Kings (#1 in The Stormlight Archive)',
+            title: 'The Way of Kings',
+            author: 'Brandon Sanderson',
+            isbn: '9780765326355',
+            position: 1,
+            identifiers: ['isbn:9780765326355'],
+          },
+        ],
+      });
+    });
+    const client = new LibrettoReadClient({
+      ...OPTS,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    const res = await client.preview({
+      builder: { type: 'hardcover_series', ref: '997' },
+      limit: 100,
+    });
+    expect(res.total).toBe(3);
+    expect(res.members?.[0]?.position).toBe(1);
+    expect(res.members?.[0]?.isbn).toBe('9780765326355');
+  });
+
+  it('degrades an unconfigured search source (503) to LibrettoUnreachableError', async () => {
+    // 5xx is transient in the shared http wrapper: it retries then maps to UNREACHABLE, so a 503 from
+    // an unconfigured source is indistinguishable from a down Libretto — both degrade the field honestly.
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse(503, { error: 'hardcover_series search needs HARDCOVER_TOKEN' }),
+    );
+    const client = new LibrettoReadClient({
+      ...OPTS,
+      retries: 0,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    await expect(client.search({ type: 'hardcover_series', q: 'storm' })).rejects.toBeInstanceOf(
+      LibrettoUnreachableError,
+    );
+  });
+
+  it('surfaces a 400 (unknown builder type) as a LibrettoHttpError', async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse(400, { error: 'unknown builder type "nope"' }),
+    );
+    const client = new LibrettoReadClient({
+      ...OPTS,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    await expect(client.search({ type: 'nope', q: 'x' })).rejects.toBeInstanceOf(LibrettoHttpError);
+  });
 });
 
 describe('LibrettoWriteClient', () => {
