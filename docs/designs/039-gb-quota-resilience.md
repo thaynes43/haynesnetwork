@@ -1,7 +1,7 @@
 # DESIGN-039: Google Books quota resilience — the shared breaker + retryable book Fixes
 
 - **Status:** Draft
-- **Last updated:** 2026-07-16
+- **Last updated:** 2026-07-18
 - **Satisfies:** PRD-001 R-218..R-220; governed by ADR-067 (the breaker + queued fixes),
   ADR-055 (GB client boundary), ADR-062 (books Fix contract), ADR-065 (pairing mint cap),
   hard rules 1/6 (state-table discipline), 8/9 (UI confirm/reflow).
@@ -40,9 +40,45 @@ coordinator reconciles at merge (the established two-track protocol).
 ### D-02 — The breaker single-writer (`packages/domain/src/gb-quota-breaker.ts`)
 
 - `classifyGb429(error): 'daily' | 'minute' | null` — structural (no `@hnet/goodreads`
-  dependency): an error object with `status === 429` classifies by body/message text
-  (`/per day|daily/i` ⇒ `daily`; any other 429 ⇒ `minute`, the conservative short trip);
-  anything else ⇒ `null` (not the breaker's business).
+  dependency): an error object with `status === 429` classifies by the RESPONSE BODY only
+  (`bodySnippet`); a body naming the per-day window (`/per day|daily limit|dailyLimitExceeded/i`)
+  ⇒ `daily`; any other 429 — per-minute, or body-less/unparsable ⇒ `minute`, the conservative
+  short trip; anything else ⇒ `null` (not the breaker's business). See **D-02a** for why the body
+  string (not `errors[].reason`) is the daily signal and why the error's own `.message` is excluded.
+
+### D-02a — 429 classification: what actually distinguishes daily from a burst (2026-07-18)
+
+A live capture of a genuine per-DAY exhaustion of the shared key (GCP `project_number:841331826441`)
+settled two questions that the original `/per day|daily/i`-over-`message`-and-`bodySnippet` version
+got subtly wrong:
+
+- **`errors[].reason` is NOT a daily signal.** The real per-day 429 body was
+  `{"error":{"code":429,"message":"Quota exceeded … limit 'Queries per day' …","errors":[{… "reason":"rateLimitExceeded"}], "status":"RESOURCE_EXHAUSTED", "details":[{"reason":"RATE_LIMIT_EXCEEDED"}]}}`
+  — i.e. a genuine daily exhaustion reports `reason:"rateLimitExceeded"`, identical to a per-minute
+  burst. Only the human-readable `message` names the window (`limit 'Queries per day'` vs
+  `limit 'Queries per minute per user'`). So we classify on the message STRING, never the reason
+  code — keying off the reason would misclassify every daily exhaustion as a 2-minute burst and
+  hammer an empty quota all day.
+- **Classify on `bodySnippet`, never the error's `.message`.** `GoodreadsHttpError.message` embeds
+  the request URL (key-redacted, but title-bearing: `q=intitle:<title>…`). Scanning it for
+  `daily`/`per day` meant a per-MINUTE burst 429 on a book whose title contains those words
+  (e.g. "The Daily Stoic") false-armed the **24-hour** daily breaker — a self-inflicted day-long
+  starvation. The body snippet carries the real signal without the title. Body-less/unparsable
+  429 ⇒ `minute` (fail toward retrying the same day; a genuine daily re-trips on the next probe).
+
+`google-books`'s `getText` mirrors this: the "don't retry a daily 429" short-circuit uses the same
+`GB_DAILY_QUOTA_BODY` regex against the `bodySnippet` only, and per-minute/5xx retries now use
+`nextBackoffMs` (jittered linear backoff, honoring a capped `Retry-After` when present — GB sends
+none on quota 429s, so jitter is the norm; it de-synchronises the three consumers' retries).
+
+**Not a code fix: the capacity problem.** The 2026-07-18 incident (pairing's first post-07:00 GB
+call 429'd `daily` and starved 210 wants) was a *correct* classification of a genuinely empty daily
+quota — the shared key's per-day allotment was already spent by ~07:32 UTC, 32 min after the reset,
+by a consumer outside haynesnetwork's namespaces (books-sync makes no GB calls; the Libretto broker
+made ~16). The ISBN-resolve path itself works when quota exists (07-17 minted 25+25 in the healthy
+post-reset window). The durable remediation is quota capacity / consumption, not classification —
+tracked as owner ops follow-up (raise the GB per-day quota on the shared project, or isolate the
+competing consumer), not code here.
 - `nextGbDailyReset(now): Date` — the next `GB_DAILY_RESET_UTC_HOUR` (default 07:00 UTC,
   env-tunable) strictly after `now`.
 - `tripGbQuotaBreaker({ db, kind, detail?, now? }): Promise<Date>` — upserts the singleton:

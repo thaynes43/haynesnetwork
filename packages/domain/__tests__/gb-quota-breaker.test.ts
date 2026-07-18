@@ -48,8 +48,32 @@ describe('classifyGb429 (structural daily-vs-minute)', () => {
   });
 
   it("classifies a per-minute 429 (and an unhinted 429) as 'minute'", () => {
-    expect(classifyGb429(http429(`limit 'Queries per minute' exceeded`))).toBe('minute');
+    expect(classifyGb429(http429(`limit 'Queries per minute per user' exceeded`))).toBe('minute');
     expect(classifyGb429(Object.assign(new Error('429'), { status: 429 }))).toBe('minute');
+  });
+
+  it("classifies the REAL Google per-day body as 'daily' even though errors[].reason is 'rateLimitExceeded'", () => {
+    // A 2026-07-18 live capture: a genuine per-day exhaustion carries reason "rateLimitExceeded"
+    // (not "dailyLimitExceeded") — the window is named ONLY in the message string.
+    const realBody =
+      `{"error":{"code":429,"message":"Quota exceeded for quota metric 'Queries' and limit ` +
+      `'Queries per day' of service 'books.googleapis.com' for consumer 'project_number:X'.",` +
+      `"errors":[{"message":"Quota exceeded...","domain":"global","reason":"rateLimitExceeded"}],` +
+      `"status":"RESOURCE_EXHAUSTED"}}`;
+    expect(classifyGb429(http429(realBody))).toBe('daily');
+  });
+
+  it("does NOT arm 'daily' from a 'daily'/'per day' book TITLE in the error message (per-minute burst)", () => {
+    // The self-inflicted 24h-starvation class: the error's `.message` embeds the request URL
+    // (title-bearing). A per-minute burst on a book titled with "daily" must stay 'minute'.
+    const burst = Object.assign(
+      new Error(
+        `GET https://www.googleapis.com/books/v1/volumes?q=intitle:The+Daily+Stoic&key=REDACTED → ` +
+          `HTTP 429 — limit 'Queries per minute per user' exceeded`,
+      ),
+      { status: 429, bodySnippet: `limit 'Queries per minute per user' exceeded` },
+    );
+    expect(classifyGb429(burst)).toBe('minute');
   });
 
   it('returns null for non-429s and non-errors (not the breaker business)', () => {
