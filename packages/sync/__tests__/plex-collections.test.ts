@@ -5,6 +5,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { and, asc, eq } from 'drizzle-orm';
 import {
+  mediaItems,
   plexCollections,
   plexCollectionMembers,
   plexLibraries,
@@ -13,12 +14,17 @@ import {
 import type { Database, PlexServerSlug } from '@hnet/db';
 import {
   syncPlexCollections,
+  upsertMediaItemsBatch,
   upsertPlexLibraries,
   type PlexClientBundle,
   type PlexCollectionSyncInput,
 } from '@hnet/domain';
 import type { PlexReadClient } from '@hnet/plex/read';
-import { fetchPlexCollectionsSnapshot } from '../src/plex-collections';
+import {
+  fetchPlexCollectionsSnapshot,
+  normalizeCollectionTitle,
+  type RadarrCollectionsReader,
+} from '../src/plex-collections';
 import { bootMigratedDb, type TestDb } from './helpers';
 
 /** A fake HOps PlexReadClient: one registered Movies section with two collections, one Photos
@@ -62,7 +68,10 @@ function fakeHopsRead(): PlexReadClient {
   } as unknown as PlexReadClient;
 }
 
-function bundle(read: PlexReadClient, slug: PlexServerSlug = 'haynesops'): Pick<PlexClientBundle, 'read'> {
+function bundle(
+  read: PlexReadClient,
+  slug: PlexServerSlug = 'haynesops',
+): Pick<PlexClientBundle, 'read'> {
   return { read: { [slug]: read } as unknown as Record<PlexServerSlug, PlexReadClient> };
 }
 
@@ -119,7 +128,7 @@ async function memberRows(db: Database, collectionRatingKey: string) {
 }
 
 describe('fetchPlexCollectionsSnapshot + syncPlexCollections (ADR-064)', () => {
-  it('mirrors the registered section\'s collections + raw members; skips photo/unmapped sections', async () => {
+  it("mirrors the registered section's collections + raw members; skips photo/unmapped sections", async () => {
     const snap = await fetchPlexCollectionsSnapshot({ db: t.db, plex: bundle(fakeHopsRead()) });
     expect(snap.stats.sectionsRead).toBe(1);
     expect(snap.stats.unmappedSections).toBe(1); // the 4K section absent from the registry
@@ -147,8 +156,20 @@ describe('fetchPlexCollectionsSnapshot + syncPlexCollections (ADR-064)', () => {
     expect(await collectionRows(t.db)).toEqual([
       // D-10' — the writer stores the label-derived category: 77001's owner `List` label → 'List',
       // 77002 carries no owner/section label → null (shows only under "All", no chip).
-      { ratingKey: '77001', title: 'IMDb Top 250', childCount: 250, category: 'List', createdBy: 'kometa' },
-      { ratingKey: '77002', title: 'The Fixture Franchise', childCount: 2, category: null, createdBy: 'plex' },
+      {
+        ratingKey: '77001',
+        title: 'IMDb Top 250',
+        childCount: 250,
+        category: 'List',
+        createdBy: 'kometa',
+      },
+      {
+        ratingKey: '77002',
+        title: 'The Fixture Franchise',
+        childCount: 2,
+        category: null,
+        createdBy: 'plex',
+      },
     ]);
     // RAW membership regardless of ledger match (owner R3) — no media_items exist at all here.
     expect(await memberRows(t.db, '77001')).toEqual([
@@ -205,7 +226,13 @@ describe('fetchPlexCollectionsSnapshot + syncPlexCollections (ADR-064)', () => {
     expect(report.membersRemoved).toBe(1); // 9002 left the fully-read 77001
     expect(report.collectionsRemoved).toBe(1); // 77002 vanished from the scoped library
     expect(await collectionRows(t.db)).toEqual([
-      { ratingKey: '77001', title: 'IMDb Top 250 (2026)', childCount: 249, category: 'List', createdBy: 'kometa' },
+      {
+        ratingKey: '77001',
+        title: 'IMDb Top 250 (2026)',
+        childCount: 249,
+        category: 'List',
+        createdBy: 'kometa',
+      },
     ]);
     expect(await memberRows(t.db, '77001')).toEqual([{ ratingKey: '9001', sortOrder: 0 }]);
     // 77002's members CASCADEd away with it.
@@ -265,7 +292,13 @@ describe('fetchPlexCollectionsSnapshot + syncPlexCollections (ADR-064)', () => {
     });
     // Title advanced; the existing member survived (no reconcile without a full member read).
     expect(await collectionRows(t.db)).toEqual([
-      { ratingKey: '77001', title: 'IMDb Top 250 (2027)', childCount: 251, category: 'List', createdBy: 'kometa' },
+      {
+        ratingKey: '77001',
+        title: 'IMDb Top 250 (2027)',
+        childCount: 251,
+        category: 'List',
+        createdBy: 'kometa',
+      },
     ]);
     expect(await memberRows(t.db, '77001')).toEqual([{ ratingKey: '9001', sortOrder: 0 }]);
   });
@@ -286,7 +319,10 @@ describe('fetchPlexCollectionsSnapshot + syncPlexCollections (ADR-064)', () => {
         return { items: [{ ratingKey: '9009' }], librarySectionId: '1', totalSize: 1 };
       },
     } as unknown as PlexReadClient;
-    const snap = await fetchPlexCollectionsSnapshot({ db: t.db, plex: bundle(truncatedListingRead) });
+    const snap = await fetchPlexCollectionsSnapshot({
+      db: t.db,
+      plex: bundle(truncatedListingRead),
+    });
     expect(snap.stats.sectionsRead).toBe(1);
     expect(snap.stats.truncatedSections).toBe(1);
     expect(snap.scopedLibraryIds).toHaveLength(0); // NOT scoped — the writer's reconcile must skip
@@ -349,5 +385,117 @@ describe('fetchPlexCollectionsSnapshot + syncPlexCollections (ADR-064)', () => {
     expect((await collectionRows(t.db)).find((c) => c.ratingKey === '77009')).toMatchObject({
       category: 'Universe',
     });
+  });
+});
+
+// DESIGN-035 D-16 — the Radarr-native (M-a) Wanted-tile membership resolution in the fetcher.
+async function seedRadarrItem(
+  db: Database,
+  o: { arrItemId: number; tmdbId: number; onDisk: number; title: string },
+) {
+  // Through the domain single writer (direct inserts into media_items are forbidden by the guard).
+  await upsertMediaItemsBatch({
+    db,
+    arrKind: 'radarr',
+    items: [
+      {
+        title: o.title,
+        arrItemId: o.arrItemId,
+        tvdbId: null,
+        tmdbId: o.tmdbId,
+        musicbrainzArtistId: null,
+        sortTitle: o.title.toLowerCase(),
+        year: 2020,
+        monitored: true,
+        qualityProfileId: 1,
+        qualityProfileName: 'Any',
+        metadataProfileId: null,
+        metadataProfileName: null,
+        rootFolder: '/movies',
+        arrTags: [],
+        onDiskFileCount: o.onDisk,
+        expectedFileCount: 1,
+        sizeOnDisk: 1000,
+        arrAttrs: {},
+      },
+    ],
+  });
+  const [row] = await db
+    .select({ id: mediaItems.id })
+    .from(mediaItems)
+    .where(and(eq(mediaItems.arrKind, 'radarr'), eq(mediaItems.arrItemId, o.arrItemId)));
+  return row!.id;
+}
+
+function radarrStub(
+  collections: Array<{ title: string; movies?: Array<{ tmdbId: number }> | null }>,
+  onList?: () => void,
+): RadarrCollectionsReader {
+  return {
+    async listCollections() {
+      onList?.();
+      return collections;
+    },
+  };
+}
+
+describe('fetchPlexCollectionsSnapshot — Radarr Wanted membership (DESIGN-035 D-16)', () => {
+  it('title-matches a Radarr collection and resolves its WANTED (on_disk=0) members', async () => {
+    // tmdb 555 is WANTED (0 on disk); tmdb 556 is HELD (1 on disk) → only 555 becomes a wanted row.
+    const wantedId = await seedRadarrItem(t.db, {
+      arrItemId: 555,
+      tmdbId: 555,
+      onDisk: 0,
+      title: 'Wanted Movie',
+    });
+    await seedRadarrItem(t.db, { arrItemId: 556, tmdbId: 556, onDisk: 1, title: 'Held Movie' });
+    const radarr = radarrStub([
+      // "The Fixture Franchise Collection" normalizes to match the Plex "The Fixture Franchise".
+      { title: 'The Fixture Franchise Collection', movies: [{ tmdbId: 555 }, { tmdbId: 556 }] },
+      { title: 'Some Other Collection', movies: [{ tmdbId: 999 }] },
+    ]);
+    const snap = await fetchPlexCollectionsSnapshot({
+      db: t.db,
+      plex: bundle(fakeHopsRead()),
+      radarr,
+    });
+
+    const franchise = snap.collections.find((c) => c.ratingKey === '77002')!;
+    expect(franchise.wantedResolved).toBe(true);
+    expect(franchise.wantedMemberIds).toEqual([wantedId]); // 555 only (556 is on disk)
+    // A movie collection with no Radarr title-match is still RESOLVED (empty set → clears stale rows).
+    const imdb = snap.collections.find((c) => c.ratingKey === '77001')!;
+    expect(imdb.wantedResolved).toBe(true);
+    expect(imdb.wantedMemberIds).toEqual([]);
+    expect(snap.stats.radarrCollectionsRead).toBe(2);
+    expect(snap.stats.wantedMatchedCollections).toBe(1);
+    expect(snap.stats.wantedMembersResolved).toBe(1);
+  });
+
+  it('no Radarr client → held-only (no collection is wantedResolved)', async () => {
+    const snap = await fetchPlexCollectionsSnapshot({ db: t.db, plex: bundle(fakeHopsRead()) });
+    for (const c of snap.collections) expect(c.wantedResolved).toBeUndefined();
+    expect(snap.stats.radarrCollectionsRead).toBe(0);
+  });
+
+  it('a Radarr read FAILURE leaves every collection unresolved (preserve existing wanted rows)', async () => {
+    const failing: RadarrCollectionsReader = {
+      async listCollections() {
+        throw new Error('radarr down');
+      },
+    };
+    const snap = await fetchPlexCollectionsSnapshot({
+      db: t.db,
+      plex: bundle(fakeHopsRead()),
+      radarr: failing,
+    });
+    for (const c of snap.collections) expect(c.wantedResolved).toBeUndefined();
+    expect(snap.stats.radarrCollectionsRead).toBe(0);
+  });
+
+  it('normalizeCollectionTitle drops a trailing " Collection" and casefolds (the title-match join)', () => {
+    expect(normalizeCollectionTitle('The Bourne Collection')).toBe('the bourne');
+    expect(normalizeCollectionTitle('  Mission:  Impossible  ')).toBe('mission: impossible');
+    expect(normalizeCollectionTitle('Star Wars')).toBe('star wars');
   });
 });

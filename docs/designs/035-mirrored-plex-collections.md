@@ -5,7 +5,7 @@
   category is now LABEL-DRIVEN and OPEN, not a title-guessed closed enum; see the dated amendment
   below. No new ADR — still an annotation + facet on ADR-064's read-model)
 - **Prior update:** 2026-07-16 (PLAN-053: **D-10/D-11** — the title-based Collection Type annotation
-  + Type facet chip row on the grouped walls)
+  - Type facet chip row on the grouped walls)
 - **Satisfies:** PRD-001 **R-208..R-210, R-214**; governed by **ADR-064** (mirror-only doctrine,
   owner R1–R4) on top of **ADR-047** (THE INVARIANT + `media_plex_matches`), **ADR-051/052** (view
   engine + per-user preferences), **DESIGN-026** (D-01 view model, D-02 registry seam, D-04 group
@@ -74,7 +74,7 @@ a collection has no portrait source, the cover fan is the art, DESIGN-026 D-04 l
 
 - **Query** — for the wall's `arrKind` (`radarr`|`sonarr`): members join
   `plex_collection_members → plex_collections → media_plex_matches ON (plex_library_id, rating_key)
-  → media_items` (+ LEFT JOIN `media_metadata` for the poster source), restricted to live
+→ media_items` (+ LEFT JOIN `media_metadata` for the poster source), restricted to live
   (non-tombstoned) items of that kind **AND the ADR-047 gate** (`libraryAccessConditionRaw` for the
   raw join / `libraryAccessWhere`), ordered by `(collection, sort_order)`.
 - **Aggregation** — count = DISTINCT accessible ledger members (never the raw Plex `child_count` —
@@ -89,6 +89,10 @@ a collection has no portrait source, the cover fan is the art, DESIGN-026 D-04 l
 - **THE INVARIANT** — a collection whose accessible ledger-member count is ZERO (all members
   withheld, unmatched, or non-ledger) is DROPPED from the listing entirely: no card, no label leak.
   Admin (unrestricted) sees every collection with ≥ 1 ledger-matched member of the kind.
+  **SOFTENED 2026-07-18 (D-16):** "member" now means held OR **wanted** — a collection with 0 held
+  but ≥ 1 accessible WANTED member (a monitored, not-on-disk *arr title in the collection's
+  *arr-native membership) is NO LONGER dropped; it renders its Wanted tiles. The leak guard is
+  unchanged (a collection with 0 accessible members of EITHER kind is still dropped). See D-16.
 - **Collection-existence visibility note (intended, pending owner confirmation):** access is
   ITEM-level (the ADR-047 gate), not collection-home-level — a member accessible through ANOTHER
   library (e.g. mirrored into a granted HNet library) still counts toward, and therefore surfaces,
@@ -121,8 +125,8 @@ resolves from the group listing.
 ### D-05 — Registry seam edits (ADR-051 C-01: rows, not components)
 
 - `WALL_VIEWS.movies` → `offers: ['flat', 'grouped']`, `flatLabel: 'All movies'`, `groupings:
-  [{ dimension: 'collection', selectorLabel: 'Collections', allLabel: 'All collections',
-  art: 'covers', level: 'movies:grouped-collection' }]`.
+[{ dimension: 'collection', selectorLabel: 'Collections', allLabel: 'All collections',
+art: 'covers', level: 'movies:grouped-collection' }]`.
 - `WALL_VIEWS.tv` → `offers: ['hierarchy', 'grouped']`, `flatLabel: 'All shows'`, same grouping with
   `level: 'tv:grouped-collection'`. The hierarchy shape (Shows → Seasons → Episodes drill) is the
   wall's non-grouped shape and is UNTOUCHED (owner R2).
@@ -177,9 +181,9 @@ multi-shape reality: the `.seg` view selector (Collections | All movies/All show
 card grid (`GroupCard`, cover-fan art, PUSH drill), the drill header (back link + collection
 title), client-side card search (label contains) + card sort (label/count), and the D-06
 canonicalization. In grouped mode the item-only controls (on-disk segment, Wanted-only, facet
-chips) do not render — a grouped level declares no facets *(amended by D-11: the grouped-collection
+chips) do not render — a grouped level declares no facets _(amended by D-11: the grouped-collection
 levels now declare exactly ONE facet, the Type chip row — still registry-enforced; item facets
-remain absent)*; the drilled grid is the ordinary wall and keeps them all. All copy is plain and
+remain absent)_; the drilled grid is the ordinary wall and keeps them all. All copy is plain and
 friendly, no em-dashes, no personal names ("Collections", "All movies", "All collections", "No
 collections yet."). ADR-015 holds: the selector/toolbar heights are fixed, cards reserve the 2:3
 box, refetches dim in place.
@@ -230,8 +234,8 @@ the chip filters — never hides.
   and never data-hidden (owner ruling: the chip filters, never hides — a 0-count chip still
   renders). Item facets stay absent from the grouped levels (D-09 asymmetry).
 - **Chips** — one always-visible single-select row over the grouped CARDS: **All** (default) ·
-  Trilogies · Franchise · Director · Actor · Lists · Other. *(Owner amendment 2026-07-17 — see
-  below: labels are display-only, counts removed, Trilogies is movies-only.)*
+  Trilogies · Franchise · Director · Actor · Lists · Other. _(Owner amendment 2026-07-17 — see
+  below: labels are display-only, counts removed, Trilogies is movies-only.)_
 - **Server-side filtering** — the chip narrows the group cards in `ledger.collectionGroups`
   (`ctype` input), never in the client; the gated `typeCounts` still come back on the wire
   (accessible-collection counts — a collection with zero accessible members is neither carded nor
@@ -280,12 +284,12 @@ and the closed `collection_type` enum.
   CHECK enum, migration 0055) becomes **`category` (text, nullable, NO CHECK — migration 0062)**.
   There is NO fixed vocabulary and NO "Other" bucket: a new label the owner coins becomes a new
   stored category and a new chip on the next sync, zero migration. `null` = no owner/section label
-  (the collection shows only under "All", contributes no chip). *Follow-up (live-verified,
+  (the collection shows only under "All", contributes no chip). _Follow-up (live-verified,
   2026-07-17): 0062 preserved the renamed column's values expecting the next sync to overwrite
   them all, but a NULL-deriving collection is COALESCE-preserved, so its stale title-classifier
   bucket survived (8 live rows, all `'other'`) and would have surfaced as an unwanted "other"
   chip. Migration 0063 clears every legacy six-bucket value to NULL (the legacy vocabulary is
-  all-lowercase and disjoint from the owner labels, so derived categories are untouched).*
+  all-lowercase and disjoint from the owner labels, so derived categories are untouched)._
 - **`deriveCollectionCategory(labels)`** (`@hnet/domain`, replacing `classifyCollectionType(title)`;
   `COLLECTION_CLASSIFIER_VERSION` → 2) picks the category with a ratified precedence:
   1. **Owner inline label wins** — the first label that is neither the reserved `Kometa` provenance
@@ -298,9 +302,9 @@ and the closed `collection_type` enum.
      ~300 in-run franchise/universe Default collections — they are born labeled.)
   3. Otherwise `null`. A `null` labels array (read failed) → `null`, so the writer COALESCE-preserves
      the prior category (symmetric with `created_by` / D-12).
-  The precedence matters where a collection carries BOTH kinds — e.g. Game of Thrones has the legacy
-  `Show Franchise Collections` section label (→ Universe) AND an inline `Sequels`; the owner label
-  wins (Sequels).
+     The precedence matters where a collection carries BOTH kinds — e.g. Game of Thrones has the legacy
+     `Show Franchise Collections` section label (→ Universe) AND an inline `Sequels`; the owner label
+     wins (Sequels).
 - **Zero new Plex I/O.** The sync fetcher already reads each collection's labels once (for D-12
   provenance); `category` is derived from that same read and threaded through
   `PlexCollectionSyncInput` beside `createdBy`.
@@ -353,6 +357,62 @@ is READ from what the source exposes, never invented.
   card on the Collections wall carries a provenance badge, so the row is consistent and a badge
   recolors, never reflows. Tokens only (`.badge--muted`).
 
+### D-16 — Wanted-tile membership: full (held + wanted) collection membership (migration 0065 — added 2026-07-18)
+
+The ratified label-driven collections program (`.agents/context/2026-07-17-label-driven-collections-spike.md`
+§7–§9) extends the collection view from **held-only** to the **full intended membership**: a 3-of-18
+franchise now shows 3 on-disk tiles + 15 **Wanted** tiles. The new data is the not-held members; per
+the owner's D-D ruling the source is *_M-a — the *arr-native collection membership*_ (the *arrs are the
+media source of truth, hard rule 4), reusing the existing `wanted_items` view. This pass ships the
+**movies leg** (Radarr); TV and books stay held-only (below).
+
+- **Data model (migration 0065)** — `plex_collection_members` gains a nullable `media_item_id`
+  (FK → `media_items`, ON DELETE SET NULL) and `held boolean NOT NULL DEFAULT true`, and `rating_key`
+  becomes NULLABLE. Two disjoint member populations now share the table:
+  - **Held rows** — the existing Plex-child members (`rating_key` set, `held = true`), unchanged. They
+    resolve to a ledger item at read time via `media_plex_matches` exactly as before.
+  - **Wanted rows** — the *arr-native members that are monitored-but-not-on-disk (`media_item_id` set,
+    `rating_key = NULL`, `held = false`). Identity `(collection_id, media_item_id)` (a partial unique
+    WHERE `media_item_id IS NOT NULL`); the legacy `(collection_id, rating_key)` unique still keys the
+    held rows (nullable `rating_key` → wanted rows are excluded from it, nulls-distinct).
+    The two populations are disjoint by construction (held comes from Plex children; wanted is only the
+    `on_disk_file_count = 0` slice of the *arr membership), so the union never double-counts.
+- **Membership source (M-a, movies)** — a NEW `@hnet/arr` `RadarrClient.listCollections()`
+  (`GET /api/v3/collection` → `{ title, movies: [{ tmdbId }] }`) gives each Radarr TMDb-collection its
+  full member set. The collections-sync fetcher reads them once, **title-matches** a Radarr collection
+  to a mirrored movies `plex_collections` row (normalized title equality), resolves the member
+  `tmdbId`s against the app's own `media_items` (`arr_kind='radarr'`), and emits the `on_disk = 0`
+  matches as WANTED members. Members already on disk are the Plex-child held rows (Kometa adds owned
+  titles to the Plex collection), so they are not re-emitted.
+  - **Join fragility (documented)** — title-match is used because `plex_collections` stores no TMDb
+    collection id. Both the Kometa/Plex collection title and the Radarr collection title are
+    TMDb-derived, so they align in the common franchise case; a rename or a curated-title divergence
+    misses. **Hardening follow-up (filed):** capture the TMDb collection id at Kometa-config time and
+    store it on `plex_collections` for an exact id-join (the M-c lever) — a later, non-blocking change.
+- **Writer** — `syncPlexCollections` writes the wanted rows alongside the held rows in the same
+  transaction (single-writer, guard-listed), upserting on `(collection_id, media_item_id)` and
+  reconcile-DELETING stale wanted rows scoped to collections whose *arr membership was fully resolved
+  this run (the same fully-read discipline as the Plex-child members — a Radarr read failure never
+  tombstones wanted rows it couldn't see). No audit rows (derived cache).
+- **Read model** — `ledger.collectionGroups` and the `?group=` drill UNION the held tiles (the existing
+  `media_plex_matches` path) with the wanted tiles (the `held=false` rows → `wanted_items`), both under
+  the ADR-047 gate, deduped by `media_item_id`. The count = accessible held + accessible wanted. The
+  card exposes a `wantedCount` so the wall can badge it. THE INVARIANT is softened per D-03: a
+  0-held/N-wanted collection now renders (its Wanted tiles); a 0-of-both collection is still dropped.
+- **Drill render** — the movies collection drill renders held tiles as on-disk posters and wanted
+  members as **Wanted tiles** (the shared movies-wall Wanted-tile component; PR3 wires the existing
+  per-item Radarr force-search onto them). The drill is still one `ledger.search` predicate, now a
+  union of the held EXISTS and a wanted EXISTS (`held=false` member → `media_items.id`).
+- **TV — HELD-ONLY this pass (owner ruling 2026-07-18).** Sonarr has no native TMDb-collection API and
+  TV "collections" are Kometa list/label groupings, so there is no clean *arr-native full-membership
+  source. TV collections render held-only (unchanged). Documented future option: an **M-b**
+  per-collection `sonarr_tag` join (a Kometa-config change) — not built now.
+- **Books — HELD-ONLY this pass (owner ruling 2026-07-18).** Surfacing a recipe's `missing[]` as Wanted
+  tiles needs a Libretto **member-level** missing endpoint (the app's `@hnet/libretto` client exposes
+  only a missing COUNT today); that is a cross-repo Libretto extension put to the owner separately. The
+  wanted-row model above is medium-neutral, so the books leg (mint `book_requests` origin `'collection'`
+  → the shipped DESIGN-029 Wanted tiles) slots in later without reworking this schema.
+
 ## Alternatives considered
 
 - **App-native collections / authoring UI** — rejected permanently by the owner doctrine (ADR-064
@@ -396,8 +456,8 @@ is READ from what the source exposes, never invented.
 
 ## Open questions
 
-| ID | Question | Resolution |
-|----|----------|------------|
-| Q-01 | Filter/hide specific mirrored collections (charts vs franchises), or per-collection display toggles? | DEFERRED by owner ruling R3 — mirror everything in v1; the knob is designed after the owner sees it live. |
-| Q-02 | Does Plex's `collectionSort` order survive the `/children` member read? | UNVERIFIED (no live Plex from the build env; schema carries no order field). v1 stores response order but no read consumes it (D-07); verify live before any "Plex order" sort ships. |
-| Q-03 | e2e smoke spec for the Collections view? | DEFERRED: the shared e2e seed keeps its ledger movies UNMATCHED (kind-home gating), and a collections journey needs `media_plex_matches` rows — which would grow "Watch on Plex" buttons on detail pages other specs assert against. The stub Plex serves a `/collections` fixture (the read path is stubbable); the seeded journey needs its own isolated seed pass — tracked in the plan file, not half-built here. |
+| ID   | Question                                                                                             | Resolution                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ---- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Q-01 | Filter/hide specific mirrored collections (charts vs franchises), or per-collection display toggles? | DEFERRED by owner ruling R3 — mirror everything in v1; the knob is designed after the owner sees it live.                                                                                                                                                                                                                                                                                                             |
+| Q-02 | Does Plex's `collectionSort` order survive the `/children` member read?                              | UNVERIFIED (no live Plex from the build env; schema carries no order field). v1 stores response order but no read consumes it (D-07); verify live before any "Plex order" sort ships.                                                                                                                                                                                                                                 |
+| Q-03 | e2e smoke spec for the Collections view?                                                             | DEFERRED: the shared e2e seed keeps its ledger movies UNMATCHED (kind-home gating), and a collections journey needs `media_plex_matches` rows — which would grow "Watch on Plex" buttons on detail pages other specs assert against. The stub Plex serves a `/collections` fixture (the read path is stubbable); the seeded journey needs its own isolated seed pass — tracked in the plan file, not half-built here. |

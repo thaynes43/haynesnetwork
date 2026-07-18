@@ -168,7 +168,10 @@ export const LIBRARY_FILTER_SHAPE = {
   // DESIGN-026 D-09 (PLAN-029 step 6) — the A–Z letter jump: page to the first item at this letter
   // (a `sort_title >= letter` narrowing that composes with the keyset cursor for later pages). The
   // client offers it only on the asc Title sort (the registry's azSorts gate); '#' = cleared.
-  letter: z.string().regex(/^[a-z]$/).optional(),
+  letter: z
+    .string()
+    .regex(/^[a-z]$/)
+    .optional(),
   // ADR-064 / DESIGN-035 D-04 (PLAN-037) — the Collections drill-in: narrow to the ledger members of
   // ONE mirrored Plex collection, keyed by the COLLECTION's rating_key (`?group=<ratingKey>` — keys,
   // never titles). One EXISTS predicate, so the drilled wall inherits every other filter/sort + the
@@ -314,15 +317,25 @@ export function buildLibraryWhere(input: LibraryWhereInput): SQL[] {
   // library. Just an AND predicate, so every other filter/sort + the ADR-047 access gate (applied by
   // the caller) compose unchanged — a withheld member never surfaces through a collection drill.
   if (input.collection !== undefined) {
+    // DESIGN-035 D-16 — a member is HELD (Plex-child row → media_plex_matches) OR WANTED (the
+    // *arr-native held=false row → media_item directly). The union surfaces the full membership; the
+    // ADR-047 gate (applied by the caller) still governs which of those the viewer sees.
     where.push(
-      sql`EXISTS (SELECT 1
-                    FROM plex_collection_members pcm
-                    JOIN plex_collections pc ON pc.id = pcm.collection_id
-                    JOIN media_plex_matches cmx
-                      ON cmx.plex_library_id = pc.plex_library_id
-                     AND cmx.rating_key = pcm.rating_key
-                   WHERE pc.rating_key = ${input.collection}
-                     AND cmx.media_item_id = ${mediaItems.id})`,
+      sql`(EXISTS (SELECT 1
+                     FROM plex_collection_members pcm
+                     JOIN plex_collections pc ON pc.id = pcm.collection_id
+                     JOIN media_plex_matches cmx
+                       ON cmx.plex_library_id = pc.plex_library_id
+                      AND cmx.rating_key = pcm.rating_key
+                    WHERE pc.rating_key = ${input.collection}
+                      AND pcm.held = TRUE
+                      AND cmx.media_item_id = ${mediaItems.id})
+           OR EXISTS (SELECT 1
+                        FROM plex_collection_members pcw
+                        JOIN plex_collections pcw2 ON pcw2.id = pcw.collection_id
+                       WHERE pcw2.rating_key = ${input.collection}
+                         AND pcw.held = FALSE
+                         AND pcw.media_item_id = ${mediaItems.id}))`,
     );
   }
   // ADR-053 / DESIGN-026 D-07 — the per-user watch-state facet (viewer-scoped EXISTS over
