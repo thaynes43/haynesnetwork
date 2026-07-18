@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.84.0](https://github.com/thaynes43/haynesnetwork/compare/v0.83.0...v0.84.0) (2026-07-18)
+
+
+### Features
+
+* **collections:** full-page search-first collection builder (DESIGN-044) ([#421](https://github.com/thaynes43/haynesnetwork/issues/421)) ([390325e](https://github.com/thaynes43/haynesnetwork/commit/390325e688bcd9c930cfab8ac4b477145f3ce4c2))
+
 ## [0.83.0](https://github.com/thaynes43/haynesnetwork/compare/v0.82.0...v0.83.0) (2026-07-18)
 
 
