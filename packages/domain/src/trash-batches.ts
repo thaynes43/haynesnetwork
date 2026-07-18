@@ -312,8 +312,16 @@ export async function createBatchFromPending(input: {
   /** DESIGN-011 amendment (2026-07-08) — reclaim-targeted creation. Absent ⇒ ALL candidates. When
    *  set, the snapshot is the greedily-chosen deletable subset (see `selectBatchCandidates`). */
   targeting?: BatchTargeting;
+  /** ADR-073 (2026-07-18) — the AUTONOMOUS-engine flag. When true, the batch is promoted straight to
+   *  leaving_soon with the save window (gate_skipped, system attribution) REGARDLESS of the global
+   *  `trash_skip_admin_gate` — the space policy sets this so the unattended cycle completes itself. The
+   *  human admin-review gate still governs MANUAL "Start a batch" creation (autoPromote absent). */
+  autoPromote?: boolean;
 }): Promise<CreateBatchResult> {
-  const skipGate = await getAppSetting(input.db, 'trash_skip_admin_gate');
+  // Auto-promote when either the global gate-skip is on OR the autonomous caller (space policy) asked for
+  // it (ADR-073). Both bypass the admin-review gate straight to leaving_soon with `gate_skipped=true`.
+  const skipGate =
+    input.autoPromote === true || (await getAppSetting(input.db, 'trash_skip_admin_gate'));
 
   // Snapshot the live pending set (mediaKind is movie|tv — music is structurally excluded, R-87).
   const pending = await listTrashPending({
@@ -626,6 +634,43 @@ export async function greenlightBatch(input: {
     mediaKind: batch.mediaKind,
     fromState: 'admin_review',
     gateSkipped: false,
+    windowDays,
+    actorId: input.actorId,
+  });
+  return { ...promoted, state: 'leaving_soon' };
+}
+
+/**
+ * ADR-073 (2026-07-18) — the AUTONOMOUS self-heal: promote an already-open policy batch that a prior
+ * space-policy run left mid-cycle (a `draft` or `admin_review` batch — e.g. created before this fix, or
+ * a run that died between the create tx and the promote tx) straight to leaving_soon with the save
+ * window, `gate_skipped=true` + system attribution. Idempotent convergence — the space policy calls this
+ * so a stuck batch always resolves on the next tick, never a permanent "no batch" stall. Refuses (throws)
+ * only if the batch is not in a promotable state (draft|admin_review), which the caller pre-checks; the
+ * one-open-per-kind invariant guarantees at most one such batch per kind.
+ */
+export async function promoteOpenPolicyBatch(input: {
+  db?: DbClient;
+  maintainerr: MaintainerrClientBundle;
+  batchId: string;
+  windowDays?: number;
+  actorId: string | null;
+}): Promise<PromoteResult & { state: 'leaving_soon' }> {
+  const batch = await loadBatch(input.db, input.batchId);
+  if (batch.state !== 'draft' && batch.state !== 'admin_review') {
+    throw new TrashBatchStateError(
+      `Batch ${input.batchId} is '${batch.state}', not draft/admin_review — cannot auto-promote.`,
+    );
+  }
+  const windowDays =
+    input.windowDays ?? (await getAppSetting(input.db, 'trash_default_window_days'));
+  const promoted = await promoteToLeavingSoon({
+    db: input.db,
+    maintainerr: input.maintainerr,
+    batchId: input.batchId,
+    mediaKind: batch.mediaKind,
+    fromState: batch.state,
+    gateSkipped: true,
     windowDays,
     actorId: input.actorId,
   });

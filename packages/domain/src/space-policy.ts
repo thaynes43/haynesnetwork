@@ -1,16 +1,18 @@
-// ADR-031 / DESIGN-014 (PLAN-014) — the SPACE-DRIVEN POLICY orchestrator. Propose-only, never
-// autonomous deletion: when a physical media array is over its `space_targets` ceiling, PROPOSE a
-// draft batch for the kind(s) that array backs (createBatchFromPending — the normal admin_review
-// path). It NEVER greenlights and NEVER sweeps; the admin gate stays the human check. If the audited
-// `trash_skip_admin_gate` is ON the proposed batch flows per that setting's own semantics (we do NOT
-// special-case it — createBatchFromPending owns that path). Every proposal writes a `trash_space_policy`
-// ledger event (the WHY: array/usedPct/target/candidates) + a `space_policy` notification (source
-// 'trash') so Bulletin/Activity shows "policy proposed a batch".
+// ADR-031 / DESIGN-014 (PLAN-014); ADR-073 (2026-07-18) — the SPACE-DRIVEN POLICY orchestrator. The
+// AUTONOMOUS engine: when a physical media array is over its `space_targets` ceiling (or always, in
+// 'continuous' mode), PROPOSE AND PROMOTE a batch for the kind(s) that array backs
+// (createBatchFromPending with `autoPromote` — straight to leaving_soon with the save window). It still
+// NEVER sweeps: only the windowed sweep reclaims. The owner ruling (2026-07-18) is that the machine
+// keeps moving unattended — reclaim → promote immediately, no cooldown, no admin-review gate before the
+// batch goes up. Every proposal writes a `trash_space_policy` ledger event (the WHY:
+// array/usedPct/target/candidates) + a `space_policy` notification (source 'trash').
 //
-// SAFETY / IDEMPOTENCE: one-open-per-kind already blocks duplicates — a refusal (TrashBatchOpenError)
-// is handled gracefully (skipped, logged, no throw). A per-kind COOLDOWN blocks re-proposing within N
-// days of the last policy-created batch for that kind (anti-spam while a batch is mid-window). An
-// array is OPT-IN (its per-array `enabled` must be true) even when the policy is globally enabled.
+// SAFETY / IDEMPOTENCE (ADR-073): the only pacing is one-open-per-kind + the save window — while a
+// leaving_soon batch is mid-window the slot is taken, so no duplicate is proposed. There is NO cooldown.
+// SELF-HEAL: a batch a prior run left stuck (draft/admin_review, system-created — e.g. from before this
+// fix, or a run that died between create and promote) is PROMOTED to leaving_soon on the next tick, so
+// the cycle can never wedge in a "no batch" state. An array is OPT-IN (its per-array `enabled` must be
+// true) even when the policy is globally enabled.
 import {
   ledgerEvents,
   trashBatches,
@@ -20,7 +22,7 @@ import {
   type TrashBatchState,
   type TrashMediaKind,
 } from '@hnet/db';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import {
   APP_SETTING_DEFAULTS,
   SPACE_POLICY_MODES,
@@ -38,6 +40,7 @@ import {
 import { resolveDb } from './db-client';
 import {
   createBatchFromPending,
+  promoteOpenPolicyBatch,
   type BatchTargeting,
   type CreateBatchResult,
 } from './trash-batches';
@@ -47,7 +50,6 @@ import { getUtilization, STORAGE_ARRAYS, type UtilizationArrBundle } from './sto
 import { recordNotification } from './notifications';
 import { listTrashPending, type TrashMedia, type TrashPendingItem } from './trash-flow';
 
-const DAY_MS = 86_400_000;
 const OPEN_STATES = TRASH_BATCH_OPEN_STATES as readonly TrashBatchState[];
 
 /** The Trash media kind each *arr source maps to (music/Lidarr is never batchable — R-87, so it
@@ -125,7 +127,6 @@ export async function getSpacePolicy(db?: DbClient): Promise<SpacePolicy> {
   return {
     enabled: stored?.enabled === true,
     mode,
-    cooldownDays: typeof stored?.cooldownDays === 'number' ? stored.cooldownDays : d.cooldownDays,
     minCandidates:
       typeof stored?.minCandidates === 'number' ? stored.minCandidates : d.minCandidates,
     perArray: stored?.perArray ?? {},
@@ -158,8 +159,9 @@ export function buildKindTargeting(
 
 export type SpacePolicyOutcome =
   | 'proposed'
+  | 'promoted'
   | 'skipped_open_batch'
-  | 'skipped_cooldown'
+  | 'skipped_under_target'
   | 'skipped_min_candidates'
   | 'skipped_empty'
   | 'error';
@@ -167,15 +169,14 @@ export type SpacePolicyOutcome =
 export interface SpacePolicyProposal {
   mediaKind: TrashMediaKind;
   outcome: SpacePolicyOutcome;
-  /** The proposed batch (null when nothing was created). */
+  /** The proposed/promoted batch (null when nothing was created or healed). */
   batchId: string | null;
-  /** Whether the audited skip-gate promoted the proposed batch straight to Leaving Soon. */
+  /** Whether the batch was promoted straight to Leaving Soon (always true for the autonomous engine —
+   *  ADR-073; false only for a skipped outcome). */
   gateSkipped: boolean;
   /** Actionable pending items considered for this kind, and their total size. */
   candidateCount: number;
   candidateBytes: number;
-  /** When the cooldown blocks this kind, when it next becomes eligible (ISO); else null. */
-  cooldownUntil: string | null;
   /** Human-readable rationale (for the CronJob log + the report). */
   reason: string;
 }
@@ -203,41 +204,40 @@ export interface SpacePolicyReport {
   arrays: SpacePolicyArrayResult[];
 }
 
-/** The most recent policy proposal (trash_space_policy event) for a kind, or null. */
-async function lastPolicyProposalAt(
+interface OpenBatchRow {
+  id: string;
+  state: TrashBatchState;
+  /** null ⇒ system/policy-created (the autonomous engine ran with a null actor). */
+  createdBy: string | null;
+}
+
+/** The OPEN batch (draft/admin_review/leaving_soon) for a kind, or null. One-open-per-kind guarantees
+ *  at most one. Carries `state` + `createdBy` so the caller can SELF-HEAL a stuck system batch. */
+async function findOpenBatch(
   db: DbClient | undefined,
   mediaKind: TrashMediaKind,
-): Promise<Date | null> {
+): Promise<OpenBatchRow | null> {
   const [row] = await resolveDb(db)
-    .select({ occurredAt: ledgerEvents.occurredAt })
-    .from(ledgerEvents)
-    .where(
-      and(
-        eq(ledgerEvents.eventType, 'trash_space_policy'),
-        sql`${ledgerEvents.payload}->>'mediaKind' = ${mediaKind}`,
-      ),
-    )
-    .orderBy(desc(ledgerEvents.occurredAt))
+    .select({ id: trashBatches.id, state: trashBatches.state, createdBy: trashBatches.createdBy })
+    .from(trashBatches)
+    .where(and(eq(trashBatches.mediaKind, mediaKind), inArray(trashBatches.state, [...OPEN_STATES])))
     .limit(1);
-  return row?.occurredAt ?? null;
+  return row ?? null;
 }
 
 /** Whether an OPEN batch (draft/admin_review/leaving_soon) already exists for a kind. */
 async function hasOpenBatch(db: DbClient | undefined, mediaKind: TrashMediaKind): Promise<boolean> {
-  const [row] = await resolveDb(db)
-    .select({ id: trashBatches.id })
-    .from(trashBatches)
-    .where(and(eq(trashBatches.mediaKind, mediaKind), inArray(trashBatches.state, [...OPEN_STATES])))
-    .limit(1);
-  return row !== undefined;
+  return (await findOpenBatch(db, mediaKind)) !== null;
 }
 
 /**
  * Evaluate the space-driven policy ONCE (the `space-policy` sync mode's body). Returns a report of
- * every array's over/under-target verdict and, for over-target opted-in arrays, one proposal outcome
- * per backing kind. Only PROPOSES (createBatchFromPending) — never greenlights, never deletes. Never
- * throws for a per-kind failure (records `outcome:'error'` in the report and moves on); it throws only
- * if the utilization/settings reads themselves fail.
+ * every array's over/under-target verdict and, for each opted-in array, one outcome per backing kind:
+ * a stuck open system batch is HEALED (promoted to leaving_soon), else a new batch is PROPOSED AND
+ * PROMOTED (createBatchFromPending with autoPromote) when the mode/target allows it (ADR-073 — the
+ * autonomous engine completes the cycle unattended; it still never deletes, only the sweep reclaims).
+ * Never throws for a per-kind failure (records `outcome:'error'` and moves on); it throws only if the
+ * utilization/settings reads themselves fail.
  */
 export async function evaluateSpacePolicy(input: {
   db?: DbClient;
@@ -274,19 +274,23 @@ export async function evaluateSpacePolicy(input: {
       proposals: [],
     };
 
-    // Gate the proposal by MODE (DESIGN-014 amendment 2026-07-09, build A):
-    //  - 'over-target' (default): opted in, reachable, has a target, AND actually over it.
-    //  - 'continuous': opted in is ENOUGH — the disk target is not required (candidates come from
-    //    Maintainerr, not the *arr disk read); utilization is still read above for the report.
-    // Not proposing ⇒ the array still appears in the report (its verdict), just with no proposals.
-    const proposeHere =
-      policy.mode === 'continuous'
-        ? arrCfg.enabled
-        : arrCfg.enabled && !util.unavailable && util.target !== null && overTarget;
-    if (!proposeHere) {
+    // An OPT-OUT array is never touched — not even to self-heal — so turning the policy on can't
+    // surprise-act on an array you forgot. Opted-in arrays ALWAYS run proposeForKind (which self-heals a
+    // stuck batch regardless of target, and proposes a NEW batch only when the mode/target allows).
+    if (!arrCfg.enabled) {
       arrays.push(result);
       continue;
     }
+
+    // Whether a NEW batch may be proposed here (DESIGN-014 amendment 2026-07-09, build A):
+    //  - 'over-target' (default): reachable, has a target, AND actually over it.
+    //  - 'continuous': always (opted in is enough — candidates come from Maintainerr, not the disk read).
+    // Self-heal of an ALREADY-open stuck batch is independent of this gate (ADR-073 — a mid-cycle death
+    // under target must still converge).
+    const canProposeNew =
+      policy.mode === 'continuous'
+        ? true
+        : !util.unavailable && util.target !== null && overTarget;
 
     for (const mediaKind of trashKindsForArray(util.key)) {
       const proposal = await proposeForKind({
@@ -300,13 +304,13 @@ export async function evaluateSpacePolicy(input: {
         arrayLabel: util.label,
         usedPct: util.usedPct,
         target: util.target,
-        cooldownDays: arrCfg.cooldownDays,
+        canProposeNew,
         minCandidates: arrCfg.minCandidates,
         // Per-kind composition caps (maxItems / targetBytes, whichever hits first), worst-rated-first
         // for policy batches (the owner default — take the least-loved titles). Absent caps ⇒ ALL.
         targeting: buildKindTargeting(policy, mediaKind),
       });
-      if (proposal.outcome === 'proposed') proposedCount += 1;
+      if (proposal.outcome === 'proposed' || proposal.outcome === 'promoted') proposedCount += 1;
       result.proposals.push(proposal);
     }
     arrays.push(result);
@@ -326,7 +330,9 @@ async function proposeForKind(input: {
   arrayLabel: string;
   usedPct: number | null;
   target: number | null;
-  cooldownDays: number;
+  /** Whether a NEW batch may be proposed here (mode/target gate). Self-heal of a stuck open batch runs
+   *  regardless of this. */
+  canProposeNew: boolean;
   minCandidates: number;
   /** DESIGN-014 amendment — per-kind composition caps (maxItems/targetBytes, worst-rated-first);
    *  absent ⇒ ALL candidates. */
@@ -338,30 +344,56 @@ async function proposeForKind(input: {
     gateSkipped: false,
     candidateCount: 0,
     candidateBytes: 0,
-    cooldownUntil: null as string | null,
   };
 
-  // 1. Idempotence: one-open-per-kind already blocks a duplicate. Skip gracefully (no error).
-  if (await hasOpenBatch(input.db, input.mediaKind)) {
+  // 1. Open batch: one-open-per-kind. SELF-HEAL (ADR-073) a system-created batch a prior run left stuck
+  //    in draft/admin_review (created before this fix, or a run that died between create and promote) —
+  //    promote it to leaving_soon so the cycle can never wedge in a "no batch" state. A leaving_soon
+  //    batch is healthy (mid save window) — leave it. A MANUAL batch (createdBy set) is the admin's to
+  //    curate — never auto-promoted.
+  const open = await findOpenBatch(input.db, input.mediaKind);
+  if (open !== null) {
+    const isSystem = open.createdBy === null;
+    if (isSystem && (open.state === 'draft' || open.state === 'admin_review')) {
+      try {
+        await promoteOpenPolicyBatch({
+          db: input.db,
+          maintainerr: input.maintainerr,
+          batchId: open.id,
+          actorId: input.actorId,
+        });
+      } catch (err) {
+        return {
+          ...base,
+          batchId: open.id,
+          outcome: 'error',
+          reason: `Could not auto-promote stuck ${input.mediaKind} batch ${open.id}: ${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+      return {
+        ...base,
+        batchId: open.id,
+        gateSkipped: true,
+        outcome: 'promoted',
+        reason: `Self-healed a stuck ${input.mediaKind} batch (${open.state}) straight to Leaving Soon.`,
+      };
+    }
     return {
       ...base,
+      batchId: open.id,
       outcome: 'skipped_open_batch',
-      reason: `An open ${input.mediaKind} batch already exists — leaving it for the admin.`,
+      reason: `An open ${input.mediaKind} batch already exists (${open.state}) — leaving it.`,
     };
   }
 
-  // 2. Cooldown: don't re-propose within N days of the last policy-created batch for this kind.
-  const lastAt = await lastPolicyProposalAt(input.db, input.mediaKind);
-  if (lastAt !== null) {
-    const eligibleAt = new Date(lastAt.getTime() + input.cooldownDays * DAY_MS);
-    if (input.now.getTime() < eligibleAt.getTime()) {
-      return {
-        ...base,
-        outcome: 'skipped_cooldown',
-        cooldownUntil: eligibleAt.toISOString(),
-        reason: `In cooldown for ${input.mediaKind} until ${eligibleAt.toISOString()} (last proposal ${lastAt.toISOString()}).`,
-      };
-    }
+  // 2. No open batch: propose a NEW one only when the mode/target gate allows (over-target under its
+  //    ceiling proposes nothing; continuous always may). Self-heal above already ran.
+  if (!input.canProposeNew) {
+    return {
+      ...base,
+      outcome: 'skipped_under_target',
+      reason: `${input.arrayLabel} is not over target (${input.usedPct ?? '?'}% vs ${input.target ?? '?'}%) — nothing proposed.`,
+    };
   }
 
   // 3. Min-candidates: don't propose unless enough is pending to be worth a batch. Read the pending
@@ -394,8 +426,9 @@ async function proposeForKind(input: {
     };
   }
 
-  // 4. Propose: the NORMAL createBatchFromPending path (admin_review, or the skip-gate's own
-  //    audited flow if trash_skip_admin_gate is ON — not special-cased here).
+  // 4. Propose AND PROMOTE: the autonomous createBatchFromPending path (ADR-073 — autoPromote drives the
+  //    batch straight to leaving_soon with the save window, gate_skipped + system attribution, so the
+  //    machine completes the cycle unattended). Still never deletes — only the sweep reclaims.
   let created: CreateBatchResult;
   try {
     created = await createBatchFromPending({
@@ -404,6 +437,7 @@ async function proposeForKind(input: {
       mediaKind: input.mediaKind,
       actorId: input.actorId,
       source: 'policy', // ADR-034 — the "batch posted" push records it was the space policy
+      autoPromote: true, // ADR-073 — the unattended engine promotes its own batch (no admin-review gate)
       // DESIGN-014 amendment (2026-07-09, build A) — optionally cap the proposed batch by the kind's
       // enabled composition caps (maxItems/targetBytes, worst-rated-first); absent ⇒ all candidates.
       // The min-candidates gate above still measures the full pending pool.
@@ -462,8 +496,8 @@ async function proposeForKind(input: {
     candidateCount: created.itemCount,
     outcome: 'proposed',
     reason:
-      `Proposed a ${input.mediaKind} batch of ${created.itemCount} item(s) — ${rationale}` +
-      (created.gateSkipped ? ' (skip-gate ON — straight to Leaving Soon).' : ' (awaiting admin review).') +
+      `Proposed a ${input.mediaKind} batch of ${created.itemCount} item(s) — ${rationale} ` +
+      '(promoted straight to Leaving Soon — the save window is now open).' +
       attributionNote,
   };
 }
@@ -549,9 +583,6 @@ export interface SpacePolicyKindStatus {
   mediaKind: TrashMediaKind;
   hasOpenBatch: boolean;
   lastProposal: SpacePolicyProposalRecord | null;
-  cooldownDays: number;
-  /** lastProposal.proposedAt + cooldownDays, or null when eligible now (no prior proposal / elapsed). */
-  nextEligibleAt: string | null;
 }
 
 export interface SpacePolicyStatus {
@@ -581,16 +612,15 @@ function toProposalRecord(row: {
 
 /**
  * The space-policy admin card's status read: the effective config, the last proposal (per kind + the
- * global newest), each kind's open-batch + cooldown/next-eligible state, and a short proposal history.
- * A pure DB read (ledger + batches) — the live over/under-target readout comes from storage.utilization
- * which the page already loads (no *arr read here). ISO strings on the wire.
+ * global newest), each kind's open-batch state, and a short proposal history. A pure DB read (ledger +
+ * batches) — the live over/under-target readout comes from storage.utilization which the page already
+ * loads (no *arr read here). ISO strings on the wire.
  */
 export async function getSpacePolicyStatus(input: {
   db?: DbClient;
   now?: Date;
 }): Promise<SpacePolicyStatus> {
   const db = resolveDb(input.db);
-  const now = input.now ?? new Date();
   const policy = await getSpacePolicy(input.db);
 
   const rows = await db
@@ -603,19 +633,11 @@ export async function getSpacePolicyStatus(input: {
 
   const kinds: SpacePolicyKindStatus[] = [];
   for (const mediaKind of ['movie', 'tv'] as const) {
-    const arrCfg = effectiveArrayPolicy(policy, 'haynestower'); // both movie+tv live on haynestower
     const last = records.find((r) => r.mediaKind === mediaKind) ?? null;
-    let nextEligibleAt: string | null = null;
-    if (last !== null) {
-      const eligible = new Date(Date.parse(last.proposedAt) + arrCfg.cooldownDays * DAY_MS);
-      nextEligibleAt = eligible.getTime() > now.getTime() ? eligible.toISOString() : null;
-    }
     kinds.push({
       mediaKind,
       hasOpenBatch: await hasOpenBatch(input.db, mediaKind),
       lastProposal: last,
-      cooldownDays: arrCfg.cooldownDays,
-      nextEligibleAt,
     });
   }
 

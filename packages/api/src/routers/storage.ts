@@ -49,7 +49,6 @@ export const SpaceTargetsInput = z.object({
 const spacePolicyArrayCfg = z
   .object({
     enabled: z.boolean(),
-    cooldownDays: z.number().int().min(0).max(365).optional(),
     minCandidates: z.number().int().min(0).max(100000).optional(),
   })
   .strict();
@@ -68,7 +67,6 @@ export const SpacePolicyInput = z
     enabled: z.boolean(),
     // DESIGN-014 amendment (2026-07-09, build A) — the proposal mode.
     mode: z.enum(SPACE_POLICY_MODES),
-    cooldownDays: z.number().int().min(0).max(365),
     minCandidates: z.number().int().min(0).max(100000),
     perArray: z.record(z.string(), spacePolicyArrayCfg),
     // DESIGN-014 amendment (2026-07-09, build A) — per-kind caps (replaces the retired flat
@@ -148,7 +146,7 @@ export const storageRouter = router({
     /** The effective space-policy config (defaults merged — always fully populated, DEFAULT OFF). */
     get: adminProcedure.query(({ ctx }) => getSpacePolicy(ctx.db)),
 
-    /** Ledger-derived status: last proposal (global + per kind), open-batch + cooldown/next-eligible. */
+    /** Ledger-derived status: last proposal (global + per kind) + each kind's open-batch state. */
     status: adminProcedure.query(({ ctx }) => getSpacePolicyStatus({ db: ctx.db })),
 
     /**

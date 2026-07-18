@@ -1,13 +1,12 @@
-// ADR-031 / DESIGN-014 (PLAN-014) — the /admin/storage "Space policy" card's pure helpers: the
-// immutable policy merges (the card sends the whole value to storage.policy.set), the live
-// over/under-target readout, the cooldown next-eligible label, and the graduation verdict copy.
+// ADR-031 / DESIGN-014 (PLAN-014); ADR-073 (2026-07-18) — the /admin/storage "Space policy" card's pure
+// helpers: the immutable policy merges (the card sends the whole value to storage.policy.set), the live
+// over/under-target readout, and the graduation verdict copy. (The cooldown next-eligible label was
+// retired with the cooldown itself — ADR-073.)
 import { describe, expect, it } from 'vitest';
 import type { GraduationReadiness, SpacePolicy } from '../space-policy';
 import {
   arrayEnabled,
-  effectiveCooldownDays,
   graduationVerdict,
-  nextEligibleLabel,
   overTargetLabel,
   saveRateLabel,
   withArrayConfig,
@@ -21,7 +20,6 @@ const CAPS = {
 const P: SpacePolicy = {
   enabled: false,
   mode: 'over-target',
-  cooldownDays: 7,
   minCandidates: 1,
   perArray: {},
   perKind: { movie: { ...CAPS }, tv: { ...CAPS } },
@@ -37,16 +35,14 @@ describe('policy merges (immutable, whole-object replace)', () => {
   it('withArrayConfig opts an array in and preserves prior fields', () => {
     const on = withArrayConfig(P, 'haynestower', { enabled: true });
     expect(on.perArray.haynestower).toEqual({ enabled: true });
-    const withCooldown = withArrayConfig(on, 'haynestower', { cooldownDays: 14 });
-    expect(withCooldown.perArray.haynestower).toEqual({ enabled: true, cooldownDays: 14 });
+    const withMin = withArrayConfig(on, 'haynestower', { minCandidates: 14 });
+    expect(withMin.perArray.haynestower).toEqual({ enabled: true, minCandidates: 14 });
     expect(P.perArray).toEqual({}); // source untouched
   });
 
-  it('effectiveCooldownDays / arrayEnabled read the override else the default', () => {
-    expect(effectiveCooldownDays(P, 'haynestower')).toBe(7);
+  it('arrayEnabled reads the per-array opt-in flag', () => {
     expect(arrayEnabled(P, 'haynestower')).toBe(false);
-    const merged = withArrayConfig(P, 'haynestower', { enabled: true, cooldownDays: 10 });
-    expect(effectiveCooldownDays(merged, 'haynestower')).toBe(10);
+    const merged = withArrayConfig(P, 'haynestower', { enabled: true });
     expect(arrayEnabled(merged, 'haynestower')).toBe(true);
   });
 });
@@ -57,14 +53,6 @@ describe('readouts', () => {
     expect(overTargetLabel(70, 80)).toBe('70% used vs 80% target — under target');
     expect(overTargetLabel(90, null)).toBe('90% used · no target set');
     expect(overTargetLabel(null, 80)).toBe('utilization unavailable');
-  });
-
-  it('nextEligibleLabel is relative', () => {
-    const now = new Date('2026-07-07T00:00:00Z');
-    expect(nextEligibleLabel(null, now)).toBe('eligible now');
-    expect(nextEligibleLabel('2026-07-01T00:00:00Z', now)).toBe('eligible now'); // past
-    expect(nextEligibleLabel('2026-07-12T00:00:00Z', now)).toBe('eligible in 5 days');
-    expect(nextEligibleLabel('2026-07-07T06:00:00Z', now)).toBe('eligible in under a day');
   });
 
   it('saveRateLabel', () => {
