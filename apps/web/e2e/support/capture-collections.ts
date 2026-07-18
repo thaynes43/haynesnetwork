@@ -1,9 +1,8 @@
 // ADR-070 / DESIGN-043 (PLAN-052 — collection manager) — the screenshot harness for owner sign-off of the
-// collection manager + the member "Suggest a collection" affordance. Boots its OWN stack (incl. the stub
-// Libretto) and captures, as admin (admin implies every collection action): the manager
-// (/integrations/collections — recipe list with the acquisition puck + the needs-attention band), the
-// composer Modal, and the books collections wall's suggest affordance + its Modal. Desktop + 390px,
-// dark + light — the standing owner screenshot-review rule.
+// collection manager. Boots its OWN stack (incl. the stub Libretto) and captures, as admin (admin implies
+// every collection action): the manager (/integrations/collections — recipe list with the acquisition puck
+// + the needs-attention band) and the composer Modal. Desktop + 390px, dark + light — the standing owner
+// screenshot-review rule.
 //
 //   pnpm --filter web exec tsx e2e/support/capture-collections.ts <output-dir>
 import { mkdirSync } from 'node:fs';
@@ -89,20 +88,6 @@ async function main(): Promise<void> {
         await hidePortal(page);
         await shoot(page, `composer-${suffix}`);
         await page.keyboard.press('Escape');
-
-        // The member suggest affordance on the books collections wall (best-effort).
-        try {
-          await page.goto('/library?tab=books&view=grouped&by=collection');
-          await page.getByTestId('suggest-affordance').waitFor({ timeout: 8000 });
-          await hidePortal(page);
-          await shoot(page, `suggest-affordance-${suffix}`, true);
-          await page.getByTestId('suggest-open').click();
-          await page.getByRole('dialog').waitFor();
-          await hidePortal(page);
-          await shoot(page, `suggest-modal-${suffix}`);
-        } catch (err) {
-          console.warn(`[capture] suggest affordance skipped for ${suffix}:`, (err as Error).message);
-        }
       }
       await page.context().close();
     }
