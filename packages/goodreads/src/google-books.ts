@@ -87,9 +87,21 @@ export function isComicText(...parts: Array<string | null | undefined>): boolean
  */
 export function gbQueryTitle(title: string): string {
   let stripped = title.replace(/\s*\([^()]*\)\s*$/, '').trim();
-  // Kavita/file-derived titles carry a series-index prefix ("02 - Grave Surprise") GB never
-  // indexes under. Strip ONLY digits + a separator followed by real text — bare numeric titles
-  // ("1984") and slash dates ("11/22/63") are untouched.
+  // Trailing library/series bracket annotation ("… [Summer, Book 1]", "… [Unabridged]") — the
+  // bracket analog of the Goodreads parenthetical above; GB indexes under the bare work title.
+  stripped = stripped.replace(/\s*\[[^\][]*\]\s*$/, '').trim();
+  // LEADING series/volume prefix on Kavita/ABS file-derived titles (PLAN-059 pairing-resolve gap):
+  //   "Wheel of Time [09]: Winter's Heart", "Lily Bard #05 - Shakespeare's Counselor" (a bracket/hash
+  //   index prefix) and "Expanse 05 - Nemesis Games", "Broken Wings 2 - Midnight Flight" (a series
+  //   word + a 1-3 digit index + a dash). GB never indexes under the series prefix — the work title
+  //   trails it. The resolve's title-coverage + author guards (gbResolveTitleMatches / gbAuthorsMatch)
+  //   catch an over-strip, so a wrong strip fails to a null (an honest gap), never a wrong-work push.
+  //   A colon after a BARE number ("Beacon 23: Part One") is deliberately NOT a series prefix — only
+  //   a bracket/hash index may use ':' — so integral-number titles survive.
+  stripped = stripped.replace(/^.*?(?:\[\d{1,3}\]|#\d{1,3})\s*[-–:]\s+(?=\S)/, '').trim();
+  stripped = stripped.replace(/^.+?\s\d{1,3}\s*[-–]\s+(?=\S)/, '').trim();
+  // Bare leading series-index ("02 - Grave Surprise", "1. The Colour of Magic") — digits + a
+  // separator + real text. Bare numeric titles ("1984") and slash dates ("11/22/63") are untouched.
   stripped = stripped.replace(/^\d{1,3}\s*[-–.]\s+(?=\S)/, '').trim();
   return stripped.length > 0 ? stripped : title;
 }

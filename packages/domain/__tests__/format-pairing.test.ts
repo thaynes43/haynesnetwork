@@ -87,11 +87,14 @@ function stubLl(
 
 function stubGb(resolve: (title: string) => string | null) {
   const calls: string[] = [];
+  const inputs: Array<{ isbn?: string | null; title: string; author?: string | null }> = [];
   return {
     calls,
+    inputs,
     gb: {
-      resolveVolume: async (input: { title: string; author?: string | null }) => {
+      resolveVolume: async (input: { isbn?: string | null; title: string; author?: string | null }) => {
         calls.push(input.title);
+        inputs.push(input);
         const v = resolve(input.title);
         return v ? { volumeId: v } : null;
       },
@@ -303,6 +306,36 @@ describe('mintPairingWants (the paced estate-wide backfill)', () => {
       matchedBooksItemId: null,
       comicStatus: null,
     });
+  });
+
+  it('passes the anchor ISBN to the GB resolve (PLAN-059 — the reliable `isbn:` leg fires first)', async () => {
+    // An ABS audiobook anchor carrying a valid ISBN, with a messy file-derived title that the fuzzy
+    // title leg would miss. The fix feeds the ISBN through so the resolver's `isbn:` leg resolves it.
+    await seedItem({
+      title: 'Expanse 05 - Nemesis Games',
+      author: 'James S.A. Corey',
+      mediaKind: 'audiobook',
+      isbn: '9780316334716',
+    });
+    const ll = stubLl();
+    const gb = stubGb(() => 'gb-nemesis');
+    await mintPairingWants({ db: t.db, ll: ll.bundle, gb: gb.gb, pacer: async () => {} });
+
+    // The resolver was handed the anchor's ISBN (not just title/author) — the crux of the fix.
+    expect(gb.inputs).toHaveLength(1);
+    expect(gb.inputs[0]).toMatchObject({ isbn: '9780316334716', author: 'James S.A. Corey' });
+    const [want] = await t.db.select().from(bookRequests);
+    expect(want).toMatchObject({ origin: 'pairing', llBookId: 'gb-nemesis', ebookStatus: 'wanted' });
+  });
+
+  it('a null-ISBN anchor still resolves via title+author (no regression)', async () => {
+    await seedItem({ title: 'Piranesi', author: 'Susanna Clarke', mediaKind: 'book' });
+    const ll = stubLl();
+    const gb = stubGb(() => 'gb-pir');
+    await mintPairingWants({ db: t.db, ll: ll.bundle, gb: gb.gb, pacer: async () => {} });
+    expect(gb.inputs[0]).toMatchObject({ isbn: null, title: 'Piranesi', author: 'Susanna Clarke' });
+    const [want] = await t.db.select().from(bookRequests);
+    expect(want!.llBookId).toBe('gb-pir');
   });
 
   it('an audiobook anchor mints the EBOOK leg (the mirror direction)', async () => {
