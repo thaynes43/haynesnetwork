@@ -207,3 +207,80 @@ ADR-067 C-09).
 | Q-01 | Surface breaker state to admins (a chip on /admin or the Integrations stats page)? | OPEN — deferred; the state row + logs suffice for v1. |
 | Q-02 | A stale-`queued` sweep (a fix queued for days because goodreads-sync stopped running)? | OPEN — deferred; the ADR-062 timeout-horizon idiom is the shape if needed. |
 | Q-03 | Winter clock: the daily reset is 08:00 UTC under PST. | Mitigated — `GB_DAILY_RESET_UTC_HOUR` env knob; worst case the half-open probe re-trips once at 07:00. |
+
+## Amendment — 2026-07-18: the FOURTH consumer (LazyLibrarian) is the real drain, and why our resolve paths can't source-swap out of it
+
+This design opened "One Google Books key, three consumers" (the web Fix fallback, the
+goodreads-sync enrichment, the format-pairing mint). A 2026-07-18 owner investigation
+(`.agents/context/2026-07-18-gb-alternatives.md`) found a **fourth, unguarded, dominant
+consumer** the breaker never knew about, plus a structural reason our own paths cannot swap
+Google Books (GB) for another metadata source. Recorded here so the breaker's premise stays honest.
+
+### D-14 — The estate-wide GB consumer inventory (evidence-based)
+
+The GB key is one field, `GOOGLE_BOOKS_API_KEY`, in the shared **`media-stack`** 1Password item
+(the same item as the Prowlarr/SAB keys). Two apps mount it:
+
+1. **haynesnetwork** (namespace `frontend`) — pulled via `dataFrom: extract media-stack` into the
+   web app + the `goodreads` (:41 hourly) and `format-pairing` (:32 hourly) CronJobs. All three GB
+   call sites already route through `guardedGbResolve` (this design) — quota-aware, low-volume,
+   and comparatively light.
+2. **LazyLibrarian** (namespace **`downloads`** — outside the frontend/media namespaces the first
+   pass checked) — `externalsecret.yaml` folds the SAME `media-stack` `GOOGLE_BOOKS_API_KEY` into
+   `/config/config.ini [API] gb_api`, with `book_api=GoogleBooks`. LL is the **primary drain**: its
+   pod log streams `gb.py:828 (API-GBRESULTS)` continuously (every `addBook` re-resolves the volume
+   from GB, and LL periodically refreshes author/book metadata against GB). It has **no quota
+   memory** — it burns the shared per-project quota unthrottled. The `:32` format-pairing GB bursts
+   line up exactly with the LL `gb.py` bursts one row later: our hourly push feeds LL `addBook`,
+   and LL then re-hits GB for each — a double-dip.
+
+**Libretto is NOT a GB consumer** (correcting a prior assumption): its only external metadata host
+is `api.hardcover.app`; ISBN handling is local checksum math (`src/identifiers.ts`). Readarr — the
+owner's "never had this problem" reference — used its own `bookinfo.club` Goodreads proxy, never GB.
+
+**Quota scope:** the GB "Queries per day" limit is a **Google Cloud per-project** quota
+(project `841331826441`), aggregated across every API key in the project. A second key in the same
+project does **not** add headroom. The owner cannot raise the cap.
+
+### D-15 — Why our paths cannot source-swap GB (the coupling)
+
+Our LL `addBook` key **is a Google Books volume id** (`@hnet/lazylibrarian/write` `addBook&id=`,
+because LL's `book_api=GoogleBooks`). Open Library / Hardcover can verify ISBN→title/author
+identity and classify comics, but **cannot produce a GB volume id** — so no alternate source can
+replace the GB call on any *pushable* path without also changing LL's `book_api` and our id scheme
+in lockstep (an ADR-level change, not a source swap). "Route pairing straight through LL" spends
+LL's GB quota under the hood (same project) and loses our comic guard — no net win. Conclusion:
+the starvation is **architectural/config**, not a metadata-source choice in our code.
+
+### D-16 — Recommendation
+
+- **Primary (owner action, highest leverage, config — cannot be done from the read-only pod):**
+  **decouple LazyLibrarian from the shared key.** Because the quota is per-project, give LL a GB key
+  from a **separate GCP project** (its own free daily quota) via `config.ini [API] gb_api` — this
+  removes the dominant consumer from our key entirely and preserves the proven GB-volume-id
+  `addBook` pipeline. (Alternatively switch LL to `book_api=OpenLibrary`, but that breaks the
+  GB-volume-id `addBook` coupling — a coordinated program, not a tonight fix.) LL config lives on
+  the PVC (written via LL `writeCFG`), not in git, so this is an owner UI/config action; the
+  `media-stack` ExternalSecret only transports the value.
+- **Shipped tonight (safe, in-scope, no new deps/egress):** the format-pairing `llBookId` reuse
+  index now draws from **both** goodreads AND prior **pairing** wants (D-17), so a pairing want whose
+  same-work sibling already resolved a GB volume id mints with **zero** GB calls — the backlog keeps
+  draining on a quota-exhausted day.
+
+### D-17 — Reuse-index widening (`mintPairingWants`)
+
+`reuseByTitle` was built only from `origin='goodreads'` requests with a non-null `llBookId`. It now
+selects `origin IN ('goodreads','pairing')` — a GB volume id is the same identity key on either
+origin. A candidate's own want is still consulted first (the reuse lookup is only reached when it
+has no id yet, and index rows require a non-null id, so there is no self-reference). Same
+title-normalization + author-agreement contract as before; unaudited derived-cache discipline
+unchanged. Test: a book resolves `gb-dune`; a same-work audiobook whose subtitle keeps the pairing
+key distinct then mints by **reusing** `gb-dune` with the GB stub throwing.
+
+### Egress note
+
+App namespaces (`frontend`/`downloads`/`media`) carry **no** CiliumNetworkPolicy — egress is
+open, so reaching a new host (e.g. `openlibrary.org`) from the app needs **no** haynes-ops PR. The
+default-deny allowlist applies only to the `dev-env` pod and `upgrade-agent`. (Confirmed: the
+dev-env pod cannot reach `openlibrary.org` — it is not on that pod's allowlist — which is why any
+empirical OL probing must happen from the app, not the ops pod.)
