@@ -463,6 +463,13 @@
 			"when": 1783902400000,
 			"tag": "0066_books_force_search_grant",
 			"breakpoints": true
+		},
+		{
+			"idx": 66,
+			"version": "7",
+			"when": 1783902400000,
+			"tag": "0067_collection_size_cap",
+			"breakpoints": true
 		}
 	]
 }

@@ -689,6 +689,12 @@ export const APP_SETTING_KEYS = [
   // the CHECK. Auto-creating a synced tier appends its group to the allowlist + records the map entry.
   'authentik_owned_groups',
   'authentik_group_map',
+  // DESIGN-035 D-17 (PLAN — collection size cap) — the MAX resolved membership a NON-ADMIN role may
+  // create/add in one collection (int; DEFAULT 25). Acquisition is now ON, so an unbounded collection
+  // could dump hundreds of monitored+searched items; this is the fence. LISTS are the admin-only
+  // exception (an admin bypasses the cap outright). Admin-mutated + audited through the same
+  // setAppSetting single-writer (never a non-admin write). migration 0067 relaxes the CHECK.
+  'collection_size_cap',
 ] as const;
 export type AppSettingKey = (typeof APP_SETTING_KEYS)[number];
 
@@ -830,6 +836,10 @@ export const TICKET_CATEGORIES = [
   'quality',
   'missing',
   'other',
+  // DESIGN-035 D-17 — an admin-override request for an over-cap collection: a non-admin who tries to
+  // create/add a collection whose resolved membership exceeds `collection_size_cap` opens a Modal that
+  // mints this ticket (reusing the ADR-050 helpdesk board) so an admin can approve the larger bound.
+  'collection_override',
 ] as const;
 export type TicketCategory = (typeof TICKET_CATEGORIES)[number];
 

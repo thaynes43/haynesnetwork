@@ -12,7 +12,7 @@ import Link from 'next/link';
 import { ConfirmButton } from '@hnet/ui';
 import { Modal } from '@/components/modal';
 import { trpc } from '@/lib/trpc-client';
-import { describeMutationError } from '@/lib/app-error';
+import { appCodeOf, describeMutationError } from '@/lib/app-error';
 
 const BUILDER_LABELS: Record<string, string> = {
   static_ids: 'ID list',
@@ -221,6 +221,8 @@ export function CollectionsClient() {
         setDraft={setDraft}
         editing={editing}
         canAcquire={canAcquire}
+        sizeCap={data.sizeCap}
+        capBypass={data.capBypass}
         onClose={() => setComposerOpen(false)}
         onSaved={() => {
           setComposerOpen(false);
@@ -372,6 +374,8 @@ function ComposerModal({
   setDraft,
   editing,
   canAcquire,
+  sizeCap,
+  capBypass,
   onClose,
   onSaved,
 }: {
@@ -380,6 +384,8 @@ function ComposerModal({
   setDraft: (d: RecipeDraft) => void;
   editing: boolean;
   canAcquire: boolean;
+  sizeCap: number;
+  capBypass: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -387,20 +393,35 @@ function ComposerModal({
   const [preview, setPreview] = useState<{ name?: string | null; workCount?: number | null; issues: string[] } | null>(
     null,
   );
+  // DESIGN-035 D-17 — the over-cap admin-override Modal state (size = the resolved membership that
+  // breached the cap; null while we are still resolving it via a validate).
+  const [overCapSize, setOverCapSize] = useState<number | null>(null);
+  const [overCapOpen, setOverCapOpen] = useState(false);
   const validate = trpc.collections.validate.useMutation({
     onError: (e) => setError(describeMutationError(e)),
     onSuccess: (res) => {
       setError(null);
-      setPreview({
-        name: res.resolved?.name ?? null,
-        workCount: res.resolved?.workCount ?? null,
-        issues: res.issues,
-      });
+      const workCount = res.resolved?.workCount ?? null;
+      setPreview({ name: res.resolved?.name ?? null, workCount, issues: res.issues });
+      // A validate kicked off by a server cap-refusal (no prior preview) resolves the size, then opens
+      // the over-cap Modal.
+      if (overCapSize === null && overCapOpen) setOverCapSize(workCount);
     },
   });
   const save = trpc.collections.save.useMutation({
-    onError: (e) => setError(describeMutationError(e)),
+    onError: (e) => {
+      if (appCodeOf(e) === 'COLLECTION_SIZE_CAP_EXCEEDED') {
+        setOverCapOpen(true);
+        if (preview?.workCount != null) setOverCapSize(preview.workCount);
+        else validate.mutate(payload); // resolve the size to show, then open (onSuccess above)
+        return;
+      }
+      setError(describeMutationError(e));
+    },
     onSuccess: onSaved,
+  });
+  const requestOverride = trpc.collections.requestOverride.useMutation({
+    onError: (e) => setError(describeMutationError(e)),
   });
 
   const payload = {
@@ -414,14 +435,45 @@ function ComposerModal({
     acquisitionEnabled: draft.acquisitionEnabled,
   };
   const canSubmit = payload.id.length > 0 && payload.builderRef.length > 0;
+  const collectionLabel = payload.name ?? payload.id;
+
+  function submitSave() {
+    if (!canSubmit) return;
+    // DESIGN-035 D-17 — pre-empt an over-cap save when a non-admin has already previewed a too-large
+    // membership (the server enforces regardless; this just avoids the round trip and shows the Modal).
+    if (!capBypass && preview?.workCount != null && preview.workCount > sizeCap) {
+      setOverCapSize(preview.workCount);
+      setOverCapOpen(true);
+      return;
+    }
+    save.mutate(payload);
+  }
 
   return (
     <Modal open={open} title={editing ? 'Edit recipe' : 'New recipe'} onClose={onClose} banner={error ? <p className="alert" role="alert">{error}</p> : null}>
+      {/* DESIGN-035 D-17 — the over-cap admin-override Modal (hard rule 8: an explanatory, multi-field
+          confirm ⇒ a Modal, never window.confirm/ConfirmButton). Files a collection_override ticket. */}
+      <OverCapModal
+        open={overCapOpen}
+        size={overCapSize}
+        cap={sizeCap}
+        collectionName={collectionLabel}
+        filing={requestOverride.isPending}
+        filed={requestOverride.isSuccess}
+        onRequest={() =>
+          requestOverride.mutate({ collectionName: collectionLabel, size: overCapSize ?? 0 })
+        }
+        onClose={() => {
+          setOverCapOpen(false);
+          setOverCapSize(null);
+          requestOverride.reset();
+        }}
+      />
       <form
         className="composer-form"
         onSubmit={(e) => {
           e.preventDefault();
-          if (canSubmit) save.mutate(payload);
+          submitSave();
         }}
       >
         <label className="composer-field">
@@ -549,6 +601,74 @@ function ComposerModal({
           </button>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+/**
+ * DESIGN-035 D-17 — the over-cap admin-override Modal. A non-admin whose collection exceeds the size cap
+ * sees this explanatory, multi-field confirm (hard rule 8 ⇒ a Modal, never window.confirm/ConfirmButton).
+ * The primary action files a `collection_override` ticket so an admin can approve a larger bound; once
+ * filed it acknowledges lightly (no wall of controls). Overlay — no neighbor reflow (ADR-015).
+ */
+function OverCapModal({
+  open,
+  size,
+  cap,
+  collectionName,
+  filing,
+  filed,
+  onRequest,
+  onClose,
+}: {
+  open: boolean;
+  size: number | null;
+  cap: number;
+  collectionName: string;
+  filing: boolean;
+  filed: boolean;
+  onRequest: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal open={open} title="Collection too large" onClose={onClose}>
+      <div className="over-cap" data-testid="collection-over-cap">
+        {filed ? (
+          <>
+            <p>
+              Request sent. An admin will review the override for <strong>{collectionName}</strong> and
+              can raise the limit.
+            </p>
+            <div className="form-actions">
+              <button type="button" className="btn primary" onClick={onClose}>
+                Done
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p>
+              This collection is too large{size != null ? ` (${size} items` : ''}
+              {size != null ? `; the limit is ${cap})` : ` — the limit is ${cap} items`}. Ask an admin
+              to approve a larger bound and they can raise the limit for you.
+            </p>
+            <div className="form-actions">
+              <button
+                type="button"
+                className="btn primary"
+                disabled={filing}
+                onClick={onRequest}
+                data-testid="collection-over-cap-request"
+              >
+                {filing ? 'Sending…' : 'Request admin override'}
+              </button>
+              <button type="button" className="btn" disabled={filing} onClick={onClose}>
+                Cancel
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </Modal>
   );
 }

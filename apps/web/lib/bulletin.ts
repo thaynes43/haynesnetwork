@@ -111,13 +111,20 @@ export const TICKET_CATEGORY_NAMES = [
 ] as const;
 export type TicketCategoryName = (typeof TICKET_CATEGORY_NAMES)[number];
 
-export const TICKET_CATEGORY_LABELS: Record<TicketCategoryName, string> = {
+// DESIGN-035 D-17 — the FULL ticket category set incl. programmatic ones. `collection_override` is
+// minted by the collections over-cap flow (never user-selectable — the intake picker uses the NAMES
+// subset), but the display maps + glyphs must render it on the board/detail. Mirrors @hnet/db's
+// TICKET_CATEGORIES (the client/server enum-mirror convention — never import the server package).
+export type TicketCategoryDisplay = TicketCategoryName | 'collection_override';
+
+export const TICKET_CATEGORY_LABELS: Record<TicketCategoryDisplay, string> = {
   playback: 'Playback',
   audio: 'Audio',
   subtitles: 'Subtitles',
   quality: 'Quality',
   missing: 'Missing',
   other: 'Other',
+  collection_override: 'Collection override',
 };
 
 /** The intake form's one-line hints (what belongs under each category). */
