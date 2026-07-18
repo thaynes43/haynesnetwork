@@ -84,6 +84,9 @@ Two distinct failures produced kyverno `no signatures found` denials on 2026-07-
   # BOTH must be HTTP 200 before touching haynes-ops:
   #   manifests/vX.Y.Z            (the image)
   #   manifests/${DIG/:/-}.sig    (its cosign signature, digest-pinned)
+  # GOTCHA (v0.79.0 driver): the .sig manifest is application/vnd.oci.image.manifest.v1+json —
+  # request it with THAT Accept header (or none). Reusing the index-only Accept header above
+  # yields a spurious 404 on a perfectly good signature.
   ```
 
 If a deploy stalls on `no signatures found` anyway: run the artifact-pair check FIRST (a 404
@@ -141,7 +144,8 @@ tag in the HelmRelease and committing to `haynes-ops`.
 
    ```bash
    flux reconcile source git haynes-ops -n flux-system
-   flux reconcile kustomization haynesnetwork -n flux-system --with-source
+   # the haynesnetwork Kustomization lives in the FRONTEND namespace (not flux-system):
+   flux reconcile kustomization haynesnetwork -n frontend --with-source
    ```
 
 4. **Rollout order** (Flux + the bjw-s app-template enforce it): `init-db` initContainer
@@ -154,13 +158,13 @@ tag in the HelmRelease and committing to `haynes-ops`.
 
 ```bash
 kubectl -n frontend get pods -l app.kubernetes.io/name=haynesnetwork -w
-kubectl -n frontend rollout status deploy/haynesnetwork
+kubectl -n frontend rollout status deploy/haynesnetwork-main
 
 # Migrations actually ran (initContainer name is `migrate`):
-kubectl -n frontend logs deploy/haynesnetwork -c migrate
+kubectl -n frontend logs deploy/haynesnetwork-main -c migrate
 
 # App is healthy — the liveness/readiness/startup probe target:
-kubectl -n frontend exec deploy/haynesnetwork -c app -- \
+kubectl -n frontend exec deploy/haynesnetwork-main -c app -- \
   curl -fsS localhost:3000/api/health
 # externally: curl -fsS https://haynesnetwork.haynesops.com/api/health
 ```
@@ -168,7 +172,7 @@ kubectl -n frontend exec deploy/haynesnetwork -c app -- \
 Confirm the running image is the tag you set:
 
 ```bash
-kubectl -n frontend get deploy/haynesnetwork \
+kubectl -n frontend get deploy/haynesnetwork-main \
   -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
 ```
 
