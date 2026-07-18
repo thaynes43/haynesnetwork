@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.81.2](https://github.com/thaynes43/haynesnetwork/compare/v0.81.1...v0.81.2) (2026-07-18)
+
+
+### Bug Fixes
+
+* **collections:** list config + hand-made collections as read-only rows on every tab ([#414](https://github.com/thaynes43/haynesnetwork/issues/414)) ([8699f70](https://github.com/thaynes43/haynesnetwork/commit/8699f7073b74966a778846af72827e8c300b3e77))
+* relocate Collections tab to user menu "Collection settings" + wall drill nav-out ([#412](https://github.com/thaynes43/haynesnetwork/issues/412)) ([b279884](https://github.com/thaynes43/haynesnetwork/commit/b279884c6088fea379cc68748b6fbbc01a568e58))
+
 ## [0.81.1](https://github.com/thaynes43/haynesnetwork/compare/v0.81.0...v0.81.1) (2026-07-18)
 
 
