@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.86.0](https://github.com/thaynes43/haynesnetwork/compare/v0.85.0...v0.86.0) (2026-07-19)
+
+
+### Features
+
+* **collections:** distinct "Locked" tag + source filter on Movies/TV lists ([#426](https://github.com/thaynes43/haynesnetwork/issues/426)) ([bbf73e9](https://github.com/thaynes43/haynesnetwork/commit/bbf73e960b70387e4b1b671e63f5d117b0e1128f))
+
+
+### Bug Fixes
+
+* unify the wanted-filter rails across all media walls ([#428](https://github.com/thaynes43/haynesnetwork/issues/428)) ([39f2d27](https://github.com/thaynes43/haynesnetwork/commit/39f2d271576921911a46e2b722c257308678344f))
+
 ## [0.85.0](https://github.com/thaynes43/haynesnetwork/compare/v0.84.0...v0.85.0) (2026-07-19)
 
 
