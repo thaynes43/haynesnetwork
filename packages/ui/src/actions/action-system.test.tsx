@@ -41,14 +41,22 @@ describe('MEDIA_ACTIONS registry', () => {
 
   it('never uses the retired forked labels', () => {
     const labels = MEDIA_ACTION_TYPES.map((t) => MEDIA_ACTIONS[t].label);
-    for (const forked of ['Fix this', 'Fix season', 'Force Search show', 'Force Search artist', 'Force re-search']) {
+    for (const forked of [
+      'Fix this',
+      'Fix season',
+      'Force Search show',
+      'Force Search artist',
+      'Force re-search',
+    ]) {
       expect(labels).not.toContain(forked);
     }
   });
 
   it('composeActionLabel appends the scope qualifier with " · ", never forks the verb', () => {
     expect(composeActionLabel(MEDIA_ACTIONS.forceSearch)).toBe('Force Search');
-    expect(composeActionLabel(MEDIA_ACTIONS.forceSearch, 'Season 2')).toBe('Force Search · Season 2');
+    expect(composeActionLabel(MEDIA_ACTIONS.forceSearch, 'Season 2')).toBe(
+      'Force Search · Season 2',
+    );
     expect(composeActionLabel(MEDIA_ACTIONS.fix, 'Whole show')).toBe('Fix · Whole show');
     expect(composeActionLabel(MEDIA_ACTIONS.fix, null)).toBe('Fix');
   });
@@ -84,6 +92,41 @@ describe('MediaAction', () => {
     expect(onFire).toHaveBeenCalledTimes(1);
     rerender(<MediaAction action="fix" onFire={onFire} disabled />);
     expect(screen.getByRole('button', { name: 'Fix' }).hasAttribute('disabled')).toBe(true);
+  });
+
+  it('renders the corner BADGE presentation as an icon-only .action-badge off the same registry action', () => {
+    const onFire = vi.fn();
+    wrap(
+      <MediaAction
+        action="forceSearch"
+        presentation="badge"
+        onFire={onFire}
+        ariaLabel="Force search Franchise A"
+        testId="fs-badge"
+      />,
+    );
+    const btn = screen.getByRole('button', { name: 'Force search Franchise A' });
+    // Same registry action (data-action-type), a DIFFERENT look: the round puck class, NOT a `.btn`.
+    expect(btn.getAttribute('data-action-type')).toBe('forceSearch');
+    expect(btn.className.split(' ')).toContain('action-badge');
+    expect(btn.className.split(' ')).not.toContain('btn');
+    // Icon-only: no visible label text, an inline currentColor SVG magnifier instead.
+    expect(btn.textContent).toBe('');
+    expect(btn.querySelector('svg')).toBeTruthy();
+    // Still the sanctioned fire path.
+    fireEvent.click(btn);
+    expect(onFire).toHaveBeenCalledTimes(1);
+  });
+
+  it('the badge honors disabled and falls back to the composed label when no ariaLabel is given', () => {
+    const { rerender } = wrap(
+      <MediaAction action="forceSearch" presentation="badge" onFire={() => {}} />,
+    );
+    expect(screen.getByRole('button', { name: 'Force Search' })).toBeTruthy();
+    rerender(<MediaAction action="forceSearch" presentation="badge" onFire={() => {}} disabled />);
+    expect(screen.getByRole('button', { name: 'Force Search' }).hasAttribute('disabled')).toBe(
+      true,
+    );
   });
 
   it('renders notOnDisk as an inert, disabled missing pill', () => {

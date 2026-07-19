@@ -2126,12 +2126,19 @@ input[aria-invalid='true'] {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* DESIGN-043 D-01/D-09 amend (2026-07-18) — the quiet "Edit collection" nav-out on a collection
-   drill header. Pinned to the trailing edge; it is static per screen (reached by a PUSH), so it
-   never reflows on interaction (ADR-015). Styling is the shared `.btn.sm` idiom (tokens-only). */
+/* DESIGN-043 D-01/D-09 amend (2026-07-18) + ADR-071 owner ruling 2026-07-19 — the "Edit collection"
+   nav-out on a collection drill header. Pinned to the trailing edge; static per screen (reached by a
+   PUSH), so it never reflows on interaction (ADR-015). Now the primary green-pill idiom (owner: the
+   nav-outs were too small/hard to see). */
 .library-drill__edit {
   flex: none;
   margin-left: auto;
+}
+/* ADR-071 owner ruling 2026-07-19 — the collection-centric "Search Missing" pill sits next to Edit
+   collection on the trailing edge (Force Search stays the outline look — ADR-071 iron rule). */
+.library-drill__search {
+  flex: none;
+  display: inline-flex;
 }
 
 /* ---------- PLAN-029 (DESIGN-026 D-09) — the A–Z letter jump rail ---------- */
@@ -4503,26 +4510,73 @@ button.bwall-tap:focus-visible {
   color: var(--color-text-muted);
   border-color: var(--color-border);
 }
-/* DESIGN-035 D-16/D-17 — a collection-drill Wanted tile: the shared <MediaAction forceSearch> rides
-   the poster's bottom edge as an overlay sibling of the card link (never nested in the <a>), so the
-   tile keeps its uniform grid size. The button recolors on hover/arm; layout is fixed (ADR-015). */
+/* ADR-071 owner ruling 2026-07-19 (DESIGN-035 D-16/D-17 amendment) — a collection-drill Wanted tile:
+   the shared <MediaAction forceSearch presentation="badge"> rides the poster's TOP-RIGHT (undecorated)
+   corner as an overlay sibling of the card link (never nested in the <a>), so the tile keeps its
+   uniform grid size and the caption's rating/on-disk chips stay unobstructed. The old bottom-centered
+   pill is retired for the magnifier badge ("it feeds into the gamification"). The badge recolors on
+   hover/focus; layout is fixed (ADR-015). */
 .coll-wanted {
   position: relative;
   display: block;
 }
 .coll-wanted__fs {
   position: absolute;
-  left: 6px;
-  right: 6px;
-  bottom: 34px; /* clears the caption/badge row beneath the poster */
-  display: flex;
-  justify-content: center;
+  top: 8px;
+  right: 8px;
   z-index: 2;
-  pointer-events: none; /* the button re-enables it; the rest of the overlay never blocks the card link */
 }
-.coll-wanted__fs .btn {
-  pointer-events: auto;
+
+/* ADR-071 owner ruling 2026-07-19 — the Force Search corner BADGE: the shared <MediaAction
+   presentation="badge"> puck (the .bwall-overlay corner-puck idiom, applied to a media action). A
+   round, icon-only magnifier affordance sized to sit in an undecorated tile/card corner, themed by
+   tokens only (CLAUDE.md rule 2). Fixed size — it recolors/scales on hover/focus, never reflows
+   (ADR-015). Positioning is the overlay wrapper's job (.coll-wanted__fs / .coll-search__badge). */
+.action-badge {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface) 82%, transparent);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: 0;
+  backdrop-filter: blur(2px);
   box-shadow: 0 2px 10px color-mix(in srgb, var(--color-text) 22%, transparent);
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease,
+    transform 0.15s ease;
+}
+.action-badge:hover,
+.action-badge:focus-visible {
+  color: var(--color-accent-contrast);
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  transform: scale(1.08);
+  outline: none;
+}
+.action-badge:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* The magnifier search badge overlaid on an all-collections GRID card (movies/TV + app-managed
+   books/audiobooks). Same top-right undecorated corner as the Wanted tile; a sibling of the card
+   link, so a click fires the collection Force Search without navigating into the drill. */
+.coll-search {
+  position: relative;
+  display: block;
+}
+.coll-search__badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
 }
 
 /* Poster treatment per state — filters/outlines only (no geometry): a saved/protected poster

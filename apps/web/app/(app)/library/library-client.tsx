@@ -84,6 +84,7 @@ import {
 import { MediaAction } from '@hnet/ui';
 import { GroupCard, MediaCard, PosterGrid, PosterGridSkeleton } from '@/components/cards';
 import { ForceSearchDialog } from './[id]/force-search-dialog';
+import { CollectionForceSearch } from '@/components/collection-search';
 import { MyFixesPanel } from '@/components/my-fixes-panel';
 import { ActivityPanel } from './activity-panel';
 import { CHIP_LABELS, DateRangeChip, RatingChip, SelectChip } from '@/components/filter-chips';
@@ -682,7 +683,8 @@ function MediaBrowser({
       : [...groupsFound].sort((a, b) => a.label.localeCompare(b.label) * groupDir);
   const groupsRefreshing = groupsQuery.isPlaceholderData && groupsQuery.isFetching;
   // The drill header names the collection (the ?group= key is a ratingKey, not a title).
-  const drilledLabel = drilled ? (groupList.find((g) => g.key === group)?.label ?? '') : '';
+  const drilledGroup = drilled ? groupList.find((g) => g.key === group) : undefined;
+  const drilledLabel = drilledGroup?.label ?? '';
   // DESIGN-043 D-01/D-09 amend (2026-07-18, owner-ruled) — the "Edit collection" nav-out target for
   // the Movies/TV walls. The Kometa join is by TITLE (no clean recipe id client-side), so the link
   // lands on the right media tab WITHOUT an `edit` param — never a fabricated id. Music has no tab.
@@ -726,8 +728,11 @@ function MediaBrowser({
           static per screen (ADR-015). */}
       {drilled && grouping !== undefined ? (
         <div className="library-drill" data-testid="library-drill">
+          {/* DESIGN-043 D-01/D-09 amend + ADR-071 owner ruling 2026-07-19 — the back + edit nav-outs get
+              the PRIMARY green-pill treatment (the "New collection" idiom) so they read at a glance
+              (owner: "too small/hard to see"). Placement unchanged — no reflow (ADR-015). */}
           <Link
-            className="btn sm library-drill__back"
+            className="btn primary library-drill__back"
             href={`${pathname}?tab=${wall}&view=grouped${
               grouping !== defaultGrouping ? `&by=${encodeURIComponent(grouping.dimension)}` : ''
             }`}
@@ -736,18 +741,33 @@ function MediaBrowser({
             ‹ {grouping.allLabel}
           </Link>
           <span className="library-drill__label">{drilledLabel}</span>
-          {/* DESIGN-043 D-01/D-09 amend — the quiet nav-out to the collection manager. Movies/TV drills
-              key by a Plex ratingKey (the Kometa join is by title), so this lands on the right media
-              tab WITHOUT an edit param — landing on the correct tab is still correct, never a
-              fabricated id. Static per screen — no reflow (ADR-015); tokens-only `.btn.sm`. */}
+          {/* The quiet nav-out to the collection manager. Movies/TV drills key by a Plex ratingKey (the
+              Kometa join is by title), so this lands on the right media tab WITHOUT an edit param. */}
           {collectionsTab !== null ? (
             <Link
-              className="btn sm library-drill__edit"
+              className="btn primary library-drill__edit"
               href={`/collections?tab=${collectionsTab}`}
               data-testid="library-drill-edit"
             >
               Edit collection
             </Link>
+          ) : null}
+          {/* ADR-071 owner ruling 2026-07-19 — the collection-centric "Search Missing": force-search
+              EVERY still-missing member of this movies/TV collection at once (the shared Force Search
+              pill; gated exactly as the per-item tile search). Sits next to Edit collection. */}
+          {collectionsTab !== null &&
+          (arrKind === 'radarr' || arrKind === 'sonarr') &&
+          group !== null ? (
+            <span className="library-drill__search">
+              <CollectionForceSearch
+                target={{ provider: 'arr', ratingKey: group, arrKind }}
+                missingCount={drilledGroup?.wantedCount ?? null}
+                noun={arrKind === 'sonarr' ? 'show' : 'movie'}
+                presentation="pill"
+                testId="collection-drill-search"
+                onDone={() => void search.refetch()}
+              />
+            </span>
           ) : null}
         </div>
       ) : null}
@@ -839,9 +859,7 @@ function MediaBrowser({
                       className={wantedState === s.value ? 'is-active' : undefined}
                       aria-pressed={wantedState === s.value}
                       data-testid={s.testId}
-                      onClick={() =>
-                        patchParams({ wanted: s.value === 'all' ? null : s.value })
-                      }
+                      onClick={() => patchParams({ wanted: s.value === 'all' ? null : s.value })}
                     >
                       {s.label}
                     </button>
@@ -1028,24 +1046,48 @@ function MediaBrowser({
           </section>
         ) : (
           <PosterGrid refreshing={groupsRefreshing} testId="collections-groups">
-            {groups.map((g) => (
-              <GroupCard
-                key={g.key}
-                href={`${pathname}?tab=${wall}${
-                  grouping !== undefined && grouping !== defaultGrouping
-                    ? `&by=${encodeURIComponent(grouping.dimension)}`
-                    : ''
-                }&group=${encodeURIComponent(g.key)}`}
-                art={grouping?.art ?? 'covers'}
-                label={g.label}
-                imageUrl={g.imageUrl}
-                coverUrls={g.coverUrls}
-                kind={arrKind}
-                count={g.count}
-                wantedCount={g.wantedCount}
-                provenance={g.provenance}
-              />
-            ))}
+            {groups.map((g) => {
+              const gcard = (
+                <GroupCard
+                  href={`${pathname}?tab=${wall}${
+                    grouping !== undefined && grouping !== defaultGrouping
+                      ? `&by=${encodeURIComponent(grouping.dimension)}`
+                      : ''
+                  }&group=${encodeURIComponent(g.key)}`}
+                  art={grouping?.art ?? 'covers'}
+                  label={g.label}
+                  imageUrl={g.imageUrl}
+                  coverUrls={g.coverUrls}
+                  kind={arrKind}
+                  count={g.count}
+                  wantedCount={g.wantedCount}
+                  provenance={g.provenance}
+                />
+              );
+              // ADR-071 owner ruling 2026-07-19 — the per-collection "Search Missing" magnifier badge,
+              // a page UP from the drill: fire the whole collection's Force Search straight off the grid
+              // card. Shown only where there IS something to find (wantedCount > 0), so a fully-held
+              // collection stays undecorated — it feeds into the gamification. Overlay sibling of the
+              // card link (top-right undecorated corner), so it never navigates or reflows (ADR-015).
+              const canSearchCard =
+                (arrKind === 'radarr' || arrKind === 'sonarr') && g.wantedCount > 0;
+              if (!canSearchCard) return <Fragment key={g.key}>{gcard}</Fragment>;
+              return (
+                <div key={g.key} className="coll-search">
+                  {gcard}
+                  <span className="coll-search__badge">
+                    <CollectionForceSearch
+                      target={{ provider: 'arr', ratingKey: g.key, arrKind }}
+                      missingCount={g.wantedCount}
+                      noun={arrKind === 'sonarr' ? 'show' : 'movie'}
+                      presentation="badge"
+                      testId="collection-card-search"
+                      onDone={() => void groupsQuery.refetch()}
+                    />
+                  </span>
+                </div>
+              );
+            })}
           </PosterGrid>
         )
       ) : search.error ? (
@@ -1085,12 +1127,17 @@ function MediaBrowser({
                 ]}
               />
             );
-            // DESIGN-035 D-16/D-17 — a Wanted member of a DRILLED movies (radarr) collection gets the
-            // shared force-search action overlaid on its tile (the shipped per-item Radarr search). The
-            // action is a corner overlay (a sibling of the card link, never nested in the <a>) so the tile
-            // keeps its uniform size — recolors on arm, never reflows (ADR-015).
+            // DESIGN-035 D-16/D-17 · ADR-071 owner ruling 2026-07-19 — a Wanted member of a DRILLED
+            // movies/TV (radarr/sonarr) collection gets the shared Force Search overlaid on its tile as
+            // the magnifier corner BADGE (the shipped per-item *arr search). It rides the poster's
+            // top-right undecorated corner as a sibling of the card link (never nested in the <a>) so the
+            // tile keeps its uniform size and the caption chips stay clear — recolors on hover, never
+            // reflows (ADR-015). "It feeds into the gamification."
             const wantedFsSeam =
-              drilled && item.arrKind === 'radarr' && disk.label === 'Wanted' && !item.tombstoned;
+              drilled &&
+              (item.arrKind === 'radarr' || item.arrKind === 'sonarr') &&
+              disk.label === 'Wanted' &&
+              !item.tombstoned;
             if (!wantedFsSeam) return <Fragment key={item.id}>{card}</Fragment>;
             return (
               <div key={item.id} className="coll-wanted">
@@ -1098,7 +1145,7 @@ function MediaBrowser({
                 <span className="coll-wanted__fs">
                   <MediaAction
                     action="forceSearch"
-                    size="sm"
+                    presentation="badge"
                     onFire={() =>
                       setFsItem({ id: item.id, arrKind: item.arrKind, title: item.title })
                     }

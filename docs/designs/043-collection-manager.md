@@ -1,7 +1,10 @@
 # DESIGN-043: The collection manager — a first-class `/collections` page, direct-add across all media types
 
 - **Status:** Accepted <!-- revised 2026-07-18 to the direct-add model (ADR-072); was Accepted on the propose→approve model (ADR-070) -->
-- **Last updated:** 2026-07-18 (REVISED to direct-add + the first-class `/collections` page — ADR-072
+- **Last updated:** 2026-07-19 (**D-01/D-02 amend** — the collection-centric "Search Missing" (drill-
+  header pill + grid badge, movies/TV via the new `ledger.forceSearchCollection`, books via #418) +
+  the drill-header primary-pill treatment. See the amendment before D-08.)
+- **Prior update:** 2026-07-18 (REVISED to direct-add + the first-class `/collections` page — ADR-072
   supersedes ADR-070; the propose→approve flow and the Integrations-hub placement are removed. Was
   DESIGN-042 in the H1 by a two-track numbering collision — corrected to DESIGN-043 in this pass.)
 - **Realizes:** **ADR-072** (direct-add + capped self-serve add/edit + over-cap cap-ticket-materialize
@@ -341,6 +344,46 @@ confirm with an option is a multi-field confirm, so no inline checkbox rides the
 pass 2026-07-18). New gallery entries capture the collection row (with the find-missing state), the composer,
 the cap/over-cap Modal, the Tickets sub-section (requester view + admin approve), and the Settings
 grid — dark/light × desktop/390 (the standing screenshot-review rule).
+
+### D-01/D-02 amend (2026-07-19, owner ruling) — the collection-centric "Search Missing" + drill-header primary pills
+
+Owner live-review of the Library collection drill produced three rulings that extend the collection
+Force Search OUT of the `/collections` manager and onto the Library walls:
+
+1. **Drill-header nav-outs get the PRIMARY treatment.** On the Library collection drill header, "All
+   collections" (back) and "Edit collection" were "too small/hard to see." They now render as the
+   `btn primary` green pill (the "New collection" idiom) — same placement, no reflow (ADR-015). This is
+   a CHROME change only (the `.library-drill__back` / `.library-drill__edit` classes gain `primary`).
+
+2. **A collection-centric "Search Missing".** One control force-searches EVERY still-missing member of
+   a collection, in two owner-specified looks off the same registry action:
+   - **Drill header:** a Force Search PILL next to "Edit collection"
+     (`<CollectionForceSearch presentation="pill">`), firing the shared bulk confirm `Modal` ("Search
+     for the N missing …", the D-02 Force Search idiom).
+   - **A page UP, on the all-collections grid:** each collection card carries the SAME magnifier
+     search BADGE (`<MediaAction presentation="badge">`, the DESIGN-035 D-16-amend corner puck) so a
+     search fires per-collection straight off the grid.
+
+3. **Per media type:**
+   - **Books/Audiobooks (app-managed, `librettoRecipeId` known):** wire the existing
+     `collections.forceSearchCollection` (#418 — the apply→refresh→search Libretto/LazyLibrarian leg),
+     gated as it already is (the `force_search_book` grant, surfaced to the wall by a new
+     `canForceSearch` flag on `books.collectionGroups`). Comics are excluded (Kapowarr has no
+     on-demand collection path). The books wall carries no per-collection missing count, so the
+     confirm copy is the generic form.
+   - **Movies/TV (arr-backed):** a NEW bulk mutation `ledger.forceSearchCollection({ ratingKey,
+     arrKind })` resolves the collection's still-missing members (held=false ∩ monitored ∩ not-on-disk
+     ∩ live) UNDER THE ACCESS GATE (THE INVARIANT — a caller can only bulk-search what they can see),
+     then FANS OUT the shipped per-item `runForceSearch` over them, bounded by a per-call cap
+     (`ARR_COLLECTION_FORCE_SEARCH_CAP`, default 25). Gating is EXACTLY the per-item movies/TV path
+     (#375): authed + the shared per-requester hourly budget drawn per member inside
+     `recordSearchRequest` (admins bypass) — NO new grant; the audited `search_requested` ledger event
+     is written same-tx as each *arr command (hard rule 6). The grid badge shows only where
+     `wantedCount > 0` (a fully-held collection stays undecorated — the gamification cue).
+
+Registry-rendered throughout (`<MediaAction action="forceSearch">` in both looks — the action-anatomy
+guard holds), tokens only, reflow-safe (ADR-015). See the ADR-071 companion note (2026-07-19) for the
+shared `presentation` variant.
 
 ### D-08 — Libretto member-level missing + the resolve broker (Libretto M3, unchanged)
 

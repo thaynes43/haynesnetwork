@@ -16,6 +16,7 @@ import {
   wantedItems,
 } from '@hnet/db';
 import {
+  forceSearchArrCollection,
   isMediaItemAccessible,
   listAlbumTracks,
   listMediaChildren,
@@ -428,6 +429,57 @@ export const ledgerRouter = router({
         };
       },
     ),
+
+  /**
+   * ADR-071 owner ruling 2026-07-19 (DESIGN-035 D-16/D-17 amendment) — the BULK "Search Missing" for a
+   * movies/TV (arr-backed) collection: force-search every still-missing member at once (the drill-header
+   * button + the all-collections grid badge fire this). Resolves the collection's MISSING members
+   * (held=false membership ∩ monitored, not-on-disk, live) UNDER THE ACCESS GATE (THE INVARIANT — a
+   * caller can only search what they can see), then fans out the shipped per-item Force Search over them,
+   * capped. Gating is EXACTLY the per-item movies/TV path (PR #375): `authedProcedure` + the shared
+   * per-requester hourly budget drawn per member inside runForceSearch/recordSearchRequest (admins
+   * bypass) — NO new grant. Audit is per member (the 'search_requested' ledger event, same-tx as the
+   * *arr command). Returns the honest tally (candidates/searched/failed/rateLimited/cap).
+   */
+  forceSearchCollection: authedProcedure
+    .input(
+      z.object({
+        ratingKey: z.string().trim().min(1).max(80),
+        arrKind: z.enum(['radarr', 'sonarr']),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      return mapDomainErrors(async () => {
+        const gate = await resolveLibraryAccessGate(ctx.user.id, ctx.db);
+        const accessCond = libraryAccessConditionRaw(gate); // EXISTS over media_plex_matches ('mi' alias)
+        // A wanted member = a held=false collection membership whose media_item is monitored, has no
+        // file, and is live (not tombstoned) — the exact onDiskSummary 'Wanted' predicate, gated.
+        const conds: SQL[] = [
+          sql`mi.arr_kind = ${input.arrKind}`,
+          sql`mi.deleted_from_arr_at IS NULL`,
+          sql`mi.monitored = TRUE`,
+          sql`mi.on_disk_file_count = 0`,
+        ];
+        if (accessCond !== null) conds.push(accessCond);
+        const result = await ctx.db.execute<{ id: string }>(
+          sql`SELECT DISTINCT mi.id
+                FROM plex_collections pc
+                JOIN plex_collection_members pcm ON pcm.collection_id = pc.id AND pcm.held = FALSE
+                JOIN media_items mi ON mi.id = pcm.media_item_id
+               WHERE pc.rating_key = ${input.ratingKey}
+                 AND ${sql.join(conds, sql` AND `)}`,
+        );
+        const rows = result.rows ?? (result as unknown as { id: string }[]);
+        const report = await forceSearchArrCollection({
+          db: ctx.db,
+          arr: resolveArrBundle(ctx),
+          requesterId: ctx.user.id,
+          requesterIsAdmin: ctx.user.role.isAdmin,
+          mediaItemIds: rows.map((r) => r.id),
+        });
+        return { ok: true as const, ...report };
+      });
+    }),
 
   /** Full item + latest event page + open/recent fixes (the /library/[id] payload). */
   detail: authedProcedure.input(z.object({ id: z.uuid() })).query(async ({ ctx, input }) => {
