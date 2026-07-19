@@ -39,7 +39,7 @@
 // skeleton tiles on first load. Pagination is the shared sentinel scroll idiom.
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FilterChip,
   addFilterValue,
@@ -58,6 +58,7 @@ import {
   PosterGridSkeleton,
   type InFlightBadge,
 } from '@/components/cards';
+import { CollectionForceSearch } from '@/components/collection-search';
 import { CHIP_LABELS, SelectChip } from '@/components/filter-chips';
 import { LetterJumpBar } from '@/components/letter-jump-bar';
 import {
@@ -185,6 +186,13 @@ export function BooksBrowser({
   const collectionsTab: 'books' | 'audiobooks' | null =
     booksWall === 'books' ? 'books' : booksWall === 'audiobooks' ? 'audiobooks' : null;
   const drillEditRecipeId = drilledCollection ? (drilledMeta?.librettoRecipeId ?? null) : null;
+  // ADR-071 owner ruling 2026-07-19 — may the caller fire the collection "Search Missing"? The books
+  // force_search_book grant (admin implies it), computed server-side on the collectionGroups read. The
+  // drill button + grid badge render only when true (the mutation is FORBIDDEN server-side regardless).
+  // Books/Audiobooks only — Comics acquire through Kapowarr, which has no on-demand collection path.
+  const canForceSearchCollection =
+    (collectionsQ.data?.canForceSearch ?? false) &&
+    (mediaKind === 'book' || mediaKind === 'audiobook');
   // A drilled ?group= that is not one of this wall's collections (mangled/shared-stale link).
   const drilledMissing =
     drilledCollection && collectionsQ.data !== undefined && drilledMeta === undefined;
@@ -576,8 +584,10 @@ export function BooksBrowser({
           A screen of its own (reached by a PUSH), so this header is static per screen (ADR-015). */}
       {drilled && drillGrouping ? (
         <div className="library-drill" data-testid="library-drill">
+          {/* ADR-071 owner ruling 2026-07-19 — the back + edit nav-outs get the PRIMARY green-pill
+              treatment (owner: "too small/hard to see"). Placement unchanged — no reflow (ADR-015). */}
           <Link
-            className="btn sm library-drill__back"
+            className="btn primary library-drill__back"
             href={`${pathname}?tab=${booksWall}&view=grouped${
               drillGrouping !== defaultGrouping
                 ? `&by=${encodeURIComponent(drillGrouping.dimension)}`
@@ -592,18 +602,36 @@ export function BooksBrowser({
           <span className="library-drill__label">
             {drilledCollection ? (drilledMeta?.label ?? '') : group}
           </span>
-          {/* DESIGN-043 D-01/D-09 amend — the quiet nav-out to the collection manager, ONLY on a
-              collection drill whose mirror row carries a Libretto recipe id (a hand-made collection
-              has none → no link). Deep-links to the matching media tab with the recipe pre-loaded for
-              edit. Static per screen — no reflow (ADR-015); tokens-only `.btn.sm`. */}
+          {/* DESIGN-043 D-01/D-09 amend — the nav-out to the collection manager, ONLY on a collection
+              drill whose mirror row carries a Libretto recipe id (a hand-made collection has none → no
+              link). Deep-links to the matching media tab with the recipe pre-loaded for edit. */}
           {collectionsTab !== null && drillEditRecipeId !== null ? (
             <Link
-              className="btn sm library-drill__edit"
+              className="btn primary library-drill__edit"
               href={`/collections?tab=${collectionsTab}&edit=${encodeURIComponent(drillEditRecipeId)}`}
               data-testid="library-drill-edit"
             >
               Edit collection
             </Link>
+          ) : null}
+          {/* ADR-071 owner ruling 2026-07-19 — the collection-centric "Search Missing" for an
+              app-managed (librettoRecipeId) books/audiobooks collection: the shipped
+              collections.forceSearchCollection leg, fired from the drill header next to Edit. Grant-gated
+              (canForceSearchCollection); the shared Force Search pill + bulk confirm Modal (#418 idiom). */}
+          {collectionsTab !== null && drillEditRecipeId !== null && canForceSearchCollection ? (
+            <span className="library-drill__search">
+              <CollectionForceSearch
+                target={{ provider: 'libretto', recipeId: drillEditRecipeId }}
+                missingCount={null}
+                noun={mediaKind}
+                presentation="pill"
+                testId="collection-drill-search"
+                onDone={() => {
+                  void search.refetch();
+                  void collectionsQ.refetch();
+                }}
+              />
+            </span>
           ) : null}
         </div>
       ) : null}
@@ -855,26 +883,51 @@ export function BooksBrowser({
           // the stacked-cover fan / the designed glyph tile, all in the reserved 2:3 box
           // (GroupCard), plus the group label and the member count. Drill-in = PUSH.
           <PosterGrid refreshing={groupsRefreshing} testId="books-groups">
-            {groups.map((g) => (
-              <GroupCard
-                key={g.key}
-                href={`${pathname}?tab=${booksWall}${
-                  grouping !== undefined && grouping !== defaultGrouping
-                    ? `&by=${encodeURIComponent(grouping.dimension)}`
-                    : ''
-                }&group=${encodeURIComponent(g.key)}`}
-                art={grouping?.art ?? 'covers'}
-                label={g.label}
-                imageUrl={g.imageUrl}
-                coverUrls={g.coverUrls}
-                kind={mediaKind}
-                count={g.count}
-                // Provenance badge only on the Collections dimension (author/genre groups carry none).
-                provenance={
-                  collectionCards ? (g as { provenance?: string | null }).provenance : undefined
-                }
-              />
-            ))}
+            {groups.map((g) => {
+              const gcard = (
+                <GroupCard
+                  href={`${pathname}?tab=${booksWall}${
+                    grouping !== undefined && grouping !== defaultGrouping
+                      ? `&by=${encodeURIComponent(grouping.dimension)}`
+                      : ''
+                  }&group=${encodeURIComponent(g.key)}`}
+                  art={grouping?.art ?? 'covers'}
+                  label={g.label}
+                  imageUrl={g.imageUrl}
+                  coverUrls={g.coverUrls}
+                  kind={mediaKind}
+                  count={g.count}
+                  // Provenance badge only on the Collections dimension (author/genre groups carry none).
+                  provenance={
+                    collectionCards ? (g as { provenance?: string | null }).provenance : undefined
+                  }
+                />
+              );
+              // ADR-071 owner ruling 2026-07-19 — the per-collection "Search Missing" magnifier badge on
+              // an app-managed (librettoRecipeId) books/audiobooks card, fired straight off the grid. The
+              // books wall carries no per-collection missing count, so the confirm Modal uses the generic
+              // copy. Overlay sibling of the card link (top-right undecorated corner) — no reflow (ADR-015).
+              const recipeId =
+                collectionCards && canForceSearchCollection
+                  ? ((g as { librettoRecipeId?: string | null }).librettoRecipeId ?? null)
+                  : null;
+              if (recipeId === null) return <Fragment key={g.key}>{gcard}</Fragment>;
+              return (
+                <div key={g.key} className="coll-search">
+                  {gcard}
+                  <span className="coll-search__badge">
+                    <CollectionForceSearch
+                      target={{ provider: 'libretto', recipeId }}
+                      missingCount={null}
+                      noun={mediaKind}
+                      presentation="badge"
+                      testId="collection-card-search"
+                      onDone={() => void collectionsQ.refetch()}
+                    />
+                  </span>
+                </div>
+              );
+            })}
           </PosterGrid>
         )
       ) : search.error ? (

@@ -7,7 +7,14 @@
 //
 // Structure only — variant → `.btn`/`.btn.primary`, size → `.btn.sm`; all color is app.css tokens
 // (CLAUDE.md rule 2). Wrap in <ReservedActionSlot> to get the reflow-safe button ↔ live-chip swap.
-import type { MouseEvent } from 'react';
+//
+// ADR-071 companion (owner ruling 2026-07-19, DESIGN-035/DESIGN-043 amendments) — a `presentation`
+// prop selects the LOOK of the SAME registry action without forking identity: `pill` (default) is
+// the estate-standard `.btn` pill; `badge` is the icon-only corner puck (`.action-badge`) the owner
+// asked for on Wanted tiles + collection cards ("a badge with a magnifying glass in an undecorated
+// corner — it feeds into the gamification"). Both render off the same MEDIA_ACTIONS row through this
+// one component, so the badge and the pill can never drift in verb/gating (the action-anatomy guard).
+import type { MouseEvent, ReactElement } from 'react';
 import { ConfirmButton } from '../controls/ConfirmButton';
 import {
   MEDIA_ACTIONS,
@@ -30,6 +37,11 @@ export interface MediaActionProps {
   disabled?: boolean;
   /** Layout only (NOT identity): `sm` = the compact `.btn.sm` used in dense rows. Default `md`. */
   size?: 'sm' | 'md';
+  /** Look only (NOT identity): `pill` (default) = the estate-standard `.btn` pill; `badge` = the
+   *  icon-only corner puck (`.action-badge`) for a tile/card corner (owner ruling 2026-07-19). The
+   *  badge renders the same registry action, so pass a descriptive `ariaLabel` (it has no visible
+   *  text). Badge is for the non-destructive fire path (Force Search); it never renders `notOnDisk`. */
+  presentation?: 'pill' | 'badge';
   testId?: string;
   /** Screen-reader name override; defaults to the composed visible label. */
   ariaLabel?: string;
@@ -46,6 +58,7 @@ export function MediaAction({
   scopeLabel,
   disabled,
   size = 'md',
+  presentation = 'pill',
   testId,
   ariaLabel,
   confirmLabel,
@@ -100,6 +113,26 @@ export function MediaAction({
     );
   }
 
+  // The icon-only corner BADGE (owner ruling 2026-07-19). Same registry action, different LOOK: a
+  // round `.action-badge` puck carrying the magnifier glyph, sized to sit in an undecorated tile/card
+  // corner. Structure only — `.action-badge` is themed by app.css; the overlay wrapper positions it.
+  if (presentation === 'badge') {
+    return (
+      <button
+        type="button"
+        className="action-badge"
+        disabled={disabled}
+        onClick={onFire}
+        data-testid={testId}
+        data-action-type={spec.type}
+        aria-label={ariaLabel ?? label}
+        title={ariaLabel ?? label}
+      >
+        <SearchGlyph />
+      </button>
+    );
+  }
+
   return (
     <button
       type="button"
@@ -112,5 +145,26 @@ export function MediaAction({
     >
       {label}
     </button>
+  );
+}
+
+/** The magnifier glyph for the Force Search badge — an inline currentColor SVG per the @hnet/ui app
+ *  icon idiom (24-grid, stroke = currentColor, no icon font/CDN), so it themes with the token seam. */
+function SearchGlyph(): ReactElement {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="11" cy="11" r="6.25" />
+      <path d="m20 20-3.8-3.8" />
+    </svg>
   );
 }

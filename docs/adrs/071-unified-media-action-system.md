@@ -132,3 +132,33 @@ model so the presentation and gating converge.)*
 - ADR-058 / DESIGN-004 D-21 — the CARD system this copies; the guard idiom
   (`packages/domain/__tests__/arr-write-import-guard.test.ts`).
 - ADR-051 — `LIBRARY_VIEW_REGISTRY`, the "config not components" precedent.
+
+## Companion note (2026-07-19, owner ruling) — the `presentation` LOOK variant (badge)
+
+This note is ADDITIVE and consistent with the decision above (it does not alter it — the ADR stays
+immutable). Owner live-review of the Movies collection drill asked for the Wanted-tile Force Search to
+be "a badge with a magnifying glass in one of the corners we have not decorated already," and for the
+same magnifier to fire a per-collection "Search Missing" from the all-collections grid.
+
+The invariant this ADR protects — ONE label/variant/gating per verb, code-guaranteed — is preserved by
+adding a `presentation` prop to the SAME `MediaAction` component rather than a new control:
+
+- `presentation: 'pill' | 'badge'` selects only the LOOK, never the identity. `pill` (default) is the
+  existing `.btn` pill; `badge` is an icon-only round `.action-badge` corner puck carrying an inline
+  currentColor magnifier (the `@hnet/ui` app-icon idiom; the `.bwall-overlay` corner-puck geometry).
+- Both looks render off the SAME `MEDIA_ACTIONS` row through the one component, emit the same
+  `data-action-type`, and route the same `onFire`/dialog — so a movie Wanted badge, a TV Wanted badge,
+  and a `/collections` Force Search pill cannot drift in verb or gating. `variant` (primary/outline)
+  still comes from the registry; `presentation` is orthogonal (a Force Search badge is still the
+  outline verb, just drawn as a puck).
+- The **action-anatomy guard is unchanged and still passes**: the badge carries no visible action
+  label and is not `.btn`-classed, and it is emitted by the sealed component (never hand-rolled), so
+  R1–R4 do not fire. No registry key or label is added.
+
+Consumers of the new look (2026-07-19): the movies/TV Wanted-tile Force Search (DESIGN-035 D-16 amend)
+and the per-collection "Search Missing" badge on the all-collections grids + the drill-header pill
+(DESIGN-043 D-01/D-02 amend). The collection-level bulk mutations (`ledger.forceSearchCollection` for
+movies/TV, `collections.forceSearchCollection` for books/audiobooks) sit BEHIND that shared control;
+gating is unchanged from each media type's existing per-item Force Search (no new grant for movies/TV;
+the `force_search_book` grant for books) — consistent with this ADR's "gating is an INPUT, one rule
+per media type" stance.

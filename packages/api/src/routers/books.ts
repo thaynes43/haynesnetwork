@@ -1222,7 +1222,17 @@ export const booksRouter = router({
     }): Promise<{
       groups: BooksCollectionGroup[];
       categoryCounts: BooksCollectionCategoryCounts;
+      /** ADR-071 owner ruling 2026-07-19 — may the caller fire the on-demand collection Force Search
+       *  ("Search Missing")? SAME gate as the books detail + the /collections rows (admin OR the role's
+       *  `force_search_book` grant). The drill header + grid badge render only when true; the mutation
+       *  is FORBIDDEN server-side regardless. */
+      canForceSearch: boolean;
     }> => {
+      const canForceSearch =
+        ctx.user.role.isAdmin ||
+        (await bookActionsForRole({ db: ctx.db, roleId: ctx.user.role.id })).includes(
+          'force_search_book',
+        );
       const rows = await ctx.db
         .select({
           id: booksCollections.id,
@@ -1315,7 +1325,7 @@ export const booksRouter = router({
         if (g.category === null) continue;
         categoryCounts[g.category] = (categoryCounts[g.category] ?? 0) + 1;
       }
-      return { groups, categoryCounts };
+      return { groups, categoryCounts, canForceSearch };
     },
   ),
 });

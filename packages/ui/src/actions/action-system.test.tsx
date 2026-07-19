@@ -86,6 +86,37 @@ describe('MediaAction', () => {
     expect(screen.getByRole('button', { name: 'Fix' }).hasAttribute('disabled')).toBe(true);
   });
 
+  it('renders the corner BADGE presentation as an icon-only .action-badge off the same registry action', () => {
+    const onFire = vi.fn();
+    wrap(
+      <MediaAction
+        action="forceSearch"
+        presentation="badge"
+        onFire={onFire}
+        ariaLabel="Force search Franchise A"
+        testId="fs-badge"
+      />,
+    );
+    const btn = screen.getByRole('button', { name: 'Force search Franchise A' });
+    // Same registry action (data-action-type), a DIFFERENT look: the round puck class, NOT a `.btn`.
+    expect(btn.getAttribute('data-action-type')).toBe('forceSearch');
+    expect(btn.className.split(' ')).toContain('action-badge');
+    expect(btn.className.split(' ')).not.toContain('btn');
+    // Icon-only: no visible label text, an inline currentColor SVG magnifier instead.
+    expect(btn.textContent).toBe('');
+    expect(btn.querySelector('svg')).toBeTruthy();
+    // Still the sanctioned fire path.
+    fireEvent.click(btn);
+    expect(onFire).toHaveBeenCalledTimes(1);
+  });
+
+  it('the badge honors disabled and falls back to the composed label when no ariaLabel is given', () => {
+    const { rerender } = wrap(<MediaAction action="forceSearch" presentation="badge" onFire={() => {}} />);
+    expect(screen.getByRole('button', { name: 'Force Search' })).toBeTruthy();
+    rerender(<MediaAction action="forceSearch" presentation="badge" onFire={() => {}} disabled />);
+    expect(screen.getByRole('button', { name: 'Force Search' }).hasAttribute('disabled')).toBe(true);
+  });
+
   it('renders notOnDisk as an inert, disabled missing pill', () => {
     wrap(<MediaAction action="notOnDisk" />);
     const btn = screen.getByRole('button', { name: 'Not on Disk' });

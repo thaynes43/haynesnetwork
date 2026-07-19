@@ -90,6 +90,9 @@ export * from './media-children';
 export * from './fix-flow';
 export * from './search-requests';
 export * from './search-flow';
+// ADR-071 owner ruling 2026-07-19 — the bulk movies/TV collection Force Search (fans out the per-item
+// runForceSearch over a collection's missing members, capped; gated exactly as the per-item path).
+export * from './collection-arr-search';
 // ADR-028 / DESIGN-005 D-20 (PLAN-015) — the Action Feedback projection: derive live *arr
 // action phases on demand from the queue + ledger milestones (read-only; no writes, no migration)
 export * from './action-progress';

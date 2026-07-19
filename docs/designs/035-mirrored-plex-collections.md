@@ -1,7 +1,10 @@
 # DESIGN-035: Mirrored Plex collections — the Movies/TV Collections group view
 
 - **Status:** Accepted
-- **Last updated:** 2026-07-18 (added **D-17** — the non-admin collection size cap
+- **Last updated:** 2026-07-19 (**D-16 amend** — the Wanted-tile Force Search is a corner magnifier
+  BADGE, movies AND TV; the shared `<MediaAction presentation="badge">` variant. See the amendment
+  under D-17. Also DESIGN-043 D-01/D-02 amend — the collection-centric "Search Missing".)
+- **Prior update:** 2026-07-18 (added **D-17** — the non-admin collection size cap
   (`collection_size_cap`, default 25) + the over-cap admin-override `Modal`/ticket, migration 0067)
 - **Prior update:** 2026-07-18 (added **D-16** — full held+wanted collection membership, migration 0065)
 - **Prior update:** 2026-07-17 (amended: **D-10'/D-11'** SUPERSEDE D-10/D-11 — the collection
@@ -462,6 +465,28 @@ Radarr/LazyLibrarian. The fence (owner-specified in the label-driven collections
   wires the seam onto the wanted tile with the collection's force-search dispatch.
 - **Reflow-free (ADR-015):** the Modal is an overlay (no neighbor reflow); the Wanted tile's
   force-search uses the shared `ReservedActionSlot` so the armed/firing state recolors, never reflows.
+
+### D-16 amend (2026-07-19, owner ruling) — the Wanted-tile Force Search is a corner BADGE; movies AND TV
+
+Owner live-review of the Movies collection drill: the on-tile Force Search rendered as "an awkward
+pill overlaying the poster." Ruling — "make it like a badge with a magnifying glass in one of the
+corners we have not decorated already — it feeds into the gamification."
+
+- **A corner BADGE, not a pill.** The Wanted-tile Force Search now renders through the SAME registry
+  action in a new shared LOOK: `<MediaAction action="forceSearch" presentation="badge" />` — an
+  icon-only round magnifier puck (`.action-badge`, the `.bwall-overlay` corner-puck idiom applied to a
+  media action). It rides the poster's **top-right** corner (the tile's undecorated corner: the
+  rating ★ / on-disk chips live in the caption below, the title beneath the poster), a sibling of the
+  card link so the tile keeps its uniform grid size and never reflows (ADR-015). The old bottom-edge
+  centered pill (`.coll-wanted__fs`) is retired for the badge.
+- **The look is a shared `@hnet/ui` variant, not a hand-roll.** ADR-071 governs it: `presentation`
+  selects `pill` (default) vs `badge` on the ONE `MediaAction` component, so the badge and the pill can
+  never drift in verb/gating/dialog — the action-anatomy guard still holds (the badge emits the same
+  `data-action-type="forceSearch"`, no new label). See the ADR-071 companion note (2026-07-19).
+- **Movies AND TV.** The seam gate widens from radarr-only to `radarr | sonarr` (a monitored,
+  not-on-disk sonarr collection member is a Wanted show; its per-item Force Search is the shipped
+  whole-series search). Books Wanted tiles are unchanged — they route to the wanted detail page (no
+  on-tile action, PLAN-045), so they keep their current form.
 
 ## Alternatives considered
 
