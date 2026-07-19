@@ -314,3 +314,17 @@ stand). PLAN-056.
   rule (query narrows wants, facets and letter exclude them). e2e: the three-state selector
   round-trip (`?wanted=only|hide` → URL → wall) + the sorted-composition assertions on the books
   wall.
+
+## Amendment 4 — 2026-07-18 (the three-state Wanted axis becomes the shared cross-wall idiom)
+
+Amendment 3 shipped the `All · Wanted only · Hide wanted` `.seg` segment on the BOOKS walls. The
+\*arr walls (Movies / TV / Music) still carried the OLD standalone boolean "Wanted only" toggle, so
+the same concept wore two different anatomies. Per the owner-blessed unification ruling (2026-07-18),
+the \*arr walls now adopt **this exact three-state segment** — see **DESIGN-026 § Amendment —
+2026-07-18** for the full design (the shared `LIBRARY_FILTER_SHAPE.wanted` enum, the honest per-engine
+implementation — books compose an overlay row, the \*arr walls negate a `media_items` predicate — the
+"On disk: …" / "Wanted: …" axis labels, and the owner's `Missing` + `Hide wanted` composed-gap insight).
+
+The only change on the books side: the wanted segment gains a leading **"Wanted"** axis label
+(`.library-axis__label`) to match the \*arr walls' now-labeled rails — the segment values, `?wanted=`
+contract, gating, and server composition of amendment 3 are otherwise unchanged.

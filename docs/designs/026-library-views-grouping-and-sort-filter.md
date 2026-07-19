@@ -1,7 +1,7 @@
 # DESIGN-026: Library views, grouping, and the per-view Sorting & Filtering overhaul
 
 - **Status:** Accepted <!-- ratified with ADR-051/052/053 on 2026-07-11; the Draft label was a docs-only-PR oversight (noted by the PLAN-029 data/domain build, fixed in the UX build PR) -->
-- **Last updated:** 2026-07-13 <!-- group-card ART pass: D-04 art amendment (author portraits / glyph tiles / `?by=` grouping dimension), live art-source grounding table, D-11 art-density closure -->
+- **Last updated:** 2026-07-18 <!-- wanted-filter rail unification amendment: the three-state Wanted axis (All · Wanted only · Hide wanted) replaces the *arr walls' boolean toggle; both axes labeled (On disk / Wanted); the owner's Missing + Hide-wanted composed-gap insight -->
 - **Satisfies:** PRD-001 **R-165..R-171**; governed by **ADR-051** (views + registries), **ADR-052** (per-user
   preferences), **ADR-053** (per-user watch/read-state). EXTENDS **DESIGN-008 D-09** (the shared `ledger.search`
   filter/sort engine + keyset cursor) and **DESIGN-024** (the `books.search`/`filterFacets` contract); reads the
@@ -342,3 +342,49 @@ engines, the D-19 URL semantics, ADR-015 reflow-free, tokens only).
 | Q-02 | Do Kavita Books/Comics get a per-series metadata fetch for year+genre facets? | DEFERRED (D-11): a bounded enhancement, not promised in v1; the walls ship with author/series/format/date-added/pages. |
 | Q-03 | Which alternative view shapes each wall offers beyond its R2 default? | DEFERRED to the build UX pass (D-11); the DEFAULTS (D-01) are fixed. |
 | Q-04 | Widen the live-Plex read for Season/Episode rating/genre/resolution facets? | DEFERRED per-need (D-11); the must-have dates need no widening — ship those, add facets only if the owner asks. |
+
+## Amendment — 2026-07-18 (unify the wanted-filter rails across all media walls)
+
+Owner-blessed ruling (2026-07-18, discussed + agreed): the \*arr walls (Movies / TV / Music) and the
+books walls (Books / Audiobooks / Comics) had **drifted** into two different wanted-filter anatomies,
+and — worse — the \*arr walls read as if they carried **two competing wanted-filters**. This amendment
+unifies them onto one idiom and labels both axes so they read as orthogonal, not rival.
+
+**The drift (before).** The \*arr walls carried the On-disk segment (`Any · Complete · Partial ·
+Missing`) PLUS a separate, unlabeled standalone boolean **"Wanted only"** `btn sm` toggle (`?wanted=1`).
+The books walls had already moved (DESIGN-029 amendment 3 / PLAN-056) to a THREE-state `.seg` segment
+(`All · Wanted only · Hide wanted`, `?wanted=only|hide`). Two anatomies for the same concept; and on the
+\*arr walls "Missing" (an On-disk state) and "Wanted only" (a monitored-missing narrowing) sat side by
+side with no axis names, reading as two toggles fighting over the same idea.
+
+- **One wanted anatomy (D-08 unification).** The \*arr walls' boolean toggle is REPLACED by the SAME
+  three-state `.seg` segment the books walls use: `All · Wanted only · Hide wanted` (absent = All). Same
+  segmented-control anatomy, fixed per-segment labels, recolor-not-reflow (ADR-015). Server-side, the
+  shared `LIBRARY_FILTER_SHAPE.wanted` input moves from `z.boolean().optional()` to
+  `z.enum(['all','only','hide']).default('all')` — mirroring the books `wanted` input's shape/naming.
+  An \*arr "wanted" stays a plain predicate over `media_items` (MONITORED + MISSING + non-tombstoned):
+  `only` keeps exactly the old `wanted: true` set, `hide` is its EXACT negation (excluded server-side,
+  never a client hide), `all`/absent adds no predicate. (Books compose a wanted OVERLAY row; the \*arr
+  walls need no overlay — the wanted items ARE `media_items` rows — so the three states are just a
+  predicate/negation. Same input contract, honest per-engine implementation.)
+- **Both axes are LABELED (the anti-rivalry fix).** The On-disk segment and the Wanted segment each now
+  lead with their **axis name** — the existing `.library-sortbar__label` idiom (a leading muted-bold
+  12px label), generalized to `.library-axis__label`. The rails read **"On disk: Any…"** and
+  **"Wanted: All…"**, announcing that they narrow DIFFERENT dimensions. The books walls' wanted segment
+  gains the same **"Wanted"** axis label for consistency (its only change here).
+- **THE POINT (owner insight, 2026-07-18 — why the split matters).** Composing **`On disk: Missing`** +
+  **`Hide wanted`** yields exactly *what is missing AND nobody is searching for* — the MISSING but
+  **UNMONITORED** gap (`onDisk = none` ∧ `¬(monitored ∧ missing ∧ ¬tombstoned)` ⇒ missing ∧ unmonitored).
+  The old single "Wanted only" toggle could never express this: it could show missing-and-wanted, but
+  had no way to say "missing and NOT wanted". The complement — `On disk: Missing` + `Wanted only` — is
+  the missing-and-monitored set (someone IS chasing it). Two labeled axes make both compositions
+  reachable; one merged toggle made neither expressible.
+- **URL / compat.** `?wanted=only|hide` (absent = All), a replace-in-place refinement (D-19). Legacy
+  `?wanted=1` links read as `only` (the client maps it before it hits the wire). Internal URLs only, so
+  no external break to document.
+- **Test strategy (added).** API (embedded PG, `ledger.test.ts`): the three-state matrix
+  (`all` = every live row / `only` = the monitored-missing row / `hide` = its negation) and, as THE
+  POINT's proof, the composed `On disk: Missing` + `Hide wanted` set = the seeded missing-and-unmonitored
+  row ALONE, with the complement (`Missing` + `Wanted only`) = the monitored-missing row. Legacy
+  `?wanted=1` → `only` is covered by the client parse. e2e/screenshots: an \*arr wall with both labeled
+  rails and the composed Missing + Hide-wanted result (390 + desktop, dark).

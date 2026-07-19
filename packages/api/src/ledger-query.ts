@@ -16,6 +16,20 @@ export const escapeLike = (q: string) => q.replace(/[\\%_]/g, '\\$&');
 export const ON_DISK_FILTERS = ['any', 'complete', 'partial', 'none'] as const;
 export type OnDiskFilter = (typeof ON_DISK_FILTERS)[number];
 
+// DESIGN-026 amendment (2026-07-18) / DESIGN-029 amendment 3 — the THREE-state Wanted axis, unified
+// with the books walls (All · Wanted only · Hide wanted; absent = 'all'). This SUPERSEDES the old
+// standalone boolean `wanted` toggle on the *arr walls. Unlike books (where a want is a composed
+// overlay row), an *arr "wanted" is a plain predicate over media_items — a MONITORED, MISSING,
+// non-tombstoned row (nobody has it, and it IS being searched for). So the three states are just:
+//   • 'all'  (default) — no wanted predicate;
+//   • 'only'           — the wanted predicate (unchanged from the old `wanted: true`);
+//   • 'hide'           — its exact negation (excluded server-side, never a client hide).
+// The point of the axis split (owner insight, 2026-07-18): composing `On disk: Missing` + `Hide
+// wanted` yields what is missing AND nobody is searching for — the unmonitored gaps — a set the old
+// single toggle could never express.
+export const WANTED_STATES = ['all', 'only', 'hide'] as const;
+export type WantedState = (typeof WANTED_STATES)[number];
+
 // ADR-053 / DESIGN-026 D-07/D-08 (PLAN-029) — the per-user (viewer-scoped) video watch-state facet.
 // 'watched' = the viewer completed it; 'unwatched' = they have no completed play; 'in_progress' = a
 // partial play with no completed one. Populated-value-gated (ADR-051 C-06): the UI offers it only when
@@ -145,7 +159,9 @@ export const LIBRARY_FILTER_SHAPE = {
   query: z.string().trim().max(200).optional(),
   arrKind: z.enum(ARR_KINDS).optional(),
   onDisk: z.enum(ON_DISK_FILTERS).default('any'),
-  wanted: z.boolean().optional(),
+  // DESIGN-026 amendment / DESIGN-029 amendment 3 — the three-state Wanted axis (mirrors the books
+  // `wanted` input's shape/naming). Absent = 'all' (the old boolean-absent behaviour, unchanged).
+  wanted: z.enum(WANTED_STATES).default('all'),
   includeTombstoned: z.boolean().default(false),
   genres: z.array(z.string().min(1)).max(50).optional(),
   resolutions: z.array(z.enum(RESOLUTIONS)).max(RESOLUTIONS.length).optional(),
@@ -202,7 +218,7 @@ export interface LibraryWhereInput {
   onDisk?: OnDiskFilter;
   hasFile?: HasFileFilter;
   monitored?: boolean;
-  wanted?: boolean;
+  wanted?: WantedState;
   includeTombstoned?: boolean;
   genres?: string[];
   resolutions?: (typeof RESOLUTIONS)[number][];
@@ -263,9 +279,14 @@ export function buildLibraryWhere(input: LibraryWhereInput): SQL[] {
     );
   }
   if (input.monitored !== undefined) where.push(eq(mediaItems.monitored, input.monitored));
-  if (input.wanted === true) {
-    where.push(eq(mediaItems.monitored, true), eq(mediaItems.onDiskFileCount, 0));
-    where.push(isNull(mediaItems.deletedFromArrAt));
+  // DESIGN-026 amendment / DESIGN-029 amendment 3 — the three-state Wanted axis. "Wanted" on an *arr
+  // wall is a MONITORED, MISSING, non-tombstoned row; `only` keeps exactly that set (the old
+  // `wanted: true` semantics), `hide` is its exact negation (excluded here, never a client hide), and
+  // `all`/undefined add no predicate. Composing `onDisk: 'none'` (missing) with `hide` yields the
+  // missing-and-unmonitored gap — what nobody is searching for (the owner's 2026-07-18 insight).
+  if (input.wanted === 'only' || input.wanted === 'hide') {
+    const isWanted = sql`(${mediaItems.monitored} = TRUE AND ${mediaItems.onDiskFileCount} = 0 AND ${mediaItems.deletedFromArrAt} IS NULL)`;
+    where.push(input.wanted === 'only' ? isWanted : sql`NOT ${isWanted}`);
   }
   if (!input.includeTombstoned) where.push(isNull(mediaItems.deletedFromArrAt));
   if (input.genres?.length) where.push(jsonbOverlap(sql`${mediaMetadata.genres}`, input.genres));

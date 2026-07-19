@@ -718,26 +718,36 @@ export function BooksBrowser({
                   { value: 'only', label: 'Wanted only', testId: 'books-wanted-only' },
                   { value: 'hide', label: 'Hide wanted', testId: 'books-wanted-hide' },
                 ] as const;
+                // DESIGN-026 amendment (2026-07-18) — the wanted segment carries its axis name (the
+                // `.library-axis__label` idiom) so it reads "Wanted: All…", matching the *arr walls'
+                // now-labeled On-disk / Wanted rails. Same `.seg` anatomy; label recolors-not-reflows.
                 return (
                   <div
                     key={facet.key}
-                    className="seg"
+                    className="library-axis"
                     role="group"
                     aria-label="Wanted"
                     data-testid="books-wanted-filter"
                   >
-                    {wantedSegments.map((s) => (
-                      <button
-                        key={s.value}
-                        type="button"
-                        className={wantedState === s.value ? 'is-active' : undefined}
-                        aria-pressed={wantedState === s.value}
-                        data-testid={s.testId}
-                        onClick={() => patchParams({ wanted: s.value === 'all' ? null : s.value })}
-                      >
-                        {s.label}
-                      </button>
-                    ))}
+                    <span className="library-axis__label" aria-hidden="true">
+                      Wanted
+                    </span>
+                    <div className="seg">
+                      {wantedSegments.map((s) => (
+                        <button
+                          key={s.value}
+                          type="button"
+                          className={wantedState === s.value ? 'is-active' : undefined}
+                          aria-pressed={wantedState === s.value}
+                          data-testid={s.testId}
+                          onClick={() =>
+                            patchParams({ wanted: s.value === 'all' ? null : s.value })
+                          }
+                        >
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 );
               }
