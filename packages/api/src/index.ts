@@ -125,6 +125,10 @@ export type {
 // type-checks its declarations against (TYPE-ONLY — erased at compile; the registry is authoritative
 // on which (wall, view-level) offers which key, these unions are the per-engine supersets).
 export type { LibrarySortField, WatchState } from './ledger-query';
+// DESIGN-026 amendment / DESIGN-029 amendment 3 — the three-state Wanted axis, unified with the books
+// walls (the *arr walls' Library client imports the type; the enum backs the shared filter shape).
+export { WANTED_STATES } from './ledger-query';
+export type { WantedState } from './ledger-query';
 export type { BooksGroup, BookLengthBucket, BookFormatKey } from './books-query';
 // ADR-052 / DESIGN-026 D-06 (PLAN-029) — the per-user Library preferences wire type (the /library route
 // + the UX agent's client import it TYPE-ONLY). Re-exported so the inferred caller type stays portable.

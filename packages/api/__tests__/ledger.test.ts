@@ -61,7 +61,18 @@ beforeAll(async () => {
     onDiskFileCount: 1,
     expectedFileCount: 1,
   });
-  await tombstoneMissingItems({ db: tdb.db, arrKind: 'radarr', seenArrItemIds: [303] });
+  // DESIGN-026 amendment / DESIGN-029 amendment 3 — a MISSING but UNMONITORED row: nothing on disk
+  // AND nobody is searching for it. It is NOT "wanted" (wanted = monitored + missing), so it is the
+  // exact item the composed `On disk: Missing` + `Hide wanted` axis pair must surface (and that the
+  // old single wanted toggle could never express).
+  const foxtrot = await seedMediaItem(tdb.db, 'radarr', {
+    title: 'Foxtrot Unmonitored',
+    arrItemId: 306,
+    monitored: false,
+    onDiskFileCount: 0,
+    expectedFileCount: 1,
+  });
+  await tombstoneMissingItems({ db: tdb.db, arrKind: 'radarr', seenArrItemIds: [303, 306] });
 
   await ingestLedgerEvents({
     db: tdb.db,
@@ -100,6 +111,7 @@ beforeAll(async () => {
     charlie: charlie.id,
     delta: delta.id,
     echo: echo.id,
+    foxtrot: foxtrot.id,
     member: member.id,
   };
   api = caller(makeCtx(tdb.db, sessionUser(member)));
@@ -117,6 +129,7 @@ describe('ledger.search (R-43)', () => {
       'Bravo Partial',
       'Charlie Wanted',
       'Delta Artist',
+      'Foxtrot Unmonitored',
     ]);
     expect(nextCursor).toBeNull();
     expect(items[0]).toMatchObject({
@@ -133,22 +146,61 @@ describe('ledger.search (R-43)', () => {
     expect(byQuery.items.map((i) => i.title)).toEqual(['Bravo Partial']);
 
     const byKind = await api.ledger.search({ arrKind: 'radarr' });
-    expect(byKind.items.map((i) => i.title)).toEqual(['Charlie Wanted']);
+    expect(byKind.items.map((i) => i.title)).toEqual(['Charlie Wanted', 'Foxtrot Unmonitored']);
 
     const partial = await api.ledger.search({ onDisk: 'partial' });
     expect(partial.items.map((i) => i.title)).toEqual(['Bravo Partial']);
 
     const none = await api.ledger.search({ onDisk: 'none' });
-    expect(none.items.map((i) => i.title)).toEqual(['Charlie Wanted']);
+    expect(none.items.map((i) => i.title)).toEqual(['Charlie Wanted', 'Foxtrot Unmonitored']);
 
     const complete = await api.ledger.search({ onDisk: 'complete' });
     expect(complete.items.map((i) => i.title)).toEqual(['Alpha Complete', 'Delta Artist']);
   });
 
-  it('wanted=true narrows to the D-08 view semantics; includeTombstoned widens', async () => {
-    const wanted = await api.ledger.search({ wanted: true });
-    expect(wanted.items.map((i) => i.title)).toEqual(['Charlie Wanted']);
+  // DESIGN-026 amendment (2026-07-18) / DESIGN-029 amendment 3 — the three-state Wanted axis
+  // (All · Wanted only · Hide wanted), unified with the books walls. "Wanted" = monitored + missing +
+  // non-tombstoned; 'hide' is its exact negation.
+  it('the three-state Wanted axis: all / only / hide', async () => {
+    // 'all' (the server default when the param is absent) — no wanted predicate.
+    const all = await api.ledger.search({ wanted: 'all' });
+    expect(all.items.map((i) => i.title)).toEqual([
+      'Alpha Complete',
+      'Bravo Partial',
+      'Charlie Wanted',
+      'Delta Artist',
+      'Foxtrot Unmonitored',
+    ]);
 
+    // 'only' — the old `wanted: true` semantics: the one MONITORED, MISSING row.
+    const only = await api.ledger.search({ wanted: 'only' });
+    expect(only.items.map((i) => i.title)).toEqual(['Charlie Wanted']);
+
+    // 'hide' — the negation: everything EXCEPT the wanted row (Foxtrot survives — it is missing but
+    // unmonitored, so it was never "wanted").
+    const hide = await api.ledger.search({ wanted: 'hide' });
+    expect(hide.items.map((i) => i.title)).toEqual([
+      'Alpha Complete',
+      'Bravo Partial',
+      'Delta Artist',
+      'Foxtrot Unmonitored',
+    ]);
+  });
+
+  // THE POINT (owner insight, 2026-07-18): composing `On disk: Missing` + `Hide wanted` reveals what
+  // is missing AND nobody is searching for — the unmonitored gaps. Impossible with the old toggle.
+  it('composes On-disk Missing + Hide wanted → the missing-and-unmonitored gap', async () => {
+    const gap = await api.ledger.search({ onDisk: 'none', wanted: 'hide' });
+    // Only Foxtrot is BOTH missing (0 on disk) AND not wanted (unmonitored) — Charlie is missing but
+    // IS wanted (monitored), so 'hide' drops it; nothing else is missing.
+    expect(gap.items.map((i) => i.title)).toEqual(['Foxtrot Unmonitored']);
+
+    // The complement proof: `On disk: Missing` + `Wanted only` is exactly Charlie (missing + wanted).
+    const wantedMissing = await api.ledger.search({ onDisk: 'none', wanted: 'only' });
+    expect(wantedMissing.items.map((i) => i.title)).toEqual(['Charlie Wanted']);
+  });
+
+  it('includeTombstoned widens to the tombstoned rows', async () => {
     const all = await api.ledger.search({ includeTombstoned: true });
     expect(all.items.map((i) => i.title)).toContain('Echo Tombstoned');
     expect(all.items.find((i) => i.title === 'Echo Tombstoned')!.tombstoned).toBe(true);

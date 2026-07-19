@@ -18,9 +18,10 @@
 // URL-state contract (deep-linkable, Back/Forward safe — documented in DESIGN-008 D-11 + D-10):
 //   ?tab=movies|tv|music|…|my-fixes         the sub-tab (PUSH — a screen-level switch, D-19)
 //   ?q=…                                    search text (input debounced 250ms → URL)
-//   ?disk=complete|partial|none             on-disk narrowing ('any' = absent)
-//   ?wanted=1                               the wanted-only toggle (Movies/TV; the book walls
-//                                           use the PLAN-056 three-state ?wanted=only|hide)
+//   ?disk=complete|partial|none             the On-disk axis ('any' = absent)
+//   ?wanted=only|hide                        the Wanted axis (three-state, absent = All) — the SAME
+//                                           idiom the book walls use (DESIGN-026 amend / DESIGN-029
+//                                           amend 3); legacy ?wanted=1 links read as 'only'
 //   ?genre=…&genre=… / res / req / col      facet filters (REPEATED params — comma-safe)
 //   ?decade=1990&decade=2000                the Decade facet (PLAN-029 — decade-start years)
 //   ?rfrom=2020-01-01&rto=2021-12-31        the Release-Date range facet (PLAN-029, inclusive)
@@ -50,7 +51,7 @@ import {
   arrowFor,
   type FilterMap,
 } from '@hnet/ui';
-import type { LibrarySortField, WallPreference } from '@hnet/api';
+import type { LibrarySortField, WallPreference, WantedState } from '@hnet/api';
 import { trpc } from '@/lib/trpc-client';
 import {
   RESOLUTION_LABELS,
@@ -167,6 +168,15 @@ const ON_DISK_FILTERS = [
 ] as const;
 
 type OnDiskFilter = (typeof ON_DISK_FILTERS)[number]['value'];
+
+// DESIGN-026 amendment (2026-07-18) / DESIGN-029 amendment 3 — the three-state Wanted axis, the SAME
+// anatomy as the books walls' wanted segment (`.seg`, fixed per-segment labels; the testIds mirror
+// the books ones with the `library-` prefix). 'all' clears the URL param (absent = the default).
+const WANTED_SEGMENTS = [
+  { value: 'all', label: 'All', testId: 'library-wanted-all' },
+  { value: 'only', label: 'Wanted only', testId: 'library-wanted-only' },
+  { value: 'hide', label: 'Hide wanted', testId: 'library-wanted-hide' },
+] as const satisfies ReadonlyArray<{ value: WantedState; label: string; testId: string }>;
 
 // DESIGN-026 D-02 — the ledger walls' ENUM facet plumbing: each registry facet key maps to its URL
 // param (registry-declared) and the same-named ledger.search input / ledger.filterFacets list.
@@ -405,7 +415,11 @@ function MediaBrowser({
   const onDisk: OnDiskFilter = ON_DISK_FILTERS.some((f) => f.value === diskRaw)
     ? (diskRaw as OnDiskFilter)
     : 'any';
-  const wantedOnly = searchParams.get('wanted') === '1';
+  // DESIGN-026 amendment / DESIGN-029 amendment 3 — the three-state Wanted axis (All · Wanted only ·
+  // Hide wanted; absent = All), unified with the books walls. Legacy `?wanted=1` links read as 'only'.
+  const wantedRaw = searchParams.get('wanted');
+  const wantedState: WantedState =
+    wantedRaw === 'only' || wantedRaw === '1' ? 'only' : wantedRaw === 'hide' ? 'hide' : 'all';
   // The registry's enum facets → the FilterMap (repeated URL params, comma-safe).
   const enumFacets = entry.facets.filter((f) => f.kind === 'enum');
   const filters: FilterMap<LibraryField> = {};
@@ -613,7 +627,9 @@ function MediaBrowser({
       query: qParam.trim() === '' ? undefined : qParam.trim(),
       arrKind,
       onDisk,
-      ...(wantedOnly ? { wanted: true } : {}),
+      // The three-state Wanted axis rides the shared LIBRARY_FILTER_SHAPE input ('all' is the server
+      // default — a no-op predicate; 'only'/'hide' compose with onDisk, the point of the axis split).
+      wanted: wantedState,
       // The registry pinned this wall's keys to LibrarySortField at compile time (library-view-registry).
       sort: { field: sort.field as LibrarySortField, dir: sort.dir },
       ...(filters.genres ? { genres: filters.genres } : {}),
@@ -778,30 +794,60 @@ function MediaBrowser({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          {/* Item-only narrowings (on-disk / Wanted) hide over group cards — a card grid can't
-              answer them (the registry's never-offer-what-it-can't-answer rule). */}
+          {/* Item-only narrowings hide over group cards — a card grid can't answer them (the
+              registry's never-offer-what-it-can't-answer rule). DESIGN-026 amendment (2026-07-18) —
+              TWO labeled axes side by side: the On-disk segment and the three-state Wanted segment,
+              each carrying its axis name (the `.library-sortbar__label` idiom) so the rails read
+              "On disk: Any…" and "Wanted: All…" and never as competing wanted-filters. Composing
+              `On disk: Missing` + `Hide wanted` reveals the missing-and-unmonitored gap (nobody is
+              searching for it) — the owner's insight, impossible with the old single toggle. Fixed
+              per-segment labels recolor-not-reflow (ADR-015). */}
           {!groupedCards ? (
             <div className="library-filters">
-              <div className="seg" role="group" aria-label="On disk">
-                {ON_DISK_FILTERS.map((f) => (
-                  <button
-                    key={f.value}
-                    type="button"
-                    className={onDisk === f.value ? 'is-active' : undefined}
-                    onClick={() => patchParams({ disk: f.value === 'any' ? null : f.value })}
-                  >
-                    {f.label}
-                  </button>
-                ))}
+              <div className="library-axis" role="group" aria-label="On disk">
+                <span className="library-axis__label" aria-hidden="true">
+                  On disk
+                </span>
+                <div className="seg">
+                  {ON_DISK_FILTERS.map((f) => (
+                    <button
+                      key={f.value}
+                      type="button"
+                      className={onDisk === f.value ? 'is-active' : undefined}
+                      aria-pressed={onDisk === f.value}
+                      onClick={() => patchParams({ disk: f.value === 'any' ? null : f.value })}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <button
-                type="button"
-                className={`btn sm${wantedOnly ? ' primary' : ''}`}
-                aria-pressed={wantedOnly}
-                onClick={() => patchParams({ wanted: wantedOnly ? null : '1' })}
+              <div
+                className="library-axis"
+                role="group"
+                aria-label="Wanted"
+                data-testid="wanted-filter"
               >
-                Wanted only
-              </button>
+                <span className="library-axis__label" aria-hidden="true">
+                  Wanted
+                </span>
+                <div className="seg">
+                  {WANTED_SEGMENTS.map((s) => (
+                    <button
+                      key={s.value}
+                      type="button"
+                      className={wantedState === s.value ? 'is-active' : undefined}
+                      aria-pressed={wantedState === s.value}
+                      data-testid={s.testId}
+                      onClick={() =>
+                        patchParams({ wanted: s.value === 'all' ? null : s.value })
+                      }
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           ) : null}
         </div>

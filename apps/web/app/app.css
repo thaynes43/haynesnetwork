@@ -1545,6 +1545,21 @@ input[aria-invalid='true'] {
   align-items: center;
   gap: 10px;
 }
+/* DESIGN-026 amendment (2026-07-18) — a labeled filter AXIS: the axis name (the
+   `.library-sortbar__label` idiom) leads its `.seg` so the On-disk and Wanted rails read
+   "On disk: Any…" / "Wanted: All…" and never as competing wanted-filters. The pair wraps as
+   whole axes on a phone (a static layout wrap, not interaction-driven) — ADR-015. */
+.library-axis {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.library-axis__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  flex: none;
+}
 .admin-filterbar {
   margin-bottom: var(--space);
 }
@@ -1671,10 +1686,13 @@ input[aria-invalid='true'] {
    `.library-chipbar` already pans horizontally when the pill outgrows a narrow phone, so the pill
    travels as a whole and never wraps → never reflows the grid (ADR-015). Matches the Tickets
    `.twall-bar .seg` idiom. */
-.library-chipbar > .seg {
+.library-chipbar > .seg,
+.library-chipbar > .library-axis {
   flex: none;
 }
-.library-chipbar > .seg button {
+.library-chipbar > .seg button,
+.library-chipbar > .library-axis button,
+.library-chipbar > .library-axis .library-axis__label {
   white-space: nowrap;
 }
 .library-sortbar {
