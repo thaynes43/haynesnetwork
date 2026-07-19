@@ -1,5 +1,9 @@
 # 2026-07-19 — GB quota watch: monitoring the first clean day under the call-budgeter
 
+> **CORRECTION / SUPERSEDED (later 07-19):** the "~100/day cap" premise below is WRONG. GCP console
+> confirmed a genuine 1,000/day quota that was SHARED (and saturated) by three consumers on one key.
+> Root cause + the fix (key split + budget raise to 700/200/100) are in [[2026-07-19-gb-quota-resolved]].
+
 Owner handed the app off for the weekend (usage resets Monday 07-20) and asked to **monitor the
 Google Books quota to see if it resolves**, noting the daily reset around 07:00 UTC. This note is the
 durable resume point for that watch — the in-session cron reminders that drive it are session-only and
