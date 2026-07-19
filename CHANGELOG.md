@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.88.0](https://github.com/thaynes43/haynesnetwork/compare/v0.87.1...v0.88.0) (2026-07-19)
+
+
+### Features
+
+* daily Google Books CALL BUDGET — keep our own consumers inside the ~100/day cap ([#433](https://github.com/thaynes43/haynesnetwork/issues/433)) ([f1ccd1e](https://github.com/thaynes43/haynesnetwork/commit/f1ccd1e612826380bc862b6de14c1fc3d52b7778))
+
 ## [0.87.1](https://github.com/thaynes43/haynesnetwork/compare/v0.87.0...v0.87.1) (2026-07-19)
 
 
