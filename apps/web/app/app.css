@@ -4519,6 +4519,15 @@ button.bwall-tap:focus-visible {
 .coll-wanted {
   position: relative;
   display: block;
+  /* This wrapper IS the poster-grid cell for a Wanted member (the card link is nested one level
+     down, not the grid item). Without min-width:0 its automatic minimum size is the nested card's
+     min-content — i.e. the nowrap title width — which inflates its `1fr` track (minmax(auto,1fr)),
+     so a long-titled Wanted tile renders WIDER than a held tile and squeezes its neighbours (owner
+     bug 2026-07-19). The bare `.poster-card` grid item avoids this only because its overflow:hidden
+     makes it a scroll container (auto min = 0); this wrapper is overflow:visible so the badge's
+     hover glow can spill, so we zero the minimum explicitly. Every drill tile now shares ONE 1fr
+     column (ADR-058 one poster anatomy; ADR-015 no reflow). */
+  min-width: 0;
 }
 .coll-wanted__fs {
   position: absolute;
@@ -4571,6 +4580,10 @@ button.bwall-tap:focus-visible {
 .coll-search {
   position: relative;
   display: block;
+  /* Same grid-cell reasoning as .coll-wanted: this wrapper is the poster-grid item for a
+     searchable collection card, so zero its automatic minimum or a long-labelled card inflates its
+     `1fr` track and diverges from its neighbours (ADR-058 / ADR-015). */
+  min-width: 0;
 }
 .coll-search__badge {
   position: absolute;

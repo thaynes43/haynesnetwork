@@ -94,6 +94,38 @@ test.describe('card gallery — the shared-card-system drift gate (ADR-058)', ()
     ).toEqual(['A']);
   });
 
+  test('collection-drill tiles share ONE poster column — held + Wanted are the same width (ADR-071)', async ({
+    page,
+  }) => {
+    // Owner bug 2026-07-19 (390px Movies drill, post-#429): the Wanted-tile overlay wrapper
+    // (`.coll-wanted`) is the poster-grid item, and without min-width:0 its automatic minimum was
+    // the nested card's nowrap-title min-content — inflating its `1fr` track so long-titled Wanted
+    // tiles rendered WIDER than the held tile. Assert every drill tile is the same width at the
+    // phone breakpoint (3-up, where the divergence bit hardest) AND on desktop.
+    for (const width of [390, 1280]) {
+      await page.setViewportSize({ width, height: 900 });
+      await openGallery(page, 'hnet-dark');
+      const grid = page.getByTestId('gallery-drill');
+      // The grid items: the held bare card + the two `.coll-wanted` wrappers (NOT the nested card).
+      const items = grid.locator('> .poster-card, > .coll-wanted');
+      const count = await items.count();
+      expect(count, 'drill renders held + wanted tiles').toBe(3);
+      const widths: number[] = [];
+      for (let i = 0; i < count; i++) {
+        const box = await items.nth(i).boundingBox();
+        expect(box).not.toBeNull();
+        widths.push(box!.width);
+      }
+      const min = Math.min(...widths);
+      const max = Math.max(...widths);
+      // Sub-pixel rounding only — a wildly-different title must NOT change tile width.
+      expect(max - min, `drill tile widths uniform @${width}px: ${widths.join(', ')}`).toBeLessThan(
+        1,
+      );
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
+  });
+
   test('activity tiles carry the in-flight stage badge (+ failure class) in the ONE badge row', async ({
     page,
   }) => {
@@ -109,7 +141,10 @@ test.describe('card gallery — the shared-card-system drift gate (ADR-058)', ()
     await expect(failed.locator('.badge--danger')).toHaveCount(2);
     // The wall in-flight prop lands as the leading badge on a real MediaCard/BookCard too.
     await expect(
-      page.getByTestId('gallery-media').locator('.poster-card', { hasText: 'Grabbing Now' }).locator('.badge--info'),
+      page
+        .getByTestId('gallery-media')
+        .locator('.poster-card', { hasText: 'Grabbing Now' })
+        .locator('.badge--info'),
     ).toHaveCount(1);
 
     // PLAN-048 D-10 — the LIVE badge state (the Fix feel): a downloading badge carries the filling mini-meter
@@ -215,7 +250,10 @@ test.describe('card gallery — the shared-card-system drift gate (ADR-058)', ()
       ['390', { width: 390, height: 844 }],
     ] as const) {
       for (const theme of ['hnet-dark', 'hnet-light'] as const) {
-        const context = await browser.newContext({ viewport, baseURL: testInfo.project.use.baseURL });
+        const context = await browser.newContext({
+          viewport,
+          baseURL: testInfo.project.use.baseURL,
+        });
         const page = await context.newPage();
         await openGallery(page, theme);
         // Hide the Next dev overlay badge — the captures are the standing reference artifact.

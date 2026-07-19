@@ -28,6 +28,7 @@ import {
   TrashWall,
   TrashWallSkeleton,
 } from '@/components/cards';
+import { MediaAction } from '@hnet/ui';
 
 // Fixture art: inline SVG data URIs (hermetic — never a proxy route). The colors are image
 // CONTENT (a fake poster's pixels), not UI theme — hard rule 2 governs stylesheets, not fixtures.
@@ -114,6 +115,63 @@ export function CardGallery() {
             inFlight={{ stage: 'downloading', progress: 42 }}
             badges={[{ label: '★ 7.4', tone: 'rating' }]}
           />
+        </PosterGrid>
+      </Section>
+
+      {/* ADR-071 / DESIGN-035 D-16 — a collection DRILL grid mixing held tiles (bare MediaCard grid
+          items) with Wanted tiles (the `.coll-wanted` overlay wrapper carrying the corner Force
+          Search badge). The wrapper IS the grid item, so it must share the held tile's `1fr` column
+          EXACTLY — titles of wildly different lengths must NOT make the wrapped tiles wider (the
+          owner-reported 2026-07-19 divergence; guarded by the sizing test below). */}
+      <Section title="Collection drill — held + Wanted tiles share ONE poster column (ADR-071)">
+        <PosterGrid testId="gallery-drill">
+          <MediaCard
+            href="#"
+            posterUrl={POSTER_A}
+            kind="radarr"
+            title="Iron Man"
+            year={2008}
+            badges={[
+              { label: '★ 7.9', tone: 'rating' },
+              { label: 'On disk', tone: 'ok' },
+            ]}
+          />
+          <div className="coll-wanted" data-testid="drill-wanted">
+            <MediaCard
+              href="#"
+              posterUrl={null}
+              kind="radarr"
+              title="The Avengers"
+              year={2012}
+              badges={[{ label: 'Wanted', tone: 'warn' }]}
+            />
+            <span className="coll-wanted__fs">
+              <MediaAction
+                action="forceSearch"
+                presentation="badge"
+                onFire={() => {}}
+                ariaLabel="Force search The Avengers"
+              />
+            </span>
+          </div>
+          <div className="coll-wanted" data-testid="drill-wanted">
+            <MediaCard
+              href="#"
+              posterUrl={null}
+              kind="radarr"
+              title="Avengers: Endgame — The Extended Very Long Edition"
+              year={2019}
+              badges={[{ label: 'Wanted', tone: 'warn' }]}
+            />
+            <span className="coll-wanted__fs">
+              <MediaAction
+                action="forceSearch"
+                presentation="badge"
+                onFire={() => {}}
+                ariaLabel="Force search Avengers: Endgame"
+              />
+            </span>
+          </div>
         </PosterGrid>
       </Section>
 
@@ -345,7 +403,11 @@ export function CardGallery() {
             title="Parked Comic"
             author="An Author"
             shelfBadge={{ label: 'To read', tone: 'muted' }}
-            statusBadge={{ label: 'Comic · Parked', tone: 'muted', title: 'Waiting on a ComicVine match.' }}
+            statusBadge={{
+              label: 'Comic · Parked',
+              tone: 'muted',
+              title: 'Waiting on a ComicVine match.',
+            }}
             phase="parked"
             requestId="fixture-r4"
           />
@@ -446,7 +508,11 @@ export function CardGallery() {
               testId: 'trash-toggle',
               markInert: true,
             }}
-            libraryLink={{ href: '#', title: 'Open Slated Movie (2019)', ariaLabel: 'Open Slated Movie (2019)' }}
+            libraryLink={{
+              href: '#',
+              title: 'Open Slated Movie (2019)',
+              ariaLabel: 'Open Slated Movie (2019)',
+            }}
             metaText="3.0 GB · ★ 6.4"
             requesters={[]}
             watchNote={null}
