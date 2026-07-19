@@ -89,6 +89,12 @@ export * from './mam-gate-state';
 // mam_gate_state class): daily/minute 429 trips consulted by every GB call site through the domain
 // guardedGbResolve seam. Guarded single-writer table (gb-quota-breaker.ts); no audit/outbox trail.
 export * from './gb-quota-state';
+// ADR-067 / DESIGN-039 (PLAN-055 amend — D-21..D-24) — the daily GB CALL BUDGET ledger (migration
+// 0070): the gb_quota_state sibling that remembers per-consumer first-party GB call counts against the
+// current quota-day so the estate's own consumers stay inside the shared key's low per-day cap
+// unattended. Guarded single-writer table (gb-call-budget.ts); no audit/outbox trail (day-rolling
+// operational state, the mam_gate_state class).
+export * from './gb-call-budget';
 // ADR-052 / DESIGN-026 D-06 (PLAN-029) — the per-user, per-wall Library preferences (last view +
 // group-by + sort). First per-user store; guarded single-writer table (setLibraryPreference), no audit.
 export * from './library-preferences';

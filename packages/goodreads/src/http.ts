@@ -42,6 +42,15 @@ export interface GetOptions {
   accept?: string;
   fetchImpl?: typeof fetch;
   sleepImpl?: (ms: number) => Promise<void>;
+  /**
+   * ADR-067 / DESIGN-039 (PLAN-055 amend — D-21) — the daily GB CALL BUDGET meter. Invoked ONCE per
+   * getText invocation (one logical outbound GB query — the isbn / title / pre-colon / confirm legs of
+   * a single resolveVolume are separate getText calls and so counted separately), NOT per retry (a
+   * transient-503 retry is the same query). Wired ONLY by the GoogleBooksClient's opts, so RSS getText
+   * calls carry no meter and are never counted. The domain budget attributes the meter's per-seam
+   * delta to a consumer and persists it to gb_call_budget.
+   */
+  onCall?: () => void;
 }
 
 const defaultSleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -58,6 +67,9 @@ export async function getText(url: string, options: GetOptions = {}): Promise<st
   const fetchImpl = options.fetchImpl ?? fetch;
   const sleepImpl = options.sleepImpl ?? defaultSleep;
   const redacted = redactKey(url);
+
+  // Count this outbound GB query ONCE (before the retry loop) — see GetOptions.onCall.
+  options.onCall?.();
 
   let attempt = 0;
   for (;;) {

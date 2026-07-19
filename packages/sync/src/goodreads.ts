@@ -8,11 +8,13 @@ import type { DbClient } from '@hnet/db';
 import {
   guardedGbResolve,
   listLinkedIntegrations,
+  makeGbBudgetTracker,
   markIntegrationSynced,
   peekGbQuotaGate,
   retryQueuedBookFixes,
   syncGoodreadsIntegration,
   type EnrichedShelfItem,
+  type GbCallMeter,
   type KapowarrClientBundle,
   type LazyLibrarianClientBundle,
   type RetryQueuedBookFixesReport,
@@ -63,6 +65,12 @@ export interface GoodreadsSyncReport {
    * breaker was/went open this run (they mirror honestly un-enriched; one log line, zero 429s).
    */
   skippedEnrichment: number;
+  /**
+   * DESIGN-039 D-23 — shelf items whose GB enrichment was skipped because the 'goodreads' daily CALL
+   * BUDGET was spent (distinct from skippedEnrichment, the shared 429 breaker). The item still mirrors
+   * honestly un-enriched (the comic text-marker fallback still applies); no breaker trip.
+   */
+  skippedBudget: number;
   /** ADR-067 C-06 — the queued-book-fix retry pass hosted in this run (absent when LL/GB missing). */
   fixRetries?: RetryQueuedBookFixesReport;
   perIntegration: Array<{
@@ -86,6 +94,12 @@ export async function runGoodreadsSync(input: {
   ll?: LazyLibrarianClientBundle;
   /** ADR-056 (PLAN-046) — the confined Kapowarr bundle for comic routing. Absent ⇒ comics stay parked. */
   kapowarr?: KapowarrClientBundle;
+  /**
+   * DESIGN-039 D-21/D-23 — the daily GB CALL BUDGET meter wired into the GB client's http wrapper.
+   * Present ⇒ enrichment is budgeted (consumer 'goodreads') and the queued-fix retry pass is metered
+   * (consumer 'bookfix'); absent ⇒ no budgeting/metering (tests / degraded) — pre-budget behaviour.
+   */
+  meter?: GbCallMeter;
   now?: Date;
   logger?: SyncLogger;
 }): Promise<GoodreadsSyncReport> {
@@ -110,6 +124,15 @@ export async function runGoodreadsSync(input: {
     });
   }
 
+  // DESIGN-039 D-23 — the 'goodreads' daily CALL BUDGET (built once per run; only when a meter is
+  // wired — the cluster cron). When this consumer's slice is spent, the rest of the run's items mirror
+  // honestly un-enriched (counted as skippedBudget) WITHOUT tripping the shared breaker.
+  const enrichmentBudget = input.meter
+    ? await makeGbBudgetTracker({ db: input.db, consumer: 'goodreads', ...(input.now ? { now: input.now } : {}) })
+    : undefined;
+  let skippedBudget = 0;
+  let budgetLogged = false;
+
   for (const integ of integrations) {
     try {
       const enriched: EnrichedShelfItem[] = [];
@@ -124,13 +147,25 @@ export async function runGoodreadsSync(input: {
           let gb: GbVolume | null = null;
           if (quotaOpen) {
             skippedEnrichment += 1;
+          } else if (enrichmentBudget && !enrichmentBudget.canSpend()) {
+            // D-23 — daily budget spent: skip GB for the rest of the run (item mirrors un-enriched).
+            skippedBudget += 1;
+            if (!budgetLogged) {
+              logger.info(
+                'goodreads-sync: GB daily call budget spent — enrichment skipped for the rest of the run',
+                { consumer: 'goodreads', used: enrichmentBudget.used() },
+              );
+              budgetLogged = true;
+            }
           } else {
+            const before = input.meter?.taken() ?? 0;
             try {
               const guarded = await guardedGbResolve({
                 db: input.db,
                 gb: input.goodreads.googleBooks,
                 query: { isbn: item.isbn, title: item.title, author: item.author },
               });
+              if (enrichmentBudget) await enrichmentBudget.spend((input.meter?.taken() ?? 0) - before);
               if (guarded.outcome === 'quota_blocked' || guarded.outcome === 'quota_tripped') {
                 quotaOpen = true;
                 skippedEnrichment += 1;
@@ -142,6 +177,7 @@ export async function runGoodreadsSync(input: {
                 gb = guarded.volume;
               }
             } catch (error) {
+              if (enrichmentBudget) await enrichmentBudget.spend((input.meter?.taken() ?? 0) - before);
               logger.error('goodreads-sync: GB enrichment failed', {
                 title: item.title,
                 error: error instanceof Error ? error.message : String(error),
@@ -197,6 +233,9 @@ export async function runGoodreadsSync(input: {
       db: input.db,
       ll: input.ll,
       gb: input.goodreads.googleBooks,
+      // DESIGN-039 D-24 — meter the retry pass's GB legs into the 'bookfix' slice (metered, not
+      // budget-blocked: completing a user's queued Fix rides the reserved headroom).
+      ...(input.meter ? { meter: input.meter } : {}),
       ...(input.now ? { now: input.now } : {}),
       logger,
     });
@@ -210,6 +249,7 @@ export async function runGoodreadsSync(input: {
     synced,
     failed,
     skippedEnrichment,
+    skippedBudget,
     ...(fixRetries !== undefined ? { fixRetries } : {}),
     perIntegration,
   };

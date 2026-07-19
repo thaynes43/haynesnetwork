@@ -23,6 +23,7 @@ import {
 import { and, asc, eq, gte, inArray, sql } from 'drizzle-orm';
 import { inTransaction, resolveDb } from './db-client';
 import { guardedGbResolve, peekGbQuotaGate } from './gb-quota-breaker';
+import { recordGbCalls, type GbCallMeter } from './gb-call-budget';
 import { NotFoundError } from './errors';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
 import type { KapowarrClientBundle } from './kapowarr-clients';
@@ -432,6 +433,13 @@ export async function retryQueuedBookFixes(input: {
   ll?: LazyLibrarianClientBundle;
   gb?: BookFixGbResolver | null;
   cap?: number;
+  /**
+   * DESIGN-039 D-24 — the daily GB CALL BUDGET meter (consumer 'bookfix'). Present ⇒ each resolve's GB
+   * legs are persisted to gb_call_budget for a complete daily accounting; the retry pass is METERED
+   * but never budget-blocked (completing a user's queued Fix rides the reserved headroom). Absent ⇒ no
+   * metering (tests / degraded) — pre-budget behaviour.
+   */
+  meter?: GbCallMeter;
   now?: Date;
   logger?: { info?: (m: string, x?: Record<string, unknown>) => void; error?: (m: string, x?: Record<string, unknown>) => void };
   pacer?: (index: number) => Promise<void>;
@@ -485,6 +493,7 @@ export async function retryQueuedBookFixes(input: {
     try {
       let llBookId = fix.llBookId;
       if (llBookId == null) {
+        const before = input.meter?.taken() ?? 0;
         const guarded = await guardedGbResolve({
           db: input.db,
           gb: input.gb,
@@ -493,6 +502,15 @@ export async function retryQueuedBookFixes(input: {
             author: await bookFixItemAuthor(input.db, fix.booksItemId),
           },
         });
+        // D-24 — persist the GB legs this resolve spent to the 'bookfix' slice (metered, not blocked).
+        if (input.meter) {
+          await recordGbCalls({
+            db: input.db,
+            consumer: 'bookfix',
+            count: (input.meter.taken() ?? 0) - before,
+            ...(input.now ? { now: input.now } : {}),
+          });
+        }
         if (guarded.outcome === 'quota_blocked' || guarded.outcome === 'quota_tripped') {
           // Quota weather again — stop the pass; everything not yet worked stays queued unchanged.
           report.attempted -= 1;

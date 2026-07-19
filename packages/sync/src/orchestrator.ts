@@ -46,6 +46,7 @@ import {
   type ForceSearchCollectionsReport,
   type DrainPoolRefreshResult,
   type FormatPairingReport,
+  type GbCallMeter,
   type KapowarrClientBundle,
   type LazyLibrarianClientBundle,
   type PairingGbResolver,
@@ -212,6 +213,10 @@ export interface RunSyncOptions {
    *  pairing want's LL identity (reuse-first). Optional — absent ⇒ reuse-only resolution. The mode's LL
    *  pushes ride the same `lazyLibrarian` bundle as goodreads-sync (also optional — absent ⇒ mint only). */
   pairingGb?: PairingGbResolver;
+  /** DESIGN-039 D-21 — the daily GB CALL BUDGET meter wired into the mode's GB client http wrapper
+   *  (sync/scripts builds it and the client together). Threaded into `goodreads-sync` (enrichment +
+   *  the queued-fix retry pass) and `format-pairing` so their GB legs are counted + budgeted. */
+  gbMeter?: GbCallMeter;
   /** Clock injection for deterministic `ai-usage-sync` tests (synced_at / created_at fallbacks). */
   now?: Date;
   /** Injected DB (tests); defaults to the lazy @hnet/db client. */
@@ -999,6 +1004,7 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
         goodreads: options.goodreads,
         ...(options.lazyLibrarian ? { ll: options.lazyLibrarian } : {}),
         ...(options.kapowarr ? { kapowarr: options.kapowarr } : {}),
+        ...(options.gbMeter ? { meter: options.gbMeter } : {}),
         ...(options.now ? { now: options.now } : {}),
         logger,
       });
@@ -1006,8 +1012,9 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
         integrations: goodreadsSync.integrations,
         synced: goodreadsSync.synced,
         failed: goodreadsSync.failed,
-        // ADR-067 (PLAN-055) — quota-skipped enrichment + the queued-fix retry pass.
+        // ADR-067 (PLAN-055) — quota-skipped enrichment + the daily-budget skip + the queued-fix retry pass.
         skippedEnrichment: goodreadsSync.skippedEnrichment,
+        skippedBudget: goodreadsSync.skippedBudget,
         ...(goodreadsSync.fixRetries ? { fixRetries: goodreadsSync.fixRetries } : {}),
       });
     } catch (error) {
@@ -1044,6 +1051,7 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
         db,
         ...(options.lazyLibrarian ? { ll: options.lazyLibrarian } : {}),
         ...(options.pairingGb ? { gb: options.pairingGb } : {}),
+        ...(options.gbMeter ? { meter: options.gbMeter } : {}),
         ...(options.now ? { now: options.now } : {}),
         logger,
       });

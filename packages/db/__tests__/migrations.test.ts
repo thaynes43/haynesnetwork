@@ -1921,6 +1921,44 @@ describe('migrations against embedded Postgres 16', () => {
       );
     });
   });
+
+  // ADR-067 / DESIGN-039 (PLAN-055 amend — migration 0070, journal idx 69): the daily GB CALL BUDGET
+  // ledger singleton (the gb_quota_state sibling).
+  describe('0070 gb call budget (DESIGN-039 D-21 — daily call-budget singleton)', () => {
+    it('creates gb_call_budget with the singleton CHECK and per-consumer counters', async () => {
+      const cols = await client.query(
+        `SELECT column_name FROM information_schema.columns WHERE table_name = 'gb_call_budget'`,
+      );
+      expect(cols.rows.map((r) => r.column_name).sort()).toEqual([
+        'bookfix_calls',
+        'goodreads_calls',
+        'id',
+        'pairing_calls',
+        'quota_day',
+        'updated_at',
+      ]);
+      // The default-id row inserts; counters default to 0.
+      const inserted = await client.query(
+        `INSERT INTO gb_call_budget (quota_day) VALUES (DATE '2026-07-19')
+         RETURNING id, pairing_calls, goodreads_calls, bookfix_calls`,
+      );
+      expect(inserted.rows[0]).toMatchObject({
+        id: 'gb',
+        pairing_calls: 0,
+        goodreads_calls: 0,
+        bookfix_calls: 0,
+      });
+      // A non-'gb' id violates the singleton CHECK…
+      await expect(
+        client.query(`INSERT INTO gb_call_budget (id, quota_day) VALUES ('gb2', DATE '2026-07-19')`),
+      ).rejects.toMatchObject({ code: '23514' });
+      // …and a second 'gb' row violates the PK.
+      await expect(
+        client.query(`INSERT INTO gb_call_budget (id, quota_day) VALUES ('gb', DATE '2026-07-19')`),
+      ).rejects.toMatchObject({ code: '23505' });
+      await client.query(`DELETE FROM gb_call_budget`);
+    });
+  });
 });
 
 // REGRESSION GUARD (2026-07-18) — the drizzle node-postgres migrator applies a journaled migration
