@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.85.0](https://github.com/thaynes43/haynesnetwork/compare/v0.84.0...v0.85.0) (2026-07-19)
+
+
+### Features
+
+* **collections:** gamified builder — caught-em-all states, wall-flow layout, no cap chrome ([#425](https://github.com/thaynes43/haynesnetwork/issues/425)) ([3d8a696](https://github.com/thaynes43/haynesnetwork/commit/3d8a6964181344c6c51b8c33449bcbadfee88156))
+
+
+### Documentation
+
+* **agents:** evening wrap — owner-driven iteration day, v0.81.0 → v0.84.0 ([#423](https://github.com/thaynes43/haynesnetwork/issues/423)) ([595ae4e](https://github.com/thaynes43/haynesnetwork/commit/595ae4e28737f18c076b7ae035e8f3a430b6270b))
+
 ## [0.84.0](https://github.com/thaynes43/haynesnetwork/compare/v0.83.0...v0.84.0) (2026-07-18)
 
 
