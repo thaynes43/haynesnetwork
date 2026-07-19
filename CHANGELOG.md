@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.87.0](https://github.com/thaynes43/haynesnetwork/compare/v0.86.0...v0.87.0) (2026-07-19)
+
+
+### Features
+
+* collection Search Missing badges + drill-header primary pills (ADR-071) ([#429](https://github.com/thaynes43/haynesnetwork/issues/429)) ([772f03c](https://github.com/thaynes43/haynesnetwork/commit/772f03c4adbe0b7c2fbeacb19c45c4632cbede2d))
+
 ## [0.86.0](https://github.com/thaynes43/haynesnetwork/compare/v0.85.0...v0.86.0) (2026-07-19)
 
 
