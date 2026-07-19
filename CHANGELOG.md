@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.87.1](https://github.com/thaynes43/haynesnetwork/compare/v0.87.0...v0.87.1) (2026-07-19)
+
+
+### Bug Fixes
+
+* drill Wanted tiles share the held tile's poster column (uniform width) ([#431](https://github.com/thaynes43/haynesnetwork/issues/431)) ([95f8904](https://github.com/thaynes43/haynesnetwork/commit/95f8904180262d3d0e02b9ff95a6c562ffc5bd8d))
+
 ## [0.87.0](https://github.com/thaynes43/haynesnetwork/compare/v0.86.0...v0.87.0) (2026-07-19)
 
 
