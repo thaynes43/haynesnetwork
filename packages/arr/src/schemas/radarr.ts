@@ -77,6 +77,11 @@ export const radarrCollectionMovieSchema = z
   .object({
     tmdbId: z.number().int(),
     title: z.string().nullish(),
+    // DESIGN-044 D-05 (owner ruling 2026-07-18 — franchise-preview posters) — the collection endpoint
+    // already carries each member's remote art (`images[].remoteUrl`, coverType 'poster'), so a MISSING
+    // franchise film (not in the estate's mirror, no proxy id) still shows its real poster from the provider
+    // payload, no extra egress. The field was previously dropped by this strip-mode schema.
+    images: z.array(arrImageSchema).nullish(),
   })
   .passthrough();
 export type RadarrCollectionMovie = z.infer<typeof radarrCollectionMovieSchema>;

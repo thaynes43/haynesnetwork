@@ -9,7 +9,7 @@ import {
   TV_BUILDER_CARDS,
   builderCard,
   builderCardsFor,
-  capMeter,
+  collectionProgress,
   isValidListUrl,
 } from '../collections';
 
@@ -44,19 +44,43 @@ describe('DESIGN-044 builder-card copy (D-03, verbatim)', () => {
   });
 });
 
-describe('DESIGN-044 cap meter (D-05)', () => {
-  it('reads "N of cap", flags at/over the cap, and clamps the fill', () => {
-    const under = capMeter(18, 25, false);
-    expect(under.label).toBe('18 of 25');
-    expect(under.over).toBe(false);
-    expect(under.fraction).toBeCloseTo(18 / 25);
+describe('DESIGN-044 gamified held/total (D-05, owner ruling 2026-07-18)', () => {
+  it('celebrates a COMPLETE collection (held === total > 0) — caught em all', () => {
+    const p = collectionProgress(2, 2); // the owner's complete 2-film franchise
+    expect(p.complete).toBe(true);
+    expect(p.empty).toBe(false);
+    expect(p.held).toBe(2);
+    expect(p.total).toBe(2);
+    expect(p.missing).toBe(0);
+  });
 
-    const over = capMeter(40, 25, false);
-    expect(over.over).toBe(true);
-    expect(over.fraction).toBe(1); // clamped
+  it('reads held/total with the missing remainder for an INCOMPLETE collection', () => {
+    const p = collectionProgress(1, 15); // a 15-member NYT list, 1 held
+    expect(p.complete).toBe(false);
+    expect(p.held).toBe(1);
+    expect(p.total).toBe(15);
+    expect(p.missing).toBe(14);
+  });
 
-    // An admin (cap-exempt) is never "over" — the meter is informational only.
-    expect(capMeter(40, 25, true).over).toBe(false);
+  it('is EMPTY (no count, no celebration) when nothing resolved — never a fake caught-em-all', () => {
+    const p = collectionProgress(0, 0);
+    expect(p.empty).toBe(true);
+    expect(p.complete).toBe(false); // total 0 is not a win
+    expect(p.missing).toBe(0);
+  });
+
+  it('clamps a held count that overshoots the total (defensive, never negative missing)', () => {
+    const p = collectionProgress(9, 4);
+    expect(p.held).toBe(4);
+    expect(p.total).toBe(4);
+    expect(p.missing).toBe(0);
+    expect(p.complete).toBe(true);
+  });
+
+  it('advertises no cap anywhere — the read is purely in-library vs total', () => {
+    const p = collectionProgress(2, 2);
+    // The shape carries only held/total/missing/complete/empty — no cap, no over, no fraction.
+    expect(Object.keys(p).sort()).toEqual(['complete', 'empty', 'held', 'missing', 'total']);
   });
 });
 

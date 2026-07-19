@@ -1,6 +1,7 @@
 # DESIGN-044: The collection builder page — a full-page, search-first builder with a live member preview
 
 - **Status:** Accepted (Shipped) <!-- leg 2: the builder page + collections.search/preview + arr collection field, PR feat/collection-builder-page -->
+  <!-- leg 3 (amendment 2026-07-18, PR feat/builder-preview-polish): owner REDESIGN — cap meter removed, gamified in-library/total "caught em all" read, full-width wall-flow layout, held/missing poster resolution. See D-05 amendment. -->
 - **Last updated:** 2026-07-18
 - **As-built (leg 2):** The page ships at `/collections/new?tab=<mediaType>` (create) and
   `/collections/<id>/edit?tab=<mediaType>` (edit; `&hand=<file>` for a hand-authored Kometa collection),
@@ -190,7 +191,38 @@ The `@hnet/arr` lookups are reached ONLY through a tRPC procedure server-side (t
 never a browser call to a *arr); the Libretto search likewise goes through the confined `@hnet/libretto`
 read client (D-09). Debounce is the client's job; result counts are capped by both providers server-side.
 
-### D-05 — The live preview panel: in-library vs missing, counts, cap meter
+### D-05 — The live preview panel: in-library vs missing, counts, ~~cap meter~~ caught-em-all
+
+> **Amendment 2026-07-18 (owner REDESIGN ruling — "gotta catch em all").** Live-review of the shipped page
+> produced three rulings that supersede the cap-meter + side-panel design below. Owner, verbatim intent:
+> *"We do not need to advertise the 25 limit... if hit the user is smart enough to read the error and file a
+> ticket."* And: gamify the builder *"like we did Trash"* — the metric that matters is in-library vs total
+> ("2/2", "1/15"), a COMPLETE collection earns a celebratory **"Caught em all"** state, and the member
+> preview should **flow full-width below a compact config, just like the Library wall** (not a narrow side
+> panel), so a big list reads as a wall. As-built:
+>
+> - **The cap meter is GONE** (component + tests removed). The cap is never advertised anywhere — not on the
+>   builder, not on the /collections rows (which previously read "N in collection / 25 limit"). Over-cap
+>   surfaces ONLY as the server `COLLECTION_SIZE_CAP_EXCEEDED` error → the existing request-larger ticket
+>   Modal, when a save actually trips it (D-07 unchanged).
+> - **The header reads the gamified in-library / total** (`collectionProgress(held, total)` in
+>   `apps/web/lib/collections.ts`, rendered by `components/collection-catch.tsx`, shared by the builder AND
+>   the /collections rows). COMPLETE (held === total, total > 0) ⇒ a gold-star **"Caught em all"** badge (the
+>   Trash gamification idiom: an inline currentColor glyph + a token-toned pill, no emoji; star = the gold
+>   `--color-warning`, the count + label = the accent green of the held tiles). Incomplete ⇒ the held/total
+>   pair with the missing remainder in the wall's existing "missing" chip typeface (`badge--warn`). An empty
+>   resolve shows no count and no celebration (the honest edge). The /collections rows carry it where the
+>   mirror knows the missing count (Libretto books/audiobooks); a Kometa row with no app-side count keeps a
+>   plain "N in collection", still no cap.
+> - **Layout is a single column:** a COMPACT config section on top, the member preview flowing FULL-WIDTH
+>   below in the shared wall grid (`PosterGrid`, ADR-058), with "In your library (N)" / "Missing (M)" as grid
+>   section headers — never a skinny sticky side panel.
+> - **Posters (poster-polish leg).** HELD tiles render the wall's OWN artwork idiom against the app mirror —
+>   the authed `/api/posters/{mediaItemId}` proxy (movies/TV, ADR-019) and `/api/books/cover` proxy
+>   (books/audiobooks, ADR-046). MISSING tiles fall back to the artwork the provider lookup already returns
+>   (Radarr/Sonarr `remotePoster`, or a franchise member's `images[].remoteUrl` — the `radarrCollectionMovieSchema`
+>   `images` field was added for this); missing books keep the honest placeholder (Libretto exposes no cover).
+>   Aspect is reserved (`.poster-box`), so a late image load never reflows the grid (ADR-015).
 
 Whenever the ref resolves to a concrete membership, the preview panel fills. It is the page's centerpiece.
 
@@ -218,10 +250,9 @@ Whenever the ref resolves to a concrete membership, the preview panel fills. It 
   family; poster where the mirror has one, a titled placeholder otherwise), each with its count. A member
   resolved by the title fallback carries a quiet "matched by title" sub-note (the DESIGN-037 honesty flag),
   never a defect badge.
-- **The cap meter.** A meter reads `resolved members / collection_size_cap` (DESIGN-043 D-10; the cap is a
-  COUNT of resolved members). Under the cap it is calm; at/over the cap it deepens color and the save
-  action switches to the over-cap "request it" path (D-07) — a recolor, not a reflow (ADR-015; the meter
-  reserves its width). For an admin (cap-exempt) the meter is informational only.
+- **~~The cap meter.~~** RETIRED by the 2026-07-18 amendment above. The header now reads the gamified
+  in-library / total (the "caught em all" celebration when complete); the cap is never advertised, and
+  over-cap is only the server error → ticket flow (D-07) when a save actually trips it.
 - **Honest edges.** A 0-member resolve (a container-series slug, an empty list) shows "this resolved to no
   titles" — the silent-failure guard, never a fabricated tile. A truncated preview (>100 members) shows
   "showing the first 100 of N" so the count is never a lie. A provider/search outage degrades the panel to

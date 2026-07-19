@@ -3,7 +3,8 @@
 // against the app's OWN mirrors: books by ISBN with the DESIGN-037 title fallback, movies/TV by tmdb/tvdb id,
 // plus the honest edges (a URL ref, a 0-member resolve, a provider outage). Providers are stubbed (ADR-010).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { booksItems } from '@hnet/db';
+import { eq } from 'drizzle-orm';
+import { booksItems, mediaItems, mediaMetadata } from '@hnet/db';
 import { LibrettoUnreachableError } from '@hnet/libretto';
 import { ArrError } from '@hnet/arr';
 import {
@@ -24,6 +25,7 @@ async function seedBook(over: {
   title: string;
   author?: string | null;
   isbn?: string | null;
+  coverRef?: string | null;
 }) {
   await t.db.insert(booksItems).values({
     source: over.source,
@@ -35,6 +37,7 @@ async function seedBook(over: {
     sortTitle: over.title.toLowerCase(),
     author: over.author ?? null,
     isbn: over.isbn ?? null,
+    coverRef: over.coverRef ?? null,
     deepLinkUrl: `https://example.test/${over.externalId}`,
   });
 }
@@ -68,7 +71,8 @@ function stubArr(read: Partial<ArrClientBundle['read']>): ArrClientBundle {
 beforeAll(async () => {
   t = await bootMigratedDb();
   // The Kavita book library (books tab). One row has an ISBN; one is ISBN-null (the title-fallback case).
-  await seedBook({ source: 'kavita', externalId: 'k1', title: 'The Way of Kings', author: 'Brandon Sanderson', isbn: '9780765326355' });
+  // k1 carries a coverRef so a held-book tile resolves the Books cover proxy (D-05 poster polish).
+  await seedBook({ source: 'kavita', externalId: 'k1', title: 'The Way of Kings', author: 'Brandon Sanderson', isbn: '9780765326355', coverRef: 'v42.png' });
   await seedBook({ source: 'kavita', externalId: 'k2', title: 'Words of Radiance', author: 'Brandon Sanderson', isbn: null });
   // An audiobook (different tab/source) that must NOT count as held for the books tab.
   await seedBook({ source: 'audiobookshelf', externalId: 'a1', title: 'Oathbringer', author: 'Brandon Sanderson', isbn: null });
@@ -90,7 +94,17 @@ beforeAll(async () => {
       },
     ],
   });
+  // Give the held Fellowship row a poster source so a held-movie tile resolves the authed poster PROXY
+  // (the wall idiom), not the provider hotlink (D-05 poster polish).
+  const [fellowship] = await t.db
+    .select({ id: mediaItems.id })
+    .from(mediaItems)
+    .where(eq(mediaItems.tmdbId, 120));
+  fellowshipId = fellowship!.id;
+  await t.db.insert(mediaMetadata).values({ mediaItemId: fellowshipId, posterSource: 'arr' });
 });
+
+let fellowshipId: string;
 
 afterAll(async () => {
   await t?.stop();
@@ -307,5 +321,105 @@ describe('previewCollectionMembers — movies/TV (D-05/D-10)', () => {
       ref: '119',
     });
     expect(res.available).toBe(false);
+  });
+});
+
+describe('previewCollectionMembers — poster resolution (D-05, owner ruling 2026-07-18)', () => {
+  it('franchise: HELD films get the app poster PROXY, MISSING films the provider image', async () => {
+    const arr = stubArr({
+      radarr: {
+        listCollections: async () => [
+          {
+            title: 'The Lord of the Rings Collection',
+            tmdbId: 119,
+            movies: [
+              // Held (120) — its poster must be the mirror proxy, not the provider hotlink.
+              {
+                tmdbId: 120,
+                title: 'The Fellowship of the Ring',
+                images: [{ coverType: 'poster', remoteUrl: 'https://image.tmdb.org/held.jpg' }],
+              },
+              // Missing (121) — no mirror row, so it falls back to the collection member's provider image.
+              {
+                tmdbId: 121,
+                title: 'The Two Towers',
+                images: [{ coverType: 'poster', remoteUrl: 'https://image.tmdb.org/missing.jpg' }],
+              },
+            ],
+          },
+        ],
+      } as unknown as ArrClientBundle['read']['radarr'],
+    });
+    const res = await previewCollectionMembers({
+      db: t.db,
+      libretto: stubLibretto({}),
+      arr,
+      mediaType: 'movies',
+      builderType: 'tmdb_collection_details',
+      ref: '119',
+    });
+    const held = res.members.find((m) => m.title === 'The Fellowship of the Ring');
+    const missing = res.members.find((m) => m.title === 'The Two Towers');
+    expect(held?.held).toBe(true);
+    expect(held?.posterUrl).toBe(`/api/posters/${fellowshipId}`); // the wall's authed proxy
+    expect(missing?.held).toBe(false);
+    expect(missing?.posterUrl).toBe('https://image.tmdb.org/missing.jpg'); // the provider image
+  });
+
+  it('id-list: HELD gets the proxy, MISSING keeps the lookup remotePoster', async () => {
+    const arr = stubArr({
+      radarr: {
+        lookupMovie: async (term: string) => {
+          const id = Number(term.replace('tmdb:', ''));
+          return [
+            {
+              title: id === 120 ? 'The Fellowship of the Ring' : 'The Two Towers',
+              year: 2001,
+              tmdbId: id,
+              remotePoster: `https://image.tmdb.org/${id}.jpg`,
+            },
+          ];
+        },
+      } as unknown as ArrClientBundle['read']['radarr'],
+    });
+    const res = await previewCollectionMembers({
+      db: t.db,
+      libretto: stubLibretto({}),
+      arr,
+      mediaType: 'movies',
+      builderType: 'tmdb_movie',
+      ref: ['120', '121'],
+    });
+    const held = res.members.find((m) => m.title === 'The Fellowship of the Ring');
+    const missing = res.members.find((m) => m.title === 'The Two Towers');
+    expect(held?.posterUrl).toBe(`/api/posters/${fellowshipId}`);
+    expect(missing?.posterUrl).toBe('https://image.tmdb.org/121.jpg');
+  });
+
+  it('books: a HELD book resolves the Books cover PROXY; a MISSING book keeps the honest placeholder', async () => {
+    const libretto = stubLibretto({
+      preview: {
+        total: 2,
+        truncated: false,
+        members: [
+          { title: 'The Way of Kings', author: 'Brandon Sanderson', isbn: '9780765326355', identifiers: [] },
+          { title: 'Wind and Truth', author: 'Brandon Sanderson', isbn: '9999999999999', identifiers: [] },
+        ],
+      },
+    });
+    const res = await previewCollectionMembers({
+      db: t.db,
+      libretto,
+      arr: stubArr({}),
+      mediaType: 'books',
+      builderType: 'hardcover_series',
+      ref: '42',
+    });
+    const held = res.members.find((m) => m.title === 'The Way of Kings');
+    const missing = res.members.find((m) => m.title === 'Wind and Truth');
+    expect(held?.held).toBe(true);
+    expect(held?.posterUrl).toBe('/api/books/cover?source=kavita&id=k1&v=v42.png'); // the wall cover proxy
+    expect(missing?.held).toBe(false);
+    expect(missing?.posterUrl ?? null).toBeNull(); // Libretto has no cover — honest placeholder
   });
 });

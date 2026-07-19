@@ -16,8 +16,14 @@
 // are pure), so it is safe to call on every debounced ref change. All provider calls go through the confined
 // clients (ADR-055) — never a browser call.
 import { and, eq, isNull } from 'drizzle-orm';
-import { ArrError } from '@hnet/arr';
-import { booksItems, mediaItems, type BooksSource, type DbClient } from '@hnet/db';
+import { ArrError, type ArrImage } from '@hnet/arr';
+import {
+  booksItems,
+  mediaItems,
+  mediaMetadata,
+  type BooksSource,
+  type DbClient,
+} from '@hnet/db';
 import { LibrettoUnreachableError } from '@hnet/libretto';
 import { resolveDb } from './db-client';
 import { normAuthor, normTitle } from './book-requests';
@@ -227,6 +233,33 @@ const PREVIEW_UNAVAILABLE = (reason: string): CollectionPreview => ({
   members: [],
 });
 
+// ── Poster resolution (DESIGN-044 D-05 poster polish, owner ruling 2026-07-18) ──────────────────
+// A HELD member renders the wall's OWN artwork idiom against the app's mirror — the authed poster/cover
+// proxy, exactly as the Library and Books walls build it (ADR-019 / ADR-046). A MISSING member has no mirror
+// row (nothing to proxy), so it falls back to the artwork the provider lookup already returned (the *arr
+// remotePoster / collection-member image). Books missing keep the honest placeholder (Libretto exposes no
+// cover). These builders live in @hnet/domain (below @hnet/api), so the proxy paths are constructed here to
+// the same contract the api-side helpers (posterUrlFor / booksCoverUrlFor) emit — a trivial path string, not
+// a re-export, to respect the package layering.
+
+/** The authed poster-proxy URL for a held Movies/TV mirror row (ADR-019) — null when the row has no poster. */
+function heldPosterProxyUrl(mediaItemId: string, posterSource: string | null): string | null {
+  return posterSource === null ? null : `/api/posters/${mediaItemId}`;
+}
+
+/** The authed cover-proxy URL for a held Books/Audiobooks mirror row (ADR-046) — null when it has no cover. */
+function heldCoverProxyUrl(source: string, externalId: string, coverRef: string | null): string | null {
+  if (!coverRef) return null;
+  return `/api/books/cover?source=${encodeURIComponent(source)}&id=${encodeURIComponent(externalId)}&v=${encodeURIComponent(coverRef)}`;
+}
+
+/** Pick a provider poster image URL from an *arr image array (the collection-member `images[]`, D-05). */
+function posterFromArrImages(images: ArrImage[] | null | undefined): string | null {
+  if (!images) return null;
+  const poster = images.find((i) => i.coverType === 'poster') ?? images[0];
+  return poster?.remoteUrl ?? null;
+}
+
 /** The Movies/TV builder types whose members cannot be resolved without new egress (D-05 / Q-01). */
 const URL_REF_BUILDERS = new Set(['imdb_list', 'tvdb_list_details']);
 /** The Movies/TV id-list builders whose exact members the app knows and can resolve (D-05). */
@@ -320,21 +353,31 @@ async function previewBooksMembers(input: {
   // The tab's source: books ⇐ kavita, audiobooks ⇐ audiobookshelf (D-10 source→media map).
   const source: BooksSource = input.mediaType === 'audiobooks' ? 'audiobookshelf' : 'kavita';
   const rows = await resolveDb(input.db)
-    .select({ id: booksItems.id, title: booksItems.title, author: booksItems.author, isbn: booksItems.isbn })
+    .select({
+      title: booksItems.title,
+      author: booksItems.author,
+      isbn: booksItems.isbn,
+      externalId: booksItems.externalId,
+      coverRef: booksItems.coverRef,
+    })
     .from(booksItems)
     .where(and(eq(booksItems.source, source), isNull(booksItems.deletedAt)));
 
-  // Two indices: an exact ISBN set, and the DESIGN-037 conservative normalized title→authors fallback for
+  // The mirror row a held member resolves to — carries its cover reference so a held tile renders the Books
+  // wall's OWN cover proxy (ADR-046), never the placeholder. Author rides along for the title-fallback check.
+  type HeldBookRow = { author: string | null; externalId: string; coverRef: string | null };
+  // Two indices: an exact ISBN → row map, and the DESIGN-037 conservative normalized title → rows fallback for
   // the many Kavita rows whose ISBN is null.
-  const isbnSet = new Set<string>();
-  const titleIndex = new Map<string, string[]>(); // normTitle → normAuthor[]
+  const isbnMap = new Map<string, HeldBookRow>();
+  const titleIndex = new Map<string, HeldBookRow[]>(); // normTitle → rows
   for (const r of rows) {
+    const row: HeldBookRow = { author: r.author, externalId: r.externalId, coverRef: r.coverRef };
     const isbn = normIsbn(r.isbn);
-    if (isbn) isbnSet.add(isbn);
+    if (isbn && !isbnMap.has(isbn)) isbnMap.set(isbn, row);
     const key = normTitle(r.title);
     if (!key) continue;
     const bucket = titleIndex.get(key) ?? [];
-    bucket.push(normAuthor(r.author));
+    bucket.push(row);
     titleIndex.set(key, bucket);
   }
 
@@ -342,24 +385,39 @@ async function previewBooksMembers(input: {
   const missing: PreviewMemberTile[] = [];
   members.forEach((m, i) => {
     const title = m.title ?? m.label ?? `Book ${i + 1}`;
-    const isbnHit = memberIsbns(m).some((isbn) => isbnSet.has(isbn));
+    let matched: HeldBookRow | undefined;
+    for (const isbn of memberIsbns(m)) {
+      matched = isbnMap.get(isbn);
+      if (matched) break;
+    }
+    const isbnHit = matched !== undefined;
     let titleHit = false;
     if (!isbnHit) {
       const bucket = titleIndex.get(normTitle(title));
       if (bucket && bucket.length > 0) {
         const wantAuthor = normAuthor(m.author ?? null);
-        titleHit = wantAuthor
-          ? bucket.some((a) => a && (a.includes(wantAuthor) || wantAuthor.includes(a)))
-          : true;
+        matched = wantAuthor
+          ? bucket.find(
+              (r) =>
+                normAuthor(r.author) &&
+                (normAuthor(r.author).includes(wantAuthor) ||
+                  wantAuthor.includes(normAuthor(r.author))),
+            )
+          : bucket[0];
+        titleHit = matched !== undefined;
       }
     }
+    const heldMember = isbnHit || titleHit;
     const tile: PreviewMemberTile = {
       key: memberIsbns(m)[0] ?? `t:${normTitle(title)}:${i}`,
       title,
       subtitle: m.author ?? null,
-      held: isbnHit || titleHit,
+      held: heldMember,
       matchedByTitle: !isbnHit && titleHit,
       position: m.position ?? null,
+      // Held ⇒ the app's own Books cover proxy (the wall idiom); missing ⇒ null (Libretto has no cover art).
+      posterUrl:
+        heldMember && matched ? heldCoverProxyUrl(source, matched.externalId, matched.coverRef) : null,
     };
     (tile.held ? held : missing).push(tile);
   });
@@ -391,22 +449,22 @@ async function previewArrIdList(input: {
   const isMovie = input.builderType === 'tmdb_movie';
   const useTvdb = input.builderType === 'tvdb_show';
 
-  // The mirror held-set for the id kind (movies ⇐ radarr.tmdb_id; tv ⇐ sonarr.tvdb_id/tmdb_id).
-  const heldSet = await loadMediaHeldSet(input.db, isMovie ? 'radarr' : 'sonarr', useTvdb ? 'tvdb' : 'tmdb');
+  // The mirror held-map for the id kind (movies ⇐ radarr.tmdb_id; tv ⇐ sonarr.tvdb_id/tmdb_id).
+  const heldMap = await loadMediaHeldMap(input.db, isMovie ? 'radarr' : 'sonarr', useTvdb ? 'tvdb' : 'tmdb');
 
   const held: PreviewMemberTile[] = [];
   const missing: PreviewMemberTile[] = [];
   for (const id of ids) {
     let title = `${isMovie ? 'Movie' : 'Show'} #${id}`;
     let year: number | null = null;
-    let posterUrl: string | null = null;
+    let remotePoster: string | null = null;
     try {
       if (isMovie) {
         const [m] = await input.arr.read.radarr.lookupMovie(`tmdb:${id}`);
         if (m) {
           title = m.title;
           year = m.year ?? null;
-          posterUrl = m.remotePoster ?? null;
+          remotePoster = m.remotePoster ?? posterFromArrImages(m.images);
         }
       } else {
         const term = useTvdb ? `tvdb:${id}` : `tmdb:${id}`;
@@ -414,19 +472,23 @@ async function previewArrIdList(input: {
         if (s) {
           title = s.title;
           year = s.year ?? null;
-          posterUrl = s.remotePoster ?? null;
+          remotePoster = s.remotePoster ?? posterFromArrImages(s.images);
         }
       }
     } catch (err) {
       if (!(err instanceof ArrError)) throw err;
       // A single lookup miss keeps the id honest as a bare tile — never drops the member.
     }
+    const heldRow = heldMap.get(Number(id));
     const tile: PreviewMemberTile = {
       key: id,
       title,
       subtitle: year != null ? String(year) : null,
-      held: heldSet.has(Number(id)),
-      posterUrl,
+      held: heldRow !== undefined,
+      // Held ⇒ the app's own poster proxy (the wall idiom); missing ⇒ the provider's remotePoster.
+      posterUrl: heldRow
+        ? heldPosterProxyUrl(heldRow.mediaItemId, heldRow.posterSource)
+        : remotePoster,
     };
     (tile.held ? held : missing).push(tile);
   }
@@ -460,14 +522,20 @@ async function previewMovieFranchise(input: {
       'A preview for this franchise is not available yet. Its films resolve on the next collection run.',
     );
   }
-  const heldSet = await loadMediaHeldSet(input.db, 'radarr', 'tmdb');
+  const heldMap = await loadMediaHeldMap(input.db, 'radarr', 'tmdb');
   const held: PreviewMemberTile[] = [];
   const missing: PreviewMemberTile[] = [];
   for (const m of collection.movies) {
+    const heldRow = heldMap.get(m.tmdbId);
     const tile: PreviewMemberTile = {
       key: String(m.tmdbId),
       title: m.title ?? `Movie #${m.tmdbId}`,
-      held: heldSet.has(m.tmdbId),
+      held: heldRow !== undefined,
+      // Held ⇒ the app's own poster proxy (the wall idiom); missing ⇒ the collection member's provider art
+      // (the D-05 franchise-poster fix — the collection endpoint already carries each film's images[]).
+      posterUrl: heldRow
+        ? heldPosterProxyUrl(heldRow.mediaItemId, heldRow.posterSource)
+        : posterFromArrImages(m.images),
     };
     (tile.held ? held : missing).push(tile);
   }
@@ -481,18 +549,32 @@ async function previewMovieFranchise(input: {
   };
 }
 
-/** Load the mirror's held external-id set for a kind (radarr ⇒ tmdb; sonarr ⇒ tvdb or tmdb). */
-async function loadMediaHeldSet(
+/** One held mirror row: its external id plus what a held tile needs to render the wall's poster proxy. */
+interface HeldMediaRow {
+  mediaItemId: string;
+  posterSource: string | null;
+}
+
+/**
+ * Load the mirror's held external-id → row map for a kind (radarr ⇒ tmdb; sonarr ⇒ tvdb or tmdb). Left-joins
+ * media_metadata for the poster source so a held tile can build the authed poster proxy (ADR-019) — the same
+ * artwork idiom the Library wall uses, never the provider hotlink. First row per external id wins.
+ */
+async function loadMediaHeldMap(
   db: DbClient | undefined,
   arrKind: 'radarr' | 'sonarr',
   idKind: 'tmdb' | 'tvdb',
-): Promise<Set<number>> {
+): Promise<Map<number, HeldMediaRow>> {
   const col = idKind === 'tvdb' ? mediaItems.tvdbId : mediaItems.tmdbId;
   const rows = await resolveDb(db)
-    .select({ v: col })
+    .select({ v: col, id: mediaItems.id, posterSource: mediaMetadata.posterSource })
     .from(mediaItems)
+    .leftJoin(mediaMetadata, eq(mediaMetadata.mediaItemId, mediaItems.id))
     .where(and(eq(mediaItems.arrKind, arrKind), isNull(mediaItems.deletedFromArrAt)));
-  const set = new Set<number>();
-  for (const r of rows) if (r.v != null) set.add(r.v);
-  return set;
+  const map = new Map<number, HeldMediaRow>();
+  for (const r of rows) {
+    if (r.v == null || map.has(r.v)) continue;
+    map.set(r.v, { mediaItemId: r.id, posterSource: r.posterSource ?? null });
+  }
+  return map;
 }

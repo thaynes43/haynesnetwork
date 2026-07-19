@@ -133,8 +133,40 @@ export async function startStubLibretto(): Promise<StubLibrettoServer> {
       // 40 members (the over-cap meter state); every other ref resolves to 5, three of which carry ISBNs the
       // seeded library holds (held) and two that it does not (missing) — a populated split for the gallery.
       if (path === '/api/preview' && method === 'POST') {
-        const req = body as { builder?: { ref?: unknown } } | undefined;
+        const req = body as { builder?: { ref?: unknown; type?: unknown } } | undefined;
         const ref = String(req?.builder?.ref ?? '');
+        const builderType = String(req?.builder?.type ?? '');
+        // DESIGN-044 D-05 (owner "gotta catch em all" redesign) — a ref carrying "complete" resolves to three
+        // members the seeded Audiobookshelf library holds by ISBN (so every tile is HELD with a real cover via
+        // the /api/books/cover proxy) — the caught-em-all celebration for the gallery + owner review.
+        if (/complete/i.test(ref)) {
+          return json(200, {
+            builder: req?.builder,
+            total: 3,
+            truncated: false,
+            members: [
+              { title: 'A Christmas Carol', author: 'Charles Dickens', isbn: '9780140620481', position: 1 },
+              { title: 'Oliver Twist', author: 'Charles Dickens', isbn: '9780141439747', position: 2 },
+              { title: 'The Hobbit', author: 'J. R. R. Tolkien', isbn: '9780007487295', position: 3 },
+            ],
+          });
+        }
+        // A New York Times list resolves to a fifteen-member wall (three held audiobooks + twelve missing) so
+        // the full-width preview reads as a Library wall, never a skinny column (the big-list owner review).
+        if (builderType === 'nyt_list' || /\bnyt|big|list\b/i.test(ref)) {
+          const held = [
+            { title: 'A Christmas Carol', author: 'Charles Dickens', isbn: '9780140620481' },
+            { title: 'Oliver Twist', author: 'Charles Dickens', isbn: '9780141439747' },
+            { title: 'The Hobbit', author: 'J. R. R. Tolkien', isbn: '9780007487295' },
+          ];
+          const missing = Array.from({ length: 12 }, (_, i) => ({
+            title: `Bestseller No. ${i + 1}`,
+            author: 'Various',
+            isbn: `97800000000${String(i).padStart(2, '0')}`,
+          }));
+          const members = [...held, ...missing].map((m, i) => ({ ...m, position: i + 1 }));
+          return json(200, { builder: req?.builder, total: members.length, truncated: false, members });
+        }
         if (/over/i.test(ref)) {
           const members = Array.from({ length: 40 }, (_, i) => ({
             title: `Cosmere Book ${i + 1}`,

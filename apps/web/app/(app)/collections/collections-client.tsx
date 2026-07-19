@@ -20,10 +20,12 @@ import {
   COLLECTIONS_NAME,
   COLLECTION_BUILDER_LABELS,
   COLLECTION_MEDIA_TYPE_LABELS,
+  collectionProgress,
   isKometaMedia,
   type CollectionBuilderTypeName,
   type CollectionMediaTypeName,
 } from '@/lib/collections';
+import { CollectionCatch } from '@/components/collection-catch';
 import {
   TICKET_STATUS_LABELS,
   ticketStatusTone,
@@ -342,8 +344,8 @@ function MediaSection({
       <div className="collections-toolbar">
         <p className="muted">
           These are the recipes that build your {label.toLowerCase()} collections. Everyone can add and
-          edit up to the size limit of {data.sizeCap}; a bigger collection can be requested and an admin
-          can approve the full size. Run history keeps only the most recent runs.
+          edit them; a very large collection files a quick request for an admin to approve. Run history keeps
+          only the most recent runs.
         </p>
         <button type="button" className="btn primary" onClick={openCreate} data-testid="collections-new">
           New collection
@@ -420,7 +422,6 @@ function MediaSection({
                       key={`m-${recipe.id}`}
                       recipe={recipe}
                       produced={collectionByRecipe.get(recipe.id)}
-                      sizeCap={data.sizeCap}
                       canFindMissing={data.canFindMissing}
                       canForceSearch={data.canForceSearch}
                       isAdmin={isAdmin}
@@ -454,7 +455,6 @@ function MediaSection({
                         key={recipe.id}
                         recipe={recipe}
                         produced={collectionByRecipe.get(recipe.id)}
-                        sizeCap={data.sizeCap}
                         canFindMissing={data.canFindMissing}
                         canForceSearch={data.canForceSearch}
                         isAdmin={isAdmin}
@@ -516,7 +516,6 @@ function MediaSection({
 function ManagedRecipeRow({
   recipe,
   produced,
-  sizeCap,
   canFindMissing,
   canForceSearch,
   isAdmin,
@@ -535,7 +534,6 @@ function ManagedRecipeRow({
     state?: 'live' | 'pending_run' | null;
   };
   produced: { itemCount: number | null } | undefined;
-  sizeCap: number;
   canFindMissing: boolean;
   /** ADR-071 — the caller may fire the on-demand collection Force Search (books force_search_book grant). */
   canForceSearch: boolean;
@@ -563,10 +561,21 @@ function ManagedRecipeRow({
           </span>
           {recipe.builderRef ? <span className="muted">{recipe.builderRef}</span> : null}
           {produced ? (
-            <span className="muted" data-testid="collection-size">
-              {produced.itemCount ?? 0} in collection
-              <span className="collection-row__cap"> / {sizeCap} limit</span>
-            </span>
+            // Owner REDESIGN ruling 2026-07-18 — the gamified held/total read (never the cap). When the
+            // mirror knows the missing count (Libretto books/audiobooks), a complete collection celebrates
+            // "caught em all"; otherwise we honestly show just what is in the collection (no cap chrome).
+            recipe.missingCount != null ? (
+              <CollectionCatch
+                progress={collectionProgress(
+                  produced.itemCount ?? 0,
+                  (produced.itemCount ?? 0) + recipe.missingCount,
+                )}
+              />
+            ) : (
+              <span className="muted" data-testid="collection-size">
+                {produced.itemCount ?? 0} in collection
+              </span>
+            )
           ) : recipe.state === 'pending_run' ? (
             <span className="muted" data-testid="collection-pending">
               pending next collection run

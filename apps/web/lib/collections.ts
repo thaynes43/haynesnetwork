@@ -270,20 +270,37 @@ export function isValidListUrl(builder: CollectionBuilderTypeName, ref: string):
   return pattern.test(ref.trim());
 }
 
-/** The cap-meter read (DESIGN-044 D-05): "18 of 25", plus whether the resolved set is at/over the cap. */
-export interface CapMeter {
-  resolved: number;
-  cap: number;
-  /** "18 of 25". */
-  label: string;
-  /** At or over the cap (the deepened, over-cap state) — false for a cap-exempt admin. */
-  over: boolean;
-  /** 0..1 fill fraction, clamped. */
-  fraction: number;
+/**
+ * DESIGN-044 D-05 (owner REDESIGN ruling 2026-07-18 — "gotta catch em all") — the gamified in-library vs
+ * total read that REPLACES the retired cap meter. The number that matters is not "how close to the 25 limit"
+ * (we never advertise the cap — over-cap surfaces only as the server error + the ticket flow when actually
+ * tripped); it is how much of the collection the estate already HOLDS. A COMPLETE collection (held === total,
+ * total > 0) earns the celebratory "caught em all" state; an incomplete one shows the held/total pair with
+ * the missing side in the wall's existing "missing" chip typeface. The Trash surfaces' gamification idiom.
+ */
+export interface CollectionProgress {
+  /** In-library member count (clamped to [0, total]). */
+  held: number;
+  /** Full resolved membership count. */
+  total: number;
+  /** total - held. */
+  missing: number;
+  /** held === total && total > 0 — the caught-em-all celebration. */
+  complete: boolean;
+  /** total === 0 — nothing resolved yet; no count, no celebration (the honest edge). */
+  empty: boolean;
 }
 
-export function capMeter(resolved: number, cap: number, capBypass: boolean): CapMeter {
-  const over = !capBypass && resolved > cap;
-  const fraction = cap > 0 ? Math.min(1, resolved / cap) : 0;
-  return { resolved, cap, label: `${resolved} of ${cap}`, over, fraction };
+/** Resolve the gamified held/total read (DESIGN-044 D-05, owner ruling 2026-07-18). */
+export function collectionProgress(held: number, total: number): CollectionProgress {
+  const safeTotal = Math.max(0, Math.trunc(total));
+  const safeHeld = Math.max(0, Math.min(Math.trunc(held), safeTotal));
+  const missing = safeTotal - safeHeld;
+  return {
+    held: safeHeld,
+    total: safeTotal,
+    missing,
+    complete: safeTotal > 0 && missing === 0,
+    empty: safeTotal === 0,
+  };
 }
