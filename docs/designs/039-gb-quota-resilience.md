@@ -1,7 +1,7 @@
 # DESIGN-039: Google Books quota resilience — the shared breaker + retryable book Fixes
 
 - **Status:** Draft
-- **Last updated:** 2026-07-18
+- **Last updated:** 2026-07-19
 - **Satisfies:** PRD-001 R-218..R-220; governed by ADR-067 (the breaker + queued fixes),
   ADR-055 (GB client boundary), ADR-062 (books Fix contract), ADR-065 (pairing mint cap),
   hard rules 1/6 (state-table discipline), 8/9 (UI confirm/reflow).
@@ -360,3 +360,106 @@ of **genuinely new volumes seated that day** (bounded by the cap and by real new
 comfortably inside ~1000/day with wide margin, unattended, and it does not grow with the backlog
 (re-pushes are now free of GB). The owner-only D-16 key-separation remains the belt-and-suspenders
 move if a future spike ever approaches the cap.
+
+## Amendment — 2026-07-19: the cap is ~100/day, and WE are the last consumer — a persistent daily CALL BUDGET
+
+The D-18 fix landed (#409: LL re-adds 193→15/day) and 429 classification is correct (#402). Yet on
+2026-07-19 the shared key STILL exhausted its per-day quota, and a fresh read-only cluster investigation
+(`.agents/context/2026-07-19-gb-call-budget-machine.md`) found the "~1000/day" premise was wrong and the
+last remaining consumer is our OWN first-party volume. This amendment records the measured cap and the
+budgeter that keeps us inside it forever, unattended.
+
+### D-20a — The measured cap is ~100 calls/day, not 1000 (2026-07-19 evidence)
+
+Read-only from the `frontend` pod logs + read-only psql over 07:00→08:32:03 UTC (the day's window from
+reset to the daily 429):
+
+| Consumer | Window | GB calls (legs) | Note |
+|---|---|---|---|
+| format-pairing resolve (07:32 run) | 07:32:03→07:32:57 | ~40–60 | 25 attempts, `skippedQuota:0` (quota healthy at 07:32); 54s of heavy 503-`backendFailed` retry — each `getText` leg counted once |
+| goodreads enrichment (07:41 run) | 07:41:02→07:41:29 | ~30–40 | ~10 of 73 items enriched, then hit the per-MINUTE 429 (retryAfter +2 min) and skipped the rest (`skippedEnrichment:63`) |
+| LazyLibrarian (`API-GBRESULTS`) | 07:32–07:33 | **13** | all at the `:32` push — #409 confirmed working (was ~213/day) |
+| collections / books-sync / book-fix | 07:00→08:32 | 0 | none make GB calls in the window |
+
+The daily 429 first surfaced at **08:32:03** (`gb_quota_state.tripped_at`, reason `daily`, on "Ghosts of
+the Shadow Market 8"). But NO scheduled GB consumer ran between 07:43 and 08:32 — so the per-day quota was
+actually exhausted during the 07:32+07:41 burst; the 07:41 per-MINUTE 429 fired FIRST (a fast burst hits
+the per-minute limit before the per-day one) and MASKED the daily exhaustion, which the next call (08:32)
+then surfaced. The total spent before exhaustion — pairing (~50) + goodreads (~35) + LL (13) ≈ **~100
+calls** — is the effective daily cap. This is the modern low default for a new key, **not** the legacy
+1000. GCP's console holds the authoritative number (unreadable from here); the budgeter is built to a
+**configurable** cap so the owner can raise it once confirmed.
+
+### D-21 — Persistent daily call accounting (`gb_call_budget`, migration 0070)
+
+A NEW single-row table `gb_call_budget` (the `gb_quota_state` sibling; migration 0070, journal idx 69) —
+`id='gb'` CHECK singleton, `quota_day date` (the `GB_DAILY_RESET_UTC_HOUR` boundary the counts belong to),
+`pairing_calls` / `goodreads_calls` / `bookfix_calls int`, `updated_at`. The sole writer is
+`recordGbCalls` (`packages/domain/src/gb-call-budget.ts`); its day-rolling upsert resets every counter to 0
+in the SAME statement when the stored `quota_day` is stale, so the row is self-resetting with no cron.
+Derived, rebuildable operational state (the `mam_gate_state` class): NO audit/outbox row; guard-listed in
+all six no-direct-state-writes families.
+
+**Counting the ACTUAL legs.** Every outbound GB call is counted in the shared `@hnet/goodreads` http
+wrapper (`getText`) via an injected `onCall` meter — fired ONCE per `getText` (one logical GB query: the
+isbn / title / pre-colon / confirm legs of a single `resolveVolume` are separate `getText` calls and so
+counted separately; a transient-503 retry is the SAME query, counted once). The meter is wired only into
+the `GoogleBooksClient` (RSS shelf reads carry no meter), so only GB legs count. The domain reads the
+meter's per-seam delta around each resolve and persists it to the consumer's column — so the budget
+reflects the real fan-out that exhausts the quota, not the resolve count.
+
+### D-22 — Oldest-first drain (ISBN-priority)
+
+The `mintPairingWants` ordering was the second half of the starvation: it walked ALL `fresh` candidates
+(which include today's NEWEST library items) before ANY `retry`, so the frozen oldest cohort (the 216
+unresolved wants, all `first_seen` 2026-07-10, last tried 2026-07-16) never got reached — every run's 25
+attempts went to newer items. Even on a healthy-quota run (07:32, `skippedQuota:0`) the 25 GB calls went
+to fresh items, not the cohort. The fix replaces the fresh-then-retry split with ONE deterministic order
+over all GB-eligible candidates: **(1) `first_seen_at` ASC** (oldest cohort first — ends the newest-first
+churn); **(2) ISBN-bearing first** within the same `first_seen` (the `isbn:` leg is the cheap, reliable
+one — cheapest drain); **(3) last-tried ASC** (a no-match advances `updated_at` and sinks below its
+not-yet-tried siblings, so a bounded daily budget MARCHES through the cohort instead of re-hammering the
+top items); **(4) `id` ASC** (deterministic tiebreak). So the 2026-07-10 cohort drains front-to-back,
+ISBN-bearing first, before any newer item is touched.
+
+### D-23 — Per-consumer daily budgets (env-tunable, ~85% of the cap)
+
+`makeGbBudgetTracker(consumer)` reads the start-of-run usage once, then the run enforces the remaining
+allowance locally (persisting each meter delta durably so the next run / a concurrent process sees it).
+Before a GB-requiring candidate, `canSpend()` gates it; when spent, the candidate is skipped as
+`skippedBudget` — the same non-attempt discipline as `skippedQuota` (no cap consumed, no want upsert so
+`updated_at` does not advance, no per-item error spam) and, crucially, **WITHOUT tripping the shared
+breaker** (this is our own pacing, not a real 429; the breaker stays for genuine 429s). Reuse/identity-
+holding candidates (no GB needed) still mint free. Env-tunable defaults sum to ~85 = ~85% of the measured
+~100 cap:
+
+| Env | Consumer | Default | Share |
+|---|---|---|---|
+| `GB_DAILY_CALL_BUDGET_PAIRING` | format-pairing resolve | **60** | lion's share — owns the backlog drain |
+| `GB_DAILY_CALL_BUDGET_GOODREADS` | goodreads enrichment | **25** | a slice — its comic-text fallback still classifies without GB |
+| `GB_DAILY_CALL_BUDGET_BOOKFIX` | book Fix | **15** | metered, NOT enforced — the reserved headroom for the person waiting |
+
+The ~15 unallocated + the un-enforced `bookfix` slice are the reserve for INTERACTIVE book Fix (low-volume,
+on-demand, breaker-guarded). Raise these only after confirming a higher real cap in the GCP console.
+
+### D-24 — Book-Fix metering + the fewer-bigger-runs question
+
+The queued-fix retry pass (`retryQueuedBookFixes`, hosted in the goodreads cron) meters its GB legs into
+the `bookfix` slice for a complete daily accounting but is never budget-blocked (completing a user's queued
+Fix rides the reserve). The interactive api book-Fix path is left un-metered reserve headroom (its shared
+`envGoogleBooksClient` is on-demand + breaker-guarded).
+
+**Fewer-bigger runs (item considered, NOT implemented):** with the budget ceiling in place, concentrating
+draining into one big post-reset window is UNNECESSARY. The 24 hourly runs each read the durable budget and
+drain a little; the first 1–2 runs after 07:00 UTC (07:32, 08:32) spend the pairing slice (25-attempt cap ×
+~2 legs ≈ 50 legs vs the 60 budget), and every later run finds the budget spent and skips (`skippedBudget`)
+— so draining ALREADY concentrates into the first post-reset runs, and the budget guarantees we never
+exceed the cap regardless of run count. **No haynes-ops cron change is made from this repo.** Owner option
+(noted, not applied): raising `PAIRING_MINT_CAP_PER_RUN` lets the single 07:32 run consume the full daily
+pairing budget alone if a one-window drain is ever preferred.
+
+**Days-to-drain the 216 frozen cohort** at the pairing budget (60 legs/day, oldest+ISBN-first): the 28
+ISBN-bearing anchors resolve at ~1 leg each (drain day 1); the ~188 title-only at ~2 legs each ≈ ~30
+resolves/day ⇒ the cohort clears in roughly **6–7 days**, front-to-back, ISBN-bearing first — accelerated
+further by reuse (free) mints. Steady state afterward: only genuinely-new unpaired items compete, always
+behind any older unresolved item.

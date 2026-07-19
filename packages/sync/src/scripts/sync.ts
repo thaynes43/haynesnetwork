@@ -18,6 +18,7 @@ import {
   booksActivityBundleFromEnv,
   buildArrActivityAdapter,
   buildKapowarrActivityAdapter,
+  createGbCallMeter,
   kapowarrBundleFromEnv,
   lazyLibrarianBundleFromEnv,
   maintainerrClientBundleFromEnv,
@@ -28,6 +29,7 @@ import {
   resolveKapowarrBaseUrl,
   type ActivitySourceAdapter,
   type BooksActivityBundle,
+  type GbCallMeter,
   type KapowarrClientBundle,
   type LazyLibrarianClientBundle,
   type UtilizationArrBundle,
@@ -469,6 +471,12 @@ async function main(): Promise<number> {
       : undefined;
   // ADR-055 / DESIGN-028 — the read-only Goodreads RSS + Google Books clients (GOODREADS_BASE_URL /
   // GOOGLE_BOOKS_URL default to the public hosts; GOOGLE_BOOKS_API_KEY optional). Pull-only.
+  // DESIGN-039 D-21 — one daily GB CALL BUDGET meter per GB-using cron process, wired into the GB
+  // client's http wrapper (onCall) so EVERY outbound GB leg is counted; the domain run attributes the
+  // meter's per-seam delta to a consumer and persists it to gb_call_budget (RSS getText carries no
+  // meter, so shelf reads are never counted).
+  const gbMeter: GbCallMeter | undefined =
+    args.mode === 'goodreads-sync' || args.mode === 'format-pairing' ? createGbCallMeter() : undefined;
   const goodreads: GoodreadsSourceBundle | undefined =
     args.mode === 'goodreads-sync'
       ? (() => {
@@ -478,6 +486,7 @@ async function main(): Promise<number> {
             googleBooks: new GoogleBooksClient({
               baseUrl: cfg.googleBooksUrl,
               ...(cfg.googleBooksApiKey ? { apiKey: cfg.googleBooksApiKey } : {}),
+              ...(gbMeter ? { onCall: gbMeter.onCall } : {}),
             }),
           };
         })()
@@ -511,6 +520,7 @@ async function main(): Promise<number> {
           return new GoogleBooksClient({
             baseUrl: cfg.googleBooksUrl,
             ...(cfg.googleBooksApiKey ? { apiKey: cfg.googleBooksApiKey } : {}),
+            ...(gbMeter ? { onCall: gbMeter.onCall } : {}),
           });
         })()
       : undefined;
@@ -565,6 +575,7 @@ async function main(): Promise<number> {
     ...(lazyLibrarian ? { lazyLibrarian } : {}),
     ...(kapowarr ? { kapowarr } : {}),
     ...(pairingGb ? { pairingGb } : {}),
+    ...(gbMeter ? { gbMeter } : {}),
     logger,
   });
 

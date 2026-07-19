@@ -29,6 +29,7 @@ import {
 import { and, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import { inTransaction, resolveDb } from './db-client';
 import { guardedGbResolve } from './gb-quota-breaker';
+import { makeGbBudgetTracker, type GbBudgetTracker, type GbCallMeter } from './gb-call-budget';
 import {
   applyRequestReconcile,
   mapLlStatus,
@@ -324,6 +325,15 @@ export interface MintPairingWantsInput {
    * calls) — see DESIGN-039 D-18.
    */
   llHasSeededBook?: (llBookId: string) => boolean;
+  /**
+   * DESIGN-039 D-21/D-23 — the daily GB CALL BUDGET meter + tracker (consumer 'pairing'). The meter is
+   * wired into the GB client's http wrapper (counts every outbound GB leg); the tracker holds this
+   * consumer's remaining daily allowance. Absent ⇒ no budget enforcement + no metering (tests /
+   * degraded runs) — exact pre-budget behaviour. When the tracker's allowance is spent, GB-requiring
+   * candidates are skipped as `skippedBudget` (cap preserved, want untouched, breaker NOT tripped).
+   */
+  meter?: GbCallMeter;
+  budget?: GbBudgetTracker;
 }
 
 export interface MintPairingWantsReport {
@@ -343,6 +353,12 @@ export interface MintPairingWantsReport {
    * retry-recency key, does not advance). Closes the PLAN-050 residual.
    */
   skippedQuota: number;
+  /**
+   * DESIGN-039 D-23 — GB-requiring candidates skipped because THIS consumer's daily CALL BUDGET was
+   * spent (distinct from skippedQuota, which is the shared 429 breaker). Same non-attempt discipline:
+   * no cap consumed, no want upsert, no breaker trip — the honest "we paced ourselves off GB today".
+   */
+  skippedBudget: number;
 }
 
 const defaultPacer = (index: number): Promise<void> =>
@@ -502,27 +518,39 @@ export async function mintPairingWants(
   const wants = await db.select().from(bookRequests).where(eq(bookRequests.origin, 'pairing'));
   const wantByAnchor = new Map(wants.map((w) => [w.pairingBooksItemId!, w] as const));
 
-  // 3. The ordered candidate list: fresh mints oldest-first, then retries least-recently-tried
-  //    first. NOT pre-capped (ADR-067 C-08): only REAL attempts consume the cap — a GB-requiring
-  //    candidate met while the quota breaker is open is skipped without burning budget, so the
-  //    identity-holding candidates behind it still mint on a quota day.
-  const fresh = unpaired
-    .filter((i) => !wantByAnchor.has(i.id))
-    .sort(
-      (a, b) => a.firstSeenAt.getTime() - b.firstSeenAt.getTime() || a.id.localeCompare(b.id),
-    );
-  const retry = unpaired
+  // 3. The ordered candidate list (DESIGN-039 D-22 — OLDEST-FIRST DRAIN, ISBN-priority). A candidate
+  //    is eligible when it has no want yet (fresh) OR its want is unresolved / the missing format is
+  //    still `requested`. The OLD ordering walked ALL fresh (which includes today's newest library
+  //    items) BEFORE any retry, so the frozen oldest cohort (the 2026-07-16 set — same first_seen,
+  //    last tried days ago) never got reached while new items churned ahead of it. The NEW single
+  //    order drains front-to-back regardless of fresh/retry:
+  //      1. first_seen_at ASC   — the oldest cohort first (ends the newest-first churn);
+  //      2. ISBN-bearing first  — WITHIN the same first_seen, the anchors carrying an ISBN go first
+  //                               (the `isbn:` leg is the cheap, reliable one — cheapest drain);
+  //      3. last-tried ASC      — least-recently-attempted next (fresh = first_seen; a retried want =
+  //                               its updated_at), so a bounded daily budget MARCHES through the cohort
+  //                               instead of re-hammering the same top items every run (a no-match
+  //                               advances updated_at and sinks below its not-yet-tried siblings);
+  //      4. id ASC              — the deterministic final tiebreak.
+  //    NOT pre-capped (ADR-067 C-08): only REAL attempts consume the cap — a GB-requiring candidate met
+  //    while the quota breaker is open (skippedQuota) or the daily budget is spent (skippedBudget) is
+  //    skipped without burning cap, so identity-holding candidates behind it still mint.
+  const hasIsbn = (i: (typeof unpaired)[number]): boolean => Boolean(i.isbn && i.isbn.trim().length > 0);
+  const lastTriedAt = (i: (typeof unpaired)[number]): number =>
+    (wantByAnchor.get(i.id)?.updatedAt ?? i.firstSeenAt).getTime();
+  const candidates = unpaired
     .filter((i) => {
       const w = wantByAnchor.get(i.id);
-      if (!w) return false;
+      if (!w) return true; // fresh — never yet minted
       return w.llBookId === null || statusOfFormat(w, missingFormatFor(i.mediaKind)) === 'requested';
     })
-    .sort((a, b) => {
-      const wa = wantByAnchor.get(a.id)!;
-      const wb = wantByAnchor.get(b.id)!;
-      return wa.updatedAt.getTime() - wb.updatedAt.getTime() || a.id.localeCompare(b.id);
-    });
-  const candidates = [...fresh, ...retry];
+    .sort(
+      (a, b) =>
+        a.firstSeenAt.getTime() - b.firstSeenAt.getTime() ||
+        (hasIsbn(b) ? 1 : 0) - (hasIsbn(a) ? 1 : 0) ||
+        lastTriedAt(a) - lastTriedAt(b) ||
+        a.id.localeCompare(b.id),
+    );
 
   // 4. The llBookId reuse index over ALREADY-RESOLVED requests (same normalized title + author
   //    agreement). Draws from BOTH goodreads shelf requests AND prior pairing wants: a GB volume id
@@ -559,9 +587,11 @@ export async function mintPairingWants(
   let pushed = 0;
   let unmintable = 0;
   let skippedQuota = 0;
+  let skippedBudget = 0;
   let attempted = 0;
   let paceSeq = 0;
   let quotaOpen = false;
+  let budgetLogged = false;
   for (const item of candidates) {
     if (attempted >= cap) break;
     const missing = missingFormatFor(item.mediaKind);
@@ -571,9 +601,25 @@ export async function mintPairingWants(
       skippedQuota += 1;
       continue;
     }
+    // DESIGN-039 D-23 — the daily CALL BUDGET: once this consumer's slice is spent, skip GB-requiring
+    // candidates for the rest of the quota-day WITHOUT consuming the cap, upserting the want, or
+    // tripping the shared breaker (this is our own pacing, not a real 429). Reuse-resolvable candidates
+    // (needsGb false) still mint free.
+    if (needsGb && input.budget && !input.budget.canSpend()) {
+      skippedBudget += 1;
+      if (!budgetLogged) {
+        log.info?.('format-pairing: GB daily call budget spent — GB-requiring mints skipped, cap preserved', {
+          consumer: input.budget.consumer,
+          used: input.budget.used(),
+        });
+        budgetLogged = true;
+      }
+      continue;
+    }
     await pace(paceSeq);
     paceSeq += 1;
     if (needsGb) {
+      const before = input.meter?.taken() ?? 0;
       try {
         const guarded = await guardedGbResolve({
           db: input.db,
@@ -582,6 +628,9 @@ export async function mintPairingWants(
           // makes the Goodreads path resolve ~99% — before falling back to the fuzzy file-title.
           query: { isbn: item.isbn ?? null, title: item.title, author: item.author },
         });
+        // Persist the GB legs this resolve actually spent (D-21): the meter counts each outbound leg;
+        // a quota_blocked outcome made ZERO calls (delta 0, no-op), a quota_tripped made one.
+        if (input.budget) await input.budget.spend((input.meter?.taken() ?? 0) - before);
         if (guarded.outcome === 'quota_blocked' || guarded.outcome === 'quota_tripped') {
           quotaOpen = true;
           skippedQuota += 1;
@@ -592,6 +641,7 @@ export async function mintPairingWants(
         }
         llBookId = guarded.outcome === 'resolved' ? guarded.volume.volumeId : null;
       } catch (error) {
+        if (input.budget) await input.budget.spend((input.meter?.taken() ?? 0) - before);
         // Non-429 failure — today's semantics: an honest unmintable ATTEMPT (cap consumed below).
         log.error?.('format-pairing: GB resolve failed (want stays unmintable)', {
           title: item.title,
@@ -633,7 +683,7 @@ export async function mintPairingWants(
     }
   }
 
-  return { candidates: unpaired.length, attempted, minted, pushed, unmintable, skippedQuota };
+  return { candidates: unpaired.length, attempted, minted, pushed, unmintable, skippedQuota, skippedBudget };
 }
 
 // ---------------------------------------------------------------------------
@@ -684,9 +734,16 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
   }
   const seatedMap = seated;
 
+  // DESIGN-039 D-23 — build the 'pairing' daily-budget tracker once per run (reads the start-of-run
+  // usage). Only when a meter is wired (the cluster cron); absent ⇒ no budgeting (tests / degraded).
+  const budget = input.meter
+    ? await makeGbBudgetTracker({ db: input.db, consumer: 'pairing', now })
+    : input.budget;
+
   const mint = await mintPairingWants({
     ...input,
     now,
+    ...(budget ? { budget } : {}),
     llHasSeededBook: seatedMap ? (id) => seatedMap.get(id) != null : undefined,
   });
 

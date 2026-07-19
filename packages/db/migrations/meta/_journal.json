@@ -484,6 +484,13 @@
 			"when": 1783902700000,
 			"tag": "0068_collection_wanted_book_requests",
 			"breakpoints": true
+		},
+		{
+			"idx": 69,
+			"version": "7",
+			"when": 1783902800000,
+			"tag": "0070_gb_call_budget",
+			"breakpoints": true
 		}
 	]
 }

@@ -155,6 +155,54 @@ describe('GoogleBooksClient.resolveVolume (fix-path hardening)', () => {
   });
 });
 
+describe('GoogleBooksClient onCall meter (DESIGN-039 D-21 — the daily call-budget hook)', () => {
+  it('fires onCall ONCE per outbound GB query (each leg), not per retry', async () => {
+    let calls = 0;
+    // The ISBN leg MISSES, so resolveVolume falls through to the title leg — two outbound queries.
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.includes('isbn')) return volResponse([]); // isbn miss → one leg
+      return volResponse([{ id: 'gb-hit', volumeInfo: { title: 'Real Book', authors: ['A'] } }]);
+    });
+    const gb = new GoogleBooksClient({
+      baseUrl: 'http://stub/books/v1',
+      apiKey: 'k',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      onCall: () => {
+        calls += 1;
+      },
+    });
+    const res = await gb.resolveVolume({ isbn: '123', title: 'Real Book', author: 'A' });
+    expect(res?.volumeId).toBe('gb-hit');
+    // Two legs (isbn + title) ⇒ two onCall invocations — one per outbound query.
+    expect(calls).toBe(2);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('counts a 503-retried query ONCE (the retry is the same logical GB call)', async () => {
+    let calls = 0;
+    let attempt = 0;
+    const fetchImpl = vi.fn(async () => {
+      attempt += 1;
+      if (attempt === 1) return new Response('backendFailed', { status: 503 }); // transient — retried
+      return volResponse([{ id: 'gb-ok', volumeInfo: { title: 'By ISBN' } }]);
+    });
+    const gb = new GoogleBooksClient({
+      baseUrl: 'http://stub/books/v1',
+      apiKey: 'k',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      backoffMs: 0,
+      sleepImpl: async () => {},
+      onCall: () => {
+        calls += 1;
+      },
+    });
+    const res = await gb.resolveVolume({ isbn: '123', title: 'By ISBN' });
+    expect(res?.volumeId).toBe('gb-ok');
+    expect(fetchImpl).toHaveBeenCalledTimes(2); // one 503 + one success
+    expect(calls).toBe(1); // …but ONE logical GB query counted
+  });
+});
+
 describe('GoogleBooksClient.resolveVolume', () => {
   it('rejects a title-search resolve of a DIFFERENT work (no wrong-work volume id, no misclassification)', async () => {
     const fetchMock = vi.fn(async (url: string) => {

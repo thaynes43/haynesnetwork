@@ -73,6 +73,10 @@ export * from './book-force-search';
 // ADR-067 / DESIGN-039 (PLAN-055) — the shared Google Books quota circuit breaker (single-row
 // gb_quota_state single-writers + the guardedGbResolve seam every GB call site consults).
 export * from './gb-quota-breaker';
+// ADR-067 / DESIGN-039 (PLAN-055 amend — D-21..D-24) — the daily GB CALL BUDGET: the gb_call_budget
+// single-writer + the call meter + per-consumer daily budgets that keep our own GB consumers inside the
+// shared key's low per-day cap unattended (the breaker reacts to 429s; the budget stops us reaching one).
+export * from './gb-call-budget';
 // ADR-053 / DESIGN-026 D-07 (PLAN-029) — per-user watch/read-state seam: the app-user↔account mapping,
 // the per-user video watch read-model, and the per-user ABS book read-state (single-writers, no audit).
 export * from './user-account-map';

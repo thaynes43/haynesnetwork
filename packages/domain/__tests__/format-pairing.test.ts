@@ -10,6 +10,7 @@ import {
   bookRequests,
   booksFormatPairs,
   booksItems,
+  gbCallBudget,
   gbQuotaState,
   integrationShelfItems,
   permissionAudit,
@@ -17,10 +18,15 @@ import {
   type BooksItemInsert,
 } from '@hnet/db';
 import {
+  createGbCallMeter,
+  makeGbBudgetTracker,
   matchFormatPairs,
   mintPairingWants,
   missingFormatFor,
   pairingTitleKey,
+  peekGbQuotaGate,
+  readGbBudgetUsage,
+  recordGbCalls,
   runFormatPairing,
   syncFormatPairs,
   tripGbQuotaBreaker,
@@ -201,6 +207,7 @@ beforeEach(async () => {
   await t.db.delete(booksItems);
   await t.db.delete(permissionAudit);
   await t.db.delete(gbQuotaState);
+  await t.db.delete(gbCallBudget);
 });
 
 let extSeq = 0;
@@ -638,5 +645,116 @@ describe('runFormatPairing (the mode body: pairs → mint → reconcile)', () =>
     const [want] = await t.db.select().from(bookRequests);
     expect(want!.audioStatus).toBe('requested');
     expect(want!.llBookId).toBe('gb-hyp'); // identity resolved — the next LL-armed run pushes
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DESIGN-039 D-22 — the OLDEST-FIRST drain (ISBN-priority within the cohort).
+// ---------------------------------------------------------------------------
+
+describe('mintPairingWants — oldest-first drain, ISBN priority (DESIGN-039 D-22)', () => {
+  const day = (n: number) => new Date(Date.UTC(2026, 6, n));
+
+  it('attempts the OLDEST cohort first, ISBN-bearing before title-only within it (not newest-first)', async () => {
+    // The 2026-07-16-style frozen cohort shares a first_seen (day 16); a NEWER item (day 18) must not
+    // jump ahead of it. Within the day-16 cohort the ISBN-bearing anchor resolves first (cheap leg).
+    await seedItem({ title: 'Cohort Title Only', author: 'A One', mediaKind: 'book', firstSeenAt: day(16) });
+    await seedItem({ title: 'Cohort With Isbn', author: 'A Two', mediaKind: 'book', firstSeenAt: day(16), isbn: '9781111111111' });
+    await seedItem({ title: 'Newer Item', author: 'A Three', mediaKind: 'book', firstSeenAt: day(18) });
+
+    const ll = stubLl();
+    const gb = stubGb((title) => `gb-${title.slice(0, 3)}`);
+    const report = await mintPairingWants({ db: t.db, ll: ll.bundle, gb: gb.gb, cap: 10, pacer: async () => {} });
+
+    expect(report.minted).toBe(3);
+    // The drain order: oldest cohort first (both day-16 anchors), ISBN-bearing first WITHIN it, then
+    // the newer day-18 item last — the exact inverse of the old fresh-newest-first churn.
+    expect(gb.calls).toEqual(['Cohort With Isbn', 'Cohort Title Only', 'Newer Item']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DESIGN-039 D-23 — the daily CALL BUDGET skip (breaker untouched).
+// ---------------------------------------------------------------------------
+
+/** A GB stub that also feeds the call meter (simulating the http wrapper's per-leg onCall). */
+function stubGbMetered(meter: { onCall: () => void }, legsPerCall: number, resolve: (title: string) => string | null) {
+  const calls: string[] = [];
+  return {
+    calls,
+    gb: {
+      resolveVolume: async (input: { isbn?: string | null; title: string; author?: string | null }) => {
+        calls.push(input.title);
+        for (let i = 0; i < legsPerCall; i += 1) meter.onCall();
+        const v = resolve(input.title);
+        return v ? { volumeId: v } : null;
+      },
+    },
+  };
+}
+
+describe('mintPairingWants — daily call budget skip (DESIGN-039 D-23)', () => {
+  const day = (n: number) => new Date(Date.UTC(2026, 6, n));
+  const now = new Date('2026-07-19T08:00:00Z');
+
+  it('spends the budget, then skips GB-requiring candidates (skippedBudget) — WITHOUT tripping the breaker', async () => {
+    for (let i = 1; i <= 5; i += 1) {
+      await seedItem({ title: `Budget Book ${i}`, author: `Auth ${i}`, mediaKind: 'book', firstSeenAt: day(i) });
+    }
+    const ll = stubLl();
+    const meter = createGbCallMeter();
+    // A 2-call daily slice: the first two resolves (1 leg each) spend it, the rest skip.
+    const budget = await makeGbBudgetTracker({ db: t.db, consumer: 'pairing', now, budgetOverride: 2 });
+    const gb = stubGbMetered(meter, 1, (title) => `gb-${title.slice(-1)}`);
+
+    const report = await mintPairingWants({
+      db: t.db,
+      ll: ll.bundle,
+      gb: gb.gb,
+      meter,
+      budget,
+      cap: 10,
+      now,
+      pacer: async () => {},
+    });
+
+    expect(gb.calls).toHaveLength(2); // only two real GB resolves happened
+    expect(report.attempted).toBe(2); // the budget skips consume NO cap
+    expect(report.skippedBudget).toBe(3);
+    expect(report.skippedQuota).toBe(0); // NOT the 429 breaker — our own pacing
+    // Durably persisted for the next run.
+    expect((await readGbBudgetUsage({ db: t.db, now })).pairing).toBe(2);
+    // The shared breaker was NEVER tripped by a budget skip.
+    expect((await peekGbQuotaGate({ db: t.db, now })).open).toBe(false);
+  });
+
+  it('an identity-holding candidate still pushes for FREE while the GB budget is spent', async () => {
+    // A pairing want that ALREADY holds its llBookId (a prior run / reuse resolved it) needs no GB
+    // call, so a spent GB budget does not stop it pushing the still-missing format.
+    const itemId = await seedItem({ title: 'Reusable Work', author: 'Reuse Author', mediaKind: 'book', firstSeenAt: day(1) });
+    await t.db.insert(bookRequests).values({
+      origin: 'pairing',
+      pairingBooksItemId: itemId,
+      title: 'Reusable Work',
+      author: 'Reuse Author',
+      llBookId: 'gb-reused',
+      ebookStatus: 'landed', // the book anchor holds the ebook
+      audioStatus: 'requested', // the missing audiobook is still wanted
+    });
+
+    const ll = stubLl();
+    const meter = createGbCallMeter();
+    await recordGbCalls({ db: t.db, consumer: 'pairing', count: 1, now }); // pre-spend the pairing slice
+    const budget = await makeGbBudgetTracker({ db: t.db, consumer: 'pairing', now, budgetOverride: 1 });
+    expect(budget.canSpend()).toBe(false);
+    const gb = stubGbMetered(meter, 1, () => 'gb-should-not-be-called');
+
+    const report = await mintPairingWants({
+      db: t.db, ll: ll.bundle, gb: gb.gb, meter, budget, cap: 10, now, pacer: async () => {},
+    });
+
+    expect(gb.calls).toHaveLength(0); // identity already held ⇒ zero GB calls
+    expect(report.pushed).toBe(1); // pushed the missing audiobook via the held id
+    expect(report.skippedBudget).toBe(0);
   });
 });
