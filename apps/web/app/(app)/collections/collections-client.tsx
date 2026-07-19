@@ -12,8 +12,17 @@
 import { Suspense, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { ConfirmButton, MediaAction, PhaseChip, ReservedActionSlot } from '@hnet/ui';
+import { ConfirmButton, FilterChip, MediaAction, PhaseChip, ReservedActionSlot } from '@hnet/ui';
 import { Modal } from '@/components/modal';
+import { CHIP_LABELS } from '@/components/filter-chips';
+import {
+  SOURCE_CATEGORY_LABELS,
+  handSourceCategory,
+  presentSourceCategories,
+  recipeSourceCategory,
+  visibleSourceCategories,
+  type SourceCategory,
+} from '@/lib/collections-source';
 import { trpc } from '@/lib/trpc-client';
 import { describeMutationError } from '@/lib/app-error';
 import {
@@ -108,6 +117,51 @@ interface HandCollection {
 function kometaSourceLabel(source: 'managed' | 'hand' | 'default'): string {
   return source === 'managed' ? 'Added here' : 'Kometa config';
 }
+
+/**
+ * Owner ruling 2026-07-18 — the small padlock glyph for the IMMUTABLE tag. Inline SVG on the app's
+ * icon idiom (24×24 stroke frame, currentColor so it themes with the muted token seam — no hex, no
+ * icon font, no CDN). A shackle over a closed body: reads as "locked" at 11px.
+ */
+function LockGlyph() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="11"
+      height="11"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+    </svg>
+  );
+}
+
+/**
+ * Owner ruling 2026-07-18 — the distinct IMMUTABLE tag for a non-editable Kometa row (both kinds: a
+ * hand-file builder too custom to model here AND a Kometa-Defaults mirror with no file). It sits
+ * beside the "Kometa config" source badge as the at-a-glance WHY the Edit is greyed; the disabled
+ * Edit keeps the full explanation in its tooltip. Muted tone but its own outlined skin (a border +
+ * the padlock) so it never reads as another source badge. The exact word "Locked" is swappable.
+ */
+function LockedBadge() {
+  return (
+    <span className="badge badge--lock" data-testid="collection-locked-badge" title="Locked here. This collection is managed in the estate’s Kometa setup and cannot be edited on this page.">
+      <LockGlyph />
+      Locked
+    </span>
+  );
+}
+
+// ── The source filter (owner ruling 2026-07-18) — a multi-select chip on the shared @hnet/ui FilterChip
+//    anatomy so a row's SOURCE can be hidden from the list (unchecking "Locked" hides the immutable rows).
+//    The category classification is the pure @/lib/collections-source module (unit-tested); this file wires
+//    it to the chip, seeded all-on so unchecking a value HIDES that category (the owner's framing).
 
 // ── The shell ──────────────────────────────────────────────────────────────────────────────
 
@@ -238,6 +292,12 @@ function MediaSection({
   // holds its place and never reflows.
   const [search, setSearch] = useState('');
 
+  // Owner ruling 2026-07-18 — the SOURCE multi-select filter (shared @hnet/ui FilterChip anatomy). State
+  // is the set of categories the caller HID (unchecked); the chip renders all-on, so unchecking a value
+  // hides its rows ("unchecking Locked hides the immutable rows"). Keyed per tab (MediaSection remounts on
+  // a tab switch), so a filter set on Movies never leaks into TV/Books.
+  const [hiddenSources, setHiddenSources] = useState<SourceCategory[]>([]);
+
   const invalidate = () => void utils.collections.overview.invalidate({ mediaType });
   const label = COLLECTION_MEDIA_TYPE_LABELS[mediaType];
 
@@ -330,9 +390,27 @@ function MediaSection({
   const handCollections: HandCollection[] = (data.handCollections ?? []) as HandCollection[];
   const q = search.trim().toLowerCase();
   const matches = (name: string) => q === '' || name.toLowerCase().includes(q);
-  const filteredRecipes = data.recipes.filter((r) => matches(r.name ?? r.id));
-  const filteredReadOnly = readOnly.filter((r) => matches(r.name));
-  const filteredHand = handCollections.filter((h) => matches(h.name));
+
+  // The recipe row's source category (a Kometa "Added here" recipe vs a books "Managed here" recipe).
+  const recipeCategory = recipeSourceCategory(isKometa);
+  // The categories actually PRESENT in this list (fixed order) and the ones still VISIBLE after the
+  // caller's unchecks — the pure classification lives in @/lib/collections-source (unit-tested).
+  const presentSources = presentSourceCategories({
+    isKometa,
+    recipeCount: data.recipes.length,
+    hand: handCollections,
+    readOnlyCount: readOnly.length,
+  });
+  const visibleSources = visibleSourceCategories(presentSources, hiddenSources);
+  const sourceVisible = (cat: SourceCategory) => visibleSources.includes(cat);
+
+  const filteredRecipes = sourceVisible(recipeCategory)
+    ? data.recipes.filter((r) => matches(r.name ?? r.id))
+    : [];
+  const filteredReadOnly = sourceVisible('library') ? readOnly.filter((r) => matches(r.name)) : [];
+  const filteredHand = handCollections.filter(
+    (h) => matches(h.name) && sourceVisible(handSourceCategory(h.editable)),
+  );
   const secondaryCount = isKometa ? handCollections.length : readOnly.length;
   const totalCount = data.recipes.length + secondaryCount;
   const noMatches = isKometa
@@ -404,6 +482,35 @@ function MediaSection({
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+
+          {/* The SOURCE filter (owner ruling 2026-07-18) — the shared @hnet/ui FilterChip on the Library
+              walls' fixed-height chip bar (ADR-015: the bar never grows, the editor overlays). Offered only
+              when the list holds more than one source, so unchecking a value (e.g. "Locked") hides those
+              rows. Works alongside the search box above. */}
+          {presentSources.length > 1 ? (
+            <div
+              className="library-chipbar"
+              role="group"
+              aria-label={`Filter ${label.toLowerCase()} collections by source`}
+              data-testid="collections-source-filter"
+            >
+              <FilterChip
+                fieldLabel="Show"
+                kind="enum"
+                values={visibleSources}
+                enumValues={presentSources}
+                enumLabel={(v) => SOURCE_CATEGORY_LABELS[v as SourceCategory] ?? v}
+                labels={CHIP_LABELS}
+                onAdd={(v) => setHiddenSources((prev) => prev.filter((c) => c !== v))}
+                onRemove={(v) =>
+                  setHiddenSources((prev) =>
+                    prev.includes(v as SourceCategory) ? prev : [...prev, v as SourceCategory],
+                  )
+                }
+                onClear={() => setHiddenSources([])}
+              />
+            </div>
+          ) : null}
 
           {noMatches ? (
             <p className="muted" data-testid="collections-no-matches">
@@ -647,6 +754,10 @@ function HandCollectionRow({
           <span className="badge badge--muted" data-testid="collection-source-badge">
             {kometaSourceLabel(hand.source)}
           </span>
+          {/* The IMMUTABLE tag — static per row (ADR-015: it renders from the row's editability, never
+              on interaction), the at-a-glance signal for both non-editable kinds. The disabled Edit
+              below keeps the honest per-reason tooltip. */}
+          {!hand.editable ? <LockedBadge /> : null}
           {builderLabel ? <span className="badge badge--info">{builderLabel}</span> : null}
           {hand.builderRef ? <span className="muted">{hand.builderRef}</span> : null}
           <span className="muted" data-testid="collection-size">
