@@ -456,6 +456,29 @@ export async function startStubArr(): Promise<StubArrServer> {
           // The Fixture (monitored, on disk) + Vanished Heist (unmonitored, fileless) — the
           // skip and monitor-flip halves of the Ledger bulk action's outcome matrix.
           return json(res, 200, [movieResource(STUB_MOVIE_ID), vanishedMovieResource()]);
+        case '/collection':
+          // DESIGN-044 D-05 (owner poster + caught-em-all redesign) — one TMDb franchise (id 990001) with two
+          // films: The Fixture (tmdbId 880001, HELD in the seeded ledger → its tile renders the /api/posters
+          // proxy) and a Sequel the estate does NOT hold (MISSING → the collection member's provider image).
+          return json(res, 200, [
+            {
+              id: 5001,
+              title: 'The Fixture Collection',
+              tmdbId: 990001,
+              movies: [
+                {
+                  tmdbId: STUB_MOVIE_TMDB_ID,
+                  title: 'The Fixture',
+                  images: [{ coverType: 'poster', remoteUrl: 'https://image.tmdb.org/t/p/original/fixture.jpg' }],
+                },
+                {
+                  tmdbId: 880002,
+                  title: 'The Fixture II: Reticketed',
+                  images: [{ coverType: 'poster', remoteUrl: 'https://image.tmdb.org/t/p/original/fixture2.jpg' }],
+                },
+              ],
+            },
+          ]);
         case '/artist':
           return json(res, 200, []);
         // DESIGN-008 D-05 — the /lookup endpoints (tombstoned-row metadata, no add).
@@ -467,6 +490,9 @@ export async function startStubArr(): Promise<StubArrServer> {
               tmdbId: STUB_MOVIE_TMDB_ID,
               imdbId: 'tt8800010',
               remotePoster: 'https://image.tmdb.org/t/p/original/lookup.jpg',
+              // DESIGN-044 D-04/D-05 — the movie's TMDb franchise, so the "movie franchise" ref search yields a
+              // pickable franchise (id 990001, previewed via the /collection handler above).
+              collection: { title: 'The Fixture Collection', tmdbId: 990001 },
               ...RADARR_META,
             },
           ]);

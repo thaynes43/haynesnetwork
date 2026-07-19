@@ -7180,10 +7180,6 @@ button.acq-puck:disabled {
 /* ADR-072 / DESIGN-043 (PLAN-052 PR4a) — the first-class /collections page: the size-vs-cap read on
    a row, the over-cap ticket Modal, and the Tickets + Settings sub-sections. Tokens only (hard rule 2);
    the sub-nav reuses .library-tabs (the bulletin idiom) so no new tab CSS is needed. */
-.collection-row__cap {
-  color: var(--color-text-muted);
-  opacity: 0.75;
-}
 .over-cap {
   display: flex;
   flex-direction: column;
@@ -7259,21 +7255,18 @@ button.acq-puck:disabled {
   gap: 8px;
   align-items: flex-start;
 }
+/* Owner REDESIGN ruling 2026-07-18 — the builder is now a single column: a COMPACT config section on top,
+   the member PREVIEW flowing full-width below as a Library-style wall (never a narrow side panel). */
 .builder-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
-  gap: 24px;
-  align-items: start;
-}
-@media (max-width: 899px) {
-  .builder-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  align-items: stretch;
 }
 .builder-form {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 18px;
   min-width: 0;
 }
 .builder-section {
@@ -7423,55 +7416,51 @@ button.builder-card:hover {
 .builder-option__note {
   font-size: 0.78rem;
 }
-/* The live preview panel — sticky on desktop; a deliberate content change on ref resolve (ADR-015). */
+/* The live member preview — a FULL-WIDTH wall section below the config (owner ruling 2026-07-18), so a big
+   list (a 15-member NYT shelf) reads as a Library wall, never an endless skinny column. A quiet top divider
+   separates it from the config; the poster tiles flow in the shared wall grid (PosterGrid). */
 .builder-preview {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 16px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  background: var(--color-surface-2);
-  position: sticky;
-  top: 16px;
-}
-@media (max-width: 899px) {
-  .builder-preview {
-    position: static;
-  }
+  gap: 16px;
+  padding-top: 18px;
+  border-top: 1px solid var(--color-border);
 }
 .builder-preview__head {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-/* The cap meter — reserves its width so at/over-cap only deepens color, never reflows (ADR-015). */
-.builder-meter {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+/* DESIGN-044 D-05 (owner REDESIGN ruling 2026-07-18 — "gotta catch em all") — the gamified in-library/total
+   read that replaces the cap meter. Content-sized; states recolor/swap text, never reflow (ADR-015). Shared
+   by the builder preview header and the /collections list rows (components/collection-catch.tsx). */
+.catch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  line-height: 1.2;
 }
-.builder-meter__track {
-  height: 8px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-text-muted) 20%, transparent);
-  overflow: hidden;
-}
-.builder-meter__fill {
-  height: 100%;
-  background: var(--color-progress);
-  transition: width 160ms ease;
-}
-.builder-meter--over .builder-meter__fill {
-  background: var(--color-warning);
-}
-.builder-meter__label {
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
-}
-.builder-meter--over .builder-meter__label {
-  color: var(--color-warning);
+.catch__count {
   font-weight: 600;
+  color: var(--color-text);
+}
+.catch__star {
+  color: var(--color-warning); /* the gold achievement star */
+  flex: none;
+}
+/* The caught-em-all celebration: the count + label go accent (the same green as the held tiles) so an all-held
+   collection reads as a win at a glance; the gold star carries the "achievement" flourish. */
+.catch--complete .catch__count,
+.catch--complete .catch__caught {
+  color: var(--color-accent);
+}
+.catch__caught {
+  font-weight: 700;
+}
+/* The missing side reuses the wall's "missing" chip typeface (badge--warn); a touch of left spacing only. */
+.catch__missing {
+  margin-left: 2px;
 }
 .builder-group {
   display: flex;

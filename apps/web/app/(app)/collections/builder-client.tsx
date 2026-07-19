@@ -12,6 +12,7 @@ import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Modal } from '@/components/modal';
 import { BaseCard, PosterGrid, type CardBadge } from '@/components/cards';
+import { CollectionCatch } from '@/components/collection-catch';
 import { trpc } from '@/lib/trpc-client';
 import { appCodeOf, describeMutationError } from '@/lib/app-error';
 import {
@@ -19,7 +20,7 @@ import {
   COLLECTION_MEDIA_TYPE_LABELS,
   builderCard,
   builderCardsFor,
-  capMeter,
+  collectionProgress,
   isValidListUrl,
   type BuilderCard,
   type CollectionBuilderTypeName,
@@ -286,17 +287,11 @@ function CollectionBuilder({
 
         {/* The live preview panel (D-05) — sticky on desktop, stacks below the form at phone width (D-08). */}
         {draft.builder && card ? (
-          <PreviewPanel
-            mediaType={tab}
-            card={card}
-            draft={draft}
-            sizeCap={overview.sizeCap}
-            capBypass={overview.capBypass}
-          />
+          <PreviewPanel mediaType={tab} card={card} draft={draft} />
         ) : (
-          <aside className="builder-preview" data-testid="builder-preview-empty">
+          <section className="builder-preview" data-testid="builder-preview-empty">
             <p className="muted">Pick a collection type to see what it will hold.</p>
-          </aside>
+          </section>
         )}
       </div>
 
@@ -682,14 +677,10 @@ function PreviewPanel({
   mediaType,
   card,
   draft,
-  sizeCap,
-  capBypass,
 }: {
   mediaType: CollectionMediaTypeName;
   card: BuilderCard;
   draft: BuilderDraft;
-  sizeCap: number;
-  capBypass: boolean;
 }) {
   const isMulti = card.shape === 'multi';
   const ref: string | string[] = isMulti ? draft.picks.map((p) => p.ref) : draft.ref.trim();
@@ -701,27 +692,15 @@ function PreviewPanel({
   );
 
   const data = preview.data;
-  const meter = data?.available ? capMeter(data.total, sizeCap, capBypass) : null;
+  // DESIGN-044 D-05 (owner REDESIGN ruling 2026-07-18) — the header reads the gamified held/total, celebrating
+  // a caught-em-all collection; the cap is never advertised (over-cap is the server error + ticket flow only).
+  const progress = data?.available ? collectionProgress(data.heldCount, data.total) : null;
 
   return (
-    <aside className="builder-preview" data-testid="builder-preview">
+    <section className="builder-preview" data-testid="builder-preview">
       <div className="builder-preview__head">
         <h2 className="builder-section__title">What you are about to build</h2>
-        {meter ? (
-          <div
-            className={`builder-meter${meter.over ? ' builder-meter--over' : ''}`}
-            data-testid="builder-cap-meter"
-            title={capBypass ? 'You are not bound by the size limit.' : undefined}
-          >
-            <div className="builder-meter__track">
-              <div className="builder-meter__fill" style={{ width: `${Math.round(meter.fraction * 100)}%` }} />
-            </div>
-            <span className="builder-meter__label">
-              {meter.label}
-              {meter.over ? ' · over the limit' : ''}
-            </span>
-          </div>
-        ) : null}
+        {progress ? <CollectionCatch progress={progress} /> : null}
       </div>
 
       {!hasRef ? (
@@ -763,7 +742,7 @@ function PreviewPanel({
           />
         </>
       ) : null}
-    </aside>
+    </section>
   );
 }
 

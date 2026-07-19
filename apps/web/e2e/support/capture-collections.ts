@@ -1,11 +1,14 @@
 // ADR-072 / DESIGN-043 D-07 + DESIGN-044 — the screenshot harness for owner sign-off of the first-class
 // /collections page AND the full-page collection BUILDER (DESIGN-044, the owner-ruled replacement for the
-// tiny popup composer). Boots its OWN stack (incl. the stub Libretto answering /api/search + /api/preview)
-// and captures the standing matrix (desktop 1280x900 + 390px, dark + light):
-//   • the Books sub-section collection list (as admin — the delete lens),
-//   • the BUILDER page: the empty type-card step, a populated ref search, a resolved preview with the
-//     in-library/missing split + cap meter, the over-cap meter + ticket path, and the locked-builder edit,
-//   • the over-cap "request it" Modal (as a NON-admin member — admins bypass the cap),
+// tiny popup composer). The 2026-07-18 owner REDESIGN ("gotta catch em all"): the cap meter is gone, the
+// builder is a compact config over a full-width member WALL, and the header reads the gamified in-library /
+// total with a caught-em-all celebration when complete. Boots its OWN stack (incl. the stub Libretto/arr
+// answering the search + preview) and captures the standing matrix (desktop 1280x900 + 390px, dark + light):
+//   • the Books sub-section collection list (as admin — the delete lens; rows now read held/total, no cap),
+//   • the BUILDER page: the empty type-card step, a populated ref search, an incomplete books preview
+//     (held/total + missing chip), the CAUGHT-EM-ALL audiobooks preview, a big NYT-style wall, a movies
+//     franchise preview (real posters), and the locked-builder edit,
+//   • the over-cap "request it" Modal (as a NON-admin member — over-cap is the server error + ticket only),
 //   • the Tickets sub-section admin approve lens (seeded once from a member over-cap request),
 //   • the admin Settings sub-section (the size cap + the find-missing grant seam).
 //
@@ -75,12 +78,15 @@ async function openBuilderOverCap(page: Page): Promise<void> {
   await page.getByTestId('builder-manual-toggle').click();
   await page.getByTestId('builder-ref-manual').fill('the-cosmere-over-everything');
   await page.getByTestId('builder-name').fill('The Cosmere (everything)');
-  await page.getByTestId('builder-cap-meter').waitFor();
+  // No cap chrome anymore — the preview resolves (40 members), and over-cap surfaces only when Save trips the
+  // server COLLECTION_SIZE_CAP_EXCEEDED → the request-larger Modal.
+  await page.getByTestId('builder-preview').waitFor();
+  await page.getByTestId('builder-missing').waitFor();
   await page.getByTestId('builder-save').click();
   await page.getByTestId('builder-over-cap').waitFor();
 }
 
-/** DESIGN-044 — drive the builder PAGE to a resolved preview (series search → pick → the held/missing split). */
+/** DESIGN-044 — an INCOMPLETE books preview (series search → pick → held/total + the missing chip + wall). */
 async function openBuilderPreview(page: Page): Promise<void> {
   await page.goto('/collections/new?tab=books');
   await page.getByTestId('builder-card-hardcover_series').click();
@@ -88,6 +94,32 @@ async function openBuilderPreview(page: Page): Promise<void> {
   await page.getByTestId('builder-result').first().click();
   await page.getByTestId('builder-preview').waitFor();
 }
+
+/** DESIGN-044 D-05 (owner redesign) — the CAUGHT-EM-ALL state: an audiobooks ref every seeded tile holds. */
+async function openBuilderCaughtEmAll(page: Page): Promise<void> {
+  await page.goto('/collections/new?tab=audiobooks');
+  await page.getByTestId('builder-card-hardcover_series').click();
+  await page.getByTestId('builder-manual-toggle').click();
+  await page.getByTestId('builder-ref-manual').fill('the-complete-collection');
+  await page.getByTestId('builder-name').fill('The Complete Shelf');
+  await page.getByTestId('builder-preview').waitFor();
+  await page.getByTestId('collection-caught').waitFor();
+}
+
+/** DESIGN-044 D-05 (owner redesign) — a big NYT-style list so the preview reads as a full-width Library wall. */
+async function openBuilderBigList(page: Page): Promise<void> {
+  await page.goto('/collections/new?tab=audiobooks');
+  await page.getByTestId('builder-card-nyt_list').click();
+  await page.getByTestId('builder-search-input').fill('hard');
+  await page.getByTestId('builder-result').first().click();
+  await page.getByTestId('builder-preview').waitFor();
+  await page.getByTestId('builder-missing').waitFor();
+}
+
+// NOTE: a MOVIES/TV (Kometa) builder screenshot is not capturable in this stub harness — the Kometa overview
+// binds haynes-ops/GitHub, which the harness does not stub (and Kometa internals are out of scope). The
+// movies/TV poster resolution (held proxy + missing provider image) is covered by the @hnet/domain
+// collection-builder poster tests + the stub-arr /collection fixture instead.
 
 async function main(): Promise<void> {
   const cwd = process.cwd();
@@ -150,7 +182,7 @@ async function main(): Promise<void> {
       year: 2014,
       releasedAt: null,
       genres: [],
-      coverRef: null,
+      coverRef: null, // Kavita covers key off a numeric series id; these synthetic refs 404 → the placeholder.
       deepLinkUrl: `https://example.test/${over.externalId}`,
       pageCount: null,
       wordCount: null,
@@ -240,11 +272,21 @@ async function main(): Promise<void> {
         await hidePortal(admin);
         await shoot(admin, `builder-searched-${suffix}`, true);
 
-        // 3) A resolved preview — the in-library / missing split + the cap meter.
+        // 3) An INCOMPLETE books preview — the held/total read + the missing chip over the full-width wall.
         await openBuilderPreview(admin);
         await admin.getByTestId('builder-missing').waitFor();
         await hidePortal(admin);
         await shoot(admin, `builder-previewed-${suffix}`, true);
+
+        // 3b) The CAUGHT-EM-ALL celebration — an audiobooks collection the estate fully holds (gold star).
+        await openBuilderCaughtEmAll(admin);
+        await hidePortal(admin);
+        await shoot(admin, `builder-caught-${suffix}`, true);
+
+        // 3c) A big NYT-style list — the preview reads as a full-width Library wall, never a skinny column.
+        await openBuilderBigList(admin);
+        await hidePortal(admin);
+        await shoot(admin, `builder-biglist-${suffix}`, true);
 
         // 4) The locked-builder edit state (name + type locked; only the ref + options change).
         await admin.goto('/collections/stormlight-archive/edit?tab=books');
@@ -266,26 +308,15 @@ async function main(): Promise<void> {
       }
       await admin.context().close();
 
-      // ── Member lens: the over-cap meter + "request it" Modal (admins bypass the cap, so only a member
-      //    sees it) ──
+      // ── Member lens: the over-cap "request it" Modal. There is no cap chrome now — a large collection
+      //    resolves like any other; Save trips the server cap and surfaces the ticket Modal (owner ruling). ──
       await setPersona(stack.oidc.baseUrl, 'member');
       const member = await signIn(browser, stack.appUrl, viewport);
       for (const theme of themes) {
         const suffix = `${label}-${theme === 'hnet-dark' ? 'dark' : 'light'}`;
         await setTheme(member, theme);
-        // The over-cap preview meter (deepened) before saving.
-        await openBuilderPreview(member); // a within-cap preview first, to warm the page
-        await member.goto('/collections/new?tab=books');
-        await member.getByTestId('builder-card-hardcover_series').click();
-        await member.getByTestId('builder-manual-toggle').click();
-        await member.getByTestId('builder-ref-manual').fill('the-cosmere-over-everything');
-        await member.getByTestId('builder-name').fill('The Cosmere (everything)');
-        await member.getByTestId('builder-cap-meter').waitFor();
-        await hidePortal(member);
-        await shoot(member, `builder-overcap-meter-${suffix}`, true);
-        // The over-cap "request it" Modal.
-        await member.getByTestId('builder-save').click();
-        await member.getByTestId('builder-over-cap').waitFor();
+        // A large (over-cap) draft resolves and reads as a plain held/total wall — no cap advertised.
+        await openBuilderOverCap(member); // drives to the Save-tripped over-cap Modal
         await hidePortal(member);
         await shoot(member, `over-cap-${suffix}`);
         await member.keyboard.press('Escape');
