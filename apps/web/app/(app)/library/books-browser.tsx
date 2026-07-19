@@ -82,6 +82,7 @@ import {
   type WallGrouping,
 } from '@/lib/library-view-registry';
 import { WantedCard } from './wanted-card';
+import { CollectionWantForceSearch } from './collection-want-forcesearch';
 import type { FacetGates } from './library-client';
 
 type BooksMediaKind = 'book' | 'audiobook' | 'comic';
@@ -955,13 +956,34 @@ export function BooksBrowser({
                 renders the SAME poster block as an on-disk book. */}
             {items.map((entry) => {
               if (entry.kind === 'wanted') {
+                const wantedCard = (
+                  <WantedCard item={entry} mediaKind={mediaKind} inFlight={wantedInFlight(entry)} />
+                );
+                // ADR-071 owner ruling 2026-07-19 — a searchable Wanted member of a DRILLED
+                // books/audiobooks/comics collection gets the SHARED Force Search magnifier BADGE on its
+                // tile, exactly like the Movies/TV drill (library-client.tsx). Gated on drilledCollection
+                // to mirror the movies `drilled` gate — only a collection drill shows Wanted tiles in the
+                // books wall (author/genre drills force wanted:'hide', line ~477), so the flat wall stays
+                // badge-free like movies. Overlay sibling of the card link (top-right undecorated corner),
+                // no reflow (ADR-015). searchPairingWant is the books-gated leg for collection/pairing wants.
+                const wantedSearchable =
+                  drilledCollection &&
+                  entry.canSearch &&
+                  (entry.origin === 'collection' || entry.origin === 'pairing');
+                if (!wantedSearchable) {
+                  return <Fragment key={`w-${entry.requestId}`}>{wantedCard}</Fragment>;
+                }
                 return (
-                  <WantedCard
-                    key={`w-${entry.requestId}`}
-                    item={entry}
-                    mediaKind={mediaKind}
-                    inFlight={wantedInFlight(entry)}
-                  />
+                  <div key={`w-${entry.requestId}`} className="coll-wanted">
+                    {wantedCard}
+                    <span className="coll-wanted__fs">
+                      <CollectionWantForceSearch
+                        requestId={entry.requestId}
+                        title={entry.title}
+                        onDone={() => void search.refetch()}
+                      />
+                    </span>
+                  </div>
                 );
               }
               const duration = formatDuration(entry.durationSeconds);

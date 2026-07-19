@@ -1914,6 +1914,15 @@ input[aria-invalid='true'] {
   flex-wrap: wrap;
   gap: 8px;
 }
+/* The pairing-row search slot (books-detail PairingSearchSlot) is a right-aligned `.action-slot`
+   (justify-content:flex-end) sitting LAST in this left-packed row, so its reserved 12rem opened the
+   same void between the "view wanted status" link and the "Search for …" button that the head pair
+   showed (owner bug 2026-07-19). Left-align the slot's content so the reserved whitespace trails to
+   its right instead of falling before the button — the reservation is intact, the button just packs
+   flush to the link. Tokens-only, no width change, no reflow (ADR-015). */
+.detail-head__play .action-slot {
+  justify-content: flex-start;
+}
 /* The external-jump caret rides at the end of a play button's label. */
 .btn__ext {
   opacity: 0.85;
@@ -4589,7 +4598,12 @@ button.bwall-tap:focus-visible {
   position: absolute;
   top: 8px;
   right: 8px;
-  z-index: 2;
+  /* On a stacked-cover fan card the fanned covers (.group-card__cover--0/1/2, z-index 1/2/3) and this
+     badge resolve in ONE shared stacking context — nothing between them opens a new context at rest —
+     so a z-index of 2 lost to the top cover (z-index 3) and the magnifier painted BEHIND the fan until
+     a :hover transform trapped it (owner bug 2026-07-19). z-index:4 is strictly above the topmost fan
+     cover, so the badge always paints over the whole fan at rest. Paint-order only — no reflow (ADR-015). */
+  z-index: 4;
 }
 
 /* Poster treatment per state — filters/outlines only (no geometry): a saved/protected poster

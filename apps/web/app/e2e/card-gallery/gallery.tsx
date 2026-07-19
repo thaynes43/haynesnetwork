@@ -175,6 +175,43 @@ export function CardGallery() {
         </PosterGrid>
       </Section>
 
+      {/* ADR-071 owner ruling 2026-07-19 — the BOOKS collection drill mirrors the movies drill above:
+          a held BookCard tile beside a Wanted tile wearing the SHARED Force Search magnifier badge
+          (the same MediaAction forceSearch presentation="badge" + testId the movies tile uses). This
+          locks books/movies drill parity (the owner-reported gap: books Wanted tiles rendered bare).
+          The `.coll-wanted` wrapper IS the grid item, so it must share the held tile's `1fr` column. */}
+      <Section title="Books collection drill — held + Wanted tiles share ONE poster column (ADR-071)">
+        <PosterGrid testId="gallery-drill-books">
+          <BookCard
+            href="#"
+            posterUrl={POSTER_A}
+            mediaKind="audiobook"
+            title="Catching Fire"
+            author="Suzanne Collins"
+            badges={[{ label: 'On disk', tone: 'ok' }]}
+          />
+          <div className="coll-wanted" data-testid="drill-wanted-book">
+            <BookCard
+              href="#"
+              posterUrl={null}
+              mediaKind="audiobook"
+              title="Sunrise on the Reaping — Ballad Of Songbirds And Snakes Extended"
+              author="Suzanne Collins"
+              badges={[{ label: 'Wanted', tone: 'warn' }]}
+            />
+            <span className="coll-wanted__fs">
+              <MediaAction
+                action="forceSearch"
+                presentation="badge"
+                onFire={() => {}}
+                testId="collection-wanted-forcesearch"
+                ariaLabel="Force search Sunrise on the Reaping"
+              />
+            </span>
+          </div>
+        </PosterGrid>
+      </Section>
+
       <Section title="BookCard — Books · Audiobooks · Comics (on-disk + composed Wanted)">
         <PosterGrid testId="gallery-books">
           <BookCard

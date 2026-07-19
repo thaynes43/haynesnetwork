@@ -122,7 +122,36 @@ test.describe('card gallery — the shared-card-system drift gate (ADR-058)', ()
       expect(max - min, `drill tile widths uniform @${width}px: ${widths.join(', ')}`).toBeLessThan(
         1,
       );
+
+      // ADR-071 owner ruling 2026-07-19 — the BOOKS collection drill must share ONE poster column
+      // TOO (parity with the movies drill above): a long-titled Wanted book tile stays the width of
+      // the held tile. The wrapped `.coll-wanted` tile is the grid item, not the nested card.
+      const booksGrid = page.getByTestId('gallery-drill-books');
+      const booksItems = booksGrid.locator('> .poster-card, > .coll-wanted');
+      const booksCount = await booksItems.count();
+      expect(booksCount, 'books drill renders held + wanted tiles').toBe(2);
+      const booksWidths: number[] = [];
+      for (let i = 0; i < booksCount; i++) {
+        const box = await booksItems.nth(i).boundingBox();
+        expect(box).not.toBeNull();
+        booksWidths.push(box!.width);
+      }
+      expect(
+        Math.max(...booksWidths) - Math.min(...booksWidths),
+        `books drill tile widths uniform @${width}px: ${booksWidths.join(', ')}`,
+      ).toBeLessThan(1);
     }
+
+    // Books/movies drill PARITY — the Wanted books tile carries the SAME sealed Force Search badge
+    // the movies tile does (the owner-reported gap: books Wanted tiles rendered bare). Same registry
+    // action (data-action-type=forceSearch), same `.action-badge` puck, same testId.
+    const booksBadge = page
+      .getByTestId('gallery-drill-books')
+      .getByTestId('collection-wanted-forcesearch');
+    await expect(booksBadge).toHaveCount(1);
+    await expect(booksBadge).toHaveAttribute('data-action-type', 'forceSearch');
+    await expect(booksBadge).toHaveClass(/action-badge/);
+
     await page.setViewportSize({ width: 1280, height: 900 });
   });
 
