@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.88.1](https://github.com/thaynes43/haynesnetwork/compare/v0.88.0...v0.88.1) (2026-07-19)
+
+
+### Bug Fixes
+
+* **collections:** collection-UX parity — card badge z-order, books head Fix/Force-Search packing, books drill magnifier ([#437](https://github.com/thaynes43/haynesnetwork/issues/437)) ([290ce8c](https://github.com/thaynes43/haynesnetwork/commit/290ce8c02fc1a4391141aa81b56efd0d4cdde9a1))
+
+
+### Documentation
+
+* **agents:** GB quota watch note — monitoring the first budgeted day (Mon 07-20 reset) ([#435](https://github.com/thaynes43/haynesnetwork/issues/435)) ([aba2879](https://github.com/thaynes43/haynesnetwork/commit/aba28792f0810e97cd8a3c57be88201bcf20595d))
+
 ## [0.88.0](https://github.com/thaynes43/haynesnetwork/compare/v0.87.1...v0.88.0) (2026-07-19)
 
 
