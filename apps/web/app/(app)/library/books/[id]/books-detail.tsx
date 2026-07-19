@@ -16,7 +16,6 @@ import Link from 'next/link';
 import {
   PhaseChip,
   MediaHero,
-  MediaActionBar,
   ConsumeLink,
   type MediaHeroBadge,
 } from '@hnet/ui';
@@ -24,8 +23,7 @@ import { trpc } from '@/lib/trpc-client';
 import { BackLink } from '@/components/back-link';
 import { MediaPoster } from '@/components/cards';
 import { formatBytes, formatWhen } from '@/lib/media';
-import { BookFixControl } from './book-fix-dialog';
-import { BookForceSearchControl } from './book-force-search-control';
+import { BooksHeadActions } from './books-head-actions';
 
 /** Kind-aware display label for the hero badge (owner tone: plain, friendly). */
 const KIND_LABEL: Record<string, string> = { book: 'Book', comic: 'Comic', audiobook: 'Audiobook' };
@@ -256,14 +254,18 @@ export function BooksDetail({ id, from }: { id: string; from: string | null }) {
           </>
         }
         // ADR-071 — Fix (green) + Force Search (outline) beside the consume row, each server
-        // grant-gated (canFix / canForceSearch). This is the headline unification: books now match
-        // the movie Fix + Force Search treatment by construction.
+        // grant-gated (canFix / canForceSearch), rendered as ONE reserved head slot (BooksHeadActions
+        // owns the MediaActionBar wrapper, exactly as item-detail passes a MediaActionBar into
+        // MediaHero.actions). This is the headline unification: books now match the movie Fix + Force
+        // Search treatment by construction — one 16rem reservation holds the pair flush-right, no void.
         actions={
           canFix || canForceSearch ? (
-            <MediaActionBar placement="head">
-              {canFix ? <BookFixControl booksItemId={item.id} title={item.title} /> : null}
-              {canForceSearch ? <BookForceSearchControl booksItemId={item.id} /> : null}
-            </MediaActionBar>
+            <BooksHeadActions
+              booksItemId={item.id}
+              title={item.title}
+              canFix={canFix}
+              canForceSearch={canForceSearch}
+            />
           ) : undefined
         }
         // ADR-065 / DESIGN-036 D-09 — the MISSING format's honest affordance (unpaired titles only):
