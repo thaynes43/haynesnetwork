@@ -2379,6 +2379,20 @@ input[aria-invalid='true'] {
   color: var(--color-text-muted);
   background: color-mix(in srgb, var(--color-text-muted) 14%, transparent);
 }
+/* The IMMUTABLE tag (owner ruling 2026-07-18) — a non-editable Kometa row's "Locked" badge. Muted
+   tone (never competes with a status chip) but its own OUTLINED skin + inline padlock so it reads as
+   distinct from the neighboring "Kometa config" source badge, not another fill chip. Tokens only. */
+.badge--lock {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-text-muted);
+  background: color-mix(in srgb, var(--color-text-muted) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-text-muted) 34%, transparent);
+}
+.badge--lock svg {
+  flex: none;
+}
 
 /* Item detail */
 .crumbs {
