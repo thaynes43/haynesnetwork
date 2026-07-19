@@ -1,5 +1,9 @@
 # 2026-07-19 — MAM growth: demand is the constraint, not the gate or GB. Tomorrow = collection expansion.
 
+> **UPDATE (later 07-19):** the GB "~100/day" contention noted below is resolved — the shared GB key was
+> split so Libretto's collection-resolve now runs on its OWN dedicated 1,000/day, clear of the app. So
+> tomorrow's expansion is no longer GB-throttled. See [[2026-07-19-gb-quota-resolved]].
+
 Owner directive (2026-07-19): "grab all the Missing now, wait until tomorrow to expand collections, let usenet
 grab what it can, then MAM for missing until we are close to the gate." Resume point for the MAM thread. Pairs
 with [[2026-07-19-gb-quota-monitor-watch]] — the same 07-20 07:00 UTC GB reset is the trigger for both.

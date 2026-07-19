@@ -6,10 +6,14 @@
 // (#409 → ~13 GBRESULTS/day) the shared key STILL exhausted its per-day quota by ~07:41 UTC — spent
 // almost entirely by ONE 07:32 format-pairing resolve run (25 attempts × 1–3 GB legs) plus a 07:41
 // goodreads enrichment burst that hit the per-MINUTE limit first (masking the daily exhaustion the
-// 08:32 run then surfaced). The measured effective cap is ~100 calls/day — the modern low default, not
-// the legacy 1000. So the fix is a persistent, per-consumer daily CALL budget summing to ~85% of the
-// cap (headroom reserved for interactive book Fix), enforced BEFORE the GB call, that skips GB work for
-// the rest of the quota-day WITHOUT tripping the shared breaker (the breaker stays for real 429s).
+// 08:32 run then surfaced). CORRECTION (2026-07-19, GCP-console-verified): the project quota is a
+// genuine 1,000 Queries/day, NOT ~100 — the earlier "~100" was only the APP's slice of a key that was
+// SHARED with LazyLibrarian + Libretto (all three on the same GCP project), which together saturated
+// the one 1,000/day quota daily. That key was split (each now has its own GCP-project key), so the app
+// owns its key's full ~1,000/day; prod env sets pairing 700 / goodreads 200 / bookfix 100. The
+// mechanism below stands: a persistent per-consumer daily CALL budget, enforced BEFORE the GB call,
+// that skips GB work for the rest of the quota-day WITHOUT tripping the shared breaker (which stays the
+// hard backstop for real 429s).
 //
 // This module is the SINGLE WRITER for gb_call_budget (the mam_gate_state class — unaudited rebuildable
 // day-rolling operational state, guard-listed). Counting itself happens in the shared @hnet/goodreads
@@ -28,12 +32,13 @@ const GB_SINGLETON_ID = 'gb';
 export type GbConsumer = 'pairing' | 'goodreads' | 'bookfix';
 
 /**
- * The per-consumer DAILY CALL BUDGETS (env-tunable). Defaults sum to ~85 = ~85% of the measured ~100
- * calls/day cap, leaving ~15 as reserved headroom for INTERACTIVE book Fix (which is metered — see
- * `bookfix` — but never budget-blocked; the reserve is for the person waiting on it). The pairing
- * resolve gets the lion's share (it owns the backlog drain); goodreads enrichment a smaller slice
- * (its comic-text fallback still classifies without GB, so it degrades gracefully when its slice is
- * spent). Raise these only after confirming a higher real cap in the GCP console.
+ * The per-consumer DAILY CALL BUDGETS (env-tunable). The code defaults below (60/25/15) date from the
+ * shared-key era and are conservative; PROD OVERRIDES them via env to 700/200/100 now that the app
+ * owns its own ~1,000/day GB key (see the header CORRECTION). bookfix is metered but never
+ * budget-blocked — the reserve is for the person waiting on an interactive Fix. The pairing resolve
+ * gets the lion's share (it owns the backlog drain); goodreads enrichment a smaller slice (its
+ * comic-text fallback still classifies without GB, so it degrades gracefully when its slice is spent).
+ * The shared breaker remains the hard backstop, so these can safely approach the full per-key cap.
  */
 export const GB_DAILY_CALL_BUDGET: Record<GbConsumer, number> = {
   pairing: Number(process.env.GB_DAILY_CALL_BUDGET_PAIRING ?? 60),
