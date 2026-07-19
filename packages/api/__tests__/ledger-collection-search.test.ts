@@ -40,7 +40,12 @@ async function libIdOf(db: Database, sectionKey: string) {
 
 /** POST /command → the *arr search command ack (radarr MoviesSearch). */
 const commandRoutes: ArrStubRoute[] = [
-  { method: 'POST', path: '/api/v3/command', status: 201, body: { id: 9001, name: 'MoviesSearch' } },
+  {
+    method: 'POST',
+    path: '/api/v3/command',
+    status: 201,
+    body: { id: 9001, name: 'MoviesSearch' },
+  },
   // The movie lookup a search may touch — harmless if unused.
   { path: new RegExp('^/api/v3/movie/\\d+$'), body: movieJson(1) },
 ];
@@ -68,12 +73,18 @@ beforeAll(async () => {
   wanted3 = (await seedMediaItem(t.db, 'radarr', { title: 'Wanted Three', onDiskFileCount: 0 })).id;
   // Monitored-off, 0 on disk — a held=false member that is NOT "Wanted" (nobody is searching for it).
   notMonitored = (
-    await seedMediaItem(t.db, 'radarr', { title: 'Unmonitored', onDiskFileCount: 0, monitored: false })
+    await seedMediaItem(t.db, 'radarr', {
+      title: 'Unmonitored',
+      onDiskFileCount: 0,
+      monitored: false,
+    })
   ).id;
 
   await syncPlexMatches({
     db: t.db,
-    matches: [{ mediaItemId: held, plexLibraryId: moviesLib, ratingKey: '9001', matchedVia: 'tmdb' }],
+    matches: [
+      { mediaItemId: held, plexLibraryId: moviesLib, ratingKey: '9001', matchedVia: 'tmdb' },
+    ],
     scopedLibraryIds: [moviesLib],
   });
 
@@ -105,7 +116,10 @@ async function searchEventsFor(ids: string[]) {
   const rows = await t.db
     .select({ mediaItemId: ledgerEvents.mediaItemId, eventType: ledgerEvents.eventType })
     .from(ledgerEvents);
-  return rows.filter((r) => r.eventType === 'search_requested' && ids.includes(r.mediaItemId));
+  return rows.filter(
+    (r) =>
+      r.eventType === 'search_requested' && r.mediaItemId !== null && ids.includes(r.mediaItemId),
+  );
 }
 
 describe('ledger.forceSearchCollection — bulk movies/TV collection Force Search', () => {
@@ -117,7 +131,13 @@ describe('ledger.forceSearchCollection — bulk movies/TV collection Force Searc
     const res = await api.ledger.forceSearchCollection({ ratingKey: '88001', arrKind: 'radarr' });
 
     // The three Wanted members were searched; the held + unmonitored members were not.
-    expect(res).toMatchObject({ ok: true, candidates: 3, searched: 3, failed: 0, rateLimited: false });
+    expect(res).toMatchObject({
+      ok: true,
+      candidates: 3,
+      searched: 3,
+      failed: 0,
+      rateLimited: false,
+    });
     expect(stub.callsFor('POST', '/api/v3/command')).toHaveLength(3);
 
     // One 'search_requested' audit event per searched Wanted member (single-writer, hard rule 6).

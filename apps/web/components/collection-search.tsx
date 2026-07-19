@@ -55,13 +55,23 @@ export function CollectionForceSearch({
 
   const arrM = trpc.ledger.forceSearchCollection.useMutation({
     onSuccess: (res) => {
-      setOutcome({ searched: res.searched, failed: res.failed, rateLimited: res.rateLimited, unreachable: false });
+      setOutcome({
+        searched: res.searched,
+        failed: res.failed,
+        rateLimited: res.rateLimited,
+        unreachable: false,
+      });
       onDone?.();
     },
   });
   const libM = trpc.collections.forceSearchCollection.useMutation({
     onSuccess: (res) => {
-      setOutcome({ searched: res.searched, failed: res.failed, rateLimited: false, unreachable: res.unreachable });
+      setOutcome({
+        searched: res.searched,
+        failed: res.failed,
+        rateLimited: false,
+        unreachable: res.unreachable,
+      });
       onDone?.();
     },
   });

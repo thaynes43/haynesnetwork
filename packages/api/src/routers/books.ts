@@ -762,7 +762,10 @@ export const booksRouter = router({
       const wantedViews = composeWanted
         ? filterWantedByQuery(
             isCollectionDrill
-              ? await getCollectionWantedBookRequests({ db: ctx.db, collectionId: input.collection! })
+              ? await getCollectionWantedBookRequests({
+                  db: ctx.db,
+                  collectionId: input.collection!,
+                })
               : await getWantedBookRequests({ db: ctx.db, format: WALL_FORMAT[input.mediaKind] }),
             input.query,
           )

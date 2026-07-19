@@ -41,14 +41,22 @@ describe('MEDIA_ACTIONS registry', () => {
 
   it('never uses the retired forked labels', () => {
     const labels = MEDIA_ACTION_TYPES.map((t) => MEDIA_ACTIONS[t].label);
-    for (const forked of ['Fix this', 'Fix season', 'Force Search show', 'Force Search artist', 'Force re-search']) {
+    for (const forked of [
+      'Fix this',
+      'Fix season',
+      'Force Search show',
+      'Force Search artist',
+      'Force re-search',
+    ]) {
       expect(labels).not.toContain(forked);
     }
   });
 
   it('composeActionLabel appends the scope qualifier with " · ", never forks the verb', () => {
     expect(composeActionLabel(MEDIA_ACTIONS.forceSearch)).toBe('Force Search');
-    expect(composeActionLabel(MEDIA_ACTIONS.forceSearch, 'Season 2')).toBe('Force Search · Season 2');
+    expect(composeActionLabel(MEDIA_ACTIONS.forceSearch, 'Season 2')).toBe(
+      'Force Search · Season 2',
+    );
     expect(composeActionLabel(MEDIA_ACTIONS.fix, 'Whole show')).toBe('Fix · Whole show');
     expect(composeActionLabel(MEDIA_ACTIONS.fix, null)).toBe('Fix');
   });
@@ -111,10 +119,14 @@ describe('MediaAction', () => {
   });
 
   it('the badge honors disabled and falls back to the composed label when no ariaLabel is given', () => {
-    const { rerender } = wrap(<MediaAction action="forceSearch" presentation="badge" onFire={() => {}} />);
+    const { rerender } = wrap(
+      <MediaAction action="forceSearch" presentation="badge" onFire={() => {}} />,
+    );
     expect(screen.getByRole('button', { name: 'Force Search' })).toBeTruthy();
     rerender(<MediaAction action="forceSearch" presentation="badge" onFire={() => {}} disabled />);
-    expect(screen.getByRole('button', { name: 'Force Search' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: 'Force Search' }).hasAttribute('disabled')).toBe(
+      true,
+    );
   });
 
   it('renders notOnDisk as an inert, disabled missing pill', () => {

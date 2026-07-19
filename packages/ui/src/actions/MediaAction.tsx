@@ -16,11 +16,7 @@
 // one component, so the badge and the pill can never drift in verb/gating (the action-anatomy guard).
 import type { MouseEvent, ReactElement } from 'react';
 import { ConfirmButton } from '../controls/ConfirmButton';
-import {
-  MEDIA_ACTIONS,
-  composeActionLabel,
-  type MediaActionType,
-} from './action-registry';
+import { MEDIA_ACTIONS, composeActionLabel, type MediaActionType } from './action-registry';
 
 export interface MediaActionProps {
   /** The canonical action — the registry KEY (e.g. "fix"). The component looks up label + variant

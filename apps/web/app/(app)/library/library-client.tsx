@@ -755,7 +755,9 @@ function MediaBrowser({
           {/* ADR-071 owner ruling 2026-07-19 — the collection-centric "Search Missing": force-search
               EVERY still-missing member of this movies/TV collection at once (the shared Force Search
               pill; gated exactly as the per-item tile search). Sits next to Edit collection. */}
-          {collectionsTab !== null && (arrKind === 'radarr' || arrKind === 'sonarr') && group !== null ? (
+          {collectionsTab !== null &&
+          (arrKind === 'radarr' || arrKind === 'sonarr') &&
+          group !== null ? (
             <span className="library-drill__search">
               <CollectionForceSearch
                 target={{ provider: 'arr', ratingKey: group, arrKind }}
@@ -857,9 +859,7 @@ function MediaBrowser({
                       className={wantedState === s.value ? 'is-active' : undefined}
                       aria-pressed={wantedState === s.value}
                       data-testid={s.testId}
-                      onClick={() =>
-                        patchParams({ wanted: s.value === 'all' ? null : s.value })
-                      }
+                      onClick={() => patchParams({ wanted: s.value === 'all' ? null : s.value })}
                     >
                       {s.label}
                     </button>
