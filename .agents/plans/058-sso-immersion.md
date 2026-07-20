@@ -1,10 +1,11 @@
 # PLAN-058: SSO immersion — one login, every site, no per-app "Log in with Plex"
 
-- **Status:** Planned — inventory + per-app remediation designed (DESIGN-041); **awaiting owner
-  rulings on DESIGN-041 Q-01..Q-09 before execution**. No code/estate changes made yet. Q-09
-  (added 2026-07-17): the Authentik Plex source allowed-servers list must gain HOps BEFORE any
-  HOps-only member is invited, or their very first login fails — this is the front door for
-  everything else in this plan.
+- **Status:** Executing — DESIGN-041 **Accepted (2026-07-20)**, all Q-01..Q-09 resolved or
+  assumed-accepted (Q-06 resolved-as-deferred). Quick wins are done (Kavita `AutoLogin` D-02 + ABS
+  `authOpenIDAutoLaunch` D-03 audited at target) and the family-facing Tautulli pilot (D-07 / Q-02)
+  is LIVE; the owner's **post-rulings execution order** (below) covers the remaining work. Q-09
+  (Authentik Plex source allowed-servers) is resolved and was applied by the owner himself — the
+  front door for everything else in this plan is already in place.
 - **Intake (owner vision, 2026-07-16 late, near-verbatim):** "Auto login is very important to me,
   so it feels like SSO when you log into haynesnetwork.com and then you can go from site to site
   with your plex account. We have a pretty big immersion break with sites that provide their own
@@ -40,7 +41,7 @@ still preview-only; Plex cards: plex.tv identity IS the SSO identity, N/A by des
 | Seerr | NO stable OIDC upstream (v3.3.0; PR #2715 open) — default = watch upstream, keep Plex OAuth; preview image only on owner opt-in (Q-01) | D-09 |
 | Plex / K8Plex / PlexOps | N/A by design (plex.tv auth; the Plex account is the estate identity) | D-10 |
 
-## Execution phases (blocked on the Q-NN rulings)
+## Execution phases (detailed per-phase reference — rulings now resolved, see the owner order below)
 
 0. **Verify pass (read-only, agent-safe).** Diff live `app_catalog` vs the seeded 10 (admin may
    have added rows — they join the inventory). Confirm each app's Authentik provider binds the
@@ -71,6 +72,32 @@ still preview-only; Plex cards: plex.tv identity IS the SSO identity, N/A by des
 An ADR (next free number at execution time) accompanies the first executing change, recording the
 owner's Q-01/Q-02 rulings as the decision; DESIGN-041 stays the mechanism record. Glossary terms
 T-194..T-196 (Estate Auto-Login, Immersion Break, Forward-Auth Front Door) landed with this plan.
+
+## Post-rulings execution order (owner, 2026-07-20)
+
+With DESIGN-041 Accepted, the owner set the order over the now-unblocked work. The quick-win flips
+(D-02 Kavita `AutoLogin`, D-03 ABS `authOpenIDAutoLaunch`) and the family-facing Tautulli pilot
+(D-07, Q-02, gated to `authentik Admins` + `family`) are **already LIVE**, so the order picks up
+from Immich:
+
+1. **Immich** — verify the live OAuth config (incl. the `app.immich:///oauth-callback` mobile
+   redirect URI), then flip `Auto Launch` (D-04, Q-04: "trust but verify").
+2. **Open WebUI** — catalog card deep-link → `/oauth/oidc/login`, revert-on-upstream (D-05, Q-05).
+3. **Tautulli ×2 LAN front doors** — `tautulli-k8plex` + `tautulli-plexops` get the Authentik
+   forward-auth front door (D-07, Q-08), staying on their internal `haynesops.com` ingress per
+   DESIGN-041 **D-11** (only the auth redirect is public), default access **admins-only**. **Creds
+   gated on two HaynesKube 1Password items — `tautulli-k8plex` and `tautulli-plexops`, username +
+   password each** (the owner's "save a few 1Password items for the http login creds").
+4. **Soak** — let the auto-login rollout settle before the role-sync leg.
+5. **Kavita role sync** (D-08, Q-06) — deferred: flip "Sync user settings with OIDC roles" only
+   after the owner supplies the tier table (group → Kavita roles / `library-<Name>` / age
+   restriction; floor-not-deny per the OPS-012 lesson).
+6. **Seerr upstream watch** (D-09, Q-01) — standing watch on seerr-team/seerr PR #2715; adopt the
+   first stable release that carries OIDC (the linking flow preserves request attribution).
+
+The phase table above stays the detailed per-phase reference (verify pass, D-01 break-glass
+discipline, Tautulli carve-outs, etc.); this list is the owner's ordering over it, all executed
+under the same D-01 (break-glass) and D-11 (LAN-only ingress) discipline.
 
 ## Hard rules for the executor
 
