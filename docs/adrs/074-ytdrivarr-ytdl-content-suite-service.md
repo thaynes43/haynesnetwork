@@ -1,6 +1,11 @@
 # ADR-074: Adopt ytdrivarr — the *arr-shaped ytdl-content suite service (replaces ytdl-sub-config-manager)
 
-- **Status:** Proposed <!-- codifies the binding scoping rulings 2026-07-20 (PLAN-025) PLUS the technical forks below, which are RECOMMENDED — the owner may veto any at Acceptance -->
+- **Status:** **Accepted (owner, 2026-07-20 — "That all sounds good")**. All four fork positions
+  (a)–(d) ratified as recommended. DESIGN-045 Q-01 (AGPL-3.0), Q-02 (own Postgres 16 instance in
+  `downloads`), Q-05 (confirm-then-delete at M3), Q-06 (podcasts/RSS non-goal) resolved on the
+  defaults; Q-04 (poster-guard fold-in) stays the recorded open fork. **Q-03 OVERRIDDEN at
+  Acceptance:** "let's move away from audio as video right away and support that first class" —
+  music is FIRST-CLASS from the M2 cutover (see the DESIGN-045 same-day acceptance amendment).
 - **Date:** 2026-07-20
 - **Deciders:** Tom Haynes (scoping rulings 2026-07-20, captured in PLAN-025 — the four gating
   questions Q-01/Q-04/Q-05/Q-06 and the plugin-architecture addendum are BINDING). The technical
