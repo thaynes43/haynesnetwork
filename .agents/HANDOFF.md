@@ -4,6 +4,21 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ SSO WAVE 1 (written 2026-07-20 ~19:30 UTC — supplements the block below; owner present)
+
+**The next big thing is TRUE SSO (PLAN-058) — owner-picked; wave 1 executed same evening.**
+DESIGN-041 is **Accepted** (all Q-01..Q-09 closed; #449 + the as-executed amendment). LIVE:
+**Immich zero-click** (autoLaunch flipped, OAuth+mobile-URI verified first) · **OWUI zero-click**
+(catalog deep-link via the audited writer) · **LAN Tautulli ×2 front doors: infra merged
+(haynes-ops #2176) and verified — the ARM step is the owner's**: mark draft **haynes-ops #2177**
+ready + merge, then LAN click-test both `*.haynesops.com` hosts (flips them open→admins-only).
+Also: v0.88.4 shipped earlier (Music wall Collection chip removed, owner-ruled). Binding new
+posture (memory `sso-authentik-only-posture` + the design amendment): **NO local accounts or
+password break-glasses — Authentik-hard-dependent is accepted**; escapes are API-level reverts.
+New design rule **D-11**: LAN-only apps NEVER gain a public ingress for SSO. Next on this
+thread: owner arm+click-test → soak → Kavita role-sync leg (Q-06 tier table) + the
+grant→login-policy sync ADR. Full state: `.agents/context/2026-07-20-sso-wave-1.md`.
+
 ## ▶ NEXT SESSION — start here (written 2026-07-20 ~17:15 UTC — the expansion day wrap; owner remote)
 
 **v0.88.3 live-verified (15:44 UTC).** Today: the Collections saga's last legs LIVE-PROVEN +

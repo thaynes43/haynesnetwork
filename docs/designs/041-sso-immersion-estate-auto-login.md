@@ -356,6 +356,43 @@ and **lost** when that worktree was cleaned up — the owner flagged it himself.
 the re-capture. It is the origin case of the standing "backlog/saga state must reach `main`" rule:
 agent working state and doc rulings are never left untracked in a disposable worktree.
 
+## Amendment — 2026-07-20 (evening): wave 1 AS-EXECUTED + the Authentik-only posture ruling
+
+**The Authentik-only posture (owner ruling, binding, supplements D-01):** "we do not need local
+admin when we have Authentik, I don't plan to use local accounts." Estate apps being
+Authentik-hard-dependent (the Paperless posture) is ACCEPTED — no standing password logins or
+local accounts are added as safety measures. The sanctioned escape hatches are admin API /
+config-level reverts; pre-existing break-glass accounts (Kavita hnetadmin) remain OIDC-down
+emergency fallbacks only.
+
+**D-04 Immich — EXECUTED.** Live OAuth verified correct first (issuer, client, `immich_role`
+claim, mobile `app.immich:///oauth-callback` already registered on Authentik provider pk 39 —
+which is deliberately NOT blueprint-managed, per the blueprints README's OIDC deferral), then
+`oauth.autoLaunch=true` via the admin API (the key rides `homepage-secret`). Zero-click proven
+(unauth authorize → Authentik). `?autoLaunch=0` stops the redirect but `passwordLogin` stays
+false — SSO-only per the posture ruling above. Revert = `PUT /api/system-config
+oauth.autoLaunch=false`. Runtime-state note: the flip lives in Immich's own DB (survives pod
+restarts; resets on a DB rebuild — re-flip then).
+
+**D-05 Open WebUI — EXECUTED.** Catalog card URL updated via the audited `updateApp` production
+writer: `https://ai.haynesnetwork.com` → `https://ai.haynesnetwork.com/oauth/oidc/login`
+(audit row recorded; the OLD url is the documented revert value). Verified: the deep-link 302s
+into Authentik authorize with the `groups` scope intact (group sync preserved).
+
+**D-07/Q-08 LAN Tautulli front doors — INFRA LIVE, ARM PENDING (owner).** haynes-ops #2176
+merged: per-app proxy providers + applications + admins-only bindings + dedicated INTERNAL
+outposts (the D-11 rule honored — apps stay on `*.haynesops.com`; only the auth redirect
+traverses public Authentik, verified 302s in-cluster) + the Authorization-re-add twin
+middlewares + ExternalSecrets off the 1Password Login items (no field quirks — top-level
+`username`/`password` properties synced first-try). **Discovery that simplifies D-07:** both
+in-cluster instances serve their UI OPEN today, so the forward-auth gate ALONE delivers
+admins-only zero-click — the HTTP-Basic injection wiring is staged but DORMANT (optional
+hardening; per the posture ruling it stays dormant unless a real need appears). **The arm step
+is haynes-ops #2177 (draft, "merge after arm")** — attaching the middlewares flips both hosts
+from open-on-LAN to admins-only, and browser login is unverifiable from the pod, so the owner
+marks it ready + merges, then LAN click-tests both hosts (zero-click through Authentik as an
+admin; access-denied as non-admin).
+
 ## Sources (external capabilities, verified 2026-07-17)
 
 - Seerr OIDC state: <https://github.com/seerr-team/seerr/pull/2715> (open),
