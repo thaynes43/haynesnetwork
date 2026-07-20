@@ -13,8 +13,14 @@
   media rules); haynesnetwork integrates it exactly like Sonarr/Radarr (one-way sync in,
   confined write client, hard-rule-4 source-of-truth pattern). The decisive driver stands:
   Fix-everywhere parity for YouTube/Peloton items requires per-item remediation only a service
-  can do. Suite doctrine applies (the Libretto precedent): HEADLESS, generic/reusable, the app
-  owns 100% of the UX.
+  can do. Generic/reusable like the suite repos — but **NOT headless (owner correction, same
+  evening: "arrs are not headless"; supersedes the Libretto-headless framing first recorded
+  here):** ytdrivarr ships its OWN operator/admin web UI like Sonarr's console (sources,
+  provider config + test, runs, health, logs), behind Authentik like every other *arr;
+  **haynesnetwork remains the MEMBER-facing layer** (Edit-grant mutations, per-item Fix, the
+  walls) via the confined client — members never touch ytdrivarr's UI, exactly the
+  Sonarr/Radarr split today. Per the division-of-labor ruling, ytdrivarr's UI is FABLE-built;
+  Opus builds the service internals/tests.
 - **Q-06 codebase → NEW REPO; port the fragile-but-working Peloton logic behind the plugin
   seam.** The old manager keeps running untouched until cutover.
 - **Q-04 state → SERVICE-OWNED.** Its own DB; it GENERATES ytdl-sub configs itself (no git-PR
