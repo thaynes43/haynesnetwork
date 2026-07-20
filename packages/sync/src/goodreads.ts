@@ -249,13 +249,16 @@ export async function runGoodreadsSync(input: {
       if (allBlipped) {
         // Every shelf blipped transiently — a blip, not a broken link. Keep status as-is ('linked' stays
         // linked; a retried 'error' row stays 'error'), record the soft note, retry next run. Do NOT run
-        // the orchestrator / advance last_synced_at (nothing was truthfully read).
+        // the orchestrator / advance last_synced_at (nothing was truthfully read). The soft-note write is
+        // guarded (like the outer-catch markIntegrationSynced): a bookkeeping-write failure must NEVER fall
+        // to the outer catch and flip a still-healthy link to 'error' (that would re-introduce the very
+        // "transient blip → error" bug this path exists to prevent).
         await noteIntegrationSyncBlip({
           db: input.db,
           integrationId: integ.id,
           note: blipNote!,
           ...(input.now ? { now: input.now } : {}),
-        });
+        }).catch(() => {});
         transientBlips += 1;
         perIntegration.push({ integrationId: integ.id, userId: integ.userId, ok: true, blip: blipNote });
       } else {
@@ -275,12 +278,15 @@ export async function runGoodreadsSync(input: {
         if (blipNote) {
           // Partial: the clean-sync write just cleared last_sync_error — restore the blip so it stays
           // visible. The soft-note writer sets NO status, so it stays 'linked' with last_synced_at advanced.
+          // Guarded (like the outer-catch markIntegrationSynced): this is a POST-SUCCESS bookkeeping write —
+          // the integration was already truthfully (partially) synced above, so a failure to restore the
+          // soft note must NEVER fall to the outer catch and downgrade a synced integration back to 'error'.
           await noteIntegrationSyncBlip({
             db: input.db,
             integrationId: integ.id,
             note: blipNote,
             ...(input.now ? { now: input.now } : {}),
-          });
+          }).catch(() => {});
           transientBlips += 1;
         }
         synced += 1;
@@ -298,9 +304,14 @@ export async function runGoodreadsSync(input: {
       failed += 1;
       const message = error instanceof Error ? error.message : String(error);
       logger.error('goodreads-sync: integration failed', { integrationId: integ.id, error: message });
-      await markIntegrationSynced({ db: input.db, integrationId: integ.id, error: message }).catch(
-        () => {},
-      );
+      // Thread the run clock so a freshly-errored row's updated_at honours `input.now` (deterministic
+      // error-retry backoff on the worklist), matching the transient-blip + success writers above.
+      await markIntegrationSynced({
+        db: input.db,
+        integrationId: integ.id,
+        error: message,
+        ...(input.now ? { now: input.now } : {}),
+      }).catch(() => {});
       perIntegration.push({ integrationId: integ.id, userId: integ.userId, ok: false, error: message });
     }
   }
