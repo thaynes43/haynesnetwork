@@ -31,6 +31,16 @@
   directly (the collections direct-add doctrine: caps per role, over-cap → ticket, admins
   unbounded, audit rows same-tx). No suggest→approve.
 
+**Addendum ruling (owner, same evening): the FULL *arr deployment pattern.** Near-verbatim:
+"follow the arrs pattern where this service is LAN only, no need to manage users, and we
+expose bits of its capabilities over an API on haynesnetwork." So: **LAN-ONLY** (internal
+`*.haynesops.com` ingress only, never public; the admin console is reached on LAN like
+Sonarr's; gate it the way the estate's *arrs are actually gated today) · **NO user
+management** in ytdrivarr (no accounts/OIDC/roles — a single API key guards the API, the
+X-Api-Key idiom; ALL per-user identity/grants/caps/audit live app-side) · **haynesnetwork
+exposes selected capabilities over ITS OWN API** (tRPC → in-cluster service DNS + API key via
+the confined `@hnet/ytdl` client; members consume the app, never the service).
+
 **Addendum ruling (owner, same evening — binding on the design): the plugin architecture is
 *arr-STYLE EXTENSION POINTS, not a port shim.** Near-verbatim: "It's important to remember how
 complex Peloton is vs YouTube so we need to 'plugin' like modularity like how *arrs let you
