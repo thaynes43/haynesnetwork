@@ -7,9 +7,10 @@
 import type { DbClient } from '@hnet/db';
 import {
   guardedGbResolve,
-  listLinkedIntegrations,
+  listIntegrationsForSync,
   makeGbBudgetTracker,
   markIntegrationSynced,
+  noteIntegrationSyncBlip,
   peekGbQuotaGate,
   retryQueuedBookFixes,
   syncGoodreadsIntegration,
@@ -21,6 +22,7 @@ import {
   type SyncGoodreadsReport,
 } from '@hnet/domain';
 import {
+  classifyGoodreadsFailure,
   isAbsentCustomShelfError,
   isComicText,
   type GbVolume,
@@ -56,10 +58,16 @@ export interface GoodreadsSourceBundle {
 }
 
 export interface GoodreadsSyncReport {
-  /** Linked integrations found. */
+  /** Integrations on the worklist this run ('linked' + due 'error' rows — the self-healing worklist). */
   integrations: number;
   synced: number;
   failed: number;
+  /**
+   * ADR-057 amend (goodreads-sync resilience) — integrations whose run hit a TRANSIENT upstream blip on
+   * one or more shelves (5xx/429/network/timeout). The link is KEPT (never flipped to 'error') and the
+   * blip is recorded as a soft note in last_sync_error; the integration retries next run.
+   */
+  transientBlips: number;
   /**
    * ADR-067 C-07 (PLAN-055) — shelf items whose GB enrichment was SKIPPED because the quota
    * breaker was/went open this run (they mirror honestly un-enriched; one log line, zero 429s).
@@ -79,14 +87,21 @@ export interface GoodreadsSyncReport {
     ok: boolean;
     error?: string;
     report?: SyncGoodreadsReport;
+    /** A transient upstream blip on one or more shelves this run — link kept, retries next run. */
+    blip?: string;
   }>;
 }
 
 /**
- * Run the goodreads-sync pass: for every LINKED Goodreads integration, fetch + enrich its shelves and hand
- * them to the domain orchestrator. Per-integration isolation — one unreachable/private shelf marks THAT
- * integration `error` (via markIntegrationSynced) and continues; it never fails the whole run. A run with
- * zero linked integrations is a clean no-op (not a failure).
+ * Run the goodreads-sync pass: for every integration on the self-healing worklist (every 'linked' row plus
+ * any 'error' row past its retry backoff — listIntegrationsForSync), fetch + enrich its shelves and hand
+ * them to the domain orchestrator. Per-shelf isolation with TRANSIENT/PERMANENT classification (ADR-057
+ * amend): a transient upstream blip (5xx/429/network/timeout) on a shelf is skipped, the link is KEPT, and
+ * the integration retries next run (a soft note in last_sync_error only); a PERMANENT failure
+ * (profile private/deleted — a built-in shelf 404/403/410, or an unexpected throw) marks THAT integration
+ * `error` (via markIntegrationSynced) and continues; it never fails the whole run. A previously-'error'
+ * row self-heals to 'linked' the moment a shelf reads cleanly. A run with zero worklist rows is a clean
+ * no-op (not a failure).
  */
 export async function runGoodreadsSync(input: {
   db?: DbClient;
@@ -104,10 +119,15 @@ export async function runGoodreadsSync(input: {
   logger?: SyncLogger;
 }): Promise<GoodreadsSyncReport> {
   const logger = input.logger ?? noopLogger;
-  const integrations = await listLinkedIntegrations({ db: input.db, provider: 'goodreads' });
+  const integrations = await listIntegrationsForSync({
+    db: input.db,
+    provider: 'goodreads',
+    ...(input.now ? { now: input.now } : {}),
+  });
   const perIntegration: GoodreadsSyncReport['perIntegration'] = [];
   let synced = 0;
   let failed = 0;
+  let transientBlips = 0;
 
   // ADR-067 C-07 — the GB quota breaker, consulted ONCE up front (an expired window peeks closed,
   // so the run's first guarded resolve below makes the half-open probe). When open: ZERO GB calls
@@ -134,11 +154,33 @@ export async function runGoodreadsSync(input: {
   let budgetLogged = false;
 
   for (const integ of integrations) {
+    const enriched: EnrichedShelfItem[] = [];
+    const syncedShelves: string[] = [];
+    let blipNote: string | undefined; // last transient blip → soft note, link stays as-is
+    let permanentError: unknown; // profile gone/private → flip to 'error' via the outer catch
     try {
-      const enriched: EnrichedShelfItem[] = [];
-      const syncedShelves: string[] = [];
       for (const shelf of integ.shelves) {
-        const items = await fetchShelfTolerant(input.goodreads.rss, integ.externalUserId, shelf);
+        let items: GoodreadsShelfItem[];
+        try {
+          items = await fetchShelfTolerant(input.goodreads.rss, integ.externalUserId, shelf);
+        } catch (error) {
+          // ADR-057 amend — classify the READ failure. A transient upstream blip (5xx/429/network/
+          // timeout — the owner's 502) must NOT break the link: skip THIS shelf and keep going, leaving
+          // its mirror intact (no syncedShelves push ⇒ no tombstoning). Only a PERMANENT failure
+          // (profile private/deleted — a built-in shelf 404/403/410, or an unexpected throw) breaks the
+          // integration and is re-thrown into the outer catch below (→ status='error').
+          if (classifyGoodreadsFailure(error) === 'transient') {
+            blipNote = error instanceof Error ? error.message : String(error);
+            logger.warn('goodreads-sync: shelf transient blip — kept linked, will retry next run', {
+              integrationId: integ.id,
+              shelf,
+              error: blipNote,
+            });
+            continue; // SKIP this shelf; do NOT push to syncedShelves → tombstoning stays scoped
+          }
+          permanentError = error; // private/deleted profile → the whole integration is broken
+          break;
+        }
         for (const item of items) {
           // GB enrichment through the breaker seam: per-attempt retry/backoff stays in the client;
           // a quota 429 trips the shared breaker (skipping the REST of the run — one line, not
@@ -198,22 +240,61 @@ export async function runGoodreadsSync(input: {
             isComic: (gb?.isComic ?? false) || isComicText(item.title, item.author),
           });
         }
-        syncedShelves.push(shelf);
+        syncedShelves.push(shelf); // only a fully-read shelf counts as synced
       }
 
-      const report = await syncGoodreadsIntegration({
-        db: input.db,
-        integrationId: integ.id,
-        items: enriched,
-        syncedShelves,
-        ...(input.ll ? { ll: input.ll } : {}),
-        ...(input.kapowarr ? { kapowarr: input.kapowarr } : {}),
-        ...(input.now ? { now: input.now } : {}),
-        logger,
-      });
-      synced += 1;
-      perIntegration.push({ integrationId: integ.id, userId: integ.userId, ok: true, report });
+      if (permanentError) throw permanentError; // reuse the outer catch → markIntegrationSynced = 'error'
+
+      const allBlipped = syncedShelves.length === 0 && blipNote !== undefined;
+      if (allBlipped) {
+        // Every shelf blipped transiently — a blip, not a broken link. Keep status as-is ('linked' stays
+        // linked; a retried 'error' row stays 'error'), record the soft note, retry next run. Do NOT run
+        // the orchestrator / advance last_synced_at (nothing was truthfully read).
+        await noteIntegrationSyncBlip({
+          db: input.db,
+          integrationId: integ.id,
+          note: blipNote!,
+          ...(input.now ? { now: input.now } : {}),
+        });
+        transientBlips += 1;
+        perIntegration.push({ integrationId: integ.id, userId: integ.userId, ok: true, blip: blipNote });
+      } else {
+        // Partial (or full, or empty-shelves) success: sync what we read. This marks status 'linked',
+        // clears last_sync_error, and advances last_synced_at (step 6 of syncGoodreadsIntegration). Because
+        // tombstoning is scoped to syncedShelves, a blipped (un-read) shelf's mirror is left intact.
+        const report = await syncGoodreadsIntegration({
+          db: input.db,
+          integrationId: integ.id,
+          items: enriched,
+          syncedShelves,
+          ...(input.ll ? { ll: input.ll } : {}),
+          ...(input.kapowarr ? { kapowarr: input.kapowarr } : {}),
+          ...(input.now ? { now: input.now } : {}),
+          logger,
+        });
+        if (blipNote) {
+          // Partial: the clean-sync write just cleared last_sync_error — restore the blip so it stays
+          // visible. The soft-note writer sets NO status, so it stays 'linked' with last_synced_at advanced.
+          await noteIntegrationSyncBlip({
+            db: input.db,
+            integrationId: integ.id,
+            note: blipNote,
+            ...(input.now ? { now: input.now } : {}),
+          });
+          transientBlips += 1;
+        }
+        synced += 1;
+        perIntegration.push({
+          integrationId: integ.id,
+          userId: integ.userId,
+          ok: true,
+          report,
+          ...(blipNote ? { blip: blipNote } : {}),
+        });
+      }
     } catch (error) {
+      // PERMANENT / orchestrator / DB failure — unchanged behavior: flip to 'error' (self-heals via the
+      // worklist backoff once upstream is back and a shelf reads cleanly).
       failed += 1;
       const message = error instanceof Error ? error.message : String(error);
       logger.error('goodreads-sync: integration failed', { integrationId: integ.id, error: message });
@@ -248,6 +329,7 @@ export async function runGoodreadsSync(input: {
     integrations: integrations.length,
     synced,
     failed,
+    transientBlips,
     skippedEnrichment,
     skippedBudget,
     ...(fixRetries !== undefined ? { fixRetries } : {}),

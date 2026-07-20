@@ -13,6 +13,10 @@ import {
   requestPhase,
   linkIntegration,
   listLinkedIntegrations,
+  listIntegrationsForSync,
+  markIntegrationSynced,
+  noteIntegrationSyncBlip,
+  ERROR_RETRY_BACKOFF_MS,
   loadLibraryMatcher,
   mapKapowarrVolumeStatus,
   mapLlStatus,
@@ -224,6 +228,79 @@ describe('link / unlink (audited)', () => {
       .where(eq(permissionAudit.action, 'unlink_integration'));
     expect(unlinkAudits).toHaveLength(1);
     expect(await listLinkedIntegrations({ db: t.db, provider: 'goodreads' })).toHaveLength(0);
+  });
+});
+
+// ADR-057 amend (goodreads-sync resilience) — the self-healing worklist + the soft transient-blip writer.
+async function linkFor(externalUserId: string): Promise<{ userId: string; integrationId: string }> {
+  const user = await createUser(t.db);
+  const { integration } = await linkIntegration({
+    db: t.db,
+    userId: user.id,
+    provider: 'goodreads',
+    externalUserId,
+    profileRef: `https://www.goodreads.com/user/show/${externalUserId}`,
+    actorId: user.id,
+  });
+  return { userId: user.id, integrationId: integration.id };
+}
+
+describe('listIntegrationsForSync (the self-healing worklist)', () => {
+  it('returns linked + stale-error rows; excludes unlinked (never resurrected) and fresh-error (backoff)', async () => {
+    const now = new Date('2026-07-19T12:00:00Z');
+
+    const linked = await linkFor('1'); // 'linked' — always due
+
+    const unlinked = await linkFor('2'); // 'unlinked' — never on the worklist
+    await unlinkIntegration({ db: t.db, userId: unlinked.userId, provider: 'goodreads', actorId: unlinked.userId });
+
+    const freshErr = await linkFor('3'); // 'error' updated_at == now → held back by the backoff
+    await markIntegrationSynced({ db: t.db, integrationId: freshErr.integrationId, error: 'boom', now });
+
+    const staleErr = await linkFor('4'); // 'error' updated_at older than the backoff → due
+    const stale = new Date(now.getTime() - ERROR_RETRY_BACKOFF_MS - 60_000);
+    await markIntegrationSynced({ db: t.db, integrationId: staleErr.integrationId, error: 'boom', now: stale });
+
+    const due = await listIntegrationsForSync({ db: t.db, provider: 'goodreads', now });
+    const ids = due.map((r) => r.id).sort();
+    expect(ids).toEqual([linked.integrationId, staleErr.integrationId].sort());
+    expect(due.map((r) => r.status)).not.toContain('unlinked');
+  });
+});
+
+describe('noteIntegrationSyncBlip (soft transient-blip note)', () => {
+  it('records the note + bumps updated_at on a linked row WITHOUT changing status or last_synced_at', async () => {
+    const { integrationId } = await linkFor('10');
+    const later = new Date('2026-07-19T13:00:00Z');
+    await noteIntegrationSyncBlip({ db: t.db, integrationId, note: 'HTTP 502', now: later });
+
+    const [row] = await t.db.select().from(userIntegrations).where(eq(userIntegrations.id, integrationId));
+    expect(row!.status).toBe('linked'); // unchanged
+    expect(row!.lastSyncError).toBe('HTTP 502');
+    expect(row!.updatedAt.getTime()).toBe(later.getTime());
+    expect(row!.lastSyncedAt).toBeNull(); // never advanced
+  });
+
+  it('is a NO-OP on an unlinked row (the ne(status, "unlinked") guard is preserved)', async () => {
+    const { userId, integrationId } = await linkFor('11');
+    await unlinkIntegration({ db: t.db, userId, provider: 'goodreads', actorId: userId });
+    await noteIntegrationSyncBlip({ db: t.db, integrationId, note: 'HTTP 502' });
+
+    const [row] = await t.db.select().from(userIntegrations).where(eq(userIntegrations.id, integrationId));
+    expect(row!.status).toBe('unlinked'); // never resurrected
+    expect(row!.lastSyncError).toBeNull(); // untouched
+  });
+
+  it('leaves an "error" row "error" but bumps updated_at + note (backoff clock advances)', async () => {
+    const { integrationId } = await linkFor('12');
+    await markIntegrationSynced({ db: t.db, integrationId, error: 'first' });
+    const later = new Date('2026-07-19T14:00:00Z');
+    await noteIntegrationSyncBlip({ db: t.db, integrationId, note: 'HTTP 503', now: later });
+
+    const [row] = await t.db.select().from(userIntegrations).where(eq(userIntegrations.id, integrationId));
+    expect(row!.status).toBe('error'); // stays broken — the note sets no status
+    expect(row!.lastSyncError).toBe('HTTP 503');
+    expect(row!.updatedAt.getTime()).toBe(later.getTime());
   });
 });
 

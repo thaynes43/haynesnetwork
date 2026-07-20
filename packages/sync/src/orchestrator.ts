@@ -1012,6 +1012,8 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
         integrations: goodreadsSync.integrations,
         synced: goodreadsSync.synced,
         failed: goodreadsSync.failed,
+        // ADR-057 amend — transient upstream blips that KEPT the link (retry next run), never flipped 'error'.
+        transientBlips: goodreadsSync.transientBlips,
         // ADR-067 (PLAN-055) — quota-skipped enrichment + the daily-budget skip + the queued-fix retry pass.
         skippedEnrichment: goodreadsSync.skippedEnrichment,
         skippedBudget: goodreadsSync.skippedBudget,
