@@ -4,6 +4,21 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ YTDRIVARR DAY 1: DESIGNED, ACCEPTED, M1 + CONSOLE SHIPPED (written 2026-07-20 ~23:30 UTC — supersedes the block below)
+
+**The ytdl platform went vision → accepted design → shipped skeleton in one evening.**
+ADR-074 + DESIGN-045 ACCEPTED (#457/#458; Fable-reviewed; **Q-03 overridden: music FIRST-CLASS
+from M2**; AGPL-3.0; own CNPG PG16). ytdrivarr repo: **M1 merged** (PR #1 — the C1–C8 contract
+seam, typed registry, 8-table domain w/ `mediaKind`, X-Api-Key REST API + OpenAPI, both preset
+families, atomic projection, trivial provider e2e, 44 tests) + **the operator console shell
+merged** (PR #2 — FABLE-built per the division-of-labor ruling; Sources/Libraries/Runs/Health/
+Providers + key gate; armed-remove two-step, zero-reflow; 58 tests; image `sha-68df68e`).
+**Deploy STAGED: haynes-ops #2178 (draft, bumped to sha-68df68e) gated on TWO owner steps** —
+the 1P item `ytdrivarr` (`YTDRIVARR_API_KEYS`) and the repo Actions toggle (allow Actions to
+create PRs, for release-please). Then merge #2178 → flux → verify /health + console on LAN.
+**Next build: M2** (YouTube takeover + first-class music; one owner nod = the music target).
+Full arc + evidence: `.agents/context/2026-07-20-ytdrivarr-day1-build.md`.
+
 ## ▶ THE NEXT BIG THING IS RATIFIED: the ytdl platform (written 2026-07-20 ~21:00 UTC)
 
 **PLAN-025 is SCOPED — the owner ran the scoping session tonight and ruled all four gates on
