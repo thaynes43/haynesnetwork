@@ -214,11 +214,9 @@ DESIGN-045 D-19 (M1–M5); PLAN-025 the executable build plan.
   **ADR-072 / DESIGN-043** (collections direct-add).
   The confined-client precedent: **ADR-070 / `@hnet/libretto`** (read/write split, arr-write-import-guard).
 - Glossary: this change adds T-214…T-224 (ytdrivarr, Source, Source Provider/Plugin, SubscriptionEntry,
-  ytdrivarr Library, Run, RemediationJob, Discovery, Remediation, Bearer Freshness SLA, `@hnet/ytdl`)
+  ytdrivarr Library, ytdrivarr Run, RemediationJob, Discovery, Remediation, `@hnet/ytdl`, ytdrivarr Operator Console)
   in the same PR (DDD-001).
 - Owner rulings of record: **PLAN-025** (the four Q-rulings + the plugin addendum, 2026-07-20), plus
   the three same-evening rulings (owner 2026-07-20): "arrs are not headless" (own operator console);
   LAN-only + no user management + single API key; the app exposes selected capabilities over its own
   API. The PLAN-025 note on `main` is amended in parallel by the coordinator.
-</content>
-</invoke>

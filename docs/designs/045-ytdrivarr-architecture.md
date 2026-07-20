@@ -499,4 +499,3 @@ capped+audited, Q-06 new repo + plugin seam — are NOT re-asked here).
 | Q-04 | **Poster guard fold-in (C8, D-11):** v1 leaves the app-side Peloton poster guard in place (ADR-074 C-10). Is folding poster durability into ytdrivarr a wanted follow-on, or does it stay app-side indefinitely? Records the fork; not decided. | (open) |
 | Q-05 | **Vestigial `PELOTON_BEARER` (D-17):** the static 1Password `PELOTON_BEARER` on the `ytdl-sub-peloton` downloader appears unused (the real bearer is NFS `bearer.txt`). Confirm it is truly unreferenced before the M3 cleanup removes it. | (open — confirm-then-delete) |
 | Q-06 | **Podcasts / RSS (D-12 Tier 3):** confirmed as an explicit v1 non-goal (no yt-dlp extractor; generic best-effort only)? Recording it as a non-goal rather than a silent gap; owner may want it on the roadmap. | (open) |
-</content>
