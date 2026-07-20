@@ -24,6 +24,18 @@
 - **Q-05 member mutations → DIRECT with caps + audit.** Edit-granted roles add/remove channels
   directly (the collections direct-add doctrine: caps per role, over-cap → ticket, admins
   unbounded, audit rows same-tx). No suggest→approve.
+
+**Addendum ruling (owner, same evening — binding on the design): the plugin architecture is
+*arr-STYLE EXTENSION POINTS, not a port shim.** Near-verbatim: "It's important to remember how
+complex Peloton is vs YouTube so we need to 'plugin' like modularity like how *arrs let you
+plug in download clients etc." The complexity SPREAD is the design driver: a simple source
+(YouTube ≈ pure config generation over yt-dlp's native extractor) and a maximally complex one
+(Peloton: auth/session lifecycle, scraping cadence, bespoke season/duration mapping) must
+implement the SAME stable contract, the way Sonarr treats download clients/indexers/import
+lists as swappable modules behind defined interfaces. The design doc must specify those
+interface contracts (capability declaration, auth/secret hooks, scheduling hooks, config
+emission, per-item remediation for Fix parity, health/telemetry) BEFORE the Peloton port —
+the port validates the seam, it doesn't define it.
 - **Relates:** PLAN-022 (ytdl-sub Library surfaces + its phase-2 "config-manager cleanup" TODO —
   SUPERSEDED by this vision), PLAN-024 (poster guard — the "smallest Kometa-for-ytdl-sub"; likely
   folds in as a core or plugin concern), ADR-038/041 (read surfaces this would add write flows to),
