@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.88.2](https://github.com/thaynes43/haynesnetwork/compare/v0.88.1...v0.88.2) (2026-07-20)
+
+
+### Bug Fixes
+
+* Goodreads integration survives transient upstream blips + self-heals ([#441](https://github.com/thaynes43/haynesnetwork/issues/441)) ([99de607](https://github.com/thaynes43/haynesnetwork/commit/99de607401a2cca8de368decb91204edd2e9fb1f))
+
+
+### Documentation
+
+* **agents:** MAM demand plan — GB-free pool exhausted, expansion is tomorrow's lever ([#438](https://github.com/thaynes43/haynesnetwork/issues/438)) ([dc792b7](https://github.com/thaynes43/haynesnetwork/commit/dc792b7d5271fabf86271bec724edc9c358f8ad6))
+* **gb:** correct the '~100/day' cap — it was genuine 1,000/day shared across 3 keys ([#440](https://github.com/thaynes43/haynesnetwork/issues/440)) ([24ca02e](https://github.com/thaynes43/haynesnetwork/commit/24ca02ee51a1eabf9e0d4b0f49142a6d44c37bfb))
+
 ## [0.88.1](https://github.com/thaynes43/haynesnetwork/compare/v0.88.0...v0.88.1) (2026-07-19)
 
 
