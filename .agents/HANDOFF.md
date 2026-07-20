@@ -4,6 +4,19 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ THE NEXT BIG THING IS RATIFIED: the ytdl platform (written 2026-07-20 ~21:00 UTC)
+
+**PLAN-025 is SCOPED — the owner ran the scoping session tonight and ruled all four gates on
+the recommended options:** *arr-shaped HEADLESS suite service (new repo, owner names+creates
+it — Libretto precedent) · Peloton logic PORTED behind a plugin seam · SERVICE-OWNED state
+(generates ytdl-sub configs, no git-PR path) · DIRECT member mutations with caps+audit (the
+collections doctrine). Rulings + lifted gates: `.agents/plans/025-ytdl-config-manager-platform.md`.
+Two Opus research dispatches were in flight at wrap (Q-02 ytdl-sub/yt-dlp source matrix ·
+Q-03 donor-repo audit / Peloton plugin-interface requirements) — their reports land as dated
+context notes; if missing, re-dispatch from the plan's Q text. NEXT: ADR + design doc off the
+research → build saga. Also this evening: SSO wave 1 executed + ARMED (block below) and the
+Open WebUI gpt-oss 500 fixed (stale hand-imported blob re-pulled; memory `ollama-ai-stack-ops`).
+
 ## ▶ SSO WAVE 1 (written 2026-07-20 ~19:30 UTC — supplements the block below; owner present)
 
 **The next big thing is TRUE SSO (PLAN-058) — owner-picked; wave 1 executed same evening.**

@@ -1,8 +1,41 @@
 # PLAN-025: Generic ytdl config-manager platform (plugin architecture) + Library-extras editing
 
-- **Status:** **Roadmap (owner vision 2026-07-10) — DO NOT DISPATCH.** Captured verbatim-in-intent
-  from the owner; explicitly "nothing to jump on right now, just roadmapping." Scoping/ADRs happen
-  in a future owner-present session.
+- **Status:** **SCOPED (owner rulings 2026-07-20 — the owner-present scoping session happened).**
+  The four gating questions are RULED (below); the two researchable ones (Q-02 source sweep,
+  Q-03 plugin interface) are Opus-dispatched, reports land as dated `.agents/context/` notes.
+  Next: ADR + design doc off the research, then the build saga. The DO-NOT-DISPATCH gate is
+  LIFTED for docs/research; code waits on the accepted design + the owner creating the new repo
+  (he names it — the Libretto precedent).
+
+## ▶ SCOPING RULINGS (owner, 2026-07-20 — all four on the recommended option)
+
+- **Q-01 shape → *ARR-SHAPED SERVICE.** Own API/domain (sources, subscriptions, scheduling,
+  media rules); haynesnetwork integrates it exactly like Sonarr/Radarr (one-way sync in,
+  confined write client, hard-rule-4 source-of-truth pattern). The decisive driver stands:
+  Fix-everywhere parity for YouTube/Peloton items requires per-item remediation only a service
+  can do. Suite doctrine applies (the Libretto precedent): HEADLESS, generic/reusable, the app
+  owns 100% of the UX.
+- **Q-06 codebase → NEW REPO; port the fragile-but-working Peloton logic behind the plugin
+  seam.** The old manager keeps running untouched until cutover.
+- **Q-04 state → SERVICE-OWNED.** Its own DB; it GENERATES ytdl-sub configs itself (no git-PR
+  write path — member mutations want instant effect; the Kometa PR-per-change friction was
+  live-measured the same day). haynes-ops just deploys the service; the hardcoded YouTube YAML
+  gets taken over at cutover.
+- **Q-05 member mutations → DIRECT with caps + audit.** Edit-granted roles add/remove channels
+  directly (the collections direct-add doctrine: caps per role, over-cap → ticket, admins
+  unbounded, audit rows same-tx). No suggest→approve.
+
+**Addendum ruling (owner, same evening — binding on the design): the plugin architecture is
+*arr-STYLE EXTENSION POINTS, not a port shim.** Near-verbatim: "It's important to remember how
+complex Peloton is vs YouTube so we need to 'plugin' like modularity like how *arrs let you
+plug in download clients etc." The complexity SPREAD is the design driver: a simple source
+(YouTube ≈ pure config generation over yt-dlp's native extractor) and a maximally complex one
+(Peloton: auth/session lifecycle, scraping cadence, bespoke season/duration mapping) must
+implement the SAME stable contract, the way Sonarr treats download clients/indexers/import
+lists as swappable modules behind defined interfaces. The design doc must specify those
+interface contracts (capability declaration, auth/secret hooks, scheduling hooks, config
+emission, per-item remediation for Fix parity, health/telemetry) BEFORE the Peloton port —
+the port validates the seam, it doesn't define it.
 - **Relates:** PLAN-022 (ytdl-sub Library surfaces + its phase-2 "config-manager cleanup" TODO —
   SUPERSEDED by this vision), PLAN-024 (poster guard — the "smallest Kometa-for-ytdl-sub"; likely
   folds in as a core or plugin concern), ADR-038/041 (read surfaces this would add write flows to),
