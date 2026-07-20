@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.88.3](https://github.com/thaynes43/haynesnetwork/compare/v0.88.2...v0.88.3) (2026-07-20)
+
+
+### Bug Fixes
+
+* count PHYSICAL GB requests (retries incl.), not logical queries ([#444](https://github.com/thaynes43/haynesnetwork/issues/444)) ([e264eec](https://github.com/thaynes43/haynesnetwork/commit/e264eec88a9d50ca06f2079f32c80332040a3522))
+* Kometa collection auto-merge gate — scope to the named validate check + defer out of the request path ([#445](https://github.com/thaynes43/haynesnetwork/issues/445)) ([968312f](https://github.com/thaynes43/haynesnetwork/commit/968312f53d037ed72b3208e6b76d5b05be8509a3))
+
+
+### Documentation
+
+* **agents:** GB first budgeted day VERIFIED — breaker held, budgets working, saga effectively closed ([#442](https://github.com/thaynes43/haynesnetwork/issues/442)) ([bf99e29](https://github.com/thaynes43/haynesnetwork/commit/bf99e291ca76867e6d12ee2f440bc544bfe4b34c))
+
 ## [0.88.2](https://github.com/thaynes43/haynesnetwork/compare/v0.88.1...v0.88.2) (2026-07-20)
 
 
