@@ -1,5 +1,9 @@
 # 2026-07-19 — GB quota watch: monitoring the first clean day under the call-budgeter
 
+> **WATCH CLOSED (2026-07-20):** the first budgeted day HELD — all four success criteria passed,
+> verified in-cluster ~12:44 UTC. Do NOT re-arm the checks below; the only residual is the
+> end-of-day confirmation described in [[2026-07-20-gb-first-budgeted-day-verified]].
+
 > **CORRECTION / SUPERSEDED (later 07-19):** the "~100/day cap" premise below is WRONG. GCP console
 > confirmed a genuine 1,000/day quota that was SHARED (and saturated) by three consumers on one key.
 > Root cause + the fix (key split + budget raise to 700/200/100) are in [[2026-07-19-gb-quota-resolved]].

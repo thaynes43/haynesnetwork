@@ -4,6 +4,28 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ GB QUOTA SAGA — RESOLVED, FIRST BUDGETED DAY VERIFIED (written 2026-07-20 ~12:50 UTC)
+
+**The Google Books quota fixes WORKED on their first clean day (Mon 07-20).** In-cluster
+verification ~12:44 UTC (full evidence: `.agents/context/2026-07-20-gb-first-budgeted-day-verified.md`):
+the daily breaker HELD (no recurrence of the 07-19 08:32 UTC trip; zero daily-signature 429s all
+day) · pairing minted 24–25/run every hourly run, 265/700 spent · goodreads enriched to its full
+200 slice then `skippedBudget`ed cleanly (`failed:0` every run) · the parked book-fix SELF-HEALED
+to completion at 09:43 (the v0.88.2 behavior live) · everything on v0.88.2 with budgets 700/200/100.
+
+Fix stack (all live): v0.88.0 call-budgeter (`gb_call_budget`, migration 0070) + the KEY SPLIT
+(haynes-ops #2159 — LazyLibrarian + Libretto on their own GCP projects; three independent
+1,000/day quotas) + budget raise (#2160) + v0.88.2 transient-blip self-heal. Root-cause chain:
+`.agents/context/2026-07-19-gb-quota-resolved.md`.
+
+**Open residuals:** end-of-day confirmation at the next 07:00 UTC reset (session cron ~23:05 UTC
+armed; the one theoretical late-day risk is retry amplification — logical worst case is exactly
+1,000; breaker backstops) · optional retry-amplification cap (logical ≈ physical) · if the day
+holds, the saga is CLOSED and the budgeter runs unattended. **Collection expansion is UNBLOCKED**
+— Libretto now resolves on its own dedicated key, clear of the app's pairing/goodreads.
+
+---
+
 ## ▶ COLLECTIONS DIRECT-ADD REWORK (written 2026-07-18 — owner rulings KILLED suggest→approve; docs landed, build queued)
 
 **The shipped collections manager (`/integrations/collections` + the in-wall "Suggest a collection"
