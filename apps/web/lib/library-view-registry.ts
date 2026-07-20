@@ -280,7 +280,11 @@ export const LIBRARY_VIEW_REGISTRY: Record<ViewLevelKey, ViewRegistryEntry> = {
     azSorts: [],
   }),
   // Music Artists — no Runtime/Year/Release-Date (artists have none; live-verified lidarr year 0%),
-  // no Resolution/Requester. Genre + Collection only (D-03).
+  // no Resolution/Requester. Genre ONLY (owner ruling 2026-07-20, DESIGN-026 D-03 amended): the
+  // label-driven Collections program spans Movies/TV/Books/Audiobooks/Comics — Music was never in it,
+  // so its Collection facet's values came back permanently empty. Per the ADR-047/ADR-051 empty-state
+  // philosophy an empty filter is worse than an absent one (no dead chip), so the Collection facet is
+  // removed rather than gated; Genre stays.
   'music:wall': ledgerLevel({
     engine: 'ledger',
     sorts: [
@@ -290,7 +294,7 @@ export const LIBRARY_VIEW_REGISTRY: Record<ViewLevelKey, ViewRegistryEntry> = {
       { key: 'last_viewed', label: 'Played', firstDir: 'desc' },
     ],
     defaultSort: { field: 'added_at', dir: 'desc' },
-    facets: [GENRE_FACET, COLLECTION_FACET],
+    facets: [GENRE_FACET],
     azSorts: ['title'],
   }),
   // Peloton — the wall IS the grouped-by-Exercise view (each Plex show is a discipline; R2 default).

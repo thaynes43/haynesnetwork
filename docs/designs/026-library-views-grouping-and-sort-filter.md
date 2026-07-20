@@ -1,7 +1,7 @@
 # DESIGN-026: Library views, grouping, and the per-view Sorting & Filtering overhaul
 
 - **Status:** Accepted <!-- ratified with ADR-051/052/053 on 2026-07-11; the Draft label was a docs-only-PR oversight (noted by the PLAN-029 data/domain build, fixed in the UX build PR) -->
-- **Last updated:** 2026-07-18 <!-- wanted-filter rail unification amendment: the three-state Wanted axis (All · Wanted only · Hide wanted) replaces the *arr walls' boolean toggle; both axes labeled (On disk / Wanted); the owner's Missing + Hide-wanted composed-gap insight -->
+- **Last updated:** 2026-07-20 <!-- D-03 amendment: Music Collection facet removed (owner ruling) — no music collections exist/planned, the empty filter was worse than absent (ADR-047/ADR-051 empty-state); Genre stays. Prior: 2026-07-18 wanted-filter rail unification amendment (three-state Wanted axis; both axes labeled On disk / Wanted; the Missing + Hide-wanted composed-gap insight) -->
 - **Satisfies:** PRD-001 **R-165..R-171**; governed by **ADR-051** (views + registries), **ADR-052** (per-user
   preferences), **ADR-053** (per-user watch/read-state). EXTENDS **DESIGN-008 D-09** (the shared `ledger.search`
   filter/sort engine + keyset cursor) and **DESIGN-024** (the `books.search`/`filterFacets` contract); reads the
@@ -125,7 +125,7 @@ new vs. the shipped D-09/books engines.** Watch/read facets (D-07) are populated
 | **TV — Shows** (ledger) | *Date Added*, **Last Episode Added**, **First Aired**, Title, **Year**, Rating, Plays, Last Watched | Genre, **Year/Decade**, Rating, Collection, on-disk, **Has-unwatched-episodes / Watched (per-user)** | 🟡 `released_at`=Sonarr `firstAired`; Last-Ep-Added rollup; per-user watch |
 | **TV — Seasons** (Plex-live) | *Season # (`index`)*, **Date Added**, Title | (thin) Collection, Unwatched | none (widen Plex read only if facets grow) |
 | **TV — Episodes** (Plex-live) | **Air Date (`originallyAvailableAt`)**, Season/Ep #, *Date Added*, Title, **Duration** | **Air-date range**, Unwatched/In-progress | dates free; resolution/rating need a wider Plex read (deferred) |
-| **Music — Artists** (ledger) | *Date Added*, Title (A–Z), Plays, Last Played | Genre, Collection, on-disk | per-user plays (D-07) |
+| **Music — Artists** (ledger) | *Date Added*, Title (A–Z), Plays, Last Played | Genre, ~~Collection~~ (removed 2026-07-20 — D-03 amendment below), on-disk | per-user plays (D-07) |
 | **Peloton** (Plex-live) | *Date Added*, Title, **Release Date**, **Duration** | **Exercise/Discipline (group-by)**, **Duration bucket**, Instructor | none for dates; discipline via Plex tags |
 | **YouTube** (Plex-live) | *Date Added*, **Upload Date (`originallyAvailableAt`)**, Title, **Duration** | **Channel (group-by)**, **Upload-date range** | none |
 | **Books** (Kavita) | *Author A–Z (grouping)*, Title, **Date Added**, **Page count** | **Author (group-by)**, **Format** (epub/cbz), on-disk | Kavita metadata sparse — no year/genre facet (honest gap) |
@@ -135,6 +135,15 @@ new vs. the shipped D-09/books engines.** Watch/read facets (D-07) are populated
 `*` ABS narrator (16%) + series (3/823) are populated-value-gated — offered only where the kind carries values.
 Kavita Books/Comics get Author/Series/Format/Date-Added/Page-count only (year/genre absent in the list read —
 adding them needs a Kavita per-series metadata fetch, a DEFERRED enhancement, D-11).
+
+> **D-03 amendment — Music Collection facet removed (2026-07-20, owner ruling).** The **Music — Artists**
+> row drops its **Collection** filter facet; **Genre stays**. No music collections exist or are planned: the
+> label-driven Collections program (DESIGN-035 mirrored Plex collections) spans **Movies / TV / Books /
+> Audiobooks / Comics** and Music was never in it, so the chip's values came back permanently empty. Per the
+> ADR-047 / ADR-051 empty-state philosophy an **empty filter is worse than an absent one** (no dead chip),
+> so the facet is REMOVED rather than value-gated. Music now offers **Genre only** — `music:wall`'s registry
+> facets are `[GENRE_FACET]`, and the registry-asymmetry battery locks Music to Genre-only
+> (`apps/web/lib/__tests__/library-view-registry.test.ts`).
 
 ### D-04 — Group-view aggregate cards
 
