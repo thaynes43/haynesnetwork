@@ -1,7 +1,9 @@
 # DESIGN-041: SSO immersion — estate auto-login inventory and per-app remediation
 
-- **Status:** Draft (awaiting owner rulings on Q-01..Q-08 — see Open questions)
-- **Last updated:** 2026-07-17
+- **Status:** **Accepted (2026-07-20)** — Q-01..Q-09 all resolved or assumed-accepted (advanced
+  Draft → Proposed → Accepted per the doc lifecycle). Q-06 is resolved-as-deferred (D-08 remains
+  the deferred follow-up), which does not block acceptance. See the 2026-07-20 amendment.
+- **Last updated:** 2026-07-20
 - **Satisfies:** PLAN-058 (owner directive 2026-07-16/17: "SINGLE sign in" through the site and
   every app it supports — auto-login everywhere, retire per-app "Log in with Plex"); governed by
   ADR-002 (Authentik OIDC only), ADR-042 / OPS-009 (Authentik config-as-code + the WebKit-crisis
@@ -51,6 +53,22 @@ escape hatch. The catalog of hatches:
 | Open WebUI | unchanged — the deep-link option (D-05) never touches OWUI's own login page, which keeps working as-is |
 | Paperless / any outpost-fronted app | Authentik itself is the login; if Authentik is down the app is unreachable by design (same posture as haynesnetwork.com) |
 | Tautulli (proposed outpost front) | the in-cluster/LAN route bypasses the outpost; Tautulli's own admin login stays intact underneath |
+
+### D-11 — The LAN-only ingress invariant (SSO must never surface a LAN app to the internet)
+
+Added 2026-07-20 (owner ruling on Q-03). Bringing an app under true SSO must **never** move it
+from an internal ingress onto a public one. The app keeps its existing internal ingress
+(`*.haynesops.com`); only the **auth redirect** traverses the public Authentik. Hard constraint
+(owner, near-verbatim): "we don't have a local only Authentik path yet and I am using cloudflare
+tunnels so `*.haynesnetwork.com` always resolves to the internet." Because Authentik itself is only
+reachable at a public `*.haynesnetwork.com` host today, the redirect leg is unavoidably
+internet-facing — but the **application** it protects must not follow it out. A LAN-only app that
+gains OIDC or a forward-auth front door stays LAN-only: its ingress class, hostnames, and reach are
+unchanged by the SSO work. Any remediation that would require exposing the app publicly to wire up
+SSO is **out of bounds** until a local-only Authentik path exists (a separate future decision).
+This is the companion to D-01 — D-01 guards the break-glass, D-11 guards the network boundary — and
+it governs both the phase-2 catalog expansion (Q-03) and the two LAN-internal Tautulli instances
+(Q-08).
 
 ## Inventory — every catalog app × its auth today
 
@@ -113,7 +131,10 @@ Administration → Settings → OAuth (issuer = the Authentik application's
 the `immich_role` claim is applied **only at account creation** (no ongoing role sync — admin
 promotion stays manual or at-creation via claim), and the password break-glass param must be
 verified live before the flip (D-01). Immich is seeded admin-grantable/hidden, so blast radius is
-small.
+small. **Q-04 RESOLVED (owner, 2026-07-20):** OAuth is already configured — "we just need Auto
+Launch - trust but verify." The live path is therefore verify (OAuth config + the
+`app.immich:///oauth-callback` mobile redirect URI) → flip `Auto Launch`; the configure-if-absent
+step is kept only as the fallback should verification find it missing.
 
 ### D-05 — Open WebUI: zero-click via catalog deep-link (no app change)
 
@@ -158,8 +179,14 @@ Docker installs. The workable zero-click design (the documented authentik↔Taut
    The backend is the **Unraid** instance, so step 1's Tautulli-side setting is an owner/Unraid
    action, not GitOps.
 
-Scope note: v1 covers the family-facing card URL only; `tautulli-k8plex` / `tautulli-plexops`
-are LAN-internal (haynesops.com) and keep their current posture unless ruled otherwise (Q-08).
+Scope note: the family-facing card URL (`tautulli.haynesnetwork.com`) is the Q-02 pilot and is
+already LIVE (gated to `authentik Admins` + `family`). **Q-08 RESOLVED (owner, 2026-07-20): the
+two LAN-internal instances (`tautulli-k8plex` / `tautulli-plexops`, haynesops.com) ALSO get the
+front door** — staying on their internal ingress per **D-11** (only the auth redirect is public),
+default access **admins-only** (they are ops surfaces; the family-facing pilot keeps admins +
+Family), a default the owner can later widen. Their HTTP-login creds come from two HaynesKube
+1Password items (`tautulli-k8plex`, `tautulli-plexops`, username + password each). See the
+2026-07-20 amendment.
 
 ### D-08 — Kavita role sync via the OIDC roles claim (the deferred follow-up)
 
@@ -266,12 +293,12 @@ Cross-cutting risks:
 |----|----------|------------|
 | Q-01 | **Seerr:** wait for upstream OIDC to reach stable (O1, default) or run the experimental `preview-new-oidc` image now (O2 — backup + rollback plan, JSON config, no role mapping, known preview login regressions)? | **RESOLVED (owner, 2026-07-17): O1 — wait for upstream OIDC to reach stable.** Do not run the experimental `preview-new-oidc` image; revisit when upstream ships a stable OIDC release. |
 | Q-02 | **Tautulli:** is the all-admin shared-identity model behind the Authentik front door acceptable (per-user Plex guest views retired)? Which Authentik groups/tiers may reach Tautulli at all? | **RESOLVED (owner, 2026-07-17): proxy accepted; login allowed to admins + the Family tier only** ("it doesn't get much use anyway" — the pilot for role-governed app login, see the amendment below). |
-| Q-03 | **v1 scope:** catalog cards only, or also estate apps outside the catalog (Grafana, Home Assistant, homepage, headlamp)? | (open — owner ruling; this design assumes catalog-only) |
-| Q-04 | **Immich:** is OAuth already configured live (runtime state, not in git)? And is Auto Launch wanted given the card is currently admin-grantable/hidden? | (open — verify + owner ruling) |
-| Q-05 | **OWUI:** accept the catalog deep-link to `/oauth/oidc/login` (zero-click now, revert-on-upstream), or keep the one-button page and wait upstream? | (open — owner ruling; D-05 recommends the deep-link) |
-| Q-06 | **Kavita role sync:** the tier table — which Authentik groups map to which Kavita roles, libraries (`library-<Name>`), and age restrictions? Flip only after the Phase-1 auto-login soak? | (open — owner supplies the mapping) |
-| Q-07 | **Plex cards:** confirm accepted-as-is (plex.tv identity IS the SSO identity; no seam exists) | (open — expected yes) |
-| Q-08 | **Tautulli scope:** family-facing `tautulli.haynesnetwork.com` only, or also the LAN-internal k8plex/plexops instances? | (open — this design assumes family-facing only) |
+| Q-03 | **v1 scope:** catalog cards only, or also estate apps outside the catalog (Grafana, Home Assistant, homepage, headlamp)? | **RESOLVED (owner, 2026-07-20): catalog apps first, but the standing aspiration is that *anything Authentik is used for* reaches true SSO over time** — keep working through more apps, adding OIDC where basic auth lives today; expansion beyond the catalog is **phase-2, app-by-app**. HARD CONSTRAINT (near-verbatim): "we don't have a local only Authentik path yet and I am using cloudflare tunnels so `*.haynesnetwork.com` always resolves to the internet." Codified as **D-11** — SSO for a LAN-only app must never move it onto a public ingress (the app keeps its internal ingress; only the auth redirect traverses the public Authentik). *(Re-capture: a prior Q-03 answer was lost in an uncommitted worktree — see the 2026-07-20 amendment.)* |
+| Q-04 | **Immich:** is OAuth already configured live (runtime state, not in git)? And is Auto Launch wanted given the card is currently admin-grantable/hidden? | **RESOLVED (owner, 2026-07-20): OAuth is already configured — "we just need Auto Launch - trust but verify."** Verify the live OAuth config (incl. the `app.immich:///oauth-callback` mobile redirect URI) first, then flip `Auto Launch` (D-04). The configure-if-absent step in D-04 is expected to be a no-op but is kept as the verify fallback. |
+| Q-05 | **OWUI:** accept the catalog deep-link to `/oauth/oidc/login` (zero-click now, revert-on-upstream), or keep the one-button page and wait upstream? | **RESOLVED (owner, 2026-07-20): take the catalog deep-link to `/oauth/oidc/login` — zero-click now, with the documented revert-on-upstream** (restore the root URL if OWUI ships native auto-redirect). Per D-05. |
+| Q-06 | **Kavita role sync:** the tier table — which Authentik groups map to which Kavita roles, libraries (`library-<Name>`), and age restrictions? Flip only after the Phase-1 auto-login soak? | **RESOLVED-as-deferred (owner, 2026-07-20): deferred until after the auto-login rollout soaks; the owner supplies the tier table when ready.** D-08 remains the deferred follow-up — no Kavita role-sync flip until the owner's group → role / `library-<Name>` / age-restriction mapping lands. |
+| Q-07 | **Plex cards:** confirm accepted-as-is (plex.tv identity IS the SSO identity; no seam exists) | **Assumed accepted (2026-07-20 — presented as the default, owner unobjected):** Plex cards stay as-is; plex.tv identity IS the SSO identity (no OIDC seam exists). Per D-10. |
+| Q-08 | **Tautulli scope:** family-facing `tautulli.haynesnetwork.com` only, or also the LAN-internal k8plex/plexops instances? | **RESOLVED (owner, 2026-07-20): YES — both LAN-internal instances (`tautulli-k8plex` and the plexops one) ALSO get the Authentik front door**, owner-directed (near-verbatim): "you can handle the other two tautullis without me save a few 1Password items for the http login creds." They stay on their internal `haynesops.com` ingress per **D-11** (Q-03 constraint) — only the auth redirect is public. Default access policy **admins-only** (they are ops surfaces; the family-facing pilot stays admins + Family per Q-02) — a default the owner can widen. Creds gated on two HaynesKube 1Password items: `tautulli-k8plex`, `tautulli-plexops` (username + password each). |
 | Q-09 | **Authentik Plex source — allowed servers (owner-raised 2026-07-17):** the source was set up allowing anyone with access to HaynesTower to authenticate; new members will be shared on HOps going forward, so an HOps-only member CANNOT log in until HOps is in the source's allowed-servers list. Which servers define the SSO trust boundary? | **RESOLVED (owner, 2026-07-17): ALL THREE servers allowed** — owner applied the edit in the Authentik UI himself. Reasoning (near-verbatim): My Plex self-service lets members add/remove themselves from libraries, and a member who removes all but one library must not lose SSO — so the trust boundary is any-of-the-three, deliberately. Machine ids per the repo-pinned `PLEX_MACHINE_IDENTIFIERS`. |
 
 ## Amendment — 2026-07-17: role-governed app login (owner direction)
@@ -299,6 +326,35 @@ SINGLE source of truth for per-app LOGIN authorization, enforced Authentik-side:
 
 This supersedes nothing above; it upgrades the D-07 Tautulli front door from a one-off into
 the first instance of the general pattern.
+
+## Amendment — 2026-07-20: owner rulings close Q-03..Q-08; design Accepted
+
+The owner ruled on the remaining open questions. With Q-01..Q-09 all resolved or assumed-accepted,
+this design advances **Draft → Proposed → Accepted** (per the doc lifecycle) as of 2026-07-20.
+Q-06 is **resolved-as-deferred** (D-08 stays the deferred follow-up), which does not block
+acceptance. The near-verbatim capture lives in the Open questions table; the rulings in brief:
+
+- **Q-03 (scope) — catalog first, but keep expanding.** The aspiration is that *anything Authentik
+  is used for* reaches true SSO over time (add OIDC where basic auth lives today), app-by-app in
+  phase 2. This introduced a hard network constraint, codified as **D-11**: SSO for a LAN-only app
+  must never move it onto a public ingress — the app keeps its internal `haynesops.com` ingress;
+  only the auth redirect traverses the public Authentik (there is no local-only Authentik path yet,
+  and Cloudflare tunnels mean `*.haynesnetwork.com` always resolves to the internet).
+- **Q-04 (Immich) — Auto Launch, "trust but verify."** OAuth is already configured; verify the
+  live config (incl. the mobile redirect URI), then flip Auto Launch (D-04).
+- **Q-05 (OWUI) — take the deep-link** to `/oauth/oidc/login` now, revert-on-upstream (D-05).
+- **Q-06 (Kavita role sync) — deferred** until the auto-login rollout soaks; owner supplies the
+  tier table when ready (D-08 stays the deferred follow-up).
+- **Q-07 (Plex cards) — assumed accepted** (presented as the default, owner unobjected): plex.tv
+  identity IS the SSO identity (D-10).
+- **Q-08 (Tautulli scope) — both LAN instances too.** `tautulli-k8plex` and `tautulli-plexops`
+  also get the Authentik front door, on their internal ingress per D-11, default admins-only (ops
+  surfaces), creds from 1Password `tautulli-k8plex` / `tautulli-plexops`.
+
+**Process note (why this PR exists).** A prior Q-03 answer was captured in an uncommitted worktree
+and **lost** when that worktree was cleaned up — the owner flagged it himself. This amendment is
+the re-capture. It is the origin case of the standing "backlog/saga state must reach `main`" rule:
+agent working state and doc rulings are never left untracked in a disposable worktree.
 
 ## Sources (external capabilities, verified 2026-07-17)
 
