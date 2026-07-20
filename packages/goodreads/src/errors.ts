@@ -42,3 +42,30 @@ export class GoodreadsTimeoutError extends GoodreadsError {
     super(`GET ${url} → timed out after ${timeoutMs}ms`);
   }
 }
+
+export type GoodreadsFailureKind = 'transient' | 'permanent';
+
+/**
+ * ADR-057 amend (goodreads-sync resilience) — classify a thrown Goodreads READ failure. TRANSIENT = a
+ * blip that should keep the link and retry next run; PERMANENT = the profile/shelf is genuinely gone /
+ * private and should surface as status='error'.
+ *  - Network + timeout failures  → transient (host unreachable / CloudFront hiccup).
+ *  - HTTP 429 or any 5xx (500/502/503/504…) → transient (rate-limit / upstream 5xx — the owner's 502).
+ *  - Any other HTTP status (404/403/401/410/4xx) → permanent. A 404 only reaches here for a BUILT-IN
+ *    shelf (absent CUSTOM shelves are already swallowed by fetchShelfTolerant), i.e. the profile went
+ *    private/away — permanent, matching the existing isAbsentCustomShelfError doctrine.
+ *  - An unexpected non-Goodreads throw → permanent (surface a real bug loudly, don't retry forever).
+ *
+ * The fetch client already surfaces everything needed to classify: getText throws GoodreadsHttpError
+ * (with a readonly `status`), GoodreadsNetworkError, or GoodreadsTimeoutError — so this is a pure function
+ * over those typed errors. http.ts's own retry loop already exhausts its backoff attempts on 5xx/429/
+ * network before throwing, so a 'transient' classification here means the blip outlived in-request retries
+ * — correctly deferred to next hour rather than flipping the link.
+ */
+export function classifyGoodreadsFailure(error: unknown): GoodreadsFailureKind {
+  if (error instanceof GoodreadsNetworkError || error instanceof GoodreadsTimeoutError) return 'transient';
+  if (error instanceof GoodreadsHttpError) {
+    return error.status === 429 || (error.status >= 500 && error.status <= 599) ? 'transient' : 'permanent';
+  }
+  return 'permanent';
+}

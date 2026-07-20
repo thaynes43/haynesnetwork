@@ -14,7 +14,7 @@ import {
   type IntegrationStatus,
   type UserIntegrationRow,
 } from '@hnet/db';
-import { and, eq, ne } from 'drizzle-orm';
+import { and, eq, lt, ne, or } from 'drizzle-orm';
 import { InvalidGoodreadsProfileError, NotFoundError } from './errors';
 import { inTransaction, resolveDb } from './db-client';
 
@@ -204,7 +204,32 @@ export async function markIntegrationSynced(input: {
     .where(stillLinked);
 }
 
-/** Read: every LINKED integration (optionally for one provider) — the goodreads-sync mode's worklist. */
+/**
+ * Sync bookkeeping (NOT audited — synced-content exemption): record a SOFT transient-blip note WITHOUT
+ * changing the link status or last_synced_at. Used when a shelf fetch hit a transient upstream blip
+ * (5xx/429/network/timeout): the integration keeps whatever status it had ('linked' stays linked; a
+ * still-broken 'error' row stays 'error') so it remains in the worklist and simply retries next run, and
+ * we only surface the blip in last_sync_error. Bumps updated_at so an 'error' row being retried honours the
+ * worklist backoff (its "last attempt" clock advances).
+ *
+ * Guarded `status <> 'unlinked'` (identical to markIntegrationSynced): a row the user unlinked mid-run is
+ * never resurrected. It deliberately sets NO `status` column, so it can never downgrade or upgrade one.
+ */
+export async function noteIntegrationSyncBlip(input: {
+  db?: DbClient;
+  integrationId: string;
+  note: string;
+  now?: Date;
+}): Promise<void> {
+  const db = resolveDb(input.db);
+  await db
+    .update(userIntegrations)
+    .set({ lastSyncError: input.note.slice(0, 500), updatedAt: input.now ?? new Date() })
+    .where(and(eq(userIntegrations.id, input.integrationId), ne(userIntegrations.status, 'unlinked')));
+}
+
+/** Read: every LINKED integration (optionally for one provider). The UI/count semantics rely on this
+ *  staying linked-only; the goodreads-sync worklist is listIntegrationsForSync (self-healing) below. */
 export async function listLinkedIntegrations(input: {
   db?: DbClient;
   provider?: IntegrationProvider;
@@ -213,6 +238,39 @@ export async function listLinkedIntegrations(input: {
   const where = input.provider
     ? and(eq(userIntegrations.status, 'linked' as IntegrationStatus), eq(userIntegrations.provider, input.provider))
     : eq(userIntegrations.status, 'linked' as IntegrationStatus);
+  return db.select().from(userIntegrations).where(where);
+}
+
+/** A genuinely-broken ('error') integration is re-attempted at most this often (cron is hourly), so a
+ *  permanently-private/deleted profile is not hammered every run. 'linked' rows are always due. Tunable. */
+export const ERROR_RETRY_BACKOFF_MS = 6 * 60 * 60 * 1000; // 6h
+
+/**
+ * The goodreads-sync WORKLIST (self-healing). Returns every 'linked' integration (always due) PLUS every
+ * 'error' integration whose last attempt (updated_at) is older than ERROR_RETRY_BACKOFF_MS — so a
+ * previously-broken link recovers on a later run once upstream is back, without hammering a permanently
+ * broken profile. NEVER returns 'unlinked' rows (they are off the worklist until the user re-links) — the
+ * status='unlinked' guard is preserved by construction (the predicate only ever selects 'linked'/'error').
+ *
+ * The backoff keys on updated_at, which every attempt-outcome writer bumps to `now`
+ * (markIntegrationSynced success/error AND noteIntegrationSyncBlip), so consecutive re-attempts of a
+ * still-broken 'error' row are naturally spaced ERROR_RETRY_BACKOFF_MS apart even when they keep blipping.
+ */
+export async function listIntegrationsForSync(input: {
+  db?: DbClient;
+  provider?: IntegrationProvider;
+  now?: Date;
+}): Promise<UserIntegrationRow[]> {
+  const db = resolveDb(input.db);
+  const retryBefore = new Date((input.now ?? new Date()).getTime() - ERROR_RETRY_BACKOFF_MS);
+  const due = or(
+    eq(userIntegrations.status, 'linked' as IntegrationStatus),
+    and(
+      eq(userIntegrations.status, 'error' as IntegrationStatus),
+      lt(userIntegrations.updatedAt, retryBefore),
+    ),
+  );
+  const where = input.provider ? and(eq(userIntegrations.provider, input.provider), due) : due;
   return db.select().from(userIntegrations).where(where);
 }
 
