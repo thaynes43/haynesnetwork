@@ -3,9 +3,23 @@
 - **Status:** **SCOPED (owner rulings 2026-07-20 — the owner-present scoping session happened).**
   The four gating questions are RULED (below); the two researchable ones (Q-02 source sweep,
   Q-03 plugin interface) are Opus-dispatched, reports land as dated `.agents/context/` notes.
-  Next: ADR + design doc off the research, then the build saga. The DO-NOT-DISPATCH gate is
-  LIFTED for docs/research; code waits on the accepted design + the owner creating the new repo
-  (he names it — the Libretto precedent).
+  Next: **ADR-074 (Proposed) + DESIGN-045 (Draft) + glossary T-214…T-224 are written** off the
+  research (this PR) — the executable build saga (M1–M5, appended below) follows ADR-074
+  Acceptance. The DO-NOT-DISPATCH gate is LIFTED for docs/research; code waits on the accepted
+  design. **The repo EXISTS** (`github.com/thaynes43/ytdrivarr`, owner-created 2026-07-20, public;
+  owner-named — the Libretto precedent).
+
+  **AMENDED 2026-07-20 eve (three same-evening owner rulings — binding; fold into the ADR/design):**
+  (1) **"arrs are not headless"** — the Libretto HEADLESS clause in the Q-01 bullet below is
+  SUPERSEDED: ytdrivarr ships its OWN operator/admin console (like Sonarr) and haynesnetwork is the
+  MEMBER-facing layer; members never touch ytdrivarr's UI (ADR-074 C-11, DESIGN-045 D-20).
+  (2) **LAN-only + no user management** — internal `traefik-internal` ingress only (never public,
+  matching the estate *arrs), a single `X-Api-Key` guards the API; no accounts/OIDC/roles
+  (DESIGN-045 D-21). (3) **the app exposes SELECTED capabilities over its OWN tRPC API**, calling
+  ytdrivarr server-side via `ytdrivarr.downloads.svc.cluster.local` — all per-user identity/caps/audit
+  live app-side (DESIGN-045 D-18). The inline "HEADLESS … owns 100% of the UX" phrasing in the Q-01
+  ruling is amended by the coordinator in parallel; this note records the correction so the plan is
+  internally consistent.
 
 ## ▶ SCOPING RULINGS (owner, 2026-07-20 — all four on the recommended option)
 
@@ -106,7 +120,109 @@ architecture**:
 - **Q-06 — what of ytdl-sub-config-manager survives:** rework in place vs new repo with the old
   Peloton logic ported behind the plugin seam.
 
-## Out of scope until the owner green-lights scoping
+## Out of scope until the owner green-lights scoping — SUPERSEDED (scoping happened 2026-07-20)
 
-Everything. No dispatches, no ADRs, no refactors of ytdl-sub-config-manager. PLAN-024's poster
-guard keeps running as-is; PLAN-022 phase-2 cleanup TODOs are parked here.
+~~Everything. No dispatches, no ADRs, no refactors of ytdl-sub-config-manager.~~ The scoping session
+ran; ADR-074 + DESIGN-045 are written; the executable build plan is below. PLAN-024's poster guard
+keeps running as-is (folding it into ytdrivarr is a recorded-not-decided later fork, ADR-074 C-10 /
+DESIGN-045 Q-04); PLAN-022 phase-2 cleanup TODOs are absorbed here.
+
+---
+
+## Executable build plan (M1–M5) — governed by ADR-074, realized by DESIGN-045
+
+Phased so nothing user-visible breaks: both ytdl-sub downloader CronJobs, the app read surfaces
+(`ytdlsubRouter`, poster proxy), and the app-side Peloton poster guard stay UNTOUCHED until each
+phase's cutover; the old `ytdl-sub-config-manager` runs until M3. Cross-cutting: the single API-key
+service auth (D-21) lands in M1; the **operator console (D-20) is Fable-built** (owner
+division-of-labor ruling — Opus builds the service internals), starting as a source/run/health shell
+in M1 and gaining provider config + `test()` at M3. **Gate: M1 starts on ADR-074 Acceptance.**
+
+Three codebases move (all suite-autonomous per rule 10; ytdrivarr drives its own release train):
+
+- **`ytdrivarr` repo** (new, `github.com/thaynes43/ytdrivarr`) — the TS core + providers + Python
+  worker + operator console.
+- **`haynes-ops`** — `kubernetes/main/apps/downloads/ytdrivarr/` (deploy) + the downloader cutovers.
+- **`haynesnetwork`** (this repo) — `@hnet/ytdl` + the domain orchestrator + the tRPC surface + the
+  member UX (Edit, Fix, roles grid).
+
+### M1 — Walking skeleton + the C1–C8 contracts (ytdrivarr repo)
+
+- **Core scaffold:** TS service — REST API (zod + generated OpenAPI), Postgres 16 + Drizzle
+  migrations (Q-02 placement TBD), the **typed provider registry** (D-04 — NOT string-import DI), the
+  **job dispatcher** (D-03 in_core vs out_of_process), the in-process **scheduler** (D-07), the
+  **emitter + NFS projection** writer (D-13/D-14, atomic write-temp-then-rename).
+  - Files (ytdrivarr): `src/core/{api,db,registry,dispatcher,scheduler,emitter,projection}/`,
+    `src/contracts/` (the C1–C8 provider interfaces + zod schemas, D-04…D-11).
+- **Service auth (D-21):** single `X-Api-Key` middleware; `YTDRIVARR_API_KEYS` env. No user mgmt.
+- **A trivial `in_core` provider end to end** (exercises C1/C3/C5, no auth) to validate the seam.
+- **Operator console shell (Fable-built, D-20):** sources / runs / health, served by the service on
+  the internal ingress.
+- No estate cutover — the old config-manager still runs. **Proves:** the contracts + emission +
+  projection round-trip.
+
+### M2 — YouTube YAML takeover (the clean first cut; ytdrivarr + haynes-ops)
+
+- **`in_core` URL-list provider** (D-12 Tier 1): import the ~80 YouTube channels (from the
+  hand-edited git YAML) as **Sources**; emit `Plex TV Show by Date` + `= Genre` chips + the throttle
+  policy by **preset composition** (D-13); project `subscriptions.yaml` to the YouTube downloader's
+  NFS volume (D-14).
+  - Files (ytdrivarr): `src/providers/youtube/`. Files (haynes-ops):
+    `kubernetes/main/apps/downloads/ytdrivarr/` (HelmRelease, ESO, Kustomization, the projection
+    volume); cut `ytdl-sub-youtube` from git YAML → ytdrivarr projection.
+- No auth, no scrape. **Proves:** emission + projection + the scheduling split (D-15) on real content.
+
+### M3 — Peloton plugin port, hardened (ytdrivarr + haynes-ops)
+
+- **`out_of_process` authenticated-scraper provider** (D-03): PORT login/session/scrape/metadata +
+  bearer/cookie minting + episode-numbering + activity-folder mapping (Q-03 port list), **hardened** —
+  explicit `WebDriverWait`s (replacing fixed sleeps), retries, the **bearer-freshness SLA** (D-07),
+  **credential-age + selector-drift alarms** (D-10). DISCARD the git-PR write-back, the Peloton
+  `Config` dataclass, string-import DI, most of the 896-line disk-repair layer, the text-summary
+  metrics (Q-03 discard list).
+  - Files (ytdrivarr): `src/providers/peloton/` (core-side registration) + the **Python/Selenium
+    worker** image (`worker/`, `ghcr.io/thaynes43/ytdrivarr-peloton-worker`). Operator console gains
+    provider config + `test()`.
+  - Files (haynes-ops): the Peloton worker Deployment/Job + 6Gi; cut `ytdl-sub-peloton` to ytdrivarr
+    projection; **remove the `ytdl-sub-peloton-config-manager` Kustomization** (git churn ends);
+    **confirm-then-remove the vestigial static `PELOTON_BEARER`** (DESIGN-045 Q-05).
+- **Proves:** the seam holds for the maximally complex source; the silent-stall failure mode is now
+  an alarm.
+
+### M4 — App Edit surfaces (haynesnetwork)
+
+- **`@hnet/ytdl`** (the `@hnet/libretto` template): `packages/ytdl/src/{index,read,write,http,schemas,
+  errors,config}.ts` + `package.json` (barrel + `./read` + `./write` exports). Extend
+  `packages/domain/__tests__/arr-write-import-guard.test.ts` — add `packages${sep}ytdl${sep}` to
+  `ALLOWED_DIR_PREFIXES` and `ytdl` to `IMPORT_PATTERN`.
+- **Domain orchestrator** (`packages/domain/`): the only importer of `@hnet/ytdl/write`; owns the
+  add/remove/edit-Source flow + the **cap check** (the `assertWithinCollectionSizeCap` analog) +
+  **over-cap → ticket** (new `TICKET_CATEGORIES += 'ytdl_source_override'`; ADR-050 payload carries
+  the Source definition) + the **user-attributed audit row same-tx** (hard rule 6, D-08/D-18).
+- **tRPC surface** (`packages/api/`): extend `ytdlsubRouter` with `edit`-gated mutation procedures
+  (`ytdlsubEditProcedure = sectionProcedure('ytdlsub','edit')`) exposing SELECTED ytdrivarr
+  capabilities; the app calls ytdrivarr server-side via `@hnet/ytdl` + `svc.cluster.local`.
+- **Roles grid:** `apps/web/lib/role-sections.ts` — `SECTION_CONTROL.ytdlsub: 'toggle' → 'tri'`
+  (the `edit` rung finally has a consumer; the in-code note already anticipates this).
+- **Member UI** (`apps/web/app/(app)/library/…`): the channel add/remove/edit surface, the over-cap
+  ticket state under the existing tickets surface, direct-add per ADR-072.
+- **Proves:** members self-serve YouTube channels, capped + audited, no git round-trip.
+
+### M5 — Per-item Fix (ytdrivarr + haynesnetwork)
+
+- **C6 remediation end to end** (D-09): `RemediationJob` in ytdrivarr (URL stateless re-download;
+  Peloton auth-gated re-fetch via the worker + a fresh bearer); a role-gated tRPC Fix route →
+  domain orchestrator → `@hnet/ytdl/write`; poll status via `@hnet/ytdl/read`.
+- Extend the Library walls' TV/Movies-style **Fix** action to YouTube/Peloton items (the unified
+  media-action doctrine). **Proves:** Fix-everywhere parity (PLAN-041) — the whole reason for the
+  *arr shape.
+
+**Untouched until each cutover:** the two ytdl-sub downloader CronJobs, the app read surfaces, and
+the app-side poster guard (C8 fold-in is the recorded-not-decided later fork, DESIGN-045 Q-04).
+
+## Open owner questions carried into the build (DESIGN-045 Q-01…Q-06)
+
+Genuinely-owner, NOT the ruled ones: repo **license** (Q-01), **Postgres placement** (own instance
+vs shared cluster, Q-02), **music-vs-video** classification at cutover (Q-03), **poster-guard fold-in**
+(Q-04), the **vestigial `PELOTON_BEARER`** confirm-then-delete (Q-05), **podcasts/RSS** non-goal
+confirmation (Q-06). These block no docs work; Q-05 gates the M3 cleanup step.
