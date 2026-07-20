@@ -7,7 +7,13 @@ import { assertHaynesopsEnv, HaynesopsConfigError, HaynesopsHttpError } from '..
 import { HaynesopsReadClient } from '../src/read';
 import { HaynesopsWriteClient } from '../src/write';
 
-const OPTS = { token: 't', apiBaseUrl: 'https://api.github.com', repo: 'o/r', baseBranch: 'main', retries: 0 };
+const OPTS = {
+  token: 't',
+  apiBaseUrl: 'https://api.github.com',
+  repo: 'o/r',
+  baseBranch: 'main',
+  retries: 0,
+};
 
 /** A tiny router over (method, path) → canned Response. */
 function fetchStub(routes: Array<{ m: string; p: RegExp; status?: number; body?: unknown }>): {
@@ -51,7 +57,11 @@ describe('assertHaynesopsEnv', () => {
 describe('HaynesopsReadClient', () => {
   it('getFile base64-decodes and returns null on 404', async () => {
     const present = fetchStub([
-      { m: 'GET', p: /contents\/a\.yml/, body: { content: b64('hello: world'), encoding: 'base64', sha: 's1' } },
+      {
+        m: 'GET',
+        p: /contents\/a\.yml/,
+        body: { content: b64('hello: world'), encoding: 'base64', sha: 's1' },
+      },
     ]);
     const c = new HaynesopsReadClient({ ...OPTS, fetchImpl: present.fetchImpl });
     expect(await c.getFile('a.yml')).toEqual({ text: 'hello: world', sha: 's1' });
@@ -67,9 +77,24 @@ describe('HaynesopsReadClient', () => {
         m: 'GET',
         p: /pulls\?state=open/,
         body: [
-          { number: 1, title: 'app', html_url: 'u1', head: { ref: 'hnet-collections/x', sha: 'h1', repo: { full_name: 'o/r' } } },
-          { number: 2, title: 'other', html_url: 'u2', head: { ref: 'feature/y', sha: 'h2', repo: { full_name: 'o/r' } } },
-          { number: 3, title: 'fork', html_url: 'u3', head: { ref: 'hnet-collections/z', sha: 'h3', repo: { full_name: 'other/r' } } },
+          {
+            number: 1,
+            title: 'app',
+            html_url: 'u1',
+            head: { ref: 'hnet-collections/x', sha: 'h1', repo: { full_name: 'o/r' } },
+          },
+          {
+            number: 2,
+            title: 'other',
+            html_url: 'u2',
+            head: { ref: 'feature/y', sha: 'h2', repo: { full_name: 'o/r' } },
+          },
+          {
+            number: 3,
+            title: 'fork',
+            html_url: 'u3',
+            head: { ref: 'hnet-collections/z', sha: 'h3', repo: { full_name: 'other/r' } },
+          },
         ],
       },
     ]);
@@ -85,7 +110,9 @@ describe('HaynesopsReadClient', () => {
         fetchImpl: fetchStub([{ m: 'GET', p: /check-runs/, body: { check_runs: runs } }]).fetchImpl,
       });
     expect(await mk([]).getChecksConclusion('h')).toBe('none');
-    expect(await mk([{ status: 'completed', conclusion: 'success' }]).getChecksConclusion('h')).toBe('success');
+    expect(
+      await mk([{ status: 'completed', conclusion: 'success' }]).getChecksConclusion('h'),
+    ).toBe('success');
     expect(
       await mk([
         { status: 'completed', conclusion: 'success' },
@@ -94,6 +121,60 @@ describe('HaynesopsReadClient', () => {
     ).toBe('failure');
     expect(await mk([{ status: 'in_progress' }]).getChecksConclusion('h')).toBe('pending');
   });
+
+  it('getChecksConclusion SCOPED to the named gate ignores the sibling Flux Local matrix (D-10 2026-07-20)', async () => {
+    const GATE = 'Kometa Validate Managed Files - Success';
+    // The live haynes-ops #2170 shape: the named validate gate is green on the first poll while the Flux Local
+    // matrix + Diff Scope are still in progress. Unscoped this false-negatives to 'pending'; scoped it is green.
+    const matrixInProgress = [
+      { name: GATE, status: 'completed', conclusion: 'success' },
+      { name: 'Flux Local - Diff (main/helmrelease)', status: 'in_progress' },
+      { name: 'Flux Local - Test (edge)', status: 'in_progress' },
+      { name: 'Diff Scope - Success', status: 'in_progress' },
+    ];
+    const c = new HaynesopsReadClient({
+      ...OPTS,
+      fetchImpl: fetchStub([{ m: 'GET', p: /check-runs/, body: { check_runs: matrixInProgress } }])
+        .fetchImpl,
+    });
+    expect(await c.getChecksConclusion('h')).toBe('pending'); // the OLD roll-up-everything false-negative
+    expect(await c.getChecksConclusion('h', { requiredCheckName: GATE })).toBe('success'); // scoped = fixed
+
+    // A red named gate is a failure even if every sibling is green.
+    const gateRed = new HaynesopsReadClient({
+      ...OPTS,
+      fetchImpl: fetchStub([
+        {
+          m: 'GET',
+          p: /check-runs/,
+          body: {
+            check_runs: [
+              { name: GATE, status: 'completed', conclusion: 'failure' },
+              { name: 'Flux Local - Success', status: 'completed', conclusion: 'success' },
+            ],
+          },
+        },
+      ]).fetchImpl,
+    });
+    expect(await gateRed.getChecksConclusion('h', { requiredCheckName: GATE })).toBe('failure');
+
+    // The named gate has not reported yet (only sibling checks present) → PENDING, never a merge.
+    const gateAbsent = new HaynesopsReadClient({
+      ...OPTS,
+      fetchImpl: fetchStub([
+        {
+          m: 'GET',
+          p: /check-runs/,
+          body: {
+            check_runs: [
+              { name: 'Flux Local - Success', status: 'completed', conclusion: 'success' },
+            ],
+          },
+        },
+      ]).fetchImpl,
+    });
+    expect(await gateAbsent.getChecksConclusion('h', { requiredCheckName: GATE })).toBe('pending');
+  });
 });
 
 describe('HaynesopsWriteClient — the open-PR dance', () => {
@@ -101,9 +182,17 @@ describe('HaynesopsWriteClient — the open-PR dance', () => {
     const s = fetchStub([
       { m: 'GET', p: /git\/ref\/heads\/main/, body: { object: { sha: 'base-sha' } } },
       { m: 'POST', p: /git\/refs/, body: {} },
-      { m: 'GET', p: /contents\/.*hnet-managed-movies\.yml/, body: { content: b64('old'), encoding: 'base64', sha: 'old-sha' } },
+      {
+        m: 'GET',
+        p: /contents\/.*hnet-managed-movies\.yml/,
+        body: { content: b64('old'), encoding: 'base64', sha: 'old-sha' },
+      },
       { m: 'PUT', p: /contents\/.*hnet-managed-movies\.yml/, body: { commit: { sha: 'c' } } },
-      { m: 'POST', p: /\/pulls$/, body: { number: 42, html_url: 'https://gh/pull/42', head: { sha: 'head42' } } },
+      {
+        m: 'POST',
+        p: /\/pulls$/,
+        body: { number: 42, html_url: 'https://gh/pull/42', head: { sha: 'head42' } },
+      },
     ]);
     const c = new HaynesopsWriteClient({ ...OPTS, fetchImpl: s.fetchImpl });
     const pr = await c.openManagedFilePr({
@@ -137,7 +226,13 @@ describe('HaynesopsWriteClient — the open-PR dance', () => {
   it('waitForChecks returns success as soon as the gate settles', async () => {
     const c = new HaynesopsWriteClient({
       ...OPTS,
-      fetchImpl: fetchStub([{ m: 'GET', p: /check-runs/, body: { check_runs: [{ status: 'completed', conclusion: 'success' }] } }]).fetchImpl,
+      fetchImpl: fetchStub([
+        {
+          m: 'GET',
+          p: /check-runs/,
+          body: { check_runs: [{ status: 'completed', conclusion: 'success' }] },
+        },
+      ]).fetchImpl,
     });
     expect(await c.waitForChecks('h', { attempts: 1, sleepImpl: async () => {} })).toBe('success');
   });
@@ -145,10 +240,11 @@ describe('HaynesopsWriteClient — the open-PR dance', () => {
   it('surfaces a 4xx as a typed HttpError (never a silent success)', async () => {
     const c = new HaynesopsWriteClient({
       ...OPTS,
-      fetchImpl: fetchStub([{ m: 'GET', p: /git\/ref/, status: 422, body: { message: 'bad' } }]).fetchImpl,
+      fetchImpl: fetchStub([{ m: 'GET', p: /git\/ref/, status: 422, body: { message: 'bad' } }])
+        .fetchImpl,
     });
-    await expect(c.openManagedFilePr({ path: 'p', content: 'c', branchSlug: 's', title: 't', body: 'b' })).rejects.toBeInstanceOf(
-      HaynesopsHttpError,
-    );
+    await expect(
+      c.openManagedFilePr({ path: 'p', content: 'c', branchSlug: 's', title: 't', body: 'b' }),
+    ).rejects.toBeInstanceOf(HaynesopsHttpError);
   });
 });

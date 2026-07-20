@@ -17,12 +17,18 @@ export const HAYNESOPS_REPO_DEFAULT = 'thaynes43/haynes-ops';
 /** The branch PRs target + auto-merge into. */
 export const HAYNESOPS_BASE_BRANCH_DEFAULT = 'main';
 /** Where the Kometa `collection_files` live in haynes-ops (the app owns hnet-managed-*.yml inside it). */
-export const HAYNESOPS_KOMETA_CONFIG_DIR_DEFAULT =
-  'kubernetes/main/apps/media/kometa/app/config';
+export const HAYNESOPS_KOMETA_CONFIG_DIR_DEFAULT = 'kubernetes/main/apps/media/kometa/app/config';
 /** GitHub REST base — overridable for GHES / a test stub. */
 export const GITHUB_API_URL_DEFAULT = 'https://api.github.com';
 /** The head-branch namespace every app-authored collection PR uses (the auto-merge diff-scope anchor). */
 export const HAYNESOPS_BRANCH_PREFIX = 'hnet-collections';
+/**
+ * The name of the ONE check-run that IS the auto-merge gate (DESIGN-042 D-09/D-10). A haynes-ops PR head
+ * carries the full Flux Local matrix + Diff Scope too; the app gates on THIS check by name and ignores the
+ * rest (the `.github/workflows/kometa-validate-managed.yaml` job name). Path-filtered (managed-include PRs
+ * only) so it is NOT a branch-protection required check — the app is the gate enforcer, not GitHub.
+ */
+export const HAYNESOPS_KOMETA_CHECK_NAME_DEFAULT = 'Kometa Validate Managed Files - Success';
 
 export interface HaynesopsEnvConfig {
   token: string;
@@ -32,6 +38,8 @@ export interface HaynesopsEnvConfig {
   /** Directory (no trailing slash) the managed include files live in. */
   configDir: string;
   apiBaseUrl: string;
+  /** The check-run name the auto-merge gate resolves against (the `--validate-file` CI gate — D-10). */
+  kometaCheckName: string;
 }
 
 /**
@@ -50,10 +58,10 @@ export function assertHaynesopsEnv(
     token,
     repo: env.HAYNESOPS_REPO?.trim() || HAYNESOPS_REPO_DEFAULT,
     baseBranch: env.HAYNESOPS_BASE_BRANCH?.trim() || HAYNESOPS_BASE_BRANCH_DEFAULT,
-    configDir: (env.HAYNESOPS_KOMETA_CONFIG_DIR?.trim() || HAYNESOPS_KOMETA_CONFIG_DIR_DEFAULT).replace(
-      /\/+$/,
-      '',
-    ),
+    configDir: (
+      env.HAYNESOPS_KOMETA_CONFIG_DIR?.trim() || HAYNESOPS_KOMETA_CONFIG_DIR_DEFAULT
+    ).replace(/\/+$/, ''),
     apiBaseUrl: (env.GITHUB_API_URL?.trim() || GITHUB_API_URL_DEFAULT).replace(/\/+$/, ''),
+    kometaCheckName: env.HAYNESOPS_KOMETA_CHECK_NAME?.trim() || HAYNESOPS_KOMETA_CHECK_NAME_DEFAULT,
   };
 }

@@ -2,8 +2,8 @@
 
 - **Status:** Accepted <!-- revised 2026-07-18 to the direct-add + auto-merge model (ADR-072); was Draft under ADR-069 -->
 - **Last updated:** 2026-07-18 evening (REVISED again — the estate's HAND-AUTHORED Kometa collections are
-  now EDITABLE in place, superseding the #414 read-only stance. Owner ruling: *"the point of the
-  collections config UI was to edit Kometa configs by add / update / editing collections."* See the D-01 /
+  now EDITABLE in place, superseding the #414 read-only stance. Owner ruling: _"the point of the
+  collections config UI was to edit Kometa configs by add / update / editing collections."_ See the D-01 /
   D-02 / D-04 revision notes below. Earlier: 2026-07-18 direct-add + auto-merge — ADR-072 supersedes
   ADR-069: the propose→approve suggestion pipeline is removed; a within-cap grouping-only add AUTO-COMMITS +
   AUTO-MERGES the haynes-ops config PR. Prior: 2026-07-17 owner directive.)
@@ -62,13 +62,13 @@ write adapters (Libretto direct, Kometa auto-merged git-PR).
 Three constraints shape every decision:
 
 1. **Mirror-only stays intact (ADR-064).** The app never writes a Plex collection. It writes a Kometa
-   *recipe* (a collection definition in Kometa's YAML) into one app-owned file; Kometa is still the
+   _recipe_ (a collection definition in Kometa's YAML) into one app-owned file; Kometa is still the
    thing that builds the collection, and DESIGN-035 is still the only read path. The write surface is a
    config recipe, not a collection.
 2. **Distilled to exactly the owner's builder types (R1).** Kometa's builder taxonomy is enormous and
    churns (the research doc's breaking-change history). The app allowlists EXACTLY the builder types
    the live config uses today (D-04) and nothing else. "Hook in your own thing" means a member picks an
-   allowlisted builder type and supplies a *validated ref* (an IMDb list URL, a TMDb collection id) —
+   allowlisted builder type and supplies a _validated ref_ (an IMDb list URL, a TMDb collection id) —
    **never raw YAML passthrough** (ADR-069).
 3. **Role-gate the blast radius (owner directive).** A movie pulls gigabytes per title. An edit that
    flips `radarr_add_missing` on can fill Radarr with an entire IMDb list, a whole studio catalogue, or
@@ -86,7 +86,7 @@ collections`). This is what each noun MEANS Kometa-side:
 - **Recipe** = one Kometa **collection definition** — a single entry under `collections:` in a
   `collection_files` YAML file: a namespaced title + a builder + its ref + a bounded set of variables
   (`{ id, provider: 'kometa', targetLibrary, name, builder: { type, ref }, variables: { syncMode,
-  collectionOrder, acquisitionEnabled, tag, schedule }, enabled }`). This is the SAME shape as a
+collectionOrder, acquisitionEnabled, tag, schedule }, enabled }`). This is the SAME shape as a
   Libretto recipe (PLAN-052 §6.2) with a Kometa discriminator; the composer form and the tRPC router
   are shared, the builder allowlist (D-04) is provider-specific.
 - **Read — what the app can safely see** (two layers, both already in the estate):
@@ -99,8 +99,8 @@ collections`). This is what each noun MEANS Kometa-side:
 
 > **REVISED 2026-07-18 evening (owner ruling — edit the estate's collections, not read-only).** The
 > bullet above originally said the app does NOT parse the owner's hand-written sibling files. That is
-> SUPERSEDED. The owner ruled: *"the point of the collections config UI was to edit Kometa configs by
-> add / update / editing collections."* The app now READS EVERY hand-authored config file
+> SUPERSEDED. The owner ruled: _"the point of the collections config UI was to edit Kometa configs by
+> add / update / editing collections."_ The app now READS EVERY hand-authored config file
 > (`movies-*.yml` / `shows-*.yml`) and parses their collections into the Movies/TV list, and EDITS a
 > hand collection in place by a **surgical text-level splice** of only that collection's builder ref (or
 > its `<arr>_add_missing`/`_search` keys), preserving every untouched byte of the file (round-trip
@@ -108,6 +108,7 @@ collections`). This is what each noun MEANS Kometa-side:
 > flow-map layout, so the splice never re-serializes the file). Editing a hand file opens a haynes-ops PR
 > against THAT file; it is ALWAYS human-merged (see D-10). Adds still flow to the app-owned managed
 > include exactly as before. The editability boundary is D-04.
+
 - **Write** = compile the enabled recipes into the ONE managed include file and open a haynes-ops PR
   (D-02). A write is a config change, applied by Flux, realized by the next Kometa run — never a live
   Plex mutation.
@@ -205,19 +206,19 @@ Enumerated from the LIVE config (`haynes-ops apps/media/kometa/app/config/*.yml`
 The allowlist is EXACTLY these types — a builder Kometa supports but the owner does not use is not
 offered:
 
-| Builder type | Where it lives now | Ref shape | Acquisition-capable? | Member-suggestible v1? |
-|---|---|---|---|---|
-| `imdb_list` | Christmas HNet, Roald Dahl, J-Horror, Addams Family, Monsterverse | an IMDb list URL (`imdb.com/list/ls\d+/`) | **Yes** (add_missing can pull the whole list) | **Yes** — validated URL + ref preview |
-| `tmdb_collection_details` | movies-franchises (Addams, Goosebumps, Fantastic Four, …) | a TMDb collection id (int) | **Yes** | **Yes** — id resolves to a name + member count preview |
-| `tvdb_list_details` | shows-franchises (Arrowverse, Band of Brothers, The Boys, …) | a TVDb list URL | **Yes** | **Yes** — validated URL + preview |
-| `tmdb_movie` | Unbreakable, Addams augment | a list of TMDb movie ids | **Yes** | **Yes** — manual id curation |
-| `tmdb_show` | Curated for Jackson/Kellie/Penelope, Kid Cartoons | a list of TMDb show ids | **Yes** | **Yes** — manual id curation |
-| `tvdb_show` | Curated family lists, Earth & Space Wonders | a list of TVDb show ids | **Yes** | **Yes** — manual id curation |
-| `tmdb_discover` | movies-charts (sort_by + `with_original_language` + `vote_count.gte`); movies-people (`with_crew`/`with_cast`) | a query OBJECT (many knobs) | **Yes** (charts pull; the 2023 flood source) | **No v1** — owner-only (it is the chart/people engine, not a ref) |
-| `imdb_chart` | IMDB Popular, IMDB Top 250 | a named chart enum | **Yes** (continuous for "Popular") | **No v1** — owner-only |
-| `imdb_search` | A24, Disney/DreamWorks Animation (company ids) | a search OBJECT (company/keyword) | **Yes** (whole catalogue) | **No v1** — owner-only |
-| `plex_all` + `filters` | Spatial Surround, Dolby Atmos, DTS X | library-filter regexes | **No** — groups EXISTING media only | **No v1** — owner-only (regex, not a ref) but inherently acquisition-safe |
-| Kometa Defaults (`- default:`) | config.yml: universe, seasonal, oscars, golden (acquire ON), franchise (OFF) | a default name + `template_variables` | Yes (per-default) | **No** — lives on the PVC config.yml (re-seed), deferred past v1 (PLAN-052) |
+| Builder type                   | Where it lives now                                                                                             | Ref shape                                 | Acquisition-capable?                          | Member-suggestible v1?                                                      |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------- |
+| `imdb_list`                    | Christmas HNet, Roald Dahl, J-Horror, Addams Family, Monsterverse                                              | an IMDb list URL (`imdb.com/list/ls\d+/`) | **Yes** (add_missing can pull the whole list) | **Yes** — validated URL + ref preview                                       |
+| `tmdb_collection_details`      | movies-franchises (Addams, Goosebumps, Fantastic Four, …)                                                      | a TMDb collection id (int)                | **Yes**                                       | **Yes** — id resolves to a name + member count preview                      |
+| `tvdb_list_details`            | shows-franchises (Arrowverse, Band of Brothers, The Boys, …)                                                   | a TVDb list URL                           | **Yes**                                       | **Yes** — validated URL + preview                                           |
+| `tmdb_movie`                   | Unbreakable, Addams augment                                                                                    | a list of TMDb movie ids                  | **Yes**                                       | **Yes** — manual id curation                                                |
+| `tmdb_show`                    | Curated for Jackson/Kellie/Penelope, Kid Cartoons                                                              | a list of TMDb show ids                   | **Yes**                                       | **Yes** — manual id curation                                                |
+| `tvdb_show`                    | Curated family lists, Earth & Space Wonders                                                                    | a list of TVDb show ids                   | **Yes**                                       | **Yes** — manual id curation                                                |
+| `tmdb_discover`                | movies-charts (sort_by + `with_original_language` + `vote_count.gte`); movies-people (`with_crew`/`with_cast`) | a query OBJECT (many knobs)               | **Yes** (charts pull; the 2023 flood source)  | **No v1** — owner-only (it is the chart/people engine, not a ref)           |
+| `imdb_chart`                   | IMDB Popular, IMDB Top 250                                                                                     | a named chart enum                        | **Yes** (continuous for "Popular")            | **No v1** — owner-only                                                      |
+| `imdb_search`                  | A24, Disney/DreamWorks Animation (company ids)                                                                 | a search OBJECT (company/keyword)         | **Yes** (whole catalogue)                     | **No v1** — owner-only                                                      |
+| `plex_all` + `filters`         | Spatial Surround, Dolby Atmos, DTS X                                                                           | library-filter regexes                    | **No** — groups EXISTING media only           | **No v1** — owner-only (regex, not a ref) but inherently acquisition-safe   |
+| Kometa Defaults (`- default:`) | config.yml: universe, seasonal, oscars, golden (acquire ON), franchise (OFF)                                   | a default name + `template_variables`     | Yes (per-default)                             | **No** — lives on the PVC config.yml (re-seed), deferred past v1 (PLAN-052) |
 
 **The member-suggestible set (v1 proposal, Q-02):** `imdb_list`, `tmdb_collection_details`,
 `tvdb_list_details`, `tmdb_movie`, `tmdb_show`, `tvdb_show` — the six that reduce to a **single
@@ -256,12 +257,12 @@ list, grouping-only:
 ```yaml
 # in hnet-managed-movies.yml (generated — do not hand-edit)
 collections:
-  "<namespaced title>":
+  '<namespaced title>':
     imdb_list: https://www.imdb.com/list/ls012345678/
     sync_mode: sync
     collection_order: custom
-    radarr_add_missing: false        # acquisitionEnabled = false ⇒ grouping-only
-    radarr_tag: "Kometa-Added,HNet-Suggested"
+    radarr_add_missing: false # acquisitionEnabled = false ⇒ grouping-only
+    radarr_tag: 'Kometa-Added,HNet-Suggested'
 ```
 
 The composer enforces: builder in the allowlist (D-04), ref validated + previewed (D-04), `id` globally
@@ -375,6 +376,33 @@ introduces over the estate's human-merge GitOps norm, and it is bounded by the f
 (ADR-072 C-06). A canary window (auto-merge behind a flag for the first runs) is a safe-rollout option
 (DESIGN-043 Q-03).
 
+> **D-10 note (2026-07-20) — AS-IMPLEMENTED after the first live write (PR4b canary, haynes-ops
+> #2170/#2171). Two corrections to the mechanics above; the four-condition policy is UNCHANGED.**
+>
+> 1. **The gate is scoped to ONE named check, app-enforced — NOT GitHub native auto-merge.** The
+>    `--validate-file` workflow (`Kometa Validate Managed Files - Success`) is **path-filtered** (it runs
+>    only on PRs that touch the managed includes), so it **cannot be a branch-protection _required_ status
+>    check** — a required check that never reports would permanently block every non-managed PR (Renovate,
+>    releases). Verified live 2026-07-20: haynes-ops main requires the Flux Local matrix + Diff Scope
+>    roll-ups, and a Renovate PR with NO Kometa check is `mergeable_state: clean`. Consequently GitHub's
+>    **native auto-merge would gate on Flux Local/Diff Scope only and merge WITHOUT the validate gate** — it
+>    cannot faithfully implement "auto-merge when the validate gate is green." So the **app is the gate
+>    enforcer**: `getChecksConclusion` is scoped to the ONE gate check _by name_ and every sibling check on
+>    the head is ignored. (The original roll-up-EVERY-check code false-negatived every eligible add on the
+>    still-in-progress Flux Local matrix even though the validate gate was green on the first poll — a pure
+>    timing/scope bug; both live PRs were `mergeable: clean` minutes later.)
+>
+> 2. **The wait is OUT of the request path — "arm + return immediately".** The add mutation opens the PR,
+>    proves the three compile/PR-time conditions (within-cap, grouping-only, managed-file-only), then makes
+>    ONE scoped gate check: **already green → merge in-request; already red → leave for a human; not settled
+>    yet → ARM a deferred (background) wait on the named gate that squash-merges the instant it goes green.**
+>    No user click ever blocks on the ~135s check poll again. The deferred merge **degrades honestly**: a gate
+>    that fails / times out, a merge that errors, or a pod restart that loses the in-process task all leave the
+>    PR OPEN for a human (the pre-existing safe default; the merged PR is still the audit trail). The gate
+>    check name is config (`HAYNESOPS_KOMETA_CHECK_NAME`, defaulted to the workflow job name). The collection
+>    row's async state spine (drafting → PR opened → merged (auto|human) → run → mirrored) is unchanged —
+>    `collections-sync` still reconciles the produced collection to `live` by title after the Kometa run (Q-05).
+
 ### D-08 — The monitor story (what Kometa honestly exposes)
 
 Kometa is a **batch process with NO inbound API/UI/daemon** (research §2). What the app can truthfully
@@ -389,7 +417,7 @@ show about a run:
   are OUTBOUND-only; pointing `run_end`/`error` at an hnet endpoint would give the app a run-state
   readback without polling (research §3.7, §6.4). Deferred — Job status + meta.log is enough for v1.
 - **Run-now** — a bounded `kubectl create job --from=cronjob/kometa-collections … -- --run --run-files
-  "hnet-managed-movies.yml"` (the dev-env SA holds job-create per the pod capabilities memo) lets a
+"hnet-managed-movies.yml"` (the dev-env SA holds job-create per the pod capabilities memo) lets a
   `manage` user trigger an immediate scoped run of ONLY the managed file after an approval, shortening
   the latency (D-02) without waiting for 06:30. Scoped to the managed file so it can never re-run the
   owner's heavy overlay/operation passes.
@@ -461,7 +489,7 @@ grouping-only, managed-file-only, CI-green (ADR-072 C-06); a canary flag is the 
 
 - **Domain (packages/domain)** — the recipe compiler is a pure function: allowlisted builder + validated
   ref → the expected `collections:` YAML entry; `acquisitionEnabled: false` emits `radarr_add_missing:
-  false`; a non-allowlisted builder or an unvalidated ref REJECTS; global `id` uniqueness bites; title
+false`; a non-allowlisted builder or an unvalidated ref REJECTS; global `id` uniqueness bites; title
   namespacing applied. Suggestion lifecycle: row + audit in ONE tx before any external call (the
   DESIGN-033 atomicity test); approve-with-acquisition without the `acquire` grant REJECTS.
 - **Grant gate (packages/api)** — `collectionActionProcedure` matrix: no grant ⇒ FORBIDDEN;
@@ -477,13 +505,13 @@ grouping-only, managed-file-only, CI-green (ADR-072 C-06); a canary flag is the 
 
 ## Open questions
 
-| ID | Question | Resolution |
-|----|----------|------------|
-| Q-01 | **Write-path merge ruling:** does a config PR merge by a HUMAN or app-armed auto-merge after `--validate-file` green? | **RESOLVED 2026-07-18 (ADR-072, owner ruling): AUTO-MERGE the safe case** — within-cap, grouping-only (find-missing OFF), managed-file-only, `--validate-file` green (D-10). Over-cap materializations and find-missing enables stay HUMAN-merged. |
-| Q-02 | **Which builder types are member-suggestible v1?** Proposed: the six single-ref types (`imdb_list`, `tmdb_collection_details`, `tvdb_list_details`, `tmdb_movie`, `tmdb_show`, `tvdb_show`); owner-only for `tmdb_discover`/`imdb_chart`/`imdb_search`/`plex_all`. | OPEN — owner ruling. The list is derived from the live config (D-04); owner confirms the cut. |
-| Q-03 | **Approval SLA / notification:** how is a member told their suggestion was approved/rejected/went live? A Ticket? The `notification_outbox` email channel (T-173)? In-app only? | OPEN — owner ruling. The outbox email channel + notification-preference machinery already exists (T-173/T-174) and is the cheap reuse. |
-| Q-04 | **Grant rollout:** which roles get `suggest` / `manage` / `acquire`, and when? | OPEN — owner ruling. Ships Admin-only (empty grants, DESIGN-033 default). Natural path: `suggest` to members early, `manage` to trusted roles, `acquire` owner-held long-term (the storage blast radius). |
-| Q-05 | **Namespacing + live-reconcile marker:** the exact convention that (a) prevents title collision with sibling files and (b) lets `collections-sync` match a produced collection back to its suggestion. A title prefix? A recipe-id marker (the Libretto `[libretto:<id>]` idiom, but Kometa collections carry no app-writable description the sync reads today — the DESIGN-035 provenance is a Plex LABEL). | **RESOLVED-AT-BUILD 2026-07-18 (PR4b): the label option.** The compiler stamps every managed collection with a reserved `HNet Managed` Plex label (`HNET_MANAGED_LABEL`), added to `deriveCollectionCategory`'s reserved set so it never becomes a category chip and never uglifies the display title. Live-reconcile is BY NORMALIZED TITLE (the mirror row's `created_by: kometa` + a title match → `live`; else `pending_run`) — no `collections-sync` change. A finer label→recipe-id sync join stays deferred (a sync dependency; the title match is honest enough for v1). |
-| Q-06 | **Ref-preview data source + egress:** resolving a TMDb collection id → name/count is a TMDb call (already a Kometa connector); resolving an IMDb/TVDb list URL → title/count needs a data source and an egress-allowlist entry (CiliumNetworkPolicy `dev-env`). Which source, and add the allowlist via a haynes-ops PR? | **RESOLVED-AT-BUILD 2026-07-18 (PR4b): canary-first, NO new egress.** `previewKometaRef` makes NO network call: an id-list builder (tmdb_movie/tmdb_show/tvdb_show) previews its exact count (the app knows it); a URL/collection-id builder renders an honest "preview unavailable for this ref type" note. Consequently the size cap can only be PROVEN for id-list builders — a non-admin URL/collection-id add is treated as over-cap (routes to the ticket, human-merged) rather than auto-merged. A TMDb/IMDb/TVDb resolve behind a new egress allowlist entry is a follow-up (Q-NN), not a proxy workaround. `--validate-file` connectivity remains UNVERIFIED — canary before relying on auto-merge. |
-| Q-07 | **Do Kometa suggestions create Radarr/Sonarr wants at all in v1, or grouping-only first?** The "ton of content" risk. | OPEN — owner ruling. Design sequences acquisition to Phase 3 (grouping-only through Phase 2); the safe default is grouping-only until the pipeline is proven. |
-| Q-08 | **TV `plex_all`/regex and Defaults toggling** — out of the member surface, but is an owner-only advanced managed surface wanted later, or do these stay hand-authored in haynes-ops? | DEFERRED. Hand-authored today; a later owner-only advanced surface is possible but out of this design's KISS scope (R1). |
+| ID   | Question                                                                                                                                                                                                                                                                                                                                                                                                     | Resolution                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Q-01 | **Write-path merge ruling:** does a config PR merge by a HUMAN or app-armed auto-merge after `--validate-file` green?                                                                                                                                                                                                                                                                                        | **RESOLVED 2026-07-18 (ADR-072, owner ruling): AUTO-MERGE the safe case** — within-cap, grouping-only (find-missing OFF), managed-file-only, `--validate-file` green (D-10). Over-cap materializations and find-missing enables stay HUMAN-merged.                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Q-02 | **Which builder types are member-suggestible v1?** Proposed: the six single-ref types (`imdb_list`, `tmdb_collection_details`, `tvdb_list_details`, `tmdb_movie`, `tmdb_show`, `tvdb_show`); owner-only for `tmdb_discover`/`imdb_chart`/`imdb_search`/`plex_all`.                                                                                                                                           | OPEN — owner ruling. The list is derived from the live config (D-04); owner confirms the cut.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Q-03 | **Approval SLA / notification:** how is a member told their suggestion was approved/rejected/went live? A Ticket? The `notification_outbox` email channel (T-173)? In-app only?                                                                                                                                                                                                                              | OPEN — owner ruling. The outbox email channel + notification-preference machinery already exists (T-173/T-174) and is the cheap reuse.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Q-04 | **Grant rollout:** which roles get `suggest` / `manage` / `acquire`, and when?                                                                                                                                                                                                                                                                                                                               | OPEN — owner ruling. Ships Admin-only (empty grants, DESIGN-033 default). Natural path: `suggest` to members early, `manage` to trusted roles, `acquire` owner-held long-term (the storage blast radius).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Q-05 | **Namespacing + live-reconcile marker:** the exact convention that (a) prevents title collision with sibling files and (b) lets `collections-sync` match a produced collection back to its suggestion. A title prefix? A recipe-id marker (the Libretto `[libretto:<id>]` idiom, but Kometa collections carry no app-writable description the sync reads today — the DESIGN-035 provenance is a Plex LABEL). | **RESOLVED-AT-BUILD 2026-07-18 (PR4b): the label option.** The compiler stamps every managed collection with a reserved `HNet Managed` Plex label (`HNET_MANAGED_LABEL`), added to `deriveCollectionCategory`'s reserved set so it never becomes a category chip and never uglifies the display title. Live-reconcile is BY NORMALIZED TITLE (the mirror row's `created_by: kometa` + a title match → `live`; else `pending_run`) — no `collections-sync` change. A finer label→recipe-id sync join stays deferred (a sync dependency; the title match is honest enough for v1).                                                                                                                             |
+| Q-06 | **Ref-preview data source + egress:** resolving a TMDb collection id → name/count is a TMDb call (already a Kometa connector); resolving an IMDb/TVDb list URL → title/count needs a data source and an egress-allowlist entry (CiliumNetworkPolicy `dev-env`). Which source, and add the allowlist via a haynes-ops PR?                                                                                     | **RESOLVED-AT-BUILD 2026-07-18 (PR4b): canary-first, NO new egress.** `previewKometaRef` makes NO network call: an id-list builder (tmdb_movie/tmdb_show/tvdb_show) previews its exact count (the app knows it); a URL/collection-id builder renders an honest "preview unavailable for this ref type" note. Consequently the size cap can only be PROVEN for id-list builders — a non-admin URL/collection-id add is treated as over-cap (routes to the ticket, human-merged) rather than auto-merged. A TMDb/IMDb/TVDb resolve behind a new egress allowlist entry is a follow-up (Q-NN), not a proxy workaround. `--validate-file` connectivity remains UNVERIFIED — canary before relying on auto-merge. |
+| Q-07 | **Do Kometa suggestions create Radarr/Sonarr wants at all in v1, or grouping-only first?** The "ton of content" risk.                                                                                                                                                                                                                                                                                        | OPEN — owner ruling. Design sequences acquisition to Phase 3 (grouping-only through Phase 2); the safe default is grouping-only until the pipeline is proven.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Q-08 | **TV `plex_all`/regex and Defaults toggling** — out of the member surface, but is an owner-only advanced managed surface wanted later, or do these stay hand-authored in haynes-ops?                                                                                                                                                                                                                         | DEFERRED. Hand-authored today; a later owner-only advanced surface is possible but out of this design's KISS scope (R1).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |

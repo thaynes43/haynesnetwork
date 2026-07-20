@@ -7,9 +7,17 @@
 // collection, and the existing collections-sync mirrors it back with `provenance: kometa`. The app NEVER
 // writes a Plex collection.
 //
-// Auto-merge (D-10) fires only when ALL FOUR conditions hold: within-cap (the assert passed AND not an
-// over-cap materialization), grouping-only (find-missing OFF), the PR diff touches ONLY the app-owned
-// managed include, and the `--validate-file` CI gate is green. Anything else leaves the PR for a human.
+// Auto-merge (D-10, as-implemented 2026-07-20). The write path ARMS an app-enforced auto-merge only when the
+// three COMPILE/PR-TIME conditions hold: within-cap (the assert passed AND not an over-cap materialization),
+// grouping-only (find-missing OFF), and the PR diff touches ONLY the app-owned managed include. The runtime
+// `--validate-file` CI gate is enforced SEPARATELY, SCOPED to its ONE named check-run: green → merge; failed
+// → leave for a human; still pending at request time → arm the DEFERRED merge (a background wait on the named
+// gate) and return immediately. This replaced the original in-request roll-up-the-whole-check-matrix poll,
+// which false-negatived every eligible add on the slow Flux Local matrix and blocked the request ~135s
+// (live 2026-07-20, haynes-ops #2170/#2171). Native GitHub auto-merge is NOT used: the validate check is
+// path-filtered and therefore NOT a branch-protection required check, so GitHub would merge on the required
+// Flux Local/Diff Scope checks WITHOUT the validate gate — the app must be the gate enforcer. Anything not
+// armed/merged leaves the PR for a human.
 import { and, eq } from 'drizzle-orm';
 import {
   permissionAudit,
@@ -242,26 +250,30 @@ export interface KometaAutoMergeInputs {
   findMissing: boolean;
   /** True only when the PR diff touches ONLY the app-owned managed include. */
   managedFileOnly: boolean;
-  /** The `--validate-file` CI gate conclusion for the PR head. */
-  checksGreen: boolean;
 }
 
 export interface KometaAutoMergeDecision {
+  /** Eligible to ARM the auto-merge (all three compile/PR-time conditions hold). */
   autoMerge: boolean;
-  /** Why auto-merge was withheld (the PR is left for a human) — null when autoMerge is true. */
+  /** Why auto-merge was withheld (the PR is left for a human) — null when eligible. */
   reason: string | null;
 }
 
 /**
- * DESIGN-042 D-10 — the app AUTO-MERGES a haynes-ops config PR only when ALL FOUR conditions hold; any one
- * failing leaves the PR for a human. Pure so the condition matrix is exhaustively testable.
+ * DESIGN-042 D-10 — the ELIGIBILITY policy: the app arms an auto-merge only when ALL THREE compile/PR-time
+ * conditions hold (within-cap, grouping-only, managed-file-only); any one failing leaves the PR for a human.
+ * The runtime `--validate-file` CI gate is NOT part of this pure decision — it is enforced separately by the
+ * (scoped, named) checks conclusion once a PR is eligible (green → merge; failed/pending → deferred/human).
+ * This keeps "is this the kind of write we auto-merge?" (compile-time, exhaustively testable) cleanly split
+ * from "is the CI gate green?" (runtime). Pure so the condition matrix stays exhaustively testable.
  */
 export function evaluateKometaAutoMerge(input: KometaAutoMergeInputs): KometaAutoMergeDecision {
   if (!input.capAsserted) return { autoMerge: false, reason: 'over the size cap' };
-  if (input.isMaterialization) return { autoMerge: false, reason: 'over-cap materialization (human-merged)' };
+  if (input.isMaterialization)
+    return { autoMerge: false, reason: 'over-cap materialization (human-merged)' };
   if (input.findMissing) return { autoMerge: false, reason: 'find-missing enabled (human-merged)' };
-  if (!input.managedFileOnly) return { autoMerge: false, reason: 'PR touches files outside the managed include' };
-  if (!input.checksGreen) return { autoMerge: false, reason: 'validation gate not green' };
+  if (!input.managedFileOnly)
+    return { autoMerge: false, reason: 'PR touches files outside the managed include' };
   return { autoMerge: true, reason: null };
 }
 
@@ -291,9 +303,16 @@ const upsertAuditDetail = (recipe: KometaRecipe, extra?: Record<string, unknown>
 export interface KometaWriteResult {
   prNumber: number;
   prUrl: string;
-  /** True when the app auto-merged (all four D-10 conditions held); false when left for a human. */
+  /** True when the app merged the PR IN the request (eligible + the validate gate already green — D-10). */
   merged: boolean;
-  /** When not merged, why (the honest "awaiting merge" reason surfaced on the row); null when merged. */
+  /**
+   * True when the app ARMED the deferred auto-merge: eligible (within-cap, grouping-only, managed-file-only)
+   * but the validate gate had not settled yet, so a background wait will merge it the instant the gate is
+   * green (or leave it for a human if it fails/times out). `merged` and `autoMergeArmed` are mutually
+   * exclusive; both false means the PR is left for a human (autoMergeBlockedReason says why).
+   */
+  autoMergeArmed: boolean;
+  /** Why NOT merged/armed (the honest "awaiting merge" reason on the row); null when merged or armed. */
   autoMergeBlockedReason: string | null;
 }
 
@@ -308,6 +327,25 @@ function recompileWith(
   return compileManagedFile({ mediaType, recipes: next });
 }
 
+/** A minimal logger seam for the deferred (out-of-request) auto-merge — optional; defaults to a no-op. */
+export interface KometaAutoMergeLogger {
+  info?: (message: string, meta?: Record<string, unknown>) => void;
+  warn?: (message: string, meta?: Record<string, unknown>) => void;
+}
+
+/**
+ * Schedule the DEFERRED auto-merge OUT of the request path. The task self-catches (never rejects), so the
+ * default is a safe fire-and-forget: the request returns immediately, the merge fires when the named gate is
+ * green. Tests inject a capturing scheduler to run the task deterministically; a caller that wants a
+ * different lifecycle (a queue, a restart-durable job) can inject its own. A merge lost to a pod restart
+ * leaves the PR open — the pre-existing safe default (a human merges the already-validated PR).
+ */
+export type ScheduleAutoMerge = (task: () => Promise<void>) => void;
+
+const defaultScheduleAutoMerge: ScheduleAutoMerge = (task) => {
+  void task();
+};
+
 interface KometaWriteContext {
   db?: DbClient;
   haynesops: HaynesopsClientBundle;
@@ -316,8 +354,12 @@ interface KometaWriteContext {
   mediaType: KometaMediaType;
   /** Injectable unique branch suffix (tests pass a fixed value). */
   branchSuffix?: string;
-  /** Injectable check-poll knobs (tests pass 1 attempt / a fake sleep). */
+  /** Injectable DEFERRED-wait knobs (tests pass 1 attempt / a fake sleep). */
   checkPoll?: { attempts?: number; intervalMs?: number; sleepImpl?: (ms: number) => Promise<void> };
+  /** Injectable scheduler for the deferred merge (default: safe fire-and-forget). */
+  scheduleAutoMerge?: ScheduleAutoMerge;
+  /** Optional logger for the deferred merge's outcome (merged / left-for-human / failed). */
+  logger?: KometaAutoMergeLogger;
 }
 
 /**
@@ -328,10 +370,16 @@ interface KometaWriteContext {
 async function openAndMaybeAutoMerge(
   ctx: KometaWriteContext,
   content: string,
-  opts: { isMaterialization: boolean; title: string; body: string; auditAction: 'upsert_collection' },
+  opts: {
+    isMaterialization: boolean;
+    title: string;
+    body: string;
+    auditAction: 'upsert_collection';
+  },
 ): Promise<KometaWriteResult> {
   const path = managedPath(ctx.haynesops, ctx.mediaType);
-  const suffix = ctx.branchSuffix ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  const suffix =
+    ctx.branchSuffix ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   const pr = await ctx.haynesops.write.openManagedFilePr({
     path,
     content,
@@ -341,29 +389,53 @@ async function openAndMaybeAutoMerge(
   });
 
   let merged = false;
+  let autoMergeArmed = false;
   let reason: string | null = 'awaiting merge';
-  // Auto-merge is off for the materialization + find-missing paths without any GitHub round-trips.
-  const eligible = !opts.isMaterialization && !ctx.recipe.findMissing;
-  if (eligible) {
+  // Materialization + find-missing are never eligible — no GitHub round-trips (D-10).
+  const preEligible = !opts.isMaterialization && !ctx.recipe.findMissing;
+  if (!preEligible) {
+    reason = opts.isMaterialization
+      ? 'over-cap materialization (human-merged)'
+      : 'find-missing enabled (human-merged)';
+  } else {
     const files = await ctx.haynesops.write.getPrFilePaths(pr.number);
     const managedFileOnly = files.length > 0 && files.every((f) => f === path);
-    const conclusion = await ctx.haynesops.write.waitForChecks(pr.headSha, ctx.checkPoll);
     const decision = evaluateKometaAutoMerge({
       capAsserted: true,
       isMaterialization: false,
-      findMissing: ctx.recipe.findMissing,
+      findMissing: false,
       managedFileOnly,
-      checksGreen: conclusion === 'success',
     });
-    if (decision.autoMerge) {
-      await ctx.haynesops.write.squashMergePr(pr.number, opts.title);
-      merged = true;
-      reason = null;
-    } else {
+    if (!decision.autoMerge) {
+      // Ineligible (managed-file-only failed) — left for a human.
       reason = decision.reason;
+    } else {
+      // Eligible. Enforce the runtime validate gate, SCOPED to its ONE named check-run (never the whole
+      // matrix). One check — NOT a blocking poll: the request path returns fast. Already green → merge now;
+      // already failed → human; still pending → ARM the deferred (out-of-request) merge and return.
+      const gate = ctx.haynesops.kometaCheckName;
+      const conclusion = await ctx.haynesops.read.getChecksConclusion(
+        pr.headSha,
+        gate ? { requiredCheckName: gate } : undefined,
+      );
+      if (conclusion === 'success') {
+        await ctx.haynesops.write.squashMergePr(pr.number, opts.title);
+        merged = true;
+        reason = null;
+      } else if (conclusion === 'failure') {
+        reason = 'validation gate failed (left for a human)';
+      } else {
+        // pending / none — the gate has not settled. Arm the deferred merge OUT of the request path.
+        autoMergeArmed = true;
+        reason = null;
+        armDeferredAutoMerge(ctx, {
+          prNumber: pr.number,
+          headSha: pr.headSha,
+          title: opts.title,
+          checkName: gate,
+        });
+      }
     }
-  } else {
-    reason = opts.isMaterialization ? 'over-cap materialization (human-merged)' : 'find-missing enabled (human-merged)';
   }
 
   await inTransaction(ctx.db, async (tx) => {
@@ -374,12 +446,57 @@ async function openAndMaybeAutoMerge(
         pr_number: pr.number,
         pr_url: pr.url,
         merged,
+        auto_merge_armed: autoMergeArmed,
         materialization: opts.isMaterialization,
       }),
     });
   });
 
-  return { prNumber: pr.number, prUrl: pr.url, merged, autoMergeBlockedReason: reason };
+  return {
+    prNumber: pr.number,
+    prUrl: pr.url,
+    merged,
+    autoMergeArmed,
+    autoMergeBlockedReason: reason,
+  };
+}
+
+/**
+ * DESIGN-042 D-10 (as-implemented 2026-07-20) — arm the DEFERRED auto-merge. The request path already proved
+ * the PR eligible (within-cap, grouping-only, managed-file-only) and that the named validate gate had not yet
+ * settled; this schedules a background wait on THAT ONE named check and squash-merges the instant it is green.
+ * Everything is out of the request path — the caller returns immediately. The task self-catches (never
+ * rejects) and degrades honestly: a gate that fails / times out, or a merge that errors, leaves the PR OPEN
+ * for a human (the pre-existing safe default — the merged PR is the audit trail, a bad recipe is a revert).
+ */
+function armDeferredAutoMerge(
+  ctx: KometaWriteContext,
+  pr: { prNumber: number; headSha: string; title: string; checkName: string },
+): void {
+  const schedule = ctx.scheduleAutoMerge ?? defaultScheduleAutoMerge;
+  const logger = ctx.logger;
+  schedule(async () => {
+    try {
+      const conclusion = await ctx.haynesops.write.waitForChecks(pr.headSha, {
+        ...ctx.checkPoll,
+        ...(pr.checkName ? { requiredCheckName: pr.checkName } : {}),
+      });
+      if (conclusion !== 'success') {
+        logger?.warn?.('kometa deferred auto-merge: validate gate not green, PR left for a human', {
+          prNumber: pr.prNumber,
+          conclusion,
+        });
+        return;
+      }
+      await ctx.haynesops.write.squashMergePr(pr.prNumber, pr.title);
+      logger?.info?.('kometa deferred auto-merge complete', { prNumber: pr.prNumber });
+    } catch (error) {
+      logger?.warn?.('kometa deferred auto-merge failed, PR left for a human', {
+        prNumber: pr.prNumber,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
 }
 
 /**
@@ -400,6 +517,9 @@ export async function upsertKometaCollection(input: {
   isAdmin: boolean;
   branchSuffix?: string;
   checkPoll?: KometaWriteContext['checkPoll'];
+  /** Injectable deferred-merge scheduler (default: fire-and-forget) + logger — the arming seam (D-10). */
+  scheduleAutoMerge?: KometaWriteContext['scheduleAutoMerge'];
+  logger?: KometaWriteContext['logger'];
 }): Promise<KometaWriteResult> {
   validateKometaRef(input.recipe.builderType, input.recipe.builderRef);
   // A non-admin with an unresolvable size cannot be proven within-cap → treat as cap+1 (over-cap ticket).
@@ -422,6 +542,8 @@ export async function upsertKometaCollection(input: {
       mediaType: recipe.mediaType,
       ...(input.branchSuffix ? { branchSuffix: input.branchSuffix } : {}),
       ...(input.checkPoll ? { checkPoll: input.checkPoll } : {}),
+      ...(input.scheduleAutoMerge ? { scheduleAutoMerge: input.scheduleAutoMerge } : {}),
+      ...(input.logger ? { logger: input.logger } : {}),
     },
     content,
     {
@@ -489,6 +611,9 @@ export async function deleteKometaRecipe(input: {
   deleteCollection?: boolean;
   branchSuffix?: string;
   checkPoll?: KometaWriteContext['checkPoll'];
+  /** Injectable deferred-merge scheduler (default: fire-and-forget) + logger — the arming seam (D-10). */
+  scheduleAutoMerge?: KometaWriteContext['scheduleAutoMerge'];
+  logger?: KometaWriteContext['logger'];
 }): Promise<KometaWriteResult> {
   const path = managedPath(input.haynesops, input.mediaType);
   const file = await input.haynesops.read.getFile(path, input.haynesops.baseBranch);
@@ -514,6 +639,8 @@ export async function deleteKometaRecipe(input: {
       mediaType: input.mediaType,
       ...(input.branchSuffix ? { branchSuffix: input.branchSuffix } : {}),
       ...(input.checkPoll ? { checkPoll: input.checkPoll } : {}),
+      ...(input.scheduleAutoMerge ? { scheduleAutoMerge: input.scheduleAutoMerge } : {}),
+      ...(input.logger ? { logger: input.logger } : {}),
     },
     content,
     {
@@ -523,7 +650,9 @@ export async function deleteKometaRecipe(input: {
         `Remove the app-managed Kometa collection **${recipe.name}** from the managed include.`,
         ``,
         `The produced Plex collection is orphaned (it survives; the recipe stops managing it).`,
-        input.deleteCollection ? `Requester asked to also delete the collection (orphan-only in v1).` : ``,
+        input.deleteCollection
+          ? `Requester asked to also delete the collection (orphan-only in v1).`
+          : ``,
       ]
         .filter(Boolean)
         .join('\n'),
@@ -551,13 +680,18 @@ export async function setKometaFindMissing(input: {
   on: boolean;
   branchSuffix?: string;
   checkPoll?: KometaWriteContext['checkPoll'];
+  /** Injectable deferred-merge scheduler (default: fire-and-forget) + logger — the arming seam (D-10). */
+  scheduleAutoMerge?: KometaWriteContext['scheduleAutoMerge'];
+  logger?: KometaWriteContext['logger'];
 }): Promise<KometaWriteResult> {
   const path = managedPath(input.haynesops, input.mediaType);
   const file = await input.haynesops.read.getFile(path, input.haynesops.baseBranch);
   const existing = parseManagedFile(file?.text);
   const current = existing.find((r) => r.id === input.id && r.mediaType === input.mediaType);
   if (!current) {
-    throw new NotFoundError(`Kometa collection "${input.id}" not found in the managed ${input.mediaType} include`);
+    throw new NotFoundError(
+      `Kometa collection "${input.id}" not found in the managed ${input.mediaType} include`,
+    );
   }
   const recipe: KometaRecipe = { ...current, findMissing: input.on };
   const content = recompileWith(existing, recipe, input.mediaType);
@@ -570,6 +704,8 @@ export async function setKometaFindMissing(input: {
       mediaType: input.mediaType,
       ...(input.branchSuffix ? { branchSuffix: input.branchSuffix } : {}),
       ...(input.checkPoll ? { checkPoll: input.checkPoll } : {}),
+      ...(input.scheduleAutoMerge ? { scheduleAutoMerge: input.scheduleAutoMerge } : {}),
+      ...(input.logger ? { logger: input.logger } : {}),
     },
     content,
     {
@@ -594,10 +730,7 @@ function handPath(haynesops: HaynesopsClientBundle, file: string): string {
 }
 
 /** Read a hand file's current text off the base branch, or throw NotFound (never a fabricated splice). */
-async function readHandFileText(
-  haynesops: HaynesopsClientBundle,
-  file: string,
-): Promise<string> {
+async function readHandFileText(haynesops: HaynesopsClientBundle, file: string): Promise<string> {
   const repoFile = await haynesops.read.getFile(handPath(haynesops, file), haynesops.baseBranch);
   if (!repoFile) throw new NotFoundError(`Kometa config file "${file}" not found in haynes-ops`);
   return repoFile.text;
@@ -620,7 +753,8 @@ async function openHandFilePrAndAudit(input: {
   auditDetail: Record<string, unknown>;
   branchSuffix?: string;
 }): Promise<KometaWriteResult> {
-  const suffix = input.branchSuffix ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  const suffix =
+    input.branchSuffix ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   const pr = await input.haynesops.write.openManagedFilePr({
     path: handPath(input.haynesops, input.file),
     content: input.content,
@@ -644,7 +778,13 @@ async function openHandFilePrAndAudit(input: {
       },
     });
   });
-  return { prNumber: pr.number, prUrl: pr.url, merged: false, autoMergeBlockedReason: 'awaiting merge (config file)' };
+  return {
+    prNumber: pr.number,
+    prUrl: pr.url,
+    merged: false,
+    autoMergeArmed: false,
+    autoMergeBlockedReason: 'awaiting merge (config file)',
+  };
 }
 
 /**
@@ -773,7 +913,9 @@ export async function deleteKometaHandCollection(input: {
       `Remove the estate's Kometa collection **${input.name}** from \`${input.file}\`.`,
       ``,
       `The produced Plex collection is orphaned (it survives; the config stops managing it).`,
-      input.deleteCollection ? `Requester asked to also delete the collection (orphan-only in v1).` : ``,
+      input.deleteCollection
+        ? `Requester asked to also delete the collection (orphan-only in v1).`
+        : ``,
       `Hand-file PRs are HUMAN-merged.`,
     ]
       .filter(Boolean)
