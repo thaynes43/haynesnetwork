@@ -219,7 +219,12 @@ describe('per-view asymmetry (R5 — a level offers ONLY what it can answer)', (
     for (const absent of ['runtime', 'year', 'released_at']) {
       expect(sortKeys('music:wall')).not.toContain(absent);
     }
-    expect(facetKeys('music:wall')).toEqual(['genres', 'sourceCollections']);
+    // Genre ONLY (owner ruling 2026-07-20, DESIGN-026 D-03 amended): the Collection facet is removed —
+    // no music collections exist or are planned (the label-driven program never spanned Music), so the
+    // chip's values came back permanently empty. An empty filter is worse than an absent one (ADR-047 /
+    // ADR-051 empty-state philosophy — no dead chip). This locks Music to Genre-only.
+    expect(facetKeys('music:wall')).toEqual(['genres']);
+    expect(facetKeys('music:wall')).not.toContain('sourceCollections');
   });
 
   it('Peloton/YouTube walls (discipline/channel cards) answer title + date-added ONLY; the class/video dimensions live at episode level', () => {
