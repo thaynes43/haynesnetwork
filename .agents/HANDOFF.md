@@ -4,7 +4,33 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-## ▶ GB QUOTA SAGA — RESOLVED, FIRST BUDGETED DAY VERIFIED (written 2026-07-20 ~12:50 UTC)
+## ▶ NEXT SESSION — start here (written 2026-07-20 ~17:15 UTC — the expansion day wrap; owner remote)
+
+**v0.88.3 live-verified (15:44 UTC).** Today: the Collections saga's last legs LIVE-PROVEN +
+new collections across **every** library type (Movies/TV via the first-ever Kometa write-path
+fire · 25 new Libretto book/audiobook recipes · comics via a same-day Libretto series-grain
+feature, "Invincible Universe" + "Scott Pilgrim" live) · **MAM 48→112 unsatisfied** (gate 185,
+demand armed: 127 new collection wants) · the GB breaker re-tripped at 13:32 UTC and the REAL
+root cause was fixed + deployed (#444: count PHYSICAL requests; the block below is
+superseded-in-part). Full evidence + all PR numbers:
+`.agents/context/2026-07-20-day-wrap-collections-mam-gb.md`.
+
+**▶ THE #1 FOR TOMORROW (07-21), after the 07:00 UTC GB reset:** (a) the app breaker must
+HOLD all day under the now-physical-accurate accounting — the REAL first clean day; (b)
+Libretto's hourly wants pass re-resolves the **127 null collection wants** (its key quota
+self-heals at reset — diagnosis: keys/projects all fine, it simply spent its own 1,000/day);
+(c) force-search the freshly-resolved wants (cron 25/run/12h + a dispatch sweep, LL id-keyed
+= GB-free) → MAM climbs toward the **185 gate → tell the owner when the 3-day countdown can
+start.** A session-only cron is armed ~08:20 UTC; re-arm if the session died.
+
+**In flight at wrap:** Libretto GB-broker hardening (429/5xx logged + retryable + additive
+`quota_exhausted` reason — full-autonomy repo, PR/deploy rides its own train). **Owner items:**
+keep-or-delete the two live "(verify)" Kometa collections (deleting live-exercises the delete
+path) · the residuals list in the day-wrap note.
+
+---
+
+## ▶ GB QUOTA SAGA — RESOLVED, FIRST BUDGETED DAY VERIFIED (written 2026-07-20 ~12:50 UTC — SUPERSEDED-IN-PART same day: the breaker re-tripped 13:32 UTC on physical-vs-logical undercounting, fixed #444/v0.88.3; see the day-wrap note)
 
 **The Google Books quota fixes WORKED on their first clean day (Mon 07-20).** In-cluster
 verification ~12:44 UTC (full evidence: `.agents/context/2026-07-20-gb-first-budgeted-day-verified.md`):
