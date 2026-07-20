@@ -1,6 +1,6 @@
 {
   "name": "haynesnetwork",
-  "version": "0.88.3",
+  "version": "0.88.4",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.9.0",
