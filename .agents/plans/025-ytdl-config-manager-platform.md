@@ -3,11 +3,12 @@
 - **Status:** **SCOPED (owner rulings 2026-07-20 — the owner-present scoping session happened).**
   The four gating questions are RULED (below); the two researchable ones (Q-02 source sweep,
   Q-03 plugin interface) are Opus-dispatched, reports land as dated `.agents/context/` notes.
-  Next: **ADR-074 (Proposed) + DESIGN-045 (Draft) + glossary T-214…T-224 are written** off the
-  research (this PR) — the executable build saga (M1–M5, appended below) follows ADR-074
-  Acceptance. The DO-NOT-DISPATCH gate is LIFTED for docs/research; code waits on the accepted
-  design. **The repo EXISTS** (`github.com/thaynes43/ytdrivarr`, owner-created 2026-07-20, public;
-  owner-named — the Libretto precedent).
+  Next: **ADR-074 + DESIGN-045 are ACCEPTED (owner, 2026-07-20 evening — all forks ratified;
+  Q-03 OVERRIDDEN: music FIRST-CLASS from M2; license AGPL-3.0; own Postgres in `downloads`) and
+  THE BUILD IS DISPATCHED** — M1 (Opus: the service skeleton + C1–C8 contracts) with the operator
+  console shell Fable-built per the division-of-labor ruling. **The repo EXISTS**
+  (`github.com/thaynes43/ytdrivarr`, owner-created 2026-07-20, public; owner-named — the Libretto
+  precedent).
 
   **AMENDED 2026-07-20 eve (three same-evening owner rulings — binding; fold into the ADR/design):**
   (1) **"arrs are not headless"** — the Libretto HEADLESS clause in the Q-01 bullet below is

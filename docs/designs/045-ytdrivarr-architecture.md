@@ -1,9 +1,11 @@
 # DESIGN-045: ytdrivarr — the *arr-shaped ytdl-content suite service
 
-- **Status:** Draft (owner-review artifact — this is the **design of record** for ytdrivarr, the
-  suite-repo precedent from DESIGN-037/CLAUDE.md rule 10: ytdrivarr is docs-first via its own README +
-  PR descriptions, but the normative architecture lives HERE, in this repo, mirroring how Libretto's
-  design of record is DESIGN-037.)
+- **Status:** **Accepted (owner 2026-07-20, at ADR-074 Acceptance; Fable-reviewed per the
+  division-of-labor ruling)** — this is the **design of record** for ytdrivarr, the suite-repo
+  precedent from DESIGN-037/CLAUDE.md rule 10: ytdrivarr is docs-first via its own README + PR
+  descriptions, but the normative architecture lives HERE, in this repo, mirroring how Libretto's
+  design of record is DESIGN-037. Acceptance carried ONE override — Q-03: music is first-class
+  from M2 (the same-day amendment below).
 - **Last updated:** 2026-07-20
 - **Satisfies:** the PLAN-025 scoping rulings (owner 2026-07-20 — Q-01 *arr-shaped, Q-04 service-owned
   state, Q-05 direct capped+audited mutations, Q-06 new repo + plugin seam) and the Library
@@ -254,9 +256,17 @@ enumeration + download-archive + scope (Only Recent / Chunk) + throttle · **dow
 media-quality + audio_extract + ytdl_options (cookies/headers) · **organize** = output_options +
 season/episode or artist/album pathing + retention · **present** = NFO / music_tags / thumbnails per
 player. **Music-vs-video is a subscribe-time classification the service owns** (disjoint preset
-families/dirs/library kinds — Q-02 §6 #1); v1 **preserves the estate's existing behavior at cutover**
-(music artists currently filed as video TV-shows) and treats the music/video split as a later
-capability, not a cutover change (see Q-03 below on preserving behavior).
+families/dirs/library kinds — Q-02 §6 #1). **AMENDED AT ACCEPTANCE (owner 2026-07-20, the Q-03
+override — "let's move away from audio as video right away and support that first class"):** music
+is FIRST-CLASS FROM M2, not a later capability. Every Source carries a `mediaKind (video | music)`
+set at subscribe time; the Tier-1 YouTube provider implements BOTH preset families from M2 —
+`mediaKind: video` → `{player} TV Show by Date`, `mediaKind: music` → the music family
+(`YouTube Releases` / `Full Albums`: `audio_extract`, `music_tags`, artist/album/track layout) into
+a **music-kind Library**. At the M2 cutover the estate's `= Music` chip channels (currently filed
+as video TV-shows) migrate to `mediaKind: music` Sources. The migration is **NON-DESTRUCTIVE**:
+existing video files stay on disk; NEW discovery lands as audio in the music Library (back-catalog
+re-grabs as audio are an owner-requested follow-up, not automatic). M2 carries ONE owner nod: the
+music target (media root + which Plex music library) — M2 proposes a default from the estate layout.
 
 ### D-13 — Config emission at library grain by preset composition
 
@@ -379,10 +389,14 @@ poster guard stay untouched until each cutover (Q-03 §"Migration inventory").
   provider registry, the job dispatcher), define the C1–C8 provider interfaces (D-04…D-11) and the
   zod schemas, and ship a trivial in-core provider end to end. Exercises C1/C3/C5 with no auth. No
   estate cutover yet — the old config-manager still runs.
-- **M2 — YouTube YAML takeover (the clean first cut).** Implement the `in_core` URL-list provider,
-  import the ~80 YouTube channels as Sources, and project the rendered `subscriptions.yaml` to the
-  YouTube downloader's volume (D-14). Cut the `ytdl-sub-youtube` downloader from hand-edited git YAML
-  to ytdrivarr projection. No auth, no scrape — validates emission + projection + the scheduling split.
+- **M2 — YouTube YAML takeover (the clean first cut) + FIRST-CLASS MUSIC (the Q-03 override).**
+  Implement the `in_core` URL-list provider with BOTH preset families (video + music, D-12 as
+  amended); import the ~80 YouTube channels as Sources **with their `mediaKind`** — the `= Music`
+  chip channels become MUSIC Sources; stand up the music-kind Library (ONE owner nod: media root +
+  Plex music library target; propose a default from the estate layout); project BOTH libraries'
+  rendered config to the downloader volume (D-14). Cut the `ytdl-sub-youtube` downloader from
+  hand-edited git YAML to ytdrivarr projection. Non-destructive for existing files. No auth, no
+  scrape — validates emission + projection + the scheduling split + the media-kind split.
 - **M3 — Peloton plugin port (hardened).** Implement the `out_of_process` authenticated-scraper
   provider: port login/session/scrape/metadata + bearer/cookie minting + episode-numbering + the
   activity folder mapping (Q-03 §"port"), **hardened** — explicit `WebDriverWait`s, retries, the
@@ -493,9 +507,9 @@ capped+audited, Q-06 new repo + plugin seam — are NOT re-asked here).
 
 | ID | Question | Resolution |
 |----|----------|------------|
-| Q-01 | Repo **license** for `github.com/thaynes43/ytdrivarr` — MIT (ecosystem default) vs AGPL-3.0 (the self-hosted-tool protective choice Libretto took, DESIGN-037 Q-01)? Owner call; the repo already exists (public), so confirm what license it carries / should carry. | (open) |
-| Q-02 | **Postgres placement** (D-01/D-17): its own Postgres 16 instance in `downloads` (isolation, standalone-shaped) vs a new database on the shared hnet cluster (one less StatefulSet)? The Libretto analog (Q-03) was ruled stateless so it did not arise; ytdrivarr IS stateful, so this is a live infra call. | (open) |
-| Q-03 | **Music-vs-video classification at cutover** (D-12): v1 preserves the estate's current behavior (music artists filed as video TV-shows). Confirm that is acceptable for v1 and the music/video split is a later capability — or does the owner want the split introduced at the YouTube cutover (M2)? | (open) |
-| Q-04 | **Poster guard fold-in (C8, D-11):** v1 leaves the app-side Peloton poster guard in place (ADR-074 C-10). Is folding poster durability into ytdrivarr a wanted follow-on, or does it stay app-side indefinitely? Records the fork; not decided. | (open) |
-| Q-05 | **Vestigial `PELOTON_BEARER` (D-17):** the static 1Password `PELOTON_BEARER` on the `ytdl-sub-peloton` downloader appears unused (the real bearer is NFS `bearer.txt`). Confirm it is truly unreferenced before the M3 cleanup removes it. | (open — confirm-then-delete) |
-| Q-06 | **Podcasts / RSS (D-12 Tier 3):** confirmed as an explicit v1 non-goal (no yt-dlp extractor; generic best-effort only)? Recording it as a non-goal rather than a silent gap; owner may want it on the roadmap. | (open) |
+| Q-01 | Repo **license** for `github.com/thaynes43/ytdrivarr` — MIT (ecosystem default) vs AGPL-3.0 (the self-hosted-tool protective choice Libretto took, DESIGN-037 Q-01)? Owner call; the repo already exists (public), so confirm what license it carries / should carry. | **RESOLVED (owner 2026-07-20, at Acceptance): AGPL-3.0** — the Libretto choice; M1 adds the LICENSE file. |
+| Q-02 | **Postgres placement** (D-01/D-17): its own Postgres 16 instance in `downloads` (isolation, standalone-shaped) vs a new database on the shared hnet cluster (one less StatefulSet)? The Libretto analog (Q-03) was ruled stateless so it did not arise; ytdrivarr IS stateful, so this is a live infra call. | **RESOLVED (owner 2026-07-20, at Acceptance): its own Postgres 16 instance in `downloads`** (standalone-shaped, the CNPG small-cluster idiom). |
+| Q-03 | **Music-vs-video classification at cutover** (D-12): v1 preserves the estate's current behavior (music artists filed as video TV-shows). Confirm that is acceptable for v1 and the music/video split is a later capability — or does the owner want the split introduced at the YouTube cutover (M2)? | **OVERRIDDEN (owner 2026-07-20, at Acceptance): "let's move away from audio as video right away and support that first class."** Music is FIRST-CLASS from M2 — `mediaKind` at subscribe time, both preset families, the `= Music` channels migrate to music Sources non-destructively (D-12/D-19 as amended). One M2 owner nod remains: the music target (media root + Plex library). |
+| Q-04 | **Poster guard fold-in (C8, D-11):** v1 leaves the app-side Peloton poster guard in place (ADR-074 C-10). Is folding poster durability into ytdrivarr a wanted follow-on, or does it stay app-side indefinitely? Records the fork; not decided. | (open — CONFIRMED as the recorded later fork at Acceptance; revisit post-M5) |
+| Q-05 | **Vestigial `PELOTON_BEARER` (D-17):** the static 1Password `PELOTON_BEARER` on the `ytdl-sub-peloton` downloader appears unused (the real bearer is NFS `bearer.txt`). Confirm it is truly unreferenced before the M3 cleanup removes it. | (open — confirm-then-delete CONFIRMED as the M3 procedure at Acceptance) |
+| Q-06 | **Podcasts / RSS (D-12 Tier 3):** confirmed as an explicit v1 non-goal (no yt-dlp extractor; generic best-effort only)? Recording it as a non-goal rather than a silent gap; owner may want it on the roadmap. | **RESOLVED (owner 2026-07-20, at Acceptance): confirmed v1 non-goal.** |
