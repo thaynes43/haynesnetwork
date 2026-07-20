@@ -157,6 +157,21 @@ holding EITHER format counts as held v1; per-format completion is a later variab
 command that materializes a `static_ids` recipe, never a live builder. Deferred builder
 ideas (Open Library lists, `wikidata_series`) stay out of v1 — KISS.
 
+**AMENDED 2026-07-20 (comics grain shipped — libretto PR #11, live sha-7f042bd):** a fourth
+live builder **`hardcover_comics`** takes an **array** of Hardcover series refs and matches at
+**SERIES grain**: the Hardcover series *name* pairs against the target's series names through
+the same conservative noise-stripped TitleIndex (D-04 philosophy; `matchedVia: 'series'`), and
+the membership unit is the matched series. Rationale: Kavita comics libraries store one series
+per comic run (volumes as chapters), so work-grain matching provably hits 0 (live 2026-07-20:
+Scott Pilgrim 0/9, Invincible 0/137). `ordered: false` ⇒ a Kavita **collection** of the matched
+series — the v1 sweet spot is multi-series "universe" collections (live proof: Invincible
+Universe = Invincible + Guarding the Globe). Hardcover-global volume-interleaved reading lists
+are deferred (`ordered: true` falls back to per-series-concatenated order). `acquisitionEnabled:
+true` is a schema validation **error** for this builder — comics acquisition is Kapowarr-side
+and out of Libretto's scope. Cache namespace `hardcover:comic-series:v1`. (Doc-drift honesty
+note: of the original v1 table, `wikidata_award` was never built — the live builders are
+`static_ids`, `hardcover_series`, `nyt_list`, `hardcover_comics`.)
+
 ### D-06 — Write targets and per-recipe target mapping
 
 Verified API surfaces (research §5, from source):
@@ -304,7 +319,10 @@ structural.
   entirely.
 - **No comics v1** — Kavita comics libraries are not targeted until a viable comics list
   source exists (the PLAN-032 comics-mandate hunt; ADR-065 C-08 kept comics out of pairing
-  for the same honesty).
+  for the same honesty). **SUPERSEDED 2026-07-20:** the blocker turned out to be membership
+  GRAIN, not source viability (Hardcover has comic series fine) — comics shipped as the
+  series-grain `hardcover_comics` builder (D-05 amendment), grouping-only (acquisition
+  remains structurally excluded).
 
 ## Alternatives considered
 
