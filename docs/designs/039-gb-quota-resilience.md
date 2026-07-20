@@ -401,12 +401,14 @@ Derived, rebuildable operational state (the `mam_gate_state` class): NO audit/ou
 all six no-direct-state-writes families.
 
 **Counting the ACTUAL legs.** Every outbound GB call is counted in the shared `@hnet/goodreads` http
-wrapper (`getText`) via an injected `onCall` meter — fired ONCE per `getText` (one logical GB query: the
+wrapper (`getText`) via an injected `onCall` meter — fired once per PHYSICAL outbound request. The
 isbn / title / pre-colon / confirm legs of a single `resolveVolume` are separate `getText` calls and so
-counted separately; a transient-503 retry is the SAME query, counted once). The meter is wired only into
-the `GoogleBooksClient` (RSS shelf reads carry no meter), so only GB legs count. The domain reads the
-meter's per-seam delta around each resolve and persists it to the consumer's column — so the budget
-reflects the real fan-out that exhausts the quota, not the resolve count.
+counted separately, AND every transient-retry re-send is counted too (see the 2026-07-20 amendment
+below — the original "count the logical query once, not per retry" rule undercounted retries and tripped
+the breaker at ~half the counted budget). The meter is wired only into the `GoogleBooksClient` (RSS shelf
+reads carry no meter), so only GB legs count. The domain reads the meter's per-seam delta around each
+resolve and persists it to the consumer's column — so the counted number matches what Google actually
+meters against the daily quota, not the resolve count.
 
 ### D-22 — Oldest-first drain (ISBN-priority)
 
@@ -430,7 +432,11 @@ Before a GB-requiring candidate, `canSpend()` gates it; when spent, the candidat
 `skippedBudget` — the same non-attempt discipline as `skippedQuota` (no cap consumed, no want upsert so
 `updated_at` does not advance, no per-item error spam) and, crucially, **WITHOUT tripping the shared
 breaker** (this is our own pacing, not a real 429; the breaker stays for genuine 429s). Reuse/identity-
-holding candidates (no GB needed) still mint free. Env-tunable defaults sum to ~85 = ~85% of the measured
+holding candidates (no GB needed) still mint free. `canSpend()` is a **reserve-before-commit** gate:
+it requires `used + reserve <= budget` (reserve = `GB_MAX_RESOLVE_LEGS`, the worst-case 4-leg structural
+fan-out of one `resolveVolume`), so a multi-leg crossing resolve cannot overshoot its slice (the
+2026-07-20 amendment — goodreads had spent 201 of a 200 slice because the old `used < budget` gate started
+a resolve at used=199 and committed to 201). Env-tunable defaults sum to ~85 = ~85% of the measured
 ~100 cap:
 
 | Env | Consumer | Default | Share |
@@ -463,3 +469,44 @@ ISBN-bearing anchors resolve at ~1 leg each (drain day 1); the ~188 title-only a
 resolves/day ⇒ the cohort clears in roughly **6–7 days**, front-to-back, ISBN-bearing first — accelerated
 further by reuse (free) mints. Steady state afterward: only genuinely-new unpaired items compete, always
 behind any older unresolved item.
+
+## Amendment — 2026-07-20: count PHYSICAL requests, not logical queries (the first budgeted day still tripped)
+
+The dedicated-key split (both other consumers moved onto their own GCP-project keys) and the D-21..D-24
+call budget landed, and 2026-07-20 was the first genuinely-budgeted day on the app's own ~1,000/day key.
+The morning held perfectly (breaker clear, pairing minting 24–25/run). Yet at **13:32:17 UTC** a
+format-pairing resolve run hit a REAL daily-signature 429 (`gb_quota_state.trip_reason` = `daily: GET
+…/volumes?q=isbn:9780141328034… → HTTP 429 "Quota exceeded for quota metric"`, `exhausted_until`
+2026-07-21T07:00Z) with only **484 counted calls** in `gb_call_budget` (pairing 282, goodreads 201,
+bookfix 1) — less than half the 700/200/100 = 1,000 budget.
+
+**Root cause (code-proven): the meter counted LOGICAL queries, not PHYSICAL requests.** The
+`@hnet/goodreads` `getText` wrapper fired its `onCall` meter ONCE, *before* the retry loop — so every
+transient-retry re-send (the mandatory backoff retry on 5xx / per-minute-429; #402) went uncounted.
+Google Books meters **every HTTP request** against the daily quota, including retries, so the physical
+requests Google saw were ~2× the counted number: 484 counted vs a GCP-verified ~1,000/day cap ⇒
+**physical : counted ≈ 2.07 : 1**. The morning's heavy 503-`backendFailed` weather (the D-20a run logged
+"54s of heavy 503-backendFailed retry") is exactly the retry burst this undercounts; a `getText` leg that
+exhausts its 3 retries is 4 physical requests counted as 1. (The secondary `/volumes/{id}` comic-confirm
+fetch was already counted — it is a separate `getText` — so the gap is retries, not the confirm leg.)
+
+**External-draw ruled out.** LazyLibrarian (`downloads` ns) and Libretto (`media` ns) both restarted
+2026-07-19 ~22:19 UTC onto their OWN ExternalSecrets, live-verified pulling `GOOGLE_BOOKS_API_KEY` from
+distinct 1Password items (`lazylibrarian`, `libretto`) — the app keeps `media-stack`. Libretto logged
+"resolve broker: Google Books configured" on its own key post-restart. (Secret *values* aren't readable
+from the dev pod, so this is inferred from the distinct item references + the split PR intent + the
+GCP-verified per-key cap, not a value diff.)
+
+**Fix:** move `onCall` INSIDE `getText`'s retry loop so it fires once per physical `fetchImpl` call
+(initial + every retry). The counted unit is now physical-request-accurate, so the **700/200/100 budgets
+stand unchanged** — they now sum to the real ~1,000/day cap in the same unit Google meters, and the
+per-day resolve throughput is (correctly) lower because each resolve now costs its true physical price.
+No haynes-ops env change is required.
+
+**Off-by-one (goodreads 201/200):** `canSpend()` became a reserve-before-commit gate,
+`used + GB_MAX_RESOLVE_LEGS <= budget` (reserve = the worst-case 4-leg structural fan-out of one
+`resolveVolume`), so an enforced consumer never STARTS a resolve it can't fully afford and a crossing
+resolve can't push the slice past its budget. Transient-retry inflation beyond the structural legs stays
+the shared breaker's job (the hard backstop); with the enforced pairing+goodreads slices summing to 900
+of the ~1,000 cap, the remaining ~100 (the unenforced `bookfix` reserve) absorbs it — worst-case physical
+stays under 1,000.

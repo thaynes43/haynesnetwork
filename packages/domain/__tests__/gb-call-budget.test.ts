@@ -6,6 +6,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { gbCallBudget } from '@hnet/db';
 import {
+  GB_MAX_RESOLVE_LEGS,
   createGbCallMeter,
   gbQuotaDayString,
   makeGbBudgetTracker,
@@ -81,7 +82,15 @@ describe('makeGbBudgetTracker — per-consumer enforcement + split', () => {
   const day = new Date('2026-07-19T08:00:00Z');
 
   it('enforces the consumer budget: canSpend flips false once the slice is spent', async () => {
-    const tracker = await makeGbBudgetTracker({ db: t.db, consumer: 'pairing', now: day, budgetOverride: 6 });
+    // reserveOverride:1 isolates the raw commit boundary (used < budget) from the reserve gate,
+    // which the dedicated reserve test below covers.
+    const tracker = await makeGbBudgetTracker({
+      db: t.db,
+      consumer: 'pairing',
+      now: day,
+      budgetOverride: 6,
+      reserveOverride: 1,
+    });
     expect(tracker.canSpend()).toBe(true);
     await tracker.spend(4);
     expect(tracker.canSpend()).toBe(true); // 4 < 6
@@ -94,11 +103,49 @@ describe('makeGbBudgetTracker — per-consumer enforcement + split', () => {
 
   it('starts from the persisted start-of-run usage (a fresh tracker sees prior spend)', async () => {
     await recordGbCalls({ db: t.db, consumer: 'pairing', count: 5, now: day });
-    const tracker = await makeGbBudgetTracker({ db: t.db, consumer: 'pairing', now: day, budgetOverride: 6 });
+    const tracker = await makeGbBudgetTracker({
+      db: t.db,
+      consumer: 'pairing',
+      now: day,
+      budgetOverride: 6,
+      reserveOverride: 1,
+    });
     expect(tracker.used()).toBe(5);
     expect(tracker.canSpend()).toBe(true);
     await tracker.spend(1);
     expect(tracker.canSpend()).toBe(false); // 6 >= 6
+  });
+
+  it('reserves a full worst-case resolve before committing — no crossing overshoot (the 201/200 fix)', async () => {
+    // The 2026-07-20 goodreads trip spent 201 of a 200 slice: the old gate (used < budget) started a
+    // resolve at used=199 and that 2-leg resolve committed to 201. The reserve gate only STARTS a
+    // resolve while `used + reserve <= budget`, so the last started resolve begins at used <= budget -
+    // reserve and its full structural fan-out lands the consumer at or under the slice — never 201.
+    expect(GB_MAX_RESOLVE_LEGS).toBe(4);
+    await recordGbCalls({ db: t.db, consumer: 'goodreads', count: 196, now: day });
+    const tracker = await makeGbBudgetTracker({
+      db: t.db,
+      consumer: 'goodreads',
+      now: day,
+      budgetOverride: 200,
+    });
+    expect(tracker.used()).toBe(196);
+    expect(tracker.canSpend()).toBe(true); // 196 + 4 <= 200 — a full worst-case resolve still fits
+    await tracker.spend(4); // a 4-leg resolve lands exactly on the slice
+    expect(tracker.used()).toBe(200);
+    expect(tracker.canSpend()).toBe(false); // 200 + 4 > 200 — no further resolve starts (never 201)
+
+    // Within the reserve band (used=197: 197 + 4 > 200) a fresh resolve is already refused — it can't
+    // afford a full worst-case fan-out, so the slice stops before it can overshoot.
+    await recordGbCalls({ db: t.db, consumer: 'pairing', count: 197, now: day });
+    const near = await makeGbBudgetTracker({
+      db: t.db,
+      consumer: 'pairing',
+      now: day,
+      budgetOverride: 200,
+    });
+    expect(near.used()).toBe(197);
+    expect(near.canSpend()).toBe(false); // 197 + 4 > 200
   });
 
   it("the 'bookfix' slice is metered but NEVER budget-blocked (the reserved headroom)", async () => {
@@ -109,10 +156,22 @@ describe('makeGbBudgetTracker — per-consumer enforcement + split', () => {
   });
 
   it('one consumer spending its slice does NOT block another (independent splits)', async () => {
-    const pairing = await makeGbBudgetTracker({ db: t.db, consumer: 'pairing', now: day, budgetOverride: 2 });
+    const pairing = await makeGbBudgetTracker({
+      db: t.db,
+      consumer: 'pairing',
+      now: day,
+      budgetOverride: 2,
+      reserveOverride: 1,
+    });
     await pairing.spend(2);
     expect(pairing.canSpend()).toBe(false);
-    const goodreads = await makeGbBudgetTracker({ db: t.db, consumer: 'goodreads', now: day, budgetOverride: 2 });
+    const goodreads = await makeGbBudgetTracker({
+      db: t.db,
+      consumer: 'goodreads',
+      now: day,
+      budgetOverride: 2,
+      reserveOverride: 1,
+    });
     expect(goodreads.canSpend()).toBe(true); // goodreads slice untouched
   });
 });

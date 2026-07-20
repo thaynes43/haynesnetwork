@@ -156,7 +156,7 @@ describe('GoogleBooksClient.resolveVolume (fix-path hardening)', () => {
 });
 
 describe('GoogleBooksClient onCall meter (DESIGN-039 D-21 — the daily call-budget hook)', () => {
-  it('fires onCall ONCE per outbound GB query (each leg), not per retry', async () => {
+  it('fires onCall once per PHYSICAL request — one per outbound leg when none retry', async () => {
     let calls = 0;
     // The ISBN leg MISSES, so resolveVolume falls through to the title leg — two outbound queries.
     const fetchImpl = vi.fn(async (url: string) => {
@@ -173,12 +173,16 @@ describe('GoogleBooksClient onCall meter (DESIGN-039 D-21 — the daily call-bud
     });
     const res = await gb.resolveVolume({ isbn: '123', title: 'Real Book', author: 'A' });
     expect(res?.volumeId).toBe('gb-hit');
-    // Two legs (isbn + title) ⇒ two onCall invocations — one per outbound query.
+    // Two legs (isbn + title), each succeeds first try ⇒ two physical requests ⇒ two onCall invocations.
     expect(calls).toBe(2);
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
-  it('counts a 503-retried query ONCE (the retry is the same logical GB call)', async () => {
+  // 2026-07-20 physical-accounting fix: a 503-retried query counts EACH physical attempt, because
+  // Google Books meters every HTTP request against the daily quota. Counting the logical query once
+  // (the prior behaviour) undercounted retries and let the real quota exhaust at ~half the counted
+  // budget — the 2026-07-20 13:32 UTC breaker trip at only 484 counted vs the ~1000/day cap.
+  it('counts a 503-retried query per PHYSICAL attempt (each metered retry is counted)', async () => {
     let calls = 0;
     let attempt = 0;
     const fetchImpl = vi.fn(async () => {
@@ -199,7 +203,35 @@ describe('GoogleBooksClient onCall meter (DESIGN-039 D-21 — the daily call-bud
     const res = await gb.resolveVolume({ isbn: '123', title: 'By ISBN' });
     expect(res?.volumeId).toBe('gb-ok');
     expect(fetchImpl).toHaveBeenCalledTimes(2); // one 503 + one success
-    expect(calls).toBe(1); // …but ONE logical GB query counted
+    expect(calls).toBe(2); // BOTH physical requests counted — Google metered both
+  });
+
+  it('counts the secondary /volumes/{id} comic-confirm fetch as its own physical request', async () => {
+    let calls = 0;
+    // Title leg resolves to a volume whose (truncated) search categories are non-comic → the client
+    // fires a /volumes/{id} confirm GET for the full BISAC list. That secondary fetch is a separate
+    // metered request and must be counted too.
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.includes('/volumes/')) {
+        return volumeResponse({ id: 'gb-c', volumeInfo: { title: 'Real Book', categories: ['Fiction'] } });
+      }
+      return volResponse([
+        { id: 'gb-c', volumeInfo: { title: 'Real Book', authors: ['A'], categories: ['Fiction'] } },
+      ]);
+    });
+    const gb = new GoogleBooksClient({
+      baseUrl: 'http://stub/books/v1',
+      apiKey: 'k',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      onCall: () => {
+        calls += 1;
+      },
+    });
+    const res = await gb.resolveVolume({ title: 'Real Book', author: 'A' });
+    expect(res?.volumeId).toBe('gb-c');
+    // One title search + one /volumes/{id} confirm ⇒ two physical requests ⇒ two onCall invocations.
+    expect(calls).toBe(2);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 });
 
