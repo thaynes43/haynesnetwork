@@ -703,8 +703,16 @@ describe('mintPairingWants — daily call budget skip (DESIGN-039 D-23)', () => 
     }
     const ll = stubLl();
     const meter = createGbCallMeter();
-    // A 2-call daily slice: the first two resolves (1 leg each) spend it, the rest skip.
-    const budget = await makeGbBudgetTracker({ db: t.db, consumer: 'pairing', now, budgetOverride: 2 });
+    // A 2-call daily slice: the first two resolves (1 leg each) spend it, the rest skip. reserveOverride:1
+    // exercises the raw per-call boundary at this tiny budget (the reserve-before-commit gate is covered
+    // by the gb-call-budget 201/200 regression test).
+    const budget = await makeGbBudgetTracker({
+      db: t.db,
+      consumer: 'pairing',
+      now,
+      budgetOverride: 2,
+      reserveOverride: 1,
+    });
     const gb = stubGbMetered(meter, 1, (title) => `gb-${title.slice(-1)}`);
 
     const report = await mintPairingWants({
@@ -745,7 +753,13 @@ describe('mintPairingWants — daily call budget skip (DESIGN-039 D-23)', () => 
     const ll = stubLl();
     const meter = createGbCallMeter();
     await recordGbCalls({ db: t.db, consumer: 'pairing', count: 1, now }); // pre-spend the pairing slice
-    const budget = await makeGbBudgetTracker({ db: t.db, consumer: 'pairing', now, budgetOverride: 1 });
+    const budget = await makeGbBudgetTracker({
+      db: t.db,
+      consumer: 'pairing',
+      now,
+      budgetOverride: 1,
+      reserveOverride: 1,
+    });
     expect(budget.canSpend()).toBe(false);
     const gb = stubGbMetered(meter, 1, () => 'gb-should-not-be-called');
 

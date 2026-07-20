@@ -43,12 +43,14 @@ export interface GetOptions {
   fetchImpl?: typeof fetch;
   sleepImpl?: (ms: number) => Promise<void>;
   /**
-   * ADR-067 / DESIGN-039 (PLAN-055 amend — D-21) — the daily GB CALL BUDGET meter. Invoked ONCE per
-   * getText invocation (one logical outbound GB query — the isbn / title / pre-colon / confirm legs of
-   * a single resolveVolume are separate getText calls and so counted separately), NOT per retry (a
-   * transient-503 retry is the same query). Wired ONLY by the GoogleBooksClient's opts, so RSS getText
-   * calls carry no meter and are never counted. The domain budget attributes the meter's per-seam
-   * delta to a consumer and persists it to gb_call_budget.
+   * ADR-067 / DESIGN-039 (PLAN-055 amend — D-21; 2026-07-20 physical-accounting fix) — the daily GB
+   * CALL BUDGET meter. Invoked once per PHYSICAL outbound request: the initial attempt AND every
+   * retry, because Google Books meters EACH HTTP request against the daily quota — a transient
+   * 503/per-minute-429 retry is a new metered request, not a free re-send. (The isbn / title /
+   * pre-colon / confirm legs of a single resolveVolume are separate getText calls and so counted
+   * separately too.) Wired ONLY by the GoogleBooksClient's opts, so RSS getText calls carry no meter
+   * and are never counted. The domain budget attributes the meter's per-seam delta to a consumer and
+   * persists it to gb_call_budget, so the count matches what Google actually meters.
    */
   onCall?: () => void;
 }
@@ -68,11 +70,13 @@ export async function getText(url: string, options: GetOptions = {}): Promise<st
   const sleepImpl = options.sleepImpl ?? defaultSleep;
   const redacted = redactKey(url);
 
-  // Count this outbound GB query ONCE (before the retry loop) — see GetOptions.onCall.
-  options.onCall?.();
-
   let attempt = 0;
   for (;;) {
+    // Count EACH physical outbound request — the initial attempt AND every retry — because Google
+    // Books meters every HTTP request against the daily quota (a 503/per-minute-429 retry is a new
+    // metered request). Fired here at the top of the loop so it counts once per fetchImpl call,
+    // covering both the retryable-status and network/timeout retry paths below. See GetOptions.onCall.
+    options.onCall?.();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     let response: Response;

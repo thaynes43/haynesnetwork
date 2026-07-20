@@ -17,9 +17,11 @@
 //
 // This module is the SINGLE WRITER for gb_call_budget (the mam_gate_state class — unaudited rebuildable
 // day-rolling operational state, guard-listed). Counting itself happens in the shared @hnet/goodreads
-// http wrapper via an injected `onCall` meter (so EVERY outbound GB leg is counted, including the
-// isbn/title/pre-colon/confirm fan-out of one resolveVolume); the meter's per-seam delta is attributed
-// to a consumer and persisted here.
+// http wrapper via an injected `onCall` meter fired once per PHYSICAL outbound request — every metered
+// HTTP call, i.e. the isbn/title/pre-colon/confirm leg fan-out of one resolveVolume AND every
+// transient-retry re-send (2026-07-20 fix: Google Books meters each HTTP request, so a 503/per-minute-429
+// retry counts too — counting only the logical query undercounted retries and tripped the breaker at
+// ~half the counted budget). The meter's per-seam delta is attributed to a consumer and persisted here.
 import { gbCallBudget, type DbClient } from '@hnet/db';
 import { eq, sql } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
@@ -46,6 +48,19 @@ export const GB_DAILY_CALL_BUDGET: Record<GbConsumer, number> = {
   // Metered for a complete daily accounting; NOT enforced (interactive Fix rides the reserve headroom).
   bookfix: Number(process.env.GB_DAILY_CALL_BUDGET_BOOKFIX ?? 15),
 };
+
+/**
+ * The worst-case number of outbound GB getText legs a single `resolveVolume` can issue: the isbn-miss
+ * leg, the primary title-miss leg, the pre-colon fallback leg, and the `/volumes/{id}` comic-confirm
+ * leg (see @hnet/goodreads `resolveVolume`). Used as the per-resolve budget RESERVE so an ENFORCED
+ * consumer never STARTS a resolve it cannot fully afford: `canSpend()` requires `used + reserve <=
+ * budget`, so a resolve that spends its full structural fan-out still lands the consumer at or under
+ * its slice — the fix for the 2026-07-20 goodreads 201/200 overshoot (a 2-leg crossing resolve started
+ * at used=199 and committed to 201). Transient-retry inflation beyond the structural legs is rare and
+ * remains the shared breaker's job (the hard backstop); with the enforced pairing+goodreads slices
+ * summing to 900 of the ~1000/day cap, that leaves the reserve headroom to absorb it.
+ */
+export const GB_MAX_RESOLVE_LEGS = 4;
 
 /**
  * The date-string (YYYY-MM-DD, UTC) of the GB_DAILY_RESET_UTC_HOUR boundary that `now` falls in — the
@@ -171,9 +186,14 @@ export async function recordGbCalls(input: {
  */
 export interface GbBudgetTracker {
   readonly consumer: GbConsumer;
-  /** True while this consumer still has daily budget (always true for the unenforced `bookfix`). */
+  /**
+   * True while this consumer can afford to START another resolve — i.e. its whole worst-case
+   * structural fan-out (`reserve`) still fits under the slice (`used + reserve <= budget`). Reserving
+   * before committing is what keeps a multi-leg crossing resolve from overshooting the slice (the
+   * 201/200 fix). Always true for the unenforced `bookfix`.
+   */
   canSpend(): boolean;
-  /** Persist `legs` GB calls for this consumer and decrement the local remaining. */
+  /** Persist `legs` GB calls (physical requests) for this consumer and decrement the local remaining. */
   spend(legs: number): Promise<void>;
   /** Calls spent by this consumer so far today (start-of-run + this run). */
   used(): number;
@@ -187,14 +207,22 @@ export async function makeGbBudgetTracker(input: {
   now?: Date;
   /** Explicit daily allowance (tests / a caller override); defaults to GB_DAILY_CALL_BUDGET. */
   budgetOverride?: number;
+  /**
+   * Per-resolve reserve for the reserve-before-commit gate (tests / a caller override); defaults to
+   * GB_MAX_RESOLVE_LEGS. A resolve is only STARTED while `used + reserve <= budget`.
+   */
+  reserveOverride?: number;
 }): Promise<GbBudgetTracker> {
   const now = input.now ?? new Date();
   const usage = await readGbBudgetUsage({ db: input.db, now });
   const budget = input.budgetOverride ?? GB_DAILY_CALL_BUDGET[input.consumer];
+  const reserve = input.reserveOverride ?? GB_MAX_RESOLVE_LEGS;
   let used = usage[input.consumer];
   return {
     consumer: input.consumer,
-    canSpend: () => !ENFORCED[input.consumer] || used < budget,
+    // Reserve a whole worst-case resolve before committing, so the crossing resolve can't overshoot
+    // the slice (the 2026-07-20 201/200 fix). Unenforced `bookfix` always spends (rides the reserve).
+    canSpend: () => !ENFORCED[input.consumer] || used + reserve <= budget,
     used: () => used,
     spend: async (legs: number) => {
       if (legs <= 0) return;
