@@ -1,8 +1,9 @@
 // @hnet/haynesops/write — the WRITE surface for the haynes-ops GitOps repo (ADR-072 / DESIGN-042 D-02/D-10).
 // The ONLY sanctioned mutations: create an app-namespaced branch, commit the ONE app-owned Kometa managed
-// include onto it, open a bot-authored PR, and — when the domain proves D-10's four auto-merge conditions —
-// squash-merge it. A write is a config CHANGE (Flux-applied, realized by the next Kometa run), NEVER a live
-// Plex mutation (mirror-only, ADR-064).
+// include onto it, open a bot-authored PR, and — once the domain proves D-10 eligibility (within-cap,
+// grouping-only, managed-file-only) AND the SCOPED validate gate is green — squash-merge it. A write is a
+// config CHANGE (Flux-applied, realized by the next Kometa run), NEVER a live Plex mutation (mirror-only,
+// ADR-064).
 //
 // This entrypoint may be imported ONLY by the packages/domain Kometa orchestrator and by packages/haynesops
 // itself — enforced by the arr-write-import-guard test (extended for @hnet/haynesops/write). It is NEVER
@@ -96,20 +97,31 @@ export class HaynesopsWriteClient extends HaynesopsReadClient {
   }
 
   /**
-   * Poll the head ref's required checks until they SETTLE (success/failure) or the bound elapses. Returns
-   * the final conclusion; a `pending` return means the checks did not settle in time (the caller leaves the
-   * PR for a human — it never force-merges a not-yet-green gate).
+   * Poll the head ref's validate gate until it SETTLES (success/failure) or the bound elapses. Scoped to the
+   * ONE named check when `requiredCheckName` is given (the norm — D-10 as-implemented 2026-07-20). This is the
+   * DEFERRED (out-of-request) wait: the request path arms the auto-merge and returns immediately, and this
+   * loop runs in the background — hence the generous default bound (~10 min). A `pending` return means the
+   * gate did not settle in time (the caller leaves the PR for a human — it NEVER force-merges a not-green
+   * gate). Returns as soon as the gate is green so the deferred merge fires the instant CI reports.
    */
   async waitForChecks(
     headSha: string,
-    opts?: { attempts?: number; intervalMs?: number; sleepImpl?: (ms: number) => Promise<void> },
+    opts?: {
+      attempts?: number;
+      intervalMs?: number;
+      sleepImpl?: (ms: number) => Promise<void>;
+      requiredCheckName?: string;
+    },
   ): Promise<ChecksConclusion> {
-    const attempts = opts?.attempts ?? 20;
-    const intervalMs = opts?.intervalMs ?? 6_000;
+    const attempts = opts?.attempts ?? 40;
+    const intervalMs = opts?.intervalMs ?? 15_000;
     const sleep = opts?.sleepImpl ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+    const scope = opts?.requiredCheckName
+      ? { requiredCheckName: opts.requiredCheckName }
+      : undefined;
     let last: ChecksConclusion = 'none';
     for (let i = 0; i < attempts; i++) {
-      last = await this.getChecksConclusion(headSha);
+      last = await this.getChecksConclusion(headSha, scope);
       if (last === 'success' || last === 'failure') return last;
       await sleep(intervalMs);
     }

@@ -22,7 +22,15 @@ import {
   setRoleCollectionActions,
   type LibrettoClientBundle,
 } from '@hnet/domain';
-import { bootMigratedDb, caller, createUser, makeCtx, sessionUser, wireShape, type TestDb } from './helpers';
+import {
+  bootMigratedDb,
+  caller,
+  createUser,
+  makeCtx,
+  sessionUser,
+  wireShape,
+  type TestDb,
+} from './helpers';
 import { stubArrBundle } from './arr-stubs';
 import type { TRPCContext } from '../src/trpc';
 
@@ -38,7 +46,11 @@ afterAll(async () => {
  * A recording Libretto stub bundle injected into ctx. `workCount` is what `validateRecipe` resolves the
  * draft to — the preview the size-cap guard reads (D-03/D-10). Defaults to 3 (well within the cap).
  */
-function stubLibretto(workCount = 3): { ctx: Partial<TRPCContext>; recipes: Array<Record<string, unknown>>; deleted: string[] } {
+function stubLibretto(workCount = 3): {
+  ctx: Partial<TRPCContext>;
+  recipes: Array<Record<string, unknown>>;
+  deleted: string[];
+} {
   const recipes: Array<Record<string, unknown>> = [];
   const deleted: string[] = [];
   const libretto = {
@@ -95,6 +107,7 @@ function stubHaynesops(opts?: {
   const haynesops = {
     configDir,
     baseBranch: 'main',
+    kometaCheckName: 'Kometa Validate Managed Files - Success',
     read: {
       getFile,
       listOpenManagedPrs: async () => [],
@@ -106,7 +119,12 @@ function stubHaynesops(opts?: {
       openManagedFilePr: async (input: Record<string, unknown>) => {
         n += 1;
         opened.push(input);
-        return { number: n, url: `https://github.com/x/y/pull/${n}`, headBranch: `b${n}`, headSha: `head${n}` };
+        return {
+          number: n,
+          url: `https://github.com/x/y/pull/${n}`,
+          headBranch: `b${n}`,
+          headSha: `head${n}`,
+        };
       },
       getPrFilePaths: async () => opts?.prFiles ?? [`${configDir}/hnet-managed-movies.yml`],
       waitForChecks: async () => opts?.checks ?? 'success',
@@ -199,7 +217,9 @@ describe('direct upsert — capped, everyone, admin bypass (D-03/D-10)', () => {
     const res = await caller(ctx).collections.upsert(draftInput({ id: 'within' }));
     expect(res.ok).toBe(true);
     expect(stub.recipes).toHaveLength(1);
-    expect((stub.recipes[0]!.variables as { acquisitionEnabled: boolean }).acquisitionEnabled).toBe(false);
+    expect((stub.recipes[0]!.variables as { acquisitionEnabled: boolean }).acquisitionEnabled).toBe(
+      false,
+    );
   });
 
   it('a non-admin OVER the cap is UNPROCESSABLE_CONTENT (appCode COLLECTION_SIZE_CAP_EXCEEDED); NO recipe lands', async () => {
@@ -246,7 +266,9 @@ describe('delete — ADMIN only (D-03)', () => {
     const member = await createUser(t.db);
     const stub = stubLibretto();
     const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stub.ctx };
-    await expect(caller(ctx).collections.remove({ id: 'dune', mediaType: 'books' })).rejects.toMatchObject({
+    await expect(
+      caller(ctx).collections.remove({ id: 'dune', mediaType: 'books' }),
+    ).rejects.toMatchObject({
       code: 'FORBIDDEN',
     });
     expect(stub.deleted).toHaveLength(0);
@@ -256,7 +278,11 @@ describe('delete — ADMIN only (D-03)', () => {
     const admin = await createUser(t.db, { admin: true });
     const stub = stubLibretto();
     const ctx = { ...makeCtx(t.db, sessionUser(admin)), ...stub.ctx };
-    const res = await caller(ctx).collections.remove({ id: 'dune', mediaType: 'books', deleteCollection: true });
+    const res = await caller(ctx).collections.remove({
+      id: 'dune',
+      mediaType: 'books',
+      deleteCollection: true,
+    });
     expect(res.ok).toBe(true);
     expect(stub.deleted).toEqual(['dune']);
   });
@@ -276,7 +302,10 @@ describe('over-cap ticket — file / approve / decline (D-11)', () => {
     });
     expect(ticketId).toBeTruthy();
 
-    const [ticket] = await t.db.select().from(tickets).where(sql`${tickets.id} = ${ticketId}`);
+    const [ticket] = await t.db
+      .select()
+      .from(tickets)
+      .where(sql`${tickets.id} = ${ticketId}`);
     expect(ticket!.category).toBe('collection_override');
     expect(ticket!.authorUserId).toBe(member.id);
     // The full requested definition rides the payload column (so Approve can materialize it).
@@ -285,10 +314,16 @@ describe('over-cap ticket — file / approve / decline (D-11)', () => {
     expect(payload.size).toBe(200); // the SERVER-resolved size (never a client-sent number)
     expect(payload.mediaType).toBe('books');
 
-    const events = await t.db.select().from(ticketEvents).where(sql`${ticketEvents.ticketId} = ${ticketId}`);
+    const events = await t.db
+      .select()
+      .from(ticketEvents)
+      .where(sql`${ticketEvents.ticketId} = ${ticketId}`);
     expect(events).toHaveLength(1);
     const outbox = (
-      await t.db.select().from(notificationOutbox).where(sql`${notificationOutbox.eventType} = 'ticket_created'`)
+      await t.db
+        .select()
+        .from(notificationOutbox)
+        .where(sql`${notificationOutbox.eventType} = 'ticket_created'`)
     ).filter((o) => (o.payload as { ticketId?: string }).ticketId === ticketId);
     expect(outbox.map((o) => o.channel).sort()).toEqual(['email', 'pushover']);
   });
@@ -298,7 +333,9 @@ describe('over-cap ticket — file / approve / decline (D-11)', () => {
     const stub = stubLibretto();
     const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stub.ctx };
     const uuid = '00000000-0000-0000-0000-000000000000';
-    await expect(caller(ctx).collections.approveOverride({ ticketId: uuid })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(caller(ctx).collections.approveOverride({ ticketId: uuid })).rejects.toMatchObject(
+      { code: 'FORBIDDEN' },
+    );
     await expect(
       caller(ctx).collections.declineOverride({ ticketId: uuid, reason: 'no' }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
@@ -346,7 +383,10 @@ describe('over-cap ticket — file / approve / decline (D-11)', () => {
     });
     stub.recipes.length = 0;
     const adminCtx = { ...makeCtx(t.db, sessionUser(admin)), ...stub.ctx };
-    const res = await caller(adminCtx).collections.declineOverride({ ticketId, reason: 'too large for now' });
+    const res = await caller(adminCtx).collections.declineOverride({
+      ticketId,
+      reason: 'too large for now',
+    });
     expect(res.status).toBe('rejected');
     expect(stub.recipes).toHaveLength(0);
   });
@@ -357,7 +397,9 @@ describe('settings — ADMIN only (D-10)', () => {
     const member = await createUser(t.db);
     const ctx = makeCtx(t.db, sessionUser(member));
     await expect(caller(ctx).collections.settings()).rejects.toMatchObject({ code: 'FORBIDDEN' });
-    await expect(caller(ctx).collections.setSizeCap({ value: 50 })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(caller(ctx).collections.setSizeCap({ value: 50 })).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
   });
 
   it('an admin reads then sets the cap (audited setAppSetting)', async () => {
@@ -380,15 +422,21 @@ describe('Kometa (Movies/TV) write path — router wiring (ADR-072 / DESIGN-042 
     const hs = stubHaynesops({ file: null, checks: 'success' });
     const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stubLibretto().ctx, ...hs.ctx };
     const res = await caller(ctx).collections.upsert(
-      draftInput({ id: 'unbreakable', name: 'Unbreakable', builderType: 'tmdb_movie', builderRef: '9741, 358', mediaType: 'movies' }),
+      draftInput({
+        id: 'unbreakable',
+        name: 'Unbreakable',
+        builderType: 'tmdb_movie',
+        builderRef: '9741, 358',
+        mediaType: 'movies',
+      }),
     );
     expect(res.ok).toBe(true);
     expect((res as { provider: string }).provider).toBe('kometa');
     expect((res as { merged: boolean }).merged).toBe(true);
     expect(hs.merged).toHaveLength(1);
     // The compiled managed include carries the acquisition-off recipe + the namespace marker.
-    expect((hs.opened[0]!.content as string)).toContain('radarr_add_missing: false');
-    expect((hs.opened[0]!.content as string)).toContain('label: "HNet Managed"');
+    expect(hs.opened[0]!.content as string).toContain('radarr_add_missing: false');
+    expect(hs.opened[0]!.content as string).toContain('label: "HNet Managed"');
   });
 
   it('a Libretto builder on a Movies draft is rejected (KOMETA_RECIPE_INVALID)', async () => {
@@ -396,9 +444,23 @@ describe('Kometa (Movies/TV) write path — router wiring (ADR-072 / DESIGN-042 
     const hs = stubHaynesops({ file: null });
     const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stubLibretto().ctx, ...hs.ctx };
     const err = await caller(ctx)
-      .collections.upsert(draftInput({ id: 'x', builderType: 'hardcover_series', builderRef: 'y', mediaType: 'movies' }))
-      .then(() => { throw new Error('expected reject'); }, (e: unknown) => e);
-    expect(wireShape(err, 'collections.upsert').data).toMatchObject({ appCode: 'KOMETA_RECIPE_INVALID' });
+      .collections.upsert(
+        draftInput({
+          id: 'x',
+          builderType: 'hardcover_series',
+          builderRef: 'y',
+          mediaType: 'movies',
+        }),
+      )
+      .then(
+        () => {
+          throw new Error('expected reject');
+        },
+        (e: unknown) => e,
+      );
+    expect(wireShape(err, 'collections.upsert').data).toMatchObject({
+      appCode: 'KOMETA_RECIPE_INVALID',
+    });
     expect(hs.opened).toHaveLength(0);
   });
 
@@ -408,10 +470,22 @@ describe('Kometa (Movies/TV) write path — router wiring (ADR-072 / DESIGN-042 
     const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stubLibretto().ctx, ...hs.ctx };
     const err = await caller(ctx)
       .collections.upsert(
-        draftInput({ id: 'christmas', builderType: 'imdb_list', builderRef: 'https://www.imdb.com/list/ls012345678/', mediaType: 'movies' }),
+        draftInput({
+          id: 'christmas',
+          builderType: 'imdb_list',
+          builderRef: 'https://www.imdb.com/list/ls012345678/',
+          mediaType: 'movies',
+        }),
       )
-      .then(() => { throw new Error('expected reject'); }, (e: unknown) => e);
-    expect(wireShape(err, 'collections.upsert').data).toMatchObject({ appCode: 'COLLECTION_SIZE_CAP_EXCEEDED' });
+      .then(
+        () => {
+          throw new Error('expected reject');
+        },
+        (e: unknown) => e,
+      );
+    expect(wireShape(err, 'collections.upsert').data).toMatchObject({
+      appCode: 'COLLECTION_SIZE_CAP_EXCEEDED',
+    });
     expect(hs.opened).toHaveLength(0);
   });
 
@@ -421,10 +495,21 @@ describe('Kometa (Movies/TV) write path — router wiring (ADR-072 / DESIGN-042 
     const hs = stubHaynesops({ file: null, checks: 'success' });
     const memberCtx = { ...makeCtx(t.db, sessionUser(member)), ...stubLibretto().ctx, ...hs.ctx };
     const { ticketId } = await caller(memberCtx).collections.requestOverride(
-      draftInput({ id: 'big-imdb', name: 'Big IMDb', builderType: 'imdb_list', builderRef: 'https://www.imdb.com/list/ls012345678/', mediaType: 'movies' }),
+      draftInput({
+        id: 'big-imdb',
+        name: 'Big IMDb',
+        builderType: 'imdb_list',
+        builderRef: 'https://www.imdb.com/list/ls012345678/',
+        mediaType: 'movies',
+      }),
     );
-    const [ticket] = await t.db.select().from(tickets).where(sql`${tickets.id} = ${ticketId}`);
-    expect((ticket!.collectionOverridePayload as CollectionOverridePayload).provider).toBe('kometa');
+    const [ticket] = await t.db
+      .select()
+      .from(tickets)
+      .where(sql`${tickets.id} = ${ticketId}`);
+    expect((ticket!.collectionOverridePayload as CollectionOverridePayload).provider).toBe(
+      'kometa',
+    );
 
     const adminCtx = { ...makeCtx(t.db, sessionUser(admin)), ...stubLibretto().ctx, ...hs.ctx };
     const res = await caller(adminCtx).collections.approveOverride({ ticketId });
@@ -477,7 +562,11 @@ describe('setFindMissing — grant-gated acquisition knob (D-14)', () => {
     const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stub.ctx };
     // Seed the recipe so the re-PUT can find it (listRecipes returns the stub's recorded recipes).
     await caller(ctx).collections.upsert(draftInput({ id: 'dune' }));
-    const res = await caller(ctx).collections.setFindMissing({ id: 'dune', mediaType: 'books', on: true });
+    const res = await caller(ctx).collections.setFindMissing({
+      id: 'dune',
+      mediaType: 'books',
+      on: true,
+    });
     expect(res).toMatchObject({ ok: true, provider: 'libretto', findMissing: true });
     const last = stub.recipes[stub.recipes.length - 1]!;
     expect((last.variables as { acquisitionEnabled: boolean }).acquisitionEnabled).toBe(true);
@@ -501,11 +590,15 @@ describe('setFindMissing — grant-gated acquisition knob (D-14)', () => {
     });
     const hs = stubHaynesops({ file: managed, checks: 'success' });
     const ctx = { ...makeCtx(t.db, sessionUser(admin)), ...stubLibretto().ctx, ...hs.ctx };
-    const res = await caller(ctx).collections.setFindMissing({ id: 'marvel', mediaType: 'movies', on: true });
+    const res = await caller(ctx).collections.setFindMissing({
+      id: 'marvel',
+      mediaType: 'movies',
+      on: true,
+    });
     expect(res).toMatchObject({ ok: true, provider: 'kometa', findMissing: true, merged: false });
     expect(hs.opened).toHaveLength(1);
     expect(hs.merged).toHaveLength(0); // acquisition lever is human-merged (D-10)
-    expect((hs.opened[0]!.content as string)).toContain('radarr_add_missing: true');
+    expect(hs.opened[0]!.content as string).toContain('radarr_add_missing: true');
   });
 });
 
@@ -762,7 +855,11 @@ describe('hand-authored Kometa collections — edit-in-place (owner ruling 2026-
     // Admin (the owner path) bypasses the cap; a collection-id ref is unprovable without egress, so a
     // non-admin edit would route to the over-cap ticket (asserted separately below).
     const admin = await createUser(t.db, { admin: true });
-    const hs = stubHaynesops({ file: null, handFiles: { [HAND_MOVIES_FILE]: HAND_MOVIES_TEXT }, checks: 'success' });
+    const hs = stubHaynesops({
+      file: null,
+      handFiles: { [HAND_MOVIES_FILE]: HAND_MOVIES_TEXT },
+      checks: 'success',
+    });
     const ctx = { ...makeCtx(t.db, sessionUser(admin)), ...stubLibretto().ctx, ...hs.ctx };
     const res = await caller(ctx).collections.editHandCollection({
       mediaType: 'movies',
@@ -774,7 +871,9 @@ describe('hand-authored Kometa collections — edit-in-place (owner ruling 2026-
     expect(res).toMatchObject({ ok: true, provider: 'kometa', merged: false });
     expect(hs.opened).toHaveLength(1);
     expect(hs.merged).toHaveLength(0); // hand-file PRs are ALWAYS human-merged
-    expect(hs.opened[0]!.path).toBe(`kubernetes/main/apps/media/kometa/app/config/${HAND_MOVIES_FILE}`);
+    expect(hs.opened[0]!.path).toBe(
+      `kubernetes/main/apps/media/kometa/app/config/${HAND_MOVIES_FILE}`,
+    );
     const content = hs.opened[0]!.content as string;
     expect(content).toContain('    template: {name: Movies, collection: 999999}');
     // Fidelity: the untouched A24 block + the template header survive byte-for-byte.
@@ -782,7 +881,10 @@ describe('hand-authored Kometa collections — edit-in-place (owner ruling 2026-
     expect(content).toContain('      company: co0390816');
     expect(content).toContain('    tmdb_collection_details: <<collection>>');
     // Audited same-tx.
-    const audit = await t.db.select().from(permissionAudit).where(eq(permissionAudit.actorId, admin.id));
+    const audit = await t.db
+      .select()
+      .from(permissionAudit)
+      .where(eq(permissionAudit.actorId, admin.id));
     expect(audit).toHaveLength(1);
     expect(audit[0]!.action).toBe('upsert_collection');
     expect((audit[0]!.detail as { hand_edit?: boolean }).hand_edit).toBe(true);
@@ -831,10 +933,21 @@ describe('hand-authored Kometa collections — edit-in-place (owner ruling 2026-
   it('delete of a hand collection is admin-only + a HUMAN-merged PR removing its block', async () => {
     const member = await createUser(t.db);
     const admin = await createUser(t.db, { admin: true });
-    const hsMember = stubHaynesops({ file: null, handFiles: { [HAND_MOVIES_FILE]: HAND_MOVIES_TEXT } });
-    const memberCtx = { ...makeCtx(t.db, sessionUser(member)), ...stubLibretto().ctx, ...hsMember.ctx };
+    const hsMember = stubHaynesops({
+      file: null,
+      handFiles: { [HAND_MOVIES_FILE]: HAND_MOVIES_TEXT },
+    });
+    const memberCtx = {
+      ...makeCtx(t.db, sessionUser(member)),
+      ...stubLibretto().ctx,
+      ...hsMember.ctx,
+    };
     await expect(
-      caller(memberCtx).collections.remove({ id: 'Goosebumps', mediaType: 'movies', handFile: HAND_MOVIES_FILE }),
+      caller(memberCtx).collections.remove({
+        id: 'Goosebumps',
+        mediaType: 'movies',
+        handFile: HAND_MOVIES_FILE,
+      }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
 
     const hs = stubHaynesops({ file: null, handFiles: { [HAND_MOVIES_FILE]: HAND_MOVIES_TEXT } });
@@ -853,7 +966,11 @@ describe('hand-authored Kometa collections — edit-in-place (owner ruling 2026-
 
   it('find-missing on a hand collection splices that file via a HUMAN-merged PR (admin)', async () => {
     const admin = await createUser(t.db, { admin: true });
-    const hs = stubHaynesops({ file: null, handFiles: { [HAND_MOVIES_FILE]: HAND_MOVIES_TEXT }, checks: 'success' });
+    const hs = stubHaynesops({
+      file: null,
+      handFiles: { [HAND_MOVIES_FILE]: HAND_MOVIES_TEXT },
+      checks: 'success',
+    });
     const ctx = { ...makeCtx(t.db, sessionUser(admin)), ...stubLibretto().ctx, ...hs.ctx };
     const res = await caller(ctx).collections.setFindMissing({
       id: 'Goosebumps',
@@ -942,8 +1059,10 @@ describe('forceSearchCollection — the on-demand collection Force Search (ADR-0
     const lazylibrarian = {
       write: {
         addBook: async (id: string) => void events.push(`addBook:${id}`),
-        queueBook: async (id: string, format: string) => void events.push(`queueBook:${id}:${format}`),
-        searchBook: async (id: string, format: string) => void events.push(`searchBook:${id}:${format}`),
+        queueBook: async (id: string, format: string) =>
+          void events.push(`queueBook:${id}:${format}`),
+        searchBook: async (id: string, format: string) =>
+          void events.push(`searchBook:${id}:${format}`),
       },
     } as unknown as NonNullable<TRPCContext['lazylibrarian']>;
     return { events, ctx: { libretto, lazylibrarian } };
@@ -953,7 +1072,10 @@ describe('forceSearchCollection — the on-demand collection Force Search (ADR-0
     await setDefaultForceSearch(false);
     await seedMirror('fs-forbidden');
     const member = await createUser(t.db);
-    const stub = stubOnDemand({ missing: [{ isbn: '1', title: 'One' }], resolveByTitle: { One: 'gb1' } });
+    const stub = stubOnDemand({
+      missing: [{ isbn: '1', title: 'One' }],
+      resolveByTitle: { One: 'gb1' },
+    });
     const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stub.ctx };
     await expect(
       caller(ctx).collections.forceSearchCollection({ recipeId: 'fs-forbidden' }),
@@ -965,10 +1087,20 @@ describe('forceSearchCollection — the on-demand collection Force Search (ADR-0
     await setDefaultForceSearch(true);
     await seedMirror('fs-granted');
     const member = await createUser(t.db);
-    const stub = stubOnDemand({ missing: [{ isbn: '1', title: 'One' }], resolveByTitle: { One: 'gb1' } });
+    const stub = stubOnDemand({
+      missing: [{ isbn: '1', title: 'One' }],
+      resolveByTitle: { One: 'gb1' },
+    });
     const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stub.ctx };
     const res = await caller(ctx).collections.forceSearchCollection({ recipeId: 'fs-granted' });
-    expect(res).toMatchObject({ ok: true, runId: 'run-od-1', minted: 1, searched: 1, failed: 0, unreachable: false });
+    expect(res).toMatchObject({
+      ok: true,
+      runId: 'run-od-1',
+      minted: 1,
+      searched: 1,
+      failed: 0,
+      unreachable: false,
+    });
     // The compose ORDER: the recipe re-applies FIRST, the missing set refreshes SECOND, the confined LL
     // chain (addBook → queueBook → searchBook) fires LAST.
     expect(stub.events).toEqual([
@@ -980,7 +1112,10 @@ describe('forceSearchCollection — the on-demand collection Force Search (ADR-0
     ]);
     // The audit row carries the caller + the on-demand via tag.
     const audits = (
-      await t.db.select().from(permissionAudit).where(eq(permissionAudit.action, 'request_book_search'))
+      await t.db
+        .select()
+        .from(permissionAudit)
+        .where(eq(permissionAudit.action, 'request_book_search'))
     ).filter((a) => (a.detail as { via?: string }).via === 'collection_force_search');
     expect(audits).toHaveLength(1);
     expect(audits[0]!.actorId).toBe(member.id);
@@ -1019,7 +1154,10 @@ describe('forceSearchCollection — the on-demand collection Force Search (ADR-0
     expect(row?.missingCount).toBe(0); // a mirror-bound recipe with no open wants counts an honest 0
 
     const admin = await createUser(t.db, { admin: true });
-    const adminView = await caller({ ...makeCtx(t.db, sessionUser(admin)), ...stubbed.ctx }).collections.overview({
+    const adminView = await caller({
+      ...makeCtx(t.db, sessionUser(admin)),
+      ...stubbed.ctx,
+    }).collections.overview({
       mediaType: 'books',
     });
     expect(adminView.canForceSearch).toBe(true);
@@ -1055,10 +1193,19 @@ describe('collections.search + collections.preview (DESIGN-044 builder page)', (
     const ctx = {
       ...makeCtx(t.db, sessionUser(member), stubArrBundle([]).bundle),
       ...stubBuilderLibretto({
-        search: { results: [{ ref: '42', name: 'The Stormlight Archive', author: 'Sanderson', workCount: 5 }], truncated: false },
+        search: {
+          results: [
+            { ref: '42', name: 'The Stormlight Archive', author: 'Sanderson', workCount: 5 },
+          ],
+          truncated: false,
+        },
       }),
     };
-    const res = await caller(ctx).collections.search({ mediaType: 'books', builderType: 'hardcover_series', q: 'storm' });
+    const res = await caller(ctx).collections.search({
+      mediaType: 'books',
+      builderType: 'hardcover_series',
+      q: 'storm',
+    });
     expect(res.reachable).toBe(true);
     expect(res.results[0]).toMatchObject({ ref: '42', name: 'The Stormlight Archive' });
   });
@@ -1069,13 +1216,22 @@ describe('collections.search + collections.preview (DESIGN-044 builder page)', (
       {
         path: '/api/v3/movie/lookup',
         body: [
-          { title: 'The Fellowship of the Ring', year: 2001, tmdbId: 120, collection: { name: 'The Lord of the Rings Collection', tmdbId: 119 } },
+          {
+            title: 'The Fellowship of the Ring',
+            year: 2001,
+            tmdbId: 120,
+            collection: { name: 'The Lord of the Rings Collection', tmdbId: 119 },
+          },
           { title: 'A Standalone', year: 2010, tmdbId: 900 },
         ],
       },
     ]);
     const ctx = { ...makeCtx(t.db, sessionUser(member), arr.bundle), ...stubBuilderLibretto({}) };
-    const res = await caller(ctx).collections.search({ mediaType: 'movies', builderType: 'tmdb_collection_details', q: 'lord' });
+    const res = await caller(ctx).collections.search({
+      mediaType: 'movies',
+      builderType: 'tmdb_collection_details',
+      q: 'lord',
+    });
     const enabled = res.results.filter((r) => !r.disabled);
     expect(enabled[0]).toMatchObject({ ref: '119', name: 'The Lord of the Rings Collection' });
   });
@@ -1087,7 +1243,11 @@ describe('collections.search + collections.preview (DESIGN-044 builder page)', (
       ...makeCtx(t.db, sessionUser(member), stubArrBundle([]).bundle),
       ...stubBuilderLibretto({ searchThrows: new LibrettoUnreachableError('GET', '/api/search') }),
     };
-    const res = await caller(ctx).collections.search({ mediaType: 'books', builderType: 'nyt_list', q: 'fiction' });
+    const res = await caller(ctx).collections.search({
+      mediaType: 'books',
+      builderType: 'nyt_list',
+      q: 'fiction',
+    });
     expect(res.reachable).toBe(false);
     expect(res.results).toEqual([]);
   });
@@ -1097,10 +1257,21 @@ describe('collections.search + collections.preview (DESIGN-044 builder page)', (
     const ctx = {
       ...makeCtx(t.db, sessionUser(member), stubArrBundle([]).bundle),
       ...stubBuilderLibretto({
-        preview: { total: 2, truncated: false, members: [{ title: 'A', author: 'X', isbn: null }, { title: 'B', author: 'Y', isbn: null }] },
+        preview: {
+          total: 2,
+          truncated: false,
+          members: [
+            { title: 'A', author: 'X', isbn: null },
+            { title: 'B', author: 'Y', isbn: null },
+          ],
+        },
       }),
     };
-    const res = await caller(ctx).collections.preview({ mediaType: 'books', builderType: 'hardcover_series', ref: '42' });
+    const res = await caller(ctx).collections.preview({
+      mediaType: 'books',
+      builderType: 'hardcover_series',
+      ref: '42',
+    });
     expect(res.available).toBe(true);
     expect(res.total).toBe(2);
     expect(res.missingCount).toBe(2);
@@ -1109,7 +1280,10 @@ describe('collections.search + collections.preview (DESIGN-044 builder page)', (
 
   it('renders the honest preview-unavailable state for a URL-ref builder (Q-01)', async () => {
     const member = await createUser(t.db);
-    const ctx = { ...makeCtx(t.db, sessionUser(member), stubArrBundle([]).bundle), ...stubBuilderLibretto({}) };
+    const ctx = {
+      ...makeCtx(t.db, sessionUser(member), stubArrBundle([]).bundle),
+      ...stubBuilderLibretto({}),
+    };
     const res = await caller(ctx).collections.preview({
       mediaType: 'movies',
       builderType: 'imdb_list',
@@ -1121,9 +1295,19 @@ describe('collections.search + collections.preview (DESIGN-044 builder page)', (
 
   it('forbids an anonymous caller from the builder reads (authed only)', async () => {
     const ctx = { ...makeCtx(t.db, null), ...stubBuilderLibretto({}) };
-    await expect(caller(ctx).collections.search({ mediaType: 'books', builderType: 'hardcover_series', q: 'x' })).rejects.toThrow();
     await expect(
-      caller(ctx).collections.preview({ mediaType: 'books', builderType: 'hardcover_series', ref: '42' }),
+      caller(ctx).collections.search({
+        mediaType: 'books',
+        builderType: 'hardcover_series',
+        q: 'x',
+      }),
+    ).rejects.toThrow();
+    await expect(
+      caller(ctx).collections.preview({
+        mediaType: 'books',
+        builderType: 'hardcover_series',
+        ref: '42',
+      }),
     ).rejects.toThrow();
   });
 });

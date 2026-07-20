@@ -31,7 +31,10 @@ bot token is an agent/CI credential, not an app-pod secret.
 **Optional (non-secret) overrides** — all defaulted, only set to change the target:
 `HAYNESOPS_REPO` (default `thaynes43/haynes-ops`), `HAYNESOPS_BASE_BRANCH` (default `main`),
 `HAYNESOPS_KOMETA_CONFIG_DIR` (default `kubernetes/main/apps/media/kometa/app/config`),
-`GITHUB_API_URL` (default `https://api.github.com`).
+`GITHUB_API_URL` (default `https://api.github.com`),
+`HAYNESOPS_KOMETA_CHECK_NAME` (default `Kometa Validate Managed Files - Success` — the ONE check-run the
+auto-merge gate resolves against by name; DESIGN-042 D-10. Set it only if the validate workflow's job name
+changes in haynes-ops).
 
 Absent the token, `assertHaynesopsEnv` throws `HaynesopsConfigError` naming `HAYNESOPS_WRITE_TOKEN`
 (never its value); a Movies/TV write surfaces that honestly and a Libretto (Books/Audiobooks) write is

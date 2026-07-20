@@ -15,6 +15,8 @@ export interface HaynesopsClientBundle {
   configDir: string;
   /** The branch PRs target + auto-merge into (the "merged" recipe source of truth). */
   baseBranch: string;
+  /** The check-run name the auto-merge gate resolves against (DESIGN-042 D-10 — the named validate check). */
+  kometaCheckName: string;
 }
 
 export interface HaynesopsBundleOptions {
@@ -23,6 +25,7 @@ export interface HaynesopsBundleOptions {
   baseBranch: string;
   configDir: string;
   apiBaseUrl: string;
+  kometaCheckName: string;
   fetchImpl?: typeof fetch;
   sleepImpl?: (ms: number) => Promise<void>;
 }
@@ -45,6 +48,7 @@ export function buildHaynesopsBundle(options: HaynesopsBundleOptions): Haynesops
     write: new HaynesopsWriteClient(clientOptions),
     configDir: options.configDir,
     baseBranch: options.baseBranch,
+    kometaCheckName: options.kometaCheckName,
   };
 }
 
@@ -64,5 +68,6 @@ export function haynesopsBundleFromEnv(
     baseBranch: config.baseBranch,
     configDir: config.configDir,
     apiBaseUrl: config.apiBaseUrl,
+    kometaCheckName: config.kometaCheckName,
   });
 }

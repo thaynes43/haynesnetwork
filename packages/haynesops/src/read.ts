@@ -111,17 +111,37 @@ export class HaynesopsReadClient {
   }
 
   /**
-   * The rolled-up conclusion of a ref's CHECK RUNS (the `--validate-file` gate). `success` only when at
-   * least one check ran and every completed check succeeded; `failure` when any completed check failed;
-   * `pending` when checks are still queued/in-progress; `none` when no check has reported yet.
+   * The conclusion of a ref's CHECK RUNS. With `requiredCheckName` (the norm — DESIGN-042 D-10 as-implemented
+   * 2026-07-20) the roll-up is SCOPED to the ONE named validate gate; every sibling check on the head (the
+   * full Flux Local matrix + Diff Scope) is IGNORED. Without a name it rolls up ALL checks (legacy behaviour).
+   *
+   * Why the scope matters: a haynes-ops PR head carries ~9 unrelated Flux Local runs; the validate gate was
+   * green on the FIRST poll while the matrix was still in progress, so the unscoped roll-up returned `pending`
+   * and the eligible add degraded to a human merge — a pure timing/scope false-negative (live 2026-07-20,
+   * haynes-ops #2170/#2171). Scoping to the named gate removes that race.
+   *
+   * Returns: `success` when the (named) gate is complete + green; `failure` when it completed non-green;
+   * `pending` when it is still queued/in-progress OR — with a name — has NOT reported yet (never `success`:
+   * the workflow triggers on the managed-include PR, so it WILL report; the caller must not merge until it
+   * does); `none` only when NO check at all has reported on the head.
    */
-  async getChecksConclusion(ref: string): Promise<ChecksConclusion> {
+  async getChecksConclusion(
+    ref: string,
+    opts?: { requiredCheckName?: string },
+  ): Promise<ChecksConclusion> {
     const raw = (await this.http.requestJson({
       method: 'GET',
       path: `/repos/${this.repo}/commits/${encodeURIComponent(ref)}/check-runs?per_page=100`,
-    })) as { total_count?: number; check_runs?: Array<{ status?: string; conclusion?: string }> } | null;
-    const runs = raw?.check_runs ?? [];
-    if (runs.length === 0) return 'none';
+    })) as {
+      total_count?: number;
+      check_runs?: Array<{ name?: string; status?: string; conclusion?: string }>;
+    } | null;
+    const allRuns = raw?.check_runs ?? [];
+    if (allRuns.length === 0) return 'none';
+    const name = opts?.requiredCheckName?.trim();
+    const runs = name ? allRuns.filter((r) => r.name === name) : allRuns;
+    // The named gate has not reported yet — PENDING, never a merge (the safe default).
+    if (name && runs.length === 0) return 'pending';
     let anyPending = false;
     let anyFailed = false;
     let anySucceeded = false;
