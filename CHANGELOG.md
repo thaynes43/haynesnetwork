@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.88.4](https://github.com/thaynes43/haynesnetwork/compare/v0.88.3...v0.88.4) (2026-07-20)
+
+
+### Bug Fixes
+
+* remove the Collection filter chip from the Music wall ([#448](https://github.com/thaynes43/haynesnetwork/issues/448)) ([e328d7d](https://github.com/thaynes43/haynesnetwork/commit/e328d7dc6266419af5fb39ddca20aced00695b49))
+
+
+### Documentation
+
+* day wrap 2026-07-20 — collections across all library types, MAM armed, GB accounting fixed; DESIGN-037 comics-grain amendment ([#446](https://github.com/thaynes43/haynesnetwork/issues/446)) ([7f5d0cc](https://github.com/thaynes43/haynesnetwork/commit/7f5d0ccc19905dfe0e2133730d9f7e0ab6170f33))
+
 ## [0.88.3](https://github.com/thaynes43/haynesnetwork/compare/v0.88.2...v0.88.3) (2026-07-20)
 
 
