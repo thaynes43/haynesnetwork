@@ -43,6 +43,17 @@ finished Stream A inline (test-contract updates, full battery, dev:local drive, 
    DESIGN-036 Q-02 identifier-backed matching now also improves the card collapse, not just
    badges (the known upgrade path).
 
+## DEPLOYED (added later the same day — the owner flagged the wall was not live)
+
+The wrap above stopped one step short: OPS-004's **one manual step** (the haynes-ops
+haynesnetwork tag bump — no Flux image automation) had not been done, so staging still ran
+v0.88.6. Completed on the owner's flag: artifact-pair gate passed for v0.89.0 (manifest +
+cosign sig both 200 — the sig 404 was the documented Accept-header gotcha), **haynes-ops
+#2200** merged (v0.88.6 → v0.89.0), flux reconciled, rollout clean, `Migrations applied.`
+(0071 included), `/api/health` ok. Running images verified in-cluster:
+`haynesnetwork:v0.89.0` (frontend) and `libretto:sha-eaa868a` (media). Staged steps 2–3
+(twin conversion + author recipes) remain next; step 1 (deploy verify) is DONE.
+
 ## Gotchas recorded
 
 - The pod's `GH_TOKEN` env var goes stale (sidecar refreshes `/creds/gh_token` every 40 min) —
