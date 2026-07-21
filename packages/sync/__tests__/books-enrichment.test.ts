@@ -42,6 +42,7 @@ describe('kavitaEnrichmentFrom — SeriesMetadataDto reduce', () => {
       publisher: 'Penguin',
       language: 'en',
       year: 1996,
+      writers: [],
     });
   });
   it('treats releaseYear 0 + empty language/summary as honest null/[]', () => {
@@ -52,7 +53,19 @@ describe('kavitaEnrichmentFrom — SeriesMetadataDto reduce', () => {
       publisher: null,
       language: null,
       year: null,
+      writers: [],
     });
+  });
+  it('reduces writers(name) — the flat-folder author fallback source', () => {
+    const meta: KavitaSeriesMetadata = {
+      summary: '',
+      genres: [],
+      publishers: [],
+      writers: [{ name: 'Diana Gabaldon' }, { name: 'A Co-Writer' }],
+      language: '',
+      releaseYear: 0,
+    };
+    expect(kavitaEnrichmentFrom(meta).writers).toEqual(['Diana Gabaldon', 'A Co-Writer']);
   });
 });
 
@@ -115,7 +128,7 @@ describe('normalizeKavitaSeries — applies enrichment / stays null without it',
   it('applies fresh enrichment (summary/genres/publisher/year + language into attrs)', () => {
     const now = new Date('2026-07-17T00:00:00Z');
     const row = normalizeKavitaSeries(series, 'book', 'Books', 'https://kavita.example', {
-      data: { summary: 'A murder.', genres: ['Mystery'], publisher: 'Penguin', language: 'en', year: 1996 },
+      data: { summary: 'A murder.', genres: ['Mystery'], publisher: 'Penguin', language: 'en', year: 1996, writers: [] },
       metadataSyncedAt: now,
     });
     expect(row.summary).toBe('A murder.');
@@ -125,6 +138,31 @@ describe('normalizeKavitaSeries — applies enrichment / stays null without it',
     expect(row.attrs.language).toBe('en');
     expect(row.attrs.format).toBe(3);
     expect(row.metadataSyncedAt).toBe(now);
+  });
+
+  it('the folder-derived author stays PRIMARY; metadata writers fill a FLAT layout (the 2026-07-21 pairing-gap fix)', () => {
+    const now = new Date('2026-07-21T00:00:00Z');
+    const enrichment = {
+      data: { summary: null, genres: [], publisher: null, language: null, year: null, writers: ['Diana Gabaldon'] },
+      metadataSyncedAt: now,
+    };
+    // Author folder layout → the folder wins even when writers are present.
+    const nested = normalizeKavitaSeries(series, 'book', 'Books', 'https://kavita.example', enrichment);
+    expect(nested.author).toBe('Charlaine Harris');
+    // Flat layout (folderPath === lowestFolderPath ⇒ no author directory) → the writer fills it.
+    const flat = {
+      ...(series as unknown as Record<string, unknown>),
+      folderPath: '/data/EBooks/Outlander',
+      lowestFolderPath: '/data/EBooks/Outlander',
+    } as unknown as KavitaSeries;
+    const healed = normalizeKavitaSeries(flat, 'book', 'Books', 'https://kavita.example', enrichment);
+    expect(healed.author).toBe('Diana Gabaldon');
+    // Flat layout with NO writers stays an honest null.
+    const bare = normalizeKavitaSeries(flat, 'book', 'Books', 'https://kavita.example', {
+      data: { summary: null, genres: [], publisher: null, language: null, year: null, writers: [] },
+      metadataSyncedAt: now,
+    });
+    expect(bare.author).toBeNull();
   });
 });
 
@@ -172,9 +210,9 @@ describe('fetchBooksSnapshot — Kavita enrichment change-gate', () => {
   it('skips an UNCHANGED series (carry-forward) and re-fetches a CHANGED one', async () => {
     const existing = new Map<string, ExistingKavitaEnrichment>([
       // 102 unchanged (same stamp, already enriched) → skipped, carried forward.
-      ['102', { sourceUpdatedAt: new Date('2026-07-09T12:00:00'), metadataSyncedAt: new Date('2026-07-16T00:00:00Z'), data: { summary: 'OLD', genres: ['Kept'], publisher: 'Old Pub', language: 'en', year: 1996 } }],
+      ['102', { sourceUpdatedAt: new Date('2026-07-09T12:00:00'), metadataSyncedAt: new Date('2026-07-16T00:00:00Z'), data: { summary: 'OLD', genres: ['Kept'], publisher: 'Old Pub', language: 'en', year: 1996, writers: [] } }],
       // 103 stamp differs from the fresh list stamp → re-fetched.
-      ['103', { sourceUpdatedAt: new Date('2026-07-01T00:00:00'), metadataSyncedAt: new Date('2026-07-16T00:00:00Z'), data: { summary: 'STALE', genres: [], publisher: null, language: null, year: null } }],
+      ['103', { sourceUpdatedAt: new Date('2026-07-01T00:00:00'), metadataSyncedAt: new Date('2026-07-16T00:00:00Z'), data: { summary: 'STALE', genres: [], publisher: null, language: null, year: null, writers: [] } }],
     ]);
     const { bundle, calls } = stubBundle(async () => meta());
     const snap = await fetchBooksSnapshot(bundle, undefined, { existingKavita: existing });
@@ -187,7 +225,7 @@ describe('fetchBooksSnapshot — Kavita enrichment change-gate', () => {
 
   it('a metadata failure carries existing enrichment forward (never wipes it)', async () => {
     const existing = new Map<string, ExistingKavitaEnrichment>([
-      ['103', { sourceUpdatedAt: new Date('2026-07-01T00:00:00'), metadataSyncedAt: new Date('2026-07-16T00:00:00Z'), data: { summary: 'KEEP', genres: ['G'], publisher: 'Pub', language: 'en', year: 2001 } }],
+      ['103', { sourceUpdatedAt: new Date('2026-07-01T00:00:00'), metadataSyncedAt: new Date('2026-07-16T00:00:00Z'), data: { summary: 'KEEP', genres: ['G'], publisher: 'Pub', language: 'en', year: 2001, writers: [] } }],
     ]);
     const { bundle } = stubBundle(async (id) => {
       if (id === '103') throw new Error('kavita 500');

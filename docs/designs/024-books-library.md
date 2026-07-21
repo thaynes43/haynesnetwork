@@ -1,7 +1,14 @@
 # DESIGN-024: Books & Audiobooks Library — the `books_items` ledger, `books-sync`, section-gated walls + cover proxy
 
 - **Status:** Draft
-- **Last updated:** 2026-07-20 (ADR-075 — the **Audiobooks wall retires**: ebooks + audiobooks unify into
+- **Last updated:** 2026-07-21 (**Kavita metadata-writers author fallback** — the live pairing-gap
+  diagnosis found 54 null-author ebook rows whose WRITERS sit in Kavita all along: the mirror's
+  Kavita author was folder-derived ONLY (the Calibre-style author directory), so flat layouts went
+  null. The enrichment reduce now carries `writers[]{name}` and `normalizeKavitaSeries` falls back
+  to `writers[0]` when the folder derive is null (folder stays primary — zero churn for the 96%
+  that worked). The change-gate loader treats a null-author BOOK row as never-enriched so one run
+  heals the backlog, then the row re-enters the gate. Comics keep their honest null unless Kavita
+  carries a writer. Prior: 2026-07-20 (ADR-075 — the **Audiobooks wall retires**: ebooks + audiobooks unify into
   ONE Books wall with a three-state Format facet, work-grain `books.search` with pair-collapse, tab list
   without Audiobooks; see the Overview + D-04 + D-06 dated amendments. Prior: 2026-07-17 — D-01/D-03
   detail-page enrichment: five nullable columns + the Kavita `/api/Series/metadata` change-gate;

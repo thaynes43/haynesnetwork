@@ -1,7 +1,14 @@
 # DESIGN-036: Book ⇄ audiobook format pairing — pair cache, paced system wants, dual consume buttons
 
 - **Status:** Draft
-- **Last updated:** 2026-07-20 (ADR-075 — the pair cache becomes the unified Books wall's COLLAPSE join +
+- **Last updated:** 2026-07-21 (**author-agreement tolerance** — the live pairing-gap diagnosis found the
+  substring check refusing real pairs on initials spacing ("JRR Tolkien" ⇄ "J.R.R. Tolkien"),
+  initials-to-full-name ("L.M." ⇄ "Lucy Maud"), middle-name insertion ("Dean Koontz" ⇄ "Dean Ray
+  Koontz"), and leading co-author credits. `authorsAgree` now ALSO accepts an ordered token
+  alignment (subsequence, equality-or-prefix per token, requiring one aligned REAL-word anchor ≥ 3
+  chars on both sides). Full noise-stripped TITLE equality remains the primary gate — Homer's
+  "Odyssey" still never pairs with Walter Mosley's — so ADR-065 C-01's conservatism bar is
+  unchanged. Prior: 2026-07-20 (ADR-075 — the pair cache becomes the unified Books wall's COLLAPSE join +
   Format-facet source; standalone pairing-want tiles retire on the wall (the anchor card's coverage badge
   carries the missing-format want state); Q-02 now also improves card collapse. See the Amendment at the
   end. Prior: 2026-07-16)
