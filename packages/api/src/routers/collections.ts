@@ -54,6 +54,7 @@ import {
 } from '@hnet/domain';
 import type { TRPCContext } from '../trpc';
 import type {
+  LibrettoBuilderRef,
   LibrettoCollection,
   LibrettoIssue,
   LibrettoRecipe,
@@ -154,6 +155,21 @@ function deriveMediaType(
   return 'books';
 }
 
+/**
+ * A builder ref for the wire display: a scalar (string / numeric Hardcover id) shown as-is, an ARRAY
+ * (static_ids / hardcover_comics) joined into the same comma-separated string the id-list builders already
+ * use, and a `{ title, author }` entry shown by its title. Keeps `builderRef` a stable `string | null` for
+ * the manager + edit form — an explicit display join, never a silent `String()` of an array.
+ */
+function builderRefToDisplay(ref: LibrettoBuilderRef | null | undefined): string | null {
+  if (ref === null || ref === undefined) return null;
+  if (!Array.isArray(ref)) return String(ref);
+  const parts = ref
+    .map((e) => (typeof e === 'object' && e !== null ? (e.title ?? '') : String(e)))
+    .filter((s) => s.length > 0);
+  return parts.length > 0 ? parts.join(', ') : null;
+}
+
 // Explicit wire shapes (the fixWire idiom) — the Libretto ACL uses zod passthrough, whose loose types do
 // not survive tRPC inference cleanly; the manager gets a stable, typed contract instead.
 function recipeWire(r: LibrettoRecipe, mediaType: CollectionMediaType, missingCount: number | null) {
@@ -161,9 +177,7 @@ function recipeWire(r: LibrettoRecipe, mediaType: CollectionMediaType, missingCo
     id: r.id,
     name: r.name ?? null,
     builderType: r.builder?.type ?? null,
-    // A multi-source ref (static_ids / hardcover_comics) is an array on the wire; join it to the same
-    // comma-separated display string the id-list builders already use, keeping this contract `string | null`.
-    builderRef: Array.isArray(r.builder?.ref) ? r.builder.ref.join(', ') : (r.builder?.ref ?? null),
+    builderRef: builderRefToDisplay(r.builder?.ref),
     ordered: r.variables?.ordered ?? null,
     syncMode: r.variables?.syncMode ?? null,
     findMissing: r.variables?.acquisitionEnabled ?? false,

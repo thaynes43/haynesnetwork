@@ -47,38 +47,62 @@ a parse rejection of a field the pass ignores. The WRITE ACL (`librettoRecipeDra
 the same string-only assumption; latent, but it would reject a comics recipe round-tripped by
 `collections-manager.ts` `recipeToDraft` (the find-missing toggle / edit re-PUT).
 
-## The fix (minimal, honest)
+## The real ref space (checked against Libretto's own schema)
 
-1. **Read ACL** (`schemas.ts` `librettoBuilderSchema`): `ref: z.union([z.string(), z.array(z.string())]).nullish()`
-   — kept TOLERANT (union + nullish) in the read ACL's local style. This alone unblocks the force-search leg.
-2. **Write ACL** (`schemas.ts` `librettoRecipeDraftSchema`): `ref: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)])`
-   — kept TIGHT (min-1) in the write draft's local style, so a comics recipe read back can be re-PUT unchanged.
-3. **tRPC wire** (`packages/api/src/routers/collections.ts` `recipeWire`): an array `ref` is comma-joined to the
-   same `string | null` display string the id-list builders already emit (`'9741, 358'`), keeping the UI
-   contract unchanged (no UI diff). This is an explicit display join, not a silent coercion.
+The shipped fix widens the ref to Libretto's ACTUAL builder-ref space, read straight from its recipe schema
+(`thaynes43/libretto` `src/recipes/schema.ts`), NOT a guessed string/string-array:
+
+- `nyt_list` → a `string`.
+- `hardcover_series` → a `string` (slug) **or a `number`** (Hardcover id).
+- `hardcover_comics` → an **array of `string | number`** — a MIXED id/slug list, e.g. `[14911, 'guarding-the-globe']`.
+- `static_ids` → an array of `string | { title, author }` entries.
+
+## The fix (honest, durable)
+
+1. **Read ACL** (`schemas.ts` `librettoBuilderSchema`): a shared `librettoBuilderRefEntrySchema`
+   (`string | number | { title?, author? }`) and `librettoBuilderRefSchema`
+   = `z.union([z.string(), z.number(), z.array(entry)]).nullish()`. Tolerant (mirrors Libretto), so a NEW grain
+   never sinks the list again. This alone unblocks the force-search leg.
+2. **Write ACL** (`schemas.ts` `librettoRecipeDraftSchema`): the same union, kept TIGHT
+   (`string.min(1) | number.int().positive() | array(entry).min(1)`), so a comics recipe read back re-PUTs
+   unchanged (`setCollectionFindMissing` → `recipeToDraft`, collections-manager.ts:242-243).
+3. **tRPC wire** (`packages/api/src/routers/collections.ts` `builderRefToDisplay` in `recipeWire`): a scalar is
+   stringified, an array is joined into the same comma-separated display string the id-list builders already
+   emit (`'9741, 358'`), a `{ title, author }` entry shows by title — keeping `builderRef` a stable
+   `string | null` (no UI diff). Explicit display join, never a silent `String()` of an array.
 
 Consumers audited across `packages/libretto`, `packages/domain`, `packages/sync`, `apps/web`: the
-builder-page preview path (`collection-builder.ts`) was already array-aware (`Array.isArray(input.ref)` at the
-id-list and franchise previews); `recipeToDraft` passes the ref through unchanged (now type-compatible); the
-`upsert_collection` audit stores the ref into a jsonb detail (an array is honest there); the search-result
-`ref` is a distinct always-string shape. No `String()` coercion of an array anywhere on the product path.
+builder-page preview path (`collection-builder.ts`) was already array-aware; `recipeToDraft` passes the ref
+through unchanged (now type-compatible with the wider write union); the `upsert_collection` audit stores the
+ref into a jsonb detail (any JSON is honest there); the search-result `ref` is a distinct always-string shape.
+
+## The v0.88.5 → v0.88.6 iteration (why proving on the cluster mattered)
+
+The first cut (v0.88.5) widened only `string → string[]`. The artifact/deploy chain was clean, but the
+**live proof-of-unblock caught that it was insufficient**: a Job off the `books-collections-sync` CronJob on
+v0.88.5 STILL aborted — the error text changed from "expected string, received array" to a bare
+"Invalid input", i.e. the union ran but the comics array failed BOTH branches because its elements are
+NUMBERS (Hardcover ids), not strings. The complete fix (this note) widens to Libretto's real ref space and
+ships as **v0.88.6**. Lesson: check the upstream's own schema for the exact element type, and never trust a
+green artifact gate as proof — only the live cron pass parsing the real recipes is proof.
 
 ## Tests
 
-`packages/libretto/__tests__/client.test.ts` gains two regressions: (a) `listRecipes` parsing a recipe list
-that MIXES string refs and `hardcover_comics` array refs (mirroring the live shape) — asserts the whole list
-parses, the array survives as an array (no coercion), and the `acquisitionEnabled` filter the cron uses stays
-readable across both shapes; (b) `upsertRecipe` round-tripping a comics recipe whose `builder.ref` is an array
-— asserts the PUT body carries the array unchanged. Full suite green
-(`pnpm typecheck && pnpm lint && pnpm test && pnpm build`): libretto 19, domain 778, api 524, web 378, sync
+`packages/libretto/__tests__/client.test.ts`: (a) `listRecipes` parsing a list that mixes a scalar string, a
+scalar NUMBER (`hardcover_series` id), and MIXED number/slug `hardcover_comics` arrays
+(`[14911, 'guarding-the-globe']`) — asserts every shape survives exactly (no coercion) and the
+`acquisitionEnabled` filter the cron uses stays readable; (b) `upsertRecipe` round-tripping a mixed comics
+array unchanged. `packages/api/__tests__/collections.test.ts`: the wire joins a comics array to
+`'14911, guarding-the-globe'` and stringifies a numeric scalar. Full suite green
+(`pnpm typecheck && pnpm lint && pnpm test && pnpm build`): libretto 19, domain 778, api 525, web 378, sync
 125, auth 70, db 107.
 
 ## Impact / the unblock
 
-Once deployed (the cron runs the app image, so the fix only matters live), the hourly `collection-force-search`
-leg parses all recipes — including the two comics array-ref ones — and resumes force-searching its
-off-cooldown wants (25/run cap, 12h cooldown) through the confined LazyLibrarian chain. That restarts app-side
-MAM demand injection. This fix is the unblock cited by the morning-watch verdict
+Once v0.88.6 is deployed (the cron runs the app image, so the fix only matters live), the hourly
+`collection-force-search` leg parses all recipes — including the two comics mixed-array ones — and resumes
+force-searching its off-cooldown wants (25/run cap, 12h cooldown) through the confined LazyLibrarian chain.
+That restarts app-side MAM demand injection. This fix is the unblock cited by the morning-watch verdict
 (`2026-07-21-morning-watch-gb-mam.md`) to HOLD the MAM governor de-escalation: the currently-low unsatisfied
 count (107 vs gate 185) is artificially low precisely because this injector has been dead.
 
