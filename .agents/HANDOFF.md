@@ -4,6 +4,20 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ STANDING ORDER — THE YTDRIVARR VALIDATION REGIME (owner-mandated 2026-07-21; runs through ~2026-08-04)
+
+**Every session in the window validates that ytdrivarr did not regress the old YouTube/Peloton
+pipelines — "works just as good if not better, ESPECIALLY Peloton."** The full protocol,
+baselines, regression definitions, and rollback levers:
+`.agents/context/2026-07-21-ytdrivarr-validation-regime.md`. Instruments: the ytdrivarr
+Prometheus metrics + the "ytdrivarr" Grafana dashboard (the owner reviews it too) + the console
+Activity run summaries. Daily check: nightly Peloton cycle green (bearer < SLA, zero selector
+drift, donor-scale discovery) · numbering NEVER re-keys (SEV-1) · all three downloaders
+consuming with no 401s/bans · projections fresh and bounded. Log a verdict every session;
+SEVs go to the owner immediately. Window closes ~08-04 → retire this block with a "validated"
+verdict. (Cutover state as of writing: YouTube video+music LIVE on ytdrivarr; Peloton phases
+A+B live, donor retirement gated on the first green nightly — haynes-ops #2182.)
+
 ## ▶ BOOKS FORMAT UNIFICATION: SHIPPED — BOTH STREAMS MERGED, ROLLOUT STAGED (updated 2026-07-21 — parallel thread; supersedes nothing below)
 
 **Ratified 2026-07-20 over remote control ("Both, in parallel"), SHIPPED within hours.**
