@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.89.1](https://github.com/thaynes43/haynesnetwork/compare/v0.89.0...v0.89.1) (2026-07-21)
+
+
+### Bug Fixes
+
+* **collections:** stop re-resolving already-resolved collection wants (quota thrift) ([#470](https://github.com/thaynes43/haynesnetwork/issues/470)) ([157c86d](https://github.com/thaynes43/haynesnetwork/commit/157c86d5e08f147343cbdbc4b33e9312ff9287f9))
+
+
+### Documentation
+
+* record the executed Libretto rollout (twins converted, Authors live, wants minted) ([#469](https://github.com/thaynes43/haynesnetwork/issues/469)) ([01beeab](https://github.com/thaynes43/haynesnetwork/commit/01beeab470ad7a516ce0508ccbe5c794c1d57889))
+* record the v0.89.0 + libretto deploy completion (OPS-004 manual step done) ([#467](https://github.com/thaynes43/haynesnetwork/issues/467)) ([baf4a41](https://github.com/thaynes43/haynesnetwork/commit/baf4a41b1e694790a5b44b3b22a87d19cba6abd5))
+
 ## [0.89.0](https://github.com/thaynes43/haynesnetwork/compare/v0.88.6...v0.89.0) (2026-07-21)
 
 
