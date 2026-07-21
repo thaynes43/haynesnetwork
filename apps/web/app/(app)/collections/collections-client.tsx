@@ -44,7 +44,10 @@ import {
 // The sub-nav keys: one per media type, then the Tickets lens, then admin-only Settings.
 type TabKey = CollectionMediaTypeName | 'tickets' | 'settings';
 
-const MEDIA_TABS: readonly CollectionMediaTypeName[] = ['movies', 'tv', 'books', 'audiobooks'];
+// ADR-076 C-01 / ADR-075 C-01 (PLAN-060) — the Books/Audiobooks sub-tabs MERGED into one Books
+// tab (every book-domain recipe lists once there); 'audiobooks' stays a tolerated `?tab=` value
+// (old deep links resolve onto Books).
+const MEDIA_TABS: readonly CollectionMediaTypeName[] = ['movies', 'tv', 'books'];
 const DEFAULT_TAB: TabKey = 'books';
 
 function tabLabel(key: TabKey): string {
@@ -60,8 +63,10 @@ function tabsFor(isAdmin: boolean): TabKey[] {
   return tabs;
 }
 
-/** Honor ?tab when it is a tab the caller may see, else fall back to Books (the default sub-section). */
+/** Honor ?tab when it is a tab the caller may see, else fall back to Books (the default
+ *  sub-section). A legacy `?tab=audiobooks` deep link lands on the merged Books tab. */
 function resolveTab(raw: string | null, available: readonly TabKey[]): TabKey {
+  if (raw === 'audiobooks') return 'books';
   if (raw !== null && (available as readonly string[]).includes(raw)) return raw as TabKey;
   return DEFAULT_TAB;
 }

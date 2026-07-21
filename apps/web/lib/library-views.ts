@@ -13,7 +13,8 @@
 //   • A stored `groupBy: null` is a REAL value — never coalesced into the wall default.
 import type { LibraryWall, LibraryViewShape, SortDirection } from '@hnet/db';
 
-/** The Library walls (mirrors @hnet/db LIBRARY_WALLS — the satisfies pins parity at compile time). */
+/** The Library walls (mirrors @hnet/db LIBRARY_WALLS — the satisfies pins parity at compile time).
+ *  ADR-075 C-01 (PLAN-060): the `audiobooks` wall retired into the unified Books wall. */
 export const LIBRARY_WALL_IDS = [
   'movies',
   'tv',
@@ -21,7 +22,6 @@ export const LIBRARY_WALL_IDS = [
   'peloton',
   'youtube',
   'books',
-  'audiobooks',
   'comics',
 ] as const satisfies readonly LibraryWall[];
 export type LibraryWallId = (typeof LIBRARY_WALL_IDS)[number];
@@ -41,8 +41,9 @@ export interface WallView {
 /**
  * The R2/R6 per-wall defaults (owner ruling — mirrors @hnet/domain LIBRARY_WALL_DEFAULTS verbatim;
  * parity-tested): Movies flat · TV hierarchy · Music flat · Peloton by Exercise · YouTube by Channel ·
- * Books/Audiobooks by Author · Comics by Series; recently-added sort on the video walls, A–Z within
- * grouping on the book walls.
+ * Books by Author · Comics by Series; recently-added sort on the video walls, A–Z within
+ * grouping on the book walls. ADR-075 C-04: the unified Books wall keeps the grouped-by-Author
+ * default both retiring walls already shared.
  */
 export const WALL_VIEW_DEFAULTS: Record<LibraryWallId, WallView> = {
   movies: { view: 'flat', groupBy: null, sortField: 'added_at', sortDir: 'desc' },
@@ -52,7 +53,6 @@ export const WALL_VIEW_DEFAULTS: Record<LibraryWallId, WallView> = {
   youtube: { view: 'grouped', groupBy: 'channel', sortField: 'added_at', sortDir: 'desc' },
   books: { view: 'grouped', groupBy: 'author', sortField: 'author', sortDir: 'asc' },
   comics: { view: 'grouped', groupBy: 'series', sortField: 'title', sortDir: 'asc' },
-  audiobooks: { view: 'grouped', groupBy: 'author', sortField: 'author', sortDir: 'asc' },
 };
 
 /** An explicit URL override (any subset — a bare URL passes {}). */

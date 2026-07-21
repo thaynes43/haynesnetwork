@@ -557,8 +557,8 @@ export default function AdminRolesPage() {
     <fieldset className="field" data-testid="books-actions-grid">
       <legend>Books actions this role may use</legend>
       <p className="field-hint">
-        Actions apply only while the role’s Books access is Read-only or Edit. Browsing the books,
-        audiobooks and comics walls rides the access level alone; Fix and Force Search are opt-in.
+        Actions apply only while the role’s Books access is Read-only or Edit. Browsing the Books
+        and Comics walls rides the access level alone; Fix and Force Search are opt-in.
       </p>
       <ul className="check-list">
         {BOOK_ACTION_NAMES.map((action) => (

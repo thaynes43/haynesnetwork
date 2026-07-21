@@ -28,11 +28,12 @@ import { BooksHeadActions } from './books-head-actions';
 /** Kind-aware display label for the hero badge (owner tone: plain, friendly). */
 const KIND_LABEL: Record<string, string> = { book: 'Book', comic: 'Comic', audiobook: 'Audiobook' };
 
-/** The wall tab a collection chip drills into, by media kind. */
-const WALL_FOR_KIND: Record<string, 'books' | 'audiobooks' | 'comics'> = {
+/** The wall tab a collection chip drills into, by media kind. ADR-075 C-01 (PLAN-060) — book AND
+ *  audiobook titles live on the unified Books wall now; only Comics keep their own wall. */
+const WALL_FOR_KIND: Record<string, 'books' | 'comics'> = {
   book: 'books',
   comic: 'comics',
-  audiobook: 'audiobooks',
+  audiobook: 'books',
 };
 
 // DESIGN-033 / DESIGN-025 D-08 — the book-Fix trail labels (owner tone: no em-dashes, no jargon).
@@ -204,9 +205,7 @@ export function BooksDetail({ id, from }: { id: string; from: string | null }) {
     pairing?.missingFormat != null ? MISSING_FORMAT_LABEL[pairing.missingFormat] : null;
   const wantedHref =
     pairing?.want != null
-      ? `/library/books/wanted/${encodeURIComponent(pairing.want.requestId)}?from=${
-          item.mediaKind === 'audiobook' ? 'audiobooks' : 'books'
-        }`
+      ? `/library/books/wanted/${encodeURIComponent(pairing.want.requestId)}?from=books`
       : null;
   const duration = formatDuration(item.durationSeconds);
   const metaBits = [

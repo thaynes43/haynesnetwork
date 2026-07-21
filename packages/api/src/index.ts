@@ -113,6 +113,9 @@ export { BOOK_READ_STATES } from './books-query';
 // PLAN-056 / DESIGN-029 amendment 3 — the three-state composed-Wanted filter + the entry union.
 export { BOOKS_WANTED_STATES } from './books-query';
 export type { BooksWantedState } from './books-query';
+// ADR-075 C-03 (PLAN-060) — the unified Books wall's three-state Format seg vocabulary.
+export { BOOKS_FORMAT_FILTERS } from './books-query';
+export type { BooksFormatFilter } from './books-query';
 export type {
   BooksSearchResult,
   BooksSearchEntry,

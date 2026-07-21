@@ -150,32 +150,51 @@ describe('books section level seam (ADR-046 C-04)', () => {
   });
 
   it('a Read-Only role row opts a member in', async () => {
+    // ADR-075 — the unified Books wall spans both formats: all four non-comic works.
     const res = await readerCaller.books.search({ mediaKind: 'book' });
-    expect(res.items.map((i) => i.title).sort()).toEqual(['Alpha', 'Beta']);
+    expect(res.items.map((i) => i.title).sort()).toEqual([
+      'Alpha',
+      'Beta',
+      'Listen One',
+      'Second Listen',
+    ]);
   });
 });
 
-describe('books.search (ADR-046)', () => {
-  it('scopes to the media kind and defaults to title sort', async () => {
+describe('books.search (ADR-046 + ADR-075 — the unified Books wall)', () => {
+  it('the unified wall spans book + audiobook under either wire value; comics stay scoped (C-01)', async () => {
     const books = await adminCaller.books.search({ mediaKind: 'book' });
-    expect(books.items.map((i) => i.title)).toEqual(['Alpha', 'Beta']);
+    expect(books.items.map((i) => i.title)).toEqual([
+      'Alpha',
+      'Beta',
+      'Listen One',
+      'Second Listen',
+    ]);
     const comics = await adminCaller.books.search({ mediaKind: 'comic' });
     expect(comics.items.map((i) => i.title)).toEqual(['Comic One']);
+    // The legacy 'audiobook' wire value means the SAME unified wall (old links keep meaning).
     const audio = await adminCaller.books.search({ mediaKind: 'audiobook' });
-    expect(onDisk(audio.items)[0]?.durationSeconds).toBe(3600);
+    expect(audio.items.map((i) => i.title)).toEqual(books.items.map((i) => i.title));
+  });
+
+  it('the three-state Format seg filters by AVAILABILITY (C-03)', async () => {
+    const ebooks = await adminCaller.books.search({ mediaKind: 'book', format: 'ebook' });
+    expect(ebooks.items.map((i) => i.title)).toEqual(['Alpha', 'Beta']);
+    const audio = await adminCaller.books.search({ mediaKind: 'book', format: 'audiobook' });
+    expect(audio.items.map((i) => i.title)).toEqual(['Listen One', 'Second Listen']);
   });
 
   it('filters by query over title/author', async () => {
     const byAuthor = await adminCaller.books.search({ mediaKind: 'book', query: 'Amy' });
-    expect(byAuthor.items.map((i) => i.title)).toEqual(['Beta']);
+    expect(byAuthor.items.map((i) => i.title)).toEqual(['Beta', 'Second Listen']);
     const byTitle = await adminCaller.books.search({ mediaKind: 'book', query: 'alph' });
     expect(byTitle.items.map((i) => i.title)).toEqual(['Alpha']);
   });
 
   it('sorts by author', async () => {
     const res = await adminCaller.books.search({ mediaKind: 'book', sort: 'author' });
-    // Amy Author (Beta) before Zed Author (Alpha).
-    expect(res.items.map((i) => i.title)).toEqual(['Beta', 'Alpha']);
+    // Amy Author (Beta, Second Listen) before Zed Author (Alpha, Listen One) — title tiebreak.
+    expect(res.items.map((i) => i.title)).toEqual(['Beta', 'Second Listen', 'Alpha', 'Listen One']);
   });
 
   it('builds an authed cover-proxy URL from the coverRef', async () => {
@@ -194,29 +213,30 @@ describe('books.search (ADR-046)', () => {
 });
 
 describe('books.filterFacets (ADR-046 + PLAN-029 D-08)', () => {
-  it('returns the distinct genres for a media kind', async () => {
+  it('returns the distinct genres across the unified wall (ADR-075 C-04)', async () => {
+    // Both wire values resolve to the one Books wall: the genre union of ebooks + audiobooks.
     const audio = await adminCaller.books.filterFacets({ mediaKind: 'audiobook' });
-    expect(audio.genres).toEqual(['Adventure', 'Fantasy']);
+    expect(audio.genres).toEqual(['Adventure', 'Epic', 'Fantasy']);
     const book = await adminCaller.books.filterFacets({ mediaKind: 'book' });
-    // DESIGN-025 D-08 — Kavita books now carry genres from the metadata enrichment call (was []).
-    expect(book.genres).toEqual(['Epic']);
+    expect(book.genres).toEqual(['Adventure', 'Epic', 'Fantasy']);
   });
 
   it('returns the PLAN-029 facet lists — populated-value-gated by construction (ADR-051 C-06)', async () => {
-    const audio = await adminCaller.books.filterFacets({ mediaKind: 'audiobook' });
-    expect(audio.authors).toEqual(['Amy Author', 'Zed Author']);
-    expect(audio.narrators).toEqual(['Nia Narrator']); // only a1 carries one — sparse, still offered
-    expect(audio.series).toEqual(['The Long Saga']);
-    expect(audio.languages).toEqual(['English', 'German']);
-    expect(audio.formats).toEqual([]); // ABS rows carry no Kavita format — empty ⇒ no chip
-
-    const book = await adminCaller.books.filterFacets({ mediaKind: 'book' });
-    expect(book.authors).toEqual(['Amy Author', 'Zed Author']);
-    expect(book.narrators).toEqual([]); // Kavita has no narrators — the honest empty
-    expect(book.formats).toEqual([
+    // ADR-075 C-04 — one unified facet surface: audio-side facets (narrator/series/language) and
+    // ebook-side facets (File formats) are BOTH offered, each populated from its carrying works.
+    const unified = await adminCaller.books.filterFacets({ mediaKind: 'book' });
+    expect(unified.authors).toEqual(['Amy Author', 'Zed Author']);
+    expect(unified.narrators).toEqual(['Nia Narrator']); // only a1 carries one — sparse, still offered
+    expect(unified.series).toEqual(['The Long Saga']);
+    expect(unified.languages).toEqual(['English', 'German']);
+    expect(unified.formats).toEqual([
       { key: 'epub', label: 'EPUB' },
       { key: 'pdf', label: 'PDF' },
     ]);
+    // The legacy wire value returns the same unified surface.
+    const alias = await adminCaller.books.filterFacets({ mediaKind: 'audiobook' });
+    expect(alias.formats).toEqual(unified.formats);
+    expect(alias.narrators).toEqual(unified.narrators);
 
     const comic = await adminCaller.books.filterFacets({ mediaKind: 'comic' });
     expect(comic.formats).toEqual([{ key: 'archive', label: 'CBZ/CBR' }]);
@@ -233,12 +253,12 @@ describe('books.search facets + direction + A–Z jump (PLAN-029 step 2/6)', () 
 
   it('filters by author (same-field OR, cross-field AND — the chip semantics)', async () => {
     const res = await adminCaller.books.search({ mediaKind: 'book', authors: ['Amy Author'] });
-    expect(res.items.map((i) => i.title)).toEqual(['Beta']);
+    expect(res.items.map((i) => i.title)).toEqual(['Beta', 'Second Listen']);
     const both = await adminCaller.books.search({
       mediaKind: 'book',
       authors: ['Amy Author', 'Zed Author'],
     });
-    expect(both.items).toHaveLength(2);
+    expect(both.items).toHaveLength(4);
   });
 
   it('filters by narrator / series / language (the ABS facets)', async () => {
@@ -257,29 +277,30 @@ describe('books.search facets + direction + A–Z jump (PLAN-029 step 2/6)', () 
     expect(either.items).toHaveLength(2);
   });
 
-  it('filters by length buckets — duration for audiobooks, pages for Kavita (OR-ed ranges)', async () => {
-    const short = await adminCaller.books.search({ mediaKind: 'audiobook', lengths: ['short'] });
-    expect(short.items.map((i) => i.title)).toEqual(['Listen One']); // 1 h
-    const long = await adminCaller.books.search({ mediaKind: 'audiobook', lengths: ['long'] });
-    expect(long.items.map((i) => i.title)).toEqual(['Second Listen']); // 14 h
+  it('splits the length axes — Pages (ebook-gated, `lengths`) vs Length (audio-gated, `durations`) — ADR-075 C-04', async () => {
+    const shortAudio = await adminCaller.books.search({ mediaKind: 'book', durations: ['short'] });
+    expect(shortAudio.items.map((i) => i.title)).toEqual(['Listen One']); // 1 h
+    const longAudio = await adminCaller.books.search({ mediaKind: 'book', durations: ['long'] });
+    expect(longAudio.items.map((i) => i.title)).toEqual(['Second Listen']); // 14 h
     const shortBook = await adminCaller.books.search({ mediaKind: 'book', lengths: ['short'] });
     expect(shortBook.items.map((i) => i.title)).toEqual(['Beta']); // 150 pp
     const orEd = await adminCaller.books.search({ mediaKind: 'book', lengths: ['short', 'long'] });
-    expect(orEd.items).toHaveLength(2); // 150 pp OR 500 pp
+    expect(orEd.items).toHaveLength(2); // 150 pp OR 500 pp — page buckets never match audio-only works
   });
 
   it('the A–Z letter jump narrows the ACTIVE sort column (title vs author)', async () => {
     const byTitle = await adminCaller.books.search({ mediaKind: 'book', sort: 'title', letter: 'b' });
-    expect(byTitle.items.map((i) => i.title)).toEqual(['Beta']); // 'alpha' < 'b'
+    expect(byTitle.items.map((i) => i.title)).toEqual(['Beta', 'Listen One', 'Second Listen']); // 'alpha' < 'b'
     const byAuthor = await adminCaller.books.search({ mediaKind: 'book', sort: 'author', letter: 'z' });
-    expect(byAuthor.items.map((i) => i.title)).toEqual(['Alpha']); // Zed Author only
+    expect(byAuthor.items.map((i) => i.title)).toEqual(['Alpha', 'Listen One']); // Zed Author's works
   });
 
   it('an explicit dir flips the primary column (R5 "+direction"), nulls still last', async () => {
     const desc = await adminCaller.books.search({ mediaKind: 'book', sort: 'title', dir: 'desc' });
-    expect(desc.items.map((i) => i.title)).toEqual(['Beta', 'Alpha']);
+    expect(desc.items.map((i) => i.title)).toEqual(['Second Listen', 'Listen One', 'Beta', 'Alpha']);
+    // Pages sorts the ebook-carrying works; audio-only works have no pages — NULLS LAST (C-09).
     const pagesAsc = await adminCaller.books.search({ mediaKind: 'book', sort: 'pages', dir: 'asc' });
-    expect(onDisk(pagesAsc.items).map((i) => i.pageCount)).toEqual([150, 500]);
+    expect(onDisk(pagesAsc.items).map((i) => i.pageCount)).toEqual([150, 500, null, null]);
   });
 });
 
@@ -290,18 +311,19 @@ describe('books.groups (PLAN-029 D-04 — the grouped view aggregate)', () => {
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 
-  it('aggregates one card per author with count + a bounded cover sample, label-A–Z', async () => {
+  it('aggregates one card per author at WORK grain across both formats (ADR-075), label-A–Z', async () => {
     const res = await adminCaller.books.groups({ mediaKind: 'book', groupBy: 'author' });
+    // Each author holds one ebook + one audiobook — the unified wall counts both as works.
     expect(res.groups.map((g) => ({ key: g.key, count: g.count }))).toEqual([
-      { key: 'Amy Author', count: 1 },
-      { key: 'Zed Author', count: 1 },
+      { key: 'Amy Author', count: 2 },
+      { key: 'Zed Author', count: 2 },
     ]);
     expect(res.groups[0]?.coverUrls[0]).toBe('/api/books/cover?source=kavita&id=k2&v=v1_c1.png');
   });
 
-  it('groups audiobooks by author too (the R2 Audiobooks default)', async () => {
+  it('the legacy audiobook wire value aggregates the same unified wall', async () => {
     const res = await adminCaller.books.groups({ mediaKind: 'audiobook', groupBy: 'author' });
-    expect(res.groups.map((g) => `${g.label}:${g.count}`)).toEqual(['Amy Author:1', 'Zed Author:1']);
+    expect(res.groups.map((g) => `${g.label}:${g.count}`)).toEqual(['Amy Author:2', 'Zed Author:2']);
   });
 
   it('author cards carry imageUrl: null when ABS is unavailable (env absent — the fan fallback, never an error)', async () => {
@@ -309,12 +331,17 @@ describe('books.groups (PLAN-029 D-04 — the grouped view aggregate)', () => {
     expect(res.groups.every((g) => g.imageUrl === null)).toBe(true);
   });
 
-  it('groups audiobooks by GENRE (group-card-art pass): label + count, no art refs (glyph tiles client-side)', async () => {
+  it('groups the unified wall by GENRE (group-card-art pass): label + count, no art refs (glyph tiles client-side)', async () => {
     await expect(
       disabledCaller.books.groups({ mediaKind: 'audiobook', groupBy: 'genre' }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
     const res = await adminCaller.books.groups({ mediaKind: 'audiobook', groupBy: 'genre' });
-    expect(res.groups.map((g) => `${g.label}:${g.count}`)).toEqual(['Adventure:1', 'Fantasy:1']);
+    // The genre union spans both formats (Epic rides the Kavita side — ADR-075 C-04).
+    expect(res.groups.map((g) => `${g.label}:${g.count}`)).toEqual([
+      'Adventure:1',
+      'Epic:1',
+      'Fantasy:1',
+    ]);
     expect(res.groups.every((g) => g.coverUrls.length === 0 && g.imageUrl === null)).toBe(true);
   });
 });

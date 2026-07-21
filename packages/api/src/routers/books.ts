@@ -24,7 +24,9 @@ import {
   type BookRequestStatus,
   type Database,
 } from '@hnet/db';
-import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, getTableColumns, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
+// (ilike retired with the single-kind query — the work-grain text match is a raw union ILIKE.)
 import {
   bookActionsForRole,
   getBookRequestById,
@@ -71,6 +73,64 @@ import { absAuthorDirectory, absAuthorImageUrlFor } from '../books-author-art';
 /** ADR-047 (PLAN-028) — the app-specific "Read in Kavita" / "Listen on Audiobookshelf" verb, by source. */
 function booksPlayLabel(source: string): string {
   return source === 'audiobookshelf' ? 'Listen on Audiobookshelf' : 'Read in Kavita';
+}
+
+// ---------------------------------------------------------------------------
+// ADR-075 (PLAN-060 Stream A) — the unified Books wall's WORK grain. One Books wall now serves
+// `media_kind ∈ {book, audiobook}`; `books_format_pairs` is the COLLAPSE join (C-02): a paired
+// (book, audio) duo renders as ONE card anchored on the EBOOK row (deterministic — the
+// BOOKS_MEDIA_KINDS tie-break precedent), with the partner's metadata carried for facets/sorts
+// (facets match the UNION, display shows the anchor's values — E-3). The anchor rule is TOTAL
+// (E-2): an unpaired row (including audio-only) anchors on itself — no card ever vanishes.
+// Comics are untouched (E-5): the same query shape serves them (their partner join simply never
+// matches — comics never pair), so there is ONE code path, not two.
+// ---------------------------------------------------------------------------
+
+/** The paired counterpart of an anchor row (the collapse join's right side). */
+const partnerItems = alias(booksItems, 'partner');
+
+/** The wall a mediaKind input resolves to: comics stay alone; book/audiobook are ONE wall now
+ *  (the old `audiobooks` wire value stays accepted — it means the same unified wall). */
+function wallKindsFor(mediaKind: BooksMediaKind): BooksMediaKind[] {
+  return mediaKind === 'comic' ? ['comic'] : ['book', 'audiobook'];
+}
+
+/** True when the request addresses the unified Books wall (vs Comics). */
+function isUnifiedWall(mediaKind: BooksMediaKind): boolean {
+  return mediaKind !== 'comic';
+}
+
+/**
+ * The anchor-exclusion predicate: an audio row that is the LIVE-paired counterpart of a live book
+ * row is COLLAPSED into that anchor's card and must not render its own. Total anchor rule (E-2):
+ * a pair whose book side tombstoned leaves the audio row anchoring on itself.
+ */
+function anchorExclusion(): SQL {
+  return sql`NOT EXISTS (
+    SELECT 1 FROM books_format_pairs cp
+      JOIN books_items cb ON cb.id = cp.book_item_id AND cb.deleted_at IS NULL
+     WHERE cp.audio_item_id = ${booksItems.id})`;
+}
+
+/** The drilled collection + its Libretto recipe TWINS (ADR-076 C-03 — a merged multi-target
+ *  collection drills as one; solo/hand collections resolve to themselves alone). */
+async function collectionSiblingIds(db: Database, collectionId: string): Promise<string[]> {
+  const rows = await db.execute<{ id: string }>(sql`
+    SELECT c2.id FROM books_collections c2
+     WHERE c2.id = ${collectionId}
+        OR (c2.libretto_recipe_id IS NOT NULL
+            AND c2.libretto_recipe_id = (SELECT c3.libretto_recipe_id FROM books_collections c3
+                                          WHERE c3.id = ${collectionId}))`);
+  const ids = (rows.rows ?? (rows as unknown as { id: string }[])).map((r) => r.id);
+  return ids.length > 0 ? ids : [collectionId];
+}
+
+/** SQL id-list literal for the sibling set (uuids from our own query — bound as params). */
+function idList(ids: string[]): SQL {
+  return sql.join(
+    ids.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
 }
 
 /** ADR-065 / DESIGN-036 D-09 — a title's format-pairing state on the detail page. Null for a comic. */
@@ -233,103 +293,122 @@ const BOOKS_SORT_NATURAL_DIR: Record<BooksSort, 'asc' | 'desc'> = {
   position: 'asc',
 };
 
-function orderForSort(sort: BooksSort, dir?: 'asc' | 'desc', collection?: string) {
-  const d = sql.raw((dir ?? BOOKS_SORT_NATURAL_DIR[sort]).toUpperCase());
+/**
+ * ADR-075 C-02/C-09 (PLAN-060) — the WORK-grain primary sort expressions. Display uses the
+ * anchor's values (E-3), so title/author/added sort the anchor; the data-gated metrics take the
+ * WORK's value via COALESCE(anchor, partner): duration is the audio side wherever it lives
+ * (Length sorts audio-carrying works), year/released fall back to the partner where the anchor
+ * lacks them; pages stays the anchor's ebook-side count. NULLS LAST either way (C-09 — honest
+ * partial sorts, no fabricated cross-format metric). On the Comics wall the partner join never
+ * matches, so every COALESCE degrades to the anchor column — one expression set, both walls.
+ */
+function workSortExpr(sort: Exclude<BooksSort, 'position'>): SQL {
   switch (sort) {
     case 'author':
-      return [
-        sql`${booksItems.author} ${d} NULLS LAST`,
-        asc(booksItems.sortTitle),
-        asc(booksItems.id),
-      ];
+      return sql`${booksItems.author}`;
     case 'added':
-      // PLAN-056 — sort_title tiebreak (was id-only): a bulk sync stamps many rows with one
-      // transaction instant, so same-instant ties are REAL — break them alphabetically, exactly
-      // like the composed union path (COMPOSED_SORT_KEYS), so the two paths never disagree.
-      return [
-        sql`COALESCE(${booksItems.sourceAddedAt}, ${booksItems.firstSeenAt}) ${d}`,
-        asc(booksItems.sortTitle),
-        asc(booksItems.id),
-      ];
+      return sql`COALESCE(${booksItems.sourceAddedAt}, ${booksItems.firstSeenAt})`;
     case 'year':
-      return [
-        sql`${booksItems.year} ${d} NULLS LAST`,
-        asc(booksItems.sortTitle),
-        asc(booksItems.id),
-      ];
+      return sql`COALESCE(${booksItems.year}, ${partnerItems.year})`;
     case 'released':
-      // ADR-051 C-05 / DESIGN-026 D-05 — Date Released (ABS publishedDate). Kavita rows (null) sort last.
-      return [
-        sql`${booksItems.releasedAt} ${d} NULLS LAST`,
-        asc(booksItems.sortTitle),
-        asc(booksItems.id),
-      ];
+      return sql`COALESCE(${booksItems.releasedAt}, ${partnerItems.releasedAt})`;
     case 'duration':
-      return [
-        sql`${booksItems.durationSeconds} ${d} NULLS LAST`,
-        asc(booksItems.sortTitle),
-        asc(booksItems.id),
-      ];
+      return sql`COALESCE(${booksItems.durationSeconds}, ${partnerItems.durationSeconds})`;
     case 'pages':
-      // DESIGN-026 D-03 (PLAN-029 step 2) — the Kavita page-count sort (Books/Comics).
-      return [
-        sql`${booksItems.pageCount} ${d} NULLS LAST`,
-        asc(booksItems.sortTitle),
-        asc(booksItems.id),
-      ];
-    case 'position':
-      // DESIGN-038 D-06 — the drilled collection's member position ("List order"). A correlated
-      // subquery against the ONE drilled collection (the same rows the EXISTS predicate admits, so
-      // NULLS LAST is a formality). Never offered outside a drill (registry + schema refinement).
-      return [
-        sql`(SELECT bcm.position FROM books_collection_members bcm
-              WHERE bcm.collection_id = ${collection ?? null}
-                AND bcm.books_item_id = ${booksItems.id}) ${d} NULLS LAST`,
-        asc(booksItems.sortTitle),
-        asc(booksItems.id),
-      ];
+      return sql`${booksItems.pageCount}`;
     case 'title':
     default:
-      return [sql`${booksItems.sortTitle} ${d}`, asc(booksItems.id)];
+      return sql`${booksItems.sortTitle}`;
   }
 }
 
+/** The drilled work's member position: MIN across the sibling collections AND the pair's two rows
+ *  (both twins carry the same builder order — ADR-076 C-03; a paired work dedupes to its position). */
+function positionExpr(siblingIds: string[]): SQL {
+  return sql`(SELECT MIN(bcm.position) FROM books_collection_members bcm
+        WHERE bcm.collection_id IN (${idList(siblingIds)})
+          AND (bcm.books_item_id = ${booksItems.id} OR bcm.books_item_id = ${partnerItems.id}))`;
+}
+
+function orderForSort(sort: BooksSort, dir?: 'asc' | 'desc', siblingIds?: string[]) {
+  const d = sql.raw((dir ?? BOOKS_SORT_NATURAL_DIR[sort]).toUpperCase());
+  if (sort === 'position') {
+    // DESIGN-038 D-06 — the drilled collection's member position ("List order"). Never offered
+    // outside a drill (registry + schema refinement), so siblingIds is always present here.
+    return [
+      sql`${positionExpr(siblingIds ?? [])} ${d} NULLS LAST`,
+      asc(booksItems.sortTitle),
+      asc(booksItems.id),
+    ];
+  }
+  if (sort === 'title') return [sql`${workSortExpr(sort)} ${d}`, asc(booksItems.id)];
+  // PLAN-056 — sort_title tiebreak: a bulk sync stamps many rows with one transaction instant, so
+  // same-instant ties are REAL — break them alphabetically, exactly like the composed union path
+  // (COMPOSED_SORT_KEYS), so the two paths never disagree.
+  const nulls = sort === 'added' ? sql.raw('') : sql.raw(' NULLS LAST');
+  return [
+    sql`${workSortExpr(sort)} ${d}${nulls}`,
+    asc(booksItems.sortTitle),
+    asc(booksItems.id),
+  ];
+}
+
+/** One OR-ed bucket-range predicate over a length column (D-11 boundaries in BOOK_LENGTH_BOUNDS). */
+function bucketRanges(
+  col: SQL,
+  kind: 'duration' | 'pages',
+  buckets: readonly BookLengthBucket[],
+): SQL {
+  const bounds = BOOK_LENGTH_BOUNDS[kind];
+  const ranges = buckets.map((bucket) => {
+    const b = bounds[bucket];
+    if (b.min !== undefined && b.max !== undefined)
+      return sql`(${col} >= ${b.min} AND ${col} < ${b.max})`;
+    if (b.min !== undefined) return sql`${col} >= ${b.min}`;
+    return sql`${col} < ${b.max!}`;
+  });
+  return sql`(${sql.join(ranges, sql` OR `)})`;
+}
+
+/** Same-field OR over an anchor column and (work grain, E-3) its partner counterpart. */
+function unionIn(anchorCol: SQL, partnerCol: SQL, values: readonly string[]): SQL {
+  const list = sql.join(
+    values.map((v) => sql`${v}`),
+    sql`, `,
+  );
+  return sql`(${anchorCol} IN (${list}) OR ${partnerCol} IN (${list}))`;
+}
+
 /**
- * DESIGN-026 D-08 (PLAN-029 step 2) — the per-medium facet predicates + the D-09 letter jump,
- * shared by search. Same chip semantics as the ledger engine: same-field OR, cross-field AND.
+ * DESIGN-026 D-08 (PLAN-029 step 2) — the facet predicates + the D-09 letter jump, shared by
+ * search. Same chip semantics as the ledger engine: same-field OR, cross-field AND.
+ * ADR-075 C-04 / E-3 (PLAN-060) — WORK grain: every facet matches the UNION of the anchor and its
+ * paired partner (the partner join never matches on the Comics wall, so these degrade to the old
+ * anchor-only predicates there). Pages/File stay anchor-side (ebook-carried data); the Length
+ * (duration) facet reads the work's audio side via COALESCE.
  */
 function facetConditions(input: BooksSearchInput) {
   const conditions = [];
   if (input.authors && input.authors.length > 0) {
-    conditions.push(
-      sql`${booksItems.author} IN (${sql.join(
-        input.authors.map((a) => sql`${a}`),
-        sql`, `,
-      )})`,
-    );
+    conditions.push(unionIn(sql`${booksItems.author}`, sql`${partnerItems.author}`, input.authors));
   }
   if (input.narrators && input.narrators.length > 0) {
     conditions.push(
-      sql`${booksItems.narrator} IN (${sql.join(
-        input.narrators.map((n) => sql`${n}`),
-        sql`, `,
-      )})`,
+      unionIn(sql`${booksItems.narrator}`, sql`${partnerItems.narrator}`, input.narrators),
     );
   }
   if (input.series && input.series.length > 0) {
     conditions.push(
-      sql`${booksItems.seriesName} IN (${sql.join(
-        input.series.map((s) => sql`${s}`),
-        sql`, `,
-      )})`,
+      unionIn(sql`${booksItems.seriesName}`, sql`${partnerItems.seriesName}`, input.series),
     );
   }
   if (input.languages && input.languages.length > 0) {
     conditions.push(
-      sql`${booksItems.attrs} ->> 'language' IN (${sql.join(
-        input.languages.map((l) => sql`${l}`),
-        sql`, `,
-      )})`,
+      unionIn(
+        sql`${booksItems.attrs} ->> 'language'`,
+        sql`${partnerItems.attrs} ->> 'language'`,
+        input.languages,
+      ),
     );
   }
   if (input.formats && input.formats.length > 0) {
@@ -342,17 +421,18 @@ function facetConditions(input: BooksSearchInput) {
     );
   }
   if (input.lengths && input.lengths.length > 0) {
-    // OR-ed bucket ranges over the medium's length column (D-11 boundaries live in BOOK_LENGTH_BOUNDS).
-    const col = input.mediaKind === 'audiobook' ? booksItems.durationSeconds : booksItems.pageCount;
-    const bounds = BOOK_LENGTH_BOUNDS[input.mediaKind === 'audiobook' ? 'duration' : 'pages'];
-    const ranges = input.lengths.map((bucket: BookLengthBucket) => {
-      const b = bounds[bucket];
-      if (b.min !== undefined && b.max !== undefined)
-        return sql`(${col} >= ${b.min} AND ${col} < ${b.max})`;
-      if (b.min !== undefined) return sql`${col} >= ${b.min}`;
-      return sql`${col} < ${b.max!}`;
-    });
-    conditions.push(sql`(${sql.join(ranges, sql` OR `)})`);
+    // The Pages buckets — the anchor's ebook-side page count (audio-only anchors have none).
+    conditions.push(bucketRanges(sql`${booksItems.pageCount}`, 'pages', input.lengths));
+  }
+  if (input.durations && input.durations.length > 0) {
+    // The Length buckets — the WORK's audio side, wherever it lives (anchor or partner).
+    conditions.push(
+      bucketRanges(
+        sql`COALESCE(${booksItems.durationSeconds}, ${partnerItems.durationSeconds})`,
+        'duration',
+        input.durations,
+      ),
+    );
   }
   if (input.letter) {
     // DESIGN-026 D-09 — the A–Z jump pages to the first item at the letter by narrowing the active
@@ -361,6 +441,17 @@ function facetConditions(input: BooksSearchInput) {
     conditions.push(sql`LOWER(${col}) >= ${input.letter}`);
   }
   return conditions;
+}
+
+/** ADR-075 C-05 — the anchor's ACTIVE missing-format pairing want (the coverage badge's want
+ *  state). Book anchors want audio; audio anchors want the ebook; landed = no active want. */
+function activePairingWantExists(): SQL {
+  return sql`EXISTS (
+    SELECT 1 FROM book_requests pr
+     WHERE pr.origin = 'pairing'
+       AND pr.pairing_books_item_id = ${booksItems.id}
+       AND CASE WHEN ${booksItems.mediaKind} = 'book'
+                THEN pr.audio_status ELSE pr.ebook_status END <> 'landed')`;
 }
 
 /**
@@ -437,6 +528,16 @@ export type BooksSearchEntry =
   | ({ kind: 'item' } & BooksListItem & {
         /** ADR-065 — feeds the wall's coverage badge (null for a comic — no pairing). */
         formatCoverage: BooksFormatCoverage | null;
+        /**
+         * ADR-075 C-05 — the anchor's ACTIVE missing-format pairing want, carried ON the card
+         * (standalone pairing tiles retired): the coverage badge wears the wanted / in-flight
+         * state and the live wall-stage poll joins by llBookId. Null = no open pairing want.
+         */
+        missingFormatWant: {
+          format: 'ebook' | 'audiobook';
+          status: BookRequestStatus;
+          llBookId: string | null;
+        } | null;
       })
   | ({ kind: 'wanted' } & BooksWantedItem);
 
@@ -446,10 +547,11 @@ export interface BooksSearchResult {
   nextCursor: number | null;
 }
 
-/** ADR-057 (PLAN-045) — which request FORMAT composes a wall's Wanted overlay. */
-const WALL_FORMAT: Record<BooksMediaKind, 'ebook' | 'audiobook' | 'comic'> = {
-  book: 'ebook',
-  audiobook: 'audiobook',
+/** ADR-057 (PLAN-045) — which request FORMAT composes a wall's Wanted overlay. ADR-075: the
+ *  unified Books wall composes at WORK grain (either book format open); Comics stay per-format. */
+const WALL_FORMAT: Record<BooksMediaKind, 'work' | 'comic'> = {
+  book: 'work',
+  audiobook: 'work',
   comic: 'comic',
 };
 
@@ -474,94 +576,153 @@ const COMPOSED_SORT_KEYS: Record<
   Exclude<BooksSort, 'position'>,
   { itemExpr: () => SQL; cast: 'text' | 'timestamptz' | 'integer'; titleTiebreak: boolean }
 > = {
-  title: { itemExpr: () => sql`${booksItems.sortTitle}`, cast: 'text', titleTiebreak: false },
-  author: { itemExpr: () => sql`${booksItems.author}`, cast: 'text', titleTiebreak: true },
-  added: {
-    // titleTiebreak — requests minted in one sync share a created_at (transaction now()), exactly
-    // like a bulk-synced item batch shares first_seen_at: alphabetical within the tie, not uuid.
-    itemExpr: () => sql`COALESCE(${booksItems.sourceAddedAt}, ${booksItems.firstSeenAt})`,
-    cast: 'timestamptz',
-    titleTiebreak: true,
-  },
-  year: { itemExpr: () => sql`${booksItems.year}`, cast: 'integer', titleTiebreak: true },
-  released: {
-    itemExpr: () => sql`${booksItems.releasedAt}`,
-    cast: 'timestamptz',
-    titleTiebreak: true,
-  },
-  duration: {
-    itemExpr: () => sql`${booksItems.durationSeconds}`,
-    cast: 'integer',
-    titleTiebreak: true,
-  },
-  pages: { itemExpr: () => sql`${booksItems.pageCount}`, cast: 'integer', titleTiebreak: true },
+  // itemExprs are the WORK-grain workSortExpr set (ADR-075 — the composed union and the plain
+  // path must never disagree). titleTiebreak everywhere but title — requests minted in one sync
+  // share a created_at (transaction now()), exactly like a bulk-synced item batch shares
+  // first_seen_at: alphabetical within the tie, not uuid.
+  title: { itemExpr: () => workSortExpr('title'), cast: 'text', titleTiebreak: false },
+  author: { itemExpr: () => workSortExpr('author'), cast: 'text', titleTiebreak: true },
+  added: { itemExpr: () => workSortExpr('added'), cast: 'timestamptz', titleTiebreak: true },
+  year: { itemExpr: () => workSortExpr('year'), cast: 'integer', titleTiebreak: true },
+  released: { itemExpr: () => workSortExpr('released'), cast: 'timestamptz', titleTiebreak: true },
+  duration: { itemExpr: () => workSortExpr('duration'), cast: 'integer', titleTiebreak: true },
+  pages: { itemExpr: () => workSortExpr('pages'), cast: 'integer', titleTiebreak: true },
 };
 
-/** PLAN-056 — the wanted-only page's in-process sort: the SAME key mapping + NULLS-LAST + tiebreak
- *  contract as the composed union's ORDER BY, applied to the (bounded) wanted list alone. */
-function sortWantedViews(
-  views: WantedBookRequestView[],
-  sort: BooksSort,
-  dir?: 'asc' | 'desc',
-): WantedBookRequestView[] {
-  const d = (dir ?? BOOKS_SORT_NATURAL_DIR[sort]) === 'desc' ? -1 : 1;
-  return [...views].sort((a, b) => {
-    const pa = wantedPrimarySortValue(a, sort);
-    const pb = wantedPrimarySortValue(b, sort);
-    if (pa !== null || pb !== null) {
-      if (pa === null) return 1; // NULLS LAST in either direction (the D-09 convention)
-      if (pb === null) return -1;
-      const cmp =
-        pa instanceof Date
-          ? pa.getTime() - (pb as Date).getTime()
-          : String(pa).localeCompare(String(pb));
-      if (cmp !== 0) return cmp * d;
-    }
-    return (
-      wantedSortTitle(a.title).localeCompare(wantedSortTitle(b.title)) ||
-      a.requestId.localeCompare(b.requestId)
-    );
-  });
+// PLAN-060 — the old in-process wanted-only sorter retired with the tile-only 'only' page: the
+// unified wall's 'only' state spans both want forms (tiles + want-carrying cards), so it pages
+// through the SAME composed union as 'all' (wantedPrimarySortValue still keys the VALUES bind).
+
+/** The flat partner-column extension every work-grain page read selects (nullable at runtime —
+ *  the LEFT JOIN misses for unpaired anchors and always on the Comics wall). */
+const WORK_PARTNER_COLUMNS = {
+  partnerId: partnerItems.id,
+  partnerNarrator: partnerItems.narrator,
+  partnerSeriesName: partnerItems.seriesName,
+  partnerYear: partnerItems.year,
+  partnerReleasedAt: partnerItems.releasedAt,
+  partnerDurationSeconds: partnerItems.durationSeconds,
+  partnerSizeBytes: partnerItems.sizeBytes,
+};
+
+/** A page row at WORK grain: the anchor's full row + the collapsed partner's carried metadata. */
+type WorkRow = BooksItemRow & {
+  partnerId: string | null;
+  partnerNarrator: string | null;
+  partnerSeriesName: string | null;
+  partnerYear: number | null;
+  partnerReleasedAt: Date | null;
+  partnerDurationSeconds: number | null;
+  partnerSizeBytes: number | null;
+};
+
+/**
+ * ADR-075 C-02 / E-3 — project a work row to the wall's list item: the ANCHOR's display values,
+ * with the audio-side metrics the anchor lacks carried from the collapsed partner (narrator,
+ * series, duration, release date, year, size) so the work card and its facets/sorts agree.
+ */
+function toWorkListItem(row: WorkRow): BooksListItem {
+  const base = toBooksListItem(row);
+  if (row.partnerId === null) return base;
+  return {
+    ...base,
+    narrator: base.narrator ?? row.partnerNarrator,
+    seriesName: base.seriesName ?? row.partnerSeriesName,
+    year: base.year ?? row.partnerYear,
+    releasedAt:
+      base.releasedAt ?? (row.partnerReleasedAt ? row.partnerReleasedAt.toISOString() : null),
+    durationSeconds: base.durationSeconds ?? row.partnerDurationSeconds,
+    sizeBytes: base.sizeBytes ?? row.partnerSizeBytes,
+  };
 }
 
-/** ADR-065 / DESIGN-036 D-09 — the page's format-coverage lookup: one bounded read over the pair
- *  cache for THIS page's ids (≤ limit rows). Comics never pair — their coverage stays null. */
-async function coverageLookup(
+/** The wire decoration of one work row: coverage + the active missing-format pairing want. */
+interface WorkDecoration {
+  coverage: BooksFormatCoverage | null;
+  want: { format: 'ebook' | 'audiobook'; status: BookRequestStatus; llBookId: string | null } | null;
+}
+
+/**
+ * ADR-065 / DESIGN-036 D-09 + ADR-075 C-05 — the page's coverage + want-state lookup: coverage
+ * falls straight out of the collapse join (a carried partner = 'both'); the UNPAIRED anchors get
+ * one bounded read over their pairing wants so the coverage badge can wear the missing format's
+ * wanted / in-flight state. Comics never pair — both stay null.
+ */
+async function workDecorations(
   db: Database,
-  mediaKind: BooksMediaKind,
-  rows: BooksItemRow[],
-): Promise<(row: BooksItemRow) => BooksFormatCoverage | null> {
-  const pairedIds = new Set<string>();
-  if (mediaKind !== 'comic' && rows.length > 0) {
-    const sideColumn =
-      mediaKind === 'book' ? booksFormatPairs.bookItemId : booksFormatPairs.audioItemId;
-    const pairRows = await db
-      .select({ id: sideColumn })
-      .from(booksFormatPairs)
+  rows: Array<Pick<WorkRow, 'id' | 'mediaKind' | 'partnerId'>>,
+): Promise<(row: Pick<WorkRow, 'id' | 'mediaKind' | 'partnerId'>) => WorkDecoration> {
+  const unpairedIds = rows
+    .filter((r) => r.mediaKind !== 'comic' && r.partnerId === null)
+    .map((r) => r.id);
+  const wantByAnchor = new Map<
+    string,
+    { ebookStatus: BookRequestStatus; audioStatus: BookRequestStatus; llBookId: string | null }
+  >();
+  if (unpairedIds.length > 0) {
+    const wants = await db
+      .select({
+        anchorId: bookRequests.pairingBooksItemId,
+        ebookStatus: bookRequests.ebookStatus,
+        audioStatus: bookRequests.audioStatus,
+        llBookId: bookRequests.llBookId,
+      })
+      .from(bookRequests)
       .where(
-        inArray(
-          sideColumn,
-          rows.map((r) => r.id),
+        and(
+          eq(bookRequests.origin, 'pairing'),
+          inArray(bookRequests.pairingBooksItemId, unpairedIds),
         ),
       );
-    for (const p of pairRows) pairedIds.add(p.id);
+    for (const w of wants) {
+      if (w.anchorId !== null) {
+        wantByAnchor.set(w.anchorId, {
+          ebookStatus: w.ebookStatus,
+          audioStatus: w.audioStatus,
+          llBookId: w.llBookId,
+        });
+      }
+    }
   }
-  return (row: BooksItemRow): BooksFormatCoverage | null => {
-    if (row.mediaKind === 'comic') return null;
-    if (pairedIds.has(row.id)) return 'both';
-    return row.mediaKind === 'book' ? 'ebook' : 'audio';
+  return (row): WorkDecoration => {
+    if (row.mediaKind === 'comic') return { coverage: null, want: null };
+    if (row.partnerId !== null) return { coverage: 'both', want: null };
+    const coverage: BooksFormatCoverage = row.mediaKind === 'book' ? 'ebook' : 'audio';
+    const missingFormat: 'ebook' | 'audiobook' =
+      row.mediaKind === 'book' ? 'audiobook' : 'ebook';
+    const want = wantByAnchor.get(row.id);
+    const status = want
+      ? missingFormat === 'audiobook'
+        ? want.audioStatus
+        : want.ebookStatus
+      : null;
+    return {
+      coverage,
+      // landed = inert (the format arrived; the pair forms on the next pairing run) — no state.
+      want:
+        want && status !== null && status !== 'landed'
+          ? { format: missingFormat, status, llBookId: want.llBookId }
+          : null,
+    };
   };
+}
+
+/** The work-grain FROM joins for the composed raw-SQL path (the query-builder path builds the
+ *  same shape via .leftJoin — the two must stay twins). */
+function workJoins(): SQL {
+  return sql`
+      LEFT JOIN ${booksFormatPairs} ON ${booksFormatPairs.bookItemId} = ${booksItems.id}
+      LEFT JOIN books_items "partner"
+        ON ${partnerItems.id} = ${booksFormatPairs.audioItemId}
+       AND ${partnerItems.deletedAt} IS NULL`;
 }
 
 /** ADR-066 / DESIGN-038 D-05 — the group card's cover-fan sample bound (the PLAN-037 idiom). */
 const BOOKS_COLLECTION_COVER_SAMPLE = 4;
 
-/**
- * DESIGN-038 D-05 — the wall-mapping tie order: a collection whose resolved live members split
- * evenly between kinds maps to the FIRST kind here (book → comic → audiobook; in practice ties are
- * the mixed-Kavita-list case — ABS collections are all-audiobook).
- */
-const WALL_MAPPING_TIE_ORDER: readonly BooksMediaKind[] = ['book', 'comic', 'audiobook'];
+// DESIGN-038 D-05 amendment 2026-07-20 (ADR-076 C-04) — the old three-way majority tie order
+// retired with the Audiobooks wall: the mapping is now a COMIC PARTITION (majority comic ⇒ the
+// Comics wall, otherwise the unified Books wall; ties go to Books) applied inline below.
 
 /** One Collections group card on a book wall (the GroupCard contract + the D-06 ordered flag). */
 export interface BooksCollectionGroup {
@@ -739,12 +900,21 @@ export const booksRouter = router({
         hasIntegrations: effectiveSectionLevel(ctx.user.role, 'integrations') !== 'disabled',
         isAdmin: ctx.user.role.isAdmin, // admins may force-search ANY user's want (2026-07-18)
       };
+      const kinds = wallKindsFor(input.mediaKind);
+      const unified = isUnifiedWall(input.mediaKind);
       // DESIGN-038 D-13 — a COLLECTION drill composes the COLLECTION's OWN wanted members (its missing
       // members, origin='collection'), not the household overlay: held tiles + Wanted tiles side by side.
       const isCollectionDrill = input.collection !== undefined;
+      // ADR-076 C-03 — a merged multi-target collection drills as ONE: the predicate + position
+      // sort span the drilled row's recipe TWINS (solo collections resolve to themselves).
+      const siblingIds = isCollectionDrill
+        ? await collectionSiblingIds(ctx.db, input.collection!)
+        : undefined;
       // Refinements a synthetic want cannot answer (the D-09 rule, now server-authoritative). NOTE: the
       // collection drill itself is NOT a narrowing here (D-13 — the wants ARE the collection's missing
-      // members); any OTHER facet inside the drill still excludes wants (a want can't answer a genre chip).
+      // members); any OTHER facet inside the drill still excludes want TILES (a want can't answer a
+      // genre chip). The Format seg is availability semantics (ADR-075 C-03) — a want holds neither
+      // format yet, so a non-All seg narrows the tiles away too.
       const narrowed =
         (input.genres?.length ?? 0) > 0 ||
         (input.authors?.length ?? 0) > 0 ||
@@ -753,12 +923,19 @@ export const booksRouter = router({
         (input.languages?.length ?? 0) > 0 ||
         (input.formats?.length ?? 0) > 0 ||
         (input.lengths?.length ?? 0) > 0 ||
+        (input.durations?.length ?? 0) > 0 ||
+        (unified && input.format !== 'all') ||
         input.readState !== undefined ||
         input.letter !== undefined;
-      // Position sort composes ONLY on a collection drill (a want has no member position — it sorts last).
+      // Which wants become TILES. ADR-075 C-05 — on the unified wall a PAIRING want's anchor work
+      // ALREADY renders as a library card (its coverage badge carries the want), so pairing views
+      // never compose as standalone tiles; goodreads-origin wants (no library anchor) keep theirs.
+      // A collection drill composes the collection's OWN wants (both twins, deduped — ADR-076 C-05).
+      // Position sort composes ONLY on a collection drill (a want has no member position).
       const composeWanted =
         (input.sort !== 'position' || isCollectionDrill) &&
-        (input.wanted === 'only' || (input.wanted === 'all' && !narrowed));
+        (input.wanted === 'only' || input.wanted === 'all') &&
+        !narrowed;
       const wantedViews = composeWanted
         ? filterWantedByQuery(
             isCollectionDrill
@@ -766,77 +943,97 @@ export const booksRouter = router({
                   db: ctx.db,
                   collectionId: input.collection!,
                 })
-              : await getWantedBookRequests({ db: ctx.db, format: WALL_FORMAT[input.mediaKind] }),
+              : (
+                  await getWantedBookRequests({ db: ctx.db, format: WALL_FORMAT[input.mediaKind] })
+                ).filter((v) => !unified || v.origin !== 'pairing'),
             input.query,
           )
         : [];
 
-      if (input.wanted === 'only') {
-        // A want has no member position; a position-sorted "only" list falls back to title order.
-        const onlySort = input.sort === 'position' ? 'title' : input.sort;
-        const sorted = sortWantedViews(wantedViews, onlySort, input.dir);
-        const page = sorted.slice(input.cursor, input.cursor + input.limit);
-        return {
-          items: page.map((v) => ({ kind: 'wanted' as const, ...toWantedWireItem(v, viewer) })),
-          nextCursor:
-            input.cursor + input.limit < sorted.length ? input.cursor + input.limit : null,
-        };
-      }
-
-      const conditions = [eq(booksItems.mediaKind, input.mediaKind), isNull(booksItems.deletedAt)];
+      const conditions = [
+        kinds.length === 1
+          ? eq(booksItems.mediaKind, kinds[0]!)
+          : inArray(booksItems.mediaKind, kinds),
+        isNull(booksItems.deletedAt),
+        // ADR-075 C-02 — collapse: a live-paired audio row folds into its ebook anchor's card.
+        anchorExclusion(),
+      ];
       if (input.query && input.query.length > 0) {
+        // The text query matches the WORK: anchor or carried partner, title or author (E-3 union).
         const like = `%${input.query}%`;
-        const match = or(ilike(booksItems.title, like), ilike(booksItems.author, like));
-        if (match) conditions.push(match);
+        conditions.push(
+          sql`(${booksItems.title} ILIKE ${like} OR ${booksItems.author} ILIKE ${like}
+             OR ${partnerItems.title} ILIKE ${like} OR ${partnerItems.author} ILIKE ${like})`,
+        );
       }
       if (input.genres && input.genres.length > 0) {
-        // PLAN-029 fix — the shipped `g = ANY(${array})` form was latently broken (node-postgres
-        // binds the JS array as a non-array parameter → 22P02 the first time the genre chips got
-        // UI). Use the ledger engine's jsonb `?|` overlap idiom (same-field OR) instead.
-        conditions.push(
-          sql`${booksItems.genres} ?| ARRAY[${sql.join(
-            input.genres.map((g) => sql`${g}`),
-            sql`, `,
-          )}]::text[]`,
-        );
+        // PLAN-029 fix — the ledger engine's jsonb `?|` overlap idiom (same-field OR); work grain
+        // matches the UNION of the pair's genre arrays (E-3).
+        const arr = sql`ARRAY[${sql.join(
+          input.genres.map((g) => sql`${g}`),
+          sql`, `,
+        )}]::text[]`;
+        conditions.push(sql`(${booksItems.genres} ?| ${arr} OR ${partnerItems.genres} ?| ${arr})`);
       }
       // DESIGN-026 D-08/D-09 (PLAN-029) — author/narrator/series/language/format/length facets + the
-      // A–Z letter jump (same-field OR, cross-field AND — the shared chip semantics).
+      // A–Z letter jump (same-field OR, cross-field AND — the shared chip semantics; union-matched).
       conditions.push(...facetConditions(input));
-      // ADR-066 / DESIGN-038 D-06 (PLAN-051) — the drilled COLLECTION narrowing: one EXISTS
-      // predicate over the mirror's resolved members, so the drilled wall inherits every other
-      // filter/sort/pager (and the books gate) unchanged.
-      if (input.collection) {
+      // ADR-075 C-03 — the three-state Format seg, availability semantics: 'ebook' = works holding
+      // an ebook side (the anchor rule makes those exactly the book-anchored works); 'audiobook' =
+      // works holding audio (audio-only anchors + paired anchors carrying a partner).
+      if (unified && input.format !== 'all') {
         conditions.push(
-          sql`EXISTS (SELECT 1 FROM ${booksCollectionMembers} bcm
-                WHERE bcm.collection_id = ${input.collection}
-                  AND bcm.books_item_id = ${booksItems.id})`,
+          input.format === 'ebook'
+            ? sql`${booksItems.mediaKind} = 'book'`
+            : sql`(${booksItems.mediaKind} = 'audiobook' OR ${partnerItems.id} IS NOT NULL)`,
         );
       }
-      // ADR-053 / DESIGN-026 D-07 — the per-user ABS read-state facet (viewer-scoped, Audiobooks only;
-      // Kavita rows simply never carry user_book_progress). Bound to the SESSION user (never the wire).
+      // ADR-066 / DESIGN-038 D-06 (PLAN-051) — the drilled COLLECTION narrowing: one EXISTS
+      // predicate over the mirror's resolved members (the drilled row + its recipe twins, at WORK
+      // grain — anchor or partner membership), so the drilled wall inherits every other
+      // filter/sort/pager (and the books gate) unchanged.
+      if (siblingIds) {
+        conditions.push(
+          sql`EXISTS (SELECT 1 FROM ${booksCollectionMembers} bcm
+                WHERE bcm.collection_id IN (${idList(siblingIds)})
+                  AND (bcm.books_item_id = ${booksItems.id}
+                       OR bcm.books_item_id = ${partnerItems.id}))`,
+        );
+      }
+      // ADR-053 / DESIGN-026 D-07 — the per-user ABS read-state facet (viewer-scoped; data-gated to
+      // audio-carrying works — Kavita rows never carry user_book_progress, so on the unified wall
+      // the progress row may sit on the collapsed PARTNER: match either side of the work. Bound to
+      // the SESSION user (never the wire).
       if (input.readState) {
-        const viewer = sql`${ctx.user.id}::uuid`;
+        const viewerId = sql`${ctx.user.id}::uuid`;
+        const side = sql`(ubp.books_item_id = ${booksItems.id} OR ubp.books_item_id = ${partnerItems.id})`;
         if (input.readState === 'read') {
           conditions.push(
-            sql`EXISTS (SELECT 1 FROM ${userBookProgress} ubp WHERE ubp.books_item_id = ${booksItems.id} AND ubp.app_user_id = ${viewer} AND ubp.is_finished = true)`,
+            sql`EXISTS (SELECT 1 FROM ${userBookProgress} ubp WHERE ${side} AND ubp.app_user_id = ${viewerId} AND ubp.is_finished = true)`,
           );
         } else if (input.readState === 'in_progress') {
           conditions.push(
-            sql`EXISTS (SELECT 1 FROM ${userBookProgress} ubp WHERE ubp.books_item_id = ${booksItems.id} AND ubp.app_user_id = ${viewer} AND ubp.in_progress = true)`,
+            sql`EXISTS (SELECT 1 FROM ${userBookProgress} ubp WHERE ${side} AND ubp.app_user_id = ${viewerId} AND ubp.in_progress = true)`,
           );
         } else {
           conditions.push(
-            sql`NOT EXISTS (SELECT 1 FROM ${userBookProgress} ubp WHERE ubp.books_item_id = ${booksItems.id} AND ubp.app_user_id = ${viewer} AND ubp.is_finished = true)`,
+            sql`NOT EXISTS (SELECT 1 FROM ${userBookProgress} ubp WHERE ${side} AND ubp.app_user_id = ${viewerId} AND ubp.is_finished = true)`,
           );
         }
       }
+      // ADR-075 C-05 / R-213 — the Wanted seg filters over BOTH forms on the unified wall: 'only'
+      // = the wanted set (goodreads tiles + cards carrying an active missing-format want); 'hide'
+      // = its EXACT negation (cards with no active want, no tiles) — the 2026-07-18 partition
+      // grammar, server-side. On the Comics wall no card carries a pairing want, so these degrade
+      // to the old tile-only semantics.
+      if (input.wanted === 'only') conditions.push(activePairingWantExists());
+      if (input.wanted === 'hide') conditions.push(sql`NOT ${activePairingWantExists()}`);
 
-      // PLAN-056 / DESIGN-029 amendment 3 — the COMPOSED page ('all' with live wants): one UNION of
-      // the item query and the (bounded) wanted list as a VALUES bind, each side carrying the SAME
-      // per-sort key columns, ordered + paged by Postgres — so a wanted card lands exactly where
-      // the active sort says (the offset cursor counts composed entries).
-      if (input.wanted === 'all' && wantedViews.length > 0) {
+      // PLAN-056 / DESIGN-029 amendment 3 — the COMPOSED page (live want TILES to weave): one
+      // UNION of the item query and the (bounded) wanted list as a VALUES bind, each side carrying
+      // the SAME per-sort key columns, ordered + paged by Postgres — so a wanted card lands exactly
+      // where the active sort says (the offset cursor counts composed entries).
+      if (wantedViews.length > 0) {
         // DESIGN-038 D-13 — on a collection drill the 'position' sort composes too: held members carry
         // their member position, wanted members have NONE (NULL ⇒ NULLS LAST ⇒ after the held reading
         // order). Off-drill, position never composes (guarded above); every other sort uses its item-side
@@ -845,10 +1042,7 @@ export const booksRouter = router({
         const key =
           input.sort === 'position'
             ? {
-                itemExpr: () =>
-                  sql`(SELECT bcm.position FROM ${booksCollectionMembers} bcm
-                       WHERE bcm.collection_id = ${input.collection ?? null}
-                         AND bcm.books_item_id = ${booksItems.id})`,
+                itemExpr: () => positionExpr(siblingIds ?? []),
                 cast: 'integer' as const,
                 titleTiebreak: true,
               }
@@ -867,7 +1061,7 @@ export const booksRouter = router({
           SELECT kind, id FROM (
             SELECT 'item' AS kind, ${booksItems.id} AS id,
                    ${key.itemExpr()} AS sk1, ${booksItems.sortTitle} AS sk2
-              FROM ${booksItems}
+              FROM ${booksItems}${workJoins()}
              WHERE ${and(...conditions)}
             UNION ALL
             SELECT 'wanted' AS kind, w.id, w.sk1, w.sk2
@@ -881,16 +1075,33 @@ export const booksRouter = router({
         const itemIds = refs.filter((r) => r.kind === 'item').map((r) => r.id);
         const itemRows =
           itemIds.length > 0
-            ? await ctx.db.select().from(booksItems).where(inArray(booksItems.id, itemIds))
+            ? ((await ctx.db
+                .select({ ...getTableColumns(booksItems), ...WORK_PARTNER_COLUMNS })
+                .from(booksItems)
+                .leftJoin(booksFormatPairs, eq(booksFormatPairs.bookItemId, booksItems.id))
+                .leftJoin(
+                  partnerItems,
+                  and(
+                    eq(partnerItems.id, booksFormatPairs.audioItemId),
+                    isNull(partnerItems.deletedAt),
+                  ),
+                )
+                .where(inArray(booksItems.id, itemIds))) as unknown as WorkRow[])
             : [];
         const itemById = new Map(itemRows.map((r) => [r.id, r]));
-        const coverageFor = await coverageLookup(ctx.db, input.mediaKind, itemRows);
+        const decorate = await workDecorations(ctx.db, itemRows);
         const wantedById = new Map(wantedViews.map((v) => [v.requestId, v]));
         return {
           items: refs.map((r): BooksSearchEntry => {
             if (r.kind === 'item') {
               const row = itemById.get(r.id)!;
-              return { kind: 'item', ...toBooksListItem(row), formatCoverage: coverageFor(row) };
+              const deco = decorate(row);
+              return {
+                kind: 'item',
+                ...toWorkListItem(row),
+                formatCoverage: deco.coverage,
+                missingFormatWant: deco.want,
+              };
             }
             return { kind: 'wanted', ...toWantedWireItem(wantedById.get(r.id)!, viewer) };
           }),
@@ -898,21 +1109,30 @@ export const booksRouter = router({
         };
       }
 
-      const rows = await ctx.db
-        .select()
+      const rows = (await ctx.db
+        .select({ ...getTableColumns(booksItems), ...WORK_PARTNER_COLUMNS })
         .from(booksItems)
+        .leftJoin(booksFormatPairs, eq(booksFormatPairs.bookItemId, booksItems.id))
+        .leftJoin(
+          partnerItems,
+          and(eq(partnerItems.id, booksFormatPairs.audioItemId), isNull(partnerItems.deletedAt)),
+        )
         .where(and(...conditions))
-        .orderBy(...orderForSort(input.sort, input.dir, input.collection))
+        .orderBy(...orderForSort(input.sort, input.dir, siblingIds))
         .limit(input.limit)
-        .offset(input.cursor);
+        .offset(input.cursor)) as unknown as WorkRow[];
 
-      const coverageFor = await coverageLookup(ctx.db, input.mediaKind, rows);
+      const decorate = await workDecorations(ctx.db, rows);
       return {
-        items: rows.map((row): BooksSearchEntry => ({
-          kind: 'item',
-          ...toBooksListItem(row),
-          formatCoverage: coverageFor(row),
-        })),
+        items: rows.map((row): BooksSearchEntry => {
+          const deco = decorate(row);
+          return {
+            kind: 'item',
+            ...toWorkListItem(row),
+            formatCoverage: deco.coverage,
+            missingFormatWant: deco.want,
+          };
+        }),
         nextCursor: rows.length === input.limit ? input.cursor + input.limit : null,
       };
     }),
@@ -1120,8 +1340,20 @@ export const booksRouter = router({
       series: string[];
       languages: string[];
       formats: Array<{ key: string; label: string }>;
+      /** ADR-075 C-04 — the unified wall's data-gates: whether any live work carries an ebook /
+       *  audio side (Pages+File gate on hasEbook; Length/Narrator/Series/Language/Read on hasAudio). */
+      hasEbook: boolean;
+      hasAudio: boolean;
     }> => {
-      const live = sql`${booksItems.mediaKind} = ${input.mediaKind} AND ${booksItems.deletedAt} IS NULL`;
+      // ADR-075 C-04 — the unified wall's facet VALUES span BOTH kinds (collapsed audio rows
+      // included: their narrator/genres ride the work card as carried partner metadata, so their
+      // values must be offerable). Comics stay single-kind.
+      const kinds = wallKindsFor(input.mediaKind);
+      const kindList = sql.join(
+        kinds.map((k) => sql`${k}`),
+        sql`, `,
+      );
+      const live = sql`${booksItems.mediaKind} IN (${kindList}) AND ${booksItems.deletedAt} IS NULL`;
       const genreRows = await ctx.db
         .select({ genre: sql<string>`genre` })
         .from(
@@ -1147,6 +1379,16 @@ export const booksRouter = router({
           Number(r.value),
         ),
       );
+      // ADR-075 C-04 — the format-side presence gates (one cheap read; comics report their own
+      // kind honestly — the registry never gates a Comics facet on these).
+      const sideRows = await ctx.db.execute<{ media_kind: string }>(
+        sql`SELECT DISTINCT ${booksItems.mediaKind} AS media_kind FROM ${booksItems} WHERE ${live}`,
+      );
+      const sides = new Set(
+        (sideRows.rows ?? (sideRows as unknown as { media_kind: string }[])).map(
+          (r) => r.media_kind,
+        ),
+      );
       return {
         genres: genreRows.map((r) => r.genre).filter((g): g is string => typeof g === 'string'),
         authors: await distinctCol(sql`${booksItems.author}`),
@@ -1158,6 +1400,8 @@ export const booksRouter = router({
           key: f.key,
           label: f.label,
         })),
+        hasEbook: sides.has('book') || sides.has('comic'),
+        hasAudio: sides.has('audiobook'),
       };
     },
   ),
@@ -1178,12 +1422,39 @@ export const booksRouter = router({
   groups: booksProcedure
     .input(z.object({ mediaKind: z.enum(BOOKS_MEDIA_KINDS), groupBy: z.enum(['author', 'genre']) }))
     .query(async ({ ctx, input }): Promise<{ groups: BooksGroup[] }> => {
+      // ADR-075 C-02 (PLAN-060) — WORK-grain aggregation: the unified Books wall counts anchors
+      // (a paired duo counts ONCE — the collapsed audio row is excluded exactly as on the wall);
+      // Comics degrade to the old single-kind read (the exclusion never matches a comic).
+      const kinds = wallKindsFor(input.mediaKind);
+      const live = and(
+        kinds.length === 1
+          ? eq(booksItems.mediaKind, kinds[0]!)
+          : inArray(booksItems.mediaKind, kinds),
+        isNull(booksItems.deletedAt),
+        anchorExclusion(),
+      );
       if (input.groupBy === 'genre') {
-        const rows = await ctx.db
-          .select({ genres: booksItems.genres })
+        // A work's genres are the UNION of the pair's arrays (E-3) — a genre either side carries
+        // counts the work once.
+        const rows = (await ctx.db
+          .select({ genres: booksItems.genres, partnerGenres: partnerItems.genres })
           .from(booksItems)
-          .where(and(eq(booksItems.mediaKind, input.mediaKind), isNull(booksItems.deletedAt)));
-        return { groups: aggregateBookGenreGroups(rows) };
+          .leftJoin(booksFormatPairs, eq(booksFormatPairs.bookItemId, booksItems.id))
+          .leftJoin(
+            partnerItems,
+            and(eq(partnerItems.id, booksFormatPairs.audioItemId), isNull(partnerItems.deletedAt)),
+          )
+          .where(live)) as unknown as Array<{
+          genres: string[] | null;
+          partnerGenres: string[] | null;
+        }>;
+        return {
+          groups: aggregateBookGenreGroups(
+            rows.map((r) => ({
+              genres: [...new Set([...(r.genres ?? []), ...(r.partnerGenres ?? [])])],
+            })),
+          ),
+        };
       }
       const rows = await ctx.db
         .select({
@@ -1194,12 +1465,13 @@ export const booksRouter = router({
           coverRef: booksItems.coverRef,
         })
         .from(booksItems)
-        .where(and(eq(booksItems.mediaKind, input.mediaKind), isNull(booksItems.deletedAt)));
+        .where(live);
       let groups = aggregateBookGroups(rows);
-      if (input.mediaKind === 'audiobook') {
-        // ABS author portraits (D-04 art): a real photo where ABS holds one, the fan elsewhere.
-        // Kavita walls skip the lookup — live-verified 2026-07-13: Kavita person images are
-        // effectively a Kavita+ feature (0 of 1156 people carry one), the honest gap stands.
+      if (isUnifiedWall(input.mediaKind)) {
+        // ABS author portraits (D-04 art): a real photo where ABS holds one, the fan elsewhere —
+        // now on the unified wall (its authors span both sources; a Kavita-only author simply has
+        // no ABS portrait and keeps the fan). Comics skip the lookup — live-verified 2026-07-13:
+        // Kavita person images are effectively a Kavita+ feature (0 of 1156 people carry one).
         const directory = await absAuthorDirectory();
         groups = groups.map((g) => ({ ...g, imageUrl: absAuthorImageUrlFor(directory, g.label) }));
       }
@@ -1244,10 +1516,19 @@ export const booksRouter = router({
           createdBy: booksCollections.createdBy,
           category: booksCollections.category,
           librettoRecipeId: booksCollections.librettoRecipeId,
+          collectionSource: booksCollections.source,
           memberKind: booksItems.mediaKind,
           source: booksItems.source,
           externalId: booksItems.externalId,
           coverRef: booksItems.coverRef,
+          position: booksCollectionMembers.position,
+          // ADR-075 C-02 / ADR-076 C-03 — the member's WORK anchor: a live-paired AUDIO member
+          // collapses onto its ebook row's id; everything else anchors on itself (E-2 totality).
+          anchorId: sql<string>`COALESCE(
+            (SELECT cb.id FROM books_format_pairs cp
+               JOIN books_items cb ON cb.id = cp.book_item_id AND cb.deleted_at IS NULL
+              WHERE cp.audio_item_id = ${booksItems.id}),
+            ${booksItems.id})`,
         })
         .from(booksCollections)
         .innerJoin(
@@ -1262,57 +1543,101 @@ export const booksRouter = router({
           asc(booksCollections.id),
           asc(booksCollectionMembers.position),
         );
-      interface Agg {
-        label: string;
+      // ADR-076 C-03 — the MERGE key: mirror rows sharing a non-null libretto_recipe_id are ONE
+      // collection (Libretto materialized one recipe into both servers); markerless/hand rows
+      // merge nothing (the app never fabricates a link — mirror honesty, E-6).
+      interface Rep {
+        id: string;
+        title: string;
         ordered: boolean;
         createdBy: string | null;
         category: string | null;
+        collectionSource: string;
+      }
+      interface Agg {
+        rep: Rep;
         librettoRecipeId: string | null;
-        counts: Record<BooksMediaKind, number>;
-        coverUrls: Record<BooksMediaKind, string[]>;
+        /** Distinct non-comic WORK anchors (count = distinct works — C-03). */
+        workIds: Set<string>;
+        comicIds: Set<string>;
+        /** Work-grain cover candidates (deduped on anchor; kept in position order). */
+        workCovers: Array<{ anchorId: string; position: number | null; url: string | null }>;
+        comicCovers: Array<{ position: number | null; url: string | null }>;
       }
-      const byCollection = new Map<string, Agg>();
+      const byMergeKey = new Map<string, Agg>();
+      // The representative twin: the kavita-source row wins (the ebook-anchor tie-break
+      // precedent), then the smaller uuid — deterministic under twin flips.
+      const repWins = (a: Rep, b: Rep): boolean => {
+        const rank = (r: Rep) => (r.collectionSource === 'kavita' ? 0 : 1);
+        return rank(a) < rank(b) || (rank(a) === rank(b) && a.id < b.id);
+      };
       for (const row of rows) {
+        const mergeKey =
+          row.librettoRecipeId !== null ? `recipe:${row.librettoRecipeId}` : `solo:${row.id}`;
+        const rep: Rep = {
+          id: row.id,
+          title: row.title,
+          ordered: row.ordered,
+          createdBy: row.createdBy,
+          category: row.category,
+          collectionSource: row.collectionSource,
+        };
         const agg =
-          byCollection.get(row.id) ??
-          byCollection
-            .set(row.id, {
-              label: row.title,
-              ordered: row.ordered,
-              createdBy: row.createdBy,
-              category: row.category,
+          byMergeKey.get(mergeKey) ??
+          byMergeKey
+            .set(mergeKey, {
+              rep,
               librettoRecipeId: row.librettoRecipeId,
-              counts: { book: 0, comic: 0, audiobook: 0 },
-              coverUrls: { book: [], comic: [], audiobook: [] },
+              workIds: new Set<string>(),
+              comicIds: new Set<string>(),
+              workCovers: [],
+              comicCovers: [],
             })
-            .get(row.id)!;
-        agg.counts[row.memberKind] += 1;
-        const covers = agg.coverUrls[row.memberKind];
-        if (covers.length < BOOKS_COLLECTION_COVER_SAMPLE) {
-          const cover = booksCoverUrlFor(row.source, row.externalId, row.coverRef);
-          if (cover !== null) covers.push(cover);
+            .get(mergeKey)!;
+        if (repWins(rep, agg.rep)) agg.rep = rep;
+        const url = booksCoverUrlFor(row.source, row.externalId, row.coverRef);
+        if (row.memberKind === 'comic') {
+          agg.comicIds.add(row.anchorId);
+          agg.comicCovers.push({ position: row.position, url });
+        } else if (!agg.workIds.has(row.anchorId)) {
+          // Members union at WORK grain: a paired work held by both twins counts ONCE and keeps
+          // its first (position-ordered) cover — both twins carry the same builder order (C-03).
+          agg.workIds.add(row.anchorId);
+          agg.workCovers.push({ anchorId: row.anchorId, position: row.position, url });
         }
       }
-      const groups: BooksCollectionGroup[] = [];
-      for (const [key, agg] of byCollection) {
-        // The wall-mapping MAJORITY rule (D-05): the kind with the most resolved live members
-        // wins; ties break in WALL_MAPPING_TIE_ORDER. Cards surface on exactly ONE wall.
-        let majority: BooksMediaKind = WALL_MAPPING_TIE_ORDER[0]!;
-        for (const kind of WALL_MAPPING_TIE_ORDER) {
-          if (agg.counts[kind] > agg.counts[majority]) majority = kind;
+      const coverSample = (
+        covers: Array<{ position: number | null; url: string | null }>,
+      ): string[] => {
+        const sorted = [...covers].sort(
+          (a, b) => (a.position ?? Number.MAX_SAFE_INTEGER) - (b.position ?? Number.MAX_SAFE_INTEGER),
+        );
+        const urls: string[] = [];
+        for (const c of sorted) {
+          if (urls.length >= BOOKS_COLLECTION_COVER_SAMPLE) break;
+          if (c.url !== null) urls.push(c.url);
         }
-        if (majority !== input.mediaKind) continue;
-        const count = agg.counts[input.mediaKind];
+        return urls;
+      };
+      const groups: BooksCollectionGroup[] = [];
+      for (const agg of byMergeKey.values()) {
+        // ADR-076 C-04 — the wall-mapping rule is now a COMIC PARTITION: majority-comic resolved
+        // live members ⇒ the Comics wall; otherwise the unified Books wall; ties go to Books.
+        const comicMajority = agg.comicIds.size > agg.workIds.size;
+        const wall: BooksMediaKind = comicMajority ? 'comic' : 'book';
+        const wantedWall: BooksMediaKind = input.mediaKind === 'comic' ? 'comic' : 'book';
+        if (wall !== wantedWall) continue;
+        const count = comicMajority ? agg.comicIds.size : agg.workIds.size;
         if (count === 0) continue; // nothing this wall could show — no card
         groups.push({
-          key,
-          label: agg.label,
+          key: agg.rep.id,
+          label: agg.rep.title,
           count,
-          coverUrls: agg.coverUrls[input.mediaKind],
+          coverUrls: coverSample(comicMajority ? agg.comicCovers : agg.workCovers),
           imageUrl: null,
-          ordered: agg.ordered,
-          provenance: provenanceDisplayName(agg.createdBy),
-          category: agg.category,
+          ordered: agg.rep.ordered,
+          provenance: provenanceDisplayName(agg.rep.createdBy),
+          category: agg.rep.category,
           librettoRecipeId: agg.librettoRecipeId,
         });
       }

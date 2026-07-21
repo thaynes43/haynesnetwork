@@ -49,7 +49,7 @@ import {
   arrowFor,
   type FilterMap,
 } from '@hnet/ui';
-import type { BooksSort, BooksWantedState, BookReadState } from '@hnet/api';
+import type { BooksFormatFilter, BooksSort, BooksWantedState, BookReadState } from '@hnet/api';
 import { trpc } from '@/lib/trpc-client';
 import {
   BookCard,
@@ -85,13 +85,17 @@ import { WantedCard } from './wanted-card';
 import { CollectionWantForceSearch } from './collection-want-forcesearch';
 import type { FacetGates } from './library-client';
 
+// ADR-075 (PLAN-060) — the Audiobooks wall retired: the unified Books wall receives mediaKind
+// 'book' (the WORK grain over both formats); Comics stay 'comic'. 'audiobook' remains in the type
+// for the shared card components' sake only.
 type BooksMediaKind = 'book' | 'audiobook' | 'comic';
-type BooksWall = Extract<LibraryWallId, 'books' | 'audiobooks' | 'comics'>;
+type BooksWall = Extract<LibraryWallId, 'books' | 'comics'>;
 
 /** The books walls' enum/suggest facet fields (FilterMap keys — each maps to a URL param + the
- *  same-named books.search input; see the registry declarations). */
+ *  same-named books.search input; see the registry declarations). `durations` is the unified
+ *  wall's audio Length buckets (`?dur=`); `lengths` stays the Pages buckets (`?len=`). */
 type BooksField =
-  'genres' | 'authors' | 'narrators' | 'series' | 'languages' | 'formats' | 'lengths';
+  'genres' | 'authors' | 'narrators' | 'series' | 'languages' | 'formats' | 'lengths' | 'durations';
 
 function formatDuration(seconds: number | null): string | null {
   if (seconds == null || seconds <= 0) return null;
@@ -183,9 +187,8 @@ export function BooksBrowser({
     : undefined;
   // DESIGN-043 D-01/D-09 amend (2026-07-18, owner-ruled) — the "Edit collection" nav-out target. The
   // manager identity is the mirror row's librettoRecipeId (null → a hand-made collection with no recipe
-  // to edit → no link). Only the Books/Audiobooks walls map to a Collections media tab; Comics has none.
-  const collectionsTab: 'books' | 'audiobooks' | null =
-    booksWall === 'books' ? 'books' : booksWall === 'audiobooks' ? 'audiobooks' : null;
+  // to edit → no link). Only the unified Books wall maps to a Collections media tab; Comics has none.
+  const collectionsTab: 'books' | null = booksWall === 'books' ? 'books' : null;
   const drillEditRecipeId = drilledCollection ? (drilledMeta?.librettoRecipeId ?? null) : null;
   // ADR-071 owner ruling 2026-07-19 — may the caller fire the collection "Search Missing"? The books
   // force_search_book grant (admin implies it), computed server-side on the collectionGroups read. The
@@ -237,6 +240,11 @@ export function BooksBrowser({
   const wantedRaw = searchParams.get('wanted');
   const wantedState: BooksWantedState =
     wantedRaw === 'only' || wantedRaw === '1' ? 'only' : wantedRaw === 'hide' ? 'hide' : 'all';
+  // ADR-075 C-03 (PLAN-060) — the unified wall's three-state Format axis (`?format=`, absent =
+  // All; availability semantics — "Ebook" = works holding an ebook side). Replace refinement.
+  const formatRaw = searchParams.get('format');
+  const formatState: BooksFormatFilter =
+    formatRaw === 'ebook' || formatRaw === 'audiobook' ? formatRaw : 'all';
   const letterRaw = searchParams.get('at');
   const letter = letterRaw !== null && /^[a-z]$/.test(letterRaw) ? letterRaw : null;
   // DESIGN-038 D-12 — the category chip (?ctype=, replace refinement — D-19). Collection-cards concern
@@ -406,7 +414,11 @@ export function BooksBrowser({
   });
   const inFlightFor = (key: string | null | undefined): InFlightBadge | null => {
     if (key == null) return null;
-    const s = wallStagesQ.data?.[booksWall]?.[key];
+    // ADR-075 C-01 (PLAN-060) — the activity contract still stages the two book acquisition legs
+    // under 'books' / 'audiobooks'; the unified wall reads BOTH (either leg in flight shows).
+    const s =
+      wallStagesQ.data?.[booksWall]?.[key] ??
+      (booksWall === 'books' ? wallStagesQ.data?.audiobooks?.[key] : undefined);
     return s ? { stage: s.stage, progress: s.progress } : null;
   };
   const wantedInFlight = (w: {
@@ -440,13 +452,14 @@ export function BooksBrowser({
     !groupedCards &&
     (entry.azSorts as readonly string[]).includes(sort.field) &&
     sort.dir === 'asc';
-  const bucketKind = mediaKind === 'audiobook' ? 'duration' : 'pages';
   const search = trpc.books.search.useInfiniteQuery(
     {
       mediaKind,
       // The registry pinned this level's keys to BooksSort at compile time.
       sort: sort.field as BooksSort,
       dir: sort.dir,
+      // ADR-075 C-03 — the Format seg rides the wire (server-side availability predicate).
+      format: formatState,
       ...(qParam.trim().length > 0 ? { query: qParam.trim() } : {}),
       // The drilled group IS its dimension's filter (D-04 — the flat grid pre-filtered to the
       // group): an author drill binds authors, a genre drill binds genres, a COLLECTION drill
@@ -469,6 +482,9 @@ export function BooksBrowser({
         ? { formats: filters.formats as ('epub' | 'archive' | 'pdf' | 'image' | 'unknown')[] }
         : {}),
       ...(filters.lengths ? { lengths: filters.lengths as ('short' | 'medium' | 'long')[] } : {}),
+      ...(filters.durations
+        ? { durations: filters.durations as ('short' | 'medium' | 'long')[] }
+        : {}),
       ...(readState !== undefined ? { readState } : {}),
       ...(azActive && letter !== null ? { letter } : {}),
       // PLAN-056 — the three-state Wanted filter, applied SERVER-side ('all' composes wants into
@@ -561,13 +577,28 @@ export function BooksBrowser({
       case 'formats':
         return facets.data.formats.map((f) => f.key);
       case 'lengths':
-        return LENGTH_BUCKET_OPTIONS[bucketKind].map((o) => o.value);
+        // The Pages buckets (`?len=`); the unified wall ALSO offers the audio Length buckets below.
+        return LENGTH_BUCKET_OPTIONS.pages.map((o) => o.value);
+      case 'durations':
+        return LENGTH_BUCKET_OPTIONS.duration.map((o) => o.value);
     }
   };
   const formatLabel = (key: string): string =>
     facets.data?.formats.find((f) => f.key === key)?.label ?? key;
-  const bucketLabel = (key: string): string =>
-    LENGTH_BUCKET_OPTIONS[bucketKind].find((o) => o.value === key)?.label ?? key;
+  /** Bucket display labels per facet: `lengths` = pages, `durations` = audio runtime. */
+  const bucketLabelFor =
+    (field: 'lengths' | 'durations') =>
+    (key: string): string =>
+      LENGTH_BUCKET_OPTIONS[field === 'durations' ? 'duration' : 'pages'].find(
+        (o) => o.value === key,
+      )?.label ?? key;
+  // ADR-075 C-04 (PLAN-060) — the unified wall's FORMAT-side data gates (registry `formatGate`):
+  // audio-gated chips render only while the wall holds an audio-carrying work, ebook-gated ones an
+  // ebook-carrying work. Optimistic while the facets load (the Genres-segment rule).
+  const formatGateOpen = (facet: (typeof entry.facets)[number]): boolean =>
+    facet.formatGate === undefined ||
+    facets.data === undefined ||
+    (facet.formatGate === 'hasAudio' ? facets.data.hasAudio : facets.data.hasEbook);
   const setFieldValues = (field: BooksField, values: string[]) => {
     const param = chipFacets.find((f) => f.key === field)!.param;
     patchParams({ [param]: values.length > 0 ? values : null });
@@ -692,6 +723,48 @@ export function BooksBrowser({
         {facetsForLevel.length > 0 ? (
           <div className="library-chipbar" role="group" aria-label="Filters">
             {facetsForLevel.map((facet) => {
+              // ADR-075 C-04 — format-side data gates (audio-gated / ebook-gated chips; no dead chip).
+              if (!formatGateOpen(facet)) return null;
+              if (facet.key === 'format') {
+                // ADR-075 C-03 — the unified wall's three-state FORMAT axis: All · Ebook ·
+                // Audiobook on the shared labeled `.seg` rail (the 2026-07-18 axis idiom — the
+                // axis name leads, fixed per-segment labels recolor-not-reflow, ADR-015).
+                // `?format=` is a replace refinement (D-19); availability semantics server-side.
+                const formatSegments = [
+                  { value: 'all', label: 'All', testId: 'books-format-all' },
+                  { value: 'ebook', label: 'Ebook', testId: 'books-format-ebook' },
+                  { value: 'audiobook', label: 'Audiobook', testId: 'books-format-audiobook' },
+                ] as const;
+                return (
+                  <div
+                    key={facet.key}
+                    className="library-axis"
+                    role="group"
+                    aria-label="Format"
+                    data-testid="books-format-filter"
+                  >
+                    <span className="library-axis__label" aria-hidden="true">
+                      Format
+                    </span>
+                    <div className="seg">
+                      {formatSegments.map((s) => (
+                        <button
+                          key={s.value}
+                          type="button"
+                          className={formatState === s.value ? 'is-active' : undefined}
+                          aria-pressed={formatState === s.value}
+                          data-testid={s.testId}
+                          onClick={() =>
+                            patchParams({ [facet.param]: s.value === 'all' ? null : s.value })
+                          }
+                        >
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              }
               if (facet.key === 'category') {
                 // DESIGN-038 D-12 — the DYNAMIC category chip row, identical to the movies/TV
                 // Collections walls: one chip per DISTINCT category actually present
@@ -808,15 +881,15 @@ export function BooksBrowser({
                   enumLabel={
                     facet.key === 'formats'
                       ? formatLabel
-                      : facet.key === 'lengths'
-                        ? bucketLabel
+                      : facet.key === 'lengths' || facet.key === 'durations'
+                        ? bucketLabelFor(facet.key)
                         : undefined
                   }
                   displayValues={
                     facet.key === 'formats'
                       ? filterValues(filters, field).map(formatLabel)
-                      : facet.key === 'lengths'
-                        ? filterValues(filters, field).map(bucketLabel)
+                      : facet.key === 'lengths' || facet.key === 'durations'
+                        ? filterValues(filters, field).map(bucketLabelFor(facet.key))
                         : undefined
                   }
                   labels={CHIP_LABELS}
@@ -987,22 +1060,31 @@ export function BooksBrowser({
                 );
               }
               const duration = formatDuration(entry.durationSeconds);
-              const badge =
-                mediaKind === 'audiobook'
-                  ? duration
-                  : entry.pageCount
-                    ? `${entry.pageCount} pp`
-                    : null;
-              // ADR-065 / DESIGN-036 D-09 — the format-coverage badge ("Ebook + Audio" when the title
-              // is paired; the honest single-format label otherwise). Comics carry none (null).
-              const coverage =
+              // The metric badge shows the anchor's own medium: page count for ebook-carrying
+              // works (paired anchors are the ebook row), duration for audio-only anchors.
+              const badge = entry.pageCount ? `${entry.pageCount} pp` : duration;
+              // ADR-065 / DESIGN-036 D-09 + ADR-075 C-05 — the format-coverage badge ("Ebook +
+              // Audio" for a collapsed pair; the single-format label otherwise). On the unified
+              // wall a single-format work's badge CARRIES the missing format's want state
+              // (wanted / in flight) — standalone pairing tiles retired. Comics carry none (null).
+              const want = entry.missingFormatWant;
+              const wantWord = want ? (want.status === 'grabbed' ? 'in flight' : 'wanted') : null;
+              const wantTone = want && want.status === 'grabbed' ? ('info' as const) : ('warn' as const);
+              const coverageBadge =
                 entry.formatCoverage === 'both'
-                  ? 'Ebook + Audio'
+                  ? { label: 'Ebook + Audio' }
                   : entry.formatCoverage === 'ebook'
-                    ? 'Ebook only'
+                    ? want
+                      ? { label: `Ebook · Audio ${wantWord}`, tone: wantTone }
+                      : { label: 'Ebook only' }
                     : entry.formatCoverage === 'audio'
-                      ? 'Audio only'
+                      ? want
+                        ? { label: `Audio · Ebook ${wantWord}`, tone: wantTone }
+                        : { label: 'Audio only' }
                       : null;
+              // The live acquisition stage rides the anchor card exactly as it rides a wanted tile
+              // (the missing format's LL leg joins by llBookId — the wall-stage poll above).
+              const cardInFlight = want ? inFlightFor(want.llBookId) : null;
               return (
                 // ADR-047 — the tile opens the in-app books DETAIL page (the deep link lives there now).
                 <BookCard
@@ -1013,7 +1095,8 @@ export function BooksBrowser({
                   title={entry.title}
                   year={entry.year}
                   author={entry.author}
-                  badges={[badge ? { label: badge } : null, coverage ? { label: coverage } : null]}
+                  inFlight={cardInFlight}
+                  badges={[badge ? { label: badge } : null, coverageBadge]}
                 />
               );
             })}

@@ -123,8 +123,10 @@ describe('library.preferences (ADR-052 / DESIGN-026 D-06) — own-row get/set', 
   });
 
   it('getAll returns every wall (stored merged over defaults)', async () => {
+    // ADR-075 C-06 — the audiobooks wall key retired with the unified Books wall (7 walls now).
     const all = await api.library.preferences.getAll();
-    expect(all).toHaveLength(8);
+    expect(all).toHaveLength(7);
+    expect(all.map((w) => w.wall)).not.toContain('audiobooks');
     expect(all.find((w) => w.wall === 'movies')).toMatchObject({ source: 'stored' });
     expect(all.find((w) => w.wall === 'tv')).toMatchObject({ view: 'hierarchy', source: 'default' });
   });

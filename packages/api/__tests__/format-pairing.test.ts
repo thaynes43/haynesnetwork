@@ -230,9 +230,11 @@ describe('the composed Wanted surfaces include the pairing want (ADR-065 C-04)',
     });
   });
 
-  it('the Books wall does NOT carry it (the held ebook is landed — only the missing leg composes)', async () => {
+  it('the unified Books wall carries it under either wire value (ADR-075 — one wall now)', async () => {
+    // Pre-unification the held-ebook side excluded the want; the unified wall composes the
+    // work's open missing-format want regardless of which legacy wire value asks.
     const res = await readerCaller.books.wanted({ mediaKind: 'book' });
-    expect(res.items.some((i) => i.requestId === pairingWantId)).toBe(false);
+    expect(res.items.some((i) => i.requestId === pairingWantId)).toBe(true);
   });
 
   it('wantedDetail renders the pairing want: origin, attribution, per-format rows, books-gated search', async () => {

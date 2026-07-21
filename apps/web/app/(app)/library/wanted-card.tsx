@@ -22,10 +22,11 @@ import type { RouterOutputs } from '@/lib/trpc-client';
 type BooksMediaKind = 'book' | 'audiobook' | 'comic';
 export type WantedWire = RouterOutputs['books']['wanted']['items'][number];
 
-/** The wall id (the `?from=` back-link key) for the detail page's way back to THIS wall. */
+/** The wall id (the `?from=` back-link key) for the detail page's way back to THIS wall.
+ *  ADR-075 C-01 (PLAN-060) — book AND audiobook wants live on the unified Books wall now. */
 const WALL_FROM: Record<BooksMediaKind, string> = {
   book: 'books',
-  audiobook: 'audiobooks',
+  audiobook: 'books',
   comic: 'comics',
 };
 

@@ -28,7 +28,8 @@ import {
   type CollectionSyncModeName,
 } from '@/lib/collections';
 
-const MEDIA_TABS: readonly CollectionMediaTypeName[] = ['movies', 'tv', 'books', 'audiobooks'];
+// ADR-076 C-01 (PLAN-060) — the Books/Audiobooks tabs merged; 'audiobooks' tolerated at the wire.
+const MEDIA_TABS: readonly CollectionMediaTypeName[] = ['movies', 'tv', 'books'];
 
 /** "The Stormlight Archive" → "the-stormlight-archive" (the derived-id convenience; users never invent one). */
 function slugifyCollectionId(name: string): string {
@@ -98,13 +99,16 @@ function CollectionBuilder({
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // The media tab seeds the provider binding + the builder-card set (D-01). A missing/invalid tab falls
-  // back to the first media type (the caller always sees all four today).
+  // The media tab seeds the provider binding + the builder-card set (D-01). A missing/invalid tab
+  // falls back to Books; a legacy `?tab=audiobooks` deep link binds the merged Books tab
+  // (ADR-076 C-01 — 'audiobooks' stays a tolerated wire value).
   const rawTab = searchParams.get('tab');
   const tab: CollectionMediaTypeName =
-    rawTab && (MEDIA_TABS as readonly string[]).includes(rawTab)
-      ? (rawTab as CollectionMediaTypeName)
-      : 'books';
+    rawTab === 'audiobooks'
+      ? 'books'
+      : rawTab && (MEDIA_TABS as readonly string[]).includes(rawTab)
+        ? (rawTab as CollectionMediaTypeName)
+        : 'books';
   const handFileParam = searchParams.get('hand');
 
   const overviewQ = trpc.collections.overview.useQuery({ mediaType: tab }, { retry: false });

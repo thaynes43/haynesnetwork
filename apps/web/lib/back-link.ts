@@ -29,9 +29,11 @@ const BACK_LINKS: Record<string, BackLinkTarget> = {
   // DESIGN-017 D-09 — the ytdl-sub drill-in's way back to its wall (the key IS the library id).
   peloton: { label: 'Peloton', href: '/library?tab=peloton' },
   youtube: { label: 'YouTube', href: '/library?tab=youtube' },
-  // ADR-047 / DESIGN-025 (PLAN-028) — the Books/Audiobooks/Comics detail pages' way back to their wall.
+  // ADR-047 / DESIGN-025 (PLAN-028) — the Books/Comics detail pages' way back to their wall.
+  // ADR-075 C-07 (PLAN-060) — the retired Audiobooks wall's `from` key stays TOLERATED: old links
+  // land on the unified Books wall with the Audiobook format preselected (shared links keep meaning).
   books: { label: 'Books', href: '/library?tab=books' },
-  audiobooks: { label: 'Audiobooks', href: '/library?tab=audiobooks' },
+  audiobooks: { label: 'Books', href: '/library?tab=books&format=audiobook' },
   comics: { label: 'Comics', href: '/library?tab=comics' },
   // ADR-057 amendment (PLAN-047) — the Wanted / library detail pages' way back to the Goodreads items wall.
   'goodreads-items': { label: 'Goodreads', href: '/integrations/goodreads?tab=items' },

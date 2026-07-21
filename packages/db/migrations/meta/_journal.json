@@ -491,6 +491,13 @@
 			"when": 1783902800000,
 			"tag": "0070_gb_call_budget",
 			"breakpoints": true
+		},
+		{
+			"idx": 70,
+			"version": "7",
+			"when": 1783902900000,
+			"tag": "0071_unified_books_wall",
+			"breakpoints": true
 		}
 	]
 }

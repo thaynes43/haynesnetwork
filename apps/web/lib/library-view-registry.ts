@@ -36,15 +36,13 @@ export type ViewLevelKey =
   | 'peloton:episode'
   | 'youtube:wall'
   | 'youtube:episode'
+  // ADR-075 (PLAN-060) — the `audiobooks:*` levels RETIRED: one Books wall serves both formats;
+  // the Genre grouping the Audiobooks wall carried moved onto `books:grouped-genre`.
   | 'books:wall'
   | 'books:grouped'
+  | 'books:grouped-genre'
   | 'books:grouped-collection'
   | 'books:collection-items'
-  | 'audiobooks:wall'
-  | 'audiobooks:grouped'
-  | 'audiobooks:grouped-genre'
-  | 'audiobooks:grouped-collection'
-  | 'audiobooks:collection-items'
   | 'comics:wall'
   | 'comics:grouped-collection'
   | 'comics:collection-items';
@@ -75,6 +73,11 @@ export interface RegistryFacet {
   /** Value-gated: the chip is hidden entirely when its facet VALUES come back empty (ADR-051 C-06 —
    *  e.g. ABS narrator 16% / series 3-of-823, Kavita formats on ABS walls). */
   dataGated?: boolean;
+  /** ADR-075 C-04 (PLAN-060) — the unified Books wall's FORMAT-side data gate: the chip renders
+   *  only while the wall holds a work carrying that side (books.filterFacets hasAudio/hasEbook) —
+   *  Length/Narrator/Series/Language/Read gate on audio-carrying works, Pages/File on
+   *  ebook-carrying ones. Orthogonal to `gate`/`dataGated` (all must pass). */
+  formatGate?: 'hasAudio' | 'hasEbook';
 }
 
 export interface ViewRegistryEntryOf<K extends string> {
@@ -147,6 +150,16 @@ const WANTED_FACET: RegistryFacet = {
   kind: 'select',
   param: 'wanted',
   dataGated: true,
+};
+/** ADR-075 C-03 (PLAN-060) — the unified Books wall's three-state FORMAT axis: All · Ebook ·
+ *  Audiobook (`?format=`, availability semantics — "Ebook" = works holding an ebook side). Renders
+ *  as a labeled `.seg` rail beside the Wanted axis (the 2026-07-18 axis idiom): fixed per-segment
+ *  labels recolor, never reflow (ADR-015). Comics never carry it (E-5). */
+const FORMAT_FACET: RegistryFacet = {
+  key: 'format',
+  label: 'Format',
+  kind: 'select',
+  param: 'format',
 };
 const releasedFacet = (label: string): RegistryFacet => ({
   key: 'released',
@@ -344,21 +357,57 @@ export const LIBRARY_VIEW_REGISTRY: Record<ViewLevelKey, ViewRegistryEntry> = {
     facets: [],
     azSorts: [],
   }),
-  // Books (Kavita EBooks) — flat level. No genre/year (Kavita's list read carries none — honest gap);
-  // author/format/page-length facets, title/author A–Z jumps.
+  // ADR-075 C-02..C-04 (PLAN-060) — the UNIFIED Books wall: one flat level over
+  // `media_kind ∈ {book, audiobook}` at WORK grain (a paired duo is ONE card). Sorts are the two
+  // retired walls' union — Length sorts audio-carrying works, Pages ebook-carrying ones (C-09
+  // partial honesty, NULLS LAST). Facets union with DATA-GATING (no dead chip, ADR-051 C-06):
+  // Author/Genre/Wanted universal; Narrator/Series/Language/Length/Read gate on audio-carrying
+  // works (formatGate hasAudio — ADR-053's Kavita read-state gap stays honest); Pages/File gate on
+  // ebook-carrying works. The old Books `fmt` facet RELABELS "File" (keeps its param); the new
+  // three-state Format seg (`?format=`) is the wall's defining axis.
   'books:wall': booksLevel({
     engine: 'books',
     sorts: [
       { key: 'title', label: 'Title', firstDir: 'asc' },
       { key: 'author', label: 'Author', firstDir: 'asc' },
       { key: 'added', label: 'Added', firstDir: 'desc' },
+      { key: 'year', label: 'Year', firstDir: 'desc' },
+      { key: 'duration', label: 'Length', firstDir: 'desc' },
       { key: 'pages', label: 'Pages', firstDir: 'desc' },
     ],
     defaultSort: { field: 'title', dir: 'asc' },
     facets: [
+      FORMAT_FACET,
+      { key: 'genres', label: 'Genre', kind: 'enum', param: 'genre', dataGated: true },
       { key: 'authors', label: 'Author', kind: 'suggest', param: 'author', dataGated: true },
-      { key: 'formats', label: 'Format', kind: 'enum', param: 'fmt', dataGated: true },
-      { key: 'lengths', label: 'Pages', kind: 'buckets', param: 'len' },
+      {
+        key: 'narrators',
+        label: 'Narrator',
+        kind: 'suggest',
+        param: 'narr',
+        dataGated: true,
+        formatGate: 'hasAudio',
+      },
+      {
+        key: 'series',
+        label: 'Series',
+        kind: 'suggest',
+        param: 'ser',
+        dataGated: true,
+        formatGate: 'hasAudio',
+      },
+      {
+        key: 'languages',
+        label: 'Language',
+        kind: 'enum',
+        param: 'lang',
+        dataGated: true,
+        formatGate: 'hasAudio',
+      },
+      { key: 'durations', label: 'Length', kind: 'buckets', param: 'dur', formatGate: 'hasAudio' },
+      { key: 'lengths', label: 'Pages', kind: 'buckets', param: 'len', formatGate: 'hasEbook' },
+      { key: 'formats', label: 'File', kind: 'enum', param: 'fmt', dataGated: true },
+      { ...READ_FACET, formatGate: 'hasAudio' },
       WANTED_FACET,
     ],
     azSorts: ['title', 'author'],
@@ -370,6 +419,19 @@ export const LIBRARY_VIEW_REGISTRY: Record<ViewLevelKey, ViewRegistryEntry> = {
       { key: 'count', label: 'Most books', firstDir: 'desc' },
     ],
     defaultSort: { field: 'author', dir: 'asc' },
+    facets: [],
+    azSorts: [],
+  }),
+  // ADR-075 C-04 — the Genre grouping the retired Audiobooks wall carried, now on the unified
+  // Books wall (glyph cards — never fake art; the selector segment value-gates on genre presence).
+  // Work-grain counts: a genre either side of a pair carries counts the work once (E-3 union).
+  'books:grouped-genre': groupLevel({
+    engine: 'books',
+    sorts: [
+      { key: 'label', label: 'Genre A–Z', firstDir: 'asc' },
+      { key: 'count', label: 'Most books', firstDir: 'desc' },
+    ],
+    defaultSort: { field: 'label', dir: 'asc' },
     facets: [],
     azSorts: [],
   }),
@@ -396,6 +458,9 @@ export const LIBRARY_VIEW_REGISTRY: Record<ViewLevelKey, ViewRegistryEntry> = {
   // the wall's, INCLUDING `wanted` (DESIGN-038 D-13, SUPERSEDES D-07 held-only): a collection that is
   // not full renders its MISSING members as Wanted tiles beside the held ones — the wanted facet toggles
   // All / Wanted only / Hide wanted, dataGated so it only shows when the drill has wanted tiles.
+  // The drilled level carries the unified wall's facet union (incl. the Format seg — filtering a
+  // merged multi-target drill by held format is an honest work-grain narrowing) + the D-13 wanted
+  // facet (a not-full collection renders its MISSING members as Wanted tiles, dataGated).
   'books:collection-items': booksLevel({
     engine: 'books',
     sorts: [
@@ -403,98 +468,43 @@ export const LIBRARY_VIEW_REGISTRY: Record<ViewLevelKey, ViewRegistryEntry> = {
       { key: 'title', label: 'Title', firstDir: 'asc' },
       { key: 'author', label: 'Author', firstDir: 'asc' },
       { key: 'added', label: 'Added', firstDir: 'desc' },
+      { key: 'year', label: 'Year', firstDir: 'desc' },
+      { key: 'duration', label: 'Length', firstDir: 'desc' },
       { key: 'pages', label: 'Pages', firstDir: 'desc' },
     ],
     defaultSort: { field: 'position', dir: 'asc' },
     facets: [
-      { key: 'authors', label: 'Author', kind: 'suggest', param: 'author', dataGated: true },
-      { key: 'formats', label: 'Format', kind: 'enum', param: 'fmt', dataGated: true },
-      { key: 'lengths', label: 'Pages', kind: 'buckets', param: 'len' },
-      WANTED_FACET,
-    ],
-    azSorts: ['title', 'author'],
-  }),
-  // Audiobooks (ABS) — the richest book registry (R8 "all"): genre/author/narrator/series/language
-  // facets (narrator + series + language populated-value-gated — live-verified sparse), duration
-  // length buckets, Year sort (ABS publishedYear), per-user Read facet (ADR-053, gated).
-  'audiobooks:wall': booksLevel({
-    engine: 'books',
-    sorts: [
-      { key: 'title', label: 'Title', firstDir: 'asc' },
-      { key: 'author', label: 'Author', firstDir: 'asc' },
-      { key: 'year', label: 'Year', firstDir: 'desc' },
-      { key: 'duration', label: 'Length', firstDir: 'desc' },
-      { key: 'added', label: 'Added', firstDir: 'desc' },
-    ],
-    defaultSort: { field: 'title', dir: 'asc' },
-    facets: [
+      FORMAT_FACET,
       { key: 'genres', label: 'Genre', kind: 'enum', param: 'genre', dataGated: true },
       { key: 'authors', label: 'Author', kind: 'suggest', param: 'author', dataGated: true },
-      { key: 'narrators', label: 'Narrator', kind: 'suggest', param: 'narr', dataGated: true },
-      { key: 'series', label: 'Series', kind: 'suggest', param: 'ser', dataGated: true },
-      { key: 'languages', label: 'Language', kind: 'enum', param: 'lang', dataGated: true },
-      { key: 'lengths', label: 'Length', kind: 'buckets', param: 'len' },
-      READ_FACET,
-      WANTED_FACET,
-    ],
-    azSorts: ['title', 'author'],
-  }),
-  'audiobooks:grouped': groupLevel({
-    engine: 'books',
-    sorts: [
-      { key: 'author', label: 'Author A–Z', firstDir: 'asc' },
-      { key: 'count', label: 'Most audiobooks', firstDir: 'desc' },
-    ],
-    defaultSort: { field: 'author', dir: 'asc' },
-    facets: [],
-    azSorts: [],
-  }),
-  // Audiobooks grouped by GENRE (group-card-art pass — the first abstract grouping dimension;
-  // ABS genres live-verified 91% populated). Cards are designed glyph tiles (never fake art);
-  // the level sorts its cards (label/count) like every grouped level.
-  'audiobooks:grouped-genre': groupLevel({
-    engine: 'books',
-    sorts: [
-      { key: 'label', label: 'Genre A–Z', firstDir: 'asc' },
-      { key: 'count', label: 'Most audiobooks', firstDir: 'desc' },
-    ],
-    defaultSort: { field: 'label', dir: 'asc' },
-    facets: [],
-    azSorts: [],
-  }),
-  // ADR-066 / DESIGN-038 D-07 (PLAN-051) — the Audiobooks Collections grouped + drilled levels
-  // (same contract as the books ones; the drill keeps the ABS item facets minus `wanted`).
-  'audiobooks:grouped-collection': groupLevel({
-    engine: 'books',
-    sorts: [
-      { key: 'label', label: 'Collection A–Z', firstDir: 'asc' },
-      { key: 'count', label: 'Most items', firstDir: 'desc' },
-    ],
-    defaultSort: { field: 'label', dir: 'asc' },
-    facets: [COLLECTION_TYPE_FACET], // D-12 — the shared dynamic category chip (see books level).
-    azSorts: [],
-  }),
-  'audiobooks:collection-items': booksLevel({
-    engine: 'books',
-    sorts: [
-      { key: 'position', label: 'List order', firstDir: 'asc' },
-      { key: 'title', label: 'Title', firstDir: 'asc' },
-      { key: 'author', label: 'Author', firstDir: 'asc' },
-      { key: 'year', label: 'Year', firstDir: 'desc' },
-      { key: 'duration', label: 'Length', firstDir: 'desc' },
-      { key: 'added', label: 'Added', firstDir: 'desc' },
-    ],
-    defaultSort: { field: 'position', dir: 'asc' },
-    facets: [
-      { key: 'genres', label: 'Genre', kind: 'enum', param: 'genre', dataGated: true },
-      { key: 'authors', label: 'Author', kind: 'suggest', param: 'author', dataGated: true },
-      { key: 'narrators', label: 'Narrator', kind: 'suggest', param: 'narr', dataGated: true },
-      { key: 'series', label: 'Series', kind: 'suggest', param: 'ser', dataGated: true },
-      { key: 'languages', label: 'Language', kind: 'enum', param: 'lang', dataGated: true },
-      { key: 'lengths', label: 'Length', kind: 'buckets', param: 'len' },
-      READ_FACET,
-      // DESIGN-038 D-13 — an audiobook collection that is not full renders its MISSING members as Wanted
-      // tiles (its Libretto recipe's missing set → origin='collection' wants). dataGated (no dead chip).
+      {
+        key: 'narrators',
+        label: 'Narrator',
+        kind: 'suggest',
+        param: 'narr',
+        dataGated: true,
+        formatGate: 'hasAudio',
+      },
+      {
+        key: 'series',
+        label: 'Series',
+        kind: 'suggest',
+        param: 'ser',
+        dataGated: true,
+        formatGate: 'hasAudio',
+      },
+      {
+        key: 'languages',
+        label: 'Language',
+        kind: 'enum',
+        param: 'lang',
+        dataGated: true,
+        formatGate: 'hasAudio',
+      },
+      { key: 'durations', label: 'Length', kind: 'buckets', param: 'dur', formatGate: 'hasAudio' },
+      { key: 'lengths', label: 'Pages', kind: 'buckets', param: 'len', formatGate: 'hasEbook' },
+      { key: 'formats', label: 'File', kind: 'enum', param: 'fmt', dataGated: true },
+      { ...READ_FACET, formatGate: 'hasAudio' },
       WANTED_FACET,
     ],
     azSorts: ['title', 'author'],
@@ -552,10 +562,11 @@ export function registryFor(key: ViewLevelKey): ViewRegistryEntry {
 }
 
 // ---------------------------------------------------------------------------
-// D-01 — which view SHAPES (and grouping DIMENSIONS) each wall offers. Books/Audiobooks offer a
-// flat alternative; Audiobooks additionally offers the Genre grouping (the group-card-art pass —
-// the first abstract dimension; Kavita walls can't: genres 0% in the list read). Every other
-// wall's R2 shape is its only honest shape today, so no selector renders there.
+// D-01 — which view SHAPES (and grouping DIMENSIONS) each wall offers. The unified Books wall
+// offers a flat alternative plus the Author / Genre / Collections groupings (Genre value-gates on
+// genre presence — the Kavita enrichment now populates genres, ADR-075 folds the old Audiobooks
+// Genre grouping in). Every other wall's R2 shape is its only honest shape today, so no selector
+// renders there.
 // ---------------------------------------------------------------------------
 
 /** D-04 (art-amended) — what an aggregate card's ART SLOT renders for a grouping dimension:
@@ -628,10 +639,12 @@ export const WALL_VIEWS: Record<LibraryWallId, WallViewsSpec> = {
     offers: ['grouped'],
     groupings: [{ dimension: 'channel', selectorLabel: 'Channels', allLabel: '', art: 'covers' }],
   },
-  // ADR-066 / DESIGN-038 D-07 (PLAN-051) — the three book walls gain the `collection` grouping as a
+  // ADR-066 / DESIGN-038 D-07 (PLAN-051) — the book walls carry the `collection` grouping as a
   // SIBLING dimension (mirrored Kavita/ABS collections + reading lists; cover-fan cards). The
   // DEFAULT shapes/dimensions are unchanged (WALL_VIEW_DEFAULTS untouched) — Collections is opt-in
   // via the selector / `?view=grouped&by=collection`.
+  // ADR-075 (PLAN-060) — the unified Books wall: the retired Audiobooks wall's Genre grouping
+  // (glyph cards) joins the dimensions; the selector value-gates it on genre presence.
   books: {
     offers: ['grouped', 'flat'],
     groupings: [
@@ -643,6 +656,13 @@ export const WALL_VIEWS: Record<LibraryWallId, WallViewsSpec> = {
         level: 'books:grouped',
       },
       {
+        dimension: 'genre',
+        selectorLabel: 'Genres',
+        allLabel: 'All genres',
+        art: 'glyph',
+        level: 'books:grouped-genre',
+      },
+      {
         dimension: 'collection',
         selectorLabel: 'Collections',
         allLabel: 'All collections',
@@ -651,33 +671,6 @@ export const WALL_VIEWS: Record<LibraryWallId, WallViewsSpec> = {
       },
     ],
     flatLabel: 'All books',
-  },
-  audiobooks: {
-    offers: ['grouped', 'flat'],
-    groupings: [
-      {
-        dimension: 'author',
-        selectorLabel: 'Authors',
-        allLabel: 'All authors',
-        art: 'covers',
-        level: 'audiobooks:grouped',
-      },
-      {
-        dimension: 'genre',
-        selectorLabel: 'Genres',
-        allLabel: 'All genres',
-        art: 'glyph',
-        level: 'audiobooks:grouped-genre',
-      },
-      {
-        dimension: 'collection',
-        selectorLabel: 'Collections',
-        allLabel: 'All collections',
-        art: 'covers',
-        level: 'audiobooks:grouped-collection',
-      },
-    ],
-    flatLabel: 'All audiobooks',
   },
   // Comics' Series grouping IS the wall — each tile is a Kavita series wearing its REAL series
   // cover through /api/books/cover (the D-04 art answer for the Series dimension). PLAN-051 adds
@@ -725,6 +718,8 @@ export const READ_STATE_OPTIONS: ReadonlyArray<{ value: BookReadState; label: st
 export const CATEGORY_CHIP_HINT_ORDER: readonly string[] = [
   'Universe',
   'Sequels',
+  // ADR-076 C-06 / R-233 (PLAN-060) — the Authors program's chip, pinned after Universe/Sequels.
+  'Authors',
   'Director',
   'Actor',
   'List',

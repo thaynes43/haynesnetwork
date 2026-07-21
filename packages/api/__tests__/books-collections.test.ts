@@ -208,17 +208,18 @@ describe('books.collectionGroups gate (DESIGN-038 D-10 — the books section is 
   });
 
   it('a Read-Only role row opts a member in (same seam as the wall)', async () => {
+    // ADR-075/076 — the unified Books wall cards the ABS collection beside the Kavita list.
     const { groups } = await readerCaller.books.collectionGroups({ mediaKind: 'book' });
-    expect(groups).toHaveLength(1);
+    expect(groups).toHaveLength(2);
   });
 });
 
-describe('books.collectionGroups (DESIGN-038 D-05 — wall mapping + honest counts)', () => {
-  it('maps a mixed collection to its MAJORITY wall with the WALL kind count (never the raw item_count)', async () => {
+describe('books.collectionGroups (DESIGN-038 D-05 amended — the comic partition + honest counts)', () => {
+  it('a mixed non-comic-majority collection lands on the unified Books wall with the WALL kind count (never the raw item_count)', async () => {
     const { groups } = await adminCaller.books.collectionGroups({ mediaKind: 'book' });
-    expect(groups).toHaveLength(1);
-    const card = groups[0]!;
-    expect(card.key).toBe(readingListId);
+    // Label A–Z: the ABS 'Discworld in Order' now cards HERE too (audiobooks folded into Books).
+    expect(groups.map((g) => g.label)).toEqual(['Discworld in Order', 'HP Reading Order']);
+    const card = groups.find((g) => g.key === readingListId)!;
     expect(card.label).toBe('HP Reading Order');
     expect(card.count).toBe(3); // 3 books — not the comic, not the raw 99, not the ghost ref
     expect(card.ordered).toBe(true);
@@ -235,7 +236,7 @@ describe('books.collectionGroups (DESIGN-038 D-05 — wall mapping + honest coun
     ]);
   });
 
-  it('the minority wall never cards the mixed collection; pure collections land on their wall', async () => {
+  it('the comic partition: Comics keeps only comic-majority cards; the legacy audiobook value is the unified wall', async () => {
     const { groups: comics } = await adminCaller.books.collectionGroups({ mediaKind: 'comic' });
     expect(comics.map((g) => g.label)).toEqual(['Capes']); // the mixed list is NOT here
     // A hand-made Kavita collection carries no Libretto recipe → no "Edit collection" nav-out.
@@ -245,11 +246,13 @@ describe('books.collectionGroups (DESIGN-038 D-05 — wall mapping + honest coun
       provenance: 'Kavita',
       librettoRecipeId: null,
     });
+    // ADR-075 C-01 — 'audiobook' is an accepted alias for the SAME unified Books wall now.
     const { groups: audiobooks } = await adminCaller.books.collectionGroups({
       mediaKind: 'audiobook',
     });
-    expect(audiobooks.map((g) => g.label)).toEqual(['Discworld in Order']);
-    expect(audiobooks[0]).toMatchObject({ count: 2, ordered: true, provenance: 'Audiobookshelf' });
+    expect(audiobooks.map((g) => g.label)).toEqual(['Discworld in Order', 'HP Reading Order']);
+    const discworld = audiobooks.find((g) => g.label === 'Discworld in Order')!;
+    expect(discworld).toMatchObject({ count: 2, ordered: true, provenance: 'Audiobookshelf' });
   });
 
   it('a collection with zero resolved live members is absent from every wall', async () => {
@@ -261,9 +264,9 @@ describe('books.collectionGroups (DESIGN-038 D-05 — wall mapping + honest coun
 
   it('CATEGORY (D-12) — cards carry the category and categoryCounts covers only present cards per wall', async () => {
     const books = await adminCaller.books.collectionGroups({ mediaKind: 'book' });
-    // The one book-wall card (HP Reading Order) carries its category; the chip counts reflect it.
-    expect(books.groups[0]!.category).toBe('Series');
-    expect(books.categoryCounts).toEqual({ Series: 1 });
+    // Both unified-wall cards (HP + Discworld) carry 'Series'; the chip counts reflect both.
+    expect(books.groups.map((g) => g.category)).toEqual(['Series', 'Series']);
+    expect(books.categoryCounts).toEqual({ Series: 2 });
     // The Ghost Shelf carries a 'List' category in data but shows NO card (0 resolved members), so it
     // must NOT leak into the chip counts — a chip can never advertise a card the wall can't show.
     expect(books.categoryCounts.List).toBeUndefined();
@@ -273,7 +276,7 @@ describe('books.collectionGroups (DESIGN-038 D-05 — wall mapping + honest coun
     expect(comics.categoryCounts).toEqual({ Event: 1 });
 
     const audiobooks = await adminCaller.books.collectionGroups({ mediaKind: 'audiobook' });
-    expect(audiobooks.categoryCounts).toEqual({ Series: 1 });
+    expect(audiobooks.categoryCounts).toEqual({ Series: 2 });
   });
 });
 
