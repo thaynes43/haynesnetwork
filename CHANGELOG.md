@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.89.0](https://github.com/thaynes43/haynesnetwork/compare/v0.88.6...v0.89.0) (2026-07-21)
+
+
+### Features
+
+* unified Books wall + merged collections (ADR-075/076) ([#464](https://github.com/thaynes43/haynesnetwork/issues/464)) ([18a0571](https://github.com/thaynes43/haynesnetwork/commit/18a05711fe1a6a89dc6cefa524fba185f5c7be65))
+
+
+### Documentation
+
+* books unification day wrap — both streams shipped, rollout staged ([#466](https://github.com/thaynes43/haynesnetwork/issues/466)) ([127115f](https://github.com/thaynes43/haynesnetwork/commit/127115fa9ae762ee86bbd279d2b28fcd7f6b8e3b))
+
 ## [0.88.6](https://github.com/thaynes43/haynesnetwork/compare/v0.88.5...v0.88.6) (2026-07-21)
 
 
