@@ -49,6 +49,34 @@ describe('LibrettoReadClient', () => {
     expect(res.issues).toHaveLength(1);
   });
 
+  it('parses a recipe list mixing scalar refs and MIXED id/slug array refs (hardcover_comics — PR #11 drift)', async () => {
+    // The live 2026-07-21 regression: two hardcover_comics recipes emit `builder.ref` as a MIXED array of
+    // Hardcover ids (numbers) AND slugs (strings), e.g. [14911, 'guarding-the-globe']. The string-only ACL
+    // threw on the WHOLE list ("recipes.15.builder.ref: Invalid input: expected string, received array"),
+    // aborting the hourly collection-force-search pass. The ref union must parse every Libretto shape:
+    // scalar string, scalar number (hardcover_series id), and the mixed comics array.
+    const recipes = [
+      { id: 'stormlight', builder: { type: 'hardcover_series', ref: 'the-stormlight-archive' }, variables: { acquisitionEnabled: true } },
+      { id: 'nyt-fiction', builder: { type: 'nyt_list', ref: 'hardcover-fiction' } },
+      { id: 'goosebumps', builder: { type: 'hardcover_series', ref: 508783 } }, // a NUMERIC Hardcover series id
+      // The comics grain: a MIXED number-and-string array (two such recipes are live: indices 15 and 30).
+      { id: 'invincible-omni', builder: { type: 'hardcover_comics', ref: [14911, 'guarding-the-globe'] }, variables: { acquisitionEnabled: true } },
+      { id: 'saga-comics', builder: { type: 'hardcover_comics', ref: [77, 78, 'saga'] }, variables: { acquisitionEnabled: false } },
+    ];
+    const fetchImpl = vi.fn(async () => jsonResponse(200, { recipes, issues: [] }));
+    const client = new LibrettoReadClient({ ...OPTS, fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    const res = await client.listRecipes(); // pre-fix: rejected the whole list and threw
+    expect(res.recipes).toHaveLength(5);
+    // Every shape survives EXACTLY (no silent coercion): scalar string, scalar number, mixed array.
+    expect(res.recipes[0]!.builder?.ref).toBe('the-stormlight-archive');
+    expect(res.recipes[2]!.builder?.ref).toBe(508783);
+    expect(res.recipes[3]!.builder?.ref).toEqual([14911, 'guarding-the-globe']);
+    // The exact field the cron force-search pass filters on stays readable across EVERY ref shape.
+    const acquisitionOn = res.recipes.filter((r) => r.variables?.acquisitionEnabled === true).map((r) => r.id);
+    expect(acquisitionOn).toEqual(['stormlight', 'invincible-omni']);
+  });
+
   it('reads a run with counts', async () => {
     const fetchImpl = vi.fn(async () =>
       jsonResponse(200, {
@@ -289,6 +317,26 @@ describe('LibrettoWriteClient', () => {
     });
     expect(seen[0]!.method).toBe('PUT');
     expect(seen[0]!.url).toContain('/api/recipes/dune');
+  });
+
+  it('upserts a comics recipe whose builder.ref is a mixed id/slug array (round-trip re-PUT)', async () => {
+    // setCollectionFindMissing reads a hardcover_comics recipe (mixed number/string array) back via
+    // recipeToDraft and re-PUTs it: the write ACL must accept the array unchanged, not throw on it.
+    const seen: Array<{ body: unknown }> = [];
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      seen.push({ body: init?.body ? JSON.parse(init.body as string) : undefined });
+      return jsonResponse(200, { id: 'invincible-omni' });
+    });
+    const client = new LibrettoWriteClient({
+      ...OPTS,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    await client.upsertRecipe({
+      id: 'invincible-omni',
+      builder: { type: 'hardcover_comics', ref: [14911, 'guarding-the-globe'] },
+      variables: { acquisitionEnabled: true },
+    });
+    expect((seen[0]!.body as { builder: { ref: unknown } }).builder.ref).toEqual([14911, 'guarding-the-globe']);
   });
 
   it('surfaces a 400 with per-path issues as LibrettoHttpError', async () => {

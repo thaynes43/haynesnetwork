@@ -146,6 +146,29 @@ describe('collections overview — everyone reads, no grant, no section floor (A
     expect(res.capBypass).toBe(false);
   });
 
+  it('wires a comics recipe mixed id/slug array ref to a joined display string (PR #11 shape)', async () => {
+    const member = await createUser(t.db);
+    const stub = stubLibretto();
+    // A hardcover_comics recipe carries a MIXED number/string array; a numeric hardcover_series id is a scalar.
+    stub.recipes.push({
+      id: 'invincible-omni',
+      name: 'Invincible Universe',
+      builder: { type: 'hardcover_comics', ref: [14911, 'guarding-the-globe'] },
+      enabled: true,
+    });
+    stub.recipes.push({
+      id: 'goosebumps',
+      name: 'Goosebumps',
+      builder: { type: 'hardcover_series', ref: 508783 },
+      enabled: true,
+    });
+    const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stub.ctx };
+    const res = await caller(ctx).collections.overview({ mediaType: 'books' });
+    // The array is joined for display (the id-list convention); the numeric scalar is stringified.
+    expect(res.recipes.find((r) => r.id === 'invincible-omni')!.builderRef).toBe('14911, guarding-the-globe');
+    expect(res.recipes.find((r) => r.id === 'goosebumps')!.builderRef).toBe('508783');
+  });
+
   it('Movies/TV bind Kometa and read the managed include (available:true, provider kometa)', async () => {
     const member = await createUser(t.db);
     const ctx = {

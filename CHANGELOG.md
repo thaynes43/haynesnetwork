@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.88.6](https://github.com/thaynes43/haynesnetwork/compare/v0.88.5...v0.88.6) (2026-07-21)
+
+
+### Bug Fixes
+
+* widen Libretto builder.ref to its real shape (mixed id/slug arrays, numeric ids) ([#462](https://github.com/thaynes43/haynesnetwork/issues/462)) ([9d871cc](https://github.com/thaynes43/haynesnetwork/commit/9d871cce556bb6c748db1595a939089d07332d71))
+
+## [0.88.5](https://github.com/thaynes43/haynesnetwork/compare/v0.88.4...v0.88.5) (2026-07-21)
+
+
+### Bug Fixes
+
+* accept array builder.ref from Libretto comics recipes (unblocks MAM injector) ([#461](https://github.com/thaynes43/haynesnetwork/issues/461)) ([fa2e75d](https://github.com/thaynes43/haynesnetwork/commit/fa2e75da0720ab2e8d0df27044cead67601ab68d))
+
+
+### Documentation
+
+* ADR-074 + DESIGN-045 ACCEPTED — all forks ratified; Q-03 overridden (music first-class from M2) ([#458](https://github.com/thaynes43/haynesnetwork/issues/458)) ([71e8e2a](https://github.com/thaynes43/haynesnetwork/commit/71e8e2a7a0278d515e9ec6a6eec7a9b49ce57f79))
+* ADR-075 + ADR-076 — unified Books wall + format-agnostic collections (owner-ratified) ([#460](https://github.com/thaynes43/haynesnetwork/issues/460)) ([686f682](https://github.com/thaynes43/haynesnetwork/commit/686f6822daeb960dda85565dc54d13cf35ae0f4e))
+* **agents:** PLAN-025 — ytdrivarr follows the full *arr deployment pattern (LAN-only, API-key, app-fronted) ([#456](https://github.com/thaynes43/haynesnetwork/issues/456)) ([be5390d](https://github.com/thaynes43/haynesnetwork/commit/be5390d97130b3b60ddef3506f0064b934107f67))
+* **agents:** PLAN-025 correction — ytdrivarr is NOT headless (owner: 'arrs are not headless'); own admin UI, app stays member-facing ([#455](https://github.com/thaynes43/haynesnetwork/issues/455)) ([b070798](https://github.com/thaynes43/haynesnetwork/commit/b07079844c70b93c4c04fca7376cedd56b9e9caf))
+* **agents:** PLAN-025 scoped — ytdl platform rulings ratified ([#453](https://github.com/thaynes43/haynesnetwork/issues/453)) ([cf79c58](https://github.com/thaynes43/haynesnetwork/commit/cf79c582e2afae7267692057deb36c1a1e860e37))
+* **agents:** ytdrivarr day-1 wrap — M1 + Fable console shipped, deploy staged on two owner gates ([#459](https://github.com/thaynes43/haynesnetwork/issues/459)) ([b428b8a](https://github.com/thaynes43/haynesnetwork/commit/b428b8a1295748b33c261c94db67cbf3a4adb41a))
+* **agents:** ytdrivarr research landed — Q-02 source matrix + Q-03 donor audit (plugin contracts C1-C8) ([#454](https://github.com/thaynes43/haynesnetwork/issues/454)) ([dcb7915](https://github.com/thaynes43/haynesnetwork/commit/dcb7915d9bcd3e3bf13e1d6cbe8e7cdb06e4515c))
+* **sso:** LAN Tautulli doors ARMED — in-cluster enforcement verified, only the LAN click-test remains ([#452](https://github.com/thaynes43/haynesnetwork/issues/452)) ([470f5f8](https://github.com/thaynes43/haynesnetwork/commit/470f5f8017692e27723e35dee55e915cae52ed97))
+* **sso:** record owner SSO rulings (2026-07-20); DESIGN-041 Accepted ([#449](https://github.com/thaynes43/haynesnetwork/issues/449)) ([9b347bd](https://github.com/thaynes43/haynesnetwork/commit/9b347bd5a1f55af62c3317ad4323586ef462e579))
+* **sso:** wave 1 as-executed — Immich+OWUI zero-click live, LAN Tautulli doors staged, Authentik-only posture codified ([#451](https://github.com/thaynes43/haynesnetwork/issues/451)) ([64bce4e](https://github.com/thaynes43/haynesnetwork/commit/64bce4e43083fe10c4b2f24533e22cfb5b9db04b))
+* ytdrivarr ADR-074 + DESIGN-045 (the *arr-shaped ytdl-content suite service) ([#457](https://github.com/thaynes43/haynesnetwork/issues/457)) ([d04b101](https://github.com/thaynes43/haynesnetwork/commit/d04b1015944a9bb974d4efeffe1eecb645593000))
+
 ## [0.88.4](https://github.com/thaynes43/haynesnetwork/compare/v0.88.3...v0.88.4) (2026-07-20)
 
 
