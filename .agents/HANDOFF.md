@@ -17,8 +17,10 @@ migration 0071; full battery + dev:local drive verified, 390px/desktop clean) + 
 (libretto → `sha-eaa868a`). Stream A's Opus agent died on the session limit mid-build; the
 coordinator finished inline. Full evidence + PR table:
 `.agents/context/2026-07-21-books-unification-shipped.md`.
-**NEXT: the staged rollout** — (1) verify flux rolled libretto `sha-eaa868a` + hnet 0.89.0
-reaches staging (owner UX review after); (2) convert the 5 audiobook twin recipes to two-target
+**DEPLOYED (same day, on the owner's flag — OPS-004's manual tag bump had been missed):**
+haynes-ops **#2200** rolled hnet **v0.89.0** live (artifact-pair gate passed; migrations
+applied; health ok); libretto **`sha-eaa868a`** confirmed running. The unified wall is LIVE.
+**NEXT:** (1) owner UX review of the live wall (390px + desktop); (2) convert the 5 audiobook twin recipes to two-target
 (KAVITA id survives; ABS twin `?deleteCollection=true`); (3) apply the 21 `examples/authors/`
 recipes with real library ids (both targets, `category: Authors`, acquisition paced by the
 shipped caps) — same API path the 07-20 batch of 25 recipes used. Plan of record:
