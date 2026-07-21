@@ -1167,24 +1167,34 @@ export interface WantedBookRequestView {
 }
 
 /**
+ * ADR-075 (PLAN-060) — the format a Wanted WALL composes over: one of the three request formats, or
+ * 'work' = the unified Books wall's WORK grain (a want composes while EITHER book format is still
+ * open — the union of the two retired per-format walls).
+ */
+export type WantedWallFormat = BookRequestFormat | 'work';
+
+/**
  * The HOUSEHOLD Wanted overlay for one Library book wall (PLAN-045 step 4 — composed from the request
- * ledger; books_items untouched, ADR-046). Format decides the wall: 'ebook' ⇒ Books, 'audiobook' ⇒
- * Audiobooks, 'comic' ⇒ Comics. A request is WANTED on a wall while that format hasn't landed and the
- * want isn't already matched into the library. Reads across ALL linked integrations (household
- * visibility — the books-section gate is the caller's, Q-01), deduped per distinct book (same Goodreads
- * id wanted by several users ⇒ one tile listing every requester; the canonical request follows
- * GOODREADS_SHELVES priority, then age). Newest-shelved first.
+ * ledger; books_items untouched, ADR-046). Format decides the wall: 'work' ⇒ the unified Books wall
+ * (either book format open — ADR-075), 'comic' ⇒ Comics ('ebook'/'audiobook' remain for per-format
+ * callers). A request is WANTED on a wall while its wall format hasn't landed and the want isn't
+ * already matched into the library. Reads across ALL linked integrations (household visibility — the
+ * books-section gate is the caller's, Q-01), deduped per distinct book (same Goodreads id wanted by
+ * several users ⇒ one tile listing every requester; the canonical request follows GOODREADS_SHELVES
+ * priority, then age). Newest-shelved first.
  */
 export async function getWantedBookRequests(input: {
   db?: DbClient;
-  format: BookRequestFormat;
+  format: WantedWallFormat;
 }): Promise<WantedBookRequestView[]> {
   const formatPredicate =
     input.format === 'comic'
       ? sql`${bookRequests.comicStatus} IS NOT NULL AND ${bookRequests.comicStatus} <> 'landed'`
       : input.format === 'audiobook'
         ? sql`${bookRequests.comicStatus} IS NULL AND ${bookRequests.audioStatus} <> 'landed'`
-        : sql`${bookRequests.comicStatus} IS NULL AND ${bookRequests.ebookStatus} <> 'landed'`;
+        : input.format === 'work'
+          ? sql`${bookRequests.comicStatus} IS NULL AND (${bookRequests.ebookStatus} <> 'landed' OR ${bookRequests.audioStatus} <> 'landed')`
+          : sql`${bookRequests.comicStatus} IS NULL AND ${bookRequests.ebookStatus} <> 'landed'`;
 
   // ADR-065 C-04 — the wanted composition admits TWO origins: a goodreads want rides its live shelf
   // item + LINKED integration (as before, now via LEFT joins), and a pairing (system) want rides
@@ -1228,7 +1238,13 @@ export async function getWantedBookRequests(input: {
       ? (row.comicStatus ?? 'requested')
       : input.format === 'audiobook'
         ? row.audioStatus
-        : row.ebookStatus;
+        : input.format === 'work'
+          ? // The unified wall's badge status: the still-open format's status, ebook-first when both
+            // are open (the deterministic ebook-anchor tie-break precedent, ADR-075 C-02).
+            row.ebookStatus !== 'landed'
+            ? row.ebookStatus
+            : row.audioStatus
+          : row.ebookStatus;
 
   const byBook = new Map<string, { rank: number; createdAt: Date; view: WantedBookRequestView }>();
   for (const row of rows) {
@@ -1375,7 +1391,52 @@ export async function syncCollectionWants(
   let removed = 0;
 
   await inTransaction(input.db, async (tx) => {
+    // PLAN-060 E-1 / ADR-076 C-05 — ONE active want per (work, format) across origins: when an
+    // ACTIVE pairing want (the anchor card's coverage-badge want, ADR-075 C-05) already covers a
+    // member's (identity, format), the collection want YIELDS — skip its mint/refresh, so a
+    // superseded existing row falls out via the tail reconcile (never re-stamped this run). The
+    // match is reuse-before-resolve: the llBookId when both sides hold one, else the normalized
+    // title + author agreement (the conservative pairing-matcher rule — never a fabricated link).
+    const activePairing = await tx
+      .select({
+        llBookId: bookRequests.llBookId,
+        title: bookRequests.title,
+        author: bookRequests.author,
+      })
+      .from(bookRequests)
+      .where(
+        and(
+          eq(bookRequests.origin, 'pairing'),
+          input.format === 'audiobook'
+            ? sql`${bookRequests.audioStatus} <> 'landed'`
+            : sql`${bookRequests.ebookStatus} <> 'landed'`,
+        ),
+      );
+    const pairingByLlBookId = new Set(
+      activePairing.map((p) => p.llBookId).filter((id): id is string => id !== null),
+    );
+    const pairingByTitle = new Map<string, string[]>();
+    for (const p of activePairing) {
+      const key = normTitle(p.title);
+      if (!key) continue;
+      const authors = pairingByTitle.get(key) ?? [];
+      authors.push(normAuthor(p.author));
+      pairingByTitle.set(key, authors);
+    }
+    const authorsAgree = (a: string, b: string): boolean =>
+      a.length > 0 && b.length > 0 && (a.includes(b) || b.includes(a));
+    const pairingCovers = (m: CollectionWantMember): boolean => {
+      if (m.llBookId !== null && pairingByLlBookId.has(m.llBookId)) return true;
+      const key = normTitle(m.title);
+      if (!key) return false;
+      const authors = pairingByTitle.get(key);
+      if (!authors) return false;
+      const memberAuthor = normAuthor(m.author);
+      return authors.some((a) => authorsAgree(a, memberAuthor));
+    };
+
     for (const m of input.members) {
+      if (pairingCovers(m)) continue; // E-1 — the pairing want carries this (work, format)
       const [existing] = await tx
         .select()
         .from(bookRequests)
@@ -1456,6 +1517,12 @@ export async function syncCollectionWants(
  * so the drill composes them through the SAME machinery as the household overlay (`toWantedWireItem`). The
  * wall format (ebook/audiobook) is derived from the collection's source; the want's `status` is that format's
  * status. A collection want is an ownerless system want (the pairing class) attributed to its collection.
+ *
+ * ADR-076 C-05 (PLAN-060) — a MERGED multi-target collection (mirror twins sharing a non-null
+ * `libretto_recipe_id`) composes the wants of BOTH twins, DEDUPED on `collection_member_ref`: a work
+ * missing from both targets shows ONE tile (the ebook-side row is canonical — the ADR-075 anchor
+ * tie-break), with per-format statuses on its detail. An active PAIRING want with the same llBookId
+ * supersedes a collection want at read time too (E-1 — the anchor card's badge already carries it).
  */
 export async function getCollectionWantedBookRequests(input: {
   db?: DbClient;
@@ -1464,6 +1531,7 @@ export async function getCollectionWantedBookRequests(input: {
   const rows = await resolveDb(input.db)
     .select({
       requestId: bookRequests.id,
+      memberRef: bookRequests.collectionMemberRef,
       title: bookRequests.title,
       author: bookRequests.author,
       ebookStatus: bookRequests.ebookStatus,
@@ -1477,15 +1545,50 @@ export async function getCollectionWantedBookRequests(input: {
     .innerJoin(booksCollections, eq(booksCollections.id, bookRequests.collectionId))
     .where(
       and(
-        eq(bookRequests.collectionId, input.collectionId),
+        // The drilled collection AND its recipe twins (solo/hand collections resolve to themselves).
+        sql`${bookRequests.collectionId} IN (
+          SELECT c2.id FROM books_collections c2
+           WHERE c2.id = ${input.collectionId}
+              OR (c2.libretto_recipe_id IS NOT NULL
+                  AND c2.libretto_recipe_id = (SELECT c3.libretto_recipe_id FROM books_collections c3
+                                                WHERE c3.id = ${input.collectionId})))`,
         eq(bookRequests.origin, 'collection'),
         isNull(bookRequests.matchedBooksItemId),
         // The collection's OWN format must not have landed (a landed want is held now — reconciled next run).
         sql`CASE WHEN ${booksCollections.source} = 'audiobookshelf' THEN ${bookRequests.audioStatus} ELSE ${bookRequests.ebookStatus} END <> 'landed'`,
+        // E-1 read guard — an ACTIVE pairing want for the same LL identity + format supersedes this
+        // tile (its anchor already renders as a library card wearing the want on its coverage badge).
+        sql`NOT EXISTS (
+          SELECT 1 FROM book_requests pw
+           WHERE pw.origin = 'pairing'
+             AND pw.ll_book_id IS NOT NULL
+             AND pw.ll_book_id = ${bookRequests.llBookId}
+             AND CASE WHEN ${booksCollections.source} = 'audiobookshelf'
+                      THEN pw.audio_status ELSE pw.ebook_status END <> 'landed')`,
       ),
     );
 
-  return rows.map((r): WantedBookRequestView => {
+  // ADR-076 C-05 — dedupe on collection_member_ref across the twins: ONE tile per work. The
+  // ebook-side (kavita) row is canonical (the anchor tie-break); age then id keep it deterministic.
+  const byRef = new Map<string, (typeof rows)[number]>();
+  for (const r of rows) {
+    const key = r.memberRef ?? r.requestId;
+    const prior = byRef.get(key);
+    if (!prior) {
+      byRef.set(key, r);
+      continue;
+    }
+    const rank = (row: (typeof rows)[number]) => (row.source === 'audiobookshelf' ? 1 : 0);
+    const wins =
+      rank(r) < rank(prior) ||
+      (rank(r) === rank(prior) &&
+        (r.createdAt.getTime() < prior.createdAt.getTime() ||
+          (r.createdAt.getTime() === prior.createdAt.getTime() &&
+            r.requestId < prior.requestId)));
+    if (wins) byRef.set(key, r);
+  }
+
+  return [...byRef.values()].map((r): WantedBookRequestView => {
     const isAudio = r.source === 'audiobookshelf';
     return {
       requestId: r.requestId,

@@ -194,10 +194,12 @@ describe('collections overview — everyone reads, no grant, no section floor (A
       scopedFamilies: [{ source: 'audiobookshelf', kind: 'collection' }],
     });
     const ctx = { ...makeCtx(t.db, sessionUser(member)), ...stub.ctx };
+    // ADR-075 C-01 — the manager's Books tab spans both formats now; 'audiobooks' stays accepted
+    // as a legacy alias for the same merged tab, so the ABS-produced recipe lands on BOTH reads.
     const audiobooks = await caller(ctx).collections.overview({ mediaType: 'audiobooks' });
     expect(audiobooks.recipes.map((r) => r.id)).toContain('dune-audiobooks');
     const books = await caller(ctx).collections.overview({ mediaType: 'books' });
-    expect(books.recipes.map((r) => r.id)).not.toContain('dune-audiobooks');
+    expect(books.recipes.map((r) => r.id)).toContain('dune-audiobooks');
   });
 
   it('an ADMIN reads with capBypass + canFindMissing', async () => {
@@ -740,7 +742,8 @@ describe('overview — two-population list: read-only estate/hand-made rows (D-0
 
     const books = await caller(ctx).collections.overview({ mediaType: 'books' });
     expect(books.readOnly.map((r) => r.name)).toContain('Kavita Hand Picks');
-    expect(books.readOnly.map((r) => r.name)).not.toContain('ABS Hand Picks');
+    // ADR-075 C-01 — the merged Books tab lists hand-made rows from BOTH sources.
+    expect(books.readOnly.map((r) => r.name)).toContain('ABS Hand Picks');
     expect(books.readOnly.find((r) => r.name === 'Kavita Hand Picks')).toMatchObject({
       managedBy: 'hand_made',
       source: 'kavita',
@@ -749,9 +752,10 @@ describe('overview — two-population list: read-only estate/hand-made rows (D-0
     expect(books.recipes.map((r) => r.id)).toContain('stormlight');
     expect(books.readOnly.map((r) => r.name)).not.toContain('Stormlight');
 
+    // The legacy 'audiobooks' alias reads the SAME merged tab (ADR-075 C-01) — both sources.
     const audiobooks = await caller(ctx).collections.overview({ mediaType: 'audiobooks' });
     expect(audiobooks.readOnly.map((r) => r.name)).toContain('ABS Hand Picks');
-    expect(audiobooks.readOnly.map((r) => r.name)).not.toContain('Kavita Hand Picks');
+    expect(audiobooks.readOnly.map((r) => r.name)).toContain('Kavita Hand Picks');
   });
 });
 

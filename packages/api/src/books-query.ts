@@ -55,10 +55,19 @@ export type BookFormatKey = (typeof KAVITA_FORMATS)[number]['key'];
 export const BOOK_FORMAT_KEYS = KAVITA_FORMATS.map((f) => f.key) as [BookFormatKey, ...BookFormatKey[]];
 
 // PLAN-056 / DESIGN-029 amendment 3 — the three-state composed-Wanted filter: 'all' composes the
-// wanted overlay INTO the sorted item stream (the default), 'only' returns the wanted rows alone,
-// 'hide' excludes them server-side (never a client hide). URL param `wanted` (absent = 'all').
+// wanted overlay INTO the sorted item stream (the default), 'only' returns the wanted set alone,
+// 'hide' excludes it server-side (never a client hide). URL param `wanted` (absent = 'all').
+// ADR-075 C-05 (PLAN-060) — on the unified Books wall the wanted set spans BOTH forms: goodreads
+// tiles AND library cards carrying an active missing-format pairing want; 'hide' is the exact
+// negation (cards with no active want, no tiles) — the 2026-07-18 partition grammar.
 export const BOOKS_WANTED_STATES = ['all', 'only', 'hide'] as const;
 export type BooksWantedState = (typeof BOOKS_WANTED_STATES)[number];
+
+// ADR-075 C-03 (PLAN-060) — the unified Books wall's three-state Format seg (All · Ebook ·
+// Audiobook, `?format=`), AVAILABILITY semantics: 'ebook' = works holding an ebook side (paired +
+// ebook-only), 'audiobook' = works holding audio (paired + audio-only). Comics never take it.
+export const BOOKS_FORMAT_FILTERS = ['all', 'ebook', 'audiobook'] as const;
+export type BooksFormatFilter = (typeof BOOKS_FORMAT_FILTERS)[number];
 
 export const booksSearchInputSchema = z
   .object({
@@ -75,8 +84,17 @@ export const booksSearchInputSchema = z
   series: z.array(z.string().min(1)).max(50).optional(),
   languages: z.array(z.string().min(1)).max(50).optional(),
   formats: z.array(z.enum(BOOK_FORMAT_KEYS)).max(KAVITA_FORMATS.length).optional(),
-  /** Length buckets — OR-ed ranges over duration_seconds (audiobook) / page_count (book/comic). */
+  /** PAGE-count buckets — OR-ed ranges over the anchor's page_count (the ebook-carrying side; the
+   *  comics wall's only length axis). ADR-075 C-04: on the unified wall this is the ebook-gated
+   *  "Pages" facet (`?len=` — the surviving Books wall keeps its param). */
   lengths: z.array(z.enum(BOOK_LENGTH_BUCKETS)).max(BOOK_LENGTH_BUCKETS.length).optional(),
+  /** DURATION buckets — OR-ed ranges over the work's audio side (COALESCE(anchor, partner) runtime).
+   *  ADR-075 C-04: the audio-gated "Length" facet on the unified wall (`?dur=` — a fresh param; the
+   *  retired Audiobooks wall's `?len=` links map onto it in the C-07 redirect). */
+  durations: z.array(z.enum(BOOK_LENGTH_BUCKETS)).max(BOOK_LENGTH_BUCKETS.length).optional(),
+  /** ADR-075 C-03 — the unified wall's three-state Format seg (availability semantics). Ignored on
+   *  the Comics wall (comics never pair — E-5). */
+  format: z.enum(BOOKS_FORMAT_FILTERS).default('all'),
   /** DESIGN-026 D-09 — the A–Z jump: page to the first item at this letter (applied to the active
    *  A–Z sort's column; meaningful only for the asc title/author sorts — the client gates it). */
   letter: z.string().regex(/^[a-z]$/).optional(),

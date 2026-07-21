@@ -1052,9 +1052,11 @@ export type NotifyOutboxEventType = (typeof NOTIFY_OUTBOX_EVENT_TYPES)[number];
 
 // ADR-052 / DESIGN-026 D-06 — the Library "wall" a per-user preference row is keyed by (one row
 // per (user_id, wall)). One entry per Library kind sub-tab: the *arr walls (movies / tv / music),
-// the live-Plex walls (peloton / youtube) and the book walls (books / audiobooks / comics). This
+// the live-Plex walls (peloton / youtube) and the book walls (books / comics). This
 // is the presentation scope — NOT a section id (SECTION_IDS gates VISIBILITY; a wall is a tab a
 // role can already see). library_preferences.wall is CHECK-constrained to this set.
+// ADR-075 C-06 (PLAN-060) — the `audiobooks` wall key RETIRED with the Audiobooks wall (ebooks +
+// audiobooks unified into one Books wall); migration 0071 dropped the orphaned rows + rebuilt the CHECK.
 export const LIBRARY_WALLS = [
   'movies',
   'tv',
@@ -1062,7 +1064,6 @@ export const LIBRARY_WALLS = [
   'peloton',
   'youtube',
   'books',
-  'audiobooks',
   'comics',
 ] as const;
 export type LibraryWall = (typeof LIBRARY_WALLS)[number];

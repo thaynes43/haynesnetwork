@@ -106,22 +106,22 @@ const YTDLSUB_TABS = [
   { key: 'youtube', label: 'YouTube', arrKind: undefined },
 ] as const satisfies ReadonlyArray<{ key: string; label: string; arrKind?: ArrKindName }>;
 
-// ADR-046 / DESIGN-024 (PLAN-023) — the Books Library sub-tabs (Books, Audiobooks, Comics). Spliced in
-// AFTER the ytdl-sub tabs (i.e. after YouTube) ONLY when the caller can see the `books` section
-// (server-resolved in page.tsx, passed as `booksVisible`). They read the app-owned books_items ledger.
+// ADR-046 / DESIGN-024 (PLAN-023) — the Books Library sub-tabs. Spliced in AFTER the ytdl-sub tabs
+// (i.e. after YouTube) ONLY when the caller can see the `books` section (server-resolved in
+// page.tsx, passed as `booksVisible`). They read the app-owned books_items ledger.
+// ADR-075 C-01 (PLAN-060) — the Audiobooks tab RETIRED: ebooks + audiobooks unify into ONE Books
+// wall (format is a facet there); tab order is Books · Comics. An old `?tab=audiobooks` link
+// REDIRECTS to Books with `format=audiobook` preselected (C-07 — shared links keep meaning).
 const BOOKS_TABS = [
   { key: 'books', label: 'Books', arrKind: undefined },
-  { key: 'audiobooks', label: 'Audiobooks', arrKind: undefined },
   { key: 'comics', label: 'Comics', arrKind: undefined },
 ] as const satisfies ReadonlyArray<{ key: string; label: string; arrKind?: ArrKindName }>;
 
-/** Each Books sub-tab's books_items media_kind. */
-const BOOKS_TAB_KINDS: Record<(typeof BOOKS_TABS)[number]['key'], 'book' | 'audiobook' | 'comic'> =
-  {
-    books: 'book',
-    audiobooks: 'audiobook',
-    comics: 'comic',
-  };
+/** Each Books sub-tab's books_items media_kind ('book' = the unified wall's work grain). */
+const BOOKS_TAB_KINDS: Record<(typeof BOOKS_TABS)[number]['key'], 'book' | 'comic'> = {
+  books: 'book',
+  comics: 'comic',
+};
 
 // ADR-059 / DESIGN-030 (PLAN-048) — the cross-library Activity sub-tab (the Trash→Activity idiom). Like My
 // Fixes it is ALWAYS-ON (no section id gates the Library shell); the `activity.list` resolver does the
@@ -226,7 +226,7 @@ function LibraryContent({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  // ADR-038 / ADR-046 / ADR-047 — Movies | TV | Music | Peloton | YouTube | Books | Audiobooks | Comics |
+  // ADR-038 / ADR-046 / ADR-047 — Movies | TV | Music | Peloton | YouTube | Books | Comics |
   // My Fixes. ADR-047 THE INVARIANT: a Movies/TV/Music tab shows only when the caller's role can access
   // that kind's Plex library, and a ytdl-sub tab (Peloton/YouTube) only when its k8plex library is granted
   // (server-resolved in page.tsx). A fully-withheld library's tab is ABSENT (not an empty-state). My Fixes
@@ -242,8 +242,28 @@ function LibraryContent({
     MY_FIXES_TAB,
   ];
   const rawTab = searchParams.get('tab');
-  const active: TabKey = tabs.some((t) => t.key === rawTab)
-    ? (rawTab as TabKey)
+  // ADR-075 C-07 (PLAN-060) — the retired Audiobooks tab REDIRECTS to the unified Books wall with
+  // the Audiobook format preselected; the wall-level view/sort/facet params ride unchanged (the old
+  // Audiobooks `?len=` duration buckets map onto the wall's `?dur=` param). A replace, not a push —
+  // Back never returns to a tab that no longer exists.
+  const legacyAudiobooks = rawTab === 'audiobooks';
+  useEffect(() => {
+    if (!legacyAudiobooks) return;
+    const params = new URLSearchParams(window.location.search);
+    params.set('tab', 'books');
+    if (!params.get('format')) params.set('format', 'audiobook');
+    const durationBuckets = params.getAll('len');
+    if (durationBuckets.length > 0 && params.getAll('dur').length === 0) {
+      params.delete('len');
+      for (const v of durationBuckets) params.append('dur', v);
+    }
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    // The redirect reads the live location once; re-running on the flag alone is the intent.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [legacyAudiobooks]);
+  const resolvedTab = legacyAudiobooks ? 'books' : rawTab;
+  const active: TabKey = tabs.some((t) => t.key === resolvedTab)
+    ? (resolvedTab as TabKey)
     : (tabs[0]?.key ?? MY_FIXES_TAB.key);
   const activeTab = tabs.find((t) => t.key === active) ?? tabs[0] ?? MY_FIXES_TAB;
 
@@ -329,11 +349,10 @@ function LibraryContent({
             label={activeTab.label}
             stored={storedViewFor(prefs.data, activeTab.key as LibraryWallId)}
           />
-        ) : activeTab.key === 'books' ||
-          activeTab.key === 'audiobooks' ||
-          activeTab.key === 'comics' ? (
-          // ADR-046 — the Books Library sub-tabs (read the app-owned books_items ledger; poster grid).
-          // PLAN-029: Books/Audiobooks default to the grouped-by-Author view with a flat alternative.
+        ) : activeTab.key === 'books' || activeTab.key === 'comics' ? (
+          // ADR-046 / ADR-075 — the Books Library sub-tabs (read the app-owned books_items ledger;
+          // poster grid). The unified Books wall renders BOTH formats as work cards (PLAN-060);
+          // it defaults to the grouped-by-Author view with a flat alternative.
           <BooksBrowser
             key={activeTab.key}
             wall={activeTab.key as LibraryWallId}

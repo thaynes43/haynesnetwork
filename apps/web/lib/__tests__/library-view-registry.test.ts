@@ -46,10 +46,9 @@ describe('registry shape invariants', () => {
   it('grouped-capable walls declare their dimensions (default first) with the D-04 art source', () => {
     // PLAN-051 (ADR-066 / DESIGN-038 D-07): the book walls gain `collection` as a SIBLING
     // dimension — always LAST in selector order, defaults untouched (author/genre/series first).
-    expect(WALL_VIEWS.books.groupings?.map((g) => g.dimension)).toEqual(['author', 'collection']);
-    // The group-card-art pass: Audiobooks adds the Genre dimension — the abstract slice renders
-    // the designed GLYPH tile, never fake imagery; the author cards use the real-cover ladder.
-    expect(WALL_VIEWS.audiobooks.groupings?.map((g) => `${g.dimension}:${g.art}`)).toEqual([
+    // ADR-075 (PLAN-060): the unified Books wall carries the retired Audiobooks wall's Genre
+    // grouping too — the abstract slice renders the designed GLYPH tile, never fake imagery.
+    expect(WALL_VIEWS.books.groupings?.map((g) => `${g.dimension}:${g.art}`)).toEqual([
       'author:covers',
       'genre:glyph',
       'collection:covers',
@@ -63,7 +62,7 @@ describe('registry shape invariants', () => {
 
   it('every aggregate-card grouping binds a registry level whose default sort it can answer', () => {
     // movies/tv — the PLAN-037 Collections grouped levels ride the same contract.
-    for (const wall of ['books', 'audiobooks', 'movies', 'tv'] as const) {
+    for (const wall of ['books', 'movies', 'tv'] as const) {
       for (const grouping of WALL_VIEWS[wall].groupings ?? []) {
         expect(grouping.level, `${wall}:${grouping.dimension}`).toBeDefined();
         const entry = registryFor(grouping.level!);
@@ -88,9 +87,12 @@ describe('registry shape invariants', () => {
     // The chip vocabulary is DYNAMIC (supplied at request time from the present categories), so the
     // registry declares NO static options. The ordering HINT pins the familiar categories first;
     // anything else sorts alphabetically after them, and both walls order identically.
+    // ADR-076 C-06 / R-233 (PLAN-060) — 'Authors' (the seeded famous-author program's chip) is
+    // pinned right after Universe/Sequels.
     expect(CATEGORY_CHIP_HINT_ORDER).toEqual([
       'Universe',
       'Sequels',
+      'Authors',
       'Director',
       'Actor',
       'List',
@@ -122,11 +124,7 @@ describe('registry shape invariants', () => {
   });
 
   it('the books Collections levels: card sorts + the shared category facet (grouped) and the position-first drill contract (PLAN-051)', () => {
-    for (const level of [
-      'books:grouped-collection',
-      'audiobooks:grouped-collection',
-      'comics:grouped-collection',
-    ] as const) {
+    for (const level of ['books:grouped-collection', 'comics:grouped-collection'] as const) {
       // Card levels sort the CARDS only. DESIGN-038 D-12 (2026-07-17) — the grouped level now carries
       // the SAME dynamic category chip the Movies/TV Collections walls do (the old "no facets" honest
       // gap was closed when the label-driven category program extended to books).
@@ -136,11 +134,7 @@ describe('registry shape invariants', () => {
       expect(categoryFacet).toMatchObject({ key: 'category', kind: 'select', param: 'ctype' });
       expect(registryFor(level).azSorts).toEqual([]);
     }
-    for (const level of [
-      'books:collection-items',
-      'audiobooks:collection-items',
-      'comics:collection-items',
-    ] as const) {
+    for (const level of ['books:collection-items', 'comics:collection-items'] as const) {
       // The drilled grid: 'position' ("List order") is the FIRST sort and the level DEFAULT
       // (ordered collections drill into reading order — DESIGN-038 D-06; the client drops the
       // key for unordered collections, the ordered-flag data gate). asc-first.
@@ -153,33 +147,29 @@ describe('registry shape invariants', () => {
     // Libretto's missing set as origin='collection' book_requests). Comics stay held-only (Kapowarr's
     // domain — no Libretto recipe), so their collection drill keeps no wanted facet.
     expect(facetKeys('books:collection-items')).toContain('wanted');
-    expect(facetKeys('audiobooks:collection-items')).toContain('wanted');
     expect(facetKeys('comics:collection-items')).not.toContain('wanted');
     // The drilled levels offer the WALL's own item sorts alongside position (the 037 rule —
-    // a drilled grid keeps the wall's dimensions).
+    // a drilled grid keeps the wall's dimensions; the unified drill spans BOTH formats' sorts).
     expect(sortKeys('books:collection-items')).toEqual(
-      expect.arrayContaining(['title', 'author', 'added', 'pages']),
-    );
-    expect(sortKeys('audiobooks:collection-items')).toEqual(
-      expect.arrayContaining(['title', 'author', 'year', 'duration', 'added']),
+      expect.arrayContaining(['title', 'author', 'added', 'year', 'duration', 'pages']),
     );
     expect(sortKeys('comics:collection-items')).toEqual(
       expect.arrayContaining(['title', 'added', 'pages']),
     );
     // …but never a dimension the wall itself cannot answer (the R5 asymmetry holds in the drill).
-    expect(sortKeys('books:collection-items')).not.toContain('duration');
     expect(sortKeys('comics:collection-items')).not.toContain('author');
+    expect(sortKeys('comics:collection-items')).not.toContain('duration');
     // Every collection grouping binds its grouped-card level (comics included — its Series
     // sibling is the item grid and deliberately binds none).
-    for (const wall of ['books', 'audiobooks', 'comics'] as const) {
+    for (const wall of ['books', 'comics'] as const) {
       const collection = WALL_VIEWS[wall].groupings?.find((g) => g.dimension === 'collection');
       expect(collection?.level).toBe(`${wall}:grouped-collection`);
       expect(collection?.art).toBe('covers');
       expect(collection?.allLabel).toBe('All collections');
     }
-    // Wall DEFAULTS are untouched — Collections is opt-in (ADR-066 / R-216).
+    // Wall DEFAULTS are untouched — Collections is opt-in (ADR-066 / R-216); the unified Books
+    // wall keeps the grouped-by-Author default both retiring walls shared (ADR-075 C-04).
     expect(WALL_VIEW_DEFAULTS.books).toMatchObject({ view: 'grouped', groupBy: 'author' });
-    expect(WALL_VIEW_DEFAULTS.audiobooks).toMatchObject({ view: 'grouped', groupBy: 'author' });
     expect(WALL_VIEW_DEFAULTS.comics).toMatchObject({ view: 'grouped', groupBy: 'series' });
   });
 });
@@ -236,45 +226,82 @@ describe('per-view asymmetry (R5 — a level offers ONLY what it can answer)', (
     }
   });
 
-  it('Books/Comics (Kavita): no genre/year dimensions (0% in the list read — the honest gap)', () => {
-    for (const level of ['books:wall', 'comics:wall'] as const) {
-      expect(facetKeys(level)).not.toContain('genres');
-      expect(sortKeys(level)).not.toContain('year');
-      expect(sortKeys(level)).not.toContain('released');
-      expect(sortKeys(level)).not.toContain('duration'); // ebooks have pages, not runtime
-      expect(sortKeys(level)).toContain('pages');
-    }
-    // …and no narrator/series/language facets (Kavita carries none of them).
-    expect(facetKeys('books:wall')).toEqual(['authors', 'formats', 'lengths', 'wanted']);
-    expect(facetKeys('comics:wall')).toEqual(['formats', 'lengths', 'wanted']);
-  });
-
-  it('Audiobooks (ABS): the R8 full set — duration + year sorts; genre/author/narrator/series/language/length/read facets', () => {
-    expect(sortKeys('audiobooks:wall')).toEqual(
-      expect.arrayContaining(['duration', 'year', 'author', 'title', 'added']),
-    );
-    expect(sortKeys('audiobooks:wall')).not.toContain('pages'); // an audiobook has no page count
-    expect(facetKeys('audiobooks:wall')).toEqual([
+  it('the unified Books wall (ADR-075): the facet UNION with format-side data gates + the union sorts', () => {
+    // Sorts are the two retired walls' union: Length sorts audio-carrying works, Pages
+    // ebook-carrying ones (C-09 — honest partial sorts, never a fabricated cross-format metric).
+    expect(sortKeys('books:wall')).toEqual([
+      'title',
+      'author',
+      'added',
+      'year',
+      'duration',
+      'pages',
+    ]);
+    // The facet union in chip order: the Format axis leads (the wall's defining seg), then the
+    // universal + gated chips; the old Books `fmt` facet relabels File and KEEPS its param.
+    expect(facetKeys('books:wall')).toEqual([
+      'format',
       'genres',
       'authors',
       'narrators',
       'series',
       'languages',
+      'durations',
       'lengths',
+      'formats',
       'read',
       'wanted',
     ]);
+    const facets = registryFor('books:wall').facets;
+    const byKey = new Map(facets.map((f) => [f.key, f]));
+    // C-03 — the three-state Format seg: select kind, ?format=, ungated (the wall's fixed axis).
+    expect(byKey.get('format')).toMatchObject({ kind: 'select', param: 'format', label: 'Format' });
+    expect(byKey.get('format')?.formatGate).toBeUndefined();
+    expect(byKey.get('format')?.dataGated).toBeUndefined();
+    // C-04 — audio-gated chips (Narrator/Series/Language/Length/Read) vs ebook-gated (Pages/File).
+    for (const key of ['narrators', 'series', 'languages', 'durations', 'read']) {
+      expect(byKey.get(key)?.formatGate, key).toBe('hasAudio');
+    }
+    expect(byKey.get('lengths')?.formatGate).toBe('hasEbook');
+    expect(byKey.get('lengths')?.param).toBe('len'); // the surviving Books wall keeps its param
+    expect(byKey.get('durations')?.param).toBe('dur'); // the audio Length facet's fresh param
+    // Author/Genre/Wanted are UNIVERSAL (no format gate).
+    for (const key of ['genres', 'authors', 'wanted']) {
+      expect(byKey.get(key)?.formatGate, key).toBeUndefined();
+    }
+    // The File relabel (C-03): key/param unchanged, label = File.
+    expect(byKey.get('formats')).toMatchObject({ label: 'File', param: 'fmt' });
+    // The Read facet keeps its per-user gate AND gains the audio gate (ADR-053 stays honest).
+    expect(byKey.get('read')?.gate).toBe('bookProgress');
+  });
+
+  it('Comics (Kavita) are untouched (E-5): no format seg, no pairing dimensions', () => {
+    expect(sortKeys('comics:wall')).toEqual(['title', 'added', 'pages']);
+    expect(facetKeys('comics:wall')).toEqual(['formats', 'lengths', 'wanted']);
+    // No Format seg, no audio dimensions, no year — the comic wall never pairs.
+    expect(facetKeys('comics:wall')).not.toContain('format');
+    expect(facetKeys('comics:wall')).not.toContain('narrators');
+    expect(facetKeys('comics:wall')).not.toContain('durations');
+    expect(sortKeys('comics:wall')).not.toContain('duration');
+    expect(sortKeys('comics:wall')).not.toContain('year');
+    // The Comics Format (file-type) chip keeps its ORIGINAL label — only the Books wall relabeled.
+    const comicFormats = registryFor('comics:wall').facets.find((f) => f.key === 'formats');
+    expect(comicFormats).toMatchObject({ label: 'Format', param: 'fmt' });
+    // Comics facets never carry a format-side gate (they are not format-partitioned).
+    for (const f of registryFor('comics:wall').facets) {
+      expect(f.formatGate, f.key).toBeUndefined();
+    }
   });
 
   it('sparse/per-user facets are gated (ADR-051 C-06 — no dead chip)', () => {
-    const audioFacets = registryFor('audiobooks:wall').facets;
+    const bookFacets = registryFor('books:wall').facets;
     for (const key of ['narrators', 'series', 'languages']) {
-      expect(audioFacets.find((f) => f.key === key)?.dataGated, key).toBe(true);
+      expect(bookFacets.find((f) => f.key === key)?.dataGated, key).toBe(true);
     }
-    expect(audioFacets.find((f) => f.key === 'read')?.gate).toBe('bookProgress');
-    // ADR-057 (PLAN-045) — the composed-Wanted narrowing rides all three book walls, value-gated
+    expect(bookFacets.find((f) => f.key === 'read')?.gate).toBe('bookProgress');
+    // ADR-057 (PLAN-045) — the composed-Wanted narrowing rides both book walls, value-gated
     // on the overlay itself (no dead chip while no wanted tiles exist).
-    for (const level of ['books:wall', 'audiobooks:wall', 'comics:wall'] as const) {
+    for (const level of ['books:wall', 'comics:wall'] as const) {
       const wanted = registryFor(level).facets.find((f) => f.key === 'wanted');
       expect(wanted?.kind, level).toBe('select');
       expect(wanted?.param, level).toBe('wanted');
@@ -287,20 +314,17 @@ describe('per-view asymmetry (R5 — a level offers ONLY what it can answer)', (
   });
 
   it('grouped levels sort the CARDS (dimension + count), not item dimensions', () => {
-    for (const level of ['books:grouped', 'audiobooks:grouped'] as const) {
-      expect(sortKeys(level)).toEqual(['author', 'count']);
-      expect(facetKeys(level)).toEqual([]);
-    }
-    // The genre grouped level (group-card-art pass) sorts label/count only — an abstract card
-    // answers no item dimension either.
-    expect(sortKeys('audiobooks:grouped-genre')).toEqual(['label', 'count']);
-    expect(facetKeys('audiobooks:grouped-genre')).toEqual([]);
+    expect(sortKeys('books:grouped')).toEqual(['author', 'count']);
+    expect(facetKeys('books:grouped')).toEqual([]);
+    // The genre grouped level (group-card-art pass, folded in by ADR-075) sorts label/count only —
+    // an abstract card answers no item dimension either.
+    expect(sortKeys('books:grouped-genre')).toEqual(['label', 'count']);
+    expect(facetKeys('books:grouped-genre')).toEqual([]);
   });
 
   it('the A–Z jump is offered exactly on the big walls’ A–Z sorts (D-09)', () => {
     expect(registryFor('movies:wall').azSorts).toEqual(['title']);
     expect(registryFor('books:wall').azSorts).toEqual(['title', 'author']);
-    expect(registryFor('audiobooks:wall').azSorts).toEqual(['title', 'author']);
     expect(registryFor('tv:season').azSorts).toEqual([]);
     expect(registryFor('peloton:wall').azSorts).toEqual([]); // client-side wall — deferred (D-11)
   });

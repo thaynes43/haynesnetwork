@@ -30,10 +30,12 @@ export interface LibraryView {
  * ADR-051 D-01 / DESIGN-026 D-03 (R2 defaults + R6 default sort) — the opinionated per-wall default a
  * wall opens with the FIRST time (no stored row, bare URL). The owner ruling: Movies flat · TV
  * hierarchy · Music flat · Peloton grouped-by-Exercise · YouTube grouped-by-Channel · Books
- * grouped-by-Author · Comics grouped-by-Series · Audiobooks grouped-by-Author; recently-added default
+ * grouped-by-Author · Comics grouped-by-Series; recently-added default
  * sort for the video walls, A–Z within grouping for the book walls. `sortField` values are the seed
  * defaults — the per-view REGISTRY (build-phase Step 2, the UX agent's) is authoritative on the exact
  * key set and may refine these; the resolver only needs a sensible fallback.
+ * ADR-075 C-04/C-06 (PLAN-060) — the `audiobooks` wall retired into the unified Books wall, which
+ * keeps the grouped-by-Author default both retiring walls already shared.
  */
 export const LIBRARY_WALL_DEFAULTS: Record<LibraryWall, LibraryView> = {
   movies: { view: 'flat', groupBy: null, sortField: 'added_at', sortDir: 'desc' },
@@ -43,7 +45,6 @@ export const LIBRARY_WALL_DEFAULTS: Record<LibraryWall, LibraryView> = {
   youtube: { view: 'grouped', groupBy: 'channel', sortField: 'added_at', sortDir: 'desc' },
   books: { view: 'grouped', groupBy: 'author', sortField: 'author', sortDir: 'asc' },
   comics: { view: 'grouped', groupBy: 'series', sortField: 'title', sortDir: 'asc' },
-  audiobooks: { view: 'grouped', groupBy: 'author', sortField: 'author', sortDir: 'asc' },
 };
 
 /** The R2/R6 default view for a wall (a fresh copy — callers must not mutate the shared constant). */

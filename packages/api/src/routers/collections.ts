@@ -294,6 +294,10 @@ export const collectionsRouter = router({
     .input(z.object({ mediaType: z.enum(COLLECTION_MEDIA_TYPES) }))
     .query(async ({ ctx, input }) => {
       return mapDomainErrors(async () => {
+        // ADR-076 C-01 / ADR-075 C-01 (PLAN-060) — the manager's Books/Audiobooks sub-tabs MERGED:
+        // 'audiobooks' stays a tolerated wire value (old links, stored ticket payloads) but folds
+        // into the one Books tab — its recipes list ONCE under Books.
+        const mediaType = input.mediaType === 'audiobooks' ? 'books' : input.mediaType;
         const sizeCap = await getAppSetting(ctx.db, 'collection_size_cap');
         const actions = await resolveCollectionActions(ctx.db, ctx.user.role);
         // The books Force Search grant (force_search_book) gates the on-demand collection Force Search — the
@@ -305,14 +309,14 @@ export const collectionsRouter = router({
             'force_search_book',
           );
         const base = {
-          mediaType: input.mediaType,
+          mediaType,
           sizeCap,
           capBypass: ctx.user.role.isAdmin,
           isAdmin: ctx.user.role.isAdmin,
           canFindMissing: actions.includes('find_missing'),
           canForceSearch,
         };
-        if (isKometaMedia(input.mediaType)) {
+        if (isKometaMedia(mediaType)) {
           // Movies/TV — the Kometa write path (owner ruling 2026-07-18: EDIT the estate's collections, not
           // read-only). Reads the app-owned managed include + EVERY hand-authored config file + the
           // DESIGN-035 mirror + the open app PRs; degrades honestly (reachable=false) on a haynes-ops/GitHub
@@ -321,7 +325,7 @@ export const collectionsRouter = router({
           const overview = await getKometaCollectionsOverview({
             db: ctx.db,
             haynesops: resolveHaynesopsBundle(ctx),
-            mediaType: input.mediaType,
+            mediaType,
           });
           const recipeByTitle = new Map(overview.recipes.map((r) => [normalizeTitle(r.name), r.id]));
           return {
@@ -378,19 +382,23 @@ export const collectionsRouter = router({
           if (!cid) return null;
           return missingByCollection.get(cid) ?? 0;
         };
+        // ADR-076 C-01 — the merged Books tab lists EVERY book-domain recipe once (both the
+        // kavita- and audiobookshelf-produced ones; a future multi-target twin pair shares one
+        // recipe id and therefore already lists once). The wire mediaType folds to 'books'.
         const recipes = overview.recipes
           .map((r) => {
             const produced = collectionByRecipe.get(r.id);
+            const derived = deriveMediaType(sourceByRecipe.get(r.id), produced?.targetKind);
             return recipeWire(
               r,
-              deriveMediaType(sourceByRecipe.get(r.id), produced?.targetKind),
+              derived === 'audiobooks' ? 'books' : derived,
               missingForRecipe(r.id),
             );
           })
-          .filter((r) => r.mediaType === input.mediaType);
-        // The hand-made (no-recipe) mirror collections for THIS media type — read-only rows the app lists
-        // but does not manage (books ⇐ kavita, audiobooks ⇐ audiobookshelf; the D-13 source→media map). A
-        // `libretto_recipe_id IS NULL` row has no Libretto recipe, so it made in Kavita/ABS by hand.
+          .filter((r) => r.mediaType === mediaType);
+        // The hand-made (no-recipe) mirror collections — read-only rows the app lists but does
+        // not manage (both book servers land on the merged Books tab now). A
+        // `libretto_recipe_id IS NULL` row has no Libretto recipe, so it was made in Kavita/ABS by hand.
         const handMadeRows = await ctx.db
           .select({
             title: booksCollections.title,
@@ -399,14 +407,12 @@ export const collectionsRouter = router({
           })
           .from(booksCollections)
           .where(isNull(booksCollections.librettoRecipeId));
-        const readOnly: ReadOnlyCollectionWire[] = handMadeRows
-          .filter((r) => deriveMediaType(r.source as string, undefined) === input.mediaType)
-          .map((r) => ({
-            name: r.title,
-            itemCount: r.itemCount,
-            managedBy: 'hand_made' as const,
-            source: r.source as 'kavita' | 'audiobookshelf',
-          }));
+        const readOnly: ReadOnlyCollectionWire[] = handMadeRows.map((r) => ({
+          name: r.title,
+          itemCount: r.itemCount,
+          managedBy: 'hand_made' as const,
+          source: r.source as 'kavita' | 'audiobookshelf',
+        }));
         return {
           ...base,
           provider: 'libretto' as const,
