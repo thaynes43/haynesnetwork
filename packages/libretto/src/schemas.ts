@@ -6,11 +6,17 @@
 // Libretto's strictObject PUT — an unknown key is a 400 we surface, not something we tolerate).
 import { z } from 'zod';
 
-/** A recipe's builder — the SOURCE the collection is built from (DESIGN-037 D-05). */
+/**
+ * A recipe's builder — the SOURCE the collection is built from (DESIGN-037 D-05). `ref` is a single string
+ * for most builders (a Hardcover series id, an NYT list name) OR a string ARRAY for the multi-source grains
+ * (`static_ids`, and `hardcover_comics` since thaynes43/libretto PR #11). The read ACL stays TOLERANT
+ * (union + nullish): a schema throw here would sink the WHOLE recipe list (upstream schema drift), so we
+ * parse both shapes and let the domain decide what a given consumer needs.
+ */
 export const librettoBuilderSchema = z
   .object({
     type: z.string(),
-    ref: z.string().nullish(),
+    ref: z.union([z.string(), z.array(z.string())]).nullish(),
   })
   .passthrough();
 
@@ -261,7 +267,12 @@ export const librettoHealthResponseSchema = z
 export const librettoRecipeDraftSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1).optional(),
-  builder: z.object({ type: z.string().min(1), ref: z.string().min(1) }),
+  // `ref` mirrors the read builder: a single string, or the multi-source array (static_ids / hardcover_comics)
+  // so a recipe READ back (recipeToDraft — the find-missing toggle / edit round-trip) can be re-PUT unchanged.
+  builder: z.object({
+    type: z.string().min(1),
+    ref: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]),
+  }),
   targetLibrary: z.unknown().optional(),
   variables: z
     .object({
