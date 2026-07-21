@@ -1,9 +1,13 @@
 # DESIGN-024: Books & Audiobooks Library — the `books_items` ledger, `books-sync`, section-gated walls + cover proxy
 
 - **Status:** Draft
-- **Last updated:** 2026-07-17 (D-01/D-03 amended — detail-page enrichment: five nullable columns + the
-  Kavita `/api/Series/metadata` change-gate; migration 0060, R-221)
-- **Satisfies:** PRD-001 **R-151..R-156**, **R-221** (detail-page enrichment data layer); governed by **ADR-046** (books ledger source + the
+- **Last updated:** 2026-07-20 (ADR-075 — the **Audiobooks wall retires**: ebooks + audiobooks unify into
+  ONE Books wall with a three-state Format facet, work-grain `books.search` with pair-collapse, tab list
+  without Audiobooks; see the Overview + D-04 + D-06 dated amendments. Prior: 2026-07-17 — D-01/D-03
+  detail-page enrichment: five nullable columns + the Kavita `/api/Series/metadata` change-gate;
+  migration 0060, R-221)
+- **Satisfies:** PRD-001 **R-151..R-156**, **R-221** (detail-page enrichment data layer), **R-231** (the
+  unified Books wall — ADR-075); governed by **ADR-046** (books ledger source + the
   dedicated-table vs `media_items` decision), reusing **ADR-021 / DESIGN-009** (Section Permissions),
   **ADR-037** (ship-Admin-only rollout), **ADR-019** (authed poster proxy), and the **ADR-044 / DESIGN-022**
   ingestion-mode shape (`ai-usage-sync`). Bounded context DDD-002 **BC-03 Media Ledger** (a new book-media
@@ -18,6 +22,15 @@ one-way synced mirror of **Kavita** (Books=EBooks + Comics) and **Audiobookshelf
 gate on a new **`books` Section-Permission** (ships `disabled` = Admin-only; owner opens per role after a
 screenshot review). Two catalog cards (Kavita, Audiobookshelf) deep-link to the servers. Read-only end to
 end — Kavita/ABS are the source of truth; the app never writes back (no Fix/Restore for books; ADR-046).
+
+> **Amended 2026-07-20 (ADR-075 — unified Books wall).** The **Audiobooks wall RETIRES**: the Books and
+> Audiobooks sub-tabs unify into ONE **Books** wall over `media_kind ∈ {book, audiobook}`, with format as a
+> three-state facet and paired titles collapsed to one work card. **Comics stay their own wall.** This is a
+> presentation-layer merge (a registry row + one `books.search` read-model change, ADR-051 C-01) — the
+> `books_items` mirror, the `books-sync` mode, the `books` section gate, and the cover proxy are UNCHANGED.
+> Where this doc says "Books · Audiobooks · Comics", read **Books · Comics** (Audiobooks folds into Books);
+> the D-04 search contract becomes work-grain (the pair-collapse + anchor rule + Format seg), and D-06's tab
+> splice drops Audiobooks. See the dated notes in D-04/D-06 and PRD R-231.
 
 ## D-01 — Schema (`books_items`, migration 0037)
 
@@ -119,6 +132,22 @@ Reuses the DESIGN-008 D-10 `@hnet/ui` filter/sort ENGINE idioms on the client **
 monitored/resolution dims). Unit-proven: `packages/api/__tests__/books.test.ts` (the level seam +
 filter/sort/pagination + the cover-url builder + facets).
 
+> **Amendment 2026-07-20 (ADR-075 C-02/C-03/C-04 — `books.search` returns WORK cards).** On the unified
+> Books wall `books.search`'s `mediaKind` widens to the pair `{book, audiobook}`: live `book`/`audiobook`
+> rows LEFT-JOIN `books_format_pairs`, and a paired (book, audio) duo **collapses to ONE card anchored on
+> the ebook row** (deterministic — the `BOOKS_MEDIA_KINDS` tie-break precedent), carrying the partner's
+> metadata (narrator, duration, language, read state) for facets/sorts and linking to the anchor's detail
+> page (both consume buttons already render, ADR-065). The **anchor rule is TOTAL**: an unpaired audio-only
+> row anchors on itself — no card vanishes for lacking an ebook (PLAN-060 E-2); divergent pair metadata
+> matches facets on the UNION, displays the anchor's values (E-3). Facet/sort/pager counts become **WORK
+> counts**. A three-state **Format** segmented control rides the wire — All · Ebook · Audiobook (`?format=`;
+> "Ebook" = works holding an ebook, paired + ebook-only) — and the old Books-wall `fmt` (epub/…) facet
+> **relabels File** (keeps its param). Facets union with **data-gating** (no dead chip, ADR-051 C-06):
+> Author/Genre/Wanted universal; Narrator/Series/Language/Length/Read gate on audio-carrying works;
+> Pages/File gate on ebook-carrying works. Mixed-format sorts stay partial + honest (Length sorts
+> audio-carrying works, Pages ebook-carrying, NULLS LAST). Comics are untouched (no pairing, no format
+> seg). The pair cache is the collapse join — see DESIGN-036 (2026-07-20 amendment) — and PRD R-231/R-167.
+
 ## D-05 — The cover proxy (`/api/books/cover`, ADR-019/-046 C-05)
 
 `apps/web/app/api/books/cover/route.ts` (Node runtime) — session-gated AND `books`-section-gated
@@ -184,6 +213,16 @@ D-07, no new ADR — no deviation from ADR-041's pattern):
 > `useInfiniteQuery`; only page-append plumbing moved from a click to the sentinel. Appending pages below the
 > grid is reflow-free (ADR-015 — existing tiles never move); the fetching hint sits under the grid. The
 > URL-synced tab state (and the search/sort draft state) survive pagination unchanged.
+
+> **Amendment 2026-07-20 (ADR-075 C-01 — the Audiobooks tab retires).** `library-client.tsx` splices
+> `BOOKS_TABS` as **Books · Comics** (no Audiobooks) after the ytdl-sub tabs and before `MY_FIXES_TAB`. Tab
+> order becomes **Movies · TV · Music · Peloton · YouTube · Books · Comics · My Fixes** (My Fixes still
+> LAST). The single Books wall renders both formats as work cards (D-04 amendment) with the three-state
+> **Format** seg; `books-browser.tsx` gains the seg beside the already-shipped coverage badge (DESIGN-036
+> D-09). A caller deep-linking the old `?tab=audiobooks` REDIRECTS to `?tab=books&format=audiobook` (C-07 —
+> shared links keep meaning). The `books` section still gates both walls with **no permission migration**
+> (C-01); the per-user `audiobooks` wall preference key retires (orphaned rows dropped, C-06). Reflow-free
+> (ADR-015).
 
 ## D-07 — Section gating (`books`, ADR-046 C-04)
 

@@ -4,7 +4,11 @@
   repo once the owner ratifies this shape; the hnet-side integration ADRs arrive with
   PLAN-051/052). **AMENDED 2026-07-16 eve: Libretto is FULLY STATELESS, Kometa-style (owner
   ruling — supersedes the same-day SQLite amendment; see D-01/D-03 and Q-03).**
-- **Last updated:** 2026-07-16
+- **Last updated:** 2026-07-16, **AMENDED 2026-07-20 (ADR-076 — multi-target recipes):** the Recipe noun's
+  `targetLibrary` becomes **`targets[]`** (1..N; back-compat normalize to a one-entry array; a new optional
+  `category` field), one recipe materializes into EVERY target, `missing[]` + the `/collections` read-back
+  tag the target, and the provenance marker may carry `|cat=<Category>` (activating DESIGN-038 D-12's L1
+  path). See the dated notes in D-02/D-03/D-07/D-09/D-10.
 - **Satisfies:** the PLAN-043 saga phase "Books collection-manager app" (owner rulings
   2026-07-16, recorded in `.agents/plans/043-integration-tab-saga.md` and restated in
   PLAN-054); governed by **ADR-064** (mirrored-only doctrine — external software is always the
@@ -69,6 +73,14 @@ verbatim (research §6.2), so the hnet form and any future provider render the s
 - **Recipe** `{ id, targetLibrary, name (namespaced), builder { type, ref }, variables
   { syncMode, ordered, acquisitionEnabled, tag, schedule }, enabled }`
   - `targetLibrary` — a configured target: `{ server: kavita|abs, libraryId }`.
+  - **AMENDED 2026-07-20 (ADR-076 C-01):** `targetLibrary` → **`targets[]`** — an array of 1..N configured
+    targets `{ server: kavita|abs, libraryId }` (practical v1: one Kavita + one ABS). One recipe declares
+    ALL its targets and Libretto materializes the collection into EACH; the app merges the mirrored twins by
+    recipe id (ADR-076 C-03). **Back-compat:** a single `targetLibrary` is accepted and normalized to a
+    one-entry `targets[]`, so the 45 live recipe YAMLs stay valid; the API emits `targets[]` (an additive
+    provider-parity change). A new OPTIONAL **`category`** field feeds the marker's `cat=` token (D-03
+    amendment) — recipe-authored collection categories (DESIGN-038 D-12 L1). hnet's `@hnet/libretto` schemas
+    + the builder form follow the noun.
   - `builder.type` — one of the v1 set (D-05); `builder.ref` — the source reference (a
     Hardcover series id, an NYT list slug, a Wikidata award QID, a static ID list).
   - `variables.syncMode` — `append | sync` (D-08); `variables.ordered` — whether the produced
@@ -79,7 +91,10 @@ verbatim (research §6.2), so the hnet form and any future provider render the s
 - **Collection** — a collection Libretto **produced**: `{ recipeId, targetLibrary,
   targetCollectionId, targetKind (kavita_collection | kavita_reading_list | abs_collection),
   name, items[] (ordered — position is first-class, research §5) }`. Not stored: **read back
-  from the targets**, ownership recovered via the D-03 provenance marker.
+  from the targets**, ownership recovered via the D-03 provenance marker. **AMENDED 2026-07-20
+  (ADR-076 C-02):** a multi-target recipe produces ONE Collection PER target, so `GET /collections`
+  returns N entries for it, each still carrying its own `targetLibrary` — that per-target tag is how hnet
+  knows which server a mirrored twin came from before it merges them by `recipeId` (D-10 amendment).
 - **Run** — first-class run records: `{ id, scope (all | recipeId), trigger (cron | api |
   ui), startedAt, finishedAt, status (running | ok | warn | error), counts (per-recipe:
   matched, written, added, removed, missing, acquired), log excerpt }` — served from the
@@ -104,6 +119,13 @@ has a home or is recomputable:
   **Kavita's writable description exposure on collections/reading lists is UNVERIFIED — an
   explicit M1 spike item (PLAN-054)**; fallback if Kavita can't carry the marker = a tiny
   sidecar ownership JSON on the config volume (still no DB).
+  - **AMENDED 2026-07-20 (ADR-076 C-02):** the marker MAY carry an optional category —
+    `[libretto:<recipeId>|cat=<Category>]` — when the recipe sets `category` (D-02 amendment). Every
+    target's produced collection carries the SAME marker (one shared identity across the twins — the merge
+    key, ADR-076 C-03). The `cat=` token is what activates DESIGN-038 D-12's **L1** path: hnet's
+    `deriveBooksCollectionCategory` parses it at sync and the recipe-authored category flows into the books
+    collection mirror (the COALESCE rule — source wins). Libretto stays generic: `cat=` is plain marker
+    text, nothing haynesnetwork-specific.
 - **Acquisition state lives in LazyLibrarian** — hard rule 4 applied to books: LL already
   tracks wants and stamps list provenance in its `Requester` column (research recon,
   PLAN-032). Libretto queries LL for want status instead of keeping a `missing_items`
@@ -187,9 +209,14 @@ Verified API surfaces (research §5, from source):
 **D-07 — Target-mapping rule (per recipe, derived not asked):** `variables.ordered` picks the
 target kind — on a Kavita library, `ordered: true` ⇒ **reading list** (positions via
 update-position), `ordered: false` ⇒ **collection**; on ABS, both map to an ABS collection
-(natively ordered; unordered recipes just write source order without maintaining it). One
+(natively ordered; unordered recipes just write source order without maintaining it). ~~One
 recipe targets one library; "the same series in both Kavita and ABS" is two recipes v1
-(matching PLAN-051 Q-02's two-honest-collections lean).
+(matching PLAN-051 Q-02's two-honest-collections lean).~~ **SUPERSEDED 2026-07-20 (ADR-076 C-01):** a recipe
+declares **`targets[]`** (1..N) and Libretto applies the SAME builder output to EACH target — "the same
+series in both Kavita and ABS" is now ONE two-target recipe, and the app merges the mirrored twins by recipe
+id (ADR-076 C-03). The **per-target kind mapping is UNCHANGED** (the rule above): on a Kavita target
+`ordered: true` ⇒ reading list / `ordered: false` ⇒ collection; on an ABS target both map to an ABS
+collection. Multi-target only adds the loop over targets; each target maps exactly as before.
 
 ### D-08 — Ownership, sync_mode, and deletion (the Kometa safety contract, made structural)
 
@@ -242,6 +269,15 @@ The `radarr_add_missing` analog, per-recipe via `variables.acquisitionEnabled` (
   (the DESIGN-036 D-05 discipline). Items that later appear in the library reconcile
   `landed` by recomputation.
 
+**AMENDED 2026-07-20 (ADR-076 C-05 — per-target `missing[]`).** With multi-target recipes the missing report
+resolves **per target**: each `missing[]` entry carries the target it is missing FROM (a work held in the
+Kavita target but absent from the ABS target is missing only from ABS). The acquisition confinement is
+UNCHANGED — LL grabs both formats for any want anyway (hnet R-180), so per-target adds no LL surface; it
+sharpens the report hnet reads. hnet's collection-wants pass mints one want per (work, format) with the
+format source-derived per target (kavita ⇒ ebook, abs ⇒ audiobook) and the merged drill dedupes tiles on
+`collection_member_ref` (DESIGN-038 D-13 amendment); the one-active-want-per-(work, format) invariant across
+origins (collection vs pairing) is PLAN-060 edge E-1.
+
 ### D-10 — API surface: the five contract nouns as REST
 
 REST + zod-validated JSON (OpenAPI generated from the zod schemas) rather than tRPC: the
@@ -264,6 +300,14 @@ The contract survives the storage swap unchanged — `upsertRecipe` is now a val
 write, `listProducedCollections` a target read-back, `getRun` a run-file read — evidence the
 contract was drawn at the right altitude: hnet (PLAN-052) binds to the nouns and never sees
 where they live.
+
+**AMENDED 2026-07-20 (ADR-076 C-02 — target-tagged read-back).** A multi-target recipe produces ONE
+collection per target, so `GET /collections` (`listProducedCollections`) returns one entry per (recipe,
+target), each TAGGING its `targetLibrary` `{ server, libraryId }` (the Collection noun already carries it,
+D-02). hnet's mirror keys the twins by the shared recipe id (from the `[libretto:<recipeId>]` marker) and
+merges them into one card (ADR-076 C-03); the per-target tag is how a reader knows which server each twin
+came from. Additive — no endpoint shape change beyond the array now carrying N entries for a multi-target
+recipe.
 
 ### D-11 — Scheduler: in-process cron
 

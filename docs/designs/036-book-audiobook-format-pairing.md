@@ -1,10 +1,14 @@
 # DESIGN-036: Book ⇄ audiobook format pairing — pair cache, paced system wants, dual consume buttons
 
 - **Status:** Draft
-- **Last updated:** 2026-07-16
-- **Satisfies:** PRD-001 R-211..R-213; governed by ADR-065 (pairing model + system wants), ADR-046
-  (mirror stays pure), ADR-055/057 (request ledger + wanted composition), ADR-054 (governor
-  untouched), ADR-015 (reserved slots, recolor-not-reflow), hard rules 4/6.
+- **Last updated:** 2026-07-20 (ADR-075 — the pair cache becomes the unified Books wall's COLLAPSE join +
+  Format-facet source; standalone pairing-want tiles retire on the wall (the anchor card's coverage badge
+  carries the missing-format want state); Q-02 now also improves card collapse. See the Amendment at the
+  end. Prior: 2026-07-16)
+- **Satisfies:** PRD-001 R-211..R-213 (+ **R-231** via ADR-075 — the pair cache powers the unified Books
+  wall's collapse + Format facet, the 2026-07-20 amendment); governed by ADR-065 (pairing model + system
+  wants), ADR-046 (mirror stays pure), ADR-055/057 (request ledger + wanted composition), ADR-054 (governor
+  untouched), ADR-015 (reserved slots, recolor-not-reflow), **ADR-075** (unified Books wall), hard rules 4/6.
 - **Companions:** DESIGN-028 (request ledger + LL push), DESIGN-029 (wanted walls), DESIGN-025
   (the plex-match derived-cache sibling), DESIGN-033 (LL-id resolve fallback precedent).
 
@@ -175,4 +179,33 @@ matrix (books read_only OK + audited; books disabled FORBIDDEN; goodreads-origin
 | ID | Question | Resolution |
 |----|----------|------------|
 | Q-01 | Should a long-unmintable want ever alert (an outbox digest of unresolvable titles)? | (open — observe the backfill first) |
-| Q-02 | Identifier-backed matching (ISBN/ASIN columns on the mirror) to pair edition variants the conservative matcher skips. | (open — the known upgrade path, ADR-065 C-c) |
+| Q-02 | Identifier-backed matching (ISBN/ASIN columns on the mirror) to pair edition variants the conservative matcher skips. | (open — the known upgrade path, ADR-065 C-c; **2026-07-20 (ADR-075): now ALSO improves the unified Books wall's CARD COLLAPSE, not just the coverage badge — a true pair the conservative matcher misses renders as TWO cards until identifiers land**) |
+
+## Amendment — 2026-07-20 (ADR-075 — the pair cache powers the unified Books wall)
+
+ADR-075 unifies the Books and Audiobooks walls into ONE Books wall with format as a facet, and it makes the
+`books_format_pairs` cache do DOUBLE DUTY. Nothing in D-01..D-06 changes (same schema, matcher, writer,
+mint, mode); the CONSUMERS grow:
+
+- **The pair cache is the wall's COLLAPSE join (C-02).** `books.search`, now work-grain over
+  `media_kind ∈ {book, audiobook}` (DESIGN-024 D-04 amendment), LEFT-JOINs `books_format_pairs` and
+  collapses a paired (book, audio) duo to ONE card anchored on the **ebook row** (unpaired audio-only
+  anchors on itself — the anchor rule is TOTAL, PLAN-060 E-2). The same ONE truth the detail buttons (D-09)
+  and the mint pass (D-05) read now also decides which rows merge into one card. Divergent pair metadata
+  (E-3): facets match on the UNION, display uses the anchor's values.
+- **The pair cache is the Format-facet source (C-03).** The three-state Format seg (All · Ebook ·
+  Audiobook) reads coverage from the same cache: "Ebook" = works holding an ebook (paired + ebook-only),
+  "Audiobook" = works holding audio. This generalizes the D-09 `formatCoverage` badge from a per-card badge
+  to the wall's facet predicate.
+- **Standalone pairing-want tiles RETIRE on the wall (C-05).** On the unified wall a pairing want's anchor
+  work ALREADY renders as a library card, so the D-07 composition no longer emits a standalone tile for it
+  — the anchor card's **coverage badge carries the missing-format want state** (wanted / in-flight). The
+  detail page keeps the pairing-want deep link + per-format force-search (D-08, unchanged); Goodreads-origin
+  wants (no library anchor) keep their Wanted tiles (D-07 unchanged for them). `getWantedBookRequests` is
+  unchanged; the WALL's composition layer is where the standalone pairing tile drops.
+- **Q-02 gains a second payoff.** Identifier-backed matching (ISBN/ASIN — the ADR-065 C-c upgrade path) now
+  improves not only badge accuracy but the **card collapse itself**: a true pair the conservative matcher
+  misses renders as TWO cards on the unified wall until identifiers land (ADR-075 C-08 — the same honesty
+  the split walls had). Still open; still the upgrade path.
+
+See DESIGN-024 D-04 (work-grain search) + DESIGN-026 (the merged registry) + PRD R-231/R-213/R-211.

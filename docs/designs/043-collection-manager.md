@@ -4,6 +4,11 @@
 - **Last updated:** 2026-07-19 (**D-01/D-02 amend** — the collection-centric "Search Missing" (drill-
   header pill + grid badge, movies/TV via the new `ledger.forceSearchCollection`, books via #418) +
   the drill-header primary-pill treatment. See the amendment before D-08.)
+- **Amended 2026-07-20 (ADR-075 C-01 / ADR-076 C-01 — surgical):** the manager's separate **Books** +
+  **Audiobooks** media tabs MERGE into one **Books** tab (the Audiobooks wall retires; a merged multi-target
+  recipe renders there once, ADR-076 C-03), and the single-target **target library** select becomes
+  **`targets[]`** (1..N — one Kavita + one ABS, ADR-076 C-01). Inline pointers at D-09' and the D-03 composer
+  bullet; no restructuring — the live composer moved to DESIGN-044 (see that doc's twin note).
 - **Prior update:** 2026-07-18 (REVISED to direct-add + the first-class `/collections` page — ADR-072
   supersedes ADR-070; the propose→approve flow and the Integrations-hub placement are removed. Was
   DESIGN-042 in the H1 by a two-track numbering collision — corrected to DESIGN-043 in this pass.)
@@ -107,7 +112,10 @@ only when the collection has a KNOWN MANAGER IDENTITY:
 - **Books / Audiobooks** — the mirror row's `librettoRecipeId` (the D-13 exact join, now surfaced on
   `books.collectionGroups`). A hand-made collection with no recipe (`librettoRecipeId === null`) renders
   NO link — there is nothing to edit in the manager. Only the Books/Audiobooks walls map to a media tab;
-  the Comics wall has no Collections media type, so it never shows the link.
+  the Comics wall has no Collections media type, so it never shows the link. _(Amended 2026-07-20 — ADR-075
+  C-01: the Books + Audiobooks media tabs merge into ONE **Books** tab (the Audiobooks wall retires), so
+  `tab=<mediaType>` deep links use `books` for both formats and a merged multi-target recipe (ADR-076 C-03)
+  renders there once; the unified Books wall drill supplies the link.)_
 - **Movies / TV** — the drill keys by a Plex `ratingKey`, and the Kometa join is by TITLE (no clean
   recipe id client-side), so the link lands on the right media tab (`/collections?tab=movies|tv`) WITHOUT
   an `edit` param. Landing on the correct tab is still correct; an id is never fabricated.
@@ -215,7 +223,9 @@ media-action vocabulary entirely. Retired and replaced:
 Add/edit uses a `Modal` (DESIGN-004 D-13 — an explanatory/multi-field confirm, never `window.confirm`):
 
 - builder type picker (from the provider's set), ref field, target library select, `ordered` toggle,
-  `syncMode` (`append` | `sync`), and the member set / ref that defines the collection,
+  `syncMode` (`append` | `sync`), and the member set / ref that defines the collection, _(the target library
+  select amended 2026-07-20 — ADR-076 C-01: the single-target noun becomes **`targets[]`** (1..N — one Kavita
+  + one ABS); the live composer is the DESIGN-044 builder page.)_
 - **ref PREVIEW** (the top composer win, the surviving ADR-070 C-07): a "Preview" action resolves the
   ref (Libretto `POST /api/validate`; Kometa's resolve, DESIGN-042 D-04) and shows the resolved
   name + resolved member count + any issues BEFORE save — a 0-work container slug shows honestly, no

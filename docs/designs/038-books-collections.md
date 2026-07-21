@@ -1,7 +1,12 @@
 # DESIGN-038: Books collections mirror — the Books/Audiobooks/Comics Collections group view
 
 - **Status:** Accepted
-- **Last updated:** 2026-07-18 (D-13 added — the books/audiobooks collection **Wanted tiles**: a
+- **Last updated:** 2026-07-20 (**ADR-076 — format-agnostic collections**: D-05 wall mapping → the comic
+  partition (the three-way majority rule retires with the Audiobooks wall) + recipe-id twin MERGE; D-11/D-12
+  the `cat=` token is now EMITTED by Libretto (L1 LIVE — recipe-authored categories; L2 agent-set stays the
+  markerless fallback, COALESCE unchanged); D-13 the merged-drill dedupe + the one-active-want-per-(work,
+  format) invariant; Q-02 RESOLVED, Q-04 PARTIALLY RESOLVED. See the dated notes below.) Prior:
+  2026-07-18 (D-13 added — the books/audiobooks collection **Wanted tiles**: a
   collection that is not full renders its MISSING members as Wanted tiles beside the held ones,
   minted as `book_requests` origin `'collection'` from Libretto's member-level missing endpoint;
   SUPERSEDES the D-07 held-only stance + the DESIGN-035 D-16 books-leg deferral. Migration 0068. See
@@ -148,6 +153,18 @@ NULL`) JOIN `books_items` (live: `deleted_at IS NULL`), ordered by `(title, id, 
   The label-driven CATEGORY program (DESIGN-035 D-10'/D-11') retired that classifier for an OPEN,
   free-form category, and the owner extended it to books — so the grouped levels now carry the SAME
   dynamic category chip the movies/TV Collections walls do. See D-12.
+
+> **Amendment 2026-07-20 (ADR-076 C-03/C-04 — the comic partition + recipe-id merge).** ADR-075 retires the
+> Audiobooks wall (ebooks + audiobooks unify into one Books wall), so the three-way majority rule above
+> **shrinks to a comic partition**: a collection whose resolved live members are majority **`comic`**
+> surfaces on **Comics**, otherwise on the unified **Books** wall; ties go to Books (the `BOOKS_MEDIA_KINDS`
+> `book` → `comic` order, audiobook folded into Books). ABS collections and mixed book/audio collections now
+> all land on Books. AND `books.collectionGroups` **merges Libretto twins by recipe id**: rows sharing a
+> non-null `libretto_recipe_id` (D-13) collapse to ONE card — members union at WORK grain via the pair cache
+> (the ADR-075 C-02 collapse join; a paired work counts once), per-member format-coverage badges, count =
+> distinct works; ordered recipes keep positions (both twins carry the same builder order). Markerless/hand
+> collections merge nothing (the app never fabricates a link — mirror honesty). This realizes ADR-076
+> C-03/C-04 and PRD R-215..R-217 / R-232.
 
 ### D-06 — Drill-in: `?group=<id>` is a `books.search` predicate + the ordered sort contract
 
@@ -327,6 +344,17 @@ Kavita-native comic Event lists have NO Libretto recipe to carry a marker, the r
   it renders only when at least one category is present), which is the books-idiom twist on the
   always-visible movies row. Both books and movies share the identical dynamic-chip renderer contract.
 
+> **Amendment 2026-07-20 (ADR-076 C-02 — L1 goes LIVE).** Libretto now EMITS the `cat=` token: a recipe's
+> `category` field (DESIGN-037 D-02 amendment) is written into the shared marker
+> `[libretto:<recipeId>|cat=<Category>]` on every produced collection. So the **L1** derive path above is no
+> longer a no-op — `deriveBooksCollectionCategory` returns the recipe-authored category, and the shipped
+> `category = COALESCE(excluded.category, books_collections.category)` rule makes it WIN over a prior value
+> (mirror doctrine — the source is authoritative). **L2 agent-set stays the fallback** for markerless hand
+> collections (e.g. Kavita-native Event lists that carry no Libretto recipe) — the COALESCE preserves an
+> agent-set L2 category whenever the L1 derive is null (edge E-6). This RESOLVES Q-04's category half; the
+> Authors program (PRD R-233) is the first live L1 category (`category: Authors`, pinned after
+> Universe/Sequels in the hint order).
+
 ### D-13 — Collection WANTED tiles (migration 0068 — added 2026-07-18)
 
 The owner flagged this "super important": a books OR audiobooks collection that is NOT full MUST render
@@ -385,6 +413,16 @@ composed-Wanted idiom, now collection-scoped.
   its WHERE admits only goodreads (linked shelf) + pairing origins, so collection wants NEVER leak onto the
   top-level Books/Audiobooks walls — they surface ONLY on their collection's drill.
 
+> **Amendment 2026-07-20 (ADR-076 C-05 — the merged multi-target drill).** When a collection is a MERGED
+> multi-target twin (one Libretto recipe → a Kavita + an ABS collection, D-05 amendment), its drill composes
+> the wants of BOTH twins. The tiles **dedupe on `collection_member_ref`** (already the idempotency key
+> above) so a work missing from both targets shows ONE tile with per-format statuses on its detail (not
+> two). The per-target `missing[]` (DESIGN-037 D-09 amendment) drives the per (work, format) mint: a kavita
+> target ⇒ an ebook want, an abs target ⇒ an audiobook want. The implementation MUST assert **one active
+> want per (work, format)** across origins (collection vs pairing — a pairing want and a collection want for
+> the same missing format must not double-mint) via the existing reuse-before-resolve + ref keys (PLAN-060
+> edge E-1); the `book_requests` partial unique + the pairing anchor unique together hold it.
+
 ## Alternatives considered
 
 - **App-native book collections / authoring UI** — rejected permanently (ADR-066 option 2, owner R1).
@@ -442,6 +480,6 @@ composed-Wanted idiom, now collection-scoped.
 | ID   | Question                                                                                                                                 | Resolution                                                                                                                                                                                                                                                                                                                                                                        |
 | ---- | ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Q-01 | e2e smoke spec for the books Collections view?                                                                                           | SUBSTRATE SHIPPED, SPEC DEFERRED — the stub collection fixtures + the harness `books-collections-sync` seed landed with the build (dev:local + every e2e run render the views), so the journey spec is now a cheap follow-up; the flows were hand-driven against dev:local during the build.                                                                                      |
-| Q-02 | Merge cross-source collections (the same series in Kavita + ABS) into one card via PLAN-050 pairing data?                                | DEFERRED (owner lean: two honest source-scoped collections v1; merge later after the owner sees the mirror live).                                                                                                                                                                                                                                                                 |
+| Q-02 | Merge cross-source collections (the same series in Kavita + ABS) into one card via PLAN-050 pairing data?                                | **RESOLVED 2026-07-20 (ADR-076 — the owner saw the mirror live and ruled MERGE).** But the merge lives in **Libretto** (multi-target recipes: one recipe declares both targets), NOT app-side pairing-data linking — the app merges the mirrored TWINS by their shared `libretto_recipe_id` (D-05 amendment), members union at work grain via the pair cache. One recipe, one intent — twin drift is gone (ADR-076 C-01/C-03).                                                                                                                                                                                                                                                                 |
 | Q-03 | Kavita response shapes verified from the tagged 0.9.0.2 SOURCE + live route probes, not an authed live call (no creds in the build env). | Accepted risk, mitigated: strip-mode zod + the fixture battery; the deployed image is pinned to the exact verified tag. First staging `books-collections-sync` run validates live; any drift is a client-schema patch, not a schema migration.                                                                                                                                    |
-| Q-04 | Builder-LEVEL books provenance (the owner's "NY Times" / "Hardcover Series", not just "Libretto")?                                       | DEFERRED (D-11). The marker carries only the recipeId; resolving `builder.type` needs a Libretto `/api/recipes` join — a NEW sync dependency (LIBRETTO_API_KEY, a client, Libretto-up coupling) the directive preferred to avoid. v1 ships the honest software tag "Libretto"; the `BUILDER_DISPLAY` map is pre-wired for the join. Owner ruling needed on adding the dependency. |
+| Q-04 | Builder-LEVEL books provenance (the owner's "NY Times" / "Hardcover Series", not just "Libretto")?                                       | **PARTIALLY RESOLVED 2026-07-20 (ADR-076).** The CATEGORY half ships: Libretto now emits `cat=<Category>` and the recipe-authored category flows in via the L1 path (D-12 amendment) — so "Authors" and other recipe categories are live chips. Builder-level PROVENANCE DISPLAY (the muted "NY Times Builder" badge, needing the `/api/recipes` recipeId→builder.type join — a NEW sync dependency) stays DEFERRED; `BUILDER_DISPLAY` remains pre-wired for it. |
