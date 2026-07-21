@@ -22,7 +22,7 @@ import type { LibrettoReadClient } from '@hnet/libretto/read';
 import { LibrettoUnreachableError } from '@hnet/libretto';
 import { inTransaction, resolveDb } from './db-client';
 import { NotFoundError } from './errors';
-import { resolveMissingMembers } from './collection-wants-sync';
+import { loadResolvedWantRefs, resolveMissingMembers } from './collection-wants-sync';
 import { syncCollectionWants } from './book-requests';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
 
@@ -130,7 +130,13 @@ async function gatherCollectionWants(
       .limit(cap - worklist.length);
     for (const r of rows) {
       if (!r.llBookId) continue; // unresolved this run — a visible tile, not yet force-searchable
-      worklist.push({ id: r.id, llBookId: r.llBookId, format, title: r.title, collectionId: collection.id });
+      worklist.push({
+        id: r.id,
+        llBookId: r.llBookId,
+        format,
+        title: r.title,
+        collectionId: collection.id,
+      });
     }
   }
   return worklist;
@@ -194,10 +200,13 @@ async function runForceSearchWorklist(input: {
       input.report.searched += 1;
     } catch (error) {
       input.report.failed += 1;
-      input.log.warn?.('collection-force-search: LazyLibrarian force-search failed (left for next run)', {
-        requestId: want.id,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      input.log.warn?.(
+        'collection-force-search: LazyLibrarian force-search failed (left for next run)',
+        {
+          requestId: want.id,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
     }
   }
 }
@@ -379,7 +388,13 @@ export async function forceSearchCollectionNow(
   try {
     report.runId = await input.libretto.write.applyScope(input.recipeId);
     const missing = await input.libretto.read.listMissingMembers(input.recipeId);
-    const { members } = await resolveMissingMembers(input.libretto.read, missing.missing ?? []);
+    // Quota thrift (shared with the hourly pass) — reuse already-resolved wants, don't re-spend GB on them.
+    const resolvedRefs = await loadResolvedWantRefs(input.db, collection.id);
+    const { members } = await resolveMissingMembers(
+      input.libretto.read,
+      missing.missing ?? [],
+      resolvedRefs,
+    );
     const synced = await syncCollectionWants({
       db: input.db,
       collectionId: collection.id,

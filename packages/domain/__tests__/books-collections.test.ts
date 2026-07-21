@@ -12,6 +12,8 @@ import {
   collectionMemberRef,
   getCollectionWantedBookRequests,
   getWantedBookRequests,
+  loadResolvedWantRefs,
+  resolveMissingMembers,
   runCollectionWantsSync,
   syncBooks,
   syncBooksCollections,
@@ -474,7 +476,12 @@ describe('collection wants (DESIGN-038 D-13 — Wanted tiles from Libretto missi
     const id = await seedCollection({ source: 'kavita', externalId: 'k1', recipeId: 'r1' });
     const members = [{ memberRef: 'isbn:1', title: 'Book One', author: 'A', llBookId: 'gb1' }];
     await syncCollectionWants({ db: t.db, collectionId: id, format: 'ebook', members });
-    const second = await syncCollectionWants({ db: t.db, collectionId: id, format: 'ebook', members });
+    const second = await syncCollectionWants({
+      db: t.db,
+      collectionId: id,
+      format: 'ebook',
+      members,
+    });
     expect(second.minted).toBe(0);
     expect(second.updated).toBe(1);
     expect(await wantRows(id)).toHaveLength(1);
@@ -502,7 +509,11 @@ describe('collection wants (DESIGN-038 D-13 — Wanted tiles from Libretto missi
   });
 
   it('an AUDIOBOOK collection runs the audio format (ebook landed)', async () => {
-    const id = await seedCollection({ source: 'audiobookshelf', externalId: 'a1', recipeId: 'ar1' });
+    const id = await seedCollection({
+      source: 'audiobookshelf',
+      externalId: 'a1',
+      recipeId: 'ar1',
+    });
     await syncCollectionWants({
       db: t.db,
       collectionId: id,
@@ -522,7 +533,12 @@ describe('collection wants (DESIGN-038 D-13 — Wanted tiles from Libretto missi
       format: 'ebook',
       members: [{ memberRef: 'isbn:1', title: 'One', author: null, llBookId: null }],
     });
-    const res = await syncCollectionWants({ db: t.db, collectionId: id, format: 'ebook', members: [] });
+    const res = await syncCollectionWants({
+      db: t.db,
+      collectionId: id,
+      format: 'ebook',
+      members: [],
+    });
     expect(res.removed).toBe(1);
     expect(await wantRows(id)).toHaveLength(0);
   });
@@ -598,6 +614,139 @@ describe('collection wants (DESIGN-038 D-13 — Wanted tiles from Libretto missi
       expect(report.unreachable).toBe(true);
       expect(report.minted).toBe(0);
       expect(await wantRows(id)).toHaveLength(1); // the prior want SURVIVES (never reconciled)
+    });
+
+    // #453 — the quota-thrift root-cause fix. The hourly pass re-sees every held member; re-resolving the
+    // ALREADY-resolved ones every run is pure Google-Books waste that exhausted Libretto's shared daily key
+    // before it reached the still-NULL members of late-iteration collections (The Expanse mains). Fixtures
+    // are the real Expanse mains, incl. the audio-ISBN'd ones whose first identifier GB can't answer.
+    it('THRIFT — reuses an already-resolved want and NEVER re-resolves it (Expanse mains fixtures)', async () => {
+      const id = await seedCollection({
+        source: 'kavita',
+        externalId: 'the-expanse',
+        recipeId: 'the-expanse',
+      });
+      // Abaddon's Gate resolved on a prior run (Orbit print ISBN); Nemesis Games (audio ISBN) still NULL.
+      await syncCollectionWants({
+        db: t.db,
+        collectionId: id,
+        format: 'ebook',
+        members: [
+          {
+            memberRef: 'isbn:9780316129077',
+            title: "Abaddon's Gate",
+            author: null,
+            llBookId: 'gb-abaddon',
+          },
+          { memberRef: 'isbn:9781478903956', title: 'Nemesis Games', author: null, llBookId: null },
+        ],
+      });
+      const resolveCalls: string[] = [];
+      const libretto = stubLibretto({
+        listMissingMembers: async () => ({
+          missing: [
+            { title: "Abaddon's Gate", isbn: '9780316129077', identifiers: [] },
+            { title: 'Nemesis Games', isbn: '9781478903956', identifiers: [] },
+          ],
+        }),
+        resolve: async (req: { title?: string }) => {
+          resolveCalls.push(req.title ?? '');
+          return { volumeId: 'gb-nemesis' };
+        },
+      });
+      const report = await runCollectionWantsSync({ db: t.db, libretto });
+      // Only the still-NULL want spends a Google-Books call; the resolved one is reused verbatim.
+      expect(resolveCalls).toEqual(['Nemesis Games']);
+      expect(report.reused).toBe(1);
+      expect(report.resolved).toBe(1);
+      const rows = await wantRows(id);
+      expect(rows.find((r) => r.memberRef === 'isbn:9780316129077')?.llBookId).toBe('gb-abaddon');
+      expect(rows.find((r) => r.memberRef === 'isbn:9781478903956')?.llBookId).toBe('gb-nemesis');
+    });
+
+    it('THRIFT — a want resolved once is never re-resolved, even if the broker later dies (quota)', async () => {
+      const id = await seedCollection({
+        source: 'audiobookshelf',
+        externalId: 'the-expanse-a',
+        recipeId: 'the-expanse',
+      });
+      const missing = [{ title: 'Leviathan Falls', isbn: '9781705024997', identifiers: [] }];
+      let calls = 0;
+      // First run: healthy broker resolves it (via the title fallback in prod; a stub id here).
+      await runCollectionWantsSync({
+        db: t.db,
+        libretto: stubLibretto({
+          listMissingMembers: async () => ({ missing }),
+          resolve: async () => {
+            calls += 1;
+            return { volumeId: 'gb-leviathan' };
+          },
+        }),
+      });
+      expect(calls).toBe(1);
+      // Next run: the broker would now throw (dead daily quota) — but the resolved want is never re-called.
+      const report = await runCollectionWantsSync({
+        db: t.db,
+        libretto: stubLibretto({
+          listMissingMembers: async () => ({ missing }),
+          resolve: async () => {
+            calls += 1;
+            throw new Error('quota_exhausted');
+          },
+        }),
+      });
+      expect(calls).toBe(1); // NOT re-called — the fix
+      expect(report.reused).toBe(1);
+      expect((await wantRows(id)).find((r) => r.memberRef === 'isbn:9781705024997')?.llBookId).toBe(
+        'gb-leviathan',
+      );
+    });
+
+    it('loadResolvedWantRefs returns only NON-NULL wants (a still-NULL want is retried, not skipped)', async () => {
+      const id = await seedCollection({
+        source: 'kavita',
+        externalId: 'k-load',
+        recipeId: 'r-load',
+      });
+      await syncCollectionWants({
+        db: t.db,
+        collectionId: id,
+        format: 'ebook',
+        members: [
+          { memberRef: 'isbn:done', title: 'Done', author: null, llBookId: 'gbX' },
+          { memberRef: 'isbn:pending', title: 'Pending', author: null, llBookId: null },
+        ],
+      });
+      const map = await loadResolvedWantRefs(t.db, id);
+      expect(map.get('isbn:done')).toBe('gbX');
+      expect(map.has('isbn:pending')).toBe(false);
+    });
+  });
+
+  describe('resolveMissingMembers — quota-thrift seam (no DB)', () => {
+    it('skips the resolve call for a member in resolvedRefs, resolves the rest', async () => {
+      const calls: string[] = [];
+      const libretto = {
+        resolve: async (req: { title?: string }) => {
+          calls.push(req.title ?? '');
+          return { volumeId: 'gb-new' };
+        },
+      };
+      const { members, resolved, reused } = await resolveMissingMembers(
+        libretto as unknown as Pick<CollectionWantsLibretto, 'resolve'>,
+        [
+          { title: "Abaddon's Gate", isbn: '9780316129077', identifiers: [] },
+          { title: 'Nemesis Games', isbn: '9781478903956', identifiers: [] },
+        ],
+        new Map([['isbn:9780316129077', 'gb-abaddon']]),
+      );
+      expect(calls).toEqual(['Nemesis Games']); // the reused one is never called
+      expect(reused).toBe(1);
+      expect(resolved).toBe(1);
+      expect(members.find((m) => m.memberRef === 'isbn:9780316129077')?.llBookId).toBe(
+        'gb-abaddon',
+      );
+      expect(members.find((m) => m.memberRef === 'isbn:9781478903956')?.llBookId).toBe('gb-new');
     });
   });
 });
