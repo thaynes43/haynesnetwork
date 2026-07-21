@@ -54,6 +54,34 @@ cosign sig both 200 — the sig 404 was the documented Accept-header gotcha), **
 `haynesnetwork:v0.89.0` (frontend) and `libretto:sha-eaa868a` (media). Staged steps 2–3
 (twin conversion + author recipes) remain next; step 1 (deploy verify) is DONE.
 
+## ROLLOUT EXECUTED (added later again — owner: "Do it")
+
+Steps 2–3 ran the same day via in-cluster Jobs (the key never enters the dev pod: Jobs in
+`media` get `libretto-secret` via envFrom; job-create + logs are the granted SA verbs).
+
+- **Twin conversion:** 11 pairs found live (not the planned 5 — the 07-20 recipe wave added
+  six), ALL converted: PUT each Kavita recipe with both targets, DELETE the `-audiobooks`
+  twin, apply. The 7 audiobook-only recipes (bobiverse, hunger-games, …) stay single-target.
+- **Authors:** all 21 recipes upserted (`category: Authors`, both targets, curated canon,
+  `acquisitionEnabled: true`) + applied. **12 author collections materialized** (holdings
+  exist); **9 stayed uncreated** (zero held works — Libretto's zero-match honesty: Asimov,
+  Clarke, Heinlein, Dick, King, Christie, Crichton, Scalzi, Vonnegut) — they appear once
+  their first canon works land.
+- **Mirror:** `books-collections-sync` ran twice: first pass 88 collections / 587 members /
+  **219 collection wants minted**; second pass (after orphan cleanup) `collectionsRemoved:
+  11`, zero skips — the wall now shows merged two-target cards with the Authors chip.
+- **Cleanups en route:** the deployed API ignores `?deleteCollection=true` (the 11 twin
+  collections orphaned in ABS — deleted them directly via the ABS API, source-of-truth
+  curation) and has no `POST /api/recipes` (upsert is PUT-only). Plus a duplicate read-back
+  listing for server-wide Kavita containers. Filed SHORT:
+  https://github.com/thaynes43/libretto/issues/14
+- **GB quota honesty:** Libretto's resolve quota was already spent today, so most missing
+  canon works logged `quota_exhausted` and skipped ACQUISITION (runs `warn`, nothing
+  fabricated). **Re-apply the 21 author recipes after the 07:00 UTC GB reset** to push their
+  LL wants (rerun the apply loop of the rollout Job, or Find-missing per recipe in the
+  manager); repeat occasionally until the canon drains. The 219 minted collection wants are
+  app-side and force-searchable now.
+
 ## Gotchas recorded
 
 - The pod's `GH_TOKEN` env var goes stale (sidecar refreshes `/creds/gh_token` every 40 min) —

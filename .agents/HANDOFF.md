@@ -20,7 +20,15 @@ coordinator finished inline. Full evidence + PR table:
 **DEPLOYED (same day, on the owner's flag — OPS-004's manual tag bump had been missed):**
 haynes-ops **#2200** rolled hnet **v0.89.0** live (artifact-pair gate passed; migrations
 applied; health ok); libretto **`sha-eaa868a`** confirmed running. The unified wall is LIVE.
-**NEXT:** (1) owner UX review of the live wall (390px + desktop); (2) convert the 5 audiobook twin recipes to two-target
+**ROLLOUT EXECUTED (owner: "Do it"):** 11 twin pairs (not 5) converted to two-target + orphans
+cleaned in ABS · 21 author recipes live (12 collections materialized, 9 await first holdings) ·
+mirror re-synced (`collectionsRemoved: 11`, zero skips) · **219 collection wants minted** ·
+libretto API nits filed SHORT (https://github.com/thaynes43/libretto/issues/14). Evidence in the
+07-21 shipped note ("ROLLOUT EXECUTED" section).
+**NEXT:** (1) owner UX review of the live wall (390px + desktop) — the Authors chip + merged
+franchise cards are live NOW; (2) after the 07:00 UTC GB reset, RE-APPLY the 21 author recipes
+(apply loop rerun or manager Find-missing) so the quota-skipped canon acquisitions push to LL;
+(3) retired step: convert the 5 audiobook twin recipes to two-target
 (KAVITA id survives; ABS twin `?deleteCollection=true`); (3) apply the 21 `examples/authors/`
 recipes with real library ids (both targets, `category: Authors`, acquisition paced by the
 shipped caps) — same API path the 07-20 batch of 25 recipes used. Plan of record:
