@@ -7,16 +7,35 @@
 import { z } from 'zod';
 
 /**
- * A recipe's builder — the SOURCE the collection is built from (DESIGN-037 D-05). `ref` is a single string
- * for most builders (a Hardcover series id, an NYT list name) OR a string ARRAY for the multi-source grains
- * (`static_ids`, and `hardcover_comics` since thaynes43/libretto PR #11). The read ACL stays TOLERANT
- * (union + nullish): a schema throw here would sink the WHOLE recipe list (upstream schema drift), so we
- * parse both shapes and let the domain decide what a given consumer needs.
+ * One entry inside an ARRAY builder ref: a bare identifier — a slug STRING or a numeric Hardcover id — or a
+ * `static_ids` `{ title, author }` pair. Mirrors Libretto's own recipe schema (thaynes43/libretto
+ * `src/recipes/schema.ts`). Kept tolerant (passthrough + nullish fields) — the domain decides what it needs.
  */
+export const librettoBuilderRefEntrySchema = z.union([
+  z.string(),
+  z.number(),
+  z.object({ title: z.string().nullish(), author: z.string().nullish() }).passthrough(),
+]);
+
+/**
+ * A recipe's builder ref — the SOURCE the collection is built from (DESIGN-037 D-05). Mirrors Libretto's
+ * builder set: a single STRING (`nyt_list`, `hardcover_series` slug) or NUMBER (`hardcover_series` id), OR an
+ * ARRAY of entries (`static_ids`, and `hardcover_comics`'s series ids/slugs since thaynes43/libretto PR #11 —
+ * a MIXED id/slug array, e.g. `[14911, 'guarding-the-globe']`). The read ACL stays TOLERANT: a schema throw
+ * here would sink the WHOLE recipe list (the PR #11 drift did exactly that — it silently killed the hourly
+ * collection-force-search pass), so we parse every shape and let the domain decide what each consumer needs.
+ */
+export const librettoBuilderRefSchema = z.union([
+  z.string(),
+  z.number(),
+  z.array(librettoBuilderRefEntrySchema),
+]);
+export type LibrettoBuilderRef = z.infer<typeof librettoBuilderRefSchema>;
+
 export const librettoBuilderSchema = z
   .object({
     type: z.string(),
-    ref: z.union([z.string(), z.array(z.string())]).nullish(),
+    ref: librettoBuilderRefSchema.nullish(),
   })
   .passthrough();
 
@@ -267,11 +286,16 @@ export const librettoHealthResponseSchema = z
 export const librettoRecipeDraftSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1).optional(),
-  // `ref` mirrors the read builder: a single string, or the multi-source array (static_ids / hardcover_comics)
-  // so a recipe READ back (recipeToDraft — the find-missing toggle / edit round-trip) can be re-PUT unchanged.
+  // `ref` mirrors the read builder ref (string | number | entry array) so a recipe READ back (recipeToDraft
+  // — the find-missing toggle / edit round-trip in setCollectionFindMissing) can be re-PUT unchanged, including
+  // a comics recipe's mixed id/slug array. Kept tighter than the read ACL (non-empty).
   builder: z.object({
     type: z.string().min(1),
-    ref: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]),
+    ref: z.union([
+      z.string().min(1),
+      z.number().int().positive(),
+      z.array(librettoBuilderRefEntrySchema).min(1),
+    ]),
   }),
   targetLibrary: z.unknown().optional(),
   variables: z
