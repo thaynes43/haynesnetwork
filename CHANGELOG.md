@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.88.6](https://github.com/thaynes43/haynesnetwork/compare/v0.88.5...v0.88.6) (2026-07-21)
+
+
+### Bug Fixes
+
+* widen Libretto builder.ref to its real shape (mixed id/slug arrays, numeric ids) ([#462](https://github.com/thaynes43/haynesnetwork/issues/462)) ([9d871cc](https://github.com/thaynes43/haynesnetwork/commit/9d871cce556bb6c748db1595a939089d07332d71))
+
 ## [0.88.5](https://github.com/thaynes43/haynesnetwork/compare/v0.88.4...v0.88.5) (2026-07-21)
 
 
