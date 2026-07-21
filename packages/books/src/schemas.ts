@@ -67,6 +67,9 @@ export const kavitaSeriesMetadataSchema = z.object({
   summary: z.string().nullable().optional(),
   genres: z.array(kavitaNamedSchema.or(z.string())).nullable().optional(),
   publishers: z.array(kavitaNamedSchema.or(z.string())).nullable().optional(),
+  // `writers[]{name}` — the metadata AUTHOR fallback for series whose folder layout carries no
+  // author directory (fix/pairing-author-gap 2026-07-21; the folder-derived author stays primary).
+  writers: z.array(kavitaNamedSchema.or(z.string())).nullable().optional(),
   language: z.string().nullable().optional(),
   releaseYear: z.number().int().nullable().optional(),
 });

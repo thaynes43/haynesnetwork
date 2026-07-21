@@ -104,6 +104,8 @@ export interface KavitaEnrichment {
   publisher: string | null;
   language: string | null;
   year: number | null;
+  /** Metadata writers — the AUTHOR fallback for flat folder layouts (first entry wins). */
+  writers: string[];
 }
 
 /** Reduce a Kavita `/api/Series/metadata` response to the ledger enrichment (pure — unit-tested). */
@@ -118,6 +120,7 @@ export function kavitaEnrichmentFrom(meta: KavitaSeriesMetadata): KavitaEnrichme
     publisher: publishers.length > 0 ? publishers[0]! : null,
     language: language.length > 0 ? language : null,
     year,
+    writers: kavitaNames(meta.writers as KavitaNamed[] | null | undefined),
   };
 }
 
@@ -159,7 +162,12 @@ export function normalizeKavitaSeries(
     libraryName: series.libraryName || libraryName,
     title: series.name,
     sortTitle: sort,
-    author: deriveKavitaAuthor(series.folderPath, series.lowestFolderPath),
+    // Folder-derived author stays PRIMARY (the Calibre-style author directory); the metadata
+    // writers fill the FLAT-layout gap (54 live null-author series held their writer in Kavita
+    // all along — the 2026-07-21 pairing-gap diagnosis). Comics keep their honest null unless
+    // Kavita carries a writer for them too.
+    author:
+      deriveKavitaAuthor(series.folderPath, series.lowestFolderPath) ?? (e?.writers[0] ?? null),
     narrator: null,
     seriesName: null,
     // The series list carries no year; the metadata call's releaseYear fills it when enriched.
