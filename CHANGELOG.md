@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.89.2](https://github.com/thaynes43/haynesnetwork/compare/v0.89.1...v0.89.2) (2026-07-21)
+
+
+### Bug Fixes
+
+* pairing author-agreement tolerances + Kavita metadata-writers author fallback ([#474](https://github.com/thaynes43/haynesnetwork/issues/474)) ([2a52f65](https://github.com/thaynes43/haynesnetwork/commit/2a52f6567a6aaef48d24f81541fae506245c9354))
+
+
+### Documentation
+
+* **agents:** PLAN-025 post-MVP backlog — Prometheus/Grafana run metrics (owner-ruled) + the dispatched-downloader idea (unruled) ([#471](https://github.com/thaynes43/haynesnetwork/issues/471)) ([cdb8d17](https://github.com/thaynes43/haynesnetwork/commit/cdb8d176636c32d74eb4341a87be77c639d5743c))
+* **agents:** the ytdrivarr two-week validation regime — standing order + protocol (owner-mandated) ([#473](https://github.com/thaynes43/haynesnetwork/issues/473)) ([2b5e6cd](https://github.com/thaynes43/haynesnetwork/commit/2b5e6cd2c6557e77bcc0dfafa27fa6b6a0e679ea))
+
 ## [0.89.1](https://github.com/thaynes43/haynesnetwork/compare/v0.89.0...v0.89.1) (2026-07-21)
 
 
