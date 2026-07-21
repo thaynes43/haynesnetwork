@@ -221,6 +221,22 @@ Three codebases move (all suite-autonomous per rule 10; ytdrivarr drives its own
 **Untouched until each cutover:** the two ytdl-sub downloader CronJobs, the app read surfaces, and
 the app-side poster guard (C8 fold-in is the recorded-not-decided later fork, DESIGN-045 Q-04).
 
+### Post-MVP backlog (owner-ruled 2026-07-21)
+
+- **Prometheus metrics + Grafana dashboard for run/discovery metrics** (owner: "We can come up
+  with a new way to track these metrics, maybe prometheus metrics with a grafana dashboard —
+  post-MVP cutover item"). Replaces the retired donor ritual of reviewing scrape summaries in
+  auto-merged haynes-ops config PR bodies (the old surface: haynes-ops #2168) — no PRs flow
+  under service-owned state, so trends/daily-review move to Grafana while the console Activity
+  page stays the per-run drill-in. Scope + counter inventory filed as
+  **github.com/thaynes43/ytdrivarr/issues/19**; DESIGN-045 D-10 already anticipates the
+  `/metrics` surface.
+- **ytdrivarr-dispatched downloader runs (the *arr-true download-client seam)** — raised by the
+  owner the same day ("ytdrivarr should connect to ytdl-sub as a downloader"): today the seam is
+  file-shaped (projection + the */15 CronJobs; ytdl-sub has no API). The evolution: ytdrivarr
+  spawns ytdl-sub Jobs on demand (download-on-change, per-run attribution, a real console Queue
+  page — the deferred mockup Q4). UNRULED — awaits an explicit owner go before design.
+
 ## Open owner questions carried into the build (DESIGN-045 Q-01…Q-06)
 
 Genuinely-owner, NOT the ruled ones: repo **license** (Q-01), **Postgres placement** (own instance
