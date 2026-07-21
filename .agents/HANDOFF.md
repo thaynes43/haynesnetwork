@@ -4,6 +4,24 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ BOOKS FORMAT UNIFICATION: RATIFIED, DOCS LANDED, TWO OPUS STREAMS QUEUED (written 2026-07-20 — parallel thread; supersedes nothing below)
+
+**Owner ruled (remote-control session): ONE Books library over both formats AND format-agnostic
+collections — "Both, in parallel."** **ADR-075** (unified Books wall: work cards via the pairing
+collapse, three-state Format seg, pairing tiles fold into the anchor card's coverage badge) +
+**ADR-076** (Libretto multi-target `targets[]` + back-compat, recipe-id twin merge, `cat=` L1
+goes live, the **Authors** category program — 21 curated-canon author recipes) are **Accepted**.
+PRD **R-231..R-233** + amendments (R-153/165/167/169/170 · R-211..213 · R-215..217); glossary
+**T-225..T-227**; DESIGN-024/026/036/037/038/043/044 amended. Rulings:
+`.agents/context/2026-07-20-books-unification-rulings.md`. Executable plan (streams, edges
+E-1..E-6, the author canon appendix): `.agents/plans/060-books-format-unification.md`.
+**NEXT: two parallel Opus streams** — **A** (hnet `feat/unified-books-wall`: registry merge,
+work-grain `books.search`, merged collection cards, prefs migration, `?tab=audiobooks` redirect)
+and **B** (libretto `feat/multi-target-recipes` → release → haynes-ops tag bump → convert the 5
+twins, Kavita id survives → land the 21 author recipes). If this session died before their PRs
+landed, re-dispatch both straight from PLAN-060 — it is self-contained. Owner reviews shipped UX
+(390px + desktop screenshots) per the standing discipline.
+
 ## ▶ YTDRIVARR DAY 1: DESIGNED, ACCEPTED, M1 + CONSOLE SHIPPED (written 2026-07-20 ~23:30 UTC — supersedes the block below)
 
 **The ytdl platform went vision → accepted design → shipped skeleton in one evening.**

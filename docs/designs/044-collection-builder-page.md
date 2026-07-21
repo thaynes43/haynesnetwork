@@ -3,6 +3,11 @@
 - **Status:** Accepted (Shipped) <!-- leg 2: the builder page + collections.search/preview + arr collection field, PR feat/collection-builder-page -->
   <!-- leg 3 (amendment 2026-07-18, PR feat/builder-preview-polish): owner REDESIGN — cap meter removed, gamified in-library/total "caught em all" read, full-width wall-flow layout, held/missing poster resolution. See D-05 amendment. -->
 - **Last updated:** 2026-07-18
+- **Amended 2026-07-20 (ADR-075 C-01 / ADR-076 C-01 — surgical):** the builder page's **Target library**
+  select becomes **`targets[]`** (1..N — a Books recipe now targets a Kavita AND an ABS library, ADR-076
+  C-01), and the Books/Audiobooks media tabs unify into one **Books** tab (the Audiobooks wall retires,
+  ADR-075 C-01) — a Books recipe spans both formats, so the "Books vs Audiobooks fixes the target" rationale
+  below is superseded by multi-target. Inline pointers at D-02 step 5 / D-06; no restructuring.
 - **As-built (leg 2):** The page ships at `/collections/new?tab=<mediaType>` (create) and
   `/collections/<id>/edit?tab=<mediaType>` (edit; `&hand=<file>` for a hand-authored Kometa collection),
   in `apps/web/app/(app)/collections/builder-client.tsx`. The DESIGN-043 D-03 Modal composer is REMOVED from
@@ -103,7 +108,10 @@ the form (D-08). The form sections, in order:
 4. **Options** — the human-worded toggles (D-06), only the ones that MEAN something for this builder +
    media type.
 5. **Target library** — a select, shown ONLY when it is meaningful (D-06): Books vs Audiobooks already
-   fixes the Libretto target; a Movies/TV tab may map to more than one Plex library.
+   fixes the Libretto target; a Movies/TV tab may map to more than one Plex library. _(Amended 2026-07-20 —
+   ADR-076 C-01: a Books recipe now declares **`targets[]`** (a Kavita AND an ABS library), so the select
+   becomes multi-target; with the unified Books wall (ADR-075) "Books vs Audiobooks" no longer fixes a
+   single target.)_
 6. **Save** — the primary action; its label + behavior are the DESIGN-043 save flows (D-07).
 
 Every reveal is an in-place expansion (the sanctioned ADR-015 exception, like the catalog inline editor):
@@ -279,7 +287,10 @@ Only the options that MEAN something for the chosen builder + media type are sho
   explanatory `Modal` ("this makes the estate acquire the collection's missing titles on the next run") —
   that Modal survives; it is not the add/edit modal this design removed. Default OFF.
 - **Target library** (D-02 §5) — shown only when the media type maps to more than one target library. Books
-  vs Audiobooks is already the target; a single-library Movies/TV tab hides it.
+  vs Audiobooks is already the target; a single-library Movies/TV tab hides it. _(Amended 2026-07-20 —
+  ADR-076 C-01: a books recipe's target is now **`targets[]`** (1..N — a Kavita + an ABS library), so the
+  multi-target select shows for Books; the pre-unification "Books vs Audiobooks is the target" rationale is
+  superseded.)_
 
 ### D-07 — Save flows are unchanged
 

@@ -1,7 +1,7 @@
 # DESIGN-026: Library views, grouping, and the per-view Sorting & Filtering overhaul
 
 - **Status:** Accepted <!-- ratified with ADR-051/052/053 on 2026-07-11; the Draft label was a docs-only-PR oversight (noted by the PLAN-029 data/domain build, fixed in the UX build PR) -->
-- **Last updated:** 2026-07-20 <!-- D-03 amendment: Music Collection facet removed (owner ruling) — no music collections exist/planned, the empty filter was worse than absent (ADR-047/ADR-051 empty-state); Genre stays. Prior: 2026-07-18 wanted-filter rail unification amendment (three-state Wanted axis; both axes labeled On disk / Wanted; the Missing + Hide-wanted composed-gap insight) -->
+- **Last updated:** 2026-07-20 <!-- ADR-075 amendment: the Books + Audiobooks registry walls MERGE into one Books wall (facet union with data-gating, a three-state Format seg, default grouped-Author); the audiobooks view levels retire; Comics untouched — see the Amendment section at the end. Prior same day: D-03 amendment — Music Collection facet removed (owner ruling) — no music collections exist/planned, the empty filter was worse than absent (ADR-047/ADR-051 empty-state); Genre stays. Prior: 2026-07-18 wanted-filter rail unification amendment (three-state Wanted axis; both axes labeled On disk / Wanted; the Missing + Hide-wanted composed-gap insight) -->
 - **Satisfies:** PRD-001 **R-165..R-171**; governed by **ADR-051** (views + registries), **ADR-052** (per-user
   preferences), **ADR-053** (per-user watch/read-state). EXTENDS **DESIGN-008 D-09** (the shared `ledger.search`
   filter/sort engine + keyset cursor) and **DESIGN-024** (the `books.search`/`filterFacets` contract); reads the
@@ -397,3 +397,38 @@ side with no axis names, reading as two toggles fighting over the same idea.
   row ALONE, with the complement (`Missing` + `Wanted only`) = the monitored-missing row. Legacy
   `?wanted=1` → `only` is covered by the client parse. e2e/screenshots: an \*arr wall with both labeled
   rails and the composed Missing + Hide-wanted result (390 + desktop, dark).
+
+## Amendment — 2026-07-20 (ADR-075 — the Books + Audiobooks registry walls merge into one Books wall)
+
+Owner ruling 2026-07-20 (ADR-075, sibling ADR-076): ebooks and audiobooks unify into ONE **Books** library
+with format as a facet. The Audiobooks wall retires; this amendment folds its registry into the Books wall.
+**Comics are untouched.** The seam is exactly the one this design built — a registry-row edit, not a new
+component (ADR-051 C-01).
+
+- **One `books` registry wall over both formats.** The `books` and `audiobooks` `WALL_VIEWS` /
+  `LIBRARY_WALL_DEFAULTS` / registry rows COLLAPSE into one `books` wall backed by the books engine over
+  `media_kind ∈ {book, audiobook}`. The D-01 defaults table's **Audiobooks** row is removed; **Books** keeps
+  its **grouped-by-Author** default (both retiring walls already defaulted to it — R-165); **Comics** keeps
+  grouped-by-Series. The `audiobooks:*` view levels (`audiobooks:wall|grouped-author|grouped-genre|
+  grouped-collection|collection-items`) **retire**; their capabilities move onto the `books:*` levels.
+- **Facet UNION with data-gating (D-02/D-03/D-08 — "no dead chip", ADR-051 C-06).** The merged Books
+  registry unions both walls' facets and gates each on the work's carried formats: Author/Genre/Wanted are
+  universal; **Narrator/Series/Language/Length/Read** gate on audio-carrying works (the ABS-derived read
+  facet, D-07, moves here data-gated — ADR-053's Kavita gap stays honest); **Pages/File** gate on
+  ebook-carrying works. The old Books `Format` (epub/cbz) facet **relabels File**.
+- **The three-state Format seg (new axis).** A Books-wall **Format** segmented control — All · Ebook ·
+  Audiobook (`?format=`, availability semantics: "Ebook" = works holding an ebook) — joins the wanted /
+  on-disk axes as a first-class labeled rail (the 2026-07-18 wanted-rail idiom above). It is the
+  ebook↔audiobook axis rendered as a seg because with exactly two formats a multi-select collapses to these
+  three states.
+- **Work-grain reads.** `books.search` collapses a paired duo to one anchor card (DESIGN-024 D-04
+  amendment / DESIGN-036 2026-07-20 amendment); facet counts, grouping, and the pager become work-grain.
+  Grouped-by-Author aggregate cards count WORKS, not rows.
+- **Per-user preference.** The `audiobooks` wall preference key retires; orphaned `library_preferences`
+  rows are dropped in the unification migration (ADR-075 C-06 — users re-pick once). The Books wall keeps
+  one key.
+- **Test strategy (added).** The registry-asymmetry battery
+  (`apps/web/lib/__tests__/library-view-registry.test.ts`) loses the `audiobooks` wall and gains the merged
+  Books wall's facet-gating cases (audio-gated vs ebook-gated chips present/absent by the seeded work's
+  formats) + the three Format seg states; the `audiobooks:*` level assertions are removed. Comics rows are
+  unchanged (regression guard). See PRD R-231/R-167/R-165/R-169/R-170.
