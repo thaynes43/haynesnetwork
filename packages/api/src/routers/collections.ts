@@ -161,7 +161,9 @@ function recipeWire(r: LibrettoRecipe, mediaType: CollectionMediaType, missingCo
     id: r.id,
     name: r.name ?? null,
     builderType: r.builder?.type ?? null,
-    builderRef: r.builder?.ref ?? null,
+    // A multi-source ref (static_ids / hardcover_comics) is an array on the wire; join it to the same
+    // comma-separated display string the id-list builders already use, keeping this contract `string | null`.
+    builderRef: Array.isArray(r.builder?.ref) ? r.builder.ref.join(', ') : (r.builder?.ref ?? null),
     ordered: r.variables?.ordered ?? null,
     syncMode: r.variables?.syncMode ?? null,
     findMissing: r.variables?.acquisitionEnabled ?? false,

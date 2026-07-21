@@ -49,6 +49,30 @@ describe('LibrettoReadClient', () => {
     expect(res.issues).toHaveLength(1);
   });
 
+  it('parses a recipe list mixing string refs and array refs (hardcover_comics grain — PR #11 drift)', async () => {
+    // The live 2026-07-21 regression: two hardcover_comics recipes emit `builder.ref` as an ARRAY, and the
+    // string-only ACL threw on the WHOLE list ("recipes.15.builder.ref: Invalid input: expected string,
+    // received array"), aborting the hourly collection-force-search pass. The widened union parses both.
+    const recipes = [
+      { id: 'stormlight', builder: { type: 'hardcover_series', ref: 'stormlight' }, variables: { acquisitionEnabled: true } },
+      { id: 'nyt-fiction', builder: { type: 'nyt_list', ref: 'hardcover-fiction' } },
+      // The comics grain: builder.ref is a string ARRAY (two such recipes are live).
+      { id: 'invincible-omni', builder: { type: 'hardcover_comics', ref: ['12345', '12346'] }, variables: { acquisitionEnabled: true } },
+      { id: 'saga-comics', builder: { type: 'hardcover_comics', ref: ['77', '78', '79'] }, variables: { acquisitionEnabled: false } },
+    ];
+    const fetchImpl = vi.fn(async () => jsonResponse(200, { recipes, issues: [] }));
+    const client = new LibrettoReadClient({ ...OPTS, fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    const res = await client.listRecipes(); // pre-fix: rejected the whole list and threw
+    expect(res.recipes).toHaveLength(4);
+    // The string ref survives as a string; the comics array survives as an array (no silent coercion).
+    expect(res.recipes[0]!.builder?.ref).toBe('stormlight');
+    expect(res.recipes[2]!.builder?.ref).toEqual(['12345', '12346']);
+    // The exact field the cron force-search pass filters on stays readable across BOTH ref shapes.
+    const acquisitionOn = res.recipes.filter((r) => r.variables?.acquisitionEnabled === true).map((r) => r.id);
+    expect(acquisitionOn).toEqual(['stormlight', 'invincible-omni']);
+  });
+
   it('reads a run with counts', async () => {
     const fetchImpl = vi.fn(async () =>
       jsonResponse(200, {
@@ -289,6 +313,26 @@ describe('LibrettoWriteClient', () => {
     });
     expect(seen[0]!.method).toBe('PUT');
     expect(seen[0]!.url).toContain('/api/recipes/dune');
+  });
+
+  it('upserts a comics recipe whose builder.ref is an array (round-trip re-PUT)', async () => {
+    // recipeToDraft reads a hardcover_comics recipe (array ref) back and re-PUTs it (the find-missing
+    // toggle / edit): the write ACL must accept the array unchanged, not throw on it.
+    const seen: Array<{ body: unknown }> = [];
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      seen.push({ body: init?.body ? JSON.parse(init.body as string) : undefined });
+      return jsonResponse(200, { id: 'invincible-omni' });
+    });
+    const client = new LibrettoWriteClient({
+      ...OPTS,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    await client.upsertRecipe({
+      id: 'invincible-omni',
+      builder: { type: 'hardcover_comics', ref: ['12345', '12346'] },
+      variables: { acquisitionEnabled: true },
+    });
+    expect((seen[0]!.body as { builder: { ref: unknown } }).builder.ref).toEqual(['12345', '12346']);
   });
 
   it('surfaces a 400 with per-path issues as LibrettoHttpError', async () => {
