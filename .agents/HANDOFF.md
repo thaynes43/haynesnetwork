@@ -4,23 +4,25 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-## ▶ BOOKS FORMAT UNIFICATION: RATIFIED, DOCS LANDED, TWO OPUS STREAMS QUEUED (written 2026-07-20 — parallel thread; supersedes nothing below)
+## ▶ BOOKS FORMAT UNIFICATION: SHIPPED — BOTH STREAMS MERGED, ROLLOUT STAGED (updated 2026-07-21 — parallel thread; supersedes nothing below)
 
-**Owner ruled (remote-control session): ONE Books library over both formats AND format-agnostic
-collections — "Both, in parallel."** **ADR-075** (unified Books wall: work cards via the pairing
-collapse, three-state Format seg, pairing tiles fold into the anchor card's coverage badge) +
-**ADR-076** (Libretto multi-target `targets[]` + back-compat, recipe-id twin merge, `cat=` L1
-goes live, the **Authors** category program — 21 curated-canon author recipes) are **Accepted**.
-PRD **R-231..R-233** + amendments (R-153/165/167/169/170 · R-211..213 · R-215..217); glossary
-**T-225..T-227**; DESIGN-024/026/036/037/038/043/044 amended. Rulings:
-`.agents/context/2026-07-20-books-unification-rulings.md`. Executable plan (streams, edges
-E-1..E-6, the author canon appendix): `.agents/plans/060-books-format-unification.md`.
-**NEXT: two parallel Opus streams** — **A** (hnet `feat/unified-books-wall`: registry merge,
-work-grain `books.search`, merged collection cards, prefs migration, `?tab=audiobooks` redirect)
-and **B** (libretto `feat/multi-target-recipes` → release → haynes-ops tag bump → convert the 5
-twins, Kavita id survives → land the 21 author recipes). If this session died before their PRs
-landed, re-dispatch both straight from PLAN-060 — it is self-contained. Owner reviews shipped UX
-(390px + desktop screenshots) per the standing discipline.
+**Ratified 2026-07-20 over remote control ("Both, in parallel"), SHIPPED within hours.**
+**ADR-075** (one Books wall: work cards via the pairing collapse, three-state Format seg,
+pairing tiles fold into the anchor card) + **ADR-076** (Libretto multi-target `targets[]`,
+recipe-id twin merge, `cat=` L1 live, the **Authors** category program) are Accepted AND
+implemented: hnet **#460** (docs) + **#464** (Stream A — unified wall, merged collection cards,
+migration 0071; full battery + dev:local drive verified, 390px/desktop clean) + **#465**
+(v0.89.0, auto-merge queued — verify) · libretto **#13** (Stream B — multi-target + `cat=` +
+`{title,author}` static entries + 21 author example recipes; 268 tests) · haynes-ops **#2197**
+(libretto → `sha-eaa868a`). Stream A's Opus agent died on the session limit mid-build; the
+coordinator finished inline. Full evidence + PR table:
+`.agents/context/2026-07-21-books-unification-shipped.md`.
+**NEXT: the staged rollout** — (1) verify flux rolled libretto `sha-eaa868a` + hnet 0.89.0
+reaches staging (owner UX review after); (2) convert the 5 audiobook twin recipes to two-target
+(KAVITA id survives; ABS twin `?deleteCollection=true`); (3) apply the 21 `examples/authors/`
+recipes with real library ids (both targets, `category: Authors`, acquisition paced by the
+shipped caps) — same API path the 07-20 batch of 25 recipes used. Plan of record:
+`.agents/plans/060-books-format-unification.md`.
 
 ## ▶ YTDRIVARR DAY 1: DESIGNED, ACCEPTED, M1 + CONSOLE SHIPPED (written 2026-07-20 ~23:30 UTC — supersedes the block below)
 
