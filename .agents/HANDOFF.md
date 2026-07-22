@@ -4,6 +4,34 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ NEXT SESSION — start here (written 2026-07-22 ~08:45 UTC — POD SHUTDOWN handoff; owner shutting the dev-env down)
+
+**The pod is being shut down clean: every worktree committed/pushed, no scheduled checks lost
+(all session crons had fired), all saga state on main.** Cold start = this block + the STANDING
+ORDER below (the validation regime is on DAY 2 of 14 — run the daily check every session
+through ~08-04). Deep context: `.agents/context/2026-07-21-overnight-handoff.md` (the
+procedures + access facts) · `2026-07-22-validation-day2.md` (yesterday's verdict) ·
+`2026-07-21-ytdrivarr-validation-regime.md` (the protocol).
+
+**Board at shutdown:** the ytdl CUTOVER IS 100% + the donor RETIRED (config-manager gone,
+haynes-ops #2182/#2209; ytdrivarr is the sole Peloton path — first unattended nightly GREEN:
+144 added, fresh bearer, no drift, numbering superset) · ytdrivarr **v0.6.1** live (the *arr
+console keyless on LAN at ytdrivarr.haynesops.com; per-activity Peloton sources; /metrics +
+the Grafana dashboard `/d/ytdrivarr/ytdrivarr`; honest bearer thresholds warn 30h/error 52h)
+· **MAM: the 185 GATE IS CROSSED (189) — the owner's 3-day countdown is RUNNING** (pool all
+<72h; governor self-capped at the 200 ceiling; capacity/expansion is the next lever — OWNER'S
+call) · GB day-2 clean (saturation-by-design; the collection-wants backlog drains ~13+/day —
+322/441 NULL incl. the Expanse mains, quota-bound not broken) · haynesnetwork v0.89.1+.
+
+**Notes for the next agent:** haynes-ops IMAGE AUTOMATION now auto-bumps ytdrivarr pins
+(#2211) — merge+release and the cluster follows; don't double-bump. LANES: agents own
+ytdrivarr; the OWNER owns Libretto/collections/haynesnetwork product (his sessions ship there
+— ADR-075/076, v0.89.x were his). Open ytdrivarr items: the interpreted defaults on PR #20
+(owner may veto) · issue #19 closable · watch the intermittent music-download noise (JVKE-class,
+non-fatal). One archive branch `archive/health-test-variant` (ytdrivarr) holds an orphaned
+test edit found at shutdown — probably superseded by merged #13; delete after a glance.
+Worktrees under ~/work are all pushed/merged — safe for cleanup to eat.
+
 ## ▶ STANDING ORDER — THE YTDRIVARR VALIDATION REGIME (owner-mandated 2026-07-21; runs through ~2026-08-04)
 
 **Every session in the window validates that ytdrivarr did not regress the old YouTube/Peloton
