@@ -39,10 +39,18 @@ cleaned in ABS · 21 author recipes live (12 collections materialized, 9 await f
 mirror re-synced (`collectionsRemoved: 11`, zero skips) · **219 collection wants minted** ·
 libretto API nits filed SHORT (https://github.com/thaynes43/libretto/issues/14). Evidence in the
 07-21 shipped note ("ROLLOUT EXECUTED" section).
+**EVENING LEG (same day): pairing gap shepherded +11 (382→392) + the NZB dupe incident.**
+Mint cap 25→100 live (haynes-ops #2204) · matcher author tolerances + Kavita writers author
+fallback shipped (hnet #474 → v0.89.2, deployed #2207; null-author ebooks 54→0) · NZB Finder
+duplicate-download warning root-caused (LL postprocess `Duplicate part 1` fail→re-snatch loop,
+4 books) — SAB `no_dupes` was OFF on BOTH instances → now Discard; the live looper unqueued.
+Full evidence + follow-ups: `.agents/context/2026-07-21-pairing-shepherd-and-dupe-guard.md`.
 **NEXT:** (1) owner UX review of the live wall (390px + desktop) — the Authors chip + merged
 franchise cards are live NOW; (2) after the 07:00 UTC GB reset, RE-APPLY the 21 author recipes
-(apply loop rerun or manager Find-missing) so the quota-skipped canon acquisitions push to LL;
-(3) retired step: convert the 5 audiobook twin recipes to two-target
+(apply loop rerun or manager Find-missing) so the quota-skipped canon acquisitions push to LL —
+the 200 unmintable pairing wants also retry then at the new cap; (3) dupe-guard follow-ups: LL
+failed-download BLACKLIST audit + stale part-file cleanup + the hnet want-cooldown guardrail
+(design-worthy); (4) retired step: convert the 5 audiobook twin recipes to two-target
 (KAVITA id survives; ABS twin `?deleteCollection=true`); (3) apply the 21 `examples/authors/`
 recipes with real library ids (both targets, `category: Authors`, acquisition paced by the
 shipped caps) — same API path the 07-20 batch of 25 recipes used. Plan of record:

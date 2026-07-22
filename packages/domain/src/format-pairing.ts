@@ -72,9 +72,52 @@ export interface FormatPairMatch {
   matchedVia: FormatPairMatchKind;
 }
 
-/** Author agreement (ADR-065 C-01): both normalized authors non-empty, substring either direction. */
+/** One token matches another when equal or one is a prefix of the other ("geo"→"george", "l"→"lucy"). */
+const tokenMatches = (a: string, b: string): boolean => a === b || a.startsWith(b) || b.startsWith(a);
+
+/**
+ * Ordered alignment of the shorter token list into the longer as a SUBSEQUENCE, tokens matching by
+ * equality-or-prefix — the bibliographic name tolerances the plain substring check misses:
+ * initials spacing ("jrr tolkien" ⇄ "j r r tolkien"), middle-name insertion ("dean koontz" ⇄
+ * "dean ray koontz"), initials-to-full-name ("l m montgomery" ⇄ "lucy maud montgomery"), and a
+ * leading co-author credit ("george r r martin" ⇄ "geo r r martin gardner duzois …"). Guard: at
+ * least one aligned pair must be a REAL word on both sides (≥ 3 chars — the surname anchor), so
+ * bare initials alone can never carry an agreement ("j" ⇄ "john grisham" stays refused).
+ */
+function tokensAlign(shorter: string[], longer: string[]): boolean {
+  let i = 0;
+  let anchored = false;
+  for (const t of shorter) {
+    let found = false;
+    while (i < longer.length) {
+      const u = longer[i++]!;
+      if (tokenMatches(t, u)) {
+        found = true;
+        anchored ||= t.length >= 3 && u.length >= 3;
+        break;
+      }
+    }
+    if (!found) return false;
+  }
+  return anchored;
+}
+
+/**
+ * Author agreement (ADR-065 C-01, tolerance-widened 2026-07-21 — the live pairing-gap diagnosis):
+ * both normalized authors non-empty, then substring either direction OR the ordered token
+ * alignment above. Full noise-stripped TITLE equality remains the primary gate (the matcher never
+ * consults authors for rows whose titles differ), so the conservatism bar — a wrong pair needs
+ * identical titles AND agreeing authors — is unchanged; "Odyssey" by Homer still never pairs with
+ * "Odyssey" by Walter Mosley.
+ */
 function authorsAgree(a: string, b: string): boolean {
-  return a.length > 0 && b.length > 0 && (a.includes(b) || b.includes(a));
+  if (a.length === 0 || b.length === 0) return false;
+  // Substring either direction — but only when the shorter side is a REAL word (≥ 3 chars), the
+  // same anchor bar the alignment uses; a bare initial could previously ride "j" ⊂ "john grisham".
+  if (Math.min(a.length, b.length) >= 3 && (a.includes(b) || b.includes(a))) return true;
+  const at = a.split(' ');
+  const bt = b.split(' ');
+  return at.length <= bt.length ? tokensAlign(at, bt) : tokensAlign(bt, at);
 }
 
 /**

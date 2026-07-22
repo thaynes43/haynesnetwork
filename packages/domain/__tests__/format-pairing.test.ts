@@ -163,6 +163,33 @@ describe('matchFormatPairs (the conservative matcher)', () => {
     expect(matchFormatPairs([book, audio])).toEqual([]);
   });
 
+  it('author tolerance (2026-07-21): initials spacing, initials-to-full, middle names, a leading co-author credit', () => {
+    const cases: Array<[string, string]> = [
+      ['J.R.R. Tolkien', 'JRR Tolkien'], // "j r r tolkien" ⇄ "jrr tolkien" — the Silmarillion class
+      ['L.M. Montgomery', 'Lucy Maud Montgomery'],
+      ['Dean Koontz', 'Dean Ray Koontz'],
+      ['George R.R. Martin', 'Geo. R.R. Martin, Gardner Duzois, Daniel Abraham'],
+    ];
+    for (const [ebookAuthor, audioAuthor] of cases) {
+      const book = pi({ title: 'Same Title', author: ebookAuthor, mediaKind: 'book' });
+      const audio = pi({ title: 'Same Title', author: audioAuthor, mediaKind: 'audiobook' });
+      expect(matchFormatPairs([book, audio]), `${ebookAuthor} vs ${audioAuthor}`).toHaveLength(1);
+    }
+  });
+
+  it('author tolerance never agrees without a real-word anchor or across disjoint names', () => {
+    const refused: Array<[string, string]> = [
+      ['Walter Mosley', 'Homer'], // distinct works sharing a bare title
+      ['Charlaine Harris', 'Harris Kelner'], // ordered alignment fails; substring fails
+      ['J.', 'John Grisham'], // a bare initial alone can never anchor an agreement
+    ];
+    for (const [ebookAuthor, audioAuthor] of refused) {
+      const book = pi({ title: 'Same Title', author: ebookAuthor, mediaKind: 'book' });
+      const audio = pi({ title: 'Same Title', author: audioAuthor, mediaKind: 'audiobook' });
+      expect(matchFormatPairs([book, audio]), `${ebookAuthor} vs ${audioAuthor}`).toHaveLength(0);
+    }
+  });
+
   it('a null/empty author on EITHER side pairs nothing', () => {
     const bookNull = pi({ title: 'Dune', author: null, mediaKind: 'book' });
     const audio = pi({ title: 'Dune', author: 'Frank Herbert', mediaKind: 'audiobook' });
