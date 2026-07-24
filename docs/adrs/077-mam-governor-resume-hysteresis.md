@@ -1,6 +1,6 @@
 # ADR-077: MAM compliance governor — resume hysteresis (a distinct resume floor below the pause threshold)
 
-- **Status:** Proposed
+- **Status:** Accepted (owner ruling 2026-07-24: proceed with the hysteresis hardening)
 - **Date:** 2026-07-23
 - **Deciders:** Tom Haynes (owner) · executed by an autonomous run
 - **Supersedes:** [ADR-054](054-mam-compliance-governor.md) consequence **C-05** (the buffer as the ONLY
