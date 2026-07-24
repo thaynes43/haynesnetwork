@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.90.1](https://github.com/thaynes43/haynesnetwork/compare/v0.90.0...v0.90.1) (2026-07-24)
+
+
+### Documentation
+
+* **adr:** accept ADR-077 (MAM governor resume hysteresis) ([#482](https://github.com/thaynes43/haynesnetwork/issues/482)) ([5b76ca4](https://github.com/thaynes43/haynesnetwork/commit/5b76ca4777af72e9d836594d4da3c98102afbb22))
+
 ## [0.90.0](https://github.com/thaynes43/haynesnetwork/compare/v0.89.2...v0.90.0) (2026-07-24)
 
 
