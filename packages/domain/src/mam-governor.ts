@@ -1,9 +1,16 @@
 // ADR-054 / DESIGN-027 (PLAN-039) — the MAM compliance governor: the cap-aware torrent-fallback pacer +
 // single-writer. The `mam-governor` sync mode counts UNSATISFIED torrents LOCALLY in qBittorrent (category
 // `books-mam`, seeding_time < 72h + still-downloading — ZERO MyAnonaMouse API surface, per the compliance
-// contract) and gates the LazyLibrarian MAM Torznab provider: near the rank cap (unsatisfied ≥ limit −
-// buffer) it PAUSES the provider via LL's own changeProvider API; when headroom returns it RE-ENABLES it.
-// Grabs self-pace to the cap with zero MAM-side behavior changes.
+// contract) and gates the LazyLibrarian MAM Torznab provider: near the rank cap (unsatisfied ≥ threshold =
+// limit − buffer) it PAUSES the provider via the Prowlarr indexer seam; it only RE-ENABLES once unsatisfied
+// drops back below a distinct, lower RESUME FLOOR. Grabs self-pace to the cap with zero MAM-side behavior.
+//
+// RESUME HYSTERESIS (ADR-077 / DESIGN-027 D-09, PLAN-061 — the 2026-07-23 gate-violation fix): pause and
+// resume no longer share one threshold. A CLOSED gate reopens only when unsatisfied < resumeFloor (default
+// limit − 2×buffer); in the DEAD BAND (resumeFloor ≤ unsatisfied < threshold) the gate HOLDS its current
+// state. This kills the flap where a resume at threshold−1 immediately re-floods past the hard cap inside one
+// 15-minute sampling interval (a queued LazyLibrarian backlog can fire ~100 MAM searches in 4 minutes). See
+// `.agents/context/2026-07-23-mam-gate-violation-audit.md`. First sight (no state row) is treated as CLOSED.
 //
 // SEAM CHOICE (ADR-054 C-01): toggle the MyAnonaMouse PROWLARR indexer's `enable` flag, NOT LazyLibrarian's
 // own provider `enabled` — Prowlarr owns LL's provider entries via its LazyLibrarian application
@@ -43,8 +50,15 @@ export const MAM_ZERO_HEADROOM_ALERT_HOURS_DEFAULT = 48;
 export interface MamGovernorTuning {
   /** MAM unsatisfied-torrent LIMIT for the account's rank. */
   limit: number;
-  /** Slots reserved below the limit (the gate closes at limit − buffer). */
+  /** Slots reserved below the limit (the gate PAUSES at limit − buffer). */
   buffer: number;
+  /**
+   * ADR-077 — the RESUME floor: a CLOSED gate only reopens when unsatisfied drops below this (distinct from,
+   * and strictly less than, the pause threshold). Between the floor and the threshold is the DEAD BAND where
+   * the gate holds. Default derived as limit − 2×buffer (one full observed reopen burst below the cap), so a
+   * single burst after a resume peaks well under the hard limit and the next sample re-closes.
+   */
+  resumeFloor: number;
   /** Hours of pinned-at-0 headroom before the stuck alert fires. */
   zeroHeadroomAlertHours: number;
 }
@@ -55,27 +69,71 @@ function parseIntEnv(raw: string | undefined, fallback: number, min: number): nu
 }
 
 /**
+ * ADR-077 — derive the default resume floor: `limit − 2×buffer`, clamped to the valid range
+ * `0 ≤ floor < threshold` (threshold = limit − buffer). Observed reopen bursts add +15..+17 unsatisfied per
+ * 15-minute interval, so seating the floor one full burst below the cap means one post-resume burst peaks
+ * under the hard limit and the next sample re-closes the gate. Never returns a value ≥ threshold (which would
+ * make resume == pause and re-introduce the flap) nor a negative floor (a mis-set buffer can only clamp it).
+ */
+export function deriveResumeFloor(limit: number, buffer: number, threshold: number): number {
+  return Math.max(0, Math.min(limit - 2 * buffer, threshold - 1));
+}
+
+/**
+ * ADR-077 — resolve the resume floor from `MAM_RESUME_FLOOR` (an ABSOLUTE unsatisfied count). A valid override
+ * must be `0 ≤ floor < threshold`; anything else (out of range, negative, unparseable, or the derived-default
+ * fallthrough when unset) yields the derived default, and an invalid override logs one warning via `warn`.
+ */
+function resolveResumeFloor(
+  raw: string | undefined,
+  derived: number,
+  threshold: number,
+  warn?: (message: string, fields?: Record<string, unknown>) => void,
+): number {
+  if (raw === undefined || raw.trim() === '') return derived;
+  const n = Number.parseInt(raw.trim(), 10);
+  if (Number.isFinite(n) && n >= 0 && n < threshold) return n;
+  warn?.('MAM_RESUME_FLOOR invalid (need 0 <= floor < threshold); using the derived default', {
+    raw: raw.trim(),
+    derived,
+    threshold,
+  });
+  return derived;
+}
+
+/**
  * Resolve the governor's tuning knobs. THE SEAM (owner ruling 2026-07-11 / PLAN-040): the mode calls this
  * ONCE per run, so PLAN-040 can add an audited DB-backed `app_setting` override here — read the setting,
  * fall back to env, fall back to the defaults — WITHOUT reworking the mode. It is async precisely so that
  * DB path drops in with no signature change. v1: env-backed (`MAM_UNSATISFIED_LIMIT` /
- * `MAM_UNSATISFIED_BUFFER` / `MAM_ZERO_HEADROOM_ALERT_HOURS`). The buffer is clamped to `< limit` so a
- * mis-set buffer can never wedge the gate permanently closed.
+ * `MAM_UNSATISFIED_BUFFER` / `MAM_RESUME_FLOOR` / `MAM_ZERO_HEADROOM_ALERT_HOURS`). The buffer is clamped to
+ * `< limit` so a mis-set buffer can never wedge the gate permanently closed; the resume floor (ADR-077) is
+ * derived `limit − 2×buffer` unless a valid `MAM_RESUME_FLOOR` (`0 ≤ floor < threshold`) overrides it.
  */
 export async function resolveGovernorConfig(opts?: {
   env?: Record<string, string | undefined>;
   /** Reserved for PLAN-040's DB-backed override (unused in v1). */
   db?: DbClient;
+  /** Sink for the one-off `MAM_RESUME_FLOOR` invalid-override warning (the CronJob wires its JSON logger). */
+  warn?: (message: string, fields?: Record<string, unknown>) => void;
 }): Promise<MamGovernorTuning> {
   const env = opts?.env ?? process.env;
   const limit = parseIntEnv(env.MAM_UNSATISFIED_LIMIT, MAM_UNSATISFIED_LIMIT_DEFAULT, 1);
   const rawBuffer = parseIntEnv(env.MAM_UNSATISFIED_BUFFER, MAM_UNSATISFIED_BUFFER_DEFAULT, 0);
+  const buffer = Math.min(rawBuffer, Math.max(0, limit - 1));
+  const threshold = limit - buffer;
+  const resumeFloor = resolveResumeFloor(
+    env.MAM_RESUME_FLOOR,
+    deriveResumeFloor(limit, buffer, threshold),
+    threshold,
+    opts?.warn,
+  );
   const zeroHeadroomAlertHours = parseIntEnv(
     env.MAM_ZERO_HEADROOM_ALERT_HOURS,
     MAM_ZERO_HEADROOM_ALERT_HOURS_DEFAULT,
     1,
   );
-  return { limit, buffer: Math.min(rawBuffer, Math.max(0, limit - 1)), zeroHeadroomAlertHours };
+  return { limit, buffer, resumeFloor, zeroHeadroomAlertHours };
 }
 
 // ---------------------------------------------------------------------------
@@ -110,15 +168,31 @@ export interface MamGovernorTargets {
 // Pure decision helpers (unit-tested)
 // ---------------------------------------------------------------------------
 
-/** Decide the DESIRED gate from the counts. Fail-closed: a failed count ⇒ closed. threshold = limit − buffer. */
+/**
+ * Decide the DESIRED gate from the counts WITH resume hysteresis (ADR-077). Pause and resume use two distinct
+ * levels: an OPEN gate closes at/above `threshold = limit − buffer`; a CLOSED gate reopens only below the
+ * lower `resumeFloor`. In the DEAD BAND (`resumeFloor ≤ unsatisfied < threshold`) the gate HOLDS `priorOpen`,
+ * so a resume can't happen at threshold−1 and immediately re-flood. `priorOpen` is the current recorded gate
+ * state; first sight (no state row) passes `false` (conservative: reopening requires < floor). Fail-closed: a
+ * failed count ⇒ closed regardless of the prior state.
+ */
 export function computeDesiredGate(
   counts: Pick<UnsatisfiedCounts, 'unsatisfied'>,
   countOk: boolean,
   tuning: MamGovernorTuning,
-): { desiredOpen: boolean; threshold: number } {
+  priorOpen: boolean,
+): { desiredOpen: boolean; threshold: number; resumeFloor: number } {
   const threshold = tuning.limit - tuning.buffer;
-  const desiredOpen = countOk && counts.unsatisfied < threshold;
-  return { desiredOpen, threshold };
+  const resumeFloor = tuning.resumeFloor;
+  let desiredOpen: boolean;
+  if (!countOk) {
+    desiredOpen = false; // fail-closed
+  } else if (priorOpen) {
+    desiredOpen = counts.unsatisfied < threshold; // OPEN holds until it reaches the pause threshold
+  } else {
+    desiredOpen = counts.unsatisfied < resumeFloor; // CLOSED holds until it drops below the resume floor
+  }
+  return { desiredOpen, threshold, resumeFloor };
 }
 
 export interface StuckDecision {
@@ -175,6 +249,8 @@ export interface MamGovernorReport {
   limit: number;
   buffer: number;
   threshold: number;
+  /** ADR-077 — the resume floor: a CLOSED gate reopens only when unsatisfied drops below this (< threshold). */
+  resumeFloor: number;
   headroom: number;
   /** The gate state we RECORDED (what LazyLibrarian actually reflects after this run). */
   gateOpen: boolean;
@@ -240,7 +316,15 @@ export async function evaluateMamGovernor(input: {
     countError = err instanceof Error ? err.message : String(err);
   }
 
-  const { desiredOpen, threshold } = computeDesiredGate(counts, countOk, tuning);
+  // ADR-077 — thread the PRIOR recorded gate state into the decision so the dead band can hold. First sight
+  // (no state row) is treated as CLOSED (conservative: reopening then requires unsatisfied < resumeFloor).
+  const priorOpen = prev?.gateOpen ?? false;
+  const { desiredOpen, threshold, resumeFloor } = computeDesiredGate(
+    counts,
+    countOk,
+    tuning,
+    priorOpen,
+  );
   const headroom = countOk ? Math.max(0, tuning.limit - counts.unsatisfied) : (prev?.headroom ?? 0);
 
   // 2. READ the MAM indexer's current enable state (best-effort).
@@ -294,6 +378,7 @@ export async function evaluateMamGovernor(input: {
     limit: tuning.limit,
     buffer: tuning.buffer,
     threshold,
+    resumeFloor,
     headroom,
     countOk,
     reason: countOk ? 'threshold' : 'count_failed',
@@ -353,6 +438,7 @@ export async function evaluateMamGovernor(input: {
     limit: tuning.limit,
     buffer: tuning.buffer,
     threshold,
+    resumeFloor,
     headroom,
     gateOpen: appliedOpen,
     previousGateOpen: prev?.gateOpen ?? null,

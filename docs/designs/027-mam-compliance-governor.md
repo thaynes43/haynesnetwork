@@ -1,9 +1,10 @@
 # DESIGN-027: MAM compliance governor
 
 - **Status:** Accepted
-- **Last updated:** 2026-07-11
-- **Satisfies:** PRD-001 R-172..R-177; governed by ADR-054 (seam) + ADR-034 (outbox) + ADR-040 (sync-mode
-  precedent) + ADR-008 (confined external write surface).
+- **Last updated:** 2026-07-23 (D-09 — resume hysteresis)
+- **Satisfies:** PRD-001 R-172..R-177 + R-234 (flap-free gating); governed by ADR-054 (seam) + **ADR-077
+  (resume hysteresis, supersedes ADR-054 C-05)** + ADR-034 (outbox) + ADR-040 (sync-mode precedent) + ADR-008
+  (confined external write surface).
 
 ## Overview
 
@@ -55,10 +56,14 @@ is the acceptance fixture.
 
 ### D-03 — the gate decision (pure)
 
-- `threshold = limit − buffer`. `desiredOpen = countOk && unsatisfied < threshold`.
-- Defaults: `limit 20` (New Member), `buffer 5` (⇒ pause at 15), `zeroHeadroomAlertHours 48`.
+- `threshold = limit − buffer`. **Pause** when `unsatisfied ≥ threshold`; **resume** below the RESUME FLOOR,
+  not the threshold — see **D-09** (ADR-077). `desiredOpen` now depends on the current gate state so the dead
+  band can hold.
+- Defaults: `limit 20` (New Member), `buffer 5` (⇒ pause at 15), `resumeFloor 10` (derived; D-09),
+  `zeroHeadroomAlertHours 48`.
 - The **buffer** reserves slots below the hard `limit` for grabs already past Prowlarr's search when we pause
-  (ADR-054 C-05). `buffer` is clamped `< limit`.
+  (ADR-054 C-05, superseded by ADR-077 C-01 — the buffer keeps this role, the resume floor adds a second
+  margin). `buffer` is clamped `< limit`.
 
 ### D-04 — actuation & the recorded state (`appliedOpen`)
 
@@ -107,6 +112,43 @@ so a phone-push link would be dead):
 - `mam_gate_stuck` — "MAM cap pinned for 48h+" (demand exceeds the ~limit-per-72h throughput; prioritise the
   wanted list / rank bump).
 
+### D-09 — resume hysteresis: a distinct resume floor + dead band (ADR-077)
+
+**Motivation (the 2026-07-23 incident).** With one shared threshold, pause and resume happen at the same
+level, so a CLOSED gate reopens the instant the count dips one below the threshold. On 2026-07-22/23 (UTC) the
+live Elite-VIP gate (`limit 200`, `buffer 15` ⇒ threshold 185) sat at 185 for four hours, dipped to 184 at
+23:49, reopened, and LazyLibrarian's queued backlog fired ~100 MAM searches in four minutes — unsatisfied
+jumped 184 → 199 inside ONE 15-minute sample, crossing MAM's hard 200 cap at 23:59:08 and earning a ~26h
+download block. Loki shows this flap 15 times in three days. Two gaps: no resume hysteresis, and a 15-minute
+sample cannot see an intra-interval burst that eats the whole 15-count buffer between two samples. Full
+write-up: [`.agents/context/2026-07-23-mam-gate-violation-audit.md`](../../.agents/context/2026-07-23-mam-gate-violation-audit.md).
+
+**The rule (two levels + a dead band).** `computeDesiredGate` now takes the current recorded gate state and
+returns `{ desiredOpen, threshold, resumeFloor }`:
+
+| Prior gate | Condition | Result |
+|---|---|---|
+| any | `!countOk` | **closed** (fail-closed, unchanged) |
+| OPEN | `unsatisfied ≥ threshold` | **close** (pause) |
+| OPEN | `unsatisfied < threshold` | **hold OPEN** (incl. the whole dead band) |
+| CLOSED | `unsatisfied < resumeFloor` | **open** (resume) |
+| CLOSED | `unsatisfied ≥ resumeFloor` | **hold CLOSED** (incl. the whole dead band) |
+
+The **dead band** is `resumeFloor ≤ unsatisfied < threshold`: the gate holds whatever it was, so a resume can
+never happen at threshold−1. First sight (no state row) is treated as **CLOSED** (conservative — reopening
+then requires `< resumeFloor`); the first-run baseline still pages nothing (D-05).
+
+**Default derivation + validation.** `resumeFloor` defaults to `limit − 2×buffer`, clamped to
+`0 ≤ floor < threshold` (`deriveResumeFloor`). Observed reopen bursts add +15..+17 unsatisfied per interval,
+so the floor sits one full burst below the pause threshold: for 200/15 → **170** (a reopen burst peaks around
+185–187, under the hard 200 cap, and the next sample re-closes); for the code default 20/5 → **10**. An env
+override `MAM_RESUME_FLOOR` (an ABSOLUTE unsatisfied count) is honored only when `0 ≤ floor < threshold`;
+anything else (out of range, negative, unparseable) falls back to the derived default and logs one warning.
+It resolves through the same `resolveGovernorConfig` seam (D-07) — no schema change: the floor is recoverable
+from the persisted `limit`/`buffer` (or the override), so `mam_gate_state` gains no column. `resumeFloor` is
+added to the report, the outbox payload, and the per-run structured CronJob log line (next to
+`limit`/`buffer`/`threshold`).
+
 ## Alternatives considered
 
 - **LL-side provider toggle** — rejected: Prowlarr's LL fullSync application clobbers it (not durable);
@@ -120,9 +162,13 @@ so a phone-push link would be dead):
 - `@hnet/downloads`: pure `computeUnsatisfied`; fetch-stub `QbittorrentClient` (incl. the live 13-torrent
   fixture, non-2xx → throws → fail-closed), `ProwlarrReadClient`, `ProwlarrWriteClient` (GET-then-PUT
   preserves other fields; phantom-success guard; empty-echo tolerance); env contract.
-- `@hnet/domain` (`mam-governor.test.ts`, embedded Postgres 16): pure gate + stuck decisions; baseline at
-  13/15 (no page); threshold-cross ⇒ one `mam_gate_paused` same-tx (+ repeat ⇒ zero); resume; fail-closed
-  (count throws) with `count_failed`; NO page on actuation failure; `mam_gate_stuck` once after 48h.
+- `@hnet/domain` (`mam-governor.test.ts`, embedded Postgres 16): pure gate + stuck decisions; open baseline
+  below the floor (no page); threshold-cross ⇒ one `mam_gate_paused` same-tx (+ repeat ⇒ zero); resume;
+  fail-closed (count throws) with `count_failed`; NO page on actuation failure; `mam_gate_stuck` once after
+  48h. **D-09 hysteresis:** the incident regression (CLOSED at 184, threshold 185/floor 170 ⇒ stays closed,
+  no `mam_gate_resumed`); reopen only below the floor (169 < 170); OPEN holds through the dead band and
+  pauses at 185; dead-band hold across consecutive runs both directions (no event spam); floor derivation +
+  `MAM_RESUME_FLOOR` override + invalid-value fallback; first-sight-treated-as-CLOSED.
 - `@hnet/db` migrations: table + singleton CHECK + both CHECK-relax preservations.
 - Guards: `arr-write-import-guard` (downloads/write domain-only); `no-direct-state-writes` (mam_gate_state).
 
