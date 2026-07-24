@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.90.0](https://github.com/thaynes43/haynesnetwork/compare/v0.89.2...v0.90.0) (2026-07-24)
+
+
+### Features
+
+* **domain:** add resume-floor hysteresis to the MAM governor gate ([#481](https://github.com/thaynes43/haynesnetwork/issues/481)) ([992aa82](https://github.com/thaynes43/haynesnetwork/commit/992aa82cda448cab36aba4fd4132bb930d311b81))
+
+
+### Documentation
+
+* **agents:** 2026-07-21 overnight handoff — cold-start validation of the first unattended night ([#477](https://github.com/thaynes43/haynesnetwork/issues/477)) ([5354e47](https://github.com/thaynes43/haynesnetwork/commit/5354e47375937986af4e352e5ef2a7204acf1638))
+* **agents:** Peloton green-nightly gate PASSED — donor config-manager retired ([#478](https://github.com/thaynes43/haynesnetwork/issues/478)) ([b5c47b2](https://github.com/thaynes43/haynesnetwork/commit/b5c47b2be5d81179b8c0aba2f52b5b86cb2a33df))
+* **agents:** pod-shutdown handoff — clean worktrees, board state, cold-start routing ([#480](https://github.com/thaynes43/haynesnetwork/issues/480)) ([4d208d8](https://github.com/thaynes43/haynesnetwork/commit/4d208d88224101aee0c11355c04c6d9c37e3e99b))
+* **agents:** ytdrivarr validation day-2 verdict — PASS (cutover); GB quota is the demand throttle ([#479](https://github.com/thaynes43/haynesnetwork/issues/479)) ([336c5a7](https://github.com/thaynes43/haynesnetwork/commit/336c5a7cb14d2eba9856ee456e78a029aebf8529))
+* evening wrap — pairing gap shepherded (+11 pairs) + NZB dupe-guard incident ([#475](https://github.com/thaynes43/haynesnetwork/issues/475)) ([99b2637](https://github.com/thaynes43/haynesnetwork/commit/99b2637396d2995a69681c645b58408cc29e4a14))
+
 ## [0.89.2](https://github.com/thaynes43/haynesnetwork/compare/v0.89.1...v0.89.2) (2026-07-21)
 
 
