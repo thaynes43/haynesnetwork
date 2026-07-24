@@ -14,10 +14,20 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      # Mint a haynes-dev-bot installation token so the release PR branch is pushed by a
+      # trusted actor (haynes-dev-bot[bot]) instead of github-actions[bot]. A GITHUB_TOKEN
+      # push parks the release PR's CI in the action_required approval gate and the required
+      # checks never report; an app-token push triggers CI normally, unattended.
+      - id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GITHUB_BOT_APP_ID }}
+          private-key: ${{ secrets.GITHUB_BOT_APP_PRIVATE_KEY }}
+
       - id: release
         uses: googleapis/release-please-action@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
