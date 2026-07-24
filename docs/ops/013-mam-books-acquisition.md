@@ -262,7 +262,7 @@ If MAM starts rejecting announces (torrent tracker status flips to *not working*
 
 ---
 
-## 10. The compliance governor (PLAN-039 / ADR-054 / DESIGN-027)
+## 10. The compliance governor (PLAN-039 / ADR-054 / DESIGN-027; resume hysteresis PLAN-061 / ADR-077 / DESIGN-027 D-09)
 
 The **`mam-governor`** sync mode (a ~15-min CronJob in the `frontend` namespace, alongside the other
 `haynesnetwork-sync-*` jobs) keeps automated MAM grabs under the account's **unsatisfied-torrent cap**
@@ -279,9 +279,16 @@ counting is local to qBittorrent and gating is local to Prowlarr; the governor n
    WebAPI answers **unauthenticated** from the cluster pod network — verified from `frontend`); a torrent is
    **unsatisfied** if it is still-downloading (`progress < 1`) OR complete-but-`seeding_time < 72h`. This is
    deliberately conservative (a wire hiccup over-counts, closing the gate earlier).
-2. **Decides the gate.** Pause when `unsatisfied ≥ MAM_UNSATISFIED_LIMIT − buffer` (limit 20, buffer 5 →
-   pause at 15); resume below. **Fail-closed:** if the count can't be obtained, it treats the account as
-   at-cap and pauses.
+2. **Decides the gate — with resume hysteresis (ADR-077).** Pause and resume use DISTINCT levels. An OPEN
+   gate PAUSES when `unsatisfied ≥ threshold` (`= MAM_UNSATISFIED_LIMIT − buffer`; live 200 − 15 = **185**).
+   A CLOSED gate RESUMES only when `unsatisfied < resumeFloor` (a distinct, lower level; live **170**). In the
+   **dead band** `resumeFloor ≤ unsatisfied < threshold` (live **170..184**) the gate HOLDS whatever it was.
+   `resumeFloor` defaults to `limit − 2×buffer` (200 − 30 = 170) and is overridable by `MAM_RESUME_FLOOR`
+   (§10.2). This replaced the old single-threshold rule (pause and resume both at 185), which flapped: a
+   resume at 184 let LazyLibrarian's queued backlog fire ~100 MAM searches in 4 minutes and re-flood past the
+   hard 200 cap inside one 15-minute sample, earning a ~26h download block (2026-07-23 — see
+   `../../.agents/context/2026-07-23-mam-gate-violation-audit.md`). First sight (no state row) is treated as
+   CLOSED. **Fail-closed:** if the count can't be obtained, it treats the account as at-cap and pauses.
 3. **Actuates at the Prowlarr indexer.** It toggles the **MyAnonaMouse Prowlarr indexer's `enable`** flag
    (`GET /api/v1/indexer/17` → set only `enable` → `PUT`), NOT LazyLibrarian's provider directly. **Why:**
    Prowlarr runs a **LazyLibrarian application with `syncLevel=fullSync` (app id 4)** — it OWNS LL's
@@ -302,9 +309,13 @@ counting is local to qBittorrent and gating is local to Prowlarr; the governor n
 - **Tuning:** `MAM_UNSATISFIED_LIMIT` (code default 20 — the owner **bumps this at each MAM rank promotion**:
   User 50 → PU 100 → VIP 150 → Elite VIP 200; **set to 200 in the haynes-ops helmrelease as of 2026-07-17**,
   the Elite VIP cap), `MAM_UNSATISFIED_BUFFER` (code default 5; **set to 15** → pause-threshold 185),
-  `MAM_ZERO_HEADROOM_ALERT_HOURS`
+  `MAM_RESUME_FLOOR` (**new — ADR-077**; the distinct RESUME level, an ABSOLUTE unsatisfied count. Defaults to
+  the derived `limit − 2×buffer` = **170** at 200/15, so it is normally left UNSET; set it only to override.
+  Validated `0 ≤ floor < threshold` — an out-of-range / negative / unparseable value falls back to the derived
+  default and logs one warning, so it can never wedge the gate), `MAM_ZERO_HEADROOM_ALERT_HOURS`
   (default 48). All resolve through one seam (`resolveGovernorConfig`); **PLAN-040** moves them to an audited
-  DB-backed admin setting with governor-state visibility.
+  DB-backed admin setting with governor-state visibility. The gate math is now: **pause at ≥ threshold (185),
+  resume at < floor (170), hold in the dead band (170..184)** — see §10.1 step 2.
 - **Credential:** `PROWLARR_API_KEY` — from the shared `media-stack` 1Password item, already `extract`ed
   into the haynesnetwork ExternalSecret (one added template line; **no new 1Password item**). qBittorrent
   needs none. URLs + the indexer id (17) default to the in-cluster Services.
@@ -315,8 +326,10 @@ counting is local to qBittorrent and gating is local to Prowlarr; the governor n
 
 - **"MAM grabs paused" but you didn't expect it:** check the CronJob log
   (`kubectl -n frontend logs job/haynesnetwork-sync-mam-governor-<id>`) — it prints `unsatisfied`, `limit`,
-  `threshold`, `gateOpen`, `event`. A `count_failed` reason means qBittorrent was unreachable (fail-closed).
-  Confirm the current state row: `SELECT * FROM mam_gate_state;`.
+  `threshold`, `resumeFloor`, `gateOpen`, `event`. A gate that stays paused while `unsatisfied` sits in the
+  dead band (`resumeFloor ≤ unsatisfied < threshold`, live 170..184) is CORRECT — resume waits for the count
+  to drop below `resumeFloor` (ADR-077, §10.1 step 2). A `count_failed` reason means qBittorrent was
+  unreachable (fail-closed). Confirm the current state row: `SELECT * FROM mam_gate_state;`.
 - **Manually force the gate open/closed:** set the Prowlarr indexer `enable` directly (Prowlarr UI or
   `PUT /api/v1/indexer/17`); the next governor run reconciles it to what the count calls for, so to keep it
   forced you must also address the count (or raise `MAM_UNSATISFIED_LIMIT`).

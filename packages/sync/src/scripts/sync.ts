@@ -336,7 +336,10 @@ async function main(): Promise<number> {
   // PROWLARR_API_KEY is absent. The tuning (limit/buffer/stuck-hours) is resolved through the
   // resolveGovernorConfig SEAM (env in v1; PLAN-040 adds a DB-backed admin override behind the same call).
   const mamGovernor = args.mode === 'mam-governor' ? mamGovernorBundleFromEnv() : undefined;
-  const mamTuning = args.mode === 'mam-governor' ? await resolveGovernorConfig() : undefined;
+  const mamTuning =
+    args.mode === 'mam-governor'
+      ? await resolveGovernorConfig({ warn: (message, fields) => logger.warn(message, fields) })
+      : undefined;
   // ADR-059 / DESIGN-030 — the books activity bundle (LL wanted-table read + SAB queue/history read + the
   // confined LL write) built INSIDE @hnet/domain (booksActivityBundleFromEnv), so the confined LL write
   // surface stays domain-only (the arr-write import guard). Construction asserts env (throws if

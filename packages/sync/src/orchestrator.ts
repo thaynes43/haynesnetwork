@@ -675,6 +675,7 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
         limit: mamGovernor.limit,
         buffer: mamGovernor.buffer,
         threshold: mamGovernor.threshold,
+        resumeFloor: mamGovernor.resumeFloor,
         headroom: mamGovernor.headroom,
         gateOpen: mamGovernor.gateOpen,
         desiredOpen: mamGovernor.desiredOpen,

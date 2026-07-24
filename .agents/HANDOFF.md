@@ -6,6 +6,25 @@
 
 ## ▶ NEXT SESSION — start here (written 2026-07-22 ~08:45 UTC — POD SHUTDOWN handoff; owner shutting the dev-env down)
 
+### ⚠ 2026-07-23 UPDATE — MAM governor resume-hysteresis PR is OPEN + a cluster mitigation is LIVE
+
+**A real MAM violation fired overnight** (resume at 184 re-flooded past the hard 200 cap → "Attempted to
+Download Past Unsatisfied limit", ~26h download block). Root cause: the governor's single-threshold gate had
+NO resume hysteresis and a 15-minute sample can't see an intra-interval burst. Full audit:
+`.agents/context/2026-07-23-mam-gate-violation-audit.md`.
+
+- **PR:** resume-hysteresis fix on branch `agent/haynesnetwork-0723-231755` (**PLAN-061** / **ADR-077**
+  supersedes ADR-054 C-05 / **DESIGN-027 D-09** / R-234 / T-228/T-229). Adds a distinct resume floor (default
+  `limit − 2×buffer` = 170 live) + a dead band (170..184 holds). **DO NOT MERGE** — the coordinator reviews
+  the docs diff first. All five local gates green.
+- **Cluster mitigation (haynes-ops, LIVE):** the `mam-governor` CronJob is **suspended** (`suspend: true`) so
+  it can't flap while the block is active and before this release deploys. Grabs flow ungated meanwhile
+  (watch the cap manually; usenet keeps flowing regardless).
+- **LIFT conditions (BOTH):** (1) the MAM download block expires (**~2026-07-25 02:23 UTC**), AND (2) this
+  release is deployed. Then a **follow-up haynes-ops PR** bumps the `haynesnetwork` image tag and removes
+  `suspend: true` from the `mam-governor` CronJob. No `MAM_RESUME_FLOOR` override needed (derived 170 is the
+  intended value). Lift checklist: the context note above.
+
 **The pod is being shut down clean: every worktree committed/pushed, no scheduled checks lost
 (all session crons had fired), all saga state on main.** Cold start = this block + the STANDING
 ORDER below (the validation regime is on DAY 2 of 14 — run the daily check every session
