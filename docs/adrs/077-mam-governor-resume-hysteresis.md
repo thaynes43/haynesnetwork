@@ -1,7 +1,9 @@
 # ADR-077: MAM compliance governor — resume hysteresis (a distinct resume floor below the pause threshold)
 
 - **Status:** Accepted (owner ruling 2026-07-24: proceed with the hysteresis hardening)
-- **Date:** 2026-07-23
+- **Date:** 2026-07-23 · **Amended 2026-07-25** (owner-directed in-place edit) — the burst magnitude
+  C-02 derives the resume floor from was measured wrong by a factor of ~3. See
+  [Amendment 2026-07-25](#amendment-2026-07-25--the-burst-basis-was-wrong) before tuning anything.
 - **Deciders:** Tom Haynes (owner) · executed by an autonomous run
 - **Supersedes:** [ADR-054](054-mam-compliance-governor.md) consequence **C-05** (the buffer as the ONLY
   anti-flap / cap-safety margin, with pause and resume sharing the single `limit − buffer` threshold).
@@ -53,7 +55,7 @@ them in which the gate holds its current state.
 | ID | Consequence |
 |----|-------------|
 | C-01 | **Two-level gate (supersedes ADR-054 C-05).** Pause and resume no longer share one threshold. An OPEN gate closes when `unsatisfied ≥ threshold` (`= limit − buffer`); a CLOSED gate reopens only when `unsatisfied < resumeFloor`. In the **dead band** `resumeFloor ≤ unsatisfied < threshold` the gate **HOLDS** its prior state. The buffer keeps its ADR-054 role (slots reserved for grabs already past Prowlarr's search when we pause); the resume floor is the SECOND, independent margin that stops a reopen from re-flooding. `computeDesiredGate` takes the current gate state as input to decide the hold. |
-| C-02 | **Derived default `resumeFloor = limit − 2×buffer`, clamped `0 ≤ floor < threshold`.** Observed reopen bursts add +15..+17 unsatisfied per 15-minute interval, so the floor sits one full burst below the pause threshold: for the live 200/15 tuning the floor is 170, so a reopen burst peaks around 185–187 (under the hard 200 cap) and the next sample re-closes. The code default 20/5 yields floor 10. The clamp guarantees the floor is never ≥ threshold (which would collapse back to the single-threshold flap) nor negative. |
+| C-02 | **Derived default `resumeFloor = limit − 2×buffer`, clamped `0 ≤ floor < threshold`.** ⚠ **The burst figure this consequence was derived from is WRONG — see the [2026-07-25 amendment](#amendment-2026-07-25--the-burst-basis-was-wrong); a +58 single-interval burst was observed. The `limit − 2×buffer` FORM stands, but it is only as safe as the buffer, which must be ≥ the true worst-case burst.** *(Original text, retained for the record: "Observed reopen bursts add +15..+17 unsatisfied per 15-minute interval, so the floor sits one full burst below the pause threshold: for the live 200/15 tuning the floor is 170, so a reopen burst peaks around 185–187 (under the hard 200 cap) and the next sample re-closes.")* The code default 20/5 yields floor 10. The clamp guarantees the floor is never ≥ threshold (which would collapse back to the single-threshold flap) nor negative. |
 | C-03 | **Env override `MAM_RESUME_FLOOR` (absolute unsatisfied count), validated.** A valid override is `0 ≤ floor < threshold`; anything else (out of range, negative, unparseable) falls back to the derived default and logs one warning. It resolves through the SAME `resolveGovernorConfig` seam as `MAM_UNSATISFIED_LIMIT`/`BUFFER` (ADR-054 C-07 unchanged), so PLAN-040's future DB-backed override covers it too. |
 | C-04 | **First sight is treated as CLOSED.** With no `mam_gate_state` row the gate is conservatively CLOSED, so reopening requires `unsatisfied < resumeFloor` — a fresh deploy in the dead band does not open. The ADR-054 first-sight baseline behavior (record state, page nothing) is preserved: the first run still enqueues no transition notification. |
 | C-05 | **Fail-closed and the transition/stuck audit are unchanged.** A failed count still yields a closed gate regardless of the prior state; the same-tx `mam_gate_paused`/`mam_gate_resumed`/`mam_gate_stuck` outbox coupling (ADR-034 C-01) is untouched. The per-run structured log line and the report/payload now also carry `resumeFloor` alongside `limit`/`buffer`/`threshold`. No schema change — the floor is derived from persisted `limit`/`buffer` (or the env override). |
@@ -69,9 +71,52 @@ them in which the gate holds its current state.
   so MAM throughput is slightly lower near the cap — accepted, because the cap is a hard compliance limit and
   usenet keeps flowing throughout. The dead band widens with the buffer; an operator who sets a very large
   buffer relative to the limit gets a floor clamped toward 0 (still safe, just a wider hold).
-- **Follow-ups:** the temporary `haynes-ops` CronJob suspend applied during the incident is lifted once the
-  MAM download block expires (~2026-07-25 02:23 UTC) AND this release is deployed (PLAN-061 rollout). PLAN-040
-  will surface `resumeFloor` in the DB-backed admin setting behind the same `resolveGovernorConfig` seam.
+- **Follow-ups:** ~~the temporary `haynes-ops` CronJob suspend applied during the incident is lifted once the
+  MAM download block expires (~2026-07-25 02:23 UTC) AND this release is deployed (PLAN-061 rollout).~~
+  **DONE** — block expired 02:23, v0.90.0 deployed, suspend lifted by haynes-ops #2233 (merged 2026-07-25
+  04:28 UTC). PLAN-040 will surface `resumeFloor` in the DB-backed admin setting behind the same
+  `resolveGovernorConfig` seam.
+
+## Amendment 2026-07-25 — the burst basis was wrong
+
+**In-place amendment, owner-directed** (the normal process for an Accepted ADR is a superseding ADR; the
+owner ruled to edit this one directly). The two-level gate mechanism is unchanged and worked exactly as
+specified. What was wrong is the **empirical input** C-02 sizes the margin from.
+
+Within two hours of the un-freeze, the post-freeze backlog drain produced this (all UTC, 15-minute samples):
+
+| time | unsatisfied | delta |
+|------|-------------|-------|
+| 04:49 | 90 | gate reopened (`mam_gate_resumed`) |
+| 05:34 | 90 | flat — nothing snatched yet |
+| 05:49 | 108 | +18 |
+| 06:04 | **166** | **+58 in one interval** |
+
+**+58 against a documented worst case of +17.** At the then-live 200/20 tuning (pause edge 180) a burst
+that size caught at 179 lands near **237** — past the hard 200 cap and into a repeat of the exact violation
+this ADR exists to prevent.
+
+Two lessons, the second more important than the first:
+
+1. **The buffer must be ≥ the true worst-case single-interval burst, not the observed-so-far burst.** Both
+   the 15 and the 20 were fitted to the largest number seen at the time, which is a floor on the true worst
+   case, never an estimate of it. `MAM_UNSATISFIED_BUFFER` is now **50** (pause edge 150, resume floor 100),
+   deliberately conservative while the surge drains — see haynes-ops #2256.
+2. **The dead band can hold the gate OPEN into a rising count.** C-01 specifies the hold as symmetric, and
+   at 166 the count sat inside 160..179, so the gate held OPEN with no pause scheduled — hysteresis working
+   as designed, in the dangerous direction. The hold is only safe while one interval's climb cannot cross
+   the cap from the top of the band. **Open design question (owner):** should a rising trend across samples
+   override the dead-band hold, making the hold asymmetric (sticky when falling, yielding when rising)?
+
+Live response, 2026-07-25: the gate was closed out-of-band by a one-off `--mode=mam-governor` run at
+buffer 50 (06:06 UTC — `mam_gate_paused`, `actuated: true`, at unsatisfied 169), then haynes-ops #2256
+merged and reconciled so the cron could not reopen at the stale floor of 160. Verified steady at 06:19 and
+06:34: `gateOpen false`, `indexerEnabled false`, `actuated false`, count flat at 169.
+
+**Do not treat 50 as a considered answer.** It is a safe placeholder chosen under time pressure during a
+live climb. The +58 followed a multi-day freeze, so it is plausibly a backlog artifact rather than
+steady-state behavior — but that is a hypothesis, not a measurement. Retune only against bursts measured
+after the surge has drained, and amend this section with the number rather than the anecdote.
 
 ## References
 
