@@ -4,6 +4,45 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ ⚠ MAM BURST INCIDENT (2026-07-25 ~06:10 UTC) — gate CLOSED, buffer 20 → 50, ADR-077's basis is STALE
+
+**Read this before touching the MAM governor.** Hours after the un-freeze below, the post-freeze
+backlog drain produced a burst **3× larger than the one ADR-077's safety margin was derived from**,
+and the gate was coasting OPEN with no pause scheduled.
+
+| time (UTC) | unsatisfied | delta |
+|---|---|---|
+| 04:49 | 90 | gate reopened (`mam_gate_resumed`) |
+| 05:34 | 90 | flat — nothing snatched yet |
+| 05:49 | 108 | +18 |
+| 06:04 | **166** | **+58 in one 15-min interval** |
+
+ADR-077 sized buffer 20 on *"worst observed single-interval burst = +17"*. At buffer 20 the pause
+edge is 180, so a +58 burst caught at 179 lands near **237** — past the hard 200 cap and into
+another "Attempted to Download Past Unsatisfied limit" violation (the 07-23 incident, multi-day
+download block). And 166 sat inside the 160..179 **dead band**, which by design HOLDS the current
+state — so hysteresis was actively keeping the gate open into a rising count.
+
+**Actions taken (both done):**
+1. **Gate closed immediately** by a one-off `--mode=mam-governor` Job run at buffer 50 (06:06 UTC):
+   `event: mam_gate_paused`, `actuated: true`, at unsatisfied **169**. Same code path as the cron,
+   just run now instead of waiting up to 15 min. (Note the count still rose 166 → 169 in between.)
+2. **haynes-ops #2256** merged + reconciled: `MAM_UNSATISFIED_BUFFER` 20 → **50** ⇒ pause edge
+   **150**, resume floor **100**. Verified live in the cronjob env. Without this the cron was still
+   on buffer 20 and would have reopened the moment the count fell under 160 — straight back into
+   the same exposure.
+
+**OPEN ITEMS FOR THE NEXT SESSION / OWNER:**
+- **ADR-077's stated basis is now false** and must not be left standing — it justifies the margin
+  with "+17". ADRs are immutable once Accepted, so this needs a SUPERSEDING ADR (not an edit)
+  recording the +58 observation and the buffer-50 posture. Design call ⇒ owner/Fable lane.
+- **Buffer 50 is deliberately conservative** while the surge drains. Retune only after bursts are
+  characterized in STEADY state (the +58 followed a multi-day freeze, so it is probably a backlog
+  artifact rather than normal behavior — but that is a hypothesis, not a measurement).
+- **The dead band is the subtle hazard:** it holds the gate open through a climb as long as the
+  count sits between the floor and the edge. Worth asking whether a rising-count trend should
+  override the dead band, rather than only the absolute edge.
+
 ## ▶ NEXT SESSION — start here (written 2026-07-25 ~05:20 UTC — all three armed watches DISCHARGED; owner present)
 
 **Every item the 07-25 "ARM WATCHES" block below asked for is DONE and verified. That block is
