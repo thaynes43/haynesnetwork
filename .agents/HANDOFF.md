@@ -6,24 +6,27 @@
 
 ## ▶ NEXT SESSION — start here (written 2026-07-22 ~08:45 UTC — POD SHUTDOWN handoff; owner shutting the dev-env down)
 
-### ⚠ 2026-07-23 UPDATE — MAM governor resume-hysteresis PR is OPEN + a cluster mitigation is LIVE
+### ⚠ 2026-07-24 UPDATE — MAM hysteresis SHIPPED + DEPLOYED; one timed merge and one CI residual remain
 
-**A real MAM violation fired overnight** (resume at 184 re-flooded past the hard 200 cap → "Attempted to
-Download Past Unsatisfied limit", ~26h download block). Root cause: the governor's single-threshold gate had
-NO resume hysteresis and a 15-minute sample can't see an intra-interval burst. Full audit:
-`.agents/context/2026-07-23-mam-gate-violation-audit.md`.
+**The 2026-07-23 MAM violation is fully remediated in code and the fix is live in the cluster** (audit:
+`.agents/context/2026-07-23-mam-gate-violation-audit.md`). Landed: hysteresis PR #481 (PLAN-061 / ADR-077 /
+DESIGN-027 D-09 / R-234 / T-228/T-229), ADR-077 Accepted (#482), released as **v0.90.0** and deployed via
+haynes-ops #2232. The `sync-mam-governor` CronJob is still **suspended** (haynes-ops #2231), so the gate is
+frozen CLOSED (MAM indexer disabled, nothing snatches) through the tracker's download block.
 
-- **PR:** resume-hysteresis fix on branch `agent/haynesnetwork-0723-231755` (**PLAN-061** / **ADR-077**
-  supersedes ADR-054 C-05 / **DESIGN-027 D-09** / R-234 / T-228/T-229). Adds a distinct resume floor (default
-  `limit − 2×buffer` = 170 live) + a dead band (170..184 holds). **DO NOT MERGE** — the coordinator reviews
-  the docs diff first. All five local gates green.
-- **Cluster mitigation (haynes-ops, LIVE):** the `mam-governor` CronJob is **suspended** (`suspend: true`) so
-  it can't flap while the block is active and before this release deploys. Grabs flow ungated meanwhile
-  (watch the cap manually; usenet keeps flowing regardless).
-- **LIFT conditions (BOTH):** (1) the MAM download block expires (**~2026-07-25 02:23 UTC**), AND (2) this
-  release is deployed. Then a **follow-up haynes-ops PR** bumps the `haynesnetwork` image tag and removes
-  `suspend: true` from the `mam-governor` CronJob. No `MAM_RESUME_FLOOR` override needed (derived 170 is the
-  intended value). Lift checklist: the context note above.
+- **TIMED ACTION — the un-freeze:** merge the DRAFT haynes-ops PR **#2233** ONLY after the MAM download
+  block expires (**not before 2026-07-25 02:30 UTC**). It removes `suspend: true` and widens
+  `MAM_UNSATISFIED_BUFFER` 15→20, so the live gate becomes pause 180 / resume floor 160 (derived) / dead
+  band 160..179 holds. After merge: flux reconcile, then watch the first governor runs while the
+  LazyLibrarian backlog drains (expect reopen below 160, re-pause near 180, no violation).
+- **CI residual — release-please app-token mint FAILS:** #483 switched release-please to push with the
+  dev-bot app token (kills the action_required approval gate), but the post-merge run failed at the
+  `create-github-app-token` step. Owner added Actions secrets; verify they are named exactly `BOT_APP_ID` /
+  `BOT_APP_PRIVATE_KEY` (numeric App ID or client id; full PEM). Until it mints, release-please does NOT run
+  on main pushes (no release PRs created/updated). Release PR **#484** (0.90.1, docs-only, authored pre-fix
+  by github-actions[bot], parked in the old approval gate) doubles as the end-to-end validation once the
+  secret is fixed — its merge push must mint cleanly. If the secrets can't be fixed, revert #483 to restore
+  the GITHUB_TOKEN path.
 
 **The pod is being shut down clean: every worktree committed/pushed, no scheduled checks lost
 (all session crons had fired), all saga state on main.** Cold start = this block + the STANDING
