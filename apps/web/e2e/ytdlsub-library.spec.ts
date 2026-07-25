@@ -25,24 +25,38 @@ test.describe('ytdl-sub Library sub-tabs (PLAN-022 · ADR-038 · DESIGN-017)', (
     await expect(page.getByRole('tab', { name: 'Movies' })).toBeVisible(); // standard tabs still there
     await expect(page.getByRole('tab', { name: 'Peloton' })).toHaveCount(0);
     await expect(page.getByRole('tab', { name: 'YouTube' })).toHaveCount(0);
-    await expect(page.getByRole('tab')).toHaveText(['Movies', 'TV', 'Music', 'My Fixes']);
+    // ADR-059 / DESIGN-030 (PLAN-048) added the cross-library Activity tab AFTER this spec was written:
+    // it sits after Books, before My Fixes. R-132 / D-08 only pins My Fixes LAST, which still holds.
+    await expect(page.getByRole('tab')).toHaveText([
+      'Movies',
+      'TV',
+      'Music',
+      'Activity',
+      'My Fixes',
+    ]);
   });
 
   // AC (R-121/R-123): an admin sees both sub-tabs, and each renders its shows read directly from k8plex.
-  // AC (D-08): the admin strip order is Movies | TV | Music | Peloton | YouTube | My Fixes.
+  // AC (D-08): the admin strip keeps the ytdl-sub pair together and My Fixes last — Books/Comics
+  // (ADR-046) and Activity (ADR-059) joined the strip after this spec was written.
   test('an admin sees Peloton + YouTube and each renders its shows in the poster grid', async ({
     page,
   }) => {
     await signIn(page, 'admin');
     await openLibrary(page);
 
-    await test.step('the tab order is Movies | TV | Music | Peloton | YouTube | My Fixes', async () => {
+    await test.step('the tab order keeps the ytdl-sub pair together and My Fixes last', async () => {
+      // Books + Comics (ADR-046 / PLAN-023) and Activity (ADR-059 / PLAN-048) all landed after this
+      // spec was written; an admin sees every section. R-132 / D-08 only pins My Fixes LAST.
       await expect(page.getByRole('tab')).toHaveText([
         'Movies',
         'TV',
         'Music',
         'Peloton',
         'YouTube',
+        'Books',
+        'Comics',
+        'Activity',
         'My Fixes',
       ]);
     });

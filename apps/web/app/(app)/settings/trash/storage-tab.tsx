@@ -74,10 +74,16 @@ function ArrayCard({ array }: { array: StorageArrayUtilization }) {
       setError(describeMutationError(err));
       setSaved(false);
     },
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       setError(null);
       setSaved(true);
-      setDraft(null);
+      // Same race the metrics capacity editor had: clearing the draft unconditionally discarded any
+      // NEW value typed while this save was in flight, leaving the field on the saved number with Save
+      // greyed out (not dirty) — the second edit looked accepted and silently wasn't. Only drop the
+      // local edit when it is still the value this save carried.
+      const savedValue = slug ? (vars.targets[slug] ?? null) : null;
+      const savedText = savedValue == null ? '' : String(savedValue);
+      setDraft((cur) => (cur === null || cur.trim() === savedText ? null : cur));
     },
     onSettled: () =>
       Promise.all([utils.storage.targets.get.invalidate(), utils.storage.utilization.invalidate()]),

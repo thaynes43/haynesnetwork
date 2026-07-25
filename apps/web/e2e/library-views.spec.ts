@@ -35,7 +35,10 @@ test.describe('library views + grouping (PLAN-029 / DESIGN-026)', () => {
     await expect(groupCard(page, 'Charlaine Harris')).toHaveCount(1);
     await expect(groupCard(page, 'Charlaine Harris')).toContainText('3 items');
     await expect(groupCard(page, 'Arthur Conan Doyle')).toContainText('2 items');
-    await expect(page.locator('.group-card')).toHaveCount(3);
+    // ADR-075 C-01 — the Books wall now carries ebooks AND audiobooks (the Audiobooks tab retired),
+    // so the audiobook-only authors group here too: 3 ebook authors + 3 audiobook authors. The
+    // per-author counts above are unchanged, which is the part that proves the grouping itself.
+    await expect(page.locator('.group-card')).toHaveCount(6);
 
     // Drill in: the same wall in flat view, pre-filtered to the author (?group= — a PUSH).
     await groupCard(page, 'Charlaine Harris').click();
@@ -60,13 +63,23 @@ test.describe('library views + grouping (PLAN-029 / DESIGN-026)', () => {
     page,
   }) => {
     await signIn(page, 'admin');
-    await page.goto('/library?tab=books');
+    // Start from an EXPLICIT grouped link rather than the bare URL: the suite is serial over one
+    // database, and the preceding drill-in test legitimately leaves this admin's stored books view on
+    // flat, so a bare URL here would reopen flat and this test would be asserting the previous test's
+    // leftovers. An explicit ?view= is a shared-link override, which per ADR-052 does NOT overwrite the
+    // stored preference — so the persistence assertions below still prove what they claim.
+    await page.goto('/library?tab=books&view=grouped');
     await expect(page.getByTestId('books-groups')).toBeVisible();
 
     // Switch to the flat "All books" shape — a screen-level PUSH + a stored preference write.
     await page.getByTestId('view-selector').getByRole('button', { name: 'All books' }).click();
     await expect(page).toHaveURL(/view=flat/);
-    await expect(page.getByTestId('books-grid').locator('.poster-card')).toHaveCount(6);
+    // Assert the flat wall RENDERED, not an exact card count: this spec is about the view switch, and
+    // the books wall total is not ours to pin — earlier specs (Goodreads shelf link + sync) legitimately
+    // add books to the shared database, so a hard count here breaks whenever an unrelated spec starts
+    // succeeding. The grouped/flat distinction is what this test exists to prove.
+    await expect(page.getByTestId('books-grid')).toBeVisible();
+    await expect(page.getByTestId('books-grid').locator('.poster-card').first()).toBeVisible();
 
     // Back restores the grouped wall; Forward re-applies flat (PLAN-036 history contract).
     await page.goBack();
@@ -160,7 +173,9 @@ test.describe('library views + grouping (PLAN-029 / DESIGN-026)', () => {
     await page.getByRole('dialog', { name: 'Edit the Length filter' }).getByLabel('Over 12 h').click();
     await expect(page.getByTestId('books-grid').locator('.poster-card')).toHaveCount(1);
     await expect(page.getByTestId('books-grid')).toContainText('Oliver Twist');
-    await expect(page).toHaveURL(/len=long/);
+    // The Length buckets facet syncs as `dur` (library-view-registry: key `durations`, param `dur`);
+    // the URL key was `len` when this spec was written.
+    await expect(page).toHaveURL(/dur=long/);
   });
 
   test('Movies: R6 recently-added default + remember-last-used; Released range; the A–Z jump; watch chip gated', async ({
@@ -229,7 +244,11 @@ test.describe('library views + grouping (PLAN-029 / DESIGN-026)', () => {
     expect(cards.length).toBeGreaterThan(0);
     const cardBox = (await cards[0]!.boundingBox())!;
     expect(cardBox.width).toBeLessThan(150);
-    const stack = (await page.locator('.group-card__stack').first().boundingBox())!;
+    // The art box reserves the 2:3 space. Which VARIANT renders is data-dependent (group-card-art
+    // draws `__stack` for a multi/zero-cover group and `__portrait` for a single-cover one), and
+    // ADR-075's unified wall reshuffled the groups — so assert the reserved box itself, which is
+    // what ADR-015 actually cares about, rather than one variant's class.
+    const stack = (await page.locator('.group-card .poster-box').first().boundingBox())!;
     expect(stack.height).toBeGreaterThan(stack.width * 1.3);
 
     // The page never scrolls horizontally (the ADR-015 portrait-safety check).

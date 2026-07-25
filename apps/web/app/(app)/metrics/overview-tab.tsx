@@ -84,7 +84,7 @@ function useCapacityMutation(
   handlers: {
     onMutate: (vars: { mbps: number }) => Promise<{ prev: unknown }>;
     onError: (err: unknown, vars: { mbps: number }, ctx: { prev: unknown } | undefined) => void;
-    onSuccess: () => void;
+    onSuccess: (data: unknown, vars: { mbps: number }) => void;
     onSettled: () => Promise<unknown> | void;
   },
 ) {
@@ -140,10 +140,14 @@ function CapacityEditor({
       setError(describeMutationError(err));
       setSaved(false);
     },
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       setError(null);
       setSaved(true);
-      setDraft(null);
+      // Drop the local edit ONLY if it is still the value this save carried. Clearing it
+      // unconditionally raced the admin: type a new number before the round-trip lands and the
+      // response wiped those keystrokes, leaving the field back on the saved value with Save greyed
+      // out (not dirty) — the edit looked accepted and silently wasn't.
+      setDraft((cur) => (cur === null || cur.trim() === String(vars.mbps) ? null : cur));
     },
     onSettled: () => utils.metrics.overview.invalidate(),
   });

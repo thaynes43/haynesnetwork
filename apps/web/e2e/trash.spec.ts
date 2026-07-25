@@ -10,7 +10,7 @@
 //     Leaving-Soon countdown + family save
 //     window → Expire sweep → the Past-batches strip (each row expands to its final report);
 //   • the ?tab=batches → ?tab=movies redirect for old deep links;
-//   • the context-aware item back-link (← Trash Movies / ← Bulletin, history.back() with state);
+//   • the context-aware item back-link (← Trash Movies / ← Tickets, history.back() with state);
 //   • Recently-Deleted → Restore, the Rules list (/settings/trash), Activity, the roles grid, and
 //     role gating.
 // Per-item /collections/media/handle calls ONLY (the estate-wide /collections/handle is asserted
@@ -555,7 +555,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await expect(page.getByTestId('back-link')).toHaveAttribute('href', '/library');
   });
 
-  test('a ticket’s library deep link carries ?from=bulletin and its item back-link reads ← Bulletin', async ({
+  test('a ticket’s library deep link carries ?from=bulletin and its item back-link reads ← Tickets', async ({
     page,
   }) => {
     // PLAN-034 (ADR-050) — the Messages board became the Helpdesk; the linked-title jump now
@@ -575,7 +575,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     expect(await link.getAttribute('href')).toMatch(/\/library\/[0-9a-f-]{36}\?from=bulletin$/);
     await link.click();
     await page.waitForURL(/\/library\/[0-9a-f-]{36}\?from=bulletin$/);
-    await expect(page.getByTestId('back-link')).toHaveText('← Bulletin');
+    await expect(page.getByTestId('back-link')).toHaveText('← Tickets');
     await expect(page.getByTestId('back-link')).toHaveAttribute('href', '/bulletin?tab=helpdesk');
   });
 

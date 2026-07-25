@@ -26,7 +26,7 @@ test('anonymous /about redirects to /login', async ({ page }) => {
   await expect(page).toHaveURL(/\/login$/);
 });
 
-test('Home shows the About card above the perforation (no app grid) and it navigates to /about', async ({
+test('Home shows the About card below the perforation (no app grid) and it navigates to /about', async ({
   page,
 }) => {
   await signIn(page, 'member');
@@ -38,8 +38,10 @@ test('Home shows the About card above the perforation (no app grid) and it navig
   // Internal link — no new tab, unlike the SSO tiles (which live on /portal now).
   await expect(card).not.toHaveAttribute('target', '_blank');
 
-  // D-01/D-02 DOM order on HOME (D-23): card → perforated rule; the tile grid is GONE from
-  // this screen — it renders on /portal (querySelectorAll is document order).
+  // D-01/D-02 DOM order on HOME (D-23): perforated rule → About card. The rule sits BETWEEN the
+  // glance badges and the card (owner touch-up 2026-07-17 — with the launcher grid moved to
+  // /portal, a trailing rule dangled at the page bottom; D-23 amendment note). The tile grid is
+  // GONE from this screen — it renders on /portal (querySelectorAll is document order).
   await expect(page.locator('.tile-rule')).toBeVisible();
   const order = await page.evaluate(() =>
     Array.from(document.querySelectorAll('.tile--about, .tile-rule, .tile-grid')).map((el) =>
@@ -50,7 +52,7 @@ test('Home shows the About card above the perforation (no app grid) and it navig
           : 'grid',
     ),
   );
-  expect(order, 'About card precedes the rule; no grid on Home').toEqual(['card', 'rule']);
+  expect(order, 'the rule precedes the About card; no grid on Home').toEqual(['rule', 'card']);
 
   await card.click();
   await expect(page).toHaveURL(/\/about$/);

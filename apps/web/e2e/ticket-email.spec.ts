@@ -57,6 +57,12 @@ test.describe('ticket email notifications (ADR-060 / PLAN-035)', () => {
     const memberPage = await memberContext.newPage();
     await signIn(memberPage, 'member');
     await assignMemberRole(page, 'Bulletin Poster');
+    // The suite is SERIAL over ONE database, and earlier specs (helpdesk.spec files two tickets) leave
+    // ticket-created rows sitting in notification_outbox. resetMails() only clears the mail SINK, so the
+    // drain below would flush those stale rows into this test's assertions — they arrived with the same
+    // Date second and broke the exact-count checks. DRAIN first, THEN reset the sink, so the counts
+    // below describe only what this journey enqueued.
+    runNotifyOutbox();
     await resetMails();
 
     // ── the MEMBER opts in via the user-menu toggle (R-196; default OFF) ──
