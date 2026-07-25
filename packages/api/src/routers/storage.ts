@@ -16,6 +16,7 @@ import {
   getSpacePolicy,
   getSpacePolicyStatus,
   setAppSetting,
+  BATCH_STRATEGIES,
   RECLAIM_WINDOWS,
   SPACE_POLICY_MODES,
 } from '@hnet/domain';
@@ -59,8 +60,15 @@ const spacePolicyArrayCfg = z
 const spacePolicyCap = z
   .object({ enabled: z.boolean(), value: z.number().nonnegative().max(Number.MAX_SAFE_INTEGER) })
   .strict();
+// `strategy` (build D) is OPTIONAL and accepted here for the same reason perArray is normalized on
+// read: getSpacePolicy emits a configured per-kind ranking, and both admin cards round-trip the object
+// they were given — a schema that rejected a field its own read emits would fail every save.
 const spacePolicyKindCaps = z
-  .object({ maxItems: spacePolicyCap, targetBytes: spacePolicyCap })
+  .object({
+    maxItems: spacePolicyCap,
+    targetBytes: spacePolicyCap,
+    strategy: z.enum(BATCH_STRATEGIES).optional(),
+  })
   .strict();
 export const SpacePolicyInput = z
   .object({

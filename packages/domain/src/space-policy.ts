@@ -32,6 +32,7 @@ import {
   effectiveKindTargeting,
   getAppSetting,
   type SpacePolicy,
+  type SpacePolicyArrayConfig,
   type SpacePolicyCap,
   type SpacePolicyKindCaps,
   type SpacePolicyMode,
@@ -116,6 +117,34 @@ function resolvePerKind(stored: SpacePolicy | undefined): SpacePolicyPerKind {
   return out;
 }
 
+/**
+ * Resolve the per-array opt-ins, NORMALIZED to the documented `SpacePolicyArrayConfig` shape. Rows
+ * written before ADR-073 can still carry a retired `cooldownDays` key INSIDE a per-array entry; it is
+ * dropped here rather than passed through, because the admin cards round-trip whatever this read emits
+ * straight back into the strict `storage.policy.set` input — a passthrough made every save on such a
+ * row fail with `unrecognized_keys` (the top-level retired keys were already dropped, the nested ones
+ * were not). Per-field guarded, like the caps: a non-boolean `enabled` reads as opted OUT, and a
+ * non-finite/negative `minCandidates` override is dropped so the top-level default applies.
+ */
+function resolvePerArray(stored: SpacePolicy | undefined): Record<string, SpacePolicyArrayConfig> {
+  const raw = stored?.perArray as Record<string, unknown> | null | undefined;
+  if (raw === null || typeof raw !== 'object') return {};
+  const out: Record<string, SpacePolicyArrayConfig> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (value === null || typeof value !== 'object') continue;
+    const cfg = value as Partial<SpacePolicyArrayConfig>;
+    const minOk =
+      typeof cfg.minCandidates === 'number' &&
+      Number.isFinite(cfg.minCandidates) &&
+      cfg.minCandidates >= 0;
+    out[key] = {
+      enabled: cfg.enabled === true,
+      ...(minOk ? { minCandidates: Math.trunc(cfg.minCandidates as number) } : {}),
+    };
+  }
+  return out;
+}
+
 /** Read the space-policy config, merged over its documented defaults so a partial/hand-edited jsonb
  *  row can never leave a required field undefined (fail-safe: missing `enabled` reads as false). */
 export async function getSpacePolicy(db?: DbClient): Promise<SpacePolicy> {
@@ -129,7 +158,8 @@ export async function getSpacePolicy(db?: DbClient): Promise<SpacePolicy> {
     mode,
     minCandidates:
       typeof stored?.minCandidates === 'number' ? stored.minCandidates : d.minCandidates,
-    perArray: stored?.perArray ?? {},
+    // Normalized (not passed through) so retired per-array keys can't break the admin card's save.
+    perArray: resolvePerArray(stored),
     // DESIGN-014 amendment (2026-07-09, build A) — per-kind caps, migrating the retired flat key.
     perKind: resolvePerKind(stored),
   };

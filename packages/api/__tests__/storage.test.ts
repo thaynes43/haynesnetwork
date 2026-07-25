@@ -4,6 +4,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { permissionAudit, type users } from '@hnet/db';
+import { setAppSetting } from '@hnet/domain';
 import {
   bootMigratedDb,
   caller,
@@ -119,5 +120,48 @@ describe('storage.targets — get/set (audited via app_settings single-writer)',
       // @ts-expect-error — deliberately invalid slug to prove the enum key rejects it
       adminCaller.storage.targets.set({ targets: { nope: 80 } }),
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+  });
+});
+
+// The Trash-settings save regression: a `space_policy` row written before ADR-073 still carried the
+// retired `cooldownDays` inside its perArray entry. getSpacePolicy used to pass perArray through
+// verbatim, so the settings card round-tripped the retired key back into this strict input and EVERY
+// save failed with `unrecognized_keys`. The read now normalizes, so get → set is a valid round-trip.
+describe('storage.policy — a legacy row round-trips through get → set (ADR-073)', () => {
+  it('accepts the object policy.get emits for a row carrying a retired per-array cooldownDays', async () => {
+    await setAppSetting({
+      db: testDb.db,
+      key: 'space_policy',
+      value: {
+        enabled: true,
+        mode: 'over-target',
+        minCandidates: 10,
+        perArray: { haynestower: { enabled: true, cooldownDays: 7 } },
+        perKind: {
+          movie: {
+            maxItems: { enabled: true, value: 50 },
+            targetBytes: { enabled: false, value: 100 * 1024 ** 3 },
+            strategy: 'worst-rated',
+          },
+          tv: {
+            maxItems: { enabled: true, value: 5 },
+            targetBytes: { enabled: false, value: 100 * 1024 ** 3 },
+          },
+        },
+      } as never,
+      actorId: admin.id,
+    });
+
+    const loaded = await adminCaller.storage.policy.get();
+    expect(loaded.perArray.haynestower).toEqual({ enabled: true });
+    // The card sends back exactly what it was given (plus the admin's edits) — this must not throw.
+    await adminCaller.storage.policy.set({ ...loaded, minCandidates: 12 });
+
+    const after = await adminCaller.storage.policy.get();
+    expect(after.minCandidates).toBe(12);
+    expect(after.perArray.haynestower).toEqual({ enabled: true });
+    // A configured per-kind ranking survives the round-trip (it used to be rejected by the strict cap).
+    expect(after.perKind.movie.strategy).toBe('worst-rated');
+    expect(after.perKind.movie.maxItems).toEqual({ enabled: true, value: 50 });
   });
 });

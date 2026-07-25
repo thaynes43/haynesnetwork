@@ -416,6 +416,49 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
     expect(p.perKind.tv.maxItems.enabled).toBe(false);
   });
 
+  // The prod break: the retired `cooldownDays` survived INSIDE a perArray entry (only the top-level
+  // retired keys were dropped) and `perArray` was passed through verbatim, so the settings card handed
+  // it straight back to the strict storage.policy.set input — every Trash-settings save died on
+  // `unrecognized_keys` at perArray.haynestower.cooldownDays.
+  it('getSpacePolicy NORMALIZES perArray — a retired nested cooldownDays is dropped, the opt-in survives', async () => {
+    await setAppSetting({
+      db: t.db,
+      key: 'space_policy',
+      value: {
+        ...ENABLED,
+        perArray: {
+          haynestower: { enabled: true, minCandidates: 3, cooldownDays: 7 },
+          cephfs: { enabled: false, cooldownDays: 14 },
+        },
+      } as unknown as SpacePolicy,
+      actorId,
+    });
+    const p = await getSpacePolicy(t.db);
+    expect(p.perArray.haynestower).toEqual({ enabled: true, minCandidates: 3 });
+    expect(p.perArray.cephfs).toEqual({ enabled: false });
+  });
+
+  it('getSpacePolicy guards a garbage perArray entry (non-object dropped, bad types fail safe)', async () => {
+    await setAppSetting({
+      db: t.db,
+      key: 'space_policy',
+      value: {
+        ...ENABLED,
+        perArray: {
+          haynestower: { enabled: 'yes', minCandidates: 'lots' },
+          cephfs: null,
+          bogus: 42,
+        },
+      } as unknown as SpacePolicy,
+      actorId,
+    });
+    const p = await getSpacePolicy(t.db);
+    // A non-boolean `enabled` reads as opted OUT; a non-numeric override is dropped (top-level applies).
+    expect(p.perArray.haynestower).toEqual({ enabled: false });
+    expect('cephfs' in p.perArray).toBe(false);
+    expect('bogus' in p.perArray).toBe(false);
+  });
+
   it('getSpacePolicy MIGRATES a legacy flat targetBytesPerBatch to movie+tv targetBytes caps', async () => {
     await setAppSetting({
       db: t.db,
