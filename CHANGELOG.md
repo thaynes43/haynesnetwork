@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.90.2](https://github.com/thaynes43/haynesnetwork/compare/v0.90.1...v0.90.2) (2026-07-25)
+
+
+### Bug Fixes
+
+* **trash:** normalize stored space-policy shape so Trash settings can save ([#487](https://github.com/thaynes43/haynesnetwork/issues/487)) ([6f70cf2](https://github.com/thaynes43/haynesnetwork/commit/6f70cf2b550ee320052881867fa04fe8b50c619b))
+
 ## [0.90.1](https://github.com/thaynes43/haynesnetwork/compare/v0.90.0...v0.90.1) (2026-07-25)
 
 
