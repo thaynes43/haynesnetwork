@@ -88,6 +88,9 @@ function draftToPolicy(d: PolicyDraft, base: SpacePolicy): SpacePolicy {
         ? Math.round(Number(k.targetGb.value) * BYTES_PER_GB)
         : baseCaps.targetBytes.value,
     },
+    // The ranking has no control on this card — carry the configured one through so saving the caps
+    // can't silently reset a kind to the default strategy.
+    ...(baseCaps.strategy !== undefined ? { strategy: baseCaps.strategy } : {}),
   });
   return {
     ...base,
