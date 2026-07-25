@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.90.1](https://github.com/thaynes43/haynesnetwork/compare/v0.90.0...v0.90.1) (2026-07-25)
+
+
+### Documentation
+
+* **adr:** accept ADR-077 (MAM governor resume hysteresis) ([#482](https://github.com/thaynes43/haynesnetwork/issues/482)) ([5b76ca4](https://github.com/thaynes43/haynesnetwork/commit/5b76ca4777af72e9d836594d4da3c98102afbb22))
+* **agents:** HANDOFF — arm watches on MAM un-freeze + release-please mint; correct secrets source to github-dev-bot ([#486](https://github.com/thaynes43/haynesnetwork/issues/486)) ([6f89e9c](https://github.com/thaynes43/haynesnetwork/commit/6f89e9cfed7cd7195c46289f9cb3cb15506f810e))
+* **agents:** HANDOFF — MAM hysteresis shipped/deployed; un-freeze timing + release-please mint residual ([#485](https://github.com/thaynes43/haynesnetwork/issues/485)) ([21d16a4](https://github.com/thaynes43/haynesnetwork/commit/21d16a41cacb24eda59acfbebf0986c9f8cc6039))
+
 ## [0.90.0](https://github.com/thaynes43/haynesnetwork/compare/v0.89.2...v0.90.0) (2026-07-24)
 
 
