@@ -6,27 +6,36 @@
 
 ## ▶ NEXT SESSION — start here (written 2026-07-22 ~08:45 UTC — POD SHUTDOWN handoff; owner shutting the dev-env down)
 
-### ⚠ 2026-07-24 UPDATE — MAM hysteresis SHIPPED + DEPLOYED; one timed merge and one CI residual remain
+### ⚠ 2026-07-25 UPDATE — MAM un-freeze CLEAR TO MERGE; next session must ARM WATCHES on the open work
 
-**The 2026-07-23 MAM violation is fully remediated in code and the fix is live in the cluster** (audit:
-`.agents/context/2026-07-23-mam-gate-violation-audit.md`). Landed: hysteresis PR #481 (PLAN-061 / ADR-077 /
-DESIGN-027 D-09 / R-234 / T-228/T-229), ADR-077 Accepted (#482), released as **v0.90.0** and deployed via
-haynes-ops #2232. The `sync-mam-governor` CronJob is still **suspended** (haynes-ops #2231), so the gate is
-frozen CLOSED (MAM indexer disabled, nothing snatches) through the tracker's download block.
+**Standing instruction (owner ruling 2026-07-25): whichever session picks this up must ARM A WATCH on each
+item below at cold start — merge, then actively verify (Monitor/loop while idle). Do NOT let this fall by
+the wayside; every item is silent-failure-prone if nobody watches.**
 
-- **TIMED ACTION — the un-freeze:** merge the DRAFT haynes-ops PR **#2233** ONLY after the MAM download
-  block expires (**not before 2026-07-25 02:30 UTC**). It removes `suspend: true` and widens
-  `MAM_UNSATISFIED_BUFFER` 15→20, so the live gate becomes pause 180 / resume floor 160 (derived) / dead
-  band 160..179 holds. After merge: flux reconcile, then watch the first governor runs while the
-  LazyLibrarian backlog drains (expect reopen below 160, re-pause near 180, no violation).
-- **CI residual — release-please app-token mint FAILS:** #483 switched release-please to push with the
-  dev-bot app token (kills the action_required approval gate), but the post-merge run failed at the
-  `create-github-app-token` step. Owner added Actions secrets; verify they are named exactly `BOT_APP_ID` /
-  `BOT_APP_PRIVATE_KEY` (numeric App ID or client id; full PEM). Until it mints, release-please does NOT run
-  on main pushes (no release PRs created/updated). Release PR **#484** (0.90.1, docs-only, authored pre-fix
-  by github-actions[bot], parked in the old approval gate) doubles as the end-to-end validation once the
-  secret is fixed — its merge push must mint cleanly. If the secrets can't be fixed, revert #483 to restore
-  the GITHUB_TOKEN path.
+Context: the 2026-07-23 MAM violation is fully remediated and deployed (audit:
+`.agents/context/2026-07-23-mam-gate-violation-audit.md`; PLAN-061 / ADR-077 / DESIGN-027 D-09; **v0.90.0**
+live via haynes-ops #2232). The `sync-mam-governor` CronJob is still **suspended** (haynes-ops #2231), gate
+frozen CLOSED. **The MAM download block EXPIRED ~2026-07-25 02:23 UTC** — the hold is no longer needed.
+
+- **WATCH 1 — un-freeze the governor:** mark haynes-ops draft PR **#2233** ready and merge it (removes
+  `suspend: true`; widens `MAM_UNSATISFIED_BUFFER` 15→20 ⇒ pause 180 / derived resume floor 160 / dead band
+  160..179 holds). Then `flux reconcile kustomization haynesnetwork -n frontend --with-source` (+ the
+  helmrelease) and WATCH the first governor runs while the LazyLibrarian backlog drains: expect reopen only
+  once unsatisfied < 160, re-pause at ≥ 180, and NO MAM violation. Transitions page via Pushover; verify via
+  job logs (`kubectl -n frontend get jobs | grep mam-governor`) or Loki
+  (`{namespace="frontend"} |= "mam-governor evaluated"`).
+- **WATCH 2 — release-please app-token mint:** #483's mint failed because the Actions secrets held the WRONG
+  app's credentials — the PR checklist pointed at the 1Password item `github-bot` (the older haynes-ops-bot
+  app, no haynesnetwork installation; the failure annotation was the installation-lookup 404). The correct
+  source is **`github-dev-bot`** (the haynes-dev-bot app, installed on all repos): `BOT_APP_ID` ←
+  `GITHUB_BOT_APP_ID`, `BOT_APP_PRIVATE_KEY` ← `GITHUB_BOT_APP_PRIVATE_KEY`. Owner re-pasted from the right
+  item 2026-07-25. **The merge push of the PR carrying this note is the validation**: the release-please run
+  on main must pass its `create-github-app-token` step. If it fails again, diagnose via check-run annotations
+  (`gh api repos/thaynes43/haynesnetwork/check-runs/<job-id>/annotations` — run logs are egress-blocked in
+  the pod) and, if unfixable, revert #483 to restore the GITHUB_TOKEN path.
+- **THEN — release PR #484** (0.90.1, docs-only): once the mint works, release-please's next main-push run
+  re-pushes the release branch as haynes-dev-bot, which should un-park its CI from the old action_required
+  approval gate; merge it when green (fallback: the one-time empty-commit unblock used on the v0.90.0 train).
 
 **The pod is being shut down clean: every worktree committed/pushed, no scheduled checks lost
 (all session crons had fired), all saga state on main.** Cold start = this block + the STANDING
