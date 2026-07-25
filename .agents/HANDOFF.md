@@ -4,7 +4,63 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-## ▶ NEXT SESSION — start here (written 2026-07-22 ~08:45 UTC — POD SHUTDOWN handoff; owner shutting the dev-env down)
+## ▶ NEXT SESSION — start here (written 2026-07-25 ~05:20 UTC — all three armed watches DISCHARGED; owner present)
+
+**Every item the 07-25 "ARM WATCHES" block below asked for is DONE and verified. That block is
+SUPERSEDED — do not re-run it.** This session also fixed a live Trash-settings bug the owner hit.
+
+- **WATCH 1 — MAM un-freeze: DONE + LIVE-VERIFIED.** haynes-ops **#2233** merged 04:28 UTC (the
+  download block had expired 02:23; checks were green). Governor is live and unsuspended at
+  limit 200 / buffer 20 ⇒ pause 180, resume floor 160, dead band 160..179. **First run 04:49
+  REOPENED the gate**: unsatisfied had drained 198 → **90** while suspended (all `seedingUnder72`
+  aging past 72h), so 90 < 160 ⇒ `mam_gate_resumed`, Prowlarr indexer actuated ON, Pushover
+  enqueued. **05:04 confirmed `indexerEnabled:true` / `actuated:false`** — the flip stuck and
+  settled, 110 of headroom under the 200 cap, no violation. NEXT THING TO WATCH: the re-pause at
+  ≥180 as the LazyLibrarian backlog drains again (that edge has never fired under hysteresis).
+- **WATCH 2 — release-please app-token mint: CLOSED, works.** Runs on main are green and release
+  PR **#488**'s CI triggered and ran normally on the release branch (the exact behavior #483 was
+  meant to buy). No further validation needed; the `github-dev-bot` credentials are correct.
+- **Release train ran clean end to end:** #487 → **v0.90.2** cut + image published → haynes-ops
+  **#2254** bumped v0.90.0 → v0.90.2 → flux reconciled → `haynesnetwork-main` running v0.90.2.
+
+**THE TRASH SETTINGS SAVE BUG (owner-reported this session) — FIXED, SHIPPED, LIVE-VERIFIED.**
+Every save on Settings → Trash → Batch policy died with
+`unrecognized_keys` at `perArray.haynestower.cooldownDays`. Root cause: the live `space_policy`
+row predates ADR-073 and carries the retired `cooldownDays` key **inside** its `perArray` entry;
+`getSpacePolicy` dropped retired TOP-LEVEL keys but passed `perArray` through verbatim, and both
+admin cards round-trip that read straight back into the `.strict()` `storage.policy.set` input.
+Fix (hnet **#487**, v0.90.2): normalize `perArray` at the read edge with the same per-field
+guarding the caps use — which is what ADR-073 already documented the read as doing. No migration:
+the next successful save rewrites the row clean. Same bug one field over, also fixed: the optional
+per-kind `strategy` that `resolvePerKind` emits was rejected by the strict cap schema (it would
+have broken the Storage tab's save identically), so the input accepts it and the Batch policy card
+carries it through instead of silently resetting the ranking.
+
+**Live evidence (frontend-ns job on the deployed v0.90.2 image, reading the REAL row):**
+`RAW_STORED` = `..."perArray":{"haynestower":{"enabled":true,"cooldownDays":0}},"cooldownDays":7...`
+→ `NORMALIZED_READ` = `..."perArray":{"haynestower":{"enabled":true}}...`, top-level keys exactly
+`enabled,minCandidates,mode,perArray,perKind`. That is precisely the shape `SpacePolicyInput`
+accepts. **RESIDUAL — the one thing NOT verified:** nobody drove the actual UI Save through
+Authentik (the pod has no owner credentials, so Playwright cannot log in). The owner's single
+click on Save is the last confirmation; expect it to succeed and to rewrite the row without
+either `cooldownDays`.
+
+**Two operational gotchas learned (both cost time — read before you hit them):**
+1. **`GH_TOKEN` goes stale ~1h into a session** (`HTTP 401: Bad credentials`, and git push fails
+   with "Invalid username or token"). The env var is captured once at session start; the sidecar
+   re-mints the live 1h token into **`/creds/gh_token`** every 40 min. Fix: prefix calls with
+   `GH_TOKEN=$(cat /creds/gh_token)` — for `gh` AND for `git push` (the credential helper is
+   `gh auth git-credential`, which reads the env). Do NOT re-auth.
+2. **The `test` lane flakes on an embedded-PG hook timeout** and the dev-bot token **cannot rerun
+   jobs** (`Resource not accessible by integration`). Signature: the step runs ~5m+ (≈ the 240s
+   `hookTimeout`) then fails, while `pnpm test` is green locally and main is green. CI logs are
+   EGRESS-BLOCKED (`productionresultssa17.blob.core.windows.net`), so diagnose by step DURATION +
+   local repro (pin cores with `taskset -c 0,1 pnpm test` to imitate the runner). Retrigger with an
+   empty commit — the documented workaround for the rerun limitation.
+
+### ⚠ SUPERSEDED (2026-07-25 05:20) — the ARM WATCHES block; all three discharged above
+
+## ▶ Prior top block (written 2026-07-22 ~08:45 UTC — POD SHUTDOWN handoff)
 
 ### ⚠ 2026-07-25 UPDATE — MAM un-freeze CLEAR TO MERGE; next session must ARM WATCHES on the open work
 
