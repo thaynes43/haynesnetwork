@@ -118,6 +118,42 @@ live climb. The +58 followed a multi-day freeze, so it is plausibly a backlog ar
 steady-state behavior — but that is a hypothesis, not a measurement. Retune only against bursts measured
 after the surge has drained, and amend this section with the number rather than the anecdote.
 
+### The measurement (2026-07-26) — the backlog-artifact hypothesis is FALSE; worst burst is +84
+
+The hypothesis above was wrong. The next reopen was an ordinary one (no freeze, backlog already drained)
+and it burst HARDER than the one that triggered the intervention:
+
+| time (UTC) | unsatisfied | delta | note |
+|------------|-------------|-------|------|
+| 16:34 | 99 | — | reopen (`mam_gate_resumed`); floor 100 |
+| 16:49–17:34 | 98 → 98 → 98 | ~0 | ~1 h flat — genuinely LOW DEMAND, not a small burst |
+| 17:49 | **186** | **+84** | `mam_gate_paused`, `actuated: true`; headroom **14** |
+
+**+84 in one 15-minute interval**, against +58 before and the +17 this ADR was originally derived from.
+The pause fired correctly and no violation occurred, but only because the burst happened to START at 102.
+
+**Buffer 50 is not sufficient in principle.** With a 15-minute sample the count can cross the edge
+mid-interval, so the invariant is `pause_edge + worst_burst < limit`. At +84 that requires an edge of
+**≤ 116**; the edge is 150. A burst of this size starting near the edge lands near 234 — past the cap, the
+exact failure this ADR exists to prevent. We were lucky, not protected.
+
+**And the buffer knob ALONE cannot express the fix.** C-02 derives `resumeFloor = limit − 2×buffer`, so
+raising the buffer drags the floor toward 0: at buffer 100 the floor is 0 and the gate can NEVER reopen
+(`unsatisfied < 0` is unsatisfiable) — a permanent wedge. The largest buffer that keeps a usable floor is
+~66 (edge 134, floor 68), which still does not cover +84. Closing the gap needs the **C-03
+`MAM_RESUME_FLOOR` override** to decouple the two levels — e.g. buffer 90 (edge 110) with an explicit
+floor of 60.
+
+**That is a THROUGHPUT decision, not a safety one, and it is the owner's:** pausing near 110 of a 200 cap
+spends only ~55% of the rank allowance. Deliberately NOT applied unilaterally — the gate is closed and
+safe as it stands, and the cost of the fix is real.
+
+**One correction to the mental model** (it changed the risk read during the incident): a completing
+download does NOT consume headroom. `unsatisfied` = still-downloading + seeded-under-72h, so a completion
+just moves an item between the two terms — the total is unchanged (observed live: `downloading` 7 → 1 with
+`seedingUnder72` 179 → 185, total flat at 186). After a pause the count can therefore only grow from grabs
+already past Prowlarr's search, which is precisely the margin C-01 assigns to the buffer.
+
 ## References
 
 - Supersedes ADR-054 C-05 (C-01..C-04, C-06, C-07 stand). Reuses ADR-034 (same-tx outbox). No migration
