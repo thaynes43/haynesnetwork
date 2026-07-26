@@ -51,6 +51,11 @@ interface StubSection {
 const LIBRARIES: Record<Slug, StubSection[]> = {
   haynestower: [
     { key: '1', title: 'HNet Movies', type: 'movie', plexId: '118181361' },
+    // MUST stay in lockstep with seed-ledger.ts: an admin library REFRESH soft-marks any seeded
+    // library this stub does not serve as `available = false` (plex-registry.ts), and
+    // effectiveAllowedLibrariesForUser only offers AVAILABLE libraries — so a section missing here
+    // silently drops that kind's /library tab for every non-admin once plex-library.spec runs.
+    { key: '2', title: 'HNet TV', type: 'show', plexId: '118181362' },
     { key: '4', title: 'HNet Photos', type: 'photo', plexId: '118278404' }, // family-only
   ],
   haynesops: [{ key: '1', title: 'HOps Movies', type: 'movie', plexId: '200001' }],

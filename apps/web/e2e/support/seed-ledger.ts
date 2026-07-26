@@ -24,6 +24,7 @@ import {
   upsertMediaItemsBatch,
   upsertMediaMetadataBatch,
   upsertPlexLibraries,
+  syncPlexMatches,
 } from '@hnet/domain';
 
 async function main(): Promise<void> {
@@ -318,6 +319,10 @@ async function main(): Promise<void> {
     slug: 'haynestower',
     libraries: [
       { sectionKey: '1', name: 'HNet Movies', mediaType: 'movie' },
+      // ADR-047 — the TV home library. The seed had NO show library at all, so once the per-library
+      // tab gate landed there was no way for a non-admin to ever see a TV tab (see the media_plex_matches
+      // block below for the full story).
+      { sectionKey: '2', name: 'HNet TV', mediaType: 'show' },
       { sectionKey: '4', name: 'HNet Photos', mediaType: 'photo' },
     ],
   });
@@ -336,7 +341,14 @@ async function main(): Promise<void> {
   );
   const libId = (slug: string, key: string) =>
     libRows.find((r) => r.slug === slug && r.key === key)!.id;
-  const nonFamily = [libId('haynestower', '1'), libId('haynesops', '1')];
+  // ADR-047 — Default must reach one library per media KIND or that kind's /library tab never renders:
+  // HNet Movies (movie) + HNet TV (show) + HOps Music (artist). HNet Photos stays family-only (R-26).
+  const nonFamily = [
+    libId('haynestower', '1'),
+    libId('haynestower', '2'),
+    libId('haynesops', '1'),
+    libId('hayneskube', '2'),
+  ];
   // ADR-024 — Default additionally ALL-grants haynesops, so the member can exercise the per-server
   // all-libraries self-toggle (leave All / re-enter All) on /library/plex. The all-grant subsumes
   // the explicit HOps Movies grant (kept for clarity); the effective set is unchanged.
@@ -357,6 +369,54 @@ async function main(): Promise<void> {
     });
   }
 
+  // ADR-047 THE INVARIANT — the *arr→Plex matches the per-library access gate reads.
+  //
+  // These rows are NOT decoration: `resolveLibraryAccessGate` derives a role's visible KINDS purely from
+  // media_plex_matches (the candidate libraries a kind's items actually live in). With zero matches the
+  // candidate map is empty, so a non-admin resolves to visibleArrKinds = {} — no Movies/TV/Music tab
+  // renders at all, and `libraryAccessWhere` denies every item too (allowedKindKeys is empty, so even the
+  // unmatched-item branch is false). That is exactly what happened when the gate landed (2026-07-10, #192)
+  // against a seed that deliberately kept its items UNMATCHED: ~19 member-facing library specs went red and
+  // stayed red, because e2e is an advisory lane nobody was reading. Production is unaffected — a real
+  // estate gets these rows from the `plex-match` sync mode.
+  //
+  // One match per LIVE seeded item into a library the Default role can reach, so a member sees all three
+  // media tabs. The tombstoned movie (Vanished Heist) is deliberately left unmatched — the gate filters
+  // tombstones out anyway, and leaving it out keeps the "unmatched item" branch exercised.
+  const matchSpecs = [
+    { title: 'The Fixture', libraryId: libId('haynestower', '1'), ratingKey: '601', via: 'tmdb' },
+    { title: 'Stub Runner', libraryId: libId('haynestower', '1'), ratingKey: '602', via: 'tmdb' },
+    { title: 'Breaking Prod', libraryId: libId('haynestower', '2'), ratingKey: '501', via: 'tvdb' },
+    {
+      title: 'The Stub Band',
+      libraryId: libId('hayneskube', '2'),
+      ratingKey: '701',
+      via: 'musicbrainz',
+    },
+  ] as const;
+  const { rows: itemRows } = await getPool().query<{ id: string; title: string }>(
+    `SELECT id, title FROM media_items WHERE deleted_from_arr_at IS NULL`,
+  );
+  const matches = matchSpecs.flatMap((m) => {
+    const item = itemRows.find((r) => r.title === m.title);
+    return item
+      ? [
+          {
+            mediaItemId: item.id,
+            plexLibraryId: m.libraryId,
+            ratingKey: m.ratingKey,
+            matchedVia: m.via,
+          },
+        ]
+      : [];
+  });
+  // Written through syncPlexMatches — the ADR-047 SOLE WRITER for media_plex_matches. The seed does not
+  // touch the table directly: the no-direct-state-writes invariant forbids it, and rightly so.
+  await syncPlexMatches({
+    matches,
+    scopedLibraryIds: [...new Set(matchSpecs.map((m) => m.libraryId))],
+  });
+
   // ADR-021 / DESIGN-009 — two roles for the Ledger-section access e2e (AC-13): a Read-Only role
   // (browse + export, no Add-&-search) and a Disabled role (no nav, no route). The Default role
   // keeps the NO-ROW default — which is DISABLED since ADR-032 (members see no Ledger anywhere
@@ -373,6 +433,12 @@ async function main(): Promise<void> {
     level: 'read_only',
     actorId: null,
   });
+  // ADR-047 THE INVARIANT applies to the Ledger too (ledgerAdmin.browse runs libraryAccessWhere), and a
+  // role with NO grant rows resolves to an EMPTY allowed set — not "everything". Without this the
+  // section permission alone yields a perfectly-rendered Ledger with zero rows, which reads like a
+  // broken query rather than a withheld library. Same libraries as Default so the browse/export
+  // journey has its three movies.
+  await setRoleLibraries({ roleId: ledgerReadOnlyId, libraryIds: nonFamily, actorId: null });
   const { roleId: ledgerDisabledId } = await createRole({
     name: 'Ledger Disabled',
     description: 'No Ledger section',
@@ -406,6 +472,11 @@ async function main(): Promise<void> {
     actions: ['save_exclude', 'remove_exclude', 'edit_rules'],
     actorId: null,
   });
+  // ADR-047 THE INVARIANT — same reason as Ledger Read-Only above: trash grants alone do not grant
+  // LIBRARY access, and a role with no grant rows resolves to an empty allowed set. Without this the
+  // wall renders its tiles but the per-item guard card never mounts on /library/<id>, because the item
+  // itself is withheld — which reads as a missing feature rather than a withheld library.
+  await setRoleLibraries({ roleId: trashLimitedId, libraryIds: nonFamily, actorId: null });
 
   // ADR-025 / DESIGN-011 — the FAMILY persona role for the Leaving-Soon window e2e: section
   // read-only + ONLY the save_leaving_soon grant (may lock/unlock during the window; no batch

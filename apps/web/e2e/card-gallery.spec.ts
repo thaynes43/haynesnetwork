@@ -197,8 +197,11 @@ test.describe('card gallery — the shared-card-system drift gate (ADR-058)', ()
   }) => {
     await openGallery(page, 'hnet-dark');
     const tiles = page.getByTestId('gallery-tickets').locator('.twall-tile');
-    await expect(tiles).toHaveCount(4);
-    for (let i = 0; i < 4; i++) {
+    // ADR-061 / PLAN-038 added a FIFTH gallery ticket — the locator variant (gallery.tsx:490), which
+    // also shifted the indices asserted below: index 1 is now that poster-carrying locator card, so
+    // the category tile ("No sound from minute 3", media={null}) moved to index 2.
+    await expect(tiles).toHaveCount(5);
+    for (let i = 0; i < 5; i++) {
       const tile = tiles.nth(i);
       // One link wrapping the whole tile; one poster surface with exactly one corner puck.
       await expect(tile.locator('a.twall-link')).toHaveCount(1);
@@ -216,9 +219,9 @@ test.describe('card gallery — the shared-card-system drift gate (ADR-058)', ()
     }
     // The state puck carries the state (recolor-only semantics ride data-status).
     await expect(tiles.nth(0)).toHaveAttribute('data-status', 'open');
-    await expect(tiles.nth(3)).toHaveAttribute('data-status', 'rejected');
+    await expect(tiles.nth(4)).toHaveAttribute('data-status', 'rejected');
     // The category tile renders for the non-media ticket, a poster for the linked one.
-    await expect(tiles.nth(1).locator('.twall-cattile')).toHaveCount(1);
+    await expect(tiles.nth(2).locator('.twall-cattile')).toHaveCount(1);
     await expect(tiles.nth(0).locator('.twall-cattile')).toHaveCount(0);
   });
 

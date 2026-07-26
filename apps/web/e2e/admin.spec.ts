@@ -96,6 +96,11 @@ test.describe('catalog CRUD (admin)', () => {
       await dialog.getByLabel('URL').fill('example.com');
       await dialog.getByRole('button', { name: 'Create entry' }).click();
       await expect(dialog).toBeHidden();
+      // The dialog hides as soon as the mutation resolves, but the TABLE only repaints on the query
+      // invalidation that follows — so reading positions() straight after the loop could miss the row
+      // that was just created (`b: -1`). Wait for the row itself. Intermittent by nature: it needs the
+      // invalidation to lose the race, which is why it flaked in CI and passed locally.
+      await expect(page.locator('.admin-table tbody tr').filter({ hasText: slug })).toHaveCount(1);
     }
 
     // Relative order of the pair among all rows (the whole-tbody text sequence).

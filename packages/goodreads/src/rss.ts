@@ -98,6 +98,37 @@ export function parseGoodreadsIdFromRef(ref: string): string | null {
 }
 
 /**
+ * The numeric id out of a `/user/show/…` or `/review/list[_rss]/…` PATH, host-agnostic.
+ *
+ * Only for URLs WE built from the configured `baseUrl` (the redirect chain in `resolveUserId`) — the
+ * host is ours by construction, so requiring `goodreads.com` there is wrong: it made the id
+ * unextractable against any configured base, so a redirect could never resolve off goodreads.com.
+ * User-supplied refs keep going through the strict, host-checked `parseGoodreadsIdFromRef`.
+ */
+function parseGoodreadsIdFromPath(url: string): string | null {
+  const m = /\/(?:user\/show|review\/list(?:_rss)?)\/(\d{1,20})/i.exec(url);
+  return m?.[1] ?? null;
+}
+
+/**
+ * The URL a profile-reference resolve STARTS at, always anchored on the configured `baseUrl`:
+ * a bare handle/path is appended to it, and an absolute **goodreads.com** URL keeps only its path so the
+ * configured base stays authoritative (in production the base IS goodreads.com, so this is a no-op there;
+ * under test it is what keeps the resolve on the stub instead of the public internet). A URL on any other
+ * host is returned verbatim — rewriting someone else's host onto ours would be wrong.
+ */
+export function resolveStartUrl(ref: string, baseUrl: string): string {
+  if (!/^https?:\/\//i.test(ref)) return `${baseUrl}/${ref.replace(/^\/+/, '')}`;
+  try {
+    const parsed = new URL(ref);
+    if (!/(^|\.)goodreads\.com$/i.test(parsed.hostname)) return ref;
+    return `${baseUrl}${parsed.pathname}${parsed.search}`;
+  } catch {
+    return ref;
+  }
+}
+
+/**
  * The three BUILT-IN Goodreads exclusive shelves — they exist on every account (even empty), so a fetch
  * failure on one of them means "private / unreachable / transient", never "the shelf does not exist".
  */
@@ -143,9 +174,13 @@ export class GoodreadsRssClient {
   async resolveUserId(ref: string): Promise<string> {
     const direct = parseGoodreadsIdFromRef(ref);
     if (direct) return direct;
-    const start = /^https?:\/\//i.test(ref.trim())
-      ? ref.trim()
-      : `${this.baseUrl}/${ref.trim().replace(/^\/+/, '')}`;
+    // An absolute goodreads.com URL is re-pointed at the CONFIGURED base rather than fetched literally.
+    // The configured base is meant to be authoritative for every read this client makes; taking the
+    // pasted host verbatim let one code path escape it, which silently reached the public internet
+    // (harmless in production, where the base IS goodreads.com — but it made the e2e stub unreachable,
+    // so the integrations specs only passed on a machine with internet access). Any OTHER host is left
+    // untouched: it is not ours to rewrite, and the id parse below simply won't find an id.
+    const start = resolveStartUrl(ref.trim(), this.baseUrl);
     const fetchImpl = this.opts.fetchImpl ?? fetch;
     let url = start;
     for (let hop = 0; hop < 5; hop += 1) {
@@ -166,11 +201,11 @@ export class GoodreadsRssClient {
         const loc = res.headers.get('location');
         if (!loc) break;
         url = new URL(loc, url).toString();
-        const id = parseGoodreadsIdFromRef(url);
+        const id = parseGoodreadsIdFromPath(url);
         if (id) return id;
         continue;
       }
-      const id = parseGoodreadsIdFromRef(res.url && res.url.length > 0 ? res.url : url);
+      const id = parseGoodreadsIdFromPath(res.url && res.url.length > 0 ? res.url : url);
       if (id) return id;
       break;
     }

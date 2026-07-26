@@ -71,6 +71,11 @@ test.describe('media ledger + fix flow', () => {
 
     // Search narrows the (TV-scoped) list.
     await page.getByLabel('Search the library').fill('breaking');
+    // Let the search's URL sync LAND before clicking through. The filter writes ?q= via a router
+    // replace; clicking the card while that transition is still in flight swallows the push and the
+    // page just sits on the list. Only reproduces under full-suite load (the dev server is slower),
+    // which is why this passed in isolation and flapped in the full run.
+    await expect(page).toHaveURL(/q=breaking/);
     await expect(page.locator('.media-card')).toHaveCount(1);
 
     // Item detail: metadata + the seeded history timeline (R-41) + the live episode list.
