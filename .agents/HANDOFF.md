@@ -4,7 +4,91 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-## ▶ ⚠ MAM BURST INCIDENT (2026-07-25 ~06:10 UTC) — gate CLOSED, buffer 20 → 50, ADR-077's basis is STALE
+## ▶ NEXT SESSION — start here (written 2026-07-26 ~19:10 UTC — everything below is DELIVERED; two owner items open)
+
+**All open work is merged and live.** Nothing is in flight. Two items want an owner ruling (bottom).
+
+### 1. MAM — the burst is MEASURED at +84; the gate math is now sized to it (DONE, live-verified)
+
+The 07-25 block below guessed the +58 burst was a backlog artifact of the freeze. **That guess was wrong.**
+The next reopen was ORDINARY (no freeze, backlog drained) and burst HARDER:
+
+| time (UTC) | unsatisfied | delta |
+|------------|-------------|-------|
+| 16:34 | 99 | reopen (`mam_gate_resumed`) |
+| 16:49–17:34 | 98 → 98 → 98 | ~0 — genuinely LOW DEMAND, not a small burst |
+| 17:49 | **186** | **+84 in one 15-min interval** → `mam_gate_paused`, headroom 14 |
+
+It paused correctly, but only because the burst started at 102; the same burst near the old 150 edge lands
+near 234 — past the hard 200 cap. **Owner ruled "fix it" 2026-07-26.** Live now (haynes-ops **#2261**,
+reconciled + verified in a real run: `threshold:100, resumeFloor:60`, no invalid-override warning):
+
+    MAM_UNSATISFIED_LIMIT 200 · MAM_UNSATISFIED_BUFFER 100 · MAM_RESUME_FLOOR 60
+    ⇒ pause edge 100 · resume floor 60 (EXPLICIT) · dead band 60..99
+
+**Why an explicit floor is REQUIRED, not decoration:** the derived floor is `limit − 2×buffer`, which at
+buffer 100 is **0** — unsatisfiable (`unsatisfied < 0`), so the gate would wedge shut FOREVER. ADR-077 C-03
+exists for this; the override validates `0 ≤ floor < threshold`. If you ever raise the buffer again, you
+MUST set the floor with it.
+
+**The invariant to reason with:** `pause_edge + worst_burst < limit`. At +84 the edge must be ≤ 116; 100
+leaves a margin of 16 for the growth trend (**17 → 58 → 84** — it has grown every time it was measured).
+**COST: pausing at 100 of a 200 cap spends only ~50% of the rank allowance.** Retune DOWNWARD only against
+a further MEASURED burst — never on a quiet window (that mistake is what produced the +58→+84 surprise).
+
+**Also corrected (it changed the risk read mid-incident):** a completing download does NOT consume headroom.
+`unsatisfied` = still-downloading + seeded-under-72h, so a completion just moves between the two terms
+(observed: `downloading` 7 → 1, total flat at 186). After a pause the count grows ONLY from grabs already
+past Prowlarr's search — exactly the margin C-01 assigns to the buffer.
+
+State at writing: gate CLOSED, indexer disabled, 186 draining toward the 60 floor (slower than before, by
+design). Full record: ADR-077's two amendments (#492, #494).
+
+### 2. The e2e lane is REPAIRED — 29 failures → 0, and it was hiding 3 real bugs (hnet #493, MERGED)
+
+The advisory lane had been red since **2026-07-10** and nobody was reading it. **215 passed / 0 failed**,
+green in CI. **No test was deleted** — every failure had a real cause.
+
+- **2 product bugs, same defect twice:** the metrics capacity editor AND the storage targets editor cleared
+  their draft unconditionally in the mutation's `onSuccess`, so typing a new value before the response
+  landed SILENTLY DISCARDED those keystrokes (field snapped back, Save greyed out — the edit looked
+  accepted and was not). Both now clear only when the draft still matches the value that save carried.
+- **1 production defect:** the Goodreads client escaped its own configured base URL, so the resolve hit the
+  PUBLIC INTERNET and the stub was unreachable BY CONSTRUCTION (those specs only passed on a machine with
+  egress). Absolute goodreads.com refs are re-anchored on the configured base (a no-op in prod).
+- **The bulk was ONE fixture gap:** `resolveLibraryAccessGate` derives visible kinds ENTIRELY from
+  `media_plex_matches` and the seed wrote none ⇒ every non-admin saw NO Movies/TV/Music tabs. Seeded via
+  `syncPlexMatches` (the sole writer — the no-direct-state-writes guard correctly refused a raw INSERT),
+  added the missing TV Plex library, kept stub-plex in lockstep (an admin refresh soft-marks unserved
+  libraries unavailable), and granted libraries to `Ledger Read-Only` + `Trash Limited` (trash/ledger
+  grants do NOT imply library access; a role with no grant rows resolves to EMPTY, not everything).
+- Stale expectations updated (ADR-075 Books unification, Activity/Books/Comics tabs, the "Tickets" rename,
+  `len`→`dur`, the Home rule position) and two races stabilized (shared-outbox mail counts; a card click
+  racing the search's `?q=` router replace).
+
+### 3. The Trash settings save failure — FIXED, SHIPPED, OWNER-CONFIRMED (v0.90.2)
+
+Root cause: the live `space_policy` row predated ADR-073 and carried the retired `cooldownDays` INSIDE its
+`perArray` entry; the read passed `perArray` through verbatim and the card round-tripped it into a
+`.strict()` input ⇒ EVERY save on that row died with `unrecognized_keys`. `getSpacePolicy` now normalizes
+at the read edge. **Owner saved successfully; the row self-healed** (both retired keys gone, the Movies cap
+50 edit persisted). No migration needed.
+
+### ▶ TWO OPEN OWNER ITEMS
+
+1. **The library-access gate returns "nothing visible" for a role with no grant rows.** That is what broke
+   the e2e seed — but it is also a production sharp edge: on a fresh deploy, BEFORE the first `plex-match`
+   sync runs, every non-admin would see an empty library. Not changed (it is ADR-047 INVARIANT territory).
+2. **MAM throughput vs safety.** Edge 100 spends ~50% of the allowance. Live with it, or accept more risk
+   for more throughput — but move it only on measured evidence.
+
+**Operational gotchas that cost time (both now proven):** `GH_TOKEN` goes stale ~1h into a session — the
+live token is at **`/creds/gh_token`**, needed for `gh` AND `git push` (the helper reads the env); do NOT
+re-auth. And the `test` lane can flake on an embedded-PG hook timeout while the bot CANNOT rerun jobs
+(`Resource not accessible by integration`) — CI logs are egress-blocked, so diagnose by step DURATION plus
+a local repro (`taskset -c 0,1 pnpm test`) and retrigger with an empty commit.
+
+## ▶ ⚠ MAM BURST INCIDENT (2026-07-25 ~06:10 UTC) — gate CLOSED, buffer 20 → 50, ADR-077's basis is STALE (SUPERSEDED by the block above: the "backlog artifact" hypothesis was disproven and the config moved to 200/100/floor-60)
 
 **Read this before touching the MAM governor.** Hours after the un-freeze below, the post-freeze
 backlog drain produced a burst **3× larger than the one ADR-077's safety margin was derived from**,
