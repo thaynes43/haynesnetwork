@@ -88,8 +88,17 @@ import {
   SCOREBOARD_DEADLINE_MS,
   type PlayScoreboardSource,
 } from '@hnet/metrics';
-import { resolveTautulliInstances } from '@hnet/arr';
-import { TautulliClient } from '@hnet/arr/read';
+// ADR-079 / DESIGN-004 D-25 (PLAN-064) — the front-page uptime badge: the TTL-memoized
+// read-only Gatus source. `@hnet/arr`'s GatusClient satisfies UptimeReader structurally;
+// the client is built with the deadline as its timeout so a slow Gatus loses the race
+// instead of riding ArrHttp's GET retries into a slow Home SSR.
+import {
+  createUptimeSource,
+  UPTIME_DEADLINE_MS,
+  type UptimeSource,
+} from '@hnet/metrics';
+import { resolveTautulliInstances, resolveGatusEnv } from '@hnet/arr';
+import { TautulliClient, GatusClient } from '@hnet/arr/read';
 // ADR-055 / DESIGN-028 (PLAN-044) — the read-only Goodreads RSS + Google Books clients the integrations.link
 // mutation uses to resolve a vanity URL → user id, probe the public shelf is reachable (no secret), and run
 // the first shelf sync inline so the coverage card isn't a "0 of 0" dead-end. Read-only.
@@ -190,6 +199,13 @@ export interface TRPCContext {
    * injected fake in tests.
    */
   playScoreboard?: PlayScoreboardSource;
+  /**
+   * ADR-079 / DESIGN-004 D-25 (PLAN-064) — the uptime-badge source `metrics.uptime` reads
+   * (the 60s TTL memo over the in-cluster Gatus apex check). Env-built singleton in
+   * production (resolveGatusEnv — always resolvable, keyless; an unreachable Gatus yields
+   * the honest unmeasured snapshot, never an error); injected fake in tests.
+   */
+  uptime?: UptimeSource;
 }
 
 let envArrBundle: ArrClientBundle | undefined;
@@ -256,6 +272,28 @@ export function resolvePlayScoreboardSource(ctx: TRPCContext): PlayScoreboardSou
     }),
   });
   return envPlayScoreboard;
+}
+
+let envUptimeSource: UptimeSource | undefined;
+
+/**
+ * The uptime-badge source for this request: injected (tests) or the env-built singleton
+ * (ADR-079). The memo lives inside the source, so the singleton IS the cache.
+ * `UPTIME_BADGE_TTL_MS` is a test hook (the e2e harness sets 0 so specs see stub state
+ * flips immediately — the ACTION_FOUND_NOTHING_WINDOW_MS idiom); unset/invalid ⇒ 60s.
+ */
+export function resolveUptimeSource(ctx: TRPCContext): UptimeSource {
+  if (ctx.uptime) return ctx.uptime;
+  if (!envUptimeSource) {
+    const reader = new GatusClient({ ...resolveGatusEnv(), timeoutMs: UPTIME_DEADLINE_MS });
+    const rawTtl = process.env.UPTIME_BADGE_TTL_MS?.trim();
+    const ttlMs = rawTtl ? Number(rawTtl) : Number.NaN;
+    envUptimeSource = createUptimeSource({
+      reader,
+      ...(Number.isFinite(ttlMs) && ttlMs >= 0 ? { ttlMs } : {}),
+    });
+  }
+  return envUptimeSource;
 }
 
 let envAuthentikPortalBundle: AuthentikPortalBundle | undefined;

@@ -36,6 +36,16 @@ export type {
 export { PhaseChip, ProgressMeter } from './controls/PhaseChip';
 export type { PhaseChipProps, ProgressMeterProps, PhaseTone } from './controls/PhaseChip';
 
+// ADR-079 / DESIGN-004 D-25 — the Home uptime badge (structure only; states map to
+// app classes over the token palette; reserved numeral width per ADR-015).
+export {
+  UptimeBadge,
+  formatUptimePercent,
+  uptimeBadgeState,
+  uptimeBadgeTitle,
+} from './controls/UptimeBadge';
+export type { UptimeBadgeData, UptimeBadgeProps, UptimeBadgeState } from './controls/UptimeBadge';
+
 // ADR-071 / DESIGN-004 D-24 — the media-action system: the MEDIA_ACTIONS registry (the ONE
 // canonical label+look per verb) and the components that render it reflow-safely (MediaAction,
 // MediaActionBar, ConsumeLink, ReservedActionSlot, MediaHero). Every per-item Fix / Force Search /

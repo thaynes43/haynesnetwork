@@ -1,13 +1,15 @@
 // DESIGN-004 D-23 (owner-directed 2026-07-17) — HOME, the calm landing screen the topbar
-// logo/wordmark links to. Exactly four things, no app cards: the MOTD banner (D-15/D-17 —
-// the estate-wide broadcast, kept on the landing screen so every login sees it), the
-// time-of-day greeting, the estate play scoreboard (ADR-068 / DESIGN-040), and the inverted
-// About tile above its perforated rule (ADR-063 / DESIGN-034). The app catalog grid moved
+// logo/wordmark links to. No app cards: the MOTD banner (D-15/D-17 — the estate-wide
+// broadcast, kept on the landing screen so every login sees it), the time-of-day greeting,
+// the uptime badge (ADR-079 / D-25 — the real external SLI, added 2026-07-28), the estate
+// play scoreboard (ADR-068 / DESIGN-040), and the inverted About tile above its perforated
+// rule (ADR-063 / DESIGN-034). The app catalog grid moved
 // to /portal (D-23); post-login landing stays `/`.
 import { headers } from 'next/headers';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getServerSession } from '@hnet/auth';
+import { UptimeBadge } from '@hnet/ui';
 import { getServerCaller } from '@/lib/trpc-server';
 import { MotdBanner } from '@/components/motd-banner';
 import { Scoreboard } from '@/components/scoreboard';
@@ -25,15 +27,22 @@ export default async function HomePage() {
   // no loading flash, anchored ABOVE the greeting (D-07 neighbor).
   // ADR-068 / DESIGN-040 D-04/D-06 — the play scoreboard rides the same server fetch (the
   // ~10-min in-process memo makes it cheap); numbers are baked at SSR, zero client fetch.
-  const [motd, plays] = await Promise.all([
+  // ADR-079 / DESIGN-004 D-25 (R-235) — the uptime badge rides the same server fetch (the
+  // 60s in-process memo + 3s deadline make it cheap and bounded); state is baked at SSR.
+  const [motd, plays, uptime] = await Promise.all([
     caller.motd.getActive(),
     caller.metrics.playScoreboard(),
+    caller.metrics.uptime(),
   ]);
 
   return (
     <>
       <MotdBanner motd={motd} />
       <Greeting displayName={session.user.displayName} />
+      {/* D-25 — the quiet uptime trophy under the greeting: the real external SLI (Gatus
+          apex check). ALWAYS renders — an unreachable Gatus shows the honest muted
+          "unmeasured" state, never fake green (ADR-079 C-02). */}
+      <UptimeBadge data={uptime} />
       {/* DESIGN-040 D-06/D-07 (R-221) — the estate play scoreboard badge row, above the About
           tile; renders NOTHING when no Tautulli answered (no empty chrome). */}
       <Scoreboard totals={plays} />

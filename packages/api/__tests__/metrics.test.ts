@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { permissionAudit, roles } from '@hnet/db/schema';
 import { createRole, syncAiUsage, type AiUsageChatInput, type AiUsageUserInput } from '@hnet/domain';
-import type { PromMatrixSeries, PromVectorSample, PrometheusReader } from '@hnet/metrics';
+import type { PromMatrixSeries, PromVectorSample, PrometheusReader, UptimeSnapshot } from '@hnet/metrics';
 import {
   bootMigratedDb,
   caller,
@@ -477,5 +477,60 @@ describe('roles.setMetricsLevel (audited single-writer)', () => {
     await expect(
       adminCaller.roles.setMetricsLevel({ roleId: adminRole!.id, level: 'limited' }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+});
+
+describe('metrics.uptime (ADR-079 — the front-page uptime badge query)', () => {
+  const SNAPSHOT: UptimeSnapshot = {
+    measured: true,
+    up: true,
+    uptime24h: 1,
+    uptime7d: 0.99913,
+    uptime30d: 0.999783,
+  };
+
+  it('any signed-in member gets the source snapshot verbatim (the playScoreboard posture)', async () => {
+    const member = await createUser(testDb.db);
+    let reads = 0;
+    const ctx = {
+      ...makeCtx(testDb.db, sessionUser(member)),
+      uptime: {
+        get: async () => {
+          reads += 1;
+          return SNAPSHOT;
+        },
+      },
+    };
+    await expect(caller(ctx).metrics.uptime()).resolves.toEqual(SNAPSHOT);
+    expect(reads).toBe(1);
+  });
+
+  it('the honest unmeasured snapshot flows through untouched (never a throw, never fake numbers)', async () => {
+    const member = await createUser(testDb.db);
+    const ctx = {
+      ...makeCtx(testDb.db, sessionUser(member)),
+      uptime: {
+        get: async () => ({
+          measured: false,
+          up: null,
+          uptime24h: null,
+          uptime7d: null,
+          uptime30d: null,
+        }),
+      },
+    };
+    await expect(caller(ctx).metrics.uptime()).resolves.toEqual({
+      measured: false,
+      up: null,
+      uptime24h: null,
+      uptime7d: null,
+      uptime30d: null,
+    });
+  });
+
+  it('an anonymous caller is UNAUTHORIZED (authed, not public)', async () => {
+    await expect(
+      caller({ ...makeCtx(testDb.db, null), uptime: { get: async () => SNAPSHOT } }).metrics.uptime(),
+    ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
   });
 });

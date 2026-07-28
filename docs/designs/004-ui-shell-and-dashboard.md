@@ -1052,7 +1052,9 @@ picker reaches all three servers, so the one web-player link loses nothing.)
 
 **HOME — `/`, the calm landing screen the logo links to.** The brand block in the topbar becomes a
 `<Link href="/">` (same anatomy/look — link chrome neutralized, the global `:focus-visible` ring is
-the keyboard affordance; hover changes nothing). The page renders exactly four things, in order:
+the keyboard affordance; hover changes nothing). The page renders exactly four things, in order
+_(amended 2026-07-28 by **D-25**: the uptime badge now sits between the greeting and the
+scoreboard — the list below is otherwise unchanged)_:
 
 1. the **MOTD banner** (D-15/D-17 — kept on the landing screen so every login sees the estate-wide
    broadcast; this is also where the owner's current "site is very new" welcome note lives, so the
@@ -1217,6 +1219,50 @@ current tree (every surface is on-pattern) and fails on a regression (a hand-rol
 retired label, an unknown registry key, or a bespoke `.btn__ext` consume link). The migration lane
 is complete: media-action drift is now structural-impossible, not convention. See the four-rule
 detail + as-built refinements above.
+
+### D-25 — Amendment 2026-07-28 (ADR-079 / R-235, saga haynesnetwork-ha plan 04) — the Home uptime badge
+
+Home gains its first deliberate new element since the D-23 split: a compact **uptime badge**
+showing the real external SLI (Gatus's `external_haynesnetwork` apex check, read in-cluster —
+ADR-079). It is a quiet trophy in the header region, not an alert: the detectors are Gatus +
+Pushover + the blackbox probe; this badge only lets the page wear the number.
+
+**Placement.** Directly UNDER the greeting (the page title) and ABOVE the estate play
+scoreboard — the D-23 Home order becomes: MOTD banner · greeting · **uptime badge** · play
+scoreboard · perforated rule · About tile. It joins the scoreboard's "glance badges" register
+and shares its shields-pill anatomy, but is its own element with its own row: unlike the
+scoreboard (which renders NOTHING when unavailable, D-23/DESIGN-040 D-07), the badge **always
+renders** — an unreachable Gatus is shown honestly as unmeasured, never hidden and never
+faked green (ADR-079 C-02). Both states are SSR-baked server-side (zero client fetch, no
+post-load shift); visible to every signed-in user (the About-tile posture — no grant gating).
+
+**Anatomy** (`UptimeBadge`, `@hnet/ui` — structure only, the PhaseChip tone-class contract;
+all color lives in `app.css` over the token palette, hard rule 2):
+
+- a two-segment pill: muted label segment **"Uptime"** + a toned value segment holding a
+  status dot, the 30d percentage (e.g. `99.98%`), and a small `30d` qualifier;
+- three states as `uptime-badge--<state>` classes + `data-state`: **up** → accent tone,
+  **down** → danger tone (same anatomy, the dot + tone carry the state), **unmeasured** →
+  muted tone with the value segment reading "unmeasured" (so the pill reads "Uptime
+  unmeasured" — em-dash-free, owner copy rules);
+- a native `title` tooltip with the 24h · 7d · 30d ratios (windows a degraded read could not
+  fetch are omitted; unmeasured explains itself in plain words).
+
+**ADR-015 (D-14) is designed in:** state changes swap color/text ONLY. The percent span
+reserves tabular-numeral width (`min-width` in `ch` + `font-variant-numeric: tabular-nums`),
+so `100%` ⇄ `99.98%` never moves the `30d` qualifier or any neighbor; the pill is the sole
+element in its row, and nothing about it is interactive (hover changes nothing).
+
+**Data path** (the D-23-era scoreboard vertical, repeated): `GatusClient` (`@hnet/arr`,
+keyless read) → `readUptimeSnapshot`/`createUptimeSource` (`@hnet/metrics`, 3s deadline +
+60s single-flight memo, never rejects) → `metrics.uptime` (`authedProcedure`) → the Home
+server component. Payload: `{ measured, up, uptime24h, uptime7d, uptime30d }`.
+
+Enforced by: `uptime-badge.spec.ts` (the three states against the stub Gatus, wired into the
+harness like stub-maintainerr), `resize-matrix.spec.ts` (Home at all eight viewports now
+includes the badge), `packages/ui/__tests__/UptimeBadge.test.tsx` (anatomy + percent
+formatting + reserved-width class), and the `@hnet/arr` / `@hnet/metrics` / `@hnet/api` unit
+specs (plain-text parse, snapshot honesty, router posture).
 
 ## Open questions
 

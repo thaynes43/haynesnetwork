@@ -6903,6 +6903,68 @@ body:has(.gallery) {
   margin: var(--space) 0;
 }
 
+/* ---------- Front-page uptime badge (ADR-079 / DESIGN-004 D-25) ---------- */
+/* The quiet trophy under the greeting: one shields pill (muted "Uptime" label + toned
+   value segment) in the scoreboard's visual register. States recolor via --uptime-tone
+   ONLY; the percent span reserves tabular-numeral width so 100% ⇄ 99.98% never moves
+   the 30d qualifier (ADR-015). Tokens only — the established color-mix tint idiom. */
+.uptime-badge {
+  --uptime-tone: var(--color-text-muted);
+  display: inline-flex;
+  align-items: stretch;
+  height: 21px;
+  margin: 0 0 var(--space);
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+.uptime-badge--up {
+  --uptime-tone: var(--color-accent);
+}
+.uptime-badge--down {
+  --uptime-tone: var(--color-danger);
+}
+.uptime-badge--unmeasured {
+  --uptime-tone: var(--color-text-muted);
+}
+.uptime-badge__label {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 7px;
+  background: color-mix(in srgb, var(--color-text-muted) 12%, transparent);
+  color: var(--color-text-muted);
+}
+.uptime-badge__value {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 7px;
+  background: color-mix(in srgb, var(--uptime-tone) 14%, transparent);
+  color: var(--uptime-tone);
+  font-variant-numeric: tabular-nums;
+}
+.uptime-badge__dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--uptime-tone);
+}
+/* The ADR-015 reservation: 6ch holds the widest percent ("99.98%"), so a shorter one
+   ("100%") pads instead of pulling the qualifier left. Unmeasured text simply overflows
+   the minimum (state is fixed at SSR — no mid-view swap exists to reflow). */
+.uptime-badge__pct {
+  min-width: 6ch;
+}
+.uptime-badge__window {
+  font-size: 9px;
+  opacity: 0.8;
+}
+
 /* ---------- Estate play scoreboard (ADR-068 / DESIGN-040 D-05/D-06) ---------- */
 /* The GitHub-readme-shields row between the greeting and the About tile: each badge is a
    two-segment pill (muted label + accent value) ~21px tall; the row wraps at phone widths

@@ -539,3 +539,7 @@ export { TvdbClient } from './tvdb';
 export type { TvdbClientOptions } from './tvdb';
 export { MaintainerrClient } from './maintainerr';
 export type { MaintainerrClientOptions } from './maintainerr';
+// ADR-079 / DESIGN-004 D-25 (PLAN-064) — the front-page uptime badge's keyless Gatus read
+// client (current status + windowed uptime ratios for one endpoint key; no write surface).
+export { GatusClient } from './gatus';
+export type { GatusClientOptions, GatusUptimeWindow } from './gatus';
