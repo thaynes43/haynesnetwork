@@ -172,12 +172,20 @@ debt gets solid BEFORE any new feature work.** Both reopen as build work:
    member/admin "still syncing" states. **Prod evidence = the no-op signature:** boot logs are
    SILENT on the warm estate (the tasks log only on seed/run/error) — the positive-fire proof is
    the 14-test battery, not prod logs; nothing observable remains on a populated DB.
-2. **MAM — "harden first, then retune": ADR-082 Accepted (PR #517), BUILD IN FLIGHT** (Opus,
-   branch `feat/mam-trend-gate-admin-config`): trend-aware dead-band override (close-only, delta
-   default 15, prior sample persisted in `mam_gate_state`) + `mam_governor_config` app-setting
-   (db → env → default resolution, write-time invariant validation) + the /admin governor panel.
-   Edge stays 100 until it ships; any retune stays measured-burst-gated. Coordinator reviews the
-   PR when it lands.
+2. **MAM — ✅ EXECUTED, LIVE-VERIFIED (v0.94.0, 2026-07-28 ~23:34 UTC).** ADR-082 → hnet **#520**
+   (Opus-built, coordinator-reviewed, four additive deviations approved) → v0.94.0 → haynes-ops
+   **#2290**. PLAN-040 → `completed/` (the trend override rode it). **Two-tick live evidence:**
+   23:19 first v0.94.0 tick ran `trendPauseDelta:15, reason:"hold", previous:null` and wrote the
+   baseline; 23:34 computed `previousUnsatisfied:94, delta:0` against the persisted sample;
+   config resolved the env tier (200/100/60) unchanged — zero-change confirmed. The owner tunes
+   knobs at `/admin/governor` from now on (validated; a wedging combination is unstorable); edge
+   stays 100, retunes stay measured-burst-gated.
+
+**THE 2026-07-28 RULED DEBT QUEUE IS COMPLETE** — budgets v0.92.0 (Default 5/hr set) · access
+gate v0.93.0 · MAM hardening v0.94.0 · ytdrivarr cron-scope v0.9.1. Next by owner sequencing:
+his new ideas / PLAN-041 Gap A (parked for his go) / the low-hanging list (collection totals,
+plan-file hygiene truing, e2e promotion, W2 age-gate silencing, feed attribution, dupe-guard
+sweeps).
 
 **Operational gotchas that cost time (both now proven):** `GH_TOKEN` goes stale ~1h into a session — the
 live token is at **`/creds/gh_token`**, needed for `gh` AND `git push` (the helper reads the env); do NOT

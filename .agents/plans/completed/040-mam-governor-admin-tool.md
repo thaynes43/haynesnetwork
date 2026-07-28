@@ -1,12 +1,16 @@
 # PLAN-040: MAM governor admin tool — rank-aware account config in-app
 
-- **Status:** ACTIVATED (owner ruling 2026-07-28, "harden first, then retune" —
-  `.agents/context/2026-07-28-owner-rulings-gate-and-mam.md`). Scope at authoring: the
-  DB-backed audited limit/buffer/floor knobs + in-app governor-state visibility below, PLUS
-  decide whether the trend-aware dead-band override (a rising unsatisfied count must not be
-  held open by hysteresis — the 07-25 hazard; supersedes/amends ADR-077 behavior) rides this
-  plan or its own. The pause edge stays 100 until this safety layer ships; retunes stay
-  measured-burst-gated. (Original placeholder note: build after PLAN-039 — long since shipped.)
+- **Status:** ✅ COMPLETED (v0.94.0, LIVE-VERIFIED 2026-07-28 ~23:34 UTC). Built as ADR-082
+  (trend-aware dead-band override RODE THIS PLAN — one release): `computeTrendOverride`
+  (close-only, delta default 15, prior sample persisted in `mam_gate_state`, migration 0074),
+  `mam_governor_config` app-setting (db → env → default with per-value provenance; write-time
+  invariant validation makes a wedging combination unstorable), and the `/admin/governor` panel
+  (state, last delta, provenance, transition reasons). hnet **#520** → v0.94.0 → haynes-ops
+  **#2290**. Live evidence: two governor ticks on the new image — 23:19 `trendPauseDelta:15,
+  reason:"hold", previous:null` (baseline written), 23:34 `previousUnsatisfied:94, delta:0`
+  (delta computed against the persisted sample); config resolved the env tier 200/100/60
+  unchanged (zero-change deploy confirmed). Edge stays 100; retunes stay measured-burst-gated.
+  (Original placeholder note: build after PLAN-039 — long since shipped.)
 - **Owner intent (2026-07-11, his words):** "MAM is a fallback that's governed based on my
   rating, but we also use/seed it enough to bring my rating up to the point where we never
   have to really disable it due to volume. I will manually request MAM account-related config
