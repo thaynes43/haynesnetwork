@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.90.3](https://github.com/thaynes43/haynesnetwork/compare/v0.90.2...v0.90.3) (2026-07-28)
+
+
+### Bug Fixes
+
+* **e2e:** repair the advisory e2e lane — 29 failures → 0, and 3 real bugs it was hiding ([#493](https://github.com/thaynes43/haynesnetwork/issues/493)) ([d2a741c](https://github.com/thaynes43/haynesnetwork/commit/d2a741c8a322eeedd4d2e74ef26018e5a52776cc))
+* **trash:** Leaving Soon as a Maintainerr rule-group shell with self-heal (ADR-078) ([#496](https://github.com/thaynes43/haynesnetwork/issues/496)) ([c6e21f4](https://github.com/thaynes43/haynesnetwork/commit/c6e21f496d2a067a3e1ee276b259d803c189cf89))
+
+
+### Documentation
+
+* **adr:** ADR-077 — the burst hypothesis was FALSE; measured +84, buffer 50 insufficient ([#494](https://github.com/thaynes43/haynesnetwork/issues/494)) ([542874e](https://github.com/thaynes43/haynesnetwork/commit/542874e7ac27dbe90c33ef381863fc00aedd54c7))
+* **adr:** amend ADR-077 in place — the burst basis was wrong (+58 observed) ([#492](https://github.com/thaynes43/haynesnetwork/issues/492)) ([33985a1](https://github.com/thaynes43/haynesnetwork/commit/33985a134b4391f347391c77d634e254e924c870))
+* **agents:** HANDOFF — all three armed watches discharged; Trash settings save fixed (v0.90.2) ([#489](https://github.com/thaynes43/haynesnetwork/issues/489)) ([6634cf4](https://github.com/thaynes43/haynesnetwork/commit/6634cf4e694c4f8cc89f525e5ce7ba0495f774e0))
+* **agents:** HANDOFF — MAM +58 burst incident; gate closed, buffer 20 → 50 ([#491](https://github.com/thaynes43/haynesnetwork/issues/491)) ([e095316](https://github.com/thaynes43/haynesnetwork/commit/e095316e2830922c0824f483367ddc55abd56a24))
+* **agents:** HANDOFF — MAM sized to the measured +84, e2e lane repaired, Trash fix confirmed ([#495](https://github.com/thaynes43/haynesnetwork/issues/495)) ([9283b3f](https://github.com/thaynes43/haynesnetwork/commit/9283b3fb728133be7c2f7895ff61a2bb1632f9a0))
+
 ## [0.90.2](https://github.com/thaynes43/haynesnetwork/compare/v0.90.1...v0.90.2) (2026-07-25)
 
 
