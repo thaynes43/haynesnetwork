@@ -4,7 +4,30 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-## ▶ NEXT SESSION — start here (written 2026-07-26 ~19:10 UTC — everything below is DELIVERED; two owner items open)
+## ▶ NEXT SESSION — start here (written 2026-07-28 ~05:30 UTC — Leaving Soon duplicates fixed; validation contract below)
+
+### 0. Leaving Soon duplicate-collections incident — root-caused, cleaned up, fixed (ADR-078)
+
+Owner reported four identical "Leaving Soon — Movies" rows on Plex Home. Root cause: Maintainerr's
+nightly `RuleMaintenanceService.removeCollectionsWithoutRule` (04:20) silently purges any collection
+record without a rule group — the app's bare `POST /api/collections` Leaving-Soon record died every
+night, every weekly promote re-created it, and the bare create mints a NEW Plex object per call
+(each promoted to Home). Also broke mid-window saves (silent "Collection with id 21 not found").
+Full evidence chain: `.agents/context/2026-07-28-leaving-soon-duplicates-incident.md`.
+
+- **Cleanup (done, live):** three orphaned Plex duplicates (98887/99586/100233) deleted via the
+  Maintainerr media-server proxy; 98724 remains the single rolling object (48 children intact).
+- **Fix (ADR-078 / DESIGN-011 D-03 amendment):** create through the RULES surface (rule-group shell,
+  `useRules:false` — survives the purge; Plex object ADOPTED by title, never duplicated),
+  `healBatchLeavingSoonCollection` self-heal (save/un-save/un-protect + hourly space-policy tick),
+  membership reconcile + clean-close clear, cancel tears down the group (cascade). Tests F4–F7 +
+  the space-policy heal case encode the contracts.
+- **Validation contract (post-deploy — check these if resuming):** (1) next space-policy tick logs
+  "Re-drove its missing Leaving-Soon collection" and `GET /api/collections` regains a
+  "Leaving Soon — Movies" record with a `GET /api/rules` shell; (2) the record SURVIVES the next
+  04:20 America/New_York maintenance; (3) Plex library 1 still has exactly ONE such object.
+
+Previous session state (MAM etc.) follows — still current except where this block supersedes it.
 
 **All open work is merged and live.** Nothing is in flight. Two items want an owner ruling (bottom).
 

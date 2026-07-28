@@ -24,10 +24,15 @@ import {
 function stubMaintainerr(): MaintainerrClientBundle {
   const exclusions = new Set<string>();
   const handled = new Set<string>();
-  // ADR-025 — created Leaving-Soon collections (id → title). v3.17.0's create returns void, so the
-  // drive re-reads the id from GET /collections by title; the list must surface them.
+  // ADR-025 — created Leaving-Soon collections (id → title). The drive creates them through the
+  // RULES surface (a rule-group shell, v3.19.0 setRules — returns no ids) and re-reads the id from
+  // GET /collections by title; the list must surface them.
   const manualCollections = new Map<number, string>();
+  // ruleGroupId → collectionId (the shell). Cancel resolves the group via GET /rules and tears it
+  // down with DELETE /rules/:id (cascade).
+  const ruleGroups = new Map<number, number>();
   let nextManualCollectionId = 900;
+  let nextRuleGroupId = 9500;
   const items = [
     { mediaServerId: 'ms-1', tmdbId: 55001, sizeBytes: 4_000_000_000, addDate: '2026-06-01T00:00:00Z' },
     { mediaServerId: 'ms-2', tmdbId: 55002, sizeBytes: 2_000_000_000, addDate: '2026-06-01T00:00:00Z' },
@@ -47,7 +52,16 @@ function stubMaintainerr(): MaintainerrClientBundle {
     if (method === 'GET' && path === '/settings/test/plex') return ok({ status: 'OK', code: 1 });
     if (method === 'GET' && path === '/rules/constants')
       return ok({ applications: [{ name: 'Radarr' }, { name: 'Sonarr' }, { name: 'Tautulli' }, { name: 'Overseerr' }] });
-    if (method === 'GET' && path === '/rules') return ok([]);
+    if (method === 'GET' && path === '/rules')
+      return ok(
+        [...ruleGroups].map(([gid, cid]) => ({
+          id: gid,
+          name: manualCollections.get(cid) ?? '',
+          isActive: true,
+          useRules: false,
+          collection: { id: cid, title: manualCollections.get(cid) ?? '' },
+        })),
+      );
     if (method === 'GET' && path === '/collections')
       return ok([
         // Rule pool: aging-safe horizon + DELETE arrAction (DESIGN-010 errata) so the audit permits sweeps.
@@ -83,9 +97,25 @@ function stubMaintainerr(): MaintainerrClientBundle {
       handled.add(String((body as { mediaId: string }).mediaId));
       return ok(null, 201);
     }
+    if (method === 'POST' && path === '/rules') {
+      // v3.19.0 setRules: creates the rule-group shell + its collection; returns a ReturnStatus
+      // (no ids) — the drive re-reads the collection id from GET /collections by exact title.
+      const title = String((body as { name?: unknown })?.name ?? '');
+      const collectionId = ++nextManualCollectionId;
+      manualCollections.set(collectionId, title);
+      ruleGroups.set(++nextRuleGroupId, collectionId);
+      return ok({ code: 1, result: 'Success' }, 201);
+    }
+    const grpDel = path.match(/^\/rules\/(\d+)$/);
+    if (method === 'DELETE' && grpDel) {
+      const gid = Number(grpDel[1]);
+      const cid = ruleGroups.get(gid);
+      ruleGroups.delete(gid);
+      if (cid !== undefined) manualCollections.delete(cid);
+      return ok({ code: 1, result: 'Success' });
+    }
     if (method === 'POST' && path === '/collections') {
-      // v3.17.0 create returns NO body (void); register the collection so GET /collections surfaces it
-      // for the drive's re-read-by-title.
+      // Legacy bare-collection create (pre rule-shell) — kept for contract archaeology.
       const title = String(((body as { collection?: { title?: unknown } })?.collection?.title) ?? '');
       manualCollections.set(++nextManualCollectionId, title);
       return ok(undefined, 201);

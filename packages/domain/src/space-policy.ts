@@ -41,6 +41,7 @@ import {
 import { resolveDb } from './db-client';
 import {
   createBatchFromPending,
+  healBatchLeavingSoonCollection,
   promoteOpenPolicyBatch,
   type BatchTargeting,
   type CreateBatchResult,
@@ -407,6 +408,32 @@ async function proposeForKind(input: {
         outcome: 'promoted',
         reason: `Self-healed a stuck ${input.mediaKind} batch (${open.state}) straight to Leaving Soon.`,
       };
+    }
+    // A leaving_soon batch is healthy — but its Maintainerr collection record can vanish underneath
+    // it (a human delete in Maintainerr; historically the nightly rule-less purge). Heal it on the
+    // hourly tick so the Plex wall recovers without waiting for a user's save to trip the
+    // heal-before-write path. Best-effort: a Maintainerr outage here must not fail the tick.
+    if (open.state === 'leaving_soon') {
+      try {
+        const heal = await healBatchLeavingSoonCollection({
+          db: input.db,
+          maintainerr: input.maintainerr,
+          batchId: open.id,
+          actorId: input.actorId,
+        });
+        if (heal.healed) {
+          return {
+            ...base,
+            batchId: open.id,
+            outcome: 'skipped_open_batch',
+            reason:
+              `An open ${input.mediaKind} batch already exists (leaving_soon) — leaving it. ` +
+              `Re-drove its missing Leaving-Soon collection (now Maintainerr id ${heal.collectionId ?? 'none'}).`,
+          };
+        }
+      } catch {
+        // The heal is opportunistic on this tick; the save-path heal still covers users.
+      }
     }
     return {
       ...base,

@@ -55,7 +55,8 @@ interface StubItem {
 interface StubCollection {
   id: number;
   isActive: boolean;
-  deleteAfterDays: number;
+  /** null = no aging horizon (the rules-surface create stores null verbatim — no zod coercion). */
+  deleteAfterDays: number | null;
   /** ServarrAction (0=DELETE … 4=DO_NOTHING). Default 0 (rule collection) in the GET handler. */
   arrAction?: number;
   /** true for app-managed Leaving-Soon manual collections; default false (rule collection). */
@@ -65,20 +66,43 @@ interface StubCollection {
   libraryId: number;
   items: StubItem[];
 }
+interface StubRuleGroup {
+  id: number;
+  name: string;
+  isActive: boolean;
+  useRules: boolean;
+  libraryId: string;
+  dataType: string;
+  collectionId: number;
+}
 interface MaintState {
   integrations: { radarr: boolean; sonarr: boolean; tautulli: boolean; seerr: boolean };
   plexOk: boolean;
   reachable: boolean;
   exclusions: Set<string>;
   collections: StubCollection[];
+  /** Rule groups (GET /api/rules) — every real rule pool has one; the Leaving-Soon shell gets one
+   *  from POST /rules. A collection without a group is purged nightly (purgeRuleLessCollections). */
+  ruleGroups: StubRuleGroup[];
   /** mediaServerIds whose per-item handle fired — dropped from collection content. */
   handled: Set<string>;
-  /** the id the stub returns for POST /collections. */
+  /** the id the stub assigns to the next created collection (POST /rules or legacy POST /collections). */
   nextCollectionId: number;
+  nextRuleGroupId: number;
   fail: Set<string>;
   /** Test seam (F2): fired on every GET /rules/exclusion — lets a test land a concurrent DB write
    *  (e.g. a Save) in the sweep's window between candidate-select and the guarded item-write. */
   onExclusionCheck?: (mediaServerId: string) => Promise<void> | void;
+}
+
+/** Mirror of Maintainerr's nightly RuleMaintenanceService.removeCollectionsWithoutRule (cron
+ *  `20 4 * * *`): silently deletes every collection record lacking a rule group. The rule-shell fix
+ *  exists so the Leaving-Soon record SURVIVES a simulated night. */
+function purgeRuleLessCollections(state: MaintState): number[] {
+  const grouped = new Set(state.ruleGroups.map((g) => g.collectionId));
+  const purged = state.collections.filter((c) => !grouped.has(c.id)).map((c) => c.id);
+  state.collections = state.collections.filter((c) => grouped.has(c.id));
+  return purged;
 }
 interface RecordedCall {
   method: string;
@@ -120,7 +144,21 @@ function makeMaintainerr(state: MaintState): {
       if (state.integrations.seerr) apps.push({ name: 'Overseerr' });
       return ok({ applications: apps });
     }
-    if (method === 'GET' && path === '/rules') return ok([]);
+    if (method === 'GET' && path === '/rules')
+      return ok(
+        state.ruleGroups.map((g) => ({
+          id: g.id,
+          name: g.name,
+          isActive: g.isActive,
+          useRules: g.useRules,
+          libraryId: g.libraryId,
+          dataType: g.dataType,
+          collection: (() => {
+            const c = state.collections.find((col) => col.id === g.collectionId);
+            return c ? { id: c.id, title: c.title, manualCollection: c.manualCollection ?? false } : null;
+          })(),
+        })),
+      );
     if (method === 'GET' && path === '/collections') {
       return ok(
         state.collections.map((c) => ({
@@ -151,6 +189,78 @@ function makeMaintainerr(state: MaintState): {
       return ok(present ? [{ id: 1, mediaServerId: id, ruleGroupId: null, parent: id }] : []);
     }
 
+    // writes — the Leaving-Soon rule-group-shell surface (v3.19.0 setRules): creates the group AND
+    // its collection; returns ONLY a ReturnStatus (no ids — the drive re-reads by title). Enforces
+    // the verified contracts loudly: arrAction MUST be DO_NOTHING(4) and the shell MUST carry zero
+    // rules (a rules-bearing group would have the executor strip app-curated members).
+    if (method === 'POST' && path === '/rules') {
+      const p = (body ?? {}) as {
+        name?: unknown;
+        libraryId?: unknown;
+        isActive?: boolean;
+        arrAction?: unknown;
+        useRules?: boolean;
+        rules?: unknown[];
+        dataType?: unknown;
+        collection?: Record<string, unknown>;
+      };
+      if (typeof p.name !== 'string' || p.name.length === 0)
+        return ok({ code: 0, result: 'name: Required' });
+      if (!Array.isArray(p.rules)) return ok({ code: 0, result: 'rules: Required' });
+      const dataType = p.dataType;
+      if (typeof dataType !== 'string' || !['movie', 'show', 'season', 'episode'].includes(dataType))
+        return ok({ code: 0, result: `dataType: expected MediaItemTypes enum string, got ${JSON.stringify(dataType)}` });
+      const col = p.collection ?? {};
+      if (p.arrAction !== 4) {
+        throw new Error(
+          `STUB CONTRACT VIOLATION (Maintainerr v3.19.0): Leaving-Soon rule shell ${JSON.stringify(p.name)} ` +
+            `created with arrAction=${JSON.stringify(p.arrAction)} (≠ DO_NOTHING=4); the estate aging ` +
+            `worker would delete its members.`,
+        );
+      }
+      if (p.useRules === true || p.rules.length > 0) {
+        throw new Error(
+          `STUB CONTRACT VIOLATION: Leaving-Soon shell ${JSON.stringify(p.name)} carries rules ` +
+            `(useRules=${String(p.useRules)}, ${p.rules.length} rule(s)) — the executor would strip ` +
+            `app-curated members on its next run.`,
+        );
+      }
+      const collectionId = state.nextCollectionId;
+      state.nextCollectionId += 1;
+      state.collections.push({
+        id: collectionId,
+        isActive: p.isActive ?? true,
+        // The rules path stores deleteAfterDays VERBATIM (internal call, no z.coerce) — null stays null.
+        deleteAfterDays:
+          col.deleteAfterDays === undefined || col.deleteAfterDays === null ? null : Number(col.deleteAfterDays),
+        arrAction: 4,
+        manualCollection: Boolean(col.manualCollection ?? false),
+        type: dataType,
+        title: p.name,
+        libraryId: Number(p.libraryId ?? 0),
+        items: [],
+      });
+      state.ruleGroups.push({
+        id: state.nextRuleGroupId,
+        name: p.name,
+        isActive: p.isActive ?? true,
+        useRules: false,
+        libraryId: String(p.libraryId ?? ''),
+        dataType,
+        collectionId,
+      });
+      state.nextRuleGroupId += 1;
+      return ok({ code: 1, result: 'Success' }, 201);
+    }
+    // writes — rule-group teardown: cascades group + collection (v3.19.0 deleteRuleGroup).
+    const groupMatch = path.match(/^\/rules\/(\d+)$/);
+    if (method === 'DELETE' && groupMatch) {
+      const gid = Number(groupMatch[1]);
+      const group = state.ruleGroups.find((g) => g.id === gid);
+      state.ruleGroups = state.ruleGroups.filter((g) => g.id !== gid);
+      if (group) state.collections = state.collections.filter((c) => c.id !== group.collectionId);
+      return ok({ code: 1, result: 'Success' });
+    }
     // writes — exclusions
     if (method === 'POST' && path === '/rules/exclusion') {
       state.exclusions.add(String((body as { mediaId: string }).mediaId));
@@ -222,9 +332,32 @@ function makeMaintainerr(state: MaintState): {
       });
       return ok(undefined, 201); // v3.17.0 create returns NO body
     }
-    if (method === 'POST' && path === '/collections/add') return ok(null, 201);
-    if (method === 'POST' && path === '/collections/remove') return ok(null, 201);
-    if (method === 'POST' && path === '/collections/removeCollection') return ok(null, 201);
+    // Membership writes are STATEFUL so the reconcile paths (drive/heal/close) are observable via
+    // the content endpoint. Adds dedupe; removing an absent member is a tolerant server-side no-op.
+    if (method === 'POST' && path === '/collections/add') {
+      const b = body as { collectionId: number; media?: Array<{ mediaServerId: string }> };
+      const col = state.collections.find((c) => c.id === b.collectionId);
+      if (col)
+        for (const m of b.media ?? []) {
+          if (!col.items.some((i) => i.mediaServerId === m.mediaServerId))
+            col.items.push({ mediaServerId: m.mediaServerId, sizeBytes: 0, addDate: new Date().toISOString() });
+        }
+      return ok(null, 201);
+    }
+    if (method === 'POST' && path === '/collections/remove') {
+      const b = body as { collectionId: number; media?: Array<{ mediaServerId: string }> };
+      const col = state.collections.find((c) => c.id === b.collectionId);
+      if (col) {
+        const gone = new Set((b.media ?? []).map((m) => m.mediaServerId));
+        col.items = col.items.filter((i) => !gone.has(i.mediaServerId));
+      }
+      return ok(null, 201);
+    }
+    if (method === 'POST' && path === '/collections/removeCollection') {
+      const b = body as { collectionId: number };
+      state.collections = state.collections.filter((c) => c.id !== b.collectionId);
+      return ok(null, 201);
+    }
 
     return new Response(JSON.stringify({ message: `no stub for ${key}` }), { status: 404 });
   }) as typeof fetch;
@@ -266,17 +399,34 @@ function movieCollection(over: Partial<StubCollection> = {}): StubCollection {
     ...over,
   };
 }
-const baseState = (over: Partial<MaintState> = {}): MaintState => ({
-  integrations: { radarr: true, sonarr: true, tautulli: true, seerr: true },
-  plexOk: true,
-  reachable: true,
-  exclusions: new Set(),
-  collections: [movieCollection()],
-  handled: new Set(),
-  nextCollectionId: 555,
-  fail: new Set(),
-  ...over,
-});
+const baseState = (over: Partial<MaintState> = {}): MaintState => {
+  const collections = over.collections ?? [movieCollection()];
+  return {
+    integrations: { radarr: true, sonarr: true, tautulli: true, seerr: true },
+    plexOk: true,
+    reachable: true,
+    exclusions: new Set(),
+    handled: new Set(),
+    nextCollectionId: 555,
+    nextRuleGroupId: 7000,
+    fail: new Set(),
+    ...over,
+    collections,
+    // Every REAL rule pool has a rule group (Maintainerr only creates collections through rules) —
+    // default one per seeded collection so purgeRuleLessCollections mirrors production.
+    ruleGroups:
+      over.ruleGroups ??
+      collections.map((c, i) => ({
+        id: 7100 + i,
+        name: c.title,
+        isActive: true,
+        useRules: true,
+        libraryId: String(c.libraryId),
+        dataType: c.type,
+        collectionId: c.id,
+      })),
+  };
+};
 
 describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
   let t: TestDb;
@@ -373,15 +523,22 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     expect(res.state).toBe('leaving_soon');
     expect(res.windowDays).toBe(14);
     expect(res.collectionId).toBe(777);
-    // The manual Leaving-Soon collection was created (visible + seeded with the pending items).
-    const create = calls.find((c) => c.method === 'POST' && c.pathname === '/collections');
+    // The Leaving-Soon collection was created through the RULES surface (a rule-group SHELL —
+    // useRules:false + zero rules), NOT bare POST /collections: a rule-less record is silently
+    // purged by Maintainerr's nightly RuleMaintenanceService (the duplicate-collection incident).
+    const create = calls.find((c) => c.method === 'POST' && c.pathname === '/rules');
     expect(create).toBeTruthy();
-    const createdCollection = (create!.body as { collection: Record<string, unknown> }).collection;
-    expect(createdCollection.visibleOnHome).toBe(true);
-    // F1 — the create body carries the VERIFIED v3.17.0 contract: arrAction DO_NOTHING(4) (the worker's
-    // only skip) + the STRING MediaItemTypes `type`. Its id is re-read via GET /collections (void create).
-    expect(createdCollection.arrAction).toBe(4);
-    expect(createdCollection.type).toBe('movie');
+    const shell = create!.body as Record<string, unknown> & { collection: Record<string, unknown> };
+    expect(shell.useRules).toBe(false);
+    expect(shell.rules).toEqual([]);
+    // The VERIFIED v3.19.0 contract: arrAction DO_NOTHING(4) (the aging worker's only skip) + the
+    // STRING MediaItemTypes dataType. The id is re-read via GET /collections (setRules returns no ids).
+    expect(shell.arrAction).toBe(4);
+    expect(shell.dataType).toBe('movie');
+    expect(shell.collection.visibleOnHome).toBe(true);
+    expect(calls.some((c) => c.method === 'POST' && c.pathname === '/collections')).toBe(false);
+    // Membership was seeded through the reconcile (the rules create carries no media).
+    expect(calls.some((c) => c.method === 'POST' && c.pathname === '/collections/add')).toBe(true);
     const [row] = await t.db.select().from(trashBatches).where(eq(trashBatches.id, batchId));
     expect(row!.state).toBe('leaving_soon');
     expect(row!.maintainerrCollectionId).toBe(777);
@@ -931,12 +1088,96 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     const { bundle, calls } = makeMaintainerr(state);
     const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
     const res = await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: 7, actorId });
-    // Reused the pre-existing collection's id — NO create POST fired; membership topped up via add.
+    // Reused the pre-existing collection's id — NO create fired (neither the rules-shell POST nor the
+    // legacy bare-collection POST); membership topped up via add.
     expect(res.collectionId).toBe(8123);
+    expect(calls.some((c) => c.method === 'POST' && c.pathname === '/rules')).toBe(false);
     expect(calls.some((c) => c.method === 'POST' && c.pathname === '/collections')).toBe(false);
     expect(calls.some((c) => c.method === 'POST' && c.pathname === '/collections/add')).toBe(true);
     const [row] = await t.db.select().from(trashBatches).where(eq(trashBatches.id, batchId));
     expect(row!.maintainerrCollectionId).toBe(8123);
+  });
+
+  it('F4 — the rule-group SHELL survives the nightly rule-less purge (the duplicate-collection incident)', async () => {
+    const state = baseState({ nextCollectionId: 600 });
+    const { bundle } = makeMaintainerr(state);
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    const res = await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: 7, actorId });
+    expect(res.collectionId).toBe(600);
+    // A night passes: RuleMaintenanceService purges every collection lacking a rule group. The
+    // shell keeps ours alive — pre-fix, this purge is what orphaned a Plex duplicate per cycle.
+    const purged = purgeRuleLessCollections(state);
+    expect(purged).toEqual([]);
+    expect(state.collections.some((c) => c.id === 600)).toBe(true);
+  });
+
+  it('F5 — heal: a vanished record is re-driven on Save; the removal targets the LIVE collection (never a silent no-op)', async () => {
+    const state = baseState({ nextCollectionId: 600 });
+    const { bundle, calls } = makeMaintainerr(state);
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: 7, actorId });
+    // The record vanishes mid-window (a manual delete in Maintainerr; historically the nightly purge).
+    state.collections = state.collections.filter((c) => c.id !== 600);
+    state.ruleGroups = state.ruleGroups.filter((g) => g.collectionId !== 600);
+    calls.length = 0;
+    const item = (await itemsOf(batchId)).find((i) => i.state === 'pending')!;
+    await setBatchItemSaved({
+      db: t.db,
+      maintainerr: bundle,
+      batchId,
+      itemId: item.id,
+      saved: true,
+      actorId,
+      callerCanManage: true,
+    });
+    // The heal re-created the shell and re-pointed the batch row...
+    expect(calls.some((c) => c.method === 'POST' && c.pathname === '/rules')).toBe(true);
+    const [row] = await t.db.select().from(trashBatches).where(eq(trashBatches.id, batchId));
+    expect(row!.maintainerrCollectionId).toBe(601);
+    // ...membership was reconciled to the pending set, and the saved item was pulled from the LIVE
+    // collection (pre-heal this removal was Maintainerr's silent "not found, skipping removal").
+    const healed = state.collections.find((c) => c.id === 601)!;
+    expect(healed.items.length).toBeGreaterThan(0);
+    expect(healed.items.some((i) => i.mediaServerId === item.maintainerrMediaId)).toBe(false);
+    // The heal is audited on the batch ledger.
+    const events = await t.db
+      .select()
+      .from(ledgerEvents)
+      .where(eq(ledgerEvents.eventType, 'trash_batch_transition'));
+    expect(
+      events.some((e) => (e.payload as { healedCollection?: boolean }).healedCollection === true),
+    ).toBe(true);
+  });
+
+  it('F6 — cancelBatch tears down the rule GROUP (cascade: group + collection), leaving no orphan shell', async () => {
+    const state = baseState({ nextCollectionId: 600 });
+    const { bundle, calls } = makeMaintainerr(state);
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: 7, actorId });
+    calls.length = 0;
+    await cancelBatch({ db: t.db, maintainerr: bundle, batchId, actorId });
+    expect(calls.some((c) => c.method === 'DELETE' && /^\/rules\/\d+$/.test(c.pathname))).toBe(true);
+    expect(state.collections.some((c) => c.title === 'Leaving Soon — Movies')).toBe(false);
+    expect(state.ruleGroups.some((g) => g.name === 'Leaving Soon — Movies')).toBe(false);
+  });
+
+  it('F7 — a clean sweep close CLEARS the rolling collection (stale members leave the Plex wall)', async () => {
+    const state = baseState({ nextCollectionId: 600 });
+    const { bundle } = makeMaintainerr(state);
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: -1, actorId });
+    // Drift: a stale member is on the Plex wall that is NOT a pending batch item (e.g. a leftover
+    // from the pre-fix era). The close must strip it — the record persists across batches now.
+    state.collections.find((c) => c.id === 600)!.items.push({
+      mediaServerId: 'ms-stale-leftover',
+      sizeBytes: 0,
+      addDate: '2026-06-01T00:00:00Z',
+    });
+    await sweepExpiredBatches({ db: t.db, maintainerr: bundle, actorId });
+    const [row] = await t.db.select().from(trashBatches).where(eq(trashBatches.id, batchId));
+    expect(row!.state).toBe('deleted');
+    const rolling = state.collections.find((c) => c.id === 600)!;
+    expect(rolling.items.filter((i) => !state.handled.has(i.mediaServerId))).toEqual([]);
   });
 
   it('F2 — a Save landing mid-sweep (after candidate-select) is NOT deleted (guarded item-write)', async () => {
