@@ -77,31 +77,43 @@ one OPEN (`draft|admin_review|leaving_soon`) batch per media kind (partial uniqu
 
 ---
 
-## D-03 — Leaving Soon collection mechanics (ADR-025 C-04; Q-05 verified from source)
+## D-03 — Leaving Soon collection mechanics (ADR-025 C-04 as amended by ADR-078; Q-05 verified from source)
 
-Re-verified against Maintainerr **v3.17.0** on **2026-07-07** (`Maintainerr/Maintainerr@v3.17.0`,
-`apps/server/src/modules/collections/collections.controller.ts` — `createCollectionBodySchema` /
-`collectionBaseShape`; `collection-worker.service.ts`; `@maintainerr/contracts`
-`collections/servarr-action.ts` + `media-server/enums.ts`). The confined write methods live in
-`@hnet/arr/write` (`MaintainerrWriteClient`). **The pre-2026-07-07 row was wrong on three points**
-(numeric `type`, `arrAction:0`, `deleteAfterDays:null` — all corrected below); it never worked
-against a live v3.17.0.
+**Amended 2026-07-28 (ADR-078 — the duplicate-collection incident):** the create transport moved
+from the bare `POST /collections` to the RULES surface. Maintainerr's nightly
+`RuleMaintenanceService.removeCollectionsWithoutRule` (cron `20 4 * * *`) silently deletes every
+collection record that has no rule group, so the old create survived at most one night; each weekly
+promote then re-created it, and the bare create mints a NEW Plex object per call — four duplicate
+"Leaving Soon — Movies" rows on Plex Home. Re-verified against Maintainerr **v3.19.0** on
+**2026-07-28** (`maintainerr/maintainerr@v3.19.0` — `rules.service.ts` `setRules`;
+`rule-maintenance.service.ts`; `collections.service.ts` create/adopt/add flows;
+`rule-executor.service.ts` `useRules` gate). The v3.17.0 contract corrections of 2026-07-07 (STRING
+`type`, `arrAction:4`, never `deleteAfterDays` on the zod route) still stand where they apply. The
+confined write methods live in `@hnet/arr/write` (`MaintainerrWriteClient`).
 
 | Purpose | Method (base `/api`) | Body | Notes |
 |---|---|---|---|
-| Create Leaving Soon | `POST /collections` | `{ collection: { title, libraryId, type:'movie'\|'show', isActive:true, arrAction:4, manualCollection:false, visibleOnHome:true, visibleOnRecommended:true }, media:[{mediaServerId}] }` | **Returns NO body (void, HTTP 201)** — re-read the new id via `GET /collections` matching the exact `title` (idempotent: reuse if one already exists). `type` is `z.enum(MediaItemTypes)` — the STRING `'movie'`/`'show'` (a numeric code is **rejected 400**). `arrAction:4` = `ServarrAction.DO_NOTHING` — the collection worker's **ONLY** per-collection skip; any other value ages the collection. `visibleOn*` pushed to Plex Home+Recommended by `updateCollectionVisibility`. |
-| Add rescued-back items | `POST /collections/add` | `{ collectionId, media:[{mediaServerId}], manual:true }` | un-save re-adds |
-| Remove rescued items | `POST /collections/remove` | `{ collectionId, media:[{mediaServerId}] }` | save pulls out |
-| Tear down | `POST /collections/removeCollection` | `{ collectionId }` | cancel |
+| Create Leaving Soon (rule-group SHELL) | `POST /rules` | `{ name:title, libraryId, description, isActive:true, arrAction:4, useRules:false, rules:[], dataType:'movie'\|'show', collection:{ visibleOnHome:true, visibleOnRecommended:true, manualCollection:false, deleteAfterDays:null } }` | Returns a **ReturnStatus only (no ids)** — re-read the new record via `GET /collections` matching the exact title (idempotent: reuse if one already exists). The shell's rule group is what makes the record survive the nightly purge. The record is created EMPTY (no Plex object minted); the media-server collection is linked on the first member add, and that link **adopts an existing same-title Plex collection** before ever creating one (no duplicates), pushing `visibleOn*` to Plex Home+Recommended on link. `deleteAfterDays:null` survives verbatim on this internal path (no `z.coerce`); aging stays disabled by `arrAction:4` (DO_NOTHING — the worker's ONLY skip). The executor visits the active shell hourly but `useRules:false` gates rule evaluation — only the convergent media-server sync runs. |
+| Seed / converge membership | `POST /collections/add` + `POST /collections/remove` | `{ collectionId, media:[{mediaServerId}] }` | the drive RECONCILES to exactly the batch's pending set (add missing, strip stale); a clean sweep close converges to `[]` so leftovers leave the wall between batches |
+| Add rescued-back items | `POST /collections/add` | `{ collectionId, media:[{mediaServerId}], manual:true }` | un-save / un-protect re-adds (heal-before-write) |
+| Remove rescued items | `POST /collections/remove` | `{ collectionId, media:[{mediaServerId}] }` | save pulls out (heal-before-write) |
+| Tear down | `GET /rules` → `DELETE /rules/:id` | — | cancel resolves the shell by `collection.id` and deletes the GROUP (Maintainerr cascades group + record + Plex object). Legacy records with no shell fall back to `POST /collections/removeCollection`. |
 
 `libraryId` is derived at green-light from the batch items' source rule collection (via
-`GET /collections`). `type` = `'movie'` (movie) / `'show'` (tv). **We do NOT send `deleteAfterDays`:
-it is `z.coerce.number().int().optional()`, so `null` coerces to `0` (`Number(null)`) — every member
-would be instantly past its danger date, and with any `arrAction` other than DO_NOTHING the
-estate-wide worker would delete the WHOLE collection on its next run. `arrAction:4` is the only lever
-that stops aging.** The write is external-first (ADR-023 C-05); the pending derivation
-(`fetchMaintainerrPending`) skips collections whose title is a Leaving-Soon name so our own manual
-collections never re-enter the pending set nor mis-target the sweep's per-item handle.
+`GET /collections`). `dataType` = `'movie'` (movie) / `'show'` (tv). The write is external-first
+(ADR-023 C-05); the pending derivation (`fetchMaintainerrPending`) skips collections whose title is
+a Leaving-Soon name so our own collections never re-enter the pending set nor mis-target the
+sweep's per-item handle.
+
+**Self-heal (ADR-078):** `healBatchLeavingSoonCollection` — when a `leaving_soon` batch's stored
+`maintainerr_collection_id` is missing from `GET /collections` (historically the nightly purge; a
+human delete in Maintainerr's UI still can), re-drive (reuse-by-title or a fresh shell), reconcile
+membership to the CURRENT pending set, re-point the batch row in a guarded tx, and write a
+`trash_batch_transition` ledger event (`leaving_soon → leaving_soon`, `extra.healedCollection`).
+Wired heal-before-write into save / un-save / un-protect and opportunistically into the hourly
+space-policy tick. Pre-heal, a save against a dangling id was Maintainerr's tolerant
+`Collection with id N not found, skipping removal` — a silent no-op that left the "rescued" item on
+the Plex wall.
 
 ---
 

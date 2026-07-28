@@ -124,25 +124,87 @@ async function writeTransitionEvent(
 }
 
 // ---------------------------------------------------------------------------
-// Leaving-Soon Plex collection (Q-05) — Maintainerr manual collection
+// Leaving-Soon Plex collection (Q-05) — Maintainerr rule-group-shell collection
 // ---------------------------------------------------------------------------
 
 /**
+ * The full membership of a Maintainerr collection as mediaServerIds (paged read, 1-based pages).
+ * Bounded at MEMBERSHIP_PAGE_LIMIT pages of 100 — far above any real batch; the bound only stops a
+ * pathological totalSize from looping forever.
+ */
+const MEMBERSHIP_PAGE_LIMIT = 50;
+async function readCollectionMembership(
+  maintainerr: MaintainerrClientBundle,
+  collectionId: number,
+): Promise<string[]> {
+  const ids: string[] = [];
+  for (let page = 1; page <= MEMBERSHIP_PAGE_LIMIT; page += 1) {
+    const content = await guardMaintainerrCall('maintainerr GET /collections/media/content', () =>
+      maintainerr.read.getCollectionContent(collectionId, page, 100),
+    );
+    for (const item of content.items) {
+      if (item.mediaServerId !== null && item.mediaServerId !== undefined) {
+        ids.push(String(item.mediaServerId));
+      }
+    }
+    if (ids.length >= content.totalSize || content.items.length === 0) break;
+  }
+  return ids;
+}
+
+/**
+ * Converge a Leaving-Soon collection's membership to exactly `desiredIds`: add what is missing,
+ * remove what should no longer be there (a save that landed while the record was dangling, a
+ * skipped item after a sweep close). Both writes are guarded (fail closed) and idempotent on the
+ * Maintainerr side (adding a present member / removing an absent one is a server-side no-op).
+ */
+async function reconcileLeavingSoonMembership(
+  maintainerr: MaintainerrClientBundle,
+  collectionId: number,
+  desiredIds: readonly string[],
+): Promise<void> {
+  const current = new Set(await readCollectionMembership(maintainerr, collectionId));
+  const desired = new Set(desiredIds);
+  const toAdd = [...desired].filter((id) => !current.has(id));
+  const toRemove = [...current].filter((id) => !desired.has(id));
+  if (toAdd.length > 0) {
+    await guardMaintainerrCall('maintainerr POST /collections/add', () =>
+      maintainerr.write.addToCollection(collectionId, toAdd),
+    );
+  }
+  if (toRemove.length > 0) {
+    await guardMaintainerrCall('maintainerr POST /collections/remove', () =>
+      maintainerr.write.removeFromCollection(collectionId, toRemove),
+    );
+  }
+}
+
+/**
  * ADR-025 C-04 (Q-05) — drive the batch's "Leaving Soon" Plex collection through Maintainerr's
- * manual-collection surface (re-verified from v3.17.0 source 2026-07-07): `POST /api/collections`
- * with `visibleOnHome`/`visibleOnRecommended` true (Maintainerr pushes these to Plex Home +
- * Recommended) and `arrAction: DO_NOTHING` (4) — the collection worker's ONLY per-collection skip, so
- * Maintainerr NEVER ages/auto-deletes it; the windowed sweep is our per-item guarded loop (ADR-023
- * C-07a). NOT `deleteAfterDays: null` — that field is `z.coerce.number()`, so null coerces to 0 and
- * would make the estate worker delete the WHOLE collection on its next run; arrAction is the lever.
+ * RULES surface (`POST /api/rules` with `useRules: false` and zero rules — a rule-group SHELL),
+ * re-verified from the v3.19.0 source 2026-07-28. The shell exists because Maintainerr's nightly
+ * `RuleMaintenanceService.removeCollectionsWithoutRule` (cron `20 4 * * *`) silently deletes EVERY
+ * collection record that has no rule group — a bare `POST /api/collections` record survives at most
+ * one night, which is exactly how the estate accumulated duplicate Plex "Leaving Soon" collections
+ * (one per weekly cycle, each promoted to Plex Home). With the shell the record persists and the
+ * rolling per-kind collection is genuinely rolling.
  *
- * v3.17.0's create handler returns NO body, so `createCollection` is a tolerant void write and we
- * RE-READ the id via `GET /api/collections` matching the exact title. Idempotent: if a collection
- * with our title already exists (a crash between create and the DB commit), reuse it (top up its
- * membership) instead of creating a duplicate. `type` is the STRING MediaItemTypes enum (a numeric
- * code is rejected 400). The target Plex `libraryId` is read from the items' source rule collection.
- * Returns the collection id (stored on the batch) or null when there is nothing to surface / no
- * library could be derived (the batch still green-lights).
+ * The collection settings ride the RulesDto: `arrAction: DO_NOTHING` (4) — the collection worker's
+ * ONLY per-collection skip, so Maintainerr never ages/auto-deletes it (the windowed sweep is our
+ * per-item guarded loop, ADR-023 C-07a) — and `visibleOnHome`/`visibleOnRecommended` true, which
+ * Maintainerr pushes to Plex Home + Recommended when it links the media-server collection. Unlike
+ * the direct `POST /api/collections` path (which creates a NEW Plex collection object on every call
+ * — the duplicate factory), the rules path creates the record EMPTY; the media-server collection is
+ * linked on the first member add, and that link ADOPTS an existing same-title Plex collection
+ * before ever creating one (v3.19.0 `checkAutomaticMediaServerLink` / the add-flow lookup).
+ *
+ * `setRules` returns only a ReturnStatus, so the new record's id is RE-READ via
+ * `GET /api/collections` matching the exact title — same void-write/re-read pattern as before.
+ * Idempotent: an existing same-title record (the rolling collection, or a crash retry) is reused.
+ * Membership is then RECONCILED to exactly `items` (top-up + strip stale members). The target Plex
+ * `libraryId` is read from the items' source rule collection. Returns the collection id (stored on
+ * the batch) or null when there is nothing to surface / no library could be derived (the batch
+ * still green-lights).
  */
 async function driveLeavingSoonCollection(input: {
   maintainerr: MaintainerrClientBundle;
@@ -164,45 +226,120 @@ async function driveLeavingSoonCollection(input: {
   if (libraryId === null || libraryId === undefined) return null;
 
   const title = leavingSoonName(input.mediaKind);
-  const mediaServerIds = input.items.map((i) => i.maintainerrMediaId);
 
-  // Idempotency: a collection with our exact title already exists (a retry after a crash) ⇒ reuse it,
-  // topping up its membership, rather than creating a duplicate.
+  // The rolling collection (or a crash retry) ⇒ reuse the existing record, never create a duplicate.
   const existing = collections.find(
     (c) => c.id !== null && c.id !== undefined && isLeavingSoonCollectionTitle(c.title) && c.title === title,
   );
-  if (existing && existing.id !== null && existing.id !== undefined) {
-    const existingId = existing.id;
-    await guardMaintainerrCall('maintainerr POST /collections/add', () =>
-      input.maintainerr.write.addToCollection(existingId, mediaServerIds),
-    );
-    return existingId;
-  }
+  let collectionId = existing?.id ?? null;
 
-  // Create (void response), then re-read the new id by exact title.
-  await guardMaintainerrCall('maintainerr POST /collections', () =>
-    input.maintainerr.write.createCollection({
-      collection: {
-        title,
-        description: 'Items leaving the server soon — save the ones you still want.',
+  if (collectionId === null) {
+    // Create the rule-group shell (void ReturnStatus), then re-read the new record's id by exact title.
+    await guardMaintainerrCall('maintainerr POST /rules', () =>
+      input.maintainerr.write.createRuleGroup({
         libraryId: String(libraryId),
-        type: leavingSoonPlexType(input.mediaKind),
+        name: title,
+        description: 'Items leaving the server soon. Save the ones you still want.',
         isActive: true,
         arrAction: MAINTAINERR_DO_NOTHING, // the worker's ONLY skip — WE own deletion via the sweep
-        manualCollection: false,
-        visibleOnHome: true,
-        visibleOnRecommended: true,
-      },
-      media: input.items.map((i) => ({ mediaServerId: i.maintainerrMediaId })),
-    }),
+        useRules: false,
+        rules: [],
+        dataType: leavingSoonPlexType(input.mediaKind),
+        collection: {
+          visibleOnHome: true,
+          visibleOnRecommended: true,
+          manualCollection: false,
+          deleteAfterDays: null,
+        },
+      }),
+    );
+    const after = await guardMaintainerrCall('maintainerr GET /collections', () =>
+      input.maintainerr.read.getCollections(),
+    );
+    collectionId = after.find((c) => c.id !== null && c.id !== undefined && c.title === title)?.id ?? null;
+    if (collectionId === null) return null;
+  }
+
+  await reconcileLeavingSoonMembership(
+    input.maintainerr,
+    collectionId,
+    input.items.map((i) => i.maintainerrMediaId),
   );
-  const after = await guardMaintainerrCall('maintainerr GET /collections', () =>
+  return collectionId;
+}
+
+/**
+ * Self-heal for a live batch whose Maintainerr collection record vanished underneath it (the
+ * pre-fix nightly `removeCollectionsWithoutRule` purge, or a human deleting it in Maintainerr's
+ * UI). Before this existed, a mid-window save against the dangling id was a silent server-side
+ * no-op (`Collection with id N not found, skipping removal`) — the item stayed on the Plex
+ * "Leaving Soon" wall while the app considered it rescued.
+ *
+ * When the batch is `leaving_soon` and its stored id is no longer in `GET /api/collections`, the
+ * collection is RE-DRIVEN (reuse-by-title or a fresh rule-group shell, membership reconciled to
+ * the CURRENT pending set — so a save that landed while dangling is stripped) and the batch row is
+ * re-pointed inside a guarded tx with a `trash_batch_transition` ledger event
+ * (`leaving_soon → leaving_soon`, extra.healedCollection) for the audit trail. Any other state, a
+ * null stored id, or a live record is an inert no-op. Callers: the save/un-save/un-protect flows
+ * (heal-before-write) and the hourly space-policy tick (heals without waiting for a user action).
+ */
+export async function healBatchLeavingSoonCollection(input: {
+  db?: DbClient;
+  maintainerr: MaintainerrClientBundle;
+  batchId: string;
+  actorId: string | null;
+}): Promise<{ healed: boolean; collectionId: number | null }> {
+  const db = resolveDb(input.db);
+  const batch = await loadBatch(input.db, input.batchId);
+  if (batch.state !== 'leaving_soon' || batch.maintainerrCollectionId === null) {
+    return { healed: false, collectionId: batch.maintainerrCollectionId };
+  }
+  const collections = await guardMaintainerrCall('maintainerr GET /collections', () =>
     input.maintainerr.read.getCollections(),
   );
-  const created = after.find(
-    (c) => c.id !== null && c.id !== undefined && c.title === title,
-  );
-  return created?.id ?? null;
+  if (collections.some((c) => c.id === batch.maintainerrCollectionId)) {
+    return { healed: false, collectionId: batch.maintainerrCollectionId };
+  }
+
+  const items = await db
+    .select({
+      maintainerrMediaId: trashBatchItems.maintainerrMediaId,
+      collectionId: trashBatchItems.collectionId,
+    })
+    .from(trashBatchItems)
+    .where(and(eq(trashBatchItems.batchId, input.batchId), eq(trashBatchItems.state, 'pending')));
+
+  const collectionId = await driveLeavingSoonCollection({
+    maintainerr: input.maintainerr,
+    mediaKind: batch.mediaKind,
+    items,
+  });
+
+  await inTransaction(input.db, async (tx) => {
+    const updated = await tx
+      .update(trashBatches)
+      .set({ maintainerrCollectionId: collectionId })
+      .where(and(eq(trashBatches.id, input.batchId), eq(trashBatches.state, 'leaving_soon')))
+      .returning({ id: trashBatches.id });
+    if (updated.length === 0) {
+      throw new TrashBatchStateError(
+        `Batch ${input.batchId} moved before its Leaving-Soon collection could be healed.`,
+      );
+    }
+    await writeTransitionEvent(tx, {
+      batchId: input.batchId,
+      mediaKind: batch.mediaKind,
+      from: 'leaving_soon',
+      to: 'leaving_soon',
+      actorId: input.actorId,
+      extra: {
+        healedCollection: true,
+        previousCollectionId: batch.maintainerrCollectionId,
+        collectionId,
+      },
+    });
+  });
+  return { healed: true, collectionId };
 }
 
 // ---------------------------------------------------------------------------
@@ -695,10 +832,29 @@ export async function cancelBatch(input: {
     );
   }
   // Release the Leaving-Soon collection first (external) — a crash leaves the batch open to retry.
+  // Rule-group-shell collections MUST be torn down through DELETE /api/rules/:id: deleting only the
+  // collection would orphan the shell group, and Maintainerr's deleteRuleGroup is the path that
+  // cascades group + collection + Plex-side object together ("DB cascade doesn't work.. So do it
+  // manually" — v3.19.0 rules.service.ts). A record with no resolvable group (legacy pre-shell, or
+  // already purged) falls back to the direct collection removal, which the server no-ops when the
+  // record is gone.
   if (batch.maintainerrCollectionId !== null) {
-    await guardMaintainerrCall('maintainerr POST /collections/removeCollection', () =>
-      input.maintainerr.write.removeCollection(batch.maintainerrCollectionId as number),
+    const cancelCollectionId = batch.maintainerrCollectionId;
+    const groups = await guardMaintainerrCall('maintainerr GET /rules', () =>
+      input.maintainerr.read.getRules(),
     );
+    const shell = groups.find(
+      (g) => (g.collection as { id?: number } | null | undefined)?.id === cancelCollectionId,
+    );
+    if (shell?.id !== null && shell?.id !== undefined) {
+      await guardMaintainerrCall('maintainerr DELETE /rules/:id', () =>
+        input.maintainerr.write.deleteRuleGroup(shell.id as number),
+      );
+    } else {
+      await guardMaintainerrCall('maintainerr POST /collections/removeCollection', () =>
+        input.maintainerr.write.removeCollection(cancelCollectionId),
+      );
+    }
   }
   await inTransaction(input.db, async (tx) => {
     const updated = await tx
@@ -805,10 +961,18 @@ export async function setBatchItemSaved(input: {
       actorId: input.actorId,
       reason: 'batch_save',
     });
-    // 2) Remove it from the visible Leaving-Soon collection (best-effort external).
-    if (batch.maintainerrCollectionId !== null) {
+    // 2) Remove it from the visible Leaving-Soon collection. Heal-before-write: a purged/dangling
+    //    record is re-driven first, so the removal targets a LIVE collection instead of being
+    //    Maintainerr's silent "not found, skipping removal" no-op (the item would stay on the wall).
+    const { collectionId: saveCollectionId } = await healBatchLeavingSoonCollection({
+      db: input.db,
+      maintainerr: input.maintainerr,
+      batchId: input.batchId,
+      actorId: input.actorId,
+    });
+    if (saveCollectionId !== null) {
       await guardMaintainerrCall('maintainerr POST /collections/remove', () =>
-        input.maintainerr.write.removeFromCollection(batch.maintainerrCollectionId as number, [
+        input.maintainerr.write.removeFromCollection(saveCollectionId, [
           item.maintainerrMediaId,
         ]),
       );
@@ -838,9 +1002,15 @@ export async function setBatchItemSaved(input: {
     mediaItemId: item.mediaItemId,
     actorId: input.actorId,
   });
-  if (batch.maintainerrCollectionId !== null) {
+  const { collectionId: unsaveCollectionId } = await healBatchLeavingSoonCollection({
+    db: input.db,
+    maintainerr: input.maintainerr,
+    batchId: input.batchId,
+    actorId: input.actorId,
+  });
+  if (unsaveCollectionId !== null) {
     await guardMaintainerrCall('maintainerr POST /collections/add', () =>
-      input.maintainerr.write.addToCollection(batch.maintainerrCollectionId as number, [
+      input.maintainerr.write.addToCollection(unsaveCollectionId, [
         item.maintainerrMediaId,
       ]),
     );
@@ -919,9 +1089,16 @@ export async function unprotectBatchItem(input: {
     actorId: input.actorId,
   });
   // 2) Surface it back into the visible Leaving-Soon collection (it was hidden while protected).
-  if (batch.maintainerrCollectionId !== null) {
+  //    Heal-before-write, same as setBatchItemSaved — the add must target a live record.
+  const { collectionId: unprotectCollectionId } = await healBatchLeavingSoonCollection({
+    db: input.db,
+    maintainerr: input.maintainerr,
+    batchId: input.batchId,
+    actorId: input.actorId,
+  });
+  if (unprotectCollectionId !== null) {
     await guardMaintainerrCall('maintainerr POST /collections/add', () =>
-      input.maintainerr.write.addToCollection(batch.maintainerrCollectionId as number, [
+      input.maintainerr.write.addToCollection(unprotectCollectionId, [
         item.maintainerrMediaId,
       ]),
     );
@@ -1235,6 +1412,25 @@ async function expireOneBatch(input: {
       raceSkipped,
       aborted: true,
     };
+  }
+
+  // Rolling-collection hygiene (rule-shell fix, 2026-07-28): the Maintainerr record now PERSISTS
+  // across batches, so a clean close strips the batch's leftover members (skipped items etc.) from
+  // the Plex "Leaving Soon" wall — the next batch re-seeds it. A missing record (legacy purge, or a
+  // human delete) skips the clear; a failure here aborts the close, and the next sweep tick resumes
+  // with zero pending candidates and re-attempts it (convergent, deletions already committed).
+  const [closingRow] = await db
+    .select({ maintainerrCollectionId: trashBatches.maintainerrCollectionId })
+    .from(trashBatches)
+    .where(eq(trashBatches.id, input.batchId));
+  const rollingCollectionId = closingRow?.maintainerrCollectionId ?? null;
+  if (rollingCollectionId !== null) {
+    const liveCollections = await guardMaintainerrCall('maintainerr GET /collections', () =>
+      input.maintainerr.read.getCollections(),
+    );
+    if (liveCollections.some((c) => c.id === rollingCollectionId)) {
+      await reconcileLeavingSoonMembership(input.maintainerr, rollingCollectionId, []);
+    }
   }
 
   // ADR-034 — the "batch swept" summary push (only on a clean close, never on a breaker abort). Window

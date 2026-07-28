@@ -148,6 +148,38 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
     expect(note!.title).toContain('Movies');
   });
 
+  it('heals an open leaving_soon batch whose Maintainerr record vanished (re-drives + re-points on the tick)', async () => {
+    await setPolicy(ENABLED);
+    const state = baseState({ collections: [movieCollection()] });
+    const { bundle } = makeMaintainerr(state);
+    // Tick 1: proposes + promotes — the drive creates the Leaving-Soon record (id 555) + its shell.
+    const first = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: overBundle(), actorId });
+    const batchId = first.arrays
+      .find((a) => a.key === 'haynestower')!
+      .proposals.find((p) => p.mediaKind === 'movie')!.batchId!;
+    const [before] = await t.db.select().from(trashBatches).where(eq(trashBatches.id, batchId));
+    expect(before!.maintainerrCollectionId).toBe(555);
+
+    // The record vanishes underneath the live batch (a manual delete in Maintainerr's UI;
+    // historically the nightly rule-less purge).
+    state.collections = state.collections.filter((c) => c.id !== 555);
+    state.ruleGroups = state.ruleGroups.filter((g) => g.collectionId !== 555);
+
+    // Tick 2: the open batch is left alone BUT its collection is healed — re-driven + re-pointed.
+    const second = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: overBundle(), actorId });
+    const proposal = second.arrays
+      .find((a) => a.key === 'haynestower')!
+      .proposals.find((p) => p.mediaKind === 'movie')!;
+    expect(proposal.outcome).toBe('skipped_open_batch');
+    expect(proposal.reason).toContain('Re-drove its missing Leaving-Soon collection');
+    const [after] = await t.db.select().from(trashBatches).where(eq(trashBatches.id, batchId));
+    expect(after!.state).toBe('leaving_soon');
+    expect(after!.maintainerrCollectionId).toBe(556);
+    const healed = state.collections.find((c) => c.id === 556);
+    expect(healed?.title).toBe('Leaving Soon — Movies');
+    expect(state.ruleGroups.some((g) => g.collectionId === 556)).toBe(true);
+  });
+
   // ── per-kind composition caps (DESIGN-014 amendment 2026-07-09, build A) ─────────────────────
   // movieCollection: 9001(4e9), 9002(3e9), 9003(2e9), all UNRATED — so worst-rated (the policy default)
   // ranks by size desc (unrated tie-break), i.e. 9001 → 9002 → 9003.
