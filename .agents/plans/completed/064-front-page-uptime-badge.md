@@ -1,7 +1,8 @@
 # PLAN-064: Front-page uptime badge — the Home page wears the real Gatus SLI
 
-- **Status:** 🚧 IN PROGRESS (PR open; NOT merged — the coordinator reviews the UX and
-  sequences the release). App-side leg of the **haynes-ops saga `haynesnetwork-ha`**,
+- **Status:** ✅ Completed — coordinator UX-reviewed (screenshot matrix), merged PR #502,
+  released **v0.91.0**, deployed; the badge is live on Home fed by the real SLI. App-side leg of
+  the **haynes-ops saga `haynesnetwork-ha`**,
   [backlog plan 04](../../../haynes-ops/.agents/sagas/haynesnetwork-ha/backlog/04-front-page-uptime-badge.md)
   (saga Decisions 3 + 4).
 - **Docs:** ADR-079 (the app-rendered badge from in-cluster Gatus, the honest unmeasured

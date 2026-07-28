@@ -4,6 +4,19 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ NEXT SESSION — start here (written 2026-07-28 ~17:45 UTC — HA saga executed; one opportunistic item open)
+
+### -1. haynesnetwork-ha saga (haynes-ops) — front page is HA, badge live, drill Phase B opportunistic
+
+The saga of record lives in haynes-ops `.agents/sagas/haynesnetwork-ha/` (read it first if touching
+HA/uptime). Executed 2026-07-28: app runs **3 replicas** across 3 nodes (topologySpread + PDB
+minAvailable 2), migrator advisory lock (PLAN-062, v0.90.4), DB-backed shared rate limiting
+(PLAN-063, v0.90.5, migration 0072), Gatus apex SLI + blackbox Probe live with Pushover alerting,
+traefik hardened (PDB + spread), and the **front-page uptime badge** (PLAN-064 / ADR-079, v0.91.0).
+SLO: ≥ 99.9% / rolling 30d (saga decision 7). Drill Phase A passed zero-downtime; **Phase B closes
+opportunistically on the next organic node restart** — procedure in the saga's plan 07. A future
+separate saga will brainstorm homepage content (owner directive; nothing else lands on Home).
+
 ## ▶ NEXT SESSION — start here (written 2026-07-28 ~05:30 UTC — Leaving Soon duplicates fixed; validation contract below)
 
 ### 0. Leaving Soon duplicate-collections incident — root-caused, cleaned up, fixed (ADR-078)

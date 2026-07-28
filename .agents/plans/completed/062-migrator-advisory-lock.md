@@ -1,7 +1,8 @@
 # PLAN-062: Migrator advisory lock — serialize concurrent migrate init-containers
 
-- **Status:** 🚧 IN PROGRESS (PR open; code + concurrency test green locally; NOT merged — the
-  coordinator sequences merges). App-side leg of the **haynes-ops saga `haynesnetwork-ha`**,
+- **Status:** ✅ Completed — merged PR #499, released **v0.90.4**, deployed; the lock held in
+  production the same day (three concurrent migrate init-containers serialized cleanly at the
+  replicas-3 rollout). App-side leg of the **haynes-ops saga `haynesnetwork-ha`**,
   [backlog plan 01](../../../haynes-ops/.agents/sagas/haynesnetwork-ha/backlog/01-migrator-advisory-lock.md)
   (saga Decision 5).
 - **No ADR / DESIGN.** This is a one-function safety hardening, not a new decision — the saga
