@@ -31,15 +31,24 @@ a confined `@hnet/ytdrivarr` write client (import-confined to `packages/domain`,
 ADR-017/ADR-062 pattern), api mutations, and the registry-standard UI on the ytdlsub detail.
 Spans two repos; ytdrivarr side is ours to build/merge (suite-repo autonomy).
 
-## Gap B — gating parity: arr Fix/Force-Search are UNGATED
+## Gap B — RE-RULED same session: rate-limit parity, NOT permission gating
 
-`packages/api/src/routers/fix.ts` `create`/`forceSearch` are plain `authedProcedure` — ANY
-authenticated user can Fix/Force-search movies/TV/music. Books and Activity actions are per-role
-grant-gated. The 07-17 audit's §4.3 (shared `canFix`/`canForceSearch`) was never implemented;
-only the vocabulary was unified. Parity = an arr action-grant (registry-style enum +
-`role_*_action_grants` + the /admin grid column, mirroring `BOOK_ACTION_NAMES` /
-`apps/web/lib/books-actions.ts`), UI deriving `canFix`/`canForceSearch` server-side like
-`books.ts:1163`. **Owner ruling captured below on the default posture.**
+The recon's first framing (grant-gate arr Fix/Force-Search like books) was REJECTED by the owner:
+*"Why would we gate Fix? … Last time we said everyone could fix but default role had a stricter
+rate limit."* That is a RECOVERED LOST RULING — it appears NOWHERE in the repo (grepped
+`.agents/` + `docs/` for stricter/per-role rate limits: empty) and was never implemented. The
+standing model is: **everyone can Fix, rate limits do the governing.**
+
+Current reality: flat `FIX_RATE_LIMIT_PER_HOUR = 25`/user/hr on the arr side (admins bypass —
+D-09/R-47, also reused by `search-requests.ts`) and a flat books budget
+(`BOOK_FIX_RATE_LIMIT_PER_HOUR` 25). NO per-role differentiation anywhere.
+
+**Gap B as re-scoped:** per-role media-action RATE LIMITS — one budget mechanism unifying the
+arr + books hourly Fix/Force-Search budgets, with the per-role limit admin-editable in
+/admin → roles (the self-serve precedent: books grid, PLAN-040's DB-backed knobs). Seeded at
+today's 25/hr for every existing role ⇒ zero behavior change on deploy; the owner then tightens
+the Default role's number at will, no redeploy. No permission gating is added for the arrs; the
+books grant grid stays exactly as shipped.
 
 ## The "Integrations-section grant" residual is ALREADY SHIPPED — closed
 
@@ -50,10 +59,10 @@ audited `setSectionPermission`. Nothing to build — if members should see Goodr
 flips Integrations → Enabled per role in /admin. (No fine-grained per-action integrations grid
 exists; none was ruled wanted.) Memory `books-fix-flip-pending` updated accordingly.
 
-## Owner rulings (2026-07-28, this session)
+## Owner rulings (2026-07-28, this session — all landed)
 
-- **Sequencing:** Gap B first (small, in-repo), then Gap A (the ytdl leg) — pending the owner's
-  confirmation captured in the session; PLAN-041 status carries the outcome.
-- **Gap B default posture:** RULING PENDING at the time of writing — grandfather-open (seed
-  grants for existing roles, preserving today's behavior) vs ship-locked (books precedent).
-  Record the answer in PLAN-041 before authoring the ADR.
+- **Scope + sequencing: "Both, B then A."** Gap B (rate-limit parity) ships first as its own
+  release, then Gap A (the ytdl leg); PLAN-041 closes when both are live.
+- **Gap B posture:** the grant-gating framing was rejected; the recovered ruling above
+  (everyone can Fix; per-role rate limits, Default stricter, admin-editable) is binding.
+  Docs-first next: the ADR for per-role media-action budgets, then the vertical.
