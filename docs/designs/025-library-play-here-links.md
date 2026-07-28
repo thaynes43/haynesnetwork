@@ -1,8 +1,12 @@
 # DESIGN-025: Library "Watch/Listen/Read here" — the *arr→Plex match, the access gate, and the availability resolver
 
 - **Status:** Accepted
-- **Last updated:** 2026-07-17 (D-08 added — books/audiobooks/comics detail-page parity, R-221)
-- **Satisfies:** PRD-001 R-157, **R-221** (D-08 — books detail-page parity); glossary T-139..T-141; governed by [ADR-047](../adrs/047-library-play-here-access-aware-deep-links.md)
+- **Last updated:** 2026-07-28 (D-09 added — the ADR-081 library-access bootstrap seed + registration
+  auto-grant, the boot-triggered first plex-match sync, and the honest cold-start empty-reason on the gate;
+  R-237, glossary T-232..T-234)
+- **Satisfies:** PRD-001 R-157, **R-221** (D-08 — books detail-page parity), **R-237** (D-09 — bootstrap +
+  cold-start contract); glossary T-139..T-141, **T-232..T-234**; governed by [ADR-047](../adrs/047-library-play-here-access-aware-deep-links.md)
+  and **[ADR-081](../adrs/081-library-access-bootstrap-and-cold-start.md)** (the bootstrap/cold-start contract layered on top)
   (reusing [ADR-024](../adrs/024-role-scoped-all-libraries.md)/[ADR-017](../adrs/017-plex-library-sharing.md) access,
   [ADR-018](../adrs/018-library-metadata-and-posters.md)/[DESIGN-008](008-library-metadata-posters-filters.md) Library
   read model, [ADR-038](../adrs/038-ytdlsub-library-direct-plex-read.md) ytdl-sub reads, [ADR-046](../adrs/046-books-library-ledger-source.md)
@@ -143,11 +147,72 @@ the enriched `item`, `collections[]`, `fixes[]`, `requests[]`. All static per lo
 neighbour (ADR-015). The enrichment DATA layer (the five `books_items` columns + the sync's change-gated Kavita
 metadata call) is DESIGN-024 D-01/D-03 (migration 0060).
 
+### D-09 — the library-access bootstrap seed + the cold-start contract (ADR-081; C-01..C-07)
+
+ADR-047 gates correctly but assumes two facts are already TRUE by configuration: (1) the Default role holds
+library grants, and (2) `media_plex_matches` is populated. D-09 makes both a CODE guarantee for a from-scratch
+deploy and makes the transient gap between them HONEST. It layers on ADR-024 (the grant model) and ADR-047 (the
+gate invariant) — both unchanged — and touches four seams. Nothing here weakens THE INVARIANT: deny-by-default
+stays the failure direction; the only thing that widens Default is an explicit, audited grant.
+
+- **The bootstrap seed (C-01/C-02/C-03) · `packages/domain/src/library-access-bootstrap.ts`.**
+  `seedDefaultServerAllGrantsIfBootstrap({db, actorId})` grants the Default role an `role_plex_server_all_grants`
+  row on EVERY registered Plex server — but ONLY when the DB holds ZERO users, the distinguishing fact of a fresh
+  bootstrap (before the first OIDC login mints a user row). Each grant is idempotent (`ON CONFLICT DO NOTHING`) and
+  co-writes the SAME `update_role_libraries` `permission_audit` row a manual server-all grant produces (hard rule
+  6), tagged `reason: 'bootstrap_default_all_grant'`. On the populated live estate it is a clean no-op: it adds no
+  rows (C-02 — the owner's configured grants are neither widened nor rewritten) and cannot re-assert a revoked
+  grant (a revocation implies an admin, hence a user row, so the guard is already closed). Non-default roles are
+  never touched (C-03). NO migration and NO backfill — the seed is a runtime bootstrap, not a schema change; the
+  three servers of record stay migration-0010 seeded (immutable infra facts).
+
+- **The registration auto-grant (C-01/C-06) · same module.** `registerPlexServer({db, server, actorId})` inserts
+  a `plex_servers` row (idempotent on slug) and, on a genuinely NEW registration, auto-grants the Default role an
+  all-libraries grant on it IN THE SAME TRANSACTION as the insert (C-06 — a crash can never register a server
+  invisibly to Default), audited identically. The auto-grant fires ONLY at first registration (the server row was
+  newly inserted); a re-registration of an existing slug never re-asserts, so an admin revocation is respected
+  forever. This is the forward-looking guarantee — the live server set is migration-seeded and slug-CHECK-capped,
+  so `registerPlexServer` is not on the live seed path today, but it is the writer any future registration flows
+  through, and it shares the same guarded single-writer + audit discipline.
+
+- **The boot-triggered first sync (C-04) · `packages/sync/src/first-plex-match.ts` + `apps/web/instrumentation.ts`.**
+  On app start (the Next.js `instrumentation.ts` `register()` hook), when `media_plex_matches` is EMPTY the app runs
+  ONE plex-match sync itself via `maybeRunFirstPlexMatch({pool, db, run})`: a cheap emptiness pre-check short-circuits
+  every steady-state boot; the cold path takes a session-level `pg_try_advisory_lock` (NON-blocking — the PLAN-062
+  migrator-lock precedent, a DISTINCT key so the two never contend) so at most one of the three replicas runs it and
+  the losers skip rather than queue; it re-checks emptiness inside the lock (TOCTOU) and then runs
+  `fetchPlexMatchSnapshot` → `syncPlexMatches`. It is fire-and-forget (never blocks serving or `/api/health`),
+  fully isolated (a Plex/DB failure is caught and returned, never propagated into the boot path), and
+  production-only (dev:local / e2e / tests exercise the helper directly and never fire a boot sync). The recurring
+  CronJob stays the steady-state owner of match freshness.
+
+- **The honest cold-start empty-reason (C-05) · `packages/domain/src/library-access.ts`.** The gate gains
+  `matchTableEmpty` (true when `media_plex_matches` holds zero rows — computed server-side; skipped on the hot path
+  where a candidate match already exists) and a pure helper `libraryEmptyReason(gate)` → `'cold_start'` (the whole
+  match table is empty, so EVERY non-admin derives zero visible kinds regardless of grants) | `'no_access'` (the
+  table has rows but the role's grants intersect none — a true denial, the existing empty state) | `null`. The
+  `/library` page resolves the gate ONCE and passes a server-decided banner to the client: a MEMBER in the
+  cold-start window sees a friendly "still syncing" state, an ADMIN (always all tabs) sees a "first sync is
+  running" banner, and the no-access case is unchanged. Reflow-safe (ADR-015, static per load), tokens-only (the
+  shared `.card`/`.empty-state` classes), owner copy rules (no em-dashes, no time-grounding).
+
+- **Layering (C-07).** ADR-024 and ADR-047 remain Accepted and unedited; this design adds the bootstrap/cold-start
+  contract on top. The seed/registration writers are the single writers of `role_plex_server_all_grants` alongside
+  the existing `setRoleLibraries` (all in `packages/domain`, guarded); the gate change is additive (a new field +
+  a pure helper), so every existing gate consumer is unaffected.
+
 ## Alternatives considered
 
 Media-type-correspondence gating (leaks across same-type libraries) and storing the Plex link on `media_items`
 (pollutes the pure *arr mirror) — both rejected in ADR-047. Deriving the home library at request time vs a second
 table: chosen the request-time grouped derive (one small aggregate) over a second guarded table.
+
+**ADR-081 alternatives (D-09):** a backfill migration seeding Default grants — rejected (C-02: it would widen the
+owner's configured live estate and re-assert revoked grants); a Default-bypasses-the-gate code path — rejected
+(inverts deny-by-default, makes restricting Default a special case); blocking the first sync at boot / running it
+from a health probe — rejected (must never block serving or health). The zero-user guard is the chosen
+fresh-vs-live signal because it is the one fact that is TRUE on a from-scratch deploy and FALSE forever after the
+first login, so the seed is a true one-shot with no marker table.
 
 ## Test strategy
 

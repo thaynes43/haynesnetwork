@@ -22,11 +22,20 @@ import {
 import {
   buildPlexWebDeepLink,
   isMediaItemAccessible,
+  libraryEmptyReason,
   resolveLibraryAccessGate,
   type LibraryAccessGate,
+  type LibraryEmptyReason,
 } from '@hnet/domain';
 
-export { resolveLibraryAccessGate, buildPlexWebDeepLink, type LibraryAccessGate };
+export {
+  resolveLibraryAccessGate,
+  buildPlexWebDeepLink,
+  // ADR-081 C-05 — the cold-start vs no-access distinction (server-side) the /library page renders on.
+  libraryEmptyReason,
+  type LibraryAccessGate,
+  type LibraryEmptyReason,
+};
 
 /** `libId IN (…)` bound-param list, or `false` when the set is empty. */
 function inLibs(col: SQL, ids: string[]): SQL {

@@ -44,6 +44,9 @@ importers:
       '@hnet/auth':
         specifier: workspace:*
         version: link:../../packages/auth
+      '@hnet/sync':
+        specifier: workspace:*
+        version: link:../../packages/sync
       '@hnet/ui':
         specifier: workspace:*
         version: link:../../packages/ui

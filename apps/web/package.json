@@ -15,6 +15,7 @@
   "dependencies": {
     "@hnet/api": "workspace:*",
     "@hnet/auth": "workspace:*",
+    "@hnet/sync": "workspace:*",
     "@hnet/ui": "workspace:*",
     "@tanstack/react-query": "^5.100.10",
     "@trpc/client": "^11.17.0",

@@ -38,7 +38,10 @@ export {
   isMediaItemAccessibleToUser,
   resolveMediaTabVisibility,
   resolveArtMatchForItem,
+  // ADR-081 C-05 — the honest cold-start distinction (cold_start vs no_access) the /library page renders on.
+  libraryEmptyReason,
   type LibraryAccessGate,
+  type LibraryEmptyReason,
   type PlexPlayTarget,
   type PlexArtMatch,
 } from './library-access';
