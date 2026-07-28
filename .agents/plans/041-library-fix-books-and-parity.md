@@ -5,9 +5,11 @@
   both actions in prod). **Part 2 ACTIVATED by owner ruling 2026-07-28** (queued with the
   gate/MAM tech-debt, ahead of new features). Recon of record:
   `.agents/context/2026-07-28-fix-parity-recon.md` — the UX vocabulary is already unified +
-  guard-enforced; the REAL remaining gaps are exactly two: **(B) gating parity** (arr
-  Fix/Force-Search are ungated `authedProcedure` vs books/activity per-role grants ⇒ arr action
-  grants + /admin grid column, books pattern) and **(A) the ytdl leg** (Peloton/YouTube kinds
+  guard-enforced; the REAL remaining gaps are exactly two: **(B) rate-limit parity** (owner
+  re-ruling 2026-07-28, a RECOVERED lost ruling: everyone can Fix — NO grant gating for the
+  arrs; per-role admin-editable hourly Fix/Force-Search budgets unifying the flat arr + books
+  25/hr limits, seeded at 25 for all roles, owner tightens Default at will) and **(A) the ytdl
+  leg** (Peloton/YouTube kinds
   have no Fix/Force-Search at all — formerly blocked on PLAN-025 Q-01, NOW UNBLOCKED: ytdrivarr
   is live; needs its write surface + a confined `@hnet/ytdrivarr` write client + registry-standard
   UI). Build order B → A. The "Integrations-section grant" residual is CLOSED — verified already
