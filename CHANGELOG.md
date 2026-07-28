@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.92.0](https://github.com/thaynes43/haynesnetwork/compare/v0.91.0...v0.92.0) (2026-07-28)
+
+
+### Features
+
+* **roles:** per-role media-action rate budgets (ADR-080) ([#511](https://github.com/thaynes43/haynesnetwork/issues/511)) ([7e5eff8](https://github.com/thaynes43/haynesnetwork/commit/7e5eff8311defd81591897cc12f648549a44c60b))
+
+
+### Documentation
+
+* **adr:** ADR-080 — per-role media-action rate budgets (everyone can Fix, limits govern) ([#510](https://github.com/thaynes43/haynesnetwork/issues/510)) ([fcff38d](https://github.com/thaynes43/haynesnetwork/commit/fcff38dd5dc11cfed5c3e3432b3eb1e6146ce9b2))
+* **agents:** complete plans 062-064 (HA saga app legs shipped v0.90.4-v0.91.0) + HANDOFF saga block ([#504](https://github.com/thaynes43/haynesnetwork/issues/504)) ([3f60b78](https://github.com/thaynes43/haynesnetwork/commit/3f60b78f4edabe8d3da08fe19514b96bc06e40b5))
+* **agents:** PLAN-041 Gap B re-ruled — recovered lost ruling: no Fix gating, per-role rate limits (Default stricter, admin-editable) ([#509](https://github.com/thaynes43/haynesnetwork/issues/509)) ([7722d88](https://github.com/thaynes43/haynesnetwork/commit/7722d88fa35f0ecf59674d7c7c7f6a834ba2f60d))
+* **agents:** PLAN-041 Part 2 recon — two real gaps (arr action gating, ytdl leg now unblocked); integrations residual verified shipped ([#508](https://github.com/thaynes43/haynesnetwork/issues/508)) ([97b7f7b](https://github.com/thaynes43/haynesnetwork/commit/97b7f7ba0b7d6f0a01d4fb05cdd9300d279dee4f))
+* **agents:** record 07-28 owner rulings — library-access gate solidification + MAM harden-first (PLAN-040 activated) ([#506](https://github.com/thaynes43/haynesnetwork/issues/506)) ([ee8eb61](https://github.com/thaynes43/haynesnetwork/commit/ee8eb618822813cb9d6f695023af74b4e52dec91))
+* **agents:** ytdrivarr validation day 8 — GREEN, 0 SEV (4 watch items incl. cadence question W3) ([#507](https://github.com/thaynes43/haynesnetwork/issues/507)) ([c23dd2e](https://github.com/thaynes43/haynesnetwork/commit/c23dd2e0e54b936c47a2762ff2f40f024df45f03))
+
 ## [0.91.0](https://github.com/thaynes43/haynesnetwork/compare/v0.90.5...v0.91.0) (2026-07-28)
 
 
