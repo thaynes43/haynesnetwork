@@ -505,6 +505,13 @@
 			"when": 1783903000000,
 			"tag": "0072_auth_rate_limit",
 			"breakpoints": true
+		},
+		{
+			"idx": 72,
+			"version": "7",
+			"when": 1783903100000,
+			"tag": "0073_role_media_action_budgets",
+			"breakpoints": true
 		}
 	]
 }

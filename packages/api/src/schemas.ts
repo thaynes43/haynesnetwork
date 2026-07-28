@@ -149,3 +149,14 @@ export const BulletinViewsInput = z.object({
   roleId: z.uuid(),
   views: z.array(z.enum(BULLETIN_VIEWS)).default([]),
 });
+
+/**
+ * ADR-080 C-02/C-05 — roles.setMediaActionBudget: set a role's hourly media-action budget (the ONE
+ * number the arr pool and the books pool each draw independently). 0..1000 whole numbers; 0 blocks that
+ * role's non-admin media actions. The Admin role has no editable budget (it bypasses) — the domain
+ * writer enforces that (ROLE_IMMUTABLE), not this schema.
+ */
+export const MediaActionBudgetInput = z.object({
+  roleId: z.uuid(),
+  fixPerHour: z.number().int().min(0).max(1000),
+});

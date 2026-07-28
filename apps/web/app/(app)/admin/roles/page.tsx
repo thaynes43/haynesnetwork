@@ -72,6 +72,67 @@ const EMPTY_FORM: RoleForm = {
   syncedTier: false,
 };
 
+/**
+ * ADR-080 C-05 (PLAN-041 Gap B) — the per-role hourly media-action budget control. A numeric field
+ * seeded from the role's EFFECTIVE value (the stored row, else the fallback 25 rendered AS the value),
+ * validated 0..1000, committed on blur / Enter only when it changed and is valid (an invalid entry
+ * reverts, never a bad write). Setting 0 blocks the role's media actions — the always-present hint says
+ * so. Reflow-safe (ADR-015): the field has reserved width and the hint never appears/disappears on
+ * interaction; only the value changes. Admin's implicit bypass is rendered by the caller (never here).
+ * The caller keys this on the server value so a successful edit (or a reverted one) remounts it with a
+ * fresh seed — no setState-in-effect (React re-seed via key, the sanctioned pattern).
+ */
+function MediaBudgetCell({
+  value,
+  roleName,
+  disabled,
+  onCommit,
+}: {
+  value: number;
+  roleName: string;
+  disabled: boolean;
+  onCommit: (fixPerHour: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+
+  const commit = () => {
+    const n = Number(draft);
+    if (draft.trim() === '' || !Number.isInteger(n) || n < 0 || n > 1000) {
+      setDraft(String(value)); // invalid ⇒ revert to the last good value, send nothing
+      return;
+    }
+    if (n !== value) onCommit(n);
+  };
+
+  return (
+    <span className="budget-cell">
+      <input
+        type="number"
+        className="budget-input"
+        inputMode="numeric"
+        min={0}
+        max={1000}
+        step={1}
+        aria-label={`Hourly media-action budget for ${roleName}`}
+        data-testid={`media-budget-${roleName}`}
+        value={draft}
+        disabled={disabled}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            e.currentTarget.blur();
+          }
+        }}
+      />
+      <span className="field-hint budget-hint">
+        Fix and Force Search per hour. Set 0 to turn this role’s media actions off.
+      </span>
+    </span>
+  );
+}
+
 export default function AdminRolesPage() {
   const utils = trpc.useUtils();
   const roles = trpc.roles.list.useQuery();
@@ -176,6 +237,14 @@ export default function AdminRolesPage() {
     onSuccess: () => setError(null),
     onSettled: invalidate,
   });
+  // ADR-080 C-02/C-05 (PLAN-041 Gap B) — a role's hourly media-action budget (the ONE number the arr
+  // pool + books pool each draw; audited 'update_media_action_budget' in-tx). Committed inline on blur/
+  // Enter from the numeric cell (0 blocks the role's media actions). Errors surface on the top banner.
+  const setMediaActionBudget = trpc.roles.setMediaActionBudget.useMutation({
+    onError: (err: unknown) => setError(describeMutationError(err)),
+    onSuccess: () => setError(null),
+    onSettled: invalidate,
+  });
   // ADR-045 (PLAN-026) — flip a role's "synced tier" opt-in. ON provisions the Authentik + OWUI groups +
   // the owned-groups allowlist; OFF stops managing it (non-destructive). Reaches Authentik/OWUI, so its
   // errors (BAD_GATEWAY on an upstream outage) surface on the top-level banner. Applied on change.
@@ -197,6 +266,7 @@ export default function AdminRolesPage() {
     setCollections.isPending ||
     setBulletinViews.isPending ||
     setMetricsLevel.isPending ||
+    setMediaActionBudget.isPending ||
     setSyncedTier.isPending;
 
   const roleRows = roles.data ?? [];
@@ -749,6 +819,7 @@ export default function AdminRolesPage() {
             <th>Metrics</th>
             <th>Library extras</th>
             <th>Integrations</th>
+            <th>Media budget</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -1000,6 +1071,31 @@ export default function AdminRolesPage() {
                       `Integrations tab visibility for ${role.name}`,
                       `integrations-level-${role.name}`,
                     )
+                  )}
+                </td>
+                {/* ADR-080 C-05 (PLAN-041 Gap B) — the per-role hourly media-action BUDGET (the one
+                    number the arr pool + books pool each draw). Admin bypasses (implicit "Unlimited");
+                    every other role edits its number inline (0..1000), committed on blur/Enter. Setting
+                    0 blocks that role's media actions — the hint says so plainly. Reflow-safe (ADR-015):
+                    the numeral field has reserved width, the hint is always present. */}
+                <td className="role-level-cell" data-label="Media budget">
+                  {role.isAdmin ? (
+                    <span
+                      className="muted"
+                      title="The Admin role bypasses media-action budgets (unlimited Fix / Force Search)"
+                    >
+                      Unlimited
+                    </span>
+                  ) : (
+                    <MediaBudgetCell
+                      key={`budget-${role.id}-${role.mediaActionBudget ?? 25}`}
+                      value={role.mediaActionBudget ?? 25}
+                      roleName={role.name}
+                      disabled={busy || editingElsewhere}
+                      onCommit={(fixPerHour) =>
+                        setMediaActionBudget.mutate({ roleId: role.id, fixPerHour })
+                      }
+                    />
                   )}
                 </td>
                 <td data-label="Actions">

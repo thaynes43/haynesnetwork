@@ -3165,6 +3165,33 @@ input[aria-invalid='true'] {
   border-color: var(--color-accent);
 }
 
+/* ADR-080 (PLAN-041 Gap B) — the per-role media-action budget cell: a compact numeric field plus an
+   always-present hint. Reflow-safe (ADR-015) — the field has reserved width and the hint never toggles
+   on interaction; only the value/border-color changes. Tokens only (hard rule 2). */
+.budget-cell {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.budget-input {
+  font: inherit;
+  font-size: 12px;
+  color: var(--color-text);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  min-height: 36px;
+  width: 5.5rem;
+}
+.budget-input:focus {
+  border-color: var(--color-accent);
+}
+.budget-hint {
+  max-width: 11rem;
+}
+
 /* fix/family-strip-mobile-roles (owner-directed 2026-07-09) — the INLINE role assignment on the
    /admin users list. The role was plain text in the mobile card, so the owner couldn't change his
    wife's role from a phone; it is now an editable select (same audited users.setRole write). Desktop:

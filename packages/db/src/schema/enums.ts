@@ -62,6 +62,11 @@ export const PERMISSION_AUDIT_ACTIONS = [
   // (the crash-safe idempotent-PUT idiom — the external write lands first, then the same-tx audit).
   'upsert_collection',
   'delete_collection',
+  // ADR-080 (PLAN-041 Gap B — per-role media-action budgets) — a role's hourly media-action budget
+  // (`role_media_action_budgets.fix_per_hour`) was set. Written by the setRoleMediaActionBudget
+  // single-writer with { role_name, before, after } in the SAME tx (hard rule 6); the Admin role has
+  // no editable budget (it bypasses). Migration 0073 rebuilds the permission_audit action CHECK to admit it.
+  'update_media_action_budget',
 ] as const;
 export type PermissionAuditAction = (typeof PERMISSION_AUDIT_ACTIONS)[number];
 

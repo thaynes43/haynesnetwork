@@ -137,6 +137,11 @@ export * from './activity-import-failures';
 // guarded single-writer tables (createBookFixRequest / setRoleBookActions).
 export * from './book-fix-requests';
 export * from './role-books-action-grants';
+// ADR-080 (PLAN-041 Gap B — per-role media-action budgets) — the per-role hourly Fix/Force-Search
+// budget (ONE number, applied independently to the arr pool and the books pool). Guarded single-writer
+// table (setRoleMediaActionBudget co-writes an update_media_action_budget audit in-tx); NO seed rows —
+// absence resolves to the code fallback 25, so deploy is zero-change (ADR-080 C-02/C-03).
+export * from './role-media-action-budgets';
 // ADR-072 / DESIGN-043 D-14 (PLAN-052 PR4a — direct-add) — the fine-grained collection action grants,
 // rebuilt to a single `find_missing` action (the per-collection acquisition-knob gate; Admin-only until
 // the owner opens it per role). The retired collection_suggestions aggregate is dropped (migration 0069);

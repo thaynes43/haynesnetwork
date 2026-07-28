@@ -178,3 +178,42 @@ describe('roles.setCollectionsActions (the find-missing FLIP control)', () => {
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 });
+
+// ADR-080 (PLAN-041 Gap B) — the per-role media-action budget control: the ONE number the arr pool +
+// books pool each draw. Admin bypasses (null); a role's absent row resolves to the fallback 25.
+describe('roles.setMediaActionBudget (per-role Fix / Force Search rate budget)', () => {
+  it('defaults to the fallback, sets + surfaces the value, and shows Admin as bypass (null)', async () => {
+    const { roleId } = await adminCaller.roles.create({ name: 'budgeted' });
+    // No row yet ⇒ list renders the effective fallback (25).
+    const before = (await adminCaller.roles.list()).find((r) => r.id === roleId)!;
+    expect(before.mediaActionBudget).toBe(25);
+    // Set it; list reflects the new value.
+    await adminCaller.roles.setMediaActionBudget({ roleId, fixPerHour: 3 });
+    const after = (await adminCaller.roles.list()).find((r) => r.id === roleId)!;
+    expect(after.mediaActionBudget).toBe(3);
+    // Admin bypasses budgets — surfaced as null (the implicit-Unlimited row).
+    const admin = (await adminCaller.roles.list()).find((r) => r.isAdmin)!;
+    expect(admin.mediaActionBudget).toBeNull();
+  });
+
+  it('rejects the Admin role (it bypasses budgets → ROLE_IMMUTABLE / FORBIDDEN)', async () => {
+    await expect(
+      adminCaller.roles.setMediaActionBudget({ roleId: SEEDED_ROLE_IDS.admin, fixPerHour: 5 }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it('rejects an out-of-range budget (BAD_REQUEST at the zod edge)', async () => {
+    const { roleId } = await adminCaller.roles.create({ name: 'ranged-api' });
+    await expect(
+      adminCaller.roles.setMediaActionBudget({ roleId, fixPerHour: 1001 }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+  });
+
+  it('is admin-only — a non-admin caller is FORBIDDEN', async () => {
+    const member = await createUser(testDb.db);
+    const memberCaller = caller(makeCtx(testDb.db, sessionUser(member)));
+    await expect(
+      memberCaller.roles.setMediaActionBudget({ roleId: SEEDED_ROLE_IDS.default, fixPerHour: 10 }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+});

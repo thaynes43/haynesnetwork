@@ -70,6 +70,10 @@ export * from './library-preferences';
 export * from './notification-preferences';
 export * from './book-fix';
 export * from './book-force-search';
+// ADR-080 (PLAN-041 Gap B) — per-role media-action budgets: the setRoleMediaActionBudget single-writer
+// + the effectiveMediaActionBudget resolver every Fix/Force-Search budget check draws (arr + books pools,
+// admin bypass, fallback 25). Replaces the retired flat FIX_RATE_LIMIT_PER_HOUR / BOOK_FIX_RATE constants.
+export * from './media-action-budgets';
 // ADR-067 / DESIGN-039 (PLAN-055) — the shared Google Books quota circuit breaker (single-row
 // gb_quota_state single-writers + the guardedGbResolve seam every GB call site consults).
 export * from './gb-quota-breaker';

@@ -48,6 +48,7 @@ import {
   BookFixUnroutableError,
   InvalidTicketTargetError,
   InvalidTicketTransitionError,
+  MediaActionBudgetRangeError,
   NotFoundError,
   OwuiUnavailableError,
   PlexAccountUnmatchedError,
@@ -464,6 +465,7 @@ const APP_CODED_ERRORS = [
   InvalidGoodreadsProfileError,
   LazyLibrarianUpstreamError,
   KapowarrUpstreamError,
+  MediaActionBudgetRangeError,
 ] as const;
 
 const t = initTRPC.context<TRPCContext>().create({
@@ -539,6 +541,9 @@ export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
     }
     if (err instanceof SystemRoleImmutableError) {
       throw new TRPCError({ code: 'FORBIDDEN', message: err.message, cause: err });
+    }
+    if (err instanceof MediaActionBudgetRangeError) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: err.message, cause: err });
     }
     if (err instanceof LastAdminError) {
       throw new TRPCError({ code: 'CONFLICT', message: err.message, cause: err });

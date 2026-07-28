@@ -13,17 +13,20 @@ import {
   permissionAudit,
   roleBooksActionGrants,
   roles,
+  users,
   BOOK_ACTIONS,
   type BookAction,
   type BookFixReason,
   type BookFixRequestRow,
   type BookFixRoute,
   type DbClient,
+  type Transaction,
 } from '@hnet/db';
 import { and, asc, eq, gte, inArray, sql } from 'drizzle-orm';
 import { inTransaction, resolveDb } from './db-client';
 import { guardedGbResolve, peekGbQuotaGate } from './gb-quota-breaker';
 import { recordGbCalls, type GbCallMeter } from './gb-call-budget';
+import { effectiveMediaActionBudget, mediaActionBudgetReachedMessage } from './media-action-budgets';
 import { NotFoundError } from './errors';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
 import type { KapowarrClientBundle } from './kapowarr-clients';
@@ -32,7 +35,7 @@ import type { KapowarrClientBundle } from './kapowarr-clients';
 // Errors (mapped in packages/api trpc.ts: rate → TOO_MANY_REQUESTS, open-dupe → CONFLICT).
 // ---------------------------------------------------------------------------
 
-/** The books-scoped hourly budget tripped (owner ruling 2026-07-15: 25/user/hour; admins exempt). */
+/** The books pool's per-role hourly budget tripped (ADR-080 — the role's number, admins bypass). */
 export class BookFixRateLimitError extends Error {
   readonly code = 'BOOK_FIX_RATE_LIMIT' as const;
 }
@@ -47,11 +50,41 @@ export class BookFixUnroutableError extends Error {
   readonly code = 'BOOK_FIX_UNROUTABLE' as const;
 }
 
-/** Owner ruling 2026-07-15 — generous for the friends-and-family group; env-tunable. */
-export const BOOK_FIX_RATE_LIMIT_PER_HOUR = Number(process.env.BOOK_FIX_RATE_LIMIT_PER_HOUR ?? 25);
-
 // ADR-067 — 'queued' is OPEN: a quota-parked fix still blocks a duplicate on the same (item, kind).
 const OPEN_BOOK_FIX_STATUSES = ['pending', 'queued', 'search_triggered'] as const;
+
+/**
+ * ADR-080 C-04 — the BOOKS POOL hourly counter for one requester: book Fix rows PLUS the book-item
+ * Force Search draws (closing its previously-unbudgeted hole). Force Search leaves no durable row, so
+ * its draw is counted from its own `request_book_search` audit rows stamped `via: 'force_search'`
+ * (only `runBookItemForceSearch` writes that marker). The pool stays SEPARATE from the arr pool — a
+ * books binge can never starve a movie Fix — while the ROLE's one number applies to each independently.
+ */
+export async function countRecentBooksBudget(
+  tx: Transaction,
+  requesterId: string,
+  now: Date,
+): Promise<number> {
+  const since = new Date(now.getTime() - 3_600_000);
+  const [fixes] = await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(bookFixRequests)
+    .where(
+      and(eq(bookFixRequests.requesterId, requesterId), gte(bookFixRequests.createdAt, since)),
+    );
+  const [searches] = await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(permissionAudit)
+    .where(
+      and(
+        eq(permissionAudit.action, 'request_book_search'),
+        eq(permissionAudit.actorId, requesterId),
+        gte(permissionAudit.createdAt, since),
+        sql`${permissionAudit.detail} ->> 'via' = 'force_search'`,
+      ),
+    );
+  return (fixes?.n ?? 0) + (searches?.n ?? 0);
+}
 
 // ---------------------------------------------------------------------------
 // Grants (the ADR-023/059 idiom — setRoleBookActions is the sole writer).
@@ -142,21 +175,21 @@ export async function createBookFixRequest(input: CreateBookFixInput): Promise<B
     if (!item) throw new NotFoundError(`Books item ${input.booksItemId} not found`);
     if (item.deletedAt !== null) throw new NotFoundError(`Books item ${input.booksItemId} is tombstoned`);
 
-    // Rate guard (books-scoped — never consumes the *arr Fix budget; owner ruling Q-08).
+    // Rate guard (books pool — separate from the *arr Fix budget; ADR-080 C-04 / owner ruling Q-08).
+    // The per-role budget supersedes the retired BOOK_FIX_RATE_LIMIT_PER_HOUR env (C-03): admin ⇒ null
+    // bypass, else the role's row, else fallback 25 — the SAME number the arr pool uses, applied here
+    // independently. Books Force Search now draws the same counter (countRecentBooksBudget).
     if (!input.requesterIsAdmin) {
-      const [count] = await tx
-        .select({ n: sql<number>`count(*)::int` })
-        .from(bookFixRequests)
-        .where(
-          and(
-            eq(bookFixRequests.requesterId, input.requesterId),
-            gte(bookFixRequests.createdAt, new Date(now.getTime() - 3_600_000)),
-          ),
-        );
-      if ((count?.n ?? 0) >= BOOK_FIX_RATE_LIMIT_PER_HOUR) {
-        throw new BookFixRateLimitError(
-          `Book Fix limit reached (${BOOK_FIX_RATE_LIMIT_PER_HOUR} per hour) — try again in a bit`,
-        );
+      const [requester] = await tx
+        .select({ roleId: users.roleId })
+        .from(users)
+        .where(eq(users.id, input.requesterId));
+      const limit = await effectiveMediaActionBudget({ db: tx, roleId: requester?.roleId });
+      if (limit !== null) {
+        const used = await countRecentBooksBudget(tx, input.requesterId, now);
+        if (used >= limit) {
+          throw new BookFixRateLimitError(mediaActionBudgetReachedMessage(limit));
+        }
       }
     }
 

@@ -39,11 +39,17 @@ export class NotFoundError extends Error {
   readonly code = 'NOT_FOUND' as const;
 }
 
+/** ADR-080 C-02: a media-action budget must be a whole number 0..1000 (defense-in-depth behind
+ * the API zod edge). Maps to BAD_REQUEST. */
+export class MediaActionBudgetRangeError extends Error {
+  readonly code = 'MEDIA_ACTION_BUDGET_RANGE' as const;
+}
+
 // ---------------------------------------------------------------------------
 // DESIGN-005 Phase 2 — media ledger / fix / sync errors (D-09, D-14, D-17).
 // ---------------------------------------------------------------------------
 
-/** R-47: requester hit FIX_RATE_LIMIT_PER_HOUR (admins bypass). */
+/** R-47 / ADR-080: requester hit their role's effective hourly media-action budget (admins bypass). */
 export class FixRateLimitError extends Error {
   readonly code = 'FIX_RATE_LIMIT_EXCEEDED' as const;
 }
