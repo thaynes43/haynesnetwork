@@ -4,7 +4,46 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-## ▶ NEXT SESSION — start here (written 2026-07-28 ~17:45 UTC — HA saga executed; one opportunistic item open)
+## ▶ NEXT SESSION — start here (written 2026-07-28 ~20:00 UTC — Gap B SHIPPED + owner-tuned; Gap A is next)
+
+### PLAN-041 Part 2 Gap B — per-role media-action budgets: LIVE (v0.92.0) and the Default budget is SET
+
+- Chain complete same-session: ADR-080 (Accepted) → hnet **#511** (Opus-built, coordinator-reviewed —
+  one docs cross-ref fixed pre-merge) → **v0.92.0** → haynes-ops **#2287** → flux reconciled →
+  3/3 pods on v0.92.0, `/api/health` ok (via the internal ingress — reachable from the dev pod).
+- **Default role budget = 5/hour (owner instruction), set through the audited writer** via a
+  frontend-ns one-off Job on the deployed image (`tsx` + `/sync` deps, the production-writers
+  precedent). Evidence: resolver 25 → **5**; `permission_audit` `update_media_action_budget`
+  `{before:25, after:5, role_name:"Default"}` at 2026-07-28T19:48:50Z. **Attribution gotcha:**
+  `manofoz@gmail.com` matches NO `users` row, so the audit actor is null (system) — if attribution
+  matters, find what email the owner's app account actually carries before the next such change.
+- Books Force Search now draws the books pool; the `BOOK_FIX_RATE_LIMIT_PER_HOUR` env is retired
+  (verified UNSET in the cluster, so retiring it was zero-change).
+- **NEXT: Gap A** — ytdl Fix/Force-Search via ytdrivarr, plugging into ADR-080 C-06 (design first;
+  the plan + recon note carry the scope). PLAN-041 closes when Gap A is live.
+
+### ytdrivarr: the twice-daily Peloton scrape is a BUG, root-caused; fix in flight
+
+- The YouTube provider's `safetyCron` (`30 4 * * *` ET) fires `runDiscovery({scope:'all'})`
+  (`src/index.ts` wiring), dragging a FULL Peloton scrape + an extra bearer mint daily at 08:30Z
+  since the 07-22 Peloton cutover activated sources. NOT owner config; doubles daily
+  onepeloton.com logins (account-risk the once-nightly design minimized). Fix dispatched
+  (branch `fix/provider-scoped-cron`: provider-scoped ticks; global stays for manual/API runs);
+  ytdrivarr is full-autonomy, deploy auto-bumps via image automation — don't double-bump.
+- **Validation day 8: GREEN, 0 SEV** (`.agents/context/2026-07-28-ytdrivarr-validation-day8.md`).
+  W1 (Peloton pass >24h) self-corrects when the emit window activates ~08-05 · W2 (age-gate error
+  flood, +31%/day) candidate fix = cookies or exclude the channel(s) · W3 is EXPLAINED by the bug
+  above — the baseline stays nightly-only.
+- **Stale-note corrections:** ytdrivarr PR #20 MERGED 2026-07-21 (the "owner may veto" item below
+  is dead); the repo has zero open PRs.
+
+### Owner rulings executed this session (details: `2026-07-28-owner-rulings-gate-and-mam.md` + `2026-07-28-fix-parity-recon.md`)
+
+Gate solidification (bootstrap Default grants + cold-start auto-sync/UX) and MAM hardening
+(trend-aware dead band + PLAN-040 knobs) remain QUEUED build work ahead of new features. The
+Integrations-section residual is confirmed dead (owner: members already use Goodreads).
+
+## ▶ Prior top block (written 2026-07-28 ~17:45 UTC — HA saga executed; one opportunistic item open)
 
 ### -1. haynesnetwork-ha saga (haynes-ops) — front page is HA, badge live, drill Phase B opportunistic
 

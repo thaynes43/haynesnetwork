@@ -5,11 +5,11 @@
   both actions in prod). **Part 2 ACTIVATED by owner ruling 2026-07-28** (queued with the
   gate/MAM tech-debt, ahead of new features). Recon of record:
   `.agents/context/2026-07-28-fix-parity-recon.md` — the UX vocabulary is already unified +
-  guard-enforced; the REAL remaining gaps are exactly two: **(B) rate-limit parity** (owner
-  re-ruling 2026-07-28, a RECOVERED lost ruling: everyone can Fix — NO grant gating for the
-  arrs; per-role admin-editable hourly Fix/Force-Search budgets unifying the flat arr + books
-  25/hr limits, seeded at 25 for all roles, owner tightens Default at will) and **(A) the ytdl
-  leg** (Peloton/YouTube kinds
+  guard-enforced; the REAL remaining gaps are exactly two: **(B) rate-limit parity — ✅ SHIPPED
+  v0.92.0, LIVE 2026-07-28** (ADR-080 built as hnet #511; per-role budgets in
+  `role_media_action_budgets`, /admin "Media budget" column; books Force Search joined the books
+  pool; **Default tuned to 5/hour by owner instruction through the audited writer, evidence in
+  HANDOFF**) and **(A) the ytdl leg — NEXT** (Peloton/YouTube kinds
   have no Fix/Force-Search at all — formerly blocked on PLAN-025 Q-01, NOW UNBLOCKED: ytdrivarr
   is live; needs its write surface + a confined `@hnet/ytdrivarr` write client + registry-standard
   UI). Build order B → A. The "Integrations-section grant" residual is CLOSED — verified already
