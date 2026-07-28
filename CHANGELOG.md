@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.91.0](https://github.com/thaynes43/haynesnetwork/compare/v0.90.5...v0.91.0) (2026-07-28)
+
+
+### Features
+
+* **dashboard:** front page uptime badge from the gatus SLI ([#502](https://github.com/thaynes43/haynesnetwork/issues/502)) ([294bdb0](https://github.com/thaynes43/haynesnetwork/commit/294bdb02c726367ff29f4e1c6a68938747cc5a99))
+
 ## [0.90.5](https://github.com/thaynes43/haynesnetwork/compare/v0.90.4...v0.90.5) (2026-07-28)
 
 
