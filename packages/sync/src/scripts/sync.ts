@@ -10,6 +10,7 @@ import {
   ARR_KINDS,
   SYNC_RUN_KINDS,
   SYNC_SOURCES,
+  db,
   getPool,
   type SyncRunKind,
   type SyncSource,
@@ -336,9 +337,12 @@ async function main(): Promise<number> {
   // PROWLARR_API_KEY is absent. The tuning (limit/buffer/stuck-hours) is resolved through the
   // resolveGovernorConfig SEAM (env in v1; PLAN-040 adds a DB-backed admin override behind the same call).
   const mamGovernor = args.mode === 'mam-governor' ? mamGovernorBundleFromEnv() : undefined;
+  // ADR-082 C-03 — resolve the tuning DB-first (audited `mam_governor_config` → env → defaults) behind the
+  // SAME seam; passing `db` opts the DB tier in (best-effort — a DB read failure falls back to env/defaults
+  // for resolution only). No row ⇒ exactly today's env/default config (zero-change deploy).
   const mamTuning =
     args.mode === 'mam-governor'
-      ? await resolveGovernorConfig({ warn: (message, fields) => logger.warn(message, fields) })
+      ? await resolveGovernorConfig({ db, warn: (message, fields) => logger.warn(message, fields) })
       : undefined;
   // ADR-059 / DESIGN-030 — the books activity bundle (LL wanted-table read + SAB queue/history read + the
   // confined LL write) built INSIDE @hnet/domain (booksActivityBundleFromEnv), so the confined LL write

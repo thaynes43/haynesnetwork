@@ -45,6 +45,15 @@ export class MediaActionBudgetRangeError extends Error {
   readonly code = 'MEDIA_ACTION_BUDGET_RANGE' as const;
 }
 
+/**
+ * ADR-082 C-04: the MAM governor config write violated an invariant (0 ≤ resumeFloor < edge,
+ * edge = limit − buffer > 0, limit ≤ 200, trendPauseDelta ≥ 1). Thrown by setMamGovernorConfig BEFORE
+ * any row is written (defense-in-depth behind the API zod edge), so an unsatisfiable floor can never be
+ * stored and the governor can never wedge on it (the ADR-077 C-03 hazard class). Maps to BAD_REQUEST. */
+export class GovernorConfigInvalidError extends Error {
+  readonly code = 'GOVERNOR_CONFIG_INVALID' as const;
+}
+
 // ---------------------------------------------------------------------------
 // DESIGN-005 Phase 2 — media ledger / fix / sync errors (D-09, D-14, D-17).
 // ---------------------------------------------------------------------------

@@ -46,6 +46,7 @@ import {
   BookFixAlreadyOpenError,
   BookFixRateLimitError,
   BookFixUnroutableError,
+  GovernorConfigInvalidError,
   InvalidTicketTargetError,
   InvalidTicketTransitionError,
   MediaActionBudgetRangeError,
@@ -466,6 +467,7 @@ const APP_CODED_ERRORS = [
   LazyLibrarianUpstreamError,
   KapowarrUpstreamError,
   MediaActionBudgetRangeError,
+  GovernorConfigInvalidError,
 ] as const;
 
 const t = initTRPC.context<TRPCContext>().create({
@@ -543,6 +545,9 @@ export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
       throw new TRPCError({ code: 'FORBIDDEN', message: err.message, cause: err });
     }
     if (err instanceof MediaActionBudgetRangeError) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: err.message, cause: err });
+    }
+    if (err instanceof GovernorConfigInvalidError) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: err.message, cause: err });
     }
     if (err instanceof LastAdminError) {

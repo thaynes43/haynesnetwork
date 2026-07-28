@@ -24,6 +24,8 @@ export default async function AdminLayout({ children }: { children: ReactNode })
         <Link href="/admin/fixes">Fixes</Link>
         {/* ADR-027 / DESIGN-004 D-15 (PLAN-010) — the dashboard Message-of-the-Day compose surface. */}
         <Link href="/admin/motd">MOTD</Link>
+        {/* ADR-082 / DESIGN-027 D-10 (PLAN-040) — the MAM governor state + DB-backed audited config. */}
+        <Link href="/admin/governor">Governor</Link>
         {/* IA reshuffle (2026-07-09, build B) — the Storage nav item is retired: disk utilization +
             reclaim + policy moved into the tabbed Trash Settings hub (user menu → Trash settings →
             Storage/Reclaim). /admin/storage now redirects to /settings/trash?tab=storage. */}
