@@ -1,8 +1,12 @@
 # PLAN-040: MAM governor admin tool — rank-aware account config in-app
 
-- **Status:** PLACEHOLDER (owner 2026-07-11 eve). Build AFTER PLAN-039 ships and the rank
-  progression is underway — until then the owner manually requests config changes at each
-  MAM promotion.
+- **Status:** ACTIVATED (owner ruling 2026-07-28, "harden first, then retune" —
+  `.agents/context/2026-07-28-owner-rulings-gate-and-mam.md`). Scope at authoring: the
+  DB-backed audited limit/buffer/floor knobs + in-app governor-state visibility below, PLUS
+  decide whether the trend-aware dead-band override (a rising unsatisfied count must not be
+  held open by hysteresis — the 07-25 hazard; supersedes/amends ADR-077 behavior) rides this
+  plan or its own. The pause edge stays 100 until this safety layer ships; retunes stay
+  measured-burst-gated. (Original placeholder note: build after PLAN-039 — long since shipped.)
 - **Owner intent (2026-07-11, his words):** "MAM is a fallback that's governed based on my
   rating, but we also use/seed it enough to bring my rating up to the point where we never
   have to really disable it due to volume. I will manually request MAM account-related config
