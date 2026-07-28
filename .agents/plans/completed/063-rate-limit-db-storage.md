@@ -1,7 +1,7 @@
 # PLAN-063: Rate-limit storage — in-memory → database (shared across replicas)
 
-- **Status:** 🚧 **IN PROGRESS** (PR open; docs + code + tests green locally; NOT merged — the
-  coordinator sequences merges/releases). Docs of record:
+- **Status:** ✅ Completed — merged PR #500, released **v0.90.5**, deployed (migration 0072
+  applied by the init migrator). Docs of record:
   [DESIGN-002 D-14](../../docs/designs/002-auth-and-authentik.md) (dated amendment 2026-07-28).
 - **Number note:** 063 assigned by the coordinator (numbers are stable, never reused — this folder's
   README). This app-side leg executes haynes-ops saga **haynesnetwork-ha** plan 05
