@@ -44,6 +44,43 @@ export interface LibraryAccessGate {
   allowedKindKeys: Set<string>;
   /** arr_kinds with ≥1 accessible home ⇒ the Movies/TV/Music tab is shown (server-side tab hiding). */
   visibleArrKinds: Set<ArrKind>;
+  /**
+   * ADR-081 C-05 — true when `media_plex_matches` holds ZERO rows: the COLD-START window before the first
+   * plex-match sync ever populates. Lets the Library surfaces distinguish an empty result that is a transient
+   * boot state (the whole match table is empty, so EVERY non-admin derives zero visible kinds regardless of
+   * grants) from a true access denial. Computed server-side. Drives the admin "first sync is running" banner
+   * (admins always see all tabs, so they need this global signal) and, via libraryEmptyReason, the non-admin
+   * cold-start empty state. Cheap: skipped entirely on the hot path where a candidate match already exists.
+   */
+  matchTableEmpty: boolean;
+}
+
+/**
+ * ADR-081 C-05 — WHY a non-admin caller's Library resolved empty:
+ *   • 'cold_start' — the match table is EMPTY (the first plex-match sync has not populated yet). Transient.
+ *   • 'no_access'  — the match table has rows, but the caller's role grants intersect NONE of them. A true
+ *                    access denial (ADR-024 deny-by-default) — the existing empty state, unchanged.
+ */
+export type LibraryEmptyReason = 'cold_start' | 'no_access';
+
+/**
+ * ADR-081 C-05 — the empty-reason for a non-admin caller (null when the caller has ≥1 visible kind, or is an
+ * admin — admins always see every tab; their cold-start banner reads gate.matchTableEmpty directly). Pure and
+ * server-side: never inferred client-side.
+ */
+export function libraryEmptyReason(gate: LibraryAccessGate): LibraryEmptyReason | null {
+  if (gate.unrestricted) return null;
+  if (gate.visibleArrKinds.size > 0) return null;
+  return gate.matchTableEmpty ? 'cold_start' : 'no_access';
+}
+
+/** ADR-081 C-05 — does ANY media_plex_matches row exist? (cheap EXISTS; the cold-start signal.) */
+async function anyPlexMatchExists(q: ReturnType<typeof resolveDb>): Promise<boolean> {
+  const rows = await q
+    .select({ one: sql<number>`1` })
+    .from(mediaPlexMatches)
+    .limit(1);
+  return rows.length > 0;
 }
 
 /**
@@ -64,11 +101,14 @@ export async function resolveLibraryAccessGate(
     .where(eq(users.id, userId));
 
   if (u?.isAdmin === true) {
+    // Admin sees every tab regardless, but still needs the cold-start signal for the "first sync is
+    // running" banner (its tabs render empty grids until the first plex-match sync populates).
     return {
       unrestricted: true,
       allowedLibraryIds: new Set(),
       allowedKindKeys: new Set(),
       visibleArrKinds: new Set(ARR_KINDS),
+      matchTableEmpty: !(await anyPlexMatchExists(q)),
     };
   }
 
@@ -105,7 +145,13 @@ export async function resolveLibraryAccessGate(
     }
   }
 
-  return { unrestricted: false, allowedLibraryIds, allowedKindKeys, visibleArrKinds };
+  // ADR-081 C-05 — cold-start signal. Fast path: a candidate match already exists ⇒ the table is non-empty
+  // (no query). Only when this caller derives NO candidates do we run the cheap EXISTS to distinguish a
+  // cold-start (whole table empty) from a true access denial (matches exist, none in an allowed library).
+  const matchTableEmpty =
+    candidateRows.length > 0 ? false : !(await anyPlexMatchExists(q));
+
+  return { unrestricted: false, allowedLibraryIds, allowedKindKeys, visibleArrKinds, matchTableEmpty };
 }
 
 /**

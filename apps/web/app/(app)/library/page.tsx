@@ -11,7 +11,8 @@ import { getServerSession } from '@hnet/auth';
 import {
   accessibleYtdlsubLibraries,
   effectiveSectionLevel,
-  resolveMediaTabVisibility,
+  libraryEmptyReason,
+  resolveLibraryAccessGate,
 } from '@hnet/api';
 import { LibraryClient } from './library-client';
 
@@ -22,9 +23,26 @@ export default async function LibraryPage() {
   // ADR-046 C-04 (PLAN-023) — the Books/Audiobooks/Comics sub-tabs' visibility (the `books` section ships
   // `disabled` = Admin-only until the owner opens it per role after his screenshot review).
   const booksVisible = effectiveSectionLevel(session.user.role, 'books') !== 'disabled';
-  // ADR-047 THE INVARIANT — Movies/TV/Music tab visibility from the caller's accessible Plex libraries.
-  const kinds = await resolveMediaTabVisibility(session.user.id);
-  const mediaVisible = { movies: kinds.radarr, tv: kinds.sonarr, music: kinds.lidarr };
+  // ADR-047 THE INVARIANT + ADR-081 C-05 — resolve the access gate ONCE: it drives both the Movies/TV/Music
+  // tab visibility AND the honest cold-start signal (an empty Library because the match table is empty vs
+  // because the role holds no grants).
+  const gate = await resolveLibraryAccessGate(session.user.id);
+  const mediaVisible = {
+    movies: gate.unrestricted || gate.visibleArrKinds.has('radarr'),
+    tv: gate.unrestricted || gate.visibleArrKinds.has('sonarr'),
+    music: gate.unrestricted || gate.visibleArrKinds.has('lidarr'),
+  };
+  // ADR-081 C-05 — the cold-start banner, decided server-side (never inferred client-side): a MEMBER whose
+  // Library resolved empty because the match table is empty (cold_start, not no_access) gets the "still
+  // syncing" state; an ADMIN (always all tabs) gets a banner while the first sync populates. no_access keeps
+  // the existing behavior (the withheld tabs are simply absent).
+  const coldStart: 'member' | 'admin' | null = gate.unrestricted
+    ? gate.matchTableEmpty
+      ? 'admin'
+      : null
+    : libraryEmptyReason(gate) === 'cold_start'
+      ? 'member'
+      : null;
   // ADR-047 — per-library ytdl-sub visibility (only under the coarse section knob).
   const ytdlsubAllowed = ytdlsubVisible
     ? await accessibleYtdlsubLibraries(session.user.id, session.user.role.isAdmin)
@@ -39,6 +57,7 @@ export default async function LibraryPage() {
       booksVisible={booksVisible}
       mediaVisible={mediaVisible}
       ytdlsubLibraries={ytdlsubLibraries}
+      coldStart={coldStart}
     />
   );
 }

@@ -153,6 +153,11 @@ type BooksTabKey = (typeof BOOKS_TABS)[number]['key'];
 // ADR-047 (PLAN-028) — server-resolved per-Plex-library tab visibility (a withheld library's tab hides).
 type MediaVisible = { movies: boolean; tv: boolean; music: boolean };
 type YtdlsubLibsVisible = { peloton: boolean; youtube: boolean };
+// ADR-081 C-05 — the server-decided cold-start banner: 'member' = a non-admin whose Library is empty ONLY
+// because the first plex-match sync hasn't populated yet (not because their role lacks grants); 'admin' = the
+// first sync is running (admins always see the tabs, so they get a heads-up while the grids fill). null = no
+// banner (steady state, or a genuine no-access empty).
+type ColdStart = 'member' | 'admin' | null;
 
 /** The ledger walls' *arr kind → preference-wall mapping (ADR-052 LIBRARY_WALLS). */
 const ARR_WALLS: Record<ArrKindName, LibraryWallId> = {
@@ -217,11 +222,13 @@ function LibraryContent({
   booksVisible,
   mediaVisible,
   ytdlsubLibraries,
+  coldStart,
 }: {
   ytdlsubVisible: boolean;
   booksVisible: boolean;
   mediaVisible: MediaVisible;
   ytdlsubLibraries: YtdlsubLibsVisible;
+  coldStart: ColdStart;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -307,6 +314,19 @@ function LibraryContent({
   return (
     <>
       <h1 className="page-title">Library</h1>
+
+      {/* ADR-081 C-05 — the honest cold-start notice (server-decided; ADR-015 static per load, no reflow on
+          interaction; tokens-only via the shared .card/.empty-state classes). A member sees it in place of
+          their still-empty tabs; an admin sees it as a heads-up above the (temporarily empty) grids. */}
+      {coldStart ? (
+        <section className="card empty-state" role="status" data-testid="library-cold-start">
+          <p>
+            {coldStart === 'admin'
+              ? 'The first library sync is running. Movies, TV, and Music will fill in for members once it finishes.'
+              : 'Your libraries are still syncing. Movies, TV, and Music will appear here once the first sync finishes.'}
+          </p>
+        </section>
+      ) : null}
 
       <div className="library-tabs" role="tablist" aria-label="Library sections">
         {tabs.map((tab, index) => (
@@ -1217,11 +1237,13 @@ export function LibraryClient({
   booksVisible,
   mediaVisible,
   ytdlsubLibraries,
+  coldStart,
 }: {
   ytdlsubVisible: boolean;
   booksVisible: boolean;
   mediaVisible: MediaVisible;
   ytdlsubLibraries: YtdlsubLibsVisible;
+  coldStart: ColdStart;
 }) {
   return (
     <Suspense fallback={<p className="muted">Loading…</p>}>
@@ -1230,6 +1252,7 @@ export function LibraryClient({
         booksVisible={booksVisible}
         mediaVisible={mediaVisible}
         ytdlsubLibraries={ytdlsubLibraries}
+        coldStart={coldStart}
       />
     </Suspense>
   );

@@ -24,6 +24,9 @@ export * from './abs-progress';
 // ADR-047 / DESIGN-025 (PLAN-028) — the read-only *arr→Plex GUID matcher the `plex-match` mode hands to the
 // domain syncPlexMatches single-writer (the Library access gate + "Watch on Plex" deep-link substrate).
 export * from './plex-match';
+// ADR-081 C-04 — the boot-triggered first plex-match trigger: an advisory-locked, non-blocking, run-once
+// helper the web app's instrumentation hook fires on start to close the cold-start window.
+export * from './first-plex-match';
 // ADR-064 / DESIGN-035 (PLAN-037) — the read-only HOps collections fetcher the `collections-sync` mode
 // hands to the domain syncPlexCollections single-writer (the Movies/TV Collections group view's mirror).
 export * from './plex-collections';

@@ -133,6 +133,9 @@ export * from './books';
 // effective-library resolver; THE INVARIANT) + the Plex deep-link builder, and the *arr→Plex match cache
 // single-writer (syncPlexMatches, the plex-match sync mode's writer).
 export * from './library-access';
+// ADR-081 — library-access bootstrap seeding (Default all-grant on a from-scratch deploy) + the Plex-server
+// registration writer that auto-grants Default in the same transaction as the server insert (C-01/C-06).
+export * from './library-access-bootstrap';
 export * from './plex-match';
 // ADR-064 / DESIGN-035 (PLAN-037) — the mirrored Plex collections single-writer (syncPlexCollections,
 // the collections-sync mode's writer). External software is always the collections source of truth.
