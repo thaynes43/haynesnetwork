@@ -449,7 +449,7 @@ tunes the Default role's number (stricter) in /admin → roles, audited, no rede
 mechanic below is untouched — only the number is now role-resolved. The "limit reached" copy states the
 role's number, not a constant (ADR-080 C-07).
 
-**Rate guard (R-47, PRD Q-05 default):** constant `FIX_RATE_LIMIT_PER_HOUR = 25` in
+**Rate guard (R-47, PRD Q-05 default — historical, see D-23):** constant `FIX_RATE_LIMIT_PER_HOUR = 25` in
 `packages/domain` — `createFixRequest` counts the requester's rows with
 `created_at > now() - interval '1 hour'` inside the insert transaction (under a
 per-requester `pg_advisory_xact_lock` so parallel submissions can't slip past) and throws
@@ -1318,7 +1318,7 @@ transcode proxy. No new external API (no TMDB stills); read-only.
 ### D-23 Per-role media-action budget — the flat constant becomes role-resolved (ADR-080, PLAN-041 Gap B)
 
 The arr pool's flat `FIX_RATE_LIMIT_PER_HOUR = 25` is retired for a PER-ROLE budget — the one mechanism
-every media family draws (the books pool too — DESIGN-033 D-25; the coming ytdl leg — ADR-080 C-06). The
+every media family draws (the books pool too — DESIGN-033 D-11; the coming ytdl leg — ADR-080 C-06). The
 recovered owner ruling is binding: **no permission gating on Fix / Force Search — everyone can Fix; the
 per-role rate limit governs** (a stricter Default is an owner act in /admin, not a release act).
 
