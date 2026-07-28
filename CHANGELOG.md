@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.93.0](https://github.com/thaynes43/haynesnetwork/compare/v0.92.0...v0.93.0) (2026-07-28)
+
+
+### Features
+
+* **library:** ADR-081 bootstrap Default grants + cold-start sync and honest empty state ([#516](https://github.com/thaynes43/haynesnetwork/issues/516)) ([39c3f17](https://github.com/thaynes43/haynesnetwork/commit/39c3f17ea93b729d408e983420269b627ea400b4))
+
+
+### Documentation
+
+* **adr:** ADR-081 — library-access bootstrap seeding + cold-start contract ([#514](https://github.com/thaynes43/haynesnetwork/issues/514)) ([d84be32](https://github.com/thaynes43/haynesnetwork/commit/d84be3261a57b0bcdac81383c1b367f0cb025b1f))
+* **agents:** HANDOFF — Gap B shipped v0.92.0 + Default budget 5/hr set; ytdrivarr double-scrape root-caused (fix in flight) ([#512](https://github.com/thaynes43/haynesnetwork/issues/512)) ([244c73c](https://github.com/thaynes43/haynesnetwork/commit/244c73c036bc964a51e31ec638d049164cd455d9))
+* **agents:** HANDOFF — ytdrivarr v0.9.1 deployed (cron-scope fix live; verify next 08:30Z tick); two note corrections ([#515](https://github.com/thaynes43/haynesnetwork/issues/515)) ([32d310b](https://github.com/thaynes43/haynesnetwork/commit/32d310bfa932d5582a9bdc05dd252294747534c4))
+
 ## [0.92.0](https://github.com/thaynes43/haynesnetwork/compare/v0.91.0...v0.92.0) (2026-07-28)
 
 
