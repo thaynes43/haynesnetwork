@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.94.0](https://github.com/thaynes43/haynesnetwork/compare/v0.93.0...v0.94.0) (2026-07-28)
+
+
+### Features
+
+* **mam:** trend-aware dead band + DB-backed governor config (ADR-082) ([#520](https://github.com/thaynes43/haynesnetwork/issues/520)) ([e6dd541](https://github.com/thaynes43/haynesnetwork/commit/e6dd541daf1f6d8a9e04d8beca10362041eda020))
+
+
+### Documentation
+
+* **adr:** ADR-082 — MAM trend-aware dead band + DB-backed audited config ([#517](https://github.com/thaynes43/haynesnetwork/issues/517)) ([3a57e22](https://github.com/thaynes43/haynesnetwork/commit/3a57e22a8518f3571cc0840535ce8b1eae881dd6))
+* **agents:** HANDOFF — ADR-081 executed (v0.93.0 live, no-op signature verified); ADR-082 build in flight ([#519](https://github.com/thaynes43/haynesnetwork/issues/519)) ([91bf4c0](https://github.com/thaynes43/haynesnetwork/commit/91bf4c0e4019a2c149d55798b843c793849322b0))
+
 ## [0.93.0](https://github.com/thaynes43/haynesnetwork/compare/v0.92.0...v0.93.0) (2026-07-28)
 
 
