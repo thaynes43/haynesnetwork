@@ -22,10 +22,12 @@ Full evidence chain: `.agents/context/2026-07-28-leaving-soon-duplicates-inciden
   `healBatchLeavingSoonCollection` self-heal (save/un-save/un-protect + hourly space-policy tick),
   membership reconcile + clean-close clear, cancel tears down the group (cascade). Tests F4–F7 +
   the space-policy heal case encode the contracts.
-- **Validation contract (post-deploy — check these if resuming):** (1) next space-policy tick logs
-  "Re-drove its missing Leaving-Soon collection" and `GET /api/collections` regains a
-  "Leaving Soon — Movies" record with a `GET /api/rules` shell; (2) the record SURVIVES the next
-  04:20 America/New_York maintenance; (3) Plex library 1 still has exactly ONE such object.
+- **Validation: ALL THREE PASSED (2026-07-28, v0.90.3 live).** (1) A triggered space-policy run
+  logged "Re-drove its missing Leaving-Soon collection (now Maintainerr id 22)" — the heal adopted
+  the surviving Plex object 98724 (`mediaServerId` on record 22) with shell group 17
+  (`useRules:false`); (2) the 04:20 America/New_York RuleMaintenanceService ran on 07-28 and the
+  record SURVIVED it (pre-fix this run deleted it nightly); (3) Plex library 1 has exactly ONE
+  "Leaving Soon — Movies" object. The incident is CLOSED; nothing left to watch.
 
 Previous session state (MAM etc.) follows — still current except where this block supersedes it.
 
