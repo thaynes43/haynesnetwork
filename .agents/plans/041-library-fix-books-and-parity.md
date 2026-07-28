@@ -1,11 +1,18 @@
 # PLAN-041: Library "Fix" for books/audiobooks/comics — Part 1 (buildable release)
 
-- **Status:** BUILT + LIVE (v0.61.0, 2026-07-15 night; #304) — **ACTIVE for ONE remaining step:
-  THE Q-01 FLIP** (owner tests the Fix as Admin, then `setRoleBookActions` opens `fix_book` to all
-  roles — DO NOT FORGET). Live-validated in prod: fix c7a0fe19 on Project Hail Mary (controlled
-  fire → search_triggered, audit row, ll_book_id seeded from the request row with NO GB call,
-  reverted via unqueueBook+rescan). Planned 2026-07-15 (owner-directed, two-Opus planning pass:
-  code mapper + architect, synthesized). Part 2 (Fix-everywhere parity) stays a standing goal.
+- **Status:** Part 1 DONE (v0.61.0 build; the Q-01 flip resolved better-than-planned as the
+  self-serve /admin "Books actions" grant grid, v0.77.0 — owner granted Default/Family/Friends
+  both actions in prod). **Part 2 ACTIVATED by owner ruling 2026-07-28** (queued with the
+  gate/MAM tech-debt, ahead of new features). Recon of record:
+  `.agents/context/2026-07-28-fix-parity-recon.md` — the UX vocabulary is already unified +
+  guard-enforced; the REAL remaining gaps are exactly two: **(B) gating parity** (arr
+  Fix/Force-Search are ungated `authedProcedure` vs books/activity per-role grants ⇒ arr action
+  grants + /admin grid column, books pattern) and **(A) the ytdl leg** (Peloton/YouTube kinds
+  have no Fix/Force-Search at all — formerly blocked on PLAN-025 Q-01, NOW UNBLOCKED: ytdrivarr
+  is live; needs its write surface + a confined `@hnet/ytdrivarr` write client + registry-standard
+  UI). Build order B → A. The "Integrations-section grant" residual is CLOSED — verified already
+  shipped end-to-end (section id + /admin toggle + audited writer); owner flips roles at will.
+  Whole-show/whole-artist Fix stays deliberately absent (FIX_TARGET_SCOPES doctrine).
 - **Docs-first artifacts:** **ADR-062** (Proposed — the books-Fix boundary) + **DESIGN-033**
   (Draft) — authored this pass; ratify (or Accept per granted authority) before code.
 - **Owner intent (2026-07-11, re-affirmed 2026-07-15):** the SAME Fix UX movies/TV have — Fix
