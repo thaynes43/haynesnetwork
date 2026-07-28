@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.90.5](https://github.com/thaynes43/haynesnetwork/compare/v0.90.4...v0.90.5) (2026-07-28)
+
+
+### Bug Fixes
+
+* **auth:** back Better Auth rate limiting with shared Postgres storage ([#500](https://github.com/thaynes43/haynesnetwork/issues/500)) ([edf9a99](https://github.com/thaynes43/haynesnetwork/commit/edf9a99a0ecff0c556d0edb0998856c496f08e43))
+
 ## [0.90.4](https://github.com/thaynes43/haynesnetwork/compare/v0.90.3...v0.90.4) (2026-07-28)
 
 
