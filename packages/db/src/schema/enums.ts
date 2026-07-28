@@ -708,6 +708,15 @@ export const APP_SETTING_KEYS = [
   // exception (an admin bypasses the cap outright). Admin-mutated + audited through the same
   // setAppSetting single-writer (never a non-admin write). migration 0067 relaxes the CHECK.
   'collection_size_cap',
+  // ADR-082 / DESIGN-027 D-10 (PLAN-040 — MAM governor DB-backed config) — the audited governor knobs
+  // (jsonb object: { limit, buffer, resumeFloor, trendPauseDelta }). Resolution is DB row → env
+  // (MAM_UNSATISFIED_LIMIT/_BUFFER/_RESUME_FLOOR/_TREND_PAUSE_DELTA) → code defaults, so NO row ⇒ the
+  // governor resolves exactly today's env/default config (C-03, zero-change deploy). Write-time
+  // validation (C-04) enforces the invariants ADR-077 only checked at runtime: 0 ≤ resumeFloor < edge,
+  // edge = limit − buffer > 0, limit ≤ 200 (the hard MAM cap), trendPauseDelta ≥ 1 — so an unsatisfiable
+  // floor can never be stored. Admin-mutated + audited through the same setAppSetting single-writer
+  // (setMamGovernorConfig validates first); migration 0074 relaxes the CHECK.
+  'mam_governor_config',
 ] as const;
 export type AppSettingKey = (typeof APP_SETTING_KEYS)[number];
 

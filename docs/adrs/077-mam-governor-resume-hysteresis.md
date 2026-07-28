@@ -1,6 +1,11 @@
 # ADR-077: MAM compliance governor — resume hysteresis (a distinct resume floor below the pause threshold)
 
 - **Status:** Accepted (owner ruling 2026-07-24: proceed with the hysteresis hardening)
+- **Superseded in part by:** [ADR-082](082-mam-governor-trend-gate-and-admin-config.md) (2026-07-28) — the
+  dead-band trend override. The dead band's "hold state" clause (C-01) becomes "hold state UNLESS a
+  single-interval rise ≥ `trendPauseDelta` fires while OPEN in the band, which pauses". Everything else here
+  (the distinct resume floor, the hysteresis rationale, the 200 cap, the config seam) stands. This is a
+  status note only; the decision body below is unchanged (immutable once Accepted).
 - **Date:** 2026-07-23 · **Amended 2026-07-25** (owner-directed in-place edit) — the burst magnitude
   C-02 derives the resume floor from was measured wrong by a factor of ~3. See
   [Amendment 2026-07-25](#amendment-2026-07-25--the-burst-basis-was-wrong) before tuning anything.

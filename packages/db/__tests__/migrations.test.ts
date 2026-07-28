@@ -1007,6 +1007,55 @@ describe('migrations against embedded Postgres 16', () => {
     });
   });
 
+  // ADR-082 / DESIGN-027 D-09+D-10 (migration 0074, PLAN-040) — the trend-aware dead band + DB-backed
+  // config: three new NULLABLE mam_gate_state columns (last_observed_count/at + last_delta) and ONE
+  // app_settings.key CHECK relax admitting 'mam_governor_config'. Additive; preservation-checked.
+  describe('0074 MAM governor trend + config (ADR-082 — new columns + app_settings CHECK relax)', () => {
+    it('mam_gate_state gains the three nullable trend columns (existing rows validate with NULLs)', async () => {
+      const cols = await client.query(
+        `SELECT column_name, is_nullable FROM information_schema.columns WHERE table_name = 'mam_gate_state'`,
+      );
+      const byName = new Map(cols.rows.map((r) => [r.column_name as string, r.is_nullable as string]));
+      for (const c of ['last_observed_count', 'last_observed_at', 'last_delta']) {
+        expect(byName.has(c)).toBe(true);
+        expect(byName.get(c)).toBe('YES'); // nullable — the trend override is disabled until a good sample
+      }
+      // The singleton row still inserts WITHOUT the new columns (they default NULL) — first sight is safe.
+      await client.query(
+        `INSERT INTO mam_gate_state (gate_open, count_ok, unsatisfied_count, downloading_count,
+           seeding_under72_count, limit_value, buffer_value, threshold, headroom)
+         VALUES (true, true, 8, 0, 8, 20, 5, 15, 12)`,
+      );
+      const row = await client.query(
+        `SELECT last_observed_count, last_observed_at, last_delta FROM mam_gate_state WHERE id = 'mam'`,
+      );
+      expect(row.rows[0].last_observed_count).toBeNull();
+      expect(row.rows[0].last_observed_at).toBeNull();
+      expect(row.rows[0].last_delta).toBeNull();
+      // ...and the trend columns accept integers / a timestamp.
+      await client.query(
+        `UPDATE mam_gate_state SET last_observed_count = 8, last_observed_at = now(), last_delta = -3 WHERE id = 'mam'`,
+      );
+      await client.query(`DELETE FROM mam_gate_state`);
+    });
+
+    it('app_settings_key_enum admits mam_governor_config + the prior keys, rejects unknown', async () => {
+      for (const key of ['collection_size_cap', 'space_policy', 'mam_governor_config']) {
+        await client.query({
+          text: `INSERT INTO app_settings (key, value) VALUES ($1, '{}'::jsonb)
+                   ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+          values: [key],
+        });
+      }
+      await expect(
+        client.query(`INSERT INTO app_settings (key, value) VALUES ('bogus_gov_key', '{}'::jsonb)`),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query(
+        `DELETE FROM app_settings WHERE key IN ('collection_size_cap','space_policy','mam_governor_config')`,
+      );
+    });
+  });
+
   // ADR-055 / DESIGN-028 (migration 0045) — the Integration tables + three CHECK relaxes. Additive.
   describe('0045 Goodreads integrations (ADR-055 — three tables + section/run-kind/audit CHECKs)', () => {
     const DEFAULT_ROLE = '11111111-1111-4111-8111-111111111111';

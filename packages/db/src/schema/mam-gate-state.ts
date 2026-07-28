@@ -47,6 +47,22 @@ export const mamGateState = pgTable(
     pinnedAlertedAt: timestamp('pinned_alerted_at', { withTimezone: true }),
     /** The last transition event enqueued ('mam_gate_paused' | 'mam_gate_resumed' | 'mam_gate_stuck' | null). */
     lastEventType: text('last_event_type'),
+    /**
+     * ADR-082 C-02 (PLAN-040) — the last SUCCESSFULLY-observed unsatisfied count and when it was observed.
+     * These persist the PRIOR RUN's sample so the trend override (C-01) computes a single-interval delta
+     * that survives process restarts. Updated ONLY on a good count (a failed count carries them forward
+     * untouched, so the trend never diffs against a stale fail-closed value). NULL until the first good
+     * count (first sight), which disables the override for that tick; a gap > 2 sampling intervals also
+     * disables it (computeTrendOverride), so an ancient sample is never used.
+     */
+    lastObservedCount: integer('last_observed_count'),
+    lastObservedAt: timestamp('last_observed_at', { withTimezone: true }),
+    /**
+     * ADR-082 C-05 — the single-interval delta the last run computed (current − the prior good sample), or
+     * NULL when there was no usable previous sample. Persisted purely so the /admin governor panel can show
+     * the last observed change without a live run; the trend decision itself uses last_observed_* above.
+     */
+    lastDelta: integer('last_delta'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [check('mam_gate_state_singleton', sql`${t.id} = 'mam'`)],

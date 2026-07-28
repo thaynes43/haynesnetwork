@@ -297,6 +297,16 @@ export interface AppSettingValueMap {
   // COLLECTION_SIZE_CAP_DEFAULT). A number, like trash_default_window_days — the getAppSetting
   // typeof-guard falls back to the default if a hand-edited jsonb row is the wrong type.
   collection_size_cap: number;
+  // ADR-082 / DESIGN-027 D-10 (PLAN-040) — the DB-backed audited MAM governor knobs. An object (so the
+  // getAppSetting typeof-guard treats it like motd/space_policy); read/written for RESOLUTION through the
+  // dedicated getMamGovernorConfig/setMamGovernorConfig helpers (raw-row presence + write-time validation),
+  // not the generic getAppSetting, so an absent row falls back to env/defaults (zero-change deploy).
+  mam_governor_config: {
+    limit: number;
+    buffer: number;
+    resumeFloor: number;
+    trendPauseDelta: number;
+  };
 }
 
 /** DESIGN-035 D-17 — the owner-fixed default non-admin collection size cap (LISTS are the admin-only
@@ -343,6 +353,10 @@ export const APP_SETTING_DEFAULTS: AppSettingValueMap = {
   authentik_group_map: {},
   // DESIGN-035 D-17 — the non-admin collection size cap ships at 25 (the owner-fixed default).
   collection_size_cap: COLLECTION_SIZE_CAP_DEFAULT,
+  // ADR-082 — the code-default governor config (exactly today's env-free behavior: 20/5, derived floor 10,
+  // trend delta 15). Only used as the audit "before" baseline + the getAppSettings map fallback; the
+  // governor resolves via raw-row presence (getMamGovernorConfig), so an absent row means env/defaults.
+  mam_governor_config: { limit: 20, buffer: 5, resumeFloor: 10, trendPauseDelta: 15 },
 };
 
 /**

@@ -1,15 +1,25 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { mamGateState, notificationOutbox } from '@hnet/db';
+import { eq } from 'drizzle-orm';
+import { appSettings, mamGateState, notificationOutbox, permissionAudit } from '@hnet/db';
 import { bootMigratedDb, type TestDb } from './helpers';
 import {
   computeDesiredGate,
   computeStuck,
+  computeTrendOverride,
   deriveResumeFloor,
   evaluateMamGovernor,
+  getMamGovernorConfig,
+  getMamGovernorStatus,
+  governorConfigError,
   resolveGovernorConfig,
+  resolveGovernorConfigResolution,
+  setMamGovernorConfig,
+  type GateTrendSample,
   type MamGovernorClients,
+  type MamGovernorConfig,
   type MamGovernorTuning,
 } from '../src/mam-governor';
+import { GovernorConfigInvalidError } from '../src/errors';
 
 // ADR-054 / DESIGN-027 (PLAN-039) — the MAM compliance governor evaluator. These tests are the plan's
 // acceptance proof: a deploy below the resume floor writes an OPEN BASELINE and pages nothing; a deploy in the
@@ -24,9 +34,23 @@ import {
 // (< resumeFloor) are DISTINCT levels; the dead band [resumeFloor, threshold) HOLDS the current state.
 // Incident regression + dead-band-hold cases below prove the flap can no longer occur.
 
-const TUNING: MamGovernorTuning = { limit: 20, buffer: 5, resumeFloor: 10, zeroHeadroomAlertHours: 48 }; // threshold 15, floor 10
-// The live Elite-VIP tuning that flapped: limit 200, buffer 15 ⇒ threshold 185, floor 170.
-const INCIDENT_TUNING: MamGovernorTuning = { limit: 200, buffer: 15, resumeFloor: 170, zeroHeadroomAlertHours: 48 };
+// threshold 15, floor 10, dead band [10, 15); trend override at +15 (never bites in this narrow band).
+const TUNING: MamGovernorTuning = {
+  limit: 20,
+  buffer: 5,
+  resumeFloor: 10,
+  trendPauseDelta: 15,
+  zeroHeadroomAlertHours: 48,
+};
+// The live Elite-VIP tuning that flapped: limit 200, buffer 15 ⇒ threshold 185, floor 170, dead band
+// [170, 185). trendPauseDelta 15 — a single-interval rise of ≥ 15 inside the band pauses (ADR-082 C-01).
+const INCIDENT_TUNING: MamGovernorTuning = {
+  limit: 200,
+  buffer: 15,
+  resumeFloor: 170,
+  trendPauseDelta: 15,
+  zeroHeadroomAlertHours: 48,
+};
 const TARGETS = { category: 'books-mam', indexerId: 17 };
 
 function counts(unsatisfied: number, downloading = 0) {
@@ -142,12 +166,158 @@ describe('computeDesiredGate + computeStuck (pure)', () => {
   });
 });
 
+describe('computeTrendOverride (ADR-082 C-01/C-02, pure)', () => {
+  const now = new Date('2026-07-28T12:00:00Z');
+  const fresh: GateTrendSample = { count: 150, observedAt: new Date('2026-07-28T11:50:00Z') }; // 10 min ago
+  const stale: GateTrendSample = { count: 150, observedAt: new Date('2026-07-28T11:20:00Z') }; // 40 min ago
+
+  it('FIRES on a dead-band rise ≥ delta while OPEN (172 vs 150 = +22 ≥ 15)', () => {
+    const r = computeTrendOverride({
+      unsatisfied: 172,
+      countOk: true,
+      priorOpen: true,
+      baseDesiredOpen: true,
+      tuning: INCIDENT_TUNING,
+      previous: fresh,
+      now,
+    });
+    expect(r).toEqual({ delta: 22, fires: true });
+  });
+
+  it('does NOT fire on a sub-delta rise (165 vs 150 = +15 fires; 164 = +14 holds)', () => {
+    expect(
+      computeTrendOverride({
+        unsatisfied: 164,
+        countOk: true,
+        priorOpen: true,
+        baseDesiredOpen: true,
+        tuning: INCIDENT_TUNING,
+        previous: fresh,
+        now,
+      }),
+    ).toEqual({ delta: 14, fires: false });
+  });
+
+  it('is CLOSE-ONLY: never fires when the gate is already CLOSED (priorOpen false)', () => {
+    expect(
+      computeTrendOverride({
+        unsatisfied: 180,
+        countOk: true,
+        priorOpen: false, // closed — the override only pauses an OPEN gate
+        baseDesiredOpen: false,
+        tuning: INCIDENT_TUNING,
+        previous: fresh,
+        now,
+      }).fires,
+    ).toBe(false);
+  });
+
+  it('does NOT fire on a MISSING previous sample (first run) — delta null', () => {
+    expect(
+      computeTrendOverride({
+        unsatisfied: 184,
+        countOk: true,
+        priorOpen: true,
+        baseDesiredOpen: true,
+        tuning: INCIDENT_TUNING,
+        previous: null,
+        now,
+      }),
+    ).toEqual({ delta: null, fires: false });
+  });
+
+  it('does NOT fire on a STALE previous sample (gap > 2 intervals) — never a delta against ancient data', () => {
+    expect(
+      computeTrendOverride({
+        unsatisfied: 184,
+        countOk: true,
+        priorOpen: true,
+        baseDesiredOpen: true,
+        tuning: INCIDENT_TUNING,
+        previous: stale,
+        now,
+      }),
+    ).toEqual({ delta: null, fires: false });
+  });
+
+  it('does NOT fire OUTSIDE the dead band (below the floor, or when the edge already pauses)', () => {
+    // 160 < floor 170 (below the band): a big rise there just keeps the gate open, no trend pause.
+    expect(
+      computeTrendOverride({
+        unsatisfied: 160,
+        countOk: true,
+        priorOpen: true,
+        baseDesiredOpen: true,
+        tuning: INCIDENT_TUNING,
+        previous: { count: 130, observedAt: fresh.observedAt },
+        now,
+      }).fires,
+    ).toBe(false);
+    // 185 ≥ threshold: the edge already pauses (baseDesiredOpen false), so it is an edge pause, not trend.
+    expect(
+      computeTrendOverride({
+        unsatisfied: 185,
+        countOk: true,
+        priorOpen: true,
+        baseDesiredOpen: false,
+        tuning: INCIDENT_TUNING,
+        previous: fresh,
+        now,
+      }).fires,
+    ).toBe(false);
+  });
+
+  it('does NOT fire on a failed count (fail-closed owns that path)', () => {
+    expect(
+      computeTrendOverride({
+        unsatisfied: 0,
+        countOk: false,
+        priorOpen: true,
+        baseDesiredOpen: false,
+        tuning: INCIDENT_TUNING,
+        previous: fresh,
+        now,
+      }).fires,
+    ).toBe(false);
+  });
+});
+
+describe('governorConfigError (ADR-082 C-04, pure)', () => {
+  const ok: MamGovernorConfig = { limit: 200, buffer: 90, resumeFloor: 60, trendPauseDelta: 15 };
+  it('accepts a valid decoupled config (edge 110, floor 60 < edge)', () => {
+    expect(governorConfigError(ok)).toBeNull();
+  });
+  it('rejects limit > 200 (the hard MAM cap)', () => {
+    expect(governorConfigError({ ...ok, limit: 201 })).toMatch(/hard cap/);
+  });
+  it('rejects a non-positive edge (buffer ≥ limit)', () => {
+    expect(governorConfigError({ limit: 20, buffer: 20, resumeFloor: 0, trendPauseDelta: 15 })).toMatch(
+      /pause edge/,
+    );
+  });
+  it('rejects a negative resume floor', () => {
+    expect(governorConfigError({ ...ok, resumeFloor: -1 })).toMatch(/cannot be negative/);
+  });
+  it('rejects a resume floor ≥ the edge (the ADR-077 wedge class)', () => {
+    expect(governorConfigError({ limit: 200, buffer: 90, resumeFloor: 110, trendPauseDelta: 15 })).toMatch(
+      /below the pause edge/,
+    );
+  });
+  it('rejects a trend delta < 1', () => {
+    expect(governorConfigError({ ...ok, trendPauseDelta: 0 })).toMatch(/at least 1/);
+  });
+  it('rejects non-integers', () => {
+    expect(governorConfigError({ ...ok, limit: 200.5 })).toMatch(/whole number/);
+  });
+});
+
 describe('resolveGovernorConfig (the PLAN-040 seam)', () => {
   it('defaults to 20/5/10/48 (resume floor derived limit - 2*buffer) and reads env overrides; clamps buffer < limit', async () => {
     expect(await resolveGovernorConfig({ env: {} })).toEqual({
       limit: 20,
       buffer: 5,
       resumeFloor: 10,
+      trendPauseDelta: 15,
       zeroHeadroomAlertHours: 48,
     });
     expect(
@@ -159,6 +329,7 @@ describe('resolveGovernorConfig (the PLAN-040 seam)', () => {
       limit: 200,
       buffer: 15,
       resumeFloor: 170,
+      trendPauseDelta: 15,
       zeroHeadroomAlertHours: 48,
     });
     // buffer >= limit is clamped so the gate can never be permanently wedged closed.
@@ -326,24 +497,27 @@ describe('evaluateMamGovernor (embedded Postgres)', () => {
     expect(reopened.calls.set).toEqual([true]);
   });
 
-  it('an OPEN gate holds through the dead band (184) and pauses at the threshold (185)', async () => {
-    // Open baseline below the floor, then a dead-band value: stays open, no page.
+  it('an OPEN gate GENTLY climbing holds through the dead band (172, 184) and pauses at the threshold (185)', async () => {
+    // Open baseline just below the floor (169 < 170 ⇒ open), then small single-interval rises (+3, +12,
+    // both < the +15 trend delta) so the dead band HOLDS open — pausing only when the count reaches the edge.
     await evaluateMamGovernor({
       db: t.db,
-      clients: makeStub({ unsatisfied: 100, indexerEnabled: true }).clients, // < floor 170 ⇒ open baseline
+      clients: makeStub({ unsatisfied: 169, indexerEnabled: true }).clients, // < floor 170 ⇒ open baseline
       targets: TARGETS,
       tuning: INCIDENT_TUNING,
     });
-    const held = makeStub({ unsatisfied: 184, indexerEnabled: true });
-    const r1 = await evaluateMamGovernor({
-      db: t.db,
-      clients: held.clients,
-      targets: TARGETS,
-      tuning: INCIDENT_TUNING,
-    });
-    expect(r1.gateOpen).toBe(true); // dead band holds open
-    expect(r1.event).toBeNull();
-    expect(held.calls.set).toHaveLength(0);
+    for (const u of [172, 184]) {
+      const held = makeStub({ unsatisfied: u, indexerEnabled: true });
+      const r = await evaluateMamGovernor({
+        db: t.db,
+        clients: held.clients,
+        targets: TARGETS,
+        tuning: INCIDENT_TUNING,
+      });
+      expect(r.gateOpen).toBe(true); // dead band holds open (gentle rise, trend does not bite)
+      expect(r.event).toBeNull();
+      expect(held.calls.set).toHaveLength(0);
+    }
 
     const paused = makeStub({ unsatisfied: 185, indexerEnabled: true });
     const r2 = await evaluateMamGovernor({
@@ -354,6 +528,7 @@ describe('evaluateMamGovernor (embedded Postgres)', () => {
     });
     expect(r2.gateOpen).toBe(false); // reaches threshold ⇒ pause
     expect(r2.event).toBe('mam_gate_paused');
+    expect(r2.reason).toBe('edge'); // paused by the edge, not the trend
     expect(paused.calls.set).toEqual([false]);
   });
 
@@ -379,16 +554,17 @@ describe('evaluateMamGovernor (embedded Postgres)', () => {
     }
     expect(await t.db.select().from(notificationOutbox)).toHaveLength(0);
 
-    // Now OPEN holds open across three dead-band samples (172, 180, 175) — still zero pages.
+    // Now OPEN holds open across three GENTLE dead-band samples (172, 173, 172; deltas +3/+1/−1, all under
+    // the +15 trend delta) — still zero pages. (A large single-interval rise would trend-pause; covered below.)
     await t.db.delete(notificationOutbox);
     await t.db.delete(mamGateState);
     await evaluateMamGovernor({
       db: t.db,
-      clients: makeStub({ unsatisfied: 100, indexerEnabled: true }).clients, // open baseline
+      clients: makeStub({ unsatisfied: 169, indexerEnabled: true }).clients, // open baseline (< floor 170)
       targets: TARGETS,
       tuning: INCIDENT_TUNING,
     });
-    for (const u of [172, 180, 175]) {
+    for (const u of [172, 173, 172]) {
       const s = makeStub({ unsatisfied: u, indexerEnabled: true });
       const r = await evaluateMamGovernor({
         db: t.db,
@@ -503,5 +679,222 @@ describe('evaluateMamGovernor (embedded Postgres)', () => {
     });
     expect(r2.stuckAlerted).toBe(false);
     expect(await t.db.select().from(notificationOutbox)).toHaveLength(1);
+  });
+
+  // ADR-082 C-01 — the trend override: a fast climb inside the dead band pauses an OPEN gate even though
+  // the count never reaches the edge (the 07-25 hazard the symmetric hold missed). Close-only + reason trend.
+  it('TREND OVERRIDE: a dead-band rise ≥ delta pauses an OPEN gate (reason trend), and does not reopen until below the floor', async () => {
+    // Open baseline just below the floor (169 < 170 ⇒ open); records last_observed = 169.
+    await evaluateMamGovernor({
+      db: t.db,
+      clients: makeStub({ unsatisfied: 169, indexerEnabled: true }).clients,
+      targets: TARGETS,
+      tuning: INCIDENT_TUNING,
+    });
+    // 184 is inside the dead band [170, 185) and rose +15 (≥ trendPauseDelta) — trend pauses BEFORE the edge.
+    const climbed = makeStub({ unsatisfied: 184, indexerEnabled: true });
+    const r = await evaluateMamGovernor({
+      db: t.db,
+      clients: climbed.clients,
+      targets: TARGETS,
+      tuning: INCIDENT_TUNING,
+    });
+    expect(r.gateOpen).toBe(false);
+    expect(r.event).toBe('mam_gate_paused');
+    expect(r.reason).toBe('trend');
+    expect(r.delta).toBe(15);
+    expect(climbed.calls.set).toEqual([false]); // actuated the indexer closed
+    const outbox = await t.db.select().from(notificationOutbox);
+    expect(outbox).toHaveLength(1);
+    expect((outbox[0]!.payload as { reason?: string }).reason).toBe('trend');
+
+    // CLOSE-ONLY: still in the dead band (175), the trend never reopens — resume waits for the floor.
+    const held = makeStub({ unsatisfied: 175, indexerEnabled: false });
+    const r2 = await evaluateMamGovernor({
+      db: t.db,
+      clients: held.clients,
+      targets: TARGETS,
+      tuning: INCIDENT_TUNING,
+    });
+    expect(r2.gateOpen).toBe(false);
+    expect(r2.event).toBeNull();
+    expect(held.calls.set).toHaveLength(0);
+
+    // Only once it drops below the floor (169 < 170) does it reopen.
+    const reopened = makeStub({ unsatisfied: 169, indexerEnabled: false });
+    const r3 = await evaluateMamGovernor({
+      db: t.db,
+      clients: reopened.clients,
+      targets: TARGETS,
+      tuning: INCIDENT_TUNING,
+    });
+    expect(r3.gateOpen).toBe(true);
+    expect(r3.event).toBe('mam_gate_resumed');
+  });
+
+  it('a GENTLE dead-band rise (below the delta) does NOT trend-pause', async () => {
+    await evaluateMamGovernor({
+      db: t.db,
+      clients: makeStub({ unsatisfied: 169, indexerEnabled: true }).clients,
+      targets: TARGETS,
+      tuning: INCIDENT_TUNING,
+    });
+    const gentle = makeStub({ unsatisfied: 178, indexerEnabled: true }); // +9 < 15
+    const r = await evaluateMamGovernor({
+      db: t.db,
+      clients: gentle.clients,
+      targets: TARGETS,
+      tuning: INCIDENT_TUNING,
+    });
+    expect(r.gateOpen).toBe(true);
+    expect(r.event).toBeNull();
+    expect(r.delta).toBe(9);
+    expect(gentle.calls.set).toHaveLength(0);
+  });
+
+  it('a STALE previous sample (gap > 2 intervals) disables the override — a big rise holds open', async () => {
+    const t0 = new Date('2026-07-28T00:00:00Z');
+    await evaluateMamGovernor({
+      db: t.db,
+      clients: makeStub({ unsatisfied: 169, indexerEnabled: true }).clients,
+      targets: TARGETS,
+      tuning: INCIDENT_TUNING,
+      now: t0,
+    });
+    // 31 minutes later (> 2 × 15-min intervals) the previous sample is ancient — no delta, so a +15 rise
+    // in the dead band does NOT trend-pause (it holds open until the edge / a fresh in-band climb).
+    const late = makeStub({ unsatisfied: 184, indexerEnabled: true });
+    const r = await evaluateMamGovernor({
+      db: t.db,
+      clients: late.clients,
+      targets: TARGETS,
+      tuning: INCIDENT_TUNING,
+      now: new Date(t0.getTime() + 31 * 60 * 1000),
+    });
+    expect(r.gateOpen).toBe(true); // stale sample ⇒ override disabled ⇒ dead band holds open
+    expect(r.event).toBeNull();
+    expect(r.delta).toBeNull();
+    expect(late.calls.set).toHaveLength(0);
+  });
+
+  // ADR-082 C-03 — the DB-backed config: setMamGovernorConfig validates + audits; resolution reads DB
+  // first (provenance db), then env, then default; getMamGovernorStatus surfaces gate + config + history.
+  describe('DB-backed config + status (ADR-082 C-03/C-04/C-05)', () => {
+    beforeEach(async () => {
+      await t.db.delete(permissionAudit);
+      await t.db.delete(appSettings);
+      await t.db.delete(notificationOutbox);
+      await t.db.delete(mamGateState);
+    });
+
+    it('setMamGovernorConfig stores the knobs AND an update_app_setting audit row in the same tx', async () => {
+      const config: MamGovernorConfig = { limit: 200, buffer: 90, resumeFloor: 60, trendPauseDelta: 20 };
+      const res = await setMamGovernorConfig({ db: t.db, config, actorId: null });
+      expect(res.changed).toBe(true);
+      expect(await getMamGovernorConfig(t.db)).toEqual(config);
+      const audits = await t.db
+        .select()
+        .from(permissionAudit)
+        .where(eq(permissionAudit.action, 'update_app_setting'));
+      expect(audits).toHaveLength(1);
+      expect((audits[0]!.detail as { key?: string }).key).toBe('mam_governor_config');
+    });
+
+    it('rejects an invalid config at the writer (GovernorConfigInvalidError) and stores NO row', async () => {
+      await expect(
+        // resumeFloor 150 ≥ edge 110 — the unsatisfiable-floor wedge class (ADR-077 C-03).
+        setMamGovernorConfig({
+          db: t.db,
+          config: { limit: 200, buffer: 90, resumeFloor: 150, trendPauseDelta: 15 },
+          actorId: null,
+        }),
+      ).rejects.toBeInstanceOf(GovernorConfigInvalidError);
+      expect(await getMamGovernorConfig(t.db)).toBeNull(); // nothing stored
+      expect(
+        await t.db.select().from(permissionAudit).where(eq(permissionAudit.action, 'update_app_setting')),
+      ).toHaveLength(0);
+    });
+
+    it('resolution precedence is DB → env → default, with per-value provenance', async () => {
+      // No row + no env ⇒ code defaults (all provenance 'default').
+      const def = await resolveGovernorConfigResolution({ db: t.db, env: {} });
+      expect(def.tuning).toEqual({
+        limit: 20,
+        buffer: 5,
+        resumeFloor: 10,
+        trendPauseDelta: 15,
+        zeroHeadroomAlertHours: 48,
+      });
+      expect(def.provenance.limit).toBe('default');
+      expect(def.provenance.resumeFloor).toBe('default');
+
+      // Env only (still no DB row) ⇒ env tier.
+      const viaEnv = await resolveGovernorConfigResolution({
+        db: t.db,
+        env: { MAM_UNSATISFIED_LIMIT: '150', MAM_UNSATISFIED_BUFFER: '20', MAM_TREND_PAUSE_DELTA: '12' },
+      });
+      expect(viaEnv.tuning.limit).toBe(150);
+      expect(viaEnv.tuning.trendPauseDelta).toBe(12);
+      expect(viaEnv.provenance.limit).toBe('env');
+      expect(viaEnv.provenance.trendPauseDelta).toBe('env');
+
+      // A DB row WINS over env (all four knobs come from DB); env is now dead.
+      await setMamGovernorConfig({
+        db: t.db,
+        config: { limit: 200, buffer: 90, resumeFloor: 60, trendPauseDelta: 25 },
+        actorId: null,
+      });
+      const viaDb = await resolveGovernorConfigResolution({
+        db: t.db,
+        env: { MAM_UNSATISFIED_LIMIT: '150', MAM_UNSATISFIED_BUFFER: '20' },
+      });
+      expect(viaDb.tuning).toEqual({
+        limit: 200,
+        buffer: 90,
+        resumeFloor: 60,
+        trendPauseDelta: 25,
+        zeroHeadroomAlertHours: 48,
+      });
+      expect(viaDb.provenance.limit).toBe('db');
+      expect(viaDb.provenance.buffer).toBe('db');
+      expect(viaDb.provenance.resumeFloor).toBe('db');
+      expect(viaDb.provenance.trendPauseDelta).toBe('db');
+    });
+
+    it('getMamGovernorStatus returns null gate before the first run, then the resolved config + gate + transitions', async () => {
+      // Config-only, no governor run yet ⇒ gate null but config resolves from the DB row (provenance db).
+      await setMamGovernorConfig({
+        db: t.db,
+        config: { limit: 200, buffer: 15, resumeFloor: 170, trendPauseDelta: 15 },
+        actorId: null,
+      });
+      const pre = await getMamGovernorStatus({ db: t.db, env: {} });
+      expect(pre.gate).toBeNull();
+      expect(pre.config.limit).toEqual({ value: 200, source: 'db' });
+      expect(pre.config.resumeFloor).toEqual({ value: 170, source: 'db' });
+
+      // Run once at an open baseline, then a trend pause — the status now shows the gate + one transition.
+      await evaluateMamGovernor({
+        db: t.db,
+        clients: makeStub({ unsatisfied: 169, indexerEnabled: true }).clients,
+        targets: TARGETS,
+        tuning: INCIDENT_TUNING,
+      });
+      await evaluateMamGovernor({
+        db: t.db,
+        clients: makeStub({ unsatisfied: 184, indexerEnabled: true }).clients,
+        targets: TARGETS,
+        tuning: INCIDENT_TUNING,
+      });
+      const post = await getMamGovernorStatus({ db: t.db, env: {} });
+      expect(post.gate).not.toBeNull();
+      expect(post.gate!.gateOpen).toBe(false);
+      expect(post.gate!.unsatisfied).toBe(184);
+      expect(post.gate!.inDeadBand).toBe(true);
+      expect(post.gate!.lastDelta).toBe(15);
+      expect(post.gate!.previousUnsatisfied).toBe(169);
+      expect(post.transitions[0]!.event).toBe('mam_gate_paused');
+      expect(post.transitions[0]!.reason).toBe('trend');
+    });
   });
 });

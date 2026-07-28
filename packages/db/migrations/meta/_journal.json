@@ -512,6 +512,13 @@
 			"when": 1783903100000,
 			"tag": "0073_role_media_action_budgets",
 			"breakpoints": true
+		},
+		{
+			"idx": 73,
+			"version": "7",
+			"when": 1783903200000,
+			"tag": "0074_mam_governor_trend_and_config",
+			"breakpoints": true
 		}
 	]
 }

@@ -1,10 +1,11 @@
 # DESIGN-027: MAM compliance governor
 
 - **Status:** Accepted
-- **Last updated:** 2026-07-23 (D-09 — resume hysteresis)
-- **Satisfies:** PRD-001 R-172..R-177 + R-234 (flap-free gating); governed by ADR-054 (seam) + **ADR-077
-  (resume hysteresis, supersedes ADR-054 C-05)** + ADR-034 (outbox) + ADR-040 (sync-mode precedent) + ADR-008
-  (confined external write surface).
+- **Last updated:** 2026-07-28 (D-09 amendment — trend override; D-10 — DB-backed config + admin surface)
+- **Satisfies:** PRD-001 R-172..R-177 + R-234 (flap-free gating) + R-238/R-239 (trend override + DB config);
+  governed by ADR-054 (seam) + **ADR-077 (resume hysteresis, supersedes ADR-054 C-05)** + **ADR-082
+  (trend-aware dead band + DB-backed audited config; supersedes ADR-077's dead-band clause in part)** +
+  ADR-034 (outbox) + ADR-040 (sync-mode precedent) + ADR-008 (confined external write surface).
 
 ## Overview
 
@@ -148,6 +149,51 @@ It resolves through the same `resolveGovernorConfig` seam (D-07) — no schema c
 from the persisted `limit`/`buffer` (or the override), so `mam_gate_state` gains no column. `resumeFloor` is
 added to the report, the outbox payload, and the per-run structured CronJob log line (next to
 `limit`/`buffer`/`threshold`).
+
+### D-09 amendment (2026-07-28, ADR-082 C-01/C-02) — the trend-aware dead band
+
+**Motivation (the 2026-07-25 hazard).** The dead-band hold above is symmetric: it holds the gate's state in
+`[resumeFloor, threshold)` regardless of direction. On 2026-07-25 that held the gate OPEN into a fast climb
+(166 inside 160..179, +58 in one 15-minute interval), because "hold" is blind to which way the count is
+moving. Measured single-interval bursts have grown every incident: **+17 → +58 → +84.** Holding open near
+the top of the band is only safe while one interval's climb cannot cross the cap from the top.
+
+**The rule (asymmetric hold — sticky when falling, yielding when rising).** `computeTrendOverride` rides on
+top of `computeDesiredGate`: when the gate is **OPEN**, the count is **in the dead band**, and it **rose
+`current − previous ≥ trendPauseDelta`** since the prior sample, the gate PAUSES this tick (event
+`mam_gate_paused`, reason **`trend`**). It is **close-only** — it never opens (a resume still requires
+`< resumeFloor`), so no new flap mode exists. Default `trendPauseDelta = 15` (below the smallest measured
+burst onset +17, above sampling noise).
+
+**The previous sample is state, not inference (C-02).** `mam_gate_state` gains `last_observed_count` +
+`last_observed_at` (migration 0074), updated ONLY on a good count, so the delta is computed against the PRIOR
+RUN's persisted sample and survives process restarts; a fail-closed tick never poisons the baseline. A first
+run (no sample) or a gap `> 2 × 15-minute intervals` disables the override for that tick (never a delta
+against ancient data). A `last_delta` column persists the computed delta for the admin surface (D-10). The
+decision `reason` (`edge`/`trend`/`floor`/`count_failed`/`hold`) is added to the report, the outbox payload,
+and the per-run log line.
+
+### D-10 — DB-backed audited config + governor-state visibility (ADR-082 C-03..C-05)
+
+**Config moves in-app (C-03/C-04).** The tuning knobs `limit`, `buffer`, `resumeFloor`, `trendPauseDelta`
+become a DB-backed audited `mam_governor_config` app_settings entry, written through the
+`setMamGovernorConfig` single-writer (validation first, then `setAppSetting` co-writes the
+`update_app_setting` permission_audit row in the SAME tx — hard rule 6). **Resolution per knob is DB row →
+env → code default** behind the SAME `resolveGovernorConfig` seam (D-07), so no row ⇒ exactly today's env/
+default behavior (zero-change deploy). The env variables stay honored as the fallback tier (C-06); a DB row
+makes them dead. **Write-time validation (C-04)** enforces the invariants ADR-077 only checked at runtime:
+`0 ≤ resumeFloor < edge`, `edge = limit − buffer > 0`, `limit ≤ 200`, `trendPauseDelta ≥ 1` — at BOTH the
+API zod edge and the domain writer, so an unsatisfiable floor can never be stored (the ADR-077 C-03 wedge
+class). A DB read failure at resolution time falls back to env/defaults for resolution only (C-08).
+
+**Visibility (C-05).** `getMamGovernorStatus` + `/admin/governor` (admin-only) show the gate state (grabs
+flowing vs paused, current unsatisfied + last delta, headroom, whether the count sits in the hold band), the
+resolved config WITH per-value provenance (`db`/`env`/`default`), the last run time, and the recent
+transitions with their reasons (`edge`/`trend`/`floor`) read from the notification_outbox trail. The config
+knobs sit beside it as one audited form (no destructive action). Realized in `@hnet/domain`
+(`mam-governor.ts` — `computeTrendOverride`, `getMamGovernorConfig`/`setMamGovernorConfig`,
+`resolveGovernorConfigResolution`, `getMamGovernorStatus`), `@hnet/api` (`mamGovernor` router), and
+`apps/web` (`/admin/governor`).
 
 ## Alternatives considered
 
