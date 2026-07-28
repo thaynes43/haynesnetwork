@@ -27,9 +27,14 @@
 - The YouTube provider's `safetyCron` (`30 4 * * *` ET) fires `runDiscovery({scope:'all'})`
   (`src/index.ts` wiring), dragging a FULL Peloton scrape + an extra bearer mint daily at 08:30Z
   since the 07-22 Peloton cutover activated sources. NOT owner config; doubles daily
-  onepeloton.com logins (account-risk the once-nightly design minimized). Fix dispatched
-  (branch `fix/provider-scoped-cron`: provider-scoped ticks; global stays for manual/API runs);
-  ytdrivarr is full-autonomy, deploy auto-bumps via image automation — don't double-bump.
+  onepeloton.com logins (account-risk the once-nightly design minimized). **FIXED + DEPLOYED
+  same session:** ytdrivarr #38 merged (provider-scoped ticks; global stays for manual/API runs;
+  runs now attribute honestly) → **v0.9.1 LIVE** (haynes-ops #2288, rollout verified).
+  **VERIFY at the next 08:30Z tick (~04:30 ET): it must be a YouTube-only re-emit with NO Peloton
+  scrape and NO extra bearer mint** — the daily validation check covers it. TWO CORRECTIONS to
+  prior notes: (a) image automation auto-bumps only the ytdrivarr WORKER — the core app deploys
+  via a MANUAL haynes-ops PR (the #2211 note oversold it); (b) the red `checks` run on ytdrivarr's
+  release commit d233c8f is a VERIFIED FLAKE (253/253 pass locally at that exact SHA).
 - **Validation day 8: GREEN, 0 SEV** (`.agents/context/2026-07-28-ytdrivarr-validation-day8.md`).
   W1 (Peloton pass >24h) self-corrects when the emit window activates ~08-05 · W2 (age-gate error
   flood, +31%/day) candidate fix = cookies or exclude the channel(s) · W3 is EXPLAINED by the bug
