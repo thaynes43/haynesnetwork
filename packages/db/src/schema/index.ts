@@ -13,6 +13,10 @@ export * from './users';
 export * from './session';
 export * from './account';
 export * from './verification';
+// DESIGN-002 D-14 amend (saga haynesnetwork-ha plan 05) — Better Auth's DB-backed rate-limit
+// bucket store (rateLimit.storage: 'database'); shared across replicas, no audit (library-managed
+// operational state, written only by better-auth's own adapter — not a domain single-writer table).
+export * from './rate-limit';
 export * from './user-role-transitions';
 export * from './app-catalog';
 export * from './permission-audit';

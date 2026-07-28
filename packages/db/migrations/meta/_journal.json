@@ -498,6 +498,13 @@
 			"when": 1783902900000,
 			"tag": "0071_unified_books_wall",
 			"breakpoints": true
+		},
+		{
+			"idx": 71,
+			"version": "7",
+			"when": 1783903000000,
+			"tag": "0072_auth_rate_limit",
+			"breakpoints": true
 		}
 	]
 }

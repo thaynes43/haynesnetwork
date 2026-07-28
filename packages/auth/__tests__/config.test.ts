@@ -52,6 +52,24 @@ describe('betterAuth config (DESIGN-002 D-02)', () => {
     ]);
   });
 
+  it('stores rate-limit buckets in the shared database (cross-replica combined limit)', async () => {
+    vi.stubEnv('BETTER_AUTH_URL', 'https://haynesnetwork.com');
+    vi.stubEnv('BETTER_AUTH_SECRET', 'test-secret-test-secret-test-secret');
+
+    const { auth } = await import('../src/config');
+
+    // saga haynesnetwork-ha plan 05: 'memory' keeps one bucket set per replica (limit ×N,
+    // fail-open); 'database' shares one bucket set in Postgres so N replicas enforce ONE
+    // combined limit. The window/max/customRules budget is unchanged by the storage flip.
+    expect(auth.options.rateLimit?.storage).toBe('database');
+    expect(auth.options.rateLimit?.window).toBe(60);
+    expect(auth.options.rateLimit?.max).toBe(100);
+    expect(auth.options.rateLimit?.customRules?.['/sign-in/oauth2']).toEqual({
+      window: 60,
+      max: 10,
+    });
+  });
+
   it('trusts the apex baseURL + the www origin from TRUSTED_ORIGINS (cutover)', async () => {
     vi.stubEnv('BETTER_AUTH_URL', 'https://haynesnetwork.com');
     vi.stubEnv('BETTER_AUTH_SECRET', 'test-secret-test-secret-test-secret');
