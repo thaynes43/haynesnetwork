@@ -152,7 +152,10 @@ tag in the HelmRelease and committing to `haynes-ops`.
    (idempotent DB + role create via `postgres-init`) → `migrate` initContainer
    (`tsx /migrator/src/scripts/migrate.ts` — Drizzle migrations + idempotent `app_catalog`
    seed) → the `app` container. A failed migration blocks the new pod; the old pod keeps
-   serving (ADR-006 C-02).
+   serving (ADR-006 C-02). Concurrent migrators are safe: `migrate.ts` serializes them with a
+   session-level `pg_advisory_lock` (saga `haynesnetwork-ha` plan 01 / PLAN-062), so a cold
+   multi-replica start or a simultaneous post-node-loss reschedule cannot race two migrators —
+   losers block until the winner finishes, then no-op.
 
 ## 3. Verify
 
