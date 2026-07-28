@@ -161,15 +161,23 @@ at the read edge. **Owner saved successfully; the row self-healed** (both retire
 `.agents/context/2026-07-28-owner-rulings-gate-and-mam.md`). **Sequencing is binding: this tech
 debt gets solid BEFORE any new feature work.** Both reopen as build work:
 
-1. **Library-access gate — ruled BOTH ways solid:** (a) the seeded Default role gains all-servers
-   grants AT BOOTSTRAP (code guarantee, not configuration; new non-default roles stay
-   deny-by-default), and (b) the cold-start window closes — auto-trigger a plex-match sync on an
-   empty match table + an explicit "libraries are still syncing" non-admin empty state. Docs-first:
-   new ADR amending the ADR-024 bootstrap posture + the ADR-047 cold-start note, then the vertical.
-2. **MAM — ruled "harden first, then retune":** build the trend-aware dead-band override (a rising
-   count must not be held open by hysteresis — the 07-25 hazard) + activate PLAN-040 (DB-backed
-   audited knobs + in-app governor-state visibility) BEFORE any edge move. Edge stays 100 until
-   that layer exists; any retune stays measured-burst-gated.
+1. **Library-access gate — ✅ EXECUTED, LIVE (v0.93.0, 2026-07-28 ~22:20 UTC).** ADR-081
+   (Accepted) → hnet **#516** (Opus-built, coordinator-reviewed) → v0.93.0 → haynes-ops **#2289**
+   → 3/3 pods rolled, health ok. Realized with two codebase-driven adjustments (honest deviations,
+   reviewed + approved): the from-scratch Default all-grant runs as a ZERO-USER-gated boot seed
+   (the Default role predates the servers in migration order), and `registerPlexServer` is the
+   C-06 writer any FUTURE server-registration path must use (the three live servers are
+   slug-CHECK-frozen in migration 0010 — no runtime registration exists today). Cold-start:
+   boot-triggered advisory-locked first plex-match sync (prod-gated) + the server-decided
+   member/admin "still syncing" states. **Prod evidence = the no-op signature:** boot logs are
+   SILENT on the warm estate (the tasks log only on seed/run/error) — the positive-fire proof is
+   the 14-test battery, not prod logs; nothing observable remains on a populated DB.
+2. **MAM — "harden first, then retune": ADR-082 Accepted (PR #517), BUILD IN FLIGHT** (Opus,
+   branch `feat/mam-trend-gate-admin-config`): trend-aware dead-band override (close-only, delta
+   default 15, prior sample persisted in `mam_gate_state`) + `mam_governor_config` app-setting
+   (db → env → default resolution, write-time invariant validation) + the /admin governor panel.
+   Edge stays 100 until it ships; any retune stays measured-burst-gated. Coordinator reviews the
+   PR when it lands.
 
 **Operational gotchas that cost time (both now proven):** `GH_TOKEN` goes stale ~1h into a session — the
 live token is at **`/creds/gh_token`**, needed for `gh` AND `git push` (the helper reads the env); do NOT
