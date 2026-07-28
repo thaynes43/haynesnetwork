@@ -713,21 +713,29 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     // admin override (danger + typed confirm live in the Modal), not disabled by the open window.
     await expect(page.getByTestId('batch-expire')).toBeEnabled();
 
-    const creates = (await maintainerrCalls(page)).filter(
-      (c) => c.method === 'POST' && c.path === '/collections',
+    // ADR-078 — the create goes through the RULES surface (a rule-group SHELL: useRules:false,
+    // zero rules, arrAction DO_NOTHING) so Maintainerr's nightly rule-less purge spares the record;
+    // membership is seeded via /collections/add (the create carries no media).
+    const calls = await maintainerrCalls(page);
+    const creates = calls.filter(
+      (c) => c.method === 'POST' && c.path === '/rules' && (c.body as { name?: unknown })?.name === 'Leaving Soon — Movies',
     );
     expect(creates).toHaveLength(1);
-    const dto = creates[0]!.body as {
-      collection: Record<string, unknown>;
-      media: Array<{ mediaServerId: string }>;
-    };
-    expect(dto.collection).toMatchObject({
-      title: 'Leaving Soon — Movies',
-      type: 'movie',
+    const shell = creates[0]!.body as Record<string, unknown> & { collection: Record<string, unknown> };
+    expect(shell).toMatchObject({
+      name: 'Leaving Soon — Movies',
+      dataType: 'movie',
       arrAction: 4,
-      visibleOnHome: true,
+      useRules: false,
+      rules: [],
     });
-    expect(dto.media.map((m) => m.mediaServerId)).not.toContain('ms-880002'); // protected stays out
+    expect(shell.collection).toMatchObject({ visibleOnHome: true });
+    expect(calls.some((c) => c.method === 'POST' && c.path === '/collections')).toBe(false);
+    const seeded = calls
+      .filter((c) => c.method === 'POST' && c.path === '/collections/add')
+      .flatMap((c) => ((c.body as { media?: Array<{ mediaServerId: string }> })?.media ?? []).map((m) => m.mediaServerId));
+    expect(seeded.length).toBeGreaterThan(0);
+    expect(seeded).not.toContain('ms-880002'); // protected stays out
   });
 
   // DESIGN-010 amendment (2026-07-08) — the OVERVIEW landing. The movie batch is Leaving Soon (a

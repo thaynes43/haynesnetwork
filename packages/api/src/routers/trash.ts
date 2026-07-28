@@ -22,6 +22,7 @@ import {
   getTrashOverview,
   getTuningReport,
   greenlightBatch,
+  isLeavingSoonCollectionTitle,
   listBatches,
   POOL_REFRESH_DELAY_MAX,
   POOL_REFRESH_DELAY_MIN,
@@ -243,9 +244,14 @@ export const trashRouter = router({
     return mapDomainErrors(() => resolveMaintainerrBundle(ctx).read.getCollections());
   }),
 
-  /** DESIGN-010 — the Maintainerr rule groups (the rules editor's data; read_only view). */
+  /** DESIGN-010 — the Maintainerr rule groups (the rules editor's data; read_only view).
+   *  ADR-078: the Leaving-Soon rule-group SHELLS are app plumbing, not editable rules — hidden here
+   *  so the editor can never arm/disarm/delete the rolling collection out from under a live batch. */
   rules: sectionProcedure('trash', 'read_only').query(async ({ ctx }) => {
-    return mapDomainErrors(() => resolveMaintainerrBundle(ctx).read.getRules());
+    return mapDomainErrors(async () => {
+      const groups = await resolveMaintainerrBundle(ctx).read.getRules();
+      return groups.filter((g) => !isLeavingSoonCollectionTitle(g.name));
+    });
   }),
 
   /** DESIGN-010 — the rule-schema catalog (constants) for the rules editor. */

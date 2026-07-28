@@ -398,6 +398,40 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
           if (appIds.has(2) && dto.sonarrSettingsId == null) {
             return json(res, 200, { code: 0, result: 'Sonarr rules require a Sonarr server to be selected' });
           }
+          if (method === 'POST' && typeof dto.id !== 'number') {
+            // ADR-078 — the Leaving-Soon rule-group SHELL create (v3.19.0 setRules): creates the
+            // GROUP and its COLLECTION together, returns ONLY a ReturnStatus (no ids — the drive
+            // re-reads the collection id from GET /collections by exact title). The collection is
+            // created EMPTY (members arrive via /collections/add) and serves arrAction DO_NOTHING
+            // through the same manual-collections emitter as before.
+            const shell = body as {
+              name?: unknown;
+              libraryId?: unknown;
+              dataType?: unknown;
+              useRules?: unknown;
+            };
+            const collectionId = ++nextManualCollectionId;
+            const title = String(shell.name ?? '');
+            const dataType = typeof shell.dataType === 'string' ? shell.dataType : 'movie';
+            manualCollections.set(collectionId, {
+              title,
+              type: dataType,
+              libraryId: Number(shell.libraryId ?? 0),
+              members: new Set(),
+            });
+            rules.push({
+              id: 9000 + collectionId,
+              name: title,
+              description: '',
+              isActive: true,
+              useRules: shell.useRules === true,
+              dataType,
+              libraryId: String(shell.libraryId ?? ''),
+              collection: { id: collectionId, title, libraryId: String(shell.libraryId ?? '') },
+              rules: [],
+            });
+            return json(res, 201, { code: 1, result: 'Success' });
+          }
           if (method === 'PUT' && typeof dto.id === 'number') {
             const stored = rules.find((r) => r.id === dto.id);
             // (3) Crucial-change WIPE simulation (verified v3.17.0 updateRules): dataType or libraryId
@@ -434,6 +468,11 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
         }
         if (method === 'DELETE' && /^\/rules\/\d+$/.test(path)) {
           const id = Number(path.split('/').pop());
+          // v3.19.0 deleteRuleGroup CASCADES: group + collection (+ Plex object) go together — a
+          // Leaving-Soon shell teardown (batch cancel) must drop the linked collection too.
+          const group = rules.find((r) => r.id === id);
+          const linkedCollectionId = (group?.collection as { id?: unknown } | undefined)?.id;
+          if (typeof linkedCollectionId === 'number') manualCollections.delete(linkedCollectionId);
           rules = rules.filter((r) => r.id !== id);
           return json(res, 200, { code: 1 });
         }
