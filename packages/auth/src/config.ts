@@ -3,7 +3,7 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { nextCookies } from 'better-auth/next-js';
 import { genericOAuth } from 'better-auth/plugins/generic-oauth';
 import { eq } from 'drizzle-orm';
-import { db, users, session, account, verification } from '@hnet/db';
+import { db, users, session, account, verification, rateLimit } from '@hnet/db';
 import { authEnv, OIDC_PROVIDER_ID } from './env';
 import { bootstrapAdminOnSignin } from './hooks/bootstrap-admin';
 import { consumePendingRoleOnSignin } from './hooks/consume-pending-role';
@@ -88,6 +88,15 @@ export const auth = betterAuth({
     // Mirror better-auth's default (enabled ?? isProduction) explicitly: prod-only.
     // `next dev` (local + the Playwright/stub-OIDC suite) must never rate limit.
     enabled: process.env.NODE_ENV === 'production',
+    // Shared, cross-replica buckets in Postgres (saga haynesnetwork-ha plan 05 —
+    // https://github.com/thaynes43/haynes-ops/blob/main/.agents/sagas/haynesnetwork-ha/backlog/05-shared-rate-limit-storage.md).
+    // The default 'memory' keeps one bucket set PER pod, so once the app runs >1 replica each pod
+    // counts independently and the effective limit multiplies by N (fail-open). 'database' routes
+    // better-auth 1.6.23's limiter through its atomic `incrementOne` against the shared `rate_limit`
+    // table (@hnet/db) — registered on the drizzle adapter below under the model name `rateLimit`
+    // (get-tables' default when storage === 'database'), so all replicas enforce ONE combined limit.
+    // Cost is one indexed upsert only on rate-limited /api/auth paths (untouched hot paths never hit it).
+    storage: 'database',
     // Overall per-client-IP, per-path budget: 100 requests/minute (window seconds).
     window: 60,
     max: 100,
@@ -126,8 +135,10 @@ export const auth = betterAuth({
     // Keyed by modelName so the adapter's getSchema(model) lookup resolves:
     // user model → `users` Drizzle table (matches options.user.modelName below);
     // session/account/verification keep Better Auth's default model names, which
-    // match the Drizzle export names.
-    schema: { users, session, account, verification },
+    // match the Drizzle export names. `rateLimit` is the DB-backed rate-limit bucket
+    // store (rateLimit.storage: 'database' above) — better-auth's `rateLimit` model
+    // name maps to the `rate_limit` Drizzle table (saga haynesnetwork-ha plan 05).
+    schema: { users, session, account, verification, rateLimit },
   }),
   user: {
     modelName: 'users',

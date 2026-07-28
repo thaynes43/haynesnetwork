@@ -424,6 +424,22 @@ Decided configuration (`packages/auth/src/config.ts`):
 Storage stays the default `memory` — fine for the single-replica deployment; revisit
 (`rateLimit.storage: 'database'` or secondary storage) if the app ever scales out.
 
+> **Amended 2026-07-28 — storage moved to `database` ahead of the multi-replica cutover.**
+> Saga **haynesnetwork-ha plan 05** ([backlog/05-shared-rate-limit-storage.md](https://github.com/thaynes43/haynes-ops/blob/main/.agents/sagas/haynesnetwork-ha/backlog/05-shared-rate-limit-storage.md))
+> takes the app to **2 replicas**. The default `memory` keeps one bucket set **per pod**, so N
+> replicas count independently and the effective limit multiplies by N (fail-open) — the exact
+> failure this D-14 anticipated. `packages/auth/src/config.ts` now sets
+> **`rateLimit.storage: 'database'`**; better-auth 1.6.23 routes the limiter through its atomic
+> `incrementOne` against a shared **`rate_limit`** table in `@hnet/db` (migration `0072`; model
+> name `rateLimit`, columns `key` unique / `count` / `last_request` epoch-ms — the get-tables
+> default when `storage === 'database'`), registered on the drizzle adapter under the `rateLimit`
+> model key. The `window`/`max`/`customRules` budget is unchanged; the only added cost is one
+> indexed upsert on rate-limited `/api/auth` paths (untouched hot paths never hit it). This is
+> library-managed operational state — written solely by better-auth's own adapter, so it carries
+> no audit surface and stays out of the `no-direct-state-writes` guard. Proof that two instances
+> over one DB enforce ONE combined limit: `packages/auth/__tests__/rate-limit-shared.test.ts`.
+> This closes backlog-recon **O-5** (`.agents/context/2026-07-05-backlog-recon.md`).
+
 Error taxonomy on `/login?error=…` (`ERROR_COPY` in `apps/web/app/login/page.tsx`;
 initiation mapping is the pure helper `apps/web/lib/sign-in-error.ts`, unit-tested):
 
