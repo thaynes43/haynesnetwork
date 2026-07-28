@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { fixRequests, ledgerEvents, mediaItems } from '@hnet/db/schema';
 import {
-  FIX_RATE_LIMIT_PER_HOUR,
+  MEDIA_ACTION_BUDGET_FALLBACK,
   FixAlreadyOpenError,
   FixRateLimitError,
   FixTargetRequiredError,
@@ -266,9 +266,10 @@ describe('fix lifecycle single-writers (DESIGN-005 D-09/D-12, ADR-007)', () => {
       ).rejects.toSatisfy(isPostgresCheckViolation);
     });
 
-    it(`rate-limits at ${FIX_RATE_LIMIT_PER_HOUR}/hour per requester; admins bypass (R-47)`, async () => {
+    // ADR-080 — a role with no budget row resolves to the fallback (today's 25); admins bypass.
+    it(`rate-limits at the fallback ${MEDIA_ACTION_BUDGET_FALLBACK}/hour per requester; admins bypass (R-47)`, async () => {
       const limited = (await createUser(t.db, { email: 'limited@example.com' })).id;
-      for (let i = 0; i < FIX_RATE_LIMIT_PER_HOUR; i++) {
+      for (let i = 0; i < MEDIA_ACTION_BUDGET_FALLBACK; i++) {
         await createFixRequest({
           db: t.db,
           requesterId: limited,

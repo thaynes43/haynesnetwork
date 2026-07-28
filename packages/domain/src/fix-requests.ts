@@ -19,14 +19,8 @@ import {
   NotFoundError,
 } from './errors';
 import { inTransaction } from './db-client';
+import { effectiveMediaActionBudget, mediaActionBudgetReachedMessage } from './media-action-budgets';
 import { resolveFixTarget, type SearchScope } from './action-scope';
-
-/**
- * R-47 / PRD Q-05 default: max fix requests per requester per rolling hour (admins bypass).
- * Owner ruling 2026-07-15: raised 5 → 25 so the friends-and-family group effectively never
- * hits it. Still a fixed constant (Q-05 keeps admin-configurability out of scope).
- */
-export const FIX_RATE_LIMIT_PER_HOUR = 25;
 
 /** D-09: statuses that count as an open fix for the one-open-fix-per-target rule. */
 export const OPEN_FIX_STATUSES = ['pending', 'actioned', 'search_triggered'] as const;
@@ -136,7 +130,12 @@ export async function createFixRequest(
     );
 
     const [requester] = await tx
-      .select({ id: users.id, email: users.email, displayName: users.displayName })
+      .select({
+        id: users.id,
+        email: users.email,
+        displayName: users.displayName,
+        roleId: users.roleId,
+      })
       .from(users)
       .where(eq(users.id, input.requesterId));
     if (!requester) {
@@ -172,12 +171,15 @@ export async function createFixRequest(
     const targetArrChildId = targetChildId; // fix_requests column name
 
     if (!input.requesterIsAdmin) {
-      // D-17: Fix + Force Search share one hourly budget (countRecentFixBudget).
-      const used = await countRecentFixBudget(tx, input.requesterId);
-      if (used >= FIX_RATE_LIMIT_PER_HOUR) {
-        throw new FixRateLimitError(
-          `Fix rate limit reached: ${FIX_RATE_LIMIT_PER_HOUR} requests per hour`,
-        );
+      // ADR-080 C-03/C-04 — the arr pool draws the REQUESTER'S ROLE budget (admin ⇒ null bypass,
+      // else the role's row, else fallback 25). D-17 unchanged: Fix + Force Search share one hourly
+      // counter (countRecentFixBudget) so the two actions can't be alternated to dodge the limit.
+      const limit = await effectiveMediaActionBudget({ db: tx, roleId: requester.roleId });
+      if (limit !== null) {
+        const used = await countRecentFixBudget(tx, input.requesterId);
+        if (used >= limit) {
+          throw new FixRateLimitError(mediaActionBudgetReachedMessage(limit));
+        }
       }
     }
 

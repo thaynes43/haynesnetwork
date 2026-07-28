@@ -8,6 +8,7 @@ import {
   roleBooksActionGrants,
   roleBulletinViewGrants,
   roleCollectionActionGrants,
+  roleMediaActionBudgets,
   roleMessageActionGrants,
   roleSectionPermissions,
   roleTrashActionGrants,
@@ -37,11 +38,13 @@ import {
   setRoleBookActions,
   setRoleBulletinViews,
   setRoleCollectionActions,
+  setRoleMediaActionBudget,
   setRoleMessageActions,
   setRoleMetricsLevel,
   setRoleTrashActions,
   setSectionPermission,
   updateRole,
+  MEDIA_ACTION_BUDGET_FALLBACK,
 } from '@hnet/domain';
 import { mapDomainErrors, resolveAuthentikPortalBundle, router } from '../trpc';
 import { adminProcedure } from '../middleware/role';
@@ -49,6 +52,7 @@ import {
   BooksActionsInput,
   BulletinViewsInput,
   CollectionsActionsInput,
+  MediaActionBudgetInput,
   MessageActionsInput,
   RoleInput,
   RolePatchInput,
@@ -125,6 +129,13 @@ export const rolesRouter = router({
         action: roleCollectionActionGrants.action,
       })
       .from(roleCollectionActionGrants);
+    // ADR-080 (PLAN-041 Gap B) — each role's stored media-action budget row (absent ⇒ the fallback).
+    const budgetRows = await ctx.db
+      .select({
+        roleId: roleMediaActionBudgets.roleId,
+        fixPerHour: roleMediaActionBudgets.fixPerHour,
+      })
+      .from(roleMediaActionBudgets);
 
     const appIdsByRole = new Map<string, string[]>();
     for (const row of grantRows) {
@@ -169,6 +180,7 @@ export const rolesRouter = router({
       s.add(row.action);
       collectionActionsByRole.set(row.roleId, s);
     }
+    const budgetByRole = new Map(budgetRows.map((row) => [row.roleId, row.fixPerHour]));
 
     // The Admin role has no explicit grants — it's an implicit all-apps / all-sections superuser.
     return roleRows.map((row) => {
@@ -205,6 +217,12 @@ export const rolesRouter = router({
       const collectionsActions: CollectionAction[] = row.isAdmin
         ? [...COLLECTION_ACTIONS]
         : COLLECTION_ACTIONS.filter((a) => collectionGrantedSet?.has(a));
+      // ADR-080 C-03/C-05 — the role's EFFECTIVE hourly media-action budget for the /admin control:
+      // null for Admin (implicit bypass, shown as such), else the stored row, else the fallback 25
+      // (rendered AS the value — no seed rows exist, absence IS 25).
+      const mediaActionBudget = row.isAdmin
+        ? null
+        : (budgetByRole.get(row.id) ?? MEDIA_ACTION_BUDGET_FALLBACK);
       return {
         ...row,
         // ADR-037 C-01 — admin implies 'full' (like admin implies section 'edit'); else the column.
@@ -217,6 +235,7 @@ export const rolesRouter = router({
         bulletinViews,
         booksActions,
         collectionsActions,
+        mediaActionBudget,
       };
     });
   }),
@@ -342,6 +361,26 @@ export const rolesRouter = router({
           db: ctx.db,
           roleId: input.roleId,
           actions: input.actions,
+          actorId: ctx.user.id,
+        }),
+      );
+    }),
+
+  /**
+   * ADR-080 C-02/C-05 (PLAN-041 Gap B) — set a role's hourly media-action budget (the ONE number the
+   * arr pool and the books pool each draw independently). Delegates to the @hnet/domain single-writer
+   * (audits 'update_media_action_budget' in-tx, hard rule 6); the Admin role bypasses budgets and has
+   * no editable number → ROLE_IMMUTABLE. 0..1000 (zod-guarded here, re-validated in the writer); setting
+   * 0 blocks that role's non-admin Fix / Force Search across every media family.
+   */
+  setMediaActionBudget: adminProcedure
+    .input(MediaActionBudgetInput)
+    .mutation(async ({ ctx, input }) => {
+      return mapDomainErrors(() =>
+        setRoleMediaActionBudget({
+          db: ctx.db,
+          roleId: input.roleId,
+          fixPerHour: input.fixPerHour,
           actorId: ctx.user.id,
         }),
       );

@@ -10,7 +10,8 @@ import { ledgerEvents, mediaItems, users, type ArrKind, type DbClient } from '@h
 import { eq, sql } from 'drizzle-orm';
 import { FixRateLimitError, LedgerItemTombstonedError, NotFoundError } from './errors';
 import { inTransaction } from './db-client';
-import { countRecentFixBudget, FIX_RATE_LIMIT_PER_HOUR } from './fix-requests';
+import { countRecentFixBudget } from './fix-requests';
+import { effectiveMediaActionBudget, mediaActionBudgetReachedMessage } from './media-action-budgets';
 import { resolveSearchTarget, type SearchScope } from './action-scope';
 
 export interface CreateSearchRequestInput {
@@ -60,7 +61,7 @@ export async function recordSearchRequest(
     );
 
     const [requester] = await tx
-      .select({ id: users.id })
+      .select({ id: users.id, roleId: users.roleId })
       .from(users)
       .where(eq(users.id, input.requesterId));
     if (!requester) {
@@ -94,11 +95,14 @@ export async function recordSearchRequest(
     });
 
     if (!input.requesterIsAdmin) {
-      const used = await countRecentFixBudget(tx, input.requesterId);
-      if (used >= FIX_RATE_LIMIT_PER_HOUR) {
-        throw new FixRateLimitError(
-          `Fix rate limit reached: ${FIX_RATE_LIMIT_PER_HOUR} requests per hour`,
-        );
+      // ADR-080 C-03/C-04 — the SAME per-role budget as Fix, drawn against the SHARED arr-pool
+      // counter (D-17): admin ⇒ null bypass, else the role's row, else fallback 25.
+      const limit = await effectiveMediaActionBudget({ db: tx, roleId: requester.roleId });
+      if (limit !== null) {
+        const used = await countRecentFixBudget(tx, input.requesterId);
+        if (used >= limit) {
+          throw new FixRateLimitError(mediaActionBudgetReachedMessage(limit));
+        }
       }
     }
 

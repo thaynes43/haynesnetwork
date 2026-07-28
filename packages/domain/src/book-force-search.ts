@@ -19,10 +19,13 @@ import {
   bookRequests,
   booksItems,
   permissionAudit,
+  users,
   type DbClient,
 } from '@hnet/db';
 import { and, desc, eq } from 'drizzle-orm';
 import { inTransaction, resolveDb } from './db-client';
+import { BookFixRateLimitError, countRecentBooksBudget } from './book-fix';
+import { effectiveMediaActionBudget, mediaActionBudgetReachedMessage } from './media-action-budgets';
 import { NotFoundError } from './errors';
 import { KapowarrUpstreamError, LazyLibrarianUpstreamError } from './errors';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
@@ -34,8 +37,12 @@ export interface RunBookItemForceSearchInput {
   booksItemId: string;
   /** The caller — audited as the actor (and subject) of the search. */
   requesterId: string;
+  /** Admins bypass the books pool budget (ADR-080 C-03 — the arr/book Fix precedent). */
+  requesterIsAdmin?: boolean;
   ll?: LazyLibrarianClientBundle;
   kapowarr?: KapowarrClientBundle;
+  /** Reference "now" for the hourly budget window (tests); default the wall clock. */
+  now?: Date;
 }
 
 export interface RunBookItemForceSearchResult {
@@ -96,8 +103,24 @@ export async function runBookItemForceSearch(
     return { searched: false, reason: 'no_ll_id' };
   }
 
-  // Audit the intent FIRST (committed before the external call — fix-flow crash-safety).
+  // Audit the intent FIRST (committed before the external call — fix-flow crash-safety). ADR-080 C-04:
+  // the budget guard runs INSIDE this tx BEFORE the audit insert, so a rejected Force Search writes
+  // nothing and draws nothing — books Force Search now draws the books pool (via the `via:'force_search'`
+  // audit rows countRecentBooksBudget reads), closing its previously-unbudgeted hole. Admins bypass.
   await inTransaction(input.db, async (tx) => {
+    if (!input.requesterIsAdmin) {
+      const [requester] = await tx
+        .select({ roleId: users.roleId })
+        .from(users)
+        .where(eq(users.id, input.requesterId));
+      const limit = await effectiveMediaActionBudget({ db: tx, roleId: requester?.roleId });
+      if (limit !== null) {
+        const used = await countRecentBooksBudget(tx, input.requesterId, input.now ?? new Date());
+        if (used >= limit) {
+          throw new BookFixRateLimitError(mediaActionBudgetReachedMessage(limit));
+        }
+      }
+    }
     await tx.insert(permissionAudit).values({
       actorId: input.requesterId,
       action: 'request_book_search',

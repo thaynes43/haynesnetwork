@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ledgerEvents, mediaItems } from '@hnet/db/schema';
 import {
-  FIX_RATE_LIMIT_PER_HOUR,
+  MEDIA_ACTION_BUDGET_FALLBACK,
   FixRateLimitError,
   FixTargetRequiredError,
   LedgerItemTombstonedError,
@@ -219,8 +219,8 @@ describe('Force Search single-writer (DESIGN-005 D-07/D-17)', () => {
       targetArrChildId: 700,
       reason: 'wont_play_corrupt',
     });
-    // Four more Force Searches reach the limit (1 fix + 4 searches = 5).
-    for (let i = 0; i < FIX_RATE_LIMIT_PER_HOUR - 1; i++) {
+    // More Force Searches reach the shared fallback limit (1 fix + (fallback − 1) searches).
+    for (let i = 0; i < MEDIA_ACTION_BUDGET_FALLBACK - 1; i++) {
       await recordSearchRequest({ db: t.db, requesterId: user, mediaItemId: radarrItemId });
     }
     // The next action of EITHER kind is rejected by the shared budget.

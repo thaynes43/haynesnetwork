@@ -1317,6 +1317,9 @@ export const booksRouter = router({
           db: ctx.db,
           booksItemId: input.booksItemId,
           requesterId: ctx.user.id,
+          // ADR-080 C-04 — books Force Search now draws the books pool; admins bypass the budget
+          // (the grant gate above is unchanged — it still governs WHO may Force Search).
+          requesterIsAdmin: ctx.user.role.isAdmin,
           ll: resolveLazyLibrarianBundle(ctx),
           kapowarr: resolveKapowarrBundle(ctx),
         }),

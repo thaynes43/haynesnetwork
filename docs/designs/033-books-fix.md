@@ -1,7 +1,8 @@
 # DESIGN-033: Books/Audiobooks/Comics Fix — landed-bad-copy remediation
 
 - **Status:** Draft
-- **Last updated:** 2026-07-15
+- **Last updated:** 2026-07-28 (D-11 — the books budget becomes per-role + books Force Search now
+  draws the books pool; ADR-080 / PLAN-041 Gap B / PRD R-236)
 - **Satisfies:** PRD-001 R-202..R-205; governed by ADR-062 (the books-Fix boundary), ADR-046
   (mirror), ADR-055/056 (confined LL/Kapowarr writes), ADR-028 (feedback), ADR-023/059 (grants),
   ADR-014/015 (confirm/reflow), hard rules 4/6/8/9.
@@ -130,6 +131,25 @@ through the shared `@hnet/ui` components (`MediaHero` / `MediaAction` / `Consume
   with its `update_book_actions` audit-in-tx). No new audit action — Force Search reuses
   `request_book_search`. Movies keep their existing gating this pass (a documented fast-follow folds
   them onto the same grant with a no-regression seed).
+
+### D-11 — Amendment 2026-07-28 (ADR-080, PLAN-041 Gap B) — the budget goes per-role; Force Search draws it
+
+Two changes to how the books pool is governed, unifying it with the arr pool onto ONE per-role budget
+(DESIGN-005 D-23) while keeping the pools SEPARATE (a books binge can never starve a movie Fix).
+
+- **Per-role budget replaces the env constant.** The flat `BOOK_FIX_RATE_LIMIT_PER_HOUR` (env-tunable,
+  default 25) is **retired from the read path** (ADR-080 C-03 — a stale env var must never shadow an
+  owner edit). `createBookFixRequest` now resolves the requester's ROLE budget through the shared
+  `effectiveMediaActionBudget` (admin ⇒ bypass → the role's `role_media_action_budgets` row → fallback
+  25 — the SAME number the arr pool uses, applied to the books pool independently). A budget of 0 blocks
+  the role's non-admin books actions (C-05). The books grant grid (ADR-071) is UNTOUCHED — it stays the
+  books-specific WHO-may lever; the budget is the HOW-MUCH lever, orthogonal.
+- **Books Force Search now draws the books pool (closes the unbudgeted hole).** `runBookItemForceSearch`
+  previously drew NO hourly budget (grant-gated only). It now counts against the books pool BEFORE its
+  audit + external call, admins bypass. Force Search leaves no durable row, so `countRecentBooksBudget`
+  counts book Fix rows PLUS the `request_book_search` audit rows this path stamps `via: 'force_search'`
+  (only it writes that marker) — the pool = book Fix + book-item Force Search, one shared per-role number.
+  The grant gate is unchanged. The "limit reached" copy states the role's number (C-07; owner copy rules).
 
 ## Alternatives considered
 

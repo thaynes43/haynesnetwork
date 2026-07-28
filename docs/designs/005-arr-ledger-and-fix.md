@@ -1,8 +1,9 @@
 # DESIGN-005: *arr media ledger, Fix, and failsafe Restore — Phase 2
 
 - **Status:** Accepted
-- **Last updated:** 2026-07-11 (**D-22** — TV season posters + episode thumbnails from the matched Plex
-  title, ADR-048 / PRD R-158, PLAN-030)
+- **Last updated:** 2026-07-28 (**D-23** — the flat Fix/Force-Search budget becomes a per-role budget,
+  ADR-080 / PLAN-041 Gap B / PRD R-236). Prior: 2026-07-11 (**D-22** — TV season posters + episode
+  thumbnails from the matched Plex title, ADR-048 / PRD R-158, PLAN-030)
 
 > **Amended 2026-07-05 (Library sub-tabs + My Fixes relocation):** the `/library` page is now a
 > **Movies · TV · Music · My Fixes** sub-tab shell (WAI-ARIA tablist; active tab via the `?tab=`
@@ -437,11 +438,18 @@ pending ──(blocklist or delete succeeded)──> actioned ──(search comm
 - `failed`: any step errored; response captured; surfaced to admins (R-46). Terminal
   alongside `completed`; users re-raise rather than retry in place.
 
-**Amendment — Fix budget raised 5 → 25 (owner ruling 2026-07-15).** `FIX_RATE_LIMIT_PER_HOUR`
-is now `25` (still a fixed constant per Q-05) so the friends-and-family group effectively never
-hits the cap; the "5" figures below are historical.
+**Amendment — Fix budget raised 5 → 25 (owner ruling 2026-07-15).** The flat cap was raised to `25`
+so the friends-and-family group effectively never hit it; the "5" figures below are historical.
 
-**Rate guard (R-47, PRD Q-05 default):** constant `FIX_RATE_LIMIT_PER_HOUR = 25` in
+**Amendment — the flat constant is retired for a PER-ROLE budget (ADR-080, PLAN-041 Gap B). See
+D-23.** `FIX_RATE_LIMIT_PER_HOUR` is gone: the arr pool now draws the REQUESTER'S ROLE budget through
+the `effectiveMediaActionBudget` resolver (admin ⇒ bypass → the role's `role_media_action_budgets` row
+→ fallback `25`, today's constant). No role has a row on deploy, so behaviour is unchanged; the owner
+tunes the Default role's number (stricter) in /admin → roles, audited, no redeploy. The shared-counter
+mechanic below is untouched — only the number is now role-resolved. The "limit reached" copy states the
+role's number, not a constant (ADR-080 C-07).
+
+**Rate guard (R-47, PRD Q-05 default — historical, see D-23):** constant `FIX_RATE_LIMIT_PER_HOUR = 25` in
 `packages/domain` — `createFixRequest` counts the requester's rows with
 `created_at > now() - interval '1 hour'` inside the insert transaction (under a
 per-requester `pg_advisory_xact_lock` so parallel submissions can't slip past) and throws
@@ -670,8 +678,8 @@ sequenceDiagram
 ```
 
 Rules already fixed above: mandatory reason taxonomy with `reason_text` iff `other`
-(D-09 CHECK), per-user rate limit `FIX_RATE_LIMIT_PER_HOUR = 25` (constant per PRD Q-05;
-admin-configurable later), every step's raw *arr response persisted in `actions_taken`,
+(D-09 CHECK), per-requester hourly rate limit — now the requester's ROLE budget (ADR-080 / D-23;
+fallback `25`), every step's raw *arr response persisted in `actions_taken`,
 any step failure → `failed` + `fix_failed` event. Target validation lives in
 `createFixRequest`: sonarr requires an episode target, lidarr an album target, radarr
 requires none (`FixTargetRequiredError` otherwise). Admin visibility = `fix.adminList`
@@ -693,8 +701,9 @@ album / movie / whole-series `SeriesSearch`), with **no** `history/failed` (Bloc
 the `recordSearchRequest` single-writer, and the `runForceSearch` orchestrator fires the
 command after that audit row commits (search-only surface of `@hnet/arr/write`). Force
 Search **shares the Fix hourly budget** (`countRecentFixBudget` counts a requester's
-`fix_requests` + `search_requested` events against `FIX_RATE_LIMIT_PER_HOUR`; admins
-bypass) so the two actions can't be alternated to dodge R-47. UI rule everywhere
+`fix_requests` + `search_requested` events against the requester's ROLE budget — ADR-080 / D-23,
+superseding the retired flat `FIX_RATE_LIMIT_PER_HOUR`; admins bypass) so the two actions can't be
+alternated to dodge R-47. UI rule everywhere
 (library list, wanted rows, detail item + each episode/album): **on disk → Fix; not on
 disk → Force Search.**
 
@@ -1305,6 +1314,27 @@ transcode proxy. No new external API (no TMDB stills); read-only.
   new hex (`.season__poster` / `.child-row .epi-still` reuse the token palette).
 - **Correlation caveat.** A Sonarr↔Plex episode-number divergence just yields no still for that row (tinted
   box) — never a wrong thumb. Specials/Season-0 with no Plex art → no icon.
+
+### D-23 Per-role media-action budget — the flat constant becomes role-resolved (ADR-080, PLAN-041 Gap B)
+
+The arr pool's flat `FIX_RATE_LIMIT_PER_HOUR = 25` is retired for a PER-ROLE budget — the one mechanism
+every media family draws (the books pool too — DESIGN-033 D-11; the coming ytdl leg — ADR-080 C-06). The
+recovered owner ruling is binding: **no permission gating on Fix / Force Search — everyone can Fix; the
+per-role rate limit governs** (a stricter Default is an owner act in /admin, not a release act).
+
+- **Table + resolver.** New `role_media_action_budgets` (`role_id` PK/FK → roles, `fix_per_hour` int
+  CHECK 0..1000; migration 0073). `effectiveMediaActionBudget(roleId | role)` resolves, in order:
+  admin ⇒ **bypass** (returns unlimited — D-09 unchanged) → the role's row → **fallback 25** (today's
+  constant). NO seed rows: absence IS today's behaviour, so deploy is zero-change.
+- **Draw sites unchanged in mechanic.** `createFixRequest` (D-09) and `recordSearchRequest` (D-17) still
+  count `countRecentFixBudget` (the SHARED arr-pool counter — Fix + Force Search, one advisory-lock key)
+  under the same transaction; only the number they compare against is now the role's resolved budget.
+  A budget of **0 blocks** that role's non-admin arr actions (ADR-080 C-05, the emergency lever).
+- **Writer + surface.** The single-writer `setRoleMediaActionBudget` upserts the row AND co-writes an
+  `update_media_action_budget` permission_audit row (before/after) in the SAME tx (hard rule 6); the
+  Admin role has no editable budget (ROLE_IMMUTABLE). A per-role numeric control on /admin → roles
+  (beside Books actions; Admin shown as implicit Unlimited) writes it via `roles.setMediaActionBudget`.
+  The "limit reached" copy states the role's number, not a constant (C-07; owner copy rules).
 
 ## Alternatives considered
 
