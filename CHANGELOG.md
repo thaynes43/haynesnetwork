@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.90.4](https://github.com/thaynes43/haynesnetwork/compare/v0.90.3...v0.90.4) (2026-07-28)
+
+
+### Bug Fixes
+
+* **db:** serialize concurrent migrators with a Postgres advisory lock ([#499](https://github.com/thaynes43/haynesnetwork/issues/499)) ([fa754c7](https://github.com/thaynes43/haynesnetwork/commit/fa754c7fefde1700b1252af621c9fbd1aa73980d))
+
+
+### Documentation
+
+* **agents:** HANDOFF — Leaving Soon validation passed (record survived the 04:20 maintenance) ([#497](https://github.com/thaynes43/haynesnetwork/issues/497)) ([da3b8c6](https://github.com/thaynes43/haynesnetwork/commit/da3b8c6c2abb87d5034f7a6276c9fb5e2305de8c))
+
 ## [0.90.3](https://github.com/thaynes43/haynesnetwork/compare/v0.90.2...v0.90.3) (2026-07-28)
 
 
