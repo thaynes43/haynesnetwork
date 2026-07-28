@@ -29,6 +29,7 @@ import {
   type NetworkMetrics,
   type NetworkOverview,
   type OverviewGrafanaLinks,
+  type UptimeSnapshot,
 } from '@hnet/metrics';
 import type { MetricsLevel } from '@hnet/db';
 import {
@@ -36,6 +37,7 @@ import {
   resolveArrBundle,
   resolveMetricsReader,
   resolvePlayScoreboardSource,
+  resolveUptimeSource,
   router,
   authedProcedure,
   type TRPCContext,
@@ -89,6 +91,17 @@ export const metricsRouter = router({
    */
   playScoreboard: authedProcedure.query(
     ({ ctx }): Promise<EstatePlayTotals> => resolvePlayScoreboardSource(ctx).get(),
+  ),
+
+  /**
+   * ADR-079 / DESIGN-004 D-25 (PLAN-064) — the front-page uptime badge: current status +
+   * 24h/7d/30d ratios of the Gatus apex check, from the 60s in-process memo. DELIBERATELY
+   * `authedProcedure` (the playScoreboard posture — every signed-in user; public pride,
+   * not admin telemetry) and NEVER throws: an unreachable Gatus degrades to the honest
+   * `measured: false` snapshot and the badge renders "unmeasured" (never fake green).
+   */
+  uptime: authedProcedure.query(
+    ({ ctx }): Promise<UptimeSnapshot> => resolveUptimeSource(ctx).get(),
   ),
 
   /**

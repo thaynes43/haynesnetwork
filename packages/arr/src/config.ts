@@ -188,6 +188,39 @@ export function resolveMaintainerrConfig(
   return { baseUrl: url || MAINTAINERR_CLUSTER_URL_DEFAULT, ...(apiKey ? { apiKey } : {}) };
 }
 
+// ---------------------------------------------------------------------------
+// ADR-079 / DESIGN-004 D-25 (PLAN-064) — Gatus uptime-badge read config. KEYLESS
+// (Gatus's read API carries no auth) and ALWAYS resolvable: unlike the opt-in
+// Maintainerr harvest tier, the badge is core Home content, so both values carry
+// in-cluster defaults (the cluster-URL-defaults idiom — zero-config when deployed)
+// and an unreachable Gatus degrades at READ time to the honest "unmeasured" state,
+// never at config time.
+// ---------------------------------------------------------------------------
+
+export const GATUS_CLUSTER_URL_DEFAULT = 'http://gatus.observability.svc.cluster.local:80';
+
+/** The saga plan 03 apex check — the through-the-Internet SLI of haynesnetwork.com. */
+export const GATUS_DEFAULT_UPTIME_ENDPOINT_KEY = 'external_haynesnetwork';
+
+export interface GatusConfig {
+  baseUrl: string;
+  /** The Gatus endpoint key whose status/uptime the badge wears. */
+  endpointKey: string;
+}
+
+/**
+ * Read `GATUS_URL` + `GATUS_UPTIME_ENDPOINT_KEY` from `env`; both default (in-cluster
+ * Service DNS + the apex check key), so this never throws and never returns null.
+ */
+export function resolveGatusEnv(
+  env: Record<string, string | undefined> = process.env,
+): GatusConfig {
+  return {
+    baseUrl: env.GATUS_URL?.trim() || GATUS_CLUSTER_URL_DEFAULT,
+    endpointKey: env.GATUS_UPTIME_ENDPOINT_KEY?.trim() || GATUS_DEFAULT_UPTIME_ENDPOINT_KEY,
+  };
+}
+
 export interface MaintainerrWriteConfig {
   baseUrl: string;
   apiKey: string;

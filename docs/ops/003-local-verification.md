@@ -119,6 +119,12 @@ e2e suite uses** — embedded PG16 → real migrations + catalog seed → stub O
   Storage tab's **native free-space trend chart** renders full 7d–1y lines locally.
   `POST <stub-prometheus>/_stub/state` with `{"mode":"down"}` flips it unreachable (the
   chart's `unavailable` degrade); `{"mode":"ok"}` restores it.
+- **Stub Gatus** (`GATUS_URL` points at it; ADR-079 / DESIGN-004 D-25) serves the apex
+  check's plain-text uptime ratios + JSON statuses, so the Home **uptime badge** renders
+  its up state locally. `POST <stub-gatus>/_stub/state` with `{"mode":"down"}` /
+  `{"mode":"unreachable"}` walks the badge's danger / honest-"unmeasured" states;
+  `POST <stub-gatus>/_stub/reset` restores the healthy default. The harness sets
+  `UPTIME_BADGE_TTL_MS=0` so a flip is visible on the next reload.
 - Everything is **throwaway**: the database is a temp dir deleted on Ctrl-C; restart for a
   pristine seeded catalog.
 - Phone/tablet/PC layouts: use the browser devtools device toolbar.

@@ -9,3 +9,5 @@ export * from './tautulli';
 export * from './tmdb';
 export * from './tvdb';
 export * from './maintainerr';
+// ADR-079 / DESIGN-004 D-25 — the uptime badge's Gatus consumed subset
+export * from './gatus';

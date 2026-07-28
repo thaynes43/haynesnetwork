@@ -12,3 +12,6 @@ export * from './grafana';
 // ADR-068 / DESIGN-040 (PLAN-057) — the estate play scoreboard read model (Tautulli
 // get_libraries_table aggregation behind the in-process TTL memo).
 export * from './plays';
+// ADR-079 / DESIGN-004 D-25 (PLAN-064) — the front-page uptime badge read model (the
+// Gatus apex-check status + windowed ratios behind the same in-process TTL memo idiom).
+export * from './uptime';

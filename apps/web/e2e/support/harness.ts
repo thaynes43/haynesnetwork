@@ -19,6 +19,7 @@ import { startStubBazarr, type StubBazarrServer } from './stub-bazarr';
 import { startStubPlex, type StubPlexServer } from './stub-plex';
 import { startStubMaintainerr, type StubMaintainerrServer } from './stub-maintainerr';
 import { startStubPrometheus, type StubPrometheusServer } from './stub-prometheus';
+import { startStubGatus, type StubGatusServer } from './stub-gatus';
 import { startStubOpenWebUi, type StubOpenWebUiServer } from './stub-openwebui';
 import { startStubAuthentik, type StubAuthentikServer } from './stub-authentik';
 import { startStubBooks, type StubBooksServer } from './stub-books';
@@ -59,6 +60,8 @@ export interface RunningStack {
   maintainerr: StubMaintainerrServer;
   /** Stub Prometheus stand-in — free-space-trend e2e layer (ADR-030 amendment 2026-07-09). */
   prometheus: StubPrometheusServer;
+  /** Stub Gatus stand-in — front-page uptime badge e2e layer (ADR-079 / DESIGN-004 D-25). */
+  gatus: StubGatusServer;
   /** Stub Open WebUI stand-in — AI-usage sub-tab e2e layer (ADR-044 / DESIGN-022). */
   openWebUi: StubOpenWebUiServer;
   authentik: StubAuthentikServer;
@@ -195,6 +198,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
   let plex: StubPlexServer | undefined;
   let maintainerr: StubMaintainerrServer | undefined;
   let prometheus: StubPrometheusServer | undefined;
+  let gatus: StubGatusServer | undefined;
   let openWebUi: StubOpenWebUiServer | undefined;
   let authentik: StubAuthentikServer | undefined;
   let books: StubBooksServer | undefined;
@@ -235,6 +239,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     plex = await startStubPlex();
     maintainerr = await startStubMaintainerr();
     prometheus = await startStubPrometheus();
+    gatus = await startStubGatus();
     openWebUi = await startStubOpenWebUi();
     authentik = await startStubAuthentik();
     books = await startStubBooks();
@@ -253,6 +258,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       stubPlexBaseUrl: plex.baseUrl,
       stubMaintainerrBaseUrl: maintainerr.baseUrl,
       stubPrometheusBaseUrl: prometheus.baseUrl,
+      stubGatusBaseUrl: gatus.baseUrl,
       stubOpenWebUiBaseUrl: openWebUi.baseUrl,
       stubAuthentikBaseUrl: authentik.baseUrl,
       stubBooksBaseUrl: books.baseUrl,
@@ -360,6 +366,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     const runningPlex = plex;
     const runningMaintainerr = maintainerr;
     const runningPrometheus = prometheus;
+    const runningGatus = gatus;
     const runningOpenWebUi = openWebUi;
     const runningAuthentik = authentik;
     const runningBooks = books;
@@ -379,6 +386,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       plex: runningPlex,
       maintainerr: runningMaintainerr,
       prometheus: runningPrometheus,
+      gatus: runningGatus,
       openWebUi: runningOpenWebUi,
       authentik: runningAuthentik,
       books: runningBooks,
@@ -403,6 +411,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
         await runningBooks.stop().catch(() => undefined);
         await runningAuthentik.stop().catch(() => undefined);
         await runningOpenWebUi.stop().catch(() => undefined);
+        await runningGatus.stop().catch(() => undefined);
         await runningPrometheus.stop().catch(() => undefined);
         await runningMaintainerr.stop().catch(() => undefined);
         await runningPlex.stop().catch(() => undefined);
@@ -424,6 +433,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     if (books) await books.stop().catch(() => undefined);
     if (authentik) await authentik.stop().catch(() => undefined);
     if (openWebUi) await openWebUi.stop().catch(() => undefined);
+    if (gatus) await gatus.stop().catch(() => undefined);
     if (prometheus) await prometheus.stop().catch(() => undefined);
     if (maintainerr) await maintainerr.stop().catch(() => undefined);
     if (plex) await plex.stop().catch(() => undefined);
