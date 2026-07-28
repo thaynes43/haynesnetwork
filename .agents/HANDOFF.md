@@ -44,7 +44,8 @@ Full evidence chain: `.agents/context/2026-07-28-leaving-soon-duplicates-inciden
 
 Previous session state (MAM etc.) follows — still current except where this block supersedes it.
 
-**All open work is merged and live.** Nothing is in flight. Two items want an owner ruling (bottom).
+**All open work is merged and live.** Nothing is in flight. The two owner items below were RULED
+2026-07-28 (see the RESOLVED block) and queue as the next build work, ahead of new features.
 
 ### 1. MAM — the burst is MEASURED at +84; the gate math is now sized to it (DONE, live-verified)
 
@@ -112,13 +113,19 @@ Root cause: the live `space_policy` row predated ADR-073 and carried the retired
 at the read edge. **Owner saved successfully; the row self-healed** (both retired keys gone, the Movies cap
 50 edit persisted). No migration needed.
 
-### ▶ TWO OPEN OWNER ITEMS
+### ▶ TWO OPEN OWNER ITEMS — RESOLVED (owner rulings 2026-07-28; full record + scope:
+`.agents/context/2026-07-28-owner-rulings-gate-and-mam.md`). **Sequencing is binding: this tech
+debt gets solid BEFORE any new feature work.** Both reopen as build work:
 
-1. **The library-access gate returns "nothing visible" for a role with no grant rows.** That is what broke
-   the e2e seed — but it is also a production sharp edge: on a fresh deploy, BEFORE the first `plex-match`
-   sync runs, every non-admin would see an empty library. Not changed (it is ADR-047 INVARIANT territory).
-2. **MAM throughput vs safety.** Edge 100 spends ~50% of the allowance. Live with it, or accept more risk
-   for more throughput — but move it only on measured evidence.
+1. **Library-access gate — ruled BOTH ways solid:** (a) the seeded Default role gains all-servers
+   grants AT BOOTSTRAP (code guarantee, not configuration; new non-default roles stay
+   deny-by-default), and (b) the cold-start window closes — auto-trigger a plex-match sync on an
+   empty match table + an explicit "libraries are still syncing" non-admin empty state. Docs-first:
+   new ADR amending the ADR-024 bootstrap posture + the ADR-047 cold-start note, then the vertical.
+2. **MAM — ruled "harden first, then retune":** build the trend-aware dead-band override (a rising
+   count must not be held open by hysteresis — the 07-25 hazard) + activate PLAN-040 (DB-backed
+   audited knobs + in-app governor-state visibility) BEFORE any edge move. Edge stays 100 until
+   that layer exists; any retune stays measured-burst-gated.
 
 **Operational gotchas that cost time (both now proven):** `GH_TOKEN` goes stale ~1h into a session — the
 live token is at **`/creds/gh_token`**, needed for `gh` AND `git push` (the helper reads the env); do NOT
