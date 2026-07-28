@@ -17,6 +17,11 @@
   Whole-show/whole-artist Fix stays deliberately absent (FIX_TARGET_SCOPES doctrine).
 - **Docs-first artifacts:** **ADR-062** (Proposed — the books-Fix boundary) + **DESIGN-033**
   (Draft) — authored this pass; ratify (or Accept per granted authority) before code.
+  **Part 2 / Gap B: ADR-080 (Accepted 2026-07-28) — per-role media-action budgets** is the
+  build spec (table `role_media_action_budgets`, effective-limit resolver w/ fallback 25,
+  admin-edited + audited, books Force-Search joins the books pool, env override retired);
+  amend DESIGN-005 (D-17) + DESIGN-033 + PRD/glossary in the implementing change. Gap A's
+  design plugs into the same mechanism (ADR-080 C-06).
 - **Owner intent (2026-07-11, re-affirmed 2026-07-15):** the SAME Fix UX movies/TV have — Fix
   button + REASON modal + live progress + audit — for a LANDED bad book/audiobook/comic.
   Trigger class: German *Matilda*; the 2026-07-15 suspected-bad epub (which turned out to be a
