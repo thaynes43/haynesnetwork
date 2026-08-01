@@ -52,6 +52,12 @@ export * from './smart-alerts';
 // to this package (guard test). resolveGovernorConfig is the PLAN-040 limit/buffer seam.
 export * from './mam-governor';
 export * from './mam-clients';
+// ADR-083 / DESIGN-046 (PLAN-065 — *arr queue janitor) — the classifier (pure), the census-first
+// single-writer evaluator (append-only arr_queue_cleanup_actions; enforce only where a class×instance cell
+// is flipped, behind the safety rails), the DB-backed audited config + promotion-ladder derivation, the
+// /admin status read, and the confined *arr client bundle (@hnet/arr/write stays in this package — the
+// arr-write import guard). The nightly digest section is composed here + rendered by notify-outbox.
+export * from './queue-cleanup';
 // DESIGN-010 amendment — the Trash Overview landing aggregate (composes the reads above)
 export * from './trash-overview';
 export * from './storage-metrics';

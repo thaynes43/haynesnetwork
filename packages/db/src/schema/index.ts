@@ -89,6 +89,10 @@ export * from './books-collections';
 // sync mode upserts (the LL MAM-provider gate + the counts/limit that drove it). Guarded single-writer
 // table (evaluateMamGovernor); its transition trail is the notification_outbox rows (smart-alerts class).
 export * from './mam-gate-state';
+// ADR-083 / DESIGN-046 (PLAN-065) — the append-only census + action ledger the queue-cleanup sync mode
+// writes (evaluateQueueCleanup is the sole writer; the table IS the janitor's audit trail — the
+// poster_guard_applications append-only class). Ships all-census (observe-only) per the promotion ladder.
+export * from './arr-queue-cleanup-actions';
 // ADR-067 / DESIGN-039 (PLAN-055) — the Google Books quota circuit breaker's single-row state (the
 // mam_gate_state class): daily/minute 429 trips consulted by every GB call site through the domain
 // guardedGbResolve seam. Guarded single-writer table (gb-quota-breaker.ts); no audit/outbox trail.

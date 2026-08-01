@@ -54,6 +54,15 @@ export class GovernorConfigInvalidError extends Error {
   readonly code = 'GOVERNOR_CONFIG_INVALID' as const;
 }
 
+/**
+ * ADR-083 / DESIGN-046 D-05 (PLAN-065 — *arr queue janitor): the queue-cleanup config write violated an
+ * invariant (an unknown key, a bad mode, or a knob out of range — maxActionsPerRun 1..100, minItemAgeHours
+ * 0..168, retryEscalateRuns 1..48). Thrown by setArrQueueCleanupConfig BEFORE any row is written
+ * (defense-in-depth behind the API zod edge), so a malformed config can never be stored. Maps to BAD_REQUEST. */
+export class QueueCleanupConfigInvalidError extends Error {
+  readonly code = 'QUEUE_CLEANUP_CONFIG_INVALID' as const;
+}
+
 // ---------------------------------------------------------------------------
 // DESIGN-005 Phase 2 — media ledger / fix / sync errors (D-09, D-14, D-17).
 // ---------------------------------------------------------------------------

@@ -111,6 +111,13 @@ export interface WantedMissingParams {
  */
 const QUEUE_PAGE_SIZE = 200;
 
+/**
+ * ADR-083 / DESIGN-046 D-02 (PLAN-065 — *arr queue janitor) — the page size for the UNFILTERED whole-queue
+ * read `getQueueAll`. Bigger than QUEUE_PAGE_SIZE (that read filters to one parent) because the janitor reads
+ * the entire instance queue; `getQueueAll` follows pages until `totalRecords` is exhausted.
+ */
+const QUEUE_ALL_PAGE_SIZE = 250;
+
 const toIso = (value: string | Date) => (value instanceof Date ? value.toISOString() : value);
 
 /** Read endpoints shared verbatim by Sonarr/Radarr/Lidarr (D-03). */
@@ -154,6 +161,26 @@ abstract class ArrReadClientBase {
       sortKey: params.sortKey ?? 'date',
       sortDirection: params.sortDirection ?? 'descending',
     };
+  }
+
+  /**
+   * ADR-083 / DESIGN-046 D-02 (PLAN-065 — *arr queue janitor) — the UNFILTERED whole-queue read, paged
+   * (page size 250) following pages until `totalRecords` is exhausted. Read-only; shared verbatim by all
+   * three *arrs (the endpoint path `queue` is identical). Guards against a non-advancing / over-count page
+   * by also stopping on an empty page or a page count that would loop.
+   */
+  protected async getQueueAllRecords<T extends z.ZodType>(record: T): Promise<z.infer<T>[]> {
+    const all: z.infer<T>[] = [];
+    let page = 1;
+    for (;;) {
+      const res = await this.http.requestJson('GET', 'queue', pagedSchema(record), {
+        query: { page, pageSize: QUEUE_ALL_PAGE_SIZE },
+      });
+      all.push(...(res.records as z.infer<T>[]));
+      if (res.records.length === 0 || all.length >= res.totalRecords) break;
+      page += 1;
+    }
+    return all;
   }
 }
 
@@ -250,6 +277,11 @@ export class SonarrClient extends ArrReadClientBase {
     });
     return page.records;
   }
+
+  /** DESIGN-046 D-02 (PLAN-065) — the WHOLE Sonarr queue, paged (the janitor reads every errored grab). */
+  getQueueAll(): Promise<SonarrQueueRecord[]> {
+    return this.getQueueAllRecords(sonarrQueueRecordSchema);
+  }
 }
 
 /** Radarr v3 read client (D-01: live 6.0.x, `/api/v3`). */
@@ -326,6 +358,11 @@ export class RadarrClient extends ArrReadClientBase {
       },
     });
     return page.records;
+  }
+
+  /** DESIGN-046 D-02 (PLAN-065) — the WHOLE Radarr queue, paged (the janitor reads every errored grab). */
+  getQueueAll(): Promise<RadarrQueueRecord[]> {
+    return this.getQueueAllRecords(radarrQueueRecordSchema);
   }
 }
 
@@ -429,6 +466,11 @@ export class LidarrClient extends ArrReadClientBase {
       },
     });
     return page.records;
+  }
+
+  /** DESIGN-046 D-02 (PLAN-065) — the WHOLE Lidarr queue, paged (the janitor reads every errored grab). */
+  getQueueAll(): Promise<LidarrQueueRecord[]> {
+    return this.getQueueAllRecords(lidarrQueueRecordSchema);
   }
 }
 

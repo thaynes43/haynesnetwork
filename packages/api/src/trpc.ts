@@ -52,6 +52,7 @@ import {
   MediaActionBudgetRangeError,
   NotFoundError,
   OwuiUnavailableError,
+  QueueCleanupConfigInvalidError,
   PlexAccountUnmatchedError,
   PlexAllStateError,
   PlexServerUnavailableError,
@@ -468,6 +469,7 @@ const APP_CODED_ERRORS = [
   KapowarrUpstreamError,
   MediaActionBudgetRangeError,
   GovernorConfigInvalidError,
+  QueueCleanupConfigInvalidError,
 ] as const;
 
 const t = initTRPC.context<TRPCContext>().create({
@@ -548,6 +550,9 @@ export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
       throw new TRPCError({ code: 'BAD_REQUEST', message: err.message, cause: err });
     }
     if (err instanceof GovernorConfigInvalidError) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: err.message, cause: err });
+    }
+    if (err instanceof QueueCleanupConfigInvalidError) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: err.message, cause: err });
     }
     if (err instanceof LastAdminError) {

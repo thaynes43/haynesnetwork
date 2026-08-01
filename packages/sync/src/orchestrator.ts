@@ -58,6 +58,13 @@ import {
   type MamGovernorBundle,
   type MamGovernorReport,
   type MamGovernorTuning,
+  // ADR-083 / DESIGN-046 (PLAN-065) — the *arr queue janitor: the single-writer evaluator + the DB-first
+  // config resolver + the opaque confined client bundle (built inside @hnet/domain, so @hnet/sync never
+  // imports the confined arr write surface — the ADR-008 guard).
+  evaluateQueueCleanup,
+  resolveArrQueueCleanupConfig,
+  type QueueCleanupClients,
+  type QueueCleanupReport,
   type BooksActivityBundle,
   type ActivityFailuresReport,
   type ActivityFailureInput,
@@ -167,6 +174,9 @@ export interface RunSyncOptions {
   /** ADR-054 / DESIGN-027 — the MAM-governor client bundle (qB count read + the confined Prowlarr indexer
    *  toggle) the `mam-governor` mode drives. Required only for that mode; tests inject fetch-stubbed clients. */
   mamGovernor?: MamGovernorBundle;
+  /** ADR-083 / DESIGN-046 — the confined *arr queue-janitor client bundle (read + the domain-built write) the
+   *  `queue-cleanup` mode drives. Required only for that mode; tests inject stub per-instance clients. */
+  queueCleanup?: QueueCleanupClients;
   /** ADR-054 / DESIGN-027 — the governor's tuning (limit/buffer/stuck-hours). Resolved once per run via
    *  the resolveGovernorConfig SEAM (env in v1; PLAN-040 adds a DB override). Required only for that mode. */
   mamTuning?: MamGovernorTuning;
@@ -272,6 +282,10 @@ export interface SyncReport {
   mamGovernor?: MamGovernorReport | null;
   /** The mam-governor run's error — sets totalFailure for the CLI exit. */
   mamGovernorError?: string;
+  /** ADR-083 — the `queue-cleanup` result (null for every other mode / when it errored). */
+  queueCleanup?: QueueCleanupReport | null;
+  /** The queue-cleanup run's error — sets totalFailure for the CLI exit. */
+  queueCleanupError?: string;
   /** ADR-059 — the `activity-scan` failure-ledger result (null for every other mode / when it errored). */
   activity?: ActivityFailuresReport | null;
   /** The activity-scan run's error — sets totalFailure for the CLI exit. */
@@ -792,6 +806,58 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       activity,
       ...(activityError !== undefined ? { activityError } : {}),
       totalFailure: activityError !== undefined,
+    };
+  }
+
+  // ADR-083 / DESIGN-046 (PLAN-065 — *arr queue janitor) — the `queue-cleanup` mode is NOT a per-source loop:
+  // it reads the WHOLE download queue of Sonarr/Radarr/Lidarr READ-ONLY, classifies every errored grab, and
+  // via evaluateQueueCleanup writes one append-only census row per item into arr_queue_cleanup_actions — and,
+  // ONLY where the class×instance cell is `enforce` (the DB-backed audited config, resolved DB-first here),
+  // executes the class's cleanup behind the safety rails. Ships all-census. No *arr SOURCE loop, writes NO
+  // sync_runs row — its trail IS arr_queue_cleanup_actions (D-06). Returns early with a `queueCleanup` report.
+  // Per-instance isolation: one *arr unreachable never fails the others; totalFailure (all failed / a DB error)
+  // ⇒ nonzero exit so a persistently broken run is visible in the CronJob history.
+  if (options.mode === 'queue-cleanup') {
+    const startedAt = new Date();
+    if (!options.queueCleanup) {
+      throw new Error('queue-cleanup requires an *arr client bundle (queueCleanup)');
+    }
+    let queueCleanup: QueueCleanupReport | null = null;
+    let queueCleanupError: string | undefined;
+    try {
+      const config = await resolveArrQueueCleanupConfig(db);
+      queueCleanup = await evaluateQueueCleanup({
+        db,
+        clients: options.queueCleanup,
+        config,
+        logger,
+      });
+      logger.info('queue-cleanup complete', {
+        rowsWritten: queueCleanup.rowsWritten,
+        totalFailure: queueCleanup.totalFailure,
+        instances: queueCleanup.instances.map((i) => ({
+          instance: i.instance,
+          read: i.read,
+          observed: i.itemsObserved,
+          actionsTaken: i.actionsTaken,
+          errors: i.errors,
+          ...(i.readError !== undefined ? { readError: i.readError } : {}),
+        })),
+      });
+    } catch (error) {
+      queueCleanupError = error instanceof Error ? error.message : String(error);
+      logger.error('queue-cleanup failed', { error: queueCleanupError });
+    }
+    return {
+      mode: options.mode,
+      startedAt,
+      finishedAt: new Date(),
+      sources: [],
+      backfill: null,
+      fixesCompleted: null,
+      queueCleanup,
+      ...(queueCleanupError !== undefined ? { queueCleanupError } : {}),
+      totalFailure: queueCleanupError !== undefined || (queueCleanup?.totalFailure ?? false),
     };
   }
 
