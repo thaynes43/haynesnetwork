@@ -4,7 +4,27 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-## ▶ NEXT SESSION — start here (written 2026-07-28 ~20:00 UTC — Gap B SHIPPED + owner-tuned; Gap A is next)
+## ▶ NEXT SESSION — start here (written 2026-08-01 — ADR-083 arr queue janitor: docs landed, BUILD IS NEXT; census ladder is a standing obligation)
+
+### PLAN-065 — arr queue janitor (errored-grab cleanup): docs merged, build in flight
+
+- Owner approved (2026-07-31) automating cleanup of the stuck *arr queue piles (live at
+  decision time: Sonarr 11 / Radarr 3 `importBlocked`, Lidarr 59 `importPending`). Chain:
+  **ADR-083** (Accepted; hard rule 4 amended — CLAUDE.md updated same change) → **DESIGN-046**
+  → **PLAN-065** (build stages S1–S7 + the promotion ladder). Glossary T-237..T-240.
+- **⚠ STANDING OBLIGATION until PLAN-065 records L3:** the janitor ships **census-only** and
+  must NOT stay there. The owner's explicit worry is stagnation — *"we leave it in census mode
+  and miss out on fine tuning it to a point where it provides value."* Every session that
+  touches this repo: read PLAN-065 §Ladder, and if any promotion criterion is met, flip the
+  config cell(s) (audited) or write a dated blocker into the §Ladder log. The nightly digest
+  prints ladder level + age and nags `[janitor: promotion due]` — an unactioned nag across
+  sessions is a process violation.
+- State when this block was written: docs on `main`; implementation NOT yet merged (S1–S6 one
+  feat PR, then S7 deploy: release → haynes-ops `sync-queue-cleanup` CronJob `25 * * * *` →
+  first-census verification per the plan's contract). If the build PR is merged but S7 isn't
+  verified, S7 is the resume point; if census is live, the resume point is the ladder.
+
+## ▶ Prior top block (written 2026-07-28 ~20:00 UTC — Gap B SHIPPED + owner-tuned; Gap A is next)
 
 ### PLAN-041 Part 2 Gap B — per-role media-action budgets: LIVE (v0.92.0) and the Default budget is SET
 
