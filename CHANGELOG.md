@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.95.1](https://github.com/thaynes43/haynesnetwork/compare/v0.95.0...v0.95.1) (2026-08-01)
+
+
+### Documentation
+
+* **agents:** PLAN-065 census LIVE — v0.95.0 deployed, first census passed its contract (ladder log updated) ([#525](https://github.com/thaynes43/haynesnetwork/issues/525)) ([8bdc980](https://github.com/thaynes43/haynesnetwork/commit/8bdc980d6837286f534d58b813055630480f1233))
+
 ## [0.95.0](https://github.com/thaynes43/haynesnetwork/compare/v0.94.0...v0.95.0) (2026-08-01)
 
 
