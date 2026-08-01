@@ -19,10 +19,15 @@
   config cell(s) (audited) or write a dated blocker into the §Ladder log. The nightly digest
   prints ladder level + age and nags `[janitor: promotion due]` — an unactioned nag across
   sessions is a process violation.
-- State when this block was written: docs on `main`; implementation NOT yet merged (S1–S6 one
-  feat PR, then S7 deploy: release → haynes-ops `sync-queue-cleanup` CronJob `25 * * * *` →
-  first-census verification per the plan's contract). If the build PR is merged but S7 isn't
-  verified, S7 is the resume point; if census is live, the resume point is the ladder.
+- **CENSUS IS LIVE (same session, 2026-08-01): S1–S7 complete.** hnet #524 merged → v0.95.0
+  (signed image) → haynes-ops #2324 (CronJob `25 * * * *`) → 3/3 pods on v0.95.0 → first
+  census PASSED its contract (73 rows = the exact live queue, 0 actions, 0 errors; queues
+  verified untouched). Early class mix (full detail in the PLAN-065 ladder log): almost no
+  `have_better` yet — Sonarr 5 `bad_release`/6 `unknown`, Radarr 3 `unknown`, Lidarr 7/52.
+  **The resume point is the PLAN-065 §Ladder log**: read the nightly digest's janitor
+  sections, tune the D-03 classifier patterns against the real reason strings (small `fix:`
+  PRs), then run the L0→L1 spot-check. The digest lands with the 21:05 ET failure digest;
+  `/admin/janitor` shows the ladder + 7-day summary live.
 
 ## ▶ Prior top block (written 2026-07-28 ~20:00 UTC — Gap B SHIPPED + owner-tuned; Gap A is next)
 
