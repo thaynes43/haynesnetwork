@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.95.0](https://github.com/thaynes43/haynesnetwork/compare/v0.94.0...v0.95.0) (2026-08-01)
+
+
+### Features
+
+* **janitor:** arr queue janitor — census-first errored-grab cleanup (ADR-083) ([#524](https://github.com/thaynes43/haynesnetwork/issues/524)) ([bebff49](https://github.com/thaynes43/haynesnetwork/commit/bebff49c64b2a846df31a9fb41b6bb93f8b24c9e))
+
+
+### Documentation
+
+* **adr:** ADR-083 — arr queue janitor, census-first (DESIGN-046, PLAN-065) ([#523](https://github.com/thaynes43/haynesnetwork/issues/523)) ([28e8d0f](https://github.com/thaynes43/haynesnetwork/commit/28e8d0f1d75a8edd36a2492df6a14408bb5f83ef))
+* **agents:** debt queue COMPLETE — ADR-082 live-verified (v0.94.0, two-tick evidence); PLAN-040 → completed/ ([#521](https://github.com/thaynes43/haynesnetwork/issues/521)) ([ff12c7d](https://github.com/thaynes43/haynesnetwork/commit/ff12c7d966d8c07553f06f1cc0a1e3ec844d68c9))
+
 ## [0.94.0](https://github.com/thaynes43/haynesnetwork/compare/v0.93.0...v0.94.0) (2026-07-28)
 
 
