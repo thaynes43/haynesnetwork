@@ -48,8 +48,12 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    may talk to in-cluster services via `*.svc.cluster.local` — that's fine and unrelated to
    user-facing catalog links.)
 4. *_The *arrs are the source of truth*_ for media lists. This app's ledger is a synced copy
-   plus attribution/audit — sync flows in from the *arrs; the only write-back is the explicit
-   failsafe restore and fix actions.
+   plus attribution/audit — sync flows in from the *arrs; the only write-backs are the explicit
+   failsafe restore and fix actions, plus the **ADR-083 queue janitor** (automated cleanup of
+   errored *grabs* — queue-item remove/blocklist/retry/re-search only, never library files;
+   census-first, per-class enforcement config, see DESIGN-046). **The janitor is in CENSUS
+   (observe-only) rollout until PLAN-065 records L3** — check `.agents/HANDOFF.md` for the
+   current ladder level; advancing it is a standing obligation, not optional.
 5. **Auth is Authentik OIDC only.** No email/password, no invite tokens. Admin role is
    bootstrapped by matching the OIDC email against the `BOOTSTRAP_ADMIN_EMAILS` allowlist.
 6. Role/permission mutations must write audit rows in the same transaction (see
