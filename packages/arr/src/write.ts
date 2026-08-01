@@ -107,6 +107,23 @@ abstract class ArrWriteClientBase {
     return this.runCommand({ name: 'ProcessMonitoredDownloads' });
   }
 
+  /**
+   * ADR-083 / DESIGN-046 D-04 (PLAN-065 — *arr queue janitor) — `DELETE /queue/{id}?removeFromClient=&
+   * blocklist=`: remove a stuck grab from the download queue. `removeFromClient` also deletes it from the
+   * download client (SABnzbd/qBittorrent); `blocklist` marks the release so the same one is never re-grabbed
+   * (the *arr picks a different release on a re-search). Shared verbatim by Sonarr/Radarr/Lidarr (identical
+   * endpoint + query params, verified against the shared Servarr `QueueController`). Confined to
+   * packages/domain (the ADR-008 write guard) exactly like the other write clients.
+   */
+  deleteQueueItem(
+    id: number,
+    opts: { removeFromClient: boolean; blocklist: boolean },
+  ): Promise<void> {
+    return this.http.requestVoid('DELETE', `queue/${id}`, {
+      query: { removeFromClient: opts.removeFromClient, blocklist: opts.blocklist },
+    });
+  }
+
   protected runCommand(body: Record<string, unknown>): Promise<ArrCommandResponse> {
     return this.http.requestJson('POST', 'command', commandResponseSchema, { body });
   }

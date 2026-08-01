@@ -184,5 +184,9 @@ export const queueRecordBaseSchema = z.object({
   statusMessages: z
     .array(z.object({ title: z.string().nullish(), messages: z.array(z.string()).nullish() }))
     .nullish(),
+  // ADR-083 / DESIGN-046 D-02 (PLAN-065 — *arr queue janitor) — when the grab entered the queue. The
+  // janitor's `minItemAgeHours` rail reads it so a freshly-completed item gets its organic import window
+  // before any action fires. ISO string; nullish (an item Sonarr/Radarr/Lidarr can't date omits it).
+  added: z.string().nullish(),
 });
 export type ArrQueueRecordBase = z.infer<typeof queueRecordBaseSchema>;

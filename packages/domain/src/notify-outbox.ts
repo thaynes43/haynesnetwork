@@ -330,6 +330,46 @@ export type OutboxEmailSender = (mail: OutboxEmail) => Promise<void>;
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 
 /**
+ * ADR-083 / DESIGN-046 D-07 — render the queue-janitor rollup section of the nightly digest from its
+ * (jsonb) payload object. Defensive (typeof-guarded) since it reads a stored payload: per instance × class
+ * counts (census vs enforced) with the top-3 reasons, the actions total, and the ladder line (level + age +
+ * next criteria). Plain text, matching the digest's owner-facing style.
+ */
+function renderQueueCleanupSection(qc: Record<string, unknown>): string {
+  const observed = num(qc.observed);
+  const actions = num(qc.actions);
+  const lines: string[] = [
+    `Queue janitor (last 24h): ${observed} observed, ${actions} actioned.`,
+  ];
+  const instances = Array.isArray(qc.instances) ? (qc.instances as Array<Record<string, unknown>>) : [];
+  for (const inst of instances) {
+    const classes = Array.isArray(inst.classes) ? (inst.classes as Array<Record<string, unknown>>) : [];
+    if (classes.length === 0) continue;
+    lines.push(`\n${str(inst.instance) || 'unknown'}:`);
+    for (const c of classes) {
+      const cls = str(c.actionClass).replace(/_/g, ' ');
+      lines.push(` • ${cls}: ${num(c.census)} census, ${num(c.enforced)} enforced`);
+      const reasons = Array.isArray(c.topReasons)
+        ? (c.topReasons as Array<Record<string, unknown>>)
+        : [];
+      for (const r of reasons) {
+        const reason = str(r.reason);
+        if (reason !== '') lines.push(`     – ${reason} ×${num(r.count)}`);
+      }
+    }
+  }
+  const ladder =
+    qc.ladder && typeof qc.ladder === 'object' ? (qc.ladder as Record<string, unknown>) : null;
+  if (ladder) {
+    const age = ladder.ageDays == null ? 'unset' : `${num(ladder.ageDays)}d at level`;
+    lines.push(`\nLadder: L${num(ladder.level)} (${age}).`);
+    if (str(ladder.nextCriteria) !== '') lines.push(`Next: ${str(ladder.nextCriteria)}`);
+  }
+  lines.push('\nReview: https://haynesnetwork.com/admin/janitor\n');
+  return lines.join('\n');
+}
+
+/**
  * Render an email-channel row's subject/body from its event type + payload (DESIGN-031 D-03 — the
  * `renderOutboxMessage` sibling; plain text, deep link in the last line). Returns `null` for an event
  * type email does not render OR a row missing its `payload.to` — such a row is a bug (email rows
@@ -372,19 +412,38 @@ export function renderOutboxEmail(row: {
         text: `${replyAuthor} replied to your ticket “${title}”.\n\n${snippet}${snippet !== '' ? '\n\n' : ''}Open it: ${ticketUrl}\n`,
       };
     }
-    // ADR-060 follow-up (PLAN-048 tail) — the nightly OPEN-failures digest (one row per run).
+    // ADR-060 follow-up (PLAN-048 tail) — the nightly OPEN-failures digest (one row per run). ADR-083 /
+    // DESIGN-046 D-07 folds the queue-janitor rollup into the SAME row: the digest now also fires on a clean
+    // ledger when the janitor observed anything in 24h, and the subject gains `[janitor: promotion due]` when
+    // a promotion criterion is met (or the ladder has stagnated > 14 days at a level).
     case 'activity_failure_digest': {
       const count = typeof p.count === 'number' ? p.count : 0;
       const items = Array.isArray(p.items) ? (p.items as Array<Record<string, unknown>>) : [];
-      const lines = items
+      const failureLines = items
         .map((f) => ` • ${str(f.title) || 'unknown'} — ${str(f.failureKind).replace(/_/g, ' ')}${str(f.sourceApp) !== '' ? ` (${str(f.sourceApp)})` : ''}`)
         .join('\n');
       const more = count > items.length ? `\n…and ${count - items.length} more.` : '';
-      return {
-        to,
-        subject: `[haynesnetwork] ${count} stuck import${count === 1 ? '' : 's'} need attention`,
-        text: `Open import failures at digest time:\n\n${lines}${more}\n\nReview + retry: https://haynesnetwork.com/library/activity\n`,
-      };
+
+      const qc =
+        p.queueCleanup && typeof p.queueCleanup === 'object'
+          ? (p.queueCleanup as Record<string, unknown>)
+          : null;
+      const promotionDue = qc?.promotionDue === true;
+
+      const subject =
+        `[haynesnetwork] ` +
+        (count > 0
+          ? `${count} stuck import${count === 1 ? '' : 's'} need attention`
+          : `Queue janitor census — ${num(qc?.observed)} observed (24h)`) +
+        (promotionDue ? ' [janitor: promotion due]' : '');
+
+      const failureBlock =
+        count > 0
+          ? `Open import failures at digest time:\n\n${failureLines}${more}\n\nReview + retry: https://haynesnetwork.com/library/activity\n`
+          : '';
+      const janitorBlock = qc ? `${count > 0 ? '\n' : ''}${renderQueueCleanupSection(qc)}` : '';
+
+      return { to, subject, text: `${failureBlock}${janitorBlock}` };
     }
     // R-196 — the author's opt-in status-transition notification.
     case 'ticket_status_changed': {

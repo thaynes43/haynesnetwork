@@ -39,7 +39,8 @@ function failure(overrides: Partial<ActivityFailureInput> & { sourceRef: string;
 describe('runFailureDigest (ADR-060 follow-up)', () => {
   it('a clean ledger enqueues NOTHING', async () => {
     const report = await runFailureDigest({ db: t.db });
-    expect(report).toEqual({ openCount: 0, enqueued: 0 });
+    // ADR-083 / DESIGN-046 D-07 — the report now also carries the 24h janitor observation count (0 here).
+    expect(report).toEqual({ openCount: 0, enqueued: 0, queueObserved: 0 });
     expect(await t.db.select().from(notificationOutbox)).toHaveLength(0);
   });
 
@@ -60,7 +61,7 @@ describe('runFailureDigest (ADR-060 follow-up)', () => {
     });
 
     const report = await runFailureDigest({ db: t.db, adminEmail: 'admin@haynesnetwork.com' });
-    expect(report).toEqual({ openCount: 1, enqueued: 1 });
+    expect(report).toEqual({ openCount: 1, enqueued: 1, queueObserved: 0 });
 
     const rows = await t.db.select().from(notificationOutbox);
     const digest = rows.filter((r) => r.eventType === 'activity_failure_digest');

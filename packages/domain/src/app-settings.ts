@@ -307,6 +307,16 @@ export interface AppSettingValueMap {
     resumeFloor: number;
     trendPauseDelta: number;
   };
+  // ADR-083 / DESIGN-046 D-05 (PLAN-065) — the DB-backed audited *arr queue-janitor config. An object (so the
+  // getAppSetting typeof-guard treats it like motd/mam_governor_config); read for resolution through the
+  // dedicated getArrQueueCleanupConfig / resolveArrQueueCleanupConfig helpers (raw-row presence + validation),
+  // written through setArrQueueCleanupConfig (write-time validation). Absent row ⇒ all-census (observe-only).
+  arr_queue_cleanup_config: {
+    modes: Record<string, Record<string, string>>;
+    maxActionsPerRun: number;
+    minItemAgeHours: number;
+    retryEscalateRuns: number;
+  };
 }
 
 /** DESIGN-035 D-17 — the owner-fixed default non-admin collection size cap (LISTS are the admin-only
@@ -357,6 +367,19 @@ export const APP_SETTING_DEFAULTS: AppSettingValueMap = {
   // trend delta 15). Only used as the audit "before" baseline + the getAppSettings map fallback; the
   // governor resolves via raw-row presence (getMamGovernorConfig), so an absent row means env/defaults.
   mam_governor_config: { limit: 20, buffer: 5, resumeFloor: 10, trendPauseDelta: 15 },
+  // ADR-083 — the code-default janitor config: ALL-CENSUS (observe-only), caps 10/2h/6-run. Used as the audit
+  // "before" baseline + the getAppSettings map fallback; the mode resolves via resolveArrQueueCleanupConfig
+  // (raw-row presence), so an absent row means all-census.
+  arr_queue_cleanup_config: {
+    modes: {
+      sonarr: { have_better: 'census', retry_import: 'census', bad_release: 'census' },
+      radarr: { have_better: 'census', retry_import: 'census', bad_release: 'census' },
+      lidarr: { have_better: 'census', retry_import: 'census', bad_release: 'census' },
+    },
+    maxActionsPerRun: 10,
+    minItemAgeHours: 2,
+    retryEscalateRuns: 6,
+  },
 };
 
 /**

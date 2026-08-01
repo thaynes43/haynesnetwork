@@ -405,8 +405,67 @@ export const SYNC_RUN_KINDS = [
   // SYNC_RUN_KINDS so the CLI --mode parser + SyncMode accept it (migration 0056 rebuilds the
   // sync_runs.run_kind CHECK).
   'books-collections-sync',
+  // ADR-083 / DESIGN-046 (PLAN-065 — *arr queue janitor) — 'queue-cleanup' reads the WHOLE download queue of
+  // Sonarr/Radarr/Lidarr READ-ONLY, classifies every errored grab into an Action Class (T-239), persists one
+  // append-only observation row per item into arr_queue_cleanup_actions, and — only where that class×instance
+  // is switched to `enforce` (the Promotion Ladder T-240, DB-backed audited config) — executes the class's
+  // cleanup (remove-from-client + blocklist / ProcessMonitoredDownloads / blocklist + re-search). Ships
+  // ALL-CENSUS (T-238: observe-only). Standalone mode: no --source, writes NO sync_runs row — its trail is the
+  // arr_queue_cleanup_actions table (D-06) plus one JSON log line per instance. It joins SYNC_RUN_KINDS so the
+  // CLI --mode parser + SyncMode accept it (migration 0075 rebuilds the sync_runs.run_kind CHECK for parity).
+  'queue-cleanup',
 ] as const;
 export type SyncRunKind = (typeof SYNC_RUN_KINDS)[number];
+
+// ---------------------------------------------------------------------------
+// ADR-083 / DESIGN-046 (PLAN-065 — *arr queue janitor). The classifier's Action Classes (T-239) and the
+// per-class×instance enforcement MODES (T-240). Both are text+CHECK on arr_queue_cleanup_actions / the
+// audited arr_queue_cleanup_config app-setting; these const arrays are the single source of truth for the
+// TS types AND the SQL CHECKs (the SPACE_POLICY_MODES / ACTIVITY_ACTIONS idiom).
+// ---------------------------------------------------------------------------
+
+/**
+ * The Action Class every queue item classifies into (DESIGN-046 D-03, first-match order). `have_better` — the
+ * *arr already holds equal/better quality (remove + blocklist, no re-search); `retry_import` — a stuck/
+ * transient import (bounded ProcessMonitoredDownloads); `bad_release` — an unparseable/failed/defective grab
+ * (blocklist + re-search where still monitored); `unknown` — everything else, NEVER acted on (ADR-083,
+ * normative — reported only). Classification patterns live in versioned code; enforcement scope lives in config.
+ */
+export const QUEUE_CLEANUP_ACTION_CLASSES = [
+  'have_better',
+  'retry_import',
+  'bad_release',
+  'unknown',
+] as const;
+export type QueueCleanupActionClass = (typeof QUEUE_CLEANUP_ACTION_CLASSES)[number];
+
+/** Per class×instance enforcement mode (DESIGN-046 D-05, T-240 cells). Ships all-census; `unknown` has no
+ *  enforce state by construction (it is never a config cell). The SPACE_POLICY_MODES idiom. */
+export const QUEUE_CLEANUP_MODES = ['census', 'enforce'] as const;
+export type QueueCleanupMode = (typeof QUEUE_CLEANUP_MODES)[number];
+
+/**
+ * What the janitor DID to a queue item this run (arr_queue_cleanup_actions.action, DESIGN-046 D-06). `none` —
+ * observed only (census, or unknown); `removed_blocklisted` — removed from the client + blocklisted, no
+ * re-search (have_better, or an unmonitored bad_release); `retried_import` — covered by this run's single
+ * ProcessMonitoredDownloads; `blocklisted_searched` — blocklisted + re-searched (a monitored bad_release);
+ * `skipped_young` — younger than minItemAgeHours (classified, never acted); `skipped_cap` — the per-instance
+ * per-run mutation cap was already spent.
+ */
+export const QUEUE_CLEANUP_ACTIONS = [
+  'none',
+  'removed_blocklisted',
+  'retried_import',
+  'blocklisted_searched',
+  'skipped_young',
+  'skipped_cap',
+] as const;
+export type QueueCleanupAction = (typeof QUEUE_CLEANUP_ACTIONS)[number];
+
+/** The outcome of a row (arr_queue_cleanup_actions.outcome, DESIGN-046 D-06). `observed` — census / no action;
+ *  `done` — the enforce action succeeded; `error` — the *arr write failed (logged, counts against the cap). */
+export const QUEUE_CLEANUP_OUTCOMES = ['observed', 'done', 'error'] as const;
+export type QueueCleanupOutcome = (typeof QUEUE_CLEANUP_OUTCOMES)[number];
 
 // DESIGN-035 D-10' / R-214 — the mirrored Plex collection CATEGORY is now an OPEN, free-form string
 // derived from the collection's own labels (see @hnet/domain `deriveCollectionCategory`), NOT a
@@ -717,6 +776,14 @@ export const APP_SETTING_KEYS = [
   // floor can never be stored. Admin-mutated + audited through the same setAppSetting single-writer
   // (setMamGovernorConfig validates first); migration 0074 relaxes the CHECK.
   'mam_governor_config',
+  // ADR-083 / DESIGN-046 D-05 (PLAN-065 — *arr queue janitor) — the audited janitor config (jsonb object:
+  // { modes: { sonarr|radarr|lidarr: { have_better|retry_import|bad_release: 'census'|'enforce' } },
+  // maxActionsPerRun, minItemAgeHours, retryEscalateRuns }). The Promotion Ladder (T-240) is these cells:
+  // DEFAULT ALL-CENSUS (no row ⇒ observe-only), owner-flippable per cell at runtime through the same
+  // setAppSetting single-writer (audit row same-tx, hard rule 6; setArrQueueCleanupConfig validates the
+  // invariants first). No env tier (unlike the governor there is no pre-existing env contract). migration
+  // 0075 relaxes the CHECK.
+  'arr_queue_cleanup_config',
 ] as const;
 export type AppSettingKey = (typeof APP_SETTING_KEYS)[number];
 

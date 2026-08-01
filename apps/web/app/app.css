@@ -7838,3 +7838,131 @@ button.builder-card:hover {
 .gov-transition__when {
   font-size: 12px;
 }
+
+/* ---------------------------------------------------------------------------
+   ADR-083 / DESIGN-046 D-08 (PLAN-065) — /admin/janitor: the *arr queue-janitor
+   ladder + enforcement surface. Reflow-safe (ADR-015): mode cells reserve the
+   wider label's width so census⇄enforce recolors without moving the grid; the
+   ladder pill and save-status slot hold their footprint. Tokens only.
+   --------------------------------------------------------------------------- */
+.janitor__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.janitor-pill {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+.janitor-pill--l0 {
+  color: var(--color-info);
+  border-color: color-mix(in srgb, var(--color-info) 40%, var(--color-border));
+  background: color-mix(in srgb, var(--color-info) 12%, transparent);
+}
+.janitor-pill--l1 {
+  color: var(--color-warning);
+  border-color: color-mix(in srgb, var(--color-warning) 40%, var(--color-border));
+  background: color-mix(in srgb, var(--color-warning) 12%, transparent);
+}
+.janitor-pill--l2 {
+  color: var(--color-accent);
+  border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
+.janitor-pill--due {
+  color: var(--color-danger);
+  border-color: color-mix(in srgb, var(--color-danger) 45%, var(--color-border));
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+}
+.janitor__age {
+  margin-top: 4px;
+}
+.janitor__criteria {
+  font-size: 13px;
+  color: var(--color-text);
+  margin: 8px 0 0;
+}
+.janitor-grid-wrap {
+  overflow-x: auto;
+}
+.janitor-grid {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+}
+.janitor-grid th,
+.janitor-grid td {
+  text-align: left;
+  padding: 10px 12px 10px 0;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
+  font-size: 13px;
+}
+.janitor-grid thead th {
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+.janitor-grid tbody tr:last-child th,
+.janitor-grid tbody tr:last-child td {
+  border-bottom: 0;
+}
+.janitor-grid__class {
+  display: block;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.janitor-grid th[scope='row'] .field-hint {
+  max-width: 34ch;
+}
+/* The mode cell — one fixed footprint for Census / Enforce / Report only (ADR-015). */
+.janitor-mode {
+  display: inline-block;
+  min-width: 92px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.janitor-mode--census {
+  color: var(--color-info);
+  border-color: color-mix(in srgb, var(--color-info) 40%, var(--color-border));
+  background: color-mix(in srgb, var(--color-info) 10%, transparent);
+}
+.janitor-mode--enforce {
+  color: var(--color-accent);
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+}
+.janitor-mode--fixed {
+  cursor: default;
+  border-style: dashed;
+}
+.janitor-knobs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+.janitor__save {
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+.janitor__status {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  min-height: 1.2em;
+}
+.janitor-grid__enforced {
+  color: var(--color-accent);
+}

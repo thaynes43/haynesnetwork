@@ -8,6 +8,7 @@ import { asc, isNull } from 'drizzle-orm';
 import { resolveDb } from '../db-client';
 import { enqueueOutbox } from '../notify-outbox';
 import { computeEarliestSend, getNotifyWindow } from '../notify-window';
+import { buildQueueCleanupDigestSection } from '../queue-cleanup';
 import { ticketAdminEmail } from '../tickets';
 
 /** The digest lists at most this many failures in the email body (the count is always exact). */
@@ -16,8 +17,10 @@ const DIGEST_ITEM_CAP = 20;
 export interface FailureDigestReport {
   /** OPEN failures at digest time (resolved_at IS NULL). */
   openCount: number;
-  /** 1 when a digest email row was enqueued, 0 on a clean ledger. */
+  /** 1 when a digest email row was enqueued, 0 on a clean ledger AND a janitor-silent 24h. */
   enqueued: number;
+  /** ADR-083 / DESIGN-046 D-07 — queue-janitor rows observed in the last 24h (0 when the janitor was silent). */
+  queueObserved: number;
 }
 
 /**
@@ -47,7 +50,12 @@ export async function runFailureDigest(input: {
     .where(isNull(activityImportFailures.resolvedAt))
     .orderBy(asc(activityImportFailures.firstSeenAt));
 
-  if (open.length === 0) return { openCount: 0, enqueued: 0 };
+  // ADR-083 / DESIGN-046 D-07 — the janitor section: the digest now enqueues when EITHER open failures exist
+  // OR the janitor observed anything in the last 24h (a clean ledger no longer suppresses janitor visibility).
+  const queueCleanup = await buildQueueCleanupDigestSection({ db: input.db, now });
+  const queueObserved = queueCleanup?.observed ?? 0;
+
+  if (open.length === 0 && queueCleanup === null) return { openCount: 0, enqueued: 0, queueObserved: 0 };
 
   const window = await getNotifyWindow(input.db);
   await enqueueOutbox(db, {
@@ -62,8 +70,11 @@ export async function runFailureDigest(input: {
         source: f.source,
         sourceApp: f.sourceApp,
       })),
+      // The janitor rollup rides the SAME digest row (D-07); renderOutboxEmail composes the section +
+      // appends '[janitor: promotion due]' to the subject when promotionDue.
+      ...(queueCleanup ? { queueCleanup } : {}),
     },
     earliestSendAt: computeEarliestSend(now, window),
   });
-  return { openCount: open.length, enqueued: 1 };
+  return { openCount: open.length, enqueued: 1, queueObserved };
 }

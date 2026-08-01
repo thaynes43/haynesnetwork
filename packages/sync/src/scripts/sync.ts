@@ -19,6 +19,7 @@ import {
   booksActivityBundleFromEnv,
   buildArrActivityAdapter,
   buildKapowarrActivityAdapter,
+  arrQueueCleanupClientsFromEnv,
   createGbCallMeter,
   kapowarrBundleFromEnv,
   lazyLibrarianBundleFromEnv,
@@ -33,6 +34,7 @@ import {
   type GbCallMeter,
   type KapowarrClientBundle,
   type LazyLibrarianClientBundle,
+  type QueueCleanupClients,
   type UtilizationArrBundle,
 } from '@hnet/domain';
 import { prometheusClientFromEnv } from '@hnet/metrics';
@@ -54,7 +56,7 @@ import type { BooksSyncBundle } from '../books';
 import { createConsoleLogger } from '../logger';
 import { runSync } from '../orchestrator';
 
-const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy|notify-outbox|smart-alerts|poster-guard|ai-usage-sync|authentik-users|books-sync|plex-match|collections-sync|books-collections-sync|mam-governor|goodreads-sync|format-pairing|activity-scan [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
+const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy|notify-outbox|smart-alerts|poster-guard|ai-usage-sync|authentik-users|books-sync|plex-match|collections-sync|books-collections-sync|mam-governor|goodreads-sync|format-pairing|activity-scan|queue-cleanup [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
 
   --mode=full              item-list upsert + tombstone pass per *arr (+ Seerr requests)
   --mode=incremental       history/since cursor polling per *arr (+ Seerr requests)
@@ -161,6 +163,15 @@ const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-bat
                            independently (a source down never closes another's strands). Needs
                            LAZYLIBRARIAN_API_KEY + SABNZBD_API_KEY + SONARR/RADARR/LIDARR_API_KEY (URLs default
                            in-cluster). No --source. Writes no sync_runs row.
+  --mode=queue-cleanup     the *arr QUEUE JANITOR (ADR-083 — census-first cleanup of errored grabs): read the
+                           WHOLE download queue of Sonarr/Radarr/Lidarr READ-ONLY, classify every errored grab
+                           into an Action Class (have_better / retry_import / bad_release / unknown), and write
+                           one append-only census row per item into arr_queue_cleanup_actions — and, ONLY where
+                           the class×instance cell is switched to enforce (the DB-backed audited
+                           arr_queue_cleanup_config; ships ALL-CENSUS), execute the cleanup (remove-from-client
+                           + blocklist / ProcessMonitoredDownloads / blocklist + re-search) behind the safety
+                           rails. Needs SONARR/RADARR/LIDARR_URL/_API_KEY (URLs default in-cluster). No
+                           --source. Writes no sync_runs row.
   --source=NAME            limit the run to one source (repeatable; default: all sources; for
                            metadata-refresh the default is the three *arr kinds)
   --force-tombstones       override the mass-tombstone guard (DESIGN-005 D-14/Q-03)
@@ -224,6 +235,7 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
       mode === 'books-collections-sync' ||
       mode === 'mam-governor' ||
       mode === 'activity-scan' ||
+      mode === 'queue-cleanup' ||
       mode === 'goodreads-sync' ||
       mode === 'format-pairing') &&
     sources.length > 0
@@ -247,6 +259,7 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
     mode === 'books-collections-sync' ||
     mode === 'mam-governor' ||
     mode === 'activity-scan' ||
+    mode === 'queue-cleanup' ||
     mode === 'goodreads-sync' ||
     mode === 'format-pairing'
       ? []
@@ -344,6 +357,12 @@ async function main(): Promise<number> {
     args.mode === 'mam-governor'
       ? await resolveGovernorConfig({ db, warn: (message, fields) => logger.warn(message, fields) })
       : undefined;
+  // ADR-083 / DESIGN-046 — the *arr queue-janitor bundle (read + the confined domain-built write) built INSIDE
+  // @hnet/domain (arrQueueCleanupClientsFromEnv), so the confined arr write surface stays domain-only (the
+  // ADR-008 guard). Throws one ArrConfigError naming any absent SONARR/RADARR/LIDARR_API_KEY. The enforcement
+  // config is resolved DB-first inside the orchestrator (no row ⇒ all-census, observe-only).
+  const queueCleanup: QueueCleanupClients | undefined =
+    args.mode === 'queue-cleanup' ? arrQueueCleanupClientsFromEnv() : undefined;
   // ADR-059 / DESIGN-030 — the books activity bundle (LL wanted-table read + SAB queue/history read + the
   // confined LL write) built INSIDE @hnet/domain (booksActivityBundleFromEnv), so the confined LL write
   // surface stays domain-only (the arr-write import guard). Construction asserts env (throws if
@@ -569,6 +588,7 @@ async function main(): Promise<number> {
     ...(smartReader ? { smartReader } : {}),
     ...(mamGovernor ? { mamGovernor } : {}),
     ...(mamTuning ? { mamTuning } : {}),
+    ...(queueCleanup ? { queueCleanup } : {}),
     ...(activityBundle ? { activityBundle } : {}),
     ...(arrActivityAdapter ? { arrActivityAdapter } : {}),
     ...(kapowarrActivityAdapter ? { kapowarrActivityAdapter } : {}),
@@ -637,6 +657,22 @@ async function main(): Promise<number> {
     ...(report.smartAlertsError !== undefined ? { smartAlertsError: report.smartAlertsError } : {}),
     ...(report.mamGovernor ? { mamGovernor: report.mamGovernor } : {}),
     ...(report.mamGovernorError !== undefined ? { mamGovernorError: report.mamGovernorError } : {}),
+    ...(report.queueCleanup
+      ? {
+          queueCleanup: {
+            rowsWritten: report.queueCleanup.rowsWritten,
+            totalFailure: report.queueCleanup.totalFailure,
+            instances: report.queueCleanup.instances.map((i) => ({
+              instance: i.instance,
+              read: i.read,
+              observed: i.itemsObserved,
+              actionsTaken: i.actionsTaken,
+              errors: i.errors,
+            })),
+          },
+        }
+      : {}),
+    ...(report.queueCleanupError !== undefined ? { queueCleanupError: report.queueCleanupError } : {}),
     ...(report.posterGuard
       ? {
           posterGuard: {

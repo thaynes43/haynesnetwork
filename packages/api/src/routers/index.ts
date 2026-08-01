@@ -23,6 +23,7 @@ import { integrationsRouter } from './integrations';
 import { activityRouter } from './activity';
 import { collectionsRouter } from './collections';
 import { mamGovernorRouter } from './mam-governor';
+import { queueCleanupRouter } from './queue-cleanup';
 
 export const appRouter = router({
   profile: profileRouter,
@@ -84,6 +85,9 @@ export const appRouter = router({
   // ADR-082 / DESIGN-027 D-10 (PLAN-040): the MAM governor admin surface — gate-state visibility + the
   // DB-backed audited limit/buffer/resumeFloor/trendPauseDelta knobs. Admin-only account-compliance config.
   mamGovernor: mamGovernorRouter,
+  // ADR-083 / DESIGN-046 D-08 (PLAN-065): the *arr queue-janitor admin surface — the census/action summary +
+  // promotion-ladder readout + the DB-backed audited 3×3 mode grid and rails. Admin-only, audited same-tx.
+  queueCleanup: queueCleanupRouter,
 });
 
 export type AppRouter = typeof appRouter;

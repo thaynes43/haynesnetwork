@@ -26,6 +26,8 @@ export default async function AdminLayout({ children }: { children: ReactNode })
         <Link href="/admin/motd">MOTD</Link>
         {/* ADR-082 / DESIGN-027 D-10 (PLAN-040) — the MAM governor state + DB-backed audited config. */}
         <Link href="/admin/governor">Governor</Link>
+        {/* ADR-083 / DESIGN-046 D-08 (PLAN-065) — the *arr queue-janitor ladder + enforcement config. */}
+        <Link href="/admin/janitor">Janitor</Link>
         {/* IA reshuffle (2026-07-09, build B) — the Storage nav item is retired: disk utilization +
             reclaim + policy moved into the tabbed Trash Settings hub (user menu → Trash settings →
             Storage/Reclaim). /admin/storage now redirects to /settings/trash?tab=storage. */}

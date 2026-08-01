@@ -18,6 +18,7 @@
 // Ctrl-C. Restarting gives a pristine seeded catalog.
 import { createInterface } from 'node:readline';
 import { startStack } from '../e2e/support/harness';
+import { erroredArrQueueFixture } from '../e2e/support/stub-arr';
 import { STUB_USERS, type PersonaName } from '../e2e/support/stub-oidc';
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -27,6 +28,15 @@ async function main(): Promise<void> {
     '[dev:local] booting the stack (embedded PG16 → migrations → stub OIDC → stub *arr → next dev)…',
   );
   const stack = await startStack({ port: PORT, prewarm: false });
+
+  // ADR-083 / DESIGN-046 (PLAN-065) — pre-stage a canned errored *arr queue so `--mode=queue-cleanup` runs
+  // end-to-end locally in census (writes arr_queue_cleanup_actions rows; enforce stays off under the
+  // all-census default). Best-effort — a staging failure never blocks the local stack.
+  await fetch(`${stack.arr.baseUrl}/_stub/queue`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ records: erroredArrQueueFixture() }),
+  }).catch(() => {});
 
   let shuttingDown = false;
   const shutdown = async (code: number): Promise<never> => {

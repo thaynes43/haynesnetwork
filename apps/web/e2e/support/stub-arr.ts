@@ -103,6 +103,93 @@ export function arrActivityQueueFixture(): Record<string, unknown>[] {
   ];
 }
 
+/**
+ * ADR-083 / DESIGN-046 D-09 (PLAN-065 — *arr queue janitor) — a canned ERRORED download queue spanning every
+ * Action Class (have_better / bad_release / retry_import / unknown) with realistic statusMessages, so
+ * `--mode=queue-cleanup` runs end-to-end locally in census (writes arr_queue_cleanup_actions rows without
+ * touching any *arr — enforcement stays off under the all-census default). `added` is deliberately old so the
+ * items clear the janitor's minItemAgeHours rail. Staged via `POST /_stub/queue` (dev:local pre-stages it).
+ * One stub stands in for all three *arrs, so a run observes each item once per instance — fine for a census
+ * smoke; the fields the classifier reads (status / trackedDownloadState / statusMessages) are what matter.
+ */
+export function erroredArrQueueFixture(): Record<string, unknown>[] {
+  const size = 2_000_000_000;
+  const added = '2026-07-01T00:00:00Z';
+  return [
+    // have_better — the *arr already holds equal/better quality (remove + blocklist, no re-search).
+    {
+      id: 91001,
+      movieId: STUB_MOVIE_ID,
+      downloadId: 'dl-have-better-1',
+      status: 'completed',
+      trackedDownloadStatus: 'warning',
+      trackedDownloadState: 'importBlocked',
+      size,
+      sizeleft: 0,
+      added,
+      title: 'The.Fixture.2022.2160p.WEB-DL',
+      statusMessages: [
+        {
+          title: 'Not an upgrade',
+          messages: [
+            'Not an upgrade for existing movie file(s). Existing quality: WEBDL-2160p. New quality WEBDL-1080p',
+          ],
+        },
+      ],
+    },
+    // bad_release — an unparseable/defective grab (blocklist + re-search where still monitored).
+    {
+      id: 91002,
+      seriesId: STUB_SERIES_ID,
+      episodeId: 5001,
+      downloadId: 'dl-bad-release-1',
+      status: 'warning',
+      trackedDownloadStatus: 'error',
+      trackedDownloadState: 'importFailed',
+      size,
+      sizeleft: 0,
+      added,
+      title: 'Some.Show.S01E01.GARBLED',
+      errorMessage: 'Unable to parse release title',
+      statusMessages: [{ title: 'Import failed', messages: ['Unable to parse the release title'] }],
+    },
+    // retry_import — a stuck/transient import (bounded ProcessMonitoredDownloads).
+    {
+      id: 91003,
+      movieId: STUB_VANISHED_ID,
+      downloadId: 'dl-retry-1',
+      status: 'completed',
+      trackedDownloadStatus: 'warning',
+      trackedDownloadState: 'importPending',
+      size,
+      sizeleft: 0,
+      added,
+      title: 'Vanished.Heist.2018.1080p.WEB-DL',
+      statusMessages: [{ title: 'Waiting', messages: ['Waiting to import...'] }],
+    },
+    // unknown — Lidarr match-ambiguity (deliberately unclassified initially, Q-01; reported, never acted on).
+    {
+      id: 91004,
+      artistId: STUB_ARTIST_ID,
+      albumId: STUB_ALBUM_ID,
+      downloadId: 'dl-unknown-1',
+      status: 'completed',
+      trackedDownloadStatus: 'warning',
+      trackedDownloadState: 'importPending',
+      size,
+      sizeleft: 0,
+      added,
+      title: 'Some Artist - Some Album (2019)',
+      statusMessages: [
+        {
+          title: 'Manual import',
+          messages: ['Found matching artist but no album could be found that was close enough'],
+        },
+      ],
+    },
+  ];
+}
+
 /** The metadata fields DESIGN-008 D-02 harvests off a Radarr movie / Sonarr series. */
 const RADARR_META = {
   runtime: 106,
