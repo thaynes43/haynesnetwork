@@ -94,11 +94,33 @@ deleted these originally is not recoverable from remaining records.
 
 ## Follow-ups
 
-- **Q-01 (owner):** who removed the `T.O.T.S.` SERIES from Sonarr on ~08-18 (after the S02/S03
-  grabs)? Its removal orphaned **107 queue items** stuck `importBlocked` ("Found matching
-  series via grab history, but release was matched to series by ID") — they can never import
-  and are janitor food (see the PLAN-065 ladder log entry, same date). If the removal was via
-  some automation, that path needs a look.
+- **Q-01 (owner): who removed the `T.O.T.S.` SERIES from Sonarr — INVESTIGATED, UNRESOLVED
+  (owner says not them).** Its removal orphaned **107 queue items** stuck `importBlocked`
+  ("release was matched to series by ID") — they can never import and are janitor food (see
+  the PLAN-065 ladder log entry, same date). Attribution sweep (2026-08-20, all with positive
+  evidence, not absence-of-logs):
+  - Series present at 21:23Z 08-18 (still grabbing); **files still on disk**
+    (`…/TV Shows/T.O.T.S` exists) → whatever deleted it used deleteFiles=false, ruling out
+    the delete-with-files automations.
+  - **Maintainerr:** every CollectionWorker run in the window logs "No data was altered";
+    Leaving-Soon rules are action='Do Nothing'; the `hnet — unwatched low-value TV` rule had
+    "no due media". Exonerated.
+  - **Kometa:** python-requests caller of Sonarr's deprecated ImportListExclusion endpoint at
+    exactly its cron times (03:00/04:00/06:30 ET) — but those are READS in its add flow;
+    Kometa has no Sonarr series-delete capability. It is however almost certainly what ADDED
+    T.O.T.S. (global `sonarr: add_missing: true, search: true`; dynamic chart lists; the
+    Kometa-Added tag design). Exonerated for the delete.
+  - **Seerr:** 4,338 log lines in the window, zero removal events. **Janitor:** census-only.
+    **App sync:** read-only. **Sonarr import lists:** none configured, listSyncLevel
+    disabled. All exonerated.
+  - Remaining explanations: a human Sonarr UI/API action (another household admin?) or an
+    unlogged direct API call. Sonarr does not log series deletes at Info and no notification
+    has `onSeriesDelete` — **recommendation: add a Pushover/webhook Sonarr connection with
+    `onSeriesDelete` + `onSeriesAdd` enabled so the next silent add/delete is timestamped and
+    attributed.** Re-add risk: T.O.T.S. is NOT in Sonarr's exclusion list and not in any
+    git-managed Kometa list, but a dynamic chart list could resurface it — harmless for the
+    indexer under Fail mode (one fetch → blocklist), but the add/delete churn source should
+    be identified before the janitor enforces on the orphan class.
 - **Q-02 (owner directive 2026-08-19, needs an ADR):** "ignore-list anything the trash
   deletes" — when the app's trash/space-policy (and/or Maintainerr) deletes media, write back
   **unmonitor** to the owning *arr (episodes/movie/album) so deleted media can't silently
