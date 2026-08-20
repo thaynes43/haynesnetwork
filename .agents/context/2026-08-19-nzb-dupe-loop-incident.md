@@ -92,6 +92,29 @@ re-download — Fail mode handles this (blocklist the dupe-walled release, take 
 (b) the owner's unmonitor-on-trash-delete feature (Q-02) prevents the UNWANTED variant. What
 deleted these originally is not recoverable from remaining records.
 
+## 2026-08-20 rulings + execution (owner answered via AskUserQuestion, one at a time)
+
+- **Q-02 RULED + ADR DRAFTED:** write-back = **unmonitor + blocklist** on app deletes;
+  **import-list exclusions** on sync-detected full removals; **Seerr re-requests must keep
+  working** (binding acceptance criterion). → **ADR-084** (Proposed, this PR). Build follows
+  docs-first.
+- **Pushover audit notification REJECTED** ("way too many notifications"). Chosen instead
+  (owner's own design): **Prometheus/Alertmanager + dashboard** — `SonarrSeriesRemoved`
+  PrometheusRule at severity=warning (timestamped in Alertmanager, below the Pushover paging
+  threshold; haynes-ops **#2536**) + the **`arr-library-audit` Grafana dashboard** (Media
+  folder, `/d/arr-library-audit`): library counts with removal dips, alert-firing history,
+  24h deltas, stuck-queue trend. The Q-01 Pushover recommendation below is SUPERSEDED.
+- **Queue cleanup EXECUTED (owner: "Clean them"):** the orphan cohort turned out to span
+  **five silently-removed series** — Los Pingüinos de Madagascar (60 items), T.O.T.S. (46),
+  The Rookie 2025+2026 (3), Monster (1). All **110 orphans bulk-removed** from Sonarr's queue
+  (no blocklist, no client removal); queue **131 → 10** (the 10 legit pending items
+  untouched). Henry Danger's every-30s "path does not exist" spam killed by deleting its two
+  dead SAB-fast history entries (both packs had imported 08-14; folders long gone) —
+  verified silent. Census evidence was already captured in `arr_queue_cleanup_actions`.
+- **Churn scale finding:** The Rookie IS in Sonarr's exclusion list while T.O.T.S./Pingüinos
+  are NOT → at least two different delete flavors (with and without exclusion). The deleter
+  remains unidentified; the new alert timestamps the next occurrence.
+
 ## Follow-ups
 
 - **Q-01 (owner): who removed the `T.O.T.S.` SERIES from Sonarr — INVESTIGATED, UNRESOLVED
