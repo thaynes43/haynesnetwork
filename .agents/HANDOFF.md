@@ -19,6 +19,19 @@ entry, same date); Q-02 the owner-directed "trash deletes → unmonitor in the *
 audit is now load-bearing. The janitor was checked first and is census-only-confirmed
 (exonerated) — but the Sonarr pile grew 11→131, so the L0→L1 spot-check is overdue.
 
+**08-20 UPDATE — owner ruled everything open (AskUserQuestion, one at a time; see the
+incident note's "2026-08-20 rulings" section):** Q-02 → **ADR-084 (Proposed)** — unmonitor +
+blocklist on app deletes, import-list exclusions on sync-detected removals, Seerr
+re-requests must keep working; **BUILD IS NEXT** (design doc → plan → code). Pushover audit
+notifications REJECTED; instead the `SonarrSeriesRemoved` PrometheusRule (haynes-ops #2536,
+severity=warning = timestamped, never pages) + the `arr-library-audit` Grafana dashboard
+(Media folder) are the removal audit trail. The orphan pile spanned FIVE silently-removed
+series (Pingüinos 60 / T.O.T.S. 46 / Rookie 3 / Monster 1) — all 110 queue orphans removed
+on owner ruling (queue 131→10) and the Henry Danger import-error spam killed (two dead SAB
+history entries deleted). Deleter still unidentified — the alert catches the next one. Also
+binding process memory: owner decisions get pushed via AskUserQuestion one at a time, never
+parked in prose lists.
+
 ## ▶ NEXT SESSION — start here (written 2026-08-01 — ADR-083 arr queue janitor: docs landed, BUILD IS NEXT; census ladder is a standing obligation)
 
 ### PLAN-065 — arr queue janitor (errored-grab cleanup): docs merged, build in flight
