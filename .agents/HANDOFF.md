@@ -4,6 +4,21 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-08-19 — NZB Finder dupe warning #2: root-caused + fixed live (read the incident note before touching SAB dupe settings)
+
+NZB Finder threatened the account again (83 dupe fetches / 23 releases, Sonarr UA). Root
+cause: the 07-21 remediation itself — SAB `no_dupes=1` (Discard) rejects the *arr's add, the
+*arr never blocklists a failed ADD, and RSS re-grabs the same NZB every ~15 min, invisibly
+(Lidarr fetched one NZB **769×** over 4 days; NZBgeek's nastygram was days away). **Fixed
+live: `no_dupes` 1→3 (Fail) on BOTH SAB instances** — dupes now fail into history so the
+*arrs blocklist and move on. Full evidence chain + verification:
+`.agents/context/2026-08-19-nzb-dupe-loop-incident.md`. Open from it: Q-01 who removed the
+`T.O.T.S.` series (orphaned 107 `importBlocked` queue items — see the PLAN-065 ladder log
+entry, same date); Q-02 the owner-directed "trash deletes → unmonitor in the *arr" feature
+(needs an ADR — expands hard rule 4's write-back list); the LL failed-download blacklist
+audit is now load-bearing. The janitor was checked first and is census-only-confirmed
+(exonerated) — but the Sonarr pile grew 11→131, so the L0→L1 spot-check is overdue.
+
 ## ▶ NEXT SESSION — start here (written 2026-08-01 — ADR-083 arr queue janitor: docs landed, BUILD IS NEXT; census ladder is a standing obligation)
 
 ### PLAN-065 — arr queue janitor (errored-grab cleanup): docs merged, build in flight
