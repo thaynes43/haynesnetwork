@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.95.1](https://github.com/thaynes43/haynesnetwork/compare/v0.95.0...v0.95.1) (2026-08-20)
+
+
+### Documentation
+
+* **adr:** ADR-084 trash-delete *arr write-back (Proposed, owner-ruled scope) + 08-20 rulings/execution record ([#529](https://github.com/thaynes43/haynesnetwork/issues/529)) ([8b3aa1d](https://github.com/thaynes43/haynesnetwork/commit/8b3aa1d0192c1334cdfb11e3f6aa00d199758438))
+* **agents:** NZB Finder dupe warning [#2](https://github.com/thaynes43/haynesnetwork/issues/2) root-caused — SAB Discard-mode grab loop; fixed live (no_dupes 1→3 both instances, verified) ([#527](https://github.com/thaynes43/haynesnetwork/issues/527)) ([b2642a9](https://github.com/thaynes43/haynesnetwork/commit/b2642a91f86861026d4b88763789bceb0a2f09c7))
+* **agents:** PLAN-065 census LIVE — v0.95.0 deployed, first census passed its contract (ladder log updated) ([#525](https://github.com/thaynes43/haynesnetwork/issues/525)) ([8bdc980](https://github.com/thaynes43/haynesnetwork/commit/8bdc980d6837286f534d58b813055630480f1233))
+* **agents:** Q-01 attribution sweep — T.O.T.S. deleter unresolved, every automation exonerated with positive evidence; onSeriesDelete notification recommended ([#528](https://github.com/thaynes43/haynesnetwork/issues/528)) ([49769b5](https://github.com/thaynes43/haynesnetwork/commit/49769b541e894c2b663386d831726862096bacfa))
+
 ## [0.95.0](https://github.com/thaynes43/haynesnetwork/compare/v0.94.0...v0.95.0) (2026-08-01)
 
 
