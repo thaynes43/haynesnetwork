@@ -4,6 +4,33 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-08-23 — Plex login outage FIXED + estate access audit (ADR-085 Proposed, build is next)
+
+**"Log in with Plex" was fully down and is restored.** Plex retired
+`GET https://plex.tv/api/v2/friends` (**410 Gone**); Authentik's Plex source calls it
+unconditionally when `allow_friends` is true, via `get_friends()` which does a bare
+`raise_for_status()` with no error handling, so every `redeem_token` 500'd *before* the
+server-overlap check that would have admitted the user. Fixed by `allow_friends: false` —
+admission now rides on `allowed_servers`, which is strictly tighter. Flipped live to restore
+service (verified `status: 200`, zero 500s), codified in `haynes-ops` **PR #2586**.
+
+**The audit that fix triggered is the bigger story:** eleven Authentik applications had **zero
+policy bindings**, which in Authentik admits *any* authenticated identity, and enrollment
+auto-creates accounts with no approval. dev-env/headlamp/grafana/omni were never
+internet-reachable (LAN-only, and the Cloudflare Tunnel 404s everything outside
+`*.haynesnetwork.com`) — but **paperless** (personal documents, forward-auth, public) was.
+`haynes-ops` **PR #2587** gates the LAN-only infra apps to `authentik Admins` (zero-risk, verified).
+
+**Do NOT hand-bind the household apps.** Authentik group membership has drifted from the Roles it
+mirrors (ADR-045's projection is event-driven only), so enforcing today locks out **five real
+users** — see the incident note for the names. Repair membership first, then enforce.
+**ADR-085 (Proposed)** settles the durable fix: derive application bindings from
+`role_app_grants`, amending ADR-045 C-02 narrowly (bindings only, positive owned-apps allowlist,
+**fails CLOSED** because an empty binding set means *open*), census-first per ADR-083.
+**BUILD IS NEXT: DESIGN-047 → PLAN-066.** Three owner questions are open in ADR-085 (Q-01
+paperless/Family grant, Q-02 reconcile placement, Q-03 the five Role-less identities). Full
+evidence: `.agents/context/2026-08-23-plex-login-outage-and-access-audit.md`.
+
 ## ▶ 2026-08-19 — NZB Finder dupe warning #2: root-caused + fixed live (read the incident note before touching SAB dupe settings)
 
 NZB Finder threatened the account again (83 dupe fetches / 23 releases, Sonarr UA). Root
