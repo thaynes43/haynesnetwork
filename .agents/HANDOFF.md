@@ -27,9 +27,12 @@ users** — see the incident note for the names. Repair membership first, then e
 **ADR-085 (Proposed)** settles the durable fix: derive application bindings from
 `role_app_grants`, amending ADR-045 C-02 narrowly (bindings only, positive owned-apps allowlist,
 **fails CLOSED** because an empty binding set means *open*), census-first per ADR-083.
-**BUILD IS NEXT: DESIGN-047 → PLAN-066.** Three owner questions are open in ADR-085 (Q-01
-paperless/Family grant, Q-02 reconcile placement, Q-03 the five Role-less identities). Full
-evidence: `.agents/context/2026-08-23-plex-login-outage-and-access-audit.md`.
+**BUILD IS NEXT: DESIGN-047 → PLAN-066.** All ADR-085 questions are **closed** by owner ruling
+(2026-08-23): paperless stays on Family; the membership reconcile runs **both** inline and
+scheduled (C-07); and Q-03 was **void** — its premise (five Role-less identities) was wrong, all
+11 Authentik humans hold a Role, verified by diffing live Authentik identities against
+`users.email`. Nothing is parked. Full evidence:
+`.agents/context/2026-08-23-plex-login-outage-and-access-audit.md`.
 
 ## ▶ 2026-08-19 — NZB Finder dupe warning #2: root-caused + fixed live (read the incident note before touching SAB dupe settings)
 

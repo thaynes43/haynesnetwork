@@ -99,7 +99,7 @@ rulings:
 | C-04 | Good: **The catalog names its Authentik application explicitly.** `app_catalog` gains a nullable `authentik_app_slug`. **NULL means "not Authentik-gated — never touch"**, which is the correct and default state for entries like `seerr` (Overseerr authenticates against Plex directly and has no Authentik application). Slug-convention matching is rejected: catalog URLs are arbitrary (ADR-013) and a coincidental slug match must not silently enroll an application into the managed set. |
 | C-05 | Good: **The derivation rule.** For each managed application: bind `authentik Admins` (order 0), then one binding per **synced-tier group** whose Role grants that catalog entry, ascending order. `is_admin` and `grants_all` Roles count as granting every entry. The result is a pure function of `role_app_grants` + `roles` + the group map, so a Role edit in `/admin/roles` is the single lever, exactly as ADR-012 C-08 intends. |
 | C-06 | Good: **Every Role that gates access must project — including Default.** A Role granting an Authentik-gated app while `synced_tier=false` is unrepresentable as a binding and would silently drop its users. The reconciler therefore treats non-synced-but-granting Roles as a **contract violation**, surfaces them, and the rollout enables `synced_tier` on the seeded **Default** role (which today grants audiobookshelf, kavita, open-webui, seerr to three users). |
-| C-07 | Good: **A membership reconcile pass closes the ADR-045 event-driven gap.** ADR-045's projection fires only on `assignRolePortal`, so roles set by `bootstrapAdminOnSignin`, `consumePendingRoleForUser`, or before synced-tier existed never projected — five users are adrift at time of writing. A new idempotent reconcile makes owned-group membership match Role for every user, reusing `assignRolePortal`'s exclusive-diff logic (ADR-045 C-07) and its `authentik_group_audit` trail. It runs before any binding is enforced, and thereafter on a schedule. |
+| C-07 | Good: **A membership reconcile closes the ADR-045 event-driven gap — inline AND scheduled** (owner ruling 2026-08-23). ADR-045's projection fires only on `assignRolePortal`, so roles set by `bootstrapAdminOnSignin`, `consumePendingRoleForUser`, or before synced-tier existed never projected — five users are adrift at time of writing. Two layers: **inline**, so a Role write applies membership immediately and admin settings never disagree with reality; and a **scheduled** `@hnet/sync` reconcile mode that repairs drift from *any* source, including future write paths that forget to project — which is precisely how today's drift arose. Both reuse `assignRolePortal`'s exclusive-diff logic (ADR-045 C-07) and its `authentik_group_audit` trail, and both are idempotent. The scheduled pass runs before any binding is enforced. |
 | C-08 | Good (safety-critical): **A pre-flight that proves nobody is dropped, then census-first rollout.** Following ADR-083, the reconciler ships **observe-only**: it computes and logs the binding diff and the membership diff without applying. Enforcement is gated on a pre-flight asserting that for every managed application, every user whose Role grants it is already in a bound group. A failing pre-flight blocks the apply and names the users. The ladder and its current level are tracked in `.agents/HANDOFF.md`, per the ADR-083 precedent. |
 | C-09 | Good: **Blueprints stop declaring bindings for catalog-mapped apps.** `60-tautulli-frontdoor.yaml` currently binds `tautulli` to `authentik Admins` + `family`; once `tautulli` is managed, that blueprint's two `policybinding` entries are removed (provider, application and outpost stay) so a blueprint re-apply cannot revert reconciler state. The inverse also holds: `80-infra-admin-gate.yaml` keeps sole ownership of the LAN-only infra bindings, and those applications are excluded from `authentik_owned_apps` by C-02. |
 | C-10 | Note: **haynesnetwork itself stays unbound, deliberately.** The Portal is the front door that renders each user only their own Role's tiles; gating the `haynesnetwork` application on a group would break the Default-role landing experience and the enrollment path that creates it. Its access control is the Role model itself, in-app. |
@@ -119,12 +119,18 @@ rulings:
 - **Ops:** OPS-011 records the `hnet-portal` service account and will record the C-13 RBAC extension as
   executed. `haynes-ops` PR #2587 lands `80-infra-admin-gate.yaml` (the LAN-only infra gate) and is a
   prerequisite for C-09's ownership split.
-- **Open questions:**
-  - **Q-01** — Should `paperless` remain granted to the whole **Family** role? It holds personal
-    documents and is publicly reachable; the current grant is inherited config, not a fresh decision.
-  - **Q-02** — Should the membership reconcile (C-07) run as a `@hnet/sync` CronJob mode alongside
-    `authentik-users`, or inline after each Role write? A schedule repairs drift from any source; inline
-    is faster but only covers paths that call it.
-  - **Q-03** — Five Authentik identities hold no Role at all (never signed into haynesnetwork). Once
-    bindings are enforced they lose all app access by construction. Confirm that is intended rather
-    than assigning them the Default role.
+- **Owner rulings (2026-08-23)** — all open questions are closed; no decisions remain parked:
+  - **Q-01 — `paperless` stays granted to the whole Family role. RULED: keep.** The household genuinely
+    shares documents, so the inherited grant is the intended state, not drift. Recorded because the
+    question was raised: paperless is publicly reachable and gated solely by Authentik forward-auth, so
+    its binding set is the one most worth re-reading whenever the Family role changes.
+  - **Q-02 — the membership reconcile runs BOTH inline and scheduled. RULED: both** — folded into C-07.
+    Inline keeps admin settings and real access in agreement immediately; the schedule is the safety net
+    for drift arriving from any other path.
+  - **Q-03 — VOID, premise was wrong.** The draft claimed five Authentik identities hold no Role and
+    would lose all access once bindings are enforced. Verified false on 2026-08-23 by diffing all live
+    Authentik human identities against `users.email`: **all 11 have a haynesnetwork user row and
+    therefore a Role**; the only rows without a live Authentik identity are the two `hnet-e2e*` test
+    accounts. The error was conflating "holds no Authentik **group**" (the five genuine drift cases in
+    C-07, every one of which *does* have a Role) with "holds no **Role**". No user is dropped by
+    construction, so the C-08 pre-flight remains the only lockout guard needed.

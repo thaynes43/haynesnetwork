@@ -57,8 +57,15 @@ event-driven (`assignRolePortal` only), so Roles set by `bootstrapAdminOnSignin`
 `consumePendingRoleForUser`, or before synced-tier existed never projected. **Five users would be
 locked out** the moment bindings are enforced: `miaellen25@gmail.com` (Family, not in `family`),
 `jbadessa@gmail.com` + `seeaych@gmail.com` (Friends, not in `friends`), `aringan0323@gmail.com` +
-`danweaver8@gmail.com` (Default, which projects to no group because `synced_tier=false`). A further
-five Authentik identities hold no Role at all. **Repair membership before enforcing anything.**
+`danweaver8@gmail.com` (Default, which projects to no group because `synced_tier=false`).
+**Repair membership before enforcing anything.**
+
+**Corrected claim:** an earlier draft of this note and of ADR-085 Q-03 said "a further five Authentik
+identities hold no Role at all". **That was wrong** — it conflated *no Authentik group* with *no Role*.
+Verified by diffing all live Authentik human identities against `users.email`: **all 11 have a
+haynesnetwork user row and therefore a Role**, and the only rows without a live Authentik identity are
+the two `hnet-e2e*` test accounts. The five named above are drift cases that DO hold Roles. No user
+loses access by construction.
 
 ## Owner rulings (2026-08-23, AskUserQuestion, one at a time)
 
@@ -87,8 +94,10 @@ five Authentik identities hold no Role at all. **Repair membership before enforc
 
 ## Next
 
-DESIGN-047 → PLAN-066 → build, then walk the census ladder before enforcing. ADR-085 carries three open
-questions for the owner: **Q-01** whether `paperless` should stay granted to the whole Family role;
-**Q-02** whether the membership reconcile runs as a `@hnet/sync` CronJob mode or inline after each Role
-write; **Q-03** whether the five Role-less Authentik identities should lose all access by construction
-or be assigned Default.
+DESIGN-047 → PLAN-066 → build, then walk the census ladder before enforcing.
+
+**All ADR-085 open questions are closed** (owner, 2026-08-23, pushed one at a time via
+AskUserQuestion): **Q-01** paperless stays granted to the whole Family role, the household genuinely
+shares documents; **Q-02** the membership reconcile runs **both** inline (immediate) and scheduled
+(drift safety net), folded into C-07; **Q-03** void, the premise was wrong — see the corrected claim
+above. Nothing is parked in prose.
