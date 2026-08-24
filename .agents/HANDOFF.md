@@ -27,7 +27,11 @@ users** — see the incident note for the names. Repair membership first, then e
 **ADR-085 (Proposed)** settles the durable fix: derive application bindings from
 `role_app_grants`, amending ADR-045 C-02 narrowly (bindings only, positive owned-apps allowlist,
 **fails CLOSED** because an empty binding set means *open*), census-first per ADR-083.
-**BUILD IS NEXT: DESIGN-047 → PLAN-066.** All ADR-085 questions are **closed** by owner ruling
+**BUILD IS UNDERWAY: DESIGN-047 + PLAN-066 are open, ladder at L0 (census only).** The five
+household apps (paperless, immich, kavita, audiobookshelf, open-webui) are still ungated —
+that is **not** a settled state, it is L0 of a ladder with a standing obligation to advance
+(PLAN-066). Do not restate it as "deliberate" without moving the ladder or recording why.
+S1 (schema) is the next stage. All ADR-085 questions are **closed** by owner ruling
 (2026-08-23): paperless stays on Family; the membership reconcile runs **both** inline and
 scheduled (C-07); and Q-03 was **void** — its premise (five Role-less identities) was wrong, all
 11 Authentik humans hold a Role, verified by diffing live Authentik identities against
