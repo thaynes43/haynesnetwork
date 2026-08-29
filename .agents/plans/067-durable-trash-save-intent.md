@@ -45,7 +45,7 @@ succeeded in the same tick.
 | S4 | Backfill | the `0076` one-off: latest event per item, `action='save'`, `reason IN ('user','batch_save')`, `arr_kind != 'lidarr'` | seeds exactly **108** rows on prod-shaped data (97 user + 11 batch_save); zero `watch_guardian` rows admitted |
 | S5 | Reconciler | `trash-relink.ts` — detect (SQL, `IS DISTINCT FROM`) → verify live → relink → `schedulePoolRefresh`; `trash_relink_enabled` kill switch (default true) | same-key case writes **nothing** (`sameKeyCensus` only); revoked intents never resurrected |
 | S6 | Sync wiring | post-step after `refreshTrashCandidates` **and** `drainDuePoolRefreshes`; `relink`/`relinkError` on `SyncReport` | outage ⇒ `relinkError` set, `totalFailure` stays false; no new mode, no new CronJob |
-| S7 | Honest badge | narrow the `||` in `pendingWallGlyph` and `trash-shield.tsx:333-352`; new `exclusionVerified` wire field; tooltip copy | `apps/web/lib/__tests__/trash.test.ts:104-187` revised: tag-only ⇒ `'trash'` **and tappable** |
+| S7 | Honest badge | narrow the `||` in `pendingWallGlyph` and `trash-shield.tsx:333-352`; tooltip copy (no new wire field — `protectedByExclusion` already IS the live-exclusion verdict, see DESIGN-048 D-05) | `apps/web/lib/__tests__/trash.test.ts:104-187` revised: tag-only ⇒ `'trash'` **and tappable** |
 | S8 | Preview drift | drop the requester branch from `partitionPendingForExpedite`; collapse the three copies onto one shared derivation (ADR-086 D-11) | all three agree on one fixture set; `previewGuardian` behaviour unchanged |
 | S9 | E2E | the lapse repro via `STUB_MAINT_RUNNER_ID` + `_stub/exclude`/`remove-pending`/`add-pending`; `purgeDanglingExclusions` added to `maintainerr-stub.ts` | inverted mirror of the existing `trash.spec.ts:404-414` assertion |
 
@@ -54,9 +54,11 @@ run against real data until un-save can revoke a lapsed intent. Otherwise the ow
 
 ## Invariants a reviewer must not let regress
 
-1. **No keep-signal changes.** `trash-flow.ts:886`, `trash-batches.ts:414`/`:531`/`:1307` keep
-   reading `protectedByTag` untouched. The display reads the **new** field. If a diff changes what
-   `shapePendingItems` puts in `protectedByTag`, it is wrong (ADR-086 D-6).
+1. **No keep-signal changes.** `classifyGuardian` and `trash-batches.ts:414`/`:531`/`:1307` keep
+   reading `protectedByTag` untouched; the display reads `protectedByExclusion`, which no
+   server-side keep consults. If a diff changes what `shapePendingItems` puts in `protectedByTag`,
+   it is wrong (ADR-086 D-6). `classifyGuardian`'s body must stay byte-identical — only its
+   parameter type was widened to a structural `Pick`.
 2. **`previewGuardian` stays a mirror of `classifyGuardian`** (ADR-023 C-07b). S8 changes the
    *server* copy to match it, never the reverse.
 3. **Relink only on a changed key.** The `IS DISTINCT FROM` clause is the carve-out that stops the
