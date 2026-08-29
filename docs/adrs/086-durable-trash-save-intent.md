@@ -10,8 +10,9 @@
 
 A Trash **Save** writes a Maintainerr exclusion keyed on the **Plex ratingKey**
 (`mediaServerId`) and a `trash_excluded` ledger row (ADR-023 C-05). The ratingKey is **not a
-durable identity**: when Radarr/Sonarr replaces a title's file, Plex drops the old item and mints a
-new one with a new key. Maintainerr's nightly Rule Maintenance then runs
+durable identity**: when Radarr/Sonarr replaces a title's file (an ordinary quality upgrade — the
+title is never removed from the *arr), Plex **can** retire the old item and mint a new one with a
+new key. It usually updates in place, but not always. Maintainerr's nightly Rule Maintenance then runs
 `removeLeftoverExclusions()`, which deletes every exclusion whose ratingKey is no longer present on
 the media server — so **the owner's save is silently erased** and the title re-enters the deletion
 pool on the next rule run.
