@@ -33,7 +33,9 @@ still the latest, so the ADR-086 backfill picks it up correctly.
 **ADR-086 (Proposed)** settles the durable fix — owner ruled **"fix both halves"** (AskUserQuestion,
 08-29): a durable revocable `trash_save_intents` record keyed on the *arr identity plus a
 **changed-key-only** relink reconciler, and a wall that stops asserting protection it cannot prove
-while every server-side keep-signal stays untouched. **BUILD IS NEXT: DESIGN-048 + PLAN-067.**
+while every server-side keep-signal stays untouched. **DESIGN-048 + PLAN-067 are OPEN; S1 (schema,
+migration `0076`) is the next stage.** PLAN-067 ships **enforcing, not census-first** — do not add a
+ladder to it, and read its "invariants a reviewer must not let regress" before touching the code.
 Glossary already carries T-241/T-242 and the T-70 amendment. Three review findings folded in that a
 builder must not re-open: **D-3** (un-save must revoke the intent even when there is no exclusion
 left to remove, or the owner cannot stop the reconciler), **D-4** (relink only on a *changed* key —
