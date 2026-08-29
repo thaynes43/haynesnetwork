@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.96.0](https://github.com/thaynes43/haynesnetwork/compare/v0.95.0...v0.96.0) (2026-08-29)
+
+
+### Features
+
+* **trash:** a Save survives a file replacement (ADR-086) ([#534](https://github.com/thaynes43/haynesnetwork/issues/534)) ([198054c](https://github.com/thaynes43/haynesnetwork/commit/198054c510aa871506b4984208a546235fcfa8c1))
+
+
+### Documentation
+
+* **adr:** ADR-084 trash-delete *arr write-back (Proposed, owner-ruled scope) + 08-20 rulings/execution record ([#529](https://github.com/thaynes43/haynesnetwork/issues/529)) ([8b3aa1d](https://github.com/thaynes43/haynesnetwork/commit/8b3aa1d0192c1334cdfb11e3f6aa00d199758438))
+* **adr:** ADR-085 derived Authentik application bindings (Proposed) + 08-23 Plex outage / access-audit record ([#530](https://github.com/thaynes43/haynesnetwork/issues/530)) ([f2f17fa](https://github.com/thaynes43/haynesnetwork/commit/f2f17fac30100513effcc2335378027721760c98))
+* **adr:** ADR-086 durable Trash save intent — a Save no longer lapses when a file is replaced ([#532](https://github.com/thaynes43/haynesnetwork/issues/532)) ([030b0ef](https://github.com/thaynes43/haynesnetwork/commit/030b0ef5884c0eb07813d1606732b3cb39dd97b0))
+* **agents:** NZB Finder dupe warning [#2](https://github.com/thaynes43/haynesnetwork/issues/2) root-caused — SAB Discard-mode grab loop; fixed live (no_dupes 1→3 both instances, verified) ([#527](https://github.com/thaynes43/haynesnetwork/issues/527)) ([b2642a9](https://github.com/thaynes43/haynesnetwork/commit/b2642a91f86861026d4b88763789bceb0a2f09c7))
+* **agents:** PLAN-065 census LIVE — v0.95.0 deployed, first census passed its contract (ladder log updated) ([#525](https://github.com/thaynes43/haynesnetwork/issues/525)) ([8bdc980](https://github.com/thaynes43/haynesnetwork/commit/8bdc980d6837286f534d58b813055630480f1233))
+* **agents:** PLAN-067 built and merged ([#534](https://github.com/thaynes43/haynesnetwork/issues/534)) — deploy is the remaining owner call ([#535](https://github.com/thaynes43/haynesnetwork/issues/535)) ([a2c5518](https://github.com/thaynes43/haynesnetwork/commit/a2c55181f7473254002d5617d21868d9a7b69d64))
+* **agents:** Q-01 attribution sweep — T.O.T.S. deleter unresolved, every automation exonerated with positive evidence; onSeriesDelete notification recommended ([#528](https://github.com/thaynes43/haynesnetwork/issues/528)) ([49769b5](https://github.com/thaynes43/haynesnetwork/commit/49769b541e894c2b663386d831726862096bacfa))
+* **design:** DESIGN-047 + PLAN-066 derived Authentik bindings — reconciler gets an owner ([#531](https://github.com/thaynes43/haynesnetwork/issues/531)) ([165b9e6](https://github.com/thaynes43/haynesnetwork/commit/165b9e6d7fc91855c80e6c8ef3b70d2d52f362af))
+* **design:** DESIGN-048 + PLAN-067 durable Trash save intent — the build contract ([#533](https://github.com/thaynes43/haynesnetwork/issues/533)) ([a889cfe](https://github.com/thaynes43/haynesnetwork/commit/a889cfeeea1b99dbe40aedbf2ab39d0879b0e706))
+
 ## [0.95.0](https://github.com/thaynes43/haynesnetwork/compare/v0.94.0...v0.95.0) (2026-08-01)
 
 
