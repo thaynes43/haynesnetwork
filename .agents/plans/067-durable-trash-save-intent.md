@@ -20,7 +20,7 @@ Exposure is ongoing: 89–288 file replacements per week.
 
 Evidence: `.agents/context/2026-08-29-trash-save-lapse-incident.md`.
 
-## Status — BUILT (#534, merged 2026-08-29), NOT YET DEPLOYED
+## Status — SHIPPED AND VERIFIED LIVE (v0.96.0, 2026-08-29 19:46 ET)
 
 S1..S9 all complete; full suite green (domain 908, api 534, web 382, sync 131, db 110) plus e2e.
 Two build-time deviations from DESIGN-048 are recorded in the design itself: no new
@@ -28,7 +28,12 @@ Two build-time deviations from DESIGN-048 are recorded in the design itself: no 
 pinned by a parity test rather than a re-export (`apps/web/lib/*` cannot import `@hnet/domain`
 values without dragging drizzle into the browser bundle).
 
-Deploy applies migration `0076` and starts the reconciler — see "Verification (live, after deploy)".
+**Deployed** via haynes-ops #2667 (owner ruled enforcing). Live results matched the pre-deploy
+dry-run exactly: 108 open intents (100 movie / 8 tv); Green Lantern seeded on the old key `95267`
+and deliberately not corrected (pool-scoped, see below); first tick silent with all four census
+counters independently verified 0 in SQL. The reconciler is confirmed to have RUN rather than
+been skipped — `trash-batch-sweep` shares the same secret, requires the write bundle, and
+succeeded in the same tick.
 
 ## Build stages
 

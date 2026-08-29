@@ -38,9 +38,26 @@ while every server-side keep-signal stays untouched. **DESIGN-048 + PLAN-067 are
 census-first** — do not add a ladder to it, and read its "invariants a reviewer must not let
 regress" before touching the code.
 
-**NOT YET DEPLOYED.** The release PR carries migration `0076` (creates `trash_save_intents` + the
-108-row backfill) and starts the relink reconciler on the `incremental` tick. Deploy is the moment
-the enforcing-vs-observe default becomes real, so it is an owner call, not a merge-when-green.
+**DEPLOYED AND VERIFIED — v0.96.0, 2026-08-29 19:46 ET** (owner ruled "deploy enforcing").
+haynes-ops #2667 bumped the tag; rollout 3/3. Live verification, all matching the pre-deploy
+dry-run:
+
+- **Backfill: exactly 108 open intents** (100 movie / 8 tv), all `origin='backfill'` — the number
+  PLAN-067 gated on.
+- **Green Lantern seeded with the OLD key `95267`**, `relink_count 0`, unrevoked — as designed. It
+  is NOT corrected, and that is correct: the hand-repair took it out of the pool and the reconciler
+  is pool-scoped (see the plan's "relinks lazily" note).
+- **First reconciler tick: silent, and the silence is real.** All four counters independently
+  computed to 0 in SQL. The step genuinely ran: `sync finished` prints a curated subset that omits
+  `relink`/`poolRefresh`, so absence there proves nothing — the proof is that `trash-batch-sweep`
+  shares the identical `envFrom` secret, REQUIRES the Maintainerr write bundle (throws without
+  `MAINTAINERR_API_KEY`), and completed on v0.96.0 in the same tick.
+- App healthy (307 auth redirect), zero app errors attributable to the release.
+
+**Unrelated, same window — the scheduled Leaving-Soon sweep fired** (batch `a10aa977`, expired
+19:17, swept 19:45): 47 deleted / 2 skipped / 1 saved / 0 handle errors, which is why the movie pool
+reads 389 not 436. Pre-checked before the deploy: the sweep set contained no lapsed saves. Same
+cadence as the 08-22 and 08-15 batches — not caused by this change.
 Glossary already carries T-241/T-242 and the T-70 amendment. Three review findings folded in that a
 builder must not re-open: **D-3** (un-save must revoke the intent even when there is no exclusion
 left to remove, or the owner cannot stop the reconciler), **D-4** (relink only on a *changed* key —
