@@ -2,6 +2,7 @@
 // PREVIEW must partition exactly like @hnet/domain classifyGuardian + the expedite 'all' loop
 // (an optimistic preview that under-counts "deleted" would make the confirm Modal lie).
 import { describe, expect, it } from 'vitest';
+import { classifyForExpedite } from '@hnet/domain';
 import {
   candidatesAsOfLabel,
   daysLeftLabel,
@@ -64,6 +65,46 @@ describe('previewGuardian (mirrors classifyGuardian — ADR-023 C-07b, fail clos
   });
 });
 
+// ADR-086 D-11 / DESIGN-048 D-06 — the drift that caused the bug: three hand-synced copies of the
+// expedite rule, one of which (the SERVER preview the Expedite-all confirm actually consumes) still
+// counted a requester as `protected` after the 2026-07-09 ruling made it informational. The two
+// server copies are now ONE derivation (`classifyForExpedite`). This mirror cannot re-export it —
+// lib code never imports @hnet/domain, which would drag drizzle/pg into the browser bundle (the
+// lib/media.ts rule, same arrangement as lib/library-views.ts) — so this node-context comparison IS
+// the parity contract that replaces hand-syncing.
+describe('previewGuardian parity with @hnet/domain classifyForExpedite (ADR-086 D-11)', () => {
+  it('agrees case-by-case across the whole guardian input matrix', () => {
+    for (const maintainerrMediaId of ['ms-1', null]) {
+      for (const mediaItemId of ['uuid-1', null]) {
+        for (const protectedByTag of [false, true]) {
+          for (const recentlyWatched of [false, true]) {
+            for (const requesters of [[], ['manofoz']]) {
+              const item: GuardianPreviewInput = {
+                maintainerrMediaId,
+                mediaItemId,
+                protectedByTag,
+                recentlyWatched,
+                requesters,
+              };
+              // Compared as objects so a failure prints WHICH input diverged.
+              expect({ ...item, verdict: previewGuardian(item) }).toEqual({
+                ...item,
+                verdict: classifyForExpedite(item),
+              });
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it('both sides agree a requester is informational, never a keep (the closed drift)', () => {
+    const requested: GuardianPreviewInput = { ...base, requesters: ['manofoz'] };
+    expect(previewGuardian(requested)).toBe('deletable');
+    expect(classifyForExpedite(requested)).toBe('deletable');
+  });
+});
+
 describe('partitionForExpedite', () => {
   it('splits deleted-now / protected / unverifiable and sums only deletable bytes', () => {
     const partition = partitionForExpedite([
@@ -123,10 +164,33 @@ describe('pendingWallGlyph / pendingWallTappable (the pending WALL tap-toggle �
       pendingWallGlyph({ ...cold, protectedByExclusion: true }, 'saved'),
     ).toBe('shield');
   });
-  it('tag or live-exclusion protection from elsewhere ⇒ the inert check (never tappable)', () => {
-    expect(pendingWallGlyph({ ...cold, protectedByTag: true }, undefined)).toBe('check');
+  it('a LIVE exclusion made elsewhere ⇒ the inert check (never tappable)', () => {
     expect(pendingWallGlyph({ ...cold, protectedByExclusion: true }, undefined)).toBe('check');
     expect(pendingWallTappable('check', true, true)).toBe(false);
+  });
+
+  // ADR-086 D-5 (the 2026-08-29 save-lapse incident) — a bare `dnd` tag is a keep-SIGNAL, never a
+  // protection CLAIM. Maintainerr's exclusion is keyed on the Plex ratingKey; a file replacement
+  // re-keys the item and the nightly `removeLeftoverExclusions()` collects the dangling exclusion,
+  // leaving the tag behind. The wall used to paint that as an inert `check`: a lie about the item's
+  // state AND a dead end, since the owner could not tap to re-save it. Only a live exclusion earns
+  // the check now. No keep-signal moved (D-6) — the tag still forces a keep server-side.
+  it('ADR-086 D-5 — a tag-only tile is the ordinary slated trash, and it is TAPPABLE again', () => {
+    expect(pendingWallGlyph({ ...cold, protectedByTag: true }, undefined)).toBe('trash');
+    expect(pendingWallTappable('trash', true, false)).toBe(true); // saveable with save_exclude
+    expect(pendingWallTappable('trash', false, true)).toBe(false); // still gated on the grant
+  });
+
+  it('ADR-086 D-5 — the LAPSED item (tag TRUE, exclusion FALSE) is re-saveable, not a dead tile', () => {
+    // Green Lantern: saved 2026-07-11 on ratingKey 95267, file replaced 08-05, Plex re-keyed to
+    // 102261, the exclusion was pruned, and it re-entered the deletion pool wearing a stale dnd tag.
+    const lapsed = { ...cold, protectedByTag: true, protectedByExclusion: false };
+    expect(pendingWallGlyph(lapsed, undefined)).toBe('trash');
+    expect(pendingWallTappable(pendingWallGlyph(lapsed, undefined), true, false)).toBe(true);
+    // A live exclusion ON TOP of the tag is real, provable protection ⇒ still the inert check.
+    expect(pendingWallGlyph({ ...lapsed, protectedByExclusion: true }, undefined)).toBe('check');
+    // …and a save made this session still wins the corner (the optimistic echo).
+    expect(pendingWallGlyph(lapsed, 'saved')).toBe('shield');
   });
   it('BUG FIX 2026-07-09 — recently watched no longer produces the inert eye corner: it is a normal, SAVEABLE tile', () => {
     // The owner-reported bug: a recently-watched candidate (PAW Patrol) showed the inert eye corner
@@ -139,10 +203,14 @@ describe('pendingWallGlyph / pendingWallTappable (the pending WALL tap-toggle �
     expect(
       pendingWallGlyph({ ...cold, recentlyWatched: true, requesters: ['manofoz'] }, undefined),
     ).toBe('trash');
-    // Hard protection (dnd tag / a foreign exclusion) still outranks — the inert check, unchanged.
+    // A LIVE foreign exclusion still outranks — the inert check, unchanged.
+    expect(
+      pendingWallGlyph({ ...cold, protectedByExclusion: true, recentlyWatched: true }, undefined),
+    ).toBe('check');
+    // The dnd tag ALONE no longer does (ADR-086 D-5) — it is a keep-signal, not a proof.
     expect(
       pendingWallGlyph({ ...cold, protectedByTag: true, recentlyWatched: true }, undefined),
-    ).toBe('check');
+    ).toBe('trash');
     // a save this session still wins — the watched item can be deliberately protected.
     expect(pendingWallGlyph({ ...cold, recentlyWatched: true }, 'saved')).toBe('shield');
   });
@@ -157,10 +225,11 @@ describe('pendingWallGlyph / pendingWallTappable (the pending WALL tap-toggle �
     expect(
       pendingWallGlyph({ ...cold, protectedByExclusion: true, requesters: ['manofoz'] }, undefined),
     ).toBe('check');
-    // The dnd TAG (hard protection) is likewise the inert `check` for a requester item.
+    // The dnd TAG alone is NOT a protection claim (ADR-086 D-5) — a tag-only requester item reads
+    // as the ordinary slated trash-can, tappable to re-save.
     expect(
       pendingWallGlyph({ ...cold, protectedByTag: true, requesters: ['manofoz'] }, undefined),
-    ).toBe('check');
+    ).toBe('trash');
     // A recently-watched requester item is ALSO the plain slated trash-can (nothing about the requester
     // or the watch signal changes the corner — both are meta-line info now).
     expect(

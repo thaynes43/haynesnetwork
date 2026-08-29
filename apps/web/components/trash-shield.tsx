@@ -330,9 +330,15 @@ export function TrashPendingNotice({
   const item = pending.data?.items.find((i) => i.mediaItemId === mediaItemId);
   if (item === undefined || item.maintainerrMediaId === null) return null;
 
-  const on =
-    override === 'saved' ||
-    ((item.protectedByTag || item.protectedByExclusion) && override !== 'unsaved');
+  // ADR-086 D-5 — the same `||` bug the pending wall carried (lib/trash pendingWallGlyph): a bare
+  // `dnd` tag outlives its exclusion when a file replacement re-keys the Plex item and
+  // Maintainerr's nightly maintenance prunes the dangling exclusion, so a lapsed item read
+  // "Protected from deletion" HERE while reading "slated" on the wall. Only a LIVE exclusion earns
+  // the claim now; a tag-only item reads as scheduled and offers Save, which is the truth and the
+  // way back. No keep-signal moves (D-6): the server still refuses to expedite a tag-protected
+  // item (trash-flow classifyGuardian ⇒ keep 'tag'), so "Delete now…" on such an item runs the
+  // honest ItemExpediteModal copy ("nothing deletes — Maintainerr will protect it").
+  const on = override === 'saved' || (item.protectedByExclusion && override !== 'unsaved');
   const days = daysUntil(item.scheduledDeleteAt);
   const canSave = access.actions.includes('save_exclude');
   const canUnsave = access.actions.includes('remove_exclude');

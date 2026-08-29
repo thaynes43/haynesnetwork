@@ -47,7 +47,15 @@ export interface GuardianPreviewInput {
 }
 
 /**
- * Why an item survives (or not) an expedite — the CLIENT mirror of the server partition:
+ * Why an item survives (or not) an expedite — the CLIENT mirror of @hnet/domain
+ * `classifyForExpedite` (trash-flow.ts), which is itself `classifyGuardian` + the expedite 'all'
+ * loop's unactionable pre-check. It is a MIRROR rather than a re-export because app lib code must
+ * not import @hnet/domain (that drags drizzle/pg into the browser bundle — the lib/media.ts rule);
+ * ADR-086 D-11 collapsed the two SERVER copies onto that one derivation and pinned this one to it
+ * with a case-by-case parity test in lib/__tests__/trash.test.ts. Do not edit this without editing
+ * `classifyForExpedite` — the test compares them directly and will fail.
+ *
+ * The partition:
  * - `deletable`       — cold + positively evaluated ⇒ the server WILL delete it. A requested item
  *                       is deletable now (owner ruling 2026-07-09 — requested is informational only,
  *                       never an app-side keep); its requester rides the meta badge, not the verdict.
@@ -128,11 +136,13 @@ export function expediteErrorAction(
  * shares the batch wall's fast tap-toggle: a poster tap flips `trash` ⇄ `shield`). One glyph per
  * tile, derived from the durable server signals + the session-local optimistic override. Keep the
  * keys in lockstep with `lib/trash-batches.ts` `WallGlyph` — both walls read as one system:
- * - `trash`   — slated for deletion (unprotected). Tap ⇒ save (the dnd-tag exclusion flow).
+ * - `trash`   — slated for deletion (not provably protected). Tap ⇒ save (the exclusion flow).
+ *               ADR-086 D-5: this now INCLUDES an item wearing a bare `dnd` tag with no live
+ *               exclusion — the lapsed case (see `pendingWallGlyph`).
  * - `shield`  — saved by YOU this session (the optimistic echo of your own save). Tap ⇒ un-save.
- * - `check`   — protected by the *arr `dnd` tag or a live Maintainerr exclusion made OUTSIDE this
- *               session. Inert: the wall never un-saves someone else's protection (the
- *               /library/[id] guard panel keeps that power for remove_exclude holders).
+ * - `check`   — a LIVE Maintainerr exclusion made OUTSIDE this session. Inert: the wall never
+ *               un-saves someone else's protection (the /library/[id] guard panel keeps that
+ *               power for remove_exclude holders).
  *
  * The person-shield `requested` glyph was RETIRED (owner ruling 2026-07-09 — "Maintainerr rules
  * decide what gets promoted; the app controls how much and when it's deleted"). A requester is
@@ -158,20 +168,31 @@ export function pendingWallGlyph(
   override: 'saved' | 'unsaved' | undefined,
 ): PendingWallGlyph {
   if (override === 'saved') return 'shield';
-  // Protection made OUTSIDE this session (the dnd tag or a live foreign exclusion) is the inert
-  // `check`; its un-protect lives on the /library guard panel. A requester no longer changes this
-  // (it is informational only now) — a requested candidate is the ordinary slated `trash` until
-  // protected. `recentlyWatched` no longer produces a corner glyph (the corner is the action; the
-  // watch fact rides the meta line).
-  if (override !== 'unsaved' && (item.protectedByTag || item.protectedByExclusion)) return 'check';
+  // ADR-086 D-5 — only a LIVE Maintainerr exclusion earns the inert `check`. A bare `dnd` tag is a
+  // keep-SIGNAL, not a protection CLAIM: it outlives its exclusion whenever a file replacement
+  // re-keys the Plex item and Maintainerr's nightly maintenance prunes the now-dangling exclusion
+  // (`removeLeftoverExclusions`). Painting that lapsed item as an inert check was both a lie and a
+  // dead end — the owner could not tap to re-save it. It now reads as the ordinary slated `trash`
+  // and is tappable; the tag itself is surfaced as information on the tile tooltip.
+  //
+  // `protectedByExclusion` is populated from the page-scoped `fetchLiveExclusions` cross-check in
+  // `listTrashPendingPage`, so on this read path it IS the live verdict. This changes NO
+  // keep-signal: `protectedByTag` still forces a keep at classifyGuardian / the batch snapshot /
+  // the sweep re-check (ADR-086 D-6) — only what the UI asserts and permits moves.
+  //
+  // A requester never changes this (informational only) — a requested candidate is the ordinary
+  // slated `trash` until protected. `recentlyWatched` produces no corner glyph either (the corner
+  // is the action; the watch fact rides the meta line).
+  if (override !== 'unsaved' && item.protectedByExclusion) return 'check';
   return 'trash';
 }
 
 /** May THIS tile be tapped to toggle? Mirrors the wire gates the caller resolved (canSave /
  *  canUnsave already fold in reachability). `trash` saves (tap ⇒ add the exclusion); `shield`
- *  un-saves. `check` stays inert — protection made outside this session (a foreign exclusion / the
- *  dnd tag) reads as state, never a button. (There is no `eye` or person-shield glyph: recently-
- *  watched and requested items are ordinary, saveable tiles now.) */
+ *  un-saves. `check` stays inert — a live exclusion made outside this session reads as state,
+ *  never a button. UNCHANGED by ADR-086 D-5: narrowing the GLYPH is what restores tappability to a
+ *  lapsed (tag-only) tile, so this gate needs no new case. (There is no `eye` or person-shield
+ *  glyph: recently-watched and requested items are ordinary, saveable tiles now.) */
 export function pendingWallTappable(
   glyph: PendingWallGlyph,
   canSave: boolean,

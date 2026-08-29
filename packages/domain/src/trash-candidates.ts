@@ -23,6 +23,7 @@ import { compareByStrategy, type BatchStrategy } from './trash-strategy';
 import type { MaintainerrClientBundle } from './maintainerr-clients';
 import {
   bucketFlatPendingForMedia,
+  classifyForExpedite,
   fetchLiveExclusions,
   fetchMaintainerrPending,
   shapePendingItems,
@@ -274,8 +275,8 @@ export interface TrashPendingFacets {
   sourceCollections: string[];
 }
 
-/** The Expedite-all preview partition computed server-side over the WHOLE kind set (mirrors the
- *  client previewGuardian) so the confirm modal is honest without loading every tile. */
+/** The Expedite-all preview partition computed server-side over the WHOLE kind set (derived from
+ *  the shared `classifyForExpedite`) so the confirm modal is honest without loading every tile. */
 export interface TrashExpeditePreview {
   deletable: number;
   deletableBytes: number;
@@ -409,23 +410,31 @@ function pendingFacets(items: readonly TrashPendingItem[]): TrashPendingFacets {
   };
 }
 
-/** Partition the way expediteDeletion scope 'all' will (mirrors the client previewGuardian). */
-function partitionPendingForExpedite(items: readonly TrashPendingItem[]): TrashExpeditePreview {
+/**
+ * Partition the way expediteDeletion scope 'all' will — by CALLING the shared derivation
+ * (`classifyForExpedite`, trash-flow.ts) rather than re-implementing it.
+ *
+ * ADR-086 D-11 / DESIGN-048 D-06: this used to be a hand-written copy of the rule, and it had
+ * drifted — it still counted `requesters.length > 0` as `protected` long after the 2026-07-09 owner
+ * ruling made a requester informational and `classifyGuardian` started DELETING requested items.
+ * Since `trash-client.tsx` feeds the Expedite-all confirm from THIS preview, the confirm understated
+ * what the run would delete. The requester branch is gone and the rule now has exactly one home;
+ * the only remaining mirror is the client `previewGuardian` (apps/web/lib/trash.ts), whose parity is
+ * pinned by apps/web/lib/__tests__/trash.test.ts.
+ */
+export function partitionPendingForExpedite(
+  items: readonly TrashPendingItem[],
+): TrashExpeditePreview {
   const out: TrashExpeditePreview = { deletable: 0, deletableBytes: 0, protected: 0, unverifiable: 0 };
   for (const i of items) {
-    if (i.maintainerrMediaId === null) {
-      out.unverifiable += 1;
-    } else if (i.protectedByTag) {
-      out.protected += 1;
-    } else if (i.recentlyWatched) {
-      out.protected += 1;
-    } else if (i.requesters.length > 0) {
-      out.protected += 1;
-    } else if (i.mediaItemId === null) {
-      out.unverifiable += 1;
-    } else {
+    const verdict = classifyForExpedite(i);
+    if (verdict === 'deletable') {
       out.deletable += 1;
       out.deletableBytes += i.sizeBytes;
+    } else if (verdict === 'unverifiable') {
+      out.unverifiable += 1;
+    } else {
+      out.protected += 1;
     }
   }
   return out;

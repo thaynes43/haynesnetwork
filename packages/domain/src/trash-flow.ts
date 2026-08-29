@@ -940,6 +940,14 @@ export async function removeExclusion(input: {
 export type GuardianKeepReason = 'tag' | 'recently_watched' | 'unevaluable';
 export type GuardianVerdict = { keep: true; reason: GuardianKeepReason } | { keep: false };
 
+/** The three fields the guardian actually reads. A structural subset of `TrashPendingItem` (every
+ *  real caller still passes a whole pending item) so the shared expedite derivation below can
+ *  compose it without an unchecked cast. */
+export type GuardianInput = Pick<
+  TrashPendingItem,
+  'protectedByTag' | 'recentlyWatched' | 'mediaItemId'
+>;
+
 /**
  * The guardian's per-item verdict (P4 — fail closed). An item is expeditable ONLY when it is
  * positively evaluated (resolved to our ledger) AND cold (not tag-protected, not recently watched).
@@ -948,12 +956,57 @@ export type GuardianVerdict = { keep: true; reason: GuardianKeepReason } | { kee
  * `media`-param bypass (P3) is defeated by callers running this over the item's REAL pending
  * identity, never a client-declared kind.
  */
-export function classifyGuardian(item: TrashPendingItem): GuardianVerdict {
+export function classifyGuardian(item: GuardianInput): GuardianVerdict {
   if (item.protectedByTag) return { keep: true, reason: 'tag' };
   if (item.recentlyWatched) return { keep: true, reason: 'recently_watched' };
   // Fail closed: no ledger resolution ⇒ no watch data ⇒ we cannot confirm it is safe.
   if (item.mediaItemId === null) return { keep: true, reason: 'unevaluable' };
   return { keep: false };
+}
+
+/** The minimal item surface an expedite verdict reads — the guardian's three fields plus the
+ *  Maintainerr id the 'all' loop pre-checks. */
+export interface ExpediteVerdictInput extends GuardianInput {
+  maintainerrMediaId: TrashPendingItem['maintainerrMediaId'];
+}
+
+/**
+ * Why an item survives (or not) an expedite:
+ * - `deletable`         — cold + positively evaluated ⇒ the server WILL delete it. A requested item
+ *                         is deletable (owner ruling 2026-07-09 — requested is informational only,
+ *                         never an app-side keep); its requester rides the meta badge, not the verdict.
+ * - `protected_tag` / `protected_watched` — kept deliberately (whitelist / watch guardian).
+ * - `unverifiable`      — kept because it CANNOT be verified safe (no Maintainerr id, or unknown to
+ *                         our ledger) ⇒ counted as SKIPPED, never deleted. NOT the same thing as
+ *                         protected — surface it distinctly (ADR-023 C-07b).
+ */
+export type ExpediteVerdict =
+  'deletable' | 'protected_tag' | 'protected_watched' | 'unverifiable';
+
+/**
+ * ADR-086 D-11 / DESIGN-048 D-06 — THE one expedite-partition derivation. It composes the
+ * enforcement truth (`classifyGuardian`, immediately above) with the expedite 'all' loop's
+ * unactionable pre-check, so a preview built on it cannot drift from what the server actually does.
+ *
+ * It exists because three hand-synced copies of this rule had already drifted: the server preview
+ * (`trash-candidates.ts` partitionPendingForExpedite) still counted `requesters.length > 0` as
+ * protected long after the 2026-07-09 owner ruling made requesters informational, so the
+ * Expedite-all confirm UNDERSTATED what would be deleted. The server preview now calls THIS, so
+ * that copy is gone. The remaining mirror is the client's `previewGuardian`
+ * (apps/web/lib/trash.ts) — app lib code must not import @hnet/domain (it would drag drizzle/pg
+ * into the browser bundle), so parity is a test contract instead of an import:
+ * `apps/web/lib/__tests__/trash.test.ts` compares the two case-by-case in the node context (the
+ * same arrangement lib/library-views.ts uses). Change this and that test fails until the mirror
+ * follows.
+ */
+export function classifyForExpedite(item: ExpediteVerdictInput): ExpediteVerdict {
+  // The expedite 'all' loop skips unactionable items (no Maintainerr id) BEFORE the guardian.
+  if (item.maintainerrMediaId === null) return 'unverifiable';
+  const verdict = classifyGuardian(item);
+  if (!verdict.keep) return 'deletable';
+  if (verdict.reason === 'tag') return 'protected_tag';
+  if (verdict.reason === 'recently_watched') return 'protected_watched';
+  return 'unverifiable'; // 'unevaluable' — kept because it cannot be cleared, not whitelisted.
 }
 
 /**

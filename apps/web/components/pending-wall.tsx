@@ -60,9 +60,17 @@ function tileInfo(item: PendingWallItem, glyph: PendingWallGlyph): string {
       : 'No scheduled delete date',
   ];
   if (glyph === 'shield') lines.push('Saved by you — protected from deletion');
-  else if (glyph === 'check')
+  else if (glyph === 'check') lines.push('Protected — excluded in Maintainerr');
+  // ADR-086 D-5 — the `dnd` tag is INFORMATION here, never a protection claim. It can outlive the
+  // exclusion that created it (a file replacement re-keys the Plex item; Maintainerr's nightly
+  // maintenance then prunes the dangling exclusion), and a tag-only tile is NOT protected: it
+  // renders as the ordinary slated `trash` and stays tappable. The tag still forces a server-side
+  // keep (D-6), so the note says what the tag IS without asserting the item is safe.
+  if (item.protectedByTag)
     lines.push(
-      item.protectedByTag ? 'Protected — carries the dnd tag' : 'Protected — excluded in Maintainerr',
+      item.protectedByExclusion
+        ? 'Carries the dnd tag'
+        : 'Carries the dnd tag, but no live Maintainerr exclusion — save it to protect it',
     );
   // DESIGN-010 D-12 (build C) — the cross-server watch line (info, not protection). BOTH watch
   // states surface here now (the action corner never carries watch info): "Watched recently on
