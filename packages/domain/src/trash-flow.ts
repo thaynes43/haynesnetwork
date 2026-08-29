@@ -25,6 +25,7 @@ import {
 } from './errors';
 import { guardMaintainerrCall, type MaintainerrClientBundle } from './maintainerr-clients';
 import { executeRestore, type ExecuteArrAddResult } from './restore-flow';
+import { openSaveIntent, revokeSaveIntent } from './trash-save-intents';
 
 /** The Maintainerr-managed protective tag (addendum b): enabled on Radarr/Sonarr via the settings
  *  patch (a deploy step), Maintainerr stamps it when it excludes an item and removes it on
@@ -792,6 +793,22 @@ export async function saveExclusion(
     input.maintainerr.read.getExclusions({ mediaServerId: input.maintainerrMediaId }),
   );
   if (existing.length > 0) {
+    // ADR-086 D-1 — the intent is written even here. This early return is EXACTLY what a re-save
+    // after a lapse hits (Maintainerr already holds the exclusion under the current key), and it is
+    // the one path that historically recorded nothing at all. No duplicate ledger row: the
+    // protection already exists and was already audited when it was first established.
+    if (input.mediaItemId != null) {
+      const mediaItemId = input.mediaItemId;
+      await inTransaction(input.db, async (tx) => {
+        await openSaveIntent(tx, {
+          mediaItemId,
+          maintainerrMediaId: input.maintainerrMediaId,
+          origin: input.reason === 'batch_save' ? 'batch_save' : 'user',
+          actorId: input.actorId,
+          relink: input.reason === 'relink',
+        });
+      });
+    }
     return { excluded: false, alreadyExcluded: true };
   }
 
@@ -800,7 +817,9 @@ export async function saveExclusion(
     input.maintainerr.write.addExclusion(input.maintainerrMediaId, input.collectionId),
   );
 
-  // 2) Then record the durable audit event (source 'maintainerr').
+  // 2) Then record the durable audit event (source 'maintainerr') AND the durable intent, in ONE
+  //    transaction (hard rule 6 — ADR-086 D-1). The intent is what survives a Plex re-key; the
+  //    exclusion above is only the enforcement of it.
   await inTransaction(input.db, async (tx) => {
     await tx.insert(ledgerEvents).values({
       mediaItemId: input.mediaItemId ?? null,
@@ -815,6 +834,17 @@ export async function saveExclusion(
         reason: input.reason ?? 'user',
       },
     });
+    // ADR-086 D-13 — a save on an item unknown to our ledger has no durable identity to relink.
+    // It is still excluded and still audited; it simply cannot be rescued after a re-key.
+    if (input.mediaItemId != null) {
+      await openSaveIntent(tx, {
+        mediaItemId: input.mediaItemId,
+        maintainerrMediaId: input.maintainerrMediaId,
+        origin: input.reason === 'batch_save' ? 'batch_save' : 'user',
+        actorId: input.actorId,
+        relink: input.reason === 'relink',
+      });
+    }
   });
 
   return { excluded: true, alreadyExcluded: false };
@@ -831,18 +861,48 @@ export async function removeExclusion(input: {
   maintainerrMediaId: string;
   mediaItemId?: string | null;
   actorId: string | null;
-}): Promise<{ removed: boolean }> {
+}): Promise<{ removed: boolean; intentRevoked: boolean }> {
   const existing = await guardMaintainerrCall('maintainerr GET /rules/exclusion', () =>
     input.maintainerr.read.getExclusions({ mediaServerId: input.maintainerrMediaId }),
   );
   if (existing.length === 0) {
-    return { removed: false };
+    // ADR-086 D-3 — nothing to un-exclude, but there may still be an OPEN INTENT. This is exactly
+    // the lapsed state (the exclusion was pruned when a file replacement re-keyed the Plex item),
+    // and it is the state in which the owner most needs to be able to say "stop keeping this".
+    // If revocation were gated on a successful un-exclude, both un-save affordances would no-op
+    // here and the relink reconciler would re-protect the title forever with no brake.
+    if (input.mediaItemId != null) {
+      const mediaItemId = input.mediaItemId;
+      const revoked = await inTransaction(input.db, async (tx) => {
+        const didRevoke = await revokeSaveIntent(tx, { mediaItemId, actorId: input.actorId });
+        if (didRevoke) {
+          await tx.insert(ledgerEvents).values({
+            mediaItemId,
+            eventType: 'trash_excluded',
+            source: 'maintainerr',
+            occurredAt: nowDate(),
+            requestedByUserId: input.actorId ?? null,
+            payload: {
+              action: 'unsave',
+              maintainerrMediaId: input.maintainerrMediaId,
+              reason: 'lapsed',
+            },
+          });
+        }
+        return didRevoke;
+      });
+      // `removed` stays false — no exclusion was removed — but the intent revocation IS a real,
+      // audited state change, so surface it distinctly rather than hiding it behind a bare no-op.
+      return { removed: false, intentRevoked: revoked };
+    }
+    return { removed: false, intentRevoked: false };
   }
 
   await guardMaintainerrCall('maintainerr DELETE /rules/exclusions', () =>
     input.maintainerr.write.removeExclusion(input.maintainerrMediaId),
   );
 
+  let intentRevoked = false;
   await inTransaction(input.db, async (tx) => {
     await tx.insert(ledgerEvents).values({
       mediaItemId: input.mediaItemId ?? null,
@@ -852,9 +912,15 @@ export async function removeExclusion(input: {
       requestedByUserId: input.actorId ?? null,
       payload: { action: 'unsave', maintainerrMediaId: input.maintainerrMediaId },
     });
+    if (input.mediaItemId != null) {
+      intentRevoked = await revokeSaveIntent(tx, {
+        mediaItemId: input.mediaItemId,
+        actorId: input.actorId,
+      });
+    }
   });
 
-  return { removed: true };
+  return { removed: true, intentRevoked };
 }
 
 /**

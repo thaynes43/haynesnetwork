@@ -20,6 +20,7 @@ import {
   backfillEventAttribution,
   completeFixRequests,
   drainDuePoolRefreshes,
+  relinkSaveIntents,
   expireStaleFixRequests,
   deliverOutbox,
   runFailureDigest,
@@ -45,6 +46,7 @@ import {
   type CollectionWantsSyncReport,
   type ForceSearchCollectionsReport,
   type DrainPoolRefreshResult,
+  type TrashRelinkReport,
   type FormatPairingReport,
   type GbCallMeter,
   type KapowarrClientBundle,
@@ -351,6 +353,14 @@ export interface SyncReport {
   poolRefresh?: DrainPoolRefreshResult | null;
   /** The pool-refresh backstop's error (isolated — a Maintainerr outage never fails the sync run). */
   poolRefreshError?: string;
+  /** ADR-086 / DESIGN-048 D-04 (PLAN-067) — the save-intent RELINK reconciler: re-applies a Save
+   *  whose Maintainerr exclusion lapsed because a file replacement re-keyed the Plex item. Runs
+   *  after the candidate refresh (it joins that snapshot) with the write-capable bundle. Also
+   *  carries the three census counters (same-key / stale-tag / unlinked) that are deliberately
+   *  observed rather than acted on. Null when skipped or errored. */
+  relink?: TrashRelinkReport | null;
+  /** The relink reconciler's error. NEVER sets totalFailure — protection is re-asserted next tick. */
+  relinkError?: string;
   /** True when EVERY requested source failed/aborted — the CLI's nonzero-exit signal. */
   totalFailure: boolean;
 }
@@ -1505,6 +1515,42 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
     }
   }
 
+  // ADR-086 / DESIGN-048 D-04 (PLAN-067) — the SAVE-INTENT RELINK reconciler. Runs LAST on purpose:
+  // it joins against the trash_candidates snapshot the step above just rebuilt, so reading a
+  // pre-refresh snapshot would double its staleness bound (ADR-086 C-07). Needs the WRITE bundle
+  // (it re-applies exclusions), so it is modelled on the pool-refresh backstop rather than the
+  // read-only candidate refresh. Isolated the same way: a Maintainerr outage logs, records the
+  // error, and never fails the sync run.
+  let relink: TrashRelinkReport | null = null;
+  let relinkError: string | undefined;
+  if (options.maintainerr !== undefined) {
+    try {
+      relink = await relinkSaveIntents({ db, maintainerr: options.maintainerr });
+      if (
+        relink.scanned > 0 ||
+        relink.sameKeyCensus > 0 ||
+        relink.staleTagCensus > 0 ||
+        relink.unlinkedSaves > 0
+      ) {
+        logger.info('trash save-intent relink', {
+          enforced: relink.enforced,
+          scanned: relink.scanned,
+          relinked: relink.relinked,
+          alreadyExcluded: relink.alreadyExcluded,
+          failed: relink.failed,
+          // Census channels (ADR-086 D-4/D-8/D-13) — observed, deliberately not acted on.
+          sameKeyCensus: relink.sameKeyCensus,
+          staleTagCensus: relink.staleTagCensus,
+          unlinkedSaves: relink.unlinkedSaves,
+          samples: relink.samples,
+        });
+      }
+    } catch (error) {
+      relinkError = error instanceof Error ? error.message : String(error);
+      logger.error('trash save-intent relink failed', { error: relinkError });
+    }
+  }
+
   const totalFailure = reports.length > 0 && reports.every((r) => r.status !== 'succeeded');
   return {
     mode: options.mode,
@@ -1516,11 +1562,13 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
     fixesTimedOut,
     candidateRefresh,
     poolRefresh,
+    relink,
     ...(backfillError !== undefined ? { backfillError } : {}),
     ...(fixCompletionError !== undefined ? { fixCompletionError } : {}),
     ...(fixTimeoutError !== undefined ? { fixTimeoutError } : {}),
     ...(candidateRefreshError !== undefined ? { candidateRefreshError } : {}),
     ...(poolRefreshError !== undefined ? { poolRefreshError } : {}),
+    ...(relinkError !== undefined ? { relinkError } : {}),
     totalFailure,
   };
 }
