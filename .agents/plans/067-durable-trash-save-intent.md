@@ -20,6 +20,16 @@ Exposure is ongoing: 89–288 file replacements per week.
 
 Evidence: `.agents/context/2026-08-29-trash-save-lapse-incident.md`.
 
+## Status — BUILT (#534, merged 2026-08-29), NOT YET DEPLOYED
+
+S1..S9 all complete; full suite green (domain 908, api 534, web 382, sync 131, db 110) plus e2e.
+Two build-time deviations from DESIGN-048 are recorded in the design itself: no new
+`exclusionVerified` wire field (`protectedByExclusion` already is one), and the client mirror is
+pinned by a parity test rather than a re-export (`apps/web/lib/*` cannot import `@hnet/domain`
+values without dragging drizzle into the browser bundle).
+
+Deploy applies migration `0076` and starts the reconciler — see "Verification (live, after deploy)".
+
 ## Build stages
 
 | # | Stage | Deliverable | Gate |
