@@ -30,8 +30,14 @@ Verified live 2026-08-29 (full evidence chain, ruled-out alternatives, and repro
 - The other **107 of 108** saved items are correctly excluded and out of the pools — the save
   mechanism itself is sound, and so are the pool-removal, rule-execute backstop, read-model and
   aging-invariant paths (all positively exonerated in the note).
-- Exposure is **ongoing**: 32 current pool members went through a delete → re-import cycle since
-  07-01, against **89–288 file replacements per week**.
+- **The trigger is an ordinary quality upgrade, not a delete-and-re-add** (sharpened 2026-08-29
+  after an owner question). Green Lantern went Remux-1080p → WEBDL-2160p with `movieId 2974`
+  constant and `deleted_from_arr_at` still NULL — Radarr replaced the file in place and Plex
+  re-keyed the item anyway. Estate-wide since 07-01: **11,700 `file_deleted` vs 255 `item_removed`,
+  and 11,645 of the file-deletes are followed by an import within 15 minutes** (99.5% upgrades).
+- Exposure is **ongoing but conditional**: an upgrade does not usually break a save (Plex normally
+  updates in place). **15 saved titles were upgraded after being saved; exactly 1 lapsed.** The
+  hazard is that when Plex *does* re-key, the loss is silent — not that every upgrade loses a save.
 
 Nothing is at risk of deletion today — the stale tag itself still forces a keep at every decision
 point (`trash-flow.ts:886` `classifyGuardian`, `trash-batches.ts:531` batch snapshot state,

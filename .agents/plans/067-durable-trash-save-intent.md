@@ -16,7 +16,12 @@ Plex item; Maintainerr's nightly `removeLeftoverExclusions()` deletes the dangli
 save is erased with no error, while a leftover `dnd` tag keeps the wall painting an inert
 "protected" check the owner cannot tap. One realised case (**Green Lantern**), re-protected by hand
 2026-08-29 and verified off both Maintainerr's pool (437 → 436) and the app's wall snapshot.
-Exposure is ongoing: 89–288 file replacements per week.
+
+The trigger is an ordinary **quality upgrade** (Radarr replaces the file in place — the movie is
+never removed), not a delete-and-re-add: 11,700 `file_deleted` vs 255 `item_removed` since 07-01,
+99.5% of the file-deletes followed by an import within 15 min. Exposure is real but **conditional**
+— an upgrade only breaks a save when Plex re-keys the item, which is the minority case: 15 saved
+titles were upgraded after being saved and exactly 1 lapsed.
 
 Evidence: `.agents/context/2026-08-29-trash-save-lapse-incident.md`.
 
