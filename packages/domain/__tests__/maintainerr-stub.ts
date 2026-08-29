@@ -69,6 +69,35 @@ export function purgeRuleLessCollections(state: MaintState): number[] {
   state.collections = state.collections.filter((c) => grouped.has(c.id));
   return purged;
 }
+/**
+ * Mirror of Maintainerr's nightly `RuleMaintenanceService.removeLeftoverExclusions` (same
+ * `20 4 * * *` task as the collection purge above, v3.25.0): deletes EVERY exclusion whose
+ * `mediaServerId` is no longer present on the media server. Because an exclusion is keyed on the
+ * Plex ratingKey, replacing a title's file re-keys the item and its exclusion is collected here —
+ * silently erasing the owner's Save (ADR-086). Tests call this after re-keying an item to simulate
+ * a night passing.
+ *
+ * `presentIds` is what the media server still has. Anything excluded but absent is pruned.
+ */
+export function purgeDanglingExclusions(state: MaintState, presentIds: Iterable<string>): string[] {
+  const present = new Set(presentIds);
+  const pruned = [...state.exclusions].filter((id) => !present.has(id));
+  for (const id of pruned) state.exclusions.delete(id);
+  return pruned;
+}
+
+/** Re-key an item the way Plex does on a file replacement: same tmdb/tvdb identity, NEW ratingKey. */
+export function rekeyStubItem(state: MaintState, oldId: string, newId: string): boolean {
+  for (const c of state.collections) {
+    const item = c.items.find((i) => i.mediaServerId === oldId);
+    if (item) {
+      item.mediaServerId = newId;
+      return true;
+    }
+  }
+  return false;
+}
+
 export interface RecordedCall {
   method: string;
   pathname: string;

@@ -277,6 +277,10 @@ export const FINAL_WARNING_DEFAULT: FinalWarning = {
 export interface AppSettingValueMap {
   trash_skip_admin_gate: boolean;
   trash_default_window_days: number;
+  // ADR-086 D-9 (PLAN-067) — kill switch for the save-intent relink reconciler. Defaults TRUE: it
+  // ships ENFORCING, because every action it takes is protective, idempotent and audited, and
+  // withholding a protection the owner explicitly asked for is the risk-bearing direction.
+  trash_relink_enabled: boolean;
   motd: MotdRecord;
   space_targets: SpaceTargets;
   space_policy: SpacePolicy;
@@ -327,6 +331,7 @@ export const COLLECTION_SIZE_CAP_DEFAULT = 25;
 export const APP_SETTING_DEFAULTS: AppSettingValueMap = {
   trash_skip_admin_gate: false,
   trash_default_window_days: 21,
+  trash_relink_enabled: true,
   motd: MOTD_DEFAULT,
   // No targets set out of the box — the utilization surface renders numbers with no reference line
   // until an admin sets one. `{}` (an object) so the getAppSetting typeof-guard treats it like motd.

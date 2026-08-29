@@ -691,6 +691,19 @@ export type TrashBatchItemState = (typeof TRASH_BATCH_ITEM_STATES)[number];
 export const TRASH_SAVE_ACTIONS = ['save', 'unsave'] as const;
 export type TrashSaveAction = (typeof TRASH_SAVE_ACTIONS)[number];
 
+// ADR-086 / DESIGN-048 D-01 — how a durable Trash save intent came to exist. 'backfill' is the
+// one-off migration-0076 seed from `trash_excluded` ledger history (user-originated saves only —
+// a `watch_guardian` auto-protection is deliberately time-scoped and must never become an eternal
+// intent, ADR-086 D-10).
+export const TRASH_SAVE_INTENT_ORIGINS = ['user', 'batch_save', 'backfill'] as const;
+export type TrashSaveIntentOrigin = (typeof TRASH_SAVE_INTENT_ORIGINS)[number];
+
+// ADR-086 D-3 — the `reason` recorded on a `trash_excluded` save event. 'relink' is written ONLY by
+// the reconciler re-applying a lapsed intent onto the title's current key; attribution stays honest
+// (a relink is never recorded as a fresh user save).
+export const TRASH_EXCLUDED_REASONS = ['user', 'batch_save', 'watch_guardian', 'relink'] as const;
+export type TrashExcludedReason = (typeof TRASH_EXCLUDED_REASONS)[number];
+
 // ---------------------------------------------------------------------------
 // ADR-025 C-06 — generic app_settings key/value store (Q-06). A small audited key→jsonb
 // table; the single-writer `setAppSetting` co-writes an `update_app_setting` permission_audit
@@ -701,6 +714,9 @@ export type TrashSaveAction = (typeof TRASH_SAVE_ACTIONS)[number];
 export const APP_SETTING_KEYS = [
   'trash_skip_admin_gate', // bool — when true, createBatch auto-green-lights (audited gate_skipped)
   'trash_default_window_days', // int — the default save-window length copied onto a batch at green-light
+  // ADR-086 D-3 / DESIGN-048 — kill switch for the save-intent relink reconciler. Absent key ⇒
+  // the documented default TRUE (it ships enforcing: every action is protective and idempotent).
+  'trash_relink_enabled', // bool
   // ADR-027 / DESIGN-004 D-15 (PLAN-010 MOTD) — the Message-of-the-Day record (jsonb object:
   // { message, severity, enabled, startsAt, endsAt, updatedBy }). The dashboard banner reuses the
   // generic audited store rather than a bespoke `motd` table (Open decision #1 resolved to reuse).

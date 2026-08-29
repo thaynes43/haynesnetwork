@@ -53,12 +53,23 @@ run against real data until un-save can revoke a lapsed intent. Otherwise the ow
 
 ## Verification (live, after deploy)
 
-- The backfill seeds 108 intents; `select count(*) from trash_save_intents where revoked_at is null`.
-- **Green Lantern is the first live proof.** It backfills with the *old* key `95267`; the first
-  reconciler tick must detect pool key ≠ saved key and update the intent to `102261` **without**
-  writing a second exclusion (it is already excluded under the new key ⇒ the `alreadyExcluded`
-  branch, `relinked = 0`, `alreadyExcluded = 1`). If it writes a relink, the live-verify stage is
-  broken.
+- The backfill seeds 108 intents. **Dry-run against production 2026-08-29 returns exactly
+  108 (97 `user` + 11 `batch_save`; 100 movie / 8 tv)** — the gate is pre-verified, so a different
+  number after deploy means something changed, not that the estimate was loose.
+- **Green Lantern backfills with the OLD key `95267`** (verified by the same dry-run) — but it will
+  **not** be corrected on the first tick, and that is correct. The hand-repair during the incident
+  re-protected it, so it is no longer in any pool, and the reconciler joins **only against pool
+  members**. Expect its intent to sit on the stale key indefinitely.
+
+  **This is the reconciler's scope, deliberately: it acts on titles that are actually at risk.** A
+  stale key on a non-pooled intent is inert — if that title ever re-enters a pool under a new key,
+  the reconciler sees pool key ≠ saved key and self-corrects then, hitting the `alreadyExcluded`
+  branch (`relinked = 0`, `alreadyExcluded = 1`) because the exclusion is already in place. Do not
+  "fix" this by making the reconciler scan outside the pool: that would re-key intents for titles
+  no rule is targeting, spend Maintainerr reads on non-problems, and lose the property that every
+  write it makes is protecting something genuinely slated.
+
+  Covered by the `relinks lazily` unit test.
 - The wall shows no inert `check` on any item lacking a live exclusion.
 - Census counters land in the sync log: `sameKeyCensus`, `staleTagCensus`, `unlinkedSaves`.
   Expected at first run: `staleTagCensus` ≥ 0 (Green Lantern's tag is now backed by a real

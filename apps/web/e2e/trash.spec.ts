@@ -22,6 +22,7 @@ import { armAndConfirm, expectViewportFit, openUserMenu, signIn, signOut } from 
 import { readRuntimeEnv } from './support/env';
 import {
   STUB_MAINT_FIXTURE_ID,
+  STUB_MAINT_RUNNER_ID,
   STUB_MAINT_TV_ID,
   STUB_MAINT_VANISHED_ID,
   type RecordedMaintainerrWrite,
@@ -172,27 +173,32 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await expect(page.getByTestId('trash-tile')).toHaveCount(4);
     await expect(page.getByTestId('trash-tablewrap')).toHaveCount(0);
 
-    // The unified glyph model: cold ⇒ trash, dnd-tagged ⇒ check (inert), unknown-to-ledger ⇒ trash
-    // (savable; the sweep would skip it). The Fixture is recently-watched AND requested — but a
+    // The unified glyph model: cold ⇒ trash, LIVE-excluded ⇒ check (inert), unknown-to-ledger ⇒
+    // trash (savable; the sweep would skip it). The Fixture is recently-watched AND requested — but a
     // requester is informational only now (owner ruling 2026-07-09 — the person-shield is retired):
     // it reads as the SAVEABLE slated trash-can, with the requester + watch facts on the meta line.
+    // ADR-086 D-5: the dnd-tagged Runner carries NO live exclusion here, so it is a slated,
+    // TAPPABLE trash tile too — a bare tag is a keep-signal, never a protection claim.
     const vanished = page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' });
     const fixture = page.getByTestId('trash-tile').filter({ hasText: 'The Fixture' });
     const runner = page.getByTestId('trash-tile').filter({ hasText: 'Stub Runner' });
     const unknown = page.getByTestId('trash-tile').filter({ hasText: 'tmdb:990009' });
     await expect(vanished).toHaveAttribute('data-glyph', 'trash');
     await expect(fixture).toHaveAttribute('data-glyph', 'trash'); // requested is a meta badge, not a glyph
-    await expect(runner).toHaveAttribute('data-glyph', 'check');
+    await expect(runner).toHaveAttribute('data-glyph', 'trash');
     await expect(unknown).toHaveAttribute('data-glyph', 'trash');
 
     // The requester attribution rides the meta line as an info badge (person icon + tooltip),
     // co-existing with the watch chip — it never changes the corner action.
     await expect(fixture.getByTestId('wall-requested')).toHaveAttribute('title', /Requested by /);
 
-    // Only the dnd-tagged `check` is inert (a non-button span). The recently-watched + requested
-    // Fixture is a normal tappable save toggle (a button) — requested/watched never make it inert.
-    await expect(runner.locator('span[data-testid="trash-toggle"]')).toHaveCount(1);
+    // ADR-086 D-5 — nothing on this wall is inert: no fixture holds a live exclusion, so every tile
+    // (including the dnd-tagged Runner, which used to be a dead `check`) is a tappable save toggle.
+    // Only a live exclusion produces the inert non-button span — see the "a live exclusion made
+    // outside the session shows the inert protected check" test below.
+    await expect(runner.locator('button[data-testid="trash-toggle"]')).toHaveCount(1);
     await expect(fixture.locator('button[data-testid="trash-toggle"]')).toHaveCount(1);
+    await expect(page.locator('span[data-testid="trash-toggle"]')).toHaveCount(0);
 
     // The guardian fact + scheduled date live in the tile tooltip now; the recently-watched Fixture's
     // tooltip carries the "Watched recently" line (info, not a corner state).
@@ -412,6 +418,52 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     const vanished = page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' });
     await expect(vanished).toHaveAttribute('data-glyph', 'check');
     await expect(vanished.locator('button[data-testid="trash-toggle"]')).toHaveCount(0);
+    await resetMaintainerr(page);
+  });
+
+  /**
+   * ADR-086 D-5 — the lapse, end to end. This is the 2026-08-29 incident in the browser: a title is
+   * saved, its file is later replaced, Plex re-keys the item, Maintainerr's nightly maintenance
+   * prunes the now-dangling exclusion, and the title reappears in the pool still wearing its `dnd`
+   * tag. Before this ADR the wall painted that as an INERT `check` — protection that did not exist,
+   * on a tile the owner could not tap to fix. It must now read as an ordinary tappable tile.
+   *
+   * Stub Runner is the dnd-tagged fixture, so it carries the leftover tag without any stub help.
+   */
+  test('a lapsed save (dnd tag, no live exclusion) is a tappable tile, not an inert protected check', async ({
+    page,
+  }) => {
+    await resetMaintainerr(page);
+    // The save that later lapses.
+    await seedExclusion(page, STUB_MAINT_RUNNER_ID);
+    await signIn(page, 'admin');
+    await openTrashMovies(page);
+
+    const runner = page.getByTestId('trash-tile').filter({ hasText: 'Stub Runner' });
+    await expect(runner).toHaveAttribute('data-glyph', 'check');
+    await expect(runner.locator('button[data-testid="trash-toggle"]')).toHaveCount(0);
+
+    // --- a night passes: the file is replaced, Plex re-keys, the nightly maintenance prunes the
+    // dangling exclusion. The `dnd` tag cannot be removed (it resolves the *arr item FROM the dead
+    // ratingKey), so it survives — which is the whole trap.
+    await page.request.post(`${env().STUB_MAINTAINERR_URL}/_stub/exclude`, {
+      data: { mediaServerId: STUB_MAINT_RUNNER_ID, excluded: false },
+    });
+    await removePending(page, STUB_MAINT_RUNNER_ID);
+    await page.request.post(`${env().STUB_MAINTAINERR_URL}/_stub/add-pending`, {
+      data: {
+        collectionId: 7,
+        mediaServerId: 'ms-880102', // the NEW ratingKey
+        tmdbId: 880002, // same identity — this is what makes the relink possible
+        sizeBytes: 2_147_483_648,
+      },
+    });
+
+    await openTrashMovies(page);
+    const relisted = page.getByTestId('trash-tile').filter({ hasText: 'Stub Runner' });
+    // The honest outcome: slated, and TAPPABLE so the owner has a way back.
+    await expect(relisted).toHaveAttribute('data-glyph', 'trash');
+    await expect(relisted.locator('button[data-testid="trash-toggle"]')).toHaveCount(1);
     await resetMaintainerr(page);
   });
 

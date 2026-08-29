@@ -154,17 +154,18 @@ write-capable bundle is already built (`packages/sync/src/scripts/sync.ts:317-32
 
 ### D-05 — The honest badge (display only)
 
-**New wire field on `TrashPendingItem`:**
+**Amended at build time (2026-08-29): no new wire field is needed.** The design called for adding
+`exclusionVerified`, but `protectedByExclusion` **already is** exactly that field — it is populated
+in `listTrashPendingPage` from the page-scoped `fetchLiveExclusions` cross-check
+(`trash-candidates.ts:509-517`), it carries only the live-exclusion verdict, and **no server-side
+keep reads it**. So ADR-086 D-6's "provably display-only" property holds as-is, and adding a second
+field carrying the same fact would be duplication, not safety.
 
-```ts
-/** ADR-086 D-6 — the DISPLAY verdict. `protectedByTag` stays exactly as it is (every server-side
- *  keep still reads it); this field carries the only claim the UI is allowed to make: a live
- *  Maintainerr exclusion. Null ⇒ not verified on this read path (see D-12). */
-exclusionVerified: boolean | null;
-```
-
-Populated in `listTrashPendingPage` alongside `protectedByExclusion` from the same
-`fetchLiveExclusions` result — no extra upstream calls.
+The tri-state (`boolean | null`) has no producer today: `listTrashPendingPage` calls
+`fetchLiveExclusions` unconditionally and it fails closed. **If the ADR-035 C-06 follow-up recorded
+in PLAN-067 ever lands** (render the wall from the snapshot during a Maintainerr outage), the
+tri-state becomes necessary to honour D-12's conservative fallback — do not drop that requirement
+along with the field.
 
 **`apps/web/lib/trash.ts` `pendingWallGlyph`** — the `||` at `:166` narrows:
 
@@ -197,9 +198,21 @@ the *server* preview, so the Expedite-all confirm understates what will be delet
 carry requesters today, so this is latent.
 
 Fix: drop the requester branch from `partitionPendingForExpedite` so all three agree, and collapse
-them onto one shared derivation exported from `@hnet/domain` (the client mirror re-exports rather
-than re-implements). This is the point of the change: adding D-05's new rule to one of three copies
-would repeat the exact drift that caused this.
+them onto one shared derivation. This is the point of the change: adding D-05's new rule to one of
+three copies would repeat the exact drift that caused this.
+
+**Amended at build time (2026-08-29) — the client mirror cannot literally re-export.** `apps/web/lib/*`
+never imports `@hnet/domain` *values*: that drags drizzle/pg into the browser bundle (the rule is
+stated at `lib/media.ts:117`, `lib/library-views.ts:2-6`, `lib/space-policy.ts:4`), and
+`@hnet/domain` exposes a single `"."` export. A true re-export would need a new pure subpath plus
+moving guardian code out of `trash-flow.ts` — the file PLAN-067's invariants pin by line number.
+
+So the shape is: **the two SERVER copies collapse into one** (`classifyForExpedite` in
+`trash-flow.ts`, which `partitionPendingForExpedite` now calls — structurally undriftable), and the
+remaining client mirror `previewGuardian` is pinned by a **parity test over the full input matrix**,
+the same arrangement `lib/library-views.ts` already uses. `classifyGuardian`'s body is byte-identical;
+only its parameter type widens to a structural `Pick` of the three fields it reads, which is a
+zero-runtime change.
 
 ### D-07 — Backfill (one-off, in `0076`)
 
@@ -274,4 +287,5 @@ still yields the inert `'check'`. Add the lapsed-item case (tag true, exclusion 
 | ID | Question | Resolution |
 |----|----------|------------|
 | Q-01 | Should the D-8 stale-tag census graduate to actually stripping `dnd` tags once counts are known? | (open — deliberately deferred; needs an owner ruling backed by the census, not a guess) |
+| Q-03 | During the lapse window, `/library/[id]` now offers **Save** rather than Un-save (the item honestly reads as slated), so revoking the intent takes Save → Un-save instead of one click. Worth a dedicated "stop keeping this" affordance? | (open — low urgency: the window is ≤ one incremental tick before the reconciler relinks and the normal Un-save returns, and the server still refuses to delete a tag-protected item throughout) |
 | Q-02 | Should a relink notify the owner (Bulletin/Pushover), or is the ledger row + digest enough? | (open — leaning ledger-only; Pushover audit notifications were REJECTED for ADR-084's analogous case on 2026-08-20, so the precedent says no) |

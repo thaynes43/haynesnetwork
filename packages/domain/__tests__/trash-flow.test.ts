@@ -563,13 +563,15 @@ describe('saveExclusion / removeExclusion (ADR-023 D-05 protective ordering)', (
       maintainerrMediaId: '5001',
       actorId,
     });
-    expect(res).toEqual({ removed: true });
+    // ADR-086 D-3 — `intentRevoked` rides the result: no media item was linked here, so there
+    // was no durable intent to revoke.
+    expect(res).toEqual({ removed: true, intentRevoked: false });
     expect(calls.some((c) => c.method === 'DELETE')).toBe(true);
 
     // Not excluded ⇒ no-op.
     const { bundle: b2, calls: c2 } = makeMaintainerr(baseState());
     const res2 = await removeExclusion({ db: t.db, maintainerr: b2, maintainerrMediaId: '404', actorId });
-    expect(res2).toEqual({ removed: false });
+    expect(res2).toEqual({ removed: false, intentRevoked: false });
     expect(c2.some((c) => c.method === 'DELETE')).toBe(false);
   });
 });
