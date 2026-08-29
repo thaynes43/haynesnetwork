@@ -4,6 +4,44 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-08-29 — Trash "Save" silently lapses on file replacement (ADR-086 Proposed, build is next)
+
+**Owner report: "Green Lantern and a few others have been saved for at least a week" and are still
+on the Trash wall.** Root-caused and the live case is fixed. A Save writes a Maintainerr exclusion
+keyed on the **Plex ratingKey**, which is not stable: a file replacement (upgrade grab → delete →
+import) re-keys the Plex item, and Maintainerr's nightly `removeLeftoverExclusions()` deletes the
+now-dangling exclusion. The save is erased with no error. The paired `dnd` un-tag cannot complete
+(it resolves the *arr item *from* the dead ratingKey), so the tag survives and the wall paints the
+item with the **inert `check` glyph** — looks protected, is not, and cannot be tapped to re-save.
+
+**Scope: exactly one live case.** Green Lantern (saved 07-11 on key 95267 → re-keyed 102261 on
+08-05, back in the pool 08-06). The other 107 of 108 saved items are correctly excluded and out of
+the pools. The only other ever-saved titles on the wall — Percy Jackson and The Passenger — were
+**deliberately un-saved** by the owner on 07-09 and belong there. **Not caused by the NZB/Kometa
+download-loop remediation** (unrelated mechanism); that fix actually *reduced* exposure
+(file replacements 288/wk on 08-10 → 89/wk on 08-24).
+
+**No deletion risk was ever present** — the stale tag itself forces a keep at every decision point,
+and ADR-036 keeps the pools defused. Positively exonerated with evidence: the exclusion→pool-removal
+mechanism, the rule-execute backstop, the read model, the sync CronJobs, and GitOps drift (pod and
+`origin/main` both on Maintainerr 3.25.0).
+
+**Remediated live:** Green Lantern re-protected (exclusion 388), rule run dropped it, pool 437 → 436.
+Note it carries **no ledger row** (written direct to Maintainerr), but its 07-11 `save` event is
+still the latest, so the ADR-086 backfill picks it up correctly.
+
+**ADR-086 (Proposed)** settles the durable fix — owner ruled **"fix both halves"** (AskUserQuestion,
+08-29): a durable revocable `trash_save_intents` record keyed on the *arr identity plus a
+**changed-key-only** relink reconciler, and a wall that stops asserting protection it cannot prove
+while every server-side keep-signal stays untouched. **BUILD IS NEXT: DESIGN-048 + PLAN-067.**
+Glossary already carries T-241/T-242 and the T-70 amendment. Three review findings folded in that a
+builder must not re-open: **D-3** (un-save must revoke the intent even when there is no exclusion
+left to remove, or the owner cannot stop the reconciler), **D-4** (relink only on a *changed* key —
+same-key is a human un-exclusion and must never be fought), **D-11** (a latent Expedite-all consent
+bug: the server preview counts requester items as protected while the guardian deletes them; zero
+current exposure). Full evidence + reproduction commands:
+`.agents/context/2026-08-29-trash-save-lapse-incident.md`.
+
 ## ▶ 2026-08-23 — Plex login outage FIXED + estate access audit (ADR-085 Proposed, build is next)
 
 **"Log in with Plex" was fully down and is restored.** Plex retired
