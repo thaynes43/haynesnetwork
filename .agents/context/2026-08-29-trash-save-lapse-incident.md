@@ -5,7 +5,10 @@ and still sit on the Trash wall, where a save used to make an item disappear on 
 run. Owner asked whether the recent download-loop remediation changed this, and whether there is
 anything to worry about.
 
-**Verdict: a real, systemic bug — not expected behaviour, and unrelated to the download-loop fix.**
+**Verdict: a real bug — not expected behaviour, and unrelated to the download-loop fix.** The trigger
+is an ordinary Radarr **quality upgrade** (file replaced in place); the movie is never deleted from
+Radarr and never re-added. What breaks the save is that Plex sometimes retires the old item and
+mints a new ratingKey when the file underneath it changes.
 No deletion risk today. One live case (Green Lantern), re-protected during this investigation.
 Owner ruled **fix both halves** (AskUserQuestion, 2026-08-29).
 
@@ -17,7 +20,7 @@ Owner ruled **fix both halves** (AskUserQuestion, 2026-08-29).
 |---|---|---|
 | 1 | Owner saves a title. App writes a Maintainerr exclusion keyed on the **Plex ratingKey** (`mediaServerId`), plus a `trash_excluded` ledger row. | `trash-flow.ts:791-821`; `write.ts:347-357` (`POST /api/rules/exclusion {mediaId, action:0}`) |
 | 2 | Maintainerr drops it from the rule pool on the next run. Item leaves the wall. **This part works.** | 0 of 291 exclusions are still pool members; 107 of 108 saved items are correctly out of the pools |
-| 3 | Later, Radarr/Sonarr **replaces the file** (upgrade grab → delete → import). Plex drops the old item and creates a new one with a **new ratingKey**. | Green Lantern: `grabbed`/`deleted`/`imported` on 2026-08-05, Plex `addedAt` 2026-08-06 01:33, key 95267 → **102261** |
+| 3 | Later, Radarr **upgrades the file in place** — grab a better release, delete the OLD FILE, import the new one. The movie is never removed from Radarr. Plex nonetheless retires the old item and mints a new one with a **new ratingKey**. | Green Lantern 2026-08-05: Remux-1080p → **WEBDL-2160p**, `movieId 2974` constant throughout, delete payload `kind: file_deleted` / `rawEventType: movieFileDeleted` pointing at the OLD file path, `media_items.deleted_from_arr_at` still NULL. Plex `addedAt` = **21:33:01**, the exact import second; key 95267 → **102261** |
 | 4 | Maintainerr's nightly **Rule Maintenance** (cron `20 4 * * *`) runs `removeLeftoverExclusions()`, which **deletes every exclusion whose ratingKey no longer exists on the media server**. The save is erased. | `rule-maintenance.service.js` (v3.25.0, read off the running pod); exclusion for 95267 absent from `exclusion` table |
 | 5 | The paired `dnd` un-tag **cannot complete**: it resolves the *arr item from the (now nonexistent) ratingKey, with a `collection_media` fallback row that is also gone ⇒ zero lookup candidates ⇒ no *arr id ⇒ tag left behind. | `servarr-tag.service.js:237-246` → `metadata.service.js:114-120`; `radarr_untag_on_unexclude = 1` yet Green Lantern still carries `dnd` |
 | 6 | Rules re-evaluate the new, unexcluded item ⇒ **back in the deletion pool**. | `trash_candidates` row for 102261, `hnet — unwatched low-value movies`, pool add 2026-08-06 |
@@ -29,9 +32,19 @@ So the owner's read was exactly right: it looks saved, it never leaves, and the 
 
 - **Live cases today: 1** (Green Lantern). Every one of the other 107 saved items is correctly
   excluded and out of the pools; all recent saves (95537, 104030, 99634, 96849, …) verified intact.
-- **Exposure is ongoing, not theoretical.** 32 current pool members went through a delete →
-  re-import cycle since 2026-07-01, and the estate replaces **89–288 files per week**. Every
-  replacement of a *saved* title lapses that save.
+- **Exposure, measured properly (corrected 2026-08-29 after an owner question).** The trigger is a
+  routine **quality upgrade**, not a delete-and-re-add: of the file-removal events since 07-01,
+  **11,700 are `file_deleted` (653 items) vs 255 `item_removed`**, and **11,645 of the 11,700 are
+  followed by an import within 15 minutes** — 99.5% are upgrades.
+
+  But an upgrade does **not** usually break a save. **15 saved titles were upgraded after being
+  saved; exactly 1 (Green Lantern) lapsed.** Plex normally updates the existing item in place and
+  the ratingKey survives; the lapse needs the rarer case where Plex retires the old item and mints a
+  new one. So the honest risk is "an upgrade *can* re-key the item, and when it does the save is
+  silently gone", not "every replacement lapses a save".
+
+  An earlier version of this note said the latter. That was wrong, and the corrected conditional is
+  the one to quote.
 - **Rare enough to have gone unnoticed:** zero `Removed exclusion` lines in the 7 days of retained
   Maintainerr logs. It only bites when a replaced title happens to have been saved.
 
@@ -50,9 +63,11 @@ So the owner's read was exactly right: it looks saved, it never leaves, and the 
 - **GitOps drift.** The pod runs `3.25.0` and `origin/main` pins `3.25.0` (haynes-ops #2640). A local
   clone was stale; there is no drift.
 - **The Kometa / NZB download-loop remediation.** Unrelated mechanism (SAB `no_dupes`, see
-  `2026-08-19-nzb-dupe-loop-incident.md`). It did not cause this and did not change it. If anything
-  the file-replacement churn it drove *increased exposure*: weekly delete events peaked at
-  2,399 (288 items) the week of 08-10 and fell to 1,003 (89 items) the week of 08-24 after the fix.
+  `2026-08-19-nzb-dupe-loop-incident.md`). It did not cause this and did not change it. It did drive
+  file-replacement churn (weekly file-delete events peaked at 2,399 / 288 items the week of 08-10,
+  falling to 1,003 / 89 items the week of 08-24), but churn only matters where it intersects a
+  *saved* title AND Plex re-keys — see the corrected conditional above. Do not present the churn
+  numbers as the exposure figure.
 
 ## Why no deletion risk today
 
