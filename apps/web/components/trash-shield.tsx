@@ -3,16 +3,18 @@
 // DESIGN-010 D-09 — the Save/whitelist SHIELD, the Trash section's protective affordance
 // (R-83). One shared control for the /trash pending rows and the /library/[id] guard panel:
 // off = outline shield ("Save — protect from deletion"), on = filled accent shield ("Saved").
-// Save/un-save are PROTECTIVE + reversible, so the shield is a plain toggle (no two-step —
-// ADR-014 reserves that for destructive actions); toggling recolors the glyph, never the
-// layout (ADR-015 — the button footprint is constant in both states).
+// SAVING is protective and stays ONE tap. RELEASING a save is the destructive direction — the title
+// goes straight back on the deletion list — so since 2026-09-14 (owner-reported phantom un-save) it
+// takes the ADR-014 inline two-step, the same `useConfirm` the ConfirmButton uses. Arming recolors
+// the glyph, never the layout (ADR-015 — the button footprint is constant in every state).
 //
 // The library guard panel (TrashPendingNotice) is the DESIGN-010 Q-02 resolution: the
 // detail-page shield renders ONLY while the item is actually in Maintainerr's pending set
 // (protect-in-context) — saveExclusion needs the Maintainerr mediaServerId (a Plex ratingKey),
 // which exists only on pending rows; Maintainerr has no tmdb/tvdb lookup endpoint to resolve
 // one for arbitrary ledger items (D-02), and we never guess ratingKeys.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useConfirm } from '@hnet/ui';
 import { trpc } from '@/lib/trpc-client';
 import { formatBytes, formatDay } from '@/lib/media';
 import { describeMutationError } from '@/lib/app-error';
@@ -257,24 +259,40 @@ export function ShieldButton({
   onUnsave,
 }: ShieldButtonProps) {
   const actionable = on ? canUnsave : canSave;
-  const label = on
-    ? canUnsave
-      ? `Un-save ${itemTitle} — remove its deletion protection`
-      : `${itemTitle} is protected from deletion`
-    : `Save ${itemTitle} — protect it from deletion`;
+  // ADR-014 — un-saving arms first; saving still fires on the first tap.
+  const release = useConfirm({ onConfirm: onUnsave });
+  // Disarm the moment protection is gone (the un-save landed, or the pending read reclassified the
+  // item) so a stale arm can never sit on a button whose next tap SAVES.
+  useEffect(() => {
+    if (!on) release.disarm();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [on]);
+  const armed = release.armed && on;
+  const label = armed
+    ? `Tap again to un-save ${itemTitle} — it goes back on the deletion list`
+    : on
+      ? canUnsave
+        ? `Un-save ${itemTitle} — remove its deletion protection`
+        : `${itemTitle} is protected from deletion`
+      : `Save ${itemTitle} — protect it from deletion`;
   return (
     <button
       type="button"
-      className={`shield-btn${on ? ' is-on' : ''}`}
+      className={`shield-btn${on ? ' is-on' : ''}${armed ? ' confirming' : ''}`}
       data-testid="trash-shield"
       data-on={on || undefined}
+      data-armed={armed ? 'true' : undefined}
       aria-pressed={on}
       aria-label={label}
       title={label}
       disabled={busy || !actionable}
-      onClick={on ? onUnsave : onSave}
+      onClick={on ? release.trigger : onSave}
     >
       <ShieldGlyph filled={on} />
+      {/* ADR-014 — the armed transition announced for screen readers (the ConfirmButton idiom). */}
+      <span className="sr-only" role="status" aria-live="polite">
+        {armed ? 'Tap again to release protection.' : ''}
+      </span>
     </button>
   );
 }

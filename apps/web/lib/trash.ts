@@ -203,6 +203,21 @@ export function pendingWallTappable(
   return false;
 }
 
+/**
+ * ADR-014 / ADR-015 — which wall taps are a protection RELEASE and therefore need the inline
+ * two-step (2026-09-14, owner-reported phantom un-save). Saving is PROTECTIVE and stays one tap;
+ * releasing a save puts the title back in the deletion pool, so it is the destructive direction and
+ * arms first. `shield` = un-save (your own save), `check` = un-protect (the batch wall removes the
+ * live exclusion). Everything else — the slated `trash` save and the terminal `skip`/`gone` states —
+ * either fires immediately or is inert. Shared by all three Trash surfaces (the pending wall, the
+ * batch wall and the /library/[id] guard shield) so one rule governs the whole section.
+ */
+export function releaseNeedsConfirm(
+  glyph: 'trash' | 'shield' | 'check' | 'skip' | 'gone',
+): boolean {
+  return glyph === 'shield' || glyph === 'check';
+}
+
 // ── cross-server watch visibility (DESIGN-010 D-12 amendment 2026-07-09, build C) ─────────────
 // INFO, NOT protection. `lastWatchedAt`/`lastWatchedServer` are the harvested cross-server MAX
 // last-watch instant (full history) + its estate server. Watch info NEVER occupies the action

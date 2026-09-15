@@ -31,6 +31,10 @@ export interface TrashCardToggle {
   testId?: string;
   /** Mark the inert span with data-inert (the pending walls' e2e hook). */
   markInert?: boolean;
+  /** Armed two-step state for a protection RELEASE (shield/check → slated). Color only, never
+   *  geometry (ADR-014 / ADR-015): the puck deepens to danger-strong in place, same 30px circle,
+   *  same glyph, no re-mount. */
+  armed?: boolean;
 }
 
 /**
@@ -127,13 +131,27 @@ export function TrashCard({
   /** data-testid on the tile ('trash-tile' pending / 'wall-tile' batch). */
   testId: string;
 }) {
+  const armed = toggle.armed === true;
   const inner = (
     <>
       <MediaPoster posterUrl={posterUrl} kind={kind} alt="" />
-      {/* keyed by glyph: a flip re-mounts the badge so the pop animation replays
-          (transform-only — never layout; killed by prefers-reduced-motion). */}
-      <span key={glyph} className="bwall-overlay" data-glyph={glyph} aria-hidden="true">
+      {/* keyed by glyph ONLY: a flip re-mounts the badge so the pop animation replays
+          (transform-only — never layout; killed by prefers-reduced-motion). Arming is a pure
+          recolor on the SAME element — the key must not fold in `armed`, or every arm would
+          replay the pop and the ADR-014 two-step would read as a state flip. */}
+      <span
+        key={glyph}
+        className="bwall-overlay"
+        data-glyph={glyph}
+        data-armed={armed ? 'true' : undefined}
+        aria-hidden="true"
+      >
         <WallGlyphSvg glyph={glyph} />
+      </span>
+      {/* ADR-014 — the visually-hidden live region announces the armed transition (the
+          ConfirmButton idiom; the glyph itself is aria-hidden, the label swap is on the button). */}
+      <span className="sr-only" role="status" aria-live="polite">
+        {armed ? 'Tap again to release protection.' : ''}
       </span>
     </>
   );
@@ -148,6 +166,7 @@ export function TrashCard({
           type="button"
           className="bwall-tap"
           data-testid={toggle.testId}
+          data-armed={armed ? 'true' : undefined}
           aria-pressed={toggle.pressed}
           aria-label={toggle.label}
           title={toggle.title}

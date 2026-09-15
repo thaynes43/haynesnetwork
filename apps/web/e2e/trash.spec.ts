@@ -15,7 +15,7 @@
 //     role gating.
 // Per-item /collections/media/handle calls ONLY (the estate-wide /collections/handle is asserted
 // ABSENT — ADR-023 C-07a).
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { armAndConfirm, expectViewportFit, openUserMenu, signIn, signOut } from './support/helpers';
@@ -110,6 +110,29 @@ function expectSameBox(
   for (const key of ['x', 'y', 'width', 'height'] as const) {
     expect(Math.abs(a![key] - b![key]), `tile ${key} must not move on tap`).toBeLessThan(0.5);
   }
+}
+
+/**
+ * ADR-014 (2026-09-14) — releasing deletion protection is a TWO-STEP on every Trash surface now
+ * (the owner-reported phantom un-save: 50 ledger un-saves, most within 0–5 s of the save they
+ * reversed). Saving stays one tap; a release ARMS first. This helper asserts the safety property on
+ * the way through — after the arming tap the tile still wears its protective glyph, carries
+ * data-armed, and (below, at each call site) NOTHING has reached Maintainerr.
+ *
+ * `tap` is the tile's tap surface (button.bwall-tap); `tile` is the <li>. MIN_ARM_MS is 300 ms, so
+ * the confirming tap waits 350 — a faster second tap is swallowed by the double-tap guard.
+ */
+async function armRelease(tile: Locator, tap: Locator, glyph: 'shield' | 'check'): Promise<void> {
+  await tap.click();
+  await expect(tap).toHaveAttribute('data-armed', 'true');
+  await expect(tile).toHaveAttribute('data-glyph', glyph); // armed is COLOR — the state has not moved
+  await tap.page().waitForTimeout(350);
+}
+
+/** Arm then confirm — the full two-step release of a tile's protection. */
+async function releaseTile(tile: Locator, tap: Locator, glyph: 'shield' | 'check'): Promise<void> {
+  await armRelease(tile, tap, glyph);
+  await tap.click();
 }
 
 test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
@@ -308,8 +331,9 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await toggle.click();
     await expect(vanished).toHaveAttribute('data-glyph', 'shield');
     await saved;
+    // Releasing takes the ADR-014 two-step (saving stayed one tap, above).
     const unsaved = page.waitForResponse((r) => r.url().includes('trash.removeExclusion'));
-    await toggle.click();
+    await releaseTile(vanished, toggle, 'shield');
     await expect(vanished).toHaveAttribute('data-glyph', 'trash');
     await unsaved;
     await resetMaintainerr(page);
@@ -362,10 +386,31 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     expectSameBox(neighborBefore, await fixture.boundingBox());
     await saveSettled;
 
-    // Tap again ⇒ un-save, back to trash (your own save stays un-savable via the wall).
+    // ADR-014 (2026-09-14) — releasing the save is a TWO-STEP. The first tap only ARMS: the tile
+    // stays a saved shield, gains data-armed, swaps its accessible name to the consequence copy —
+    // and NOTHING reaches Maintainerr. This is the defect the owner hit (a stray tap in a burst of
+    // six released a save 13 s after making it), so the no-call assertion is the point of the test.
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('data-armed', 'true');
+    await expect(vanished).toHaveAttribute('data-glyph', 'shield');
+    await expect(toggle).toHaveAttribute(
+      'aria-label',
+      /^Tap again to un-save Vanished Heist — it goes back on the deletion list$/,
+    );
+    // Arming is COLOR ONLY (ADR-015) — neither the tile nor its neighbor may move.
+    expectSameBox(before, await vanished.boundingBox());
+    expectSameBox(neighborBefore, await fixture.boundingBox());
+    expect(
+      (await maintainerrCalls(page)).filter((c) => c.method === 'DELETE'),
+      'arming must not release the save',
+    ).toHaveLength(0);
+
+    // Second tap, past the 300 ms double-tap guard ⇒ the un-save fires, back to trash.
+    await page.waitForTimeout(350);
     const unsaveSettled = page.waitForResponse((r) => r.url().includes('trash.removeExclusion'));
     await toggle.click();
     await expect(vanished).toHaveAttribute('data-glyph', 'trash');
+    await expect(toggle).not.toHaveAttribute('data-armed', 'true');
     await unsaveSettled;
 
     const calls = await maintainerrCalls(page);
@@ -376,6 +421,70 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
       (c) => c.method === 'DELETE' && c.path === `/rules/exclusions/${STUB_MAINT_VANISHED_ID}`,
     );
     expect(removes).toHaveLength(1);
+  });
+
+  /** ADR-014 — the arm expires on its own. An interrupted release leaves the save intact. */
+  test('an armed un-save AUTO-REVERTS after the 3 s window with no Maintainerr call', async ({
+    page,
+  }) => {
+    await resetMaintainerr(page);
+    await signIn(page, 'admin');
+    await openTrashMovies(page);
+
+    const vanished = page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' });
+    const toggle = vanished.getByTestId('trash-toggle');
+    await page.waitForLoadState('networkidle');
+    await toggle.scrollIntoViewIfNeeded();
+
+    // One tap saves (protective — still one tap).
+    const saveSettled = page.waitForResponse((r) => r.url().includes('trash.saveExclusion'));
+    await toggle.click();
+    await expect(vanished).toHaveAttribute('data-glyph', 'shield');
+    await saveSettled;
+
+    // Arm the release, then walk away: after CONFIRM_MS (3 s) the tile is an ordinary saved shield
+    // again and the exclusion was never removed.
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('data-armed', 'true');
+    await page.waitForTimeout(3200);
+    await expect(toggle).not.toHaveAttribute('data-armed', 'true');
+    await expect(vanished).toHaveAttribute('data-glyph', 'shield');
+    await expect(toggle).toHaveAttribute('aria-label', /^Un-save Vanished Heist/);
+    expect(
+      (await maintainerrCalls(page)).filter((c) => c.method === 'DELETE'),
+      'an expired arm must never release the save',
+    ).toHaveLength(0);
+    await resetMaintainerr(page);
+  });
+
+  /** ADR-014 MIN_ARM_MS — one gesture can never arm AND confirm. This is the exact shape of the
+   *  owner's report: a burst of rapid taps across the wall. */
+  test('a DOUBLE-tap inside the 300 ms guard leaves the tile armed and releases nothing', async ({
+    page,
+  }) => {
+    await resetMaintainerr(page);
+    await signIn(page, 'admin');
+    await openTrashMovies(page);
+
+    const vanished = page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' });
+    const toggle = vanished.getByTestId('trash-toggle');
+    await page.waitForLoadState('networkidle');
+    await toggle.scrollIntoViewIfNeeded();
+
+    const saveSettled = page.waitForResponse((r) => r.url().includes('trash.saveExclusion'));
+    await toggle.click();
+    await expect(vanished).toHaveAttribute('data-glyph', 'shield');
+    await saveSettled;
+
+    // Two clicks in one gesture: the first arms, the second lands inside MIN_ARM_MS and is ignored.
+    await toggle.dblclick();
+    await expect(toggle).toHaveAttribute('data-armed', 'true');
+    await expect(vanished).toHaveAttribute('data-glyph', 'shield');
+    expect(
+      (await maintainerrCalls(page)).filter((c) => c.method === 'DELETE'),
+      'a double-tap must not release the save',
+    ).toHaveLength(0);
+    await resetMaintainerr(page);
   });
 
   test('BUG FIX 2026-07-09 — a recently-watched candidate is SAVEABLE via tap (no more inert eye corner)', async ({
@@ -704,14 +813,45 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     expect(saves).toHaveLength(1);
     expect(saves[0]!.body).toMatchObject({ mediaId: STUB_MAINT_VANISHED_ID });
 
-    // Un-save (NET semantics — 0 saved, 1 un-saved).
-    await vanished.getByRole('button').click();
+    // Un-save (NET semantics — 0 saved, 1 un-saved). ADR-014 (2026-09-14): the release is a
+    // two-step here too. The arming tap must reach NOTHING — assert the DELETE is still absent.
+    const vanishedTap = vanished.getByRole('button');
+    await armRelease(vanished, vanishedTap, 'shield');
+    expect(
+      (await maintainerrCalls(page)).some(
+        (c) => c.method === 'DELETE' && c.path === `/rules/exclusions/${STUB_MAINT_VANISHED_ID}`,
+      ),
+      'arming must not release the save',
+    ).toBe(false);
+    await vanishedTap.click();
     await expect(vanished).toHaveAttribute('data-glyph', 'trash');
     await expect(page.getByTestId('batch-savers')).toContainText('Bootstrap Admin · 0 saved · 1 un-saved');
     calls = await maintainerrCalls(page);
     expect(
       calls.some((c) => c.method === 'DELETE' && c.path === `/rules/exclusions/${STUB_MAINT_VANISHED_ID}`),
     ).toBe(true);
+
+    // ADR-014 — the OTHER release on this wall: a `check` tile taps to UN-PROTECT (it removes a live
+    // exclusion), so it arms too. One tap arms and changes nothing; letting the window lapse leaves
+    // the protection exactly where it was — Kept is still 1 and the glyph is still the check.
+    const runner = page.getByTestId('wall-tile').filter({ hasText: 'Stub Runner' });
+    const runnerTap = runner.getByRole('button');
+    let unprotectCalls = 0;
+    const countUnprotect = (req: { url: () => string }) => {
+      if (req.url().includes('unprotectItem')) unprotectCalls += 1;
+    };
+    page.on('request', countUnprotect);
+    await armRelease(runner, runnerTap, 'check');
+    await expect(runnerTap).toHaveAttribute(
+      'aria-label',
+      /^Tap again to un-protect Stub Runner — it goes back on the deletion list$/,
+    );
+    await page.waitForTimeout(3200); // the arm expires
+    await expect(runnerTap).not.toHaveAttribute('data-armed', 'true');
+    await expect(runner).toHaveAttribute('data-glyph', 'check');
+    await expect(page.getByTestId('wall-counts')).toContainText('Kept 1');
+    page.off('request', countUnprotect);
+    expect(unprotectCalls, 'arming a check tile must not un-protect it').toBe(0);
 
     // A fresh candidate joins the LIVE set (not the frozen batch) ⇒ the future-batch strip appears.
     // Owner-directed 2026-07-09: the strip is the full interactive "Potential in future batches"
@@ -891,7 +1031,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await unknown.getByRole('button').click();
     await expect(unknown).toHaveAttribute('data-glyph', 'shield');
     await expect(memberPage.getByTestId('batch-savers')).toContainText('Marge Member · 1 saved');
-    await unknown.getByRole('button').click();
+    await releaseTile(unknown, unknown.getByRole('button'), 'shield');
     await expect(unknown).toHaveAttribute('data-glyph', 'trash');
 
     // ADR-025 errata — GLOBAL SAVE IS A SUPERSET: Trash Limited holds `save_exclude` (the anytime
@@ -907,8 +1047,8 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     // flight (inFlight guard), so the un-save below must wait for the save round-trip (mirrors the
     // Trash Family block above, which waits on the savers line between its save and un-save).
     await expect(memberPage.getByTestId('batch-savers')).toContainText('Marge Member · 1 saved');
-    // Own save ⇒ can release it again (leaves the wall clean for the next test).
-    await limitedTile.getByRole('button').click();
+    // Own save ⇒ can release it again (leaves the wall clean for the next test) — two-step.
+    await releaseTile(limitedTile, limitedTile.getByRole('button'), 'shield');
     await expect(limitedTile).toHaveAttribute('data-glyph', 'trash');
 
     // Owner-directed 2026-07-09 (evening): the "Potential in future batches" strip is ALSO interactive
@@ -929,7 +1069,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await stripSaved;
     await expect(stripToggle).not.toHaveAttribute('aria-busy', 'true');
     const stripUnsaved = memberPage.waitForResponse((r) => r.url().includes('trash.removeExclusion'));
-    await stripToggle.click();
+    await releaseTile(stripTile, stripToggle, 'shield');
     await expect(stripTile).toHaveAttribute('data-glyph', 'trash');
     await stripUnsaved;
 
@@ -1315,6 +1455,39 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await page.goto(fixtureHref!);
     await expect(page.getByTestId('trash-guard')).toBeVisible();
     await expect(page.getByTestId('trash-guard')).toContainText('Scheduled for deletion');
+
+    // ADR-014 (2026-09-14) — the THIRD release surface. Saving from the guard panel is one tap;
+    // un-saving arms first. Same asymmetry, same copy, same no-reflow rule as the two walls.
+    const shield = page.getByTestId('trash-shield');
+    const shieldBox = (await shield.boundingBox())!;
+    const guardSaved = page.waitForResponse((r) => r.url().includes('trash.saveExclusion'));
+    await shield.click();
+    await expect(page.getByTestId('trash-guard')).toContainText('Protected from deletion');
+    await guardSaved;
+
+    // First tap only ARMS: the button deepens (the .confirm-btn look), swaps its accessible name,
+    // keeps its exact 30×30 footprint, and sends nothing.
+    await shield.click();
+    await expect(shield).toHaveAttribute('data-armed', 'true');
+    await expect(shield).toHaveClass(/confirming/);
+    await expect(shield).toHaveAttribute(
+      'aria-label',
+      /^Tap again to un-save The Fixture — it goes back on the deletion list$/,
+    );
+    expectSameBox(shieldBox, await shield.boundingBox());
+    expect(
+      (await maintainerrCalls(page)).filter((c) => c.method === 'DELETE'),
+      'arming the guard shield must not release the save',
+    ).toHaveLength(0);
+
+    // Second tap past the guard ⇒ the un-save lands and the panel reads scheduled again.
+    await page.waitForTimeout(350);
+    const guardUnsaved = page.waitForResponse((r) => r.url().includes('trash.removeExclusion'));
+    await shield.click();
+    await guardUnsaved;
+    await expect(page.getByTestId('trash-guard')).toContainText('Scheduled for deletion');
+    await expect(shield).not.toHaveAttribute('data-armed', 'true');
+    await resetMaintainerr(page);
 
     await openTrashMovies(page);
     const runnerHref = await page

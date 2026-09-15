@@ -17,8 +17,8 @@
 //
 // Owner refinement 2026-07-07: the wall is a FAST tap-toggle (poster/glyph flips trash⇄shield);
 // /library nav is a distinct corner icon; per-item expedite lives on the item page now.
-import { useRef, useState, type ReactNode } from 'react';
-import { ConfirmButton } from '@hnet/ui';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { ConfirmButton, useConfirm } from '@hnet/ui';
 import { trpc } from '@/lib/trpc-client';
 import { Modal } from '@/components/modal';
 import { TrashCard, TrashWall, TrashWallSkeleton } from '@/components/cards';
@@ -35,6 +35,7 @@ import {
   candidatesAsOfLabel,
   daysUntil,
   deadlineCountdown,
+  releaseNeedsConfirm,
   sweepTimeLabel,
   watchNote,
 } from '@/lib/trash';
@@ -141,7 +142,15 @@ function tileLabel(
   glyph: WallGlyph,
   tappable: boolean,
   savedByName: string | null,
+  armed = false,
 ): string {
+  // ADR-014 (2026-09-14) — an ARMED tile is mid-release: say what the second tap does and what it
+  // costs. Both release glyphs land the title back in the deletion pool, so the consequence clause
+  // is identical; only the verb differs (un-save your own save vs un-protect a live exclusion).
+  if (armed)
+    return glyph === 'check'
+      ? `Tap again to un-protect ${title} — it goes back on the deletion list`
+      : `Tap again to un-save ${title} — it goes back on the deletion list`;
   switch (glyph) {
     case 'trash':
       return tappable
@@ -161,6 +170,85 @@ function tileLabel(
     case 'gone':
       return `${title} was deleted`;
   }
+}
+
+/**
+ * One batch-wall tile. It exists as a component (rather than inline in the wall's map) because it
+ * owns a hook: the ADR-014 two-step that guards a protection RELEASE (2026-09-14, owner-reported
+ * phantom un-save). Saving a slated `trash` tile stays ONE tap — protective and fast. Releasing —
+ * `shield` (un-save) or `check` (un-protect, which removes the live exclusion) — arms first and
+ * fires on a second tap inside the 3s window. `onTap` keeps PosterWall's inFlight guard.
+ */
+function BatchTile({
+  item,
+  glyph,
+  kind,
+  ctx,
+  fromKey,
+  saverNames,
+  busy,
+  onTap,
+}: {
+  item: BatchItemWire;
+  glyph: WallGlyph;
+  kind: 'movie' | 'tv';
+  ctx: WallTapContext;
+  fromKey: string;
+  saverNames: ReadonlyMap<string, string>;
+  busy: boolean;
+  onTap: (item: BatchItemWire) => void;
+}) {
+  const tappable = tileTappable(ctx, glyph, item.savedBy);
+  const release = useConfirm({ onConfirm: () => onTap(item) });
+  const needsConfirm = releaseNeedsConfirm(glyph);
+  // Disarm as soon as the glyph leaves shield/check (the release landed, or the refetch reclassified
+  // the row) so a stale arm can never ride onto a tile that now SAVES on tap.
+  useEffect(() => {
+    if (!needsConfirm) release.disarm();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsConfirm]);
+  const armed = release.armed && needsConfirm;
+  const savedByName = item.savedBy !== null ? (saverNames.get(item.savedBy) ?? null) : null;
+  const label = tileLabel(item.title, glyph, tappable, savedByName, armed);
+  const rating = formatRating(ratingOrNull(item.imdbRating) ?? ratingOrNull(item.tmdbRating));
+  // DESIGN-010 D-12 (build C) — the meta-line watch chip: info-tone (recently watched) or muted
+  // (watched a while ago); null with no watch signal. NEVER in the action corner.
+  const note = watchNote(item);
+  const titleYear = `${item.title}${item.year !== null ? ` (${item.year})` : ''}`;
+  // PLAN-047 / ADR-058 — the tile is the shared TrashCard (never bespoke bwall markup).
+  return (
+    <TrashCard
+      testId="wall-tile"
+      glyph={glyph}
+      posterUrl={item.posterUrl}
+      kind={kind === 'movie' ? 'radarr' : 'sonarr'}
+      title={item.title}
+      year={item.year}
+      toggle={{
+        tappable,
+        // A saved/protected tile reads "pressed" (kept); a slated pending tile is not pressed.
+        pressed: glyph === 'shield' || glyph === 'check',
+        label,
+        title: label,
+        busy,
+        armed,
+        onTap: needsConfirm ? release.trigger : () => onTap(item),
+      }}
+      // The /library nav corner — distinct from the toggle (owner refinement).
+      libraryLink={
+        item.mediaItemId !== null
+          ? {
+              href: `/library/${item.mediaItemId}?from=${fromKey}`,
+              title: `Open ${titleYear} — history and fixes`,
+              ariaLabel: `Open ${titleYear} — its library page`,
+            }
+          : null
+      }
+      metaText={`${item.sizeBytes > 0 ? formatBytes(item.sizeBytes) : '—'}${rating !== null ? ` · ★ ${rating}` : ''}`}
+      requesters={item.requesters}
+      watchNote={note !== null ? { label: note.label, tone: note.tone } : null}
+    />
+  );
 }
 
 // ── THE POSTER WALL (batch curation / Leaving-Soon / terminal review) ───────────────────────
@@ -262,53 +350,19 @@ function PosterWall({
         {wallError ?? ''}
       </p>
       <TrashWall testId="batch-wall">
-        {effective.map(({ item, state }) => {
-          const glyph = wallGlyph(state);
-          const tappable = tileTappable(ctx, glyph, item.savedBy);
-          const savedByName = item.savedBy !== null ? (saverNames.get(item.savedBy) ?? null) : null;
-          const label = tileLabel(item.title, glyph, tappable, savedByName);
-          const rating = formatRating(
-            ratingOrNull(item.imdbRating) ?? ratingOrNull(item.tmdbRating),
-          );
-          // DESIGN-010 D-12 (build C) — the meta-line watch chip: info-tone (recently watched) or muted
-          // (watched a while ago); null with no watch signal. NEVER in the action corner.
-          const note = watchNote(item);
-          const titleYear = `${item.title}${item.year !== null ? ` (${item.year})` : ''}`;
-          // PLAN-047 / ADR-058 — the tile is the shared TrashCard (never bespoke bwall markup).
-          return (
-            <TrashCard
-              key={item.id}
-              testId="wall-tile"
-              glyph={glyph}
-              posterUrl={item.posterUrl}
-              kind={kind === 'movie' ? 'radarr' : 'sonarr'}
-              title={item.title}
-              year={item.year}
-              toggle={{
-                tappable,
-                // A saved/protected tile reads "pressed" (kept); a slated pending tile is not pressed.
-                pressed: glyph === 'shield' || glyph === 'check',
-                label,
-                title: label,
-                busy: inFlight.has(item.id),
-                onTap: () => tap(item),
-              }}
-              // The /library nav corner — distinct from the toggle (owner refinement).
-              libraryLink={
-                item.mediaItemId !== null
-                  ? {
-                      href: `/library/${item.mediaItemId}?from=${fromKey}`,
-                      title: `Open ${titleYear} — history and fixes`,
-                      ariaLabel: `Open ${titleYear} — its library page`,
-                    }
-                  : null
-              }
-              metaText={`${item.sizeBytes > 0 ? formatBytes(item.sizeBytes) : '—'}${rating !== null ? ` · ★ ${rating}` : ''}`}
-              requesters={item.requesters}
-              watchNote={note !== null ? { label: note.label, tone: note.tone } : null}
-            />
-          );
-        })}
+        {effective.map(({ item, state }) => (
+          <BatchTile
+            key={item.id}
+            item={item}
+            glyph={wallGlyph(state)}
+            kind={kind}
+            ctx={ctx}
+            fromKey={fromKey}
+            saverNames={saverNames}
+            busy={inFlight.has(item.id)}
+            onTap={tap}
+          />
+        ))}
       </TrashWall>
     </>
   );
