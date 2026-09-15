@@ -33,6 +33,26 @@ We need to make sure everything is in 1Password for Fable 5 before tomorrow. Thi
 
 ----------------------------------------
 
+## Parked 2026-09-14 (each needs an owner ruling before build — cold-start context in
+`.agents/context/2026-09-14-trash-wall-age-guard-and-phantom-saves.md` §4/§5)
+
+- **Duplicate-NZB fetches are dominated by upgrade/re-post loops, not trash.** 234 "Duplicate NZB"
+  `downloadFailed` events across the *arrs since the 08-19 SAB Fail-mode fix: Sonarr 186 (Tiny Ones
+  Transport Service alone **164**, the same AndreMor MULTI re-posts the 08-19 note named, still
+  recurring 09-11), Radarr 17 (Terminator 3: one release fetched **10× in two minutes** because
+  Prowlarr serves the same NZB from four indexers and Radarr's blocklist keys on release+indexer),
+  Lidarr 31. Only 3 of 234 came from trash re-adds. Remedy needs a ruling: a Sonarr release profile
+  that blocks the re-post group, per-series unmonitor, or a Prowlarr-side de-dupe. Evidence command:
+  `kubectl -n media exec deploy/sonarr -c app -- sh -c 'curl -s -H "X-Api-Key: $SONARR__AUTH__APIKEY" "localhost:8989/api/v3/history?page=1&pageSize=2000&sortKey=date&sortDirection=descending&eventType=4"'`.
+- **ADR-084 build (D-1 as amended by errata E-1/E-4/E-5/E-6):** app-side release memory on the
+  deletion snapshot + re-blocklist on re-add detection, an exclusion-list prune surface, and a
+  "re-added after trash delete" ledger signal. E-3 (`listExclusions` on both pools) is live; the
+  Seerr re-request path is the one still able to fetch an identical NZB once.
+- **Green Lantern's save intent still records the dead key 95267** (exclusion lives on 102261 from
+  the 08-29 hand repair; the reconciler is pool-scoped so it never re-points it). One-line fix in
+  the next `fix:` touching `trash-save-intents.ts`; also correct the `sameKeyCensus` docstring — it
+  counts fresh saves awaiting Maintainerr's next rule run, not lapses.
+
 ## Smaller backlog items
 
 - **Global collection totals (from PLAN-053 owner review, 2026-07-17).** The per-chip Type
