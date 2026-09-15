@@ -4,6 +4,44 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-09-14 — Trash wall: age guard added (180 d), Kometa re-add loop closed, one-tap un-save fixed
+
+**Owner report (evening):** a brand-new title (*Clash of the Thundermans*) slated on `/trash`, and
+G.I. Joe / Fantastic Four / Sex and the City "saved before" yet back on the wall; hard constraint
+restated: **a trash deletion must never re-fetch the same NZB from the same indexer.** Three
+separate causes, **none of them the ADR-086 re-key lapse** (v0.96.0 healthy; 123/124 open intents
+live-excluded). Full evidence: `.agents/context/2026-09-14-trash-wall-age-guard-and-phantom-saves.md`.
+
+1. **The movie rule had no age clause** — the 07-09 seeding note deferred it and nobody re-added
+   it; Thundermans (Kometa IMDB Popular add, rating 4.7) was pooled 17 h after import. **Owner
+   ruled 180 days on the Plex "date added"** (Radarr's date would have emptied the pool: 289/300 were
+   Radarr-added in July). **Applied live to both rule groups via `PUT /api/rules`**; the run removed
+   exactly **101** movies (pool 300 → 199) and all 4 TV shows (pool → 0), ADR-036 invariants intact. The open Leaving Soon batch
+   inherits it (the sweep skips anything no longer in the live pool — 15 of its 44 will be skipped).
+2. **The "saved" titles were never durably saved** — no ledger/intent/exclusion record, except G.I.
+   Joe: Retaliation: **saved 09-05 21:27:50, un-saved 13 s later** inside a burst of six taps. Every
+   surface released protection on ONE tap. **Fixed: hnet #539 (v0.96.1)** — releasing a save is the
+   ADR-014 two-step on the pending wall, the batch wall (`shield` + `check`) and the library shield;
+   saving stays one tap. DESIGN-010 errata. The owner's saves tonight are real and effective.
+3. **The re-add loop is real and 100 % Kometa:** 388 trash-deleted, **16 re-added — all by Kometa's
+   morning chart/Universe runs**, 12 deleted twice, **10 re-fetched byte-identical**. The delete
+   destroys the *arr record and Radarr wipes its blocklist rows with it. **Owner ruled
+   `listExclusions: true` on both pools, applied live** (Kometa honours the *arr exclusion list;
+   Seerr/direct adds bypass it — verified from source, so re-requests keep working). **ADR-084 got an
+   errata block (E-1..E-6):** D-1's blocklist cannot survive the delete → the release memory must be
+   app-side; C-04 prune surface is now mandatory; the sync is blind to the re-add cycle. **Build is
+   next** (design + plan from ADR-084 as amended). Until then a *Seerr* re-request can still fetch an
+   identical NZB once (SAB Fail mode then blocklists it).
+
+**Parked in `.agents/plans/TODO.md` (need a ruling):** the dominant dupe-fetch source is NOT trash —
+234 duplicate NZB fetches since 08-19, **164 of them Tiny Ones Transport Service** re-posts, plus a
+4-indexer amplifier (Terminator 3: one release fetched 10× in two minutes). Also: Green Lantern's
+intent still carries its dead key; `sameKeyCensus` counts fresh saves, not lapses.
+
+**Deploy chain for v0.96.1:** #539 merged → release PR #538 → tag → image → haynes-ops bump → 3/3.
+Verify the rollout (`kubectl -n frontend get deploy haynesnetwork-main -o jsonpath=...image`) and,
+on 09-20 after 01:17 ET, that batch `3671be2e` reports the 15 young items as skipped.
+
 ## ▶ 2026-08-29 — Trash "Save" silently lapses on file replacement (ADR-086 Proposed, build is next)
 
 **Owner report: "Green Lantern and a few others have been saved for at least a week" and are still

@@ -81,6 +81,46 @@ explicit Seerr-re-request carve-out.
 | C-06 | Risk: exclusion writes keyed off tombstones must debounce *arr outages (a flapping *arr must not mass-exclude); the tombstone flow's existing liveness guards gate the writer. |
 | C-07 | Open (Q-01): should the app also unmonitor/exclude on removals it performed via the failsafe-restore reversal path? (Likely yes for symmetry; decide in design.) |
 
+## Errata (2026-09-14) — what the live evidence changed, and the interim ruling
+
+Recorded while the ADR is still **Proposed** (editable). Full evidence:
+`.agents/context/2026-09-14-trash-wall-age-guard-and-phantom-saves.md`.
+
+- **E-1 — D-1 cannot work as written.** "Blocklist the exact deleted release" assumes the blocklist
+  outlives the delete. It does not: Maintainerr's `arrAction 0` delete destroys the *arr record, and
+  Radarr's `BlocklistService.HandleAsync(MoviesDeletedEvent)` (Sonarr: `SeriesDeletedEvent`) removes
+  every blocklist row for it unconditionally. Any blocklist written before the handle is gone a
+  second later; one written after has no record to attach to. **The release memory must live
+  app-side** — persist the deleted file's release identity (`sourceTitle`, `nzbInfoUrl`, indexer,
+  `downloadId`) on the deletion snapshot (`trash_batch_items` / the expedite audit), and re-apply the
+  blocklist when the sync observes the title re-added. C-05 ("entries accumulate in the *arrs") is
+  therefore wrong in direction; the accumulation is ours to own.
+- **E-2 — the leak path is Kometa, and D-2 is the right lever.** Measured 07-07 → 09-14: 388 titles
+  trash-deleted, 16 re-added, **all 16 by Kometa** (chart + `universecollection` runs the next
+  morning), 12 deleted twice, 10 of those re-fetched byte-identical. Zero Seerr re-requests, zero
+  manual re-adds, zero Sonarr re-adds.
+- **E-3 — interim ruling (owner, AskUserQuestion 2026-09-14): `listExclusions: true` on both
+  Maintainerr rule pools, applied live.** Maintainerr passes it as `addImportExclusion` /
+  `addImportListExclusion` on the delete it already performs, so the exclusion is written in the
+  same call as the delete — no app writer, no tombstone debounce (C-06 is moot for this path).
+  Verified from source before flipping: Radarr `AddMovieService` and Sonarr `AddSeriesService` never
+  consult the exclusion list (only `ImportListSyncService` does), so **D-3 holds — Seerr re-requests
+  and direct adds succeed**; Kometa's `respect_list_exclusions_when_adding()` (both `modules/radarr.py`
+  and `modules/sonarr.py`) honours it from its next run. D-2's app-side tombstone writer remains the
+  answer for removals Maintainerr did **not** perform (the unattributed Aug-2026 series removals).
+- **E-4 — C-04 becomes mandatory, not optional.** With E-3 live the exclusion list grows by every
+  sweep (~50 titles/week). The admin prune/visibility surface must ship with the D-1 build.
+- **E-5 — the sync is blind to the cycle.** Radarr's history dies with the record and the ledger
+  never receives the re-added movieId's grab/import events; the churn in E-2 was only visible through
+  a `deleted_size_bytes` fingerprint. The D-1 design must add an observable "re-added after trash
+  delete" signal (a ledger event on the sync's next observation of a previously-deleted identity).
+- **E-6 — ordering constraint for the build.** Whatever app-side write accompanies a delete must
+  complete **before** `POST /collections/media/handle`, in the same domain transaction as the
+  deletion audit; the handle is the point of no return for anything keyed on the *arr id.
+
+**Build is next:** DESIGN-0xx + PLAN-0xx from this ADR, scoped to E-1/E-4/E-5 (E-3 is already
+live). Hard rule 4's write-back list is amended in the PR that lands the first app-side writer.
+
 ## More information
 
 - Incident + evidence: `.agents/context/2026-08-19-nzb-dupe-loop-incident.md`
