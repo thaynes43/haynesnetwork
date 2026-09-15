@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.96.2](https://github.com/thaynes43/haynesnetwork/compare/v0.96.1...v0.96.2) (2026-09-15)
+
+
+### Documentation
+
+* **agents:** trash wall 2026-09-14 — 180 d age guard + listExclusions applied live (owner rulings), phantom-save root cause, ADR-084 errata, parked dupe-fetch findings ([#540](https://github.com/thaynes43/haynesnetwork/issues/540)) ([01f4375](https://github.com/thaynes43/haynesnetwork/commit/01f4375e49b6f1cf7b8db22013a7aa3d7c2bdb10))
+* **agents:** v0.96.1 rolled out and verified (3/3, health 200) ([#542](https://github.com/thaynes43/haynesnetwork/issues/542)) ([6773149](https://github.com/thaynes43/haynesnetwork/commit/6773149cbaa61e833011fe9563ab8680693bf1a5))
+
 ## [0.96.1](https://github.com/thaynes43/haynesnetwork/compare/v0.96.0...v0.96.1) (2026-09-15)
 
 
