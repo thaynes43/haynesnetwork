@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.96.1](https://github.com/thaynes43/haynesnetwork/compare/v0.96.0...v0.96.1) (2026-09-15)
+
+
+### Bug Fixes
+
+* **trash:** releasing a save is a two-step tap on every surface (no more one-tap un-save) ([#539](https://github.com/thaynes43/haynesnetwork/issues/539)) ([4838f35](https://github.com/thaynes43/haynesnetwork/commit/4838f35017301b62d929ab5a802b728dba184982))
+
+
+### Documentation
+
+* **agents:** PLAN-067 shipped and verified live (v0.96.0) ([#536](https://github.com/thaynes43/haynesnetwork/issues/536)) ([627f7cf](https://github.com/thaynes43/haynesnetwork/commit/627f7cfe01e76886d918efbed83c63eb492dc0b2))
+* correct the lapse trigger — an in-place quality upgrade, not a delete/re-add ([#537](https://github.com/thaynes43/haynesnetwork/issues/537)) ([9a59854](https://github.com/thaynes43/haynesnetwork/commit/9a59854c98dfa1f9f7f9173fde0406d848cd7430))
+
 ## [0.96.0](https://github.com/thaynes43/haynesnetwork/compare/v0.95.0...v0.96.0) (2026-08-29)
 
 
