@@ -38,9 +38,11 @@ live-excluded). Full evidence: `.agents/context/2026-09-14-trash-wall-age-guard-
 4-indexer amplifier (Terminator 3: one release fetched 10× in two minutes). Also: Green Lantern's
 intent still carries its dead key; `sameKeyCensus` counts fresh saves, not lapses.
 
-**Deploy chain for v0.96.1:** #539 merged → release PR #538 → tag → image → haynes-ops bump → 3/3.
-Verify the rollout (`kubectl -n frontend get deploy haynesnetwork-main -o jsonpath=...image`) and,
-on 09-20 after 01:17 ET, that batch `3671be2e` reports the 15 young items as skipped.
+**v0.96.1 IS LIVE — verified same session (2026-09-15 03:25Z):** #539 → release PR #538 → tag
+`v0.96.1` (image + cosign signature both 200 in GHCR) → haynes-ops #2936 → flux reconciled →
+`haynesnetwork-main` rolled out 3/3 on `v0.96.1`, `/api/health` 200. The record PR is #540.
+**Still to observe:** on 09-20 after 01:17 ET, batch `3671be2e` should report the 15 young items as
+skipped (they left the live pool when the age guard landed).
 
 ## ▶ 2026-08-29 — Trash "Save" silently lapses on file replacement (ADR-086 Proposed, build is next)
 
