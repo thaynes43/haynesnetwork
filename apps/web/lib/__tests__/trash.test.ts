@@ -18,6 +18,7 @@ import {
   partitionForExpedite,
   pendingWallGlyph,
   pendingWallTappable,
+  releaseNeedsConfirm,
   previewGuardian,
   nextSweepSlot,
   reclaimLabel,
@@ -253,6 +254,36 @@ describe('pendingWallGlyph / pendingWallTappable (the pending WALL tap-toggle �
     expect(pendingWallGlyph({ ...cold, requesters: ['manofoz'] }, undefined)).toBe('trash');
     // unprotected + watched (either state) ⇒ the slated, saveable trash-can — the eye corner is gone.
     expect(pendingWallGlyph(cold, undefined)).toBe('trash');
+  });
+});
+
+// ADR-014 / ADR-015 (2026-09-14) — the asymmetry the phantom-un-save defect exposed: SAVING is
+// protective and stays one tap; RELEASING a save is destructive and arms first. This one predicate
+// is what all three Trash surfaces (pending wall, batch wall, /library guard shield) route on, so
+// it is the place the asymmetry is pinned down.
+describe('releaseNeedsConfirm (which wall taps are a protection RELEASE — ADR-014 two-step)', () => {
+  it('the two RELEASE glyphs arm: shield (un-save) and check (un-protect)', () => {
+    expect(releaseNeedsConfirm('shield')).toBe(true);
+    expect(releaseNeedsConfirm('check')).toBe(true);
+  });
+
+  it('saving is NEVER gated — a slated trash tile still fires on the first tap', () => {
+    expect(releaseNeedsConfirm('trash')).toBe(false);
+  });
+
+  it('the terminal states need no confirm (they are inert, never tappable)', () => {
+    expect(releaseNeedsConfirm('skip')).toBe(false);
+    expect(releaseNeedsConfirm('gone')).toBe(false);
+  });
+
+  it('every TAPPABLE pending glyph that is not a save is a release (the two helpers agree)', () => {
+    const pending = ['trash', 'shield', 'check'] as const;
+    for (const glyph of pending) {
+      // With every grant held, a tappable non-`trash` tile is exactly a release.
+      const tappable = pendingWallTappable(glyph, true, true);
+      if (tappable && glyph !== 'trash') expect(releaseNeedsConfirm(glyph)).toBe(true);
+      if (glyph === 'trash') expect(releaseNeedsConfirm(glyph)).toBe(false);
+    }
   });
 });
 

@@ -575,6 +575,31 @@ export function CardGallery() {
             requesters={['Marge Member']}
             watchNote={{ label: 'Watched recently on k8plex', tone: 'info' }}
           />
+          {/* ADR-014 two-step (2026-09-14) — the ARMED release: the SAME shield tile mid-confirm.
+              Identical geometry to the tile above (same 30px puck, same glyph, same caption/meta
+              heights); only the color deepens to danger-strong and the label swaps (ADR-015). */}
+          <TrashCard
+            pwall
+            testId="trash-tile"
+            glyph="shield"
+            posterUrl={POSTER_B}
+            kind="radarr"
+            title="Armed to Un-save"
+            year={2021}
+            toggle={{
+              tappable: true,
+              pressed: true,
+              armed: true,
+              label: 'Tap again to un-save Armed to Un-save — it goes back on the deletion list',
+              title: 'Tap again to un-save — 3 seconds',
+              testId: 'trash-toggle',
+              markInert: true,
+            }}
+            libraryLink={null}
+            metaText="1.2 GB"
+            requesters={[]}
+            watchNote={null}
+          />
           <TrashCard
             pwall
             testId="trash-tile"

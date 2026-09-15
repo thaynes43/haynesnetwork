@@ -187,6 +187,14 @@ async function main(): Promise<void> {
       await page.getByTestId('ticket-tile').first().waitFor();
       await shoot(page, `helpdesk-twall-${label}-dark`);
 
+      // 11 — The card gallery itself: every card state side by side, including the ADR-014 ARMED
+      // release tile (2026-09-14) whose danger-strong puck has no natural home on a live wall (it
+      // only exists between the two taps of a release).
+      await page.goto('/e2e/card-gallery');
+      await page.getByTestId('card-gallery').waitFor();
+      await page.getByTestId('gallery-trash').waitFor();
+      await shoot(page, `card-gallery-${label}-dark`);
+
       await page.context().close();
     }
 

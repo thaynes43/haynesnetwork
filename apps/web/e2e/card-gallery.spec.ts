@@ -230,8 +230,8 @@ test.describe('card gallery — the shared-card-system drift gate (ADR-058)', ()
   }) => {
     await openGallery(page, 'hnet-dark');
     const tiles = page.getByTestId('gallery-trash').locator('.bwall-tile');
-    await expect(tiles).toHaveCount(5);
-    for (let i = 0; i < 5; i++) {
+    await expect(tiles).toHaveCount(6);
+    for (let i = 0; i < 6; i++) {
       const tile = tiles.nth(i);
       // ONE tap surface holding the poster + exactly one state puck.
       await expect(tile.locator('.bwall-tap')).toHaveCount(1);
@@ -247,13 +247,38 @@ test.describe('card gallery — the shared-card-system drift gate (ADR-058)', ()
     // Interactivity contract: tappable states are <button>, terminal/inert states are spans.
     await expect(tiles.nth(0).locator('button.bwall-tap')).toHaveCount(1); // trash — saveable
     await expect(tiles.nth(1).locator('button.bwall-tap')).toHaveCount(1); // shield — un-saveable
-    await expect(tiles.nth(2).locator('button.bwall-tap')).toHaveCount(0); // check — inert
-    await expect(tiles.nth(4).locator('button.bwall-tap')).toHaveCount(0); // gone — terminal
+    await expect(tiles.nth(2).locator('button.bwall-tap')).toHaveCount(1); // shield, ARMED
+    await expect(tiles.nth(3).locator('button.bwall-tap')).toHaveCount(0); // check — inert
+    await expect(tiles.nth(5).locator('button.bwall-tap')).toHaveCount(0); // gone — terminal
     // State rides data-glyph (recolor-only, ADR-015).
     await expect(tiles.nth(1)).toHaveAttribute('data-glyph', 'shield');
-    await expect(tiles.nth(4)).toHaveAttribute('data-glyph', 'gone');
+    await expect(tiles.nth(5)).toHaveAttribute('data-glyph', 'gone');
     // The pending tiles carry the lib-nav corner where ledger-joined.
     await expect(tiles.nth(0).locator('.pwall-corner')).toHaveCount(1);
+
+    // ADR-014 armed RELEASE (2026-09-14): the armed tile is the SAME shield state mid-confirm —
+    // data-armed on the tap surface AND the puck, the glyph unchanged, and (ADR-015) the exact
+    // geometry of the un-armed shield beside it. Arming may recolor; it may never move anything.
+    const resting = tiles.nth(1);
+    const armed = tiles.nth(2);
+    await expect(armed).toHaveAttribute('data-glyph', 'shield');
+    await expect(armed.locator('button.bwall-tap')).toHaveAttribute('data-armed', 'true');
+    await expect(armed.locator('.bwall-overlay')).toHaveAttribute('data-armed', 'true');
+    await expect(resting.locator('button.bwall-tap')).not.toHaveAttribute('data-armed', 'true');
+    await expect(resting.locator('.bwall-overlay')).not.toHaveAttribute('data-armed', 'true');
+    await expect(armed.locator('button.bwall-tap')).toHaveAttribute(
+      'aria-label',
+      /^Tap again to un-save .* it goes back on the deletion list$/,
+    );
+    // The armed puck + tile are pixel-identical in SIZE to the resting shield (color-only change).
+    const restingBox = (await resting.boundingBox())!;
+    const armedBox = (await armed.boundingBox())!;
+    expect(Math.abs(restingBox.width - armedBox.width)).toBeLessThan(0.5);
+    expect(Math.abs(restingBox.height - armedBox.height)).toBeLessThan(0.5);
+    const restingPuck = (await resting.locator('.bwall-overlay').boundingBox())!;
+    const armedPuck = (await armed.locator('.bwall-overlay').boundingBox())!;
+    expect(Math.abs(restingPuck.width - armedPuck.width)).toBeLessThan(0.5);
+    expect(Math.abs(restingPuck.height - armedPuck.height)).toBeLessThan(0.5);
   });
 
   test('skeletons hold the grid geometry', async ({ page }) => {

@@ -2,8 +2,10 @@
 
 - **Status:** Draft (backend vertical shipped; **UX shipped 2026-07-06** — D-09 records the
   as-built; **pending tables → poster walls 2026-07-07**, see the D-09 amendment)
-- **Last updated:** 2026-07-09 (errata — Maintainerr aging-invariant safeguard, ADR-036 / incident;
-  D-12 build C — watch indicators never occupy the action corner; every tile stays saveable)
+- **Last updated:** 2026-09-14 (errata — releasing protection is the ADR-014 two-step on all three
+  surfaces; saving stays one tap. Prior: 2026-07-09 — Maintainerr aging-invariant safeguard,
+  ADR-036 / incident; D-12 build C — watch indicators never occupy the action corner; every tile
+  stays saveable)
 - **Satisfies:** PRD-001 **R-79..R-87** + **US-10** / **AC-14..AC-16**; governed by **ADR-023**
   (Trash/Maintainerr + per-action grants + safety gate). Reuses **ADR-021** (section levels),
   **ADR-008/011** (write-back confinement), **DESIGN-005 D-16** (Restore), **DESIGN-008/009 D-09**
@@ -546,6 +548,31 @@ glyph unions drop `'eye'`); `pendingWallTappable` no longer special-cases `eye`;
 > ADR-025 errata (2026-07-09); the **recently-watched** sweep keep is unchanged. Batch counts: a
 > requested pending item counts as **slated** (it is no longer a "kept" person-shield). See DESIGN-011
 > D-11 errata.
+
+> **Errata (2026-09-14, owner-reported phantom un-save) — releasing protection (un-save /
+> un-protect) is the ADR-014 two-step on all three surfaces; saving stays one tap.** The tap-toggle
+> language above (D-05 / the D-09 wall amendment, and points 1–3 of the D-12 build-C ruling) is
+> amended in ONE direction only. Every surface released protection on a single tap with no confirm:
+> the pending wall's `shield` tile, the batch wall's `shield` (un-save) and `check` (un-protect)
+> tiles, and the /library/[id] guard panel's shield button. A save is protective and reversible; a
+> RELEASE is the destructive direction — the title goes straight back into the deletion pool — so it
+> earns the inline arm-to-confirm (hard rule 8), while saving stays the fast single tap the walls
+> were designed around. Evidence: the ledger holds 50 un-saves, most within 0–5 s of the save they
+> reversed, including one the owner remembers making ("I saved that") — G.I. Joe: Retaliation,
+> un-saved 13 s after its save in a burst of six taps.
+>
+> **As built.** One `useConfirm` controller per tile/button (`@hnet/ui`, the ConfirmButton
+> mechanism): first tap arms, a second tap after `MIN_ARM_MS` (300 ms) and within `CONFIRM_MS`
+> (3000 ms) fires, and the only reverts are the timeout and the fire. `releaseNeedsConfirm(glyph)`
+> (`apps/web/lib/trash.ts`) is the single predicate — true for `shield` and `check`, false for
+> `trash`/`skip`/`gone` — so all three surfaces route on one rule. Armed state is **color only**
+> (ADR-015): the 30 px corner puck turns `--color-danger-strong` in place, the poster ring follows,
+> the glyph does not change and the badge is NOT re-mounted (no pop replay); the guard-panel button
+> reuses the `.confirm-btn.confirming` look inside its constant footprint. The accessible name swaps
+> to the consequence copy — *"Tap again to un-save &lt;title&gt; — it goes back on the deletion
+> list"* (`un-protect` for a `check` tile) — and a visually-hidden live region announces the arm.
+> No glyph, tappability, count, grant or keep-signal changes: `pendingWallGlyph`,
+> `pendingWallTappable`, `tileTappable`, `wallGlyph` and every server path are untouched.
 
 ## D-13 — Strategy-mirrored wall order + honest cadence + debounced pool refresh (amendment 2026-07-09, build D)
 

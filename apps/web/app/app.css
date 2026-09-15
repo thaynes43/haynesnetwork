@@ -3833,6 +3833,18 @@ input[aria-invalid='true'] {
   cursor: default;
   opacity: 0.55;
 }
+/* ADR-014 armed release on the /library/[id] guard shield: the same danger-strong deepening the
+   inline .confirm-btn uses, on a button that already reserves its 30×30 footprint — so the arm is
+   pure color (ADR-015). Listed after .is-on so an armed SAVED shield reads danger, not accent. */
+.shield-btn.confirming {
+  color: var(--color-danger-strong);
+  border-color: var(--color-danger-strong);
+  background: color-mix(in srgb, var(--color-danger-strong) 16%, transparent);
+}
+.shield-btn.confirming:hover:not(:disabled) {
+  color: var(--color-danger-strong);
+  border-color: var(--color-danger-strong);
+}
 
 .badge--shield {
   color: var(--color-accent);
@@ -4529,6 +4541,15 @@ button.bwall-tap:focus-visible {
   color: var(--color-accent);
   border-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
 }
+/* ADR-014 armed RELEASE (the two-step un-save / un-protect, 2026-09-14): releasing a save is the
+   destructive direction, so the first tap arms and the puck turns danger-strong IN PLACE. Color
+   only (ADR-015) — same 30px circle, same glyph, no re-mount, no reflow; it wins over the
+   shield/check glyph rules above by source order at equal (0,2,0) specificity. */
+.bwall-overlay[data-armed='true'] {
+  color: var(--color-danger-strong);
+  border-color: var(--color-danger-strong);
+  background: color-mix(in srgb, var(--color-danger-strong) 16%, var(--color-surface));
+}
 /* NOTE: there is no `data-glyph='eye'` corner rule — the recently-watched eye was RETIRED from the
    action corner (owner ruling 2026-07-09). Watch info now rides the meta-line chip (.bwall-watched)
    so the corner is always the save/slate toggle. */
@@ -4641,6 +4662,11 @@ button.bwall-tap:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: -2px;
 }
+/* …and the armed ring follows the puck: the accent "kept" ring recolors to danger-strong while the
+   release is armed. Same 2px outline in the same place — a color swap, never geometry (ADR-015). */
+.bwall-tile:has(.bwall-tap[data-armed='true']) .poster-box {
+  outline-color: var(--color-danger-strong);
+}
 .bwall-tile[data-glyph='gone'] .poster-img,
 .bwall-tile[data-glyph='gone'] .poster-fallback {
   filter: grayscale(1) brightness(0.62);
@@ -4654,6 +4680,11 @@ button.bwall-tap:hover .bwall-overlay[data-glyph='trash'] {
 }
 button.bwall-tap:hover .bwall-overlay[data-glyph='shield'] {
   background: color-mix(in srgb, var(--color-accent) 84%, var(--color-text));
+}
+/* Hovering an ARMED tile must not undo the danger-strong repaint above (the hover rules are
+   (0,3,1) and would otherwise win): the armed state is the message, hover is decoration. */
+button.bwall-tap:hover .bwall-overlay[data-armed='true'] {
+  background: color-mix(in srgb, var(--color-danger-strong) 28%, var(--color-surface));
 }
 
 /* Fixed-height single-line caption + meta — a flip can never change a tile's height. */

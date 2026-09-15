@@ -13,6 +13,7 @@
 // batch; requested items are informational only now (owner ruling 2026-07-09 — a person meta badge,
 // not a corner glyph; the corner is the pure save/slate toggle — lib/trash pendingWallGlyph).
 import { useEffect, useState, type RefObject } from 'react';
+import { useConfirm } from '@hnet/ui';
 import { trpc } from '@/lib/trpc-client';
 import { TrashCard, TrashWall, TrashWallSkeleton } from '@/components/cards';
 import { formatBytes, formatDay, formatRating, ratingOrNull } from '@/lib/media';
@@ -22,6 +23,7 @@ import {
   daysUntil,
   pendingWallGlyph,
   pendingWallTappable,
+  releaseNeedsConfirm,
   watchNote,
   type PendingWallGlyph,
 } from '@/lib/trash';
@@ -53,8 +55,11 @@ const itemRating = (item: PendingWallItem): number | null =>
 
 /** The tile tooltip — the detail the retired table columns carried; the full history is one tap
  *  away on /library/[id]. */
-function tileInfo(item: PendingWallItem, glyph: PendingWallGlyph): string {
+function tileInfo(item: PendingWallItem, glyph: PendingWallGlyph, armed = false): string {
   const lines: string[] = [
+    // ADR-014 — while the release is armed the tooltip leads with the ask + the window, so a
+    // pointer user sees the same thing the aria-label tells a screen-reader user.
+    ...(armed ? ['Tap again to un-save — 3 seconds'] : []),
     item.scheduledDeleteAt !== null
       ? `Deletes ${formatDay(item.scheduledDeleteAt)} (${daysLeftLabel(daysUntil(item.scheduledDeleteAt))})`
       : 'No scheduled delete date',
@@ -169,13 +174,28 @@ function PendingTile({
   const glyph = pendingWallGlyph(item, override);
   const tappable =
     item.maintainerrMediaId !== null && pendingWallTappable(glyph, canSave, canUnsave);
-  const info = tileInfo(item, glyph);
+  // ADR-014 (2026-09-14) — SAVING stays one tap (protective, fast); RELEASING a save is the
+  // destructive direction (the title goes back on the deletion list) and takes the inline two-step.
+  // One controller per tile, owned here — which is why the tile is its own component (hooks cannot
+  // live in a map callback). `usePendingSaves.toggle` is untouched: it still decides save vs un-save
+  // from the glyph; this only gates WHEN it is called.
+  const release = useConfirm({ onConfirm: () => onToggle(item, glyph) });
+  const needsConfirm = releaseNeedsConfirm(glyph);
+  // Disarm whenever the glyph stops being a release (the un-save fired, or a refetch flipped it) so
+  // a stale arm can never ride onto a tile that now SAVES on tap.
+  useEffect(() => {
+    if (!needsConfirm) release.disarm();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsConfirm]);
+  const armed = release.armed && needsConfirm;
+  const info = tileInfo(item, glyph, armed);
   // DESIGN-010 D-12 (build C) — the meta-line watch chip: info-tone eye (recently watched) or muted
   // eye (watched a while ago). Null when there is no watch signal. NEVER in the action corner.
   const note = watchNote(item);
   const titleYear = `${item.title}${item.year !== null ? ` (${item.year})` : ''}`;
-  const toggleLabel =
-    glyph === 'shield'
+  const toggleLabel = armed
+    ? `Tap again to un-save ${item.title} — it goes back on the deletion list`
+    : glyph === 'shield'
       ? tappable
         ? `Un-save ${item.title} — remove its deletion protection`
         : `${item.title} is saved — protected from deletion`
@@ -200,7 +220,9 @@ function PendingTile({
         label: toggleLabel,
         title: info,
         busy: item.maintainerrMediaId !== null && busy.has(item.maintainerrMediaId),
-        onTap: () => onToggle(item, glyph),
+        armed,
+        // A `trash` tile SAVES — one tap, unchanged. A `shield` tile RELEASES — arm, then confirm.
+        onTap: needsConfirm ? release.trigger : () => onToggle(item, glyph),
         testId: 'trash-toggle',
         markInert: true,
       }}
