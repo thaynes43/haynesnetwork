@@ -54,11 +54,14 @@ import {
   wallCounts,
   wallGlyph,
   wallInteractive,
+  wallSection,
+  PROJECTED_SKIP_MEANING,
   type BatchItemStateName,
   type BatchStateName,
   type TargetCandidate,
   type TargetStrategy,
   type WallGlyph,
+  type WallSection,
   type WallTapContext,
 } from '@/lib/trash-batches';
 
@@ -107,6 +110,13 @@ interface BatchItemWire {
   lastWatchedAt: string | null;
   lastWatchedServer: string | null;
   requesters: string[];
+  /**
+   * DESIGN-011 D-07 amendment (b) 2026-09-19 — the pool projection, answered from the
+   * `trash_candidates` read model: `false` = known absent from the live trash pool (the sweep would
+   * keep it), `true` = present, `null` = unknown (stale/missing state row, or no Maintainerr id).
+   * Display only. Treated as `null` when absent, so an older server keeps every tile slated.
+   */
+  inLivePool: boolean | null;
 }
 
 /** The pending-candidate fields the new-candidates diff + the Start-a-batch target preview read (a
@@ -143,7 +153,11 @@ function tileLabel(
   tappable: boolean,
   savedByName: string | null,
   armed = false,
+  projectedSkip = false,
 ): string {
+  // A PROJECTED skip (a still-`pending` row the live pool no longer holds) announces a different
+  // fact from a row the sweep actually skipped — the sweep never ran on it (amendment (b)).
+  if (projectedSkip) return `${title} ${PROJECTED_SKIP_MEANING}`;
   // ADR-014 (2026-09-14) — an ARMED tile is mid-release: say what the second tap does and what it
   // costs. Both release glyphs land the title back in the deletion pool, so the consequence clause
   // is identical; only the verb differs (un-save your own save vs un-protect a live exclusion).
@@ -182,6 +196,7 @@ function tileLabel(
 function BatchTile({
   item,
   glyph,
+  projectedSkip,
   kind,
   ctx,
   fromKey,
@@ -191,6 +206,8 @@ function BatchTile({
 }: {
   item: BatchItemWire;
   glyph: WallGlyph;
+  /** This `skip` is the pool PROJECTION over a still-`pending` row, not a swept `skipped` row. */
+  projectedSkip: boolean;
   kind: 'movie' | 'tv';
   ctx: WallTapContext;
   fromKey: string;
@@ -209,7 +226,7 @@ function BatchTile({
   }, [needsConfirm]);
   const armed = release.armed && needsConfirm;
   const savedByName = item.savedBy !== null ? (saverNames.get(item.savedBy) ?? null) : null;
-  const label = tileLabel(item.title, glyph, tappable, savedByName, armed);
+  const label = tileLabel(item.title, glyph, tappable, savedByName, armed, projectedSkip);
   const rating = formatRating(ratingOrNull(item.imdbRating) ?? ratingOrNull(item.tmdbRating));
   // DESIGN-010 D-12 (build C) — the meta-line watch chip: info-tone (recently watched) or muted
   // (watched a while ago); null with no watch signal. NEVER in the action corner.
@@ -252,6 +269,22 @@ function BatchTile({
 }
 
 // ── THE POSTER WALL (batch curation / Leaving-Soon / terminal review) ───────────────────────
+/** One tile's fully-resolved render inputs — the glyph the header counts and the tile draws are
+ *  the SAME derivation, so they can never disagree (DESIGN-011 D-07 header contract). */
+interface WallRow {
+  item: BatchItemWire;
+  state: BatchItemStateName;
+  inLivePool: boolean | null;
+  glyph: WallGlyph;
+  section: WallSection;
+  projectedSkip: boolean;
+}
+
+/** The section an item is pinned to — always from its SERVER state + pool answer, never from an
+ *  optimistic override (an override must flip the glyph in place, never re-home the tile). */
+const serverSection = (item: BatchItemWire): WallSection =>
+  wallSection(wallGlyph(item.state, item.inLivePool ?? null));
+
 function PosterWall({
   batchId,
   batch,
@@ -275,6 +308,31 @@ function PosterWall({
   );
   const [inFlight, setInFlight] = useState<ReadonlySet<string>>(() => new Set());
   const [wallError, setWallError] = useState<string | null>(null);
+  // ── PINNED section membership (DESIGN-011 D-07 amendment (a) 2026-09-19) ────────────────────
+  // Each item's group is decided the FIRST time this mounted wall sees its id and is then frozen
+  // for the life of the mount. Nothing downstream may recompute it: not the optimistic override,
+  // not the `trash.batches.get` refetch the tap triggers. That is what makes hard rule 9 / ADR-015
+  // hold across a save — the tile flips its glyph exactly where it stands, and takes its new
+  // section only on the next load (PosterWall is keyed by batch.id upstream, so a remount
+  // re-partitions from fresh server truth).
+  //
+  // The lazy initialiser partitions the first `items` array; the render-phase catch-up below is the
+  // defensive path for an id that appears later (a batch's item set is frozen at snapshot, so this
+  // is belt-and-braces). Both read the SERVER state, and both are idempotent — a strict-mode double
+  // render produces the identical map.
+  const [pinnedSections, setPinnedSections] = useState<ReadonlyMap<string, WallSection>>(
+    () => new Map(items.map((item) => [item.id, serverSection(item)] as const)),
+  );
+  const unpinned = items.filter((item) => !pinnedSections.has(item.id));
+  if (unpinned.length > 0) {
+    // React's sanctioned "adjust state while rendering" — this re-renders immediately (no flash,
+    // no effect) and then settles, because the next pass finds nothing unpinned.
+    setPinnedSections((prev) => {
+      const next = new Map(prev);
+      for (const item of unpinned) if (!next.has(item.id)) next.set(item.id, serverSection(item));
+      return next;
+    });
+  }
   const setSaved = trpc.trash.batches.setItemSaved.useMutation();
   const unprotect = trpc.trash.batches.unprotectItem.useMutation();
   const fromKey = fromKeyFor(kind);
@@ -327,10 +385,48 @@ function PosterWall({
     setSaved.mutate({ batchId, itemId: item.id, saved: desired }, handlers);
   };
 
-  const effective = items.map((item) => ({ item, state: effectiveState(item) }));
+  const rows: WallRow[] = items.map((item) => {
+    const override = overrides.get(item.id);
+    const state = override ?? item.state;
+    // Amendment (b), last clause: an in-session optimistic override WINS over the pool projection.
+    // A just-un-saved or just-un-protected tile must read as the slated trash-can it now is —
+    // never as an inert `skip` the viewer can't tap back. `null` = "unknown", which reads slated.
+    const inLivePool = override !== undefined ? null : (item.inLivePool ?? null);
+    const glyph = wallGlyph(state, inLivePool);
+    return {
+      item,
+      state,
+      inLivePool,
+      glyph,
+      // `?? serverSection(item)` only covers the render in which a brand-new id is being pinned;
+      // the state update above lands the identical value, so the tile never moves.
+      section: pinnedSections.get(item.id) ?? serverSection(item),
+      // A `skip` over a still-`pending` row is the projection, not a swept `skipped` row.
+      projectedSkip: glyph === 'skip' && state === 'pending',
+    };
+  });
+  // The header reads the SAME (state, inLivePool) pairs the tiles were drawn from, so a projected
+  // tile lands under Kept and its bytes leave `frees` — amendment (c), honest numbers.
   const counts = wallCounts(
-    effective.map(({ item, state }) => ({ state, sizeBytes: item.sizeBytes })),
+    rows.map(({ item, state, inLivePool }) => ({ state, inLivePool, sizeBytes: item.sizeBytes })),
   );
+  // Sections are a property of an OPEN batch only; the terminal Past-batches report stays one grid.
+  const sectioned = OPEN_STATES.includes(batch.state);
+  const renderTile = (row: WallRow) => (
+    <BatchTile
+      key={row.item.id}
+      item={row.item}
+      glyph={row.glyph}
+      projectedSkip={row.projectedSkip}
+      kind={kind}
+      ctx={ctx}
+      fromKey={fromKey}
+      saverNames={saverNames}
+      busy={inFlight.has(row.item.id)}
+      onTap={tap}
+    />
+  );
+  const inSection = (section: WallSection) => rows.filter((row) => row.section === section);
 
   // The running header — numbers change in place (tabular figures), the row never grows.
   const headline =
@@ -349,21 +445,31 @@ function PosterWall({
       <p className="bwall-error" role="alert" data-testid="wall-error">
         {wallError ?? ''}
       </p>
+      {/* `batch-wall` is THE grid in both wall shapes: the slated group when the batch is open, and
+          the whole untouched single grid when it is terminal (the Past-batches final report keeps
+          today's rendering exactly). The slated group carries no heading — the sticky header above
+          is already its label. */}
       <TrashWall testId="batch-wall">
-        {effective.map(({ item, state }) => (
-          <BatchTile
-            key={item.id}
-            item={item}
-            glyph={wallGlyph(state)}
-            kind={kind}
-            ctx={ctx}
-            fromKey={fromKey}
-            saverNames={saverNames}
-            busy={inFlight.has(item.id)}
-            onTap={tap}
-          />
-        ))}
+        {(sectioned ? inSection('slated') : rows).map(renderTile)}
       </TrashWall>
+      {sectioned && inSection('rescued').length > 0 ? (
+        <section className="bwall-section" data-testid="wall-section-rescued">
+          <h3 className="bwall-section__title">Rescued</h3>
+          <p className="muted bwall-section__note">
+            Saved from this batch. These will not be deleted.
+          </p>
+          <TrashWall testId="batch-wall-rescued">{inSection('rescued').map(renderTile)}</TrashWall>
+        </section>
+      ) : null}
+      {sectioned && inSection('kept').length > 0 ? (
+        <section className="bwall-section" data-testid="wall-section-kept">
+          <h3 className="bwall-section__title">Kept</h3>
+          <p className="muted bwall-section__note">
+            Already protected, or not in the trash pool right now. These will not be deleted.
+          </p>
+          <TrashWall testId="batch-wall-kept">{inSection('kept').map(renderTile)}</TrashWall>
+        </section>
+      ) : null}
     </>
   );
 }
@@ -524,9 +630,13 @@ function ExpireModal({
   // sweep guardian keeps recently-watched and unevaluable items; a requester is NO LONGER a keep
   // (owner ruling 2026-07-09 — requested is informational only), so a requested pending item counts
   // toward willDelete like any other cold item.
+  // DESIGN-011 D-07 amendment (c) 2026-09-19 — an item the live pool no longer holds is certain to
+  // be skipped (the sweep's own `!fresh` branch), so it leaves "up to N delete", joins "at least K
+  // skipped", and leaves the typed-confirm count with them. `null`/`true` stay countable: unknown
+  // always reads as slated, the conservative side.
   const pending = items.filter((i) => i.state === 'pending');
   const willDelete = pending.filter(
-    (i) => !i.recentlyWatched && i.mediaItemId !== null,
+    (i) => !i.recentlyWatched && i.mediaItemId !== null && i.inLivePool !== false,
   ).length;
   const willKeep = pending.length - willDelete;
   const savedCount = batch.counts.saved;
@@ -643,8 +753,8 @@ function ExpireModal({
               — a save is permanent protection.
             </li>
             <li>
-              <strong>At least {willKeep} will be kept (skipped)</strong> — recently watched,
-              unverifiable, or guardian-protected at sweep time.
+              <strong>At least {willKeep} will be kept (skipped)</strong> — recently watched, no
+              longer in the trash pool, unverifiable, or guardian-protected at sweep time.
             </li>
           </ul>
           {windowOpen ? (

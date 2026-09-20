@@ -18,6 +18,8 @@ import {
   trashBatchItems,
   trashBatchSaves,
   trashBatches,
+  trashCandidates,
+  trashCandidatesState,
   users,
   TRASH_BATCH_OPEN_STATES,
   type DbClient,
@@ -1678,16 +1680,45 @@ export interface BatchDetailItem {
    *  an app-side keep). A non-empty list drives the wall's "Requested by <name>" meta badge; it does
    *  NOT change the tile glyph or actionability. */
   requesters: string[];
+  /**
+   * DESIGN-011 D-07 amendment 2026-09-19 (b) — POOL-AWARE PROJECTION. Whether this item is still in
+   * Maintainerr's live deletion pool, answered from the ADR-035 `trash_candidates` READ-MODEL (never
+   * a live Maintainerr call on the wall path — C-02 holds: this is display only and never feeds a
+   * delete decision).
+   *
+   *   `false` — the kind's `trash_candidates_state.refreshed_at` is within
+   *             LIVE_POOL_PROJECTION_MAX_AGE_MS AND the item's Maintainerr id is absent from that
+   *             kind's snapshot. A `pending` item reading `false` renders the inert `skip` glyph and
+   *             lives in **Kept**: the sweep's own `!fresh` branch would skip it.
+   *   `true`  — present in the fresh snapshot (slated, as before).
+   *   `null`  — UNKNOWN: the state row is missing or stale, or the item carries no Maintainerr id.
+   *             Always reads as slated — the conservative side.
+   *
+   * This is a PROJECTION, not a state change: nothing is written, the sweep still decides from the
+   * LIVE pool, and an item that re-enters the pool reads as slated again on the next load.
+   */
+  inLivePool: boolean | null;
 }
 
 export interface BatchDetail extends BatchSummary {
   items: BatchDetailItem[];
 }
 
+/**
+ * DESIGN-011 D-07 amendment 2026-09-19 (b) — how fresh the ADR-035 candidate snapshot must be before
+ * its ABSENCE of an item is allowed to mean "no longer in the live pool" (`inLivePool: false`). Past
+ * this age the snapshot can only say "unknown" (`null` ⇒ reads as slated), never "gone": a stale
+ * read-model must never talk a wall out of showing a title as slated. One hour comfortably covers a
+ * missed sync-incremental tick (the CronJob refreshes every 15 min) without going blind for a day.
+ */
+export const LIVE_POOL_PROJECTION_MAX_AGE_MS = 60 * 60_000;
+
 /** ADR-025 — one batch with its poster-grid item list (the review/Leaving-Soon wall source). */
 export async function getBatchDetail(input: {
   db?: DbClient;
   batchId: string;
+  /** Test seam for the live-pool freshness window (defaults to wall-clock now). */
+  now?: Date;
 }): Promise<BatchDetail> {
   const db = resolveDb(input.db);
   const [b] = await db.select().from(trashBatches).where(eq(trashBatches.id, input.batchId));
@@ -1713,6 +1744,40 @@ export async function getBatchDetail(input: {
   const watchedCutoff = Date.now() - RECENTLY_WATCHED_WINDOW_DAYS * 86_400_000;
   /** Drizzle numeric columns arrive as strings — normalize (0 stays 0; the UI collapses it). */
   const numOrNull = (v: string | null): number | null => (v === null ? null : Number(v));
+
+  // Pool-aware projection (amendment b) — TWO cheap extra queries, never an N+1 and never a live
+  // Maintainerr call: the kind's snapshot state row, then (only when it is fresh enough to be
+  // trusted about absence) that kind's Maintainerr id set. `livePoolIds === null` ⇒ unknown for
+  // every item on the wall.
+  const nowMs = (input.now ?? new Date()).getTime();
+  const [candidateState] = await db
+    .select({ refreshedAt: trashCandidatesState.refreshedAt })
+    .from(trashCandidatesState)
+    .where(eq(trashCandidatesState.mediaKind, b.mediaKind))
+    .limit(1);
+  const snapshotFresh =
+    candidateState !== undefined &&
+    nowMs - candidateState.refreshedAt.getTime() <= LIVE_POOL_PROJECTION_MAX_AGE_MS;
+  let livePoolIds: Set<string> | null = null;
+  if (snapshotFresh) {
+    // Scoped to the batch's OWN kind — a movie batch never reads the TV snapshot (and vice versa),
+    // so a title present in the other kind's pool can never mask an absence here.
+    const candidateRows = await db
+      .select({ maintainerrMediaId: trashCandidates.maintainerrMediaId })
+      .from(trashCandidates)
+      .where(eq(trashCandidates.mediaKind, b.mediaKind));
+    livePoolIds = new Set(
+      candidateRows
+        .map((r) => r.maintainerrMediaId)
+        .filter((id): id is string => id !== null && id !== ''),
+    );
+  }
+  /** `null` = unknown (stale/missing snapshot, or an item with no Maintainerr id) ⇒ reads as slated. */
+  const projectLivePool = (maintainerrMediaId: string): boolean | null => {
+    if (livePoolIds === null) return null;
+    if (maintainerrMediaId === '') return null;
+    return livePoolIds.has(maintainerrMediaId);
+  };
 
   const raw: Record<string, number> = {};
   let reclaimedBytes = 0;
@@ -1760,6 +1825,7 @@ export async function getBatchDetail(input: {
       lastWatchedAt: lastWatchedAt?.toISOString() ?? null,
       lastWatchedServer: lastWatchedServer ?? null,
       requesters: requesters ?? [],
+      inLivePool: projectLivePool(it.maintainerrMediaId),
     })),
   };
 }

@@ -797,6 +797,20 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     // The Fixture now counts as slated (was Kept before): Deleting 3 (Vanished 2 + Fixture 4 + unknown 1).
     await expect(page.getByTestId('wall-counts')).toHaveText('Deleting 3 · Rescued 0 · Kept 1 · frees 7.0 GB');
 
+    // DESIGN-011 D-07 amendment (a) 2026-09-19 — an OPEN wall is SECTIONED at load: the headless
+    // slated grid, then Rescued, then Kept. Nothing is rescued yet, so that group renders nothing at
+    // all (no heading, no empty grid); the protected Stub Runner is the only Kept member.
+    await expect(page.getByTestId('batch-wall').getByTestId('wall-tile')).toHaveCount(3);
+    await expect(page.getByTestId('wall-section-rescued')).toHaveCount(0);
+    await expect(page.getByTestId('wall-section-kept')).toBeVisible();
+    await expect(page.getByTestId('wall-section-kept')).toContainText('Kept');
+    await expect(page.getByTestId('wall-section-kept')).toContainText(
+      'Already protected, or not in the trash pool right now. These will not be deleted.',
+    );
+    const keptTiles = page.getByTestId('batch-wall-kept').getByTestId('wall-tile');
+    await expect(keptTiles).toHaveCount(1);
+    await expect(keptTiles.filter({ hasText: 'Stub Runner' })).toHaveCount(1);
+
     // Tap trash → shield: overlay swap only — the tile and its neighbor must not move (ADR-015).
     const fixture = page.getByTestId('wall-tile').filter({ hasText: 'The Fixture' });
     await vanished.getByRole('button').scrollIntoViewIfNeeded();
@@ -812,6 +826,30 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     const saves = calls.filter((c) => c.method === 'POST' && c.path === '/rules/exclusion');
     expect(saves).toHaveLength(1);
     expect(saves[0]!.body).toMatchObject({ mediaId: STUB_MAINT_VANISHED_ID });
+
+    // …and section membership is PINNED for the life of the mount (amendment (a)): the save flipped
+    // the glyph exactly where the tile stood, so it is STILL in the slated grid — not re-homed into
+    // Rescued by the post-tap `trash.batches.get` refetch. This is the invariant the bounding-box
+    // assertions above enforce geometrically; assert the membership too, so a future refactor that
+    // re-partitions on refetch fails here even if the layout happens to land identically.
+    await expect(
+      page.getByTestId('batch-wall').getByTestId('wall-tile').filter({ hasText: 'Vanished Heist' }),
+    ).toHaveCount(1);
+    await expect(page.getByTestId('wall-section-rescued')).toHaveCount(0);
+
+    // The tile takes its new section on the NEXT LOAD — a remount re-partitions from server truth.
+    await page.reload();
+    const afterReload = page.getByTestId('wall-counts');
+    await expect(afterReload).toHaveText('Deleting 2 · Rescued 1 · Kept 1 · frees 5.0 GB');
+    await expect(page.getByTestId('wall-section-rescued')).toBeVisible();
+    await expect(page.getByTestId('wall-section-rescued')).toContainText(
+      'Saved from this batch. These will not be deleted.',
+    );
+    const rescuedTiles = page.getByTestId('batch-wall-rescued').getByTestId('wall-tile');
+    await expect(rescuedTiles.filter({ hasText: 'Vanished Heist' })).toHaveCount(1);
+    const slatedTiles = page.getByTestId('batch-wall').getByTestId('wall-tile');
+    await expect(slatedTiles).toHaveCount(2);
+    await expect(slatedTiles.filter({ hasText: 'Vanished Heist' })).toHaveCount(0);
 
     // Un-save (NET semantics — 0 saved, 1 un-saved). ADR-014 (2026-09-14): the release is a
     // two-step here too. The arming tap must reach NOTHING — assert the DELETE is still absent.

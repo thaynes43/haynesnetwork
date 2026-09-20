@@ -9,6 +9,7 @@ import {
   mediaMetadata,
   notifications,
   trashBatchItems,
+  trashBatchSaves,
   trashBatches,
   users,
   TRASH_BATCH_OPEN_STATES,
@@ -784,6 +785,131 @@ export interface SaveExclusionInput {
   reason?: string;
 }
 
+/**
+ * DESIGN-011 D-07 amendment 2026-09-19 (d) — A SAVE MADE OUTSIDE THE WALL REACHES THE WALL.
+ *
+ * The batch poster wall is not the only place a title gets rescued: the pending wall and the library
+ * shield both save through `saveExclusion`, which never touched `trash_batch_items`. The batch row
+ * stayed `pending` (red trash glyph, counted in `Deleting`) even though the sweep would keep it as
+ * `liveExcluded` — found while auditing the 2026-09-19 owner report (latent; no wrong deletion was
+ * possible, the wall was simply dishonest about the row).
+ *
+ * This is the ONE writer for that cross-surface flip, and it mirrors `setBatchItemSaved`'s save
+ * branch exactly: the PROTECTIVE external write (pulling the poster out of the visible Leaving-Soon
+ * collection) happens FIRST, then ONE transaction flips the row to `saved` (+ `saved_by`/`saved_at`)
+ * and appends the `trash_batch_saves` 'save' row (the PLAN-014 tuning dataset). The UPDATE is guarded
+ * (`AND state = 'pending'`) and the save-event row is written only when it actually changed a row, so
+ * a concurrent wall save loses the race instead of double-recording.
+ *
+ * Scope:
+ *   - OPEN batches only (draft/admin_review/leaving_soon). A terminal batch's rows are history.
+ *   - `pending` rows only. `saved`/`protected`/`deleted`/`skipped` are inert.
+ *   - PROTECTIVE DIRECTION ONLY — there is no un-save counterpart: an un-save made outside the wall
+ *     leaves the batch row `saved` (the title is kept for this batch and competes again in the next).
+ *   - Identity is matched on EITHER key the two surfaces share: the Maintainerr id (Plex ratingKey)
+ *     or, when the caller knows it, our stable `media_item_id` — which is what still matches after a
+ *     file replacement re-keys the Plex item (ADR-086).
+ *
+ * The collection removal is BEST-EFFORT: a Maintainerr failure there must never undo or shadow the
+ * protective exclusion the caller already established, and it must never block the row flip — the
+ * flip is itself protective (a `saved` row is outside the sweep), while a stale poster in the
+ * Leaving-Soon collection is cosmetic and is reconciled by the next heal/close drive. Non-upstream
+ * errors still propagate.
+ */
+export async function applyOpenBatchSave(input: {
+  db?: DbClient;
+  maintainerr: MaintainerrClientBundle;
+  /** The Maintainerr id (Plex ratingKey) that was just excluded. */
+  maintainerrMediaId: string;
+  /** Our stable ledger id, when known — the identity that survives a Plex re-key. */
+  mediaItemId?: string | null;
+  actorId: string | null;
+}): Promise<{ flipped: boolean; batchId: string | null; batchItemId: string | null }> {
+  const db = resolveDb(input.db);
+  const mediaItemId = input.mediaItemId ?? null;
+  const byMediaId = eq(trashBatchItems.maintainerrMediaId, input.maintainerrMediaId);
+  const identity =
+    mediaItemId === null ? byMediaId : or(byMediaId, eq(trashBatchItems.mediaItemId, mediaItemId));
+
+  const [row] = await db
+    .select({
+      itemId: trashBatchItems.id,
+      batchId: trashBatchItems.batchId,
+      itemMediaId: trashBatchItems.maintainerrMediaId,
+      collectionId: trashBatches.maintainerrCollectionId,
+    })
+    .from(trashBatchItems)
+    .innerJoin(trashBatches, eq(trashBatches.id, trashBatchItems.batchId))
+    .where(
+      and(
+        inArray(trashBatches.state, [...TRASH_BATCH_OPEN_STATES]),
+        eq(trashBatchItems.state, 'pending'),
+        identity,
+      ),
+    )
+    .limit(1);
+  // Not in any open batch (the common case) — a clean no-op, no transaction, no Maintainerr call.
+  if (!row) return { flipped: false, batchId: null, batchItemId: null };
+
+  // 1) Protective external write FIRST (ADR-023 C-05 ordering, as in setBatchItemSaved): pull the
+  //    poster out of the visible Leaving-Soon collection. Null collection id ⇒ the batch is still
+  //    pre-green-light and has no collection yet. Both keys are sent when the frozen snapshot key
+  //    and the just-excluded key differ (a re-key): removing an absent member is a tolerant no-op.
+  const { collectionId } = row;
+  if (collectionId !== null) {
+    const keys = [...new Set([row.itemMediaId, input.maintainerrMediaId])];
+    try {
+      await guardMaintainerrCall('maintainerr POST /collections/remove', () =>
+        input.maintainerr.write.removeFromCollection(collectionId, keys),
+      );
+    } catch (err) {
+      // Best-effort (see the doc comment): the exclusion stands and the row still flips.
+      if (!(err instanceof MaintainerrUpstreamError)) throw err;
+    }
+  }
+
+  // 2) Then the DB, in ONE transaction: state + holder + the append-only save-event row.
+  const flipped = await inTransaction(input.db, async (tx) => {
+    const updated = await tx
+      .update(trashBatchItems)
+      .set({ state: 'saved', savedBy: input.actorId, savedAt: nowDate(), savedReason: null })
+      .where(and(eq(trashBatchItems.id, row.itemId), eq(trashBatchItems.state, 'pending')))
+      .returning({ id: trashBatchItems.id });
+    if (updated.length === 0) return false;
+    await tx
+      .insert(trashBatchSaves)
+      .values({ batchItemId: row.itemId, userId: input.actorId, action: 'save' });
+    return true;
+  });
+  return { flipped, batchId: row.batchId, batchItemId: row.itemId };
+}
+
+/**
+ * The (d) hook, applied on EVERY successful `saveExclusion` — including the already-excluded early
+ * return, which is exactly what a retry after a transient failure hits (so the flip is recoverable).
+ *
+ * Gated on the save's ORIGIN so it never double-applies and never invents a human rescue:
+ *   - `batch_save` — the wall path itself (`setBatchItemSaved`) calls `saveExclusion` first and then
+ *     does its own heal-before-write removal + flip + save row. Running here too would write a
+ *     SECOND `trash_batch_saves` row for one tap. Skipped.
+ *   - `watch_guardian` / `relink` — SYSTEM protections, not rescues. `trash_batch_saves` is the
+ *     "which items get rescued, BY WHOM" tuning dataset (PLAN-014) and the batch model deliberately
+ *     has no system auto-save any more (ADR-025 errata 2026-07-09), so a cron must not author one.
+ *     Their honesty fix is amendment (b) instead: an excluded item leaves Maintainerr's pool, so the
+ *     wall projects it `inLivePool: false` and shows it under Kept.
+ *   - `user` (or unset) — the pending wall / library shield. THIS is the case (d) is about.
+ */
+async function reconcileOpenBatchFromSave(input: SaveExclusionInput): Promise<void> {
+  if ((input.reason ?? 'user') !== 'user') return;
+  await applyOpenBatchSave({
+    db: input.db,
+    maintainerr: input.maintainerr,
+    maintainerrMediaId: input.maintainerrMediaId,
+    mediaItemId: input.mediaItemId ?? null,
+    actorId: input.actorId,
+  });
+}
+
 export async function saveExclusion(
   input: SaveExclusionInput,
 ): Promise<{ excluded: boolean; alreadyExcluded: boolean }> {
@@ -809,6 +935,8 @@ export async function saveExclusion(
         });
       });
     }
+    // DESIGN-011 D-07 (d) — a re-save of an already-excluded title still reconciles the wall.
+    await reconcileOpenBatchFromSave(input);
     return { excluded: false, alreadyExcluded: true };
   }
 
@@ -846,6 +974,10 @@ export async function saveExclusion(
       });
     }
   });
+
+  // 3) DESIGN-011 D-07 (d) — a save made OUTSIDE the batch wall reaches the wall: flip a matching
+  //    `pending` row of an OPEN batch to `saved` (protective Maintainerr write first, then DB).
+  await reconcileOpenBatchFromSave(input);
 
   return { excluded: true, alreadyExcluded: false };
 }
