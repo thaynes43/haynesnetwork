@@ -14,6 +14,8 @@ import {
   trashBatchItems,
   trashBatchSaves,
   trashBatches,
+  trashCandidates,
+  trashCandidatesState,
 } from '@hnet/db/schema';
 import {
   MaintainerrUnsafeError,
@@ -29,9 +31,12 @@ import {
   getBatchSaveStats,
   greenlightBatch,
   listBatches,
+  refreshTrashCandidates,
+  saveExclusion,
   selectBatchCandidates,
   setAppSetting,
   setBatchItemSaved,
+  LIVE_POOL_PROJECTION_MAX_AGE_MS,
   sweepExpiredBatches,
   unprotectBatchItem,
   upsertMediaItemsBatch,
@@ -1282,6 +1287,246 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     expect(second.batches[0]!.deletedCount).toBe(1);
     const [done] = await t.db.select().from(trashBatches).where(eq(trashBatches.id, batchId));
     expect(done!.state).toBe('deleted');
+  });
+
+  // ── DESIGN-011 D-07 amendment 2026-09-19 (b) — pool-aware projection ──────────────────────────
+  // getBatchDetail answers `inLivePool` from the ADR-035 candidate READ-MODEL (never a live
+  // Maintainerr call): `false` ONLY on a FRESH snapshot that lacks the item, `true` when present,
+  // `null` (unknown ⇒ reads as slated, the conservative side) when the snapshot is stale/missing or
+  // the item has no Maintainerr id.
+
+  /** The candidate read-model is global state — every projection test starts from a clean slate. */
+  const clearCandidates = async () => {
+    await t.db.delete(trashCandidates);
+    await t.db.delete(trashCandidatesState);
+  };
+
+  it('inLivePool: TRUE for items still in a FRESH snapshot, FALSE for one that left the pool', async () => {
+    await clearCandidates();
+    const state = baseState();
+    const { bundle, calls } = makeMaintainerr(state);
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    await refreshTrashCandidates({ db: t.db, maintainerr: bundle });
+
+    const before = await getBatchDetail({ db: t.db, batchId });
+    expect(before.items.every((i) => i.inLivePool === true)).toBe(true);
+
+    // Maintainerr's rule run drops a rescued title out of the pool; the next refresh sees it gone.
+    state.collections[0]!.items = state.collections[0]!.items.filter((i) => i.mediaServerId !== 'ms-9001');
+    await refreshTrashCandidates({ db: t.db, maintainerr: bundle });
+
+    const wallCallsBefore = calls.length;
+    const after = await getBatchDetail({ db: t.db, batchId });
+    // C-02 — the wall path makes NO live Maintainerr call; the projection is pure Postgres.
+    expect(calls.length).toBe(wallCallsBefore);
+    const byId = new Map(after.items.map((i) => [i.maintainerrMediaId, i]));
+    expect(byId.get('ms-9001')!.inLivePool).toBe(false);
+    expect(byId.get('ms-9002')!.inLivePool).toBe(true);
+    expect(byId.get('ms-9004')!.inLivePool).toBe(true);
+    await clearCandidates();
+  });
+
+  it('inLivePool: NULL when the snapshot is STALE (past LIVE_POOL_PROJECTION_MAX_AGE_MS) or MISSING', async () => {
+    await clearCandidates();
+    const state = baseState();
+    const { bundle } = makeMaintainerr(state);
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    // ms-9001 is genuinely OUT of the pool — but a snapshot we cannot trust must still say "unknown".
+    state.collections[0]!.items = state.collections[0]!.items.filter((i) => i.mediaServerId !== 'ms-9001');
+    await refreshTrashCandidates({ db: t.db, maintainerr: bundle });
+
+    // Exactly at the threshold the snapshot is still trusted…
+    const atEdge = await getBatchDetail({
+      db: t.db,
+      batchId,
+      now: new Date(Date.now() + LIVE_POOL_PROJECTION_MAX_AGE_MS - 5_000),
+    });
+    expect(atEdge.items.find((i) => i.maintainerrMediaId === 'ms-9001')!.inLivePool).toBe(false);
+
+    // …one minute past it, absence means nothing any more.
+    const stale = await getBatchDetail({
+      db: t.db,
+      batchId,
+      now: new Date(Date.now() + LIVE_POOL_PROJECTION_MAX_AGE_MS + 60_000),
+    });
+    expect(stale.items.every((i) => i.inLivePool === null)).toBe(true);
+
+    // A MISSING state row (never refreshed) is unknown too — even with candidate rows present.
+    await t.db.delete(trashCandidatesState).where(eq(trashCandidatesState.mediaKind, 'movie'));
+    const noState = await getBatchDetail({ db: t.db, batchId });
+    expect(noState.items.every((i) => i.inLivePool === null)).toBe(true);
+    await clearCandidates();
+  });
+
+  it('inLivePool: NULL for a batch item carrying no Maintainerr id, even on a fresh snapshot', async () => {
+    await clearCandidates();
+    const { bundle } = makeMaintainerr(baseState());
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    await refreshTrashCandidates({ db: t.db, maintainerr: bundle });
+    // The column is NOT NULL, so "no Maintainerr id" is the empty handle — unactionable either way.
+    await t.db.insert(trashBatchItems).values({
+      batchId,
+      maintainerrMediaId: '',
+      title: 'Idless Movie',
+      sizeBytes: 1_000_000,
+    });
+
+    const detail = await getBatchDetail({ db: t.db, batchId });
+    const idless = detail.items.find((i) => i.title === 'Idless Movie')!;
+    expect(idless.inLivePool).toBeNull();
+    // Its real-id neighbours are unaffected.
+    expect(detail.items.find((i) => i.maintainerrMediaId === 'ms-9001')!.inLivePool).toBe(true);
+    await clearCandidates();
+  });
+
+  it('inLivePool: the OTHER kind’s snapshot never leaks across kinds', async () => {
+    await clearCandidates();
+    const tvCollection: StubCollection = {
+      id: 8,
+      isActive: true,
+      deleteAfterDays: 9999,
+      arrAction: 0,
+      manualCollection: false,
+      type: 'show',
+      title: 'Least watched shows',
+      libraryId: 2,
+      items: [
+        { mediaServerId: 'ms-8001', tvdbId: 8001, sizeBytes: 6_000_000_000, addDate: '2026-06-01T00:00:00Z' },
+        { mediaServerId: 'ms-8002', tvdbId: 8002, sizeBytes: 5_000_000_000, addDate: '2026-06-01T00:00:00Z' },
+      ],
+    };
+    const movies = movieCollection();
+    const state = baseState({ collections: [movies, tvCollection] });
+    const { bundle } = makeMaintainerr(state);
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'tv', actorId });
+    await refreshTrashCandidates({ db: t.db, maintainerr: bundle });
+    expect((await getBatchDetail({ db: t.db, batchId })).items.every((i) => i.inLivePool === true)).toBe(true);
+
+    // ms-8001 leaves the TV pool and turns up in the MOVIE snapshot (a re-bucketed collection). A
+    // TV batch reads ONLY the TV snapshot, so this is an absence, not a presence.
+    tvCollection.items = tvCollection.items.filter((i) => i.mediaServerId !== 'ms-8001');
+    movies.items = [
+      ...movies.items,
+      { mediaServerId: 'ms-8001', tmdbId: 8001, sizeBytes: 6_000_000_000, addDate: '2026-06-01T00:00:00Z' },
+    ];
+    await refreshTrashCandidates({ db: t.db, maintainerr: bundle });
+    const movieSnapshot = await t.db
+      .select()
+      .from(trashCandidates)
+      .where(eq(trashCandidates.mediaKind, 'movie'));
+    expect(movieSnapshot.some((r) => r.maintainerrMediaId === 'ms-8001')).toBe(true); // present — for MOVIES
+
+    const detail = await getBatchDetail({ db: t.db, batchId });
+    const byId = new Map(detail.items.map((i) => [i.maintainerrMediaId, i]));
+    expect(byId.get('ms-8001')!.inLivePool).toBe(false);
+    expect(byId.get('ms-8002')!.inLivePool).toBe(true);
+    await clearCandidates();
+  });
+
+  // ── DESIGN-011 D-07 amendment 2026-09-19 (d) — a save made OUTSIDE the wall reaches the wall ──
+  // saveExclusion (pending wall / library shield) flips a matching `pending` row of an OPEN batch to
+  // `saved` with the same ordering discipline as setBatchItemSaved: protective Maintainerr write
+  // first (pull it out of the Leaving-Soon collection), then ONE tx for the row + the save-event row.
+
+  const savesOf = (batchItemId: string) =>
+    t.db.select().from(trashBatchSaves).where(eq(trashBatchSaves.batchItemId, batchItemId));
+
+  it('an OUTSIDE save flips the open-batch pending row, records ONE save row, and pulls the poster', async () => {
+    const state = baseState({ nextCollectionId: 811 });
+    const { bundle, calls } = makeMaintainerr(state);
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: 14, actorId });
+    const cold = (await itemsOf(batchId)).find((i) => i.maintainerrMediaId === 'ms-9001')!;
+    expect(state.collections.find((c) => c.id === 811)!.items.some((i) => i.mediaServerId === 'ms-9001')).toBe(true);
+
+    // The save arrives from the PENDING wall — no batchId, no itemId, no wall involvement at all.
+    const res = await saveExclusion({
+      db: t.db,
+      maintainerr: bundle,
+      maintainerrMediaId: 'ms-9001',
+      mediaItemId: cold.mediaItemId,
+      actorId,
+    });
+    expect(res).toEqual({ excluded: true, alreadyExcluded: false });
+
+    const [row] = await t.db.select().from(trashBatchItems).where(eq(trashBatchItems.id, cold.id));
+    expect(row!.state).toBe('saved');
+    expect(row!.savedBy).toBe(actorId);
+    expect(row!.savedAt).not.toBeNull();
+    expect((await savesOf(cold.id)).filter((r) => r.action === 'save')).toHaveLength(1);
+    // Protective external write happened, and the poster left the visible Leaving-Soon collection.
+    expect(calls.some((c) => c.method === 'POST' && c.pathname === '/collections/remove')).toBe(true);
+    expect(state.collections.find((c) => c.id === 811)!.items.some((i) => i.mediaServerId === 'ms-9001')).toBe(false);
+    // Attribution lands on the acting user — the NET save-stats read the item row, so they agree.
+    const stats = await getBatchSaveStats({ db: t.db, batchId });
+    expect(stats.netSaved).toBe(1);
+    expect(stats.byUser.find((u) => u.userId === actorId)?.saves).toBe(1);
+  });
+
+  it('the WALL path still writes exactly ONE save row (no double-apply through saveExclusion)', async () => {
+    const { bundle } = makeMaintainerr(baseState());
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    const cold = (await itemsOf(batchId)).find((i) => i.maintainerrMediaId === 'ms-9001')!;
+
+    await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: cold.id, saved: true, actorId });
+    expect((await savesOf(cold.id)).filter((r) => r.action === 'save')).toHaveLength(1);
+
+    // A redundant OUTSIDE save of the SAME already-saved title adds nothing (the row is not pending).
+    await saveExclusion({
+      db: t.db,
+      maintainerr: bundle,
+      maintainerrMediaId: 'ms-9001',
+      mediaItemId: cold.mediaItemId,
+      actorId,
+    });
+    expect((await savesOf(cold.id)).filter((r) => r.action === 'save')).toHaveLength(1);
+    const [row] = await t.db.select().from(trashBatchItems).where(eq(trashBatchItems.id, cold.id));
+    expect(row!.state).toBe('saved');
+  });
+
+  it('an outside save leaves `protected` rows, TERMINAL batches, and non-batch titles untouched', async () => {
+    const { bundle } = makeMaintainerr(baseState());
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    const items = await itemsOf(batchId);
+    const dnd = items.find((i) => i.maintainerrMediaId === 'ms-9003')!; // snapshotted `protected`
+    expect(dnd.state).toBe('protected');
+
+    // 1) `protected` is inert — protective direction only flips `pending`.
+    await saveExclusion({ db: t.db, maintainerr: bundle, maintainerrMediaId: 'ms-9003', mediaItemId: dnd.mediaItemId, actorId });
+    const [stillProtected] = await t.db.select().from(trashBatchItems).where(eq(trashBatchItems.id, dnd.id));
+    expect(stillProtected!.state).toBe('protected');
+    expect(await savesOf(dnd.id)).toHaveLength(0);
+
+    // 2) A title in NO batch at all is a clean no-op (and never throws).
+    await expect(
+      saveExclusion({ db: t.db, maintainerr: bundle, maintainerrMediaId: 'ms-not-batched', actorId }),
+    ).resolves.toEqual({ excluded: true, alreadyExcluded: false });
+
+    // 3) A TERMINAL batch's rows are history — cancelling closes the batch, the row stays pending.
+    const cold = items.find((i) => i.maintainerrMediaId === 'ms-9001')!;
+    await cancelBatch({ db: t.db, maintainerr: bundle, batchId, actorId });
+    await saveExclusion({ db: t.db, maintainerr: bundle, maintainerrMediaId: 'ms-9001', mediaItemId: cold.mediaItemId, actorId });
+    const [afterTerminal] = await t.db.select().from(trashBatchItems).where(eq(trashBatchItems.id, cold.id));
+    expect(afterTerminal!.state).toBe('pending');
+    expect(await savesOf(cold.id)).toHaveLength(0);
+  });
+
+  it('a SYSTEM protection (watch guardian) never authors a wall rescue — (b) covers its honesty', async () => {
+    const { bundle } = makeMaintainerr(baseState());
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    const watched = (await itemsOf(batchId)).find((i) => i.maintainerrMediaId === 'ms-9002')!;
+
+    await saveExclusion({
+      db: t.db,
+      maintainerr: bundle,
+      maintainerrMediaId: 'ms-9002',
+      mediaItemId: watched.mediaItemId,
+      actorId: null,
+      reason: 'watch_guardian',
+    });
+    const [row] = await t.db.select().from(trashBatchItems).where(eq(trashBatchItems.id, watched.id));
+    expect(row!.state).toBe('pending'); // the tuning dataset stays a record of HUMAN rescues
+    expect(await savesOf(watched.id)).toHaveLength(0);
   });
 });
 

@@ -312,6 +312,63 @@ running counts → **the wall** → save-stats → history → settings.
 > the batch terminal, which would otherwise unmount the LifecycleView (and its Modal) before the
 > report is read; deferring keeps the Deletion report on screen until dismissed.
 
+> **Amended 2026-09-19 (owner ruling via AskUserQuestion, same day) — the open-batch wall is
+> sectioned on load, and its numbers follow the live pool.** Owner report: titles rescued five days
+> earlier were "still in the trash", read as a failed Maintainerr sync. The saves were sound
+> (exclusion + intent + ledger, out of the pool); the wall was the problem. It kept rescued posters
+> interleaved with slated ones (size order, which this design never specified), and its header
+> advertised `Deleting 44 · frees 1.2 TB` while 15 of the 44 had left the live pool and were
+> certain to be skipped by the sweep. Four changes, all display-side except (d):
+>
+> **(a) Load-time sections.** For an OPEN batch (`admin_review`, `leaving_soon`) the wall renders up
+> to three stacked groups with identical tile geometry, each ordered by frozen size descending:
+> the **slated grid** (no heading; `trash` tiles) directly under the running header, then
+> **Rescued** (`shield` tiles), then **Kept** (`check` + `skip` tiles). A group with no members
+> renders nothing. **Section membership is pinned the first time the mounted wall sees an item and
+> never changes for the life of that mount** — a tap still flips the tile where it stands (hard
+> rule 9 / ADR-015 are untouched: no tile moves under an interaction, and the post-tap refetch must
+> not re-home it). The tile takes its new section on the next load. Section headings carry no
+> counts (the sticky header owns the numbers, and a pinned count would disagree with it after a
+> tap). Terminal walls (the Past-batches final reports) stay a single grid.
+>
+> **(b) Pool-aware projection.** `getBatchDetail` returns `inLivePool: boolean | null` per item,
+> answered from the `trash_candidates` read model (ADR-035 — no live Maintainerr call on the wall
+> path; display only, so C-02 "never feeds a delete decision" holds). It is `false` only when the
+> kind's `trash_candidates_state.refreshed_at` is within the last 60 minutes AND the item's
+> Maintainerr id is absent from the snapshot; a missing or stale state row, or an item with no
+> Maintainerr id, yields `null` (unknown), which always reads as slated — the conservative side.
+> A `pending` item with `inLivePool === false` renders the inert `skip` glyph (announced as
+> "<title> is not in the trash pool right now, so it will not be deleted") and lives in **Kept**. This is a
+> projection of the sweep's own `!fresh` branch, not a state change: nothing is written, the sweep
+> still decides from the LIVE pool, and an item that re-enters the pool reads as slated again on
+> the next load. An in-session optimistic override (a just-un-saved or just-un-protected tile)
+> wins over the projection until the next load, so a tap never lands on a `skip`.
+>
+> **(c) Honest numbers.** The header contract is unchanged — "derived from the SAME glyph mapping
+> as the tiles" — so projected tiles count under `Kept` and their bytes leave `frees`. The
+> Expire-now preview subtracts them from "up to N delete" (and from the typed-confirm count) and
+> adds them to "at least K skipped". Recently-watched items stay counted as slated (owner ruling
+> 2026-07-09 — the corner is the action; the modal's "up to" covers them).
+>
+> **(d) A save made outside the wall reaches the wall.** `saveExclusion` (the pending-wall /
+> library-shield path) now also flips a matching `pending` row of an OPEN batch to `saved`
+> (`saved_by`, `saved_at`, a `trash_batch_saves` row, removal from the Leaving Soon collection) in
+> the same transaction discipline as `setBatchItemSaved`. Before this the row stayed `pending`
+> (red trash glyph, counted in `Deleting`) even though the sweep would keep it as `liveExcluded`.
+> As built (`applyOpenBatchSave` in `trash-flow.ts`, the lower layer, so no import cycle): it runs
+> only for a human save (`reason` `user` or unset) — `batch_save` is the wall path doing its own
+> flip (a second `trash_batch_saves` row would double-count one tap), and `watch_guardian` /
+> `relink` are system protections that must not author a rescue in the tuning dataset (they surface
+> through (b) instead: an excluded title leaves the pool and reads **Kept**). The row is matched on
+> the Maintainerr id OR the stable `media_item_id` (survives an ADR-086 re-key); the UPDATE is
+> guarded on `state='pending'` so a concurrent wall save cannot double-record. The Leaving Soon
+> removal is best-effort here (a Maintainerr upstream failure is swallowed): the exclusion is
+> already committed and the flip is itself protective, so neither may be blocked by a cosmetic
+> membership write. No window-closed gate — a late protective save still lands honestly.
+> Protective direction only: an un-save made outside the wall leaves the batch row `saved` —
+> `saved` rows are outside the sweep, so the title is kept for this batch and competes again in
+> the next one.
+
 ---
 
 ## D-08 — Ops (env + CronJob)

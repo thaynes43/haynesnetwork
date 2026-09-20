@@ -15,7 +15,11 @@ import {
   wallCounts,
   wallGlyph,
   wallInteractive,
+  wallSection,
+  PROJECTED_SKIP_MEANING,
+  WALL_GLYPH_MEANING,
   type TargetCandidate,
+  type WallGlyph,
   type WallTapContext,
 } from '../trash-batches';
 
@@ -46,6 +50,68 @@ describe('wallGlyph — the overlay language (ADR-033 unified: trash/shield/chec
     // state — there is nowhere left to pass them, so a requester can never win a `requested` glyph.
     expect(wallGlyph('pending')).toBe('trash');
     expect(wallGlyph('saved')).toBe('shield'); // always a human rescue now (no system auto-saves)
+  });
+});
+
+describe('wallGlyph — the pool projection (DESIGN-011 D-07 amendment (b) 2026-09-19)', () => {
+  it('a pending item KNOWN to have left the live pool reads as the inert skip', () => {
+    expect(wallGlyph('pending', false)).toBe('skip');
+  });
+
+  it('present (true) and unknown (null / omitted) both read as slated — the conservative side', () => {
+    // `null` is a stale/missing trash_candidates state row or an item with no Maintainerr id. The
+    // projection is only ever allowed to move a tile toward KEPT on a positive answer.
+    expect(wallGlyph('pending', true)).toBe('trash');
+    expect(wallGlyph('pending', null)).toBe('trash');
+    expect(wallGlyph('pending')).toBe('trash');
+  });
+
+  it('the projection touches ONLY pending rows — every other state is unchanged by it', () => {
+    for (const pool of [true, false, null] as const) {
+      expect(wallGlyph('saved', pool)).toBe('shield');
+      expect(wallGlyph('protected', pool)).toBe('check');
+      expect(wallGlyph('skipped', pool)).toBe('skip');
+      expect(wallGlyph('deleted', pool)).toBe('gone');
+    }
+  });
+
+  it('a projected skip announces a DIFFERENT fact from a row the sweep actually skipped', () => {
+    expect(PROJECTED_SKIP_MEANING).toBe(
+      'is not in the trash pool right now, so it will not be deleted',
+    );
+    expect(WALL_GLYPH_MEANING.skip).toBe('kept — could not be verified safe, never deleted');
+    expect(PROJECTED_SKIP_MEANING).not.toBe(WALL_GLYPH_MEANING.skip);
+  });
+
+  it('a projected skip is INERT, exactly like any other skip (nothing honest a tap could do)', () => {
+    const admin = ctx({ canManage: true, canSaveWindow: true });
+    expect(tileTappable(admin, wallGlyph('pending', false), null)).toBe(false);
+    // …while the same row with an unknown/present pool answer stays the saveable trash-can.
+    expect(tileTappable(admin, wallGlyph('pending', null), null)).toBe(true);
+  });
+});
+
+describe('wallSection — the load-time grouping (amendment (a))', () => {
+  it('maps every glyph to its stacked group', () => {
+    expect(wallSection('trash')).toBe('slated');
+    expect(wallSection('shield')).toBe('rescued');
+    expect(wallSection('check')).toBe('kept');
+    expect(wallSection('skip')).toBe('kept');
+    // `gone` is terminal-only (the Past-batches wall stays one grid); folded in with `trash` so the
+    // mapping is total. It is never reached by a rendered section.
+    expect(wallSection('gone')).toBe('slated');
+  });
+
+  it('is total over WallGlyph — every glyph has a home', () => {
+    const glyphs: WallGlyph[] = ['trash', 'shield', 'check', 'skip', 'gone'];
+    for (const g of glyphs) {
+      expect(['slated', 'rescued', 'kept']).toContain(wallSection(g));
+    }
+  });
+
+  it('a projected skip lands in Kept, not in the slated grid', () => {
+    expect(wallSection(wallGlyph('pending', false))).toBe('kept');
+    expect(wallSection(wallGlyph('pending', true))).toBe('slated');
   });
 });
 
@@ -138,6 +204,50 @@ describe('wallCounts — the running header agrees with the glyphs', () => {
       kept: 2, // check + skip
       deleted: 1,
     });
+  });
+
+  it('a projected tile counts under kept and its bytes LEAVE frees (amendment (c) — honest numbers)', () => {
+    // The owner-reported dishonesty: "Deleting 44 · frees 1.2 TB" while 15 of the 44 had already
+    // left the live pool and were certain to be skipped.
+    const counts = wallCounts([
+      { state: 'pending', sizeBytes: 100, inLivePool: true }, // trash → slated
+      { state: 'pending', sizeBytes: 50, inLivePool: null }, // unknown → still slated
+      { state: 'pending', sizeBytes: 7 }, // omitted ⇒ unknown → still slated
+      { state: 'pending', sizeBytes: 900, inLivePool: false }, // projected skip → kept, bytes excluded
+      { state: 'pending', sizeBytes: 800, inLivePool: false }, // projected skip → kept, bytes excluded
+      { state: 'saved', sizeBytes: 10, inLivePool: false }, // a save is a save — pool is irrelevant
+      { state: 'protected', sizeBytes: 1, inLivePool: false },
+    ]);
+    expect(counts).toEqual({
+      slated: 3,
+      slatedBytes: 157, // 100 + 50 + 7 — the 1.7 GB of projected tiles never enters `frees`
+      rescued: 1,
+      kept: 3, // 2 projected + 1 protected
+      deleted: 0,
+    });
+  });
+
+  it('keeps the standing ruling: a recently-watched pending item still counts as SLATED', () => {
+    // Owner ruling 2026-07-09, re-affirmed by the 2026-09-19 amendment (c). The watch guardian acts
+    // at the SWEEP; the wall corner is the action, and the modal's "up to N" covers the difference.
+    // wallCounts has no watch input at all — there is nowhere to smuggle one in.
+    const counts = wallCounts([{ state: 'pending', sizeBytes: 999, inLivePool: true }]);
+    expect(counts.slated).toBe(1);
+    expect(counts.slatedBytes).toBe(999);
+    expect(counts.kept).toBe(0);
+  });
+
+  it('the header can never disagree with the tiles — both go through wallGlyph on the same inputs', () => {
+    const rows = [
+      { state: 'pending' as const, sizeBytes: 5, inLivePool: false },
+      { state: 'pending' as const, sizeBytes: 6, inLivePool: true },
+      { state: 'saved' as const, sizeBytes: 7, inLivePool: null },
+    ];
+    const bySection = rows.map((r) => wallSection(wallGlyph(r.state, r.inLivePool)));
+    const counts = wallCounts(rows);
+    expect(bySection.filter((s) => s === 'slated')).toHaveLength(counts.slated);
+    expect(bySection.filter((s) => s === 'rescued')).toHaveLength(counts.rescued);
+    expect(bySection.filter((s) => s === 'kept')).toHaveLength(counts.kept);
   });
 });
 

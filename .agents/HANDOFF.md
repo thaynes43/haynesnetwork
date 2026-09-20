@@ -4,6 +4,36 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-09-19 — "Saved days ago, still in the trash": saves were sound; the batch wall is now sectioned and honest
+
+**Owner report (phone screenshot):** Sex and the City / AVP / Fantastic Four (2005) green-shielded
+but still on `/trash` five days after the save, under `Deleting 44 · Rescued 6 · Kept 0 · frees
+1.2 TB` — "did they not sync?" **They synced.** All six 09-14 saves have an open intent, a global
+Maintainerr exclusion (399–404), latest ledger action `save`, and are out of the rule pool, the
+Leaving Soon collection and `trash_candidates`. Full evidence + audit commands:
+`.agents/context/2026-09-19-batch-wall-rescued-still-showing.md`.
+
+**The wall was the defect.** With a batch open the Movies tab shows the frozen 50-item batch wall;
+D-07 flipped a saved tile in place and left it interleaved by size for the rest of the window. And
+the header lied: 15 of the 44 "Deleting" had left the live pool with the 09-14 age guard (the sweep
+skips them) — honest outcome 29 / ~0.84 TB.
+
+**Owner ruling (AskUserQuestion, 2026-09-19): rescued posters get their own section below the
+slated grid on the next load.** Built as the 2026-09-19 amendment to DESIGN-011 D-07:
+(a) load-time sections slated / **Rescued** / **Kept**, membership pinned per mount so a tap still
+never moves a tile (hard rule 9 intact); (b) `getBatchDetail.inLivePool` projected from the
+`trash_candidates` read model (display only, 60-min freshness gate, unknown reads as slated) — a
+pending item that left the pool shows the inert `skip` glyph under Kept; (c) header + Expire-now
+preview follow the glyphs; (d) `saveExclusion` (pending wall / library shield) now flips a matching
+open-batch row to `saved` — before, such a row stayed a red "Deleting" tile although the sweep kept
+it. Protective direction only.
+
+**Corrections to earlier notes:** movie rule pool = Maintainerr collection **1**, movie Leaving Soon
+= **22**; TV rule pool = **3** (not 2), TV Leaving Soon = 23.
+
+**Still to observe (carried from 09-14):** after 09-20 01:17 ET batch `3671be2e` should report
+**29 deleted / 15 skipped / 6 saved**.
+
 ## ▶ 2026-09-14 — Trash wall: age guard added (180 d), Kometa re-add loop closed, one-tap un-save fixed
 
 **Owner report (evening):** a brand-new title (*Clash of the Thundermans*) slated on `/trash`, and

@@ -4455,6 +4455,10 @@ input[aria-invalid='true'] {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   background: var(--color-bg);
+  /* A hairline so the pinned bar reads as chrome, not as a gap cut through the posters scrolling
+     under it (the sectioned wall is tall enough that it is pinned on every phone scroll). A shadow,
+     not a border: it adds no height, so the bar's fixed geometry is untouched. */
+  box-shadow: 0 1px 0 var(--color-border);
 }
 /* Fixed-height error slot under the counts: appearing text recolors, never shifts the wall. */
 .bwall-error {
@@ -4750,6 +4754,32 @@ button.bwall-tap:hover .bwall-overlay[data-armed='true'] {
   width: 13px;
   height: 13px;
 }
+/* DESIGN-011 D-07 amendment (a) 2026-09-19 — the open wall's stacked groups (Rescued / Kept). The
+   slated grid stays headless directly under the sticky counts; each following group gets a heading
+   + one muted note, then its own .bwall grid (identical tile geometry — the grid rules above are
+   shared, nothing here touches a tile). Rhythm matches the .batch-savers__title idiom so the page
+   reads as one column at 320px and up. Spacing only: no color of its own, so both themes inherit. */
+.bwall-section {
+  /* .bwall already carries `margin: 0 0 18px`, so the group only needs its own top gap. */
+  margin: 6px 0 0;
+}
+/* A group with no members renders NOTHING (amendment (a)). Rescued/Kept simply aren't rendered;
+   the slated grid stays in the tree as the wall's anchor even when every item has been rescued or
+   kept, so drop its trailing rhythm too — an empty grid must leave no gap behind. */
+.bwall:empty {
+  margin-bottom: 0;
+}
+.bwall-section__title {
+  margin: 0 0 2px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.bwall-section__note {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 @media (max-width: 480px) {
   .bwall {
     grid-template-columns: repeat(3, 1fr);
@@ -4760,6 +4790,9 @@ button.bwall-tap:hover .bwall-overlay[data-armed='true'] {
     right: 5px;
     width: 27px;
     height: 27px;
+  }
+  .bwall-section__note {
+    margin-bottom: 6px;
   }
 }
 

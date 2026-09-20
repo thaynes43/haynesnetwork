@@ -72,7 +72,23 @@ export const LEAVING_SOON_NAMES: Record<'movie' | 'tv', string> = {
  */
 export type WallGlyph = 'trash' | 'shield' | 'check' | 'skip' | 'gone';
 
-export function wallGlyph(state: BatchItemStateName): WallGlyph {
+/**
+ * THE one glyph derivation — tiles AND the running header both go through this, so they can never
+ * disagree (DESIGN-011 D-07, header contract: "derived from the SAME glyph mapping as the tiles").
+ *
+ * `inLivePool` is the DESIGN-011 D-07 amendment (b) 2026-09-19 pool-aware projection, answered
+ * server-side from the `trash_candidates` read model (ADR-035 — no live Maintainerr call on the wall
+ * path; display only, so ADR-025 C-02 "never feeds a delete decision" holds):
+ *   - `false` — the item is KNOWN absent from the live trash pool (a fresh snapshot without it). A
+ *               `pending` row then renders the inert `skip` glyph: the sweep's own `!fresh` branch
+ *               would keep it, so advertising it as slated was the dishonesty the owner reported.
+ *   - `true` / `null` — present, or unknown (stale/missing state row, no Maintainerr id). Both read
+ *               as slated — the conservative side. Nothing is written either way: this is a
+ *               PROJECTION, the sweep still decides from the LIVE pool, and an item that re-enters
+ *               the pool reads as slated again on the next load.
+ * Callers that have no pool answer (terminal walls, the older tests) may omit it entirely.
+ */
+export function wallGlyph(state: BatchItemStateName, inLivePool: boolean | null = null): WallGlyph {
   switch (state) {
     case 'saved':
       // A human rescue (the filled shield). Requester items are no longer auto-saved (owner ruling
@@ -87,8 +103,9 @@ export function wallGlyph(state: BatchItemStateName): WallGlyph {
     case 'pending':
       // The corner is ALWAYS the action (owner ruling 2026-07-09). A pending item — recently watched,
       // requested, or plain — reads as the slated, saveable trash-can; the watch/requester facts ride
-      // the meta line, never the corner glyph.
-      return 'trash';
+      // the meta line, never the corner glyph. The ONE exception is the pool projection above: an
+      // item that has already left the live pool is certain to be skipped, so it reads as kept.
+      return inLivePool === false ? 'skip' : 'trash';
   }
 }
 
@@ -100,6 +117,15 @@ export const WALL_GLYPH_MEANING: Record<WallGlyph, string> = {
   skip: 'kept — could not be verified safe, never deleted',
   gone: 'deleted',
 };
+
+/**
+ * A PROJECTED skip (a `pending` row with `inLivePool === false`) is a different fact from a real
+ * `skipped` row, so it gets its own meaning copy: the sweep never ran on it — it simply is not in
+ * the trash pool any more. `WALL_GLYPH_MEANING.skip` stays the wording for a row the sweep actually
+ * skipped (DESIGN-011 D-07 amendment (b) 2026-09-19).
+ */
+export const PROJECTED_SKIP_MEANING =
+  'is not in the trash pool right now, so it will not be deleted';
 
 export interface WallTapContext {
   batchState: BatchStateName;
@@ -159,6 +185,13 @@ export function tileTappable(
 export interface WallCountInput {
   state: BatchItemStateName;
   sizeBytes: number;
+  /**
+   * The pool projection for THIS tile, exactly as the tile itself was given it (amendment (b)/(c)
+   * 2026-09-19). The caller must pass the same value it passed to `wallGlyph` for the tile —
+   * including the override rule: an in-session optimistic flip passes `null`, so a just-un-saved
+   * tile counts as slated and the header agrees with the trash-can it shows.
+   */
+  inLivePool?: boolean | null;
 }
 
 export interface WallCounts {
@@ -167,18 +200,19 @@ export interface WallCounts {
   slatedBytes: number;
   /** shield (saved) tiles. */
   rescued: number;
-  /** check + skip tiles — kept without being a deliberate human save. */
+  /** check + skip tiles — kept without being a deliberate human save (projected skips included). */
   kept: number;
   /** gone tiles. */
   deleted: number;
 }
 
 /** The running header numbers — derived from the SAME glyph mapping the tiles use, so the
- *  header always agrees with what the wall shows. */
+ *  header always agrees with what the wall shows. A projected skip therefore counts under `kept`
+ *  and its bytes leave `slatedBytes` (amendment (c) — "honest numbers"). */
 export function wallCounts(items: ReadonlyArray<WallCountInput>): WallCounts {
   const out: WallCounts = { slated: 0, slatedBytes: 0, rescued: 0, kept: 0, deleted: 0 };
   for (const item of items) {
-    switch (wallGlyph(item.state)) {
+    switch (wallGlyph(item.state, item.inLivePool ?? null)) {
       case 'trash':
         out.slated += 1;
         out.slatedBytes += item.sizeBytes;
@@ -194,6 +228,35 @@ export function wallCounts(items: ReadonlyArray<WallCountInput>): WallCounts {
     }
   }
   return out;
+}
+
+// ── load-time sections (DESIGN-011 D-07 amendment (a) 2026-09-19) ───────────────────────────
+/** The three stacked groups an OPEN batch wall renders, in display order. */
+export const WALL_SECTIONS = ['slated', 'rescued', 'kept'] as const;
+export type WallSection = (typeof WALL_SECTIONS)[number];
+
+/**
+ * Which group a tile belongs to, derived from the SAME glyph the tile and the header use — one
+ * source of truth for all three. The caller PINS the answer at first sight and never recomputes it
+ * for the life of the mount (hard rule 9 / ADR-015: a tap flips the glyph where the tile stands; it
+ * never re-homes the tile, and neither does the post-tap refetch). The tile takes its new section on
+ * the next load.
+ *
+ * `gone` is terminal-only — sections render for OPEN batches, where no item can be `deleted`, and
+ * the terminal Past-batches wall deliberately stays ONE grid. It is folded in with `trash` purely so
+ * this function is total and pure; that branch is never reached by a rendered section.
+ */
+export function wallSection(glyph: WallGlyph): WallSection {
+  switch (glyph) {
+    case 'shield':
+      return 'rescued';
+    case 'check':
+    case 'skip':
+      return 'kept';
+    case 'trash':
+    case 'gone':
+      return 'slated';
+  }
 }
 
 export interface CountdownCopyInput {
