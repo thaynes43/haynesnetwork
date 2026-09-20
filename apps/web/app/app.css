@@ -4455,6 +4455,10 @@ input[aria-invalid='true'] {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   background: var(--color-bg);
+  /* A hairline so the pinned bar reads as chrome, not as a gap cut through the posters scrolling
+     under it (the sectioned wall is tall enough that it is pinned on every phone scroll). A shadow,
+     not a border: it adds no height, so the bar's fixed geometry is untouched. */
+  box-shadow: 0 1px 0 var(--color-border);
 }
 /* Fixed-height error slot under the counts: appearing text recolors, never shifts the wall. */
 .bwall-error {
