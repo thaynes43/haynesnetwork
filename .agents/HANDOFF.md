@@ -31,6 +31,14 @@ it. Protective direction only.
 **Corrections to earlier notes:** movie rule pool = Maintainerr collection **1**, movie Leaving Soon
 = **22**; TV rule pool = **3** (not 2), TV Leaving Soon = 23.
 
+**v0.96.2 IS LIVE — verified same session (2026-09-20 03:40Z):** hnet #543 → release PR #541 → tag
+`v0.96.2` (image + cosign signature both 200 in GHCR) → haynes-ops #2989 → flux reconciled →
+`haynesnetwork-main` rolled out 3/3 on `v0.96.2`, `/api/health` 200. The projection computed against
+production right after the rollout (snapshot 9 min old): **29 pending in pool (0.84 TB) · 15 pending
+out of pool (0.46 TB) · 6 saved** — so the owner's wall now reads `Deleting 29 · Rescued 6 · Kept 15`.
+Layout reviewed from 390 px / 320 px captures in both themes; the sticky counts bar also gained a
+hairline so it reads as a header when pinned over posters.
+
 **Still to observe (carried from 09-14):** after 09-20 01:17 ET batch `3671be2e` should report
 **29 deleted / 15 skipped / 6 saved**.
 
