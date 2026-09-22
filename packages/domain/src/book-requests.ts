@@ -50,9 +50,9 @@ export function mapLlStatus(raw: string | null | undefined): BookRequestStatus |
 // ADR-055 amendment (2026-09-22) — the LL PUSH GUARD predicate. `queueBook` is an unconditional
 // `UPDATE books SET Status='Wanted' WHERE BookID=?` (LL `api.py::_queuebook`) with no held-file guard, so
 // every push to a format LL already holds CLOBBERS an imported book back into the search backlog, where
-// LL re-searches it forever and qBittorrent rejects the re-grab as a duplicate hash. On 2026-09-22 that
-// had left 292 of LL's 564 non-Open per-format rows (155 eBook + 137 AudioBook) `Wanted` with a real file
-// and a library date. This predicate is the gate every push site consults first.
+// LL re-searches it forever and qBittorrent rejects the re-grab as a duplicate hash. On 2026-09-22 LL
+// tracked 812 books (1624 per-format rows); 564 of those rows read `Wanted`, and 292 of THOSE (155 eBook
+// + 137 AudioBook) carried a real file and a library date. This is the gate every push site consults.
 // ---------------------------------------------------------------------------
 
 /** The per-format held-signals the guard reads (a structural subset of the ACL's `LlBookStatus`). */

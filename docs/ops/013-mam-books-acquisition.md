@@ -466,7 +466,7 @@ change needed.
 
 A night of wrong files in wrong author folders (a _Shatter Me_ m4b duplicated into 7 unrelated author
 folders; _The Lost Metal_'s folder indexed by Audiobookshelf as "Skin Deep"), a 195 GB `books-mam.unpack`
-directory, ~620 LazyLibrarian rows of which 292 were re-searched daily forever, and two dead MAM
+directory, 292 LazyLibrarian rows re-searched daily forever, and two dead MAM
 sessions. Four independent faults, one evening. Everything below is **as-built after the fix** — each
 bullet is an invariant that must hold, with the mechanism that makes it hold.
 
@@ -540,7 +540,8 @@ re-grab as a duplicate hash — forever. Measured on the live LL database, 2026-
 | eBook     | 88                | **155**                | 24              | 10               | 184    |
 | AudioBook | 184               | **137**                | 15              | 19               | 119    |
 
-**292 of the ~620 rows were phantom wants.** This is the traffic the MAM governor was pacing for
+LL tracked **812 books** (1624 per-format rows) that night. **564 rows read `Wanted`, and 292 of those
+were phantom** — books already on disk. This is the traffic the MAM governor was pacing for
 nothing, and the source of the duplicate-hash rejections.
 
 The worst offender was the **hourly find-missing collection pass**: it decided "still missing" from the

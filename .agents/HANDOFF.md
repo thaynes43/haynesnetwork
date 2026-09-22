@@ -15,8 +15,8 @@ the worst of them**: unattended, ≤25 wants/run, re-firing every 12h forever, b
 missing" from our own row status and not from LL's), and books Force Search, which fired "regardless of
 landed state" by design. So every push to a format LL had **already
 imported** clobbered it back into LL's search backlog, where it was re-searched daily, re-found on MAM,
-and rejected by qBittorrent as a duplicate hash — forever. **Measured: 292 of LL's ~620 per-format rows
-(155 eBook + 137 AudioBook) were `Wanted` with a real file on disk.** Full evidence + the three LL source
+and rejected by qBittorrent as a duplicate hash — forever. **Measured: LL tracked 812 books (1624 per-format
+rows); 564 read `Wanted`, and 292 of those (155 eBook + 137 AudioBook) had a real file on disk.** Full evidence + the three LL source
 facts: `.agents/context/2026-09-22-ll-push-guard-evidence.md`.
 
 **A status-only guard would not have been enough.** LL also carries 24 eBook + 15 AudioBook rows that

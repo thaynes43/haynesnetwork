@@ -259,15 +259,15 @@ re-searched on every `SEARCH_BOOKINTERVAL` tick, re-found on the same indexer, r
 qBittorrent rejects the grab as a duplicate hash. The book never leaves `Wanted`, and the loop repeats
 every day, forever.
 
-**The measurement (live LL sqlite, 2026-09-22).** Of LL's book rows:
+**The measurement (live LL sqlite, 2026-09-22).** LL tracked 812 books — 1624 per-format rows:
 
 | format    | `Wanted`, no file | `Wanted`, file + library date | `Skipped`, file | `Snatched`, file | `Open` |
 | --------- | ----------------- | ----------------------------- | --------------- | ---------------- | ------ |
 | eBook     | 88                | **155**                       | 24              | 10               | 184    |
 | AudioBook | 184               | **137**                       | 15              | 19               | 119    |
 
-**292 `Wanted` rows were books LL already had on disk** — the daily re-search engine. Note the third
-and fourth columns: `BookFile`/`BookLibrary` were set on 39 `Skipped` and 29 `Snatched` rows too, so a
+**564 rows read `Wanted`, and 292 of them were books LL already had on disk** — the daily re-search
+engine. Note the third and fourth columns: `BookFile`/`BookLibrary` were set on 39 `Skipped` and 29 `Snatched` rows too, so a
 status-only guard is not sufficient — the file signals are load-bearing.
 
 **The guard.** `llFormatAlreadyHeld(status, format)` (packages/domain, beside `mapLlStatus` — the ACL

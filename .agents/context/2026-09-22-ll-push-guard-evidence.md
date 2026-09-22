@@ -75,7 +75,8 @@ it does not serve.
 | Wanted         | no           | 88      |     | Wanted                  | no           | 184     |
 | **Wanted**     | **yes**      | **155** |     | **Wanted**              | **yes**      | **137** |
 
-**292 `Wanted` rows carried a real file** — the daily re-search engine. The bolded `Skipped`/`Snatched`
+LL tracked **812 books** — 1624 per-format rows, of which **564 read `Wanted` and 292 of those carried a
+real file** — the daily re-search engine. The bolded `Skipped`/`Snatched`
 rows (39 + 29) are why the guard reads the file/library fields and not just the status: a status-only
 guard would have left the `Skipped` sweep free to clobber 39 already-imported books.
 
