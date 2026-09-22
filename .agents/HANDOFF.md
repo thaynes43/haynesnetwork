@@ -46,9 +46,11 @@ which is how a _Shatter Me_ m4b reached 7 wrong author folders and how `books-ma
 195 GB); LL `REJECT_WORDS` += `m4b, m4a, flac`, `REJECT_AUDIO` += `azw3, azw, pdf`;
 `SEARCH_BOOKINTERVAL` 360 → 1440; both MAM sessions re-issued after a password change, with a daily
 keepalive + `MamSeedboxSessionDead` / `MamGovernorActuationFailing` alerts. **Governor thresholds and the
-§6 compliance invariants were deliberately NOT touched.** Still open cluster-side: **LazyLibrarian has
-no scheduled library scan** (`librarysync.py` is the only other writer of `Open`), so a book imported
-outside LL's own post-processor stays invisible to it — a haynes-ops CronJob for it is pending.
+§6 compliance invariants were deliberately NOT touched.** The complementary cluster-side piece has since
+landed too: LL's **daily library scan** CronJob (haynes-ops #3087, UTC-pinned by #3089) —
+`librarysync.py`'s `library_scan()` is the only other writer of `Open`, so without it LL never learned
+about a book imported outside its own post-processor. The scan teaches LL what it holds; this guard
+stops us re-queueing it.
 
 **Docs:** DESIGN-028 amendment 2026-09-22 (normative for every push site), DESIGN-036 amendment (the
 pairing sweep is also documented there for the first time), DESIGN-033 D-12, DESIGN-043 D-16, OPS-013

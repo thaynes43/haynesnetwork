@@ -120,5 +120,9 @@ Handled outside haynesnetwork the same evening, and documented in OPS-013 §12: 
 which keeps them seeding), the 195 GB `books-mam.unpack` scratch deleted, LL `REJECT_WORDS` +=
 `m4b, m4a, flac` and `REJECT_AUDIO` += `azw3, azw, pdf`, `SEARCH_BOOKINTERVAL` 360 → 1440, both MAM
 sessions re-issued with a daily keepalive plus the `MamSeedboxSessionDead` /
-`MamGovernorActuationFailing` Loki alerts. LL still has **no scheduled library scan** (`librarysync.py`
-is the only other writer of `Open`); a haynes-ops CronJob for it is pending.
+`MamGovernorActuationFailing` Loki alerts (the Loki **ruler** itself was inert until haynes-ops #3084 —
+every `loki_rule` alert in that repo was a no-op before it). LL's daily **library scan** CronJob also
+landed that day (#3087, UTC-pinned by #3089): `librarysync.py`'s `library_scan()` is the only other
+writer of `Open`, so without it LL never learned about a book imported outside its own post-processor.
+That scan and this guard are complementary — the scan teaches LL what it holds, the guard stops us
+re-queueing it.

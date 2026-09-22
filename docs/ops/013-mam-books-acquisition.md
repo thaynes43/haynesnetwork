@@ -554,11 +554,13 @@ reconciled was re-clobbered every 12h forever, up to 25 per run, unattended.
 `Snatched` rows can also be fully imported**, so a status-only guard is not enough. Suppressions surface
 as the `ll_push_skipped_have` log event and the `pushesSkippedHeld` / `skippedHeld` job counters.
 
-**Cluster-side follow-up: LazyLibrarian has no scheduled library scan.** `librarysync.py` is the only
-other writer of `Open`, and nothing runs it on a timer — so a book imported outside LL's own
-post-processor stays invisible to LL indefinitely. A haynes-ops CronJob to run the library scan is being
-added; until it lands, LL's view of what it holds only advances when its own post-processor files
-something.
+**Cluster-side companion: the daily library scan.** `librarysync.py`'s `library_scan()` is the only
+other writer of `Open`, and nothing used to run it on a timer — so a book imported outside LL's own
+post-processor stayed invisible to LL indefinitely, which is part of why so many held books still read
+`Wanted`. **Landed 2026-09-22** as a haynes-ops CronJob (`lazylibrarian/app/library-scan-cronjob.yaml`,
+#3087, pinned to `Etc/UTC` past k8tz's webhook by #3089; `10 9 * * *`, `concurrencyPolicy: Forbid`). The
+two fixes are complementary: the scan teaches LL what it already holds, and this app then refuses to
+re-queue it.
 
 ### 12.5 Both MAM sessions were dead — and are now watched
 
