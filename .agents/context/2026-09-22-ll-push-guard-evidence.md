@@ -126,3 +126,28 @@ landed that day (#3087, UTC-pinned by #3089): `librarysync.py`'s `library_scan()
 writer of `Open`, so without it LL never learned about a book imported outside its own post-processor.
 That scan and this guard are complementary — the scan teaches LL what it holds, the guard stops us
 re-queueing it.
+
+## 6. Post-deploy verification (v0.96.3, 2026-09-22 07:42Z)
+
+The first run of each mode on the new image, straight from the CronJob logs:
+
+| mode | time | counters |
+|---|---|---|
+| find-missing collections | 07:27Z | `findMissingCollections 66 · candidates 47 · searched 31 · failed 0 · **skippedHeld 16**` |
+| format-pairing | 07:32Z | `attempted 100 · minted 1 · pushed 1 · unmintable 85 · **skippedHeld 14** · reconciled 602 · requeued 0` |
+| goodreads-sync | 07:41Z | `pushed 0 · requeued 0 · **pushesSkippedHeld 0**` (both integrations) |
+
+**~30 clobbering `queueBook` calls prevented in the first hour**, all on the two unattended paths. The
+goodreads zero is genuine — that worklist had nothing to push this hour; the field appearing at all is
+what proves the guarded path is live, which is why the counters were threaded through the run summaries.
+
+Titles the find-missing pass declined to re-search (it logged all 16): **The Lost Metal** — one of the
+very titles the import corruption mangled that night — Mistborn: The Final Empire, Life the Universe and
+Everything, Guards! Guards!, The Evening and the Morning, Loamhedge, Mariel of Redwall, and the Terry
+Pratchett BBC Radio collection. Every one of those was being re-queued to `Wanted` every 12h.
+
+**The backlog is draining from the other side too.** LL `Wanted` legs carrying a file on disk, measured
+read-only across the evening: **292 → 252 → 168**. That is the new daily library scan (haynes-ops #3087)
+reconciling them. The scan drains the backlog; this guard stops it refilling. A future session wanting to
+confirm the fix held should re-run that count — it should keep falling toward the genuinely-wanted floor
+(88 eBook + 184 AudioBook at the time of the snapshot) and not climb back.

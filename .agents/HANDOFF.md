@@ -52,6 +52,27 @@ landed too: LL's **daily library scan** CronJob (haynes-ops #3087, UTC-pinned by
 about a book imported outside its own post-processor. The scan teaches LL what it holds; this guard
 stops us re-queueing it.
 
+**v0.96.3 IS LIVE — and the guard is demonstrably firing (2026-09-22 07:42Z):** hnet #546 (`7d32f0e`)
+→ release PR #545 → tag `v0.96.3` (image + cosign signature both 200 in GHCR) → haynes-ops #3090
+(`73fd6dc`) → flux reconciled → `haynesnetwork-main` rolled out **3/3 on v0.96.3**, `/api/health` 200,
+all three books CronJobs on the new image. The FIRST post-deploy run of each mode:
+
+* **find-missing collections** (07:27Z) — `findMissingCollections 66 · candidates 47 · searched 31 ·
+  failed 0 · **skippedHeld 16**`. Sixteen of forty-seven candidates (34%) were books LazyLibrarian
+  already held; before this release all forty-seven were clobbered to `Wanted`, every 12h, forever.
+  Among the sixteen: **The Lost Metal** — one of the very titles the 09-22 import corruption mangled —
+  plus Mistborn, Guards! Guards!, Loamhedge, Mariel of Redwall.
+* **format-pairing** (07:32Z) — `attempted 100 · minted 1 · pushed 1 · unmintable 85 · **skippedHeld 14**
+  · reconciled 602 · requeued 0`.
+* **goodreads-sync** (07:41Z) — `pushed 0 · requeued 0 · **pushesSkippedHeld 0**` on both integrations.
+  A genuine zero: that worklist had nothing to push this hour. The field appearing at all is what proves
+  the guarded path is live.
+
+**So ~30 clobbering `queueBook` calls were prevented in the first hour**, on the two unattended paths
+that were refilling the phantom backlog. The backlog itself is draining from the other side: LL's
+`Wanted` legs with a file on disk went **292 → 252 → 168** across the evening as the new daily library
+scan reconciled them. The scan drains it; this guard stops it refilling.
+
 **Docs:** DESIGN-028 amendment 2026-09-22 (normative for every push site), DESIGN-036 amendment (the
 pairing sweep is also documented there for the first time), DESIGN-033 D-12, DESIGN-043 D-16, OPS-013
 §12 + a new §6 invariant. No new ADR — this narrows ADR-055 C-02 / ADR-065 C-08 rather than deciding anything new,
