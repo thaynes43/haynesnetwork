@@ -189,6 +189,10 @@ alone:
   185 = limit 200 − buffer 15). Cap rises with rank (New Member 20 → User 50 → PU 100 → VIP 150 →
   Elite VIP 200); bump `MAM_UNSATISFIED_LIMIT` on each promotion.
 - **No buying/selling invites; regular site login** (owner-side).
+- **Never search for a book we already have** (added 2026-09-22, §12.4). Re-grabbing an already-imported
+  book is traffic MAM never owed us and a duplicate-hash rejection on our side. Enforced by construction:
+  qBittorrent gives every torrent its own subfolder (§12.1), LazyLibrarian's backlog sweep runs once a
+  day (§12.3), and the app refuses to `queueBook` a format LL already holds (§12.4).
 
 ---
 
@@ -455,3 +459,118 @@ The current list (`hörbuch/hoerbuch/hörverlag/lesung/ungekürzt/gekürzt/deuts
 entscheidung/erzählt/wüstenplanet/goldener/zorn/doppelgängerin/und` + their ascii folds; defaults
 `audiobook,mp3` / `epub,mobi` preserved) is word-boundary-safe as-is — no substring-danger entries, no
 change needed.
+
+---
+
+## 12. The 2026-09-22 import-corruption incident — the invariants that keep it fixed
+
+A night of wrong files in wrong author folders (a _Shatter Me_ m4b duplicated into 7 unrelated author
+folders; _The Lost Metal_'s folder indexed by Audiobookshelf as "Skin Deep"), a 195 GB `books-mam.unpack`
+directory, ~620 LazyLibrarian rows of which 292 were re-searched daily forever, and two dead MAM
+sessions. Four independent faults, one evening. Everything below is **as-built after the fix** — each
+bullet is an invariant that must hold, with the mechanism that makes it hold.
+
+### 12.1 qBittorrent MUST create a per-torrent subfolder (the root cause)
+
+**Invariant: the `books-mam` category must never deliver a bare single file into the category root.**
+
+The global preference `torrent_content_layout` was **`Original`** — so a single-file torrent (a lone
+`.m4b`/`.epub`) landed _directly_ in `/data/cephfs-hdd/torrents/books/books-mam/`, with no folder of its
+own. **282 existing torrents were in that shape.**
+
+That is fatal in combination with LazyLibrarian's post-processor. `postprocess.py` takes the **parent
+directory** of a completed download and copies the whole thing into its working area:
+
+```
+# postprocess.py — the single-file branch
+if os.path.isfile(pp_path):
+    pp_path = os.path.dirname(pp_path)      # ← the CATEGORY ROOT, not this torrent
+...
+copy_tree(pp_path, <destination>.unpack)     # ← copies EVERY seeding torrent
+```
+
+…then picks "a file of the wanted type" out of that directory. With every torrent sharing one parent,
+"the wanted type" was whatever `.m4b`/`.epub` it happened to find — someone else's book. That is the
+whole mechanism behind the wrong-author imports, and behind `books-mam.unpack` reaching **195 GB**
+(deleted 2026-09-22; it is pure scratch and safe to delete, but see the seeding warning below).
+
+**The fix, applied 2026-09-22:**
+
+- Global `torrent_content_layout` set to **`Subfolder`** (via the WebAPI `setPreferences`), so every new
+  torrent — single-file included — gets its own directory.
+- The **282 existing bare torrents were moved into stem-named subfolders** with
+  `POST /api/v2/torrents/setLocation` (qBittorrent moves the data and keeps the torrent seeding; never
+  move these files with `mv` — that breaks the seed and reads as an H&R to MAM, §6).
+
+**Never set `torrent_content_layout` back to `Original` or `NoSubfolder`** for this category, and never
+point any other category's save path at the `books-mam` directory: LL's post-processor cannot tell one
+torrent from another inside a shared parent. Equally, **never delete `books-mam.unpack` while a
+post-process is running**, and never delete anything under `books-mam/` itself — that is live seeding
+data (§6, seed-forever).
+
+### 12.2 LazyLibrarian reject lists — the category-less general search
+
+LL's general search is not format-scoped, so an **eBook** search happily selected `[M4B]` releases (and
+vice versa). Now pinned:
+
+- `REJECT_WORDS` includes **`m4b, m4a, flac`** (on top of the language/abridged list of §11.4).
+- `REJECT_AUDIO` includes **`azw3, azw, pdf`**.
+
+Matching is **word-membership, not substring** (§11.4) — these are bare tokens on purpose.
+
+### 12.3 `SEARCH_BOOKINTERVAL` is 1440, not 360
+
+LL's backlog search re-runs over **every** `Wanted` row. At 360 minutes that was four full sweeps a day
+across a backlog that was 47% phantom (§12.4). Now **1440** (once daily). Raising the frequency again
+without first fixing the phantom-`Wanted` population just multiplies duplicate grabs.
+
+### 12.4 The app must never push a book LazyLibrarian already holds
+
+**Invariant: no LazyLibrarian `queueBook` for a format LL already has on disk.**
+
+LL's `api.py::_queuebook` is an unguarded `UPDATE books SET Status='Wanted' WHERE BookID=?`. haynesnetwork
+pushed it unconditionally from three sites, so every push to an already-imported book clobbered it back
+into the backlog, where §12.3's sweep re-searched it, re-found it on MAM, and qBittorrent rejected the
+re-grab as a duplicate hash — forever. Measured on the live LL database, 2026-09-22:
+
+| format    | `Wanted`, no file | `Wanted`, file present | `Skipped`, file | `Snatched`, file | `Open` |
+| --------- | ----------------- | ---------------------- | --------------- | ---------------- | ------ |
+| eBook     | 88                | **155**                | 24              | 10               | 184    |
+| AudioBook | 184               | **137**                | 15              | 19               | 119    |
+
+**292 of the ~620 rows were phantom wants.** This is the traffic the MAM governor was pacing for
+nothing, and the source of the duplicate-hash rejections.
+
+**Fixed app-side** (haynesnetwork, DESIGN-028 amendment 2026-09-22): every push site consults
+`llFormatAlreadyHeld` first — `Open`/`Have`, or a `BookLibrary`/`AudioLibrary` import date, or a
+`BookFile`/`AudioFile` path, means skip. Note the third and fourth columns above: **`Skipped` and
+`Snatched` rows can also be fully imported**, so a status-only guard is not enough. Suppressions surface
+as the `ll_push_skipped_have` log event and the `pushesSkippedHeld` / `skippedHeld` job counters.
+
+**Cluster-side follow-up: LazyLibrarian has no scheduled library scan.** `librarysync.py` is the only
+other writer of `Open`, and nothing runs it on a timer — so a book imported outside LL's own
+post-processor stays invisible to LL indefinitely. A haynes-ops CronJob to run the library scan is being
+added; until it lands, LL's view of what it holds only advances when its own post-processor files
+something.
+
+### 12.5 Both MAM sessions were dead — and are now watched
+
+A site password change invalidated **both** `mam_id` sessions (§1's two-IP model: the Prowlarr
+ASN-locked session and the seedbox dynamic session). Both are restored. Now watched, so a silent death
+cannot repeat:
+
+- A **daily keepalive** validates the seedbox session (the §2 sidecar's `dynamicSeedbox.php` path, which
+  still honours the ≤ 1 call/hour invariant of §6).
+- Loki alerts **`MamSeedboxSessionDead`** and **`MamGovernorActuationFailing`** page when the session
+  stops validating or the §10 governor cannot actuate.
+
+A password change on the MAM site **always** invalidates both sessions — re-issue both `mam_id` values
+(§8) whenever the owner changes it.
+
+### 12.6 What was deliberately NOT changed
+
+- **The §10 governor thresholds and the §6 compliance invariants are untouched.** The phantom-want
+  traffic was the problem; the pacing was doing its job.
+- **The books Fix flow keeps its unguarded push.** A Fix is the user asserting the copy on disk is
+  defective; making LL want that book again is the point. It is now the only sanctioned way to make LL
+  re-acquire a format it already holds.

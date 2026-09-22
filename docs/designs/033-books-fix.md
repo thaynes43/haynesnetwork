@@ -151,6 +151,38 @@ Two changes to how the books pool is governed, unifying it with the arr pool ont
   (only it writes that marker) — the pool = book Fix + book-item Force Search, one shared per-role number.
   The grant gate is unchanged. The "limit reached" copy states the role's number (C-07; owner copy rules).
 
+### D-12 — Amendment 2026-09-22 (the LL push guard) — Force Search declines a format LazyLibrarian already holds
+
+**What changed.** D-10's books Force Search fired the confined LL chain "regardless of landed state" —
+that was its whole stated point, since the title is on disk by definition. It no longer can. Per
+DESIGN-028's 2026-09-22 amendment, `runBookItemForceSearch` reads LL's own per-format state first
+(one `getAllBooks`, already bounded by the D-11 media-action budget enforced before it) and returns a
+new honest outcome `{ searched: false, reason: 'already_held' }` when `llFormatAlreadyHeld` is true.
+Nothing is written. The click is **still audited** — the `request_book_search` row commits before the
+read, exactly as it always did.
+
+**Why there is no third option — this is LazyLibrarian's shape, not a policy choice.** Two facts from
+the deployed build, verified 2026-09-22:
+
+- `api.py::_queuebook` is an unguarded `UPDATE books SET Status='Wanted' WHERE BookID=?`. Queuing a held
+  format strands an imported book in LL's daily search backlog permanently (292 rows were in that state).
+- `searchbook.py::search_book` only enqueues a book whose `Status`/`AudioStatus` is literally `'Wanted'`.
+  So dropping `queueBook` and calling `searchBook` alone is **a silent no-op** on an `Open` book.
+
+LL therefore offers no way to re-search a format it already holds without damaging its state, and the
+damaged state is precisely the defect. An honest decline beats a write that harms LL and achieves
+nothing.
+
+**The user-facing copy** (the one noop surface, the books detail head): the chip reads
+**"Already have this copy"**, titled _"LazyLibrarian already has this copy filed, so it won't search for
+another. If the file itself is wrong — bad quality, wrong edition, won't open — use Fix instead."_ That
+is not a consolation: **Fix is the correct path here and is deliberately left unguarded** (D-05), because
+a Fix is the user asserting the copy is defective, and it carries a durable reason row and the quarantine
+flow that make re-acquisition intentional rather than a daily accident.
+
+**The Kapowarr (comic) leg is untouched** — `searchVolume` carries no status clobber, so a comic Force
+Search still fires unconditionally.
+
 ## Alternatives considered
 
 Reusing `fix_requests` (rejected — *arr-shaped, ADR-062 C-04); app-driven file quarantine in v1

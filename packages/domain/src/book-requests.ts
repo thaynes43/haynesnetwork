@@ -46,6 +46,52 @@ export function mapLlStatus(raw: string | null | undefined): BookRequestStatus |
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// ADR-055 amendment (2026-09-22) — the LL PUSH GUARD predicate. `queueBook` is an unconditional
+// `UPDATE books SET Status='Wanted' WHERE BookID=?` (LL `api.py::_queuebook`) with no held-file guard, so
+// every push to a format LL already holds CLOBBERS an imported book back into the search backlog, where
+// LL re-searches it forever and qBittorrent rejects the re-grab as a duplicate hash. On 2026-09-22 that
+// had left 292 of LL's 564 non-Open per-format rows (155 eBook + 137 AudioBook) `Wanted` with a real file
+// and a library date. This predicate is the gate every push site consults first.
+// ---------------------------------------------------------------------------
+
+/** The per-format held-signals the guard reads (a structural subset of the ACL's `LlBookStatus`). */
+export interface LlHeldSignals {
+  ebookStatus?: string | null;
+  audioStatus?: string | null;
+  ebookLibrary?: string | null;
+  audioLibrary?: string | null;
+  ebookFile?: string | null;
+  audioFile?: string | null;
+}
+
+/** LL statuses that mean "this format is in LL's library" — the same pair `mapLlStatus` maps to `landed`. */
+const LL_HELD_STATUSES = new Set(['open', 'have']);
+
+const nonBlank = (v: string | null | undefined): boolean =>
+  v != null && v.trim() !== '' && v.trim().toLowerCase() !== 'none';
+
+/**
+ * Does LazyLibrarian ALREADY HOLD this format? True when LL's per-format status is `Open`/`Have`, or when
+ * LL carries an import date / on-disk path for it — the file signals matter independently, because LL's
+ * table holds rows that are `Skipped` or `Snatched` yet fully imported (39 + 29 of them on 2026-09-22),
+ * and a status-only guard would re-queue every one of those and clobber it.
+ *
+ * `false` for an absent/unknown book (the caller has nothing to skip on — the honest default is to push:
+ * this guard only ever SUPPRESSES a write, it never invents one).
+ */
+export function llFormatAlreadyHeld(
+  status: LlHeldSignals | null | undefined,
+  format: Extract<BookRequestFormat, 'ebook' | 'audiobook'>,
+): boolean {
+  if (!status) return false;
+  const raw = format === 'audiobook' ? status.audioStatus : status.ebookStatus;
+  if (raw != null && LL_HELD_STATUSES.has(raw.trim().toLowerCase())) return true;
+  return format === 'audiobook'
+    ? nonBlank(status.audioLibrary) || nonBlank(status.audioFile)
+    : nonBlank(status.ebookLibrary) || nonBlank(status.ebookFile);
+}
+
 const POSITIVE = new Set<BookRequestStatus>(['grabbed', 'landed']);
 
 /** Advance a per-format status without regressing a positive (grabbed/landed) to a searching state. */

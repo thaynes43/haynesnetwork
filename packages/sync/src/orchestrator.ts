@@ -1106,6 +1106,8 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
         // ADR-067 (PLAN-055) — quota-skipped enrichment + the daily-budget skip + the queued-fix retry pass.
         skippedEnrichment: goodreadsSync.skippedEnrichment,
         skippedBudget: goodreadsSync.skippedBudget,
+        // ADR-055 amendment (2026-09-22) — LL pushes the held-format guard suppressed this run.
+        pushesSkippedHeld: goodreadsSync.pushesSkippedHeld,
         ...(goodreadsSync.fixRetries ? { fixRetries: goodreadsSync.fixRetries } : {}),
       });
     } catch (error) {

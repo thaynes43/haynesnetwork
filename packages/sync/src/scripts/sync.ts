@@ -740,6 +740,12 @@ async function main(): Promise<number> {
             failed: report.goodreadsSync.failed,
             // ADR-067 (PLAN-055) — quota-skipped enrichment + the queued-fix retry pass.
             skippedEnrichment: report.goodreadsSync.skippedEnrichment,
+            // DESIGN-039 D-23 — the daily GB call-budget skip (was dropped from this summary).
+            skippedBudget: report.goodreadsSync.skippedBudget,
+            // ADR-057 amend — transient upstream blips that kept the link (was dropped from this summary).
+            transientBlips: report.goodreadsSync.transientBlips,
+            // ADR-055 amendment (2026-09-22) — LL pushes the held-format guard suppressed this run.
+            pushesSkippedHeld: report.goodreadsSync.pushesSkippedHeld,
             ...(report.goodreadsSync.fixRetries
               ? { fixRetries: report.goodreadsSync.fixRetries }
               : {}),

@@ -32,10 +32,12 @@ import { guardedGbResolve } from './gb-quota-breaker';
 import { makeGbBudgetTracker, type GbBudgetTracker, type GbCallMeter } from './gb-call-budget';
 import {
   applyRequestReconcile,
+  llFormatAlreadyHeld,
   mapLlStatus,
   markRequestFormatsRequeued,
   normAuthor,
   normTitle,
+  type LlHeldSignals,
 } from './book-requests';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
 
@@ -369,6 +371,16 @@ export interface MintPairingWantsInput {
    */
   llHasSeededBook?: (llBookId: string) => boolean;
   /**
+   * ADR-055 amendment (2026-09-22 — the push guard) — predicate: does LazyLibrarian ALREADY HOLD this
+   * format of this book (`Open`/`Have`, or an import date / on-disk path)? Derived from the SAME
+   * getAllBookStatuses read `llHasSeededBook` comes from, so the guard costs no extra LL call. When it
+   * returns true the whole confined chain is suppressed for that want: `queueBook` is an unguarded
+   * `UPDATE books SET Status='Wanted'` (LL api.py::_queuebook), so pushing a held format clobbers an
+   * imported book back into LL's search backlog forever. Absent ⇒ never suppress (the safe default —
+   * this guard may only ever remove a write, never add one).
+   */
+  llHoldsFormat?: (llBookId: string, format: 'ebook' | 'audiobook') => boolean;
+  /**
    * DESIGN-039 D-21/D-23 — the daily GB CALL BUDGET meter + tracker (consumer 'pairing'). The meter is
    * wired into the GB client's http wrapper (counts every outbound GB leg); the tracker holds this
    * consumer's remaining daily allowance. Absent ⇒ no budget enforcement + no metering (tests /
@@ -402,6 +414,13 @@ export interface MintPairingWantsReport {
    * no cap consumed, no want upsert, no breaker trip — the honest "we paced ourselves off GB today".
    */
   skippedBudget: number;
+  /**
+   * ADR-055 amendment (2026-09-22 — the push guard) — wants whose missing-format chain was SUPPRESSED
+   * because LazyLibrarian already holds that format. The want is still minted/refreshed (it is a real
+   * attempt and the cap is consumed); only the clobbering LL write is withheld, and the next reconcile
+   * settles the want to `landed` from LL's own status.
+   */
+  skippedHeld: number;
 }
 
 const defaultPacer = (index: number): Promise<void> =>
@@ -631,6 +650,7 @@ export async function mintPairingWants(
   let unmintable = 0;
   let skippedQuota = 0;
   let skippedBudget = 0;
+  let skippedHeld = 0;
   let attempted = 0;
   let paceSeq = 0;
   let quotaOpen = false;
@@ -702,6 +722,21 @@ export async function mintPairingWants(
       continue;
     }
     if (!input.ll || statusOfFormat(row, missing) !== 'requested') continue;
+    // ADR-055 amendment (2026-09-22 — the push guard). LL already holding the missing format means this
+    // pairing want is ALREADY satisfied on LL's side; pushing would `UPDATE books SET Status='Wanted'`
+    // over an imported book and strand it in LL's daily search backlog. Suppress the whole chain — the
+    // want stays minted and the run's reconcile below settles it to `landed` from LL's own status.
+    if (input.llHoldsFormat?.(llBookId, missing)) {
+      skippedHeld += 1;
+      log.info?.('ll_push_skipped_have', {
+        site: 'format-pairing.mint-push',
+        requestId: row.id,
+        llBookId,
+        formats: [missing],
+        title: item.title,
+      });
+      continue;
+    }
     try {
       // DESIGN-039 D-18 — addBook ONLY seats a volume LL does not already hold. When LL already has
       // it (the common case for a re-pushed want), skip addBook so LL makes ZERO Google Books calls
@@ -726,7 +761,16 @@ export async function mintPairingWants(
     }
   }
 
-  return { candidates: unpaired.length, attempted, minted, pushed, unmintable, skippedQuota, skippedBudget };
+  return {
+    candidates: unpaired.length,
+    attempted,
+    minted,
+    pushed,
+    unmintable,
+    skippedQuota,
+    skippedBudget,
+    skippedHeld,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -738,6 +782,11 @@ export interface FormatPairingReport extends SyncFormatPairsReport, MintPairingW
   reconciled: number;
   /** Pairing wants whose raw-`Skipped` missing format was re-queued + re-searched this run. */
   requeued: number;
+  /**
+   * ADR-055 amendment (2026-09-22 — the push guard). Widened from `MintPairingWantsReport.skippedHeld`:
+   * on the run report this is the RUN TOTAL — mint-push suppressions PLUS Skipped-sweep suppressions.
+   */
+  skippedHeld: number;
 }
 
 export type RunFormatPairingInput = MintPairingWantsInput;
@@ -765,7 +814,9 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
   // exact pre-D-18 semantics. A volume mint FIRST-seats this run is (correctly) absent from this
   // pre-mint snapshot: it gets addBook'd now and reconciles on the next run (a benign one-run delay,
   // since a just-pushed want has no status to reconcile yet).
-  let seated: Map<string, { ebookStatus: string | null; audioStatus: string | null }> | null = null;
+  // ADR-055 amendment (2026-09-22) — the same one read now feeds a THIRD consumer: the held-format
+  // push guard (`llHoldsFormat` below and the Skipped sweep). Still one LL call per run.
+  let seated: Map<string, LlHeldSignals> | null = null;
   if (input.ll) {
     try {
       seated = await input.ll.read.getAllBookStatuses();
@@ -788,10 +839,14 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
     now,
     ...(budget ? { budget } : {}),
     llHasSeededBook: seatedMap ? (id) => seatedMap.get(id) != null : undefined,
+    llHoldsFormat: seatedMap
+      ? (id, format) => llFormatAlreadyHeld(seatedMap.get(id), format)
+      : undefined,
   });
 
   let reconciled = 0;
   let requeued = 0;
+  let sweepSkippedHeld = 0;
   if (input.ll && seatedMap) {
     const open = (await db.select().from(bookRequests).where(eq(bookRequests.origin, 'pairing'))).filter(
       (w) =>
@@ -814,7 +869,20 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
         reconciled += 1;
         // The Skipped sweep, missing format only (the held format never re-queues — it is ours).
         const raw = missing === 'ebook' ? status.ebookStatus : status.audioStatus;
-        if (raw?.trim().toLowerCase() === 'skipped') {
+        // ADR-055 amendment (2026-09-22) — `Skipped` is not proof LL lacks the file: LL carries rows that
+        // are Skipped yet fully imported (39 of them on that date). Re-queueing one clobbers it to
+        // `Wanted`, so the sweep now consults the file/library signals before it fires.
+        if (raw?.trim().toLowerCase() === 'skipped' && llFormatAlreadyHeld(status, missing)) {
+          sweepSkippedHeld += 1;
+          log.info?.('ll_push_skipped_have', {
+            site: 'format-pairing.skipped-sweep',
+            requestId: want.id,
+            llBookId: want.llBookId,
+            formats: [missing],
+            ebookStatus: status.ebookStatus ?? null,
+            audioStatus: status.audioStatus ?? null,
+          });
+        } else if (raw?.trim().toLowerCase() === 'skipped') {
           await pace(requeued + 1);
           await input.ll.write.queueBook(want.llBookId!, missing);
           await input.ll.write.searchBook(want.llBookId!, missing);
@@ -835,7 +903,15 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
     }
   }
 
-  const report: FormatPairingReport = { ...pairs, ...mint, reconciled, requeued };
+  const report: FormatPairingReport = {
+    ...pairs,
+    ...mint,
+    reconciled,
+    requeued,
+    // The run total: mint-push suppressions + Skipped-sweep suppressions (both are held-format clobbers
+    // withheld), so one number answers "how many clobbering LL writes did the guard stop this run".
+    skippedHeld: mint.skippedHeld + sweepSkippedHeld,
+  };
   log.info?.('format-pairing run complete', { ...report });
   return report;
 }

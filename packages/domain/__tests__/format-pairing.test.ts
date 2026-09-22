@@ -50,9 +50,18 @@ interface LlCall {
  * recorded, so a test can assert the pairing path never reaches beyond the three sanctioned
  * acquisition writes (no provider-config call exists on this path, structurally).
  */
-function stubLl(
-  statusOf?: (id: string) => { ebookStatus: string | null; audioStatus: string | null } | null,
-) {
+/** Mirrors the ACL's LlBookStatus — ADR-055 amend (2026-09-22): the library/file fields are the ones
+ *  the push guard reads, so the stub has to be able to emit them. */
+interface StubLlStatus {
+  ebookStatus: string | null;
+  audioStatus: string | null;
+  ebookLibrary?: string | null;
+  audioLibrary?: string | null;
+  ebookFile?: string | null;
+  audioFile?: string | null;
+}
+
+function stubLl(statusOf?: (id: string) => StubLlStatus | null) {
   const calls: LlCall[] = [];
   const writeAccessed = new Set<string>();
   const write = new Proxy(
@@ -83,7 +92,17 @@ function stubLl(
       getAllBookStatuses: async () => ({
         get: (id: string) => {
           const s = statusOf ? statusOf(id) : null;
-          return s ? { bookId: id, ebookStatus: s.ebookStatus, audioStatus: s.audioStatus } : undefined;
+          return s
+            ? {
+                bookId: id,
+                ebookStatus: s.ebookStatus,
+                audioStatus: s.audioStatus,
+                ebookLibrary: s.ebookLibrary ?? null,
+                audioLibrary: s.audioLibrary ?? null,
+                ebookFile: s.ebookFile ?? null,
+                audioFile: s.audioFile ?? null,
+              }
+            : undefined;
         },
       }),
     },
@@ -665,10 +684,69 @@ describe('runFormatPairing (the mode body: pairs → mint → reconcile)', () =>
     expect(ll3.calls.filter((c) => c.cmd === 'queueBook').map((c) => c.format)).toEqual(['audiobook']);
   });
 
+  // ADR-055 amendment (2026-09-22) — THE PUSH GUARD on the pairing path. Both of its LL writes are
+  // suppressed when LL already holds the missing format, because `queueBook` clobbers LL's status.
+  it('never pushes a missing format LazyLibrarian already holds — the want still settles to landed', async () => {
+    await seedItem({ title: 'Hyperion', author: 'Dan Simmons', mediaKind: 'book' });
+    // LL already has the audiobook (Open) — the exact case the pairing mint was re-queueing daily.
+    const ll = stubLl((id) =>
+      id === 'gb-hyp'
+        ? { ebookStatus: null, audioStatus: 'Open', audioLibrary: '2026-08-02' }
+        : null,
+    );
+    const run = await runFormatPairing({
+      db: t.db,
+      ll: ll.bundle,
+      gb: stubGb(() => 'gb-hyp').gb,
+      pacer: async () => {},
+    });
+
+    expect(run).toMatchObject({ minted: 1, pushed: 0, skippedHeld: 1 });
+    expect(ll.calls.filter((c) => c.cmd === 'queueBook')).toHaveLength(0);
+    expect(ll.calls.filter((c) => c.cmd === 'searchBook')).toHaveLength(0);
+    // The want is real and stays on the books; the reconcile settles it from LL's own status.
+    const [want] = await t.db.select().from(bookRequests);
+    expect(want!.llBookId).toBe('gb-hyp');
+    expect(want!.audioStatus).toBe('landed');
+  });
+
+  it('does not let the pairing Skipped sweep re-queue a Skipped-but-imported missing format', async () => {
+    await seedItem({ title: 'Hyperion', author: 'Dan Simmons', mediaKind: 'book' });
+    const gb = stubGb(() => 'gb-hyp');
+    await runFormatPairing({
+      db: t.db,
+      ll: stubLl(() => null).bundle,
+      gb: gb.gb,
+      pacer: async () => {},
+    });
+
+    // The missing (audio) format reads `Skipped` — but LL carries a real file for it.
+    const ll = stubLl((id) =>
+      id === 'gb-hyp'
+        ? { ebookStatus: null, audioStatus: 'Skipped', audioFile: '/audiobooks/hyperion.m4b' }
+        : null,
+    );
+    const run = await runFormatPairing({
+      db: t.db,
+      ll: ll.bundle,
+      gb: gb.gb,
+      pacer: async () => {},
+    });
+
+    expect(run.requeued).toBe(0);
+    expect(run.skippedHeld).toBe(1);
+    expect(ll.calls.filter((c) => c.cmd === 'queueBook')).toHaveLength(0);
+    expect(ll.calls.filter((c) => c.cmd === 'searchBook')).toHaveLength(0);
+  });
+
   it('degrades honestly with NO LL bundle: pairs + mints, pushes nothing, statuses stay requested', async () => {
     await seedItem({ title: 'Hyperion', author: 'Dan Simmons', mediaKind: 'book' });
-    const report = await runFormatPairing({ db: t.db, gb: stubGb(() => 'gb-hyp').gb, pacer: async () => {} });
-    expect(report).toMatchObject({ minted: 1, pushed: 0, reconciled: 0 });
+    const report = await runFormatPairing({
+      db: t.db,
+      gb: stubGb(() => 'gb-hyp').gb,
+      pacer: async () => {},
+    });
+    expect(report).toMatchObject({ minted: 1, pushed: 0, reconciled: 0, skippedHeld: 0 });
     const [want] = await t.db.select().from(bookRequests);
     expect(want!.audioStatus).toBe('requested');
     expect(want!.llBookId).toBe('gb-hyp'); // identity resolved — the next LL-armed run pushes

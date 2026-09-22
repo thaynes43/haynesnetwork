@@ -27,9 +27,30 @@ const REASONS: { value: string; label: string; hint: string }[] = [
 
 type FiredState =
   | { kind: 'fired' }
-  | { kind: 'noop' }
+  | { kind: 'noop'; reason?: string }
   | { kind: 'failed'; message: string }
   | null;
+
+/**
+ * The honest "nothing fired" copy, per domain reason (wanted-detail.tsx's NOOP_COPY precedent). The
+ * default covers `no_ll_id` / `no_kapowarr_id` / `unroutable` — the title genuinely has no acquisition
+ * record to re-search. `already_held` is the opposite case and needed its own words: LazyLibrarian HAS
+ * a record, it has the file filed, and it will not search for a copy it already holds. Re-searching one
+ * anyway is what left hundreds of already-imported books stranded in LazyLibrarian's search backlog, so
+ * the button now declines and points at Fix — the path that exists for "the copy I have is wrong".
+ */
+const SEARCH_NOOP_COPY: Record<string, { label: string; title: string }> = {
+  already_held: {
+    label: 'Already have this copy',
+    title:
+      'LazyLibrarian already has this copy filed, so it won’t search for another. If the file itself is wrong — bad quality, wrong edition, won’t open — use Fix instead.',
+  },
+};
+
+const SEARCH_NOOP_DEFAULT = {
+  label: 'Nothing to search',
+  title: 'This title has no acquisition record to re-search right now.',
+};
 
 export function BooksHeadActions({
   booksItemId,
@@ -47,7 +68,12 @@ export function BooksHeadActions({
   // the honest signal (the pairing-search precedent).
   const [searchState, setSearchState] = useState<FiredState>(null);
   const forceSearch = trpc.books.forceSearch.useMutation({
-    onSuccess: (result) => setSearchState(result.searched ? { kind: 'fired' } : { kind: 'noop' }),
+    onSuccess: (result) =>
+      setSearchState(
+        result.searched
+          ? { kind: 'fired' }
+          : { kind: 'noop', ...(result.reason ? { reason: result.reason } : {}) },
+      ),
     onError: (error) => setSearchState({ kind: 'failed', message: describeMutationError(error) }),
   });
 
@@ -66,14 +92,10 @@ export function BooksHeadActions({
       />
     );
   } else if (searchState?.kind === 'noop') {
-    searchLive = (
-      <PhaseChip
-        phase="noop"
-        label="Nothing to search"
-        tone="warning"
-        title="This title has no acquisition record to re-search right now."
-      />
-    );
+    const copy =
+      (searchState.reason ? SEARCH_NOOP_COPY[searchState.reason] : undefined) ??
+      SEARCH_NOOP_DEFAULT;
+    searchLive = <PhaseChip phase="noop" label={copy.label} tone="warning" title={copy.title} />;
   } else if (searchState?.kind === 'failed') {
     searchLive = (
       <PhaseChip phase="failed" label="Search failed" tone="danger" title={searchState.message} />

@@ -14,6 +14,7 @@ import {
   linkIntegration,
   listLinkedIntegrations,
   listIntegrationsForSync,
+  llFormatAlreadyHeld,
   markIntegrationSynced,
   noteIntegrationSyncBlip,
   ERROR_RETRY_BACKOFF_MS,
@@ -44,7 +45,18 @@ interface LlCall {
   format?: string;
 }
 
-function stubLl(statusOf?: (id: string) => { ebookStatus: string | null; audioStatus: string | null } | null) {
+/** The per-format signals the stub can report — mirrors the ACL's LlBookStatus (ADR-055 amend 2026-09-22:
+ *  the library/file fields are what the push guard reads, so the stub must be able to emit them). */
+interface StubLlStatus {
+  ebookStatus: string | null;
+  audioStatus: string | null;
+  ebookLibrary?: string | null;
+  audioLibrary?: string | null;
+  ebookFile?: string | null;
+  audioFile?: string | null;
+}
+
+function stubLl(statusOf?: (id: string) => StubLlStatus | null) {
   const calls: LlCall[] = [];
   const bundle = {
     write: {
@@ -67,7 +79,17 @@ function stubLl(statusOf?: (id: string) => { ebookStatus: string | null; audioSt
       getAllBookStatuses: async () => ({
         get: (id: string) => {
           const s = statusOf ? statusOf(id) : { ebookStatus: 'Wanted', audioStatus: 'Wanted' };
-          return s ? { bookId: id, ebookStatus: s.ebookStatus, audioStatus: s.audioStatus } : undefined;
+          return s
+            ? {
+                bookId: id,
+                ebookStatus: s.ebookStatus,
+                audioStatus: s.audioStatus,
+                ebookLibrary: s.ebookLibrary ?? null,
+                audioLibrary: s.audioLibrary ?? null,
+                ebookFile: s.ebookFile ?? null,
+                audioFile: s.audioFile ?? null,
+              }
+            : undefined;
         },
       }),
     },
@@ -182,6 +204,63 @@ describe('mapLlStatus / advanceStatus', () => {
     expect(advanceStatus('grabbed', 'missing')).toBe('grabbed');
     expect(advanceStatus('wanted', 'missing')).toBe('missing');
     expect(advanceStatus('wanted', 'landed')).toBe('landed');
+  });
+});
+
+// ADR-055 amendment (2026-09-22) — the LL PUSH GUARD predicate. `queueBook` is an unguarded
+// `UPDATE books SET Status='Wanted'`, so a push to a format LL already holds clobbers an imported book
+// back into LL's daily search backlog. The predicate is what every push site consults first.
+describe('llFormatAlreadyHeld (the push guard predicate)', () => {
+  it('treats Open/Have as held, per format, case- and whitespace-insensitively', () => {
+    expect(llFormatAlreadyHeld({ ebookStatus: 'Open', audioStatus: 'Wanted' }, 'ebook')).toBe(true);
+    expect(llFormatAlreadyHeld({ ebookStatus: 'Open', audioStatus: 'Wanted' }, 'audiobook')).toBe(
+      false,
+    );
+    expect(llFormatAlreadyHeld({ ebookStatus: null, audioStatus: '  have ' }, 'audiobook')).toBe(
+      true,
+    );
+    expect(llFormatAlreadyHeld({ ebookStatus: 'OPEN', audioStatus: null }, 'ebook')).toBe(true);
+  });
+
+  it('treats an import date or an on-disk path as held EVEN when the status says otherwise', () => {
+    // The 2026-09-22 live cross-tab: 24 ebook + 15 audio rows are `Skipped` yet fully imported, and
+    // 10 + 19 are `Snatched` yet imported. A status-only guard re-queues every one of them.
+    expect(
+      llFormatAlreadyHeld(
+        { ebookStatus: 'Skipped', audioStatus: null, ebookLibrary: '2026-07-11T23:38:10Z' },
+        'ebook',
+      ),
+    ).toBe(true);
+    expect(
+      llFormatAlreadyHeld(
+        { ebookStatus: null, audioStatus: 'Snatched', audioFile: '/books/x.m4b' },
+        'audiobook',
+      ),
+    ).toBe(true);
+    // ...and the held signal stays scoped to its own format.
+    expect(
+      llFormatAlreadyHeld(
+        { ebookStatus: 'Wanted', audioStatus: 'Wanted', audioLibrary: '2026-07-11' },
+        'ebook',
+      ),
+    ).toBe(false);
+  });
+
+  it('is NOT held for a genuinely wanted row, a blank field, or a book LL does not know', () => {
+    expect(llFormatAlreadyHeld({ ebookStatus: 'Wanted', audioStatus: 'Skipped' }, 'ebook')).toBe(
+      false,
+    );
+    expect(
+      llFormatAlreadyHeld({ ebookStatus: 'Wanted', audioStatus: 'Skipped' }, 'audiobook'),
+    ).toBe(false);
+    // LL serves absent fields as '', '   ' or the literal 'None' depending on the row's age.
+    expect(
+      llFormatAlreadyHeld({ ebookStatus: 'Wanted', ebookLibrary: '', ebookFile: '   ' }, 'ebook'),
+    ).toBe(false);
+    expect(llFormatAlreadyHeld({ ebookStatus: 'Wanted', ebookFile: 'None' }, 'ebook')).toBe(false);
+    // An absent book is never "held" — the guard may only ever SUPPRESS a write, never invent one.
+    expect(llFormatAlreadyHeld(undefined, 'ebook')).toBe(false);
+    expect(llFormatAlreadyHeld(null, 'audiobook')).toBe(false);
   });
 });
 
@@ -480,6 +559,140 @@ describe('syncGoodreadsIntegration (the vertical)', () => {
     const tog = requests.find((r) => r.llBookId === 'gb-tog')!;
     expect(tog.ebookStatus).toBe('wanted'); // swept
     expect(tog.audioStatus).toBe('grabbed'); // reconciled, not swept
+  });
+
+  // ADR-055 amendment (2026-09-22) — THE PUSH GUARD. `queueBook` is an unguarded
+  // `UPDATE books SET Status='Wanted'`, so pushing a format LL already holds clobbers an imported book
+  // back into LL's search backlog, where it is re-searched daily forever and qBittorrent rejects each
+  // re-grab as a duplicate hash. These four cases pin every leg of the guard.
+  it('never pushes a format LazyLibrarian already holds — and still pushes the one it does not', async () => {
+    const { integration } = await seed();
+    // LL already has the ebook (Open + a library date); the audiobook is genuinely being searched for.
+    const ll = stubLl((id) =>
+      id === 'gb-tog'
+        ? { ebookStatus: 'Open', audioStatus: 'Wanted', ebookLibrary: '2026-07-11T23:38:10Z' }
+        : null,
+    );
+
+    const report = await syncGoodreadsIntegration({
+      db: t.db,
+      integrationId: integration.id,
+      items,
+      syncedShelves: ['to-read'],
+      ll: ll.bundle,
+      pacer: async () => {},
+    });
+
+    const forTog = ll.calls.filter((c) => c.id === 'gb-tog');
+    // The held ebook was never queued or searched; the missing audiobook still was.
+    expect(forTog.filter((c) => c.cmd === 'queueBook').map((c) => c.format)).toEqual(['audiobook']);
+    expect(forTog.filter((c) => c.cmd === 'searchBook').map((c) => c.format)).toEqual([
+      'audiobook',
+    ]);
+    expect(report.pushesSkippedHeld).toBe(1);
+    expect(report.requestsPushed).toBe(1); // real writes went out, so it is a real push
+    // The reconcile still settles the held format honestly.
+    const requests = await getBookRequestsForIntegration({
+      db: t.db,
+      integrationId: integration.id,
+    });
+    expect(requests.find((r) => r.llBookId === 'gb-tog')!.ebookStatus).toBe('landed');
+  });
+
+  it('skips the push WHOLE (addBook included) when LL holds both formats, and counts it as no push', async () => {
+    const { integration } = await seed();
+    const ll = stubLl((id) =>
+      id === 'gb-tog' ? { ebookStatus: 'Open', audioStatus: 'Have' } : null,
+    );
+
+    const report = await syncGoodreadsIntegration({
+      db: t.db,
+      integrationId: integration.id,
+      items,
+      syncedShelves: ['to-read'],
+      ll: ll.bundle,
+      pacer: async () => {},
+    });
+
+    expect(ll.calls.filter((c) => c.id === 'gb-tog')).toHaveLength(0); // not even addBook
+    expect(report.pushesSkippedHeld).toBe(2);
+    expect(report.requestsPushed).toBe(0); // nothing was pushed — never a phantom push
+    // ...but the want still carries its llBookId and reconciles to landed, so it leaves the worklist.
+    const requests = await getBookRequestsForIntegration({
+      db: t.db,
+      integrationId: integration.id,
+    });
+    const tog = requests.find((r) => r.title === 'Throne of Glass')!;
+    expect(tog.llBookId).toBe('gb-tog');
+    expect(tog.ebookStatus).toBe('landed');
+    expect(tog.audioStatus).toBe('landed');
+  });
+
+  it('does not let the Skipped sweep re-queue a Skipped-but-imported row (the 39-row live case)', async () => {
+    const { integration } = await seed();
+    const first = stubLl(() => null);
+    await syncGoodreadsIntegration({
+      db: t.db,
+      integrationId: integration.id,
+      items,
+      syncedShelves: ['to-read'],
+      ll: first.bundle,
+      pacer: async () => {},
+    });
+
+    // Both formats read `Skipped`, but the EBOOK carries a real file — LL has it, the status lies.
+    const second = stubLl((id) =>
+      id === 'gb-tog'
+        ? { ebookStatus: 'Skipped', audioStatus: 'Skipped', ebookFile: '/books/tog.epub' }
+        : null,
+    );
+    const report = await syncGoodreadsIntegration({
+      db: t.db,
+      integrationId: integration.id,
+      items,
+      syncedShelves: ['to-read'],
+      ll: second.bundle,
+      pacer: async () => {},
+    });
+
+    const forTog = second.calls.filter((c) => c.id === 'gb-tog');
+    expect(forTog.filter((c) => c.cmd === 'queueBook').map((c) => c.format)).toEqual(['audiobook']);
+    expect(forTog.filter((c) => c.cmd === 'searchBook').map((c) => c.format)).toEqual([
+      'audiobook',
+    ]);
+    expect(report.pushesSkippedHeld).toBe(1);
+    expect(report.requestsRequeued).toBe(1); // the audiobook leg still swept
+  });
+
+  it('degrades to pushing everything when the LL read fails — the guard may only ever remove a write', async () => {
+    const { integration } = await seed();
+    const ll = stubLl(() => null);
+    // Break ONLY the read; the writes still record.
+    (ll.bundle as unknown as { read: { getAllBookStatuses: () => Promise<never> } }).read = {
+      getAllBookStatuses: async () => {
+        throw new Error('LL 503');
+      },
+    };
+
+    const report = await syncGoodreadsIntegration({
+      db: t.db,
+      integrationId: integration.id,
+      items,
+      syncedShelves: ['to-read'],
+      ll: ll.bundle,
+      pacer: async () => {},
+    });
+
+    const forTog = ll.calls.filter((c) => c.id === 'gb-tog');
+    expect(
+      forTog
+        .filter((c) => c.cmd === 'queueBook')
+        .map((c) => c.format)
+        .sort(),
+    ).toEqual(['audiobook', 'ebook']);
+    expect(report.pushesSkippedHeld).toBe(0);
+    expect(report.requestsPushed).toBe(1);
+    expect(report.requestsReconciled).toBe(0); // reconcile skipped, exactly as before the guard
   });
 
   it('manual re-search on a Missing request is audited and fires a real LL searchBook', async () => {
