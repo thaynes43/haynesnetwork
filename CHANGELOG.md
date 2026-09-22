@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.96.3](https://github.com/thaynes43/haynesnetwork/compare/v0.96.2...v0.96.3) (2026-09-22)
+
+
+### Bug Fixes
+
+* **books:** never push LazyLibrarian a format it already holds ([#546](https://github.com/thaynes43/haynesnetwork/issues/546)) ([7d32f0e](https://github.com/thaynes43/haynesnetwork/commit/7d32f0ed7734aa6f3954ab9b97e5df887f766178))
+
+
+### Documentation
+
+* **agents:** v0.96.2 rolled out and verified (3/3, health 200; wall projection 29/15/6) ([#544](https://github.com/thaynes43/haynesnetwork/issues/544)) ([1d553d4](https://github.com/thaynes43/haynesnetwork/commit/1d553d4732695f46c1970be3f5620c7fead2c8d1))
+
 ## [0.96.2](https://github.com/thaynes43/haynesnetwork/compare/v0.96.1...v0.96.2) (2026-09-20)
 
 
