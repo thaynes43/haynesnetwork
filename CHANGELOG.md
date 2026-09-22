@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.96.4](https://github.com/thaynes43/haynesnetwork/compare/v0.96.3...v0.96.4) (2026-09-22)
+
+
+### Bug Fixes
+
+* **books:** Force Search declines a copy LazyLibrarian already has (the fifth LL site) ([#549](https://github.com/thaynes43/haynesnetwork/issues/549)) ([353f201](https://github.com/thaynes43/haynesnetwork/commit/353f2019ac0dc450946a502756ef7f9265ab1f01))
+
+
+### Documentation
+
+* **agents:** v0.96.3 rolled out and verified — the guard stopped 30 clobbers in its first hour ([#547](https://github.com/thaynes43/haynesnetwork/issues/547)) ([81343ed](https://github.com/thaynes43/haynesnetwork/commit/81343ed95309a49c955e13d3322fa860daecdaf5))
+
 ## [0.96.3](https://github.com/thaynes43/haynesnetwork/compare/v0.96.2...v0.96.3) (2026-09-22)
 
 
