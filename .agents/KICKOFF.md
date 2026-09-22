@@ -87,8 +87,11 @@ The app deploys via the **sibling Flux GitOps repo** `../../haynes-ops` (cluster
    `kubernetes/main/apps/frontend/haynesnetwork/app/helmrelease.yaml` (the `&mainImage` anchor
    moves app + migrate init-container + both sync CronJobs together). Commit + push.
 3. `flux reconcile source git haynes-ops -n flux-system` then
-   `flux reconcile kustomization haynesnetwork -n flux-system --with-source`.
-4. Verify: `kubectl -n frontend rollout status deploy/haynesnetwork`; health at `/api/health`.
+   `flux reconcile kustomization haynesnetwork -n frontend --with-source` — the app's Kustomization
+   lives in **frontend**, not `flux-system` (`-n flux-system` fails with `kustomizations…
+   "haynesnetwork" not found`; corrected 2026-09-22, it had sent every reader down that hole).
+4. Verify: `kubectl -n frontend rollout status deploy/haynesnetwork-main` (the deployment carries the
+   `-main` controller suffix); health at `/api/health`.
 
 **Local merge gate (matches CI — run before every PR):**
 `pnpm lint && pnpm lint:css && pnpm typecheck && pnpm test && pnpm build`. Iterate one package
