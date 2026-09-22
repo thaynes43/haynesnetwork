@@ -4,6 +4,59 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-09-22 — The books pipeline was re-buying books it already had: the LL push is now guarded
+
+**The finding (live, 2026-09-22).** LazyLibrarian's `queueBook` is an unguarded
+`UPDATE books SET Status='Wanted' WHERE BookID=?` (`api.py::_queuebook` — no held-file check of any
+kind), and this app pushed it unconditionally from FOUR sites: the Goodreads shelf push
+(`goodreads-sync.ts`), the pairing mint + its `Skipped` sweep (`format-pairing.ts`), the hourly
+find-missing collection force-search (`collection-force-search.ts` — **not in the original finding, and
+the worst of them**: unattended, ≤25 wants/run, re-firing every 12h forever, because it decides "still
+missing" from our own row status and not from LL's), and books Force Search, which fired "regardless of
+landed state" by design. So every push to a format LL had **already
+imported** clobbered it back into LL's search backlog, where it was re-searched daily, re-found on MAM,
+and rejected by qBittorrent as a duplicate hash — forever. **Measured: LL tracked 812 books (1624 per-format
+rows); 564 read `Wanted`, and 292 of those (155 eBook + 137 AudioBook) had a real file on disk.** Full evidence + the three LL source
+facts: `.agents/context/2026-09-22-ll-push-guard-evidence.md`.
+
+**A status-only guard would not have been enough.** LL also carries 24 eBook + 15 AudioBook rows that
+read `Skipped` while fully imported, and 10 + 19 that read `Snatched`. The guard
+(`llFormatAlreadyHeld`, beside `mapLlStatus`) therefore treats `Open`/`Have` **or** a
+`BookLibrary`/`AudioLibrary` import date **or** a `BookFile`/`AudioFile` path as held, per format.
+Three invariants pinned by tests: it may only ever SUPPRESS a write and never invent one (an absent
+book, an unknown status or a failed LL read all mean "push"); it is per format, not per book; and a
+suppressed push is neither a failure nor a phantom push (`requestsPushed` counts only real writes).
+Counters `pushesSkippedHeld` / `skippedHeld` + the `ll_push_skipped_have` log event make it observable
+— nothing in haynes-ops alerts on these logs today, so `kubectl logs` is the only read-out.
+
+**Force Search had to change behaviour, and LL left no third option.** `searchbook.py::search_book`
+only enqueues a book whose status is literally `'Wanted'`, so dropping `queueBook` and calling
+`searchBook` alone is a _silent no-op_ on an `Open` book. LazyLibrarian simply cannot re-search a format
+it holds without being clobbered first. Books Force Search on a held format therefore now declines
+honestly — `{ searched: false, reason: 'already_held' }`, chip reads **"Already have this copy"** — and
+points at **Fix**, which is deliberately left unguarded because a Fix is the user asserting the copy is
+defective and carries a durable reason row. The click is still audited. The comic (Kapowarr) leg is
+untouched. **If Tom wants Force Search to keep forcing on held books, that is a one-line revert of the
+guard in `book-force-search.ts` — flag it, it was the one judgement call in this change.**
+
+**Cluster-side the same evening (not this repo, recorded in OPS-013 §12):** qBittorrent
+`torrent_content_layout` → `Subfolder` + 282 bare torrents relocated via `torrents/setLocation` (LL's
+post-processor `copy_tree`s the _parent directory_ of a single-file torrent — i.e. the whole category —
+which is how a _Shatter Me_ m4b reached 7 wrong author folders and how `books-mam.unpack` reached
+195 GB); LL `REJECT_WORDS` += `m4b, m4a, flac`, `REJECT_AUDIO` += `azw3, azw, pdf`;
+`SEARCH_BOOKINTERVAL` 360 → 1440; both MAM sessions re-issued after a password change, with a daily
+keepalive + `MamSeedboxSessionDead` / `MamGovernorActuationFailing` alerts. **Governor thresholds and the
+§6 compliance invariants were deliberately NOT touched.** The complementary cluster-side piece has since
+landed too: LL's **daily library scan** CronJob (haynes-ops #3087, UTC-pinned by #3089) —
+`librarysync.py`'s `library_scan()` is the only other writer of `Open`, so without it LL never learned
+about a book imported outside its own post-processor. The scan teaches LL what it holds; this guard
+stops us re-queueing it.
+
+**Docs:** DESIGN-028 amendment 2026-09-22 (normative for every push site), DESIGN-036 amendment (the
+pairing sweep is also documented there for the first time), DESIGN-033 D-12, DESIGN-043 D-16, OPS-013
+§12 + a new §6 invariant. No new ADR — this narrows ADR-055 C-02 / ADR-065 C-08 rather than deciding anything new,
+the DESIGN-039 D-18 precedent.
+
 ## ▶ 2026-09-19 — "Saved days ago, still in the trash": saves were sound; the batch wall is now sectioned and honest
 
 **Owner report (phone screenshot):** Sex and the City / AVP / Fantastic Four (2005) green-shielded

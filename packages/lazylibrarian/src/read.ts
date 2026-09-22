@@ -20,6 +20,18 @@ export interface LlBookStatus {
   ebookStatus: string | null;
   /** The AUDIOBOOK status string (LL `AudioStatus`) — null when LL omits it. */
   audioStatus: string | null;
+  /**
+   * ADR-055 amendment (2026-09-22 — the push guard) — LL's EBOOK import date (`BookLibrary`): non-empty
+   * exactly when LL's post-processor has filed an ebook copy into its library. Raw string; the domain
+   * decides (the mapLlStatus precedent). Null when LL omits it or serves it empty.
+   */
+  ebookLibrary: string | null;
+  /** The AUDIOBOOK import date (`AudioLibrary`) — same contract. */
+  audioLibrary: string | null;
+  /** The EBOOK's on-disk path (`BookFile`), when the build serves it — `getAllBooks` here does not. */
+  ebookFile: string | null;
+  /** The AUDIOBOOK's on-disk path (`AudioFile`), when the build serves it — `getAllBooks` here does not. */
+  audioFile: string | null;
 }
 
 /**
@@ -56,6 +68,10 @@ export class LazyLibrarianReadClient {
    * build has no `getBook` command (it answers `Unknown command`), so reconcile reads the whole list once
    * per sync run and looks books up locally. Returns an empty map on an unknown/error response (the domain
    * treats a missing entry as "LL doesn't know this book" and leaves the request untouched).
+   *
+   * Since the 2026-09-22 push guard this ONE read serves three consumers per run: the addBook seat gate
+   * (DESIGN-039 D-18), the status reconcile, and the held-format push guard — so the guard costs zero
+   * extra LL calls on both sync paths.
    */
   async getAllBookStatuses(): Promise<Map<string, LlBookStatus>> {
     const raw = await this.http.commandJson('getAllBooks', llGetAllBooksResponseSchema);
@@ -72,6 +88,10 @@ export class LazyLibrarianReadClient {
         bookId,
         ebookStatus: row.Status ?? null,
         audioStatus: row.AudioStatus ?? null,
+        ebookLibrary: blankToNull(row.BookLibrary),
+        audioLibrary: blankToNull(row.AudioLibrary),
+        ebookFile: blankToNull(row.BookFile),
+        audioFile: blankToNull(row.AudioFile),
       });
     }
     return byId;
@@ -101,6 +121,14 @@ export class LazyLibrarianReadClient {
       snatchedAt: r.NZBdate != null && r.NZBdate !== '' ? r.NZBdate : null,
     }));
   }
+}
+
+/** LL serves absent per-format file/library fields as `null`, `''` or `'None'` depending on the row age. */
+function blankToNull(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  const s = value.trim();
+  if (s === '' || s.toLowerCase() === 'none') return null;
+  return s;
 }
 
 /** Map LL's `AuxInfo` format tag ('eBook'/'AudioBook') to our format union; null when unrecognized. */

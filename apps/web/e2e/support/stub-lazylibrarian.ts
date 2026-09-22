@@ -22,12 +22,29 @@ export interface StubLazyLibrarianServer {
  * The per-book status the stub reports (drives the reconcile → per-format request state). gb-tog is
  * `Ignored` — the remaining DEAD-END Missing (the Search-again target): raw `Skipped` now auto-requeues
  * via the sweep (DESIGN-028 amendment 2026-07-15), so a fixture that must STAY Missing pins Ignored.
+ *
+ * ADR-055 amendment (2026-09-22 — the push guard): an `Open` row in the REAL LL always carries the
+ * matching `BookLibrary`/`AudioLibrary` import date, so the stub emits them too (the same
+ * mirror-the-real-build discipline as the `getBook` 405 below). Without them a future e2e touching a
+ * push path would silently bypass the guard instead of exercising it. The `Wanted` rows carry none —
+ * they are genuinely missing, which is why the integrations spec still sees them queued.
  */
-function bookStatus(id: string): { BookID: string; Status: string; AudioStatus: string } {
-  if (id === 'gb-rpo') return { BookID: id, Status: 'Open', AudioStatus: 'Open' }; // landed → covered
+interface StubBookRow {
+  BookID: string;
+  Status: string;
+  AudioStatus: string;
+  BookLibrary?: string;
+  AudioLibrary?: string;
+}
+
+const STUB_IMPORTED_AT = '2026-07-11T23:38:10Z';
+
+function bookStatus(id: string): StubBookRow {
+  const held = { Status: 'Open', AudioStatus: 'Open', BookLibrary: STUB_IMPORTED_AT, AudioLibrary: STUB_IMPORTED_AT };
+  if (id === 'gb-rpo') return { BookID: id, ...held }; // landed → covered
   if (id === 'gb-tog') return { BookID: id, Status: 'Ignored', AudioStatus: 'Ignored' }; // dead-end Missing
   // ADR-057 (PLAN-045) — the READ-shelf covered book: LL already holds it (landed → covered).
-  if (id === 'gb-martian') return { BookID: id, Status: 'Open', AudioStatus: 'Open' };
+  if (id === 'gb-martian') return { BookID: id, ...held };
   return { BookID: id, Status: 'Wanted', AudioStatus: 'Wanted' };
 }
 

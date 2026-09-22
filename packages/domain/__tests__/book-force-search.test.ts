@@ -63,13 +63,44 @@ async function seedIdentity(
   });
 }
 
-function stubLl() {
+/** Mirrors the ACL's LlBookStatus — ADR-055 amend (2026-09-22): Force Search reads LL's own per-format
+ *  state before it pushes, so the stub must be able to report a HELD format. */
+interface StubLlStatus {
+  ebookStatus?: string | null;
+  audioStatus?: string | null;
+  ebookLibrary?: string | null;
+  audioLibrary?: string | null;
+  ebookFile?: string | null;
+  audioFile?: string | null;
+}
+
+function stubLl(statusOf?: (id: string) => StubLlStatus | null) {
   const calls: { cmd: string; id: string; format?: string }[] = [];
   const bundle = {
     write: {
       addBook: async (id: string) => void calls.push({ cmd: 'addBook', id }),
       queueBook: async (id: string, format: string) => void calls.push({ cmd: 'queueBook', id, format }),
       searchBook: async (id: string, format: string) => void calls.push({ cmd: 'searchBook', id, format }),
+    },
+    read: {
+      // The real client returns a Map from ONE getAllBooks call; an id the fn nulls is one LL
+      // does not know (absent from the map) — the default, so the push fires as it always did.
+      getAllBookStatuses: async () => ({
+        get: (id: string) => {
+          const s = statusOf ? statusOf(id) : null;
+          return s
+            ? {
+                bookId: id,
+                ebookStatus: s.ebookStatus ?? null,
+                audioStatus: s.audioStatus ?? null,
+                ebookLibrary: s.ebookLibrary ?? null,
+                audioLibrary: s.audioLibrary ?? null,
+                ebookFile: s.ebookFile ?? null,
+                audioFile: s.audioFile ?? null,
+              }
+            : undefined;
+        },
+      }),
     },
   } as unknown as Parameters<typeof runBookItemForceSearch>[0]['ll'];
   return { calls, bundle };
@@ -154,6 +185,93 @@ describe('runBookItemForceSearch (quick re-search, no durable row)', () => {
     expect(result).toEqual({ searched: false, reason: 'no_ll_id' });
     expect(ll.calls).toHaveLength(0);
     expect(await t.db.select().from(permissionAudit)).toHaveLength(0);
+  });
+
+  // ADR-055 amendment (2026-09-22) — THE PUSH GUARD. LazyLibrarian offers no third option here:
+  // `queueBook` unconditionally sets Status='Wanted' (api.py::_queuebook) and `searchBook` alone is a
+  // silent no-op on a non-`Wanted` book (searchbook.py only enqueues rows whose status is 'Wanted').
+  // So a held format can only be "re-searched" by stranding it in LL's daily backlog — which is the
+  // defect. Force Search now declines honestly, and the click is STILL audited.
+  it('declines with `already_held` (writing nothing) when LazyLibrarian already holds the format', async () => {
+    const user = await createUser(t.db);
+    const bookId = await seedBook('book');
+    await seedIdentity(bookId, { llBookId: 'gb-held' });
+    const ll = stubLl((id) => (id === 'gb-held' ? { ebookStatus: 'Open' } : null));
+
+    const result = await runBookItemForceSearch({
+      db: t.db,
+      booksItemId: bookId,
+      requesterId: user.id,
+      ll: ll.bundle,
+    });
+
+    expect(result).toEqual({ searched: false, reason: 'already_held' });
+    expect(ll.calls).toHaveLength(0);
+    // The intent is still recorded — the audit commits before the external call, as it always has.
+    const audits = await t.db
+      .select()
+      .from(permissionAudit)
+      .where(eq(permissionAudit.action, 'request_book_search'));
+    expect(audits).toHaveLength(1);
+  });
+
+  it('declines on a file/library signal even when the status is not Open (the Skipped-but-imported row)', async () => {
+    const user = await createUser(t.db);
+    const bookId = await seedBook('audiobook');
+    await seedIdentity(bookId, { llBookId: 'gb-skipped-held' });
+    const ll = stubLl((id) =>
+      id === 'gb-skipped-held'
+        ? { audioStatus: 'Skipped', audioLibrary: '2026-08-02T10:00:00Z' }
+        : null,
+    );
+
+    const result = await runBookItemForceSearch({
+      db: t.db,
+      booksItemId: bookId,
+      requesterId: user.id,
+      ll: ll.bundle,
+    });
+    expect(result).toEqual({ searched: false, reason: 'already_held' });
+    expect(ll.calls).toHaveLength(0);
+  });
+
+  it('still fires when the LL read fails — the guard may only ever remove a write, never add one', async () => {
+    const user = await createUser(t.db);
+    const bookId = await seedBook('book');
+    await seedIdentity(bookId, { llBookId: 'gb-readfail' });
+    const ll = stubLl();
+    (ll.bundle as unknown as { read: { getAllBookStatuses: () => Promise<never> } }).read = {
+      getAllBookStatuses: async () => {
+        throw new Error('LL 503');
+      },
+    };
+
+    const result = await runBookItemForceSearch({
+      db: t.db,
+      booksItemId: bookId,
+      requesterId: user.id,
+      ll: ll.bundle,
+    });
+    expect(result).toEqual({ searched: true });
+    expect(ll.calls.map((c) => c.cmd)).toEqual(['addBook', 'queueBook', 'searchBook']);
+  });
+
+  it('the Kapowarr (comic) leg is untouched by the guard — searchVolume carries no status clobber', async () => {
+    const user = await createUser(t.db);
+    const comicId = await seedBook('comic');
+    await seedIdentity(comicId, { kapowarrVolumeId: '91', comic: true });
+    const kap = stubKapowarr();
+    const result = await runBookItemForceSearch({
+      db: t.db,
+      booksItemId: comicId,
+      requesterId: user.id,
+      kapowarr: kap.bundle,
+    });
+    expect(result).toEqual({ searched: true });
+    expect(kap.calls).toEqual([
+      { op: 'monitor', id: 91 },
+      { op: 'search', id: 91 },
+    ]);
   });
 });
 

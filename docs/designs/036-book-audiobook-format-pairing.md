@@ -216,3 +216,28 @@ mint, mode); the CONSUMERS grow:
   the split walls had). Still open; still the upgrade path.
 
 See DESIGN-024 D-04 (work-grain search) + DESIGN-026 (the merged registry) + PRD R-231/R-213/R-211.
+
+## Amendment — 2026-09-22 (the LL push guard) — the pairing pushes are guarded, and the sweep is documented
+
+**Normative rule: DESIGN-028's 2026-09-22 amendment.** Both LazyLibrarian writes on this path now
+consult `llFormatAlreadyHeld` first and are suppressed when LL already holds the want's MISSING format:
+
+1. **D-05's mint push.** A pairing candidate whose missing format LL already holds is already satisfied
+   on LL's side; pushing would only `UPDATE books SET Status='Wanted'` over an imported book. The want
+   is still minted/refreshed (a real attempt, the cap is consumed), the chain is withheld, and the
+   run's own reconcile settles the want to `landed` from LL's status. Counted as
+   `MintPairingWantsReport.skippedHeld`.
+2. **The pairing `Skipped` sweep** — which until now existed only in code (`runFormatPairing`, mirroring
+   DESIGN-028's 2026-07-15 amendment) and was **undocumented here**. Recorded now: the sweep re-queues +
+   re-searches the missing format when LL reports it raw-`Skipped`, and since this amendment it does NOT
+   fire when that `Skipped` row nevertheless carries a library date or an on-disk path (39 such rows
+   existed on 2026-09-22 — `Skipped` is not proof LL lacks the file). Counted into the run report's
+   `skippedHeld`, which on `FormatPairingReport` is widened to the RUN TOTAL (mint push + sweep).
+
+**No extra LL reads.** The predicate is derived from the ONE `getAllBookStatuses` this run already takes
+for DESIGN-039 D-18's `addBook` seat gate and the status reconcile — one read, three consumers. If that
+read fails, `llHoldsFormat` is absent and the guard suppresses nothing, exactly as D-18's gate degrades.
+
+**ADR-065 C-08 is intact.** The guard only ever withholds one of the three sanctioned acquisition
+writes; it adds no new surface. The C-08 governor pin (every write-surface property the run touches is
+one of `addBook`/`queueBook`/`searchBook`) still passes unchanged.

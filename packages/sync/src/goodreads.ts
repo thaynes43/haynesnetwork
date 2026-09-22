@@ -79,6 +79,13 @@ export interface GoodreadsSyncReport {
    * honestly un-enriched (the comic text-marker fallback still applies); no breaker trip.
    */
   skippedBudget: number;
+  /**
+   * ADR-055 amendment (2026-09-22 — the LL push guard) — the run rollup of every integration's
+   * `pushesSkippedHeld`: per-format LazyLibrarian pushes SUPPRESSED because LL already holds that
+   * format. Rolled up here because the per-integration reports are otherwise never read again, and
+   * this counter is the only signal that the guard is doing its job.
+   */
+  pushesSkippedHeld: number;
   /** ADR-067 C-06 — the queued-book-fix retry pass hosted in this run (absent when LL/GB missing). */
   fixRetries?: RetryQueuedBookFixesReport;
   perIntegration: Array<{
@@ -152,6 +159,8 @@ export async function runGoodreadsSync(input: {
     : undefined;
   let skippedBudget = 0;
   let budgetLogged = false;
+  // ADR-055 amendment (2026-09-22) — the run rollup of the per-integration LL push-guard suppressions.
+  let pushesSkippedHeld = 0;
 
   for (const integ of integrations) {
     const enriched: EnrichedShelfItem[] = [];
@@ -290,6 +299,7 @@ export async function runGoodreadsSync(input: {
           transientBlips += 1;
         }
         synced += 1;
+        pushesSkippedHeld += report?.pushesSkippedHeld ?? 0;
         perIntegration.push({
           integrationId: integ.id,
           userId: integ.userId,
@@ -343,6 +353,7 @@ export async function runGoodreadsSync(input: {
     transientBlips,
     skippedEnrichment,
     skippedBudget,
+    pushesSkippedHeld,
     ...(fixRetries !== undefined ? { fixRetries } : {}),
     perIntegration,
   };

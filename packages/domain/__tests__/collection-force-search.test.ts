@@ -59,14 +59,43 @@ async function seedCollection(externalId: string, recipeId: string): Promise<str
   return row!.id;
 }
 
-/** A recording LazyLibrarian write stub bundle. */
-function stubLl() {
+/** Mirrors the ACL's LlBookStatus — ADR-055 amend (2026-09-22): the push guard reads these. */
+interface StubLlStatus {
+  ebookStatus?: string | null;
+  audioStatus?: string | null;
+  ebookLibrary?: string | null;
+  audioLibrary?: string | null;
+  ebookFile?: string | null;
+  audioFile?: string | null;
+}
+
+/** A recording LazyLibrarian write stub bundle (+ the read leg the 2026-09-22 push guard consults —
+ *  `statusOf` nulls by default, i.e. LL knows none of these books, so every want still searches). */
+function stubLl(statusOf?: (id: string) => StubLlStatus | null) {
   const calls: Array<{ step: string; id: string; format?: string }> = [];
   const bundle = {
     write: {
       addBook: async (id: string) => void calls.push({ step: 'addBook', id }),
       queueBook: async (id: string, format: string) => void calls.push({ step: 'queueBook', id, format }),
       searchBook: async (id: string, format: string) => void calls.push({ step: 'searchBook', id, format }),
+    },
+    read: {
+      getAllBookStatuses: async () => ({
+        get: (id: string) => {
+          const s = statusOf ? statusOf(id) : null;
+          return s
+            ? {
+                bookId: id,
+                ebookStatus: s.ebookStatus ?? null,
+                audioStatus: s.audioStatus ?? null,
+                ebookLibrary: s.ebookLibrary ?? null,
+                audioLibrary: s.audioLibrary ?? null,
+                ebookFile: s.ebookFile ?? null,
+                audioFile: s.audioFile ?? null,
+              }
+            : undefined;
+        },
+      }),
     },
   } as unknown as Parameters<typeof forceSearchFindMissingCollections>[0]['ll'];
   return { calls, bundle };
@@ -157,6 +186,73 @@ describe('forceSearchFindMissingCollections — the cron acquisition leg', () =>
     const second = await forceSearchFindMissingCollections({ db: t.db, libretto, ll: stubLl().bundle, pacer: noPace });
     expect(second.candidates).toBe(0);
     expect(second.searched).toBe(0);
+  });
+
+  // ADR-055 amendment (2026-09-22) — THE PUSH GUARD. This pass is the most exposed push site: unattended,
+  // hourly, and its "still missing" test is OUR row's status, which says nothing about what LL holds. A want
+  // whose copy LL imported but whose row never reconciled was re-clobbered to `Wanted` every 12h forever.
+  it('never force-searches a want LazyLibrarian already holds — stamps it so the cooldown settles it', async () => {
+    const id = await seedCollection('c', 'recipe-on');
+    await syncCollectionWants({
+      db: t.db,
+      collectionId: id,
+      format: 'ebook',
+      members: [
+        { memberRef: 'isbn:1', title: 'One', author: null, llBookId: 'gb1' },
+        { memberRef: 'isbn:2', title: 'Two', author: null, llBookId: 'gb2' },
+      ],
+    });
+    // LL holds gb1 (Open); gb2 it is genuinely still looking for.
+    const ll = stubLl((bookId) =>
+      bookId === 'gb1' ? { ebookStatus: 'Open', ebookLibrary: '2026-08-02T10:00:00Z' } : null,
+    );
+
+    const report = await forceSearchFindMissingCollections({
+      db: t.db,
+      libretto: stubLibretto({ 'recipe-on': true }),
+      ll: ll.bundle,
+      pacer: noPace,
+    });
+
+    expect(report).toMatchObject({ candidates: 2, searched: 1, failed: 0, skippedHeld: 1 });
+    expect(ll.calls.some((c) => c.id === 'gb1')).toBe(false); // not even addBook
+    expect(ll.calls.filter((c) => c.step === 'searchBook').map((c) => c.id)).toEqual(['gb2']);
+    // The suppressed want is STAMPED (the cooldown settles it) but writes NO audit — nothing was asked
+    // of LazyLibrarian, so there is no search intent to record.
+    const rows = await t.db
+      .select({ llBookId: bookRequests.llBookId, lastSearchedAt: bookRequests.lastSearchedAt })
+      .from(bookRequests);
+    expect(rows.every((r) => r.lastSearchedAt !== null)).toBe(true);
+    const audits = await t.db
+      .select()
+      .from(permissionAudit)
+      .where(eq(permissionAudit.action, 'request_book_search'));
+    expect(audits).toHaveLength(1);
+  });
+
+  it('degrades to searching everything when the LL read fails — the guard only ever removes a write', async () => {
+    const id = await seedCollection('c', 'recipe-on');
+    await syncCollectionWants({
+      db: t.db,
+      collectionId: id,
+      format: 'ebook',
+      members: [{ memberRef: 'isbn:1', title: 'One', author: null, llBookId: 'gb1' }],
+    });
+    const ll = stubLl();
+    (ll.bundle as unknown as { read: { getAllBookStatuses: () => Promise<never> } }).read = {
+      getAllBookStatuses: async () => {
+        throw new Error('LL 503');
+      },
+    };
+
+    const report = await forceSearchFindMissingCollections({
+      db: t.db,
+      libretto: stubLibretto({ 'recipe-on': true }),
+      ll: ll.bundle,
+      pacer: noPace,
+    });
+    expect(report).toMatchObject({ searched: 1, skippedHeld: 0 });
+    expect(ll.calls.map((c) => c.step)).toEqual(['addBook', 'queueBook', 'searchBook']);
   });
 
   it('skips an unresolved want (no llBookId) — a visible tile, not yet force-searchable', async () => {

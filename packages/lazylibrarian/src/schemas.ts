@@ -8,6 +8,14 @@ import { z } from 'zod';
  * One LL book row (as served inside `cmd=getAllBooks`). LL uses capitalized keys; `Status` is the EBOOK
  * status and `AudioStatus` the AUDIOBOOK status (both from the LL vocabulary: Wanted / Skipped / Open /
  * Have / Snatched / Ignored / Matched).
+ *
+ * ADR-055 amendment (2026-09-22 — the push guard): `BookLibrary` / `AudioLibrary` ride through too. They
+ * are LL's per-format IMPORT DATES (set when LL's post-processor files a copy into its library, ISO'd by
+ * LL's own `_dic_from_query`), i.e. the "LL holds this format on disk" signal — the field the push guard
+ * needs, because a status alone lies: LL's `books` table holds rows that are `Skipped` (39 of them on
+ * 2026-09-22) or `Snatched` (29) with a library date and a real file. `BookFile` / `AudioFile` (the on-disk
+ * paths) are accepted when a build serves them — this build's `getAllBooks` projection does NOT include
+ * them, so they are optional and the guard ORs every held-signal it is given.
  */
 export const llBookSchema = z
   .object({
@@ -15,6 +23,10 @@ export const llBookSchema = z
     BookName: z.string().optional(),
     Status: z.string().nullish(),
     AudioStatus: z.string().nullish(),
+    BookLibrary: z.string().nullish(),
+    AudioLibrary: z.string().nullish(),
+    BookFile: z.string().nullish(),
+    AudioFile: z.string().nullish(),
   })
   .passthrough();
 
@@ -26,6 +38,10 @@ export type LlBook = z.infer<typeof llBookSchema>;
  * answers `Unknown command: getBook` — found 2026-07-15, the reconcile had been a silent no-op since
  * PLAN-044 shipped), so per-book status reads are impossible — the sync fetches the full list once per run
  * instead (~100s of rows; cheaper than N per-book calls anyway, and immune to per-call 503 bursts).
+ * RE-VERIFIED against the live pod 2026-09-22: `api.py` DOES define a `_getbook` method, but `getBook` is
+ * absent from its `cmd_dict`, and the dispatcher rejects any command missing from that dict BEFORE the
+ * lookup (`if kwargs['cmd'].lower() not in self.lower_cmds: … Unknown command`). So `getBook&id=` is still
+ * unreachable on this build and this full-list read remains the only per-book status source.
  * Array / `{ data }` / error-string shapes all tolerated (→ empty map in the read client).
  */
 export const llGetAllBooksResponseSchema = z.union([

@@ -8,7 +8,7 @@ const OPTS = { baseUrl: 'http://ll:5299', apiKey: 'secret-key', backoffMs: 1, sl
 describe('LazyLibrarianReadClient.getAllBookStatuses', () => {
   it('parses the array and {data} shapes into a BookID-keyed map, skipping id-less rows', async () => {
     const rows = [
-      { BookID: 'b1', Status: 'Wanted', AudioStatus: 'Open' },
+      { BookID: 'b1', Status: 'Wanted', AudioStatus: 'Open', AudioLibrary: '2026-07-11T23:38:10Z' },
       { BookID: 'b2', Status: 'Skipped' },
       { Status: 'Orphan' }, // no BookID — unaddressable, dropped
     ];
@@ -16,12 +16,60 @@ describe('LazyLibrarianReadClient.getAllBookStatuses', () => {
     const client = new LazyLibrarianReadClient({ ...OPTS, fetchImpl: (async () => arr) as unknown as typeof fetch });
     const map = await client.getAllBookStatuses();
     expect(map.size).toBe(2);
-    expect(map.get('b1')).toEqual({ bookId: 'b1', ebookStatus: 'Wanted', audioStatus: 'Open' });
-    expect(map.get('b2')).toEqual({ bookId: 'b2', ebookStatus: 'Skipped', audioStatus: null });
+    // ADR-055 amend (2026-09-22) — the per-format library/file fields ride through for the push guard.
+    expect(map.get('b1')).toEqual({
+      bookId: 'b1',
+      ebookStatus: 'Wanted',
+      audioStatus: 'Open',
+      ebookLibrary: null,
+      audioLibrary: '2026-07-11T23:38:10Z',
+      ebookFile: null,
+      audioFile: null,
+    });
+    expect(map.get('b2')).toEqual({
+      bookId: 'b2',
+      ebookStatus: 'Skipped',
+      audioStatus: null,
+      ebookLibrary: null,
+      audioLibrary: null,
+      ebookFile: null,
+      audioFile: null,
+    });
 
     const wrapped = new Response(JSON.stringify({ data: rows.slice(0, 1) }), { status: 200 });
     const c2 = new LazyLibrarianReadClient({ ...OPTS, fetchImpl: (async () => wrapped) as unknown as typeof fetch });
     expect((await c2.getAllBookStatuses()).size).toBe(1);
+  });
+
+  // The 2026-09-22 push guard reads these fields to decide whether LL already holds a format, so their
+  // blank spellings matter: LL serves an absent per-format file/library as null, '' or the literal 'None'
+  // depending on the row's age, and all three must normalize to null (a `''` would read as "held").
+  it('normalizes blank / whitespace / "None" library+file fields to null', async () => {
+    const rows = [
+      {
+        BookID: 'b3',
+        Status: 'Wanted',
+        AudioStatus: 'Wanted',
+        BookLibrary: '',
+        AudioLibrary: '   ',
+        BookFile: 'None',
+        AudioFile: '  /audiobooks/x.m4b  ',
+      },
+    ];
+    const res = new Response(JSON.stringify(rows), { status: 200 });
+    const client = new LazyLibrarianReadClient({
+      ...OPTS,
+      fetchImpl: (async () => res) as unknown as typeof fetch,
+    });
+    expect((await client.getAllBookStatuses()).get('b3')).toEqual({
+      bookId: 'b3',
+      ebookStatus: 'Wanted',
+      audioStatus: 'Wanted',
+      ebookLibrary: null,
+      audioLibrary: null,
+      ebookFile: null,
+      audioFile: '/audiobooks/x.m4b', // a real path survives, trimmed
+    });
   });
 
   it('returns an empty map on the unknown-command error shape (the real-build getBook lesson)', async () => {

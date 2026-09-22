@@ -427,6 +427,33 @@ The full teardown the build agents execute (PLAN-052 PR4a). "Move, don't duplica
 - **Move the manager** — `/integrations/collections` → `/collections` (D-01); remove the Integrations
   hub Collections card; add the `/integrations/collections` → `/collections` redirect.
 
+### D-16 — Amendment 2026-09-22 (the LL push guard) — the find-missing pass never re-searches a held copy
+
+**Normative rule: DESIGN-028's 2026-09-22 amendment.** Both D-14 force-search legs — the hourly
+`find_missing_cron` pass and the on-demand collection Force Search — now consult `llFormatAlreadyHeld`
+before the confined chain, and suppress the whole `addBook → queueBook → searchBook` for a want whose
+format LazyLibrarian already holds.
+
+**Why this pass mattered most of the four push sites.** Its "still missing" test is
+`ne(statusCol, 'landed')` on our OWN `book_requests` row. That is a statement about our mirror, not
+about LazyLibrarian: a want whose copy LL imported but whose row never reconciled reads as missing
+forever. Combined with `queueBook`'s unguarded `UPDATE books SET Status='Wanted'`, the pass re-clobbered
+each such want back into LL's search backlog **every 12h, unattended, up to 25 per run**.
+
+**Bookkeeping for a suppressed want:** `last_searched_at` IS stamped (the want is settled on LL's side,
+so the D-14 cooldown should keep it out of the next run rather than re-reading it hourly) and **no
+`request_book_search` audit row is written** — nothing was asked of LazyLibrarian, so there is no search
+intent to record. Counted as `skippedHeld` on both reports, and logged as `ll_push_skipped_have` with the
+`collection-force-search.<via>` site discriminator.
+
+**One LL read per pass**, taken before the first write and covering the whole ≤`cap` worklist. A read
+failure degrades to searching everything, exactly as before — the guard may suppress a write, never
+invent one.
+
+**UI:** an on-demand Force Search where every missing member turned out to be held now shows the honest
+**"Already have them"** chip instead of "Search started" — the recipe was still re-applied, but no search
+went out, and claiming one did is a lie the user cannot check.
+
 ## Alternatives considered
 
 - **Keep propose→approve** (ADR-070). REJECTED by the owner — the affordance is being torn out.

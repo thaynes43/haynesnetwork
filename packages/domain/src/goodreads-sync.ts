@@ -14,6 +14,7 @@ import {
   applyComicReconcile,
   applyRequestReconcile,
   computeCoverage,
+  llFormatAlreadyHeld,
   loadLibraryMatcher,
   mapKapowarrVolumeStatus,
   mapLlStatus,
@@ -26,6 +27,7 @@ import {
   syncShelfRequests,
   type ComicRouteTarget,
   type Coverage,
+  type LlHeldSignals,
   type RequestSyncItem,
 } from './book-requests';
 
@@ -70,6 +72,13 @@ export interface SyncGoodreadsReport {
    * re-searched (usenet-first by LL's provider priority; MAM only fills gaps when its gate is open).
    */
   requestsRequeued: number;
+  /**
+   * ADR-055 amendment (2026-09-22 — the push guard) — per-format LL pushes SUPPRESSED this run because
+   * LazyLibrarian already holds that format (`Open`/`Have`, or an import date / on-disk path). Counts
+   * FORMAT LEGS, not books: a want whose ebook is held and audiobook is not contributes 1. Every one of
+   * these would have been a `queueBook` clobbering an imported book back to `Wanted`.
+   */
+  pushesSkippedHeld: number;
   /** ADR-056 — comics newly routed to Kapowarr this run (resolved + added monitored). */
   comicsRouted: number;
   /** ADR-056 — comics whose Kapowarr state was reconciled back this run (incl. the ones just routed). */
@@ -128,26 +137,71 @@ export async function syncGoodreadsIntegration(
     now,
   });
 
-  // 4. Push the routable-unmatched wants to LL, paced: addBook → queueBook (BOTH formats — mandatory) →
-  //    searchBook (BOTH). addBook alone lands 'Skipped'; queueBook reaches 'Wanted' (the F-10 lesson, R2).
+  // 3a. ADR-055 amendment (2026-09-22 — the push guard). Read LL's book table BEFORE the push, so the
+  //     guard below sees LL's pre-push truth. This is deliberately a SECOND `getAllBooks` (step 5 keeps
+  //     its own post-push read): one snapshot cannot serve both honestly — a pre-push snapshot would
+  //     reconcile freshly-pushed wants from stale rows and re-sweep the formats this very run queued.
+  //     It costs one extra LL *database* read per integration per run (no Google Books leg, no external
+  //     hop). On a read failure the map stays empty and the guard degrades to "push everything" — its
+  //     only safe default, because this guard may suppress a write but must never invent one.
+  let prePush = new Map<string, LlHeldSignals>();
+  if (input.ll && toPush.length > 0) {
+    try {
+      prePush = await input.ll.read.getAllBookStatuses();
+    } catch (error) {
+      log.error?.(
+        'goodreads-sync: LL getAllBooks failed — push guard degraded to push-everything',
+        {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
+    }
+  }
+
+  // 4. Push the routable-unmatched wants to LL, paced: addBook → queueBook (missing formats — mandatory) →
+  //    searchBook. addBook alone lands 'Skipped'; queueBook reaches 'Wanted' (the F-10 lesson, R2).
+  //    GUARDED since 2026-09-22: a format LazyLibrarian ALREADY HOLDS is never queued or searched.
+  //    `queueBook` is an unguarded `UPDATE books SET Status='Wanted'` (LL api.py::_queuebook), so pushing a
+  //    held format clobbers an imported book back into the search backlog, where LL re-searches it daily
+  //    and qBittorrent rejects every re-grab as a duplicate hash — 292 of LL's rows were in that state on
+  //    2026-09-22. A want whose BOTH formats are held is skipped whole (no addBook either) and still marked
+  //    pushed: the request is satisfied on LL's side, and step 5 reconciles it to `landed`.
   let pushed = 0;
+  let pushesSkippedHeld = 0;
+  const BOTH_FORMATS = ['ebook', 'audiobook'] as const;
   if (input.ll) {
     for (let i = 0; i < toPush.length; i += 1) {
       const target = toPush[i]!;
       await pace(i);
+      const held = prePush.get(target.llBookId);
+      const toQueue = BOTH_FORMATS.filter((f) => !llFormatAlreadyHeld(held, f));
+      const skipped = BOTH_FORMATS.filter((f) => !toQueue.includes(f));
+      if (skipped.length > 0) {
+        pushesSkippedHeld += skipped.length;
+        log.info?.('ll_push_skipped_have', {
+          site: 'goodreads-sync.push',
+          requestId: target.requestId,
+          llBookId: target.llBookId,
+          formats: skipped,
+          ebookStatus: held?.ebookStatus ?? null,
+          audioStatus: held?.audioStatus ?? null,
+        });
+      }
       try {
-        await input.ll.write.addBook(target.llBookId);
-        await input.ll.write.queueBook(target.llBookId, 'ebook');
-        await input.ll.write.queueBook(target.llBookId, 'audiobook');
-        await input.ll.write.searchBook(target.llBookId, 'ebook');
-        await input.ll.write.searchBook(target.llBookId, 'audiobook');
+        if (toQueue.length > 0) {
+          await input.ll.write.addBook(target.llBookId);
+          for (const format of toQueue) await input.ll.write.queueBook(target.llBookId, format);
+          for (const format of toQueue) await input.ll.write.searchBook(target.llBookId, format);
+        }
         await markRequestPushed({
           db: input.db,
           requestId: target.requestId,
           llBookId: target.llBookId,
           now,
         });
-        pushed += 1;
+        // Only a run that actually issued writes counts as a push (an all-held want is `pushesSkippedHeld`,
+        // never a phantom push) — but it is still marked pushed so it carries its llBookId and reconciles.
+        if (toQueue.length > 0) pushed += 1;
       } catch (error) {
         log.error?.('goodreads-sync: LL push failed (will retry next run)', {
           requestId: target.requestId,
@@ -158,18 +212,21 @@ export async function syncGoodreadsIntegration(
   }
 
   // 5. Reconcile LL per-format statuses back onto the requests (both freshly-pushed + prior-run wants).
-  //    One `getAllBooks` fetch per run (the deployed LL build has no `getBook`; a book absent from the map
-  //    is one LL doesn't know — the request stays untouched, the honest gap).
+  //    One `getAllBooks` fetch, taken AFTER the push so a freshly-pushed want reconciles from what the
+  //    push actually left behind (the deployed LL build has no `getBook`; a book absent from the map is
+  //    one LL doesn't know — the request stays untouched, the honest gap).
   // 5a. The Skipped-want sweep (DESIGN-028 amendment 2026-07-15, owner-directed): a live want whose LL
   //     status is raw `Skipped` is a book LL is NOT looking for — addBook races and the pre-searchBook
   //     PLAN-044 pushes both left rows in this state. Re-queue + re-search each such format immediately so
   //     usenet (SAB) grabs it on LL's usenet-first provider priority — MAM only fills the gaps when its
   //     gate is open (the governor still caps it). Raw `Skipped` ONLY: `Ignored` is an owner ruling and
-  //     `Matched` means LL thinks it already holds a file — neither may be re-queued.
+  //     `Matched` means LL thinks it already holds a file — neither may be re-queued. GUARDED since
+  //     2026-09-22 as well: LL carries `Skipped` rows that are nevertheless imported (24 ebook + 15 audio
+  //     on that date, each with a library date and a real file), and re-queueing one clobbers it.
   let reconciled = 0;
   let requeued = 0;
   if (input.ll) {
-    let statuses: Map<string, { ebookStatus: string | null; audioStatus: string | null }>;
+    let statuses: Map<string, LlHeldSignals>;
     try {
       statuses = await input.ll.read.getAllBookStatuses();
     } catch (error) {
@@ -191,8 +248,26 @@ export async function syncGoodreadsIntegration(
         });
         reconciled += 1;
         const skippedFormats: Array<'ebook' | 'audiobook'> = [];
-        if (status.ebookStatus?.trim().toLowerCase() === 'skipped') skippedFormats.push('ebook');
-        if (status.audioStatus?.trim().toLowerCase() === 'skipped') skippedFormats.push('audiobook');
+        const heldFormats: Array<'ebook' | 'audiobook'> = [];
+        for (const format of BOTH_FORMATS) {
+          const raw = format === 'ebook' ? status.ebookStatus : status.audioStatus;
+          if (raw?.trim().toLowerCase() !== 'skipped') continue;
+          // A `Skipped` row that nevertheless carries a library date / file is one LL HAS — re-queueing
+          // it would clobber an imported book back to `Wanted`. Suppress, count, and log.
+          if (llFormatAlreadyHeld(status, format)) heldFormats.push(format);
+          else skippedFormats.push(format);
+        }
+        if (heldFormats.length > 0) {
+          pushesSkippedHeld += heldFormats.length;
+          log.info?.('ll_push_skipped_have', {
+            site: 'goodreads-sync.skipped-sweep',
+            requestId: target.requestId,
+            llBookId: target.llBookId,
+            formats: heldFormats,
+            ebookStatus: status.ebookStatus ?? null,
+            audioStatus: status.audioStatus ?? null,
+          });
+        }
         if (skippedFormats.length > 0) {
           await pace(requeued + 1);
           for (const format of skippedFormats) {
@@ -270,6 +345,7 @@ export async function syncGoodreadsIntegration(
     pushed,
     reconciled,
     requeued,
+    pushesSkippedHeld,
     comicsRouted,
     comicsReconciled,
     coverage,
@@ -282,6 +358,7 @@ export async function syncGoodreadsIntegration(
     requestsPushed: pushed,
     requestsReconciled: reconciled,
     requestsRequeued: requeued,
+    pushesSkippedHeld,
     comicsRouted,
     comicsReconciled,
     coverage,

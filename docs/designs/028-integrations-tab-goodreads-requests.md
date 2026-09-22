@@ -240,3 +240,72 @@ egress IP (the Kapowarr 429 storm).
 
 **Data repair (live, 2026-07-17):** the request row was un-comic'd (`comic_status`/`kapowarr_volume_id`/
 `comicvine_id` → NULL — it re-enters the LL book route on the next sync) and Kapowarr volume 3 deleted.
+
+## Amendment — 2026-09-22: the LL PUSH GUARD — never queue a format LazyLibrarian already holds
+
+**This amendment is normative for EVERY LazyLibrarian acquisition push in the app**, not just D-04's
+shelf push: the pairing mint + sweep (DESIGN-036), the find-missing collection force-search — cron AND
+on-demand (DESIGN-043 D-14), and the books Force Search (DESIGN-033 D-09). It is recorded here because
+D-02/D-04 define the confined write surface and the ordered chain.
+
+**The defect.** `queueBook` is, in the deployed LL build (`api.py::_queuebook`), an **unguarded**
+`UPDATE books SET Status='Wanted' WHERE BookID=?` (`AudioStatus` for the audiobook leg). It has no
+held-file check of any kind. Every push site issued it unconditionally — D-04's shelf push queued BOTH
+formats for every routable want, the 2026-07-15 sweep re-queued any raw-`Skipped` format, the pairing
+mint queued the missing format, the hourly find-missing collection pass queued every want our own row
+did not call `landed`, and Force Search queued "regardless of landed state". So any push to a
+format LL had **already imported** clobbered an `Open` book back into LL's search backlog. There it is
+re-searched on every `SEARCH_BOOKINTERVAL` tick, re-found on the same indexer, re-grabbed — and
+qBittorrent rejects the grab as a duplicate hash. The book never leaves `Wanted`, and the loop repeats
+every day, forever.
+
+**The measurement (live LL sqlite, 2026-09-22).** LL tracked 812 books — 1624 per-format rows:
+
+| format    | `Wanted`, no file | `Wanted`, file + library date | `Skipped`, file | `Snatched`, file | `Open` |
+| --------- | ----------------- | ----------------------------- | --------------- | ---------------- | ------ |
+| eBook     | 88                | **155**                       | 24              | 10               | 184    |
+| AudioBook | 184               | **137**                       | 15              | 19               | 119    |
+
+**564 rows read `Wanted`, and 292 of them were books LL already had on disk** — the daily re-search
+engine. Note the third and fourth columns: `BookFile`/`BookLibrary` were set on 39 `Skipped` and 29 `Snatched` rows too, so a
+status-only guard is not sufficient — the file signals are load-bearing.
+
+**The guard.** `llFormatAlreadyHeld(status, format)` (packages/domain, beside `mapLlStatus` — the ACL
+parses, the domain decides) returns true when the format's LL status is `Open`/`Have` **or** when LL
+carries an import date (`BookLibrary`/`AudioLibrary`) or an on-disk path (`BookFile`/`AudioFile`) for
+it. The ACL (`LlBookStatus`) now carries those four fields; `getAllBooks`'s projection serves the two
+library dates (the file paths ride through when a build serves them). Blank spellings LL actually
+emits — `null`, `''`, whitespace, the literal `'None'` — all normalize to "not held".
+
+Three invariants a reviewer must not let regress:
+
+1. **The guard may only ever SUPPRESS a write, never invent one.** An absent book, an unknown status,
+   or a failed LL read all mean "not held" → push exactly as before. There is no path where the guard
+   causes a push that would not otherwise have happened.
+2. **It is per FORMAT, never per book.** A want whose ebook LL holds and whose audiobook it does not
+   still pushes the audiobook. Only an all-held want skips whole (`addBook` included).
+3. **A suppressed push is not a failure and not a phantom push.** The want is still marked pushed (it
+   carries its `llBookId` and leaves the worklist); `requestsPushed` counts only runs that issued real
+   writes; the suppression is counted separately and logged.
+
+**Counters + log event.** `SyncGoodreadsReport.pushesSkippedHeld` (rolled up to
+`GoodreadsSyncReport.pushesSkippedHeld` and into the `goodreads-sync complete` / `sync finished` log
+lines) and `FormatPairingReport.skippedHeld` (mint-push + sweep, already spread into
+`format-pairing complete`) count **format legs** suppressed. Each suppression also logs one line whose
+_message_ is the snake_case event token **`ll_push_skipped_have`** — deliberately unlike this repo's
+prose-message convention, so the event is greppable in Loki as a token rather than a sentence — with a
+`site` discriminator (`goodreads-sync.push`, `goodreads-sync.skipped-sweep`,
+`format-pairing.mint-push`, `format-pairing.skipped-sweep`), the request + LL ids, and the formats.
+
+**Read budget.** The pairing run reuses its ONE existing `getAllBookStatuses` (D-18's seat-gate read
+now feeds a third consumer — zero extra calls). The shelf sync takes a **second** `getAllBooks`, before
+the push, and only when there is something to push: one snapshot cannot serve both honestly — a
+pre-push snapshot would reconcile freshly-pushed wants from stale rows and re-sweep the very formats
+that run just queued. It is an LL sqlite read, not a Google Books leg. Force Search takes one read per
+user click, already bounded by the ADR-080 media-action budget enforced before it.
+
+**What is NOT guarded, deliberately: the books Fix (DESIGN-033 D-05).** A Fix is the user asserting the
+copy on disk is defective and asking for a replacement, with a durable `book_fix_requests` row and a
+reason. Making LL want that book again is the _point_, so Fix keeps the unguarded chain. It is now also
+the only sanctioned way to make LL re-acquire a format it already holds — which is what the Force
+Search decline points users at.

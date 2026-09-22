@@ -138,6 +138,9 @@ function stubLl() {
       queueBook: async () => {},
       searchBook: async () => {},
     },
+    // ADR-055 amend (2026-09-22) — Force Search reads LL's per-format state before pushing. An empty
+    // map means LL knows none of these books, so the push proceeds and the budget legs stay in scope.
+    read: { getAllBookStatuses: async () => new Map() },
   } as unknown as Parameters<typeof runBookItemForceSearch>[0]['ll'];
   return bundle;
 }

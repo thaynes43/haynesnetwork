@@ -15,17 +15,15 @@
 // Audit: a single `request_book_search` permission_audit row (the same audit the manual/pairing
 // search records), committed BEFORE the external call (the fix-flow crash-safety discipline). That
 // is an AUDIT row, not a durable action row — no synthetic-reason fix is ever written.
-import {
-  bookRequests,
-  booksItems,
-  permissionAudit,
-  users,
-  type DbClient,
-} from '@hnet/db';
-import { and, desc, eq } from 'drizzle-orm';
+import { bookRequests, booksItems, permissionAudit, users, type DbClient } from '@hnet/db';
+import { desc, eq } from 'drizzle-orm';
 import { inTransaction, resolveDb } from './db-client';
 import { BookFixRateLimitError, countRecentBooksBudget } from './book-fix';
-import { effectiveMediaActionBudget, mediaActionBudgetReachedMessage } from './media-action-budgets';
+import { llFormatAlreadyHeld } from './book-requests';
+import {
+  effectiveMediaActionBudget,
+  mediaActionBudgetReachedMessage,
+} from './media-action-budgets';
 import { NotFoundError } from './errors';
 import { KapowarrUpstreamError, LazyLibrarianUpstreamError } from './errors';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
@@ -47,17 +45,22 @@ export interface RunBookItemForceSearchInput {
 
 export interface RunBookItemForceSearchResult {
   searched: boolean;
-  /** When false: nothing fired — the item has no LL/Kapowarr identity to re-grab, or its route is
-   *  not configured. Never an error; the UI shows an honest note. */
-  reason?: 'no_ll_id' | 'no_kapowarr_id' | 'unroutable';
+  /** When false: nothing fired — the item has no LL/Kapowarr identity to re-grab, its route is not
+   *  configured, or LazyLibrarian already holds this format (`already_held`, the 2026-09-22 push
+   *  guard). Never an error; the UI shows an honest note. */
+  reason?: 'no_ll_id' | 'no_kapowarr_id' | 'unroutable' | 'already_held';
 }
 
 /**
  * Fire a one-click quick re-search for an on-disk title. Resolves the acquisition identity from the
  * linked `book_requests` seed, audits the intent (committed first), then re-runs the confined
- * acquisition search for the item's own format — regardless of "landed" state, since Force Search's
- * whole purpose is to re-grab a better copy of a title that is already on disk. Leaves no durable
- * row. An LL/Kapowarr outage surfaces as *UpstreamError (BAD_GATEWAY) AFTER the audit.
+ * acquisition search for the item's own format. Leaves no durable row. An LL/Kapowarr outage surfaces
+ * as *UpstreamError (BAD_GATEWAY) AFTER the audit.
+ *
+ * ADR-055 amendment (2026-09-22): the LL leg no longer fires "regardless of landed state" — a format
+ * LazyLibrarian already holds returns `already_held` instead. See the guard block below for why LL
+ * leaves no third option. The Kapowarr (comic) leg is untouched: `searchVolume` carries no such
+ * status clobber. The intent is STILL audited either way — the click is recorded, as it always was.
  */
 export async function runBookItemForceSearch(
   input: RunBookItemForceSearchInput,
@@ -149,9 +152,24 @@ export async function runBookItemForceSearch(
   }
 
   if (!input.ll) return { searched: false, reason: 'unroutable' };
+
+  // ADR-055 amendment (2026-09-22 — the LL push guard). This used to re-grab "regardless of landed
+  // state". It cannot any more, and the reason is structural in LazyLibrarian, not a policy choice:
+  //   • `queueBook` is an unguarded `UPDATE books SET Status='Wanted' WHERE BookID=?`
+  //     (LL `api.py::_queuebook`) — it clobbers an imported book back into the search backlog; and
+  //   • `searchBook` alone cannot substitute, because LL's `search_book()` only enqueues a book whose
+  //     `Status`/`AudioStatus` is literally `'Wanted'` (LL `searchbook.py`) — on an `Open` book it is a
+  //     silent no-op.
+  // So LL offers no way to re-search a format it already holds WITHOUT stranding it as permanently
+  // `Wanted`, where LL re-searches it daily and qBittorrent rejects every re-grab as a duplicate hash.
+  // That is the exact defect this guard exists to stop, so a held format now returns an honest
+  // `already_held` instead of a write that damages LL's state and achieves nothing.
+  const held = await llHoldsFormat(input.ll, llBookId!, format);
+  if (held) return { searched: false, reason: 'already_held' };
+
   try {
-    // Re-grab regardless of landed state — addBook is idempotent; queueBook is MANDATORY (addBook
-    // alone lands Skipped); searchBook fires the actual re-search for the item's own format.
+    // addBook is idempotent; queueBook is MANDATORY (addBook alone lands Skipped); searchBook fires the
+    // actual re-search for the item's own format.
     await input.ll.write.addBook(llBookId!);
     await input.ll.write.queueBook(llBookId!, format);
     await input.ll.write.searchBook(llBookId!, format);
@@ -159,4 +177,24 @@ export async function runBookItemForceSearch(
     throw new LazyLibrarianUpstreamError('LazyLibrarian search failed', { cause: error });
   }
   return { searched: true };
+}
+
+/**
+ * Does LL already hold this format? One `getAllBooks` read per user click (the deployed LL build has no
+ * `getBook` — see @hnet/lazylibrarian schemas), so this is bounded by the ADR-080 media-action budget the
+ * caller already enforces above: no click, no call. An LL read failure is NOT fatal — the guard falls
+ * through to `false` and the push proceeds exactly as it did before, because this guard may only ever
+ * suppress a write, never invent one; a genuine LL outage then surfaces on the write as it always has.
+ */
+async function llHoldsFormat(
+  ll: LazyLibrarianClientBundle,
+  llBookId: string,
+  format: 'ebook' | 'audiobook',
+): Promise<boolean> {
+  try {
+    const statuses = await ll.read.getAllBookStatuses();
+    return llFormatAlreadyHeld(statuses.get(llBookId), format);
+  } catch {
+    return false;
+  }
 }
