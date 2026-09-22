@@ -8,9 +8,12 @@
 
 **The finding (live, 2026-09-22).** LazyLibrarian's `queueBook` is an unguarded
 `UPDATE books SET Status='Wanted' WHERE BookID=?` (`api.py::_queuebook` — no held-file check of any
-kind), and this app pushed it unconditionally from three sites: the Goodreads shelf push
-(`goodreads-sync.ts`), the pairing mint + its `Skipped` sweep (`format-pairing.ts`), and books Force
-Search, which fired "regardless of landed state" by design. So every push to a format LL had **already
+kind), and this app pushed it unconditionally from FOUR sites: the Goodreads shelf push
+(`goodreads-sync.ts`), the pairing mint + its `Skipped` sweep (`format-pairing.ts`), the hourly
+find-missing collection force-search (`collection-force-search.ts` — **not in the original finding, and
+the worst of them**: unattended, ≤25 wants/run, re-firing every 12h forever, because it decides "still
+missing" from our own row status and not from LL's), and books Force Search, which fired "regardless of
+landed state" by design. So every push to a format LL had **already
 imported** clobbered it back into LL's search backlog, where it was re-searched daily, re-found on MAM,
 and rejected by qBittorrent as a duplicate hash — forever. **Measured: 292 of LL's ~620 per-format rows
 (155 eBook + 137 AudioBook) were `Wanted` with a real file on disk.** Full evidence + the three LL source
@@ -48,8 +51,8 @@ no scheduled library scan** (`librarysync.py` is the only other writer of `Open`
 outside LL's own post-processor stays invisible to it — a haynes-ops CronJob for it is pending.
 
 **Docs:** DESIGN-028 amendment 2026-09-22 (normative for every push site), DESIGN-036 amendment (the
-pairing sweep is also documented there for the first time), DESIGN-033 D-12, OPS-013 §12 + a new §6
-invariant. No new ADR — this narrows ADR-055 C-02 / ADR-065 C-08 rather than deciding anything new,
+pairing sweep is also documented there for the first time), DESIGN-033 D-12, DESIGN-043 D-16, OPS-013
+§12 + a new §6 invariant. No new ADR — this narrows ADR-055 C-02 / ADR-065 C-08 rather than deciding anything new,
 the DESIGN-039 D-18 precedent.
 
 ## ▶ 2026-09-19 — "Saved days ago, still in the trash": saves were sound; the batch wall is now sectioned and honest

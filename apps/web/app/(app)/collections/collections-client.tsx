@@ -956,14 +956,17 @@ function CollectionForceSearchButton({
 }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [runId, setRunId] = useState<string | null>(null);
-  const [state, setState] = useState<'idle' | 'fired' | 'unreachable'>('idle');
+  const [state, setState] = useState<'idle' | 'fired' | 'unreachable' | 'all-held'>('idle');
   const search = trpc.collections.forceSearchCollection.useMutation({
     onSuccess: (res) => {
       setConfirmOpen(false);
       if (res.unreachable) {
         setState('unreachable');
       } else {
-        setState('fired');
+        // ADR-055 amend (2026-09-22 — the LL push guard): the recipe was re-applied, but every missing
+        // member turned out to be one the book service already has filed, so no search went out. Saying
+        // "Search started" there would be a lie the user has no way to check.
+        setState(res.searched === 0 && res.skippedHeld > 0 ? 'all-held' : 'fired');
         if (res.runId) setRunId(res.runId);
       }
       onDone();
@@ -990,6 +993,15 @@ function CollectionForceSearchButton({
         pulse
         meter
         title="The recipe was re-applied and the missing books are being searched for now."
+      />
+    );
+  } else if (state === 'all-held') {
+    live = (
+      <PhaseChip
+        phase="noop"
+        label="Already have them"
+        tone="warning"
+        title="The collection was re-applied, but every title it was missing is one we already have a copy of — so nothing needed searching for."
       />
     );
   } else if (state === 'unreachable') {

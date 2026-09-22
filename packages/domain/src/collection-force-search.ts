@@ -23,7 +23,7 @@ import { LibrettoUnreachableError } from '@hnet/libretto';
 import { inTransaction, resolveDb } from './db-client';
 import { NotFoundError } from './errors';
 import { loadResolvedWantRefs, resolveMissingMembers } from './collection-wants-sync';
-import { syncCollectionWants } from './book-requests';
+import { llFormatAlreadyHeld, syncCollectionWants, type LlHeldSignals } from './book-requests';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
 
 /** The Libretto read surface this pass needs — just the recipe list (which carries acquisitionEnabled). */
@@ -67,6 +67,12 @@ export interface ForceSearchCollectionsReport {
   searched: number;
   /** Wants whose LazyLibrarian force-search failed (logged; left for the next run). */
   failed: number;
+  /**
+   * ADR-055 amendment (2026-09-22 — the LL push guard) — wants SUPPRESSED because LazyLibrarian already
+   * holds that format. They are NOT searched and NOT failed; `last_searched_at` is still stamped (they are
+   * done, not pending) so the cooldown keeps them out of the next run instead of re-checking hourly.
+   */
+  skippedHeld: number;
   /** True when Libretto was unreachable — the whole pass was skipped. */
   unreachable: boolean;
 }
@@ -161,15 +167,52 @@ async function runForceSearchWorklist(input: {
   subjectUserId?: string | null;
   /** Tag the audit with the single collection (on-demand path); omitted for the multi-collection cron leg. */
   tagCollection?: boolean;
-  report: { searched: number; failed: number };
+  report: { searched: number; failed: number; skippedHeld: number };
   log: {
     info?: (msg: string, meta?: Record<string, unknown>) => void;
     warn?: (msg: string, meta?: Record<string, unknown>) => void;
     error?: (msg: string, meta?: Record<string, unknown>) => void;
   };
 }): Promise<void> {
+  // ADR-055 amendment (2026-09-22 — the LL push guard). ONE `getAllBooks` for the whole worklist (≤ cap),
+  // taken before the first write. This pass is the most exposed of all the push sites: it is unattended,
+  // hourly, and its "still missing" test is OUR row's status (`ne(statusCol,'landed')`), which says nothing
+  // about what LazyLibrarian holds — so a want whose copy LL imported but whose row never reconciled was
+  // re-clobbered to `Wanted` every 12h, forever. On a read failure the map is empty and every want pushes,
+  // exactly as before: the guard may suppress a write, never invent one.
+  let held = new Map<string, LlHeldSignals>();
+  if (input.worklist.length > 0) {
+    try {
+      held = await input.ll.read.getAllBookStatuses();
+    } catch (error) {
+      input.log.warn?.(
+        'collection-force-search: LL getAllBooks failed — push guard degraded to search-everything',
+        { error: error instanceof Error ? error.message : String(error) },
+      );
+    }
+  }
+
   for (let i = 0; i < input.worklist.length; i += 1) {
     const want = input.worklist[i]!;
+    if (llFormatAlreadyHeld(held.get(want.llBookId), want.format)) {
+      input.report.skippedHeld += 1;
+      input.log.info?.('ll_push_skipped_have', {
+        site: `collection-force-search.${input.via}`,
+        requestId: want.id,
+        llBookId: want.llBookId,
+        formats: [want.format],
+        title: want.title,
+      });
+      // Stamp last_searched_at anyway (no audit — nothing was requested of LL). The want is settled on
+      // LL's side, so the 12h cooldown should keep it out of the next run rather than re-reading it hourly.
+      await inTransaction(input.db, async (tx) => {
+        await tx
+          .update(bookRequests)
+          .set({ lastSearchedAt: input.now, updatedAt: input.now })
+          .where(eq(bookRequests.id, want.id));
+      });
+      continue;
+    }
     await input.pace(i);
     try {
       // The confined LazyLibrarian force-search chain — MANDATORY queueBook after addBook (else Skipped).
@@ -229,6 +272,7 @@ export async function forceSearchFindMissingCollections(
     candidates: 0,
     searched: 0,
     failed: 0,
+    skippedHeld: 0,
     unreachable: false,
   };
 
@@ -288,6 +332,7 @@ export async function forceSearchFindMissingCollections(
     candidates: report.candidates,
     searched: report.searched,
     failed: report.failed,
+    skippedHeld: report.skippedHeld,
   });
   return report;
 }
@@ -342,6 +387,8 @@ export interface ForceSearchCollectionNowReport {
   searched: number;
   /** Wants whose LazyLibrarian force-search failed (logged; left for the next run). */
   failed: number;
+  /** ADR-055 amendment (2026-09-22) — wants suppressed because LazyLibrarian already holds that format. */
+  skippedHeld: number;
   /** True when Libretto was unreachable — the apply/refresh could not run, so nothing was searched. */
   unreachable: boolean;
 }
@@ -366,6 +413,7 @@ export async function forceSearchCollectionNow(
     candidates: 0,
     searched: 0,
     failed: 0,
+    skippedHeld: 0,
     unreachable: false,
   };
 

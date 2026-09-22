@@ -244,14 +244,16 @@ egress IP (the Kapowarr 429 storm).
 ## Amendment — 2026-09-22: the LL PUSH GUARD — never queue a format LazyLibrarian already holds
 
 **This amendment is normative for EVERY LazyLibrarian acquisition push in the app**, not just D-04's
-shelf push: the pairing mint + sweep (DESIGN-036), and the books Force Search (DESIGN-033 D-09). It is
-recorded here because D-02/D-04 define the confined write surface and the ordered chain.
+shelf push: the pairing mint + sweep (DESIGN-036), the find-missing collection force-search — cron AND
+on-demand (DESIGN-043 D-14), and the books Force Search (DESIGN-033 D-09). It is recorded here because
+D-02/D-04 define the confined write surface and the ordered chain.
 
 **The defect.** `queueBook` is, in the deployed LL build (`api.py::_queuebook`), an **unguarded**
 `UPDATE books SET Status='Wanted' WHERE BookID=?` (`AudioStatus` for the audiobook leg). It has no
 held-file check of any kind. Every push site issued it unconditionally — D-04's shelf push queued BOTH
 formats for every routable want, the 2026-07-15 sweep re-queued any raw-`Skipped` format, the pairing
-mint queued the missing format, and Force Search queued "regardless of landed state". So any push to a
+mint queued the missing format, the hourly find-missing collection pass queued every want our own row
+did not call `landed`, and Force Search queued "regardless of landed state". So any push to a
 format LL had **already imported** clobbered an `Open` book back into LL's search backlog. There it is
 re-searched on every `SEARCH_BOOKINTERVAL` tick, re-found on the same indexer, re-grabbed — and
 qBittorrent rejects the grab as a duplicate hash. The book never leaves `Wanted`, and the loop repeats

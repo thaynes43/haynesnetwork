@@ -85,9 +85,17 @@ guard would have left the `Skipped` sweep free to clobber 39 already-imported bo
   (the ACL parses, the domain decides). True on `Open`/`Have`, or a non-blank library date / file path
   for that format. LL's blank spellings (`null`, `''`, whitespace, the literal `'None'`) all normalize
   to not-held.
-- Four suppression points: the shelf push and its `Skipped` sweep (`goodreads-sync.ts`), the pairing
-  mint push and its `Skipped` sweep (`format-pairing.ts`). Each logs `ll_push_skipped_have` with a
-  `site` discriminator and counts into `pushesSkippedHeld` / `skippedHeld`.
+- Six suppression points across four modules: the shelf push and its `Skipped` sweep
+  (`goodreads-sync.ts`), the pairing mint push and its `Skipped` sweep (`format-pairing.ts`), and both
+  find-missing collection legs — the hourly cron and the on-demand button (`collection-force-search.ts`).
+  Each logs `ll_push_skipped_have` with a `site` discriminator and counts into `pushesSkippedHeld` /
+  `skippedHeld`.
+- **The fourth site was not in the original finding and is the worst one.** `collection-force-search.ts`
+  gathers its worklist with `ne(statusCol,'landed')` on our OWN row — a statement about our mirror, not
+  about LL. Unattended, hourly, ≤25 wants per run, re-firing every 12h per want forever. A suppressed
+  want there is stamped `last_searched_at` (settled, so the cooldown holds it) but writes NO audit row:
+  nothing was asked of LL. Found by chasing the work order's "keep the existing 12h cooldown/caps" line,
+  which belongs to this file and to none of the three sites the finding named.
 - `runBookItemForceSearch` returns `{ searched: false, reason: 'already_held' }` for a held format, and
   the books detail head renders "Already have this copy" pointing at Fix.
 - The books **Fix** chain is deliberately NOT guarded — see DESIGN-028's amendment, last paragraph.

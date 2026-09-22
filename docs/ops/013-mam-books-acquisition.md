@@ -529,7 +529,9 @@ without first fixing the phantom-`Wanted` population just multiplies duplicate g
 **Invariant: no LazyLibrarian `queueBook` for a format LL already has on disk.**
 
 LL's `api.py::_queuebook` is an unguarded `UPDATE books SET Status='Wanted' WHERE BookID=?`. haynesnetwork
-pushed it unconditionally from three sites, so every push to an already-imported book clobbered it back
+pushed it unconditionally from four sites — the Goodreads shelf push and its `Skipped` sweep, the pairing
+mint and its `Skipped` sweep, the hourly find-missing collection pass, and books Force Search — so every
+push to an already-imported book clobbered it back
 into the backlog, where §12.3's sweep re-searched it, re-found it on MAM, and qBittorrent rejected the
 re-grab as a duplicate hash — forever. Measured on the live LL database, 2026-09-22:
 
@@ -540,6 +542,10 @@ re-grab as a duplicate hash — forever. Measured on the live LL database, 2026-
 
 **292 of the ~620 rows were phantom wants.** This is the traffic the MAM governor was pacing for
 nothing, and the source of the duplicate-hash rejections.
+
+The worst offender was the **hourly find-missing collection pass**: it decided "still missing" from the
+app's own row status, not from LL's, so any want whose copy LL had imported but whose row never
+reconciled was re-clobbered every 12h forever, up to 25 per run, unattended.
 
 **Fixed app-side** (haynesnetwork, DESIGN-028 amendment 2026-09-22): every push site consults
 `llFormatAlreadyHeld` first — `Open`/`Have`, or a `BookLibrary`/`AudioLibrary` import date, or a
